@@ -109,6 +109,18 @@ export interface NotifyContext {
   retriedForSec?: number | null;
   quotaUsed?: number | null;
   quotaTotal?: number | null;
+  /**
+   * OPS-WEBHOOK-QUOTA-METER-PARITY-W1: WHICH wall paused the deliveries, and the daily meter's
+   * own pair when that wall is the daily one.
+   *
+   * Passed IN from the gate that refused rather than re-read here: this module imports neither
+   * `license` nor `entitlement`, and deliberately so — the notify is fire-and-forget and runs
+   * after the decision, so a second read could name a different wall than the one that actually
+   * fired. `quotaUsed`/`quotaTotal` above are and remain the MONTHLY pair.
+   */
+  quotaWall?: 'daily' | 'monthly' | null;
+  quotaDailyUsed?: number | null;
+  quotaDailyTotal?: number | null;
 }
 
 export interface NotifyArgs {
@@ -262,6 +274,11 @@ async function dispatchTemplate(
         subscriptionId: ctx.subscriptionId ?? 0,
         used: ctx.quotaUsed ?? 0,
         total: ctx.quotaTotal ?? 0,
+        // Default 'monthly' preserves the pre-wave email byte-for-byte for every caller that
+        // does not name a wall — the variant is opt-IN, so no existing sender changes.
+        wall: ctx.quotaWall ?? 'monthly',
+        dailyUsed: ctx.quotaDailyUsed ?? null,
+        dailyTotal: ctx.quotaDailyTotal ?? null,
       });
     case 'webhook_resumed':
       return null; // unreachable: sendsEmail === false is checked before dispatch

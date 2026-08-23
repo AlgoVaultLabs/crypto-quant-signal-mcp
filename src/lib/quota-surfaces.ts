@@ -386,25 +386,40 @@ export const QUOTA_SURFACES: readonly QuotaSurface[] = [
   // OPS-WEBHOOK-QUOTA-METER-PARITY-W1 owns. Deferring a structurally-blocked row with a named owner
   // differs in KIND from deferring a one-line fix.
   //
-  // And the deferral expires by itself: `deferredBlocker` is re-probed on every run, so the moment
-  // `checkQuotaByKey` returns a daily pair the excuse is void and this gate turns RED.
+  // And the deferral expired by itself, exactly as designed: `deferredBlocker` was re-probed on
+  // every run, and the moment OPS-WEBHOOK-QUOTA-METER-PARITY-W1 made `checkQuotaByKey` return a
+  // daily pair the gate turned RED — which is why the plumbing, the payload and this flip all land
+  // in ONE commit. CLOSED 2026-08-22 by that wave: the row is `conforming`, the blocker is gone
+  // rather than re-deferred, and `/api/webhooks` now emits `resets_at`, the daily pair and
+  // `binding`. The paragraph above is kept as the record of WHY the deferral was legitimate.
   {
     id: 'envelope:webhook-api',
     module: 'src/lib/webhook-api.ts',
-    primitives: ['key:quota'],
-    emits: ['quota.used', 'quota.total', 'quota.remaining'],
-    status: 'deferred',
-    meterAware: false,
-    dailyRequiredFields: ['quota.used', 'quota.total', 'quota.remaining'],
-    reason: 'Instance 12, found by the Step-0 derived scan and named in no wave document — exactly what "the spec\'s eleven are a floor, not a ceiling" predicted. `/api/webhooks` POST and GET emit a 3-key `quota` block with NO `resets_at`, `daily` or `binding`, while `checkQuotaByKey` walls EVERY tier on the daily meter. Structurally blocked here: the surface reads the ALLOWED path, where `checkQuotaByKey` reports `limit: null`, so there is no wall to name and no daily pair to emit. CH2 deletes the false word "monthly" from the adjacent note; the missing FIELDS are the owner wave\'s.',
-    ownerWave: 'OPS-WEBHOOK-QUOTA-METER-PARITY-W1',
-    deferredBlocker: {
-      file: 'src/lib/license.ts',
-      symbol: 'checkQuotaByKey',
-      absentPattern: 'daily_used',
-      description: '`checkQuotaByKey` returns `limit: "daily"` when it refuses but NO `daily_used`/`daily_total` pair on any path, so a caller of the allowed path cannot render a daily meter. When this function starts returning `daily_used`, the blocker is lifted and this row must be fixed, not re-deferred.',
-    },
-    emittedFingerprint: ['remaining', 'total', 'used'],
+    primitives: ['key:quota', 'key:resets_at', 'bindingMeter', 'monthResetAtMs', 'utcDayResetAtMs'],
+    emits: ['quota.used', 'quota.total', 'quota.remaining', 'quota.resets_at', 'quota.daily', 'quota.binding'],
+    status: 'conforming',
+    meterAware: true,
+    dailyRequiredFields: ['quota.daily.used', 'quota.daily.total', 'quota.daily.resets_at', 'quota.binding'],
+  },
+
+  // OPS-WEBHOOK-QUOTA-METER-PARITY-W1 — a NEW row, and the wave did not choose to add it: naming
+  // the wall in `suggested_action` is what made this module a quota surface, and check B refused
+  // the build until it was declared. That is the registry working as intended — the alternative
+  // was a module emitting a quota fact that no row covers, which is exactly the orphan class the
+  // corpus scan exists to catch.
+  //
+  // The string it emits was the SECOND false surface on the daily path (named in the email row
+  // below): it said "owner monthly quota exhausted ... paused until reset or upgrade" for EVERY
+  // refusal, including the daily wall that lifts at 00:00 UTC. It now projects from the same
+  // `quota.limit` the email does -- one discriminator, two renderings, no second comparison.
+  {
+    id: 'delivery:webhook-pause',
+    module: 'src/lib/webhook-delivery.ts',
+    primitives: ['utcDayResetAtMs'],
+    emits: ['suggested_action'],
+    status: 'conforming',
+    meterAware: true,
+    dailyRequiredFields: ['suggested_action'],
   },
 
   // ── Declared monthly-only exemption ─────────────────────────────────────────────────────────
@@ -428,7 +443,7 @@ export const QUOTA_SURFACES: readonly QuotaSurface[] = [
     status: 'excluded',
     meterAware: false,
     dailyRequiredFields: [],
-    reason: 'Excluded pending meter plumbing. Outside CORPUS_BOUNDARY (email, not an API/MCP payload) — but the copy IS false on the daily path, measured: `checkQuotaByKey` returns `limit: "daily"` for every tier, `webhook-delivery.ts` fires the notify on `!quota.allowed` REGARDLESS of `quota.limit`, and the owner is then mailed "monthly limit reached … resumes next month". TWO surfaces are wrong on that path, not one — this email and `webhook-delivery.ts`\'s `suggested_action: "owner monthly quota exhausted … until reset"`.',
+    reason: 'Outside CORPUS_BOUNDARY — an EMAIL, not an API/MCP payload, so the detectors that read response shapes cannot judge it. That boundary argument is unchanged and is the whole reason this row is `excluded` rather than `conforming`. What HAS changed: the row previously read "Excluded pending meter plumbing" and recorded that the copy was FALSE on the daily path — `checkQuotaByKey` walls every tier on the daily meter, `webhook-delivery.ts` fires the notify on `!quota.allowed` regardless of `quota.limit`, and the owner was then mailed "monthly limit reached ... resumes next month". BOTH surfaces named there are FIXED by OPS-WEBHOOK-QUOTA-METER-PARITY-W1 (2026-08-22): the email projects both variants from one `wall` discriminator, and `webhook-delivery.ts` now has its own conforming row above. The exclusion is now a statement about the MEDIUM only, never a deferred defect — an excluded row whose stated excuse has expired is a warn-mode in disguise, which is why this text was rewritten rather than left standing.',
     ownerWave: 'OPS-WEBHOOK-QUOTA-METER-PARITY-W1',
   },
 ] as const;

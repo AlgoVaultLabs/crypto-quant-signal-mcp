@@ -5,14 +5,24 @@
  * provided Express app (called once from src/index.ts so the route surface lives
  * in the HTTP server). Auth reuses the existing license path; ownership +
  * delivery quota are key-addressed (NO bespoke webhook tiering — Mr.1/Cowork
- * ratified: universal access, gated only by the monthly call quota).
+ * ratified: universal access, gated by BOTH call meters — the monthly budget and the daily
+ * pacing cap, which refuse independently. `checkQuotaByKey` walls EVERY tier on the daily
+ * meter, so a paying subscriber can be paused by a wall that lifts at 00:00 UTC rather than
+ * one that clears next month; the `quota` block below names which meter binds. Corrected by
+ * OPS-WEBHOOK-QUOTA-METER-PARITY-W1 — the prior "gated only by the monthly call quota" was
+ * false on the daily path).
  *
  * Security: a subscription's `secret` is returned ONCE (on create) and NEVER on
  * list; `owner_key` (the API key) is never echoed in any response.
  */
 import express, { type Express, type Request, type Response, type RequestHandler } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import { resolveLicense, checkQuotaByKey, getUpgradeHint } from './license.js';
+import { resolveLicense, checkQuotaByKey, getUpgradeHint, monthResetAtMs } from './license.js';
+// OPS-WEBHOOK-QUOTA-METER-PARITY-W1: the arc's shared discriminator + daily horizon. Both frozen
+// this wave — consumed, never edited. `bindingMeter` is the ONLY comparator between the two meters
+// anywhere in the codebase, which is why this surface does not introduce a second one.
+import { bindingMeter } from './binding-meter.js';
+import { utcDayResetAtMs } from './utc-day.js';
 // AUTH-THREE-STATE-W1 CH3: these routes 401 on `!ownerKey`, which is null for a caller who sent
 // NOTHING and for one who sent a key we could not resolve — so the message "An API key is required"
 // was factually wrong for the second. The outcome tells them apart.
@@ -69,6 +79,71 @@ function nowSec(): number {
  * `/api/performance-shadow` route reuses the SAME owner-resolution + 401 shape
  * as the webhook routes — single source, no second auth implementation.
  */
+/**
+ * OPS-WEBHOOK-QUOTA-METER-PARITY-W1 — the ONE conforming `quota` block both routes emit.
+ *
+ * Mirrors the shape `tier-warning.ts` already ships, including its SPREAD-ON-PRESENCE discipline:
+ * when the tier has no finite daily cap (Enterprise, x402, internal) the daily keys are absent and
+ * the emitted key set is the pre-wave three-key block plus `resets_at`. Absent means "this tier has
+ * no daily meter", never "zero".
+ *
+ * `binding` is what the registry's `quota-block-without-binding` detector requires: a caller
+ * reading `used` must be able to tell WHICH meter governs. It comes from the shared `bindingMeter`,
+ * so no second comparison between the two meters enters this file.
+ *
+ * ⚠️ THE DETECTOR IS NOT THE GUARD HERE, AND THE NEXT READER SHOULD NOT ASSUME IT IS. It tests
+ * `/\bbinding\b/` — the TOKEN — against the brace span, and the token also appears in the
+ * `...(hasDaily && binding ? …)` spread condition below. Measured: deleting the emitted
+ * `binding:` key leaves the gate at `VERDICT=PASS` because the guard still mentions the word.
+ * A source-text scan cannot tell a MENTION from an EMISSION. What actually catches that
+ * deletion is the behavioural assertion in `tests/webhook-api.test.ts`, which reads `binding`
+ * off a live response. The checker is frozen this wave, so this is recorded rather than fixed.
+ *
+ * 🛑 IT RETURNS THE ENVELOPE, NOT THE BARE BLOCK, AND THAT IS LOAD-BEARING. The detector is a
+ * SOURCE-TEXT scan for a `quota: { … }` literal naming `used`. An earlier revision of this
+ * helper returned the block alone and the call sites read `quota: buildQuotaBlock(…)` — which
+ * made the detector structurally BLIND to this surface: deleting `binding` entirely still
+ * reported `VERDICT=PASS`, on a row declared `conforming`. Keeping the literal in source text
+ * is what keeps the declaration checkable. Measured, not theorised — a mutation dropping
+ * `binding` passed the gate before this shape, and fails it after.
+ */
+function quotaEnvelope(
+  q: ReturnType<typeof checkQuotaByKey>,
+  license: LicenseInfo,
+): { quota: Record<string, unknown> } {
+  const monthlyResetMs = monthResetAtMs(license);
+  const hasDaily =
+    typeof q.daily_used === 'number' &&
+    typeof q.daily_total === 'number' &&
+    Number.isFinite(q.daily_total);
+  const dailyResetMs = utcDayResetAtMs();
+  const binding = hasDaily
+    ? bindingMeter(
+        { used: q.used, limit: q.total, resetAtMs: monthlyResetMs },
+        { used: q.daily_used as number, limit: q.daily_total as number, resetAtMs: dailyResetMs },
+      )
+    : null;
+  return {
+    quota: {
+      used: q.used,
+      total: q.total,
+      remaining: q.remaining,
+      resets_at: new Date(monthlyResetMs).toISOString(),
+      ...(hasDaily && binding
+        ? {
+            daily: {
+              used: q.daily_used as number,
+              total: q.daily_total as number,
+              remaining: Math.max(0, (q.daily_total as number) - (q.daily_used as number)),
+              resets_at: new Date(dailyResetMs).toISOString(),
+            },
+            binding: binding.binding,
+          }
+        : {}),
+    },
+  };
+}
+
 export async function resolveOwner(req: Request): Promise<{ license: LicenseInfo; ownerKey: string | null }> {
   const headers = req.headers as Record<string, string | undefined>;
   const { license } = await resolveLicense(headers);
@@ -336,7 +411,7 @@ export function registerWebhookRoutes(app: Express): void {
       return res.status(201).json({
         ok: true,
         subscription: serializeSubscription(sub, { includeSecret: true }),
-        quota: { used: quota.used, total: quota.total, remaining: quota.remaining },
+        ...quotaEnvelope(quota, license),
         note: 'Store `secret` now — it is shown only once. Each delivered event draws down your call quota.',
         ...(scanDigestReminder ? { scan_digest_reminder: scanDigestReminder } : {}),
         ...(upgradeHint ? { upgrade_hint: upgradeHint } : {}),
@@ -357,7 +432,7 @@ export function registerWebhookRoutes(app: Express): void {
       return res.json({
         ok: true,
         subscriptions: subs.map((s) => serializeSubscription(s, { includeSecret: false })),
-        quota: { used: quota.used, total: quota.total, remaining: quota.remaining },
+        ...quotaEnvelope(quota, license),
       });
     } catch (err) {
       console.error('[/api/webhooks GET] internal error:', err instanceof Error ? err.message : err);

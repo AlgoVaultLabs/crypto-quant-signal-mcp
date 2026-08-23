@@ -1383,6 +1383,14 @@ export function checkQuotaByKey(trackerKey: string, tier: LicenseTier): TrackCal
     if (tier === 'free' && (bonusRemaining.get(trackerKey) ?? 0) > 0) {
       return { allowed: true, remaining, overage, used: tracker.count, total: quota, bonus_remaining: bonusRemaining.get(trackerKey) };
     }
+    // OPS-WEBHOOK-QUOTA-METER-PARITY-W1: NO daily pair here, DELIBERATELY. Reaching this branch
+    // means the monthly meter refused before the daily one was ever consulted — so there is no
+    // daily reading to report, and producing one would mean calling `getDailyTracker`, which
+    // MATERIALISES a `{count: 0, day: today}` entry for a key that has none. `getTrackerEpisode`
+    // reads that same map, so inventing the entry here would make a caller who has never made a
+    // daily-metered call report `dailyDay: <today>` — an episode this very read had invented.
+    // That is the exact hazard `entitlement.ts` documents reading the episode BEFORE the gate to
+    // avoid. Absent is the honest answer; a fabricated 0/N is not.
     return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota, limit: 'monthly' };
   }
   // CH4: the daily meter, with THIS path's existing posture preserved. Note the by-key path
@@ -1390,13 +1398,25 @@ export function checkQuotaByKey(trackerKey: string, tier: LicenseTier): TrackCal
   // deliberately does not "fix", because doing so would silently stop refusing paid webhook
   // owners at their ceiling. Recorded rather than changed.
   const dailyCap = getDailyCap(tier);
+  // OPS-WEBHOOK-QUOTA-METER-PARITY-W1: the daily pair travels with the decision it produced.
+  //
+  // ONE derivation — these are the SAME `daily.count` / `dailyCap` the branch below already
+  // computed to decide `limit`, returned rather than re-read, exactly as `trackCall` does. Read
+  // INSIDE the existing finite-cap guard and never hoisted above the monthly return, so the set of
+  // keys this function materialises is byte-identical to before.
+  //
+  // WHY IT MUST BE RETURNED: a caller of the ALLOWED path could not render a daily meter at all,
+  // so `/api/webhooks` had no wall to name and the webhook-paused email told a subscriber walled
+  // until 00:00 UTC to come back next month.
+  let dailyPair: { daily_used: number; daily_total: number } | undefined;
   if (Number.isFinite(dailyCap)) {
     const daily = getDailyTracker(trackerKey);
+    dailyPair = { daily_used: daily.count, daily_total: dailyCap };
     if (daily.count >= dailyCap) {
-      return { allowed: false, remaining, overage, used: tracker.count, total: quota, limit: 'daily' };
+      return { allowed: false, remaining, overage, used: tracker.count, total: quota, limit: 'daily', ...dailyPair };
     }
   }
-  return { allowed: true, remaining, overage, used: tracker.count, total: quota, limit: null };
+  return { allowed: true, remaining, overage, used: tracker.count, total: quota, limit: null, ...dailyPair };
 }
 
 /** Increment + check an explicit tracker key against BOTH meters. */

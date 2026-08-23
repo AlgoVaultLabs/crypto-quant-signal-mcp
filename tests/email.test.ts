@@ -120,3 +120,92 @@ describe('email module', () => {
     expect(mockSend.mock.calls[0][0].text).toContain('90+% PFE win rate across 100K++ verified calls');
   });
 });
+
+// ── OPS-WEBHOOK-QUOTA-METER-PARITY-W1 — the webhook-paused email ──────────────────────────
+//
+// `checkQuotaByKey` walls EVERY tier on the daily meter, so a paying Starter (1,000/day against
+// 10,000/month) can be paused by a wall that lifts at 00:00 UTC. Before this wave the email told
+// them to come back next month — hours misreported as weeks, to a paying customer, by email.
+describe('sendWebhookQuotaPausedEmail — one discriminator, two variants', () => {
+  const origEnv = { ...process.env };
+  beforeEach(() => {
+    vi.resetModules();
+    mockSend.mockReset();
+    mockSend.mockResolvedValue({ data: { id: 'mock-email-id' }, error: null });
+    process.env.RESEND_API_KEY = 're_test_key';
+  });
+  afterEach(() => { process.env = { ...origEnv }; });
+
+  async function render(args: Record<string, unknown>) {
+    const { sendWebhookQuotaPausedEmail } = await import('../src/lib/email.js');
+    await sendWebhookQuotaPausedEmail(args as never);
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    return mockSend.mock.calls[0][0] as { subject: string; html: string; text: string };
+  }
+
+  // AC6. The expectations are LITERAL, deliberately: a test that derives its expectation from the
+  // template it is pinning asserts nothing at all — deleting the line would simply stop checking it.
+  it('🎯 MONTHLY variant is byte-identical to the pre-wave copy', async () => {
+    const sent = await render({ to: 'a@example.com', subscriptionId: 42, used: 9876, total: 10000 });
+    expect(sent.subject).toBe('Webhook deliveries paused — monthly limit reached');
+    expect(sent.html).toContain('You have used 9,876 of your 10,000 monthly calls, so webhook #42 is paused.');
+    expect(sent.html).toContain('Deliveries resume automatically when your quota resets next month.');
+    expect(sent.text).toContain('Webhook deliveries paused — monthly limit reached.\n\nYou have used 9,876 of your 10,000 monthly calls, so webhook #42 is paused.\n\nDeliveries resume automatically when your quota resets next month.\n');
+    expect(sent.text).toContain('— AlgoVault Labs');
+    // The wall it must NOT name.
+    expect(sent.subject).not.toContain('daily');
+    expect(sent.html).not.toContain('00:00 UTC');
+  });
+
+  it('🎯 an UNSPECIFIED wall still renders the monthly copy — the daily variant is opt-in', async () => {
+    // Every pre-wave caller omits `wall`; none of their emails may change.
+    const a = await render({ to: 'a@example.com', subscriptionId: 7, used: 1, total: 2 });
+    mockSend.mockClear();
+    const b = await render({ to: 'a@example.com', subscriptionId: 7, used: 1, total: 2, wall: 'monthly' });
+    expect(a.subject).toBe(b.subject);
+    expect(a.html).toBe(b.html);
+    expect(a.text).toBe(b.text);
+  });
+
+  it('🎯 DAILY variant names the daily wall, the live N/M and the 00:00 UTC horizon', async () => {
+    const sent = await render({
+      to: 'a@example.com', subscriptionId: 42,
+      used: 1234, total: 10000,          // monthly pair — only 12% consumed
+      wall: 'daily', dailyUsed: 1000, dailyTotal: 1000,
+    });
+    expect(sent.subject).toBe('Webhook deliveries paused — daily limit reached');
+    expect(sent.html).toContain('You have used 1,000 of your 1,000 calls today, so webhook #42 is paused.');
+    expect(sent.html).toContain('Deliveries resume automatically at 00:00 UTC.');
+    expect(sent.text).toContain('Webhook deliveries paused — daily limit reached.');
+    // 🛑 THE DEFECT THIS WAVE EXISTS TO RETIRE — a wall that lifts in hours must never say weeks.
+    expect(sent.html).not.toContain('next month');
+    expect(sent.text).not.toContain('next month');
+    expect(sent.html).not.toContain('monthly calls');
+    // The MONTHLY figures must not leak into the daily copy: rendering 1,234/10,000 under a daily
+    // wall is the "100/200 for a wall that lifts at midnight" defect in a different surface.
+    expect(sent.html).not.toContain('1,234');
+  });
+
+  it('🎯 a daily wall with NO live pair falls back to monthly copy rather than fabricating 0/0', async () => {
+    // We can only state N/M when we have them. A fabricated pair is worse than the wrong horizon.
+    const sent = await render({ to: 'a@example.com', subscriptionId: 9, used: 5, total: 10, wall: 'daily' });
+    expect(sent.subject).toBe('Webhook deliveries paused — monthly limit reached');
+    expect(sent.html).not.toContain('0 of your 0');
+  });
+
+  it('🎯 every rendered fact projects from ONE wall value — subject, usage and horizon agree', async () => {
+    for (const [args, wallWord, horizon] of [
+      [{ to: 'a@e.com', subscriptionId: 1, used: 5, total: 10 }, 'monthly', 'next month'],
+      [{ to: 'a@e.com', subscriptionId: 1, used: 5, total: 10, wall: 'daily', dailyUsed: 3, dailyTotal: 3 }, 'daily', '00:00 UTC'],
+    ] as const) {
+      mockSend.mockClear();
+      const sent = await render(args as Record<string, unknown>);
+      expect(sent.subject).toContain(`${wallWord} limit reached`);
+      expect(sent.html).toContain(horizon);
+      expect(sent.text).toContain(horizon);
+      // The subject's wall and the body's horizon can never disagree, because both read one value.
+      const otherHorizon = horizon === 'next month' ? '00:00 UTC' : 'next month';
+      expect(sent.html).not.toContain(otherHorizon);
+    }
+  });
+});

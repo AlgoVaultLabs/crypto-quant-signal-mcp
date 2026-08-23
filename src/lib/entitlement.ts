@@ -57,6 +57,19 @@ export interface EntitlementDecision {
   readonly dailyDay: string | null;
   /** Projected from CHANNEL_BILLING_POLICY, never decided here. */
   readonly refusesAtWall: boolean;
+  /**
+   * OPS-WEBHOOK-QUOTA-METER-PARITY-W1: the DAILY meter's own pair, forwarded verbatim from
+   * `checkQuotaByKey`. `used`/`total` above are and remain the MONTHLY pair.
+   *
+   * Absent when the tier has no finite daily cap (Enterprise, x402, internal) AND on the
+   * monthly-refusal path, where the daily meter was never consulted — see the comment on that
+   * branch in `license.ts`. Absent means "not read", never "zero".
+   *
+   * Forwarded rather than re-derived: `webhook-delivery.ts` mails a subscriber the wall that
+   * paused them, and a second read there could disagree with the wall that actually fired.
+   */
+  readonly daily_used?: number;
+  readonly daily_total?: number;
 }
 
 export interface ConsumeResult {
@@ -127,6 +140,10 @@ export function readEntitlement(
     total: q.total,
     remaining: q.remaining,
     limit: q.limit ?? null,
+    // Spread-on-presence: absent stays absent, so a tier with no daily cap emits no daily keys.
+    ...(typeof q.daily_used === 'number' && typeof q.daily_total === 'number'
+      ? { daily_used: q.daily_used, daily_total: q.daily_total }
+      : {}),
     periodStart: episode.periodStart,
     dailyDay: episode.dailyDay,
     refusesAtWall: policy.refusesAtWall,

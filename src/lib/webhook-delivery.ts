@@ -18,6 +18,8 @@
 import crypto from 'crypto';
 import { Agent } from 'undici';
 import { PKG_VERSION } from './pkg-version.js';
+// OPS-WEBHOOK-QUOTA-METER-PARITY-W1: the shared daily-horizon primitive (frozen; consumed).
+import { utcDayResetAtMs } from './utc-day.js';
 import { consumeEntitlement, readEntitlement } from './entitlement.js';
 import { resolveAndAssertEgress, EgressBlockedError, type ResolveEgressOpts, type PinnedAddress } from './webhook-ssrf.js';
 import type { LicenseTier } from '../types.js';
@@ -456,14 +458,26 @@ export async function deliverOne(
     // idempotency key is bucketed by month; a per-delivery notice would mail
     // hundreds of times. Fire-and-forget: a notify failure must never change this
     // DeliveryResult (pinned by the forced-throw test).
+    // OPS-WEBHOOK-QUOTA-METER-PARITY-W1: carry the wall that ACTUALLY refused, plus the daily
+    // meter's own pair when that is the wall. Passed from the gate above rather than re-read in
+    // the notify layer, so the email can never name a different wall than the one that fired.
+    const wall = quota.limit ?? 'monthly';
+    const dailyWall = wall === 'daily'
+      && typeof quota.daily_used === 'number'
+      && typeof quota.daily_total === 'number';
     safeNotify({
       ownerKey: sub.owner_key,
       event: 'webhook_quota_paused',
       context: {
         subscriptionId: sub.id,
-        stateEpochBucket: billingMonthBucket(),
+        // The daily wall lifts at 00:00 UTC, so a MONTH bucket would suppress every notice after
+        // the first for the rest of the month — a subscriber paused on five separate days would
+        // hear about it once. Bucket the daily wall by its own horizon.
+        stateEpochBucket: dailyWall ? utcDayResetAtMs() : billingMonthBucket(),
         quotaUsed: quota.used,
         quotaTotal: quota.total,
+        quotaWall: wall,
+        ...(dailyWall ? { quotaDailyUsed: quota.daily_used, quotaDailyTotal: quota.daily_total } : {}),
       },
     });
     return {
@@ -472,7 +486,12 @@ export async function deliverOne(
       attempts: delivery.attempts,
       responseCode: null,
       subscriptionDisabled: false,
-      suggested_action: `owner monthly quota exhausted (${quota.used}/${quota.total}); deliveries paused until reset or upgrade`,
+      // The SECOND false surface on this path (registry row #13 named it): this string said
+      // "monthly" unconditionally while `checkQuotaByKey` walls every tier on the daily meter.
+      // Projects from the same `wall` as the email — one discriminator, two renderings.
+      suggested_action: dailyWall
+        ? `owner daily quota exhausted (${quota.daily_used}/${quota.daily_total} today); deliveries resume at 00:00 UTC`
+        : `owner monthly quota exhausted (${quota.used}/${quota.total}); deliveries paused until reset or upgrade`,
     };
   }
 

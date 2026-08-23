@@ -14,6 +14,9 @@ import { Resend } from 'resend';
 // chapter gate). deriveUserCode is the pure code derivation (no DB).
 import { deriveUserCode } from './referral-store.js';
 import { canonicalInquiryType } from './contact-submit.js';
+// OPS-WEBHOOK-QUOTA-METER-PARITY-W1: the SAME wall discriminator every other surface in the
+// arc projects from. Type-only import of a frozen module — consumed, never edited.
+import type { QuotaWall } from './quota-notice.js';
 import { commissionPct, commissionMonthsLabel, bonusCallsLabel, shareLink, formatUsdE2, usdcMinPayoutLabel } from './referral-constants.js';
 
 const FROM_DEFAULT = 'noreply@algovault.com';
@@ -679,28 +682,65 @@ Fix your endpoint so it returns a 2xx status, then register the webhook again to
 export interface WebhookQuotaPausedEmailArgs {
   to: string;
   subscriptionId: number;
-  /** Live quota figures — never hardcoded. */
+  /** Live quota figures — never hardcoded. The MONTHLY pair. */
   used: number;
   total: number;
+  /**
+   * OPS-WEBHOOK-QUOTA-METER-PARITY-W1: WHICH wall paused the deliveries.
+   *
+   * Defaults to `'monthly'`, which keeps every existing caller's email byte-identical — the
+   * daily variant is opt-IN. `checkQuotaByKey` walls EVERY tier on the daily meter, so a paying
+   * Starter (1,000/day against 10,000/month) could be paused by a wall that lifts at 00:00 UTC
+   * and be told to come back next month. The two horizons are hours vs weeks; naming the wrong
+   * one is the wrong-horizon defect this arc exists to retire, and this is its only instance
+   * that reaches a paying customer by email rather than an agent by JSON.
+   */
+  wall?: QuotaWall;
+  /** The DAILY meter's live pair. Required for the daily variant; ignored by the monthly one. */
+  dailyUsed?: number | null;
+  dailyTotal?: number | null;
 }
 
-/** D4: deliveries paused at the monthly cap. An upgrade moment, so silence costs revenue. */
+/**
+ * D4: deliveries paused at a quota wall. An upgrade moment, so silence costs revenue.
+ *
+ * ONE discriminator, projected once. Every fact below — subject, noun, horizon and the figures —
+ * comes from the same `wall` value in a single expression, which is why they cannot disagree.
+ * That is the pattern `quota-notice.ts`'s `headline()` established and the reason its three facts
+ * stay consistent; a second `if (wall === …)` further down is exactly how they drift apart.
+ */
 export async function sendWebhookQuotaPausedEmail(args: WebhookQuotaPausedEmailArgs): Promise<{ id: string } | null> {
   const client = getResendClient();
   if (!client) return null;
-  const { to, subscriptionId, used, total } = args;
-  const subject = 'Webhook deliveries paused — monthly limit reached';
+  const { to, subscriptionId, used, total, wall = 'monthly', dailyUsed, dailyTotal } = args;
+  // The daily variant needs a live pair; without one we cannot state N/M truthfully, so we fall
+  // back to the monthly copy rather than render a fabricated 0/0. Never hand-typed.
+  const daily = wall === 'daily' && typeof dailyUsed === 'number' && typeof dailyTotal === 'number'
+    ? { used: dailyUsed, total: dailyTotal }
+    : null;
+  const copy = daily
+    ? {
+        subject: 'Webhook deliveries paused — daily limit reached',
+        usage: `You have used ${daily.used.toLocaleString('en-GB')} of your ${daily.total.toLocaleString('en-GB')} calls today, so webhook #${subscriptionId} is paused.`,
+        horizon: 'Deliveries resume automatically at 00:00 UTC.',
+      }
+    : {
+        subject: 'Webhook deliveries paused — monthly limit reached',
+        usage: `You have used ${used.toLocaleString('en-GB')} of your ${total.toLocaleString('en-GB')} monthly calls, so webhook #${subscriptionId} is paused.`,
+        horizon: 'Deliveries resume automatically when your quota resets next month.',
+      };
+  const subject = copy.subject;
   const html = webhookNotifShell(subject,
     `<h1 style="font-size:22px;font-weight:700;margin:0 0 12px">Your deliveries are paused</h1>
-  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">You have used ${used.toLocaleString('en-GB')} of your ${total.toLocaleString('en-GB')} monthly calls, so webhook #${subscriptionId} is paused.</p>
-  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">Deliveries resume automatically when your quota resets next month.</p>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">${copy.usage}</p>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">${copy.horizon}</p>
   <p style="font-size:14px;line-height:1.5;margin:0">Upgrade your plan to resume them today.</p>`,
     'Upgrade your plan', SIGNUP_URL);
-  const text = `Webhook deliveries paused — monthly limit reached.
+  const text = `${copy.subject}.
 
-You have used ${used.toLocaleString('en-GB')} of your ${total.toLocaleString('en-GB')} monthly calls, so webhook #${subscriptionId} is paused.
+${copy.usage}
 
-Deliveries resume automatically when your quota resets next month.
+${copy.horizon}
 
 Upgrade your plan to resume them today: ${SIGNUP_URL}
 — AlgoVault Labs`;

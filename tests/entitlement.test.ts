@@ -189,3 +189,97 @@ describe('readEntitlement — no charge, no claim', () => {
     expect(d.dailyDay).toBeNull();
   });
 });
+
+// ── OPS-WEBHOOK-QUOTA-METER-PARITY-W1 — REPORTING changed, ENFORCEMENT did not ────────────
+//
+// The wave made `checkQuotaByKey` return the daily pair. The one thing it must NOT have done is
+// change WHO gets refused. `checkQuotaByKey` walls every tier on the daily meter deliberately —
+// a posture this wave preserves exactly, because relaxing it would silently stop refusing paid
+// webhook owners at their ceiling.
+describe('checkQuotaByKey — refusal parity (AC1)', () => {
+  const TIERS = ['free', 'starter', 'pro', 'enterprise', 'x402', 'internal'] as const;
+
+  it('🎯 the enforcement matrix is exactly as recorded before the wave', async () => {
+    const { checkQuotaByKey, trackCallByKey } = await import('../src/lib/license.js');
+    const { PLANS, FREE_MONTHLY_CALLS, FREE_DAILY_CALLS } = await import('../src/lib/plans.js');
+    const monthlyOf = (t: string) => (t === 'free' ? FREE_MONTHLY_CALLS : (PLANS as never)[t]?.monthlyCalls ?? Infinity);
+    const dailyOf = (t: string) => (t === 'free' ? FREE_DAILY_CALLS : (PLANS as never)[t]?.dailyCalls ?? Infinity);
+
+    // The LITERAL pre-wave matrix, captured from origin/main before a line was edited. Pinned as
+    // literals on purpose: derived expectations would move with the code they are meant to pin.
+    const EXPECTED: Record<string, [boolean, string | null]> = {
+      'free|fresh': [true, null],       'free|under': [true, null],
+      'free|daily': [false, 'daily'],   'free|monthly': [false, 'monthly'],
+      'starter|fresh': [true, null],    'starter|under': [true, null],
+      'starter|daily': [false, 'daily'],'starter|monthly': [false, 'monthly'],
+      'pro|fresh': [true, null],        'pro|under': [true, null],
+      'pro|daily': [false, 'daily'],    'pro|monthly': [false, 'monthly'],
+      // Enterprise has NO daily cap (`dailyCalls: null`), so its daily state is allowed.
+      'enterprise|fresh': [true, null], 'enterprise|under': [true, null],
+      'enterprise|daily': [true, null], 'enterprise|monthly': [false, 'monthly'],
+      // Uncapped tiers refuse nothing.
+      'x402|fresh': [true, null],       'x402|under': [true, null],
+      'x402|daily': [true, null],       'x402|monthly': [true, null],
+      'internal|fresh': [true, null],   'internal|under': [true, null],
+      'internal|daily': [true, null],   'internal|monthly': [true, null],
+    };
+
+    let n = 0;
+    for (const tier of TIERS) {
+      const m = monthlyOf(tier), d = dailyOf(tier);
+      const states: [string, number][] = [
+        ['fresh', 0],
+        ['under', Number.isFinite(d) ? Math.max(0, d - 1) : 5],
+        ['daily', Number.isFinite(d) ? d : 5],
+        ['monthly', Number.isFinite(m) ? m : 5],
+      ];
+      for (const [state, units] of states) {
+        const key = `parity-guard-${tier}-${state}-${n++}`;
+        if (units > 0) trackCallByKey(key, tier, units);
+        const r = checkQuotaByKey(key, tier);
+        const [wantAllowed, wantLimit] = EXPECTED[`${tier}|${state}`];
+        expect([tier, state, r.allowed]).toEqual([tier, state, wantAllowed]);
+        expect([tier, state, r.limit ?? null]).toEqual([tier, state, wantLimit]);
+      }
+    }
+  });
+
+  it('🎯 the daily pair travels with the decision, and never replaces the MONTHLY pair', async () => {
+    const { checkQuotaByKey, trackCallByKey } = await import('../src/lib/license.js');
+    const { PLANS } = await import('../src/lib/plans.js');
+    const key = 'parity-pair-starter';
+    trackCallByKey(key, 'starter', PLANS.starter.dailyCalls!); // sit exactly on the DAILY wall
+    const r = checkQuotaByKey(key, 'starter');
+    expect(r.allowed).toBe(false);
+    expect(r.limit).toBe('daily');
+    // 🛑 THE DEFECT CLASS: a daily wall must not render the monthly figures. Both pairs travel.
+    expect(r.daily_used).toBe(PLANS.starter.dailyCalls);
+    expect(r.daily_total).toBe(PLANS.starter.dailyCalls);
+    expect(r.total).toBe(PLANS.starter.monthlyCalls);
+    expect(r.daily_total).not.toBe(r.total);
+  });
+
+  it('🎯 a MONTHLY refusal carries NO daily pair — absent, never a fabricated 0/N', async () => {
+    const { checkQuotaByKey, trackCallByKey, getTrackerEpisode } = await import('../src/lib/license.js');
+    const { PLANS } = await import('../src/lib/plans.js');
+    const key = 'parity-monthly-refusal';
+    trackCallByKey(key, 'starter', PLANS.starter.monthlyCalls);
+    const r = checkQuotaByKey(key, 'starter');
+    expect(r.limit).toBe('monthly');
+    // Reaching the monthly branch means the daily meter was never consulted. Reporting a pair
+    // would require materialising a daily tracker — which `getTrackerEpisode` reads, so it would
+    // invent an episode this very call had created. Absent is the honest answer.
+    expect(r.daily_used).toBeUndefined();
+    expect(r.daily_total).toBeUndefined();
+    expect(getTrackerEpisode(key).dailyDay).not.toBeNull(); // trackCallByKey already charged today
+  });
+
+  it('🎯 a tier with NO daily cap emits no daily keys at all', async () => {
+    const { checkQuotaByKey } = await import('../src/lib/license.js');
+    for (const tier of ['enterprise', 'x402', 'internal'] as const) {
+      const r = checkQuotaByKey(`parity-nodaily-${tier}`, tier);
+      expect(r.daily_used, tier).toBeUndefined();
+      expect(r.daily_total, tier).toBeUndefined();
+    }
+  });
+});

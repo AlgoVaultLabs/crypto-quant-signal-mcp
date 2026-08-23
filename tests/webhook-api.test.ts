@@ -207,3 +207,54 @@ describe('/api/webhooks/:id/test: signed ping', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ── OPS-WEBHOOK-QUOTA-METER-PARITY-W1 — the conforming quota block ────────────────────────
+//
+// Registry row `envelope:webhook-api` was DEFERRED because `checkQuotaByKey` reported no daily
+// pair on any path, so this surface had no wall to name. The plumbing shipped; these pin the
+// shape the registry now declares `conforming`.
+describe('/api/webhooks quota block — names the meter that binds', () => {
+  it('🎯 POST and GET both emit the daily pair, resets_at and binding', async () => {
+    const { json: created } = await createSub(STARTER_KEY);
+    const listed = await fetch(`${baseUrl}/api/webhooks`, {
+      headers: { authorization: `Bearer ${STARTER_KEY}` },
+    }).then(r => r.json());
+    for (const [label, q] of [['POST', created.quota], ['GET', listed.quota]] as const) {
+      // The monthly pair keeps its meaning — `used`/`total` are and remain MONTHLY.
+      expect(q.total, label).toBe(PLANS.starter.monthlyCalls);
+      expect(typeof q.resets_at, label).toBe('string');
+      // The detector's rule: a block naming `used` must name `binding`.
+      expect(q.binding, label).toMatch(/^(daily|monthly)$/);
+      expect(q.daily.total, label).toBe(PLANS.starter.dailyCalls);
+      expect(typeof q.daily.resets_at, label).toBe('string');
+      // 🛑 The two meters must never be conflated: the daily total is NOT the monthly one.
+      expect(q.daily.total, label).not.toBe(q.total);
+    }
+    // ONE derivation — both routes emit byte-identical blocks for the same owner.
+    expect(JSON.stringify(created.quota)).toBe(JSON.stringify(listed.quota));
+  });
+
+  it('🎯 daily resets_at is the next 00:00 UTC — the horizon the wall actually has', async () => {
+    const q = await fetch(`${baseUrl}/api/webhooks`, {
+      headers: { authorization: `Bearer ${STARTER_KEY}` },
+    }).then(r => r.json()).then(j => j.quota);
+    const reset = new Date(q.daily.resets_at);
+    expect(reset.getUTCHours()).toBe(0);
+    expect(reset.getUTCMinutes()).toBe(0);
+    expect(reset.getUTCSeconds()).toBe(0);
+    expect(reset.getTime()).toBeGreaterThan(Date.now());
+    // …and strictly sooner than the monthly horizon, which is the whole point of naming it.
+    expect(reset.getTime()).toBeLessThan(new Date(q.resets_at).getTime());
+  });
+
+  it('🎯 INVARIANT: `binding` is present iff `daily` is present', async () => {
+    const q = await fetch(`${baseUrl}/api/webhooks`, {
+      headers: { authorization: `Bearer ${STARTER_KEY}` },
+    }).then(r => r.json()).then(j => j.quota);
+    expect('daily' in q).toBe('binding' in q);
+    // A `daily` block without `binding` is precisely what the conformance detector rejects; a
+    // `binding` without `daily` would name a meter the caller cannot see.
+    expect(q.daily.remaining).toBe(q.daily.total - q.daily.used);
+    expect(q.remaining).toBe(q.total - q.used);
+  });
+});

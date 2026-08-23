@@ -378,3 +378,39 @@ describe('email copy LAW', () => {
     }
   });
 });
+
+// ── OPS-WEBHOOK-QUOTA-METER-PARITY-W1 — the wall survives the notify hop ──────────────────
+//
+// A unit test on the email renderer cannot prove anything PASSES it the wall. This pins the seam:
+// whatever `webhook-delivery.ts` puts in the context must arrive at the email intact, because this
+// module deliberately cannot re-read it (it imports neither `license` nor `entitlement` — a second
+// read could name a different wall than the one that actually fired).
+describe('webhook_quota_paused — the wall reaches the email', () => {
+  it('🎯 a DAILY wall forwards the wall and the daily pair', async () => {
+    const { mod, sends } = await loadNotify({ email: 'a@b.com' });
+    await mod.notifySubscriber({
+      ownerKey: 'av_live_x',
+      event: 'webhook_quota_paused',
+      context: {
+        subscriptionId: 42, stateEpochBucket: 1,
+        quotaUsed: 1234, quotaTotal: 10000,
+        quotaWall: 'daily', quotaDailyUsed: 1000, quotaDailyTotal: 1000,
+      },
+    });
+    expect(sends).toHaveLength(1);
+    expect(sends[0].args).toMatchObject({
+      wall: 'daily', dailyUsed: 1000, dailyTotal: 1000,
+      used: 1234, total: 10000,   // the MONTHLY pair keeps its meaning
+    });
+  });
+
+  it('🎯 an unspecified wall defaults to monthly — no existing sender changes', async () => {
+    const { mod, sends } = await loadNotify({ email: 'a@b.com' });
+    await mod.notifySubscriber({
+      ownerKey: 'av_live_x',
+      event: 'webhook_quota_paused',
+      context: { subscriptionId: 7, stateEpochBucket: 1, quotaUsed: 5, quotaTotal: 10 },
+    });
+    expect(sends[0].args).toMatchObject({ wall: 'monthly', dailyUsed: null, dailyTotal: null });
+  });
+});

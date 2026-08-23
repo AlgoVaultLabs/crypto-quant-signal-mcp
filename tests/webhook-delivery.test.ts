@@ -257,3 +257,55 @@ describe('worker lifecycle', () => {
     expect(delivery.isWorkerRunning()).toBe(false);
   });
 });
+
+// ── OPS-WEBHOOK-QUOTA-METER-PARITY-W1 — the DELIVERY side names the wall that fired ───────
+//
+// This exists because a mutation SURVIVED without it: hardcoding `wall = 'monthly'` in
+// `webhook-delivery.ts` broke nothing, since every other test pinned the notify→email seam and
+// nothing pinned delivery→notify. A unit test on a renderer cannot prove anything CALLS it with
+// the right value.
+describe('quota gate — the DAILY wall is reported as daily', () => {
+  it('🎯 a daily-walled owner gets the daily horizon, not "until reset or upgrade"', async () => {
+    const license = await import('../src/lib/license.js');
+    const { FREE_DAILY_CALLS, FREE_MONTHLY_CALLS: MONTHLY } = await import('../src/lib/plans.js');
+    // Sit exactly on the DAILY cap while the MONTHLY budget is still ~half unused — the shape of
+    // the real defect: a caller paused for hours, previously told to come back next month.
+    const ownerKey = 'free:daily-walled';
+    for (let i = 0; i < FREE_DAILY_CALLS; i++) license.trackCallByKey(ownerKey, 'free');
+    const q = license.checkQuotaByKey(ownerKey, 'free');
+    expect(q.allowed).toBe(false);
+    expect(q.limit).toBe('daily');
+    expect(q.used).toBeLessThan(MONTHLY); // the monthly budget is NOT exhausted
+
+    const sub = await store.createSubscription({ url: 'https://sink/h', events: ['trade_call'], tier: 'free', ownerKey });
+    const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:daily', eventType: 'trade_call', eventData: eventData() });
+    const d = (await store.pendingDeliveries(10)).find(x => x.id === deliveryId)!;
+    const { impl, calls } = mockFetch([200]);
+    const res = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup });
+
+    expect(res.status).toBe('pending');  // enforcement unchanged — still paused
+    expect(calls.length).toBe(0);
+    // 🛑 The string that was false for every daily refusal before this wave.
+    expect(res.suggested_action).toContain('daily quota exhausted');
+    expect(res.suggested_action).toContain('00:00 UTC');
+    expect(res.suggested_action).not.toContain('monthly');
+    expect(res.suggested_action).not.toContain('until reset or upgrade');
+    // The figures must be the DAILY pair, not the monthly one.
+    expect(res.suggested_action).toContain(`${FREE_DAILY_CALLS}/${FREE_DAILY_CALLS} today`);
+  });
+
+  it('🎯 a MONTHLY-walled owner keeps the pre-wave string byte-for-byte', async () => {
+    const license = await import('../src/lib/license.js');
+    const { FREE_MONTHLY_CALLS: MONTHLY } = await import('../src/lib/plans.js');
+    const ownerKey = 'free:monthly-walled';
+    for (let i = 0; i < MONTHLY; i++) license.trackCallByKey(ownerKey, 'free');
+    const sub = await store.createSubscription({ url: 'https://sink/h', events: ['trade_call'], tier: 'free', ownerKey });
+    const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:monthly', eventType: 'trade_call', eventData: eventData() });
+    const d = (await store.pendingDeliveries(10)).find(x => x.id === deliveryId)!;
+    const res = await delivery.deliverOne(d, { fetchImpl: mockFetch([200]).impl, sleep: noopSleep, lookup: okLookup });
+    expect(res.status).toBe('pending');
+    expect(res.suggested_action).toBe(
+      `owner monthly quota exhausted (${MONTHLY}/${MONTHLY}); deliveries paused until reset or upgrade`,
+    );
+  });
+});
