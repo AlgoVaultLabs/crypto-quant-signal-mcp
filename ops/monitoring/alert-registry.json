@@ -43,6 +43,17 @@
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-AOE_SHADOW_WRITER_STALL_PERSISTENT-W{NEXT}"
     },
     {
+      "alert_id": "AOE_OUTPUT_LIVENESS_STALLED",
+      "owner": "monitoring/aoe-host/aoe-output-liveness-canary.py",
+      "hosts": [
+        "aoe-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-AOE_OUTPUT_LIVENESS_STALLED-W{NEXT}",
+      "envelope_adopted": true
+    },
+    {
       "alert_id": "AUTOPUB_NUMERIC_ANCHOR_UNRESOLVED",
       "owner": "algovault-editorial:lib/anchor-numeric-claims.mjs",
       "hosts": [
@@ -729,5 +740,6 @@
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it \u2014 no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",
-  "_source_union": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. This registry is now the UNION of two derivations: call-site detection (scripts/check-alert-registry.mjs SHAPES) and monitoring-inventory.json[].alert_ids. Before the union, 14 declared ids were invisible here \u2014 including DIRECTIONAL_LABEL_CAPACITY_SHORTFALL, whose false page commissioned this wave; it is raised through a Python subprocess.run([...]) argv list, a shape call-site detection does not match. The fix is deliberately NOT a fourth regex: ALERT_SOURCE_DELTA_VERDICT reports any disagreement between the sources rather than silently resolving to the smaller set."
+  "_source_union": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. This registry is now the UNION of two derivations: call-site detection (scripts/check-alert-registry.mjs SHAPES) and monitoring-inventory.json[].alert_ids. Before the union, 14 declared ids were invisible here \u2014 including DIRECTIONAL_LABEL_CAPACITY_SHORTFALL, whose false page commissioned this wave; it is raised through a Python subprocess.run([...]) argv list, a shape call-site detection does not match. The fix is deliberately NOT a fourth regex: ALERT_SOURCE_DELTA_VERDICT reports any disagreement between the sources rather than silently resolving to the smaller set.",
+  "_envelope_adopted_counts_alerts_not_code_adopters": "OPS-AOE-LIVENESS-W1 CH1, recorded because the two counts diverge and the divergence is STRUCTURAL, not a backlog. `envelope_adopted` is a property of an ALERT ROW, so it can only ever count detectors that page. There are THREE code adopters of DETECTOR_ENVELOPE \u2014 src/scripts/backfill-directional-labels.ts (producer), ops/monitoring/labeler_truncation_attribution.py, and monitoring/aoe-host/aoe-output-liveness-canary.py \u2014 but only TWO rows can ever carry envelope_adopted:true, because labeler_truncation_attribution.py is DIGEST-ONLY with alert_ids:[] by design (its inventory row: \"must never page, because truncation is safe and self-healing\"). Minting an alert_id for it purely to make a count read 3 would page a detector this estate deliberately silenced \u2014 the field is not undercounting, it is counting a different thing. Making \"declared-only by design\" distinguishable from \"declared-only by omission\" is OPS-ALERT-REGISTRY-CROSS-REPO-FLAG-W{NEXT}."
 }

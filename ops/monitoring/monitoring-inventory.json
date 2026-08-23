@@ -968,6 +968,54 @@
       "owner_wave": "OPS-AOE-CANARY-AND-GATE-WATCHER-REACTIVATE-W1"
     },
     {
+      "id": "aoe-output-liveness-canary",
+      "artifact": "monitoring/aoe-host/aoe-output-liveness-canary.py",
+      "repo": "autonomous-optimizer",
+      "kind": "executable",
+      "host": "aoe-1",
+      "host_path": "/opt/algovault-monitoring/aoe-output-liveness-canary.py",
+      "installed_at": [
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/aoe-output-liveness-canary.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "47 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "ebe1c1c7171422e06a563f738a2c49e21a2e424ac89a181ef4821d8381df1c6f",
+      "alert_ids": [
+        "AOE_OUTPUT_LIVENESS_STALLED"
+      ],
+      "owner_wave": "OPS-AOE-LIVENESS-W1",
+      "notes": "GRADES AOE'S OUTPUT, which nothing did. The sibling aoe-shadow-writer-stall-canary probes a duckdb WRITER LOCK and logged PROBE_OK across 3,432 rows while AOE published nothing for 27 days \u2014 a lock is not an output. This row is the output half. It writes NO second Redis client: it calls src.feedback.edge_gate.live_serving_count() inside aoe-prefect-worker via docker exec (aoe-1's host python3 has no redis module, measured), which is also the single-derivation guarantee \u2014 one authority for one number. 3rd CODE adopter of DETECTOR_ENVELOPE, consumed as shipped: a Redis read failure returns None, which maps to run_outcome=unknown, which the schema declares non-conclusive, so the verdict is FORCED to INDETERMINATE at build time and 'could not measure' can never render as health. FAIL always carries a nameable reason (gate=stale / promoted_set=0 / all-demoted) read from read_latest_verdicts(), the same authority _publish_allowed gates on \u2014 never scraped from a log line. Cron :47 is canonical and >=3min off :00, and sits clear of the :30 edge_gate and :35 promote_hourly fires so it observes a settled cycle. Self-test: python3 aoe-output-liveness-canary.py --self-test, 25 checks, token DETECTOR_ENVELOPE_VERDICT=PASS|FAIL|INDETERMINATE; proven able to fail in three directions. Needs host python3 >= 3.11 (datetime.UTC); aoe-1 measured 3.12.3."
+    },
+    {
+      "id": "aoe-output-liveness-manifest",
+      "artifact": "monitoring/aoe-host/aoe-output-liveness-manifest.yaml",
+      "repo": "autonomous-optimizer",
+      "kind": "config",
+      "host": "aoe-1",
+      "host_path": "/opt/algovault-monitoring/aoe-output-liveness-manifest.yaml",
+      "installed_at": [
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/aoe-output-liveness-manifest.yaml"
+        }
+      ],
+      "criticality": "supporting",
+      "schedule": null,
+      "invoked_by": "called-by:aoe-output-liveness-canary",
+      "install_state": "installed",
+      "sha256": "8ca783cd5160436a74bdc741ac86258d29376db28a618783fa38049f5b2e0cfa",
+      "alert_ids": [
+        "AOE_OUTPUT_LIVENESS_STALLED"
+      ],
+      "owner_wave": "OPS-AOE-LIVENESS-W1",
+      "notes": "Thresholds for the output-liveness canary. consecutive_zero_threshold=3 spans three publish opportunities on the :47 cron, so one missed fire cannot page \u2014 sized to survive a blip, NOT to survive an outage, which is what 654 silent completions already did."
+    },
+    {
       "id": "network-posture",
       "artifact": "ops/monitoring/network-posture.json",
       "kind": "baseline-data",
@@ -1494,16 +1542,20 @@
         {
           "host": "signal-1",
           "path": "/opt/algovault-monitoring/detector_envelope.py"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/detector_envelope.py"
         }
       ],
       "criticality": "load-bearing",
       "schedule": null,
-      "invoked_by": "imported-by:directional-label-freshness.py",
+      "invoked_by": "imported-by:directional-label-freshness.py,imported-by:aoe-output-liveness-canary.py",
       "install_state": "installed",
       "sha256": "0ec9f061b4887d6f29e345d1d042ade0d8fda7af9215e25bfd52eca14d9b1750",
       "alert_ids": [],
       "owner_wave": "OPS-MONITORING-SIGNAL-CONTRACT-W1",
-      "notes": "CONSUMER half of the DETECTOR_ENVELOPE contract (CH2). Reads the declaration ops/monitoring/detector-envelope.schema.json, which declaration-sync.sh syncs; this file is an ARTIFACT and is installed by reviewed SSH, never by that script. INSTALLED by CH3, the first adopter, alongside directional-label-freshness.py in one reviewed step with pre-write backups. Installing a library before its only caller uses it would be an unreviewed privileged mutation with no consumer \u2014 'installed is not working', and a dark artifact exiting 0 is indistinguishable from a healthy one. Self-test: python3 detector_envelope.py --self-test, token DETECTOR_ENVELOPE_VERDICT=PASS|FAIL|INDETERMINATE."
+      "notes": "CONSUMER half of the DETECTOR_ENVELOPE contract (CH2). Reads the declaration ops/monitoring/detector-envelope.schema.json, which declaration-sync.sh syncs; this file is an ARTIFACT and is installed by reviewed SSH, never by that script. INSTALLED by CH3, the first adopter, alongside directional-label-freshness.py in one reviewed step with pre-write backups. Installing a library before its only caller uses it would be an unreviewed privileged mutation with no consumer \u2014 'installed is not working', and a dark artifact exiting 0 is indistinguishable from a healthy one. Self-test: python3 detector_envelope.py --self-test, token DETECTOR_ENVELOPE_VERDICT=PASS|FAIL|INDETERMINATE. SECOND HOST 2026-08-23 (OPS-AOE-LIVENESS-W1 CH1): installed on aoe-1 by reviewed SSH with a pre-write backup, because aoe-output-liveness-canary.py (autonomous-optimizer repo) imports it there. Its declaration detector-envelope.schema.json moved scope signal-1 -> signal-1,aoe-1 in the same commit \u2014 the condition declaration-sync.sh set (\"promote when a second host genuinely reads it, never in advance\") was MET, not waived. Comma-list, not `*`: `*` would claim every host is a reader."
     },
     {
       "id": "detector-envelope-schema",
@@ -1518,7 +1570,7 @@
       "sha256": "2bd26c18fb53ec443fb79493a7f8e455b867ca496bde15508744ffbcf6362e22",
       "alert_ids": [],
       "owner_wave": "OPS-MONITORING-SIGNAL-CONTRACT-W1",
-      "notes": "The DETECTOR_ENVELOPE contract \u2014 ONE SoT read by BOTH the TypeScript producer (src/lib/detector-envelope.ts) and the Python consumer (ops/monitoring/detector_envelope.py). It is a DECLARATION: declaration-sync.sh moves it (scope signal-1, its only reader's host); detector_envelope.py beside it is an ARTIFACT installed by reviewed SSH. INSTALLED by CH3, the first adopter, which installed the pair in one reviewed step. criticality load-bearing because a host copy that drifts from this file would let the consumer accept an envelope the producer could not have emitted."
+      "notes": "The DETECTOR_ENVELOPE contract \u2014 ONE SoT read by BOTH the TypeScript producer (src/lib/detector-envelope.ts) and the Python consumer (ops/monitoring/detector_envelope.py). It is a DECLARATION: declaration-sync.sh moves it (scope signal-1, its only reader's host); detector_envelope.py beside it is an ARTIFACT installed by reviewed SSH. INSTALLED by CH3, the first adopter, which installed the pair in one reviewed step. criticality load-bearing because a host copy that drifts from this file would let the consumer accept an envelope the producer could not have emitted. SCOPE WIDENED 2026-08-23 (OPS-AOE-LIVENESS-W1 CH1) signal-1 -> signal-1,aoe-1: aoe-1 gained a genuine reader. declaration-sync.sh delivers it there; it is NOT scp'd, which is what keeps it a declaration rather than an artifact."
     },
     {
       "id": "labeler-truncation-attribution",

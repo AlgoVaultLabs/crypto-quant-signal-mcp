@@ -17,10 +17,18 @@
  *     value:   "false" — reader reads ONLY the global key (pre-Path-4
  *       behaviour; instant rollback without redeploy).
  *
- * Redis key contract (Path 4, 2026-04-25)
- * ---------------------------------------
+ * Redis key contract (Path 4, 2026-04-25; grammar MEASURED 2026-08-23)
+ * -------------------------------------------------------------------
  *   algovault:aoe:recommended_weights:<strategy>            (global)
  *   algovault:aoe:recommended_weights:<venue>:<strategy>    (per-venue)
+ *
+ *   <strategy>  ::= <SIDE> "__" <timeframe>      e.g. BUY__15m, BUY__1d
+ *   <SIDE>      ::= "BUY"                        the only value ever produced
+ *   <timeframe> ::= 3m|5m|15m|30m|1h|2h|4h|8h|12h|1d
+ *
+ *   There is NO regime segment and NO indicator segment. AOE's
+ *   `bank_shadow_candidates.source_regime` is NULL on all 90 rows, so regime is
+ *   absent from the key AND from the data.
  *
  * Value shape (JSON):
  *   {
@@ -158,9 +166,22 @@ async function _rawRead(key: string): Promise<AoeConfig | null> {
  * When ALGOVAULT_AOE_CONFIG_SOURCE is not "redis" (default), returns
  * ``{config: null, source: 'none'}`` without touching Redis.
  *
- * @param strategy  Strategy key (e.g. "RSI_BULL_1h")
- * @param venue     Exchange venue — "HL" / "BINANCE" / "BYBIT" / "OKX" /
- *                  "BITGET" / null (request global only)
+ * @param strategy  Strategy key, `<SIDE>__<timeframe>` (e.g. "BUY__15m")
+ * @param venue     Exchange venue — 17 are live as of 2026-08-23: ASTER,
+ *                  BINANCE, BINGX, BITGET, BITMART, BYBIT, EDGEX, GATE, HL,
+ *                  HTX, KUCOIN, MEXC, OKX, PHEMEX, WEEX, WHITEBIT, XT — or
+ *                  null (request global only). The reader accepts any venue;
+ *                  this list is MEASURED and grows with coverage, so re-measure
+ *                  rather than trusting it.
+ *
+ * ⚠️ CORRECTED 2026-08-23 (OPS-AOE-LIVENESS-W1 CH1). This docblock used to give
+ * `RSI_BULL_1h` as the strategy example and name five venues. **`RSI_BULL_1h`
+ * has never been a live key**, and the five-venue list was stale by twelve. The
+ * cost was not cosmetic: a wave spec read this example plus the matching test
+ * fixture as evidence that AOE already carried a per-regime dimension, and built
+ * a strategic hypothesis on it. A docblock example and a test fixture are not
+ * evidence of live data. Both are corrected at the source; the real grammar is
+ * above, and `autonomous-optimizer/docs/redis-keys.md` carries the same census.
  */
 export async function readAoeConfig(
     strategy: string,

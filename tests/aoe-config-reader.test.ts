@@ -4,6 +4,14 @@
  * (per-venue → global → none). Uses a stubbed Redis client so no live
  * Redis is required.
  *
+ * ⚠️ FIXTURE CORRECTED 2026-08-23 (OPS-AOE-LIVENESS-W1 CH1): the strategy string was
+ * `RSI_BULL_1h`, which has NEVER been a live key. Together with the same example in the
+ * reader's docblock, it was read by a wave spec as evidence that AOE carried a per-regime
+ * dimension it has never had. The real grammar is `<SIDE>__<timeframe>`, and `BUY__15m` is
+ * a key that actually existed (`algovault:aoe:recommended_weights:WHITEBIT:BUY__15m`). A
+ * fixture is not evidence of live data — but an INVENTED one is actively misleading, so it
+ * is a measured one now.
+ *
  * Coverage:
  * 1. ALGOVAULT_AOE_CONFIG_SOURCE default ("hardcoded") → reader never
  *    touches Redis, always returns {config: null, source: 'none'}.
@@ -44,14 +52,14 @@ import {
 } from '../src/lib/aoe-config-reader.js';
 
 const VALID_HL = JSON.stringify({
-    config_id: 'hl-cfg-1', strategy: 'RSI_BULL_1h',
+    config_id: 'hl-cfg-1', strategy: 'BUY__15m',
     weights: { rsi: 0.4, ema: 0.1, funding: 0.3, oi: 0.2 },
     published_at: '2026-04-25T00:00:00Z', source: 'aoe-retune',
     shadow_stats: { oos_sharpe: 1.5, stability_score: 0.7, pfe_wr: 0.55 },
     venue: 'HL',
 });
 const VALID_GLOBAL = JSON.stringify({
-    config_id: 'global-cfg-1', strategy: 'RSI_BULL_1h',
+    config_id: 'global-cfg-1', strategy: 'BUY__15m',
     weights: { rsi: 0.3, ema: 0.1, funding: 0.25, oi: 0.35 },
     published_at: '2026-04-25T00:00:00Z', source: 'aoe-retune',
     shadow_stats: { oos_sharpe: 1.2, stability_score: 0.6, pfe_wr: 0.52 },
@@ -74,14 +82,14 @@ describe('readAoeConfig — feature-flag gating + resolution order', () => {
     });
 
     it('returns none without touching Redis when outer flag is default', async () => {
-        const r = await readAoeConfig('RSI_BULL_1h', 'HL');
+        const r = await readAoeConfig('BUY__15m', 'HL');
         expect(r).toEqual({ config: null, source: 'none' });
         expect(mockGet).not.toHaveBeenCalled();
     });
 
     it('returns none without touching Redis when outer flag is explicitly hardcoded', async () => {
         process.env.ALGOVAULT_AOE_CONFIG_SOURCE = 'hardcoded';
-        const r = await readAoeConfig('RSI_BULL_1h', 'HL');
+        const r = await readAoeConfig('BUY__15m', 'HL');
         expect(r).toEqual({ config: null, source: 'none' });
         expect(mockGet).not.toHaveBeenCalled();
     });
@@ -89,8 +97,8 @@ describe('readAoeConfig — feature-flag gating + resolution order', () => {
     it('per-venue hit returns venue:HL source', async () => {
         process.env.ALGOVAULT_AOE_CONFIG_SOURCE = 'redis';
         mockGet.mockImplementation(async (k: string) =>
-            k === 'algovault:aoe:recommended_weights:HL:RSI_BULL_1h' ? VALID_HL : null);
-        const r = await readAoeConfig('RSI_BULL_1h', 'HL');
+            k === 'algovault:aoe:recommended_weights:HL:BUY__15m' ? VALID_HL : null);
+        const r = await readAoeConfig('BUY__15m', 'HL');
         expect(r.source).toBe('venue:HL');
         expect(r.config?.venue).toBe('HL');
         expect(r.config?.weights.rsi).toBe(0.4);
@@ -99,8 +107,8 @@ describe('readAoeConfig — feature-flag gating + resolution order', () => {
     it('per-venue miss + global hit returns global_fallback source', async () => {
         process.env.ALGOVAULT_AOE_CONFIG_SOURCE = 'redis';
         mockGet.mockImplementation(async (k: string) =>
-            k === 'algovault:aoe:recommended_weights:RSI_BULL_1h' ? VALID_GLOBAL : null);
-        const r = await readAoeConfig('RSI_BULL_1h', 'HL');
+            k === 'algovault:aoe:recommended_weights:BUY__15m' ? VALID_GLOBAL : null);
+        const r = await readAoeConfig('BUY__15m', 'HL');
         expect(r.source).toBe('global_fallback');
         expect(r.config?.venue).toBeNull();
     });
@@ -108,7 +116,7 @@ describe('readAoeConfig — feature-flag gating + resolution order', () => {
     it('both miss returns {config: null, source: none}', async () => {
         process.env.ALGOVAULT_AOE_CONFIG_SOURCE = 'redis';
         mockGet.mockResolvedValue(null);
-        const r = await readAoeConfig('RSI_BULL_1h', 'HL');
+        const r = await readAoeConfig('BUY__15m', 'HL');
         expect(r).toEqual({ config: null, source: 'none' });
     });
 
@@ -116,28 +124,28 @@ describe('readAoeConfig — feature-flag gating + resolution order', () => {
         process.env.ALGOVAULT_AOE_CONFIG_SOURCE = 'redis';
         process.env.AOE_PER_VENUE_CONSUMER_ENABLED = 'false';
         mockGet.mockImplementation(async (k: string) =>
-            k === 'algovault:aoe:recommended_weights:RSI_BULL_1h' ? VALID_GLOBAL : null);
-        const r = await readAoeConfig('RSI_BULL_1h', 'HL');
+            k === 'algovault:aoe:recommended_weights:BUY__15m' ? VALID_GLOBAL : null);
+        const r = await readAoeConfig('BUY__15m', 'HL');
         expect(r.source).toBe('global');
         // Verify we NEVER queried the per-venue key.
         const keysQueried = mockGet.mock.calls.map((c) => c[0]);
-        expect(keysQueried).not.toContain('algovault:aoe:recommended_weights:HL:RSI_BULL_1h');
+        expect(keysQueried).not.toContain('algovault:aoe:recommended_weights:HL:BUY__15m');
     });
 
     it('null venue + per-venue enabled reads only global key', async () => {
         process.env.ALGOVAULT_AOE_CONFIG_SOURCE = 'redis';
         mockGet.mockImplementation(async (k: string) =>
-            k === 'algovault:aoe:recommended_weights:RSI_BULL_1h' ? VALID_GLOBAL : null);
-        const r = await readAoeConfig('RSI_BULL_1h', null);
+            k === 'algovault:aoe:recommended_weights:BUY__15m' ? VALID_GLOBAL : null);
+        const r = await readAoeConfig('BUY__15m', null);
         expect(r.source).toBe('global');
         const keysQueried = mockGet.mock.calls.map((c) => c[0]);
-        expect(keysQueried).toEqual(['algovault:aoe:recommended_weights:RSI_BULL_1h']);
+        expect(keysQueried).toEqual(['algovault:aoe:recommended_weights:BUY__15m']);
     });
 
     it('rejects payload containing outcome_return_pct (defensive)', async () => {
         process.env.ALGOVAULT_AOE_CONFIG_SOURCE = 'redis';
         const LEAKED = JSON.stringify({
-            config_id: 'leak', strategy: 'RSI_BULL_1h',
+            config_id: 'leak', strategy: 'BUY__15m',
             weights: { rsi: 1.0 }, published_at: '2026-04-25T00:00:00Z',
             source: 'aoe-retune',
             shadow_stats: { oos_sharpe: null, stability_score: null, pfe_wr: null },
@@ -145,8 +153,8 @@ describe('readAoeConfig — feature-flag gating + resolution order', () => {
             outcome_return_pct: 0.012345, // leaked!
         });
         mockGet.mockImplementation(async (k: string) =>
-            k === 'algovault:aoe:recommended_weights:HL:RSI_BULL_1h' ? LEAKED : null);
-        const r = await readAoeConfig('RSI_BULL_1h', 'HL');
+            k === 'algovault:aoe:recommended_weights:HL:BUY__15m' ? LEAKED : null);
+        const r = await readAoeConfig('BUY__15m', 'HL');
         // Poisoned payload rejected → falls through to global (also null in
         // this setup) → source = 'none'.
         expect(r.source).toBe('none');
@@ -156,12 +164,12 @@ describe('readAoeConfig — feature-flag gating + resolution order', () => {
     it('caches reads within the 60s TTL', async () => {
         process.env.ALGOVAULT_AOE_CONFIG_SOURCE = 'redis';
         mockGet.mockImplementation(async (k: string) =>
-            k === 'algovault:aoe:recommended_weights:HL:RSI_BULL_1h' ? VALID_HL : null);
-        const r1 = await readAoeConfig('RSI_BULL_1h', 'HL');
+            k === 'algovault:aoe:recommended_weights:HL:BUY__15m' ? VALID_HL : null);
+        const r1 = await readAoeConfig('BUY__15m', 'HL');
         expect(r1.source).toBe('venue:HL');
         const callsAfterFirst = mockGet.mock.calls.length;
         // Second read — cache hit; no new Redis calls.
-        const r2 = await readAoeConfig('RSI_BULL_1h', 'HL');
+        const r2 = await readAoeConfig('BUY__15m', 'HL');
         expect(r2.source).toBe('venue:HL');
         expect(mockGet.mock.calls.length).toBe(callsAfterFirst);
         expect(_getAoeCacheSize()).toBe(1);

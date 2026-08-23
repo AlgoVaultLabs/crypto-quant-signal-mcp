@@ -199,15 +199,17 @@ DECLARATIONS=(
   # sets the precedent), but it means a legitimate incident-time re-baseline must be committed.
   "OPS-SEED-ORCHESTRATOR-W1-baseline.json|by_venue_total_24h|3|signal-1"
   # ── added by OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2 ──
-  # The DETECTOR_ENVELOPE contract. It is `signal-1` and not `*` on the same measured-consumer
-  # rule as the five above: its only reader is ops/monitoring/detector_envelope.py, imported by
-  # directional-label-freshness.py, which runs on signal-1 alone. Syncing it to aoe-1 would make
-  # it an ORPHAN there. Promote to `*` when a second host genuinely reads it, never in advance.
+  # The DETECTOR_ENVELOPE contract. Scope widened signal-1 -> signal-1,aoe-1 by
+  # OPS-AOE-LIVENESS-W1 CH1: the condition this line set was MET, not waived. aoe-1 now has a
+  # genuine reader — monitoring/aoe-host/aoe-output-liveness-canary.py (autonomous-optimizer
+  # repo) imports the detector_envelope.py installed beside it there. Still a COMMA-LIST and
+  # deliberately not `*`: `*` would declare every host a reader, which is the claim this row
+  # spent four months refusing to make. Add the next host the same way, when it reads.
   # THE PAIRING, stated because the two files sit next to each other on the host: the .schema.json
   # is a DECLARATION (inert JSON, synced here) and detector_envelope.py is an ARTIFACT
   # (executable, installed by reviewed SSH and never by this script).
   # `required_fields` is live 9; 5 is a truncation refusal, not a target.
-  "detector-envelope.schema.json|required_fields|5|signal-1"
+  "detector-envelope.schema.json|required_fields|5|signal-1,aoe-1"
 )
 
 # Exactly one terminal token on stdout, plus — outside the hermetic suite — a durable record in
