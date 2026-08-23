@@ -48,6 +48,7 @@
  * Callers gate on the TOKEN, never the code.
  */
 import { describe, it, expect, afterAll, afterEach } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -222,6 +223,94 @@ export function stripCast(arg: string): string {
   return arg.replace(/\s+as\s+[\s\S]+$/, '').trim();
 }
 
+/* ─────────── REL-4: advertised resources (CH3) — parsed, never live-probed ─────────── */
+
+export interface AdvertisedResources { concrete: string[]; templates: string[]; producers: string[] }
+
+/**
+ * Every `server.resource(name, <uri>, …)` registration in one source text.
+ *
+ * Three arg-2 shapes exist in `src/index.ts` and all three are handled, because ignoring
+ * the third would make this guard FALSE-FIRE on a real resource:
+ *   'algovault://x'                                  → concrete
+ *   new ResourceTemplate('verify://signal/{id}', …)  → template
+ *   res.uri, inside `for (const res of listX())`     → producer, resolved by import below
+ */
+export function findResourceRegistrations(src: string): AdvertisedResources {
+  const concrete: string[] = [];
+  const templates: string[] = [];
+  const producers: string[] = [];
+  const NEEDLE = 'server.resource(';
+  let i = 0;
+  while ((i = src.indexOf(NEEDLE, i)) !== -1) {
+    const openIdx = i + NEEDLE.length - 1;
+    const closeIdx = matchParen(src, openIdx);
+    if (closeIdx < 0) { i = openIdx + 1; continue; }
+    const args = src.slice(openIdx + 1, closeIdx);
+    // Arg 2 begins after the first top-level comma; a literal or `new ResourceTemplate(`
+    // is always within the first few hundred chars of it.
+    const afterName = args.slice(args.indexOf(',') + 1);
+    const tpl = /^\s*new\s+ResourceTemplate\s*\(\s*['"]([^'"]+)['"]/.exec(afterName);
+    const lit = /^\s*['"]([^'"]+)['"]\s*,/.exec(afterName);
+    if (tpl) templates.push(tpl[1]);
+    else if (lit) concrete.push(lit[1]);
+    else {
+      // Non-literal: find the nearest enclosing `for (const <v> of <producer>()`.
+      const before = src.slice(0, i);
+      const loop = [...before.matchAll(/for\s*\(\s*const\s+\w+\s+of\s+([A-Za-z_$][\w$]*)\s*\(/g)].pop();
+      if (loop) producers.push(loop[1]);
+    }
+    i = closeIdx + 1;
+  }
+  return { concrete, templates, producers: [...new Set(producers)] };
+}
+
+/** `verify://signal/{id}` → /^verify:\/\/signal\/[^/]+$/ — one path segment per placeholder. */
+export function templateToRegExp(uriTemplate: string): RegExp {
+  const escaped = uriTemplate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('^' + escaped.replace(/\\\{[^}]*\\\}/g, '[^/]+') + '$');
+}
+
+/**
+ * Scheme-shaped tokens in one HTML page that CLAIM to be MCP resource URIs.
+ *
+ * Web/transport schemes are excluded by DENY-list, not by allow-listing our own schemes:
+ * an allow-list would be circular — a page citing a bogus `bogus://x` would pass by never
+ * being looked at, which is the exact defect this guard exists to catch.
+ *
+ * ORDER MATTERS AND IS THE SUBTLE PART: match on the RAW html, decode entities AFTERWARDS.
+ * Decoding first turns `verify://signal/&lt;id&gt;` into `verify://signal/<id>`, and the
+ * `<` then terminates the match at the very character class that keeps URIs from running
+ * into the next HTML tag — yielding a truncated `verify://signal/`, which no template can
+ * match. Measured on landing/verify.html: decode-first reported the page's own documented
+ * URI as undiscoverable.
+ */
+export const NON_RESOURCE_SCHEME_RE = /^(?:[a-z+.-]*https?|mailto|data|wss?|file|tel|ftp):/i;
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+}
+
+export function extractResourceUris(html: string): string[] {
+  const hits = html.match(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>()\][]*/gi) ?? [];
+  return [...new Set(
+    hits
+      .filter((u) => !NON_RESOURCE_SCHEME_RE.test(u))
+      .map((u) => decodeEntities(u))
+      // Trailing prose/markup punctuation. `>` is NOT trimmed — a `<id>` placeholder ends in one.
+      .map((u) => u.replace(/["')\].,;:]+$/, ''))
+      .filter((u) => u.length > 0),
+  )];
+}
+
+export function unadvertisedUris(uris: string[], ads: { concrete: string[]; templates: string[] }): string[] {
+  const exact = new Set(ads.concrete);
+  const tpl = ads.templates.map(templateToRegExp);
+  return uris.filter((u) => !exact.has(u) && !tpl.some((r) => r.test(u)));
+}
+
 function walkTs(dir: string, acc: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     if (name === 'node_modules' || name.startsWith('.')) continue;
@@ -314,6 +403,55 @@ const RESOLVED_BINDINGS: ResolvedBinding[] = await (async () => {
   return out;
 })();
 
+/* ─────────────────────────── REL-4 corpus (CH3) ─────────────────────────── */
+
+const INDEX_TS = join(SRC_ROOT, 'index.ts');
+const advertErrors: string[] = [];
+/** Escalations discovered while a test RUNS, not at corpus-build time. Read by afterAll. */
+const runtimeIndeterminate: string[] = [];
+
+/**
+ * The advertised set, read from source rather than from a live server — the suite stays
+ * hermetic. BOTH advertisement sources count: `resources/list` (concrete registrations) and
+ * `resources/templates/list` (ResourceTemplate registrations). A guard that recognised only
+ * the first would false-fire on `verify://signal/{id}`, the exact URI this chapter protects
+ * — it is advertised on the dedicated `resources/templates/list` method, which is where the
+ * MCP protocol puts templates.
+ *
+ * ONLY LITERAL registrations are enumerated, and that limit is DECLARED rather than hidden.
+ * `src/index.ts` also registers the knowledge bundle from a loop over
+ * `listKnowledgeResources()`, whose URIs depend on files under `dist/knowledge/`. Calling it
+ * from here was tried and REJECTED: under vitest the module resolves its bundle directory
+ * differently than in production and returns `[]` even with `dist/knowledge/latest.json`
+ * present — an enrichment that silently looks complete and is not, which is strictly worse
+ * than none. So the producers are RECORDED, and REL-4 escalates to INDETERMINATE (never
+ * FAIL) if an unmatched URI could plausibly have come from one. An incomplete advertised set
+ * can still yield a truthful PASS when nothing is unmatched; it can never yield an accusation.
+ */
+const RESOURCE_REGISTRATIONS: AdvertisedResources = (() => {
+  try {
+    return findResourceRegistrations(readFileSync(INDEX_TS, 'utf8'));
+  } catch (e) {
+    advertErrors.push(`could not read ${INDEX_TS}: ${(e as Error).message}`);
+    return { concrete: [], templates: [], producers: [] };
+  }
+})();
+const ADVERTISED = { concrete: RESOURCE_REGISTRATIONS.concrete, templates: RESOURCE_REGISTRATIONS.templates };
+const UNENUMERATED_PRODUCERS = RESOURCE_REGISTRATIONS.producers;
+
+/** Committed top-level landing pages — `git ls-files`, so an untracked scratch page is out of scope. */
+const LANDING_PAGES: Array<[string, string]> = (() => {
+  let tracked: string[];
+  try {
+    tracked = execFileSync('git', ['ls-files', '--', 'landing/*.html'], { cwd: REPO_ROOT, encoding: 'utf8' })
+      .split('\n').map((s) => s.trim()).filter(Boolean);
+  } catch (e) {
+    advertErrors.push(`git ls-files landing/*.html failed: ${(e as Error).message}`);
+    return [];
+  }
+  return tracked.map((rel) => [rel, readFileSync(join(REPO_ROOT, rel), 'utf8')] as [string, string]);
+})();
+
 /**
  * Vacuity guard, placed where the corpus is CONSTRUCTED. An empty corpus here means this
  * file built nothing — a defect in the test, never a pass. A binding we were HANDED and
@@ -323,7 +461,11 @@ const CORPUS_INDETERMINATE: string[] = [
   ...(COPY_STRINGS.length === 0 ? ['tool-descriptions.ts exported zero string constants'] : []),
   ...(LIVE_MCP_NAMES.length === 0 ? ['feature registry yielded zero live mcp-channel tools'] : []),
   ...(RESOLVED_BINDINGS.length === 0 ? ['static parse found zero z.enum(...).describe(PARAM_DESC_*) bindings'] : []),
+  ...(ADVERTISED.concrete.length === 0 ? ['static parse found zero concrete server.resource() registrations'] : []),
+  ...(ADVERTISED.templates.length === 0 ? ['static parse found zero ResourceTemplate registrations'] : []),
+  ...(LANDING_PAGES.length === 0 ? ['git ls-files listed zero committed landing/*.html pages'] : []),
   ...bindingErrors,
+  ...advertErrors,
 ];
 
 /* ──────────────────────────────────────── REL-1 ───────────────────────────────────────── */
@@ -425,8 +567,41 @@ describe('REL-3 — param prose vs its own Zod enum', () => {
 
 /* ──────────────────────────────────────── REL-4 ───────────────────────────────────────── */
 
-describe('REL-4 — documented resource must be advertised', () => {
-  it.todo('every resource URI cited in a committed landing/*.html is advertised — CH3 owns this');
+describe('REL-4 — documented resource must be advertised (FORWARD-GUARD: zero violations expected)', () => {
+  it('every resource URI cited in a committed landing/*.html is advertised', () => {
+    const offenders: string[] = [];
+    let cited = 0;
+    for (const [page, html] of LANDING_PAGES) {
+      const uris = extractResourceUris(html);
+      cited += uris.length;
+      for (const u of unadvertisedUris(uris, ADVERTISED)) offenders.push(`${page} → ${u}`);
+    }
+    if (offenders.length) {
+      const detail =
+        offenders.map((o) => `    ${o}`).join('\n') +
+        `\n    advertised concrete: ${ADVERTISED.concrete.join(' ')}` +
+        `\n    advertised templates: ${ADVERTISED.templates.join(' ')}`;
+      // An unmatched URI is only an ACCUSATION when the advertised set is complete. With a
+      // loop-registered producer we could not enumerate, the honest verdict is "could not
+      // verify", not "undiscoverable" — INDETERMINATE, never FAIL.
+      if (UNENUMERATED_PRODUCERS.length > 0) {
+        runtimeIndeterminate.push(
+          `REL-4 cannot decide: ${offenders.length} unmatched URI(s) while ${UNENUMERATED_PRODUCERS.length} ` +
+            `loop-registered resource producer(s) [${UNENUMERATED_PRODUCERS.join(', ')}] were not enumerable:\n${detail}`,
+        );
+        console.error(`  ? REL-4 INDETERMINATE — unmatched URI(s) with an unenumerated producer:\n${detail}`);
+        return;
+      }
+      for (const o of offenders) failures.push(`REL-4 undiscoverable: ${o}`);
+      throw new Error(
+        `REL-4: ${offenders.length} documented resource URI(s) that no advertisement source carries:\n${detail}`,
+      );
+    }
+    console.log(
+      `REL-4: ${cited} resource URI citation(s) across ${LANDING_PAGES.length} committed landing pages, ` +
+        `all advertised (${ADVERTISED.concrete.length} concrete + ${ADVERTISED.templates.length} template)`,
+    );
+  });
 });
 
 /* ───────────────────────────── self-tests (prove each can fail) ───────────────────────── */
@@ -478,9 +653,52 @@ describe('self-test — REL-1/2/3 each proven to fail dirty and pass clean', () 
     expect(namesRange('from dawn to dusk', TFS)).toBe(false);
   });
 
+  it('REL-4 clean fixture passes / dirty fixture fails, and templates count as advertised', () => {
+    // REL-4, like REL-1, has no live violation. This pair is the only evidence it works.
+    const ads = { concrete: ['performance://signal-performance'], templates: ['verify://signal/{id}'] };
+    const CLEAN =
+      `<pre>curl performance://signal-performance</pre><code>verify://signal/&lt;id&gt;</code>` +
+      `<a href="https://algovault.com/docs">docs</a><span>git+https://github.com/x/y.git</span>`;
+    const DIRTY = CLEAN + `<code>verify://batch/&lt;n&gt;</code><code>ledger://outcomes</code>`;
+    expect(unadvertisedUris(extractResourceUris(CLEAN), ads)).toEqual([]);
+    expect(unadvertisedUris(extractResourceUris(DIRTY), ads).sort()).toEqual(['ledger://outcomes', 'verify://batch/<n>']);
+
+    // A TEMPLATE is a valid advertisement source — the whole point of C3b. Recognising only
+    // `resources/list` would flag verify://signal/{id}, the URI this chapter protects.
+    expect(unadvertisedUris(['verify://signal/0x4a2c7f91'], ads)).toEqual([]);
+    expect(unadvertisedUris(['verify://signal/1'], { concrete: ads.concrete, templates: [] })).toEqual(['verify://signal/1']);
+    // One placeholder = one path segment, so a template must not swallow a deeper path.
+    expect(templateToRegExp('verify://signal/{id}').test('verify://signal/1/extra')).toBe(false);
+    // Web + transport schemes are excluded; a novel scheme is NOT (an allow-list would be circular).
+    expect(extractResourceUris('<a href="https://x.y">z</a>')).toEqual([]);
+    expect(extractResourceUris('see mailto://a@b and wss://c.d')).toEqual([]);
+    expect(extractResourceUris('<p>bogus://made-up</p>')).toEqual(['bogus://made-up']);
+    // Entity decoding is load-bearing: the real page writes `verify://signal/&lt;id&gt;`.
+    expect(extractResourceUris('verify://signal/&lt;id&gt;')).toEqual(['verify://signal/<id>']);
+
+    // The registration parser must see all three arg-2 shapes, or a real resource reads as missing.
+    const IDX = [
+      `import { listKnowledgeResources } from './lib/knowledge-store.js';`,
+      `server.resource('usage-stats', 'analytics://usage-stats', { description: 'x' }, async () => {});`,
+      `server.resource(`,
+      `  'verify-signal',`,
+      `  new ResourceTemplate('verify://signal/{id}', { list: undefined }),`,
+      `  { description: 'y' },`,
+      `  async () => {},`,
+      `);`,
+      `for (const res of listKnowledgeResources()) {`,
+      `  server.resource(res.name, res.uri, { description: res.description }, async () => {});`,
+      `}`,
+    ].join('\n');
+    const parsed = findResourceRegistrations(IDX);
+    expect(parsed.concrete).toEqual(['analytics://usage-stats']);
+    expect(parsed.templates).toEqual(['verify://signal/{id}']);
+    expect(parsed.producers).toEqual(['listKnowledgeResources']);
+  });
+
   /**
-   * A hermetic self-test is blind to exactly what its own seam replaces. The three checks
-   * above run on inline fixtures, so the STATIC PARSER and the corpus builder — the code
+   * A hermetic self-test is blind to exactly what its own seam replaces. The four checks
+   * above run on inline fixtures, so the STATIC PARSERS and the corpus builders — the code
    * that decides what those checks ever see — would otherwise be the only code no scenario
    * executes. Assert the bypassed artifacts directly.
    */
@@ -523,6 +741,20 @@ describe('self-test — REL-1/2/3 each proven to fail dirty and pass clean', () 
     expect(bindingErrors, `unresolvable enum bindings: ${bindingErrors.join(' | ')}`).toEqual([]);
     // Every live tool must actually have served copy, or REL-2 silently compares empty strings.
     for (const n of LIVE_MCP_NAMES) expect(servedDescription(n).length, `${n} served description`).toBeGreaterThan(0);
+
+    // REL-4's real corpus, likewise asserted rather than assumed.
+    expect(ADVERTISED.concrete.length).toBeGreaterThan(0);
+    expect(ADVERTISED.templates).toContain('verify://signal/{id}');
+    expect(LANDING_PAGES.length).toBeGreaterThan(0);
+    expect(advertErrors, `resource-advertisement errors: ${advertErrors.join(' | ')}`).toEqual([]);
+    // The loop-registered producer must be DETECTED even though its URIs are not enumerable
+    // — that detection is what turns a would-be false accusation into an INDETERMINATE.
+    expect(UNENUMERATED_PRODUCERS).toContain('listKnowledgeResources');
+    // The real page's own documented URI must survive extraction intact. This is the exact
+    // assertion that caught the decode-before-match ordering bug.
+    const verifyPage = LANDING_PAGES.find(([p]) => p.endsWith('verify.html'));
+    expect(verifyPage, 'landing/verify.html must be in the committed corpus').toBeTruthy();
+    expect(extractResourceUris(verifyPage![1])).toContain('verify://signal/<id>');
   });
 
   /**
@@ -553,8 +785,9 @@ afterEach((ctx) => {
 });
 
 afterAll(() => {
-  const verdict = verdictOf(CORPUS_INDETERMINATE, failures);
-  for (const r of CORPUS_INDETERMINATE) console.error(`  ? ${r}`);
+  const indeterminate = [...CORPUS_INDETERMINATE, ...runtimeIndeterminate];
+  const verdict = verdictOf(indeterminate, failures);
+  for (const r of indeterminate) console.error(`  ? ${r}`);
   for (const f of failures) console.error(`  ✗ ${f}`);
   console.log(`TDQS_RELATIONAL_VERDICT=${verdict}`);
   if (verdict === 'INDETERMINATE') process.exitCode = 3;
