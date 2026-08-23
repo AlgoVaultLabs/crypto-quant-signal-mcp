@@ -30,19 +30,32 @@
 
 // get_trade_call (canonical, v1.10.0) + get_trade_signal (alias) share
 // TRADE_CALL_DESCRIPTION; the alias appends TRADE_CALL_ALIAS_SUFFIX.
+//
+// TDQS-RELATIONAL-DEFECTS-W1 C2a: the trust claim now NAMES its evidence
+// (performance://signal-performance) instead of asserting it. A bare "verified track
+// record" is a claim no calling model can check, so it buys exactly the lift a fabricated
+// one would; a resource URI is fetchable.
 export const TRADE_CALL_DESCRIPTION =
-  'Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; for a whole-market scan use scan_trade_calls. Read-only: reads live exchange APIs, no orders. Verified track record, on-chain verified merkle anchor.';
+  'Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; for a whole-market scan use scan_trade_calls. Read-only: reads live exchange APIs, no orders. Verified track record via performance://signal-performance; on-chain verified merkle anchor.';
 
 // KNOWLEDGE-ARTIFACT-W1 (Q-5, 2026-05-18): suffix literal uses the [ALIAS] tag
 // prefix pattern so future tool aliases follow the same shape.
+//
+// TDQS-RELATIONAL-DEFECTS-W1 C2d: the final sentence is APPENDED, never reordered —
+// tool-description-keywords.test.ts:137 Case 6 pins the alias to DESCRIPTION + SUFFIX.
+// It is also the alias-collision exemption cue: REL-2 in
+// tool-description-relational.test.ts exempts a declared alias pair ONLY when the added
+// text matches /prefer \w+ for new integrations/i. The sentence and that regex are ONE
+// contract — reword it here and REL-2 goes red, by design.
 export const TRADE_CALL_ALIAS_SUFFIX =
-  ' [ALIAS] This tool is an alias of get_trade_call — same behavior, kept for backward compatibility.';
+  ' [ALIAS] This tool is an alias of get_trade_call — same behavior, kept for backward compatibility. Prefer get_trade_call for new integrations.';
 
 export const SCAN_FUNDING_ARB_DESCRIPTION =
   'Ranked cross-venue funding arbitrage across major crypto perpetual futures venues — funding rate spreads, long one venue short another, as a BUY SELL HOLD composite verdict per pair. AI trading signal for crypto quant and Claude trading agents. Trade call via get_trade_call, market regime via get_market_regime. On-chain verified merkle anchor.';
 
+// TDQS-RELATIONAL-DEFECTS-W1 C2b: same trust-claim swap as C2a, same rationale.
 export const GET_MARKET_REGIME_DESCRIPTION =
-  'Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict blends trend ranging and cross-venue funding rate sentiment. Read-only, live exchange APIs. Verified track record, on-chain verified merkle anchor.';
+  'Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict blends trend ranging and cross-venue funding rate sentiment. Read-only, live exchange APIs. Verified track record via performance://signal-performance; on-chain verified merkle anchor.';
 
 // describe-text for the `search_knowledge` MCP tool. Self-pitching text
 // intentionally instructs the calling LLM to call it BEFORE other tools to
@@ -96,8 +109,12 @@ export const PARAM_DESC_SCAN_TOP_N =
   'How many top perps by open interest to scan, 1 to 100 (default 20).';
 export const PARAM_DESC_SCAN_TIMEFRAME =
   'Candle timeframe, 1m to 1d for the scan. Default 15m intraday.';
+// TDQS-RELATIONAL-DEFECTS-W1 C2c: was 'Venue: BINANCE (default) HL BYBIT OKX BITGET.' —
+// five bare names against a FIFTEEN-value Zod enum, read by an agent as the whole set.
+// Now byte-identical to PARAM_DESC_TRADE_CALL_EXCHANGE, whose `e.g.` marks the list as
+// illustrative. REL-3 in tool-description-relational.test.ts holds the shape.
 export const PARAM_DESC_SCAN_EXCHANGE =
-  'Venue: BINANCE (default) HL BYBIT OKX BITGET.';
+  'Crypto venue (default Binance), e.g. Binance Bybit OKX Bitget Hyperliquid.';
 export const PARAM_DESC_SCAN_MIN_CONFIDENCE =
   'Optional confidence floor, 0 to 100, applied to non-HOLD trade calls.';
 // FIX-CONVICTION-CALL-POSTS-W1: universe-side liquidity floor. Deliberately carries NO
