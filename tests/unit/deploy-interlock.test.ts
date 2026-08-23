@@ -86,6 +86,93 @@ describe('CH2 — all four policy paths, each writing a record', () => {
   });
 });
 
+/**
+ * OPS-DEPLOY-CATCHUP-DETACH-W1 — the catch-up must not hold the deploy's SSH session open.
+ *
+ * The backfill is budgeted up to 125 minutes and used to run in the FOREGROUND of that session,
+ * whose action times out at ~10 minutes — so a deploy that had already fully succeeded (containers
+ * recreated, host GIT_SHA advanced) reported FAILURE. Measured on runs 32616428011 and
+ * 32619577958. A red badge meaning "deployed fine" trains an operator to ignore deploy failures.
+ *
+ * The shell --self-test asserts this too; it is ALSO asserted here because this file is what the
+ * wired suite and the pre-push gate actually run.
+ *
+ * SPAWN BUDGET: 2 bash spawns.
+ */
+describe('OPS-DEPLOY-CATCHUP-DETACH-W1 — the catch-up is launched, not awaited', () => {
+  it('returns immediately even though the child runs far past the SSH timeout', { timeout: 40_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'interlock-detach-'));
+    const ledger = path.join(dir, 'ledger');
+    const marker = path.join(dir, 'marker');
+    const docker = path.join(dir, 'docker');
+    // 30s stands in for the 125-minute backfill: comfortably past the 5s bound below, so a
+    // regression to a foreground call cannot pass by being merely quick.
+    writeFileSync(docker, '#!/bin/sh\nsleep 30\nexit 0\n', { mode: 0o755 });
+    writeFileSync(marker, '2026-08-23T05:00:00Z\n');
+    // Drive the REAL (setsid) branch, not the degraded one. `setsid` is util-linux and is ABSENT
+    // on macOS, so without this the test silently takes the no-setsid fallback — which carries its
+    // OWN `&` and therefore stays fast even if the production branch loses its detach entirely.
+    // Measured: removing `&` from the setsid branch left this test GREEN until the seam was
+    // injected here. A test that cannot reach the branch that ships is not covering it.
+    const detach = path.join(dir, 'detach');
+    writeFileSync(detach, '#!/bin/sh\nexec "$@"\n', { mode: 0o755 });
+    const t0 = Date.now();
+    const r = spawnSync('bash', [SH, 'catchup'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        INTERLOCK_LEDGER: ledger,
+        INTERLOCK_MARKER: marker,
+        INTERLOCK_DOCKER: docker,
+        INTERLOCK_TIERS: path.join(dir, 'tiers.json'),
+        INTERLOCK_WORST_OVERRIDE: '140',   // past SLO, so the catch-up is warranted
+        INTERLOCK_REMAINING_OVERRIDE: '99',
+        INTERLOCK_CARRY_LOG: path.join(dir, 'carry.log'),
+        INTERLOCK_RUNNER_LOG: path.join(dir, 'runner.log'),
+        INTERLOCK_DETACH: detach,
+      },
+    });
+    const elapsedMs = Date.now() - t0;
+    expect(r.status).toBe(0);
+    expect((r.stdout.match(/INTERLOCK_VERDICT=(\w+)/) || [])[1]).toBe('DEFERRED');
+    expect(elapsedMs).toBeLessThan(5_000);
+    const led = readFileSync(ledger, 'utf8');
+    // LAUNCHED, not "running" — the record must be true at the moment it is written.
+    expect(led).toContain('catchup=launched');
+    expect(led).not.toContain('catchup=running');
+    // The detach mode is recorded, so a host without setsid degrades LOUDLY instead of
+    // failing the launch into a discarded background job and skipping the work in silence.
+    expect(led).toMatch(/detach=\S+/);
+    // …and specifically NOT the degraded fallback, or this covers the wrong branch.
+    expect(led).not.toContain('detach=degraded');
+  });
+
+  it('the runner records a TERMINAL outcome, so "launched" is always answered', { timeout: 40_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'interlock-runner-'));
+    const ledger = path.join(dir, 'ledger');
+    const docker = path.join(dir, 'docker');
+    const flock = path.join(dir, 'flock');
+    writeFileSync(docker, '#!/bin/sh\nexit 7\n', { mode: 0o755 });
+    // `flock -n <lock> <cmd...>` — drop our own two args and exec the command.
+    writeFileSync(flock, '#!/bin/sh\nshift 2\nexec "$@"\n', { mode: 0o755 });
+    const r = spawnSync('bash', [SH, '--catchup-runner', '5'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        INTERLOCK_LEDGER: ledger,
+        INTERLOCK_DOCKER: docker,
+        INTERLOCK_FLOCK: flock,
+        INTERLOCK_CARRY_LOG: path.join(dir, 'carry.log'),
+      },
+    });
+    expect(r.status).toBe(0);
+    const led = readFileSync(ledger, 'utf8');
+    // The rc that caused it, carried — the old inline call ended in `|| true` and lost it.
+    expect(led).toContain('catchup=failed rc=7');
+    expect(led).not.toContain('catchup=finished');
+  });
+});
+
 describe('AC2.4 — a hotfix ALWAYS proceeds, whatever the probe would have said', () => {
   it.each([0, 1, 7, 125])('proceeds with docker rc=%i', { timeout: 40_000 }, (rc) => {
     // The hatch must be TOTAL. A hatch that fails when it is most needed gets replaced by
