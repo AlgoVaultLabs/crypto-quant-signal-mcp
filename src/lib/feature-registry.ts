@@ -17,6 +17,7 @@ import {
   CHAT_KNOWLEDGE_DESCRIPTION,
   GET_EQUITY_CALL_DESCRIPTION,
   GET_EQUITY_REGIME_DESCRIPTION,
+  TRADE_CALL_ALIAS_SUFFIX,
 } from '../tool-descriptions.js';
 // SCAN-RANKBY-W1: the rankBy lens set is advertised on /capabilities from the SINGLE
 // source (rank-constants.ts) — the bot derives valid lenses, never hardcodes. Pure leaf
@@ -214,6 +215,50 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
     enabled: true,
   },
 ];
+
+/**
+ * The description the server SERVES for a callable tool name — canonical or alias.
+ *
+ * ONE derivation, and it exists because there were two. `src/index.ts` registered the alias as
+ * `TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX` while `projectCapabilities()` spread the
+ * BASE description onto every alias, so the two public description surfaces disagreed about
+ * `get_trade_signal`: measured 2026-08-24, `tools/list` served 488 chars carrying
+ * *"Prefer get_trade_call for new integrations."* and `GET /capabilities` served 346 without it.
+ * The alias hint is the entire steering signal `TDQS-RELATIONAL-DEFECTS-W1` shipped, and exactly
+ * one of the two surfaces carried it.
+ *
+ * So the composition rule lives HERE, once, and `index.ts`, `projectCapabilities()` and the
+ * lockstep canary all project from this. A second copy of this expression is the defect that
+ * produced the divergence — the canary that guards it must not itself re-derive it.
+ *
+ * @param nameOrAlias a callable tool name
+ * @returns the served description, or `undefined` for an unknown / description-less tool
+ */
+export function servedDescription(nameOrAlias: string): string | undefined {
+  const f = getFeature(nameOrAlias);
+  if (!f) return undefined;
+  const base = DESCRIPTIONS[f.descriptionRef];
+  if (base == null) return undefined;
+  // An ALIAS carries the steering suffix; the canonical name does not.
+  return f.name === nameOrAlias ? base : base + TRADE_CALL_ALIAS_SUFFIX;
+}
+
+/**
+ * Every callable name → the description the server serves for it, canonical and alias alike.
+ * The lockstep canary compares `lobehub-manifest.json` `api[]` against exactly this map.
+ * Disabled features are omitted, matching `tools/list` and `projectCapabilities()`.
+ */
+export function servedDescriptions(): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const f of FEATURE_REGISTRY) {
+    if (!f.enabled) continue;
+    for (const n of [f.name, ...f.aliases]) {
+      const d = servedDescription(n);
+      if (d != null) out.set(n, d);
+    }
+  }
+  return out;
+}
 
 /** Resolve a tool name OR alias to its FeatureSpec — closes the canonical-key gap. */
 export function getFeature(nameOrAlias: string): FeatureSpec | undefined {

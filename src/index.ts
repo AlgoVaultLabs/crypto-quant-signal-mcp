@@ -135,7 +135,7 @@ import {
   GET_EQUITY_CALL_DESCRIPTION,
   GET_EQUITY_REGIME_DESCRIPTION,
 } from './tool-descriptions.js';
-import { allToolNames, projectCapabilities } from './lib/feature-registry.js';
+import { allToolNames, projectCapabilities, servedDescription } from './lib/feature-registry.js';
 // EQUITY-TOOLS-DARK-RETIRE-W1: the live tools/list set is env-gated (get_equity_call /
 // get_equity_regime dark behind EQUITY_TOOLS_ENABLED, default OFF). allToolNames() stays
 // the DECLARED set (9); liveMcpToolNames() is what actually registers (7 OFF / 9 ON).
@@ -580,7 +580,13 @@ function createServer(): McpServer {
   );
   register(
     'get_trade_signal',
-    TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX,
+    // NPM-PUBLISH-v1.28.1-W1: projected from `servedDescription`, which now owns the
+    // alias-composition rule. This line used to BE that rule, while `projectCapabilities()`
+    // spread the base description onto aliases — so `tools/list` served 488 chars with the
+    // steering hint and `/capabilities` served 346 without it. Two derivations, one of them
+    // silently wrong. Behaviour here is unchanged: the resolver returns exactly
+    // `TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX` for this name.
+    servedDescription('get_trade_signal') ?? TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX,
     TRADE_CALL_SCHEMA,
     { title: 'Trade Signal', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
     makeTradeCallHandler('get_trade_signal')
