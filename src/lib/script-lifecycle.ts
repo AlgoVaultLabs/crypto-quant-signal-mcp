@@ -75,15 +75,48 @@ function posInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/** Await `closeDbAsync()` but never block exit longer than `ms`. */
+/**
+ * Flush one stdio stream's queued writes.
+ *
+ * `process.exit()` TRUNCATES a pending asynchronous write, and a write to a PIPE turns
+ * asynchronous the moment it exceeds the pipe buffer (64 KB on Linux). A write to a FILE is
+ * synchronous and always complete — which is why this only ever bites the piped invocation, and
+ * why it never showed up in local testing. MEASURED 2026-08-24 on `dwr-baseline-report.js`, same
+ * run, same data: **65,536 bytes** through `docker exec … > file-on-host` (a pipe) versus
+ * **303,280 bytes** through `docker exec sh -c "… > file-in-container"`. Exit code was `0` both
+ * times, and the truncated JSON's only symptom was a parse error at the cut — a silent partial
+ * artifact from a job that reported success. Every `runScript` consumer printing a report larger
+ * than the pipe buffer has the same defect, so the fix belongs here and not in one report.
+ *
+ * `write('', cb)` is the flush: stream write callbacks fire in order, so a callback on an empty
+ * final write cannot run until every earlier chunk has been handed to the OS. It stays inside the
+ * caller's bounded race, so an unread pipe costs the drain grace and never a hang.
+ */
+function flushStream(s: NodeJS.WriteStream): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (!s || s.destroyed || s.writableEnded) return resolve();
+    try {
+      s.write('', () => resolve());
+    } catch {
+      resolve(); // EPIPE / closed reader — nothing left to flush, and never a reason to block exit
+    }
+  });
+}
+
+/** Await `closeDbAsync()` + the stdio flush, but never block exit longer than `ms`. */
 async function drainWithTimeout(label: string, ms: number): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<'timeout'>((resolve) => {
     timer = setTimeout(() => resolve('timeout'), ms);
     timer.unref?.();
   });
+  const drained = Promise.all([
+    closeDbAsync(),
+    flushStream(process.stdout),
+    flushStream(process.stderr),
+  ]);
   try {
-    const outcome = await Promise.race([closeDbAsync().then(() => 'drained' as const), timeout]);
+    const outcome = await Promise.race([drained.then(() => 'drained' as const), timeout]);
     if (outcome === 'timeout') {
       console.error(`[script-lifecycle] DRAIN_TIMEOUT label=${label} after ${ms}ms — exiting anyway`);
     }
