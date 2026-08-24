@@ -93,7 +93,7 @@ Under the hood, a self-tuning model fuses momentum, trend structure, derivatives
     { "coin": "SOL", "timeframe": "15m", "confidence": 73 }
   ],
   "_algovault": {
-    "version": "1.28.0",
+    "version": "1.28.1",
     "tool": "get_trade_call",
     "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
   }
@@ -259,6 +259,8 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 - **🎛️ The published `exchange` list matches what we actually serve.** `get_trade_call`, `get_trade_signal`, `get_market_regime` and `scan_trade_calls` advertise only publicly supported venues, so an agent can trust the enum it reads. **Breaking:** `EDGEX` and `WEEX` are no longer accepted — see *Upgrading from v1.27.x* below.
 - **📘 Two parameters that were always there, now documented.** `assetClass` on the trade-call tools and `minLiquidityUsd` on `scan_trade_calls`. Both project from the live schema, so the docs can't drift from the server — and `_receipts` fields are documented from real responses.
 - **📗 [The docs](https://algovault.com/docs) answer the question instead of pointing at it.** Every `rankBy` lens is documented, REST is as complete as MCP, there's a proper error-code reference, and the copy-paste samples run exactly as written — CI re-checks them against the live API on every deploy.
+
+- **v1.28.1** — clearer tool descriptions for agent tool-selection; `get_trade_signal` now steers new integrations to `get_trade_call`.
 
 **Upgrading from v1.27.x** — one breaking change: `EDGEX` and `WEEX` are no longer valid `exchange` values and now return `-32602`. No tool was added or renamed. Check any hard-coded `exchange` value against the published enum, and read `_algovault.auth` if you branch on auth failures.
 
