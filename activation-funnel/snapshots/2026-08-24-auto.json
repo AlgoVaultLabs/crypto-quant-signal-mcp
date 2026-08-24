@@ -1,0 +1,231 @@
+{
+  "generated_at": "2026-08-24T10:05:17.055Z",
+  "window": {
+    "from": "2026-08-10T10:05:16.100Z",
+    "to": "2026-08-24T10:05:16.100Z"
+  },
+  "sessions": {
+    "total": 88,
+    "unique_ips": 88,
+    "new_in_window": 88
+  },
+  "funnel": {
+    "install": 3526,
+    "first_call": 88,
+    "second_call": 84,
+    "fifth_plus_call": 29,
+    "first_non_hold_verdict": 10,
+    "track_record_viewed": 22,
+    "landing_cta_clicked": 15,
+    "paid_upgrade": 3,
+    "mcp_tools_list": 445,
+    "quota_hit_soft": 18,
+    "quota_hit_hard": 16,
+    "quota_hit_block": 20,
+    "upgrade_cta_clicked": 0,
+    "stripe_checkout_started": 127,
+    "tg_bot_start": 19,
+    "tg_bot_first_command": 4,
+    "tg_bot_watchlist_add": null,
+    "tg_bot_quota_hit": 0,
+    "tg_bot_upgrade_clicked": null
+  },
+  "paid_upgrade_detail": {
+    "stripe_tier_sessions": 2,
+    "x402_settled_wallets": 1,
+    "unit_note": "stripe_tier_sessions counts SESSIONS (agent_sessions.tiers_seen, windowed on first_seen epoch-ms); x402_settled_wallets counts DISTINCT EXTERNAL PAYER WALLETS whose payment SETTLED (processed_x402_payments, windowed on created_at, operator self-settlement excluded). The two share no join key, so paid_upgrade is their sum, not a single population. Base/USDC rail only — OKX a2mcp settlements are not in this ledger."
+  },
+  "conversion": {
+    "install_to_first_call": 0.024957458876914352,
+    "first_to_second": 0.9545454545454546,
+    "second_to_fifth": 0.34523809523809523,
+    "fifth_to_paid": 0.10344827586206896
+  },
+  "stage_retentions": {
+    "install_to_mcp_tools_list": 0.12620533182076007,
+    "mcp_tools_list_to_first_call": 0.19775280898876405,
+    "first_call_to_quota_hit_soft": 0.20454545454545456,
+    "quota_hit_soft_to_quota_hit_hard": 0.8888888888888888,
+    "quota_hit_hard_to_quota_hit_block": null,
+    "quota_hit_block_to_upgrade_cta_clicked": 0,
+    "upgrade_cta_clicked_to_stripe_checkout_started": null,
+    "stripe_checkout_started_to_paid_upgrade": 0.023622047244094488,
+    "paid_upgrade_to_tg_bot_start": null,
+    "tg_bot_start_to_tg_bot_first_command": 0.21052631578947367,
+    "tg_bot_first_command_to_tg_bot_watchlist_add": null,
+    "tg_bot_watchlist_add_to_tg_bot_quota_hit": null,
+    "tg_bot_quota_hit_to_tg_bot_upgrade_clicked": null
+  },
+  "stage_ratio_anomalies": [
+    {
+      "from": "quota_hit_hard",
+      "to": "quota_hit_block",
+      "from_count": 16,
+      "to_count": 20,
+      "ratio": 1.25,
+      "reason": "quota_hit_block exceeds quota_hit_hard, so these stages are not sequential — a session can reach quota_hit_block without ever emitting quota_hit_hard. Not a retention; reported here instead."
+    },
+    {
+      "from": "paid_upgrade",
+      "to": "tg_bot_start",
+      "from_count": 3,
+      "to_count": 19,
+      "ratio": 6.333333333333333,
+      "reason": "tg_bot_start exceeds paid_upgrade, so these stages are not sequential — a session can reach tg_bot_start without ever emitting paid_upgrade. Not a retention; reported here instead."
+    }
+  ],
+  "weakest_stage_transition": {
+    "from": "quota_hit_block",
+    "to": "upgrade_cta_clicked",
+    "retention": 0
+  },
+  "stick_rate": 0.9545454545454546,
+  "time_to_first_call_ms": {
+    "p50": 7260.5,
+    "p90": 66600481.2
+  },
+  "tool_call_distribution": {
+    "get_trade_signal": 25,
+    "get_market_regime": 11764,
+    "scan_funding_arb": 23,
+    "other": 55335
+  },
+  "hold_rate_get_trade_signal": 1,
+  "tier_cohort_sizes": {
+    "free": 98,
+    "starter": 2,
+    "pro": 2,
+    "enterprise": 0,
+    "x402": 1
+  },
+  "by_source": [
+    {
+      "source": "unknown",
+      "connects": 555,
+      "deterministic": 0,
+      "first_call": 88,
+      "conversion": 2
+    },
+    {
+      "source": "claude",
+      "connects": 19,
+      "deterministic": 0,
+      "first_call": 0,
+      "conversion": 0
+    }
+  ],
+  "identity_coverage": {
+    "identified": 1,
+    "fallback": 573,
+    "anonymous": 0,
+    "coverage_pct": 0.0017421602787456446
+  },
+  "by_authenticity": {
+    "raw_denominator": 574,
+    "human_denominator": 232,
+    "automated_count": 342,
+    "human_first_call_pct": 0.31896551724137934
+  },
+  "quota_wall_split": {
+    "stages": [
+      {
+        "event_type": "quota_hit_soft",
+        "sessions": {
+          "daily": 16,
+          "monthly": 7,
+          "unknown": 2
+        },
+        "rows": {
+          "daily": 170,
+          "monthly": 95,
+          "unknown": 40
+        },
+        "multi_bucket_sessions": 7,
+        "discriminator_cutover": {
+          "absent_until": "2026-08-14T05:01:54.732Z",
+          "live_since": "2026-08-15T21:39:50.063Z"
+        },
+        "window_predates_cutover": true
+      },
+      {
+        "event_type": "quota_hit_hard",
+        "sessions": {
+          "daily": 14,
+          "monthly": 4,
+          "unknown": 2
+        },
+        "rows": {
+          "daily": 161,
+          "monthly": 73,
+          "unknown": 40
+        },
+        "multi_bucket_sessions": 4,
+        "discriminator_cutover": {
+          "absent_until": "2026-08-14T06:02:02.952Z",
+          "live_since": "2026-08-15T22:39:54.581Z"
+        },
+        "window_predates_cutover": true
+      },
+      {
+        "event_type": "quota_hit_block",
+        "sessions": {
+          "daily": 17,
+          "monthly": 9,
+          "unknown": 0
+        },
+        "rows": {
+          "daily": 2902,
+          "monthly": 50349,
+          "unknown": 0
+        },
+        "multi_bucket_sessions": 6,
+        "discriminator_cutover": {
+          "absent_until": "2026-08-09T08:32:21.957Z",
+          "live_since": "2026-08-09T08:35:52.505Z"
+        },
+        "window_predates_cutover": false
+      }
+    ],
+    "pooled": {
+      "sessions": {
+        "daily": 17,
+        "monthly": 9,
+        "unknown": 2
+      },
+      "rows": {
+        "daily": 3063,
+        "monthly": 50422,
+        "unknown": 40
+      },
+      "multi_bucket_sessions": 6,
+      "distinct_sessions": 20
+    },
+    "claim": {
+      "claims": 1,
+      "with_inherited_usage": 1,
+      "inherited_usage_total": 115,
+      "inherited_usage_max": 115,
+      "first_claim_at": "2026-08-16T07:44:49.919Z"
+    },
+    "pending": [
+      {
+        "id": "keyed_vs_keyless",
+        "question": "Do callers who CLAIMED a free key hit the wall differently from anonymous ones?",
+        "blocker": "`funnel_events.session_id` never carries an `av_free_` key — it is the resolved analytics identity (track token / ipHash / uuid), which is a different namespace from the quota key. There is no join from a walled session to a claimed key.",
+        "evidence": "measured live this window: 0 of 22 distinct quota-stage sessions carry an `av_free_` prefix"
+      },
+      {
+        "id": "wall_to_paid",
+        "question": "Does a daily wall convert to payment at a different rate than a monthly one?",
+        "blocker": "`processed_x402_payments` carries no `session_id` (nonce · tool · amount · created_at · payer_wallet · settlement_state · rail · settlement_ref), so a payment cannot be attributed to the wall that preceded it. The existing quota→paid rate is already unit-approximate (walled SESSIONS vs paying WALLETS); splitting it by wall would multiply that approximation rather than resolve it.",
+        "evidence": "structural — the join column does not exist on either side"
+      }
+    ],
+    "unit_note": "sessions = DISTINCT session_id (the rate basis, same unit as the canonical stages). rows = raw event count, VOLUME ONLY — never a rate denominator, because a handful of sessions produce most rows. Buckets do NOT sum to the stage total: a session that hits both walls is counted in both (see multi_bucket_sessions).",
+    "cutover_note": "Each stage carries its OWN bounds, derived from data, never a shared deploy timestamp. The true cutover lies between absent_until and live_since; live_since is traffic-bounded (the first caller to trip that wall after the deploy), so it is an upper bound and not the deploy instant."
+  },
+  "warnings": [
+    "unknown license_tier 'internal' in request_log — ignored",
+    "bot SQLite watchlists count failed: Command failed: sqlite3 -readonly /var/lib/algovault-bot/state.db \"SELECT COUNT(DISTINCT chat_id) FROM watchlists WHERE created_at >= '2026-08-10T10:05:16.100Z' AND created_at <= '2026-08-24T10:05:16.100Z';\"\nError: in prepare, no such column: created_at\n  ECT COUNT(DISTINCT chat_id) FROM watchlists WHERE created_at >= '2026-08-10T10\n                                      error here ---^\n"
+  ]
+}
