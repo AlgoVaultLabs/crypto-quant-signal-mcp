@@ -110,11 +110,11 @@ tailwind.config = { theme: { extend: { colors: {
     <div class="eyebrow">MCP tools for LlamaIndex</div>
     <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">What's a LlamaIndex setup for quant trading <span style="color:#5BEEB3">research</span>?</h1>
 
-    <p class="lede">AlgoVault is the verified call layer a LlamaIndex research stack queries for crypto trade calls. Add <code>get_trade_call</code> as a tool, and your stack gets a composite verdict per call instead of training its own model. It posts a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> verified calls, each Merkle-anchored on Base L2. You query the call layer; you don't build the trading model.</p>
+    <p class="lede">AlgoVault is the verified call layer a LlamaIndex research stack queries for crypto trade calls. Add <code>get_trade_call</code> as a tool, and your stack gets a composite verdict per call instead of training its own model. It posts a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">508,268</span> verified calls, each Merkle-anchored on Base L2. You query the call layer; you don't build the trading model.</p>
 
     <h2>What does the stack look like?</h2>
     <p>Retrieval and reasoning stay in LlamaIndex. The trading read is one tool call. Your stack indexes its own context, then queries <code>get_trade_call</code> for the verified verdict when it needs a directional read.</p>
-    <p>The verdict is composite across <span data-tr-field="exchange_count">5</span> perpetual-futures venues, so the stack reads one call rather than maintaining venue connectors and a model.</p>
+    <p>The verdict is composite across <span data-tr-field="exchange_count">15</span> perpetual-futures venues, so the stack reads one call rather than maintaining venue connectors and a model.</p>
 
     <h2>Why not train your own model?</h2>
     <p>Building a trading model means data pipelines, labeling, retraining, and drift monitoring. AlgoVault maintains that substrate and publishes the record on-chain. Your stack calls a maintained verdict and stays focused on retrieval and reasoning.</p>

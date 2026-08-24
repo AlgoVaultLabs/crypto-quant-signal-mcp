@@ -4649,7 +4649,7 @@ ${renderSiteNav()}
      (matches Cross-Venue ↔ On-Chain Verified visual gap per Mr.1 directive). -->
 <div class="space-y-2 mb-8">
   <h1 class="text-5xl sm:text-6xl font-semibold tracking-tight" style="color:var(--fg)">Live <span class="text-mint-400">Track Record</span></h1>
-  <p class="text-sm" style="color:#5BEEB3">v<span data-tr-field="pkg_version">${PKG_VERSION}</span> &middot; <span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> Exchanges &middot; <span data-tr-field="asset_count">736</span> assets</p>
+  <p class="text-sm" style="color:#5BEEB3">v<span data-tr-field="pkg_version">${PKG_VERSION}</span> &middot; <span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> Exchanges &middot; <span data-tr-field="asset_count">&mdash;</span> assets</p>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
@@ -5133,6 +5133,20 @@ async function load() {
     var r = await fetch(PERF_URL, { credentials: 'same-origin' });
     var d = await r.json();
     cachedData = d;
+
+    // EXTERNAL-SURFACE-PARITY-W1 CH2b: hydrate the subtitle's asset count from the payload we
+    // already have. This span was a HARDCODED 736 against a live 1,748 — a public number with no
+    // producer, frozen at its authoring date on the one page whose entire pitch is verifiability.
+    // It is NOT routed through the deploy-time injector: that operates on landing/*.html files and
+    // /track-record is function-rendered from this module, so there is no file for it to patch.
+    // Pre-load it now reads the page's own &mdash; placeholder convention, exactly as
+    // merkle_batch_count / latest_batch_at do, so a fetch failure shows a placeholder rather than
+    // a confident wrong number.
+    if (typeof d.asset_count === 'number') {
+      document.querySelectorAll('[data-tr-field="asset_count"]').forEach(function(el){
+        el.textContent = d.asset_count.toLocaleString();
+      });
+    }
 
     // Tier filter tabs
     var ttEl = document.getElementById('tier-tabs');

@@ -1,7 +1,16 @@
 {
-  "_comment": "The RATCHET for scripts/check-claim-coverage.mjs's COV-1/COV-3 span checks (EXTERNAL-SURFACE-PARITY-W1 CH1). Every span defect that cannot be closed yet is ENUMERATED here with an owner and a revisit date; anything NOT listed FAILS today, so a regression is blocked from day one while the backlog drains. This is a ratchet, not warn-mode: nothing is silently tolerated, and the gate still prints every held row on every run.",
+  "_comment": "The RATCHET for scripts/check-claim-coverage.mjs's COV-1/COV-3 span checks (EXTERNAL-SURFACE-PARITY-W1 CH1). Every span defect that cannot be closed yet is ENUMERATED here with an owner and a revisit date; anything NOT listed FAILS today, so a regression is blocked from day one while the backlog drains. This is a ratchet, not warn-mode: nothing is silently tolerated, and the gate PRINTS every held row on every run.",
   "_schema": "kind: 'cov1' (a span with no producer — needs file+field) | 'cov3' (a field carrying more than one meaning across the corpus — needs field). reason: why it cannot be closed in this wave. owner: the wave that closes it. revisit: YYYY-MM-DD.",
-  "_ratchet": "max_rows may only be LOWERED. The gate FAILS if rows.length exceeds it, so the list cannot grow to absorb a new defect. A row whose defect is gone is reported STALE on every run so it gets removed.",
-  "max_rows": 0,
-  "rows": []
+  "_ratchet": "max_rows may only be LOWERED. The gate FAILS if rows.length exceeds it, so the list cannot grow to absorb a new defect. A row whose defect is gone is reported STALE on every run so it gets removed. CH2 took this from a pristine 8 defects (1 COV-1 + 1 COV-3a + 6 COV-3) to 1 by widening the manifest to the full corpus — 91 new (claim,file) pairings, every one verified to match at least one literal.",
+  "max_rows": 1,
+  "rows": [
+    {
+      "kind": "cov1",
+      "file": "landing/verify.html",
+      "field": "next_batch_in",
+      "reason": "A DEAD HOOK, not a stale number — and the distinction is why it is held rather than fixed here. Nothing anywhere sets it: it is absent from landing/js/track-record-proxy.js's setField list, has no inline populator and no manifest claim, so it renders its '&mdash;' placeholder permanently. That is honest (it publishes no figure and therefore violates no numerical-citation rule) but it is still a promise of liveness the page does not keep. Closing it means EITHER teaching the shared populator to compute a countdown from /api/merkle-batches.next_publish_at, OR deleting the span — both are edits to landing/** or the populator, which this wave's own firewall forbids in every chapter. Deliberately not smuggled in under C2c: the re-baker writes literals, and inventing a claim shape for a value the SoT does not serve is exactly the mid-chapter invention C2d says to HALT on.",
+      "owner": "OPS-VERIFY-NEXT-BATCH-COUNTDOWN-W{NEXT}",
+      "revisit": "2026-09-24"
+    }
+  ]
 }

@@ -110,7 +110,7 @@ tailwind.config = { theme: { extend: { colors: {
     <div class="eyebrow">Python + MCP quickstart</div>
     <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">How do you build a crypto trading <span style="color:#5BEEB3">agent in Python</span>?</h1>
 
-    <p class="lede">Build a Python agent by wiring an MCP client to AlgoVault for trade calls. One call returns a composite verdict — direction, confidence, regime — with a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> Merkle-anchored calls. Your agent reads the verdict and acts.</p>
+    <p class="lede">Build a Python agent by wiring an MCP client to AlgoVault for trade calls. One call returns a composite verdict — direction, confidence, regime — with a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">508,268</span> Merkle-anchored calls. Your agent reads the verdict and acts.</p>
 
     <div class="note"><strong>Scope:</strong> AlgoVault is the call layer your agent queries, not the agent framework or the executor. You call <code>get_trade_call</code> for the verdict; your code handles execution, sizing, and risk.</div>
 
@@ -129,7 +129,7 @@ async with streamablehttp_client("https://api.algovault.com/mcp") as (r, w, _):
 
     <h2>What does AlgoVault handle, and what do you?</h2>
     <ul>
-      <li><strong>AlgoVault returns</strong> the interpreted verdict: direction, confidence, regime, and factors across <span data-tr-field="exchange_count">5</span> venues.</li>
+      <li><strong>AlgoVault returns</strong> the interpreted verdict: direction, confidence, regime, and factors across <span data-tr-field="exchange_count">15</span> venues.</li>
       <li><strong>You build</strong> the agent loop, execution against your exchange or broker, position sizing, and risk limits.</li>
     </ul>
     <p>This split keeps your agent thin: no factor engineering, no per-venue normalization, no track-record bookkeeping. See the <a href="https://modelcontextprotocol.io/" rel="noopener noreferrer" target="_blank">Model Context Protocol</a> spec and the <a href="https://algovault.com/docs.html">docs</a> for client setup.</p>

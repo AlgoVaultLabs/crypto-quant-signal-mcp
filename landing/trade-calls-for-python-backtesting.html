@@ -110,7 +110,7 @@ tailwind.config = { theme: { extend: { colors: {
     <div class="eyebrow">Backtesting + verified calls</div>
     <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">Where do verified trade calls fit in a Python <span style="color:#5BEEB3">backtest</span>?</h1>
 
-    <p class="lede">AlgoVault is the verified trade-call source your Python backtest reads, not a backtester. It returns one composite verdict per call — direction, confidence, regime — with a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> calls, each Merkle-anchored on Base L2. Your library runs the test against that series.</p>
+    <p class="lede">AlgoVault is the verified trade-call source your Python backtest reads, not a backtester. It returns one composite verdict per call — direction, confidence, regime — with a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">508,268</span> calls, each Merkle-anchored on Base L2. Your library runs the test against that series.</p>
 
     <div class="note"><strong>Scope:</strong> AlgoVault is <strong>not a backtester</strong>. Point your Backtrader or vectorbt loop at the on-chain-verifiable call series; AlgoVault never runs the backtest or places trades.</div>
 
@@ -127,7 +127,7 @@ if verdict["call"] == "BUY" and verdict["confidence"] >= 60:
     strategy.buy()        # Backtrader / vectorbt / your own loop</code></pre>
 
     <h2>How are the calls verified, so the backtest is honest?</h2>
-    <p>Each call is hashed and published on <a href="https://www.base.org/" rel="noopener noreferrer" target="_blank">Base L2</a> before its outcome is known. That removes hindsight: you cannot tune a strategy against verdicts that were edited after the market moved, because they were fixed beforehand. Recompute any hash at <a href="https://algovault.com/verify">/verify</a> across <span data-tr-field="exchange_count">5</span> venues.</p>
+    <p>Each call is hashed and published on <a href="https://www.base.org/" rel="noopener noreferrer" target="_blank">Base L2</a> before its outcome is known. That removes hindsight: you cannot tune a strategy against verdicts that were edited after the market moved, because they were fixed beforehand. Recompute any hash at <a href="https://algovault.com/verify">/verify</a> across <span data-tr-field="exchange_count">15</span> venues.</p>
 
     <h2>Which backtesting libraries pair with it?</h2>
     <p>Any Python library — <a href="https://github.com/mementum/backtrader" rel="noopener noreferrer" target="_blank">Backtrader</a>, vectorbt, or a custom loop. AlgoVault returns the verdict; the library handles fills, slippage, and metrics. See the <a href="https://algovault.com/docs.html">docs</a> for the response shape.</p>

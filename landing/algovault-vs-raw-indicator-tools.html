@@ -114,7 +114,7 @@ tailwind.config = { theme: { extend: { colors: {
     <div class="eyebrow">Comparison</div>
     <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">AlgoVault vs raw-indicator tools: one verdict or eight <span style="color:#5BEEB3">indicators</span>?</h1>
 
-    <p class="lede">Raw-indicator tools hand back series you interpret. AlgoVault returns one composite verdict — direction, confidence, regime — across five perpetual-futures venues, with a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> on-chain-verified calls. For an AI agent, one verdict beats eight raw indicators.</p>
+    <p class="lede">Raw-indicator tools hand back series you interpret. AlgoVault returns one composite verdict — direction, confidence, regime — across five perpetual-futures venues, with a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">508,268</span> on-chain-verified calls. For an AI agent, one verdict beats eight raw indicators.</p>
 
     <h2>How do they compare?</h2>
     <table>
@@ -122,7 +122,7 @@ tailwind.config = { theme: { extend: { colors: {
       <tbody>
         <tr><td>Output</td><td>RSI, funding, OI series</td><td>One verdict: call + confidence + regime</td></tr>
         <tr><td>Interpretation</td><td>You or your agent</td><td>Done before the agent reads it</td></tr>
-        <tr><td>Venues per call</td><td>One feed at a time</td><td><span data-tr-field="exchange_count">5</span> perp venues in one call</td></tr>
+        <tr><td>Venues per call</td><td>One feed at a time</td><td><span data-tr-field="exchange_count">15</span> perp venues in one call</td></tr>
         <tr><td>Factors exposed</td><td>Raw only</td><td>Verdict plus the factors behind it</td></tr>
         <tr><td>Track record</td><td>None to verify</td><td>Merkle-anchored on Base L2; <code>/verify</code></td></tr>
       </tbody>

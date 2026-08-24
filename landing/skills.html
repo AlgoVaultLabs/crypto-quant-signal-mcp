@@ -74,7 +74,7 @@ tailwind.config = {
   "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com", "logo": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 } },
   "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
-  "description": "20 Anthropic Agent Skills wrapping AlgoVault MCP. Composite trading verdicts (91.8%+ Merkle-verified PFE Win Rate), funding-arb monitoring. One install: claude plugin install AlgoVaultLabs/algovault-skills",
+  "description": "20 Anthropic Agent Skills wrapping AlgoVault MCP. Composite trading verdicts (91.7%+ Merkle-verified PFE Win Rate), funding-arb monitoring. One install: claude plugin install AlgoVaultLabs/algovault-skills",
   "proficiencyLevel": "Beginner|Intermediate|Advanced|Expert",
   "about": { "@type": "Thing", "name": "Anthropic Agent Skills for crypto trading agents via Model Context Protocol" }
 }
@@ -105,12 +105,12 @@ tailwind.config = {
     { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "100,000 calls/month (up to 10,000/day)", "url": "https://api.algovault.com/signup?plan=pro" }
   ],
   "additionalProperty": [
-    { "@type": "PropertyValue", "name": "PFE win rate", "value": "91.8%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "456707" },
-    { "@type": "PropertyValue", "name": "Asset count", "value": "1559" },
+    { "@type": "PropertyValue", "name": "PFE win rate", "value": "91.7%" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "508268" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "1748" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "15" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
-    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "100" },
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "136" },
     { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-08-09" }
   ]
 }
@@ -166,7 +166,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 91.8% PFE win rate across 456707 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 91.7% PFE win rate across 508268 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@id": "https://algovault.com/#organization" },
   "inLanguage": "en"
 }
@@ -346,7 +346,7 @@ tailwind.config = {
 
     <!-- WEBSITE-REFRESH-CLEANUP-W1 R1 dedup: prior version had this paragraph repeated (lines 125-126 byte-identical to 122-123) — same root cause as the index.html dup. One <p class="quotable-fact"> per page is sufficient. -->
     <p class="quotable-fact text-emerald-400/90 text-sm mt-4 max-w-2xl mx-auto" itemscope itemtype="https://schema.org/Claim">
-      <span itemprop="claimReviewed">AlgoVault Skills wrap a composite-verdict API with <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">91.7%</span>+ PFE Win Rate across <span data-tr-field="call_count" class="text-emerald-300 font-semibold">56,375</span>+ Merkle-anchored trade calls (verifiable at <a href="/track-record" itemprop="url" class="text-mint-400 hover:underline">algovault.com/track-record</a>).</span>
+      <span itemprop="claimReviewed">AlgoVault Skills wrap a composite-verdict API with <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">91.7%</span>+ PFE Win Rate across <span data-tr-field="call_count" class="text-emerald-300 font-semibold">508,268</span>+ Merkle-anchored trade calls (verifiable at <a href="/track-record" itemprop="url" class="text-mint-400 hover:underline">algovault.com/track-record</a>).</span>
     </p>
     <p class="text-gray-500 text-xs mt-3">
       &#x1f517; Every Skill invocation is <strong>Merkle-anchored on Base L2</strong>. Track record:
@@ -614,8 +614,8 @@ tailwind.config = {
     <h2 class="text-2xl font-bold text-white text-center mb-8">Why Skills?</h2>
     <ul class="space-y-3 text-gray-300 text-sm">
       <li class="flex items-start gap-3"><span class="text-mint-400 mt-1">&diams;</span><span><strong class="text-white">Composite verdict, not raw indicators.</strong> Every Skill returns a single direction + confidence + regime, fused from RSI / EMA / funding / OI / volume + cross-venue context.</span></li>
-      <li class="flex items-start gap-3"><span class="text-mint-400 mt-1">&diams;</span><span><strong class="text-white">Cross-venue intelligence.</strong> Funding spreads, regime alignment, sentiment fused across <span data-tr-field="exchange_count">5</span> exchanges (Hyperliquid, Binance, OKX, Bybit, Bitget) &mdash; not derivable from any single-venue API.</span></li>
-      <li class="flex items-start gap-3"><span class="text-mint-400 mt-1">&diams;</span><span><strong class="text-white">Merkle-verified.</strong> Every signal anchored to Base L2 via on-chain Merkle proof. <span data-tr-field="call_count">56,375</span>+ calls, <span data-tr-field="batch_count">16</span>+ batches at last snapshot. Verifiable accuracy, not a marketing claim.</span></li>
+      <li class="flex items-start gap-3"><span class="text-mint-400 mt-1">&diams;</span><span><strong class="text-white">Cross-venue intelligence.</strong> Funding spreads, regime alignment, sentiment fused across <span data-tr-field="exchange_count">15</span> exchanges (Hyperliquid, Binance, OKX, Bybit, Bitget) &mdash; not derivable from any single-venue API.</span></li>
+      <li class="flex items-start gap-3"><span class="text-mint-400 mt-1">&diams;</span><span><strong class="text-white">Merkle-verified.</strong> Every signal anchored to Base L2 via on-chain Merkle proof. <span data-tr-field="call_count">508,268</span>+ calls, <span data-tr-field="batch_count">136</span>+ batches at last snapshot. Verifiable accuracy, not a marketing claim.</span></li>
       <li class="flex items-start gap-3"><span class="text-mint-400 mt-1">&diams;</span><span><strong class="text-white">Install once, use everywhere.</strong> One <code>claude plugin install</code> &mdash; the whole pack ships, slug-named, manifest-driven, MIT licensed.</span></li>
     </ul>
 

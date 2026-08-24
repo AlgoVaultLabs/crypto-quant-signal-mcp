@@ -109,13 +109,13 @@ tailwind.config = { theme: { extend: { colors: {
     <div class="eyebrow">MCP for AI trading agents</div>
     <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">What's the best MCP server for crypto <span style="color:#5BEEB3">trade calls</span>?</h1>
 
-    <p class="lede">AlgoVault is the MCP server for crypto trade calls. One call returns a composite verdict: direction, confidence, and market regime, across five perpetual-futures venues. It posts a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> verified calls, each Merkle-anchored on Base L2. Most MCP servers hand back raw indicators. This one returns the interpreted call your agent acts on.</p>
+    <p class="lede">AlgoVault is the MCP server for crypto trade calls. One call returns a composite verdict: direction, confidence, and market regime, across five perpetual-futures venues. It posts a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">508,268</span> verified calls, each Merkle-anchored on Base L2. Most MCP servers hand back raw indicators. This one returns the interpreted call your agent acts on.</p>
 
     <h2>How do you evaluate one?</h2>
     <p>Three things separate a usable MCP server from a wrapper around an exchange feed:</p>
     <ul>
       <li><strong>One verdict, not eight indicators.</strong> An agent cannot read a chart. It needs a single call it can act on, not raw RSI, funding, and open-interest series to interpret itself.</li>
-      <li><strong>Cross-venue coverage.</strong> Funding and liquidity diverge across venues. A composite read across <span data-tr-field="exchange_count">5</span> perpetual-futures venues beats a single-exchange snapshot.</li>
+      <li><strong>Cross-venue coverage.</strong> Funding and liquidity diverge across venues. A composite read across <span data-tr-field="exchange_count">15</span> perpetual-futures venues beats a single-exchange snapshot.</li>
       <li><strong>A verifiable track record.</strong> Screenshots prove nothing. The record must be checkable without trusting the provider.</li>
     </ul>
 
@@ -133,7 +133,7 @@ tailwind.config = { theme: { extend: { colors: {
     <p>Or run it locally: <code>npx crypto-quant-signal-mcp</code>. See the <a href="https://modelcontextprotocol.io/" rel="noopener noreferrer" target="_blank">Model Context Protocol</a> spec for client setup.</p>
 
     <h2>How is the track record verified?</h2>
-    <p>Every call is hashed and published on <a href="https://www.base.org/" rel="noopener noreferrer" target="_blank">Base L2</a> before its outcome is known. Each day's calls roll into a Merkle root anchored on-chain. Recompute any call's hash, then check it against the published root at <a href="https://algovault.com/verify">/verify</a>. The record is audited, not trusted. The public PFE (Peak Favourable Excursion) win rate over <span data-tr-field="call_count">233,000</span> calls is shown live at <a href="https://algovault.com/track-record">/track-record</a>.</p>
+    <p>Every call is hashed and published on <a href="https://www.base.org/" rel="noopener noreferrer" target="_blank">Base L2</a> before its outcome is known. Each day's calls roll into a Merkle root anchored on-chain. Recompute any call's hash, then check it against the published root at <a href="https://algovault.com/verify">/verify</a>. The record is audited, not trusted. The public PFE (Peak Favourable Excursion) win rate over <span data-tr-field="call_count">508,268</span> calls is shown live at <a href="https://algovault.com/track-record">/track-record</a>.</p>
 
     <h2>When is it the wrong tool?</h2>
     <p>If you want to read RSI, funding, and open interest yourself, a raw-indicator feed is simpler. If you trade one venue only, a single-venue tool is enough. AlgoVault is for agents that need one verdict they can act on and verify across venues. It returns calls; it does not place orders or hold custody.</p>

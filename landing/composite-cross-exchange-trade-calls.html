@@ -110,13 +110,13 @@ tailwind.config = { theme: { extend: { colors: {
     <div class="eyebrow">Composite trade calls for agents</div>
     <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">Where do you get composite cross-exchange quant trade <span style="color:#5BEEB3">calls</span>?</h1>
 
-    <p class="lede">AlgoVault returns one composite cross-exchange trade call from a single MCP call. <code>get_trade_call</code> blends factors across venues into one verdict: direction, confidence, and regime. It posts a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> verified calls, each Merkle-anchored on Base L2. One verdict, not eight raw indicators you merge yourself.</p>
+    <p class="lede">AlgoVault returns one composite cross-exchange trade call from a single MCP call. <code>get_trade_call</code> blends factors across venues into one verdict: direction, confidence, and regime. It posts a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">508,268</span> verified calls, each Merkle-anchored on Base L2. One verdict, not eight raw indicators you merge yourself.</p>
 
     <h2>What is a composite cross-exchange call?</h2>
     <p>It is a single directional read built from many factors. Funding, open interest, trend persistence, and breakout state collapse into one verdict per coin: BUY, SELL, or HOLD, with a confidence score and the market regime. The agent acts on the verdict, not the inputs.</p>
 
     <h2>Why read across venues?</h2>
-    <p>Funding, liquidity, and open interest diverge across exchanges. A composite read across <span data-tr-field="exchange_count">5</span> perpetual-futures venues beats a single-exchange snapshot.</p>
+    <p>Funding, liquidity, and open interest diverge across exchanges. A composite read across <span data-tr-field="exchange_count">15</span> perpetual-futures venues beats a single-exchange snapshot.</p>
     <p>You could orchestrate several single-venue tools and merge them yourself, but at material cost: more connectors, more rate limits, and no shared verdict. The trade-off is convenience and verifiability. AlgoVault returns one verified call, and publishes the record on-chain.</p>
 
     <h2>What you call</h2>

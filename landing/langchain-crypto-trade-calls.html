@@ -110,11 +110,11 @@ tailwind.config = { theme: { extend: { colors: {
     <div class="eyebrow">MCP tools for LangChain agents</div>
     <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">How do you give a LangChain agent crypto trade <span style="color:#5BEEB3">calls</span>?</h1>
 
-    <p class="lede">AlgoVault gives a LangChain agent crypto trade calls and market data through MCP tools. Bind <code>get_trade_call</code> and <code>get_market_regime</code>; the agent gets a composite verdict and the current regime, one call each. It posts a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> verified calls, each Merkle-anchored on Base L2. AlgoVault is the call and market-data layer, not the framework or executor.</p>
+    <p class="lede">AlgoVault gives a LangChain agent crypto trade calls and market data through MCP tools. Bind <code>get_trade_call</code> and <code>get_market_regime</code>; the agent gets a composite verdict and the current regime, one call each. It posts a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">508,268</span> verified calls, each Merkle-anchored on Base L2. AlgoVault is the call and market-data layer, not the framework or executor.</p>
 
     <h2>How do you bind the tools?</h2>
     <p>A LangChain agent reasons, then calls tools. You bind <code>get_trade_call</code> and <code>get_market_regime</code> to the AlgoVault MCP server. The agent calls one for a verdict, the other for context.</p>
-    <p>The verdict spans <span data-tr-field="exchange_count">5</span> perpetual-futures venues, so the agent reads one composite call rather than merging exchange feeds itself.</p>
+    <p>The verdict spans <span data-tr-field="exchange_count">15</span> perpetual-futures venues, so the agent reads one composite call rather than merging exchange feeds itself.</p>
 
     <h2>What does each tool return?</h2>
     <p><code>get_trade_call</code> returns a direction (BUY, SELL, or HOLD), a confidence score, the market regime, and the factors. <code>get_market_regime</code> returns the regime label alone: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE. The agent conditions its next step on both.</p>

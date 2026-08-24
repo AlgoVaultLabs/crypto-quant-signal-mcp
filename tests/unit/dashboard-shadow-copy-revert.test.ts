@@ -88,9 +88,20 @@ describe('REVERT-DASHBOARD-SHADOW-COPY-W1 — forbidden-phrase canary on public 
     const indexTs = readFileSync(join(REPO_ROOT, 'src/index.ts'), 'utf8');
     // After the revert: span exists, no `+` suffix on the displayed digit,
     // and no `710+` literal anywhere in the dashboard header region.
-    expect(indexTs).toMatch(/data-tr-field="asset_count">\d+<\/span>\s*assets/);
+    //
+    // EXTERNAL-SURFACE-PARITY-W1 CH2b: the fallback is now the page's own INERT `&mdash;`
+    // placeholder rather than a digit. This assertion previously REQUIRED a digit
+    // (`>\d+</span>`), which encoded the old remedy's shape and — measured — certified a
+    // HARDCODED 736 sitting against a live 1,748 as "live-bound" for months. A digit committed
+    // here is precisely the defect: nothing ever rewrote it, because the deploy-time injector
+    // operates on landing/*.html and /track-record is function-rendered from this module.
+    // So the shape is widened to accept the inert placeholder AND paired with a POSITIVE
+    // assertion that a populator actually exists — a span alone is not proof of self-healing.
+    expect(indexTs).toMatch(/data-tr-field="asset_count">(?:\d+|&mdash;)<\/span>\s*assets/);
     // Old shape: `<span data-tr-field="asset_count">710</span>+ assets`
     expect(indexTs).not.toMatch(/data-tr-field="asset_count">\d+<\/span>\+\s*assets/);
+    // The promise of liveness must be FULFILLED: something has to write this span.
+    expect(indexTs).toMatch(/querySelectorAll\('\[data-tr-field="asset_count"\]'\)/);
   });
 
   it('asset-tiers.ts Tier 3 description is simply "stocks, indices, commodities, FX" (no parenthetical)', () => {
