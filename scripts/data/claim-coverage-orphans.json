@@ -1,0 +1,7 @@
+{
+  "_comment": "The RATCHET for scripts/check-claim-coverage.mjs's COV-1/COV-3 span checks (EXTERNAL-SURFACE-PARITY-W1 CH1). Every span defect that cannot be closed yet is ENUMERATED here with an owner and a revisit date; anything NOT listed FAILS today, so a regression is blocked from day one while the backlog drains. This is a ratchet, not warn-mode: nothing is silently tolerated, and the gate still prints every held row on every run.",
+  "_schema": "kind: 'cov1' (a span with no producer — needs file+field) | 'cov3' (a field carrying more than one meaning across the corpus — needs field). reason: why it cannot be closed in this wave. owner: the wave that closes it. revisit: YYYY-MM-DD.",
+  "_ratchet": "max_rows may only be LOWERED. The gate FAILS if rows.length exceeds it, so the list cannot grow to absorb a new defect. A row whose defect is gone is reported STALE on every run so it gets removed.",
+  "max_rows": 0,
+  "rows": []
+}
