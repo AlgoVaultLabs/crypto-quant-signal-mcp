@@ -1,0 +1,122 @@
+{
+  "_doc": "EXTERNAL-SURFACE-PARITY-W1 CH3 — the SoT for every published surface OUTSIDE this repo that carries a claim derived from live /api/performance-public. Every gate this project owns lives inside crypto-quant-signal-mcp and is therefore structurally blind to a listing in someone else's catalog: that is why C3c of OPS-DOCKER-CATALOG-* corrected servers/algovault-remote/tools.json BY HAND while server.yaml and readme.md sat stale beside it, and why nothing noticed for months. Read by scripts/check-external-surface-parity.mjs. Missing, unparseable, or carrying an empty surfaces[] => EXTERNAL_SURFACE_PARITY_VERDICT=INDETERMINATE, exit 3 — never a pass.",
+
+  "_enumeration_policy": "ENUMERATE, DO NOT DETECT. A surface absent from surfaces[] is invisible to every gate we own, so the completeness of this list IS the deliverable — the canary can only ever verify what is named here. CLAUDE.md's consumer-registry LAW ('a shared primitive used by >=2 repos gets a CONSUMER REGISTRY naming every installation; detection is strictly weaker than enumeration') is applied here to PUBLISHED CLAIMS rather than to executables. Publishing a new external listing without adding its row is the defect; adding the row is the whole cost.",
+
+  "_no_producer_finding": "MEASURED 2026-08-24, and it is the substantive finding of this registry: NONE of these surfaces has a refresh producer. In-repo landing/*.html and README.md are re-baked nightly by ops/cron/snapshot-landing-daily.sh from scripts/snapshot-landing-manifest.json; nothing whatsoever re-bakes a file in a third-party catalog repo. So every row below is refresh_mechanism=MANUAL by structure, not by neglect, and the spec's alternative parity leg — 'or its refresh mechanism ran more recently than the last SoT change' — can NEVER pass for these rows. That is not a gap in the canary; it is the honest report, and it is why the figures are written in a FORWARD-STABLE rounded-down form that stays true as the values grow rather than an exact figure that re-staleens the next day.",
+
+  "_freshness_control": "raw.githubusercontent.com is CDN-cached at max-age=300 in BOTH ref forms — the ref form does NOT control freshness (CLAUDE.md, measured twice). For a verification read the control is a cache-buster or a pinned SHA. The canary appends a cache-buster query param; it deliberately does NOT pin a SHA, because pinning would make the canary verify the commit we wrote instead of the branch head anyone can push to, which is the tautology this registry exists to avoid.",
+
+  "_tolerance_vocabulary": {
+    "EXACT_ROUNDED": "The published literal must equal the live SoT value rounded to `dp` decimal places. Deliberately NOT a band: the surface publishes at 1dp, so the tightest honest statement is that it round-trips at its own stated precision, and any band wide enough to be quiet is wide enough to have accepted the real defect — 91.6% published against a live 91.71% is 0.11pp, which a 0.5pp or even 0.2pp band would have passed. A firing here is a genuine one-line correction, never noise.",
+    "FLOOR_BOUNDED": "For a monotonic count published as `<floor>+`. PASS iff floor <= live < floor + max_steps*step. The lower leg catches a SoT regression; the upper leg is the BOUNDED GAP that a bare floor lacks — CLAUDE.md: 'when two quantities should track each other, assert a BOUNDED GAP; a one-sided inequality catches only sign violations and is blind to magnitude drift.' A bare floor is exactly why `1,300+ assets` read as true against a live 1,748 and `375,000+ calls` against 508,080. `step` is the rounding granularity the literal was written at, so the bound scales with the claim instead of being a magic number. max_steps DEFAULTS TO 1 — the published floor must BE the floor of the live value at that granularity, so `1,700+` becomes due for rewrite exactly when assets reach 1,800. max_steps=2 was the first draft and is measurably too weak: `375,000+` against a live 508,080 PASSES a 2-step bound at 100k granularity, i.e. the bound would have accepted the very defect this wave exists to fix."
+  },
+
+  "surfaces": [
+    {
+      "id": "docker-mcp-registry-server-yaml",
+      "repo": "AlgoVaultFi/mcp-registry",
+      "upstream_repo": "docker/mcp-registry",
+      "path": "servers/algovault-remote/server.yaml",
+      "branch": "add-algovault-remote",
+      "pr": "https://github.com/docker/mcp-registry/pull/3892",
+      "raw_url": "https://raw.githubusercontent.com/AlgoVaultFi/mcp-registry/add-algovault-remote/servers/algovault-remote/server.yaml",
+      "surface_kind": "third-party catalog listing",
+      "refresh_mechanism": "MANUAL — no producer. Corrected only by a dispatched wave; no cron, no deploy hook, no injector reaches this repo.",
+      "owner": "AlgoVault Labs — release/listing wave",
+      "last_corrected_at": "2026-08-24T15:09:49Z",
+      "last_corrected_commit": "f87f761d",
+      "last_corrected_by": "EXTERNAL-SURFACE-PARITY-W1 CH3",
+      "fields": [
+        {
+          "name": "pfe_win_rate",
+          "sot_accessor": "overall.pfeWinRate",
+          "sot_scale": 100,
+          "published": "91.7%",
+          "extract": "(\\d{1,3}\\.\\d)% verified trading intelligence",
+          "tolerance": { "type": "EXACT_ROUNDED", "dp": 1 }
+        },
+        {
+          "name": "asset_count",
+          "sot_accessor": "asset_count",
+          "published": "1,700+",
+          "extract": "([\\d,]+)\\+ assets",
+          "tolerance": { "type": "FLOOR_BOUNDED", "floor": 1700, "step": 100, "max_steps": 1 }
+        }
+      ],
+      "forbidden": {
+        "venue_count": "Listing copy publishes no venue/exchange count (standing policy, Mr.1 2026-07-17). Asserted, not merely intended."
+      }
+    },
+    {
+      "id": "docker-mcp-registry-readme",
+      "repo": "AlgoVaultFi/mcp-registry",
+      "upstream_repo": "docker/mcp-registry",
+      "path": "servers/algovault-remote/readme.md",
+      "branch": "add-algovault-remote",
+      "pr": "https://github.com/docker/mcp-registry/pull/3892",
+      "raw_url": "https://raw.githubusercontent.com/AlgoVaultFi/mcp-registry/add-algovault-remote/servers/algovault-remote/readme.md",
+      "surface_kind": "third-party catalog listing",
+      "refresh_mechanism": "MANUAL — no producer. Same repo and same absence of any producer as the row above.",
+      "owner": "AlgoVault Labs — release/listing wave",
+      "last_corrected_at": "2026-08-24T15:09:49Z",
+      "last_corrected_commit": "f87f761d",
+      "last_corrected_by": "EXTERNAL-SURFACE-PARITY-W1 CH3",
+      "fields": [
+        {
+          "name": "pfe_win_rate",
+          "sot_accessor": "overall.pfeWinRate",
+          "sot_scale": 100,
+          "published": "91.7%",
+          "extract": "(\\d{1,3}\\.\\d)% verified accuracy",
+          "tolerance": { "type": "EXACT_ROUNDED", "dp": 1 }
+        },
+        {
+          "name": "total_calls",
+          "sot_accessor": "totalCalls",
+          "published": "500,000+",
+          "extract": "([\\d,]+)\\+ calls",
+          "tolerance": { "type": "FLOOR_BOUNDED", "floor": 500000, "step": 100000, "max_steps": 1 }
+        },
+        {
+          "name": "asset_count",
+          "sot_accessor": "asset_count",
+          "published": "1,700+",
+          "extract": "([\\d,]+)\\+ assets",
+          "tolerance": { "type": "FLOOR_BOUNDED", "floor": 1700, "step": 100, "max_steps": 1 }
+        },
+        {
+          "name": "timeframe_count",
+          "sot_accessor": "timeframe_count",
+          "published": "11",
+          "extract": "(\\d+) timeframes",
+          "tolerance": { "type": "EXACT_ROUNDED", "dp": 0 }
+        }
+      ],
+      "forbidden": {
+        "venue_count": "Listing copy publishes no venue/exchange count (standing policy, Mr.1 2026-07-17)."
+      }
+    },
+    {
+      "id": "docker-mcp-registry-tools-json",
+      "repo": "AlgoVaultFi/mcp-registry",
+      "upstream_repo": "docker/mcp-registry",
+      "path": "servers/algovault-remote/tools.json",
+      "branch": "add-algovault-remote",
+      "pr": "https://github.com/docker/mcp-registry/pull/3892",
+      "raw_url": "https://raw.githubusercontent.com/AlgoVaultFi/mcp-registry/add-algovault-remote/servers/algovault-remote/tools.json",
+      "surface_kind": "third-party catalog listing — tool descriptions",
+      "refresh_mechanism": "MANUAL — no producer. Corrected by hand in a prior wave; that hand-fix is precisely what left the two rows above stale, and is the incident this registry exists to prevent recurring.",
+      "owner": "AlgoVault Labs — release/listing wave",
+      "last_corrected_at": "2026-08-23T13:17:28Z",
+      "last_corrected_commit": "bdaa9a6b",
+      "last_corrected_by": "prior Docker-catalog wave (hand-corrected)",
+      "fields": [],
+      "assert_no_sot_figures": {
+        "enabled": true,
+        "reason": "This file carries tool descriptions, not performance claims, and its only numerals today are parameter limits and defaults (10, 25, 50, 200, 2000). An EMPTY fields[] would make the canary verify nothing for this row — a vacuity hole in the very registry built to close one. So the assertion is inverted and stays falsifiable: the file must contain NO SoT-derived figure. If a future edit puts a win-rate percentage or a five-plus-digit call/asset count in here, the canary FAILS until the figure is registered as a field with a tolerance.",
+        "note": "Drift of the tool DESCRIPTIONS themselves against live tools/list is a different subject with its own owner (tests/unit/tool-description-forward-stability.test.ts governs the in-repo side). This row asserts only the numeric-claim property."
+      }
+    }
+  ]
+}
