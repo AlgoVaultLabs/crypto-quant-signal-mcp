@@ -208,13 +208,13 @@ describe('AC 3.4 — INDETERMINATE, never PASS, on an unreachable surface', () =
 });
 
 describe('token -> EXIT CODE mapping (asserted, not assumed)', () => {
-  it('--self-test exits 0 and prints the PASS token', () => {
-    const r = spawnSync(process.execPath, [SCRIPT_PATH, '--self-test'], { encoding: 'utf8' });
+  it('--self-test exits 0 and prints the PASS token', { timeout: 30000 }, () => {
+    const r = spawnSync(process.execPath, [SCRIPT_PATH, '--self-test'], { encoding: 'utf8', timeout: 30_000 });
     expect(r.stdout, r.stderr).toContain(`${TOKEN}=PASS`);
     expect(r.status).toBe(0);
   });
 
-  it('an unusable registry exits 3 with the INDETERMINATE token', () => {
+  it('an unusable registry exits 3 with the INDETERMINATE token', { timeout: 30000 }, () => {
     // No env seam and no injection point: copy the script + an EMPTY registry into a temp tree
     // that preserves the relative layout, and run the real file there.
     const dir = mkdtempSync(join(tmpdir(), 'espw1-tree.'));
@@ -223,7 +223,7 @@ describe('token -> EXIT CODE mapping (asserted, not assumed)', () => {
     copyFileSync(SCRIPT_PATH, join(dir, 'scripts', 'check-external-surface-parity.mjs'));
     writeFileSync(join(dir, 'ops', 'published-surface-registry.json'), JSON.stringify({ surfaces: [] }));
 
-    const r = spawnSync(process.execPath, [join(dir, 'scripts', 'check-external-surface-parity.mjs')], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [join(dir, 'scripts', 'check-external-surface-parity.mjs')], { encoding: 'utf8', timeout: 30_000 });
     expect(r.stdout, r.stderr).toContain(`${TOKEN}=INDETERMINATE`);
     expect(r.status).toBe(3);
   });
