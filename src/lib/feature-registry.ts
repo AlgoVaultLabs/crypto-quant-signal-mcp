@@ -341,8 +341,17 @@ export function projectCapabilities(): { tools: PublicCapability[] } {
       ...(f.lenses ? { lenses: f.lenses } : {}),
       enabled: f.enabled,
     };
-    tools.push({ name: f.name, ...base });
-    for (const alias of f.aliases) tools.push({ name: alias, ...base });
+    // NPM-PUBLISH-v1.28.1-W1: the description is per-NAME, not per-feature, because an alias
+    // carries the steering suffix and its canonical does not. Spreading `...base` onto every
+    // alias is what made GET /capabilities serve `get_trade_signal` at 346 chars WITHOUT
+    // "Prefer get_trade_call for new integrations." while tools/list served 488 WITH it —
+    // measured live 2026-08-24. Project each name through `servedDescription`, which owns the
+    // rule; `base.description` stays as the fallback so an unresolvable name degrades exactly
+    // as before rather than to undefined.
+    tools.push({ name: f.name, ...base, description: servedDescription(f.name) ?? base.description });
+    for (const alias of f.aliases) {
+      tools.push({ name: alias, ...base, description: servedDescription(alias) ?? base.description });
+    }
   }
   return { tools };
 }
