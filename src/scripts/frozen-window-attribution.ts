@@ -167,11 +167,16 @@ async function loadSample(days: number, spec: string, buySample: number): Promis
     [spec],
   );
 
-  // BUY control: stratified to the SELL (venue, timeframe) mix so the comparison is not just a
-  // comparison of where each side happens to be emitted. Deterministic ordering via id.
+  // BUY control: stratified to the SELL (venue, timeframe) mix, so the comparison is not merely
+  // a comparison of WHERE each side happens to be emitted. The join to `cells` also restricts
+  // BUY to cells that carry SELLs at all — an unrestricted BUY arm would be a different
+  // population, not a control. Ordering by id makes the draw deterministic and re-runnable.
   const buys = await dbQuery<SignalRow>(
     `WITH cells AS (
-       SELECT s.exchange, s.timeframe, count(*)::float AS n ${base} AND s.signal = 'SELL'
+       SELECT s.exchange, s.timeframe, count(*)::float AS n
+       FROM signals s JOIN directional_labels dl ON dl.signal_id = s.id
+       WHERE dl.barrier_spec = $1 AND dl.low_vol_history = false
+         AND s.created_at > ${cutoff} AND s.signal = 'SELL'
        GROUP BY 1, 2),
      tot AS (SELECT sum(n) AS t FROM cells),
      ranked AS (
@@ -179,12 +184,14 @@ async function loadSample(days: number, spec: string, buySample: number): Promis
               dl.label, dl.mfe_return_pct, dl.mae_return_pct,
               row_number() OVER (PARTITION BY s.exchange, s.timeframe ORDER BY s.id) AS rn,
               ceil(c.n / t.t * $2) AS quota
-       ${base} AND s.signal = 'BUY'
-         AND (s.exchange, s.timeframe) IN (SELECT exchange, timeframe FROM cells))
+       FROM signals s
+       JOIN directional_labels dl ON dl.signal_id = s.id
+       JOIN cells c ON c.exchange = s.exchange AND c.timeframe = s.timeframe
+       CROSS JOIN tot t
+       WHERE dl.barrier_spec = $1 AND dl.low_vol_history = false
+         AND s.created_at > ${cutoff} AND s.signal = 'BUY')
      SELECT id, created_at, signal, exchange, coin, timeframe, label, mfe_return_pct, mae_return_pct
-     FROM ranked, tot t, cells c
-     WHERE c.exchange = ranked.exchange AND c.timeframe = ranked.timeframe AND rn <= quota
-     ORDER BY created_at`,
+     FROM ranked WHERE rn <= quota ORDER BY created_at`,
     [spec, buySample],
   );
   console.log(`[${ts()}] sample: SELL ${sells.length} · BUY ${buys.length} (stratified to the SELL venue×tf mix)`);
