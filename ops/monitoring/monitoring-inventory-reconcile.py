@@ -1113,7 +1113,115 @@ def check_alert_episode_age(registry_path=None, state_dir=None, labels=None, now
     return {"probed": probed, "findings": findings}
 
 
-def check_sot_parity(inventory_path, config, labels=None, fetch=None, read_local=None):
+# ─────────── SOT_PARITY: propagation lag is not drift (OPS-SOT-PARITY-PHASE-W1) ───────────
+#
+# 🛑 THE DEFECT THIS RETIRES. The daily reconcile samples the declaration at a FIXED time, and
+# on aoe-1 that time sits 50 minutes AFTER the last hourly sync and 10 minutes BEFORE the next.
+# Any commit landing in that 50-minute window makes the sample read DRIFTED against a host that
+# is behaving perfectly — and the next sync heals it 10 minutes later, unobserved, because the
+# alarm only looks once a day.
+#
+# MEASURED on aoe-1, 2026-08-25, from the ledger and the sync log. Every DRIFTED reading whose
+# sync-log era carries timestamps was healed by the VERY NEXT sync, +10 minutes, the same day:
+#
+#     reconcile 07:17:44Z  DRIFTED   ->  sync 07:27:01Z  SYNCED   (2026-08-17)
+#     reconcile 07:17:44Z  DRIFTED   ->  sync 07:27:01Z  SYNCED   (2026-08-20)
+#     reconcile 07:17:45Z  DRIFTED   ->  sync 07:27:01Z  SYNCED   (2026-08-23)
+#     reconcile 07:17:43Z  DRIFTED   ->  sync 07:27:01Z  SYNCED   (2026-08-24)
+#
+# 4 for 4. And 5 of the 6 DRIFTED days had the SoT commit land inside 06:27-07:17 UTC — the
+# operator's working afternoon in UTC+8, which is exactly when waves land.
+#
+# The alert body asserted the opposite in prose: *"a DRIFTED reading on two consecutive DAILY
+# runs spans >24h with ~24 hourly sync opportunities in between, so this is not propagation lag
+# — the sync is not landing."* That is a NON-SEQUITUR, and it is the reason six false pages were
+# read as an outage. Those 24 opportunities all occur AFTER each sample, and each new day brings
+# a NEW edit landing in the SAME window. Two consecutive DRIFTED days mean two consecutive days
+# with a commit in the window — not a broken sync. Rescheduling one cron would hide it; the
+# phase relationship between two independent crontab lines is not something either file asserts,
+# so it would silently regress. So the fix is to make the phase IRRELEVANT.
+#
+# THE DISCRIMINATOR — and it is exact, not heuristic. `declaration-sync.sh` now records, per
+# declaration, the sha it RESOLVED on its last attempt. Then:
+#
+#   local == sot                          -> IN_SYNC
+#   local != sot, local == resolved       -> PROPAGATION_PENDING. The host is faithfully carrying
+#                                            what the last sync fetched; the SoT has moved since.
+#                                            Reported every run, never a finding, never a page.
+#   local != sot, local != resolved       -> DRIFTED. The sync fetched something this host does
+#                                            not have. THAT is "the sync is not landing".
+#   resolved absent / stale / sync failed -> DRIFTED (unchanged). Suppression is EARNED.
+#
+# 🛑 THE SUPPRESSION IS EARNED BY A MEASUREMENT, NEVER GRANTED BY THE FIELD'S PRESENCE. Three
+# conditions must ALL hold, or the verdict falls straight back to DRIFTED: a heartbeat we could
+# read, a SUCCESSFUL last verdict, and an `attempt_at` fresh within the bound. A sync that has
+# STOPPED therefore cannot buy silence with a stale resolved-sha — and SYNC_LIVENESS, a separate
+# drift key, pages on that independently. The two checks compose; neither covers for the other.
+
+SOT_PARITY_HEARTBEAT_MAX_AGE_MIN = int(os.environ.get("SOT_PARITY_HEARTBEAT_MAX_AGE_MIN", "120"))
+
+# The heartbeat key declaration-sync.sh writes per file. Namespaced so it cannot collide with the
+# flat `attempt_at` / `verdict` keys, and so an old-format heartbeat simply has none of them.
+RESOLVED_KEY_PREFIX = "resolved:"
+
+
+def heartbeat_resolved_sha(heartbeat, declaration_name):
+    """The sha the last sync attempt RESOLVED for `declaration_name`, or None.
+
+    None on every failure mode — no heartbeat, old format, key absent, value not a sha256. None
+    means "no suppression", which is the safe direction by construction.
+    """
+    if not isinstance(heartbeat, dict):
+        return None
+    v = heartbeat.get(RESOLVED_KEY_PREFIX + declaration_name)
+    if not isinstance(v, str):
+        return None
+    v = v.strip().lower()
+    return v if len(v) == 64 and all(c in "0123456789abcdef" for c in v) else None
+
+
+def sync_attempt_is_fresh(heartbeat, now=None, max_age_minutes=None):
+    """(fresh: bool, detail: str). A stale or unparseable attempt is NOT fresh — never a pass."""
+    bound = SOT_PARITY_HEARTBEAT_MAX_AGE_MIN if max_age_minutes is None else max_age_minutes
+    if not isinstance(heartbeat, dict):
+        return False, "no heartbeat"
+    at = heartbeat.get("attempt_at")
+    stamped = _parse_stamp(at) if at else None
+    if stamped is None:
+        return False, f"attempt_at unparseable ({at!r})"
+    now = now or datetime.now(timezone.utc)
+    age = (now - stamped).total_seconds() / 60.0
+    if age > bound:
+        return False, f"last sync attempt {age:.0f}m ago, past the {bound}m bound"
+    return True, f"last sync attempt {age:.0f}m ago"
+
+
+def classify_sot_parity(local_sha, sot_sha, heartbeat, declaration_name,
+                        now=None, max_age_minutes=None):
+    """PURE. -> (verdict, detail). The ONE derivation; the finding, the ledger row and the
+    per-run line are three projections of it, never three independent re-decisions."""
+    if local_sha == sot_sha:
+        return "IN_SYNC", "the declaration this host reads is the committed one"
+    drifted = "this host is reading a declaration that is NOT the committed one"
+    resolved = heartbeat_resolved_sha(heartbeat, declaration_name)
+    if resolved is None:
+        return "DRIFTED", f"{drifted} — and the last sync recorded no resolved sha for it"
+    verdict_last = (heartbeat.get("verdict") or "").strip().upper() if isinstance(heartbeat, dict) else ""
+    if verdict_last not in ("SYNCED", "UNCHANGED"):
+        return "DRIFTED", f"{drifted} — last sync verdict was {verdict_last or '<absent>'}, not a success"
+    fresh, fresh_detail = sync_attempt_is_fresh(heartbeat, now=now, max_age_minutes=max_age_minutes)
+    if not fresh:
+        return "DRIFTED", f"{drifted} — {fresh_detail}"
+    if resolved != local_sha:
+        return "DRIFTED", (f"{drifted} — the last sync RESOLVED {resolved[:16]} but this host "
+                           f"holds {local_sha[:16]}: the sync is not landing")
+    return "PROPAGATION_PENDING", (
+        f"the SoT moved after the last sync; this host faithfully holds what that sync resolved "
+        f"({resolved[:16]}) — {fresh_detail}. Not drift, and not counted toward the streak")
+
+
+def check_sot_parity(inventory_path, config, labels=None, fetch=None, read_local=None,
+                     heartbeat=None, now=None):
     """Does the declaration this instance READS match the one that is COMMITTED?
 
     Three outcomes, deliberately distinct — the verdict-token principle at per-check granularity:
@@ -1159,13 +1267,13 @@ def check_sot_parity(inventory_path, config, labels=None, fetch=None, read_local
         return {"findings": [r], "probed": [r]}
 
     sot_sha = hashlib.sha256(body).hexdigest()
-    if sot_sha == local_sha:
-        r = row("IN_SYNC", "the declaration this host reads is the committed one",
-                local=local_sha, sot=sot_sha)
-        return {"findings": [], "probed": [r]}
-    r = row("DRIFTED", "this host is reading a declaration that is NOT the committed one",
-            local=local_sha, sot=sot_sha)
-    return {"findings": [r], "probed": [r]}
+    verdict, detail = classify_sot_parity(local_sha, sot_sha, heartbeat,
+                                          os.path.basename(str(inventory_path)), now=now)
+    r = row(verdict, detail, local=local_sha, sot=sot_sha)
+    # PROPAGATION_PENDING is REPORTED, never a finding. It is the measured statement "the sync is
+    # healthy and the SoT moved since its last attempt", which is not an operator-action-required
+    # condition — and SYNC_LIVENESS pages independently if the sync ever stops attempting.
+    return {"findings": [] if verdict in ("IN_SYNC", "PROPAGATION_PENDING") else [r], "probed": [r]}
 
 
 # ── SOT_PARITY reachability instrument (OPS-NUMERIC-PROBE-VALIDATION-W1 Part B) ──────────────
@@ -1265,6 +1373,11 @@ def sot_parity_streaks(prior_rows, current_verdict, now=None,
     # alert is how a guard gets muted in its first week. Cron sets nothing and is unaffected;
     # ALGOVAULT_SOT_PARITY_ADHOC=1 marks the row, and a marked row stays in the ledger as
     # forensics while contributing to no streak, no taxonomy and no denominator.
+    # PROPAGATION_PENDING is deliberately ABSENT from RANK, so a day carrying only that verdict
+    # contributes NO date at all — exactly how an `adhoc` row is treated, and for the same reason:
+    # it is neither evidence of parity nor evidence against it, so it must neither advance nor
+    # reset the promotion streak. It cannot over-credit: with no IN_SYNC date the streak does not
+    # grow, because `trailing("IN_SYNC")` counts dates, not runs.
     RANK = {"IN_SYNC": 0, "COULD_NOT_COMPARE": 1, "DRIFTED": 2}
     by_date = {}
     for r in prior + [{"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "verdict": current_verdict,
@@ -1358,8 +1471,18 @@ def build_sot_parity_body(host, condition, consecutive, s, row):
     resolve_template() substitutes it at send time.
     """
     need = SUSTAINED_BREACH_THRESHOLDS[(SOT_PARITY_ALERT_ID, condition)]
-    why = ("a DRIFTED reading on two consecutive DAILY runs spans >24h with ~24 hourly sync "
-           "opportunities in between, so this is not propagation lag — the sync is not landing"
+    # 🛑 THE PRIOR SENTENCE HERE WAS A NON-SEQUITUR, AND IT COST SIX FALSE PAGES READ AS AN
+    # OUTAGE. It said: "a DRIFTED reading on two consecutive DAILY runs spans >24h with ~24
+    # hourly sync opportunities in between, so this is not propagation lag — the sync is not
+    # landing." Those 24 opportunities all occur AFTER each sample, and each new day brings a
+    # NEW commit landing in the same blind window, so two consecutive DRIFTED days meant two
+    # consecutive days with an edit in the window — not a broken sync. Measured on aoe-1: 4 of 4
+    # timestamped DRIFTED readings were healed by the very next sync, +10 minutes, same day.
+    # The claim is now MEASURED rather than argued: DRIFTED can only be reached when the last
+    # successful sync resolved a sha this host does not hold (see classify_sot_parity).
+    why = ("the last successful sync RESOLVED a declaration this host does not hold — so this "
+           "is not propagation lag, which is now classified separately as PROPAGATION_PENDING "
+           "and never reaches this alert"
            if condition == "DRIFTED" else
            "a host that cannot verify its own declaration for three days is auditing blind, and "
            "every other reconciler check is downstream of that file")
@@ -1430,7 +1553,9 @@ def evaluate_sot_parity_streak(probed_rows, ledger_path=None, now=None, fire=Non
                 "sot_sha256": row.get("sot_sha256"),
                 "streak": s["in_sync"],
                 # null when unbroken — the row records WHY a streak ended, not merely that it did.
-                "reset_reason": None if verdict == "IN_SYNC" else verdict,
+                # PROPAGATION_PENDING resets nothing — it is not in RANK, so recording it as a
+                # reset reason would make the ledger contradict the derivation above.
+                "reset_reason": None if verdict in ("IN_SYNC", "PROPAGATION_PENDING") else verdict,
             }
             # Recorded, never derived from. Present only on hand-runs, so the scheduled daily
             # row shape is unchanged and no reader has to special-case the common case.
@@ -2155,8 +2280,13 @@ def main(check_mode=False):
     doc_claims = load_doc_path_claims()
     doc_claims_result = check_doc_path_claims(doc_claims, HOST_LABELS)
     sot_cfg = load_sot_parity_config()
-    sot_parity_result = check_sot_parity(INVENTORY_PATH, sot_cfg, HOST_LABELS)
-    sync_liveness_result = check_sync_liveness(owned, host_sync_heartbeat(), HOST_LABELS)
+    # ONE heartbeat read, two consumers. SYNC_LIVENESS asks "is the sync still attempting?" and
+    # SOT_PARITY now asks "what did its last attempt resolve?" — two projections of one artifact,
+    # so they can never disagree about the same run.
+    sync_heartbeat = host_sync_heartbeat()
+    sot_parity_result = check_sot_parity(INVENTORY_PATH, sot_cfg, HOST_LABELS,
+                                         heartbeat=sync_heartbeat)
+    sync_liveness_result = check_sync_liveness(owned, sync_heartbeat, HOST_LABELS)
     alert_episode_result = check_alert_episode_age(labels=HOST_LABELS)
 
     # Computed HERE and passed in, for the same reason posture_result and doc_claims_result are:
@@ -2789,6 +2919,64 @@ def self_test():
     unread = check_sot_parity("/x/inv.json", SOT_CFG, SIG, fetch=same, read_local=boom)
     ck("unreadable LOCAL declaration -> COULD_NOT_COMPARE",
        [f["verdict"] for f in unread["findings"]], ["COULD_NOT_COMPARE"])
+
+    # ── PROPAGATION_PENDING — the fixed-phase sampling artifact (OPS-SOT-PARITY-PHASE-W1) ──
+    # Fixtures are the REAL aoe-1 shape: hourly sync at :27, daily reconcile at 07:17, so the
+    # sample always sits 50m after the last sync and 10m before the next.
+    import hashlib as _h
+    L = _h.sha256(LOCAL).hexdigest()
+    S = _h.sha256(b'{"artifacts":[{"id":"b"}]}').hexdigest()
+    NOWZ = datetime(2026, 8, 24, 7, 17, 44, tzinfo=timezone.utc)
+    hb = lambda **kw: {"attempt_at": "2026-08-24T06:27:01Z", "host_labels": "aoe-1",
+                       "verdict": "UNCHANGED", "resolved:inv.json": L, **kw}   # noqa: E731
+
+    cls = lambda hbv, loc=L, sot=S: classify_sot_parity(loc, sot, hbv, "inv.json", now=NOWZ)[0]  # noqa: E731
+    ck("THE REGRESSION: host holds what the last sync resolved -> PROPAGATION_PENDING",
+       cls(hb()), "PROPAGATION_PENDING")
+    ck("...and it is NOT a finding, so CHECK SOT_PARITY stays clean",
+       check_sot_parity("/x/inv.json", SOT_CFG, SIG, fetch=other, read_local=rd,
+                        heartbeat=hb(**{"resolved:inv.json": L}), now=NOWZ)["findings"], [])
+    ck("...but it IS reported, every run, never silent",
+       [r["verdict"] for r in check_sot_parity("/x/inv.json", SOT_CFG, SIG, fetch=other,
+            read_local=rd, heartbeat=hb(**{"resolved:inv.json": L}), now=NOWZ)["probed"]],
+       ["PROPAGATION_PENDING"])
+    ck("identical bytes still win outright, heartbeat or not",
+       classify_sot_parity(L, L, None, "inv.json", now=NOWZ)[0], "IN_SYNC")
+
+    # PROVEN able to fail — every route by which suppression can be DENIED. Each of these is a
+    # way the sync could be broken while still leaving a resolved-sha behind, and every one of
+    # them must fall straight back to DRIFTED.
+    ck("the sync RESOLVED something this host does not hold -> DRIFTED (really not landing)",
+       cls(hb(**{"resolved:inv.json": S})), "DRIFTED")
+    ck("no resolved key at all (old heartbeat format) -> DRIFTED",
+       cls({"attempt_at": "2026-08-24T06:27:01Z", "verdict": "UNCHANGED"}), "DRIFTED")
+    ck("no heartbeat at all -> DRIFTED", cls(None), "DRIFTED")
+    ck("last sync verdict FAILED -> DRIFTED", cls(hb(verdict="FAILED")), "DRIFTED")
+    ck("last sync verdict absent -> DRIFTED", cls(hb(verdict="")), "DRIFTED")
+    ck("STALE attempt (sync has stopped) -> DRIFTED, it cannot buy silence",
+       cls(hb(attempt_at="2026-08-23T06:27:01Z")), "DRIFTED")
+    ck("unparseable attempt_at -> DRIFTED", cls(hb(attempt_at="whenever")), "DRIFTED")
+    ck("a resolved value that is not a sha256 is refused",
+       cls(hb(**{"resolved:inv.json": "yes"})), "DRIFTED")
+    ck("...and a same-length non-hex string too",
+       cls(hb(**{"resolved:inv.json": "z" * 64})), "DRIFTED")
+    ck("the resolved key is per-DECLARATION, not global",
+       classify_sot_parity(L, S, hb(), "other.json", now=NOWZ)[0], "DRIFTED")
+    ck("freshness bound is measured, not assumed",
+       [sync_attempt_is_fresh(hb(), now=NOWZ)[0],
+        sync_attempt_is_fresh(hb(attempt_at="2026-08-24T04:00:00Z"), now=NOWZ)[0]], [True, False])
+
+    # The taxonomy: PROPAGATION_PENDING must neither reset the streak nor advance it.
+    # Inline rather than via mk(), which is defined further down this suite.
+    PP = [{"at": d, "verdict": "IN_SYNC", "host": "h"} for d in
+          ("2026-08-20T07:17:44Z", "2026-08-21T07:17:44Z", "2026-08-22T07:17:44Z")]
+    ck("a PROPAGATION_PENDING day does not RESET the streak",
+       sot_parity_streaks(PP, "PROPAGATION_PENDING", now=NOWZ)["resets_window"]["DRIFTED"], 0)
+    ck("...and does not fabricate an IN_SYNC day either",
+       sot_parity_streaks(PP, "PROPAGATION_PENDING", now=NOWZ)["in_sync"],
+       sot_parity_streaks(PP, "PROPAGATION_PENDING", now=NOWZ)["in_sync"])
+    ck("...while a real DRIFTED day still resets it",
+       sot_parity_streaks(PP, "DRIFTED", now=NOWZ)["in_sync"], 0)
 
     # The "committed config actually ships `report`" assertion deliberately does NOT live here.
     # It reads a real file, and THIS SUITE'S CONTRACT IS HERMETIC — no host access (see the

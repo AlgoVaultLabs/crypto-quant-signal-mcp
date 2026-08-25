@@ -203,6 +203,66 @@ export async function tryClaimNotification(params: {
   return rows.length > 0;
 }
 
+/**
+ * Suffix for a row that records a notification we could NOT send.
+ *
+ * It is a SEPARATE key on purpose. The canonical key is the idempotency claim for a real send,
+ * and writing an unsent row under it would suppress the genuine notification the moment the
+ * owner became reachable again — turning a bookkeeping improvement into permanent silence for
+ * the exact customer it exists to protect.
+ */
+const UNSENT_KEY_SUFFIX = '#unsent';
+
+/**
+ * Persist "we tried and could not tell them", for an owner who COULD have been told.
+ *
+ * 🛑 WHY THIS EXISTS. Before it, `owner_unreachable` / `resolution_failed` returned early and
+ * wrote NOTHING — so a terminal notification that never went out was indistinguishable, in the
+ * data, from one that was never attempted and from one that succeeded and was later deleted.
+ *
+ * MEASURED 2026-08-25. Subscription 6 (a PAYING `starter` owner) hit `quarantine_expired` at
+ * 2026-08-24 13:44:56Z. `runHealthProbeSweep` called safeNotify('webhook_disabled') exactly as
+ * designed, `WEBHOOK_SUBSCRIBER_NOTIFY_ENABLED` was default-on, the registry has the event as
+ * `sendsEmail: true` — and `subscriber_notifications` holds no row of any kind. The owner had
+ * become unresolvable between their 2026-08-01 quarantine email and the terminal event, so the
+ * notify exited at `owner_unreachable` and left no trace. The customer's integration is
+ * permanently dead and nothing in the system records that we failed to say so.
+ *
+ * That is this estate's own law in a new substrate: "assert POSITIVE per-row output — never
+ * absence-of-alert: a row silently skipped by a load error looks identical to a row that
+ * passed." An unsent notice is now a FACT on the record, not an absence.
+ *
+ * SCOPE, deliberately narrow. A `free:<ipHash>` owner is STRUCTURALLY unreachable — no email
+ * exists and none ever can — so recording one row per free-tier event would be unbounded noise
+ * about a by-design skip with no available action. Those stay silent and unrecorded, exactly as
+ * before. This records only owners who could, in principle, have been reached.
+ *
+ * Fail-soft: a bookkeeping write must never change a notify outcome or throw into the caller.
+ */
+export async function recordUnsentNotification(params: {
+  key: string;
+  ownerKey: string;
+  event: SubscriberNotifyEvent;
+  subscriptionId: number | null;
+  outcome: NotifyOutcome;
+}): Promise<boolean> {
+  if (isStructurallyUnreachable(params.ownerKey)) return false;
+  try {
+    const rows = await dbQuery<{ notification_key: string }>(
+      `INSERT INTO subscriber_notifications (notification_key, owner_key, event, subscription_id, sent_at, resend_id, outcome)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (notification_key) DO NOTHING
+       RETURNING notification_key`,
+      [params.key + UNSENT_KEY_SUFFIX, params.ownerKey, params.event, params.subscriptionId,
+        Math.floor(Date.now() / 1000), null, params.outcome],
+    );
+    return rows.length > 0;
+  } catch (err) {
+    console.error('[subscriber-notify] unsent-record write failed:', err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
 async function finalizeOutcome(key: string, outcome: NotifyOutcome, resendId: string | null): Promise<void> {
   try {
     await dbQuery(
@@ -305,19 +365,29 @@ export async function notifySubscriber(args: NotifyArgs): Promise<NotifyResult> 
       return { sent: false, outcome: 'suppressed_silent' };
     }
 
+    // The key is derived BEFORE resolution now, because the unrecoverable paths below have to
+    // be able to record themselves under it. It depends only on the event and its context.
+    const key = notificationKey(event, ownerKey, ctx.subscriptionId ?? null, ctx.stateEpochBucket ?? null);
+
     const resolved = await resolveOwnerEmail(ownerKey);
     if (resolved.unreachable) {
-      // By design for a free: owner. NEVER pages — a by-design skip has no threshold.
-      console.log(`[subscriber-notify] owner unreachable (${isStructurallyUnreachable(ownerKey) ? 'free-tier' : 'no email on file'}) for ${event}`);
+      const structural = isStructurallyUnreachable(ownerKey);
+      // A `free:` owner is a by-design skip with no available action — silent, unrecorded.
+      // A PAID owner we cannot reach is a DATA GAP about a customer, and it gets written down.
+      console.log(`[subscriber-notify] owner unreachable (${structural ? 'free-tier' : 'no email on file'}) for ${event}`);
+      await recordUnsentNotification({
+        key, ownerKey, event, subscriptionId: ctx.subscriptionId ?? null, outcome: 'owner_unreachable',
+      });
       return { sent: false, outcome: 'owner_unreachable' };
     }
     if (resolved.failed || !resolved.email) {
       console.error(`[subscriber-notify] resolution_failed for ${event} — escalation counter incremented`);
+      await recordUnsentNotification({
+        key, ownerKey, event, subscriptionId: ctx.subscriptionId ?? null, outcome: 'resolution_failed',
+      });
       return { sent: false, outcome: 'resolution_failed' };
     }
     const to = resolved.email;
-
-    const key = notificationKey(event, ownerKey, ctx.subscriptionId ?? null, ctx.stateEpochBucket ?? null);
 
     if (isSubscriberNotifyDryRun()) {
       // Render for real so the gate proves the body, then stop. NO row is written,
