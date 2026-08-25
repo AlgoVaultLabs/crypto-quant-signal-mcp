@@ -66,3 +66,8 @@ ops/scripts/.disk-forensics-hosts
 .vitest-error-shapes.json
 .vitest-isolation-report.json
 .vitest-isolation-error-shapes.json
+
+# BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 CH1 R4 — partner-coordinate probe cache (24h TTL).
+# Machine-local and rebuilt on demand; committing it would let one machine's cached
+# probe results decide another machine's gate.
+.cache/

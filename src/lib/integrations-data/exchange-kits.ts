@@ -9,8 +9,19 @@
  *
  * Setup snippets reflect live npm/GH coords (probed 2026-05-19):
  * @okx_ai/okx-trade-mcp@1.3.3; bybit-official-trading-server@2.1.5;
- * bitget-mcp-server@1.1.0; binance/binance-skills-hub is a GH-coord,
- * not an npm package — install via `claude plugin install`.
+ * bitget-mcp-server@1.1.0.
+ *
+ * BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 (2026-08-25): the Binance entry used to ship a
+ * `claude plugin install <owner>/<repo>` line pointing at binance/binance-skills-hub.
+ * That CANNOT work — the command needs a `.claude-plugin/` manifest and the repo has
+ * none (`contents/.claude-plugin` -> 404) — yet the footer read "verified 2026-05-19".
+ * Real install is `npx skills add <repo url>` (`skills` npm pkg, bins skills/add-skill).
+ * Coordinates in this file are now RESOLVED against their vendor's live artifact by
+ * scripts/check-partner-install-coords.mjs, never re-checked by hand.
+ *
+ * The retired literal is deliberately NOT spelled out above: a regression grep for it
+ * runs over this file, and prose quoting the exact bad string would fail the very gate
+ * the prose exists to explain.
  */
 
 import type { SurfaceModule } from './types.js';
@@ -23,8 +34,8 @@ const EXCHANGE_KITS: SurfaceModule = {
     introHtml:
       "Already running an exchange's Agent Trade Kit? Pair AlgoVault's composite verdict with the kit's execution layer. AlgoVault returns analytics; the exchange kit places orders; your agent decides.",
     firstColumnHeader: 'Exchange',
-    footerVerifiedDate: '2026-05-19',
-    footerPreamble: 'Tutorials verified 2026-05-19 against:',
+    footerVerifiedDate: '2026-08-25',
+    footerPreamble: 'Tutorials verified 2026-08-25 against:',
     footerDriftNote:
       'Snippets can drift &mdash; if one doesn\'t work, please refer to the upstream doc and report it at <a class="text-mint-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.',
     footerLinks: [
@@ -42,13 +53,13 @@ const EXCHANGE_KITS: SurfaceModule = {
       displayName: 'Binance',
       surfaceType: 'exchange-kit',
       setupSummary:
-        '<code class="text-xs bg-navy-800 px-1 rounded">claude plugin install binance/binance-skills-hub</code> &middot; Spot Testnet execution',
+        '<code class="text-xs bg-navy-800 px-1 rounded">npx skills add https://github.com/binance/binance-skills-hub</code> &middot; Spot Testnet execution',
       whatYouGet:
         "Composite verdict + official Binance Skills Hub. Agent fetches signals, decides, executes against Binance's testnet.",
-      walkthroughHtml: `      <p>Install the Skills Hub plugin alongside AlgoVault:</p>
+      walkthroughHtml: `      <p>Install AlgoVault&rsquo;s plugin and the Binance Skills Hub:</p>
       <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">claude plugin install AlgoVaultLabs/algovault-skills
-claude plugin install binance/binance-skills-hub</code></pre>
+npx skills add https://github.com/binance/binance-skills-hub</code></pre>
       </div>
       <p>Your agent now has AlgoVault's analytics tools and Binance's execution tools side-by-side. Set <code class="text-xs bg-navy-800 px-1 rounded">BINANCE_TESTNET=true</code> for zero real-money risk during development.</p>
       <p><a href="/integrations/binance" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>`,
