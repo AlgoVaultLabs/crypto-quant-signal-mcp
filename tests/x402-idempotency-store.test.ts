@@ -294,3 +294,78 @@ describe('tryClaimPayment — three outcomes × row writes (W4 Step 0B)', () => 
     expect(Number(rows[0].c)).toBe(0);
   });
 });
+
+/**
+ * OPS-X402-SETTLEMENT-RECONCILER-W1 — `CLAIMED_EXPIRED` is terminal for the METER, never for
+ * the MONEY.
+ *
+ * `ops/monitoring/x402-settlement-reconciler.py` writes `CLAIMED_EXPIRED` after reading on chain
+ * that an aged authorization was never consumed. That is a correct call at that moment — but it
+ * is a judgement about the WORLD, not a fact about our money. If a settlement genuinely lands
+ * afterwards, the callback carries the rail's own transaction reference and MUST still be
+ * recorded; refusing it would let a monitoring job's inference outrank the rail's own receipt.
+ *
+ * The invariant that does matter is the opposite one, and it is asserted here too: SETTLED and
+ * OPERATOR are absent from the promotable set, so money that moved can never be un-recorded by a
+ * late or duplicated callback.
+ */
+describe('🛑 settlement promotion — which FROM states are legal', () => {
+  const NONCE = '0xabc0000000000000000000000000000000000000000000000000000000000abc';
+  const PAYER = '0x7da6de194fed97fb745137faddde5699afe37a45';
+
+  const stateOf = async (nonce: string): Promise<string | undefined> => {
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    const rows = await dbQuery<{ settlement_state: string }>(
+      'SELECT settlement_state FROM processed_x402_payments WHERE nonce = ?', [nonce]);
+    return rows[0]?.settlement_state;
+  };
+  const setState = async (nonce: string, s: string): Promise<void> => {
+    const { dbExec } = await import('../src/lib/performance-db.js');
+    dbExec(`UPDATE processed_x402_payments SET settlement_state = '${s}' WHERE nonce = '${nonce}'`);
+  };
+
+  it('CLAIMED_PENDING → SETTLED, with the rail reference recorded (the incumbent path)', async () => {
+    expect(await store.tryClaimPayment(NONCE, 'get_trade_signal', '20000', PAYER)).toBe('CLAIMED');
+    expect(await stateOf(NONCE)).toBe('CLAIMED_PENDING');
+    expect(await store.recordSettlementOutcome(NONCE, PAYER, 'SETTLED', '0xdeadbeef')).toBe('PROMOTED');
+    expect(await stateOf(NONCE)).toBe('SETTLED');
+  });
+
+  it('🛑 CLAIMED_EXPIRED → SETTLED still promotes — the rail outranks the reconciler', async () => {
+    expect(await store.tryClaimPayment(NONCE, 'get_trade_signal', '20000', PAYER)).toBe('CLAIMED');
+    await setState(NONCE, 'CLAIMED_EXPIRED');           // as the reconciler would have written it
+    expect(await store.recordSettlementOutcome(NONCE, PAYER, 'SETTLED', '0xfeedface')).toBe('PROMOTED');
+    expect(await stateOf(NONCE)).toBe('SETTLED');
+  });
+
+  it('🛑 SETTLED is NEVER re-promoted — money that moved cannot be un-recorded', async () => {
+    expect(await store.tryClaimPayment(NONCE, 'get_trade_signal', '20000', PAYER)).toBe('CLAIMED');
+    expect(await store.recordSettlementOutcome(NONCE, PAYER, 'SETTLED', '0xaaa')).toBe('PROMOTED');
+    // A late/duplicated callback, even one claiming a different outcome.
+    expect(await store.recordSettlementOutcome(NONCE, PAYER, 'OPERATOR', '0xbbb')).toBe('NOT_FOUND');
+    expect(await stateOf(NONCE)).toBe('SETTLED');
+  });
+
+  it('🛑 OPERATOR is never re-promoted either', async () => {
+    expect(await store.tryClaimPayment(NONCE, 'get_trade_signal', '20000', PAYER)).toBe('CLAIMED');
+    await setState(NONCE, 'OPERATOR');
+    expect(await store.recordSettlementOutcome(NONCE, PAYER, 'SETTLED', '0xccc')).toBe('NOT_FOUND');
+    expect(await stateOf(NONCE)).toBe('OPERATOR');
+  });
+
+  it('a wrong payer key promotes nothing — the row is untouched', async () => {
+    expect(await store.tryClaimPayment(NONCE, 'get_trade_signal', '20000', PAYER)).toBe('CLAIMED');
+    expect(await store.recordSettlementOutcome(NONCE, '0x0000000000000000000000000000000000000001', 'SETTLED', '0xddd'))
+      .toBe('NOT_FOUND');
+    expect(await stateOf(NONCE)).toBe('CLAIMED_PENDING');
+  });
+
+  it('a blank rail reference is stored as NULL, never as an empty string', async () => {
+    expect(await store.tryClaimPayment(NONCE, 'get_trade_signal', '20000', PAYER)).toBe('CLAIMED');
+    expect(await store.recordSettlementOutcome(NONCE, PAYER, 'SETTLED', '   ')).toBe('PROMOTED');
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    const rows = await dbQuery<{ settlement_ref: string | null }>(
+      'SELECT settlement_ref FROM processed_x402_payments WHERE nonce = ?', [NONCE]);
+    expect(rows[0]?.settlement_ref).toBeNull();
+  });
+});

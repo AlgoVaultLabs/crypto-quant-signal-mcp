@@ -96,7 +96,16 @@ export function estimateBlock(headBlock: bigint, headTs: number, targetEpoch: nu
  *   SETTLED / OPERATOR — established positive; carries a `settlement_ref` when the rail gave one.
  *   UNRESOLVABLE       — we could not look (RPC error, unusable timestamp).
  */
-export type SettlementClass = 'SETTLED' | 'CLAIMED_PENDING' | 'CLAIMED_UNSETTLED' | 'OPERATOR' | 'UNRESOLVABLE';
+export type SettlementClass = 'SETTLED' | 'CLAIMED_PENDING' | 'CLAIMED_UNSETTLED' | 'OPERATOR'
+  | 'UNRESOLVABLE'
+  // OPS-X402-SETTLEMENT-RECONCILER-W1. Terminal for the METER, never for the MONEY.
+  // `CLAIMED_PENDING` means "nothing has looked yet", and the only thing that ever looked
+  // was the live settle callback — which cannot re-run for a week-old attempt. So an
+  // abandoned authorization stayed pending forever and revenue-meter (c) grew with
+  // FAILURES instead of measuring unsettled REVENUE. `CLAIMED_EXPIRED` is written ONLY by
+  // ops/monitoring/x402-settlement-reconciler.py, and only after reading on chain that the
+  // EIP-3009 authorization was never consumed — i.e. no transfer ever happened.
+  | 'CLAIMED_EXPIRED';
 
 /**
  * Classify one row from its on-chain `AuthorizationUsed` lookup. Pure — the viem call stays in
@@ -148,7 +157,7 @@ async function main(): Promise<void> {
   // only ever emits an ESTABLISHED verdict (it looked), never "nothing has looked yet". A non-zero
   // count here would mean the vocabulary leaked into the scanner. tsc caught its absence the
   // moment the union grew, which is the whole reason the tally is a `Record<SettlementClass, …>`.
-  const tally: Record<SettlementClass, number> = { SETTLED: 0, CLAIMED_PENDING: 0, CLAIMED_UNSETTLED: 0, OPERATOR: 0, UNRESOLVABLE: 0 };
+  const tally: Record<SettlementClass, number> = { SETTLED: 0, CLAIMED_PENDING: 0, CLAIMED_UNSETTLED: 0, OPERATOR: 0, UNRESOLVABLE: 0, CLAIMED_EXPIRED: 0 };
   for (const row of rows) {
     const epoch = Math.floor(new Date(row.created_at as string).getTime() / 1000);
     let wallet: string | null = null;

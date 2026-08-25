@@ -1377,6 +1377,30 @@
       "notes": "CH7 \u2014 the arc's generator. THREE meters, ONE token. (a) PRODUCER-UPSTREAM DIVERGENCE, the detector: a checkout.session.completed in processed_stripe_events with no subscriber_profiles row after REVENUE_METER_GRACE_MINUTES (15), joined on metadata::jsonb->>'client_reference_id' - the ONLY pure-SQL key, because the events ledger has NO customer_id column and session_id resolves only through a Stripe API round trip. DIRECTIONAL events->profiles ONLY: one customer converted 2026-06-07, before both this ledger's first row and the profiler's birth commit, so a profile with no event is a legitimate standing orphan and the reverse direction would page forever. N=15min is ~3300x the MEASURED 270ms full producer build (incl. a live retrieveSession); the 370/128/126s figures in the arc notes are signup->converted CUSTOMER latency and are NOT a producer bound. No self-healing: the profiler runs only in the isNew branch after the idempotency claim, so once the webhook 200s Stripe never redelivers and a breach is PERMANENT - detection speed is the only lever. (b) CROSS-METER AGREEMENT: CONSUMES reconcileCounts() via GET /dashboard/api/funnel-scoreboard .paying_subscribers.reconciliation, Bearer ADMIN_API_KEY read from the app container (~/.config/algovault/admin.env does NOT exist on this host). NEVER re-implemented. Reported as AGREEMENT, never as detection, and a green (b) must never suppress (a): replayed at 2026-08-05T08:50Z with one paying customer genuinely missing it computes divergent:false (absGap=1, 4/3=1.33) while meter (a) returns exactly 1 - at n=4 it needs a 3-of-4 loss to flip. stripe_total=null raises rather than passing, because a Stripe outage currently reads as agreement. (c) UNSETTLED GROWTH above a DECLARED WATERMARK (2026-07-29T14:08:47.787216Z), excluding the 4 unattributable empty-payer_wallet rows. An age-only threshold would be a CONSTANT: SETTLED has NEVER existed (0 rows lifetime) and the only promoter, src/scripts/backfill-x402-payer-wallet.ts --classify --execute, is on no cron on either host, so 15/15 would breach at any threshold forever. DECLARED DEBT: those 15 rows are carried here, not alarmed on; unblock wave OPS-REVENUE-METER-SETTLEMENT-W{NEXT}. TOKEN: REVENUE_METER_VERDICT=PASS|FAIL|INDETERMINATE, exit 0 = evaluated, 3 = INDETERMINATE (token-law default for a NEW gate; check_test_baseline.sh is 2 ONLY because it already deployed 2 - do not align them). A cron exit code blocks nothing, so 3 is compatible with fail-open. FIRST ARTIFACT IN THIS DIRECTORY TO COMBINE A BREACH STREAK WITH A VERDICT TOKEN: the fail-open path FEEDS the dark streak and pages at SUSTAINED_DARK_CYCLES (3), because a canary silent BECAUSE IT IS BROKEN is not one silent because everything is fine - webhook-delivery-canary.py owns the only other streak, prints no token, and its fail-open branch touches neither. Consumer of send_telegram.sh; does NOT re-implement its severity/cooldown/DRY_RUN/fail-open gates. Gate-test with ALGOVAULT_TG_TEST_INERT=1, NEVER DRY_RUN_TG=1 (writes the 24h marker and false-greens the second run). --self-test is hermetic (no DB, no HTTP, no wrapper, temp state), 33 assertions, vacuity-guarded, and PROVEN ABLE TO FAIL by six deliberate breaks: meter (a) stops detecting; a green (b) suppresses (a); stripe_total=null laundered into agreement; the dark path stops feeding the streak; the rendered body regresses to a bare count beside the ids; meter (c) reverts to an age-only threshold. The 4th break initially PASSED because the self-test re-implemented the streak arithmetic locally - fixed by extracting record_dark_cycle() so the suite drives the SHIPPED path, which is the same defect class this canary exists to catch. FIRST LIVE RUN REPORTED INDETERMINATE: algovault_autopilot lacked SELECT on subscriber_profiles and processed_x402_payments. That is the whole reason the token exists - it refused to report health it had not verified instead of exiting 0 green. Fixed by GRANT SELECT (read-only ONLY; the role holds no INSERT/UPDATE/DELETE/DDL on any of the three tables, verified via has_table_privilege)."
     },
     {
+      "id": "x402-settlement-reconciler",
+      "artifact": "ops/monitoring/x402-settlement-reconciler.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/x402-settlement-reconciler.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/x402-settlement-reconciler.py",
+          "schedule": "23 4 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "23 4 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "dc6d352af2d7d9076967be623cd3b538d6bd7b1958f8371134c2437ec1759efb",
+      "alert_ids": [
+        "X402_UNRECORDED_SETTLEMENT"
+      ],
+      "owner_wave": "OPS-X402-SETTLEMENT-RECONCILER-W1",
+      "notes": "Gives `CLAIMED_PENDING` an exit, from CHAIN truth. That state means \u2014 by its own definition \u2014 \"nothing has looked yet\", and the only thing that ever looked was the live settle callback in recordSettlementOutcome, which cannot re-run for a week-old attempt. So an abandoned authorization stayed pending FOREVER and revenue-meter-canary.py meter (c) grew with FAILURES instead of measuring unsettled REVENUE (breaching continuously from 2026-08-17 on two 2026-08-10 rows worth $0.04 that, read on chain, had never moved a cent). Reads USDC EIP-3009 `authorizationState(authorizer,nonce)`: not-consumed + aged past a grace LONGER than meter (c)\u0027s 7d \u2192 CLAIMED_EXPIRED; consumed \u2192 PAGES as X402_UNRECORDED_SETTLEMENT and writes NOTHING, because a SETTLED row needs the rail\u0027s own reference and this cannot obtain one. 🛑 EVERY LIVE RUN FIRST VALIDATES THE INSTRUMENT against a nonce known-consumed (a SETTLED row carrying a real settlement_ref); if that control does not read back true the whole run is INDETERMINATE with zero writes, because a wrong selector/contract/encoding returns `false` \u2014 the same answer as \"never consumed\". READ-ONLY without --apply. Its UPDATE pins the FROM state so it cannot touch SETTLED or OPERATOR; CLAIMED_EXPIRED remains promotable by a late genuine settlement (PROMOTABLE_FROM in x402-idempotency-store.ts), so a monitoring inference never outranks the rail\u0027s receipt. Runs at :23 on the canonical minute set, 30min before revenue-meter\u0027s hourly :53 so a night\u0027s expiries are visible to the very next meter run."
+    },
+    {
       "id": "xrepo-ci-conclusion-canary",
       "artifact": "ops/cron/xrepo-ci-conclusion-canary.sh",
       "kind": "executable",
@@ -1575,7 +1599,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "eb32938abe6bfeb7e35cccc3206eb4206aeb81f8cd910fb49682335a903e122f",
+      "sha256": "dbfe21aca1d06463ace09940beb44558ee7e1de9f9faa36b682ecade215f2484",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",

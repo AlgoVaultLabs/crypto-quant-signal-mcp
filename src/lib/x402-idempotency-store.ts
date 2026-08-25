@@ -66,6 +66,22 @@ import type { SettlementClass } from '../scripts/backfill-x402-payer-wallet.js';
  */
 const CLAIM_INITIAL_SETTLEMENT_STATE: SettlementClass = 'CLAIMED_PENDING';
 
+/**
+ * States a settlement callback may promote OUT OF. OPS-X402-SETTLEMENT-RECONCILER-W1.
+ *
+ * `CLAIMED_EXPIRED` is in here deliberately. The reconciler writes it after reading on
+ * chain that the authorization was never consumed — a correct call at that moment, but a
+ * judgement about the WORLD, not a fact about our money. If a settlement genuinely lands
+ * afterwards, the callback carries the rail's own reference and must still be recorded;
+ * refusing it would let a monitoring job's inference outrank the rail's own receipt.
+ *
+ * SETTLED and OPERATOR are deliberately ABSENT, which is the invariant that actually
+ * matters: money that moved can never be un-recorded by a late or duplicated callback.
+ */
+const PROMOTABLE_FROM: readonly SettlementClass[] = Object.freeze(
+  ['CLAIMED_PENDING', 'CLAIMED_EXPIRED'] as const,
+) as readonly SettlementClass[];
+
 /** Rail written when a caller does not declare one — never guessed on their behalf. */
 export const RAIL_UNKNOWN = 'unknown';
 
@@ -328,8 +344,10 @@ export async function tryClaimPayment(
  *
  * FORWARD-ONLY, and the `WHERE` is load-bearing. The insert path's `DO NOTHING` is documented
  * above as what keeps promotion durable; this is the other half. `settlement_state` may only move
- * CLAIMED_UNSETTLED → SETTLED/OPERATOR, never back, so a late or duplicated settle callback can
- * never un-settle money that did move.
+ * out of `PROMOTABLE_FROM` → SETTLED/OPERATOR, never back, so a late or duplicated settle
+ * callback can never un-settle money that did move. (The FROM-set gained `CLAIMED_EXPIRED` in
+ * OPS-X402-SETTLEMENT-RECONCILER-W1 — see its docstring: a reconciler's inference must never
+ * outrank the rail's own receipt.)
  *
  * THE KEY MUST BE DERIVED EXACTLY AS THE CLAIM DERIVED IT. `payerWallet` here is
  * `extractPayerWallet(paymentPayload) ?? ''` — the same call, on the same payload, that
@@ -355,9 +373,9 @@ export async function recordSettlementOutcome(
     const ref = typeof settlementRef === 'string' && settlementRef.trim() !== '' ? settlementRef : null;
     const rows = await dbQuery<{ nonce: string }>(
       `UPDATE processed_x402_payments SET settlement_state = ?, settlement_ref = ?
-        WHERE nonce = ? AND payer_wallet = ? AND settlement_state = ?
+        WHERE nonce = ? AND payer_wallet = ? AND settlement_state IN (${PROMOTABLE_FROM.map(() => '?').join(', ')})
         RETURNING nonce`,
-      [outcome, ref, nonce, payerWallet, CLAIM_INITIAL_SETTLEMENT_STATE],
+      [outcome, ref, nonce, payerWallet, ...PROMOTABLE_FROM],
     );
     if (rows.length > 0) {
       console.log(`[x402-idempotency] settlement promoted → ${outcome} (nonce=${nonce})`);

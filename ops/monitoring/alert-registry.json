@@ -545,6 +545,18 @@
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-REVENUE_METER_DIVERGENCE-W{NEXT}"
     },
     {
+      "alert_id": "X402_UNRECORDED_SETTLEMENT",
+      "owner": "ops/monitoring/x402-settlement-reconciler.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-X402_UNRECORDED_SETTLEMENT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-X402_UNRECORDED_SETTLEMENT-W{NEXT}"
+    },
+    {
       "alert_id": "SEED_COVERAGE_GAP",
       "owner": "ops/cron/seed-coverage-canary.sh",
       "hosts": [
