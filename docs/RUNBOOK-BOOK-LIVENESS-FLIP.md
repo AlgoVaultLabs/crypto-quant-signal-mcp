@@ -84,6 +84,34 @@ Fleet-aggregate ≈ **3.6%** of emissions at k=12. Venue-concentrated:
 `hold_rate` (live 99.1) moves **UP**, because suppressed emissions become HOLDs.
 `totalCalls` growth **slows** — it never decreases, so the `FLOOR` drift canaries stay green.
 
+## Shadow-window alert exception — PRE-DECLARED, DATED, and NOT ACTIONABLE
+
+_Declared before the flip by `EDGE-SELL-RESOLUTION-ASYMMETRY-W1` (architect ruling Q2, 2026-08-25)._
+
+**Window: shadow flip `2026-08-25` → `2026-09-08` (14 days).** Inside it, the breach below is
+**EXPECTED AND LOGGED**. Do **not** act on it, do **not** silence it, and do **not** tune any
+threshold while it is open — a threshold moved during the test destroys the test. On `2026-09-08`
+this exception **EXPIRES**: a row still breaching then is a real debt and needs a real decision.
+
+| what breaches | where | why it is expected |
+|---|---|---|
+| `PENDING_STALE` on `book-liveness-canary` | `monitoring-inventory-reconcile.py`, daily `57 6 * * *` UTC — so first fire **2026-08-26 06:57 UTC** | Its `blocked_on` is `container_env EMIT_BOOK_LIVENESS_ENABLED / met_when: truthy`, and the reconciler breaches **immediately at any age** the moment a blocked condition is MET. Setting `ENABLED=1` for SHADOW meets it. |
+
+**The condition is keyed on the wrong variable, and that is a finding, not something to patch
+mid-soak.** This canary's own row says its checks "BOTH presuppose the gate is ENFORCING", but
+`ENABLED=1` is equally true in shadow — `MODE` is what separates the two stages. A two-stage
+rollout observed through a one-bit flag is the same defect class this wave already fixed in the
+AOE digest footnote. Re-keying it to `EMIT_BOOK_LIVENESS_MODE` needs a `met_when` that can compare
+a VALUE (`met_when: truthy` accepts only `{1,true,yes,on}`, so neither `shadow` nor `enforce`
+would ever satisfy it, and the row would be blocked forever). That work belongs to
+**`EDGE-SELL-RESOLUTION-ENFORCE-W{NEXT}`**, which installs the canary and ratchets its ceilings
+anyway — not to a mid-test edit.
+
+Ratchets deliberately NOT done in the shadow wave, for the same reason (ruling Q2): the runbook's
+Stage-2 8-box bar, and `ops/monitoring/book-liveness-canary.py`'s `SUPPRESSION_CEILING_PCT` /
+`FROZEN_CEILING_PCT`. Rewriting an acceptance bar *before* the soak that is meant to supply its
+evidence is circular. The shadow window produces the evidence; the enforce wave sets the bar.
+
 ## Stage 1 — SHADOW (mandatory; produces the evidence for stage 2)
 
 ```bash

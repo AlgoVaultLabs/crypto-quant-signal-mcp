@@ -344,10 +344,22 @@ function summarise(all: Classified[]) {
 
   const sellSurvivors = sells.filter((r) => r.wouldSuppress === false);
   const buySurvivors = buys.filter((r) => r.wouldSuppress === false);
-  const attribCI = clusterBootstrapCI([...sells, ...buys],
+  const pooled = [...sells, ...buys];
+  const attribCI = clusterBootstrapCI(pooled,
     (rs) => frozenAttributableShare(rs.filter((r) => r.signal === 'SELL'), rs.filter((r) => r.signal === 'BUY')));
   const sellCfCI = clusterBootstrapCI(sells,
     (rs) => timeoutRate(rs.filter((r) => r.wouldSuppress === false)));
+
+  // The ABSOLUTE excess, before and after. The attributable SHARE is a ratio of differences and
+  // its interval is wide by construction — the denominator shrinks in the same draws the
+  // numerator does, and a draw where suppression OVERSHOOTS (SELL ending better than BUY) puts
+  // the ratio above 100%. These two are the stable, readable form of the same finding, and they
+  // are what a reader should check the decision against.
+  const excessPP = (rs: Classified[]) =>
+    (timeoutRate(rs.filter((r) => r.signal === 'SELL')) - timeoutRate(rs.filter((r) => r.signal === 'BUY'))) * 100;
+  const residualPP = (rs: Classified[]) => excessPP(rs.filter((r) => r.wouldSuppress === false));
+  const observedCI = clusterBootstrapCI(pooled, excessPP);
+  const residualCI = clusterBootstrapCI(pooled, residualPP);
 
   return {
     generated_at: ts(),
@@ -371,10 +383,17 @@ function summarise(all: Classified[]) {
       buy_emissions_suppressed: buys.length - buySurvivors.length,
     },
     attribution: {
+      observed_excess_pp: +excessPP(pooled).toFixed(2),
+      observed_excess_ci95_pp: [+observedCI.lo.toFixed(2), +observedCI.hi.toFixed(2)],
+      residual_excess_pp: +residualPP(pooled).toFixed(2),
+      residual_excess_ci95_pp: [+residualCI.lo.toFixed(2), +residualCI.hi.toFixed(2)],
       frozen_attributable_share_pct: +(frozenAttributableShare(sells, buys) * 100).toFixed(2),
       ci95_pct: [+(attribCI.lo * 100).toFixed(2), +(attribCI.hi * 100).toFixed(2)],
       clusters: attribCI.clusters,
-      note: 'cluster bootstrap over (venue, coin); n is a COVERAGE figure, never a power claim',
+      note: 'cluster bootstrap over (venue, coin); n is a COVERAGE figure, never a power claim. '
+        + 'The SHARE is a ratio of differences: its interval is wide by construction and can '
+        + 'exceed 100% when a draw overshoots (SELL ending BETTER than BUY). Read '
+        + 'residual_excess_pp for the decision.',
     },
     per_cell: perCell,
   };
@@ -391,6 +410,17 @@ async function main(): Promise<void> {
   const summary = summarise(classified);
   writeFileSync(out, JSON.stringify({ ...summary, params: { days, spec, buySample } }, null, 2));
   console.log(`[${ts()}] wrote ${out}`);
+
+  // Per-signal dump, opt-in. `EDGE-SELL-RESOLUTION-CONFIRM-W{NEXT}` compares against this
+  // baseline, and a refetch of the SAME historical windows is not reproducible — HTX and XT
+  // serve a recent window only, so those bars age out of reach. Keeping the classified rows is
+  // the only way the forward check can re-derive rather than re-measure. Stays OUT of the repo
+  // (it carries per-signal ids); it belongs beside the audit in the private vault.
+  const dump = arg('--dump');
+  if (dump) {
+    writeFileSync(dump, classified.map((c) => JSON.stringify(c)).join('\n') + '\n');
+    console.log(`[${ts()}] wrote ${dump} (${classified.length} rows)`);
+  }
   console.log(JSON.stringify(summary.sides, null, 2));
   console.log(JSON.stringify(summary.counterfactual, null, 2));
   console.log(JSON.stringify(summary.attribution, null, 2));
