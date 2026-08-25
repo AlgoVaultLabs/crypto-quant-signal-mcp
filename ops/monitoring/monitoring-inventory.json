@@ -984,7 +984,7 @@
       "schedule": "47 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "ebe1c1c7171422e06a563f738a2c49e21a2e424ac89a181ef4821d8381df1c6f",
+      "sha256": "ee514837c938fe43775b1a1dd9be48b2345e08533b48e5671e10063994a118d4",
       "alert_ids": [
         "AOE_OUTPUT_LIVENESS_STALLED"
       ],
@@ -1032,7 +1032,7 @@
       "schedule": "41 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "f4e8464748db1ef6822f85d033c52b601e717f937708b00841340de7d0d08d96",
+      "sha256": "3a2d15a7fa04004142fdef0de1e62297c2197cba7ecd6fec725b1b7d3a18c7a3",
       "alert_ids": [
         "AOE_PROMOTED_KEY_AGE_STALE",
         "AOE_APPROVED_CANDIDATE_STUCK"
