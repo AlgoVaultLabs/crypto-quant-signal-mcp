@@ -621,6 +621,19 @@ tailwind.config = {
           <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
         </div>
       </a>
+      <a href="/integrations/binance-agent-os"
+         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'binance-agent-os',source:'integrations_index',medium:'card'}})"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+          <h3 class="text-white font-semibold text-base">Binance Agent OS &times; AlgoVault</h3>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Your agent asks AlgoVault what to do and Binance to do it. No API keys on the machine, no HMAC signing, and no withdrawal scope exists.</p>
+        <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic</code> &middot; OAuth, no API keys</p>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-mint-400">View tutorial &rarr;</span>
+        </div>
+      </a>
       <a href="/integrations/okx"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'okx',source:'integrations_index',medium:'card'}})"
          class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">

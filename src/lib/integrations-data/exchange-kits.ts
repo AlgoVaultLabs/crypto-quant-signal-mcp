@@ -67,6 +67,28 @@ npx skills add https://github.com/binance/binance-skills-hub</code></pre>
       hasDedicatedPage: true,
     },
     {
+      // BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 (2026-08-25). Placed immediately after `binance`:
+      // the two are the same venue by two routes, and the cards read as a pair.
+      slug: 'binance-agent-os',
+      displayName: 'Binance Agent OS',
+      surfaceType: 'exchange-kit',
+      setupSummary:
+        '<code class="text-xs bg-navy-800 px-1 rounded">claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic</code> &middot; OAuth, no API keys',
+      whatYouGet:
+        'Your agent asks AlgoVault what to do and Binance to do it. No API keys on the machine, no HMAC signing, and no withdrawal scope exists.',
+      walkthroughHtml: `      <p>Add both servers to one MCP client &mdash; AlgoVault decides, Binance executes:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic
+claude mcp add --transport http --scope project algovault \\
+  https://api.algovault.com/mcp?src=binance_agent_os</code></pre>
+      </div>
+      <p>Authenticate Binance through <code class="text-xs bg-navy-800 px-1 rounded">/mcp</code> and grant the least scope you need: market data, account, trade or transfer. Trading runs inside an isolated Agentic sub-account you fund yourself.</p>
+      <p>Name the tool you want. An exchange-shaped prompt routes to Binance and never reaches the verdict, so ask for <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code> explicitly.</p>
+      <p><a href="/integrations/binance-agent-os" class="text-mint-400 hover:underline">Full tutorial &rarr;</a></p>`,
+      fullTutorialUrl: '/integrations/binance-agent-os',
+      hasDedicatedPage: true,
+    },
+    {
       slug: 'okx',
       displayName: 'OKX',
       surfaceType: 'exchange-kit',

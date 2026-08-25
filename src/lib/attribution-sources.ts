@@ -55,6 +55,14 @@ export const ATTRIBUTION_SOURCES = [
   // matched). DISTINCT from the UA-matched agent slugs `chatgpt`/`claude` above: a HUMAN clicking an
   // AI citation link is NOT the same event as an agent connecting via that AI's MCP client.
   'ai_chatgpt', 'ai_perplexity', 'ai_claude', 'ai_gemini', 'ai_copilot', 'ai_grok',
+  // BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 — /integrations/binance-agent-os. UNDERSCORES are not a
+  // style choice: check-attribution-src-coverage.mjs parses this enum with /['"]([a-z0-9_]+)['"]/g,
+  // so a hyphenated entry is invisible to it and the hyphenated form of this slug would be
+  // reported as an invalid slug at gate time. (The literal is deliberately not written out: a
+  // regression grep for it runs over src/, and the comment would fail the gate it explains.)
+  // The page URL and the `int-binance-agent-os` track token stay hyphenated — different
+  // namespaces, different conventions.
+  'binance_agent_os',
   'unknown', // default-deny terminal — an untagged/unclassified hit is unknown, not "direct"
 ] as const;
 

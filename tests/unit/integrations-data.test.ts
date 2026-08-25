@@ -140,8 +140,10 @@ describe('integrations-data: cross-surface invariants', () => {
     }
   });
 
-  it('EXCHANGE_KITS contains exactly 12 entries all with hasDedicatedPage:true', () => {
-    expect(EXCHANGE_KITS.entries).toHaveLength(12);
+  it('EXCHANGE_KITS contains exactly 13 entries all with hasDedicatedPage:true', () => {
+    // 12 → 13 (BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1, 2026-08-25): +binance-agent-os, the first
+    // exchange-kit tutorial sourced in-repo rather than from the algovault-skills checkout.
+    expect(EXCHANGE_KITS.entries).toHaveLength(13);
     for (const e of EXCHANGE_KITS.entries) {
       expect(e.hasDedicatedPage, `${e.slug}`).toBe(true);
     }

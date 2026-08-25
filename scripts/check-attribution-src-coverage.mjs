@@ -20,7 +20,7 @@
  *
  * ── Scan scope ────────────────────────────────────────────────────────────────────────────
  *   • src/lib/integrations-data/mcp-clients.ts   (the /docs + /integrations index snippets)
- *   • docs/integrations/mcp-clients/*.md         (the per-platform connection tutorials)
+ *   • every *.md under docs/integrations/ (recursive — any subdirectory)
  * Both are the SOURCES that render to landing/**; tagging the source closes the gap once.
  *
  * ── What counts as a connection URL ───────────────────────────────────────────────────────
@@ -56,8 +56,16 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Files scanned in addition to the per-platform markdown tutorials. */
 const SCAN_FILES = ['src/lib/integrations-data/mcp-clients.ts'];
-/** Directory whose *.md files are the per-platform connection tutorials. */
-const MCP_CLIENTS_MD_DIR = 'docs/integrations/mcp-clients';
+/**
+ * Tutorial-markdown ROOT, walked RECURSIVELY.
+ *
+ * BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 CH2 R2 widened this from the literal
+ * `docs/integrations/mcp-clients` to the whole tree. A literal directory means a new
+ * tutorial directory escapes the `?src=` gate simply by existing — and CH2 adds exactly
+ * such a directory (`docs/integrations/exchange-kits/`). Scope widening only: what counts
+ * as a connect URL, and the slug set it is checked against, are unchanged.
+ */
+const DOCS_MD_ROOT = 'docs/integrations';
 
 /** The live remote MCP connect URL + any trailing query/path up to a delimiter. */
 const CONNECT_URL_RE = /https?:\/\/api\.algovault\.com\/mcp[^\s"'`\\<>)]*/g;
@@ -78,13 +86,17 @@ export function loadEnumSlugs() {
   return slugs;
 }
 
-/** Scan targets: SCAN_FILES + every *.md under the mcp-clients dir (repo-relative paths). */
+/** Scan targets: SCAN_FILES + every *.md anywhere under DOCS_MD_ROOT (repo-relative paths). */
 export function scanTargets() {
   const targets = [...SCAN_FILES];
-  for (const f of readdirSync(join(ROOT, MCP_CLIENTS_MD_DIR))) {
-    if (f.endsWith('.md')) targets.push(`${MCP_CLIENTS_MD_DIR}/${f}`);
-  }
-  return targets;
+  const walk = (rel) => {
+    for (const e of readdirSync(join(ROOT, rel), { withFileTypes: true })) {
+      if (e.isDirectory()) walk(`${rel}/${e.name}`);
+      else if (e.name.endsWith('.md')) targets.push(`${rel}/${e.name}`);
+    }
+  };
+  walk(DOCS_MD_ROOT);
+  return targets.sort();
 }
 
 /**
@@ -121,7 +133,7 @@ export function auditAttributionSrcCoverage() {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { untagged, invalidSlug, scanned } = auditAttributionSrcCoverage();
   if (scanned === 0) {
-    console.error('[attribution-src-coverage] FAIL — 0 connection URLs found in scope. Did the scan scope move? Check SCAN_FILES + docs/integrations/mcp-clients/*.md.');
+    console.error('[attribution-src-coverage] FAIL — 0 connection URLs found in scope. Did the scan scope move? Check SCAN_FILES + docs/integrations/**/*.md.');
     process.exit(1);
   }
   if (untagged.length === 0 && invalidSlug.length === 0) {
@@ -137,6 +149,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const b of invalidSlug) console.error(`  ${b.file}: ?src=${b.slug}   ${b.snippet}`);
   }
   console.error('\nFix: append `?src=<slug>` (slug ∈ src/lib/attribution-sources.ts ATTRIBUTION_SOURCES) to the connection URL, then re-render —');
-  console.error('  `node scripts/render-integrations.mjs` for docs/integrations/mcp-clients/*.md, or `npm run build:landing` for mcp-clients.ts.');
+  console.error('  `node scripts/render-integrations.mjs --source <skills-worktree>` for docs/integrations/**/*.md, or `npm run build:landing` for mcp-clients.ts.');
   process.exit(1);
 }

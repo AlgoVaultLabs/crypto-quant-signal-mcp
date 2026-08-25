@@ -35,9 +35,17 @@ describe('attribution-sources — SoT enum', () => {
     expect(set.has('chatgpt' as never) && set.has('ai_chatgpt' as never)).toBe(true);
     // A4: `direct` was intentionally dropped (an untagged connect is `unknown`).
     expect(set.has('direct' as never)).toBe(false);
-    // 15 original + 12 FUNNEL-FIX-ATTRIBUTION-W1 + 6 OPS-ATTRIBUTION-AI-REFERRAL-W1 = 33 slugs, no dupes.
-    expect(ATTRIBUTION_SOURCES.length).toBe(33);
-    expect(new Set(ATTRIBUTION_SOURCES).size).toBe(33);
+    // 15 original + 12 FUNNEL-FIX-ATTRIBUTION-W1 + 6 OPS-ATTRIBUTION-AI-REFERRAL-W1
+    // + 1 BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 (`binance_agent_os`) = 34 slugs, no dupes.
+    expect(ATTRIBUTION_SOURCES.length).toBe(34);
+    expect(new Set(ATTRIBUTION_SOURCES).size).toBe(34);
+    // BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1: every slug must match /^[a-z0-9_]+$/. This is not a
+    // style rule — check-attribution-src-coverage.mjs extracts this enum with that exact
+    // character class, so a HYPHENATED slug is invisible to the gate and every connect URL
+    // carrying it is reported as an invalid slug. Pinned here because the coupling is silent.
+    for (const slug of ATTRIBUTION_SOURCES) {
+      expect(slug, `${slug} must be underscore-cased to stay visible to the ?src= gate`).toMatch(/^[a-z0-9_]+$/);
+    }
   });
 
   it('isAttributionSource is a correct type guard', () => {

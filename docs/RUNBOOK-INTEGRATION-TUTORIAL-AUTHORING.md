@@ -22,9 +22,13 @@ the generator.
 | **MCP clients** (`claude-desktop`, `cursor`, `cline`, `claude-code`, `smithery`, `codex`, `kimi`, `glm-zcode`) | `docs/integrations/mcp-clients/<slug>.md` — **this repo** |
 | **Exchange kits** (`binance`, `okx`, `bybit`, `bitget`, `gemini`, `kraken`, `alpaca`, `hyperliquid`, `aster`, `bingx`, `kucoin`, `gateio`) | `docs/integrations/<slug>.md` in **`algovault-skills`** (separate repo) |
 | **Agent frameworks** (`langchain`, `llamaindex`, `maf`, `crewai`) | `docs/integrations/<slug>.md` in **`algovault-skills`** |
+| **In-repo exchange kits** (`binance-agent-os`) | `docs/integrations/exchange-kits/<slug>.md` — **this repo** |
 
-`scripts/render-integrations.mjs` `getSrcPath()` routes per slug: MCP clients resolve locally,
-everything else resolves under `--source` (default `~/git/algovault-skills`).
+`scripts/render-integrations.mjs` `getSrcPath()` routes per SLUG, not per category
+(BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 CH2 R1): it looks for `docs/integrations/*/<slug>.md`
+**in this repo first**, and only falls back to `--source` when no in-repo file exists. A new
+tutorial of ANY kind can therefore live here; the existing 12 exchange and 4 framework slugs
+still resolve out-of-repo, because the in-repo lookup only fires on a file that is present.
 
 **The exchange-kit and framework tutorials also have a real template** —
 `algovault-skills/docs/integrations/_template.md`. A defect copied from it reaches every future
@@ -49,14 +53,44 @@ repos enforce the same blocklist.
   edit triggers no rebuild at all. Push skills first, then re-render here, so the
   committed HTML traces to a published commit rather than to a local working tree.
 
-### Two skills checkouts exist — use the one the renderer reads
+### There is no default skills checkout — pass `--source` a worktree
 
-`render-integrations.mjs` defaults to `~/git/algovault-skills`. A second checkout at
-`~/code/algovault-skills` also exists and has been observed divergent and dirty.
-Rendering with `--source` pointed at the wrong one produces materially different HTML.
-Confirm with `git -C <path> rev-parse --short HEAD` before rendering — and use
-`git -c safe.directory='*'`, because a bare `rev-parse` refuses a repo it does not own
-and reports "not a repo", which has mis-classified real checkouts before.
+**`--source` is effectively required, and the renderer now REFUSES without a resolvable one.**
+The built-in default is `~/git/algovault-skills`, and that path does not exist: `~/git` was
+retired by `OPS-WORKTREE-ROOT-CONFINEMENT-W2` CH6, which relocated the checkout to
+`~/code/algovault-skills.dup-20260809` (its `exempt_paths` row in `ops/shared-worktree-state.json`
+records the move). Until BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 an argument-less run ENOENT'd on that
+phantom path, which reads as a missing tutorial rather than a missing checkout; it now fails with
+a named error naming the cause and the fix.
+
+Create a worktree off `algovault-skills`' `origin/main` and point `--source` at it:
+
+```bash
+git -C ~/code/algovault-skills fetch origin
+git -C ~/code/algovault-skills worktree add \
+  ~/code/.worktrees/algovault-skills/<task> -b worktree-<task> origin/main
+node scripts/render-integrations.mjs --source ~/code/.worktrees/algovault-skills/<task>
+```
+
+**Do NOT render from `~/code/algovault-skills` itself.** Measured 2026-08-25: it is 13 commits
+behind `origin/main`, carries 31 uncommitted changes, and is **missing 5 of the 12 exchange
+sources** (`hyperliquid`, `aster`, `bingx`, `kucoin`, `gateio`), so a full render cannot complete
+from it. Its dirt is somebody's uncommitted work — never reset, stash or pull it.
+
+Confirm any candidate with `git -c safe.directory='*' -C <path> rev-parse --short HEAD` before
+rendering; a bare `rev-parse` refuses a repo it does not own and reports "not a repo", which has
+mis-classified real checkouts before.
+
+**Verify the render, do not assume it.** Re-rendering rewrites three generator-injected
+time-varying fields on **every** page — `<meta name="last-updated">`, the JSON-LD `dateModified`,
+and the `data-tr-field="call_count"` snapshot fallback — so a non-empty `git diff` is expected and
+is not evidence of a source mismatch. The real assertion is that **nothing else** moved:
+
+```bash
+git diff -U0 landing/ | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' \
+  | grep -vE '<meta name="last-updated"|"dateModified":|data-tr-field="call_count"' | wc -l
+# must print 0
+```
 
 ## 2. Run the whole generator chain, in order
 

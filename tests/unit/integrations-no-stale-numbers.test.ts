@@ -56,7 +56,8 @@ describe('landing/integrations/*.html — stale-number drift guard', () => {
     // +glm-zcode. The count stays HARDCODED on purpose — deriving it from the
     // same readdir() the suite iterates would make this assertion tautological,
     // and its whole job is to catch a glob that silently stops matching.
-    expect(PAGES.length).toBe(24);
+    // 24 → 25 (BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1, 2026-08-25): +binance-agent-os.
+    expect(PAGES.length).toBe(25);
     // Execution-kit tutorials for non-signal venues are intentional — kept, not
     // deleted, per Mr.1 2026-07-20. Their presence is asserted so a future
     // cleanup wave can't quietly drop them.
@@ -67,6 +68,9 @@ describe('landing/integrations/*.html — stale-number drift guard', () => {
     for (const added of ['codex.html', 'kimi.html', 'glm-zcode.html']) {
       expect(PAGES).toContain(added);
     }
+    // The first in-repo-sourced exchange kit. Named explicitly so a regression in
+    // getSrcPath()'s per-slug routing shows up here as a missing page, not as a bare count.
+    expect(PAGES).toContain('binance-agent-os.html');
   });
 
   for (const page of PAGES) {

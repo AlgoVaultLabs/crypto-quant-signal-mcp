@@ -1459,7 +1459,7 @@ async function startHttp() {
   // INTEGRATION_HTML at startup, so the HTML must exist in the image before
   // a slug is listed here — a missing file only console.warns, then 404s.
   const INTEGRATION_EXCHANGES = ['binance', 'okx', 'bybit', 'bitget', 'gemini', 'kraken', 'alpaca',
-    'hyperliquid', 'aster', 'bingx', 'kucoin', 'gateio'] as const;
+    'hyperliquid', 'aster', 'bingx', 'kucoin', 'gateio', 'binance-agent-os'] as const;
   const INTEGRATION_FRAMEWORKS = ['langchain', 'llamaindex', 'maf', 'crewai'] as const;
   // INTEGRATIONS-FULL-STACK-W1 C4 (2026-05-19): 5 MCP-client landing pages
   // (Plain HTTP/curl stays inline-only per Q-PLAIN-HTTP=NO; not in allow-list).

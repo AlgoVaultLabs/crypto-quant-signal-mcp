@@ -19,6 +19,7 @@
  */
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -49,7 +50,10 @@ const EXCHANGES = ['binance', 'okx', 'bybit', 'bitget', 'gemini', 'kraken', 'alp
   'hyperliquid', 'aster', 'bingx', 'kucoin',
   // OPS-INTEGRATIONS-VENUE-PAGES-W2 (2026-07-21): Gate.io. MEXC/HTX/Phemex are
   // CLOSED, not pending — see audits/OPS-INTEGRATIONS-VENUE-PAGES-W2-endpoint-truth.md.
-  'gateio'];
+  'gateio',
+  // BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 (2026-08-25): the first exchange-kit tutorial sourced
+  // IN-REPO (docs/integrations/exchange-kits/), which getSrcPath() now resolves per slug.
+  'binance-agent-os'];
 // AI-AGENT-FRAMEWORK-TUTORIALS-W1 (2026-05-18): 4 framework integration mirrors
 // extend the same render pipeline. Same template — eyebrow shows `<slug> integration`,
 // canonical URL = /integrations/<slug>, page title = AlgoVault × <Display>.
@@ -65,18 +69,65 @@ const ALL_TARGETS = [...EXCHANGES, ...FRAMEWORKS, ...MCP_CLIENTS];
 
 const args = process.argv.slice(2);
 const sourceArg = args[args.indexOf('--source') + 1];
-const SOURCE_REPO = sourceArg && sourceArg !== '--source'
-  ? sourceArg
-  : join(homedir(), 'git', 'algovault-skills');
+// BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 CH2 R0 — the default used to be
+// `join(homedir(), 'git', 'algovault-skills')`. That path does NOT exist:
+// OPS-WORKTREE-ROOT-CONFINEMENT-W2 CH6 relocated `~/git/algovault-skills` to
+// `~/code/algovault-skills.dup-20260809` (see its exempt_paths row in
+// ops/shared-worktree-state.json), and `~/git` has been gone since. So every
+// argument-less run ENOENT'd on a phantom path, which reads as a missing tutorial
+// rather than a missing checkout. A default pointing at a directory that cannot
+// exist is a fictional primitive in our OWN tree — exactly the class CH1's gate
+// retires — so it now REFUSES with a named error instead.
+const DEFAULT_SOURCE_REPO = join(homedir(), 'git', 'algovault-skills');
+const SOURCE_REPO = sourceArg && sourceArg !== '--source' ? sourceArg : DEFAULT_SOURCE_REPO;
 
 const SOURCE_DIR = join(SOURCE_REPO, 'docs', 'integrations');
-const LOCAL_MCP_CLIENTS_DIR = join(ROOT, 'docs', 'integrations', 'mcp-clients');
+const LOCAL_DOCS_ROOT = join(ROOT, 'docs', 'integrations');
+const LOCAL_MCP_CLIENTS_DIR = join(LOCAL_DOCS_ROOT, 'mcp-clients');
 const TARGET_DIR = join(ROOT, 'landing', 'integrations');
 
+/**
+ * Refuse a run that cannot possibly resolve its out-of-repo sources, naming the cause.
+ * Called only when a slug actually needs SOURCE_DIR, so a future all-in-repo tree stops
+ * depending on the sibling checkout without anyone editing this guard.
+ */
+function requireSourceRepo(slug) {
+  if (existsSync(SOURCE_DIR)) return;
+  const usedDefault = SOURCE_REPO === DEFAULT_SOURCE_REPO;
+  throw new Error(
+    `[render] cannot resolve the algovault-skills source for '${slug}'.\n` +
+    `         looked in: ${SOURCE_DIR}\n` +
+    (usedDefault
+      ? `         No --source was passed, so this fell back to the built-in default\n` +
+        `         ${DEFAULT_SOURCE_REPO}, which does not exist on this machine\n` +
+        `         (~/git/algovault-skills was relocated by OPS-WORKTREE-ROOT-CONFINEMENT-W2 CH6).\n`
+      : `         That path was passed via --source and does not exist.\n`) +
+    `         Fix: create a worktree of algovault-skills off its origin/main and pass it:\n` +
+    `           node scripts/render-integrations.mjs --source <path-to-algovault-skills-worktree>\n` +
+    `         Do NOT point this at ~/code/algovault-skills — it is a divergent, dirty checkout\n` +
+    `         (see docs/RUNBOOK-INTEGRATION-TUTORIAL-AUTHORING.md).`,
+  );
+}
+
+/**
+ * Resolve a slug's markdown source. IN-REPO FIRST, across any subdirectory of
+ * docs/integrations/, then the sibling algovault-skills checkout.
+ *
+ * BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 CH2 R1: this used to route on CATEGORY —
+ * `MCP_CLIENTS` resolved locally and everything else resolved out-of-repo. That coupling
+ * made a page's KIND decide which repo you had to edit, so every exchange-kit tutorial
+ * was a cross-repo change. Routing per SLUG instead means a new tutorial is an in-repo
+ * file, and an existing one keeps resolving exactly where it does today: the in-repo
+ * lookup only fires for a file that is actually present, so the 12 exchange and 4
+ * framework slugs are untouched (proven by a byte-identical re-render).
+ */
 function getSrcPath(slug) {
-  if (MCP_CLIENTS.includes(slug)) {
-    return join(LOCAL_MCP_CLIENTS_DIR, `${slug}.md`);
+  for (const dir of readdirSync(LOCAL_DOCS_ROOT, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue;
+    const candidate = join(LOCAL_DOCS_ROOT, dir.name, `${slug}.md`);
+    if (existsSync(candidate)) return candidate;
   }
+  requireSourceRepo(slug);
   return join(SOURCE_DIR, `${slug}.md`);
 }
 
@@ -88,6 +139,28 @@ function escapeHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+// BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 CH2 R7 — per-slug JSON-LD overrides.
+//
+// `datePublished` was a single hardcoded 2026-04-25 for every page. A page created today
+// cannot honestly claim it, and a crawler-facing publication date is public copy. Only the
+// NEW slug is listed; every existing page keeps the incumbent value byte-for-byte, so the
+// zero-diff re-render proof still holds.
+const DEFAULT_DATE_PUBLISHED = '2026-04-25';
+const DATE_PUBLISHED = {
+  'binance-agent-os': '2026-08-25',
+};
+
+// The shared description ends "Demo runs testnet/demo only — zero real-money risk in any code
+// path." That is true of the demo-bearing kits and FALSE here: this page connects a real
+// Binance account under OAuth and can place live orders in an Agentic sub-account. Shipping the
+// default would put an inaccurate safety claim in crawler-facing JSON-LD.
+const DESCRIPTIONS = {
+  'binance-agent-os':
+    "Connect Binance Agent OS and AlgoVault MCP to one client: AlgoVault returns the composite "
+    + "verdict, Binance executes it under OAuth. No API keys, no HMAC signing, and no withdrawal "
+    + "scope exists. Trading is confined to an isolated Agentic sub-account you fund yourself.",
+};
 
 // Acronym-aware target display names (avoid auto-cap "OKX" → "Okx").
 const DISPLAY_NAMES = {
@@ -113,6 +186,9 @@ const DISPLAY_NAMES = {
   aster: 'Aster',
   bingx: 'BingX',
   kucoin: 'KuCoin',
+  // BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 — without this the title-cased fallback renders
+  // "Binance-agent-os".
+  'binance-agent-os': 'Binance Agent OS',
   cursor: 'Cursor',
   cline: 'Cline (VSCode)',
   smithery: 'Smithery',
@@ -358,7 +434,7 @@ function techArticleSchema(exchange, display) {
     "@type": "TechArticle",
     "headline": `AlgoVault × ${display} - Build Verifiable AI Trading Agents`,
     "url": canonical,
-    "datePublished": "2026-04-25T00:00:00+00:00",
+    "datePublished": `${DATE_PUBLISHED[exchange] ?? DEFAULT_DATE_PUBLISHED}T00:00:00+00:00`,
     "dateModified": `${SNAPSHOT.date}T15:00:00+00:00`,
     "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
     "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com", "logo": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 } },
@@ -367,7 +443,7 @@ function techArticleSchema(exchange, display) {
     // number. Meta + JSON-LD cannot self-heal (no client proxy runs for a
     // crawler), so a baked figure here rots permanently — the class is killed
     // by removing the number, not by refreshing it. Body spans keep the numbers.
-    "description": `Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with ${display}'s execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.`,
+    "description": DESCRIPTIONS[exchange] ?? `Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with ${display}'s execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.`,
     "proficiencyLevel": "Intermediate|Advanced",
     "about": { "@type": "Thing", "name": `${display} integration with AlgoVault MCP composite verdict` }
   };
