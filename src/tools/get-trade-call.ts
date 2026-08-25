@@ -19,7 +19,7 @@ import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions
 import { tradfiFundingAnnotation } from '../lib/tradfi-funding.js';
 // OPS-PFE-METRIC-INTEGRITY-W1 R2/R3: emit-time book-liveness gate + its fail-open counter.
 import { assessBookLiveness, getBookLivenessMode, BOOK_LIVENESS_WINDOW, BOOK_LIVENESS_MIN_GENUINE_BARS } from '../lib/book-liveness.js';
-import { recordEmitSuppression } from '../lib/emit-suppressions.js';
+import { recordEmitSuppression, suppressionReasonFor } from '../lib/emit-suppressions.js';
 // `intervalMsFor` joins the EXISTING candle-guard import rather than arriving as a second
 // import of the same module. candle-guard owns TF_INTERVAL_MS outright: this file's private
 // getIntervalMs was a THIRD copy of that table and is deleted below.
@@ -1072,7 +1072,13 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     const wouldSuppress = bookLivenessMode === 'enforce'
       ? liveVerdict.scoreAdjustments.some((a) => a.startsWith('Book not trading'))
       : liveVerdict.signal !== 'HOLD';
-    if (wouldSuppress) recordEmitSuppression(exchange, timeframe, coin);
+    // The MODE is recorded with the row (EDGE-SELL-RESOLUTION-ASYMMETRY-W1 Q3). Both stages
+    // write here on purpose; without the mode in the data, a reader over the pg-tunnel cannot
+    // tell "we withheld this" from "we would have", and the AOE digest's frozen-book footnote
+    // was hiding itself on a bare row count — i.e. the moment SHADOW began.
+    if (wouldSuppress) {
+      recordEmitSuppression(exchange, timeframe, coin, suppressionReasonFor(bookLivenessMode));
+    }
   }
 
   // SHADOW divergence log — fire-and-forget + try/catch-isolated (NEVER blocks/fails the

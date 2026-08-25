@@ -37,14 +37,48 @@
  * for RARE events; this is not that.
  */
 
+import type { BookLivenessMode } from './book-liveness.js';
+
 /**
  * Why an emission was suppressed. A string union rather than a bare string so a new reason
  * cannot be added without the type surfacing every consumer.
+ *
+ * ── WHY THE MODE IS PART OF THE REASON (EDGE-SELL-RESOLUTION-ASYMMETRY-W1 Q3) ──
+ *
+ * `shadow` and `enforce` BOTH write here — deliberately, so the shadow-compare report and the
+ * live rate come from one code path (see the call site in `get-trade-call.ts`). But the row
+ * they wrote was indistinguishable, and a downstream consumer that reads "are there any rows"
+ * as "the gate is live" then goes silently WRONG the moment shadow starts: in shadow the
+ * verdict is untouched, so the emitted corpus still contains every frozen-book row.
+ *
+ * That consumer is real. `autonomous-optimizer`'s `src/monitoring/dwr_baseline.py`
+ * `frozen_book_footnote()` renders *"decided set still includes frozen-book rows (liveness
+ * gate dark)"* and hid it on `count(*) > 0` — which is TRUE throughout shadow. It reads this
+ * table over the read-only pg-tunnel and has no other way to observe the gate's mode, so the
+ * distinction has to exist in the DATA. `reason` is already part of the primary key
+ * (`date, exchange, timeframe, coin, reason`), so splitting by mode needs no migration.
+ *
+ * `frozen_book` therefore means "an emission was ACTUALLY withheld"; `frozen_book_shadow`
+ * means "would have been, had the gate been enforcing".
  */
-export type SuppressionReason = 'frozen_book';
+export type SuppressionReason = 'frozen_book' | 'frozen_book_shadow';
+
+/**
+ * The ONE mapping from rollout stage to recorded reason. Single-derivation: every consumer
+ * projects from this, and `off` can never reach here (the predicate does not run), so it maps
+ * to the shadow value rather than inventing a third.
+ */
+export function suppressionReasonFor(mode: BookLivenessMode): SuppressionReason {
+  return mode === 'enforce' ? 'frozen_book' : 'frozen_book_shadow';
+}
 
 /**
  * Increment the suppression counter for one (day, venue, timeframe, coin, reason).
+ *
+ * `reason` is REQUIRED, not defaulted. A default would have to pick a mode, and picking
+ * `frozen_book` would let a caller that forgets the argument mint a fake "we actually withheld
+ * this" row — the exact class of defect this parameter exists to prevent. Derive it with
+ * {@link suppressionReasonFor}.
  *
  * @param exchange The venue whose book was frozen — the field `hold_counts` lacks.
  */
@@ -52,7 +86,7 @@ export function recordEmitSuppression(
   exchange: string,
   timeframe: string,
   coin: string,
-  reason: SuppressionReason = 'frozen_book',
+  reason: SuppressionReason,
 ): void {
   // Offline under vitest by default so an emit-path test never spins up the SQLite backend.
   // `EMIT_SUPPRESSIONS_TEST=1` re-enables the real path for the fail-open recorder test.

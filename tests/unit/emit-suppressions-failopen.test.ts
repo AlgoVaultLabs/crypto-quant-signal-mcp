@@ -27,20 +27,20 @@ afterEach(() => {
 
 describe('recordEmitSuppression — fail-open on the emit path', () => {
   it('returns undefined SYNCHRONOUSLY — it must never be awaited into the emit path', () => {
-    const r = recordEmitSuppression('ASTER', '1h', 'QQQ');
+    const r = recordEmitSuppression('ASTER', '1h', 'QQQ', 'frozen_book');
     // undefined is by definition not a thenable, so a caller cannot await it into the path.
     expect(r).toBeUndefined();
   });
 
   it('is offline under vitest by default (no DB spin-up from an emit-path test)', () => {
     expect(process.env.VITEST).toBeTruthy();
-    expect(() => recordEmitSuppression('ASTER', '1h', 'QQQ')).not.toThrow();
+    expect(() => recordEmitSuppression('ASTER', '1h', 'QQQ', 'frozen_book')).not.toThrow();
   });
 
   it('does not throw when the real path is enabled and the backend is unavailable', async () => {
     process.env.EMIT_SUPPRESSIONS_TEST = '1';
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(() => recordEmitSuppression('NOPE', '1h', 'FAKE')).not.toThrow();
+    expect(() => recordEmitSuppression('NOPE', '1h', 'FAKE', 'frozen_book')).not.toThrow();
     // Let the lazy import + rejection settle; the catch must swallow it.
     await new Promise((r) => setTimeout(r, 50));
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('UnhandledPromiseRejection'));
@@ -54,7 +54,7 @@ describe('recordEmitSuppression — fail-open on the emit path', () => {
       [undefined as unknown as string, null as unknown as string, NaN as unknown as string],
     ];
     for (const [ex, tf, coin] of hostile) {
-      expect(() => recordEmitSuppression(ex, tf, coin)).not.toThrow();
+      expect(() => recordEmitSuppression(ex, tf, coin, 'frozen_book')).not.toThrow();
     }
   });
 });
