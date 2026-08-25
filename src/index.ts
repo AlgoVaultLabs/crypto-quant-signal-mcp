@@ -1302,10 +1302,20 @@ async function startHttp() {
         //      a fix to script-src alone, and the visible symptom is identical: an empty space
         //      where the widget should be, and every submission failing the challenge.
         // Cloudflare's CSP reference names exactly these two directives. `connect-src` is NOT
-        // widened — it is required only for pre-clearance mode, which this integration does not
-        // use, and a directive added "just in case" is threat surface bought for nothing.
-        'script-src \'self\' \'unsafe-inline\' https://cdn.tailwindcss.com https://challenges.cloudflare.com; ' +
-        'frame-src \'self\' https://challenges.cloudflare.com; ' +
+        // widened -- it is required only for pre-clearance mode, which this integration does
+        // not use, and a speculative directive is threat surface bought for nothing.
+        //
+        // ⚠️ EVERY LITERAL IN THIS CALL MUST USE DOUBLE QUOTES, AND THIS COMMENT MUST CONTAIN
+        // NONE. `scripts/check-token-resolution.mjs` reconstructs this policy by scraping
+        // double-quoted literals out of a byte window of this file, so a single-quoted segment
+        // is INVISIBLE to it and a double-quoted phrase in the prose gets spliced INTO the
+        // policy. Both happened in this wave's first draft: the new directives vanished, and a
+        // quoted aside landed mid-string, turning `style-src` into `casestyle-src` and failing
+        // the fail-closed deploy gate. The scraper now strips comments (same commit), so only
+        // the quoting convention still matters here — but it matters silently, which is why it
+        // is stated at the site rather than left to be rediscovered.
+        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://challenges.cloudflare.com; " +
+        "frame-src 'self' https://challenges.cloudflare.com; " +
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://algovault.com; " +
         "font-src 'self' https://fonts.gstatic.com data:; " +
         "img-src 'self' data: https:; " +

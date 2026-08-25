@@ -139,12 +139,54 @@ export function localFileForHref(repoRoot, href) {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
-/** The CSP the Express middleware sets, read from source — never hand-copied. */
+/**
+ * Remove `//` line comments from a window of source.
+ *
+ * Deliberately narrow: it runs on a window that is a chain of string concatenations, where the
+ * only `//` occurring inside a string literal is a URL scheme separator and is therefore always
+ * preceded by a colon. Guarding that one case is sufficient here and keeps this readable; a full
+ * tokenizer would be more machinery than this window justifies.
+ */
+export function stripLineComments(src) {
+  return src
+    .split('\n')
+    .map((line) => {
+      const m = line.match(/(^|[^:])\/\//);
+      if (!m) return line;
+      return line.slice(0, m.index + m[1].length);
+    })
+    .join('\n');
+}
+
+/**
+ * The CSP the Express middleware sets, read from source — never hand-copied.
+ *
+ * COMMENTS ARE STRIPPED FIRST, and that is not tidiness — it is the fix for a measured failure.
+ * 2026-08-25 (CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH2): a wave added an explanatory comment inside
+ * this `setHeader` call containing an ordinary English phrase in double quotes. The scraper
+ * ingested it as a policy fragment and produced
+ *
+ *     default-src 'self'; just in casestyle-src 'self' 'unsafe-inline' https://...
+ *
+ * so `style-src` became `casestyle-src`, the directive silently VANISHED from the parsed policy,
+ * every page fell back to `default-src 'self'`, and this fail-closed gate blocked the deploy
+ * with 15 findings describing a CSP nobody had written. The policy on the wire was correct the
+ * whole time — the instrument was wrong, and it was confidently, specifically wrong.
+ *
+ * Same class as `scripts/check-canaries-wired.mjs` stripping comments before deciding what
+ * counts as an invocation, and as the CLAUDE.md rule that a ban-grep must not read a docblock
+ * quoting the banned construct. The direction is inverted here — a comment INJECTED content
+ * rather than tripping a ban — but the remedy is identical: the scanner must see code, not prose.
+ *
+ * Still by design: only DOUBLE-quoted literals are read, because that is the convention the call
+ * site uses. A single-quoted segment stays invisible, which is why the call site now carries a
+ * standing note saying so.
+ */
 export function extractExpressCsp(indexSrc) {
   const i = indexSrc.indexOf("'Content-Security-Policy'");
   if (i === -1) return null;
   // Concatenated string literals up to the closing paren of setHeader.
-  const seg = indexSrc.slice(i, i + 2500);
+  const seg = stripLineComments(indexSrc.slice(i, i + 2500));
   const parts = [...seg.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
   const joined = parts.join('');
   return joined.includes('default-src') ? joined : null;
@@ -310,6 +352,37 @@ function selfTest() {
       'src/lib/fallback-page.ts': pageTs('<style>body{font-family:var(--font-text, system-ui)}</style>'),
       'src/lib/real-page.ts': pageTs('<style>:root{--bg:#0d1117}body{background:var(--bg)}</style>'),
     })), 'PASS');
+
+    // ── must-produce: a COMMENT must never contribute to the extracted policy ──
+    //
+    // The live regression, pinned. CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH2 added a comment inside
+    // the setHeader call carrying an ordinary English phrase in double quotes; this scraper
+    // spliced it into the policy, `style-src` became `casestyle-src`, and the gate blocked a
+    // deploy over a CSP nobody had written. Asserted at the EXTRACTOR rather than end-to-end,
+    // because that is the function that was wrong.
+    produce += 1;
+    const withComment = indexTs(
+      `"default-src 'self'; " +\n  // a directive added "just in case" is threat surface\n  "style-src 'self' https://fonts.googleapis.com; "`,
+    );
+    expect(
+      'a double-quoted phrase in a comment does NOT enter the policy',
+      extractExpressCsp(withComment),
+      "default-src 'self'; style-src 'self' https://fonts.googleapis.com; ",
+    );
+
+    produce += 1;
+    expect(
+      'stripLineComments leaves a URL scheme separator alone',
+      stripLineComments('const a = "https://x.test/a.css"; // trailing note'),
+      'const a = "https://x.test/a.css"; ',
+    );
+
+    // Proven able to fail: the UNSTRIPPED extraction really does corrupt the directive, so the
+    // assertion above is not vacuously true of any input.
+    produce += 1;
+    const unstripped = [...withComment.slice(withComment.indexOf("'Content-Security-Policy'")).matchAll(/"([^"]*)"/g)]
+      .map((m) => m[1]).join('');
+    expect('without the strip, style-src IS corrupted', /casestyle-src/.test(unstripped), true);
 
     // ── must-map ────────────────────────────────────────────────────────────
     map += 1;
