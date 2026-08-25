@@ -1764,6 +1764,12 @@ async function startHttp() {
         markNotified: store.markContactLeadNotified,
         sendEmail: emailMod.sendContactLeadEmail,
         sendAlert: tg.sendAlert,
+        // CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1 — the quarantine lane's three seams. Each fails
+        // open inside the store, so a DB problem degrades to "notify the operator", never to a
+        // silently swallowed lead.
+        readLookback: store.readContactLeadLookback,
+        markScored: store.markContactLeadScored,
+        countRecentQuarantines: store.countRecentQuarantines,
       },
     );
     switch (result.kind) {

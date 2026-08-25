@@ -180,8 +180,15 @@ describe('AC5 — CR/LF must never reach an email header', () => {
     const h = makeDeps({
       sendEmail: async (args) => { captured.push(args as unknown as Record<string, unknown>); return { id: 're_2' }; },
     });
+    // `monthly_volume` deliberately DIFFERS from `name` — CONTACT-ANTISPAM-AND-REPLY-TO-W1.
+    // Both fields used to carry `nasty`, which was incidental to this test (the point was "every
+    // field carries CRLF"), but that pair is now the live campaign's exact fingerprint:
+    // `same-name-volume` scores 50, the lead quarantines, and `sendEmail` is never reached — so
+    // the test would assert against an empty `captured` instead of the property it exists for.
+    // The property is unchanged: the HANDLER passes raw bytes through and stripping is the
+    // SENDER's job. The quarantine behaviour it collided with is asserted positively below.
     const r = await handleContactSubmission(
-      { name: nasty, email: 'ok@example.test', company: nasty, monthly_volume: nasty, message: nasty },
+      { name: nasty, email: 'ok@example.test', company: nasty, monthly_volume: '250,000', message: nasty },
       CTX, h.deps,
     );
     expect(r.kind).toBe('ok');
@@ -190,7 +197,27 @@ describe('AC5 — CR/LF must never reach an email header', () => {
     expect(typeof sendContactLeadEmail).toBe('function');
     // And prove the values that DID reach the sender still carry the raw bytes — i.e. the
     // stripping is the sender's job and is not silently assumed upstream.
+    expect(captured).toHaveLength(1);
     expect(String(captured[0].name)).toContain('\r\n');
+  });
+
+  it('a hostile name REPEATED into monthly_volume is quarantined, so nothing is sent at all', async () => {
+    // The positive half of the fixture change above: the pair this test used to submit is the
+    // campaign fingerprint, and the scorer is right to catch it. Asserted here at the handler
+    // boundary — not only in contact-spam.test.ts — because what matters operationally is that
+    // the SEND does not happen, and that is a property of this function, not of the scorer.
+    const nasty = 'x\r\nBcc: attacker@evil.test\r\nSubject: forged';
+    const captured: Array<Record<string, unknown>> = [];
+    const h = makeDeps({
+      sendEmail: async (args) => { captured.push(args as unknown as Record<string, unknown>); return { id: 're_2' }; },
+    });
+    const r = await handleContactSubmission(
+      { name: nasty, email: 'ok@example.test', company: nasty, monthly_volume: nasty, message: nasty },
+      CTX, h.deps,
+    );
+    expect(r).toMatchObject({ kind: 'ok', quarantined: true });
+    expect(captured).toHaveLength(0);
+    expect(h.alerts).toHaveLength(0);
   });
 
   it('the SENDER strips CR/LF from every header-bound field and keeps them out of the subject', async () => {
@@ -224,5 +251,224 @@ describe('AC5 — CR/LF must never reach an email header', () => {
     expect(args.html).toContain('enquiry');
     vi.doUnmock('resend');
     delete process.env.RESEND_API_KEY;
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1 — the quarantine lane.
+//
+// AC1.5  a quarantined submission is STORED, but sendEmail and the per-lead TG alert are never
+//        called, and the user sees the normal confirmation
+// AC1.6  persist still happens BEFORE scoring — pinned by index comparison, exactly as the
+//        original wave pinned insert-before-send
+// AC1.7  the lookback reader fails open: a forced DB error yields an empty summary, contributes
+//        0, and the lead is notified normally
+// AC1.8  the campaign alert fires ONCE per 24h window across N quarantines, not N times
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The live 2026-08 campaign shape, verbatim from `contact_leads`. */
+const SPAM = {
+  name: 'Roberttic',
+  email: 'catherinemcglamry@gmail.com',
+  company: 'google',
+  monthly_volume: 'Roberttic',
+  message: 'I would like to know more about pricing',
+};
+
+/** Extends the existing recorder with the three quarantine seams. */
+function makeQuarantineDeps(over: Partial<ContactSubmitDeps> = {}) {
+  const h = makeDeps();
+  const scored: Array<{ id: number; score: number; reasons: string | null; quarantined: boolean }> = [];
+  let quarantinedSoFar = 0;
+  const deps: ContactSubmitDeps = {
+    ...h.deps,
+    readLookback: async () => { h.order.push('lookback'); return { distinctEmailsForIdentity: 0, leadsFromIpHash: 0 }; },
+    markScored: async (id, score, reasons, quarantined) => {
+      h.order.push('markScored');
+      scored.push({ id, score, reasons, quarantined });
+      if (quarantined) quarantinedSoFar += 1;
+      return true;
+    },
+    countRecentQuarantines: async () => { h.order.push('countQuarantines'); return quarantinedSoFar - 1; },
+    ...over,
+  };
+  return { ...h, deps, scored, priorCount: () => quarantinedSoFar };
+}
+
+describe('AC1.5 — a quarantined submission is stored, marked, and silent', () => {
+  it('stores the row, skips sendEmail AND the per-lead alert, and confirms normally', async () => {
+    const h = makeQuarantineDeps();
+    const r = await handleContactSubmission(SPAM, CTX, h.deps);
+
+    // Stored — the lead is never destroyed. This is the Data Integrity property.
+    expect(h.inserted).toHaveLength(1);
+    expect(h.inserted[0]).toMatchObject({ name: 'Roberttic', monthlyVolume: 'Roberttic' });
+
+    // Not notified. Call COUNTS, not just absence of a value.
+    expect(h.emailed).toHaveLength(0);
+    expect(h.order).not.toContain('send');
+    expect(h.notified).toHaveLength(0);
+
+    // Marked, with the verdict persisted.
+    expect(h.scored).toEqual([
+      { id: 42, score: 50, reasons: 'same-name-volume', quarantined: true },
+    ]);
+
+    // The user sees the SAME thing a human sees. `kind` is 'ok' so the route renders the
+    // confirmation page — a bot must never be told it was detected.
+    expect(r.kind).toBe('ok');
+    expect(r).toMatchObject({ kind: 'ok', leadId: 42, emailed: false, quarantined: true, spamScore: 50 });
+  });
+
+  it('a genuine lead still takes the full notify path', async () => {
+    const h = makeQuarantineDeps();
+    const r = await handleContactSubmission(VALID, CTX, h.deps);
+    expect(r).toMatchObject({ kind: 'ok', emailed: true, quarantined: false, spamScore: 0 });
+    expect(h.emailed).toHaveLength(1);
+    expect(h.alerts).toHaveLength(1);
+    expect(h.notified).toEqual([{ id: 42, error: null }]);
+  });
+
+  it('the quarantined confirmation is INDISTINGUISHABLE from the genuine one to the caller', async () => {
+    // The route switches on `kind` alone, so both must land in the same branch. If a later wave
+    // gives quarantine its own `kind`, the route grows a different response and hands a bot the
+    // oracle it needs to tune around the scorer.
+    const spam = await handleContactSubmission(SPAM, CTX, makeQuarantineDeps().deps);
+    const good = await handleContactSubmission(VALID, CTX, makeQuarantineDeps().deps);
+    expect(spam.kind).toBe(good.kind);
+  });
+});
+
+describe('AC1.6 — persist happens BEFORE scoring', () => {
+  it('insert precedes lookback, scoring and the mark — pinned by index', async () => {
+    const h = makeQuarantineDeps();
+    await handleContactSubmission(SPAM, CTX, h.deps);
+    const i = (step: string) => h.order.indexOf(step);
+    expect(i('insert')).toBeGreaterThanOrEqual(0);
+    expect(i('insert')).toBeLessThan(i('lookback'));
+    expect(i('insert')).toBeLessThan(i('markScored'));
+  });
+
+  it('a lead that never became durable is never scored', async () => {
+    const h = makeQuarantineDeps({ insertLead: async () => null });
+    const r = await handleContactSubmission(SPAM, CTX, h.deps);
+    expect(r.kind).toBe('server_error');
+    expect(h.order).not.toContain('lookback');
+    expect(h.order).not.toContain('markScored');
+    expect(h.scored).toEqual([]);
+  });
+
+  it('the genuine path keeps its original ordering, with scoring spliced between', async () => {
+    const h = makeQuarantineDeps();
+    await handleContactSubmission(VALID, CTX, h.deps);
+    expect(h.order).toEqual([
+      'validate', 'insert', 'lookback', 'markScored', 'send', 'markNotified', 'alert',
+    ]);
+  });
+});
+
+describe('AC1.7 — the lookback reader fails open', () => {
+  it('a THROWING lookback scores the lead with an empty window and notifies it normally', async () => {
+    const h = makeQuarantineDeps({
+      readLookback: async () => { throw new Error('connection terminated unexpectedly'); },
+    });
+    const r = await handleContactSubmission(VALID, CTX, h.deps);
+    // Contributed 0: the genuine lead scores 0 and is notified, exactly as if the DB were fine.
+    expect(h.scored[0]).toMatchObject({ score: 0, quarantined: false });
+    expect(r).toMatchObject({ kind: 'ok', emailed: true, quarantined: false });
+    expect(h.emailed).toHaveLength(1);
+  });
+
+  it('a DB failure can never quarantine a real lead — the failure direction is NOTIFY', async () => {
+    // The rule that matters: an unmeasurable window must not accuse anyone. A lead whose ONLY
+    // signals would have been lookback-derived sails through when the lookback is broken.
+    const h = makeQuarantineDeps({
+      readLookback: async () => { throw new Error('pool exhausted'); },
+    });
+    const r = await handleContactSubmission(
+      { ...VALID, name: 'Roberttic', company: 'google', monthly_volume: '250,000' },
+      CTX, h.deps,
+    );
+    expect(r).toMatchObject({ quarantined: false });
+  });
+
+  it('a throwing markScored does not fail the request — the lead is already durable', async () => {
+    const h = makeQuarantineDeps({
+      markScored: async () => { throw new Error('write lost'); },
+    });
+    const r = await handleContactSubmission(VALID, CTX, h.deps);
+    expect(r.kind).toBe('ok');
+    expect(h.emailed).toHaveLength(1);
+  });
+
+  it('absent quarantine deps still SCORE — only the persistence and the notice are optional', async () => {
+    // Every new dep is optional, but scoring is NOT dep-gated and that distinction is the point:
+    // `same-name-volume` needs no database, so a caller that has not been updated still refuses
+    // to page the operator for the live campaign. What it loses is the durable record
+    // (`markScored`) and the campaign notice (`countRecentQuarantines`), never the protection.
+    const h = makeDeps();
+    const r = await handleContactSubmission(SPAM, CTX, h.deps);
+    expect(r).toMatchObject({ kind: 'ok', quarantined: true, emailed: false });
+    expect(h.emailed).toHaveLength(0);
+    expect(h.alerts).toHaveLength(0);
+    // ...and the lead is still captured, which is the invariant that never bends.
+    expect(h.inserted).toHaveLength(1);
+  });
+
+  it('a lookback-only signal DOES need the dep — absent it, that rule cannot fire', async () => {
+    // The other side of the same coin, so the split above is not merely asserted but shown.
+    const h = makeDeps();
+    const r = await handleContactSubmission(
+      { ...VALID, name: 'Roberttic', company: 'google', monthly_volume: '250,000' }, CTX, h.deps,
+    );
+    expect(r).toMatchObject({ quarantined: false, emailed: true });
+  });
+});
+
+describe('AC1.8 — ONE campaign alert per 24h window, not one per lead', () => {
+  it('fires once across 6 consecutive quarantines', async () => {
+    const h = makeQuarantineDeps();
+    for (let i = 0; i < 6; i++) {
+      await handleContactSubmission({ ...SPAM, email: `spam${i}@gmail.com` }, CTX, h.deps);
+    }
+    expect(h.scored).toHaveLength(6);
+    expect(h.scored.every((s) => s.quarantined)).toBe(true);
+    // SIX quarantines, ONE alert. Pre-wave this was six emails and six Telegram pages.
+    expect(h.alerts).toHaveLength(1);
+    expect(h.alerts[0]).toContain('Contact-form spam campaign detected');
+    expect(h.alerts[0]).toContain('Per-lead alerts are suppressed');
+    // And zero emails throughout.
+    expect(h.emailed).toHaveLength(0);
+  });
+
+  it('an unavailable count SUPPRESSES the alert rather than manufacturing a page', async () => {
+    const h = makeQuarantineDeps({ countRecentQuarantines: async () => null });
+    await handleContactSubmission(SPAM, CTX, h.deps);
+    expect(h.alerts).toHaveLength(0);
+    // ...but the lead is still stored and still marked. The lane works without the notice.
+    expect(h.inserted).toHaveLength(1);
+    expect(h.scored[0]).toMatchObject({ quarantined: true });
+  });
+
+  it('a throwing alert never fails the request', async () => {
+    const h = makeQuarantineDeps({
+      sendAlert: async () => { throw new Error('telegram down'); },
+    });
+    const r = await handleContactSubmission(SPAM, CTX, h.deps);
+    expect(r).toMatchObject({ kind: 'ok', quarantined: true });
+  });
+
+  it('the alert body names the count, the score and the reasons — not a bare number', async () => {
+    const h = makeQuarantineDeps();
+    await handleContactSubmission(SPAM, CTX, h.deps);
+    const body = h.alerts[0];
+    // The id carries its entity noun — CLAUDE.md forbids a bare parenthesised number beside a
+    // count, which cost a real operator misread on WEBHOOK_DELIVERY_DRIFT.
+    expect(body).toContain('First quarantined lead in 24h: 42');
+    expect(body).toContain('score 50/50');
+    expect(body).toContain('same-name-volume');
+    // States the retention promise explicitly, because "quarantined" reads as "deleted" to a
+    // reader who has not seen the schema.
+    expect(body).toContain('STORED and marked, never deleted');
   });
 });

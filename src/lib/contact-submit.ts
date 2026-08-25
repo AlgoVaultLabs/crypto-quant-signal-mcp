@@ -8,12 +8,35 @@
  * be honestly asserted against a closure nobody can import.
  *
  * ORDER IS THE CONTRACT:
- *   validate → PERSIST (durably) → notify → record the notify outcome → confirm.
+ *   validate → PERSIST (durably) → SCORE → (quarantined ? mark & stay silent : notify)
+ *            → record the notify outcome → confirm.
  *
  * A lead is the scarcest thing this product captures and an email send is a network call that
  * fails. Sending first — or persisting non-durably — turns a Resend outage into a lost lead
  * behind a success page. Everything after the persist is explicitly unable to fail the request.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY SCORING RUNS *AFTER* THE INSERT, AND MUST NOT BE "OPTIMISED" FORWARD
+ * (CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1)
+ *
+ * Moving the score ahead of the persist looks cheaper — you would skip a write for spam. It is
+ * wrong three times over:
+ *   1. The lead would no longer be durable before we pass judgement on it, so a scorer bug could
+ *      destroy a real enterprise lead. Quarantine's entire safety property is that it acts on
+ *      something already saved.
+ *   2. The lookback rules count PRIOR ROWS over a 24h window. Scoring before the insert makes the
+ *      current submission invisible to its own window, silently shifting every threshold by one.
+ *   3. A scoring or DB failure could then fail the request. After the insert it provably cannot.
+ *
+ * The quarantine branch suppresses the NOTIFICATION, never the CAPTURE. No path in this file
+ * deletes or rejects a stored lead — a false positive costs one email in the operator's inbox; a
+ * false negative would cost the lead itself.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
+import {
+  scoreLead, serializeReasons, QUARANTINE_THRESHOLD, LOOKBACK_HOURS,
+  EMPTY_LOOKBACK, type LeadLookback, type SpamReasonId,
+} from './contact-spam.js';
 
 export interface ContactSubmitRaw {
   readonly [key: string]: unknown;
@@ -23,6 +46,15 @@ export interface ContactSubmitContext {
   /** Resolved server-side from the request; the form's hidden field is a hint, never trusted. */
   readonly src: string | null;
   readonly ipHash: string | null;
+  /**
+   * Reason ids decided OUTSIDE this handler — CONTACT-ANTISPAM-AND-REPLY-TO-W1.
+   *
+   * Today only `turnstile-unverified`, contributed by CH2 when the challenge could not be
+   * evaluated. It arrives here rather than being derived because the challenge outcome is a
+   * property of the REQUEST, not of the submitted fields, and `contact-spam.ts` is pure.
+   * Optional and trailing: absent → no external tag, which is the pre-CH2 behaviour exactly.
+   */
+  readonly spamTags?: readonly SpamReasonId[];
 }
 
 export interface ContactSubmitDeps {
@@ -38,11 +70,48 @@ export interface ContactSubmitDeps {
   }) => Promise<{ id: string } | null>;
   readonly sendAlert: (message: string, level: 'critical' | 'warning' | 'info') => Promise<boolean>;
   readonly log?: (line: string) => void;
+
+  // ── Quarantine lane (CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1) ──
+  // ALL OPTIONAL, so every existing caller and every existing test compiles unchanged (CLAUDE.md's
+  // interface-preserved side-fix rule).
+  //
+  // WHAT IS AND IS NOT DEP-GATED, because the difference matters: SCORING ALWAYS RUNS. The
+  // field-only rules — `same-name-volume` above all, which alone identified all 65 rows of the
+  // 2026-08 campaign — need no database, so a caller wired without these deps still refuses to
+  // page the operator for a known spam shape. What absent deps cost is the DURABLE RECORD
+  // (`markScored`) and the campaign NOTICE (`countRecentQuarantines`), plus the two
+  // lookback-derived rules, which genuinely cannot fire without a window to measure. The
+  // protection is not optional; its bookkeeping is.
+
+  /** Measure the lookback window. Absent → {@link EMPTY_LOOKBACK}, i.e. no lookback rule fires. */
+  readonly readLookback?: (args: {
+    name: string; company: string | null; ipHash: string | null;
+  }) => Promise<LeadLookback>;
+
+  /** Persist the verdict. Absent → the score is computed and logged but not stored. */
+  readonly markScored?: (
+    id: number, score: number, reasons: string | null, quarantined: boolean,
+  ) => Promise<boolean>;
+
+  /**
+   * Quarantines in the last {@link LOOKBACK_HOURS}, EXCLUDING this lead. Drives the campaign
+   * alert's one-per-window bound. `null` means "could not count" and suppresses the alert — a
+   * missing count must never manufacture a page.
+   */
+  readonly countRecentQuarantines?: (excludeId: number) => Promise<number | null>;
 }
 
 export type ContactSubmitResult =
-  /** Render the confirmation page (HTTP 200). */
-  | { kind: 'ok'; leadId: number; emailed: boolean }
+  /**
+   * Render the confirmation page (HTTP 200).
+   *
+   * `quarantined` is the third verdict this pipeline gained in CH1 — "stored, but not trustworthy".
+   * It rides on `ok` rather than becoming its own `kind` DELIBERATELY: the caller's response must
+   * be byte-identical either way. A bot that can tell quarantine from success has been handed the
+   * oracle it needs to tune around the scorer, which is the same reasoning the `honeypot` branch
+   * already applies one screen below.
+   */
+  | { kind: 'ok'; leadId: number; emailed: boolean; quarantined?: boolean; spamScore?: number }
   /** A bot filled the honeypot. Renders the SAME confirmation — never tell it why. */
   | { kind: 'honeypot' }
   /** Re-render the form with a reason (HTTP 400). */
@@ -153,7 +222,64 @@ export async function handleContactSubmission(
   if (leadId === null) return { kind: 'server_error' };
   log(`[contact] lead ${leadId} STORED (intent=${intent} src=${ctx.src ?? 'direct'})`);
 
-  // 4. Notify. The lead is durable from here on, so NOTHING below may fail the request.
+  // 4. SCORE. The lead is durable from here on, so NOTHING below may fail the request — every
+  //    step is individually wrapped and every failure degrades toward NOTIFYING, never toward
+  //    silence. "We could not judge it" must resolve to "the operator sees it".
+  let lookback: LeadLookback = EMPTY_LOOKBACK;
+  if (deps.readLookback) {
+    try {
+      lookback = await deps.readLookback({ name, company, ipHash: ctx.ipHash });
+    } catch (err) {
+      // The store already fails open internally; this is the belt to that braces, because a
+      // throw here would otherwise reach the request path the persist step just made safe.
+      console.error(
+        `[contact] lead ${leadId} lookback threw — scoring with an empty window:`,
+        err instanceof Error ? err.message : err,
+      );
+      lookback = EMPTY_LOOKBACK;
+    }
+  }
+
+  const verdict = scoreLead(
+    { name, company, monthlyVolume, message, src: ctx.src },
+    lookback,
+    ctx.spamTags ?? [],
+  );
+  const reasons = serializeReasons(verdict.reasons);
+  log(
+    `[contact] lead ${leadId} SCORED ${verdict.score}/${QUARANTINE_THRESHOLD}`
+    + ` reasons=${reasons ?? 'none'} verdict=${verdict.quarantined ? 'QUARANTINE' : 'notify'}`,
+  );
+
+  if (deps.markScored) {
+    try {
+      const wrote = await deps.markScored(leadId, verdict.score, reasons, verdict.quarantined);
+      // Success-path log: a score write that silently vanished would leave a quarantined lead
+      // looking un-scored forever, which is indistinguishable from the scorer never running.
+      if (!wrote) console.error(`[contact] lead ${leadId} score write did not land (lead IS stored)`);
+    } catch (err) {
+      console.error(
+        `[contact] lead ${leadId} score write FAILED (lead IS stored):`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  // 5. QUARANTINE BRANCH — stored, marked, and SILENT.
+  //
+  //    No email and no per-lead Telegram alert. `email_sent_at` and `email_error` both stay NULL,
+  //    which is what makes "not sent because quarantined" distinguishable from "send failed":
+  //    `quarantined_at` is the discriminator, not the absence of a timestamp.
+  //
+  //    The user gets the SAME confirmation a human gets. Telling a bot it was detected only
+  //    teaches it to tune around the rule — the honeypot branch above already establishes this,
+  //    and here the stakes are higher because the rule table is public in the repo.
+  if (verdict.quarantined) {
+    await maybeAlertCampaign(leadId, verdict.score, reasons, ctx, deps, log);
+    return { kind: 'ok', leadId, emailed: false, quarantined: true, spamScore: verdict.score };
+  }
+
+  // 6. Notify.
   let sendError: string | null = null;
   let emailed = false;
   try {
@@ -173,9 +299,12 @@ export async function handleContactSubmission(
     deps.markNotified(leadId, sendError);
   } catch { /* bookkeeping only — the lead is already durable */ }
 
-  // 5. Operator alert. In-container `sendAlert`, because the host wrapper
+  // 7. Operator alert. In-container `sendAlert`, because the host wrapper
   //    /opt/algovault-monitoring/send_telegram.sh does NOT exist inside the container (verified
   //    by `docker exec … ls`). It is fail-open by construction and no gate is re-implemented.
+  //
+  //    UNREACHABLE FOR A QUARANTINED LEAD — the branch above returns before this line. That is
+  //    the whole point of the wave: 65 of these fired across 15 days for one campaign.
   try {
     await deps.sendAlert(
       `New ${intent} enquiry — lead ${leadId}\nFrom: ${name} <${email}>\nCompany: ${company ?? '—'}\n`
@@ -186,5 +315,65 @@ export async function handleContactSubmission(
     console.error(`[contact] lead ${leadId} TG alert failed (non-fatal):`, err instanceof Error ? err.message : err);
   }
 
-  return { kind: 'ok', leadId, emailed };
+  return { kind: 'ok', leadId, emailed, quarantined: false, spamScore: verdict.score };
+}
+
+/**
+ * ONE bounded campaign alert per {@link LOOKBACK_HOURS} window — not one page per spam lead.
+ *
+ * CLAUDE.md draws the line at the number of messages an EPISODE can produce: per-item chatter is
+ * noise, one bounded notice is signal. So this fires on the FIRST quarantine in a window and then
+ * stays silent for the rest of it, however long the campaign runs.
+ *
+ * THE COOLDOWN IS DERIVED FROM `quarantined_at` ITSELF, not from a marker file or a module-level
+ * timestamp. In-memory state resets on every deploy, so a redeploy mid-campaign would re-page;
+ * and a separate "when did we last alert" store is a second thing that drifts from the thing it
+ * describes. The data already answers the question.
+ *
+ * `count === null` means we could not count, and that SUPPRESSES the alert. Deliberate direction:
+ * the quarantine lane is already working silently at this point, so a failed count must not
+ * manufacture a page. The counter's failure is logged by the store.
+ */
+async function maybeAlertCampaign(
+  leadId: number,
+  score: number,
+  reasons: string | null,
+  ctx: ContactSubmitContext,
+  deps: ContactSubmitDeps,
+  log: (line: string) => void,
+): Promise<void> {
+  if (!deps.countRecentQuarantines) return;
+  try {
+    const priorInWindow = await deps.countRecentQuarantines(leadId);
+    if (priorInWindow === null) {
+      log(`[contact] lead ${leadId} quarantined; campaign-alert SUPPRESSED (count unavailable)`);
+      return;
+    }
+    if (priorInWindow > 0) {
+      // The expected steady state during a campaign. Positive per-lead log line so a silent
+      // window is distinguishable from a dead scorer — CLAUDE.md: assert positive output, never
+      // absence-of-alert.
+      log(
+        `[contact] lead ${leadId} quarantined; campaign-alert suppressed`
+        + ` (${priorInWindow} prior in the last ${LOOKBACK_HOURS}h)`,
+      );
+      return;
+    }
+    await deps.sendAlert(
+      `Contact-form spam campaign detected — quarantine active\n`
+      + `First quarantined lead in ${LOOKBACK_HOURS}h: ${leadId} (score ${score}/${QUARANTINE_THRESHOLD}, ${reasons ?? 'none'})\n`
+      + `Channel: ${ctx.src ?? 'direct'}\n`
+      + `These leads are STORED and marked, never deleted. Per-lead alerts are suppressed for the\n`
+      + `next ${LOOKBACK_HOURS}h; this is the only message you will get for this campaign.\n`
+      + `Review: SELECT id, created_at, name, email, spam_score, spam_reasons FROM contact_leads\n`
+      + `        WHERE quarantined_at IS NOT NULL ORDER BY id DESC;`,
+      'info',
+    );
+    log(`[contact] lead ${leadId} quarantined; campaign-alert SENT (first in ${LOOKBACK_HOURS}h)`);
+  } catch (err) {
+    console.error(
+      `[contact] lead ${leadId} campaign alert failed (non-fatal, lead IS stored and marked):`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }

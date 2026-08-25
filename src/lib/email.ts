@@ -13,7 +13,9 @@ import { Resend } from 'resend';
 // Program numbers interpolate from REFERRAL_TERMS renderers (never hardcoded —
 // chapter gate). deriveUserCode is the pure code derivation (no DB).
 import { deriveUserCode } from './referral-store.js';
-import { canonicalInquiryType } from './contact-submit.js';
+// FIELD_LIMITS comes from the same module the route caps with — `safeReplyToAddress` must not
+// declare a second length bound for one field.
+import { canonicalInquiryType, FIELD_LIMITS } from './contact-submit.js';
 // OPS-WEBHOOK-QUOTA-METER-PARITY-W1: the SAME wall discriminator every other surface in the
 // arc projects from. Type-only import of a frozen module — consumed, never edited.
 import type { QuotaWall } from './quota-notice.js';
@@ -67,6 +69,53 @@ export function maskEmail(email: string): string {
   const at = email.indexOf('@');
   if (at <= 0) return '***';
   return `${email[0]}***${email.slice(at)}`;
+}
+
+/**
+ * A HEADER-SAFETY ALLOW-LIST for `Reply-To` — CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1.
+ *
+ * WHY AN ALLOW-LIST AND NOT STRIPPING. `sendContactLeadEmail` used to refuse to put the
+ * submitter's address in `Reply-To` at all, on the grounds that "a header is exactly where an
+ * injected CRLF does damage". The hazard was real; the remedy was the wrong one. CRLF-stripping
+ * does not make a header safe — it leaves attacker-controlled text sitting IN a header, merely
+ * without the newline. Worse, a stripped address is a DIFFERENT, still-deliverable address, so a
+ * reply would silently reach the wrong mailbox: strictly worse than not replying at all.
+ *
+ * An allow-list is a closed language. Every byte that could terminate a header (CR, LF, NUL),
+ * forge a second recipient (`,` `;`) or open a display-name form (`<` `>` `"` space) is
+ * UNREPRESENTABLE here, not removed. That is the same mechanism `canonicalInquiryType` already
+ * established on this very function for the SUBJECT line: re-check against a closed set, and the
+ * output is provably one of a known-safe population no matter what any caller passes.
+ *
+ * SCOPE, STATED HONESTLY: this is NOT an RFC-5322 validator and must not be reused as one. It is
+ * deliberately narrower — no quoted local parts, no IP-literal domains, a dotted domain required.
+ * Breadth buys nothing here and costs threat surface; the route has already run the real
+ * validator (`validateSignupEmail`: syntax + mailchecker + MX) by the time an address reaches us.
+ * It is marginally LOOSER in one cosmetic respect — a leading or trailing dot in the local part
+ * passes — which is not a security property and needs no fix.
+ *
+ * IT REFUSES; IT NEVER THROWS. This runs on a live serving path (CLAUDE.md), and the fallback is
+ * `REPLY_TO_ADDRESS`, i.e. exactly the pre-wave behaviour. Degrading to "Reply goes to the
+ * operator" is the honest floor; taking the send down over a malformed address is not.
+ *
+ * ONE JS TRAP, MEASURED AND CLOSED: in JavaScript `$` without the `m` flag matches END OF INPUT
+ * ONLY — unlike Python and Ruby, where it also matches before a trailing newline. Verified:
+ * `/^abc$/.test("abc\n") === false`. The anchor below is therefore correct as written, and the
+ * two CRLF cases are MANDATORY tests so nobody has to remember this to keep the guard sound.
+ */
+// Module scope: compiled once. NO `g` FLAG — a g-flagged regex carries `lastIndex` across
+// `.test()` calls, so it would alternate true/false on the SAME input and intermittently reject
+// perfectly valid addresses. That failure would be rare, non-deterministic, and invisible in a
+// test that only ever calls it once.
+const SAFE_REPLY_TO_PATTERN =
+  /^[A-Za-z0-9!#$%&*+/=?^_`{|}~.-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+
+export function safeReplyToAddress(email: string): string {
+  if (typeof email !== 'string') return REPLY_TO_ADDRESS;
+  // Reuses the route's own cap rather than re-declaring one — two limits for one field is two
+  // things that drift.
+  if (email.length > FIELD_LIMITS.email) return REPLY_TO_ADDRESS;
+  return SAFE_REPLY_TO_PATTERN.test(email) ? email : REPLY_TO_ADDRESS;
 }
 
 interface EmailArgs {
@@ -785,11 +834,28 @@ function esc(value: string): string {
 /**
  * Notify the operator of a new lead.
  *
- * NO USER INPUT REACHES ANY HEADER. `subject` is a fixed literal, `from` is our configured
- * sender and `replyTo` is our own constant — the submitter's address travels in the BODY only.
- * Putting it in `Reply-To` would be the convenient choice and is the one this deliberately
- * refuses: it is the single field most likely to be interpolated later "just for convenience",
- * and a header is exactly where an injected CRLF does damage.
+ * HEADERS ARE ALLOW-LISTED, NOT SANITISED. `from` is our configured sender, `to` is our own
+ * constant, `subject` is re-canonicalised against a closed set, and `replyTo` passes through
+ * {@link safeReplyToAddress} — so every header is provably drawn from a known-safe population no
+ * matter what any caller passes.
+ *
+ * ⚠️ THIS SUPERSEDES AN EARLIER DECISION IN THIS SAME DOCBLOCK, and the reasoning is kept so the
+ * pendulum does not swing back. It used to read: *"Putting it in `Reply-To` would be the
+ * convenient choice and is the one this deliberately refuses … a header is exactly where an
+ * injected CRLF does damage."* The HAZARD was correctly identified; the REMEDY was not.
+ * CRLF-stripping is not what makes a header safe — it leaves attacker-controlled text sitting in
+ * a header without the newline, and a stripped address is a DIFFERENT, still-deliverable address,
+ * so a reply would silently reach the wrong mailbox. An allow-list is what makes a header safe,
+ * because the dangerous bytes become unrepresentable rather than removed.
+ *
+ * This is the same correction the very next wave on this function already made for the SUBJECT:
+ * `canonicalInquiryType` re-checks against the closed set so the subject is provably one of six
+ * literals. `safeReplyToAddress` is that precedent applied to the one header the operator
+ * actually needs populated — and CONTACT-ANTISPAM-AND-REPLY-TO-W1 is also what made it SAFE to
+ * populate at all: with the quarantine lane in place a spam lead produces no notification, so a
+ * harvested third party's address never reaches this header and a careless Reply can never send
+ * mail from our domain to a victim. Shipping Reply-To WITHOUT quarantine would have made the
+ * campaign strictly more dangerous, which is why the two halves shipped in one wave.
  *
  * Returns the Resend id, or throws — the caller records the failure against an already-durable
  * lead row and still returns success to the user.
@@ -824,6 +890,18 @@ export async function sendContactLeadEmail(args: ContactLeadEmailArgs): Promise<
   // the five inquiry types plus this neutral fallback — no matter what any caller passes.
   const subjectIntent = canonicalInquiryType(intent) ?? 'General';
   const subject = `New ${subjectIntent} enquiry — AlgoVault`;
+
+  // CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1 — the whole point of the wave's second half. Computed
+  // from the ALREADY-stripHeaderUnsafe'd local: the allow-list is the guarantee, and running it
+  // over the stripped value means a CR/LF-bearing input is rejected outright rather than
+  // silently repaired into a different deliverable address.
+  const replyTo = safeReplyToAddress(email);
+  // Operator-facing, and honest about which branch ran — a line promising a one-click reply on a
+  // mail that actually replies to admin@ would be worse than no line. Escaped through the
+  // module's existing `esc` in the HTML twin below.
+  const replyHint = replyTo === REPLY_TO_ADDRESS
+    ? `Reply-To could not be set safely for this address — reply goes to ${REPLY_TO_ADDRESS}.`
+    : `Reply to this email to answer ${name} directly.`;
   const rows: Array<[string, string]> = [
     ['Name', name], ['Email', email], ['Company', company],
     ['Expected volume', volume], ['Intent', intent], ['Channel', src], ['Lead ID', String(args.leadId)],
@@ -833,18 +911,27 @@ export async function sendContactLeadEmail(args: ContactLeadEmailArgs): Promise<
   <table style="border-collapse:collapse;font-size:14px;margin-bottom:16px">
     ${rows.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#656d76">${esc(k)}</td><td style="padding:4px 0"><strong>${esc(v)}</strong></td></tr>`).join('\n    ')}
   </table>
+  <div style="font-size:14px;color:#656d76;margin-bottom:12px">${esc(replyHint)}</div>
   <div style="font-size:14px;line-height:1.5;white-space:pre-wrap;border-left:3px solid #d0d7de;padding-left:12px">${esc(message)}</div>
 </div>`;
-  const text = `New ${intent} enquiry\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n---\n${message}\n`;
+  const text = `New ${intent} enquiry\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n---\n${message}\n`
+    + `\n${replyHint}\n`;
 
   const sent = await client.emails.send({
     to: REPLY_TO_ADDRESS,
     from: getFromAddress(),
-    replyTo: REPLY_TO_ADDRESS,
+    replyTo,
     subject,
     html,
     text,
   });
+  // Success-path log naming the BRANCH, because "Reply-To was the submitter" and "Reply-To fell
+  // back to admin@" are the two outcomes an operator would otherwise have to infer from a mail
+  // client. Masked through the module's existing `maskEmail` — never a raw address in a log, and
+  // never a second masker.
+  console.log(
+    `[contact-email] lead ${args.leadId} replyTo=${replyTo === REPLY_TO_ADDRESS ? 'FALLBACK admin@' : `submitter ${maskEmail(replyTo)}`}`,
+  );
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }

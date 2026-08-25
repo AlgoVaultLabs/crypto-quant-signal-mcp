@@ -344,7 +344,19 @@ const CREATE_TABLE_SQL = `
 // Order is preserved exactly as historical migrations ran. PostgreSQL uses
 // native ADD COLUMN IF NOT EXISTS (PG 9.6+); SQLite uses a single
 // PRAGMA table_info() pre-check to skip already-present columns.
-type MigrationDescriptor = { table: string; column: string; type: string };
+// `sqliteType` is OPTIONAL and TRAILING (CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1): every existing
+// descriptor is byte-unchanged and keeps resolving to `type` on both backends. It exists because
+// one type string cannot always serve both dialects — `TIMESTAMPTZ` is right for Postgres but
+// gives SQLite NUMERIC affinity, which would disagree with the TEXT timestamps the SQLite
+// `CREATE TABLE` for that same table already declares. Two timestamp representations inside one
+// table is the kind of divergence that surfaces only as a comparison quietly matching nothing.
+// Absent → `type` is used verbatim, so this is inert for every incumbent row.
+type MigrationDescriptor = { table: string; column: string; type: string; sqliteType?: string };
+
+/** The type an ALTER should use on SQLite. ONE derivation, read by the runner and its test. */
+export function sqliteColumnType(m: MigrationDescriptor): string {
+  return m.sqliteType ?? m.type;
+}
 
 const SIGNAL_MIGRATIONS: MigrationDescriptor[] = [
   // v1.3: unified outcome columns
@@ -418,6 +430,22 @@ const SIGNAL_MIGRATIONS: MigrationDescriptor[] = [
   { table: 'webhook_subscriptions', column: 'last_probe_at', type: 'BIGINT' },
   { table: 'webhook_subscriptions', column: 'last_success_at', type: 'BIGINT' },
   { table: 'webhook_subscriptions', column: 'disabled_reason', type: 'TEXT' },
+  // CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1 — the contact_leads quarantine lane. Postgres twin is
+  // migrations/031_contact_lead_quarantine.sql, PRE-APPLIED via SSH before that file was
+  // committed, so these three are an idempotent no-op against live prod and only do real work on
+  // a fresh SQLite dev/test DB.
+  //
+  // `spam_score` is NOT NULL DEFAULT 0, which is what makes the pre-apply safe: the INSERT the
+  // deployed code was already running kept working unchanged across the ALTER, and a row written
+  // in the gap is genuinely un-scored rather than wrongly-scored.
+  { table: 'contact_leads', column: 'spam_score', type: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'contact_leads', column: 'spam_reasons', type: 'TEXT' },
+  // TIMESTAMPTZ on PG to match created_at / email_sent_at on this same table; TEXT on SQLite to
+  // match what that dialect's CREATE TABLE declares for those same two columns. Note this is a
+  // DIFFERENT column from webhook_subscriptions.quarantined_at above (BIGINT epoch) — same word,
+  // different table, deliberately not unified: they share no consumer, and forcing one
+  // representation on both would mean restating one table's existing timestamps.
+  { table: 'contact_leads', column: 'quarantined_at', type: 'TIMESTAMPTZ', sqliteType: 'TEXT' },
 ];
 
 /**
@@ -454,7 +482,7 @@ function runMigrations(b: DbBackend, pg: boolean): void {
   for (const m of SIGNAL_MIGRATIONS) {
     const present = existingByTable.get(m.table);
     if (present && present.has(m.column)) continue;
-    b.exec(`ALTER TABLE ${m.table} ADD COLUMN ${m.column} ${m.type};`);
+    b.exec(`ALTER TABLE ${m.table} ADD COLUMN ${m.column} ${sqliteColumnType(m)};`);
   }
 }
 
@@ -736,7 +764,10 @@ const CREATE_CONTACT_LEADS_SQL = process.env.DATABASE_URL
       ip_hash TEXT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       email_sent_at TIMESTAMPTZ NULL,
-      email_error TEXT NULL
+      email_error TEXT NULL,
+      spam_score INTEGER NOT NULL DEFAULT 0,
+      spam_reasons TEXT NULL,
+      quarantined_at TIMESTAMPTZ NULL
     );`
   : `CREATE TABLE IF NOT EXISTS contact_leads (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -750,7 +781,10 @@ const CREATE_CONTACT_LEADS_SQL = process.env.DATABASE_URL
       ip_hash TEXT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       email_sent_at TEXT NULL,
-      email_error TEXT NULL
+      email_error TEXT NULL,
+      spam_score INTEGER NOT NULL DEFAULT 0,
+      spam_reasons TEXT NULL,
+      quarantined_at TEXT NULL
     );`;
 
 const CREATE_CONTACT_LEADS_CREATED_AT_INDEX_SQL = `
@@ -759,6 +793,24 @@ const CREATE_CONTACT_LEADS_CREATED_AT_INDEX_SQL = `
 
 const CREATE_CONTACT_LEADS_INTENT_INDEX_SQL = `
   CREATE INDEX IF NOT EXISTS idx_contact_leads_intent ON contact_leads (intent);
+`;
+
+// CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1 — twins of migrations/031_contact_lead_quarantine.sql.
+//
+// Composite rather than a bare ip_hash index: the ip-velocity lookback is always (equality on
+// ip_hash) AND (range on created_at), so the second column turns an index scan + filter into a
+// range scan.
+const CREATE_CONTACT_LEADS_IP_CREATED_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_contact_leads_ip_created ON contact_leads (ip_hash, created_at);
+`;
+
+// PARTIAL. quarantined_at is NULL for every legitimate lead and a B-tree stores NULLs, so on a
+// table whose healthy steady state is almost entirely NULL here, indexing them is pure insert-time
+// overhead. Both backends accept this syntax (PostgreSQL; SQLite since 3.8.0, and this repo runs
+// better-sqlite3 11.10.0 / SQLite 3.49.2).
+const CREATE_CONTACT_LEADS_QUARANTINED_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_contact_leads_quarantined ON contact_leads (quarantined_at)
+    WHERE quarantined_at IS NOT NULL;
 `;
 
 const CREATE_SIGNUP_EMAILS_SOURCE_INDEX_SQL = `
@@ -1041,6 +1093,15 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_SUBSCRIBER_NOTIFICATIONS_OWNER_INDEX_SQL);
   backend.exec(CREATE_SUBSCRIBER_NOTIFICATIONS_OUTCOME_INDEX_SQL);
   runMigrations(backend, isPg);
+  // CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1 — the two quarantine-lane indexes. Placed AFTER
+  // runMigrations, and that ordering is load-bearing rather than tidiness: both index a column
+  // this wave ADDS, so on a pre-existing SQLite database (every dev machine and every test
+  // fixture created before this wave) the table exists WITHOUT it and `CREATE INDEX … ON
+  // contact_leads (quarantined_at)` throws `no such column` if it runs first. runMigrations is
+  // synchronous on SQLite, so after this line the column is guaranteed present. Same reasoning
+  // and same placement as the delivery_state backfill directly below.
+  backend.exec(CREATE_CONTACT_LEADS_IP_CREATED_INDEX_SQL);
+  backend.exec(CREATE_CONTACT_LEADS_QUARANTINED_INDEX_SQL);
   // OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1 (2026-07-24): one-time idempotent
   // backfill of legacy one-way-disabled subs (active=false but still at the
   // DEFAULT delivery_state='active') → 'quarantined' so C4's health-probe sweep

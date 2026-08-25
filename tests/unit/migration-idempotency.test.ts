@@ -46,6 +46,14 @@ const ALL_SIGNAL_COLS = [
   'first_touch_source', 'last_touch_source',
   // OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1: webhook_subscriptions lifecycle (3rd table).
   'delivery_state', 'failure_class', 'quarantined_at', 'next_probe_at', 'last_probe_at', 'last_success_at', 'disabled_reason',
+  // CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH1: contact_leads quarantine lane (4th table).
+  //
+  // ⚠️ `quarantined_at` APPEARS TWICE IN THIS LIST, AND THAT IS CORRECT. The list mirrors
+  // SIGNAL_MIGRATIONS *ENTRIES*, not distinct column names, because test 3 asserts one ALTER per
+  // declared entry — and `quarantined_at` is genuinely declared on two different tables
+  // (webhook_subscriptions as a BIGINT epoch, contact_leads as a timestamp). De-duplicating it
+  // would make test 3 under-count by one, which is exactly the drift this guard exists to catch.
+  'spam_score', 'spam_reasons', 'quarantined_at',
 ];
 
 interface MockPgBackend {
@@ -77,7 +85,7 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     const alterCount = await runPgMigrationsAsync(b as any);
     expect(alterCount).toBe(0);
     // Exactly one introspect query fired (NOT 13 individual ALTERs)
-    expect(b.query).toHaveBeenCalledTimes(3); // 3 distinct tables: signals + agent_sessions + webhook_subscriptions
+    expect(b.query).toHaveBeenCalledTimes(4); // 4 distinct tables: signals + agent_sessions + webhook_subscriptions + contact_leads
     expect(b.execAsync).toHaveBeenCalledTimes(0);
   });
 
@@ -91,7 +99,7 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const alterCount = await runPgMigrationsAsync(b as any);
     expect(alterCount).toBe(3);
-    expect(b.query).toHaveBeenCalledTimes(3); // 3 distinct tables: signals + agent_sessions + webhook_subscriptions
+    expect(b.query).toHaveBeenCalledTimes(4); // 4 distinct tables: signals + agent_sessions + webhook_subscriptions + contact_leads
     expect(b.execAsync).toHaveBeenCalledTimes(3);
 
     // Verify the ALTER calls target ONLY the missing columns
@@ -109,10 +117,13 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     const b = mockPg([]); // No migration columns in the table
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const alterCount = await runPgMigrationsAsync(b as any);
-    // SIGNAL_MIGRATIONS.length is 22 (13 signals + 2 agent_sessions + 7 webhook_subscriptions;
-    // drift guard — update if list grows).
+    // The expectation derives from the mirror above; there is deliberately NO literal count in
+    // this comment. The previous wording claimed "22 (13 signals + 2 agent_sessions + 7
+    // webhook_subscriptions)" and was already wrong before this wave touched it — signals had
+    // grown to 15 and the true total was 24. A count quoted in prose is a duplicated fact that
+    // goes stale in silence; point at the enumeration instead (CLAUDE.md).
     expect(alterCount).toBe(ALL_SIGNAL_COLS.length);
-    expect(b.query).toHaveBeenCalledTimes(3); // 3 distinct tables: signals + agent_sessions + webhook_subscriptions
+    expect(b.query).toHaveBeenCalledTimes(4); // 4 distinct tables: signals + agent_sessions + webhook_subscriptions + contact_leads
     expect(b.execAsync).toHaveBeenCalledTimes(ALL_SIGNAL_COLS.length);
   });
 
