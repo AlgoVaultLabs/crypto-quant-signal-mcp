@@ -87,6 +87,21 @@ RAIL_CONTRACTS = {"base-usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"}
 # read above proves it on every live run, and a wrong value fails the run rather than the row.
 AUTH_STATE_SELECTOR = "0xe94a0102"
 
+# 🛑 THE User-Agent IS LOAD-BEARING, not decoration. Measured 2026-08-25 from signal-1:
+# `https://mainnet.base.org` returns **HTTP 403** to Python's default `Python-urllib/3.x` while
+# accepting curl and any explicit UA — a bot filter, not an auth failure. Without this header
+# EVERY chain read fails, and a reconciler that treated a failed read as `false` would have
+# marked two LIVE authorizations expired on its very first run. It did not, because the control
+# caught exactly this — which is what the control is for, and this is its first real save.
+#
+# A CONSTANT rather than an inline literal so the self-test can assert the VALUE. The first
+# version of that assertion grepped this file for the UA string — which the assertion itself
+# contained, so it passed with the header deleted. An assertion that cannot fail is not one.
+RPC_HEADERS = {
+    "content-type": "application/json",
+    "user-agent": "algovault-x402-settlement-reconciler/1",
+}
+
 # Longer than revenue-meter-canary.py's UNSETTLED_GRACE_DAYS (7) ON PURPOSE: this may only ever
 # retire a row meter (c) has already had time to surface, never one it has not yet seen.
 EXPIRY_GRACE_DAYS = int(os.environ.get("X402_RECONCILE_GRACE_DAYS", "14"))
@@ -218,7 +233,13 @@ def eth_call_auth_state(url, contract, payer, nonce, timeout=20):
         "jsonrpc": "2.0", "id": 1, "method": "eth_call",
         "params": [{"to": contract, "data": build_auth_state_calldata(payer, nonce)}, "latest"],
     }).encode()
-    req = urllib.request.Request(url, data=payload, headers={"content-type": "application/json"})
+    # 🛑 THE User-Agent IS LOAD-BEARING, not decoration. Measured 2026-08-25 on this host:
+    # `https://mainnet.base.org` returns **HTTP 403** to Python's default `Python-urllib/3.x`
+    # while accepting curl and any explicit UA — a bot filter, not an auth failure. Without this
+    # header every chain read fails, and a reconciler that treated a failed read as `false` would
+    # have marked two LIVE authorizations expired on its first run. (It does not: the control
+    # below caught exactly this, which is what the control is for.)
+    req = urllib.request.Request(url, data=payload, headers=dict(RPC_HEADERS))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             doc = json.loads(resp.read().decode())
@@ -301,11 +322,22 @@ def main(apply_writes=False):
             "read. No classification performed." % c_rail)
         print("X402_SETTLEMENT_RECONCILE_VERDICT=INDETERMINATE")
         return EXIT_INDETERMINATE
-    if eth_call_auth_state(url, c_contract, c_payer, c_nonce) is not True:
-        log("CONTROL_FAILED: a nonce known-consumed (SETTLED with a rail reference, nonce %s…) "
-            "did not read back as consumed. The selector, the contract address or the encoding "
-            "is wrong — every `false` this run would produce is meaningless. Zero writes."
-            % c_nonce[:12])
+    # Both branches are INDETERMINATE, but they are DIFFERENT FAILURES and the operator acts on
+    # them differently — so the message must name the one that happened. Reporting a transport
+    # 403 as "your encoding is wrong" sends someone to read ABI docs about a bot filter; that is
+    # the misnamed-refusal defect this estate has now paid for twice.
+    control = eth_call_auth_state(url, c_contract, c_payer, c_nonce)
+    if control is None:
+        log("CONTROL_UNREACHABLE: could not READ the chain at all (see the RPC line above). "
+            "Nothing is known to be wrong with the ledger or the encoding — we simply could not "
+            "look. Zero writes.")
+        print("X402_SETTLEMENT_RECONCILE_VERDICT=INDETERMINATE")
+        return EXIT_INDETERMINATE
+    if control is not True:
+        log("CONTROL_FAILED: the chain answered, but a nonce known-consumed (SETTLED with a rail "
+            "reference, nonce %s…) read back as NOT consumed. The selector, the contract address "
+            "or the encoding is wrong — every `false` this run would produce is meaningless. "
+            "Zero writes." % c_nonce[:12])
         print("X402_SETTLEMENT_RECONCILE_VERDICT=INDETERMINATE")
         return EXIT_INDETERMINATE
     log("CONTROL OK — nonce %s… reads consumed=True; the instrument can see." % c_nonce[:12])
@@ -464,6 +496,17 @@ def self_test():
     check("body carries the templated wave, never a literal W-number", "W{NEXT}" in body)
     check("body says money MOVED", "Money MOVED" in body)
     check("body explains why it did not auto-promote", "reference" in body)
+
+    # --- the User-Agent, whose absence 403s every chain read on the public Base endpoint ------
+    ua = RPC_HEADERS.get("user-agent", "")
+    check("🛑 an explicit User-Agent is sent (mainnet.base.org 403s Python's default)",
+          isinstance(ua, str) and ua.strip() != "" and "urllib" not in ua.lower())
+    check("...and it identifies THIS consumer, so a provider block is attributable",
+          "x402-settlement-reconciler" in ua)
+    check("the request still declares JSON", RPC_HEADERS.get("content-type") == "application/json")
+    src = open(__file__, encoding="utf-8").read() if os.path.exists(__file__) else ""
+    check("the control distinguishes UNREACHABLE from a wrong ANSWER",
+          "CONTROL_UNREACHABLE" in src and "CONTROL_FAILED" in src)
 
     # --- vacuity guard: WE build this corpus, so empty here is a defect in the test -----------
     check("self-test corpus is non-empty", len(passed) + len(failed) >= 35)
