@@ -266,6 +266,31 @@ stamp_attempt() {
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$HOST_LABELS" > "$HEARTBEAT"; } 2>/dev/null || true
 }
 
+# ── What THIS attempt RESOLVED, per declaration (OPS-SOT-PARITY-PHASE-W1) ────────────────────
+#
+# The reconciler's SOT_PARITY check compares the host's local declaration against the committed
+# SoT at a FIXED time each day. On aoe-1 that sample lands 50 minutes after this script's last
+# run and 10 minutes before its next, so any commit inside that window reads as DRIFTED against
+# a host that is behaving perfectly — measured 4/4, every such reading healed by the very next
+# sync, +10 minutes, unobserved.
+#
+# One line of evidence closes it: the sha this attempt actually FETCHED and VALIDATED. If the
+# host holds exactly that, the host is faithful and the SoT simply moved since — propagation,
+# not drift. If the host holds something ELSE, the sync fetched a body it failed to install, and
+# THAT is the real "the sync is not landing" that the alert was written for.
+#
+# Recorded for BOTH terminal per-file outcomes, because both are resolutions: UNCHANGED means
+# "fetched, validated, already had it" and SYNCED means "fetched, validated, installed it". A
+# rejected or unfetchable body records NOTHING — we resolved no sha, so we make no claim, and
+# the reconciler's absence-of-key path falls straight back to DRIFTED. Suppression is EARNED.
+#
+# Appended, never rewritten: stamp_attempt() truncates the heartbeat at job start, so the file
+# only ever describes the CURRENT attempt. Fail-soft — this must never change a verdict.
+record_resolved() {
+  [ "$IN_SELF_TEST" -eq 0 ] || return 0
+  { printf 'resolved:%s=%s\n' "$1" "$2" >> "$HEARTBEAT"; } 2>/dev/null || true
+}
+
 # Validate a candidate body. Refuses on anything it cannot positively confirm.
 # <path> <required-key> <min-count> -> 0 ok / 1 reject (reason on stdout)
 #
@@ -670,6 +695,7 @@ for d in "${DECLARATIONS[@]}"; do
   old_h=""; [ -f "$dest" ] && old_h=$(sha256sum "$dest" | cut -d' ' -f1)
   if [ "$new_h" = "$old_h" ]; then
     echo "  · UNCHANGED $name — ${new_h:0:16} (${new_b}B)"
+    record_resolved "$name" "$new_h"
     unchanged=$((unchanged+1)); continue
   fi
 
@@ -701,6 +727,7 @@ for d in "${DECLARATIONS[@]}"; do
   fi
   [ "$first_install" -eq 1 ] && cp -p "$dest" "$dest.bak.$BACKUP_REASON-$STAMP"
   echo "  ✓ SYNCED   $name — ${old_h:0:16} -> ${new_h:0:16} (${new_b}B), $backup_note"
+  record_resolved "$name" "$new_h"
   changed=$((changed+1))
 done
 

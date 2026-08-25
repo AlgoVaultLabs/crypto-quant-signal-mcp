@@ -414,3 +414,101 @@ describe('webhook_quota_paused — the wall reaches the email', () => {
     expect(sends[0].args).toMatchObject({ wall: 'monthly', dailyUsed: null, dailyTotal: null });
   });
 });
+
+/**
+ * OPS-SOT-PARITY-PHASE-AND-NOTIFY-RECORD-W1 CH2 — an unsent terminal notice is a FACT.
+ *
+ * THE INCIDENT. Subscription 6 (a PAYING `starter` owner) hit `quarantine_expired` at
+ * 2026-08-24 13:44:56Z. The probe sweep called safeNotify('webhook_disabled') exactly as
+ * designed; the kill switch was default-on; the registry has the event as `sendsEmail: true`.
+ * `subscriber_notifications` holds NO ROW OF ANY KIND for it. The owner had become unresolvable
+ * between their 2026-08-01 quarantine email and the terminal event, so the notify exited at
+ * `owner_unreachable` and left no trace — making "we could not tell them" indistinguishable
+ * from "we never tried" and from "we told them and the row was removed".
+ *
+ * The recorded outcome must NEVER be able to suppress a later real send: that would convert a
+ * bookkeeping improvement into permanent silence for exactly the customer it protects.
+ */
+describe('🛑 an unsent notice for a REACHABLE-in-principle owner is recorded', () => {
+  it('owner_unreachable on a PAID owner writes a row (it used to write nothing)', async () => {
+    const { mod, rows } = await loadNotify({ email: null, customerId: 'cus_X' });
+    const r = await mod.notifySubscriber({
+      ownerKey: 'av_live_x', event: 'webhook_disabled', context: { subscriptionId: 6, stateEpochBucket: 1784907276 },
+    });
+    expect(r.outcome).toBe('owner_unreachable');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe('owner_unreachable');
+    expect(rows[0].event).toBe('webhook_disabled');
+  });
+
+  it('resolution_failed on a PAID owner writes a row too', async () => {
+    const { mod, rows } = await loadNotify({ stripeThrows: true });
+    const r = await mod.notifySubscriber({
+      ownerKey: 'av_live_x', event: 'webhook_disabled', context: { subscriptionId: 6 },
+    });
+    expect(r.outcome).toBe('resolution_failed');
+    expect(rows.map((x) => x.outcome)).toEqual(['resolution_failed']);
+  });
+
+  it('a free: owner stays silent AND unrecorded — a by-design skip, not a data gap', async () => {
+    const { mod, rows } = await loadNotify({ email: 'a@b.com' });
+    const r = await mod.notifySubscriber({
+      ownerKey: 'free:deadbeef', event: 'webhook_disabled', context: { subscriptionId: 6 },
+    });
+    expect(r.outcome).toBe('owner_unreachable');
+    expect(rows).toHaveLength(0);
+  });
+
+  it('🛑 the unsent row uses a SEPARATE key and cannot suppress a later real send', async () => {
+    // First: unreachable → records under the '#unsent' key.
+    const a = await loadNotify({ email: null, customerId: 'cus_X' });
+    await a.mod.notifySubscriber({
+      ownerKey: 'av_live_x', event: 'webhook_disabled', context: { subscriptionId: 6, stateEpochBucket: 99 },
+    });
+    const unsentKey = String(a.rows[0].notification_key);
+    expect(unsentKey.endsWith('#unsent')).toBe(true);
+
+    const canonical = a.mod.notificationKey('webhook_disabled', 'av_live_x', 6, 99);
+    expect(unsentKey).toBe(`${canonical}#unsent`);
+    expect(a.claims.has(canonical)).toBe(false); // the real claim is still FREE
+  });
+
+  it('...proven end to end: the owner becomes reachable and the email still goes out', async () => {
+    const { mod, rows, sends, claims } = await loadNotify({ email: null, customerId: 'cus_X' });
+    await mod.notifySubscriber({
+      ownerKey: 'av_live_x', event: 'webhook_disabled', context: { subscriptionId: 6, stateEpochBucket: 99 },
+    });
+    expect(sends).toHaveLength(0);
+    // Same process, same claim set — now the resolver can see an address.
+    const canonical = mod.notificationKey('webhook_disabled', 'av_live_x', 6, 99);
+    expect(claims.has(canonical)).toBe(false);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('recording twice is idempotent — one row per episode, not one per attempt', async () => {
+    const { mod, rows } = await loadNotify({ email: null, customerId: 'cus_X' });
+    const ctx = { subscriptionId: 6, stateEpochBucket: 1784907276 };
+    await mod.notifySubscriber({ ownerKey: 'av_live_x', event: 'webhook_disabled', context: ctx });
+    await mod.notifySubscriber({ ownerKey: 'av_live_x', event: 'webhook_disabled', context: ctx });
+    expect(rows).toHaveLength(1);
+  });
+
+  it('a bookkeeping write failure never changes the notify outcome', async () => {
+    const { mod } = await loadNotify({ email: null, customerId: 'cus_X' });
+    // recordUnsentNotification swallows its own errors; assert the contract directly.
+    await expect(mod.recordUnsentNotification({
+      key: 'k', ownerKey: 'av_live_x', event: 'webhook_disabled', subscriptionId: 6, outcome: 'owner_unreachable',
+    })).resolves.not.toThrow();
+  });
+
+  it('a successful send is unchanged — one row, under the CANONICAL key', async () => {
+    const { mod, rows, sends } = await loadNotify({ email: 'a@b.com' });
+    const r = await mod.notifySubscriber({
+      ownerKey: 'av_live_x', event: 'webhook_disabled', context: { subscriptionId: 6, stateEpochBucket: 99 },
+    });
+    expect(r.outcome).toBe('sent');
+    expect(sends).toHaveLength(1);
+    expect(rows).toHaveLength(1);
+    expect(String(rows[0].notification_key).endsWith('#unsent')).toBe(false);
+  });
+});

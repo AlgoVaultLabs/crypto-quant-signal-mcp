@@ -53,7 +53,7 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "3313542d33125c6c83144c6067a7eeef42a42f1e019ad5aaea951e84617ae1b2",
+      "sha256": "1384ebccd80ed8bfc3c12858a73bfeb8eb4eec94add4c36e37bb0404f1e15b2c",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT",
         "SOT_PARITY_SUSTAINED_DRIFT"
@@ -83,7 +83,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "a3d1bfd0a05433c0460562a0a1749bbbd09493ec88ed9baa0d8733310cccc6c1",
+      "sha256": "81129cc7cecaddfcf3f73222ed12010ef1474723f1e0cd91078ba621363bebec",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],

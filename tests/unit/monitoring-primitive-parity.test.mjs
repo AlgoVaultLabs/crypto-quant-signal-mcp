@@ -247,3 +247,46 @@ test('self-check: the detectors fire on a known-bad fixture (both directions)', 
   // adding a fresh occurrence of a real host address to a PUBLIC repo.
   assert.ok(/\b\d{1,3}(\.\d{1,3}){3}\b/.test('192.0.2.1'), 'address detector would not fire');
 });
+
+/**
+ * OPS-SOT-PARITY-PHASE-AND-NOTIFY-RECORD-W1 CH1 — the heartbeat key is a CONTRACT between two
+ * separately-installed artifacts, and nothing else asserts it.
+ *
+ * `declaration-sync.sh` WRITES `resolved:<name>=<sha>` into the heartbeat; the reconciler READS
+ * it back through `RESOLVED_KEY_PREFIX`. If either side changes the spelling, the reconciler
+ * simply finds no key and every propagation-lag sample reverts to DRIFTED — the exact six-false-
+ * pages behaviour this wave retired, silently restored, with both files' own self-tests green
+ * (each is hermetic and neither can see the other). A cross-language contract needs a
+ * cross-artifact assertion; that is the whole lesson of the `send_telegram.sh` divergence above.
+ */
+test('the sync and the reconciler agree on the resolved-sha heartbeat key', () => {
+  const sync = readFileSync(path.join(REPO, 'ops/monitoring/declaration-sync.sh'), 'utf8');
+  const recon = readFileSync(path.join(REPO, 'ops/monitoring/monitoring-inventory-reconcile.py'), 'utf8');
+
+  assert.match(sync, /printf 'resolved:%s=%s\\n'/,
+    'declaration-sync.sh no longer writes the resolved-sha line — SOT_PARITY loses its only '
+    + 'discriminator between propagation lag and a sync that is not landing');
+  const m = recon.match(/^RESOLVED_KEY_PREFIX = "([^"]+)"/m);
+  assert.ok(m, 'the reconciler no longer declares RESOLVED_KEY_PREFIX');
+  assert.equal(m[1], 'resolved:',
+    `the reconciler reads "${m[1]}" but the sync writes "resolved:" — the key drifted apart`);
+
+  // Both terminal per-file outcomes must record. UNCHANGED is the one that matters most: it is
+  // what a healthy steady state looks like, so losing it would disable the fix on exactly the
+  // runs where it is load-bearing.
+  const recordCalls = sync.split('\n').filter((l) => /^\s*record_resolved "\$name" "\$new_h"/.test(l));
+  assert.equal(recordCalls.length, 2,
+    `expected record_resolved on BOTH the UNCHANGED and SYNCED branches, found ${recordCalls.length}`);
+
+  // And the reconciler must still refuse a non-sha value, or the key becomes a mute button.
+  assert.match(recon, /len\(v\) == 64 and all\(c in "0123456789abcdef" for c in v\)/,
+    'the resolved-sha validator was removed — any string could then buy suppression');
+});
+
+test('self-check: the heartbeat-key detectors fire on a known-bad fixture', () => {
+  const badSync = 'record_resolved() { :; }\n';
+  assert.ok(!/printf 'resolved:%s=%s\\n'/.test(badSync), 'writer detector would not fire');
+  const badRecon = 'RESOLVED_KEY_PREFIX = "resolvedsha:"\n';
+  assert.notEqual(badRecon.match(/^RESOLVED_KEY_PREFIX = "([^"]+)"/m)[1], 'resolved:',
+    'key-drift detector would not fire');
+});
