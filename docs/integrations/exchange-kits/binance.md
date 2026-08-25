@@ -21,15 +21,15 @@ AlgoVault MCP gives your agent a **composite verdict** in one call — direction
 
 > **Provenance:** OFFICIAL [Binance Skills Hub](https://github.com/binance/binance-skills-hub) (`github.com/binance/binance-skills-hub` · "Built by Binance" · 761⭐ at the time of writing · last updated 2026-04-25). Binance Skills Hub uses an open marketplace pattern — install via `npx skills add <repo-url>` rather than a classic npm MCP server. Demo execution runs against [Binance Spot Testnet](https://testnet.binance.vision) (`https://testnet.binance.vision/api`) with `BINANCE_TESTNET=true` + `MAINNET_BLOCKED=true` wrapper guards. Verified 2026-04-25.
 
-## Direct API path (Spot Testnet, API keys)
-
-Everything from here down is the key-based flow: you issue Binance API keys, sign your own requests, and run the demo against Spot Testnet.
-
-### TL;DR (3-line hook)
+## TL;DR (3-line hook)
 
 - One API call → composite verdict (signal, confidence, regime, factors). Not 26 raw indicators.
 - Cross-venue intelligence across 12 exchanges. Funding spreads, regime alignment, volatility — fused.
 - Every signal Merkle-anchored on-chain. Verifiable accuracy, not a marketing claim.
+## Direct API path (Spot Testnet, API keys)
+
+Everything from here down is the key-based flow: you issue Binance API keys, sign your own requests, and run the demo against Spot Testnet.
+
 
 ### What you'll build (90s read)
 
@@ -104,7 +104,7 @@ Expected output (last 3 lines):
 
 The script does three things in order:
 
-1. **Fetch the AlgoVault verdict.** The shared helper opens an MCP session against `https://api.algovault.com/mcp`, calls `get_trade_call` with `{coin: 'ETH', timeframe: '1h'}`, and returns the parsed `signal`/`confidence`/`regime`/`factors` payload. Free tier covers {{PRICING.free_allowance}} — plenty for development.
+1. **Fetch the AlgoVault verdict.** The shared helper opens an MCP session against `https://api.algovault.com/mcp?src=docs`, calls `get_trade_call` with `{coin: 'ETH', timeframe: '1h'}`, and returns the parsed `signal`/`confidence`/`regime`/`factors` payload. Free tier covers {{PRICING.free_allowance}} — plenty for development.
 
 2. **Apply the agent's policy.** When the verdict satisfies the agent's pre-configured policy (`signal === 'BUY' AND confidence > 70`), the script proceeds to the execution branch. The policy lives in your code — AlgoVault returns the analytics; the agent decides.
 

@@ -279,7 +279,7 @@ tailwind.config = {
       <div class="placeholder-cap" style="margin-bottom:14px">· binance integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">510,132</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">510,133</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
            (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
@@ -301,12 +301,6 @@ tailwind.config = {
 </blockquote></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Direct API path (Spot Testnet, API keys)</h2>
 <p>Everything from here down is the key-based flow: you issue Binance API keys, sign your own requests, and run the demo against Spot Testnet.</p>
-<h3>TL;DR (3-line hook)</h3>
-<ul>
-<li>One API call → composite verdict (signal, confidence, regime, factors). Not 26 raw indicators.</li>
-<li>Cross-venue intelligence across <span data-tr-field="exchange_count">15</span> exchanges. Funding spreads, regime alignment, volatility — fused.</li>
-<li>Every signal Merkle-anchored on-chain. Verifiable accuracy, not a marketing claim.</li>
-</ul>
 <h3>What you’ll build (90s read)</h3>
 <p>A runnable Node.js agent that:</p>
 <ol>
@@ -367,7 +361,7 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <p>The script does three things in order:</p>
 <ol>
 <li>
-<p><strong>Fetch the AlgoVault verdict.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin: 'ETH', timeframe: '1h'}</code>, and returns the parsed <code>signal</code>/<code>confidence</code>/<code>regime</code>/<code>factors</code> payload. Free tier covers 200 calls/month (100/day) — plenty for development.</p>
+<p><strong>Fetch the AlgoVault verdict.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp?src=docs</code>, calls <code>get_trade_call</code> with <code>{coin: 'ETH', timeframe: '1h'}</code>, and returns the parsed <code>signal</code>/<code>confidence</code>/<code>regime</code>/<code>factors</code> payload. Free tier covers 200 calls/month (100/day) — plenty for development.</p>
 </li>
 <li>
 <p><strong>Apply the agent’s policy.</strong> When the verdict satisfies the agent’s pre-configured policy (<code>signal === 'BUY' AND confidence &gt; 70</code>), the script proceeds to the execution branch. The policy lives in your code — AlgoVault returns the analytics; the agent decides.</p>
@@ -402,7 +396,7 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <!-- snapshot: 2026-07-21 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </li>
 </ul>
-<p><strong><span data-tr-field="pfe_wr">91.7%</span> PFE Win Rate · <span data-tr-field="call_count">510,132</span>+ calls · <span data-tr-field="batch_count">137</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'binance',campaign:'track-record'}})">view live track record</a></p></div>
+<p><strong><span data-tr-field="pfe_wr">91.7%</span> PFE Win Rate · <span data-tr-field="call_count">510,133</span>+ calls · <span data-tr-field="batch_count">137</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'binance',campaign:'track-record'}})">view live track record</a></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Install</h2>
 <pre><code class="language-bash">claude plugin install AlgoVaultLabs/algovault-skills
 </code></pre>
