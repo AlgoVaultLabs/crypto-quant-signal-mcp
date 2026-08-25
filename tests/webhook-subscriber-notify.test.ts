@@ -47,12 +47,22 @@ async function loadNotify(opts: {
   const rows: Array<Record<string, unknown>> = [];
   const sends: Array<{ fn: string; args: Record<string, unknown> }> = [];
 
+  // `resolveCustomerByApiKey` is the RESOLUTION lookup (no entitlement filter) that
+  // subscriber-notify uses — see OPS-REACHABILITY-AND-XREPO-INSTALL-W1. The entitlement lookup
+  // is mocked alongside it so a regression back to it is visible as a call, not a crash.
+  const resolved = vi.fn(async () => {
+    if (opts.stripeThrows) throw new Error('stripe boom');
+    if (opts.customerId === null && opts.email === null) return null;
+    return {
+      customerId: opts.customerId ?? 'cus_TEST', tier: 'starter', email: opts.email ?? null,
+      // Deliberately NOT active: the whole point is that a lapsed customer stays reachable.
+      subscriptionStatus: 'past_due', hasActiveSubscription: false,
+    };
+  });
+  const entitled = vi.fn(async () => null);
   vi.doMock('../src/lib/stripe.js', () => ({
-    getCustomerByApiKey: vi.fn(async () => {
-      if (opts.stripeThrows) throw new Error('stripe boom');
-      if (opts.customerId === null && opts.email === null) return null;
-      return { customerId: opts.customerId ?? 'cus_TEST', tier: 'starter', email: opts.email ?? null };
-    }),
+    resolveCustomerByApiKey: resolved,
+    getCustomerByApiKey: entitled,
   }));
 
   vi.doMock('../src/lib/performance-db.js', () => ({
@@ -91,7 +101,7 @@ async function loadNotify(opts: {
   }));
 
   const mod = await import('../src/lib/subscriber-notify.js');
-  return { mod, claims, rows, sends };
+  return { mod, claims, rows, sends, resolved, entitled };
 }
 
 describe('registry totality', () => {
@@ -510,5 +520,42 @@ describe('🛑 an unsent notice for a REACHABLE-in-principle owner is recorded',
     expect(sends).toHaveLength(1);
     expect(rows).toHaveLength(1);
     expect(String(rows[0].notification_key).endsWith('#unsent')).toBe(false);
+  });
+});
+
+/**
+ * OPS-REACHABILITY-AND-XREPO-INSTALL-W1 CH1 — contact resolution must not be gated on billing.
+ *
+ * The harness above returns a customer whose subscription is `past_due` and NOT active, which is
+ * the live shape of `cus_UuBrP1otU51OBm`: their card failed, so the entitlement lookup returned
+ * null, so the 2026-08-24 terminal webhook notice was never sent and left no trace. If notify
+ * ever calls the entitlement lookup again, every lapsed customer silently stops being
+ * contactable — and nothing else in this suite would notice, because the two functions have the
+ * same shape on the happy path.
+ */
+describe('🛑 reachability is not entitlement', () => {
+  it('a past_due owner is still emailed — the notice reaches them', async () => {
+    const { mod, sends } = await loadNotify({ email: 'lapsed@example.com' });
+    const r = await mod.notifySubscriber({
+      ownerKey: 'av_live_25cb2a59a4dd793e24c6ddd0', event: 'webhook_disabled',
+      context: { subscriptionId: 6, stateEpochBucket: 1784907276 },
+    });
+    expect(r.outcome).toBe('sent');
+    expect(sends).toHaveLength(1);
+    expect(sends[0].args.to).toBe('lapsed@example.com');
+  });
+
+  it('...via the RESOLUTION lookup, and never the entitlement one', async () => {
+    const { mod, resolved, entitled } = await loadNotify({ email: 'lapsed@example.com' });
+    await mod.notifySubscriber({ ownerKey: 'av_live_x', event: 'webhook_disabled', context: { subscriptionId: 6 } });
+    expect(resolved).toHaveBeenCalledTimes(1);
+    expect(entitled).not.toHaveBeenCalled();
+  });
+
+  it('the profiles-cache fallback still works for a lapsed owner with no Stripe email', async () => {
+    const { mod, sends } = await loadNotify({ email: null, customerId: 'cus_X', profileEmail: 'cached@b.com' });
+    const r = await mod.notifySubscriber({ ownerKey: 'av_live_x', event: 'webhook_disabled', context: { subscriptionId: 6 } });
+    expect(r.outcome).toBe('sent');
+    expect(sends[0].args.to).toBe('cached@b.com');
   });
 });

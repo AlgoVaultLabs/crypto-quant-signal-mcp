@@ -19,7 +19,7 @@
  * sister pages get same chrome treatment for consistent UX.
  */
 import type { Request, Response } from 'express';
-import { getCustomerByApiKey, getCustomerByEmail, createBillingPortalSession } from './stripe.js';
+import { resolveCustomerByApiKey, getCustomerByEmail, createBillingPortalSession } from './stripe.js';
 import { sendKeyRecoveryEmail } from './email.js';
 import type { ReferralStatsView } from './referral-pages.js';
 import { renderBrandFooter } from './footer-content.js';
@@ -261,7 +261,16 @@ export async function accountPortalHandler(req: Request, res: Response): Promise
     return;
   }
   try {
-    const customer = await getCustomerByApiKey(apiKey);
+    // 🛑 THE PORTAL ADMITS ANY RESOLVABLE CUSTOMER, INCLUDING `past_due` AND CANCELLED.
+    //
+    // It used to call the ENTITLEMENT lookup, which returns null without an ACTIVE subscription
+    // — so a customer whose card had just failed pasted their real, valid key and was told
+    // "Invalid API key". That is backwards: a failed payment is the single most common reason to
+    // open a billing portal, and the portal is where it gets fixed. Measured 2026-08-25 on
+    // `cus_UuBrP1otU51OBm` (0 active, 1 past_due), whose key resolves fine here and returned 401
+    // there. Authentication is the API KEY matching a Stripe customer's metadata; billing STATE
+    // is what the portal exists to show them, never a precondition for reaching it.
+    const customer = await resolveCustomerByApiKey(apiKey);
     if (!customer) {
       res.status(401).send(getAccountErrorPageHtml('Invalid API key. Try again or use the email recovery option.'));
       return;

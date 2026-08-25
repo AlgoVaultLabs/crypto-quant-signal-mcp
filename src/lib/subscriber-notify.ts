@@ -15,9 +15,11 @@
  *     `notifySubscriber` is called fire-and-forget from the delivery worker and the
  *     health-probe sweep; a notification failure must never change a DeliveryResult
  *     or abort a sweep. Pinned by a forced-throw test.
- *  2. ONE resolver. Owner→email goes through `getCustomerByApiKey` (widened in this
- *     wave to return the email it already fetched), with the `subscriber_profiles`
- *     cache as the degradation path. There is no second implementation.
+ *  2. ONE resolver. Owner→email goes through `resolveCustomerByApiKey`, with the
+ *     `subscriber_profiles` cache as the degradation path. There is no second
+ *     implementation. It is deliberately the NON-entitlement lookup: reachability and
+ *     entitlement are different questions, and answering the first with the second
+ *     is what dropped a paying customer's terminal notice on 2026-08-24.
  *  3. IDEMPOTENCY BEFORE SEND. `tryClaimNotification` mirrors `tryClaimEvent`: the
  *     claim is durable before an email goes out, so a retried tick cannot mail twice.
  *  4. A SILENT EVENT IS A ROW, NOT AN OMISSION. `webhook_resumed` has
@@ -28,7 +30,7 @@
  */
 
 import { dbQuery } from './performance-db.js';
-import { getCustomerByApiKey } from './stripe.js';
+import { resolveCustomerByApiKey } from './stripe.js';
 import {
   sendWebhookQuarantinedEmail,
   sendWebhookDisabledEmail,
@@ -287,7 +289,11 @@ export async function resolveOwnerEmail(
 ): Promise<{ email?: string; unreachable?: boolean; failed?: boolean }> {
   if (isStructurallyUnreachable(ownerKey)) return { unreachable: true };
   try {
-    const customer = await getCustomerByApiKey(ownerKey);
+    // REACHABILITY, not entitlement. This deliberately does NOT require an active subscription:
+    // a `past_due` or cancelled customer is exactly who most needs to hear that their webhook
+    // died, and gating contact on billing state is what silently dropped the 2026-08-24 terminal
+    // notice for `cus_UuBrP1otU51OBm`. See resolveCustomerByApiKey's docstring.
+    const customer = await resolveCustomerByApiKey(ownerKey);
     if (customer?.email) return { email: customer.email };
     // Degradation path: Stripe unconfigured / no active sub / no email on the
     // customer → the local subscriber_profiles cache, keyed by the customer id we

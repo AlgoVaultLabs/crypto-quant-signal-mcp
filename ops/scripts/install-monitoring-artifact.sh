@@ -110,7 +110,7 @@ if not entries:
     # host/host_path, but this primitive exists for the MULTI-consumer case, and silently doing
     # one host would rebuild the very defect it retires.
     print(f"__ERR__ row {rid!r} declares no installed_at registry"); raise SystemExit(0)
-print(f"__ARTIFACT__\t{row['artifact']}\t{row.get('sha256','')}")
+print(f"__ARTIFACT__\t{row['artifact']}\t{row.get('sha256','')}\t{row.get('repo') or ''}")
 for e in entries:
     if not e.get("host") or not e.get("path"):
         print(f"__ERR__ an installed_at entry of {rid!r} lacks host/path"); raise SystemExit(0)
@@ -148,10 +148,19 @@ J
  {"id":"two-host","artifact":"ops/monitoring/x.sh","sha256":"aa",
   "installed_at":[{"host":"h1","path":"/opt/x.sh"},{"host":"h2","path":"/opt/x.sh"}]},
  {"id":"no-registry","artifact":"ops/monitoring/y.sh","sha256":"bb"},
+ {"id":"xrepo","artifact":"monitoring/aoe-host/q.py","sha256":"dd","repo":"sibling-repo",
+  "installed_at":[{"host":"h1","path":"/opt/q.py"}]},
  {"id":"bad-entry","artifact":"ops/monitoring/z.sh","sha256":"cc",
   "installed_at":[{"host":"h1"}]}
 ]}
 J
+  # ── the row's `repo` field must SURVIVE enumeration, or source resolution cannot use it ──
+  # A row that declares a foreign repo and an enumerator that drops the declaration is exactly
+  # how the tool came to report "artifact not found" for a file that was never missing.
+  out=$(INSTALL_ARTIFACT_INVENTORY="$tmp/inv.json" row_targets xrepo | grep '^__ARTIFACT__' | cut -f4)
+  ck 'a foreign repo declared on the row survives enumeration' "$out" "sibling-repo"
+  out=$(INSTALL_ARTIFACT_INVENTORY="$tmp/inv.json" row_targets two-host | grep '^__ARTIFACT__' | cut -f4)
+  ck 'a local row emits an EMPTY repo field, never a stray value' "$out" ""
   out=$(INSTALL_ARTIFACT_INVENTORY="$tmp/inv.json" row_targets two-host | grep -c $'^h[12]\t')
   ck 'both registry entries are enumerated' "$out" 2
   out=$(INSTALL_ARTIFACT_INVENTORY="$tmp/inv.json" row_targets no-registry | grep -c '^__ERR__')
@@ -195,13 +204,13 @@ J
 
   # Vacuity: WE built these corpora, so an empty one is a defect in the TEST.
   checks=$((checks+1))
-  [ "$checks" -ge 18 ] || { say "  ✗ self-test asserted almost nothing"; fails=$((fails+1)); }
+  [ "$checks" -ge 20 ] || { say "  ✗ self-test asserted almost nothing"; fails=$((fails+1)); }
 
   if [ "$fails" -ne 0 ]; then
     say "✗ install-monitoring-artifact self-test: $fails of $checks check(s) FAILED"
     verdict INDETERMINATE 3
   fi
-  say "✓ install-monitoring-artifact self-test: $checks checks passed (label resolution both ways, registry enumeration, canonical-hash precondition, remote-install backup paths)"
+  say "✓ install-monitoring-artifact self-test: $checks checks passed (label resolution both ways, registry enumeration, foreign-repo declaration survival, canonical-hash precondition, remote-install backup paths)"
   verdict PASS 0
 }
 
@@ -314,18 +323,50 @@ TARGETS=()
 while IFS= read -r l; do [ -n "$l" ] && TARGETS+=("$l"); done < <(row_targets "$ROW_ID")
 [ "${#TARGETS[@]}" -gt 0 ] || { say "  ✗ enumeration produced nothing"; verdict INDETERMINATE 3; }
 
-ARTIFACT=""; CANON=""
+ARTIFACT=""; CANON=""; ROW_REPO=""
 for t in "${TARGETS[@]}"; do
   case "$t" in
     __ERR__*) say "  ✗ ${t#__ERR__ }"; verdict INDETERMINATE 3 ;;
-    __ARTIFACT__*) IFS=$'\t' read -r _ ARTIFACT CANON <<< "$t" ;;
+    __ARTIFACT__*) IFS=$'\t' read -r _ ARTIFACT CANON ROW_REPO <<< "$t" ;;
   esac
 done
 [ -n "$ARTIFACT" ] || { say "  ✗ row declared no artifact path"; verdict INDETERMINATE 3; }
 
-SRC="$REPO/$ARTIFACT"
-say "$ROW_ID — $ARTIFACT"
+# ── Source resolution HONOURS the row's own `repo` field ────────────────────────────────────
+#
+# 🛑 THE DEFECT THIS RETIRES. The source was unconditionally "$REPO/$ARTIFACT", so a row whose
+# artifact lives in a SIBLING repo — and which says so, in a `repo` field it already carries —
+# was refused with `✗ artifact not found at <this repo>/<path>`. That message names the wrong
+# problem: the file is not missing, it is somewhere the tool declined to look. Measured
+# 2026-08-25 on `aoe-output-liveness-canary` (`repo: "autonomous-optimizer"`).
+#
+# The consequence was not cosmetic. `install-monitoring-artifact.sh` is the ONLY sanctioned path
+# that takes the first-install backup the reconciler's NO_BACKUP check asserts — so for the 6
+# foreign-repo rows the convention had no tool at all, the install happened by hand, and one of
+# them (this one) shipped without a backup and paged for it two days later. A refusal that
+# misnames its own cause turns a solvable chore into a recurring alert.
+#
+# The sibling root is DERIVED, never committed: this repo is public and an absolute developer
+# path has no business in it. `--git-common-dir` resolves to the PRIMARY checkout even from a
+# worktree, so `<primary>/..` is the directory siblings live in. Override for a non-standard
+# layout with INSTALL_ARTIFACT_SIBLING_ROOT.
+SIBLING_ROOT="${INSTALL_ARTIFACT_SIBLING_ROOT:-$(dirname "$(dirname "$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$REPO/.git")")")}"
+if [ -n "$ROW_REPO" ]; then
+  SRC="$SIBLING_ROOT/$ROW_REPO/$ARTIFACT"
+else
+  SRC="$REPO/$ARTIFACT"
+fi
+say "$ROW_ID — $ARTIFACT${ROW_REPO:+  [repo: $ROW_REPO]}"
 say "  canonical sha256: ${CANON:0:16}   mode: $([ "$APPLY" = 1 ] && echo APPLY || echo 'DRY RUN (pass --apply to act)')"
+# A foreign-repo artifact we cannot reach is INDETERMINATE, not FAIL: nothing is wrong with the
+# row or the estate, we simply could not look. Say exactly where we looked and how to fix it —
+# "could not verify" must never be reported as "verified, broken" (the verdict-token law).
+if [ -n "$ROW_REPO" ] && [ ! -f "$SRC" ]; then
+  say "  ✗ this row's artifact lives in the '$ROW_REPO' repo, which is not checked out beside this one"
+  say "    looked at: $SRC"
+  say "    fix: clone/locate '$ROW_REPO' under $SIBLING_ROOT, or set INSTALL_ARTIFACT_SIBLING_ROOT"
+  verdict INDETERMINATE 3
+fi
 hash_matches "$SRC" "$CANON" || verdict FAIL 1
 
 ok=0; bad=0; skipped=0

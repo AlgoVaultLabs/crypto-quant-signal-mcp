@@ -537,7 +537,52 @@ export async function handleSubscriptionCreated(
  * codebase, and every caller projects from it. `email` is null when Stripe has no
  * email on the customer; callers MUST treat that as unreachable, never as an error.
  */
-export async function getCustomerByApiKey(apiKey: string): Promise<{ customerId: string; tier: string; email: string | null } | null> {
+/**
+ * A customer resolved from their API key, WITHOUT any entitlement judgement.
+ *
+ * `hasActiveSubscription` is the entitlement fact; `subscriptionStatus` is the billing fact.
+ * They are reported SEPARATELY because callers ask genuinely different questions of them, and
+ * collapsing the two is what caused the incident documented on `resolveCustomerByApiKey`.
+ */
+export interface ResolvedCustomer {
+  customerId: string;
+  tier: string;
+  email: string | null;
+  /** Stripe status of the most relevant subscription, or null when there is none at all. */
+  subscriptionStatus: string | null;
+  hasActiveSubscription: boolean;
+}
+
+/**
+ * Owner API key → the customer, with NO entitlement filter applied.
+ *
+ * ── 🛑 WHY THIS EXISTS, MEASURED ────────────────────────────────────────────────────────────
+ * `getCustomerByApiKey` searched Stripe, FOUND the customer, read their email — and then threw
+ * the whole record away if `subscriptions.list({status:'active'})` came back empty. One boolean
+ * was answering three different questions:
+ *
+ *   "may this key call the API?"        entitlement  — active-only is CORRECT
+ *   "can we email this person?"         reachability — active-only is WRONG
+ *   "may they open their own billing portal?"        — active-only is BACKWARDS
+ *
+ * Measured 2026-08-25 on `cus_UuBrP1otU51OBm` (owner `av_live_25cb…`, tier starter): customer
+ * present, NOT deleted, email present, name present — and 0 subscriptions `active`, 1
+ * `past_due`. Their card had failed (the same `insufficient_funds` Mastercard behind
+ * PAYMENT_DECLINE_DRIFT), so the subscription went `past_due`, and that single status change
+ * silently severed EVERY channel to them at once:
+ *
+ *   1. their webhook hit terminal-disable on 2026-08-24 and the notice was dropped with no
+ *      trace — `resolveOwnerEmail` could not even reach its `subscriber_profiles` fallback,
+ *      because that fallback is keyed on the `customerId` of the record just discarded;
+ *   2. `/account/portal` answered their VALID key with `401 Invalid API key` — locking them out
+ *      of the one page that fixes a failed card. A past_due customer is precisely who the
+ *      billing portal exists for.
+ *
+ * So: this function reports what it found, and each caller applies its OWN predicate.
+ * `getCustomerByApiKey` below is that predicate for entitlement and is byte-identical to what
+ * it always was — no existing caller's behaviour moves.
+ */
+export async function resolveCustomerByApiKey(apiKey: string): Promise<ResolvedCustomer | null> {
   if (!stripe) return null;
   if (!/^[a-zA-Z0-9_]+$/.test(apiKey)) return null;
 
@@ -548,24 +593,48 @@ export async function getCustomerByApiKey(apiKey: string): Promise<{ customerId:
     });
     if (customers.data.length === 0) return null;
     const customer = customers.data[0];
+    // A DELETED customer is genuinely unresolvable — no email, no portal, nothing to manage.
+    if ('deleted' in customer && customer.deleted) return null;
 
-    const subs = await stripe.subscriptions.list({
-      customer: customer.id,
-      status: 'active',
-      limit: 10,
-    });
-    if (subs.data.length === 0) return null;
+    // ONE list call, `status: 'all'`. The previous code listed `status: 'active'` and could
+    // therefore only ever learn "active or nothing"; this costs the same request and returns
+    // both facts, so neither has to be inferred from the other's absence.
+    const subs = await stripe.subscriptions.list({ customer: customer.id, status: 'all', limit: 10 });
+    const active = subs.data.find((s) => s.status === 'active') ?? null;
+    // Newest-first is Stripe's documented list order, so [0] is the most recent subscription —
+    // the one whose status a human would recognise as "their current billing state".
+    const relevant = active ?? subs.data[0] ?? null;
 
     const tier = (customer.metadata?.tier as string) || 'starter';
     // `customer` is a Customer | DeletedCustomer union in the SDK types; a deleted
     // customer carries no email. Guard rather than cast so a deleted-but-searchable
     // record degrades to "unreachable" instead of throwing.
     const email = 'email' in customer && typeof customer.email === 'string' ? customer.email : null;
-    return { customerId: customer.id, tier, email };
+    return {
+      customerId: customer.id,
+      tier,
+      email,
+      subscriptionStatus: relevant?.status ?? null,
+      hasActiveSubscription: active !== null,
+    };
   } catch (err) {
-    console.error('Stripe getCustomerByApiKey error:', err instanceof Error ? err.message : err);
+    console.error('Stripe resolveCustomerByApiKey error:', err instanceof Error ? err.message : err);
     return null;
   }
+}
+
+/**
+ * ENTITLEMENT. Owner API key → customer, but ONLY while they hold an ACTIVE subscription.
+ *
+ * Unchanged contract, deliberately: this is the predicate every incumbent caller already
+ * depends on (`referral-accrual` credits a Stripe balance off it), and widening it here would
+ * silently change who gets paid. Reachability and billing self-service use
+ * `resolveCustomerByApiKey` instead — see its docstring for why the two must not be one call.
+ */
+export async function getCustomerByApiKey(apiKey: string): Promise<{ customerId: string; tier: string; email: string | null } | null> {
+  const c = await resolveCustomerByApiKey(apiKey);
+  if (!c || !c.hasActiveSubscription) return null;
+  return { customerId: c.customerId, tier: c.tier, email: c.email };
 }
 
 // Exported for cross-module reuse (POWER-USER-OUTREACH-W1-V2 /api/signup-email).

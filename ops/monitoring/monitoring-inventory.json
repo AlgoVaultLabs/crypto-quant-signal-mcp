@@ -1285,7 +1285,7 @@
       "schedule": null,
       "invoked_by": "operator (manual, from a developer checkout)",
       "install_state": "installed",
-      "sha256": "67d74210bf9ad309cbbdb9764bb993cb9f550be7fdb1227f1d87d4716ea4f238",
+      "sha256": "69c55d22d5eeadcee3877243d884bdda47219e5a4f175086ca3aa3b67411e66a",
       "owner_wave": "OPS-AOE-SEND-TELEGRAM-REPARITY-W1",
       "repo_resident": true,
       "notes": "Installs a monitoring artifact to EVERY host its installed_at registry names, resolving each label through scripts/data/boot-critical-units.json (the existing label->{address} SoT - deliberately NOT a new registry, because a duplicated fact goes stale). Runs on the OPERATOR's machine, so host/host_path are n-a rather than invented, same shape as host-deploy-primitive. NO CRON MAY EVER CALL IT: it moves executable code, and an unattended privileged install is what CLAUDE.md forbids - this is the human-invoked, reviewed path. Dry run by default; --apply required. Refuses unless the repo file already matches the row's canonical sha256, so it cannot plant the drift HASH_DRIFT exists to catch. Exists because installed_at was DECLARATIVE ONLY: REGISTRY_PARITY could report a missed consumer but nothing ever read the registry to install, so 'update the primitive everywhere' stayed an act of memory and send_telegram.sh diverged twice."
@@ -1613,6 +1613,16 @@
       "kind": "config",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/detector-envelope.schema.json",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/detector-envelope.schema.json"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/detector-envelope.schema.json"
+        }
+      ],
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:detector_envelope.py",
@@ -1620,7 +1630,7 @@
       "sha256": "2bd26c18fb53ec443fb79493a7f8e455b867ca496bde15508744ffbcf6362e22",
       "alert_ids": [],
       "owner_wave": "OPS-MONITORING-SIGNAL-CONTRACT-W1",
-      "notes": "The DETECTOR_ENVELOPE contract \u2014 ONE SoT read by BOTH the TypeScript producer (src/lib/detector-envelope.ts) and the Python consumer (ops/monitoring/detector_envelope.py). It is a DECLARATION: declaration-sync.sh moves it (scope signal-1, its only reader's host); detector_envelope.py beside it is an ARTIFACT installed by reviewed SSH. INSTALLED by CH3, the first adopter, which installed the pair in one reviewed step. criticality load-bearing because a host copy that drifts from this file would let the consumer accept an envelope the producer could not have emitted. SCOPE WIDENED 2026-08-23 (OPS-AOE-LIVENESS-W1 CH1) signal-1 -> signal-1,aoe-1: aoe-1 gained a genuine reader. declaration-sync.sh delivers it there; it is NOT scp'd, which is what keeps it a declaration rather than an artifact."
+      "notes": "The DETECTOR_ENVELOPE contract \u2014 ONE SoT read by BOTH the TypeScript producer (src/lib/detector-envelope.ts) and the Python consumer (ops/monitoring/detector_envelope.py). It is a DECLARATION: declaration-sync.sh moves it (scope signal-1, its only reader's host); detector_envelope.py beside it is an ARTIFACT installed by reviewed SSH. INSTALLED by CH3, the first adopter, which installed the pair in one reviewed step. criticality load-bearing because a host copy that drifts from this file would let the consumer accept an envelope the producer could not have emitted. SCOPE WIDENED 2026-08-23 (OPS-AOE-LIVENESS-W1 CH1) signal-1 -> signal-1,aoe-1: aoe-1 gained a genuine reader. declaration-sync.sh delivers it there; it is NOT scp'd, which is what keeps it a declaration rather than an artifact. REGISTRY CORRECTED 2026-08-25 (OPS-REACHABILITY-AND-XREPO-INSTALL-W1): that widening was written into THIS SENTENCE and nowhere the reconciler reads \u2014 `host` stayed signal-1 and there was no `installed_at`, so aoe-1 held a file its own inventory did not own and reported ORPHAN on every run from 2026-08-23. Prose is not a control; `installed_at` now carries both hosts, which is the half a machine can check."
     },
     {
       "id": "labeler-truncation-attribution",
