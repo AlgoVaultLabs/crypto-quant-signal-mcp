@@ -1668,7 +1668,7 @@ with MCPServerAdapter(server_params) as tools:
         <tr class="border-b border-white/10">
           <td class="text-white text-sm px-4 py-3 font-medium">Binance</td>
           <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">npx skills add https://github.com/binance/binance-skills-hub</code> &middot; Spot Testnet execution</td>
-          <td class="text-gray-400 text-sm px-4 py-3">Composite verdict + official Binance Skills Hub. Agent fetches signals, decides, executes against Binance's testnet.</td>
+          <td class="text-gray-400 text-sm px-4 py-3">Composite verdict + official Binance Skills Hub, on the direct API path. You issue keys and sign requests; the demo runs against Spot Testnet.</td>
         </tr>
         <tr class="border-b border-white/10">
           <td class="text-white text-sm px-4 py-3 font-medium">Binance Agent OS</td>
@@ -1737,12 +1737,14 @@ with MCPServerAdapter(server_params) as tools:
   <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Binance &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>Install AlgoVault&rsquo;s plugin and the Binance Skills Hub:</p>
+      <p><strong>On Binance Agent OS?</strong> That path needs no API keys &mdash; OAuth, an isolated Agentic sub-account, and no withdrawal scope. <a href="/integrations/binance-agent-os" class="text-mint-400 hover:underline">Start there instead &rarr;</a></p>
+      <p>For the direct API path, install AlgoVault&rsquo;s plugin and the Binance Skills Hub:</p>
       <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">claude plugin install AlgoVaultLabs/algovault-skills
 npx skills add https://github.com/binance/binance-skills-hub</code></pre>
       </div>
       <p>Your agent now has AlgoVault's analytics tools and Binance's execution tools side-by-side. Set <code class="text-xs bg-navy-800 px-1 rounded">BINANCE_TESTNET=true</code> for zero real-money risk during development.</p>
+      <p>Keep this path for custom order types, non-MCP runtimes, or a deterministic backtest harness.</p>
       <p><a href="/integrations/binance" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
     </div>
   </details>
