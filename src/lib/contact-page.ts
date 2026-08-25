@@ -75,7 +75,60 @@ export const CONTACT_ERRORS: Readonly<Record<string, string>> = {
   disposable_email: 'Please use your work email address.',
   too_long: 'That message is longer than we can accept. Please shorten it.',
   server_error: 'Something went wrong on our side. Please email us directly instead.',
+  // CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH2. Names the RETRY, never the detection — the visitor is
+  // present and the widget is on screen, so this is actionable. A message explaining what was
+  // detected would hand a bot the oracle it needs to tune around the challenge, which is the
+  // same reasoning the honeypot branch already applies.
+  turnstile_failed: 'Please complete the verification and try again.',
 };
+
+// ── Cloudflare Turnstile (CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH2) ──
+//
+// The sitekey is PUBLIC by design — it renders in `data-sitekey` and is visible in page source.
+// The SECRET key never appears here or anywhere else in the repo; it lives only in the host .env.
+const TURNSTILE_API_JS = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+
+/**
+ * Read at CALL time, never at import. Two reasons: a module-level read is untestable (both the
+ * set and unset branches must be exercisable in one suite), and the container is recreated with
+ * `docker compose up -d` on an env change, so a captured value would be a second thing to
+ * invalidate.
+ */
+function turnstileSitekey(): string | null {
+  const k = process.env.TURNSTILE_SITEKEY;
+  return typeof k === 'string' && k.trim().length > 0 ? k.trim() : null;
+}
+
+/**
+ * The widget markup, or EMPTY STRING when no sitekey is configured.
+ *
+ * Rendering neither the script nor the div is what keeps a CH1-only deploy, every dev box and CI
+ * serving a page that is valid and submittable — exactly as it was before this chapter. An empty
+ * `data-sitekey` would render a permanently-failing widget instead, which is strictly worse than
+ * no widget: the visitor would see a broken challenge they cannot pass.
+ */
+export function renderTurnstileWidget(): string {
+  const sitekey = turnstileSitekey();
+  if (!sitekey) return '';
+  // The sitekey is sanitised to the documented character class before interpolation. It is our
+  // own configuration rather than user input, but it reaches an HTML attribute, and an attribute
+  // is not a place to trust provenance.
+  const safe = sitekey.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+  if (safe.length === 0) return '';
+  // ONE insertion point for both the loader and the widget, placed together just above Send.
+  //
+  // The script tag was briefly interpolated at the top of the body instead, which put it on the
+  // same LINE as `<body><main…><div class="wrap">` — valid HTML, and it worked, but it welded a
+  // Turnstile string onto a line of unrelated markup. `api.js` is `async defer`, so it does not
+  // care where in the document it sits; keeping both on their own lines next to the field they
+  // govern is what makes "the widget is the only thing this chapter adds" checkable by reading.
+  //
+  // The string carries its OWN leading newline and indent, so the unconfigured case interpolates
+  // to the empty string and leaves the template byte-identical to its pre-chapter form rather
+  // than leaving a stray blank line behind.
+  return `\n    <script src="${TURNSTILE_API_JS}" async defer></script>`
+    + `\n    <div class="row"><div class="cf-turnstile" data-sitekey="${safe}" data-theme="dark"></div></div>`;
+}
 
 export function renderContactPage(opts: { error?: string | null; src?: string | null } = {}): string {
   const errKey = opts.error && Object.prototype.hasOwnProperty.call(CONTACT_ERRORS, opts.error) ? opts.error : null;
@@ -83,6 +136,7 @@ export function renderContactPage(opts: { error?: string | null; src?: string | 
   // `src` round-trips through a hidden field so the channel survives the POST. It is
   // re-classified server-side on submit — never trusted as sent.
   const src = typeof opts.src === 'string' ? opts.src.replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 64) : '';
+  const turnstileBlock = renderTurnstileWidget();
   return shell('Contact AlgoVault', `
   <h1>Talk to us</h1>
   <div class="sub">Enterprise volume, custom venues, or anything the self-serve plans do not cover. We read every message.</div>
@@ -97,7 +151,7 @@ export function renderContactPage(opts: { error?: string | null; src?: string | 
     <div class="row"><label for="monthly_volume">Expected calls per month <span class="opt">(optional)</span></label><input id="monthly_volume" name="monthly_volume" maxlength="60" placeholder="e.g. 250,000"></div>
     <div class="row"><label for="message">Message</label><textarea id="message" name="message" required maxlength="4000"></textarea></div>
     <div class="hp" aria-hidden="true"><label for="${HONEYPOT_FIELD}">Website</label><input id="${HONEYPOT_FIELD}" name="${HONEYPOT_FIELD}" tabindex="-1" autocomplete="off"></div>
-    <input type="hidden" name="src" value="${src}">
+    <input type="hidden" name="src" value="${src}">${turnstileBlock}
     <button type="submit">Send</button>
   </form>
   <div class="fallback">Prefer email? <a href="mailto:${CONTACT_FALLBACK_EMAIL}">${CONTACT_FALLBACK_EMAIL}</a></div>`);

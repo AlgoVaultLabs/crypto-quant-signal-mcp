@@ -1282,10 +1282,30 @@ async function startHttp() {
     // apex and are same-origin with the stylesheet, so 'self' already permits it. Leaving Caddy
     // stricter is safe — the keep-in-sync warning above guards against pages being left
     // UNCOVERED, not against Caddy being tighter than Express.
+    //
+    // The same holds for the Turnstile hosts added below, and it is worth stating why rather
+    // than inheriting the sentence above. `/contact` is served by Express (Caddy's earlier
+    // `handle /contact { reverse_proxy localhost:3000 }` block wins over the static
+    // file_server), so THIS header is the one the browser receives on the only page carrying the
+    // widget — verified 2026-08-25 by curling the live URL and matching the returned policy
+    // against this string, not against the Caddyfile's. Widening the static-page twin for a
+    // script no static page loads would be a loosening bought for nothing.
     res.setHeader(
       'Content-Security-Policy',
       "default-src 'self'; " +
-        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; " +
+        // CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH2 — challenges.cloudflare.com, in BOTH script-src
+        // and frame-src. Measured 2026-08-25 against the live header: the widget was blocked
+        // TWICE and each block is silent on its own.
+        //   1. script-src omitted the host, so api.js never loaded.
+        //   2. There was NO frame-src directive AT ALL, so the Turnstile iframe fell back to
+        //      `default-src 'self'` and was refused. This is the half that would have survived
+        //      a fix to script-src alone, and the visible symptom is identical: an empty space
+        //      where the widget should be, and every submission failing the challenge.
+        // Cloudflare's CSP reference names exactly these two directives. `connect-src` is NOT
+        // widened — it is required only for pre-clearance mode, which this integration does not
+        // use, and a directive added "just in case" is threat surface bought for nothing.
+        'script-src \'self\' \'unsafe-inline\' https://cdn.tailwindcss.com https://challenges.cloudflare.com; ' +
+        'frame-src \'self\' https://challenges.cloudflare.com; ' +
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://algovault.com; " +
         "font-src 'self' https://fonts.gstatic.com data:; " +
         "img-src 'self' data: https:; " +
@@ -1742,12 +1762,39 @@ async function startHttp() {
   // contract and is unit-testable (CLAUDE.md — a handler closure in index.ts is not).
   app.post('/contact', contactLimiter, express.urlencoded({ extended: false, limit: '8kb' }), async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const [{ handleContactSubmission }, store, emailMod, tg] = await Promise.all([
+    const [{ handleContactSubmission }, store, emailMod, tg, turnstile] = await Promise.all([
       import('./lib/contact-submit.js'),
       import('./lib/contact-leads-store.js'),
       import('./lib/email.js'),
       import('./lib/telegram.js'),
+      import('./lib/turnstile.js'),
     ]);
+
+    // ── The challenge gate (CONTACT-ANTISPAM-AND-REPLY-TO-W1 CH2) ──
+    //
+    // This is the ONE step that runs BEFORE the persist, and it is the only place in this route
+    // that can refuse a submission outright. Everything after it obeys CH1's ordering contract.
+    //
+    // `remoteip` comes from CF-Connecting-IP, falling back to X-Forwarded-For. Cloudflare
+    // overwrites a client-supplied CF-Connecting-IP at its edge, so it is not spoofable — the
+    // same property the Caddyfile's `handle /contact` block already relies on for the limiter.
+    const cfIp = req.headers['cf-connecting-ip'];
+    const xff = req.headers['x-forwarded-for'];
+    const remoteIp = (typeof cfIp === 'string' && cfIp)
+      || (typeof xff === 'string' ? xff.split(',')[0]?.trim() : '')
+      || null;
+    const challenge = await turnstile.verifyTurnstile(
+      body[turnstile.TURNSTILE_RESPONSE_FIELD],
+      remoteIp,
+      { getSecret: () => process.env.TURNSTILE_SECRET_KEY },
+    );
+    if (challenge.kind === 'reject') {
+      // ZERO ROWS WRITTEN — the persist has not happened yet. A retryable 400 with the widget
+      // still on screen is materially different from a dropped row, which is why this is the one
+      // sanctioned refusal on a route whose entire design is "never lose a lead".
+      return res.status(400).type('html').send(renderContactPage({ error: 'turnstile_failed', src: typeof body.src === 'string' ? body.src : null }));
+    }
+
     // Channel re-derived server-side; the form's hidden field is a hint, never trusted as sent.
     const classified = classifySource({
       srcParam: typeof body.src === 'string' ? body.src : undefined,
@@ -1757,7 +1804,13 @@ async function startHttp() {
     });
     const result = await handleContactSubmission(
       body,
-      { src: classified.source ?? null, ipHash: hashIp(clientIp(req) || 'unknown') },
+      {
+        src: classified.source ?? null,
+        ipHash: hashIp(clientIp(req) || 'unknown'),
+        // `skip` and `pass` contribute nothing; only `unverified` tags. The lead is captured and
+        // notified either way — the tag makes it VISIBLE as unverified, it does not suppress it.
+        spamTags: turnstile.turnstileTags(challenge),
+      },
       {
         validateEmail: validateSignupEmail,
         insertLead: store.insertContactLead,
