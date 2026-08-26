@@ -1599,7 +1599,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "dbfe21aca1d06463ace09940beb44558ee7e1de9f9faa36b682ecade215f2484",
+      "sha256": "5ce7571ef08ef053a5c99832eb81e8d03a4d439d5ece21abaf354321583dba0c",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -1744,6 +1744,29 @@
       "owner_wave": "OPS-HOLD-DECISION-CAPTURE-W1",
       "repo_resident": true,
       "notes": "Counterfactual HOLD labeler -> `hold_decision_labels` (migration 032). DATA PIPELINE, not a guard, and inventoried on the same reasoning as its sibling dwr-baseline-snapshot: it lives under /opt/crypto-quant-signal-mcp and has a committed ancestor. `alert_ids` is empty because R2 specified silent-on-success + fail-open; the verdict token HOLD_LABEL_VERDICT=PASS|FAIL|INDETERMINATE lands in /var/log/hold-decision-labeler.log rather than paging. EXIT 3 IS INDETERMINATE and the wrapper passes the child's code through unchanged -- the run was cut short by its time budget or by venue weight budgets, which is NOT the same as 'nothing to label' (an empty work-list is the intended steady state and exits 0 PASS). QUARANTINE: this job must never write to `directional_labels`. Its labels are COUNTERFACTUAL -- they score trades the engine deliberately did not make -- and `directional_labels` backs the DWR baseline and the published track record. The two key on different id spaces (hold_decisions.decision_id vs signals.id) with a declared FK, and tests/unit/hold-decision-capture.test.ts fails if that separation is edited away. Sibling producer: the capture write itself has NO cron -- it runs inline at the single HOLD site in src/tools/get-trade-call.ts and is sampled at write time by uq_hold_decisions_fleet_cell."
+    },
+    {
+      "id": "binance-pr-disposition-canary",
+      "artifact": "ops/cron/binance-pr-disposition-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/binance-pr-disposition-canary.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/binance-pr-disposition-canary.sh"
+        }
+      ],
+      "criticality": "informational",
+      "schedule": "37 6 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "589afff135883fc3c3d2a1684be80873ab3a616e9dd421390a4f19ebfe8fbedc",
+      "alert_ids": [
+        "BINANCE_SKILLS_PR_STALE"
+      ],
+      "owner_wave": "OPS-DATEMODIFIED-DERIVE-AND-PR-DISPOSITION-W1",
+      "notes": "Forces the 90-day disposition decision on binance/binance-skills-hub PR #254 instead of letting it sit open because nobody scheduled the question. BINANCE-AGENT-OS-GEO-AND-SUBMISSIONS-W2 recorded the state honestly (opened 2026-05-08, zero maintainer comments, ZERO third-party skills ever merged into that hub) and named this trigger; its own chapter firewall forbade writing into this repo, so the row lands here. DATE-GATED, and that is the whole design: before 2026-11-24 it logs one line, makes ZERO network calls and exits 0 - proven by timing, 14ms against an unroutable host before the date vs 40143ms after. Polling a 90-day question 90 times spends 90 requests on one bit, and api.github.com is 60/hr PER IP, unauthenticated and SHARED: it was measured fully drained on this host 2026-08-21, which is what took xrepo-ci-conclusion-canary.sh dark. CORRECTION worth keeping: re-measured 2026-08-26 the budget was NOT drained (core 59/60, pulls/254 -> HTTP 200), so that exhaustion was a point-in-time state and not a standing property - the date gate is right because the budget is VOLATILE, not because it is dead. READER IS THE API, deliberately against this repo's own badge-migration precedent, and the 9th probe is why: measured on signal-1 2026-08-26 the github.com PR web page carries a state token but NO comment or review count at all, so it cannot distinguish OPEN_UNENGAGED from OPEN_ENGAGED - and that distinction IS the alert. A surface that cannot answer the question is not a cheaper way to answer it. ENGAGEMENT IS KEYED ON author_association, NEVER on a comment count: PR #254 already has one comment and it is OURS (AlgoVaultFi, association NONE), so a raw count would read ENGAGED forever and the only branch that pages could never fire - a guard dark by construction, shipped by the wave that added it. Four tokens (BINANCE_PR_DISPOSITION_VERDICT=OPEN_UNENGAGED|OPEN_ENGAGED|CLOSED|INDETERMINATE), exit 0 for a read or a closed gate and 3 for INDETERMINATE; NO verdict token is emitted before the decision date, deliberately, because the four tokens answer what the PR's disposition IS and before the date we have not asked. Only OPEN_UNENGAGED pages, at WARNING, through send_telegram.sh - which owns the severity gate and the 24h cooldown - using the POSITIONAL contract and REAL newlines, both of which had previously left host alerts dark. The cron row invokes it BARE, matching the canary convention on this host: the script self-locks, and an outer flock on the same path made the scheduler-invoked run skip its own body and exit 0 - caught only by running it as the scheduler does, which is why that is an AC and not a formality. No recovery lane: closing a PR is a judgment call and stays one. Seven deliberate breaks applied and all seven caught; two exposed real self-test holes first - the login-skip was untested because the assoc filter masked it in the fixture, and the token-to-exit-code mapping on the read path was unasserted."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label \u2192 address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON \u2014 this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

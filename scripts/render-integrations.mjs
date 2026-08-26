@@ -20,6 +20,7 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -131,6 +132,69 @@ function getSrcPath(slug) {
   return join(SOURCE_DIR, `${slug}.md`);
 }
 
+// ─── dateModified derives from the CONTENT SOURCE ────────────────────────────────────────────
+//
+// OPS-DATEMODIFIED-DERIVE-AND-PR-DISPOSITION-W1 R1. This was a frozen 25-entry per-slug map
+// (the sibling of the published-date map above) whose 25 values were all `2026-08-25` — one false value repeated across 25 crawler-facing
+// pages, which is the exact defect BINANCE-AGENT-OS-GEO-AND-SUBMISSIONS-W2 CH1 removed from
+// `datePublished` and then reintroduced in the sibling field. Measured 2026-08-26: the pages'
+// real last-modified date was 2026-08-26 (W2's own two commits) while every page served
+// 2026-08-25.
+//
+// The root cause is a chicken-and-egg, and it is why a map cannot be the fix: you cannot know
+// the date of the commit you are about to make, so ANY artifact-derived value is stale the
+// moment it is written. Deriving from something already SETTLED — the source markdown's last
+// commit — has no such circularity.
+//
+// WHY THE SOURCE AND NOT THE RENDERED ARTIFACT. `dateModified` answers "when did this tutorial
+// last change?". Keying it on the rendered HTML means a nav-only or footer-only re-render bumps
+// all 25 modification dates at once — crawler-facing freshness spam, and a worse lie than being
+// a day stale. Keyed on the source, an unchanged tutorial correctly reports an unchanged date.
+//
+// Measured 2026-08-26 across the 25 slugs: 5 distinct dates (2026-07-21 / 07-25 / 08-09 / 08-25
+// / 08-26), 15 owned by the algovault-skills worktree and 10 in-repo.
+const dateModifiedCache = new Map();
+
+/**
+ * Last commit date (YYYY-MM-DD, UTC) of the slug's SOURCE markdown, from whichever repo owns it.
+ *
+ * `getSrcPath()` resolves in-repo first and falls back to SOURCE_REPO, so the owning repo is
+ * whichever of the two the resolved path sits under — running `git -C` against the wrong one
+ * returns empty and would look identical to "no history".
+ *
+ * REFUSES on empty output. No fallback to SNAPSHOT.date, to datePublished, or to file mtime:
+ * a guessed modification date is precisely the defect this function exists to retire, and a
+ * plausible-looking wrong date is harder to notice than a refusal.
+ */
+function sourceModifiedDate(slug) {
+  if (dateModifiedCache.has(slug)) return dateModifiedCache.get(slug);
+  const srcPath = getSrcPath(slug);
+  const owner = srcPath.startsWith(ROOT) ? ROOT : SOURCE_REPO;
+  let out = '';
+  try {
+    out = execFileSync('git', ['-C', owner, 'log', '-1', '--format=%aI', '--', srcPath],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch (err) {
+    throw new Error(
+      `[render] cannot read the source commit date for '${slug}'.\n` +
+      `         source: ${srcPath}\n         repo:   ${owner}\n` +
+      `         git failed: ${String(err.message).split('\n')[0]}\n` +
+      `         dateModified is DERIVED, never guessed — fix the repo or the --source path.`,
+    );
+  }
+  if (!out) {
+    throw new Error(
+      `[render] no commit history for '${slug}' — refusing to guess its dateModified.\n` +
+      `         source: ${srcPath}\n         repo:   ${owner}\n` +
+      `         A shallow clone, an uncommitted source file, or the wrong --source will all\n` +
+      `         produce this. Commit the source or point --source at the repo that owns it.`,
+    );
+  }
+  const date = out.slice(0, 10);
+  dateModifiedCache.set(slug, date);
+  return date;
+}
+
 // html: true required so source MDs can include <span data-tr-field="..."> for
 // the live track-record proxy (see WEBSITE-REFRESH-W1 C1).
 const md = new MarkdownIt({ html: true, linkify: true, typographer: true });
@@ -193,36 +257,6 @@ const DATE_PUBLISHED = {
   'smithery':         '2026-05-19',
 };
 
-// Last commit that touched the rendered page. Invariant asserted at render time:
-// datePublished <= dateModified <= today. A violation is a HALT, never a clamp.
-
-const DATE_MODIFIED = {
-  'alpaca':           '2026-08-25',
-  'aster':            '2026-08-25',
-  'binance':          '2026-08-25',
-  'binance-agent-os': '2026-08-25',
-  'bingx':            '2026-08-25',
-  'bitget':           '2026-08-25',
-  'bybit':            '2026-08-25',
-  'claude-code':      '2026-08-25',
-  'claude-desktop':   '2026-08-25',
-  'cline':            '2026-08-25',
-  'codex':            '2026-08-25',
-  'crewai':           '2026-08-25',
-  'cursor':           '2026-08-25',
-  'gateio':           '2026-08-25',
-  'gemini':           '2026-08-25',
-  'glm-zcode':        '2026-08-25',
-  'hyperliquid':      '2026-08-25',
-  'kimi':             '2026-08-25',
-  'kraken':           '2026-08-25',
-  'kucoin':           '2026-08-25',
-  'langchain':        '2026-08-25',
-  'llamaindex':       '2026-08-25',
-  'maf':              '2026-08-25',
-  'okx':              '2026-08-25',
-  'smithery':         '2026-08-25',
-};
 
 
 // The shared description ends "Demo runs testnet/demo only — zero real-money risk in any code
@@ -506,7 +540,12 @@ function techArticleSchema(exchange, display) {
   // never a clamp: silently clamping would re-publish a plausible-looking date that no commit
   // supports, which is the class this chapter exists to retire.
   const published = DATE_PUBLISHED[exchange] ?? DEFAULT_DATE_PUBLISHED;
-  const modified = DATE_MODIFIED[exchange] ?? SNAPSHOT.date;
+  // max(), not a clamp on a detected violation: a page cannot have been modified before it
+  // was published, and a source committed to algovault-skills BEFORE its mirror was added
+  // here would otherwise trip the invariant below through no fault of the data. Measured
+  // 2026-08-26 it never fires — source >= published on all 25 — so it is a guard, not a lever.
+  const sourceModified = sourceModifiedDate(exchange);
+  const modified = sourceModified > published ? sourceModified : published;
   if (!(published <= modified && modified <= SNAPSHOT.date)) {
     throw new Error(
       `[render] date invariant violated for '${exchange}': ` +
@@ -798,6 +837,20 @@ async function main() {
   console.log(`[render] source(exchanges + frameworks)=${SOURCE_DIR}`);
   console.log(`[render] source(mcp-clients)=${LOCAL_MCP_CLIENTS_DIR}`);
   console.log(`[render] target=${TARGET_DIR}`);
+
+  // PRE-FLIGHT every date BEFORE writing a single page, so a refusal is ATOMIC.
+  //
+  // Measured 2026-08-26 while proving AC5: resolving dates inside the render loop meant a slug
+  // that refused mid-run had already written every page before it — the `--source /nonexistent`
+  // probe refused at `okx` and left `binance.html` on disk as a BARE page, missing the nav and
+  // analytics regions the later generators inject. Seven tests failed on that one file, and none
+  // of them named the cause. "Emits no page" has to mean no page, or a failed render leaves the
+  // tree in a state worse than not having run at all.
+  //
+  // sourceModifiedDate() memoises, so this costs one `git log` per slug and the loop below reuses
+  // every answer.
+  for (const slug of ALL_TARGETS) sourceModifiedDate(slug);
+
   for (const slug of ALL_TARGETS) {
     await renderOne(slug);
   }
