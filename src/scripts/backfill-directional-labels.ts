@@ -694,45 +694,78 @@ async function main(): Promise<void> {
   // budgeted run, not only on a shortfall, because a run that could not measure must SAY so —
   // silence is what let a truncated night look like a clean one.
   if (cli.timeBudgetMin !== undefined) {
-    const budgetExpired = budget.globalExpired();
-    const cap = detectCapacityShortfall(summaries, venueOrder, frontier, nowSec, defaultSloHoursFor, 24, budgetExpired);
-    const startedAt = new Date(budget.startMs).toISOString();
-    const env = buildEnvelope({
-      detector: 'directional-label-capacity',
-      // The run's IDENTITY, derived from its own start instant — the consumer re-derives the
-      // same string from the log's last `DWR backfill start` line, so a marker from an earlier
-      // run cannot masquerade as this one's.
-      runId: `dwr-${startedAt}`,
-      runStartedAt: startedAt,
-      runOutcome: cap.runOutcome,
-      producedAt: new Date(nowSec * 1000).toISOString(),
-      observationWindow: { from: startedAt, to: new Date(nowSec * 1000).toISOString() },
-      verdict: cap.verdict,
-      // EVIDENCE, not narrative. Every value here is measured by this run, and the schema caps
-      // string values at a word count that no sentence about mechanism can fit inside.
-      evidence: {
-        unreached_in_danger: cap.unreachedInDanger.join(',') || 'none',
-        unreached_count: cap.unreachedInDanger.length,
-        est_venue_min_short: cap.estVenueMinShort,
-        venues_reached: summaries.length,
-        venues_total: venueOrder.length,
-        rotation: venueOrder.join('>'),
-        elapsed_min: Math.round(((Date.now() - budget.startMs) / 60_000) * 10) / 10,
-        budget_min: cli.timeBudgetMin,
-        budget_expired: budgetExpired,
-      },
-    });
-    // Refuse to emit a signal we would ourselves reject. A producer that can publish a
-    // non-conforming envelope makes the consumer's validation the only guard, and one guard is
-    // how the class returns.
-    if (!isConforming(env)) {
-      console.error(`[detector-envelope] REFUSING to emit a non-conforming envelope for ${env.detector}`);
-    } else {
-      console.log(`[detector-envelope] ${JSON.stringify(env)}`);
+    // THE DETECTOR MAY NOT KILL THE RUN IT DESCRIBES.
+    //
+    // Measured 2026-08-26: `buildEnvelope` threw ENOENT here on every nightly since 2026-08-22,
+    // AFTER the rotation had completed and written its rows — so a fully successful 100-minute
+    // label pass exited 1, `nightly-carry-labeler` logged `STEP directional-labels FAILED`, and
+    // the `DONE` line never printed. OPS-DETECTOR-ENVELOPE-RUNTIME-W1 removed that specific cause
+    // (the embedded mirror in detector-envelope.ts), but the SHAPE is the defect: a guard on a
+    // path that has already done its work REFUSES, it does not THROW.
+    //
+    // A failure here is deliberately NOT laundered into a pass. Emitting nothing is exactly what
+    // `directional-label-freshness.py` reads as `CAPACITY_SIGNAL INDETERMINATE`, so the dark case
+    // stays visible to the consumer that already alerts on it — while the labeling work, which is
+    // a different question entirely, keeps its own honest exit code.
+    try {
+      emitCapacityEnvelope(cli, budget, summaries, venueOrder, frontier, nowSec);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[detector-envelope] REFUSING: could not build the capacity envelope: ${msg}`);
     }
   }
 
   console.log(`[${ts()}] DONE ${JSON.stringify({ ...cov, noKlinesByVenue: Object.fromEntries(noKlinesByVenue) })}`);
+}
+
+/**
+ * Capacity-honesty (Objective #2), under the DETECTOR_ENVELOPE contract (CH3). Extracted from
+ * `main` by OPS-DETECTOR-ENVELOPE-RUNTIME-W1 so the emission has a seam its caller can refuse at.
+ */
+function emitCapacityEnvelope(
+  cli: { timeBudgetMin?: number },
+  budget: { globalExpired: () => boolean; startMs: number },
+  summaries: VenueRunSummary[],
+  venueOrder: string[],
+  frontier: Map<string, number>,
+  nowSec: number,
+): void {
+  const budgetExpired = budget.globalExpired();
+  const cap = detectCapacityShortfall(summaries, venueOrder, frontier, nowSec, defaultSloHoursFor, 24, budgetExpired);
+  const startedAt = new Date(budget.startMs).toISOString();
+  const env = buildEnvelope({
+    detector: 'directional-label-capacity',
+    // The run's IDENTITY, derived from its own start instant — the consumer re-derives the
+    // same string from the log's last `DWR backfill start` line, so a marker from an earlier
+    // run cannot masquerade as this one's.
+    runId: `dwr-${startedAt}`,
+    runStartedAt: startedAt,
+    runOutcome: cap.runOutcome,
+    producedAt: new Date(nowSec * 1000).toISOString(),
+    observationWindow: { from: startedAt, to: new Date(nowSec * 1000).toISOString() },
+    verdict: cap.verdict,
+    // EVIDENCE, not narrative. Every value here is measured by this run, and the schema caps
+    // string values at a word count that no sentence about mechanism can fit inside.
+    evidence: {
+      unreached_in_danger: cap.unreachedInDanger.join(',') || 'none',
+      unreached_count: cap.unreachedInDanger.length,
+      est_venue_min_short: cap.estVenueMinShort,
+      venues_reached: summaries.length,
+      venues_total: venueOrder.length,
+      rotation: venueOrder.join('>'),
+      elapsed_min: Math.round(((Date.now() - budget.startMs) / 60_000) * 10) / 10,
+      budget_min: cli.timeBudgetMin,
+      budget_expired: budgetExpired,
+    },
+  });
+  // Refuse to emit a signal we would ourselves reject. A producer that can publish a
+  // non-conforming envelope makes the consumer's validation the only guard, and one guard is
+  // how the class returns.
+  if (!isConforming(env)) {
+    console.error(`[detector-envelope] REFUSING to emit a non-conforming envelope for ${env.detector}`);
+  } else {
+    console.log(`[detector-envelope] ${JSON.stringify(env)}`);
+  }
 }
 
 if (require.main === module) {

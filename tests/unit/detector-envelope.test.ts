@@ -12,14 +12,16 @@
  * the budget goes on the blocks that spawn and nowhere else. (Ratified 2026-08-22 Q4.)
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync as realReadFileSync } from 'node:fs';
 import * as path from 'node:path';
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
   buildEnvelope,
   isConforming,
   loadSchema,
   validateEnvelope,
   schemaPath,
+  EMBEDDED_SCHEMA,
   _resetSchemaCacheForTest,
   type DetectorEnvelope,
 } from '../../src/lib/detector-envelope.js';
@@ -195,15 +197,152 @@ describe('DETECTOR_ENVELOPE — a schema it cannot read is INDETERMINATE, not pe
   });
 });
 
-describe('DETECTOR_ENVELOPE — the incident replay, as the regression anchor', () => {
-  it('the 2026-08-22 run cannot produce a capacity verdict', () => {
-    const env: DetectorEnvelope = buildEnvelope({ ...INCIDENT, verdict: 'FAIL' });
-    expect(env.verdict).toBe('INDETERMINATE');
-    expect(isConforming(env)).toBe(true);
-    // est_venue_min_short=26 may still be REPORTED — it is a measurement. What it may no longer
-    // do is arrive labelled as a structural capacity conclusion.
-    const withNumber = buildEnvelope({ ...INCIDENT, verdict: 'FAIL', evidence: { ...INCIDENT.evidence, est_venue_min_short: 26 } });
-    expect(withNumber.verdict).toBe('INDETERMINATE');
-    expect(withNumber.evidence.est_venue_min_short).toBe(26);
+/**
+ * OPS-DETECTOR-ENVELOPE-RUNTIME-W1 — THE PIN.
+ *
+ * `/app/ops` does not exist in the runtime image, so `loadSchema()` falls back to
+ * `EMBEDDED_SCHEMA` there. That is only defensible while the mirror IS the SoT rather than a
+ * second opinion about it, and prose cannot hold that — this block is the control. It runs in CI
+ * and in the pre-push gate, so a schema edit that is not mirrored cannot be pushed at all, which
+ * is a stronger guarantee than the rebuild trigger a `Dockerfile` COPY would have needed (and
+ * which GitHub Actions cannot express surgically: `!` negation is valid only in `paths`, and
+ * `paths` and `paths-ignore` cannot be combined for one event).
+ */
+describe('DETECTOR_ENVELOPE — the embedded mirror is pinned to the SoT, field for field', () => {
+  const sot = JSON.parse(realReadFileSync(schemaPath(), 'utf8')) as Record<string, unknown>;
+  /** Contract keys only — `_comment` / `_generator` / `_*_doc` are documentation, not contract. */
+  const contractKeys = Object.keys(sot).filter((k) => !k.startsWith('_'));
+
+  it('carries EXACTLY the SoT contract keys — no more, and critically no fewer', () => {
+    // The "fewer" half is the one that matters: a wave adding a field to the JSON and not here
+    // would otherwise leave the container silently validating against the older contract.
+    expect([...Object.keys(EMBEDDED_SCHEMA)].sort()).toEqual([...contractKeys].sort());
+  });
+
+  it.each(
+    Object.keys(JSON.parse(realReadFileSync(schemaPath(), 'utf8')) as Record<string, unknown>)
+      .filter((k) => !k.startsWith('_')),
+  )('mirrors the SoT value of %s', (key) => {
+    expect((EMBEDDED_SCHEMA as unknown as Record<string, unknown>)[key]).toEqual(sot[key]);
+  });
+
+  // PROVE THE PIN CAN FAIL. An assertion nobody has watched go red is a decoration; this walks a
+  // deliberately-mutated mirror through the same comparison the block above runs.
+  it('the pin is not vacuous — a mutated mirror is rejected by both halves', () => {
+    const drifted = { ...EMBEDDED_SCHEMA, max_age_seconds: 999 } as unknown as Record<string, unknown>;
+    expect(drifted.max_age_seconds).not.toEqual(sot.max_age_seconds);
+
+    const truncated = { ...EMBEDDED_SCHEMA } as unknown as Record<string, unknown>;
+    delete truncated.observation_window_fields;
+    expect([...Object.keys(truncated)].sort()).not.toEqual([...contractKeys].sort());
+  });
+
+  it('is frozen, so no consumer can mutate the contract for every later caller', () => {
+    expect(Object.isFrozen(EMBEDDED_SCHEMA)).toBe(true);
+  });
+});
+
+/**
+ * THE CONTAINER CONDITION, PINNED AS A FACT.
+ *
+ * The mirror exists because `/app/ops` does not. That is a property of the Dockerfile, not of
+ * anyone's memory of it, so it is asserted here — anchored on a line-start `COPY` so this very
+ * comment cannot satisfy the grep (the recorded false-positive shape, see the Dockerfile's own
+ * note about the retired `COPY ops/closedbar-recalibrate-config.json`).
+ */
+describe('DETECTOR_ENVELOPE — the runtime image really has no ops/ tree', () => {
+  it('the Dockerfile COPYs no ops/ path, which is why the SoT cannot be read in prod', () => {
+    const dockerfile = realReadFileSync(path.join(REPO, 'Dockerfile'), 'utf8');
+    const copies = dockerfile.split('\n').filter((l) => /^COPY\s+ops\//.test(l));
+    expect(copies).toEqual([]);
+  });
+
+  it('and the SoT path is inside that absent tree', () => {
+    expect(path.relative(REPO, schemaPath()).startsWith('ops/')).toBe(true);
+  });
+});
+
+/**
+ * The DEFAULT-path fallback, exercised.
+ *
+ * The seam replaces NODE'S FILESYSTEM and nothing of ours: the catch, the errno discrimination,
+ * the one-shot announcement and the mirror substitution are all real code running here. Kept LAST
+ * in the file and torn down explicitly, because a `doMock` leaks forward across describe blocks.
+ */
+describe('DETECTOR_ENVELOPE — an absent SoT is answered by the mirror, loudly', () => {
+  const REAL = schemaPath();
+
+  async function withFsThatFails(
+    fail: (f: string) => Error | string,
+    fn: (m: typeof import('../../src/lib/detector-envelope.js')) => void | Promise<void>,
+  ): Promise<void> {
+    vi.resetModules();
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
+      return {
+        ...actual,
+        readFileSync: (f: unknown, ...rest: unknown[]) => {
+          if (typeof f === 'string' && path.resolve(f) === path.resolve(REAL)) {
+            const r = fail(f);
+            if (r instanceof Error) throw r;
+            return r;
+          }
+          return (actual.readFileSync as unknown as (...a: unknown[]) => unknown)(f, ...rest);
+        },
+      };
+    });
+    try {
+      const mod = await import('../../src/lib/detector-envelope.js');
+      mod._resetSchemaCacheForTest();
+      await fn(mod);
+    } finally {
+      vi.doUnmock('node:fs');
+      vi.resetModules();
+    }
+  }
+
+  const enoent = (f: string): Error => {
+    const e = new Error(`ENOENT: no such file or directory, open '${f}'`) as NodeJS.ErrnoException;
+    e.code = 'ENOENT';
+    return e;
+  };
+
+  it('substitutes the mirror, says so once, and still builds a CONFORMING envelope', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await withFsThatFails(enoent, (m) => {
+        expect(m.loadSchema()).toEqual(m.EMBEDDED_SCHEMA);
+        // Silence here would be the dark-guard shape: a substitution nobody can see in a log.
+        expect(spy.mock.calls.flat().join(' ')).toContain('using the embedded mirror');
+        // Announced ONCE per process, not once per call — the cache makes the second call free.
+        const before = spy.mock.calls.length;
+        m.loadSchema();
+        expect(spy.mock.calls.length).toBe(before);
+
+        const env = m.buildEnvelope({ ...INCIDENT, runOutcome: 'complete', verdict: 'FAIL' });
+        expect(m.isConforming(env)).toBe(true);
+        expect(env.verdict).toBe('FAIL');
+        // And the forcing rule survives the substitution — this is the whole point of the module.
+        expect(m.buildEnvelope({ ...INCIDENT, verdict: 'FAIL' }).verdict).toBe('INDETERMINATE');
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a MALFORMED SoT still THROWS — only ABSENCE is answered by the mirror', async () => {
+    await withFsThatFails(() => '{ this is not json', (m) => {
+      expect(() => m.loadSchema()).toThrow();
+    });
+  });
+
+  it('a non-ENOENT read failure still THROWS rather than being papered over', async () => {
+    await withFsThatFails((f) => {
+      const e = new Error(`EACCES: permission denied, open '${f}'`) as NodeJS.ErrnoException;
+      e.code = 'EACCES';
+      return e;
+    }, (m) => {
+      expect(() => m.loadSchema()).toThrow(/EACCES/);
+    });
   });
 });

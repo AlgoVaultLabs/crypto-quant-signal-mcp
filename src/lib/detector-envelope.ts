@@ -15,6 +15,37 @@
  * THE SCHEMA IS THE SoT AND IT IS DATA, NOT CODE. `ops/monitoring/detector-envelope.schema.json`
  * is read here AND by `ops/monitoring/detector_envelope.py`. A shared TypeScript helper would
  * leave the Python consumer unconstrained, which is precisely where D2 and D3 lived.
+ *
+ * ── WHY THERE IS AN EMBEDDED MIRROR (OPS-DETECTOR-ENVELOPE-RUNTIME-W1) ──
+ *
+ * That SoT file is STRUCTURALLY ABSENT from the runtime image. The Dockerfile COPYs no `ops/`
+ * path, so `/app/ops` does not exist, and every in-container `buildEnvelope` call threw ENOENT
+ * instead of emitting a verdict. Measured 2026-08-26: 18 throws in /var/log/carry-labeler.log,
+ * each one killing the nightly labeler AFTER it had written its rows, and the consumer
+ * (`directional-label-freshness.py`) reporting `CAPACITY_SIGNAL INDETERMINATE` every morning
+ * since 2026-08-23 because the producer had gone silent.
+ *
+ * SHIPPING THE FILE INTO THE IMAGE WAS PROBED AND REJECTED, and the reason is a measured platform
+ * limit rather than a preference. A COPYed path must leave `deploy.yml`'s `paths-ignore` or a
+ * schema edit ships a stale image — and GitHub Actions cannot express "ignore `ops/monitoring/**`
+ * except this one file": `!` negation works only in `paths`, and `paths` and `paths-ignore`
+ * cannot be combined for one event. The reachable alternatives were dropping `ops/monitoring/**`
+ * wholesale (every canary edit then rebuilds and restarts prod — the exact thing that entry
+ * exists to prevent) or inverting the trigger to a `paths` allow-list, whose failure mode is
+ * worse than this defect: a future wave adding a runtime path would silently never deploy.
+ *
+ * SO THE MIRROR IS NOT A SECOND SoT AND IT IS NOT A PERMISSIVE DEFAULT. It is a projection of the
+ * same file, pinned FIELD-FOR-FIELD by `tests/unit/detector-envelope.test.ts`, which also asserts
+ * the JSON declares no contract key the mirror lacks. A schema edit that is not mirrored fails the
+ * pre-push gate and CI — strictly stronger than a rebuild trigger, which only fires if a deploy
+ * happens to run. This is the same shape the Python consumer already uses: mirror the rule, pin
+ * the pair with one shared-corpus test.
+ *
+ * `ops/monitoring/detector_envelope.py::load_schema` deliberately does NOT do this, and the
+ * asymmetry is the point. It is the CONSUMER — a validator that invented its own contract would
+ * accept envelopes nobody could have emitted, which is the dark-guard class. This is the
+ * PRODUCER: it emits `schema_version`, so a mirror that ever did drift is rejected downstream by
+ * the consumer's own version check rather than laundered into a pass.
  */
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
@@ -45,20 +76,95 @@ export interface EnvelopeSchema {
   observation_window_fields: string[];
 }
 
-/** Resolved from THIS file's location, so it is correct in the repo, in `dist/`, and in a container. */
+/**
+ * Resolved from THIS file's location. Correct in the repo and on any host that has the SoT beside
+ * it; in the runtime image it resolves to `/app/ops/monitoring/...`, which does not exist — see
+ * the module header for why that is answered by the mirror below and not by a Dockerfile COPY.
+ */
 export function schemaPath(): string {
   return path.resolve(__dirname, '../../ops/monitoring/detector-envelope.schema.json');
 }
 
+/**
+ * The contract, mirrored. EVERY key of `EnvelopeSchema` and nothing else — the `_comment`,
+ * `_generator` and `_*_doc` keys of the JSON are documentation and are deliberately not carried.
+ * `tests/unit/detector-envelope.test.ts` asserts this equals the SoT field for field AND that the
+ * SoT declares no non-underscore key missing here, so a contract change cannot be pushed
+ * half-applied.
+ */
+export const EMBEDDED_SCHEMA: EnvelopeSchema = Object.freeze({
+  schema_version: 1,
+  required_fields: Object.freeze([
+    'schema_version',
+    'detector',
+    'verdict',
+    'run_id',
+    'run_started_at',
+    'run_outcome',
+    'produced_at',
+    'observation_window',
+    'evidence',
+  ]) as unknown as string[],
+  verdict_values: Object.freeze(['PASS', 'FAIL', 'INDETERMINATE']) as unknown as Verdict[],
+  verdict_default: 'INDETERMINATE',
+  run_outcome_values: Object.freeze([
+    'complete',
+    'venue-budget',
+    'global-budget',
+    'venue-error',
+    'venue-circuit-break',
+    'stopped',
+    'unknown',
+  ]) as unknown as string[],
+  run_outcome_conclusive: Object.freeze(['complete', 'venue-budget', 'global-budget']) as unknown as string[],
+  max_age_seconds: 21600,
+  evidence_rules: Object.freeze({ must_be_object: true, min_keys: 1, max_prose_words: 7 }),
+  observation_window_fields: Object.freeze(['from', 'to']) as unknown as string[],
+}) as EnvelopeSchema;
+
 let cached: EnvelopeSchema | null = null;
+let announcedMirror = false;
+
+/**
+ * THE SUBSTITUTION IS NEVER SILENT, AND IT IS NEVER A WIDENING.
+ *
+ *   - default path, file present     → the file wins. It is the SoT.
+ *   - default path, file ABSENT      → the pinned mirror, plus ONE stderr line per process.
+ *   - default path, file UNREADABLE  → THROWS. Input we were handed and could not parse is the
+ *                                      indeterminate case; a corrupt SoT must never be papered
+ *                                      over by a copy that happens to still parse.
+ *   - EXPLICIT path, missing         → THROWS. A caller naming a file is asserting something about
+ *                                      THAT file, and answering with different bytes would make
+ *                                      the assertion unfalsifiable.
+ */
 export function loadSchema(p: string = schemaPath()): EnvelopeSchema {
-  if (cached && p === schemaPath()) return cached;
-  const s = JSON.parse(readFileSync(p, 'utf8')) as EnvelopeSchema;
-  if (p === schemaPath()) cached = s;
+  const isDefault = p === schemaPath();
+  if (cached && isDefault) return cached;
+
+  let raw: string;
+  try {
+    raw = readFileSync(p, 'utf8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (!isDefault || (code !== 'ENOENT' && code !== 'ENOTDIR')) throw err;
+    if (!announcedMirror) {
+      announcedMirror = true;
+      console.error(
+        `[detector-envelope] schema SoT absent at ${p}; using the embedded mirror `
+        + '(pinned field-for-field by tests/unit/detector-envelope.test.ts). '
+        + 'Expected inside the runtime image, which COPYs no ops/ path.',
+      );
+    }
+    if (isDefault) cached = EMBEDDED_SCHEMA;
+    return EMBEDDED_SCHEMA;
+  }
+
+  const s = JSON.parse(raw) as EnvelopeSchema;
+  if (isDefault) cached = s;
   return s;
 }
 /** Test seam — the module-level cache would otherwise pin the first schema a suite loaded. */
-export function _resetSchemaCacheForTest(): void { cached = null; }
+export function _resetSchemaCacheForTest(): void { cached = null; announcedMirror = false; }
 
 export interface BuildInput {
   detector: string;
