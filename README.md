@@ -93,7 +93,7 @@ Under the hood, a self-tuning model fuses momentum, trend structure, derivatives
     { "coin": "SOL", "timeframe": "15m", "confidence": 73 }
   ],
   "_algovault": {
-    "version": "1.28.1",
+    "version": "1.28.2",
     "tool": "get_trade_call",
     "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
   }
@@ -157,7 +157,7 @@ AlgoVault is drop-in for every MCP-spec client, every major agent framework, and
 
 Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a real BUY/SELL/HOLD verdict from `api.algovault.com/mcp`, prints it. ≤5 minutes to first call.
 
-**Exchange Agent Trade Kits.** AlgoVault returns the analytics; your agent's risk policy decides what to execute. All demos run testnet/demo only.
+**Exchange Agent Trade Kits.** AlgoVault returns the analytics; your agent's risk policy decides what to execute. All demos run testnet/demo only. For Binance, the Agent OS path is the recommended default for new integrations — OAuth at connect time, no API keys on the machine; the key-based kit remains right for custom order types.
 
 <!-- BUILD:README_INTEGRATIONS_TABLE -->
 | # | Exchange | Tutorial | Demo | Mirror |
@@ -174,6 +174,7 @@ Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a
 | 10 | Kraken | [`docs/integrations/kraken.md`](docs/integrations/kraken.md) | [`examples/kraken/demo.mjs`](examples/kraken/demo.mjs) | [algovault.com/docs/integrations/kraken](https://algovault.com/integrations/kraken) |
 | 11 | Alpaca | [`docs/integrations/alpaca.md`](docs/integrations/alpaca.md) | [`examples/alpaca/demo.mjs`](examples/alpaca/demo.mjs) | [algovault.com/docs/integrations/alpaca](https://algovault.com/integrations/alpaca) |
 | 12 | Gate.io | [`docs/integrations/gateio.md`](docs/integrations/gateio.md) | [`examples/gateio/demo.mjs`](examples/gateio/demo.mjs) | [algovault.com/docs/integrations/gateio](https://algovault.com/integrations/gateio) |
+| 13 | Binance Agent OS | [`docs/integrations/exchange-kits/binance-agent-os.md`](docs/integrations/exchange-kits/binance-agent-os.md) | — | [algovault.com/integrations/binance-agent-os](https://algovault.com/integrations/binance-agent-os) |
 <!-- /BUILD:README_INTEGRATIONS_TABLE -->
 
 ---
@@ -261,6 +262,7 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 - **📗 [The docs](https://algovault.com/docs) answer the question instead of pointing at it.** Every `rankBy` lens is documented, REST is as complete as MCP, there's a proper error-code reference, and the copy-paste samples run exactly as written — CI re-checks them against the live API on every deploy.
 
 - **v1.28.1** — clearer tool descriptions for agent tool-selection; `get_trade_signal` now steers new integrations to `get_trade_call`.
+- **v1.28.2** — **Pair with [Binance Agent OS](https://algovault.com/integrations/binance-agent-os).** One MCP client, two servers: AlgoVault returns the verdict, Binance Agent OS executes it. OAuth at connect time — no API keys on your machine, no request signing, and trading confined to an isolated sub-account you fund yourself. There is no withdrawal scope.
 
 **Upgrading from v1.27.x** — one breaking change: `EDGEX` and `WEEX` are no longer valid `exchange` values and now return `-32602`. No tool was added or renamed. Check any hard-coded `exchange` value against the published enum, and read `_algovault.auth` if you branch on auth failures.
 
