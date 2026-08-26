@@ -271,7 +271,7 @@ tailwind.config = {
     <div style="position:relative;z-index:1">
       <div class="placeholder-cap" style="margin-bottom:14px">· binance-agent-os integration</div>
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">512,397</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">512,416</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>AlgoVault × Binance Agent OS — Build Verifiable AI Trading Agents</h1>
@@ -379,6 +379,65 @@ tailwind.config = {
 <li><strong>Emergency stop:</strong> <code>Profile → Dashboard → Sub-account → Account Management</code>. One step disconnects every agent and cancels open orders and positions.</li>
 <li><strong>Permission changes require disconnect and reconnect.</strong> Scopes are fixed for the life of a connection.</li>
 </ul></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Common questions</h2>
+<p><strong>Does AlgoVault work with Binance Agent OS?</strong></p>
+<p>Yes. Add both MCP servers to the same client. AlgoVault returns the composite verdict; Binance Agent OS executes it.</p>
+<p><strong>Do I need Binance API keys?</strong></p>
+<p>No. Binance Agent OS authenticates over OAuth at connect time. No API key or secret is stored on your machine.</p>
+<p><strong>Can the agent withdraw my funds?</strong></p>
+<p>No. There is no withdrawal scope. The agent cannot move funds to an external address, and trading is confined to a sub-account you fund yourself.</p>
+<p><strong>Why does my agent ignore AlgoVault and use Binance tools?</strong></p>
+<p>An exchange-shaped prompt is ambiguous with two servers connected. AlgoVault exposes no exchange-operation tools. Name the tool you want.</p>
+<p><strong>What does AlgoVault add that Binance MCP does not?</strong></p>
+<p>A cross-venue funding spread, which a single-venue server cannot compute, plus a composite verdict across every exchange AlgoVault covers, and a Merkle-anchored track record.</p>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Does AlgoVault work with Binance Agent OS?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Add both MCP servers to the same client. AlgoVault returns the composite verdict; Binance Agent OS executes it."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need Binance API keys?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Binance Agent OS authenticates over OAuth at connect time. No API key or secret is stored on your machine."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can the agent withdraw my funds?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. There is no withdrawal scope. The agent cannot move funds to an external address, and trading is confined to a sub-account you fund yourself."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does my agent ignore AlgoVault and use Binance tools?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "An exchange-shaped prompt is ambiguous with two servers connected. AlgoVault exposes no exchange-operation tools. Name the tool you want."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What does AlgoVault add that Binance MCP does not?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A cross-venue funding spread, which a single-venue server cannot compute, plus a composite verdict across every exchange AlgoVault covers, and a Merkle-anchored track record."
+      }
+    }
+  ]
+}
+</script></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Verify the record, then start</h2>
 <p>Every AlgoVault call is Merkle-anchored on Base L2. Read the live record at <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'binance-agent-os',campaign:'track-record'}})">https://algovault.com/track-record</a>, then get a key at <a href="https://api.algovault.com/signup">https://api.algovault.com/signup</a> and run Step 1.</p></div>
       </article>

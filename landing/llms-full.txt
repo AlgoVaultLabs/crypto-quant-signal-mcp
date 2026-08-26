@@ -157,6 +157,51 @@ Docs: https://algovault.com/docs#x402 · x402 spec: https://x402.org
 - **Recipes:** regime gated dca btc / confidence filtered eth swing / funding arb cash and carry.
 - **Status:** LIVE · **Launched:** 2026-03-03
 
+### Binance Agent OS × AlgoVault
+
+- **Tutorial:** https://algovault.com/integrations/binance-agent-os
+- **Pairs with:** Binance Agent OS MCP server — https://agent.binance.com/mcp/agentic
+- **Auth:** OAuth at connect time. No API keys on the machine, no HMAC request signing.
+- **Scopes:** market data (no auth) · account · trade · transfer. **No withdrawal scope exists.**
+- **Execution account:** an isolated Agentic sub-account. It starts empty and only you can fund
+  it — the agent cannot pull from your main account. That balance is the real risk limit, and
+  Binance enforces it rather than your prompt.
+- **Status:** LIVE · **Launched:** 2026-08-25
+
+Two MCP servers in one client. AlgoVault decides, Binance executes.
+
+```bash
+claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic
+
+claude mcp add --transport http --scope project algovault \
+  https://api.algovault.com/mcp?src=binance_agent_os \
+  --header "Authorization: Bearer $AV_API_KEY" \
+  --header "X-AlgoVault-Track-Token:int-binance-agent-os"
+```
+
+Division of labour — each server answers what it alone can answer:
+
+| Question the agent asks | Server | Why |
+|---|---|---|
+| Direction, confidence, regime | AlgoVault `get_trade_call` | Composite verdict across every exchange AlgoVault covers, Merkle-anchored track record |
+| Cross-venue funding spread | AlgoVault `scan_funding_arb` | A spread needs two venues; Binance's server sees one |
+| Whole-market breadth | AlgoVault `scan_trade_calls` | Ranked calls across the scan universe |
+| Live price, balance, position | Binance | Its own book, its own account |
+| Place or cancel an order, move funds | Binance | Execution, confirmed by the user every time |
+
+With two servers connected, an exchange-shaped prompt is ambiguous. AlgoVault exposes no
+exchange-operation tools, so "what is BTC doing on Binance" names a venue, not a question, and
+nothing about it points at the verdict. Name the tool:
+
+> "Use AlgoVault's `get_trade_call` for BTC 15m on Binance. Show me signal, confidence and
+> regime. If signal is BUY and confidence is above 70, place a $100 market buy on Binance spot —
+> confirm with me before sending."
+
+The MCP endpoint is OAuth-gated: an unauthenticated `initialize` returns HTTP 401 with
+`www-authenticate: Bearer resource_metadata="https://agent.binance.com/.well-known/oauth-protected-resource/gateway-mcp"`,
+and that metadata document resolves and names the same endpoint. That is the RFC 9728 handshake
+working, not a fault.
+
 ### OKX × AlgoVault
 
 - **Tutorial:** https://algovault.com/docs/integrations/okx

@@ -130,6 +130,7 @@ tailwind.config = { theme: { extend: { colors: {
 
     <h2>Does it work with other MCP clients?</h2>
     <p>Yes. The same <a href="https://modelcontextprotocol.io/" rel="noopener noreferrer" target="_blank">Model Context Protocol</a> server works with Cursor, Cline, and custom agents over Streamable HTTP or stdio. Nothing is Claude-specific.</p>
+    <p>It also sits beside an execution server in the same client. Binance Agent OS is the execution half of a Claude trading stack: Claude reasons, AlgoVault returns the verdict, Binance places the order under OAuth. See <a href="https://algovault.com/integrations/binance-agent-os">Binance Agent OS</a>.</p>
 
     <h2>How do you verify the numbers Claude cites?</h2>
     <p>Every call is hashed and published on <a href="https://www.base.org/" rel="noopener noreferrer" target="_blank">Base L2</a> before its outcome is known. Recompute any call's hash and check it at <a href="https://algovault.com/verify">/verify</a>; the live win rate is at <a href="https://algovault.com/track-record">/track-record</a>. Claude's citations trace to the same public source.</p>

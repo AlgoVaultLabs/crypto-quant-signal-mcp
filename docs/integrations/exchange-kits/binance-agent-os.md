@@ -88,6 +88,78 @@ That prompt has one decision step and one execution step, and it says which serv
 - **Emergency stop:** `Profile → Dashboard → Sub-account → Account Management`. One step disconnects every agent and cancels open orders and positions.
 - **Permission changes require disconnect and reconnect.** Scopes are fixed for the life of a connection.
 
+
+## Common questions
+
+**Does AlgoVault work with Binance Agent OS?**
+
+Yes. Add both MCP servers to the same client. AlgoVault returns the composite verdict; Binance Agent OS executes it.
+
+**Do I need Binance API keys?**
+
+No. Binance Agent OS authenticates over OAuth at connect time. No API key or secret is stored on your machine.
+
+**Can the agent withdraw my funds?**
+
+No. There is no withdrawal scope. The agent cannot move funds to an external address, and trading is confined to a sub-account you fund yourself.
+
+**Why does my agent ignore AlgoVault and use Binance tools?**
+
+An exchange-shaped prompt is ambiguous with two servers connected. AlgoVault exposes no exchange-operation tools. Name the tool you want.
+
+**What does AlgoVault add that Binance MCP does not?**
+
+A cross-venue funding spread, which a single-venue server cannot compute, plus a composite verdict across every exchange AlgoVault covers, and a Merkle-anchored track record.
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Does AlgoVault work with Binance Agent OS?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Add both MCP servers to the same client. AlgoVault returns the composite verdict; Binance Agent OS executes it."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need Binance API keys?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Binance Agent OS authenticates over OAuth at connect time. No API key or secret is stored on your machine."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can the agent withdraw my funds?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. There is no withdrawal scope. The agent cannot move funds to an external address, and trading is confined to a sub-account you fund yourself."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does my agent ignore AlgoVault and use Binance tools?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "An exchange-shaped prompt is ambiguous with two servers connected. AlgoVault exposes no exchange-operation tools. Name the tool you want."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What does AlgoVault add that Binance MCP does not?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A cross-venue funding spread, which a single-venue server cannot compute, plus a composite verdict across every exchange AlgoVault covers, and a Merkle-anchored track record."
+      }
+    }
+  ]
+}
+</script>
+
 ## Verify the record, then start
 
 Every AlgoVault call is Merkle-anchored on Base L2. Read the live record at <https://algovault.com/track-record>, then get a key at <https://api.algovault.com/signup> and run Step 1.
