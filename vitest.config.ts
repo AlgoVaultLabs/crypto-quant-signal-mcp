@@ -89,6 +89,10 @@ export default defineConfig({
       // ATTRIBUTION-SRC-COVERAGE-W1 — node:test acquisition `?src=` coverage canary (same
       // node:test ownership; exclude from vitest so it doesn't false-fail "No test suite found").
       'tests/unit/attribution-src-coverage.test.mjs',
+      // BINANCE-AGENT-OS-GEO-AND-SUBMISSIONS-W2 CH1 — node:test rendered-comment hygiene canary
+      // (canonical runner is node:test; exclude from vitest so it doesn't false-fail "No test
+      // suite found").
+      'tests/unit/rendered-comment-hygiene.test.mjs',
       // FOOTER-UNIFY-W1 — node:test footer-drift canary (canonical runner is node:test;
       // exclude from vitest so it doesn't false-fail "No test suite found").
       'tests/unit/footer-unify-canary.test.mjs',

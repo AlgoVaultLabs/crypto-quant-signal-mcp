@@ -1,0 +1,45 @@
+{
+  "_doc": "BINANCE-AGENT-OS-GEO-AND-SUBMISSIONS-W2 CH1 R4 — the declaration read by scripts/check-rendered-comment-hygiene.mjs. A developer note written as an <!-- --> comment inside a generator's template literal is PUBLIC COPY: it ships to View Source on every page that generator emits. Measured 2026-08-26, before this wave: 8 flavoured comments on each of 25 rendered integration pages, one of them quoting an internal directive by name. The gate is ALLOW-LIST shaped — a deny-list of internal tokens is one new wave-ID format away from silence.",
+
+  "_severity_doc": "TWO severities, because the gate cannot be CLEAN over the whole tree on day one and a gate that blocks on 42 pre-existing leaks would simply be disabled. BLOCK covers the surface this wave owns and cleaned; REPORT covers everything else, behind a promotion criterion that carries BOTH a count and a DEADLINE. A guard permanently stuck in REPORT is decoration (git-and-worktrees.md:17), so every run appends its count and the healing RATE is measured at the decision rather than guessed.",
+
+  "blocking_globs": ["landing/integrations/*.html"],
+  "_blocking_globs_reason": "The 25 pages CH1 re-renders from scripts/render-integrations.mjs, whose template this wave cleaned. Every leak here is one this wave is responsible for, so blocking costs nothing and prevents regression.",
+
+  "report_globs": ["landing/**/*.html"],
+  "_report_globs_reason": "Everything else under landing/. These files are emitted by build_nav.mjs, build_docs.mjs, build_landing.mjs, render-jsx-static.mjs, build_channel_pages.mjs and build_tools_page.mjs — cleaning them is a multi-generator public-copy sweep, a different risk class from this chapter, and CH1's Must-NOT-write forbids those generators outright.",
+
+  "allowed_markers": [
+    { "pattern": "^NAV:(START|END)$", "reason": "Nav injection region. scripts/build_nav.mjs replaces the content between these two markers; they are load-bearing and must survive byte-identical." },
+    { "pattern": "^ANALYTICS:(START|END)$", "reason": "Analytics snippet region injected by scripts/build_analytics.mjs. Same contract as NAV." },
+    { "pattern": "^/?BUILD:[A-Za-z0-9_-]+(:(start|end))?$", "reason": "Generated-block markers consumed by scripts/build_landing.mjs and scripts/build_docs.mjs (BUILD:connect-exchange-kit, BUILD:INTEGRATIONS_INDEX_*, and the slash-closed llms.txt form)." },
+    { "pattern": "^(BEGIN|END): AlgoVault canonical design loader$", "reason": "Canonical design-loader boundary emitted by four generators. W2 CH1 stripped its '(DESIGN-W2 / D2-C)' parenthetical from render-integrations.mjs — the wave ID was decoration, the marker text is the contract." },
+    { "pattern": "^SNAPSHOT-LINE$", "reason": "Marks a line auto-injected from the live SoT by scripts/snapshot-landing-data.mjs. Hand-editing a marked line breaks the injector." },
+    { "pattern": "^SLOT:[A-Z_]+$", "reason": "Template placeholder in landing/_templates/*.template.html, substituted at generation time." },
+    { "pattern": "^snapshot: \\d{4}-\\d{2}-\\d{2}\\s*[—–-]{1,2}\\s*live source of truth:", "reason": "Snapshot-provenance marker carried from the tutorial markdown. render-integrations.mjs's stripSnapshotBlock() matches on it, so it is functional, not prose. The dash character varies by upstream source (em dash, en dash, double hyphen), hence the character class." },
+    { "pattern": "^Privacy-friendly analytics by Plausible$", "reason": "Fixed label emitted inside the analytics region by build_analytics.mjs. Carries no internal identifier and is part of that generator's stable output." }
+  ],
+
+  "promotion": {
+    "criterion": "report_lane_leaks == 0 AND every remaining comment in the report globs matches allowed_markers",
+    "max_leaks": 0,
+    "decide_by": "2026-11-26",
+    "_decide_by_reason": "A DEADLINE, not a waiting period. The count alone can never fire if the report lane does not heal, and nothing schedules it to heal — the six generators that emit these comments are untouched by this wave. On this date somebody DECIDES: promote, extend with a stated reason, or delete the report lane as decoration.",
+    "wave": "OPS-COMMENT-HYGIENE-PROMOTE-W{NEXT}",
+    "observed": [
+      {
+        "at": "2026-08-26",
+        "report_lane_leaks": null,
+        "note": "Baseline recorded by the wave's first live run; see the run output appended below. Before CH1 the BLOCKING surface carried 8 flavoured comments on each of 25 pages; after CH1 it carries zero."
+      }
+    ],
+    "_observed_doc": "Append one row per decision-point run so the healing RATE is measurable rather than guessed. A flat count with no series cannot distinguish 'slowly healing' from 'structurally stuck'.",
+    "instrument": {
+      "population": "Non-conforming HTML comments in the REPORT globs — every <!-- --> in landing/**/*.html outside landing/integrations/ that matches no allowed_markers row. Counted live per run.",
+      "written_by": "scripts/check-rendered-comment-hygiene.mjs — the subject of this criterion. It READS the committed tree and writes none of it.",
+      "grade": "B",
+      "rederive": "Re-derive at any commit without trusting a recorded number: `git checkout <sha> && node scripts/check-rendered-comment-hygiene.mjs` and read the REPORT-lane count. The population is the committed HTML corpus, which git preserves, so a past value is recomputable rather than merely remembered — and the gate cannot inflate or deflate it, because it only reads files that six OTHER generators write.",
+      "reason": "B, not C: the gate is the instrument, but a deliberate invocation cannot MANUFACTURE the value — the count is a pure function of the committed tree, and lowering it requires actually editing one of the 16 files. B, not D: unlike a live-world observation, every past sample is recomputable from git at the corresponding SHA, so observed[] is a convenience rather than the only record. B, not A: the producer and the subject are the same script, so the independence comes from re-derivability, not from a separate population."
+    }
+  }
+}
