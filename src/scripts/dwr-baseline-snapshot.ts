@@ -24,6 +24,13 @@
  * matching `ops/cron/carry-tracker-publish.sh`'s declared fail-soft contract. This script itself
  * never launders a failure into PASS.
  *
+ * TWO DIFFERENT VERDICTS LIVE HERE AND THEY MUST NOT BE CONFLATED. `DWR_SNAPSHOT_VERDICT` is
+ * about the WRITE — did this job persist the month's rows? The `verdict` COLUMN is about the
+ * SCIENCE — did any cell clear the validity bar? A spec whose family was empty stores
+ * `verdict='INDETERMINATE'` with `verdict_reason='no_powered_cells'` while this job correctly
+ * reports `DWR_SNAPSHOT_VERDICT=PASS`, because writing an honest "we tested nothing" IS a
+ * successful write. EDGE-DWR-VALIDATED-PREDICATE-W1.
+ *
  * ── WHY IT REFUSES A BOUNDED RUN ─────────────────────────────────────────────────────────
  * `dwr-baseline-report.js --signals-before=…` produces a deliberately SMALLER corpus (the
  * healing-only re-run). Writing that into the monthly series would overwrite a full-corpus row
@@ -34,6 +41,7 @@
 import { dbQuery } from '../lib/performance-db.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { buildReport } from './dwr-baseline-report.js';
+import { VALIDITY_PREDICATE_VERSION } from './edge-stats.js';
 
 export type SnapshotVerdict = 'PASS' | 'FAIL' | 'INDETERMINATE';
 
@@ -48,7 +56,8 @@ export const SNAPSHOT_COLUMNS = [
   'run_month', 'spec', 'run_ts', 'window_signals_before',
   'corpus_eligible', 'corpus_labeled', 'coverage_pct',
   'family_size', 'powered_cells', 'testable_cells', 'constant_side_cells',
-  'raw_pass', 'fdr_pass', 'bonferroni_pass', 'fdr_survivors', 'verdict',
+  'raw_pass', 'fdr_pass', 'bonferroni_pass', 'fdr_survivors', 'verdict', 'verdict_reason',
+  'predicate_version',
   'median_dwr', 'median_edge',
   'aggregate_n', 'aggregate_decided', 'aggregate_dwr', 'aggregate_benchmark', 'aggregate_edge',
   'aggregate_dwr_ci_lo', 'aggregate_dwr_ci_hi',
@@ -92,6 +101,7 @@ export interface SpecSlice {
   spec: string;
   familySize: number; poweredCells: number; testableCells: number; constantSideCells: number;
   rawPass: number; fdrPass: number; bonferroniPass: number; validated: number; verdict: string;
+  verdictReason: string | null;
   medianDwr: number; medianEdge: number;
   aggregate: { n: number; decided: number; dwr: number; benchmark: number; edge: number;
     wilsonLo: number; wilsonHi: number };
@@ -110,12 +120,14 @@ export function projectRow(
   labeled: number,
   s: SpecSlice,
   coverageByVenue: unknown,
+  predicateVersion: string,
 ): unknown[] {
   const row: unknown[] = [
     runMonth, s.spec, runTs, windowSignalsBefore,
     eligible, labeled, eligible > 0 ? Number((labeled / eligible).toFixed(4)) : null,
     s.familySize, s.poweredCells, s.testableCells, s.constantSideCells,
-    s.rawPass, s.fdrPass, s.bonferroniPass, s.validated, s.verdict,
+    s.rawPass, s.fdrPass, s.bonferroniPass, s.validated, s.verdict, s.verdictReason ?? null,
+    predicateVersion,
     fin(s.medianDwr), fin(s.medianEdge),
     s.aggregate.n, s.aggregate.decided, fin(s.aggregate.dwr), fin(s.aggregate.benchmark),
     fin(s.aggregate.edge), fin(s.aggregate.wilsonLo), fin(s.aggregate.wilsonHi),
@@ -154,7 +166,10 @@ async function snapshot(): Promise<number> {
   for (const s of report.specs as unknown as SpecSlice[]) {
     const cov = (report.coverage as Record<string, { labeledSignals?: number }>)[s.spec];
     const labeled = Number(cov?.labeledSignals ?? 0);
-    const params = projectRow(runMonth, report.generatedAt, null, eligible, labeled, s, report.coverageByVenue);
+    const params = projectRow(
+      runMonth, report.generatedAt, null, eligible, labeled, s, report.coverageByVenue,
+      report.predicateVersion,
+    );
     const rows = await dbQuery<{ run_month: string; spec: string }>(sql, params);
     // RETURNING + await, deliberately: `dbRun` is fire-and-forget on PG and this process exits
     // immediately after, so an un-awaited write would be dropped while the log said "done".
@@ -182,12 +197,15 @@ function slice(over: Partial<SpecSlice> = {}): SpecSlice {
     spec: 'tau1.0-floor0.30-v1',
     familySize: 178, poweredCells: 104, testableCells: 43, constantSideCells: 59,
     rawPass: 2, fdrPass: 0, bonferroniPass: 0, validated: 0, verdict: 'NO-VALIDATED-EDGE',
+    verdictReason: null,
     medianDwr: 0.4785, medianEdge: -0.0385,
     aggregate: { n: 400, decided: 300, dwr: 0.48, benchmark: 0.52, edge: -0.04, wilsonLo: 0.42, wilsonHi: 0.54 },
     byVenue: [{ key: 'BINANCE', n: 100 }], byTimeframe: [{ key: '5m', n: 100 }],
     ...over,
   };
 }
+
+const PV = VALIDITY_PREDICATE_VERSION;
 
 function selfTest(): number {
   let fails = 0;
@@ -209,25 +227,36 @@ function selfTest(): number {
   check('sql: key columns are never in the UPDATE set', () => !/run_month = EXCLUDED/.test(sql) && !/\bspec = EXCLUDED/.test(sql));
 
   // (2) The row projection.
-  check('projectRow: arity matches the column list', () => projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 1000, 860, slice(), []).length === SNAPSHOT_COLUMNS.length);
+  check('projectRow: arity matches the column list', () => projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 1000, 860, slice(), [], PV).length === SNAPSHOT_COLUMNS.length);
   check('projectRow: coverage_pct = labeled/eligible', () => {
-    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 1000, 860, slice(), []);
+    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 1000, 860, slice(), [], PV);
     return r[SNAPSHOT_COLUMNS.indexOf('coverage_pct')] === 0.86;
   });
   check('projectRow: zero eligible → NULL coverage, never a divide artifact', () => {
-    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 0, 0, slice(), []);
+    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 0, 0, slice(), [], PV);
     return r[SNAPSHOT_COLUMNS.indexOf('coverage_pct')] === null;
   });
   check('projectRow: fdr_survivors carries `validated`, not fdrPass', () => {
-    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5, slice({ validated: 3, fdrPass: 7 }), []);
+    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5, slice({ validated: 3, fdrPass: 7 }), [], PV);
     return r[SNAPSHOT_COLUMNS.indexOf('fdr_survivors')] === 3 && r[SNAPSHOT_COLUMNS.indexOf('fdr_pass')] === 7;
   });
   check('projectRow: NaN medians land as NULL, not the float NaN', () => {
-    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5, slice({ medianDwr: NaN, medianEdge: NaN }), []);
+    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5, slice({ medianDwr: NaN, medianEdge: NaN }), [], PV);
     return r[SNAPSHOT_COLUMNS.indexOf('median_dwr')] === null && r[SNAPSHOT_COLUMNS.indexOf('median_edge')] === null;
   });
+  check('projectRow: predicate_version is stamped from the report, not defaulted', () => {
+    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5, slice(), [], 'v-under-test');
+    return r[SNAPSHOT_COLUMNS.indexOf('predicate_version')] === 'v-under-test';
+  });
+  check('projectRow: verdict_reason carries the vacuity reason, and NULL when there is none', () => {
+    const empty = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5,
+      slice({ verdict: 'INDETERMINATE', verdictReason: 'no_powered_cells' }), [], PV);
+    const normal = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5, slice(), [], PV);
+    return empty[SNAPSHOT_COLUMNS.indexOf('verdict_reason')] === 'no_powered_cells'
+      && normal[SNAPSHOT_COLUMNS.indexOf('verdict_reason')] === null;
+  });
   check('projectRow: JSONB columns are serialized strings', () => {
-    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5, slice(), [{ venue: 'HL' }]);
+    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5, slice(), [{ venue: 'HL' }], PV);
     return typeof r[SNAPSHOT_COLUMNS.indexOf('by_venue')] === 'string'
       && typeof r[SNAPSHOT_COLUMNS.indexOf('coverage_by_venue')] === 'string';
   });

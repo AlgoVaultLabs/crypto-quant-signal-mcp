@@ -332,7 +332,7 @@ describe('edge-metric statistics', () => {
     expect(bonferroni([0.001, 0.02, 0.5], 0.05)).toEqual([true, false, false]);
   });
 
-  it('edgeMetricReport: EDGE-FOUND only for a benchmark-positive, FDR-surviving, out-of-sample cell', () => {
+  it('edgeMetricReport: C2C-EDGE-FOUND only for a benchmark-positive, FDR-surviving, out-of-sample cell', () => {
     const good: EdgeCell = {
       key: 'good',
       full: { n: 1000, engineHits: 650, upCount: 500 }, // rh .65 vs naive .5 → excess .15
@@ -353,14 +353,14 @@ describe('edge-metric statistics', () => {
     };
     const rep = edgeMetricReport([good, drift, overfit], { minN: 30 });
     expect(rep.familySize).toBe(3);
-    expect(rep.verdict).toBe('EDGE-FOUND');
+    expect(rep.verdict).toBe('C2C-EDGE-FOUND');
     expect(rep.validated).toBe(1);
     expect(rep.cells.find((c) => c.key === 'good')!.validated).toBe(true);
     expect(rep.cells.find((c) => c.key === 'drift')!.excess).toBeCloseTo(0, 6);
     expect(rep.cells.find((c) => c.key === 'overfit')!.validated).toBe(false); // holdout flips
   });
 
-  it('edgeMetricReport: NO-VALIDATED-EDGE when only drift/overfit cells exist', () => {
+  it('edgeMetricReport: NO-VALIDATED-C2C-EDGE when only drift/overfit cells exist', () => {
     const drift: EdgeCell = {
       key: 'd', full: { n: 2000, engineHits: 1140, upCount: 1140 },
       train: { n: 1200, engineHits: 684, upCount: 684 }, holdout: { n: 800, engineHits: 456, upCount: 456 },
@@ -370,7 +370,7 @@ describe('edge-metric statistics', () => {
       train: { n: 600, engineHits: 360, upCount: 300 }, holdout: { n: 400, engineHits: 190, upCount: 200 },
     };
     const rep = edgeMetricReport([drift, overfit], { minN: 30 });
-    expect(rep.verdict).toBe('NO-VALIDATED-EDGE');
+    expect(rep.verdict).toBe('NO-VALIDATED-C2C-EDGE');
     expect(rep.validated).toBe(0);
   });
 

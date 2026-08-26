@@ -13,6 +13,11 @@ export interface LabelRow {
   ambiguous: boolean;
   coin: string;
   createdAt: number; // unix seconds
+  /** `directional_labels.barrier_pct` — the race's barrier half-width, PERCENT of price.
+   *  REQUIRED, not optional: the validity predicate's magnitude conditions are expressed in
+   *  return space, and an optional field would let a caller silently omit it and receive an
+   *  INPUT_NOT_MEASURABLE rejection that looks like a market verdict. */
+  barrierPct: number;
 }
 
 /** Side-independent race outcome, reconstructed from the side-adjusted label. */
@@ -71,6 +76,19 @@ export function firstPerCoin(rows: LabelRow[]): LabelRow[] {
   return [...best.values()];
 }
 
+/**
+ * Median of a numeric sample; NaN for an empty one (matching every other statistic here, which
+ * yields NaN rather than a plausible zero when there is nothing to measure).
+ * EXPORTED for the unit test — it is the only new statistic-shaped helper in this wave, and it
+ * is a SELECTION, not a derivation: no distributional assumption, no estimator choice.
+ */
+export function medianOf(xs: number[]): number {
+  const v = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  if (v.length === 0) return NaN;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+
 export interface CellStats {
   n: number; // all labeled rows in the cell (excl. low_vol_history, applied upstream)
   decided: number; // wins + losses (timeouts excluded)
@@ -89,6 +107,12 @@ export interface CellStats {
   ptAll: PtResult; // (a) all decided
   ptNonOverlap: PtResult; // (b) first-per-coin subsample
   constantSide: boolean; // all-BUY or all-SELL predictions → PT undefined
+  /** MEDIAN barrier half-width over the cell's rows, PERCENT of price. Median rather than mean
+   *  for ROBUSTNESS first: barrier width is strongly right-skewed within a cell (measured on
+   *  `5m|rest|c60_74|RANGING` at τ=0.5 — median 0.3944, mean 1.0097, max 19.7528, with 35.6% of
+   *  rows pinned at the 0.30 floor), so a mean would let a handful of unusually wide races carry
+   *  the magnitude test. It is also the tighter bar; both arguments point the same way. */
+  barrierPctMedian: number;
 }
 
 export function computeCellStats(rows: LabelRow[]): CellStats {
@@ -117,5 +141,6 @@ export function computeCellStats(rows: LabelRow[]): CellStats {
     ptAll: ptOverRows(rows),
     ptNonOverlap: ptOverRows(firstPerCoin(rows)),
     constantSide: nBuy === 0 || nBuy === rows.length,
+    barrierPctMedian: medianOf(rows.map((r) => r.barrierPct)),
   };
 }

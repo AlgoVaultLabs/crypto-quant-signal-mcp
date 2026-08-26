@@ -375,14 +375,28 @@ export interface EdgeReport {
   fdrPass: number;
   bonferroniPass: number;
   validated: number;
-  verdict: 'EDGE-FOUND' | 'NO-VALIDATED-EDGE';
+  verdict: 'C2C-EDGE-FOUND' | 'NO-VALIDATED-C2C-EDGE';
   cells: EdgeCellResult[];
 }
 
 /**
  * The full rigor: benchmark-excess + Wilson CI + BH-FDR (+ Bonferroni cross-check)
  * + walk-forward. A cell is `validated` ONLY if it survives FDR AND its holdout
- * excess is positive and one-sided-significant. `EDGE-FOUND` iff ≥1 validated.
+ * excess is positive and one-sided-significant. `C2C-EDGE-FOUND` iff ≥1 validated.
+ *
+ * ── EDGE-DWR-VALIDATED-PREDICATE-W1: TOKENS RENAMED, MATH UNTOUCHED ─────────────────────────
+ * This is the CLOSE-TO-CLOSE family (realized hit rate over `outcome_return_pct`), a DIFFERENT
+ * metric from the DWR symmetric-triple-barrier family in `dwr-baseline-report.ts`, on a
+ * different corpus, with a different bar (minN=30, no Pesaran-Timmermann, no CI separation, no
+ * cost condition). Until 2026-08-26 both families emitted the byte-identical strings
+ * `EDGE-FOUND` / `NO-VALIDATED-EDGE`, so neither a reader nor a grep could tell WHICH bar had
+ * spoken — exactly the collision the verdict-token law exists to prevent. The tokens here are
+ * now prefixed `C2C-`; the arithmetic above is deliberately unchanged, because altering it
+ * would be a metric redefinition rather than a naming fix.
+ *
+ * This function has NOT been reconciled to `validityVerdict()` in `edge-stats.ts` and must not
+ * be: that predicate is the bar for the DWR family, and applying it to a different metric would
+ * silently redefine this one.
  */
 export function edgeMetricReport(cells: EdgeCell[], opts: { q?: number; minN?: number } = {}): EdgeReport {
   const q = opts.q ?? 0.05;
@@ -417,7 +431,7 @@ export function edgeMetricReport(cells: EdgeCell[], opts: { q?: number; minN?: n
     fdrPass: rejected.filter(Boolean).length,
     bonferroniPass: bonf.filter(Boolean).length,
     validated,
-    verdict: validated > 0 ? 'EDGE-FOUND' : 'NO-VALIDATED-EDGE',
+    verdict: validated > 0 ? 'C2C-EDGE-FOUND' : 'NO-VALIDATED-C2C-EDGE',
     cells: cellResults.sort((a, b) => b.excess - a.excess),
   };
 }

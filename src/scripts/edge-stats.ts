@@ -139,3 +139,149 @@ export function pesaranTimmermann(predicted: number[], actual: number[]): PtResu
   const z = (pHat - pStar) / Math.sqrt(denom);
   return { z, p: 1 - normalCdf(z), na: null, pHat, pStar };
 }
+
+// ── The validity predicate (EDGE-DWR-VALIDATED-PREDICATE-W1) ─────────────────
+//
+// THE ONE definition of `validated` for the DWR triple-barrier family. It lives in this leaf,
+// not in the report, because the bar is not a property of one reporting script: it is the
+// estate's certification contract, and every future directional result is judged by it.
+//
+// ── Why it was tightened, and why that is legitimate ──────────────────────────
+// Loosening a bar after a failure is goalpost-moving and is forbidden. TIGHTENING a bar after
+// it produced a DEMONSTRATED FALSE POSITIVE is the opposite act. Both of the following were
+// live `validated: true` on 2026-08-26 under the previous predicate (*same edge sign in the
+// holdout* + *holdout PT p<0.05*, with no magnitude, no CI-separation and no cost condition):
+//
+//   tau0.5 5m|rest|c60_74|RANGING        W/L 5,124 / 5,253 · edge +0.0045 · Wilson [.4842,.5034]
+//     — it loses more barrier races than it wins, and its own CI contains the benchmark. It
+//       "beat" the benchmark only because always-BUY (.4893) and always-SELL did worse.
+//   tau0.5 3m|rest|c60_74|TRENDING_DOWN  W/L 1,331 / 1,372 · edge -0.0270 · holdout edge -0.0407
+//     — a NEGATIVE edge in the full sample AND in the holdout. `Math.sign(ho) === Math.sign(full)`
+//       is satisfied by two negatives, so "the edge persisted out of sample" certified a cell
+//       that was worse than always-SELL on both halves of the split. Measured, not inferred:
+//       the 70/30 cut replayed in SQL gives holdout DWR .5049 against holdout benchmark .5457.
+//
+// Every condition below is a CONJUNCT ADDED to the previous set; nothing was removed or
+// weakened. It is therefore structurally impossible for a cell to GAIN validation under this
+// change — a fact the re-run confirms rather than establishes.
+//
+// ── Why there are TWO magnitude conditions ────────────────────────────────────
+// EXCESS answers "does the engine beat the directionless benchmark by more than it costs to
+// trade?". TRADEABILITY answers "is it profitable at all?". They are not the same question
+// whenever the benchmark sits below breakeven — and here it measurably does (the flagged cell's
+// benchmark is 0.4893). A cell can clear EXCESS against a sub-0.5 benchmark while still losing
+// money on every race, so both are required.
+//
+// Both are evaluated on the WILSON LOWER BOUND rather than the point estimate, so magnitude
+// inherits the same winner's-curse control as CI separation: we promote on the bound, never on
+// the estimate.
+//
+// ── Units ─────────────────────────────────────────────────────────────────────
+// `barrierPctMedian` is PERCENT OF PRICE (`directional_labels.barrier_pct`; measured tau=0.5
+// median 0.7212, mean 1.3776, max 30.99), and so is `roundTripCostPct`. A symmetric
+// triple-barrier race pays +/- one barrier width on a decided outcome, so a rate difference `d`
+// converts to expected return per decided race as `2*d*barrierPct` — the ONLY conversion used
+// here, and it introduces no new statistic. NOTE that the "0.30" in every barrier-spec name is
+// a minimum barrier WIDTH, not a fee; comparing a win-rate difference in percentage points
+// directly against it is a unit error.
+//
+// MEDIAN, not mean, for ROBUSTNESS first and conservatism second: barrier width is strongly
+// right-skewed within a cell (the flagged cell: median 0.3944, mean 1.0097, max 19.75, 35.6% of
+// rows pinned at the floor), so a mean-based bar could certify a cell on the strength of a
+// handful of unusually wide races.
+
+/** Bumped whenever the predicate's MEANING changes. Stamped into every artifact that carries a
+ *  `validated` count, so a consumer can refuse to render a figure computed under an older bar. */
+export const VALIDITY_PREDICATE_VERSION = 'v2-ci-magnitude-2026-08';
+
+/** Minimum decided calls for a cell to be testable at all. Owned here because it is part of the
+ *  bar; `dwr-baseline-report.ts` imports it rather than declaring a second copy. */
+export const VALIDITY_POWERED_FLOOR = 50;
+
+/** One-sided significance level demanded of the walk-forward holdout's PT test. */
+export const VALIDITY_HOLDOUT_ALPHA = 0.05;
+
+/** First failing condition, in evaluation order. `null` iff the cell is validated. */
+export type ValidityReject =
+  | 'INPUT_NOT_MEASURABLE' // a required statistic is absent / non-finite — could not verify
+  | 'N_LT_FLOOR'
+  | 'PT_UNDEFINED'
+  | 'FDR_FAIL'
+  | 'W_NOT_GT_L'
+  | 'CI_NOT_SEPARATED'
+  | 'EXCESS_BELOW_COST'
+  | 'NOT_TRADEABLE'
+  | 'WF_SIGN_FAIL'
+  | 'WF_P_FAIL';
+
+export interface ValidityInput {
+  nDecided: number;
+  wins: number;
+  losses: number;
+  /** max(alwaysBUY, alwaysSELL) over the SAME races. */
+  benchmark: number;
+  /** Wilson lower bound of the cell's DWR. */
+  wilsonLo: number;
+  /** false when PT is undefined (constant-side / insufficient-n) — rejected by design. */
+  ptDefined: boolean;
+  /** BH-FDR rejection of the null at q, decided by the caller across the whole family. */
+  fdrReject: boolean;
+  /** Holdout edge (dwr − benchmark) of the walk-forward split; null when no holdout exists. */
+  holdoutEdge: number | null;
+  /** Holdout PT p-value; null when undefined. */
+  holdoutP: number | null;
+  /** Median `barrier_pct` over the cell's rows, PERCENT of price. */
+  barrierPctMedian: number;
+  /** Round-trip execution cost, PERCENT of price. Caller-supplied so this leaf imports nothing. */
+  roundTripCostPct: number;
+}
+
+export interface ValidityVerdict {
+  validated: boolean;
+  rejectReason: ValidityReject | null;
+  /** 2·(wilsonLo − benchmark)·barrierPctMedian — expected EXCESS return per decided race, %. */
+  excessReturnPct: number;
+  /** 2·(wilsonLo − 0.5)·barrierPctMedian — expected ABSOLUTE return per decided race, %. */
+  tradeableReturnPct: number;
+}
+
+/**
+ * The ONE `validated` predicate. Conjunctive; returns the FIRST failing condition so every
+ * rejection is diagnosable rather than a bare false.
+ *
+ * `W > L` is deliberately REDUNDANT — TRADEABILITY subsumes it whenever the cost is positive.
+ * It is kept because it is the human-legible line ("a cell that loses more barrier races than
+ * it wins is never certified"), and redundancy in a validity bar is a feature, not a smell.
+ */
+export function validityVerdict(x: ValidityInput): ValidityVerdict {
+  const excessReturnPct = 2 * (x.wilsonLo - x.benchmark) * x.barrierPctMedian;
+  const tradeableReturnPct = 2 * (x.wilsonLo - 0.5) * x.barrierPctMedian;
+  const reject = (rejectReason: ValidityReject): ValidityVerdict => ({
+    validated: false, rejectReason, excessReturnPct, tradeableReturnPct,
+  });
+
+  // "Could not verify" is not "verified and rejected". A non-finite benchmark / Wilson bound /
+  // barrier width means the statistic was never measurable for this cell, and reporting that as
+  // a magnitude failure would misattribute a data gap to the market.
+  if (
+    !Number.isFinite(x.benchmark) || !Number.isFinite(x.wilsonLo) ||
+    !Number.isFinite(x.barrierPctMedian) || x.barrierPctMedian <= 0 ||
+    !Number.isFinite(x.roundTripCostPct) || x.roundTripCostPct < 0
+  ) return reject('INPUT_NOT_MEASURABLE');
+
+  if (x.nDecided < VALIDITY_POWERED_FLOOR) return reject('N_LT_FLOOR');
+  if (!x.ptDefined) return reject('PT_UNDEFINED');
+  if (!x.fdrReject) return reject('FDR_FAIL');
+  if (!(x.wins > x.losses)) return reject('W_NOT_GT_L');
+  if (!(x.wilsonLo > x.benchmark)) return reject('CI_NOT_SEPARATED');
+  if (!(excessReturnPct > x.roundTripCostPct)) return reject('EXCESS_BELOW_COST');
+  if (!(tradeableReturnPct > x.roundTripCostPct)) return reject('NOT_TRADEABLE');
+  // "Same sign" is not "positive": two negative edges satisfy it. The holdout must show a
+  // POSITIVE edge, or the check certifies a persistent loss.
+  if (x.holdoutEdge == null || !Number.isFinite(x.holdoutEdge) || !(x.holdoutEdge > 0)) {
+    return reject('WF_SIGN_FAIL');
+  }
+  if (x.holdoutP == null || !(x.holdoutP < VALIDITY_HOLDOUT_ALPHA)) return reject('WF_P_FAIL');
+
+  return { validated: true, rejectReason: null, excessReturnPct, tradeableReturnPct };
+}

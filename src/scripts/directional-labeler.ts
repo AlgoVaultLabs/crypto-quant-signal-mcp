@@ -22,6 +22,42 @@ export const TF_MS: Record<string, number> = {
 };
 
 export const FLOOR_PCT = 0.3; // 0.30% ≈ 3× round-trip taker (2 × 0.05%); expressed in PERCENT
+
+/**
+ * Round-trip execution cost, PERCENT of price. DERIVED IN-ESTATE from `FLOOR_PCT`'s own stated
+ * relationship above (0.30% ≈ 3× round-trip taker) rather than from training knowledge:
+ * 0.30 / 3 = 0.10, i.e. 2 × 0.05% taker.
+ *
+ * CORROBORATED against the estate's MEASURED per-venue fee table — `backfill-funding-episodes.ts`
+ * `META`, which the carry lane transcribes verbatim into `src/research/carry/costs.py:TAKER`:
+ * BINANCE 0.0005, OKX 0.0005, GATE 0.0005, BYBIT 0.00055, HL 0.00045, ASTER 0.00035,
+ * KUCOIN 0.0006. Binance taker is exactly 0.05%, so 2 × taker = 0.10%.
+ *
+ * ⚠️ DISCLOSED LIMIT, stated rather than hidden: this is FEES ONLY. The estate's own fuller
+ * model is `rtCost = 2·taker + 2·halfSpread` (`funding-episode-builder.ts:77`), with
+ * `halfSpread` measured at 0.5 bp for majors and 2 bp for alts
+ * (`backfill-funding-episodes.ts:58`). That puts the true Binance round trip at 0.11% (majors)
+ * to 0.14% (alts) — so 0.10 is a FLOOR, and any bar built on it is mildly PERMISSIVE on this
+ * axis. A cell that fails against 0.10 fails against the truth a fortiori; a cell that passes
+ * has not been shown to survive spread.
+ *
+ * WHY A SCALAR AND NOT THAT PER-VENUE MODEL: the DWR family's cell key is
+ * `timeframe|tier|conf_bin|regime` — it carries neither venue nor coin, and pools all 17
+ * venues — so a per-(venue, coin) cost is not expressible at the predicate site without
+ * redefining the cell, which this wave's Must-NOT forbids. Named follow-up if ever wanted:
+ * EDGE-DWR-VENUE-COST-CELL-W{NEXT}.
+ *
+ * Consumed by `dwr-baseline-report.ts` and handed to `validityVerdict()` in `edge-stats.ts`,
+ * which stays dependency-free and therefore never imports this file.
+ *
+ * The `toFixed` is cosmetic and load-bearing only for the ARTIFACT: `0.3 / 3` is
+ * 0.09999999999999999 in IEEE-754, which a reader of the emitted JSON reasonably reads as a bug.
+ * It stays a DERIVATION rather than a second literal `0.10`, because the whole point is that
+ * this number moves if `FLOOR_PCT` ever does. The rounding is ~1.4e-17 and cannot change any
+ * comparison at this magnitude — `tests/unit/dwr-validity-predicate.test.ts` pins it to
+ * `FLOOR_PCT / 3` to 12 decimal places so the derivation cannot silently drift into a literal.
+ */
+export const ROUND_TRIP_COST_PCT = Number((FLOOR_PCT / 3).toFixed(4));
 export const SIGMA_TARGET_WINDOWS = 60; // trailing non-overlapping W-candle windows
 export const SIGMA_MIN_WINDOWS = 30; // < this ⇒ low_vol_history (excluded from cell stats)
 

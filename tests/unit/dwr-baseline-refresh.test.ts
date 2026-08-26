@@ -13,13 +13,15 @@
  */
 import { describe as suite, it, expect } from 'vitest';
 import { computeCellStats, type LabelRow } from '../../src/scripts/dwr-baseline.js';
-import { epochBound, parseArgs, rollup, describe as project, type DimRow } from '../../src/scripts/dwr-baseline-report.js';
+import {
+  epochBound, parseArgs, rollup, describe as project, specVerdict, walkForward, type DimRow,
+} from '../../src/scripts/dwr-baseline-report.js';
 import {
   EXIT_FOR, SNAPSHOT_COLUMNS, upsertSql, runMonthOf, projectRow, type SpecSlice,
 } from '../../src/scripts/dwr-baseline-snapshot.js';
 
 function row(over: Partial<DimRow> = {}): DimRow {
-  return { side: 'BUY', label: 1, ambiguous: false, coin: 'BTC', createdAt: 1_750_000_000, venue: 'BINANCE', timeframe: '5m', ...over };
+  return { side: 'BUY', label: 1, ambiguous: false, coin: 'BTC', createdAt: 1_750_000_000, barrierPct: 0.3, venue: 'BINANCE', timeframe: '5m', ...over };
 }
 
 suite('epochBound — the only parsing in the report', () => {
@@ -94,9 +96,9 @@ suite('rollup — descriptive, and a strict partition', () => {
 
 suite('describe — projection of the ONE derivation, never a second one', () => {
   const rows: LabelRow[] = [
-    { side: 'BUY', label: 1, ambiguous: false, coin: 'BTC', createdAt: 1 },
-    { side: 'SELL', label: -1, ambiguous: false, coin: 'ETH', createdAt: 2 },
-    { side: 'BUY', label: 0, ambiguous: false, coin: 'SOL', createdAt: 3 },
+    { side: 'BUY', label: 1, ambiguous: false, coin: 'BTC', createdAt: 1, barrierPct: 0.3 },
+    { side: 'SELL', label: -1, ambiguous: false, coin: 'ETH', createdAt: 2, barrierPct: 0.3 },
+    { side: 'BUY', label: 0, ambiguous: false, coin: 'SOL', createdAt: 3, barrierPct: 0.3 },
   ];
 
   it('every field equals computeCellStats on the same rows', () => {
@@ -117,8 +119,8 @@ suite('describe — projection of the ONE derivation, never a second one', () =>
 
   it('a one-sided cell reports PT as undefined rather than inventing a z', () => {
     const allBuy: LabelRow[] = [
-      { side: 'BUY', label: 1, ambiguous: false, coin: 'BTC', createdAt: 1 },
-      { side: 'BUY', label: -1, ambiguous: false, coin: 'ETH', createdAt: 2 },
+      { side: 'BUY', label: 1, ambiguous: false, coin: 'BTC', createdAt: 1, barrierPct: 0.3 },
+      { side: 'BUY', label: -1, ambiguous: false, coin: 'ETH', createdAt: 2, barrierPct: 0.3 },
     ];
     const p = project(allBuy);
     expect(p.constantSide).toBe(true);
@@ -191,5 +193,98 @@ suite('snapshot writer — the artifacts the DB seam bypasses', () => {
   it('the token to exit-code MAPPING is pinned, not just the token strings', () => {
     expect(EXIT_FOR).toEqual({ PASS: 0, FAIL: 1, INDETERMINATE: 3 });
     expect(new Set(Object.values(EXIT_FOR)).size).toBe(3);
+  });
+});
+
+
+// ── EDGE-DWR-VALIDATED-PREDICATE-W1 ────────────────────────────────────────────────────────
+
+suite('walkForward reports the holdout EDGE, not merely its sign', () => {
+  /** n rows on ascending days; the 70/30 cut is at floor(0.7·n). */
+  function series(labels: Array<[LabelRow['side'], number]>): DimRow[] {
+    return labels.map(([side, label], i) => row({ side, label, coin: `C${i}`, createdAt: 1000 + i }));
+  }
+
+  it('exposes holdoutEdge so a NEGATIVE holdout can never read as "the edge persisted"', () => {
+    // 10 rows: the first 7 train, the last 3 hold out. Every holdout row is a SELL that lost,
+    // so the holdout's DWR is 0 against a benchmark of 1 — an unambiguously negative edge.
+    const rows = series([
+      ['BUY', 1], ['SELL', 1], ['BUY', 1], ['SELL', 1], ['BUY', 1], ['SELL', 1], ['BUY', 1],
+      ['SELL', -1], ['SELL', -1], ['SELL', -1],
+    ]);
+    const wf = walkForward(rows, -0.5);
+    expect(wf.holdoutN).toBe(3);
+    expect(wf.holdoutEdge).toBeLessThan(0);
+    // The exact defect this wave fixes: a negative full edge and a negative holdout edge are
+    // "the same sign", so the retained diagnostic still says true while the bar now says no.
+    expect(wf.holdoutSameSign).toBe(true);
+  });
+
+  it('holdoutSameSign is false when the sign genuinely flips', () => {
+    const rows = series([
+      ['BUY', -1], ['SELL', -1], ['BUY', -1], ['SELL', -1], ['BUY', -1], ['SELL', -1], ['BUY', -1],
+      ['BUY', 1], ['BUY', 1], ['BUY', 1],
+    ]);
+    expect(walkForward(rows, -0.5).holdoutSameSign).toBe(false);
+  });
+
+  it('a single-day cell degrades to an empty holdout rather than inventing one', () => {
+    const wf = walkForward([row({ coin: 'A', createdAt: 1 })], 0.1);
+    expect(wf.holdoutN).toBe(1); // floor(1*0.7) = 0, so the one row IS the holdout
+    expect(walkForward([], 0.1).holdoutN).toBe(0);
+  });
+});
+
+suite('specVerdict — the vacuity guard, at the point the family is constructed', () => {
+  it('EDGE-FOUND only when something actually cleared the bar', () => {
+    expect(specVerdict(52, 1)).toEqual({ verdict: 'EDGE-FOUND', verdictReason: null });
+  });
+
+  it('NO-VALIDATED-EDGE means a REAL family was tested and none survived', () => {
+    expect(specVerdict(52, 0)).toEqual({ verdict: 'NO-VALIDATED-EDGE', verdictReason: null });
+  });
+
+  it('zero testable cells is INDETERMINATE, never a clean NO-VALIDATED-EDGE', () => {
+    // Before this guard, an empty corpus and a fully-measured corpus with no survivors emitted
+    // the identical token — one value encoding both "verified, clean" and "verified nothing".
+    expect(specVerdict(0, 0)).toEqual({ verdict: 'INDETERMINATE', verdictReason: 'no_powered_cells' });
+  });
+
+  it('the two zero-cases are DISTINGUISHABLE — which is the whole point', () => {
+    expect(specVerdict(0, 0).verdict).not.toBe(specVerdict(52, 0).verdict);
+  });
+});
+
+suite('the snapshot row is self-describing about WHICH bar produced it', () => {
+  const slice = (over: Partial<SpecSlice> = {}): SpecSlice => ({
+    spec: 'tau1.0-floor0.30-v1',
+    familySize: 178, poweredCells: 104, testableCells: 43, constantSideCells: 59,
+    rawPass: 2, fdrPass: 0, bonferroniPass: 0, validated: 0, verdict: 'NO-VALIDATED-EDGE',
+    verdictReason: null,
+    medianDwr: 0.4785, medianEdge: -0.0385,
+    aggregate: { n: 400, decided: 300, dwr: 0.48, benchmark: 0.52, edge: -0.04, wilsonLo: 0.42, wilsonHi: 0.54 },
+    byVenue: [], byTimeframe: [],
+    ...over,
+  });
+  const at = (c: string) => SNAPSHOT_COLUMNS.indexOf(c as (typeof SNAPSHOT_COLUMNS)[number]);
+
+  it('carries predicate_version, so a stored `validated` can never be read under the wrong bar', () => {
+    const r = projectRow('2026-08', '2026-08-26T13:38:56.464Z', null, 10, 5, slice(), [], 'v2-ci-magnitude-2026-08');
+    expect(r[at('predicate_version')]).toBe('v2-ci-magnitude-2026-08');
+  });
+
+  it('carries verdict_reason for the vacuity case, and NULL otherwise', () => {
+    const vacuous = projectRow('2026-08', '2026-08-26T13:38:56.464Z', null, 10, 5,
+      slice({ verdict: 'INDETERMINATE', verdictReason: 'no_powered_cells' }), [], 'v2');
+    expect(vacuous[at('verdict')]).toBe('INDETERMINATE');
+    expect(vacuous[at('verdict_reason')]).toBe('no_powered_cells');
+    expect(projectRow('2026-08', '2026-08-26T13:38:56.464Z', null, 10, 5, slice(), [], 'v2')[at('verdict_reason')]).toBeNull();
+  });
+
+  it('arity still matches after the two added columns', () => {
+    expect(projectRow('2026-08', '2026-08-26T13:38:56.464Z', null, 10, 5, slice(), [], 'v2'))
+      .toHaveLength(SNAPSHOT_COLUMNS.length);
+    expect(EXIT_FOR.INDETERMINATE).toBe(3);
+    expect(upsertSql()).toContain('predicate_version = EXCLUDED.predicate_version');
   });
 });

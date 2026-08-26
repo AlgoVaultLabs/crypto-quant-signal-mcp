@@ -32,16 +32,38 @@
  * so the backfill's contribution is measured with accrual held out. `--labels-before` bounds by
  * label write time (`computed_at` is a FIRST-write stamp — the labeler is
  * `ON CONFLICT DO NOTHING`, so it never moves) to reconstruct what a given run actually read.
+ *
+ * ── EDGE-DWR-VALIDATED-PREDICATE-W1: the bar moved, and only the bar ──────────────────────
+ *
+ * `validated` is no longer computed here. It is `validityVerdict()` in `edge-stats.ts` — the ONE
+ * definition — and this file supplies its inputs and records its `rejectReason`. The metric
+ * itself is untouched: DWR, the benchmark, the barrier rule and the cell key are byte-identical.
+ * Only the VALIDITY predicate changed, and every change is an ADDED conjunct, so no cell can
+ * gain validation under it.
+ *
+ * Two live false positives motivated it, both measured 2026-08-26 at τ=0.5: a cell losing
+ * 5,124 of 10,377 races certified because the old bar had no CI-separation, magnitude or cost
+ * condition; and a cell with a NEGATIVE edge in BOTH the full sample and the holdout certified
+ * because "same holdout sign" is satisfied by two negatives. See `edge-stats.ts`.
+ *
+ * `barrier_pct` is now SELECTed — the one new column — because the magnitude conditions are
+ * expressed in return space and a symmetric barrier race pays ±barrier_pct on a decided outcome.
  */
 
 import { dbQuery } from '../lib/performance-db.js';
 import { runScript } from '../lib/script-lifecycle.js';
-import { benjaminiHochberg, bonferroni } from './edge-stats.js';
-import { computeCellStats, ptOverRows, type LabelRow, type Side } from './dwr-baseline.js';
+import {
+  benjaminiHochberg, bonferroni, validityVerdict,
+  VALIDITY_PREDICATE_VERSION, VALIDITY_POWERED_FLOOR, type ValidityReject,
+} from './edge-stats.js';
+import { computeCellStats, medianOf, ptOverRows, type LabelRow, type Side } from './dwr-baseline.js';
+import { ROUND_TRIP_COST_PCT } from './directional-labeler.js';
 
 const SPECS = ['tau1.0-floor0.30-v1', 'tau0.5-floor0.30-v1', 'tau2.0-floor0.30-v1'];
 const PRIMARY = 'tau1.0-floor0.30-v1';
-const POWERED_FLOOR = 50; // n≥50 decided calls
+/** Imported, never re-declared: the powered floor is part of the BAR, and the bar has one home
+ *  (`edge-stats.ts`). A second literal here is how two definitions of `validated` started. */
+const POWERED_FLOOR = VALIDITY_POWERED_FLOOR;
 const Q = 0.05;
 
 /**
@@ -86,7 +108,7 @@ export function epochBound(iso: string | undefined, label: string): number | nul
 interface RawRow {
   timeframe: string; tier: string; conf_bin: string; regime: string;
   side: Side; coin: string; created_at: number; label: number; ambiguous_candle: boolean;
-  venue: string;
+  barrier_pct: number; venue: string;
 }
 
 /** A label row that also remembers the two dimensions the family key averages over. */
@@ -114,7 +136,7 @@ async function loadRows(spec: string, sigBefore: number | null, labBefore: numbe
        CASE WHEN s.confidence<60 THEN 'c52_59' WHEN s.confidence<75 THEN 'c60_74' ELSE 'c75_100' END AS conf_bin,
        coalesce(s.regime,'none') AS regime,
        s.signal AS side, s.coin, s.created_at, dl.label, dl.ambiguous_candle,
-       s.exchange AS venue
+       dl.barrier_pct, s.exchange AS venue
      FROM directional_labels dl JOIN signals s ON s.id = dl.signal_id
      WHERE dl.barrier_spec = $1 AND dl.low_vol_history = FALSE${windowSql(sigBefore, labBefore)}`,
     [spec],
@@ -126,7 +148,7 @@ async function loadRows(spec: string, sigBefore: number | null, labBefore: numbe
     if (!cells.has(key)) cells.set(key, []);
     const row: DimRow = {
       side: r.side, label: r.label, ambiguous: r.ambiguous_candle, coin: r.coin, createdAt: r.created_at,
-      venue: r.venue, timeframe: r.timeframe,
+      barrierPct: Number(r.barrier_pct), venue: r.venue, timeframe: r.timeframe,
     };
     cells.get(key)!.push(row);
     rows.push(row);
@@ -134,16 +156,38 @@ async function loadRows(spec: string, sigBefore: number | null, labBefore: numbe
   return { cells, rows };
 }
 
-/** Walk-forward: 70% calendar-train / 30% holdout; survives iff same edge sign + PT p<0.05 in holdout. */
-function walkForward(rows: LabelRow[], fullEdge: number): { holdoutN: number; holdoutP: number | null; holdoutSameSign: boolean; survives: boolean } {
+export interface WalkForward {
+  holdoutN: number;
+  holdoutP: number | null;
+  /** The holdout's OWN edge (dwr − benchmark). Reported, not merely its sign — the sign alone is
+   *  what let a cell negative on BOTH halves of the split read as "the edge persisted". */
+  holdoutEdge: number;
+  /** Retained as a DIAGNOSTIC only. It is no longer a validity condition: `validityVerdict`
+   *  requires `holdoutEdge > 0`, which this cannot express (two negatives are "the same sign"). */
+  holdoutSameSign: boolean;
+}
+
+/**
+ * Walk-forward: 70% calendar-train / 30% holdout. Computes the holdout's statistics; it does NOT
+ * decide validity — `validityVerdict()` owns that, and this function no longer returns a
+ * `survives` flag a caller could mistake for the bar.
+ *
+ * EXPORTED for the unit test: the previous version's defect was unreachable from a test because
+ * the function was module-private, so the regression that certified a negative edge could only
+ * be found by reading a 300 KB production artifact.
+ */
+export function walkForward(rows: LabelRow[], fullEdge: number): WalkForward {
   const sorted = [...rows].sort((a, b) => a.createdAt - b.createdAt);
   const cut = Math.floor(sorted.length * 0.7);
   const holdout = sorted.slice(cut);
   const hoStats = computeCellStats(holdout);
   const pt = ptOverRows(holdout);
-  const sameSign = Math.sign(hoStats.edge) === Math.sign(fullEdge) && fullEdge !== 0;
-  const survives = sameSign && pt.p != null && pt.p < 0.05;
-  return { holdoutN: hoStats.decided, holdoutP: pt.p, holdoutSameSign: sameSign, survives };
+  return {
+    holdoutN: hoStats.decided,
+    holdoutP: pt.p,
+    holdoutEdge: hoStats.edge,
+    holdoutSameSign: Math.sign(hoStats.edge) === Math.sign(fullEdge) && fullEdge !== 0,
+  };
 }
 
 /**
@@ -175,7 +219,32 @@ export function describe(rows: LabelRow[]) {
     ptP: s.ptAll.p == null ? null : round(s.ptAll.p, 5),
     ptNa: s.ptAll.na ?? (s.constantSide ? 'PT_NA_CONSTANT_SIDE' : null),
     constantSide: s.constantSide,
+    // Descriptive only, like every other field here. A venue's or timeframe's typical barrier
+    // width is what decides how large a rate edge must be to clear costs, so it belongs beside
+    // the edge it conditions — but it confers no validity, and rollups still carry no `validated`.
+    barrierPctMedian: round(s.barrierPctMedian),
   };
+}
+
+export type SpecVerdict = 'EDGE-FOUND' | 'NO-VALIDATED-EDGE' | 'INDETERMINATE';
+
+/**
+ * The spec-level verdict, as a PURE function of what was actually tested.
+ *
+ * Vacuity guard, placed where the family is CONSTRUCTED rather than where it is observed:
+ * `NO-VALIDATED-EDGE` must mean "a real family was tested and nothing survived". With zero
+ * TESTABLE cells — an empty corpus, or one where every powered cell is constant-side so PT is
+ * undefined throughout — nothing was tested at all, and reporting that as a clean result is
+ * exactly the "one value encodes both verified-clean and verified-nothing" defect the
+ * verdict-token law forbids. `INDETERMINATE` reuses the estate's existing vocabulary rather
+ * than inventing a parallel one.
+ *
+ * EXPORTED so the guard is unit-testable without a database — the alternative is a branch that
+ * only ever runs against a corpus which, by construction, almost never occurs.
+ */
+export function specVerdict(testableCells: number, validated: number): { verdict: SpecVerdict; verdictReason: string | null } {
+  if (testableCells === 0) return { verdict: 'INDETERMINATE', verdictReason: 'no_powered_cells' };
+  return { verdict: validated > 0 ? 'EDGE-FOUND' : 'NO-VALIDATED-EDGE', verdictReason: null };
 }
 
 async function reportForSpec(spec: string, sigBefore: number | null, labBefore: number | null) {
@@ -194,7 +263,19 @@ async function reportForSpec(spec: string, sigBefore: number | null, labBefore: 
     const ti = testable.indexOf(c);
     const fdrReject = ti >= 0 ? fdr.rejected[ti] : false;
     const bonfReject = ti >= 0 ? bonf[ti] : false;
+    // Lazy, as before: the predicate short-circuits at FDR_FAIL long before it reads the
+    // holdout, so a non-FDR cell never pays for a walk-forward it cannot use.
     const wf = fdrReject ? walkForward(c.rows, c.stats.edge) : null;
+    const v = validityVerdict({
+      nDecided: c.stats.decided, wins: c.stats.wins, losses: c.stats.losses,
+      benchmark: c.stats.benchmark, wilsonLo: c.stats.wilsonLo,
+      ptDefined: c.stats.ptAll.p != null,
+      fdrReject,
+      holdoutEdge: wf?.holdoutEdge ?? null,
+      holdoutP: wf?.holdoutP ?? null,
+      barrierPctMedian: c.stats.barrierPctMedian,
+      roundTripCostPct: ROUND_TRIP_COST_PCT,
+    });
     return {
       key: c.key,
       n: c.stats.n, decided: c.stats.decided, wins: c.stats.wins, losses: c.stats.losses,
@@ -207,13 +288,21 @@ async function reportForSpec(spec: string, sigBefore: number | null, labBefore: 
       ptNonOverlapZ: c.stats.ptNonOverlap.z == null ? null : round(c.stats.ptNonOverlap.z),
       ptNonOverlapP: c.stats.ptNonOverlap.p == null ? null : round(c.stats.ptNonOverlap.p, 5),
       ptNa: c.stats.ptAll.na ?? (c.stats.constantSide ? 'PT_NA_CONSTANT_SIDE' : null),
+      barrierPctMedian: round(c.stats.barrierPctMedian),
       fdrReject, bonferroni: bonfReject,
       walkForward: wf,
-      validated: !!wf?.survives,
+      // The two magnitude figures are REPORTED whether or not the cell reached them, so a
+      // reader can see how far short a rejected cell fell rather than only that it fell.
+      excessReturnPct: round(v.excessReturnPct, 6),
+      tradeableReturnPct: round(v.tradeableReturnPct, 6),
+      validated: v.validated,
+      rejectReason: v.rejectReason as ValidityReject | null,
     };
   }).sort((a, b) => b.edge - a.edge);
 
   const validated = cellsOut.filter((c) => c.validated).length;
+
+  const { verdict, verdictReason } = specVerdict(testable.length, validated);
   return {
     spec,
     familySize: all.length,
@@ -222,9 +311,9 @@ async function reportForSpec(spec: string, sigBefore: number | null, labBefore: 
     constantSideCells: powered.filter((c) => c.stats.constantSide).length,
     rawPass, fdrPass: fdr.rejected.filter(Boolean).length, bonferroniPass: bonf.filter(Boolean).length,
     validated,
-    verdict: validated > 0 ? 'EDGE-FOUND' : 'NO-VALIDATED-EDGE',
-    medianDwr: round(median(powered.map((c) => c.stats.dwr))),
-    medianEdge: round(median(powered.map((c) => c.stats.edge))),
+    verdict, verdictReason,
+    medianDwr: round(medianOf(powered.map((c) => c.stats.dwr))),
+    medianEdge: round(medianOf(powered.map((c) => c.stats.edge))),
     // Pooled over EVERY labeled row in the spec (not just powered cells) — the R4 artifact's
     // "aggregate DWR, edge + CI". Descriptive: it mixes timeframes and tiers by construction.
     aggregate: { rowsPooled: allRows.length, ...describe(allRows) },
@@ -235,12 +324,8 @@ async function reportForSpec(spec: string, sigBefore: number | null, labBefore: 
 }
 
 function round(x: number, dp = 4): number { return Number.isFinite(x) ? Number(x.toFixed(dp)) : NaN; }
-function median(xs: number[]): number {
-  const v = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
-  if (v.length === 0) return NaN;
-  const m = Math.floor(v.length / 2);
-  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
-}
+// `median` was a second copy of the five lines now exported as `medianOf` from dwr-baseline.ts,
+// where the per-cell barrier median needs them. One derivation, two callers.
 
 /**
  * The ONE derivation. `main()` prints it; `dwr-baseline-snapshot.ts` persists it. Two consumers,
@@ -293,6 +378,10 @@ export async function buildReport(opts: ReportOptions = {}) {
   return {
     wave: 'EDGE-DWR-METRIC-SOT-W1',
     refreshedBy: 'EDGE-DWR-REFRESH-W1',
+    // Stamped so a consumer can REFUSE to render a `validated` count computed under an older
+    // bar. `dwr_baseline_runs.predicate_version` (migration 033) carries it into the digest.
+    predicateVersion: VALIDITY_PREDICATE_VERSION,
+    roundTripCostPct: ROUND_TRIP_COST_PCT,
     generatedAt: new Date().toISOString(),
     window: {
       signalsBefore: opts.signalsBefore ?? null,
@@ -310,6 +399,7 @@ export async function buildReport(opts: ReportOptions = {}) {
       rate: r.n > 0 ? round(r.amb / r.n, 4) : 0, flagRefinement: r.n > 0 && (r.amb / r.n) > 0.1 && (r.timeframe === '3m' || r.timeframe === '5m') })),
     specs: specReports,
     rollupNote: 'byVenue / byTimeframe / aggregate are DESCRIPTIVE projections of the same computeCellStats; they are NOT members of the BH-FDR family and carry no validated flag.',
+    predicateNote: 'validated is validityVerdict() in edge-stats.ts: n>=50, PT defined, BH-FDR, W>L, wilsonLo>benchmark, 2*(wilsonLo-benchmark)*barrierPctMedian>roundTripCostPct, 2*(wilsonLo-0.5)*barrierPctMedian>roundTripCostPct, holdout edge>0, holdout PT p<0.05. Every condition is a conjunct ADDED to the pre-2026-08-26 bar, so no cell can gain validation under it. roundTripCostPct is FEES ONLY and excludes spread — see directional-labeler.ts.',
     comparisonNote: 'CRYPTO-EDGE-METRIC-W1 close-to-close: 130 powered cells, 0 survived FDR/Bonferroni/walk-forward. DWR re-answers the same family under the symmetric triple-barrier metric.',
   };
 }
