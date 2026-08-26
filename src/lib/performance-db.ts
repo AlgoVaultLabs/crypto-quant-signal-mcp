@@ -1715,22 +1715,65 @@ export async function getMerkleBatchSummary(): Promise<{
   latest_batch_id: number | null;
   batch_count: number;
   total_signals: number;
+  latest_published_at: string | null;
+  latest_signal_count: number | null;
 }> {
   type Row = {
     latest_batch_id: string | number | null;
     batch_count: string | number;
     total_signals: string | number | null;
+    latest_published_at: string | Date | null;
+    latest_signal_count: string | number | null;
   };
+  // OPS-DIGEST-MERKLE-ANCHOR-W1: `latest_published_at` / `latest_signal_count`
+  // are ADDITIVE — the three pre-existing fields are byte-unchanged and the
+  // public /api/merkle-batches allow-list does not name the new two, so the
+  // public response shape is untouched. They exist so the daily Telegram digest
+  // can render the SAME batch identity + total the /verify page renders WITHOUT
+  // reducing over the LIMIT-capped `getRecentMerkleBatches()` page (the exact
+  // defect OPS-MERKLE-BATCH-IDENTITY-W1 retired). Correlated scalar subqueries
+  // over a PRIMARY KEY index are portable to both backends and cost one extra
+  // index seek each.
   const rows = (await dbQuery<Row>(
-    `SELECT MAX(batch_id) AS latest_batch_id, COUNT(*) AS batch_count, COALESCE(SUM(signal_count), 0) AS total_signals FROM merkle_batches`,
+    `SELECT MAX(batch_id) AS latest_batch_id, COUNT(*) AS batch_count, COALESCE(SUM(signal_count), 0) AS total_signals,
+            (SELECT published_at  FROM merkle_batches ORDER BY batch_id DESC LIMIT 1) AS latest_published_at,
+            (SELECT signal_count  FROM merkle_batches ORDER BY batch_id DESC LIMIT 1) AS latest_signal_count
+       FROM merkle_batches`,
   )) as Row[];
   const row = rows[0];
   const latest = row?.latest_batch_id;
+  const latestCount = row?.latest_signal_count;
   return {
     latest_batch_id: latest === null || latest === undefined ? null : Number(latest),
     batch_count: Number(row?.batch_count ?? 0),
     total_signals: Number(row?.total_signals ?? 0),
+    latest_published_at: normalizeSqlTimestamp(row?.latest_published_at ?? null),
+    latest_signal_count:
+      latestCount === null || latestCount === undefined ? null : Number(latestCount),
   };
+}
+
+/**
+ * Normalise a `published_at`-class column to an ISO-8601 UTC string.
+ *
+ * The two backends hand back two different shapes for the SAME column: node-pg
+ * hydrates `TIMESTAMP` into a JS `Date`, while SQLite returns the raw
+ * `datetime('now')` TEXT (`'2026-08-26 00:05:03'`) — UTC, but with no zone
+ * marker, so `new Date(...)` would read it as LOCAL time and silently shift the
+ * value by the host offset. Returns null for anything unparseable rather than an
+ * Invalid Date, so a consumer's freshness verdict degrades to "unknown" instead
+ * of to a fabricated timestamp.
+ */
+function normalizeSqlTimestamp(v: string | Date | null): string | null {
+  if (v === null || v === undefined) return null;
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString();
+  if (typeof v !== 'string' || v.trim() === '') return null;
+  const raw = v.trim();
+  // Already zone-qualified (…Z or ±HH:MM) → trust it. Otherwise it is SQLite's
+  // space-separated UTC text; make the UTC intent explicit before parsing.
+  const zoned = /(?:Z|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : `${raw.replace(' ', 'T')}Z`;
+  const ms = Date.parse(zoned);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
 /** Default page size for the public /api/merkle-batches listing. */

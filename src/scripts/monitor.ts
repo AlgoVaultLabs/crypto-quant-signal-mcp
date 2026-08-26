@@ -8,7 +8,8 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { sendAlert, sendDigest } from '../lib/telegram.js';
 import { formatAgentActivity } from '../lib/agent-activity-format.js';
-import { getPerformanceStatsAsync, dbQuery } from '../lib/performance-db.js';
+import { getPerformanceStatsAsync, getMerkleBatchSummary, dbQuery } from '../lib/performance-db.js';
+import { formatMerkleAnchoring } from '../lib/merkle-anchor-format.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { evaluatePfeWinRate, internalPerfPublicUrl } from './monitor-pfe.js';
 import { evaluateSeedFreshness, buildSeedFreshnessRows, formatSeedOutagePage } from './monitor-seed-freshness.js';
@@ -612,8 +613,12 @@ async function runDigest(): Promise<void> {
   const date = new Date().toISOString().split('T')[0];
 
   // Gather data in parallel
-  const [perfStats, gasResult, backfillResult, analyticsResult, npmResult, uptimeInfo] = await Promise.all([
+  const [perfStats, merkleSummary, gasResult, backfillResult, analyticsResult, npmResult, uptimeInfo] = await Promise.all([
     getPerformanceStatsAsync().catch(() => null),
+    // OPS-DIGEST-MERKLE-ANCHOR-W1: the SAME SQL MAX/COUNT/SUM the /verify page's
+    // "On-Chain Proof" line reads — NOT the LIMIT-capped batches page. Fails soft:
+    // a broken anchoring read must never cost the operator the whole digest.
+    getMerkleBatchSummary().catch(() => null),
     checkGasWallet(),
     checkBackfillQueue(),
     ADMIN_KEY
@@ -629,6 +634,14 @@ async function runDigest(): Promise<void> {
   sections.push(`📊 *AlgoVault Daily Digest — ${date}*`);
 
   // Signal Performance
+  // OPS-DIGEST-MERKLE-ANCHOR-W1: the daily Base anchor batch renders as the last
+  // bullet(s) of this section. Rendered via the pure, golden-tested formatter, and
+  // rendered even when the stats query fails — the two reads have independent
+  // failure modes, so one must not swallow the other.
+  // The formatter takes the null itself and renders "— (unavailable)": a DROPPED
+  // line would be indistinguishable from "nothing was anchored", so the read's
+  // failure has to be visible in the digest rather than absent from it.
+  const merkleLines = formatMerkleAnchoring(merkleSummary, Date.now());
   if (perfStats) {
     const total = perfStats.overall.totalCalls;
     const evaluated = perfStats.overall.totalEvaluated;
@@ -643,7 +656,12 @@ async function runDigest(): Promise<void> {
       `• Evaluated: ${evaluated.toLocaleString()} (${evalPct}%)`,
       `• PFE Win Rate: ${pfe}`,
       `• Pending evaluation: ${pending.toLocaleString()}`,
+      ...merkleLines,
     ].join('\n'));
+  } else {
+    // Stats query down but anchoring readable (or both down) — the section still
+    // renders, carrying whatever the anchoring read could establish.
+    sections.push(['📈 *Signal Performance*', ...merkleLines].join('\n'));
   }
 
   // Agent Activity (from analytics endpoint)
