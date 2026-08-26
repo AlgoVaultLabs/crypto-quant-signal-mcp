@@ -140,16 +140,90 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 CH2 R7 — per-slug JSON-LD overrides.
+// BINANCE-AGENT-OS-GEO-AND-SUBMISSIONS-W2 CH1 R1/R2 — every date is DERIVED FROM GIT.
 //
-// `datePublished` was a single hardcoded 2026-04-25 for every page. A page created today
-// cannot honestly claim it, and a crawler-facing publication date is public copy. Only the
-// NEW slug is listed; every existing page keeps the incumbent value byte-for-byte, so the
-// zero-diff re-render proof still holds.
+// 24 of these pages told crawlers they were published 2026-04-25 because that was a single
+// hardcoded default; the generator's own comments dated them across May-August. A schema date
+// is crawler-facing public copy, so a shared false one is a published falsehood on 24 indexed
+// pages.
+//
+// Derived with `git log --diff-filter=A --format=%aI -- <path> | tail -1` and
+// `git log -1 --format=%aI -- <path>`. **NOT `--follow`.** Measured 2026-08-26: --follow
+// returns 2026-04-25 for 24 of 25 slugs -- including binance-agent-os, created 2026-08-25 --
+// because rename-detection collapses these near-identical generated pages onto one ancestor
+// (e4ec754 'website mirrors for 4 integration tutorials'). It manufactures a false common
+// ancestor and would have re-stamped the site's only honest date with the lie. This does NOT
+// contradict the provenance rule that a `git log -S` pickaxe carries --follow: that traces a
+// renamed SOURCE file, where --follow prevents a false 'never designed'. Opposite operation,
+// opposite failure mode, both true.
+//
+// Cross-checked against the generator's wave comments (05-18 frameworks / 05-19 mcp-clients /
+// 06-05 gemini-kraken-alpaca / 07-21 venue pages / 08-05 codex-kimi-zcode): ZERO disagreements.
+//
+// DEFAULT_DATE_PUBLISHED is retained as a structural fallback but is now UNREACHABLE -- every
+// rendered slug has an explicit entry, and the chapter gate asserts the entry count. A new slug
+// that forgets its entry gets the fallback, which is why the gate counts rather than trusts.
 const DEFAULT_DATE_PUBLISHED = '2026-04-25';
+
 const DATE_PUBLISHED = {
+  'alpaca':           '2026-06-05',
+  'aster':            '2026-07-21',
+  'binance':          '2026-04-25',
   'binance-agent-os': '2026-08-25',
+  'bingx':            '2026-07-21',
+  'bitget':           '2026-04-25',
+  'bybit':            '2026-04-25',
+  'claude-code':      '2026-05-19',
+  'claude-desktop':   '2026-05-19',
+  'cline':            '2026-05-19',
+  'codex':            '2026-08-05',
+  'crewai':           '2026-05-18',
+  'cursor':           '2026-05-19',
+  'gateio':           '2026-07-21',
+  'gemini':           '2026-06-05',
+  'glm-zcode':        '2026-08-05',
+  'hyperliquid':      '2026-07-21',
+  'kimi':             '2026-08-05',
+  'kraken':           '2026-06-05',
+  'kucoin':           '2026-07-21',
+  'langchain':        '2026-05-18',
+  'llamaindex':       '2026-05-18',
+  'maf':              '2026-05-18',
+  'okx':              '2026-04-25',
+  'smithery':         '2026-05-19',
 };
+
+// Last commit that touched the rendered page. Invariant asserted at render time:
+// datePublished <= dateModified <= today. A violation is a HALT, never a clamp.
+
+const DATE_MODIFIED = {
+  'alpaca':           '2026-08-25',
+  'aster':            '2026-08-25',
+  'binance':          '2026-08-25',
+  'binance-agent-os': '2026-08-25',
+  'bingx':            '2026-08-25',
+  'bitget':           '2026-08-25',
+  'bybit':            '2026-08-25',
+  'claude-code':      '2026-08-25',
+  'claude-desktop':   '2026-08-25',
+  'cline':            '2026-08-25',
+  'codex':            '2026-08-25',
+  'crewai':           '2026-08-25',
+  'cursor':           '2026-08-25',
+  'gateio':           '2026-08-25',
+  'gemini':           '2026-08-25',
+  'glm-zcode':        '2026-08-25',
+  'hyperliquid':      '2026-08-25',
+  'kimi':             '2026-08-25',
+  'kraken':           '2026-08-25',
+  'kucoin':           '2026-08-25',
+  'langchain':        '2026-08-25',
+  'llamaindex':       '2026-08-25',
+  'maf':              '2026-08-25',
+  'okx':              '2026-08-25',
+  'smithery':         '2026-08-25',
+};
+
 
 // The shared description ends "Demo runs testnet/demo only — zero real-money risk in any code
 // path." That is true of the demo-bearing kits and FALSE here: this page connects a real
@@ -428,14 +502,26 @@ function techArticleSchema(exchange, display) {
   // SERP rich results in Aug 2023) with TechArticle, which IS rich-result
   // eligible. The HowTo was valid markup but produced "No items detected"
   // in Google's Rich Results Test — TechArticle resolves that.
+  // W2 CH1 R2 — resolve both dates, then ASSERT the ordering invariant. A violation is a HALT,
+  // never a clamp: silently clamping would re-publish a plausible-looking date that no commit
+  // supports, which is the class this chapter exists to retire.
+  const published = DATE_PUBLISHED[exchange] ?? DEFAULT_DATE_PUBLISHED;
+  const modified = DATE_MODIFIED[exchange] ?? SNAPSHOT.date;
+  if (!(published <= modified && modified <= SNAPSHOT.date)) {
+    throw new Error(
+      `[render] date invariant violated for '${exchange}': ` +
+      `datePublished=${published} <= dateModified=${modified} <= today=${SNAPSHOT.date} is false. ` +
+      `Re-derive with: git log --diff-filter=A --format=%aI -- landing/integrations/${exchange}.html | tail -1`,
+    );
+  }
   const canonical = `https://algovault.com/integrations/${exchange}`;
   return {
     "@context": "https://schema.org",
     "@type": "TechArticle",
     "headline": `AlgoVault × ${display} - Build Verifiable AI Trading Agents`,
     "url": canonical,
-    "datePublished": `${DATE_PUBLISHED[exchange] ?? DEFAULT_DATE_PUBLISHED}T00:00:00+00:00`,
-    "dateModified": `${SNAPSHOT.date}T15:00:00+00:00`,
+    "datePublished": `${published}T00:00:00+00:00`,
+    "dateModified": `${modified}T15:00:00+00:00`,
     "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
     "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com", "logo": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 } },
     "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
@@ -449,6 +535,31 @@ function techArticleSchema(exchange, display) {
   };
 }
 
+// ─── Notes that used to ship as HTML comments INSIDE this template ────────────────────────
+// BINANCE-AGENT-OS-GEO-AND-SUBMISSIONS-W2 CH1 R3. A `//` comment never renders; an `<!-- -->`
+// comment inside a template literal IS PUBLIC COPY. Eight flavoured comments per page reached
+// View Source on all 25 rendered pages, one of them quoting an internal directive by name.
+// Nothing is lost here — the notes moved from the shipped artifact to the source file, which is
+// where they always belonged. Enforced going forward by scripts/check-rendered-comment-hygiene.mjs.
+//
+//   · WEBSITE-REFRESH-W1 C1  — the <meta name="last-updated"> snapshot date for the static
+//                              numbers below; live source /api/performance-public + /api/merkle-batches.
+//   · WEBSITE-REFRESH-W1 C7  — the Schema.org TechArticle block, for Google rich-results.
+//   · WEBSITE-REFRESH-W1 C7  — the quotable-factoid block (Schema.org Claim) for LLM citation.
+//                              PRESERVED byte-identical per the W10 preservation LAW.
+//   · NAV-PLATFORM-GENERATOR-W1 (A1) — the unified nav region; scripts/build_nav.mjs injects
+//                              between NAV:START/NAV:END. This generator emits the markers only.
+//   · DESIGN-W10 / C3        — canonical hero scaffolding (artboard + 3 bg layers + VEyebrow)
+//                              and the canonical Footer, verbatim from live algovault.com.
+//   · DESIGN-W10-FF-2 (2026-05-12) — tier-stat-card per-section wrapping RESTORED; the W10-FF-1
+//                              removal was based on a misread directive. The clarification was
+//                              that "remove this section" meant the TL;DR section content, not
+//                              the visual section cards. wrapH2InTierStatCard() wraps each H2
+//                              section; stripTLDRSection() removes the redundant TL;DR first so
+//                              it does not become an empty card.
+//
+// The design-loader BEGIN:/END: pair STAYS in the HTML — it is a functional marker other tooling
+// keys on. Only its `(DESIGN-W2 / D2-C)` parenthetical was stripped; the marker text is untouched.
 function htmlShell(exchange, bodyHtml) {
   const title = pageTitle(exchange);
   const display = DISPLAY_NAMES[exchange] ?? (exchange.charAt(0).toUpperCase() + exchange.slice(1));
@@ -468,19 +579,15 @@ function htmlShell(exchange, bodyHtml) {
 <meta property="og:description" content="${escapeHtml(description)}">
 <meta property="og:type" content="article">
 <meta property="og:url" content="${canonical}">
-<!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
 <meta name="last-updated" content="${SNAPSHOT.date}">
 <script src="https://cdn.tailwindcss.com"></script>
-<!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
+<!-- BEGIN: AlgoVault canonical design loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/_design/algovault-design.css">
 <!-- END: AlgoVault canonical design loader -->
 <script defer src="/js/track-record-proxy.js"></script>
-<!-- WEBSITE-REFRESH-W1 C7 — Schema.org TechArticle for Google rich-results
-     eligibility (replaced HowTo which Google deprecated for SERP rich
-     results in Aug 2023; TechArticle is current rich-result-eligible). -->
 <script type="application/ld+json">
 ${techArticle}
 </script>
@@ -530,11 +637,8 @@ tailwind.config = {
 </style>
 </head>
 <body>
-<!-- NAV-PLATFORM-GENERATOR-W1 (A1): unified nav region — scripts/build_nav.mjs injects the
-     shared renderSiteNav() here (single-derivation; retires the old per-page canonicalNavHtml). -->
 ${NAV_REGION_MARKERS}
 
-<!-- DESIGN-W10 / C3: canonical hero scaffolding (artboard + 3 bg layers + VEyebrow). -->
 <main class="lp-integrations-desktop">
   <div class="artboard" style="padding:100px 24px 64px;max-width:1024px;margin:0 auto;width:100%">
     <div class="bg-grid"></div>
@@ -542,16 +646,9 @@ ${NAV_REGION_MARKERS}
     <div class="bg-noise"></div>
     <div style="position:relative;z-index:1">
       <div class="placeholder-cap" style="margin-bottom:14px">· ${exchange} integration</div>
-      <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
         <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">${SNAPSHOT.pfeWr}</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">${SNAPSHOT.callCount}</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
-      <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
-           (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
-           "I means remove this section, not the section cards" — referring to the
-           TL;DR section content, not the visual card structure. wrapH2InTierStatCard()
-           wraps each h2 section + intro in a card; stripTLDRSection() removes the
-           redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
       <article>
 ${wrapH2InTierStatCard(stripInternalHeadingAnnotations(stripTLDRSection(stripSnapshotBlock(bodyHtml))))}
       </article>
@@ -559,8 +656,6 @@ ${wrapH2InTierStatCard(stripInternalHeadingAnnotations(stripTLDRSection(stripSna
   </div>
 </main>
 
-<!-- DESIGN-W10 / C3: canonical Footer (verbatim from live algovault.com line 493).
-     REPLACES the pre-W10 legacy footer block per Q-W10-8 ratification. -->
 ${CANONICAL_FOOTER_HTML}
 </body>
 </html>

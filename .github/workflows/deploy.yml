@@ -309,6 +309,17 @@ jobs:
       - name: Integrations registry lockstep canary (check-integrations-registry-lockstep --check)
         run: node scripts/check-integrations-registry-lockstep.mjs --check
 
+      # BINANCE-AGENT-OS-GEO-AND-SUBMISSIONS-W2 CH1 R4 — an <!-- --> comment inside a generator's
+      # template literal is public copy. Blocks on landing/integrations/*.html (the surface that
+      # wave cleaned); reports on the rest behind a counted, dated promotion criterion in
+      # ops/comment-hygiene-config.json. deploy.yml ONLY this wave: the shared pre-push hook
+      # governs 78 worktrees, so installing a block there is a fleet-wide mutation deferred to
+      # OPS-PREPUSH-GATE-LANE-W1, which bundles it with check-claim-coverage.mjs.
+      - name: Rendered-comment hygiene gate (fail-closed)
+        run: |
+          node scripts/check-rendered-comment-hygiene.mjs --self-test
+          node scripts/check-rendered-comment-hygiene.mjs --check
+
       # FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1 — brand-footer universal coverage.
       # Asserts every non-exempt public page carries the footer rendered from the ONE SoT
       # (src/lib/footer-content.ts). Fail-closed; prints FOOTER_INJECT_VERDICT=.

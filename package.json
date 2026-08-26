@@ -41,6 +41,8 @@
     "registry:drift:check": "tsc && node scripts/check-feature-registry-drift.mjs --check",
     "integrations:lockstep:check": "node scripts/check-integrations-registry-lockstep.mjs --check",
     "partner:install:check": "node scripts/check-partner-install-coords.mjs --check",
+    "comment:hygiene:check": "node scripts/check-rendered-comment-hygiene.mjs --check",
+    "comment:hygiene:selftest": "node scripts/check-rendered-comment-hygiene.mjs --self-test",
     "partner:install:selftest": "node scripts/check-partner-install-coords.mjs --self-test",
     "assets:version": "node scripts/build_asset_versions.mjs",
     "assets:version:check": "node scripts/build_asset_versions.mjs --check",
