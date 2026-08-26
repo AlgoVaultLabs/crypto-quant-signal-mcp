@@ -36,7 +36,7 @@ async function main() {
     console.log(text);
     console.log('--- end dry-run ---');
   } else {
-    const ok = await sendDigest(sections);
+    const ok = await sendDigest(sections, { label: 'rate-limit-digest-weekly' });
     if (ok) {
       console.log(`[rate-limit-digest] ${new Date().toISOString()}: digest sent to Telegram`);
     } else {

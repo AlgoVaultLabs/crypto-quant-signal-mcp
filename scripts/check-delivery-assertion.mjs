@@ -23,6 +23,16 @@
  *       BRANCHED ON — never discarded next to an unconditional success log.
  *   R2  No committed smoke/runbook line PRESCRIBES DRY_RUN_TG for a repeatable synthetic
  *       fire. Mentioning it to warn against it is fine; telling a reader to use it is not.
+ *   R3  Every `sendDigest(...)` in a SCHEDULED producer (`src/scripts/*.ts`) declares a
+ *       `label:` so a failed delivery escalates to the operator.
+ *
+ * WHY R3 EXISTS (OPS-GEO-DIGEST-DELIVERY-W1, 2026-08-26): R1 proves the caller BRANCHES
+ * on the result. It does not prove anyone is TOLD. The GEO weekly digest satisfied R1 in
+ * full — it branched, logged `DIGEST SEND FAILED`, and set a non-zero exit code — and
+ * still went undelivered for SIX consecutive Mondays, because the only reader of that
+ * branch was a log file nobody tails. Branching without escalating is a gap this gate
+ * had, measured, not theorised. Opting out is `{ label: null }` — DATA, so a considered
+ * decision is distinguishable from a forgotten field.
  *
  * Usage:
  *   node scripts/check-delivery-assertion.mjs --self-test
@@ -129,8 +139,65 @@ export function findDryRunPrescriptions(src) {
   return hits;
 }
 
+/**
+ * Return the parenthesised argument list of the call `text` STARTS with, matching
+ * brackets while skipping string literals.
+ *
+ * Cutting at the first `;` instead — the obvious shortcut — is WRONG and was caught by
+ * this gate's own first live run: `geo-weekly-cron.ts` passes a section string containing
+ * `'_dry-run preview; the live cron …'`, so a semicolon scan ends the call before its
+ * `{ label: null }` and reports a false FAIL on correct code.
+ */
+export function extractCallArgs(text) {
+  const open = text.indexOf('(');
+  if (open === -1) return text;
+  let depth = 0;
+  let quote = null;
+  for (let j = open; j < text.length; j++) {
+    const c = text[j];
+    if (quote) {
+      if (c === '\\') { j++; continue; }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') { quote = c; continue; }
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') {
+      depth--;
+      if (depth === 0) return text.slice(open, j + 1);
+    }
+  }
+  return text.slice(open); // unterminated within the window — scan what we have
+}
+
+/**
+ * R3 — a scheduled digest producer that cannot page when it fails to deliver.
+ *
+ * Scans the call text (statement-scoped, so a multi-line section array is covered) for
+ * `label:`. `{ label: null }` is a PASS: it is the explicit opt-out for an
+ * operator-initiated send that reports its own outcome.
+ */
+export function findUnescalatedDigestSends(src) {
+  const hits = [];
+  const lines = stripComments(src).split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (!/\bsendDigest\s*\(/.test(lines[i])) continue;
+    const window = lines.slice(i, i + 14).join('\n');
+    const call = extractCallArgs(window.slice(window.indexOf('sendDigest')));
+    if (!/\blabel\s*:/.test(call)) {
+      hits.push({
+        rule: 'R3',
+        detail: 'sendDigest in a scheduled producer declares no `label:` — a failed delivery would be silent (use `{ label: null }` to opt out deliberately)',
+        snippet: lines[i].trim().slice(0, 140),
+      });
+    }
+  }
+  return hits;
+}
+
 export function scanJs(src) { return findDiscardedDeliveryResults(src); }
 export function scanOps(src) { return findDryRunPrescriptions(src); }
+export function scanProducers(src) { return findUnescalatedDigestSends(src); }
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 const DIRTY_R1 = [
@@ -146,6 +213,20 @@ const CLEAN_R1 = [
   // Discarded but claims nothing — reported, deliberately NOT failed (see findDiscardedDeliveryResults).
   '  await sendAlert("escalation", "warning");',
 ];
+const DIRTY_R3 = [
+  // The live shape that went silent for six Mondays.
+  '  if (await sendDigest(lines)) {\n    console.log("sent");\n  } else {\n    console.error("DIGEST SEND FAILED");\n  }',
+  '  const ok = await sendDigest(digest.sections);',
+  '  const ok = await sendDigest([\n    "a",\n    ...lines,\n  ]);',
+];
+const CLEAN_R3 = [
+  "  if (await sendDigest(lines, { label: 'geo-weekly-cron' })) { console.log('sent'); }",
+  "  const ok = await sendDigest(sections, { label: 'venue-readiness-report' });",
+  '  const ok = await sendDigest([\n    "a",\n    ...lines,\n  ], { label: null });',
+  // A semicolon INSIDE a section string must not end the call scan (live false-FAIL, 2026-08-26).
+  '  const ok = await sendDigest([\n    "_preview; the live cron sends this_",\n    ...lines,\n  ], { label: null });',
+  '  const x = 1; // no send here at all',
+];
 const DIRTY_R2 = [
   '  LF_NOW_EPOCH   freeze "now"   --force-stale VENUE  (pair with DRY_RUN_TG=1 — runbook §6)',
   '# exercise the alert path end-to-end under DRY_RUN_TG=1 (no real send).',
@@ -159,7 +240,7 @@ const CLEAN_R2 = [
 
 function selfTest() {
   const fails = [];
-  if (!DIRTY_R1.length || !CLEAN_R1.length || !DIRTY_R2.length || !CLEAN_R2.length) {
+  if (!DIRTY_R1.length || !CLEAN_R1.length || !DIRTY_R2.length || !CLEAN_R2.length || !DIRTY_R3.length || !CLEAN_R3.length) {
     console.error('✖ self-test corpus is empty — refusing to report a pass');
     return 'INDETERMINATE';
   }
@@ -167,12 +248,14 @@ function selfTest() {
   for (const f of CLEAN_R1) if (scanJs(f).length) fails.push(`FALSE POSITIVE R1: ${f.slice(0, 70).replace(/\n/g, ' ')}`);
   for (const f of DIRTY_R2) if (!scanOps(f).length) fails.push(`MISSED R2: ${f.slice(0, 70)}`);
   for (const f of CLEAN_R2) if (scanOps(f).length) fails.push(`FALSE POSITIVE R2: ${f.slice(0, 70)}`);
+  for (const f of DIRTY_R3) if (!scanProducers(f).length) fails.push(`MISSED R3: ${f.slice(0, 70).replace(/\n/g, ' ')}`);
+  for (const f of CLEAN_R3) if (scanProducers(f).length) fails.push(`FALSE POSITIVE R3: ${f.slice(0, 70).replace(/\n/g, ' ')}`);
   if (fails.length) {
     console.error('✖ self-test FAILED:');
     fails.forEach((f) => console.error('   - ' + f));
     return 'FAIL';
   }
-  console.log(`✓ self-test: ${DIRTY_R1.length + DIRTY_R2.length} known-bad fixtures flagged, ${CLEAN_R1.length + CLEAN_R2.length} clean fixtures passed.`);
+  console.log(`✓ self-test: ${DIRTY_R1.length + DIRTY_R2.length + DIRTY_R3.length} known-bad fixtures flagged, ${CLEAN_R1.length + CLEAN_R2.length + CLEAN_R3.length} clean fixtures passed.`);
   return 'PASS';
 }
 
@@ -195,9 +278,14 @@ try {
 }
 
 const jsFiles = all.filter((f) => /^(src|scripts)\/.*\.(ts|mjs|js)$/.test(f) && !f.endsWith('.d.ts'));
+// R3 is scoped to SCHEDULED producers: an unattended cron is the only caller whose
+// silent failure nobody is present to see. src/lib holds the definition, not a send.
+const producerFiles = all.filter((f) => /^src\/scripts\/.*\.ts$/.test(f));
 const opsFiles = all.filter((f) => /^(ops|docs)\/.*\.(py|sh|md)$/.test(f));
-if (jsFiles.length === 0 || opsFiles.length === 0) {
-  console.error(`✖ corpus empty (js=${jsFiles.length} ops=${opsFiles.length}) — refusing to report a pass`);
+if (jsFiles.length === 0 || opsFiles.length === 0 || producerFiles.length === 0) {
+  console.error(
+    `✖ corpus empty (js=${jsFiles.length} ops=${opsFiles.length} producers=${producerFiles.length}) — refusing to report a pass`,
+  );
   verdictAndExit('INDETERMINATE');
 }
 
@@ -214,6 +302,9 @@ for (const f of jsFiles) {
 if (softTotal.length) {
   console.log(`\u2139 ${softTotal.length} send call(s) discard their result WITHOUT claiming success — reported, not enforced (tracked as OPS-ALERT-DELIVERY-ASSERT-W{NEXT}): ${[...new Set(softTotal.map((s) => s.file))].join(', ')}`);
 }
+for (const f of producerFiles) {
+  try { for (const h of scanProducers(readFileSync(join(ROOT, f), 'utf8'))) findings.push({ file: f, ...h }); } catch { /* unreadable */ }
+}
 for (const f of opsFiles) {
   try { for (const h of scanOps(readFileSync(join(ROOT, f), 'utf8'))) findings.push({ file: f, ...h }); } catch { /* unreadable */ }
 }
@@ -227,5 +318,7 @@ if (findings.length) {
   verdictAndExit('FAIL');
 }
 
-console.log(`✓ delivery assertion: ${jsFiles.length} js file(s) bind every send result; ${opsFiles.length} ops file(s) prescribe no cooldown-burning smoke.`);
+console.log(
+  `✓ delivery assertion: ${jsFiles.length} js file(s) bind every send result; ${producerFiles.length} scheduled producer(s) declare a digest label; ${opsFiles.length} ops file(s) prescribe no cooldown-burning smoke.`,
+);
 verdictAndExit('PASS');

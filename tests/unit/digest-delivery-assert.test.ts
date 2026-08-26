@@ -133,12 +133,18 @@ describe('sendDigest — asserts DELIVERY, not attempt', () => {
   it('a Markdown parse 400 falls back to PLAIN TEXT and still delivers', async () => {
     // Formatting must never cost delivery. First call (Markdown) 400s; the fallback
     // re-sends with no parse_mode and succeeds.
+    //
+    // OPS-GEO-DIGEST-DELIVERY-W1: the input is an unclosed `[`, deliberately NOT an
+    // odd `_`. `hasUnbalancedMarkdown` now downgrades an odd `*`/`_`/backtick to plain
+    // text PROACTIVELY, which would make the first POST plain and stop this test from
+    // exercising the REACTIVE path at all. An unclosed bracket is outside that model,
+    // so this keeps proving the reactive fallback still covers what the detector misses.
     mockFetchSequence([
       { status: 400, body: PARSE_ERROR_BODY },
       { status: 200, body: '{"ok":true}' },
     ]);
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(await sendDigest(['a _b'])).toBe(true);
+    expect(await sendDigest(['a [b'])).toBe(true);
     expect(calls[0].parse_mode).toBe('Markdown');
     expect(calls[1].parse_mode).toBeUndefined(); // plain text
     expect(err.mock.calls.flat().join(' ')).toContain('DELIVERED AS PLAIN TEXT');

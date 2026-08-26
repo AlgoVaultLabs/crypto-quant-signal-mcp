@@ -34,7 +34,7 @@ export async function main(): Promise<void> {
     console.log(`[meta] due=${batch.due.length} totalUsdE2=${batch.totalUsdE2} withAddress=${batch.withAddress} withoutAddress=${batch.withoutAddress}`);
     return;
   }
-  const ok = await sendDigest(sections);
+  const ok = await sendDigest(sections, { label: 'referral-payout-batch-detect' });
   if (ok) {
     console.log(`[referral-payout-batch] ${stamp}: digest sent — ${batch.due.length} due, ${batch.withoutAddress} missing address`);
   } else {

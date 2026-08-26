@@ -194,7 +194,7 @@ async function main() {
     return;
   }
 
-  const ok = await sendDigest(digest.sections);
+  const ok = await sendDigest(digest.sections, { label: 'chat-analytics-digest' });
   if (ok) {
     console.log(`[chat-analytics-digest] ${new Date().toISOString()}: digest sent to Telegram`);
   } else {

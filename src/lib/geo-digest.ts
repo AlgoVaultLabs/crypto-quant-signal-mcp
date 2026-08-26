@@ -16,6 +16,7 @@ import { isSignificantDecline, DEFAULT_ALERT_HYGIENE, type AlertHygieneConfig } 
 // leaf; no DB/Date code lands here). `target_set` classification + the per-query attribution rate.
 import type { TargetSet } from './geo-decide.js';
 import type { QueryAttributionRate } from './geo-rates.js';
+import { mdValue } from './markdown-safe.js';
 
 export type Verdict = 'gaining' | 'holding' | 'slipping';
 
@@ -662,7 +663,9 @@ export function buildDigest(data: GeoDigestData): string[] {
   if (data.decision) {
     const dec = data.decision;
     L.push('🎯 *DECISION READY* — open Cowork to act');
-    L.push(`Priority: ${dec.gateLabel}  ·  Move: ${dec.move}`);
+    // mdValue: `move` is snake_case (`pursue_placement`), and a bare `_` opens an
+    // italic entity legacy Markdown has no way to escape.
+    L.push(`Priority: ${dec.gateLabel}  ·  Move: ${mdValue(dec.move)}`);
     if (dec.knownActionSpec) L.push(`candidate action: ${dec.knownActionSpec} (already drafted)`);
     L.push(
       `Brief: ${dec.briefName} · ${dec.candidateCount} candidate${dec.candidateCount === 1 ? '' : 's'} scored through the priority gate`,
@@ -676,7 +679,7 @@ export function buildDigest(data: GeoDigestData): string[] {
         const badge = tierBadge(c.target_tier);
         const b = badge ? ` [${badge}]` : '';
         L.push(
-          `  ${i + 1}. ${c.query_id ?? '—'}${b} · ${c.move} · score ${c.score.toFixed(2)} (lift ${c.expected_lift.toFixed(2)} · fit ${c.product_fit.toFixed(2)} · ${c.query_tier ?? '—'})`,
+          `  ${i + 1}. ${c.query_id ?? '—'}${b} · ${mdValue(c.move)} · score ${c.score.toFixed(2)} (lift ${c.expected_lift.toFixed(2)} · fit ${c.product_fit.toFixed(2)} · ${c.query_tier ?? '—'})`,
         );
       });
     }

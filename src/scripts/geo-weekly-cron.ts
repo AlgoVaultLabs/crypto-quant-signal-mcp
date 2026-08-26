@@ -541,11 +541,15 @@ async function main(): Promise<void> {
     const { data, wowAlerts, decline } = await fetchDigestData();
     const lines = buildDigest(data);
     if (previewSend) {
+      // `label: null` — this preview is operator-initiated and reports its own outcome
+      // on the next line. A failure here is a person watching a terminal, not a silent
+      // weekly surface, so it must not page. Opting out explicitly (rather than omitting
+      // the field) is what lets the R3 gate distinguish this from a forgotten label.
       const ok = await sendDigest([
         '🧪 *PREVIEW — Growth digest (OPS-WEEKLY-GROWTH-DIGEST-W1)*',
         '_dry-run preview; the live cron sends this every Mon 08:00 UTC_',
         ...lines,
-      ]);
+      ], { label: null });
       console.log(`[geo-cron] PREVIEW-SEND ${ok ? 'delivered to operator chat' : 'FAILED (telegram unconfigured?)'}`);
     } else {
       console.log('---DIGEST BODY---');
@@ -571,7 +575,7 @@ async function main(): Promise<void> {
   const lines = buildDigest(data);
 
   // SEC-17: assert delivery, not attempt (sendDigest returns a boolean, never throws).
-  if (await sendDigest(lines)) {
+  if (await sendDigest(lines, { label: 'geo-weekly-cron' })) {
     console.log(`[geo-cron] digest sent · sections=${lines.length}`);
   } else {
     console.error(`[geo-cron] DIGEST SEND FAILED · sections=${lines.length} — see the [telegram] HTTP line above`);

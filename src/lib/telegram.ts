@@ -3,6 +3,12 @@
  * Silent no-op if TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set.
  */
 
+// Pure Markdown/length primitives live in their own leaf so a PURE renderer can
+// reach mdValue() without importing this transport module. Re-exported here so
+// every existing `from './telegram.js'` importer is untouched.
+import { mdValue, hasUnbalancedMarkdown, chunkSections, TELEGRAM_MAX_MESSAGE } from './markdown-safe.js';
+export { mdValue, hasUnbalancedMarkdown, chunkSections, TELEGRAM_MAX_MESSAGE };
+
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? '';
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? '';
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -15,23 +21,6 @@ const LEVEL_EMOJI: Record<string, string> = {
 
 function isConfigured(): boolean {
   return BOT_TOKEN.length > 0 && CHAT_ID.length > 0;
-}
-
-/**
- * Render a dynamic value so Markdown cannot mis-parse it (SEC-17).
- *
- * Telegram's LEGACY `Markdown` parse mode has no escape syntax — that is precisely why
- * MarkdownV2 exists — so a backslash does not help. A code span does: content inside
- * backticks is literal, so `_`, `*` and `[` in an interpolated value stop being entity
- * starters. Backticks in the value itself are stripped, since they would close the span.
- *
- * The concrete incident: the weekly knowledge-page digest interpolated the source name
- * `github_discussion`, whose single `_` opened an italic entity that never closed. Every
- * POST returned HTTP 400 `can't parse entities … at byte offset 168` (byte-exact) for
- * three consecutive weeks while the producer logged "digest sent".
- */
-export function mdValue(value: unknown): string {
-  return `\`${String(value).replace(/`/g, '')}\``;
 }
 
 async function sendOnce(
@@ -52,10 +41,19 @@ async function sendOnce(
   return { ok: false, status: res.status, body: await res.text() };
 }
 
-async function post(text: string, retries = 1): Promise<boolean> {
+async function postOne(text: string, retries = 1): Promise<boolean> {
+  // PROACTIVE downgrade: an odd `*`/`_`/backtick cannot be escaped in legacy
+  // Markdown, so attempting it is a guaranteed 400. Send plain text on the
+  // FIRST attempt instead of burning the retry budget discovering that.
+  const unbalanced = hasUnbalancedMarkdown(text);
+  if (unbalanced) {
+    console.error(
+      '[telegram] UNBALANCED Markdown entity — sending as PLAIN TEXT; wrap the interpolated value in mdValue()',
+    );
+  }
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const r = await sendOnce(text, 'Markdown');
+      const r = await sendOnce(text, unbalanced ? null : 'Markdown');
       if (r.ok) return true;
       console.error(`[telegram] HTTP ${r.status}: ${r.body}`);
       // A Markdown parse failure is a FORMATTING problem, not a delivery problem. Retry
@@ -77,15 +75,73 @@ async function post(text: string, retries = 1): Promise<boolean> {
   return false;
 }
 
+/**
+ * The ONE way anything leaves this module. Splits `text` if it exceeds the Telegram
+ * limit, so no entry point — `sendAlert`, `sendDigest`, `sendVenueStatusChange`, or
+ * whatever a later wave adds — can reintroduce the size cliff by forgetting to chunk.
+ *
+ * Fixing this at the generator rather than per-sender is the point: `sendDigest` was
+ * the lane that failed, but `sendAlert` and `sendVenueStatusChange` sat behind the same
+ * un-chunked `post()` and would have failed identically on a long enough body.
+ */
+async function post(text: string, retries = 1): Promise<boolean> {
+  const chunks = chunkSections([text]);
+  if (chunks.length === 0) return false;
+  let ok = true;
+  for (const chunk of chunks) {
+    if (!(await postOne(chunk, retries))) ok = false;
+  }
+  return ok;
+}
+
 export async function sendAlert(message: string, level: 'critical' | 'warning' | 'info'): Promise<boolean> {
   if (!isConfigured()) return false;
   const emoji = LEVEL_EMOJI[level] ?? '🟢';
   return post(`${emoji} *AlgoVault Alert*\n\n${message}`);
 }
 
-export async function sendDigest(sections: string[]): Promise<boolean> {
+/** Options for `sendDigest`. All optional — every existing call site is unchanged. */
+export interface DigestOptions {
+  /**
+   * Producer name (e.g. `geo-weekly-cron`). Present ⇒ a failed delivery fires ONE
+   * short warning alert naming this producer.
+   *
+   * Detect → Alert, not Detect → console.error. A `DIGEST SEND FAILED` line in a
+   * log nobody tails is indistinguishable from a healthy week, which is exactly
+   * how six consecutive GEO digests went missing before an operator noticed. The
+   * alert is bounded by construction: at most one per digest run.
+   *
+   * Explicit `null` = a deliberate non-escalating send (an operator-initiated
+   * preview that reports its own outcome). Opting out is expressed in DATA, not in
+   * a comment, so `check-delivery-assertion.mjs` R3 can tell a considered decision
+   * from an omission — the same reason `announce_resolution` lives on a registry
+   * row rather than in prose.
+   */
+  label?: string | null;
+}
+
+export async function sendDigest(sections: string[], opts: DigestOptions = {}): Promise<boolean> {
   if (!isConfigured()) return false;
-  return post(sections.join('\n\n'));
+  const chunks = chunkSections(sections);
+  if (chunks.length === 0) return false;
+  // Attempt EVERY chunk even after one fails — a partial digest beats none, and
+  // the return value still reports the truth.
+  let ok = true;
+  for (const chunk of chunks) {
+    if (!(await post(chunk))) ok = false;
+  }
+  if (!ok && opts.label) {
+    // Short by design: whatever broke the digest (length, entities) must not
+    // also break the message that reports it.
+    const escalated = await sendAlert(
+      `Digest ${mdValue(opts.label)} FAILED to deliver — ${chunks.length} part(s), ${sections.length} section(s). See the [telegram] HTTP line in that producer's log.`,
+      'warning',
+    );
+    // Best-effort by nature (the transport that lost the digest may also lose this), but
+    // never SILENT about its own failure — that is the defect one layer up.
+    if (!escalated) console.error(`[telegram] ESCALATION ALSO FAILED for digest '${opts.label}' — operator is unaware`);
+  }
+  return ok;
 }
 
 // ── Venue lifecycle alerts (EXCHANGE-SHADOW-PROMOTE-W1 / C3) ──

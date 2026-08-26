@@ -27,6 +27,7 @@ import {
 // is byte-identical to what the cron feeds computeAttribution (single-derivation in the tests too).
 import { computeAttributionRates, type QueryAttributionRate } from '../../src/lib/geo-rates.js';
 import type { TargetSet } from '../../src/lib/geo-decide.js';
+import { hasUnbalancedMarkdown } from '../../src/lib/markdown-safe.js';
 
 const VERDICT_EMOJI: Record<Verdict, string> = { gaining: '🟢', holding: '🟡', slipping: '🔴' };
 const VERDICT_WORD: Record<Verdict, string> = { gaining: 'GAINING', holding: 'HOLDING', slipping: 'SLIPPING' };
@@ -373,8 +374,46 @@ describe('buildDigest', () => {
     };
     const out = buildDigest(withBasis).join('\n');
     expect(out).toContain('Basis — ranked candidates');
-    expect(out).toContain('1. best-mcp-trading [🤝 earned] · earned · score 0.60 (lift 0.90 · fit 1.00 · head)');
-    expect(out).toContain('2. composite-quant-signal [🎯 conversion] · seed_the_answer · score 0.51');
+    // OPS-GEO-DIGEST-DELIVERY-W1 — `move` is now routed through mdValue(). It is
+    // snake_case, and a BARE `seed_the_answer` opened a legacy-Markdown italic entity
+    // that Telegram rejected with `can't parse entities … byte offset 5562`. Legacy
+    // Markdown has no escape syntax, so a code span is the only fix.
+    expect(out).toContain('1. best-mcp-trading [🤝 earned] · `earned` · score 0.60 (lift 0.90 · fit 1.00 · head)');
+    expect(out).toContain('2. composite-quant-signal [🎯 conversion] · `seed_the_answer` · score 0.51');
+    // The value must still be READABLE — neutralising it must not hide it.
+    expect(out).toContain('seed_the_answer');
+  });
+
+  // OPS-GEO-DIGEST-DELIVERY-W1 — assert the rendered BODY, not just the verdict. This
+  // is the assertion that would have caught the live 400: every `_` the digest emits
+  // must sit inside a code span, or Telegram refuses the whole message.
+  it('emits NO unclosed Markdown entity even when every candidate carries a snake_case move', () => {
+    const snakeCase: GeoDigestData = {
+      ...data,
+      decision: {
+        priorityTier: 'third_party',
+        gateLabel: 'THIRD-PARTY (gate 2/3)',
+        move: 'pursue_placement',
+        candidateCount: 5,
+        briefName: 'geo-decision-2026-08-17',
+        suspects: [],
+        rankedCandidates: Array.from({ length: 5 }, (_, i) => ({
+          query_id: `q-${i}`,
+          query_tier: 'head',
+          target_tier: 'A',
+          move: 'pursue_placement',
+          expected_lift: 1,
+          product_fit: 1,
+          score: 0.67,
+        })),
+      },
+    };
+    expect(hasUnbalancedMarkdown(buildDigest(snakeCase).join('\n'))).toBe(false);
+  });
+
+  it('PROVES THAT ASSERTION BITES: the same body with a BARE move is unbalanced', () => {
+    // The pre-fix rendering, reconstructed. If this ever passes, the guard above is vacuous.
+    expect(hasUnbalancedMarkdown('Basis:\n  1. q-0 · pursue_placement · score 0.67')).toBe(true);
   });
 
   // (b) target-only who's-winning — a dropped-misfit query never renders even if passed in.

@@ -129,7 +129,7 @@ async function main(): Promise<void> {
     console.log('\n[DRY_RUN] not sent.');
     return;
   }
-  const ok = await sendDigest(sections);
+  const ok = await sendDigest(sections, { label: 'venue-readiness-report' });
   console.log(ok ? '\n[sent via telegram.sendDigest]' : '\n[telegram not configured — printed only]');
 }
 
