@@ -175,6 +175,35 @@ jobs:
       - name: Refresh README track-record numbers (snapshot injector)
         run: node scripts/snapshot-landing-data.mjs
 
+      # Rebuild landing/docs.html AFTER the injector — NPM-PUBLISH-v1.28.2-W1.
+      #
+      # The injector's payload in this lane is README.md, which IS in package.json `files[]`.
+      # But it also rewrites `landing/docs.html` (a GENERATED artifact) and `docs-src/template.html`
+      # (the source that artifact is generated FROM), patching each independently with live
+      # numbers. `prepublishOnly` then runs `build_docs.mjs --check`, which regenerates from the
+      # freshly-injected template and compares against the freshly-injected artifact — and the two
+      # do not agree. Measured 2026-08-26: `1748+ assets` -> `1771+`, plus the exchange_count span;
+      # publish run 32980710335 died at prepublishOnly step 11 of 23 with "docs.html DRIFT".
+      #
+      # The gate was telling the truth: the tree really was drifted at that instant. A sibling step
+      # in this same lane created the condition seconds earlier. It reproduces exactly — committed
+      # tree green, inject -> check RED, inject -> rebuild -> check GREEN — and it fires whenever
+      # the live asset count has moved since the last committed docs bake, i.e. most days. v1.28.1
+      # published only because the numbers had not yet diverged.
+      #
+      # 🛑 THIS MAKES prepublishOnly's `build_docs --check` VACUOUS IN THIS LANE, BY CONSTRUCTION.
+      # It now compares a file regenerated seconds earlier against a fresh regeneration and cannot
+      # fail here. NEVER cite a green publish run as evidence that the docs were in sync. The
+      # load-bearing instances are `deploy.yml` and the pre-push suite, which run against the
+      # un-injected COMMITTED tree and still block real drift.
+      #
+      # Neither landing/ nor docs-src/ is in `files[]` (dist, README.md, LICENSE, logo.png,
+      # server.json, smithery.yaml), so this restores self-consistency without touching what ships.
+      # The real generator fix would be scoping the injector to a target set; see
+      # OPS-PUBLISH-LANE-PRE-VERIFY-W{NEXT}.
+      - name: Rebuild generated docs after injection (keeps prepublishOnly self-consistent)
+        run: node scripts/build_docs.mjs
+
       # OIDC trusted publishing: NO `NODE_AUTH_TOKEN` here — a present token makes npm skip the
       # OIDC exchange (see the Phase-1 design-flaw note in the header). With no token, npm
       # authenticates via OIDC against the verified trusted-publisher config, and `--provenance`
