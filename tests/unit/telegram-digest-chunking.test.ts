@@ -180,6 +180,17 @@ describe('sendDigest — an oversized digest now DELIVERS', () => {
     expect(sent.some((c) => String(c.text) === preFix)).toBe(false);
   });
 
+  it('never DOUBLE-marks a part — post() re-chunks what sendDigest already bounded', async () => {
+    // sendDigest chunks on section boundaries, then every chunk passes through post(),
+    // which chunks again as the generator-level backstop. The second pass must be a
+    // no-op on an already-bounded message, or the operator sees `— part 1/2 — part 1/1`.
+    mockFetch();
+    await sendDigest(oversizedSections());
+    for (const c of sent) {
+      expect(String(c.text).match(/— part \d+\/\d+/g) ?? []).toHaveLength(1);
+    }
+  });
+
   it('a labelled producer ESCALATES once when delivery fails', async () => {
     mockFetch(400, CHAT_NOT_FOUND);
     vi.spyOn(console, 'error').mockImplementation(() => {});
