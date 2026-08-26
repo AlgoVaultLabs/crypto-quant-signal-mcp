@@ -578,6 +578,93 @@ const CREATE_EMIT_SUPPRESSIONS_SQL = process.env.DATABASE_URL
       PRIMARY KEY (date, exchange, timeframe, coin, reason)
     );`;
 
+// OPS-HOLD-DECISION-CAPTURE-W1 R1/R2 — schema-as-code mirror of `migrations/032`.
+//
+// The migration file is the SoT and carries the full reasoning (why a dedicated id space, why the
+// unique index IS the sampler, why `suppression_reason` ships before it has rows). This block
+// exists so fresh deploys and SQLite test fixtures inherit the tables without running migrations;
+// on live PG it is a no-op against a DB prepared via SSH before the commit landed.
+//
+// TWO BACKENDS, ONE SEMANTIC. SQLite has no BIGSERIAL and no TIMESTAMPTZ; `INTEGER PRIMARY KEY
+// AUTOINCREMENT` gives the same monotonic, never-reused id space, which is the property that
+// matters here — an id that cannot be confused with `signals.id` or `request_log.id`.
+const CREATE_HOLD_DECISIONS_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS hold_decisions (
+      decision_id        BIGSERIAL PRIMARY KEY,
+      captured_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+      decided_at         INTEGER NOT NULL,
+      coin               TEXT NOT NULL,
+      timeframe          TEXT NOT NULL,
+      exchange           TEXT,
+      regime             TEXT,
+      would_be_side      SMALLINT NOT NULL,
+      confidence         SMALLINT NOT NULL,
+      price_at_decision  DOUBLE PRECISION NOT NULL,
+      arm                TEXT NOT NULL,
+      is_bot_internal    BOOLEAN,
+      suppression_reason TEXT NOT NULL,
+      CONSTRAINT hold_decisions_side_ck   CHECK (would_be_side IN (-1, 0, 1)),
+      CONSTRAINT hold_decisions_arm_ck    CHECK (arm IN ('request', 'fleet')),
+      CONSTRAINT hold_decisions_reason_ck CHECK (suppression_reason IN ('below_threshold', 'book_liveness'))
+    );`
+  : `CREATE TABLE IF NOT EXISTS hold_decisions (
+      decision_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      captured_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_at         INTEGER NOT NULL,
+      coin               TEXT NOT NULL,
+      timeframe          TEXT NOT NULL,
+      exchange           TEXT,
+      regime             TEXT,
+      would_be_side      INTEGER NOT NULL,
+      confidence         INTEGER NOT NULL,
+      price_at_decision  REAL NOT NULL,
+      arm                TEXT NOT NULL,
+      is_bot_internal    INTEGER,
+      suppression_reason TEXT NOT NULL,
+      CHECK (would_be_side IN (-1, 0, 1)),
+      CHECK (arm IN ('request', 'fleet')),
+      CHECK (suppression_reason IN ('below_threshold', 'book_liveness'))
+    );`;
+
+// The fleet arm's sampler. `ON CONFLICT DO NOTHING` against this index is what bounds the
+// ~437k/day firehose to one row per (UTC day × venue × coin × timeframe × confidence-decile ×
+// regime) — breadth-first, because distinct (venue, coin) CLUSTERS are the binding constraint on
+// the pre-registered analysis, not row count. COALESCE because NULLs compare DISTINCT in a unique
+// index, so NULL-venue rows would otherwise bypass the quota entirely.
+const CREATE_HOLD_DECISIONS_INDEXES_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_hold_decisions_scan
+    ON hold_decisions (exchange, coin, timeframe, decided_at);
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_hold_decisions_fleet_cell
+    ON hold_decisions (
+      (decided_at / 86400), COALESCE(exchange, ''), coin, timeframe,
+      (confidence / 10), COALESCE(regime, '')
+    ) WHERE arm = 'fleet';
+`;
+
+// QUARANTINE. HOLD labels are counterfactual — they score a trade the engine deliberately did not
+// make — and must NEVER reach `directional_labels`, the corpus behind the DWR baseline and the
+// published track record. The FK column is `hold_decision_id`, never `signal_id`: `request_log.id`
+// and `signals.id` numerically OVERLAP (measured ~355k vs ~512k), so a HOLD row carrying either
+// into `directional_labels` would join SILENTLY to an unrelated acted signal. The declared
+// REFERENCES makes a wrong id fail loudly at INSERT instead of joining wrongly at SELECT.
+const CREATE_HOLD_DECISION_LABELS_SQL = `
+  CREATE TABLE IF NOT EXISTS hold_decision_labels (
+    hold_decision_id  ${process.env.DATABASE_URL ? 'BIGINT' : 'INTEGER'} NOT NULL REFERENCES hold_decisions(decision_id) ON DELETE CASCADE,
+    barrier_spec      TEXT NOT NULL,
+    label             SMALLINT NOT NULL,
+    ambiguous_candle  BOOLEAN NOT NULL DEFAULT FALSE,
+    low_vol_history   BOOLEAN NOT NULL DEFAULT FALSE,
+    t_hit_candles     INT,
+    mfe_return_pct    DOUBLE PRECISION,
+    mae_return_pct    DOUBLE PRECISION,
+    barrier_pct       DOUBLE PRECISION NOT NULL,
+    computed_at       ${process.env.DATABASE_URL ? 'TIMESTAMPTZ NOT NULL DEFAULT now()' : "TEXT NOT NULL DEFAULT (datetime('now'))"},
+    PRIMARY KEY (hold_decision_id, barrier_spec)
+  );
+  CREATE INDEX IF NOT EXISTS idx_hold_labels_spec_decision
+    ON hold_decision_labels (barrier_spec, hold_decision_id);
+`;
+
 // v1.9.0 L3 (2026-04-15): agent_sessions cohort table.
 // Persisted on every tool call (when sessionId is present, i.e. HTTP transport).
 const CREATE_AGENT_SESSIONS_SQL = `
@@ -1054,6 +1141,14 @@ function getBackend(): DbBackend {
   // pre-applied via SSH BEFORE this commit lands, so the deploy is a no-op against a prepared
   // DB (CLAUDE.md: pre-apply schema, then ship schema-as-code).
   backend.exec(CREATE_EMIT_SUPPRESSIONS_SQL);
+  // OPS-HOLD-DECISION-CAPTURE-W1 R1/R2. Same pre-apply contract as emit_suppressions above: the
+  // live PG tables are created via SSH BEFORE this commit lands, so this is a no-op there and a
+  // real create for fresh deploys and SQLite fixtures. Indexes are a separate exec because the
+  // unique index is the fleet sampler — if it ever failed to create, the table would silently
+  // accept the whole firehose, so it must not be buried inside the table DDL's success.
+  backend.exec(CREATE_HOLD_DECISIONS_SQL);
+  backend.exec(CREATE_HOLD_DECISIONS_INDEXES_SQL);
+  backend.exec(CREATE_HOLD_DECISION_LABELS_SQL);
   backend.exec(CREATE_MERKLE_BATCHES_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_INDEX_SQL);
@@ -1463,6 +1558,57 @@ export function recordEmitSuppressionImpl(
   } catch (e) {
     // Fail-open: a counter that can fail an emission is worse than no counter.
     console.warn(`[emit-suppressions] record failed (fail-open): ${(e as Error).message}`);
+  }
+}
+
+/**
+ * OPS-HOLD-DECISION-CAPTURE-W1 R1 — persist one HOLD decision.
+ *
+ * Reached only through the lazy `import()` in `hold-decision-capture.ts` (that module has zero
+ * static imports so it can never join the documented init cycle). Fail-open: a capture that can
+ * break a trade call is worse than no capture.
+ *
+ * ── ON CONFLICT DO NOTHING IS THE SAMPLER, AND IT IS ARM-ASYMMETRIC BY DESIGN ──
+ *
+ * The `WHERE arm = 'fleet'` predicate on `uq_hold_decisions_fleet_cell` means the conflict target
+ * only ever matches fleet rows. So the SAME statement gives two different behaviours, both
+ * intended:
+ *   * request arm (~3.19k/day, both `is_bot_internal` values) — no matching index, every row is
+ *     written. Unsampled, because at ~300 external + ~2.9k bot HOLDs/day the whole arm costs
+ *     ~1.5 MB/yr and the analysis needs every one of its ~28 distinct assets.
+ *   * fleet arm (~437k/day) — first row per cell per UTC day wins, the rest are silent no-ops.
+ *
+ * The no-op is NOT a dropped observation to be logged: it is the sampling decision itself, taken
+ * once per cell per day. What DOES get logged is the process-local runaway cap in the caller,
+ * because that one really is truncation.
+ */
+export function recordHoldDecisionImpl(c: {
+  decidedAt: number;
+  coin: string;
+  timeframe: string;
+  exchange: string | null;
+  regime: string | null;
+  wouldBeSide: number;
+  confidence: number;
+  priceAtDecision: number;
+  arm: string;
+  isBotInternal: boolean | null;
+  suppressionReason: string;
+}): void {
+  try {
+    const b = getBackend();
+    const botValue = c.isBotInternal === null ? null : (isPg ? c.isBotInternal : (c.isBotInternal ? 1 : 0));
+    b.run(
+      `INSERT INTO hold_decisions
+         (decided_at, coin, timeframe, exchange, regime, would_be_side, confidence,
+          price_at_decision, arm, is_bot_internal, suppression_reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT DO NOTHING`,
+      c.decidedAt, c.coin, c.timeframe, c.exchange, c.regime, c.wouldBeSide, c.confidence,
+      c.priceAtDecision, c.arm, botValue, c.suppressionReason,
+    );
+  } catch (e) {
+    console.warn(`[hold-decision-capture] record failed (fail-open): ${(e as Error).message}`);
   }
 }
 

@@ -1721,6 +1721,29 @@
       "owner_wave": "EDGE-DWR-REFRESH-W1",
       "repo_resident": true,
       "notes": "Monthly DWR / Directional-Edge scoreboard writer -> `dwr_baseline_runs` (migration 030). DATA PIPELINE, not a guard: `alert_ids` is empty because R4 specified silent-on-success + fail-open, and its verdict token DWR_SNAPSHOT_VERDICT=PASS|FAIL|INDETERMINATE lands in /var/log/dwr-baseline-snapshot.log rather than paging. Inventoried anyway, unlike its closest sibling ops/cron/carry-tracker-publish.sh, because that one argues a specific exemption (its three /opt/algovault-carry siblings have no repo ancestor and are uninventoried, so a lone row would misclassify the job) while this one sits under /opt/crypto-quant-signal-mcp alongside snapshot-landing-daily, which IS inventoried on the same reasoning. Idempotent by construction: PRIMARY KEY (run_month, spec) means a forced re-run refreshes the month instead of appending, so it is safe to run by hand. A staleness alarm on the series is deliberately NOT shipped here — if paging is wanted it is OPS-DWR-SERIES-FRESHNESS-W{NEXT}, and it must measure this job's ATTEMPT recency (the producer), never the rendered row."
+    },
+    {
+      "id": "hold-decision-labeler",
+      "artifact": "ops/cron/hold-decision-labeler.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/hold-decision-labeler.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/hold-decision-labeler.sh",
+          "schedule": "41 3 * * *"
+        }
+      ],
+      "criticality": "advisory",
+      "schedule": "41 3 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "757a49d1a384c8fba5000b63e7a1d21e7e4130dcbce54cf63aaf9235e211bc20",
+      "alert_ids": [],
+      "owner_wave": "OPS-HOLD-DECISION-CAPTURE-W1",
+      "repo_resident": true,
+      "notes": "Counterfactual HOLD labeler -> `hold_decision_labels` (migration 032). DATA PIPELINE, not a guard, and inventoried on the same reasoning as its sibling dwr-baseline-snapshot: it lives under /opt/crypto-quant-signal-mcp and has a committed ancestor. `alert_ids` is empty because R2 specified silent-on-success + fail-open; the verdict token HOLD_LABEL_VERDICT=PASS|FAIL|INDETERMINATE lands in /var/log/hold-decision-labeler.log rather than paging. EXIT 3 IS INDETERMINATE and the wrapper passes the child's code through unchanged -- the run was cut short by its time budget or by venue weight budgets, which is NOT the same as 'nothing to label' (an empty work-list is the intended steady state and exits 0 PASS). QUARANTINE: this job must never write to `directional_labels`. Its labels are COUNTERFACTUAL -- they score trades the engine deliberately did not make -- and `directional_labels` backs the DWR baseline and the published track record. The two key on different id spaces (hold_decisions.decision_id vs signals.id) with a declared FK, and tests/unit/hold-decision-capture.test.ts fails if that separation is edited away. Sibling producer: the capture write itself has NO cron -- it runs inline at the single HOLD site in src/tools/get-trade-call.ts and is sampled at write time by uq_hold_decisions_fleet_cell."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label \u2192 address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON \u2014 this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

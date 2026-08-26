@@ -4,7 +4,7 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 // full EMA passes per signal on a path `scan_trade_calls` fans out across many assets.
 // The extraction surfaced it; the golden fixture proves removing it changed no output.
 import { rsi, ema, atr, hurstExponent, detectSqueeze } from '../lib/indicators.js';
-import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../lib/license.js'
+import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs, setRequestHoldCapture } from '../lib/license.js'
 import type { TrackCallResult } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { FUNDING_Z_WINDOW_DAYS } from '../lib/funding-window.js';
@@ -20,6 +20,10 @@ import { tradfiFundingAnnotation } from '../lib/tradfi-funding.js';
 // OPS-PFE-METRIC-INTEGRITY-W1 R2/R3: emit-time book-liveness gate + its fail-open counter.
 import { assessBookLiveness, getBookLivenessMode, BOOK_LIVENESS_WINDOW, BOOK_LIVENESS_MIN_GENUINE_BARS } from '../lib/book-liveness.js';
 import { recordEmitSuppression, suppressionReasonFor } from '../lib/emit-suppressions.js';
+// OPS-HOLD-DECISION-CAPTURE-W1 R1. Safe to import statically: like emit-suppressions above,
+// hold-decision-capture has ZERO static imports of its own, so it can never join the
+// documented performance-db -> ... -> upstream-weight-budget init cycle.
+import { recordHoldDecision, wouldBeSideFromRawScore } from '../lib/hold-decision-capture.js';
 // `intervalMsFor` joins the EXISTING candle-guard import rather than arriving as a second
 // import of the same module. candle-guard owns TF_INTERVAL_MS outright: this file's private
 // getIntervalMs was a THIRD copy of that table and is deleted below.
@@ -1338,6 +1342,55 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
         recordHoldCount(coin, timeframe);
       } catch (e) {
         console.debug('recordHoldCount failed:', e instanceof Error ? e.message : e);
+      }
+      // ── OPS-HOLD-DECISION-CAPTURE-W1 R1 — the capture seam ──
+      //
+      // THIS IS THE ONLY PLACE IN THE CODEBASE THAT SEES EVERY HOLD. The request path
+      // (index.ts:482 → routeTradeCall → getTradeSignal) and the fleet path
+      // (seed-signals.ts:774 → getTradeSignal) both arrive here, which is why `hold_counts`
+      // above records ~437k/day. Everything the analysis needs is already in scope: the venue,
+      // the regime, the live price, and — critically — `liveVerdict.rawScore`, whose SIGN is
+      // discarded ten lines into `deriveVerdict` by `Math.abs()` at :273 and exists nowhere else.
+      //
+      // SINGLE-DERIVATION. The tuple is computed ONCE here and projected two ways: persisted to
+      // `hold_decisions` (the labeling work-list, both arms) and stamped into the request-scoped
+      // ALS so `logRequest` can write the matching `request_log` columns for the request arm. The
+      // two consumers can never disagree about what this decision was, because neither of them
+      // re-derives it.
+      //
+      // NO NEW LATENCY, STRUCTURALLY. Both projections are synchronous, non-awaited and
+      // fail-open; the DB write happens in a microtask. Nothing here can delay or fail a response
+      // — which is a property of the shape, not a benchmark that happened to come out flat.
+      try {
+        const capture = {
+          decidedAt: Math.floor(Date.now() / 1000),
+          coin,
+          timeframe,
+          exchange: exchange ?? null,
+          regime: regime ?? null,
+          // POST-adjustment sign. NOT B-DIR's pre-adjustment score — see
+          // `wouldBeSideFromRawScore`'s docstring before using this number anywhere.
+          wouldBeSide: wouldBeSideFromRawScore(liveVerdict.rawScore),
+          confidence,
+          priceAtDecision: currentPrice,
+          // `arm` is resolved inside recordHoldDecision, not here: it needs `currentCaller()`
+          // from upstream-weight-budget, which sits in the documented init cycle.
+          isBotInternal: license.tier === 'internal',
+          // Reuses the EXACT predicate the shadow-compare at :1073 already uses, rather than a
+          // second reading of the same condition. Dead until the gate leaves shadow mode.
+          suppressionReason: liveVerdict.scoreAdjustments.some((a) => a.startsWith('Book not trading'))
+            ? ('book_liveness' as const)
+            : ('below_threshold' as const),
+        };
+        recordHoldDecision(capture);
+        setRequestHoldCapture({
+          wouldBeSide: capture.wouldBeSide,
+          exchange: capture.exchange,
+          regime: capture.regime,
+          priceAtDecision: capture.priceAtDecision,
+        });
+      } catch (e) {
+        console.debug('hold-decision capture failed:', e instanceof Error ? e.message : e);
       }
     }
   }

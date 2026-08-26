@@ -9,7 +9,8 @@ import { dbExec, dbRun, dbQuery } from './performance-db.js';
 // per-request classifyTraffic verdict from the ALS to stamp `request_log.is_automated`.
 // analytics.ts is a leaf (only performance-db + crypto); license.ts does NOT import
 // analytics → this edge is a DAG, no import cycle (verified in Plan Mode).
-import { getRequestIsAutomated, getRequestUserAgent } from './license.js';
+import { getRequestIsAutomated, getRequestUserAgent, getRequestHoldCapture } from './license.js';
+import type { RequestHoldCapture } from './license.js';
 // OPS-CLIENT-ATTRIBUTION-W1: the ONE UA → client identity map (also drives is_automated
 // via traffic-classifier.ts). Imported, never re-derived.
 import { classifyClient, normalizeUaForStorage, UNKNOWN_CLIENT } from './client-registry.js';
@@ -40,7 +41,11 @@ const CREATE_TABLE_SQL = `
     is_bot_internal ${process.env.DATABASE_URL ? 'BOOLEAN' : 'INTEGER'} DEFAULT ${process.env.DATABASE_URL ? 'FALSE' : '0'},
     is_automated ${process.env.DATABASE_URL ? 'BOOLEAN NOT NULL' : 'INTEGER NOT NULL'} DEFAULT ${process.env.DATABASE_URL ? 'FALSE' : '0'},
     user_agent TEXT,
-    client_name TEXT
+    client_name TEXT,
+    would_be_side ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'},
+    exchange TEXT,
+    regime TEXT,
+    price_at_decision ${process.env.DATABASE_URL ? 'DOUBLE PRECISION' : 'REAL'}
   );
 `;
 
@@ -86,6 +91,36 @@ const ALTER_USER_AGENT_SQL = process.env.DATABASE_URL
 const ALTER_CLIENT_NAME_SQL = process.env.DATABASE_URL
   ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS client_name TEXT;`
   : `ALTER TABLE request_log ADD COLUMN client_name TEXT;`;
+
+// OPS-HOLD-DECISION-CAPTURE-W1 (2026-08-26): the four fields that make a HOLD reconstructible.
+// Same shape as the four ALTERs above, for the same reasons — PG gets IF NOT EXISTS (idempotent
+// no-op against the prod DB, where migration 032 pre-applied them via SSH before this deploy);
+// SQLite gets a bare ALTER and throws "duplicate column" on re-run, caught by initAnalytics.
+//
+// THEY LIVE HERE, NOT IN performance-db.ts's SIGNAL_MIGRATIONS, and that is not a style choice.
+// `request_log` is created by THIS file; `SIGNAL_MIGRATIONS` runs during performance-db init,
+// which happens FIRST. Rows for `request_log` there ALTER a table that does not exist yet, the
+// throw aborts the rest of DB init, and `request_log` is then never created at all — measured
+// 2026-08-26 as 173 failures across 41 test files, every one of them reporting
+// "no such table: request_log" rather than anything resembling the actual cause. Add a column
+// where its table is owned.
+//
+// All four are NULLABLE with no default. On PG 11+ that is a metadata-only catalog change, so a
+// ~355k-row table is not rewritten. A default would also be WRONG independently of cost: these
+// columns are populated only on captured HOLDs, and NULL has to keep meaning "not a captured
+// HOLD" rather than a fabricated side, venue or price on every other row and on all history.
+const ALTER_WOULD_BE_SIDE_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS would_be_side SMALLINT;`
+  : `ALTER TABLE request_log ADD COLUMN would_be_side INTEGER;`;
+const ALTER_HOLD_EXCHANGE_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS exchange TEXT;`
+  : `ALTER TABLE request_log ADD COLUMN exchange TEXT;`;
+const ALTER_HOLD_REGIME_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS regime TEXT;`
+  : `ALTER TABLE request_log ADD COLUMN regime TEXT;`;
+const ALTER_PRICE_AT_DECISION_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS price_at_decision DOUBLE PRECISION;`
+  : `ALTER TABLE request_log ADD COLUMN price_at_decision REAL;`;
 
 // DASH-EXTERNAL-ONLY-W1, 2026-05-24: partial index for external-only reads.
 // Speeds the 24h/7d/all-time tiles in getUsageStats() + getToolLatencyStats(),
@@ -327,6 +362,16 @@ export function initAnalytics(): void {
   } catch {
     // Best-effort — see above. Both columns are nullable, so old rows stay queryable.
   }
+  // OPS-HOLD-DECISION-CAPTURE-W1: the HOLD capture columns. One try/catch EACH, for the reason
+  // stated above the pair before them — a SQLite "duplicate column" on an earlier statement must
+  // not skip the later ones. Four independent columns, four independent attempts.
+  for (const sql of [ALTER_WOULD_BE_SIDE_SQL, ALTER_HOLD_EXCHANGE_SQL, ALTER_HOLD_REGIME_SQL, ALTER_PRICE_AT_DECISION_SQL]) {
+    try {
+      dbExec(sql);
+    } catch {
+      // Best-effort — column may already exist (PG IF NOT EXISTS no-ops; SQLite throws).
+    }
+  }
   // DASH-EXTERNAL-ONLY-W1: partial index on (timestamp) WHERE NOT is_bot_internal.
   // Idempotent CREATE INDEX IF NOT EXISTS; safe to fire on fresh deploy + existing PG.
   try {
@@ -485,6 +530,17 @@ interface LogEntry {
   // ALS (getRequestUserAgent), so existing call sites need no change. Truncated and
   // classified inside logRequest so BOTH derived values come from one place.
   userAgent?: string | null;
+  // OPS-HOLD-DECISION-CAPTURE-W1: the four fields that make a HOLD reconstructible. Optional —
+  // when omitted, logRequest reads them from the ALS (getRequestHoldCapture), so the existing
+  // call sites need no change, exactly as with isAutomated/userAgent above.
+  //
+  // Stamped INSIDE the engine rather than threaded down from the handler, because the field that
+  // matters cannot be observed from outside it: `deriveVerdict` takes `Math.abs(rawScore)` at
+  // `get-trade-call.ts:273`, so by the time a handler sees the result the would-be side is gone.
+  // `exchange` and `regime` COULD have been read off `route`/`result` at the call site, and are
+  // deliberately not — taking all four from one stamp is what guarantees they describe the same
+  // decision rather than merely the same request.
+  holdCapture?: RequestHoldCapture;
 }
 
 export function logRequest(entry: LogEntry): void {
@@ -506,9 +562,17 @@ export function logRequest(entry: LogEntry): void {
     const rawUa = entry.userAgent ?? getRequestUserAgent();
     const uaValue = normalizeUaForStorage(rawUa);
     const clientNameValue = uaValue === null ? UNKNOWN_CLIENT : classifyClient(rawUa).name;
+    // OPS-HOLD-DECISION-CAPTURE-W1: same single-derivation shape as isAutomated/userAgent above —
+    // an explicit entry value wins, else the stamp the engine left in the ALS. `undefined` on
+    // every non-HOLD request, which is why all four columns are nullable: NULL here means "this
+    // row is not a captured HOLD", never "capture failed".
+    //
+    // THIS IS THE READER the license.ts seam is required to have. If this line goes, delete the
+    // seam in the same commit — `tests/unit/hold-decision-capture.test.ts` fails if it does not.
+    const hold = entry.holdCapture ?? getRequestHoldCapture();
     dbRun(
-      `INSERT INTO request_log (timestamp, session_id, tool_name, asset, timeframe, license_tier, response_time_ms, verdict, confidence, ip_hash, is_bot_internal, is_automated, user_agent, client_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO request_log (timestamp, session_id, tool_name, asset, timeframe, license_tier, response_time_ms, verdict, confidence, ip_hash, is_bot_internal, is_automated, user_agent, client_name, would_be_side, exchange, regime, price_at_decision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       new Date().toISOString(),
       entry.sessionId || null,
       entry.toolName,
@@ -523,6 +587,10 @@ export function logRequest(entry: LogEntry): void {
       automatedValue,
       uaValue,
       clientNameValue,
+      hold?.wouldBeSide ?? null,
+      hold?.exchange ?? null,
+      hold?.regime ?? null,
+      hold?.priceAtDecision ?? null,
     );
   } catch {
     // Never fail the request — logging is best-effort

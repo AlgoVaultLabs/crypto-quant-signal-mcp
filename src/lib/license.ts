@@ -87,6 +87,31 @@ interface RequestContext {
    * an unrecognized request stays interactive, never silently delayed).
    */
   background?: boolean;
+  /**
+   * OPS-HOLD-DECISION-CAPTURE-W1 R1: the four facts that make a HOLD reconstructible, stamped by
+   * the engine at the single HOLD site (`get-trade-call.ts:1336`) and read by `logRequest()` to
+   * fill `request_log.would_be_side / exchange / regime / price_at_decision`.
+   *
+   * WHY THE FLOW IS INWARD-OUT HERE, unlike every other field on this interface. `isAutomated`,
+   * `userAgent` and `source` are resolved at the /mcp POST layer and read INWARD by the engine.
+   * This one is the reverse: the values exist only INSIDE `deriveVerdict`, and the sign in
+   * particular is destroyed by `Math.abs(rawScore)` at `get-trade-call.ts:273` before any caller
+   * of the tool could observe it. Threading it back out through the ALS keeps it off the response
+   * shape entirely — no field is added to `TradeCallResult`, so no caller's payload changes.
+   *
+   * Absent on every non-HOLD request and on the fleet path (which never reaches `logRequest`).
+   * Absence therefore means "not a captured HOLD", never "capture failed".
+   */
+  holdCapture?: RequestHoldCapture;
+}
+
+/** @see RequestContext.holdCapture */
+export interface RequestHoldCapture {
+  /** +1 BUY · -1 SELL · 0 no direction. POST-adjustment sign — NOT B-DIR's pre-adjustment score. */
+  wouldBeSide: number;
+  exchange: string | null;
+  regime: string | null;
+  priceAtDecision: number;
 }
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();
@@ -144,6 +169,34 @@ export function getRequestIsAutomated(): boolean {
  */
 export function getRequestUserAgent(): string | null {
   return requestContext.getStore()?.userAgent ?? null;
+}
+
+// ── OPS-HOLD-DECISION-CAPTURE-W1 R1: the HOLD-capture seam ──
+//
+// READ THE TOMBSTONE ABOVE FIRST. `setRequestVerdict` / `getRequestVerdict` were DELETED from
+// this file for being a write-only seam: one writer, zero readers, no test — and the stated
+// reason was that a write-only seam is WORSE than no seam, because it still looks like the source
+// of truth for "what did this request decide", so the next wave wires a second consumer to a
+// field nothing maintains.
+//
+// This pair is deliberately not that, and the difference is enforced rather than asserted:
+//   * the READER is live — `logRequest()` in `analytics.ts` calls `getRequestHoldCapture()` on
+//     every request and writes four `request_log` columns from it;
+//   * `tests/unit/hold-decision-capture.test.ts` fails if that read stops happening, so the seam
+//     cannot decay back into write-only without a red suite.
+//
+// If a future wave removes the last reader, delete this pair in the same commit. Do not leave it
+// standing "in case someone needs it" — that is precisely how the deleted one earned its epitaph.
+
+/** Stamp the HOLD capture for the current request. No-op outside a request context (stdio, fleet). */
+export function setRequestHoldCapture(capture: RequestHoldCapture): void {
+  const ctx = requestContext.getStore();
+  if (ctx) ctx.holdCapture = capture;
+}
+
+/** Read the HOLD capture for the current request; `undefined` on every non-HOLD request. */
+export function getRequestHoldCapture(): RequestHoldCapture | undefined {
+  return requestContext.getStore()?.holdCapture;
 }
 
 /**
