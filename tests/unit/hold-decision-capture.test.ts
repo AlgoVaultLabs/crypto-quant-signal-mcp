@@ -255,6 +255,45 @@ describe('quarantine — HOLD labels can never reach the published corpus', () =
   });
 });
 
+describe('the labeler emits a verdict token that actually reaches the log', () => {
+  it('does NOT import detector-envelope — that schema is absent from the runtime image', () => {
+    // `buildEnvelope` reads ops/monitoring/detector-envelope.schema.json at call time, and
+    // /app/ops does not exist in the container: the Dockerfile COPYs no ops/ path and deploy.yml
+    // lists ops/monitoring/** under paths-ignore. Measured 2026-08-26: the sibling labeler calls
+    // it (nightly-carry-labeler.ts:59 always passes --time-budget-min) and threw ENOENT on 18
+    // runs in /var/log/carry-labeler.log, emitting no verdict at all.
+    //
+    // This assertion exists so the "reuse the house primitive" instinct — which is normally
+    // right, and was this file's first draft — does not silently reintroduce a dependency that
+    // cannot work where the script runs.
+    const labeler = src('src/scripts/backfill-hold-decision-labels.ts');
+    expect(labeler).not.toMatch(/^import .*detector-envelope/m);
+    expect(labeler).not.toMatch(/buildEnvelope\(/);
+  });
+
+  it('emits all three verdict values, with INDETERMINATE distinguishable from success', () => {
+    const labeler = src('src/scripts/backfill-hold-decision-labels.ts');
+    for (const v of ['PASS', 'FAIL', 'INDETERMINATE']) expect(labeler).toContain(v);
+    // Exit 0 must never encode both "labeled everything" and "could not observe enough".
+    expect(labeler).toMatch(/verdict === 'INDETERMINATE' \? 3 : 0/);
+    expect(labeler).toMatch(/HOLD_LABEL_VERDICT=/);
+  });
+
+  it('treats an EMPTY work-list as PASS, not INDETERMINATE — vacuity is not indeterminacy', () => {
+    // Every eligible decision already labeled is the steady state this script exists to reach.
+    const labeler = src('src/scripts/backfill-hold-decision-labels.ts');
+    expect(labeler).toMatch(/todo\.length === 0\s*\?\s*'PASS'|cov\.written > 0 \|\| todo\.length === 0/);
+  });
+
+  it('reports cluster + cell counts every run', () => {
+    // n is a coverage target, never a power claim: an interval without its cluster count is not
+    // a result, so the count is tracked per run rather than discovered at analysis time.
+    const labeler = src('src/scripts/backfill-hold-decision-labels.ts');
+    expect(labeler).toMatch(/clusters:\s*cov\.clusters\.size/);
+    expect(labeler).toMatch(/cells:\s*cov\.cells\.size/);
+  });
+});
+
 describe('capture cannot change what a caller receives', () => {
   it('the capture block is wrapped so a throw cannot escape into the response path', () => {
     const s = src('src/tools/get-trade-call.ts');

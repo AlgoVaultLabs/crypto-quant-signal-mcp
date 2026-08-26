@@ -49,7 +49,6 @@ import {
   runTripleBarrier,
 } from './directional-labeler.js';
 import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
-import { buildEnvelope } from '../lib/detector-envelope.js';
 
 const DELAY_BETWEEN_FETCHES_MS = 250;
 const FETCH_BUFFER_CANDLES = 2;
@@ -355,47 +354,63 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   // ── Verdict token ──
   //
   // A gate that can fail open MUST emit a distinguishable token, and this one can: it is bounded
-  // by a time budget and by venue weight budgets, so "labeled nothing" has two completely
-  // different meanings. INDETERMINATE is not an error state here — it says the run could not
-  // observe enough to have an opinion, which a bare exit 0 cannot express.
+  // by a time budget and by venue weight budgets, so "labeled nothing" has two entirely different
+  // meanings. Exit 0 may never encode both "labeled everything there was" and "could not observe
+  // enough to say". Callers gate on the TOKEN; 3 is INDETERMINATE.
   //
-  // VACUITY BELONGS WHERE THE CORPUS IS CONSTRUCTED. An empty work-list is NOT indeterminate: it
-  // means every eligible decision is already labeled, which is the steady state this script is
-  // supposed to reach. Being cut short by a budget, or having every fetch fail, is the
-  // indeterminate case — the run was SUPPOSED to fill something and could not.
+  // VACUITY BELONGS WHERE THE CORPUS IS CONSTRUCTED. An empty work-list is NOT indeterminate — it
+  // means every eligible decision is already labeled, which is the steady state this script exists
+  // to reach. Being cut short by a budget, or losing every fetch, is the indeterminate case: the
+  // run was SUPPOSED to fill something and could not.
+  //
+  // ── WHY THIS DOES NOT USE `buildEnvelope` ──
+  //
+  // `detector-envelope.ts` is the house primitive for exactly this and was the first draft here.
+  // It reads `ops/monitoring/detector-envelope.schema.json` at call time, and that file is
+  // STRUCTURALLY ABSENT from the runtime image: `/app/ops` does not exist, because the Dockerfile
+  // COPYs no `ops/` path and `deploy.yml` lists `ops/monitoring/**` under `paths-ignore`. Every
+  // in-container caller therefore throws ENOENT instead of emitting a verdict.
+  //
+  // That is not a hypothetical. `backfill-directional-labels.ts` calls `buildEnvelope` whenever
+  // `--time-budget-min` is set, `nightly-carry-labeler.ts:59` always sets it, and
+  // /var/log/carry-labeler.log carries 18 such throws (measured 2026-08-26, most recent
+  // 2026-08-26T04:05Z) — its capacity detector has been emitting nothing at all.
+  //
+  // This script therefore emits the same three-value contract WITHOUT the file dependency, rather
+  // than adopting a primitive that cannot work where it runs. It does NOT patch the sibling: that
+  // is another wave's artifact and routing around, or silently repairing, someone else's red is
+  // forbidden. Flagged in status.md for OPS-DETECTOR-ENVELOPE-RUNTIME-W{NEXT}, which should decide
+  // between shipping the schema into the image and making `loadSchema` fall back to its defaults.
   const truncated = cov.budgetSkips > 0 || isStopRequested() || Date.now() - startMs > budgetMs;
-  const attemptedNothing = todo.length > 0 && cov.labeled === 0;
-  const runOutcome = truncated || (attemptedNothing && cov.errors > 0) ? 'partial' : 'complete';
-  const env = buildEnvelope({
-    detector: 'hold-decision-label-coverage',
-    runId: `hold-label-${startedAt}`,
-    runStartedAt: startedAt,
-    runOutcome,
-    producedAt: new Date().toISOString(),
-    observationWindow: { from: startedAt, to: new Date().toISOString() },
-    verdict: cov.written > 0 || todo.length === 0 ? 'PASS' : 'FAIL',
-    evidence: {
-      considered: cov.considered,
-      unclosed_skipped: cov.skippedUnclosed,
-      labeled: cov.labeled,
-      written: cov.written,
-      no_klines: cov.noKlines,
-      wins: cov.wins,
-      losses: cov.losses,
-      timeouts: cov.timeouts,
-      low_vol: cov.lowVolHistory,
-      // The two numbers the pre-registered analysis is actually powered by. Reported every run so
-      // the cluster count is TRACKED rather than discovered at analysis time.
-      cells: cov.cells.size,
-      clusters: cov.clusters.size,
-      budget_skips: cov.budgetSkips,
-      errors: cov.errors,
-      elapsed_min: Math.round(((Date.now() - startMs) / 60_000) * 10) / 10,
-    },
-  });
-  // Silent on success — the token is the record, and it goes to the log the cron redirects.
-  console.log(`HOLD_LABEL_VERDICT=${env.verdict} ${JSON.stringify(env)}`);
-  return env.verdict === 'INDETERMINATE' ? 3 : 0;
+  const observedNothing = todo.length > 0 && cov.labeled === 0;
+  const verdict: 'PASS' | 'FAIL' | 'INDETERMINATE' =
+    truncated || (observedNothing && cov.errors > 0) ? 'INDETERMINATE'
+    : cov.written > 0 || todo.length === 0 ? 'PASS'
+    : 'FAIL';
+  const evidence = {
+    run_id: `hold-label-${startedAt}`,
+    run_started_at: startedAt,
+    produced_at: new Date().toISOString(),
+    considered: cov.considered,
+    unclosed_skipped: cov.skippedUnclosed,
+    labeled: cov.labeled,
+    written: cov.written,
+    no_klines: cov.noKlines,
+    wins: cov.wins,
+    losses: cov.losses,
+    timeouts: cov.timeouts,
+    low_vol: cov.lowVolHistory,
+    // The two numbers the pre-registered analysis is actually powered by. Reported EVERY run so
+    // the cluster count is tracked rather than discovered at analysis time.
+    cells: cov.cells.size,
+    clusters: cov.clusters.size,
+    budget_skips: cov.budgetSkips,
+    errors: cov.errors,
+    elapsed_min: Math.round(((Date.now() - startMs) / 60_000) * 10) / 10,
+  };
+  // Silent on success in the sense that matters — no alert, no Telegram. The token is the record.
+  console.log(`HOLD_LABEL_VERDICT=${verdict} ${JSON.stringify(evidence)}`);
+  return verdict === 'INDETERMINATE' ? 3 : 0;
 }
 
 if (process.argv[1] && process.argv[1].includes('backfill-hold-decision-labels')) {

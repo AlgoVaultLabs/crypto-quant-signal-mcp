@@ -211,3 +211,22 @@ CREATE TABLE IF NOT EXISTS hold_decision_labels (
 
 CREATE INDEX IF NOT EXISTS idx_hold_labels_spec_decision
   ON hold_decision_labels (barrier_spec, hold_decision_id);
+
+-- ── OWNERSHIP — NOT boilerplate; omitting it makes the whole wave a silent no-op ─────────────
+--
+-- The app connects as `algovault_app` (`DATABASE_URL`), while this file is applied over SSH as
+-- the bootstrap superuser `algovault`. A table CREATEd in that session is owned by `algovault`
+-- and `algovault_app` gets NOTHING — so every capture INSERT is refused, the refusal is
+-- swallowed by the fail-open catch that exists to protect the response path, and the outcome is
+-- an empty table with a green deploy and no alert. Measured here on 2026-08-26: the first run
+-- after deploy logged `must be owner of table hold_decisions` into the container log and wrote
+-- exactly zero rows while `hold_counts` recorded 154,216 HOLDs on the same code path.
+--
+-- Every sibling in this database — `signals`, `request_log`, `hold_counts`, `directional_labels`
+-- — is owned by `algovault_app`. These two match that exactly rather than being granted a
+-- hand-picked privilege set, because a bespoke grant list is a second definition of "what the app
+-- may do" and would drift from the tables it sits beside. `aoe_readonly` already receives SELECT
+-- through default privileges; it is not re-granted here.
+ALTER TABLE hold_decisions       OWNER TO algovault_app;
+ALTER TABLE hold_decision_labels OWNER TO algovault_app;
+ALTER SEQUENCE hold_decisions_decision_id_seq OWNER TO algovault_app;

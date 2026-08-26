@@ -26,6 +26,7 @@
 --   2. deploy code with capture disabled (HOLD_DECISION_CAPTURE_ENABLED=0) — no rebuild needed;
 --   3. only then run this file.
 
+-- Ownership needs no undo: dropping the tables drops it with them.
 DROP INDEX IF EXISTS idx_hold_labels_spec_decision;
 DROP TABLE IF EXISTS hold_decision_labels;
 
