@@ -5,6 +5,14 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.2] - 2026-08-26
+
+### Added
+- A pairing guide for Binance Agent OS: run AlgoVault and Binance's agent toolkit as two servers in one MCP client, so the verdict and the execution come from different places. OAuth at connect time — no API keys on the machine, no request signing — with trading confined to an isolated sub-account and no withdrawal scope. Guide: https://algovault.com/integrations/binance-agent-os
+
+### Fixed
+- The contact form is now challenge-protected against automated abuse, and replies go to a mailbox that is actually monitored.
+
 ## [1.28.1] - 2026-08-24
 
 ### Changed
