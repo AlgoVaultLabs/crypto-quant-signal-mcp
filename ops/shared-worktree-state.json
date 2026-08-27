@@ -520,6 +520,27 @@
       }
     },
     {
+      "id": "ci-workflow-publish-lane-preverify",
+      "path": ".github/workflows/publish-lane-preverify.yml",
+      "kind": "ci-workflow",
+      "contended_target": null,
+      "writers": [
+        ".github/workflows/publish-lane-preverify.yml"
+      ],
+      "_writers_reason": "A ci-workflow row's resource IS the workflow's run lane; the writer is the workflow file itself, and the concurrent writers are two runs of it. The >=2-writers rule therefore does not decide these rows \u2014 the CI_SERIALIZATION checks do, and they require a non-empty serialization.key on EVERY ci-workflow row regardless of writer count.",
+      "consumers": [],
+      "invariant": "Carries a TOP-LEVEL concurrency block whose group equals serialization.key, with queue: max and NO cancel-in-progress. queue: max (never the `single` default) because a run cancelled while PENDING is not a failure anywhere \u2014 it is simply missing, and a rehearsal that silently did not run is precisely the condition OPS-PUBLISH-LANE-PRE-VERIFY-W1 exists to end. cancel-in-progress is not set on any workflow in this repo: it is the wrong knob for pending-run cancellation, its `false` value appears nowhere in GitHub documentation, and queue: max combined with cancel-in-progress: true is an explicit workflow validation error.",
+      "severity": "report",
+      "sha256": null,
+      "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
+      "serialization": {
+        "mechanism": "gha-concurrency",
+        "key": "${{ github.workflow }}",
+        "scope": "all runs of this workflow, repository-wide",
+        "_scope_reason": "contended_target is NONE, stated rather than invented. This job rehearses the publish lane WITHOUT publishing: it never commits, never pushes, never deploys, never publishes, requests no id-token: write and carries no npm credential, so the only thing it mutates is its own ephemeral runner. It is registered and grouped ANYWAY because the enumeration clause is what makes a new workflow structurally unable to land unserialized \u2014 an exempt workflow is a hole in exactly the rule that clause installs. It is deliberately NOT keyed per-ref like publish-npm.yml: that lane is tag-triggered and two versions must not share a group, whereas two rehearsals of different refs contend for nothing and run-lane dedup is the whole benefit."
+      }
+    },
+    {
       "id": "ci-workflow-postgres-lane",
       "path": ".github/workflows/postgres-lane.yml",
       "kind": "ci-workflow",

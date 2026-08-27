@@ -271,10 +271,27 @@ describe('CH3 — the gate is wired, and the inventory row declares why nothing 
     // A GHA runner starts clean every run, so an alert from CI would fire on every failing deploy —
     // shipping the alert without the safeguard CLAUDE.md requires of it. The named red step is the
     // signal instead. This assertion keeps the count at zero.
+    //
+    // COMMENTS ARE STRIPPED FIRST — OPS-PUBLISH-LANE-PRE-VERIFY-W1 R2. As first written this
+    // scanned the RAW yaml, so a workflow EXPLAINING why it deliberately has no Telegram leg was
+    // read as wiring one. That fired for real: publish-lane-preverify.yml names send_telegram.sh
+    // in its header for exactly this reason, and the gate demanded the deletion of the most
+    // valuable lines in the file. Same rule scripts/check-canaries-wired.mjs already applies — a
+    // mention in a comment is not an invocation — and the negative direction is asserted below so
+    // the strip cannot silently turn this into a gate that matches nothing.
     const wfDir = join(ROOT, '.github/workflows');
-    const hits = readdirSync(wfDir)
-      .filter((f) => /\.ya?ml$/.test(f))
-      .filter((f) => /send_telegram|api\.telegram\.org|TELEGRAM_BOT_TOKEN/i.test(readFileSync(join(wfDir, f), 'utf8')));
+    const wired = (src: string) =>
+      /send_telegram|api\.telegram\.org|TELEGRAM_BOT_TOKEN/i.test(
+        src.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n'),
+      );
+    const files = readdirSync(wfDir).filter((f) => /\.ya?ml$/.test(f));
+    expect(files.length, 'no workflows found — a vacuous sweep must never read as a clean one').toBeGreaterThan(0);
+    const hits = files.filter((f) => wired(readFileSync(join(wfDir, f), 'utf8')));
     expect(hits, `a workflow now wires Telegram: ${hits.join(', ')} — the cooldown cannot hold in CI`).toEqual([]);
+
+    // PROVEN able to fail, both ways: a real `run:` line still trips it, and the prose that
+    // motivated the strip still does not.
+    expect(wired('jobs:\n  x:\n    steps:\n      - run: /opt/algovault-monitoring/send_telegram.sh CRIT\n')).toBe(true);
+    expect(wired('# send_telegram.sh cannot be used here — the cooldown marker is host-local\njobs: {}\n')).toBe(false);
   });
 });

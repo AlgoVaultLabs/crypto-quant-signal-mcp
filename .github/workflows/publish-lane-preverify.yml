@@ -1,0 +1,196 @@
+name: Publish lane pre-verify
+
+# OPS-PUBLISH-LANE-PRE-VERIFY-W1 R2 — REHEARSE THE PUBLISH LANE WITHOUT PUBLISHING.
+#
+# WHY THIS IS A WORKFLOW OF ITS OWN, rather than a job inside monitoring-schedules.yml.
+#
+# monitoring-schedules.yml is a static lint over committed JSON — its own header says it plainly:
+# "no build, no image, no SSH, no deploy". It is path-triggered on the host-monitoring declaration
+# files and carries no `schedule:` at all, so it is not the declared home for scheduled CI; it is
+# the declared home for ONE gate over ONE corpus. This job is the opposite shape: it installs
+# dependencies, compiles, reaches live sources and runs a 23-step lifecycle chain. Folding it in
+# would put a multi-minute build behind a lint that exists to be instant, and would make a
+# monitoring-JSON edit run the publish rehearsal for no reason.
+#
+# WHY IT EXISTS AT ALL.
+#
+# publish-npm.yml is the only lane in this repo whose steps run exclusively at the moment of
+# consequence. A publish happens only AFTER scripts/land.sh has landed, the tag is cut, the
+# GitHub Release is published and prod is deployed — so a defect in that lane is structurally
+# undiscoverable until a release already depends on it, and every fix becomes a mid-flight repair
+# with the version public on three surfaces and npm behind. Three releases in a row paid that bill:
+# v1.28.0 (checkout carried no fetch-depth), v1.28.2 (the injector mutates the very artifact
+# build_docs --check then compares), and the v1.23.3/v1.24.0 NODE_AUTH_TOKEN-over-OIDC failure.
+#
+# tests/unit/publish-lane-invariants.test.ts pins the lane's four properties STATICALLY, at the
+# commit that would regress them. This workflow owns what a static test cannot see: EMERGENT and
+# ORDERING breakage — the v1.28.2 case exactly, where every step was individually correct.
+#
+# ─── STRUCTURALLY INCAPABLE OF PUBLISHING ────────────────────────────────────────────────────
+#
+# `permissions: contents: read` ONLY. publish-npm.yml needs `id-token: write` for provenance; this
+# job must NOT request it, so even a mistaken edit here cannot mint a publishing token. There is no
+# npm credential in the job, no `registry-url` on setup-node (so no .npmrc _authToken line is ever
+# written), and the publishing verb — `npm publish`, the one line publish-npm.yml has that this
+# file must not — is never invoked. The `--dry-run` on the pack is belt-and-braces, not the
+# control. tests/unit/publish-lane-preverify.test.ts asserts all of that after
+# STRIPPING COMMENTS — a mention in prose is not an invocation, the same rule
+# scripts/check-canaries-wired.mjs already applies.
+#
+# It also never commits and never pushes. The injector and the docs rebuild mutate the working
+# tree BY DESIGN — that is the whole point of rehearsing them — and the mutation is discarded with
+# the runner.
+#
+# ─── NO TELEGRAM LEG, DELIBERATELY ───────────────────────────────────────────────────────────
+#
+# send_telegram.sh's 24h cooldown is a marker file under /opt/algovault-monitoring that an
+# ephemeral runner cannot persist, and CI must never hold prod credentials. An alert from here
+# would ship without the safeguard CLAUDE.md requires of it, and ops/monitoring/alert-registry.json
+# is derived from send_telegram.sh call sites + monitoring-inventory.json[].alert_ids — a CI-only
+# job has neither, so a row for it would declare an alert nothing can raise. The named red step IS
+# the operator signal, exactly as already recorded for docs-samples-live-canary and twice in
+# deploy.yml. A FAIL here means the NEXT RELEASE WILL FAIL; that is what makes the red actionable.
+
+on:
+  # Daily, off-peak. 19:37 UTC sits inside the deploy-free window (18:00–02:59) and off the :00
+  # boundary, so it collides with neither the deploy hour nor the host cron grid. GitHub's
+  # scheduler is best-effort; nothing here is time-critical.
+  schedule:
+    - cron: '37 19 * * *'
+
+  # Paths that can break the lane. THIS FILE IS LISTED IN ITS OWN FILTER — a paths-filtered
+  # workflow that omits its own path never runs on the commit introducing it and can never re-run
+  # when the gate itself changes, and its empty run list reads identically to "nothing to check".
+  pull_request:
+    paths:
+      - '.github/workflows/publish-npm.yml'
+      - '.github/workflows/publish-lane-preverify.yml'
+      - 'scripts/check-publish-lane-preverify.mjs'
+      - 'scripts/snapshot-landing-data.mjs'
+      - 'scripts/snapshot-landing-manifest.json'
+      - 'scripts/build_docs.mjs'
+      - 'docs-src/**'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-npm.yml'
+      - '.github/workflows/publish-lane-preverify.yml'
+      - 'scripts/check-publish-lane-preverify.mjs'
+      - 'scripts/snapshot-landing-data.mjs'
+      - 'scripts/snapshot-landing-manifest.json'
+      - 'scripts/build_docs.mjs'
+      - 'docs-src/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+  workflow_dispatch:
+
+# ─── CONCURRENCY — OPS-SERIALIZE-LANDING-AND-DEPLOY-W1 CH3 ───────────────────────────────────
+#
+# THE GROUP KEY IS A FUNCTION OF THE RESOURCE, NEVER OF THE CONTAINER. This workflow mutates
+# nothing outside its own runner: it never commits, never pushes, never deploys and never
+# publishes, so `contended_target: none` is stated rather than invented, and the group buys
+# run-lane dedup only. It is grouped ANYWAY because the enumeration clause is what makes an
+# unserialized workflow unable to land — an exempt workflow is a hole in exactly that rule.
+#
+# `queue: max`, never the `single` default: a run cancelled while PENDING is not a failure
+# anywhere, it is simply missing, and a rehearsal that silently did not run is the condition this
+# whole wave exists to end. `cancel-in-progress` is deliberately absent — the wrong knob for
+# pending-run cancellation, its `false` value appears nowhere in GitHub's documentation, and
+# combining it with `queue: max` is an explicit workflow validation error.
+#
+# No job-level concurrency block: GitHub does not document how workflow-level and job-level groups
+# interact, and a load-bearing safety property must never be rented from undocumented behaviour.
+# Declared in ops/shared-worktree-state.json (`ci-workflow-publish-lane-preverify`) and asserted in
+# BOTH directions by scripts/check-shared-state.mjs + tests/unit/workflow-concurrency.test.ts.
+concurrency:
+  group: ${{ github.workflow }}
+  queue: max
+
+permissions:
+  contents: read
+
+jobs:
+  rehearse:
+    runs-on: ubuntu-latest
+    steps:
+      # ─── publish-npm.yml :111 — mirrored EXACTLY, including fetch-depth. ───
+      # prepublishOnly runs check-test-budget.mjs, which asks `git merge-base HEAD origin/main`.
+      # A depth-1 checkout cannot answer that and the gate correctly reports INDETERMINATE — the
+      # v1.28.0 defect. Rehearsing on a shallow clone would reproduce the wrong lane.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The lane gets a resolvable origin/main for free, as a side effect of its ancestor guard's
+      # own `git fetch`. This job does NOT mirror that guard — deliberately, and it is not an
+      # oversight: the guard refuses any tree that is not an ancestor of origin/main, which is
+      # EVERY pull-request head, so mirroring it would make the rehearsal refuse itself on the one
+      # trigger that makes it useful. Its absence is safe here precisely because this job cannot
+      # publish; the guard protects a registry write that does not exist on this path, and it
+      # stays pinned by publish-lane-invariants.test.ts + ci-git-context.test.ts. What IS needed
+      # from that step is its fetch, so the budget gate can see main rather than being perpetually
+      # INDETERMINATE.
+      - name: Make origin/main resolvable (the lane gets this from its ancestor guard)
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+
+      # ─── publish-npm.yml :144 — same Node major. ───
+      # NOTE: no `registry-url`, unlike the lane. setup-node's registry-url is what writes an
+      # .npmrc carrying `_authToken=${NODE_AUTH_TOKEN}`; this job has no reason to authenticate
+      # to a registry, so the line is omitted rather than neutralised.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # ─── publish-npm.yml :160 ───
+      - name: Pin npm (same pin the lane publishes under)
+        run: npm install -g npm@11.18.0
+
+      # ─── publish-npm.yml :163 ───
+      - name: Install deps
+        run: npm ci
+
+      # ─── publish-npm.yml :166 ───
+      - name: Compile TS
+        run: npm run build
+
+      # The gate's own logic runs FIRST and separately: a gate whose classifier is broken must
+      # never be allowed to report on the lane. Callers gate on the TOKEN, not the code.
+      - name: Rehearsal classifier self-test (fail-closed)
+        run: node scripts/check-publish-lane-preverify.mjs --self-test
+
+      # ─── publish-npm.yml :175 → :205, then the two verification legs. ───
+      #
+      # The script mirrors the injector and the docs rebuild, then runs the LITERAL
+      # `npm run prepublishOnly` (npm's own lifecycle invocation, not a re-execution of the chain)
+      # and collects the file manifest with `npm pack --dry-run`. That ordering is the documented
+      # npm lifecycle: `npm pack` runs prepack → prepare → postpack and NEVER prepublishOnly, so a
+      # rehearsal built on pack alone would silently skip the 23-step chain that has broken twice.
+      #
+      # GATE ON THE TOKEN, NEVER THE BARE EXIT CODE.
+      #   PASS          — the lane rehearsed clean.
+      #   INDETERMINATE — fail-OPEN: a live source the lane touches was unreachable, or the chain
+      #                   did not execute. Not a divergence signal, and deliberately NOT a red:
+      #                   a third party being down is not our lane breaking, and a gate that reds
+      #                   on someone else's outage is one that gets ignored.
+      #   anything else — fail-CLOSED: the lane is broken and the next release will fail.
+      - name: Rehearse the publish lane (fail-open on transport, fail-closed on content)
+        run: |
+          set +e
+          node scripts/check-publish-lane-preverify.mjs | tee /tmp/publish_lane_preverify.log
+          set -e
+          TOKEN=$(grep -oE 'PUBLISH_LANE_PREVERIFY_VERDICT=[A-Z]+' /tmp/publish_lane_preverify.log | tail -1)
+          echo "publish-lane rehearsal verdict: ${TOKEN:-NO_TOKEN_EMITTED}"
+          case "$TOKEN" in
+            PUBLISH_LANE_PREVERIFY_VERDICT=PASS)
+              echo "the publish lane rehearsed clean — a release today would reach the registry step" ;;
+            PUBLISH_LANE_PREVERIFY_VERDICT=INDETERMINATE)
+              echo "::warning::the rehearsal could not verify the lane (unreachable live source, or the chain did not execute) — not a divergence signal" ;;
+            *)
+              echo "::error::the publish lane is BROKEN — the next release will fail at this step. See the rehearsal summary above for the last gate reached."
+              exit 1 ;;
+          esac
