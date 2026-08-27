@@ -52,6 +52,8 @@
     "scan:digest:parity:check": "tsc && node scripts/check-scan-digest-parity.mjs --check",
     "quota:surface:check": "tsc && node scripts/check-quota-surface-conformance.mjs",
     "quota:surface:selftest": "node scripts/check-quota-surface-conformance.mjs --self-test",
+    "release:divergence": "node scripts/check-shipped-set-divergence.mjs",
+    "release:divergence:selftest": "node scripts/check-shipped-set-divergence.mjs --self-test",
     "declaration:coverage:check": "node scripts/check-declaration-coverage.mjs",
     "declaration:coverage:selftest": "node scripts/check-declaration-coverage.mjs --self-test",
     "scan:digest:parity:live": "node scripts/check-scan-digest-parity.mjs --live",
