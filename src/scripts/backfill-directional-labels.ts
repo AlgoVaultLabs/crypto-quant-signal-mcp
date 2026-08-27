@@ -181,6 +181,13 @@ async function loadGroups(cli: Cli): Promise<{ exchange: string; coin: string; t
     "signal IN ('BUY','SELL')",
     'pfe_return_pct IS NOT NULL',
     "timeframe <> '1m'", // retired lane (OPS-1M-SEED-DECOM-W1) — never labeled
+    // OPS-BITMART-RETIRE-W1: exclude RETIRED venues from the labeler. A retired venue (e.g. BitMart, whose
+    // kline API went dead at its 2026-08-26 trading halt) still has historical unlabeled signals; without
+    // this the rotation keeps visiting it, the dead API errors dominate its writes, the A2 circuit-breaker
+    // trips, and outcome=venue-circuit-break voids the whole nightly capacity claim. Data-driven off
+    // venues.status — deletes/mutates NO rows; the retired venue's unlabeled signals simply stay unlabeled
+    // (a frozen, disclosed coverage hole, not an ongoing shortfall).
+    "exchange NOT IN (SELECT exchange_id FROM venues WHERE status = 'retired')",
   ];
   const params: unknown[] = [];
   if (cli.venue) { params.push(cli.venue); where.push(`exchange = $${params.length}`); }
@@ -392,6 +399,12 @@ export interface CapacityShortfall {
   runOutcome: string;
   /** PASS = measured, in-SLO · FAIL = measured, short · INDETERMINATE = the run did not finish. */
   verdict: Verdict;
+  /**
+   * OPS-BITMART-RETIRE-W1 R2 — venues excluded from the capacity verdict because their own breaker
+   * tripped (venue-error / venue-circuit-break). INDETERMINATE for THAT venue, not for the corpus;
+   * named here so the alert can say its subject rather than emitting a bare `venue-circuit-break`.
+   */
+  excludedVenues: Array<{ venue: string; outcome: string }>;
 }
 
 /**
@@ -420,6 +433,23 @@ export function detectCapacityShortfall(
   // enum-widening rule: never insert a required param mid-signature.
   budgetExpired = false,
 ): CapacityShortfall {
+  // OPS-BITMART-RETIRE-W1 R2 — the estate's vacuity rule applied per-input: a venue whose OWN breaker
+  // tripped (venue-error / venue-circuit-break) is INDETERMINATE for THAT venue, not for the corpus.
+  // Exclude those venues from the capacity verdict AND from the run-outcome derivation (they were
+  // "reached" but not measured, and would otherwise count as danger OR — via deriveRunOutcome — void
+  // the whole nightly claim, which is exactly what BitMart did on 2026-08-27). The excluded venues are
+  // reported separately so the alert names its subject. A SIGTERM ('stopped') or a global-budget expiry
+  // still voids the run — those decapitate the rotation and are not a single venue's fault.
+  const excluded = summaries.filter((s) => s.outcome === 'venue-error' || s.outcome === 'venue-circuit-break');
+  const excludedSet = new Set(excluded.map((s) => s.venue));
+  // Derive the RUN outcome from the MEASURABLE venues only: a venue whose own breaker tripped is
+  // INDETERMINATE for THAT venue, not for the corpus, so it must not flip the whole run to a
+  // non-conclusive outcome and void the nightly capacity claim (BitMart did exactly this on 2026-08-27).
+  // The reached/unreached/danger/median math is left over ALL summaries — a broken venue was still
+  // reached (so it is not falsely counted "in danger"), and its truncated duration is a minor,
+  // pre-existing input to the median. Only the corpus-voiding decision is scoped to the measurable set.
+  const measured = summaries.filter((s) => !excludedSet.has(s.venue));
+
   const reached = new Set(summaries.map((s) => s.venue));
   const unreached = venueOrder.filter((v) => !reached.has(v));
   const inDanger = unreached.filter((v) => {
@@ -429,7 +459,7 @@ export function detectCapacityShortfall(
   const durations = summaries.map((s) => s.elapsedS / 60).filter((m) => m > 0).sort((a, b) => a - b);
   const median = durations.length ? durations[Math.floor(durations.length / 2)] : 45;
   const shortfall = inDanger.length > 0;
-  const runOutcome = deriveRunOutcome(summaries, budgetExpired);
+  const runOutcome = deriveRunOutcome(measured, budgetExpired);
   const conclusive = runOutcome === 'complete' || runOutcome === 'global-budget' || runOutcome === 'venue-budget';
   return {
     shortfall,
@@ -437,6 +467,7 @@ export function detectCapacityShortfall(
     estVenueMinShort: Math.round(inDanger.length * median),
     runOutcome,
     verdict: conclusive ? (shortfall ? 'FAIL' : 'PASS') : 'INDETERMINATE',
+    excludedVenues: excluded.map((s) => ({ venue: s.venue, outcome: s.outcome })),
   };
 }
 
@@ -752,6 +783,11 @@ function emitCapacityEnvelope(
       est_venue_min_short: cap.estVenueMinShort,
       venues_reached: summaries.length,
       venues_total: venueOrder.length,
+      // OPS-BITMART-RETIRE-W1 R2a — name the subject. A venue whose breaker tripped is excluded from
+      // the verdict above; these say WHICH and WHY, so the alert never renders a bare venue-circuit-break.
+      excluded_venues: cap.excludedVenues.map((e) => e.venue).join(',') || 'none',
+      excluded_reason: cap.excludedVenues.map((e) => e.outcome).join(',') || 'none',
+      excluded_count: cap.excludedVenues.length,
       rotation: venueOrder.join('>'),
       elapsed_min: Math.round(((Date.now() - budget.startMs) / 60_000) * 10) / 10,
       budget_min: cli.timeBudgetMin,

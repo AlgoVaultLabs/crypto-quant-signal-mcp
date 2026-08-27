@@ -51,6 +51,7 @@
  */
 
 import { dbQuery } from '../lib/performance-db.js';
+import { listVenues } from '../lib/venue-store.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import {
   benjaminiHochberg, bonferroni, validityVerdict,
@@ -366,6 +367,14 @@ export async function buildReport(opts: ReportOptions = {}) {
      ORDER BY e.eligible DESC`, [PRIMARY],
   );
 
+  // OPS-BITMART-RETIRE-W1 (Q2 rider): a retired venue's coverage is FROZEN, not an ongoing shortfall.
+  // Its historical rows are never labeled further (the labeler now skips retired venues), so its pct
+  // stops moving the day it retires. Render it as "RETIRED — coverage frozen at <x>% as of <date>" so
+  // a reader does not mistake a permanent, honest coverage hole for a labeler that is falling behind.
+  // Fail-open: if the venues table can't be read, every venue renders ACTIVE (the pre-wave behaviour).
+  const retiredVenues = await listVenues('retired').catch(() => []);
+  const retiredAtByVenue = new Map(retiredVenues.map((v) => [v.exchange_id, v.retired_at ?? null]));
+
   const ambiguityByTf = await dbQuery<{ timeframe: string; n: number; amb: number }>(
     `SELECT s.timeframe, count(*)::int AS n, sum(dl.ambiguous_candle::int)::int AS amb
      FROM directional_labels dl JOIN signals s ON s.id = dl.signal_id
@@ -393,8 +402,20 @@ export async function buildReport(opts: ReportOptions = {}) {
     poweredFloor: POWERED_FLOOR,
     q: Q,
     coverage,
-    coverageByVenue: coverageByVenue.map((r) => ({ venue: r.venue, eligible: r.eligible, labeled: r.labeled,
-      pct: r.eligible > 0 ? round(r.labeled / r.eligible, 4) : null })),
+    coverageByVenue: coverageByVenue.map((r) => {
+      const pct = r.eligible > 0 ? round(r.labeled / r.eligible, 4) : null;
+      if (!retiredAtByVenue.has(r.venue)) {
+        return { venue: r.venue, eligible: r.eligible, labeled: r.labeled, pct, status: 'ACTIVE' as const };
+      }
+      const retiredAt = retiredAtByVenue.get(r.venue) ?? null;
+      const day = retiredAt ? String(retiredAt).slice(0, 10) : 'unknown';
+      const pctStr = pct != null ? `${(pct * 100).toFixed(2)}%` : 'n/a';
+      return {
+        venue: r.venue, eligible: r.eligible, labeled: r.labeled, pct,
+        status: 'RETIRED' as const, retiredAt,
+        note: `RETIRED — coverage frozen at ${pctStr} as of ${day}`,
+      };
+    }),
     ambiguityByTimeframe: ambiguityByTf.map((r) => ({ timeframe: r.timeframe, n: r.n, ambiguous: r.amb,
       rate: r.n > 0 ? round(r.amb / r.n, 4) : 0, flagRefinement: r.n > 0 && (r.amb / r.n) > 0.1 && (r.timeframe === '3m' || r.timeframe === '5m') })),
     specs: specReports,

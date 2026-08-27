@@ -26,6 +26,7 @@ import {
   type ScanCallItem,
 } from '../lib/trade-call-scanner.js';
 import { checkQuota, trackCall, getRequestSessionId, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../lib/license.js';
+import { assertVenueNotRetired } from '../lib/venue-store.js';
 import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts } from '../lib/quota-notice.js';
 import { formatScanReceipts, type ScanReceipts } from '../lib/receipts.js';
 import { getReceiptTrackRecord } from '../lib/receipts-track-record.js';
@@ -249,6 +250,12 @@ export async function runScanTradeCall(
       _algovault: withAuthState({ tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null }, license),
     };
   }
+
+  // Retired-venue gate (OPS-BITMART-RETIRE-W1 Q3): a scan naming a wound-down venue is declined by
+  // name before quota is charged or the dead adapter is reached. Enum still advertises BITMART, so
+  // Zod cannot catch this. Thrown deliberately (named, not an adapter timeout) — same as the other
+  // two venue tools.
+  await assertVenueNotRetired(params.exchange);
 
   const refCode = referralCodeForKey(license.key);
   const entry = checkQuota(license);

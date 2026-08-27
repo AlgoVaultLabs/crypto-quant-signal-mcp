@@ -236,6 +236,45 @@ export async function listVenues(status?: VenueStatus): Promise<VenueRecord[]> {
   return (rows || []).map(rowToRecord);
 }
 
+// ── OPS-BITMART-RETIRE-W1 (Q3) — cached retired-venue set for the hot request path ──
+//
+// A user request naming a RETIRED venue must be declined cleanly (naming the retirement), never left to
+// hit the dead adapter and time out (BitMart's kline API went dead at its 2026-08-26 halt). The trade-call
+// / market-regime / scan tools check this before touching an adapter. TTL-cached so it costs ~1 DB read per
+// minute, not one per request. FAIL-OPEN: a cold or failed read yields the empty set → nothing is refused,
+// because the venues table is the real gate and a false refusal of a live venue is worse than a slow one.
+let _retiredCache: { set: Set<string>; loadedAt: number } | null = null;
+const RETIRED_CACHE_TTL_MS = 60_000;
+
+export async function getRetiredVenueSet(nowMs: number = Date.now()): Promise<Set<string>> {
+  if (_retiredCache && nowMs - _retiredCache.loadedAt < RETIRED_CACHE_TTL_MS) return _retiredCache.set;
+  try {
+    const rows = await listVenues('retired');
+    _retiredCache = { set: new Set(rows.map((r) => r.exchange_id)), loadedAt: nowMs };
+  } catch {
+    if (!_retiredCache) _retiredCache = { set: new Set(), loadedAt: nowMs }; // fail-open: never refuse on a read error
+  }
+  return _retiredCache.set;
+}
+
+/** Test seam — reset the module-level retired-set cache. */
+export function _resetRetiredCacheForTest(): void { _retiredCache = null; }
+
+/**
+ * Throw a clean, explicit refusal if `exchange` names a RETIRED venue — so a user request to a
+ * wound-down venue is declined BY NAME rather than left to time out on the dead adapter. No-op for
+ * internal (grid-refresh) calls and for every live venue. OPS-BITMART-RETIRE-W1 (Q3).
+ */
+export async function assertVenueNotRetired(exchange: string | undefined | null, internal = false): Promise<void> {
+  if (internal || !exchange) return;
+  if ((await getRetiredVenueSet()).has(exchange)) {
+    throw new Error(
+      `Venue ${exchange} is retired and no longer serves live market data (the exchange wound down). `
+      + `Its historical track record is unchanged and remains verifiable; query a live venue instead.`,
+    );
+  }
+}
+
 // ── Write helpers ────────────────────────────────────────────────────────
 
 export interface SetStatusOptions {

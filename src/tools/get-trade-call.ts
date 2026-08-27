@@ -1,4 +1,5 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
+import { assertVenueNotRetired } from '../lib/venue-store.js';
 // `emaLast` dropped (SIGNAL-CLOSEDBAR-SHADOW-W1 CH2): its only two call sites assigned
 // `ema9Val`/`ema21Val`, which nothing ever read — dead on origin/main, so that was two
 // full EMA passes per signal on a path `scan_trade_calls` fans out across many assets.
@@ -795,6 +796,11 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   }
 
   const exchange = input.exchange || 'BINANCE';
+
+  // Retired-venue gate (OPS-BITMART-RETIRE-W1 Q3): a request naming a venue that has been wound down
+  // is declined BY NAME here, before we touch its adapter — otherwise the call hangs on the dead
+  // upstream API and returns a raw timeout. No-op for live venues and for internal grid-refresh.
+  await assertVenueNotRetired(exchange, input.internal);
 
   // Venue-coverage gate (TRADFI-SYMBOL-ALIAS-W1 / v1.11.1): if the coin is a
   // known TradFi symbol AND the requested venue does NOT carry it (per the

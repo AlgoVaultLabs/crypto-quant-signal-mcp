@@ -365,6 +365,19 @@ describe('CH3 D1 — a run that did not finish cannot publish a capacity conclus
     expect(cap.verdict).toBe('FAIL');
   });
 
+  it('OPS-BITMART-RETIRE-W1 R2 — a lone circuit-break no longer voids the corpus; the venue is marked', () => {
+    // Same rotation, but the SIGTERM'd venue completed — the ONLY non-complete outcome is the poison
+    // venue's OWN breaker. The capacity question WAS answered for every measurable venue → conclusive,
+    // with the broken venue named + excluded (INDETERMINATE for-that-input, never for-the-corpus).
+    const circuitOnly = INCIDENT.map((s) => (s.outcome === 'stopped' ? { ...s, outcome: 'complete' as const } : s));
+    const order4 = ['EDGEX', 'BITMART', 'OKX', 'HL']; // only the reached venues → nothing unreached in danger
+    const freshFrontier = new Map(order4.map((v) => [v, NOW]));
+    const cap = detectCapacityShortfall(circuitOnly, order4, freshFrontier, NOW, undefined, 24, false);
+    expect(cap.runOutcome).toBe('complete');       // NOT 'venue-circuit-break' — the poison venue was excluded
+    expect(cap.verdict).toBe('PASS');              // the corpus verdict stands, conclusive
+    expect(cap.excludedVenues).toEqual([{ venue: 'BITMART', outcome: 'venue-circuit-break' }]);
+  });
+
   it('a complete run with nothing in danger yields PASS, not silence', () => {
     const fresh = new Map(order.map((v) => [v, NOW - 60]));
     const all: VenueRunSummary[] = order.map((v) => ({ venue: v, groupsDone: 1, groupsTotal: 1, outcome: 'complete', elapsedS: 60 }));

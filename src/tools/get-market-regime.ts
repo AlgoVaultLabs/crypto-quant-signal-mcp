@@ -1,4 +1,5 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
+import { assertVenueNotRetired } from '../lib/venue-store.js';
 import { adx, atr, detectPriceStructure } from '../lib/indicators.js';
 import { getDexForCoin, isKnownTradFi } from '../lib/asset-tiers.js';
 import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.js';
@@ -286,6 +287,10 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   const startTime = Date.now() - candleCount * intervalMs;
 
   const exchange = input.exchange || 'HL';
+
+  // Retired-venue gate (OPS-BITMART-RETIRE-W1 Q3): decline a wound-down venue by name before its
+  // dead adapter is touched. get_market_regime has no internal grid path, so this always enforces.
+  await assertVenueNotRetired(exchange);
 
   // Venue-coverage gate (TRADFI-SYMBOL-ALIAS-W1 / v1.11.1): see same gate in
   // get_trade_call — block known TradFi symbols on unsupported CEX so callers

@@ -30,6 +30,9 @@ import {
   insertVenue,
   refreshAssetCount,
   _resetInitForTest,
+  getRetiredVenueSet,
+  assertVenueNotRetired,
+  _resetRetiredCacheForTest,
 } from '../../src/lib/venue-store.js';
 import { dbQuery, dbRun, dbExec } from '../../src/lib/performance-db.js';
 
@@ -281,6 +284,63 @@ describe('stampSeedingStarted (OPS-SHADOW-PIPELINE-W1/C3)', () => {
     expect(sql).toMatch(/seeding_started_at IS NULL/);   // idempotent: stamps once
     expect(sql).toMatch(/status = 'shadow'/);            // promoted venues never stamped
     expect(updateCall![1]).toEqual([when, 'WEEX']);
+  });
+});
+
+describe('getRetiredVenueSet + assertVenueNotRetired (OPS-BITMART-RETIRE-W1 Q3)', () => {
+  beforeEach(() => { _resetRetiredCacheForTest(); });
+
+  const retiredRow = {
+    ...binanceRow,
+    exchange_id: 'BITMART',
+    status: 'retired',
+    promoted_at: null,
+    retired_at: new Date('2026-08-27T00:00:00Z'),
+  };
+
+  it('returns the set of retired exchange_ids', async () => {
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([retiredRow]); // init seed, then SELECT status='retired'
+    const set = await getRetiredVenueSet(1_000);
+    expect(set.has('BITMART')).toBe(true);
+    expect(set.size).toBe(1);
+  });
+
+  it('caches within the 60s TTL — a second call issues no new DB read', async () => {
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([retiredRow]);
+    await getRetiredVenueSet(1_000);
+    const callsAfterFirst = mockQuery.mock.calls.length;
+    await getRetiredVenueSet(1_000 + 59_000); // still inside the TTL
+    expect(mockQuery.mock.calls.length).toBe(callsAfterFirst);
+  });
+
+  it('refreshes after the TTL expires', async () => {
+    mockQuery.mockResolvedValue([retiredRow]);
+    await getRetiredVenueSet(1_000);
+    const callsAfterFirst = mockQuery.mock.calls.length;
+    await getRetiredVenueSet(1_000 + 61_000); // past the 60s TTL
+    expect(mockQuery.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+  });
+
+  it('FAILS OPEN — a DB read error yields an empty set so nothing is refused', async () => {
+    mockQuery.mockRejectedValue(new Error('db down'));
+    const set = await getRetiredVenueSet(1_000);
+    expect(set.size).toBe(0);
+  });
+
+  it('assertVenueNotRetired THROWS, naming the retirement, for a retired venue', async () => {
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([retiredRow]);
+    await expect(assertVenueNotRetired('BITMART')).rejects.toThrow(/retired/i);
+  });
+
+  it('assertVenueNotRetired is a no-op for a live venue', async () => {
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([retiredRow]);
+    await expect(assertVenueNotRetired('BINANCE')).resolves.toBeUndefined();
+  });
+
+  it('assertVenueNotRetired short-circuits internal grid-refresh BEFORE any DB read', async () => {
+    // internal=true must skip the venue check entirely — the grid scores every cell regardless of tier
+    await expect(assertVenueNotRetired('BITMART', true)).resolves.toBeUndefined();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 
