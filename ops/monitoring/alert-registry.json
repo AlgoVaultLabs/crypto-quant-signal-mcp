@@ -327,10 +327,24 @@
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-HOMEPAGE_MERKLE_COUNT_DTRF_EXACT-W{NEXT}"
     },
     {
+      "alert_id": "BOOT_CONTRACT_DRIFT",
+      "owner": "ops/monitoring/boot-contract-canary.sh",
+      "hosts": [
+        "aoe-1",
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-BOOT_CONTRACT_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-BOOT_CONTRACT_DRIFT-W{NEXT}"
+    },
+    {
       "alert_id": "KERNEL_STALENESS",
       "owner": "ops/monitoring/kernel-staleness-canary.sh",
       "hosts": [
-        "aoe-1"
+        "aoe-1",
+        "signal-1"
       ],
       "adopted": false,
       "announce_resolution": false,

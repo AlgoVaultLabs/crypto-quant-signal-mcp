@@ -214,6 +214,27 @@ DECLARATIONS=(
   # is a DECLARATION (inert JSON, synced here) and detector_envelope.py is an ARTIFACT
   # (executable, installed by reviewed SSH and never by this script).
   # `required_fields` is live 9; 5 is a truncation refusal, not a target.
+  # ── added by OPS-HOST-KERNEL-REBOOT-W3 CH1 ──
+  # The boot-survival contract, PROJECTED from scripts/data/boot-critical-units.json by
+  # scripts/check-boot-contract-parity.mjs. `*` on MEASURED evidence: boot-contract-canary.sh is
+  # installed and scheduled on BOTH hosts and reads this file to decide, and aoe-1 has no checkout
+  # of this repo at all, so this sync is its ONLY source.
+  # Floor 1, and the reasoning is worth stating because 2 is the tempting answer. `hosts` is a
+  # DICT of exactly two (signal-1, aoe-1), and tests/unit/declaration-sync.test.ts REQUIRES every
+  # floor to sit STRICTLY BELOW the live count: "the floor is a truncation guard, never a policy
+  # minimum" — a floor equal to the live value starts refusing a healthy declaration the moment
+  # the file legitimately shrinks, and the hosts then silently freeze on a stale copy. That is the
+  # same lesson recorded two entries above, where OPS-AOE-LIVENESS-W2 CH2 had to lower a floor
+  # 2 -> 1 after retiring a row. So the "there must be TWO hosts" requirement is enforced where it
+  # can be enforced without that side effect, and it IS enforced twice:
+  #   - scripts/check-boot-contract-parity.mjs refuses to emit or accept a projection declaring
+  #     fewer than MIN_HOSTS=2, at build time, before anything reaches a host;
+  #   - boot-contract-canary.sh resolves its own identity FROM this file and reports
+  #     INDETERMINATE when it matches no declared host, so a truncated copy makes the guard say
+  #     so rather than quietly evaluating the wrong box.
+  # THE PAIRING: boot-contract.json is a DECLARATION (generated, inert JSON, synced here) while
+  # boot-contract-canary.sh is an ARTIFACT (executable, installed by reviewed SSH, never here).
+  "boot-contract.json|hosts|1|*"
   "detector-envelope.schema.json|required_fields|5|signal-1,aoe-1"
 )
 

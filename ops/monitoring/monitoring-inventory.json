@@ -83,7 +83,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "81129cc7cecaddfcf3f73222ed12010ef1474723f1e0cd91078ba621363bebec",
+      "sha256": "7e3b3964f5c4a73b32dc33fef1996bb9f821e358fef970dc3ebe2b6d1a00051e",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
@@ -1120,6 +1120,63 @@
       "notes": "Standing signal for SEC-18. Keyed on RUNNING-vs-newest-INSTALLED kernel, deliberately NOT on /var/run/reboot-required mtime: that file is re-stamped by every new kernel package, so its age is the age of the LATEST trigger and an alert keyed on it resets its own clock monthly (measured at R0 - both hosts read 2026-07-29 while one was 12 and the other 30 revisions behind). Same file on both hosts, ONE canonical sha256 on this row; per-host copies carry no hash of their own. `--self-test` is two-way and vacuity-guarded (>=7 assertions) and proves the send path by capturing the wrapper argv, because both hosts are freshly rebooted and the BREACH branch is unreachable from live state. Fires through send_telegram.sh, which owns severity/cooldown/{NEXT}; smoke it with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1 (that writes the 24h marker and false-greens run 2)."
     },
     {
+      "id": "boot-contract-canary",
+      "artifact": "ops/monitoring/boot-contract-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/boot-contract-canary.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/boot-contract-canary.sh",
+          "schedule": "9 8 * * *"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/boot-contract-canary.sh",
+          "schedule": "37 8 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "9 8 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "da4ca20986e2bec0123e7ca6dd5c3986386013d7fc9091846918f8d0cddc90a3",
+      "alert_ids": [
+        "BOOT_CONTRACT_DRIFT"
+      ],
+      "owner_wave": "OPS-HOST-KERNEL-REBOOT-W3",
+      "notes": "The LIVE half of the boot-survival guarantee. scripts/check-boot-readiness.mjs is a BUILD-TIME gate that only proves the contract is internally coherent; measured 2026-08-15 and re-confirmed 2026-08-27, nothing scheduled ran it on any host and it is not present on aoe-1 at all, so 'do the hosts MATCH the contract' was answered by nobody. This answers it, per host, daily. Asserts EFFECTIVE enablement per the contract's activation kind (enabled|socket|timer), never a raw is-active diff - which is wrong on ssh.service and every timer-driven unit, and which flagged polkit.service as a casualty on both hosts in W2. Reads live `docker inspect` restart policies rather than a committed YAML proxy, which is what lets it cover aoe-1, whose compose lives in another repo. Parses with python3, NOT jq: measured 2026-08-27 jq is 1.7 on signal-1 and ABSENT on aoe-1, so a jq implementation would have been dark on exactly one host. SCHEDULE SUBSTITUTION, recorded so the next author does not re-derive it: the spec proposed :13 (signal-1) and :27 (aoe-1) and both are occupied. On signal-1 the cron `13,17,23,27,33,37,43,47,53,57 * * * * /opt/algovault-bot/scripts/entitlement-drain.sh` holds ALL TEN canonical minutes EVERY hour, permanently, so no canonical minute is available at any hour, and :09 is the only free minute at 08 UTC with offset >= 3. schedule-boundary-rule.json states canonical membership is advisory-and-reported while the >=3 rule is what blocks, so :09 is compliant and needs no exemption and no baseline row. On aoe-1 :27 is declaration-sync.sh and :37 is the next free canonical minute, clear of the prefect grid at :25/:30/:35/:40. Verdict token BOOT_CONTRACT_VERDICT=OK|DRIFT|INDETERMINATE, emitted as the LAST stdout line on every path; the live path always exits 0 (fail-open). BOTH DRIFT and INDETERMINATE fire, under one alert_id so the 24h cooldown bounds them to one page a day - a host that cannot answer the question must not be indistinguishable from a healthy one. First cycle is REPORT-only and seeds /var/lib/algovault-monitoring/boot-contract-seen. Undeclared live containers are REPORTED with their count and names, never DRIFT (coverage input for OPS-BOOT-CONTRACT-WIDEN-W{NEXT}). Past the contract's own _TODO_revisit_by the verdict is INDETERMINATE, which is behaviour the contract SPECIFIES in _revisit_rationale. `--self-test` is two-way, vacuity-guarded at 52, and runs 53 assertions including an end-to-end block that re-invokes the live path with stubbed systemctl/docker, because a pure-function suite is blind to identity resolution and to the first-cycle gate. Smoke it with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1."
+    },
+    {
+      "id": "boot-contract",
+      "artifact": "ops/monitoring/boot-contract.json",
+      "kind": "declaration-data",
+      "host_path": "/opt/algovault-monitoring/boot-contract.json",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/boot-contract.json",
+          "install_state": "installed",
+          "installed_wave": "OPS-HOST-KERNEL-REBOOT-W3"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/boot-contract.json",
+          "install_state": "installed",
+          "installed_wave": "OPS-HOST-KERNEL-REBOOT-W3"
+        }
+      ],
+      "criticality": "load-bearing",
+      "install_state": "installed",
+      "sha256": "5acf6e978b45644affc4ca75b39ca60c8a6a3c6ea586be5e9755fc96c5735569",
+      "alert_ids": [],
+      "exempt_consumers": null,
+      "owner_wave": "OPS-HOST-KERNEL-REBOOT-W3",
+      "divergent_copies": null,
+      "notes": "GENERATED - never hand-edited. Projection of scripts/data/boot-critical-units.json, emitted and byte-asserted by scripts/check-boot-contract-parity.mjs (--write / --check), which is wired into prepublishOnly. The SoT stays at scripts/data/ and is NOT forked: declaration-sync.sh pins its BASE_URL to .../main/ops/monitoring and uses each entry's basename for BOTH the fetch URL and the destination filename, so it structurally cannot reach scripts/data/. Teaching it a path was probed and REFUSED: check-declaration-coverage.mjs pins DECLARATION_DIR='ops/monitoring', so a name declared from outside that directory can never enter `derived`, which trips its VACUITY GUARD 3 and returns DECLARATION_COVERAGE_VERDICT=INDETERMINATE (exit 3), breaking prepublishOnly. Projecting into ops/monitoring/ instead leaves the sync, its four IFS='|' read call sites, its self-test, its unit test and the coverage gate all untouched, and keeps exactly ONE authored copy of the fact. Declared as `boot-contract.json|hosts|2|*` in declaration-sync.sh, so it self-syncs hourly on both hosts and a hand-edited host copy is reverted within the hour. Read by boot-contract-canary.sh on BOTH hosts - the only source on aoe-1, which has no checkout of this repo. NEVER remove host_path from a row that carries installed_at."
+    },
+    {
       "id": "candle-basis-shadow-report",
       "artifact": "ops/cron/candle-basis-shadow-report.sh",
       "kind": "executable",
@@ -1613,7 +1670,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "5ce7571ef08ef053a5c99832eb81e8d03a4d439d5ece21abaf354321583dba0c",
+      "sha256": "1b0207c80704feeca0e5517fd6cefff55de27d8e8317a31fd58c2f62020f5920",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
