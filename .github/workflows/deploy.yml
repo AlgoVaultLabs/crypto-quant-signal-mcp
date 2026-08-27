@@ -613,6 +613,23 @@ jobs:
           node scripts/check-jq-truthiness.mjs --self-test
           node scripts/check-jq-truthiness.mjs
 
+      # GROWTH-TG-QUOTA-PARITY-W1 CH4 — retired brand phrases may not reach a live surface.
+      # brand-facts.md carried the FORBIDDEN list as prose since 2026-08-09; a census 18 days
+      # later found the retired free-tier figure still live in 9 repo files including
+      # landing/llms-full.txt. Prose is not a control.
+      #
+      # 🛑 GATES ON THE TOKEN, NEVER THE BARE EXIT CODE — INDETERMINATE (3) must not read as a
+      # pass just because a shell test saw a non-1 status.
+      - name: Forbidden brand phrases gate (fail-closed)
+        run: |
+          node scripts/check-forbidden-phrases.mjs --self-test
+          set +e
+          OUT="$(node scripts/check-forbidden-phrases.mjs 2>&1)"
+          set -e
+          printf '%s\n' "$OUT"
+          V="$(printf '%s\n' "$OUT" | grep -oE '^FORBIDDEN_PHRASE_VERDICT=[A-Z]+' | tail -1)"
+          test "$V" = "FORBIDDEN_PHRASE_VERDICT=PASS" || { echo "::error::$V"; exit 1; }
+
       - name: Source greppability gate (fail-closed)
         run: |
           node scripts/check-source-greppable.mjs --self-test

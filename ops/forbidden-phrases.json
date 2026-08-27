@@ -1,0 +1,110 @@
+{
+  "_doc": [
+    "GROWTH-TG-QUOTA-PARITY-W1 CH4 — the MACHINE SoT for retired brand phrases.",
+    "",
+    "WHY THIS FILE EXISTS: brand-facts.md has carried a 🛑 FORBIDDEN list since 2026-08-09.",
+    "Eighteen days later a census found the retired free-tier phrase still live in 21 vault files",
+    "and 9 repo files, including landing/llms-full.txt — the surface AI agents ingest. The list",
+    "did not fail because it was wrong; it failed because prose addressed to whoever happens to",
+    "read it is not a control. Per the Completeness Standard, a rule that has once failed as",
+    "prose must be retired into a gate or deleted, and this one is worth keeping.",
+    "",
+    "THE SPLIT, and it is stated in BOTH files so neither can quietly claim the other's job:",
+    "  brand-facts.md  is authoritative for RATIONALE — why a phrase was retired, what replaced",
+    "                  it, and every judgement a human needs to write good copy.",
+    "  THIS FILE       is authoritative for ENFORCEMENT — the patterns scripts/check-forbidden-",
+    "                  phrases.mjs actually blocks. Nothing here explains; nothing there blocks.",
+    "",
+    "Each entry carries `retired_on` and `superseded_by` so a hit tells the author what to write",
+    "INSTEAD, not merely that they are wrong. A gate that only says no gets muted."
+  ],
+  "_severity_contract": "error = FAIL the gate. warn = report on stderr, verdict unaffected. Only 'error' blocks.",
+  "phrases": [
+    {
+      "id": "free-quota-100-per-month",
+      "pattern": "\\b100\\b\\s*(?:free\\s+)?calls?\\s*(?:/|per\\s+)\\s*(?:mo\\b|month)",
+      "retired_on": "2026-08-09",
+      "superseded_by": "200 calls/month · 100 per UTC day",
+      "reason": "PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 moved the free ladder. Canonical only from v1.10.3 → v1.25.x.",
+      "severity": "error",
+      "negative_context": "[Ss]uperseded|[Rr]etired|no\\s+longer|~~"
+    },
+    {
+      "id": "free-quota-100-mo-shorthand",
+      "pattern": "\\b100/mo\\s+free|\\bfree\\s+100/mo\\b|against\\s+your\\s+100/mo",
+      "retired_on": "2026-08-09",
+      "superseded_by": "200/mo free",
+      "reason": "Same retirement as free-quota-100-per-month, in the shorthand form the FAQ used.",
+      "severity": "error",
+      "negative_context": "[Ss]uperseded|[Rr]etired|no\\s+longer|~~"
+    },
+    {
+      "id": "free-quota-after-100",
+      "pattern": "After\\s+100,\\s*pay\\s+per\\s+call",
+      "retired_on": "2026-08-09",
+      "superseded_by": "After 200, pay per call",
+      "reason": "The llms-full.txt FAQ phrasing of the same retired figure. Kept as its own entry because the generic pattern cannot see it — there is no unit noun beside the number.",
+      "severity": "error"
+    },
+    {
+      "id": "free-quota-20-per-day",
+      "pattern": "\\b20\\b\\s*(?:free\\s+)?calls?\\s*(?:/|per\\s+)\\s*day",
+      "retired_on": "2026-08-09",
+      "superseded_by": "100 calls/day",
+      "reason": "`20 calls/day` was the pre-v1.10.3 free daily cap. NARROWED 2026-08-27: the first cut bundled `100 calls/day` into this pattern and fired on the CANONICAL copy in docs/RUNBOOK-INTEGRATION-TUTORIAL-AUTHORING.md — a gate that fails on the phrasing it steers authors toward is one that gets warn-moded. The stale-monthly form (`100 calls/day` used AS the monthly figure) is caught by legacy-asset-gate, which sees the `BTC+ETH` it always travels with.",
+      "severity": "error",
+      "negative_context": "never\\s+write|forbidden|[Rr]etired|[Ss]uperseded|blocklist"
+    },
+    {
+      "id": "month-only-enforcement",
+      "pattern": "no\\s+daily\\s+cap|unlimited\\s+per\\s+day",
+      "retired_on": "2026-08-09",
+      "superseded_by": "state the per-UTC-day cap explicitly",
+      "reason": "INVERTED, not merely retired: a per-UTC-day cap now exists on both the API and (since 2026-08-27) the Telegram bot, so copy denying it is a live falsehood rather than stale phrasing.",
+      "severity": "error"
+    },
+    {
+      "id": "legacy-asset-gate",
+      "pattern": "BTC\\s+and\\s+ETH\\s+only|15m\\s+and\\s+1h\\s+only",
+      "retired_on": "2026-04-01",
+      "superseded_by": "all assets · all 11 timeframes",
+      "reason": "The free tier's coin/timeframe gate was removed in v1.10.3 FREE-UNLOCK-W1. Forbidden in brand-facts.md since 2026-08-09 and never enforced until now.",
+      "severity": "error"
+    },
+    {
+      "id": "retired-annual-pricing",
+      "pattern": "\\$79/yr|\\$299/yr|interval=year|Save\\s+3[49]%|Save\\s+49%",
+      "retired_on": "2026-08-09",
+      "superseded_by": "$39.90/6mo (Starter) · $129/6mo (Pro)",
+      "reason": "The annual interval was ARCHIVED IN STRIPE — there is no annual plan to sell. PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1.",
+      "severity": "error",
+      "negative_context": "[Ss]uperseded|[Rr]etired|was\\s+\\*\\*\\$|no\\s+longer|~~"
+    },
+    {
+      "id": "retired-tier-quotas",
+      "pattern": "\\b3,000\\s+calls|\\b15,000\\s+calls",
+      "retired_on": "2026-08-09",
+      "superseded_by": "10,000 calls/month (Starter) · 100,000 (Pro)",
+      "reason": "The pre-flat-billing Starter/Pro rungs. Same ladder that leg L4 of the bot's seam gate bans in code.",
+      "severity": "error"
+    },
+    {
+      "id": "weakened-positioning",
+      "pattern": "\\bQuant Layer\\b|\\bAI Trading Platform\\b|\\bCrypto Signal API\\b",
+      "retired_on": "2026-05-12",
+      "superseded_by": "The Brain Layer for AI Trading Agents",
+      "reason": "brand-facts.md Positioning LAW: 'Never weaken to Quant Layer, AI Trading Platform, or Crypto Signal API.' Prose-only until this wave.",
+      "severity": "error",
+      "negative_context": "Buyers\\s+often\\s+use|Is\\s+this\\s+a\\s+|\\\"name\\\":|<h3>|often\\s+search"
+    },
+    {
+      "id": "nonexistent-pricing-page",
+      "pattern": "algovault\\.com/pricing\\b",
+      "retired_on": "2026-08-11",
+      "superseded_by": "https://api.algovault.com/signup",
+      "reason": "brand-facts.md: `algovault.com/pricing` returns 404 and must never be cited. The signup endpoint IS the pricing surface.",
+      "severity": "error"
+    }
+  ],
+  "_negative_context_contract": "negative_context: a regex tested against the SAME LINE. On a match the hit is SUPPRESSED and COUNTED, and the run prints the suppression total — 'detect the thing, then JUDGE it separately, and print what the predicate excludes'. This exists because a live surface may legitimately NAME a retired phrase in order to retire it: a README release recap saying '$79/yr … Superseded: annual was retired 2026-08-09', or an authoring runbook teaching 'never write 20 calls/day'. Deleting those sentences would destroy the record that the retirement happened, which is the opposite of what this gate exists for."
+}

@@ -17,6 +17,7 @@ import {
 } from '../../src/lib/referral-pages.js';
 import { commissionPct, bonusCallsLabel, commissionMonthsLabel, usdcMinPayoutLabel, payoutScheduleLabel } from '../../src/lib/referral-constants.js';
 import { freeCallsLabel } from '../../src/lib/plans.js';
+import { FREE_MONTHLY_CALLS } from '../../src/lib/plans.js';
 
 describe('renderReferralStatsPage', () => {
   const page = renderReferralStatsPage({
@@ -330,9 +331,12 @@ describe('REFERRAL-WEB-FIX-W1 C2 — share UX on all 3 web surfaces', () => {
     });
   }
 
-  it('the bonus copy is de-ambiguated to one-time-on-top-of-100/mo (kills the recurring misread)', () => {
+  it('the bonus copy is de-ambiguated to one-time-on-top-of-the-free-monthly-cap (kills the recurring misread)', () => {
     expect(renderReferralLandingPage()).toContain('one-time bonus calls');
-    expect(renderReferralStatsPage({ code: 'X', clicks: 0, signups: 0, conversions: 0, bonusRemaining: 0, accruedUsdE2: 0, creditedUsdE2: 0, usdcPendingUsdE2: 0, usdcPaidUsdE2: 0 })).toContain('one-time bonus calls (on top of their 100/mo free)');
+    // GROWTH-TG-QUOTA-PARITY-W1 CH5: rendered from the ladder SoT, not a literal. The assertion is
+    // that the copy DISAMBIGUATES the one-time bonus from the recurring allowance — a property of
+    // the sentence, never of the number, which is why the number moving broke this test.
+    expect(renderReferralStatsPage({ code: 'X', clicks: 0, signups: 0, conversions: 0, bonusRemaining: 0, accruedUsdE2: 0, creditedUsdE2: 0, usdcPendingUsdE2: 0, usdcPaidUsdE2: 0 })).toContain(`one-time bonus calls (on top of their ${FREE_MONTHLY_CALLS}/mo free)`);
     expect(renderJoinPage({ refValid: true, code: 'X' })).toContain('one-time bonus calls');
   });
 });

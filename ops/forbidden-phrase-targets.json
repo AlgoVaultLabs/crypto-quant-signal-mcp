@@ -1,0 +1,62 @@
+{
+  "_doc": [
+    "GROWTH-TG-QUOTA-PARITY-W1 CH4 — the scan manifest for scripts/check-forbidden-phrases.mjs.",
+    "",
+    "GLOB-DERIVED, exactly the shape ops/footer-coverage-config.json already uses — and for the",
+    "same reason it uses it. That config exists because a hand-listed TARGETS array went stale",
+    "TWICE, silently, while reporting success over pages it never opened. A hand-listed corpus",
+    "cannot distinguish 'clean' from 'never looked', so the only thing a human maintains here is",
+    "the far smaller set of paths that must NOT be scanned — each carrying its reason IN DATA.",
+    "An exemption that lives in a code comment gets 'fixed' by the next wave enforcing the",
+    "contract; one that lives here has to be argued with.",
+    "",
+    "🛑 LEDGER PATHS ARE EXEMPT BY REASONED ENTRY, NEVER BY SILENT OMISSION. A dated Prompt/,",
+    "Old Status/, audits/ or CHANGELOG entry states what was true WHEN WRITTEN. Rewriting one",
+    "falsifies the record — Build Rule 5. The manifest exemption IS the record that they were",
+    "considered and deliberately left alone; nobody has to add a banner to 50 files."
+  ],
+  "roots": [
+    {
+      "root": ".",
+      "globs": [
+        "landing/**/*.html",
+        "landing/**/*.txt",
+        "landing/**/*.json",
+        "docs/**/*.md",
+        "README.md",
+        "src/**/*.ts"
+      ]
+    }
+  ],
+  "exempt": [
+    {
+      "path": "audits/**",
+      "reason": "LEDGER. A dated audit records what was measured on its date; correcting a superseded figure inside one would make it a lie about its own moment. Build Rule 5."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "reason": "LEDGER. Released-version entries are historical by construction — a v1.19 line saying `100 calls/month` is CORRECT about v1.19."
+    },
+    {
+      "path": "**/*-ARCHIVE.md",
+      "reason": "LEDGER. Explicitly archived content, preserved verbatim by the trim policy."
+    },
+    {
+      "path": "docs/METERING-DIVERGENCE.md",
+      "reason": "AMENDED, NOT REWRITTEN. This document deliberately keeps its retired rules struck through in place — the record of what it once asserted is the point — so it quotes the retired free-tier phrasing on purpose. GROWTH-TG-QUOTA-PARITY-W1 CH3g."
+    },
+    {
+      "path": "docs/SHADOW_SEED_DECISION_RUNBOOK.md",
+      "reason": "LEDGER. Records the pre-registered gates as they stood at decision time."
+    },
+    {
+      "path": "landing/_templates/**",
+      "reason": "TEMPLATE SOURCE, not a served page — placeholders here are substituted by the generator before anything ships. Correcting the RENDERED output is what matters, and those pages are in the glob."
+    },
+    {
+      "path": "src/**/*.test.ts",
+      "reason": "TEST FIXTURES. A test asserting that a retired phrase is REJECTED must be able to contain it; banning it here would make the guard's own coverage unwritable — the `exemption + its test are a pair` rule."
+    }
+  ],
+  "_vacuity_note": "A manifest that expands to zero files is INDETERMINATE, never PASS. The corpus is CONSTRUCTED here, so empty means this file is wrong — not that the estate is clean."
+}

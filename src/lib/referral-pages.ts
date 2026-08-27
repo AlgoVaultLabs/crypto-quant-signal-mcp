@@ -141,7 +141,7 @@ export function renderReferralStatsPage(v: ReferralStatsView): string {
 
   const body = `
     <h1>Your referral dashboard</h1>
-    <p class="sub">Refer, earn ${commissionPct()}. Friends get ${bonusCallsLabel()} one-time bonus calls (on top of their 100/mo free); you earn ${commissionPct()} of their subscription for ${commissionMonthsLabel()}.</p>
+    <p class="sub">Refer, earn ${commissionPct()}. Friends get ${bonusCallsLabel()} one-time bonus calls (on top of their 200/mo free); you earn ${commissionPct()} of their subscription for ${commissionMonthsLabel()}.</p>
     <div class="card">
       <div class="l muted">YOUR CODE</div>
       <div class="code mono">${esc(v.code)}</div>
@@ -241,7 +241,7 @@ const REFERRAL_SIGNUP_FORM_JS = `
   }
   function success(data){
     f.style.display="none"; out.innerHTML="";
-    if(data.bonus_calls){ var b=document.createElement("p"); b.style.cssText="color:var(--mint);font-weight:700;margin:0 0 10px;font-size:15px"; b.textContent="\\u2713 "+data.bonus_calls+" one-time bonus calls added (on top of your 100/mo free)!"; out.appendChild(b); }
+    if(data.bonus_calls){ var b=document.createElement("p"); b.style.cssText="color:var(--mint);font-weight:700;margin:0 0 10px;font-size:15px"; b.textContent="\\u2713 "+data.bonus_calls+" one-time bonus calls added (on top of your 200/mo free)!"; out.appendChild(b); }
     var lbl=document.createElement("div"); lbl.className="l muted"; lbl.style.cssText="font-size:12px;color:var(--fg-3);text-transform:uppercase;letter-spacing:.5px"; lbl.textContent="Your referral link"; out.appendChild(lbl);
     var a=document.createElement("a"); a.className="link mono"; a.href=data.referral_link; a.textContent=data.referral_link; a.style.cssText="display:block;margin:6px 0 0"; out.appendChild(a);
     out.appendChild(shareRow(data.referral_link));
@@ -338,7 +338,7 @@ export function renderReferralLandingPage(opts: ReferralLandingOptions = {}): st
     <div class="card">
       <ol style="margin:0;padding-left:20px;line-height:1.9">
         <li><strong>Grab your link.</strong> Every account gets one automatically — find it in your account.</li>
-        <li><strong>Share it.</strong> Your friend gets ${bonusCallsLabel()} one-time bonus calls (on top of the free 100/mo) the moment they join.</li>
+        <li><strong>Share it.</strong> Your friend gets ${bonusCallsLabel()} one-time bonus calls (on top of the free 200/mo) the moment they join.</li>
         <li><strong>Earn.</strong> Get ${commissionPct()} of their subscription every month for ${commissionMonthsLabel()} — auto-credited.</li>
       </ol>
     </div>

@@ -38,7 +38,7 @@ Section **`### 💰 Finance & Fintech`** (anchor `#finance--fintech`). The CONTR
 > - Repo: https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp
 > - npm: https://www.npmjs.com/package/crypto-quant-signal-mcp (published; actively maintained — see release cadence)
 > - Remote MCP: `https://api.algovault.com/mcp` · Local: `npx crypto-quant-signal-mcp`
-> - Free tier (100 calls/month); on-chain verifiable track record at https://algovault.com/track-record
+> - Free tier (200 calls/month, 100/day); on-chain verifiable track record at https://algovault.com/track-record
 >
 > Entry is alphabetically placed, format-matched, and carries no drifting numbers. Thanks for maintaining the list.
 

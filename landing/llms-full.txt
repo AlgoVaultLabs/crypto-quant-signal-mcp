@@ -5,7 +5,7 @@
 > 15 exchanges — leading CEX & perp-DEX venues. Every call  # SNAPSHOT-LINE
 > is Merkle-anchored on Base L2. MCP-native. Buyers are AI agents.
 
-last_updated: 2026-06-08T00:00:00Z
+last_updated: 2026-08-27T00:00:00Z
 live_source_of_truth: https://algovault.com/api/performance-public + https://algovault.com/api/merkle-batches
 
 ---
@@ -63,7 +63,7 @@ Answer-shaped guides for the most-asked AI-agent crypto-trading questions (GEO-C
 
 ---
 
-## Live Track Record (snapshot 2026-04-26)
+## Live Track Record (# SNAPSHOT-LINE — snapshot 2026-04-26; live values: GET /api/performance-public)
 
 | Metric | Value | Source |
 |---|---|---|
@@ -143,7 +143,7 @@ Docs: https://algovault.com/docs#x402 · x402 spec: https://x402.org
 
 ---
 
-## Integrations (4 official Brain + Execution pairings)
+## Integrations (official Brain + Execution pairings)  # count deliberately unstated: the list below is generated, and a hand-typed N goes stale the moment a slug is added
 
 **Index page:** https://algovault.com/integrations — manifest-driven listing of every supported exchange tutorial; one card per integration. Adding the Nth exchange requires only an update to `algovault-skills/integrations/manifest.json` (the build pipeline regenerates the index card grid in `landing/integrations.html`).
 
@@ -363,7 +363,7 @@ What this proves to a sceptical buyer:
 A: No. AlgoVault returns analytics; the agent and its risk policy decide what (if anything) to execute. We're an API for AI agents, not a financial advisor.
 
 **Q: How is a scan billed?**
-A: A scan is billed per call. Every BUY/SELL trade call, market-regime call, and funding-arb scan counts as one call against your 100/mo free quota; a market scan (`scan_trade_calls`) counts as 1 call per trade call it returns (a scan with no actionable calls counts as 1). After 100, pay per call via x402 (USDC on Base) — no signup, no API key.
+A: A scan is billed per call. Every BUY/SELL trade call, market-regime call, and funding-arb scan counts as one call against your 200/mo free quota (and 100 per UTC day); a market scan (`scan_trade_calls`) counts as 1 call per trade call it returns (a scan with no actionable calls counts as 1). After 200, pay per call via x402 (USDC on Base) — no signup, no API key.
 
 **Q: What's the difference between PFE Win Rate and "outcome win rate"?**
 A: PFE (Peak Favourable Excursion) measures whether the price moved in the predicted direction at any point during the evaluation window. It's the canonical public metric. Outcome-based metrics are internal to our quant engine and not exposed.
@@ -375,7 +375,7 @@ A: Yes — any MCP-compatible client. The Streamable HTTP endpoint is `https://a
 A: No. The free tier is per-IP rate-limited (200 calls/month, up to 100/day). Paid tiers issue API keys at signup.
 
 **Q: What exchanges are analysed?**
-A: Hyperliquid (primary), Binance, Bybit, OKX, Bitget. Cross-venue funding spreads + regime alignment are derived across all 5.
+A: Hyperliquid (primary), Binance, Bybit, OKX, Bitget, and others — 15 venues as of 2026-08-27. Cross-venue funding spreads + regime alignment are derived across all of them. # SNAPSHOT-LINE — live value: GET /api/performance-public .exchange_count
 
 **Q: Is the source code open?**
 A: The Skills pack (`algovault-skills`) is MIT-licensed and open: https://github.com/AlgoVaultLabs/algovault-skills. The MCP server itself is closed-source but its outputs are fully verifiable on-chain.

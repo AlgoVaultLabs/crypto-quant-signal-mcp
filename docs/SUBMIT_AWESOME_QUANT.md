@@ -38,7 +38,7 @@ Section **`## Trading & Backtesting`** (anchor `#trading-backtesting`). The subs
 > What makes it list-worthy:
 > - **Real install base + active maintenance** — published on npm with a regular release cadence: https://www.npmjs.com/package/crypto-quant-signal-mcp
 > - **Verifiable track record** — every call is Merkle-anchored on Base L2 and independently checkable on-chain: https://algovault.com/track-record
-> - **Free tier** — 100 calls/month, no card.
+> - **Free tier** — 200 calls/month (100/day), no card.
 >
 > Repo: https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp · format-matched, no drifting numbers. Thanks!
 

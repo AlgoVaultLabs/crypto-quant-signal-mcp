@@ -3529,7 +3529,7 @@ async function startHttp() {
         `<!doctype html><meta charset="utf-8"><title>You're in — AlgoVault</title>` +
         `<body style="font-family:system-ui;background:#0d1117;color:#c9d1d9;max-width:560px;margin:60px auto;padding:0 20px">` +
         `<h1 style="color:#56d364">You're in via ${id}${stubNote}</h1>` +
-        `<p>Your free API key (100 calls/mo, no card):</p>` +
+        `<p>Your free API key (200 calls/mo, 100/day, no card):</p>` +
         `<pre style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;user-select:all">${key}</pre>` +
         `<p>Referral link: <a style="color:#58a6ff" href="${referralLink}">${referralLink}</a></p>` +
         `<p style="color:#8b949e;font-size:13px">Use it as <code>Authorization: Bearer &lt;key&gt;</code>. <a style="color:#58a6ff" href="/account">Manage your account →</a></p></body>`,

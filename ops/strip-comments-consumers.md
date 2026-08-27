@@ -89,3 +89,9 @@ unprecedented.
   move to the shared module first; the offset-losing `regex` shapes are the risky ones.
 - `check-webhook-idempotency.mjs:94`'s anti-blind-spot guard is already ported to the shared module
   as `strippingLostRealCalls()`; a migrating consumer should drop its local copy, not keep both.
+
+## Consumers (added after the registry's first cut)
+
+| Consumer | Wave | Why it needs stripping |
+|---|---|---|
+| `scripts/check-forbidden-phrases.mjs` | GROWTH-TG-QUOTA-PARITY-W1 CH4 (2026-08-27) | Scans live surfaces for RETIRED brand phrases. Its first live run produced 30 hits, of which 10 were code comments EXPLAINING the retirement they name — `plans.ts` quotes the old ladder to record what it fixed, `x402-nudge.ts` names "the free 100/mo quota" in the docblock describing the leak it closed. Those are the most valuable lines in their files. Reached for this module rather than writing a seventeenth stripper; the OFFSET-PRESERVING property is load-bearing because the gate reports `path:line`. |
