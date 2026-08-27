@@ -203,6 +203,24 @@ export function classify(r) {
   return { verdict: 'PASS', reason: 'the publish lane rehearsed clean', lines };
 }
 
+/**
+ * The tail of a failing chain's output — where the gate that died prints its own diagnosis.
+ *
+ * The one-line `reason` can only name the last gate that got as far as EMITTING a token, which on
+ * a real failure is the gate BEFORE the broken one — measured on the v1.28.2 reproduction, the
+ * reason read "last gate reached: QUOTA_SURFACE_CONFORMANCE_VERDICT=PASS" while the step that
+ * actually failed was the NEXT segment, `build_docs.mjs --check`. A summary that names a PASSING
+ * gate and nothing else is a summary an operator misreads. npm does not echo per-segment, so there
+ * is no honest way to compute the failing segment's name — but the failing gate always prints its
+ * own reason immediately before dying, so surface that verbatim rather than inventing a mapping.
+ */
+export function failureTail(output, lines = 12) {
+  return String(output ?? '')
+    .split('\n')
+    .filter((l) => l.trim() !== '')
+    .slice(-lines);
+}
+
 /** Files `npm pack --dry-run` would ship. Reported, never asserted — R3 owns the shipped set. */
 export function packedEntries(output) {
   return [...String(output ?? '').matchAll(/^npm notice \d+(?:\.\d+)?\s*[kMG]?B\s+(\S+)$/gm)].map((m) => m[1]);
@@ -273,6 +291,14 @@ function rehearse() {
   for (const l of result.lines) console.log(`  ${l}`);
   console.log(`  npm pack --dry-run entries       : ${packExit === null ? 'not collected (prepublishOnly did not pass)' : entries.length}`);
   console.log(`  reason                           : ${result.reason}`);
+  if (result.verdict !== 'PASS') {
+    const failing = packExit !== null && packExit !== 0 ? packOutput : prepublishExit !== 0 ? prepublishOutput : earlyOutput;
+    const tail = failureTail(failing);
+    if (tail.length) {
+      console.log('  the failing step said:');
+      for (const l of tail) console.log(`    | ${l}`);
+    }
+  }
   console.log('');
   console.log(`${TOKEN}=${result.verdict}`);
   return EXIT[result.verdict];
@@ -351,6 +377,11 @@ function selfTest() {
   check('packedEntries reads npm pack --dry-run notice lines', () =>
     packedEntries('npm notice 1.2kB dist/index.js\nnpm notice 400B README.md\n').length === 2);
   check('packedEntries on empty output is empty, and that is a FACT not a pass', () => packedEntries('').length === 0);
+  check('failureTail surfaces the failing gate\'s own diagnosis, which `reason` cannot name', () => {
+    const t = failureTail('A_VERDICT=PASS\n\nbuild_docs --check: 1 problem(s):\n  docs.html DRIFT vs generated\n', 2);
+    return t.length === 2 && t[1].includes('docs.html DRIFT');
+  });
+  check('failureTail on empty output is empty rather than throwing', () => failureTail('').length === 0);
 
   // Proven able to fail: assert the negative direction of the two levers that could silently
   // launder a red into a green.
