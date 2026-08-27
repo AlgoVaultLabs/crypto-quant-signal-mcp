@@ -114,6 +114,8 @@ import { checkBotInternalAuth } from './lib/bot-auth.js';
 // PRICING-BOT-DELIVERY-METERING-W1 CH3: /api/entitlement/* route registrar.
 import { registerEntitlementRoutes } from './lib/entitlement-api.js';
 import { registerOpsBuildRoute } from './lib/ops-build-api.js';
+// GROWTH-TG-QUOTA-PARITY-W1 CH1: GET /api/plans/public — the plan-ladder read surface.
+import { registerPlansPublicRoutes } from './lib/plans-public-api.js';
 import { getWelcomePageHtml } from './lib/welcome-page.js';
 import {
   TRADE_CALL_DESCRIPTION,
@@ -3711,6 +3713,13 @@ async function startHttp() {
   // container was built from. Registered here beside the other internal-key routes; the handler
   // lives in lib/ because index.ts boots the server at import.
   registerOpsBuildRoute(app);
+
+  // GROWTH-TG-QUOTA-PARITY-W1 CH1: GET /api/plans/public — the plan ladder, projected from
+  // `lib/plans.ts` at request time. UNAUTHENTICATED by design, unlike its neighbours above: the
+  // consumer this exists for is a FREE, unlinked Telegram chat, which holds no api_key and no
+  // internal key, and cannot read the ladder it is metered against through any authenticated
+  // route. Public data only (allow-list formatter in lib/plans-public-api.ts); no DB touch.
+  registerPlansPublicRoutes(app);
 
   // MCP endpoint
   app.all('/mcp', express.json(), async (req, res) => {

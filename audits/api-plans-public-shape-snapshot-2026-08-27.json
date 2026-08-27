@@ -1,0 +1,84 @@
+{
+  "wave": "GROWTH-TG-QUOTA-PARITY-W1",
+  "chapter": "CH1",
+  "endpoint": "/api/plans/public",
+  "snapshot_date": "2026-08-27",
+  "captured_at_utc": "2026-08-27T08:21:50Z",
+  "change_class": "NEW ENDPOINT — first snapshot; no prior contract to compare against",
+  "change_note": "The plan ladder, published as machine-readable JSON. THE DEFINING PROPERTY: this endpoint computes and stores NOTHING. It is a pure ALLOW-list projection of src/lib/plans.ts evaluated at request time — no database touch, no cache lookup, no network call, no authentication. It exists because before this wave the ladder was reachable over HTTP only through /api/entitlement/state, which requires bot-internal auth AND a subscriber api_key; a FREE, unlinked Telegram chat holds neither and therefore could not derive the allowance it is metered against. The bot hand-typed it instead, in eleven strings across three languages, which is the generator defect this wave retires. CH0/P3 enumerated all 76 app.get/post routes in src/index.ts plus /capabilities and confirmed no existing surface returned the ladder — so this EXTENDS nothing and is deliberately the first. UNITS: monthly_calls and daily_calls are CALLS on the API's meter (one returned verdict, HOLD included, per PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1). The Telegram bot's meter counts DELIVERED ALERTS and a silent HOLD stays free there — same NUMBER, different UNIT. That distinction is Rule 1 and Rule 3 of docs/METERING-DIVERGENCE.md and survives this wave untouched; only the ALLOWANCE is unified.",
+  "source": "src/lib/plans-public-api.ts::buildPublicPlansBody() projecting src/lib/plans.ts (FREE_MONTHLY_CALLS, FREE_DAILY_CALLS, PLANS); registered by registerPlansPublicRoutes(app) at src/index.ts. Captured 2026-08-27T08:21:50Z from the real registrar booted on an ephemeral port.",
+  "allowed_keys": [
+    "_algovault",
+    "free",
+    "generated_at",
+    "tiers"
+  ],
+  "free_value_keys": [
+    "daily_calls",
+    "monthly_calls"
+  ],
+  "tiers_value_keys": [
+    "daily_calls",
+    "id",
+    "label",
+    "monthly_calls",
+    "price_usd"
+  ],
+  "algovault_sub_keys": [
+    "brand",
+    "docs",
+    "get_started",
+    "note"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "outcome_won",
+    "customerId",
+    "customer_id",
+    "stripe",
+    "api_key",
+    "apiKey",
+    "subscriber",
+    "subscriber_count",
+    "customer_count",
+    "priceUsdAnnual",
+    "priceUsd6Month",
+    "priceUsdMonthly",
+    "monthlyCalls",
+    "dailyCalls"
+  ],
+  "captured_body": {
+    "free": { "monthly_calls": 200, "daily_calls": 100 },
+    "tiers": [
+      { "id": "starter", "label": "Starter", "monthly_calls": 10000, "daily_calls": 1000, "price_usd": 9.99 },
+      { "id": "pro", "label": "Pro", "monthly_calls": 100000, "daily_calls": 10000, "price_usd": 49 },
+      { "id": "enterprise", "label": "Enterprise", "monthly_calls": 100000, "daily_calls": null, "price_usd": 299 }
+    ],
+    "generated_at": "2026-08-27T08:21:50.030Z",
+    "_algovault": {
+      "brand": "The Brain Layer for AI Trading Agents",
+      "note": "Building an agent? Get a free API key — higher limits, all tools, x402 pay-per-call.",
+      "get_started": "https://algovault.com/#pricing",
+      "docs": "https://algovault.com/docs.html"
+    }
+  },
+  "null_daily_calls_note": "enterprise.daily_calls is null, and null is a REFUSAL — not 'unlimited' and not zero. src/lib/plans.ts::planDailyCallsLabel carries the same warning for the copy path: no real Enterprise deal has set a daily cap, so a consumer must render the ABSENCE rather than substitute a number or the word 'unlimited', which PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-E removed from this ladder. A consumer that coerces null to 0 would refuse every Enterprise call; one that reads it as unlimited would publish a claim no contract supports. Pinned by tests/plans-public-api.test.ts.",
+  "generated_at_note": "🛑 generated_at is a RENDER STAMP, not a producer-freshness signal, and it is the ONLY per-request-varying field in the body. verification-gates.md — 'freshness alarms measure PRODUCERS, never rendered artifacts' — so no canary may key staleness on it: it reports the serving process's clock, not the ladder's cadence. The ladder changes only on deploy, and the container restart is its real invalidation boundary. It is emitted so a machine consumer can tell when a cached copy was minted, and it is documented here so a future freshness check does not mistake it for a producer stamp.",
+  "algovault_block_note": "_algovault IS on the ALLOW-list, ratified by Mr.1 2026-08-27 (Q3=b) against CH1's own initial recommendation to exempt this endpoint. src/lib/public-cta.ts declares that any FUTURE public JSON endpoint merges buildPublicCtaBlock(), and audits/public-cta-shape-snapshot-2026-07-15.json already lists _algovault plus these four sub-keys under each adopting endpoint's allowed_keys. The block is an exported pure formatter returning static approved copy — no I/O, no live figures — so it changes neither the cost profile nor the cacheability of a static projection. Three grounds recorded so the ruling is not re-litigated: (1) purity, (2) the ALLOW-list rule exists to keep INTERNAL fields out and _algovault is a DECLARED PUBLIC block, so it joins the list rather than breaching it, (3) public-cta.ts's whole value is that it is universal — exempting the first endpoint that finds it inconvenient is how the rule dies, and an agent fetching our pricing JSON is the highest-intent CTA placement on the estate. No exemption line was added to public-cta.ts.",
+  "error_contract": "No error path exists. buildPublicPlansBody() is total: it reads module-level constants and a frozen record, performs no I/O, and cannot throw on any input — the route takes no parameters. There is no 4xx and no 5xx branch. An unreachable endpoint is an infrastructure fault, not an application state, and must be diagnosed as one.",
+  "auth_contract": "UNAUTHENTICATED by design, unlike its register-site neighbours /api/bot/validate-key, /api/entitlement/* and /api/ops/build. The consumer this exists for is a FREE, unlinked Telegram chat, which holds no api_key and no internal key. Every field served is already public copy on algovault.com/#pricing. Adding auth here would recreate the exact gap the endpoint closes.",
+  "cache_contract": {
+    "description": "Cache-Control: public, max-age=300. No in-process cache: the handler is a pure projection with no DB touch, so caching it in-process would add an invalidation problem to a function that has none. The 300s TTL matches the bot's EXISTING five-minute entitlement-drain cadence (CH2's ladder mirror rides that cron — no new schedule), so the mirror can never be more than one drain cycle behind an edge copy.",
+    "ttl_seconds": 300,
+    "staleness_signal": "NONE, deliberately. The ladder changes only on deploy and the container restart is the invalidation boundary. Do not key a freshness alarm on generated_at — see generated_at_note."
+  },
+  "consumers": [
+    "NEW — algovault-bot free-tier ladder mirror (GROWTH-TG-QUOTA-PARITY-W1 CH2, batch 2, NOT YET BUILT AS OF THIS SNAPSHOT). Fetched by the EXISTING entitlement_drain cron; the base URL is derived by stripping the /mcp suffix off ALGOVAULT_MCP_URL, the way referral_client._referral_base() already does — no third URL env var. The mirror reads free.monthly_calls and free.daily_calls and MUST IGNORE every other key: a strict parser turns any future additive change to this endpoint into a bot outage, so unknown-key tolerance is pinned there by a fixture carrying two invented extra keys (ratified 2026-08-27, Q3=b).",
+    "ops/pricing-tokens.json via scripts/emit-pricing-tokens.mjs — NOT a consumer of this endpoint, but a SECOND PROJECTION of the same source (dist/lib/plans.js). tests/plans-public-api.test.ts asserts the two agree. 🛑 On a mismatch the fix is to REGENERATE the tokens from plans.ts — never to hand-edit either artifact to match the other, which would convert two projections into two SoTs."
+  ],
+  "proven_able_to_fail": "tests/plans-public-api.test.ts, 16 tests. Five deliberate breaks were run against it on 2026-08-27 and all five went RED: (1) hand-typing the free ladder as literals instead of projecting — 2 failed / 13 passed, caught ONLY by the projection block, which is why that block earns its keep; (2) dropping _algovault — 3 failed; (3) leaking priceUsd6Month into a tier — 2 failed; (4) dropping 'pro' from PUBLIC_PLAN_ORDER — 4 failed; (5) coercing enterprise daily_calls from null to 0 — 2 failed. Restored: 16/16 green, stable over 4 consecutive runs.",
+  "drift_check_command": "curl -fsS https://api.algovault.com/api/plans/public | jq -e '(keys == [\"_algovault\",\"free\",\"generated_at\",\"tiers\"]) and (.free | keys == [\"daily_calls\",\"monthly_calls\"]) and ([.tiers[] | keys] | flatten | unique == [\"daily_calls\",\"id\",\"label\",\"monthly_calls\",\"price_usd\"]) and ((.tiers | map(.id)) == [\"starter\",\"pro\",\"enterprise\"]) and ((.tiers[] | select(.id==\"enterprise\") | .daily_calls) == null) and (._algovault | keys == [\"brand\",\"docs\",\"get_started\",\"note\"])' >/dev/null && ! curl -fsS https://api.algovault.com/api/plans/public | grep -qE 'outcome_(return_pct|price|won)|priceUsd(Annual|6Month|Monthly)|monthlyCalls|dailyCalls|customer_?[Cc]ount|api_?[Kk]ey' && echo PLANS_PUBLIC_SHAPE_OK",
+  "drift_check_note": "The command asserts the ladder's SHAPE and its ordering, and separately greps for internal field names. It deliberately does NOT pin the VALUES 200/100/10000/etc: those are the ladder, and the ladder is allowed to change — pinning them here would make a legitimate price change look like a drift incident. What must never change without a wave is the key set, the tier order, enterprise's null, and the absence of every forbidden key. Value correctness lives in tests/plans-public-api.test.ts (against plans.ts) and in scripts/emit-pricing-tokens.mjs --check (against dist/lib/plans.js) — two projections, one source.",
+  "not_yet_live_note": "As of this snapshot the endpoint is committed and test-green but NOT DEPLOYED — CH6 is this wave's terminal deploy chapter and belongs to batch 3. The drift_check_command above targets the live host and will 404 until then. That is expected, and the 404 must not be read as a regression before CH6 lands."
+}
