@@ -31,11 +31,17 @@ def check(name: str, cond: bool, detail: str = "") -> None:
     print(f"ok   {name}")
 
 
-def run(tmp: Path, rows: list[tuple[str, int, int | None]], *, state=None, argv=(), env_extra=None):
+def run(tmp: Path, rows: list[tuple[str, int, int | None]], *, state=None, argv=(), env_extra=None, retired=()):
     stub = tmp / "psql_stub.sh"
     lines = "\n".join(f"{v}|{s}|{'' if l is None else l}" for v, s, l in rows)
     stub.write_text(f"#!/bin/bash\necho 'SET'\ncat <<'EOF'\n{lines}\nEOF\n")
     stub.chmod(0o755)
+    # OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (Q3): a SEPARATE stub for the retired-venue set
+    # (LF_RETIRED_CMD). Default empty → existing cases see no retired venues (behaviour unchanged).
+    retired_stub = tmp / "retired_stub.sh"
+    rlines = "\n".join(retired)
+    retired_stub.write_text(f"#!/bin/bash\necho 'SET'\ncat <<'EOF'\n{rlines}\nEOF\n")
+    retired_stub.chmod(0o755)
     wrapper = tmp / "wrapper.sh"
     wrapper.write_text('#!/bin/bash\nprintf "%s %s\\n" "$1" "$2" >> "$0.calls"\ncat >> "$0.body"\n')
     wrapper.chmod(0o755)
@@ -49,6 +55,7 @@ def run(tmp: Path, rows: list[tuple[str, int, int | None]], *, state=None, argv=
         "LF_DIGEST_FILE": str(tmp / "digest.txt"),
         "LF_NOW_EPOCH": str(NOW),
         "LF_RECOVERY_ENABLED": "0",  # hermetic by default; recovery cases opt in via env_extra
+        "LF_RETIRED_CMD": str(retired_stub),
     } | (env_extra or {})
     out = subprocess.run([sys.executable, str(CANARY), *argv], capture_output=True, text=True, env=env)
     calls = (tmp / "wrapper.sh.calls").read_text() if (tmp / "wrapper.sh.calls").exists() else ""
@@ -195,11 +202,26 @@ with tempfile.TemporaryDirectory() as d:
         "LF_PSQL_CMD": str(stub), "LF_WRAPPER": str(wrapper), "LF_STATE_FILE": str(state_file),
         "LF_DIGEST_FILE": str(tmp / "digest.txt"), "LF_NOW_EPOCH": str(NOW),
         "LF_RECOVERY_ENABLED": "1", "LF_RECOVERY_CMD": str(rec),
+        "LF_RETIRED_CMD": "true",  # hermetic: no docker; retired_set() → empty
     }
     out = subprocess.run([sys.executable, str(CANARY)], capture_output=True, text=True, env=env)
     calls = (tmp / "wrapper.sh.calls").read_text() if (tmp / "wrapper.sh.calls").exists() else ""
     check("recovery-heal: targeted re-label invoked", (tmp / "rec.sh.log").exists() and "recovered OKX" in (tmp / "rec.sh.log").read_text())
     check("recovery-heal: re-census shows healed", "RECOVERY_HEALED" in out.stdout and "OKX" in out.stdout, out.stdout)
     check("recovery-heal: SILENT — no page after heal", calls == "", calls)
+
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (Q3): a RETIRED venue with recent signals + lagging labels
+    # (exactly the stranded-backlog shape a retirement leaves) renders `retired`, NEVER BREACH, never pages.
+    fixture = [("BITMART", fresh(1), fresh(200))]  # input_flowing (1h) + lag 200h > 72h long-tail SLO
+    out, calls, _, digest, _ = run(tmp, fixture, retired=["BITMART"])
+    check("retired: exit 0", out.returncode == 0, out.stderr)
+    check("retired: rendered `retired`, not BREACH", "retired" in digest and "BREACH" not in digest, digest)
+    check("retired: no page", calls == "")
+    # CONTROL (proves the assertion can fail): the SAME fixture WITHOUT the retired flag DOES breach.
+    out2, calls2, _, digest2, _ = run(tmp, fixture, retired=[])
+    check("retired-control: same fixture breaches when NOT retired", "BREACH" in digest2, digest2)
+    check("retired-control: still never pages (long-tail)", calls2 == "")
 
 print(f"\nALL {PASSED} ASSERTIONS PASSED")

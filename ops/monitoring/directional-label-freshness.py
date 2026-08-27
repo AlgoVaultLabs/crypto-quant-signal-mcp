@@ -121,6 +121,17 @@ CENSUS_SQL = (
     "AND s.timeframe <> '1m' GROUP BY 1 ORDER BY 1;"
 )
 
+# OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (Q3): a venue RETIRED in the `venues` table is not a
+# monitored producer — the seed loop stopped emitting its signals and the labeler stopped labelling
+# them (both status-derived). Its stranded pre-retirement signals would otherwise read as "recent
+# input, lagging labels" and show a cosmetic BREACH for up to INPUT_FLOWING_H hours. We render it
+# `retired` instead, never BREACH. `aoe_readonly` holds SELECT on `venues` (probed 2026-08-27). A
+# SEPARATE LF_RETIRED_CMD seam (defaults to the same psql) lets the test inject it independently.
+RETIRED_SQL = (
+    "SET default_transaction_read_only=on; "
+    "SELECT exchange_id FROM venues WHERE status = 'retired';"
+)
+
 
 def now_epoch() -> int:
     return int(os.environ.get("LF_NOW_EPOCH") or time.time())
@@ -148,10 +159,32 @@ def census() -> list[tuple[str, int, int | None]]:
     return rows
 
 
-def evaluate(rows, force_stale: str | None, now: int):
+def retired_set() -> frozenset[str]:
+    """Retired venue ids, to suppress a cosmetic BREACH on a deliberately-retired venue.
+    FAIL-SAFE: any error yields an EMPTY set — a retired venue then merely keeps its old (long-tail,
+    never-paging) digest line; we never SUPPRESS a real major breach, because a major is never retired."""
+    cmd = os.environ.get("LF_RETIRED_CMD", PSQL_DEFAULT)
+    try:
+        out = subprocess.run(cmd.split() + ["-c", RETIRED_SQL], capture_output=True, text=True, timeout=60)
+        if out.returncode != 0:
+            log(f"retired_set psql rc={out.returncode}: {out.stderr.strip()[:120]} — treating as none")
+            return frozenset()
+        return frozenset(s for line in out.stdout.strip().splitlines() if (s := line.strip()) and s != "SET")
+    except Exception as exc:
+        log(f"retired_set error: {exc} — treating as none")
+        return frozenset()
+
+
+def evaluate(rows, force_stale: str | None, now: int, retired: frozenset[str] = frozenset()):
     """Pure classification: returns (digest_lines, major_breaches, longtail_breaches)."""
     digest, majors_bad, tail_bad = [], [], []
     for venue, newest_sig, newest_lab in sorted(rows):
+        if venue in retired:
+            # OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (Q3): a retired venue is not a monitored producer.
+            # Render `retired`, never BREACH, never a page — its stranded pre-retirement signals would
+            # otherwise read as recent-input / lagging-labels for up to INPUT_FLOWING_H hours.
+            digest.append(f"{venue:9s} {'retired':9s} lag={'n/a':>8s} slo=-   retired")
+            continue
         tier = "major" if venue in MAJORS else "long-tail"
         slo_h = MAJOR_SLO_H if venue in MAJORS else LONGTAIL_SLO_H
         input_flowing = (now - newest_sig) <= INPUT_FLOWING_H * 3600
@@ -401,7 +434,7 @@ def main(argv: list[str]) -> int:
         return 0
 
     now = now_epoch()
-    digest, majors_bad, tail_bad = evaluate(rows, force_stale, now)
+    digest, majors_bad, tail_bad = evaluate(rows, force_stale, now, retired_set())
 
     for line in digest:
         log(f"digest {line}")

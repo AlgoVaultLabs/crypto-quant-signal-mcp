@@ -71,12 +71,21 @@ export const EXCHANGE_COUNT: number = EXCHANGES.length;
 
 /**
  * OPS-SCAN-UNIVERSE-EXPAND-W1 — the promoted-venue id union, DERIVED from `EXCHANGES`
- * (the single SoT). `EXCHANGES` is `as const`, so this resolves to the exact 12-literal
- * union, NOT the full `ExchangeId`. Every scan representation (the universe FETCHERS record,
- * `ScanExchangeId`, `SCAN_EXCHANGES`, the Zod enum, the x402 bazaar enum, the OI-sampler
- * venue list) projects from this — so a `Record<PromotedVenueId, …>` is tsc-exhaustive and
- * "forgot to add the new venue to scan" becomes a compile error. A unit test asserts this
- * set equals `listVenues('promoted')` so the compile-time list can't drift from the DB truth.
+ * (the single SoT). `EXCHANGES` is `as const`, so this resolves to the exact literal
+ * union, NOT the full `ExchangeId`. The scan-shape representations (the universe FETCHERS record,
+ * `ScanExchangeId`, `SCAN_EXCHANGES`, the Zod tool enum, the x402 bazaar enum) project from this —
+ * so a `Record<PromotedVenueId, …>` is tsc-exhaustive and "forgot to add the new venue to scan"
+ * becomes a compile error.
+ *
+ * OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (R1) — CAVEAT, and DO NOT restore the deleted claim: this is
+ * the STATIC promoted union and it can DIVERGE from the live `venues` table — a venue retired via
+ * `venues.status='retired'` stays in THIS list (that is BitMart's state today). So registries that
+ * DRIVE LIVE API CALLS do NOT iterate this directly; they iterate `getActivePromotedVenueIds()`
+ * (venue-store.ts) = this list MINUS retired. The prior comment here claimed "a unit test asserts this
+ * set equals `listVenues('promoted')` so the compile-time list can't drift from the DB truth" — that
+ * unit test NEVER EXISTED (`scan-promoted-derivation.test.ts` only defers parity to a live `byExchange`
+ * check; `public-venue-scope.test.ts` asserts static==static). Reconciling this static list to the DB
+ * truth is owned by OPS-BITMART-ENUM-REMOVE-W1, which also removes retired venues from the public enum.
  */
 export type PromotedVenueId = (typeof EXCHANGES)[number]['id'];
 

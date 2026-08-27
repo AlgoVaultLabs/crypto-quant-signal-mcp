@@ -15,6 +15,7 @@ import type {
 } from '../types.js';
 import { annualizeFunding } from '../lib/rank-constants.js';
 import { FUNDING_VENUE_META, FUNDING_ARB_FETCH_ADAPTERS } from '../lib/funding-venues.js';
+import { getRetiredVenueSet } from '../lib/venue-store.js';
 import { fetchVenueUniverse, effectiveLiquidityUsd } from '../lib/exchange-universe.js';
 import { getFreshCarryScores, carryKey, type CarryScores } from '../lib/carry-rank-reader.js';
 import { writeDivergenceLog } from '../lib/carry-divergence-log.js';
@@ -227,12 +228,20 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
   // Bin/HL/Bybit aggregate; GATE/KUCOIN/ASTER/OKX each add their own venue. Dedup by venue-string keeps
   // HL the sole source for Bin/Bybit → 0-regression on the pre-expansion 3. Prefetch the per-venue
   // liquidity maps (scan SoT) for the gate in the same round-trip. Both cached (30s / 60s TTL).
+  // OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (R1/Q2): drop any RETIRED venue from the funding set BEFORE
+  // any live call — funding-arb drives live predicted-funding + liquidity fetches per venue. Reuses the
+  // ONE retired-set primitive (getRetiredVenueSet). FUNDING_VENUE_META / FUNDING_ARB_FETCH_ADAPTERS are a
+  // curated set that contains no retired venue today, so this is a NO-OP on current output and pure
+  // future-proofing for the next retirement of a funding venue. Fail-safe: a DB error yields an empty
+  // retired set → the full list (never silently drops a live venue).
+  const retired = await getRetiredVenueSet();
+  const fetchAdapters = FUNDING_ARB_FETCH_ADAPTERS.filter((v) => !retired.has(v));
   const [feeds, liquidityByExchange] = await Promise.all([
-    Promise.all(FUNDING_ARB_FETCH_ADAPTERS.map(v => getCachedPredictedFundings(v).catch(() => [] as FundingData[]))),
+    Promise.all(fetchAdapters.map(v => getCachedPredictedFundings(v).catch(() => [] as FundingData[]))),
     _liquidityOverride
       ? Promise.resolve(new Map<ExchangeId, Map<string, number>>())
       : (async () => {
-          const ids = [...new Set(Object.values(FUNDING_VENUE_META).map(m => m.exchangeId))];
+          const ids = [...new Set(Object.values(FUNDING_VENUE_META).map(m => m.exchangeId))].filter((id) => !retired.has(id));
           const pairs = await Promise.all(ids.map(async id => [id, await getVenueLiquidity(id)] as const));
           return new Map<ExchangeId, Map<string, number>>(pairs);
         })(),

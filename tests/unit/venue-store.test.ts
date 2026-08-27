@@ -33,8 +33,10 @@ import {
   getRetiredVenueSet,
   assertVenueNotRetired,
   _resetRetiredCacheForTest,
+  getActivePromotedVenueIds,
 } from '../../src/lib/venue-store.js';
 import { dbQuery, dbRun, dbExec } from '../../src/lib/performance-db.js';
+import { PROMOTED_VENUE_IDS } from '../../src/lib/capabilities.js';
 
 const mockQuery = vi.mocked(dbQuery);
 const mockRun = vi.mocked(dbRun);
@@ -341,6 +343,37 @@ describe('getRetiredVenueSet + assertVenueNotRetired (OPS-BITMART-RETIRE-W1 Q3)'
     // internal=true must skip the venue check entirely — the grid scores every cell regardless of tier
     await expect(assertVenueNotRetired('BITMART', true)).resolves.toBeUndefined();
     expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe('getActivePromotedVenueIds (OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1)', () => {
+  beforeEach(() => { _resetRetiredCacheForTest(); });
+
+  it('AC2 — a newly-retired venue drops out of the ACTIVE set with ZERO code change (still present in the raw static list)', async () => {
+    // No venue is named here — the predicate is status-only. The "next retirement" needs only a DB
+    // status flip, no edit to this list or to any class-(i) consumer. Simulate any promoted id retired.
+    const victim = PROMOTED_VENUE_IDS[PROMOTED_VENUE_IDS.length - 1];
+    mockQuery
+      .mockResolvedValueOnce([]) // initVenuesTable seed
+      .mockResolvedValueOnce([{ ...binanceRow, exchange_id: victim, status: 'retired', promoted_at: null, retired_at: new Date('2026-08-27T00:00:00Z') }]);
+    const active = await getActivePromotedVenueIds(1_000);
+    expect(active).not.toContain(victim);           // dropped from the active (live-call) set
+    expect(PROMOTED_VENUE_IDS).toContain(victim);   // raw static list (class ii/iii) is UNCHANGED
+    expect(active).toHaveLength(PROMOTED_VENUE_IDS.length - 1);
+  });
+
+  it('FAIL-SAFE DIRECTION — a DB read error keeps the FULL static list, never a silently-shrunk set', async () => {
+    // getRetiredVenueSet fails open to an EMPTY retired set. Wrongly SAMPLING a retired venue costs a
+    // few API calls; wrongly DROPPING a live one costs DATA — so on any uncertainty we keep every venue.
+    mockQuery.mockRejectedValue(new Error('db down'));
+    const active = await getActivePromotedVenueIds(1_000);
+    expect([...active].sort()).toEqual([...PROMOTED_VENUE_IDS].sort());
+  });
+
+  it('no retired venues → active set equals the full promoted set', async () => {
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([]); // seed, then empty retired
+    const active = await getActivePromotedVenueIds(1_000);
+    expect([...active].sort()).toEqual([...PROMOTED_VENUE_IDS].sort());
   });
 });
 

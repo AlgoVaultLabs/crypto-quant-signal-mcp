@@ -567,13 +567,13 @@
       "schedule": "41 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "2feb29c39383f6db7393818f19a9dbebf22c23d499fe4950d53214f853d6028d",
+      "sha256": "7ae250556841dc9d435eb5e84bc9171cf9fc49d10c2b71bd46dff2923a69b4b6",
       "alert_ids": [
         "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
         "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL"
       ],
       "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
-      "notes": "SEC-13 (OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch4): --force-stale now accepts ALGOVAULT_TG_TEST_INERT=1, which suppresses BEFORE the cooldown gate and writes no marker. It previously REQUIRED DRY_RUN_TG=1, which DOES write the 24h marker \u2014 so the sanctioned smoke silenced the next genuine MAJOR-venue page for 24h and a second smoke false-greened. Re-verified live on the host under INERT: 16 positive per-venue rows (venue + lag + slo + verdict), marker unchanged."
+      "notes": "OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (Q3): now status-aware \u2014 a venue with venues.status='retired' renders `retired`, never BREACH, via a SEPARATE LF_RETIRED_CMD seam (reads `SELECT exchange_id FROM venues WHERE status='retired'` as aoe_readonly; SELECT-on-venues privilege probed present). Fail-safe: a retired-set read error yields an empty set (a retired venue keeps its old long-tail digest line; a real major breach is never suppressed because a major is never retired). PRIOR (SEC-13, OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch4): --force-stale accepts ALGOVAULT_TG_TEST_INERT=1, which suppresses BEFORE the cooldown gate and writes no marker; it previously REQUIRED DRY_RUN_TG=1, which DOES write the 24h marker."
     },
     {
       "id": "test-directional-label-freshness",
@@ -585,7 +585,7 @@
       "schedule": null,
       "invoked_by": "manual",
       "install_state": "installed",
-      "sha256": "2cac4f59ce3e8f521c3b159768a080e64f98446fa1195148b722bc279caeeaa4",
+      "sha256": "21c64af5234d7e69642f085f33d70a9f2e12c2952c219bd397145befb9149d9b",
       "alert_ids": [],
       "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1"
     },

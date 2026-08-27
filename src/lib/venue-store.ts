@@ -19,6 +19,7 @@
  */
 
 import { dbExec, dbQuery, dbRun } from './performance-db.js';
+import { PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
 import type { VenueRecord, VenueStatus } from '../types.js';
 
 // ── Idempotent schema bootstrap ──────────────────────────────────────────
@@ -259,6 +260,24 @@ export async function getRetiredVenueSet(nowMs: number = Date.now()): Promise<Se
 
 /** Test seam — reset the module-level retired-set cache. */
 export function _resetRetiredCacheForTest(): void { _retiredCache = null; }
+
+/**
+ * OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (R1) — the ACTIVE promoted-venue ids: the static
+ * `PROMOTED_VENUE_IDS` MINUS anything currently `retired` in the `venues` table. This is the SINGLE
+ * derivation any registry that DRIVES LIVE API CALLS must iterate (the OI sampler, funding-arb), so a
+ * venue retirement drops out of every operational path with ZERO code change — no venue is named here.
+ * It reuses {@link getRetiredVenueSet} (OPS-BITMART-RETIRE-W1), so "which venues are retired" is derived
+ * in exactly one place.
+ *
+ * FAIL-SAFE DIRECTION (asserted by a test, not merely this comment): a DB read failure makes
+ * `getRetiredVenueSet` an EMPTY set, so this returns the FULL static `PROMOTED_VENUE_IDS`. Wrongly
+ * SAMPLING a retired venue costs a few wasted API calls; wrongly DROPPING a live one costs DATA — so on
+ * any uncertainty we KEEP the venue. This function never returns a silently-shrunk set on error.
+ */
+export async function getActivePromotedVenueIds(nowMs: number = Date.now()): Promise<PromotedVenueId[]> {
+  const retired = await getRetiredVenueSet(nowMs);
+  return PROMOTED_VENUE_IDS.filter((v) => !retired.has(v));
+}
 
 /**
  * Throw a clean, explicit refusal if `exchange` names a RETIRED venue — so a user request to a

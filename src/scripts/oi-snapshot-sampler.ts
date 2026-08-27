@@ -38,12 +38,15 @@ import {
   spreadBps,
   type OiSnapshotInput,
 } from '../lib/oi-snapshots.js';
-import { PROMOTED_VENUE_IDS } from '../lib/capabilities.js';
+import { getActivePromotedVenueIds } from '../lib/venue-store.js';
 
-// OPS-SCAN-UNIVERSE-EXPAND-W1: derive from EXCHANGES (all 12 promoted). W1: every venue is now
+// OPS-SCAN-UNIVERSE-EXPAND-W1: derive from EXCHANGES (all promoted). W1: every venue is now
 // sampled — oi-sources still returns [] for the volume-proxy venues (Aster/BingX), which now
 // yields OI-NULL rows carrying real basis/spread rather than no row at all.
-const PROMOTED_VENUES: readonly ExchangeId[] = PROMOTED_VENUE_IDS;
+// OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (R1): the venue set is no longer the static
+// `PROMOTED_VENUE_IDS` — it is `getActivePromotedVenueIds()` (promoted MINUS retired), computed once
+// per run inside `runOiSnapshotSampler`, so a retired venue stops being OI-sampled with zero code
+// change here. See that function for the fail-safe (a DB error keeps the FULL list).
 const POOL = Number(process.env.RANK_OI_SAMPLE_POOL ?? 60);
 
 /** Per-venue field coverage, so the audit reports MEASURED counts instead of assumed ones. */
@@ -121,7 +124,10 @@ export async function runOiSnapshotSampler(
   const perVenue: Record<string, number> = {};
   const coverage: Record<string, VenueCoverage> = {};
   let total = 0;
-  for (const venue of PROMOTED_VENUES) {
+  // Single construction point: the ACTIVE promoted venues (retired excluded). Fail-safe to the full
+  // static list on a DB read error — see getActivePromotedVenueIds. `nowMs` threads the same clock.
+  const venues = await getActivePromotedVenueIds(nowMs);
+  for (const venue of venues) {
     try {
       const rows = await buildVenueRows(venue, bucket);
       coverage[venue] = countCoverage(rows);
