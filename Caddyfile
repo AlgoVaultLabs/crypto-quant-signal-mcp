@@ -248,7 +248,35 @@ algovault.com {
         # 'unsafe-inline' is required for script-src AND style-src — these are static
         # files with inline <script> hydration (data-tr-field) and inline style=""
         # attributes, and file_server cannot mint per-request nonces.
-        header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://api.algovault.com https://plausible.algovault.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+        # SEO-SITE-NAME-AND-PREFERRED-SOURCES-W1 (2026-08-27) — three ADDITIVE allowances for
+        # Google's "Add to Preferred Sources" button on the home page. Nothing existing is
+        # narrowed; every other directive is byte-identical to what shipped before.
+        #
+        # THE BUTTON IS AN IFRAME, AND CSP FAILURE HERE IS SILENT. news.google.com/swg/js/v1/
+        # publisher.js binds every [google-add-preferred-source-btn] and mints one iframe per
+        # match (measured in the live 251KB bundle, 2026-08-27). Under the previous policy the
+        # script was refused by script-src, the iframes fell back to default-src 'self', and the
+        # XHR was refused by connect-src — so the button did not degrade, it did not render AT
+        # ALL, with nothing in the HTML to show for it. A green HTML diff is not evidence that
+        # this works; only an iframe in the live DOM is.
+        #
+        # frame-src MUST carry 'self' FIRST. It does not exist in the previous policy, so frames
+        # currently inherit default-src 'self'; declaring it bare for news.google.com would
+        # silently revoke same-origin framing. Measured before the edit: ZERO iframes exist
+        # anywhere in landing/**/*.html or src/ (static or createElement), so nothing breaks
+        # either way today — but the same 'self'-first shape already ships in the Express policy
+        # at src/index.ts:1318 for Turnstile, and a defence that only holds while a count is zero
+        # is not a defence.
+        #
+        # NOT touched, and not to be "aligned": frame-ancestors 'none' and X-Frame-Options DENY
+        # govern who may embed US. They are unrelated to what WE may embed.
+        #
+        # This file is in deploy.yml paths-ignore, so pushing it applies NOTHING — it is copied
+        # to /etc/caddy/Caddyfile from the committed SHA and `systemctl reload caddy`d by hand.
+        # It is therefore applied BEFORE the button markup ships, never after: widening a policy
+        # for an origin nothing references yet is inert, while shipping the markup first would
+        # leave a live page whose button silently does not render.
+        header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://news.google.com; frame-src 'self' https://news.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://api.algovault.com https://plausible.algovault.com https://news.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
         header X-Content-Type-Options "nosniff"
         header X-Frame-Options "DENY"
         header Referrer-Policy "strict-origin-when-cross-origin"
