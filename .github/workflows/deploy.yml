@@ -359,6 +359,23 @@ jobs:
           node scripts/check-token-resolution.mjs --self-test
           node scripts/check-token-resolution.mjs
 
+      # SEO-SITE-NAME-AND-PREFERRED-SOURCES-W1 — the CSP the STATIC landing surfaces are served
+      # is a second policy, and until this wave nothing checked it. The canary above models the
+      # EXPRESS policy from src/index.ts; every landing/*.html is served by Caddy's file_server,
+      # which Express never touches. Both directions are asserted: an external <script>/<iframe>/
+      # <link rel=stylesheet> the served policy forbids (a SILENT failure — Google's Preferred
+      # Sources button is an iframe, and under the previous policy it rendered nothing at all with
+      # a perfectly green HTML diff), and the inverse, an allowed origin nothing references any
+      # more. STATIC and network-free here, matching the feature-registry / rank-metrics /
+      # scan-digest split; the `--live` leg that compares the SERVED header against the committed
+      # Caddyfile needs the network and is run by hand or by a host cron, so a wobbly network can
+      # never block a deploy. Fail-closed: an unextractable policy or an empty corpus is
+      # INDETERMINATE (exit 3), never a pass.
+      - name: External-origin CSP canary (fail-closed)
+        run: |
+          node scripts/check-external-origin-csp.mjs --self-test
+          node scripts/check-external-origin-csp.mjs
+
       # LANDING-MCP-CLIENT-REGISTRY-W1 CH5 — the vendor-UI-path drift gate. The
       # lockstep canary above proves a SLUG is wired across its six homes; this one
       # proves the COPY is not stale. Claude Desktop renamed Settings → Integrations

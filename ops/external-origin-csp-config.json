@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "_doc": [
+    "scripts/check-external-origin-csp.mjs — declared exemptions for the REVERSE direction.",
+    "",
+    "The forward direction (an element references an origin the CSP forbids) has no exemptions",
+    "and never will: that is the class the gate exists for, and it fails SILENTLY in a browser.",
+    "",
+    "The reverse direction (a CSP origin that nothing in landing/**/*.html references) is the",
+    "'we widened the policy for something we later removed' class. It has legitimate exceptions —",
+    "an origin whose consumer is not an element or a literal in our own HTML — and each one is",
+    "listed here WITH A REASON. An exemption without a stated reason gets deleted by the next",
+    "wave enforcing the contract, so the reason is the point."
+  ],
+  "verdict_token": "EXTERNAL_ORIGIN_CSP_VERDICT",
+  "exit_codes": { "0": "OK", "1": "DRIFT", "3": "INDETERMINATE" },
+  "_directives_doc": [
+    "Scanned directives are exactly those whose consumers are elements or literals in our own",
+    "landing HTML: script-src, frame-src, style-src, connect-src.",
+    "",
+    "font-src is deliberately NOT scanned. Its only origin, https://fonts.gstatic.com, is",
+    "requested by the Google Fonts STYLESHEET, not by anything in our markup — so scanning it",
+    "would produce a permanent false DRIFT on a healthy policy, and a gate that cries wolf once",
+    "is ignored forever. img-src is not scanned for the same reason plus its `https:` wildcard.",
+    "default-src / base-uri / form-action / object-src / frame-ancestors carry no external",
+    "origins today; if one ever does, add it here deliberately rather than by widening a glob."
+  ],
+  "scanned_directives": ["script-src", "frame-src", "style-src", "connect-src"],
+  "reverse_exemptions": [
+    {
+      "origin": "https://plausible.algovault.com",
+      "directive": "connect-src",
+      "reason": "SELFHOST-PLAUSIBLE-CE-AND-CF-ORIGIN-SHIELD: analytics is a FIRST-PARTY beacon — landing pages load /js/insights.js and POST /pa/event through the apex Caddy proxy, so the plausible origin appears in ZERO landing HTML files by design (measured 2026-08-27: 0 of 57). The connect-src allowance predates the proxy flip and is now unreferenced from our markup. NOT this wave's to remove: deciding whether the direct-origin path is still needed belongs to whoever owns the beacon. Recorded so it is a DECLARED gap rather than one rediscovered by the next incident."
+    }
+  ]
+}

@@ -2090,6 +2090,39 @@ function applyHowItWorksOverrides(html, isDesktop) {
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
+// ─── SEO-SITE-NAME-AND-PREFERRED-SOURCES-W1 — Google "Add to Preferred Sources" button ───
+//
+// PLACEMENT IS A RENDERER CONCERN, NOT A JSX ONE. The apex closing seam is built HERE, in the
+// landing-rest concatenation: the vault JSX's own `LandingFooter` is NOT rendered (FOOTER-UNIFY-W1
+// takes the footer whole from renderBrandFooter), so the gap between the FAQ and the footer
+// exists only in this file. Putting the button in v1-landing-rest.jsx would either nest it inside
+// the FAQ section or land it in a component nothing renders — dead code either way. Design.md's
+// dual-render-3-site-edit-checklist therefore resolves to TWO sites for this insertion, and the
+// proof that nothing is lost on a re-render is the artboard delta, not the third site.
+//
+// ONE ELEMENT PER ARTBOARD, BY DESIGN. publisher.js binds
+// querySelectorAll("[google-add-preferred-source-btn]:not([data-initialized])") and mints one
+// iframe per match, so the two artboards cost two iframes — the inactive one is display:none
+// (algovault-design.css) and Chrome still loads it. Measured, accepted, and the reason AC11
+// pins LCP/CLS before and after with a named rollback trigger.
+//
+// NO ALGOVAULT COPY. The only user-visible string is Google's own localized label inside their
+// iframe. data-theme="dark" matches the landing; data-lang="en" matches <html lang>.
+//
+// The markers are a rollback range, allow-listed as FUNCTIONAL in ops/comment-hygiene-config.json
+// so this does not add to the report-lane leak count that OPS-COMMENT-HYGIENE-PROMOTE-W{NEXT} is
+// trying to drive to zero.
+function preferredSourceButton(mobile) {
+  const pad = mobile ? '28px 22px 0' : '36px 80px 0';
+  return (
+    '<!-- SEO-PREFSRC-W1:START -->' +
+    `<div style="padding:${pad};display:flex;justify-content:center">` +
+    '<div google-add-preferred-source-btn data-theme="dark" data-lang="en"></div>' +
+    '</div>' +
+    '<!-- SEO-PREFSRC-W1:END -->'
+  );
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const target = args.target || 'belowfold';
@@ -2167,7 +2200,10 @@ async function main() {
       // links included), not the vault LandingFooter JSX → applyFooterUrls → injectFooterBadge.
       const ft = renderBrandFooter(mobile ? 'mobile' : 'desktop');
       // Final pass: wrap "5 exchanges" / "11 timeframes" prose literals with proxy spans (copy-consistency canary).
-      html = wrapCounterLiteralsInProse(lv + ltr + tp + tb + sp + wt + vs + uc + try30 + fd + fq + ft);
+      // SEO-SITE-NAME-AND-PREFERRED-SOURCES-W1: the button sits in the closing seam — after the
+      // FAQ, BEFORE the injected brand footer, so it is visually adjacent to it and never inside it.
+      const ps = preferredSourceButton(mobile);
+      html = wrapCounterLiteralsInProse(lv + ltr + tp + tb + sp + wt + vs + uc + try30 + fd + fq + ps + ft);
     } else if (target === 'hero') {
       // DESIGN-W7 hero render — V1Hero from v1-minimal.jsx with `count=32, diagram='flow'`
       // (matches canonical AlgoVault Landing.html bootstrap line 59).

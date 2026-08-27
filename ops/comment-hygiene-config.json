@@ -17,7 +17,8 @@
     { "pattern": "^SNAPSHOT-LINE$", "reason": "Marks a line auto-injected from the live SoT by scripts/snapshot-landing-data.mjs. Hand-editing a marked line breaks the injector." },
     { "pattern": "^SLOT:[A-Z_]+$", "reason": "Template placeholder in landing/_templates/*.template.html, substituted at generation time." },
     { "pattern": "^snapshot: \\d{4}-\\d{2}-\\d{2}\\s*[—–-]{1,2}\\s*live source of truth:", "reason": "Snapshot-provenance marker carried from the tutorial markdown. render-integrations.mjs's stripSnapshotBlock() matches on it, so it is functional, not prose. The dash character varies by upstream source (em dash, en dash, double hyphen), hence the character class." },
-    { "pattern": "^Privacy-friendly analytics by Plausible$", "reason": "Fixed label emitted inside the analytics region by build_analytics.mjs. Carries no internal identifier and is part of that generator's stable output." }
+    { "pattern": "^Privacy-friendly analytics by Plausible$", "reason": "Fixed label emitted inside the analytics region by build_analytics.mjs. Carries no internal identifier and is part of that generator's stable output." },
+    { "pattern": "^SEO-PREFSRC-W1:(START|END)$", "reason": "Rollback range for Google's Add-to-Preferred-Sources button (SEO-SITE-NAME-AND-PREFERRED-SOURCES-W1). Three pairs on landing/index.html: the publisher.js tag in <head> and one button div per lp-rest-* artboard. Load-bearing as a revert handle — the AC11 rollback trigger is one sed over this exact range — and emitted verbatim by preferredSourceButton() in scripts/render-jsx-static.mjs, so a re-render reproduces them byte-identically." }
   ],
 
   "promotion": {
