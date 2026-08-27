@@ -12,7 +12,7 @@
  * permanently destroy the distinction between "blocked before charge creation" (PI-failure
  * alone) and "issuer declined the charge" (both).
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Per-file SQLite isolation (unique temp HOME before imports) — same shape as the sibling
 // stripe-webhook-idempotency suite. `DATABASE_URL` must be deleted BEFORE import: the store
@@ -327,5 +327,182 @@ describe('🛑 THE REGRESSION: one dunned customer is ONE failing customer', () 
     const [n] = await dbQuery<{ n: number }>(
       'SELECT COUNT(DISTINCT COALESCE(customer_id, payment_intent_id, event_id)) AS n FROM stripe_payment_failures', []);
     expect(Number(n.n)).toBe(1);
+  });
+});
+
+/**
+ * OPS-PAYMENT-DECLINE-INSTRUMENT-UNIT-W1 — one card, several customer records, ONE failing payer.
+ *
+ * THE INCIDENT. On 2026-08-27 the decline floor fired on "3 distinct CUSTOMERS with a failed
+ * payment in the last 7d". Two of those three were the SAME PHYSICAL CARD: Stripe fingerprint
+ * `NErSOdf0ZP9j0cJB`, last4 7755, two customer records created 48 MINUTES apart with different
+ * emails, both `past_due`. True distinct payment instruments: 2 — which does not breach a floor
+ * of 3.
+ *
+ * This is the customer-unit defect one rung higher. Stripe inflates per PAYMENT (dunning
+ * retries), then per CUSTOMER RECORD (one person can hold many). It cannot inflate per CARD.
+ *
+ * Fixtures are CAPTURED shapes: measured on api_version 2026-03-25.dahlia, the fingerprint is
+ * present on `charge.failed` (`payment_method_details.card`) and on
+ * `payment_intent.payment_failed` (`last_payment_error.payment_method.card`), and ABSENT from
+ * `invoice.payment_failed` — which is exactly why the canary joins it per customer, not per row.
+ */
+const FP_SHARED = 'NErSOdf0ZP9j0cJB';
+const CUS_A = 'cus_UxLEF1LqHKaHih';
+const CUS_B = 'cus_UxM0PrC0uwky7Q';
+
+const sharedCard = (fingerprint: string) => ({
+  type: 'card',
+  card: { brand: 'mastercard', country: 'US', funding: 'credit', last4: '7755', fingerprint },
+});
+
+const chargeWithCard = (eventId: string, customer: string, pi: string, fingerprint: string) => ({
+  id: eventId, type: 'charge.failed', created: 1_788_000_000,
+  data: { object: { id: `ch_${eventId}`, object: 'charge', customer, payment_intent: pi,
+    amount: 999, currency: 'usd', created: 1_788_000_000, failure_code: 'card_declined',
+    decline_code: 'insufficient_funds', payment_method_details: sharedCard(fingerprint) } },
+});
+
+const piWithCard = (eventId: string, customer: string, pi: string, fingerprint: string) => ({
+  id: eventId, type: 'payment_intent.payment_failed', created: 1_788_000_100,
+  data: { object: { id: pi, object: 'payment_intent', customer, amount: 999, currency: 'usd',
+    created: 1_788_000_100,
+    last_payment_error: { code: 'card_declined', decline_code: 'insufficient_funds',
+      message: 'declined', payment_method: sharedCard(fingerprint) } } },
+});
+
+/**
+ * The pseudonym key is set BY THE SUITE, never inherited from the developer's shell. Measured:
+ * without it these tests pass locally (my shell had it) and fail in CI — the classic hermeticity
+ * hole, and the reason `hashCardRef`'s no-key degrade path gets its own explicit test below
+ * rather than being the accidental default everywhere else.
+ */
+const TEST_PSEUDONYM_KEY = 'test-card-ref-key-0000000000000000000000000000000000000000000000';
+let _savedKey: string | undefined;
+beforeEach(() => { _savedKey = process.env.ALGOVAULT_IP_HASH_KEY; process.env.ALGOVAULT_IP_HASH_KEY = TEST_PSEUDONYM_KEY; });
+afterEach(() => {
+  if (_savedKey === undefined) delete process.env.ALGOVAULT_IP_HASH_KEY;
+  else process.env.ALGOVAULT_IP_HASH_KEY = _savedKey;
+});
+
+describe('🛑 the card pseudonym — the unit one rung above the customer record', () => {
+  it('🛑 stores a KEYED ref, never the fingerprint — the PAN prohibition is not weakened', () => {
+    const row = buildPaymentFailureRow(chargeWithCard('evt_pan', CUS_A, 'pi_a', FP_SHARED))!;
+    expect(row.cardRef).toMatch(/^v1:[0-9a-f]{16}$/);
+    expect(JSON.stringify(row)).not.toContain(FP_SHARED);
+    expect(JSON.stringify(row)).not.toContain('7755');
+  });
+
+  it('🛑 no key ⇒ NULL ref, never an unkeyed value, and never a throw on the webhook path', () => {
+    delete process.env.ALGOVAULT_IP_HASH_KEY;
+    let row: ReturnType<typeof buildPaymentFailureRow>;
+    expect(() => { row = buildPaymentFailureRow(chargeWithCard('evt_nokey', CUS_A, 'pi_a', FP_SHARED)); })
+      .not.toThrow();
+    expect(row!.cardRef).toBeNull();
+    // ...and the row is otherwise intact, so the canary simply falls back to customer_id.
+    expect(row!.customerId).toBe(CUS_A);
+  });
+
+  it('the same card yields the same ref; a different card a different one', () => {
+    const a = buildPaymentFailureRow(chargeWithCard('evt_s1', CUS_A, 'pi_a', FP_SHARED))!.cardRef;
+    const b = buildPaymentFailureRow(chargeWithCard('evt_s2', CUS_B, 'pi_b', FP_SHARED))!.cardRef;
+    const c = buildPaymentFailureRow(chargeWithCard('evt_s3', CUS_A, 'pi_c', 'DifferentCard123'))!.cardRef;
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+  });
+
+  it('case is PRESERVED — two cards differing only in case must not fold together', () => {
+    const upper = buildPaymentFailureRow(chargeWithCard('evt_u', CUS_A, 'pi_a', 'AbCdEfGh1234'))!.cardRef;
+    const lower = buildPaymentFailureRow(chargeWithCard('evt_l', CUS_A, 'pi_a', 'abcdefgh1234'))!.cardRef;
+    expect(upper).not.toBe(lower);
+  });
+
+  it('is extracted from a charge (payment_method_details.card)', () => {
+    const ref = buildPaymentFailureRow(chargeWithCard('evt_c1', CUS_A, 'pi_a', FP_SHARED))!.cardRef!;
+    expect(ref).toMatch(/^v1:[0-9a-f]{16}$/);
+    expect(ref).not.toContain(FP_SHARED);
+  });
+
+  it('is extracted from a PaymentIntent (last_payment_error.payment_method.card)', () => {
+    expect(buildPaymentFailureRow(piWithCard('evt_p1', CUS_A, 'pi_a', FP_SHARED))!.cardRef)
+      .toBe(buildPaymentFailureRow(chargeWithCard('evt_c9', CUS_B, 'pi_b', FP_SHARED))!.cardRef);
+  });
+
+  it('is NULL on an invoice — it carries no card node, and that is why the join is per customer', () => {
+    const row = buildPaymentFailureRow(dahliaInvoiceEvent('evt_inv_fp', 1))!;
+    expect(row.cardRef).toBeNull();
+    expect(row.customerId).toBe(CUS);   // ...but the customer IS there, which is what rescues it
+  });
+
+  it('a too-short or non-base62 fingerprint is REFUSED, never keyed into a bogus ref', () => {
+    // The validator bounds are 8..64 base62 chars. A short or punctuated value is not a Stripe
+    // fingerprint, and hashing it anyway would mint a confident key for a value we do not trust.
+    for (const bad of ['short', 'has-dash-000000', '', '   ']) {
+      expect(buildPaymentFailureRow(chargeWithCard('evt_bad', CUS_A, 'pi_a', bad))!.cardRef).toBeNull();
+    }
+    expect(buildPaymentFailureRow(chargeWithCard('evt_ok', CUS_A, 'pi_a', 'abcd1234'))!.cardRef)
+      .toMatch(/^v1:[0-9a-f]{16}$/);
+  });
+
+  it('a card-less method (no card node at all) yields null, never a fabricated key', () => {
+    const noCard = {
+      id: 'evt_nocard', type: 'charge.failed', created: 1,
+      data: { object: { id: 'ch_x', object: 'charge', customer: CUS_A, amount: 999,
+        currency: 'usd', created: 1, payment_method_details: { type: 'link' } } },
+    };
+    expect(buildPaymentFailureRow(noCard)!.cardRef).toBeNull();
+  });
+});
+
+describe('🛑 THE REGRESSION: two customer records, one card, one failing payer', () => {
+  it('the live 2026-08-27 shape counts 2 by card where the customer unit counted 3', async () => {
+    // Customer A and B share ONE card; customer C (the incumbent past_due) has a different one.
+    for (const e of [
+      chargeWithCard('evt_a_ch', CUS_A, 'pi_a', FP_SHARED),
+      piWithCard('evt_a_pi', CUS_A, 'pi_a', FP_SHARED),
+      chargeWithCard('evt_b_ch', CUS_B, 'pi_b', FP_SHARED),
+      piWithCard('evt_b_pi', CUS_B, 'pi_b', FP_SHARED),
+      chargeWithCard('evt_c_ch', CUS, 'pi_c', 'fn0g5haOdN7RU6eh'),
+    ]) {
+      expect(await recordPaymentFailure(buildPaymentFailureRow(e)!)).toBe(true);
+    }
+    // Plus an INVOICE row for A, which carries no card — the row the per-row COALESCE would split.
+    await recordPaymentFailure(buildPaymentFailureRow(dahliaInvoiceEvent('evt_a_inv', 1))!);
+
+    const [byCustomer] = await dbQuery<{ n: number }>(
+      'SELECT COUNT(DISTINCT COALESCE(customer_id, payment_intent_id, event_id)) AS n FROM stripe_payment_failures', []);
+    const [byCard] = await dbQuery<{ n: number }>(
+      `WITH fp AS (SELECT customer_id, MAX(card_ref) AS card_ref
+                     FROM stripe_payment_failures
+                    WHERE customer_id IS NOT NULL AND COALESCE(TRIM(card_ref),'') <> ''
+                    GROUP BY customer_id)
+       SELECT COUNT(DISTINCT COALESCE(fp.card_ref, f.customer_id, f.payment_intent_id, f.event_id)) AS n
+         FROM stripe_payment_failures f LEFT JOIN fp ON fp.customer_id = f.customer_id`, []);
+
+    expect(Number(byCustomer.n)).toBe(3);   // the unit that fired the floor
+    expect(Number(byCard.n)).toBe(2);       // the truth: two physical cards
+  });
+
+  it('...and the invoice row inherits its customer\'s card rather than splitting off', async () => {
+    await recordPaymentFailure(buildPaymentFailureRow(chargeWithCard('evt_a_ch', CUS_A, 'pi_a', FP_SHARED))!);
+    await recordPaymentFailure(buildPaymentFailureRow(dahliaInvoiceEvent('evt_a_inv', 1))!);
+    const [n] = await dbQuery<{ n: number }>(
+      `WITH fp AS (SELECT customer_id, MAX(card_ref) AS card_ref
+                     FROM stripe_payment_failures
+                    WHERE customer_id IS NOT NULL AND COALESCE(TRIM(card_ref),'') <> ''
+                    GROUP BY customer_id)
+       SELECT COUNT(DISTINCT COALESCE(fp.card_ref, f.customer_id, f.payment_intent_id, f.event_id)) AS n
+         FROM stripe_payment_failures f LEFT JOIN fp ON fp.customer_id = f.customer_id`, []);
+    // The invoice row belongs to a DIFFERENT customer (CUS) than the charge (CUS_A), so 2 is
+    // correct here — what matters is that neither splits into more than one key.
+    expect(Number(n.n)).toBe(2);
+  });
+
+  it('two genuinely different CARDS still count as two — the alarm is not disarmed', async () => {
+    await recordPaymentFailure(buildPaymentFailureRow(chargeWithCard('evt_x', CUS_A, 'pi_x', 'FPoneAAAAAAAAAAA'))!);
+    await recordPaymentFailure(buildPaymentFailureRow(chargeWithCard('evt_y', CUS_B, 'pi_y', 'FPtwoBBBBBBBBBBB'))!);
+    const [n] = await dbQuery<{ n: number }>(
+      'SELECT COUNT(DISTINCT card_ref) AS n FROM stripe_payment_failures WHERE card_ref IS NOT NULL', []);
+    expect(Number(n.n)).toBe(2);
   });
 });

@@ -26,7 +26,9 @@
  */
 // NB: `dbRun` deliberately NOT imported — see the module header.
 import { dbExec, dbQuery } from './performance-db.js';
-import { resolvePaymentFailureDetail, type PaymentFailureDetail } from './payment-method-attribution.js';
+import crypto from 'node:crypto';
+import { resolvePaymentFailureDetail, readCardFingerprint, type PaymentFailureDetail } from './payment-method-attribution.js';
+import { resolveIpHashKey } from './analytics.js';
 
 const PG = !!process.env.DATABASE_URL;
 const TS = PG ? 'TIMESTAMPTZ' : 'TIMESTAMP';
@@ -52,11 +54,13 @@ const CREATE_STRIPE_PAYMENT_FAILURES_SQL = `
     tier TEXT,
     customer_id TEXT,
     invoice_id TEXT,
-    subscription_id TEXT
+    subscription_id TEXT,
+    card_ref TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_spf_occurred_at ON stripe_payment_failures (occurred_at DESC);
   CREATE INDEX IF NOT EXISTS idx_spf_payment_intent_id ON stripe_payment_failures (payment_intent_id);
   CREATE INDEX IF NOT EXISTS idx_spf_customer_id ON stripe_payment_failures (customer_id);
+  CREATE INDEX IF NOT EXISTS idx_spf_card_ref ON stripe_payment_failures (card_ref);
 `;
 
 // ── The three linkage columns, added to a table that already exists in PROD ────────────────
@@ -75,7 +79,9 @@ const CREATE_STRIPE_PAYMENT_FAILURES_SQL = `
 //
 // Same idempotent-ALTER shape as referral-store.ensureReferralPayoutColumns: PG's ADD COLUMN IF
 // NOT EXISTS is natively idempotent; SQLite has none and needs the PRAGMA pre-check.
-const LINKAGE_COLUMNS = Object.freeze(['customer_id', 'invoice_id', 'subscription_id'] as const);
+const LINKAGE_COLUMNS = Object.freeze(
+  ['customer_id', 'invoice_id', 'subscription_id', 'card_ref'] as const,
+);
 
 let _linkageColInit = false;
 export async function ensurePaymentFailureLinkageColumns(): Promise<void> {
@@ -128,6 +134,8 @@ export interface StripePaymentFailureRow extends PaymentFailureDetail {
   /** Present on `invoice.payment_failed` (the object's own id); null elsewhere on `dahlia`. */
   invoiceId: string | null;
   subscriptionId: string | null;
+  /** Keyed per-card pseudonym — see hashCardRef. NEVER the raw fingerprint. */
+  cardRef: string | null;
 }
 
 /**
@@ -147,8 +155,8 @@ export async function recordPaymentFailure(row: StripePaymentFailureRow): Promis
        payment_method_type, card_brand, card_country, card_funding,
        decline_code, failure_code, failure_message,
        outcome_type, outcome_reason, outcome_seller_message, outcome_risk_level,
-       amount_usd, tier, customer_id, invoice_id, subscription_id
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       amount_usd, tier, customer_id, invoice_id, subscription_id, card_ref
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (event_id) DO NOTHING
      RETURNING event_id`,
     [
@@ -172,9 +180,49 @@ export async function recordPaymentFailure(row: StripePaymentFailureRow): Promis
       row.customerId,
       row.invoiceId,
       row.subscriptionId,
+      row.cardRef,
     ],
   );
   return inserted.length > 0;
+}
+
+/** Current card-pseudonym derivation version. Bump ONLY together with a key rotation. */
+export const CARD_REF_VERSION = 'v1';
+
+/**
+ * A KEYED, non-reversible pseudonym for a physical card. `v1:<16 hex>`, or null.
+ *
+ * ── WHY A PSEUDONYM AND NOT THE FINGERPRINT ───────────────────────────────────────────────
+ * The decline floor needs to know whether two failures came from the SAME CARD — an equality
+ * question, which never requires the value itself. And `payment-method-attribution.ts` carries a
+ * structural PAN prohibition asserting it "never emits last4, fingerprint, iin or cardholder name
+ * even when present". A Stripe fingerprint is not a PAN and is not reversible to one, but it IS a
+ * stable CROSS-MERCHANT identifier for a physical card, so that control is pointing at something
+ * real. Storing a keyed hash satisfies the counter exactly and stores nothing linkable.
+ *
+ * HMAC-SHA256 under the server-side key already provisioned for `hashIp`, with a `card:` DOMAIN
+ * PREFIX so the two pseudonym namespaces cannot collide or be cross-joined. Reusing the key is
+ * deliberate: a second secret means a second provisioning, rotation and leak surface for no gain,
+ * and domain separation is the purpose-built answer. A rotation bumps both version tags together.
+ *
+ * 🛑 IT RETURNS NULL RATHER THAN THROWING WHEN THE KEY IS ABSENT. `hashIp` throws by design — an
+ * unkeyed pseudonym is the reversible bug wearing a new label — but this runs inside a LIVE
+ * PAYMENT WEBHOOK, and a guard on a serving path refuses, it does not throw. No key ⇒ no card
+ * ref ⇒ the canary's COALESCE falls back to `customer_id`, i.e. exactly the pre-wave behaviour.
+ * Degraded, never broken, and never silently unkeyed.
+ */
+export function hashCardRef(fingerprint: string | null | undefined): string | null {
+  if (typeof fingerprint !== 'string' || fingerprint.trim() === '') return null;
+  let key: string;
+  try {
+    key = resolveIpHashKey();
+  } catch {
+    console.warn('[stripe-payment-failures] no pseudonym key — card_ref degrades to NULL '
+      + '(the decline floor falls back to customer_id; it does NOT store an unkeyed value)');
+    return null;
+  }
+  const mac = crypto.createHmac('sha256', key).update(`card:${fingerprint.trim()}`).digest('hex').slice(0, 16);
+  return `${CARD_REF_VERSION}:${mac}`;
 }
 
 // ── Event → row (pure; the webhook cases are thin shells over this) ──────────────────────
@@ -273,6 +321,10 @@ export function buildPaymentFailureRow(event: any): StripePaymentFailureRow | nu
     customerId,
     invoiceId,
     subscriptionId,
+    // Measured on `dahlia`: present on charge.failed and payment_intent.payment_failed, ABSENT
+    // from invoice.payment_failed — which is why the canary joins the ref per CUSTOMER, not per
+    // row. The raw fingerprint lives only in this expression and is never stored.
+    cardRef: hashCardRef(readCardFingerprint(object)),
   };
 }
 

@@ -53,11 +53,22 @@ added so a NULL-PI row would not be silently DROPPED, which was right; but it su
 that GUARANTEES distinctness for exactly the row class that most needs deduping. True distinct
 failing customers over the same window: **1**.
 
-`customer` is the unifier: measured on api_version `2026-03-25.dahlia`, it is present on ALL
-THREE subscribed event types, while `invoice` is absent from the Charge and the PaymentIntent
-and `payment_intent` is absent from the Invoice. So the customer is both the only unit every
-event can be attributed to AND the unit the predicate always meant. Rows written before
-`customer_id` existed have NULL, and those fall back to the old key so history is never dropped.
+`customer` is the unifier across EVENT TYPES: measured on api_version `2026-03-25.dahlia`, it is
+present on ALL THREE subscribed event types, while `invoice` is absent from the Charge and the
+PaymentIntent and `payment_intent` is absent from the Invoice.
+
+── 🛑 AND THEN THE UNIT MOVED ONE RUNG HIGHER AGAIN (2026-08-27) ───────────────────────────
+The floor fired on "3 distinct customers". Two of those three were the SAME PHYSICAL CARD:
+fingerprint `NErSOdf0ZP9j0cJB`, last4 7755, two Stripe customer records created 48 MINUTES apart
+with different emails, both `past_due`. One payer, counted twice; true distinct instruments 2,
+which does not breach a floor of 3.
+
+So the live unit is now the CARD FINGERPRINT — Stripe's stable per-card id, opaque and not a PAN.
+Stripe inflates per PAYMENT (dunning), then per CUSTOMER RECORD (one person, many accounts); it
+cannot inflate per CARD. That is what makes this the terminal rung rather than the next surprise.
+
+All three units are computed and REPORTED on every run. The gaps are the diagnosis:
+instruments→customers is DUPLICATE ACCOUNTS, customers→payments is DUNNING RETRIES.
 
 Verdict token: every run prints exactly one terminal `PAYMENT_DECLINE_VERDICT=` line.
 Exit codes: 0 = PASS · 1 = FAIL · 3 = INDETERMINATE.
@@ -117,16 +128,63 @@ def log(msg):
 # inside its own bypassed parser). The self-test asserts these artifacts directly.
 
 def build_failure_count_query(days):
-    """Distinct FAILING CUSTOMERS in a window — never a row count, and never a per-event unit.
+    """Distinct FAILING PAYMENT INSTRUMENTS in a window — the unit the floor actually means.
 
     The COALESCE chain is ordered by how much deduplication each key buys, strongest first:
 
-      customer_id       one row per human, immune to retries AND to the dual-event fan-out
-      payment_intent_id one row per payment  (pre-linkage rows, and any event with no customer)
-      event_id          one row per event    (last resort; never DROP an unkeyable row)
+      card_ref  one row per CARD — immune to retries, to the dual-event fan-out, AND to
+                        one person holding several Stripe customer records
+      customer_id       one row per customer record (rows whose event carried no card)
+      payment_intent_id one row per payment          (pre-linkage rows)
+      event_id          one row per event            (last resort; never DROP an unkeyable row)
 
-    Only the first is retry-proof, which is the whole point — see the module header for the
-    measurement that made a single dunned customer read as three failed payments.
+    🛑 WHY THE UNIT MOVED AGAIN, AND WHY THIS IS THE LAST RUNG. Measured 2026-08-27: the floor
+    fired on "3 distinct customers", and two of those three were the SAME PHYSICAL CARD —
+    fingerprint `NErSOdf0ZP9j0cJB`, last4 7755, two Stripe customer records created 48 minutes
+    apart with different emails. One payer, counted twice. True distinct instruments: 2, which
+    does not breach a floor of 3.
+
+    This is the same defect the customer unit fixed, one rung higher. Stripe inflates per PAYMENT
+    (dunning retries), then per CUSTOMER RECORD (one person can hold many). It cannot inflate per
+    CARD: the fingerprint is stable across customers, tokens and PaymentMethods by construction,
+    which is precisely what makes it the terminal unit rather than the next thing to be surprised
+    by.
+
+    ── THE FINGERPRINT IS RESOLVED PER CUSTOMER, NOT PER ROW, AND THAT IS LOAD-BEARING ────────
+    `invoice.payment_failed` carries NO card node (measured on api_version 2026-03-25.dahlia: the
+    Invoice exposes only an unexpanded `default_payment_method`), so an invoice row's own
+    fingerprint is always NULL. A per-ROW COALESCE would therefore fall back to `customer_id` for
+    exactly those rows and re-split the two customer records that share a card — fixing nothing.
+
+    So the fingerprint is joined in from the SAME CUSTOMER's card-bearing rows. `DISTINCT ON`
+    pins one fingerprint per customer (the most recent), because a customer who has failed on two
+    different cards would otherwise fan the join out and re-inflate the very count this exists to
+    deflate — over-counting is the wrong direction for a floor whose false alarms are the bug.
+    """
+    if not isinstance(days, int) or days <= 0:
+        raise ValueError("days must be a positive int, got %r" % (days,))
+    return (
+        "WITH fp AS ("
+        "SELECT DISTINCT ON (customer_id) customer_id, card_ref "
+        "FROM stripe_payment_failures "
+        "WHERE customer_id IS NOT NULL AND coalesce(trim(card_ref),'') <> '' "
+        "ORDER BY customer_id, occurred_at DESC"
+        ") "
+        "SELECT COUNT(DISTINCT COALESCE(fp.card_ref, f.customer_id, "
+        "f.payment_intent_id, f.event_id)) "
+        "FROM stripe_payment_failures f "
+        "LEFT JOIN fp ON fp.customer_id = f.customer_id "
+        "WHERE f.occurred_at >= NOW() - INTERVAL '%d days'" % days
+    )
+
+
+def build_customer_count_query(days):
+    """The PREVIOUS unit — distinct customer RECORDS — kept and reported beside the new one.
+
+    Two prior units now ship alongside the live one, and neither is decoration: the gap between
+    instruments and customers is DUPLICATE ACCOUNTS, the gap between customers and payments is
+    DUNNING RETRIES. Two different facts about the same failures, each invisible without its
+    counterpart, and both would have been silently lost had the unit simply been swapped.
     """
     if not isinstance(days, int) or days <= 0:
         raise ValueError("days must be a positive int, got %r" % (days,))
@@ -181,7 +239,8 @@ def parse_count(raw):
     return int(first)
 
 
-def classify(failures_7d, failures_30d, successes_30d, payments_7d=None, payments_30d=None):
+def classify(failures_7d, failures_30d, successes_30d, payments_7d=None, payments_30d=None,
+             customers_7d=None, customers_30d=None):
     """Pure verdict. Returns (verdict, reasons, facts) — no I/O, no clock.
 
     `failures_*` are DISTINCT CUSTOMERS; `payments_*` are the prior distinct-payment unit,
@@ -196,7 +255,9 @@ def classify(failures_7d, failures_30d, successes_30d, payments_7d=None, payment
         "failures_7d": failures_7d,
         "payments_7d": payments_7d,
         "payments_30d": payments_30d,
-        "failure_unit": "distinct customers",
+        "customers_7d": customers_7d,
+        "customers_30d": customers_30d,
+        "failure_unit": "distinct payment instruments (keyed card ref)",
         "min_n": MIN_N,
         "rate_predicate": "ACTIVE" if n >= MIN_N else "INERT (n < MIN_N)",
         "decline_rate_pct_30d": (round(failures_30d * 100.0 / n, 1) if n > 0 else None),
@@ -206,15 +267,16 @@ def classify(failures_7d, failures_30d, successes_30d, payments_7d=None, payment
     # Absolute floor — live from n=1. This is the only predicate that can fire today.
     if failures_7d >= FLOOR_FAILURES:
         reasons.append(
-            "ABSOLUTE FLOOR breached: %d distinct CUSTOMERS with a failed payment in the last "
-            "%dd (threshold >= %d)" % (failures_7d, FLOOR_WINDOW_DAYS, FLOOR_FAILURES)
+            "ABSOLUTE FLOOR breached: %d distinct PAYMENT INSTRUMENTS (cards) failed in the "
+            "last %dd (threshold >= %d)" % (failures_7d, FLOOR_WINDOW_DAYS, FLOOR_FAILURES)
         )
 
     # Rate predicate — structurally inert below MIN_N.
     if n >= MIN_N and facts["decline_rate_pct_30d"] is not None:
         if facts["decline_rate_pct_30d"] > DECLINE_RATE_PCT_MAX:
             reasons.append(
-                "DECLINE RATE %.1f%% over Last %dd exceeds %.1f%% (n=%d: %d failed / %d converted)"
+                "DECLINE RATE %.1f%% over Last %dd exceeds %.1f%% (n=%d: %d failing instruments / "
+                "%d converted)"
                 % (facts["decline_rate_pct_30d"], RATE_WINDOW_DAYS, DECLINE_RATE_PCT_MAX,
                    n, failures_30d, successes_30d)
             )
@@ -231,19 +293,22 @@ def build_body(reasons, facts):
     lines = ["🛑 %s" % ALERT_ID]
     lines.extend(reasons)
     lines.append(
-        "Facts — Last %dd: n=%d (%d converted + %d failing customers) · rate=%s · Last %dd failing customers=%d · rate predicate %s"
+        "Facts — Last %dd: n=%d (%d converted + %d failing cards) · rate=%s · Last %dd failing cards=%d · rate predicate %s"
         % (RATE_WINDOW_DAYS, facts["n_30d"], facts["successes_30d"], facts["failures_30d"],
            ("%.1f%%" % facts["decline_rate_pct_30d"]) if facts["decline_rate_pct_30d"] is not None else "unmeasured",
            FLOOR_WINDOW_DAYS, facts["failures_7d"], facts["rate_predicate"])
     )
     lines.append(
-        "Prior unit for comparison — distinct payments: %s in %dd, %s in %dd. A gap between the "
-        "two is Stripe DUNNING RETRIES on the same card, not extra failing customers."
-        % (_n(facts.get("payments_7d")), FLOOR_WINDOW_DAYS,
-           _n(facts.get("payments_30d")), RATE_WINDOW_DAYS)
+        "Three units, %dd / %dd — the GAPS are the diagnosis:"
+        % (FLOOR_WINDOW_DAYS, RATE_WINDOW_DAYS)
     )
-    lines.append("Every count is over DISTINCT CUSTOMERS, not rows and not payment intents "
-                 "(one declined card writes up to 2 rows per dunning attempt).")
+    lines.append("  cards (live unit): %s / %s" % (_n(facts.get("failures_7d")), _n(facts.get("failures_30d"))))
+    lines.append("  customer records:  %s / %s   — a gap above means DUPLICATE ACCOUNTS on one card"
+                 % (_n(facts.get("customers_7d")), _n(facts.get("customers_30d"))))
+    lines.append("  distinct payments: %s / %s   — a gap above means Stripe DUNNING RETRIES"
+                 % (_n(facts.get("payments_7d")), _n(facts.get("payments_30d"))))
+    lines.append("The floor counts CARDS. One person holding several Stripe customer records, or "
+                 "one card dunned for weeks, is ONE failing payer and must not read as several.")
     lines.append("Action: dispatch %s via Cowork → Claude Code" % RECOMMENDED_WAVE)
     return "\n".join(lines)
 
@@ -309,6 +374,8 @@ def main():
         # not depend on it, so it degrades to '-' rather than escalating a healthy run.
         payments_7d = parse_count(_psql(build_payment_count_query(FLOOR_WINDOW_DAYS)))
         payments_30d = parse_count(_psql(build_payment_count_query(RATE_WINDOW_DAYS)))
+        customers_7d = parse_count(_psql(build_customer_count_query(FLOOR_WINDOW_DAYS)))
+        customers_30d = parse_count(_psql(build_customer_count_query(RATE_WINDOW_DAYS)))
     except Exception as exc:                                    # noqa: BLE001
         log("DB unreadable: %s" % exc)
         # Fail-open in the sense that we do not crash — but a blind canary ESCALATES. An
@@ -329,17 +396,18 @@ def main():
         return EXIT_INDETERMINATE
 
     verdict, reasons, facts = classify(failures_7d, failures_30d, successes_30d,
-                                       payments_7d, payments_30d)
+                                       payments_7d, payments_30d, customers_7d, customers_30d)
     append_observation(facts)
 
     # POSITIVE per-check output — never "absence of an alert". A row silently skipped by a
     # load error must not look identical to a row that passed.
-    log("Last %dd: n=%d (%d converted + %d failing customers) rate=%s | Last %dd failing customers=%d "
-        "(floor >= %d) | prior unit distinct payments: %s in %dd / %s in %dd | rate predicate %s"
+    log("Last %dd: n=%d (%d converted + %d failing cards) rate=%s | Last %dd failing cards=%d "
+        "(floor >= %d) | customer records: %s/%s | distinct payments: %s/%s | rate predicate %s"
         % (RATE_WINDOW_DAYS, facts["n_30d"], facts["successes_30d"], facts["failures_30d"],
            ("%.1f%%" % facts["decline_rate_pct_30d"]) if facts["decline_rate_pct_30d"] is not None else "unmeasured",
            FLOOR_WINDOW_DAYS, facts["failures_7d"], FLOOR_FAILURES,
-           _n(facts["payments_7d"]), FLOOR_WINDOW_DAYS, _n(facts["payments_30d"]), RATE_WINDOW_DAYS,
+           _n(facts["customers_7d"]), _n(facts["customers_30d"]),
+           _n(facts["payments_7d"]), _n(facts["payments_30d"]),
            facts["rate_predicate"]))
 
     if verdict == "FAIL":
@@ -393,13 +461,40 @@ def self_test():
     # the exact expression that scored one dunned customer as three failed payments. The unit is
     # now the customer, and the OLD unit is retained under its own builder and asserted there, so
     # the change is visible in the suite rather than silently swapped.
-    check("failure query counts distinct CUSTOMERS first",
-          "COALESCE(customer_id, payment_intent_id, event_id)" in q7)
-    check("...and still never DROPS a row that has neither (event_id is the last resort)",
-          q7.rstrip().count("event_id") == 1 and "COUNT(DISTINCT COALESCE(" in q7)
-    check("the PRIOR unit is retained, not deleted, so the two are comparable on every run",
+    # FLIPPED again, not deleted. The customer unit fixed dunning inflation; it could not fix
+    # ONE CARD held across several customer records, which is what fired the floor on 2026-08-27.
+    check("failure query counts distinct CARD REFS first",
+          "COALESCE(fp.card_ref, f.customer_id, f.payment_intent_id, f.event_id)" in q7)
+    check("...and still never DROPS a row that has none of them (event_id is the last resort)",
+          "f.event_id))" in q7 and "COUNT(DISTINCT COALESCE(" in q7)
+    check("🛑 the fingerprint is joined PER CUSTOMER, not read per row — an invoice event carries "
+          "no card node, so a per-row COALESCE would re-split the very accounts this merges",
+          "DISTINCT ON (customer_id)" in q7 and "LEFT JOIN fp ON fp.customer_id = f.customer_id" in q7)
+    check("...pinned to ONE fingerprint per customer, so a second card cannot fan the join out",
+          "ORDER BY customer_id, occurred_at DESC" in q7)
+    check("...and a blank fingerprint never becomes a key",
+          "coalesce(trim(card_ref),'') <> ''" in q7)
+    check("the CUSTOMER unit is retained as a prior, not deleted",
+          "COALESCE(customer_id, payment_intent_id, event_id)" in build_customer_count_query(7)
+          and "card_ref" not in build_customer_count_query(7))
+    check("the PAYMENT unit is retained too, so all three are comparable on every run",
           "COALESCE(payment_intent_id, event_id)" in build_payment_count_query(7)
           and "customer_id" not in build_payment_count_query(7))
+    check("the customer-unit builder carries its own window",
+          "INTERVAL '30 days'" in build_customer_count_query(30))
+    try:
+        build_customer_count_query(0)
+        check("customer-unit builder rejects a bad window", False)
+    except ValueError:
+        check("customer-unit builder rejects a bad window", True)
+    for bad in ("7; DROP TABLE x", None, 1.5):
+        try:
+            build_customer_count_query(bad)
+            check("customer-unit builder REFUSES %r rather than crashing" % (bad,), False)
+        except ValueError:
+            check("customer-unit builder REFUSES %r rather than crashing" % (bad,), True)
+        except Exception:
+            check("customer-unit builder REFUSES %r rather than crashing" % (bad,), False)
     check("the prior-unit builder carries its own window",
           "INTERVAL '30 days'" in build_payment_count_query(30))
     try:
@@ -432,7 +527,8 @@ def self_test():
     body = build_body(r, f)
     check("body names the alert id", ALERT_ID in body)
     check("body carries the templated wave, never a literal W-number", "W{NEXT}" in body)
-    check("body states the distinct-CUSTOMER semantics", "DISTINCT CUSTOMERS" in body)
+    check("body states the CARD semantics", "The floor counts CARDS" in body)
+    check("body names duplicate accounts as the customer-gap meaning", "DUPLICATE ACCOUNTS" in body)
     check("body carries n alongside every count", "n=5" in body)
     check("body names dunning retries as the reason the two units can differ",
           "DUNNING RETRIES" in body)
@@ -447,7 +543,20 @@ def self_test():
     check("...and both units are carried so the gap is auditable",
           (f1["failures_7d"], f1["payments_7d"]) == (1, 3))
     check("...and the facts name their unit rather than leaving it implied",
-          f1["failure_unit"] == "distinct customers")
+          f1["failure_unit"] == "distinct payment instruments (keyed card ref)")
+
+    # --- THE 2026-08-27 REGRESSION, as its live numbers ---------------------------------
+    # 3 customer records, 5 distinct payments, but only TWO physical cards (two records shared
+    # fingerprint NErSOdf0ZP9j0cJB). The floor must read 2 and stay silent.
+    v5, r5, f5 = classify(failures_7d=2, failures_30d=2, successes_30d=2,
+                          payments_7d=5, payments_30d=10, customers_7d=3, customers_30d=3)
+    check("THE REGRESSION: one card across two customer records does NOT trip the floor", v5 == "PASS")
+    check("...while the CUSTOMER unit would have (3 >= 3)", f5["customers_7d"] >= FLOOR_FAILURES)
+    check("...and all three units are carried so both gaps are auditable",
+          (f5["failures_7d"], f5["customers_7d"], f5["payments_7d"]) == (2, 3, 5))
+    b5 = build_body(["x"], f5)
+    check("...and the body renders all three, labelled", "cards (live unit): 2" in b5
+          and "customer records:  3" in b5 and "distinct payments: 5" in b5)
 
     # PROVEN able to fail in the other direction: three genuinely distinct customers still page.
     v2, _, _ = classify(failures_7d=3, failures_30d=3, successes_30d=4, payments_7d=3, payments_30d=3)
@@ -459,12 +568,12 @@ def self_test():
     _, r4, f4 = classify(failures_7d=3, failures_30d=3, successes_30d=0,
                          payments_7d=None, payments_30d=None)
     check("an absent prior-unit count renders as '-', never 0",
-          "distinct payments: - in 7d" in build_body(r4, f4))
+          "distinct payments: - / -" in build_body(r4, f4))
     check("_n renders a real zero as 0 and an absent value as '-'", (_n(0), _n(None)) == ("0", "-"))
 
     # --- vacuity guard --------------------------------------------------------------------
     # WE built this corpus, so empty here means the suite built nothing — a defect in the test.
-    check("self-test corpus is non-empty (vacuity guard)", len(passed) + len(failed) >= 40)
+    check("self-test corpus is non-empty (vacuity guard)", len(passed) + len(failed) >= 55)
 
     for label in failed:
         sys.stderr.write("  SELF-TEST FAIL: %s\n" % label)

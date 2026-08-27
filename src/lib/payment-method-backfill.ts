@@ -24,14 +24,14 @@
  */
 import { dbQuery } from './performance-db.js';
 import { getStripeClient } from './stripe.js';
-import { resolvePaymentMethodAttribution } from './payment-method-attribution.js';
+import { resolvePaymentMethodAttribution, resolvePaymentFailureDetail, readCardFingerprint } from './payment-method-attribution.js';
 import {
   ensureStripePaymentFailuresSchema,
   recordPaymentFailure,
   type StripePaymentFailureRow,
+  hashCardRef,
 } from './stripe-payment-failures-store.js';
 import { ensureSubscriberPaymentMethodColumns } from './subscriber-attribution.js';
-import { resolvePaymentFailureDetail } from './payment-method-attribution.js';
 
 export interface BackfillReport {
   mode: 'dry-run' | 'execute';
@@ -123,6 +123,7 @@ export async function backfillPaymentMethodAttribution(
         customerId: str(charge.customer as string | null | undefined),
         invoiceId: null,
         subscriptionId: null,
+        cardRef: hashCardRef(readCardFingerprint(charge)),
       };
       const [already] = await dbQuery<{ n: unknown }>(
         'SELECT COUNT(*) AS n FROM stripe_payment_failures WHERE event_id = ?', [chargeId],

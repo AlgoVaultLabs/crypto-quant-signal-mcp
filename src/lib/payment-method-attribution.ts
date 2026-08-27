@@ -110,17 +110,53 @@ export type PaymentMethodLike = unknown;
  * payload shape: Stripe retries a non-2xx for three days, and the retry would re-deliver the
  * same unfamiliar shape.
  */
+/**
+ * Unwrap to the node that actually carries `type` + `card`, in specificity order:
+ *   charge.payment_method_details → paymentIntent.last_payment_error.payment_method → the object
+ *
+ * Extracted so there is ONE derivation of "where is the card on this event", with two consumers
+ * that have deliberately DIFFERENT privacy postures: this module's attribution (which emits only
+ * non-identifying facets — see the PAN prohibition) and the failures store (which derives a
+ * KEYED, non-reversible per-card pseudonym and never stores the fingerprint itself). Two copies
+ * of this unwrap would drift, and the drift would be silent in both directions.
+ */
+export function resolveMethodHolder(source: PaymentMethodLike): Record<string, unknown> {
+  const root = obj(source);
+  if (!root) return {};
+  return (
+    obj(root.payment_method_details) ??
+    obj(obj(root.last_payment_error)?.payment_method) ??
+    root
+  );
+}
+
+/**
+ * The RAW Stripe card fingerprint, or null. 🛑 NEVER STORE OR EMIT THIS VALUE.
+ *
+ * It exists solely to be fed to `hashCardRef`, which turns it into a keyed pseudonym. It is
+ * deliberately NOT part of `PaymentMethodAttribution`: that interface is covered by a structural
+ * PAN prohibition asserting the resolver "never emits last4, fingerprint, iin or cardholder name
+ * even when present", and that control stays exactly as it was.
+ *
+ * A fingerprint is not a PAN and is not reversible to one — but it IS a stable cross-merchant
+ * identifier for a physical card, which is why it gets pseudonymised before it touches a column.
+ */
+export function readCardFingerprint(source: PaymentMethodLike): string | null {
+  const card = obj(resolveMethodHolder(source).card);
+  if (!card) return null;
+  const v = card.fingerprint;
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  // Base62 and CASE-SENSITIVE — `asToken` must never be used here: it lower-cases, which would
+  // fold two different cards onto one key in the very count this feeds.
+  return /^[A-Za-z0-9]{8,64}$/.test(t) ? t : null;
+}
+
 export function resolvePaymentMethodAttribution(source: PaymentMethodLike): PaymentMethodAttribution {
   const root = obj(source);
   if (!root) return { ...EMPTY_ATTRIBUTION };
 
-  // Unwrap to the node that actually carries `type` + `card`, in specificity order.
-  //   charge.payment_method_details  →  paymentIntent.last_payment_error.payment_method  →  the object itself
-  const holder =
-    obj(root.payment_method_details) ??
-    obj(obj(root.last_payment_error)?.payment_method) ??
-    root;
-
+  const holder = resolveMethodHolder(root);
   const card = obj(holder.card);
 
   return {
