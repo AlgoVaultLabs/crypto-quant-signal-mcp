@@ -56,6 +56,9 @@
     "release:divergence:selftest": "node scripts/check-shipped-set-divergence.mjs --self-test",
     "declaration:coverage:check": "node scripts/check-declaration-coverage.mjs",
     "declaration:coverage:selftest": "node scripts/check-declaration-coverage.mjs --self-test",
+    "boot:contract:check": "node scripts/check-boot-contract-parity.mjs --check",
+    "boot:contract:write": "node scripts/check-boot-contract-parity.mjs --write",
+    "boot:contract:selftest": "node scripts/check-boot-contract-parity.mjs --self-test",
     "scan:digest:parity:live": "node scripts/check-scan-digest-parity.mjs --live",
     "entitlement:channels:check": "node scripts/check-entitlement-channel-drift.mjs",
     "idempotency:helper:check": "node scripts/check-idempotency-helper.mjs",
@@ -71,7 +74,7 @@
     "check:kb-reachability:live": "node scripts/check-kb-reachability.mjs --live",
     "readme:links:check": "node scripts/check-readme-links.mjs",
     "readme:links:selftest": "node scripts/check-readme-links.mjs --self-test",
-    "prepublishOnly": "npm run build && node scripts/snapshot_capabilities.mjs --live && node scripts/check-source-greppable.mjs --check && node scripts/check-monitoring-schedules.mjs && node scripts/check-declaration-coverage.mjs && node scripts/check-shared-state.mjs --self-test && node scripts/check-feature-registry-drift.mjs --check && node scripts/check-rank-metrics-parity.mjs --check && node scripts/check-scan-digest-parity.mjs --check && node scripts/check-quota-surface-conformance.mjs && node scripts/build_docs.mjs --check && node scripts/build_nav.mjs --check && node scripts/build_analytics.mjs --check && node scripts/build_asset_versions.mjs --check && npm run entitlement:channels:check && npm run idempotency:helper:check && npm run credential:outcome:check && npm run docs:samples:selftest && npm run test:budget:check && npm run readme:links:selftest && node scripts/check-claim-coverage.mjs && node scripts/check-mcp-client-copy.mjs && node scripts/check-live-numeric-claims.mjs"
+    "prepublishOnly": "npm run build && node scripts/snapshot_capabilities.mjs --live && node scripts/check-source-greppable.mjs --check && node scripts/check-monitoring-schedules.mjs && node scripts/check-declaration-coverage.mjs && node scripts/check-boot-contract-parity.mjs --check && node scripts/check-shared-state.mjs --self-test && node scripts/check-feature-registry-drift.mjs --check && node scripts/check-rank-metrics-parity.mjs --check && node scripts/check-scan-digest-parity.mjs --check && node scripts/check-quota-surface-conformance.mjs && node scripts/build_docs.mjs --check && node scripts/build_nav.mjs --check && node scripts/build_analytics.mjs --check && node scripts/build_asset_versions.mjs --check && npm run entitlement:channels:check && npm run idempotency:helper:check && npm run credential:outcome:check && npm run docs:samples:selftest && npm run test:budget:check && npm run readme:links:selftest && node scripts/check-claim-coverage.mjs && node scripts/check-mcp-client-copy.mjs && node scripts/check-live-numeric-claims.mjs"
   },
   "keywords": [
     "mcp",

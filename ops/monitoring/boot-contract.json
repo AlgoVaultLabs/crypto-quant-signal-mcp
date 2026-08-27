@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "_comment": "GENERATED — do not edit. Projection of scripts/data/boot-critical-units.json for host-side consumption by ops/monitoring/boot-contract-canary.sh. Regenerate with `node scripts/check-boot-contract-parity.mjs --write`; parity is asserted by the same script in --check mode, which is wired into prepublishOnly.",
+  "generated_from": "scripts/data/boot-critical-units.json",
+  "generator": "scripts/check-boot-contract-parity.mjs",
+  "probed_at": "2026-07-31",
+  "revisit_by": "2027-02-28",
+  "activation_semantics": {
+    "enabled": "the unit itself must be `systemctl is-enabled` = enabled|enabled-runtime",
+    "socket": "the named socket unit must be enabled; the .service is expected to be `disabled`",
+    "timer": "the named timer unit must be enabled; the .service is expected to be `static` or `disabled`"
+  },
+  "acceptable_restart_policies": [
+    "always",
+    "unless-stopped"
+  ],
+  "postgres_stop_budget_seconds_min": 30,
+  "hosts": {
+    "aoe-1": {
+      "address": "178.104.200.44",
+      "units": [
+        {
+          "unit": "ssh.service",
+          "activation": "socket",
+          "via": "ssh.socket"
+        },
+        {
+          "unit": "docker.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "containerd.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "cron.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "fail2ban.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "algovault-aoe.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "aoe-pg-tunnel.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "cloudflared.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "docker-builder-gc.service",
+          "activation": "timer",
+          "via": "docker-builder-gc.timer"
+        }
+      ],
+      "containers": [
+        "aoe-pg-tunnel",
+        "aoe-prefect-server",
+        "aoe-redis",
+        "aoe-supervisor"
+      ]
+    },
+    "signal-1": {
+      "address": "204.168.185.24",
+      "units": [
+        {
+          "unit": "ssh.service",
+          "activation": "socket",
+          "via": "ssh.socket"
+        },
+        {
+          "unit": "docker.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "containerd.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "caddy.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "cron.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "fail2ban.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "algovault-bot.service",
+          "activation": "enabled"
+        },
+        {
+          "unit": "algovault-funnel-snapshot.service",
+          "activation": "timer",
+          "via": "algovault-funnel-snapshot.timer"
+        },
+        {
+          "unit": "algovault-funnel-leak-detector.service",
+          "activation": "timer",
+          "via": "algovault-funnel-leak-detector.timer"
+        },
+        {
+          "unit": "algovault-bot-cron.service",
+          "activation": "timer",
+          "via": "algovault-bot-cron.timer"
+        },
+        {
+          "unit": "algovault-bot-digest.service",
+          "activation": "timer",
+          "via": "algovault-bot-digest.timer"
+        },
+        {
+          "unit": "docker-builder-gc.service",
+          "activation": "timer",
+          "via": "docker-builder-gc.timer"
+        }
+      ],
+      "containers": [
+        "crypto-quant-signal-mcp-mcp-server-1",
+        "crypto-quant-signal-mcp-postgres-1",
+        "crypto-quant-signal-mcp-facilitator-1"
+      ]
+    }
+  }
+}
