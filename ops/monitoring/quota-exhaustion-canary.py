@@ -42,6 +42,61 @@ the caller's eventual MONTHLY exhaustion too, which is exactly what happened on 
 When a bucket leaves the exhausted set (period rolled, day rolled, caller upgraded) it
 auto-resolves SILENTLY — recovery alerts are noise.
 
+DETECT AT THE MOMENT, PAGE ON THE OUTCOME (OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W1). Detection is
+unchanged and still happens at the wall. The PAGE is DEFERRED by `QUOTA_OUTCOME_GRACE_H` (24h),
+after which the entry resolves to exactly ONE terminal state: SILENT_CONVERTED (a signup was
+attributed), SILENT_CTA_CLICKED, SILENT_STILL_ACTIVE (still being refused at volume), or PAGED —
+walled, grace elapsed, and then nothing. Only PAGED reaches the operator.
+
+  THE REUSABLE PRIMITIVE is that pending-then-resolve shape, and it generalises to every canary
+  that fires on a BUSINESS event rather than a fault — the x402 rail's first refusal, any future
+  free-tier surface that walls, every conversion-moment detector. It is the SECOND instance in
+  this estate, not a new invention: `decision-gate-orphan-canary.py` already carries
+  `DECISION_GATE_GRACE_DAYS` with ORPHAN_SUSPECTED / FIRED_RECENT. What is new is using the
+  window to read an OUTCOME rather than to age a suspicion, and coalescing inside it.
+
+  Why this wave existed at all: measured 2026-08-02 → 08-26, this alert DELIVERED 12 pages
+  (26 fire decisions, 14 cooldown-suppressed), every one of them closing with a SQL research task
+  and a `recommended_wave` that had never been dispatched — the wrapper logged RESOLVER_MISS on
+  all 12 because no wave of that class has ever completed. An alert whose recommended action is
+  never taken is not an alert, it is a thing the operator learns to swipe away.
+
+  A DAILY WALL ALONE CAN NO LONGER PAGE, and that is deliberate rather than a gap. Its dedup id
+  carries the UTC day, so by the time the grace elapses the day has rolled, the caller is being
+  served again, and a cap that heals itself in hours is a RECOVERY — silent by the alert
+  contract. What a daily wall is still worth is its LEAD: it precedes the same caller's monthly
+  wall by a median 15.5h (7 of 7 pairs, 10.4–27.2h, measured 2026-08-26).
+
+  COALESCING. When the monthly wall lands while the daily entry is still PENDING, the pending
+  entry is upgraded in place — monthly-first, keeping the ORIGINAL detection instant so the page
+  is not delayed — and BOTH dedup ids are claimed so the monthly cannot page separately later.
+  The body then states the MONTHLY reset horizon: monthly is the binding wall and does not clear
+  at midnight, so rendering the daily horizon would promise a recovery that is not coming.
+
+  STATE FILE FORMAT CHANGED. Legacy lines are bare dedup ids; v2 lines are `<id>#<state>#<epoch>`.
+  Both parse, and a legacy line is ALREADY RESOLVED — never re-paged. The host file at cutover
+  holds ids the operator has already been paged about, so a migration that re-pages the backlog
+  is the bootstrap bug wearing a different hat.
+
+  THE BODY CARRIES THE ANSWER, NOT THE HOMEWORK. Refusals since the wall, whether a signup was
+  attributed, CTA state (named DARK when it is), and how many days this bucket had walled before.
+  Each degrades to an EXPLICIT `unavailable (...)` string — never a silent zero — and an
+  unavailable arm can never silence a page. That is what makes a lost
+  `migrations/034_grant_autopilot_funnel_reads.sql` visible instead of dark.
+
+  ⚠️ `request_log` NEVER RECORDS A REFUSED CALL, so "calls after the wall" is a structural zero
+  after a monthly wall and "went silent" is a tautology. Measured 2026-08-26 on
+  free:v2:37d4ed14c450db39: zero request_log rows after the wall while quota_hit_block was still
+  accruing five hours later. The continuation signal is `funnel_events.quota_hit_block`, and
+  nothing here may be re-pointed at `request_log` for it.
+
+  SEVERITY IS UNCHANGED at CRITICAL_PERSISTENT. CH1 measured the wall cohort and returned
+  QUOTA_CONVERSION_VERDICT=INDETERMINATE (n=26 external walled buckets, ZERO lifetime
+  conversions against an expected 0.75 under the never-walled baseline, p=0.525; the CTA arm is
+  dark at n=1 all-time). Changing severity on that evidence would be a conditional approval
+  shipped unconditionally. Follow-up: OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W2, on the instruments
+  becoming readable.
+
 There is no sustain gate. `webhook-delivery-canary.py` needs one because its metrics fluctuate
 around a threshold; a quota counter only ever climbs within a period, so a "sustained N cycles"
 gate here would add latency and detect nothing extra. Per-bucket dedup is the whole control.
@@ -118,6 +173,29 @@ DAY_S = 86400
 # The rolling free window (license.ts MONTH_MS). A row older than this is a stale period.
 WINDOW_S = 30 * DAY_S
 
+# ── Deferred-page state grammar (OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W1) ────────────────────
+# Legacy state lines are BARE dedup ids; v2 lines are `<id>#<state>#<epoch>`. `#` is the
+# separator because a dedup id is `<key>@<epoch>` or `<key>@<epoch>|daily@<day>` and neither
+# form can contain it, while whitespace would break `load_state`'s `.split()`.
+STATE_SEP = "#"
+ST_PENDING = "PENDING"                    # detected, grace not yet elapsed — NO page
+ST_PAGED = "PAGED"                        # terminal: the operator was paged
+ST_CONVERTED = "SILENT_CONVERTED"         # terminal: a signup was attributed — no page
+ST_CTA = "SILENT_CTA_CLICKED"             # terminal: they clicked upgrade — no page
+ST_ACTIVE = "SILENT_STILL_ACTIVE"         # terminal: still being refused at volume — no page
+ST_LEGACY = "RESOLVED_LEGACY"             # a pre-W1 bare id: already known, never re-pages
+TERMINAL_STATES = (ST_PAGED, ST_CONVERTED, ST_CTA, ST_ACTIVE, ST_LEGACY)
+
+# Outcome-arm sentinels. An UNAVAILABLE arm is NOT zero and must never be read as one — that
+# separation is the entire point. A missing SELECT privilege renders distinguishably from an
+# empty result, because a grant that silently vanishes on a reprovision would otherwise send
+# these arms dark at a green exit code. Migration 034 exists for the same reason, and THIS is
+# what makes its loss detectable rather than silent.
+ARM_NA_KEYED = "n/a (keyed bucket — no ip_hash to join on)"
+ARM_UNAVAIL_NOPRIV = "unavailable (no SELECT privilege)"
+ARM_UNAVAIL_ERROR = "unavailable (query failed)"
+ARM_UNAVAILABLE = (ARM_NA_KEYED, ARM_UNAVAIL_NOPRIV, ARM_UNAVAIL_ERROR)
+
 # The two walls. Rendered horizons are NOT interchangeable — a monthly wall does not clear at
 # midnight, and telling an operator it does is worse than telling them nothing.
 WALL_MONTHLY = "monthly"
@@ -180,6 +258,22 @@ RATE_WINDOW_H = _int_env("QUOTA_CANARY_RATE_WINDOW_HOURS", 24)
 # being asked, which is "is a real caller hammering us right now", not "how fast is the
 # meter ticking". `quota_usage` remains the authority for the CAPS themselves.
 CHARGEABLE_VERDICT_EXCLUDED = "HOLD"
+
+# ── The grace window (OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W1) ───────────────────────────────
+# DETECT AT THE MOMENT, PAGE ON THE OUTCOME. Detection is unchanged and still happens at the
+# wall; the PAGE waits this long and then resolves to exactly one terminal state.
+#
+# SECOND instance of this shape in the estate, not a new primitive — `decision-gate-orphan-
+# canary.py` already carries `DECISION_GATE_GRACE_DAYS` with ORPHAN_SUSPECTED / FIRED_RECENT.
+# What is new is that the window is used to read an OUTCOME rather than to age a suspicion,
+# and that a pending entry can be COALESCED with a later wall of the same bucket.
+#
+# 24 is MEASURED and deliberately not widened. The daily wall leads the same caller's monthly
+# wall by a median 15.5h (7 of 7 pairs, range 10.4–27.2h, measured 2026-08-26), so 24h captures
+# six of seven inside one window. Widening to 28h to capture the seventh would delay EVERY page
+# by 4h to catch one pair; the out-of-window pair pages separately, which is the grace window
+# working rather than failing. Env-overridable as a DOCUMENTED TEST SEAM only.
+OUTCOME_GRACE_H = _int_env("QUOTA_OUTCOME_GRACE_H", 24)
 
 
 def log(msg):
@@ -346,12 +440,59 @@ def utc_day_key(now_s):
 # ── State ─────────────────────────────────────────────────────────────────────────────────
 
 
-def load_fired_set():
+def parse_state_token(token):
+    """One state-file token -> (dedup_id, state, epoch). Total: it never raises.
+
+    Two grammars share this file and BOTH must parse, forever:
+
+      legacy  `free:v2:abc@1787630920`                 (pre-OUTCOME-GATE-W1, bare id)
+      v2      `free:v2:abc@1787630920#PENDING#1787...` (id, state, detection instant)
+
+    A legacy line resolves to ST_LEGACY — *already resolved*, never re-paged. That direction is
+    not a detail: the file on the host at cutover holds live ids for buckets the operator has
+    ALREADY been paged about, so a migration that re-pages the backlog is the bootstrap bug
+    wearing a different hat, and this file already carries a bootstrap branch written because of
+    exactly that. An unparseable or unknown-state token gets the same treatment for the same
+    reason — when in doubt about a bucket we have clearly seen before, stay silent.
+    """
+    if STATE_SEP not in token:
+        return token, ST_LEGACY, 0
+    parts = token.split(STATE_SEP)
+    if len(parts) != 3:
+        return parts[0], ST_LEGACY, 0
+    ident, state, stamp = parts
+    if state != ST_PENDING and state not in TERMINAL_STATES:
+        return ident, ST_LEGACY, 0
+    try:
+        return ident, state, int(stamp)
+    except ValueError:
+        return ident, ST_LEGACY, 0
+
+
+def load_state():
+    """`{dedup_id: {"state": str, "since": int}}` — empty dict when the file is absent."""
     try:
         with open(FIRED_SET_FILE) as fh:
-            return set(x for x in fh.read().split() if x.strip())
+            raw = fh.read()
     except OSError:
-        return set()
+        return {}
+    out = {}
+    for token in raw.split():
+        if not token.strip():
+            continue
+        ident, state, stamp = parse_state_token(token)
+        out[ident] = {"state": state, "since": stamp}
+    return out
+
+
+def load_fired_set():
+    """Every dedup id this canary has already SEEN, whatever state it is in.
+
+    Retained under its original name and original meaning — "do not treat this bucket-period
+    as new" — because that is what every dedup call site asks. A PENDING entry is included: it
+    has been detected, it simply has not been resolved yet.
+    """
+    return set(load_state().keys())
 
 
 def state_exists():
@@ -364,13 +505,26 @@ def state_exists():
     return os.path.exists(FIRED_SET_FILE)
 
 
-def save_fired_set(ids):
+def save_state(state):
+    """Persist `{dedup_id: {"state", "since"}}` in the v2 grammar, one token per line."""
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
+        lines = ["%s%s%s%s%d" % (i, STATE_SEP, state[i]["state"], STATE_SEP, state[i]["since"])
+                 for i in sorted(state)]
         with open(FIRED_SET_FILE, "w") as fh:
-            fh.write("\n".join(sorted(ids)))
+            fh.write("\n".join(lines))
     except OSError as e:
-        log("WARN: could not persist fired set: %s" % e)
+        log("WARN: could not persist state: %s" % e)
+
+
+def save_fired_set(ids, now_s=None, state=ST_LEGACY):
+    """Compatibility shim: persist a bare id set, defaulting every entry to already-resolved.
+
+    Used by the bootstrap branch and by auto-resolve pruning, both of which mean "record that
+    these are known, and never page them" — which is exactly ST_LEGACY's contract.
+    """
+    stamp = int(now_s or time.time())
+    save_state({i: {"state": state, "since": stamp} for i in ids})
 
 
 def render_bucket(tracker_key):
@@ -513,6 +667,155 @@ def query_bucket_facts(keys, as_of_s=None):
         if h and h in by_hash:
             facts[k] = by_hash[h]
     return facts
+
+
+def _arm_unavailable_reason(exc):
+    """Map a psql failure to the RIGHT sentinel. No-privilege is not query-failure.
+
+    Separating them is required, not cosmetic: `migrations/034_grant_autopilot_funnel_reads.sql`
+    grants this role its reads, and a reprovision that loses those grants must be visible in the
+    alert body as a PRIVILEGE problem — not as an empty result and not as a generic error.
+    """
+    text = str(exc).lower()
+    if "permission denied" in text or "must be owner" in text:
+        return ARM_UNAVAIL_NOPRIV
+    return ARM_UNAVAIL_ERROR
+
+
+def build_outcome_query(kind, ip_hash, since_s, until_s):
+    """The outcome statement for one arm-group, or None when there is nothing to join on.
+
+    Concatenated rather than %-formatted for the same reason as every other query here: a `%`
+    in a LIKE pattern or a timestamp format string kills a %-format call, and this file has
+    already shipped dark once on exactly that.
+
+    TWO STATEMENTS, NOT ONE, and the split is load-bearing: `funnel_events` and
+    `signup_attribution` are separate GRANTs, so folding them into a single statement would let
+    one missing privilege darken BOTH arms and misreport which one is actually unreadable.
+
+    ⚠️ `funnel_events` is `meta_json` (TEXT) and `ts` (timestamptz) — NOT `meta` and not
+    `timestamp`. Probed live 2026-08-26; the spec that commissioned this join named both wrong.
+    """
+    if not ip_hash or "'" in ip_hash or "\\" in ip_hash:
+        return None
+    lo = "to_timestamp(" + str(int(since_s)) + ")"
+    hi = "to_timestamp(" + str(int(until_s)) + ")"
+    q = "'" + ip_hash + "'"
+    if kind == "funnel":
+        # Arms 1, 3 and 4 all live in one table and therefore behind one privilege.
+        #   refusals   — did they KEEP TRYING. This is the continuation signal, and it is the
+        #                only one there is: `request_log` never records a refused call, so a
+        #                walled caller's row count stops dead at the cap and "calls after the
+        #                wall" is a structural zero. Measured 2026-08-26 on
+        #                free:v2:37d4ed14c450db39 — 0 request_log rows after the wall while
+        #                quota_hit_block was still accruing five hours later.
+        #   cta        — did they click upgrade. Measured DARK: n=1 all-time (2026-06-18).
+        #   prior_days — how many earlier UTC days this bucket was already walling on.
+        return (
+            "SELECT "
+            "count(*) FILTER (WHERE event_type='quota_hit_block' AND ts > " + lo + " AND ts <= " + hi + "), "
+            "count(*) FILTER (WHERE event_type='upgrade_cta_clicked' AND ts > " + lo + " AND ts <= " + hi + "), "
+            "count(DISTINCT (ts AT TIME ZONE 'UTC')::date) FILTER (WHERE event_type='quota_hit_block' AND ts <= " + lo + ") "
+            "FROM funnel_events WHERE session_id = " + q
+        )
+    if kind == "signup":
+        # Arm 2 — the first-party bridge. `signup_attribution.ip_hash` is NOT caller-settable,
+        # unlike funnel_events.session_id (`trackToken ?? ipHash ?? randomUUID()`). Measured
+        # 2026-08-26, the shape hazard is 0.00% on quota_hit_block rows but 100% on
+        # landing_cta_clicked, so the bridge is preferred wherever both would answer.
+        return ("SELECT count(*) FILTER (WHERE created_at > " + lo + " AND created_at <= " + hi + "), "
+                "count(*) FROM signup_attribution WHERE ip_hash = " + q)
+    raise ValueError("unknown outcome arm-group: %r" % kind)
+
+
+def query_outcome(tracker_key, since_s, until_s):
+    """Every outcome arm for one bucket. Each arm is an int OR an ARM_UNAVAILABLE sentinel.
+
+    NEVER returns a zero it did not measure. A keyed bucket has no ip_hash, a table may be
+    unreadable, a query may fail — three different facts, three different renderings, and none
+    of them is `0`. A body that silently drops a fact it could not measure is indistinguishable
+    from one where the fact was absent, which is the failure this file's own per-bucket
+    positive-output rule exists to stop.
+    """
+    forced = os.environ.get("QUOTA_CANARY_FORCE_OUTCOME")
+    if forced is not None:
+        # Seam: `key:refusals:cta:signups:prior_days,...` — rsplit from the RIGHT because a
+        # tracker key carries colons of its own (`free:v2:<hash>`). Same shape as FORCE_FACTS.
+        # A field may be a sentinel word: `noprivilege` / `error` / `keyed`.
+        def _v(tok):
+            return {"noprivilege": ARM_UNAVAIL_NOPRIV, "error": ARM_UNAVAIL_ERROR,
+                    "keyed": ARM_NA_KEYED}.get(tok, None) if not tok.lstrip("-").isdigit() else int(tok)
+        for chunk in forced.split(","):
+            if not chunk.strip():
+                continue
+            key, r, c, s, p = chunk.rsplit(":", 4)
+            if key == tracker_key:
+                return {"refusals": _v(r), "cta": _v(c), "signups": _v(s), "prior_days": _v(p)}
+        return {"refusals": 0, "cta": 0, "signups": 0, "prior_days": 0}
+
+    iph = bucket_ip_hash(tracker_key)
+    if iph is None:
+        # KEYED bucket. Not a failure and not a zero — there is genuinely no ip_hash to join.
+        return {"refusals": ARM_NA_KEYED, "cta": ARM_NA_KEYED,
+                "signups": ARM_NA_KEYED, "prior_days": ARM_NA_KEYED}
+
+    out = {}
+    try:
+        sql = build_outcome_query("funnel", iph, since_s, until_s)
+        parts = _psql(sql).strip().split("|")
+        if len(parts) != 3:
+            raise RuntimeError("unexpected funnel_events outcome row: %r" % parts)
+        out["refusals"], out["cta"], out["prior_days"] = int(parts[0]), int(parts[1]), int(parts[2])
+    except Exception as e:  # noqa: BLE001 — an unreadable arm degrades, it never kills the run
+        reason = _arm_unavailable_reason(e)
+        log("OUTCOME_ARM_INDETERMINATE: funnel_events for %s — %s (%s)"
+            % (render_bucket(tracker_key), reason, type(e).__name__))
+        out["refusals"] = out["cta"] = out["prior_days"] = reason
+    try:
+        sql = build_outcome_query("signup", iph, since_s, until_s)
+        parts = _psql(sql).strip().split("|")
+        if len(parts) != 2:
+            raise RuntimeError("unexpected signup_attribution outcome row: %r" % parts)
+        out["signups"] = int(parts[0])
+    except Exception as e:  # noqa: BLE001
+        reason = _arm_unavailable_reason(e)
+        log("OUTCOME_ARM_INDETERMINATE: signup_attribution for %s — %s (%s)"
+            % (render_bucket(tracker_key), reason, type(e).__name__))
+        out["signups"] = reason
+    return out
+
+
+def resolve_outcome(outcome):
+    """The pending entry's terminal state, from its measured outcome. One derivation.
+
+    Order is deliberate — strongest evidence of a GOOD outcome first:
+      signup   -> SILENT_CONVERTED     the funnel worked; a working funnel is not a page
+      cta      -> SILENT_CTA_CLICKED   they engaged with the upsell
+      refusals -> SILENT_STILL_ACTIVE  still hammering the wall; nothing has been lost yet
+      else     -> PAGED                walled, grace elapsed, and then silence — the churn case
+
+    AN UNAVAILABLE ARM CAN NEVER SILENCE A PAGE. `x > 0` is False for a sentinel string, so an
+    arm we could not read falls through to PAGED rather than being read as zero. That direction
+    is the safe one *and* the loud one: it preserves the pre-wave behaviour exactly when the
+    instruments fail, and it is what makes a lost migration-034 grant show up in an operator's
+    hands instead of vanishing into a silent resolve.
+    """
+    def positive(v):
+        return isinstance(v, int) and v > 0
+    if positive(outcome.get("signups")):
+        return ST_CONVERTED
+    if positive(outcome.get("cta")):
+        return ST_CTA
+    if positive(outcome.get("refusals")):
+        return ST_ACTIVE
+    return ST_PAGED
+
+
+def render_arm(value, unit):
+    """One outcome fact, rendered. A sentinel prints itself; an int gets its noun."""
+    if value in ARM_UNAVAILABLE:
+        return value
+    return "%d %s" % (value, unit)
 
 
 def parse_forced_rows(spec):
@@ -693,10 +996,59 @@ def build_body(new_entries, total_high, monthly_cap, daily_cap):
     ids = [render_bucket(e["key"]) for e in new_entries]
     noun = "bucket" if len(ids) == 1 else "buckets"
     detail = " | ".join(
-        "%s used %d/%d (%s) at ~%.0f calls/day"
-        % (render_bucket(e["key"]), e["used"], e["cap"], WALL_HORIZON[e["wall"]], e["rate"])
+        "%s used %d/%d (%s) at ~%.0f calls/day%s"
+        % (render_bucket(e["key"]), e["used"], e["cap"], WALL_HORIZON[e["wall"]], e["rate"],
+           ("" if not e.get("also_wall") else
+            " [also hit the %s wall earlier in this episode — coalesced into this one page]"
+            % e["also_wall"].upper()))
         for e in new_entries
     )
+    # THE OUTCOME, not a research task. Every fact is measured over the grace window and every
+    # one of them degrades to an EXPLICIT string — never a silent zero, never a dropped line.
+    outcome_lines = [
+        "  %s — %s since the wall | signup: %s | upgrade CTA: %s | prior walled days: %s"
+        % (render_bucket(e["key"]),
+           render_arm(e["outcome"]["refusals"], "refusals"),
+           render_arm(e["outcome"]["signups"], "attributed"),
+           (e["outcome"]["cta"] if e["outcome"]["cta"] in ARM_UNAVAILABLE
+            else ("%d" % e["outcome"]["cta"] if e["outcome"]["cta"]
+                  else "0 — ARM IS DARK (1 click estate-wide, all-time)")),
+           render_arm(e["outcome"]["prior_days"], "days"))
+        for e in new_entries
+    ]
+    # SINGLE DERIVATION of the contact channel, from the bucket's own keyed/keyless
+    # discriminator — the same value `render_bucket` and `bucket_ip_hash` already branch on.
+    # Before OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W1 this sentence asserted "no account and no
+    # email" UNCONDITIONALLY, including on `key:sha16:…` buckets, whose whole definition is a
+    # caller who registered. It shipped that way to the operator at least twice on 2026-08-16
+    # (`av_free_30…` and `av_free_c8…`, both walled 100/100 that day).
+    keyed = [e for e in new_entries if bucket_ip_hash(e["key"]) is None]
+    keyless = [e for e in new_entries if bucket_ip_hash(e["key"]) is not None]
+    contact = []
+    if keyed:
+        contact.append("REGISTERED caller%s %s — a free API key was issued, so an account and a "
+                       "direct contact path EXIST."
+                       % ("" if len(keyed) == 1 else "s",
+                          ", ".join(render_bucket(e["key"]) for e in keyed)))
+    if keyless:
+        contact.append("Keyless caller%s %s — no account and no email; the exhaustion notice was "
+                       "the only contact."
+                       % ("" if len(keyless) == 1 else "s",
+                          ", ".join(render_bucket(e["key"]) for e in keyless)))
+    # The action clause PROJECTS from the same measured outcome the body just rendered, once.
+    # An unconditional "the caller went quiet" would assert as fact the exact thing an
+    # UNAVAILABLE arm means we could not establish — which is the shape of falsehood R3 exists
+    # to retire, reappearing one line lower down.
+    unread = [e for e in new_entries
+              if any(e["outcome"][k] in ARM_UNAVAILABLE for k in ("refusals", "signups", "cta"))]
+    if unread:
+        action_clause = ("the outcome could NOT be measured for %d of %d bucket(s) — treat the "
+                         "page as unresolved and fix the reader first (see the unavailable arm "
+                         "above; migrations/034_grant_autopilot_funnel_reads.sql grants it)."
+                         % (len(unread), len(new_entries)))
+    else:
+        action_clause = ("the caller(s) above went quiet after the wall — decide win-back vs "
+                         "let-go from the outcome line.")
     return "\n".join([
         "\U0001F4B0 %s" % ALERT_ID,
         # IDs and COUNTS live on SEPARATE lines. Mixing them is what produced the 2026-08-01
@@ -707,9 +1059,17 @@ def build_body(new_entries, total_high, monthly_cap, daily_cap):
         "Newly exhausted count: %d | high-volume exhausted now: %d | threshold >= %d calls/day "
         "| free limits %d/mo + %d/day"
         % (len(ids), total_high, MIN_CALLS_PER_DAY, monthly_cap, daily_cap),
-        "This is a CONVERSION moment, not a fault. The caller has no account and no email —",
-        "the exhaustion notice is the only contact. Check funnel_events quota_hit_block + request_log.",
-        "Action: dispatch OPS-QUOTA-EXHAUSTION-CONVERSION-W{NEXT} via Cowork → Claude Code",
+        "This is a CONVERSION moment, not a fault. Outcome measured over the %dh since detection:"
+        % OUTCOME_GRACE_H,
+    ] + outcome_lines + [
+        "Contact: %s" % " ".join(contact),
+        # R5 — the retired `OPS-QUOTA-EXHAUSTION-CONVERSION-W{NEXT}` was recommended on all 12
+        # delivered pages and dispatched zero times; the wrapper logged RESOLVER_MISS every time
+        # because no wave of that class has ever completed. The action line now names THIS
+        # bucket and its measured outcome, and any wave reference keeps the {NEXT} template form
+        # (a literal Wn is forbidden) pointing at a class that actually has a completed wave.
+        "Action: %s Free-tier policy follow-up: OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W{NEXT}."
+        % action_clause,
         "Source log: %s" % LOG,
     ])
 
@@ -757,18 +1117,54 @@ def fire(body):
 
 
 def run_cycle(rows, now_s, facts, monthly_cap, daily_cap):
-    """One evaluation. Auto-resolve, dedup, fire. Returns an action dict."""
+    """One evaluation. Auto-resolve, detect-to-PENDING, resolve-on-outcome, fire.
+
+    DETECT AT THE MOMENT, PAGE ON THE OUTCOME (OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W1). A newly
+    exhausted high-volume external bucket is recorded PENDING and pages NOTHING. On the first
+    cycle at or after `OUTCOME_GRACE_H` the entry is resolved against its measured outcome to
+    exactly one terminal state, and only the PAGED branch reaches the operator.
+
+    COALESCING. A caller's daily wall leads their monthly wall by a median 15.5h, so the monthly
+    wall usually arrives while the daily entry is still PENDING. When it does, the pending entry
+    is UPGRADED in place — monthly-first, keeping the ORIGINAL detection instant so the page is
+    not delayed — and BOTH dedup ids are marked, so the monthly can never page separately later.
+    The page then states the MONTHLY reset horizon: monthly is the binding wall and does NOT
+    clear at 00:00 UTC, so rendering the daily horizon would tell the operator to expect a
+    recovery in hours that is not coming. Same monthly-first precedence `classify` already
+    applies to the same-cycle case.
+    """
     high, low, stale, internal = classify(rows, now_s, facts or {}, monthly_cap, daily_cap)
-    fired = load_fired_set()
+    state = load_state()
     live_ids = set(dedup_id(e) for e in high)
 
     # 1) Auto-resolve (SILENT): periods that rolled over, UTC days that rolled over, or
-    #    callers who upgraded.
-    resolved = fired - live_ids
+    #    callers who upgraded. A PENDING entry that disappears before its grace elapses is
+    #    resolved here and never pages — the wall cleared on its own, which is the funnel
+    #    working, and this is the recovery-is-silent default the alert contract mandates.
+    #
+    # ⚠️ A PENDING ENTRY IS NEVER PRUNED HERE, and that exception is load-bearing in two ways.
+    # (a) A DAILY dedup id carries its UTC day, so it leaves the live set at 00:00 UTC — every
+    #     single time, by construction. Pruning pending entries would therefore destroy every
+    #     daily detection before its 24h grace elapsed, and with it the coalescing window that
+    #     the monthly wall (median 15.5h later, i.e. usually across that boundary) depends on.
+    # (b) A pending entry is a COMMITMENT to evaluate an outcome at a stated instant. Dropping
+    #     it early does not make the alert quieter, it makes it forgetful.
+    # Pending entries whose row is gone at resolution time are handled there, silently, as the
+    # recovery they are.
+    # A bucket that still has a PENDING entry keeps its whole state, terminal siblings included:
+    # the coalesce record IS a closed sibling, and pruning it would erase the evidence that the
+    # page about to be rendered absorbed an earlier wall. It self-cleans on the first cycle
+    # after that pending entry resolves.
+    keys_pending = set(i.split("@")[0] for i, v in state.items() if v["state"] == ST_PENDING)
+    resolved = set(i for i, v in state.items()
+                   if i not in live_ids and v["state"] != ST_PENDING
+                   and i.split("@")[0] not in keys_pending)
     if resolved:
-        log("RESOLVED: %d bucket-period-wall(s) no longer exhausted (auto-resolve, silent)" % len(resolved))
-        fired = fired & live_ids
-        save_fired_set(fired)
+        log("RESOLVED: %d bucket-period-wall(s) no longer exhausted (auto-resolve, silent)"
+            % len(resolved))
+        state = {i: v for i, v in state.items() if i not in resolved}
+        save_state(state)
+    fired = set(state)
 
     # POSITIVE per-check output — never absence-of-alert. A row silently dropped by a parse
     # error must not look identical to a row that was evaluated and passed. Every line carries
@@ -806,16 +1202,103 @@ def run_cycle(rows, now_s, facts, monthly_cap, daily_cap):
         return {"action": "bootstrap", "seeded": len(seeded), "high": len(high), "low": len(low),
                 "internal": len(internal)}
 
-    new_entries = [e for e in high if dedup_id(e) not in fired]
-    if not new_entries:
-        log("HEALTHY: high=%d low=%d stale=%d internal=%d, no NEW high-volume exhaustion (rows=%d)"
-            % (len(high), len(low), len(stale), len(internal), len(rows)))
-        return {"action": "silent", "high": len(high), "low": len(low), "internal": len(internal)}
+    # 2) DETECT — a bucket-period-wall we have not seen becomes PENDING. No page.
+    #    Coalescing runs first so a monthly wall arriving on top of a still-PENDING daily one
+    #    is absorbed rather than opening a second pending entry.
+    by_key_pending = {}
+    for ident, v in state.items():
+        if v["state"] == ST_PENDING:
+            by_key_pending.setdefault(ident.split("@")[0], []).append(ident)
+    entry_by_id = {dedup_id(e): e for e in high}
+    coalesced = {}
+    newly_pending = []
+    for e in high:
+        ident = dedup_id(e)
+        if ident in state:
+            continue
+        siblings = [i for i in by_key_pending.get(e["key"], []) if i != ident]
+        if siblings and e["wall"] == WALL_MONTHLY:
+            # Monthly wall landed while the daily one is still PENDING → one page, not two.
+            older = min(siblings, key=lambda i: state[i]["since"])
+            lag_h = max(0.0, (now_s - state[older]["since"]) / 3600.0)
+            state[ident] = {"state": ST_PENDING, "since": state[older]["since"]}
+            state[older] = {"state": ST_ACTIVE, "since": state[older]["since"]}
+            coalesced[ident] = {"from_wall": WALL_DAILY, "lag_h": lag_h}
+            log("COALESCE: bucket %s hit the MONTHLY wall %.1fh after a still-PENDING DAILY wall "
+                "— merged into ONE pending page, monthly-first; both dedup ids are now claimed "
+                "so the monthly cannot page separately later"
+                % (render_bucket(e["key"]), lag_h))
+            continue
+        state[ident] = {"state": ST_PENDING, "since": now_s}
+        newly_pending.append(e)
+        log("EVAL deferred: bucket %s used %d/%d wall=%s verdict=PENDING_OUTCOME (page held %dh; "
+            "resolves at ~%s)"
+            % (render_bucket(e["key"]), e["used"], e["cap"], e["wall"].upper(), OUTCOME_GRACE_H,
+               time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_s + OUTCOME_GRACE_H * 3600))))
 
-    fire(build_body(new_entries, len(high), monthly_cap, daily_cap))
-    save_fired_set(fired | set(dedup_id(e) for e in new_entries))
-    return {"action": "fire", "new": len(new_entries), "high": len(high), "low": len(low),
-            "internal": len(internal), "walls": sorted(set(e["wall"] for e in new_entries))}
+    # 3) RESOLVE — every PENDING entry whose grace has elapsed gets exactly one terminal state.
+    due, page_entries = [], []
+    for ident, v in sorted(state.items()):
+        if v["state"] != ST_PENDING:
+            continue
+        if now_s - v["since"] < OUTCOME_GRACE_H * 3600:
+            log("EVAL pending: %s verdict=PENDING_OUTCOME (%.1fh of %dh elapsed — no page)"
+                % (ident, max(0.0, (now_s - v["since"]) / 3600.0), OUTCOME_GRACE_H))
+            continue
+        e = entry_by_id.get(ident)
+        if e is None:
+            # The wall CLEARED on its own before the grace elapsed — the daily cap rolling over
+            # at 00:00 UTC is the overwhelming case, and a caller who is served again tomorrow
+            # is the funnel working, not a conversion moment lost. Recovery is silent by the
+            # alert contract; the measured outcome still goes to the log as forensics so a
+            # silently-closed entry is never indistinguishable from one that was skipped.
+            key = ident.split("@")[0]
+            oc = query_outcome(key, v["since"], now_s)
+            state[ident] = {"state": ST_ACTIVE, "since": v["since"]}
+            log("EVAL resolve: bucket %s verdict=SILENT_STILL_ACTIVE (wall cleared before the "
+                "%dh grace elapsed — no live row this cycle; refusals=%s signups=%s cta=%s)"
+                % (render_bucket(key), OUTCOME_GRACE_H, oc["refusals"], oc["signups"], oc["cta"]))
+            continue
+        outcome = query_outcome(e["key"], v["since"], now_s)
+        terminal = resolve_outcome(outcome)
+        state[ident] = {"state": terminal, "since": v["since"]}
+        due.append(ident)
+        log("EVAL resolve: bucket %s wall=%s grace=%dh refusals=%s signups=%s cta=%s "
+            "prior_days=%s verdict=%s"
+            % (render_bucket(e["key"]), e["wall"].upper(), OUTCOME_GRACE_H,
+               outcome["refusals"], outcome["signups"], outcome["cta"], outcome["prior_days"],
+               terminal))
+        if terminal == ST_PAGED:
+            e = dict(e)
+            e["outcome"] = outcome
+            # Was this entry COALESCED from an earlier wall of the same bucket? Derived from the
+            # state itself rather than from a per-invocation variable, because detection and
+            # resolution are DIFFERENT RUNS an entire grace window apart — anything held only in
+            # memory is gone by the time the body is rendered. The signature is exact: a sibling
+            # id on the same bucket, closed at coalesce time, carrying the SAME detection
+            # instant this entry inherited. A sibling that merely resolved on its own carries
+            # its own `since` and does not match.
+            sibs = [i for i, sv in state.items()
+                    if i != ident and i.split("@")[0] == e["key"]
+                    and sv["state"] == ST_ACTIVE and sv["since"] == v["since"]]
+            if sibs:
+                e["also_wall"] = WALL_DAILY if any("|daily@" in i for i in sibs) else WALL_MONTHLY
+            page_entries.append(e)
+
+    save_state(state)
+
+    if not page_entries:
+        log("HEALTHY: high=%d low=%d stale=%d internal=%d pending=%d resolved_this_cycle=%d, "
+            "no page (rows=%d)"
+            % (len(high), len(low), len(stale), len(internal),
+               sum(1 for v in state.values() if v["state"] == ST_PENDING), len(due), len(rows)))
+        return {"action": "silent", "high": len(high), "low": len(low), "internal": len(internal),
+                "pending": len(newly_pending), "resolved": len(due)}
+
+    fire(build_body(page_entries, len(high), monthly_cap, daily_cap))
+    return {"action": "fire", "new": len(page_entries), "high": len(high), "low": len(low),
+            "internal": len(internal), "pending": len(newly_pending), "resolved": len(due),
+            "walls": sorted(set(e["wall"] for e in page_entries))}
 
 
 def main():
@@ -892,6 +1375,33 @@ def self_test():
     def cycle(rows, now_s, f=None, m=CAP_M, d=CAP_D):
         return run_cycle(rows, now_s, f if f is not None else {}, m, d)
 
+    GRACE_S = OUTCOME_GRACE_H * 3600
+
+    def outcome_seam(rows, refusals=0, cta=0, signups=0, prior=0):
+        """Force every bucket in `rows` to a known outcome. `None` clears the seam.
+
+        The hermetic suite has no database, so WITHOUT this every outcome arm would resolve to
+        `unavailable (query failed)` and — because an unavailable arm can never silence a page —
+        every scenario would page for the wrong reason and still look green. That is precisely
+        the "a hermetic --self-test is blind to what its own seam replaces" trap, so the seam is
+        explicit per scenario and one scenario below asserts the unavailable path on purpose.
+        """
+        if rows is None:
+            os.environ.pop("QUOTA_CANARY_FORCE_OUTCOME", None)
+            return
+        os.environ["QUOTA_CANARY_FORCE_OUTCOME"] = ",".join(
+            "%s:%d:%d:%d:%d" % (r[0], refusals, cta, signups, prior) for r in rows)
+
+    def page(rows, now_s, f=None, m=CAP_M, d=CAP_D, **oc):
+        """Detect, then resolve one grace window later. Returns the RESOLVING cycle's action.
+
+        Two cycles, because that is now the real contract: nothing pages at detection. Callers
+        that only want the detection half use `cycle` directly.
+        """
+        outcome_seam(rows, **oc)
+        cycle(rows, now_s, f, m, d)
+        return cycle(rows, now_s + GRACE_S + 60, f, m, d)
+
     # A0) BOOTSTRAP — the first cycle seeds and does NOT page, even with high-volume backlog.
     backlog = [row("free:v2:9999aaaa8888bbbb", 900, NOW - 2 * DAY_S),
                row("free:v2:7777cccc6666dddd", 400, NOW - 2 * DAY_S)]
@@ -911,11 +1421,23 @@ def self_test():
     r = cycle(low_row, NOW, facts(low_row, 12))
     check("low-volume exhaustion → silent by design", r["action"] == "silent" and r["low"] == 1)
 
-    # C) HIGH-volume MONTHLY exhaustion pages once (200 calls in ~1 hour ≈ 2400/day)
+    # C) HIGH-volume MONTHLY exhaustion — DETECTED now, PAGED one grace window later.
     high_row = [row("free:v2:cccc3333dddd4444", 200, NOW - HOUR)]
-    r = cycle(high_row, NOW, facts(high_row, 2400))
-    check("high-volume monthly exhaustion → fire", r["action"] == "fire" and r["new"] == 1)
+    outcome_seam(high_row)                       # churn branch: no refusals, no cta, no signup
+    r0 = cycle(high_row, NOW, facts(high_row, 2400))
+    check("detection alone does NOT page (deferred)", r0["action"] == "silent" and r0["pending"] == 1)
+    check("detection wrote a PENDING entry", load_state()[dedup_id(
+        _entry("free:v2:cccc3333dddd4444", 200, NOW - HOUR, 0, WALL_MONTHLY, 200, TODAY)
+    )]["state"] == ST_PENDING)
+    check("detection wrote NO alert body", LAST_FIRE_BODY is None)
+    r_mid = cycle(high_row, NOW + GRACE_S - 2 * HOUR, facts(high_row, 2400))
+    check("grace NOT elapsed → still no page, state persists",
+          r_mid["action"] == "silent" and LAST_FIRE_BODY is None)
+    r = cycle(high_row, NOW + GRACE_S + 60, facts(high_row, 2400))
+    check("grace elapsed on the churn branch → fires", r["action"] == "fire" and r["new"] == 1)
     check("it is named as a MONTHLY wall", r.get("walls") == [WALL_MONTHLY])
+    check("the resolved entry is terminal PAGED", ST_PAGED in
+          [v["state"] for v in load_state().values()])
 
     # C2) THE CORRECTED CAP. A bucket at the OLD mirrored literal (100) is only HALF WAY to the
     #     real monthly wall and must NOT be selected. This is the wave's defect, asserted.
@@ -925,15 +1447,14 @@ def self_test():
     check("a bucket at 100/200 is NOT exhausted (the retired mirror fired here)",
           r["action"] == "silent" and r["high"] == 0)
 
-    # D) same bucket, same period → NO re-fire (dedup)
-    save_fired_set(set())
-    cycle(high_row, NOW, facts(high_row, 2400))
-    check("same bucket+period persists → silent (dedup)",
-          cycle(high_row, NOW, facts(high_row, 2400))["action"] == "silent")
+    # D) same bucket, same period → NO re-fire (dedup), and a PAGED entry never re-pages
+    check("same bucket+period persists after paging → silent (dedup)",
+          cycle(high_row, NOW + GRACE_S + 2 * HOUR, facts(high_row, 2400))["action"] == "silent")
 
-    # E) SAME bucket, NEW period → re-arms and fires again
+    # E) SAME bucket, NEW period → re-arms and pages again after its own grace
+    save_fired_set(set())
     new_period = [row("free:v2:cccc3333dddd4444", 200, NOW + 31 * DAY_S)]
-    r = cycle(new_period, NOW + 31 * DAY_S + HOUR, facts(new_period, 2400))
+    r = page(new_period, NOW + 31 * DAY_S + HOUR, facts(new_period, 2400))
     check("same bucket, NEW period → fires again (re-armed)", r["action"] == "fire")
 
     # F) bucket leaves the exhausted set → auto-resolve, silent, state emptied
@@ -948,7 +1469,7 @@ def self_test():
     # H) SECRET HYGIENE — a keyed bucket's API key never appears anywhere
     save_fired_set(set())
     keyed = [row("av_free_000000000000000000000000", 200, NOW - HOUR)]
-    r = cycle(keyed, NOW)
+    r = page(keyed, NOW)
     body = LAST_FIRE_BODY or ""
     check("keyed bucket fires", r["action"] == "fire")
     check("rendered body does NOT contain the raw API key", "av_free_000000000000000000000000" not in body)
@@ -959,7 +1480,7 @@ def self_test():
     #    how an operator-misreadable body passed every gate on 2026-08-01.
     save_fired_set(set())
     body_row = [row("free:v2:1111aaaa2222bbbb", 200, NOW - HOUR)]
-    cycle(body_row, NOW, facts(body_row, 2400))
+    page(body_row, NOW, facts(body_row, 2400))
     body1 = LAST_FIRE_BODY or ""
     check("singular labels the ID ('Newly exhausted: bucket <id>')",
           "Newly exhausted: bucket free:v2:1111aaaa2222bbbb" in body1)
@@ -971,12 +1492,28 @@ def self_test():
     check("summary states BOTH resolved limits", "free limits 200/mo + 100/day" in body1)
     check("the retired single-limit phrasing is gone", "free limit " not in body1)
     check("body carries a templated recommended_wave (no literal Wn)",
-          "OPS-QUOTA-EXHAUSTION-CONVERSION-W{NEXT}" in body1)
+          "OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W{NEXT}" in body1)
+    check("no literal Wn anywhere in the body",
+          not re.search(r"-W\d+\b", body1))
+
+    # ── OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W1 R2/R5 — the body carries the ANSWER, not homework.
+    check("R2: body carries the refusal-continuation fact", "refusals since the wall" in body1)
+    check("R2: body carries the signup fact", "signup: " in body1)
+    check("R2: body carries the CTA fact", "upgrade CTA: " in body1)
+    check("R2: body carries the prior-walled-days fact", "prior walled days: " in body1)
+    check("R2: body names the grace window it measured over",
+          "since detection" in body1 and str(OUTCOME_GRACE_H) in body1)
+    # STRUCTURAL absence, asserted on the RENDERED body — and deliberately not satisfiable by a
+    # comment recording the retired string, because a comment is not in the body at all.
+    check("R5: the retired research line is structurally ABSENT",
+          "Check funnel_events" not in body1)
+    check("R5: the never-dispatched wave name is structurally ABSENT",
+          "OPS-QUOTA-EXHAUSTION-CONVERSION" not in body1)
 
     save_fired_set(set())
     body_rows = [row("free:v2:1111aaaa2222bbbb", 200, NOW - HOUR),
                  row("free:v2:3333cccc4444dddd", 200, NOW - HOUR)]
-    cycle(body_rows, NOW, facts(body_rows, 2400))
+    page(body_rows, NOW, facts(body_rows, 2400))
     body2 = LAST_FIRE_BODY or ""
     check("plural renders 'buckets <id>, <id>'",
           "Newly exhausted: buckets free:v2:1111aaaa2222bbbb, free:v2:3333cccc4444dddd" in body2)
@@ -1095,10 +1632,26 @@ def self_test():
     #     so nothing but the daily leg can select this row.
     save_fired_set(set())
     daily_row = [row("free:v2:d0d0d0d0d0d0d0d0", 120, NOW - 3 * DAY_S, 100, TODAY)]
+    outcome_seam(daily_row)
     r = cycle(daily_row, NOW, facts(daily_row, 2400))
-    check("a DAILY-wall bucket is selected and fires", r["action"] == "fire")
-    check("it is named as a DAILY wall", r.get("walls") == [WALL_DAILY])
-    daily_body = LAST_FIRE_BODY or ""
+    check("a DAILY-wall bucket is selected and DETECTED", r["action"] == "silent" and r["pending"] == 1)
+    # A DAILY wall alone can now NEVER page, and that is a deliberate consequence rather than a
+    # gap: its dedup id carries the UTC day, so by the time the 24h grace elapses the day has
+    # rolled, the row is no longer live, and the caller is being served again. A cap that heals
+    # itself in hours is a recovery, and recovery is silent by the alert contract. What a daily
+    # wall IS good for is the coalescing lead — see Q8.
+    r = cycle(daily_row, NOW + GRACE_S + 60, facts(daily_row, 2400))
+    check("a DAILY wall alone resolves SILENTLY once its UTC day has rolled",
+          r["action"] == "silent")
+    check("...and its terminal state is SILENT_STILL_ACTIVE, not PAGED",
+          ST_PAGED not in [v["state"] for v in load_state().values()])
+    # The DAILY rendering is still gated, at unit level, because the deferred path can no longer
+    # reach it and METER-TRUTH-W1 bought these assertions with a real incident: a DAILY
+    # exhaustion once rendered as `used 100/100 … free limit 100/mo`.
+    daily_entry = dict(_entry("free:v2:d1d1d1d1d1d1d1d1", 100, NOW - 3 * DAY_S, 2400.0,
+                              WALL_DAILY, 100, TODAY))
+    daily_entry["outcome"] = {"refusals": 0, "cta": 0, "signups": 0, "prior_days": 0}
+    daily_body = build_body([daily_entry], 1, CAP_M, CAP_D)
     check("the daily body renders the DAILY denominator, not the monthly one",
           "used 100/100" in daily_body and "used 120/200" not in daily_body)
     check("the daily body names the 00:00 UTC reset horizon",
@@ -1116,7 +1669,7 @@ def self_test():
     #     does not clear at midnight).
     save_fired_set(set())
     both = [row("free:v2:b0thb0thb0thb0th", 200, NOW - HOUR, 100, TODAY)]
-    r = cycle(both, NOW, facts(both, 2400))
+    r = page(both, NOW, facts(both, 2400))
     check("a bucket on BOTH walls fires exactly once", r["action"] == "fire" and r["new"] == 1)
     check("...and it is reported MONTHLY-first", r.get("walls") == [WALL_MONTHLY])
     both_body = LAST_FIRE_BODY or ""
@@ -1130,29 +1683,35 @@ def self_test():
     save_fired_set(set())
     REARM_KEY = "free:v2:dede1111dede2222"
     d1 = [row(REARM_KEY, 120, NOW - 3 * DAY_S, 100, TODAY)]
-    check("daily wall day 1 → fires", cycle(d1, NOW, facts(d1, 2400))["action"] == "fire")
-    check("daily wall day 1, same day again → silent (dedup)",
-          cycle(d1, NOW, facts(d1, 2400))["action"] == "silent")
+    outcome_seam(d1)
+    r1 = cycle(d1, NOW, facts(d1, 2400))
+    check("daily wall day 1 → DETECTED (pending)", r1["pending"] == 1)
+    check("daily wall day 1, same day again → no second pending entry (dedup)",
+          cycle(d1, NOW, facts(d1, 2400))["pending"] == 0)
     later = NOW + DAY_S
     d2 = [row(REARM_KEY, 140, NOW - 3 * DAY_S, 100, utc_day_key(later))]
-    check("SAME bucket, SAME monthly period, NEW UTC day → re-arms and fires",
-          cycle(d2, later, facts(d2, 2400))["action"] == "fire")
+    outcome_seam(d2)
+    r2 = cycle(d2, later, facts(d2, 2400))
+    check("SAME bucket, SAME monthly period, NEW UTC day → re-arms as a NEW pending entry",
+          r2["pending"] == 1)
+    check("...and the two daily walls carry DISTINCT dedup ids (the METER-TRUTH-W1 identity)",
+          len([i for i in load_state() if "|daily@" in i]) == 2)
 
     # Q7) THE DENOMINATOR IS THE RESOLVED CAP — asserted against TWO different cap pairs, so a
     #     re-hardcoded number fails at least one of them.
     save_fired_set(set())
     alt = [row("free:v2:a17a17a17a17a17a", 500, NOW - HOUR)]
-    cycle(alt, NOW, facts(alt, 2400), m=500, d=250)
+    page(alt, NOW, facts(alt, 2400), m=500, d=250)
     alt_body = LAST_FIRE_BODY or ""
     check("under caps (500,250) the monthly denominator is 500", "used 500/500" in alt_body)
     check("under caps (500,250) the summary reads 500/mo + 250/day",
           "free limits 500/mo + 250/day" in alt_body)
     check("under caps (500,250) the retired literals appear nowhere",
           "/100 " not in alt_body and "200/mo" not in alt_body)
-    save_fired_set(set())
-    alt_d = [row("free:v2:a17a17a17a17a17b", 300, NOW - 3 * DAY_S, 250, TODAY)]
-    cycle(alt_d, NOW, facts(alt_d, 2400), m=500, d=250)
-    alt_d_body = LAST_FIRE_BODY or ""
+    alt_d_entry = dict(_entry("free:v2:a17a17a17a17a17b", 250, NOW - 3 * DAY_S, 2400.0,
+                              WALL_DAILY, 250, TODAY))
+    alt_d_entry["outcome"] = {"refusals": 0, "cta": 0, "signups": 0, "prior_days": 0}
+    alt_d_body = build_body([alt_d_entry], 1, 500, 250)
     check("under caps (500,250) the DAILY denominator is 250", "used 250/250" in alt_d_body)
 
     # I2) THE QUERY ITSELF. Every scenario above feeds rows in through the FORCE_ROWS seam, so
@@ -1215,7 +1774,7 @@ def self_test():
     # The exclusion must be about the FLAG, not about the volume — same bucket, same rate,
     # external, must page. Without this pair, `internal: True` for everything would pass.
     save_fired_set(set())
-    r = cycle(internal_row, NOW, facts(internal_row, 5000, internal=False))
+    r = page(internal_row, NOW, facts(internal_row, 5000, internal=False))
     check("the SAME bucket at the SAME rate, external → pages", r["action"] == "fire")
     # ...and the exclusion covers the DAILY wall too, not only the monthly one.
     save_fired_set(set())
@@ -1242,7 +1801,7 @@ def self_test():
           old_rate < MIN_CALLS_PER_DAY and 39.0 < old_rate < 40.0)
 
     save_fired_set(set())
-    r = cycle(fixture, FIXTURE_WALL, facts(fixture, 2807), m=100, d=100)
+    r = page(fixture, FIXTURE_WALL, facts(fixture, 2807), m=100, d=100)
     check("🎯 the historical exhaustion FIRES under the windowed rate", r["action"] == "fire")
     fixture_body = LAST_FIRE_BODY or ""
     check("the fired body names the real bucket", "free:v2:d552fbc794cd05dc" in fixture_body)
@@ -1261,20 +1820,178 @@ def self_test():
     #    is structurally 0 for every one of them.
     save_fired_set(set())
     keyed_fresh = [row("av_free_111111111111111111111111", 200, NOW - HOUR)]
-    r = cycle(keyed_fresh, NOW, {})   # deliberately NO facts row
+    r = page(keyed_fresh, NOW, {})   # deliberately NO facts row
     check("keyed bucket with no facts row still pages (lifetime fallback)", r["action"] == "fire")
     # ...and a keyed bucket at the DAILY wall pages on its own daily count, which IS a
     # calls/day figure. A windowed rate would be 0 here and would mute every one of them.
     save_fired_set(set())
     keyed_daily = [row("av_free_222222222222222222222222", 120, NOW - 3 * DAY_S, 100, TODAY)]
     r = cycle(keyed_daily, NOW, {})
-    check("keyed bucket at the DAILY wall pages on its daily count", r["action"] == "fire")
+    check("keyed bucket at the DAILY wall is DETECTED on its daily count", r["pending"] == 1)
+
+    # ── OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W1 R6 ───────────────────────────────────────
+    #
+    # W1a) THE THREE SILENT BRANCHES. Each is the SAME wall, the SAME rate, the SAME grace —
+    #      only the measured outcome differs. Asserting them as a set is the point: it proves
+    #      the branch is chosen by the OUTCOME and by nothing else about the bucket.
+    silent_row = [row("free:v2:5111e17511e17511", 200, NOW - HOUR)]
+    for label, kwargs, want in (
+        ("a signup was attributed → SILENT_CONVERTED", {"signups": 1}, ST_CONVERTED),
+        ("they clicked upgrade → SILENT_CTA_CLICKED", {"cta": 1}, ST_CTA),
+        ("still refused at volume → SILENT_STILL_ACTIVE", {"refusals": 340}, ST_ACTIVE),
+    ):
+        save_fired_set(set())
+        globals()["LAST_FIRE_BODY"] = None
+        r = page(silent_row, NOW, facts(silent_row, 2400), **kwargs)
+        check("R6: %s → NO page" % label, r["action"] == "silent")
+        check("R6: %s → terminal state is %s" % (label, want),
+              want in [v["state"] for v in load_state().values()])
+        check("R6: %s → wrote NO alert body" % label, LAST_FIRE_BODY is None)
+
+    # W1b) PRECEDENCE, asserted rather than assumed: money beats engagement beats presence.
+    check("R6: signup outranks CTA and refusals",
+          resolve_outcome({"signups": 1, "cta": 9, "refusals": 999}) == ST_CONVERTED)
+    check("R6: CTA outranks refusals",
+          resolve_outcome({"signups": 0, "cta": 1, "refusals": 999}) == ST_CTA)
+    check("R6: nothing at all → PAGED (the churn branch)",
+          resolve_outcome({"signups": 0, "cta": 0, "refusals": 0}) == ST_PAGED)
+
+    # W1c) AN UNAVAILABLE ARM CAN NEVER SILENCE A PAGE. This is the property that makes a lost
+    #      migration-034 grant DETECTABLE rather than silent, so it is asserted per sentinel.
+    for sentinel in ARM_UNAVAILABLE:
+        check("R6: refusals=%r cannot silence the page" % sentinel,
+              resolve_outcome({"signups": 0, "cta": 0, "refusals": sentinel}) == ST_PAGED)
+        check("R6: signups=%r cannot silence the page" % sentinel,
+              resolve_outcome({"signups": sentinel, "cta": 0, "refusals": 0}) == ST_PAGED)
+
+    # W1d) NO-PRIVILEGE vs QUERY-FAILURE vs ZERO — three facts, three renderings (Q1-ADD-2).
+    check("R6: a permission-denied maps to the NO-PRIVILEGE sentinel",
+          _arm_unavailable_reason(RuntimeError("psql failed: ERROR:  permission denied for "
+                                               "table funnel_events")) == ARM_UNAVAIL_NOPRIV)
+    check("R6: any other failure maps to the QUERY-FAILED sentinel",
+          _arm_unavailable_reason(RuntimeError("psql failed: could not connect"))
+          == ARM_UNAVAIL_ERROR)
+    check("R6: the sentinels are distinguishable from each other and from zero",
+          ARM_UNAVAIL_NOPRIV != ARM_UNAVAIL_ERROR
+          and render_arm(0, "refusals") == "0 refusals"
+          and render_arm(ARM_UNAVAIL_NOPRIV, "refusals") == ARM_UNAVAIL_NOPRIV)
+    save_fired_set(set())
+    unavail_row = [row("free:v2:c0ffeec0ffeec0ff", 200, NOW - HOUR)]
+    os.environ["QUOTA_CANARY_FORCE_OUTCOME"] = \
+        "free:v2:c0ffeec0ffeec0ff:noprivilege:noprivilege:noprivilege:noprivilege"
+    cycle(unavail_row, NOW, facts(unavail_row, 2400))
+    r = cycle(unavail_row, NOW + GRACE_S + 60, facts(unavail_row, 2400))
+    unavail_body = LAST_FIRE_BODY or ""
+    check("R6: an unreadable outcome still PAGES (never a silent zero)", r["action"] == "fire")
+    check("R6: the body says the arm is unavailable, in words",
+          ARM_UNAVAIL_NOPRIV in unavail_body)
+    check("R6: the body does NOT render an unmeasured zero", "0 refusals" not in unavail_body)
+    check("R6: the ACTION clause does not claim the caller went quiet when we could not look",
+          "went quiet" not in unavail_body and "could NOT be measured" in unavail_body)
+    check("R6: a MEASURED churn page does say the caller went quiet",
+          "went quiet" in body1 and "could NOT be measured" not in body1)
+
+    # W1e) A REAL raising query — the seam above forces a sentinel, this forces the exception
+    #      path itself, because a hermetic suite is blind to exactly what its own seam replaces.
+    outcome_seam(None)
+    _saved_psql = globals()["_psql"]
+
+    def _boom(*a, **k):
+        raise RuntimeError("psql failed: ERROR:  permission denied for table signup_attribution")
+    globals()["_psql"] = _boom
+    try:
+        raised = query_outcome("free:v2:c0ffeec0ffeec0ff", NOW, NOW + 3600)
+    finally:
+        globals()["_psql"] = _saved_psql
+    check("R6: a RAISING outcome query degrades instead of killing the run",
+          raised["signups"] == ARM_UNAVAIL_NOPRIV and raised["refusals"] == ARM_UNAVAIL_NOPRIV)
+    check("R6: a KEYED bucket's arms are n/a — not unavailable, and not zero",
+          query_outcome("av_free_999999999999999999999999", NOW, NOW + 1)["refusals"]
+          == ARM_NA_KEYED)
+
+    # W1f) LEGACY STATE LINES. The host file at cutover holds bare ids for buckets the operator
+    #      has ALREADY been paged about; re-paging that backlog is the bootstrap bug in a new
+    #      coat, so a bare id is `already resolved`, full stop.
+    save_fired_set(set())
+    legacy_row = [row("free:v2:1e6ac71e6ac71e6a", 200, NOW - HOUR)]
+    legacy_id = dedup_id(_entry("free:v2:1e6ac71e6ac71e6a", 200, NOW - HOUR, 0,
+                                WALL_MONTHLY, 200, TODAY))
+    with open(FIRED_SET_FILE, "w") as fh:
+        fh.write(legacy_id + "\n")                       # BARE id, pre-W1 grammar
+    check("R6: a legacy bare id parses as already-resolved",
+          parse_state_token(legacy_id) == (legacy_id, ST_LEGACY, 0))
+    globals()["LAST_FIRE_BODY"] = None
+    outcome_seam(legacy_row)
+    r = cycle(legacy_row, NOW, facts(legacy_row, 2400))
+    check("R6: a legacy entry opens NO pending entry", r["pending"] == 0)
+    r = cycle(legacy_row, NOW + GRACE_S + 60, facts(legacy_row, 2400))
+    check("R6: a legacy entry NEVER re-pages, even past the grace window",
+          r["action"] == "silent" and LAST_FIRE_BODY is None)
+    check("R6: an unparseable token is also treated as resolved, never as new",
+          parse_state_token("garbage#NOT_A_STATE#x")[1] == ST_LEGACY
+          and parse_state_token("a#b#c#d")[1] == ST_LEGACY)
+
+    # W1g) THE KEYED/KEYLESS TRUTH FIX (R3). The retired sentence asserted "no account and no
+    #      email" UNCONDITIONALLY, including for `key:sha16:…` buckets — whose whole definition
+    #      is a caller who registered. It shipped to the operator that way on 2026-08-16.
+    save_fired_set(set())
+    keyed_body_rows = [row("av_free_333333333333333333333333", 200, NOW - HOUR)]
+    page(keyed_body_rows, NOW, {})
+    keyed_body = LAST_FIRE_BODY or ""
+    check("R3: a KEYED bucket's body does NOT claim the caller has no account",
+          "no account and no email" not in keyed_body)
+    check("R3: a KEYED bucket's body says a contact path EXISTS",
+          "REGISTERED caller" in keyed_body and "direct contact path EXIST" in keyed_body)
+    check("R3: a KEYLESS bucket's body DOES say there is no account",
+          "no account and no email" in body1)
+    check("R3: a KEYLESS bucket's body does NOT claim a registered caller",
+          "REGISTERED caller" not in body1)
+
+    # W1h) COALESCING (Q4). The monthly wall lands while the daily one is still PENDING → ONE
+    #      page, monthly-first, both dedup ids claimed so the monthly cannot page separately.
+    save_fired_set(set())
+    COAL_KEY = "free:v2:c0a1e5cec0a1e5ce"
+    coal_daily = [row(COAL_KEY, 150, NOW - 3 * DAY_S, 100, TODAY)]
+    outcome_seam(coal_daily)
+    cycle(coal_daily, NOW, facts(coal_daily, 2400))
+    st0 = load_state()
+    check("R6/Q4: the daily wall is PENDING before the monthly arrives",
+          len(st0) == 1 and list(st0.values())[0]["state"] == ST_PENDING)
+    LAG = int(15.5 * HOUR)                              # the measured median lead
+    coal_monthly = [row(COAL_KEY, 200, NOW - 3 * DAY_S, 100, utc_day_key(NOW + LAG))]
+    outcome_seam(coal_monthly)
+    r = cycle(coal_monthly, NOW + LAG, facts(coal_monthly, 2400))
+    st = load_state()
+    check("R6/Q4: the monthly wall COALESCES into the pending daily entry (no page yet)",
+          r["action"] == "silent")
+    check("R6/Q4: BOTH dedup ids are claimed, so the monthly cannot page separately",
+          len(st) == 2 and sum(1 for v in st.values() if v["state"] == ST_PENDING) == 1)
+    check("R6/Q4: the coalesced entry keeps the ORIGINAL detection instant (page is not delayed)",
+          [v["since"] for v in st.values() if v["state"] == ST_PENDING] == [NOW])
+    globals()["LAST_FIRE_BODY"] = None
+    r = cycle(coal_monthly, NOW + GRACE_S + 60, facts(coal_monthly, 2400))
+    coal_body = LAST_FIRE_BODY or ""
+    check("R6/Q4: the coalesced pair produces exactly ONE page",
+          r["action"] == "fire" and r["new"] == 1)
+    check("R6/Q4-RULE-1: it states the MONTHLY reset horizon, not the daily one",
+          "(MONTHLY wall — clears at the caller's rolling reset)" in coal_body
+          and "clears at 00:00 UTC" not in coal_body)
+    check("R6/Q4-RULE-1: it NAMES the daily wall it absorbed",
+          "also hit the DAILY wall" in coal_body and "coalesced into this one page" in coal_body)
+    check("R6/Q4: a NON-coalesced page carries no absorbed-wall clause (the derivation is not "
+          "just 'any sibling')", "also hit the" not in body1)
+
+    # W1i) THE GRACE CONSTANT. Q4-RULE-2 refused a widening to 28h; pin the default so a future
+    #      edit has to argue with this line rather than slip past it.
+    check("R6/Q4-RULE-2: the grace default is 24h (not widened for the 27.2h outlier)",
+          OUTCOME_GRACE_H == 24)
 
     # J) VACUITY GUARD — refuse to report a pass over an empty corpus. Without this, a future
     #    change that made every scenario a no-op would still print PASS.
     check("self-test corpus is non-empty (vacuity guard)",
           len(body1) > 0 and len(body2) > 0 and len(fixture_body) > 0
-          and len(daily_body) > 0 and len(both_body) > 0 and len(alt_body) > 0)
+          and len(daily_body) > 0 and len(both_body) > 0 and len(alt_body) > 0
+          and len(keyed_body) > 0 and len(coal_body) > 0 and len(unavail_body) > 0)
 
     ok = not failures
     print("SELF-TEST: %s (%d failed)" % ("PASS" if ok else "FAIL", len(failures)))
