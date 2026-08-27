@@ -72,6 +72,10 @@ export default defineConfig({
       'tests/unit/design_w*_consistency.test.mjs',
       'tests/unit/geo_answer_page_invariants.test.mjs',
       'tests/unit/geo_jsonld_consistency.test.mjs',
+      // SEO-SITE-NAME-AND-PREFERRED-SOURCES-W1 — the site-name signal guard sits beside the
+      // other JSON-LD tests above and uses the same canonical runner (node:test), so it needs
+      // the same row here or vitest false-fails it with "No test suite found in file".
+      'tests/unit/website-alternatename-homepage-only.test.mjs',
       'tests/unit/how_it_works_consistency.test.mjs',
       'tests/unit/landing_faq_glossary_substrate.test.mjs',
       // OPS-CADDY-ROUTE-PARITY-W1 — node:test apex-route-parity guard (canonical runner is

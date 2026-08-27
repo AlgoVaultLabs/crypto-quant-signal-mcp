@@ -157,18 +157,51 @@ function renderTemplate(text, data) {
   });
 }
 
-async function buildBlocks(data, { orgRef = false } = {}) {
+// SEO-SITE-NAME-AND-PREFERRED-SOURCES-W1 — keys the WebSite template carries that belong on
+// the HOME PAGE ONLY. Google's site-names doc (verified 2026-08-27): "The WebSite structured
+// data must be on the home page of the site", and `alternateName` is the site-name preference
+// list Google reads from exactly that one node — "Specify them in order of your preference,
+// with the most important one listed first", lowercase domain last as the explicit backup.
+//
+// The VALUE lives in landing/_jsonld/website.json.template, so there is ONE source of truth for
+// it. This strips it back out for the ten sub-pages that carry a WebSite node (measured, not
+// assumed). Because it is a line REMOVAL it reproduces their committed bytes EXACTLY — the
+// wave shipped with zero sub-page diff, asserted by tests/unit/website-alternatename-homepage-
+// only.test.mjs against every committed landing page.
+//
+// Gated on the SAME `homepage` boolean that already selects the full-vs-@id Organization node
+// (ENTITY-FOOTPRINT-W1's HOMEPAGE_FILE conditional), so one fact is expressed by one gate
+// rather than two. The prior option name `orgRef` was that same fact stated negatively.
+//
+// Throws rather than silently no-opping if the template stops carrying the key: this is a
+// build-time generator, not a live serving path, so loud is correct here.
+const HOMEPAGE_ONLY_WEBSITE_KEYS = ['alternateName'];
+
+export function stripHomepageOnlyWebsiteKeys(json) {
+  let out = json;
+  for (const key of HOMEPAGE_ONLY_WEBSITE_KEYS) {
+    const before = out;
+    out = out.replace(new RegExp(`^[ \\t]*"${key}":[^\\n]*\\n`, 'm'), '');
+    if (out === before) {
+      throw new Error(`website.json.template no longer carries the homepage-only key "${key}"`);
+    }
+  }
+  return out;
+}
+
+async function buildBlocks(data, { homepage = false } = {}) {
   const blocks = [];
   for (const t of TEMPLATES) {
     // ENTITY-FOOTPRINT-W1: on non-homepage pages the Organization block is a bare @id
     // reference to the single canonical full node served on the homepage.
-    if (t.name === 'Organization' && orgRef) {
+    if (t.name === 'Organization' && !homepage) {
       blocks.push({ name: t.name, json: JSON.stringify(ORG_REF_NODE, null, 2) });
       continue;
     }
     const tplPath = path.join(TEMPLATE_DIR, t.file);
     const raw = await readFile(tplPath, 'utf-8');
-    const rendered = renderTemplate(raw, data).trimEnd();
+    let rendered = renderTemplate(raw, data).trimEnd();
+    if (t.name === 'WebSite' && !homepage) rendered = stripHomepageOnlyWebsiteKeys(rendered);
     JSON.parse(rendered); // validate
     blocks.push({ name: t.name, json: rendered });
   }
@@ -222,8 +255,8 @@ async function main() {
   const entityUrls = await loadEntityUrls();
   data.sameas_json = JSON.stringify(buildSameAs(entityUrls));
   // Full Organization node on the homepage; @id reference on every other page.
-  const homeBlocks = await buildBlocks(data, { orgRef: false });
-  const subBlocks = await buildBlocks(data, { orgRef: true });
+  const homeBlocks = await buildBlocks(data, { homepage: true });
+  const subBlocks = await buildBlocks(data, { homepage: false });
 
   const allFiles = await readdir(LANDING_DIR);
   const htmlFiles = allFiles.filter(f => f.endsWith('.html') && !FILES_TO_SKIP.has(f)).sort();
