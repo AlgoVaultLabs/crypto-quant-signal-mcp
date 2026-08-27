@@ -868,5 +868,38 @@ tailwind.config = {
 </script>
 
 
+<!-- SEO-PREFSRC-W1:START -->
+<script>
+/* Google's publisher.js auto-inits SYNCHRONOUSLY at module-eval — measured in the live 251KB
+   bundle 2026-08-27: `for(…) if("manual"===s[t].getAttribute("preferred-sources-control")){e=!1}
+   e && n.init()`, with no DOMContentLoaded fallback and no second attempt. Loaded `async` from
+   <head> (the placement Google's own doc prescribes) it therefore races this page's ~250KB body
+   and wins: querySelectorAll("[google-add-preferred-source-btn]") returns ZERO, init() binds
+   nothing, and the button never appears. Measured on the first deploy of this wave — two button
+   divs present, data-initialized null on both, 0x0.
+   Re-init once the DOM is parsed. api.init() is the library's public entry (PREFERRED_SOURCE.api
+   = {init, addPreferredSource}) and is idempotent by construction — it selects
+   :not([data-initialized]) — so calling it after a successful auto-init is a no-op. Bounded
+   retry rather than a queue push, because the queue's drain semantics for a PRE-EXISTING array
+   are unverified here while api.init() is measured: calling it bound both buttons and rendered
+   the desktop one at 1105x60. */
+(function () {
+  function go() {
+    var P = self.PREFERRED_SOURCE;
+    if (!P || !P.api || typeof P.api.init !== 'function') return false;
+    P.api.init();
+    return true;
+  }
+  function start() {
+    if (go()) return;
+    var n = 0;
+    var t = setInterval(function () { if (go() || ++n > 40) clearInterval(t); }, 250);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+</script>
+<!-- SEO-PREFSRC-W1:END -->
+
 </body>
 </html>

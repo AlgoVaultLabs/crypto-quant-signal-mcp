@@ -176,6 +176,37 @@ export function directiveOrigins(sources = []) {
   return out;
 }
 
+/**
+ * A CSP-permitted embed can still be inert. Google's publisher.js auto-inits SYNCHRONOUSLY at
+ * module-eval with no DOMContentLoaded fallback and no retry, so loaded `async` from <head> — the
+ * placement Google's own doc prescribes — it races the body and, on a large page, wins: it finds
+ * zero [google-add-preferred-source-btn] elements, binds nothing, and never tries again. Measured
+ * live on the first deploy of SEO-SITE-NAME-AND-PREFERRED-SOURCES-W1: both button divs present,
+ * data-initialized null on both, rendered 0x0.
+ *
+ * This is the STATIC half of that class — the dynamic half needs a real browser and is not
+ * something a deploy gate should own. A page that loads the library must also carry an explicit
+ * post-DOM re-init; deleting the initializer while leaving the script tag is the exact regression,
+ * and it is silent in every other check.
+ */
+const INERT_EMBED_RULES = [
+  {
+    loader: 'news.google.com/swg/js/v1/publisher.js',
+    requires: /PREFERRED_SOURCE[\s\S]{0,400}?\.api\.init\(\)/,
+    why: 'publisher.js auto-inits at module-eval only; without an explicit post-DOM api.init() the button silently never renders',
+  },
+];
+
+export function inertEmbedFindings(html, file) {
+  const out = [];
+  for (const r of INERT_EMBED_RULES) {
+    if (html.includes(r.loader) && !r.requires.test(html)) {
+      out.push(`INERT ${file} loads ${r.loader} but carries no post-DOM initializer — ${r.why}.`);
+    }
+  }
+  return out;
+}
+
 // ─────────────────────────── the gate ───────────────────────────
 
 function runCheck({ repoRoot = REPO_ROOT, live = false } = {}) {
@@ -209,6 +240,7 @@ function runCheck({ repoRoot = REPO_ROOT, live = false } = {}) {
   for (const f of files) {
     const html = fs.readFileSync(f, 'utf8');
     corpus.push(html);
+    findings.push(...inertEmbedFindings(html, path.relative(repoRoot, f)));
     for (const ref of extractExternalRefs(html, path.relative(repoRoot, f))) {
       refCount++;
       const r = cspAllowsUrl(csp, ref.src, ref.kind);
@@ -354,6 +386,25 @@ function selfTest() {
     'OK',
   );
 
+  // must-REFUSE 7 — a CSP-permitted embed that is INERT: the loader without its initializer.
+  const LOADER = '<script async src="https://news.google.com/swg/js/v1/publisher.js"></script>';
+  const INIT = '<script>self.PREFERRED_SOURCE.api.init()</script>';
+  // The fixture policy must permit the loader in script-src too, or these two scenarios would
+  // be testing the FORWARD rule again instead of the inert-embed rule.
+  const CADDY_G = CADDY_OK
+    .replace('https://embed.example.com', 'https://news.google.com')
+    .replace("script-src 'self' https://cdn.example.com", "script-src 'self' https://cdn.example.com https://news.google.com");
+  expect(
+    'loader without initializer is DRIFT',
+    scenario('inert', { caddy: CADDY_G, pages: { 'a.html': PAGE_OK.replace('</head>', LOADER + '</head>').replace('https://embed.example.com/w', 'https://news.google.com/w') }, config: BASE_CFG }).status,
+    'DRIFT',
+  );
+  expect(
+    'loader WITH initializer is OK',
+    scenario('inert-ok', { caddy: CADDY_G, pages: { 'a.html': PAGE_OK.replace('</head>', LOADER + '</head>').replace('</body>', INIT + '</body>').replace('https://embed.example.com/w', 'https://news.google.com/w') }, config: BASE_CFG }).status,
+    'OK',
+  );
+
   // must-REFUSE 4 — INDETERMINATE, not a pass: an unextractable policy.
   expect(
     'unextractable CSP is INDETERMINATE',
@@ -402,7 +453,7 @@ function selfTest() {
 
   const failed = cases.filter((c) => !c.ok);
   for (const c of cases) console.log(`  ${c.ok ? '✓' : '✗'} ${c.name}${c.ok ? '' : ` — expected ${c.want}, got ${c.got}`}`);
-  if (cases.length < 14) {
+  if (cases.length < 16) {
     console.log(`  vacuity: only ${cases.length} scenarios — the suite built nothing`);
     return verdict('INDETERMINATE');
   }
