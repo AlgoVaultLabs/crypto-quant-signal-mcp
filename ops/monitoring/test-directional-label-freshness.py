@@ -20,13 +20,21 @@ NOW = 1_800_000_000
 H = 3600
 
 PASSED = 0
+FAILURES: list[str] = []
 
 
 def check(name: str, cond: bool, detail: str = "") -> None:
+    # GENERATOR FIX (OPS-LABEL-FRESHNESS-SELFTEST-TRUNCATION-W1): collect-and-continue.
+    # The prior `sys.exit(1)` on the FIRST failing assertion truncated the whole suite — a
+    # single red assertion left every later assertion UNEXECUTED, so the host self-test
+    # reported on a fraction of its checks and its tail was permanently dark. A self-test
+    # that aborts on first failure cannot answer "what else is broken?". Record every
+    # failure, keep going, and exit non-zero exactly once at the END with the full tally.
     global PASSED
     if not cond:
+        FAILURES.append(f"{name} {detail}".rstrip())
         print(f"FAIL {name} {detail}")
-        sys.exit(1)
+        return
     PASSED += 1
     print(f"ok   {name}")
 
@@ -48,6 +56,19 @@ def run(tmp: Path, rows: list[tuple[str, int, int | None]], *, state=None, argv=
     state_file = tmp / "state.json"
     if state is not None:
         state_file.write_text(json.dumps(state))
+        # OPS-LABEL-FRESHNESS-SELFTEST-TRUNCATION-W1 (option a): SEC-30 in
+        # directional-label-freshness.py redirects BOTH state and digest to a
+        # `<file>.forced-smoke` sibling whenever --force-stale is set — precisely so a
+        # synthetic breach can never touch production state — and it does so BEFORE the
+        # consecutive-state read. So on the forced path the base state.json is never read;
+        # to exercise the day-2 SUSTAINED-DRIFT page under --force-stale the pre-seeded
+        # day-1 state must land where the redirected read looks. Mirror the seed there using
+        # the SAME suffix transform SEC-30 applies. This does NOT weaken SEC-30's isolation:
+        # production state stays the base file, and every synthetic write the canary makes
+        # still lands only on the .forced-smoke sibling.
+        if "--force-stale" in argv:
+            forced_state = state_file.with_suffix(state_file.suffix + ".forced-smoke")
+            forced_state.write_text(json.dumps(state))
     env = os.environ | {
         "LF_PSQL_CMD": str(stub),
         "LF_WRAPPER": str(wrapper),
@@ -224,4 +245,10 @@ with tempfile.TemporaryDirectory() as d:
     check("retired-control: same fixture breaches when NOT retired", "BREACH" in digest2, digest2)
     check("retired-control: still never pages (long-tail)", calls2 == "")
 
+TOTAL = PASSED + len(FAILURES)
+if FAILURES:
+    print(f"\n{PASSED} of {TOTAL} ASSERTIONS PASSED — {len(FAILURES)} FAILED:")
+    for f in FAILURES:
+        print(f"  FAIL {f}")
+    sys.exit(1)
 print(f"\nALL {PASSED} ASSERTIONS PASSED")

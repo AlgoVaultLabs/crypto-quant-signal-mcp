@@ -585,7 +585,7 @@
       "schedule": null,
       "invoked_by": "manual",
       "install_state": "installed",
-      "sha256": "21c64af5234d7e69642f085f33d70a9f2e12c2952c219bd397145befb9149d9b",
+      "sha256": "4cd97fdbcc86b1c971764301b6c88ed95d3d88f2650f3e607341e18d77b503c2",
       "alert_ids": [],
       "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1"
     },
