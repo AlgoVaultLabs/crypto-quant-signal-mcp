@@ -1,5 +1,5 @@
 /**
- * MCP Client integrations — 11 entries (8 dedicated + 3 inline-only).
+ * MCP Client integrations — 12 entries (9 dedicated + 3 inline-only).
  *
  * THE single MCP-client SoT. Consumers are listed in ./types.ts. Do not add a
  * second module exporting a client list — every surface projects from here.
@@ -15,7 +15,7 @@
  * hasDedicatedPage:false means "no /integrations/<slug> page", NOT "lesser":
  *   plain-http  — a transport, not a client.
  *   zai-api     — server-side MCP on the provider's own API; nothing to install.
- *   deepseek    — a MODEL you point an existing client at, not a client itself.
+ *   deepseek    — the bring-your-own-model path; the native client is deepseek-harness.
  * All three still render on the landing quickstart grid, which deliberately
  * does NOT apply renderIndexGrid()'s hasDedicatedPage filter.
  *
@@ -307,6 +307,43 @@ bearer_token_env_var = "AV_API_KEY"
       verifiedAt: '2026-08-05',
     },
     {
+      slug: 'deepseek-harness',
+      displayName: 'DeepSeek Harness',
+      surfaceType: 'mcp-client',
+      setupSummary:
+        'Add <code class="text-xs bg-navy-800 px-1 rounded">@deepseek-ai/dsh-mcp-client</code>, then insert one entry in <code class="text-xs">cordis.patch.yml</code>',
+      whatYouGet:
+        'DeepSeek’s own agent runtime. AlgoVault tools arrive as <code class="text-xs">mcp__algovault__*</code>; the free tier needs no key.',
+      walkthroughHtml: `      <p>Two steps: add the plugin, then patch the profile. <code class="text-xs bg-navy-800 px-1 rounded">pnpm</code> must be on PATH &mdash; the CLI forwards to it.</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">dsh plugin --profile &lt;name&gt; add @deepseek-ai/dsh-mcp-client@0.1.1-rc.2</code></pre>
+      </div>
+      <p>The version is pinned on purpose. npm’s <code class="text-xs">latest</code> tag still points at <code class="text-xs">0.0.1-rc.1</code>, which is BSD-3-Clause; MIT starts at <code class="text-xs">0.1.0-rc.2</code>.</p>
+      <p>Then edit <code class="text-xs bg-navy-800 px-1 rounded">~/.dsh/profiles/&lt;name&gt;/cordis.patch.yml</code>, or <code class="text-xs">~/.dsh/cordis.patch.yml</code> for every profile:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">- insert:
+    - id: mcp-algovault
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: algovault
+        transport: streamable-http
+        url: https://api.algovault.com/mcp?src=docs
+        headers:
+          X-AlgoVault-Track-Token: chan-docs</code></pre>
+      </div>
+      <p>The <code class="text-xs">- insert:</code> wrapper is required. Without it the entry is an id-targeted override, and it is skipped with a warning.</p>
+      <p>Paid tier adds one more line to that <code class="text-xs">headers</code> block: <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code>. The free tier needs no key.</p>
+      <p>The tools arrive server-qualified &mdash; <code class="text-xs">mcp__algovault__get_trade_call</code>, <code class="text-xs">mcp__algovault__scan_trade_calls</code>, and the rest.</p>
+      <p>DSH bridges tools only. MCP resources and prompts are deferred upstream, so read the track record at <a class="text-mint-400 hover:underline" href="https://algovault.com/track-record">algovault.com/track-record</a> instead.</p>
+      <p><strong>Verify:</strong> ask <code class="text-xs">dsh</code> <em>"Get me a trade call for BTC on the 1h timeframe"</em>.</p>
+      <p class="text-xs text-gray-500">Verified against <code class="text-xs">@deepseek-ai/dsh-mcp-client</code> 0.1.1-rc.2 on 2026-08-28. DSH ships prereleases only; expect compatibility-breaking changes.</p>`,
+      fullTutorialUrl: '/integrations/deepseek-harness',
+      hasDedicatedPage: true,
+      kind: 'native',
+      source: 'https://github.com/deepseek-ai/deepseek-harness',
+      verifiedAt: '2026-08-28',
+    },
+    {
       slug: 'zai-api',
       displayName: 'Z.ai API',
       surfaceType: 'mcp-client',
@@ -346,7 +383,7 @@ bearer_token_env_var = "AV_API_KEY"
       whatYouGet:
         'Bring your own model. DeepSeek does the thinking; your existing harness carries the AlgoVault tools.',
       walkthroughSummary: 'DeepSeek &mdash; bring your own model',
-      walkthroughHtml: `      <p>DeepSeek ships no MCP application of its own, and its API exposes no MCP parameter. What it does offer is an Anthropic-compatible endpoint, so you run a harness that already speaks MCP and swap the model behind it.</p>
+      walkthroughHtml: `      <p>DeepSeek’s own harness connects to AlgoVault directly &mdash; see the <a class="text-mint-400 hover:underline" href="/integrations/deepseek-harness">DeepSeek Harness tutorial</a>. This row is the other path: keep the harness you already run and swap the model behind it. The DeepSeek API itself still exposes no MCP parameter, so the harness carries the tools.</p>
       <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
 export ANTHROPIC_AUTH_TOKEN="$DEEPSEEK_API_KEY"
@@ -361,7 +398,7 @@ claude mcp add --transport http --scope project algovault \\
       hasDedicatedPage: false,
       kind: 'byo-model',
       source: 'https://api-docs.deepseek.com/guides/anthropic_api',
-      verifiedAt: '2026-08-05',
+      verifiedAt: '2026-08-28',
     },
   ],
 };

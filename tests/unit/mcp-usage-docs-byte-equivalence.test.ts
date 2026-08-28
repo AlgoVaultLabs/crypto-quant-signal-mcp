@@ -49,6 +49,20 @@
  * rather than after. The second clause is not decoration: R-B added a SECOND meter, and copy
  * naming only the monthly one would understate the wall a free caller actually hits first.
  *
+ * FIXTURE MAINTENANCE — LANDING-DSH-CLIENT-SURFACE-W1 (CH1, 2026-08-28): regenerated to absorb
+ * ONE new row (`deepseek-harness`, DeepSeek's own agent runtime, which ships a first-party MCP
+ * client) and the CORRECTION of a claim in the `deepseek` row that had been false for 18 days:
+ * "DeepSeek ships no MCP application of its own, and its API exposes no MCP parameter." The
+ * second clause is still true — measured on the row's own source, `mcp_servers` is Ignored and
+ * `mcp_tool_use` is Not Supported. The first became false on 2026-08-10 when
+ * `@deepseek-ai/dsh-mcp-client` was published from deepseek-ai/deepseek-harness.
+ * Verified BEFORE regenerating, not after: of the 410 non-empty lines in the old fixture,
+ * EXACTLY ONE is absent from the new one — that paragraph — and all 31 removed word tokens come
+ * from it. 2858 -> 3153 words; every other line is present verbatim (exhaustive containment, not
+ * an eyeballed diff). The new row was placed BEFORE `zai-api` deliberately so `deepseek` stays
+ * last and renderTableRow()'s omit-border-on-the-last-row behaviour does not shift, which is the
+ * positional diff the 2026-08-05 regeneration had to absorb.
+ *
  * FIXTURE MAINTENANCE — DOCS-SAMPLE-EXECUTABLE-W1 (CH1, 2026-08-19): regenerated to absorb the
  * correction of a FALSE claim in `mcp-clients.ts` `walkthroughHtml`. It told non-MCP integrators
  * that "Streamable-HTTP MCP requires a 3-step handshake: initialize -> notifications/initialized

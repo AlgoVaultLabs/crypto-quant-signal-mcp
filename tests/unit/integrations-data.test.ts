@@ -124,12 +124,14 @@ describe('integrations-data: cross-surface invariants', () => {
     expect(new Set(dedicated).size).toBe(dedicated.length);
   });
 
-  it('MCP_CLIENTS contains exactly 8 dedicated + 3 inline', () => {
+  it('MCP_CLIENTS contains exactly 9 dedicated + 3 inline', () => {
     const dedicated = MCP_CLIENTS.entries.filter((e) => e.hasDedicatedPage);
     const inline = MCP_CLIENTS.entries.filter((e) => !e.hasDedicatedPage);
-    expect(dedicated).toHaveLength(8);
+    expect(dedicated).toHaveLength(9);
     // plain-http (a transport), zai-api (server-side, nothing to install) and
-    // deepseek (a model, not a client) each have no /integrations/<slug> page.
+    // deepseek (the bring-your-own-model path, not an install) each have no
+    // /integrations/<slug> page. DeepSeek's own harness DOES have one, under the
+    // separate `deepseek-harness` slug — the two are different products.
     expect(inline.map((e) => e.slug).sort()).toEqual(['deepseek', 'plain-http', 'zai-api']);
   });
 
@@ -235,13 +237,25 @@ describe('mcp-clients: ClientKind factuality', () => {
     }
   });
 
-  it('deepseek is byo-model, not a native client', () => {
-    // DeepSeek ships no MCP application and its API exposes no MCP parameter.
-    // It is a MODEL you point an existing harness at. A later wave must not
-    // quietly promote it to a peer of the native clients — hence this lock.
+  it('the two DeepSeek rows keep their distinct kinds', () => {
+    // These are two different products and the distinction is the whole point of
+    // the pair. `deepseek` is the bring-your-own-model path: point a harness you
+    // already run at https://api.deepseek.com/anthropic and swap the model behind
+    // it. `deepseek-harness` is DeepSeek's own agent runtime, which ships a
+    // first-party MCP client (@deepseek-ai/dsh-mcp-client) and connects directly.
+    //
+    // This lock replaces one that asserted "DeepSeek ships no MCP application and
+    // its API exposes no MCP parameter". The second clause is still true; the
+    // first was true when written and false from 2026-08-10, and the lock was
+    // holding the false half in place. Collapsing the two rows into one — in
+    // either direction — is what this now forbids.
     const deepseek = MCP_CLIENTS.entries.find((e) => e.slug === 'deepseek');
     expect(deepseek, 'deepseek row present').toBeDefined();
     expect(deepseek!.kind).toBe('byo-model');
+
+    const harness = MCP_CLIENTS.entries.find((e) => e.slug === 'deepseek-harness');
+    expect(harness, 'deepseek-harness row present').toBeDefined();
+    expect(harness!.kind).toBe('native');
   });
 
   it('no byo-model row describes itself as an MCP client', () => {
