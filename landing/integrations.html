@@ -514,6 +514,19 @@ tailwind.config = {
           <span class="text-mint-400">View tutorial &rarr;</span>
         </div>
       </a>
+      <a href="/integrations/deepseek-harness"
+         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'deepseek-harness',source:'integrations_index',medium:'card'}})"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+          <h3 class="text-white font-semibold text-base">DeepSeek Harness</h3>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">DeepSeek’s own agent runtime. AlgoVault tools arrive as <code class="text-xs">mcp__algovault__*</code>; the free tier needs no key.</p>
+        <p class="text-gray-600 text-xs mb-3">Add <code class="text-xs bg-navy-800 px-1 rounded">@deepseek-ai/dsh-mcp-client</code>, then insert one entry in <code class="text-xs">cordis.patch.yml</code></p>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-mint-400">View tutorial &rarr;</span>
+        </div>
+      </a>
       <!-- BUILD:INTEGRATIONS_INDEX_MCP_CLIENTS:end -->
     </div>
   </div>

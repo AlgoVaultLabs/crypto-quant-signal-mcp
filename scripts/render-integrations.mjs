@@ -309,6 +309,10 @@ const DISPLAY_NAMES = {
   codex: 'Codex',
   kimi: 'Kimi Code',
   'glm-zcode': 'ZCode (GLM)',
+  // LANDING-DSH-CLIENT-SURFACE-W1 — same reason as binance-agent-os above: the title-cased
+  // fallback renders "Deepseek-harness", which gets the vendor's own capitalisation wrong on
+  // the <title>, the OG tags and the H1.
+  'deepseek-harness': 'DeepSeek Harness',
 };
 
 // NAV-PLATFORM-GENERATOR-W1 (A1): canonicalNavHtml() RETIRED. The per-page integration nav is
