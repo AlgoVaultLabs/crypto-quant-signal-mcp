@@ -60,14 +60,23 @@ function runMain(mode: string, psqlPy: string) {
   return spawnSync('python3', ['-c', code], { encoding: 'utf8', env: { ...process.env } });
 }
 
-/** A `psql` stub: routes by builder fragment, returns `-tA -F'|'` shaped text. */
-function psqlStub(frozen: string, persistence: string, floor: string): string {
+/**
+ * A `psql` stub: routes by builder fragment, returns `-tA -F'|'` shaped text.
+ *
+ * `counterAge` is routed SEPARATELY from the persistence rows on purpose — the two answer
+ * different questions ("how old is the counter" vs "which days carry a suppression"), and the
+ * state that distinguishes them is the one this canary is built to reach: a mature counter with
+ * zero suppressions, i.e. a fully enforcing gate.
+ */
+function psqlStub(frozen: string, persistence: string, floor: string, counterAge = '4'): string {
   return [
     'def _q(sql):',
     '    if "n_frozen" in sql:',
     `        return ${JSON.stringify(frozen)}`,
     '    if "window_days_seen" in sql:',
     `        return ${JSON.stringify(persistence)}`,
+    '    if "MAX(date)" in sql:',
+    `        return ${JSON.stringify(counterAge)}`,
     `    return ${JSON.stringify(floor)}`,
     'm.psql = _q',
   ].join('\n');
@@ -178,7 +187,7 @@ describe('book-liveness-canary — closed-vs-broken discriminator', () => {
   it('a dead book breaches; a closed market on the SAME run does not', { timeout: 30_000 }, () => {
     // cols: exchange|coin|days|tfs|n|window_days_seen — a full 28-day window.
     const rows = ['XT|EPT|28|3|140|28', 'ASTER|SPY|9|2|9|28'].join('\n');
-    const r = runMain('enforce', psqlStub('BINANCE|500|0', rows, 'XT|10'));
+    const r = runMain('enforce', psqlStub('BINANCE|500|0', rows, 'XT|10', '28'));
     expect(r.status, r.stderr).toBe(0);
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
     expect(r.stdout).toMatch(/BREACH dead book XT\|EPT/);
@@ -188,11 +197,25 @@ describe('book-liveness-canary — closed-vs-broken discriminator', () => {
   it('a young counter reports INSUFFICIENT_WINDOW and never a verdict', { timeout: 30_000 }, () => {
     // The same dead book, but the counter has only seen 4 of 28 days.
     const rows = 'XT|EPT|4|3|15|4';
-    const r = runMain('shadow', psqlStub('BINANCE|500|0', rows, 'XT|10'));
+    const r = runMain('shadow', psqlStub('BINANCE|500|0', rows, 'XT|10', '4'));
     expect(r.status, r.stderr).toBe(0);
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
-    expect(r.stdout).toMatch(/INSUFFICIENT_WINDOW - counter has 4 of 28 distinct days/);
+    expect(r.stdout).toMatch(/INSUFFICIENT_WINDOW - the counter is 4 day\(s\) old, needs 28/);
   });
+});
+
+describe('book-liveness-canary — the target state', () => {
+  it('a MATURE counter with ZERO suppressions is a reported PASS, not an unknown',
+    { timeout: 30_000 }, () => {
+      // The state a fully enforcing gate reaches. Keying evaluability on "days carrying a
+      // suppression" instead of counter AGE would make the canary call its own success
+      // INSUFFICIENT_WINDOW forever.
+      const r = runMain('enforce', psqlStub('BINANCE|500|0', '', '', '28'));
+      expect(r.status, r.stderr).toBe(0);
+      expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
+      expect(r.stdout).toMatch(/persistence: 0 suppressions in the last 28 days over a full 28-day counter - no dead books/);
+      expect(r.stdout).not.toMatch(/INSUFFICIENT_WINDOW/);
+    });
 });
 
 describe('book-liveness-canary — reporting is positive, never absence-of-alert', () => {

@@ -211,6 +211,19 @@ def build_persistence_sql(window_days, reason):
     )
 
 
+def build_counter_age_sql(reason):
+    """How many distinct days the counter has EXISTED for, unbounded by the window.
+
+    Its own query rather than a subquery on the grouped result, because the grouped result is
+    empty in exactly the state that matters — a fully enforcing gate with nothing left to
+    suppress — and a value read off row[0] of an empty set is not a value.
+    """
+    return (
+        "SELECT COALESCE(MAX(date) - MIN(date), 0) + CASE WHEN COUNT(*) = 0 THEN 0 ELSE 1 END"
+        " FROM emit_suppressions WHERE reason = '%s';" % _safe_literal(reason)
+    )
+
+
 def build_floor_sql(window_days, reason):
     """Maximum suppressions recorded for any single (venue, day) in the window."""
     return (
@@ -263,14 +276,21 @@ def reason_for(mode):
     return "frozen_book" if mode == "enforce" else "frozen_book_shadow"
 
 
-def classify_persistence(rows, min_days, window_days, days_seen):
+def classify_persistence(rows, min_days, window_days, days_seen, counter_age_days):
     """(dead_books, evaluable) - a (venue, coin) suppressed on >= min_days distinct days.
 
-    `evaluable` is False while the counter has seen fewer than `window_days` distinct days: the
-    threshold is only meaningful against a full window, and reporting a verdict from a short one
-    would mistake a YOUNG COUNTER for a healthy fleet.
+    `evaluable` is False while the COUNTER ITSELF is younger than `window_days`: the threshold is
+    only meaningful against a full window, and reporting a verdict from a short one would mistake
+    a young counter for a healthy fleet.
+
+    `counter_age_days` and `days_seen` are DIFFERENT questions and conflating them is a reporting
+    lie in the state this canary is built to reach. `days_seen` counts days that CARRY a
+    suppression; `counter_age_days` counts days the counter has existed. Once the gate is
+    enforcing well, `days_seen` legitimately falls to 0 — and a guard that then reports
+    "INSUFFICIENT_WINDOW" would be calling its own success an unknown. Zero suppressions over a
+    FULL window is a fact we were handed: it is a reported PASS, not an inability to judge.
     """
-    if days_seen < window_days:
+    if counter_age_days < window_days:
         return [], False
     dead = []
     for r in rows:
@@ -408,20 +428,34 @@ def main():
               file=sys.stderr)
         return emit("INDETERMINATE", EXIT_INDETERMINATE)
 
+    try:
+        arows = parse_rows(psql(build_counter_age_sql(reason)), 1)
+    except QueryError as e:
+        print("[book-liveness-canary] %s INDETERMINATE - counter-age query: %s" % (stamp, e),
+              file=sys.stderr)
+        return emit("INDETERMINATE", EXIT_INDETERMINATE)
+
+    counter_age = int(arows[0][0] or 0) if arows else 0
     days_seen = int(prows[0][5] or 0) if prows else 0
     dead, evaluable = classify_persistence(prows, DEAD_BOOK_MIN_DAYS, DEAD_BOOK_WINDOW_DAYS,
-                                           days_seen)
+                                           days_seen, counter_age)
     if not evaluable:
-        info.append("persistence: INSUFFICIENT_WINDOW - counter has %d of %d distinct days; the "
-                    "pin is only meaningful over a full window"
-                    % (days_seen, DEAD_BOOK_WINDOW_DAYS))
+        info.append("persistence: INSUFFICIENT_WINDOW - the counter is %d day(s) old, needs %d; "
+                    "the pin is only meaningful over a full window (%d day(s) carry a "
+                    "suppression)" % (counter_age, DEAD_BOOK_WINDOW_DAYS, days_seen))
     else:
         evaluated += 1
         if dead:
             breaches.extend("dead book %s" % d for d in dead)
+        elif not prows:
+            # The target state, reported as a PASS rather than as an unknown.
+            info.append("persistence: 0 suppressions in the last %d days over a full %d-day "
+                        "counter - no dead books" % (DEAD_BOOK_WINDOW_DAYS,
+                                                     DEAD_BOOK_WINDOW_DAYS))
         else:
-            info.append("persistence: %d (venue,coin) pair(s) suppressed, none reaching %d of %d "
-                        "days" % (len(prows), DEAD_BOOK_MIN_DAYS, DEAD_BOOK_WINDOW_DAYS))
+            info.append("persistence: %d (venue,coin) pair(s) suppressed on %d day(s), none "
+                        "reaching %d of %d days" % (len(prows), days_seen, DEAD_BOOK_MIN_DAYS,
+                                                    DEAD_BOOK_WINDOW_DAYS))
 
     # -- 3. suppression volume floor (REPORT-ONLY) --
     try:
@@ -548,17 +582,27 @@ def _self_test():
     dead_row = ["XT", "EPT", "26", "3", "40", "28"]
     live_row = ["ASTER", "SPY", "6", "1", "6", "28"]
     ck("dead book detected",
-       lambda: len(classify_persistence([dead_row], 24, 28, 28)[0]), 1)
+       lambda: len(classify_persistence([dead_row], 24, 28, 28, 28)[0]), 1)
     ck("closed market NOT flagged",
-       lambda: len(classify_persistence([live_row], 24, 28, 28)[0]), 0)
+       lambda: len(classify_persistence([live_row], 24, 28, 28, 28)[0]), 0)
     ck("mixed corpus flags only the dead one",
-       lambda: len(classify_persistence([dead_row, live_row], 24, 28, 28)[0]), 1)
-    ck("short window is not evaluable",
-       lambda: classify_persistence([dead_row], 24, 28, 4)[1], False)
-    ck("short window yields no verdict",
-       lambda: len(classify_persistence([dead_row], 24, 28, 4)[0]), 0)
+       lambda: len(classify_persistence([dead_row, live_row], 24, 28, 28, 28)[0]), 1)
+    ck("young COUNTER is not evaluable",
+       lambda: classify_persistence([dead_row], 24, 28, 4, 4)[1], False)
+    ck("young counter yields no verdict",
+       lambda: len(classify_persistence([dead_row], 24, 28, 4, 4)[0]), 0)
     ck("full window is evaluable",
-       lambda: classify_persistence([live_row], 24, 28, 28)[1], True)
+       lambda: classify_persistence([live_row], 24, 28, 28, 28)[1], True)
+    # The target state: a mature counter with ZERO suppressions is a PASS, never an unknown.
+    # Keying evaluability on days_seen instead of counter age would call success "insufficient".
+    ck("mature counter with zero suppressions IS evaluable",
+       lambda: classify_persistence([], 24, 28, 0, 28)[1], True)
+    ck("mature counter with zero suppressions finds no dead books",
+       lambda: len(classify_persistence([], 24, 28, 0, 28)[0]), 0)
+    ck("counter-age sql scopes the reason",
+       lambda: "reason = 'frozen_book'" in build_counter_age_sql("frozen_book"), True)
+    ck("counter-age sql is NOT window-bounded",
+       lambda: "INTERVAL" not in build_counter_age_sql("frozen_book"), True)
 
     # ceiling lookup falls back, and the enforce table really is the ratchet
     ck("shadow ceiling per venue", lambda: ceiling(FROZEN_CEILING_PCT_SHADOW, "XT"), 6.0)
