@@ -292,6 +292,15 @@ export class KnowledgeIndex {
     return this._docs.get(id);
   }
 
+  /**
+   * Number of indexed documents. SEARCH-TOOL-RANK-BOOST-W1 needs it to ask wink-bm25 for the
+   * WHOLE scored result set rather than its 10-row default — the library scores every doc and
+   * only slices at the end, so a larger limit costs nothing and a smaller one silently truncates.
+   */
+  docCount(): number {
+    return this._docs.size;
+  }
+
   getBundle(): KnowledgeBundle | null {
     return this._bundle;
   }
