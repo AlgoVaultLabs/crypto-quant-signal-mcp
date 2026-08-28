@@ -107,10 +107,39 @@ would ever satisfy it, and the row would be blocked forever). That work belongs 
 **`EDGE-SELL-RESOLUTION-ENFORCE-W{NEXT}`**, which installs the canary and ratchets its ceilings
 anyway — not to a mid-test edit.
 
+> **RESOLVED — `EDGE-SELL-RESOLUTION-ENFORCE-W1` CH1, 2026-08-28. The re-key was NOT done, and
+> deliberately so; `blocked_on` was DELETED instead** (architect ruling Q3).
+>
+> The instruction above is correct about the defect and wrong about the remedy, and the reason is
+> worth keeping rather than overwriting: **installing the canary dissolves the question.**
+> `monitoring-inventory-reconcile.py`'s `PENDING_STALE` check reads only rows whose
+> `install_state` is `pending` or `unclassified` (`check_pending_stale`, the `continue` at the top
+> of its loop). Once CH1 sets `install_state: installed` there is no pending clock left for a
+> `blocked_on` to suppress, so a re-key would have added a value-comparing `met_when` kind to the
+> reconciler that **nothing would ever consume** — a new mechanism built for a code path that no
+> longer runs. A stale `blocked_on` on an `installed` row is dead config, and dead config is what
+> the next wave "fixes" back into existence.
+>
+> The MODE-vs-ENABLED distinction the finding identified is real and is now handled where it
+> belongs — inside the canary, which resolves the live stage through a mirror of the shipped
+> `getBookLivenessMode()` and scopes both its ceiling table and its `emit_suppressions.reason`
+> filter by it. The one-bit view is gone; it was just never the inventory row's job to fix.
+
 Ratchets deliberately NOT done in the shadow wave, for the same reason (ruling Q2): the runbook's
 Stage-2 8-box bar, and `ops/monitoring/book-liveness-canary.py`'s `SUPPRESSION_CEILING_PCT` /
 `FROZEN_CEILING_PCT`. Rewriting an acceptance bar *before* the soak that is meant to supply its
 evidence is circular. The shadow window produces the evidence; the enforce wave sets the bar.
+
+> **DISCHARGED — `EDGE-SELL-RESOLUTION-ENFORCE-W1` CH2, 2026-08-28.** Both ratchets are done and
+> the `PENDING_STALE` breach is cleared **at the cause** (the row is installed, not muted), so
+> this exception closes ahead of its 2026-09-08 expiry rather than lapsing. `FROZEN_CEILING_PCT`
+> is now MODE-KEYED — a shadow table that tolerates the defect the gate is not yet removing, and
+> an enforce table that ratchets to 1% fleet-wide — so the "ratchet at enforce" step is
+> structural and no longer a checklist item anyone can forget. `SUPPRESSION_CEILING_PCT` was not
+> ratcheted but RETIRED: it divided an `emit_suppressions` numerator by a deduped `signals`
+> denominator, two different populations (measured: 29 `(venue, coin, timeframe)` cells carried
+> suppressions with zero in-window signal rows). Its replacements are the dead-book persistence
+> discriminator and a report-only volume floor.
 
 ## Stage 1 — SHADOW (mandatory; produces the evidence for stage 2)
 
@@ -139,12 +168,39 @@ ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
 ## Stage 2 — pre-flip bar (mechanical; every box must be ticked)
 
 - [ ] **Shadow soak ≥ 72h** with both keys confirmed live in the container env.
-- [ ] **Per-venue suppression rate published** — daily timeseries, per venue AND per timeframe.
+- [ ] **Per-venue suppression COUNTS published** — daily timeseries, per venue AND per timeframe.
       Aggregates mask displacement; a single fleet number is not sufficient.
-- [ ] **Every healthy venue ≤ 1%.** Any venue materially above its S2-scaled estimate (>5×)
-      indicates a **parse defect, not a frozen book** → STOP and investigate the adapter.
-- [ ] **ASTER within ~5pp of the measured 27%.** Materially higher ⇒ the pin or the predicate
-      drifted; re-measure before flipping.
+      **Every figure carries its INSTRUMENT and denominator** (architect ruling Q1, 2026-08-28).
+      Two instruments exist and they are not interchangeable — quoting either bare is what put a
+      wrong prohibition into a dispatched spec:
+      | figure | instrument | window | denominator |
+      |---|---|---|---|
+      | fleet **0.799%** | live `emit_suppressions` counter | 3d | 80 / 10,007 |
+      | fleet **1.375%** | counterfactual replay (`frozen-window-attribution.ts`) | 30d | 1,384 / 100,688 |
+      Calibrate the canary's own ceilings on the **live counter** — the instrument the canary
+      runs. A ceiling set from the replay would be a cross-instrument comparison.
+- [ ] **No `(venue, coin)` classified as a DEAD BOOK outside the known five.**
+      _(Re-baselined by `EDGE-SELL-RESOLUTION-ENFORCE-W1` CH2, replacing **"every healthy venue
+      ≤ 1%"**. That box was written against a suppression RATE now retired as ill-defined — see
+      `WHY_THE_RATE_WAS_RETIRED` in the canary. Measured 2026-08-28T16:16Z on the LIVE
+      `emit_suppressions` counter, 3d window: XT **6.14%** · HTX **5.32%** · ASTER **5.08%** ·
+      GATE **0.29%** · 12 other venues exactly **0.00%** — the old box FAILS on four venues today
+      and would have failed on the night of the flip.)_
+      The bar is now structural, not a percentage: a `(venue, coin)` suppressed on ≥ 24 of the
+      last 28 days is a **dead book**; anything recovering inside the window is a **closed
+      market**, which is correct behaviour. Known dead books at re-baseline: `XT|D`, `XT|EPT`,
+      `HTX|LRDS`, `HTX|SEI`, `HTX|VIRTUAL`. **A NEW one appearing ⇒ STOP and investigate the
+      adapter** — that is the parse-defect signal the old box was reaching for.
+- [ ] **The closed-market population still recovers.** _(Replaces **"ASTER within ~5pp of the
+      measured 27%"**. ASTER measures **5.08%**, 21.9 pp below the old box, because the frozen
+      population MIGRATED onto XT and HTX — so the old box FAILS on correct behaviour.)_ Confirm
+      the ASTER + GATE suppressions are single-day and spread across many symbols (measured: 29
+      `(venue, coin)` pairs at exactly 1 day each), not persistent on a few.
+      **Note the composition — it is the most user-visible enforce consequence.** ASTER is MIXED:
+      ~10 tokenized equities (`SPY RTX QCOM MRNA EBAY SOXL BMNR BARD AIOT SKHYNIX`) and ~11 thin
+      crypto alts (`SAND POL THETA TLM VANA DOGS MANTA YB FF DRAM EDGE`). GATE is entirely
+      equities, largely Chinese A-shares (`BIWIN NAURA HUAGONGTECH PUYA XIECHUANG YONGDING REGN
+      NET`). Ruling C1 intact — but state this consequence explicitly BEFORE flipping.
 - [ ] **No suppression on a book a human would call liquid.** Spot-check the top-10 suppressed
       `(venue, symbol)` pairs by hand against live venue data.
 - [ ] **`totalCalls` still monotonic** (`/api/performance-public`) — the FLOOR canaries green.

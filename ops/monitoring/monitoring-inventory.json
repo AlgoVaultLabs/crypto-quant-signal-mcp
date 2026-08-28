@@ -705,25 +705,16 @@
       "kind": "executable",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/book-liveness-canary.py",
-      "criticality": "advisory",
-      "schedule": null,
+      "criticality": "load-bearing",
+      "schedule": "9 19 * * *",
       "invoked_by": "crontab:root",
-      "install_state": "pending",
-      "sha256": "a9b849e54f42b12fa9afe090f71bbb051daa53df05f805eb3dba9f707f4dfa95",
+      "install_state": "installed",
+      "sha256": "0c79be8cd9562f300085264a1abb13e3a8bb02cf650869babb53e4e9a245104c",
       "alert_ids": [
         "book_liveness_ceiling"
       ],
       "owner_wave": "OPS-PFE-METRIC-INTEGRITY-W1",
-      "pending_since": "2026-07-21",
-      "notes": "R8 RECURRENCE guard (its own docstring), not a one-shot \u2014 so 'retired' would be false. It watches the frozen-row + suppression rates of the emit-time book-liveness gate, and BOTH presuppose the gate is ENFORCING. status.md:1708 records 'The emit gate ships DARK', and EMIT_BOOK_LIVENESS_ENABLED (the kill switch, src/lib/book-liveness.ts:100) is unset in the live container, so the mode is forced 'off'. Installing it now would measure a dark gate. UNBLOCK CONDITION: install when EMIT_BOOK_LIVENESS_ENABLED flips to 1/true \u2014 now DECLARED in the `blocked_on` block and evaluated every run by monitoring-inventory-reconcile.py, rather than left as prose for whoever reads the row. Fired once at 2026-07-21T04:02Z (install-time smoke).",
-      "blocked_on": {
-        "kind": "container_env",
-        "container": "crypto-quant-signal-mcp-mcp-server-1",
-        "var": "EMIT_BOOK_LIVENESS_ENABLED",
-        "met_when": "truthy",
-        "review_by": "2026-11-20",
-        "reason": "The UNBLOCK CONDITION already stated in `notes`, moved into DATA so the reconciler can MEASURE it instead of clocking 30 days past a debt nobody can legally discharge. This canary watches the frozen-row + suppression rates of the emit-time book-liveness gate, and both presuppose the gate is ENFORCING. EMIT_BOOK_LIVENESS_ENABLED is unset in the live container (measured 2026-08-22: `docker exec ... printenv` -> rc=1), so the mode is forced 'off' and installing now would measure a DARK gate \u2014 exactly what 'prove a revived guard FIRES before calling it live' forbids. While the var stays falsy the row reports BLOCKED and does not page; the DAY it flips truthy the row breaches IMMEDIATELY at any age, which is the half of this that makes it a gate and not a mute button. Past review_by the block itself becomes the debt and breaches regardless."
-      }
+      "notes": "R8 RECURRENCE guard (its own docstring), not a one-shot \u2014 so 'retired' would be false. Watches the emit-time book-liveness gate: frozen-row rate, dead-book persistence, and a report-only suppression volume floor. INSTALLED 2026-08-28 by EDGE-SELL-RESOLUTION-ENFORCE-W1 CH1, cron `9 19 * * *` (hour 19 was empty and minute 9 is clear of every hourly job; the canonical :13/:17/:23... snapshot-sampler slots are all taken, and 18:00-02:59 is the deploy-free band). The FILE had been on the host since 2026-07-21 byte-identical to its committed ancestor \u2014 only the SCHEDULE was missing, so 'never installed' was never true of the artifact. `blocked_on` DELETED, not re-keyed to EMIT_BOOK_LIVENESS_MODE as docs/RUNBOOK-BOOK-LIVENESS-FLIP.md then instructed (architect ruling Q3, 2026-08-28): check_pending_stale reads only `pending`/`unclassified` rows (reconcile :710), so an installed row has no pending clock for a block to suppress, and a value-comparing `met_when` kind would have had zero consumers. The MODE-vs-ENABLED distinction it identified is real and now lives INSIDE the canary, which resolves the stage through a mirror of the shipped getBookLivenessMode() and scopes both its ceiling table and its emit_suppressions.reason filter by it. Promoted advisory -> load-bearing in the same wave so NO_BACKUP asserts the backup rather than leaving it a convention. Proven able to fail before going live: 4 deliberate mutations each produced SELF-TEST: FAIL with a verdict (never a crash), and a seeded live breach went red on the host."
     },
     {
       "id": "nav-drift-canary",
