@@ -92,6 +92,28 @@ export function loadContract(raw, now) {
   }
   const total = Object.values(hosts).reduce((n, h) => n + (Array.isArray(h.units) ? h.units.length : 0), 0);
   if (total === 0) return { ok: false, reason: 'contract declares no units — it would verify nothing' };
+  // ── compose_exempt_containers (OPS-BOOT-CONTRACT-WIDEN-W1) ────────────────────────────────
+  // The per-CONTAINER form of the pre-existing per-HOST `compose_in_this_repo: false` exemption,
+  // for a container whose compose lives outside this repo while the rest of the host's does not.
+  // Validated HERE, not in R2, because a malformed exemption is a defect in a corpus WE author:
+  // that is INDETERMINATE ("could not decide"), never FAIL ("the tree is bad"). The reason is
+  // MANDATORY — a missing/empty reason is INDETERMINATE, never a silent pass.
+  for (const [host, h] of Object.entries(hosts)) {
+    const ex = h.compose_exempt_containers;
+    if (ex === undefined) continue;
+    if (!Array.isArray(ex)) return { ok: false, reason: `host ${host} has a \`compose_exempt_containers\` that is not an array` };
+    for (const row of ex) {
+      if (!row || typeof row !== 'object' || Array.isArray(row) || typeof row.container !== 'string' || row.container.length === 0) {
+        return { ok: false, reason: `host ${host} has a compose_exempt_containers row without a non-empty string \`container\`` };
+      }
+      if (typeof row.reason !== 'string' || row.reason.trim().length === 0) {
+        return { ok: false, reason: `host ${host} exempts container ${row.container} from the R2 compose check with a missing or empty \`reason\` — the reason is MANDATORY, an unexplained exemption is INDETERMINATE and never a silent pass` };
+      }
+      if (!(h.containers ?? []).includes(row.container)) {
+        return { ok: false, reason: `host ${host} exempts ${row.container} from the R2 compose check, but that container is not in its \`containers\` — exempting something nothing checks is a stale row, not an exemption` };
+      }
+    }
+  }
   const revisit = d._TODO_revisit_by;
   if (typeof revisit === 'string' && daysUntil(revisit, now) < 0) {
     return { ok: false, reason: `contract is STALE — _TODO_revisit_by ${revisit} has passed; re-probe both hosts` };
@@ -137,7 +159,13 @@ export function findRestartPolicyGaps(contract, composeTexts) {
     // A host whose compose lives in ANOTHER repo cannot be verified from here. That is an
     // EXEMPTION WITH A STATED REASON on the row (never a silent skip) — the caller reports it.
     if (h.compose_in_this_repo === false) continue;
+    // A container whose compose lives outside this repo, declared ON THE ROW with a mandatory
+    // reason (shape already validated by loadContract). Its live restart policy IS still asserted
+    // daily by ops/monitoring/boot-contract-canary.sh via `docker inspect`, which is a stronger
+    // instrument than this committed-YAML proxy — so the coverage moves, it does not vanish.
+    const composeExempt = new Set((h.compose_exempt_containers ?? []).map((e) => e.container));
     for (const c of h.containers ?? []) {
+      if (composeExempt.has(c)) continue;
       // Compose names containers `<project>-<service>-<n>` or via container_name. Derive the
       // service token and require a restart policy to exist somewhere in the composed stack.
       const svc = String(c).replace(/^crypto-quant-signal-mcp-/, '').replace(/-\d+$/, '');
@@ -245,6 +273,38 @@ function selfTest() {
     fails.push('a below-floor stop_grace_period was not flagged');
   }
 
+  // (e2) compose_exempt_containers — the per-container R2 exemption (OPS-BOOT-CONTRACT-WIDEN-W1)
+  // MUST-FIRE first: without the exemption an out-of-repo container IS flagged. Asserting only the
+  // exempted case would pass just as happily if R2 had stopped checking containers altogether.
+  const outOfRepo = JSON.parse(JSON.stringify(GOOD_CONTRACT));
+  outOfRepo.hosts.h.containers = ['postgres', 'vendor-thing-1'];
+  if (!scan(outOfRepo, GOOD_COMPOSE).some((x) => x.rule === 'R2' && /vendor-thing-1/.test(x.detail))) {
+    fails.push('a container absent from committed compose was NOT flagged — R2 is not checking');
+  }
+  const exempted = JSON.parse(JSON.stringify(outOfRepo));
+  exempted.hosts.h.compose_exempt_containers = [{ container: 'vendor-thing-1', reason: 'its compose lives in another repo' }];
+  if (scan(exempted, GOOD_COMPOSE).some((x) => /vendor-thing-1/.test(x.detail))) {
+    fails.push('a declared compose exemption did not suppress its own R2 finding');
+  }
+  // ...and it must suppress ONLY its own row.
+  const exemptedPlusBad = JSON.parse(JSON.stringify(exempted));
+  exemptedPlusBad.hosts.h.containers.push('another-missing-1');
+  if (!scan(exemptedPlusBad, GOOD_COMPOSE).some((x) => x.rule === 'R2' && /another-missing-1/.test(x.detail))) {
+    fails.push('the exemption suppressed a DIFFERENT container’s finding — it is not row-scoped');
+  }
+  const exemptRaw = (mutate) => {
+    const c = JSON.parse(JSON.stringify(GOOD_CONTRACT));
+    c.hosts.h.containers = ['postgres', 'vendor-thing-1'];
+    c.hosts.h.compose_exempt_containers = [{ container: 'vendor-thing-1', reason: 'ok' }];
+    mutate(c);
+    return loadContract(JSON.stringify(c), now).ok;
+  };
+  if (!exemptRaw(() => {})) fails.push('a well-formed compose exemption failed to load');
+  if (exemptRaw((c) => { delete c.hosts.h.compose_exempt_containers[0].reason; })) fails.push('an exemption with NO reason must not load');
+  if (exemptRaw((c) => { c.hosts.h.compose_exempt_containers[0].reason = '  '; })) fails.push('an exemption with an ALL-WHITESPACE reason must not load');
+  if (exemptRaw((c) => { c.hosts.h.compose_exempt_containers[0].container = 'not-declared'; })) fails.push('an exemption naming an undeclared container must not load');
+  if (exemptRaw((c) => { c.hosts.h.compose_exempt_containers = { a: 1 }; })) fails.push('a non-array compose_exempt_containers must not load');
+
   // (f) FAIL-CLOSED on a broken / empty / stale contract
   if (loadContract('{not json', now).ok) fails.push('unparseable contract must not load');
   if (loadContract(JSON.stringify({ hosts: {} }), now).ok) fails.push('contract with no hosts must not load');
@@ -261,7 +321,7 @@ function selfTest() {
     fails.forEach((f) => console.error('   - ' + f));
     return 'FAIL';
   }
-  console.log('✓ self-test: happy path, 3 R1 must-fire, the 2 real-world false positives must-NOT-fire, 2 R2 must-fire, 2 R3 must-fire, 4 fail-closed cases, vacuity guard.');
+  console.log('✓ self-test: happy path, 3 R1 must-fire, the 2 real-world false positives must-NOT-fire, 2 R2 must-fire, 3 compose-exemption must-fire/must-suppress/row-scoped, 5 exemption-shape fail-closed, 2 R3 must-fire, 4 fail-closed cases, vacuity guard.');
   return 'PASS';
 }
 
@@ -303,6 +363,11 @@ const hostCount = Object.keys(loaded.contract.hosts).length;
 for (const [host, h] of Object.entries(loaded.contract.hosts)) {
   if (h.compose_in_this_repo === false) {
     console.log(`\u2139 R2 NOT ENFORCED for ${host} (${(h.containers ?? []).length} container(s)) — ${h.compose_exemption_reason ?? 'no reason recorded'}`);
+  }
+  // NO SILENT CAPS: name every per-container exemption too, with its reason. A skipped check that
+  // prints nothing is indistinguishable from a check that ran and passed.
+  for (const e of h.compose_exempt_containers ?? []) {
+    console.log(`\u2139 R2 NOT ENFORCED for ${host}/${e.container} — ${e.reason}`);
   }
 }
 

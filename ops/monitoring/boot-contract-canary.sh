@@ -55,6 +55,22 @@
 # to signal-1, so a bare run on aoe-1 asserts signal-1's identity. A whole host evaluated against
 # the wrong declaration is worse than no answer, so there is no default here.
 #
+# ── THE THIRD CATEGORY (OPS-BOOT-CONTRACT-WIDEN-W1) ──────────────────────────────────────────
+# Every container live on a host is ruled on in exactly one of two lists, so that
+#   undeclared = live - containers - acknowledged
+# can reach ZERO. Before this, the REPORT line read 7 undeclared containers on every run on both
+# hosts, forever. A REPORT line that can never reach zero is not a signal — it is background
+# noise, and it trains every future reader to skip the list that the first genuinely new container
+# will land in. `containers[]` is MUST-SURVIVE; `acknowledged_containers[]` is ruled-not-critical
+# WITH A MANDATORY REASON (a missing/empty reason is INDETERMINATE, never a silent pass — the
+# convention is quoted verbatim from ops/monitoring/schedule-boundary-rule.json).
+#
+# Undeclared stays REPORT, NEVER DRIFT: the contract is the authority on what must survive, and a
+# container it does not name is not a violation. But a one-way acknowledged list becomes a stale
+# copy of a world that moved, so `acknowledged_but_absent` is reported in the other direction too.
+# BOTH print as explicit zeros on every path, including the paths that could not compare at all —
+# a skipped comparison must never be indistinguishable from a clean one.
+#
 # FIRST CYCLE IS REPORT-ONLY. A naive first run on a host that has drifted for months would page
 # as though it had just happened, which is why quota-exhaustion-canary bootstraps silently too.
 # The state file's existence is the "I have observed this host before" marker.
@@ -96,6 +112,11 @@ log() { printf '%s [%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ALERT_ID" "$*" 
 #   META   <acceptable_restart_policies|-joined>  <pg_stop_budget>  <revisit_by>
 #   UNIT   <label>  <unit>  <activation>  <via-or-empty>
 #   CONT   <label>  <name>
+#   ACK    <label>  <name>  <reason-or-EMPTY>
+# The ACK reason is emitted RAW-but-flattened (tabs/newlines -> spaces) and .strip()ed, so an
+# all-whitespace reason arrives as the empty string and the shell can rule on it. The parser
+# deliberately does NOT refuse an empty reason: a per-row INDETERMINATE naming the container is a
+# better answer than a whole-contract parse failure naming nothing.
 # A parse failure prints nothing and exits non-zero: input we were HANDED and could not parse is
 # INDETERMINATE, always — never a pass over zero rows.
 parse_contract() {
@@ -127,6 +148,16 @@ for label in sorted(hosts):
         out.append('\t'.join(('UNIT', label, str(u.get('unit') or ''), str(u.get('activation') or ''), str(u.get('via') or ''))))
     for name in (h.get('containers') or []):
         out.append('\t'.join(('CONT', label, str(name))))
+    for a in (h.get('acknowledged_containers') or []):
+        if not isinstance(a, dict):
+            print(f'acknowledged_containers row for {label} is not an object', file=sys.stderr)
+            sys.exit(1)
+        nm = str(a.get('container') or '')
+        rs = str(a.get('reason') or '')
+        # Flatten: the record stream is tab-separated and line-oriented, so a reason carrying
+        # either would silently shift every downstream field.
+        rs = rs.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ').strip()
+        out.append('\t'.join(('ACK', label, nm, rs)))
 print('\n'.join(out))
 PY
 }
@@ -166,6 +197,30 @@ decide_container() { # <name> <policy> <acceptable-pipe-joined> <probe-ok:0|1>
   case "|$acceptable|" in
     *"|$policy|"*) echo "OK container=$name restart=$policy" ;;
     *) echo "DRIFT container=$name restart=${policy:-<empty>} (acceptable: ${acceptable//|/, })" ;;
+  esac
+}
+
+# An acknowledged row asserts "this container's absence is not boot-critical". That assertion is
+# worth nothing without its justification, so the reason is MANDATORY — a missing or empty one is
+# INDETERMINATE ("could not decide"), never a silent pass. Verbatim convention from
+# ops/monitoring/schedule-boundary-rule.json's `_exemption_semantics`.
+decide_ack_reason() { # <name> <reason>
+  local name="$1" reason="$2"
+  if [ -z "$reason" ]; then
+    echo "INDETERMINATE acknowledged=$name reason=<empty> — an acknowledged container MUST carry a non-empty reason; an unexplained exemption is INDETERMINATE, never a silent pass"; return
+  fi
+  echo "OK acknowledged=$name reason present (${#reason} chars)"
+}
+
+# A name in BOTH lists is a self-contradiction in a corpus WE author. The parity gate refuses it at
+# build time; this refuses it again at runtime, because the projection read here could in principle
+# have been hand-edited on the box. INDETERMINATE, never DRIFT: it means "could not decide", not
+# "the host drifted" — the host did nothing wrong.
+decide_ack_overlap() { # <name> <space-padded declared list>
+  local name="$1" declared="$2"
+  case " ${declared} " in
+    *" $name "*) echo "INDETERMINATE acknowledged=$name is ALSO in containers[] — a container cannot be must-survive and acknowledged-not-boot-critical at once; the contract contradicts itself" ;;
+    *) echo "OK acknowledged=$name is not also declared must-survive" ;;
   esac
 }
 
@@ -276,6 +331,14 @@ if [ "${1:-}" = "--self-test" ]; then
   # A substring match would accept "stopped" for "unless-stopped"; the |-delimited compare must not.
   expect DRIFT         "no substring match on the policy list"   decide_container c1 stopped        'always|unless-stopped' 0
 
+  echo "--- acknowledged rulings (the third category) ---"
+  expect OK            "a reason present is a ruling"             decide_ack_reason plausible-1 'analytics; state is in named volumes'
+  expect INDETERMINATE "an EMPTY reason is INDETERMINATE"         decide_ack_reason plausible-1 ''
+  expect OK            "acknowledged, not also must-survive"      decide_ack_overlap ack-only ' c1 c2 '
+  expect INDETERMINATE "a name in BOTH lists contradicts itself"  decide_ack_overlap c1 ' c1 c2 '
+  # A substring match would let `c1` be "found" inside `c11`; the space-padded compare must not.
+  expect OK            "no substring match on the declared list"  decide_ack_overlap c1 ' c11 c12 '
+
   echo "--- postgres stop budget (read from the contract, never a literal) ---"
   expect OK            "120s clears a 30s floor"                 decide_stop_budget pg 120 30
   expect OK            "exactly at the floor"                    decide_stop_budget pg 30  30
@@ -309,7 +372,11 @@ if [ "${1:-}" = "--self-test" ]; then
   "hosts": {
     "signal-1": { "address": "10.0.0.1",
       "units": [{"unit":"ssh.service","activation":"socket","via":"ssh.socket"},{"unit":"docker.service","activation":"enabled"}],
-      "containers": ["c1","c2"] },
+      "containers": ["c1","c2"],
+      "acknowledged_containers": [
+        {"container":"not-declared-1","reason":"live, ruled not boot-critical\tby\nthis fixture"},
+        {"container":"gone-1","reason":"acknowledged and no longer live"}
+      ] },
     "aoe-1": { "address": "10.0.0.2", "units": [{"unit":"cron.service","activation":"enabled"}], "containers": [] }
   }
 }
@@ -321,6 +388,14 @@ FIX
   ck '  a socket row keeps its via'           "$(echo "$parsed" | awk -F'\t' '$1=="UNIT" && $3=="ssh.service"{print $4"/"$5}')" 'socket/ssh.socket'
   ck '  an enabled row has an empty via'      "$(echo "$parsed" | awk -F'\t' '$1=="UNIT" && $3=="docker.service"{print $4"/"$5}')" 'enabled/'
   ck '  containers are emitted per host'      "$(echo "$parsed" | awk -F'\t' '$1=="CONT" && $2=="signal-1"{printf "%s,",$3}')" 'c1,c2,'
+  ck '  ACK rows are emitted per host'          "$(echo "$parsed" | awk -F'\t' '$1=="ACK" && $2=="signal-1"{printf "%s,",$3}')" 'not-declared-1,gone-1,'
+  # A reason carrying a tab or a newline would shift every downstream field of a tab-separated,
+  # line-oriented record stream — so the parser flattens both, and this pins that it does.
+  ck '  an ACK reason is FLATTENED (no tab/newline)' "$(echo "$parsed" | awk -F'\t' '$1=="ACK" && $3=="not-declared-1"{print $4}')" 'live, ruled not boot-critical by this fixture'
+  ck '  ...so the record still has exactly 4 fields' "$(echo "$parsed" | awk -F'\t' '$1=="ACK" && $3=="not-declared-1"{print NF}')" '4'
+  printf '{"hosts":{"h":{"address":"1","units":[{"unit":"u","activation":"enabled"}],"containers":[],"acknowledged_containers":[{"container":"x","reason":"   "}]}},"acceptable_restart_policies":["always"],"postgres_stop_budget_seconds_min":30}' > "$probe_dir/blankreason.json"
+  ck '  an all-whitespace reason arrives EMPTY (so the shell can rule on it)' \
+     "$(parse_contract "$probe_dir/blankreason.json" | awk -F'\t' '$1=="ACK"{print "["$4"]"}')" '[]'
   printf '{"hosts":{' > "$probe_dir/truncated.json"
   parse_contract "$probe_dir/truncated.json" >/dev/null 2>&1
   ck 'a truncated contract REFUSES (never a pass over zero rows)' "$?" '1'
@@ -390,7 +465,10 @@ STUB
 { printf 'argv=%s|%s|%s\n' "$1" "$2" "$3"; cat; } > "$E2E_CAPTURE"
 STUB
   chmod +x "$e2e/bin/"*
-  e2e_run() { # <systemctl-stub> <state-file> [extra env assignments...]
+  # FULL stdout is the primitive and the token run derives from it: the REPORT lines this wave
+  # adds are only observable in the whole stream, and a second copy of the env block would be a
+  # second thing to drift.
+  e2e_out() { # <systemctl-stub> <state-file> [extra env assignments...]
     local sc="$1" st="$2"; shift 2
     rm -f "$e2e/captured.txt"
     # The per-case overrides go LAST: `env` applies assignments left to right, so a default
@@ -401,8 +479,9 @@ STUB
         BOOT_CONTRACT_DOCKER="$e2e/bin/docker" BOOT_CONTRACT_WRAPPER="$e2e/bin/capture-send.sh" \
         MONITORING_HOST_LABELS=signal-1 \
         "$@" \
-        bash "$0" 2>/dev/null | tail -1
+        bash "$0" 2>/dev/null
   }
+  e2e_run() { e2e_out "$@" | tail -1; }
   fired() { [ -s "$e2e/captured.txt" ] && echo yes || echo no; }
 
   rm -f "$e2e/state/fresh"
@@ -427,15 +506,58 @@ STUB
   ck 'the marker file alone resolves identity end-to-end' \
      "$(e2e_run systemctl-ok "$e2e/state/fresh" MONITORING_HOST_LABELS= BOOT_CONTRACT_IDENTITY_FILE="$e2e/host-label")" 'BOOT_CONTRACT_VERDICT=OK'
 
+  echo "--- the two-way reconciliation, end-to-end (OPS-BOOT-CONTRACT-WIDEN-W1) ---"
+  # The docker stub lists c1, c2 and not-declared-1. The fixture declares c1+c2 and acknowledges
+  # not-declared-1 (live) and gone-1 (not live). So: undeclared REACHES ZERO — the whole point of
+  # the wave — and acknowledged_but_absent catches the stale row in the other direction.
+  full_ok="$(e2e_out systemctl-ok "$e2e/state/fresh")"
+  ck 'undeclared REACHES ZERO once every live container is ruled on' \
+     "$(printf '%s\n' "$full_ok" | grep -c 'REPORT undeclared_containers=0')" '1'
+  ck '  ...and prints as an explicit zero, never as silence' \
+     "$(printf '%s\n' "$full_ok" | grep -c 'undeclared_containers=')" '1'
+  ck 'acknowledged_but_absent FIRES for an acknowledged row that is no longer live' \
+     "$(printf '%s\n' "$full_ok" | grep -c 'REPORT acknowledged_but_absent=1 — gone-1')" '1'
+  ck 'a live acknowledged container is NOT reported absent' \
+     "$(printf '%s\n' "$full_ok" | grep -c 'acknowledged_but_absent=.*not-declared-1')" '0'
+  ck 'the acknowledged count prints positively even on a clean run' \
+     "$(printf '%s\n' "$full_ok" | grep -c 'OK acknowledged_declared=2')" '1'
+  ck '  and neither REPORT line makes the verdict anything but OK' \
+     "$(printf '%s\n' "$full_ok" | tail -1)" 'BOOT_CONTRACT_VERDICT=OK'
+
+  # "could not compare" must never be indistinguishable from "compared, clean".
+  cat > "$e2e/bin/docker-nops" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = "ps" ]; then exit 0; fi
+if [ "$1" = "inspect" ]; then
+  case "$4" in c1|c2) [ "$3" = '{{.Config.StopTimeout}}' ] && echo 60 || echo unless-stopped; exit 0 ;; *) exit 1 ;; esac
+fi
+exit 1
+STUB
+  chmod +x "$e2e/bin/docker-nops"
+  full_nops="$(e2e_out systemctl-ok "$e2e/state/fresh" BOOT_CONTRACT_DOCKER="$e2e/bin/docker-nops")"
+  ck 'an unenumerable live set says so for undeclared' \
+     "$(printf '%s\n' "$full_nops" | grep -c 'undeclared_containers=<could not enumerate live containers>')" '1'
+  ck '  ...and for acknowledged_but_absent too, never silently' \
+     "$(printf '%s\n' "$full_nops" | grep -c 'acknowledged_but_absent=<could not enumerate live containers>')" '1'
+
+  # An acknowledged row with no reason is INDETERMINATE end-to-end, not merely in the pure fn.
+  sed 's/"acknowledged and no longer live"/""/' "$probe_dir/contract.json" > "$probe_dir/noreason.json"
+  ck 'an EMPTY reason makes the whole host INDETERMINATE' \
+     "$(e2e_run systemctl-ok "$e2e/state/fresh" BOOT_CONTRACT_FILE="$probe_dir/noreason.json")" 'BOOT_CONTRACT_VERDICT=INDETERMINATE'
+  # ...and a self-contradicting contract is INDETERMINATE ("could not decide"), never DRIFT.
+  sed 's/"container":"gone-1"/"container":"c1"/' "$probe_dir/contract.json" > "$probe_dir/overlap.json"
+  ck 'a name in BOTH lists is INDETERMINATE, never DRIFT' \
+     "$(e2e_run systemctl-ok "$e2e/state/fresh" BOOT_CONTRACT_FILE="$probe_dir/overlap.json")" 'BOOT_CONTRACT_VERDICT=INDETERMINATE'
+
   # Vacuity guard: this suite BUILDS its own corpus, so "nothing ran" is a defect in the test.
-  MIN_ASSERTIONS=59
+  MIN_ASSERTIONS=78
   if [ "$checked" -lt "$MIN_ASSERTIONS" ]; then
     echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= $MIN_ASSERTIONS)"; exit 3
   fi
   if [ "${#fails[@]}" -gt 0 ]; then
     echo "SELF_TEST_VERDICT=FAIL — ${#fails[@]}/$checked: ${fails[*]}"; exit 1
   fi
-  echo "SELF_TEST_VERDICT=PASS — $checked assertions (10 unit, 5 container, 4 budget, 4 revisit, 5 aggregation, 9 parser, 5 wrapper, 5 identity, 13 end-to-end)"
+  echo "SELF_TEST_VERDICT=PASS — $checked assertions (10 unit, 5 container, 5 acknowledged, 4 budget, 4 revisit, 5 aggregation, 13 parser, 5 wrapper, 5 identity, 23 end-to-end)"
   exit 0
 fi
 
@@ -538,22 +660,52 @@ case "$DECLARED_CONTAINERS" in
   *) log "  OK no postgres container declared on $LABEL — the ${BUDGET}s stop-budget floor does not apply here" ;;
 esac
 
-# ── undeclared live containers: REPORTED, never DRIFT ────────────────────────────────────────
-# The contract is the authority on what MUST survive; a container it does not name is not a
-# violation. But a bare pass would hide the coverage gap, so the count and the NAMES are printed
-# on every run. Same code path on both hosts — signal-1's plausible-ce-* stack goes through it
-# exactly as aoe-1's autonomous-optimizer-* containers do. Input to OPS-BOOT-CONTRACT-WIDEN-W1.
+# ── acknowledged containers: ruled NOT boot-critical, with a MANDATORY reason ────────────────
+ACK_CONTAINERS=""
+ACK_SEEN=0
+while IFS=$'\t' read -r _ _ name reason; do
+  [ -n "$name" ] || continue
+  ACK_SEEN=$((ACK_SEEN + 1))
+  ACK_CONTAINERS="${ACK_CONTAINERS} ${name}"
+  absorb "$(decide_ack_reason "$name" "$reason")"
+  absorb "$(decide_ack_overlap "$name" "$DECLARED_CONTAINERS")"
+done < <(echo "$PARSED" | awk -F'\t' -v l="$LABEL" '$1=="ACK" && $2==l')
+# Positive line even at zero: a host that acknowledges nothing must not look like a host whose
+# acknowledged rows silently failed to parse.
+log "  OK acknowledged_declared=$ACK_SEEN for $LABEL"
+
+# ── the two-way reconciliation: undeclared, and acknowledged-but-absent ──────────────────────
+# undeclared = live - containers - acknowledged. REPORTED, NEVER DRIFT: the contract is the
+# authority on what MUST survive, and a container it does not name is not a violation. It IS a
+# coverage gap, so the count and the NAMES print on every run — and because acknowledged rows now
+# subtract, this count can reach ZERO, which is what makes a non-empty one a real detector rather
+# than a standing complaint.
+#
+# acknowledged_but_absent = acknowledged - live. Without it the acknowledged list is one-way and
+# becomes a stale copy of a world that moved; this closes the loop in the other direction. Also
+# REPORT: a container we already ruled non-critical going away is not a contract violation either.
 LIVE="$("$DOCKER" ps --format '{{.Names}}' 2>/dev/null)"
 if [ -z "$LIVE" ]; then
+  # Both lines still print. "Could not compare" and "compared, clean" must never look alike.
   log "  REPORT undeclared_containers=<could not enumerate live containers>"
+  log "  REPORT acknowledged_but_absent=<could not enumerate live containers>"
 else
   UNDECLARED=""; UNDECLARED_N=0
   while read -r c; do
     [ -n "$c" ] || continue
     case " ${DECLARED_CONTAINERS} " in *" $c "*) continue ;; esac
+    case " ${ACK_CONTAINERS} " in *" $c "*) continue ;; esac
     UNDECLARED="${UNDECLARED}${UNDECLARED:+, }$c"; UNDECLARED_N=$((UNDECLARED_N + 1))
   done <<< "$LIVE"
-  log "  REPORT undeclared_containers=$UNDECLARED_N${UNDECLARED:+ — $UNDECLARED} (not a violation; the contract names what MUST survive — coverage input for OPS-BOOT-CONTRACT-WIDEN-W{NEXT})"
+  log "  REPORT undeclared_containers=$UNDECLARED_N${UNDECLARED:+ — $UNDECLARED} (not a violation; the contract names what MUST survive. A non-zero count means a container nobody has ruled on — add it to containers[] or acknowledge it with a reason in scripts/data/boot-critical-units.json)"
+
+  ABSENT=""; ABSENT_N=0
+  for a in $ACK_CONTAINERS; do
+    case "$(printf '%s\n' "$LIVE" | grep -Fxc -- "$a" 2>/dev/null)" in
+      0|'') ABSENT="${ABSENT}${ABSENT:+, }$a"; ABSENT_N=$((ABSENT_N + 1)) ;;
+    esac
+  done
+  log "  REPORT acknowledged_but_absent=$ABSENT_N${ABSENT:+ — $ABSENT} (not a violation; an acknowledged container is not required to survive. A non-zero count means the acknowledged list has gone stale — re-rule the row or delete it)"
 fi
 
 # Vacuity: the contract is a corpus WE author, so a host block with nothing in it is our defect.
@@ -563,7 +715,7 @@ if [ "$UNITS_SEEN" -eq 0 ]; then
   log "  INDETERMINATE units_declared=0 for $LABEL"
 fi
 
-log "VERDICT=$VERDICT host=$LABEL units=$UNITS_SEEN containers=$CONTAINERS_SEEN"
+log "VERDICT=$VERDICT host=$LABEL units=$UNITS_SEEN containers=$CONTAINERS_SEEN acknowledged=$ACK_SEEN"
 log "BOOT_CONTRACT_VERDICT=$VERDICT"
 
 # ── first cycle is REPORT-only ───────────────────────────────────────────────────────────────

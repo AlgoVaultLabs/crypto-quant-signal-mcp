@@ -3,7 +3,7 @@
   "_comment": "GENERATED — do not edit. Projection of scripts/data/boot-critical-units.json for host-side consumption by ops/monitoring/boot-contract-canary.sh. Regenerate with `node scripts/check-boot-contract-parity.mjs --write`; parity is asserted by the same script in --check mode, which is wired into prepublishOnly.",
   "generated_from": "scripts/data/boot-critical-units.json",
   "generator": "scripts/check-boot-contract-parity.mjs",
-  "probed_at": "2026-07-31",
+  "probed_at": "2026-08-28",
   "revisit_by": "2027-02-28",
   "activation_semantics": {
     "enabled": "the unit itself must be `systemctl is-enabled` = enabled|enabled-runtime",
@@ -63,6 +63,24 @@
         "aoe-prefect-server",
         "aoe-redis",
         "aoe-supervisor"
+      ],
+      "acknowledged_containers": [
+        {
+          "container": "aoe-prefect-worker",
+          "reason": "Covered by aoe-supervisor's SPINE_CONTAINERS set {aoe-redis, aoe-prefect-server, aoe-prefect-worker, aoe-pg-tunnel}, which is DETECT-ONLY: never auto-restarted (an errant reconcile bouncing the worker on a 2-vCPU box is real blast radius), but paged CRIT once per outage after SPINE_PAGE_AFTER_SECONDS=300 via _send_alert -> _telegram_send. THIS IS A DIFFERENT MECHANISM FROM THE PREFIX FILTER that covers the three rows below, and the distinction is load-bearing: `aoe-prefect-worker` does NOT match _AOE_CONTAINER_NAME_FILTER = 'autonomous-optimizer-', so the prefix filter alone would leave the executor of every AOE flow uncovered. Measured 2026-08-28 in the live supervisor container: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID_AOE are both present, so the page path is credentialled - but it has fired zero times in 30 days (no spine outage), so it is committed-and-credentialled and first-invocation-untested. If SPINE detect-only is ever removed or the supervisor demoted, this row must be re-ruled MUST-SURVIVE."
+        },
+        {
+          "container": "autonomous-optimizer-promotion-scanner-1",
+          "reason": "Absence is self-healing via aoe-supervisor's AUTO-RESTART recoverable set, selected by _AOE_CONTAINER_NAME_FILTER = 'autonomous-optimizer-' (deliberately narrow, architect-ratified: OPS-AOE-CHAOS-RECOVERY-W1 Q2(b), 2026-08-02). BOTH LINKS OF THE CHAIN, stated on this row so the blast radius is visible from here alone: the recovering agent is `aoe-supervisor`, and aoe-supervisor is itself declared in this host's containers[] above - so a future wave that DEMOTES or removes aoe-supervisor removes the coverage for this row and the two below, and must re-rule all three. This row REFUTES the spec's own MUST-SURVIVE hypothesis (OPS-BOOT-CONTRACT-WIDEN-W1 R1); it is a real producer (`aoe promotion scan --since 14` every 900s into duckdb-volume), which is why the ruling rests on the recovery mechanism and not on it being inert."
+        },
+        {
+          "container": "autonomous-optimizer-mcp-server-1",
+          "reason": "Same AUTO-RESTART mechanism as promotion-scanner: matches _AOE_CONTAINER_NAME_FILTER = 'autonomous-optimizer-', recovered by aoe-supervisor, which is itself declared must-survive above. AND it is on NO serving path, checked explicitly rather than assumed: it publishes 0.0.0.0:8080 inside the box but is UNREACHABLE from a peer-host vantage and from the operator's machine (curl exit 28 both ways, measured 2026-08-28 - the Hetzner Cloud Firewall has suppressed it since OPS-HOST-EXPOSURE-POSTURE-W1 on 2026-07-30, a firewall rule rather than a rebind), and aoe-1's cloudflared ingress maps only aoe.algovault.com -> 127.0.0.1:4200 with everything else -> http_status:404. Internal-ops MCP, not user-facing. If OPS-AOE-MCP-BEHIND-TUNNEL-W{NEXT} ever puts it behind an ingress hostname, that makes it a serving path and this row must be re-ruled."
+        },
+        {
+          "container": "autonomous-optimizer-dashboard-internal-1",
+          "reason": "Same AUTO-RESTART mechanism as promotion-scanner: matches _AOE_CONTAINER_NAME_FILTER = 'autonomous-optimizer-', recovered by aoe-supervisor, which is itself declared must-survive above. Non-producing and on no serving path, checked rather than assumed: it publishes 127.0.0.1:8081 (loopback only, measured via `ss -ltnp`) and aoe-1's cloudflared ingress has no rule for it - the only mapped hostname is aoe.algovault.com -> 127.0.0.1:4200 (aoe-prefect-server, which IS declared must-survive). It renders from duckdb-volume and archive-volume; it writes nothing that is lost by its absence."
+        }
       ]
     },
     "signal-1": {
@@ -126,8 +144,12 @@
       "containers": [
         "crypto-quant-signal-mcp-mcp-server-1",
         "crypto-quant-signal-mcp-postgres-1",
-        "crypto-quant-signal-mcp-facilitator-1"
-      ]
+        "crypto-quant-signal-mcp-facilitator-1",
+        "plausible-ce-plausible-1",
+        "plausible-ce-plausible_db-1",
+        "plausible-ce-plausible_events_db-1"
+      ],
+      "acknowledged_containers": []
     }
   }
 }

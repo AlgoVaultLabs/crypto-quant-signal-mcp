@@ -34,11 +34,27 @@
  * is a pure function of the SoT or the build stops.
  *
  * WHAT IS PROJECTED, and what is deliberately dropped: the host canary decides on
- * `hosts{} -> {address, units[], containers[]}`, `acceptable_restart_policies`,
- * `postgres_stop_budget_seconds_min`, the activation semantics, and the revisit date. The SoT's
- * prose (`why`, `_comment`, `compose_exemption_reason`, `_restart_policy_note`) is NOT projected:
- * it explains the contract to a reader of the repo and is not a decision input, and every field
- * carried is a field that can drift.
+ * `hosts{} -> {address, units[], containers[], acknowledged_containers[]}`,
+ * `acceptable_restart_policies`, `postgres_stop_budget_seconds_min`, the activation semantics,
+ * and the revisit date. The SoT's prose (`why`, `_comment`, `compose_exemption_reason`,
+ * `_restart_policy_note`) is NOT projected: it explains the contract to a reader of the repo and
+ * is not a decision input, and every field carried is a field that can drift.
+ *
+ * ── THE KEY-WHITELIST TRAP, AND WHY THIS PARAGRAPH EXISTS (OPS-BOOT-CONTRACT-WIDEN-W1) ───────
+ * `projectContract` copies an EXPLICIT WHITELIST of per-host keys. Anything else is dropped
+ * SILENTLY and the verdict still reads PASS, because source and projection genuinely agree — the
+ * field never entered the derivation, so there is nothing to disagree about. Measured 2026-08-28
+ * on a scratch copy of the SoT: a `_throwaway_probe_key` added under `hosts['signal-1']` was
+ * absent from the projection while `--check` printed `BOOT_CONTRACT_PARITY_VERDICT=PASS`, exit 0.
+ * `ops/monitoring/boot-contract.json` is the ONLY copy either host ever reads, so a new per-host
+ * decision input that is not added HERE ships dark with every gate green. If you add a key the
+ * HOST must act on, add it to the whitelist below AND assert it survives the round trip in the
+ * self-test — `tests/unit/boot-contract-acknowledged.test.ts` pins that for the acknowledged set.
+ *
+ * `compose_exempt_containers` is the deliberate counter-example: it is a BUILD-TIME exemption
+ * read only by `scripts/check-boot-readiness.mjs`, the canary verifies restart policy from live
+ * `docker inspect` instead, so it is correctly NOT projected. "Not projected" must always be a
+ * decision with a reason, never an oversight.
  *
  * Verdict: exactly one terminal `BOOT_CONTRACT_PARITY_VERDICT=PASS|FAIL|INDETERMINATE`.
  * Exit 0=PASS / 1=FAIL / 3=INDETERMINATE (3 is the token-law default for a NEW gate).
@@ -106,6 +122,32 @@ export function projectContract(sot) {
     if (!Array.isArray(h.containers)) {
       throw new TypeError(`host ${label} has no \`containers\` array`);
     }
+    // ── acknowledged_containers: ruled NOT boot-critical, WITH A MANDATORY REASON ───────────
+    // The reason is MANDATORY: a missing/empty reason is INDETERMINATE, never a silent pass.
+    // Exemptions live ON THE ROW and never in prose. (Convention quoted verbatim from
+    // ops/monitoring/schedule-boundary-rule.json — second application, not a new invention.)
+    const rawAck = h.acknowledged_containers;
+    if (rawAck !== undefined && !Array.isArray(rawAck)) {
+      throw new TypeError(`host ${label} has an \`acknowledged_containers\` that is not an array`);
+    }
+    const acknowledged = (rawAck ?? []).map((a) => {
+      if (!a || typeof a !== 'object' || Array.isArray(a) || typeof a.container !== 'string' || a.container.length === 0) {
+        throw new TypeError(`host ${label} has an acknowledged_containers row without a non-empty string \`container\``);
+      }
+      if (typeof a.reason !== 'string' || a.reason.trim().length === 0) {
+        throw new TypeError(`host ${label} acknowledges container ${a.container} with a missing or empty \`reason\` — the reason is MANDATORY, an unexplained exemption is INDETERMINATE and never a silent pass`);
+      }
+      return { container: a.container, reason: a.reason };
+    });
+    // A name in BOTH lists is a self-contradiction in a corpus WE author. Refuse at build time so
+    // it can never reach a host; the canary refuses again at runtime because the projection it
+    // reads could in principle have been hand-edited on the box.
+    const mustSurvive = new Set(h.containers);
+    for (const a of acknowledged) {
+      if (mustSurvive.has(a.container)) {
+        throw new TypeError(`host ${label} lists ${a.container} in BOTH \`containers\` and \`acknowledged_containers\` — a container cannot be must-survive and acknowledged-not-boot-critical at the same time`);
+      }
+    }
     projectedHosts[label] = {
       address: h.address,
       // `via` is omitted rather than nulled when absent: the canary branches on `activation`, and
@@ -121,6 +163,12 @@ export function projectContract(sot) {
         return typeof u.via === 'string' ? { unit: u.unit, activation: u.activation, via: u.via } : { unit: u.unit, activation: u.activation };
       }),
       containers: [...h.containers],
+      // OPS-BOOT-CONTRACT-WIDEN-W1. Every live container is ruled on in exactly one of the two
+      // lists, so the canary's `undeclared = live - containers - acknowledged` can reach ZERO.
+      // Absent means "no ruling recorded yet" and projects as an empty list rather than throwing:
+      // the build-time gate cannot see a host's LIVE container set, so "you forgot to rule on
+      // something" is a question only the canary can ask, and it asks it as the undeclared REPORT.
+      acknowledged_containers: acknowledged,
     };
   }
 
@@ -215,7 +263,9 @@ function emit(r) {
   // read like a host that was checked and matched.
   console.log(`boot-contract-parity: ${SOT_REL} -> ${PROJECTION_REL}, ${r.hostCount} host(s)`);
   for (const [label, h] of Object.entries(r.expected.hosts)) {
-    console.log(`  · ${label.padEnd(10)} address=${h.address}  units=${h.units.length}  containers=${h.containers.length}`);
+    // Positive per-host output on EVERY path, and the acknowledged count is part of it: a host
+    // whose ruling list silently failed to project must not print like one that carried it.
+    console.log(`  · ${label.padEnd(10)} address=${h.address}  units=${h.units.length}  containers=${h.containers.length}  acknowledged=${(h.acknowledged_containers ?? []).length}`);
   }
   console.log(`  · policies=${r.expected.acceptable_restart_policies.join('|')}  pg_stop_budget=${r.expected.postgres_stop_budget_seconds_min}s  revisit_by=${r.expected.revisit_by ?? '<none>'}`);
   if (r.verdict === 'FAIL') {
@@ -300,7 +350,12 @@ function selfTest() {
         ],
         containers: ['c1', 'c2'],
       },
-      'aoe-1': { address: '10.0.0.2', units: [{ unit: 'cron.service', activation: 'enabled' }], containers: [] },
+      'aoe-1': {
+        address: '10.0.0.2',
+        units: [{ unit: 'cron.service', activation: 'enabled' }],
+        containers: [],
+        acknowledged_containers: [{ container: 'ack-1', reason: 'ruled not boot-critical', extra: 'a key that must NOT survive' }],
+      },
     },
     acceptable_restart_policies: ['always', 'unless-stopped'],
     postgres_stop_budget_seconds_min: 30,
@@ -318,6 +373,17 @@ function selfTest() {
   // The serializer is a SEAM every other assertion agrees with by construction — a compact
   // serializer round-trips just as happily as a canonical one. Pin the bytes, not the round-trip.
   ck('serialize() emits 2-space canonical JSON with a trailing newline', serialize({ a: 1 }), '{\n  "a": 1\n}\n');
+  // ── THE R0.3 WHITELIST TRAP, PINNED SO IT CANNOT REGRESS ─────────────────────────────────
+  // Measured 2026-08-28: a per-host key absent from the whitelist above is dropped SILENTLY and
+  // --check still prints PASS, because source and projection genuinely agree once the field never
+  // entered the derivation. `ops/monitoring/boot-contract.json` is the only copy either host
+  // reads, so that is a decision input shipping dark behind a green gate. These four assertions
+  // are the standing proof that acknowledged_containers is not in that class.
+  ck('acknowledged_containers SURVIVES the projection (the R0.3 trap)', JSON.stringify(p.hosts['aoe-1'].acknowledged_containers), JSON.stringify([{ container: 'ack-1', reason: 'ruled not boot-critical' }]));
+  ck('  and an unknown key on the ROW is still dropped', Object.prototype.hasOwnProperty.call(p.hosts['aoe-1'].acknowledged_containers[0], 'extra'), false);
+  ck('  a host with no acknowledged rows projects an explicit [], never absent', `${Object.prototype.hasOwnProperty.call(p.hosts['signal-1'], 'acknowledged_containers')}/${p.hosts['signal-1'].acknowledged_containers.length}`, 'true/0');
+  ck('  compose_exempt_containers is deliberately NOT projected (build-time only)', Object.prototype.hasOwnProperty.call(p.hosts['signal-1'], 'compose_exempt_containers'), false);
+
   ck('decision inputs are carried, not re-declared', `${p.acceptable_restart_policies.join('|')}/${p.postgres_stop_budget_seconds_min}/${p.revisit_by}`, 'always|unless-stopped/30/2027-02-28');
 
   console.log('--- refusals (shapes we author, so empty is OUR defect) ---');
@@ -333,6 +399,17 @@ function selfTest() {
   refuses('an activation kind the semantics do not define', (s) => { s.hosts['aoe-1'].units[0].activation = 'wishful'; });
   refuses('a missing restart-policy list', (s) => { delete s.acceptable_restart_policies; });
   refuses('a non-numeric stop budget', (s) => { s.postgres_stop_budget_seconds_min = 'thirty'; });
+  // The reason is MANDATORY: a missing/empty reason is INDETERMINATE, never a silent pass.
+  refuses('an acknowledged row with NO reason', (s) => { delete s.hosts['aoe-1'].acknowledged_containers[0].reason; });
+  refuses('an acknowledged row with an EMPTY reason', (s) => { s.hosts['aoe-1'].acknowledged_containers[0].reason = ''; });
+  refuses('an acknowledged row with an ALL-WHITESPACE reason', (s) => { s.hosts['aoe-1'].acknowledged_containers[0].reason = '   \n  '; });
+  refuses('an acknowledged row with no `container`', (s) => { delete s.hosts['aoe-1'].acknowledged_containers[0].container; });
+  refuses('an acknowledged_containers that is not an array', (s) => { s.hosts['aoe-1'].acknowledged_containers = { c: 'x' }; });
+  // Q4 (architect-approved, 2026-08-28) — and it is proven fail-capable by this very fixture:
+  // the same NAME in both lists must THROW, not project.
+  refuses('the SAME NAME in both containers[] and acknowledged_containers[]', (s) => {
+    s.hosts['signal-1'].acknowledged_containers = [{ container: 'c1', reason: 'contradicts the containers[] entry above' }];
+  });
 
   console.log('--- verdicts ---');
   const sotOk = { ok: true, value: goodSot, raw: '{}' };
@@ -373,7 +450,7 @@ function selfTest() {
   ck('serialize() round-trips to identical bytes', liveProjected ? serialize(JSON.parse(serialize(liveProjected))) === serialize(liveProjected) : false, true);
 
   // Vacuity guard: this suite BUILDS its own corpus, so "nothing ran" is a defect in the test.
-  const MIN_ASSERTIONS = 25;
+  const MIN_ASSERTIONS = 36;
   if (checked < MIN_ASSERTIONS) {
     console.log(`SELF_TEST_VERDICT=INDETERMINATE — only ${checked} assertions ran (expected >= ${MIN_ASSERTIONS})`);
     console.log('BOOT_CONTRACT_PARITY_VERDICT=INDETERMINATE');
@@ -384,7 +461,7 @@ function selfTest() {
     console.log('BOOT_CONTRACT_PARITY_VERDICT=FAIL');
     return 1;
   }
-  console.log(`SELF_TEST_VERDICT=PASS — ${checked} assertions (7 shape, 5 must-refuse, 8 verdict, 3 token-map, 4 live-seam)`);
+  console.log(`SELF_TEST_VERDICT=PASS — ${checked} assertions (7 shape, 4 acknowledged-round-trip, 11 must-refuse, 8 verdict, 3 token-map, 4 live-seam)`);
   console.log('BOOT_CONTRACT_PARITY_VERDICT=PASS');
   return 0;
 }
