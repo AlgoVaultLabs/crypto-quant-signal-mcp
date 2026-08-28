@@ -269,9 +269,9 @@ bearer_token_env_var = "AV_API_KEY"
       config:
         serverName: algovault
         transport: streamable-http
-        url: https://api.algovault.com/mcp?src=docs
+        url: https://api.algovault.com/mcp?src=deepseek_harness
         headers:
-          X-AlgoVault-Track-Token: chan-docs</code></pre>
+          X-AlgoVault-Track-Token: int-deepseek-harness</code></pre>
       </div>
       <p>The <code class="text-xs">- insert:</code> wrapper is required. Without it the entry is an id-targeted override, and it is skipped with a warning.</p>
       <p>Paid tier adds one more line to that <code class="text-xs">headers</code> block: <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code>. The free tier needs no key.</p>

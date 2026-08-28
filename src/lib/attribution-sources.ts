@@ -63,6 +63,14 @@ export const ATTRIBUTION_SOURCES = [
   // The page URL and the `int-binance-agent-os` track token stay hyphenated — different
   // namespaces, different conventions.
   'binance_agent_os',
+  // LANDING-DSH-CLIENT-SURFACE-W1 — /integrations/deepseek-harness, DeepSeek's own agent runtime.
+  // Same UNDERSCORE rule and the same reason as the row above: check-attribution-src-coverage.mjs
+  // parses this enum with a lowercase-plus-underscore character class, so a hyphenated entry is
+  // invisible to it. The page URL and the `int-deepseek-harness` track token stay hyphenated.
+  // It gets its OWN slug rather than riding the generic `docs` bucket because merging DSH
+  // arrivals into `docs` makes the channel unmeasurable, and an unmeasurable channel cannot
+  // justify the follow-on work it is supposed to earn.
+  'deepseek_harness',
   'unknown', // default-deny terminal — an untagged/unclassified hit is unknown, not "direct"
 ] as const;
 

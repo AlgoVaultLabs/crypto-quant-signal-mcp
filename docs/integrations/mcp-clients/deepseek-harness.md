@@ -29,7 +29,7 @@ Edit `~/.dsh/profiles/<name>/cordis.patch.yml` for one profile, or `~/.dsh/cordi
       config:
         serverName: algovault
         transport: streamable-http
-        url: https://api.algovault.com/mcp?src=docs
+        url: https://api.algovault.com/mcp?src=deepseek_harness
         headers:
           X-AlgoVault-Track-Token: int-deepseek-harness
 ```
