@@ -1112,7 +1112,7 @@
       "schedule": "23 7 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "3495a7a148b17c11daebcedb00b36fb144af7c0b5d3d614eb3b3c061da31e3b8",
+      "sha256": "479fc079840d1324da959fd94a447e963003fe9fa0fcb749bb19b8b4269889f1",
       "alert_ids": [
         "KERNEL_STALENESS"
       ],

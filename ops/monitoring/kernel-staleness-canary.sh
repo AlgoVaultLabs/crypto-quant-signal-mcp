@@ -26,11 +26,25 @@ set -uo pipefail
 ALERT_ID="KERNEL_STALENESS"
 SEND="${KERNEL_CANARY_WRAPPER:-/opt/algovault-monitoring/send_telegram.sh}"
 LOG="${KERNEL_CANARY_LOG:-/var/log/kernel-staleness-canary.log}"
-# Report below this, escalate at/above it. unattended-upgrades lands kernels ~monthly, so 7 days is
-# "you have had a maintenance window and did not take it", not "a kernel just landed".
+# Report below this, escalate at/above it. MEASURED CADENCE, not folklore: /var/log/dpkg.log on
+# BOTH hosts across 9 kernels (2026-04-06 -> 2026-08-20) gives n=15 install intervals, median 15d,
+# range 12-29d. Two premises die on that data. The first is the one this comment used to carry,
+# "unattended-upgrades lands kernels ~monthly". The second is the "~12 days" proposed as its
+# replacement by the OPS-HOST-KERNEL-REBOOT-W3 dispatch, which read ONE gap (-137 -> -138) as a
+# cadence — a single-interval estimate wearing a measurement's clothes.
+# THRESHOLD_DAYS stays 7 ON THAT EVIDENCE: at a 12-29d cadence, 7 days pages 5-22 days after each
+# install, which is the intended "you have had a window and did not take it" rather than "a kernel
+# just landed". It is not tuned to the median; it is bounded below by the SHORTEST observed gap.
+# INSTRUMENT WARNING for whoever re-derives this. The /var/lib/dpkg/info/linux-image-*.list mtime
+# that AGE_DAYS below is computed from is RE-STAMPED by later dpkg activity: measured 2026-08-27,
+# -136 reads 2026-08-20 on both hosts while dpkg.log records its real install as 2026-07-18. It is
+# trustworthy ONLY for the NEWEST kernel — which is the only one this canary ever stats, so the
+# live path is sound. Re-derive cadence from dpkg.log, never from the .list mtimes.
 THRESHOLD_DAYS="${KERNEL_STALENESS_ALERT_DAYS:-7}"
-# TODO: revisit by 2027-02-28 — re-derive against the observed kernel cadence; a threshold nobody
-# re-checks is how the last "reboot pending" signal decayed into background noise.
+# The former "TODO: revisit by 2027-02-28" is RETIRED, not moved. It asked a future reader to
+# re-derive the cadence; that has now been done and the measured values are recorded above. A
+# premise already falsified does not need a future reminder — it needs replacing, which is what
+# OPS-HOST-KERNEL-REBOOT-W3 did.
 
 log() { printf '%s [%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ALERT_ID" "$*" | tee -a "$LOG" 2>/dev/null || true; }
 
@@ -70,8 +84,14 @@ inactive. A local privilege-escalation there also un-bounds the least-privilege 
 the stack, which assumes the app cannot become root.
 
 Action: schedule a reboot. The procedure is validated end-to-end by OPS-HOST-KERNEL-REBOOT-W1
-(verify Hetzner console access first, rehearse on aoe-1, then signal-1); boot survival is asserted
-continuously by scripts/check-boot-readiness.mjs. recommended_wave: OPS-HOST-KERNEL-REBOOT-W{NEXT}
+(verify Hetzner console access first, rehearse on aoe-1, then signal-1).
+
+Boot survival is asserted continuously by ops/monitoring/boot-contract-canary.sh, scheduled per
+host (signal-1 08:09 UTC, aoe-1 08:37 UTC), which checks this box against the declared contract.
+scripts/check-boot-readiness.mjs is the BUILD-TIME gate: it proves the contract is internally
+coherent and never that a host matches it.
+
+recommended_wave: OPS-HOST-KERNEL-REBOOT-W{NEXT}
 EOF
 )" | "$SEND" "$ALERT_ID" CRITICAL_PERSISTENT - 2>>"$LOG" || log "FAIL_OPEN: send_telegram invocation failed"
 }
