@@ -1467,9 +1467,13 @@ async function startHttp() {
   // (Plain HTTP/curl stays inline-only per Q-PLAIN-HTTP=NO; not in allow-list).
   // LANDING-MCP-CLIENT-REGISTRY-W1 (2026-08-05): +3 MCP-client pages. The other
   // 3 registry rows (plain-http, zai-api, deepseek) are hasDedicatedPage:false —
-  // a transport, a server-side API and a model, none of which have a page.
+  // a transport, a server-side API and a bring-your-own-model path.
+  // LANDING-DSH-CLIENT-SURFACE-W1 (2026-08-28): +deepseek-harness. This supersedes
+  // the reading that `deepseek` "is a model, none of which have a page": DeepSeek
+  // now ships its own agent runtime with a first-party MCP client, and that is a
+  // SEPARATE product from the byo-model row, which keeps no page of its own.
   const INTEGRATION_MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline', 'smithery',
-    'codex', 'kimi', 'glm-zcode'] as const;
+    'codex', 'kimi', 'glm-zcode', 'deepseek-harness'] as const;
   const ALL_INTEGRATION_SLUGS = [...INTEGRATION_EXCHANGES, ...INTEGRATION_FRAMEWORKS, ...INTEGRATION_MCP_CLIENTS];
   const INTEGRATION_HTML = new Map<string, string>();
   {

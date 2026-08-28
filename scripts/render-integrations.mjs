@@ -65,7 +65,11 @@ const FRAMEWORKS = ['langchain', 'llamaindex', 'maf', 'crewai'];
 // per-slug.
 const MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline', 'smithery',
   // +3, each verified 2026-08-05 against that vendor's own MCP documentation.
-  'codex', 'kimi', 'glm-zcode'];
+  'codex', 'kimi', 'glm-zcode',
+  // +1, verified 2026-08-28 against the harness source and registry.npmjs.org. NOTE the pairing:
+  // `deepseek-harness` is DeepSeek's own runtime (a native client, this page); `deepseek` is the
+  // bring-your-own-model row and stays hasDedicatedPage:false. Two products, two rows.
+  'deepseek-harness'];
 const ALL_TARGETS = [...EXCHANGES, ...FRAMEWORKS, ...MCP_CLIENTS];
 
 const args = process.argv.slice(2);
