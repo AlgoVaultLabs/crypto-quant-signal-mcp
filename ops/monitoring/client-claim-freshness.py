@@ -172,10 +172,35 @@ CORPUS = [
 # Vendor npm scope per slug — the second, independent contradiction input. Three states; see the
 # module docstring. An entry is REQUIRED for every byo-model/api-level row.
 VENDOR_SCOPE = {
-    "deepseek": "@deepseek-ai",
+    "deepseek": None,
     "zai-api": None,
 }
 VENDOR_SCOPE_REASON = {
+    # LANDING-DSH-CLIENT-SURFACE-W1 (2026-08-28) FLIPPED this row from "@deepseek-ai" to None, and
+    # the flip is a CORRECTION of this arm's aim rather than a suppression of its finding.
+    #
+    # The arm fired correctly on 2026-08-28: the row asserted "DeepSeek ships no MCP application of
+    # its own" and @deepseek-ai/dsh-mcp-client falsified it. That wave retired the false sentence and
+    # split the subject into two rows — `deepseek-harness` (native, DeepSeek's own runtime) and this
+    # one, which now claims only the bring-your-own-model PATH and asserts no absence at all.
+    #
+    # But the predicate keys on `kind`, not on what the row actually claims, so it would keep
+    # returning `contradicted` on a factually-correct row every day for as long as DeepSeek ships an
+    # MCP client — i.e. permanently. A guard that cannot stop firing is one that gets ignored, and
+    # the finding it would be reporting is already fixed.
+    #
+    # THIS IS DECLARED DEBT, NOT A CLOSED QUESTION. The real fix is to fire only when the row's
+    # RENDERED TEXT asserts the absence, which makes the arm re-arm itself automatically for this row
+    # and every future one. Owner: OPS-CLIENT-CLAIM-PREDICATE-CLAIMTEXT-W{NEXT}. Until it lands this
+    # row keeps its AGE arm and its SOURCE arm, which is what still checks its surviving claim that
+    # the DeepSeek API exposes no MCP parameter.
+    "deepseek": (
+        "the row no longer asserts an absence, so there is nothing here for a vendor-artifact "
+        "probe to falsify: LANDING-DSH-CLIENT-SURFACE-W1 moved the native-client subject to the "
+        "`deepseek-harness` row and left this one claiming only the bring-your-own-model path. "
+        "The arm keys on `kind` rather than on the asserted claim, so re-enabling it here would "
+        "page daily and forever on correct copy. Re-arm at "
+        "OPS-CLIENT-CLAIM-PREDICATE-CLAIMTEXT-W{NEXT}"),
     "zai-api": ("no first-party npm scope located 2026-08-28 (probed @z-ai, @zai-org, @zhipuai, "
                 "@zai — 0 in-scope packages each) AND the row's api-level claim asserts a "
                 "PRESENCE, so a new Z.ai MCP client would EXTEND it rather than falsify it. "
@@ -692,6 +717,13 @@ def self_test():
     os.environ["CLIENT_CLAIM_SELFTEST"] = "1"
     os.environ["ALGOVAULT_TG_TEST_INERT"] = "1"
 
+    # The vendor-arm scenarios below own their fixture instead of borrowing a production row.
+    # They used to drive `deepseek`, whose scope was "@deepseek-ai" — until
+    # LANDING-DSH-CLIENT-SURFACE-W1 legitimately flipped it to None and three assertions went
+    # RED for a reason that had nothing to do with the capability they exist to pin. A suite
+    # that borrows a production value as a fixture inherits that value's politics.
+    VENDOR_SCOPE["selftest-vendor"] = "@selftest"
+
     failures, ran = [], []
 
     def check(name, fn):
@@ -790,22 +822,32 @@ def self_test():
 
     # ── vendor arm ──────────────────────────────────────────────────────────────────────────
     check("a first-party MCP client in the vendor scope -> contradicted",
-          lambda: vendor_arm(row(slug="deepseek", kind="byo-model"),
-                             ({"@deepseek-ai/dsh-mcp-client": "MCP client bridge"}, True))[0]
+          lambda: vendor_arm(row(slug="selftest-vendor", kind="byo-model"),
+                             ({"@selftest/dsh-mcp-client": "MCP client bridge"}, True))[0]
           == ARM_CONTRADICTED)
     check("…and the evidence NAMES the package",
-          lambda: "@deepseek-ai/dsh-mcp-client" in vendor_arm(
-              row(slug="deepseek", kind="byo-model"),
-              ({"@deepseek-ai/dsh-mcp-client": "MCP client bridge"}, True))[1])
+          lambda: "@selftest/dsh-mcp-client" in vendor_arm(
+              row(slug="selftest-vendor", kind="byo-model"),
+              ({"@selftest/dsh-mcp-client": "MCP client bridge"}, True))[1])
     check("a clean vendor scope -> ok",
-          lambda: vendor_arm(row(slug="deepseek", kind="byo-model"),
-                             ({"@deepseek-ai/dsh-fs": "filesystem"}, True))[0] == ARM_OK)
+          lambda: vendor_arm(row(slug="selftest-vendor", kind="byo-model"),
+                             ({"@selftest/dsh-fs": "filesystem"}, True))[0] == ARM_OK)
     check("unproven scope exhaustion -> predicate indeterminate (capped-collection law)",
-          lambda: vendor_arm(row(slug="deepseek", kind="byo-model"), ({}, False))[0]
+          lambda: vendor_arm(row(slug="selftest-vendor", kind="byo-model"), ({}, False))[0]
           == ARM_INDETERMINATE)
     check("a declared N/A scope WITH a reason -> ok, and the reason is rendered",
           lambda: vendor_arm(row(slug="zai-api", kind="api-level"), None)[0] == ARM_OK
           and "npm scope" in vendor_arm(row(slug="zai-api", kind="api-level"), None)[1])
+    check("EVERY declared-None row carries a reason — a silent N/A is indistinguishable from a "
+          "forgotten one",
+          lambda: all(VENDOR_SCOPE_REASON.get(s) for s, v in VENDOR_SCOPE.items() if v is None))
+    # The ban is on a literal wave number as the RE-ARM TARGET, not on citing the wave that made
+    # a change: `LANDING-DSH-CLIENT-SURFACE-W1` is history and belongs in the prose. A whole-string
+    # /-W\d+/ ban conflated the two and failed on its own correction record.
+    check("deepseek is declared N/A and its RE-ARM target is templated, never a literal wave",
+          lambda: VENDOR_SCOPE["deepseek"] is None
+          and re.search(r"Re-arm at [A-Z][A-Z0-9-]*-W\{NEXT\}",
+                        VENDOR_SCOPE_REASON["deepseek"]) is not None)
     check("an UNDECLARED row -> predicate indeterminate, never a silent pass",
           lambda: vendor_arm(row(slug="brand-new", kind="byo-model"), None)[0]
           == ARM_INDETERMINATE)
@@ -935,7 +977,7 @@ _TS_FIXTURE_SHORT = "".join(
 # Floor, not a target — set to the ACTUAL check count so removing any scenario trips it. Raise
 # it when scenarios are added; it exists so a suite that stops running its scenarios cannot
 # report a confident pass over nothing.
-_SELF_TEST_MIN_CHECKS = 47
+_SELF_TEST_MIN_CHECKS = 49
 
 
 if __name__ == "__main__":

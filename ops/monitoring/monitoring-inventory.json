@@ -1856,7 +1856,7 @@
       "schedule": "17 2 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "65c867a219c36b60617d434c94982d9e07c5bcc2e246f31ff13dc90f63ac0037",
+      "sha256": "81588ea984f1f1aef533d2c7bf7d2aba6aad9b47e717e822958ead85c10a620a",
       "alert_ids": [
         "CLIENT_CLAIM_DRIFT"
       ],
