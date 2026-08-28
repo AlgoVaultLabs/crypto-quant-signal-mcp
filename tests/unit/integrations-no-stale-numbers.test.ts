@@ -57,7 +57,9 @@ describe('landing/integrations/*.html — stale-number drift guard', () => {
     // same readdir() the suite iterates would make this assertion tautological,
     // and its whole job is to catch a glob that silently stops matching.
     // 24 → 25 (BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1, 2026-08-25): +binance-agent-os.
-    expect(PAGES.length).toBe(25);
+    // 25 → 26 (LANDING-DSH-CLIENT-SURFACE-W1, 2026-08-28): +deepseek-harness, DeepSeek's
+    // own agent runtime — a NATIVE mcp-client page, distinct from the byo-model `deepseek` row.
+    expect(PAGES.length).toBe(26);
     // Execution-kit tutorials for non-signal venues are intentional — kept, not
     // deleted, per Mr.1 2026-07-20. Their presence is asserted so a future
     // cleanup wave can't quietly drop them.

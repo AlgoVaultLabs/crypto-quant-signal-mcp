@@ -170,8 +170,13 @@ describe('client-claim-freshness — declarations the rest of the estate reads',
     // (its header defers that to OPS-ALERT-WAVE-GATE-PY-COVERAGE-W{NEXT} and asks each Python
     // canary to assert the property itself). This is that assertion.
     expect(SRC).toContain('LANDING-{VENDOR}-CLIENT-SURFACE-W{{NEXT}}');
-    const emitted = SRC.split('RECOMMENDED_WAVE = ')[1];
-    expect(emitted).not.toMatch(/\bLANDING-[A-Z0-9-]*-W\d+\b/);
+    // Scoped to the TEMPLATE CONSTANT, not to the rest of the file. The ban is on emitting a
+    // literal wave number as an Action line; CITING the wave that made a change is how every
+    // correction in this estate is written, and a whole-remainder ban fails on the canary's own
+    // correction record (VENDOR_SCOPE_REASON names LANDING-DSH-CLIENT-SURFACE-W1 as history).
+    // Same over-broad-regex defect the canary's own --self-test hit on the same day.
+    const template = SRC.split('RECOMMENDED_WAVE = ')[1].split('\n')[0];
+    expect(template).not.toMatch(/-W\d+/);
   });
 
   it('the CORPUS uses declaration-sync.sh\'s name|path|fields idiom', () => {
