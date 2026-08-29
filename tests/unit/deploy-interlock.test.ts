@@ -42,6 +42,9 @@ function run(cmd: string, opts: { dockerRc?: number; hotfix?: boolean; env?: Rec
     encoding: 'utf8',
     env: {
       ...process.env,
+      // OPS-HOST-AUTO-REBOOT-W1 — the registry is per-host and the interlock REFUSES to guess.
+      // This suite drives signal-1's corpus, which is the host deploy.yml actually runs on.
+      MONITORING_HOST_LABELS: 'signal-1',
       INTERLOCK_LEDGER: ledger,
       INTERLOCK_MARKER: marker,
       INTERLOCK_DOCKER: docker,
@@ -70,6 +73,7 @@ function oneRowRegistry(dir: string, row: Record<string, unknown>) {
 
 const LABELER_ROW = {
   id: 'carry-labeler',
+  host: 'signal-1',
   script: 'src/scripts/backfill-directional-labels.ts',
   container: 'ctr',
   process_pattern: 'dist/scripts/backfill-directional-labels',
@@ -164,7 +168,7 @@ describe('the protected set is DATA, and an unusable row is never a silent pass'
   it('a safe-to-kill row is not probed, and still prints a positive per-job line', { timeout: 60_000 }, () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'interlock-reg-'));
     const reg = oneRowRegistry(dir, {
-      id: 'seed-signals', script: 'src/scripts/seed-signals.ts', container: 'ctr',
+      id: 'seed-signals', host: 'signal-1', script: 'src/scripts/seed-signals.ts', container: 'ctr',
       process_pattern: 'dist/scripts/seed-signals', class: 'safe-to-kill',
       reason: 'idempotent on next fire, flock-guarded',
     });
@@ -180,7 +184,7 @@ describe('the protected set is DATA, and an unusable row is never a silent pass'
     const docker = path.join(dir, 'docker');
     writeFileSync(docker, `#!/bin/sh\necho "$@" >> ${argv}\nexit 0\n`, { mode: 0o755 });
     const reg = oneRowRegistry(dir, {
-      id: 'publish-merkle-batch', script: 'src/scripts/publish-merkle-batch.ts', container: 'ctr',
+      id: 'publish-merkle-batch', host: 'signal-1', script: 'src/scripts/publish-merkle-batch.ts', container: 'ctr',
       process_pattern: 'dist/scripts/publish-merkle-batch', class: 'no-safe-kill',
       reason: 'on-chain tx then DB write; a kill between them orphans a Merkle root',
     });
@@ -188,6 +192,7 @@ describe('the protected set is DATA, and an unusable row is never a silent pass'
       encoding: 'utf8',
       env: {
         ...process.env,
+        MONITORING_HOST_LABELS: 'signal-1',
         INTERLOCK_LEDGER: path.join(dir, 'led'), INTERLOCK_MARKER: path.join(dir, 'mk'),
         INTERLOCK_DOCKER: docker, INTERLOCK_WAIT_S: '2', INTERLOCK_REGISTRY: reg,
       },
@@ -202,7 +207,7 @@ describe('the protected set is DATA, and an unusable row is never a silent pass'
   it('an EMPTY reason is INDETERMINATE, never a silent safe-to-kill', { timeout: 60_000 }, () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'interlock-noreason-'));
     const reg = oneRowRegistry(dir, {
-      id: 'unreasoned', script: 'x', container: 'ctr', process_pattern: 'p',
+      id: 'unreasoned', host: 'signal-1', script: 'x', container: 'ctr', process_pattern: 'p',
       class: 'safe-to-kill', reason: '   ',
     });
     const r = run('preempt', { dockerRc: 1, env: { INTERLOCK_REGISTRY: reg } });
@@ -269,6 +274,7 @@ describe('OPS-DEPLOY-CATCHUP-DETACH-W1 — the catch-up is launched, not awaited
       encoding: 'utf8',
       env: {
         ...process.env,
+        MONITORING_HOST_LABELS: 'signal-1',
         INTERLOCK_LEDGER: ledger,
         INTERLOCK_MARKER: marker,
         INTERLOCK_DOCKER: docker,
@@ -308,6 +314,7 @@ describe('OPS-DEPLOY-CATCHUP-DETACH-W1 — the catch-up is launched, not awaited
       encoding: 'utf8',
       env: {
         ...process.env,
+        MONITORING_HOST_LABELS: 'signal-1',
         INTERLOCK_LEDGER: ledger,
         INTERLOCK_DOCKER: docker,
         INTERLOCK_FLOCK: flock,
@@ -439,7 +446,7 @@ describe('Q6 — the pattern is pinned to the REAL script, and the workflow real
     // one job that was already protected — and nothing else in the tree would notice.
     const pattern = spawnSync('bash', [SH, '--print-pattern'], { encoding: 'utf8' }).stdout.trim();
     const rows = JSON.parse(readFileSync(REGISTRY, 'utf8')).rows as Array<Record<string, string>>;
-    const labeler = rows.find((r) => r.id === 'carry-labeler');
+    const labeler = rows.find((r) => r.id === 'carry-labeler' && r.host === 'signal-1');
     expect(labeler).toBeDefined();
     expect(labeler!.process_pattern).toBe(pattern);
     expect(labeler!.class).toBe('preempt-and-catchup');
@@ -471,6 +478,49 @@ describe('Q6 — the pattern is pinned to the REAL script, and the workflow real
     // AC3's floor: never fewer checks than the 33 this file carried before the generalization.
     const n = Number((r.stdout.match(/SELF-TEST: PASS — (\d+) checks/) || [])[1]);
     expect(n).toBeGreaterThanOrEqual(33);
+  });
+});
+
+/**
+ * OPS-HOST-AUTO-REBOOT-W1 — the registry is PER-HOST, and this consumer must not read another
+ * host's answer for its own question.
+ *
+ * SPAWN BUDGET: 3 bash spawns.
+ */
+describe('the interlock reads ONLY its own host\'s rows', () => {
+  it('a row belonging to aoe-1 is never evaluated during a signal-1 deploy', { timeout: 60_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'interlock-host-'));
+    const reg = oneRowRegistry(dir, { ...LABELER_ROW, host: 'aoe-1' });
+    // dockerRc 0 would DEFER if the row were evaluated at all.
+    const r = run('preempt', { dockerRc: 0, env: { INTERLOCK_REGISTRY: reg } });
+    expect(r.verdict).toBe('INDETERMINATE');
+    expect(r.ledger).toContain('registry-unloadable');
+  });
+
+  it('an UNRESOLVABLE identity is INDETERMINATE at exit 0 — never a default to signal-1', { timeout: 60_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'interlock-noid-'));
+    const docker = path.join(dir, 'docker');
+    writeFileSync(docker, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const r = spawnSync('bash', [SH, 'preempt'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        MONITORING_HOST_LABELS: '',
+        INTERLOCK_IDENTITY_FILE: '/nonexistent/host-label',
+        INTERLOCK_LEDGER: path.join(dir, 'led'),
+        INTERLOCK_MARKER: path.join(dir, 'mk'),
+        INTERLOCK_DOCKER: docker,
+      },
+    });
+    expect(r.status).toBe(0);
+    expect((r.stdout.match(/INTERLOCK_VERDICT=(\w+)/) || [])[1]).toBe('INDETERMINATE');
+  });
+
+  it('the REAL registry declares a host on every row', { timeout: 60_000 }, () => {
+    const rows = JSON.parse(readFileSync(REGISTRY, 'utf8')).rows as Array<Record<string, string>>;
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.filter((r) => !String(r.host || '').trim())).toEqual([]);
+    expect([...new Set(rows.map((r) => r.host))].sort()).toEqual(['aoe-1', 'signal-1']);
   });
 });
 

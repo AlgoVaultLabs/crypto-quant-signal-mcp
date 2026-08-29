@@ -56,6 +56,29 @@ describe('the gate decides the REAL tree, and says so with one token', () => {
       expect(r.stdout).toMatch(/ops\/cron\/nav-drift-canary\.sh\s+no docker exec/);
     });
 
+  it('BOTH hosts are evaluated, each with its own positive block', { timeout: 60_000 }, () => {
+    const r = runGate();
+    expect(r.stdout).toContain('cron-interlock-coverage [signal-1]:');
+    expect(r.stdout).toContain('cron-interlock-coverage [aoe-1]:');
+    // aoe-1 has no repo-side cron tree, and saying so positively is the honest answer — not a
+    // vacuity INDETERMINATE, because nobody was ever supposed to fill that corpus for this host.
+    expect(r.stdout).toMatch(/\[aoe-1\][\s\S]*repo cron corpus: none/);
+  });
+
+  it('--host narrows to one host and still prints exactly one token', { timeout: 60_000 }, () => {
+    const r = runGate(['--host', 'aoe-1']);
+    expect(r.verdict).toBe('PASS');
+    expect(r.stdout).toContain('cron-interlock-coverage [aoe-1]:');
+    expect(r.stdout).not.toContain('cron-interlock-coverage [signal-1]:');
+    expect((r.stdout.match(/^CRON_INTERLOCK_COVERAGE_VERDICT=/gm) || []).length).toBe(1);
+  });
+
+  it('an UNKNOWN host is INDETERMINATE at exit 3, never an empty PASS', { timeout: 60_000 }, () => {
+    const r = runGate(['--host', 'mars-1']);
+    expect(r.verdict).toBe('INDETERMINATE');
+    expect(r.status).toBe(3);
+  });
+
   it('the DECLARED limitation is printed, not buried in a header nobody reads', { timeout: 60_000 }, () => {
     const r = runGate();
     expect(r.stdout).toContain('a build-time gate cannot see host-only crons');
@@ -90,7 +113,7 @@ describe('vacuity: an empty or broken corpus is INDETERMINATE, never PASS', () =
   };
 
   it('an EMPTY ops/cron tree is INDETERMINATE — the glob is broken, not the tree', { timeout: 60_000 }, async () => {
-    const r = await evaluateIn({ 'ops/scripts/cron-interlock-registry.json': '{"rows":[{"id":"a","script":"s","class":"safe-to-kill","reason":"r"}]}' });
+    const r = await evaluateIn({ 'ops/scripts/cron-interlock-registry.json': '{"rows":[{"id":"a","host":"signal-1","script":"s","class":"safe-to-kill","reason":"r"}],"_enumeration":{"signal-1":{"command":"fixture"}},"_residual_no_safe_kill":{"signal-1":{"count":0,"ids":[]}}}' });
     expect(r.verdict).toBe('INDETERMINATE');
     expect(r.reason).toContain('the glob is broken, not the tree');
   });
@@ -103,7 +126,7 @@ describe('vacuity: an empty or broken corpus is INDETERMINATE, never PASS', () =
   it('wrappers that exist but NEVER exec are INDETERMINATE — the matcher broke', { timeout: 60_000 }, async () => {
     const r = await evaluateIn({
       'ops/cron/a.sh': '#!/usr/bin/env bash\necho hi\n',
-      'ops/scripts/cron-interlock-registry.json': '{"rows":[{"id":"a","script":"s","class":"safe-to-kill","reason":"r"}]}',
+      'ops/scripts/cron-interlock-registry.json': '{"rows":[{"id":"a","host":"signal-1","script":"s","class":"safe-to-kill","reason":"r"}],"_enumeration":{"signal-1":{"command":"fixture"}},"_residual_no_safe_kill":{"signal-1":{"count":0,"ids":[]}}}',
     });
     expect(r.verdict).toBe('INDETERMINATE');
     expect(r.reason).toContain('the matcher is broken, not the tree');
@@ -151,18 +174,39 @@ describe('the registry is complete, classified, and carries its instruments', ()
     }
   });
 
-  it('the enumeration is reproducible: the covered cron lines plus the excluded ones account for all of them', () => {
-    const covered = rows.reduce((a, r) => a + (r.cron_lines as number), 0);
-    expect(covered).toBeGreaterThan(0);
-    expect(covered).toBeLessThanOrEqual(doc._enumeration.active_cron_lines);
+  it('EVERY row declares its host — a hostless row is invisible to every per-host consumer', () => {
+    // OPS-HOST-AUTO-REBOOT-W1. The whole point of the per-host split is that a consumer reads only
+    // the rows for the host it is acting on; a row with no host would be read by nobody, silently.
+    for (const r of rows) expect(String(r.host ?? '').trim().length, `row ${r.id}`).toBeGreaterThan(0);
+    expect([...new Set(rows.map((r) => r.host))].sort()).toEqual(['aoe-1', 'signal-1']);
   });
 
-  it('the residual no-safe-kill ruling matches the rows, so the window verdict cannot drift from its evidence', () => {
-    // R4. If a future wave reclassifies the last no-safe-kill row without updating the ruling,
-    // the deploy-free window would keep being justified by a row that no longer says so.
-    const actual = rows.filter((r) => r.class === 'no-safe-kill');
-    expect(doc._residual_no_safe_kill.count).toBe(actual.length);
-    expect([...doc._residual_no_safe_kill.ids].sort()).toEqual(actual.map((r) => r.id).sort());
+  it('the enumeration is reproducible per host, and each host records its OWN command', () => {
+    for (const h of ['signal-1', 'aoe-1']) {
+      const covered = rows.filter((r) => r.host === h).reduce((a, r) => a + (r.cron_lines as number), 0);
+      const en = doc._enumeration[h];
+      expect(en, `enumeration for ${h}`).toBeDefined();
+      expect(String(en.command ?? '').trim().length, `${h} command`).toBeGreaterThan(20);
+      expect(covered).toBeLessThanOrEqual(en.active_cron_lines);
+    }
+    // The two commands must DIFFER: signal-1's disruption event is a container recreate (a
+    // `docker exec` question) and aoe-1's is a reboot (strictly larger). Inheriting one command
+    // for both is the wrong-instrument defect this wave's R1 exists to fix.
+    expect(doc._enumeration['signal-1'].command).not.toBe(doc._enumeration['aoe-1'].command);
+  });
+
+  it('the residual no-safe-kill ruling matches the rows PER HOST, so no control drifts from its evidence', () => {
+    // If a future wave reclassifies the last no-safe-kill row without updating the ruling, the
+    // deploy-free window (signal-1) or the reboot gate (aoe-1) would keep being justified by a row
+    // that no longer says so. The gate asserts this too; this pins it at the data layer.
+    for (const h of ['signal-1', 'aoe-1']) {
+      const actual = rows.filter((r) => r.host === h && r.class === 'no-safe-kill');
+      expect(doc._residual_no_safe_kill[h].count, h).toBe(actual.length);
+      expect([...doc._residual_no_safe_kill[h].ids].sort(), h).toEqual(actual.map((r) => r.id).sort());
+    }
+    // aoe-1 having ZERO is the measured reason it is the host automated first — assert it, so a
+    // future no-safe-kill row on aoe-1 cannot land without this test going red and forcing a ruling.
+    expect(doc._residual_no_safe_kill['aoe-1'].count).toBe(0);
   });
 });
 

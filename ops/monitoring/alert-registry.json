@@ -353,6 +353,30 @@
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-KERNEL_STALENESS-W{NEXT}"
     },
     {
+      "alert_id": "KERNEL_AUTO_REBOOT",
+      "owner": "ops/monitoring/kernel-auto-reboot.sh",
+      "hosts": [
+        "aoe-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-KERNEL_AUTO_REBOOT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-KERNEL_AUTO_REBOOT-W{NEXT}"
+    },
+    {
+      "alert_id": "AOE_PEER_UNREACHABLE",
+      "owner": "ops/monitoring/aoe-peer-watchdog.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-AOE_PEER_UNREACHABLE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-AOE_PEER_UNREACHABLE-W{NEXT}"
+    },
+    {
       "alert_id": "LLM_SPEND_OVER_THRESHOLD",
       "owner": "ops/monitoring/llm-spend-monitor.py",
       "hosts": [

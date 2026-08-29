@@ -1,34 +1,64 @@
 {
-  "_comment": "OPS-DEPLOY-INTERLOCK-CRON-DEFER-W1 — the DECLARED set of crons a deploy can decapitate. Read by ops/scripts/deploy-cron-interlock.sh (its only consumer) and asserted by scripts/check-cron-interlock-coverage.mjs. THE CLASSIFICATION IS THE DELIVERABLE; the dispatch code around it is small. Placement is DERIVED, not taste: check-declaration-coverage.mjs pins CONSUMER_DIRS = ['ops/monitoring','ops/cron'], so a declaration read only from ops/scripts/ has zero readers there and would sit half-declared; and it needs no sync because deploy.yml runs `git reset --hard origin/main` BEFORE it invokes the interlock, so this file is always current at the only moment it is ever read. (Correcting the dispatching spec's third reason: ops/scripts/ IS placed on the host by that same reset, but monitoring-inventory-reconcile.py's ORPHAN scan is scoped to MONITORING_DIR=/opt/algovault-monitoring and never sees it — the CONSUMER_DIRS leg is the load-bearing one.)",
+  "_comment": "OPS-DEPLOY-INTERLOCK-CRON-DEFER-W1, made PER-HOST by OPS-HOST-AUTO-REBOOT-W1 — the DECLARED set of scheduled work a HOST-LEVEL DISRUPTION can decapitate. Read by ops/scripts/deploy-cron-interlock.sh (signal-1 deploys) and ops/monitoring/kernel-auto-reboot.sh (aoe-1 reboots), asserted by scripts/check-cron-interlock-coverage.mjs. THE CLASSIFICATION IS THE DELIVERABLE; the dispatch code around it is small. EVERY ROW DECLARES ITS `host`, and `_enumeration` / `_containers` / `_residual_no_safe_kill` are keyed by host — because the DISRUPTION EVENT differs per host and so does the enumeration that finds it. signal-1's event is `docker compose up --force-recreate`, which kills `docker exec`s; aoe-1's is a REBOOT, which is strictly larger — it stops every container, every host process and every in-flight Prefect run, so a `docker exec` grep is the WRONG INSTRUMENT there and would have produced a 1-row population and a structurally vacuous gate on the only host that reboots. Placement is DERIVED, not taste: check-declaration-coverage.mjs pins CONSUMER_DIRS = ['ops/monitoring','ops/cron'], so a declaration read only from ops/scripts/ has zero readers there and would sit half-declared; and it needs no sync because deploy.yml runs `git reset --hard origin/main` BEFORE it invokes the interlock, so this file is always current at the only moment it is ever read. (monitoring-inventory-reconcile.py's ORPHAN scan is scoped to MONITORING_DIR=/opt/algovault-monitoring and never sees ops/scripts/ — the CONSUMER_DIRS leg is the load-bearing one.)",
   "schema_version": 1,
-  "owner_wave": "OPS-DEPLOY-INTERLOCK-CRON-DEFER-W1",
+  "owner_wave": "OPS-DEPLOY-INTERLOCK-CRON-DEFER-W1 -> OPS-HOST-AUTO-REBOOT-W1",
   "verified_at": "2026-08-29",
-
   "_classes": {
     "safe-to-kill": "Atomic-replace publish, checkpoint-resumable, or idempotent on next fire. The deploy does NOTHING. The row exists so a future reader sees the job was CONSIDERED, not missed.",
     "preempt-and-catchup": "Killing loses work that a bounded catch-up can repair. SIGTERM, wait up to the derived budget for a checkpoint, then launch an SLO-gated catch-up detached.",
     "no-safe-kill": "Neither atomic nor repairable. Bounded wait, then PROCEED ANYWAY with a loud DEFERRED record. A deploy must never hang on a batch job.",
     "_indeterminate": "A row whose `reason` is missing or empty is INDETERMINATE, never a silent safe-to-kill. Same convention as schedule-boundary-rule.json's exemptions."
   },
-
   "_enumeration": {
-    "host": "signal-1 (204.168.185.24)",
-    "verified_at": "2026-08-29T03:17Z",
-    "command": "crontab -l | grep -vE '^\\s*(#|$)'   # then resolve each entry to its script and grep that script for a command-position `docker exec`",
-    "active_cron_lines": 100,
-    "lines_with_direct_docker_exec": 46,
-    "note": "Rows are keyed by PROCESS PATTERN, not by cron line: the interlock matches patterns, and one pattern (seed-signals.js) covers 28 cron lines. `cron_lines` on each row records the fan-out so the enumeration stays recoverable. The prior enumeration measured 91 active lines (OPS-HOST-KERNEL-REBOOT-W2) and 75 before that (W1) — re-derive, never inherit."
+    "signal-1": {
+      "host": "signal-1 (204.168.185.24)",
+      "verified_at": "2026-08-29T03:17Z",
+      "command": "crontab -l | grep -vE '^\\s*(#|$)'   # then resolve each entry to its script and grep that script for a command-position `docker exec`",
+      "active_cron_lines": 100,
+      "lines_with_direct_docker_exec": 46,
+      "note": "Rows are keyed by PROCESS PATTERN, not by cron line: the interlock matches patterns, and one pattern (seed-signals.js) covers 28 cron lines. `cron_lines` on each row records the fan-out so the enumeration stays recoverable. The prior enumeration measured 91 active lines (OPS-HOST-KERNEL-REBOOT-W2) and 75 before that (W1) — re-derive, never inherit."
+    },
+    "aoe-1": {
+      "host": "aoe-1 (178.104.200.44)",
+      "verified_at": "2026-08-29T06:2xZ",
+      "disruption_event": "kernel reboot",
+      "command": "crontab -l | grep -vE '^\\s*(#|$)'   # 7 lines   &&   docker exec aoe-prefect-server python -c '<read_deployments + schedules>'   # 11 deployments   &&   docker ps --format '{{.Names}}'   # 8 containers   — the UNION is the population, because a reboot stops all three. Deliberately NOT signal-1's `grep docker exec`: aoe-1 has ZERO direct docker-exec cron lines and exactly one indirect, so that command measures almost nothing here.",
+      "active_cron_lines": 7,
+      "prefect_deployments": 11,
+      "running_containers": 8,
+      "note": "Prefect INTERVAL schedules are derived from their anchor, never assumed: retune_nightly 86400s @ 2026-05-29T07:04:40Z, w2_gate_watcher 3600s and w3_gate_watcher 900s @ 07:04:41Z. Cron+Prefect union leaves :05-:12 as the longest contiguous clear run (8 min) — re-derived 2026-08-29, matching the W2/W3 hand-measured window rather than inheriting it."
+    }
   },
-
   "_containers": {
-    "recreated_by_deploy": ["crypto-quant-signal-mcp-mcp-server-1", "crypto-quant-signal-mcp-facilitator-1", "crypto-quant-signal-mcp-postgres-1"],
-    "evidence": "deploy.yml runs `docker compose up -d --build --force-recreate` in /opt/crypto-quant-signal-mcp; docker-compose.yml declares services mcp-server, facilitator, postgres. The plausible-ce-* containers are a SEPARATE compose project and are not touched.",
-    "note": "A `docker exec` into ANY of the three dies at that moment. `docker exec` into a non-signal-mcp container, and any host process, is out of scope by construction — see `exclusions`."
+    "signal-1": {
+      "recreated_by_deploy": [
+        "crypto-quant-signal-mcp-mcp-server-1",
+        "crypto-quant-signal-mcp-facilitator-1",
+        "crypto-quant-signal-mcp-postgres-1"
+      ],
+      "evidence": "deploy.yml runs `docker compose up -d --build --force-recreate` in /opt/crypto-quant-signal-mcp; docker-compose.yml declares services mcp-server, facilitator, postgres. The plausible-ce-* containers are a SEPARATE compose project and are not touched.",
+      "note": "A `docker exec` into ANY of the three dies at that moment. `docker exec` into a non-signal-mcp container, and any host process, is out of scope by construction — see `exclusions`."
+    },
+    "aoe-1": {
+      "stopped_by_reboot": [
+        "autonomous-optimizer-mcp-server-1",
+        "autonomous-optimizer-promotion-scanner-1",
+        "autonomous-optimizer-dashboard-internal-1",
+        "aoe-supervisor",
+        "aoe-prefect-worker",
+        "aoe-redis",
+        "aoe-pg-tunnel",
+        "aoe-prefect-server"
+      ],
+      "restart_policy": "unless-stopped on ALL EIGHT — measured 2026-08-29 via `docker inspect -f '{{.HostConfig.RestartPolicy.Name}}'`, not inherited from the boot contract, which names only the 4 must-survive.",
+      "evidence": "Last boot 2026-08-27T15:02:01Z (`uptime -s`): 6 of 8 containers reached StartedAt at boot+19s with RestartCount=0. The two later StartedAt values are unrelated to the boot cycle — aoe-pg-tunnel reconnects on peer-side Postgres bounces (RestartCount 7) and promotion-scanner restarted ~19h in.",
+      "note": "A reboot stops all eight and `unless-stopped` brings all eight back. The supervisor has never been needed across three hand-run reboot cycles (W1/W2/W3)."
+    }
   },
-
   "rows": [
     {
       "id": "carry-labeler",
+      "host": "signal-1",
       "script": "src/scripts/backfill-directional-labels.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/backfill-directional-labels",
@@ -45,6 +75,7 @@
     },
     {
       "id": "publish-merkle-batch",
+      "host": "signal-1",
       "script": "src/scripts/publish-merkle-batch.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/publish-merkle-batch",
@@ -61,6 +92,7 @@
     },
     {
       "id": "geo-weekly-cron",
+      "host": "signal-1",
       "script": "src/scripts/geo-weekly-cron.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/geo-weekly-cron",
@@ -77,6 +109,7 @@
     },
     {
       "id": "seed-signals",
+      "host": "signal-1",
       "script": "src/scripts/seed-signals.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/seed-signals",
@@ -93,6 +126,7 @@
     },
     {
       "id": "backfill-outcomes",
+      "host": "signal-1",
       "script": "src/scripts/backfill-outcomes.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/backfill-outcomes",
@@ -109,6 +143,7 @@
     },
     {
       "id": "hold-decision-labeler",
+      "host": "signal-1",
       "script": "ops/cron/hold-decision-labeler.sh",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/backfill-hold-decision-labels",
@@ -124,6 +159,7 @@
     },
     {
       "id": "oi-snapshot-sampler",
+      "host": "signal-1",
       "script": "src/scripts/oi-snapshot-sampler.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/oi-snapshot-sampler",
@@ -139,6 +175,7 @@
     },
     {
       "id": "agent-forum-post",
+      "host": "signal-1",
       "script": "src/scripts/agent-forum-post.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/agent-forum-post",
@@ -154,6 +191,7 @@
     },
     {
       "id": "monitor",
+      "host": "signal-1",
       "script": "src/scripts/monitor.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/monitor",
@@ -169,6 +207,7 @@
     },
     {
       "id": "seed-coverage-canary",
+      "host": "signal-1",
       "script": "ops/cron/seed-coverage-canary.sh",
       "container": "crypto-quant-signal-mcp-postgres-1 + crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/lib/tf-support",
@@ -184,6 +223,7 @@
     },
     {
       "id": "dwr-baseline-snapshot",
+      "host": "signal-1",
       "script": "ops/cron/dwr-baseline-snapshot.sh",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/dwr-baseline-snapshot",
@@ -199,6 +239,7 @@
     },
     {
       "id": "venue-readiness-report",
+      "host": "signal-1",
       "script": "src/scripts/venue-readiness-report.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/venue-readiness-report",
@@ -214,6 +255,7 @@
     },
     {
       "id": "chat-analytics-digest",
+      "host": "signal-1",
       "script": "src/scripts/chat-analytics-digest.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/chat-analytics-digest",
@@ -229,6 +271,7 @@
     },
     {
       "id": "rate-limit-digest-weekly",
+      "host": "signal-1",
       "script": "src/scripts/rate-limit-digest-weekly.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/rate-limit-digest-weekly",
@@ -244,6 +287,7 @@
     },
     {
       "id": "referral-payout-batch-detect",
+      "host": "signal-1",
       "script": "src/scripts/referral-payout-batch-detect.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/referral-payout-batch-detect",
@@ -259,6 +303,7 @@
     },
     {
       "id": "refresh-knowledge-pages",
+      "host": "signal-1",
       "script": "scripts/refresh-knowledge-pages.mjs",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "scripts/refresh-knowledge-pages",
@@ -274,6 +319,7 @@
     },
     {
       "id": "funding-stats-matview-refresh",
+      "host": "signal-1",
       "script": "crontab inline",
       "container": "crypto-quant-signal-mcp-postgres-1",
       "process_pattern": "REFRESH MATERIALIZED VIEW CONCURRENTLY funding_stats_14d",
@@ -289,6 +335,7 @@
     },
     {
       "id": "oi-snapshots-vacuum",
+      "host": "signal-1",
       "script": "crontab inline",
       "container": "crypto-quant-signal-mcp-postgres-1",
       "process_pattern": "VACUUM (ANALYZE) oi_snapshots",
@@ -304,6 +351,7 @@
     },
     {
       "id": "monitoring-inventory-reconcile",
+      "host": "signal-1",
       "script": "ops/monitoring/monitoring-inventory-reconcile.py",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "monitoring-inventory-reconcile",
@@ -319,6 +367,7 @@
     },
     {
       "id": "host-only-monitoring-canaries",
+      "host": "signal-1",
       "script": "/opt/algovault-monitoring/{db-superuser-canary.sh,directional-label-freshness.py,outcome-backfill-freshness.py,quota-exhaustion-canary.py,stripe-webhook-events-canary.sh,tier-misclassification-canary.sh,venue-slo-tiers-drift-canary.sh,webhook-delivery-canary.py}",
       "container": "crypto-quant-signal-mcp-mcp-server-1 + crypto-quant-signal-mcp-postgres-1",
       "process_pattern": "<eight distinct short read-only probes — see `script`>",
@@ -331,16 +380,80 @@
       "catchup_cmd": null,
       "source": "host-only",
       "verified_at": "2026-08-29"
+    },
+    {
+      "id": "aoe-containers",
+      "host": "aoe-1",
+      "script": "docker-compose services on aoe-1 (8 containers — see _containers['aoe-1'].stopped_by_reboot)",
+      "container": "n/a — these ARE the containers",
+      "process_pattern": "n/a — a reboot stops every container; there is no pattern to match",
+      "class": "safe-to-kill",
+      "reason": "All EIGHT carry restart=unless-stopped, so a reboot stops them and the daemon brings them back with no operator action. Measured across the last boot: 6 of 8 reached StartedAt at boot+19s with RestartCount=0, and three hand-run reboot cycles (W1/W2/W3) needed the aoe-supervisor zero times. aoe-pg-tunnel is the one with state to lose and it is the best-evidenced of the set — W2 measured it absorbing a peer-host Postgres outage unaided, reconnecting 4s before Postgres was ready.",
+      "max_runtime_s": 19,
+      "runtime_instrument": "boot-to-Up latency, not a job duration: `docker inspect -f '{{.State.StartedAt}}'` minus `uptime -s`, n=6 of 8 on the 2026-08-27T15:02:01Z boot cycle. The two excluded values are later unrelated restarts, not boot latency.",
+      "cron_lines": 0,
+      "cron": "n/a — daemon-managed",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-08-29"
+    },
+    {
+      "id": "aoe-prefect-schedules",
+      "host": "aoe-1",
+      "script": "11 Prefect deployments: aoe_daily_digest · aoe_weekly_digest · chaos_nightly · promote_hourly · regime_burst · regression_gate · retune_nightly · shadow_advance · w2_gate_watcher · w3_gate_watcher · w3c4_budget_tick",
+      "container": "aoe-prefect-worker (flows) / aoe-prefect-server (scheduler)",
+      "process_pattern": "n/a — flow runs are container-native, not docker exec",
+      "class": "safe-to-kill",
+      "reason": "Every deployment is a short, DB-state-driven tick that is idempotent on its next fire: the gate watchers re-evaluate live state, promote/advance/regression re-derive from the same rows, and the digests re-render. A killed run is re-scheduled by Prefect on the next tick with nothing to repair. The longest observed run is chaos_nightly at 60.3s — and that one exists to verify recovery, so a reboot during it is re-verified the following night. regime_burst carries no schedule at all (event-triggered), so a reboot cannot interrupt a scheduled fire of it.",
+      "max_runtime_s": 61,
+      "runtime_instrument": "Prefect API flow-run history, 2000 runs paginated at limit=200, 2026-08-29: max end_time-start_time per deployment — chaos_nightly 60.3s · retune_nightly 11.0s · shadow_advance 7.2s · aoe_daily_digest 5.6s · regression_gate 5.5s · promote_hourly 2.1s · aoe_weekly_digest 1.7s · w3c4_budget_tick 1.1s · w2_gate_watcher 0.7s · w3_gate_watcher 0.2s. Recorded value is the max, rounded up.",
+      "cron_lines": 0,
+      "cron": "Prefect schedules, NOT crontab: 0 0 * * * · 0 9 * * 1 · 25 10 * * * · 35 * * * * · 30 * * * * · 25 * * * * · 40 * * * * ; plus intervals retune_nightly 86400s and w2/w3 gate watchers 3600s/900s anchored 2026-05-29T07:04:4xZ",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-08-29"
+    },
+    {
+      "id": "aoe-monitoring-crons",
+      "host": "aoe-1",
+      "script": "/opt/algovault-monitoring/{aoe-shadow-writer-stall-canary.py,aoe-output-liveness-canary.py,aoe-promotion-health-canary.py,kernel-staleness-canary.sh,boot-contract-canary.sh,declaration-sync.sh}",
+      "container": "n/a — host processes",
+      "process_pattern": "n/a — host processes, not docker exec",
+      "class": "safe-to-kill",
+      "reason": "Six read-only probes and one declaration sync, every one of which re-derives its verdict from live state on its next fire. None writes application data; the heaviest side effect is a cooldown marker, which is re-derived. A reboot costs at most one skipped evaluation cycle.",
+      "max_runtime_s": 2,
+      "runtime_instrument": "direct timed runs on aoe-1 under ALGOVAULT_TG_TEST_INERT=1 and MONITORING_HOST_LABELS=aoe-1, 2026-08-29: shadow-writer-stall 0s · output-liveness 1s · promotion-health 1s · kernel-staleness 0s · boot-contract 0s · declaration-sync 2s. Recorded value is the max.",
+      "cron_lines": 6,
+      "cron": "13,18,23,28,33,38,43,48,53,57 * * * * · 47 * * * * · 41 * * * * · 37 7 * * * · 37 8 * * * · 27 * * * *",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-08-29"
+    },
+    {
+      "id": "aoe-monitoring-inventory-reconcile",
+      "host": "aoe-1",
+      "script": "/opt/algovault-monitoring/monitoring-inventory-reconcile.py",
+      "container": "reads aoe-1 host state; the only aoe-1 cron with an (indirect) docker exec",
+      "process_pattern": "monitoring-inventory-reconcile",
+      "class": "safe-to-kill",
+      "reason": "Diagnostic by design — no auto-install, no auto-copy, no mutation of anything it inspects. A killed run costs one daily reconciliation and the next re-derives every check from live host state. Broken out from the sibling crons row because it is an order of magnitude slower and because it is the single aoe-1 cron that signal-1's docker-exec enumeration would have found.",
+      "max_runtime_s": 43,
+      "runtime_instrument": "direct timed run on aoe-1 under ALGOVAULT_TG_TEST_INERT=1 MONITORING_HOST_LABELS=aoe-1 POSTURE_PEER_SIGNAL_1=204.168.185.24, 2026-08-29 (43s; its signal-1 twin measured 37s the same way)",
+      "cron_lines": 1,
+      "cron": "17 7 * * *",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-08-29"
     }
   ],
-
   "exclusions": [
     {
       "id": "no-docker-exec-crons",
       "what": "The 42 active cron lines on signal-1 that never reach a crypto-quant-signal-mcp-* container. 100 active lines, 46 with a direct `docker exec`, 12 more reaching one through a host script — 58 covered by `rows`, 42 excluded here.",
       "reason": "`docker compose up -d --build --force-recreate` recreates only the three services in /opt/crypto-quant-signal-mcp/docker-compose.yml. A cron that runs as a host process, or execs into a container belonging to another compose project, is not reachable by this deploy at all — there is nothing for an interlock to protect. Excluded by construction, not by judgement.",
       "re_derivation_command": "crontab -l | grep -vE '^\\s*(#|$)' | grep -v 'docker exec'   # then, for each resolved script path, `grep -E '(^|[;&|]|\\$\\(|\\bexec[[:space:]])[[:space:]]*docker[[:space:]]+exec' <script>` and confirm it is empty",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "host": "signal-1"
     },
     {
       "id": "entitlement-drain",
@@ -348,21 +461,38 @@
       "reason": "OUT OF SCOPE FOR THIS DEPLOY, settled by probe rather than by assumption. It belongs to the algovault-bot repo (absent from this one), and it runs a HOST process — `/opt/algovault-bot/.venv/bin/python scripts/entitlement-drain.py` — with zero `docker exec` anywhere in it. `docker compose up --force-recreate` on the signal-mcp stack cannot touch it.",
       "re_derivation_command": "grep -cE 'docker[[:space:]]+exec' /opt/algovault-bot/scripts/entitlement-drain.sh   # expect 0",
       "verified_at": "2026-08-29",
-      "separate_finding": "Its SCHEDULE is a different problem and is deliberately NOT fixed here: those ten minutes occupy every canonical off-boundary slot in the hour, which is why signal-1 has only :09 and :39 free and why OPS-HOST-AUTO-REBOOT-W1 faces a 2-minute target. Filed as OPS-BOT-CRON-SCHEDULE-GREED-W1; it is a bot-repo change and cannot ship from a signal-mcp wave. Note also that the script's own header docstring claims `*/5 * * * *`, which the live crontab contradicts — the docstring is stale and belongs to the same follow-up."
+      "separate_finding": "Its SCHEDULE is a different problem and is deliberately NOT fixed here: those ten minutes occupy every canonical off-boundary slot in the hour, which is why signal-1 has only :09 and :39 free and why OPS-HOST-AUTO-REBOOT-W1 faces a 2-minute target. Filed as OPS-BOT-CRON-SCHEDULE-GREED-W1; it is a bot-repo change and cannot ship from a signal-mcp wave. Note also that the script's own header docstring claims `*/5 * * * *`, which the live crontab contradicts — the docstring is stale and belongs to the same follow-up.",
+      "host": "signal-1"
     },
     {
       "id": "prose-only-docker-exec-mentions",
       "what": "ops/cron/analytics-drift-canary.sh and ops/cron/nav-drift-canary.sh.",
       "reason": "Both contain the literal string `docker exec`, and neither invokes it. One occurrence is a `#` comment recording a RETIRED implementation; the other sits inside an alert-body heredoc ('... host dist/ unusable AND docker exec failed ...'). A mention is not an invocation — the same rule check-canaries-wired.mjs already carries for comments and check-test-budget.mjs carries for string literals. scripts/check-cron-interlock-coverage.mjs therefore matches `docker exec` only in COMMAND POSITION, after stripping comments.",
       "re_derivation_command": "sed -E 's/(^|[[:space:]])#.*$/\\1/' ops/cron/<f>.sh | grep -cE '(^|[;&|]|\\$\\(|\\bexec[[:space:]])[[:space:]]*(sudo[[:space:]]+)?docker[[:space:]]+exec\\b'   # expect 0 for these two, 1..2 for the three real ones",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "host": "signal-1"
     }
   ],
-
   "_residual_no_safe_kill": {
-    "count": 2,
-    "ids": ["publish-merkle-batch", "geo-weekly-cron"],
-    "ruling": "The 18:00-02:59 UTC deploy-free window is NOT retired. It is now a DECLARED control with two named rows justifying it, both of which fire inside it (00:05 and Mon 01:00). What changes is that it stops being folklore carried by an agent-side memory file — a third rule source in an estate that declares two — and becomes data these rows own. OPS-HOST-AUTO-REBOOT-W1 should read this block, not the memory file.",
-    "retire_when": "publish-merkle-batch writes its batch row in the same transaction boundary as (or before) its on-chain send, and geo-weekly-cron gains a checkpoint. Neither is in scope here."
+    "signal-1": {
+      "count": 2,
+      "ids": [
+        "publish-merkle-batch",
+        "geo-weekly-cron"
+      ],
+      "ruling": "The 18:00-02:59 UTC deploy-free window is NOT retired. It is now a DECLARED control with two named rows justifying it, both of which fire inside it (00:05 and Mon 01:00). What changes is that it stops being folklore carried by an agent-side memory file — a third rule source in an estate that declares two — and becomes data these rows own. OPS-HOST-AUTO-REBOOT-W1 should read this block, not the memory file.",
+      "retire_when": "publish-merkle-batch writes its batch row in the same transaction boundary as (or before) its on-chain send, and geo-weekly-cron gains a checkpoint. Neither is in scope here."
+    },
+    "aoe-1": {
+      "count": 0,
+      "ids": [],
+      "ruling": "ZERO — and that is the measured reason aoe-1 is the right host to automate FIRST, not a gap in the enumeration. Every candidate is atomic-on-restart (8 containers, unless-stopped), idempotent on next fire (11 Prefect schedules, max 60.3s), or a read-only probe (7 crons, max 43s). Nothing on aoe-1 writes on-chain, publishes externally, or holds an unrepairable critical section — unlike signal-1, whose two no-safe-kill rows are exactly what keeps the 18:00-02:59 UTC deploy-free window alive.",
+      "gate_is_not_vacuous": "kernel-auto-reboot.sh's third gate can therefore never ABORT today. That is a REPORTED pass, never a silent one: the gate prints the aoe-1 row count it evaluated, so a zero that means 'nothing is unsafe' stays distinguishable from a zero that means 'the filter is broken'. Its value is forward-looking — the day a no-safe-kill job lands on aoe-1, the reboot starts deferring without anyone remembering to wire it."
+    }
+  },
+  "_hosts": {
+    "signal-1": "204.168.185.24 — the revenue host. Disruption event: `docker compose up -d --build --force-recreate`.",
+    "aoe-1": "178.104.200.44 — the AOE tuner. Disruption event: an unattended kernel REBOOT (OPS-HOST-AUTO-REBOOT-W1).",
+    "_why_per_host": "A row consulted for the wrong host is a guard reading a green light for a road it is not on. Every consumer MUST filter rows by the host it is acting on, resolved through the estate's identity chain (MONITORING_HOST_LABELS -> /etc/algovault-host-label -> REFUSE), never a default."
   }
 }

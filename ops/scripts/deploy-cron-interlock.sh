@@ -133,6 +133,22 @@ REGISTRY="${INTERLOCK_REGISTRY:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cr
 # vacuity hole on containers (it exits 0 for [] and {}), and this repo lints that shape out.
 # Seamed so --self-test can drive the load-failure branch without deleting an interpreter.
 PY_BIN="${INTERLOCK_PY:-python3}"
+# OPS-HOST-AUTO-REBOOT-W1 — THE REGISTRY IS NOW PER-HOST, so this script must say which host it is
+# acting on and read only that host's rows. A row consulted for the wrong host is a guard reading a
+# green light for a road it is not on.
+#
+# IDENTITY IS ASSERTED, NEVER ASSUMED, and resolution FAILS TOWARD REFUSAL — env
+# MONITORING_HOST_LABELS, then /etc/algovault-host-label, then INDETERMINATE. That is
+# declaration-sync.sh's and boot-contract-canary.sh's order verbatim, not a new dialect: an
+# unlabelled declaration-sync.sh once adopted signal-1's identity on aoe-1 and littered five
+# foreign declarations there, twice. There is deliberately NO DEFAULT — defaulting to signal-1 is
+# the exact trap monitoring-inventory-reconcile.py fell into.
+IDENTITY_FILE="${INTERLOCK_IDENTITY_FILE:-/etc/algovault-host-label}"
+resolve_host() {
+  local h="${MONITORING_HOST_LABELS:-}"
+  [ -n "$h" ] || { [ -r "$IDENTITY_FILE" ] && h="$(head -1 "$IDENTITY_FILE" 2>/dev/null | tr -d "[:space:]")"; }
+  printf '%s' "${h%%,*}"
+}
 # Anything the detached runner writes OUTSIDE the ledger (a setsid/exec failure before the record).
 # Without this the one failure mode that loses the runner entirely would be silent.
 RUNNER_LOG="${INTERLOCK_RUNNER_LOG:-/var/log/algovault-deploy-interlock-runner.log}"
@@ -198,7 +214,12 @@ emit_agg() { echo "INTERLOCK_VERDICT=$AGG"; }
 # That is a different fact from "a row is bad", and the caller answers it differently.
 registry_rows() {
   [ -f "$REGISTRY" ] || return 1
-  "$PY_BIN" - "$REGISTRY" <<'PY'
+  local host; host="$(resolve_host)"
+  # No resolvable identity means we cannot know WHICH rows apply. That is INDETERMINATE, never a
+  # guess and never "all rows" — evaluating aoe-1's population during a signal-1 deploy would probe
+  # patterns that cannot exist here and report a confident, meaningless PROCEED.
+  [ -n "$host" ] || return 1
+  "$PY_BIN" - "$REGISTRY" "$host" <<'PY'
 import json, sys
 VALID = ("safe-to-kill", "preempt-and-catchup", "no-safe-kill")
 try:
@@ -209,6 +230,15 @@ rows = doc.get("rows")
 # A registry WE author is a CONSTRUCTED corpus, so an empty declaration is vacuity and must
 # refuse — the same rule that lets this script stay permissive about the world's input.
 if not isinstance(rows, list) or not rows:
+    sys.exit(1)
+# PER-HOST (OPS-HOST-AUTO-REBOOT-W1). A row with no `host` is NOT silently skipped: it is a
+# defect in a corpus we author, so it refuses the whole load rather than vanishing from the
+# selection of every host.
+host = sys.argv[2]
+if any(not str((r or {}).get("host") or "").strip() for r in rows if isinstance(r, dict)):
+    sys.exit(1)
+rows = [r for r in rows if isinstance(r, dict) and r.get("host") == host]
+if not rows:
     sys.exit(1)
 out = []
 for r in rows:
@@ -570,12 +600,12 @@ cmd_self_test() {
   # driven deterministically. The real file is asserted separately at the end, because a hermetic
   # test is structurally blind to exactly what its seam replaces.
   reg() { printf '{"schema_version":1,"rows":[%s]}\n' "$2" > "$1"; }
-  local ROW_LABELER='{"id":"carry-labeler","container":"ctr","process_pattern":"dist/scripts/backfill-directional-labels","class":"preempt-and-catchup","reason":"seeded"}'
-  local ROW_SAFE='{"id":"seed-signals","container":"ctr","process_pattern":"dist/scripts/seed-signals","class":"safe-to-kill","reason":"idempotent on next fire"}'
-  local ROW_NOSAFE='{"id":"publish-merkle-batch","container":"ctr","process_pattern":"dist/scripts/publish-merkle-batch","class":"no-safe-kill","reason":"onchain then db"}'
-  local ROW_NOREASON='{"id":"unreasoned","container":"ctr","process_pattern":"p","class":"safe-to-kill","reason":"   "}'
-  local ROW_BADCLASS='{"id":"badclass","container":"ctr","process_pattern":"p","class":"probably-fine","reason":"stated"}'
-  local ROW_SECOND_PC='{"id":"other-job","container":"ctr","process_pattern":"dist/scripts/other","class":"preempt-and-catchup","reason":"stated"}'
+  local ROW_LABELER='{"id":"carry-labeler","host":"signal-1","container":"ctr","process_pattern":"dist/scripts/backfill-directional-labels","class":"preempt-and-catchup","reason":"seeded"}'
+  local ROW_SAFE='{"id":"seed-signals","host":"signal-1","container":"ctr","process_pattern":"dist/scripts/seed-signals","class":"safe-to-kill","reason":"idempotent on next fire"}'
+  local ROW_NOSAFE='{"id":"publish-merkle-batch","host":"signal-1","container":"ctr","process_pattern":"dist/scripts/publish-merkle-batch","class":"no-safe-kill","reason":"onchain then db"}'
+  local ROW_NOREASON='{"id":"unreasoned","host":"signal-1","container":"ctr","process_pattern":"p","class":"safe-to-kill","reason":"   "}'
+  local ROW_BADCLASS='{"id":"badclass","host":"signal-1","container":"ctr","process_pattern":"p","class":"probably-fine","reason":"stated"}'
+  local ROW_SECOND_PC='{"id":"other-job","host":"signal-1","container":"ctr","process_pattern":"dist/scripts/other","class":"preempt-and-catchup","reason":"stated"}'
   reg "$tmp/reg-labeler.json"  "$ROW_LABELER"
   reg "$tmp/reg-safe.json"     "$ROW_SAFE"
   reg "$tmp/reg-nosafe.json"   "$ROW_NOSAFE"
@@ -588,6 +618,11 @@ cmd_self_test() {
   printf 'not json at all\n'                > "$tmp/reg-broken.json"
 
   REGISTRY="$tmp/reg-labeler.json"
+  # OPS-HOST-AUTO-REBOOT-W1 — the registry is per-host, so the suite must declare which host it is
+  # driving. Exported rather than assigned to a global: resolve_host() reads the ENV at call time,
+  # which is the same channel production uses, so the seam does not bypass the resolution itself.
+  export MONITORING_HOST_LABELS=signal-1
+  printf 'signal-1\n' > "$tmp/identity"
 
   echo "deploy-cron-interlock --self-test"
 
@@ -645,6 +680,26 @@ cmd_self_test() {
      "$(grep -c 'job=unreasoned reason=unclassifiable-row' "$tmp/r1")" "1"
   ck "an unknown class is INDETERMINATE too" \
      "$(REGISTRY=$tmp/reg-badclass.json LEDGER=$tmp/r2 DOCKER_BIN=$tmp/rc0.sh cmd_preempt | tail -1)" "INTERLOCK_VERDICT=INDETERMINATE"
+
+  # ── PER-HOST scoping (OPS-HOST-AUTO-REBOOT-W1) ─────────────────────────────────────────────
+  # A row belonging to ANOTHER host must not be probed here. Driven with rc0 (which would DEFER if
+  # the row were evaluated) so a PROCEED is the assertion that it was filtered out.
+  reg "$tmp/reg-foreign.json" '{"id":"aoe-thing","host":"aoe-1","container":"ctr","process_pattern":"dist/scripts/aoe","class":"preempt-and-catchup","reason":"stated"}'
+  ck "a row for ANOTHER host is never evaluated here" \
+     "$(REGISTRY=$tmp/reg-foreign.json LEDGER=$tmp/h1 DOCKER_BIN=$tmp/rc0.sh cmd_preempt | tail -1)" "INTERLOCK_VERDICT=INDETERMINATE"
+  ck "…and it says the registry yielded nothing for this host, not that the host is clean" \
+     "$(grep -c 'reason=registry-unloadable' "$tmp/h1")" "1"
+  # NO RESOLVABLE IDENTITY is INDETERMINATE, never a guess and never "all rows". Defaulting to
+  # signal-1 is exactly the trap monitoring-inventory-reconcile.py fell into.
+  ck "an UNRESOLVABLE identity is INDETERMINATE, never a default" \
+     "$(MONITORING_HOST_LABELS= IDENTITY_FILE=/nonexistent LEDGER=$tmp/h2 DOCKER_BIN=$tmp/rc0.sh cmd_preempt | tail -1)" "INTERLOCK_VERDICT=INDETERMINATE"
+  # The FILE leg of the chain is real, not decorative: with the env cleared it must still resolve.
+  ck "the identity FILE is a working fallback when the env is empty" \
+     "$(MONITORING_HOST_LABELS= IDENTITY_FILE=$tmp/identity DOCKER_BIN=$tmp/rc1.sh LEDGER=$tmp/h3 cmd_preempt | tail -1)" "INTERLOCK_VERDICT=PROCEED"
+  # A HOSTLESS row refuses the whole load rather than vanishing from every host's selection.
+  reg "$tmp/reg-hostless.json" '{"id":"ghost","container":"ctr","process_pattern":"p","class":"safe-to-kill","reason":"stated"}'
+  ck "a row with NO host refuses the load, never silently disappears" \
+     "$(REGISTRY=$tmp/reg-hostless.json LEDGER=$tmp/h4 DOCKER_BIN=$tmp/rc0.sh cmd_preempt | tail -1)" "INTERLOCK_VERDICT=INDETERMINATE"
 
   # ── registry load failure: fail OPEN and LOUD ──────────────────────────────────────────────
   ck "a MISSING registry is INDETERMINATE" \
@@ -826,6 +881,10 @@ cmd_self_test() {
   ck "SEAM — the REAL registry still carries the carry-labeler row this file hardcodes" \
      "$(registry_rows 2>/dev/null | awk -F'\t' -v p="$LABELER_PATTERN" '$1=="carry-labeler" && $3==p' | wc -l | tr -d ' ')" "1"
   ck "SEAM — the REAL python default is python3" "$PY_BIN" "python3"
+  ck "SEAM — the REAL identity file default is the estate's shared marker" \
+     "$IDENTITY_FILE" "/etc/algovault-host-label"
+  ck "SEAM — the REAL registry declares a host on EVERY row" \
+     "$("$PY_BIN" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(sum(1 for r in d["rows"] if not str(r.get("host") or "").strip()))' "$REGISTRY")" "0"
 
   rm -rf "$tmp"
   if [ "$fails" -gt 0 ]; then
