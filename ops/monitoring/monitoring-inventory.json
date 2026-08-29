@@ -709,7 +709,7 @@
       "schedule": "9 19 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "2d9861afcbda7cad2229436e68b94ca8e03f22b914c92c93ce4b6d0f12e663bf",
+      "sha256": "3fd266eb805996aabf412738e6ab429b31119d66fd1fa849012c2710e3ad0864",
       "alert_ids": [
         "book_liveness_ceiling"
       ],

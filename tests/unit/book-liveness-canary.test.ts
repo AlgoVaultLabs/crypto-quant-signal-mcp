@@ -68,14 +68,21 @@ function runMain(mode: string, psqlPy: string) {
  * state that distinguishes them is the one this canary is built to reach: a mature counter with
  * zero suppressions, i.e. a fully enforcing gate.
  */
-function psqlStub(frozen: string, persistence: string, floor: string, counterAge = '4'): string {
+function psqlStub(
+  frozen: string, persistence: string, floor: string,
+  counterAge = '4', shadowAge = '99999',
+): string {
   return [
     'def _q(sql):',
     '    if "n_frozen" in sql:',
     `        return ${JSON.stringify(frozen)}`,
     '    if "window_days_seen" in sql:',
     `        return ${JSON.stringify(persistence)}`,
-    '    if "MAX(date)" in sql:',
+    // Both remaining builders mention MAX(date); route on what is UNIQUE to each, or a
+    // reordering of the two would silently swap which answer each query receives.
+    '    if "99999" in sql:',
+    `        return ${JSON.stringify(shadowAge)}`,
+    '    if "MIN(date)" in sql:',
     `        return ${JSON.stringify(counterAge)}`,
     `    return ${JSON.stringify(floor)}`,
     'm.psql = _q',
@@ -161,7 +168,7 @@ describe('book-liveness-canary — mode-awareness', () => {
   it('shadow and enforce read DIFFERENT ceiling tables on identical input',
     { timeout: 40_000 }, () => {
       // 15 frozen of 500 = 3.00%: under XT's 6.0 shadow ceiling, over the 1.0 enforce ratchet.
-      const rows = psqlStub('XT|500|15', '', '');
+      const rows = psqlStub('XT|500|15', '', '', '4', '3');   // shadow tail already aged out
       const shadow = runMain('shadow', rows);
       const enforce = runMain('enforce', rows);
       expect(tokenLines(shadow.stdout)).toEqual([`${TOKEN}=PASS`]);
@@ -201,6 +208,27 @@ describe('book-liveness-canary — closed-vs-broken discriminator', () => {
     expect(r.status, r.stderr).toBe(0);
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
     expect(r.stdout).toMatch(/INSUFFICIENT_WINDOW - the counter is 4 day\(s\) old, needs 28/);
+  });
+});
+
+describe('book-liveness-canary — the shadow→enforce cutover must not page on itself', () => {
+  // MEASURED at the real flip, 2026-08-29T03:25:45Z: the enforce table breached HTX 2.36% and
+  // XT 2.85% within seconds, and ALL 21 offending rows were emitted BEFORE the flip (post-flip
+  // count 0 on every venue). The mode flips in an instant; the LOOKBACK_DAYS window does not.
+  it('a fresh shadow tail defers the ratchet and says so', { timeout: 30_000 }, () => {
+    // 15 frozen of 500 = 3.00% — over the 1.0 enforce ratchet, under XT's 6.0 shadow ceiling.
+    const r = runMain('enforce', psqlStub('XT|500|15', '', '', '28', '0'));
+    expect(r.status, r.stderr).toBe(0);
+    expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
+    expect(r.stdout).toMatch(/frozen ceilings=shadow \(MIXED_WINDOW\)/);
+    expect(r.stdout).toMatch(/MIXED_WINDOW - shadow last wrote 0d ago, lookback is 3d/);
+  });
+
+  it('once the window is entirely post-transition the ratchet BITES', { timeout: 30_000 }, () => {
+    const r = runMain('enforce', psqlStub('XT|500|15', '', '', '28', '3'));
+    expect(r.status, r.stderr).toBe(0);
+    expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
+    expect(r.stdout).toMatch(/BREACH frozen XT: 3\.00%.*ceiling 1\.0%/);
   });
 });
 

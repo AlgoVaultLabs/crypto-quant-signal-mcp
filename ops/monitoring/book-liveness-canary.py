@@ -224,6 +224,46 @@ def build_counter_age_sql(reason):
     )
 
 
+def build_shadow_recency_sql():
+    """Whole days since the SHADOW stage last wrote a suppression. 99999 when it never did.
+
+    This is how the canary knows whether its frozen-row window is still carrying rows from the
+    PREVIOUS rollout stage — see MIXED_WINDOW below.
+    """
+    return (
+        "SELECT COALESCE((NOW()::date - MAX(date)), 99999)"
+        " FROM emit_suppressions WHERE reason = 'frozen_book_shadow';"
+    )
+
+
+def frozen_table_for(mode, shadow_age_days, lookback_days):
+    """(table, label) - which frozen-row ceiling applies RIGHT NOW.
+
+    -- MIXED_WINDOW: why the enforce ratchet cannot bite the instant the flag flips --
+    #
+    # The frozen-row check reads a LOOKBACK_DAYS window of already-emitted rows. The mode flag
+    # flips in one instant; that window does not. For LOOKBACK_DAYS after a shadow->enforce
+    # flip the window is still full of rows the gate was NOT YET SUPPRESSING, and judging them
+    # against the enforce ratchet pages on a regression that never happened.
+    #
+    # MEASURED at the real flip, 2026-08-29T03:25:45Z: the enforce table breached HTX 2.36%
+    # and XT 2.85% within seconds, and ALL 21 offending rows (ASTER 3, GATE 2, HTX 6, XT 10)
+    # were emitted BEFORE the flip - post-flip count was 0 on every venue. A guard that fires
+    # on its own cutover teaches the operator to ignore it, which is the failure mode this
+    # whole wave exists to retire.
+    #
+    # So the ratchet engages only once the window is ENTIRELY post-transition, detected from
+    # the DATA rather than from a stamp the canary would have to keep: `frozen_book_shadow`
+    # rows carry the last day the previous stage was writing. No new state, self-correcting,
+    # and it handles a flip BACK to shadow for free.
+    """
+    if mode != "enforce":
+        return FROZEN_CEILING_PCT_SHADOW, "shadow"
+    if shadow_age_days < lookback_days:
+        return FROZEN_CEILING_PCT_SHADOW, "shadow (MIXED_WINDOW)"
+    return FROZEN_CEILING_PCT_ENFORCE, "enforce"
+
+
 def build_floor_sql(window_days, reason):
     """Maximum suppressions recorded for any single (venue, day) in the window."""
     return (
@@ -395,9 +435,22 @@ def main():
         return emit("PASS", 0)
 
     reason = reason_for(mode)
-    frozen_table = FROZEN_CEILING_PCT_ENFORCE if mode == "enforce" else FROZEN_CEILING_PCT_SHADOW
+
+    try:
+        srows = parse_rows(psql(build_shadow_recency_sql()), 1)
+    except QueryError as e:
+        print("[book-liveness-canary] %s INDETERMINATE - shadow-recency query: %s" % (stamp, e),
+              file=sys.stderr)
+        return emit("INDETERMINATE", EXIT_INDETERMINATE)
+    shadow_age = int(srows[0][0] or 0) if srows else 99999
+
+    frozen_table, table_label = frozen_table_for(mode, shadow_age, LOOKBACK_DAYS)
     info.append("gate mode=%s (frozen ceilings=%s, suppression reason=%s)"
-                % (mode, "enforce" if mode == "enforce" else "shadow", reason))
+                % (mode, table_label, reason))
+    if "MIXED_WINDOW" in table_label:
+        info.append("frozen window MIXED_WINDOW - shadow last wrote %dd ago, lookback is %dd; the "
+                    "enforce ratchet engages once the window is entirely post-transition"
+                    % (shadow_age, LOOKBACK_DAYS))
 
     # -- 1. frozen-row rate --
     try:
@@ -603,6 +656,20 @@ def _self_test():
        lambda: "reason = 'frozen_book'" in build_counter_age_sql("frozen_book"), True)
     ck("counter-age sql is NOT window-bounded",
        lambda: "INTERVAL" not in build_counter_age_sql("frozen_book"), True)
+
+    # MIXED_WINDOW: the ratchet must NOT bite while the window still carries shadow-era rows
+    ck("shadow mode uses the shadow table",
+       lambda: frozen_table_for("shadow", 0, 3)[1], "shadow")
+    ck("enforce with a FRESH shadow tail defers the ratchet",
+       lambda: frozen_table_for("enforce", 0, 3)[1], "shadow (MIXED_WINDOW)")
+    ck("enforce with a fresh tail really returns the LOOSER table",
+       lambda: frozen_table_for("enforce", 0, 3)[0] is FROZEN_CEILING_PCT_SHADOW, True)
+    ck("enforce past the lookback engages the ratchet",
+       lambda: frozen_table_for("enforce", 3, 3)[1], "enforce")
+    ck("enforce with no shadow history ever engages immediately",
+       lambda: frozen_table_for("enforce", 99999, 3)[1], "enforce")
+    ck("shadow-recency sql scopes the shadow reason",
+       lambda: "reason = 'frozen_book_shadow'" in build_shadow_recency_sql(), True)
 
     # ceiling lookup falls back, and the enforce table really is the ratchet
     ck("shadow ceiling per venue", lambda: ceiling(FROZEN_CEILING_PCT_SHADOW, "XT"), 6.0)
