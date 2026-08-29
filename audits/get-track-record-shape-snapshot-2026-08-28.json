@@ -1,0 +1,82 @@
+{
+  "wave": "DEV-TRACK-RECORD-TOOL-PARITY-W1",
+  "endpoint": "get_track_record (MCP tool)",
+  "snapshot_date": "2026-08-28",
+  "captured_at_utc": "2026-08-28",
+  "change_class": "NEW PUBLIC SURFACE — a second channel for an aggregate already published; no new field, no new number",
+  "change_note": "The track record becomes callable as a TOOL. Three live tool descriptions (get_trade_call, get_trade_signal, get_market_regime) cite performance://signal-performance as the evidence behind their trust claim, and a harness that bridges tools only cannot open a resource URI — DeepSeek Harness says so verbatim in packages/mcp/mcp-client/README.md: 'Tools are the only bridged MCP capability — Resources and Prompts have no harness consumer mechanism and are deferred.' So the citation was a dead pointer in the one place the moat is supposed to be provable. This tool computes NOTHING: it reads the one producer (getSignalPerformance) and projects it through the one exported allow-list formatter (src/lib/public-performance-formatter.ts) that performance://signal-performance and GET /api/performance-public also call. Two code paths computing a win rate is how two different win rates ship. The full aggregate is ~1.1 MB (byExchange carries a per-asset breakdown per venue), which is unusable inside the very harness this tool exists for, so the DEFAULT response is the compact head and byAsset / byExchange / recentSignals are opt-in via `include`. `include` widens the SECTIONS returned; it never widens the ROWS disclosed.",
+  "source": "src/tools/get-track-record.ts (runGetTrackRecord) + src/lib/public-performance-formatter.ts (formatPublicPerformance); pre-deploy capture",
+  "allowed_keys": [
+    "_algovault",
+    "byAsset",
+    "byCallType",
+    "byExchange",
+    "byTier",
+    "byTimeframe",
+    "methodology",
+    "overall",
+    "period",
+    "recentSignals",
+    "totalCalls"
+  ],
+  "default_response_keys": [
+    "totalCalls",
+    "period",
+    "overall",
+    "byCallType",
+    "byTimeframe",
+    "byTier",
+    "methodology",
+    "_algovault"
+  ],
+  "include_gated_keys": [
+    "byAsset",
+    "byExchange",
+    "recentSignals"
+  ],
+  "forbidden_keys": [
+    "equities",
+    "outcome_return_pct",
+    "outcome_price",
+    "outcome_won",
+    "phase_e_wr",
+    "eligible_non_hold",
+    "pfe_return_pct",
+    "mae_return_pct",
+    "call",
+    "confidence",
+    "signal_hash",
+    "merkle_proof",
+    "descriptionRef"
+  ],
+  "forbidden_keys_note": "`equities` is forbidden HERE and was simultaneously REMOVED from performance://signal-performance by this wave. It is absent from audits/api-performance-public-shape-snapshot-2026-07-15.json's allowed_keys, and equities are under the standing public-copy HOLD that keeps both equity tools publicListing:false — so a second public channel carrying it would have widened a held disclosure. The formatter cannot emit it: the output object is built by naming permitted keys, never by spreading the producer's value.",
+  "byAsset_value_keys": ["count", "tier", "pfeWinRate"],
+  "byTier_value_keys": ["tier", "name", "label", "color", "count", "evaluated", "pfeWinRate", "assets"],
+  "byTimeframe_value_keys": ["count", "evaluated", "pfeWinRate"],
+  "byCallType_value_keys": ["count", "evaluated", "pfeWinRate"],
+  "byExchange_value_keys": ["exchange", "count", "evaluated", "pfeWinRate", "byTimeframe", "byTier", "byCallType", "byAsset"],
+  "recentSignals_value_keys": ["id", "coin", "timeframe", "tier", "created_at", "exchange"],
+  "_algovault_value_keys": ["brand", "note", "get_started", "docs", "tool", "version", "included_sections", "signal_performance"],
+  "row_allow_list": {
+    "venues": "byExchange is restricted to listVenues('promoted') INTERSECT getActivePromotedVenueIds() — the fail-CLOSED DB read narrowed by the retired-venue subtraction. Measured 2026-08-28 that is 14 ids; BITMART and EDGEX are `retired` and WEEX is `shadow`, and none of the three may appear. An unreadable or empty venues table yields NO per-venue rows, never all of them (the SV-02 contract from OPS-AUDIT-REMEDIATION-MED-W1).",
+    "timeframes": "Shadow timeframes (1m, 3m) are stripped from byTimeframe — and from each admitted venue's nested byTimeframe — unless named in SHADOW_REVEAL_TIMEFRAMES. Prod reveals 3m only, so 1m must not appear.",
+    "enforcement": "Allow-list BY CONSTRUCTION in src/lib/public-performance-formatter.ts: the output object is built by naming permitted keys, so a field added to PerformanceStats cannot leak through and a newly-shadowed venue is excluded with no code edit."
+  },
+  "error_contract": "The tool REFUSES in-band (structured payload + isError:true), it never throws: (a) INVALID_INCLUDE when `include` names a section outside the literal union — the payload lists allowed_sections and a suggested_include; (b) VENUE_BREAKDOWN_UNAVAILABLE when byExchange was explicitly requested and the venue allow-list is empty, which distinguishes 'registry unreadable' from 'no venues listed' instead of serving an ambiguous {}. A default call (no include) never hits either branch. Unexpected errors fall through to index.ts toolErrorContent.",
+  "cache_contract": {
+    "description": "Inherits the producer's bucket-keyed rolling aggregate cache (getPerformanceStatsAsync). The tool adds no cache of its own, so tool and resource observe the same generation. The venue allow-list inherits venue-store's retired-set TTL cache.",
+    "per_caller_variance": "None. The response carries no license-derived or per-caller field; `_algovault` is the static public CTA block plus the tool name, package version and the echoed include list."
+  },
+  "consumers": [
+    "MCP clients that bridge tools only (DeepSeek Harness @deepseek-ai/dsh-mcp-client, Codex-style harnesses)",
+    "GET /capabilities projection (registry-derived; name + description + channels + quota)",
+    "dist/knowledge/latest.json response_shapes (via scripts/build-knowledge-json.mjs)"
+  ],
+  "drift_check_command": "curl -s -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"get_track_record\",\"arguments\":{}}}' --max-time 30 | sed -n 's/^data: //p' | head -1 | python3 -c \"import sys,json; d=json.loads(json.load(sys.stdin)['result']['content'][0]['text']); ALLOW=['totalCalls','period','overall','byCallType','byTimeframe','byTier','methodology','_algovault']; assert sorted(d.keys())==sorted(ALLOW), 'DEFAULT-KEY DRIFT: '+str(sorted(d.keys())); blob=json.dumps(d); assert all(k not in blob for k in ['equities','outcome_return_pct','outcome_price','pfe_return_pct','mae_return_pct']), 'FORBIDDEN KEY LEAK'; print('shape OK, tool', d['_algovault']['tool'])\"",
+  "anchors_at_capture": {
+    "default_response_bytes_approx": 18000,
+    "full_include_response_bytes_approx": 1150000,
+    "promoted_venue_count": 14,
+    "note": "The ~64x size ratio between the default head and the fully-included response is the reason `include` exists: byExchange alone is ~466 KB because it carries a per-asset breakdown for every venue. A key-set change, a forbidden-key leak, or a per-venue row for a non-promoted venue is the drift signal."
+  }
+}

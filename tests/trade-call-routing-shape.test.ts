@@ -1,10 +1,17 @@
 /**
  * TRADE-CALL-ROUTING-RESOLVER-W1 R4 — public input-shape drift canary.
  *
- * Locks the tool input-schema contract against
- * audits/trade-call-routing-shape-snapshot-2026-06-09.json: the additive
- * optional params, the 2 architect-sanctioned (A1) non-additive default-key
- * removals on get_trade_call, and tools/list staying 9 (no add/remove/rename).
+ * Locks the tool input-schema contract against the CURRENT
+ * audits/trade-call-routing-shape-snapshot-*.json: the additive optional params, the 2
+ * architect-sanctioned (A1) non-additive default-key removals on get_trade_call, and the
+ * tool set matching what the code actually declares.
+ *
+ * DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2 repointed this from the 2026-06-09 snapshot — which had
+ * been SUPERSEDED TWICE and still recorded `tools_list_count: 9` — to the current one, and
+ * replaced the bare digit with a comparison against the live derivation. A count asserted as a
+ * literal on both sides proves only that two literals match; asserting the snapshot against
+ * `liveMcpToolNames()` and `allToolNames()` is what makes this a drift canary rather than a
+ * second copy of the number.
  * Source-text canary in the CHANGE-DEFAULT-EXCHANGE-W1 style (the live
  * tools/list inputSchema is verified post-deploy via the snapshot's
  * drift_check_command).
@@ -15,17 +22,22 @@ import { PUBLIC_TOOL_ENUM_PARAMS } from '../src/lib/tool-param-schema.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { allToolNames } from '../src/lib/feature-registry.js';
+import { liveMcpToolNames } from '../src/lib/equities/equity-tools-flag.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel: string): string => readFileSync(join(REPO_ROOT, rel), 'utf8');
-const snapshot = JSON.parse(read('audits/trade-call-routing-shape-snapshot-2026-06-09.json'));
+const snapshot = JSON.parse(read('audits/trade-call-routing-shape-snapshot-2026-08-28.json'));
 const indexSrc = read('src/index.ts');
 const descSrc = read('src/tool-descriptions.ts');
 
 describe('TRADE-CALL-ROUTING-RESOLVER-W1 — public input-shape drift canary', () => {
-  it('tools/list stays 9 — no add / remove / rename', () => {
-    expect(new Set(allToolNames()).size).toBe(9);
-    expect(snapshot.tools_list_count).toBe(9);
+  it('the snapshot documents the tool set the code actually declares', () => {
+    // The snapshot's count is the LIVE surface (what an agent can call); the declared set is
+    // larger by exactly the flag-gated equity tools. Both sides derive, so an add/remove/rename
+    // that forgets the snapshot goes red here rather than shipping a stale public contract.
+    expect(snapshot.tools_list_count).toBe(liveMcpToolNames({}).length);
+    expect([...snapshot.allowed_keys].sort()).toEqual(liveMcpToolNames({}).sort());
+    expect(new Set(allToolNames()).size).toBe(liveMcpToolNames({}).length + 2); // + the 2 gated equity tools
   });
 
   it('get_trade_call gains the additive optional assetClass param', () => {

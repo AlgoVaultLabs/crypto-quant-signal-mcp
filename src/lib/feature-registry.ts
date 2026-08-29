@@ -17,6 +17,7 @@ import {
   CHAT_KNOWLEDGE_DESCRIPTION,
   GET_EQUITY_CALL_DESCRIPTION,
   GET_EQUITY_REGIME_DESCRIPTION,
+  GET_TRACK_RECORD_DESCRIPTION,
   TRADE_CALL_ALIAS_SUFFIX,
 } from '../tool-descriptions.js';
 // SCAN-RANKBY-W1: the rankBy lens set is advertised on /capabilities from the SINGLE
@@ -113,6 +114,7 @@ const DESCRIPTIONS: Record<string, string> = {
   CHAT_KNOWLEDGE_DESCRIPTION,
   GET_EQUITY_CALL_DESCRIPTION,
   GET_EQUITY_REGIME_DESCRIPTION,
+  GET_TRACK_RECORD_DESCRIPTION,
 };
 
 /**
@@ -213,6 +215,42 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
     x402: null,
     descriptionRef: 'SEARCH_KNOWLEDGE_DESCRIPTION',
     enabled: true,
+  },
+  {
+    // DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2 — the track record on the tools channel.
+    //
+    // Every flag below is pinned by `scripts/check-feature-registry-drift.mjs --check`, so
+    // the values are decisions, not defaults:
+    //   • `httpX402: false` — HTTP_TOOLS (x402-http-routes.ts) is a hand-maintained,
+    //     deliberately alias-keyed literal that check 3 asserts equals the registry's
+    //     httpX402 set. A `true` here without an HTTP route is drift.
+    //   • `x402: null` — check 2 requires TOOL_PRICING keys for every priced feature. This
+    //     reads a cached aggregate and calls no exchange; it is the cheapest call on the
+    //     surface, and pricing the proof of the track record would be self-defeating.
+    //   • no `webhookEvent`, `webhook: false` — check 5 derives the webhook VALID_EVENTS set
+    //     from this field. An aggregate has no event to emit.
+    //   • `a2mcp: false` — check 6 requires an a2mcp tool to be priced AND httpX402.
+    //   • `acp: false` — every channels.acp tool needs exactly one offerings.ts entry.
+    //   • `bot: false` — the TG bot's command surface FOLLOWS this flag; a bot command is a
+    //     separate UX decision and a separate repo.
+    //
+    // `quota.unit: 'rate-limited'` mirrors the knowledge tools: not metered against the
+    // 100/mo call quota. `call-class.ts` derives UNMETERED_TOOLS from this via toolsOnAxis,
+    // so there is no parallel hand-kept list to update.
+    //
+    // `publicListing: false` is a SCOPE boundary, not a judgement on the tool. publicToolNames()
+    // feeds the nav Platform ▸ Tools mega-menu, the /tools index and the docs outline, so a
+    // `true` regenerates landing/** and docs/** — outside this wave's firewall. It does NOT
+    // hide the tool: `tools/list` and /capabilities are unchanged by this field, so every
+    // tools-only harness still gets it. Surfacing it on brand pages is a follow-up wave.
+    name: 'get_track_record',
+    aliases: [],
+    channels: { mcp: true, httpX402: false, bot: false, webhook: false, a2mcp: false, acp: false },
+    quota: { unit: 'rate-limited', holdFree: false },
+    x402: null,
+    descriptionRef: 'GET_TRACK_RECORD_DESCRIPTION',
+    enabled: true,
+    publicListing: false,
   },
 ];
 

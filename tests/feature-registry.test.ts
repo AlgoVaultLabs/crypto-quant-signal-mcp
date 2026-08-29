@@ -13,10 +13,13 @@ import {
 import { TOOL_PRICING } from '../src/lib/x402.js';
 import { RANK_BY_VALUES } from '../src/lib/rank-constants.js';
 
-// The live tools/list (3-step handshake, Step-0 2026-06-08): 8 canonical + the alias.
+// The DECLARED tool set (name ∪ aliases): 9 canonical + the get_trade_signal alias.
+// DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2 added `get_track_record` (9 → 10 declared, 7 → 8 on the
+// live tools/list — the two equity tools stay flag-gated OFF; see equity-tools-dark-retire).
 const LIVE_TOOLS = [
   'get_trade_call', 'get_trade_signal', 'get_market_regime', 'scan_funding_arb',
   'scan_trade_calls', 'get_equity_call', 'get_equity_regime', 'chat_knowledge', 'search_knowledge',
+  'get_track_record',
 ].sort();
 
 // Price-key tolerant of CH3's re-keying (alias-keyed today → canonical after CH3).
@@ -25,7 +28,7 @@ const price = (canonical: string, alias?: string): number | undefined =>
   (alias ? (TOOL_PRICING as Record<string, number>)[alias] : undefined);
 
 describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
-  it('(a) name ∪ aliases == live tools/list (9 names, alias included)', () => {
+  it('(a) name ∪ aliases == the declared tool set (10 names, alias included)', () => {
     expect([...allToolNames()].sort()).toEqual(LIVE_TOOLS);
   });
 
@@ -54,7 +57,7 @@ describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
     expect(json).not.toMatch(/outcome_|eligible_non_hold|descriptionRef|trackCall|owner_key|ipHash/);
   });
 
-  it('(c2) projection lists all 9 callable names with public fields only', () => {
+  it('(c2) projection lists all 10 callable names with public fields only', () => {
     const proj = projectCapabilities().tools;
     expect(proj.map((t) => t.name).sort()).toEqual(LIVE_TOOLS);
     const BASE = ['canonical', 'channels', 'description', 'enabled', 'name', 'quota', 'x402'];
@@ -87,9 +90,15 @@ describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
     expect(getFeature('nonexistent_tool')).toBeUndefined();
   });
 
-  it('registry has 8 canonical specs; chat/search are rate-limited (not call-metered)', () => {
-    expect(FEATURE_REGISTRY).toHaveLength(8);
+  it('registry has 9 canonical specs; chat/search/track-record are rate-limited (not call-metered)', () => {
+    expect(FEATURE_REGISTRY).toHaveLength(9);
     expect(getFeature('chat_knowledge')!.quota.unit).toBe('rate-limited');
     expect(getFeature('search_knowledge')!.quota.unit).toBe('rate-limited');
+    // DEV-TRACK-RECORD-TOOL-PARITY-W1: get_track_record reads a cached aggregate and calls no
+    // exchange, so it is unmetered like the knowledge tools. `call-class.ts` DERIVES
+    // UNMETERED_TOOLS from this field, so asserting it here is asserting the billing axis.
+    expect(getFeature('get_track_record')!.quota.unit).toBe('rate-limited');
+    expect(getFeature('get_track_record')!.x402).toBeNull();
+    expect(getFeature('get_track_record')!.publicListing).toBe(false);
   });
 });

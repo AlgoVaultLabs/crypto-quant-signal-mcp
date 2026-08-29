@@ -23,6 +23,10 @@ import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { runScanTradeCall, SCAN_TRADE_CALLS_SCHEMA, SCAN_TRADE_CALLS_DESCRIPTION } from './tools/scan-trade-calls.js';
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
+// DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2: the ONE public allow-list projection of the track
+// record. Consumed here by BOTH `performance://signal-performance` and
+// `GET /api/performance-public`, and by `src/tools/get-track-record.ts`. Single derivation.
+import { formatPublicPerformance, resolvePublicPerformanceAllowList } from './lib/public-performance-formatter.js';
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
 import { renderBrandFooter } from './lib/footer-content.js';
 import {
@@ -58,8 +62,11 @@ import { mountOkxA2mcpRoutes } from './lib/okx-a2mcp.js';
 import { startAcpSellerWorker } from './channels/acp/seller-worker.js';
 import { PUBLIC_READONLY_TOOL_ANNOTATIONS } from './tool-annotations.js';
 import { getEquityRegime } from './lib/equities/equity-tool-formatters.js';
-import { getEquityPerformance } from './lib/equities/equity-performance.js';
-import { getEquityPool } from './lib/equities/equity-store.js';
+// DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2: `getEquityPerformance` / `getEquityPool` were
+// imported here for the `equities` key on `performance://signal-performance`. That key is
+// dropped (public-copy HOLD + absent from the endpoint's published allow-list), and the
+// imports go with it. The equity engine itself is untouched — `equity-performance.ts` keeps
+// its other consumers, so this removes a public projection, not a capability.
 import { initAnalytics, logRequest, hashIp, getUsageStats, logSkillInvocation, assertIpHashKeyConfigured, IP_HASH_VERSION } from './lib/analytics.js';
 import { clientIp } from './lib/client-ip.js';
 import { ensureProcessedStripeEventsSchema, tryClaimEvent } from './lib/stripe-events-store.js';
@@ -136,7 +143,10 @@ import {
   PARAM_DESC_REGIME_EXCHANGE,
   GET_EQUITY_CALL_DESCRIPTION,
   GET_EQUITY_REGIME_DESCRIPTION,
+  GET_TRACK_RECORD_DESCRIPTION,
+  PARAM_DESC_TRACK_RECORD_INCLUDE,
 } from './tool-descriptions.js';
+import { runGetTrackRecord, TRACK_RECORD_SECTIONS } from './tools/get-track-record.js';
 import { allToolNames, projectCapabilities, servedDescription } from './lib/feature-registry.js';
 // EQUITY-TOOLS-DARK-RETIRE-W1: the live tools/list set is env-gated (get_equity_call /
 // get_equity_regime dark behind EQUITY_TOOLS_ENABLED, default OFF). allToolNames() stays
@@ -940,6 +950,41 @@ function createServer(): McpServer {
     }
   );
 
+  // ── Tool 6: get_track_record (DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2) ──
+  // The track record on the tools channel, for the harnesses that bridge tools and nothing
+  // else. Thin shell by design: every decision lives in the exported `runGetTrackRecord`,
+  // which projects the ONE producer through the ONE public formatter. It refuses in-band
+  // (structured payload + isError) rather than throwing, so a venue-registry blip degrades
+  // one optional section instead of the call.
+  register(
+    'get_track_record',
+    GET_TRACK_RECORD_DESCRIPTION,
+    {
+      include: z.array(z.enum(TRACK_RECORD_SECTIONS)).optional().describe(PARAM_DESC_TRACK_RECORD_INCLUDE),
+    },
+    { title: 'Track Record', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
+    async ({ include }) => {
+      const startMs = Date.now();
+      try {
+        const license = getRequestLicense();
+        const { payload, isError } = await runAsCaller('get_track_record', () => runGetTrackRecord({ include }));
+        logRequest({
+          sessionId: getRequestSessionId(),
+          toolName: 'get_track_record',
+          licenseTier: license.tier,
+          responseTimeMs: Date.now() - startMs,
+          ipHash: getRequestIpHash(),
+          isBotInternal: license.tier === 'internal',
+        });
+        return isError
+          ? { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }], isError: true as const }
+          : { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
+      } catch (err: unknown) {
+        return toolErrorContent(err);
+      }
+    }
+  );
+
   // FEATURE-REGISTRY-SOT-W1 CH2: registry-driven registration — register exactly the
   // names FEATURE_REGISTRY declares (canonical + aliases), pulling each tool's verbatim
   // handler/schema/annotations/description from toolDefs. Bidirectional parity guard:
@@ -985,20 +1030,32 @@ function createServer(): McpServer {
     'performance://signal-performance',
     { description: 'Signal track record — PFE win rates by timeframe, asset, tier, and signal type. Measures whether price moved in the signal direction during the evaluation window.' },
     async () => {
+      // DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2 — THE LEAK CLOSED. This handler used to
+      // serve `{ ...stats, equities }` RAW, so the resource published strictly more than
+      // `/api/performance-public` did. Measured 2026-08-28: 17 venues against the
+      // endpoint's 14 — BITMART (`retired`), EDGEX (`retired`), WEEX (`shadow`) — plus
+      // the 1m shadow timeframe, on an unauthenticated public surface. BITMART is the
+      // sharp end: the estate had already WITHDRAWN that venue while this resource kept
+      // itemising its per-asset track record. The fail-closed venue filter SV-02 shipped
+      // (OPS-AUDIT-REMEDIATION-MED-W1) only ever reached the HTTP lane; this is the same
+      // guard arriving at the lane it was always owed.
+      //
+      // `equities` is DROPPED, not filtered: it is absent from
+      // audits/api-performance-public-shape-snapshot-2026-07-15.json's allowed_keys and
+      // equities are under the standing public-copy HOLD that keeps both equity tools
+      // `publicListing: false`. Consumer audit for this removal: the ONLY reader of
+      // `.equities` in the tree was this line, and every other consumer of
+      // `getSignalPerformance()` reads the PRODUCER directly rather than this payload
+      // (`/performance` admin-only, `/api/performance-shadow` auth-gated,
+      // capabilities.getAssetCount → byAsset key count, chat-track-record → scalars,
+      // seed-signals → byAsset coin names). So nothing rendered the removed rows: this
+      // retracts an unlawful disclosure, it does not reduce public-facing data.
       const stats = await getSignalPerformance();
-      // EQUITIES-ENGINE-W1 E6: ADDITIVE `equities` key (PFE-only). Crypto keys
-      // byte-unchanged. Fail-open — equity DB issues must never break the crypto
-      // resource (graceful pre-data shape on error).
-      let equities: unknown;
-      try {
-        equities = await getEquityPerformance(getEquityPool());
-      } catch {
-        equities = { state: 'pre_data', overall: { totalCalls: 0, totalEvaluated: 0, pfeWinRate: null } };
-      }
+      const allow = await resolvePublicPerformanceAllowList();
       return {
         contents: [{
           uri: 'performance://signal-performance',
-          text: JSON.stringify({ ...stats, equities }, null, 2),
+          text: JSON.stringify(formatPublicPerformance(stats, allow), null, 2),
           mimeType: 'application/json',
         }],
       };
@@ -2836,58 +2893,33 @@ async function startHttp() {
       const denom = totalHolds + totalCalls;
       const hold_rate = denom > 0 ? Math.round((totalHolds / denom) * 1000) / 10 : 0;
 
-      // SHADOW-SEED-W1: shadow-mode timeframes (1m, 3m) are stripped from
-      // `byTimeframe` aggregation by default. The env flag
-      // `SHADOW_REVEAL_TIMEFRAMES` (comma-list) toggles individual timeframes
-      // back on once Mr.1 has reviewed the 2-week digest data. Default = both
-      // hidden. To unlock 3m only: `SHADOW_REVEAL_TIMEFRAMES=3m` + container
-      // restart. To unlock both: `SHADOW_REVEAL_TIMEFRAMES=1m,3m`.
-      const shadowReveal = new Set(
-        (process.env.SHADOW_REVEAL_TIMEFRAMES ?? '')
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
-      );
-      const SHADOW_TIMEFRAMES = ['1m', '3m'] as const;
-      const filteredByTimeframe = stats.byTimeframe
-        ? Object.fromEntries(
-            Object.entries(stats.byTimeframe).filter(
-              ([tf]) => !SHADOW_TIMEFRAMES.includes(tf as '1m' | '3m') || shadowReveal.has(tf),
-            ),
-          )
-        : stats.byTimeframe;
-      // EXCHANGE-SHADOW-PROMOTE-W1 / C4: filter `byExchange` to only
-      // `venues.status='promoted'` rows. Existing 5 venues all promoted
-      // post-C1 backfill → no behavior change at deploy. Shadow venues get
-      // their own (auth-gated) /api/performance-shadow endpoint.
+      // DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2: the shadow-timeframe strip
+      // (SHADOW-SEED-W1) and the fail-CLOSED promoted-venue filter
+      // (EXCHANGE-SHADOW-PROMOTE-W1 / C4, hardened by SV-02 of
+      // OPS-AUDIT-REMEDIATION-MED-W1) used to live INLINE here — which is
+      // exactly why `performance://signal-performance` never had them and
+      // published BITMART (retired), EDGEX (retired) and WEEX (shadow) plus
+      // the 1m timeframe on a public surface. Both filters now live in ONE
+      // exported allow-list formatter that every public channel calls; this
+      // handler is its first consumer, the resource its second, the
+      // `get_track_record` tool its third. Do not reintroduce a local copy —
+      // a second derivation of this filter is the defect being retired.
       //
-      // SV-02 (OPS-AUDIT-REMEDIATION-MED-W1): FAIL-CLOSED. The prior code
-      // defaulted to the UNFILTERED stats.byExchange and skipped the filter
-      // when the promoted set was empty (and the catch left it unfiltered) —
-      // so a venues-table outage / empty-table leaked shadow rows onto the
-      // PUBLIC surface (Data-Integrity LAW violation). Now: default EMPTY,
-      // ALWAYS filter to promotedIds (empty-promoted → empty, never all), and
-      // on any lookup error set EMPTY. The happy path (5 promoted) is
-      // byte-identical. Never let a missing filter dependency widen the
-      // public response.
-      let filteredByExchange: typeof stats.byExchange = {};
+      // Behaviour here is UNCHANGED: same allow-list, same fail-CLOSED
+      // direction (empty/unreadable venues → NO per-venue rows, never all),
+      // and the formatter emits keys in `PerformanceStats` declaration order
+      // so the happy-path body is byte-identical to the pre-extraction one.
+      const allow = await resolvePublicPerformanceAllowList();
+      const publicStats = formatPublicPerformance(stats, allow);
       let shadow_venue_count = 0;
       try {
-        const promoted = await listVenues('promoted');
-        const shadow = await listVenues('shadow');
-        shadow_venue_count = shadow.length;
-        const promotedIds = new Set(promoted.map(v => v.exchange_id));
-        filteredByExchange = Object.fromEntries(
-          Object.entries(stats.byExchange).filter(([ex]) => promotedIds.has(ex)),
-        );
-      } catch (err) {
-        console.error('[performance-public] venues filter failed → fail-CLOSED → empty byExchange:', err instanceof Error ? err.message : err);
-        filteredByExchange = {};
+        shadow_venue_count = (await listVenues('shadow')).length;
+      } catch {
+        shadow_venue_count = 0;
       }
-      const filteredStats = { ...stats, byTimeframe: filteredByTimeframe, byExchange: filteredByExchange };
 
       res.json({
-        ...filteredStats,
+        ...publicStats,
         ...holdStats,
         hold_rate,
         asset_count,

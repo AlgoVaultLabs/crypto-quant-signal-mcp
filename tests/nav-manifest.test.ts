@@ -39,7 +39,7 @@ const feat = (over: Partial<FeatureSpec> & { name: string }): FeatureSpec => ({
   ...(over.publicListing !== undefined ? { publicListing: over.publicListing } : {}),
 });
 
-describe('CH1 AC-a — public tool count = allToolNames() minus alias + equities-HOLD', () => {
+describe('CH1 AC-a — public tool count = allToolNames() minus aliases minus the HELD tools', () => {
   it('publicToolNames() = 6 canonical (equities excluded, no aliases)', () => {
     expect(publicToolNames()).toEqual([
       'get_trade_call',
@@ -54,11 +54,26 @@ describe('CH1 AC-a — public tool count = allToolNames() minus alias + equities
     const expected = FEATURE_REGISTRY.filter((f) => f.enabled && f.publicListing !== false).map((f) => f.name);
     expect(publicToolNames()).toEqual(expected);
   });
-  it('is allToolNames() minus aliases minus the two equities (HOLD)', () => {
-    const canonicalNonEquity = allToolNames()
+  it('is allToolNames() minus aliases minus every publicListing:false tool', () => {
+    // DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2: this used to drop the held set by NAME
+    // (`!n.startsWith('get_equity_')`), which is a second derivation of a predicate the
+    // registry already owns — so the moment a non-equity tool was held it went red for the
+    // right behaviour. It now drops by the FIELD, and the held set is asserted separately
+    // below so the exemption stays visible rather than becoming implicit.
+    const held = new Set(FEATURE_REGISTRY.filter((f) => f.publicListing === false).map((f) => f.name));
+    const canonicalListed = allToolNames()
       .filter((n) => FEATURE_REGISTRY.some((f) => f.name === n)) // drop aliases (only canonical names)
-      .filter((n) => !n.startsWith('get_equity_')); // drop the HELD equities
-    expect(publicToolNames()).toEqual(canonicalNonEquity);
+      .filter((n) => !held.has(n));
+    expect(publicToolNames()).toEqual(canonicalListed);
+  });
+
+  it('the HELD set is exactly the two equities plus get_track_record', () => {
+    // Equities: the standing public-copy HOLD (NAV-PLATFORM-GENERATOR-W1 A4).
+    // get_track_record: LIVE on tools/list and /capabilities, kept off nav + /tools this
+    // wave only because listing it would regenerate landing/** and docs/**, outside
+    // DEV-TRACK-RECORD-TOOL-PARITY-W1's declared firewall. Flip in the follow-up wave.
+    expect(FEATURE_REGISTRY.filter((f) => f.publicListing === false).map((f) => f.name).sort())
+      .toEqual(['get_equity_call', 'get_equity_regime', 'get_track_record']);
   });
 });
 

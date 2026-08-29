@@ -82,8 +82,25 @@ export const GET_EQUITY_CALL_DESCRIPTION =
 export const GET_EQUITY_REGIME_DESCRIPTION =
   'Returns the market regime for a US stock or ETF — trending_up, trending_down, compression, or ranging, with a confidence score — derived from daily-bar trend strength (ADX/DI), persistence (Hurst), and volatility compression. Defaults to SPY. For a crypto regime use get_market_regime instead. Read-only: reads a live market-data API.';
 
+// DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2: the track record as a TOOL.
+//
+// Three sibling descriptions cite `performance://signal-performance` as the evidence behind
+// their trust claim. In a tools-only harness — DeepSeek Harness bridges tools and nothing
+// else, verbatim: "Tools are the only bridged MCP capability" — that URI is a dead pointer
+// in the one place the moat is supposed to be provable. This tool is the route those clients
+// can actually take.
+//
+// Deliberately SHORT. In DSH a tool definition costs tokens on EVERY request while the
+// response costs them once, so the saving from the aggregate-head default must not be spent
+// back on prose. Qualitative only — no win-rate %, no venue/asset count (forward-stability).
+export const GET_TRACK_RECORD_DESCRIPTION =
+  'Returns the AlgoVault track record — aggregated PFE win rates by call type, timeframe and asset tier, plus the evaluation methodology and window. The same verified aggregate the performance://signal-performance resource serves, callable from harnesses that bridge tools only. Defaults to the compact aggregate; use include for the per-asset, per-venue or recent-signal breakdowns. Read-only, no side effects.';
+
 // Param describe() strings — type + units + allowed values + example; ≤80 chars
 // each for the 3 BM25-audited tools (length-locked by the keyword canary).
+export const PARAM_DESC_TRACK_RECORD_INCLUDE =
+  'Optional extra sections: byAsset, byExchange, recentSignals. Omit for compact.';
+
 export const PARAM_DESC_TRADE_CALL_COIN =
   'Base asset, e.g. BTC ETH SOL signal, or a US stock/ETF ticker (no USDT).';
 export const PARAM_DESC_TRADE_CALL_TIMEFRAME =

@@ -1,8 +1,8 @@
 {
-  "_comment": "OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1 (D3) — successor to trade-call-routing-shape-snapshot-2026-06-09.json. The routing contract itself is UNCHANGED and still live (src/lib/market-route.ts resolveMarketRoute); it is carried forward verbatim below. What drifted is the SURFACE it was documented against: the 2026-06-09 snapshot published allowed_keys [\"get_equity_call\",\"get_trade_call\"] and tools_list_count 9, so the public knowledge bundle documented an input contract for a tool that is not on the live tools/list. Corrected to the live set. The equity route remains implemented and reachable in code; it is simply not exposed as an MCP tool today, so an agent reading this bundle must not be told to call it.",
-  "wave": "TRADE-CALL-ROUTING-RESOLVER-W1",
-  "date": "2026-08-21",
-  "tools_list_count": 7,
+  "_comment": "DEV-TRACK-RECORD-TOOL-PARITY-W1 (CH2) — successor to trade-call-routing-shape-snapshot-2026-08-21.json. The routing contract itself is UNCHANGED and is carried forward verbatim; what moved is the live tool SET. `get_track_record` ships on the tools channel so that harnesses which bridge tools ONLY — DeepSeek Harness bridges nothing else, verbatim: \"Tools are the only bridged MCP capability\" — can reach the aggregated track record the three trade-tool descriptions cite as their evidence. tools_list_count 7 -> 8; allowed_keys gains get_track_record. The two equity tools remain DECLARED (allToolNames() = 10) and flag-gated OFF the live surface by EQUITY_TOOLS_ENABLED, unchanged by this wave.",
+  "wave": "DEV-TRACK-RECORD-TOOL-PARITY-W1",
+  "date": "2026-08-28",
+  "tools_list_count": 8,
   "no_add_remove_rename": true,
   "tools": {
     "get_trade_call": {
@@ -56,9 +56,9 @@
     "description": "clients cache tools/list at session start — additive optional params + reworded descriptions need NO cache-refresh notice (no add/remove/rename)",
     "_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W2): was a bare STRING. build-knowledge-json.mjs only projects cache_contract when it is an OBJECT, so the public bundle silently dropped it. Wrapped, preserving the original text verbatim under `description`."
   },
-  "drift_check_command": "N=$(curl -fsS https://api.algovault.com/capabilities | jq '.tools | length'); test \"$N\" -ge 7 || { echo \"TOOL_COUNT_REGRESSION: $N < 7\"; exit 1; }; curl -fsS https://api.algovault.com/capabilities | jq -e '([.tools[].name] | index(\"get_trade_call\")) and ([.tools[].name] | index(\"get_market_regime\"))' >/dev/null && echo SHAPE_OK",
+  "drift_check_command": "N=$(curl -fsS https://api.algovault.com/capabilities | jq '.tools | length'); test \"$N\" -ge 8 || { echo \"TOOL_COUNT_REGRESSION: $N < 8\"; exit 1; }; curl -fsS https://api.algovault.com/capabilities | jq -e '([.tools[].name] | index(\"get_trade_call\")) and ([.tools[].name] | index(\"get_track_record\"))' >/dev/null && echo SHAPE_OK",
   "drift_check_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W2): was `must == 9`; live /capabilities returns 7 and has since the equity tools were dark-retired (EQUITY_TOOLS_ENABLED default OFF) — an INTENTIONAL state, so an equality assertion on a conditionally-exposed surface is guaranteed to fire on a non-defect. Re-expressed as a FLOOR (>= 7) plus a by-name presence assert on the two tools this snapshot actually documents. A floor catches the real regression (a tool disappearing) without breaking every time a flag flips.",
-  "snapshot_date": "2026-08-21",
+  "snapshot_date": "2026-08-28",
   "endpoint": "POST /mcp (tools/list routing contract)",
   "allowed_keys": [
     "get_trade_call",
@@ -67,10 +67,11 @@
     "scan_funding_arb",
     "get_market_regime",
     "search_knowledge",
-    "chat_knowledge"
+    "chat_knowledge",
+    "get_track_record"
   ],
   "projection_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W2): scripts/build-knowledge-json.mjs projects this file into the PUBLIC knowledge bundle and reads the field name `snapshot_date`, with a TOTAL per-field fallback. This file carried its date under a different key, so the public bundle advertised snapshot_date:'unknown' (and, where allowed_keys/endpoint were absent, allowed_keys:[] and the filename as the endpoint) with a perfectly green build. Canonical keys added; the original keys are retained so no other reader breaks.",
-  "tools_list_count_note": "The live tools/list set, which is what an agent can actually call. This is a FLOOR-checked observation rather than a promise — see drift_check_command. Superseded snapshots of this endpoint recorded 9, which was true when they were written.",
+  "tools_list_count_note": "The live tools/list set, which is what an agent can actually call. This is a FLOOR-checked observation rather than a promise — see drift_check_command. Superseded snapshots of this endpoint recorded 7 (2026-08-21) and 9 (2026-06-09); each was true when it was written. The DECLARED set is 10 (allToolNames()); the two equity tools are gated off the live surface.",
   "not_on_live_tool_surface": {
     "tools": [
       "get_equity_call",
@@ -95,7 +96,5 @@
       "back_compat": "symbol-only callers behave exactly as before (daily-bar equity 1d); a supplied venue/timeframe routes to the perp engine via the resolver"
     }
   },
-  "supersedes": "trade-call-routing-shape-snapshot-2026-06-09.json",
-  "superseded_by": "trade-call-routing-shape-snapshot-2026-08-28.json",
-  "superseded_reason": "DEV-TRACK-RECORD-TOOL-PARITY-W1 added get_track_record to the live tools/list (7 -> 8). The routing contract is unchanged; only the tool SET moved. Values here were true when written."
+  "supersedes": "trade-call-routing-shape-snapshot-2026-08-21.json"
 }

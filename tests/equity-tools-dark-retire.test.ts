@@ -3,10 +3,16 @@
  *
  * Pins: (a) the flag parser (default OFF; accepts 1/true, case-insensitive — the
  * X402_NUDGE hotfix lesson); (b) the equity-tool name set; (c) liveMcpToolNames —
- * OFF → 7 (the two equity tools absent), ON → 9 (both return). This is the SAME
- * derivation the index.ts registration loop consumes, so the live tools/list 9→7→9
- * behavior is proven at the seam it's produced. Env is passed in (never mutating the
- * shared process.env) to stay race-free under parallel vitest.
+ * OFF → the crypto set, ON → the full declared set. This is the SAME derivation the
+ * index.ts registration loop consumes, so the live tools/list behavior is proven at the
+ * seam it's produced. Env is passed in (never mutating the shared process.env) to stay
+ * race-free under parallel vitest.
+ *
+ * DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2: the counts moved 7→8 live / 9→10 declared when
+ * `get_track_record` shipped. The DELTA between OFF and ON is what this file actually
+ * guards, and it is unchanged: exactly the two equity tools, whatever else the registry
+ * holds. The counts are asserted against the name lists below rather than as bare digits,
+ * so the next tool moves one literal and not five.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -20,8 +26,9 @@ import { allToolNames, projectCapabilities } from '../src/lib/feature-registry.j
 const CRYPTO_LIVE = [
   'get_trade_call', 'get_trade_signal', 'get_market_regime',
   'scan_funding_arb', 'scan_trade_calls', 'chat_knowledge', 'search_knowledge',
+  'get_track_record',
 ].sort();
-const ALL_NINE = [...CRYPTO_LIVE, 'get_equity_call', 'get_equity_regime'].sort();
+const ALL_DECLARED = [...CRYPTO_LIVE, 'get_equity_call', 'get_equity_regime'].sort();
 
 describe('EQUITY-TOOLS-DARK-RETIRE-W1 — flag parser (default OFF)', () => {
   it('is OFF by default (unset env) — the dark-retire default', () => {
@@ -52,20 +59,20 @@ describe('EQUITY-TOOLS-DARK-RETIRE-W1 — equity tool set', () => {
 });
 
 describe('EQUITY-TOOLS-DARK-RETIRE-W1 — reversibility proven both ways (7 vs 9)', () => {
-  it('DECLARED registry is unchanged (allToolNames stays 9) — no add/remove/rename', () => {
-    expect([...allToolNames()].sort()).toEqual(ALL_NINE);
+  it('DECLARED registry == allToolNames() — no unintended add/remove/rename', () => {
+    expect([...allToolNames()].sort()).toEqual(ALL_DECLARED);
   });
-  it('flag OFF → live tools/list = 7, both equity tools ABSENT', () => {
+  it('flag OFF → live tools/list = the crypto set (8), both equity tools ABSENT', () => {
     const live = liveMcpToolNames({}).sort();
     expect(live).toEqual(CRYPTO_LIVE);
-    expect(live).toHaveLength(7);
+    expect(live).toHaveLength(CRYPTO_LIVE.length);
     expect(live).not.toContain('get_equity_call');
     expect(live).not.toContain('get_equity_regime');
   });
-  it('flag ON → live tools/list = 9, both equity tools RETURN (== declared)', () => {
+  it('flag ON → live tools/list = the declared set (10), both equity tools RETURN', () => {
     const live = liveMcpToolNames({ EQUITY_TOOLS_ENABLED: '1' }).sort();
-    expect(live).toEqual(ALL_NINE);
-    expect(live).toHaveLength(9);
+    expect(live).toEqual(ALL_DECLARED);
+    expect(live).toHaveLength(ALL_DECLARED.length);
     expect(live).toContain('get_equity_call');
     expect(live).toContain('get_equity_regime');
     // ON is exactly the declared set — the flip is a pure add-back, no drift.
@@ -87,16 +94,16 @@ describe('EQUITY-TOOLS-DARK-RETIRE-W1 — /capabilities tracks live tools/list (
     const live = new Set(liveMcpToolNames(env));
     return projectCapabilities().tools.filter((t) => live.has(t.name)).map((t) => t.name).sort();
   };
-  it('projectCapabilities() itself stays the pristine registry projection (9) — STATIC canary safe', () => {
-    expect(projectCapabilities().tools.map((t) => t.name).sort()).toEqual(ALL_NINE);
+  it('projectCapabilities() itself stays the pristine registry projection — STATIC canary safe', () => {
+    expect(projectCapabilities().tools.map((t) => t.name).sort()).toEqual(ALL_DECLARED);
   });
-  it('flag OFF → live /capabilities == live tools/list (both 7, no equity — no MCP-channel drift)', () => {
+  it('flag OFF → live /capabilities == live tools/list (no equity — no MCP-channel drift)', () => {
     expect(liveCapabilityNames({})).toEqual(liveMcpToolNames({}).sort());
     expect(liveCapabilityNames({})).toEqual(CRYPTO_LIVE);
   });
-  it('flag ON → live /capabilities == live tools/list (both 9)', () => {
+  it('flag ON → live /capabilities == live tools/list', () => {
     const env = { EQUITY_TOOLS_ENABLED: '1' };
     expect(liveCapabilityNames(env)).toEqual(liveMcpToolNames(env).sort());
-    expect(liveCapabilityNames(env)).toEqual(ALL_NINE);
+    expect(liveCapabilityNames(env)).toEqual(ALL_DECLARED);
   });
 });

@@ -2524,7 +2524,16 @@ export function _getPerformanceStatsCacheSize(): number {
   return perfStatsCache.size;
 }
 
-const METHODOLOGY: Record<string, unknown> = {
+/**
+ * The published methodology block — ONE literal, read by all three public channels
+ * (`performance://signal-performance`, `GET /api/performance-public`, `get_track_record`),
+ * so a correction here repairs every surface at once.
+ *
+ * EXPORTED for `tests/unit/public-performance-formatter.test.ts`, which asserts the public
+ * formatter's by-name allow-list covers every key declared here — adding a key fails the
+ * build until it is deliberately admitted, instead of being silently dropped.
+ */
+export const METHODOLOGY: Record<string, unknown> = {
   pfeWinRate: 'Peak Favorable Excursion win rate. Did price move in the signal direction at any point during the evaluation window?',
   note: 'AlgoVault provides directional entry signals. Exit timing is determined by your agent or strategy — PFE Win Rate measures whether the direction was correct, independent of exit.',
   evaluationWindows: {
@@ -2534,7 +2543,26 @@ const METHODOLOGY: Record<string, unknown> = {
     '8h': '4 candles (32 hours)', '12h': '4 candles (48 hours)', '1d': '3 candles (3 days)',
   },
   dataSource: 'Hyperliquid public API. Every qualifying signal recorded and evaluated.',
-  signalFilter: 'Confidence >= 60%. HOLD signals excluded.',
+  // DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2 — CORRECTED. This read `'Confidence >= 60%. HOLD
+  // signals excluded.'` and had been FALSE since 2026-04-15, when R6 lowered
+  // MIN_TRACKABLE_CONFIDENCE from 60 to 52 (src/tools/get-trade-call.ts:193, gate site :1336).
+  // CRYPTO-PFE-BENCHMARK-AUDIT-W1 measured it false on 2026-07-02 (finding 1) and it stayed
+  // live on both public channels for ~8 more weeks; this wave would have carried it onto a
+  // third. CLAUDE.md: a disclosed methodology filter must be grep-proven as a real predicate
+  // on BOTH the write and the read path.
+  //
+  // Measured on prod 2026-08-28 (n=521,677 signals), which is why the wording is what it is:
+  //   • min(confidence) = 52 and rows below 52 = 0  → the RECORDING gate is exactly 52.
+  //   • rows with confidence < 60 = 304,518 (58.4%) → a ">= 60%" claim misdescribed the
+  //     majority of the population behind the published win rate.
+  //   • the READ path applies no confidence predicate at all: `loadSignalsForStats` is a bare
+  //     SELECT, the SQL-pushdown branch is its declared byte-equivalent, and `computeStats`
+  //     filters only `signal !== 'HOLD'` — hence the explicit second sentence.
+  //   • boundary check, since the window opens 2026-04-10 and the gate moved 2026-04-15:
+  //     36,767 in-window rows predate the change and **0** of them are below 60. Every
+  //     pre-change row therefore satisfies ">= 52%" too, so no boundary clause is owed. That
+  //     is a measurement, not an assumption — see the wave's audit for the query.
+  signalFilter: 'Recording gate: non-HOLD calls with confidence >= 52% at signal time. Aggregation excludes HOLD and applies no further confidence filter.',
 };
 
 function emptyStats(): PerformanceStats {
