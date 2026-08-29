@@ -50,13 +50,59 @@
     "descriptionRef"
   ],
   "forbidden_keys_note": "`equities` is forbidden HERE and was simultaneously REMOVED from performance://signal-performance by this wave. It is absent from audits/api-performance-public-shape-snapshot-2026-07-15.json's allowed_keys, and equities are under the standing public-copy HOLD that keeps both equity tools publicListing:false — so a second public channel carrying it would have widened a held disclosure. The formatter cannot emit it: the output object is built by naming permitted keys, never by spreading the producer's value.",
-  "byAsset_value_keys": ["count", "tier", "pfeWinRate"],
-  "byTier_value_keys": ["tier", "name", "label", "color", "count", "evaluated", "pfeWinRate", "assets"],
-  "byTimeframe_value_keys": ["count", "evaluated", "pfeWinRate"],
-  "byCallType_value_keys": ["count", "evaluated", "pfeWinRate"],
-  "byExchange_value_keys": ["exchange", "count", "evaluated", "pfeWinRate", "byTimeframe", "byTier", "byCallType", "byAsset"],
-  "recentSignals_value_keys": ["id", "coin", "timeframe", "tier", "created_at", "exchange"],
-  "_algovault_value_keys": ["brand", "note", "get_started", "docs", "tool", "version", "included_sections", "signal_performance"],
+  "byAsset_value_keys": [
+    "count",
+    "tier",
+    "pfeWinRate"
+  ],
+  "byTier_value_keys": [
+    "tier",
+    "name",
+    "label",
+    "color",
+    "count",
+    "evaluated",
+    "pfeWinRate",
+    "assets"
+  ],
+  "byTimeframe_value_keys": [
+    "count",
+    "evaluated",
+    "pfeWinRate"
+  ],
+  "byCallType_value_keys": [
+    "count",
+    "evaluated",
+    "pfeWinRate"
+  ],
+  "byExchange_value_keys": [
+    "exchange",
+    "count",
+    "evaluated",
+    "pfeWinRate",
+    "byTimeframe",
+    "byTier",
+    "byCallType",
+    "byAsset"
+  ],
+  "recentSignals_value_keys": [
+    "id",
+    "coin",
+    "timeframe",
+    "tier",
+    "created_at",
+    "exchange"
+  ],
+  "_algovault_value_keys": [
+    "brand",
+    "note",
+    "get_started",
+    "docs",
+    "tool",
+    "version",
+    "included_sections",
+    "signal_performance"
+  ],
   "row_allow_list": {
     "venues": "byExchange is restricted to listVenues('promoted') INTERSECT getActivePromotedVenueIds() — the fail-CLOSED DB read narrowed by the retired-venue subtraction. Measured 2026-08-28 that is 14 ids; BITMART and EDGEX are `retired` and WEEX is `shadow`, and none of the three may appear. An unreadable or empty venues table yields NO per-venue rows, never all of them (the SV-02 contract from OPS-AUDIT-REMEDIATION-MED-W1).",
     "timeframes": "Shadow timeframes (1m, 3m) are stripped from byTimeframe — and from each admitted venue's nested byTimeframe — unless named in SHADOW_REVEAL_TIMEFRAMES. Prod reveals 3m only, so 1m must not appear.",
@@ -74,9 +120,12 @@
   ],
   "drift_check_command": "curl -s -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"get_track_record\",\"arguments\":{}}}' --max-time 30 | sed -n 's/^data: //p' | head -1 | python3 -c \"import sys,json; d=json.loads(json.load(sys.stdin)['result']['content'][0]['text']); ALLOW=['totalCalls','period','overall','byCallType','byTimeframe','byTier','methodology','_algovault']; assert sorted(d.keys())==sorted(ALLOW), 'DEFAULT-KEY DRIFT: '+str(sorted(d.keys())); blob=json.dumps(d); assert all(k not in blob for k in ['equities','outcome_return_pct','outcome_price','pfe_return_pct','mae_return_pct']), 'FORBIDDEN KEY LEAK'; print('shape OK, tool', d['_algovault']['tool'])\"",
   "anchors_at_capture": {
-    "default_response_bytes_approx": 18000,
-    "full_include_response_bytes_approx": 1150000,
     "promoted_venue_count": 14,
-    "note": "The ~64x size ratio between the default head and the fully-included response is the reason `include` exists: byExchange alone is ~466 KB because it carries a per-asset breakdown for every venue. A key-set change, a forbidden-key leak, or a per-venue row for a non-promoted venue is the drift signal."
+    "note": "The ~64x size ratio between the default head and the fully-included response is the reason `include` exists: byExchange alone is ~466 KB because it carries a per-asset breakdown for every venue. A key-set change, a forbidden-key leak, or a per-venue row for a non-promoted venue is the drift signal.",
+    "default_response_bytes": 36229,
+    "full_include_response_bytes": 1086927,
+    "bytes_measured_note": "Measured on the LIVE tool post-deploy 2026-08-29, not estimated. The pre-deploy figure written here was 18000 for the default response and was WRONG by ~2x: byTier carries a full `assets[]` ticker array per tier, which the compact head keeps. The ratio that justifies `include` is unchanged and is the point — 36 KB default vs 1.09 MB fully included, ~30x.",
+    "field_identity_paths_verified": 41843,
+    "field_identity_note": "Live post-deploy: the fully-included tool response minus `_algovault` is field-identical to `performance://signal-performance` across 41,843 JSON paths, zero differences. Scalar VALUES drift by the signals recorded between the two calls (measured: totalCalls 521694 vs 521693) — identity is asserted on the path set, never on values across two points in a live stream."
   }
 }
