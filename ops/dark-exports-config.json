@@ -66,6 +66,10 @@
     {
       "symbol": "CONFORMANCE_CRITERION",
       "reason": "OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH1. The sentence every quota surface is judged against, held in code rather than in a wave document precisely so a later reader cannot widen it in prose. Asserted by tests/unit/quota-surface-conformance.test.ts; no src/ consumer by design, same rationale as QUOTA_SURFACES."
+    },
+    {
+      "symbol": "AI_CRAWLER_ALLOWLIST",
+      "reason": "GEO-ROBOTS-CONTENT-SIGNAL-W1 R2. The AI-crawler allowlist is an OPS-FACING policy SoT: its consumers are scripts/check-robots-ai-allowlist.mjs (which reads this file's array literal directly, because the gate runs on a host with node 20 and no build step) and tests/unit/robots-ai-allowlist.test.ts, which asserts that reader's output EQUALS this constant so the two cannot drift. Zero src/ consumers is the INTENDED end state, not a wiring gap - the list governs a static file served by Caddy and an edge policy surface, neither of which the runtime ever touches, and importing it into src/ would turn a build-time contract into a runtime dependency. Same rationale as QUOTA_SURFACES. An explanation, not a suppression: the row is still printed and counted as `exempt` on every run."
     }
   ]
 }

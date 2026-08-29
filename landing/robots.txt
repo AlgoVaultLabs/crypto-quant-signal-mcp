@@ -1,5 +1,5 @@
 # AlgoVault Labs — robots.txt
-# Last updated: 2026-04-26
+# Last updated: 2026-08-29
 #
 # We welcome AI training and citation crawlers. Every signal call is
 # Merkle-anchored on Base L2 (algovault.com/track-record) — all data is
@@ -19,7 +19,10 @@
 # Anthropic's official docs; removed from this allowlist.
 
 # === Default policy: allow everything except admin-gated routes ===
+# Content-signal is an AFFIRMATIVE grant (contentsignals.org), not a restriction:
+# it states in machine-readable form the same YES the per-UA `Allow: /` groups below already give.
 User-agent: *
+Content-signal: search=yes, ai-input=yes, ai-train=yes
 Allow: /
 Disallow: /dashboard
 Disallow: /dashboard/
