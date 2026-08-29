@@ -928,18 +928,22 @@ jobs:
               fi
             done
 
-            # OPS-LABEL-FRESHNESS-W1 R2 (A1) + OPS-DEPLOY-LABELER-WINDOW-W1 CH2.
+            # OPS-LABEL-FRESHNESS-W1 R2 (A1) + OPS-DEPLOY-LABELER-WINDOW-W1 CH2
+            # + OPS-DEPLOY-INTERLOCK-CRON-DEFER-W1 (registry-driven; script renamed).
             #
-            # Gracefully checkpoint an in-flight nightly labeler at a venue boundary before the
-            # recreate decapitates it mid-venue. The POLICY now lives in a script rather than
-            # inline here, for three reasons: inline bash in a workflow cannot be unit-tested;
-            # the labeler's process pattern was a bare literal that a rename would silently stop
-            # matching with nothing red; and the old block had only TWO outcomes, so a failed
-            # `docker exec` printed the same reassuring line as "nothing was running".
+            # `--force-recreate` below decapitates EVERY `docker exec` into mcp-server,
+            # facilitator or postgres. Which jobs that is safe for is DECLARED DATA —
+            # ops/scripts/cron-interlock-registry.json, one row per process pattern with a class
+            # and a mandatory reason — not a pattern hardcoded in the script. Before that, one
+            # job was protected and every other long cron was unprotected BY DEFAULT with
+            # nothing going red; scripts/check-cron-interlock-coverage.mjs now fails the build
+            # when an ops/cron/*.sh gains a `docker exec` with no row.
             #
-            # It NEVER blocks the deploy — it always exits 0 and the caller reads the token.
+            # It NEVER blocks the deploy — it always exits 0 and the caller reads the token,
+            # aggregated over every row with an explicit precedence
+            # (BYPASSED > INDETERMINATE > DEFERRED > PROCEED).
             # DEPLOY_HOTFIX=1 bypasses it entirely and ledgers the bypass.
-            bash /opt/crypto-quant-signal-mcp/ops/scripts/deploy-labeler-interlock.sh preempt || true
+            bash /opt/crypto-quant-signal-mcp/ops/scripts/deploy-cron-interlock.sh preempt || true
 
             # --force-recreate defends against env_file race: docker compose
             # only auto-recreates if image OR compose-config mtime changed,
@@ -959,7 +963,7 @@ jobs:
             # budget rather than a fresh one, takes the same flock as the nightly, and is SKIPPED
             # ENTIRELY when the worst projected lag is already inside SLO (a preemption at venue
             # 15 of 17 needs no catch-up; running one anyway is recovery chatter).
-            bash /opt/crypto-quant-signal-mcp/ops/scripts/deploy-labeler-interlock.sh catchup || true
+            bash /opt/crypto-quant-signal-mcp/ops/scripts/deploy-cron-interlock.sh catchup || true
 
             # Capture new version after pull
             NEW_VERSION=$(grep -m1 '"version"' package.json | sed 's/.*: *"//;s/".*//' || echo "0.0.0")
