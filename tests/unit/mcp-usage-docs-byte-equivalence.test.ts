@@ -78,6 +78,27 @@
  *      optional session handshake.</p>"
  * Nothing else in the surface moved.
  *
+ * FIXTURE MAINTENANCE — OPS-DSH-TUTORIAL-INSTALL-CLAIM-W1 (2026-08-29): regenerated to absorb the
+ * correction of a FALSE CONCLUSION in the `deepseek-harness` row's `setupSummary` +
+ * `walkthroughHtml`. Both opened on an install step — `dsh plugin --profile <name> add
+ * @deepseek-ai/dsh-mcp-client@0.1.1-rc.2` — justified by a TRUE premise: the `base`, `headless`
+ * and `web-app` bundles do declare zero MCP dependencies. The conclusion does not follow. The
+ * `dsh` CLI ships `@deepseek-ai/dsh-mcp-client` in its OWN dependency closure (`npm view
+ * @deepseek-ai/dsh@0.1.1-rc.2 dependencies` → `"@deepseek-ai/dsh-mcp-client": "^0.1.1-rc.2"`), a
+ * bare plugin `name` resolves through the profile's Node parent walk to
+ * `$DSH_HOME/profiles/node_modules` which that closure feeds — not via any bundle's
+ * package.json — and the bridge's own README states "Add one entry per server; nothing else is
+ * required." Running `plugin add` on it was not merely redundant but inert: the layer-stack
+ * reconciler only promotes a dependency declaring a `dsh.bundle` key, and mcp-client declares
+ * none, so it "stays plain with a one-time warning". The pinned-version/licence rationale went
+ * with it — correct on its own terms, but moot, because `^0.1.1-rc.2` already resolves to an MIT
+ * copy for anyone following the vendor; the BSD-3 `latest` tag was only reachable through the
+ * invented step.
+ * The word-level diff against the old fixture was verified BEFORE regenerating, not after:
+ * 3157 -> 3220 words across EXACTLY 10 changed regions, every one inside the `deepseek-harness`
+ * row, and of 443 old non-empty lines exactly 7 are absent — the six rewritten/removed
+ * walkthrough lines plus the `setupSummary` cell. No other row moved.
+ *
  * Worth naming, because it is this wave's whole thesis: this fixture could never have caught the
  * claim rotting. It asserts BYTES, so it goes red only once someone edits the sentence — it has
  * no opinion on whether the sentence is TRUE. That hole is what

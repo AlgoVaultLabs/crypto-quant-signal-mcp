@@ -1,24 +1,24 @@
 # Connect AlgoVault to DeepSeek Harness
 
-Give your `dsh` agent live trade verdicts. Two steps: add a plugin, patch one config file.
+Give your `dsh` agent live trade verdicts. One step: patch one config file.
 
-> *Verified 2026-08-28 against `@deepseek-ai/dsh-mcp-client` 0.1.1-rc.2 and <https://github.com/deepseek-ai/deepseek-harness>. DSH ships prereleases only, and its README says to expect compatibility-breaking changes.*
+> *Verified 2026-08-29 against `dsh` 0.1.1-rc.2 and <https://github.com/deepseek-ai/deepseek-harness>. DSH ships prereleases only, and its README says to expect compatibility-breaking changes.*
 
 ## Prerequisites
 
-`dsh` installed, and `pnpm` on your PATH. The plugin command forwards to pnpm; without it you get `dsh: pnpm not found on PATH`.
+`dsh` installed. Nothing else — you already have the MCP bridge.
 
-## Step 1 — add the MCP client plugin
+## There is no install step
 
-```bash
-dsh plugin --profile <name> add @deepseek-ai/dsh-mcp-client@0.1.1-rc.2
-```
+The `dsh` CLI ships `@deepseek-ai/dsh-mcp-client` in its own dependency closure, so a plain `dsh` install already put the bridge on disk. The bridge's README says it outright: *"Add one entry per server; nothing else is required."*
 
-The version is pinned deliberately. npm's `latest` tag still points at `0.0.1-rc.1`, published 2026-08-10 under BSD-3-Clause. MIT starts at `0.1.0-rc.2`, so an unpinned install gets you the older build and the older licence.
+This is worth stating because the obvious check points the wrong way. The `base`, `headless` and `web-app` bundles declare zero MCP dependencies, which is true and reads like proof that you must install something. It is not. A bare plugin `name` in a patch row resolves through the profile directory's Node parent walk, which reaches `$DSH_HOME/profiles/node_modules` — and that directory is fed by the CLI's dependency closure, not by any bundle's `package.json`. Bundle membership is the wrong question.
 
-No shipped bundle includes this plugin. The `base`, `headless` and `web-app` bundles all declare zero MCP dependencies, so the install is genuinely two steps.
+Running `dsh plugin add` on it does not help either. The reconciler that builds the layer stack only promotes a dependency whose manifest declares a `dsh.bundle` key; `@deepseek-ai/dsh-mcp-client` declares none, so it stays plain with a one-time warning and never joins the stack. Nothing about the config entry below changes.
 
-## Step 2 — patch the profile
+Nothing is enabled by default, which is deliberate: DSH treats each server command as trusted executable code outside the agent sandbox, so you opt in per server. The entry below is that opt-in.
+
+## Step 1 — patch the profile
 
 Edit `~/.dsh/profiles/<name>/cordis.patch.yml` for one profile, or `~/.dsh/cordis.patch.yml` for every profile. `$DSH_HOME` overrides `~/.dsh`.
 
@@ -36,9 +36,9 @@ Edit `~/.dsh/profiles/<name>/cordis.patch.yml` for one profile, or `~/.dsh/cordi
 
 **Do not edit `cordis.yml`.** It exists, but DSH rewrites it on every boot; its own header says to edit `cordis.patch.yml` instead.
 
-**The `- insert:` wrapper is required.** An entry without it is treated as an id-targeted override of an existing row. A missing id is skipped with a warning, so a pasted bare `- id: / name: / config:` block mounts nothing and looks like it worked.
+**The `- insert:` wrapper is required.** An entry without it is treated as an id-targeted override of an existing row. A missing id is skipped with a warning, so a pasted bare `- id: / name: / config:` block mounts nothing and looks like it worked. The bridge's own README shows the unwrapped form because it documents the plugin config shape, not a `cordis.patch.yml` edit — copy the wrapped form above.
 
-## Step 3 — call it
+## Step 2 — call it
 
 Tools arrive server-qualified, as `mcp__algovault__<tool>`:
 
@@ -50,7 +50,9 @@ Tools arrive server-qualified, as `mcp__algovault__<tool>`:
 
 Ask `dsh`: *"Get me a trade call for BTC on the 1h timeframe."*
 
-It invokes `get_trade_call` and returns the call, a confidence score, the market regime, and the drivers behind them. The longest namespaced name is 33 characters, well inside DSH's 64-character budget, so nothing is truncated or hash-suffixed.
+It invokes `get_trade_call` and returns the call, a confidence score, the market regime, and the drivers behind them. `serverName` must match `[A-Za-z0-9_-]{1,32}` and be unique across live bridge instances; `algovault` is nine characters, so it fits with room to spare.
+
+Discovery is asynchronous, so wait for the `mcp__algovault__*` tools to appear before sending the first prompt. A new `dsh` session picks up the entry; a host restart is not needed.
 
 ## Paid tier
 
@@ -66,7 +68,7 @@ Add one line to the same `headers` block:
 
 ## What DSH does not bridge
 
-DSH bridges **tools only**. Its README lists resources and prompts as deferred, with no harness consumer.
+DSH bridges **tools only**. The bridge's README lists resources and prompts as deferred, with no harness consumer mechanism.
 
 AlgoVault publishes its track record as an MCP resource. Inside DSH that resource is not reachable, so read it on the web instead: [verify the track record on-chain](https://algovault.com/track-record).
 
@@ -74,16 +76,16 @@ AlgoVault publishes its track record as an MCP resource. Inside DSH that resourc
 
 - **Nothing mounted, no error** — the patch entry is missing its `- insert:` wrapper. DSH read it as an override of a row that does not exist and skipped it.
 - **Your edit vanished** — you edited `cordis.yml`. DSH rewrites that file on boot. Move the entry to `cordis.patch.yml`.
-- **`dsh: pnpm not found on PATH`** — install pnpm. The plugin command is a thin forwarder to it.
-- **Older build installed** — you dropped the `@0.1.1-rc.2` pin, so npm resolved `latest` to `0.0.1-rc.1`.
+- **"My bundle lists no MCP dependency"** — expected, and not a problem. The bridge comes from the `dsh` CLI's dependency closure, not from a bundle. Skip straight to the patch entry.
+- **Tools appear a moment late** — discovery is asynchronous. Wait for the `mcp__algovault__*` names before prompting.
 - **`401 unauthorized`** — check the key shape (`av_live_...`). On free tier, remove the `Authorization` header entirely.
 - **Tools missing after a restart** — confirm the profile you patched is the profile you launched.
 
 ## FAQ
 
-**Free tier OK?** Yes. Drop the `Authorization` header. 200 calls a month, 100 a day.
+**Do I need to install a plugin first?** No. `dsh` ships `@deepseek-ai/dsh-mcp-client` as its own dependency, and the patch entry above resolves it from the profile's Node parent walk. The config entry is the whole job.
 
-**Why pin the version?** npm's `latest` still points at the 2026-08-10 build, which is BSD-3-Clause. MIT begins at `0.1.0-rc.2`.
+**Free tier OK?** Yes. Drop the `Authorization` header. 200 calls a month, 100 a day.
 
 **One profile or all?** `~/.dsh/profiles/<name>/cordis.patch.yml` patches one. `~/.dsh/cordis.patch.yml` patches every profile.
 

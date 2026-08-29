@@ -11,7 +11,7 @@
 <meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with DeepSeek Harness&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/deepseek-harness">
-<meta name="last-updated" content="2026-08-28">
+<meta name="last-updated" content="2026-08-29">
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -271,22 +271,22 @@ tailwind.config = {
     <div style="position:relative;z-index:1">
       <div class="placeholder-cap" style="margin-bottom:14px">· deepseek-harness integration</div>
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">520,762</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">522,176</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to DeepSeek Harness</h1>
-<p>Give your <code>dsh</code> agent live trade verdicts. Two steps: add a plugin, patch one config file.</p>
+<p>Give your <code>dsh</code> agent live trade verdicts. One step: patch one config file.</p>
 <blockquote>
-<p><em>Verified 2026-08-28 against <code>@deepseek-ai/dsh-mcp-client</code> 0.1.1-rc.2 and <a href="https://github.com/deepseek-ai/deepseek-harness">https://github.com/deepseek-ai/deepseek-harness</a>. DSH ships prereleases only, and its README says to expect compatibility-breaking changes.</em></p>
+<p><em>Verified 2026-08-29 against <code>dsh</code> 0.1.1-rc.2 and <a href="https://github.com/deepseek-ai/deepseek-harness">https://github.com/deepseek-ai/deepseek-harness</a>. DSH ships prereleases only, and its README says to expect compatibility-breaking changes.</em></p>
 </blockquote></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Prerequisites</h2>
-<p><code>dsh</code> installed, and <code>pnpm</code> on your PATH. The plugin command forwards to pnpm; without it you get <code>dsh: pnpm not found on PATH</code>.</p></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Step 1 — add the MCP client plugin</h2>
-<pre><code class="language-bash">dsh plugin --profile &lt;name&gt; add @deepseek-ai/dsh-mcp-client@0.1.1-rc.2
-</code></pre>
-<p>The version is pinned deliberately. npm’s <code>latest</code> tag still points at <code>0.0.1-rc.1</code>, published 2026-08-10 under BSD-3-Clause. MIT starts at <code>0.1.0-rc.2</code>, so an unpinned install gets you the older build and the older licence.</p>
-<p>No shipped bundle includes this plugin. The <code>base</code>, <code>headless</code> and <code>web-app</code> bundles all declare zero MCP dependencies, so the install is genuinely two steps.</p></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Step 2 — patch the profile</h2>
+<p><code>dsh</code> installed. Nothing else — you already have the MCP bridge.</p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>There is no install step</h2>
+<p>The <code>dsh</code> CLI ships <code>@deepseek-ai/dsh-mcp-client</code> in its own dependency closure, so a plain <code>dsh</code> install already put the bridge on disk. The bridge’s README says it outright: <em>“Add one entry per server; nothing else is required.”</em></p>
+<p>This is worth stating because the obvious check points the wrong way. The <code>base</code>, <code>headless</code> and <code>web-app</code> bundles declare zero MCP dependencies, which is true and reads like proof that you must install something. It is not. A bare plugin <code>name</code> in a patch row resolves through the profile directory’s Node parent walk, which reaches <code>$DSH_HOME/profiles/node_modules</code> — and that directory is fed by the CLI’s dependency closure, not by any bundle’s <code>package.json</code>. Bundle membership is the wrong question.</p>
+<p>Running <code>dsh plugin add</code> on it does not help either. The reconciler that builds the layer stack only promotes a dependency whose manifest declares a <code>dsh.bundle</code> key; <code>@deepseek-ai/dsh-mcp-client</code> declares none, so it stays plain with a one-time warning and never joins the stack. Nothing about the config entry below changes.</p>
+<p>Nothing is enabled by default, which is deliberate: DSH treats each server command as trusted executable code outside the agent sandbox, so you opt in per server. The entry below is that opt-in.</p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Step 1 — patch the profile</h2>
 <p>Edit <code>~/.dsh/profiles/&lt;name&gt;/cordis.patch.yml</code> for one profile, or <code>~/.dsh/cordis.patch.yml</code> for every profile. <code>$DSH_HOME</code> overrides <code>~/.dsh</code>.</p>
 <pre><code class="language-yaml">- insert:
     - id: mcp-algovault
@@ -299,8 +299,8 @@ tailwind.config = {
           X-AlgoVault-Track-Token: int-deepseek-harness
 </code></pre>
 <p><strong>Do not edit <code>cordis.yml</code>.</strong> It exists, but DSH rewrites it on every boot; its own header says to edit <code>cordis.patch.yml</code> instead.</p>
-<p><strong>The <code>- insert:</code> wrapper is required.</strong> An entry without it is treated as an id-targeted override of an existing row. A missing id is skipped with a warning, so a pasted bare <code>- id: / name: / config:</code> block mounts nothing and looks like it worked.</p></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Step 3 — call it</h2>
+<p><strong>The <code>- insert:</code> wrapper is required.</strong> An entry without it is treated as an id-targeted override of an existing row. A missing id is skipped with a warning, so a pasted bare <code>- id: / name: / config:</code> block mounts nothing and looks like it worked. The bridge’s own README shows the unwrapped form because it documents the plugin config shape, not a <code>cordis.patch.yml</code> edit — copy the wrapped form above.</p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Step 2 — call it</h2>
 <p>Tools arrive server-qualified, as <code>mcp__algovault__&lt;tool&gt;</code>:</p>
 <ul>
 <li><code>mcp__algovault__get_trade_call</code> — one asset, one timeframe, one verdict</li>
@@ -310,7 +310,8 @@ tailwind.config = {
 <li><code>mcp__algovault__chat_knowledge</code> and <code>mcp__algovault__search_knowledge</code></li>
 </ul>
 <p>Ask <code>dsh</code>: <em>“Get me a trade call for BTC on the 1h timeframe.”</em></p>
-<p>It invokes <code>get_trade_call</code> and returns the call, a confidence score, the market regime, and the drivers behind them. The longest namespaced name is 33 characters, well inside DSH’s 64-character budget, so nothing is truncated or hash-suffixed.</p></div>
+<p>It invokes <code>get_trade_call</code> and returns the call, a confidence score, the market regime, and the drivers behind them. <code>serverName</code> must match <code>[A-Za-z0-9_-]{1,32}</code> and be unique across live bridge instances; <code>algovault</code> is nine characters, so it fits with room to spare.</p>
+<p>Discovery is asynchronous, so wait for the <code>mcp__algovault__*</code> tools to appear before sending the first prompt. A new <code>dsh</code> session picks up the entry; a host restart is not needed.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Paid tier</h2>
 <p>Add one line to the same <code>headers</code> block:</p>
 <pre><code class="language-yaml">        headers:
@@ -319,20 +320,20 @@ tailwind.config = {
 </code></pre>
 <p><code>headers</code> is a plain string-to-string dict. The free tier needs no key at all: 200 calls a month, 100 a day, every coin and every timeframe.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>What DSH does not bridge</h2>
-<p>DSH bridges <strong>tools only</strong>. Its README lists resources and prompts as deferred, with no harness consumer.</p>
+<p>DSH bridges <strong>tools only</strong>. The bridge’s README lists resources and prompts as deferred, with no harness consumer mechanism.</p>
 <p>AlgoVault publishes its track record as an MCP resource. Inside DSH that resource is not reachable, so read it on the web instead: <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'deepseek-harness',campaign:'track-record'}})">verify the track record on-chain</a>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
 <ul>
 <li><strong>Nothing mounted, no error</strong> — the patch entry is missing its <code>- insert:</code> wrapper. DSH read it as an override of a row that does not exist and skipped it.</li>
 <li><strong>Your edit vanished</strong> — you edited <code>cordis.yml</code>. DSH rewrites that file on boot. Move the entry to <code>cordis.patch.yml</code>.</li>
-<li><strong><code>dsh: pnpm not found on PATH</code></strong> — install pnpm. The plugin command is a thin forwarder to it.</li>
-<li><strong>Older build installed</strong> — you dropped the <code>@0.1.1-rc.2</code> pin, so npm resolved <code>latest</code> to <code>0.0.1-rc.1</code>.</li>
+<li><strong>“My bundle lists no MCP dependency”</strong> — expected, and not a problem. The bridge comes from the <code>dsh</code> CLI’s dependency closure, not from a bundle. Skip straight to the patch entry.</li>
+<li><strong>Tools appear a moment late</strong> — discovery is asynchronous. Wait for the <code>mcp__algovault__*</code> names before prompting.</li>
 <li><strong><code>401 unauthorized</code></strong> — check the key shape (<code>av_live_...</code>). On free tier, remove the <code>Authorization</code> header entirely.</li>
 <li><strong>Tools missing after a restart</strong> — confirm the profile you patched is the profile you launched.</li>
 </ul></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>FAQ</h2>
+<p><strong>Do I need to install a plugin first?</strong> No. <code>dsh</code> ships <code>@deepseek-ai/dsh-mcp-client</code> as its own dependency, and the patch entry above resolves it from the profile’s Node parent walk. The config entry is the whole job.</p>
 <p><strong>Free tier OK?</strong> Yes. Drop the <code>Authorization</code> header. 200 calls a month, 100 a day.</p>
-<p><strong>Why pin the version?</strong> npm’s <code>latest</code> still points at the 2026-08-10 build, which is BSD-3-Clause. MIT begins at <code>0.1.0-rc.2</code>.</p>
 <p><strong>One profile or all?</strong> <code>~/.dsh/profiles/&lt;name&gt;/cordis.patch.yml</code> patches one. <code>~/.dsh/cordis.patch.yml</code> patches every profile.</p>
 <p><strong>Is this the same as the DeepSeek model path?</strong> No. <a href="/integrations">The DeepSeek row</a> covers pointing a harness you already run at DeepSeek’s Anthropic-compatible endpoint. This page is DeepSeek’s own runtime connecting to AlgoVault directly.</p>
 <p><strong>Which tools appear?</strong> The same set every client gets, led by <code>get_trade_call</code>.</p></div>
