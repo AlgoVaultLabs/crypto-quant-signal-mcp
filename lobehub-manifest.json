@@ -4,7 +4,7 @@
     {
       "url": "https://api.algovault.com/mcp",
       "name": "get_trade_call",
-      "description": "Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; for a whole-market scan use scan_trade_calls. Read-only: reads live exchange APIs, no orders. Verified track record via performance://signal-performance; on-chain verified merkle anchor.",
+      "description": "Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; whole-market scan: scan_trade_calls. Read-only: live exchange APIs, no orders. Verified track record: get_track_record or performance://signal-performance; on-chain verified merkle anchor.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -58,7 +58,7 @@
     {
       "url": "https://api.algovault.com/mcp",
       "name": "get_trade_signal",
-      "description": "Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; for a whole-market scan use scan_trade_calls. Read-only: reads live exchange APIs, no orders. Verified track record via performance://signal-performance; on-chain verified merkle anchor. [ALIAS] This tool is an alias of get_trade_call — same behavior, kept for backward compatibility. Prefer get_trade_call for new integrations.",
+      "description": "Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; whole-market scan: scan_trade_calls. Read-only: live exchange APIs, no orders. Verified track record: get_track_record or performance://signal-performance; on-chain verified merkle anchor. [ALIAS] This tool is an alias of get_trade_call — same behavior, kept for backward compatibility. Prefer get_trade_call for new integrations.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -132,7 +132,7 @@
     {
       "url": "https://api.algovault.com/mcp",
       "name": "get_market_regime",
-      "description": "Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict blends trend ranging and cross-venue funding rate sentiment. Read-only, live exchange APIs. Verified track record via performance://signal-performance; on-chain verified merkle anchor.",
+      "description": "Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict: trend ranging + cross-venue funding rate. Read-only, live exchange APIs. Verified track record: get_track_record or performance://signal-performance; on-chain verified merkle anchor.",
       "parameters": {
         "type": "object",
         "properties": {

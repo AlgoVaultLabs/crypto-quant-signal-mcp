@@ -35,8 +35,20 @@
 // (performance://signal-performance) instead of asserting it. A bare "verified track
 // record" is a claim no calling model can check, so it buys exactly the lift a fabricated
 // one would; a resource URI is fetchable.
+//
+// DEV-TRACK-RECORD-TOOL-PARITY-W1 CH3: fetchable BY WHOM. DeepSeek Harness — and every
+// client implementing a subset of MCP — bridges tools and nothing else ("Tools are the only
+// bridged MCP capability", its own README), so for those callers the URI was a dead pointer
+// in the one place the moat is supposed to be provable. The citation now leads with
+// `get_track_record` and KEEPS the URI for clients that can read resources.
+//
+// The characters were paid for, not borrowed: the keyword canary caps this string at 350 and
+// it sat at 346. `via` → `:` and two verbose clauses tightened ("for a whole-market scan use"
+// → "whole-market scan:", "reads live exchange APIs" → "live exchange APIs"). Every TOP_20
+// keyword survives — coverage is unchanged at 16/20, and none of the trimmed words carried
+// one. Re-measure before rewording: the budget headroom here is single digits.
 export const TRADE_CALL_DESCRIPTION =
-  'Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; for a whole-market scan use scan_trade_calls. Read-only: reads live exchange APIs, no orders. Verified track record via performance://signal-performance; on-chain verified merkle anchor.';
+  'Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; whole-market scan: scan_trade_calls. Read-only: live exchange APIs, no orders. Verified track record: get_track_record or performance://signal-performance; on-chain verified merkle anchor.';
 
 // KNOWLEDGE-ARTIFACT-W1 (Q-5, 2026-05-18): suffix literal uses the [ALIAS] tag
 // prefix pattern so future tool aliases follow the same shape.
@@ -54,8 +66,11 @@ export const SCAN_FUNDING_ARB_DESCRIPTION =
   'Ranked cross-venue funding arbitrage across major crypto perpetual futures venues — funding rate spreads, long one venue short another, as a BUY SELL HOLD composite verdict per pair. AI trading signal for crypto quant and Claude trading agents. Trade call via get_trade_call, market regime via get_market_regime. On-chain verified merkle anchor.';
 
 // TDQS-RELATIONAL-DEFECTS-W1 C2b: same trust-claim swap as C2a, same rationale.
+// DEV-TRACK-RECORD-TOOL-PARITY-W1 CH3: same tool-route addition, same budget arithmetic —
+// "blends trend ranging and cross-venue funding rate sentiment" → "trend ranging +
+// cross-venue funding rate" pays for it. Coverage unchanged at 16/20.
 export const GET_MARKET_REGIME_DESCRIPTION =
-  'Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict blends trend ranging and cross-venue funding rate sentiment. Read-only, live exchange APIs. Verified track record via performance://signal-performance; on-chain verified merkle anchor.';
+  'Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict: trend ranging + cross-venue funding rate. Read-only, live exchange APIs. Verified track record: get_track_record or performance://signal-performance; on-chain verified merkle anchor.';
 
 // describe-text for the `search_knowledge` MCP tool. Self-pitching text
 // intentionally instructs the calling LLM to call it BEFORE other tools to
