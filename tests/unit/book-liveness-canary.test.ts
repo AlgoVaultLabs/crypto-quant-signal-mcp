@@ -70,7 +70,7 @@ function runMain(mode: string, psqlPy: string) {
  */
 function psqlStub(
   frozen: string, persistence: string, floor: string,
-  counterAge = '4', shadowAge = '99999',
+  counterAge = '4|2026-08-25', shadowAge = '99999',
 ): string {
   return [
     'def _q(sql):',
@@ -168,33 +168,43 @@ describe('book-liveness-canary — mode-awareness', () => {
   it('shadow and enforce read DIFFERENT ceiling tables on identical input',
     { timeout: 40_000 }, () => {
       // 15 frozen of 500 = 3.00%: under XT's 6.0 shadow ceiling, over the 1.0 enforce ratchet.
-      const rows = psqlStub('XT|500|15', '', '', '4', '3');   // shadow tail already aged out
+      const rows = psqlStub('XT|500|15', '', '', '4|2026-08-25', '3');   // shadow tail already aged out
       const shadow = runMain('shadow', rows);
       const enforce = runMain('enforce', rows);
       expect(tokenLines(shadow.stdout)).toEqual([`${TOKEN}=PASS`]);
       expect(tokenLines(enforce.stdout)).toEqual([`${TOKEN}=FAIL`]);
     });
 
-  it('each mode scopes the suppression rows to ITS OWN reason', { timeout: 30_000 }, () => {
-    const r = spawnSync('python3', ['-c', [
-      'import importlib.util',
-      `spec = importlib.util.spec_from_file_location("c", ${JSON.stringify(PY)})`,
-      'm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)',
-      'print(m.reason_for("enforce"))',
-      'print(m.reason_for("shadow"))',
-      'print("YES" if "frozen_book_shadow" in m.build_persistence_sql(28, "frozen_book_shadow")',
-      '      else "NO")',
-    ].join('\n')], { encoding: 'utf8' });
-    expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout.trim().split('\n')).toEqual(['frozen_book', 'frozen_book_shadow', 'YES']);
-  });
+  it('the stage reason is still DERIVED, but ONLY the stage query uses it — the detector '
+    + 'window is reason-INDEPENDENT so a flip cannot restart it', { timeout: 30_000 }, () => {
+      // MEASURED 2026-08-29: the shadow->enforce flip changed reason_for(mode), the window
+      // queries were scoped by it, and the dead-book detector silently reset to zero — counter
+      // age 5d -> 1d, and 3 of 5 KNOWN dead books dropped to zero recorded days. A window keyed
+      // on a mutable reason restarts itself every time the reason changes.
+      const r = spawnSync('python3', ['-c', [
+        'import importlib.util',
+        `spec = importlib.util.spec_from_file_location("c", ${JSON.stringify(PY)})`,
+        'm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)',
+        'print(m.reason_for("enforce"))',
+        'print(m.reason_for("shadow"))',
+        // the stage query SHOULD be stage-scoped — that is its actual subject
+        'print("STAGE_SCOPED" if "frozen_book_shadow" in m.build_shadow_recency_sql() else "NO")',
+        // the three WINDOW queries must mention no reason at all
+        'w = [m.build_persistence_sql(28), m.build_counter_age_sql(), m.build_floor_sql(28)]',
+        'print("WINDOW_REASON_FREE" if not any("reason" in q for q in w) else "LEAKED")',
+      ].join('\n')], { encoding: 'utf8' });
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout.trim().split('\n')).toEqual([
+        'frozen_book', 'frozen_book_shadow', 'STAGE_SCOPED', 'WINDOW_REASON_FREE',
+      ]);
+    });
 });
 
 describe('book-liveness-canary — closed-vs-broken discriminator', () => {
   it('a dead book breaches; a closed market on the SAME run does not', { timeout: 30_000 }, () => {
     // cols: exchange|coin|days|tfs|n|window_days_seen — a full 28-day window.
     const rows = ['XT|EPT|28|3|140|28', 'ASTER|SPY|9|2|9|28'].join('\n');
-    const r = runMain('enforce', psqlStub('BINANCE|500|0', rows, 'XT|10', '28'));
+    const r = runMain('enforce', psqlStub('BINANCE|500|0', rows, 'XT|10', '28|2026-08-01'));
     expect(r.status, r.stderr).toBe(0);
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
     expect(r.stdout).toMatch(/BREACH dead book XT\|EPT/);
@@ -204,10 +214,11 @@ describe('book-liveness-canary — closed-vs-broken discriminator', () => {
   it('a young counter reports INSUFFICIENT_WINDOW and never a verdict', { timeout: 30_000 }, () => {
     // The same dead book, but the counter has only seen 4 of 28 days.
     const rows = 'XT|EPT|4|3|15|4';
-    const r = runMain('shadow', psqlStub('BINANCE|500|0', rows, 'XT|10', '4'));
+    const r = runMain('shadow', psqlStub('BINANCE|500|0', rows, 'XT|10', '4|2026-08-25'));
     expect(r.status, r.stderr).toBe(0);
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
-    expect(r.stdout).toMatch(/INSUFFICIENT_WINDOW - the counter is 4 day\(s\) old, needs 28/);
+    expect(r.stdout).toMatch(/INSUFFICIENT_WINDOW - the counter is 4 day\(s\) old, needs 28; full coverage on 2026-09-21/);
+      expect(r.stdout).toMatch(/NO dead-book detection until then/);
   });
 });
 
@@ -217,7 +228,7 @@ describe('book-liveness-canary — the shadow→enforce cutover must not page on
   // count 0 on every venue). The mode flips in an instant; the LOOKBACK_DAYS window does not.
   it('a fresh shadow tail defers the ratchet and says so', { timeout: 30_000 }, () => {
     // 15 frozen of 500 = 3.00% — over the 1.0 enforce ratchet, under XT's 6.0 shadow ceiling.
-    const r = runMain('enforce', psqlStub('XT|500|15', '', '', '28', '0'));
+    const r = runMain('enforce', psqlStub('XT|500|15', '', '', '28|2026-08-01', '0'));
     expect(r.status, r.stderr).toBe(0);
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
     expect(r.stdout).toMatch(/frozen ceilings=shadow \(MIXED_WINDOW\)/);
@@ -225,7 +236,7 @@ describe('book-liveness-canary — the shadow→enforce cutover must not page on
   });
 
   it('once the window is entirely post-transition the ratchet BITES', { timeout: 30_000 }, () => {
-    const r = runMain('enforce', psqlStub('XT|500|15', '', '', '28', '3'));
+    const r = runMain('enforce', psqlStub('XT|500|15', '', '', '28|2026-08-01', '3'));
     expect(r.status, r.stderr).toBe(0);
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
     expect(r.stdout).toMatch(/BREACH frozen XT: 3\.00%.*ceiling 1\.0%/);
@@ -238,7 +249,7 @@ describe('book-liveness-canary — the target state', () => {
       // The state a fully enforcing gate reaches. Keying evaluability on "days carrying a
       // suppression" instead of counter AGE would make the canary call its own success
       // INSUFFICIENT_WINDOW forever.
-      const r = runMain('enforce', psqlStub('BINANCE|500|0', '', '', '28'));
+      const r = runMain('enforce', psqlStub('BINANCE|500|0', '', '', '28|2026-08-01'));
       expect(r.status, r.stderr).toBe(0);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
       expect(r.stdout).toMatch(/persistence: 0 suppressions in the last 28 days over a full 28-day counter - no dead books/);

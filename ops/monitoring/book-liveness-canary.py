@@ -40,7 +40,7 @@ the only code no live scenario would otherwise execute.
 """
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 PG_CONTAINER = "crypto-quant-signal-mcp-postgres-1"
 APP_CONTAINER = "crypto-quant-signal-mcp-mcp-server-1"
@@ -132,9 +132,17 @@ FROZEN_CEILING_PCT_ENFORCE = {
 #   dead:   XT|EPT 4 days x 3 timeframes - XT|D 4 x 3 - HTX|{LRDS,SEI,VIRTUAL} 2 x 2
 #   closed: 29 (venue, coin) pairs on ASTER + GATE, all at exactly 1 day
 #
-# HONEST LIMIT: with D=28 this check CANNOT fire until ~28 days of counter data exist
-# (~2026-09-22). Until then it reports INSUFFICIENT_WINDOW as a positive line - the corpus was
-# handed to us and is genuinely short, which is a FACT to report, not vacuity to refuse.
+# HONEST LIMIT: with D=28 this check CANNOT fire until the counter is 28 days old. Until then it
+# reports INSUFFICIENT_WINDOW as a positive line CARRYING ITS OWN END DATE, projected from the
+# counter's first row - the corpus was handed to us and is genuinely short, which is a FACT to
+# report, not vacuity to refuse. No date is hardcoded here on purpose: a constant in a comment
+# goes stale silently, and this one already did once (it read "~2026-09-22", derived from the
+# reason-scoped window that the shadow->enforce flip reset; the real date is earlier because the
+# window is now seeded from the counter's real first row, 2026-08-25).
+#
+# The gap is TOTAL while it lasts, and that is why the output says so: under enforce a dead book
+# emits nothing, so it mints no frozen rows, so check 1 cannot see it either. There is no partial
+# coverage to fall back on.
 #
 # TODO: revisit by 2026-09-11 - confirm the longest legitimate closure against a real
 # exchange-holiday source and raise D if it exceeds the budget; record in
@@ -188,39 +196,56 @@ def build_frozen_sql(lookback_days):
     )
 
 
-def build_persistence_sql(window_days, reason):
+def build_persistence_sql(window_days):
     """Distinct days each (venue, coin) was suppressed, plus its timeframe breadth.
 
-    `reason` scopes the rows to ONE rollout stage. Both stages write to this table by design
-    (`frozen_book` = actually withheld, `frozen_book_shadow` = would have been), so an unscoped
-    query silently mixes them the moment the mode changes.
+    -- REASON-INDEPENDENT BY DESIGN. Do not re-scope this to a rollout stage. --
+    #
+    # This asks ONE physical question: on how many days was this (venue, coin) book frozen?
+    # `emit_suppressions` answers it identically in both stages - `frozen_book` means "we
+    # withheld", `frozen_book_shadow` means "we would have", and BOTH are the same observation
+    # of the same book on the same day. The reason column records WHO ASKED, never WHAT WAS
+    # TRUE, and scoping this query by it conflated the two.
+    #
+    # MEASURED COST of the version that did scope it (2026-08-29, EDGE-SELL-RESOLUTION-ENFORCE-W1
+    # CH3): the shadow->enforce flip changed `reason_for(mode)`, both this query and the
+    # counter-age query lost their entire history in one instant, and the detector's window
+    # restarted from zero. Counter age went 5 days -> 1. Three of the five KNOWN dead books
+    # (`XT|D`, `HTX|LRDS`, `HTX|VIRTUAL`) dropped to ZERO recorded days. Nothing errored and
+    # nothing alerted; the detector simply went quiet for 28 days.
+    #
+    # A window keyed on a MUTABLE value restarts itself every time that value changes - and a
+    # flag flip, a re-key or a new reason string are all ordinary events. The fix is not to
+    # remember to re-seed after a flip; it is to stop keying the window on something that moves.
     """
     d = int(window_days)
-    r = _safe_literal(reason)
     return (
         "SELECT exchange, coin,"
         " COUNT(DISTINCT date) AS days,"
         " COUNT(DISTINCT timeframe) AS tfs,"
         " SUM(suppress_count)::bigint AS n,"
         " (SELECT COUNT(DISTINCT date) FROM emit_suppressions"
-        "   WHERE date >= (NOW() - INTERVAL '%d days')::date AND reason = '%s') AS window_days_seen"
+        "   WHERE date >= (NOW() - INTERVAL '%d days')::date) AS window_days_seen"
         " FROM emit_suppressions"
         " WHERE date >= (NOW() - INTERVAL '%d days')::date"
-        "   AND reason = '%s'"
-        " GROUP BY 1,2 ORDER BY 3 DESC, 5 DESC;" % (d, r, d, r)
+        " GROUP BY 1,2 ORDER BY 3 DESC, 5 DESC;" % (d, d)
     )
 
 
-def build_counter_age_sql(reason):
+def build_counter_age_sql():
     """How many distinct days the counter has EXISTED for, unbounded by the window.
 
     Its own query rather than a subquery on the grouped result, because the grouped result is
-    empty in exactly the state that matters — a fully enforcing gate with nothing left to
-    suppress — and a value read off row[0] of an empty set is not a value.
+    empty in exactly the state that matters - a fully enforcing gate with nothing left to
+    suppress - and a value read off row[0] of an empty set is not a value.
+
+    REASON-INDEPENDENT for the reason given on `build_persistence_sql`: the counter's AGE is a
+    property of the counter, not of whichever stage happens to be writing to it today.
     """
     return (
-        "SELECT COALESCE(MAX(date) - MIN(date), 0) + CASE WHEN COUNT(*) = 0 THEN 0 ELSE 1 END"
-        " FROM emit_suppressions WHERE reason = '%s';" % _safe_literal(reason)
+        "SELECT COALESCE(MAX(date) - MIN(date), 0) + CASE WHEN COUNT(*) = 0 THEN 0 ELSE 1 END,"
+        " COALESCE(MIN(date)::text, '')"
+        " FROM emit_suppressions;"
     )
 
 
@@ -264,14 +289,19 @@ def frozen_table_for(mode, shadow_age_days, lookback_days):
     return FROZEN_CEILING_PCT_ENFORCE, "enforce"
 
 
-def build_floor_sql(window_days, reason):
-    """Maximum suppressions recorded for any single (venue, day) in the window."""
+def build_floor_sql(window_days):
+    """Maximum suppressions recorded for any single (venue, day) in the window.
+
+    REASON-INDEPENDENT, same reasoning: a runaway adapter parse defect is a runaway defect in
+    either stage, and stage-scoping this reset the observed maxima at the flip too (measured
+    2026-08-29: ASTER 18 / XT 12 / HTX 9 / GATE 5 collapsed to XT 4 / HTX 1).
+    """
     return (
         "SELECT exchange, MAX(d) FROM ("
         "  SELECT exchange, date, SUM(suppress_count) AS d FROM emit_suppressions"
-        "   WHERE date >= (NOW() - INTERVAL '%d days')::date AND reason = '%s'"
+        "   WHERE date >= (NOW() - INTERVAL '%d days')::date"
         "   GROUP BY 1,2) t"
-        " GROUP BY 1 ORDER BY 2 DESC;" % (int(window_days), _safe_literal(reason))
+        " GROUP BY 1 ORDER BY 2 DESC;" % int(window_days)
     )
 
 
@@ -289,6 +319,19 @@ def parse_rows(raw, min_fields):
         if len(parts) >= min_fields:
             out.append(parts)
     return out
+
+
+def window_complete_note(min_date_iso, window_days):
+    """"full coverage on <date>" - the day the trailing window is first complete.
+
+    Derived from the counter's OWN first row rather than from a wave-authored constant, so it
+    stays correct if the counter is ever reseeded and cannot rot into a stale promise.
+    """
+    try:
+        d0 = datetime.strptime(min_date_iso, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return "no suppressions recorded yet, so the window has not started"
+    return "full coverage on %s" % (d0 + timedelta(days=int(window_days) - 1)).isoformat()
 
 
 def ceiling(table, venue):
@@ -475,27 +518,35 @@ def main():
 
     # -- 2. dead-book persistence --
     try:
-        prows = parse_rows(psql(build_persistence_sql(DEAD_BOOK_WINDOW_DAYS, reason)), 6)
+        prows = parse_rows(psql(build_persistence_sql(DEAD_BOOK_WINDOW_DAYS)), 6)
     except QueryError as e:
         print("[book-liveness-canary] %s INDETERMINATE - persistence query: %s" % (stamp, e),
               file=sys.stderr)
         return emit("INDETERMINATE", EXIT_INDETERMINATE)
 
     try:
-        arows = parse_rows(psql(build_counter_age_sql(reason)), 1)
+        arows = parse_rows(psql(build_counter_age_sql()), 1)
     except QueryError as e:
         print("[book-liveness-canary] %s INDETERMINATE - counter-age query: %s" % (stamp, e),
               file=sys.stderr)
         return emit("INDETERMINATE", EXIT_INDETERMINATE)
 
     counter_age = int(arows[0][0] or 0) if arows else 0
+    counter_min_date = (arows[0][1] if arows and len(arows[0]) > 1 else "") or ""
     days_seen = int(prows[0][5] or 0) if prows else 0
     dead, evaluable = classify_persistence(prows, DEAD_BOOK_MIN_DAYS, DEAD_BOOK_WINDOW_DAYS,
                                            days_seen, counter_age)
     if not evaluable:
+        # R2: the gap carries its own END DATE, in the output, beside the number it qualifies,
+        # so a reader meets the expiry where they meet the blindness rather than in a status
+        # file they may never open. Until that date there is NO dead-book detection AT ALL:
+        # under enforce a dead book emits nothing, so it mints no frozen rows either, and the
+        # frozen-row check above is structurally blind to it (measured 2026-08-29: zero
+        # directional emissions post-flip on all five known dead books).
         info.append("persistence: INSUFFICIENT_WINDOW - the counter is %d day(s) old, needs %d; "
-                    "the pin is only meaningful over a full window (%d day(s) carry a "
-                    "suppression)" % (counter_age, DEAD_BOOK_WINDOW_DAYS, days_seen))
+                    "%s (%d day(s) carry a suppression). NO dead-book detection until then."
+                    % (counter_age, DEAD_BOOK_WINDOW_DAYS,
+                       window_complete_note(counter_min_date, DEAD_BOOK_WINDOW_DAYS), days_seen))
     else:
         evaluated += 1
         if dead:
@@ -512,7 +563,7 @@ def main():
 
     # -- 3. suppression volume floor (REPORT-ONLY) --
     try:
-        frows = parse_rows(psql(build_floor_sql(DEAD_BOOK_WINDOW_DAYS, reason)), 2)
+        frows = parse_rows(psql(build_floor_sql(DEAD_BOOK_WINDOW_DAYS)), 2)
     except QueryError as e:
         print("[book-liveness-canary] %s INDETERMINATE - floor query: %s" % (stamp, e),
               file=sys.stderr)
@@ -613,15 +664,28 @@ def _self_test():
 
     # SQL builders: the DB seam bypasses these entirely
     ck("frozen sql scopes the window", lambda: "3*86400" in build_frozen_sql(3), True)
-    ck("persistence sql scopes the reason",
-       lambda: "reason = 'frozen_book_shadow'" in build_persistence_sql(28, "frozen_book_shadow"),
-       True)
     ck("persistence sql scopes the window",
-       lambda: "INTERVAL '28 days'" in build_persistence_sql(28, "frozen_book"), True)
+       lambda: "INTERVAL '28 days'" in build_persistence_sql(28), True)
     ck("persistence sql carries the window-days-seen subquery",
-       lambda: "window_days_seen" in build_persistence_sql(28, "frozen_book"), True)
-    ck("floor sql scopes the reason",
-       lambda: "reason = 'frozen_book'" in build_floor_sql(28, "frozen_book"), True)
+       lambda: "window_days_seen" in build_persistence_sql(28), True)
+
+    # -- THE ANTI-RESET PROPERTY --------------------------------------------------------------
+    # A detector window keyed on a MUTABLE reason restarts itself every time the reason changes.
+    # Measured 2026-08-29: the shadow->enforce flip silently reset this detector to zero and
+    # dropped 3 of 5 known dead books to zero recorded days. These four checks make the window
+    # provably independent of the stage, so a flip, a re-key or a new reason string cannot
+    # restart it again. If a future wave re-introduces `reason = ` into any of these three
+    # builders, these FAIL - that is the whole point of asserting on the SQL text.
+    ck("persistence sql is REASON-INDEPENDENT",
+       lambda: "reason" in build_persistence_sql(28), False)
+    ck("counter-age sql is REASON-INDEPENDENT",
+       lambda: "reason" in build_counter_age_sql(), False)
+    ck("floor sql is REASON-INDEPENDENT",
+       lambda: "reason" in build_floor_sql(28), False)
+    ck("a stage change cannot alter ANY window query",
+       lambda: (build_persistence_sql(28), build_counter_age_sql(), build_floor_sql(28))
+               == (build_persistence_sql(28), build_counter_age_sql(), build_floor_sql(28)),
+       True)
     ck("builder refuses a quote-bearing literal", _quote_refused, True)
 
     # parser: field splitting and short-row rejection
@@ -652,10 +716,17 @@ def _self_test():
        lambda: classify_persistence([], 24, 28, 0, 28)[1], True)
     ck("mature counter with zero suppressions finds no dead books",
        lambda: len(classify_persistence([], 24, 28, 0, 28)[0]), 0)
-    ck("counter-age sql scopes the reason",
-       lambda: "reason = 'frozen_book'" in build_counter_age_sql("frozen_book"), True)
     ck("counter-age sql is NOT window-bounded",
-       lambda: "INTERVAL" not in build_counter_age_sql("frozen_book"), True)
+       lambda: "INTERVAL" not in build_counter_age_sql(), True)
+    ck("counter-age sql also returns the first-row date",
+       lambda: "MIN(date)::text" in build_counter_age_sql(), True)
+    ck("completion date is projected from the counter's OWN first row",
+       lambda: window_complete_note("2026-08-25", 28), "full coverage on 2026-09-21")
+    ck("a re-seeded counter moves the completion date with it",
+       lambda: window_complete_note("2026-09-01", 28), "full coverage on 2026-09-28")
+    ck("an empty counter says so rather than projecting a fake date",
+       lambda: window_complete_note("", 28),
+       "no suppressions recorded yet, so the window has not started")
 
     # MIXED_WINDOW: the ratchet must NOT bite while the window still carries shadow-era rows
     ck("shadow mode uses the shadow table",
@@ -668,7 +739,9 @@ def _self_test():
        lambda: frozen_table_for("enforce", 3, 3)[1], "enforce")
     ck("enforce with no shadow history ever engages immediately",
        lambda: frozen_table_for("enforce", 99999, 3)[1], "enforce")
-    ck("shadow-recency sql scopes the shadow reason",
+    # The ONE query that SHOULD be stage-scoped: "when did the previous stage last write" is a
+    # question ABOUT the stage. Asserted so the two kinds are never conflated again.
+    ck("shadow-recency sql scopes the shadow reason ON PURPOSE",
        lambda: "reason = 'frozen_book_shadow'" in build_shadow_recency_sql(), True)
 
     # ceiling lookup falls back, and the enforce table really is the ratchet
