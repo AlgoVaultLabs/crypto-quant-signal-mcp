@@ -11,7 +11,28 @@ live ⇔ **≥ 12 of its last 24 bars carry `volume > 0`**. A frozen book yields
 
 Unchanged: response shape, fields, quotas, pricing, tool descriptions, thresholds, the funding
 adjustments, and every scoring path. `rawScore` and `confidence` are still the true computed
-values — only the ACTION is withheld, and the suppression is explained in `scoreAdjustments`.
+values — only the ACTION is withheld.
+
+**Where the suppression is explained — and the correction that got us here.** This line used to
+read *"the suppression is explained in `scoreAdjustments`"*. That was true of the INTERNAL array
+and misleading about what a caller sees: `scoreAdjustments` is on no response, read only by
+`emit_suppressions` and `hold_decisions`. A suppression explained only in telemetry is not
+explained, and the gap became live the moment the gate started enforcing.
+
+Since `OPS-BOOK-LIVENESS-EXPLAIN-HOLD-W1` (2026-08-29) there are two channels, and they project
+from ONE derivation — `VerdictOutcome.suppressedSide`, set in the single branch that suppresses:
+
+| channel | audience | what it carries |
+|---|---|---|
+| `reasoning` (public, on every response) | the CALLER | that the call was withheld, WHICH side, and that `confidence` is the withheld call's — *"Book not trading: under 12 of the last 24 bars carried volume, so the SELL (confidence 67) was withheld. Resumes once the book trades again."* A closed underlying gets the market-reopens wording instead. |
+| `scoreAdjustments` (internal) | telemetry / debugging | unchanged, verbatim |
+
+Two things that had to move together, so a future edit does not undo half of it: the caller was
+not only uninformed, the third sentence was **false** — it read *"Turns directional if funding
+normalises"* over a withheld SELL, an affirmative claim that the call was not directional.
+Suppressed responses now carry a resume condition that is true. And the `>280`-char degradation
+ladder is guarded on suppression, because it replaces sentence 2 — which on these responses is
+the explanation itself. Pinned by `tests/unit/verdict-reasoning-suppressed.test.ts`.
 
 **A suppressed emission becomes a HOLD, not a void.** That is load-bearing: `totalGenerated =
 totalCalls + totalHolds` (`index.ts:4274`), so a vanished emission would silently shrink the

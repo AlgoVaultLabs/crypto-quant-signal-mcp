@@ -229,6 +229,22 @@ export interface VerdictOutcome {
   confidence: number;
   rawScore: number;
   scoreAdjustments: string[];
+  /**
+   * OPS-BOOK-LIVENESS-EXPLAIN-HOLD-W1: the directional call the book-liveness gate WITHHELD.
+   * `null` ⇒ nothing was suppressed — the common case, and every legacy caller.
+   *
+   * THE SINGLE DERIVATION of "was this a suppressed HOLD, and of what". Assigned in the one
+   * branch that suppresses, from the same `signal` the note interpolates, so the public
+   * sentence, `emit_suppressions` and `hold_decisions` cannot disagree about what happened.
+   *
+   * It REPLACES `scoreAdjustments.some(a => a.startsWith('Book not trading'))`, which three
+   * consumers would otherwise each re-derive by string prefix — the shape that drifts. The
+   * equivalence is exact rather than approximate: that branch is the ONLY writer of both, so
+   * the field is non-null exactly when the prefix is present. Pinned in both directions by
+   * `tests/unit/verdict-reasoning-suppressed.test.ts`, which also asserts no OTHER push in
+   * this function can produce that prefix.
+   */
+  suppressedSide: 'BUY' | 'SELL' | null;
 }
 export function deriveVerdict(s: VerdictScoreInputs, g: VerdictGateInputs): VerdictOutcome {
   let rawScore =
@@ -293,15 +309,19 @@ export function deriveVerdict(s: VerdictScoreInputs, g: VerdictGateInputs): Verd
   //
   // `bookLive === false` is the only suppressing value — `undefined` (legacy callers, tests)
   // and `true` both pass through untouched.
+  let suppressedSide: 'BUY' | 'SELL' | null = null;
   if (g.bookLive === false && signal !== 'HOLD') {
     scoreAdjustments.push(
       `Book not trading — fewer than ${BOOK_LIVENESS_MIN_GENUINE_BARS} of the last ${BOOK_LIVENESS_WINDOW} bars carried volume. ${signal} suppressed to HOLD (no counterparty to act against).`,
     );
+    // Captured BEFORE the overwrite below, from the same value the note interpolates — one
+    // derivation, two projections (the internal note, and everything that reads the field).
+    suppressedSide = signal;
     signal = 'HOLD';
   }
 
   const confidence = Math.min(Math.round((absScore / MAX_RAW_SCORE) * 100), 100);
-  return { signal, confidence, rawScore, scoreAdjustments };
+  return { signal, confidence, rawScore, scoreAdjustments, suppressedSide };
 }
 
 /**
@@ -1079,8 +1099,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   //    outcomes, and counting them would inflate the rate against a denominator of real
   //    emissions. Fire-and-forget; `recordEmitSuppression` can never throw into this path. ──
   if (!input.internal && bookLiveness && !bookLiveness.live) {
+    // OPS-BOOK-LIVENESS-EXPLAIN-HOLD-W1 (architect Q2): reads the STRUCTURED field instead of
+    // re-deriving by string prefix. Behaviour-identical — the branch that pushes that note is
+    // the only writer of both — and it keeps "was this suppressed" a SINGLE derivation now
+    // that a third consumer (the public `reasoning`) exists.
     const wouldSuppress = bookLivenessMode === 'enforce'
-      ? liveVerdict.scoreAdjustments.some((a) => a.startsWith('Book not trading'))
+      ? liveVerdict.suppressedSide !== null
       : liveVerdict.signal !== 'HOLD';
     // The MODE is recorded with the row (EDGE-SELL-RESOLUTION-ASYMMETRY-W1 Q3). Both stages
     // write here on purpose; without the mode in the data, a reader over the pg-tunnel cannot
@@ -1268,7 +1292,18 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     gates: { fundingZScore, fundingWindowDays: FUNDING_Z_WINDOW_DAYS },
   });
   const reasoning = includeReasoning
-    ? renderVerdictReasoning(factorLedger, signal, confidence, { marketClosed: isClosedState(session.state) })
+    // OPS-BOOK-LIVENESS-EXPLAIN-HOLD-W1: `suppressedSide` rides in so the caller is TOLD the
+    // call was withheld. `confidence` is already a parameter and is the withheld call's own
+    // conviction — the renderer states whose number it is rather than changing it.
+    ? renderVerdictReasoning(factorLedger, signal, confidence, {
+      marketClosed: isClosedState(session.state),
+      suppressedSide: liveVerdict.suppressedSide,
+      // INJECTED, never imported by the renderer — that module holds zero imports and no
+      // constants so it cannot print a figure it does not hold. These are the SAME two
+      // constants the internal note at the suppression branch interpolates, so the public
+      // sentence and the telemetry note can never quote different pins.
+      suppressionPin: { minGenuineBars: BOOK_LIVENESS_MIN_GENUINE_BARS, window: BOOK_LIVENESS_WINDOW },
+    })
     : '';
 
   const result: TradeCallResult = {
@@ -1382,9 +1417,11 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
           // `arm` is resolved inside recordHoldDecision, not here: it needs `currentCaller()`
           // from upstream-weight-budget, which sits in the documented init cycle.
           isBotInternal: license.tier === 'internal',
-          // Reuses the EXACT predicate the shadow-compare at :1073 already uses, rather than a
-          // second reading of the same condition. Dead until the gate leaves shadow mode.
-          suppressionReason: liveVerdict.scoreAdjustments.some((a) => a.startsWith('Book not trading'))
+          // Reuses the EXACT predicate the shadow-compare above already uses, rather than a
+          // second reading of the same condition. OPS-BOOK-LIVENESS-EXPLAIN-HOLD-W1 (architect
+          // Q2) moved BOTH onto `suppressedSide`; the prior string-prefix form is behaviourally
+          // identical, and consolidating was the point — a third consumer now exists.
+          suppressionReason: liveVerdict.suppressedSide !== null
             ? ('book_liveness' as const)
             : ('below_threshold' as const),
         };

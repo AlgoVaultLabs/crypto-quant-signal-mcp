@@ -1097,8 +1097,25 @@ function flipSentence(ledger: FactorLedger, call: string, driver: FactorRow | nu
 export function renderVerdictReasoning(
   ledger: FactorLedger,
   call: string,
-  _confidencePct?: number,
-  opts: { marketClosed?: boolean } = {},
+  confidencePct?: number,
+  opts: {
+    marketClosed?: boolean;
+    /**
+     * OPS-BOOK-LIVENESS-EXPLAIN-HOLD-W1: the directional call the book-liveness gate WITHHELD.
+     * `null`/absent ⇒ nothing was suppressed, and every sentence below is byte-unchanged.
+     */
+    suppressedSide?: 'BUY' | 'SELL' | null;
+    /**
+     * The book-liveness pin, INJECTED — never imported. This module holds zero imports and no
+     * constants by design (see the purity note at the top): it renders public copy, so it must
+     * be structurally unable to print a number it does not hold. Same discipline as `WEIGHTS`.
+     *
+     * Absent ⇒ the suppression sentence renders in its NUMBER-FREE form. A caller that cannot
+     * supply the pin must not cause a fabricated one; `get-trade-call.ts` always supplies it,
+     * and a test asserts it passes the real constants rather than literals.
+     */
+    suppressionPin?: { minGenuineBars: number; window: number };
+  } = {},
 ): string {
   const { rows, netDirection, counterweight } = ledger;
 
@@ -1136,7 +1153,34 @@ export function renderVerdictReasoning(
   // ── 2. Counterweight, else the strongest context that is not the driver ──
   const others = rows.filter((r) => r !== driver && r !== counterweight);
   let s2: string;
-  if (opts.marketClosed) {
+  if (opts.suppressedSide) {
+    // ── OPS-BOOK-LIVENESS-EXPLAIN-HOLD-W1 ──
+    //
+    // The gate withheld a directional call. Until this shipped, the caller saw `HOLD` beside
+    // the WITHHELD call's confidence and no explanation anywhere on the wire — the note existed
+    // only in `scoreAdjustments`, which two telemetry consumers read and no caller ever sees.
+    // An unexplained HOLD is a gap; a HOLD carrying a directional call's conviction, with prose
+    // that never says so, is a claim. So this states BOTH facts in one sentence: the call was
+    // withheld, and the number belongs to it.
+    //
+    // It takes slot 2 for the same reason the closed-market caveat does — it IS the most
+    // important context in this state — and it OUTRANKS that caveat, which describes a read
+    // that was still emitted. The two are orthogonal (`marketClosed` is the underlying session;
+    // suppression is the book's own volume) and genuinely co-occur, so this is a three-state
+    // ladder and not a two-way switch: a closed market that ALSO suppressed gets the closed
+    // wording, and a closed market that did not is left byte-identical below.
+    //
+    // NUMBERS: the pin is injected, never held here, and the number-free form is the fail-safe.
+    // The threshold form ("under k of the last N") is deliberate over the observed count —
+    // `barsExamined` is `min(candles, N)` and can legitimately be k..N-1, so a literal N beside
+    // an observed count would be FALSE on exactly those books.
+    const pin = opts.suppressionPin;
+    const bars = pin ? `under ${pin.minGenuineBars} of the last ${pin.window} bars carried volume` : 'too few recent bars carried volume';
+    const conviction = typeof confidencePct === 'number' ? ` (confidence ${confidencePct})` : '';
+    s2 = opts.marketClosed
+      ? `Underlying market closed and the book is not trading, so the ${opts.suppressedSide}${conviction} was withheld until it reopens`
+      : `Book not trading: ${bars}, so the ${opts.suppressedSide}${conviction} was withheld`;
+  } else if (opts.marketClosed) {
     // A TradFi perp whose cash market is shut is priced off a CAPPED synthetic index,
     // so the directional read is provisional. This used to ride as a 4th appended
     // sentence, which both broke the sentence count and pushed the string past the
@@ -1171,22 +1215,44 @@ export function renderVerdictReasoning(
   }
 
   // ── 3. Flip ──
-  const s3 = flipSentence(ledger, call, driver);
+  //
+  // OPS-BOOK-LIVENESS-EXPLAIN-HOLD-W1 (architect Q1): on a SUPPRESSED hold the ordinary flip
+  // sentence is not merely uninformative, it is FALSE. Measured live on `EPT|4h|XT` while the
+  // gate was enforcing: "Turns directional if funding normalises" — an affirmative claim that
+  // the call is not currently directional, printed over a withheld SELL at confidence 67.
+  // Funding normalising would change nothing; the book trading again is the real condition.
+  // Correcting slot 2 while leaving this in place would put a fixed sentence beside an
+  // uncorrected one, which reads as deliberate.
+  const s3 = opts.suppressedSide
+    ? (opts.marketClosed ? 'Resumes when the underlying market reopens' : 'Resumes once the book trades again')
+    : flipSentence(ledger, call, driver);
 
   // Fit to the consumer's ceiling by DEGRADING slot 2, never by dropping a slot: the
   // driver and the flip are the two the reader cannot do without, and a 2-sentence
   // variant would make the sentence count a function of string length.
+  //
+  // OPS-BOOK-LIVENESS-EXPLAIN-HOLD-W1: both degradation branches are now guarded on
+  // `suppressedSide` as well, mirroring the existing `marketClosed` guards. Without that, the
+  // >280 fallback would replace slot 2 — i.e. DELETE the very explanation this wave adds, and
+  // do it only on the longest responses, which is the worst possible way to lose it.
   const join = (a: string, b: string, c: string) => [a, b, c].map((s) => s.replace(/\.*$/, '')).join('. ') + '.';
   let out = join(s1, s2, s3);
-  if (out.length > REASONING_MAX_CHARS && !counterweight && !opts.marketClosed) {
+  if (out.length > REASONING_MAX_CHARS && !counterweight && !opts.marketClosed && !opts.suppressedSide) {
     const ctx = others.filter((r) => r.factor === 'regime' || r.factor === 'breakout_pending' || r.factor === 'oi_change_pct');
     if (ctx.length) out = join(s1, clauseFor(ctx[0]), s3);
   }
-  if (out.length > REASONING_MAX_CHARS && !opts.marketClosed) {
+  if (out.length > REASONING_MAX_CHARS && !opts.marketClosed && !opts.suppressedSide) {
     const short = counterweight
       ? `Against: ${counterweight.factor.replace(/_/g, ' ')} reads ${counterweight.direction}`
       : 'Nothing else cleared its threshold';
     out = join(s1, short, s3);
+  }
+  // Last resort on a SUPPRESSED response only: degrade slot 1, never slot 2. The driver
+  // sentence is the one the reader can most afford to lose here, because the withheld call and
+  // its confidence — the whole point of this state — live in slot 2. Ordinary and closed-market
+  // responses are untouched: their >280 handling is the ladder above, exactly as before.
+  if (out.length > REASONING_MAX_CHARS && opts.suppressedSide) {
+    out = join(`Signal computed ${netDirection}`, s2, s3);
   }
   return out;
 }
