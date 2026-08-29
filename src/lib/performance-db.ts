@@ -2461,7 +2461,12 @@ export function getPerformanceStats(): PerformanceStats {
   const all = b.all(
     `SELECT ${STATS_COL_PROJECTION} FROM signals ORDER BY created_at DESC`
   ) as unknown as SignalRecord[];
-  const stats = computeStats(all, null);
+  // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: `null` = unfiltered, and it is a decision, not an
+  // omission. This is the SYNCHRONOUS SQLite path — `getPerformanceStats()` returns
+  // `emptyStats()` outright under PG, so prod never reaches here — and the venue allow-list
+  // resolves from an async DB read that a sync function cannot await. Documented rather than
+  // faked: a SQLite deployment serving this path would not have the row filter.
+  const stats = computeStats(all, null, null);
   perfStatsCache.set(bucket, { stats, computedAt: Date.now() });
   console.debug(`[perf-stats] cache miss bucket=${bucket} rows=${all.length} elapsedMs=${Date.now() - t0}`);
   return stats;
@@ -2490,15 +2495,26 @@ export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
       // computeStats scan (CH1 oracle gate); returns in ms without holding a pool
       // connection for the full-table load. Default-deny: any non-"1"/"true" → scan.
       const useSql = perfStatsSqlPushdownEnabled() && isPg;
+      // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: resolve the public venue allow-list ONCE, here,
+      // and hand the SAME set to whichever branch runs. Measured 2026-08-29,
+      // PERF_STATS_SQL_PUSHDOWN=1 in prod — the SQL branch is the LIVE one, so a fix applied
+      // only to the in-memory branch below would be a no-op in production while looking green
+      // locally. That is exactly why the parameter is required rather than defaulted.
+      //
+      // Reuses the aggregate lane's resolver (fail-CLOSED, lazily imported so the DB layer
+      // gains no static edge to venue-store, which imports THIS module). ONE venue source
+      // governs aggregates and rows alike.
+      const { resolvePublicPerformanceAllowList } = await import('./public-performance-formatter.js');
+      const recentVenues = (await resolvePublicPerformanceAllowList()).venues;
       let stats: PerformanceStats;
       let rows: number;
       if (useSql) {
-        const { groups, period, recentRows } = await aggregateSignalsSql();
-        stats = rollupStats(groups, period, top20, recentRows);
+        const { groups, period, recentRows } = await aggregateSignalsSql(recentVenues);
+        stats = rollupStats(groups, period, top20, recentRows, recentVenues);
         rows = period.total;
       } else {
         const all = await loadSignalsForStats();
-        stats = computeStats(all, top20);
+        stats = computeStats(all, top20, recentVenues);
         rows = all.length;
       }
       perfStatsCache.set(bucket, { stats, computedAt: Date.now() });
@@ -2580,7 +2596,50 @@ function emptyStats(): PerformanceStats {
   };
 }
 
-function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null): PerformanceStats {
+/**
+ * OPS-RECENT-SIGNALS-VENUE-FILTER-W1 — who may appear in the public RECENCY window.
+ *
+ * `ReadonlySet<string>` — admit only these venue ids into `recentSignals`. This is the SAME
+ * resolved set the aggregate lane uses (`resolvePublicPerformanceAllowList()` in
+ * public-performance-formatter.ts): `listVenues('promoted')` ∩ `getActivePromotedVenueIds()`,
+ * fail-CLOSED. There is no second venue source, and the RAW static promoted-venue constant in
+ * `capabilities.ts` is never read here — it still carries the RETIRED `BITMART` (15 ids against
+ * the live 14). (Named descriptively rather than by symbol on purpose: this wave's verification
+ * gate bans that identifier from this file by grep, and a comment explaining why it is banned
+ * would otherwise keep the gate red for the wrong reason.)
+ *
+ * `null` — UNFILTERED. Legal, and it means *admin or oracle context*, never "caller forgot".
+ * The parameter is deliberately REQUIRED at every producer below rather than defaulted: an
+ * optional param defaulting to unfiltered is the fix-one-branch-miss-the-other trap expressed
+ * in the type system, where a missed call site keeps the old behaviour AND compiles clean.
+ * Required means omission is a compile error, so "both branches" is structural rather than
+ * remembered. `tests/unit/perfstats-rollup-equivalence.test.ts` pins that the two public paths
+ * pass a real set and not `null`.
+ */
+export type RecentVenueScope = ReadonlySet<string> | null;
+
+/**
+ * Rows admitted to the public recency window. FAIL-CLOSED: an empty scope admits nothing.
+ *
+ * `undefined` is NOT `null` and is not treated as unfiltered. TypeScript makes it unreachable
+ * from a typed caller — the parameter is required — so it can only arrive from untyped JS or a
+ * stale call site, which is a programming error and not a runtime condition. It throws with the
+ * contract named, because the alternative was a bare `TypeError: Cannot read properties of
+ * undefined (reading 'has')` several frames from the cause. This is not a live-serving-path
+ * guard (which would refuse rather than throw); it is unreachable-by-construction, made legible.
+ */
+function admitRecent(rows: SignalRecord[], scope: RecentVenueScope): SignalRecord[] {
+  if (scope === undefined) {
+    throw new Error(
+      '[perf-stats] recentVenues is required: pass a ReadonlySet<string> for a public path, '
+      + 'or an explicit `null` for an admin/oracle path. `undefined` is never a valid scope.',
+    );
+  }
+  if (scope === null) return rows;
+  return rows.filter(r => scope.has(r.exchange || 'HL'));
+}
+
+function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null, recentVenues: RecentVenueScope): PerformanceStats {
   if (all.length === 0) return emptyStats();
 
   const oldest = all[all.length - 1];
@@ -2765,7 +2824,10 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
     // reader) inherits the sanitized shape with zero per-consumer migration.
     // Closes DESIGN-W11-FF3 flagged follow-up. Sanitizer is a pure exported
     // function `formatPublicRecentSignal()` below — directly unit-testable.
-    recentSignals: all.slice(0, 20).map(s => formatPublicRecentSignal({
+    // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: filter BEFORE the slice, never after. Filtering the
+    // 20 would yield a jittery 14-to-20-row ticker whose LENGTH leaks how many rows were
+    // dropped; filtering the pool keeps the window at the 20 most recent PROMOTED rows.
+    recentSignals: admitRecent(all, recentVenues).slice(0, 20).map(s => formatPublicRecentSignal({
       id: s.id!,
       coin: s.coin,
       timeframe: s.timeframe,
@@ -2892,6 +2954,7 @@ export function rollupStats(
   period: PeriodRow,
   top20ByOI: Set<string> | null,
   recentRows: SignalRecord[],
+  recentVenues: RecentVenueScope,
 ): PerformanceStats {
   if (period.total === 0) return emptyStats();
   const nonHold = groups.filter(g => g.signal !== 'HOLD');
@@ -2953,7 +3016,12 @@ export function rollupStats(
     byAsset,
     byExchange,
     byTier,
-    recentSignals: recentRows.slice(0, 20).map(s => formatPublicRecentSignal({
+    // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: on THIS branch the venue predicate is already in the
+    // SQL (`recentSql`), because `LIMIT 20` runs in the database — a JS filter here could never
+    // see a 21st row to backfill with. `admitRecent` is applied anyway so the two branches are
+    // byte-identical for a caller that hands this function an unfiltered `recentRows` (the
+    // equivalence oracle does exactly that), and so the guarantee does not rest on the SQL alone.
+    recentSignals: admitRecent(recentRows, recentVenues).slice(0, 20).map(s => formatPublicRecentSignal({
       id: s.id!, coin: s.coin, timeframe: s.timeframe, tier: classifyAsset(s.coin, top20ByOI), created_at: s.created_at, exchange: s.exchange || 'HL',
     })),
     methodology: METHODOLOGY,
@@ -2972,8 +3040,8 @@ export function canonicalizeForCompare(v: unknown): unknown {
 }
 
 /** Test-seam: invoke the FROZEN oracle without exporting/altering computeStats itself. */
-export function _computeStatsOracle(rows: SignalRecord[], top20ByOI: Set<string> | null = null): PerformanceStats {
-  return computeStats(rows, top20ByOI);
+export function _computeStatsOracle(rows: SignalRecord[], top20ByOI: Set<string> | null, recentVenues: RecentVenueScope): PerformanceStats {
+  return computeStats(rows, top20ByOI, recentVenues);
 }
 
 // ── OPS-PERFSTATS-SQL-PUSHDOWN-W1 (CH2) — SQL pushdown (PG only, dark behind a flag) ──
@@ -2993,7 +3061,7 @@ function perfStatsSqlPushdownEnabled(): boolean {
  * coalesces to 'HL' to match computeStats' `s.exchange || 'HL'`. max(created_at)
  * + max(id) per group drive rollup's deterministic byAsset/byExchange order (Q1).
  */
-export function buildStatsAggregateSql(): { groupsSql: string; periodSql: string; recentSql: string } {
+export function buildStatsAggregateSql(recentVenues: RecentVenueScope): { groupsSql: string; periodSql: string; recentSql: string; recentParams: unknown[] } {
   // OPS-PFE-METRIC-INTEGRITY-W1: both filters below carry the S2 frozen-book exclusion via the
   // SHARED fragment from pfe-scoring.ts. This path is the LIVE one in prod
   // (PERF_STATS_SQL_PUSHDOWN=1), so a rule applied only to the TypeScript predicates would be a
@@ -3009,8 +3077,17 @@ export function buildStatsAggregateSql(): { groupsSql: string; periodSql: string
       "FROM signals GROUP BY coalesce(exchange, 'HL'), coin, timeframe, signal",
     periodSql:
       'SELECT min(created_at) AS min_created_at, max(created_at) AS max_created_at, count(*) AS total FROM signals',
+    // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: the venue predicate belongs INSIDE this query. The
+    // `LIMIT 20` executes in the database, so a post-query filter cannot reach a 21st row —
+    // it could only ever shrink the window. Parameterised with the repo's `?` convention
+    // (PgBackend rewrites to `$n`). FAIL-CLOSED by construction rather than by a branch: an
+    // EMPTY scope produces `= ANY('{}')`, which matches nothing, so a venue-registry fault
+    // withholds rows instead of leaking them.
     recentSql:
-      `SELECT ${STATS_COL_PROJECTION} FROM signals ORDER BY created_at DESC, id DESC LIMIT 20`,
+      `SELECT ${STATS_COL_PROJECTION} FROM signals`
+      + (recentVenues === null ? '' : " WHERE coalesce(exchange, 'HL') = ANY(?)")
+      + ' ORDER BY created_at DESC, id DESC LIMIT 20',
+    recentParams: recentVenues === null ? [] : [[...recentVenues]],
   };
 }
 
@@ -3019,15 +3096,15 @@ export function buildStatsAggregateSql(): { groupsSql: string; periodSql: string
  * count/bigint as strings) + period + the deterministic top-20 recent rows (left
  * in native b.query types so recentSignals byte-matches loadSignalsForStats rows).
  */
-export async function aggregateSignalsSql(): Promise<{ groups: StatGroupRow[]; period: PeriodRow; recentRows: SignalRecord[] }> {
+export async function aggregateSignalsSql(recentVenues: RecentVenueScope): Promise<{ groups: StatGroupRow[]; period: PeriodRow; recentRows: SignalRecord[] }> {
   const b = getBackend();
   if (!(isPg && b instanceof PgBackend)) throw new Error('aggregateSignalsSql: PG backend required');
-  const { groupsSql, periodSql, recentSql } = buildStatsAggregateSql();
+  const { groupsSql, periodSql, recentSql, recentParams } = buildStatsAggregateSql(recentVenues);
   // Sequential on ONE pooled connection (~150ms total) — fewer concurrent conns
   // than 3 parallel queries; still ms vs the ~6s full-row-load it replaces.
   const rawGroups = (await b.query(groupsSql)) as unknown as Array<Record<string, unknown>>;
   const rawPeriod = (await b.query(periodSql)) as unknown as Array<Record<string, unknown>>;
-  const recentRows = (await b.query(recentSql)) as unknown as SignalRecord[];
+  const recentRows = (await b.query(recentSql, recentParams)) as unknown as SignalRecord[];
   const groups: StatGroupRow[] = rawGroups.map(r => ({
     exchange: String(r.exchange), coin: String(r.coin), timeframe: String(r.timeframe), signal: r.signal as SignalVerdict,
     cnt: Number(r.cnt), pfe_eval: Number(r.pfe_eval), pfe_win: Number(r.pfe_win),
@@ -3039,13 +3116,13 @@ export async function aggregateSignalsSql(): Promise<{ groups: StatGroupRow[]; p
 }
 
 // Probe seams (underscore-prefixed) for the live byte-equivalence gate (audits/perfstats-equivalence-probe.js).
-export async function _perfStatsOldPath(top20: Set<string> | null): Promise<{ stats: PerformanceStats; total: number }> {
+export async function _perfStatsOldPath(top20: Set<string> | null, recentVenues: RecentVenueScope = null): Promise<{ stats: PerformanceStats; total: number }> {
   const all = await loadSignalsForStats();
-  return { stats: computeStats(all, top20), total: all.length };
+  return { stats: computeStats(all, top20, recentVenues), total: all.length };
 }
-export async function _perfStatsNewPath(top20: Set<string> | null): Promise<{ stats: PerformanceStats; total: number }> {
-  const { groups, period, recentRows } = await aggregateSignalsSql();
-  return { stats: rollupStats(groups, period, top20, recentRows), total: period.total };
+export async function _perfStatsNewPath(top20: Set<string> | null, recentVenues: RecentVenueScope = null): Promise<{ stats: PerformanceStats; total: number }> {
+  const { groups, period, recentRows } = await aggregateSignalsSql(recentVenues);
+  return { stats: rollupStats(groups, period, top20, recentRows, recentVenues), total: period.total };
 }
 
 // ── Public recent signals (for /api/performance-public.recentSignals[] + /track-record dashboard) ──

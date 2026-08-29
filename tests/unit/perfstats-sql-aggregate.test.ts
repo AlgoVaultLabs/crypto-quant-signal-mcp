@@ -6,7 +6,9 @@ import { describe, it, expect } from 'vitest';
 import { buildStatsAggregateSql, _parsePerfStatsPushdownFlag } from '../../src/lib/performance-db.js';
 
 describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
-  const { groupsSql, periodSql, recentSql } = buildStatsAggregateSql();
+  // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: the builder now takes the public venue scope.
+  // `null` = unfiltered (admin/oracle); the venue-scoped shape is asserted in its own block below.
+  const { groupsSql, periodSql, recentSql } = buildStatsAggregateSql(null);
 
   it('groups SQL: grouping + win/eval predicates + max_ca/max_id + coalesce; NO time-window/confidence/outcome', () => {
     expect(groupsSql).toMatch(/GROUP BY coalesce\(exchange,\s*'HL'\),\s*coin,\s*timeframe,\s*signal/i);
@@ -41,6 +43,42 @@ describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
     expect(recentSql).toMatch(/LIMIT 20/i);
     expect(recentSql).not.toMatch(/outcome_/);
     expect(recentSql).toMatch(/pfe_return_pct/);  // STATS_COL_PROJECTION (rollup ignores it for recentSignals)
+  });
+
+  // ── OPS-RECENT-SIGNALS-VENUE-FILTER-W1 — the venue predicate lives in the SQL ──
+  //
+  // It has to. `LIMIT 20` executes in the DATABASE, so a post-query JS filter could never reach
+  // a 21st row to backfill with — it could only shrink the window, producing a ticker whose
+  // LENGTH leaks how many rows were dropped. And this is the LIVE branch: PERF_STATS_SQL_PUSHDOWN
+  // is ON in prod, so a predicate applied only to the in-memory path would be a production no-op.
+  it('venue-scoped: recentSql gains a parameterised allow-list; groups/period are UNTOUCHED', () => {
+    const scoped = buildStatsAggregateSql(new Set(['BINANCE', 'HL']));
+    expect(scoped.recentSql).toMatch(/WHERE coalesce\(exchange,\s*'HL'\)\s*=\s*ANY\(\?\)/i);
+    expect(scoped.recentParams).toEqual([['BINANCE', 'HL']]);
+    // Parameterised, never interpolated — no venue id is ever spliced into the SQL text.
+    expect(scoped.recentSql).not.toMatch(/BINANCE/);
+    // The window is still the deterministic top-20 AFTER the predicate.
+    expect(scoped.recentSql).toMatch(/ORDER BY created_at DESC,\s*id DESC/i);
+    expect(scoped.recentSql).toMatch(/LIMIT 20/i);
+    // AGGREGATES are deliberately unfiltered here — byExchange is filtered downstream by the
+    // shared public formatter, so the admin view and /api/performance-shadow keep every venue.
+    const bare = buildStatsAggregateSql(null);
+    expect(scoped.groupsSql).toBe(bare.groupsSql);
+    expect(scoped.periodSql).toBe(bare.periodSql);
+  });
+
+  it('venue-scoped: an EMPTY scope is FAIL-CLOSED — it matches nothing, it does not match all', () => {
+    // `= ANY('{}')` is false for every row, so a venue-registry fault withholds rows rather
+    // than leaking them. Fail-closed BY CONSTRUCTION: there is no branch here to get wrong.
+    const empty = buildStatsAggregateSql(new Set());
+    expect(empty.recentSql).toMatch(/= ANY\(\?\)/);
+    expect(empty.recentParams).toEqual([[]]);
+  });
+
+  it('venue-scoped: null means UNFILTERED and emits no predicate at all (admin/oracle)', () => {
+    const bare = buildStatsAggregateSql(null);
+    expect(bare.recentSql).not.toMatch(/ANY\(/);
+    expect(bare.recentParams).toEqual([]);
   });
 
   it('flag parse: default-deny — only "1"/"true" enable', () => {

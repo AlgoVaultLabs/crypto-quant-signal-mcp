@@ -40,9 +40,32 @@ function seedSignals() {
   }
 }
 
+// OPS-RECENT-SIGNALS-VENUE-FILTER-W1: `recentSignals` is now venue-scoped, and the scope is
+// FAIL-CLOSED — an empty `venues` registry admits nothing. This suite seeds rows on `HL`, so it
+// must also register HL as promoted; without that the correct new behaviour is ZERO rows and the
+// suite would read as a regression. Seeding the registry keeps the test on the REAL path
+// (getPerformanceStatsAsync → resolvePublicPerformanceAllowList → listVenues) instead of mocking
+// the resolver away, which would stop exercising the thing this wave changed.
+async function seedPromotedVenue() {
+  const venueStore = await import('../src/lib/venue-store.js');
+  await venueStore.initVenuesTable();
+  venueStore._resetRetiredCacheForTest();
+  // Written with primitives rather than via `insertVenue`, which binds a `Date` and so cannot
+  // run on SQLite ("SQLite3 can only bind numbers, strings, bigints, buffers, and null"). That
+  // is a pre-existing dual-backend gap in a helper this wave does not own; the READ path under
+  // test (listVenues → getActivePromotedVenueIds) is exercised for real either way.
+  perfDb.dbRun(
+    `INSERT INTO venues (exchange_id, status, asset_count, min_buy_sell_sample, integrated_at, notes)
+     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (exchange_id) DO NOTHING`,
+    'HL', 'promoted', 1, 10, new Date().toISOString(), null,
+  );
+  perfDb._clearPerformanceStatsCache();
+}
+
 describe('recentSignals shape', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     seedSignals();
+    await seedPromotedVenue();
   });
 
   it('includes id: number on every entry', async () => {
@@ -79,3 +102,32 @@ describe('recentSignals shape', () => {
     }
   });
 });
+
+// ── OPS-RECENT-SIGNALS-VENUE-FILTER-W1 — the fail-closed direction, on the REAL async path ──
+describe('recentSignals venue scope (fail-closed)', () => {
+  it('an EMPTY venue registry yields ZERO rows — never a fall-through to unfiltered', async () => {
+    seedSignals();
+    const venueStore = await import('../src/lib/venue-store.js');
+    await venueStore.initVenuesTable();
+    try {
+      // Empty the registry for this assertion only. The signal pool stays NON-empty, so zero
+      // rows is the predicate HOLDING, not an empty input — the distinction the vacuity rule
+      // exists for. This is the SV-02 contract (empty ⇒ nothing, never everything) applied to
+      // the row lane.
+      perfDb.dbRun('DELETE FROM venues');
+      venueStore._resetRetiredCacheForTest();
+      perfDb._clearPerformanceStatsCache();
+      expect((await venueStore.listVenues('promoted')).length).toBe(0);
+      const stats = await perfDb.getPerformanceStatsAsync();
+      expect(stats.totalCalls, 'the signal pool must be non-empty or this proves nothing')
+        .toBeGreaterThan(0);
+      expect(stats.recentSignals).toHaveLength(0);
+    } finally {
+      // Restore, so this test cannot leak into any sibling regardless of ordering.
+      await seedPromotedVenue();
+      venueStore._resetRetiredCacheForTest();
+      perfDb._clearPerformanceStatsCache();
+    }
+  });
+});
+

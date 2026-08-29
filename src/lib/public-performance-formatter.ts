@@ -157,6 +157,26 @@ export function isPublicTimeframe(tf: string, allow: PublicPerformanceAllowList)
   return !(SHADOW_TIMEFRAMES as readonly string[]).includes(tf) || allow.revealedShadowTimeframes.has(tf);
 }
 
+/**
+ * OPS-RECENT-SIGNALS-VENUE-FILTER-W1 — the ROW predicate.
+ *
+ * The venue allow-list, exposed for the per-ROW lane. `formatPublicPerformance` below governs
+ * the AGGREGATE sections (`byExchange` keys); this is the same set applied to individual rows —
+ * `recentSignals` — which are produced upstream in `performance-db.ts` and reach every public
+ * channel already sliced.
+ *
+ * WHY IT LIVES HERE AND NOT IN THE PRODUCER. The producer would otherwise need its own venue
+ * source, and "an allow-list applied to one output shape and not another" is precisely the bug
+ * class the aggregate wave retired. There is ONE resolved set
+ * ({@link resolvePublicPerformanceAllowList}) and both shapes read it.
+ *
+ * FAIL-CLOSED by construction: an empty `allow.venues` admits nothing, which is the same
+ * direction the aggregate path takes and the SV-02 contract requires.
+ */
+export function isPublicVenue(exchange: string | null | undefined, allow: PublicPerformanceAllowList): boolean {
+  return allow.venues.has(exchange || 'HL');
+}
+
 type TfAgg = { count: number; evaluated: number; pfeWinRate: number | null };
 type AssetAgg = { count: number; tier: number; pfeWinRate: number | null };
 
