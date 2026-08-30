@@ -57,3 +57,70 @@ export const AI_CRAWLER_ALLOWLIST: readonly string[] = [
   'Googlebot',
   'Bingbot',
 ];
+
+/**
+ * API_CATALOG_ENDPOINTS — the ONE endpoint set behind `/.well-known/api-catalog` (RFC 9727).
+ *
+ * Single derivation, two consumers, and the split is deliberate:
+ *   - `scripts/generate-wellknown.mjs` EMITS the catalog document from this list;
+ *   - `scripts/check-robots-ai-allowlist.mjs` PROBES every href in it for liveness.
+ * So the published document and the thing the gate verifies cannot describe different sets.
+ *
+ * WHY `probe` LIVES HERE AND NOT IN THE DOCUMENT. RFC 9727 §4.2 makes the catalog an RFC 9264
+ * linkset, whose object members are link RELATION TYPES. `probe-method` is not a registered
+ * relation, so putting it in the served body would make a document whose entire value is
+ * conformance carry our gate's private config. It is our config, so it lives in our repo.
+ *
+ * WHY `probe` EXISTS AT ALL. `https://api.algovault.com/mcp` answers **405 to GET and to HEAD**
+ * (measured 2026-08-30; `allow: GET, POST, DELETE` is a stale advertisement — the stateless
+ * transport refuses GET). It is nonetheless the product's primary API and a catalog omitting it
+ * would be misleading, so liveness for that one item is proven the way the endpoint is actually
+ * used: a JSON-RPC POST. RFC 9727 §4.1 requires hyperlinks to API endpoints and says nothing
+ * about their being GET-able.
+ *
+ * GUARDRAIL — the gate may call `initialize` or `tools/list` and NOTHING ELSE. It runs daily,
+ * unattended, against production: calling a billable tool (`get_trade_call`, `scan_trade_calls`,
+ * `get_market_regime`, `scan_funding_arb`) would consume quota and write a signal, making the
+ * canary a producer of the data it exists to watch. `probe: 'mcp-initialize'` is the only
+ * non-GET probe kind, and it is handshake-only by construction.
+ *
+ * ONE ENTRY PER LINE is load-bearing: the gate and the generator both run on a host with no
+ * TypeScript loader, so they read this literal as TEXT (same constraint as
+ * AI_CRAWLER_ALLOWLIST above). Reformatting an entry across lines makes it invisible to both.
+ *
+ * `service-desc` is deliberately absent: no OpenAPI document exists
+ * (`https://algovault.com/openapi.json` → 404, re-probed 2026-08-30). RFC 9727 makes it
+ * RECOMMENDED, not required, and fabricating an href to a file that does not exist is the exact
+ * defect this arc's gate was built to catch.
+ */
+export interface ApiCatalogEndpoint {
+  /** Absolute URL published in the linkset. */
+  readonly href: string;
+  /** Registered link relation type. `item` = RFC 6573; `service-doc` = RFC 8631. */
+  readonly rel: 'item' | 'service-doc';
+  /** How the GATE proves this href is alive. Never emitted into the document. */
+  readonly probe: 'GET' | 'mcp-initialize';
+  /** Optional RFC 9264 `type` hint, emitted into the document when present. */
+  readonly type?: string;
+}
+
+export const API_CATALOG_ENDPOINTS: readonly ApiCatalogEndpoint[] = [
+  { href: 'https://api.algovault.com/mcp', rel: 'item', probe: 'mcp-initialize' },
+  { href: 'https://api.algovault.com/api/plans/public', rel: 'item', probe: 'GET' },
+  { href: 'https://algovault.com/api/performance-public', rel: 'item', probe: 'GET' },
+  { href: 'https://algovault.com/api/merkle-batches', rel: 'item', probe: 'GET' },
+  { href: 'https://algovault.com/docs', rel: 'service-doc', probe: 'GET', type: 'text/html' },
+];
+
+/** The canonical RFC 9727 catalog URI. Every other API domain 301s here. */
+export const API_CATALOG_URL = 'https://algovault.com/.well-known/api-catalog';
+
+/** RFC 9727 §4.2 — the media type the catalog MUST be served as, with its SHOULD profile param. */
+export const API_CATALOG_CONTENT_TYPE =
+  'application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"';
+
+/** RFC 8288 typed link the apex advertises on every response. Registered relation only. */
+export const API_CATALOG_LINK_HEADER = '</.well-known/api-catalog>; rel="api-catalog"';
+
+/** RFC 9116 §2.5 — `Expires` is generated as now + this many days. Under a year, per the RFC. */
+export const SECURITY_TXT_EXPIRY_DAYS = 180;

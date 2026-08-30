@@ -13,6 +13,21 @@ api.algovault.com {
     # from the committed landing/api-robots.txt via the same static idiom as /privacy below, so
     # the body is a repo file the gate and the unit tests can both read. deploy.yml already
     # copies landing/*.txt into /var/www/algovault, so this needs no new deploy step.
+    # GEO-WELLKNOWN-DISCOVERY-W1 R2.3 — RFC 9727 §5.1: where APIs span domains, publish the
+    # well-known URI at EACH API domain, choose ONE canonical, and have the others redirect to
+    # it. api. hosts /mcp and /api/plans/public so it IS an API domain; the apex holds the one
+    # canonical document. A 301 rather than a second copy, because two bodies are two things to
+    # keep true and the drift lands in whichever one nobody reads. 301 not 302: §5.1 is choosing
+    # a canonical permanently, and a 302 would say the choice is provisional.
+    #
+    # NOT paired with a security.txt redirect, and that is a rule rather than an omission:
+    # RFC 9116 §3 says a security.txt "MUST only apply to the domain or IP address in the URI
+    # used to retrieve it, not to any of its subdomains or parent domains" — so a 301 here would
+    # hand an agent a document that by the RFC does not cover api. at all. The RFC-correct form
+    # is a SECOND document, which is a second artifact to drift for zero measured demand.
+    handle /.well-known/api-catalog {
+        redir * https://algovault.com/.well-known/api-catalog 301
+    }
     handle /robots.txt {
         root * /var/www/algovault
         rewrite * /api-robots.txt
@@ -74,6 +89,34 @@ algovault.com {
     # tests/unit/robots-ai-allowlist.test.ts, and against the LIVE response by
     # scripts/check-robots-ai-allowlist.mjs. No `use=` — Cloudflare documents it as "testing".
     header Content-Signal "search=yes, ai-input=yes, ai-train=yes"
+
+    # GEO-WELLKNOWN-DISCOVERY-W1 R3 — RFC 8288 typed link to the RFC 9727 API catalog.
+    #
+    # SITE LEVEL, same placement and same reason as Content-Signal above: an agent that HEADs any
+    # apex URL learns where the catalog is without a second request. It also satisfies RFC 9727
+    # §2 for free — that section requires the `api-catalog` relation on a HEAD of the well-known
+    # URI itself, and /.well-known/api-catalog IS an apex URL, so no second handler is needed.
+    #
+    # ONLY REGISTERED RELATIONS. `api-catalog` is RFC 9727 §7.2. There is no registered relation
+    # for llms.txt, so none is emitted — inventing one would put a private vocabulary on the
+    # surface whose entire value is that it speaks a standard one.
+    #
+    # Does not displace Content-Signal: no Link header existed on this site before (measured
+    # 2026-08-30, curl -sI showed content-signal and no link), and the gate asserts BOTH on the
+    # same response rather than either alone.
+    header Link "</.well-known/api-catalog>; rel=\"api-catalog\""
+
+    # RFC 9727 §4.2 / §6.2 — the catalog MUST be served as application/linkset+json (RFC 9264
+    # §4.2) and SHOULD carry the profile parameter.
+    #
+    # THIS LINE IS LOAD-BEARING, NOT AN OVERRIDE OF A WRONG DEFAULT. Measured on this host
+    # 2026-08-30, Caddy 2.6.2's file_server emits NO Content-Type header AT ALL for an
+    # extensionless file, on GET and on HEAD — the catalog file is extensionless per RFC 9727
+    # §3, so without this directive the document ships untyped and a conforming client is
+    # entitled to ignore it. scripts/check-robots-ai-allowlist.mjs asserts the live media type
+    # for exactly that reason: a future Caddyfile edit that drops this line is silent otherwise.
+    @apicatalog path /.well-known/api-catalog
+    header @apicatalog Content-Type "application/linkset+json; profile=\"https://www.rfc-editor.org/info/rfc9727\""
 
     # OPS-APEX-CADDY-ACCESS-LOG-W1 (2026-07-15) — privacy-safe, auto-rotated access log.
     # Masks the real client IP (CF-Connecting-IP; apex is CF-orange) to /24 (v4) / /48 (v6)

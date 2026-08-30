@@ -1,0 +1,27 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://algovault.com/.well-known/api-catalog",
+      "item": [
+        {
+          "href": "https://api.algovault.com/mcp"
+        },
+        {
+          "href": "https://api.algovault.com/api/plans/public"
+        },
+        {
+          "href": "https://algovault.com/api/performance-public"
+        },
+        {
+          "href": "https://algovault.com/api/merkle-batches"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://algovault.com/docs",
+          "type": "text/html"
+        }
+      ]
+    }
+  ]
+}
