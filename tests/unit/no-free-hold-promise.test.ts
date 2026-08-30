@@ -33,12 +33,7 @@ const ROOT = join(__dirname, '..', '..');
  * the contract (CLAUDE.md).
  */
 const GUARDED: ReadonlyArray<{ path: string; reason: string; projectedOnly?: boolean }> = [
-  { path: 'landing/index.html', reason: 'the pricing surface itself — both dual-render artboards' },
-  { path: 'landing/docs.html', reason: 'generated from docs-src; carried a whole "Free HOLD Policy" section' },
-  { path: 'landing/faq.html', reason: 'hand-edited; visible answer + its FAQPage JSON-LD twin' },
-  { path: 'landing/glossary.html', reason: 'hand-edited; DefinedTerm JSON-LD + visible twin' },
-  { path: 'landing/llms.txt', reason: 'served verbatim to LLM crawlers — a pricing claim they will quote' },
-  { path: 'landing/llms-full.txt', reason: 'ditto, and it carried a dedicated HOLD-pricing Q&A' },
+  ...landingSurfaces(),
   { path: 'landing/_jsonld/product.json.template', reason: 'ONE of four copies of the same Offer literal' },
   { path: 'landing/_jsonld/application.json.template', reason: 'ONE of four copies of the same Offer literal' },
   { path: 'docs-src/template.html', reason: 'ONE of four copies of the same Offer literal' },
@@ -64,12 +59,39 @@ const GUARDED: ReadonlyArray<{ path: string; reason: string; projectedOnly?: boo
   { path: 'landing/integrations.html', reason: 'hand-authored client index; carries free-tier allowance copy' },
   { path: 'src/lib/integrations-data/mcp-clients.ts', reason: 'the SoT the docs client table is generated FROM — fixing only the output rots on next build' },
   { path: 'src/lib/landing-content.ts', reason: 'the dual-render copy SoT injected into both index artboards' },
+  { path: 'src/lib/channel-registry.ts', reason: 'the channel SoT generating rest-api.html\'s FAQ — visible answer AND its FAQPage JSON-LD twin; fixing only the output rots on next build' },
   { path: 'src/lib/welcome-page.ts', reason: 'the /welcome paywall card — the first paid-tier copy a free caller sees' },
   { path: 'src/lib/referral-pages.ts', reason: 'referral landing copy quoting the free allowance' },
   { path: 'src/tools/scan-trade-calls.ts', reason: 'R-G — the batch tool whose per-verdict charge closes the free-HOLD loophole' },
   { path: 'scripts/render-jsx-static.mjs', reason: 'ONE of four copies of the same Offer literal' },
   ...bundledShapeSnapshots(),
 ];
+
+/**
+ * OPS-PUBLIC-HOLD-BILLING-COPY-W1 — the landing corpus is ENUMERATED, never listed.
+ *
+ * Six landing rows used to be hand-written here. That list could only ever name the pages someone
+ * remembered, and it did not remember three: `landing/rest-api.html` carried "HOLD verdicts are not
+ * billed" in BOTH its visible FAQ and its schema.org FAQPage JSON-LD, and
+ * `landing/crypto-trade-call-api-for-ai-agents.html` carried "HOLD calls never cost quota" in its
+ * page lede — live on production for weeks while this gate reported green. Same failure mode, same
+ * remedy as `bundledShapeSnapshots()` below: enumerate the corpus so a NEW page is covered the day
+ * it is written, rather than the day someone adds a row.
+ *
+ * `landing/` is the deployed web root: every .html and .txt in it is a public surface by
+ * construction. Subdirectories are walked too — `_jsonld` templates keep their explicit rows below
+ * because they are BUILD INPUTS with their own reason, not served files.
+ */
+function landingSurfaces(): ReadonlyArray<{ path: string; reason: string }> {
+  const dir = join(ROOT, 'landing');
+  return readdirSync(dir)
+    .filter((n) => /\.(html?|txt)$/.test(n))
+    .sort()
+    .map((n) => ({
+      path: `landing/${n}`,
+      reason: 'served from the deployed web root — any pricing claim here is public copy',
+    }));
+}
 
 /**
  * OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1 (D2) — the audits rows are ENUMERATED, never listed.
@@ -122,6 +144,17 @@ const PROMISE_PATTERNS: ReadonlyArray<RegExp> = [
   // the two guards read one definition of the claim; the 40-char window is what keeps it off the
   // ratified correction ("HOLD included … are never charged" puts ~88 chars between the two).
   /HOLDs?\b[^\n]{0,40}?\b(?:free|unmetered|unbilled|not charged|never charged|no quota|billed \$?0)\b/i,
+  // OPS-PUBLIC-HOLD-BILLING-COPY-W1. Three MORE phrasings shipped to production past all seven
+  // patterns above — measured, not theorised, by running these regexes against the live strings:
+  //   "HOLD verdicts are not billed."            → `not billed` is in no token set ("unbilled" and
+  //                                                 "not charged" are; "not billed" was not).
+  //   "HOLD calls never cost quota, so an agent…" → pattern 3 demands HOLD *immediately* followed by
+  //                                                 "never"; one word ("calls") between defeats it.
+  //   "Free tier bills only non-HOLD results"     → every pattern reads left-to-right from HOLD, so
+  //                                                 a claim that puts "free" BEFORE it is invisible.
+  /HOLDs?\b[^.\n]{0,30}\b(?:are\s+|is\s+)?not\s+billed\b/i,
+  /HOLDs?\b[^.\n]{0,30}\bnever\s+cost\b/i,
+  /\b(?:free|bills?\s+only|charges?\s+only|only)\b[^.\n]{0,25}\bnon-HOLD\b/i,
 ];
 
 /** Strip comments so a behaviour note in code is not read as a public claim (the ban-grep law). */

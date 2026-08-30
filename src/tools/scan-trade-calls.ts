@@ -228,7 +228,7 @@ const TRACK_RECORD_POINTER =
 /**
  * Run a scan with quota gating + envelope. Entry-checks quota (exhausted →
  * structured quota_exhausted response, no scan, no charge), runs the scan, then
- * charges max(1, non-HOLD returned) units. `_algovault.quota` reflects the
+ * charges max(1, returned calls) units — HOLD rows included (R-G). `_algovault.quota` reflects the
  * post-charge meter. x402/internal tiers short-circuit to Infinity (no charge).
  */
 export async function runScanTradeCall(

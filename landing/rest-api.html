@@ -98,7 +98,7 @@ tailwind.config = {
       "name": "What are the tiers and limits?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Free gives 200 calls a month. Starter gives 10,000 for $9.99 a month. Pro gives 100,000 for $49. HOLD verdicts are not billed. Read the _algovault.quota block on any response for your live remaining count."
+        "text": "Free gives 200 calls a month. Starter gives 10,000 for $9.99 a month. Pro gives 100,000 for $49. Quota is counted per call, regardless of verdict. Read the _algovault.quota block on any response for your live remaining count."
       }
     },
     {
@@ -435,7 +435,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
       <details class="ch-faq"><summary>Do I need the MCP handshake for the REST API?</summary><p>No. The REST API is a plain request/response HTTP call — no initialize or session handshake. That handshake belongs to the MCP-over-HTTP transport, not to this channel.</p></details>
       <details class="ch-faq"><summary>What format are responses in?</summary><p>JSON. Every response carries the composite verdict plus an _algovault metadata block.</p></details>
       <details class="ch-faq"><summary>Should I use an API key or x402?</summary><p>Two rails, pick one. An API key bills a monthly plan and is sent as an Authorization: Bearer header. x402 pays per call in USDC on Base and needs no account. Choose a key for steady volume, x402 for one-off agent calls. Sign up at https://algovault.com/signup, or send an x402 request and let your wallet settle it.</p></details>
-      <details class="ch-faq"><summary>What are the tiers and limits?</summary><p>Free gives 200 calls a month. Starter gives 10,000 for $9.99 a month. Pro gives 100,000 for $49. HOLD verdicts are not billed. Read the _algovault.quota block on any response for your live remaining count.</p></details>
+      <details class="ch-faq"><summary>What are the tiers and limits?</summary><p>Free gives 200 calls a month. Starter gives 10,000 for $9.99 a month. Pro gives 100,000 for $49. Quota is counted per call, regardless of verdict. Read the _algovault.quota block on any response for your live remaining count.</p></details>
       <details class="ch-faq"><summary>How do I know my API key is being applied?</summary><p>Read _algovault.auth on any response. An outcome of OK, with your paid tier beside it, means the key applied. A paid key reporting tier &quot;free&quot; was NOT applied — the request was served as anonymous. Check the header name and the Bearer prefix, then call again and re-read the block.</p></details>
       <details class="ch-faq"><summary>What do the error codes mean?</summary><p>Two shapes, so check both. Code -32602 arrives as HTTP 200 with result.isError set and the code inside the text. Codes -32003 and -32004 arrive as a JSON-RPC error object instead. Check error first, then result.isError. Read the full table at https://algovault.com/docs#tools-errors.</p></details>
       <details class="ch-faq"><summary>Which tools work over REST, and which need MCP?</summary><p>REST reaches get_trade_call, get_market_regime, scan_funding_arb, and scan_trade_calls. MCP additionally reaches chat_knowledge and search_knowledge. Use REST for the signal tools from any language; use MCP when you also want the knowledge tools. Full reference at https://algovault.com/docs#rest-api.</p></details>

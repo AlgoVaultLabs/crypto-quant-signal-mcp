@@ -752,7 +752,7 @@ tailwind.config = {
         <p class="text-gray-400 text-sm leading-relaxed mb-3">Most assets are HOLD most of the time, and <code class="text-xs bg-navy-800 px-1 rounded">includeHolds</code> defaults to <code class="text-xs bg-navy-800 px-1 rounded">false</code> &mdash; so a scan that filters every result out is working correctly, not failing. A live 30-asset scan on <code class="text-xs bg-navy-800 px-1 rounded">1h</code> at the time of writing returned <strong class="text-white">29 HOLD</strong> against <strong class="text-white">1</strong> actionable call.</p>
         <p class="text-gray-400 text-sm leading-relaxed">Read <code class="text-xs bg-navy-800 px-1 rounded">scanned</code> to confirm the universe was evaluated. To widen the result set, lower <code class="text-xs bg-navy-800 px-1 rounded">minConfidence</code>, or set <code class="text-xs bg-navy-800 px-1 rounded">includeHolds: true</code> to see the HOLD verdicts alongside the rest.</p>
       </div>
-      <p class="text-gray-500 text-xs mt-3">Each result carries the same shape as <a href="#get-trade-call" class="text-mint-400 hover:underline">get_trade_call</a>. Free tier bills only non-HOLD results (min 1); x402 is a flat $0.02/scan.</p>
+      <p class="text-gray-500 text-xs mt-3">Each result carries the same shape as <a href="#get-trade-call" class="text-mint-400 hover:underline">get_trade_call</a>. A scan charges one unit per returned result, minimum 1. Quota is counted per call, regardless of verdict. x402 is a flat $0.02/scan.</p>
     </section>
 
     <section id="chat-knowledge" class="mb-16"><span id="knowledge-tools-chat" aria-hidden="true"></span>

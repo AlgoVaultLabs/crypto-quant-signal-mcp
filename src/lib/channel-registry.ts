@@ -140,7 +140,7 @@ export const CHANNELS: ChannelSpec[] = [
       },
       {
         q: 'What are the tiers and limits?',
-        a: `Free gives ${FREE_MONTHLY_CALLS} calls a month. Starter gives ${planCallsLabel('starter')} for ${planPriceLabel('starter')} a month. Pro gives ${planCallsLabel('pro')} for ${planPriceLabel('pro')}. HOLD verdicts are not billed. Read the _algovault.quota block on any response for your live remaining count.`,
+        a: `Free gives ${FREE_MONTHLY_CALLS} calls a month. Starter gives ${planCallsLabel('starter')} for ${planPriceLabel('starter')} a month. Pro gives ${planCallsLabel('pro')} for ${planPriceLabel('pro')}. Quota is counted per call, regardless of verdict. Read the _algovault.quota block on any response for your live remaining count.`,
       },
       {
         q: 'How do I know my API key is being applied?',
