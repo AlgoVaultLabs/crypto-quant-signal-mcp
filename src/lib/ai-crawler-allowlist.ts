@@ -18,6 +18,28 @@
  * user-agents Cloudflare's managed robots.txt feature would `Disallow: /`, i.e. the
  * precise regression surface an edge injection creates.
  */
+/**
+ * CONTENT_SIGNAL_VALUE — the ONE content-signal declaration, per contentsignals.org.
+ *
+ * It has to appear on three artifacts no TypeScript module can reach: `landing/robots.txt`,
+ * `landing/api-robots.txt` and the `Caddyfile` response header. So "single derivation" here is
+ * a constant plus TWO gates, and NEITHER ONE CLOSES IT ALONE:
+ *
+ *   - build time — `tests/unit/robots-ai-allowlist.test.ts` asserts the three COMMITTED
+ *     artifacts carry this exact literal;
+ *   - run time  — `scripts/check-robots-ai-allowlist.mjs` asserts the LIVE surfaces do.
+ *
+ * The split is load-bearing, not redundancy: `Caddyfile` is in `deploy.yml`'s `paths-ignore`, so
+ * the committed copy is applied to the host by SSH and can legitimately differ from the running
+ * one between a commit and its install. The build-time test proves the committed copy; the live
+ * gate proves the running one. Deleting either because "the other covers it" reopens exactly the
+ * window in which they disagree.
+ *
+ * `use=` / `content-use` is deliberately ABSENT — Cloudflare documents it as "testing", and an
+ * unratified directive has no place on the surface governing all crawler access.
+ */
+export const CONTENT_SIGNAL_VALUE = 'search=yes, ai-input=yes, ai-train=yes';
+
 export const AI_CRAWLER_ALLOWLIST: readonly string[] = [
   // --- The eight Cloudflare's managed robots.txt block prepend would Disallow: / ---
   'Amazonbot',

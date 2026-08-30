@@ -1,0 +1,19 @@
+# Served at https://api.algovault.com/robots.txt
+# Its presence at any other path is a deploy artifact and carries no policy.
+#
+# AlgoVault Labs — api.algovault.com
+# MCP server host. Endpoints are POST-only JSON-RPC; there is no
+# crawlable content here. Documentation lives at algovault.com/docs.
+#
+# `Disallow: /` is deliberate: nothing here is indexable, and it stops crawlers
+# generating 405s against /mcp (a GET on a POST-only JSON-RPC endpoint).
+# `/.well-known/` is re-allowed so agent discovery keeps working once
+# GEO-WELLKNOWN-DISCOVERY-W1 populates it — under RFC 9309 §2.2.2 the longer
+# path wins, so the Allow beats the Disallow for that subtree only.
+
+User-agent: *
+Content-signal: search=yes, ai-input=yes, ai-train=yes
+Allow: /.well-known/
+Disallow: /
+
+Sitemap: https://algovault.com/sitemap.xml

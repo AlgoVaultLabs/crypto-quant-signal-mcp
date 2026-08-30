@@ -150,7 +150,7 @@ Docs: https://algovault.com/docs#x402 · x402 spec: https://x402.org
 <!-- BUILD:LLMS_FULL_INTEGRATIONS -->
 ### Binance × AlgoVault
 
-- **Tutorial:** https://algovault.com/docs/integrations/binance
+- **Tutorial:** https://algovault.com/integrations/binance
 - **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance
 - **Pairs with:** binance/binance-skills-hub (verified-2026-04-25)
 - **Demo execution:** BINANCE_TESTNET=true
@@ -204,7 +204,7 @@ working, not a fault.
 
 ### OKX × AlgoVault
 
-- **Tutorial:** https://algovault.com/docs/integrations/okx
+- **Tutorial:** https://algovault.com/integrations/okx
 - **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/okx
 - **Pairs with:** @okx_ai/okx-trade-mcp (1.3.1)
 - **Demo execution:** OKX_DEMO=true (or --demo CLI flag)
@@ -213,7 +213,7 @@ working, not a fault.
 
 ### Bybit × AlgoVault
 
-- **Tutorial:** https://algovault.com/docs/integrations/bybit
+- **Tutorial:** https://algovault.com/integrations/bybit
 - **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bybit
 - **Pairs with:** bybit-official-trading-server (2.0.9)
 - **Demo execution:** BYBIT_TESTNET=true
@@ -222,7 +222,7 @@ working, not a fault.
 
 ### Bitget × AlgoVault
 
-- **Tutorial:** https://algovault.com/docs/integrations/bitget
+- **Tutorial:** https://algovault.com/integrations/bitget
 - **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bitget
 - **Pairs with:** bitget-mcp-server (1.1.0)
 - **Demo execution:** BITGET_DEMO=true (wrapper-enforced; MCP server has no built-in demo flag)

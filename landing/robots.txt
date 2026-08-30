@@ -26,7 +26,12 @@ Content-signal: search=yes, ai-input=yes, ai-train=yes
 Allow: /
 Disallow: /dashboard
 Disallow: /dashboard/
-Disallow: /.well-known/
+# /.well-known/ holds the agent-discovery documents — RFC 9727 (api-catalog),
+# RFC 9728 (oauth-protected-resource) and RFC 8414 (oauth-authorization-server).
+# Blocking the whole directory told agents not to look where agents look, which an
+# MCP-native product cannot mean. Only acme-challenge stays disallowed: transient
+# cert-validation noise with no discovery value.
+Disallow: /.well-known/acme-challenge/
 
 # === US / Western AI Crawlers — explicitly welcomed ===
 

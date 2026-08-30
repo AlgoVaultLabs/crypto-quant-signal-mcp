@@ -23,6 +23,22 @@
  * were handed and could not parse is INDETERMINATE; a fetch failure must never read as
  * "allowlist intact."
  *
+ * GEO-AGENT-DISCOVERY-W2 EXTENSION — every W1 assertion is unchanged; these are additions.
+ * The gate now covers a SURFACE LIST rather than one host, and a new host joins by adding one
+ * array entry to SURFACES below. Four surfaces today, three distinct check kinds:
+ *
+ *   algovault.com          allowlist resolution (W1) + content-signal VALUE + no blanket
+ *                          /.well-known/ disallow + the Content-Signal RESPONSE HEADER
+ *                          + llms.txt carries zero /docs/integrations/ redirect hops
+ *   api.algovault.com      robots.txt must return 200 (it 404'd before W2)
+ *   plausible.algovault.com robots.txt must return 200 — already correct at W2 time, and kept
+ *                          under the gate precisely because "already correct" can regress
+ *   www.algovault.com      a DISTINCT check kind: 301 -> https://algovault.com/<path>. Deliberately
+ *                          NOT a robots.txt resolution, so redirect logic cannot contaminate the
+ *                          allowlist logic. www is the 2nd-largest non-2xx path on the zone and its
+ *                          largest consumer is Claude-SearchBot; if that 301 ever breaks the traffic
+ *                          dies silently, and enumeration beats detection.
+ *
  * Usage:
  *   node scripts/check-robots-ai-allowlist.mjs   # probe the live edge
  *   npm run check:robots                         # the same, wired
@@ -42,6 +58,39 @@ export const FETCH_TIMEOUT_MS = 15000;
 export const CF_MANAGED_MARKER = 'BEGIN Cloudflare Managed content';
 
 export const VERDICT_EXIT = Object.freeze({ GREEN: 0, RED: 1, INDETERMINATE: 3 });
+
+/** A blanket disallow of the agent-discovery directory. Its PRESENCE is RED; the narrow
+ *  `/.well-known/acme-challenge/` form is fine and must not match. */
+export const WELL_KNOWN_BLANKET = '/.well-known/';
+
+export const LLMS_URL = 'https://algovault.com/llms.txt';
+/** Redirect hops inside the agent-ingested SoT. Any occurrence is RED. */
+export const LLMS_FORBIDDEN_PATH = '/docs/integrations/';
+
+export const APEX_ORIGIN = 'https://algovault.com';
+
+/**
+ * The surface list. ONE array entry per host; `kind` selects the check.
+ * `robots-200` hosts are asserted reachable, not resolved — they carry no allowlist.
+ */
+export const SURFACES = Object.freeze([
+  { host: 'algovault.com', kind: 'apex' },
+  { host: 'api.algovault.com', kind: 'robots-200' },
+  { host: 'plausible.algovault.com', kind: 'robots-200' },
+  { host: 'www.algovault.com', kind: 'redirect-to-apex', probePath: '/track-record' },
+]);
+
+/**
+ * Read CONTENT_SIGNAL_VALUE out of the same TypeScript SoT the allowlist comes from, by the
+ * same means and for the same reason (host node 20, no build step, no dist). Returns null when
+ * the literal cannot be located — the caller turns that into INDETERMINATE, never GREEN.
+ */
+export function readContentSignalFromSource(tsSource) {
+  const m = /export\s+const\s+CONTENT_SIGNAL_VALUE\s*(?::[^=]*)?=\s*['"]([^'"]+)['"]\s*;/.exec(
+    String(tsSource ?? ''),
+  );
+  return m ? m[1] : null;
+}
 
 /**
  * Read the allowlist out of its TypeScript SoT. The gate runs on a host with node 20 and
@@ -214,23 +263,202 @@ export function evaluate(body, allowlist) {
   };
 }
 
+/**
+ * W2 apex signal checks over an already-fetched robots.txt body. PURE.
+ *
+ * Each branch returns a DISTINCT reason string. That is not cosmetic: W1's break-proof showed a
+ * verdict-only assertion cannot tell two branches apart when both return the same verdict, so the
+ * reason is what makes each of these individually falsifiable — one fixture, one branch.
+ *
+ * Returns { verdict, lines, reasons }.
+ */
+export function evaluateApexSignals(body, expectedSignal) {
+  const lines = [];
+  const reasons = [];
+  const text = String(body ?? '');
+
+  if (!expectedSignal) {
+    return {
+      verdict: 'INDETERMINATE',
+      lines: [],
+      reasons: ['content-signal SoT read back EMPTY — cannot verify the declared value'],
+    };
+  }
+
+  // --- content-signal presence AND value ---
+  const m = /^[ \t]*content-signal[ \t]*:[ \t]*(.*)$/im.exec(text);
+  if (!m) {
+    reasons.push('content-signal: LINE ABSENT from the apex robots.txt');
+    lines.push('content-signal: MISSING');
+  } else {
+    const got = m[1].trim();
+    if (got !== expectedSignal) {
+      reasons.push(`content-signal: VALUE MISMATCH — got "${got}", expected "${expectedSignal}"`);
+      lines.push(`content-signal: MISMATCHED ("${got}")`);
+    } else {
+      lines.push(`content-signal: ok ("${got}")`);
+    }
+  }
+
+  // --- blanket /.well-known/ disallow ---
+  // Matches the blanket form only. `/.well-known/acme-challenge/` has trailing path and must not
+  // match, which is the whole point of R2 and is asserted in both directions by the self-test.
+  const blanket = new RegExp(
+    `^[ \\t]*disallow[ \\t]*:[ \\t]*${WELL_KNOWN_BLANKET.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[ \\t]*$`,
+    'im',
+  );
+  if (blanket.test(text)) {
+    reasons.push('well-known: BLANKET `Disallow: /.well-known/` present — agent discovery blocked');
+    lines.push('well-known: BLOCKED (blanket disallow)');
+  } else {
+    lines.push('well-known: open (no blanket disallow)');
+  }
+
+  return { verdict: reasons.length ? 'RED' : 'GREEN', lines, reasons };
+}
+
+/** W2 response-header check. PURE. `headerValue` is null when the header was absent. */
+export function evaluateHeader(headerValue, expectedSignal) {
+  if (!expectedSignal) {
+    return {
+      verdict: 'INDETERMINATE',
+      lines: [],
+      reasons: ['content-signal SoT read back EMPTY — cannot verify the response header'],
+    };
+  }
+  if (headerValue === null || headerValue === undefined) {
+    return {
+      verdict: 'RED',
+      lines: ['header Content-Signal: MISSING'],
+      reasons: ['header: `Content-Signal` ABSENT on the apex response'],
+    };
+  }
+  const got = String(headerValue).trim();
+  if (got !== expectedSignal) {
+    return {
+      verdict: 'RED',
+      lines: [`header Content-Signal: MISMATCHED ("${got}")`],
+      reasons: [`header: VALUE MISMATCH — got "${got}", expected "${expectedSignal}"`],
+    };
+  }
+  return { verdict: 'GREEN', lines: [`header Content-Signal: ok ("${got}")`], reasons: [] };
+}
+
+/** W2 llms.txt hygiene. PURE. An empty body is INDETERMINATE, not a silent pass. */
+export function evaluateLlms(body) {
+  const text = String(body ?? '');
+  if (text.trim() === '') {
+    return {
+      verdict: 'INDETERMINATE',
+      lines: [],
+      reasons: ['llms.txt: EMPTY body — could not verify'],
+    };
+  }
+  const n = text.split(LLMS_FORBIDDEN_PATH).length - 1;
+  if (n > 0) {
+    return {
+      verdict: 'RED',
+      lines: [`llms.txt: ${n} REDIRECT HOP(S)`],
+      reasons: [`llms.txt: ${n} occurrence(s) of ${LLMS_FORBIDDEN_PATH} — the agent-ingested SoT points at 301s`],
+    };
+  }
+  return { verdict: 'GREEN', lines: ['llms.txt: ok (0 redirect hops)'], reasons: [] };
+}
+
+/** W2 non-apex robots.txt reachability. PURE. 200 required; anything else RED. */
+export function evaluateRobotsReachable(host, status) {
+  if (status === 200) {
+    return { verdict: 'GREEN', lines: [`${host}/robots.txt: ok (HTTP 200)`], reasons: [] };
+  }
+  return {
+    verdict: 'RED',
+    lines: [`${host}/robots.txt: HTTP ${status}`],
+    reasons: [`${host}: robots.txt returned HTTP ${status}, expected 200 — no crawl policy served`],
+  };
+}
+
+/**
+ * W2 www redirect check. PURE and DELIBERATELY SEPARATE from the allowlist resolution, so
+ * redirect logic can never contaminate it. Accepts any 3xx whose Location lands on the apex
+ * origin at the same path — the status family is the contract, not one exact code.
+ */
+export function evaluateRedirect(host, status, location, probePath) {
+  const want = `${APEX_ORIGIN}${probePath}`;
+  if (status < 300 || status >= 400) {
+    return {
+      verdict: 'RED',
+      lines: [`${host}${probePath}: HTTP ${status} (not a redirect)`],
+      reasons: [`${host}: expected a 3xx to ${want}, got HTTP ${status}`],
+    };
+  }
+  const raw = String(location ?? '').trim();
+  // Compare ORIGIN + PATHNAME only. The contract is "lands on the apex at the same path"; a
+  // preserved query string is correct redirect behaviour and not part of it. Measured: the gate's
+  // own `?cb=` cache-buster survives the 301, so a whole-URL comparison false-REDs on every run —
+  // found by this gate's first live invocation, which is why the first run of a new gate is a test.
+  let got;
+  try {
+    const u = new URL(raw, `https://${host}`);
+    got = `${u.origin}${u.pathname}`;
+  } catch {
+    got = raw;
+  }
+  if (got !== want) {
+    return {
+      verdict: 'RED',
+      lines: [`${host}${probePath}: ${status} -> ${raw || '(no Location)'}`],
+      reasons: [`${host}: redirect target is "${got || '(none)'}", expected "${want}"`],
+    };
+  }
+  return { verdict: 'GREEN', lines: [`${host}${probePath}: ok (${status} -> ${want})`], reasons: [] };
+}
+
+/**
+ * Fold every surface's result into ONE verdict.
+ *
+ * RED dominates INDETERMINATE on purpose: if one check definitively found a regression while
+ * another could not be verified, the actionable truth is that a regression exists. INDETERMINATE
+ * dominates GREEN for the reason the token law gives — could-not-verify is never a pass.
+ */
+export function combineVerdicts(results) {
+  const all = results.filter(Boolean);
+  if (all.length === 0) {
+    return { verdict: 'INDETERMINATE', lines: [], reasons: ['no surface produced a result'] };
+  }
+  const lines = all.flatMap((r) => r.lines ?? []);
+  const reasons = all.flatMap((r) => r.reasons ?? []);
+  const verdict = all.some((r) => r.verdict === 'RED')
+    ? 'RED'
+    : all.some((r) => r.verdict === 'INDETERMINATE')
+      ? 'INDETERMINATE'
+      : 'GREEN';
+  return { verdict, lines, reasons };
+}
+
 /** Cache-buster, not a ref form: a CDN edge in front of this file would otherwise let a
  *  stale-but-clean body answer a verification read. */
 export function buildFetchUrl(now) {
   return `${ROBOTS_URL}?cb=${now}`;
 }
 
-async function fetchLive(url) {
+async function fetchLive(url, { redirect = 'follow' } = {}) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       signal: ac.signal,
-      redirect: 'follow',
-      headers: { 'cache-control': 'no-cache', 'user-agent': 'algovault-robots-allowlist-gate/1' },
+      redirect,
+      headers: { 'cache-control': 'no-cache', 'user-agent': 'algovault-robots-allowlist-gate/2' },
     });
-    if (!res.ok) return { ok: false, reason: `non-2xx: HTTP ${res.status}` };
-    return { ok: true, body: await res.text(), status: res.status };
+    // W2: a non-2xx is NOT automatically a transport failure any more — evaluateRobotsReachable
+    // and evaluateRedirect need the STATUS to decide. So this returns ok:true with the status and
+    // lets the caller judge; only a real transport failure is ok:false (⇒ INDETERMINATE).
+    return {
+      ok: true,
+      status: res.status,
+      body: await res.text().catch(() => ''),
+      headers: res.headers,
+    };
   } catch (err) {
     return { ok: false, reason: `fetch failed: ${err?.name ?? 'Error'}: ${err?.message ?? err}` };
   } finally {
@@ -246,39 +474,104 @@ function emit(result, extraLines = []) {
   return VERDICT_EXIT[result.verdict];
 }
 
-async function main() {
-  let allowlist = [];
-  try {
-    allowlist = readAllowlistFromSource(readFileSync(ALLOWLIST_SOURCE, 'utf8'));
-  } catch (err) {
-    return emit(
-      {
-        verdict: 'INDETERMINATE',
-        lines: [],
-        disallowed: [],
-        reasons: [`cannot read allowlist SoT ${ALLOWLIST_SOURCE}: ${err?.message ?? err}`],
-      },
-      [],
-    );
-  }
-  const url = buildFetchUrl(Date.now());
-  const fetched = await fetchLive(url);
-  if (!fetched.ok) {
-    return emit(
-      { verdict: 'INDETERMINATE', lines: [], disallowed: [], reasons: [fetched.reason] },
-      [`GET ${url}`],
-    );
-  }
-  const result = evaluate(fetched.body, allowlist);
-  return emit(result, [
-    `GET ${url} -> HTTP ${fetched.status}, ${fetched.body.length} B, ` +
-      `${result.groupCount} user-agent group(s)`,
-    `checking ${allowlist.length} allowlisted agent(s) for path /:`,
-  ]);
+/** INDETERMINATE result for a transport failure on any surface. */
+function transportIndeterminate(label, reason) {
+  return { verdict: 'INDETERMINATE', lines: [`${label}: UNREACHABLE`], reasons: [`${label}: ${reason}`] };
 }
 
-// Two-way self-test lives in tests/unit/robots-ai-allowlist.test.ts (vitest), which drives
-// the pure functions above directly — no network, no seam this file has to grow.
+async function checkApex(allowlist, expectedSignal, out) {
+  const results = [];
+  const url = buildFetchUrl(Date.now());
+  const r = await fetchLive(url);
+  if (!r.ok) {
+    out.push(`GET ${url}`);
+    return [transportIndeterminate('algovault.com/robots.txt', r.reason)];
+  }
+  if (r.status < 200 || r.status >= 300) {
+    out.push(`GET ${url} -> HTTP ${r.status}`);
+    return [transportIndeterminate('algovault.com/robots.txt', `non-2xx: HTTP ${r.status}`)];
+  }
+  // W1's allowlist resolution, unchanged.
+  const w1 = evaluate(r.body, allowlist);
+  out.push(
+    `GET ${url} -> HTTP ${r.status}, ${r.body.length} B, ${w1.groupCount ?? 0} user-agent group(s)`,
+  );
+  out.push(`checking ${allowlist.length} allowlisted agent(s) for path /:`);
+  results.push(w1);
+  // W2 signal checks over the same body.
+  results.push(evaluateApexSignals(r.body, expectedSignal));
+
+  // W2 response header on the apex ROOT (not robots.txt) — the resource-level policy surface.
+  const hUrl = `${APEX_ORIGIN}/?cb=${Date.now()}`;
+  const h = await fetchLive(hUrl);
+  if (!h.ok) {
+    results.push(transportIndeterminate('algovault.com header', h.reason));
+  } else if (h.status < 200 || h.status >= 300) {
+    results.push(transportIndeterminate('algovault.com header', `non-2xx: HTTP ${h.status}`));
+  } else {
+    results.push(evaluateHeader(h.headers.get('content-signal'), expectedSignal));
+  }
+
+  // W2 llms.txt hygiene.
+  const lUrl = `${LLMS_URL}?cb=${Date.now()}`;
+  const l = await fetchLive(lUrl);
+  if (!l.ok) {
+    results.push(transportIndeterminate('llms.txt', l.reason));
+  } else if (l.status < 200 || l.status >= 300) {
+    results.push(transportIndeterminate('llms.txt', `non-2xx: HTTP ${l.status}`));
+  } else {
+    results.push(evaluateLlms(l.body));
+  }
+  return results;
+}
+
+async function checkSurface(surface, allowlist, expectedSignal, out) {
+  if (surface.kind === 'apex') return checkApex(allowlist, expectedSignal, out);
+
+  if (surface.kind === 'robots-200') {
+    const url = `https://${surface.host}/robots.txt?cb=${Date.now()}`;
+    const r = await fetchLive(url);
+    // A TIMEOUT / transport failure is INDETERMINATE; a reachable non-200 is RED. Distinct
+    // branches on purpose — "could not ask" and "asked and got the wrong answer" are not the
+    // same fact, and only the second is a regression.
+    if (!r.ok) return [transportIndeterminate(`${surface.host}/robots.txt`, r.reason)];
+    return [evaluateRobotsReachable(surface.host, r.status)];
+  }
+
+  if (surface.kind === 'redirect-to-apex') {
+    const path = surface.probePath ?? '/';
+    const url = `https://${surface.host}${path}?cb=${Date.now()}`;
+    const r = await fetchLive(url, { redirect: 'manual' });
+    if (!r.ok) return [transportIndeterminate(`${surface.host}${path}`, r.reason)];
+    return [evaluateRedirect(surface.host, r.status, r.headers.get('location'), path)];
+  }
+
+  return [transportIndeterminate(surface.host, `unknown surface kind "${surface.kind}"`)];
+}
+
+async function main() {
+  let allowlist = [];
+  let expectedSignal = null;
+  try {
+    const src = readFileSync(ALLOWLIST_SOURCE, 'utf8');
+    allowlist = readAllowlistFromSource(src);
+    expectedSignal = readContentSignalFromSource(src);
+  } catch (err) {
+    return emit({
+      verdict: 'INDETERMINATE',
+      lines: [],
+      reasons: [`cannot read allowlist SoT ${ALLOWLIST_SOURCE}: ${err?.message ?? err}`],
+    });
+  }
+
+  const out = [`checking ${SURFACES.length} surface(s): ${SURFACES.map((s) => s.host).join(', ')}`];
+  const results = [];
+  for (const surface of SURFACES) {
+    results.push(...(await checkSurface(surface, allowlist, expectedSignal, out)));
+  }
+  return emit(combineVerdicts(results), out);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exit(await main());
 }

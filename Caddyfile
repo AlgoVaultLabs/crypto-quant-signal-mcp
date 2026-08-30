@@ -3,6 +3,21 @@
 # Applied via: systemctl reload caddy
 
 api.algovault.com {
+    # GEO-AGENT-DISCOVERY-W2 R1 — same content signal as the apex, same reason (see there).
+    # NOT added to the plausible block: that host declares it has no crawlable content, so
+    # asserting a content-use policy over it would be a claim about content that does not exist.
+    header Content-Signal "search=yes, ai-input=yes, ai-train=yes"
+
+    # GEO-AGENT-DISCOVERY-W2 R4 — api. had NO robots.txt (404 measured 2026-08-29), so crawlers
+    # had no policy telling them to stop and were generating 405s against /mcp with GET. Served
+    # from the committed landing/api-robots.txt via the same static idiom as /privacy below, so
+    # the body is a repo file the gate and the unit tests can both read. deploy.yml already
+    # copies landing/*.txt into /var/www/algovault, so this needs no new deploy step.
+    handle /robots.txt {
+        root * /var/www/algovault
+        rewrite * /api-robots.txt
+        file_server
+    }
     handle /privacy {
         root * /var/www/algovault
         rewrite * /privacy.html
@@ -45,6 +60,21 @@ api.algovault.com {
 }
 
 algovault.com {
+    # GEO-AGENT-DISCOVERY-W2 R1 — the content signal on the RESPONSE HEADER, not only robots.txt.
+    # robots.txt is site-wide and advisory; this header travels with each resource and is what
+    # Cloudflare's Markdown-for-Agents pipeline defers to ("if your origin already sets a
+    # content-signal header ... your origin's policy is authoritative"). Absent one, Cloudflare
+    # substitutes its own default and we stop controlling our own per-resource policy.
+    #
+    # SITE LEVEL ON PURPOSE, outside every `handle`: /track-record, /skills, /integrations/*,
+    # /contact and the account handlers are reverse_proxy'd app routes serving real content, so a
+    # header scoped to the static file_server below would be a half-shipped declaration.
+    #
+    # The literal is asserted against src/lib/ai-crawler-allowlist.ts CONTENT_SIGNAL_VALUE by
+    # tests/unit/robots-ai-allowlist.test.ts, and against the LIVE response by
+    # scripts/check-robots-ai-allowlist.mjs. No `use=` — Cloudflare documents it as "testing".
+    header Content-Signal "search=yes, ai-input=yes, ai-train=yes"
+
     # OPS-APEX-CADDY-ACCESS-LOG-W1 (2026-07-15) — privacy-safe, auto-rotated access log.
     # Masks the real client IP (CF-Connecting-IP; apex is CF-orange) to /24 (v4) / /48 (v6)
     # at WRITE time (GDPR-style, non-reversible) and deletes all other raw-IP-bearing headers.

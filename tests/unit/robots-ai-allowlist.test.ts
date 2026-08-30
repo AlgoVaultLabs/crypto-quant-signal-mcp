@@ -10,19 +10,31 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { AI_CRAWLER_ALLOWLIST } from '../../src/lib/ai-crawler-allowlist.js';
+import { AI_CRAWLER_ALLOWLIST, CONTENT_SIGNAL_VALUE } from '../../src/lib/ai-crawler-allowlist.js';
 import {
   ALLOWLIST_SOURCE,
+  APEX_ORIGIN,
   CF_MANAGED_MARKER,
+  LLMS_FORBIDDEN_PATH,
+  SURFACES,
   VERDICT_EXIT,
+  WELL_KNOWN_BLANKET,
   buildFetchUrl,
+  combineVerdicts,
   evaluate,
+  evaluateApexSignals,
+  evaluateHeader,
+  evaluateLlms,
+  evaluateRedirect,
+  evaluateRobotsReachable,
   parseRobots,
   readAllowlistFromSource,
+  readContentSignalFromSource,
   resolveForAgent,
 } from '../../scripts/check-robots-ai-allowlist.mjs';
 
 const REPO_ROOT = join(__dirname, '..', '..');
+const REPO_ROOT_T = REPO_ROOT;
 const LIVE_ROBOTS = readFileSync(join(REPO_ROOT, 'landing', 'robots.txt'), 'utf8');
 const ALLOWLIST = [...AI_CRAWLER_ALLOWLIST];
 
@@ -234,6 +246,261 @@ describe('robots.txt AI-crawler allowlist gate', () => {
       const url = buildFetchUrl(1234567890);
       expect(url).toBe('https://algovault.com/robots.txt?cb=1234567890');
       expect(buildFetchUrl(1)).not.toBe(buildFetchUrl(2));
+    });
+  });
+});
+
+/**
+ * GEO-AGENT-DISCOVERY-W2 — every W1 fixture above is unchanged. These are additions.
+ *
+ * DISCIPLINE THIS BLOCK INHERITS FROM W1'S BREAK-PROOF: W1's `BREAK 4` stayed GREEN because two
+ * refusal branches returned the same verdict, so a verdict-only assertion could not tell them
+ * apart. Every fixture below therefore asserts the branch's DISTINCT reason string as well as its
+ * verdict — that is what makes each branch reachable by exactly one fixture and individually
+ * falsifiable.
+ */
+describe('W2 — agent-discovery layer', () => {
+  const SIGNAL = CONTENT_SIGNAL_VALUE;
+  const APEX_OK = [
+    'User-agent: *',
+    `Content-signal: ${SIGNAL}`,
+    'Allow: /',
+    'Disallow: /dashboard',
+    'Disallow: /.well-known/acme-challenge/',
+    '',
+  ].join('\n');
+
+  describe('apex robots.txt signal checks', () => {
+    it('the current committed landing/robots.txt passes both signal checks', () => {
+      const r = evaluateApexSignals(LIVE_ROBOTS, SIGNAL);
+      expect(r.reasons).toEqual([]);
+      expect(r.verdict).toBe('GREEN');
+    });
+
+    it('fixture 1 — Content-signal line REMOVED → RED', () => {
+      const body = APEX_OK.split('\n').filter((l) => !/^Content-signal:/i.test(l)).join('\n');
+      const r = evaluateApexSignals(body, SIGNAL);
+      expect(r.verdict).toBe('RED');
+      expect(r.reasons).toEqual([expect.stringContaining('LINE ABSENT')]);
+    });
+
+    it('fixture 2 — `ai-train=no` → RED (proves VALUE checking, not mere presence)', () => {
+      const body = APEX_OK.replace(SIGNAL, 'search=yes, ai-train=no');
+      const r = evaluateApexSignals(body, SIGNAL);
+      expect(r.verdict).toBe('RED');
+      expect(r.reasons).toEqual([expect.stringContaining('VALUE MISMATCH')]);
+      expect(r.reasons[0]).toContain('ai-train=no');
+    });
+
+    it('fixture 3 — blanket `Disallow: /.well-known/` → RED', () => {
+      const body = APEX_OK.replace('Disallow: /.well-known/acme-challenge/', 'Disallow: /.well-known/');
+      const r = evaluateApexSignals(body, SIGNAL);
+      expect(r.verdict).toBe('RED');
+      expect(r.reasons).toEqual([expect.stringContaining('BLANKET')]);
+    });
+
+    it('the NARROW acme-challenge form must NOT trip the blanket check (the other direction)', () => {
+      expect(APEX_OK).toContain(`Disallow: ${WELL_KNOWN_BLANKET}acme-challenge/`);
+      expect(evaluateApexSignals(APEX_OK, SIGNAL).verdict).toBe('GREEN');
+    });
+
+    it('an unreadable content-signal SoT is INDETERMINATE, never a pass', () => {
+      const r = evaluateApexSignals(APEX_OK, null);
+      expect(r.verdict).toBe('INDETERMINATE');
+      expect(r.reasons).toEqual([expect.stringContaining('SoT read back EMPTY')]);
+    });
+  });
+
+  describe('Content-Signal response header', () => {
+    it('fixture 4 — header MISSING → RED', () => {
+      const r = evaluateHeader(null, SIGNAL);
+      expect(r.verdict).toBe('RED');
+      expect(r.reasons).toEqual([expect.stringContaining('ABSENT on the apex response')]);
+    });
+
+    it('fixture 5 — header PRESENT but value MISMATCHED → RED', () => {
+      const r = evaluateHeader('search=yes, ai-train=no', SIGNAL);
+      expect(r.verdict).toBe('RED');
+      expect(r.reasons).toEqual([expect.stringContaining('VALUE MISMATCH')]);
+    });
+
+    it('matching header → GREEN, and surrounding whitespace is tolerated', () => {
+      expect(evaluateHeader(SIGNAL, SIGNAL).verdict).toBe('GREEN');
+      expect(evaluateHeader(`  ${SIGNAL}  `, SIGNAL).verdict).toBe('GREEN');
+    });
+  });
+
+  describe('non-apex surfaces', () => {
+    it('fixture 6 — robots.txt returning 404 → RED', () => {
+      const r = evaluateRobotsReachable('api.algovault.com', 404);
+      expect(r.verdict).toBe('RED');
+      expect(r.reasons).toEqual([expect.stringContaining('HTTP 404, expected 200')]);
+    });
+
+    it('200 → GREEN', () => {
+      expect(evaluateRobotsReachable('plausible.algovault.com', 200).verdict).toBe('GREEN');
+    });
+
+    it('fixture 8 — a TIMEOUT is INDETERMINATE, not RED (a distinct branch from a 404)', () => {
+      // "could not ask" and "asked and got the wrong answer" are not the same fact, and only the
+      // second is a regression. The gate reaches this branch through fetchLive's ok:false path.
+      const r = combineVerdicts([
+        {
+          verdict: 'INDETERMINATE',
+          lines: ['api.algovault.com/robots.txt: UNREACHABLE'],
+          reasons: ['api.algovault.com/robots.txt: fetch failed: AbortError: The operation was aborted'],
+        },
+      ]);
+      expect(r.verdict).toBe('INDETERMINATE');
+      expect(r.verdict).not.toBe('RED');
+      expect(r.reasons[0]).toContain('fetch failed');
+    });
+  });
+
+  describe('www redirect assertion (a DISTINCT check kind, not allowlist resolution)', () => {
+    it('301 to the apex at the same path → GREEN, query string preserved or not', () => {
+      expect(evaluateRedirect('www.algovault.com', 301, `${APEX_ORIGIN}/track-record`, '/track-record').verdict).toBe('GREEN');
+      // Measured on the first live run: the gate's own ?cb= cache-buster survives the 301, so a
+      // whole-URL comparison false-REDs every run. Origin+pathname is the contract.
+      expect(evaluateRedirect('www.algovault.com', 301, `${APEX_ORIGIN}/track-record?cb=9`, '/track-record').verdict).toBe('GREEN');
+    });
+
+    it.each([
+      ['redirect stops happening (200)', 200, `${APEX_ORIGIN}/track-record`, 'expected a 3xx'],
+      ['redirect goes to the wrong path', 301, `${APEX_ORIGIN}/elsewhere`, 'redirect target is'],
+      ['redirect goes to another host', 301, 'https://evil.example.com/track-record', 'redirect target is'],
+      ['no Location header at all', 301, null, 'redirect target is'],
+    ])('%s → RED', (_n, status, loc, reason) => {
+      const r = evaluateRedirect('www.algovault.com', status as number, loc as string | null, '/track-record');
+      expect(r.verdict).toBe('RED');
+      expect(r.reasons).toEqual([expect.stringContaining(reason as string)]);
+    });
+  });
+
+  describe('llms.txt hygiene', () => {
+    it('fixture 7 — a /docs/integrations/ hop → RED, counted', () => {
+      const r = evaluateLlms(`- [Binance](${APEX_ORIGIN}/docs/integrations/binance): x`);
+      expect(r.verdict).toBe('RED');
+      expect(r.reasons).toEqual([expect.stringContaining(`1 occurrence(s) of ${LLMS_FORBIDDEN_PATH}`)]);
+    });
+
+    it('the committed llms.txt and llms-full.txt carry ZERO hops', () => {
+      for (const f of ['llms.txt', 'llms-full.txt']) {
+        const body = readFileSync(join(REPO_ROOT_T, 'landing', f), 'utf8');
+        expect(`${f}:${body.split(LLMS_FORBIDDEN_PATH).length - 1}`).toBe(`${f}:0`);
+        expect(evaluateLlms(body).verdict).toBe('GREEN');
+      }
+    });
+
+    it('an EMPTY llms.txt is INDETERMINATE, never a silent pass', () => {
+      const r = evaluateLlms('');
+      expect(r.verdict).toBe('INDETERMINATE');
+      expect(r.reasons).toEqual([expect.stringContaining('EMPTY body')]);
+    });
+  });
+
+  describe('surface list + verdict folding', () => {
+    it('a new host joins by ONE array entry, and all four are declared', () => {
+      expect(SURFACES.map((s) => `${s.host}:${s.kind}`)).toEqual([
+        'algovault.com:apex',
+        'api.algovault.com:robots-200',
+        'plausible.algovault.com:robots-200',
+        'www.algovault.com:redirect-to-apex',
+      ]);
+    });
+
+    it('plausible stays under the gate even though W2 writes nothing there', () => {
+      // R5 was a no-op — plausible already served the right body. "Already correct" is a state
+      // that can regress, so it keeps its assertion.
+      expect(SURFACES.some((s) => s.host === 'plausible.algovault.com')).toBe(true);
+    });
+
+    it('RED dominates INDETERMINATE dominates GREEN', () => {
+      const g = { verdict: 'GREEN', lines: [], reasons: [] };
+      const i = { verdict: 'INDETERMINATE', lines: [], reasons: ['x'] };
+      const r = { verdict: 'RED', lines: [], reasons: ['y'] };
+      expect(combineVerdicts([g, g]).verdict).toBe('GREEN');
+      expect(combineVerdicts([g, i]).verdict).toBe('INDETERMINATE');
+      expect(combineVerdicts([g, i, r]).verdict).toBe('RED');
+      expect(combineVerdicts([]).verdict).toBe('INDETERMINATE');
+    });
+  });
+
+  /**
+   * BUILD-TIME half of the content-signal lockstep. The RUN-TIME half is
+   * scripts/check-robots-ai-allowlist.mjs against the live surfaces.
+   *
+   * NEITHER CLOSES IT ALONE, and that is deliberate: `Caddyfile` is in deploy.yml's paths-ignore,
+   * so the committed copy is applied to the host by SSH and can legitimately differ from the
+   * running one between a commit and its install. This block proves the COMMITTED artifacts; the
+   * live gate proves the RUNNING one. Do not delete either believing the other covers it.
+   */
+  describe('content-signal single-derivation lockstep (committed artifacts)', () => {
+    it("the gate's reader returns EXACTLY the imported constant", () => {
+      expect(readContentSignalFromSource(readFileSync(ALLOWLIST_SOURCE, 'utf8'))).toBe(CONTENT_SIGNAL_VALUE);
+    });
+
+    it('returns null (⇒ INDETERMINATE) when the literal is absent', () => {
+      expect(readContentSignalFromSource('export const SOMETHING_ELSE = 1;')).toBeNull();
+      expect(readContentSignalFromSource('')).toBeNull();
+    });
+
+    it.each([
+      ['landing/robots.txt', 'landing/robots.txt'],
+      ['landing/api-robots.txt', 'landing/api-robots.txt'],
+    ])('%s carries the constant byte-for-byte', (_n, rel) => {
+      const line = readFileSync(join(REPO_ROOT_T, rel), 'utf8')
+        .split('\n')
+        .find((l) => /^content-signal:/i.test(l));
+      expect(line).toBeDefined();
+      expect(line!.replace(/^content-signal:\s*/i, '').trim()).toBe(CONTENT_SIGNAL_VALUE);
+    });
+
+    it('the committed Caddyfile sets the header on the apex AND api blocks, and NOT on plausible', () => {
+      const caddy = readFileSync(join(REPO_ROOT_T, 'Caddyfile'), 'utf8');
+      const headers = [...caddy.matchAll(/^\s*header Content-Signal "([^"]*)"/gim)].map((m) => m[1]);
+      expect(headers).toHaveLength(2);
+      for (const h of headers) expect(h).toBe(CONTENT_SIGNAL_VALUE);
+      // plausible.algovault.com's block must carry no content-use declaration: we declared that
+      // host has no crawlable content, so a policy over it would be a claim about content that
+      // does not exist.
+      const plausible = caddy.slice(caddy.indexOf('plausible.algovault.com {'));
+      expect(plausible).not.toMatch(/header Content-Signal/i);
+    });
+
+    it('no unratified `use=` / content-use DIRECTIVE on any policy surface', () => {
+      // Scoped to NON-COMMENT lines. A whole-file grep cannot tell a directive from a mention,
+      // and these files deliberately DISCUSS `use=` to record why it is absent — scanning the
+      // comments would make the prohibition unwritable-about, which is the invocation-vs-mention
+      // trap. `#` opens a comment in both robots.txt (RFC 9309) and the Caddyfile.
+      for (const rel of ['landing/robots.txt', 'landing/api-robots.txt', 'Caddyfile']) {
+        const directives = readFileSync(join(REPO_ROOT_T, rel), 'utf8')
+          .split('\n')
+          .map((l) => l.replace(/#.*$/, ''))
+          .join('\n');
+        expect(`${rel}:${(directives.match(/\buse=/g) ?? []).length}`).toBe(`${rel}:0`);
+      }
+    });
+
+    it('…and that scan is not vacuous — it still catches a real directive', () => {
+      // Proves the comment-stripping above did not disarm the check itself.
+      const withDirective = '# talking about use= is fine\nContent-signal: search=yes, use=full\n';
+      const stripped = withDirective.split('\n').map((l) => l.replace(/#.*$/, '')).join('\n');
+      expect((stripped.match(/\buse=/g) ?? []).length).toBe(1);
+    });
+
+    it('api-robots.txt opens with the provenance comment that neutralises its apex copy', () => {
+      const body = readFileSync(join(REPO_ROOT_T, 'landing', 'api-robots.txt'), 'utf8');
+      const first2 = body.split('\n').slice(0, 2);
+      expect(first2[0]).toBe('# Served at https://api.algovault.com/robots.txt');
+      expect(first2[1]).toBe('# Its presence at any other path is a deploy artifact and carries no policy.');
+    });
+
+    it('api-robots.txt disallows everything EXCEPT the agent-discovery directory', () => {
+      const groups = parseRobots(readFileSync(join(REPO_ROOT_T, 'landing', 'api-robots.txt'), 'utf8'));
+      expect(resolveForAgent(groups, 'GPTBot', '/').verdict).toBe('disallowed');
+      expect(resolveForAgent(groups, 'GPTBot', '/mcp').verdict).toBe('disallowed');
+      expect(resolveForAgent(groups, 'GPTBot', '/.well-known/api-catalog').verdict).toBe('allowed');
     });
   });
 });
