@@ -4,13 +4,14 @@
 // aggregateSignalsSql execution + byte-equivalence is the LIVE e2e gate.
 import { describe, it, expect } from 'vitest';
 import { buildStatsAggregateSql, _parsePerfStatsPushdownFlag } from '../../src/lib/performance-db.js';
+import { SQL_PUBLISHED_POPULATION } from '../../src/lib/published-population.js';
 
 describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
   // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: the builder now takes the public venue scope.
   // `null` = unfiltered (admin/oracle); the venue-scoped shape is asserted in its own block below.
   const { groupsSql, periodSql, recentSql } = buildStatsAggregateSql(null);
 
-  it('groups SQL: grouping + win/eval predicates + max_ca/max_id + coalesce; NO time-window/confidence/outcome', () => {
+  it('groups SQL: grouping + win/eval predicates + max_ca/max_id + coalesce; population EXPLICIT, NO time-window/outcome', () => {
     expect(groupsSql).toMatch(/GROUP BY coalesce\(exchange,\s*'HL'\),\s*coin,\s*timeframe,\s*signal/i);
     // OPS-PFE-METRIC-INTEGRITY-W1 R5 CHANGED THIS PREDICATE — deliberately, and this
     // assertion was flipped with it (exemption + its test are a pair, per CLAUDE.md).
@@ -26,8 +27,20 @@ describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
     expect(groupsSql).toMatch(/max\(created_at\)/i);                                              // Q1 ordering
     expect(groupsSql).toMatch(/max\(id\)/i);
     expect(groupsSql).not.toMatch(/outcome_/);                                                    // PII LAW
-    expect(groupsSql).not.toMatch(/confidence/i);                                                 // no confidence filter
-    expect(groupsSql).not.toMatch(/FROM signals\s+WHERE/i);                                       // no time-window (only FILTER WHEREs)
+
+    // OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R1 — FLIPPED, and the flip IS the wave.
+    //
+    // These two assertions used to read `not.toMatch(/confidence/i)` and
+    // `not.toMatch(/FROM signals\s+WHERE/i)`, pinning the ABSENCE of a confidence predicate as a
+    // desired property. It never was one: the population was inherited from `recordSignal`'s
+    // write gate and stated nowhere here, so one insert below that gate moved the published win
+    // rate silently. The predicate is now REQUIRED, and asserting it positively is what stops a
+    // future wave deleting it as dead code (measured: it removes 0 rows today).
+    expect(groupsSql).toContain(SQL_PUBLISHED_POPULATION);
+    // The no-time-window property the deleted `FROM signals WHERE` assertion was really guarding
+    // — Merkle-parity means the full table, never a rolling window. Asserted directly now, so it
+    // survives the arrival of a legitimate WHERE clause instead of being collateral damage.
+    expect(groupsSql).not.toMatch(/created_at\s*>=?/i);
   });
 
   it('period SQL: min/max created_at + count; NO outcome / time-window', () => {
@@ -35,7 +48,9 @@ describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
     expect(periodSql).toMatch(/max\(created_at\)/i);
     expect(periodSql).toMatch(/count\(\*\)/i);
     expect(periodSql).not.toMatch(/outcome_/);
-    expect(periodSql).not.toMatch(/FROM signals\s+WHERE/i);
+    // R1: same flip as groupsSql above — the population is stated, the time-window still is not.
+    expect(periodSql).toContain(SQL_PUBLISHED_POPULATION);
+    expect(periodSql).not.toMatch(/created_at\s*>=?/i);
   });
 
   it('recent SQL: deterministic top-20 (created_at DESC, id DESC), LIMIT 20; NO outcome', () => {
@@ -43,6 +58,7 @@ describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
     expect(recentSql).toMatch(/LIMIT 20/i);
     expect(recentSql).not.toMatch(/outcome_/);
     expect(recentSql).toMatch(/pfe_return_pct/);  // STATS_COL_PROJECTION (rollup ignores it for recentSignals)
+    expect(recentSql).toContain(SQL_PUBLISHED_POPULATION);  // R1: population stated on the row lane too
   });
 
   // ── OPS-RECENT-SIGNALS-VENUE-FILTER-W1 — the venue predicate lives in the SQL ──
@@ -53,7 +69,11 @@ describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
   // is ON in prod, so a predicate applied only to the in-memory path would be a production no-op.
   it('venue-scoped: recentSql gains a parameterised allow-list; groups/period are UNTOUCHED', () => {
     const scoped = buildStatsAggregateSql(new Set(['BINANCE', 'HL']));
-    expect(scoped.recentSql).toMatch(/WHERE coalesce\(exchange,\s*'HL'\)\s*=\s*ANY\(\?\)/i);
+    // R1: the venue predicate is now the SECOND conjunct — the published-population predicate
+    // leads. Both are present; only their order changed, and `AND` is asserted explicitly so a
+    // future edit cannot silently drop one of the two into an `OR`.
+    expect(scoped.recentSql).toMatch(/AND coalesce\(exchange,\s*'HL'\)\s*=\s*ANY\(\?\)/i);
+    expect(scoped.recentSql).toContain(SQL_PUBLISHED_POPULATION);
     expect(scoped.recentParams).toEqual([['BINANCE', 'HL']]);
     // Parameterised, never interpolated — no venue id is ever spliced into the SQL text.
     expect(scoped.recentSql).not.toMatch(/BINANCE/);

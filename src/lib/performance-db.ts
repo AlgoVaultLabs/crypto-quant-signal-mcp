@@ -9,6 +9,7 @@ import type { SignalRecord, SignalVerdict, PerformanceStats } from '../types.js'
 import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js';
 import { isShortLivedScript } from './runtime.js';
 import { isPfeEligible, SQL_PFE_ELIGIBLE } from './pfe-scoring.js';
+import { SQL_PUBLISHED_POPULATION, sqlPublishedPopulation, isPublishedPopulation } from './published-population.js';
 import { formatWriteLossLog } from './log-redact.js';
 // The funding z-score window lives in its own dependency-free leaf: `reasoning` cites
 // it in public copy, and every trade-call test mocks THIS module wholesale — so a
@@ -1791,11 +1792,11 @@ export async function getUnbatchedSignals(): Promise<{ id: number; signal_hash: 
   const b = getBackend();
   if (isPg && b instanceof PgBackend) {
     return b.query(
-      `SELECT id, signal_hash FROM signals WHERE signal_hash IS NOT NULL AND merkle_batch_id IS NULL ORDER BY created_at ASC`
+      `SELECT id, signal_hash FROM signals WHERE signal_hash IS NOT NULL AND merkle_batch_id IS NULL AND ${SQL_PUBLISHED_POPULATION} ORDER BY created_at ASC`
     ) as any;
   }
   return b.all(
-    `SELECT id, signal_hash FROM signals WHERE signal_hash IS NOT NULL AND merkle_batch_id IS NULL ORDER BY created_at ASC`
+    `SELECT id, signal_hash FROM signals WHERE signal_hash IS NOT NULL AND merkle_batch_id IS NULL AND ${SQL_PUBLISHED_POPULATION} ORDER BY created_at ASC`
   ) as any;
 }
 
@@ -1968,7 +1969,7 @@ export async function getSignalWithBatch(signalId: number): Promise<any | null> 
            mb.merkle_root, mb.tx_hash, mb.block_number, mb.signal_count, mb.published_at
     FROM signals s
     LEFT JOIN merkle_batches mb ON s.merkle_batch_id = mb.batch_id
-    WHERE s.id = ?
+    WHERE s.id = ? AND ${sqlPublishedPopulation('s')}
   `;
   if (isPg && b instanceof PgBackend) {
     const rows = await b.query(sql, [signalId]);
@@ -1993,7 +1994,7 @@ export async function getSignalByHash(signalHash: string): Promise<any | null> {
            mb.merkle_root, mb.tx_hash, mb.block_number, mb.signal_count, mb.published_at
     FROM signals s
     LEFT JOIN merkle_batches mb ON s.merkle_batch_id = mb.batch_id
-    WHERE s.signal_hash = ?
+    WHERE s.signal_hash = ? AND ${sqlPublishedPopulation('s')}
   `;
   if (isPg && b instanceof PgBackend) {
     const rows = await b.query(sql, [signalHash]);
@@ -2437,11 +2438,11 @@ async function loadSignalsForStats(): Promise<SignalRecord[]> {
   const b = getBackend();
   if (isPg && b instanceof PgBackend) {
     return await b.query(
-      `SELECT ${STATS_COL_PROJECTION} FROM signals ORDER BY created_at DESC`
+      `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE ${SQL_PUBLISHED_POPULATION} ORDER BY created_at DESC`
     ) as unknown as SignalRecord[];
   }
   return b.all(
-    `SELECT ${STATS_COL_PROJECTION} FROM signals ORDER BY created_at DESC`
+    `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE ${SQL_PUBLISHED_POPULATION} ORDER BY created_at DESC`
   ) as unknown as SignalRecord[];
 }
 
@@ -2459,7 +2460,7 @@ export function getPerformanceStats(): PerformanceStats {
   const t0 = Date.now();
   const b = getBackend();
   const all = b.all(
-    `SELECT ${STATS_COL_PROJECTION} FROM signals ORDER BY created_at DESC`
+    `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE ${SQL_PUBLISHED_POPULATION} ORDER BY created_at DESC`
   ) as unknown as SignalRecord[];
   // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: `null` = unfiltered, and it is a decision, not an
   // omission. This is the SYNCHRONOUS SQLite path — `getPerformanceStats()` returns
@@ -2639,7 +2640,20 @@ function admitRecent(rows: SignalRecord[], scope: RecentVenueScope): SignalRecor
   return rows.filter(r => scope.has(r.exchange || 'HL'));
 }
 
-function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null, recentVenues: RecentVenueScope): PerformanceStats {
+function computeStats(rows: SignalRecord[], top20ByOI: Set<string> | null, recentVenues: RecentVenueScope): PerformanceStats {
+  // OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R1 — the published population, stated ONCE.
+  //
+  // Applied here rather than at each cohort deliberately: this function derives ~11 separate
+  // breakdowns (overall, per-signal-type, per-timeframe, per-asset, per-tier, per-exchange, the
+  // period bounds, totalCalls, recentSignals…), and eleven parallel copies of one rule is exactly
+  // the drift `pfe-scoring.ts` was extracted to end. Filtering the input is the single-derivation
+  // form: every cohort below inherits the population instead of restating it.
+  //
+  // Idempotent against the SQL predicate on the loader — both project from the same constant, and
+  // a row excluded by one is excluded by the other. That redundancy is the point: the scan path
+  // and the SQL-pushdown path (`rollupStats`) must agree byte-for-byte, and they now do so
+  // because both name the population rather than because both happened to inherit it.
+  const all = rows.filter(isPublishedPopulation);
   if (all.length === 0) return emptyStats();
 
   const oldest = all[all.length - 1];
@@ -3057,7 +3071,17 @@ function perfStatsSqlPushdownEnabled(): boolean {
 /**
  * The three SQL strings of the pushdown — pure (unit-tested for shape; executed
  * by aggregateSignalsSql). NO outcome_* (PII LAW), NO time-window (full-table,
- * Merkle-parity), NO confidence filter (enforced at write). null-exchange
+ * Merkle-parity).
+ *
+ * ⚠ THE CONFIDENCE FILTER IS NOW EXPLICIT, AND THIS LINE IS WHY THE WAVE HAPPENED. It read
+ * "NO confidence filter (enforced at write)" until OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R1 —
+ * an accurate description of an inverted design. The published population was inherited from
+ * `recordSignal`'s write gate and stated nowhere on the read side, so ONE insert below that gate
+ * would have moved the published win rate, the published call count and the on-chain Merkle
+ * anchor with nothing failing anywhere. All three strings below now carry
+ * `SQL_PUBLISHED_POPULATION`, and this is the LIVE branch in prod
+ * (`PERF_STATS_SQL_PUSHDOWN=1`) — a predicate applied only to the TypeScript path would have
+ * been a silent no-op on the published number. null-exchange
  * coalesces to 'HL' to match computeStats' `s.exchange || 'HL'`. max(created_at)
  * + max(id) per group drive rollup's deterministic byAsset/byExchange order (Q1).
  */
@@ -3074,9 +3098,9 @@ export function buildStatsAggregateSql(recentVenues: RecentVenueScope): { groups
       `count(*) FILTER (WHERE ${SQL_PFE_ELIGIBLE}) AS pfe_eval, ` +
       `count(*) FILTER (${winFilter}) AS pfe_win, ` +
       'max(created_at) AS max_ca, max(id) AS max_id ' +
-      "FROM signals GROUP BY coalesce(exchange, 'HL'), coin, timeframe, signal",
+      `FROM signals WHERE ${SQL_PUBLISHED_POPULATION} GROUP BY coalesce(exchange, 'HL'), coin, timeframe, signal`,
     periodSql:
-      'SELECT min(created_at) AS min_created_at, max(created_at) AS max_created_at, count(*) AS total FROM signals',
+      `SELECT min(created_at) AS min_created_at, max(created_at) AS max_created_at, count(*) AS total FROM signals WHERE ${SQL_PUBLISHED_POPULATION}`,
     // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: the venue predicate belongs INSIDE this query. The
     // `LIMIT 20` executes in the database, so a post-query filter cannot reach a 21st row —
     // it could only ever shrink the window. Parameterised with the repo's `?` convention
@@ -3084,8 +3108,8 @@ export function buildStatsAggregateSql(recentVenues: RecentVenueScope): { groups
     // EMPTY scope produces `= ANY('{}')`, which matches nothing, so a venue-registry fault
     // withholds rows instead of leaking them.
     recentSql:
-      `SELECT ${STATS_COL_PROJECTION} FROM signals`
-      + (recentVenues === null ? '' : " WHERE coalesce(exchange, 'HL') = ANY(?)")
+      `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE ${SQL_PUBLISHED_POPULATION}`
+      + (recentVenues === null ? '' : " AND coalesce(exchange, 'HL') = ANY(?)")
       + ' ORDER BY created_at DESC, id DESC LIMIT 20',
     recentParams: recentVenues === null ? [] : [[...recentVenues]],
   };
@@ -3234,6 +3258,7 @@ export async function getRecentCallsAsync(limit: number): Promise<RecentCall[]> 
   const rows = await dbQuery<RecentCallDbRow>(
     `SELECT coin, exchange, timeframe, signal, confidence, created_at
      FROM signals
+     WHERE ${SQL_PUBLISHED_POPULATION}
      ORDER BY created_at DESC
      LIMIT $1`,
     [safeLimit],
@@ -3354,7 +3379,7 @@ export async function getConfidenceBands(): Promise<ConfidenceBand[]> {
         WHEN signal = 'SELL' AND pfe_return_pct < 0 THEN ABS(pfe_return_pct)
       END)::numeric, 3) as avg_pfe_pct
     FROM signals
-    WHERE signal IN ('BUY', 'SELL')
+    WHERE signal IN ('BUY', 'SELL') AND ${SQL_PUBLISHED_POPULATION}
     GROUP BY band
     ORDER BY band
   `;

@@ -8,6 +8,7 @@ import { rsi, ema, atr, hurstExponent, detectSqueeze } from '../lib/indicators.j
 import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs, setRequestHoldCapture } from '../lib/license.js'
 import type { TrackCallResult } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
+import { MIN_TRACKABLE_CONFIDENCE } from '../lib/published-population.js';
 import { FUNDING_Z_WINDOW_DAYS } from '../lib/funding-window.js';
 import { buildFactorLedger, renderVerdictReasoning } from '../lib/verdict-factors.js';
 import { hashSignal } from '../lib/merkle.js';
@@ -212,13 +213,15 @@ export const R4_THRESHOLDS: { buyPenaltyZ: number; sellSofteningZ: number } = {
 //  which inflated every confidence output by ~1.20× and clipped the high tail to 100)
 const MAX_RAW_SCORE = 89;
 
-// Minimum confidence to record in track record (filters noise)
-// R6 (2026-04-15): lowered 60 → 52 after R1 MAX_RAW_SCORE fix to preserve pre-R1
-// effective rawScore floor (~44.4). Pre-R1 raw floor = 60/1.351 = 44.4; post-R1 under
-// new denominator 89, same rawScore 44.4 → confidence 50, so setting gate to 52 keeps
-// a thin noise margin while recovering ~95% of pre-fix persistence volume. See
-// experiments/quant-trading-server/phase-c-results.md.
-const MIN_TRACKABLE_CONFIDENCE = 52;
+// Minimum confidence to record in track record (filters noise).
+//
+// OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R1: RELOCATED to `src/lib/published-population.ts`
+// (imported above), value UNCHANGED at 52. It moved because it is not only a write gate — it is
+// the population boundary every public aggregate must now state explicitly, and
+// `performance-db.ts` cannot import it from here (this module imports THAT one, so the constant
+// had to live in a leaf both can reach). One literal, no cycle.
+//
+// The R6 (2026-04-15) derivation that produced 52 travelled with it and is recorded in the leaf.
 
 
 // ── SCAN-RANKBY-REFINEMENTS-W1 CH4: the score→verdict tail as a PURE function ──
