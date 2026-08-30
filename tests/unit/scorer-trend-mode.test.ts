@@ -18,11 +18,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  computeIndicatorScores, deriveVerdict, classifyRegimeLabel,
+  computeIndicatorScores, deriveVerdict, classifyRegimeLabel, R4_THRESHOLDS,
   type IndicatorInputs,
 } from '../../src/tools/get-trade-call.js';
 import { getTrendMode } from '../../src/lib/trend-mode-flag.js';
-import { getR4Thresholds } from '../../src/lib/r4-relax-flag.js';
 import type { Candle } from '../../src/types.js';
 
 const WEIGHTS = { rsi: 0.30, ema: 0.10, funding: 0.25, oi: 0.15, volume: 0.20 };
@@ -93,7 +92,7 @@ describe('CH3 — flag ON flips the saturated region, and only there', () => {
   it('flag ON turns the measured HOLD into a directional BUY', () => {
     const gates = {
       fundingZScore: null, fundingRateAnnualized: 0, hurstVal: null, squeezeActive: false,
-      r4Thresholds: getR4Thresholds(), buyThreshold: 40, sellThreshold: 55,
+      r4Thresholds: R4_THRESHOLDS, buyThreshold: 40, sellThreshold: 55,
     };
     const off = computeIndicatorScores(base(RIPPING, { trendMode: false }));
     const on = computeIndicatorScores(base(RIPPING, { trendMode: true }));

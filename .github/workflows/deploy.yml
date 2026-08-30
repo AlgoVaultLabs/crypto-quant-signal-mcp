@@ -897,22 +897,6 @@ jobs:
               fi
             done
 
-            # OPS-TRADE-CALL-CLUSTER-W1 CH2 — R4 RELAX 2-flag firewall.
-            # Outer ENABLE_R4_RELAX + inner R4_RELAX_DIRECTION enum
-            # (buy-revert / sell-revert / both-soften). Direction pre-set to
-            # 'sell-revert' (Plan-Mode (ii) — directly addresses BUY:SELL
-            # imbalance 705:1 + 430:1 by raising SELL count without touching BUY).
-            # OFF on first deploy; architect flips ENABLE_R4_RELAX=1 via
-            # follow-up OPS-TRADE-CALL-R4-ROLLOUT-W<N> wave once
-            # [seed-confidence-bucket] evidence confirms behavior shift.
-            for KV in 'ENABLE_R4_RELAX=0' 'R4_RELAX_DIRECTION=sell-revert'; do
-              KEY="${KV%%=*}"
-              if ! grep -q "^${KEY}=" /opt/crypto-quant-signal-mcp/.env 2>/dev/null; then
-                echo "$KV" >> /opt/crypto-quant-signal-mcp/.env
-                echo "$KV appended to /opt/crypto-quant-signal-mcp/.env"
-              fi
-            done
-
             # X402-CDP-BAZAAR-DISCOVERY-W1 (2026-05-29) — FacilitatorAdapter two-flag firewall.
             # Default-safe: legacy facilitator (self-hosted sidecar) + Bazaar discovery OFF
             # (byte-identical to pre-wave behavior on a fresh .env). CDP keys

@@ -25,8 +25,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { parseShadowCsv, storedRawBand, windowAt, loadCandlesCsv } from './verdict-mix-replay.js';
-import { computeIndicatorScores, deriveVerdict } from '../tools/get-trade-call.js';
-import { getR4Thresholds } from '../lib/r4-relax-flag.js';
+import { computeIndicatorScores, deriveVerdict, R4_THRESHOLDS } from '../tools/get-trade-call.js';
 import { FUNDING_Z_WINDOW_DAYS } from '../lib/funding-window.js';
 
 const DATA = process.env.R1_DATA ?? '/tmp/r1data';
@@ -107,7 +106,7 @@ function main(): number {
     });
     const v = deriveVerdict(s, {
       fundingZScore: z, fundingRateAnnualized: annual, hurstVal: s.hurstVal,
-      squeezeActive: s.squeezeActive, r4Thresholds: getR4Thresholds(),
+      squeezeActive: s.squeezeActive, r4Thresholds: R4_THRESHOLDS,
       buyThreshold: 40, sellThreshold: 55,
     });
 

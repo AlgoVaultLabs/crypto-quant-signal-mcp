@@ -23,9 +23,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { loadCandlesCsv, windowAt } from './verdict-mix-replay.js';
-import { computeIndicatorScores, deriveVerdict } from '../tools/get-trade-call.js';
+import { computeIndicatorScores, deriveVerdict, R4_THRESHOLDS } from '../tools/get-trade-call.js';
 import { runScript } from '../lib/script-lifecycle.js';
-import { getR4Thresholds } from '../lib/r4-relax-flag.js';
 import { isPfeWin, seededCall } from './calibration-audit.js';
 import type { Candle, RegimeType, SignalVerdict } from '../types.js';
 
@@ -90,7 +89,7 @@ function build(): Row[] {
       const on = computeIndicatorScores({ ...common, trendMode: true });
       const gates = {
         fundingZScore: null, fundingRateAnnualized: fundAnn, hurstVal: off.hurstVal,
-        squeezeActive: off.squeezeActive, r4Thresholds: getR4Thresholds(),
+        squeezeActive: off.squeezeActive, r4Thresholds: R4_THRESHOLDS,
         buyThreshold: BUY_THRESHOLD, sellThreshold: 55,
       };
       const fwd = all.slice(i + 1, i + 1 + FORWARD_BARS);

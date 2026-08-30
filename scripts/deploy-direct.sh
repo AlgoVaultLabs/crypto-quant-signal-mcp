@@ -97,7 +97,6 @@ for KV in 'ENABLE_PERTF_THRESHOLDS=0' \
           'ENABLE_PERTF_15M=0' 'ENABLE_PERTF_30M=0' 'ENABLE_PERTF_1H=0' \
           'ENABLE_PERTF_2H=0' 'ENABLE_PERTF_4H=0' 'ENABLE_PERTF_8H=0' \
           'ENABLE_PERTF_12H=0' 'ENABLE_PERTF_1D=0' \
-          'ENABLE_R4_RELAX=0' 'R4_RELAX_DIRECTION=sell-revert' \
           'X402_FACILITATOR=legacy' 'BAZAAR_DISCOVERABLE=false'; do
   KEY="${KV%%=*}"
   if ! grep -q "^${KEY}=" /opt/crypto-quant-signal-mcp/.env 2>/dev/null; then

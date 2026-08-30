@@ -44,7 +44,6 @@ import type { TradeCallResult, SignalVerdict, EmaCrossDirection, RegimeType, Lic
 // independently of whether this file happens to call them.
 import { bucketTrendPersistence, bucketFundingState, bucketBreakoutPending } from '../lib/indicator-buckets.js';
 import { getThresholdForTF } from '../lib/pertf-thresholds.js';
-import { getR4Thresholds } from '../lib/r4-relax-flag.js';
 import { recordOiScoreShadow } from '../lib/oiscore-shadow.js';
 import { getOiScoreSource } from '../lib/oiscore-source-flag.js';
 import { splitCandleWindow } from '../lib/candle-window.js';
@@ -178,6 +177,35 @@ const WEIGHTS = {
 const BUY_BASE_THRESHOLD = 40;
 const SELL_THRESHOLD_GATED = 55;
 
+// ── R4 funding-z gate constants (OPS-R4-RELAX-RETIRE-W1, 2026-08-30) ──
+// Formerly resolved through the 2-flag firewall `src/lib/r4-relax-flag.ts`
+// (`ENABLE_R4_RELAX` / `R4_RELAX_DIRECTION`), retired with that module. The outer flag was
+// `0` in production for the whole ~13 weeks it existed, so the firewall's lookup returned
+// exactly these two values on every call ever made — the substitution is byte-identical,
+// and was PROVEN so over a 571,536-case `deriveVerdict` grid straddling both branches
+// below rather than assumed (see the status.md entry).
+//
+// It was retired rather than enabled because the lever was MEASURED not to exist. Its
+// ratified `sell-revert` direction moves `sellSofteningZ` -2.0 -> -2.5, withdrawing the
+// `+20` softening below from rows in the band. Re-derived live 2026-08-30 by
+// reconstructing the funding z in SQL over `hold_decisions` x `funding_history` (14d
+// rolling window, STDDEV_SAMP, n>=20): 2 flip-eligible would-be-SELL rows in 3.232 days
+// = +0.62 SELL/day against 33.27/day = +1.9% SELL emission, ~0.05% of the 38.97pp gap to
+// the `29d9576` "Target: BUY share >= 60%", and ZERO rows on the -55 atom. 17,966 of
+// 17,969 flip-eligible rows (99.98%) were never softened at all: the softening and the
+// |raw| threshold select near-disjoint populations.
+//
+// Deliberately NOT env-configurable. Two committed deploy writers used to re-append the
+// pair on every deploy, so deleting the prod `.env` keys alone silently self-healed; both
+// writers were removed in the same wave. Moving these values re-opens the atom map — see
+// the EXPIRY CONDITION above, and route it through the scoring-ladder wave.
+export const R4_THRESHOLDS: { buyPenaltyZ: number; sellSofteningZ: number } = {
+  /** Z-Score above which BUY direction gets penalized (rawScore -= 20). */
+  buyPenaltyZ: 2.5,
+  /** Z-Score below which SELL direction gets softened (rawScore += 20). */
+  sellSofteningZ: -2.0,
+};
+
 // Theoretical max |rawScore| for proper confidence scaling
 // RSI(100)*0.30 + EMA(100)*0.10 + Funding(80)*0.25 + OI(60)*0.15 + Vol(100)*0.20 = 30+10+20+9+20 = 89
 // (R1 from generator audit 2026-04-14: prior value 74 was computed from the wrong per-feature maxes,
@@ -210,7 +238,7 @@ export interface VerdictGateInputs {
   fundingRateAnnualized: number;
   hurstVal: number | null;
   squeezeActive: boolean;
-  r4Thresholds: ReturnType<typeof getR4Thresholds>;
+  r4Thresholds: typeof R4_THRESHOLDS;
   buyThreshold: number;
   sellThreshold: number;
   /**
@@ -1041,9 +1069,11 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   //    (single-derivation — the live verdict + the oiScore shadow both project from it). The
   //    oiScore re-base is SHADOW-ONLY: OISCORE_SOURCE defaults to 'price' ⇒ the live
   //    call/confidence are BYTE-IDENTICAL to the priceChange-derived behaviour. ──
-  // OPS-TRADE-CALL-CLUSTER-W1: R4-relax + per-TF thresholds resolved here (pure env reads;
-  // order vs the score is irrelevant) and passed into deriveVerdict.
-  const r4Thresholds = getR4Thresholds();
+  // OPS-TRADE-CALL-CLUSTER-W1: per-TF thresholds resolved here (a pure env read; order vs
+  // the score is irrelevant) and passed into deriveVerdict alongside the R4 gate constants.
+  // The R4 half is NO LONGER an env read — OPS-R4-RELAX-RETIRE-W1 retired that firewall and
+  // inlined it as `R4_THRESHOLDS` above.
+  const r4Thresholds = R4_THRESHOLDS;
   const buyThreshold = getThresholdForTF(timeframe, 'buy', BUY_BASE_THRESHOLD);
   const sellThreshold = getThresholdForTF(timeframe, 'sell', SELL_THRESHOLD_GATED);
   // `hurstVal` / `squeezeActive` are CANDLE-DERIVED, so the closed basis needs its own

@@ -25,8 +25,7 @@
  * and cannot reach an anchored row.
  */
 import { readFileSync } from 'node:fs';
-import { computeIndicatorScores, deriveVerdict } from '../tools/get-trade-call.js';
-import { getR4Thresholds } from '../lib/r4-relax-flag.js';
+import { computeIndicatorScores, deriveVerdict, R4_THRESHOLDS } from '../tools/get-trade-call.js';
 import { splitCandleWindow } from '../lib/candle-window.js';
 import type { Candle, RegimeType, SignalVerdict } from '../types.js';
 
@@ -93,7 +92,7 @@ export function achievableAbsRaw(
         { rsiScore: s.rsiScore, emaScore: s.emaScore, fundingScore: f, oiScore: o, volumeScore: s.volumeScore },
         {
           fundingZScore: z, fundingRateAnnualized: fr, hurstVal: s.hurstVal,
-          squeezeActive: s.squeezeActive, r4Thresholds: getR4Thresholds(),
+          squeezeActive: s.squeezeActive, r4Thresholds: R4_THRESHOLDS,
           buyThreshold, sellThreshold,
         },
       );
@@ -167,7 +166,7 @@ export function verdictAt(
     fundingRateAnnualized: fundingAnnualized,
     hurstVal: s.hurstVal,
     squeezeActive: s.squeezeActive,
-    r4Thresholds: getR4Thresholds(),
+    r4Thresholds: R4_THRESHOLDS,
     buyThreshold, sellThreshold,
   });
 }
