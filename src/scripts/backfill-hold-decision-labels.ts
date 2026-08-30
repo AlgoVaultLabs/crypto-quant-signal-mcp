@@ -9,6 +9,11 @@
  *   node dist/scripts/backfill-hold-decision-labels.js [--check] [--venue X] [--coin Y]
  *        [--timeframe 15m] [--barrier-spec tau1.0-floor0.30-v1] [--per-cell N]
  *        [--max-decisions N] [--lookback-days N] [--time-budget-min N]
+ *        [--side buy|sell] [--conf-min N] [--conf-max N]
+ *
+ * `--side` / `--conf-min` / `--conf-max` (EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1 R2) narrow the
+ * WORK-LIST only, for dedicated band-targeted backfills; default-off, byte-identical SQL when
+ * absent, barrier arithmetic untouched.
  *
  * ── THE QUARANTINE IS THE POINT OF THIS FILE BEING A SEPARATE FILE ───────────────────────────
  *
@@ -82,6 +87,14 @@ interface Cli {
   maxDecisions: number;
   lookbackDays?: number;
   timeBudgetMin?: number;
+  /** EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1 R2 — additive, default-off work-list filters.
+   *  Worklist SQL only; the barrier arithmetic is untouched by construction (it lives in
+   *  directional-labeler.ts). With all three absent the generated SQL + params are
+   *  byte-identical to the pre-flag behaviour — pinned by
+   *  tests/unit/hold-decision-label-filters.test.ts. */
+  side?: 'buy' | 'sell';
+  confMin?: number;
+  confMax?: number;
 }
 
 interface HoldRow {
@@ -117,6 +130,22 @@ export function parseCli(argv: string[]): Cli {
   const specSel = val('--barrier-spec');
   const specs = specSel ? ALL_SPECS.filter((s) => s.spec === specSel) : [...ALL_SPECS];
   if (specSel && specs.length === 0) throw new Error(`unknown --barrier-spec '${specSel}'`);
+  const sideSel = val('--side');
+  if (sideSel !== undefined && sideSel !== 'buy' && sideSel !== 'sell') {
+    throw new Error(`--side must be 'buy' or 'sell', got '${sideSel}'`);
+  }
+  const conf = (f: string) => {
+    const v = val(f);
+    if (v === undefined) return undefined;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0 || n > 100) throw new Error(`${f} must be an integer 0..100`);
+    return n;
+  };
+  const confMin = conf('--conf-min');
+  const confMax = conf('--conf-max');
+  if (confMin !== undefined && confMax !== undefined && confMin > confMax) {
+    throw new Error(`--conf-min (${confMin}) must be <= --conf-max (${confMax})`);
+  }
   return {
     check: has('--check'),
     specs,
@@ -127,6 +156,9 @@ export function parseCli(argv: string[]): Cli {
     maxDecisions: posInt('--max-decisions') ?? DEFAULT_MAX_DECISIONS,
     lookbackDays: posInt('--lookback-days'),
     timeBudgetMin: posInt('--time-budget-min'),
+    side: sideSel,
+    confMin,
+    confMax,
   };
 }
 
@@ -159,6 +191,21 @@ export function buildWorklistSql(cli: Cli, nowSec: number): { sql: string; param
   if (cli.lookbackDays) {
     params.push(nowSec - cli.lookbackDays * 86_400);
     where.push(`h.decided_at > $${params.length}`);
+  }
+  // EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1 R2 filters — appended AFTER every pre-existing
+  // conditional and BEFORE the LIMIT params, so with all three absent nothing here executes
+  // and the emitted SQL + param vector stay byte-identical to the pre-flag behaviour.
+  if (cli.side) {
+    params.push(cli.side === 'sell' ? -1 : 1);
+    where.push(`h.would_be_side = $${params.length}`);
+  }
+  if (cli.confMin !== undefined) {
+    params.push(cli.confMin);
+    where.push(`h.confidence >= $${params.length}`);
+  }
+  if (cli.confMax !== undefined) {
+    params.push(cli.confMax);
+    where.push(`h.confidence <= $${params.length}`);
   }
   params.push(cli.perCell);
   const perCell = `$${params.length}`;
