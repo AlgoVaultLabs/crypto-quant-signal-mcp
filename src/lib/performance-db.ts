@@ -9,7 +9,7 @@ import type { SignalRecord, SignalVerdict, PerformanceStats } from '../types.js'
 import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js';
 import { isShortLivedScript } from './runtime.js';
 import { isPfeEligible, SQL_PFE_ELIGIBLE } from './pfe-scoring.js';
-import { SQL_PUBLISHED_POPULATION, sqlPublishedPopulation, isPublishedPopulation } from './published-population.js';
+import { SQL_PUBLISHED_POPULATION, sqlPublishedPopulation, isPublishedPopulation, MIN_TRACKABLE_CONFIDENCE } from './published-population.js';
 import { formatWriteLossLog } from './log-redact.js';
 // The funding z-score window lives in its own dependency-free leaf: `reasoning` cites
 // it in public copy, and every trade-call test mocks THIS module wholesale — so a
@@ -666,6 +666,118 @@ const CREATE_HOLD_DECISION_LABELS_SQL = `
     ON hold_decision_labels (barrier_spec, hold_decision_id);
 `;
 
+// ── OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R2 — schema-as-code mirror of `migrations/035` ──
+//
+// The migration file is the SoT and carries the full reasoning. This block exists so fresh
+// deploys and SQLite test fixtures inherit the tables without running migrations; on live PG it
+// is a no-op against a DB prepared via SSH before the commit landed.
+//
+// WHAT THIS TABLE IS. The directional calls the engine EMITS and has never recorded:
+// `recordSignal` persists only at `confidence >= MIN_TRACKABLE_CONFIDENCE`, while BUY emits from
+// confidence 45, so 62.27% of all request-path BUYs are handed to a paying caller and written
+// nowhere (measured on `request_log` 2026-08-30, n=2197).
+//
+// WHAT IT IS NOT, AND THE ABSENCE IS THE DESIGN. There is no `signal_hash`, no `merkle_batch_id`
+// and no `merkle_proof` column. `getUnbatchedSignals()` selects `WHERE signal_hash IS NOT NULL
+// AND merkle_batch_id IS NULL` and `publish-merkle-batch.ts` anchors the result to Base L2; a
+// band row is therefore unanchorable BY CONSTRUCTION rather than by a guard someone has to
+// remember. Adding any of the three re-opens on-chain publication for rows that must never be
+// published, and an anchored batch has no undo.
+//
+// TWO BACKENDS, ONE SEMANTIC. SQLite has no BIGSERIAL, SMALLINT or TIMESTAMPTZ; `INTEGER PRIMARY
+// KEY AUTOINCREMENT` gives the same monotonic never-reused id space, which is the property that
+// matters — a `band_id` that cannot be confused with `signals.id` or `request_log.id`.
+//
+// The CHECK is built from MIN_TRACKABLE_CONFIDENCE, never a second literal: the band IS "below
+// the recording gate", so a row at or above it belongs in `signals` and misfiling one here would
+// quietly build a comparison corpus overlapping the published one.
+const CREATE_BAND_SIGNALS_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS band_signals (
+      band_id              BIGSERIAL PRIMARY KEY,
+      captured_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+      coin                 TEXT NOT NULL,
+      signal               TEXT NOT NULL,
+      confidence           SMALLINT NOT NULL,
+      timeframe            TEXT NOT NULL,
+      exchange             TEXT NOT NULL DEFAULT 'HL',
+      price_at_signal      REAL NOT NULL,
+      created_at           INTEGER NOT NULL,
+      regime               TEXT,
+      regime_rule_version  SMALLINT NOT NULL DEFAULT 1,
+      verdict_rule_version SMALLINT NOT NULL DEFAULT 1,
+      outcome_price        REAL,
+      outcome_return_pct   REAL,
+      return_1candle       REAL,
+      pfe_price            REAL,
+      pfe_return_pct       REAL,
+      mae_price            REAL,
+      mae_return_pct       REAL,
+      pfe_candles          INTEGER,
+      arm                  TEXT NOT NULL,
+      is_bot_internal      BOOLEAN,
+      CONSTRAINT band_signals_signal_ck CHECK (signal IN ('BUY', 'SELL')),
+      CONSTRAINT band_signals_arm_ck    CHECK (arm IN ('request', 'fleet')),
+      CONSTRAINT band_signals_below_gate_ck CHECK (confidence >= 0 AND confidence < ${MIN_TRACKABLE_CONFIDENCE})
+    );`
+  : `CREATE TABLE IF NOT EXISTS band_signals (
+      band_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      captured_at          TEXT NOT NULL DEFAULT (datetime('now')),
+      coin                 TEXT NOT NULL,
+      signal               TEXT NOT NULL,
+      confidence           INTEGER NOT NULL,
+      timeframe            TEXT NOT NULL,
+      exchange             TEXT NOT NULL DEFAULT 'HL',
+      price_at_signal      REAL NOT NULL,
+      created_at           INTEGER NOT NULL,
+      regime               TEXT,
+      regime_rule_version  INTEGER NOT NULL DEFAULT 1,
+      verdict_rule_version INTEGER NOT NULL DEFAULT 1,
+      outcome_price        REAL,
+      outcome_return_pct   REAL,
+      return_1candle       REAL,
+      pfe_price            REAL,
+      pfe_return_pct       REAL,
+      mae_price            REAL,
+      mae_return_pct       REAL,
+      pfe_candles          INTEGER,
+      arm                  TEXT NOT NULL,
+      is_bot_internal      INTEGER,
+      CHECK (signal IN ('BUY', 'SELL')),
+      CHECK (arm IN ('request', 'fleet')),
+      CHECK (confidence >= 0 AND confidence < ${MIN_TRACKABLE_CONFIDENCE})
+    );`;
+
+const CREATE_BAND_SIGNALS_INDEXES_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_band_signals_scan
+    ON band_signals (exchange, coin, timeframe, created_at);
+  CREATE INDEX IF NOT EXISTS idx_band_signals_pending_outcome
+    ON band_signals (created_at) WHERE outcome_price IS NULL;
+`;
+
+// QUARANTINE, and the key is the whole point. Keys on `band_id`, NEVER `signal_id`:
+// `request_log.id` (~355k) and `signals.id` (~524k) numerically OVERLAP, so an id from the wrong
+// space inserted into `directional_labels` — the corpus behind the DWR baseline and the published
+// track record — would JOIN SILENTLY to an unrelated acted signal. `band_id` is a third dedicated
+// id space; the declared REFERENCES makes a wrong id fail loudly at INSERT rather than join
+// wrongly at SELECT.
+const CREATE_BAND_SIGNAL_LABELS_SQL = `
+  CREATE TABLE IF NOT EXISTS band_signal_labels (
+    band_id           ${process.env.DATABASE_URL ? 'BIGINT' : 'INTEGER'} NOT NULL REFERENCES band_signals(band_id) ON DELETE CASCADE,
+    barrier_spec      TEXT NOT NULL,
+    label             SMALLINT NOT NULL,
+    ambiguous_candle  BOOLEAN NOT NULL DEFAULT FALSE,
+    low_vol_history   BOOLEAN NOT NULL DEFAULT FALSE,
+    t_hit_candles     INT,
+    mfe_return_pct    DOUBLE PRECISION,
+    mae_return_pct    DOUBLE PRECISION,
+    barrier_pct       DOUBLE PRECISION NOT NULL,
+    computed_at       ${process.env.DATABASE_URL ? 'TIMESTAMPTZ NOT NULL DEFAULT now()' : "TEXT NOT NULL DEFAULT (datetime('now'))"},
+    PRIMARY KEY (band_id, barrier_spec)
+  );
+  CREATE INDEX IF NOT EXISTS idx_band_labels_spec_band
+    ON band_signal_labels (barrier_spec, band_id);
+`;
+
 // v1.9.0 L3 (2026-04-15): agent_sessions cohort table.
 // Persisted on every tool call (when sessionId is present, i.e. HTTP transport).
 const CREATE_AGENT_SESSIONS_SQL = `
@@ -1150,6 +1262,12 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_HOLD_DECISIONS_SQL);
   backend.exec(CREATE_HOLD_DECISIONS_INDEXES_SQL);
   backend.exec(CREATE_HOLD_DECISION_LABELS_SQL);
+  // OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R2. Same pre-apply contract as the two blocks above:
+  // `migrations/035` was applied to live PG via SSH before this commit landed, so this is a no-op
+  // there and a real create for fresh deploys and SQLite fixtures.
+  backend.exec(CREATE_BAND_SIGNALS_SQL);
+  backend.exec(CREATE_BAND_SIGNALS_INDEXES_SQL);
+  backend.exec(CREATE_BAND_SIGNAL_LABELS_SQL);
   backend.exec(CREATE_MERKLE_BATCHES_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_INDEX_SQL);
@@ -1373,6 +1491,162 @@ export function recordSignal(
         priceAtSignal, signalHash: signalHash || null, regime: regime ?? null, createdAt,
       }))
       .catch((err) => console.error('[webhook-events] hook error:', err instanceof Error ? err.message : err));
+  }
+}
+
+/**
+ * OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R2 — the band writer.
+ *
+ * Records a directional call the engine EMITTED but `recordSignal` refuses: `signal != 'HOLD'`
+ * with `confidence < MIN_TRACKABLE_CONFIDENCE`. Measured on `request_log` 2026-08-30, 1368 of
+ * 2197 emitted BUYs all-time (62.27%) fall here, are delivered to a paying caller, and were
+ * written nowhere before this function existed.
+ *
+ * THIS IS NOT `recordSignal` WITH A DIFFERENT TABLE NAME, and three differences are load-bearing:
+ *
+ *  1. NO `signalHash` PARAMETER. `band_signals` has no `signal_hash` column, so there is nothing
+ *     to pass and nothing to forget. A band row cannot enter the Merkle anchor path because the
+ *     column `getUnbatchedSignals()` selects on does not exist on this table.
+ *  2. NO WEBHOOK HOOK. `recordSignal` fires `onSignalRecorded` behind `WEBHOOK_DELIVERY_ENABLED`.
+ *     A band call was never delivered as a subscribable event and must not become one — these
+ *     rows are a measurement corpus, not a product surface.
+ *  3. AN `arm`. `request` = a paying caller received this call; `fleet` = the seeder generated it.
+ *     The claim this corpus exists to test is about what CALLERS receive, so the two populations
+ *     must be separable at analysis time. `request_log` sees only the request arm and
+ *     `seed-signals.ts` never touches it, so the distinction is recorded here or nowhere.
+ *
+ * Everything else mirrors `recordSignal` exactly — same column names, same types, same
+ * `created_at` unit (epoch seconds), same rule-version stamping evaluated at WRITE time rather
+ * than hoisted to a module constant. The eventual band-vs-tracked comparison has to be a
+ * difference in the DATA, never an artifact of two different writers.
+ *
+ * UNSAMPLED, deliberately, unlike `hold_decisions`. That table samples because the fleet HOLD arm
+ * is ~437k rows/day; the band is estimated at 5.6k-8.9k/day against a tracked stream of ~2,820,
+ * two orders of magnitude smaller, so full capture is affordable and a sampler would only add a
+ * selection effect to a corpus whose entire purpose is to be unbiased.
+ */
+export function recordBandSignal(
+  coin: string,
+  signal: SignalVerdict,
+  confidence: number,
+  timeframe: string,
+  priceAtSignal: number,
+  exchange: string = 'HL',
+  regime: string | null | undefined,
+  arm: 'request' | 'fleet',
+  isBotInternal?: boolean | null,
+): void {
+  const b = getBackend();
+  const createdAt = Math.floor(Date.now() / 1000);
+  b.run(
+    `INSERT INTO band_signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, regime, regime_rule_version, verdict_rule_version, arm, is_bot_internal)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    coin, signal, confidence, timeframe, exchange, priceAtSignal, createdAt, regime ?? null,
+    REGIME_RULE_VERSION,
+    currentVerdictRuleVersion(),
+    arm,
+    // SQLite binds no booleans (`SQLite3 can only bind numbers, strings, bigints, buffers, and
+    // null`), so the same 0/1 coercion `recordHoldDecisionImpl` applies is needed here. Caught by
+    // tests/unit/band-population-invariance.test.ts on the SQLite backend — prod is PG, where the
+    // raw boolean is correct, so this would have shipped green and failed only in fixtures.
+    isBotInternal === null || isBotInternal === undefined
+      ? null
+      : (isPg ? isBotInternal : (isBotInternal ? 1 : 0)),
+  );
+}
+
+/**
+ * The running count the successor wave is gated on.
+ *
+ * `OPS-TRACK-RECORD-BAND-DECISION-W{NEXT}` opens on a stated row count of RESOLVED band rows —
+ * never a date — so the count has to be readable without an SSH psql session. Returns both legs
+ * because they answer different questions: `captured` is how fast the band accrues, `resolved` is
+ * how much of it is actually comparable to a tracked row, and only the second one advances the
+ * gate. A row is RESOLVED when the outcome evaluator has scored it, which is exactly the
+ * condition `isPfeEligible` reads on the tracked side.
+ *
+ * INTERNAL ONLY. Surfaced on the ADMIN-gated `/api/confidence-bands` and nowhere else;
+ * `tests/unit/band-population-invariance.test.ts` asserts the field name is absent from every
+ * unauthenticated response.
+ */
+export async function getBandSignalCounts(): Promise<{ captured: number; resolved: number }> {
+  try {
+    const rows = await dbQuery<{ captured: string | number; resolved: string | number }>(
+      `SELECT count(*) AS captured,
+              count(*) FILTER (WHERE pfe_return_pct IS NOT NULL) AS resolved
+         FROM band_signals`,
+    );
+    const r = rows[0];
+    return { captured: Number(r?.captured ?? 0), resolved: Number(r?.resolved ?? 0) };
+  } catch {
+    // The table is absent only on a backend that never ran init. Zero is the honest answer for a
+    // COUNT over an empty corpus and this figure gates nothing automatically — the successor
+    // reads it, a human decides.
+    return { captured: 0, resolved: 0 };
+  }
+}
+
+/**
+ * OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R2 — the band lane's OWN work queue.
+ *
+ * A SEPARATE QUERY, NOT A WIDENED ONE, AND THAT IS THE POINT. The tracked evaluator
+ * (`getSignalsNeedingUnifiedBackfillAsync`, `LIMIT 5000`, oldest-first) feeds the PUBLISHED
+ * number and draws venue candles from a shared upstream weight budget. Band capture is estimated
+ * at 5.6k-8.9k rows/day against a tracked stream of ~2,820/day, so pointing both lanes at one
+ * oldest-first queue would let a counterfactual measurement sit in front of the published
+ * metric's own evaluator. Separate table, separate queue, separate cap — the band can starve, the
+ * published metric cannot.
+ *
+ * `limit` is REQUIRED rather than defaulted. An optional cap that silently defaults is the
+ * fix-one-branch-miss-the-other trap expressed in the type system; making it explicit means a new
+ * call site has to state its budget out loud.
+ */
+export async function getBandSignalsNeedingOutcome(limit: number): Promise<SignalRecord[]> {
+  const safe = Math.max(1, Math.min(Math.trunc(limit) || 1, 5000));
+  return (await dbQuery<SignalRecord>(
+    `SELECT band_id AS id, coin, signal, confidence, timeframe, exchange, price_at_signal, created_at,
+            outcome_price, pfe_return_pct, mae_return_pct
+       FROM band_signals
+      WHERE outcome_price IS NULL
+      ORDER BY created_at ASC
+      LIMIT ${safe}`,
+  )) as unknown as SignalRecord[];
+}
+
+/**
+ * Write one band row's outcome. Column-for-column identical to `updateSignalOutcomes`, because
+ * the values come from the SAME `computePFEMAE` + `toSignalOutcomeUpdate` pair the tracked lane
+ * uses. Reusing the evaluator rather than reimplementing it is what makes the eventual
+ * band-vs-tracked comparison a difference in the DATA rather than an artifact of two labellers —
+ * the failure mode the spec names as "an artifact of different labelling".
+ */
+export async function updateBandSignalOutcomes(bandId: number, data: {
+  outcome_price: number;
+  outcome_return_pct: number;
+  return_1candle: number;
+  pfe_price: number;
+  pfe_return_pct: number;
+  mae_price: number;
+  mae_return_pct: number;
+  pfe_candles: number;
+}): Promise<void> {
+  const b = getBackend();
+  const sql = `UPDATE band_signals SET
+    outcome_price = ?, outcome_return_pct = ?, return_1candle = ?,
+    pfe_price = ?, pfe_return_pct = ?,
+    mae_price = ?, mae_return_pct = ?,
+    pfe_candles = ?
+    WHERE band_id = ?`;
+  const args = [
+    data.outcome_price, data.outcome_return_pct, data.return_1candle,
+    data.pfe_price, data.pfe_return_pct,
+    data.mae_price, data.mae_return_pct,
+    data.pfe_candles, bandId,
+  ] as const;
+  if (isPg && b instanceof PgBackend) {
+    await b.runAsync(sql, ...args);
+  } else {
+    b.run(sql, ...args);
   }
 }
 

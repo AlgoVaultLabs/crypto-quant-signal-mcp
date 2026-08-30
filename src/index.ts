@@ -35,7 +35,7 @@ import {
   ADMIN_UNAUTHORIZED_PAGE,
   ADMIN_UNAUTHORIZED_API,
 } from './lib/admin-auth.js';
-import { closeDb, getConfidenceBands, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands, getBandSignalCounts, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { registerWebhookRoutes, resolveOwner, authRequired, refuseOwner } from './lib/webhook-api.js';
 import { formatShadowVenuePublic, formatVenueForResource } from './lib/venue-public-formatter.js';
 import { startDeliveryWorker, startHealthProbeSweep } from './lib/webhook-delivery.js';
@@ -2585,7 +2585,30 @@ async function startHttp() {
       }
       try {
         const bands = await getConfidenceBands();
-        res.json({ bands, generatedAt: new Date().toISOString() });
+        // ── OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R4 — the successor's gate, made readable ──
+        //
+        // `OPS-TRACK-RECORD-BAND-DECISION-W{NEXT}` opens on a STATED ROW COUNT of resolved band
+        // rows, never a date, so the count has to be checkable without an SSH psql session every
+        // time someone asks whether the corpus is ready.
+        //
+        // ADMIN-GATED, AND THAT IS LOAD-BEARING. This route sits behind `isAdminAuthorized`; its
+        // sibling `/api/confidence-bands-public` is unauthenticated and must NEVER carry these
+        // fields — band rows are excluded from every published number by construction, and a
+        // count of them appearing on a public surface would be the first step to including them.
+        // `tests/unit/band-population-invariance.test.ts` asserts the absence by field NAME on
+        // every unauthenticated response.
+        //
+        // Named `band_*` rather than a bare `total` deliberately: this value will get
+        // copy-pasted into a status entry or a dashboard one day, and a name that travels with
+        // its meaning is the difference between a reader knowing it is a COUNTERFACTUAL corpus
+        // and assuming it is part of the track record.
+        const bandCounts = await getBandSignalCounts();
+        res.json({
+          bands,
+          band_signals_captured: bandCounts.captured,
+          band_signals_resolved: bandCounts.resolved,
+          generatedAt: new Date().toISOString(),
+        });
       } catch (err) {
         res.status(500).json({ error: 'Failed to fetch confidence bands' });
       }

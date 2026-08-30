@@ -9,6 +9,7 @@ import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQu
 import type { TrackCallResult } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { MIN_TRACKABLE_CONFIDENCE } from '../lib/published-population.js';
+import { recordBandSignalCapture, isBandConfidence } from '../lib/band-signal-capture.js';
 import { FUNDING_Z_WINDOW_DAYS } from '../lib/funding-window.js';
 import { buildFactorLedger, renderVerdictReasoning } from '../lib/verdict-factors.js';
 import { hashSignal } from '../lib/merkle.js';
@@ -1467,6 +1468,55 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
         });
       } catch (e) {
         console.debug('hold-decision capture failed:', e instanceof Error ? e.message : e);
+      }
+    } else {
+      // ── OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R2 — the band capture seam ──
+      //
+      // THIS BRANCH USED NOT TO EXIST, AND ITS ABSENCE WAS THE DEFECT. The chain above is
+      // `if (non-HOLD && confidence >= 52) … else if (HOLD) …`, so a non-HOLD call BELOW the
+      // recording gate matched NEITHER arm: no `recordSignal`, no `recordHoldCount`, no
+      // `hold_decisions` row. It was returned to the caller and then forgotten. BUY emits from
+      // confidence 45 while the gate sits at 52, so this silent gap swallowed 62.27% of all
+      // request-path BUYs (1368 of 2197, measured on `request_log` 2026-08-30).
+      //
+      // Reached by the same two callers as every other arm here — the request path
+      // (index.ts → routeTradeCall → getTradeSignal) and the fleet path
+      // (seed-signals.ts → getTradeSignal) — which is why the arm is resolved inside the
+      // recorder rather than guessed from this call site.
+      //
+      // THE SIDE NEEDS NO CHECK, AND THE COMPILER IS THE ONE SAYING SO. A `signal !== 'HOLD'`
+      // guard here is rejected with TS2367 — the `else if (signal === 'HOLD')` above has already
+      // narrowed `signal` to `'BUY' | 'SELL'`, so non-HOLD is a type-level fact on this branch
+      // rather than a runtime hope, and no cast is needed to pass it on. That narrowing is also
+      // what makes this seam side-agnostic for free: it captures whichever side lands below the
+      // gate, so a future move in `getThresholdForTF` (identity today) cannot silently stop the
+      // capture the way a hardcoded "BUY 45-51" range would.
+      //
+      // `isBandConfidence` IS still asserted, and its redundancy is the load-bearing part: if a
+      // future edit reshuffles the chain above, a row that does not satisfy the band predicate
+      // must not silently land in the band corpus, where it would overlap the published
+      // population. The DB CHECK constraint on `band_signals.confidence` is the same assertion
+      // made a third time, at the last place it can still be made.
+      //
+      // WHAT IS DELIBERATELY NOT HERE: no `hashSignal`, because `band_signals` has no
+      // `signal_hash` column and therefore no path into the Merkle anchor. That absence is the
+      // property migration 035 exists to buy — see its header.
+      if (isBandConfidence(confidence)) {
+        try {
+          recordBandSignalCapture({
+            decidedAt: Math.floor(Date.now() / 1000),
+            coin,
+            signal,
+            confidence,
+            timeframe,
+            exchange,
+            regime: regime ?? null,
+            priceAtSignal: currentPrice,
+            isBotInternal: license.tier === 'internal',
+          });
+        } catch (e) {
+          console.debug('band-signal capture failed:', e instanceof Error ? e.message : e);
+        }
       }
     }
   }

@@ -64,6 +64,23 @@ export async function runBackfill(): Promise<void> {
 let backfillInflight: Promise<void> | null = null;
 
 /**
+ * OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R2 — the ONE-WAY priority read.
+ *
+ * The band outcome lane calls this and yields while it is true. Nothing in THIS file calls
+ * anything in the band lane, and that asymmetry is the guarantee: the tracked evaluator — which
+ * feeds the published number — cannot be blocked, delayed or reordered by a counterfactual
+ * measurement, because it does not know the band lane exists. Priority that both sides negotiate
+ * is priority neither side has.
+ *
+ * `tests/unit/band-outcome-lane.test.ts` asserts BOTH directions: that the band lane yields when
+ * this returns true, and that this module contains no reference to the band lane at all. The
+ * second assertion is the one that catches a future edit making the dependency mutual.
+ */
+export function isTrackedBackfillInflight(): boolean {
+  return backfillInflight !== null;
+}
+
+/**
  * Get signal performance stats (the MCP resource handler).
  * Backfill runs in the background — never blocks the response.
  */
