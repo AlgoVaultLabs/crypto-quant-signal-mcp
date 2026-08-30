@@ -147,3 +147,25 @@ chance. That is a claim about the filter, not about the signal, and nothing meas
 5. **The falsifier is not optional.** If §5 fires, the public-copy retirement is the deliverable.
 6. Any deviation from this document is recorded as a deviation, in this file, with its reason — not
    silently absorbed into the next wave's method section.
+
+## 12. Amendment 2026-08-30 — prior-examination disclosure (recorded per §11.6)
+
+**`EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1`** (architect-ratified 2026-08-30, Q3, under the
+Observed-Path Exception of 2026-08-29) examined this corpus — `hold_decisions` /
+`hold_decision_labels` — **before** the §3 test has run, for a **different question**: DWR by
+raw-score band over withheld would-be-SELL decisions, as an input to the scoring-ladder redesign
+(`EDGE-SCORING-LADDER-REDESIGN-W1/W2`). Its targeted labeling also **densified coverage** of the
+SELL conf-45..62 band through the same labeler code path (additive work-list filters; barrier
+arithmetic untouched).
+
+Binding consequences, ratified with the examination:
+
+1. **The §3 test definition is unchanged and stays binding.** This wave neither gates nor
+   substitutes it (§11.2 intact).
+2. **When `EDGE-HOLD-DISCIPLINE-W{NEXT}` runs, its result MUST carry this disclosure.** A prior
+   look does not invalidate the test; an undisclosed prior look would.
+3. **`EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1`'s output may NOT be cited as evidence for or against
+   the HOLD-discipline hypothesis (§2/§3), in any artifact, ever.** Adjacent question, separate
+   verdict.
+4. Its figures are internal research under the Observed-Path Exception's hard boundary and live
+   in the private vault only — none appear in this file or any repo artifact.
