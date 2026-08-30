@@ -844,6 +844,16 @@
       "follow_up_wave": "OPS-ALERT-ADOPT-ROBOTS_AI_ALLOWLIST-W{NEXT}",
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-ROBOTS_AI_ALLOWLIST-W{NEXT}"
+    },
+    {
+      "alert_id": "EDGE_CRAWLER_DISAPPEARED",
+      "owner": "ops/monitoring/edge-crawler-report-canary.sh",
+      "hosts": ["signal-1"],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-EDGE_CRAWLER_DISAPPEARED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-EDGE_CRAWLER_DISAPPEARED-W{NEXT}"
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it \u2014 no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",
