@@ -265,6 +265,16 @@ jobs:
       - name: Landing-page sync guard (build_landing --check; incl. tools + channel pages)
         run: node scripts/build_landing.mjs --check
 
+      # GEO-WELLKNOWN-DISCOVERY-W1 — gate the COMMITTED /.well-known/ documents' shape.
+      # --self-test first so a broken checker cannot silently pass the check that follows it.
+      # SHAPE ONLY, never freshness: the served Expires is regenerated at deploy time, so
+      # asserting freshness here would key a calendar-triggered CI failure to commit date.
+      # Freshness lives in robots-ai-allowlist-canary.sh, against the served copy.
+      - name: Well-known discovery documents (generate-wellknown --self-test + --check)
+        run: |
+          node scripts/generate-wellknown.mjs --self-test
+          node scripts/generate-wellknown.mjs --check
+
       # OPS-LANDING-ASSET-CACHE-BUST-W1: first-party landing JS must carry its content hash
       # (`?v=<sha256[:8]>`). Caddy serves assets max-age=60 but CLOUDFLARE rewrites that to
       # max-age=14400 (4h), so a correct deploy stays invisible to returning visitors for up
@@ -862,6 +872,29 @@ jobs:
             # auto-detects text/plain MIME for .txt files via file_server).
             cp landing/*.txt /var/www/algovault/ 2>/dev/null && echo "Landing txt/ synced" || echo "No landing txt/ to sync"
             cp landing/sitemap.xml /var/www/algovault/ 2>/dev/null && echo "Landing sitemap.xml synced" || echo "No landing sitemap.xml to sync"
+
+            # GEO-WELLKNOWN-DISCOVERY-W1 — the RFC 9116 / RFC 9727 agent-discovery documents.
+            #
+            # The `cp landing/*.txt` line above CANNOT reach them, and neither could a recursive
+            # `landing/*` copy: `.well-known` is a DOT-directory (a bare `*` glob skips it) and
+            # the RFC 9727 catalog file is EXTENSIONLESS. Hence the explicit path.
+            #
+            # RENDERED, not copied. scripts/generate-wellknown.mjs regenerates security.txt's
+            # RFC 9116 `Expires` as now+180d on every deploy, so the SERVED copy is always
+            # measured from this deploy rather than from whenever the file happened to be
+            # committed. It writes STRAIGHT to the serve path and never touches the checkout:
+            # ops/deploy/checkout-parity.conf's dirty-tree allowlist for this service is
+            # path-scoped (README.md + landing/*.html only), so rewriting the repo file here
+            # would trip ops/cron/checkout-parity.sh's daily clean-tree assertion and page a
+            # human for a build step doing exactly what it was told to.
+            #
+            # FAIL-OPEN, same contract as snapshot-landing-data.mjs above: a render failure
+            # leaves the previously-served copy in place, and a lapsing Expires is caught within
+            # 24h by robots-ai-allowlist-canary.sh (RED under 30 days). Breaking every deploy
+            # over a non-runtime artifact would be the worse trade. The token is greppable on
+            # purpose — a failure that logs an English sentence cannot be found later.
+            mkdir -p /var/www/algovault/.well-known
+            node scripts/generate-wellknown.mjs --out /var/www/algovault/.well-known >> /var/log/algovault-snapshot-landing.log 2>&1 || echo "WELLKNOWN_RENDER_FAILED continuing fail-open"
 
             # AI-CRAWLER-ACCESS-W2 R3: IndexNow ping. Submits the sitemap URL set to
             # Bing / Yandex / Seznam / etc (→ the ChatGPT + Perplexity retrieval substrate;

@@ -1,0 +1,12 @@
+# AlgoVault Labs — security contact
+# https://www.rfc-editor.org/rfc/rfc9116
+#
+# TEMPLATE. scripts/generate-wellknown.mjs OWNS the Expires value below and regenerates it
+# on every deploy straight into /var/www/algovault/.well-known/. Hand-editing Expires in
+# this file changes NOTHING that is served — it only moves the committed copy out of step
+# with the generator. To refresh it here, run the generator; never retype the date.
+
+Contact: https://algovault.com/contact
+Expires: 2027-02-26T09:27:13Z
+Preferred-Languages: en
+Canonical: https://algovault.com/.well-known/security.txt

@@ -31,7 +31,42 @@ import {
   readAllowlistFromSource,
   readContentSignalFromSource,
   resolveForAgent,
+  // --- GEO-WELLKNOWN-DISCOVERY-W1 ---
+  CATALOG_MEDIA_TYPE_PREFIX,
+  CATALOG_URL,
+  EXPIRES_MIN_DAYS,
+  LINK_REL_API_CATALOG,
+  SECURITY_TXT_URL,
+  evaluateApexLinkAndSignal,
+  evaluateCatalogDocument,
+  evaluateCatalogHeadLink,
+  evaluateCatalogHref,
+  evaluateCatalogRedirect,
+  evaluateMcpProbe,
+  evaluateSecurityTxt,
+  hasRelApiCatalog,
+  parseSseData,
 } from '../../scripts/check-robots-ai-allowlist.mjs';
+import {
+  DOCUMENTS,
+  WELL_KNOWN_DIR,
+  buildApiCatalog,
+  buildSecurityTxt,
+  checkApiCatalogShape,
+  checkSecurityTxtShape,
+  computeExpires,
+  formatExpires,
+  readEndpointsFromSource,
+  readNumberConstFromSource,
+  readStringConstFromSource,
+} from '../../scripts/generate-wellknown.mjs';
+import {
+  API_CATALOG_ENDPOINTS,
+  API_CATALOG_URL,
+  API_CATALOG_CONTENT_TYPE,
+  API_CATALOG_LINK_HEADER,
+  SECURITY_TXT_EXPIRY_DAYS,
+} from '../../src/lib/ai-crawler-allowlist.js';
 
 const REPO_ROOT = join(__dirname, '..', '..');
 const REPO_ROOT_T = REPO_ROOT;
@@ -502,5 +537,378 @@ describe('W2 — agent-discovery layer', () => {
       expect(resolveForAgent(groups, 'GPTBot', '/mcp').verdict).toBe('disallowed');
       expect(resolveForAgent(groups, 'GPTBot', '/.well-known/api-catalog').verdict).toBe('allowed');
     });
+  });
+});
+
+/**
+ * GEO-WELLKNOWN-DISCOVERY-W1 — the /.well-known/ discovery documents.
+ *
+ * Every W1 and W2 fixture above is untouched; these are additions.
+ *
+ * EVERY FIXTURE ASSERTS ITS BRANCH'S DISTINCT `reason` STRING, not just the verdict. That is
+ * the W1 BREAK-4 finding made structural: two branches returning the same verdict are
+ * indistinguishable to a verdict-only assertion, so a deliberate break can stay green while the
+ * logic is wrong. The reason string is what makes "every new branch reachable by exactly one
+ * fixture" a checkable claim rather than a hope.
+ */
+const DAY = 86400000;
+const NOW = Date.parse('2026-08-30T00:00:00Z');
+const inDays = (n: number) => new Date(NOW + n * DAY).toISOString().slice(0, 19) + 'Z';
+const goodSecTxt = (expires: string) =>
+  `# TEMPLATE.\nContact: https://algovault.com/contact\nExpires: ${expires}\nPreferred-Languages: en\n`;
+const goodCatalog = JSON.stringify({
+  linkset: [{ anchor: API_CATALOG_URL, item: [{ href: 'https://algovault.com/api/merkle-batches' }] }],
+});
+const LINKSET_CT = 'application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"';
+
+describe('W1 — /.well-known/ discovery documents', () => {
+  // --- R5.1-R5.5 security.txt --------------------------------------------------------------
+  it('R5.1 security.txt missing -> RED, naming the 404', () => {
+    const r = evaluateSecurityTxt(404, 'text/plain', '', NOW);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('returned HTTP 404, expected 200');
+  });
+
+  it('R5.2 security.txt present but Expires absent -> RED', () => {
+    const r = evaluateSecurityTxt(200, 'text/plain', 'Contact: https://algovault.com/contact\n', NOW);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('requires an Expires field; none present');
+  });
+
+  it('R5.3 Expires 10 days out -> RED (proves the 30-day margin, not merely expiry)', () => {
+    const r = evaluateSecurityTxt(200, 'text/plain', goodSecTxt(inDays(10)), NOW);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain(`under the ${EXPIRES_MIN_DAYS}d renewal margin`);
+  });
+
+  it('R5.4 Expires 200 days out -> GREEN', () => {
+    const r = evaluateSecurityTxt(200, 'text/plain', goodSecTxt(inDays(200)), NOW);
+    expect(r.verdict).toBe('GREEN');
+    expect(r.reasons).toHaveLength(0);
+    expect(r.lines[0]).toContain('200d left');
+  });
+
+  it('R5.5 Expires unparseable -> INDETERMINATE, never RED', () => {
+    const r = evaluateSecurityTxt(200, 'text/plain', goodSecTxt('next-tuesday'), NOW);
+    expect(r.verdict).toBe('INDETERMINATE');
+    expect(r.reasons[0]).toContain('could not be parsed as a date');
+  });
+
+  it('an ALREADY-PAST Expires is RED on its own branch, distinct from the margin branch', () => {
+    const r = evaluateSecurityTxt(200, 'text/plain', goodSecTxt(inDays(-5)), NOW);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('has already passed');
+  });
+
+  it('a wrong media type is RED before the body is even read', () => {
+    const r = evaluateSecurityTxt(200, 'application/json', goodSecTxt(inDays(200)), NOW);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('content-type must start "text/plain"');
+  });
+
+  it('a missing Contact is RED on its own branch', () => {
+    const r = evaluateSecurityTxt(200, 'text/plain', `Expires: ${inDays(200)}\n`, NOW);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('requires a Contact field');
+  });
+
+  // --- R5.6-R5.8 api-catalog ---------------------------------------------------------------
+  it('R5.6 catalog served as application/json -> RED (proves media-type checking)', () => {
+    const r = evaluateCatalogDocument(200, 'application/json', goodCatalog);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain(`must start "${CATALOG_MEDIA_TYPE_PREFIX}"`);
+  });
+
+  it('R5.6b catalog served with NO content-type at all -> RED (Caddy\'s measured default)', () => {
+    const r = evaluateCatalogDocument(200, undefined, goodCatalog);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('got "(none)"');
+  });
+
+  it('R5.7 a catalog href that 404s -> RED, naming the dead endpoint', () => {
+    const r = evaluateCatalogHref('https://algovault.com/api/gone', 404);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('the catalog names a dead endpoint');
+  });
+
+  it('R5.8 catalog with an empty item array -> RED', () => {
+    const body = JSON.stringify({ linkset: [{ anchor: API_CATALOG_URL, item: [] }] });
+    const r = evaluateCatalogDocument(200, LINKSET_CT, body);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('a catalog naming no API is decorative');
+  });
+
+  it('a valid catalog is GREEN and hands back every href for liveness probing', () => {
+    const body = JSON.stringify({
+      linkset: [{
+        anchor: API_CATALOG_URL,
+        item: [{ href: 'https://a/1' }, { href: 'https://a/2' }],
+        'service-doc': [{ href: 'https://a/docs', type: 'text/html' }],
+      }],
+    });
+    const r = evaluateCatalogDocument(200, LINKSET_CT, body);
+    expect(r.verdict).toBe('GREEN');
+    expect(r.hrefs.map((h: { href: string }) => h.href)).toEqual([
+      'https://a/1', 'https://a/2', 'https://a/docs',
+    ]);
+  });
+
+  it('a catalog body that is not JSON -> RED on its own branch', () => {
+    const r = evaluateCatalogDocument(200, LINKSET_CT, '<html>nope</html>');
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('did not parse as JSON');
+  });
+
+  it('a catalog with no linkset[0] -> RED on its own branch', () => {
+    const r = evaluateCatalogDocument(200, LINKSET_CT, JSON.stringify({ linkset: [] }));
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('carries no linkset[0] context object');
+  });
+
+  it('a 404 catalog -> RED before any media-type or body reasoning', () => {
+    const r = evaluateCatalogDocument(404, LINKSET_CT, goodCatalog);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('the catalog is not published');
+  });
+
+  // --- R5.9 HEAD Link ----------------------------------------------------------------------
+  it('R5.9 HEAD without the Link header -> RED', () => {
+    const r = evaluateCatalogHeadLink(undefined);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('RFC 9727 §2 requires a Link header');
+  });
+
+  it('R5.9b HEAD with a Link header carrying the WRONG relation -> RED on a distinct branch', () => {
+    const r = evaluateCatalogHeadLink('</style.css>; rel="stylesheet"');
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('carries no api-catalog relation');
+  });
+
+  it('HEAD with the correct Link header -> GREEN', () => {
+    expect(evaluateCatalogHeadLink(API_CATALOG_LINK_HEADER).verdict).toBe('GREEN');
+  });
+
+  it('rel matching is RFC 8288-shaped: quoted, bare and case-insensitive all match', () => {
+    expect(hasRelApiCatalog('</x>; rel="api-catalog"')).toBe(true);
+    expect(hasRelApiCatalog('</x>; rel=api-catalog')).toBe(true);
+    expect(hasRelApiCatalog('</x>; REL="API-CATALOG"')).toBe(true);
+    expect(hasRelApiCatalog('</x>; rel="service-doc"')).toBe(false);
+  });
+
+  // --- R5.10 apex dual header --------------------------------------------------------------
+  it('R5.10 apex missing Link while Content-Signal present -> RED', () => {
+    const r = evaluateApexLinkAndSignal(undefined, CONTENT_SIGNAL_VALUE, CONTENT_SIGNAL_VALUE);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('carries no Link header');
+  });
+
+  it('R5.10b apex Link present but Content-Signal DISPLACED -> RED (the inverse regression)', () => {
+    const r = evaluateApexLinkAndSignal(API_CATALOG_LINK_HEADER, '', CONTENT_SIGNAL_VALUE);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('displaced the W2 Content-Signal header');
+  });
+
+  it('apex with a CHANGED Content-Signal value -> RED on its own branch', () => {
+    const r = evaluateApexLinkAndSignal(API_CATALOG_LINK_HEADER, 'ai-train=no', CONTENT_SIGNAL_VALUE);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('expected "search=yes, ai-input=yes, ai-train=yes"');
+  });
+
+  it('apex with a Link carrying the wrong relation -> RED on its own branch', () => {
+    const r = evaluateApexLinkAndSignal('</x>; rel="preload"', CONTENT_SIGNAL_VALUE, CONTENT_SIGNAL_VALUE);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('apex Link header carries no api-catalog relation');
+  });
+
+  it('apex with BOTH headers present and correct -> GREEN', () => {
+    const r = evaluateApexLinkAndSignal(API_CATALOG_LINK_HEADER, CONTENT_SIGNAL_VALUE, CONTENT_SIGNAL_VALUE);
+    expect(r.verdict).toBe('GREEN');
+  });
+
+  // --- R5.11 api-host redirect -------------------------------------------------------------
+  it('R5.11 api-host catalog returning 200 instead of 301 -> RED', () => {
+    const r = evaluateCatalogRedirect(200, null);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain(`expected a 301 to ${CATALOG_URL}`);
+  });
+
+  it('R5.11b api-host catalog 301-ing to the WRONG target -> RED on a distinct branch', () => {
+    const r = evaluateCatalogRedirect(301, 'https://algovault.com/docs');
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('redirect target is "https://algovault.com/docs"');
+  });
+
+  it('api-host 301 to the canonical -> GREEN, and a cache-buster query does not break it', () => {
+    expect(evaluateCatalogRedirect(301, CATALOG_URL).verdict).toBe('GREEN');
+    expect(evaluateCatalogRedirect(301, `${CATALOG_URL}?cb=123`).verdict).toBe('GREEN');
+  });
+
+  // --- the /mcp probe: SSE framing + result-not-error ---------------------------------------
+  it('parseSseData pulls the payload out of an SSE frame, and returns null without one', () => {
+    expect(parseSseData('event: message\ndata: {"a":1}\n\n')).toBe('{"a":1}');
+    expect(parseSseData('{"a":1}')).toBeNull();
+  });
+
+  it('a healthy SSE-framed initialize -> GREEN (a plain JSON.parse would have failed here)', () => {
+    const body = 'event: message\ndata: ' + JSON.stringify({
+      jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'x', version: '1.28.2' } },
+    }) + '\n\n';
+    const r = evaluateMcpProbe('https://api.algovault.com/mcp', 200, body);
+    expect(r.verdict).toBe('GREEN');
+    expect(r.lines[0]).toContain('server v1.28.2');
+  });
+
+  it('a 200 carrying a JSON-RPC error -> RED (the decorative-pointer case in a success code)', () => {
+    const body = 'data: ' + JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'nope' } });
+    const r = evaluateMcpProbe('https://api.algovault.com/mcp', 200, body);
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('the JSON-RPC envelope carries error "nope"');
+  });
+
+  it('a 200 with neither result nor error -> RED on its own branch', () => {
+    const r = evaluateMcpProbe('https://api.algovault.com/mcp', 200, 'data: {"jsonrpc":"2.0","id":1}');
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('neither result nor error');
+  });
+
+  it('a non-200 from initialize -> RED naming the status', () => {
+    const r = evaluateMcpProbe('https://api.algovault.com/mcp', 406, '');
+    expect(r.verdict).toBe('RED');
+    expect(r.reasons[0]).toContain('answered HTTP 406 to a JSON-RPC initialize');
+  });
+
+  it('a 200 with an empty or unparseable payload -> INDETERMINATE, never RED', () => {
+    expect(evaluateMcpProbe('h', 200, '').verdict).toBe('INDETERMINATE');
+    expect(evaluateMcpProbe('h', 200, 'data: not-json').verdict).toBe('INDETERMINATE');
+    expect(evaluateMcpProbe('h', 200, 'data: not-json').reasons[0]).toContain('did not parse as JSON');
+  });
+
+  // --- generator: pure builders + shape checks ---------------------------------------------
+  it('computeExpires is pure and lands exactly SECURITY_TXT_EXPIRY_DAYS out', () => {
+    expect(computeExpires(new Date('2026-01-01T00:00:00Z'), 180)).toBe('2026-06-30T00:00:00Z');
+    expect(SECURITY_TXT_EXPIRY_DAYS).toBe(180);
+  });
+
+  it('formatExpires emits RFC 9116-shaped ISO 8601 with seconds precision and no milliseconds', () => {
+    expect(formatExpires(new Date('2026-01-02T03:04:05.678Z'))).toBe('2026-01-02T03:04:05Z');
+  });
+
+  it('the generated security.txt carries no mailto and no Encryption, and names the generator', () => {
+    const body = buildSecurityTxt(inDays(180));
+    expect(body).not.toMatch(/mailto:/i);
+    expect(body).not.toMatch(/^Encryption:/mi);
+    expect(body).toContain('TEMPLATE.');
+    expect(body).toContain('generate-wellknown.mjs');
+  });
+
+  it('the generated catalog never leaks the gate-only probe key into the document', () => {
+    const doc = buildApiCatalog([...API_CATALOG_ENDPOINTS], API_CATALOG_URL);
+    expect(doc).not.toContain('probe');
+    expect(JSON.parse(doc).linkset[0]['service-desc']).toBeUndefined();
+  });
+
+  it('the source reader recovers the SoT endpoint set byte-for-byte from the .ts text', () => {
+    // The gate and the generator both run on a host with no TypeScript loader, so this text
+    // reader IS the interface. If it drifts from the typed constant the document and the probe
+    // set silently disagree — which is the whole reason it is one reader and not two.
+    const src = readFileSync(join(REPO_ROOT, 'src', 'lib', 'ai-crawler-allowlist.ts'), 'utf8');
+    const read = readEndpointsFromSource(src);
+    expect(read).toEqual(API_CATALOG_ENDPOINTS.map((e) => ({ ...e })));
+    expect(readStringConstFromSource(src, 'API_CATALOG_URL')).toBe(API_CATALOG_URL);
+    expect(readNumberConstFromSource(src, 'SECURITY_TXT_EXPIRY_DAYS')).toBe(SECURITY_TXT_EXPIRY_DAYS);
+  });
+
+  it('an empty read is vacuity, not a default: the reader returns [] rather than guessing', () => {
+    expect(readEndpointsFromSource('nothing here')).toEqual([]);
+    expect(readStringConstFromSource('nothing here', 'API_CATALOG_URL')).toBe('');
+    expect(readNumberConstFromSource('nothing here', 'SECURITY_TXT_EXPIRY_DAYS')).toBeNull();
+  });
+
+  it('exactly one endpoint is probed by POST, it is /mcp, and no billable tool is named', () => {
+    const nonGet = API_CATALOG_ENDPOINTS.filter((e) => e.probe !== 'GET');
+    expect(nonGet).toHaveLength(1);
+    expect(nonGet[0].href).toBe('https://api.algovault.com/mcp');
+    expect(nonGet[0].probe).toBe('mcp-initialize');
+    const gateSrc = readFileSync(join(REPO_ROOT, 'scripts', 'check-robots-ai-allowlist.mjs'), 'utf8');
+    // The guardrail, asserted rather than trusted to a comment: a daily unattended canary must
+    // never call a billable tool, because that would make it a producer of the data it watches.
+    for (const tool of ['get_trade_call', 'scan_trade_calls', 'get_market_regime', 'scan_funding_arb']) {
+      expect(gateSrc).not.toContain(`"${tool}"`);
+      expect(gateSrc).not.toContain(`'${tool}'`);
+    }
+    expect(gateSrc).toContain("method: 'initialize'");
+  });
+
+  // --- the COMMITTED artifacts (bypassed-seam assertions) -----------------------------------
+  it('both committed documents exist at the path the deploy renders to', () => {
+    for (const name of DOCUMENTS) {
+      expect(existsSync(join(WELL_KNOWN_DIR, name))).toBe(true);
+    }
+    expect(DOCUMENTS).toEqual(['security.txt', 'api-catalog']);
+  });
+
+  it('the committed security.txt passes its SHAPE check — freshness is the live gate\'s job', () => {
+    // Deliberately NOT asserting the committed Expires is >30d out: that would key a
+    // calendar-triggered failure to commit date, in a pre-push hook shared by ~74 checkouts.
+    const body = readFileSync(join(WELL_KNOWN_DIR, 'security.txt'), 'utf8');
+    expect(checkSecurityTxtShape(body).reasons).toEqual([]);
+    expect(body).not.toMatch(/mailto:/i);
+    expect(body).not.toMatch(/^Encryption:/mi);
+  });
+
+  it('the committed api-catalog passes its shape check and matches the SoT endpoint set', () => {
+    const body = readFileSync(join(WELL_KNOWN_DIR, 'api-catalog'), 'utf8');
+    expect(checkApiCatalogShape(body).reasons).toEqual([]);
+    const doc = JSON.parse(body);
+    expect(doc.linkset[0].anchor).toBe(API_CATALOG_URL);
+    const inDoc = [
+      ...doc.linkset[0].item.map((l: { href: string }) => l.href),
+      ...doc.linkset[0]['service-doc'].map((l: { href: string }) => l.href),
+    ];
+    expect(inDoc).toEqual(API_CATALOG_ENDPOINTS.map((e) => e.href));
+  });
+
+  it('the Caddyfile declares the media type and the Link header the gate asserts live', () => {
+    // Caddyfile is in deploy.yml paths-ignore, so the committed copy is applied by SSH and can
+    // legitimately lag the running one. This locks the COMMITTED copy; the live gate locks the
+    // RUNNING one. Neither closes it alone — the same split W2 recorded for Content-Signal.
+    const caddy = readFileSync(join(REPO_ROOT, 'Caddyfile'), 'utf8');
+    expect(caddy).toContain('application/linkset+json; profile=');
+    expect(caddy).toContain('rfc-editor.org/info/rfc9727');
+    expect(caddy).toContain('rel=\\"api-catalog\\"');
+    expect(caddy).toContain('redir * https://algovault.com/.well-known/api-catalog 301');
+    // No invented relation anywhere on the surface (R3.1).
+    expect(caddy).not.toMatch(/rel=\\?"llms/i);
+  });
+
+  it('deploy.yml renders the documents and carries a GREPPABLE failure token', () => {
+    const dep = readFileSync(join(REPO_ROOT, '.github', 'workflows', 'deploy.yml'), 'utf8');
+    expect(dep).toContain('generate-wellknown.mjs --out /var/www/algovault/.well-known');
+    expect(dep).toContain('mkdir -p /var/www/algovault/.well-known');
+    expect(dep).toContain('WELLKNOWN_RENDER_FAILED');
+  });
+
+  it('the gate URLs point at the apex canonical', () => {
+    expect(SECURITY_TXT_URL).toBe(`${APEX_ORIGIN}/.well-known/security.txt`);
+    expect(CATALOG_URL).toBe(API_CATALOG_URL);
+    expect(API_CATALOG_CONTENT_TYPE.startsWith(CATALOG_MEDIA_TYPE_PREFIX)).toBe(true);
+    expect(LINK_REL_API_CATALOG).toBe('api-catalog');
+  });
+
+  it('robots.txt still permits the discovery directory it now has documents in', () => {
+    // The W2 narrowing is what makes this wave meaningful; if it regressed, these documents are
+    // published into a directory crawlers are told to skip.
+    expect(resolveForAgent(parseRobots(LIVE_ROBOTS), 'GPTBot', '/.well-known/security.txt').verdict).toBe('allowed');
+    expect(resolveForAgent(parseRobots(LIVE_ROBOTS), 'GPTBot', '/.well-known/api-catalog').verdict).toBe('allowed');
+    expect(resolveForAgent(parseRobots(LIVE_ROBOTS), '*', '/.well-known/acme-challenge/x').verdict).toBe('disallowed');
+  });
+
+  it('combineVerdicts still folds a document RED over an otherwise-green run', () => {
+    const green = { verdict: 'GREEN', lines: [], reasons: [] };
+    const red = evaluateSecurityTxt(404, 'text/plain', '', NOW);
+    expect(combineVerdicts([green, red]).verdict).toBe('RED');
+    expect(combineVerdicts([green, evaluateSecurityTxt(200, 'text/plain', goodSecTxt('nope'), NOW)]).verdict)
+      .toBe('INDETERMINATE');
+    expect(VERDICT_EXIT.INDETERMINATE).toBe(3);
   });
 });
