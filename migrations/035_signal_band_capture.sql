@@ -161,7 +161,35 @@ CREATE TABLE IF NOT EXISTS band_signal_labels (
 CREATE INDEX IF NOT EXISTS idx_band_labels_spec_band
   ON band_signal_labels (barrier_spec, band_id);
 
+-- ── OWNERSHIP — MEASURED FAILURE, NOT A PRECAUTION ───────────────────────────────────────────
+--
+-- The app connects as `algovault_app`; `psql -U algovault` (the bootstrap superuser) is how an
+-- operator applies this file. A table created that way is OWNED BY `algovault`, and every
+-- sibling — `signals`, `hold_decisions` — is owned by `algovault_app`. The consequence, measured
+-- on prod 2026-08-30 immediately after this migration was first applied:
+--
+--   * every capture INSERT failed on privilege and was swallowed by the writer's fail-open path,
+--     so the seam looked deployed and healthy while writing NOTHING for 14 minutes;
+--   * the schema-as-code mirror's `CREATE INDEX IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS`
+--     logged `must be owner of table band_signals` on every boot — the only visible symptom, and
+--     it named the cause exactly.
+--
+-- The band corpus is the one thing this wave exists to produce, and "zero rows" is also what a
+-- genuinely quiet window looks like, so a silent privilege failure here is indistinguishable from
+-- a correct measurement. Hence: state ownership explicitly rather than inheriting it from
+-- whoever ran the file. Guarded on role existence so a fresh deploy without the app role still
+-- applies cleanly.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'algovault_app') THEN
+    EXECUTE 'ALTER TABLE band_signals       OWNER TO algovault_app';
+    EXECUTE 'ALTER TABLE band_signal_labels OWNER TO algovault_app';
+    EXECUTE 'ALTER SEQUENCE band_signals_band_id_seq OWNER TO algovault_app';
+  END IF;
+END $$;
+
 -- The monitoring role reads, never writes. Mirrors the grant migration 034 established for the
 -- funnel tables; a table the autopilot cannot read is INVISIBLE to a canary rather than absent,
--- so the grant ships with the table instead of being discovered missing later.
+-- so the grant ships with the table instead of being discovered missing later. Granted AFTER the
+-- ownership transfer above, because a GRANT must be issued by the owner.
 GRANT SELECT ON band_signals, band_signal_labels TO algovault_autopilot;
