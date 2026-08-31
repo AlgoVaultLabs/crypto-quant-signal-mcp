@@ -3869,51 +3869,21 @@ export function recordScorerInputs(c: {
 }
 
 /**
- * The running count `EDGE-SELL-FEATURE-ATTRIBUTION-W{NEXT}` is gated on.
+ * THE RUNNING COUNT IS NOT AN ENDPOINT HERE, AND THAT IS A DELIBERATE TRADE.
  *
- * That successor opens on a stated ROW COUNT of captured-and-labeled rows — never a date — so
- * the count has to be readable without an SSH psql session. `captured` is how fast the corpus
- * accrues; `labeled` is how much of it is actually usable for attribution, and only the second
- * advances the gate. Same two-leg shape, and the same reason, as `getBandSignalCounts`.
+ * `EDGE-SELL-FEATURE-ATTRIBUTION-W{NEXT}` opens on a stated ROW COUNT of captured-and-labeled
+ * rows, so the count has to be readable. `getBandSignalCounts` above solves the same problem by
+ * feeding the admin-gated `/api/confidence-bands`, and this wave first copied that shape —
+ * a `getScorerInputCounts()` reader. It was REMOVED before shipping, for two reasons:
  *
- * `labeled` is NOT `count(*) WHERE raw_final IS NOT NULL`. That column is NOT NULL on this table,
- * so such a predicate would return `captured` under a different name — a gate leg that can never
- * fail, which is the zeroed-comparator shape this estate has already been burned by. LABELED
- * means what the successor needs: the parent signal has a triple-barrier label in
- * `directional_labels`. The join is `(signal_hash, exchange)` -> `signals.id` -> label, i.e.
- * exactly the path the attribution itself will walk, so a row this counts is a row that analysis
- * can actually use.
+ *  1. It had ZERO non-test callers. A helper with no consumer is not "ready for the successor",
+ *     it is dead code that a unit test can make look alive.
+ *  2. Wiring it to the endpoint would put a reference to this store inside `src/index.ts` — the
+ *     public-serving module — and `tests/unit/scorer-input-quarantine.test.ts` exists precisely
+ *     to refuse that. An allowlist row for `index.ts` would gut the guard on its first use.
  *
- * The hold arm's label join lives behind the counterfactual firewall and is deliberately NOT
- * summed in here: mixing a quarantined count into a figure an admin surface can render is how a
- * quarantine leaks. The hold arm's own count is read by the identity canary, on the host.
- *
- * Effectively PG-only. The correlated `EXISTS` is not exercised on the SQLite fixture backend, so
- * rather than assert a dialect it returns the same `{0, 0}` a missing table returns — this figure
- * is read by a human deciding whether to open the successor, never by an automated gate, so a
- * refusal would cost more than a zero that is visibly a zero.
+ * The count is published instead by `ops/monitoring/scorer-input-identity-canary.py`, which
+ * already prints `captured=N` per arm on every scheduled run and is the one thing that reads all
+ * three arms. A figure a human reads once per wave does not need an HTTP surface; it needs to
+ * exist on a schedule, which it does.
  */
-export async function getScorerInputCounts(): Promise<{ captured: number; labeled: number }> {
-  try {
-    const rows = await dbQuery<{ captured: string | number; labeled: string | number }>(
-      `SELECT count(*) AS captured,
-            count(*) FILTER (
-              WHERE EXISTS (
-                SELECT 1 FROM signals s
-                JOIN directional_labels dl ON dl.signal_id = s.id
-                WHERE s.signal_hash = si.signal_hash AND s.exchange = si.exchange
-              )
-            ) AS labeled
-         FROM signal_scorer_inputs si`,
-    );
-    const r = rows[0];
-    return { captured: Number(r?.captured ?? 0), labeled: Number(r?.labeled ?? 0) };
-  } catch {
-    // Absent table (a backend that never ran init) or an unsupported dialect. Zero is the honest
-    // answer for a COUNT over a corpus that is not there, and this figure gates nothing
-    // automatically — the successor wave reads it and a human decides. Mirrors
-    // `getBandSignalCounts`, deliberately: two running-count readers with different failure
-    // behaviour would be two contracts.
-    return { captured: 0, labeled: 0 };
-  }
-}
