@@ -119,6 +119,31 @@ function walkTs(dir, acc = []) {
 
 const sameSet = (a, b) => a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|');
 
+/**
+ * Normalise one `array_agg` result to a JS array of lowercased column names.
+ *
+ * WHY THIS IS NOT PARANOIA. `pg_attribute.attname` is type `name`, not `text`, so
+ * `array_agg(attname)` yields `name[]` (OID 1003) — and node-pg ships no parser for that OID, so it
+ * hands back the RAW literal `'{payer_wallet,nonce}'`. The first live run of this gate died on
+ * `row.cols.map is not a function` and correctly reported INDETERMINATE rather than a false OK,
+ * which is the verdict-token law doing its job — but it is a gate that could not run.
+ *
+ * The query now casts to `::text`, which IS parsed. This function is the belt: it accepts either
+ * shape and THROWS a legible error on anything else, so a future type or driver change surfaces as
+ * a named failure instead of a TypeError three frames away.
+ */
+export function normalizeCols(cols) {
+  if (Array.isArray(cols)) return cols.map((c) => String(c).toLowerCase());
+  if (typeof cols === 'string' && cols.startsWith('{') && cols.endsWith('}')) {
+    return cols
+      .slice(1, -1)
+      .split(',')
+      .map((c) => c.replace(/^"|"$/g, '').trim().toLowerCase())
+      .filter(Boolean);
+  }
+  throw new Error(`unexpected array_agg shape from pg (${typeof cols}): ${JSON.stringify(cols)}`);
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) {
     verdict('INDETERMINATE', ['DATABASE_URL is unset — no database to compare the call sites against.']);
@@ -145,7 +170,7 @@ async function main() {
     await c.connect();
     const r = await c.query(`
       SELECT i.indrelid::regclass::text AS tbl,
-             array_agg(a.attname ORDER BY k.ord)  AS cols
+             array_agg(a.attname::text ORDER BY k.ord)  AS cols
         FROM pg_index i
         JOIN LATERAL unnest(i.indkey::int[]) WITH ORDINALITY AS k(attnum, ord) ON true
         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
@@ -161,7 +186,7 @@ async function main() {
     for (const row of r.rows) {
       const key = String(row.tbl).replace(/^public\./, '').toLowerCase();
       if (!uniques.byTable.has(key)) uniques.byTable.set(key, []);
-      uniques.byTable.get(key).push(row.cols.map((c) => String(c).toLowerCase()));
+      uniques.byTable.get(key).push(normalizeCols(row.cols));
     }
   } catch (e) {
     verdict('INDETERMINATE', [`could not read the unique-index catalogue: ${e.message}`]);
@@ -224,6 +249,28 @@ function selfTest() {
   if (dyn.length !== 1 || dyn[0].columns !== null) fails.push('interpolated clause must be UNRESOLVED, not parsed');
   if (!sameSet(['b', 'a'], ['a', 'b'])) fails.push('sameSet must ignore order');
   if (sameSet(['a'], ['a', 'b'])) fails.push('sameSet must reject a subset');
+
+  // The DB-shape seam. A hermetic self-test is blind to exactly what its seam replaces, and this
+  // gate's first live run proved it: everything below passed while the real query returned a shape
+  // the code could not read. Both driver shapes are now pinned here, and the third case asserts the
+  // error is NAMED rather than a TypeError from somewhere else.
+  if (!sameSet(normalizeCols(['Payer_Wallet', 'nonce']), ['payer_wallet', 'nonce'])) {
+    fails.push('normalizeCols must accept a parsed array and lowercase it');
+  }
+  if (!sameSet(normalizeCols('{payer_wallet,nonce}'), ['payer_wallet', 'nonce'])) {
+    fails.push('normalizeCols must accept the RAW name[] literal node-pg cannot parse');
+  }
+  if (!sameSet(normalizeCols('{"odd name",b}'), ['odd name', 'b'])) {
+    fails.push('normalizeCols must strip quoting on a quoted identifier');
+  }
+  try {
+    normalizeCols(42);
+    fails.push('normalizeCols must THROW on an unknown shape, not return something plausible');
+  } catch (e) {
+    if (!/unexpected array_agg shape/.test(String(e.message))) {
+      fails.push(`normalizeCols threw the wrong error: ${e.message}`);
+    }
+  }
 
   // The real tree must yield sites, or the vacuity guard is the only thing between this gate and a
   // permanent green over nothing. Also PIN the known-hard one so a regression in table resolution
