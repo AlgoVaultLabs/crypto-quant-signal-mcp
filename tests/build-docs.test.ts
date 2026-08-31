@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,15 +9,20 @@ import { fileURLToPath } from 'node:url';
 // (CHANNEL-HUB-PAGES-GEO-W1 precedent). Drives the REAL scripts/build_docs.mjs entrypoint as a
 // subprocess. READ-ONLY on landing/docs.html: it asserts against the COMMITTED (build:landing-
 // filled) docs.html and never regenerates it mid-suite — build-channel-pages.test.ts (a parallel
-// worker) READS docs.html, so writing it here would race. The missing-partial gate exits BEFORE
-// build_docs writes, so that case is write-free too.
+// worker) READS docs.html, so writing it here would race.
+//
+// OPS-X402-PAYER-WALLET-MIGRATION-W1 CORRECTION: that reasoning was RIGHT about the output and
+// INCOMPLETE about the input. The missing-partial case does exit before any write, but it used to
+// provoke the failure by renaming the REAL docs-src/partials/faq.html aside — and a shared repo
+// file being mutated mid-suite is a race whether it is read or written downstream. It now runs in
+// its own sandbox; see the comment on that test for the measured failure.
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const run = (args: string[]) =>
   execFileSync('node', ['scripts/build_docs.mjs', ...args], { cwd: REPO, encoding: 'utf8' });
-const runExpectFail = (args: string[]): { code: number; out: string } => {
+const runExpectFail = (args: string[], cwd: string = REPO): { code: number; out: string } => {
   try {
-    run(args);
+    execFileSync('node', ['scripts/build_docs.mjs', ...args], { cwd, encoding: 'utf8' });
     return { code: 0, out: '' };
   } catch (e: any) {
     return { code: e.status ?? 1, out: `${e.stdout ?? ''}${e.stderr ?? ''}` };
@@ -58,18 +64,42 @@ describe('build_docs.mjs generator', () => {
     expect(html).not.toContain('id="get-equity-call"');
   });
 
-  it('MISSING PARTIAL is a hard build failure (never a silent drop; exits before writing docs.html)', () => {
-    const victim = path.join(REPO, 'docs-src', 'partials', 'faq.html');
-    const bak = `${victim}.bak`;
-    fs.renameSync(victim, bak);
+  it('MISSING PARTIAL is a hard build failure (never a silent drop)', () => {
+    // IN ITS OWN SANDBOX, and the reason is a measured flake rather than caution.
+    //
+    // This used to rename the REAL docs-src/partials/faq.html aside and restore it in `finally`.
+    // That is write-free with respect to landing/docs.html — which is what this file's header
+    // reasoned about — and it raced anyway, because the shared artifact it mutated was an INPUT.
+    // tests/build-docs-foreign-markers.test.ts builds its sandbox with
+    // `cpSync(REPO/docs-src, …)` in a PARALLEL WORKER; a copy taken inside this rename window
+    // yields a sandbox permanently missing faq.html, and all three of that file's end-to-end tests
+    // then fail with "1 MISSING partial(s) — refusing to generate".
+    //
+    // Measured 2026-09-01: green in isolation, green in three consecutive local full runs, and it
+    // blocked a push by flagging the OTHER file as a NEW failure. The pre-push gate was right and
+    // the two green local runs were the luck.
+    //
+    // The rule this sharpens: never mutate a shared repo file mid-suite — INPUTS INCLUDED. A
+    // sibling that copies a whole tree is indistinguishable from a sibling that reads one file,
+    // and "I put it back in `finally`" does not help a reader scheduled in between.
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'build-docs-missing-partial-'));
     try {
-      // build_docs checks partial coverage and exits 1 BEFORE generate()/write — docs.html untouched.
-      const { code, out } = runExpectFail([]);
+      for (const d of ['scripts', 'docs-src', 'landing']) {
+        fs.cpSync(path.join(REPO, d), path.join(sandbox, d), { recursive: true });
+      }
+      // dist is a read-only input (docs-outline + footer-content) — symlink, never copy.
+      fs.symlinkSync(path.join(REPO, 'dist'), path.join(sandbox, 'dist'), 'dir');
+
+      const victim = path.join(sandbox, 'docs-src', 'partials', 'faq.html');
+      expect(fs.existsSync(victim), 'the sandbox copy must contain the partial we are about to remove').toBe(true);
+      fs.rmSync(victim);
+
+      const { code, out } = runExpectFail([], sandbox);
       expect(code).not.toBe(0);
       expect(out).toMatch(/MISSING partial/i);
       expect(out).toContain('faq.html');
     } finally {
-      fs.renameSync(bak, victim);
+      fs.rmSync(sandbox, { recursive: true, force: true });
     }
   });
 

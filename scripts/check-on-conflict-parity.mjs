@@ -41,6 +41,12 @@
  * than inferred. Same for a site whose table or column list is built by string interpolation — it is
  * UNRESOLVED, printed, and never silently dropped.
  *
+ * The ARBITER-FREE form — a bare `ON CONFLICT DO NOTHING` with no column list — is outside this
+ * gate by construction, and that is correct rather than a gap: with no inference target Postgres
+ * cannot raise 42P10, so it is not the failure class this exists for. It has its own hazard (it
+ * swallows a conflict on ANY constraint, not the one the author meant) which belongs to a
+ * different gate.
+ *
  * Partial unique indexes (`indpred IS NOT NULL`) are excluded: Postgres will only infer one for an
  * ON CONFLICT that carries a matching WHERE clause, so counting them would let a gate pass over an
  * inference that cannot actually happen.

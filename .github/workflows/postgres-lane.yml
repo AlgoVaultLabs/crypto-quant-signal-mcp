@@ -153,16 +153,22 @@ jobs:
         #
         # DERIVED from the migrations rather than listed here: a hand-maintained role list is a
         # duplicated fact that goes stale the first time a migration adds a role, and this repo
-        # has that failure mode written down twice already. The pattern is deliberately narrow
-        # (`algovault_*` / `aoe_*`); a false positive costs one unused NOLOGIN role inside an
-        # ephemeral container that is destroyed at the end of the job.
+        # has that failure mode written down twice already. A false positive costs one unused
+        # NOLOGIN role inside an ephemeral container that is destroyed at the end of the job.
+        #
+        # The pattern covers BARE `algovault` as well as `algovault_*`, and that is not cosmetic:
+        # `migrations/034` ends in `ALTER DEFAULT PRIVILEGES FOR ROLE algovault`, which the
+        # underscore-only form missed entirely. It has never failed here only because `algovault`
+        # happens to be this lane's POSTGRES_USER — i.e. the derivation was passing by coincidence,
+        # on a database provisioned by a role of that name. `CREATE ROLE` guarded on `pg_roles`
+        # makes that a no-op rather than a dependency.
         #
         # NOLOGIN and no privileges of their own: the suite connects as the bootstrap superuser,
         # so these exist purely to make the GRANTs executable. Creating them means the lane now
         # exercises the privilege model instead of skipping past it.
         run: |
           sudo apt-get install -y --no-install-recommends postgresql-client >/dev/null 2>&1 || true
-          ROLES=$(grep -rhoE '\b(algovault_[a-z0-9_]+|aoe_[a-z0-9_]+)\b' migrations/*.sql | sort -u)
+          ROLES=$(grep -rhoE '\b(algovault[a-z0-9_]*|aoe_[a-z0-9_]+)\b' migrations/*.sql | sort -u)
           if [ -z "$ROLES" ]; then
             echo "no roles derived from migrations/ — nothing to create (not a failure)"
           fi
@@ -222,13 +228,25 @@ jobs:
           ERRS=$(grep -c 'ERROR:' /tmp/migrations.log || true)
           echo "MIGRATION_RESIDUAL_ERRORS=${ERRS}"
           if [ "$ERRS" -ne 0 ]; then
-            echo "::error::migrations/ cannot apply cleanly to an empty database — ${ERRS} error(s)."
-            echo "A migration that needs an object no earlier migration creates is INVISIBLE in"
-            echo "production, because the pre-apply-over-SSH convention means a human already"
-            echo "supplied it there. This lane is the only place it can be seen."
+            echo "::error::migrations/ do not apply cleanly onto the declared bootstrap — ${ERRS} error(s)."
+            echo "A migration that needs an object nothing has created BY THIS POINT IN THE SEQUENCE is"
+            echo "invisible in production, because the pre-apply-over-SSH convention means a human"
+            echo "already supplied it there. This lane is the only place it can be seen."
             grep 'ERROR:' /tmp/migrations.log || true
             exit 1
           fi
+
+          # WHAT THIS GATE DOES AND DOES NOT ASSERT — stated because the first wording overstated it.
+          # It does NOT claim migrations/ can build a schema from NOTHING, and that is deliberate:
+          # this repo's architecture is "the app owns its schema, migrations are deltas", so
+          # demanding self-sufficiency would create a SECOND source of truth for ~24 tables. Five
+          # tables (signals, request_log, quota_usage, funnel_events, contact_leads) are assumed by
+          # migrations and created only by the app; against the bootstrap above they are no-ops, and
+          # on a genuinely empty database those five migrations are dead statements.
+          # What it DOES assert is the invariant that actually failed: every object a migration
+          # touches must exist by the time migrations run, GIVEN THE DECLARED BOOTSTRAP. `payer_wallet`
+          # broke exactly that — its creator (x402-idempotency-store) is outside the bootstrap set.
+          # Widening the guarantee means widening BOOTSTRAP_MODULES, not rewriting migrations/.
 
       - name: ON CONFLICT ↔ constraint parity — ON_CONFLICT_PARITY_VERDICT
         # OPS-X402-PAYER-WALLET-MIGRATION-W1 — the gate for the class that took the paid rail down
