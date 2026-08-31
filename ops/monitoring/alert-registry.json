@@ -873,6 +873,30 @@
       "follow_up_wave": "OPS-ALERT-ADOPT-TREND_MODE_READOUT_DUE-W{NEXT}",
       "envelope_adopted": true,
       "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. ONCE-EVER at flip+30d, behind /var/lib/algovault-monitoring/trend-mode-readout-due.fired. This is the scheduled half of 'the readout is scheduled, not remembered' \u2014 a follow-up that depends on someone remembering is prose, not a control. adopted=FALSE because a once-ever due-date alert has no FIRING->CLEAR edge, so --clear on it would be a no-op wearing the look of state hygiene. It STILL names a follow_up_wave: the repo requires every unadopted row to name who will revisit it, and that rule is not mine to argue with from inside a row \u2014 the follow-up may well conclude 'not applicable', but the conclusion belongs in that wave rather than in this note."
+    },
+    {
+      "alert_id": "scorer_input_identity",
+      "owner": "ops/monitoring/scorer-input-identity-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-scorer_input_identity-W{NEXT}",
+      "notes": "OPS-SCORER-INPUT-PERSISTENCE-W1 R3. Fires when the persisted scorer parts stop reproducing their own total \u2014 SUM(bucket_i * WEIGHTS_i) != raw0, or raw0 + the three adjustment deltas != raw_final \u2014 on any of the three capture arms, OR when an arm has ZERO captured rows in the window. Those two cases page and nothing else does, and the split is DATA vs INSTRUMENT: a wrong row and a missing row are both unrecoverable, because capture is forward-only, while an unreadable psql is an instrument fault the inventory's own DARK check already covers \u2014 paging on it would train the operator to ignore the channel. Pages on the FIRST occurrence rather than behind a consecutive-run confirmation, deliberately: a confirmation window on a forward-only corpus buys certainty by spending the data it is protecting. adopted=true \u2014 the canary calls --clear on its healthy path, because send_telegram.sh writes its cooldown marker on a delivered fire and nothing else removes it, so a healed breach would otherwise pin the channel's last word to the worst thing that ever happened. announce_resolution stays FALSE per the law's default: recovery chatter is noise, and the operator action here is a capture fix, not an acknowledgement."
+    },
+    {
+      "alert_id": "disk_headroom",
+      "owner": "ops/monitoring/disk-headroom-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-disk_headroom-W{NEXT}",
+      "notes": "OPS-SCORER-INPUT-PERSISTENCE-W1 R4 (Q4-ii). The control that makes this wave's UNBOUNDED retention commitment a gate rather than a promise: no sampling and no TTL on the scorer-input corpus was approved ON CONDITION that headroom is alarmed. Fires at >=85% (schedule a reclaim) and >=92% (reclaim now \u2014 Postgres loses WAL/vacuum/temp headroom well before 100%). BOTH tiers deliver, because CRITICAL_PERSISTENT is the only severity send_telegram.sh actually delivers by its own contract; the tier is carried in the body instead of in a severity string the wrapper would drop, and the ladder is still meaningful because the two tiers imply different urgencies of the same operator action. DETECT AND ALERT ONLY \u2014 the canary prunes nothing; attribution is ops/scripts/disk-forensics.sh (read-only) and reclaim is a separate Plan-Mode-gated wave, per the never-automate-a-destructive-recovery rule. An unreadable df is INDETERMINATE and SILENT. adopted=true (--clear on the healthy path, so a reclaimed disk does not leave the channel pinned at its worst reading). Scoped to the whole filesystem, not to this wave's tables: measured 2026-08-31 the capture adds ~6.95 MB/day against 238G free, i.e. ~991 months of runway from this wave ALONE, so a scorer-scoped alarm would stay quiet while the box filled from anywhere else. Consumer: OPS-SCORER-INPUT-RETENTION-W{NEXT}, gated on THIS ALERT FIRING, never on a date."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it \u2014 no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",

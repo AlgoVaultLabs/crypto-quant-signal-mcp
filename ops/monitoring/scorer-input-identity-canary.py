@@ -81,6 +81,33 @@ WINDOW_DAYS = int(os.environ.get("SI_WINDOW_DAYS", "2"))
 # The cap is REPORTED per arm (see `check_arm`), never silent: "no silent caps".
 ROW_CAP = int(os.environ.get("SI_ROW_CAP", "20000"))
 
+# ── ALERT DISPATCH ───────────────────────────────────────────────────────────────────────────
+#
+# The canary MUST fire the wrapper itself. A canary that only prints a token is INSTALLED but
+# DARK: it exits 0/1/3 on schedule and pages nobody, which is indistinguishable from healthy —
+# the failure class this estate has hit four times. `send_telegram.sh` owns the cooldown (24h per
+# alert_id), the severity gate and the dry-run lever; none of that is reimplemented here.
+TG = os.environ.get("SI_TG_WRAPPER", "/opt/algovault-monitoring/send_telegram.sh")
+ALERT_ID = "scorer_input_identity"
+
+# WHAT PAGES, AND WHAT DOES NOT — the split is DATA vs INSTRUMENT.
+#
+#   FAIL                     → PAGES. The parts do not reproduce their own total, so the corpus
+#                              is being written WRONG. Forward-only capture means every hour it
+#                              continues is unrecoverable, so this pages on the FIRST occurrence
+#                              rather than waiting for a consecutive-run confirmation.
+#   INDETERMINATE (vacuity)  → PAGES. Zero captured rows means the WRITER STOPPED, which is data
+#                              being silently lost — the same urgency as above.
+#   INDETERMINATE (probe)    → SILENT. A psql/docker error is an instrument fault, not a data
+#                              fault; the monitoring inventory's own DARK check already covers a
+#                              canary that stops producing, and paging here would train the
+#                              operator to ignore the channel.
+#
+# `CRITICAL_PERSISTENT` is the ONLY severity send_telegram.sh delivers (every other value logs
+# silently, by its contract), so it is used for both paging cases and the distinction is carried
+# in the BODY rather than in a severity string the wrapper would drop.
+SEVERITY_DELIVERED = "CRITICAL_PERSISTENT"
+
 ARMS = (
     # (arm label, table, decision-time column)
     ("emitted", "signal_scorer_inputs", "decided_at"),
@@ -164,9 +191,35 @@ def run_sql(sql: str) -> str:
     return out.stdout
 
 
+def fire(body: str) -> None:
+    """Dispatch to the shared wrapper. Extracted so it is stubbable — a test must be able to drive
+    the real `main()` without posting to the operator channel. Fail-open: a broken wrapper must
+    never turn a reporting run into a crash."""
+    try:
+        subprocess.run([TG, ALERT_ID, SEVERITY_DELIVERED, "-"],
+                       input=body, text=True, timeout=30, check=False)
+    except Exception as e:  # noqa: BLE001
+        print(f"[scorer-input-identity] TG dispatch failed (fail-open): {e}", file=sys.stderr)
+
+
+def clear() -> None:
+    """FIRING -> CLEAR on the healthy path. STATE HYGIENE, not a recovery announcement:
+    send_telegram.sh writes its cooldown marker on a delivered fire and nothing else removes it,
+    so without this a healed breach would pin the channel's last word to the worst thing that ever
+    happened. `announce_resolution` stays false on the registry row — recovery chatter is noise."""
+    try:
+        subprocess.run([TG, "--clear", ALERT_ID, "identity clean on every captured arm"],
+                       timeout=30, check=False, capture_output=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[scorer-input-identity] TG clear failed (fail-open): {e}", file=sys.stderr)
+
+
 def check_arm(label: str, table: str, ts_col: str) -> tuple[str, dict[str, float]]:
     """Return (verdict, metrics) for one arm. Never raises — an arm that cannot be read is
-    INDETERMINATE for that arm, and the run's verdict is the worst of the three."""
+    INDETERMINATE for that arm, and the run's verdict is the worst of the three.
+
+    The returned metrics dict is EMPTY exactly when the read failed, which is how `main` tells an
+    instrument fault (silent) from the vacuity case (pages)."""
     try:
         row = parse_row(run_sql(build_sql(table, ts_col, WINDOW_DAYS, ROW_CAP)))
     except Exception as e:  # noqa: BLE001 — any failure to READ is INDETERMINATE, never a pass
@@ -346,8 +399,36 @@ def main(argv: list[str]) -> int:
         return 0
 
     print(f"scorer-input identity — {len(ARMS)} arms, window={WINDOW_DAYS}d, tolerance={TOLERANCE}")
-    verdicts = [check_arm(label, table, ts)[0] for label, table, ts in ARMS]
+    results = [(label, *check_arm(label, table, ts)) for label, table, ts in ARMS]
+    verdicts = [v for _, v, _ in results]
     verdict = worst(verdicts)
+
+    # DATA faults page; INSTRUMENT faults do not. `metrics` is empty only when the read itself
+    # failed, so this distinguishes "the writer stopped" (pages) from "psql was unreachable"
+    # (silent) without a second probe.
+    broken = [(l, m) for l, v, m in results if v == "FAIL"]
+    vacuous = [(l, m) for l, v, m in results if v == "INDETERMINATE" and m and int(m["captured"]) == 0]
+    if broken or vacuous:
+        lines = [f"SCORER-INPUT IDENTITY {verdict} — the captured scorer parts are not trustworthy.", ""]
+        for l, m in broken:
+            lines.append(
+                f"  {l}: {int(m['bad_sum'])} rows fail SUM(bucket*WEIGHT)==raw0, "
+                f"{int(m['bad_chain'])} fail raw0+deltas==raw_final "
+                f"(max residual {m['max_sum_resid']:.3e} / {m['max_chain_resid']:.3e}, "
+                f"tolerance {TOLERANCE}) over {int(m['captured'])} captured rows.")
+        for l, _ in vacuous:
+            lines.append(f"  {l}: ZERO captured rows in the last {WINDOW_DAYS}d — the writer has stopped.")
+        lines += [
+            "",
+            "Capture is FORWARD-ONLY: rows written wrong, or not written at all, cannot be",
+            "recovered later. Kill switch (no rebuild): SCORER_INPUT_CAPTURE_ENABLED=0.",
+            "Owner: OPS-SCORER-INPUT-PERSISTENCE-W1. Successor gated on this corpus:",
+            "EDGE-SELL-FEATURE-ATTRIBUTION-W{NEXT}.",
+        ]
+        fire("\n".join(lines))
+    elif verdict == "PASS":
+        clear()
+
     print(f"SCORER_IDENTITY_VERDICT={verdict}")
     return EXIT_FOR[verdict]
 

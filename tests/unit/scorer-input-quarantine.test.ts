@@ -96,6 +96,10 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
     'ops/monitoring/monitoring-inventory.json',
     'inventory row documenting the identity canary + its schedule; data about the store, no query',
   ],
+  [
+    'ops/monitoring/alert-registry.json',
+    'alert-registry note stating what scorer_input_identity fires on; prose about the store, no query',
+  ],
 ]);
 
 /** Strip comments by dialect so a MENTION is not judged as a REFERENCE.

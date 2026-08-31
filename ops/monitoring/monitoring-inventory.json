@@ -2031,7 +2031,7 @@
       "schedule": "37 20 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "b09ca7388be479a445cca5542ec7e1802f3bddeae2a5bbd93568adaf61f8cdc8",
+      "sha256": "b3f7a69c6105425f808a0656451d8ae11eb2c5536fe3ab35fd647f90c28aac08",
       "alert_ids": [
         "scorer_input_identity"
       ],
@@ -2056,7 +2056,7 @@
       "schedule": "43 20 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "9748b7ce2e080cb9f3f827c26ae3b946c7a637c84fa76295568ec907ee7ce544",
+      "sha256": "6df280ec4f71df663ba83fc3a3bed63d16b1c159951516013272a6139470dd27",
       "alert_ids": [
         "disk_headroom"
       ],

@@ -76,6 +76,44 @@ SCORER_MB_PER_DAY = float(os.environ.get("DH_SCORER_MB_PER_DAY", "6.95"))
 EXIT_FOR = {"PASS": 0, "FAIL": 1, "INDETERMINATE": 3}
 _RANK = {"PASS": 0, "FAIL": 1, "INDETERMINATE": 2}
 
+# ── ALERT DISPATCH ───────────────────────────────────────────────────────────────────────────
+#
+# The canary fires the wrapper itself; a canary that only prints a token is INSTALLED but DARK.
+# send_telegram.sh owns the 24h per-alert-id cooldown, the severity gate and the dry-run lever.
+TG = os.environ.get("DH_TG_WRAPPER", "/opt/algovault-monitoring/send_telegram.sh")
+ALERT_ID = "disk_headroom"
+
+# `CRITICAL_PERSISTENT` is the ONLY severity send_telegram.sh actually delivers — by its own
+# contract every other value logs silently. So BOTH ladder tiers deliver, and the tier is carried
+# in the BODY rather than in a severity string the wrapper would drop.
+#
+# That is a deliberate choice, not an accident of the wrapper, and the ladder is not decorative
+# because of it: at >=85% the action is "schedule a reclaim wave", at >=92% it is "reclaim now,
+# Postgres is about to lose its WAL/vacuum/temp headroom". Both are operator-action-required, and
+# an alarm that stayed silent until 92% would remove the only tier at which the fix is unhurried.
+SEVERITY_DELIVERED = "CRITICAL_PERSISTENT"
+
+
+def fire(body: str) -> None:
+    """Dispatch to the shared wrapper. Stubbable, and fail-open — a broken wrapper must never turn
+    a reporting run into a crash."""
+    try:
+        subprocess.run([TG, ALERT_ID, SEVERITY_DELIVERED, "-"],
+                       input=body, text=True, timeout=30, check=False)
+    except Exception as e:  # noqa: BLE001
+        print(f"[disk-headroom] TG dispatch failed (fail-open): {e}", file=sys.stderr)
+
+
+def clear() -> None:
+    """FIRING -> CLEAR on the healthy path. State hygiene: send_telegram.sh writes its cooldown
+    marker on a delivered fire and nothing else removes it, so without this a reclaimed disk would
+    leave the channel's last word at the worst it ever got."""
+    try:
+        subprocess.run([TG, "--clear", ALERT_ID, "every watched filesystem below the warn threshold"],
+                       timeout=30, check=False, capture_output=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[disk-headroom] TG clear failed (fail-open): {e}", file=sys.stderr)
+
 
 def parse_df(out: str) -> list[dict[str, object]]:
     """Parse `df -P -k` output into rows.
@@ -141,7 +179,7 @@ def worst(verdicts: list[str]) -> str:
     return max(verdicts, key=lambda v: _RANK[v])
 
 
-def check() -> tuple[str, str]:
+def check() -> tuple[str, str, list[str]]:
     try:
         out = subprocess.run(
             ["df", "-P", "-k", *MOUNTS], capture_output=True, text=True, timeout=30,
@@ -150,11 +188,15 @@ def check() -> tuple[str, str]:
             raise RuntimeError(f"df rc={out.returncode}: {out.stderr.strip()[:160]}")
         rows = parse_df(out.stdout)
     except Exception as e:  # noqa: BLE001 — a failure to READ is INDETERMINATE, never a pass
+        # An unreadable `df` is an INSTRUMENT fault, not a disk fault. It does NOT page: the
+        # monitoring inventory's DARK check already covers a canary that stops producing, and
+        # paging on the instrument trains the operator to ignore the channel.
         print(f"  INDETERMINATE — {type(e).__name__}: {str(e)[:160]}")
-        return "INDETERMINATE", "none"
+        return "INDETERMINATE", "none", []
 
     verdicts: list[str] = []
     severities: list[str] = []
+    breaches: list[str] = []
     for r in rows:
         pct = int(r["pct_used"])
         sev = severity_for(pct)
@@ -172,9 +214,13 @@ def check() -> tuple[str, str]:
         )
         verdicts.append("FAIL" if sev != "none" else "PASS")
         severities.append(sev)
+        if sev != "none":
+            breaches.append(
+                f"  {r['mount']} at {pct}% used ({int(r['avail_kb'])//1048576}G free of "
+                f"{int(r['total_kb'])//1048576}G) — {sev} (warn>={WARN_PCT}%, crit>={CRIT_PCT}%)")
 
     sev = "critical" if "critical" in severities else ("warning" if "warning" in severities else "none")
-    return worst(verdicts), sev
+    return worst(verdicts), sev, breaches
 
 
 def self_test() -> int:
@@ -271,7 +317,20 @@ def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
     print(f"disk headroom — mounts={','.join(MOUNTS)} warn>={WARN_PCT}% crit>={CRIT_PCT}%")
-    verdict, severity = check()
+    verdict, severity, breaches = check()
+    if breaches:
+        fire("\n".join(
+            [f"DISK HEADROOM {severity.upper()} on signal-1.", ""] + breaches + [
+                "",
+                "DETECT-AND-ALERT ONLY — nothing has been pruned and nothing will be.",
+                "Attribute first (read-only): ops/scripts/disk-forensics.sh <ip>",
+                "Reclaim is a separate Plan-Mode-gated wave; never an unattended action.",
+                "",
+                "Retention review for the scorer-input corpus this alarm was commissioned with:",
+                "OPS-SCORER-INPUT-RETENTION-W{NEXT} — gated on THIS alert firing, never a date.",
+            ]))
+    elif verdict == "PASS":
+        clear()
     print(f"DISK_HEADROOM_VERDICT={verdict}")
     print(f"DISK_HEADROOM_SEVERITY={severity}")
     return EXIT_FOR[verdict]
