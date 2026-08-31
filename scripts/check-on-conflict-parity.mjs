@@ -254,15 +254,19 @@ function selfTest() {
   // gate's first live run proved it: everything below passed while the real query returned a shape
   // the code could not read. Both driver shapes are now pinned here, and the third case asserts the
   // error is NAMED rather than a TypeError from somewhere else.
-  if (!sameSet(normalizeCols(['Payer_Wallet', 'nonce']), ['payer_wallet', 'nonce'])) {
-    fails.push('normalizeCols must accept a parsed array and lowercase it');
-  }
-  if (!sameSet(normalizeCols('{payer_wallet,nonce}'), ['payer_wallet', 'nonce'])) {
-    fails.push('normalizeCols must accept the RAW name[] literal node-pg cannot parse');
-  }
-  if (!sameSet(normalizeCols('{"odd name",b}'), ['odd name', 'b'])) {
-    fails.push('normalizeCols must strip quoting on a quoted identifier');
-  }
+  // Each accepted shape is checked inside its own try, so a REGRESSION reports as a named failing
+  // check rather than an unhandled stack trace — a self-test whose own output is a traceback is one
+  // more thing to decode at the moment you least want to.
+  const shape = (label, input, want) => {
+    try {
+      if (!sameSet(normalizeCols(input), want)) fails.push(label + ': wrong result');
+    } catch (e) {
+      fails.push(label + ': threw — ' + e.message);
+    }
+  };
+  shape('normalizeCols accepts a parsed array and lowercases it', ['Payer_Wallet', 'nonce'], ['payer_wallet', 'nonce']);
+  shape('normalizeCols accepts the RAW name[] literal node-pg cannot parse', '{payer_wallet,nonce}', ['payer_wallet', 'nonce']);
+  shape('normalizeCols strips quoting on a quoted identifier', '{"odd name",b}', ['odd name', 'b']);
   try {
     normalizeCols(42);
     fails.push('normalizeCols must THROW on an unknown shape, not return something plausible');
