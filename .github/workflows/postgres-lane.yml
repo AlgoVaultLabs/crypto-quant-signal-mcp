@@ -201,12 +201,18 @@ jobs:
         # re-statements of DDL the app also creates, and a duplicate-object notice is not a lane
         # failure.
         #
-        # REPORT-ONLY, and named as such rather than left implicit: the residual error count is
-        # printed but does not gate. Promoting it to a gate needs a DECLARED expected-column set
-        # (a table existing does not mean a migration's ADD COLUMN landed), which is
-        # `OPS-PG-LANE-MIGRATION-STRICT-W{NEXT}`. Printing the count is what makes the promotion
-        # decidable from a real measurement instead of a guess — the previous form piped every
-        # error into `grep … || true` and reported nothing at all.
+        # PROMOTED TO A GATE by OPS-X402-PAYER-WALLET-MIGRATION-W1, on a measurement rather than a
+        # hope. The report-only form its predecessor shipped printed 9 residual errors, and all 9
+        # were ONE absent column: `migrations/024` edits `payer_wallet`, which NO migration created
+        # — it reached prod over SSH and every other database through the app's
+        # `ADD COLUMN IF NOT EXISTS`. 024 is one transaction, so its primary-key swap was lost with
+        # it, and 026 then aborted on the same column and rolled back the two columns 028 needed.
+        #
+        # With 024 repaired the count is 0, so the threshold is 0 and any regression blocks here.
+        # The promotion criterion its predecessor named — "needs a DECLARED expected-column set" —
+        # turned out to be unnecessary: a migration that cannot apply reports itself, and demanding
+        # a hand-declared column list would have added a second thing to keep in sync in order to
+        # check the first. Report-first was still right; it is what made the count measurable.
         run: |
           : > /tmp/migrations.log
           for f in $(ls migrations/*.sql | grep -v '\.down\.sql$' | sort); do
@@ -214,7 +220,36 @@ jobs:
             psql "$DATABASE_URL" -q -f "$f" 2>&1 | grep -viE 'already exists|NOTICE' | tee -a /tmp/migrations.log || true
           done
           ERRS=$(grep -c 'ERROR:' /tmp/migrations.log || true)
-          echo "MIGRATION_RESIDUAL_ERRORS=${ERRS}  (report-only — see OPS-PG-LANE-MIGRATION-STRICT-W{NEXT})"
+          echo "MIGRATION_RESIDUAL_ERRORS=${ERRS}"
+          if [ "$ERRS" -ne 0 ]; then
+            echo "::error::migrations/ cannot apply cleanly to an empty database — ${ERRS} error(s)."
+            echo "A migration that needs an object no earlier migration creates is INVISIBLE in"
+            echo "production, because the pre-apply-over-SSH convention means a human already"
+            echo "supplied it there. This lane is the only place it can be seen."
+            grep 'ERROR:' /tmp/migrations.log || true
+            exit 1
+          fi
+
+      - name: ON CONFLICT ↔ constraint parity — ON_CONFLICT_PARITY_VERDICT
+        # OPS-X402-PAYER-WALLET-MIGRATION-W1 — the gate for the class that took the paid rail down
+        # for ~25 hours.
+        #
+        # `ON CONFLICT (a, b)` resolves to a unique INDEX, not to a column list. No match is not a
+        # degradation — it RAISES, and the write path then refuses every row. `tryClaimPayment` kept
+        # `ON CONFLICT (nonce)` after the key became `(payer_wallet, nonce)` and x402 served nothing
+        # for a day, through a green suite.
+        #
+        # This lane was built for exactly that and STILL could not have caught it, which is the
+        # reason for a schema gate rather than another test: a lane only catches what a test
+        # exercises, and BOTH suites pinning this table's key force the SQLite backend —
+        # `tests/x402-idempotency-store.test.ts` deletes DATABASE_URL, and
+        # `tests/unit/x402-idempotency-payer-nonce.test.ts` skips itself outright when it is set.
+        # Asking the DATABASE what unique indexes it has does not depend on anybody writing a test.
+        #
+        # Runs HERE, on the schema as migrations leave it, because that is the state a fresh box or
+        # a restored backup is actually in. Tables no suite has touched yet are absent and are
+        # REPORTED, not failed — widening that coverage means widening the bootstrap module set.
+        run: node scripts/check-on-conflict-parity.mjs
 
       - name: Suite — POSTGRES lane
         id: pg
