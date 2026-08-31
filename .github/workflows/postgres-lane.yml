@@ -145,18 +145,76 @@ jobs:
             })().catch((e) => { console.error('POSTGRES_LANE_VERDICT=INDETERMINATE — database unreachable:', e.message); process.exit(3); });
           "
 
-      - name: Apply migrations
-        # The application self-heals its own schema (each store calls its ensure*Schema() on first
-        # use), so this applies the migrations that are NOT expressible that way. Ordinal order.
-        # `ON_ERROR_STOP` is deliberately OFF: several migrations are idempotent re-statements of
-        # DDL the app also creates, and a duplicate-object notice is not a lane failure. A genuine
-        # schema problem surfaces as a TEST failure, which is the signal we want.
+      - name: Create the roles the migrations grant to
+        # OPS-PG-LANE-BOOTSTRAP-W1. Seven migrations end in GRANTs to roles that exist on the
+        # production box and nowhere else, so on this lane every one of them failed with
+        # `role "algovault_app" does not exist` — twelve errors per run, all swallowed by the
+        # step below, all noise that trained the eye past the REAL errors sitting beside them.
+        #
+        # DERIVED from the migrations rather than listed here: a hand-maintained role list is a
+        # duplicated fact that goes stale the first time a migration adds a role, and this repo
+        # has that failure mode written down twice already. The pattern is deliberately narrow
+        # (`algovault_*` / `aoe_*`); a false positive costs one unused NOLOGIN role inside an
+        # ephemeral container that is destroyed at the end of the job.
+        #
+        # NOLOGIN and no privileges of their own: the suite connects as the bootstrap superuser,
+        # so these exist purely to make the GRANTs executable. Creating them means the lane now
+        # exercises the privilege model instead of skipping past it.
         run: |
           sudo apt-get install -y --no-install-recommends postgresql-client >/dev/null 2>&1 || true
-          for f in $(ls migrations/*.sql | grep -v '\.down\.sql$' | sort); do
-            echo "── $f"
-            psql "$DATABASE_URL" -q -f "$f" 2>&1 | grep -viE 'already exists|NOTICE' || true
+          ROLES=$(grep -rhoE '\b(algovault_[a-z0-9_]+|aoe_[a-z0-9_]+)\b' migrations/*.sql | sort -u)
+          if [ -z "$ROLES" ]; then
+            echo "no roles derived from migrations/ — nothing to create (not a failure)"
+          fi
+          for r in $ROLES; do
+            echo "── role $r"
+            psql "$DATABASE_URL" -q -v ON_ERROR_STOP=1 -c \
+              "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$r') THEN CREATE ROLE $r NOLOGIN; END IF; END \$\$;"
           done
+
+      - name: Bootstrap the application schema — PG_BOOTSTRAP_VERDICT
+        # OPS-PG-LANE-BOOTSTRAP-W1 — THE STEP THIS LANE NEVER HAD.
+        #
+        # `migrations/*.sql` is not the schema. Most tables are created by the app on first use,
+        # and the migrations mostly ALTER or INDEX those tables — so on a fresh database the
+        # migration step below was failing on `signals`, `request_log`, `quota_usage`,
+        # `contact_leads` and `funnel_events` simply because nothing had created them yet.
+        #
+        # This drives the app's own DDL entrypoints and AWAITS them, then asserts every table
+        # they declare actually exists, and prints exactly one
+        # `PG_BOOTSTRAP_VERDICT=OK|INCOMPLETE|INDETERMINATE`. Non-OK fails the job HERE, where
+        # "the schema is half-built" is legible, instead of downstream where it arrives as a
+        # scatter of unrelated-looking test failures across whichever suites happened to touch
+        # the missing tables first. (That is precisely how it arrived: three failures in
+        # band-population-invariance.test.ts, a file with nothing to do with any of them.)
+        #
+        # Ordering with the app's own lazy DDL is what makes this deterministic — see
+        # `DdlBarrier` and the `PgBackend.ddl` rationale. Before that barrier this step could
+        # itself have raced, and a bootstrap that races is not a bootstrap.
+        run: node scripts/bootstrap-pg-schema.mjs
+
+      - name: Apply migrations
+        # Runs AFTER the bootstrap above, so the tables these migrations ALTER and INDEX now
+        # exist. Ordinal order.
+        #
+        # `ON_ERROR_STOP` is still deliberately OFF: several migrations are idempotent
+        # re-statements of DDL the app also creates, and a duplicate-object notice is not a lane
+        # failure.
+        #
+        # REPORT-ONLY, and named as such rather than left implicit: the residual error count is
+        # printed but does not gate. Promoting it to a gate needs a DECLARED expected-column set
+        # (a table existing does not mean a migration's ADD COLUMN landed), which is
+        # `OPS-PG-LANE-MIGRATION-STRICT-W{NEXT}`. Printing the count is what makes the promotion
+        # decidable from a real measurement instead of a guess — the previous form piped every
+        # error into `grep … || true` and reported nothing at all.
+        run: |
+          : > /tmp/migrations.log
+          for f in $(ls migrations/*.sql | grep -v '\.down\.sql$' | sort); do
+            echo "── $f" | tee -a /tmp/migrations.log
+            psql "$DATABASE_URL" -q -f "$f" 2>&1 | grep -viE 'already exists|NOTICE' | tee -a /tmp/migrations.log || true
+          done
+          ERRS=$(grep -c 'ERROR:' /tmp/migrations.log || true)
+          echo "MIGRATION_RESIDUAL_ERRORS=${ERRS}  (report-only — see OPS-PG-LANE-MIGRATION-STRICT-W{NEXT})"
 
       - name: Suite — POSTGRES lane
         id: pg

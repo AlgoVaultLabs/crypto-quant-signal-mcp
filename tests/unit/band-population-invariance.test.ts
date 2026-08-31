@@ -39,9 +39,13 @@ import {
   getBandSignalCounts,
   dbRun,
   dbQuery,
+  awaitDbWrites,
   _clearPerformanceStatsCache,
 } from '../../src/lib/performance-db.js';
-import { MIN_TRACKABLE_CONFIDENCE } from '../../src/lib/published-population.js';
+import {
+  MIN_TRACKABLE_CONFIDENCE,
+  SQL_PUBLISHED_POPULATION,
+} from '../../src/lib/published-population.js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -68,6 +72,38 @@ function publicFigures() {
 
 const nowSec = () => Math.floor(Date.now() / 1000);
 
+/**
+ * OPS-PG-LANE-BOOTSTRAP-W1 — WHICH ARMS ARE SQLITE-PATH, AND WHY IT IS A DECLARATION RATHER
+ * THAN A QUARANTINE.
+ *
+ * `getPerformanceStats()` opens with `if (isPg) return emptyStats();`. Under DATABASE_URL it is
+ * a no-op BY CONSTRUCTION — production reads the async path, and the sync one exists for SQLite
+ * dev/test. So on the Postgres lane every `publicFigures()` snapshot is the empty object, and
+ * the three byte-identical arms below split into two useless halves: the two "nothing moved"
+ * assertions pass because both sides are empty (vacuous), and the two-way half — "a row AT the
+ * gate DOES move the figures" — CANNOT pass, ever. That is the deterministic failure the lane
+ * has reported on every run since 2026-08-30, and no amount of retrying changes it.
+ *
+ * Two things follow, and only doing both is honest:
+ *
+ *   1. The byte-identical arms are marked for the backend they were written against. A snapshot
+ *      comparison of GLOBAL figures is additionally unsafe on this lane even in principle: all
+ *      twelve vitest workers share ONE database, and other suites write `signals` between the
+ *      `before` and the `after`. "Make them run on PG" would trade a deterministic red for a
+ *      flaky one.
+ *   2. The PG branch does NOT lose coverage — see the block at the bottom of this file. It seeds
+ *      the same two rows and asserts the same rule directly against `SQL_PUBLISHED_POPULATION`
+ *      on whichever engine is under test, scoped to a unique coin so twelve concurrent workers
+ *      cannot perturb it. On Postgres that is STRICTLY MORE than the arms it stands in for,
+ *      because it executes the predicate production actually runs instead of a comparison of two
+ *      empty objects.
+ *
+ * A `skipIf` that names its backend and ships a replacement arm is not the baseline row this
+ * file refused to become.
+ */
+const ON_POSTGRES = !!process.env.DATABASE_URL;
+const itSqlitePath = it.skipIf(ON_POSTGRES);
+
 
 // OPS-SCORER-INPUT-PERSISTENCE-W1 R1a: `recordBandSignal` gained a REQUIRED trailing `parts`.
 // Required rather than optional on purpose — capture is forward-only, so a caller that silently
@@ -91,9 +127,14 @@ describe('R3 ARM A — the band corpus is ISOLATED from every published number',
   const coin = uniq('BAND_ARM_A');
 
   beforeEach(() => { _clearPerformanceStatsCache(); });
-  afterEach(() => { dbRun('DELETE FROM band_signals WHERE coin = ?', coin); });
+  // `dbRun` is fire-and-forget on Postgres, so an un-drained DELETE can outlive the test that
+  // issued it and bleed into the next one. Draining is a no-op on SQLite.
+  afterEach(async () => {
+    dbRun('DELETE FROM band_signals WHERE coin = ?', coin);
+    await awaitDbWrites();
+  });
 
-  it('seeding band_signals moves NO public figure', () => {
+  itSqlitePath('seeding band_signals moves NO public figure', () => {
     const before = publicFigures();
     // A real band row: below the gate, directional, fully populated — not a degenerate fixture.
     recordBandSignal(coin, 'BUY', 47, '5m', 100, 'HL', 'TRENDING_UP', 'request', false, PARTS);
@@ -106,6 +147,11 @@ describe('R3 ARM A — the band corpus is ISOLATED from every published number',
     // silently failed, the byte-identical assertion above would pass for the wrong reason and the
     // arm would be decorative forever.
     recordBandSignal(coin, 'SELL', 30, '1h', 200, 'BINANCE', null, 'fleet', true, PARTS);
+    // OPS-PG-LANE-BOOTSTRAP-W1: `recordBandSignal` reaches `dbRun`, which on Postgres RETURNS
+    // BEFORE THE STATEMENT IS SENT. On SQLite the row exists when it returns. One signature,
+    // two happens-before contracts — so this read was sound on SQLite and a coin flip on the
+    // lane, which is exactly what the 1-vs-3 failure counts on an identical SHA were.
+    await awaitDbWrites();
     const n = await dbQuery<{ c: number }>('SELECT count(*) AS c FROM band_signals WHERE coin = ?', [coin]);
     expect(Number(n[0].c)).toBeGreaterThan(0);
   });
@@ -144,9 +190,12 @@ describe('R3 ARM B — a sub-gate row IN `signals` moves no public figure (the r
   const coin = uniq('BAND_ARM_B');
 
   beforeEach(() => { _clearPerformanceStatsCache(); });
-  afterEach(() => { dbRun('DELETE FROM signals WHERE coin = ?', coin); });
+  afterEach(async () => {
+    dbRun('DELETE FROM signals WHERE coin = ?', coin);
+    await awaitDbWrites();
+  });
 
-  it('a confidence-45 row inserted directly into `signals` changes NOTHING public', () => {
+  itSqlitePath('a confidence-45 row inserted directly into `signals` changes NOTHING public', () => {
     const before = publicFigures();
 
     // The future-writer failure mode, constructed. A backfill, a migration, a counterfactual
@@ -171,6 +220,7 @@ describe('R3 ARM B — a sub-gate row IN `signals` moves no public figure (the r
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       coin, 'SELL', 51, '1h', 'HL', 200, nowSec(),
     );
+    await awaitDbWrites();
     const rows = await dbQuery<{ c: number }>(
       'SELECT count(*) AS c FROM signals WHERE coin = ? AND confidence < ?',
       [coin, MIN_TRACKABLE_CONFIDENCE],
@@ -178,7 +228,7 @@ describe('R3 ARM B — a sub-gate row IN `signals` moves no public figure (the r
     expect(Number(rows[0].c)).toBeGreaterThan(0);
   });
 
-  it('a row AT the gate DOES move the figures — proving the arm above measures something', () => {
+  itSqlitePath('a row AT the gate DOES move the figures — proving the arm above measures something', () => {
     // The two-way half. If a confidence-52 row also changed nothing, Arm B would be measuring an
     // inert harness rather than the predicate, and its green would mean nothing. This is the
     // assertion that says the instrument is live.
@@ -190,6 +240,56 @@ describe('R3 ARM B — a sub-gate row IN `signals` moves no public figure (the r
     );
     const after = publicFigures();
     expect(after).not.toBe(before);
+  });
+});
+
+describe('R3 ARM B (both backends) — the PREDICATE, on whichever engine is under test', () => {
+  /**
+   * OPS-PG-LANE-BOOTSTRAP-W1 — the arm that replaces the byte-identical pair on Postgres, and
+   * that runs on SQLite too so there is no branch-only coverage.
+   *
+   * Arm B asks "does a sub-gate row move a published figure?" through a global snapshot. That
+   * question is unanswerable on a lane where twelve workers share one database and
+   * `getPerformanceStats()` is a no-op. So this asks the SAME question one layer down, where the
+   * answer is a property of the rows rather than of the process: seed BOTH boundary rows under a
+   * unique coin, then evaluate `SQL_PUBLISHED_POPULATION` — the literal predicate every public
+   * reader concatenates — and require exactly the at-gate row to survive it.
+   *
+   * Coin-scoped on purpose: another worker inserting signals mid-test cannot change the answer,
+   * which is what makes this safe to run on the shared lane at all. And it is the branch
+   * production executes: the SQL predicate, on Postgres, rather than the TypeScript filter.
+   */
+  const coin = uniq('BAND_PREDICATE');
+
+  afterEach(async () => {
+    dbRun('DELETE FROM signals WHERE coin = ?', coin);
+    await awaitDbWrites();
+  });
+
+  it('excludes the sub-gate row and admits the at-gate row', async () => {
+    const insert = (confidence: number) =>
+      dbRun(
+        `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, pfe_return_pct, mae_return_pct)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        coin, 'BUY', confidence, '5m', 'HL', 100, nowSec(), 2.5, -0.5,
+      );
+    insert(MIN_TRACKABLE_CONFIDENCE - 7);
+    insert(MIN_TRACKABLE_CONFIDENCE);
+    await awaitDbWrites();
+
+    // VACUITY GUARD FIRST, and it belongs here because this test CONSTRUCTS the corpus. If the
+    // inserts had not landed, "only the at-gate row is published" would be true of an empty
+    // table and the arm would be decorative — the precise failure mode that made the two Arm A/B
+    // guards go red on the lane rather than silently pass.
+    const seeded = await dbQuery<{ c: number }>(
+      'SELECT count(*) AS c FROM signals WHERE coin = ?', [coin],
+    );
+    expect(Number(seeded[0].c), 'both fixture rows must exist or the assertion below is vacuous').toBe(2);
+
+    const published = await dbQuery<{ confidence: number }>(
+      `SELECT confidence FROM signals WHERE coin = ? AND ${SQL_PUBLISHED_POPULATION}`, [coin],
+    );
+    expect(published.map((r) => Number(r.confidence))).toEqual([MIN_TRACKABLE_CONFIDENCE]);
   });
 });
 
