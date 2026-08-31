@@ -66,6 +66,82 @@ describe.skipIf(SKIP)('SEC-49 — idempotency is keyed on (payer_wallet, nonce)'
   });
 });
 
+/**
+ * OPS-X402-PAYER-WALLET-MIGRATION-W1 — THE SAME THREE ASSERTIONS, ON POSTGRES.
+ *
+ * The block above is SQLite-only by construction: its `beforeEach` deletes `DATABASE_URL` and
+ * points the store at an in-memory database, and the whole describe `skipIf`s itself the moment
+ * `DATABASE_URL` is set. So on the Postgres lane it does not run at all. Its sibling
+ * `tests/x402-idempotency-store.test.ts` also deletes `DATABASE_URL` on purpose.
+ *
+ * Which means the composite-key claim behaviour — the thing whose mismatch refused every paid x402
+ * call for about twenty-five hours — was pinned ONLY by source-text assertions and only ever
+ * EXECUTED against SQLite, whose branch is `INSERT OR IGNORE` and has no ON CONFLICT clause at all.
+ * The docstring further down this file says exactly that about the original outage. The Postgres
+ * lane was then built to close it, and this file skipped itself out of the lane.
+ *
+ * This block runs the identical three questions against the engine production runs. It is the only
+ * place in the suite where `ON CONFLICT (payer_wallet, nonce)` is ever sent to a Postgres server.
+ *
+ * SAFE ON THE SHARED LANE DATABASE: all twelve vitest workers point at ONE database, so every nonce
+ * and payer below is namespaced by a per-run id. The claim is keyed on exactly `(payer_wallet,
+ * nonce)`, so a unique pair is untouchable by any concurrent suite — no cleanup required, and none
+ * attempted (a DELETE here would race the other workers).
+ */
+describe.runIf(!!process.env.DATABASE_URL)('SEC-49 on POSTGRES — the branch production actually executes', () => {
+  let store: typeof import('../../src/lib/x402-idempotency-store.js');
+  // Namespaced per run AND per worker. `VITEST_WORKER_ID` is what separates two workers that
+  // started inside the same millisecond.
+  const RUN = `${Date.now().toString(36)}${process.env.VITEST_WORKER_ID ?? '0'}${Math.random().toString(36).slice(2, 8)}`;
+  const nonce = (tag: string) => `0xpg${RUN}${tag}`.padEnd(66, '0').slice(0, 66);
+
+  beforeEach(async () => {
+    // DELIBERATELY does NOT touch DATABASE_URL. The store's CREATE/INSERT SQL is selected at import
+    // time from its presence, so deleting it here would silently put us back on the SQLite branch
+    // and this whole block would assert nothing — the exact shape of the gap it exists to close.
+    store = await import('../../src/lib/x402-idempotency-store.js');
+    store.ensureProcessedX402PaymentsSchema();
+  });
+
+  it('the PG claim path works AT ALL — a first claim is CLAIMED, not INDETERMINATE', async () => {
+    // The load-bearing one, and it is not a formality. When the composite PRIMARY KEY is missing —
+    // which is what every fresh Postgres built from `migrations/` had before this wave — Postgres
+    // answers `ON CONFLICT (payer_wallet, nonce)` with "there is no unique or exclusion constraint
+    // matching the ON CONFLICT specification", tryClaimPayment fails safe, and EVERY payment is
+    // refused. That failure is total, not partial, and this assertion is what now sees it.
+    expect(
+      await store.tryClaimPayment(nonce('a'), 'get_trade_call', '0.01', `0xPAYER_A_${RUN}`),
+      'INDETERMINATE here means the ON CONFLICT target has no matching unique index on this database',
+    ).toBe('CLAIMED');
+  });
+
+  it('a genuine replay — same payer, same nonce — is REFUSED on Postgres', async () => {
+    const n = nonce('b');
+    const payer = `0xPAYER_B_${RUN}`;
+    expect(await store.tryClaimPayment(n, 'get_trade_call', '0.01', payer)).toBe('CLAIMED');
+    expect(await store.tryClaimPayment(n, 'get_trade_call', '0.01', payer)).toBe('ALREADY_CLAIMED');
+  });
+
+  it('THE FIX, on Postgres: two DIFFERENT payers sharing a nonce BOTH settle', async () => {
+    // Under the bare-nonce key the second payer was read as a replay: they paid on-chain and were
+    // served nothing, with nothing detecting it. Until now this was only ever proven on SQLite,
+    // where the key shape comes from a fresh CREATE TABLE and therefore could not be wrong.
+    const n = nonce('c');
+    expect(await store.tryClaimPayment(n, 'get_trade_call', '0.01', `0xPAYER_C1_${RUN}`)).toBe('CLAIMED');
+    expect(await store.tryClaimPayment(n, 'get_trade_call', '0.01', `0xPAYER_C2_${RUN}`)).toBe('CLAIMED');
+  });
+
+  it("an unextractable payer still DEDUPES on Postgres — '' and not NULL", async () => {
+    // The PG-specific half of the rule, and it cannot be checked anywhere else: under a composite
+    // key Postgres treats NULL != NULL, so a NULL payer would make every unattributable row
+    // DISTINCT and let a replay re-serve for free. SQLite's uniqueness semantics differ, so the
+    // SQLite copy of this assertion does not test the same thing.
+    const n = nonce('d');
+    expect(await store.tryClaimPayment(n, 'get_trade_call', '0.01', undefined)).toBe('CLAIMED');
+    expect(await store.tryClaimPayment(n, 'get_trade_call', '0.01', undefined)).toBe('ALREADY_CLAIMED');
+  });
+});
+
 describe('SEC-49 — the migration and the store agree on the key', () => {
   it('the store DDL declares the composite primary key', async () => {
     const src = await import('node:fs').then((fs) =>
@@ -75,6 +151,45 @@ describe('SEC-49 — the migration and the store agree on the key', () => {
     expect(src, 'the bare-nonce key must be gone').not.toContain('nonce TEXT PRIMARY KEY');
     expect(src, 'the conflict target must be the FULL key or the claim is still nonce-only')
       .toContain('ON CONFLICT (payer_wallet, nonce) DO NOTHING');
+  });
+
+  it('the store CONVERGES the key it names, because IF NOT EXISTS structurally cannot', async () => {
+    // OPS-X402-PAYER-WALLET-MIGRATION-W1. `CREATE TABLE IF NOT EXISTS` does NOTHING when the table
+    // exists, so the composite PRIMARY KEY declared inside it is unreachable on any pre-existing
+    // table, and `ADD COLUMN IF NOT EXISTS` cannot add a constraint. The key therefore came from
+    // exactly one place — migration 024 — and a database where 024 did not run kept the bare-nonce
+    // key while this module's SQL claimed the composite one.
+    //
+    // DECLARED LIMIT, stated rather than implied: this is a PRESENCE assertion. The swap arm is not
+    // exercised by any lane run, because the lane's migrations now produce the composite key
+    // directly and the block correctly returns early. It is asserted here so it cannot be deleted
+    // as dead code by someone who observes, correctly, that it never fires on their database.
+    const src = await import('node:fs').then((fs) =>
+      fs.readFileSync(new URL('../../src/lib/x402-idempotency-store.ts', import.meta.url), 'utf8'),
+    );
+    expect(src).toContain('CONVERGE_PAYER_NONCE_PK_SQL');
+    expect(src, 'the swap must be guarded on the OLD key, or a re-run fights the new one')
+      .toMatch(/PRIMARY KEY \(nonce\)'/);
+    expect(src).toMatch(/ADD PRIMARY KEY \(payer_wallet, nonce\)/);
+  });
+
+  it('migration 024 can apply to an EMPTY database — it edits a column it now also creates', async () => {
+    // The defect: 024 opened with `UPDATE … SET payer_wallet = ''` and NO migration created
+    // payer_wallet — it reached prod over SSH, and every other database through the app's
+    // ADD COLUMN IF NOT EXISTS. 024 is one transaction, so on a fresh database its PK swap was lost
+    // with it, and 026 then aborted on the same column and rolled back the columns 028 needed.
+    // Nine lane errors, one absent column.
+    const fs = await import('node:fs');
+    const up = fs.readFileSync(
+      new URL('../../migrations/024_x402_idempotency_payer_nonce_pk.sql', import.meta.url),
+      'utf8',
+    );
+    const addIdx = up.indexOf('ADD COLUMN IF NOT EXISTS payer_wallet');
+    const useIdx = up.indexOf("SET payer_wallet = ''");
+    expect(addIdx, '024 must create the column it edits').toBeGreaterThan(-1);
+    expect(useIdx).toBeGreaterThan(-1);
+    expect(addIdx, 'the ADD COLUMN must come BEFORE the first use, or the transaction still aborts')
+      .toBeLessThan(useIdx);
   });
 
   it('a nonce-only index survives, since the composite PK cannot serve a bare-nonce probe', async () => {

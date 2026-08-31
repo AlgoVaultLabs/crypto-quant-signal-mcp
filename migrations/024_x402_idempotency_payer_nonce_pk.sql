@@ -29,6 +29,24 @@
 
 BEGIN;
 
+-- 0. THE COLUMN THIS MIGRATION EDITS MUST EXIST, and until OPS-X402-PAYER-WALLET-MIGRATION-W1 it
+--    did not — not in any migration. `payer_wallet` was added to prod over SSH and, for every
+--    other database, by the app's own `ADD COLUMN IF NOT EXISTS` inside
+--    CREATE_PROCESSED_X402_PAYMENTS_SQL (src/lib/x402-idempotency-store.ts). migrations/010 creates
+--    this table WITHOUT the column, so applying migrations/ in order to an EMPTY database failed
+--    right here — and because this file is one transaction, the PK swap below was lost with it,
+--    then 026 and 028 failed on the columns 026's own rollback had just removed. Nine errors, ONE
+--    absent column. Measured on postgres-lane run 33407686342.
+--
+--    A no-op against prod and against any database the app has touched. It is here rather than in
+--    a new migration 037 because 037 would run AFTER this file had already aborted; the only place
+--    that repairs the chain is inside the transaction that needs the column.
+--
+--    The general rule this instance produced: the pre-apply-over-SSH convention means a migration
+--    can be INCOMPLETE and still work in production forever, because a human supplied the missing
+--    piece by hand. `migrations/` is only a schema history if it can build one from nothing.
+ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS payer_wallet TEXT;
+
 -- 1. Back-fill: an unextractable payer becomes '' so it still dedupes.
 UPDATE processed_x402_payments SET payer_wallet = '' WHERE payer_wallet IS NULL;
 

@@ -153,6 +153,73 @@ const RAIL_BY_NETWORK_AND_DOMAIN: Readonly<Record<string, string>> = Object.free
   'eip155:10|GatewayWalletBatched': RAIL_OP_GATEWAY_USDC,
 });
 
+/**
+ * OPS-X402-PAYER-WALLET-MIGRATION-W1 — CONVERGE THE PRIMARY KEY, because the repo's schema-idempotency
+ * idiom structurally CANNOT.
+ *
+ * THE HOLE. `CREATE TABLE IF NOT EXISTS` + `ADD COLUMN IF NOT EXISTS` self-heals COLUMNS on an
+ * already-existing table. It can never self-heal a CONSTRAINT: when the table exists, the CREATE
+ * does NOTHING AT ALL, so the `PRIMARY KEY (payer_wallet, nonce)` declared inside it is unreachable,
+ * and nothing else adds it. The key therefore came from exactly one place — `migrations/024` — and a
+ * database where 024 did not run keeps `PRIMARY KEY (nonce)` forever while this module's SQL two
+ * hundred lines below says `ON CONFLICT (payer_wallet, nonce)`.
+ *
+ * WHY THAT IS NOT HYPOTHETICAL. Until this wave, 024 could not apply to an empty database at all: it
+ * edits `payer_wallet`, and no migration created that column (010 creates the table without it; the
+ * column came from prod SSH and from the `ADD COLUMN IF NOT EXISTS` above). So EVERY fresh Postgres
+ * built from `migrations/` — a CI lane, a new box, a restored backup — ended up with the bare-nonce
+ * key. `ON CONFLICT` binds to a CONSTRAINT, not to a column list, so the mismatch does not degrade:
+ * postgres answers "there is no unique or exclusion constraint matching the ON CONFLICT
+ * specification", `tryClaimPayment` fails safe to INDETERMINATE, and the paid rail refuses EVERY
+ * payment. That is the ~25-hour outage of 2026-08, exactly, and it was reachable from the committed
+ * repo.
+ *
+ * 024 is repaired, so migrations/ can now build this schema alone. This block is the OTHER half, and
+ * it is the durable one: it makes the `ON CONFLICT` clause below true BY CONSTRUCTION rather than
+ * true because a migration happened to have run. A store that names a key in its writes owns
+ * converging to that key.
+ *
+ * COST IN THE STEADY STATE IS ONE CATALOG READ. The first branch returns immediately when the
+ * composite key is already present — which is prod, and any database whose table came from the
+ * CREATE above — so no lock is taken and no ALTER is issued. Only a database carrying the OLD key
+ * pays for the swap, once.
+ *
+ * The repair sequence is migration 024's, statement for statement, deliberately: two derivations of
+ * "how to get from the bare-nonce key to the composite one" would drift, and this one has to agree
+ * with the file that already ran in production. `''` rather than NULL for an unextractable payer is
+ * load-bearing and is 024's reasoning too — under a composite key Postgres treats NULL != NULL, so a
+ * NULL payer would make every unattributable row DISTINCT and let a replay bypass the claim.
+ *
+ * Postgres-only. SQLite cannot ALTER a primary key at all, and does not need to: its tables are
+ * always created fresh from the CREATE above, which carries the composite key directly.
+ */
+const CONVERGE_PAYER_NONCE_PK_SQL = `
+  DO $$
+  BEGIN
+    IF EXISTS (
+      SELECT 1 FROM pg_constraint
+       WHERE conrelid = 'processed_x402_payments'::regclass
+         AND contype = 'p'
+         AND pg_get_constraintdef(oid) = 'PRIMARY KEY (payer_wallet, nonce)'
+    ) THEN
+      RETURN;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM pg_constraint
+       WHERE conrelid = 'processed_x402_payments'::regclass
+         AND contype = 'p'
+         AND pg_get_constraintdef(oid) = 'PRIMARY KEY (nonce)'
+    ) THEN
+      UPDATE processed_x402_payments SET payer_wallet = '' WHERE payer_wallet IS NULL;
+      ALTER TABLE processed_x402_payments ALTER COLUMN payer_wallet SET DEFAULT '';
+      ALTER TABLE processed_x402_payments ALTER COLUMN payer_wallet SET NOT NULL;
+      ALTER TABLE processed_x402_payments DROP CONSTRAINT processed_x402_payments_pkey;
+      ALTER TABLE processed_x402_payments ADD PRIMARY KEY (payer_wallet, nonce);
+    END IF;
+  END $$;
+`;
+
 const CREATE_PROCESSED_X402_PAYMENTS_SQL = `
   CREATE TABLE IF NOT EXISTS processed_x402_payments (
     nonce TEXT NOT NULL,
@@ -172,6 +239,7 @@ const CREATE_PROCESSED_X402_PAYMENTS_SQL = `
   ${process.env.DATABASE_URL ? `ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS settlement_state TEXT NOT NULL DEFAULT '${CLAIM_INITIAL_SETTLEMENT_STATE}';` : ''}
   ${process.env.DATABASE_URL ? `ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS rail TEXT NOT NULL DEFAULT '${RAIL_UNKNOWN}';` : ''}
   ${process.env.DATABASE_URL ? 'ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS settlement_ref TEXT;' : ''}
+  ${process.env.DATABASE_URL ? CONVERGE_PAYER_NONCE_PK_SQL : ''}
 `;
 // OPS-X402-SETTLEMENT-BACKFILL-W1: `settlement_ref` is the rail's OWN identifier for the
 // settlement (`result.transaction`), and it is NULLABLE on purpose — NULL means "the rail gave us
