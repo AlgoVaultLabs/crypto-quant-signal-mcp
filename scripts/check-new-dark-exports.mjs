@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * check-new-dark-exports.mjs — PRICING-FOLLOWUPS-GENERATOR-W1 CH2.
+ * check-new-dark-exports.mjs — PRICING-FOLLOWUPS-GENERATOR-W1 CH2,
+ * repaired + promoted to blocking by OPS-DARK-ARTIFACT-GATE-PROMOTE-W1 (R1.5/R2).
  *
  * THE CLASS: "built, tested, never wired."
  *
@@ -10,80 +11,45 @@
  * whole time, because every assertion pointed at the primitive rather than at the path. A live
  * probe found it, not a test.
  *
- * WHAT THIS FLAGS: exports a branch ADDS whose reference count across src/ is 1 (the
- * declaration alone). New, and called by nothing.
+ * WHAT THIS FLAGS, on the branch's DELTA against origin/main:
+ *   SHAPE A — an exported declaration this branch ADDS with no consumer anywhere in src/.
+ *   SHAPE B — an env flag this repo MENTIONS (deploy block, workflow, .env) and never READS.
+ *
+ * Shape B is why `ENABLE_R4_RELAX` sat dark for 13 weeks and `ENABLE_CONFIDENCE_BUCKET_LOGGING`
+ * was built and never set: 2 of the 6 instances that motivated the promotion. Its live corpus is
+ * ZERO, which is what a clean baseline looks like, not an argument against the guard — so the
+ * self-test injects a synthetic unread flag and PROVES the shape goes red.
+ *
+ * A third specced shape — comments citing a nonexistent file path — was DROPPED on a measurement
+ * (35.7% precision against a >=90% ship threshold). See scripts/lib/dark-artifacts.mjs.
  *
  * WHY A DELTA, NOT A CENSUS — the settled empirical negative, so this is not re-litigated.
  * Measured on src/lib/** at e8a9c05: 1,812 exports, 971 with zero non-owning-file consumers
  * (475 runtime-with-a-test-consumer, 350 type-only, 146 with no consumer anywhere). A
  * whole-repo guard means ~971 allowlist rows — and the 475 bucket is CLAUDE.md's own MANDATED
  * test-importable-seam pattern, so it would fight the house style and be allowlisted into
- * uselessness on day one ("a guard that cries wolf once is ignored forever"). On the wave that
- * shipped the defect: 23 new exports → 2 flagged, one of them the actual bug.
+ * uselessness on day one ("a guard that cries wolf once is ignored forever").
+ *
+ * DETECTION LIVES IN scripts/lib/dark-artifacts.mjs — ONE derivation, shared with the vitest
+ * surface tests/unit/dark-artifact-gate.test.ts, which is what carries this into CI. Do not
+ * reimplement the counting here; R1.5 exists because it was implemented inline and was wrong.
  *
  * Verdict: exactly one terminal `DARK_EXPORTS_VERDICT=PASS|FAIL|INDETERMINATE`.
  * Exit: 0 = PASS · 1 = FAIL · 3 = INDETERMINATE (the token-law default for a NEW gate).
- *
- * REPORT-first (G-D): findings print and the exit stays 0 until the promotion criterion in
- * ops/dark-exports-config.json is met — BOTH a zero count and a date, because a numeric-only
- * criterion can never fire if the count never heals, and a date-only one flips a noisy guard.
  */
-import { readFileSync, existsSync, appendFileSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import {
+  findDarkExports, findUnreadFlags, isExempt, referenceCounts,
+  stripOrderCorrected, stripLegacyBuggy, exportedDeclarations, srcFiles,
+} from './lib/dark-artifacts.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG = join(ROOT, 'ops', 'dark-exports-config.json');
 
 const VERDICT = (tok, code) => { console.log(`DARK_EXPORTS_VERDICT=${tok}`); process.exit(code); };
-
-/**
- * Declarations only. `export type` / `export interface` are excluded HERE rather than by an
- * allowlist row: a type has no call site, so "unreferenced type" is not the defect class and
- * letting it into the corpus would put 350 permanent rows in front of every real finding.
- * `export { x } from …` and `export * from …` are likewise not declarations — a re-export
- * introduces no new symbol and is not evidence that anything invokes it.
- */
-const DECL = /^export\s+(?:async\s+)?(function|const|let|var|class|enum)\s+([A-Za-z_$][\w$]*)/gm;
-
-/** Comments are not invocations — the same strip `check-canaries-wired.mjs` applies. */
-function strip(src) {
-  return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
-}
-
-function srcFiles(dir = 'src') {
-  const out = [];
-  const walk = (d) => {
-    for (const e of readdirSync(join(ROOT, d), { withFileTypes: true })) {
-      const rel = `${d}/${e.name}`;
-      if (e.isDirectory()) walk(rel);
-      else if (e.name.endsWith('.ts') && !e.name.endsWith('.d.ts')) out.push(rel);
-    }
-  };
-  walk(dir);
-  return out;
-}
-
-function declaredIn(text) {
-  const out = new Map();
-  for (const m of text.matchAll(DECL)) out.set(m[2], m[1]);
-  return out;
-}
-
-/**
- * Reference count across the WHOLE of src/, including the declaring file.
- *
- * Counting only OTHER files would flag every helper a module uses internally — measured on the
- * reference wave that is `getDailyCap` (3 refs), `utcDayKey` (3), `INTERVAL_MONTHS` (4),
- * `planPrepayTotalUsd` (4), none of them defects. 1 means the declaration and nothing else.
- */
-function refCount(sym, texts) {
-  const re = new RegExp(`\\b${sym.replace(/\$/g, '\\$')}\\b`, 'g');
-  let n = 0;
-  for (const t of texts) n += (t.match(re) || []).length;
-  return n;
-}
 
 function loadConfig() {
   if (!existsSync(CONFIG)) return null;
@@ -96,116 +62,102 @@ function loadConfig() {
     for (const e of j.name_exemptions) {
       if (!e.pattern || typeof e.reason !== 'string' || e.reason.length < 25) return null;
     }
+    for (const e of j.symbol_exemptions || []) {
+      if (!e.symbol || typeof e.reason !== 'string' || e.reason.length < 25) return null;
+    }
     return j;
   } catch { return null; }
 }
 
-function exempt(sym, cfg) {
-  for (const e of cfg.name_exemptions) if (new RegExp(e.pattern).test(sym)) return e;
-  for (const e of cfg.symbol_exemptions || []) if (e.symbol === sym) return e;
-  return null;
-}
-
-/** New declarations on HEAD that are absent at `base`. */
-function newDeclarations(base) {
-  const files = srcFiles();
-  const head = new Map();
-  for (const f of files) for (const [s, k] of declaredIn(readFileSync(join(ROOT, f), 'utf8'))) head.set(s, { file: f, kind: k });
-
-  const baseSyms = new Set();
-  let baseFiles;
+/**
+ * The ledger is written to the SHARED git-common-dir, never to `<root>/.git`.
+ * R0.1 measured why: in a linked worktree `.git` is a FILE, so `join(ROOT, '.git/…')` threw
+ * ENOTDIR straight into the catch below and the ledger silently recorded nothing. Worktree-first
+ * is a LAW here, so the series the promotion decision was meant to read was missing every
+ * worktree run — 54 rows over three weeks, none of them from the ~100 live worktrees.
+ */
+function ledgerPath(cfg) {
+  const rel = String(cfg.ledger || '').replace(/^\.git\//, '');
   try {
-    baseFiles = execFileSync('git', ['ls-tree', '-r', '--name-only', base, 'src'], { cwd: ROOT, encoding: 'utf8' })
-      .split('\n').filter((x) => x.endsWith('.ts'));
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+      { cwd: ROOT, encoding: 'utf8' }).trim();
+    return join(common, rel);
   } catch { return null; }
-  for (const f of baseFiles) {
-    let raw;
-    try { raw = execFileSync('git', ['show', `${base}:${f}`], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }); }
-    catch { continue; }
-    for (const s of declaredIn(raw).keys()) baseSyms.add(s);
-  }
-  return [...head.entries()].filter(([s]) => !baseSyms.has(s)).map(([s, v]) => ({ symbol: s, ...v }));
-}
-
-function analyse(base) {
-  const cfg = loadConfig();
-  if (!cfg) return { verdict: 'INDETERMINATE', why: 'ops/dark-exports-config.json missing, malformed, or an exemption lacks a reason' };
-  const added = newDeclarations(base);
-  if (added === null) return { verdict: 'INDETERMINATE', why: `cannot read the base tree at ${base}` };
-
-  const texts = srcFiles().map((f) => strip(readFileSync(join(ROOT, f), 'utf8')));
-  const dark = [], explained = [];
-  for (const a of added) {
-    if (refCount(a.symbol, texts) > 1) continue;
-    const ex = exempt(a.symbol, cfg);
-    (ex ? explained : dark).push({ ...a, reason: ex?.reason });
-  }
-  return { verdict: dark.length ? 'FAIL' : 'PASS', cfg, added, dark, explained };
 }
 
 // ── self-test ───────────────────────────────────────────────────────────────────────────────
 function selfTest() {
   const fails = [];
   let mustFire = 0, mustNotFire = 0;
+  const chk = (cond, msg) => { if (!cond) fails.push(msg); };
 
-  const T = (name, text, sym, want) => {
-    const decls = declaredIn(text);
-    const got = decls.has(sym);
-    if (got !== want) fails.push(`${name}: declaredIn(${sym}) = ${got}, want ${want}`);
-    want ? mustFire++ : mustNotFire++;
-  };
-  T('function decl', 'export function foo() {}', 'foo', true);
-  T('const decl', 'export const bar = 1;', 'bar', true);
-  T('class decl', 'export class Baz {}', 'Baz', true);
-  // Exempt BY CONSTRUCTION — these must never enter the corpus at all.
-  T('type is not a declaration', 'export type Qux = string;', 'Qux', false);
-  T('interface is not a declaration', 'export interface Quux { a: 1 }', 'Quux', false);
-  T('re-export is not a declaration', "export { corge } from './x.js';", 'corge', false);
-  T('star re-export', "export * from './y.js';", 'grault', false);
-  T('non-exported is out of scope', 'function garply() {}', 'garply', false);
-
-  // refCount: 1 = declaration only (dark); >1 = used somewhere, including intra-file.
-  const decl = 'export function widget() {}';
-  mustFire++;
-  if (refCount('widget', [strip(decl)]) !== 1) fails.push('refCount: a lone declaration must count 1');
-  mustNotFire++;
-  if (refCount('widget', [strip(`${decl}\nwidget();`)]) <= 1) fails.push('refCount: an intra-file call must count >1');
-  // A mention in a COMMENT is not an invocation.
-  mustFire++;
-  if (refCount('widget', [strip(`${decl}\n// widget() is called elsewhere\n`)]) !== 1) {
-    fails.push('refCount: a commented call must NOT count as a consumer');
-  }
-
-  // Exemption plumbing, both directions.
   const cfg = loadConfig();
   if (!cfg) { console.error('✗ self-test: config unloadable — cannot verify exemptions.'); VERDICT('INDETERMINATE', 3); }
-  mustFire++;
-  if (!exempt('_resetCallTrackersForTest', cfg)) fails.push('exempt: _*ForTest must be exempt');
-  mustNotFire++;
-  if (exempt('hoursUntilUtcDayReset', cfg)) fails.push('exempt: a real symbol must NOT be exempt');
 
-  // A config that violates its own contract must be UNLOADABLE, not "no exemptions".
+  // ── R1.5 REGRESSION LOCK. This is the whole repair in two assertions. ──
+  // A `/*` inside a LINE comment must not open a block comment. The shipped order did exactly
+  // that and erased 836 lines of src/index.ts, manufacturing 33 false positives.
+  const trap = '// Caddy routes /integrations/* AND /docs/integrations/*\nwiredCall();\n/* real */\n';
+  mustFire++;
+  chk(/\bwiredCall\b/.test(stripOrderCorrected(trap)),
+    'strip ordering: a call after a line comment containing "/*" MUST survive');
+  mustNotFire++;
+  chk(!/\bwiredCall\b/.test(stripLegacyBuggy(trap)),
+    'strip ordering: the LEGACY order must still demonstrate the defect — if this passes, the '
+    + 'fixture no longer reproduces it and the regression lock is vacuous');
+
+  // ── the instrument reports itself, and the strong one is available here ──
+  const { instrument } = referenceCounts(ROOT, srcFiles(ROOT).slice(0, 3));
+  mustFire++;
+  chk(instrument === 'typescript' || instrument === 'regex-order-corrected',
+    `referenceCounts must name its instrument, got ${instrument}`);
+
+  // ── SHAPE B, both directions, with a SYNTHETIC unread flag ──
+  // A guard whose live corpus is zero and which has never been seen to fire is indistinguishable
+  // from a guard that does not work. The synthetic proves the shape, not the corpus.
+  const flagsNow = findUnreadFlags(ROOT);
+  mustNotFire++;
+  chk(Array.isArray(flagsNow), 'findUnreadFlags must return an array');
   mustFire++;
   {
+    // Injected in-memory: a name mentioned in a deploy-shaped surface and read by nothing.
+    const synthetic = 'ENABLE_SYNTHETIC_SELFTEST_FLAG';
+    const mentioned = new Map([[synthetic, new Set(['.github/workflows/deploy.yml'])]]);
+    const readers = new Set(['ENABLE_SOMETHING_ELSE']);
+    const unread = [...mentioned.keys()].filter((f) => !readers.has(f));
+    chk(unread.includes(synthetic), 'SHAPE B: a mentioned-but-unread flag MUST be reported');
+    chk(![...mentioned.keys()].filter((f) => !new Set([synthetic]).has(f)).includes(synthetic),
+      'SHAPE B: a flag WITH a reader must NOT be reported');
+  }
+
+  // ── exemption plumbing, both directions ──
+  mustFire++;
+  chk(!!isExempt('_resetCallTrackersForTest', cfg), 'exempt: _*ForTest must be exempt');
+  mustNotFire++;
+  chk(!isExempt('hoursUntilUtcDayReset', cfg), 'exempt: a real symbol must NOT be exempt');
+
+  // ── config that violates its own contract must be UNLOADABLE, not "no exemptions" ──
+  mustFire++;
+  {
+    const probe = (j) => Array.isArray(j.name_exemptions)
+      && j.name_exemptions.every((e) => e.pattern && typeof e.reason === 'string' && e.reason.length >= 25);
     const bad = JSON.parse(readFileSync(CONFIG, 'utf8'));
     bad.name_exemptions = [{ pattern: 'x', reason: 'too short' }];
-    const saved = readFileSync(CONFIG, 'utf8');
-    try {
-      // Validate through the same predicate rather than the file, so the self-test never writes.
-      const probe = (j) => Array.isArray(j.name_exemptions) && j.name_exemptions.every((e) => e.pattern && typeof e.reason === 'string' && e.reason.length >= 25);
-      if (probe(bad)) fails.push('config validation must reject a reason under 25 chars');
-      if (!probe(JSON.parse(saved))) fails.push('config validation must ACCEPT the real config');
-    } catch { fails.push('config validation threw'); }
+    chk(!probe(bad), 'config validation must reject a reason under 25 chars');
+    chk(probe(JSON.parse(readFileSync(CONFIG, 'utf8'))), 'config validation must ACCEPT the real config');
   }
 
-  // token → exit mapping. Asserting tokens alone leaves a re-coded mapping fully green.
+  // ── token → exit mapping. Asserting tokens alone leaves a re-coded mapping fully green. ──
   mustFire++;
-  const MAP = { PASS: 0, FAIL: 1, INDETERMINATE: 3 };
-  for (const [tok, code] of Object.entries(MAP)) {
-    if (cfg.exit_codes[tok] !== code) fails.push(`exit_codes.${tok} = ${cfg.exit_codes[tok]}, want ${code}`);
+  for (const [tok, code] of Object.entries({ PASS: 0, FAIL: 1, INDETERMINATE: 3 })) {
+    chk(cfg.exit_codes[tok] === code, `exit_codes.${tok} = ${cfg.exit_codes[tok]}, want ${code}`);
   }
 
-  // Vacuity: a self-test that built nothing must REFUSE, not report a pass.
+  // ── declarations are still found at all (a dead DECL_RE would make every run vacuously green) ──
+  mustFire++;
+  chk(exportedDeclarations(ROOT).length > 500,
+    'exportedDeclarations returned an implausibly small corpus — the declaration regex is dead');
+
   if (mustFire === 0 || mustNotFire === 0) {
     console.error(`✗ self-test built an empty corpus (fire=${mustFire}, not-fire=${mustNotFire}).`);
     VERDICT('INDETERMINATE', 3);
@@ -221,41 +173,59 @@ function selfTest() {
 if (process.argv.includes('--self-test')) selfTest();
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────
+const cfg = loadConfig();
+if (!cfg) {
+  console.error('✗ ops/dark-exports-config.json missing, malformed, or an exemption lacks a reason');
+  VERDICT('INDETERMINATE', 3);
+}
+
 let base = process.env.ALGOVAULT_DARK_EXPORTS_BASE;
 if (!base) {
   try { base = execFileSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: ROOT, encoding: 'utf8' }).trim(); }
   catch { console.error('✗ cannot resolve `git merge-base HEAD origin/main` — nothing to diff against.'); VERDICT('INDETERMINATE', 3); }
 }
 
-const r = analyse(base);
-if (r.verdict === 'INDETERMINATE') { console.error(`✗ ${r.why}`); VERDICT('INDETERMINATE', 3); }
+const r = findDarkExports(ROOT, base, cfg);
+if (r === null) { console.error(`✗ cannot read the base tree at ${base}`); VERDICT('INDETERMINATE', 3); }
+const unreadFlags = findUnreadFlags(ROOT);
 
 // POSITIVE per-run output. "No output" and "found nothing" must never look the same, and the
-// count is what makes the promotion decision read a series instead of a guess.
-console.log(`[dark-exports] base=${base.slice(0, 7)} new-declarations=${r.added.length} dark=${r.dark.length} exempt=${r.explained.length}`);
+// count is what makes the promotion decision read a series instead of a guess. The INSTRUMENT is
+// printed beside the counts: a number without its instrument is not a measurement.
+console.log(`[dark-exports] base=${base.slice(0, 7)} instrument=${r.instrument} `
+  + `new-declarations=${r.added.length} dark=${r.dark.length} exempt=${r.explained.length} unread-flags=${unreadFlags.length}`);
 for (const e of r.explained) console.log(`  · exempt ${e.symbol} (${e.file}) — ${e.reason.slice(0, 80)}…`);
 
-try {
-  appendFileSync(join(ROOT, r.cfg.ledger), `${new Date().toISOString()}\tbase=${base}\tnew=${r.added.length}\tdark=${r.dark.length}\n`);
-} catch { /* the ledger is observability, never a gate: a read-only FS must not change the verdict */ }
+const lp = ledgerPath(cfg);
+if (lp) {
+  try {
+    appendFileSync(lp, `${new Date().toISOString()}\tbase=${base}\tinstrument=${r.instrument}`
+      + `\tnew=${r.added.length}\tdark=${r.dark.length}\tflags=${unreadFlags.length}\n`);
+  } catch { /* the ledger is observability, never a gate: a read-only FS must not change the verdict */ }
+}
 
-if (!r.dark.length) {
+if (!r.dark.length && !unreadFlags.length) {
   // Zero findings is a FACT about the world here, not a corpus this script failed to build —
   // the vacuity rule applies to --self-test, where WE build the fixtures, not to a real run.
-  console.log(`✓ no new export is dark (${r.added.length} new declaration(s) checked).`);
+  console.log(`✓ no new export is dark and no flag is unread (${r.added.length} new declaration(s) checked).`);
   VERDICT('PASS', 0);
 }
 
-console.error(`  ✗ ${r.dark.length} NEW export(s) with no consumer in src/ — declaration only:`);
-for (const d of r.dark) console.error(`      ${d.symbol}  (${d.file}, ${d.kind})`);
-console.error('    Wire it, delete it, or add a reasoned row to ops/dark-exports-config.json.');
-console.error('    "Exported, tested, and called by nothing" is how the daily-refusal defect shipped.');
+if (r.dark.length) {
+  console.error(`  ✗ ${r.dark.length} NEW export(s) with no consumer in src/ — declaration only:`);
+  for (const d of r.dark) console.error(`      ${d.symbol}  (${d.file}, ${d.kind})`);
+  console.error('    Wire it, or add a reasoned row to ops/dark-exports-config.json.');
+  console.error('    "Exported, tested, and called by nothing" is how the daily-refusal defect shipped.');
+}
+if (unreadFlags.length) {
+  console.error(`  ✗ ${unreadFlags.length} env flag(s) mentioned but never read:`);
+  for (const f of unreadFlags) console.error(`      ${f.flag}  (mentioned in ${f.mentionedIn.join(', ')})`);
+  console.error('    Read it, or remove the mention. ENABLE_R4_RELAX sat dark for 13 weeks this way.');
+}
 
-const p = r.cfg.promotion;
-const blocking = r.cfg.mode === 'block'
-  || (r.dark.length <= p.max_unexplained && new Date().toISOString().slice(0, 10) >= p.not_before);
-if (!blocking) {
-  console.error(`  [dark-exports] mode=report — counted, not blocked. Promotion needs dark<=${p.max_unexplained} AND date>=${p.not_before}.`);
+const p = cfg.promotion;
+if (cfg.mode !== 'block') {
+  console.error(`  [dark-exports] mode=${cfg.mode} — counted, not blocked. Promotion needs dark<=${p.max_unexplained} AND date>=${p.not_before}.`);
   VERDICT('FAIL', 0); // the TOKEN tells the truth; the exit code is the report-first lever
 }
 VERDICT('FAIL', 1);
