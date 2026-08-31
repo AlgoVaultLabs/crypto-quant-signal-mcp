@@ -36,6 +36,8 @@
  */
 
 /** +1 BUY · -1 SELL · 0 exactly-zero score (no direction at all). */
+import type { ScorerParts } from './scorer-input-codes.js';
+
 export type WouldBeSide = -1 | 0 | 1;
 
 /**
@@ -79,6 +81,14 @@ export interface HoldDecisionCapture {
   priceAtDecision: number;
   isBotInternal: boolean | null;
   suppressionReason: HoldSuppressionReason;
+  /**
+   * OPS-SCORER-INPUT-PERSISTENCE-W1 R1 — the scorer's own inputs for this decision.
+   *
+   * REQUIRED, not optional, and that is the point: an optional field is one a future edit can
+   * drop in silence, and capture is FORWARD-ONLY — a dropped part is not a bug you find later,
+   * it is data that never existed. The compiler refuses a capture that forgot them.
+   */
+  parts: ScorerParts;
 }
 
 /**

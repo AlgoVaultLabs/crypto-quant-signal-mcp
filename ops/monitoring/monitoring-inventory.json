@@ -2012,6 +2012,56 @@
         "note": "The decision this gate exists to inform: keep TREND_MODE on, or roll it back. Once the readout wave is in status.md the question is answered and the gate can only re-report a settled result. A DECLINE retires it exactly as a ship does \u2014 what ends its life is that the decision was TAKEN, not which way it went."
       },
       "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. Evaluates the four PRE-DECLARED rollback triggers daily against the in-repo contract audits/SIGNAL-TREND-MODE-ENABLE-W1-trigger-contract.md, and fires TREND_MODE_READOUT_DUE once-ever at flip+30d. BOTH ARMS COME FROM ONE QUERY \u2014 verdict_rule_version is the GROUP BY key, regime_rule_version=3 is held fixed on both sides, BITMART is excluded from both (retired mid-window) \u2014 so no baseline is ever baked in and no delta can span two instruments. DETECT->ALERT->ESCALATE ONLY: it NEVER unsets the flag, because an unattended job must not mutate a live scorer. Adopts DETECTOR_ENVELOPE and refuses its OWN non-conforming signal as INDETERMINATE rather than laundering it into a PASS. TREND_MODE_READOUT_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL exits 0 because the alert IS the action. The 1d cell reports INDETERMINATE for most of the window BY PRE-DECLARATION \u2014 ~3.6 rows/day is a directional watch, not a powered test. A fifth trigger (webhook regime_shift delivery volume) was DROPPED by architect ruling 2026-08-31: zero active subscriptions and zero deliveries across the whole BEFORE window made it dark by construction; the readout wave re-opens it if a subscription becomes active. Gate-test with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1. --self-test is hermetic, 26 assertions, vacuity-guarded, asserts the DB-seam-BYPASSED artifacts (the three SQL strings and the built envelope), and is PROVEN ABLE TO FAIL by two deliberate breaks: a code/contract threshold divergence, and INDETERMINATE laundered into PASS."
+    },
+    {
+      "id": "scorer-input-identity-canary",
+      "artifact": "ops/monitoring/scorer-input-identity-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/scorer-input-identity-canary.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/scorer-input-identity-canary.py",
+          "schedule": "37 20 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": "37 20 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "b09ca7388be479a445cca5542ec7e1802f3bddeae2a5bbd93568adaf61f8cdc8",
+      "alert_ids": [
+        "scorer_input_identity"
+      ],
+      "owner_wave": "OPS-SCORER-INPUT-PERSISTENCE-W1",
+      "notes": "R3 live half of the arithmetic-identity gate: asserts SUM(bucket_i * WEIGHTS_i) == raw0 and raw0 + the three adjustment deltas == raw_final, over live rows on all THREE capture arms (signal_scorer_inputs, hold_decisions, band_signals). The fixture half is tests/unit/scorer-input-identity.test.ts, which proves the DERIVATION; this proves the WRITER \u2014 a transposed positional bind in an INSERT is invisible to the fixture suite and is the class this file exists to catch. One SCORER_IDENTITY_VERDICT= token per run, 0/1/3 (3 = the token-law default for a NEW gate; deliberately NOT check_test_baseline.sh's 2, which is 2 only because it already deployed 2). Zero captured rows in the window is INDETERMINATE, never PASS: this corpus is one WE construct, so empty means the writer stopped. Runs as `aoe_readonly` \u2014 MEASURED 2026-08-31, the only role able to SELECT all three arms (algovault_autopilot cannot read hold_decisions, so a canary on that role would silently skip the arm carrying 94% of the corpus and still print PASS); that choice needs no privilege widening on the quarantined counterfactual store. Sanctioned in tests/unit/counterfactual-quarantine.test.ts's allowlist because it reads ONLY the scorer INPUT columns and counts \u2014 never would_be_side, suppression_reason or any label. Cron `37 20 * * *`: hour 20 is inside the 18:00-02:59 deploy-free band and minute 37 is clear of all four cron families (5m/15m/30m seeders, the */2 monitor, and the 2-59/3 backfill). PROVEN ABLE TO FAIL before install \u2014 7 deliberate mutations, 6 caught with SELF-TEST: FAIL (weight drift; INDETERMINATE re-coded to 0; empty-arm-list failing open; each identity leg's tolerance loosened SEPARATELY; the captured/uncaptured alias swap that would have inverted the vacuity guard). The 7th, an alias RENAME, is correctly harmless because psql -tA returns values not names \u2014 which is what showed the real contract is the SELECT ORDER, now pinned by RESULT_KEYS. That step found TWO genuine defects, both fixed before install: a vacuous weight assertion comparing the constants to themselves, and a tolerance check that was a bare substring test and stayed green while one identity leg was loosened to `> 999`."
+    },
+    {
+      "id": "disk-headroom-canary",
+      "artifact": "ops/monitoring/disk-headroom-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/disk-headroom-canary.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/disk-headroom-canary.py",
+          "schedule": "43 20 * * *"
+        }
+      ],
+      "criticality": "advisory",
+      "repo_resident": true,
+      "schedule": "43 20 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "9748b7ce2e080cb9f3f827c26ae3b946c7a637c84fa76295568ec907ee7ce544",
+      "alert_ids": [
+        "disk_headroom"
+      ],
+      "owner_wave": "OPS-SCORER-INPUT-PERSISTENCE-W1",
+      "notes": "R4 Q4-ii. The control that makes this wave's UNBOUNDED retention commitment (no sampling, no TTL on the scorer-input corpus) a gate rather than a promise. DETECT AND ALERT ONLY \u2014 it prunes nothing and runs no reclaim command; attribution belongs to ops/scripts/disk-forensics.sh (read-only, and its own header names itself the seed for a future disk-fill autopilot) and reclaim to a separate Plan-Mode-gated wave. DISK_HEADROOM_VERDICT= token, 0/1/3, plus a DISK_HEADROOM_SEVERITY= line (none / warning>=85% / critical>=92%; 92 because Postgres degrades on WAL, vacuum and temp space well before 100%). Cooldown is INHERITED from send_telegram.sh's 24h per-alert-id gate and deliberately NOT reimplemented \u2014 a second cooldown is a second definition of how often this may page; this file is stateless by construction. SCOPED TO THE WHOLE FILESYSTEM, not to this wave's tables, and the file states why: measured 2026-08-31 signal-1 is 301G with 51G used (18%) and the scorer capture adds ~6.95 MB/day, i.e. ~991 MONTHS to the 85% threshold from this wave ALONE \u2014 so this wave is NOT the binding growth term and a scorer-scoped alarm would stay quiet while the box filled from anywhere else. Retention is reviewed by OPS-SCORER-INPUT-RETENTION-W{NEXT}, gated on THIS ALERT FIRING, never on a date. Proven able to fail: 4 deliberate mutations each produced SELF-TEST: FAIL (warn threshold raised above crit; empty verdict list failing open; the short-row guard disabled; INDETERMINATE re-coded to exit 0)."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label \u2192 address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON \u2014 this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

@@ -13,6 +13,8 @@ import { recordBandSignalCapture, isBandConfidence } from '../lib/band-signal-ca
 import { FUNDING_Z_WINDOW_DAYS } from '../lib/funding-window.js';
 import { buildFactorLedger, renderVerdictReasoning } from '../lib/verdict-factors.js';
 import { hashSignal } from '../lib/merkle.js';
+import { FUNDING_ADJUST, HURST_ADJUST, SQUEEZE_ADJUST, toScorerParts } from '../lib/scorer-input-codes.js';
+import { recordScorerInputCapture } from '../lib/scorer-input-capture.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid, isKnownTradFi, getTop20ByOI } from '../lib/asset-tiers.js';
 import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.js';
 import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError } from '../lib/errors.js';
@@ -277,6 +279,39 @@ export interface VerdictOutcome {
    * this function can produce that prefix.
    */
   suppressedSide: 'BUY' | 'SELL' | null;
+  /**
+   * ── OPS-SCORER-INPUT-PERSISTENCE-W1 R1 — the decomposition of `rawScore`. ──
+   *
+   * `raw0` is the weighted sum BEFORE any adjustment; the three deltas are exactly what each
+   * stage applied; `rawScore` above is the final value. The wave exists because this estate
+   * persisted the total and discarded the parts, and therefore cannot backtest any scoring
+   * change against its own history.
+   *
+   * THESE ARE READ OFF THE RUNNING VALUE, NEVER RECOMPUTED. Each delta is the difference of two
+   * consecutive observations of the SAME `rawScore` local, so
+   * `raw0 + fundingDelta + hurstDelta + squeezeDelta === rawScore` holds by construction rather
+   * than by agreement between two derivations. A second computation would be a second
+   * instrument, and the entire value of capturing the parts is that they are the ones the
+   * engine actually used.
+   *
+   * ADDITIVE AND UNREACHABLE FROM ANY RESPONSE. `VerdictOutcome` is consumed only inside this
+   * module (as `priceVerdict` / `oiVerdict` / `liveVerdict`) and by the offline
+   * `src/scripts/verdict-mix-*.ts` replays; `TradeCallResult` is assembled field-by-field and
+   * never spreads a verdict, so no field added here can reach a caller.
+   */
+  raw0: number;
+  fundingDelta: number;
+  hurstDelta: number;
+  squeezeDelta: number;
+  /**
+   * Branch codes. `src/lib/scorer-input-codes.ts` carries the injectivity test that decided each
+   * stage needs one — all three stages FAIL injectivity, each differently. They are emitted
+   * HERE, at the only site that knows which branch ran; a consumer reconstructing them from the
+   * delta would be re-deriving precisely what that test proved is not reconstructible.
+   */
+  fundingAdjustCode: number;
+  hurstAdjustCode: number;
+  squeezeAdjustCode: number;
 }
 export function deriveVerdict(s: VerdictScoreInputs, g: VerdictGateInputs): VerdictOutcome {
   let rawScore =
@@ -285,42 +320,71 @@ export function deriveVerdict(s: VerdictScoreInputs, g: VerdictGateInputs): Verd
     s.fundingScore * WEIGHTS.funding +
     s.oiScore * WEIGHTS.oi +
     s.volumeScore * WEIGHTS.volume;
+  // OPS-SCORER-INPUT-PERSISTENCE-W1: the pre-adjustment sum, observed once before the mutations
+  // below. Not a second computation — it is this computation's only result, held rather than
+  // discarded. Every `*Before` local under it exists for the same reason.
+  const raw0 = rawScore;
+  let fundingAdjustCode = 0;
+  let hurstAdjustCode: number = HURST_ADJUST.NOT_EVALUATED;
+  let squeezeAdjustCode: number = SQUEEZE_ADJUST.INACTIVE;
   const scoreAdjustments: string[] = [];
   if (g.fundingZScore !== null) {
     if (rawScore > 0 && g.fundingZScore > g.r4Thresholds.buyPenaltyZ) {
+      fundingAdjustCode |= FUNDING_ADJUST.BUY_PENALTY_Z;
       rawScore -= 20;
       scoreAdjustments.push(`Funding Z-Score ${g.fundingZScore.toFixed(2)} (>+${g.r4Thresholds.buyPenaltyZ}) — extreme crowded longs. BUY penalized 20 pts.`);
     }
     if (rawScore < 0 && g.fundingZScore < g.r4Thresholds.sellSofteningZ) {
+      fundingAdjustCode |= FUNDING_ADJUST.SELL_SOFTENING_Z;
       rawScore += 20;
       scoreAdjustments.push(`Funding Z-Score ${g.fundingZScore.toFixed(2)} (<${g.r4Thresholds.sellSofteningZ}) — extreme short crowding. SELL softened 20 pts.`);
     }
     if (rawScore > 0 && g.fundingZScore < -1.5) {
+      fundingAdjustCode |= FUNDING_ADJUST.CONTRARIAN_BONUS_Z;
       rawScore += 10;
       scoreAdjustments.push(`Funding Z-Score ${g.fundingZScore.toFixed(2)} (<-1.5) — contrarian bullish. BUY bonus +10 pts.`);
     }
   } else {
+    // Bit 5 marks the SET that was in play, not a branch. Without it a code of 0 cannot say
+    // whether the z path ran and matched nothing, or the raw fallback did — the same
+    // null-vs-neutral ambiguity the Hurst code exists to remove, one stage over.
+    fundingAdjustCode |= FUNDING_ADJUST.Z_NULL_PATH;
     if (rawScore < 0 && g.fundingRateAnnualized > 4.38) {
+      fundingAdjustCode |= FUNDING_ADJUST.SELL_SOFTENING_RAW;
       rawScore += 15;
       scoreAdjustments.push(`Funding annualized +${g.fundingRateAnnualized.toFixed(2)} — longs crowded, squeeze risk. SELL softened 15 pts (raw fallback, R4 inverted).`);
     }
     if (rawScore > 0 && g.fundingRateAnnualized < -4.38) {
+      fundingAdjustCode |= FUNDING_ADJUST.CONTRARIAN_BONUS_RAW;
       rawScore += 10;
       scoreAdjustments.push(`Funding annualized ${g.fundingRateAnnualized.toFixed(2)} (<-4.38) — contrarian BUY bonus +10 pts (raw fallback).`);
     }
   }
+  const afterFunding = rawScore;
   if (g.hurstVal !== null) {
+    hurstAdjustCode = HURST_ADJUST.NEUTRAL;
     if (g.hurstVal < 0.45) {
+      hurstAdjustCode = HURST_ADJUST.MEAN_REVERTING;
       rawScore = rawScore > 0 ? rawScore - 25 : rawScore + 25;
       scoreAdjustments.push(`Hurst ${g.hurstVal.toFixed(3)} (<0.45) — mean-reverting/choppy regime. Directional signal penalized 25 pts.`);
     } else if (g.hurstVal > 0.55) {
+      hurstAdjustCode = HURST_ADJUST.TRENDING;
       rawScore = rawScore > 0 ? rawScore + 10 : rawScore - 10;
       scoreAdjustments.push(`Hurst ${g.hurstVal.toFixed(3)} (>0.55) — trending/persistent. Directional signal boosted 10 pts.`);
     }
   }
-  if (g.squeezeActive && Math.abs(rawScore) > 10) {
-    rawScore = rawScore > 0 ? rawScore + 12 : rawScore - 12;
-    scoreAdjustments.push(`Volatility squeeze detected (BB inside KC). Breakout setup — directional signal boosted 12 pts.`);
+  const afterHurst = rawScore;
+  if (g.squeezeActive) {
+    // The magnitude guard is now a nested branch rather than a second conjunct, so the GATED
+    // case is observable. Behaviour is identical: `squeezeActive && |raw| > 10` still selects
+    // exactly the rows that receive +/-12, and every other row is untouched.
+    if (Math.abs(rawScore) > 10) {
+      squeezeAdjustCode = SQUEEZE_ADJUST.ACTIVE_APPLIED;
+      rawScore = rawScore > 0 ? rawScore + 12 : rawScore - 12;
+      scoreAdjustments.push(`Volatility squeeze detected (BB inside KC). Breakout setup — directional signal boosted 12 pts.`);
+    } else {
+      squeezeAdjustCode = SQUEEZE_ADJUST.ACTIVE_GATED;
+    }
   }
   let signal: SignalVerdict;
   const absScore = Math.abs(rawScore);
@@ -353,7 +417,17 @@ export function deriveVerdict(s: VerdictScoreInputs, g: VerdictGateInputs): Verd
   }
 
   const confidence = Math.min(Math.round((absScore / MAX_RAW_SCORE) * 100), 100);
-  return { signal, confidence, rawScore, scoreAdjustments, suppressedSide };
+  return {
+    signal, confidence, rawScore, scoreAdjustments, suppressedSide,
+    // OPS-SCORER-INPUT-PERSISTENCE-W1: differences of the running value at each stage boundary.
+    // Note the book-liveness gate is DELIBERATELY not a stage here — it withholds the ACTION and
+    // never touches `rawScore` (see its comment above), so it has no delta to record.
+    raw0,
+    fundingDelta: afterFunding - raw0,
+    hurstDelta: afterHurst - afterFunding,
+    squeezeDelta: rawScore - afterHurst,
+    fundingAdjustCode, hurstAdjustCode, squeezeAdjustCode,
+  };
 }
 
 /**
@@ -1118,7 +1192,23 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // LIVE verdict: default OISCORE_SOURCE='price' ⇒ priceVerdict (byte-identical). The FLIP
   // wave (SCAN-OISCORE-FLIP-W1) sets OISCORE_SOURCE='oi' once matured-outcome WR
   // non-regression is proven; it flips back instantly by unsetting the env.
-  const liveVerdict = getOiScoreSource() === 'oi' && oiVerdict ? oiVerdict : priceVerdict;
+  //
+  // OPS-SCORER-INPUT-PERSISTENCE-W1: the selection is now NAMED rather than inlined, because two
+  // things must agree on it — which verdict is live, and which `oiScore` produced it. Expressed
+  // twice they would drift the moment the flip wave lands, and the failure would be quiet: the
+  // captured parts would not sum to their own captured total, and only the identity gate would
+  // ever say so. `oiVerdict` is non-null exactly when `oiScoreOi` is, since the former is built
+  // from the latter, so one boolean selects both.
+  const useOiBasis = getOiScoreSource() === 'oi' && oiVerdict !== null;
+  const liveVerdict = useOiBasis ? oiVerdict! : priceVerdict;
+  const liveOiScore = useOiBasis ? oiScoreOi! : oiScorePrice;
+  // The parts, built ONCE for all three persist arms below. `toScorerParts` is the only place the
+  // buckets and the verdict's decomposition are joined, so a future fourth arm cannot pair them
+  // differently — and specifically cannot pair a price-basis bucket with an OI-basis verdict.
+  const scorerParts = toScorerParts(
+    { rsiScore, emaScore, fundingScore, oiScore: liveOiScore, volumeScore },
+    liveVerdict,
+  );
   const signal: SignalVerdict = liveVerdict.signal;
   const confidence = liveVerdict.confidence;
 
@@ -1409,6 +1499,25 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
           timestamp: Math.floor(Date.now() / 1000), price: currentPrice,
         });
         recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash, exchange, regime);
+        // ── OPS-SCORER-INPUT-PERSISTENCE-W1 R1b — the emitted arm's capture seam. ──
+        //
+        // Beside `recordSignal`, never inside it: that function writes the ANCHORED table and
+        // must not grow a second concern. The same `sigHash` is passed to both, so the sibling
+        // row and its parent cannot disagree about which decision this is.
+        //
+        // Inside the same try/catch, deliberately. A capture failure must never cost the signal
+        // write — but the write above has already happened by the time this line runs, so the
+        // only thing a throw here could lose is the capture itself, which the seam's own
+        // fail-open already absorbs. Two nested try blocks would suggest an ordering hazard that
+        // does not exist.
+        recordScorerInputCapture({
+          decidedAt: Math.floor(Date.now() / 1000),
+          signalHash: sigHash,
+          coin, signal: signal as 'BUY' | 'SELL', confidence, timeframe, exchange,
+          regime: regime ?? null,
+          isBotInternal: license.tier === 'internal',
+          parts: scorerParts,
+        });
       } catch (e) {
         console.debug('recordSignal failed:', e instanceof Error ? e.message : e);
       }
@@ -1458,6 +1567,11 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
           suppressionReason: liveVerdict.suppressedSide !== null
             ? ('book_liveness' as const)
             : ('below_threshold' as const),
+          // OPS-SCORER-INPUT-PERSISTENCE-W1 R1a. The withheld population is where the SELL null
+          // was measured (EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1: DWR 0.467-0.514 vs random ~0.495),
+          // so it is the arm attribution needs most — and at ~117.3k rows/day it is 94% of the
+          // corpus. Rides in the SAME row as the decision; no join, no fourth id space.
+          parts: scorerParts,
         };
         recordHoldDecision(capture);
         setRequestHoldCapture({
@@ -1513,6 +1627,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
             regime: regime ?? null,
             priceAtSignal: currentPrice,
             isBotInternal: license.tier === 'internal',
+            // OPS-SCORER-INPUT-PERSISTENCE-W1 R1a. Band rows were DELIVERED to paying callers,
+            // so their parts were discarded exactly as the emitted arm's were. Captured in this
+            // wave rather than a successor because capture is forward-only: an arm omitted now
+            // is permanently lost, and this is the arm the persistence-band wave just showed was
+            // a blind spot.
+            parts: scorerParts,
           });
         } catch (e) {
           console.debug('band-signal capture failed:', e instanceof Error ? e.message : e);

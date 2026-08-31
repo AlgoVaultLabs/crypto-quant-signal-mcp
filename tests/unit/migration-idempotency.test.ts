@@ -54,6 +54,15 @@ const ALL_SIGNAL_COLS = [
   // (webhook_subscriptions as a BIGINT epoch, contact_leads as a timestamp). De-duplicating it
   // would make test 3 under-count by one, which is exactly the drift this guard exists to catch.
   'spam_score', 'spam_reasons', 'quarantined_at',
+  // OPS-SCORER-INPUT-PERSISTENCE-W1 R1a: the scorer's inputs, declared on TWO more tables
+  // (5th and 6th) — `hold_decisions` and `band_signals`.
+  //
+  // ⚠️ ALL THIRTEEN NAMES APPEAR TWICE, AND THAT IS CORRECT, for exactly the reason the
+  // `quarantined_at` note above gives: this list mirrors SIGNAL_MIGRATIONS *ENTRIES*, not
+  // distinct column names, and each of these thirteen is genuinely declared on two different
+  // tables. De-duplicating them would make test 3 under-count by thirteen.
+  'rsi_score', 'ema_score', 'funding_score', 'oi_score', 'volume_score', 'raw0', 'funding_delta', 'hurst_delta', 'squeeze_delta', 'raw_final', 'funding_adjust_code', 'hurst_adjust_code', 'squeeze_adjust_code',  // hold_decisions
+  'rsi_score', 'ema_score', 'funding_score', 'oi_score', 'volume_score', 'raw0', 'funding_delta', 'hurst_delta', 'squeeze_delta', 'raw_final', 'funding_adjust_code', 'hurst_adjust_code', 'squeeze_adjust_code',  // band_signals
 ];
 
 interface MockPgBackend {
@@ -85,7 +94,9 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     const alterCount = await runPgMigrationsAsync(b as any);
     expect(alterCount).toBe(0);
     // Exactly one introspect query fired (NOT 13 individual ALTERs)
-    expect(b.query).toHaveBeenCalledTimes(4); // 4 distinct tables: signals + agent_sessions + webhook_subscriptions + contact_leads
+    // 6 distinct tables: signals + agent_sessions + webhook_subscriptions + contact_leads,
+    // plus hold_decisions + band_signals (OPS-SCORER-INPUT-PERSISTENCE-W1 R1a).
+    expect(b.query).toHaveBeenCalledTimes(6);
     expect(b.execAsync).toHaveBeenCalledTimes(0);
   });
 
@@ -99,7 +110,7 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const alterCount = await runPgMigrationsAsync(b as any);
     expect(alterCount).toBe(3);
-    expect(b.query).toHaveBeenCalledTimes(4); // 4 distinct tables: signals + agent_sessions + webhook_subscriptions + contact_leads
+    expect(b.query).toHaveBeenCalledTimes(6); // 6 distinct tables — see the note in test 1
     expect(b.execAsync).toHaveBeenCalledTimes(3);
 
     // Verify the ALTER calls target ONLY the missing columns
@@ -123,7 +134,7 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     // grown to 15 and the true total was 24. A count quoted in prose is a duplicated fact that
     // goes stale in silence; point at the enumeration instead (CLAUDE.md).
     expect(alterCount).toBe(ALL_SIGNAL_COLS.length);
-    expect(b.query).toHaveBeenCalledTimes(4); // 4 distinct tables: signals + agent_sessions + webhook_subscriptions + contact_leads
+    expect(b.query).toHaveBeenCalledTimes(6); // 6 distinct tables — see the note in test 1
     expect(b.execAsync).toHaveBeenCalledTimes(ALL_SIGNAL_COLS.length);
   });
 

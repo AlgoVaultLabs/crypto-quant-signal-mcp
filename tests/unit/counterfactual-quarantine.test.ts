@@ -73,6 +73,22 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
     'docs/RUNBOOK-BOOK-LIVENESS-FLIP.md',
     'ops runbook prose naming the capture table as evidence surface; methodology, no figures',
   ],
+  [
+    'ops/monitoring/scorer-input-identity-canary.py',
+    // OPS-SCORER-INPUT-PERSISTENCE-W1 R3. Reads hold_decisions for an ARITHMETIC-IDENTITY check
+    // only — the five bucket values, raw0, the three adjustment deltas and raw_final, which are
+    // the engine's INPUTS and identical in kind to those captured on the non-quarantined arms.
+    // It touches NO counterfactual field: not would_be_side, not suppression_reason, and not
+    // hold_decision_labels, whose whole table is outside its query. Its output is a
+    // SCORER_IDENTITY_VERDICT= token and row COUNTS — never a label, a rate or a return. It is
+    // ops-internal, runs on the host under cron, and reaches no public surface.
+    //
+    // The hold arm cannot simply be dropped from the check: it carries ~117.3k of ~124.7k
+    // captured decisions per day (94% of the corpus), so a canary that skipped it would verify
+    // the two small arms and print a green PASS over the big one — the dark-guard shape this
+    // estate has hit four times.
+    'the R3 arithmetic-identity gate: reads only the scorer INPUT columns + counts, never a counterfactual field or label; ops-internal, no public surface',
+  ],
 ]);
 
 /** Strip comments by dialect so a MENTION is not judged as a REFERENCE. Exported shape kept

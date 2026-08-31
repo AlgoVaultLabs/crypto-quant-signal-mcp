@@ -68,6 +68,25 @@ function publicFigures() {
 
 const nowSec = () => Math.floor(Date.now() / 1000);
 
+
+// OPS-SCORER-INPUT-PERSISTENCE-W1 R1a: `recordBandSignal` gained a REQUIRED trailing `parts`.
+// Required rather than optional on purpose — capture is forward-only, so a caller that silently
+// omits the parts loses them permanently, and only the compiler can prevent that. Note it did
+// NOT prevent it HERE: `tsconfig.json` excludes `tests/`, so this call site was caught at
+// runtime by this suite rather than at typecheck. That is the suite doing its job, and it is
+// why the fixture below is a REAL parts vector rather than a cast — a degenerate one would let
+// a future writer bug through.
+//
+// Internally consistent by construction: 40*0.30 + 0 + 0 + 20*0.15 + 10*0.20 = 17, no
+// adjustments, so raw_final == raw0 and both identities hold. The arithmetic-identity canary
+// reads live rows, and a fixture that violated the identity would make the corpus it samples
+// look broken.
+const PARTS = {
+  rsiScore: 40, emaScore: 0, fundingScore: 0, oiScore: 20, volumeScore: 10,
+  raw0: 17, fundingDelta: 0, hurstDelta: 0, squeezeDelta: 0, rawFinal: 17,
+  fundingAdjustCode: 0, hurstAdjustCode: 0, squeezeAdjustCode: 0,
+};
+
 describe('R3 ARM A — the band corpus is ISOLATED from every published number', () => {
   const coin = uniq('BAND_ARM_A');
 
@@ -77,7 +96,7 @@ describe('R3 ARM A — the band corpus is ISOLATED from every published number',
   it('seeding band_signals moves NO public figure', () => {
     const before = publicFigures();
     // A real band row: below the gate, directional, fully populated — not a degenerate fixture.
-    recordBandSignal(coin, 'BUY', 47, '5m', 100, 'HL', 'TRENDING_UP', 'request', false);
+    recordBandSignal(coin, 'BUY', 47, '5m', 100, 'HL', 'TRENDING_UP', 'request', false, PARTS);
     const after = publicFigures();
     expect(after).toBe(before);
   });
@@ -86,7 +105,7 @@ describe('R3 ARM A — the band corpus is ISOLATED from every published number',
     // VACUITY GUARD, and it belongs here because THIS test constructs the corpus. If the insert
     // silently failed, the byte-identical assertion above would pass for the wrong reason and the
     // arm would be decorative forever.
-    recordBandSignal(coin, 'SELL', 30, '1h', 200, 'BINANCE', null, 'fleet', true);
+    recordBandSignal(coin, 'SELL', 30, '1h', 200, 'BINANCE', null, 'fleet', true, PARTS);
     const n = await dbQuery<{ c: number }>('SELECT count(*) AS c FROM band_signals WHERE coin = ?', [coin]);
     expect(Number(n[0].c)).toBeGreaterThan(0);
   });

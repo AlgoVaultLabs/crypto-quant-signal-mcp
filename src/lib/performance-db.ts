@@ -10,6 +10,7 @@ import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js'
 import { isShortLivedScript } from './runtime.js';
 import { isPfeEligible, SQL_PFE_ELIGIBLE } from './pfe-scoring.js';
 import { SQL_PUBLISHED_POPULATION, sqlPublishedPopulation, isPublishedPopulation, MIN_TRACKABLE_CONFIDENCE } from './published-population.js';
+import { scorerCaptureEnabled, type ScorerParts } from './scorer-input-codes.js';
 import { formatWriteLossLog } from './log-redact.js';
 // The funding z-score window lives in its own dependency-free leaf: `reasoning` cites
 // it in public copy, and every trade-call test mocks THIS module wholesale — so a
@@ -447,6 +448,48 @@ const SIGNAL_MIGRATIONS: MigrationDescriptor[] = [
   // different table, deliberately not unified: they share no consumer, and forcing one
   // representation on both would mean restating one table's existing timestamps.
   { table: 'contact_leads', column: 'quarantined_at', type: 'TIMESTAMPTZ', sqliteType: 'TEXT' },
+  // ── OPS-SCORER-INPUT-PERSISTENCE-W1 R1a — the scorer's inputs on the two quarantined siblings.
+  //
+  // EVERY ONE IS NULLABLE AND CARRIES NO DEFAULT, and that is load-bearing rather than stylistic.
+  // `hold_decisions` held 628,423 rows when this landed and `band_signals` is on the live serving
+  // path; a DEFAULT risks a table rewrite, while nullable-without-default is catalog-only and
+  // takes ACCESS EXCLUSIVE for microseconds. NULL therefore means "written before capture
+  // shipped" (or written with the kill switch off) and NEVER "capture failed" — the convention
+  // migration 032 established for its own additive columns.
+  //
+  // `sqliteType: 'REAL'` throughout: SQLite has no SMALLINT or DOUBLE PRECISION and the fixture
+  // backend only ever round-trips these, so one affinity serves both integer buckets and float
+  // deltas. Prod is PG, where the declared types above are exact.
+  //
+  // Mirrors migrations/036_scorer_input_capture.sql. On live PG these are pre-applied via SSH
+  // before the commit, so this list is an idempotent no-op there and the real schema owner for
+  // the SQLite fixture backend.
+  { table: 'hold_decisions', column: 'rsi_score', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'ema_score', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'funding_score', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'oi_score', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'volume_score', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'raw0', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'funding_delta', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'hurst_delta', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'squeeze_delta', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'raw_final', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'funding_adjust_code', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'hurst_adjust_code', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'hold_decisions', column: 'squeeze_adjust_code', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'rsi_score', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'ema_score', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'funding_score', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'oi_score', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'volume_score', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'raw0', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'funding_delta', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'hurst_delta', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'squeeze_delta', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'raw_final', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'funding_adjust_code', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'hurst_adjust_code', type: 'SMALLINT', sqliteType: 'REAL' },
+  { table: 'band_signals', column: 'squeeze_adjust_code', type: 'SMALLINT', sqliteType: 'REAL' },
 ];
 
 /**
@@ -776,6 +819,57 @@ const CREATE_BAND_SIGNAL_LABELS_SQL = `
   );
   CREATE INDEX IF NOT EXISTS idx_band_labels_spec_band
     ON band_signal_labels (barrier_spec, band_id);
+`;
+
+// ── OPS-SCORER-INPUT-PERSISTENCE-W1 R1b: the EMITTED arm's sibling table. ──
+//
+// The other two arms carry their parts as columns because they are already quarantined siblings.
+// This arm's parent is `signals`, the ANCHORED table, which this wave does not touch — so its
+// parts live here instead.
+//
+// ⚠ NO `merkle_batch_id`, NO `merkle_proof`. `getUnbatchedSignals()` selects `FROM signals`, so
+// this table is outside the anchor path BY CONSTRUCTION rather than by a guard someone maintains.
+// `signal_hash` is present only as a join key back to the parent.
+//
+// Mirrors migrations/036_scorer_input_capture.sql; that file is the PG owner and this is the
+// SQLite fixture owner. The UNIQUE key is `(signal_hash, exchange)`, not the hash alone —
+// `hashSignal`'s preimage carries no venue, and 5 measured cross-venue collisions would otherwise
+// lose one side's parts to `ON CONFLICT DO NOTHING`.
+const CREATE_SIGNAL_SCORER_INPUTS_SQL = `
+  CREATE TABLE IF NOT EXISTS signal_scorer_inputs (
+    scorer_input_id      ${process.env.DATABASE_URL ? 'BIGSERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+    captured_at          ${process.env.DATABASE_URL ? 'TIMESTAMPTZ NOT NULL DEFAULT now()' : "TEXT NOT NULL DEFAULT (datetime('now'))"},
+    decided_at           INTEGER NOT NULL,
+    signal_hash          TEXT NOT NULL,
+    coin                 TEXT NOT NULL,
+    signal               TEXT NOT NULL,
+    confidence           ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
+    timeframe            TEXT NOT NULL,
+    exchange             TEXT NOT NULL,
+    regime               TEXT,
+    arm                  TEXT NOT NULL,
+    is_bot_internal      BOOLEAN,
+    verdict_rule_version ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL DEFAULT 1,
+    rsi_score            ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
+    ema_score            ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
+    funding_score        ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
+    oi_score             ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
+    volume_score         ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
+    raw0                 ${process.env.DATABASE_URL ? 'DOUBLE PRECISION' : 'REAL'} NOT NULL,
+    funding_delta        ${process.env.DATABASE_URL ? 'DOUBLE PRECISION' : 'REAL'} NOT NULL,
+    hurst_delta          ${process.env.DATABASE_URL ? 'DOUBLE PRECISION' : 'REAL'} NOT NULL,
+    squeeze_delta        ${process.env.DATABASE_URL ? 'DOUBLE PRECISION' : 'REAL'} NOT NULL,
+    raw_final            ${process.env.DATABASE_URL ? 'DOUBLE PRECISION' : 'REAL'} NOT NULL,
+    funding_adjust_code  ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
+    hurst_adjust_code    ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
+    squeeze_adjust_code  ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
+    CONSTRAINT signal_scorer_inputs_signal_ck CHECK (signal IN ('BUY', 'SELL')),
+    CONSTRAINT signal_scorer_inputs_arm_ck    CHECK (arm IN ('request', 'fleet'))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_signal_scorer_inputs_hash_exchange
+    ON signal_scorer_inputs (signal_hash, exchange);
+  CREATE INDEX IF NOT EXISTS idx_signal_scorer_inputs_scan
+    ON signal_scorer_inputs (exchange, coin, timeframe, decided_at);
 `;
 
 // v1.9.0 L3 (2026-04-15): agent_sessions cohort table.
@@ -1269,6 +1363,7 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_BAND_SIGNALS_INDEXES_SQL);
   backend.exec(CREATE_BAND_SIGNAL_LABELS_SQL);
   backend.exec(CREATE_MERKLE_BATCHES_SQL);
+  backend.exec(CREATE_SIGNAL_SCORER_INPUTS_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_INDEX_SQL);
   // POWER-USER-OUTREACH-W1-V2 (2026-05-28): signup_emails + idempotency sibling
@@ -1534,13 +1629,18 @@ export function recordBandSignal(
   exchange: string = 'HL',
   regime: string | null | undefined,
   arm: 'request' | 'fleet',
-  isBotInternal?: boolean | null,
+  isBotInternal: boolean | null | undefined,
+  // OPS-SCORER-INPUT-PERSISTENCE-W1 R1. A TRAILING parameter per the repo's N-implementor rule,
+  // but REQUIRED rather than optional: capture is forward-only, so a caller that silently omits
+  // the parts loses them permanently. The compiler is the only thing that can prevent that, and
+  // it can only do it if the parameter is required.
+  parts: ScorerParts,
 ): void {
   const b = getBackend();
   const createdAt = Math.floor(Date.now() / 1000);
   b.run(
-    `INSERT INTO band_signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, regime, regime_rule_version, verdict_rule_version, arm, is_bot_internal)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO band_signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, regime, regime_rule_version, verdict_rule_version, arm, is_bot_internal, rsi_score, ema_score, funding_score, oi_score, volume_score, raw0, funding_delta, hurst_delta, squeeze_delta, raw_final, funding_adjust_code, hurst_adjust_code, squeeze_adjust_code)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     coin, signal, confidence, timeframe, exchange, priceAtSignal, createdAt, regime ?? null,
     REGIME_RULE_VERSION,
     currentVerdictRuleVersion(),
@@ -1552,6 +1652,7 @@ export function recordBandSignal(
     isBotInternal === null || isBotInternal === undefined
       ? null
       : (isPg ? isBotInternal : (isBotInternal ? 1 : 0)),
+    ...scorerPartsBinds(parts),
   );
 }
 
@@ -1857,6 +1958,29 @@ export function recordEmitSuppressionImpl(
  * once per cell per day. What DOES get logged is the process-local runaway cap in the caller,
  * because that one really is truncation.
  */
+
+/**
+ * OPS-SCORER-INPUT-PERSISTENCE-W1 — bind the thirteen scorer columns, or thirteen NULLs when the
+ * kill switch is off.
+ *
+ * The two column-arms cannot "skip" the parts the way the emitted arm skips its whole INSERT:
+ * their parts are columns in a row that must still be written. So the switch nulls them, and NULL
+ * already means exactly the right thing on those tables — "not captured" — because it is what
+ * every row predating this wave carries.
+ *
+ * ONE function, so the hold and band writers cannot disagree about the column ORDER. Thirteen
+ * positional binds duplicated across two call sites is a transposition waiting to happen, and a
+ * transposed `hurst_delta`/`squeeze_delta` pair would still satisfy the sum identity.
+ */
+function scorerPartsBinds(parts: ScorerParts): Array<number | null> {
+  if (!scorerCaptureEnabled()) return new Array(13).fill(null);
+  return [
+    parts.rsiScore, parts.emaScore, parts.fundingScore, parts.oiScore, parts.volumeScore,
+    parts.raw0, parts.fundingDelta, parts.hurstDelta, parts.squeezeDelta, parts.rawFinal,
+    parts.fundingAdjustCode, parts.hurstAdjustCode, parts.squeezeAdjustCode,
+  ];
+}
+
 export function recordHoldDecisionImpl(c: {
   decidedAt: number;
   coin: string;
@@ -1869,6 +1993,10 @@ export function recordHoldDecisionImpl(c: {
   arm: string;
   isBotInternal: boolean | null;
   suppressionReason: string;
+  // OPS-SCORER-INPUT-PERSISTENCE-W1 R1 — the scorer's own inputs, written into the SAME ROW as
+  // the decision. No join, and no fourth id space to collide with the three that already
+  // overlap numerically (see migration 036's header).
+  parts: ScorerParts;
 }): void {
   try {
     const b = getBackend();
@@ -1876,11 +2004,13 @@ export function recordHoldDecisionImpl(c: {
     b.run(
       `INSERT INTO hold_decisions
          (decided_at, coin, timeframe, exchange, regime, would_be_side, confidence,
-          price_at_decision, arm, is_bot_internal, suppression_reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          price_at_decision, arm, is_bot_internal, suppression_reason,
+          rsi_score, ema_score, funding_score, oi_score, volume_score, raw0, funding_delta, hurst_delta, squeeze_delta, raw_final, funding_adjust_code, hurst_adjust_code, squeeze_adjust_code)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO NOTHING`,
       c.decidedAt, c.coin, c.timeframe, c.exchange, c.regime, c.wouldBeSide, c.confidence,
       c.priceAtDecision, c.arm, botValue, c.suppressionReason,
+      ...scorerPartsBinds(c.parts),
     );
   } catch (e) {
     console.warn(`[hold-decision-capture] record failed (fail-open): ${(e as Error).message}`);
@@ -3671,4 +3801,119 @@ export async function getConfidenceBands(): Promise<ConfidenceBand[]> {
       avgConfidence: parseFloat(r.avg_confidence),
       avgPfePct: r.avg_pfe_pct ? parseFloat(r.avg_pfe_pct) : null,
     }));
+}
+
+/**
+ * OPS-SCORER-INPUT-PERSISTENCE-W1 R1b — the EMITTED arm's scorer-input writer.
+ *
+ * The other two arms write their parts into their own row, because `hold_decisions` and
+ * `band_signals` are already quarantined sibling tables. The emitted arm's parent is `signals`,
+ * which is the ANCHORED table, so its parts go to a sibling instead and this is that sibling's
+ * only writer.
+ *
+ * THREE THINGS ARE DELIBERATELY ABSENT, and each absence is a property rather than an omission:
+ *
+ *  1. NO `merkle_batch_id`, NO `merkle_proof`, and no write to `signals`. `getUnbatchedSignals()`
+ *     selects `FROM signals`, so this table is outside the anchor path by construction — not by
+ *     a guard that a later wave might delete. `signal_hash` is here ONLY as a join key.
+ *  2. NO WEBHOOK HOOK. `recordSignal` fires `onSignalRecorded` behind `WEBHOOK_DELIVERY_ENABLED`.
+ *     These rows are a measurement corpus, never a subscribable product event.
+ *  3. NO `RETURNING`, and nothing awaits this. It is called beside `recordSignal` on the serving
+ *     path; the response must not wait on it, which is the same contract every sibling capture
+ *     writer in this file already keeps.
+ *
+ * `ON CONFLICT DO NOTHING` against `uq_signal_scorer_inputs_hash_exchange` — FIRST write wins.
+ * Measured 2026-08-31, that collapses 1,400 same-decision double-writes (identical rows with
+ * consecutive ids) losslessly, while the composite key keeps the 5 measured cross-venue hash
+ * collisions as distinct rows, because `hashSignal`'s preimage carries no venue and those rows'
+ * parts genuinely differ. See migration 036 for the full measurement.
+ */
+export function recordScorerInputs(c: {
+  decidedAt: number;
+  signalHash: string;
+  coin: string;
+  signal: SignalVerdict;
+  confidence: number;
+  timeframe: string;
+  exchange: string;
+  regime: string | null | undefined;
+  arm: 'request' | 'fleet';
+  isBotInternal: boolean | null | undefined;
+  parts: ScorerParts;
+}): void {
+  const b = getBackend();
+  const p = c.parts;
+  b.run(
+    `INSERT INTO signal_scorer_inputs
+       (decided_at, signal_hash, coin, signal, confidence, timeframe, exchange, regime,
+        arm, is_bot_internal, verdict_rule_version,
+        rsi_score, ema_score, funding_score, oi_score, volume_score,
+        raw0, funding_delta, hurst_delta, squeeze_delta, raw_final,
+        funding_adjust_code, hurst_adjust_code, squeeze_adjust_code)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT DO NOTHING`,
+    c.decidedAt, c.signalHash, c.coin, c.signal, c.confidence, c.timeframe, c.exchange,
+    c.regime ?? null, c.arm,
+    // Same SQLite boolean coercion the two sibling writers apply — prod is PG, where the raw
+    // boolean is correct, so omitting it would ship green and fail only in fixtures.
+    c.isBotInternal === null || c.isBotInternal === undefined
+      ? null
+      : (isPg ? c.isBotInternal : (c.isBotInternal ? 1 : 0)),
+    // Evaluated at WRITE time, never hoisted: TREND_MODE moves with no deploy and no diff, and it
+    // changes what a given `rsi_score` MEANS. Rows from two generations must not be pooled.
+    currentVerdictRuleVersion(),
+    p.rsiScore, p.emaScore, p.fundingScore, p.oiScore, p.volumeScore,
+    p.raw0, p.fundingDelta, p.hurstDelta, p.squeezeDelta, p.rawFinal,
+    p.fundingAdjustCode, p.hurstAdjustCode, p.squeezeAdjustCode,
+  );
+}
+
+/**
+ * The running count `EDGE-SELL-FEATURE-ATTRIBUTION-W{NEXT}` is gated on.
+ *
+ * That successor opens on a stated ROW COUNT of captured-and-labeled rows — never a date — so
+ * the count has to be readable without an SSH psql session. `captured` is how fast the corpus
+ * accrues; `labeled` is how much of it is actually usable for attribution, and only the second
+ * advances the gate. Same two-leg shape, and the same reason, as `getBandSignalCounts`.
+ *
+ * `labeled` is NOT `count(*) WHERE raw_final IS NOT NULL`. That column is NOT NULL on this table,
+ * so such a predicate would return `captured` under a different name — a gate leg that can never
+ * fail, which is the zeroed-comparator shape this estate has already been burned by. LABELED
+ * means what the successor needs: the parent signal has a triple-barrier label in
+ * `directional_labels`. The join is `(signal_hash, exchange)` -> `signals.id` -> label, i.e.
+ * exactly the path the attribution itself will walk, so a row this counts is a row that analysis
+ * can actually use.
+ *
+ * The hold arm's label join lives behind the counterfactual firewall and is deliberately NOT
+ * summed in here: mixing a quarantined count into a figure an admin surface can render is how a
+ * quarantine leaks. The hold arm's own count is read by the identity canary, on the host.
+ *
+ * Effectively PG-only. The correlated `EXISTS` is not exercised on the SQLite fixture backend, so
+ * rather than assert a dialect it returns the same `{0, 0}` a missing table returns — this figure
+ * is read by a human deciding whether to open the successor, never by an automated gate, so a
+ * refusal would cost more than a zero that is visibly a zero.
+ */
+export async function getScorerInputCounts(): Promise<{ captured: number; labeled: number }> {
+  try {
+    const rows = await dbQuery<{ captured: string | number; labeled: string | number }>(
+      `SELECT count(*) AS captured,
+            count(*) FILTER (
+              WHERE EXISTS (
+                SELECT 1 FROM signals s
+                JOIN directional_labels dl ON dl.signal_id = s.id
+                WHERE s.signal_hash = si.signal_hash AND s.exchange = si.exchange
+              )
+            ) AS labeled
+         FROM signal_scorer_inputs si`,
+    );
+    const r = rows[0];
+    return { captured: Number(r?.captured ?? 0), labeled: Number(r?.labeled ?? 0) };
+  } catch {
+    // Absent table (a backend that never ran init) or an unsupported dialect. Zero is the honest
+    // answer for a COUNT over a corpus that is not there, and this figure gates nothing
+    // automatically — the successor wave reads it and a human decides. Mirrors
+    // `getBandSignalCounts`, deliberately: two running-count readers with different failure
+    // behaviour would be two contracts.
+    return { captured: 0, labeled: 0 };
+  }
 }
