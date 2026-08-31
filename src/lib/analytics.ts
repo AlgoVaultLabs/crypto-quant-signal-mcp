@@ -541,6 +541,20 @@ interface LogEntry {
   // deliberately not — taking all four from one stamp is what guarantees they describe the same
   // decision rather than merely the same request.
   holdCapture?: RequestHoldCapture;
+
+  // OPS-HL-INTERACTIVE-STARVATION-W1: `regime` and `exchange` as EXPLICIT entry fields, for tools
+  // that know both at the call site and are not `get_trade_call` HOLD captures.
+  //
+  // These share the two `request_log` columns with `holdCapture`, and that is deliberate rather
+  // than a collision: the columns describe the row, not the wave that added them. They must NOT be
+  // routed through `holdCapture`, whose contract is "NULL means this row is not a captured HOLD" —
+  // stamping a `get_market_regime` row into it would silently enrol regime calls in the
+  // hold-decision population that `hold-decision-capture.ts` and the directional labeler select.
+  //
+  // Precedence below is `entry ?? hold ?? null`, so `get_trade_call` — which passes neither — is
+  // byte-identical to before, and no existing call site changes.
+  regime?: string | null;
+  exchange?: string | null;
 }
 
 export function logRequest(entry: LogEntry): void {
@@ -588,8 +602,11 @@ export function logRequest(entry: LogEntry): void {
       uaValue,
       clientNameValue,
       hold?.wouldBeSide ?? null,
-      hold?.exchange ?? null,
-      hold?.regime ?? null,
+      // OPS-HL-INTERACTIVE-STARVATION-W1: explicit entry value wins, else the HOLD stamp — the same
+      // single-derivation precedence as isAutomated/userAgent/holdCapture above. `get_trade_call`
+      // passes neither, so its rows are unchanged.
+      entry.exchange ?? hold?.exchange ?? null,
+      entry.regime ?? hold?.regime ?? null,
       hold?.priceAtDecision ?? null,
     );
   } catch {

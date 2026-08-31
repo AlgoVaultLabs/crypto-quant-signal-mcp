@@ -3,7 +3,7 @@ import { assertVenueNotRetired } from '../lib/venue-store.js';
 import { adx, atr, detectPriceStructure } from '../lib/indicators.js';
 import { getDexForCoin, isKnownTradFi } from '../lib/asset-tiers.js';
 import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.js';
-import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError } from '../lib/errors.js';
+import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError, UpstreamRateLimitError } from '../lib/errors.js';
 import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
 import { resolveAssetClass } from '../lib/underlying-type.js';
 import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
@@ -12,7 +12,7 @@ import { computeSuggestedTimeframes, suggestedActionFor, intervalMsFor } from '.
 import { splitCandleWindow } from '../lib/candle-window.js';
 import { getCandleBasis } from '../lib/candle-basis-flag.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
-import { checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../lib/license.js';
+import { checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs, setRequestRegimeFundingDegraded } from '../lib/license.js';
 import { withTierWarning, withQuotaState, withAuthState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId, Candle } from '../types.js';
@@ -310,7 +310,23 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   const hlAdapter = getAdapter('HL');
   const [candles, allFundings] = await Promise.all([
     adapter.getCandles(coin, timeframe, startTime, dex),
-    hlAdapter.getPredictedFundings().catch(() => [] as Awaited<ReturnType<typeof adapter.getPredictedFundings>>),
+    // OPS-HL-INTERACTIVE-STARVATION-W1: this `.catch` is BEST-EFFORT BY DESIGN and stays that way —
+    // a cross-venue funding outage must not fail a regime call. What changes is that the swallow is
+    // no longer SILENT. An `UpstreamRateLimitError` here is HL refusing us (weight-budget
+    // `BUDGET_CEILING` on the interactive reserve, `upstream-weight-budget.ts:233`), and it
+    // degrades the response to `cross_venue_funding_sentiment: 'NEUTRAL'` +
+    // `'Insufficient cross-venue data'` — byte-identical to a coin that genuinely has no HL
+    // funding. Stamping the ALS separates those two, which is the only reason a call-level failure
+    // rate is computable at all. The RESPONSE is deliberately unchanged (CH2 asserts identity);
+    // only `request_log.verdict` learns the difference.
+    //
+    // Non-rate-limit failures are left unstamped rather than lumped in: a parse error and a budget
+    // refusal are different events, and one column that means "something went wrong" would rebuild
+    // the very conflation this wave exists to remove.
+    hlAdapter.getPredictedFundings().catch((e: unknown) => {
+      if (e instanceof UpstreamRateLimitError) setRequestRegimeFundingDegraded();
+      return [] as Awaited<ReturnType<typeof adapter.getPredictedFundings>>;
+    }),
   ]);
   // Everything below assumes oldest-first candles (closes[length-1] = current
   // price, structure/EMA walk forward); a newest-first venue payload would

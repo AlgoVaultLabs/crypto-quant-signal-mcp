@@ -103,6 +103,26 @@ interface RequestContext {
    * Absence therefore means "not a captured HOLD", never "capture failed".
    */
   holdCapture?: RequestHoldCapture;
+
+  /**
+   * OPS-HL-INTERACTIVE-STARVATION-W1 — true when `get_market_regime`'s cross-venue funding leg was
+   * refused by the upstream weight budget and SILENTLY DEGRADED rather than surfaced to the caller.
+   *
+   * INWARD-OUT for the same reason as `holdCapture` above: the fact exists only inside the
+   * `.catch()` at `get-market-regime.ts:311-313`, which swallows the refusal and substitutes an
+   * empty funding array. Downstream that becomes `cross_venue_funding_sentiment: 'NEUTRAL'` with
+   * `'Insufficient cross-venue data'` — byte-identical to what a coin with genuinely no HL funding
+   * produces. Threading it out through the ALS keeps it off `MarketRegimeResult` entirely, so no
+   * caller's payload changes (CH2 requires byte-identical tool output).
+   *
+   * This is a SENTINEL SEPARATION, not telemetry garnish: without it, an upstream rate-limit
+   * refusal and a real neutral market are indistinguishable in every store we keep — which is the
+   * conflation that made ten days of customer impact unmeasurable.
+   *
+   * Absent on the stdio / fleet paths, which never enter a request context. Absence therefore means
+   * "not observed"; only an explicit `true` is written as degraded.
+   */
+  regimeFundingDegraded?: boolean;
 }
 
 /** @see RequestContext.holdCapture */
@@ -197,6 +217,32 @@ export function setRequestHoldCapture(capture: RequestHoldCapture): void {
 /** Read the HOLD capture for the current request; `undefined` on every non-HOLD request. */
 export function getRequestHoldCapture(): RequestHoldCapture | undefined {
   return requestContext.getStore()?.holdCapture;
+}
+
+// OPS-HL-INTERACTIVE-STARVATION-W1. Same seam shape, and it carries the same obligation the
+// tombstone above states: this pair has a LIVE READER — `src/index.ts`'s `get_market_regime`
+// handler calls `getRequestRegimeFundingDegraded()` to choose the `request_log.verdict` value —
+// and `tests/unit/regime-request-observability.test.ts` fails if that read stops happening. If a
+// future wave removes the last reader, delete this pair in the same commit.
+
+/**
+ * Mark the current request's `get_market_regime` cross-venue funding leg as degraded by an
+ * upstream rate-limit refusal. No-op outside a request context (stdio, fleet).
+ * @see RequestContext.regimeFundingDegraded
+ */
+export function setRequestRegimeFundingDegraded(): void {
+  const ctx = requestContext.getStore();
+  if (ctx) ctx.regimeFundingDegraded = true;
+}
+
+/**
+ * Read the degraded-funding flag for the current request. `false` when unset — the flag is only
+ * ever written on an observed refusal, so absence is "not degraded / not observed", never a
+ * silent failure to record.
+ * @see RequestContext.regimeFundingDegraded
+ */
+export function getRequestRegimeFundingDegraded(): boolean {
+  return requestContext.getStore()?.regimeFundingDegraded === true;
 }
 
 /**

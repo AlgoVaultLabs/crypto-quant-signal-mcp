@@ -55,7 +55,8 @@ import {
 import { recordNonPublicVenue } from './lib/non-public-venue-counter.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded } from './lib/license.js';
+import { regimeSuccessVerdict, regimeErrorVerdict } from './lib/regime-request-verdict.js';
 import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
 import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
 import { mountOkxA2mcpRoutes } from './lib/okx-a2mcp.js';
@@ -680,6 +681,15 @@ function createServer(): McpServer {
           responseTimeMs: Date.now() - startMs,
           ipHash: getRequestIpHash(),
           isBotInternal: license.tier === 'internal',
+          // OPS-HL-INTERACTIVE-STARVATION-W1. Until this wave, `verdict` and `regime` were NULL on
+          // every one of this tool's rows, so it had no measurable failure rate and its ten-day
+          // outage was invisible by construction.
+          //
+          // THIS IS THE READER the `license.ts` regimeFundingDegraded seam is required to have;
+          // `tests/unit/regime-request-observability.test.ts` fails if it stops happening.
+          verdict: regimeSuccessVerdict(getRequestRegimeFundingDegraded()),
+          regime: (result as { regime?: string }).regime ?? null,
+          exchange,
         });
         const sessionIdForCohort = getRequestSessionId() ?? null;
         if (sessionIdForCohort !== null) {
@@ -693,6 +703,31 @@ function createServer(): McpServer {
         }
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err: unknown) {
+        // OPS-HL-INTERACTIVE-STARVATION-W1 — THE ERROR ARM, which did not exist.
+        //
+        // `logRequest` sat inside the `try` AFTER the awaited call, and this `catch` returned
+        // without logging. A refused call therefore wrote NO `request_log` row at all, so the
+        // 36,836 rows for this tool were successes ONLY and any failure rate computed from that
+        // table was 0.0% BY CONSTRUCTION — a confident wrong number rather than a missing one.
+        // Populating `verdict` without adding this block would have reported exactly that 0.0%.
+        //
+        // `license` is re-read rather than hoisted: `getRequestLicense()` returns a default when no
+        // request context exists, so it cannot throw, and a second throw on the error path would
+        // lose the row and restore the blind spot. `logRequest` is best-effort internally already.
+        const errLicenseTier = getRequestLicense().tier;
+        logRequest({
+          sessionId: getRequestSessionId(),
+          toolName: 'get_market_regime',
+          asset: coin,
+          timeframe,
+          licenseTier: errLicenseTier,
+          responseTimeMs: Date.now() - startMs,
+          ipHash: getRequestIpHash(),
+          isBotInternal: errLicenseTier === 'internal',
+          verdict: regimeErrorVerdict(err),
+          regime: null,
+          exchange,
+        });
         return toolErrorContent(err);
       }
     }
