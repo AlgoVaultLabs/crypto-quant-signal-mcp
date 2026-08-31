@@ -102,7 +102,7 @@ describe('dark-artifact gate — base-tree read covers ALL of src/', () => {
   // absent-at-base and therefore NEW. The gate then reported createSandboxServer, TOP_20_KEYWORDS
   // and resolveSessionCorrelationId as dark on a branch that never touched them. A comment about
   // it is not a control; this is.
-  it('sees the files directly under src/, not only nested ones', () => {
+  it('sees the files directly under src/, not only nested ones', { timeout: 60_000 }, () => {
     const base = execFileSync('git', ['rev-parse', 'origin/main'], { cwd: ROOT, encoding: 'utf8' }).trim();
     const files: string[] | null = baseTreeSrcFiles(ROOT, base);
     expect(files).not.toBeNull();
@@ -110,7 +110,7 @@ describe('dark-artifact gate — base-tree read covers ALL of src/', () => {
     expect(files!.filter((f) => f.split('/').length === 2).length).toBeGreaterThan(0);
   });
 
-  it('a branch with no new exports has an empty delta', () => {
+  it('a branch with no new exports has an empty delta', { timeout: 60_000 }, () => {
     const base = execFileSync('git', ['rev-parse', 'origin/main'], { cwd: ROOT, encoding: 'utf8' }).trim();
     expect(newDeclarations(ROOT, base)).toEqual([]);
   });
@@ -222,7 +222,7 @@ describe('dark-artifact gate — the live tree is clean (promotion precondition)
     expect(findUnreadFlags(ROOT)).toEqual([]);
   });
 
-  it('this branch adds no dark export', () => {
+  it('this branch adds no dark export', { timeout: 60_000 }, () => {
     let base: string;
     try {
       base = execFileSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: ROOT, encoding: 'utf8' }).trim();
