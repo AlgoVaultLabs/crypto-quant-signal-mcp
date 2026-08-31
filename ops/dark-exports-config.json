@@ -24,7 +24,7 @@
   ],
   "verdict_token": "DARK_EXPORTS_VERDICT",
   "exit_codes": { "PASS": 0, "FAIL": 1, "INDETERMINATE": 3 },
-  "mode": "report",
+  "mode": "block",
   "promotion": {
     "max_unexplained": 0,
     "not_before": "2026-08-16",
@@ -36,7 +36,25 @@
       "not_before is +7d rather than the usual +14d because the measured signal is 2 flagged",
       "out of 23 new exports on a real wave — a rate that does not need a fortnight of",
       "observation to judge. Every run appends its count to the ledger, so the flip decision",
-      "reads a series rather than a guess."
+      "reads a series rather than a guess.",
+      "",
+      "PROMOTED 2026-08-31 by OPS-DARK-ARTIFACT-GATE-PROMOTE-W1 R2. mode is now `block`, and it",
+      "is the ONLY thing the script reads — the old auto-promotion arm was UNREACHABLE CODE and",
+      "has been deleted rather than fixed. It read `dark.length <= max_unexplained` at a point",
+      "the script only reaches when `dark.length >= 1`, against `max_unexplained: 0`, so it could",
+      "never be true; the date leg had passed since 2026-08-16 and made no difference. A criterion",
+      "that cannot fire is not a criterion, and leaving it in place would have kept this guard",
+      "permanently in report — the `decoration` shape the git rules already name.",
+      "",
+      "The fields below are RETAINED, not vestigial: they are the promotion RECORD, and",
+      "tests/unit/promotion-independence.test.ts asserts every promotion block carries an",
+      "instrument. Neither is read by the gate any more.",
+      "",
+      "The flip was gated on a REPAIR, not on the clock. As shipped the detector measured 33 false",
+      "positives and 5 false negatives against the TypeScript compiler's own scanner over 1,847",
+      "export declarations at d26898cf — 16.1% of the unexempt flagged set. After R1.5 it measures",
+      "FP=0 / FN=0. Blast radius at flip time was measured, not assumed: of 103 worktrees, 10 were",
+      "unlanded, 9 of those lack the script entirely (they skip loudly) and the 10th returns PASS."
     ],
 
     "instrument": {
