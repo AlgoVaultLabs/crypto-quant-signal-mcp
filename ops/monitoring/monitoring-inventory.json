@@ -1984,6 +1984,34 @@
       "alert_ids": ["EDGE_CRAWLER_DISAPPEARED"],
       "owner_wave": "GEO-EDGE-LOG-VISIBILITY-W1",
       "notes": "GEO-EDGE-LOG-VISIBILITY-W1, wave 4 of 4 and the arc close. Daily driver for scripts/edge-crawler-report.mjs --daily, the edge-side AI-crawler visibility reporter. IT IS A REPORTER, NOT A GATE, and that is why it is a separate artifact from robots-ai-allowlist-canary.sh rather than another branch inside it: that canary's BREACH means crawl policy is broken, while a failure to reach Cloudflare's analytics API is a reporting gap. Folding them together would page at gate severity for a vendor outage, and the gate would start being ignored. The reporter therefore emits NO *_VERDICT token and this wrapper gates nothing. WHAT IT RETIRES: 'a GEO claim rests on a number a human read off a dashboard' — AI-Discovery Visibility is the program north star and until now every figure about it came from a screenshot. The durable series at /var/lib/algovault-monitoring/edge-crawler/daily-series.ndjson is APPEND-ONLY and is what makes GEO progress diffable over months; an INDETERMINATE run is RECORDED rather than skipped, so a gap in the series is visible as a gap. EXACTLY ONE ALARM, severity-gated: a crawler present in the trailing 7-day series that has been at zero for 3 consecutive days. Not volume changes, not a daily summary, not the reporter failing to run. NO AUTO-RECOVERY ARM BY DESIGN — the response to a crawler leaving is investigation, and an unattended job must never mutate a policy surface. MEASURED PLAN LIMITS, all probed on this zone 2026-08-30 and none assumed from docs: Logpush is Enterprise-only and appears nowhere; botDetectionIds_hasany and clientRefererHost_like are REFUSED on this plan, so crawler identification is USER-AGENT MATCHING, which Cloudflare documents as spoofable — that caveat travels with every number and is printed in the alert body. notOlderThan is 691200s (8d nominal) but T-7d answers and T-8d is refused, so the usable retention floor is 7d. A single query may not span more than 1 DAY, so every window is sliced and the slice count IS the query count against the 300-per-5-minute limit. SINGLE DERIVATION: the crawler list is read from src/lib/ai-crawler-allowlist.ts, making this the FOURTH consumer of AI_CRAWLER_ALLOWLIST after robots.txt, the allowlist gate and the api-catalog generator. Nothing is vendored into /opt/algovault-monitoring, so there is no copy to drift; the wrapper runs the committed reporter out of the deploy checkout."
+    },
+    {
+      "id": "trend-mode-readout-gate",
+      "artifact": "ops/monitoring/trend-mode-readout-gate.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/trend-mode-readout-gate.py",
+      "installed_at": [
+        { "host": "signal-1", "path": "/opt/algovault-monitoring/trend-mode-readout-gate.py", "schedule": "19 7 * * *" }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": "19 7 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "e8116b96500afc21662715c90acfc47af9eccfa3b7d85ca0f22d7532af3ddaaa",
+      "owner_wave": "SIGNAL-TREND-MODE-ENABLE-W1",
+      "alert_ids": ["TREND_MODE_TRIGGER_BREACH", "TREND_MODE_READOUT_DUE"],
+      "consumes": ["ops/monitoring/detector_envelope.py", "ops/monitoring/detector-envelope.schema.json"],
+      "decision_gate": true,
+      "once_ever_alert": "TREND_MODE_READOUT_DUE",
+      "once_ever_marker": "/var/lib/algovault-monitoring/trend-mode-readout-due.fired",
+      "retirement_trigger": {
+        "kind": "status_md_entry",
+        "match": "SIGNAL-TREND-MODE-READOUT-W",
+        "note": "The decision this gate exists to inform: keep TREND_MODE on, or roll it back. Once the readout wave is in status.md the question is answered and the gate can only re-report a settled result. A DECLINE retires it exactly as a ship does \u2014 what ends its life is that the decision was TAKEN, not which way it went."
+      },
+      "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. Evaluates the four PRE-DECLARED rollback triggers daily against the in-repo contract audits/SIGNAL-TREND-MODE-ENABLE-W1-trigger-contract.md, and fires TREND_MODE_READOUT_DUE once-ever at flip+30d. BOTH ARMS COME FROM ONE QUERY \u2014 verdict_rule_version is the GROUP BY key, regime_rule_version=3 is held fixed on both sides, BITMART is excluded from both (retired mid-window) \u2014 so no baseline is ever baked in and no delta can span two instruments. DETECT->ALERT->ESCALATE ONLY: it NEVER unsets the flag, because an unattended job must not mutate a live scorer. Adopts DETECTOR_ENVELOPE and refuses its OWN non-conforming signal as INDETERMINATE rather than laundering it into a PASS. TREND_MODE_READOUT_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL exits 0 because the alert IS the action. The 1d cell reports INDETERMINATE for most of the window BY PRE-DECLARATION \u2014 ~3.6 rows/day is a directional watch, not a powered test. A fifth trigger (webhook regime_shift delivery volume) was DROPPED by architect ruling 2026-08-31: zero active subscriptions and zero deliveries across the whole BEFORE window made it dark by construction; the readout wave re-opens it if a subscription becomes active. Gate-test with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1. --self-test is hermetic, 26 assertions, vacuity-guarded, asserts the DB-seam-BYPASSED artifacts (the three SQL strings and the built envelope), and is PROVEN ABLE TO FAIL by two deliberate breaks: a code/contract threshold divergence, and INDETERMINATE laundered into PASS."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label \u2192 address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON \u2014 this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

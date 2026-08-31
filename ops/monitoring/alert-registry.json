@@ -854,6 +854,24 @@
       "follow_up_wave": "OPS-ALERT-ADOPT-EDGE_CRAWLER_DISAPPEARED-W{NEXT}",
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-EDGE_CRAWLER_DISAPPEARED-W{NEXT}"
+    },
+    {
+      "alert_id": "TREND_MODE_TRIGGER_BREACH",
+      "owner": "ops/monitoring/trend-mode-readout-gate.py",
+      "hosts": ["signal-1"],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": true,
+      "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. Fires when TREND_MODE=on breaches a PRE-DECLARED rollback trigger (edge floor / edge-vs-long / volume ceiling / cell concentration / emission gap). adopted=true: the gate calls --clear on its healthy path, because send_telegram.sh writes its cooldown marker on a delivered fire and nothing else removes it, so a healed breach would pin the channel's last word to the worst thing that ever happened. announce_resolution stays FALSE per the law's default \u2014 a trigger flapping back is chatter, and the operator action here is a ROLLBACK DECISION, not an acknowledgement of a blip."
+    },
+    {
+      "alert_id": "TREND_MODE_READOUT_DUE",
+      "owner": "ops/monitoring/trend-mode-readout-gate.py",
+      "hosts": ["signal-1"],
+      "adopted": false,
+      "announce_resolution": false,
+      "envelope_adopted": true,
+      "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. ONCE-EVER at flip+30d, behind /var/lib/algovault-monitoring/trend-mode-readout-due.fired. This is the scheduled half of 'the readout is scheduled, not remembered' \u2014 a follow-up that depends on someone remembering is prose, not a control. adopted=FALSE is CORRECT rather than pending, and carries no follow_up_wave for that reason: a once-ever due-date alert has no FIRING->CLEAR edge, so calling --clear on it would be a no-op wearing the look of state hygiene."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it \u2014 no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",
