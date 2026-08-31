@@ -10,7 +10,7 @@
 // applied CLIENT-SIDE by the controller matching location.pathname — so one region works on
 // both the apex- and api-served origins with no server-side variation.)
 //
-// Parity (desktop⇄mobile item set) is enforced by tests/build-nav.test.mjs; structural
+// Parity (desktop⇄mobile item set) is enforced by tests/build-nav.test.ts; structural
 // mobile-presence by scripts/check_mobile_nav_parity.sh; byte-shape by tests/site-nav.test.ts.
 import {
   buildNavModel,
