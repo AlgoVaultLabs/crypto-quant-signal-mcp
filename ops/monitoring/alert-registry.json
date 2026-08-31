@@ -870,8 +870,9 @@
       "hosts": ["signal-1"],
       "adopted": false,
       "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-TREND_MODE_READOUT_DUE-W{NEXT}",
       "envelope_adopted": true,
-      "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. ONCE-EVER at flip+30d, behind /var/lib/algovault-monitoring/trend-mode-readout-due.fired. This is the scheduled half of 'the readout is scheduled, not remembered' \u2014 a follow-up that depends on someone remembering is prose, not a control. adopted=FALSE is CORRECT rather than pending, and carries no follow_up_wave for that reason: a once-ever due-date alert has no FIRING->CLEAR edge, so calling --clear on it would be a no-op wearing the look of state hygiene."
+      "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. ONCE-EVER at flip+30d, behind /var/lib/algovault-monitoring/trend-mode-readout-due.fired. This is the scheduled half of 'the readout is scheduled, not remembered' \u2014 a follow-up that depends on someone remembering is prose, not a control. adopted=FALSE because a once-ever due-date alert has no FIRING->CLEAR edge, so --clear on it would be a no-op wearing the look of state hygiene. It STILL names a follow_up_wave: the repo requires every unadopted row to name who will revisit it, and that rule is not mine to argue with from inside a row \u2014 the follow-up may well conclude 'not applicable', but the conclusion belongs in that wave rather than in this note."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it \u2014 no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",
