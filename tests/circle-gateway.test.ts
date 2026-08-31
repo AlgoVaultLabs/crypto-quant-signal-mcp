@@ -2,7 +2,7 @@
  * CIRCLE-GATEWAY-MIGRATE-W1 — Circle Gateway additive scheme: config resolution, Stub, factory.
  *
  * Pure/unit only — no network. The live-facilitator + dual-advertise proofs live in
- * tests/integration/circle-gateway-dual-advertise.test.ts (INTEGRATION=1 gated).
+ * tests/integration/circle-gateway-testnet.test.ts (INTEGRATION=1 gated).
  */
 import { describe, it, expect } from 'vitest';
 import {

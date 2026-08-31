@@ -7,7 +7,9 @@
  * scoring logic used by the live get_trade_signal tool.
  *
  * Indicators imported directly from src/lib/indicators.ts.
- * Scoring weights replicated verbatim from src/tools/get-trade-signal.ts.
+ * Scoring weights replicated verbatim from `WEIGHTS` in src/tools/get-trade-call.ts
+ * (renamed from get-trade-signal.ts; the old path was cited here until
+ * OPS-DARK-ARTIFACT-GATE-PROMOTE-W1 R1.5).
  */
 
 import { fetchCandles } from '../src/lib/hyperliquid.js';
