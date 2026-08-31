@@ -20,6 +20,7 @@ import { FUNDING_Z_MIN_SAMPLES, FUNDING_Z_WINDOW_SECONDS } from './funding-windo
 // the stamp is a function of this flag's LIVE value. `trend-mode-flag.ts` imports nothing, so the
 // edge is a leaf and no cycle is introduced. See currentVerdictRuleVersion() below.
 import { getTrendMode } from './trend-mode-flag.js';
+import { DdlBarrier } from './ddl-barrier.js';
 
 /**
  * Resolve the local SQLite DB location AT CONNECT TIME (not once at module
@@ -220,6 +221,55 @@ class PgBackend implements DbBackend {
   // mid-retry and lose the write.
   private pending = new Set<Promise<void>>();
 
+  /**
+   * OPS-PG-LANE-BOOTSTRAP-W1 — THE DDL BARRIER. Program order was not execution order without
+   * it, and that is not a test-only concern.
+   *
+   * `exec()` IS the schema path. `getBackend()` below issues ~60 statements in a straight line
+   * — a CREATE TABLE, then its CREATE INDEXes — and every other store's `ensure*Schema()` does
+   * the same. Each statement used to be handed straight to a 12-connection `Pool` and NOT
+   * awaited, so a dozen of them executed CONCURRENTLY on a dozen different connections.
+   * Postgres has no reason to run them in the order they were queued, and it does not:
+   *
+   *   CREATE INDEX idx_signup_emails_optin_at ON signup_emails (optin_at)
+   *     -> ERROR: relation "signup_emails" does not exist
+   *
+   * ...while `CREATE TABLE signup_emails` was still in flight beside it. Because `exec` is
+   * fire-and-forget the failure surfaced only as a `[pg-write] WRITE LOST` line, and the index
+   * was silently never created. Measured on the Postgres CI lane (run 33400151672): SEVEN
+   * tables lost indexes this way inside ONE process — signup_emails, agent_sessions,
+   * contact_leads, funnel_events, webhook_subscriptions, webhook_deliveries,
+   * subscriber_notifications — and WHICH ones lost them varied run to run on an identical
+   * tree, which is what a race looks like from the outside.
+   *
+   * Production never saw it because production's schema is pre-applied over SSH ahead of the
+   * deploys that need it (this file says so in a dozen places), so `IF NOT EXISTS` makes the
+   * whole cascade a no-op there. A FRESH database is the case nobody exercises — and a fresh
+   * database is exactly what a CI lane, a new Hetzner box, and a restored backup each are.
+   *
+   * WHY A BARRIER RATHER THAN THE DOCUMENTED REMEDY. CLAUDE.md already carried the rule:
+   * "`dbExec`/`dbRun` fire-and-forget on PG — bundle DDL in single multi-statement call". It is
+   * correct, and it was ignored by ~60 call sites across a dozen modules for months, because
+   * nothing enforced it. A rule that has once failed as prose is retired into a control rather
+   * than restated, so ordering is now a property of the backend instead of something each
+   * caller has to remember.
+   *
+   * SHAPE, and why this is not "serialise everything":
+   *   - `exec` (DDL) chains FIFO: statement N+1 starts only once N has settled.
+   *   - `run` (DML) and `query` (reads) wait for the DDL backlog AS OF THE MOMENT THEY ARE
+   *     ISSUED, then run concurrently with each other. Write throughput is unchanged; a write
+   *     simply cannot overtake the CREATE TABLE it depends on.
+   * Once the startup burst settles this is an already-resolved promise, so the steady-state
+   * cost is one microtask per call.
+   *
+   * HONEST LIMIT: a DDL statement that exhausts its transient-error retries re-enters the chain
+   * at its RETRY position, so a connection drop mid-bootstrap can still reorder around the
+   * failure. Every DDL statement in this repo is `IF NOT EXISTS`-guarded and idempotent, so
+   * re-running it is safe; ordering across a dropped connection is a strictly smaller problem
+   * than the one being fixed here and is not claimed to be solved.
+   */
+  private ddl = new DdlBarrier();
+
   constructor(connectionString: string) {
     // Dynamic import resolved at runtime
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -235,15 +285,40 @@ class PgBackend implements DbBackend {
   }
 
   exec(sql: string): void {
-    // Fire and forget — init schema. Resilient + loud (see trackedWrite).
-    this.trackedWrite('exec', () => this.pool.query(sql), sql, []);
+    // Fire and forget — init schema. Resilient + loud (see trackedWrite), and ORDERED
+    // (see `ddl` below: an index may never be dispatched beside the table it indexes).
+    this.trackedWrite('exec', () => this.enqueueDdl(() => this.pool.query(sql)), sql, []);
   }
 
   run(sql: string, ...params: unknown[]): void {
     // Convert ? placeholders to $1, $2, etc. for pg
     let idx = 0;
     const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
-    this.trackedWrite('run', () => this.pool.query(pgSql, params), pgSql, params);
+    this.trackedWrite(
+      'run',
+      () => this.afterDdl(() => this.pool.query(pgSql, params)),
+      pgSql,
+      params,
+    );
+  }
+
+  /**
+   * Serialise one DDL statement behind every DDL issued before it.
+   *
+   * Runs `fn` whether the previous statement RESOLVED or REJECTED. A failed CREATE must not
+   * wedge the rest of the schema — the barrier's job is to stop later statements OVERTAKING
+   * earlier ones, not to make the schema all-or-nothing.
+   */
+  private enqueueDdl<T>(fn: () => Promise<T>): Promise<T> {
+    return this.ddl.enqueue(fn);
+  }
+
+  /**
+   * Run `fn` after the DDL issued SO FAR, without joining the chain — so reads and writes wait
+   * out the schema burst once and then stay fully concurrent with each other.
+   */
+  private afterDdl<T>(fn: () => Promise<T>): Promise<T> {
+    return this.ddl.after(fn);
   }
 
   /**
@@ -292,25 +367,48 @@ class PgBackend implements DbBackend {
    * (see buildPoolConfig). Scripts MUST `await` this (via runScript) before exit.
    */
   async closeAsync(): Promise<void> {
-    await Promise.allSettled([...this.pending]);
+    await this.drain();
     await this.pool.end().catch(() => {});
+  }
+
+  /**
+   * OPS-PG-LANE-BOOTSTRAP-W1 — settle every in-flight fire-and-forget write WITHOUT closing.
+   *
+   * `closeAsync()` already drained, but only on the way to `pool.end()`, so there was no way to
+   * ask "have my writes landed?" and keep using the handle. That gap is the second half of the
+   * backend divergence this wave is about: on SQLite `dbRun` returns after the row EXISTS, on
+   * Postgres it returns before the statement has even been sent. Any caller that writes and
+   * then reads back — every fixture that seeds a row and counts it — is therefore correct on
+   * one backend and a coin flip on the other, with nothing in the shared signature to say so.
+   */
+  async drain(): Promise<void> {
+    // Bounded. A settled write can be followed by another the caller issued meanwhile; the cap
+    // is a runaway guard, never an expected exit — a caller writing faster than the database
+    // settles has a problem this method cannot solve, and spinning forever would hide it.
+    for (let i = 0; i < 100 && this.pending.size > 0; i++) {
+      await Promise.allSettled([...this.pending]);
+    }
+    await this.ddl.settled();
   }
 
   async query(sql: string, params: unknown[] = []): Promise<SignalRecord[]> {
     let idx = 0;
     const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
-    const result = await this.pool.query(pgSql, params);
+    // Behind the DDL barrier: a read issued during schema bootstrap must not be answered
+    // "relation does not exist" by a table that is one statement away from existing.
+    const result = await this.afterDdl(() => this.pool.query(pgSql, params));
     return result.rows as SignalRecord[];
   }
 
   async execAsync(sql: string): Promise<void> {
-    await this.pool.query(sql);
+    // DDL — joins the chain, same as the fire-and-forget `exec`.
+    await this.enqueueDdl(() => this.pool.query(sql));
   }
 
   async runAsync(sql: string, ...params: unknown[]): Promise<void> {
     let idx = 0;
     const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
-    await this.pool.query(pgSql, params);
+    await this.afterDdl(() => this.pool.query(pgSql, params));
   }
 }
 
@@ -1469,6 +1567,27 @@ export async function closeDbAsync(): Promise<void> {
   if (!b) return;
   if (typeof b.closeAsync === 'function') await b.closeAsync();
   else b.close();
+}
+
+/**
+ * OPS-PG-LANE-BOOTSTRAP-W1 — resolve once every fire-and-forget write issued SO FAR has
+ * settled, leaving the handle open.
+ *
+ * `dbRun()` and `dbExec()` share one signature across two backends with two different
+ * happens-before contracts: on SQLite the row exists when the call returns, on Postgres the
+ * statement has not been sent yet. Read-after-write is therefore correct on one and a race on
+ * the other, and there is nothing in the type to warn a caller — which is how three assertions
+ * in `tests/unit/band-population-invariance.test.ts` came to fail non-deterministically on the
+ * Postgres lane while being sound on SQLite.
+ *
+ * Deliberately a no-op on SQLite and when no backend is open, so a caller writes ONE line that
+ * is correct on both backends rather than branching on `process.env.DATABASE_URL`. This is NOT
+ * on the read path by design: draining inside `dbQuery()` would make every read wait out a
+ * retrying write (up to ~3s of backoff) and put a serving path at the mercy of the write queue.
+ */
+export async function awaitDbWrites(): Promise<void> {
+  const b = backend;
+  if (b instanceof PgBackend) await b.drain();
 }
 
 // ── Generic DB access for other modules (analytics) ──
@@ -2851,6 +2970,13 @@ async function loadSignalsForStats(): Promise<SignalRecord[]> {
 }
 
 export function getPerformanceStats(): PerformanceStats {
+  // Resolve the backend FIRST. `isPg` is a module-level `let` assigned inside `getBackend()`,
+  // so reading it before that call answers `false` on the FIRST invocation in any process —
+  // including a Postgres one. The old order took the SQLite branch exactly once per process,
+  // then called `b.all()` on `PgBackend`, which returns `[]` by construction: a real-looking
+  // `[perf-stats] cache miss ... rows=0` line, computed off a backend that cannot answer.
+  // Every later call took the PG branch, so the wrong answer appeared once and hid.
+  const b = getBackend();
   if (isPg) {
     return emptyStats();
   }
@@ -2862,7 +2988,6 @@ export function getPerformanceStats(): PerformanceStats {
     return cached.stats;
   }
   const t0 = Date.now();
-  const b = getBackend();
   const all = b.all(
     `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE ${SQL_PUBLISHED_POPULATION} ORDER BY created_at DESC`
   ) as unknown as SignalRecord[];
