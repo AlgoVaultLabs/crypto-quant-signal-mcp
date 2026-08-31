@@ -12,11 +12,11 @@
   "_enumeration": {
     "signal-1": {
       "host": "signal-1 (204.168.185.24)",
-      "verified_at": "2026-08-29T03:17Z",
+      "verified_at": "2026-08-31T13:43Z",
       "command": "crontab -l | grep -vE '^\\s*(#|$)'   # then resolve each entry to its script and grep that script for a command-position `docker exec`",
-      "active_cron_lines": 100,
+      "active_cron_lines": 106,
       "lines_with_direct_docker_exec": 46,
-      "note": "Rows are keyed by PROCESS PATTERN, not by cron line: the interlock matches patterns, and one pattern (seed-signals.js) covers 28 cron lines. `cron_lines` on each row records the fan-out so the enumeration stays recoverable. The prior enumeration measured 91 active lines (OPS-HOST-KERNEL-REBOOT-W2) and 75 before that (W1) — re-derive, never inherit."
+      "note": "Rows are keyed by PROCESS PATTERN, not by cron line: the interlock matches patterns, and one pattern (seed-signals.js) covers 28 cron lines. `cron_lines` on each row records the fan-out so the enumeration stays recoverable. The prior enumeration measured 91 active lines (OPS-HOST-KERNEL-REBOOT-W2) and 75 before that (W1) — re-derive, never inherit. Re-derived 2026-08-31T13:43Z by OPS-BAND-OUTCOME-WIRE-W1: 100 -> 106 active lines in two days, `docker exec` lines unchanged at 46. The growth is entirely in host-process lines, so no row's classification moves; the count is corrected because a stale enumeration makes every interlock decision built on it wrong, and this file's own instruction is to re-derive rather than inherit."
     },
     "aoe-1": {
       "host": "aoe-1 (178.104.200.44)",
@@ -132,14 +132,15 @@
       "process_pattern": "dist/scripts/backfill-outcomes",
       "class": "safe-to-kill",
       "reason": "Idempotent on next fire at a 3-minute cadence and `flock -n`-guarded. It backfills outcomes for signals that do not yet have them, driven entirely by DB state, so a truncated run leaves exactly the same work queued for the next fire ~3 minutes later.",
-      "max_runtime_s": 793,
-      "runtime_instrument": "host `ps -eo etimes,args`, n=130 samples @1s, 2026-08-29 03:37Z; max observed instance lifetime",
+      "max_runtime_s": 8410,
+      "max_runtime_is_lower_bound": true,
+      "runtime_instrument": "host `ps -eo etimes,args`, n=10 samples @1s, 2026-08-31T13:43Z; max observed instance lifetime. A LOWER BOUND, not a max: the instance was still alive at the last sample, so its true span is longer. Deliberately NOT the log-span instrument the carry-labeler and merkle rows use — /var/log/backfill.log is ISO-stamped, but this job fires every 3 minutes and outlives its own cadence, so its lines never open the 600s gap those rows group on: the same grouping returns ONE 118,867s 'run' spanning 2026-08-30T04:42Z to now, which is an artifact of the instrument and not a runtime. Do not 'improve' this row by switching to it.",
       "cron_lines": 1,
       "cron": "2-59/3 * * * *",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29",
-      "notes": "Runs far longer (13m) than its 3-minute cadence, so an instance is alive most of the time and a deploy nearly always kills one. Harmless by construction, and recorded so that is a finding rather than an assumption."
+      "verified_at": "2026-08-31",
+      "notes": "Runs far longer (2h20m+) than its 3-minute cadence, so an instance is alive essentially ALL of the time and a deploy always kills one. Harmless by construction, and recorded so that is a finding rather than an assumption. Re-measured 2026-08-31 by OPS-BAND-OUTCOME-WIRE-W1: 793s -> 8,410s, a 10.6x growth in two days, and the prior figure's '13m' framing understated the exposure by an order of magnitude. THE CONSEQUENCE IS NOT ONLY THIS ROW: that wave proposed gating a new band-outcome sweep on 'is the tracked backfill inflight', and this measurement is what retired the idea — a lane that yields whenever this process is alive would yield essentially always. Continuous liveness is a property to design around, not a transient to wait out."
     },
     {
       "id": "hold-decision-labeler",

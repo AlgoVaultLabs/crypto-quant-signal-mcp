@@ -270,3 +270,49 @@ describe('weight class context (AsyncLocalStorage)', () => {
     expect(currentWeightClass()).toBe('interactive');
   });
 });
+
+// OPS-BAND-OUTCOME-WIRE-W1 R1 — the read-only headroom projection.
+//
+// `batchHeadroom()` exists so an advisory caller can skip a request it can predict will stall on
+// `acquire()`'s 300 s batch wait. It must answer for the CURRENT window; the third case below is
+// the one that makes it live in this class at all, because `_readLedger()` deliberately does not
+// roll and `windowMs` is private, so no external reader could get it right.
+describe('WeightBudget — batchHeadroom (advisory, roll-aware)', () => {
+  it('is the full ceiling−reserve on an untouched ledger, and never the raw ceiling', () => {
+    const { budget } = makeBudget(); // ceiling 1000, reserve 300
+    expect(budget.batchHeadroom()).toBe(700);
+  });
+
+  it('decreases by batch usage only — interactive usage does not consume batch headroom', async () => {
+    const { budget } = makeBudget();
+    await budget.acquire(200, 'batch');
+    expect(budget.batchHeadroom()).toBe(500);
+    await budget.acquire(100, 'interactive');
+    // `used` is now 300, but the batch cap is measured against batchUsed, which is still 200.
+    expect(budget._readLedger().used).toBe(300);
+    expect(budget.batchHeadroom()).toBe(500);
+  });
+
+  it('reports the FULL cap once the window has rolled, even though the ledger still holds the closed window', async () => {
+    const { budget, clock } = makeBudget();
+    await budget.acquire(700, 'batch'); // saturate the batch lane
+    expect(budget.batchHeadroom()).toBe(0);
+
+    // Cross the minute boundary WITHOUT acquiring. `roll()` only fires inside `acquire()`, so the
+    // on-disk ledger still carries the closed window's 700. A naive reader would report a
+    // saturated lane for a window that is in fact empty — that false negative is what this guards.
+    clock.t += 60_000;
+    expect(budget._readLedger().batchUsed).toBe(700); // the stale ledger, unchanged on disk
+    expect(budget.batchHeadroom()).toBe(700); // …but the CURRENT window is empty
+  });
+
+  it('floors at 0 rather than going negative', async () => {
+    const { budget } = makeBudget({ ceilingPerMin: 1000, interactiveReserve: 300 });
+    await budget.acquire(700, 'batch');
+    // Interactive may exceed the batch cap (it is capped at the full ceiling), which would drive
+    // a naive `cap − batchUsed` below zero if it read `used`.
+    await budget.acquire(300, 'interactive');
+    expect(budget.batchHeadroom()).toBe(0);
+    expect(budget.batchHeadroom()).toBeGreaterThanOrEqual(0);
+  });
+});

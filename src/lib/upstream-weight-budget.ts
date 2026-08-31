@@ -275,6 +275,35 @@ export class WeightBudget {
     return this.readLedgerRaw(this.now());
   }
 
+  /**
+   * Weight a `batch` caller could still acquire in the CURRENT window, without acquiring
+   * anything. Read-only: it takes no lock, writes no ledger, and changes no behaviour.
+   *
+   * It lives here rather than in the caller for two reasons, both load-bearing:
+   *
+   *   1. **One derivation of the cap.** `ceiling − reserve` is what `acquire()` compares a batch
+   *      request against. A caller rebuilding it from `venue-budget-registry.ts`'s 15 exported
+   *      `*_CEILING` / `*_RESERVE` pairs would be a second derivation of one number, and the copy
+   *      nobody is watching is the one that goes wrong.
+   *   2. **Window staleness is invisible from outside.** `_readLedger()` deliberately does NOT
+   *      roll, so once a window closes the file still carries the PREVIOUS window's totals until
+   *      somebody acquires. An external reader cannot tell — `windowMs` is private — and would
+   *      report a saturated lane a full minute after it emptied. That check needs
+   *      `windowStartFor`, so it belongs in here.
+   *
+   * NOT a guard, and a caller must not treat it as one: the headroom reported here can be taken
+   * by any other process before that caller reaches its own `acquire()`, which remains the sole
+   * authority. It exists only to let a caller skip a request it can predict will stall.
+   * (OPS-BAND-OUTCOME-WIRE-W1 R1.)
+   */
+  batchHeadroom(): number {
+    const now = this.now();
+    const cap = this.ceiling - this.reserve;
+    const ledger = this.readLedgerRaw(now);
+    if (ledger.windowStartMs !== this.windowStartFor(now)) return cap; // window already rolled
+    return Math.max(0, cap - ledger.batchUsed);
+  }
+
   // ── internals ──
 
   private windowStartFor(now: number): number {

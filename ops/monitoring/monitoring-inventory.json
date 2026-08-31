@@ -1151,7 +1151,7 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 \u2014 is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "7b352d2e7885cdaeffee71b9dd974c3d362914aeaa48c7d61be5def5d334da68",
+      "sha256": "24b533f18273826df7eacb31f3332226c1a64b826ada77a21ea6636ed376ff28",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation \u2014 the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. DECLARED LIMITATION: unlike signal-1's, this copy CAN go stale between installs. The detector is the daily reconciler's HASH_DRIFT against this row's sha256 \u2014 which is precisely why it gets a row rather than being scp'd by hand. Re-install with ops/scripts/install-monitoring-artifact.sh cron-interlock-registry-aoe1 --apply after any registry edit, and re-stamp this sha256 in the same commit. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot."

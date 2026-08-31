@@ -64,17 +64,27 @@ export async function runBackfill(): Promise<void> {
 let backfillInflight: Promise<void> | null = null;
 
 /**
- * OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R2 — the ONE-WAY priority read.
+ * OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R2 — an IN-PROCESS inflight read.
  *
- * The band outcome lane calls this and yields while it is true. Nothing in THIS file calls
- * anything in the band lane, and that asymmetry is the guarantee: the tracked evaluator — which
- * feeds the published number — cannot be blocked, delayed or reordered by a counterfactual
- * measurement, because it does not know the band lane exists. Priority that both sides negotiate
- * is priority neither side has.
+ * Nothing in THIS file references the band lane, and that half of the asymmetry is real and
+ * asserted: `tests/unit/band-population-invariance.test.ts` fails the build if this module ever
+ * mentions `band-outcome-lane`, `runBandOutcomeSweep` or `bandOutcomeEnabled`. The tracked
+ * evaluator that feeds the published number therefore cannot be blocked, delayed or reordered by
+ * a counterfactual measurement, because it does not know the band lane exists.
  *
- * `tests/unit/band-outcome-lane.test.ts` asserts BOTH directions: that the band lane yields when
- * this returns true, and that this module contains no reference to the band lane at all. The
- * second assertion is the one that catches a future edit making the dependency mutual.
+ * **The other half is NOT a cross-process priority, and used to be described as one.**
+ * `backfillInflight` above is module-level state set only by `getSignalPerformance()` in the
+ * SAME process. The dominant tracked consumer is the `backfill-outcomes.js` cron, which runs as
+ * a separate `docker exec` process — so a scheduled band sweep reads its own fresh module state
+ * and this returns a constant `false`. It is a useful in-process courtesy and nothing more.
+ * The real mechanism is a weight class below `batch` in `upstream-weight-budget.ts`, deferred to
+ * the capacity wave; see `OPS-HL-INTERACTIVE-STARVATION-W1`.
+ *
+ * _(Corrected 2026-08-31 `OPS-BAND-OUTCOME-WIRE-W1`. The prior text cited
+ * `tests/unit/band-outcome-lane.test.ts` as asserting BOTH directions. That file exists on no
+ * ref and never has; only the absence half was ever asserted, by the test named above, and the
+ * yield half could not have passed a behavioural test because it does not work across
+ * processes.)_
  */
 export function isTrackedBackfillInflight(): boolean {
   return backfillInflight !== null;
