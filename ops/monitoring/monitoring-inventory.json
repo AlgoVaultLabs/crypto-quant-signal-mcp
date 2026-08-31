@@ -1752,7 +1752,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "6aaca0a2eb9c335b6d93cf263f6b8cbc3a05d321089b0b267e132bf54d6591df",
+      "sha256": "5da325083fe531f5609afab4a2b0304e185f289582771a9b9a2da14a630afd6a",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
