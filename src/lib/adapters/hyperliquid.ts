@@ -167,6 +167,61 @@ export function _resetHyperliquidMetaCache(): void {
   metaCacheImpl._clear();
 }
 
+// ── OPS-HL-INTERACTIVE-STARVATION-W1 CH2: the same treatment for `predictedFundings` ──
+//
+// WHY THIS IS THE LEVER, measured rather than preferred. `get_market_regime` calls
+// `getPredictedFundings()` on EVERY invocation at EVERY venue (`get-market-regime.ts:311-313`),
+// and it was the ONE HL call in that path still going direct to `hlInfoPost` while its neighbour
+// `metaAndAssetCtxs` had been coalesced since OPS-HL-RATELIMIT-W1. At weight 20 (`weightFor`:
+// "metaAndAssetCtxs, predictedFundings, and unknown → never under-count") that is 20 of the ~41
+// weight a default 4h/HL regime call spends — roughly HALF, on a payload identical for every
+// caller.
+//
+// THE ALTERNATIVE WAS MEASURED AND REJECTED. Raising the interactive reserve cannot fix this:
+// HL_WEIGHT_CEILING is 1150 against HL's documented 1200/min/IP, so only 50 wt/min is
+// unallocated — reserve 450→500 is +11%, taking ~10.9 calls/min to ~12, against bursts measured
+// at up to 106 throws in a SINGLE minute (2026-08-16). Taking the rest from batch is forbidden:
+// batch is compliant, 0 breaches in 222 closed windows. Coalescing REDUCES DEMAND rather than
+// reallocating a fixed budget, which is why it wins even where a reserve bump would fit.
+//
+// OUTPUT IDENTITY IS STRUCTURAL, NOT MERELY ASSERTED. `predictedFundings` takes NO parameters and
+// returns the whole perp universe, so every caller already receives the same payload — there is no
+// per-caller dimension that could be baked into a cached cell (the hazard the "value varying along
+// a dimension absent from the cache key" rule names). Funding also moves far slower than the mark
+// prices the 60 s meta TTL already covers, so this TTL is strictly safer than one already ratified
+// in this same file.
+//
+// The RAW payload is cached and mapped per caller, deliberately: caching the mapped array would
+// hand ONE array object to N callers, and a shared mutable result buys nothing here. Mapping ~230
+// entries in-process is free next to a 20-weight network call.
+//
+// Same knobs as meta, for the same reasons. `staleOk: false` + `negativeTtlMs: 0` mean a refusal is
+// NOT memoised, so the next call retries instead of inheriting a 60 s-old failure. Serving a stale
+// funding payload through an upstream refusal would serve the customer better, but it CHANGES the
+// response in the degraded case — out of scope for a chapter whose gate is output identity.
+// Recorded as a follow-on candidate rather than silently taken.
+const PREDICTED_FUNDINGS_TTL_MS = 60_000;
+
+// `predictedFundings` accepts no arguments, so there is exactly ONE cell. The key is a constant
+// rather than a dex or coin — inventing a dimension the endpoint does not have would fragment the
+// cache and quietly restore the per-caller fetch this exists to remove.
+const PREDICTED_FUNDINGS_KEY = 'all';
+
+const predictedFundingsCacheImpl = coalescedCache<HLPredictedFunding[]>({
+  load: () => hlInfoPost<HLPredictedFunding[]>({ type: 'predictedFundings' }),
+  ttlMs: PREDICTED_FUNDINGS_TTL_MS,
+  staleOk: false,
+  negativeTtlMs: 0,
+});
+
+/**
+ * Test-only reset of the adapter's predictedFundings coalescing cache.
+ * Production code MUST NOT call this — used by unit tests to isolate cases.
+ */
+export function _resetHyperliquidPredictedFundingsCache(): void {
+  predictedFundingsCacheImpl._clear();
+}
+
 // OPS-ADAPTER-RATELIMIT-UNIFY-W1: the raw `hlPost` POST/retry/429 loop was retired —
 // hlInfoPost now routes through the shared `upstreamFetch` (VENUE_FETCH_CONFIGS.HL).
 
@@ -239,7 +294,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getPredictedFundings(): Promise<FundingData[]> {
-    const raw = await hlInfoPost<HLPredictedFunding[]>({ type: 'predictedFundings' });
+    // OPS-HL-INTERACTIVE-STARVATION-W1 CH2: route through the in-process coalescing cache so a
+    // burst of concurrent `get_market_regime` callers shares ONE backend fetch (60s TTL) instead
+    // of spending 20 weight each on the identical universe payload. The mapping below is unchanged
+    // and runs per caller, so each receives its own array. See the block beside the cache for why
+    // this is the lever and why a larger reserve is not.
+    const raw = await predictedFundingsCacheImpl.get(PREDICTED_FUNDINGS_KEY);
     return raw.map(entry => ({
       coin: entry[0],
       venues: (entry[1] || [])
