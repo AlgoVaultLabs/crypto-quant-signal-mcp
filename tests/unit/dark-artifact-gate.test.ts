@@ -125,7 +125,19 @@ describe('dark-artifact gate — base-tree read covers ALL of src/', () => {
   // against HEAD too — see the sibling assertion below, which reintroduces it.
   it('a branch with no new exports has an empty delta', { timeout: 60_000 }, () => {
     const self = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
-    expect(newDeclarations(ROOT, self)).toEqual([]);
+    // `newDeclarations` reads the WORKING TREE for the "new" side and the ref for the "old"
+    // side, so against HEAD a developer mid-edit with an uncommitted export would go red on a
+    // suite run — a spurious local failure, and a spurious failure on a blocking gate is how
+    // that gate gets bypassed and permanently degraded. Symbols from files the working tree has
+    // actually modified are therefore EXPLAINED and excluded. On a clean tree (every gate run,
+    // every CI run) the set is empty and this is the original assertion verbatim; the R2
+    // pathspec defect surfaces symbols from UNMODIFIED files, so it still turns this red.
+    const modified = new Set(
+      execFileSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' })
+        .split('\n').filter(Boolean).map((l) => l.slice(3).trim().split(' -> ').pop()!),
+    );
+    const unexplained = newDeclarations(ROOT, self)!.filter((d) => !modified.has(d.file));
+    expect(unexplained).toEqual([]);
   });
 
   it('…and the R2 pathspec defect still makes that delta non-empty — otherwise the lock is vacuous', { timeout: 60_000 }, () => {
