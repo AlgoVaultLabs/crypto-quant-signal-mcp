@@ -11,7 +11,12 @@ import { formatAgentActivity } from '../lib/agent-activity-format.js';
 import { getPerformanceStatsAsync, getMerkleBatchSummary, dbQuery } from '../lib/performance-db.js';
 import { formatMerkleAnchoring } from '../lib/merkle-anchor-format.js';
 import { runScript } from '../lib/script-lifecycle.js';
-import { evaluatePfeWinRate, internalPerfPublicUrl } from './monitor-pfe.js';
+import {
+  internalPerfPublicUrl,
+  pfeReadVerdict,
+  pfeUnreadableVerdict,
+  type PfeProbeVerdict,
+} from './monitor-pfe.js';
 import { evaluateSeedFreshness, buildSeedFreshnessRows, formatSeedOutagePage } from './monitor-seed-freshness.js';
 import { listVenues } from '../lib/venue-store.js';
 import { getLatestSeedHeartbeatPerVenue } from '../lib/seed-heartbeats.js';
@@ -183,6 +188,15 @@ const FAIL_THRESHOLDS: Record<string, number> = {
   exchanges: 3,
   backfill: 1,
   pfe_winrate: 1,
+  // OPS-PFE-PROBE-INDETERMINATE-W1: the COULD-NOT-MEASURE half of the PFE check,
+  // split off `pfe_winrate` so an unreadable endpoint can neither advance the
+  // win-rate counter nor consume its 30-min dedup window (see monitor-pfe.ts).
+  // 3 (~6 min) rather than 2: a genuine outage is `server_health`'s job and it
+  // pages at 2, so this channel exists for the narrower "server up, but
+  // performance-public specifically will not answer" condition — which is only
+  // operator-actionable once it is sustained. The classifier's transient floor
+  // (TRANSIENT_MIN_CYCLES=2) is a lower bound on this, never a substitute for it.
+  pfe_probe: 3,
   // OPS-SEED-ORCHESTRATOR-W1/CH2: RESERVED for the seed-freshness check, which
   // ships REPORT-ONLY (checkSeedFreshness returns null pending a calibrated /
   // baseline-relative redesign — live data showed a fixed recency threshold
@@ -468,7 +482,7 @@ async function checkBackfillQueue(): Promise<{ error: string | null; count: numb
   }
 }
 
-async function checkPfeWinRate(): Promise<{ error: string | null; rate: number | null }> {
+async function checkPfeWinRate(): Promise<PfeProbeVerdict> {
   // Read the server-side-cached stats instead of recomputing the ~6 s / 152k-row
   // query in this cold cron process. Hit the co-located server on 127.0.0.1:$PORT
   // (NOT the public Cloudflare hairpin — it intermittently returned HTTP 0) with
@@ -489,7 +503,7 @@ async function checkPfeWinRate(): Promise<{ error: string | null; rate: number |
   let lastReason: string | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const { ok, status, data, reason } = await fetchJson(internalPerfPublicUrl(), {}, PFE_FETCH_TIMEOUT_MS);
-    if (ok) return evaluatePfeWinRate(data);
+    if (ok) return pfeReadVerdict(data);
     lastStatus = status;
     lastReason = reason;
     if (attempt < MAX_ATTEMPTS) {
@@ -497,7 +511,7 @@ async function checkPfeWinRate(): Promise<{ error: string | null; rate: number |
       await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
     }
   }
-  return { error: pfeProbeAlert(lastStatus, MAX_ATTEMPTS, lastReason), rate: null };
+  return pfeUnreadableVerdict(pfeProbeAlert(lastStatus, MAX_ATTEMPTS, lastReason));
 }
 
 async function checkSeedFreshness(): Promise<string | null> {
@@ -569,6 +583,9 @@ async function runCritical(): Promise<void> {
   console.log(`[monitor] critical check at ${new Date().toISOString()}`);
   const state = loadState();
 
+  let pfeMemo: PfeProbeVerdict | null = null;
+  const pfeOnce = async (): Promise<PfeProbeVerdict> => (pfeMemo ??= await checkPfeWinRate());
+
   const checks: [string, () => Promise<string | null>][] = [
     ['server_health', checkServerHealth],
     ['facilitator', checkFacilitator],
@@ -576,7 +593,11 @@ async function runCritical(): Promise<void> {
     ['database', checkDatabase],
     ['exchanges', checkExchanges],
     ['backfill', async () => (await checkBackfillQueue()).error],
-    ['pfe_winrate', async () => (await checkPfeWinRate()).error],
+    // ONE fetch per cycle, memoised, reported down TWO independent channels —
+    // separate consecutive counters and separate dedup windows. Evaluating the
+    // probe twice would double the load it is already the dominant source of.
+    ['pfe_winrate', async () => (await pfeOnce()).breach],
+    ['pfe_probe', async () => (await pfeOnce()).unreadable],
     ['seed_freshness', checkSeedFreshness],
     ['seed_attempt_freshness', checkSeedAttemptFreshness],
   ];

@@ -51,6 +51,7 @@ import {
   effectiveFailThreshold,
   TRANSIENT_MIN_CYCLES,
 } from '../../src/lib/probe-failure-class.js';
+import { pfeReadVerdict, pfeUnreadableVerdict } from '../../src/scripts/monitor-pfe.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -151,5 +152,88 @@ describe('G4 — two-way: a CONFIRMED breach keeps cycle-1 visibility', () => {
     expect(classifyProbeFailure('devto-http-404')).toBe('confirmed');
     expect(classifyProbeFailure('devto-http-410')).toBe('confirmed');
     expect(classifyProbeFailure('Backfill queue stuck: 61,000 pending (> 50,000)')).toBe('confirmed');
+  });
+});
+
+/**
+ * G5-G7 — OPS-PFE-PROBE-INDETERMINATE-W1 CH2: the two PFE verdicts travel on
+ * SEPARATE channels.
+ *
+ * The false-negative this closes is not hypothetical arithmetic: `runCritical`
+ * keys both `consecutiveFails` and the 30-minute `lastAlerted` dedup window on
+ * the check key, so one UNREADABLE page would have swallowed a genuine
+ * win-rate page for the next half hour — the single alert the check exists to
+ * deliver.
+ */
+describe('G5 — exactly one verdict field is ever set', () => {
+  it('a read endpoint yields a BREACH verdict and never an unreadable one', () => {
+    const bad = pfeReadVerdict({ overall: { pfeWinRate: 0.83 } });
+    expect(bad.breach).toBe('PFE win rate dropped to 83.0% (< 85%)');
+    expect(bad.unreadable).toBeNull();
+    expect(bad.rate).toBe(0.83);
+
+    const good = pfeReadVerdict({ overall: { pfeWinRate: 0.9168 } });
+    expect(good.breach).toBeNull();
+    expect(good.unreadable).toBeNull();
+  });
+
+  it('an unread endpoint yields an UNREADABLE verdict and NEVER a win-rate claim', () => {
+    const v = pfeUnreadableVerdict(pfeProbeAlert(FETCH_THROW_STATUS, 3, 'TimeoutError: aborted'));
+    expect(v.unreadable).toContain('HTTP 0');
+    // The load-bearing assertion: an unreadable probe must not touch the WR channel,
+    // so it can neither advance its counter nor burn its dedup window.
+    expect(v.breach).toBeNull();
+    expect(v.rate).toBeNull();
+  });
+
+  it('mutual exclusivity holds across every representative input', () => {
+    const verdicts = [
+      pfeReadVerdict({ overall: { pfeWinRate: 0.9168 } }),
+      pfeReadVerdict({ overall: { pfeWinRate: 0.83 } }),
+      pfeReadVerdict({ overall: { pfeWinRate: null } }),
+      pfeReadVerdict({}),
+      pfeReadVerdict(null),
+      pfeUnreadableVerdict(pfeProbeAlert(FETCH_THROW_STATUS, 3, null)),
+      pfeUnreadableVerdict(pfeProbeAlert(503, 3, null)),
+    ];
+    for (const v of verdicts) {
+      expect(v.breach === null || v.unreadable === null, JSON.stringify(v)).toBe(true);
+    }
+  });
+});
+
+describe('G6 — the channels are wired to distinct keys with distinct thresholds', () => {
+  const src = () => fs.readFileSync(path.join(REPO, 'src/scripts/monitor.ts'), 'utf-8');
+
+  it('both keys exist in FAIL_THRESHOLDS and pfe_probe is sustained-only', () => {
+    const s = src();
+    expect(s).toMatch(/pfe_winrate:\s*1\b/);
+    const m = s.match(/pfe_probe:\s*(\d+)/);
+    expect(m, 'pfe_probe must have its own threshold').not.toBeNull();
+    expect(Number(m![1]), 'a could-not-measure channel must never page cycle-1').toBeGreaterThanOrEqual(2);
+  });
+
+  it('runCritical registers both channels off ONE memoised probe', () => {
+    const s = src();
+    expect(s).toMatch(/\['pfe_winrate', async \(\) => \(await pfeOnce\(\)\)\.breach\]/);
+    expect(s).toMatch(/\['pfe_probe', async \(\) => \(await pfeOnce\(\)\)\.unreadable\]/);
+    // One fetch per cycle: the probe is already the dominant driver of the
+    // recompute it fails to read; evaluating it twice would double that.
+    expect((s.match(/await checkPfeWinRate\(\)/g) ?? []).length).toBe(1);
+  });
+});
+
+describe('G7 — the unreadable channel is not silent (no dark guard)', () => {
+  it('a SUSTAINED unreadable endpoint still pages, on its own channel', () => {
+    const alert = pfeUnreadableVerdict(
+      pfeProbeAlert(FETCH_THROW_STATUS, 3, 'TimeoutError: The operation was aborted due to timeout'),
+    ).unreadable!;
+    // transient ⇒ floored to TRANSIENT_MIN_CYCLES, but pfe_probe's own threshold is
+    // higher, and effectiveFailThreshold takes the MAX — so it pages at 3, not never.
+    expect(effectiveFailThreshold(3, alert)).toBe(3);
+    expect(classifyProbeFailure(alert)).toBe('transient');
+    // …and the body names the cause, so the page is actionable on arrival.
+    expect(alert).toContain('performance-public');
+    expect(alert).toContain('aborted due to timeout');
   });
 });

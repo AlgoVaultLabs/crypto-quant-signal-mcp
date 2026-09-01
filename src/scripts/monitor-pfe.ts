@@ -33,3 +33,43 @@ export function internalPerfPublicUrl(env: NodeJS.ProcessEnv = process.env): str
   const port = env.PORT && /^\d+$/.test(env.PORT) ? env.PORT : '3000';
   return `http://127.0.0.1:${port}/api/performance-public`;
 }
+
+/**
+ * OPS-PFE-PROBE-INDETERMINATE-W1 — the two verdicts this check can reach, kept
+ * on SEPARATE alerting channels.
+ *
+ * `checkPfeWinRate` answers two different questions and used to report both
+ * through the one `pfe_winrate` key:
+ *
+ *   BREACH      — measured, and the rate is below the floor. Operator-actionable
+ *                 data integrity. Keeps its cycle-1 visibility.
+ *   UNREADABLE  — could not measure at all. Says nothing about the win rate.
+ *
+ * Sharing one key is not merely untidy, it has a false-NEGATIVE path: `runCritical`
+ * keys BOTH `consecutiveFails` and the 30-min `lastAlerted` dedup window on the
+ * check key, so an UNREADABLE page at T would suppress a genuine win-rate page
+ * until T+30min — the one alert this check exists to deliver. It is the
+ * verdict-token law applied to an alert channel: a gate that can fail open must
+ * not report "verified nothing" down the same wire as "verified, and it is bad."
+ *
+ * Exactly one field is non-null; `tests/unit/monitor-probe-alerts.test.ts` asserts it.
+ */
+export interface PfeProbeVerdict {
+  /** Measured, below the floor → `pfe_winrate` channel, threshold 1. */
+  breach: string | null;
+  /** Could not measure → `pfe_probe` channel, sustained-only. */
+  unreadable: string | null;
+  /** The measured rate, or null when unknown OR unread. */
+  rate: number | null;
+}
+
+/** The endpoint answered: the verdict is whatever the (unchanged) floor rule says. */
+export function pfeReadVerdict(data: unknown): PfeProbeVerdict {
+  const { error, rate } = evaluatePfeWinRate(data);
+  return { breach: error, unreadable: null, rate };
+}
+
+/** The endpoint did not answer: INDETERMINATE. Never a win-rate claim, in either direction. */
+export function pfeUnreadableVerdict(probeAlert: string): PfeProbeVerdict {
+  return { breach: null, unreadable: probeAlert, rate: null };
+}
