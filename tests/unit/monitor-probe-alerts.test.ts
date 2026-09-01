@@ -39,13 +39,26 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as alerts from '../../src/scripts/monitor-probe-alerts.js';
 import {
   FETCH_THROW_STATUS,
-  HTTP_PROBE_ALERTS,
   pfeProbeAlert,
   serverHealthProbeAlert,
   facilitatorProbeAlert,
 } from '../../src/scripts/monitor-probe-alerts.js';
+
+/**
+ * The enumeration, taken from the MODULE'S OWN EXPORTS rather than a second
+ * hand-kept list. The naming convention is the contract: any exported
+ * `*ProbeAlert` is discovered here, so a probe alert added later is gated the day
+ * it is written. (A registry array was tried first and correctly refused by
+ * `check-dark-exports.mjs` — exported, tested, called by nothing in src/.)
+ */
+type ProbeAlertFn = (status: number, attempts: number, reason?: string | null) => string;
+const HTTP_PROBE_ALERTS: readonly { key: string; format: ProbeAlertFn }[] =
+  Object.entries(alerts)
+    .filter(([n, v]) => n.endsWith('ProbeAlert') && typeof v === 'function')
+    .map(([key, format]) => ({ key, format: format as ProbeAlertFn }));
 import {
   classifyProbeFailure,
   effectiveFailThreshold,
@@ -96,29 +109,29 @@ describe('G1 — every registered HTTP probe alert is transient at the fetch-thr
   });
 });
 
-describe('G2 — the registry is complete with respect to this module’s exports', () => {
-  it('every exported *ProbeAlert formatter is registered', async () => {
-    const mod = await import('../../src/scripts/monitor-probe-alerts.js');
-    const exported = Object.entries(mod)
-      .filter(([name, v]) => name.endsWith('ProbeAlert') && typeof v === 'function')
-      .map(([name]) => name);
-    expect(exported.length).toBeGreaterThanOrEqual(3);
-    const registered = new Set(HTTP_PROBE_ALERTS.map((a) => a.format));
-    for (const name of exported) {
-      expect(
-        registered.has((mod as Record<string, unknown>)[name] as never),
-        `${name} is exported but missing from HTTP_PROBE_ALERTS — G1 would never see it`,
-      ).toBe(true);
-    }
-  });
-
-  it('the three live call sites are the registered ones', () => {
+describe('G2 — the enumeration is discovered, not hand-kept', () => {
+  it('picks up exactly the three live formatters, by convention', () => {
     expect(HTTP_PROBE_ALERTS.map((a) => a.key).sort()).toEqual(
-      ['facilitator', 'pfe_winrate', 'server_health'],
+      ['facilitatorProbeAlert', 'pfeProbeAlert', 'serverHealthProbeAlert'],
     );
     expect(HTTP_PROBE_ALERTS.map((a) => a.format)).toEqual(
       expect.arrayContaining([serverHealthProbeAlert, facilitatorProbeAlert, pfeProbeAlert]),
     );
+  });
+
+  it('a formatter added to the module is enumerated WITHOUT editing this file', () => {
+    // The property the deleted registry was supposed to give, asserted directly:
+    // discovery is by export name, so nothing can be added and silently uncovered.
+    const fake = { extraProbeAlert: (s: number, a: number) => `x (HTTP ${s}) after ${a} attempts` };
+    const discovered = Object.entries({ ...alerts, ...fake })
+      .filter(([n, v]) => n.endsWith('ProbeAlert') && typeof v === 'function')
+      .map(([n]) => n);
+    expect(discovered).toContain('extraProbeAlert');
+    expect(discovered.length).toBe(HTTP_PROBE_ALERTS.length + 1);
+  });
+
+  it('the enumeration is not vacuous', () => {
+    expect(HTTP_PROBE_ALERTS.length).toBeGreaterThanOrEqual(3);
   });
 });
 

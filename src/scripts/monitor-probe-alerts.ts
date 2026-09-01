@@ -58,19 +58,18 @@ export function pfeProbeAlert(status: number, attempts: number, reason?: string 
   return `PFE check failed: performance-public HTTP ${status} after ${attempts} attempts${probeFailureCause(reason)}`;
 }
 
-export interface HttpProbeAlert {
-  /** The `FAIL_THRESHOLDS` key this alert is reported under. */
-  readonly key: string;
-  readonly format: (status: number, attempts: number, reason?: string | null) => string;
-}
-
 /**
- * Every HTTP-probe alert the monitor can page on. The gate iterates THIS, not a
- * hand-written list, and separately asserts that every exported `*ProbeAlert`
- * appears here — so the enumeration cannot go stale in either direction.
+ * There is deliberately NO exported registry array here.
+ *
+ * The first draft had one, and `scripts/check-dark-exports.mjs` refused the push:
+ * it was exported, tested, and called by nothing in `src/` — the exact
+ * "declaration only" shape that gate exists to catch, and the gate was right.
+ * The enumeration it existed for is better taken from the MODULE'''s own exports
+ * (`Object.entries(mod)` filtered to `*ProbeAlert`), which `tests/unit/
+ * monitor-probe-alerts.test.ts` does. That keeps the property the registry was
+ * for — a probe alert added later is covered the day it is written — without a
+ * second list that can disagree with the first.
+ *
+ * The naming convention IS the contract: any function exported from this module
+ * whose name ends in `ProbeAlert` is enumerated and gated.
  */
-export const HTTP_PROBE_ALERTS: readonly HttpProbeAlert[] = [
-  { key: 'server_health', format: serverHealthProbeAlert },
-  { key: 'facilitator', format: facilitatorProbeAlert },
-  { key: 'pfe_winrate', format: pfeProbeAlert },
-];
