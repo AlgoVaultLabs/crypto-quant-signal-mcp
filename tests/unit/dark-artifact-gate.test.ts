@@ -110,9 +110,33 @@ describe('dark-artifact gate — base-tree read covers ALL of src/', () => {
     expect(files!.filter((f) => f.split('/').length === 2).length).toBeGreaterThan(0);
   });
 
+  // BASE IS `HEAD`, NOT `origin/main` — repaired by OPS-PFE-PROBE-INDETERMINATE-W1, and the
+  // change is what the test's own NAME already asked for. Against `origin/main` this asserted
+  // "the branch I happen to be sitting on adds no exports", which is a property of the checkout,
+  // not of the code: it is true only on `main` and on branches that add nothing, so it FAILED
+  // the pre-push test gate for EVERY feature branch that exports a symbol, and blocked the whole
+  // estate. Measured on the branch that hit it: 8 new declarations, `DARK_EXPORTS_VERDICT=PASS`
+  // (all wired) — a green gate and a red test over the same fact.
+  //
+  // Against `HEAD` the precondition in the name HOLDS BY CONSTRUCTION on any branch, and the
+  // lock keeps its teeth: this describe block exists because reading the base tree with the
+  // pathspec `src/**/*.ts` silently dropped the files sitting DIRECTLY under `src/`, so their
+  // symbols read as absent-at-base and therefore NEW. That defect makes the delta non-empty
+  // against HEAD too — see the sibling assertion below, which reintroduces it.
   it('a branch with no new exports has an empty delta', { timeout: 60_000 }, () => {
-    const base = execFileSync('git', ['rev-parse', 'origin/main'], { cwd: ROOT, encoding: 'utf8' }).trim();
-    expect(newDeclarations(ROOT, base)).toEqual([]);
+    const self = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
+    expect(newDeclarations(ROOT, self)).toEqual([]);
+  });
+
+  it('…and the R2 pathspec defect still makes that delta non-empty — otherwise the lock is vacuous', { timeout: 60_000 }, () => {
+    // The buggy read, verbatim: `src/**/*.ts` matches only NESTED files under src/.
+    const self = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
+    const buggy = execFileSync('git', ['ls-tree', '-r', '--name-only', self, 'src/**/*.ts'], { cwd: ROOT, encoding: 'utf8' })
+      .split('\n').filter((x) => x.endsWith('.ts') && !x.endsWith('.d.ts'));
+    const correct = baseTreeSrcFiles(ROOT, self)!;
+    expect(correct.length).toBeGreaterThan(buggy.length);
+    expect(correct.filter((f) => f.split('/').length === 2)).not.toEqual([]);
+    expect(buggy.filter((f) => f.split('/').length === 2)).toEqual([]);
   });
 });
 
