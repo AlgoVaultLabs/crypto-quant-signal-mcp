@@ -51,7 +51,7 @@ import {
   effectiveFailThreshold,
   TRANSIENT_MIN_CYCLES,
 } from '../../src/lib/probe-failure-class.js';
-import { pfeReadVerdict, pfeUnreadableVerdict } from '../../src/scripts/monitor-pfe.js';
+import { isReadablePerfBody, pfeReadVerdict, pfeUnreadableVerdict } from '../../src/scripts/monitor-pfe.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -235,5 +235,125 @@ describe('G7 — the unreadable channel is not silent (no dark guard)', () => {
     // …and the body names the cause, so the page is actionable on arrival.
     expect(alert).toContain('performance-public');
     expect(alert).toContain('aborted due to timeout');
+  });
+});
+
+/**
+ * G8-G11 — OPS-PFE-PROBE-INDETERMINATE-W1 CH3: a 200 we could not READ is
+ * UNREADABLE, never CLEAN.
+ *
+ * The page that fired on 2026-09-01 and a silent clean verdict are two coin-flips
+ * of the SAME 69.7 s event. Abort before headers ⇒ throw ⇒ `HTTP 0` ⇒ the page.
+ * Abort mid-way through the 568 KB body ⇒ `res.json()` rejects ⇒ the old
+ * `.catch(() => null)` returned `{ ok: true, status: 200, data: null }` ⇒
+ * `evaluatePfeWinRate(null)` ⇒ `error: null` ⇒ `runCritical` logs `auto-recovered`
+ * and resets the counter. Silent, clean, and wrong — "exit 0 encoding both
+ * 'verified, clean' and 'verified nothing'" in one return statement.
+ */
+describe('G8 — a structurally unreadable body is not adjudicable', () => {
+  it('rejects the shapes an aborted or malformed body actually produces', () => {
+    for (const bad of [null, undefined, 'not json', 42, [], {}, { overall: null }, { overall: 'nope' }]) {
+      expect(isReadablePerfBody(bad), JSON.stringify(bad) ?? 'undefined').toBe(false);
+    }
+  });
+
+  it('accepts a well-formed body — INCLUDING one honestly reporting no matured data', () => {
+    expect(isReadablePerfBody({ overall: { pfeWinRate: 0.9168 } })).toBe(true);
+    // The documented "unknown rate is not a drop" rule must survive CH3 untouched:
+    // a present `overall` with a null rate is READ, and read-and-unknown is clean.
+    expect(isReadablePerfBody({ overall: { pfeWinRate: null } })).toBe(true);
+    const v = pfeReadVerdict({ overall: { pfeWinRate: null } });
+    expect(v.breach).toBeNull();
+    expect(v.unreadable).toBeNull();
+    expect(v.rate).toBeNull();
+  });
+});
+
+describe('G9 — the unread-body reason classifies transient through the shared lexicon', () => {
+  it('a body-read failure never pages cycle-1', () => {
+    for (const reason of [
+      'parse-error: TypeError: terminated',
+      'parse-error: SyntaxError: Unexpected end of JSON input',
+      'parse-error: body has no `overall` block (unreadable, not clean)',
+    ]) {
+      const alert = pfeProbeAlert(200, 3, reason);
+      // NB: 200 is NOT transient by the numeric leg — the `parse-error` token is what
+      // carries it. That is the defence-in-depth CH1 installed, doing real work here.
+      expect(classifyProbeFailure(alert), alert).toBe('transient');
+      expect(effectiveFailThreshold(1, alert)).toBe(TRANSIENT_MIN_CYCLES);
+    }
+  });
+});
+
+describe('G10 — the probe does not adjudicate on `ok` alone', () => {
+  const src = () => fs.readFileSync(path.join(REPO, 'src/scripts/monitor.ts'), 'utf-8');
+
+  it('the PFE read is gated on parse success AND body shape, not just `ok`', () => {
+    const s = src();
+    expect(s).toMatch(/if \(ok && !parseError && isReadablePerfBody\(data\)\) return pfeReadVerdict\(data\);/);
+    // The bare form is the defect. It must not come back.
+    expect(s).not.toMatch(/if \(ok\) return pfeReadVerdict\(data\);/);
+  });
+
+  it('fetchJson reports the body-read failure instead of swallowing it', () => {
+    // Scoped to fetchJson's body ON PURPOSE. `checkGasWallet` uses the same
+    // discard-and-substitute-null form legitimately at monitor.ts:354 — its
+    // `parseGasBalanceResult` handles a null explicitly, which is the whole point of
+    // "never coerce a missing RPC result to 0 ETH" (d8164113). A repo-wide ban would
+    // fail on that correct call site and teach the next reader to delete the gate.
+    const s = src();
+    const start = s.indexOf('async function fetchJson(');
+    expect(start, 'fetchJson must exist for this gate to mean anything').toBeGreaterThan(-1);
+    const body = s.slice(start, s.indexOf('\n}', start));
+    expect(body).not.toMatch(/\.catch\(\(\) => null\)/);
+    expect(body).toMatch(/parseError/);
+    expect(body).toMatch(/parseError: string \| null/);
+  });
+});
+
+/**
+ * G11 — OPS-PFE-PROBE-INDETERMINATE-W1 CH4: the PFE probe takes ONE observation
+ * per cycle.
+ *
+ * The removed 3×15 s loop was a non-control that read as a control:
+ * `perfStatsInflight` is keyed by bucket and cleared only on settle, so attempts 2
+ * and 3 awaited the SAME promise attempt 1 started. Three aborts of one observation.
+ * Reintroducing it would restore ~55 s of serial wall-clock inside a 120 s cron
+ * period and buy no additional probability, so the gate refuses it rather than
+ * relying on a comment — the prior comment IS what this replaces.
+ *
+ * `checkServerHealth` and `checkFacilitator` keep their loops on purpose: those
+ * probes hit `/health` and the facilitator, share no in-flight promise, and their
+ * attempts are genuinely independent draws.
+ */
+describe('G11 — one observation per cycle, and the sustained gate does the rest', () => {
+  const pfeBody = () => {
+    const s = fs.readFileSync(path.join(REPO, 'src/scripts/monitor.ts'), 'utf-8');
+    const start = s.indexOf('async function checkPfeWinRate(');
+    expect(start, 'checkPfeWinRate must exist for this gate to mean anything').toBeGreaterThan(-1);
+    return s.slice(start, s.indexOf('\n}\n', start));
+  };
+
+  it('checkPfeWinRate fetches exactly once and has no retry loop', () => {
+    const body = pfeBody();
+    expect((body.match(/await fetchJson\(/g) ?? []).length).toBe(1);
+    expect(body).not.toMatch(/for \(let attempt/);
+    expect(body).not.toMatch(/MAX_ATTEMPTS/);
+    expect(body).not.toMatch(/RETRY_DELAY_MS/);
+  });
+
+  it('the genuinely-independent probes KEEP their retries (this is not a blanket ban)', () => {
+    const s = fs.readFileSync(path.join(REPO, 'src/scripts/monitor.ts'), 'utf-8');
+    for (const fn of ['checkServerHealth', 'checkFacilitator']) {
+      const start = s.indexOf(`async function ${fn}(`);
+      const body = s.slice(start, s.indexOf('\n}\n', start));
+      expect(body, `${fn} must keep its independent-sample retry`).toMatch(/for \(let attempt/);
+    }
+  });
+
+  it('the unreadable alert honestly reports ONE attempt', () => {
+    const body = pfeBody();
+    expect(body).toMatch(/pfeProbeAlert\(status, 1, why\)/);
+    expect(pfeProbeAlert(FETCH_THROW_STATUS, 1, 'TimeoutError: aborted')).toContain('after 1 attempts');
   });
 });

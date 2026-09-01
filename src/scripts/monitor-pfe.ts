@@ -73,3 +73,25 @@ export function pfeReadVerdict(data: unknown): PfeProbeVerdict {
 export function pfeUnreadableVerdict(probeAlert: string): PfeProbeVerdict {
   return { breach: null, unreadable: probeAlert, rate: null };
 }
+
+/**
+ * OPS-PFE-PROBE-INDETERMINATE-W1 CH3 — is this body one we can ADJUDICATE?
+ *
+ * `evaluatePfeWinRate` deliberately reports an unknown rate as "no error", and that
+ * rule is right: a null `pfeWinRate` on a well-formed body means no matured data,
+ * which is not a drop. But it cannot distinguish that from a body we never read.
+ * `fetchJson`'s `res.json().catch(() => null)` turned an abort landing mid-body into
+ * `{ ok: true, status: 200, data: null }`, and the check then reported VERIFIED CLEAN
+ * and reset its counter — the exact "exit 0 encoding both 'verified, clean' and
+ * 'verified nothing'" the token law forbids, reachable by the same 69.7 s degradation
+ * that produced the 2026-09-01 page.
+ *
+ * So the two questions are separated: THIS one asks whether the payload is structurally
+ * a performance body at all. Only if it is does the floor rule get to speak.
+ * A present `overall` object with `pfeWinRate: null` is READABLE (and clean) — unchanged.
+ */
+export function isReadablePerfBody(data: unknown): boolean {
+  if (typeof data !== 'object' || data === null) return false;
+  const overall = (data as { overall?: unknown }).overall;
+  return typeof overall === 'object' && overall !== null;
+}

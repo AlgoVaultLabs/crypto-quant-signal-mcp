@@ -13,6 +13,7 @@ import { formatMerkleAnchoring } from '../lib/merkle-anchor-format.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import {
   internalPerfPublicUrl,
+  isReadablePerfBody,
   pfeReadVerdict,
   pfeUnreadableVerdict,
   type PfeProbeVerdict,
@@ -117,19 +118,36 @@ async function fetchJson(
   url: string,
   options?: RequestInit,
   timeoutMs: number = FETCH_TIMEOUT,
-): Promise<{ ok: boolean; status: number; data: unknown; reason: string | null }> {
+): Promise<{ ok: boolean; status: number; data: unknown; reason: string | null; parseError: string | null }> {
   try {
     // `...options` FIRST: spread last, a caller passing `signal` — even
     // `signal: undefined` — silently disabled the abort. A timeout guard a caller can
     // switch off by accident is not a guard. No live caller passes one today; this
     // closes the hazard rather than relying on that staying true.
     const res = await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
-    const data = await res.json().catch(() => null);
-    return { ok: res.ok, status: res.status, data, reason: null };
+    // CH3 — `parseError` is reported, not swallowed. The previous form discarded the
+    // body-read rejection and substituted null (the literal is deliberately NOT quoted
+    // here: G10 bans it, and a comment quoting a banned string keeps a gate red for the
+    // wrong reason). That made a FAILED body read indistinguishable from a body that
+    // legitimately decoded to null, and the difference is the whole verdict: the 15 s
+    // abort can land AFTER
+    // headers, mid-way through the 568 KB body, in which case `res.json()` rejects and
+    // this used to return `{ ok: true, status: 200, data: null }`. The PFE check then
+    // read that as VERIFIED CLEAN and reset its counter — silently. The page that
+    // fired on 2026-09-01 and a silent clean verdict are two coin-flips of the SAME
+    // 69.7 s event. Prefixed `parse-error:` so the shared classifier reads it through
+    // its existing token (same convention as the forum verifier's `devto-parse-error`).
+    let parseError: string | null = null;
+    const data = await res.json().catch((e: unknown) => {
+      const pe = e as Error;
+      parseError = `parse-error: ${pe?.name ?? 'Error'}: ${pe?.message ?? String(e)}`;
+      return null;
+    });
+    return { ok: res.ok, status: res.status, data, reason: parseError, parseError };
   } catch (err) {
     const e = err as Error;
     const reason = `${e.name ?? 'Error'}: ${e.message}`;
-    return { ok: false, status: FETCH_THROW_STATUS, data: e.message, reason };
+    return { ok: false, status: FETCH_THROW_STATUS, data: e.message, reason, parseError: null };
   }
 }
 
@@ -483,35 +501,41 @@ async function checkBackfillQueue(): Promise<{ error: string | null; count: numb
 }
 
 async function checkPfeWinRate(): Promise<PfeProbeVerdict> {
-  // Read the server-side-cached stats instead of recomputing the ~6 s / 152k-row
-  // query in this cold cron process. Hit the co-located server on 127.0.0.1:$PORT
-  // (NOT the public Cloudflare hairpin — it intermittently returned HTTP 0) with
-  // a 15 s timeout, since /api/performance-public takes ~4.7 s on a cold 60 s-cache
-  // miss and brushed the generic 5 s FETCH_TIMEOUT. Verdict logic in the pure,
-  // unit-tested evaluatePfeWinRate(); an outage is caught by server_health/database.
+  // Reads the server-side-cached stats over the co-located loopback rather than
+  // recomputing them in this cold cron process (8504fd86) or hairpinning through
+  // Cloudflare (8ac821c5). Verdict logic stays in the pure, unit-tested
+  // monitor-pfe.ts; the sustained gate is the cross-cycle counter in runCritical.
   //
-  // OPS-COALESCED-CACHE-LOAD-TIMEOUT-W1 R4: retry the FETCH (transient loopback abort / HTTP 0)
-  // like checkServerHealth — 3 attempts, 5s delay. ONLY the HTTP-error path retries; once `ok`,
-  // a real WR-value breach (evaluatePfeWinRate) still pages FIRST-cycle (NOT masked). The 15s
-  // per-fetch timeout and FAIL_THRESHOLDS.pfe_winrate=1 are UNCHANGED. With the coalesced-cache
-  // loadTimeoutMs fix (R1/R2) the endpoint no longer blocks ~84s on a cold HL fill, so a fetch
-  // abort is now genuinely transient — this closes the consecutive=1 no-retry gap the loopback
-  // hotfix flagged, without masking a sustained slowness or a real WR drop.
-  const MAX_ATTEMPTS = 3;
-  const RETRY_DELAY_MS = 5_000;
-  let lastStatus = 0;
-  let lastReason: string | null = null;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { ok, status, data, reason } = await fetchJson(internalPerfPublicUrl(), {}, PFE_FETCH_TIMEOUT_MS);
-    if (ok) return pfeReadVerdict(data);
-    lastStatus = status;
-    lastReason = reason;
-    if (attempt < MAX_ATTEMPTS) {
-      console.log(`[monitor] PFE check fetch failed (HTTP ${status}${reason ? `: ${reason}` : ''}), retry ${attempt}/${MAX_ATTEMPTS - 1} in ${RETRY_DELAY_MS / 1000}s...`);
-      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-    }
-  }
-  return pfeUnreadableVerdict(pfeProbeAlert(lastStatus, MAX_ATTEMPTS, lastReason));
+  // OPS-PFE-PROBE-INDETERMINATE-W1 CH4 — the 3x/5 s in-process retry loop
+  // (OPS-COALESCED-CACHE-LOAD-TIMEOUT-W1 R4) is REMOVED. This is the deletion of a
+  // prior lane fix, not a fourth one.
+  //
+  // It could not do what its name claimed. `perfStatsInflight` in performance-db.ts is
+  // keyed by 5-minute bucket and cleared only on settle, so attempts 2 and 3 AWAIT THE
+  // SAME PROMISE attempt 1 started — three aborts of one observation, not three draws.
+  // It bought 3.7x wall-clock (a serial ~55 s budget inside a 120 s cron period) and 0x
+  // probability, and attempt 1 may itself join a load some earlier caller began, so the
+  // budget can cover only that load's tail. Measured on the 2026-09-01 incident: all
+  // three attempts aborted against one 69,744 ms recompute; only a 300 s bucket rollover
+  // could have given a fresh sample, which is reachable in <=20% of cycles and would
+  // START A SECOND CONCURRENT RECOMPUTE — a load amplifier, not a recovery.
+  //
+  // Leaving it in place with a comment explaining that it does not work would be exactly
+  // the "prose addressed to whoever happens to read it is NOT a control" failure. One
+  // honest observation per cycle; `pfe_probe`'s 3-cycle gate is the real sustained
+  // check, and it is a stronger one because its samples ARE independent — they are
+  // 2 minutes apart and each starts its own load.
+  const { ok, status, data, reason, parseError } = await fetchJson(
+    internalPerfPublicUrl(), {}, PFE_FETCH_TIMEOUT_MS,
+  );
+  // `ok` alone is NOT permission to adjudicate (CH3). A 200 whose body failed to parse,
+  // or whose `overall` block is absent, is could-not-measure — and evaluatePfeWinRate
+  // would have called both CLEAN, because its (correct) "an unknown rate is not a drop"
+  // rule cannot tell an unread body from a read one reporting no matured data.
+  if (ok && !parseError && isReadablePerfBody(data)) return pfeReadVerdict(data);
+  const why = reason ?? (ok ? 'parse-error: body has no `overall` block (unreadable, not clean)' : null);
+  console.log(`[monitor] PFE probe unreadable (HTTP ${status}${why ? `: ${why}` : ''})`);
+  return pfeUnreadableVerdict(pfeProbeAlert(status, 1, why));
 }
 
 async function checkSeedFreshness(): Promise<string | null> {
