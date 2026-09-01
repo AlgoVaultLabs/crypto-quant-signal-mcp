@@ -47,6 +47,36 @@ describe('classifyProbeFailure', () => {
     }
   });
 
+  // OPS-PFE-PROBE-INDETERMINATE-W1 — the shape this suite never tested.
+  // `HTTP 0` is fetchJson()'s "the fetch threw" sentinel and therefore the most
+  // common failure string the monitor emits; `extractHttpStatus` matched \d{3},
+  // so it read as CONFIRMED and paged pfe_winrate at consecutive=1 on 2026-09-01
+  // against a healthy endpoint. The pre-existing fixture below used HTTP 503 for
+  // this exact sentence — a status the path had produced twice in three weeks.
+  it('classifies the fetch-throw sentinel HTTP 0 as transient (the 2026-09-01 page)', () => {
+    for (const s of [
+      'PFE check failed: performance-public HTTP 0 after 3 attempts',
+      'PFE check failed: performance-public HTTP 0 after 3 attempts (TimeoutError: The operation was aborted due to timeout)',
+      'Server health check failed (HTTP 0) after 3 attempts',
+      'x402 facilitator down (HTTP 0) after 3 attempts',
+      'HTTP 0', 'http-0', 'http_0',
+    ]) {
+      expect(classifyProbeFailure(s), s).toBe('transient');
+    }
+    expect(effectiveFailThreshold(1, 'PFE check failed: performance-public HTTP 0 after 3 attempts'))
+      .toBe(TRANSIENT_MIN_CYCLES);
+  });
+
+  it('the widened \\d{1,3} parse does not launder a confirmed status into transient', () => {
+    // 404 / 410 remain the confirmed-drop signal, and the trailing \\b makes the
+    // parse STRICTER than \\d{3} was: "http 4041" used to mis-read as 404.
+    expect(classifyProbeFailure('devto-http-404')).toBe('confirmed');
+    expect(classifyProbeFailure('devto-http-410')).toBe('confirmed');
+    expect(classifyProbeFailure('build id http 4041 rejected')).toBe('confirmed');
+    expect(classifyProbeFailure('PFE win rate dropped to 83.0% (< 85%)')).toBe('confirmed');
+    expect(effectiveFailThreshold(1, 'PFE win rate dropped to 83.0% (< 85%)')).toBe(1);
+  });
+
   it('classifies rate-limit / 5xx / auth-ambiguous HTTP as transient', () => {
     for (const s of [
       'devto-http-429', 'hashnode-http-429', 'moltbook-http-429',

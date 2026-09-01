@@ -41,6 +41,25 @@
  * the consecutive gate.
  *
  * Pure + dependency-free ⇒ unit-tested in isolation (tests/unit/probe-failure-class.test.ts).
+ *
+ * ## The gap this generator itself had — OPS-PFE-PROBE-INDETERMINATE-W1 (2026-09-01)
+ *
+ * The generator above was correct and still did not fire, for the check named
+ * in its own lane-fix list. `extractHttpStatus` required THREE digits, and the
+ * failure string every `fetchJson()` throw produces is `HTTP 0` — one digit.
+ * So the classifier was blind to the single commonest could-not-measure marker
+ * in the codebase and returned `confirmed`, and `pfe_winrate` (threshold 1)
+ * paged at consecutive=1 on a healthy endpoint that self-healed two minutes
+ * later.
+ *
+ * The lesson is about the FIXTURE, not the logic: this module's suite asserted
+ * the PFE sentence with `HTTP 503` — a status that path had produced twice in
+ * three weeks — and never with the status the code emits on every abort. A
+ * classifier's test corpus must be drawn from what its PRODUCERS actually
+ * output, not from what reads plausibly. The producers are now declared once in
+ * `src/scripts/monitor-probe-alerts.ts` and enumerated by
+ * `tests/unit/monitor-probe-alerts.test.ts`, so a new probe alert is classified
+ * the day it is written rather than the day it pages.
  */
 
 export type ProbeFailureClass = 'transient' | 'confirmed';
@@ -114,11 +133,34 @@ function haystack(input: unknown): string {
   }
 }
 
-/** First HTTP status code mentioned in the text ("http-429", "HTTP 503", "http_404"). */
+/**
+ * First HTTP status mentioned in the text ("http-429", "HTTP 503", "http_404")
+ * — or the NON-status a probe reports when the fetch threw ("HTTP 0").
+ *
+ * OPS-PFE-PROBE-INDETERMINATE-W1: this matched `\d{3}` and therefore could not
+ * see `HTTP 0`, which is `monitor.ts fetchJson()`'s universal "the fetch threw"
+ * sentinel (`FETCH_THROW_STATUS`) and so the most common failure string the
+ * monitor emits. The one classifier built to stop could-not-measure being
+ * conflated with confirmed-adverse was blind to the commonest could-not-measure
+ * marker in the codebase, and on 2026-09-01 06:44:01Z it paged a healthy
+ * `/api/performance-public` at consecutive=1. The suite had tested this exact
+ * PFE sentence with `HTTP 503` and never with the status the code produces.
+ *
+ * `\d{1,3}` with a trailing `\b` is STRICTLY better than `\d{3}`, not merely
+ * wider: "http 4041" previously mis-parsed as 404, and now matches nothing.
+ */
 function extractHttpStatus(text: string): number | null {
-  const m = text.match(/http[\s_-]?(\d{3})/);
+  const m = text.match(/http[\s_-]?(\d{1,3})\b/);
   return m ? Number(m[1]) : null;
 }
+
+/**
+ * A value below 100 is not an HTTP status at all — it is a probe reporting that
+ * it never got a response. That is could-not-measure by construction, which is
+ * the definition of transient, and it is a stronger statement than any token
+ * match: it holds whatever the underlying errno turned out to be.
+ */
+const NOT_A_STATUS_CEILING = 100;
 
 /**
  * Classify a probe failure. Accepts the composed error string a check returns,
@@ -130,7 +172,9 @@ export function classifyProbeFailure(input: unknown): ProbeFailureClass {
   if (!text) return 'confirmed';
   if (TRANSIENT_TOKENS.some((t) => text.includes(t))) return 'transient';
   const status = extractHttpStatus(text);
-  if (status != null && (TRANSIENT_HTTP.has(status) || status >= 500)) return 'transient';
+  if (status != null && (status < NOT_A_STATUS_CEILING || TRANSIENT_HTTP.has(status) || status >= 500)) {
+    return 'transient';
+  }
   return 'confirmed';
 }
 

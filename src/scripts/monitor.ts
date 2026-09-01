@@ -26,6 +26,12 @@ import {
   type GasRead,
 } from '../lib/gas-wallet-quorum.js';
 import { effectiveFailThreshold, classifyProbeFailure } from '../lib/probe-failure-class.js';
+import {
+  FETCH_THROW_STATUS,
+  serverHealthProbeAlert,
+  facilitatorProbeAlert,
+  pfeProbeAlert,
+} from './monitor-probe-alerts.js';
 
 // ── Config ──
 
@@ -57,6 +63,26 @@ const BASE_RPCS = [
 const STATE_FILE = '/tmp/algovault-monitor-state.json';
 const DEDUP_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 const FETCH_TIMEOUT = 5_000;
+/**
+ * Per-attempt budget for the PFE probe. **DO NOT RAISE THIS TO FIX A PAGE.**
+ *
+ * It has already been raised once (5 s → 15 s, `8ac821c5`) against a then-measured
+ * ~4.7 s cold recompute. Measured on prod over 3 h on 2026-09-01: n=96, p50 2,471 ms,
+ * p99 3,164 ms — and one 69,744 ms outlier, 28× p99. A constant cannot be sized
+ * against a tail with no upper bound in code: nothing on the `/api/performance-public`
+ * path imposes a deadline, and the only ceiling in the whole stack is the 120 s
+ * `statement_timeout`. CLAUDE.md calls a constant raised against a moving tail a
+ * COUNTDOWN, and the next bump would be the fourth lane fix of the same class.
+ *
+ * Two things make the budget non-load-bearing instead, and they are the fix:
+ *   - exceeding it now yields a TRANSIENT verdict (probe-failure-class.ts), floored
+ *     to TRANSIENT_MIN_CYCLES, so one slow recompute can never page;
+ *   - the three attempts are honestly NOT independent samples — `perfStatsInflight`
+ *     in performance-db.ts is keyed by bucket, so attempts 2 and 3 attach to the SAME
+ *     in-flight promise. They extend the wall-clock wait; they do not re-roll the dice.
+ *     Raising the count buys nothing either.
+ */
+const PFE_FETCH_TIMEOUT_MS = 15_000;
 
 // ── Helpers ──
 
@@ -70,13 +96,35 @@ function parseArgs(): 'critical' | 'digest' {
   return mode;
 }
 
-async function fetchJson(url: string, options?: RequestInit, timeoutMs: number = FETCH_TIMEOUT): Promise<{ ok: boolean; status: number; data: unknown }> {
+/**
+ * OPS-PFE-PROBE-INDETERMINATE-W1: `reason` is now a first-class field.
+ *
+ * This used to report a throw as `{ ok:false, status:0, data: err.message }` —
+ * the cause was reachable only through `data`, which every failure path
+ * discards, so the operator saw `HTTP 0` and nothing else. Reconstructing the
+ * 2026-09-01 page took a container-log dig to find the 69,744 ms recompute the
+ * 15 s budget had aborted against. `status` is still `FETCH_THROW_STATUS` (the
+ * absence of a response, not a code); `reason` says WHICH absence, and
+ * `classifyProbeFailure` reads its "aborted"/"timeout"/errno tokens as a second
+ * independent route to `transient`.
+ */
+async function fetchJson(
+  url: string,
+  options?: RequestInit,
+  timeoutMs: number = FETCH_TIMEOUT,
+): Promise<{ ok: boolean; status: number; data: unknown; reason: string | null }> {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), ...options });
+    // `...options` FIRST: spread last, a caller passing `signal` — even
+    // `signal: undefined` — silently disabled the abort. A timeout guard a caller can
+    // switch off by accident is not a guard. No live caller passes one today; this
+    // closes the hazard rather than relying on that staying true.
+    const res = await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
     const data = await res.json().catch(() => null);
-    return { ok: res.ok, status: res.status, data };
+    return { ok: res.ok, status: res.status, data, reason: null };
   } catch (err) {
-    return { ok: false, status: 0, data: (err as Error).message };
+    const e = err as Error;
+    const reason = `${e.name ?? 'Error'}: ${e.message}`;
+    return { ok: false, status: FETCH_THROW_STATUS, data: e.message, reason };
   }
 }
 
@@ -192,16 +240,19 @@ async function checkServerHealth(): Promise<string | null> {
   const RETRY_DELAY_MS = 5_000;
   let lastStatus = 0;
 
+  let lastReason: string | null = null;
+
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { ok, status } = await fetchJson(`${API_BASE}/health`);
+    const { ok, status, reason } = await fetchJson(`${API_BASE}/health`);
     if (ok) return null;
     lastStatus = status;
+    lastReason = reason;
     if (attempt < MAX_ATTEMPTS) {
-      console.log(`[monitor] server health failed (HTTP ${status}), retry ${attempt}/${MAX_ATTEMPTS - 1} in ${RETRY_DELAY_MS / 1000}s...`);
+      console.log(`[monitor] server health failed (HTTP ${status}${reason ? `: ${reason}` : ''}), retry ${attempt}/${MAX_ATTEMPTS - 1} in ${RETRY_DELAY_MS / 1000}s...`);
       await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
     }
   }
-  return `Server health check failed (HTTP ${lastStatus}) after ${MAX_ATTEMPTS} attempts`;
+  return serverHealthProbeAlert(lastStatus, MAX_ATTEMPTS, lastReason);
 }
 
 async function checkFacilitator(): Promise<string | null> {
@@ -213,16 +264,18 @@ async function checkFacilitator(): Promise<string | null> {
   const MAX_ATTEMPTS = 3;
   const RETRY_DELAY_MS = 5_000;
   let lastStatus = 0;
+  let lastReason: string | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { ok, status } = await fetchJson(url);
+    const { ok, status, reason } = await fetchJson(url);
     if (ok) return null;
     lastStatus = status;
+    lastReason = reason;
     if (attempt < MAX_ATTEMPTS) {
-      console.log(`[monitor] facilitator health failed (HTTP ${status}), retry ${attempt}/${MAX_ATTEMPTS - 1}...`);
+      console.log(`[monitor] facilitator health failed (HTTP ${status}${reason ? `: ${reason}` : ''}), retry ${attempt}/${MAX_ATTEMPTS - 1}...`);
       await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
     }
   }
-  return `x402 facilitator down (HTTP ${lastStatus}) after ${MAX_ATTEMPTS} attempts`;
+  return facilitatorProbeAlert(lastStatus, MAX_ATTEMPTS, lastReason);
 }
 
 async function checkGasWallet(): Promise<{ error: string | null; balance: number }> {
@@ -433,16 +486,18 @@ async function checkPfeWinRate(): Promise<{ error: string | null; rate: number |
   const MAX_ATTEMPTS = 3;
   const RETRY_DELAY_MS = 5_000;
   let lastStatus = 0;
+  let lastReason: string | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { ok, status, data } = await fetchJson(internalPerfPublicUrl(), {}, 15_000);
+    const { ok, status, data, reason } = await fetchJson(internalPerfPublicUrl(), {}, PFE_FETCH_TIMEOUT_MS);
     if (ok) return evaluatePfeWinRate(data);
     lastStatus = status;
+    lastReason = reason;
     if (attempt < MAX_ATTEMPTS) {
-      console.log(`[monitor] PFE check fetch failed (HTTP ${status}), retry ${attempt}/${MAX_ATTEMPTS - 1} in ${RETRY_DELAY_MS / 1000}s...`);
+      console.log(`[monitor] PFE check fetch failed (HTTP ${status}${reason ? `: ${reason}` : ''}), retry ${attempt}/${MAX_ATTEMPTS - 1} in ${RETRY_DELAY_MS / 1000}s...`);
       await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
     }
   }
-  return { error: `PFE check failed: performance-public HTTP ${lastStatus} after ${MAX_ATTEMPTS} attempts`, rate: null };
+  return { error: pfeProbeAlert(lastStatus, MAX_ATTEMPTS, lastReason), rate: null };
 }
 
 async function checkSeedFreshness(): Promise<string | null> {
