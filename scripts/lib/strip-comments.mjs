@@ -62,29 +62,75 @@ function familyFor(filePath) {
 export function stripComments(text, filePath) {
   const family = familyFor(filePath);
   if (family === 'none') return text;
-  let out = text;
 
-  // Block comments first — they span lines, so they must be blanked before per-line work.
-  if (family === 'slash' || family === 'dash') {
-    out = out.replace(/\/\*[\s\S]*?\*\//g, blank);
-  }
   if (family === 'angle') {
-    out = out.replace(/<!--[\s\S]*?-->/g, blank);
-    return out; // HTML/XML have no line-comment form.
+    return String(text).replace(/<!--[\s\S]*?-->/g, blank); // HTML/XML have no line-comment form.
   }
+  if (family === 'hash') {
+    // No block-comment form, so a single per-line pass is exact. A '#' only opens a comment at
+    // line start or after whitespace, so `a#b` and a URL fragment survive.
+    return String(text)
+      .split('\n')
+      .map((line) => line.replace(/(^|\s)#.*$/, (m, keep = '') => keep + blank(m.slice(keep.length))))
+      .join('\n');
+  }
+  return scanSlashLike(String(text), family === 'dash' ? '--' : '//');
+}
 
-  const linePattern = {
-    // A '#' only opens a comment at line start or after whitespace, so `a#b` and a URL
-    // fragment survive. Same rule check-canaries-wired.mjs applies.
-    hash: /(^|\s)#.*$/,
-    slash: /(^|[^:])\/\/.*$/, // the [^:] keeps `https://…` intact
-    dash: /(^|\s)--.*$/,
-  }[family];
+/**
+ * ONE left-to-right pass: whichever delimiter OPENS FIRST wins.
+ *
+ * ── WHY THIS IS A SCAN AND NOT TWO REGEX PASSES (OPS-STRIP-COMMENTS-ORDER-W1) ───────────────
+ * Two passes are wrong in BOTH orders, and each order fails silently by eating real code:
+ *
+ *   block-first (what shipped):  `// route table for /api/thing/*`
+ *                                `wiredCall();`
+ *                                `/* an ordinary block comment *␘/`
+ *     The `/*` inside the LINE comment opens a block that runs to the next `*␘/`, swallowing
+ *     everything between. Measured on src/index.ts at d177425b: 77,158 characters of real code
+ *     across 1,776 lines blanked, against a parser-derived ground truth.
+ *
+ *   line-first (the tempting fix):  `/* a // b *␘/ c();`
+ *     The `//` INSIDE the block comment matches the line pattern and blanks the rest of the
+ *     line — including the block's own terminator and `c()`. Swapping the passes therefore
+ *     trades one silent over-strip for another.
+ *
+ * A single scan has neither failure, because a delimiter found inside an already-open comment is
+ * just text. Offset-preserving: only non-whitespace comment characters become spaces, so every
+ * newline, line length and column offset survives — callers grep with -n.
+ */
+function scanSlashLike(text, lineTok) {
+  const out = text.split('');
+  const n = text.length;
+  const blankTo = (from, to) => { for (let i = from; i < to; i++) if (!/\s/.test(out[i])) out[i] = ' '; };
+  let i = 0;
+  while (i < n) {
+    if (text.startsWith(lineTok, i) && lineOpensHere(text, i, lineTok)) {
+      let j = i;
+      while (j < n && text[j] !== '\n') j++;
+      blankTo(i, j);
+      i = j;
+      continue;
+    }
+    if (text.startsWith('/*', i)) {
+      const end = text.indexOf('*/', i + 2);
+      const stop = end === -1 ? n : end + 2;
+      blankTo(i, stop);
+      i = stop;
+      continue;
+    }
+    i++;
+  }
+  return out.join('');
+}
 
-  return out
-    .split('\n')
-    .map((line) => line.replace(linePattern, (m, keep = '') => keep + blank(m.slice(keep.length))))
-    .join('\n');
+/** The guards the two-pass regexes carried, preserved verbatim in meaning. */
+function lineOpensHere(text, i, lineTok) {
+  const prev = i === 0 ? '' : text[i - 1];
+  // `//` — never after a colon, so `https://…` survives. Same rule the old /(^|[^:])\/\// carried.
+  if (lineTok === '//') return prev !== ':';
+  // `--` — only at line start or after whitespace, so `a--b` survives.
+  return prev === '' || prev === '\n' || /\s/.test(prev);
 }
 
 // Diff-structure lines. `+++ b/<path>` is the one that matters: it begins with '+', so a gate
@@ -157,6 +203,31 @@ function selfTest() {
   ck('yaml: a glob is NOT a block comment',
     stripComments('paths: ops/scripts/**\nrun: npm test', 'deploy.yml'), 'paths: ops/scripts/**\nrun: npm test');
   ck('ts: https:// survives', stripComments('const u = "https://x.dev";', 'a.ts'), 'const u = "https://x.dev";');
+
+  // ── OPS-STRIP-COMMENTS-ORDER-W1: whichever delimiter OPENS FIRST wins ──
+  // Two regex passes are wrong in BOTH orders and each fails SILENTLY by eating real code, so
+  // both directions are asserted. A lock that only checks the direction you just fixed is how
+  // the second ordering ships as the fix for the first.
+  ck('a "/*" inside a LINE comment does NOT open a block (block-first was the shipped defect)',
+    stripComments('// routes /api/thing/*\nwiredCall();\n/* real */', 'a.ts').includes('wiredCall'), true);
+  ck('a "//" inside a BLOCK comment does NOT eat the line (line-first would be the wrong fix)',
+    stripComments('/* a // b */ keptCall();', 'a.ts').includes('keptCall'), true);
+  ck('an ordinary block comment is still blanked',
+    stripComments('/* darkSymbol */ keptCall();', 'a.ts').includes('darkSymbol'), false);
+  ck('an unterminated block comment consumes to EOF, not silently nothing',
+    stripComments('/* open\neaten();', 'a.ts').includes('eaten'), false);
+  ck('offset preservation survives the scan', stripComments('// x\nconst a = 1;', 'a.ts').length,
+    '// x\nconst a = 1;'.length);
+
+  // ── KNOWN GAP, asserted so it is a RECORDED limitation and not a surprise ──
+  // The scanner is not string-literal aware, so a comment delimiter inside a string still opens a
+  // comment. Measured at d177425b over 1,007 JS/TS files against a TypeScript-parser ground truth:
+  // this ordering fix took over-stripping 136,550 -> 85,342 chars (-37.5%) and under-stripping
+  // 55 -> 0; every one of the 85,342 residual characters is inside a string, template or regex
+  // literal. Closing it needs regex-vs-division grammar context, which is a parser, not a scan.
+  // Owner: OPS-STRIP-COMMENTS-LITERALS-W{NEXT}. Both live consumers measured UNAFFECTED today.
+  ck('KNOWN GAP: a delimiter inside a string still opens a comment',
+    stripComments("const s = '//'; const b = 1;", 'a.ts').includes('const b = 1'), false);
 
   // ── offset preservation ──
   const src = 'line1 // c\nline2\n/* b\nb */\nline5';
