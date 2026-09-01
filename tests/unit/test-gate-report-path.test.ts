@@ -33,6 +33,26 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
+/**
+ * OPS-PG-PARITY-ABSENCE-PRECONDITION-W1 — EVERY test below spawns a bash subprocess that runs
+ * `check_test_baseline.sh` end to end, so every one of them declares its own time budget in the
+ * OPTIONS ARG. That is this repo's contract for a spawning test (`scripts/check-test-budget.mjs`),
+ * and it is blocking for any test file touched today.
+ *
+ * WHY IT WAS NEEDED HERE. `scripts/land.sh` returned `LAND_VERDICT=GATE_BLOCKED` on two of these
+ * ("ZERO test files", "warn mode does not launder a REAL regression"), both `Test timed out in
+ * 5000ms`. The SAME TREE passed on the next gate run and the file passes 27/27 alone in 19s. A
+ * coin-flip gate is worse than a slow one — and this is the file guarding the push gate itself.
+ *
+ * A FILE-WIDE `vi.setConfig` was tried first and was WRONG: `check-test-budget.mjs` refused it,
+ * correctly. Its own header records why the per-test form is the contract — on 2026-08-17 a test
+ * shelling out to `tsc` inherited the 5,000 ms default, blew it on a slower runner, and blocked
+ * ANOTHER wave's finished, merged work for ~3 days. An implicit file-wide default is the same bet
+ * with the declaration hidden.
+ *
+ * Only the deadline moves. Every assertion still runs and still asserts.
+ */
+
 const SCRIPT_PATH = resolve(__dirname, '..', '..', 'scripts', 'check_test_baseline.sh');
 
 /** Baseline content used by the fixtures: one allow-listed file + the comment/blank forms. */
@@ -181,13 +201,13 @@ describe('check_test_baseline.sh — report-path contract', () => {
     fx.cleanup();
   });
 
-  it('precondition: jq is on PATH (the gate fails OPEN without it, which would mask every assertion below)', () => {
+  it('precondition: jq is on PATH (the gate fails OPEN without it, which would mask every assertion below)', { timeout: 30_000 }, () => {
     expect(spawnSync('jq', ['--version']).status, 'install jq — the gate cannot parse a report without it').toBe(0);
   });
 
   // ── the defect: an unusable report path must NOT fail open ──
 
-  it('exits non-zero when mktemp fails and the report path is EMPTY (was: exit 0, verified nothing)', () => {
+  it('exits non-zero when mktemp fails and the report path is EMPTY (was: exit 0, verified nothing)', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts']));
     stubFailingMktemp(fx);
 
@@ -197,7 +217,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.all).not.toMatch(/GREEN/);
   });
 
-  it('exits non-zero when vitest crashes before writing a report (CACError class)', () => {
+  it('exits non-zero when vitest crashes before writing a report (CACError class)', { timeout: 30_000 }, () => {
     stubNpx(fx, null);
 
     const r = runGate(fx);
@@ -206,7 +226,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.all).not.toMatch(/GREEN/);
   });
 
-  it('does not describe an unrunnable suite as a fail-OPEN', () => {
+  it('does not describe an unrunnable suite as a fail-OPEN', { timeout: 30_000 }, () => {
     stubNpx(fx, null);
 
     const r = runGate(fx);
@@ -216,7 +236,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
 
   // ── the portability defect itself ──
 
-  it('hands vitest an EXPANDED report path, never a literal XXXXXX template', () => {
+  it('hands vitest an EXPANDED report path, never a literal XXXXXX template', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts']));
 
     const r = runGate(fx);
@@ -227,7 +247,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(handed, `mktemp template was not expanded: ${handed}`).not.toMatch(/XXXXXX/);
   });
 
-  it('cleans up its transient report dir', () => {
+  it('cleans up its transient report dir', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts']));
 
     const r = runGate(fx);
@@ -249,7 +269,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
   // why there is deliberately no blanket `trap ... EXIT` cleanup: that would delete
   // the very file hard_fail() has just told the operator to go read.
 
-  it('keeps the per-run log dir, with the operator-facing log inside it, when the gate FAILS', () => {
+  it('keeps the per-run log dir, with the operator-facing log inside it, when the gate FAILS', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts'], ['tests/unit/brand-new.test.ts']));
 
     const r = runGate(fx);
@@ -267,7 +287,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.all).toContain(runDirs[0]);
   });
 
-  it('removes the per-run log dir on PASS (nothing to diagnose, and residue is unbounded)', () => {
+  it('removes the per-run log dir on PASS (nothing to diagnose, and residue is unbounded)', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts']));
 
     const r = runGate(fx);
@@ -279,7 +299,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     ).toEqual([]);
   });
 
-  it('caps the vitest worker pool via VITEST_MAX_FORKS, and refuses a value that would hang', () => {
+  it('caps the vitest worker pool via VITEST_MAX_FORKS, and refuses a value that would hang', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts']));
 
     // The cap reaches vitest as an ENV var (not a CLI flag): an unknown env var is
@@ -299,7 +319,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(bad.all).toMatch(/hang vitest forever/i);
   });
 
-  it('still runs the suite when a stale literal-XXXXXX file is already present (the production collision)', () => {
+  it('still runs the suite when a stale literal-XXXXXX file is already present (the production collision)', { timeout: 30_000 }, () => {
     writeFileSync(join(fx.tmp, 'test-gate-vitest.XXXXXX.json'), 'stale leftover\n');
     stubNpx(fx, report(['tests/unit/a.test.ts']));
 
@@ -309,7 +329,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.exitCode).toBe(0);
   });
 
-  it('tolerates a TMPDIR with a trailing slash (macOS exports one, yielding // in every path)', () => {
+  it('tolerates a TMPDIR with a trailing slash (macOS exports one, yielding // in every path)', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts']));
 
     const r = runGate(fx, { TMPDIR: `${fx.tmp}/` });
@@ -318,7 +338,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.exitCode).toBe(0);
   });
 
-  it('never reads a previous run\'s report (a stale report must not be mistaken for this run\'s)', () => {
+  it('never reads a previous run\'s report (a stale report must not be mistaken for this run\'s)', { timeout: 30_000 }, () => {
     // vitest writes nothing; if the gate reused a fixed-name path from an earlier
     // run it would parse that stale GREEN report and pass.
     writeFileSync(join(fx.tmp, 'test-gate-vitest.json'), JSON.stringify(report(['tests/unit/a.test.ts'])));
@@ -349,7 +369,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
   // `|| true`, so the report is the gate's only signal. `jq -e` is falsy for `null` and
   // `false` ONLY, so the empty array was truthy: the report read as usable, the failing
   // set came back empty, and the gate printed GREEN having verified nothing.
-  it('reports INDETERMINATE (exit 2), not a pass, when vitest collected ZERO test files', () => {
+  it('reports INDETERMINATE (exit 2), not a pass, when vitest collected ZERO test files', { timeout: 30_000 }, () => {
     stubNpx(fx, report([]));
 
     const r = runGate(fx);
@@ -360,7 +380,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.all).not.toMatch(/GREEN/);
   });
 
-  it('reports INDETERMINATE (exit 2), not a pass, when node_modules/vitest is missing', () => {
+  it('reports INDETERMINATE (exit 2), not a pass, when node_modules/vitest is missing', { timeout: 30_000 }, () => {
     rmSync(join(fx.dir, 'node_modules'), { recursive: true, force: true });
 
     const r = runGate(fx, { ALGOVAULT_TEST_GATE_AUTOINSTALL: '0' });
@@ -376,7 +396,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.all).not.toMatch(/recovering with 'npm ci'/);
   });
 
-  it('reports INDETERMINATE (exit 2), not a pass, on a genuine build failure', () => {
+  it('reports INDETERMINATE (exit 2), not a pass, on a genuine build failure', { timeout: 30_000 }, () => {
     writeStub(join(fx.dir, 'stubbin', 'npm'), 'case "$*" in "run build") exit 2;; esac\nexit 0');
     stubNpx(fx, report(['tests/unit/a.test.ts']));
 
@@ -391,7 +411,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
   // simply blocked. This is the mitigation that makes closing the soft fail-opens
   // acceptable, so it is asserted rather than assumed — and whichever way it lands,
   // the token must agree with the code.
-  it('cold checkout with autoinstall ON attempts recovery, and token matches code', () => {
+  it('cold checkout with autoinstall ON attempts recovery, and token matches code', { timeout: 30_000 }, () => {
     rmSync(join(fx.dir, 'node_modules'), { recursive: true, force: true });
 
     const r = runGate(fx, { ALGOVAULT_TEST_GATE_AUTOINSTALL: '1', CI: '' });
@@ -408,7 +428,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.exitCode, `token ${token} must map to ${expected}`).toBe(expected);
   });
 
-  it('honours the documented ALGOVAULT_TEST_GATE=warn override for an unusable report path', () => {
+  it('honours the documented ALGOVAULT_TEST_GATE=warn override for an unusable report path', { timeout: 30_000 }, () => {
     stubNpx(fx, null);
 
     const r = runGate(fx, { ALGOVAULT_TEST_GATE: 'warn' });
@@ -420,7 +440,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.stdout).toMatch(/^TEST_GATE_VERDICT=INDETERMINATE$/m);
   });
 
-  it('warn mode does not launder a REAL regression into a pass either', () => {
+  it('warn mode does not launder a REAL regression into a pass either', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts'], ['tests/unit/brand-new.test.ts']));
 
     const r = runGate(fx, { ALGOVAULT_TEST_GATE: 'warn' });
@@ -431,7 +451,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
 
   // ── the verdict-token contract itself ──
 
-  it('prints EXACTLY ONE terminal TEST_GATE_VERDICT line on every path', () => {
+  it('prints EXACTLY ONE terminal TEST_GATE_VERDICT line on every path', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts']));
     const clean = runGate(fx);
     stubNpx(fx, null);
@@ -445,7 +465,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(broken.stdout).toMatch(/^TEST_GATE_VERDICT=INDETERMINATE$/m);
   });
 
-  it('--self-test is two-way, non-vacuous, and names every case', () => {
+  it('--self-test is two-way, non-vacuous, and names every case', { timeout: 30_000 }, () => {
     const r = runGate(fx, {}, ['--self-test']);
 
     expect(r.exitCode, `output:\n${r.all}`).toBe(0);
@@ -469,7 +489,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
   /** The ledger fail_open() appends to: $(git rev-parse --git-common-dir)/… */
   const ledgerPath = (f: Fixture) => join(f.dir, '.git', 'algovault-test-gate-failopen.log');
 
-  it('records a warn-mode hard failure in the fail-open ledger (an ungated push is never silent)', () => {
+  it('records a warn-mode hard failure in the fail-open ledger (an ungated push is never silent)', { timeout: 30_000 }, () => {
     stubNpx(fx, null);
 
     const r = runGate(fx, { ALGOVAULT_TEST_GATE: 'warn' });
@@ -480,7 +500,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(ledger, `ledger:\n${ledger}`).toMatch(/downgraded by ALGOVAULT_TEST_GATE=warn/);
   });
 
-  it('a later GREEN run reports the ungated push and clears the ledger', () => {
+  it('a later GREEN run reports the ungated push and clears the ledger', { timeout: 30_000 }, () => {
     // 1. warn-mode hard failure → one ledger row.
     stubNpx(fx, null);
     runGate(fx, { ALGOVAULT_TEST_GATE: 'warn' });
@@ -495,7 +515,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(readFileSync(ledgerPath(fx), 'utf8').trim(), 'ledger should be cleared').toBe('');
   });
 
-  it('a blocking hard failure does NOT write a ledger row (nothing went ungated)', () => {
+  it('a blocking hard failure does NOT write a ledger row (nothing went ungated)', { timeout: 30_000 }, () => {
     stubNpx(fx, null);
 
     const r = runGate(fx); // block mode
@@ -506,7 +526,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
 
   // ── baseline allow-list semantics — unchanged by this wave ──
 
-  it('GREEN when every file passes', () => {
+  it('GREEN when every file passes', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts', 'tests/unit/b.test.ts']));
 
     const r = runGate(fx);
@@ -515,7 +535,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.stdout).toMatch(/GREEN/);
   });
 
-  it('exits 1 on a NEW failing file that is not allow-listed', () => {
+  it('exits 1 on a NEW failing file that is not allow-listed', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts'], ['tests/unit/regressed.test.ts']));
 
     const r = runGate(fx);
@@ -524,7 +544,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.all).toMatch(/tests\/unit\/regressed\.test\.ts/);
   });
 
-  it('exits 0 when the only failing file IS allow-listed in the baseline', () => {
+  it('exits 0 when the only failing file IS allow-listed in the baseline', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts'], ['tests/unit/known-broken.test.ts']));
 
     const r = runGate(fx);
@@ -533,7 +553,7 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.stdout).toMatch(/GREEN/);
   });
 
-  it('reports the allow-listed count, ignoring comment and blank lines', () => {
+  it('reports the allow-listed count, ignoring comment and blank lines', { timeout: 30_000 }, () => {
     stubNpx(fx, report(['tests/unit/a.test.ts']));
 
     const r = runGate(fx);
