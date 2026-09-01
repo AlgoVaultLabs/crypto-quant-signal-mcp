@@ -41,6 +41,27 @@
  * than inferred. Same for a site whose table or column list is built by string interpolation — it is
  * UNRESOLVED, printed, and never silently dropped.
  *
+ * ── WHY ABSENCE IS SAFE, AS A CHECK RATHER THAN AS PROSE ────────────────────────────────────────
+ *
+ * "Absent is fine" is only true while the absent table has exactly ONE source of DDL — its own
+ * store's `CREATE TABLE IF NOT EXISTS`, where the key is declared inline and is therefore created
+ * atomically with the table and never altered afterwards. Under that condition the constraint has
+ * one possible shape and cannot diverge from the `ON CONFLICT` naming it.
+ *
+ * The x402 failure needed the opposite: a MIGRATION that changed an existing table's key, so the
+ * table had two possible shapes and the code assumed the newer one. So the exact precondition for
+ * "absence is benign" is `no migration touches this table` — and that is checkable, so it is
+ * CHECKED here rather than argued in a comment. The moment a migration starts touching one of the
+ * unchecked tables, its absence stops being benign and this gate says so instead of staying quiet.
+ *
+ * (Measured 2026-09-01 against the live production schema, all 37 sites: 34 matched automatically
+ * and the 3 UNRESOLVED ones were closed by hand — `carry-freshness-helpers.ts` -> `funding_episodes`
+ * `{venue,symbol,entry_ts,entry_floor_apr}` and `idempotency.ts` -> `entitlement_debits` `{idem_key}`
+ * via its sole caller `entitlement.ts`. Zero mismatches. That measurement is what retired the
+ * proposed "widen BOOTSTRAP_MODULES" wave: none of the six unchecked tables is touched by any
+ * migration, so widening would have imported six more stores into CI to gate a divergence that
+ * cannot occur for them.)
+ *
  * The ARBITER-FREE form — a bare `ON CONFLICT DO NOTHING` with no column list — is outside this
  * gate by construction, and that is correct rather than a gap: with no inference target Postgres
  * cannot raise 42P10, so it is not the failure class this exists for. It has its own hazard (it
@@ -59,7 +80,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -105,6 +126,20 @@ export function conflictSites(sourceText, file = '<src>') {
     });
   }
   return out;
+}
+
+/**
+ * Is this table mentioned anywhere in the forward migrations?
+ *
+ * Coarse on purpose — any mention counts, because a migration that so much as INDEXES a table has
+ * become a second source of DDL for it. But WORD-BOUNDED, which is not optional: a bare substring
+ * test reports `signals` as touched because `band_signals` is, and this predicate's false direction
+ * costs a RED on a healthy table. A gate that cries wolf once is ignored forever, so the
+ * over-reporting direction is the one to close.
+ */
+export function tablesTouchedByMigrations(migrationTexts) {
+  const all = migrationTexts.join('\n').toLowerCase();
+  return (name) => new RegExp(`(^|[^a-z0-9_])${name.toLowerCase()}([^a-z0-9_]|$)`).test(all);
 }
 
 function walkTs(dir, acc = []) {
@@ -192,14 +227,32 @@ async function main() {
     verdict('INDETERMINATE', [`could not read the unique-index catalogue: ${e.message}`]);
   }
 
+  // The precondition that makes an ABSENT table safe to skip. Read here rather than asserted in a
+  // comment — see the header. Unreadable migrations are INDETERMINATE, never an implied pass.
+  let migrationTouches;
+  try {
+    const dir = resolve(REPO, 'migrations');
+    const texts = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql') && !f.endsWith('.down.sql'))
+      .map((f) => readFileSync(join(dir, f), 'utf8'));
+    if (texts.length === 0) verdict('INDETERMINATE', ['migrations/ contains no forward .sql files — cannot judge whether an absent table is safe.']);
+    migrationTouches = tablesTouchedByMigrations(texts);
+  } catch (e) {
+    verdict('INDETERMINATE', [`could not read migrations/: ${e.message}`]);
+  }
+
   const mismatches = [];
   const absent = [];
+  const absentButMigrated = [];
   const unresolved = [];
   let checked = 0;
 
   for (const s of sites) {
     if (!s.table || !s.columns) { unresolved.push(s); continue; }
-    if (!uniques.present.has(s.table)) { absent.push(s); continue; }
+    if (!uniques.present.has(s.table)) {
+      (migrationTouches(s.table) ? absentButMigrated : absent).push(s);
+      continue;
+    }
     checked++;
     const candidates = uniques.byTable.get(s.table) || [];
     if (!candidates.some((cols) => sameSet(cols, s.columns))) {
@@ -212,7 +265,17 @@ async function main() {
       `${absent.length} table-absent (reported), ${unresolved.length} unresolved (reported)`,
   );
   for (const u of unresolved) console.error(`   ? UNRESOLVED ${u.file}:${u.line} — ${u.raw}`);
-  for (const a of absent) console.error(`   · table absent, not checked: ${a.table} (${a.file}:${a.line})`);
+  for (const a of absent) console.error(`   · table absent, not checked — no migration touches it: ${a.table} (${a.file}:${a.line})`);
+
+  if (absentButMigrated.length) {
+    verdict('MISMATCH', [
+      'A table is ABSENT here AND is touched by a migration. Absence is only safe while a table has',
+      'ONE source of DDL; a migration is a second one, and a migration that changes a key is exactly',
+      'how ON CONFLICT came to name a constraint that did not exist. Bring it into',
+      'scripts/bootstrap-pg-schema.mjs BOOTSTRAP_MODULES so this gate can actually check it.',
+      ...absentButMigrated.map((a) => `   ✖ ${a.table} — ${a.file}:${a.line}  ${a.raw}`),
+    ]);
+  }
 
   // A run in which NOTHING could be checked is not a pass. The absent/unresolved rows above are
   // fine individually; all of them together means the gate observed nothing.
@@ -283,6 +346,27 @@ function selfTest() {
     conflictSites(readFileSync(f, 'utf8'), f.slice(REPO.length + 1)),
   );
   if (real.length === 0) fails.push('src/ yielded 0 ON CONFLICT sites — derivation broken');
+
+  // The absence-precondition, both ways. `signals` IS touched by migrations (001 alters it) and
+  // `chat_usage_monthly` is touched by none — measured 2026-09-01. If either flips, the reasoning
+  // that makes this gate's 'absent, not checked' rows safe has changed and must be re-derived.
+  try {
+    const dir = resolve(REPO, 'migrations');
+    const texts = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql') && !f.endsWith('.down.sql'))
+      .map((f) => readFileSync(join(dir, f), 'utf8'));
+    const touches = tablesTouchedByMigrations(texts);
+    if (!touches('signals')) fails.push('migration-touch probe says signals is untouched — it is altered by 001');
+    // The word-boundary property itself, on a real pair from this repo: `band_signals` must not
+    // make a lookup for `signals` true by substring, and must be found on its own.
+    if (!touches('band_signals')) fails.push('band_signals should be touched (migration 035)');
+    if (touches('ignals')) fails.push('touch probe is matching a substring — band_signals/signals would cross-fire');
+    if (touches('chat_usage_monthly')) {
+      fails.push('chat_usage_monthly is now touched by a migration — its absence is no longer benign; widen BOOTSTRAP_MODULES');
+    }
+  } catch (e) {
+    fails.push(`could not read migrations/ for the absence-precondition probe: ${e.message}`);
+  }
   const x402 = real.filter((s) => s.table === 'processed_x402_payments');
   if (x402.length === 0) fails.push('lost coverage of processed_x402_payments — the outage table');
   if (x402.some((s) => !s.columns || !sameSet(s.columns, ['payer_wallet', 'nonce']))) {
@@ -298,5 +382,16 @@ function selfTest() {
   process.exit(0);
 }
 
-if (process.argv.includes('--self-test')) selfTest();
-else main().catch((e) => verdict('INDETERMINATE', [`unhandled: ${e && e.stack ? e.stack : e}`]));
+/**
+ * Entry guard. Without it, `import`ing this file to reuse its derivation RUNS the gate — which is
+ * how an ad-hoc read-only probe against production got `ON_CONFLICT_PARITY_VERDICT=INDETERMINATE`
+ * and no data. The repo already states the rule for `scripts/*` ("make entrypoints
+ * test-importable"); this is its ESM form.
+ */
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly) {
+  if (process.argv.includes('--self-test')) selfTest();
+  else main().catch((e) => verdict('INDETERMINATE', [`unhandled: ${e && e.stack ? e.stack : e}`]));
+}

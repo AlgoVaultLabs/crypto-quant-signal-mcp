@@ -48,7 +48,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -194,5 +194,16 @@ function selfTest() {
   process.exit(0);
 }
 
-if (process.argv.includes('--self-test')) selfTest();
-else main().catch((e) => verdict('INDETERMINATE', [`unhandled: ${e && e.stack ? e.stack : e}`]));
+/**
+ * Entry guard. Without it, `import`ing this file to reuse its derivation RUNS the gate — which is
+ * how an ad-hoc read-only probe against production got `ON_CONFLICT_PARITY_VERDICT=INDETERMINATE`
+ * and no data. The repo already states the rule for `scripts/*` ("make entrypoints
+ * test-importable"); this is its ESM form.
+ */
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly) {
+  if (process.argv.includes('--self-test')) selfTest();
+  else main().catch((e) => verdict('INDETERMINATE', [`unhandled: ${e && e.stack ? e.stack : e}`]));
+}
