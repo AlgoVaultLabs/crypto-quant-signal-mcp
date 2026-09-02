@@ -152,6 +152,30 @@ export function isNonDeployingDelta(changedFiles, pathsIgnore) {
 export const BADGE_URL =
   'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/actions/workflows/deploy.yml/badge.svg?branch=main';
 
+/**
+ * Advance the drift latch for one repo. PURE — no clock, no I/O, so the self-test can execute the
+ * exact code main() runs rather than a paraphrase of it.
+ *
+ * Returns `{ ledger, behindMs, deltaKey }`. `behindMs` is how long THIS delta has been observed,
+ * and it is 0 when provenance was unreadable — see the block in main() for the incident.
+ */
+export function advanceDriftLatch({ ledger, repoName, prodSha, mainHead, now }) {
+  const key = `${repoName}:drift`;
+  const deltaKey = prodSha && mainHead ? `${prodSha}..${mainHead}` : null;
+  if (deltaKey === null) {
+    // Observed no delta. Neither start a clock nor reset one: "could not look" must not
+    // manufacture an age, and must not wipe a real stuck deploy's accumulated one.
+    return { ledger, behindMs: 0, deltaKey: null };
+  }
+  const prev = ledger[key];
+  const firstSeenMs = prev && prev.deltaKey === deltaKey ? prev.firstSeenMs : now;
+  return {
+    ledger: { ...ledger, [key]: { firstSeenMs, deltaKey } },
+    behindMs: now - firstSeenMs,
+    deltaKey,
+  };
+}
+
 /** Behind for longer than this before recovery may act — a deploy in flight is not drift. */
 export const BEHIND_GRACE_MS = 30 * 60 * 1000;
 /** Per UTC day, per repo. */
@@ -429,6 +453,43 @@ function selfTest() {
   t('body uses REAL newlines, never %0A', body.includes('%0A'), false);
   t('body still leads with the repo', body.split('\n')[0], '🚨 deploy drift — crypto-quant-signal-mcp');
 
+  // ── the drift latch, keyed on the DELTA (OPS-DEPLOY-DRIFT-PROPAGATION-WINDOW-W1) ──────────
+  const P0 = 'a'.repeat(40), P1 = 'b'.repeat(40), M1 = 'c'.repeat(40), M2 = 'd'.repeat(40);
+  const T = 1e12, HALF_HOUR = 30 * 60 * 1000;
+  const latch = (ledger, prodSha, mainHead, now) =>
+    advanceDriftLatch({ ledger, repoName: 'r', prodSha, mainHead, now });
+
+  const l1 = latch({}, P0, M1, T);
+  t('a newly observed delta starts its own clock at zero', l1.behindMs, 0);
+  const l2 = latch(l1.ledger, P0, M1, T + HALF_HOUR);
+  t('the SAME delta accumulates — a genuinely stuck deploy still ages', l2.behindMs, HALF_HOUR);
+  t('...and past the grace it may page', l2.behindMs > BEHIND_GRACE_MS, false);
+  const l2b = latch(l1.ledger, P0, M1, T + HALF_HOUR + 1);
+  t('...strictly past the grace, it pages', l2b.behindMs > BEHIND_GRACE_MS, true);
+
+  // THE INCIDENT, 2026-09-02: an unreadable-provenance run at 11:43 started a clock that a
+  // four-minute-old delta inherited at 12:13 and paged on, reporting a false "behind: 30m".
+  const unread = latch({}, P0, null, T);
+  t('🛑 unreadable provenance observes NO delta and starts NO clock', unread.behindMs, 0);
+  t('...and writes no latch at all', JSON.stringify(unread.ledger), '{}');
+  const afterUnread = latch(unread.ledger, P0, M1, T + HALF_HOUR);
+  t('🛑 THE REGRESSION: a real delta seen later does NOT inherit that clock', afterUnread.behindMs, 0);
+  t('...so it cannot page on its first observation', afterUnread.behindMs > BEHIND_GRACE_MS, false);
+
+  // main advancing is a NEW delta — the clock restarts, it does not carry over.
+  const l3 = latch(l2.ledger, P0, M2, T + HALF_HOUR + 1000);
+  t('main advancing resets the clock — a new delta is newly behind', l3.behindMs, 0);
+  const l4 = latch(l2.ledger, P1, M1, T + HALF_HOUR + 1000);
+  t('prod advancing resets it too', l4.behindMs, 0);
+
+  // ...but an unreadable run must NOT wipe a real stuck deploy's accumulated age.
+  const keep = latch(l2.ledger, P0, null, T + HALF_HOUR + 1000);
+  t('🛑 an unreadable run PRESERVES an existing latch, never resets it',
+    keep.ledger['r:drift'].firstSeenMs, T);
+  const resumed = latch(keep.ledger, P0, M1, T + HALF_HOUR + 2000);
+  t('...so the stuck delta resumes its real age and still pages',
+    resumed.behindMs > BEHIND_GRACE_MS, true);
+
   const led = recordAttempt(recordAttempt({}, 'signal', 1e12), 'signal', 1e12);
   t('ledger counts per UTC day', attemptsFor(led, 'signal', 1e12).attemptsToday, 2);
   t('ledger resets on a new day', attemptsFor(led, 'signal', 1e12 + 864e5 * 2).attemptsToday, 0);
@@ -680,10 +741,31 @@ function main() {
     }
     worst = verdict.verdict;
 
-    // Persistence latch — a deploy in flight is not drift.
-    const first = next[`${repo.name}:drift`]?.firstSeenMs ?? now;
-    next = { ...next, [`${repo.name}:drift`]: { firstSeenMs: first } };
-    const behindMs = now - first;
+    // ── Persistence latch, keyed on the DELTA — not merely on the repo ──────────────────────
+    //
+    // 🛑 THE DEFECT THIS RETIRES, measured 2026-09-02. The latch used to key on the repo alone
+    // and clear only on a HEALTHY verdict, so `behindMs` answered "how long has this repo been
+    // non-healthy" while the alert body and decideRecovery() both read it as "how long has prod
+    // been behind THIS main". Those are different questions the moment the delta changes, and a
+    // run that could not read provenance at all — which observes NO delta — was starting the
+    // clock for one:
+    //
+    //   11:43  prod=86dd6a0  main=UNKNOWN   INDETERMINATE (provenance unreadable)  ← clock starts
+    //   12:13  prod=86dd6a0  main=3a1f791   INDETERMINATE                          ← inherits it
+    //                                       -> behind: 30m -> PAGED
+    //
+    // main advanced at ~12:09 and the deploy completed 12:15, so the delta was FOUR MINUTES old.
+    // The `behind: 30m` printed in that page was false, inherited from an observation that knew
+    // nothing about any delta. Simulated over the full log: 36 of 68 INDETERMINATE runs had their
+    // (prod,main) pair gone by the very next run — transient propagation — while 26 persisted and
+    // remain genuine. This keys the clock to the delta so only the 26 can page.
+    //
+    // An unreadable-provenance run neither STARTS nor RESETS a clock. "Could not look" is not
+    // "looked and prod is behind", and it must not manufacture an age; equally it must not wipe a
+    // real stuck deploy's accumulated one. It simply cannot page.
+    const latch = advanceDriftLatch({ ledger: next, repoName: repo.name, prodSha, mainHead, now });
+    next = latch.ledger;
+    const behindMs = latch.behindMs;
 
     const { attemptsToday, msSinceLastAttempt } = attemptsFor(next, repo.name, now);
     const isAncestor = false; // requires a local checkout of the repo; not available for the bot
