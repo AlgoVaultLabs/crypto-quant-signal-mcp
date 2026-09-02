@@ -439,20 +439,14 @@ done
 stamp_first_install() {
   [ "$APPLY" = 1 ] || return 0
   [ "$ok" -gt 0 ] || return 0
-  INVENTORY="$INVENTORY" ROW_ID="$ROW_ID" STAMP="$STAMP" python3 -c '
-import collections, json, os, sys
-inv, rid, stamp = os.environ["INVENTORY"], os.environ["ROW_ID"], os.environ["STAMP"]
-with open(inv, encoding="utf-8") as fh:
-    doc = json.load(fh, object_pairs_hook=collections.OrderedDict)
-row = next((r for r in doc["artifacts"] if r.get("id") == rid), None)
-if row is None:
-    sys.exit("no such row: " + rid)
-row["first_install"] = collections.OrderedDict(
-    [("at", stamp), ("by", "ops/scripts/install-monitoring-artifact.sh")])
-with open(inv, "w", encoding="utf-8") as fh:
-    json.dump(doc, fh, indent=2, ensure_ascii=False)
-    fh.write("\n")
-' || { say "  ⚠ could not stamp first_install (the install itself SUCCEEDED)"; return 0; }
+  # The stamper lives in its OWN FILE, not inline. The first version was embedded in a
+  # single-quoted `python3 -c '...'` here and died with SyntaxError the moment it contained a
+  # line continuation — the shell ate the escapes. It failed soft and corrupted nothing, which is
+  # the only reason that was cheap. A program with regexes has no business behind two layers of
+  # shell quoting. It edits the row SURGICALLY (see its docstring) so a stamp never reformats a
+  # sibling row another session wrote compactly.
+  python3 "$REPO/ops/scripts/lib/stamp-first-install.py" "$INVENTORY" "$ROW_ID" "$STAMP" \
+    || { say "  ⚠ could not stamp first_install (the install itself SUCCEEDED)"; return 0; }
   say "  · stamped first_install on row $ROW_ID — COMMIT THE INVENTORY with this install"
 }
 stamp_first_install
