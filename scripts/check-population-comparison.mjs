@@ -74,9 +74,29 @@ function stripComments(src, file) {
   return s;
 }
 
+/**
+ * THIS FILE IS EXCLUDED FROM ITS OWN SWEEP, and the reason is circularity rather than convenience.
+ *
+ * The self-test fixtures below are STRING LITERALS containing the banned form — they are how the
+ * regex is proven to match what this repo actually writes, and they are what caught the first
+ * draft's under-detection (1 hit where 4 exist). Comment-stripping cannot reach a string literal,
+ * so without this exclusion the gate flags its own fixtures and its remediation is "delete the
+ * evidence that you work". That is the documented trap one substrate over: a ban-grep whose most
+ * valuable line is the one it demands you remove.
+ *
+ * SCOPED TO EXACTLY ONE FILE, and the self-test asserts the count, so this cannot quietly grow
+ * into an allowlist. Same argument `check-declaration-coverage.mjs` makes for NOT_A_CONSUMER:
+ * a gate that is its own subject can never be falsified by itself.
+ *
+ * THE HOLE THIS LEAVES, STATED: a real banned comparator written INSIDE this gate would not be
+ * caught by this gate. It would still be caught by review and by the derivation's own self-test,
+ * and this file computes no rates — it only matches text.
+ */
+export const SELF_EXCLUDED = new Set(['scripts/check-population-comparison.mjs']);
+
 function tracked() {
   const out = execFileSync('git', ['-C', ROOT, 'ls-files', ...SCAN_DIRS], { encoding: 'utf8' });
-  return out.split('\n').filter(f => f && SCAN_EXT.test(f));
+  return out.split('\n').filter(f => f && SCAN_EXT.test(f) && !SELF_EXCLUDED.has(f));
 }
 
 function run() {
@@ -217,6 +237,11 @@ function selfTest() {
       && Number.isFinite(Number(r.unmigrated_baseline));
   } catch (e) { console.log(`     (contract read failed: ${e.message})`); }
   ck('schema + registry are coherent: MAX_NAIVE banned, every site typed, every debt owned', ok);
+
+  ck('the self-exclusion is EXACTLY this file — not an allowlist',
+     SELF_EXCLUDED.size === 1 && SELF_EXCLUDED.has('scripts/check-population-comparison.mjs'));
+  ck('the excluded file is genuinely absent from the swept corpus',
+     !tracked().includes('scripts/check-population-comparison.mjs'));
 
   console.log(`SELF-TEST: ${fails.length === 0 ? 'PASS' : `FAIL (${fails.length})`}`);
   console.log(`POPULATION_COMPARISON_GATE_VERDICT=${fails.length === 0 ? PASS : INDET}`);
