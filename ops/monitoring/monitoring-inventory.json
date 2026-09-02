@@ -83,12 +83,32 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "ab7df214e617fe61024fe0d90be31d0c3ef35dd807757a2c9a45a4c32e7f65b4",
+      "sha256": "df876a7d6beb19aae8f39c117494339758afbfca0d93e95ea58b3da271f5dcc8",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
       "owner_wave": "OPS-MONITORING-INVENTORY-HOST-SYNC-W1",
       "notes": "Flows the committed DECLARATIONS to the hosts that read them. It exists because monitoring-inventory-reconcile.py resolves its checklist to a HOST-LOCAL sibling copy, while `ops/monitoring/**` is in deploy.yml's paths-ignore by design — so no deploy ever synced the file the reconciler actually reads, every edit needed a manual two-host push, and nothing detected a skipped one (measured 2026-08-05: repo 52 rows, both hosts 50, surfacing as a false ORPHAN on a healthy artifact). PULL, not a CI push: `gh secret list` has no aoe-1 credential and the AOE repo's deploy.yml is a stub, so a push would need a newly minted key AND would hand the prod root SSH key to a second workflow (SEC-04). The raw URL was verified byte-identical to `git show origin/main:<path>` from BOTH hosts. Syncs a DECLARED SET (inventory + doc-host-path-claims + network-posture + schedule-boundary-rule) because all four are the same shape — the other three had simply not drifted yet, and fixing one lane is the lane-fix-wearing-a-generator's-clothes class. DECLARATIONS ONLY: it moves .json and never an executable, which is why it does not weaken CLAUDE.md's no-auto-install rule. Fail-closed — a non-200, an unparseable body, a missing required key or a >50% size collapse REFUSES the write and keeps the working file, because a truncated declaration breaks every check at once. Emits one DECLARATION_SYNC_VERDICT= token; 0=SYNCED/UNCHANGED, 1=FAILED, 3=INDETERMINATE. Per-host schedules differ so each lands ≥24min before that host's reconciler (signal-1 :33, the measured least-contended canonical minute; aoe-1 :27, fully clear of its 5-min grid)."
+    },
+    {
+      "id": "audit-cadence",
+      "artifact": "ops/monitoring/audit-cadence.json",
+      "kind": "declaration-data",
+      "host_path": "/opt/algovault-monitoring/audit-cadence.json",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/audit-cadence.json",
+          "install_state": "installed",
+          "installed_wave": "OPS-AUDIT-CADENCE-CANARY-W1"
+        }
+      ],
+      "criticality": "medium",
+      "install_state": "installed",
+      "sha256": "0a585bfb5766f2efdfbde62cdb044d0262e396ebc63de881df9e6c1dcf80dbd0",
+      "alert_ids": [],
+      "owner_wave": "OPS-AUDIT-CADENCE-CANARY-W1",
+      "notes": "The security-audit cadence ledger — the corpus audit-cadence-canary.py reads to decide PASS/DUE/OVERDUE. CLASSIFICATION: inert JSON DATA, i.e. a DECLARATION by this project's own artifact/declaration line, so it is SYNCED by declaration-sync.sh and never installed by SSH. Declared as `audit-cadence.json|audits|1|signal-1` — scope signal-1 and NOT `*`, because its only consumer runs there and syncing it to aoe-1 would make it an ORPHAN that host reads from nowhere. CRITICALITY IS `medium`, NOT `load-bearing`, and the reasoning is recorded so a later wave can challenge it rather than guess: this file's absence or corruption does not degrade a guarantee SILENTLY — the canary's INDETERMINATE arm catches every such case and escalates SECURITY_AUDIT_CADENCE_INDETERMINATE at CRITICAL_PERSISTENT, i.e. it fails LOUD. That is the same shape as alert-registry.json, also `medium`, whose read failures likewise resolve safely. A CONSEQUENCE of that honest grade — not a reason for it — is that this row does not qualify for the first_install stamp OPS-AOE-MONITORING-PARITY-W1 requires of load-bearing rows; if a future wave regrades it load-bearing, it must also install it via ops/scripts/install-monitoring-artifact.sh and carry that stamp. No `schedule`: it is DATA read by the canary's cron, not itself a scheduled job, so DARK does not apply."
     },
     {
       "id": "host-identity-label",

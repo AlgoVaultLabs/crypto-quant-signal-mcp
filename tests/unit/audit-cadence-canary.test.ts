@@ -178,7 +178,7 @@ describe('audit-cadence-canary — the alert the operator actually receives', ()
     expect(body).toContain('ARGV: SECURITY_AUDIT_OVERDUE CRITICAL_PERSISTENT -');
     // Every quantity carries its ENTITY NOUN — a bare parenthesised number beside a count is
     // forbidden and once cost a real operator misread.
-    expect(body).toMatch(/\d+ day\(s\) OVERDUE/);
+    expect(body).toMatch(/\d+ day\(s\) PAST DUE/);
     expect(body).toContain('wave SECURITY-AUDIT-MONTHLY-W1');
     expect(body).toContain('c'.repeat(40));                       // next BASELINE_SHA
     expect(body).toContain('autonomous-optimizer');               // rotation[(slot+1) % len]

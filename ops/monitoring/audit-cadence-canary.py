@@ -36,13 +36,25 @@ one exit code, chosen LOCALLY — the divergence is a decision. **Do not align t
 read as "no audit is overdue". Alerting is the channel; callers gate on the TOKEN, never the code.
 
 ─── SEVERITY, AND AN HONEST NOTE ABOUT WHAT `DUE` ACTUALLY DELIVERS ────────────────────────────
-`send_telegram.sh:526` suppresses every severity except CRITICAL_PERSISTENT
+`send_telegram.sh:526` suppresses every severity other than the single delivering one
 (`SUPPRESSED_SEVERITY: severity=$SEVERITY not in TG-fire set`). So:
 
-    OVERDUE        CRITICAL_PERSISTENT  -> DELIVERED to the operator (24h cooldown applies)
-    INDETERMINATE  CRITICAL_PERSISTENT  -> DELIVERED. A blind cadence guard is exactly the dark-
-                                          guard class this wave exists to retire, so it escalates.
-    DUE            WARN                 -> LOGGED, NOT DELIVERED, by design.
+    OVERDUE        -> CRITICAL_PERSISTENT -> DELIVERED to the operator (24h cooldown applies)
+    INDETERMINATE  -> CRITICAL_PERSISTENT -> DELIVERED. A blind cadence guard is exactly the
+                                             dark-guard class this wave exists to retire.
+    DUE            -> WARN                -> LOGGED, NOT DELIVERED, by design.
+
+    (The `->` before each severity is LOAD-BEARING PUNCTUATION, not styling.
+     `scripts/check-alert-registry.mjs` shape 2 reads "the bare token immediately preceding the
+     severity literal is an alert id", and it strips `#` comments but NOT Python docstrings —
+     a docstring is a string, not a comment. Written as a bare column, `OVERDUE` and
+     `INDETERMINATE` here minted PHANTOM alert ids and FAILed that gate. Measured, not theorised.)
+
+**`warn_lead_days` is an INTERNAL STATE BOUNDARY, not a notification window.** Do not "fix" DUE
+by escalating its severity to force delivery: at a 24h cooldown that is one page per day for
+`warn_lead_days` days while nothing is actually late, and an alert that fires while nothing is
+wrong gets muted — after which the OVERDUE page it was meant to precede is muted too. Day
+`cadence_days` IS the deadline, not an overrun.
 
 That last line is a real consequence, stated rather than left to be discovered: the operator's
 first DELIVERED signal is OVERDUE at day `cadence_days`. DUE is the 7-day forensic heads-up that
@@ -72,7 +84,7 @@ ALERT_DUE = "SECURITY_AUDIT_DUE"
 ALERT_OVERDUE = "SECURITY_AUDIT_OVERDUE"
 ALERT_INDETERMINATE = "SECURITY_AUDIT_CADENCE_INDETERMINATE"
 
-# The ONLY severity send_telegram.sh delivers (:526). Everything else is SUPPRESSED_SEVERITY.
+# The one severity send_telegram.sh delivers (:526). Everything else -> SUPPRESSED_SEVERITY.
 SEVERITY_DELIVERED = "CRITICAL_PERSISTENT"
 SEVERITY_WARN = "WARN"
 
@@ -160,7 +172,16 @@ def render_body(verdict: str, age_days: float, doc: dict, last: dict) -> str:
     wid = last.get("wave_id", "unknown")
 
     if verdict == "OVERDUE":
-        lead = f"Security audit is {over} day(s) OVERDUE — {int(age_days)} days since the last one, cadence is {cadence} days."
+        # `over == 0` is the FIRST day of OVERDUE — the audit is due TODAY, not overrun. Rendering
+        # that as "0 days overdue" on a first-ever delivered page teaches the operator the channel
+        # exaggerates, and this canary's entire value is that its one page is believed. Day
+        # `cadence_days` IS the deadline; `warn_lead_days` is an internal state boundary, not a
+        # notification window (DUE never delivers — see the module docstring).
+        if over == 0:
+            lead = (f"Security audit is DUE TODAY — day {int(age_days)} of a {cadence}-day cadence. "
+                    f"It is not yet overrun; it becomes overdue tomorrow.")
+        else:
+            lead = f"Security audit is {over} day(s) PAST DUE — {int(age_days)} days since the last one, cadence is {cadence} days."
     elif verdict == "DUE":
         left = int(cadence) - int(age_days) if isinstance(cadence, int) else "?"
         lead = f"Security audit is DUE in {left} day(s) — {int(age_days)} days since the last one, cadence is {cadence} days."
@@ -374,7 +395,17 @@ def self_test() -> int:
     ck("argv body is stdin ('-'), matching the wrapper's 3-arg contract", lambda: argv[3], "-")
     ck("clear argv targets OVERDUE via --clear", lambda: build_clear_argv()[1:3], ["--clear", ALERT_OVERDUE])
 
-    ck("body carries days-overdue WITH its entity noun", lambda: "10 day(s) OVERDUE" in body, True)
+    ck("body carries days-past-due WITH its entity noun", lambda: "10 day(s) PAST DUE" in body, True)
+
+    # ── the two OVERDUE renderings are DISTINCT (architect correction, 2026-09-02) ───────
+    # `over == 0` is the first day of OVERDUE: the audit is due TODAY, not overrun. A first-ever
+    # delivered page reading "0 days overdue" trains the operator to discount the channel.
+    body_today = render_body("OVERDUE", 30.0, ledger(30), ledger(30)["audits"][0])
+    ck("age == cadence renders DUE TODAY, never '0 days'", lambda: "DUE TODAY" in body_today, True)
+    ck("the due-today body names the day and the cadence", lambda: "day 30 of a 30-day cadence" in body_today, True)
+    ck("the due-today body says it is NOT yet overrun", lambda: "not yet overrun" in body_today, True)
+    ck("the due-today body never claims a past-due count", lambda: "PAST DUE" in body_today, False)
+    ck("age > cadence still renders PAST DUE, not DUE TODAY", lambda: "DUE TODAY" in body, False)
     ck("body carries the last wave_id WITH its entity noun", lambda: "wave SECURITY-AUDIT-MONTHLY-W1" in body, True)
     ck("body carries the next BASELINE_SHA (the last head_sha)", lambda: ("c" * 40) in body, True)
     ck("body carries the rotation repo for the next wave", lambda: "autonomous-optimizer" in body, True)
