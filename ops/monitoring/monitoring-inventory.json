@@ -111,6 +111,36 @@
       "notes": "The security-audit cadence ledger — the corpus audit-cadence-canary.py reads to decide PASS/DUE/OVERDUE. CLASSIFICATION: inert JSON DATA, i.e. a DECLARATION by this project's own artifact/declaration line, so it is SYNCED by declaration-sync.sh and never installed by SSH. Declared as `audit-cadence.json|audits|1|signal-1` — scope signal-1 and NOT `*`, because its only consumer runs there and syncing it to aoe-1 would make it an ORPHAN that host reads from nowhere. CRITICALITY IS `medium`, NOT `load-bearing`, and the reasoning is recorded so a later wave can challenge it rather than guess: this file's absence or corruption does not degrade a guarantee SILENTLY — the canary's INDETERMINATE arm catches every such case and escalates SECURITY_AUDIT_CADENCE_INDETERMINATE at CRITICAL_PERSISTENT, i.e. it fails LOUD. That is the same shape as alert-registry.json, also `medium`, whose read failures likewise resolve safely. A CONSEQUENCE of that honest grade — not a reason for it — is that this row does not qualify for the first_install stamp OPS-AOE-MONITORING-PARITY-W1 requires of load-bearing rows; if a future wave regrades it load-bearing, it must also install it via ops/scripts/install-monitoring-artifact.sh and carry that stamp. No `schedule`: it is DATA read by the canary's cron, not itself a scheduled job, so DARK does not apply."
     },
     {
+      "id": "audit-cadence-canary",
+      "artifact": "ops/monitoring/audit-cadence-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/audit-cadence-canary.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/audit-cadence-canary.py",
+          "schedule": "51 8 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "51 8 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "79824ec61127cf504f52a10f35583b3b115adfc53228a9f5f05e6164222aace2",
+      "alert_ids": [
+        "SECURITY_AUDIT_DUE",
+        "SECURITY_AUDIT_OVERDUE",
+        "SECURITY_AUDIT_CADENCE_INDETERMINATE"
+      ],
+      "owner_wave": "OPS-AUDIT-CADENCE-CANARY-W1",
+      "notes": "Retires the monthly security-audit cadence from prose into a gate. Reads ops/monitoring/audit-cadence.json (the `audit-cadence` row, a DECLARATION synced by declaration-sync.sh) and emits AUDIT_CADENCE_VERDICT=PASS|DUE|OVERDUE|INDETERMINATE, exits 0/0/0/3. DUE and OVERDUE exit 0 DELIBERATELY: this is a paging canary whose channel is Telegram, and a non-zero exit on a real OVERDUE would make cron mail an operator who already has the page. Its sibling build gate scripts/check-audit-cadence-schema.mjs maps FAIL->1 because a build gate must fail the build — one meaning, one exit code, chosen locally. DO NOT ALIGN THEM. criticality load-bearing: if this canary goes dark the cadence is unmonitored SILENTLY, which is the whole failure mode it exists to retire (the rule failed as prose twice — 7.5 weeks before SECURITY-AUDIT-FULL-W1 and 5 weeks before SECURITY-AUDIT-MONTHLY-W1). Age is keyed on max(audits[].completed_utc) — the PRODUCER's own stamp — NEVER the ledger file's mtime, because declaration-sync.sh rewrites that file hourly (33 * * * *) and an mtime-keyed alarm would read fresh forever. Pinned by an mtime-immunity probe in both suites. cron 51 8 * * *: offset(51)=min(51,9)=9 >= min_offset_minutes 3 per schedule-boundary-rule.json, so it is COMPLIANT; canonical-minute membership is advisory and never blocks. No minute of hour 8 is unoccupied (*/2 and 2-59/3 cover all 60), so the slot was chosen on measured CONCURRENCY (2 at :51 against a max of 8 at :02), not on freeness.",
+      "first_install": {
+        "at": "20260902T114857Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
+    },
+    {
       "id": "host-identity-label",
       "artifact": null,
       "kind": "config",
@@ -1772,7 +1802,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "39c967c87647c7bbd15bd47e16605495b975263112136d0614dfefea1ed64943",
+      "sha256": "c0c05e9342cc327ce194a2b733b1a8da595de5e9d976fa544a9f94470e8d0d32",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",

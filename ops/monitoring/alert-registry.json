@@ -915,6 +915,45 @@
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-regime_budget_starvation-W{NEXT}",
       "notes": "OPS-HL-INTERACTIVE-STARVATION-W1 CH3. Fires when interactive BUDGET_CEILING refusals on a venue exceed 1.0 per 100 get_market_regime calls over a trailing 24h. THE METRIC IS NORMALISED PER CALL, NOT A RAW COUNT, and that is the whole design: on 2026-08-28 throws went to EXACTLY ZERO while nothing was fixed — traffic simply fell from ~2,900 calls/day to 581 — so a raw count cannot tell a fix from a demand outage. Below MIN_CALLS (1500) the verdict is INDETERMINATE and never PASS, which is that natural experiment refusing to be read as health a second time; a breach still FAILS at any volume, because throws happening at all is information. This alarm exists because the underlying defect ran from 2026-07-07 and at ~1,000/day from 2026-08-21 on a PAID tool with nothing watching it for ten days — the severity was never the refusal, which is correctly shaped, but its invisibility. DETECT AND ALERT ONLY: it never mutates a budget, a reserve, a ceiling or a network rule, per the never-automate-a-rate-budget rule. An unreadable psql is an instrument fault and is SILENT INDETERMINATE — the inventory's own DARK check already covers a canary that stops producing. Reads as aoe_readonly, NOT algovault_autopilot: measured 2026-08-31, autopilot has no SELECT on rate_limit_events, and a table a role cannot read returns as ABSENT rather than DENIED — a silent zero on exactly the arm that matters. adopted=true (--clear on the healthy path, so a healed breach does not leave the channel pinned to its worst reading); announce_resolution stays FALSE per the law's default — recovery chatter is noise."
+    },
+    {
+      "alert_id": "SECURITY_AUDIT_OVERDUE",
+      "owner": "ops/monitoring/audit-cadence-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": true,
+      "follow_up_wave": "OPS-ALERT-ADOPT-SECURITY_AUDIT_OVERDUE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SECURITY_AUDIT_OVERDUE-W{NEXT}",
+      "notes": "announce_resolution TRUE — the ONLY one of the three. It is the one state whose resolution may have been produced by someone OTHER than the alert's reader: anyone can run the audit, so the operator holding the page is not necessarily the person who cleared it. Bounded by construction — the canary emits --clear only on OVERDUE->PASS, and the 24h cooldown already limits this alert to one fire per day, therefore to one resolution per day. No new timer, no new tunable."
+    },
+    {
+      "alert_id": "SECURITY_AUDIT_DUE",
+      "owner": "ops/monitoring/audit-cadence-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-SECURITY_AUDIT_DUE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SECURITY_AUDIT_DUE-W{NEXT}",
+      "notes": "announce_resolution FALSE. A warn that supersedes ITSELF into OVERDUE or PASS, so its 'resolution' is not an event an operator needs told. Also note it is dispatched at severity WARN, which send_telegram.sh:526 does NOT deliver — DUE is a forensic heads-up in the alert log, and warn_lead_days is an INTERNAL state boundary, not a notification window. Do not escalate it to force delivery: at a 24h cooldown that is one page per day for warn_lead_days while nothing is late, and an alert that fires while nothing is wrong gets muted."
+    },
+    {
+      "alert_id": "SECURITY_AUDIT_CADENCE_INDETERMINATE",
+      "owner": "ops/monitoring/audit-cadence-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-SECURITY_AUDIT_CADENCE_INDETERMINATE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SECURITY_AUDIT_CADENCE_INDETERMINATE-W{NEXT}",
+      "notes": "announce_resolution FALSE — always fixed by the person reading it (an absent, unparseable or empty ledger), so its resolution is chatter by construction. It IS dispatched at CRITICAL_PERSISTENT and therefore delivered: a blind cadence guard is exactly the dark-guard class this wave exists to retire, so it must escalate rather than go quiet. Silent recovery with forensics in the log stays the default for this row."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",
