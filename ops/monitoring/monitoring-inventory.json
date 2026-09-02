@@ -1025,7 +1025,7 @@
       "schedule": "47 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "b3a82bf54dffafac443e6ad9bda34b5a76b6499eba327355e4ba8dae61132936",
+      "sha256": "7d13739c2545bf93b7667aec20bdac8176ff77b3aa2d467719af9d95f3c20df2",
       "alert_ids": [
         "AOE_OUTPUT_LIVENESS_STALLED"
       ],
@@ -1049,7 +1049,7 @@
       "schedule": null,
       "invoked_by": "called-by:aoe-output-liveness-canary",
       "install_state": "installed",
-      "sha256": "c11ec756f7d4186d0a9f025cf509fa0276be708ef99d8b4091970dd682223bc8",
+      "sha256": "95bcf23ff893341599854aa72cb15839830cc21da482b4664571a05fe09d2640",
       "alert_ids": [
         "AOE_OUTPUT_LIVENESS_STALLED"
       ],
