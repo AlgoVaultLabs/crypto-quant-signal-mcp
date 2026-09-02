@@ -44,7 +44,6 @@ export const VENUE_BRAND_COLORS: Record<PromotedVenueId, string> = {
   MEXC: '#1972E2', // MEXC — "Ocean Blue" logo gradient
   PHEMEX: '#7DE95B', // Phemex — official logo green
   WHITEBIT: '#F6F0FF', // WhiteBIT — monochrome brand → off-white (kept distinct from OKX pure white)
-  BITMART: '#00F8F8', // BitMart — live-site CTA cyan
   XT: '#FFBE40', // XT — logo amber (Pantone 1365)
 };
 

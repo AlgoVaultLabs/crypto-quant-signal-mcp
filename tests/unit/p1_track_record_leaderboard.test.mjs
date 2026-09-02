@@ -41,7 +41,7 @@ async function readBrandColors() {
   const body = t.slice(start, t.indexOf('};', start));
   const obj = {};
   for (const m of body.matchAll(/(\w+):\s*'(#[0-9A-Fa-f]{6})'/g)) obj[m[1]] = m[2];
-  assert.ok(Object.keys(obj).length >= 15, 'brand-colour SoT parsed (>=15 entries)');
+  assert.ok(Object.keys(obj).length >= 14, 'brand-colour SoT parsed (>=14 entries)');
   return obj;
 }
 function perfFunc(src) {

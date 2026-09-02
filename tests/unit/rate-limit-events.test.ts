@@ -91,7 +91,7 @@ describe('evaluateRateLimitTriggers — both sides of every threshold', () => {
     // The 7 promoted by 2026-06-30 + the 3 by OPS-VENUE-GO-LIVE-15-W1 must be treated the same as
     // the original 5. 'Gate'/'Bitmart' (not 'Gate.io'/'BitMart') is the venueName the events table
     // carries — the derivation trap (PROMOTED_VENUE_NAMES maps id→VENUE_FETCH_CONFIGS.venueName).
-    for (const v of ['Aster', 'BingX', 'Gate', 'HTX', 'KuCoin', 'MEXC', 'Phemex', 'Bitmart', 'WhiteBIT', 'XT']) {
+    for (const v of ['Aster', 'BingX', 'Gate', 'HTX', 'KuCoin', 'MEXC', 'Phemex', 'WhiteBIT', 'XT']) {
       expect(evaluateRateLimitTriggers([venue(v, { throws: 2466 })]).shadowBudget, v).toBe(false);
     }
   });

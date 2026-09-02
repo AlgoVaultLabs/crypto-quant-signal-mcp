@@ -346,27 +346,12 @@ export const whitebitWeightBudget = new WeightBudget({
   log: WHITEBIT_VITEST ? () => {} : undefined,
 });
 
-// ── BitMart: consumer, OPS-VENUE-GO-LIVE-15-W1 — the fleet's TIGHTEST limiter ──
-// BitMart Futures V2 public limit 12 req/2s (= 360/min) per IP; open-interest endpoint 2 req/2s;
-// 429→418 IP-ban escalation (developer-pro.bitmart.com/en/futuresv2/#rate-limit, re-verified
-// 2026-07-23). This cross-process ledger is the MECHANISM that makes the uncapped 1h+ promoted pass
-// (~1200 perps) safe — it serializes ALL BitMart seed lines to ≤ ceiling. As a SHADOW venue BitMart
-// had NO budget (SHADOW_VENUE_BUDGETS empty) → concurrent lines burst past 12/2s → 523 raw 429s in a
-// 2026-07-20/21 window (0×418 ever). Ceiling = 50% of 360 = 180/min; reserve 40. weightFor = () => 1.
-// // TODO: revisit by 2026-08-23 — if the C4 24h ban-watch still surfaces 429s on the uncapped 1h+,
-// tighten toward the 2 req/2s OI-endpoint cap (or give BitMart HL-class isolated seed lines).
-export const BITMART_REQ_CEILING = 180;
-export const BITMART_INTERACTIVE_RESERVE = 40;
-const BITMART_VITEST = process.env.VITEST === 'true';
-const bitmartLedgerSuffix = BITMART_VITEST ? `.test-${process.pid}` : '';
-export const bitmartWeightBudget = new WeightBudget({
-  venue: 'Bitmart',
-  ledgerPath: process.env.BITMART_WEIGHT_LEDGER ?? `/tmp/algovault-bitmart-weight${bitmartLedgerSuffix}.json`,
-  lockPath: process.env.BITMART_WEIGHT_LOCK ?? `/tmp/algovault-bitmart-weight${bitmartLedgerSuffix}.lock`,
-  ceilingPerMin: BITMART_VITEST ? 1_000_000_000 : BITMART_REQ_CEILING,
-  interactiveReserve: BITMART_VITEST ? 0 : BITMART_INTERACTIVE_RESERVE,
-  log: BITMART_VITEST ? () => {} : undefined,
-});
+// ── BitMart: RETIRED 2026-08-27, budget block removed by OPS-BITMART-ENUM-RECONCILE-W1 ──
+// Its weight-budget evidence (12 req/2s = 360/min vendor limit + cited URL re-verified 2026-07-23,
+// the 429→418 escalation, the 523 raw 429s measured 2026-07-20/21 when it ran with NO budget, the
+// 180/min = 50%-of-360 derivation, reserve 40) and its EXPIRED-UNACTIONED `revisit by 2026-08-23`
+// TODO are MIGRATED to research/shadow-venues-api-limits-2026-06-05.md — the venue-API-limits SoT,
+// where an un-retirement would look. Do not re-derive them from scratch on a ban-escalating venue.
 
 // ── XT: consumer, OPS-VENUE-GO-LIVE-15-W1 ──
 // XT global 1000 req/min per IP; breach = 10-MINUTE ACCOUNT LOCK (doc.xt.com futures Basic
@@ -404,7 +389,6 @@ const VENUE_BUDGETS: Record<PromotedVenueId, VenueBudgetEntry> = {
   // OPS-VENUE-GO-LIVE-15-W1 — all request-count. BitMart's ledger (180/min) is the binding one; it
   // serializes the uncapped 1h+ pass so the shadow-era 429 burst can't recur. See each block above.
   WHITEBIT: { budget: whitebitWeightBudget, weightFor: () => 1 },
-  BITMART: { budget: bitmartWeightBudget, weightFor: () => 1 },
   XT: { budget: xtWeightBudget, weightFor: () => 1 },
 };
 

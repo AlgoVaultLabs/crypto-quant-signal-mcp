@@ -280,6 +280,18 @@ export async function getActivePromotedVenueIds(nowMs: number = Date.now()): Pro
 }
 
 /**
+ * OPS-BITMART-ENUM-RECONCILE-W1 — REACHABILITY CHANGED, function DELIBERATELY KEPT.
+ * BITMART left the public enum on 2026-09-03, so a caller naming it is now rejected upstream by Zod
+ * with a generic `-32602 invalid_enum_value` and never reaches this guard — the same treatment EDGEX
+ * already had. That is the ratified outcome (architect Q5, 2026-09-02): CHANGELOG [1.28.0] publishes
+ * that the enum lists only publicly served venues, so a special-cased BitMart message would
+ * contradict shipped public docs.
+ *
+ * This is NOT dead code. It is the guard for the window between a venue being retired in the
+ * `venues` table and its enum removal landing — exactly the 7-day window BitMart just lived through,
+ * during which it was the ONLY thing giving callers a named reason instead of an adapter timeout.
+ * The next retirement re-enters that window on day one. Do not delete it.
+ *
  * Throw a clean, explicit refusal if `exchange` names a RETIRED venue — so a user request to a
  * wound-down venue is declined BY NAME rather than left to time out on the dead adapter. No-op for
  * internal (grid-refresh) calls and for every live venue. OPS-BITMART-RETIRE-W1 (Q3).

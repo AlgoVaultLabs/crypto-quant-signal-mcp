@@ -5144,9 +5144,9 @@ var LB_SMALL_N = 30;          // muted "small sample" tag bar (single source w/ 
 // OPS-VENUE-GO-LIVE-15-W1 (2026-07-23): 12→15. WhiteBIT lime #A3E635 / BitMart red #F6465D /
 // XT pink #EC4899 — chosen pairwise-distinct from the 12 (unused red/lime/magenta hues; Design.md
 // "no two venues share a colour"), brand hues being too crowded (blue/teal) to stay distinct.
-var LB_EX_LABEL = { HL: 'Hyperliquid', BINANCE: 'Binance', BYBIT: 'Bybit', OKX: 'OKX', BITGET: 'Bitget', ASTER: 'Aster', BINGX: 'BingX', GATE: 'Gate.io', HTX: 'HTX', KUCOIN: 'KuCoin', MEXC: 'MEXC', PHEMEX: 'Phemex', WHITEBIT: 'WhiteBIT', BITMART: 'BitMart', XT: 'XT' };
-var LB_EX_COLOR = { HL: '#4ade80', BINANCE: '#F0B90B', BYBIT: '#F7A600', OKX: '#ffffff', BITGET: '#00C8BC', ASTER: '#A855F7', BINGX: '#0058FB', GATE: '#17E6A1', HTX: '#0091D4', KUCOIN: '#23AF91', MEXC: '#1972E2', PHEMEX: '#818CF8', WHITEBIT: '#A3E635', BITMART: '#F6465D', XT: '#EC4899' };
-var LB_EX_ORDER = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX', 'WHITEBIT', 'BITMART', 'XT'];
+var LB_EX_LABEL = { HL: 'Hyperliquid', BINANCE: 'Binance', BYBIT: 'Bybit', OKX: 'OKX', BITGET: 'Bitget', ASTER: 'Aster', BINGX: 'BingX', GATE: 'Gate.io', HTX: 'HTX', KUCOIN: 'KuCoin', MEXC: 'MEXC', PHEMEX: 'Phemex', WHITEBIT: 'WhiteBIT', XT: 'XT' };
+var LB_EX_COLOR = { HL: '#4ade80', BINANCE: '#F0B90B', BYBIT: '#F7A600', OKX: '#ffffff', BITGET: '#00C8BC', ASTER: '#A855F7', BINGX: '#0058FB', GATE: '#17E6A1', HTX: '#0091D4', KUCOIN: '#23AF91', MEXC: '#1972E2', PHEMEX: '#818CF8', WHITEBIT: '#A3E635', XT: '#EC4899' };
+var LB_EX_ORDER = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX', 'WHITEBIT', 'XT'];
 // TRACK-RECORD-EXCHANGE-BRAND-COLORS-W1: server-side VENUE_BRAND_COLORS SoT
 // (src/lib/venue-brand-colors.ts) injected once so the ANALYZING chip row's
 // client re-render and its server-rendered chips share ONE derivation. This is
@@ -5354,7 +5354,11 @@ async function load() {
       return '<div class="tab'+(isActive?' active':'')+'" data-ex="'+ex.id+'" style="font-size:13px" onclick="setExchangeFilter(\\''+ex.id+'\\')">'+ex.label+'</div>';
     }).join('');
 
-    // OPS-VENUE-GO-LIVE Phase B (R3b-TR): Analyzing chip row — same LB_EX_ORDER SoT (auto-grows with EXCHANGES)
+    // OPS-VENUE-GO-LIVE Phase B (R3b-TR): Analyzing chip row — same LB_EX_ORDER SoT.
+    // OPS-BITMART-ENUM-RECONCILE-W1: LB_EX_* do NOT "auto-grow with EXCHANGES" — they are HAND-
+    // MAINTAINED literals inside this client script, invisible to tsc. What keeps them honest is
+    // tests/unit/capabilities.test.ts, which pins LB_EX_ORDER and LB_EX_COLOR EXACTLY to
+    // PROMOTED_VENUE_IDS. Edit them in the same commit as EXCHANGES or that test goes RED.
     // TRACK-RECORD-EXCHANGE-BRAND-COLORS-W1: colour projects from VENUE_BRAND_COLORS
     // (the injected brand SoT), NOT LB_EX_COLOR — so the chip strip shows each venue's
     // official brand colour while the leaderboard bars keep their chart-distinct palette.

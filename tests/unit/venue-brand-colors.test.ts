@@ -40,7 +40,6 @@ const APPROVED: Record<string, string> = {
   MEXC: '#1972E2',
   PHEMEX: '#7DE95B',
   WHITEBIT: '#F6F0FF',
-  BITMART: '#00F8F8',
   XT: '#FFBE40',
 };
 

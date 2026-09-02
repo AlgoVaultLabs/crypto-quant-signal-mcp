@@ -653,7 +653,6 @@ const FETCHERS: Record<PromotedExchangeId, (limit: number) => Promise<ExchangeAs
   MEXC: fetchMexc,
   PHEMEX: fetchPhemex,
   WHITEBIT: fetchWhitebit,
-  BITMART: fetchBitmart,
   XT: fetchXt,
 };
 

@@ -41,7 +41,7 @@ describe('the accepted-venue set is declared ONCE', () => {
   it('VENUE_IDS_ALL is a strict superset of the promoted set, differing by exactly EDGEX + WEEX', () => {
     const promoted = new Set<string>(PROMOTED_VENUE_IDS);
     for (const v of promoted) expect(VENUE_IDS_ALL).toContain(v);
-    expect(VENUE_IDS_ALL.filter((v) => !promoted.has(v)).sort()).toEqual(['EDGEX', 'WEEX']);
+    expect(VENUE_IDS_ALL.filter((v) => !promoted.has(v)).sort()).toEqual(['BITMART', 'EDGEX', 'WEEX']);
   });
 
   it('has no duplicates — a set comparison would hide one, a length check would not catch it', () => {

@@ -24,7 +24,9 @@ const REPO_ROOT = join(dirname(__filename), '..', '..');
 describe('capabilities SoT — exchange list', () => {
   it('EXCHANGES has the canonical 15 entries in canonical order', () => {
     // OPS-VENUE-GO-LIVE-2026-06-30: 5→12 (7 appended). OPS-VENUE-GO-LIVE-15-W1: 12→15 (WHITEBIT/BITMART/XT).
-    expect(EXCHANGES.map((e) => e.id)).toEqual(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX', 'WHITEBIT', 'BITMART', 'XT']);
+    // OPS-BITMART-ENUM-RECONCILE-W1: 15→14 — BITMART retired 2026-08-27, removed from the static SoT
+    // so EXCHANGE_COUNT stops overstating (it published 15 while byExchange served 14 for 7 days).
+    expect(EXCHANGES.map((e) => e.id)).toEqual(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX', 'WHITEBIT', 'XT']);
   });
   it('EXCHANGES has display labels for every entry', () => {
     for (const e of EXCHANGES) {
@@ -34,7 +36,7 @@ describe('capabilities SoT — exchange list', () => {
   });
   it('EXCHANGE_COUNT === EXCHANGES.length', () => {
     expect(EXCHANGE_COUNT).toBe(EXCHANGES.length);
-    expect(EXCHANGE_COUNT).toBe(15);
+    expect(EXCHANGE_COUNT).toBe(14);
   });
   it('EXCHANGES is frozen (cannot mutate at runtime)', () => {
     expect(Object.isFrozen(EXCHANGES)).toBe(true);
@@ -102,6 +104,38 @@ describe('capabilities SoT — leaderboard (LB_EX_*) covers every promoted venue
       expect(colors, `LB_EX_COLOR missing ${id}`).toContain(id);
     }
   });
+  // ── OPS-BITMART-ENUM-RECONCILE-W1 — projection parity for the venue CHIP strip ──
+  // Four sites on /track-record project the venue list: :4835 (SSR, from EXCHANGES), the leaderboard
+  // (guarded by `if (!e) return` against byExchange), the exchange filter TABS, and the client chip
+  // re-render. Only the leaderboard is guarded, so for the other three the ONLY thing keeping a
+  // retired venue off the public page is that LB_EX_ORDER/EXCHANGES no longer contain it. That makes
+  // PARITY the correct assertion — not "chips subset of byExchange", which would still pass while a
+  // retired venue sat in the static list (BitMart painted a live chip for 7 days exactly that way).
+  it('LB_EX_LABEL / LB_EX_COLOR carry NO key beyond the promoted set (extras ship GREEN otherwise)', () => {
+    // `toContain` above proves nothing is MISSING; without this, a leftover retired venue survives as
+    // dead data and still paints a chip. This is the assertion that fails on a stale BITMART entry.
+    expect([...objKeys('LB_EX_LABEL')].sort()).toEqual([...PROMOTED_VENUE_IDS].sort());
+    expect([...objKeys('LB_EX_COLOR')].sort()).toEqual([...PROMOTED_VENUE_IDS].sort());
+  });
+
+  it('the chip strip + filter tabs project from LB_EX_ORDER, so they inherit that parity', () => {
+    // If either stops projecting from LB_EX_ORDER, the parity above no longer covers it and this
+    // test must be revisited — that is the point of asserting the SOURCE, not the output.
+    expect(idx, 'chip strip must project from LB_EX_ORDER').toMatch(
+      /chipsEl\.innerHTML = LB_EX_ORDER\.map/);
+    expect(idx, 'exchange filter tabs must project from LB_EX_ORDER').toMatch(
+      /\[\{\s*id:\s*'all'[^\]]*\]\.concat\(LB_EX_ORDER\.map/);
+  });
+
+  it('no RETIRED venue appears in any venue projection (the live-page defect this closes)', () => {
+    // BITMART was retired 2026-08-27 and kept painting on the public page until 2026-09-03.
+    for (const name of ['LB_EX_ORDER', 'LB_EX_LABEL', 'LB_EX_COLOR']) {
+      expect(idx.match(new RegExp(`var ${name} = [^;]+;`))![0],
+        `${name} still carries a retired venue`).not.toMatch(/BITMART/);
+    }
+    expect(PROMOTED_VENUE_IDS as readonly string[]).not.toContain('BITMART');
+  });
+
   it('no two venues share a leaderboard colour (Design.md)', () => {
     const m = idx.match(/var LB_EX_COLOR = \{([^}]+)\}/);
     const hexes = [...m![1].matchAll(/'(#[0-9a-fA-F]{3,8})'/g)].map((x) => x[1].toLowerCase());

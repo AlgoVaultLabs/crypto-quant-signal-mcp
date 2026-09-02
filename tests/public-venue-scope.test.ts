@@ -36,8 +36,9 @@ const indexSrc = read('src/index.ts');
 const EXCHANGE_TOOLS = ['get_trade_call', 'get_market_regime', 'scan_trade_calls'] as const;
 
 describe('1-2 — PUBLIC_VENUE_IDS is the promoted set, and excludes the two non-public venues', () => {
-  it('has 15 entries and equals PROMOTED_VENUE_IDS as a set', () => {
-    expect(PUBLIC_VENUE_IDS).toHaveLength(15);
+  it('has 14 entries and equals PROMOTED_VENUE_IDS as a set', () => {
+    // OPS-BITMART-ENUM-RECONCILE-W1: 15→14 (BITMART retired 2026-08-27, removed from the static SoT).
+    expect(PUBLIC_VENUE_IDS).toHaveLength(14);
     expect([...PUBLIC_VENUE_IDS].sort()).toEqual([...PROMOTED_VENUE_IDS].sort());
   });
 
@@ -62,7 +63,7 @@ describe('3 — VENUE_IDS_ALL still means "every venue with an adapter"', () => 
 
   it('the public set is a strict subset of the declared set, differing by exactly EDGEX + WEEX', () => {
     const pub = new Set<string>(PUBLIC_VENUE_IDS);
-    expect(VENUE_IDS_ALL.filter((v) => !pub.has(v)).sort()).toEqual(['EDGEX', 'WEEX']);
+    expect(VENUE_IDS_ALL.filter((v) => !pub.has(v)).sort()).toEqual(['BITMART', 'EDGEX', 'WEEX']);
   });
 });
 
@@ -73,14 +74,14 @@ describe('4 — EDGEX is rejected, via result.isError and NOT via response.error
   // this case asserts the Zod issue rather than an `error.code` that never arrives.
   const schema = z.enum(PUBLIC_VENUE_ENUM);
 
-  for (const bad of ['EDGEX', 'WEEX'] as const) {
+  for (const bad of ['BITMART', 'EDGEX', 'WEEX'] as const) {
     it(`rejects ${bad} with invalid_enum_value naming the 15 valid options`, () => {
       const r = schema.safeParse(bad);
       expect(r.success).toBe(false);
       if (r.success) return;
       const issue = r.error.issues[0] as { code: string; options?: readonly string[] };
       expect(issue.code).toBe('invalid_enum_value');
-      expect(issue.options).toHaveLength(15);
+      expect(issue.options).toHaveLength(14);
       expect(issue.options).not.toContain(bad);
     });
   }

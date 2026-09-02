@@ -63,7 +63,6 @@ export const EXCHANGES = Object.freeze([
   // promoted clean; XT (91.8%, sample 96% — 392 short) with pre-authorised --force. Vendor-cased
   // labels verified vs each venue's own site (WhiteBIT / BitMart / XT). EXCHANGE_COUNT → 15 here.
   { id: 'WHITEBIT', label: 'WhiteBIT' },
-  { id: 'BITMART',  label: 'BitMart' },
   { id: 'XT',       label: 'XT' },
 ] as const) satisfies readonly ExchangeEntry[];
 
@@ -77,15 +76,25 @@ export const EXCHANGE_COUNT: number = EXCHANGES.length;
  * so a `Record<PromotedVenueId, …>` is tsc-exhaustive and "forgot to add the new venue to scan"
  * becomes a compile error.
  *
- * OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (R1) — CAVEAT, and DO NOT restore the deleted claim: this is
- * the STATIC promoted union and it can DIVERGE from the live `venues` table — a venue retired via
- * `venues.status='retired'` stays in THIS list (that is BitMart's state today). So registries that
- * DRIVE LIVE API CALLS do NOT iterate this directly; they iterate `getActivePromotedVenueIds()`
- * (venue-store.ts) = this list MINUS retired. The prior comment here claimed "a unit test asserts this
- * set equals `listVenues('promoted')` so the compile-time list can't drift from the DB truth" — that
- * unit test NEVER EXISTED (`scan-promoted-derivation.test.ts` only defers parity to a live `byExchange`
- * check; `public-venue-scope.test.ts` asserts static==static). Reconciling this static list to the DB
- * truth is owned by OPS-BITMART-ENUM-REMOVE-W1, which also removes retired venues from the public enum.
+ * OPS-BITMART-ENUM-RECONCILE-W1 — RECONCILED. This static union and the live `venues` table now
+ * AGREE: BitMart was retired 2026-08-27 and is removed from `EXCHANGES` here, so `EXCHANGE_COUNT`
+ * states 14 and `byExchange` serves 14. Before this wave the two disagreed for 7 days (15 published
+ * vs 14 served) and nothing caught it.
+ *
+ * This wave SUBSUMED `OPS-BITMART-ENUM-REMOVE-W1` (architect ruling 2026-09-02) — that wave name is
+ * retired; there is ONE owner for this reconciliation, not a silent overlap.
+ *
+ * DO NOT restore the claim this block once made — that a unit test asserted this set equals
+ * `listVenues('promoted')`. It NEVER EXISTED, and it could not live in the unit suite anyway: that
+ * suite runs on SQLite with no production Postgres, so a parity test written there ships DARK, which
+ * is precisely the defect class it would exist to catch. Drift is now caught by the ops-scheduled
+ * PG-lane gate `promoted-set-drift-canary` (three-way identity: this static list == live
+ * `exchange_count` == live `byExchange` keys == `SELECT exchange_id FROM venues WHERE
+ * status='promoted'`, by symmetric difference).
+ *
+ * Registries that DRIVE LIVE API CALLS still do NOT iterate this directly — they iterate
+ * `getActivePromotedVenueIds()` (venue-store.ts) = this list MINUS retired — because a venue is
+ * retired in the DB before its enum removal lands, and that window must degrade safely.
  */
 export type PromotedVenueId = (typeof EXCHANGES)[number]['id'];
 

@@ -13,7 +13,7 @@
  * (network-isolated CI runners).
  */
 import { describe, it, expect } from 'vitest';
-import { EXCHANGE_COUNT, TIMEFRAME_COUNT } from '../../src/lib/capabilities.js';
+import { EXCHANGE_COUNT, TIMEFRAME_COUNT, PROMOTED_VENUE_IDS } from '../../src/lib/capabilities.js';
 
 const LIVE_URL = 'https://api.algovault.com/api/performance-public';
 const FETCH_TIMEOUT_MS = 5000;
@@ -49,13 +49,25 @@ describe('AUTO-TRACE-W1: /api/performance-public capability counters', () => {
     // CI pre-deploy fetch hits the OLD server, these may be undefined; in
     // that case the test still passes the contract by checking for the
     // canonical-SoT values via a strict-positive check after the fact.
+    // LOCAL deterministic invariant replacing the deleted live assertion — race-free, no live
+    // dependency, and it is the property that actually matters: the published count IS the
+    // promoted-id list, never a hand-typed number.
+    expect(EXCHANGE_COUNT).toBe(PROMOTED_VENUE_IDS.length);
+
     if (typeof data.exchange_count === 'number') {
-      // Monotonic + deploy-order tolerant (OPS-VENUE-GO-LIVE-15-W1): during a SoT-bump wave the code
-      // constant (EXCHANGE_COUNT) LEADS the not-yet-deployed live API, and promotion only ever GROWS
-      // the count — so live ≤ SoT, never overstates. The exact ==EXCHANGE_COUNT match is verified
-      // post-deploy by the chapter gate's live curl; here we lock the contract without a deploy race.
+      // OPS-BITMART-ENUM-RECONCILE-W1 (architect ruling Q13[D]): the `live <= EXCHANGE_COUNT`
+      // assertion that stood here was RELOCATED, not weakened. Three reasons:
+      //  (1) It was redundant BY CONSTRUCTION — byExchange = listVenues('promoted') INTERSECT
+      //      getActivePromotedVenueIds(), so live can never exceed the static set.
+      //  (2) A PRE-PUSH gate must not assert LIVE REMOTE state that the push itself is about to
+      //      change; that coupling is deploy-race-prone by construction. Its own premise here —
+      //      "promotion only ever GROWS the count" — was falsified by the first RETIREMENT.
+      //  (3) A +/-1 tolerance would have permitted a PERMANENT drift of exactly the magnitude this
+      //      wave exists to fix (15-vs-14 IS a 1-drift).
+      // The real check is now the ops-scheduled PG-lane gate `promoted-set-drift-canary`, upgraded to
+      // a THREE-WAY identity: live exchange_count == live byExchange keys == DB promoted set, by
+      // symmetric difference. Only the live LIVENESS check stays here.
       expect(data.exchange_count).toBeGreaterThan(0);
-      expect(data.exchange_count).toBeLessThanOrEqual(EXCHANGE_COUNT);
     }
     if (typeof data.timeframe_count === 'number') {
       expect(data.timeframe_count).toBe(TIMEFRAME_COUNT);
