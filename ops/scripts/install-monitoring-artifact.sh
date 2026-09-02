@@ -411,6 +411,52 @@ for t in "${TARGETS[@]}"; do
   esac
 done
 
+# ── Stamp `first_install` on the row this run actually installed ────────────────────────────
+#
+# 🛑 WHY THIS EXISTS. The reconciler's NO_BACKUP check is the estate's assertion that a
+# load-bearing host artifact is RECOVERABLE. This script is the only sanctioned path that takes
+# the first-install backup satisfying it — and FIVE separate waves, over thirteen days, installed
+# by hand instead and paged for it 24h later:
+#
+#   deploy-drift-canary             OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1   2026-08-20
+#   algovault-bot-referral-…-drain  REFERRAL-PARITY-NOTIFS-W1                    2026-08-22
+#   detector-envelope[-schema]      OPS-MONITORING-SIGNAL-CONTRACT-W1            2026-08-25
+#   edge-crawler-report-canary      GEO-EDGE-LOG-VISIBILITY-W1                   2026-09-02
+#
+# Five waves, five authors, one mistake, while the inventory grew 68 -> 95 rows. That is a
+# GENERATOR problem, not a discipline problem, and CLAUDE.md is explicit that the 4th same-class
+# occurrence must become a gate rather than a 5th fix.
+#
+# The stamp is what makes that gate possible WITHOUT host access:
+# tests/unit/monitoring-primitive-parity.test.mjs ratchets the count of qualifying rows that lack
+# it, so a newly-registered load-bearing row that never came through this script cannot be
+# committed.
+#
+# It edits the WORKING TREE inventory — the same file this script already reads — so a wave
+# registers the row, runs this, and commits row + stamp in ONE commit. No two-commit workflow.
+# Written only on a genuine install (ok>0), never on a dry run and never when nothing changed:
+# claiming an install that did not happen is the exact defect the `note=` plumbing above fixed.
+stamp_first_install() {
+  [ "$APPLY" = 1 ] || return 0
+  [ "$ok" -gt 0 ] || return 0
+  INVENTORY="$INVENTORY" ROW_ID="$ROW_ID" STAMP="$STAMP" python3 -c '
+import collections, json, os, sys
+inv, rid, stamp = os.environ["INVENTORY"], os.environ["ROW_ID"], os.environ["STAMP"]
+with open(inv, encoding="utf-8") as fh:
+    doc = json.load(fh, object_pairs_hook=collections.OrderedDict)
+row = next((r for r in doc["artifacts"] if r.get("id") == rid), None)
+if row is None:
+    sys.exit("no such row: " + rid)
+row["first_install"] = collections.OrderedDict(
+    [("at", stamp), ("by", "ops/scripts/install-monitoring-artifact.sh")])
+with open(inv, "w", encoding="utf-8") as fh:
+    json.dump(doc, fh, indent=2, ensure_ascii=False)
+    fh.write("\n")
+' || { say "  ⚠ could not stamp first_install (the install itself SUCCEEDED)"; return 0; }
+  say "  · stamped first_install on row $ROW_ID — COMMIT THE INVENTORY with this install"
+}
+stamp_first_install
+
 say "  summary: $ok installed · $skipped already canonical · $bad failed"
 [ "$bad" -eq 0 ] || verdict FAIL 1
 verdict PASS 0
