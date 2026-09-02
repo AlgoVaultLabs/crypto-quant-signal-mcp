@@ -246,6 +246,27 @@ DECLARATIONS=(
   # boot-contract-canary.sh is an ARTIFACT (executable, installed by reviewed SSH, never here).
   "boot-contract.json|hosts|1|*"
   "detector-envelope.schema.json|required_fields|5|signal-1,aoe-1"
+  # ── added by OPS-AUDIT-CADENCE-CANARY-W1 CH2 ──
+  # The security-audit cadence ledger. Its ONLY consumer is audit-cadence-canary.py on signal-1,
+  # so the scope is `signal-1` and NOT `*`: syncing it to aoe-1 would make it an ORPHAN there —
+  # a file that host reads from nowhere — which is the measured lesson the .yaml rows above
+  # already record. Add the next host the same way, WHEN it reads.
+  #
+  # Floor 1, not 2. `audits` is live at 2 and grows by one per monthly audit; the floor is a
+  # TRUNCATION guard, never a policy minimum, so it tracks the live value from BELOW. A floor
+  # pinned at the live count would REFUSE a legitimate future edit, which is how a healthy
+  # declaration gets frozen on every host.
+  #
+  # THE PAIRING, stated because the two sit next to each other on the host: audit-cadence.json is
+  # a DECLARATION (inert JSON, synced here) and audit-cadence-canary.py is an ARTIFACT
+  # (executable, installed by reviewed SSH in CH3 and never by this script). That distinction is
+  # what keeps this mechanism inside CLAUDE.md's no-auto-install rule.
+  #
+  # This row lands in CH2 rather than CH1 BY MEASUREMENT: check-declaration-coverage.mjs derives
+  # its expectation from CONSUMPTION, so a declaration with no reader makes `declared` a strict
+  # superset of `derived` — which its Vacuity Guard 3 correctly calls a broken scan and returns
+  # INDETERMINATE for. The declaration must land WITH its consumer, and here it does.
+  "audit-cadence.json|audits|1|signal-1"
 )
 
 # Exactly one terminal token on stdout, plus — outside the hermetic suite — a durable record in
