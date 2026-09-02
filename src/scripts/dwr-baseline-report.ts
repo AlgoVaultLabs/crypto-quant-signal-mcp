@@ -58,6 +58,7 @@ import {
   VALIDITY_PREDICATE_VERSION, VALIDITY_POWERED_FLOOR, type ValidityReject,
 } from './edge-stats.js';
 import { computeCellStats, medianOf, ptOverRows, type LabelRow, type Side } from './dwr-baseline.js';
+import { clusterEdge } from './dwr-cluster-edge.js';
 import { ROUND_TRIP_COST_PCT } from './directional-labeler.js';
 
 const SPECS = ['tau1.0-floor0.30-v1', 'tau0.5-floor0.30-v1', 'tau2.0-floor0.30-v1'];
@@ -318,6 +319,13 @@ async function reportForSpec(spec: string, sigBefore: number | null, labBefore: 
     // Pooled over EVERY labeled row in the spec (not just powered cells) — the R4 artifact's
     // "aggregate DWR, edge + CI". Descriptive: it mixes timeframes and tiers by construction.
     aggregate: { rowsPooled: allRows.length, ...describe(allRows) },
+    // OPS-AOE-MONITORING-DWR-REFOCUS-W1 R1 — the SAME rows, aggregated per UTC day against the
+    // mix-matched null instead of pooled against `max(alwaysBUY, alwaysSELL)`. ADDITIVE: it sits
+    // BESIDE `aggregate` and changes nothing in it, because `aggregate.edge` is still what the
+    // gate-side derivation mirrors. Measured 2026-09-02 the two disagree by ~1.7 pp, and the
+    // digest publishes THIS one while labelling the divergence and naming
+    // `EDGE-DWR-MIX-MATCHED-NULL-W{NEXT}` as the wave that reconciles them.
+    aggregateClusterEdge: clusterEdge(allRows),
     byVenue: rollup(allRows, 'venue'),
     byTimeframe: rollup(allRows, 'timeframe'),
     cells: cellsOut,

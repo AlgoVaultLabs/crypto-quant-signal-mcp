@@ -2207,7 +2207,7 @@
       "repo_resident": true,
       "invoked_by": "scripts/check-population-comparison.mjs (repo-side gate, not host-installed)",
       "install_state": "installed",
-      "sha256": "be28f04b36ad76b11d3eba553b1448fba0c8300f3a077d4813ba5f31d683c2b3",
+      "sha256": "51be7f6781ee5f3b338e1a6f26e96f7bb18fb427c355b9be398571ab11da127b",
       "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
       "reconcile_exempt_reason": "REPO-SIDE ONLY by design \u2014 the ledger is read by a pre-push gate in scripts/, never on a host, so it has no host_path and no installed_at row. Declared here so the enumeration is complete rather than because anything installs it.",
       "notes": "The census of every cross-population comparison site in this repo, with a monotonic ratchet on the UNMIGRATED count. Detection is strictly weaker than enumeration: measured 2026-09-02, the pattern sweep reaches 3 of the 4 known sites \u2014 edge-stats.ts carries the banned comparator only in a docstring while its naiveBest value arrives from a caller, so the lint provably cannot see it. That gap is the reason this file exists."

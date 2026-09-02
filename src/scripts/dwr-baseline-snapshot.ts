@@ -61,6 +61,10 @@ export const SNAPSHOT_COLUMNS = [
   'median_dwr', 'median_edge',
   'aggregate_n', 'aggregate_decided', 'aggregate_dwr', 'aggregate_benchmark', 'aggregate_edge',
   'aggregate_dwr_ci_lo', 'aggregate_dwr_ci_hi',
+  // OPS-AOE-MONITORING-DWR-REFOCUS-W1 R1 — the per-cluster mix-matched edge, ADDITIVE beside the
+  // pooled max-naive `aggregate_*` above. Migration 037.
+  'cluster_edge_mean_pp', 'cluster_edge_sd_pp', 'cluster_edge_clusters',
+  'cluster_edge_rows', 'cluster_edge_verdict',
   'by_venue', 'by_timeframe', 'coverage_by_venue',
 ] as const;
 
@@ -105,6 +109,13 @@ export interface SpecSlice {
   medianDwr: number; medianEdge: number;
   aggregate: { n: number; decided: number; dwr: number; benchmark: number; edge: number;
     wilsonLo: number; wilsonHi: number };
+  /** OPS-AOE-MONITORING-DWR-REFOCUS-W1 R1. REQUIRED, not optional: an optional field would let a
+   *  report silently omit it and store five NULLs that the reader cannot distinguish from a
+   *  pre-migration row. `buildReport` always produces it, INDETERMINATE included. */
+  aggregateClusterEdge: {
+    meanPp: number | null; sdPp: number | null; clusters: number; rowsInClusters: number;
+    verdict: string;
+  };
   byVenue: unknown; byTimeframe: unknown;
 }
 
@@ -131,6 +142,9 @@ export function projectRow(
     fin(s.medianDwr), fin(s.medianEdge),
     s.aggregate.n, s.aggregate.decided, fin(s.aggregate.dwr), fin(s.aggregate.benchmark),
     fin(s.aggregate.edge), fin(s.aggregate.wilsonLo), fin(s.aggregate.wilsonHi),
+    fin(s.aggregateClusterEdge.meanPp), fin(s.aggregateClusterEdge.sdPp),
+    s.aggregateClusterEdge.clusters, s.aggregateClusterEdge.rowsInClusters,
+    s.aggregateClusterEdge.verdict,
     JSON.stringify(s.byVenue), JSON.stringify(s.byTimeframe), JSON.stringify(coverageByVenue),
   ];
   if (row.length !== SNAPSHOT_COLUMNS.length) {
@@ -200,6 +214,12 @@ function slice(over: Partial<SpecSlice> = {}): SpecSlice {
     verdictReason: null,
     medianDwr: 0.4785, medianEdge: -0.0385,
     aggregate: { n: 400, decided: 300, dwr: 0.48, benchmark: 0.52, edge: -0.04, wilsonLo: 0.42, wilsonHi: 0.54 },
+    // OPS-AOE-MONITORING-DWR-REFOCUS-W1 R1. The pooled `aggregate.edge` above (-0.04) and this
+    // per-cluster mean are DIFFERENT QUANTITIES on purpose — the fixture carries both so the
+    // self-test can prove the writer stores them in the right columns.
+    aggregateClusterEdge: {
+      meanPp: -0.05, sdPp: 0.95, clusters: 143, rowsInClusters: 282040, verdict: 'PER_CLUSTER',
+    },
     byVenue: [{ key: 'BINANCE', n: 100 }], byTimeframe: [{ key: '5m', n: 100 }],
     ...over,
   };
@@ -259,6 +279,28 @@ function selfTest(): number {
     const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5, slice(), [{ venue: 'HL' }], PV);
     return typeof r[SNAPSHOT_COLUMNS.indexOf('by_venue')] === 'string'
       && typeof r[SNAPSHOT_COLUMNS.indexOf('coverage_by_venue')] === 'string';
+  });
+
+  // OPS-AOE-MONITORING-DWR-REFOCUS-W1 R1 — the per-cluster columns land SEPARATELY from the
+  // pooled ones. The two edges differ by ~1.7 pp in production, so a transposition here would
+  // publish the artifact this wave retired under the corrected label and read entirely plausible.
+  check('projectRow: the per-cluster edge lands in its own columns, not over aggregate_edge', () => {
+    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5, slice(), [], PV);
+    return r[SNAPSHOT_COLUMNS.indexOf('cluster_edge_mean_pp')] === -0.05
+      && r[SNAPSHOT_COLUMNS.indexOf('cluster_edge_sd_pp')] === 0.95
+      && r[SNAPSHOT_COLUMNS.indexOf('cluster_edge_clusters')] === 143
+      && r[SNAPSHOT_COLUMNS.indexOf('cluster_edge_rows')] === 282040
+      && r[SNAPSHOT_COLUMNS.indexOf('cluster_edge_verdict')] === 'PER_CLUSTER'
+      && r[SNAPSHOT_COLUMNS.indexOf('aggregate_edge')] === -0.04;
+  });
+  check('projectRow: an INDETERMINATE cluster run stores NULL mean WITH its verdict', () => {
+    // The verdict is what the reader gates on. A NULL mean with a NULL verdict is
+    // indistinguishable from a pre-037 row, so the writer must always store the verdict.
+    const r = projectRow('2026-08', '2026-08-24T06:00:00.000Z', null, 10, 5,
+      slice({ aggregateClusterEdge: { meanPp: null, sdPp: null, clusters: 4, rowsInClusters: 90, verdict: 'INDETERMINATE' } }),
+      [], PV);
+    return r[SNAPSHOT_COLUMNS.indexOf('cluster_edge_mean_pp')] === null
+      && r[SNAPSHOT_COLUMNS.indexOf('cluster_edge_verdict')] === 'INDETERMINATE';
   });
 
   // (3) The month key, both directions.

@@ -84,7 +84,18 @@
       "purpose": "EFFECT_CLAIM",
       "basis": "MAX_NAIVE",
       "migration_wave": "EDGE-DWR-MIX-MATCHED-NULL-W{NEXT}",
-      "note": "`Math.max(bench.alwaysBuyDwr, bench.alwaysSellDwr)`."
+      "note": "`Math.max(bench.alwaysBuyDwr, bench.alwaysSellDwr)`. STILL UNMIGRATED after OPS-AOE-MONITORING-DWR-REFOCUS-W1, deliberately: `computeCellStats.edge` is what `edge_gate` and the validity predicate consume, so migrating it is the live alpha-gating change this registry already ratified a separate wave and shadow period for. That wave did NOT touch this site; it added the sibling `dwr-cluster-edge:aggregate` below, which the DIGEST publishes while LABELLING the divergence from this one."
+    },
+    {
+      "id": "dwr-cluster-edge:aggregate",
+      "file": "src/scripts/dwr-cluster-edge.ts",
+      "status": "MIGRATED",
+      "purpose": "EFFECT_CLAIM",
+      "basis": "MIX_MATCHED_NULL",
+      "aggregation": "PER_CLUSTER",
+      "cluster_unit": "calendar_day",
+      "owner_wave": "OPS-AOE-MONITORING-DWR-REFOCUS-W1",
+      "note": "THE DIGEST'S HEADLINE, and a NEW site rather than a migration of `dwr-baseline:benchmark` — it feeds no gate, no validity predicate and no promotion decision. Measured 2026-09-02 on tau1.0 (n=282,071, q(BUY)=.9417): pooled max-naive -1.79pp, pooled mix-matched null -1.75pp, PER-UTC-DAY mix-matched null -0.05pp (sd 0.95, 143 clusters). AGGREGATION is the dominant term (~1.7pp), the comparator is noise against it (0.04pp), and the corrected figure is indistinguishable from zero rather than a 1.9pp deficit. Identifiability is DELIBERATELY ABSENT: it is a CROSS-ARM construct and this is a single population with no declared floor (measured attainable width 11.66pp against a ~0.05pp effect), so inventing a floor to make the clause fit would be worse than omitting it. It applies again the day a cross-arm DWR comparison is made. Until EDGE-DWR-MIX-MATCHED-NULL-W{NEXT} lands, this site and `dwr-baseline:benchmark` are two different quantities BY DESIGN and the digest says so in the rendered body."
     },
     {
       "id": "directional-accuracy-sot:formula",

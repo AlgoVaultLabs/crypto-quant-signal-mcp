@@ -136,6 +136,10 @@ suite('snapshot writer — the artifacts the DB seam bypasses', () => {
       rawPass: 2, fdrPass: 0, bonferroniPass: 0, validated: 0, verdict: 'NO-VALIDATED-EDGE',
       medianDwr: 0.4785, medianEdge: -0.0385,
       aggregate: { n: 400, decided: 300, dwr: 0.48, benchmark: 0.52, edge: -0.04, wilsonLo: 0.42, wilsonHi: 0.54 },
+      // OPS-AOE-MONITORING-DWR-REFOCUS-W1 R1 — the per-cluster mix-matched edge. REQUIRED on
+      // SpecSlice, so a report that stopped producing it fails to compile rather than storing
+      // five NULLs the reader cannot tell from a pre-037 row.
+      aggregateClusterEdge: { meanPp: -0.05, sdPp: 0.95, clusters: 143, rowsInClusters: 282040, verdict: 'PER_CLUSTER' },
       byVenue: [{ key: 'BINANCE', n: 100 }], byTimeframe: [{ key: '5m', n: 100 }],
       ...over,
     };
@@ -263,6 +267,7 @@ suite('the snapshot row is self-describing about WHICH bar produced it', () => {
     verdictReason: null,
     medianDwr: 0.4785, medianEdge: -0.0385,
     aggregate: { n: 400, decided: 300, dwr: 0.48, benchmark: 0.52, edge: -0.04, wilsonLo: 0.42, wilsonHi: 0.54 },
+    aggregateClusterEdge: { meanPp: -0.05, sdPp: 0.95, clusters: 143, rowsInClusters: 282040, verdict: 'PER_CLUSTER' },
     byVenue: [], byTimeframe: [],
     ...over,
   });
