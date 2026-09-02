@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "cadence_days": 30,
+  "warn_lead_days": 7,
+  "rotation": [
+    "algovault-bot",
+    "autonomous-optimizer",
+    "algovault-editorial",
+    "algovault-skills"
+  ],
+  "rotation_slot": 0,
+  "audits": [
+    {
+      "wave_id": "SECURITY-AUDIT-FULL-W1",
+      "completed_utc": "2026-07-28T10:54:00Z",
+      "baseline_sha": "aec417541753b06fce06adda938fcf60af698a08",
+      "head_sha": "0096cb99b02713ff857b330b87dcb96a192b828b",
+      "scope": [
+        "crypto-quant-signal-mcp"
+      ]
+    },
+    {
+      "wave_id": "SECURITY-AUDIT-MONTHLY-W1",
+      "completed_utc": "2026-09-02T07:27:19Z",
+      "baseline_sha": "0096cb99b02713ff857b330b87dcb96a192b828b",
+      "head_sha": "cc90e7c6291e6bc3fb8fad12c1f4a6b2dbf6aa88",
+      "scope": [
+        "crypto-quant-signal-mcp",
+        "algovault-bot"
+      ]
+    }
+  ]
+}
