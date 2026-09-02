@@ -409,7 +409,20 @@ def main(argv: list[str]) -> int:
         # `announce_resolution` stays FALSE on this alert — the clear is SILENT, per the law's
         # default. A trigger flapping back and forth is chatter; the operator action here is a
         # rollback DECISION, not an acknowledgement of a blip.
-        if verdict == PASS and Path(wrapper).exists():
+        # CLEAR ON "NOT FAILING AND NOT BLIND", not on PASS.
+        #
+        # Clearing only on PASS was wrong the moment trigger A became a structural REFUSAL: A is
+        # permanently INDETERMINATE for this pair of arms (NOT_IDENTIFIABLE is a determinate
+        # statement that the test cannot be run, not a transient read failure), so the fold can
+        # never reach PASS and the marker from the 2026-09-02 FALSE alarm would sit forever —
+        # pinning the channel's last word to the worst thing that ever happened, which is the exact
+        # defect the recovery-notice law names.
+        #
+        # But "clear whenever not FAIL" would clear while wholly blind, which is laundering. The
+        # condition is therefore BOTH: nothing is failing AND at least one trigger was genuinely
+        # evaluated. A run that measured nothing clears nothing.
+        evaluated_something = any(c.verdict == PASS for c in checks)
+        if verdict != FAIL and evaluated_something and Path(wrapper).exists():
             try:
                 subprocess.run([wrapper, "--clear", ALERT_ID_BREACH,
                                 "all pre-declared triggers within band"],
