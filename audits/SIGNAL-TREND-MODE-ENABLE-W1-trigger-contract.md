@@ -41,13 +41,50 @@ delta", applied to time instead of to tooling.
 
 ## Triggers
 
+**⚠️ AMENDED 2026-09-02 by `EDGE-POPULATION-COMPARISON-W1`, AFTER trigger A fired.** The amendment
+is recorded here WITH the firing that prompted it, in that order, because changing a pre-declared
+threshold after watching it fire is post-hoc threshold selection and "my correction is
+methodologically right" is exactly how that feels from the inside. Ratified by the architect
+2026-09-02 as a named wave rather than applied silently.
+
+**What fired and why it was wrong.** Trigger A was declared as
+`engine − max(always_long, always_short)`, compared across arms. It reported v2 −9.23pp vs v1
+−4.15pp and FAILed a −3.0pp floor. Measured decomposition: `always_short` moved **+2.97pp** between
+the windows, which alone explains most of the delta with **zero engine change**. The comparator was
+market-coupled, and `max()` is additionally selection-coupled — it silently changes *which* quantity
+it names as the up-rate crosses 0.5.
+
+**And the deeper finding, which no comparator repair fixes.** The excess an arm can attain over its
+own null is bounded by its marginals. At v1's 99.47% BUY share the engine **cannot** deviate from
+its mix-matched null by more than ±0.5pp whatever it does. Attainable widths: **1.06pp (v1)** vs
+**38.93pp (v2)** — 36.7×, against a declared floor of 3.0pp. **A floor wider than an arm's entire
+attainable range means that arm cannot influence the verdict**, so the "cross-arm delta" was
+arithmetically a single-arm level test wearing a delta's clothes. Trigger A therefore **REFUSES**
+this comparison as `NOT_IDENTIFIABLE` rather than reporting a number.
+
 | # | Trigger | Metric | Fires when | Window | Min n |
 |---|---|---|---|---|---|
-| **A** | Edge floor | v2 accuracy **minus the better of its own two naive baselines** (always-long, always-short), vs the same quantity on v1 | v2 edge falls **> 3.0 pp** below v1 edge | rolling from flip | **5,000** scored v2 rows |
-| **A2** | Edge-vs-long floor | v2 accuracy minus v2 always-long, vs the same on v1 — the "does trend mode beat simply buying" test | falls **> 2.0 pp** below v1 | rolling | **5,000** scored |
-| **B** | Volume ceiling | `TRENDING_*` recorded rows/day | **> 8×** the v1 daily rate, sustained **3 consecutive days**. The replay predicted a ~5.1× rise in BUY share; 8× is the pre-declared meaning of "much worse than predicted" | 3-day sustained | n/a |
-| **C** | Cell concentration | share of emissions landing in `4h` + `1d` | **> 3×** the v1 share | rolling | **2,000** v2 rows |
-| **D** | Operator-visible anomaly | (i) any `recordSignal` failure in 24 h, **or** (ii) an emission gap **> 2× the v1 maximum** | either | 24 h | n/a |
+| **A** | Edge floor — **derived through `ops/monitoring/population_comparison.py`, basis `MIX_MATCHED_NULL`** | `engine − (q·p_long + (1−q)·p_short)` on the SAME rows, where `q` is the emitted BUY share — the only basis that controls for **both** the world and the arm's own side mix | v2 excess falls **> 3.0 pp** below v1's — **but only if the comparison is IDENTIFIABLE.** Refuses to `INDETERMINATE` when the declared floor exceeds either arm's attainable range, or below **20 clusters** | rolling from flip | **5,000** scored v2 rows **and 20 clusters** |
+| ~~A2~~ | ~~Edge-vs-long floor~~ | **RETIRED, not migrated.** Its basis is mix-coupled: it reported **+0.44pp improvement** on the same rows and the same day A reported a 5.08pp regression, purely because BUY share fell 99.5% → 80.9%. Migrating it to the mix-matched null yields a second copy of A, which is a second derivation of one value. Survives as a diagnostic | — | — | — |
+| **B** | Volume ceiling — `purpose: OPERATIONAL_BOUND` | `TRENDING_*` recorded rows/day | **> 8×** the v1 daily rate, sustained **3 consecutive days** | 3-day sustained | n/a |
+| **C** | Cell concentration — `OPERATIONAL_BOUND` | share of emissions in `4h` + `1d` | **> 3×** the v1 share | rolling | **2,000** v2 rows |
+| **D** | Emission gap — `OPERATIONAL_BOUND` | max inter-arrival gap | **> 2×** the v1 maximum | 24 h | n/a |
+
+**B, C and D deliberately compare against a prior window and are declared `OPERATIONAL_BOUND` for
+it.** They are anomaly and liveness bounds, not effect claims — and an `OPERATIONAL_BOUND` is
+**forbidden from naming the change under test in its alert body**, because a bound that names the
+change reads as an effect claim to the operator receiving the page.
+
+**Aggregation is PER_CLUSTER, never pooled.** Measured 2026-09-02: pooled excess **−1.25pp** vs
+unweighted daily mean **+0.21pp** — pooling **flipped the sign**, because it weights the busiest day
+and the day is the independence unit. v1 ran daily mean 0.00 / stddev 0.08 over 10 days; v2 ran
+stddev 2.08 over 3 — a 26× variance difference a pooled point estimate hides entirely.
+
+**Q2 ratified 2026-09-02 — the 3.2× emission rise is ACCEPTED for the 30 days, explicitly.**
+Emission went 3,136/day (v1) → ~10,141/day (v2). Trigger B's ceiling is 8× so it correctly passes.
+The operator was asked whether a quality-adjusted volume trigger should be added and answered
+**keep** — recorded here so the acceptance is a decision on the record rather than a gap nobody
+noticed.
 
 ### Pre-declared limits, stated now rather than discovered at readout
 

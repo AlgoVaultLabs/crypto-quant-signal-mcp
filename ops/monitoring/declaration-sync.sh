@@ -170,6 +170,16 @@ DECLARATIONS=(
   # the committed declaration must not itself be configured by a copy nobody keeps current.
   # `enforcement` is a string, so presence-only (0) — there is nothing to count.
   "sot-parity-config.json|enforcement|0|*"
+  # EDGE-POPULATION-COMPARISON-W1 — the cross-population comparator contract. It is `signal-1`
+  # and NOT `*` on the ORPHAN rule's own terms: the only consumer is population_comparison.py,
+  # imported by trend-mode-readout-gate.py, which is installed on signal-1 and nowhere else. A `*`
+  # here would declare a consumer on aoe-1 that does not exist, and an ORPHAN row that fires on a
+  # host by construction is a guard nobody keeps. `banned_basis` is the load-bearing key — a schema
+  # that syncs with an EMPTY banned list would permit the exact comparator this wave retired, so
+  # the floor is 4, STRICTLY BELOW the live 6, because it is a TRUNCATION REFUSAL and not a
+  # target: a floor equal to the live count makes the sync reject the healthy file it is meant to
+  # protect. 4 still refuses a list gutted to the two entries that would re-permit the comparator.
+  "population-comparison.schema.json|banned_basis|4|signal-1"
   # The alert CONSUMER REGISTRY, added by OPS-ALERT-REGISTRY-DECLARE-W1 — same argument one
   # subject over: the registry that records which alerts exist must not itself be a copy nobody
   # keeps current. `alerts` is live 46; 30 is a truncation refusal, not a target.

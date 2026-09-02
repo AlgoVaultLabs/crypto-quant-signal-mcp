@@ -77,6 +77,10 @@ export default defineConfig({
       // the same row here or vitest false-fails it with "No test suite found in file".
       'tests/unit/website-alternatename-homepage-only.test.mjs',
       'tests/unit/how_it_works_consistency.test.mjs',
+      // EDGE-POPULATION-COMPARISON-W1 — node:test canary for the cross-population comparator
+      // gate. Same runner as its neighbours above, so it needs the same row here or vitest
+      // false-fails it with "No test suite found in file".
+      'tests/unit/population-comparison.test.mjs',
       'tests/unit/landing_faq_glossary_substrate.test.mjs',
       // OPS-CADDY-ROUTE-PARITY-W1 — node:test apex-route-parity guard (canonical runner is
       // node:test; exclude from vitest so it doesn't false-fail "No test suite found").

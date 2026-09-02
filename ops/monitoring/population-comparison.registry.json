@@ -1,0 +1,116 @@
+{
+  "_comment": "LEDGER of every cross-population rate comparison in this repo. EDGE-POPULATION-COMPARISON-W1. CLAUDE.md: detection is strictly weaker than enumeration — a comparison site nobody listed is exactly what this file exists to make impossible. The gate (scripts/check-population-comparison.mjs) requires every detected site to have a row here, and RATCHETS the unmigrated count so the population can only shrink.",
+
+  "_why_a_ledger_and_not_just_a_lint": "Measured 2026-09-02: the pattern sweep reaches roughly half the in-class sites. A rename, a loop accumulating a max, or a helper called `bestOf` evades it. What the ledger buys that a lint cannot is ENUMERATION — the sites are declared, so a reader can see the whole population and its debt, and the gate can prove the debt never grows. The lint is the tripwire; this is the census.",
+
+  "_status_doc": {
+    "MIGRATED": "uses population_comparison / population-comparison.ts, basis MIX_MATCHED_NULL or MATCHED_CONTROL, and satisfies the identifiability refusal.",
+    "OPERATIONAL_BOUND": "compares against a prior-window rate deliberately — an anomaly or liveness bound, NOT an effect claim. FORBIDDEN from naming the change under test in its alert body, because a bound that names the change reads as an effect claim to the operator receiving it.",
+    "UNMIGRATED": "carries the banned comparator and is DECLARED DEBT with a named migration wave. Counted by the ratchet. NOT silently tolerated — an undeclared site fails the gate."
+  },
+
+  "_ratchet_doc": "unmigrated_baseline is the count at the wave that shipped this file. The gate FAILS if the live count exceeds it, so the class can shrink and never grow. It is deliberately NOT a promotion criterion with a date: the migrations touch a LIVE alpha predicate (edge-stats.ts `validated`) and the estate's declared SoT formula, so each needs its own ratified wave rather than a deadline that invites a rushed flip.",
+  "unmigrated_baseline": 4,
+
+  "sites": [
+    {
+      "id": "trend-mode-readout-gate:trigger-A",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "status": "MIGRATED",
+      "purpose": "EFFECT_CLAIM",
+      "basis": "MIX_MATCHED_NULL",
+      "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
+      "note": "THE TRIPPING INSTANCE. Shipped 2026-08-31 with basis max(always_long, always_short); fired a FALSE FAIL 2026-09-02 whose -5.08pp was dominated by always_short moving +2.97pp between windows. Now derives through population_comparison.py, which REFUSES this particular comparison as NOT_IDENTIFIABLE — the declared 3.0pp floor exceeds arm v1's entire 1.06pp attainable range, so v1 could never influence the verdict."
+    },
+    {
+      "id": "trend-mode-readout-gate:trigger-A2",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "status": "MIGRATED",
+      "purpose": "EFFECT_CLAIM",
+      "basis": "MIX_MATCHED_NULL",
+      "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
+      "note": "DELETED as a gating trigger rather than migrated: its basis (engine - always_long) is mix-coupled, and migrating it to the mix-matched null merely yields a second copy of trigger A, which is a second derivation of one value. Survives as a diagnostic. Measured 2026-09-02 it reported +0.44pp IMPROVEMENT while trigger A reported a 5.08pp regression on the same rows — two market artifacts of opposite sign from one dataset."
+    },
+    {
+      "id": "trend-mode-readout-gate:B-volume-ceiling",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "status": "OPERATIONAL_BOUND",
+      "purpose": "OPERATIONAL_BOUND",
+      "basis": "PRIOR_WINDOW_RATE",
+      "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
+      "note": "Emission volume vs the v1-window rate. Deliberately a prior-window comparison: this is an anomaly bound, not an effect claim. Its alert body must not attribute a breach to TREND_MODE."
+    },
+    {
+      "id": "trend-mode-readout-gate:C-concentration",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "status": "OPERATIONAL_BOUND",
+      "purpose": "OPERATIONAL_BOUND",
+      "basis": "PRIOR_WINDOW_RATE",
+      "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
+      "note": "4h+1d emission share vs the v1-window share. Anomaly bound."
+    },
+    {
+      "id": "trend-mode-readout-gate:D-emission-gap",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "status": "OPERATIONAL_BOUND",
+      "purpose": "OPERATIONAL_BOUND",
+      "basis": "PRIOR_WINDOW_RATE",
+      "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
+      "note": "Liveness. Max inter-arrival gap vs the v1-window maximum."
+    },
+
+    {
+      "id": "edge-stats:naiveBest",
+      "file": "src/scripts/edge-stats.ts",
+      "status": "UNMIGRATED",
+      "purpose": "EFFECT_CLAIM",
+      "basis": "MAX_NAIVE",
+      "migration_wave": "EDGE-DWR-MIX-MATCHED-NULL-W{NEXT}",
+      "note": "HIGHEST BLAST RADIUS IN THE REPO, and the reason this wave declares rather than migrates. `validated` gates on holdoutEdge > 0 where the holdout carries its OWN window's max(alwaysBUY, alwaysSELL) benchmark — so the train and holdout comparators are two different quantities, which is this exact class across time rather than across arms. Migrating it changes what counts as validated alpha for every standing cell and for a byte-parity port in the autonomous-optimizer repo. That is a live alpha-gating change and needs its own ratified wave with a shadow period, not a side effect of a monitoring fix."
+    },
+    {
+      "id": "calibration-audit:bestBenchmark",
+      "file": "src/scripts/calibration-audit.ts",
+      "status": "UNMIGRATED",
+      "purpose": "EFFECT_CLAIM",
+      "basis": "MAX_NAIVE",
+      "migration_wave": "EDGE-DWR-MIX-MATCHED-NULL-W{NEXT}",
+      "note": "Two sites: `Math.max(alwaysBuyWr, alwaysSellWr, randomWr)` and `edge: actual - Math.max(alwaysBuy, alwaysSell)`. Feeds calibration recommendations."
+    },
+    {
+      "id": "dwr-baseline:benchmark",
+      "file": "src/scripts/dwr-baseline.ts",
+      "status": "UNMIGRATED",
+      "purpose": "EFFECT_CLAIM",
+      "basis": "MAX_NAIVE",
+      "migration_wave": "EDGE-DWR-MIX-MATCHED-NULL-W{NEXT}",
+      "note": "`Math.max(bench.alwaysBuyDwr, bench.alwaysSellDwr)`."
+    },
+    {
+      "id": "directional-accuracy-sot:formula",
+      "file": "docs/Directional-Accuracy-SoT.md",
+      "status": "UNMIGRATED",
+      "purpose": "EFFECT_CLAIM",
+      "basis": "MAX_NAIVE",
+      "migration_wave": "EDGE-DWR-MIX-MATCHED-NULL-W{NEXT}",
+      "note": "THE GENERATOR'S PAPER TRAIL: `Directional Edge = DWR - max(alwaysBUY, alwaysSELL)` is declared here as the estate SoT, which is WHY the monitoring gate reached for the same comparator. The defect was inherited from a source of truth, not invented — so amending the doc is part of the migration wave, not optional documentation cleanup."
+    }
+  ],
+
+  "_foreign_consumers": [
+    {
+      "repo": "autonomous-optimizer",
+      "path": "src/feedback/edge_stats.py",
+      "note": "A byte-parity port of the max-naive derivation. NOT IN THIS CHECKOUT, so this gate cannot read it and DOES NOT PROTECT IT. Adoption needs a consumer registry and its own wave — recorded here so the gap is declared rather than discovered by the next incident."
+    }
+  ],
+
+  "_out_of_scope": [
+    {
+      "class": "fixed threshold on a moving rate",
+      "examples": ["docs/RUNBOOK-VENUE-SHADOW-ONBOARDING.md pfe_wr >= 0.80", "tests/unit/monitor-pfe.test.ts bare 85% literal that pages a human"],
+      "wave": "OPS-MOVING-RATE-FIXED-BAR-W{NEXT}",
+      "note": "The MIRROR defect — a fixed bar against a rate that moves with the world. Same family, different fix. Named here so this wave is not mis-scoped to include it."
+    }
+  ]
+}

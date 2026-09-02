@@ -83,7 +83,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "7e3b3964f5c4a73b32dc33fef1996bb9f821e358fef970dc3ebe2b6d1a00051e",
+      "sha256": "ab7df214e617fe61024fe0d90be31d0c3ef35dd807757a2c9a45a4c32e7f65b4",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
@@ -2015,7 +2015,7 @@
       "schedule": "19 7 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "e8116b96500afc21662715c90acfc47af9eccfa3b7d85ca0f22d7532af3ddaaa",
+      "sha256": "165f586a37cdd7a2d5654d82a4ca6418d85630b4ead5cdf69216d3391b1b1a20",
       "owner_wave": "SIGNAL-TREND-MODE-ENABLE-W1",
       "alert_ids": [
         "TREND_MODE_TRIGGER_BREACH",
@@ -2109,6 +2109,58 @@
       ],
       "owner_wave": "OPS-HL-INTERACTIVE-STARVATION-W1",
       "notes": "CH3. Watches interactive BUDGET_CEILING refusals per venue, NORMALISED per get_market_regime call over a trailing 24h, because the raw count cannot distinguish a fix from a demand drop: on 2026-08-28 throws hit EXACTLY ZERO while nothing had been fixed and traffic had simply fallen from ~2,900 calls/day to 581. Below 1500 calls the verdict is INDETERMINATE and never PASS; a breach FAILS at any volume. Exists because the defect it watches ran from 2026-07-07, at ~1,000/day from 2026-08-21, on a PAID tool, with nothing watching it for ten days. REGIME_STARVATION_VERDICT= token per run, 0/1/3 (3 = the token-law default for a NEW gate; deliberately NOT check_test_baseline.sh's 2, which is 2 only because it already deployed 2). Three modes: --check (the alert), --observability-gate (CH1's assertion that new get_market_regime rows carry a non-NULL verdict; zero new rows is INDETERMINATE, never PASS), --self-test (hermetic). DETECT AND ALERT ONLY — never mutates a budget, reserve, ceiling or network rule. An unreadable psql is an instrument fault: SILENT INDETERMINATE, since the inventory's own DARK check already covers a canary that stops producing. Runs as aoe_readonly — MEASURED 2026-08-31, algovault_autopilot has NO SELECT on rate_limit_events, and a table a role cannot read comes back ABSENT rather than DENIED, i.e. a silent zero on the arm that matters. Cron 43 21: hour 21 is inside the 18:00-02:59 deploy-free band and carried no other job at all; minute 43 is off the :00 boundary. PROVEN ABLE TO FAIL before install — removing the volume floor and re-coding INDETERMINATE to 0 each turned the self-test red (2 caught). INSTALLED AND PROVEN FIRING on the real defect, not a synthetic one: the first live run on signal-1 at 2026-08-31T17:03Z reported Hyperliquid FAIL at 27.85 throws per 100 calls (981/3,522) with positive PASS output on the other four venues, exit 1. Cron row added the same minute (active lines 106 -> 107, diff shows exactly one addition, crontab backed up first)."
+    },
+    {
+      "id": "population-comparison-derivation",
+      "artifact": "ops/monitoring/population_comparison.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/population_comparison.py",
+      "installed_at": [
+        { "host": "signal-1", "path": "/opt/algovault-monitoring/population_comparison.py" }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "invoked_by": "imported by trend-mode-readout-gate.py",
+      "install_state": "installed",
+      "sha256": "c167f6dfc7de25ead2116ba2be42c0a35a1015e60e83a2c98cc490e44a50e519",
+      "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
+      "consumes": ["ops/monitoring/population-comparison.schema.json"],
+      "notes": "THE ONE DERIVATION for comparing a rate across two populations. It REFUSES rather than repairs: an arm's excess over its own mix-matched null is bounded by its marginals, so when a declared floor exceeds either arm's attainable range the comparison is NOT_IDENTIFIABLE and resolves to INDETERMINATE. Measured 2026-09-02, the firing that produced this file: attainable width 1.06pp (v1, 99.47% one-sided) vs 38.93pp (v2) against a 3.0pp floor \u2014 so the v1 term could never influence the verdict and the 'cross-arm delta' was a single-arm level test wearing a delta's clothes. No schedule: it is a library, imported by trend-mode-readout-gate.py, and has no cron of its own."
+    },
+    {
+      "id": "population-comparison-schema",
+      "artifact": "ops/monitoring/population-comparison.schema.json",
+      "kind": "declaration-data",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/population-comparison.schema.json",
+      "installed_at": [
+        { "host": "signal-1", "path": "/opt/algovault-monitoring/population-comparison.schema.json" }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "invoked_by": "read by population_comparison.py",
+      "install_state": "installed",
+      "sha256": "ef8906da0697834242b1532affe27990a18a47b6d24aa6d89f9fbfa5a75e9329",
+      "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
+      "consumed_by": ["ops/monitoring/population_comparison.py"],
+      "notes": "The SoT for the cross-population comparator contract, and it is DATA so both languages read one file \u2014 same discipline as detector-envelope.schema.json. Carries the banned-basis list (MAX_NAIVE, ALWAYS_LONG, ALWAYS_SHORT, RANDOM, PRIOR_WINDOW_RATE, OTHER_COHORT_RATE), the pinned ALL_SCORED denominator convention, and the identifiability rule. An unreadable schema is INDETERMINATE, never a permissive default."
+    },
+    {
+      "id": "population-comparison-registry",
+      "artifact": "ops/monitoring/population-comparison.registry.json",
+      "kind": "declaration-data",
+      "host": "204.168.185.24",
+      "host_path": null,
+      "installed_at": [],
+      "criticality": "informational",
+      "repo_resident": true,
+      "invoked_by": "scripts/check-population-comparison.mjs (repo-side gate, not host-installed)",
+      "install_state": "installed",
+      "sha256": "be28f04b36ad76b11d3eba553b1448fba0c8300f3a077d4813ba5f31d683c2b3",
+      "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
+      "reconcile_exempt_reason": "REPO-SIDE ONLY by design \u2014 the ledger is read by a pre-push gate in scripts/, never on a host, so it has no host_path and no installed_at row. Declared here so the enumeration is complete rather than because anything installs it.",
+      "notes": "The census of every cross-population comparison site in this repo, with a monotonic ratchet on the UNMIGRATED count. Detection is strictly weaker than enumeration: measured 2026-09-02, the pattern sweep reaches 3 of the 4 known sites \u2014 edge-stats.ts carries the banned comparator only in a docstring while its naiveBest value arrives from a caller, so the lint provably cannot see it. That gap is the reason this file exists."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

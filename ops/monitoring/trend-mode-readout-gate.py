@@ -55,6 +55,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import detector_envelope as de  # noqa: E402  (host-local sibling; see the inventory row)
+import population_comparison as pc  # noqa: E402  (EDGE-POPULATION-COMPARISON-W1)
 
 ALERT_ID_BREACH = "TREND_MODE_TRIGGER_BREACH"
 ALERT_ID_DUE = "TREND_MODE_READOUT_DUE"
@@ -66,7 +67,7 @@ PASS, FAIL, INDET = "PASS", "FAIL", "INDETERMINATE"
 # ── Pre-declared thresholds. Contract file is the SoT; these mirror it and the self-test asserts
 #    the mirror, so a silent divergence between code and contract is not writable. ──
 EDGE_FLOOR_DROP_PP = 3.0      # A   v2 edge vs best naive baseline, below v1's by more than this
-EDGE_LONG_DROP_PP = 2.0       # A2  v2 edge vs always-long, below v1's by more than this
+# A2 RETIRED by EDGE-POPULATION-COMPARISON-W1 — mix-coupled basis; see the block in evaluate().
 EDGE_MIN_SCORED = 5000        # A/A2 minimum scored v2 rows
 VOLUME_CEILING_MULT = 8.0     # B   TRENDING_* rows/day above this multiple of v1's
 VOLUME_SUSTAIN_DAYS = 3       # B   consecutive days
@@ -87,6 +88,10 @@ SELECT verdict_rule_version,
                    OR (signal='SELL' AND outcome_return_pct < 0)) THEN 1 ELSE 0 END),
        sum(CASE WHEN outcome_return_pct > 0 THEN 1 ELSE 0 END),
        sum(CASE WHEN outcome_return_pct < 0 THEN 1 ELSE 0 END),
+       -- EDGE-POPULATION-COMPARISON-W1: the emitted BUY share, over the SAME scored denominator.
+       -- Without it the null cannot be MIX-matched, and a fixed-side comparator moves with the
+       -- arm's own mix (measured 2026-09-02: BUY share 99.5% -> 80.9%).
+       sum(CASE WHEN outcome_return_pct IS NOT NULL AND signal='BUY' THEN 1 ELSE 0 END),
        sum(CASE WHEN regime IN ('TRENDING_UP','TRENDING_DOWN') THEN 1 ELSE 0 END),
        sum(CASE WHEN timeframe IN ('4h','1d') THEN 1 ELSE 0 END),
        sum(CASE WHEN timeframe = '1d' THEN 1 ELSE 0 END),
@@ -145,11 +150,11 @@ class Arm:
 
     def __init__(self, row: list[str]) -> None:
         (self.version, self.n, self.scored, self.engine_wins, self.long_wins,
-         self.short_wins, self.trending, self.concentrated, self.n_1d,
+         self.short_wins, self.buy_side, self.trending, self.concentrated, self.n_1d,
          self.first_at, self.last_at) = (
             int(row[0]), int(_f(row[1])), int(_f(row[2])), int(_f(row[3])), int(_f(row[4])),
-            int(_f(row[5])), int(_f(row[6])), int(_f(row[7])), int(_f(row[8])),
-            int(_f(row[9])), int(_f(row[10])))
+            int(_f(row[5])), int(_f(row[6])), int(_f(row[7])), int(_f(row[8])), int(_f(row[9])),
+            int(_f(row[10])), int(_f(row[11])))
 
     def _rate(self, wins: int) -> float | None:
         return None if self.scored == 0 else 100.0 * wins / self.scored
@@ -214,25 +219,31 @@ def evaluate(v1: Arm | None, v2: Arm | None, daily: dict, gaps: dict, now: datet
 
     ev.update(v1_n=v1.n, v2_n=v2.n, v1_scored=v1.scored, v2_scored=v2.scored)
 
-    # ── A / A2 — edge floors ──
-    if v2.scored < EDGE_MIN_SCORED:
-        checks.append(Check("A_edge_floor", INDET,
-                            f"v2 scored {v2.scored} < {EDGE_MIN_SCORED} required"))
-        checks.append(Check("A2_edge_vs_long", INDET,
-                            f"v2 scored {v2.scored} < {EDGE_MIN_SCORED} required"))
-    else:
-        d = v2.edge_best - v1.edge_best
-        ev["edge_best_delta_pp"] = round(d, 3)
-        checks.append(Check(
-            "A_edge_floor", FAIL if d < -EDGE_FLOOR_DROP_PP else PASS,
-            f"v2 edge {v2.edge_best:+.2f}pp vs v1 {v1.edge_best:+.2f}pp "
-            f"(delta {d:+.2f}pp, floor -{EDGE_FLOOR_DROP_PP}pp)"))
-        dl = v2.edge_long - v1.edge_long
-        ev["edge_long_delta_pp"] = round(dl, 3)
-        checks.append(Check(
-            "A2_edge_vs_long", FAIL if dl < -EDGE_LONG_DROP_PP else PASS,
-            f"v2 edge-vs-long {v2.edge_long:+.2f}pp vs v1 {v1.edge_long:+.2f}pp "
-            f"(delta {dl:+.2f}pp, floor -{EDGE_LONG_DROP_PP}pp)"))
+    # ── A — edge floor, via the ONE derivation, which REFUSES rather than repairs ──
+    #
+    # SHIPPED 2026-08-31 AS `engine - max(always_long, always_short)`, AND IT FIRED A FALSE FAIL ON
+    # 2026-09-02. Measured decomposition: always_short moved +2.97pp between the windows, which
+    # alone explained most of the -5.08pp "regression" with ZERO engine change. The comparator was
+    # market-coupled — and `max()` is additionally SELECTION-coupled, silently changing which
+    # quantity it names as the up-rate crosses 0.5.
+    #
+    # THE LAW WAS FOLLOWED, NOT BROKEN. CLAUDE.md's Benchmark-before-publish mandates edge against
+    # the naive baselines ON THE SAME ROWS; that controls the market WITHIN an arm and is silent
+    # BETWEEN arms. Following it is what produced this comparator.
+    #
+    # A2 (edge vs always_long) is DELETED as a gating trigger, not migrated: it is mix-coupled, it
+    # reported +0.44pp IMPROVEMENT on the same rows and the same day trigger A reported a 5.08pp
+    # regression, and migrating it to the mix-matched null just yields a second copy of A.
+    arm1 = pc.Arm("verdict_rule_version=1", v1.scored, v1.engine_wins, v1.long_wins,
+                  v1.short_wins, v1.buy_side)
+    arm2 = pc.Arm("verdict_rule_version=2", v2.scored, v2.engine_wins, v2.long_wins,
+                  v2.short_wins, v2.buy_side)
+    n_clusters = len(daily.get(2, {}))
+    cmpres = pc.compare_arms(arm1, arm2, EDGE_FLOOR_DROP_PP, n_clusters=n_clusters)
+    ev.update({k: val for k, val in cmpres.evidence.items()
+               if k in ("attainable_pp_a", "attainable_pp_b", "excess_pp_a", "excess_pp_b",
+                        "capacity_ratio", "delta_excess_pp", "diagnostic_max_naive_drift_pp")})
+    checks.append(Check("A_edge_floor", cmpres.verdict, cmpres.reason))
 
     # ── B — volume ceiling, sustained ──
     base_rate = v1.trending_per_day
@@ -441,8 +452,12 @@ def _send(wrapper: str, alert_id: str, body: str) -> bool:
 # strings and the envelope shape), because those are the only code no scenario would otherwise run
 # and are exactly where this class of canary has broken before.
 
-def _row(version, n, scored, ew, lw, sw, tr, conc, n1d, first, last):
-    return [str(version), str(n), str(scored), str(ew), str(lw), str(sw),
+def _row(version, n, scored, ew, lw, sw, tr, conc, n1d, first, last, buy=None):
+    # buy_side defaults to "almost all BUY", which is what the v1 arm really is (99.47%) — and it
+    # is exactly that one-sidedness that makes v1's attainable excess range 1.06pp wide and the
+    # cross-arm comparison NOT IDENTIFIABLE against a 3.0pp floor.
+    b = scored if buy is None else buy
+    return [str(version), str(n), str(scored), str(ew), str(lw), str(sw), str(b),
             str(tr), str(conc), str(n1d), str(first), str(last)]
 
 
@@ -469,17 +484,40 @@ def _self_test() -> int:
     check("no v2 rows ⇒ PASS with an explicit line (fact, not vacuity)",
           fold(checks) == PASS and any("no v2 rows yet" in c.detail for c in checks))
 
-    # 2. a healthy v2 arm passes every trigger
-    v2_ok = Arm(_row(2, 30000, 27000, 12700, 12650, 14000, 19000, 1150, 40, 0, 9 * day))
+    # 2. a healthy v2 arm passes the OPERATIONAL bounds
+    v2_ok = Arm(_row(2, 30000, 27000, 12700, 12650, 14000, 19000, 1150, 40, 0, 9 * day, buy=21870))
     checks, ev = evaluate(v1, v2_ok, daily_ok, gaps_ok, now, flip)
-    check("healthy v2 ⇒ PASS", fold(checks) == PASS)
-    check("evidence carries measured scalars", "edge_best_delta_pp" in ev and "v2_n" in ev)
+    check("healthy v2 ⇒ B/C/D all PASS",
+          all(c.verdict == PASS for c in checks if c.name.startswith(("B_", "C_conc", "D_"))))
+    check("evidence carries the capacity scalars the refusal is built from",
+          "attainable_pp_a" in ev and "excess_pp_a" in ev and "v2_n" in ev)
 
-    # 3. MUST-FAIL, one per trigger — a suite that cannot go red is decoration
-    v2_edge = Arm(_row(2, 30000, 27000, 11000, 12650, 14000, 19000, 1150, 40, 0, 9 * day))
-    check("A fires on an edge collapse",
+    # 3. THE REFUSAL, on the REAL 2026-09-02 shape. v1 is 99.5% one-sided, so its entire attainable
+    #    excess range is ~1.06pp — narrower than the declared 3.0pp floor. The comparison is
+    #    therefore NOT IDENTIFIABLE and must refuse rather than report a number.
+    check("A REFUSES a one-sided v1 against a floor wider than its attainable range",
+          any(c.name == "A_edge_floor" and c.verdict == INDET and "NOT_IDENTIFIABLE" in c.detail
+              for c in evaluate(v1, v2_ok, daily_ok, gaps_ok, now, flip)[0]))
+
+    # 3b. …and the refusal is NOT blanket. Give BOTH arms real two-sided capacity and A evaluates.
+    #     Without this the previous assertion would be satisfied by a trigger that always refuses,
+    #     which is a dark guard wearing a refusal's clothes.
+    # 25 clusters, because the day is the independence unit and the contract floors at 20. The
+    # first draft of this fixture carried 3 days and A returned "under-clustered" — correct
+    # behaviour that the test mistook for a broken refusal.
+    daily_many = {2: {f"2026-09-{d:02d}": 2000 for d in range(1, 26)}}
+    v1_2s = Arm(_row(1, 30000, 28000, 13300, 13300, 14000, 19000, 1100, 33, 0, 9 * day, buy=15000))
+    v2_2s = Arm(_row(2, 30000, 27000, 13000, 12900, 13900, 19000, 1150, 40, 0, 9 * day, buy=14000))
+    a_two_sided = [c for c in evaluate(v1_2s, v2_2s, daily_many, gaps_ok, now, flip)[0]
+                   if c.name == "A_edge_floor"]
+    check("A EVALUATES when both arms have capacity (the refusal is not blanket)",
+          bool(a_two_sided) and a_two_sided[0].verdict in (PASS, FAIL))
+
+    # 3c. MUST-FAIL — with capacity present, a genuine edge collapse still fires.
+    v2_bad = Arm(_row(2, 30000, 27000, 11200, 12900, 13900, 19000, 1150, 40, 0, 9 * day, buy=14000))
+    check("A still FIRES on a real edge collapse once it is identifiable",
           any(c.name == "A_edge_floor" and c.verdict == FAIL
-              for c in evaluate(v1, v2_edge, daily_ok, gaps_ok, now, flip)[0]))
+              for c in evaluate(v1_2s, v2_bad, daily_many, gaps_ok, now, flip)[0]))
     daily_hot = {2: {"2026-09-27": 99999, "2026-09-28": 99999, "2026-09-29": 99999}}
     check("B fires on 3 sustained days over the ceiling",
           any(c.name == "B_volume_ceiling" and c.verdict == FAIL

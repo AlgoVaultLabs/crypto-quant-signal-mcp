@@ -1,0 +1,61 @@
+{
+  "_comment": "POPULATION_COMPARISON — the contract every cross-population rate comparison must satisfy. EDGE-POPULATION-COMPARISON-W1. Sibling of detector-envelope.schema.json and the same discipline: THE PRODUCER IS TYPESCRIPT (src/**) AND THE CONSUMER IS PYTHON (ops/monitoring/**), so this is a JSON DATA CONTRACT read by both and NEVER a shared code module — a TS-only helper would leave the Python monitoring gates unconstrained, which is exactly where the 2026-09-02 defect lived.",
+
+  "_why": "A rate metric compared across two populations reports Δ = Δengine − Δcomparator. That is a statement about the thing under test ONLY IF Δcomparator is zero by construction. A comparator re-measured on each population's own rows is a function of (i) the world between the two windows and (ii) the arm's own emission mix, so both movements are added to the engine term and attributed to the change. MEASURED 2026-09-02 on signals: always_short moved +2.97pp between arms, which alone explained most of a -5.08pp 'regression' with ZERO engine change. THE LAW WAS FOLLOWED, NOT BROKEN — CLAUDE.md's Benchmark-before-publish mandates edge against the naive baselines ON THE SAME ROWS, which controls the market WITHIN an arm and says nothing about BETWEEN arms. A correctly-followed rule producing the defect is worse than a violated one, because compliance is false assurance and review cannot catch it.",
+
+  "schema_version": 1,
+
+  "_purpose_doc": "EFFECT_CLAIM asserts something about the thing under test and must satisfy every rule below. OPERATIONAL_BOUND is an anomaly/liveness bound (is emission still flowing, has volume exploded) — it may compare against a prior window, but it is FORBIDDEN from naming the change under test in its alert body, because an operational bound that names the change reads as an effect claim to the operator receiving it.",
+  "purpose_values": ["EFFECT_CLAIM", "OPERATIONAL_BOUND"],
+
+  "_basis_doc": "The comparator an EFFECT_CLAIM is measured against. MIX_MATCHED_NULL is the only basis that controls for BOTH the world and the arm's own side mix: pStar = q*pL + (1-q)*pS on the SAME rows, where q is the emitted BUY share. MATCHED_CONTROL requires the control arm's own counts to be supplied — a bare string naming a control is not a control.",
+  "basis_values": ["MIX_MATCHED_NULL", "MATCHED_CONTROL"],
+
+  "_banned_basis_doc": "Each of these is a MARGINAL of the outcome distribution, so subtracting it RELOCATES the coupling rather than removing it. max(alwaysBUY, alwaysSELL) is additionally SELECTION-COUPLED: it silently changes WHICH quantity it names as the up-rate crosses 0.5, so it satisfies 'one instrument on both sides' in name and defeats it in value. Listed as data so the gate and both language bindings read one list.",
+  "banned_basis": [
+    "MAX_NAIVE",
+    "ALWAYS_LONG",
+    "ALWAYS_SHORT",
+    "RANDOM",
+    "PRIOR_WINDOW_RATE",
+    "OTHER_COHORT_RATE"
+  ],
+
+  "_denominator_doc": "ALL_SCORED, pinned. Rates are taken over count(outcome_return_pct), with outcome_return_pct = 0 rows IN the denominator and in NO win bucket. Verified: always_long + always_short sums to 98.86% (v1) and 99.28% (v2) — the residual is real, it MOVED between arms, and the up-rate is not identified without a stated convention. This convention is pinned rather than proven: it is what the SQL already produces and it reproduces the 2026-09-02 figures to the digit.",
+  "denominator_convention": "ALL_SCORED",
+
+  "_identifiability_doc": "THE LOAD-BEARING REFUSAL, and the finding that no comparator repair could have produced. An arm's excess over its own mix-matched null is BOUNDED BY ITS MARGINALS: at BUY share 0.9947 the engine cannot deviate from pStar by more than ±0.5pp NO MATTER WHAT IT DOES. Measured 2026-09-02: attainable width 1.06pp (v1) vs 38.93pp (v2), a 36.7x ratio, against a declared floor of 3.0pp. A floor wider than an arm's ENTIRE attainable range means that arm cannot influence the verdict — so the 'cross-arm delta' was arithmetically a single-arm level test wearing a delta's clothes. A comparison whose declared floor exceeds either arm's attainable range is NOT IDENTIFIABLE and resolves to INDETERMINATE. Zero asserted constants: the refusal compares the wave's OWN declared floor against the arms' OWN measured ranges.",
+  "identifiability_rule": "REFUSE when declared_floor_pp > min(attainable_pp[a], attainable_pp[b])",
+
+  "_attainable_doc": "Fréchet bounds on the binarised {up, not-up} table. Deliberately the CONSERVATIVE (wider) bound rather than the tighter 3-outcome one, so a refusal computed from it is never over-eager: the gate refuses less often than a tighter bound would, and every refusal it does make is sound. dMax = min(q*(1-pL), (1-q)*pL); dMin = max(-q*pL, -(1-q)*(1-pL)); attainable_pp = 200*(dMax - dMin).",
+
+  "_aggregation_doc": "PER_CLUSTER is required for an EFFECT_CLAIM. Pooling a rate across days weights the busiest day, and the day is the independence unit, not the row. MEASURED 2026-09-02: pooled excess -1.25pp vs unweighted daily mean +0.21pp — POOLING FLIPPED THE SIGN. v1 daily excess ran mean 0.00 / stddev 0.08 over 10 days; v2 ran stddev 2.08 over 3 — a 26x variance difference that a pooled point estimate hides entirely.",
+  "aggregation_values": ["PER_CLUSTER", "POOLED_UNSTRATIFIED"],
+  "cluster_unit": ["coin", "calendar_day"],
+
+  "_interval_doc": "An EFFECT_CLAIM gates on an INTERVAL BOUND, never a point estimate — the edge-stats.ts:176 convention, and for a ROLLBACK gate the bound is the conservative side. Below min_clusters the verdict is INDETERMINATE, never PASS.",
+  "min_clusters": 20,
+
+  "required_fields": [
+    "schema_version",
+    "comparison_id",
+    "purpose",
+    "basis",
+    "denominator_convention",
+    "aggregation",
+    "arms",
+    "declared_floor_pp",
+    "verdict"
+  ],
+
+  "_arm_doc": "COUNTS ONLY — never pre-computed rates. The consumer recomputes from counts and cross-checks against the producer's value within recompute_tolerance_pp; a producer that ships a rate it alone computed is a second derivation nothing can check. outcome_return_pct is INTERNAL-ONLY and this repo is PUBLIC, so counts (not pp figures) are also what may safely appear in a fixture.",
+  "arm_required_fields": ["label", "scored", "engine_wins", "long_wins", "short_wins", "buy_side"],
+
+  "recompute_tolerance_pp": 0.005,
+
+  "verdict_values": ["PASS", "FAIL", "INDETERMINATE"],
+  "_verdict_default_doc": "INDETERMINATE is the DEFAULT for any path that did not complete its measurement. NOT_IDENTIFIABLE, under-clustered, unreadable — all resolve to INDETERMINATE. 'Measured and clean' may never share an output with 'measured nothing'.",
+  "verdict_default": "INDETERMINATE",
+
+  "_limits_doc": "STATED, because a contract that hides its residuals is prose. (1) Composition shift: if an arm emits on a DIFFERENT SET OF ROWS — other coins, timeframes, regimes — mix-matching does nothing, and TREND_MODE changes which rows get TRENDING_* labels, so this is the live second-order residual here. (2) Simpson: pStar holds the marginals fixed POOLED; declare strata or accept POOLED_UNSTRATIFIED as a stated limitation. (3) Capacity cannot be normalized away — every association measure is marginal-bounded when one arm is 99.47% one-sided; the contract REFUSES, it does not repair. (4) Multiplicity: a daily-evaluated floor is a repeated test and this contract does not correct for it. (5) A repo the gate cannot read is not protected by it."
+}
