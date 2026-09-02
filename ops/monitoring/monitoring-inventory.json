@@ -1749,7 +1749,7 @@
       "schedule": "13,43 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "8b04635a825fff7858cc23e525b61c28cdca0ae39ad7596df4cde7315eda0918",
+      "sha256": "8da48577d6cf0156f56a0f60a7b16989017e3c838d05eb3d91b5ea1e1a33f9a3",
       "owner_wave": "OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1",
       "alert_ids": [
         "DEPLOY_DRIFT"
