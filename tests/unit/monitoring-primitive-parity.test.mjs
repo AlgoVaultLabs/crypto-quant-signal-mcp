@@ -290,3 +290,107 @@ test('self-check: the heartbeat-key detectors fire on a known-bad fixture', () =
   assert.notEqual(badRecon.match(/^RESOLVED_KEY_PREFIX = "([^"]+)"/m)[1], 'resolved:',
     'key-drift detector would not fire');
 });
+
+/**
+ * OPS-FIRST-INSTALL-BACKUP-RATCHET-W1 — the gate that closes the NO_BACKUP class.
+ *
+ * ── THE CLASS, MEASURED ─────────────────────────────────────────────────────────────────────
+ * `NO_BACKUP` asserts that a load-bearing host artifact is RECOVERABLE. The ONLY sanctioned path
+ * that takes the first-install backup satisfying it is `ops/scripts/install-monitoring-artifact.sh`.
+ * Over thirteen days, FIVE separate waves installed by hand instead and paged 24h later:
+ *
+ *   deploy-drift-canary             OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1   2026-08-20
+ *   algovault-bot-referral-…-drain  REFERRAL-PARITY-NOTIFS-W1                    2026-08-22
+ *   detector-envelope[-schema]      OPS-MONITORING-SIGNAL-CONTRACT-W1            2026-08-25
+ *   edge-crawler-report-canary      GEO-EDGE-LOG-VISIBILITY-W1                   2026-09-02
+ *
+ * Five waves, five authors, one mistake, while the inventory grew 68 → 95 rows. Fixing the fifth
+ * by hand would be the fifth lane fix. CLAUDE.md: the 4th same-class occurrence MUST build a gate
+ * that makes the class structurally impossible.
+ *
+ * ── WHY A COUNT AND NOT A LIST ──────────────────────────────────────────────────────────────
+ * 45 incumbent rows predate the stamp. An allow-LIST of 45 ids would be a maintained exemption
+ * register — the anti-pattern this repo already refuses elsewhere — and every future reader would
+ * have to decide whether a given id belongs on it. A COUNT cannot be argued with: it may fall as
+ * waves reinstall through the tool, and any NEW unstamped row pushes it up and fails. Same idiom
+ * as COVERAGE_FLOOR above, opposite direction.
+ *
+ * ── WHY THIS CAN LIVE IN A HOST-FREE TEST ───────────────────────────────────────────────────
+ * The gate cannot ask "does a .bak exist on signal-1" — CI has no host access, and a gate that
+ * fails open on network is not a gate. So the installer STAMPS the row it installed, and this
+ * asserts the stamp. The backup and the stamp are produced by the same run: you cannot have the
+ * stamp without having taken the backup, which is what turns a 24h-late detection into a
+ * commit-time refusal.
+ */
+const UNSTAMPED_CEILING = 44; // 2026-09-02 baseline. 45 qualifying rows predated the stamp;
+// edge-crawler-report-canary was installed through the tool in this wave, so the floor is 44.
+// This number may only ever go DOWN. Never raise it to make a commit pass — raising it is exactly
+// the "register a load-bearing artifact without a sanctioned install" act the gate exists to stop.
+
+const needsFirstInstall = (r) =>
+  r.install_state === 'installed'
+  && r.criticality === 'load-bearing'
+  && !r.repo_resident
+  && Boolean(r.sha256);
+
+test('a newly-registered load-bearing artifact carries proof of a sanctioned install', () => {
+  const qualifying = rows.filter(needsFirstInstall);
+  assert.ok(qualifying.length > 0, 'vacuity: no qualifying rows — the predicate stopped matching');
+
+  const unstamped = qualifying.filter((r) => {
+    const fi = r.first_install;
+    return !(fi && typeof fi === 'object' && typeof fi.at === 'string' && fi.at.trim() !== ''
+             && typeof fi.by === 'string' && fi.by.includes('install-monitoring-artifact'));
+  });
+
+  assert.ok(
+    unstamped.length <= UNSTAMPED_CEILING,
+    `${unstamped.length} load-bearing rows lack a \`first_install\` stamp; the ceiling is `
+    + `${UNSTAMPED_CEILING} and it may only ever FALL.\n`
+    + `New/newly-unstamped: ${unstamped.slice(0, 8).map((r) => r.id).join(', ')}\n`
+    + 'A load-bearing host artifact must be installed with:\n'
+    + '    ops/scripts/install-monitoring-artifact.sh <row-id> --apply\n'
+    + 'which takes the first-install backup NO_BACKUP asserts AND writes this stamp. Installing by '
+    + 'hand skips both and pages ~24h later. Do NOT raise the ceiling.',
+  );
+});
+
+test('the ratchet is honest about its own direction', () => {
+  const unstamped = rows.filter(needsFirstInstall).filter((r) => !r.first_install);
+  // If the estate has caught up, the ceiling is stale and should be lowered — a ceiling well above
+  // the real count silently re-opens the class for that many future rows.
+  assert.ok(
+    UNSTAMPED_CEILING - unstamped.length <= 5,
+    `the ceiling (${UNSTAMPED_CEILING}) now sits ${UNSTAMPED_CEILING - unstamped.length} above the `
+    + `real count (${unstamped.length}); lower it to ${unstamped.length} — slack in a ratchet is `
+    + 'room for the defect to come back unnoticed.',
+  );
+});
+
+test('self-check: the stamp predicate rejects every near-miss shape', () => {
+  const base = { install_state: 'installed', criticality: 'load-bearing', sha256: 'a'.repeat(64) };
+  const bad = [
+    undefined, null, 'yes', 42, {},
+    { at: '', by: 'ops/scripts/install-monitoring-artifact.sh' },
+    { at: '20260902T000000Z' },                                  // no `by`
+    { by: 'ops/scripts/install-monitoring-artifact.sh' },        // no `at`
+    { at: '20260902T000000Z', by: 'scp' },                       // installed by hand, claimed
+  ];
+  const stamped = (fi) => {
+    const r = { ...base, first_install: fi };
+    return !(r.first_install && typeof r.first_install === 'object'
+             && typeof r.first_install.at === 'string' && r.first_install.at.trim() !== ''
+             && typeof r.first_install.by === 'string'
+             && r.first_install.by.includes('install-monitoring-artifact'));
+  };
+  for (const fi of bad) assert.ok(stamped(fi), `should NOT count as stamped: ${JSON.stringify(fi)}`);
+  assert.ok(!stamped({ at: '20260902T000000Z', by: 'ops/scripts/install-monitoring-artifact.sh' }),
+    'a genuine stamp must count');
+  // And the installer must still be the thing that writes it.
+  const inst = readFileSync(path.join(REPO, 'ops/scripts/install-monitoring-artifact.sh'), 'utf8');
+  assert.match(inst, /stamp_first_install/,
+    'the installer no longer stamps first_install — the ratchet would then block every future '
+    + 'sanctioned install, which is the gate eating its own users');
+  assert.match(inst, /"first_install"\]\s*=|\["first_install"\]|first_install/,
+    'the installer must write the first_install key the ratchet reads');
+});
