@@ -392,14 +392,69 @@ const VENUE_BUDGETS: Record<PromotedVenueId, VenueBudgetEntry> = {
   XT: { budget: xtWeightBudget, weightFor: () => 1 },
 };
 
+// ── WEEX: shadow consumer, OPS-WEEX-PROMOTION-READINESS-W1 CH2 ──
+// WEEX declares 500 requests / 10 minutes in its own V3 `/capi/v3/market/exchangeInfo`
+// `rateLimits[]` (= 0.833 req/s = 50/min, fetched 2026-09-03) while its response headers
+// advertise `x-used-weight-10s` (50 req/s) — a 60x self-contradiction. Architect D4 ruling:
+// the venue's own DECLARED limit governs. Ceiling = 50% = 25 req/min; reserve 5.
+//
+// WHY A CROSS-PROCESS BUDGET AND NOT JUST THE DELAY — measured, in production, twice:
+//   1. V2 tolerated 3.33 req/s for 89 days with ZERO 418/429. V3 returned 83 within FOUR
+//      MINUTES of the cutover at the same pacing. V3 enforces what V2 never did.
+//   2. Raising `DELAY_PER_EXCHANGE.WEEX` 300 -> 2400ms cut that to 8 — but the delay is
+//      PER-PROCESS, and all 8 landed in a SINGLE MINUTE (11:06Z) from FOUR concurrent
+//      callers: seed:5m, seed:15m, seed:30m, seed:1h. Each honoured 2400ms; jointly they
+//      delivered ~1.67 req/s against a declared 0.833. A 100-symbol pass takes ~240s at
+//      2400ms, so the cron grid overlaps lanes by construction and no per-process delay
+//      can fix it. This is the "two individually compliant jobs breach one shared budget"
+//      class, and the ledger is the only thing that serialises them.
+//
+// Placed in SHADOW_VENUE_BUDGETS per this block's own contract ("a shadow venue that needs
+// pacing pre-promotion can get an ad-hoc row here"). On promotion tsc demands it move into
+// the exhaustive VENUE_BUDGETS record above — the values carry over unchanged.
+//
+// ⚠️ CAPACITY — WEEX IS AT ITS CEILING, AND THIS IS AN OPEN QUESTION, NOT A SETTLED ONE.
+// Aggregate steady-state demand across the nine shadow lanes (5m top-50 + eight top-100
+// lanes, 1 kline/symbol + 1 bulk ticker/pass) is 1420 req/hour = 23.7 req/min against a
+// 25/min ceiling — 95% utilisation, 1.3 req/min headroom. With `interactiveReserve` 5 the
+// BATCH share is 20/min, so seeding is OVER-SUBSCRIBED and will WAIT, and under sustained
+// contention SKIP. If promoted (3m top-15 added, 5m depth 50->30) demand is 25.0 req/min
+// = 100% of the ceiling before any reserve.
+//
+// A wait is strictly better than a 429 (orderly, no ban-escalation risk), so this ships as
+// the correct control. But it means WEEX CANNOT carry the promoted lane set at top-100
+// depth against its own declared limit — the depth, the lane set, or the 50%-of-declared
+// reading has to give, and that is a capacity decision for the architect, not a mid-chapter
+// one. Do NOT quietly reduce seed depth (a Data Integrity change) or quietly loosen the
+// ceiling to make the arithmetic work. Recorded as BLOCKING for promotion in
+// audits/OPS-WEEX-PROMOTION-READINESS-W1-preconditions.md #1.
+export const WEEX_REQ_CEILING = 25;
+export const WEEX_INTERACTIVE_RESERVE = 5;
+const WEEX_VITEST = process.env.VITEST === 'true';
+const weexLedgerSuffix = WEEX_VITEST ? `.test-${process.pid}` : '';
+export const weexWeightBudget = new WeightBudget({
+  venue: 'WEEX',
+  ledgerPath: process.env.WEEX_WEIGHT_LEDGER ?? `/tmp/algovault-weex-weight${weexLedgerSuffix}.json`,
+  lockPath: process.env.WEEX_WEIGHT_LOCK ?? `/tmp/algovault-weex-weight${weexLedgerSuffix}.lock`,
+  ceilingPerMin: WEEX_VITEST ? 1_000_000_000 : WEEX_REQ_CEILING,
+  interactiveReserve: WEEX_VITEST ? 0 : WEEX_INTERACTIVE_RESERVE,
+  log: WEEX_VITEST ? () => {} : undefined,
+});
+
 /**
- * Shadow venues (BITMART / EDGEX / WEEX / WHITEBIT / XT) — deliberately SPARSE and
- * NEVER required to be exhaustive. Empty today: shadow data does not feed the public
- * track record, so a ban there degrades nothing user-visible. A shadow venue that
- * needs pacing pre-promotion can get an ad-hoc row here without touching the
- * exhaustive record above; on promotion, tsc will demand it move up.
+ * Shadow venues (EDGEX / WEEX) — deliberately SPARSE and NEVER required to be exhaustive.
+ * Shadow data does not feed the public track record, so a ban there degrades nothing
+ * user-visible; a shadow venue that needs pacing pre-promotion gets an ad-hoc row here
+ * without touching the exhaustive record above, and on promotion tsc demands it move up.
+ *
+ * WEEX is the first occupant (see the block directly above). EDGEX is RETIRED and needs
+ * none. _(Roster corrected 2026-09-03: this docblock still listed BITMART/WHITEBIT/XT as
+ * shadow venues — BITMART was retired 2026-08-27 and WHITEBIT/XT were promoted, both long
+ * before this wave.)_
  */
-const SHADOW_VENUE_BUDGETS: ReadonlyMap<string, VenueBudgetEntry> = new Map<string, VenueBudgetEntry>();
+const SHADOW_VENUE_BUDGETS: ReadonlyMap<string, VenueBudgetEntry> = new Map<string, VenueBudgetEntry>([
+  ['WEEX', { budget: weexWeightBudget, weightFor: () => 1 }],   // request-count venue
+]);
 
 /**
  * The cross-process weight budget for `exchangeId`, or null when the venue is

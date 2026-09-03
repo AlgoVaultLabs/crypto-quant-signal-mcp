@@ -8,7 +8,7 @@
  * instances, and that a budgeted entry can actually `acquire` (smoke).
  */
 import { describe, it, expect } from 'vitest';
-import { getVenueBudget } from '../../src/lib/venue-budget-registry.js';
+import { getVenueBudget, WEEX_REQ_CEILING, WEEX_INTERACTIVE_RESERVE } from '../../src/lib/venue-budget-registry.js';
 import { WeightBudget } from '../../src/lib/upstream-weight-budget.js';
 import { PROMOTED_VENUE_IDS } from '../../src/lib/capabilities.js';
 
@@ -45,11 +45,40 @@ describe('venue-budget-registry', () => {
 
   // ASTER/KUCOIN/MEXC/PHEMEX were in this list until OPS-TELEMETRY-DIGEST-REFRAME-W1; BITMART/
   // WHITEBIT/XT until OPS-VENUE-GO-LIVE-15-W1 — all PROMOTED now and correctly resolve non-null.
-  // Only the genuinely-shadow set (EDGEX/WEEX) stays null.
-  it('returns null for delay-paced shadow venues + unknown ids (sparse shadow map)', () => {
-    for (const id of ['EDGEX', 'WEEX', 'NOPE', '']) {
+  // WEEX left it in OPS-WEEX-PROMOTION-READINESS-W1 CH2: it is still SHADOW but now carries an
+  // ad-hoc SHADOW_VENUE_BUDGETS row, which is exactly what that map's contract is for. EDGEX is
+  // retired and needs none, so it remains the genuine null case alongside unknown ids.
+  it('returns null for un-budgeted shadow venues + unknown ids (sparse shadow map)', () => {
+    for (const id of ['EDGEX', 'NOPE', '']) {
       expect(getVenueBudget(id), id).toBeNull();
     }
+  });
+
+  // The gap this wave closed, asserted POSITIVELY — a flipped absence fixture that only
+  // stops asserting absence proves nothing about what replaced it.
+  //
+  // WHY IT EXISTS, so a later wave does not "simplify" it away: WEEX had ZERO 418/429 in 89
+  // days on /capi/v2 and took 83 within FOUR MINUTES of the V3 cutover, because V3 enforces
+  // the 0.833 req/s it declares. Raising the per-process delay 300 -> 2400ms cut that to 8 —
+  // and all 8 landed in ONE MINUTE from FOUR concurrent seed lanes, each honouring 2400ms and
+  // jointly delivering ~1.67 req/s. Only a cross-process ledger serialises them.
+  it('WEEX carries a shadow budget — the cross-process control a per-process delay cannot be', () => {
+    const entry = getVenueBudget('WEEX');
+    expect(entry, 'WEEX must resolve to a budget entry, not null').not.toBeNull();
+    expect(entry!.budget).toBeInstanceOf(WeightBudget);
+    // request-count venue: every call weighs 1 regardless of any weightHint
+    expect(entry!.weightFor({})).toBe(1);
+    expect(entry!.weightFor({ weightHint: 20 })).toBe(1);
+  });
+
+  it('the WEEX ceiling is 50% of the venue-DECLARED limit, not of the header value', () => {
+    // /capi/v3/market/exchangeInfo rateLimits[] = 500 req / 10 min = 50/min (fetched
+    // 2026-09-03). Headers advertise 50 req/s — a 60x spread. The architect's D4 ruling took
+    // the DECLARED limit; 50% of 50/min = 25. Pinning the derivation, not just the digit:
+    // reading the header value instead would give a ceiling of 1500/min.
+    expect(WEEX_REQ_CEILING).toBe(25);
+    expect(WEEX_REQ_CEILING).toBe(50 / 2);
+    expect(WEEX_INTERACTIVE_RESERVE).toBeLessThan(WEEX_REQ_CEILING);
   });
 
   it('the promoted set and the shadow set are disjoint (no venue is both)', () => {
