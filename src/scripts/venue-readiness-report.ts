@@ -56,6 +56,45 @@ export function venueVerdict(v: VenueRecord, s: Stats): Verdict {
   return { glyph: '✅', line: `✅ ${v.exchange_id} — QUALIFIED (day ${s.days_since}, ${smp}, WR ${wrPct(s.pfe_wr)})`, qualified: true };
 }
 
+/**
+ * OPS-BITMART-ENUM-RECONCILE-W1 CH5 — is there anything to ACT on?
+ *
+ * With the shadow set nearly empty this digest was on its way to reporting a static roster every
+ * morning forever, and per CLAUDE.md chatter is noise: an alert is operator-action-required or it
+ * should not fire. This is the predicate, kept PURE so both directions are testable — a
+ * suppression-only test would let the SEND path rot dark, which is the "installed is not working"
+ * class this estate keeps paying for.
+ *
+ * ACTIONABLE (architect-decided 2026-09-03, implemented as given):
+ *   • ≥1 shadow venue          — an onboarding is in flight and needs watching
+ *   • ≥1 ✅ QUALIFIED          — it is waiting on a promote decision
+ *   • ≥1 ⚠️ WR < 80%           — a venue below the promotion bar is a regression the operator may
+ *                                need to act on; this is what keeps the digest valuable once the
+ *                                shadow set empties
+ * NOT actionable:
+ *   • 🔌 "no pipeline yet"     — already ruled silent by the estate (New-Venue-SOP Phase 1: a
+ *                                starved venue "fires no operator alert and burns no extension")
+ *
+ * The equity card is handled by a one-line short-circuit at the call site rather than being folded
+ * in here: its input is inlined at the render site and hoisting it is an unbudgeted refactor.
+ */
+export function isDigestActionable(rows: VenueRecord[], statsByVenue: Map<string, Stats>): { actionable: boolean; reason: string } {
+  const empty: Stats = { pfe_wr: null, buy_sell_count: 0, days_since: 0 };
+  const shadow = rows.filter((v) => v.status === 'shadow').length;
+  let qualified = 0;
+  let belowBar = 0;
+  for (const v of rows) {
+    const verdict = venueVerdict(v, statsByVenue.get(v.exchange_id) ?? empty);
+    if (verdict.qualified) qualified += 1;
+    else if (verdict.glyph === '⚠️') belowBar += 1;
+  }
+  const actionable = shadow > 0 || qualified > 0 || belowBar > 0;
+  return {
+    actionable,
+    reason: `${shadow} shadow, ${qualified} qualified, ${belowBar} below-bar`,
+  };
+}
+
 /** Build the digest sections (pure — exported for tests). dateLabel passed in (no Date.now in tests). */
 export function buildReport(rows: VenueRecord[], statsByVenue: Map<string, Stats>, dateLabel: string): string[] {
   const sorted = [...rows].sort((a, b) => a.exchange_id.localeCompare(b.exchange_id));
@@ -127,6 +166,23 @@ async function main(): Promise<void> {
 
   if (process.env.DRY_RUN) {
     console.log('\n[DRY_RUN] not sent.');
+    return;
+  }
+  // CH5 — speak only when there is something to act on. FAIL-OPEN: a predicate error SENDS, because
+  // one day of noise beats one day of blind. The equity leg is a one-line short-circuit rather than
+  // a hoist: if the card is active the digest sends unconditionally, so enabling it can never be
+  // silently swallowed by a venue-side predicate.
+  let verdict = { actionable: true, reason: 'predicate not evaluated (fail-open)' };
+  try {
+    verdict = isEquityToolsEnabled()
+      ? { actionable: true, reason: 'equity Tool-Promotion-Readiness card is active' }
+      : isDigestActionable(rows, statsByVenue);
+  } catch (e) {
+    console.error(`[venue-readiness] actionability predicate failed — SENDING anyway: ${e instanceof Error ? e.message : e}`);
+  }
+  if (!verdict.actionable) {
+    // Silence in Telegram must never mean silence everywhere: this line is the job's liveness.
+    console.log(`[venue-readiness] SUPPRESSED — nothing actionable (${verdict.reason}, equity card inactive)`);
     return;
   }
   const ok = await sendDigest(sections, { label: 'venue-readiness-report' });
