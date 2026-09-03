@@ -327,6 +327,17 @@ jobs:
       - name: Integrations registry lockstep canary (check-integrations-registry-lockstep --check)
         run: node scripts/check-integrations-registry-lockstep.mjs --check
 
+      # OPS-WEEX-PROMOTION-READINESS-W1 CH2 — WEEX's V2 API is announced to sunset
+      # (V3 changelog 2026-03-09 + 2026-03-18; banner "V2 (Sunsets Sep 30)", year absent;
+      # working deadline 2026-09-30). After that date a reintroduced V2 call site does not
+      # fail loudly at review time — it ships and then dies at the vendor's convenience,
+      # taking WEEX's seed lane with it. This blocks the deploy instead.
+      # Bans a v2 CALL, not the substring "capi/v2": the provenance notes in
+      # seed-shadow-venues-w3b.ts record the 2026-05-20 pilot's V2 findings and must
+      # survive untouched. Gate on the TOKEN (WEEX_V2_RETIRED_VERDICT), not the exit code.
+      - name: WEEX V2-retirement canary (check-weex-v2-retired)
+        run: node scripts/check-weex-v2-retired.mjs
+
       # BINANCE-AGENT-OS-GEO-AND-SUBMISSIONS-W2 CH1 R4 — an <!-- --> comment inside a generator's
       # template literal is public copy. Blocks on landing/integrations/*.html (the surface that
       # wave cleaned); reports on the rest behind a counted, dated promotion criterion in
