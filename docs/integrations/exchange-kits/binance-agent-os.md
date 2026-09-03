@@ -63,7 +63,7 @@ Each server answers what it alone can answer.
 
 | Question the agent asks | Server that answers | Why |
 |---|---|---|
-| Direction, confidence, regime | **AlgoVault** `get_trade_call` | Composite verdict across 15 exchanges, with a Merkle-anchored track record |
+| Direction, confidence, regime | **AlgoVault** `get_trade_call` | Composite verdict across every supported perp venue, with a Merkle-anchored track record |
 | Cross-venue funding spread | **AlgoVault** `scan_funding_arb` | A spread needs two venues; Binance's server sees one |
 | Whole-market breadth | **AlgoVault** `scan_trade_calls` | Ranked calls across the scan universe |
 | Live price, balance, position | **Binance** | Its own book, its own account |

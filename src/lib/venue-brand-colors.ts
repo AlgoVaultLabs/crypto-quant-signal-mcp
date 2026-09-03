@@ -15,7 +15,7 @@
  * not "dedupe" them.
  *
  * Keyed by {@link PromotedVenueId} — i.e. `(typeof EXCHANGES)[number]['id']`,
- * the exact 15 venues rendered on the dashboard — NOT the wider `ExchangeId`
+ * the exact promoted venues rendered on the dashboard — NOT the wider `ExchangeId`
  * union (which also carries EDGEX / WEEX, shadow ids that are not rendered and
  * have no approved brand colour). Because this is an exhaustive
  * `Record<PromotedVenueId, string>`, `tsc` FAILS THE BUILD if a 16th venue is

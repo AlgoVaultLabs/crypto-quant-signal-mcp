@@ -316,6 +316,14 @@ jobs:
       - name: Feature-registry drift canary (check-feature-registry-drift --check)
         run: node scripts/check-feature-registry-drift.mjs --check
 
+      # OPS-BITMART-ENUM-RECONCILE-W1 (Q5): capability-snapshot drift fails at PUSH, not at publish.
+      # prepublishOnly used to run this with --live — the lone WRITER in a chain of verifiers — so a
+      # count change silently rewrote README/landing at publish time, and publish-npm.yml checks out
+      # the TAG TREE, producing an npm artifact that differs from the reviewed tree by construction.
+      # Recovery when this fails: `npm run snapshot:capabilities` and commit the result.
+      - name: Capability-snapshot drift canary (snapshot_capabilities --check)
+        run: node scripts/snapshot_capabilities.mjs --check
+
       - name: Integrations registry lockstep canary (check-integrations-registry-lockstep --check)
         run: node scripts/check-integrations-registry-lockstep.mjs --check
 

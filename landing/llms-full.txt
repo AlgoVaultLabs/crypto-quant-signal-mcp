@@ -375,7 +375,7 @@ A: Yes — any MCP-compatible client. The Streamable HTTP endpoint is `https://a
 A: No. The free tier is per-IP rate-limited (200 calls/month, up to 100/day). Paid tiers issue API keys at signup.
 
 **Q: What exchanges are analysed?**
-A: Hyperliquid (primary), Binance, Bybit, OKX, Bitget, and others — 15 venues as of 2026-08-27. Cross-venue funding spreads + regime alignment are derived across all of them. # SNAPSHOT-LINE — live value: GET /api/performance-public .exchange_count
+A: Hyperliquid (primary), Binance, Bybit, OKX, Bitget, and others — see /api/performance-public for the current venue count. Cross-venue funding spreads + regime alignment are derived across all of them. # SNAPSHOT-LINE — live value: GET /api/performance-public .exchange_count
 
 **Q: Is the source code open?**
 A: The Skills pack (`algovault-skills`) is MIT-licensed and open: https://github.com/AlgoVaultLabs/algovault-skills. The MCP server itself is closed-source but its outputs are fully verifiable on-chain.
