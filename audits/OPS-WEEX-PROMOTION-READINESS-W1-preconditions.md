@@ -14,7 +14,7 @@
 
 | # | Precondition | Blocking? | Effort |
 |---|---|---|---|
-| 1 | `weexWeightBudget` row | 🛑 **BLOCKING** — and it is the *enforcement mechanism*, not paperwork | S |
+| 1 | `weexWeightBudget` row | ✅ **SHIPPED in CH2** — but reopens as 🛑 **BLOCKING on CAPACITY**: WEEX is at **95% of its ceiling** today, **100% if promoted** | S–M |
 | 2 | Two WEEX-absence tests | ⚪ not blocking — they record today's state | S |
 | 3 | Brand hex | 🛑 **BLOCKING — PENDING-MR1**, the wave's single operator-action item | S once supplied |
 | 4 | Docs identity gate | ⚪ **not blocking — generator-owned**, contrary to the spec's framing | S |
@@ -25,23 +25,41 @@
 | 9 | Public-contract reversal (B1) | 🛑 **BLOCKING — release-wave act**, drafted below, not published | S (rides a release) |
 | 10 | Ordering | ⚪ not blocking — a constraint on the promotion wave, recorded | none |
 
-**Four blockers**, of which one (#3) needs Mr.1 and one (#9) needs a release wave. Nothing here is hard; the binding constraint on promotion remains **B7** (CH1) — the evidence base, not the mechanics.
+**Four blockers**, of which one (#3) needs Mr.1 and one (#9) needs a release wave. **#1 is the one that changed during the wave**: it shipped, then reopened as a capacity ceiling — WEEX cannot carry the promoted lane set at top-100 depth against its own declared limit. The binding constraint on promotion is still **B7** (CH1, the evidence base), with **#1 now a hard second**.
 
 ---
 
 ## 1 · `weexWeightBudget` — 🛑 BLOCKING, and CH2 proved why
 
-**Anchors:** `src/lib/venue-budget-registry.ts:376` `const VENUE_BUDGETS: Record<PromotedVenueId, VenueBudgetEntry>` (tsc-exhaustive) · `:403` `SHADOW_VENUE_BUDGETS = new Map<string, VenueBudgetEntry>()` — **empty** · `:409` `getVenueBudget()` returns `VENUE_BUDGETS[id] ?? SHADOW_VENUE_BUDGETS.get(id) ?? null`.
+**Anchors:** `src/lib/venue-budget-registry.ts:376` `const VENUE_BUDGETS: Record<PromotedVenueId, VenueBudgetEntry>` (tsc-exhaustive) · `:403` `SHADOW_VENUE_BUDGETS` — **was empty; WEEX is now its first occupant (`0835bb54`)** · `:409` `getVenueBudget()` returns `VENUE_BUDGETS[id] ?? SHADOW_VENUE_BUDGETS.get(id) ?? null`.
 
 **What must change.** Promotion moves WEEX into `PromotedVenueId`, so `tsc` FAILS the build until a `WEEX:` row exists in the exhaustive record. A `weexWeightBudget` block must be authored alongside it.
 
 **The budget value, cited.** WEEX `/capi/v3/market/exchangeInfo` `rateLimits[]` = `{interval: "MINUTE", intervalNum: 10, limit: 500}` → **0.833 req/s**, fetched 2026-09-03. Response headers advertise `x-used-weight-10s` (50 req/s) — a 60× self-contradiction. Architect D4 ruling: the venue's own **declared** limit governs; pace at ≤50% ⇒ **≥2400 ms**, i.e. a request-count budget of **250 requests / 10 min**.
 
-**⚠️ This stopped being theoretical during CH2.** WEEX had **zero** 418/429 in 89 days on V2 at 300 ms. Within **four minutes** of the V3 cutover, **45 `429`s** landed in `rate_limit_events` (`caller=seed:30m`). V3 enforces the declared limit that V2 did not. CH2 fixed the per-process delay (`DELAY_PER_EXCHANGE.WEEX` 300 → 2400).
+**⚠️ This stopped being theoretical during CH2.** WEEX had **zero** 418/429 in 89 days on V2 at 300 ms. Within **four minutes** of the V3 cutover, **83 `429`s** landed in `rate_limit_events` (first seen at 45 and still climbing when I sampled — the final count for that window is 83). V3 enforces the declared limit that V2 did not. CH2 fixed the per-process delay (`DELAY_PER_EXCHANGE.WEEX` 300 → 2400).
 
 **But the delay is PER-PROCESS and the budget is not.** `getVenueBudget('WEEX')` is `null`, so nothing serialises WEEX across concurrent lanes. The live cron grid overlaps them — minute 1 fires shadow-5m *and* shadow-4h; minute 4 fires shadow-1h *and* shadow-1d — so **two lanes each honouring 2400 ms jointly deliver ~1200 ms**, breaching a budget both independently respect. This is the "two individually compliant jobs breach one shared budget" class.
 
-**Therefore the budget row is the cross-process enforcement, and promotion (which adds the 3m and denser 5m lanes) increases the overlap.** Blocking. **Effort S.**
+**Therefore the budget row is the cross-process enforcement.** ✅ **SHIPPED IN CH2** (`0835bb54`) rather than deferred, because the hazard proved live: after the per-process fix, **8 more 429s landed in a single minute (11:06Z) from FOUR concurrent callers** — `seed:5m`, `seed:15m`, `seed:30m`, `seed:1h`, whose ~240 s passes began 11:02/03/04/06. Ceiling **25/min** = 50% of the venue-declared 500 req/10 min; reserve 5. On promotion `tsc` demands it move into the exhaustive record, values unchanged.
+
+**🛑 BUT THE PRECONDITION IS NOT CLOSED — IT CHANGED SHAPE, AND THIS IS THE WAVE'S SHARPEST CAPACITY FINDING.**
+
+My D4 analysis checked each lane **independently** and never summed them. Aggregate steady-state demand across the nine shadow lanes (5m top-50 + eight top-100 lanes; 1 kline/symbol + 1 bulk ticker/pass):
+
+| lane | 5m | 15m | 30m | 1h | 2h | 4h | 8h | 12h | 1d | **total** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| req/hour | 612 | 404 | 202 | 101 | 50.5 | 25.2 | 12.6 | 8.4 | 4.2 | **1420** |
+
+**1420 req/hour = 23.7 req/min against a 25/min ceiling — 95% utilisation, 1.3 req/min headroom.** With `interactiveReserve` 5 the batch share is **20/min**, so seeding is **over-subscribed** and will WAIT, and under sustained contention SKIP. **If promoted** (3m top-15 added, 5m depth 50→30): **25.0 req/min = 100% of the ceiling before any reserve.**
+
+**WEEX cannot carry the promoted lane set at top-100 depth against its own declared limit.** This is the D4 question the spec actually asked — *"say which lanes it can and cannot fit… if it cannot fit the tight lanes, WEEX is an HL-class isolated-line venue and that is a promotion cost, not a footnote"* — and the per-lane table answered it **wrongly** by not aggregating. One of three things must give, and the choice is the architect's:
+
+1. **Seed depth** — top-100 → top-50 on the slow lanes buys ~40% headroom. *(A Data Integrity change; not made here.)*
+2. **Lane set** — drop WEEX from the 2h/8h/12h lanes it barely uses.
+3. **The 50%-of-declared reading** — the headers claim 50 req/s; taking even 25% of *that* removes the problem entirely, at the cost of trusting the number the venue's own docs contradict.
+
+Still **BLOCKING for promotion**, now on capacity rather than on absence. **Effort S to ship a decision, M if depth changes.**
 
 ## 2 · The two WEEX-absence assertions — ⚪ not blocking
 
