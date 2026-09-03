@@ -134,8 +134,31 @@ const DELAY_PER_EXCHANGE: Record<ExchangeId, number> = {
   // HTX (formerly Huobi) Linear USDT-Margined Swap (233 USDT-listed). Most-
   // generous rate limit of W3A batch (800req/s per-IP market data); 200ms.
   'HTX':     150,
-  // PILOT-ADAPTERS-W3B / C1 (2026-05-20): WEEX shadow venue. cmt_ prefix + 4h funding.
-  'WEEX':    300,
+  // PILOT-ADAPTERS-W3B / C1 (2026-05-20): WEEX shadow venue, 4h funding. Was 300ms.
+  //
+  // OPS-WEEX-PROMOTION-READINESS-W1 CH2 — 300 → 2400ms, and this is MEASURED, not cautious.
+  // WEEX declares 500 requests / 10 minutes in its own V3 `exchangeInfo` rateLimits[]
+  // (0.833 req/s) while its response headers advertise `x-used-weight-10s` (50 req/s) — a
+  // 60x self-contradiction. The architect's D4 ruling took the venue's own DECLARED limit
+  // as authoritative and paced at <=50% of it: >=2400ms.
+  //
+  // The V2 path never enforced it: ZERO 418/429 in 89 days at 300ms, on an instrument
+  // proven live by 562k Bitmart 429s through the same `upstreamFetch` code path. That
+  // absence was evidence about V2's enforcement, never a documented budget — and V3
+  // settles it. Within FOUR MINUTES of the V3 deploy, 45 `429`s landed in
+  // `rate_limit_events` from `caller=seed:30m` at 300ms (3.33 req/s vs the declared
+  // 0.833). So the conservative reading was not merely prudent; it was correct.
+  //
+  // Cost, computed rather than feared: a top-100 kline pass is ~240s at 2400ms once the
+  // per-symbol ticker calls collapse into the one bulk `/ticker/24hr` fetch. Every shadow
+  // lane (5m@300s through 1d) and every promoted lane (3m top-15, 5m top-30) still fits
+  // with margin, so WEEX is NOT an HL-class isolated-line venue.
+  //
+  // NOTE this delay is PER-PROCESS. `getVenueBudget('WEEX')` is null (SHADOW_VENUE_BUDGETS
+  // is empty), so two lanes overlapping on the cron grid each honour 2400ms and jointly
+  // deliver ~1200ms. A `weexWeightBudget` row is the cross-process enforcement and is
+  // recorded as BLOCKING for promotion in this wave's precondition audit.
+  'WEEX':    2400,
   // PILOT-ADAPTERS-W3B / C2 (2026-05-20): BITMART shadow venue. Binance-style symbol BTCUSDT; 8h cadence.
   'BITMART': 500,
   // PILOT-ADAPTERS-W3B / C3 (2026-05-20): XT shadow venue. Lowercase btc_usdt; 8h cadence.
