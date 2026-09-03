@@ -55,12 +55,37 @@ describe('C2 shadow universe-fetchers — shape mapping + ranking + filters', ()
     expect(await fetchBingxCoins(5)).toEqual(['ETH', 'BTC']);
   });
 
-  it('WEEX: cmt_ prefix + usdt suffix strip + uppercase, volume_24h ranking', async () => {
+  // OPS-WEEX-PROMOTION-READINESS-W1 CH2 — migrated to /capi/v3/market/ticker/24hr.
+  // V3 dropped the cmt_ prefix and uppercased symbols, so the V2-era fixture is no
+  // longer the venue's shape; the ranking field is quoteVolume (see the trap below).
+  it('WEEX: USDT suffix strip + uppercase, quoteVolume ranking', async () => {
     mockFetch([
-      { symbol: 'cmt_btcusdt', volume_24h: '100' },
-      { symbol: 'cmt_ethusdt', volume_24h: '200' },
+      { symbol: 'BTCUSDT', quoteVolume: '100' },
+      { symbol: 'ETHUSDT', quoteVolume: '200' },
     ]);
     expect(await fetchWeexCoins(5)).toEqual(['ETH', 'BTC']);
+  });
+
+  // THE TRAP THIS FETCHER IS MOST EXPOSED TO. V2 `volume_24h` was QUOTE volume; V3's
+  // same-named `volume` is BASE. Because the deflation factor is each coin's own price,
+  // reading `volume` does not rescale the ranking — it REORDERS it. Here BTC has the
+  // larger quote volume but the smaller base volume, so a name-match mapping silently
+  // inverts the top-N that WEEX's entire seed lane is drawn from.
+  it('ranks on quoteVolume, NOT the same-named base `volume` (a name-match REORDERS)', async () => {
+    mockFetch([
+      { symbol: 'BTCUSDT', quoteVolume: '1794119177', volume: '23227.69' },
+      { symbol: 'ETHUSDT', quoteVolume: '900000000', volume: '374000.0' },
+    ]);
+    expect(await fetchWeexCoins(5)).toEqual(['BTC', 'ETH']);
+  });
+
+  it('WEEX: reverses the TradFi aliases a bare suffix-strip would miss (XAG → SILVER)', async () => {
+    mockFetch([
+      { symbol: 'XAGUSDT', quoteVolume: '300' },
+      { symbol: 'CLUSDT', quoteVolume: '200' },
+      { symbol: 'BTCUSDT', quoteVolume: '100' },
+    ]);
+    expect(await fetchWeexCoins(5)).toEqual(['SILVER', 'USOIL', 'BTC']);
   });
 
   it('BITMART: product_type==1 + USDT filter, open_interest ranking', async () => {

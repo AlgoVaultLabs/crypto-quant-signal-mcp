@@ -149,7 +149,8 @@ const PRICE_CASES: {
   },
   {
     name: 'weex',
-    mock: px => setMock('/capi/v2/market/ticker', { symbol: 'cmt_btcusdt', markPrice: px, indexPrice: px, last: px }),
+    // V3: one-element array, uppercase symbol, lastPrice (was V2's bare object + `last`).
+    mock: px => setMock('/capi/v3/market/ticker/24hr', [{ symbol: 'BTCUSDT', markPrice: px, indexPrice: px, lastPrice: px }]),
     run: () => new WeexAdapter().getCurrentPrice('BTC'),
   },
   {
@@ -188,17 +189,19 @@ describe('getCurrentPrice default-denies a wrong-but-finite upstream price', () 
 
 describe('getAssetContext throws rather than scoring an unparseable mark price', () => {
   it('weex', async () => {
-    setMock('/capi/v2/market/ticker', {
-      symbol: 'cmt_btcusdt', last: '77318.1', markPrice: '77327.8', indexPrice: '77359.15',
-      high_24h: '0', low_24h: '0', volume_24h: '0', priceChangePercent: '0',
-    });
+    setMock('/capi/v3/market/ticker/24hr', [{
+      symbol: 'BTCUSDT', lastPrice: '77318.1', markPrice: '77327.8', indexPrice: '77359.15',
+      openPrice: '77000', highPrice: '0', lowPrice: '0', volume: '0', quoteVolume: '0',
+      priceChangePercent: '0',
+    }]);
     await expect(new WeexAdapter().getAssetContext('BTC')).resolves.toMatchObject({ coin: 'BTC' });
 
     mockResponses = new Map();
-    setMock('/capi/v2/market/ticker', {
-      symbol: 'cmt_btcusdt', last: '77318.1', markPrice: '12abc', indexPrice: '77359.15',
-      high_24h: '0', low_24h: '0', volume_24h: '0', priceChangePercent: '0',
-    });
+    setMock('/capi/v3/market/ticker/24hr', [{
+      symbol: 'BTCUSDT', lastPrice: '77318.1', markPrice: '12abc', indexPrice: '77359.15',
+      openPrice: '77000', highPrice: '0', lowPrice: '0', volume: '0', quoteVolume: '0',
+      priceChangePercent: '0',
+    }]);
     await expect(new WeexAdapter().getAssetContext('BTC')).rejects.toThrow(/invalid markPrice/);
   });
 

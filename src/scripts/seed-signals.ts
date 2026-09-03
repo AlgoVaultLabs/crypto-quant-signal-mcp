@@ -59,6 +59,9 @@ import { recordSeedHeartbeat } from '../lib/seed-heartbeats.js';
 import { isTimeframeFaithful, servedTimeframeLabel } from '../lib/tf-support.js';
 import { fetchVenueUniverse } from '../lib/exchange-universe.js';
 import { BINANCE_OVERRIDES } from '../lib/coin-overrides.js';
+// Single-derivation: the seed fetcher and the adapter must agree on WEEX's symbol
+// grammar, aliases included. Two copies of that rule would drift the moment one moved.
+import { fromWeexSymbol } from '../lib/adapters/weex.js';
 
 // Internal license bypasses free-tier gating
 const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed', outcome: 'RESOLVED' };
@@ -636,13 +639,27 @@ export async function fetchBingxCoins(topN: number): Promise<string[]> { return 
 // HTX — delegates to the rich SoT (real OI: swap_open_interest.value, joined to batch_merged price/vol).
 export async function fetchHtxCoins(topN: number): Promise<string[]> { return scanUniverseCoins('HTX', topN); }
 
-// WEEX — /capi/v2/market/tickers (volume_24h); symbol = "cmt_<coin>usdt".
+// WEEX — /capi/v3/market/ticker/24hr (quoteVolume); symbol = "<COIN>USDT".
+//
+// OPS-WEEX-PROMOTION-READINESS-W1 CH2 — migrated off the sunsetting V2 path. THREE traps,
+// each measured live 2026-09-03, none of which a path rename would have survived:
+//   1. `/capi/v3/market/tickers` DOES NOT EXIST (404). The bulk path is
+//      `/capi/v3/market/ticker/24hr` with no `symbol` — 1023 rows in one call.
+//   2. Symbols lost the `cmt_` prefix, so the old regex would have matched ZERO rows and
+//      this fetcher would have returned [] — silently starving WEEX's whole seed lane.
+//   3. **The score field is `quoteVolume`, NOT `volume`.** V2's `volume_24h` was QUOTE
+//      volume (1,794,123,988 for BTC) while V3's same-named `volume` is BASE (23,227.70).
+//      Ranking on `volume` would have deflated every score ~77,000× and, because the
+//      deflation factor is each coin's own price, REORDERED the entire top-N rather than
+//      merely rescaling it.
+// `fromWeexSymbol` reverses the TradFi aliases (XAG→SILVER etc.), which a bare
+// `.replace(/usdt$/)` would not — all four are live on V3 under their native tickers.
 export async function fetchWeexCoins(topN: number): Promise<string[]> {
-  const data = await fetchUniverseJson('https://api-contract.weex.com/capi/v2/market/tickers', 'WEEX');
+  const data = await fetchUniverseJson('https://api-contract.weex.com/capi/v3/market/ticker/24hr', 'WEEX');
   if (!Array.isArray(data)) return [];
-  const rows = (data as Array<{ symbol?: string; volume_24h?: string }>)
-    .filter(t => typeof t.symbol === 'string' && /^cmt_.*usdt$/i.test(t.symbol))
-    .map(t => ({ coin: (t.symbol as string).replace(/^cmt_/i, '').replace(/usdt$/i, '').toUpperCase(), score: parseFloat(t.volume_24h || '0') }));
+  const rows = (data as Array<{ symbol?: string; quoteVolume?: string }>)
+    .filter(t => typeof t.symbol === 'string' && /USDT$/i.test(t.symbol))
+    .map(t => ({ coin: fromWeexSymbol(t.symbol as string), score: parseFloat(t.quoteVolume || '0') }));
   return rankTopN(rows, topN);
 }
 
