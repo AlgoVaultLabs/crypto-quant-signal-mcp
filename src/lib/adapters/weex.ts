@@ -15,9 +15,17 @@
  * Ticker bundles markPrice + indexPrice + openPrice + 24h vol + lastPrice.
  *
  * TRADFI_ALIASES (4): SILVER→XAG, PLATINUM→XPT, PALLADIUM→XPD, USOIL→CL.
- * WEEX has NO XAU/GOLD listing. SPX intentionally NOT aliased — cmt_spxusdt
- * = $0.37 SPX6900 memecoin per semantic-fingerprint probe 2026-05-20 (5th
- * sighting). WEEX has NO real S&P 500 perp.
+ *
+ * ⚠️ CORRECTED 2026-09-03 (OPS-WEEX-PROMOTION-READINESS-W1 CH2): this docblock said
+ * "WEEX has NO XAU/GOLD listing", recorded from the 2026-05-20 W3B pilot. That is now
+ * FALSE — V3 `exchangeInfo` lists `XAUUSDT` (`GOLDUSDT` is still absent), and the live
+ * seed lane already scores it (`[WEEX] XAU -> HOLD (18%) @ $4,429.82`, a plausible gold
+ * price). No alias is needed or added: `XAU` reaches the venue unaliased and resolves,
+ * exactly as `TSLA`/`NVDA` do. Recorded rather than acted on because adding a GOLD→XAU
+ * alias would be a behaviour change, which CH2's firewall forbids.
+ *
+ * SPX intentionally NOT aliased — SPXUSDT = $0.37 SPX6900 memecoin per
+ * semantic-fingerprint probe 2026-05-20 (5th sighting). WEEX has NO real S&P 500 perp.
  */
 import type {
   ExchangeAdapter,
