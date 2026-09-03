@@ -25,6 +25,35 @@ import { sendVenueStatusChange } from '../lib/telegram.js';
 const PFE_WR_THRESHOLD = 0.80;
 const DAY_15_FLOOR = 15;
 
+/**
+ * OPS-BITMART-ENUM-RECONCILE-W1 CH4-B — THE FORCE FLOOR, now code instead of prose.
+ *
+ * `--force` used to proceed past ANY failure, including `pfe_wr === null` — i.e. a venue with no
+ * measured outcomes at all could be promoted to a public surface. The "floor" that was supposed to
+ * stop that lived only in a prior wave's endpoint-truth prose, so a dispatching spec built its ONLY
+ * abort condition on a gate that did not exist. Per CLAUDE.md, a rule that has failed as prose must
+ * become a gate or be deleted.
+ *
+ * `--force` now overrides the SOFT criteria only (sample size, the 15-day clock, the 0.80 bar).
+ * These three are HARD and refuse even under --force, because each makes the promotion unevidenced
+ * rather than merely early:
+ *   • pfe_wr === null      — no Phase-E outcome exists; there is nothing to judge
+ *   • days_since < 7       — too short to have observed a regime change
+ *   • pfe_wr < 0.70        — below the floor the estate has ever knowingly published
+ */
+const FORCE_FLOOR_PFE_WR = 0.70;
+const FORCE_FLOOR_DAYS = 7;
+
+/** PURE — exported so the test can drive every branch without a DB. Returns the tripped
+ *  conditions, in order, or [] when the venue clears the floor. */
+export function forceFloorBreaches(stats: { days_since: number; pfe_wr: number | null }): string[] {
+  const tripped: string[] = [];
+  if (stats.pfe_wr === null) tripped.push('pfe_wr=null (no Phase-E outcome exists — nothing to judge)');
+  else if (stats.pfe_wr < FORCE_FLOOR_PFE_WR) tripped.push(`pfe_wr=${(stats.pfe_wr * 100).toFixed(1)}% < floor ${(FORCE_FLOOR_PFE_WR * 100).toFixed(0)}%`);
+  if (stats.days_since < FORCE_FLOOR_DAYS) tripped.push(`days_since=${stats.days_since} < floor ${FORCE_FLOOR_DAYS}`);
+  return tripped;
+}
+
 export async function promoteVenue(exchangeId: string, force = false, now: Date = new Date()): Promise<number> {
   const venue = await getVenue(exchangeId);
   if (!venue) {
@@ -56,6 +85,16 @@ export async function promoteVenue(exchangeId: string, force = false, now: Date 
     return 1;
   }
   if (failures.length > 0 && force) {
+    // The floor is checked BEFORE the override takes effect — --force buys the soft criteria, never these.
+    const tripped = forceFloorBreaches(stats);
+    if (tripped.length > 0) {
+      console.error(`❌ ${exchangeId} trips the FORCE FLOOR — --force cannot override this:`);
+      for (const t of tripped) console.error(`   • ${t}`);
+      console.error(`   suggested_action: this venue is UNEVIDENCED, not merely early. Let it accrue a Phase-E outcome and re-evaluate.`);
+      console.log(`PROMOTE_FORCE_FLOOR_VERDICT=REFUSED tripped=${tripped.length}`);
+      return 1;
+    }
+    console.log('PROMOTE_FORCE_FLOOR_VERDICT=CLEARED');
     console.warn(`⚠️  --force: promoting ${exchangeId} despite unmet criteria: ${failures.join('; ')}`);
   }
 

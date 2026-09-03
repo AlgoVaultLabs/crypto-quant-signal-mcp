@@ -7,6 +7,17 @@
   "_generated_by": "OPS-ALERT-RECOVERY-NOTICE-W1 CH2 — union of source call sites and on-disk markers on both hosts, 2026-08-21. NEITHER SOURCE IS COMPLETE ALONE, measured three ways: 14 ids had a live cooldown marker and no discoverable call site; 4 more (incl. the lowercase `gate-shadow-cpu`) had a call site through a $WRAPPER variable and had NEVER fired, so no marker existed either — those 4 were invisible until the gate's own prove-it-can-fail step exposed the extractor's blind spot. This is the enumeration-beats-detection argument, measured rather than asserted.",
   "alerts": [
     {
+      "alert_id": "promoted_set_drift",
+      "owner": "ops/monitoring/promoted-set-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-PROMOTED_SET_DRIFT-W{NEXT}"
+    },
+    {
       "alert_id": "ACTIVATION_FUNNEL_LEAK_DETECTED",
       "owner": "ops/monitoring/funnel-leak-detector.py",
       "hosts": [

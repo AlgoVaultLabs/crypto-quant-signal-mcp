@@ -1806,7 +1806,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "c0c05e9342cc327ce194a2b733b1a8da595de5e9d976fa544a9f94470e8d0d32",
+      "sha256": "13b8b55ade3b6d2edbdf5a246ad2d50b5dee6f3f91d2841e24b67c629de0fb21",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -2088,6 +2088,31 @@
         "note": "The decision this gate exists to inform: keep TREND_MODE on, or roll it back. Once the readout wave is in status.md the question is answered and the gate can only re-report a settled result. A DECLINE retires it exactly as a ship does — what ends its life is that the decision was TAKEN, not which way it went."
       },
       "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. Evaluates the four PRE-DECLARED rollback triggers daily against the in-repo contract audits/SIGNAL-TREND-MODE-ENABLE-W1-trigger-contract.md, and fires TREND_MODE_READOUT_DUE once-ever at flip+30d. BOTH ARMS COME FROM ONE QUERY — verdict_rule_version is the GROUP BY key, regime_rule_version=3 is held fixed on both sides, BITMART is excluded from both (retired mid-window) — so no baseline is ever baked in and no delta can span two instruments. DETECT->ALERT->ESCALATE ONLY: it NEVER unsets the flag, because an unattended job must not mutate a live scorer. Adopts DETECTOR_ENVELOPE and refuses its OWN non-conforming signal as INDETERMINATE rather than laundering it into a PASS. TREND_MODE_READOUT_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL exits 0 because the alert IS the action. The 1d cell reports INDETERMINATE for most of the window BY PRE-DECLARATION — ~3.6 rows/day is a directional watch, not a powered test. A fifth trigger (webhook regime_shift delivery volume) was DROPPED by architect ruling 2026-08-31: zero active subscriptions and zero deliveries across the whole BEFORE window made it dark by construction; the readout wave re-opens it if a subscription becomes active. Gate-test with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1. --self-test is hermetic, 26 assertions, vacuity-guarded, asserts the DB-seam-BYPASSED artifacts (the three SQL strings and the built envelope), and is PROVEN ABLE TO FAIL by two deliberate breaks: a code/contract threshold divergence, and INDETERMINATE laundered into PASS."
+    },
+    {
+      "id": "promoted-set-drift-canary",
+      "artifact": "ops/monitoring/promoted-set-drift-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/promoted-set-drift-canary.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/promoted-set-drift-canary.py",
+          "schedule": "23 5 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": "23 5 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "d24685a41a2f1bfa804048633f287283d709bf0f7c102efc6fd40ddd359a65e9",
+      "alert_ids": [
+        "promoted_set_drift"
+      ],
+      "owner_wave": "OPS-BITMART-ENUM-RECONCILE-W1",
+      "notes": "CH4. THREE-WAY identity over the promoted venue set: container static PROMOTED_VENUE_IDS (dist/lib/capabilities.js) vs SELECT exchange_id FROM venues WHERE status='promoted' vs /api/performance-public .byExchange keys, PLUS exchange_count == |byExchange|. Every leg is compared by SYMMETRIC DIFFERENCE and names the offending ids — never by cardinality, because two cancelling mismatches pass a count check (asserted in --self-test). Vacuity is checked where the corpus is CONSTRUCTED: an empty set from any leg is INDETERMINATE, never PASS. exit 0/1/3; INDETERMINATE outranks FAIL; a probe/docker/psql fault is INDETERMINATE and SILENT, never a data verdict. Exists because BitMart was retired in the venues table 2026-08-27 but stayed in the compile-time EXCHANGES array, so exchange_count published 15 against a served 14 for SEVEN DAYS with nothing to catch it — capabilities.ts had claimed a unit test asserted this parity and that test never existed, nor could it (the vitest suite is SQLite-backed with no production Postgres, so such a test ships dark). Shipped report-only (PSD_REPORT_ONLY=1), confirmed clean against the reconciled 14/14 state, then armed."
     },
     {
       "id": "scorer-input-identity-canary",

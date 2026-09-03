@@ -71,14 +71,27 @@ describe('promote-venue (C4)', () => {
     expect(mockSet).toHaveBeenCalledWith('GATE', 'promoted', { promoted_at: now });
   });
 
-  it('--force overrides unmet criteria and promotes', async () => {
+  // OPS-BITMART-ENUM-RECONCILE-W1 CH4-B: this case used `{days_since: 5, pfe_wr: null}` as a
+  // convenient "unmet criteria" fixture. That shape is now REFUSED by the codified force floor —
+  // it is unevidenced, not merely early — so the fixture moves to a below-bar-but-above-floor
+  // venue (the real --force case), and the old shape gets its own must-refuse assertion below.
+  it('--force overrides the SOFT criteria and promotes (below bar, above floor)', async () => {
     const now = new Date('2026-06-05T00:00:00Z');
     mockGet
       .mockResolvedValueOnce(venue())
       .mockResolvedValueOnce(venue({ status: 'promoted', promoted_at: now.toISOString() }));
-    mockStats.mockResolvedValueOnce({ days_since: 5, buy_sell_count: 0, pfe_wr: null });
+    // fails all three soft criteria (days<15, sample short, wr<0.80) but clears the floor
+    mockStats.mockResolvedValueOnce({ days_since: 10, buy_sell_count: 5, pfe_wr: 0.75 });
     expect(await promoteVenue('GATE', true, now)).toBe(0);
     expect(mockSet).toHaveBeenCalledWith('GATE', 'promoted', { promoted_at: now });
+  });
+
+  it('--force does NOT override the FORCE FLOOR — a null pfe_wr is refused and nothing is written', async () => {
+    const now = new Date('2026-06-05T00:00:00Z');
+    mockGet.mockResolvedValueOnce(venue());
+    mockStats.mockResolvedValueOnce({ days_since: 5, buy_sell_count: 0, pfe_wr: null });
+    expect(await promoteVenue('GATE', true, now)).toBe(1);
+    expect(mockSet).not.toHaveBeenCalled();
   });
 });
 
