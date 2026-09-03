@@ -14,7 +14,7 @@
 
 | # | Precondition | Blocking? | Effort |
 |---|---|---|---|
-| 1 | `weexWeightBudget` row | ✅ **SHIPPED in CH2** — but reopens as 🛑 **BLOCKING on CAPACITY**: WEEX is at **95% of its ceiling** today, **100% if promoted** | S–M |
+| 1 | `weexWeightBudget` row | ✅ **SHIPPED in CH2** — reopens as 🛑 **BLOCKING on CAPACITY**: 95% today; the promoted matrix is **275% of batch share** and needs **148% of the whole declared limit**. Sized answer: **uniform `--top 30`**, applied inside the promotion wave | M |
 | 2 | Two WEEX-absence tests | ⚪ not blocking — they record today's state | S |
 | 3 | Brand hex | 🛑 **BLOCKING — PENDING-MR1**, the wave's single operator-action item | S once supplied |
 | 4 | Docs identity gate | ⚪ **not blocking — generator-owned**, contrary to the spec's framing | S |
@@ -25,7 +25,7 @@
 | 9 | Public-contract reversal (B1) | 🛑 **BLOCKING — release-wave act**, drafted below, not published | S (rides a release) |
 | 10 | Ordering | ⚪ not blocking — a constraint on the promotion wave, recorded | none |
 
-**Four blockers**, of which one (#3) needs Mr.1 and one (#9) needs a release wave. **#1 is the one that changed during the wave**: it shipped, then reopened as a capacity ceiling — WEEX cannot carry the promoted lane set at top-100 depth against its own declared limit. The binding constraint on promotion is still **B7** (CH1, the evidence base), with **#1 now a hard second**.
+**Four blockers**, of which one (#3) needs Mr.1 and one (#9) needs a release wave. **#1 is the one that changed during the wave**: it shipped, then reopened as a capacity ceiling — and re-modelling showed the SOP promoted matrix would need **148% of WEEX's entire declared rate limit**, so WEEX is an **HL-class venue** requiring a uniform `--top 30`. The binding constraint on promotion is still **B7** (CH1, the evidence base — now scoped by the architect to the `verdict_rule_version = 2` slice), with **#1 a hard second**.
 
 ---
 
@@ -51,15 +51,47 @@ My D4 analysis checked each lane **independently** and never summed them. Aggreg
 |---|---|---|---|---|---|---|---|---|---|---|
 | req/hour | 612 | 404 | 202 | 101 | 50.5 | 25.2 | 12.6 | 8.4 | 4.2 | **1420** |
 
-**1420 req/hour = 23.7 req/min against a 25/min ceiling — 95% utilisation, 1.3 req/min headroom.** With `interactiveReserve` 5 the batch share is **20/min**, so seeding is **over-subscribed** and will WAIT, and under sustained contention SKIP. **If promoted** (3m top-15 added, 5m depth 50→30): **25.0 req/min = 100% of the ceiling before any reserve.**
+**1420 req/hour = 23.7 req/min against a 25/min ceiling — 95% utilisation, 1.3 req/min headroom.** With `interactiveReserve` 5 the batch share is **20/min**. **Live behaviour confirms this exactly**: over 24 minutes spanning multiple lane overlaps, `rate_limit_events` recorded **56 `wait`, 0 `throw`, 0 `skip`**, and the ledger reads `batchUsed: 20` — pinned at its share, saturated, losing nothing.
 
-**WEEX cannot carry the promoted lane set at top-100 depth against its own declared limit.** This is the D4 question the spec actually asked — *"say which lanes it can and cannot fit… if it cannot fit the tight lanes, WEEX is an HL-class isolated-line venue and that is a promotion cost, not a footnote"* — and the per-lane table answered it **wrongly** by not aggregating. One of three things must give, and the choice is the architect's:
+### ⚠️ THE PROMOTED MODEL WAS WRONG BY 2.2×, AND THE CORRECTION CHANGES THE ANSWER
 
-1. **Seed depth** — top-100 → top-50 on the slow lanes buys ~40% headroom. *(A Data Integrity change; not made here.)*
-2. **Lane set** — drop WEEX from the 2h/8h/12h lanes it barely uses.
-3. **The 50%-of-declared reading** — the headers claim 50 req/s; taking even 25% of *that* removes the problem entirely, at the cost of trusting the number the venue's own docs contradict.
+I first reported *"if promoted: 25.0 req/min"*. **That assumed `--top 100` carries over to the promoted lanes. It does not.** Measured on the live crontab and `seed-signals.ts:243` (`let top = 0; // 0 = all`): the promoted matrix leaves **1h, 2h, 4h, 8h and 12h UNCAPPED**, and an uncapped lane seeds the venue's whole universe — confirmed from the producer's own log lines (`MEXC=1055`, `BINGX=1109`, `XT=1031`, `GATE=980`) against exactly `100` on the capped 15m lane.
 
-Still **BLOCKING for promotion**, now on capacity rather than on absence. **Effort S to ship a decision, M if depth changes.**
+With WEEX's **1023** perps:
+
+| lane | 3m | 5m | 15m | 30m | 1h | 2h | 4h | 8h | 12h | **total** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| depth | 15 | 30 | 100 | 100 | **1023** | **1023** | **1023** | **1023** | **1023** | |
+| req/hour | 320 | 372 | 404 | 202 | 1024 | 512 | 256 | 128 | 85 | **3303** |
+
+**3303 req/hour = 55.1 req/min = 275% of batch share.** Not 100%. My figure was **2.2× optimistic**, and it was optimistic because it modelled the shadow matrix under a promoted label.
+
+### What that implies — WEEX is an HL-class venue, and the SOP matrix is unreachable at any conservative reading
+
+**The standard promoted matrix would need a ceiling of ~74/min — 148% of WEEX's ENTIRE declared limit (50/min).** Not 148% of the 50% budget: 148% of the whole thing. So this is not a question of how conservative to be; the matrix does not fit even at 100% of the declared limit.
+
+**Q8[B] is refuted as a standalone lever:** the already-capped fast lanes (3m/5m/15m/30m) alone are **1298 req/hour = 21.6 req/min = 108% of batch share**, over target before any 1h+ traffic. Dropping 2h/8h/12h cannot get there.
+
+**Sized to the architect's ~80%-of-batch-share target — a UNIFORM depth cap across every promoted lane:**
+
+| cap | req/min | % of batch share | |
+|---|---|---|---|
+| top-20 | 12.3 | 62% | |
+| top-25 | 14.0 | 70% | |
+| **top-30** | **15.6** | **78%** | ✅ **the sized answer — largest depth meeting the target** |
+| top-40 | 17.0 | 85% | over |
+| top-50 | 18.3 | 91% | over |
+
+**PRECONDITION for `OPS-WEEX-PROMOTE-W1`: promote WEEX with a uniform `--top 30` on every lane it joins**, a deliberate deviation from the promoted matrix and the SOP's documented HL-class treatment for a rate-limited venue with a large universe. Relative to the matrix this *raises* 3m depth (15→30), holds 5m (30), and lowers 15m/30m (100→30) and 1h+ (1023→30).
+
+**Two conditions on applying it, both from the architect's ruling:**
+
+1. **Do NOT apply it now.** WEEX today is a stable lane — 95%, orderly waits, zero throws, zero skips, zero loss. Changing depth for a promotion weeks away is churn against a working system. The cap is applied and verified **inside** the promotion wave.
+2. **Re-verify with the SAME instrument that measured the defect** — the 24-minute multi-lane-overlap window on `rate_limit_events` by `kind`, asserting `throw = 0` **and** `skip = 0`. Never certify a fix with a different instrument than the one that found the problem.
+
+**Not a Data-Integrity reduction, and must not be logged as one:** WEEX has **zero public rows** today, so choosing a promotion depth is an INITIAL CONFIGURATION, not a shrink. Coins 31–100 keep every shadow row already accrued; they simply stop growing. The LAW protects existing public data, and there is none here to protect.
+
+Still **BLOCKING for promotion**, on capacity. **Effort M** (depth cap + re-measurement, inside the promotion wave).
 
 ## 2 · The two WEEX-absence assertions — ⚪ not blocking
 
@@ -112,7 +144,7 @@ Today WEEX has only `fetchWeexCoins(topN): Promise<string[]>` (`src/scripts/seed
 
 **D5 changed the inputs here, so this is cheaper than the spec assumed.** B6's premise ("`base_volume === target_volume` is the signature of a placeholder") is **refuted**: V2's `open_interest` and V3's `openInterest` return the *identical* value (`140229.2102` for BTC), i.e. one real OI figure serialised into two legacy field names. It is distinct across symbols, stable across two fetches, and Spearman **+0.84** against 24h quote volume.
 
-**Recommendation — ship the volume proxy, not the OI endpoint** (`oiIsProxy: true` + `OI_PROXY_VENUES`, `src/lib/exchange-universe.ts:664`, joining BINANCE/ASTER/BINGX/XT):
+**RULED (architect Q7[A]): ship the volume proxy, NOT the OI endpoint.** The decisive argument is the **UNIT, not the 41 minutes** — a figure that renders as **$10.9B or $1.09M** depending on which reading of `contractVal` you take is uninterpretable, and we cannot label something "open interest" when we cannot say what it counts. `rho +0.84` means `quoteVolume` already carries the ranking signal. Supporting reasons: (`oiIsProxy: true` + `OI_PROXY_VENUES`, `src/lib/exchange-universe.ts:664`, joining BINANCE/ASTER/BINGX/XT):
 
 - `/capi/v3/market/openInterest` is **per-symbol only** (no `symbol` → `-1141`), so ranking 1023 symbols costs **1023 calls ≈ 41 min at 2400 ms**, every refresh.
 - For a ranking that already correlates **+0.84** with `quoteVolume`, which arrives **free** in the single bulk `/capi/v3/market/ticker/24hr` call CH2 already makes.
