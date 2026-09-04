@@ -331,6 +331,23 @@ export interface ResolveLicenseOpts {
  * Two-flag firewall per CLAUDE.md `## Build rules > Cross-repo wire-up`:
  * outer `BOT_INTERNAL_BYPASS_ENABLED` (default false) + inner key match.
  */
+/**
+ * OPS-BOT-DISPATCH-LATENCY-W1 CH4 — the rate-limiter exemption predicate, as ONE derivation.
+ *
+ * `index.ts` boots the server at import, so its limiter options cannot be imported by a test
+ * (this repo's own test-importability law). Without a named export the test would have to
+ * RE-DECLARE the skip lambda, and a duplicated predicate drifts silently — the test would keep
+ * passing against its own copy while production diverged. Both sides call this instead.
+ *
+ * Fails CLOSED through `checkInternalBypass`: bypass disabled, key absent, key under 16 chars,
+ * header missing, header mismatched — every one leaves the caller LIMITED.
+ */
+export function isInternalRateLimitExempt(
+  headers: Record<string, string | undefined>,
+): boolean {
+  return checkInternalBypass(headers) !== null;
+}
+
 export function checkInternalBypass(
   headers: Record<string, string | undefined>,
 ): LicenseInfo | null {

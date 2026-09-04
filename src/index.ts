@@ -55,7 +55,7 @@ import {
 import { recordNonPublicVenue } from './lib/non-public-venue-counter.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded } from './lib/license.js';
 import { regimeSuccessVerdict, regimeErrorVerdict } from './lib/regime-request-verdict.js';
 import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
 import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
@@ -1420,7 +1420,38 @@ async function startHttp() {
   });
 
   // Rate limiting
-  app.use('/mcp', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
+  //
+  // OPS-BOT-DISPATCH-LATENCY-W1 CH4 — the INTERNAL caller is exempt from the per-IP bucket.
+  //
+  // This was NOT safe to do before this wave and the reason is worth keeping. The bot used to
+  // reach the MCP over the PUBLIC url, so its requests arrived through Cloudflare, and the
+  // Caddyfile rewrites X-Forwarded-For to CF-Connecting-IP — which Cloudflare delivers already
+  // MASKED to a /24 (v4) or /48 (v6). `req.ip` was therefore a shared Hetzner PREFIX
+  // (2a01:4f9:c013::), so an IP-keyed exemption would have exempted an entire /48 rather than
+  // one host. CH1b repointed the bot to http://127.0.0.1:3000/mcp; the loopback bucket is this
+  // host alone, and the exemption below is keyed on a SECRET HEADER rather than on the address
+  // regardless, so neither half rests on the network shape.
+  //
+  // WHY IT IS NEEDED. The bot's dispatch collapses onto one tick by design (jitter is being
+  // removed so every row fires at bar close), and the whole watchlist is ~104 rows ≈ 115 tool
+  // calls plus handshakes in a single minute — over the 120 cap, with the overflow arriving as
+  // a SILENTLY DROPPED ALERT rather than a retry. Measured peak before the collapse: 31
+  // tool-calls/min, and 0 × HTTP 429 in 14 days, so this is headroom for a change we are
+  // making, not a fix for an incident.
+  //
+  // `checkInternalBypass` is the predicate the MCP request path already uses (five live routes)
+  // and it fails CLOSED on every misconfiguration: bypass disabled, key absent, key under 16
+  // chars, header missing, header mismatched — every one returns null and the caller stays
+  // limited. It is a shared secret, not an address, so it cannot be spoofed by position on the
+  // network. Same shape as the per-key burst guard below; two limiters, one idiom.
+  app.use('/mcp', rateLimit({
+    windowMs: 60_000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: import('express').Request): boolean =>
+      isInternalRateLimitExempt(req.headers as Record<string, string | undefined>),
+  }));
 
   // ── Ops-only per-KEY burst guard (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 CH4) ──
   //
