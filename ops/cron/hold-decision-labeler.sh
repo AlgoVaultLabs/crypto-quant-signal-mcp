@@ -33,11 +33,19 @@
 # a single collapsed number that hid which leg was cut short would be the same defect the token
 # contract exists to prevent, one level up.
 #
-# EXIT 137 IS EXPECTED AND IS NOT A FAILURE. This job is classified `safe-to-kill` in
+# EXIT 137 IS EXPECTED AND IS NOT A FAILURE — BUT IT IS NOT FREE EITHER, AND THE REGISTRY'S
+# `safe-to-kill` LABEL IS ABOUT INTEGRITY, NOT COST. This job is classified `safe-to-kill` in
 # ops/scripts/cron-interlock-registry.json: a deploy recreates the container mid-run and SIGKILLs
-# the `docker exec`, which by definition cannot print a token. The `NOT EXISTS` work-list makes the
-# next run resume, so nothing is lost. Observed 2026-09-04T03:57:22Z. Do not "fix" it by reading
-# 137 as an error, and do not reclassify without re-deriving the interlock row.
+# the `docker exec`, which by definition cannot print a token, and the `NOT EXISTS` work-list makes
+# the next run relabel whatever was missed. Nothing is CORRUPTED and nothing is permanently lost.
+#
+# What IS lost is the whole run. Every INSERT happens AFTER the group loop, so a SIGKILL discards
+# the entire in-memory batch along with the upstream venue weight already spent on it. MEASURED
+# 2026-09-04: killed at 03:57:22Z after ~16 minutes of fetching, `hold_decision_labels` rows
+# written that day = ZERO. (A SIGTERM is different — `installGracefulStop` breaks the loop and the
+# INSERTs still run. `safe-to-kill` means the deploy sends nothing at all, so this path gets the
+# SIGKILL.) Do not read 137 as an error, do not reclassify without re-deriving the interlock row,
+# and do not describe the cost as nil — it is one full run per preempting deploy.
 set -euo pipefail
 
 REPO=/opt/crypto-quant-signal-mcp

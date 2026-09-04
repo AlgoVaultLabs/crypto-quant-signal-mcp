@@ -109,6 +109,30 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
     'ops/monitoring/alert-registry.json',
     'alert-registry note stating what scorer_input_identity fires on; prose about the store, no query',
   ],
+  [
+    // ADDED 2026-09-04, EDGE-ATTRIBUTION-CORPUS-DRAIN-W1 R1. The firewall was RIGHT to flag this
+    // file the moment `--require-parts` shipped, and the row is deliberately narrow.
+    //
+    // The reference is a PRESENCE TEST and nothing else: `h.raw0 IS NOT NULL` in the work-list
+    // WHERE clause, and its inverse in the disagreement counter. The column is never SELECTed,
+    // never bound, never returned, never compared to a value. This script writes only
+    // `hold_decision_labels`, and its output is a verdict token plus counts. It reads the store's
+    // SHAPE (is this row captured?) and never its CONTENT, which is the distinction this firewall
+    // exists to police.
+    //
+    // Why a parts column at all: the rows the labeler must target ARE the captured ones, and
+    // `ops/monitoring/scorer-input-identity-canary.py` — the instrument that publishes the
+    // pre-registered gate quantity — already keys "is captured" on `raw0`. Selecting rows by one
+    // column while scoring them by another is two derivations of one predicate. A date-only proxy
+    // was considered and rejected: `--since` cannot survive capture being paused and resumed,
+    // which is why `--require-parts` is the authoritative half of that pair.
+    //
+    // IF THIS FILE EVER SELECTS A PARTS VALUE, this row stops describing it and must be REMOVED
+    // rather than widened — a stale reason exonerates a file it no longer describes, which is the
+    // exact failure the R6b correction above records.
+    'src/scripts/backfill-hold-decision-labels.ts',
+    'work-list PRESENCE TEST only (`raw0 IS NOT NULL` + its inverse); never selects, binds or returns a parts value',
+  ],
 ]);
 
 /** Strip comments by dialect so a MENTION is not judged as a REFERENCE.

@@ -1961,7 +1961,7 @@
       "schedule": "41 3 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "f5dd8fa40fa16e8a5c05b22643863032b3935ba9283143235d7e5caa47643896",
+      "sha256": "1135bbd57accd7355d09734bb1611b041c45fe741b28cead02f6f343d46b29d7",
       "alert_ids": [],
       "owner_wave": "OPS-HOLD-DECISION-CAPTURE-W1",
       "repo_resident": true,
