@@ -124,6 +124,21 @@ iso_to_epoch() {
     || printf ''
 }
 
+# OPS-BOT-DISPATCH-LATENCY-W1 CH1c — WHICH BAR did a given fire belong to?
+# Returns the minute-of-hour at which that bar OPENED. Pure arithmetic on the instant, so it
+# is exercised by --self-test rather than being one of the seams the hermetic suite is blind to.
+bar_open_minute() {   # <epoch> <period_seconds> -> 0..59, empty on bad input
+  local e="${1:-}" p="${2:-}"
+  # Each argument checked SEPARATELY. Concatenating them first ("$e$p") is why the first
+  # revision of this helper returned 0 for an EMPTY epoch: '' + '900' is all digits, so the
+  # guard passed and the caller read minute 0 — i.e. "contended" — and would have certified a
+  # run that had no sample at all. Caught by the assertion below on its first execution.
+  case "$e" in ''|*[!0-9]*) printf ''; return 1 ;; esac
+  case "$p" in ''|*[!0-9]*) printf ''; return 1 ;; esac
+  [ "$p" -le 0 ] && { printf ''; return 1; }
+  printf '%s' "$(( (e - e % p) % 3600 / 60 ))"
+}
+
 secs_into_bar() {   # <timestamp|epoch> <period_seconds>
   local e; e=$(iso_to_epoch "${1:-}") || { printf ''; return 1; }
   [ -z "$e" ] && { printf ''; return 1; }
@@ -287,6 +302,22 @@ self_test() {
   # The literal that fired the 2026-08-01 incident, both shapes -> the same 5s.
   map=$((map + 1)); check "incident iso"      "5"          "$(secs_into_bar '2026-08-01 14:45:05' 900)"
   map=$((map + 1)); check "incident epoch"    "5"          "$(secs_into_bar '1785595505' 900)"
+
+  # OPS-BOT-DISPATCH-LATENCY-W1 CH1c — bar_open_minute. This decides whether a run is
+  # certifying anything at all, so it is asserted here rather than left as one of the seams a
+  # hermetic suite cannot see. 1785595505 = 2026-08-01 14:45:05Z.
+  map=$((map + 1)); check "bar_open :45"      "45"         "$(bar_open_minute 1785595505 900)"
+  map=$((map + 1)); check "bar_open :30"      "30"         "$(bar_open_minute 1785594600 900)"
+  # THE CONTENDED CASE — the only sample that certifies. 1785592800 = 14:00:00Z.
+  map=$((map + 1)); check "bar_open :00"      "0"          "$(bar_open_minute 1785592800 900)"
+  map=$((map + 1)); check "bar_open :00 +2m"  "0"          "$(bar_open_minute 1785592920 900)"
+  # A 1h row's bar always opens at :00, so the arm can never mis-fire on coarse timeframes.
+  map=$((map + 1)); check "bar_open 1h"       "0"          "$(bar_open_minute 1785595505 3600)"
+  # Default-deny on junk: empty, non-numeric, zero period -> empty, never a spurious 0 that
+  # would read as "contended" and silently certify.
+  map=$((map + 1)); check "bar_open empty"    ""           "$(bar_open_minute '' 900)"
+  map=$((map + 1)); check "bar_open nonnum"   ""           "$(bar_open_minute 'abc' 900)"
+  map=$((map + 1)); check "bar_open zero per" ""           "$(bar_open_minute 1785592800 0)"
   # A T-separated stamp must NOT silently parse to something plausible-but-wrong.
   map=$((map + 1)); check "unparseable -> empty" ""        "$(secs_into_bar 'not-a-timestamp' 900)"
 
@@ -477,6 +508,31 @@ while IFS= read -r ts; do
   o=$(secs_into_bar "$ts" "$TF_SECONDS") || continue
   [ -n "$o" ] && PEER_OFFSETS+=("$o")
 done <<< "$PEERS"
+
+# ── Did this run audit the CONTENDED bar? ────────────────────────────────────
+# OPS-BOT-DISPATCH-LATENCY-W1 CH1c. CHECK1 reads each row's CURRENT last_fetched_at, so the
+# CRON MINUTE silently decides which bar is under audit — and at the original `44 * * * *`
+# that was always the :30 bar. Budget contention happens at the :00 boundary, where the 73
+# 1h rows collapse onto the same ticks as the 15m/5m/3m rows and FETCH_BUDGET_PER_MIN defers
+# the overflow. The :30 bar has no 1h cohort and therefore cannot exhibit the defect at all.
+# Measured: 26 budget-capped ticks in 26h, every single one at minute :03 — and this guard,
+# running at :44, had never once looked at them.
+#
+# A run that audited the uncontended bar has not verified the property, it has verified
+# NOTHING, so the honest verdict is INDETERMINATE and never PASS. This is a VERDICT rather
+# than a log line on purpose: a comment telling a future wave "keep this cron in the :06-:15
+# window" is prose, and prose is not a control. With the cron at :11 this arm stays quiet;
+# move it back and the guard says so in its own token instead of silently re-blinding itself.
+if [ "${#PEER_OFFSETS[@]}" -gt 0 ]; then
+  SAMPLED_BAR_MIN=$(bar_open_minute "$LAST_EPOCH" "$TF_SECONDS")
+  if [ -n "$SAMPLED_BAR_MIN" ]; then
+    log "CHECK1 sampled_bar=:$(printf '%02d' "$SAMPLED_BAR_MIN") contended=$([ "$SAMPLED_BAR_MIN" -eq 0 ] && echo yes || echo no)"
+    if [ "$SAMPLED_BAR_MIN" -ne 0 ]; then
+      log "CHECK1 SAMPLE_BLIND — audited the :$(printf '%02d' "$SAMPLED_BAR_MIN") bar, which carries no 1h cohort and cannot exhibit budget contention. Verified nothing; not certifying. Move this cron into the :06-:15 window (currently expected at :11)."
+      emit_verdict INDETERMINATE
+    fi
+  fi
+fi
 
 VERDICT=$(classify_offsets "$TF_SECONDS" "${PEER_OFFSETS[@]:-}")
 log "CHECK1 peers_on_${TF}=${#PEER_OFFSETS[@]} offsets=[${PEER_OFFSETS[*]:-}] verdict=$VERDICT"
