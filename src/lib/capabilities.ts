@@ -64,6 +64,19 @@ export const EXCHANGES = Object.freeze([
   // labels verified vs each venue's own site (WhiteBIT / BitMart / XT). EXCHANGE_COUNT → 15 here.
   { id: 'WHITEBIT', label: 'WhiteBIT' },
   { id: 'XT',       label: 'XT' },
+  // OPS-WEEX-PROMOTE-W1 (2026-09-04): promoted set 14→15. OPERATOR OVERRIDE, dated, and the
+  // reason is recorded here because someone will ask why WEEX was promoted at 11% of its
+  // live-rule bar. The `verdict_rule_version = 2` sample condition that OPS-WEEX-PROMOTION-
+  // READINESS-W1 set was WITHDRAWN by Mr.1: the TREND_MODE flip of 2026-08-31 was FLEET-WIDE,
+  // so all 14 incumbents publish a WR blended across it, and holding WEEX alone to a pure-v2
+  // bar would apply a standard NO INCUMBENT MEETS.
+  //   - published (blended)  93.43% over 5194 rows  <- what byExchange serves
+  //   - live rule (v2 slice)  87.72% over  782 rows (q 93.86%)
+  //   - bar in force at flip: 7230 (asset_count 723 x 10); 10230 after the asset_count refresh
+  // Promoted with --force; it clears the codified force floor on every axis (pfe_wr non-null,
+  // >=0.70, days_since >= 7) — the floor is not what held it. Vendor casing "WEEX" verified
+  // against weex.com. EXCHANGE_COUNT -> 15 here.
+  { id: 'WEEX',     label: 'WEEX' },
 ] as const) satisfies readonly ExchangeEntry[];
 
 export const EXCHANGE_COUNT: number = EXCHANGES.length;

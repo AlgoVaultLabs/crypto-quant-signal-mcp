@@ -38,13 +38,17 @@ const EXCHANGE_TOOLS = ['get_trade_call', 'get_market_regime', 'scan_trade_calls
 describe('1-2 — PUBLIC_VENUE_IDS is the promoted set, and excludes the two non-public venues', () => {
   it('has 14 entries and equals PROMOTED_VENUE_IDS as a set', () => {
     // OPS-BITMART-ENUM-RECONCILE-W1: 15→14 (BITMART retired 2026-08-27, removed from the static SoT).
-    expect(PUBLIC_VENUE_IDS).toHaveLength(14);
+    // OPS-WEEX-PROMOTE-W1: 14→15 (WEEX promoted 2026-09-04).
+    expect(PUBLIC_VENUE_IDS).toHaveLength(15);
     expect([...PUBLIC_VENUE_IDS].sort()).toEqual([...PROMOTED_VENUE_IDS].sort());
   });
 
-  it('excludes EDGEX and WEEX', () => {
+  it('excludes EDGEX; includes WEEX since OPS-WEEX-PROMOTE-W1', () => {
+    // EDGEX stays out — RETIRED, not merely unpromoted. WEEX flipped ABSENT→PRESENT on
+    // 2026-09-04; this assertion recorded the old state, while the load-bearing guard is the
+    // set-equality with PROMOTED_VENUE_IDS directly above, which keeps working at 15.
     expect(PUBLIC_VENUE_IDS).not.toContain('EDGEX');
-    expect(PUBLIC_VENUE_IDS).not.toContain('WEEX');
+    expect(PUBLIC_VENUE_IDS).toContain('WEEX');
   });
 });
 
@@ -61,9 +65,11 @@ describe('3 — VENUE_IDS_ALL still means "every venue with an adapter"', () => 
     expect(src).toMatch(/type _AllExchangeIdsAreVenues = ExchangeId extends \(typeof VENUE_IDS_ALL\)\[number\]/);
   });
 
-  it('the public set is a strict subset of the declared set, differing by exactly EDGEX + WEEX', () => {
+  it('the public set is a strict subset of the declared set, differing by exactly BITMART + EDGEX', () => {
+    // OPS-WEEX-PROMOTE-W1: WEEX left this difference on 2026-09-04. BITMART + EDGEX are RETIRED
+    // and stay declared-but-not-public; that is the whole remaining gap.
     const pub = new Set<string>(PUBLIC_VENUE_IDS);
-    expect(VENUE_IDS_ALL.filter((v) => !pub.has(v)).sort()).toEqual(['BITMART', 'EDGEX', 'WEEX']);
+    expect(VENUE_IDS_ALL.filter((v) => !pub.has(v)).sort()).toEqual(['BITMART', 'EDGEX']);
   });
 });
 
@@ -74,14 +80,14 @@ describe('4 — EDGEX is rejected, via result.isError and NOT via response.error
   // this case asserts the Zod issue rather than an `error.code` that never arrives.
   const schema = z.enum(PUBLIC_VENUE_ENUM);
 
-  for (const bad of ['BITMART', 'EDGEX', 'WEEX'] as const) {
+  for (const bad of ['BITMART', 'EDGEX'] as const) {
     it(`rejects ${bad} with invalid_enum_value naming the 15 valid options`, () => {
       const r = schema.safeParse(bad);
       expect(r.success).toBe(false);
       if (r.success) return;
       const issue = r.error.issues[0] as { code: string; options?: readonly string[] };
       expect(issue.code).toBe('invalid_enum_value');
-      expect(issue.options).toHaveLength(14);
+      expect(issue.options).toHaveLength(15);
       expect(issue.options).not.toContain(bad);
     });
   }
@@ -136,7 +142,10 @@ describe('8 — the rejection is measured, because request_log cannot see it', (
 
   it('classifies only the venues CH1 removed — a typo is a different, pre-existing class', () => {
     expect(isNonPublicVenue('EDGEX')).toBe(true);
-    expect(isNonPublicVenue('WEEX')).toBe(true);
+    expect(isNonPublicVenue('BITMART')).toBe(true);
+    // WEEX is PUBLIC since OPS-WEEX-PROMOTE-W1 — NON_PUBLIC is derived from PUBLIC_VENUE_IDS,
+    // so it dropped out by construction with no edit to the counter itself.
+    expect(isNonPublicVenue('WEEX')).toBe(false);
     expect(isNonPublicVenue('BINANCE')).toBe(false);
     expect(isNonPublicVenue('NOTAVENUE')).toBe(false);
     expect(isNonPublicVenue(undefined)).toBe(false);
@@ -145,7 +154,7 @@ describe('8 — the rejection is measured, because request_log cannot see it', (
   it('records exactly one entry per attempt, and NOTHING for a public venue', () => {
     recordNonPublicVenue('EDGEX', 'get_trade_call', 'free');
     recordNonPublicVenue('EDGEX', 'get_trade_call', 'free');
-    recordNonPublicVenue('WEEX', 'get_market_regime', 'starter');
+    recordNonPublicVenue('BITMART', 'get_market_regime', 'starter');
     // The public venue must be DRIVEN THROUGH the recorder, not merely absent from the calls
     // above: an earlier draft asserted only `counts['BINANCE:…']` is undefined without ever
     // calling it, so deleting the class guard entirely left every test green. The guard is what
@@ -154,7 +163,7 @@ describe('8 — the rejection is measured, because request_log cannot see it', (
     recordNonPublicVenue('NOTAVENUE', 'get_trade_call', 'free');
     const { counts } = getNonPublicVenueSnapshot();
     expect(counts['EDGEX:get_trade_call']).toBe(2);
-    expect(counts['WEEX:get_market_regime']).toBe(1);
+    expect(counts['BITMART:get_market_regime']).toBe(1);
     expect(counts['BINANCE:get_trade_call']).toBeUndefined();
     expect(counts['NOTAVENUE:get_trade_call']).toBeUndefined();
     expect(Object.keys(counts)).toHaveLength(2);

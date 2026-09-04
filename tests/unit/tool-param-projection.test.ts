@@ -38,10 +38,11 @@ const DOCS_HTML = read('landing/docs.html');
 const HARDCODED_17 = /'HL',\s*'BINANCE',\s*'BYBIT',\s*'OKX',\s*'BITGET',\s*'ASTER',\s*'EDGEX'/;
 
 describe('the accepted-venue set is declared ONCE', () => {
-  it('VENUE_IDS_ALL is a strict superset of the promoted set, differing by exactly EDGEX + WEEX', () => {
+  it('VENUE_IDS_ALL is a strict superset of the promoted set, differing by exactly BITMART + EDGEX', () => {
+    // OPS-WEEX-PROMOTE-W1: WEEX joined the promoted set 2026-09-04 and left this difference.
     const promoted = new Set<string>(PROMOTED_VENUE_IDS);
     for (const v of promoted) expect(VENUE_IDS_ALL).toContain(v);
-    expect(VENUE_IDS_ALL.filter((v) => !promoted.has(v)).sort()).toEqual(['BITMART', 'EDGEX', 'WEEX']);
+    expect(VENUE_IDS_ALL.filter((v) => !promoted.has(v)).sort()).toEqual(['BITMART', 'EDGEX']);
   });
 
   it('has no duplicates — a set comparison would hide one, a length check would not catch it', () => {
@@ -81,7 +82,8 @@ describe('the per-tool difference is preserved, not flattened', () => {
     const scan = PUBLIC_TOOL_ENUM_PARAMS.scan_trade_calls.exchange.values;
     expect([...all].sort()).toEqual([...scan].sort());
     expect(all).not.toContain('EDGEX');
-    expect(all).not.toContain('WEEX');
+    expect(all).not.toContain('BITMART');
+    expect(all).toContain('WEEX');   // OPS-WEEX-PROMOTE-W1 — publicly served since 2026-09-04
   });
 
   it('get_market_regime takes a deliberate timeframe SUBSET, not the full set', () => {

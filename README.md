@@ -235,7 +235,7 @@ Two meters per paid tier, monthly and daily, enforced independently: a call is r
 
 | Feature | Free | Starter ($9.99/mo · $39.90/6mo) | Pro ($49/mo · $129/6mo) | Enterprise (contact us) | x402 (per call) |
 |---------|------|-------------------|-------------|---------------------|-----------------|
-| Exchanges | All 14 | All 14 | All 14 | All 14 | All 14 | <!-- SNAPSHOT-LINE-TABLE -->
+| Exchanges | All 15 | All 15 | All 15 | All 15 | All 15 | <!-- SNAPSHOT-LINE-TABLE -->
 | Assets | All 740+ | All 740+ | All 740+ | All 740+ | All 740+ | <!-- SNAPSHOT-LINE-TABLE -->
 | Asset classes | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi |
 | Timeframes | All 11 | All 11 | All 11 | All 11 | All 11 |

@@ -26,7 +26,8 @@ describe('capabilities SoT — exchange list', () => {
     // OPS-VENUE-GO-LIVE-2026-06-30: 5→12 (7 appended). OPS-VENUE-GO-LIVE-15-W1: 12→15 (WHITEBIT/BITMART/XT).
     // OPS-BITMART-ENUM-RECONCILE-W1: 15→14 — BITMART retired 2026-08-27, removed from the static SoT
     // so EXCHANGE_COUNT stops overstating (it published 15 while byExchange served 14 for 7 days).
-    expect(EXCHANGES.map((e) => e.id)).toEqual(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX', 'WHITEBIT', 'XT']);
+    // OPS-WEEX-PROMOTE-W1: 14→15 — WEEX promoted 2026-09-04 under a dated operator override.
+    expect(EXCHANGES.map((e) => e.id)).toEqual(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX', 'WHITEBIT', 'XT', 'WEEX']);
   });
   it('EXCHANGES has display labels for every entry', () => {
     for (const e of EXCHANGES) {
@@ -36,7 +37,7 @@ describe('capabilities SoT — exchange list', () => {
   });
   it('EXCHANGE_COUNT === EXCHANGES.length', () => {
     expect(EXCHANGE_COUNT).toBe(EXCHANGES.length);
-    expect(EXCHANGE_COUNT).toBe(14);
+    expect(EXCHANGE_COUNT).toBe(15);
   });
   it('EXCHANGES is frozen (cannot mutate at runtime)', () => {
     expect(Object.isFrozen(EXCHANGES)).toBe(true);

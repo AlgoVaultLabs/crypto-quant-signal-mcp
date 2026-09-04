@@ -635,6 +635,46 @@ async function fetchXt(limit: number): Promise<ExchangeAsset[]> {
   return assets.slice(0, limit);
 }
 
+/** WEEX: /capi/v3/market/ticker/24hr (1 bulk call, 1023 perps). NO USABLE OI ⇒ LIQUIDITY PROXY:
+ *  notionalOI_usd = quoteVolume (USDT-denominated, probed 2026-09-04: BTC $3.00B, and
+ *  volume 37355.87 BTC × lastPrice 80886.2 = $3.02B, so quoteVolume is genuinely quote-side).
+ *  symbol `<COIN>USDT` uppercase; priceChangePercent is a signed FRACTION (×100 — probed
+ *  3109.1/77777.1 = 0.03997); markPrice + indexPrice inline (real, zero extra call); no book,
+ *  no funding rate on this endpoint. WEEX funding is 4h, NOT the 8h default (adapters/weex.ts:218).
+ *
+ *  WHY THE PROXY AND NOT REAL OI — architect ruling Q7[A], OPS-WEEX-PROMOTION-READINESS-W1 CH3.
+ *  The decisive argument is the UNIT, not the latency. `/capi/v3/market/openInterest` is
+ *  PER-SYMBOL only (no `symbol` ⇒ -1141), so ranking 1023 symbols costs 1023 calls ≈ 41 min at
+ *  the venue's 2400 ms pacing — but the disqualifier is that its unit does not reconcile: BTC
+ *  renders as $10.9B (base-units) or $1.09M (contractVal-notional) depending on which reading of
+ *  `contractVal` you take, and `contractVal` spans 0.0001 → 100. We cannot publish a magnitude we
+ *  cannot defend, so an UNINTERPRETABLE OI figure is a Factuality hazard while a LABELLED volume
+ *  proxy is honest. `quoteVolume` already carries the ranking signal: Spearman +0.84 against the
+ *  real OI series. Joins OI_PROXY_VENUES alongside BINANCE/ASTER/BINGX/XT. */
+async function fetchWeex(limit: number): Promise<ExchangeAsset[]> {
+  const rows = await upstreamFetch<Array<{ symbol?: string; quoteVolume?: string; lastPrice?: string;
+    priceChangePercent?: string; markPrice?: string; indexPrice?: string }>>(
+    VENUE_FETCH_CONFIGS.WEEX, { url: 'https://api-contract.weex.com/capi/v3/market/ticker/24hr' });
+  const assets: ExchangeAsset[] = (Array.isArray(rows) ? rows : [])
+    .filter((t) => typeof t.symbol === 'string' && t.symbol.endsWith('USDT'))
+    .map((t) => {
+      const qv = num(t.quoteVolume);   // USDT-denominated 24h turnover ≈ USD
+      const pcp = parseFloat(t.priceChangePercent ?? '');
+      return {
+        coin: (t.symbol as string).replace(/USDT$/, '').toUpperCase(),
+        notionalOI_usd: qv,   // proxy: WEEX exposes no interpretable bulk OI
+        oiIsProxy: true,
+        volume24h_usd: qv,
+        changePct24h: Number.isFinite(pcp) ? pcp * 100 : undefined,   // priceChangePercent is a fraction
+        fundingIntervalHours: 4,   // WEEX is 4h, not the 8h default; rate is not on this call
+        markPx: pos(t.markPrice),
+        indexPx: pos(t.indexPrice),
+      };
+    });
+  assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
+  return assets.slice(0, limit);
+}
+
 // OPS-SCAN-UNIVERSE-EXPAND-W1: the unified venue→universe SoT, keyed by the EXCHANGES-derived
 // PromotedExchangeId — tsc fails if a promoted venue lacks a fetcher. OPS-VENUE-GO-LIVE-15-W1: now
 // 15 (5 original + 7 + 3 new). 11 real-OI + 4 volume-proxy (BINANCE via oi-sources openInterestHist,
@@ -654,6 +694,7 @@ const FETCHERS: Record<PromotedExchangeId, (limit: number) => Promise<ExchangeAs
   PHEMEX: fetchPhemex,
   WHITEBIT: fetchWhitebit,
   XT: fetchXt,
+  WEEX: fetchWeex,   // OPS-WEEX-PROMOTE-W1 — volume proxy, see fetchWeex
 };
 
 /**
@@ -661,7 +702,7 @@ const FETCHERS: Record<PromotedExchangeId, (limit: number) => Promise<ExchangeAs
  * + oi_change lens MUST skip these (never record volume as OI). BINANCE keeps a real-OI special-case
  * in oi-sources (openInterestHist); ASTER/BINGX have none. Honest-labeling contract.
  */
-export const OI_PROXY_VENUES: ReadonlySet<ExchangeId> = new Set<ExchangeId>(['BINANCE', 'ASTER', 'BINGX', 'XT']);
+export const OI_PROXY_VENUES: ReadonlySet<ExchangeId> = new Set<ExchangeId>(['BINANCE', 'ASTER', 'BINGX', 'XT', 'WEEX']);
 
 /**
  * The USD liquidity figure to gate an asset on — ONE derivation, two consumers.

@@ -45,6 +45,15 @@ export const VENUE_BRAND_COLORS: Record<PromotedVenueId, string> = {
   PHEMEX: '#7DE95B', // Phemex — official logo green
   WHITEBIT: '#F6F0FF', // WhiteBIT — monochrome brand → off-white (kept distinct from OKX pure white)
   XT: '#FFBE40', // XT — logo amber (Pantone 1365)
+  // OPS-WEEX-PROMOTE-W1 — Mr.1-approved 2026-09-04. Provenance: WEEX's OWN media kit
+  // (weex.com/Media-kit), which states verbatim "Brand colors HEX #D8AE15 RGB 216 174 21
+  // Alpha 100" alongside #000000. Fetched first-hand, not inferred. Deliberately NOT the
+  // #E5AD00 read off the served stylesheet — that is the SITE ACCENT, not the brand value
+  // (the page's own CSS renders #d8ae14, one unit of blue off its stated hex). Near BINANCE
+  // #F0B90B / BYBIT #F7A600 by design: this map is BRAND FIDELITY and carries no distinctness
+  // constraint — OKX/WhiteBIT already set that precedent. The chart-distinct value is
+  // LB_EX_COLOR.WEEX (#FF6B3D) in index.ts, which is a different palette for a different job.
+  WEEX: '#D8AE15', // WEEX — official media-kit brand gold (RGB 216 174 21)
 };
 
 /** Brand hex for a rendered venue. Total over {@link PromotedVenueId} (no fallback needed). */

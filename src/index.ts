@@ -5175,9 +5175,9 @@ var LB_SMALL_N = 30;          // muted "small sample" tag bar (single source w/ 
 // OPS-VENUE-GO-LIVE-15-W1 (2026-07-23): 12→15. WhiteBIT lime #A3E635 / BitMart red #F6465D /
 // XT pink #EC4899 — chosen pairwise-distinct from the 12 (unused red/lime/magenta hues; Design.md
 // "no two venues share a colour"), brand hues being too crowded (blue/teal) to stay distinct.
-var LB_EX_LABEL = { HL: 'Hyperliquid', BINANCE: 'Binance', BYBIT: 'Bybit', OKX: 'OKX', BITGET: 'Bitget', ASTER: 'Aster', BINGX: 'BingX', GATE: 'Gate.io', HTX: 'HTX', KUCOIN: 'KuCoin', MEXC: 'MEXC', PHEMEX: 'Phemex', WHITEBIT: 'WhiteBIT', XT: 'XT' };
-var LB_EX_COLOR = { HL: '#4ade80', BINANCE: '#F0B90B', BYBIT: '#F7A600', OKX: '#ffffff', BITGET: '#00C8BC', ASTER: '#A855F7', BINGX: '#0058FB', GATE: '#17E6A1', HTX: '#0091D4', KUCOIN: '#23AF91', MEXC: '#1972E2', PHEMEX: '#818CF8', WHITEBIT: '#A3E635', XT: '#EC4899' };
-var LB_EX_ORDER = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX', 'WHITEBIT', 'XT'];
+var LB_EX_LABEL = { HL: 'Hyperliquid', BINANCE: 'Binance', BYBIT: 'Bybit', OKX: 'OKX', BITGET: 'Bitget', ASTER: 'Aster', BINGX: 'BingX', GATE: 'Gate.io', HTX: 'HTX', KUCOIN: 'KuCoin', MEXC: 'MEXC', PHEMEX: 'Phemex', WHITEBIT: 'WhiteBIT', XT: 'XT', WEEX: 'WEEX' };
+var LB_EX_COLOR = { HL: '#4ade80', BINANCE: '#F0B90B', BYBIT: '#F7A600', OKX: '#ffffff', BITGET: '#00C8BC', ASTER: '#A855F7', BINGX: '#0058FB', GATE: '#17E6A1', HTX: '#0091D4', KUCOIN: '#23AF91', MEXC: '#1972E2', PHEMEX: '#818CF8', WHITEBIT: '#A3E635', XT: '#EC4899', WEEX: '#FF6B3D' };
+var LB_EX_ORDER = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX', 'WHITEBIT', 'XT', 'WEEX'];
 // TRACK-RECORD-EXCHANGE-BRAND-COLORS-W1: server-side VENUE_BRAND_COLORS SoT
 // (src/lib/venue-brand-colors.ts) injected once so the ANALYZING chip row's
 // client re-render and its server-rendered chips share ONE derivation. This is

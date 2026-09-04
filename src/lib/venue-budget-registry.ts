@@ -373,6 +373,66 @@ export const xtWeightBudget = new WeightBudget({
 // EXHAUSTIVE over PromotedVenueId (derived from capabilities.ts EXCHANGES, the one
 // promoted-venue SoT). Omitting a key here is a COMPILE ERROR — that is the whole
 // point: promotion and budgeting can no longer drift apart silently.
+// ── WEEX: promoted 2026-09-04 (OPS-WEEX-PROMOTE-W1); budget authored OPS-WEEX-PROMOTION-READINESS-W1 CH2 ──
+// Declared HERE, above VENUE_BUDGETS, because that record references `weexWeightBudget` — a
+// `const` used before its declaration is a TS2448 build failure, not a style question.
+// WEEX declares 500 requests / 10 minutes in its own V3 `/capi/v3/market/exchangeInfo`
+// `rateLimits[]` (= 0.833 req/s = 50/min, fetched 2026-09-03) while its response headers
+// advertise `x-used-weight-10s` (50 req/s) — a 60x self-contradiction. Architect D4 ruling:
+// the venue's own DECLARED limit governs. Ceiling = 50% = 25 req/min; reserve 5.
+//
+// WHY A CROSS-PROCESS BUDGET AND NOT JUST THE DELAY — measured, in production, twice:
+//   1. V2 tolerated 3.33 req/s for 89 days with ZERO 418/429. V3 returned 83 within FOUR
+//      MINUTES of the cutover at the same pacing. V3 enforces what V2 never did.
+//   2. Raising `DELAY_PER_EXCHANGE.WEEX` 300 -> 2400ms cut that to 8 — but the delay is
+//      PER-PROCESS, and all 8 landed in a SINGLE MINUTE (11:06Z) from FOUR concurrent
+//      callers: seed:5m, seed:15m, seed:30m, seed:1h. Each honoured 2400ms; jointly they
+//      delivered ~1.67 req/s against a declared 0.833. A 100-symbol pass takes ~240s at
+//      2400ms, so the cron grid overlaps lanes by construction and no per-process delay
+//      can fix it. This is the "two individually compliant jobs breach one shared budget"
+//      class, and the ledger is the only thing that serialises them.
+//
+// OPS-WEEX-PROMOTE-W1 (2026-09-04): MIGRATED into the exhaustive VENUE_BUDGETS record above,
+// values unchanged. It was originally placed in SHADOW_VENUE_BUDGETS per that map's contract.
+//
+// ⚠️ CAPACITY — WEEX IS AT ITS CEILING, AND THIS IS AN OPEN QUESTION, NOT A SETTLED ONE.
+// Aggregate steady-state demand across the nine shadow lanes (5m top-50 + eight top-100
+// lanes, 1 kline/symbol + 1 bulk ticker/pass) is 1420 req/hour = 23.7 req/min against a
+// 25/min ceiling — 95% utilisation, 1.3 req/min headroom. With `interactiveReserve` 5 the
+// BATCH share is 20/min, so seeding is OVER-SUBSCRIBED and will WAIT, and under sustained
+// contention SKIP. If promoted (3m top-15 added, 5m depth 50->30) demand is 25.0 req/min
+// = 100% of the ceiling before any reserve.
+//
+// A wait is strictly better than a 429 (orderly, no ban-escalation risk), so this ships as
+// the correct control. But it meant WEEX COULD NOT carry the promoted lane set at top-100
+// depth against its own declared limit.
+//
+// RESOLVED by OPS-WEEX-PROMOTE-W1 (2026-09-04) — HL-CLASS ISOLATION, and the reason it is
+// isolation rather than a depth number is ARITHMETIC, not preference. The promoted lanes are
+// SHARED cron lines (`--status promoted --exclude HL`) and `--top` is per-LINE; seed-signals
+// has no per-venue depth. So a "uniform --top 30 on the promoted lanes" would have cut
+// 15m/30m from top-100 and 1h+ from UNCAPPED to 30 for ALL 14 INCUMBENTS — MEXC (881 assets),
+// XT (893), GATE (719), BINGX (638) losing ~97% of their 1h+ accrual. Those venues HAVE public
+// rows; WEEX has none. The Data Integrity LAW protects existing public data, so that form is
+// FORBIDDEN: promoting the 15th venue may not shrink the other 14.
+//
+// WEEX therefore runs on its OWN nine `--exchange-list WEEX --top 30` lines and is excluded
+// from every shared promoted lane. Projected steady state 15.6 req/min = 78% of the 20/min
+// batch share. NOTE for whoever reads this next: `--exchange WEEX` EXITS 1 — seed-signals'
+// `validSingle` accepts only HL/BINANCE/BYBIT/OKX/BITGET/ALL. It must be `--exchange-list`.
+export const WEEX_REQ_CEILING = 25;
+export const WEEX_INTERACTIVE_RESERVE = 5;
+const WEEX_VITEST = process.env.VITEST === 'true';
+const weexLedgerSuffix = WEEX_VITEST ? `.test-${process.pid}` : '';
+export const weexWeightBudget = new WeightBudget({
+  venue: 'WEEX',
+  ledgerPath: process.env.WEEX_WEIGHT_LEDGER ?? `/tmp/algovault-weex-weight${weexLedgerSuffix}.json`,
+  lockPath: process.env.WEEX_WEIGHT_LOCK ?? `/tmp/algovault-weex-weight${weexLedgerSuffix}.lock`,
+  ceilingPerMin: WEEX_VITEST ? 1_000_000_000 : WEEX_REQ_CEILING,
+  interactiveReserve: WEEX_VITEST ? 0 : WEEX_INTERACTIVE_RESERVE,
+  log: WEEX_VITEST ? () => {} : undefined,
+});
+
 const VENUE_BUDGETS: Record<PromotedVenueId, VenueBudgetEntry> = {
   HL: { budget: hlWeightBudget, weightFor: (req) => req.weightHint ?? 20 },
   BINANCE: { budget: binanceWeightBudget, weightFor: (req) => req.weightHint ?? 5 },
@@ -390,78 +450,56 @@ const VENUE_BUDGETS: Record<PromotedVenueId, VenueBudgetEntry> = {
   // serializes the uncapped 1h+ pass so the shadow-era 429 burst can't recur. See each block above.
   WHITEBIT: { budget: whitebitWeightBudget, weightFor: () => 1 },
   XT: { budget: xtWeightBudget, weightFor: () => 1 },
+  // OPS-WEEX-PROMOTE-W1 — MIGRATED from SHADOW_VENUE_BUDGETS, values UNCHANGED (ceiling 25/min,
+  // reserve 5). The migration is the point, not a formality: promotion moves WEEX out of the
+  // shadow map, and if the budget does not FOLLOW it, `getVenueBudget('WEEX')` starts returning
+  // null and promotion silently DELETES the only cross-process mechanism preventing the 429
+  // storm that CH2 of the readiness wave measured live (83 in four minutes at the V3 cutover).
+  // tsc forces the row to exist; nothing forces the shadow row to be REMOVED, so the assertion
+  // that matters is `SHADOW_VENUE_BUDGETS.size === 0` — a duplicate row would be dead code that
+  // reads as enforcement. Pinned by tests/unit/venue-budget-registry.test.ts.
+  WEEX: { budget: weexWeightBudget, weightFor: () => 1 },       // request-count venue
 };
 
-// ── WEEX: shadow consumer, OPS-WEEX-PROMOTION-READINESS-W1 CH2 ──
-// WEEX declares 500 requests / 10 minutes in its own V3 `/capi/v3/market/exchangeInfo`
-// `rateLimits[]` (= 0.833 req/s = 50/min, fetched 2026-09-03) while its response headers
-// advertise `x-used-weight-10s` (50 req/s) — a 60x self-contradiction. Architect D4 ruling:
-// the venue's own DECLARED limit governs. Ceiling = 50% = 25 req/min; reserve 5.
-//
-// WHY A CROSS-PROCESS BUDGET AND NOT JUST THE DELAY — measured, in production, twice:
-//   1. V2 tolerated 3.33 req/s for 89 days with ZERO 418/429. V3 returned 83 within FOUR
-//      MINUTES of the cutover at the same pacing. V3 enforces what V2 never did.
-//   2. Raising `DELAY_PER_EXCHANGE.WEEX` 300 -> 2400ms cut that to 8 — but the delay is
-//      PER-PROCESS, and all 8 landed in a SINGLE MINUTE (11:06Z) from FOUR concurrent
-//      callers: seed:5m, seed:15m, seed:30m, seed:1h. Each honoured 2400ms; jointly they
-//      delivered ~1.67 req/s against a declared 0.833. A 100-symbol pass takes ~240s at
-//      2400ms, so the cron grid overlaps lanes by construction and no per-process delay
-//      can fix it. This is the "two individually compliant jobs breach one shared budget"
-//      class, and the ledger is the only thing that serialises them.
-//
-// Placed in SHADOW_VENUE_BUDGETS per this block's own contract ("a shadow venue that needs
-// pacing pre-promotion can get an ad-hoc row here"). On promotion tsc demands it move into
-// the exhaustive VENUE_BUDGETS record above — the values carry over unchanged.
-//
-// ⚠️ CAPACITY — WEEX IS AT ITS CEILING, AND THIS IS AN OPEN QUESTION, NOT A SETTLED ONE.
-// Aggregate steady-state demand across the nine shadow lanes (5m top-50 + eight top-100
-// lanes, 1 kline/symbol + 1 bulk ticker/pass) is 1420 req/hour = 23.7 req/min against a
-// 25/min ceiling — 95% utilisation, 1.3 req/min headroom. With `interactiveReserve` 5 the
-// BATCH share is 20/min, so seeding is OVER-SUBSCRIBED and will WAIT, and under sustained
-// contention SKIP. If promoted (3m top-15 added, 5m depth 50->30) demand is 25.0 req/min
-// = 100% of the ceiling before any reserve.
-//
-// A wait is strictly better than a 429 (orderly, no ban-escalation risk), so this ships as
-// the correct control. But it means WEEX CANNOT carry the promoted lane set at top-100
-// depth against its own declared limit — the depth, the lane set, or the 50%-of-declared
-// reading has to give, and that is a capacity decision for the architect, not a mid-chapter
-// one. Do NOT quietly reduce seed depth (a Data Integrity change) or quietly loosen the
-// ceiling to make the arithmetic work. Recorded as BLOCKING for promotion in
-// audits/OPS-WEEX-PROMOTION-READINESS-W1-preconditions.md #1.
-export const WEEX_REQ_CEILING = 25;
-export const WEEX_INTERACTIVE_RESERVE = 5;
-const WEEX_VITEST = process.env.VITEST === 'true';
-const weexLedgerSuffix = WEEX_VITEST ? `.test-${process.pid}` : '';
-export const weexWeightBudget = new WeightBudget({
-  venue: 'WEEX',
-  ledgerPath: process.env.WEEX_WEIGHT_LEDGER ?? `/tmp/algovault-weex-weight${weexLedgerSuffix}.json`,
-  lockPath: process.env.WEEX_WEIGHT_LOCK ?? `/tmp/algovault-weex-weight${weexLedgerSuffix}.lock`,
-  ceilingPerMin: WEEX_VITEST ? 1_000_000_000 : WEEX_REQ_CEILING,
-  interactiveReserve: WEEX_VITEST ? 0 : WEEX_INTERACTIVE_RESERVE,
-  log: WEEX_VITEST ? () => {} : undefined,
-});
-
 /**
- * Shadow venues (EDGEX / WEEX) — deliberately SPARSE and NEVER required to be exhaustive.
- * Shadow data does not feed the public track record, so a ban there degrades nothing
- * user-visible; a shadow venue that needs pacing pre-promotion gets an ad-hoc row here
- * without touching the exhaustive record above, and on promotion tsc demands it move up.
+ * Shadow venues — deliberately SPARSE and NEVER required to be exhaustive. Shadow data does
+ * not feed the public track record, so a ban there degrades nothing user-visible; a shadow
+ * venue that needs pacing pre-promotion gets an ad-hoc row here without touching the
+ * exhaustive record above, and on promotion tsc demands it move up.
  *
- * WEEX is the first occupant (see the block directly above). EDGEX is RETIRED and needs
- * none. _(Roster corrected 2026-09-03: this docblock still listed BITMART/WHITEBIT/XT as
- * shadow venues — BITMART was retired 2026-08-27 and WHITEBIT/XT were promoted, both long
- * before this wave.)_
+ * EMPTY as of OPS-WEEX-PROMOTE-W1 (2026-09-04). WEEX was its first and only occupant and has
+ * MIGRATED into VENUE_BUDGETS above; EDGEX is RETIRED and needs none. There are zero shadow
+ * venues today (`shadow_venue_count` = 0), so an empty map is the CORRECT state, not an
+ * unfinished one — do not "restore" a row here.
+ *
+ * _(Roster corrected 2026-09-03: this docblock once listed BITMART/WHITEBIT/XT as shadow
+ * venues — BITMART was retired 2026-08-27 and WHITEBIT/XT were promoted, both long before.)_
  */
-const SHADOW_VENUE_BUDGETS: ReadonlyMap<string, VenueBudgetEntry> = new Map<string, VenueBudgetEntry>([
-  ['WEEX', { budget: weexWeightBudget, weightFor: () => 1 }],   // request-count venue
-]);
+const SHADOW_VENUE_BUDGETS: ReadonlyMap<string, VenueBudgetEntry> = new Map<string, VenueBudgetEntry>([]);
 
 /**
  * The cross-process weight budget for `exchangeId`, or null when the venue is
- * delay-paced only (the shadow venues) and therefore has no shared budget.
- * Signature and null-for-shadow behaviour are unchanged — `_upstream-fetch.ts`
- * calls this synchronously before every venue fetch.
+ * delay-paced only and therefore has no shared budget. Signature and null-for-
+ * unbudgeted behaviour are unchanged — `_upstream-fetch.ts` calls this
+ * synchronously before every venue fetch. With SHADOW_VENUE_BUDGETS empty the
+ * second lookup is currently always a miss; it is KEPT because the next shadow
+ * onboarding needs it, and deleting it would make that wave re-derive this.
  */
+/**
+ * Read-only inspector — the number of ad-hoc shadow budget rows. Exported for the ONE assertion
+ * that a promotion actually MIGRATED a venue's budget rather than leaving a duplicate behind:
+ * tsc forces the promoted row to exist, but nothing forces the shadow row to be removed, and a
+ * leftover row is dead code that reads as enforcement. Zero is the correct value today.
+ *
+ * Underscore-prefixed + `ForTest`-suffixed to match this repo's BY-CONSTRUCTION dark-export
+ * exemption (`ops/dark-exports-config.json` `^_.*ForTest$`) rather than adding an allowlist row:
+ * it is the read-only-inspector leg of CLAUDE.md's mandated cache/state seam trio, and the name
+ * is what marks it non-API. (OPS-WEEX-PROMOTE-W1.)
+ */
+export function _shadowVenueBudgetSizeForTest(): number {
+  return SHADOW_VENUE_BUDGETS.size;
+}
+
 export function getVenueBudget(exchangeId: string): VenueBudgetEntry | null {
   const promoted = VENUE_BUDGETS[exchangeId as PromotedVenueId];
   if (promoted) return promoted;

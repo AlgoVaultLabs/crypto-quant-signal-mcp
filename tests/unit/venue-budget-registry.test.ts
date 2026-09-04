@@ -8,7 +8,7 @@
  * instances, and that a budgeted entry can actually `acquire` (smoke).
  */
 import { describe, it, expect } from 'vitest';
-import { getVenueBudget, WEEX_REQ_CEILING, WEEX_INTERACTIVE_RESERVE } from '../../src/lib/venue-budget-registry.js';
+import { getVenueBudget, WEEX_REQ_CEILING, WEEX_INTERACTIVE_RESERVE, _shadowVenueBudgetSizeForTest } from '../../src/lib/venue-budget-registry.js';
 import { WeightBudget } from '../../src/lib/upstream-weight-budget.js';
 import { PROMOTED_VENUE_IDS } from '../../src/lib/capabilities.js';
 
@@ -82,9 +82,24 @@ describe('venue-budget-registry', () => {
   });
 
   it('the promoted set and the shadow set are disjoint (no venue is both)', () => {
-    for (const id of ['EDGEX', 'WEEX']) {
+    for (const id of ['EDGEX', 'BITMART']) {
       expect(PROMOTED_VENUE_IDS as readonly string[], id).not.toContain(id);
     }
+  });
+
+  // OPS-WEEX-PROMOTE-W1 — THE assertion the promotion turns on, and the one the dispatched spec's
+  // own gate could NOT make: it proposed `getVenueBudget('WEEX') != null`, which was already true
+  // BEFORE the change (WEEX held a SHADOW_VENUE_BUDGETS row), so it could never have detected the
+  // failure it existed for. What must be true is that the budget FOLLOWED the venue out of the
+  // shadow map. tsc forces the promoted row to exist; NOTHING forces the shadow row to be removed,
+  // and a duplicate would be dead code that reads as enforcement.
+  it('WEEX is budgeted from the PROMOTED record and the shadow map is empty', () => {
+    expect(PROMOTED_VENUE_IDS as readonly string[]).toContain('WEEX');
+    const b = getVenueBudget('WEEX');
+    expect(b, 'getVenueBudget(WEEX) is null — promotion deleted its rate-limit enforcement').not.toBeNull();
+    expect(WEEX_REQ_CEILING).toBe(25);          // 50% of the venue-declared 500 req / 10 min
+    expect(WEEX_INTERACTIVE_RESERVE).toBe(5);
+    expect(_shadowVenueBudgetSizeForTest(), 'a leftover shadow row is dead code that reads as enforcement').toBe(0);
   });
 
   it('each budgeted venue is a distinct WeightBudget instance', () => {
