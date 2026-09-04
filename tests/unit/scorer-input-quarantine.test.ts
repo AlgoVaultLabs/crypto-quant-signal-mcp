@@ -82,7 +82,16 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   ],
   [
     'src/lib/performance-db.ts',
-    'schema owner (mirrors migration 036) + the three capture INSERTs + the running-count reader',
+    // CORRECTED 2026-09-04, OPS-SCORER-CAPTURE-DAY3-HEALTH-READOUT-W1 R6b. This read
+    // "+ the running-count reader", which describes a function that does NOT exist: the
+    // `getScorerInputCounts()` reader was removed before OPS-SCORER-INPUT-PERSISTENCE-W1
+    // shipped (it had zero non-test callers, and wiring it to the admin endpoint would have
+    // forced `src/index.ts` into THIS allowlist and gutted the guard on its first use). What
+    // remains at performance-db.ts is the block comment explaining that removal — and comments
+    // are stripped before matching, so the clause described nothing this file matches on.
+    // Second surface of the same stale claim; `system-map.md` carried the first.
+    // The running count is published by `ops/monitoring/scorer-input-identity-canary.py`.
+    'schema owner (mirrors migration 036) + the three capture INSERTs; no reader — the running count is published by the identity canary',
   ],
   [
     'src/tools/get-trade-call.ts',

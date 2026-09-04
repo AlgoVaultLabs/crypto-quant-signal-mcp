@@ -37,7 +37,35 @@ it is the only one that can read ALL THREE arms: measured 2026-08-31, `algovault
 cannot SELECT `hold_decisions`, so a canary running as that role would silently skip the arm
 carrying 94% of the corpus and still print PASS.
 
-Reads only. Writes nothing, alerts nothing on its own — `send_telegram.sh` consumes the token.
+Reads only (plus one append to the results log; see below). Alerts nothing on its own —
+`send_telegram.sh` consumes the token.
+
+── OFF-HOST READOUT — OPS-SCORER-CAPTURE-DAY3-HEALTH-READOUT-W1 R6 ──────────────────────────
+This canary's stdout was the ONLY place the running capture counts were published, which made
+the scheduled day-N health check undispatchable from anywhere without an SSH credential. It now
+also appends one structured JSON line per run via `canary_result_log.append_result`, which
+`ops/scripts/monitoring-results-sync.sh` pulls back into the vault.
+
+That record is a RECORD, NOT A GATE LEG. The verdict, the exit code and the alert dispatch are
+identical whether the append succeeds or fails — a logging fault must never become a paging
+fault. The one thing it may not do is fail SILENTLY, so a positive line is printed either way.
+
+── THE ATTRIBUTION COUNT, AND WHY IT IS A SECOND QUERY ──────────────────────────────────────
+`EDGE-SELL-FEATURE-ATTRIBUTION-W{NEXT}` opens on a stated ROW COUNT of captured-and-LABELED
+rows — never a date. The identity query CANNOT answer that: it is windowed (2d) and LIMIT-capped
+(20k/arm), and measured 2026-09-04 the emitted AND hold arms both sit at that cap, so its
+`captured=N` is a bounded sample. Aggregating over it would be the capped-collection defect this
+estate has already paid for. The attribution figures are therefore an INDEPENDENT, uncapped,
+unwindowed query, and every number carries its instrument (`window_days`, `row_cap`,
+`cap_reached`) beside it in the record so a later reader cannot mistake one for the other.
+
+ARM COVERAGE, RATIFIED: attribution counts the WITHHELD arm (`hold_decision_labels`) as well as
+the emitted one. Architect ruling 2026-09-04 admits `EDGE-SELL-FEATURE-ATTRIBUTION-W{NEXT}` as
+the THIRD consumer of the counterfactual store, under the SAME three protections as the second
+(`EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1`): it pre-registers its own hypotheses, its output may
+NEVER be cited for or against the HOLD-discipline hypothesis, and nothing derived from it reaches
+public copy. What this file reads from that store is a COUNT of labelled parents — never a label
+value, never a rate, never a return.
 
     scorer-input-identity-canary.py              # live check
     scorer-input-identity-canary.py --self-test  # hermetic; no DB, no network
@@ -48,6 +76,24 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+
+# The off-host result recorder — a sibling in /opt/algovault-monitoring (python puts the script's
+# own directory on sys.path, so the plain name resolves there exactly as it does in the repo).
+#
+# GUARDED, and not out of habit: an unguarded `import` of a module that is missing — a partial
+# install, a rollback of the module alone — would abort this file at LOAD time, and the identity
+# verdict would never be computed at all. A recorder taking the gate down is strictly worse than
+# a run with no record, so absence degrades to a no-op that SAYS SO.
+try:
+    from canary_result_log import append_result as _append_result
+
+    _RESULT_LOG_IMPORT_ERROR = ""
+except Exception as _import_err:  # noqa: BLE001
+    _RESULT_LOG_IMPORT_ERROR = f"{type(_import_err).__name__}: {_import_err}"
+
+    def _append_result(*_a, **_k):  # type: ignore[misc]
+        return False, f"canary_result_log unavailable ({_RESULT_LOG_IMPORT_ERROR})"
+
 
 # ── Constants that MUST equal the engine's ───────────────────────────────────────────────────
 #
@@ -168,17 +214,94 @@ def build_sql(table: str, ts_col: str, window_days: int, cap: int) -> str:
 RESULT_KEYS = ("captured", "uncaptured", "bad_sum", "bad_chain", "max_sum_resid", "max_chain_resid")
 
 
-def parse_row(raw: str) -> dict[str, float]:
-    """Parse one `-tA` pipe-separated result row.
+def parse_row(raw: str, keys: tuple[str, ...] = RESULT_KEYS) -> dict[str, float]:
+    """Parse one `-tA` pipe-separated result row against a POSITIONAL key tuple.
 
     Pure and self-tested for the same reason `build_sql` is. `-tA` emits unaligned rows with `|`
     as the separator and no header; a shape drift here would otherwise surface as a confident
     wrong number rather than an error.
+
+    `keys` is a parameter rather than a second parser: the attribution query below has its own
+    positional contract, and two copies of this three-line function would be two things that can
+    drift apart. The default keeps every existing caller and every existing assertion unchanged.
     """
     parts = [p.strip() for p in raw.strip().split("|")]
-    if len(parts) != len(RESULT_KEYS):
-        raise ValueError(f"expected {len(RESULT_KEYS)} fields, got {len(parts)}: {raw.strip()[:120]!r}")
-    return {k: float(v) for k, v in zip(RESULT_KEYS, parts)}
+    if len(parts) != len(keys):
+        raise ValueError(f"expected {len(keys)} fields, got {len(parts)}: {raw.strip()[:120]!r}")
+    return {k: float(v) for k, v in zip(keys, parts)}
+
+
+# ── THE ATTRIBUTION COUNT (R6) ───────────────────────────────────────────────────────────────
+#
+# The successor's gate quantity: how many CAPTURED rows also carry a triple-barrier label. It is
+# deliberately NOT derivable from the identity query — see the module docstring — so it gets its
+# own uncapped, unwindowed statement and its own positional contract.
+#
+# `labeled` is a DISTINCT count of PARENT rows, never a row count of the label table: a parent
+# carries up to three `barrier_spec` labels, so counting label rows would triple-count it. Both
+# the any-spec figure and the canonical-spec figure are emitted, because they answer different
+# questions and a single number would hide which one a reader is holding.
+CANONICAL_BARRIER_SPEC = os.environ.get("SI_BARRIER_SPEC", "tau1.0-floor0.30-v1")
+
+ATTRIBUTION_KEYS = (
+    "captured_emitted",
+    "captured_hold",
+    "captured_band",
+    "labeled_emitted_any_spec",
+    "labeled_emitted_canonical",
+    "labeled_hold_any_spec",
+    "labeled_hold_canonical",
+)
+
+
+def build_attribution_sql(spec: str = CANONICAL_BARRIER_SPEC) -> str:
+    """PURE. One row of uncapped corpus counts. Extracted and self-tested for the same reason
+    `build_sql` is — the DB seam is exactly what a hermetic self-test cannot see.
+
+    The emitted arm joins through `signals` on the COMPOSITE `(signal_hash, exchange)` key, never
+    on the hash alone: measured 2026-08-31, five duplicate-hash groups differ by venue, so a
+    bare-hash join fans out and inflates the count it exists to report.
+
+    The hold arm keys on `hold_decision_id -> hold_decisions.decision_id`, NEVER `signal_id`:
+    `request_log.id` and `signals.id` overlap numerically, so a wrong id joins SILENTLY to an
+    unrelated acted signal. It reads a COUNT and nothing else from the counterfactual store.
+    """
+    emitted_join = (
+        "FROM signal_scorer_inputs i "
+        "JOIN signals s ON s.signal_hash = i.signal_hash AND s.exchange = i.exchange "
+        "JOIN directional_labels dl ON dl.signal_id = s.id "
+        "WHERE i.raw0 IS NOT NULL"
+    )
+    hold_join = (
+        "FROM hold_decisions h "
+        "JOIN hold_decision_labels hl ON hl.hold_decision_id = h.decision_id "
+        "WHERE h.raw0 IS NOT NULL"
+    )
+    return (
+        "SELECT "
+        "(SELECT count(*) FROM signal_scorer_inputs WHERE raw0 IS NOT NULL) AS captured_emitted, "
+        "(SELECT count(*) FROM hold_decisions WHERE raw0 IS NOT NULL) AS captured_hold, "
+        "(SELECT count(*) FROM band_signals WHERE raw0 IS NOT NULL) AS captured_band, "
+        f"(SELECT count(DISTINCT i.scorer_input_id) {emitted_join}) AS labeled_emitted_any_spec, "
+        f"(SELECT count(DISTINCT i.scorer_input_id) {emitted_join} "
+        f"   AND dl.barrier_spec = '{spec}') AS labeled_emitted_canonical, "
+        f"(SELECT count(DISTINCT h.decision_id) {hold_join}) AS labeled_hold_any_spec, "
+        f"(SELECT count(DISTINCT h.decision_id) {hold_join} "
+        f"   AND hl.barrier_spec = '{spec}') AS labeled_hold_canonical"
+    )
+
+
+def read_attribution() -> tuple[dict[str, float] | None, str]:
+    """Return `(metrics, detail)`. NEVER raises, and NEVER contributes to the verdict.
+
+    This leg is a RECORD, not a gate. A failure here records `null` with a reason and leaves the
+    identity verdict, the exit code and the alert dispatch untouched — adding a second way for
+    this file to go INDETERMINATE would widen the paging surface for a reporting concern.
+    """
+    try:
+        return parse_row(run_sql(build_attribution_sql()), ATTRIBUTION_KEYS), "ok"
+    except Exception as e:  # noqa: BLE001
+        return None, f"{type(e).__name__}: {str(e)[:140]}"
 
 
 def run_sql(sql: str) -> str:
@@ -248,7 +371,7 @@ def check_arm(label: str, table: str, ts_col: str) -> tuple[str, dict[str, float
     return "PASS", row
 
 
-ASSERTION_COUNT = 28
+ASSERTION_COUNT = 45
 
 
 def self_test() -> int:
@@ -359,6 +482,85 @@ def self_test() -> int:
           lambda: worst(["FAIL", "INDETERMINATE"]) == "INDETERMINATE")
     check("worst-of an empty arm list is INDETERMINATE, never PASS", lambda: worst([]) == "INDETERMINATE")
 
+    # ── the BYPASSED artifact #3: the ATTRIBUTION SQL (R6) ──
+    #
+    # Same reasoning as artifacts #1 and #2: the DB seam means this string is never executed by
+    # any scenario, so it is asserted directly. Every check below names a defect that would be a
+    # confident wrong NUMBER rather than an error.
+    asql = build_attribution_sql("tau9.9-fixture-v1")
+    check("attribution joins the emitted arm on the COMPOSITE key, never the hash alone",
+          lambda: "s.signal_hash = i.signal_hash AND s.exchange = i.exchange" in asql)
+    check("attribution keys the hold arm on hold_decision_id, NEVER signal_id",
+          lambda: "hl.hold_decision_id = h.decision_id" in asql and "hl.signal_id" not in asql)
+    check("attribution counts DISTINCT PARENTS, not label rows",
+          lambda: asql.count("count(DISTINCT") == 4)
+    check("attribution reads the WITHHELD arm (the ratified third consumer)",
+          lambda: "hold_decision_labels" in asql)
+    check("attribution filters on the captured predicate, both arms",
+          lambda: "i.raw0 IS NOT NULL" in asql and "h.raw0 IS NOT NULL" in asql)
+    # The spec literal must actually reach the SQL. Asserted against the ARGUMENT rather than
+    # against CANONICAL_BARRIER_SPEC, which would be the vacuous self-comparison this estate has
+    # already been bitten by twice (the weight assertion here, the key-order assertion in
+    # canary_result_log.py) — it would pass for whatever value the constant happened to hold.
+    check("the requested barrier_spec reaches BOTH canonical legs",
+          lambda: asql.count("barrier_spec = 'tau9.9-fixture-v1'") == 2)
+    # UNCAPPED is the point of this query: a LIMIT here would silently reintroduce the
+    # capped-collection defect the identity query's own cap already demonstrates live.
+    check("the attribution query is UNCAPPED — no LIMIT, no window",
+          lambda: "LIMIT" not in asql and "86400" not in asql)
+    check("attribution keys are the declared positional contract",
+          lambda: ATTRIBUTION_KEYS == ("captured_emitted", "captured_hold", "captured_band",
+                                       "labeled_emitted_any_spec", "labeled_emitted_canonical",
+                                       "labeled_hold_any_spec", "labeled_hold_canonical"))
+
+    def attribution_alias_order_matches() -> bool:
+        idx = [asql.index(f"AS {k}") for k in ATTRIBUTION_KEYS]
+        return idx == sorted(idx)
+    check("the attribution SELECT order matches its parser's key order", attribution_alias_order_matches)
+    check("the parser handles the attribution row shape",
+          lambda: parse_row("1|2|3|4|5|6|7", ATTRIBUTION_KEYS)["labeled_hold_canonical"] == 7.0)
+
+    def attribution_rejects_identity_shape() -> bool:
+        # A 6-field identity row fed to the 7-field contract must RAISE, not silently short-zip.
+        try:
+            parse_row("1|2|3|4|5|6", ATTRIBUTION_KEYS)
+        except ValueError:
+            return True
+        return False
+    check("the parser REFUSES a wrong-width attribution row", attribution_rejects_identity_shape)
+
+    # ── the off-host RECORD payload (R6) ──
+    _rows = [
+        ("emitted", "PASS", {"captured": float(ROW_CAP), "uncaptured": 0.0, "bad_sum": 0.0,
+                             "bad_chain": 0.0, "max_sum_resid": 0.0, "max_chain_resid": 0.0}),
+        ("hold", "INDETERMINATE", {}),
+    ]
+    _m = build_metrics(_rows, {k: 1.0 for k in ATTRIBUTION_KEYS}, "ok")
+    # A capped number travelling off-host as if it were a total is the defect this flag prevents.
+    check("a capped arm is recorded as cap_reached",
+          lambda: _m["identity"]["arms"]["emitted"]["cap_reached"] is True)
+    check("every arm ships its instrument beside its number",
+          lambda: _m["identity"]["arms"]["emitted"]["window_days"] == WINDOW_DAYS
+          and _m["identity"]["arms"]["emitted"]["row_cap"] == ROW_CAP)
+    # A failed READ and a zero COUNT are different facts and must not flatten into each other.
+    check("an unread arm records read_ok=false, never a zeroed count",
+          lambda: _m["identity"]["arms"]["hold"]["read_ok"] is False
+          and "captured" not in _m["identity"]["arms"]["hold"])
+    check("the record marks the attribution figures UNCAPPED",
+          lambda: _m["attribution"]["uncapped"] is True)
+
+    _m_noattr = build_metrics(_rows, None, "RuntimeError: psql rc=2")
+    check("a failed attribution read records null + a reason, and leaves identity intact",
+          lambda: _m_noattr["attribution"]["counts"] is None
+          and _m_noattr["attribution"]["ok"] is False
+          and "psql rc=2" in _m_noattr["attribution"]["detail"]
+          and _m_noattr["identity"]["arms"]["emitted"]["captured"] == ROW_CAP)
+
+    # The RECORDER must never be able to change the gate. Its own failure path returns a reason;
+    # the verdict is a pure function of the arms and nothing else touches it.
+    check("the result recorder reports rather than raises",
+          lambda: _append_result("fixture", "PASS", 0, {}, path="/proc/self/mem/x/y.jsonl")[0] is False)
+
     # The advertised count is itself asserted: a printed number nothing checks drifts the
     # first time someone adds an assertion, and then it is decoration rather than evidence.
     if len(_ran) != ASSERTION_COUNT:
@@ -390,12 +592,60 @@ def worst(verdicts: list[str]) -> str:
     return max(verdicts, key=lambda v: _RANK[v])
 
 
+def build_metrics(
+    results: list[tuple[str, str, dict[str, float]]],
+    attribution: dict[str, float] | None,
+    attribution_detail: str,
+) -> dict:
+    """PURE. Assemble the off-host record's `metrics` payload.
+
+    EVERY NUMBER CARRIES ITS INSTRUMENT. The per-arm identity figures are windowed and capped, so
+    each one ships `window_days`, `row_cap` and an explicit `cap_reached` flag; the attribution
+    figures are uncapped and unwindowed and live under a separate key. A reader off-host has no
+    access to this file, so the record itself has to say which quantity it is holding — that is
+    the whole reason a `captured=20000` at the cap must not travel as if it were a total.
+    """
+    arms: dict[str, dict] = {}
+    for label, arm_verdict, m in results:
+        if not m:
+            # An empty metrics dict means the READ failed, which is a different fact from a zero
+            # count. Recorded as such rather than flattened to zeros.
+            arms[label] = {"verdict": arm_verdict, "read_ok": False}
+            continue
+        captured = int(m["captured"])
+        arms[label] = {
+            "verdict": arm_verdict,
+            "read_ok": True,
+            "captured": captured,
+            "uncaptured": int(m["uncaptured"]),
+            "bad_sum": int(m["bad_sum"]),
+            "bad_chain": int(m["bad_chain"]),
+            "max_sum_resid": m["max_sum_resid"],
+            "max_chain_resid": m["max_chain_resid"],
+            "window_days": WINDOW_DAYS,
+            "row_cap": ROW_CAP,
+            "cap_reached": captured >= ROW_CAP,
+        }
+    return {
+        "identity": {"tolerance": TOLERANCE, "arms": arms},
+        "attribution": {
+            "ok": attribution is not None,
+            "detail": attribution_detail,
+            "barrier_spec": CANONICAL_BARRIER_SPEC,
+            "uncapped": True,
+            "since": "capture-start (2026-08-31T10:37:58Z); the corpus has no earlier rows",
+            "counts": ({k: int(v) for k, v in attribution.items()} if attribution else None),
+        },
+    }
+
+
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
     if "--show-sql" in argv:
         for label, table, ts_col in ARMS:
             print(f"-- {label}\n{build_sql(table, ts_col, WINDOW_DAYS, ROW_CAP)}\n")
+        print(f"-- attribution (uncapped, unwindowed)\n{build_attribution_sql()}\n")
         return 0
 
     print(f"scorer-input identity — {len(ARMS)} arms, window={WINDOW_DAYS}d, tolerance={TOLERANCE}")
@@ -428,6 +678,33 @@ def main(argv: list[str]) -> int:
         fire("\n".join(lines))
     elif verdict == "PASS":
         clear()
+
+    # ── THE OFF-HOST RECORD (R6) ─────────────────────────────────────────────────────────────
+    #
+    # Read and appended AFTER the alert decision, deliberately: the paging path must not be able
+    # to wait on, or be changed by, a reporting query. The attribution read is the one thing here
+    # that touches the DB again, and it never contributes to `verdict`.
+    attribution, attribution_detail = read_attribution()
+    if attribution is not None:
+        print(
+            "  attribution "
+            f"labeled_emitted={int(attribution['labeled_emitted_any_spec'])} "
+            f"labeled_hold={int(attribution['labeled_hold_any_spec'])} "
+            f"(spec={CANONICAL_BARRIER_SPEC}: "
+            f"{int(attribution['labeled_emitted_canonical'])}/"
+            f"{int(attribution['labeled_hold_canonical'])})  "
+            f"captured_total=(emitted {int(attribution['captured_emitted'])}, "
+            f"hold {int(attribution['captured_hold'])}, "
+            f"band {int(attribution['captured_band'])})  UNCAPPED"
+        )
+    else:
+        print(f"  attribution UNAVAILABLE — {attribution_detail} (verdict unaffected)")
+
+    ok, detail = _append_result(
+        ALERT_ID, verdict, EXIT_FOR[verdict], build_metrics(results, attribution, attribution_detail)
+    )
+    # POSITIVE either way. A run that wrote no record must never look like one that did.
+    print(f"CANARY_RESULT_LOG={'ok ' + detail if ok else 'FAILED ' + detail}")
 
     print(f"SCORER_IDENTITY_VERDICT={verdict}")
     return EXIT_FOR[verdict]

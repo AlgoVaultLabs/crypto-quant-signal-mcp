@@ -78,16 +78,35 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
     // OPS-SCORER-INPUT-PERSISTENCE-W1 R3. Reads hold_decisions for an ARITHMETIC-IDENTITY check
     // only — the five bucket values, raw0, the three adjustment deltas and raw_final, which are
     // the engine's INPUTS and identical in kind to those captured on the non-quarantined arms.
-    // It touches NO counterfactual field: not would_be_side, not suppression_reason, and not
-    // hold_decision_labels, whose whole table is outside its query. Its output is a
-    // SCORER_IDENTITY_VERDICT= token and row COUNTS — never a label, a rate or a return. It is
-    // ops-internal, runs on the host under cron, and reaches no public surface.
+    // It touches NO counterfactual field: not would_be_side, not suppression_reason. Its output
+    // is a SCORER_IDENTITY_VERDICT= token and row COUNTS — never a label value, a rate or a
+    // return. It is ops-internal, runs on the host under cron, and reaches no public surface.
+    //
+    // ── WIDENED 2026-09-04, OPS-SCORER-CAPTURE-DAY3-HEALTH-READOUT-W1 R6 ────────────────────
+    // This row previously also asserted the canary touched "not `hold_decision_labels`, whose
+    // whole table is outside its query". That is NO LONGER TRUE, and the reason is corrected in
+    // the SAME commit as the change — a stale reason is worse than no reason, because it
+    // exonerates a file it no longer describes and the guard rots into a permissive list.
+    //
+    // The canary now also emits the successor's gate quantity: a COUNT of captured rows that
+    // carry a triple-barrier label, on the emitted arm AND on the withheld arm. Architect ruling
+    // 2026-09-04 admits `EDGE-SELL-FEATURE-ATTRIBUTION-W{NEXT}` as the THIRD ratified consumer
+    // of this store, under the SAME three protections as the second
+    // (`EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1`): it pre-registers its own hypotheses, its output
+    // may NEVER be cited for or against the HOLD-discipline hypothesis, and nothing derived from
+    // it reaches public copy.
+    //
+    // What crosses the boundary is therefore still only a CARDINALITY — how many parents are
+    // labelled — never a label value, never a win rate, never a return. The hard boundary the
+    // Observed-Path Exception draws is around counterfactual OUTCOMES; a row count is not one.
+    // The figure travels to host stdout and to one JSON line pulled into the PRIVATE vault; no
+    // public-serving surface reads either.
     //
     // The hold arm cannot simply be dropped from the check: it carries ~117.3k of ~124.7k
     // captured decisions per day (94% of the corpus), so a canary that skipped it would verify
     // the two small arms and print a green PASS over the big one — the dark-guard shape this
     // estate has hit four times.
-    'the R3 arithmetic-identity gate: reads only the scorer INPUT columns + counts, never a counterfactual field or label; ops-internal, no public surface',
+    'the R3 arithmetic-identity gate + the R6 attribution CARDINALITY: reads the scorer INPUT columns and COUNTS of labelled parents, never a counterfactual field, label value, rate or return; ops-internal, no public surface',
   ],
 ]);
 
