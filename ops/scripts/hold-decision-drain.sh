@@ -102,6 +102,49 @@ combine_verdict() {
   printf '%s' "$worst"
 }
 
+# Is the app container up RIGHT NOW? Cheap, and it is the discriminator below.
+container_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CTR"; }
+
+# `docker exec` into a container that is not running exits **1** with
+#   Error response from daemon: container <id> is not running
+# on stderr — the SAME code the labeler uses for its own HOLD_LABEL_VERDICT=FAIL. So the exit code
+# ALONE cannot tell "the labeler ran and failed" from "the labeler never started", and collapsing
+# them publishes a confident wrong verdict.
+#
+# MEASURED 2026-09-04, by this script, on its own first real run: a deploy recreated the container
+# mid-drain; GATE died with 137 and the TEN venues after it each reported exit=1 having executed
+# nothing at all. HOLD_DRAIN_VERDICT=FAIL over ten legs that never ran. FAIL means "observed a
+# failure"; this is "could not observe", which is INDETERMINATE, and the whole point of the token
+# contract is that those two must not share a code.
+#
+# So a non-zero leg is re-classified to 3 when either signal says the container was the cause.
+# BOTH are checked because each alone has a hole: the container may have come BACK by the time we
+# look (a deploy takes ~1-2 min), and the daemon's wording may change.
+leg_was_container_fault() {  # <rc> <captured-output-file>
+  [ "$1" -eq 0 ] && return 1
+  # 137 = 128+SIGKILL. A killed leg did not observe its corpus, whatever it had done so far, and
+  # a deploy recreating the container is the only thing that sends it here. Always indeterminate.
+  [ "$1" -eq 137 ] && return 0
+  container_up || return 0
+  grep -qE 'Error response from daemon:.*(is not running|No such container)' "$2"
+}
+
+# A deploy is a NORMAL event on this host, not an outage: wait a bounded time for the container to
+# come back rather than burning the rest of the venue list. Fails OPEN into INDETERMINATE.
+CTR_WAIT_S="${HOLD_DRAIN_CTR_WAIT_S:-240}"
+await_container() {
+  local waited=0
+  container_up && return 0
+  while [ "$waited" -lt "$CTR_WAIT_S" ]; do
+    sleep 10; waited=$((waited + 10))
+    if container_up; then
+      echo "$LOG_TAG container returned after ${waited}s (a deploy recreates it; this is expected)"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # The declared venue set minus the declared exclusions. An excluded venue passed explicitly is
 # REFUSED, not silently dropped: silently honouring half a request is how an exclusion gets
 # believed to be in force when it is not.
@@ -138,6 +181,25 @@ if [ "${1:-}" = "--self-test" ]; then
   check "absent keys read as dashes, never 0" "-|-|-|-|-|-" "$(parse_ledger '{}')"
   check "unreadable ledger is dashes, never 0" "-|-|-|-|-|-" "$(parse_ledger 'not json')"
   check "a JSON scalar is not a ledger"        "-|-|-|-|-|-" "$(parse_ledger '7')"
+  # leg_was_container_fault — the discriminator that the first live run proved was missing.
+  # `container_up` is stubbed so the classifier is exercised in BOTH container states without a
+  # docker daemon; the grep leg runs for real against a real temp file.
+  tmpout=$(mktemp)
+  printf 'Error response from daemon: container 70c1b9db is not running\n' > "$tmpout"
+  cleanout=$(mktemp)
+  printf 'HOLD_LABEL_VERDICT=FAIL {"considered":10,"written":0}\n' > "$cleanout"
+
+  container_up() { return 0; }   # container UP
+  leg_was_container_fault 0 "$tmpout";   check "rc=0 is never a container fault" 1 "$?"
+  leg_was_container_fault 1 "$cleanout"; check "a real labeler FAIL stays a FAIL" 1 "$?"
+  leg_was_container_fault 1 "$tmpout";   check "the daemon error is caught even if the container came back" 0 "$?"
+  leg_was_container_fault 137 "$cleanout"; check "137 is ALWAYS indeterminate, never a failure" 0 "$?"
+  container_up() { return 1; }   # container DOWN
+  leg_was_container_fault 1 "$cleanout"; check "rc=1 with the container down is a container fault" 0 "$?"
+  leg_was_container_fault 0 "$cleanout"; check "rc=0 stays clean even with the container down" 1 "$?"
+  unset -f container_up
+  rm -f "$tmpout" "$cleanout"
+
   # resolve_venues — the exclusions must be REFUSALS
   check "healthy venues resolve" "GATE HTX" "$(resolve_venues 'GATE,HTX')"
   resolve_venues 'GATE,HL' >/dev/null 2>&1; check "an excluded venue is refused" 2 "$?"
@@ -207,11 +269,25 @@ for v in $VENUES; do
     continue
   fi
 
+  # Re-checked EVERY leg, not once at the top: the pre-flight check answered a question about a
+  # container that no longer exists by the time venue 3 runs.
+  if ! await_container; then
+    echo "$LOG_TAG [$v] SKIPPED — container $CTR down > ${CTR_WAIT_S}s. INDETERMINATE, not a failure."
+    codes+=(3); continue
+  fi
+
+  legout=$(mktemp)
   docker exec "$CTR" node dist/scripts/backfill-hold-decision-labels.js \
     --venue "$v" --since "$SINCE_EPOCH" --require-parts --side sell \
     --per-cell "$PER_CELL" --max-decisions "$MAX_PER_VENUE" \
-    --time-budget-min "$TIME_PER_VENUE_MIN" 2>&1 | sed "s/^/$LOG_TAG [$v] /"
-  rc=${PIPESTATUS[0]}
+    --time-budget-min "$TIME_PER_VENUE_MIN" > "$legout" 2>&1
+  rc=$?
+  sed "s/^/$LOG_TAG [$v] /" "$legout"
+  if leg_was_container_fault "$rc" "$legout"; then
+    echo "$LOG_TAG [$v] rc=$rc was the CONTAINER, not the labeler — re-classified 3 (INDETERMINATE)"
+    rc=3
+  fi
+  rm -f "$legout"
   codes+=("$rc")
 
   after=$(parse_ledger "$(ledger_of "$v")")
