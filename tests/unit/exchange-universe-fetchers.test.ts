@@ -47,14 +47,20 @@ describe('exchange-universe — rich fetchers for the newly-promoted venues', ()
 
   it('fail-soft: a non-promoted / unknown venue returns [] (never throws)', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // WEEX gained a fetcher with OPS-WEEX-PROMOTE-W1, so the fail-soft case now uses the two
+    // venues that genuinely have none: EDGEX and BITMART, both RETIRED.
     await expect(getExchangeTopAssetsWithVolume('EDGEX', 5)).resolves.toEqual([]);
-    await expect(fetchVenueUniverse('WEEX')).resolves.toEqual([]);
+    await expect(fetchVenueUniverse('BITMART' as never)).resolves.toEqual([]);
   });
 
-  it('OI_PROXY_VENUES = the volume-proxy venues (Binance / Aster / BingX)', () => {
+  it('OI_PROXY_VENUES = the volume-proxy venues (Binance / Aster / BingX / XT / WEEX)', () => {
     expect(OI_PROXY_VENUES.has('ASTER')).toBe(true);
     expect(OI_PROXY_VENUES.has('BINGX')).toBe(true);
     expect(OI_PROXY_VENUES.has('BINANCE')).toBe(true);
+    // OPS-WEEX-PROMOTE-W1: WEEX ranks on quoteVolume — its openInterest endpoint is per-symbol
+    // only AND its unit does not reconcile ($10.9B vs $1.09M on contractVal), so a labelled
+    // proxy is the honest option and an uninterpretable magnitude is a Factuality hazard.
+    expect(OI_PROXY_VENUES.has('WEEX')).toBe(true);
     expect(OI_PROXY_VENUES.has('GATE')).toBe(false);
   });
 });

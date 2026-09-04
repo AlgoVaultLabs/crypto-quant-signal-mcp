@@ -41,6 +41,7 @@ const APPROVED: Record<string, string> = {
   PHEMEX: '#7DE95B',
   WHITEBIT: '#F6F0FF',
   XT: '#FFBE40',
+  WEEX: '#D8AE15',
 };
 
 describe('venue brand-colour SoT — exhaustiveness + drift', () => {
@@ -73,11 +74,15 @@ describe('venue brand-colour SoT — exhaustiveness + drift', () => {
     expect(VENUE_BRAND_COLORS.OKX).not.toBe(VENUE_BRAND_COLORS.WHITEBIT);
   });
 
-  it('is keyed by the rendered set (PromotedVenueId), not the wider ExchangeId — no EDGEX/WEEX', () => {
-    // EDGEX/WEEX are ExchangeId literals that are NOT promoted into EXCHANGES and
-    // carry no approved brand colour; they must be absent from the SoT.
+  it('is keyed by the rendered set (PromotedVenueId), not the wider ExchangeId — no EDGEX', () => {
+    // EDGEX is an ExchangeId literal that is NOT promoted into EXCHANGES and carries no
+    // approved brand colour; it must stay absent. It is RETIRED, not merely unpromoted.
+    // WEEX flipped ABSENT→PRESENT with OPS-WEEX-PROMOTE-W1 (2026-09-04) — its approved hex
+    // #D8AE15 comes from WEEX's own media kit and is pinned in APPROVED above. This assertion
+    // only ever RECORDED which ExchangeId values were unpromoted; the load-bearing guard is
+    // `toEqual(APPROVED)`, which pins the whole palette and survives the change unweakened.
     expect(VENUE_BRAND_COLORS).not.toHaveProperty('EDGEX');
-    expect(VENUE_BRAND_COLORS).not.toHaveProperty('WEEX');
+    expect(VENUE_BRAND_COLORS).toHaveProperty('WEEX');
   });
 
   it('venueBrandColor(id) projects the map value for every rendered venue', () => {

@@ -150,14 +150,28 @@ const DELAY_PER_EXCHANGE: Record<ExchangeId, number> = {
   // 0.833). So the conservative reading was not merely prudent; it was correct.
   //
   // Cost, computed rather than feared: a top-100 kline pass is ~240s at 2400ms once the
-  // per-symbol ticker calls collapse into the one bulk `/ticker/24hr` fetch. Every shadow
-  // lane (5m@300s through 1d) and every promoted lane (3m top-15, 5m top-30) still fits
-  // with margin, so WEEX is NOT an HL-class isolated-line venue.
+  // per-symbol ticker calls collapse into the one bulk `/ticker/24hr` fetch.
   //
-  // NOTE this delay is PER-PROCESS. `getVenueBudget('WEEX')` is null (SHADOW_VENUE_BUDGETS
-  // is empty), so two lanes overlapping on the cron grid each honour 2400ms and jointly
-  // deliver ~1200ms. A `weexWeightBudget` row is the cross-process enforcement and is
-  // recorded as BLOCKING for promotion in this wave's precondition audit.
+  // CORRECTED by OPS-WEEX-PROMOTE-W1 (2026-09-04). This block used to end "so WEEX is NOT an
+  // HL-class isolated-line venue". That was FALSE, and it was false because it reasoned about
+  // the SHADOW lane set under a promoted label: the shadow lanes are 5m top-50 + eight top-100,
+  // but the PROMOTED matrix leaves 1h/2h/4h/8h/12h UNCAPPED, and an uncapped pass seeds WEEX's
+  // whole 1023-symbol universe — 3303 req/hour = 55.1 req/min = 275% of the batch share, 2.2x
+  // the figure first reported. The standard matrix would need ~74 req/min: 148% of WEEX's
+  // ENTIRE declared limit, so it does not fit at any conservative reading.
+  //
+  // WEEX IS THEREFORE AN HL-CLASS ISOLATED-LINE VENUE. It runs on its own nine
+  // `--exchange-list WEEX --top 30` lines and is excluded from every shared promoted lane.
+  // A shared-line `--top` could not have worked: `--top` is per-LINE and there is no per-venue
+  // depth here, so capping the shared lanes would have cut 1h+ accrual ~97% for all 14
+  // incumbents — venues that HAVE public rows, which the Data Integrity LAW protects.
+  //
+  // ⚠️ `--exchange WEEX` EXITS 1 — `validSingle` in parseArgs accepts only
+  // HL/BINANCE/BYBIT/OKX/BITGET/ALL. Isolated WEEX lines MUST use `--exchange-list WEEX`.
+  //
+  // NOTE this delay is PER-PROCESS. Two lanes overlapping on the cron grid each honour 2400ms
+  // and jointly deliver ~1200ms, so the cross-process enforcement is `weexWeightBudget` —
+  // MIGRATED into the exhaustive VENUE_BUDGETS record on promotion, values unchanged.
   'WEEX':    2400,
   // PILOT-ADAPTERS-W3B / C2 (2026-05-20): BITMART shadow venue. Binance-style symbol BTCUSDT; 8h cadence.
   'BITMART': 500,
