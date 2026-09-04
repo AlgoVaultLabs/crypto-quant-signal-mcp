@@ -70,6 +70,31 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
     'inventory row documenting the labeler cron + its quarantine; data about the store, no query',
   ],
   [
+    // ADDED 2026-09-04, EDGE-ATTRIBUTION-CORPUS-DRAIN-W1 R2. The firewall was RIGHT to flag this
+    // the moment the wrapper gained a per-venue loop, and the row is narrow on purpose.
+    //
+    // This file is the labeler's own cron driver — it already exists to invoke the ONLY writer of
+    // hold_decision_labels, which is allowlisted two rows above. What is new is that it now names
+    // the table in SQL of its own, for exactly one thing: `SELECT DISTINCT exchange` over rows
+    // captured in the last two days, to derive the venue set it loops.
+    //
+    // What crosses is a VENUE NAME — a DIMENSION, not an observation. The query touches no
+    // counterfactual field: not would_be_side, not suppression_reason, not confidence, and no
+    // label. It is strictly less revealing than the CARDINALITY the 2026-09-04 architect ruling
+    // already admits across this boundary, and its output is a bash variable consumed by
+    // `--venue` on the next line.
+    //
+    // Why not read the venue set from somewhere non-quarantined: the set that matters is "venues
+    // with capturable rows", which only this table knows. capabilities.ts is the promoted-venue
+    // SoT but lives inside the image, and a hardcoded list here would be a duplicated fact that
+    // goes stale the day a venue is promoted — the defect this loop exists to stop having.
+    //
+    // IF THIS FILE EVER READS A COUNTERFACTUAL FIELD, this row stops describing it and must be
+    // REMOVED rather than widened — the failure the row below already records once.
+    'ops/cron/hold-decision-labeler.sh',
+    'the labeler\'s own cron driver; SELECT DISTINCT exchange only — a venue DIMENSION, never a counterfactual field',
+  ],
+  [
     'docs/RUNBOOK-BOOK-LIVENESS-FLIP.md',
     'ops runbook prose naming the capture table as evidence surface; methodology, no figures',
   ],
