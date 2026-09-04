@@ -4,8 +4,7 @@
     "endpoint": "GET https://algovault.com/api/performance-public \u2192 .byExchange[<EXCHANGE>]",
     "captured_at": "2026-06-01T08:00:00Z",
     "purpose": "Public-response-shape SoT for the byExchange map. Promotion (promote-venue.ts) is ADD-ONLY: a newly-promoted venue appears as a new key with the SAME shape. PFE-WR-only \u2014 outcome_return_pct / Phase-E outcome WR must NEVER appear (Data Integrity LAW).",
-    "venue_status_filter": "byExchange exposes status='promoted' venues only; shadow venues are NEVER public",
-    "superseded_note": "OPS-WEEX-PROMOTE-W1 CH5 (2026-09-04): superseded at 15 promoted venues. Kept on disk as history; NOT projected into the knowledge bundle (build-knowledge-json.mjs skips any snapshot carrying superseded_by)."
+    "venue_status_filter": "byExchange exposes status='promoted' venues only; shadow venues are NEVER public"
   },
   "current_keys_promoted_venues": [
     "BINANCE",
@@ -59,5 +58,6 @@
     "pfeWinRate"
   ],
   "allowed_keys_source": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1 \u2014 derived from the PUBLIC surface, never an internal type/DB row/pre-formatter object: live public response, GET /api/performance-public .byExchange entry (2026-08-03). Cross-checked both directions against that response.",
-  "superseded_by": "audits/byExchange-shape-snapshot-2026-09-04.json"
+  "superseded_by": "audits/byExchange-shape-snapshot-2026-09-04.json",
+  "superseded_reason": "Captured at 5 promoted venues; the live surface now serves 15 and 8 per-venue keys (byAsset/byCallType/byTier arrived later), so this asserted a contract NARROWER than reality. It also used `per_venue_allowed_keys`, a field build-knowledge-json.mjs does not read, so it published allowed_keys: [] into the PUBLIC knowledge bundle \u2014 a contract asserting nothing \u2014 silently. Superseded by byExchange-shape-snapshot-2026-09-04.json (OPS-WEEX-PROMOTE-W1 CH5). Kept on disk as history."
 }
