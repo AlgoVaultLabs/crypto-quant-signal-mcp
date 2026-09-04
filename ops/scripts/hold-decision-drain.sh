@@ -26,8 +26,23 @@
 #                                     window is OPEN. HL is also the SMALLEST pool in the
 #                                     work-list (10,924 rows, 2.4%), so excluding it costs
 #                                     almost nothing and protects a live measurement.
-#   OKX    350/350 batch, 2 waits   — saturated.
-#   WEEX    20/20  batch, 7 waits   — saturated; ceiling is 25/min total.
+#                                     RE-CONFIRMED 2026-09-04T12:04Z mid-drain: still 672/700
+#                                     with 10 waits, i.e. persistent, not a sampling accident.
+#   WEEX    20/20  batch, 7 waits   — saturated; the ceiling is 25/min TOTAL, so this is
+#                                     structural rather than a busy moment. Re-confirmed
+#                                     2026-09-04T12:04Z: 20/20 with 16 waits.
+#
+# ── OKX WAS EXCLUDED ON A SAMPLE TOO THIN TO CARRY IT, AND IS BACK ──────────────────────────
+#
+# It was dropped on ONE one-minute window (350/350, 2 waits, 2026-09-04T06:09Z). Re-measured
+# mid-drain at 12:04Z the same ledger read **161/350** — the 06:09 reading was a busy window, not
+# a standing condition, and a permanent exclusion resting on a single sample is the same
+# "a measured baseline is meaningless without its instrument" error this estate keeps paying for.
+# HL and WEEX survive re-measurement; OKX did not, so it is restored. Its pool is not small
+# either: 18,241 eligible post-capture rows, the 6th largest.
+#
+# The general rule this leaves behind: an exclusion here must rest on a REPEATED reading or on a
+# structural fact (WEEX's 25/min ceiling), never on one window.
 #
 # Everything else has real headroom. The order below is BY MEASURED HEADROOM, widest first, so
 # that if the drain is interrupted it has already spent its time where contention was lowest.
@@ -63,9 +78,9 @@ PER_CELL="${HOLD_DRAIN_PER_CELL:-3}"
 MAX_PER_VENUE="${HOLD_DRAIN_MAX_PER_VENUE:-1500}"
 TIME_PER_VENUE_MIN="${HOLD_DRAIN_TIME_PER_VENUE_MIN:-12}"
 
-# Widest measured batch headroom first. See the exclusions block above for HL / OKX / WEEX.
-DEFAULT_VENUES="HTX,GATE,WHITEBIT,BYBIT,BITGET,BINANCE,BINGX,ASTER,KUCOIN,PHEMEX,XT,MEXC"
-EXCLUDED_VENUES="HL,OKX,WEEX"
+# Widest measured batch headroom first. See the exclusions block above for HL / WEEX.
+DEFAULT_VENUES="HTX,GATE,WHITEBIT,BYBIT,BITGET,BINANCE,BINGX,ASTER,KUCOIN,PHEMEX,OKX,XT,MEXC"
+EXCLUDED_VENUES="HL,WEEX"
 
 # ── pure helpers (the artifacts a hermetic self-test would otherwise never execute) ──────────
 
@@ -203,9 +218,24 @@ if [ "${1:-}" = "--self-test" ]; then
   # resolve_venues — the exclusions must be REFUSALS
   check "healthy venues resolve" "GATE HTX" "$(resolve_venues 'GATE,HTX')"
   resolve_venues 'GATE,HL' >/dev/null 2>&1; check "an excluded venue is refused" 2 "$?"
-  resolve_venues 'OKX'     >/dev/null 2>&1; check "OKX is refused"               2 "$?"
+  check "OKX RESOLVES — its exclusion rested on one window and was re-measured" "OKX" "$(resolve_venues 'OKX')"
+  resolve_venues 'HL'      >/dev/null 2>&1; check "HL is refused"                2 "$?"
   resolve_venues 'WEEX'    >/dev/null 2>&1; check "WEEX is refused"              2 "$?"
   resolve_venues ''        >/dev/null 2>&1; check "an empty set is refused"      2 "$?"
+  # POSITIVE MEMBERSHIP, not just absence. The exclusion loop below proves excluded venues are
+  # OUT; nothing proved a drained venue is IN, so a venue could vanish from DEFAULT_VENUES and the
+  # suite would stay green. Found by mutation R2 while restoring OKX — the assertion set was
+  # one-sided, which is the same shape as a guard that only checks the happy path.
+  case ",$DEFAULT_VENUES," in
+    *",OKX,"*) printf 'SELF-TEST: ok   OKX is IN the default set (its exclusion was re-measured)\n' ;;
+    *) printf 'SELF-TEST: FAIL OKX missing from the default set\n'; fails=$((fails+1)) ;;
+  esac
+  # A floor, not an exact count: the set grows when a venue is promoted, and an equality check
+  # would fail on that legitimate change while still catching a silent shrink.
+  dv_n=$(printf '%s' "$DEFAULT_VENUES" | tr ',' ' ' | wc -w | tr -d ' ')
+  if [ "$dv_n" -ge 13 ]; then printf 'SELF-TEST: ok   default set holds %s venues (floor 13)\n' "$dv_n"
+  else printf 'SELF-TEST: FAIL default set shrank to %s venues (floor 13)\n' "$dv_n"; fails=$((fails+1)); fi
+
   # the default set must not contain an excluded venue — a list and a rule that disagree is worse
   # than either alone, and nothing else would catch it
   for v in ${EXCLUDED_VENUES//,/ }; do
