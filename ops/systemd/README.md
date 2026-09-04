@@ -12,6 +12,9 @@ Currently shipping:
 | `algovault-funnel-snapshot.timer`     | Weekly schedule: Monday 10:00 UTC, 15-minute randomized delay.          |
 | `docker-builder-gc.service`           | One-shot size-capped `docker builder prune` (buildkit cache only; image-safe). See §8. |
 | `docker-builder-gc.timer`             | Weekly: Sun 04:23 UTC + up to 1h randomized delay, `Persistent=true`.   |
+| `algovault-bot.service`               | The public Telegram bot's long-running command listener. |
+| `algovault-bot-cron.service`          | One-shot alert-engine tick (per-TF lazy dispatch). |
+| `algovault-bot-cron.timer`            | **Every minute at :10 seconds** — see §9 for why the phase is load-bearing. |
 
 The actual snapshot logic lives in `scripts/write-funnel-snapshot.ts` (owned
 by Teammate 2's scope in this same PR); the commit wrapper is at
@@ -359,3 +362,108 @@ sudo rm /etc/systemd/system/docker-builder-gc.{service,timer}
 sudo systemctl daemon-reload
 # optional: sudo rm /etc/algovault/docker-builder-gc.env
 ```
+
+
+---
+
+## 9. algovault-bot units (`OPS-BOT-DISPATCH-LATENCY-W1` CH4)
+
+These three units ran in production for months with **no committed ancestor in any repo** —
+`git ls-tree -r origin/main` over the algovault-bot repo returns zero `[Unit]` and zero
+`ExecStart` lines, and they are absent from `ops/deploy/algovault-bot.manifest`. That is the
+exact precondition of `OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W1`, where `dispatch_schedule.py`
+was live while existing on no branch and a full-tree rsync silently deleted it. Committing them
+here closes that gap.
+
+`algovault-bot.service` and `algovault-bot-cron.service` are **byte-identical to the live host
+files** — verified with `diff` against `/etc/systemd/system/` before committing, so this commit
+records reality rather than an idealised version of it. Only the timer differs, and only in two
+lines.
+
+### 9.1 What changed in the timer, and why the phase is not cosmetic
+
+```
+-OnCalendar=*:*:00      +OnCalendar=*:*:10
+-AccuracySec=5s         +AccuracySec=1s
+```
+
+The engine dispatches a watch row at `bar_open + offset + grace + jitter`, **rounded up to the
+next tick**. On a `*:*:00` grid the only reachable instants after a bar closes are +0s and +60s,
+so the smallest expressible non-zero offset is a WHOLE MINUTE. That is the entire reason
+`ALGOVAULT_BOT_CLOSE_GRACE_MIN` existed at 1, and the reason a 15m alert could not land sooner
+than bar_close + 60s no matter how the knobs were set.
+
+Bar close +0s is not a safe alternative. Measured on Binance fapi **from this host**: a
+just-closed bar's final `(close, volume)` settles between **+2.13s and +6.27s**, and the edge
+serves NON-MONOTONIC reads out to +6.45s — a new bar appearing, vanishing, and reappearing.
+Dispatching at +0s scores the correct bar with non-final data, and the scorer's volume component
+is a step function over `lastCandleVol / avgCandleVol`, so an under-integrated bar biases it
+downward. The magnitude scales as 1/bar-duration (measured ~4.9% shortfall on a 1m BTC bar,
+implying ~0.08% at 1h), so it is a short-timeframe concern rather than a book-wide one — but it
+is removed entirely by waiting ~10s instead of arguing about it.
+
+**`AccuracySec=1s` is part of the same change, not a tidy-up.** systemd may fire anywhere inside
+the accuracy window, so leaving 5s would turn a 10s target into 10–15s and spend the settle
+margin. Measured over 1620 consecutive ticks the timer already fires within +0.010s..+0.335s, so
+1s is a ceiling this host comfortably meets.
+
+### 9.2 Registration
+
+Deliberately a documented manual step, matching every other unit in this directory. It is NOT
+automated into `ops/scripts/host-deploy.sh`: that tool's `--units` flag runs `daemon-reload` +
+`restart` and has never written a unit file, and the monitoring rules are explicit that an
+unattended job must not perform an unreviewed privileged mutation. Installing a unit into
+`/etc/systemd/system/` is exactly that.
+
+```bash
+# Back up first — the live copies are the only record of the pre-change state.
+for u in algovault-bot.service algovault-bot-cron.service algovault-bot-cron.timer; do
+  sudo cp -a "/etc/systemd/system/$u" "/etc/systemd/system/$u.bak.DISPATCH-LATENCY-W1-$(date -u +%Y%m%dT%H%M%SZ)"
+done
+
+sudo cp /opt/crypto-quant-signal-mcp/ops/systemd/algovault-bot.service        /etc/systemd/system/
+sudo cp /opt/crypto-quant-signal-mcp/ops/systemd/algovault-bot-cron.service   /etc/systemd/system/
+sudo cp /opt/crypto-quant-signal-mcp/ops/systemd/algovault-bot-cron.timer     /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart algovault-bot-cron.timer
+
+# Assert the phase actually took — `daemon-reload` alone does NOT re-arm a running timer.
+systemctl show -p NextElapseUSecRealtime --value algovault-bot-cron.timer
+systemctl list-timers algovault-bot-cron.timer          # NEXT must land on a :10 second
+```
+
+### 9.3 The env half — it must land in the SAME window
+
+The timer phase alone changes nothing user-visible: `CLOSE_GRACE_MIN=1` still adds a minute on
+top of it. Both halves are one change.
+
+```bash
+sudo cp -a /etc/algovault-bot/env "/etc/algovault-bot/env.bak.DISPATCH-LATENCY-W1-$(date -u +%Y%m%dT%H%M%SZ)"
+sudo sed -i 's/^ALGOVAULT_BOT_CLOSE_GRACE_MIN=.*/ALGOVAULT_BOT_CLOSE_GRACE_MIN=0/'   /etc/algovault-bot/env
+sudo sed -i 's/^ALGOVAULT_BOT_JITTER_WINDOW_MIN=.*/ALGOVAULT_BOT_JITTER_WINDOW_MIN=1/' /etc/algovault-bot/env
+```
+
+> ⚠️ **`JITTER_WINDOW_MIN=1`, never `0`.** `dispatch_schedule._bounded_int_env` is default-DENY
+> over `[1, 60)`, so `0` is out of range and falls back to the **default of 3** — silently
+> restoring full jitter while looking like a successful change. `1` is the real "off":
+> `jitter_minutes` returns 0 for any window <= 1. The liveness canary reads the same raw value
+> and would build an EMPTY due-time grid from `0`, so the wrong value is doubly wrong.
+
+### 9.4 Preconditions — none of this is safe without them
+
+| Precondition | Why | Status |
+| --- | --- | --- |
+| Concurrent dispatch + budget >= 104 | `JITTER_WINDOW_MIN=1` deletes the load-spreading primitive `FETCH_BUDGET_PER_MIN` depends on, collapsing ~89 rows (104 at a 4h boundary) onto ONE tick. At the old budget of 30 that drains over four ticks, putting the last cohort at +190s — worse than the +120s being fixed. | Shipped + deployed (`2d9ad14`); measured live at **8.1x** (25 rows in 1.81s vs 14.7s sequential) |
+| `/mcp` limiter exempts the internal caller | ~104 rows is ~115 tool calls plus handshakes in one minute against `max: 120`, and the overflow is a SILENTLY DROPPED ALERT, not a retry. | Committed, **not yet merged/deployed** |
+| `closedbar-w1-liveness` cron moved `:44` -> `:11` | At `:44` it audits the `:30` bar, which carries no 1h cohort and cannot exhibit contention. Its SAMPLE_BLIND arm goes INDETERMINATE on a wrong-bar sample, so the cron move and that script are one change. | Committed, **not yet merged/deployed** |
+
+### 9.5 Rollback
+
+```bash
+sudo cp -a /etc/systemd/system/algovault-bot-cron.timer.bak.DISPATCH-LATENCY-W1-<ts> /etc/systemd/system/algovault-bot-cron.timer
+sudo cp -a /etc/algovault-bot/env.bak.DISPATCH-LATENCY-W1-<ts> /etc/algovault-bot/env
+sudo systemctl daemon-reload && sudo systemctl restart algovault-bot-cron.timer
+```
+
+`FETCH_CONCURRENCY=1` in the same env file independently restores the pre-CH3 sequential tick
+with no redeploy, if the concurrency rather than the phase turns out to be the problem.
