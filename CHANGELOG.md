@@ -5,6 +5,29 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.0] - 2026-09-04
+
+### Added
+- `get_track_record` — a tool that returns the published track record, for clients that bridge tools but not resources. Defaults to the compact aggregate; `include` opts into the per-asset, per-venue and recent-call sections. Same data the `performance://signal-performance` resource serves.
+- `GET /api/plans/public` — an unauthenticated endpoint returning the current free and paid call allowances, so an integrator no longer has to hard-code them.
+- `/.well-known/security.txt` and `/.well-known/api-catalog` are now served; both previously returned 404.
+- A DeepSeek Harness integration guide: https://algovault.com/integrations/deepseek-harness
+
+### Changed
+- A trade call on a book that is not currently trading now returns HOLD instead of a directional action, and the reasoning says why and when it resumes. Previously a still book was described as a flat market.
+- `get_market_regime` no longer reports neutral cross-venue funding when the upstream funding request was refused. A degraded read is now distinguishable from a genuine neutral one.
+- `performance://signal-performance` returns only the venues currently served, and no longer lists a timeframe the engine does not publish.
+- The recording threshold stated in the methodology block now matches the threshold the engine actually applies.
+- The site declares a brand name to search engines and offers a preferred-sources control on the home page.
+
+### Fixed
+- The pricing copy no longer states that HOLD verdicts are unbilled. Quota is counted per call, regardless of verdict.
+- Corrected the DeepSeek Harness install steps, the matching integrations card, and a stale pricing link in one integration tutorial.
+- Repaired the database migration chain so a fresh self-hosted install completes; a missing column previously aborted it partway.
+
+### Removed
+- **BREAKING** — `BITMART` is no longer an accepted value for the `exchange` parameter on `get_trade_call`, `get_trade_signal`, `get_market_regime` and `scan_trade_calls`. Calls passing it now return `-32602 invalid_enum_value` instead of a named refusal. BitMart is retired and the published enum lists only publicly served venues. If you pinned it, switch to a listed venue. Shipped under a minor for the same reason as the v1.28.0 enum change: the venue had already stopped serving before the schema caught up.
+
 ## [1.28.2] - 2026-08-26
 
 ### Added
