@@ -31,8 +31,16 @@ SELECT count(DISTINCT h.decision_id) AS decided_hold_sell_canonical
  WHERE l.barrier_spec = 'tau1.0-floor0.30-v1'
    AND l.label       <> 0            -- decided: the barrier race resolved, not a timeout
    AND h.would_be_side = -1          -- SELL side
-   AND h.raw_final IS NOT NULL;      -- captured parts present (migration 036)
+   AND h.raw0      IS NOT NULL;      -- captured parts present (migration 036)
 ```
+
+**`raw0` and not `raw_final`, and the choice is not arbitrary.** All 13 parts columns are written
+in one atomic insert, so any of them answers "is this row captured" — measured 2026-09-04, zero
+NULLs across 39 of 39 (arm × column) cells. That makes the choice free, and *therefore* it must be
+made once: `scorer-input-identity-canary.py` already keys its captured predicate on `raw0`, so the
+counter that scores the gate and the `--require-parts` filter that selects the rows now name the
+same column. Two columns would have been two derivations of one question, agreeing today and
+drifting later in whichever copy nobody is watching.
 
 | | |
 |---|---|
@@ -65,7 +73,7 @@ for this declaration.
 
 ## 3. Population, and the selection effects that must travel with every figure
 
-Population: `hold_decisions` rows with captured parts (`raw_final IS NOT NULL`, i.e. written on or
+Population: `hold_decisions` rows with captured parts (`raw0 IS NOT NULL`, i.e. written on or
 after `2026-08-31T10:34:35.985Z`, the first parts-bearing row), `would_be_side = -1`, labelled under
 `tau1.0-floor0.30-v1`.
 

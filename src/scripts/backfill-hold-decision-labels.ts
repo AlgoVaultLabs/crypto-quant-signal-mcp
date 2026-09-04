@@ -27,8 +27,15 @@
  * went to rows feature attribution cannot use. The labeler was working hard on data the gate
  * could not consume.
  *
- * **`--require-parts` is the SEMANTIC filter and it is AUTHORITATIVE; `--since` is an index
- * bound.** They are ANDed, so the intersection IS `--require-parts` winning — stated here and
+ * **`--require-parts` (`h.raw0 IS NOT NULL`) is the SEMANTIC filter and it is AUTHORITATIVE;
+ * `--since` is an index
+ * bound.** `raw0` and not `raw_final` ON PURPOSE: `scorer-input-identity-canary.py` — the
+ * instrument that PUBLISHES the pre-registered gate quantity — already keys "is captured" on
+ * `raw0`, and the filter selecting the rows must be the SAME predicate as the counter scoring
+ * them. All 13 parts columns are written in one atomic insert so any would serve; picking a
+ * second one would be a second derivation of one question, and the drifted copy is always the
+ * one nobody watches.
+ * They are ANDed, so the intersection IS `--require-parts` winning — stated here and
  * asserted in the tests rather than left to a reader. The distinction is load-bearing because
  * `--lookback-days`, the pre-existing time filter this pair REFINES rather than replaces, is
  * relative to `now` and floored to whole days and therefore cannot name an absolute epoch:
@@ -289,8 +296,8 @@ function buildEligibleWhere(
     where.push(`h.decided_at >= $${params.length}`);
   }
   // no param either way — a NULL test takes no bind
-  if (partsMode === 'require') where.push('h.raw_final IS NOT NULL');
-  else if (partsMode === 'exclude') where.push('h.raw_final IS NULL');
+  if (partsMode === 'require') where.push('h.raw0 IS NOT NULL');
+  else if (partsMode === 'exclude') where.push('h.raw0 IS NULL');
   return { where, params };
 }
 

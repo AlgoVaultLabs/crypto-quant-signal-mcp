@@ -93,7 +93,7 @@ describe('R1 date + parts work-list filters', () => {
     const { sql, params } = buildWorklistSql(parseCli([]), NOW_SEC);
     expect(sql).toBe(PRE_FLAG_SQL);
     expect(params).toEqual(['tau1.0-floor0.30-v1', 3, 4000]);
-    expect(sql).not.toContain('raw_final');
+    expect(sql).not.toContain('raw0 IS');
     expect(sql).not.toContain('h.decided_at >=');
   });
 
@@ -121,9 +121,9 @@ describe('R1 date + parts work-list filters', () => {
 
   it('--require-parts adds an unparameterised NOT NULL test, written last', () => {
     const { sql, params } = buildWorklistSql(parseCli(['--require-parts']), NOW_SEC);
-    expect(sql).toContain('h.raw_final IS NOT NULL');
+    expect(sql).toContain('h.raw0 IS NOT NULL');
     expect(params).toEqual(['tau1.0-floor0.30-v1', 3, 4000]); // consumes no bind
-    expect(sql.indexOf('h.raw_final IS NOT NULL')).toBeGreaterThan(sql.indexOf('NOT EXISTS'));
+    expect(sql.indexOf('h.raw0 IS NOT NULL')).toBeGreaterThan(sql.indexOf('NOT EXISTS'));
   });
 
   it('the new predicates land AFTER the R2 filters — param numbering preserved', () => {
@@ -143,7 +143,7 @@ describe('R1 date + parts work-list filters', () => {
     // A --since deliberately older than capture start still cannot admit a parts-less row.
     const { sql } = buildWorklistSql(parseCli(['--since', '1', '--require-parts']), NOW_SEC);
     expect(sql).toContain('h.decided_at >= $2');
-    expect(sql).toContain('h.raw_final IS NOT NULL');
+    expect(sql).toContain('h.raw0 IS NOT NULL');
     expect(sql).not.toContain(' OR '); // ANDed — the intersection IS the parts predicate winning
   });
 
@@ -152,9 +152,9 @@ describe('R1 date + parts work-list filters', () => {
     const work = buildWorklistSql(cli, NOW_SEC);
     const gap = buildSinceWithoutPartsSql(cli, NOW_SEC);
     expect(gap.sql.startsWith('SELECT count(*)')).toBe(true);
-    expect(gap.sql).toContain('h.raw_final IS NULL');
+    expect(gap.sql).toContain('h.raw0 IS NULL');
     // scoped to the parts column: `h.exchange IS NOT NULL` is a structural exclusion and MUST stay
-    expect(gap.sql).not.toContain('h.raw_final IS NOT NULL');
+    expect(gap.sql).not.toContain('h.raw0 IS NOT NULL');
     expect(gap.sql).toContain('h.exchange IS NOT NULL');
     // ONE derivation: every eligibility term the work-list carries, the counter carries too
     for (const term of [
