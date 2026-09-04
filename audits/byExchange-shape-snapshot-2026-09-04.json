@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "wave": "OPS-WEEX-PROMOTE-W1 CH5",
+    "supersedes": "audits/byExchange-shape-snapshot-2026-06-01.json",
+    "why": "That snapshot was captured at 5 promoted venues and declared 5 per-venue keys. The live surface now serves 15 venues and 8 per-venue keys (byAsset/byCallType/byTier arrived after it), so it had drifted into asserting a contract narrower than reality. It also used per_venue_allowed_keys, a field name build-knowledge-json.mjs does NOT read — so it published allowed_keys: [] into the PUBLIC knowledge bundle, a contract asserting nothing, silently. This one uses the projector's real field names.",
+    "captured_at": "2026-09-04T07:04:52Z",
+    "promotion_note": "WEEX promoted 2026-09-04T06:44:46Z under a dated operator override. Promotion is ADD-ONLY: a new venue appears as a new key with the SAME shape.",
+    "venue_status_filter": "byExchange exposes status='promoted' venues only; shadow venues are NEVER public"
+  },
+  "endpoint": "GET https://api.algovault.com/api/performance-public -> .byExchange[<EXCHANGE>]",
+  "snapshot_date": "2026-09-04",
+  "current_keys_promoted_venues": ["ASTER","BINANCE","BINGX","BITGET","BYBIT","GATE","HL","HTX","KUCOIN","MEXC","OKX","PHEMEX","WEEX","WHITEBIT","XT"],
+  "allowed_keys": ["byAsset","byCallType","byTier","byTimeframe","count","evaluated","exchange","pfeWinRate"],
+  "per_timeframe_allowed_keys": ["count","evaluated","pfeWinRate"],
+  "forbidden_keys": ["outcome_return_pct", "outcome_price", "phase_e_wr", "phaseEWinRate", "outcome_win_rate", "realized_return", "pnl", "min_buy_sell_sample", "last_eval_at"],
+  "error_contract": {
+    "no_signals": "200 with byExchange {} — never 4xx for a valid GET",
+    "note": "PFE win-rate only. Phase-E outcome WR is INTERNAL and must never appear here (Data Integrity LAW)."
+  },
+  "cache_contract": {
+    "description": "served from getPerformanceStats cache (column-projected); refreshed on the existing perf-stats cadence",
+    "observed_flip_to_consistent_seconds": 19
+  },
+  "consumers": [
+    "landing/track-record (LB_EX_ORDER leaderboard + filter tabs + analyzing chips)",
+    "performance://signal-performance MCP resource",
+    "ops/monitoring/website-drift-manifest.yaml HOMEPAGE_VENUE_COUNT_EXACT + TRACKRECORD_EXCHANGE_COUNT_DTRF_EXACT",
+    "ops/monitoring/promoted-set-drift-canary.py (three-way identity, daily 05:23 UTC)",
+    "scripts/refresh-integrations-numbers.mjs + scripts/render-integrations.mjs (exchange_count)"
+  ],
+  "drift_check_command": "curl -fsS https://api.algovault.com/api/performance-public | jq -e '(.exchange_count==15) and ((.byExchange|keys|length)==15) and (.byExchange|has(\"WEEX\")) and (.shadow_venue_count==0) and ([.byExchange[]|keys[]]|unique|map(select(.==\"outcome_return_pct\" or .==\"outcome_price\"))|length==0)'"
+}

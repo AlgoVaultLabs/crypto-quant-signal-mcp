@@ -57,5 +57,7 @@
     "exchange",
     "pfeWinRate"
   ],
-  "allowed_keys_source": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1 \u2014 derived from the PUBLIC surface, never an internal type/DB row/pre-formatter object: live public response, GET /api/performance-public .byExchange entry (2026-08-03). Cross-checked both directions against that response."
+  "allowed_keys_source": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1 \u2014 derived from the PUBLIC surface, never an internal type/DB row/pre-formatter object: live public response, GET /api/performance-public .byExchange entry (2026-08-03). Cross-checked both directions against that response.",
+  "superseded_by": "audits/byExchange-shape-snapshot-2026-09-04.json",
+  "superseded_reason": "Captured at 5 promoted venues; the live surface now serves 15 and 8 per-venue keys (byAsset/byCallType/byTier arrived later), so this asserted a contract NARROWER than reality. It also used `per_venue_allowed_keys`, a field build-knowledge-json.mjs does not read, so it published allowed_keys: [] into the PUBLIC knowledge bundle \u2014 a contract asserting nothing \u2014 silently. Superseded by byExchange-shape-snapshot-2026-09-04.json (OPS-WEEX-PROMOTE-W1 CH5). Kept on disk as history."
 }
