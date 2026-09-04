@@ -1366,22 +1366,22 @@
       "artifact": "ops/monitoring/closedbar-w1-liveness.sh",
       "kind": "executable",
       "host": "204.168.185.24",
-      "host_path": "/usr/local/bin/closedbar-w1-liveness.sh",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/monitoring/closedbar-w1-liveness.sh",
       "installed_at": [
         {
           "host": "signal-1",
-          "path": "/usr/local/bin/closedbar-w1-liveness.sh",
-          "schedule": "44 * * * *"
+          "path": "/opt/crypto-quant-signal-mcp/ops/monitoring/closedbar-w1-liveness.sh",
+          "schedule": "11 * * * *"
         }
       ],
       "criticality": "load-bearing",
       "repo_resident": true,
-      "schedule": "44 * * * *",
-      "invoked_by": "systemd:transient (systemd-run --on-active, armed per deploy)",
+      "schedule": "11 * * * *",
+      "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "beb9c7d31134e00485e22e9c5d5e9de4f797665ef0237ed1fc2339885cd7cf80",
+      "sha256": "19b160037b8072d2264973b7145489f3d5e09da92bdac53390c3601eb056d690",
       "owner_wave": "SIGNAL-CLOSEDBAR-FLIP-W1",
-      "notes": "Hourly liveness proof that watchlist dispatch is bucket-deterministic and lands in the band the bot is CONFIGURED for. SIGNAL-CLOSEDBAR-FLIP-W1 CH5 fixed three defects at once: (1) the band was hardcoded at '>= 2/3 of the bar', true only for OFFSET_PCT=75 — after the flip to 0 it would have paged CLOSEDBAR_DISPATCH_OFFSET_FAULT on every CORRECT fire; it is now derived from /etc/algovault-bot/env. (2) the probe row was a hardcoded SUBSCRIBER watch (chat 8776880162 ETH/15m/BINANCE) which that subscriber unwatched after 2026-08-02, so the guard resolved nothing and reported RATCHET_REGRESSION — a CRITICAL page caused by a stranger tidying their watchlist; the row is now selected at runtime and an empty corpus is INSUFFICIENT, never a page. (3) it was NEVER ON A CRON — written in SHADOW-W1, run by hand twice, dark ever since; scheduled here at :44 hourly. Emits no verdict token by design: the alert contract owns delivery via send_telegram.sh. 29 self-test assertions, RED-verified 4 ways."
+      "notes": "Hourly liveness proof that watchlist dispatch is bucket-deterministic and lands in the band the bot is CONFIGURED for. SIGNAL-CLOSEDBAR-FLIP-W1 CH5 fixed three defects at once: (1) the band was hardcoded at '>= 2/3 of the bar', true only for OFFSET_PCT=75 — after the flip to 0 it would have paged CLOSEDBAR_DISPATCH_OFFSET_FAULT on every CORRECT fire; it is now derived from /etc/algovault-bot/env. (2) the probe row was a hardcoded SUBSCRIBER watch (chat 8776880162 ETH/15m/BINANCE) which that subscriber unwatched after 2026-08-02, so the guard resolved nothing and reported RATCHET_REGRESSION — a CRITICAL page caused by a stranger tidying their watchlist; the row is now selected at runtime and an empty corpus is INSUFFICIENT, never a page. (3) it was NEVER ON A CRON — written in SHADOW-W1, run by hand twice, dark ever since; scheduled here at :44 hourly. Emits no verdict token by design: the alert contract owns delivery via send_telegram.sh. 29 self-test assertions, RED-verified 4 ways. \u2014 OPS-BOT-DISPATCH-LATENCY-W1 CH1c corrected FIVE fields that had drifted from the running artifact: host_path and installed_at[0].path named /usr/local/bin/closedbar-w1-liveness.sh, a DEAD 16631-byte pre-flip copy the crontab has never invoked, while the recorded sha256 was the digest of the /opt copy \u2014 the row asserted the right hash against the wrong path, which no reconciler check can catch (HASH_DRIFT skips a file it cannot find; ORPHAN runs host\u2192repo). invoked_by claimed systemd:transient while crontab:root has owned it since SIGNAL-CLOSEDBAR-FLIP-W1 CH5. The dead copy is deliberately LEFT IN PLACE, not deleted \u2014 removal is a separate decision this wave was not asked to make. SCHEDULE MOVED :44 \u2192 :11, load-bearing rather than cosmetic: CHECK1 reads each row's CURRENT last_fetched_at, so the cron minute silently decides WHICH bar is audited, and :44 is always the :30 bar \u2014 no 1h cohort, so it cannot exhibit budget contention. Measured: 26 budget-capped ticks in 26h, all at minute :03, none ever sampled. :11 sits in the :06-:15 window where the :00 bar's fires are complete and the :15 bar's have not yet overwritten them. The coupling is now ENFORCED, not documented: bar_open_minute() plus a SAMPLE_BLIND arm make a non-:00 sample INDETERMINATE instead of PASS, because a run that audited the uncontended bar verified nothing. Self-test 53 \u2192 61 assertions; the 8 new ones caught a real defect in bar_open_minute on their FIRST execution (an empty epoch returned 0, which reads as contended and would have silently certified)."
     },
     {
       "id": "algovault-bot-dispatch-schedule",
