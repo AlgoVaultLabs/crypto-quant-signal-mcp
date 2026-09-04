@@ -46,18 +46,69 @@ describe('the indeterminate counter is observable', () => {
 describe('stripe.validateApiKey distinguishes "cannot determine" from "invalid"', () => {
   const src = code(read('../../src/lib/stripe.ts'));
 
+  // OPS-VALIDATE-KEY-INDETERMINATE-W1 CH1 RE-ANCHORED THESE THREE, AND STRENGTHENED THEM.
+  //
+  // They were source-text greps for the LITERAL returns (`return { valid: false, indeterminate:
+  // true }`). CH1 routes every return through the one `project({ state })` projection so the
+  // legacy booleans cannot drift from the state they summarise — which is the same guarantee
+  // these tests exist for, expressed once instead of five times. Grepping for the old literals
+  // would now fail against a STRONGER implementation, so the two that CAN be driven behaviourally
+  // now are, and the one that cannot (the catch block needs an unreachable Stripe) is re-anchored
+  // to the mechanism that replaced it.
+
   it('an unreachable Stripe returns indeterminate, not a bare invalid', () => {
     const c = src.slice(src.indexOf('catch (err)'));
-    expect(c).toMatch(/return \{ valid: false, indeterminate: true \}/);
+    expect(c).toMatch(/return project\(\{ state: 'INDETERMINATE' \}\)/);
   });
 
   it('an unconfigured Stripe is also indeterminate — not-configured is not "invalid"', () => {
-    expect(src).toMatch(/if \(!stripe\) return \{ valid: false, indeterminate: true \}/);
+    expect(src).toMatch(/if \(!stripe\) return project\(\{ state: 'INDETERMINATE' \}\)/);
   });
 
-  it('a genuinely rejected key still returns a plain invalid (the distinction must cut BOTH ways)', () => {
-    // If everything became indeterminate the signal would be worthless.
-    expect(src).toMatch(/return \{ valid: false \}/);
+  it('a genuinely rejected key still returns a determined invalid (the distinction cuts BOTH ways)', async () => {
+    // If everything became indeterminate the signal would be worthless, so this is asserted
+    // BEHAVIOURALLY rather than by grepping for a literal.
+    //
+    // 🛑 Driven through `classifyCustomerSubscriptions`, NOT `validateApiKey`, and the reason is
+    // an ordering this wave deliberately did NOT touch: `validateApiKey` answers INDETERMINATE on
+    // `!stripe` BEFORE it ever reaches the shape check, so in a test environment with no Stripe
+    // configured EVERY key — malformed included — is indeterminate. That ordering is load-bearing:
+    // `license.ts`'s indeterminate branch re-classifies shape itself and returns
+    // `{tier:'free', key, outcome:'MALFORMED'}` with the KEY PRESERVED, which is what keeps an
+    // unexpanded-`${env:AV_API_KEY}` caller out of the anonymous `free:<ipHash>` bucket
+    // (pinned by tests/credential-outcome.test.ts). Reordering to satisfy this test would have
+    // moved a live metering bucket to make an assertion prettier.
+    const { classifyCustomerSubscriptions } = await import('../../src/lib/stripe.js');
+    const r = classifyCustomerSubscriptions('cus_gone', []);
+    expect(r.valid).toBe(false);
+    expect(r.indeterminate, 'a customer with no subscription is DETERMINED, not unknown').toBeUndefined();
+    expect(r.entitlementState).toBe('NOT_ENTITLED');
+    expect(r.reason).toBe('no_subscription');
+  });
+
+  it('PROJECTS the legacy booleans from the state — they cannot disagree', async () => {
+    // The single-derivation pin. `valid` is ENTITLED-only and `indeterminate` is
+    // INDETERMINATE-only BY CONSTRUCTION, so a future state that needs to grant changes one line.
+    const { classifyCustomerSubscriptions } = await import('../../src/lib/stripe.js');
+    const price = process.env.STARTER_PRICE_ID ?? 'price_unknown_to_this_build';
+    const sub = (status: string) => ({ id: 'sub_x', status, items: { data: [{ price: { id: price } }] } });
+
+    for (const [status, expected] of [['canceled', 'NOT_ENTITLED'], ['unpaid', 'NOT_ENTITLED'],
+                                      ['incomplete', 'NOT_ENTITLED'], ['past_due', null]] as const) {
+      const r = classifyCustomerSubscriptions('cus_x', [sub(status)]);
+      // `past_due` resolves to DUNNING only when the Price is recognised; in a build with no
+      // price env vars it degrades to NOT_ENTITLED, which is the safe direction. Either way it is
+      // NEVER `valid`, and that is what this loop pins.
+      if (expected) expect(r.entitlementState).toBe(expected);
+      expect(r.valid).toBe(false);
+      expect(r.indeterminate).toBeUndefined();
+    }
+
+    // An unlisted status neither grants nor revokes — it is an outage, not a verdict.
+    const unknown = classifyCustomerSubscriptions('cus_x', [sub('some_future_stripe_status')]);
+    expect(unknown.entitlementState).toBe('INDETERMINATE');
+    expect(unknown.valid).toBe(false);
+    expect(unknown.indeterminate).toBe(true);
   });
 
   it('the indeterminate branch is COUNTED, not merely logged', () => {

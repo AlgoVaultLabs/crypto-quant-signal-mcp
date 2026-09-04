@@ -244,7 +244,77 @@ export function priceIdFor(plan: PaidPlanId, interval: BillingInterval = 'month'
 
 // ── Types ──
 
+/**
+ * OPS-VALIDATE-KEY-INDETERMINATE-W1 CH1 — the FOUR states a key can be in.
+ *
+ * `valid: boolean` could only ever express two, so four distinct facts were folded into
+ * `{valid:false}`: "no such customer", "their card is failing and Stripe is still dunning them",
+ * "their subscription ended", and "we could not ask Stripe". MEASURED 2026-09-04: a `past_due`
+ * customer (`sub_…Tylz9REY`, dunning since 2026-08-26) was indistinguishable from a deleted one
+ * at every consumer, which is what let the Telegram bot serve them 2,025 alerts across nine days
+ * with 1,987 debits terminally 404'd — unmetered, unwalled, and invisible.
+ *
+ * ENTITLED       an `active`/`trialing` subscription on a recognised Price. Grants the tier.
+ * DUNNING        `past_due`. Stripe is still collecting. Grants NOTHING here — see below — but is
+ *                a fact each consumer may act on with its own predicate.
+ * NOT_ENTITLED   a DETERMINED negative: no customer, no subscription, or one that has ended.
+ * INDETERMINATE  we could not ask, or Stripe answered with a status this build cannot classify.
+ *                Never a fact about the subscriber; always a fact about us.
+ */
+export type EntitlementState = 'ENTITLED' | 'DUNNING' | 'NOT_ENTITLED' | 'INDETERMINATE';
+
+/** WHY a determined negative. Fixed vocabulary — never caller input, never free text. */
+export type NotEntitledReason =
+  | 'malformed_key'
+  | 'no_customer'
+  | 'customer_deleted'
+  | 'no_subscription'
+  | 'subscription_ended'
+  | 'unrecognised_price';
+
+/**
+ * Stripe subscription status → entitlement class. THE one mapping; every consumer projects.
+ *
+ * 🛑 AN UNLISTED STATUS IS `INDETERMINATE`, NOT A DEFAULT EITHER WAY. Stripe may add a status;
+ * defaulting it to NOT_ENTITLED would cut paying customers off on a vendor release, and
+ * defaulting it to ENTITLED would give service away. "We cannot classify this" is the only true
+ * answer, and it is the one answer that neither grants nor revokes.
+ *
+ * `incomplete` is NOT_ENTITLED deliberately: the FIRST payment has not succeeded, so nothing was
+ * ever bought. That is a different fact from `past_due`, where an established subscription's
+ * renewal failed — which is why the two do not share a class.
+ */
+export const SUBSCRIPTION_STATUS_CLASS: Readonly<Record<string, 'ENTITLED' | 'DUNNING' | 'NOT_ENTITLED'>> =
+  Object.freeze({
+    active: 'ENTITLED',
+    trialing: 'ENTITLED',
+    past_due: 'DUNNING',
+    unpaid: 'NOT_ENTITLED',
+    canceled: 'NOT_ENTITLED',
+    incomplete: 'NOT_ENTITLED',
+    incomplete_expired: 'NOT_ENTITLED',
+    paused: 'NOT_ENTITLED',
+  });
+
+/** Which class wins when a customer holds several subscriptions. Best entitlement wins. */
+const STATE_RANK: Readonly<Record<'ENTITLED' | 'DUNNING' | 'NOT_ENTITLED', number>> = Object.freeze({
+  ENTITLED: 3,
+  DUNNING: 2,
+  NOT_ENTITLED: 1,
+});
+
 export interface StripeValidation {
+  /**
+   * 🛑 UNCHANGED CONTRACT, AND DELIBERATELY SO: `valid` is true IFF `entitlementState` is
+   * ENTITLED, and `tier` is set IFF `valid`. Every incumbent consumer — above all
+   * `license.ts:582`'s `if (stripeResult.valid && stripeResult.tier)` — keeps byte-identical
+   * behaviour, and the ratified estate policy that API entitlement is ACTIVE-ONLY
+   * (see `resolveCustomerByApiKey`'s docstring) is preserved rather than quietly reversed.
+   *
+   * The new fields below are PURELY ADDITIVE. They carry the distinction beside the verdict so a
+   * consumer that needs it can read it, which is the same fix `KeyCheck.reason` and
+   * `resolveCustomerByApiKey` already applied to their own sentinel collapses.
+   */
   valid: boolean;
   tier?: 'starter' | 'pro' | 'enterprise';
   customerId?: string;
@@ -257,8 +327,25 @@ export interface StripeValidation {
    *
    * `indeterminate: true` means "could not determine", never "determined invalid". A caller MUST
    * NOT treat it as a tier decision.
+   *
+   * CH1: still present, still exactly this meaning — now PROJECTED from `entitlementState`
+   * rather than decided a second time, so the two can never disagree.
    */
   indeterminate?: true;
+  /** CH1 — the single derivation every other field on this object projects from. */
+  entitlementState?: EntitlementState;
+  /** Set IFF `entitlementState === 'NOT_ENTITLED'`. */
+  reason?: NotEntitledReason;
+  /** The raw Stripe status we classified, when we got one. Diagnostics only — never a predicate. */
+  subscriptionStatus?: string | null;
+  /**
+   * Set IFF `entitlementState === 'DUNNING'`.
+   *
+   * A SEPARATE FIELD, not `tier`, and that is the whole point: `tier` means "granted" to nine
+   * existing call sites and four production consumers. Overloading it to also mean "would be
+   * granted if they paid" is precisely the collapse this chapter exists to undo, one field over.
+   */
+  dunning?: { tier: 'starter' | 'pro' | 'enterprise'; since: string | null; subscriptionId: string };
 }
 
 // ── API Key Generation ──
@@ -295,12 +382,36 @@ export function invalidateCacheForCustomer(customerId: string): void {
 
 // ── Validation ──
 
+/**
+ * OPS-VALIDATE-KEY-INDETERMINATE-W1 CH1 — resolve a key to ONE entitlement state.
+ *
+ * ── WHAT CHANGED, AND WHAT DELIBERATELY DID NOT ────────────────────────────────────────────
+ * The list call is now `status: 'all'` rather than `status: 'active'`. It costs the SAME ONE
+ * request and returns both facts, so neither has to be inferred from the other's absence — the
+ * identical correction `resolveCustomerByApiKey` already made on 2026-08-25 for the identical
+ * customer (`cus_UuBrP1otU51OBm`, a failed Mastercard). That fix landed on one call site; this
+ * is the same defect on the entitlement hot path, which is why it is being fixed at the
+ * GENERATOR and pinned by `scripts/check-subscription-status-sot.mjs` rather than patched again.
+ *
+ * ENTITLEMENT IS STILL ACTIVE-ONLY. `valid` is true IFF the resolved state is ENTITLED, so
+ * `license.ts`, `/mcp`, `referral-accrual` and every other incumbent behave byte-identically.
+ * `resolveCustomerByApiKey`'s docstring RATIFIED that policy ("may this key call the API?
+ * entitlement — active-only is CORRECT") and this chapter does not reverse it. What it does is
+ * stop DESTROYING the reason, so the Telegram bot — whose predicate is legitimately different —
+ * can stop guessing from a bare 404.
+ *
+ * SINGLE DERIVATION. `valid`, `tier`, `indeterminate` and `dunning` are all PROJECTED from
+ * `entitlementState` at the one return below. Two independent derivations of one classification
+ * drift to contradiction, and here the contradiction would be a customer who is `valid:false`
+ * and `entitlementState:'ENTITLED'` at the same time.
+ */
 export async function validateApiKey(apiKey: string): Promise<StripeValidation> {
   // Not configured is "cannot determine", NOT "invalid" — the distinction the caller needs.
-  if (!stripe) return { valid: false, indeterminate: true };
+  if (!stripe) return project({ state: 'INDETERMINATE' });
 
-  // Validate key format to prevent query injection
-  if (!/^[a-zA-Z0-9_]+$/.test(apiKey)) return { valid: false };
+  // Validate key format to prevent query injection. Shape is knowable WITHOUT Stripe, so this
+  // stays a DETERMINED negative even during an outage.
+  if (!/^[a-zA-Z0-9_]+$/.test(apiKey)) return project({ state: 'NOT_ENTITLED', reason: 'malformed_key' });
 
   // Check cache first
   const cached = cache.get(apiKey);
@@ -316,42 +427,143 @@ export async function validateApiKey(apiKey: string): Promise<StripeValidation> 
     });
 
     if (customers.data.length === 0) {
-      const result: StripeValidation = { valid: false };
+      const result = project({ state: 'NOT_ENTITLED', reason: 'no_customer' });
       cache.set(apiKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
       return result;
     }
 
     const customer = customers.data[0];
+    if ('deleted' in customer && customer.deleted) {
+      const result = project({ state: 'NOT_ENTITLED', reason: 'customer_deleted', customerId: customer.id });
+      cache.set(apiKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+      return result;
+    }
 
-    // Check for active subscriptions
+    // ONE list call, `status: 'all'` — see the docblock. STATUS-SOT-OWNER.
     const subscriptions = await stripe.subscriptions.list({
       customer: customer.id,
-      status: 'active',
+      status: 'all',
       limit: 10,
     });
 
-    // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: projects from the ONE price→tier registry, so a newly
-    // added Price (annual, or any future interval) entitles its buyer the moment its env var is
-    // set. The prior inline comparison chain knew only the three monthly ids, so an annual
-    // subscriber resolved to no tier at all and was handed `{valid:false}` — having paid.
-    let tier: PaidPlanId | undefined;
-    for (const sub of subscriptions.data) {
-      const subTier = highestTier(sub);
-      if (subTier && (tier === undefined || TIER_RANK[subTier] > TIER_RANK[tier])) tier = subTier;
-    }
-
-    const result: StripeValidation = tier
-      ? { valid: true, tier, customerId: customer.id }
-      : { valid: false, customerId: customer.id };
-
+    const result = classifyCustomerSubscriptions(customer.id, subscriptions.data);
     cache.set(apiKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
     return result;
   } catch (err) {
     // OPS-ZERO-VS-UNKNOWN-W1: an unreachable Stripe is INDETERMINATE, never "invalid".
     console.error('Stripe validateApiKey error:', err instanceof Error ? err.message : err);
     recordIndeterminate('stripe_validate_api_key');
-    return { valid: false, indeterminate: true };
+    return project({ state: 'INDETERMINATE' });
   }
+}
+
+/** Best-effort period start for a dunning subscription. NEVER throws, NEVER invents a date. */
+function dunningSince(sub: any): string | null {
+  const raw =
+    sub?.items?.data?.[0]?.current_period_start ??
+    sub?.current_period_start ??
+    null;
+  return typeof raw === 'number' && Number.isFinite(raw) ? new Date(raw * 1000).toISOString() : null;
+}
+
+/**
+ * A customer's subscriptions → ONE state. Exported for the unit test, which drives every Stripe
+ * status through it WITHOUT a network call — the branch matrix is the whole contract here and a
+ * live-Stripe-only test could never cover `unpaid` or `incomplete_expired`.
+ *
+ * PRECEDENCE: best entitlement wins (ENTITLED > DUNNING > NOT_ENTITLED), and within ENTITLED the
+ * highest tier by `TIER_RANK`. That is byte-identical to the previous behaviour for any customer
+ * holding an active subscription — which is every customer the old code could see at all.
+ */
+export function classifyCustomerSubscriptions(customerId: string, subs: any[]): StripeValidation {
+  // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: projects from the ONE price→tier registry, so a newly
+  // added Price (annual, or any future interval) entitles its buyer the moment its env var is
+  // set. The prior inline comparison chain knew only the three monthly ids, so an annual
+  // subscriber resolved to no tier at all and was handed `{valid:false}` — having paid.
+  let best: { rank: number; state: 'ENTITLED' | 'DUNNING' | 'NOT_ENTITLED'; sub: any; tier: PaidPlanId | null } | null = null;
+  let sawUnclassifiable = false;
+  let sawSubWithUnknownPrice = false;
+
+  for (const sub of subs) {
+    const status = typeof sub?.status === 'string' ? sub.status : '';
+    const cls = SUBSCRIPTION_STATUS_CLASS[status];
+    if (!cls) {
+      // A status this build has never heard of. We cannot say — and saying either way is worse
+      // than admitting it. Recorded and surfaced as INDETERMINATE below.
+      sawUnclassifiable = true;
+      continue;
+    }
+    const tier = highestTier(sub);
+    if (cls !== 'NOT_ENTITLED' && !tier) sawSubWithUnknownPrice = true;
+    // A grant needs a recognised Price; without one the subscription cannot confer a tier, so it
+    // can never out-rank a subscription that can.
+    const effective: 'ENTITLED' | 'DUNNING' | 'NOT_ENTITLED' = tier ? cls : 'NOT_ENTITLED';
+    const rank = STATE_RANK[effective] * 10 + (tier ? TIER_RANK[tier] : 0);
+    if (!best || rank > best.rank) best = { rank, state: effective, sub, tier };
+  }
+
+  if (sawUnclassifiable && (!best || best.state === 'NOT_ENTITLED')) {
+    // Only INDETERMINATE when the unclassifiable subscription could actually have changed the
+    // answer. A customer with a live `active` subscription plus some future status we do not know
+    // is ENTITLED regardless, and must not be degraded into an outage.
+    recordIndeterminate('stripe_subscription_status_unclassified');
+    return project({ state: 'INDETERMINATE', customerId });
+  }
+
+  if (!best || best.state === 'NOT_ENTITLED') {
+    const reason: NotEntitledReason = subs.length === 0
+      ? 'no_subscription'
+      : sawSubWithUnknownPrice
+        ? 'unrecognised_price'
+        : 'subscription_ended';
+    return project({
+      state: 'NOT_ENTITLED',
+      reason,
+      customerId,
+      subscriptionStatus: typeof best?.sub?.status === 'string' ? best.sub.status : null,
+    });
+  }
+
+  if (best.state === 'DUNNING') {
+    return project({
+      state: 'DUNNING',
+      customerId,
+      subscriptionStatus: 'past_due',
+      dunning: { tier: best.tier as PaidPlanId, since: dunningSince(best.sub), subscriptionId: String(best.sub?.id ?? '') },
+    });
+  }
+
+  return project({
+    state: 'ENTITLED',
+    customerId,
+    tier: best.tier as PaidPlanId,
+    subscriptionStatus: typeof best.sub?.status === 'string' ? best.sub.status : null,
+  });
+}
+
+/**
+ * THE projection. Every `StripeValidation` in this module is built here and nowhere else, so the
+ * legacy booleans cannot drift from the state they are supposed to summarise.
+ *
+ * 🛑 `valid` is ENTITLED-only and `indeterminate` is INDETERMINATE-only, BY CONSTRUCTION. If a
+ * future state needs to grant, it changes this one line — not five return sites.
+ */
+function project(d: {
+  state: EntitlementState;
+  reason?: NotEntitledReason;
+  customerId?: string;
+  tier?: PaidPlanId;
+  subscriptionStatus?: string | null;
+  dunning?: { tier: PaidPlanId; since: string | null; subscriptionId: string };
+}): StripeValidation {
+  const out: StripeValidation = { valid: d.state === 'ENTITLED', entitlementState: d.state };
+  if (d.state === 'ENTITLED' && d.tier) out.tier = d.tier;
+  if (d.state === 'INDETERMINATE') out.indeterminate = true;
+  if (d.reason) out.reason = d.reason;
+  if (d.customerId) out.customerId = d.customerId;
+  if (d.subscriptionStatus !== undefined) out.subscriptionStatus = d.subscriptionStatus;
+  if (d.dunning) out.dunning = d.dunning;
+  return out;
 }
 
 // ── Checkout Session Creation ──
