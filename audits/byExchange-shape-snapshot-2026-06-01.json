@@ -4,7 +4,8 @@
     "endpoint": "GET https://algovault.com/api/performance-public \u2192 .byExchange[<EXCHANGE>]",
     "captured_at": "2026-06-01T08:00:00Z",
     "purpose": "Public-response-shape SoT for the byExchange map. Promotion (promote-venue.ts) is ADD-ONLY: a newly-promoted venue appears as a new key with the SAME shape. PFE-WR-only \u2014 outcome_return_pct / Phase-E outcome WR must NEVER appear (Data Integrity LAW).",
-    "venue_status_filter": "byExchange exposes status='promoted' venues only; shadow venues are NEVER public"
+    "venue_status_filter": "byExchange exposes status='promoted' venues only; shadow venues are NEVER public",
+    "superseded_note": "OPS-WEEX-PROMOTE-W1 CH5 (2026-09-04): superseded at 15 promoted venues. Kept on disk as history; NOT projected into the knowledge bundle (build-knowledge-json.mjs skips any snapshot carrying superseded_by)."
   },
   "current_keys_promoted_venues": [
     "BINANCE",
@@ -57,5 +58,6 @@
     "exchange",
     "pfeWinRate"
   ],
-  "allowed_keys_source": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1 \u2014 derived from the PUBLIC surface, never an internal type/DB row/pre-formatter object: live public response, GET /api/performance-public .byExchange entry (2026-08-03). Cross-checked both directions against that response."
+  "allowed_keys_source": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1 \u2014 derived from the PUBLIC surface, never an internal type/DB row/pre-formatter object: live public response, GET /api/performance-public .byExchange entry (2026-08-03). Cross-checked both directions against that response.",
+  "superseded_by": "audits/byExchange-shape-snapshot-2026-09-04.json"
 }
