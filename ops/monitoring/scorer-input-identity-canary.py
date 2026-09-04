@@ -251,6 +251,20 @@ ATTRIBUTION_KEYS = (
     "labeled_emitted_canonical",
     "labeled_hold_any_spec",
     "labeled_hold_canonical",
+    # EDGE-ATTRIBUTION-CORPUS-DRAIN-W1 R3 — the PRE-REGISTERED GATE QUANTITY, and its denominator.
+    #
+    # `audits/attribution-gate-preregistration-2026-09-04.md` opens
+    # `EDGE-SELL-FEATURE-ATTRIBUTION-W{NEXT}` at >= 5,000 `decided_hold_sell_canonical`. Publishing
+    # it here is the point of publishing it at all: the 2026-09-17T12:00:00Z checkpoint becomes a
+    # READ of `Claude files/canary-results.jsonl` rather than a dispatched wave — the same class of
+    # fix as the R6 change that made this file readable off-host in the first place.
+    #
+    # Its DENOMINATOR ships beside it and is not optional. `decided` excludes timeouts, so the
+    # decided count ALONE cannot separate "few rows labelled" from "many labelled, few resolving",
+    # and those two facts have opposite remedies. Still a CARDINALITY either way — never a label
+    # value, never a rate, never a return, so the counterfactual quarantine is intact.
+    "labeled_hold_sell_canonical",
+    "decided_hold_sell_canonical",
 )
 
 
@@ -287,7 +301,15 @@ def build_attribution_sql(spec: str = CANONICAL_BARRIER_SPEC) -> str:
         f"   AND dl.barrier_spec = '{spec}') AS labeled_emitted_canonical, "
         f"(SELECT count(DISTINCT h.decision_id) {hold_join}) AS labeled_hold_any_spec, "
         f"(SELECT count(DISTINCT h.decision_id) {hold_join} "
-        f"   AND hl.barrier_spec = '{spec}') AS labeled_hold_canonical"
+        f"   AND hl.barrier_spec = '{spec}') AS labeled_hold_canonical, "
+        # The pre-registered gate quantity and its denominator. Same join, same DISTINCT-parent
+        # counting unit; `would_be_side = -1` is SELL and `hl.label <> 0` is decided (the barrier
+        # race resolved rather than timing out). `-1` is the stored encoding, not a display value.
+        f"(SELECT count(DISTINCT h.decision_id) {hold_join} "
+        f"   AND hl.barrier_spec = '{spec}' AND h.would_be_side = -1) AS labeled_hold_sell_canonical, "
+        f"(SELECT count(DISTINCT h.decision_id) {hold_join} "
+        f"   AND hl.barrier_spec = '{spec}' AND h.would_be_side = -1 "
+        f"   AND hl.label <> 0) AS decided_hold_sell_canonical"
     )
 
 
@@ -371,7 +393,7 @@ def check_arm(label: str, table: str, ts_col: str) -> tuple[str, dict[str, float
     return "PASS", row
 
 
-ASSERTION_COUNT = 45
+ASSERTION_COUNT = 50
 
 
 def self_test() -> int:
@@ -493,7 +515,7 @@ def self_test() -> int:
     check("attribution keys the hold arm on hold_decision_id, NEVER signal_id",
           lambda: "hl.hold_decision_id = h.decision_id" in asql and "hl.signal_id" not in asql)
     check("attribution counts DISTINCT PARENTS, not label rows",
-          lambda: asql.count("count(DISTINCT") == 4)
+          lambda: asql.count("count(DISTINCT") == 6)
     check("attribution reads the WITHHELD arm (the ratified third consumer)",
           lambda: "hold_decision_labels" in asql)
     check("attribution filters on the captured predicate, both arms",
@@ -503,7 +525,7 @@ def self_test() -> int:
     # already been bitten by twice (the weight assertion here, the key-order assertion in
     # canary_result_log.py) — it would pass for whatever value the constant happened to hold.
     check("the requested barrier_spec reaches BOTH canonical legs",
-          lambda: asql.count("barrier_spec = 'tau9.9-fixture-v1'") == 2)
+          lambda: asql.count("barrier_spec = 'tau9.9-fixture-v1'") == 4)
     # UNCAPPED is the point of this query: a LIMIT here would silently reintroduce the
     # capped-collection defect the identity query's own cap already demonstrates live.
     check("the attribution query is UNCAPPED — no LIMIT, no window",
@@ -511,23 +533,50 @@ def self_test() -> int:
     check("attribution keys are the declared positional contract",
           lambda: ATTRIBUTION_KEYS == ("captured_emitted", "captured_hold", "captured_band",
                                        "labeled_emitted_any_spec", "labeled_emitted_canonical",
-                                       "labeled_hold_any_spec", "labeled_hold_canonical"))
+                                       "labeled_hold_any_spec", "labeled_hold_canonical",
+                                       "labeled_hold_sell_canonical",
+                                       "decided_hold_sell_canonical"))
 
     def attribution_alias_order_matches() -> bool:
         idx = [asql.index(f"AS {k}") for k in ATTRIBUTION_KEYS]
         return idx == sorted(idx)
     check("the attribution SELECT order matches its parser's key order", attribution_alias_order_matches)
     check("the parser handles the attribution row shape",
-          lambda: parse_row("1|2|3|4|5|6|7", ATTRIBUTION_KEYS)["labeled_hold_canonical"] == 7.0)
+          lambda: parse_row("1|2|3|4|5|6|7|8|9", ATTRIBUTION_KEYS)["decided_hold_sell_canonical"] == 9.0)
 
     def attribution_rejects_identity_shape() -> bool:
-        # A 6-field identity row fed to the 7-field contract must RAISE, not silently short-zip.
+        # A 6-field identity row fed to the 9-field contract must RAISE, not silently short-zip.
         try:
             parse_row("1|2|3|4|5|6", ATTRIBUTION_KEYS)
         except ValueError:
             return True
         return False
     check("the parser REFUSES a wrong-width attribution row", attribution_rejects_identity_shape)
+
+    def attribution_rejects_the_PREVIOUS_width() -> bool:
+        # The 7-field pre-R3 attribution row must ALSO raise. This is the case that actually
+        # bites: a host still running the older query returns a row that is wrong only by being
+        # SHORT, and a short-zip would silently hand every reader `labeled_hold_canonical`'s value
+        # under the gate's name.
+        try:
+            parse_row("1|2|3|4|5|6|7", ATTRIBUTION_KEYS)
+        except ValueError:
+            return True
+        return False
+    check("the parser REFUSES the PRE-R3 7-field row", attribution_rejects_the_PREVIOUS_width)
+
+    # ── EDGE-ATTRIBUTION-CORPUS-DRAIN-W1 R3 — the gate quantity ──
+    #
+    # These four checks each name a defect that would publish a confident WRONG NUMBER under the
+    # pre-registered gate's own name, which is worse than publishing nothing.
+    check("the gate leg selects SELL by its STORED encoding (-1), not a display string",
+          lambda: "h.would_be_side = -1" in asql and "'SELL'" not in asql)
+    check("DECIDED is label <> 0 — a timeout is not a decision",
+          lambda: "hl.label <> 0" in asql)
+    check("the decided leg is a strict SUBSET of its denominator leg",
+          lambda: asql.count("AND h.would_be_side = -1") == 2 and asql.count("hl.label <> 0") == 1)
+    check("the gate quantity is the LAST key, so a short row cannot masquerade as it",
+          lambda: ATTRIBUTION_KEYS[-1] == "decided_hold_sell_canonical")
 
     # ── the off-host RECORD payload (R6) ──
     _rows = [
