@@ -682,7 +682,7 @@ def build_metrics(
             "detail": attribution_detail,
             "barrier_spec": CANONICAL_BARRIER_SPEC,
             "uncapped": True,
-            "since": "capture-start (2026-08-31T10:37:58Z); the corpus has no earlier rows",
+            "since": "capture-start (2026-08-31T10:34:35.985Z, the first parts-bearing row —\n                       MEASURED 2026-09-04, correcting a 10:37:58Z literal that was\n                       3m23s late); the corpus has no earlier rows",
             "counts": ({k: int(v) for k, v in attribution.items()} if attribution else None),
         },
     }
@@ -745,6 +745,18 @@ def main(argv: list[str]) -> int:
             f"captured_total=(emitted {int(attribution['captured_emitted'])}, "
             f"hold {int(attribution['captured_hold'])}, "
             f"band {int(attribution['captured_band'])})  UNCAPPED"
+        )
+        # The PRE-REGISTERED GATE, on its own line and named as such. It is in the JSON record
+        # either way, but the operator's on-host view is this log — a number published only where
+        # nobody looks is the same defect R6 retired one layer down, so it is printed too.
+        print(
+            f"  gate  decided_hold_sell_canonical={int(attribution['decided_hold_sell_canonical'])}"
+            f" / {int(attribution['labeled_hold_sell_canonical'])} labelled"
+            # The THRESHOLD is deliberately NOT restated here. It lives in
+            # audits/attribution-gate-preregistration-2026-09-04.md, and a copy in this file would
+            # be a duplicated fact that goes stale silently — the canary publishes the COUNT and
+            # points at its authority; it never evaluates the gate.
+            f"  (gate: audits/attribution-gate-preregistration-2026-09-04.md)"
         )
     else:
         print(f"  attribution UNAVAILABLE — {attribution_detail} (verdict unaffected)")
