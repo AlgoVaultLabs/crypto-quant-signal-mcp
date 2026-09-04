@@ -1,0 +1,33 @@
+[Unit]
+Description=AlgoVault Bot — alert-engine cron timer (every 1 min, lazy per-TF dispatch handles all 11 TFs)
+Documentation=https://github.com/AlgoVaultLabs/algovault-bot
+
+[Timer]
+# OPS-BOT-DISPATCH-LATENCY-W1 CH4 — PHASED to :10, not left on :00.
+#
+# The engine dispatches a watch row at `bar_open + offset + grace + jitter`, rounded UP to the
+# next tick. On a *:*:00 grid the only reachable instants are bar_open+0s and bar_open+60s, so
+# the smallest non-zero post-close offset expressible is a WHOLE MINUTE — which is why
+# CLOSE_GRACE_MIN existed at 1 and why every alert landed at least a minute late.
+#
+# Bar close + 0s is NOT safe: measured on Binance fapi from this host, a just-closed bar's final
+# (close, volume) settles between +2.13s and +6.27s, and the edge serves NON-MONOTONIC reads out
+# to +6.45s — a new bar appearing, vanishing and reappearing. Dispatching at +0s scores the
+# right bar with non-final data, and the volume component is a step function over
+# lastCandleVol/avgCandleVol, so an under-integrated bar biases it downward.
+#
+# Phasing the TIMER rather than shrinking the grace is what buys a sub-minute offset: at :10 the
+# first reachable instant after bar close is bar_open+10s, past the measured settle tail with
+# ~3.7s of margin, and CLOSE_GRACE_MIN can then be 0.
+#
+# AccuracySec=1s, not the previous 5s. systemd may fire anywhere inside the accuracy window, so
+# 5s would turn a 10s target into 10-15s and eat the settle margin. Measured over 1620
+# consecutive ticks the timer already fired within +0.010s..+0.335s, so 1s is a ceiling this
+# host comfortably meets, not a tightening it has to strain for.
+OnCalendar=*:*:10
+AccuracySec=1s
+Persistent=false
+Unit=algovault-bot-cron.service
+
+[Install]
+WantedBy=timers.target

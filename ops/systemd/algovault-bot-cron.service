@@ -1,0 +1,21 @@
+[Unit]
+Description=AlgoVault Bot — alert-engine cron tick (per-TF lazy dispatch)
+Documentation=https://github.com/AlgoVaultLabs/algovault-bot
+After=network-online.target algovault-bot.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=algovault-bot
+Group=algovault-bot
+WorkingDirectory=/opt/algovault-bot
+EnvironmentFile=/etc/algovault-bot/env
+ExecStart=/opt/algovault-bot/.venv/bin/python -m algovault_bot.alert_engine
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/algovault-bot /var/lib/algovault-bot
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=algovault-bot-cron
