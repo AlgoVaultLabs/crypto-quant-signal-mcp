@@ -120,6 +120,7 @@ import { runAsBatch, runAsCaller } from './lib/upstream-weight-budget.js';
 import { listVenues } from './lib/venue-store.js';
 import { checkBotInternalAuth } from './lib/bot-auth.js';
 // PRICING-BOT-DELIVERY-METERING-W1 CH3: /api/entitlement/* route registrar.
+import { projectEntitlementHttp } from './lib/entitlement-http.js';
 import { registerEntitlementRoutes } from './lib/entitlement-api.js';
 import { registerOpsBuildRoute } from './lib/ops-build-api.js';
 // GROWTH-TG-QUOTA-PARITY-W1 CH1: GET /api/plans/public — the plan-ladder read surface.
@@ -3817,15 +3818,14 @@ async function startHttp() {
     if (!apiKey) {
       return res.status(400).json({ error: 'api_key_required' });
     }
+    // OPS-VALIDATE-KEY-INDETERMINATE-W1 CH2 — ONE projection, shared with /api/entitlement/*.
+    // The `if (!valid || !tier) 404` this replaces answered a bare 404 for FOUR different facts,
+    // including a Stripe outage that `validateApiKey` had already flagged `indeterminate`.
     const result = await validateApiKey(apiKey);
-    if (!result.valid || !result.tier) {
-      return res.status(404).json({ valid: false });
-    }
-    return res.json({
-      valid: true,
-      customer_id: result.customerId || null,
-      tier: result.tier,
-    });
+    const p = projectEntitlementHttp(result);
+    // `customer_id: null` is preserved for the ENTITLED shape the bot has always parsed.
+    if (p.state === 'ENTITLED' && p.body.customer_id === undefined) p.body.customer_id = null;
+    return res.status(p.status).json(p.body);
   });
 
   // PRICING-BOT-DELIVERY-METERING-W1 CH3: the entitlement routes register HERE, beside

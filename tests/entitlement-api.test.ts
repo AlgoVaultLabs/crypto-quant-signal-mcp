@@ -42,11 +42,33 @@ beforeEach(async () => {
   vi.resetModules();
   // The route resolves a key's tier through stripe.validateApiKey. Mocking it keeps these tests
   // hermetic and makes "unknown key" a deterministic input rather than a network outcome.
+  //
+  // OPS-VALIDATE-KEY-INDETERMINATE-W1 CH2 — THE DOUBLE NOW RETURNS THE REAL FOUR-STATE SHAPE.
+  // It previously returned `{valid:true|false}` only, which is a shape the real function can no
+  // longer produce: every return in `validateApiKey` goes through the one `project()` and always
+  // carries `entitlementState`. `projectEntitlementHttp` treats an ABSENT state as INDETERMINATE
+  // (a build that predates CH1 cannot be trusted to have meant "determined negative"), so a stale
+  // double answered 503 for everything — which is the double lying, not the route misbehaving.
+  //
+  // Key prefixes select the state, so every branch is reachable from a test:
+  //   av_live_starter_… / pro / enterprise  → ENTITLED
+  //   av_live_dunning_…                     → DUNNING   (past_due, still being collected)
+  //   av_live_indeterminate_…               → INDETERMINATE (Stripe unreachable)
+  //   anything else                         → NOT_ENTITLED
   vi.doMock('../src/lib/stripe.js', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../src/lib/stripe.js')>()),
     validateApiKey: async (k: string) => {
       const m = /^av_live_(starter|pro|enterprise)_/.exec(k);
-      return m ? { valid: true, tier: m[1], customerId: `cus_${m[1]}` } : { valid: false };
+      if (m) return { valid: true, entitlementState: 'ENTITLED', tier: m[1], customerId: `cus_${m[1]}`, subscriptionStatus: 'active' };
+      if (/^av_live_dunning_/.test(k)) {
+        return {
+          valid: false, entitlementState: 'DUNNING', customerId: 'cus_dunning',
+          subscriptionStatus: 'past_due',
+          dunning: { tier: 'starter', since: '2026-08-26T12:37:05.000Z', subscriptionId: 'sub_dunning' },
+        };
+      }
+      if (/^av_live_indeterminate_/.test(k)) return { valid: false, entitlementState: 'INDETERMINATE', indeterminate: true };
+      return { valid: false, entitlementState: 'NOT_ENTITLED', reason: 'no_customer' };
     },
   }));
 
@@ -121,9 +143,66 @@ describe('400s — default-deny on every input', () => {
   });
 
   it('404 on an unknown key, byte-identical to the validate-key shape', async () => {
+    // OPS-VALIDATE-KEY-INDETERMINATE-W1 CH2 — the body GREW, deliberately, and this assertion is
+    // updated rather than relaxed. `{valid:false}` alone was the collapse: it was the answer for
+    // "no such customer", "their card is failing", "their subscription ended" AND "we could not
+    // reach Stripe". `valid:false` is still there for every incumbent parser; `entitlement_state`
+    // and `reason` are what stop the four facts from being one.
     const r = await post({ api_key: 'not-a-real-key', channel: 'bot', idempotency_key: 'k' });
     expect(r.status).toBe(404);
-    expect(await r.json()).toEqual({ valid: false });
+    expect(await r.json()).toEqual({
+      valid: false,
+      entitlement_state: 'NOT_ENTITLED',
+      reason: 'no_customer',
+    });
+  });
+
+  it('503 — NOT 404 — when Stripe could not be asked, and the debit stays retryable', async () => {
+    // THE ROW THIS WHOLE WAVE EXISTS FOR. A 404 is TERMINAL to entitlement_drain.py: it stamps
+    // `key_invalid_404` and the debit is never charged and never retried. Answering 404 for an
+    // outage silently forgives revenue and, on the link lifecycle, reads as a determined negative
+    // against a paying customer. 5xx is what the live bot already maps to INDETERMINATE.
+    const r = await post({ api_key: 'av_live_indeterminate_x', channel: 'bot', idempotency_key: 'k' });
+    expect(r.status).toBe(503);
+    const b = await r.json();
+    expect(b.entitlement_state).toBe('INDETERMINATE');
+    expect(b.retryable).toBe(true);
+    expect(b.valid).toBe(false);
+  });
+
+  it('DUNNING is CHARGED at 200, not forgiven at 404 — the revenue fix', async () => {
+    // Measured 2026-09-04: 1,987 debits for one `past_due` customer were stamped terminal and
+    // never charged, while 2,025 alerts went out. A dunning customer is one Stripe is still
+    // collecting from; they are metered, not served for free and not cut off.
+    const r = await post({ api_key: 'av_live_dunning_x', channel: 'bot', idempotency_key: 'dun-1' });
+    expect(r.status).toBe(200);
+    const b = await r.json();
+    expect(b.outcome).toBe('CHARGED');
+    expect(b.entitlement_state).toBe('DUNNING');
+    expect(b.tier).toBe('starter');
+    expect(b.used).toBeGreaterThan(0);
+    expect(b.dunning.since).toBe('2026-08-26T12:37:05.000Z');
+  });
+
+  it('the four states are distinguishable from the wire — status ALONE is not the discriminant', async () => {
+    // ENTITLED and DUNNING deliberately share 200, so a consumer branching on the status code is
+    // still collapsing two states. The PAIR is what must be unique, and `entitlement_state` must
+    // be present on every response — including the ones that already had a body.
+    const seen = new Map<string, string>();
+    for (const [key, expected] of [
+      ['av_live_starter_a', 'ENTITLED'],
+      ['av_live_dunning_a', 'DUNNING'],
+      ['not-a-real-key', 'NOT_ENTITLED'],
+      ['av_live_indeterminate_a', 'INDETERMINATE'],
+    ] as const) {
+      const r = await post({ api_key: key, channel: 'bot', idempotency_key: `sig-${key}` });
+      const b = await r.json();
+      expect(b.entitlement_state, `${key} must carry a state`).toBe(expected);
+      const pair = `${r.status}:${b.entitlement_state}`;
+      expect(seen.has(pair), `two states collapsed onto ${pair}`).toBe(false);
+      seen.set(pair, key);
+    }
+    expect(seen.size).toBe(4);
   });
 });
 

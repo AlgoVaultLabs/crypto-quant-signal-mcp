@@ -23,6 +23,7 @@ import { checkBotInternalAuth } from './bot-auth.js';
 import { validateApiKey } from './stripe.js';
 import { consumeEntitlement, readEntitlement } from './entitlement.js';
 import { asChannelId } from './entitlement-channels.js';
+import { projectEntitlementHttp } from './entitlement-http.js';
 import { PLANS, DEFAULT_UPGRADE_PLAN, type PaidPlanId } from './plans.js';
 
 export function registerEntitlementRoutes(app: Express): void {
@@ -38,6 +39,18 @@ export function registerEntitlementRoutes(app: Express): void {
   // business logic lives here.
   //
   // 🛑 Neither route writes `request_log`. A debit is not a request; see the note in entitlement.ts.
+
+  /**
+   * The state fields merged onto a 200. Deliberately a SUBSET of the projection's body: `valid`
+   * is omitted because a 200 from these routes has always meant "we answered", never "entitled",
+   * and adding it would change a field four-month-old clients already parse.
+   */
+  function stateFields(p: { state: string; body: Record<string, unknown> }): Record<string, unknown> {
+    const out: Record<string, unknown> = { entitlement_state: p.state };
+    if (p.body.dunning !== undefined) out.dunning = p.body.dunning;
+    if (p.body.subscription_status !== undefined) out.subscription_status = p.body.subscription_status;
+    return out;
+  }
 
   /** `Infinity` is not valid JSON — `JSON.stringify` emits `null` silently. Make it explicit. */
   const finiteOrNull = (n: number): number | null => (Number.isFinite(n) ? n : null);
@@ -102,15 +115,29 @@ export function registerEntitlementRoutes(app: Express): void {
     const rawUnits = Number(body.units ?? 1);
     const units = Number.isFinite(rawUnits) && rawUnits >= 1 ? Math.floor(rawUnits) : 1;
 
+    // OPS-VALIDATE-KEY-INDETERMINATE-W1 CH2/CH4 — the ONE projection, and the revenue fix.
+    //
+    // The `if (!valid || !tier) 404` this replaces was terminal to the drainer: it stamped
+    // `key_invalid_404` and the debit was never charged and never retried. A DUNNING customer
+    // therefore received unlimited free deliveries for as long as Stripe kept dunning them —
+    // measured at 1,987 uncharged debits over nine days.
+    //
+    // `chargeableTier` is what decides, NOT `valid`. Deriving the meter from `valid` is exactly
+    // what produced the leak: a customer can be un-ENTITLED for API access and still owe us for
+    // every alert we deliver while their card is being retried.
     const result = await validateApiKey(apiKey);
-    if (!result.valid || !result.tier) return res.status(404).json({ valid: false });
+    const p = projectEntitlementHttp(result);
+    if (!p.chargeableTier) return res.status(p.status).json(p.body);
 
     const consumed = await consumeEntitlement({
-      trackerKey: apiKey, tier: result.tier as LicenseTier, channel, units, idempotencyKey,
+      trackerKey: apiKey, tier: p.chargeableTier as LicenseTier, channel, units, idempotencyKey,
     });
     // 200 for ALL FOUR outcomes — these are business outcomes, not transport failures. A 5xx must
     // mean the server broke, because that is the distinction the client's retry logic keys on.
-    return res.json(entitlementBody(consumed.outcome, consumed.decision));
+    // `entitlement_state` rides along so a 200 still says WHICH kind of 200 it is. Without it a
+    // charged DUNNING debit is indistinguishable from a charged ENTITLED one, and CH3's link
+    // lifecycle would have nothing to read.
+    return res.json({ ...entitlementBody(consumed.outcome, consumed.decision), ...stateFields(p) });
   });
 
   app.get('/api/entitlement/state', async (req, res) => {
@@ -123,10 +150,11 @@ export function registerEntitlementRoutes(app: Express): void {
     if (!channel) return res.status(400).json({ error: 'unknown_channel' });
 
     const result = await validateApiKey(apiKey);
-    if (!result.valid || !result.tier) return res.status(404).json({ valid: false });
+    const p = projectEntitlementHttp(result);
+    if (!p.chargeableTier) return res.status(p.status).json(p.body);
 
     // No charge, no claim — the mirror-refresh poll for an idle subscriber.
-    const decision = readEntitlement(apiKey, result.tier as LicenseTier, channel);
-    return res.json(entitlementBody('READ', decision));
+    const decision = readEntitlement(apiKey, p.chargeableTier as LicenseTier, channel);
+    return res.json({ ...entitlementBody('READ', decision), ...stateFields(p) });
   });
 }
