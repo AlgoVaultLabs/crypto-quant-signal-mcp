@@ -853,9 +853,27 @@ export async function getCustomerByApiKey(apiKey: string): Promise<{ customerId:
 export const EMAIL_RE = /^[^\s@'"\\]+@[^\s@'"\\]+\.[^\s@'"\\]+$/;
 
 /**
- * Look up an active-subscription customer by billing email.
- * Returns the apiKey + tier so the recovery handler can fire the email.
- * Returns null on no-match, no-active-sub, missing-api-key-metadata, or invalid email format.
+ * Look up a subscriber by billing email for KEY RECOVERY. Returns apiKey + tier so the recovery
+ * handler can fire the email. Null on no-match, no subscription, missing api_key metadata, an
+ * ended subscription, or an invalid email format.
+ *
+ * ── 🛑 THIS IS REACHABILITY, NOT ENTITLEMENT ──────────────────────────────────────────────────
+ * OPS-VALIDATE-KEY-INDETERMINATE-W1 CH5. This listed `status: 'active'` and returned null for
+ * anything else, so a `past_due` customer who lost their API key COULD NOT RECOVER IT — locked
+ * out of the self-service page by the same one status change that locked
+ * `cus_UuBrP1otU51OBm` out of their billing portal on 2026-08-24.
+ *
+ * `resolveCustomerByApiKey`'s docstring already enumerated this exact taxonomy on 2026-08-25:
+ *
+ *     "may this key call the API?"        entitlement  — active-only is CORRECT
+ *     "can we email this person?"         reachability — active-only is WRONG
+ *
+ * and this function is the second question. It was simply never revisited, which is why the fix
+ * is now pinned by `scripts/check-subscription-status-sot.mjs` instead of by a third docstring.
+ *
+ * DUNNING QUALIFIES, ENDED DOES NOT. A customer Stripe is still collecting from still owns their
+ * key; one whose subscription is `canceled`/`unpaid` is not owed a live credential by email.
+ * That predicate is `classifyCustomerSubscriptions`', not a second copy of the status list.
  */
 export async function getCustomerByEmail(email: string): Promise<{ apiKey: string; tier: string } | null> {
   if (!stripe) return null;
@@ -869,15 +887,18 @@ export async function getCustomerByEmail(email: string): Promise<{ apiKey: strin
     });
     if (customers.data.length === 0) return null;
     const customer = customers.data[0];
+    if ('deleted' in customer && customer.deleted) return null;
     const apiKey = customer.metadata?.api_key;
     if (!apiKey) return null;
 
+    // ONE list call, `status: 'all'`, classified by the SoT. STATUS-SOT-OWNER.
     const subs = await stripe.subscriptions.list({
       customer: customer.id,
-      status: 'active',
+      status: 'all',
       limit: 10,
     });
-    if (subs.data.length === 0) return null;
+    const state = classifyCustomerSubscriptions(customer.id, subs.data).entitlementState;
+    if (state !== 'ENTITLED' && state !== 'DUNNING') return null;
 
     const tier = (customer.metadata?.tier as string) || 'starter';
     return { apiKey, tier };
@@ -973,6 +994,10 @@ export async function countActiveSubscriptionsByTier(now: number = Date.now()): 
   try {
     const resolved: ResolvedSubscription[] = [];
     // Stripe SDK async iterator auto-pages through every active subscription.
+    // STATUS-SOT-EXEMPT: a CENSUS of active subscriptions is the question being asked, not an
+    // entitlement or reachability decision about any one customer. Widening it would change a
+    // PUBLISHED headline number, which is a Data-Integrity change needing its own wave — the
+    // dunning cohort's invisibility here is filed as OPS-CENSUS-DUNNING-COHORT-W{NEXT}.
     for await (const sub of stripe.subscriptions.list({ status: 'active', limit: 100 })) {
       // ONE resolver for tier AND interval (PRICING-ANNUAL-AND-HOLD-PROMISE-W1 collapsed the
       // 4 copies of the tier precedence; OPS-STRIPE-SUBSCRIPTION-TRUTH-W1 added the cadence to

@@ -1322,6 +1322,10 @@ export async function backfillSubscriberIntervals(
 
   // customerId → what Stripe says they actually bought.
   const truth = new Map<string, { tier: string; interval: StoredBillingInterval }>();
+  // STATUS-SOT-EXEMPT: a backfill of what customers BOUGHT, keyed on live subscriptions. This
+  // writes `subscriber_profiles.tier`, and the status column beside it is maintained by the
+  // `customer.subscription.updated` webhook — which is where `past_due` already reaches the
+  // record. Widening this loop would duplicate that path, not fix a gap.
   for await (const sub of stripe.subscriptions.list({ status: 'active', limit: 100 })) {
     const cid = typeof sub.customer === 'string' ? sub.customer : (sub.customer as { id?: string })?.id;
     const r = resolveSubscription(sub as never);
