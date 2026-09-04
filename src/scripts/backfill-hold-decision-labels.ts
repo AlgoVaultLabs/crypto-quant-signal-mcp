@@ -10,10 +10,37 @@
  *        [--timeframe 15m] [--barrier-spec tau1.0-floor0.30-v1] [--per-cell N]
  *        [--max-decisions N] [--lookback-days N] [--time-budget-min N]
  *        [--side buy|sell] [--conf-min N] [--conf-max N]
+ *        [--since <ISO8601|epoch-seconds>] [--require-parts]
  *
  * `--side` / `--conf-min` / `--conf-max` (EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1 R2) narrow the
  * WORK-LIST only, for dedicated band-targeted backfills; default-off, byte-identical SQL when
  * absent, barrier arithmetic untouched.
+ *
+ * ── `--since` AND `--require-parts` (EDGE-ATTRIBUTION-CORPUS-DRAIN-W1 R1) ────────────────────
+ *
+ * Same contract: work-list SQL only, default-off, byte-identical when absent.
+ *
+ * They exist because the work-list is `ROW_NUMBER() … ORDER BY h.decided_at ASC` with
+ * `rn <= perCell`, so it takes the OLDEST row in every cell first. After migration 036 added the
+ * 13 scorer-parts columns (2026-08-31) the oldest rows are precisely the ones carrying NO parts —
+ * measured 2026-09-04, only 17.4% of this labeler's output reached a captured parent while 82.6%
+ * went to rows feature attribution cannot use. The labeler was working hard on data the gate
+ * could not consume.
+ *
+ * **`--require-parts` is the SEMANTIC filter and it is AUTHORITATIVE; `--since` is an index
+ * bound.** They are ANDed, so the intersection IS `--require-parts` winning — stated here and
+ * asserted in the tests rather than left to a reader. The distinction is load-bearing because
+ * `--lookback-days`, the pre-existing time filter this pair REFINES rather than replaces, is
+ * relative to `now` and floored to whole days and therefore cannot name an absolute epoch:
+ * measured 2026-09-04 against the exact 461,469-row post-capture target, `--lookback-days 4`
+ * over-included 24,604 parts-less rows and `--lookback-days 3` excluded 97,681 wanted ones, an
+ * error drifting ~122,000 rows/day as `now` advances. A date is a PROXY for "has parts"; only the
+ * parts predicate is the thing itself, and it cannot drift if capture is paused and resumed.
+ *
+ * The two agreeing is a FACT about today, not a guarantee — measured 2026-09-04, post-capture rows
+ * with NULL parts = 0 and pre-capture rows with parts = 0. So the run evidence carries
+ * `since_admitted_without_parts`: the count `--since` would have admitted that `--require-parts`
+ * rejects. A future divergence becomes a number in the log instead of a silent filter.
  *
  * ── THE QUARANTINE IS THE POINT OF THIS FILE BEING A SEPARATE FILE ───────────────────────────
  *
@@ -95,6 +122,11 @@ interface Cli {
   side?: 'buy' | 'sell';
   confMin?: number;
   confMax?: number;
+  /** EDGE-ATTRIBUTION-CORPUS-DRAIN-W1 R1 — additive, default-off, same contract as the three
+   *  above. `requireParts` is AUTHORITATIVE over `since`: they are ANDed, so the intersection is
+   *  the parts predicate winning. See the header for why a date is only a proxy for it. */
+  since?: number;
+  requireParts?: boolean;
 }
 
 interface HoldRow {
@@ -146,6 +178,26 @@ export function parseCli(argv: string[]): Cli {
   if (confMin !== undefined && confMax !== undefined && confMin > confMax) {
     throw new Error(`--conf-min (${confMin}) must be <= --conf-max (${confMax})`);
   }
+  // `--since` accepts an absolute instant in either notation. DEFAULT-DENY on anything else: a
+  // silently-mis-parsed bound would point the drain at the wrong era and report a confident wrong
+  // number. The digits-only branch is matched by REGEX before Number(), because Number('0x1') is
+  // 1 and parseFloat('0x1') is 0 — both finite, both 1970, neither an error.
+  const sinceRaw = val('--since');
+  let since: number | undefined;
+  if (sinceRaw !== undefined) {
+    if (/^\d{1,11}$/.test(sinceRaw)) {
+      since = Number(sinceRaw);
+    } else {
+      const ms = Date.parse(sinceRaw);
+      if (!Number.isFinite(ms)) {
+        throw new Error(`--since must be ISO8601 or epoch-seconds, got '${sinceRaw}'`);
+      }
+      since = Math.floor(ms / 1000);
+    }
+    if (!Number.isInteger(since) || since <= 0) {
+      throw new Error(`--since must resolve to a positive epoch-second, got '${sinceRaw}'`);
+    }
+  }
   return {
     check: has('--check'),
     specs,
@@ -159,6 +211,8 @@ export function parseCli(argv: string[]): Cli {
     side: sideSel,
     confMin,
     confMax,
+    since,
+    requireParts: has('--require-parts') ? true : undefined,
   };
 }
 
@@ -175,7 +229,21 @@ export function parseCli(argv: string[]): Cli {
  * handles this with an explicit `forwardAsc.length < W` guard; here it is also excluded in SQL so
  * the budget is never spent fetching candles that cannot yield a label.
  */
-export function buildWorklistSql(cli: Cli, nowSec: number): { sql: string; params: unknown[] } {
+/**
+ * The eligibility predicate — ONE derivation, two consumers.
+ *
+ * `buildWorklistSql` fetches rows with it; `buildSinceWithoutPartsSql` counts the rows `--since`
+ * admits that `--require-parts` rejects, which is the SAME predicate with the parts test inverted.
+ * Writing that predicate twice would let the measurement of a filter drift away from the filter,
+ * and the drifted copy is the one nobody watches.
+ *
+ * `partsMode`: `'require'` ⇒ `IS NOT NULL` · `'exclude'` ⇒ `IS NULL` · `'off'` ⇒ no parts test.
+ */
+function buildEligibleWhere(
+  cli: Cli,
+  nowSec: number,
+  partsMode: 'require' | 'exclude' | 'off',
+): { where: string[]; params: unknown[] } {
   const where: string[] = [
     'h.would_be_side <> 0',
     'h.exchange IS NOT NULL',
@@ -207,6 +275,27 @@ export function buildWorklistSql(cli: Cli, nowSec: number): { sql: string; param
     params.push(cli.confMax);
     where.push(`h.confidence <= $${params.length}`);
   }
+  // EDGE-ATTRIBUTION-CORPUS-DRAIN-W1 R1 — appended AFTER every pre-existing conditional and
+  // BEFORE the LIMIT params, for the same reason the block above is: inserting earlier renumbers
+  // every later `$n`. With both absent nothing here executes and the emitted SQL + param vector
+  // stay byte-identical to the pre-flag behaviour (pinned by a golden in
+  // tests/unit/hold-decision-label-filters.test.ts).
+  //
+  // ORDER WITHIN THIS BLOCK IS DELIBERATE: `--since` is the index bound, `--require-parts` is the
+  // semantic filter, and the parts predicate is written LAST so it reads as the final word. They
+  // are ANDed, so the intersection IS `--require-parts` winning over a looser `--since`.
+  if (cli.since !== undefined) {
+    params.push(cli.since);
+    where.push(`h.decided_at >= $${params.length}`);
+  }
+  // no param either way — a NULL test takes no bind
+  if (partsMode === 'require') where.push('h.raw_final IS NOT NULL');
+  else if (partsMode === 'exclude') where.push('h.raw_final IS NULL');
+  return { where, params };
+}
+
+export function buildWorklistSql(cli: Cli, nowSec: number): { sql: string; params: unknown[] } {
+  const { where, params } = buildEligibleWhere(cli, nowSec, cli.requireParts ? 'require' : 'off');
   params.push(cli.perCell);
   const perCell = `$${params.length}`;
   params.push(cli.maxDecisions);
@@ -231,6 +320,23 @@ export function buildWorklistSql(cli: Cli, nowSec: number): { sql: string; param
      ORDER BY exchange, coin, timeframe, decided_at
      LIMIT ${maxRows}`;
   return { sql, params };
+}
+
+/**
+ * The DISAGREEMENT counter: rows `--since` admits that `--require-parts` rejects.
+ *
+ * `--require-parts` is authoritative, and because the two predicates are ANDed it wins silently.
+ * Silently is the problem: measured 2026-09-04 the two agree exactly (post-capture rows with NULL
+ * parts = 0, pre-capture rows with parts = 0), and an agreement that is a fact about today will
+ * be read by a later wave as a guarantee. This makes the gap a NUMBER in every run's evidence, so
+ * the day a writer path stops populating parts, the log says so instead of the drain quietly
+ * shrinking.
+ *
+ * Deliberately NOT a gate leg: `main` reports `null` if it cannot be read, and the run proceeds.
+ */
+export function buildSinceWithoutPartsSql(cli: Cli, nowSec: number): { sql: string; params: unknown[] } {
+  const { where, params } = buildEligibleWhere(cli, nowSec, 'exclude');
+  return { sql: `SELECT count(*)::int AS n FROM hold_decisions h WHERE ${where.join(' AND ')}`, params };
 }
 
 /** Windows must have fully CLOSED — see buildWorklistSql. Applied in JS so `W` stays one table. */
@@ -286,6 +392,20 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const { sql, params } = buildWorklistSql(cli, nowSec);
   const all = await dbQuery<HoldRow>(sql, params);
 
+  // Only meaningful when BOTH are set — with one of them absent there is no disagreement to
+  // measure. A RECORD, never a gate leg: a failure here reports `null` and the run continues,
+  // because a measurement fault must not become a labeling fault.
+  let sinceWithoutParts: number | null = null;
+  if (cli.since !== undefined && cli.requireParts) {
+    try {
+      const q = buildSinceWithoutPartsSql(cli, nowSec);
+      const r = await dbQuery<{ n: number }>(q.sql, q.params);
+      sinceWithoutParts = r[0]?.n ?? null;
+    } catch {
+      sinceWithoutParts = null;
+    }
+  }
+
   const cov: Cov = {
     considered: 0, skippedUnclosed: 0, labeled: 0, written: 0, noKlines: 0, lowVolHistory: 0,
     timeouts: 0, wins: 0, losses: 0, ambiguous: 0, budgetSkips: 0, errors: 0,
@@ -303,7 +423,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     // anything labeled, so a second --check immediately after a real run reports 0.
     console.log(
       `[${ts()}] HOLD-LABEL CHECK would_label=${todo.length * cli.specs.length} ` +
-        `decisions=${todo.length} unclosed_skipped=${cov.skippedUnclosed}`,
+        `decisions=${todo.length} unclosed_skipped=${cov.skippedUnclosed}` +
+        (sinceWithoutParts === null ? '' : ` since_admitted_without_parts=${sinceWithoutParts}`),
     );
     return 0;
   }
@@ -453,6 +574,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     clusters: cov.clusters.size,
     budget_skips: cov.budgetSkips,
     errors: cov.errors,
+    // `--require-parts` wins over `--since` by construction (they are ANDed). This is the size of
+    // that win. 0 = the two predicates agree. null = not both flags set, or the count could not
+    // be read — never silently 0, which would read as agreement.
+    since_admitted_without_parts: sinceWithoutParts,
     elapsed_min: Math.round(((Date.now() - startMs) / 60_000) * 10) / 10,
   };
   // Silent on success in the sense that matters — no alert, no Telegram. The token is the record.
