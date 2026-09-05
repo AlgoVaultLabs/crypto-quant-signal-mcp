@@ -25,7 +25,7 @@
  *   node dist/scripts/backfill-outcomes.js          (production)
  */
 
-import { getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes, closeDb } from '../lib/performance-db.js';
+import { getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes, recordBackfillAttempt, closeDb } from '../lib/performance-db.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { getDexForCoin } from '../lib/asset-tiers.js';
@@ -121,6 +121,13 @@ async function main() {
           const now = Date.now();
 
           // Double-check: enough time has passed for full evaluation window
+          //
+          // OPS-OUTCOME-BACKFILL-STALL-W1 A1 — this path deliberately records NO attempt, and
+          // that omission is load-bearing. The row is not unfillable, it is not yet MATURE: its
+          // barrier window has not closed. Counting it would back off the freshest rows in the
+          // queue — precisely the rows whose absence produced this wave's outage — and would
+          // convert a backoff for dead data into a backoff for live data. Same reasoning for
+          // WeightBudgetSkipError below: our own rate limiting is not the row's fault.
           if (now < endTimeNeeded) {
             skipped++;
             continue;
@@ -141,7 +148,14 @@ async function main() {
           const relevantCandles = candles.filter(c => c.time >= signalTimeMs);
 
           if (relevantCandles.length < 1) {
+            // OPS-OUTCOME-BACKFILL-STALL-W1 A1: THIS is the dominant sediment class, and the
+            // in-process `failCounts` breaker has never once seen it — a no-candle result was a
+            // bare `skipped++`. Measured 2026-09-05, ~2,037 such rows were re-fetched and
+            // re-skipped in EVERY batch (`Batch 67 done: 11 filled, 2037 skipped, 0 errors`),
+            // pinning the LIMIT-5000 window's frontier 11.3h in the past. Recording the attempt
+            // is what lets the row age out under a bounded cooldown and re-enter afterwards.
             console.log(`[${ts()}] ${coin} ${sig.signal} [${timeframe}] — no candles after signal time, skipping`);
+            await recordBackfillAttempt(sig.id!);
             skipped++;
             await sleep(DELAY_BETWEEN_FETCHES_MS);
             continue;
@@ -149,6 +163,9 @@ async function main() {
 
           const result = computePFEMAE(sig, relevantCandles, evalCount);
           if (!result) {
+            // A1: candles arrived but the evaluator could not produce an outcome from them —
+            // unfillable on this data, same queue-clogging shape as the no-candle case.
+            await recordBackfillAttempt(sig.id!);
             skipped++;
             await sleep(DELAY_BETWEEN_FETCHES_MS);
             continue;
@@ -182,6 +199,10 @@ async function main() {
             continue;
           }
           const msg = err instanceof Error ? err.message : String(err);
+          // A1: the DURABLE half of the breaker. `failCounts` below is per-PROCESS and resets on
+          // every 3-minute fire, so the same ~150 errors were re-incurred and their rows
+          // re-blocked from scratch on every run. This one survives the process.
+          await recordBackfillAttempt(sig.id!);
           const fc = (failCounts.get(failKey) || 0) + 1;
           failCounts.set(failKey, fc);
           if (fc <= MAX_FAIL_PER_SYMBOL) {

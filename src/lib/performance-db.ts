@@ -588,7 +588,74 @@ const SIGNAL_MIGRATIONS: MigrationDescriptor[] = [
   { table: 'band_signals', column: 'funding_adjust_code', type: 'SMALLINT', sqliteType: 'REAL' },
   { table: 'band_signals', column: 'hurst_adjust_code', type: 'SMALLINT', sqliteType: 'REAL' },
   { table: 'band_signals', column: 'squeeze_adjust_code', type: 'SMALLINT', sqliteType: 'REAL' },
+  // ── OPS-OUTCOME-BACKFILL-STALL-W1 A1 — the producer's own write stamp + a DURABLE breaker.
+  //
+  // `outcome_filled_at` is the column `OPS-RECALIBRATE-HARNESS-RETIRE-W1` probe #11 found missing
+  // and substituted for. Its absence is why `outcome-backfill-freshness` had to key on
+  // `max(created_at) FILTER (pfe_return_pct IS NOT NULL)` — the birth time of the newest matured
+  // signal, which is the SUM of backfill staleness and the emitted population's maturation
+  // horizon and cannot separate them. The name is NOT invented: `equity_verdicts` already carries
+  // `outcome_filled_at` for the same quantity, so this is one vocabulary, not two.
+  //
+  // `outcome_attempts` / `outcome_last_attempt_at` are the DURABLE half of a breaker that was
+  // process-local. `backfill-outcomes.ts` keeps a `failCounts` Map with MAX_FAIL_PER_SYMBOL=3 —
+  // but it resets on every 3-minute fire, AND it never sees the dominant failure at all: a
+  // "no candles after signal time" result increments `skipped`, never `failCounts`. Measured
+  // 2026-09-05: 3,058 rows whose barrier closed >24h ago (2,574 >7d) sat at the head of the
+  // `ORDER BY created_at ASC LIMIT 5000` queue being re-fetched and re-skipped on EVERY batch —
+  // `Batch 67 done: 11 filled, 2037 skipped, 0 errors`. With the NULL backlog at 11,748-11,823
+  // against that 5,000 cap the window's newest row was 07:16Z, so every fresher signal was
+  // structurally invisible to the producer and the 12.1h that paged was the age of the QUEUE
+  // FRONTIER, not the producer's last write.
+  //
+  // THE BREAKER IS A BACKOFF, NOT A TOMBSTONE (Data Integrity LAW). The queue excludes a row only
+  // while `outcome_attempts >= N AND outcome_last_attempt_at > now - cooldown`; after the
+  // cooldown it re-enters. A permanent exclusion would zero rows that become fillable when a
+  // sparse market reopens — CXMT/SPCX/SKHY/DRAM/CBRS/NBIS are exactly that shape (CXMT: 692 of
+  // 1,369 rows DID fill) — which is deleting public-facing data by side effect.
+  //
+  // All three nullable with no DEFAULT: catalog-only on PG (microseconds of ACCESS EXCLUSIVE on a
+  // ~598k-row table), which is what makes the CLAUDE.md pre-apply-via-SSH safe here. NULL means
+  // "written before this shipped", never "the producer failed" — and the re-keyed canary must
+  // therefore report INDETERMINATE on an all-NULL `max(outcome_filled_at)`, never PASS.
+  //
+  // INTEGER epoch to match `created_at` on this same table, so the canary's window arithmetic
+  // stays plain integer maths with no timezone to get wrong.
+  { table: 'signals', column: 'outcome_filled_at', type: 'INTEGER' },
+  { table: 'signals', column: 'outcome_attempts', type: 'INTEGER' },
+  { table: 'signals', column: 'outcome_last_attempt_at', type: 'INTEGER' },
 ];
+
+/**
+ * OPS-OUTCOME-BACKFILL-STALL-W1 A1 — the backfill queue's own constants, exported as DATA.
+ *
+ * THREE consumers must agree on these and a second literal is the generator bug: the queue
+ * predicate in `getSignalsNeedingUnifiedBackfillAsync`, the `outcome-backfill-freshness`
+ * REACHABILITY arm (which compares an UNCAPPED backlog count against this exact cap), and the A2
+ * drain gate. A canary hardcoding its own `5000` would report healthy against a producer reading
+ * a different number — the duplicated-fact class this estate has already paid for twice.
+ */
+export const BACKFILL_QUEUE_LIMIT = 5000;
+/** Attempts after which a row is held out of the queue for `BACKFILL_ATTEMPT_COOLDOWN_S`. */
+export const BACKFILL_MAX_ATTEMPTS = 3;
+/**
+ * How long a maxed-out row stays OUT of the queue before it is retried. Never forever.
+ *
+ * 24h, derived from the measured sediment rather than picked round: at probe time 3,058 NULL rows
+ * had barriers closed >24h and 2,574 >7d, so a 24h cooldown re-admits the whole 7d-plus body once
+ * a day — soon enough to catch a reopened market on its next session, and cheap enough that a
+ * full re-attempt sweep costs ~3,058 x 300ms ~ 15 min of one run per day instead of ~2,037 wasted
+ * fetches in every batch of every run.
+ *
+ * Instrument, recorded beside the number: `SELECT count(*) FROM signals WHERE outcome_price IS
+ * NULL AND created_at + horizon + 86400 <= now()` as `aoe_readonly` on
+ * `crypto-quant-signal-mcp-postgres-1`, signal-1, 2026-09-05T18:20:56Z.
+ *
+ * TODO: revisit by 2026-10-05 — re-derive from the sediment series once the canary's reachability
+ * arm has published a fortnight of `sediment_24h` counts. Register row in
+ * `Claude files/defensive-reductions-to-revisit.md`.
+ */
+export const BACKFILL_ATTEMPT_COOLDOWN_S = 86_400;
 
 /**
  * OPS-HOUSEKEEPING-W1 Phase B (2026-05-01): symmetric migration-idempotency
@@ -2809,7 +2876,26 @@ export function _getFundingStatsCacheSize(): number {
   return fundingStatsCache.size;
 }
 
-/** v1.4.1: Update all outcome columns (unified + PFE/MAE + 1-candle). */
+/**
+ * v1.4.1: Update all outcome columns (unified + PFE/MAE + 1-candle).
+ *
+ * OPS-OUTCOME-BACKFILL-STALL-W1 A1 — `outcome_filled_at` is stamped HERE, in this one statement,
+ * and that placement is load-bearing twice over.
+ *
+ * SINGLE DERIVATION. There are TWO callers, not one: `src/scripts/backfill-outcomes.ts` (the
+ * 3-minute cron) and `src/resources/signal-performance.ts` (the MCP resource, which lazily
+ * backfills on read). Stamping at the call sites would be two independent derivations of one
+ * fact, and the second one is exactly the sort that gets forgotten by the wave that adds a third
+ * caller — after which the re-keyed freshness canary silently under-reports the producer.
+ *
+ * ATOMICITY. The stamp goes in the SAME `UPDATE`, never a follow-up statement. A crash between
+ * two statements would mint rows carrying an outcome and no stamp — permanently invisible to a
+ * canary keyed on `max(outcome_filled_at)`, and indistinguishable from a producer that never ran.
+ * One statement makes that state unrepresentable rather than merely unlikely.
+ *
+ * `outcome_attempts` is deliberately NOT reset on success: it is the row's attempt HISTORY, and
+ * the queue predicate already stops consulting it the moment `outcome_price` is non-NULL.
+ */
 export async function updateSignalOutcomes(id: number, data: {
   outcome_price: number;
   outcome_return_pct: number;
@@ -2819,13 +2905,14 @@ export async function updateSignalOutcomes(id: number, data: {
   mae_price: number;
   mae_return_pct: number;
   pfe_candles: number;
-}): Promise<void> {
+}, nowEpoch?: number): Promise<void> {
   const b = getBackend();
+  const filledAt = Math.trunc(nowEpoch ?? Math.floor(Date.now() / 1000));
   const sql = `UPDATE signals SET
     outcome_price = ?, outcome_return_pct = ?, return_1candle = ?,
     pfe_price = ?, pfe_return_pct = ?,
     mae_price = ?, mae_return_pct = ?,
-    pfe_candles = ?
+    pfe_candles = ?, outcome_filled_at = ?
     WHERE id = ?`;
 
   if (isPg && b instanceof PgBackend) {
@@ -2833,14 +2920,14 @@ export async function updateSignalOutcomes(id: number, data: {
       data.outcome_price, data.outcome_return_pct, data.return_1candle,
       data.pfe_price, data.pfe_return_pct,
       data.mae_price, data.mae_return_pct,
-      data.pfe_candles, id
+      data.pfe_candles, filledAt, id
     );
   } else {
     b.run(sql,
       data.outcome_price, data.outcome_return_pct, data.return_1candle,
       data.pfe_price, data.pfe_return_pct,
       data.mae_price, data.mae_return_pct,
-      data.pfe_candles, id
+      data.pfe_candles, filledAt, id
     );
   }
 }
@@ -2855,13 +2942,44 @@ const TIMEFRAME_SECONDS: Record<string, number> = {
   '1h': 3600, '2h': 7200, '4h': 14400, '8h': 28800, '12h': 43200, '1d': 86400,
 };
 
+/**
+ * OPS-OUTCOME-BACKFILL-STALL-W1 A1 — the queue predicate, built as a PURE fn.
+ *
+ * Pure and exported because the SQL string is otherwise the one artifact no test executes: the
+ * unit suite mocks the backend, so a `%`-formatted or mis-parenthesised predicate would ship
+ * green. Its shape is asserted directly by `tests/unit/backfill-queue-backoff.test.ts`.
+ *
+ * The backoff clause is `NOT (maxed AND still cooling)`, written with an explicit
+ * `outcome_attempts IS NULL` arm because SQL three-valued logic makes `NOT (NULL >= 3 AND ...)`
+ * evaluate to NULL — i.e. FALSE for a WHERE — which would silently exclude every historical row
+ * that has never been attempted. That is the whole backlog. The arm is not defensive noise; it
+ * is the difference between a backoff and a total outage.
+ */
+export function buildBackfillQueueSql(nowEpoch: number, limit = BACKFILL_QUEUE_LIMIT): string {
+  const cutoff = Math.trunc(nowEpoch) - BACKFILL_ATTEMPT_COOLDOWN_S;
+  return (
+    `SELECT * FROM signals WHERE outcome_price IS NULL` +
+    ` AND (outcome_attempts IS NULL` +
+    ` OR outcome_attempts < ${BACKFILL_MAX_ATTEMPTS}` +
+    ` OR outcome_last_attempt_at IS NULL` +
+    ` OR outcome_last_attempt_at <= ${cutoff})` +
+    ` ORDER BY created_at ASC LIMIT ${Math.trunc(limit)}`
+  );
+}
+
 export async function getSignalsNeedingUnifiedBackfillAsync(): Promise<SignalRecord[]> {
   const b = getBackend();
   const now = Math.floor(Date.now() / 1000);
 
   // Build a CASE-based query: only select signals old enough for their timeframe
   // We use a generous approach: fetch all pending, then filter in JS (simpler across SQLite/PG)
-  const sql = `SELECT * FROM signals WHERE outcome_price IS NULL ORDER BY created_at ASC LIMIT 5000`;
+  //
+  // OPS-OUTCOME-BACKFILL-STALL-W1: the cap is unchanged at BACKFILL_QUEUE_LIMIT. Raising it was
+  // considered and REJECTED — a capacity constant is a COUNTDOWN, not a lifecycle change, and
+  // with permanently-unfillable rows at the head of a FIFO any raised constant is consumed by
+  // sediment first and returns as a fresh incident at the next volume step. What changed is that
+  // sediment now AGES OUT of the window under a bounded backoff, so the cap governs live work.
+  const sql = buildBackfillQueueSql(now);
 
   let rows: SignalRecord[];
   if (isPg && b instanceof PgBackend) {
@@ -2876,6 +2994,31 @@ export async function getSignalsNeedingUnifiedBackfillAsync(): Promise<SignalRec
     if (!evalWindow) return false;
     return (now - s.created_at) >= evalWindow;
   });
+}
+
+/**
+ * OPS-OUTCOME-BACKFILL-STALL-W1 A1 — record ONE failed backfill attempt against a row.
+ *
+ * Called on BOTH terminal non-fill paths, and the "both" is the generator fix. The pre-existing
+ * in-process `failCounts` breaker only ever saw thrown errors; the dominant sediment class is a
+ * "no candles after signal time" result, which increments `skipped` and touches no counter at
+ * all. A breaker blind to the majority of its own failure population is not a breaker.
+ *
+ * `COALESCE(outcome_attempts, 0) + 1` so a historical NULL row starts at 1 rather than staying
+ * NULL forever. Fire-and-forget is deliberate here and ONLY here: this is bookkeeping, not the
+ * outcome write, and a lost increment costs one extra re-attempt rather than a wrong number.
+ */
+export async function recordBackfillAttempt(id: number, nowEpoch?: number): Promise<void> {
+  const b = getBackend();
+  const now = Math.trunc(nowEpoch ?? Math.floor(Date.now() / 1000));
+  const sql =
+    `UPDATE signals SET outcome_attempts = COALESCE(outcome_attempts, 0) + 1,` +
+    ` outcome_last_attempt_at = ? WHERE id = ?`;
+  if (isPg && b instanceof PgBackend) {
+    await b.runAsync(sql, now, id);
+  } else {
+    b.run(sql, now, id);
+  }
 }
 
 /**
