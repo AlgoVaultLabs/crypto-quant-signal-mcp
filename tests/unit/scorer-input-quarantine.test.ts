@@ -52,6 +52,28 @@ const REPO_ROOT = join(__dirname, '..', '..');
  * There is no pre-existing collision — in particular `\boi_score\b` does not match the
  * `oiscore_shadow` family, which carries no underscore in that position.
  */
+/**
+ * ── CONSUMER, BY RESOLVED ID (2026-09-05, EDGE-SELL-ATTRIBUTION-COLLIDER-CONTROL-W1, architect Q7 ruled 2026-09-04) ──
+ * system-map.md declared this store's consumer as `EDGE-SELL-FEATURE-ATTRIBUTION-W{NEXT} ONLY`. The
+ * placeholder resolved to: EDGE-SELL-FEATURE-ATTRIBUTION-W1 (which did not read this table) and
+ * EDGE-SELL-ATTRIBUTION-COLLIDER-CONTROL-W1, which reads the EMITTED arm for ONE supplementary
+ * design — a within-emitted BUY-vs-SELL contrast at fixed emission status, an explicitly DIFFERENT
+ * estimand from the withheld-arm attribution, de-duplicated on scorer_input_id (the
+ * (signal_hash, exchange) join fans out: 18,927 rows for 18,921 inputs, measured 2026-09-04).
+ *
+ * POOLING THE EMITTED ARM WITH THE WITHHELD ARM IS FORBIDDEN — NOT IDENTIFIED. Measured
+ * 2026-09-04: emitted positives start at raw_final = +46 and the withheld SELL arm tops out at -1, so
+ * the pooled support has a 46-value hole at [0, +46) and sign stays perfectly separable by a
+ * magnitude threshold; a "side as covariate" model on that pool relocates the sign conditioning
+ * rather than removing it. Magnitude-support overlap with the withheld SELL corpus: withheld-BUY
+ * 99.93%, emitted-positive 3.78%. (The withheld arms pool fine — contiguous support — and that is
+ * the spec's design 3; the ban is on pooling ACROSS the emission gap.) Any wave that wants to pool
+ * across it needs a new ruling, not a reading of this comment.
+ *
+ * Neither wave's analysis code lives in this scan: the statistics are the PURE module
+ * src/scripts/cluster-perm-stats.py (no store, no column — pinned by its own test) and the query
+ * layer is session-local. Nothing derived reaches public copy.
+ */
 const TOKEN_RE =
   /\bsignal_scorer_inputs\b|\bscorer_input_id\b|\brecordScorerInputs\b|\brecordScorerInputCapture\b|\bgetScorerInputCounts\b|\braw0\b|\brsi_score\b|\bema_score\b|\bfunding_score\b|\boi_score\b|\bvolume_score\b|\bfunding_delta\b|\bhurst_delta\b|\bsqueeze_delta\b|\braw_final\b|\bfunding_adjust_code\b|\bhurst_adjust_code\b|\bsqueeze_adjust_code\b/;
 

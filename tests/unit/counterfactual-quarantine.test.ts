@@ -121,6 +121,18 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
     // may NEVER be cited for or against the HOLD-discipline hypothesis, and nothing derived from
     // it reaches public copy.
     //
+    // ── RESOLVED 2026-09-05, EDGE-SELL-ATTRIBUTION-COLLIDER-CONTROL-W1 (architect Q7, ruled 2026-09-04) ────────
+    // "W{NEXT}" above resolved to TWO waves, and relying on a reader to interpret a placeholder
+    // is prose doing a control's job. The ratified third consumer is, by resolved ID:
+    //   * EDGE-SELL-FEATURE-ATTRIBUTION-W1 (2026-09-04, prereg 2aaa2878) and its direct
+    //     continuation with the SAME estimand,
+    //   * EDGE-SELL-ATTRIBUTION-COLLIDER-CONTROL-W1 (2026-09-05, this amendment).
+    // Both read this store ONLY through a pre-registered analysis committed under audits/ (outside
+    // this scan) and a session-local query layer; the statistics they run are the PURE module
+    // src/scripts/cluster-perm-stats.py, which names no store and is pinned pure by
+    // tests/unit/cluster-perm-stats.test.ts. The three protections are unchanged. A FOURTH consumer
+    // needs its own ruling and its own line here — never an edit to this one.
+    //
     // What crosses the boundary is therefore still only a CARDINALITY — how many parents are
     // labelled — never a label value, never a win rate, never a return. The hard boundary the
     // Observed-Path Exception draws is around counterfactual OUTCOMES; a row count is not one.
