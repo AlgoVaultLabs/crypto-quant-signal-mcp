@@ -489,10 +489,12 @@
       "alert_id": "OUTCOME_BACKFILL_STALLED",
       "owner": "ops/monitoring/outcome-backfill-freshness.py",
       "hosts": [
-        "<never fired on either host>"
+        "signal-1"
       ],
-      "adopted": false,
-      "announce_resolution": false,
+      "first_fired": "2026-09-05T17:13:01Z",
+      "adopted": true,
+      "announce_resolution": true,
+      "announce_resolution_note": "Flipped true by OPS-OUTCOME-BACKFILL-STALL-W1 A3, CONDITIONAL on the symmetric sustain shipping in the SAME change, and it did: clear() announces only after CONSECUTIVE_TO_PAGE consecutive PASS runs following a DELIVERED page, mirroring the consecutive FAILs the page itself requires. Without that this alert would flap-announce - its own measured behaviour on 2026-09-05 oscillated across the threshold inside one hour (12.19 -> 12.13 -> 11.61 -> 11.28). `adopted` also flips true in the same edit because the canary now calls --clear at all, which it never did before. Owner: clear() in ops/monitoring/outcome-backfill-freshness.py; 6 self-test scenarios, each proven able to fail.",
       "follow_up_wave": "OPS-ALERT-ADOPT-OUTCOME_BACKFILL_STALLED-W{NEXT}",
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OUTCOME_BACKFILL_STALLED-W{NEXT}"

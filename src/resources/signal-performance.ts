@@ -1,4 +1,4 @@
-import { getPerformanceStatsAsync, getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes } from '../lib/performance-db.js';
+import { getPerformanceStatsAsync, getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes, recordBackfillAttempt } from '../lib/performance-db.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { runAsBatch } from '../lib/upstream-weight-budget.js';
 import type { ExchangeId, PerformanceStats } from '../types.js';
@@ -33,10 +33,16 @@ export async function runBackfill(): Promise<void> {
         const fetchEndTime = signalTimeMs + (evalCount + 2) * candleMs;
         const candles = await adapter.getCandles(sig.coin, sig.timeframe, signalTimeMs, undefined, fetchEndTime);
         const relevant = candles.filter(c => c.time >= signalTimeMs);
-        if (relevant.length < 1) continue;
+        // OPS-OUTCOME-BACKFILL-STALL-W1 A1 — this lazy path shares ONE queue with the cron, so it
+        // must feed the same durable breaker. If only the cron recorded attempts, every resource
+        // read would keep re-serving the sediment the cron had just backed off, and the two
+        // consumers of one queue would disagree about which rows are worth attempting.
+        // `not ready yet` above records nothing, for the same reason it records nothing in the
+        // cron: an immature row is not a failed row.
+        if (relevant.length < 1) { await recordBackfillAttempt(sig.id!); continue; }
 
         const result = computePFEMAE(sig, relevant, evalCount);
-        if (!result) continue;
+        if (!result) { await recordBackfillAttempt(sig.id!); continue; }
 
         await updateSignalOutcomes(sig.id!, toSignalOutcomeUpdate(result));
       } catch {

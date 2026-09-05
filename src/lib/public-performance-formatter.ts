@@ -87,6 +87,15 @@ export const PUBLIC_PERF_FORBIDDEN_KEYS = [
   'eligible_non_hold',
   'call',
   'confidence',
+  // OPS-OUTCOME-BACKFILL-STALL-W1 A1 — the three producer-bookkeeping columns added to `signals`.
+  // They carry no outcome VALUE and are not themselves an internal-WR family, so the ban is
+  // defence-in-depth rather than a Data Integrity necessity: they are operational internals that
+  // no public consumer has ever been shaped to receive, and the shape snapshot's `allowed_keys`
+  // does not list them. `equity_verdicts.outcome_filled_at` is already excluded from that store's
+  // public tool path for exactly the same reason — one convention, applied on both tables.
+  'outcome_filled_at',
+  'outcome_attempts',
+  'outcome_last_attempt_at',
 ] as const;
 
 /** The resolved public-disclosure allow-list. Build it with {@link resolvePublicPerformanceAllowList}. */

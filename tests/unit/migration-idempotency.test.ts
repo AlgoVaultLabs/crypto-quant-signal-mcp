@@ -63,6 +63,22 @@ const ALL_SIGNAL_COLS = [
   // tables. De-duplicating them would make test 3 under-count by thirteen.
   'rsi_score', 'ema_score', 'funding_score', 'oi_score', 'volume_score', 'raw0', 'funding_delta', 'hurst_delta', 'squeeze_delta', 'raw_final', 'funding_adjust_code', 'hurst_adjust_code', 'squeeze_adjust_code',  // hold_decisions
   'rsi_score', 'ema_score', 'funding_score', 'oi_score', 'volume_score', 'raw0', 'funding_delta', 'hurst_delta', 'squeeze_delta', 'raw_final', 'funding_adjust_code', 'hurst_adjust_code', 'squeeze_adjust_code',  // band_signals
+  // OPS-OUTCOME-BACKFILL-STALL-W1 A1: the producer write stamp + the durable backfill breaker,
+  // all three on `signals` (no new table, so the 6-table introspect count is unchanged).
+  //
+  // These broke tests 1-3 on arrival, and that is this list's DESIGN rather than a defect: it is a
+  // hand-maintained mirror of SIGNAL_MIGRATIONS, so it catches a silent REMOVAL at the cost of one
+  // deliberate edit per legitimate ADDITION. `outcome_filled_at` is now the column
+  // `outcome-backfill-freshness` is KEYED on, so a silent removal would leave that canary reading
+  // something nothing writes and reporting a healthy producer forever — which is why test 2 also
+  // NAMES all three positively rather than trusting a count.
+  //
+  // The mirror is nonetheless a duplicated fact and will go stale in some future wave that forgets
+  // it. Deriving the fixture from an exported SIGNAL_MIGRATIONS (keeping an explicit
+  // must-contain set for the removal case) is the generator fix, and it is deliberately NOT done
+  // here — it is a change to a gate this wave does not otherwise touch. Owner:
+  // `OPS-MIGRATION-FIXTURE-DERIVE-W{NEXT}`.
+  'outcome_filled_at', 'outcome_attempts', 'outcome_last_attempt_at',
 ];
 
 interface MockPgBackend {
@@ -121,6 +137,31 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     // None of the present columns should appear in altered
     expect(altered.some((sql: string) => sql.includes('ADD COLUMN IF NOT EXISTS outcome_price'))).toBe(false);
     expect(altered.some((sql: string) => sql.includes('ADD COLUMN IF NOT EXISTS exchange'))).toBe(false);
+    // OPS-OUTCOME-BACKFILL-STALL-W1 A1 — these three are PRESENT in this fixture, so they must
+    // NOT be altered. Named explicitly rather than left to the count: `outcome_filled_at` is what
+    // `outcome-backfill-freshness` is keyed on, and a count-only assertion cannot tell a removed
+    // entry from a renamed one.
+    for (const c of ['outcome_filled_at', 'outcome_attempts', 'outcome_last_attempt_at']) {
+      expect(altered.some((sql: string) => sql.includes(`ADD COLUMN IF NOT EXISTS ${c}`))).toBe(false);
+    }
+  });
+
+  // ── Test 2b: the three A1 columns are genuinely DECLARED, not merely counted ──
+  it('OPS-OUTCOME-BACKFILL-STALL-W1 A1: the producer stamp + breaker columns are declared on `signals`', async () => {
+    // The removal case the hand-maintained mirror exists for. Deleting an entry from
+    // SIGNAL_MIGRATIONS would keep tests 1-3 self-consistent (the mirror would just be one
+    // longer than reality and test 3 would fail on a bare count) — this one says WHICH column,
+    // on WHICH table, with WHICH type, so a rename or a table move is caught by name.
+    const b = mockPg([]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await runPgMigrationsAsync(b as any);
+    const altered = b.execAsync.mock.calls.map((call) => call[0] as string);
+    for (const c of ['outcome_filled_at', 'outcome_attempts', 'outcome_last_attempt_at']) {
+      expect(altered.some((sql) => sql === `ALTER TABLE signals ADD COLUMN IF NOT EXISTS ${c} INTEGER`)).toBe(true);
+      // Nullable, no DEFAULT — a NOT NULL add would rewrite a ~598k-row table on the live path,
+      // and it is what makes the pre-apply-via-SSH safe.
+      expect(altered.some((sql) => sql.includes(c) && /NOT NULL|DEFAULT/.test(sql))).toBe(false);
+    }
   });
 
   // ── Test 3: Empty schema → all SIGNAL_MIGRATIONS run ──
