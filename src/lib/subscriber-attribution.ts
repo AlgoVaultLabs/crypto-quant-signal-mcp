@@ -40,15 +40,64 @@ const CREATE_SIGNUP_ATTRIBUTION_SQL = `
     landing_path TEXT,
     tier_requested TEXT,
     ip_hash TEXT,
-    user_agent TEXT
+    user_agent TEXT,
+    classification TEXT,
+    ua_class TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_signup_attribution_created_at ON signup_attribution (created_at);
 `;
+
+/**
+ * FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 — the two columns that turn the funnel's top stage
+ * from a request count into a HUMAN denominator.
+ *
+ * `classification` — `browser` | `bot` | `unknown` from `classifyBrowserIntent()`.
+ * `ua_class`       — the client slug from the ONE UA→identity map (`classifyClient().name`).
+ *
+ * THEY LIVE HERE, NOT in `performance-db.ts`'s `SIGNAL_MIGRATIONS`, for the reason that file
+ * records verbatim against `request_log`: `signup_attribution` is created by THIS module,
+ * lazily, while `SIGNAL_MIGRATIONS` runs during performance-db init, which happens FIRST. A row
+ * there would ALTER a table that does not exist yet and the throw aborts the rest of DB init.
+ * Add a column where its table is owned.
+ *
+ * Both are NULLABLE with no default, deliberately. On PG 11+ that is a metadata-only catalog
+ * change (no rewrite), and NULL has to keep meaning "written before CH1" — which is precisely
+ * what the scoreboard's raw/`unknown` diagnostic rows must still be able to see. A DEFAULT would
+ * silently relabel every pre-classification row as a real verdict.
+ *
+ * PG gets `IF NOT EXISTS` (idempotent — `migrations/038_signup_attribution_classification.sql`
+ * pre-applies it on prod via SSH before this code deploys, so the runtime path is a no-op
+ * there). SQLite has NO `ADD COLUMN IF NOT EXISTS` (verified 3.49,
+ * DASH-EXTERNAL-ONLY-W1-PATCH-A), so it gets a bare ALTER that throws "duplicate column" on
+ * re-run — caught below, ONE try/catch EACH so a throw on the first cannot skip the second.
+ *
+ * The column list is EXPORTED so `tests/unit/signup-attribution-ddl-parity.test.ts` can assert
+ * that this boot path and migration 038 name the same columns: two DDLs for one schema is a
+ * drift generator unless something compares them.
+ */
+export const SIGNUP_ATTRIBUTION_ADDED_COLUMNS: readonly string[] = Object.freeze([
+  'classification',
+  'ua_class',
+]);
+
+const ALTER_SIGNUP_ATTRIBUTION_SQL: readonly string[] = SIGNUP_ATTRIBUTION_ADDED_COLUMNS.map((c) =>
+  PG
+    ? `ALTER TABLE signup_attribution ADD COLUMN IF NOT EXISTS ${c} TEXT;`
+    : `ALTER TABLE signup_attribution ADD COLUMN ${c} TEXT;`,
+);
 
 let _signupAttributionInit = false;
 export function ensureSignupAttributionSchema(): void {
   if (_signupAttributionInit) return;
   dbExec(CREATE_SIGNUP_ATTRIBUTION_SQL);
+  for (const sql of ALTER_SIGNUP_ATTRIBUTION_SQL) {
+    try {
+      dbExec(sql);
+    } catch {
+      // Best-effort — the column may already exist (PG `IF NOT EXISTS` no-ops; SQLite throws
+      // "duplicate column"). Both are nullable, so pre-CH1 rows stay queryable either way.
+    }
+  }
   _signupAttributionInit = true;
 }
 
@@ -82,6 +131,15 @@ export interface SignupAttributionInput {
   tierRequested?: string | null;
   ipHash?: string | null;
   userAgent?: string | null;
+  /**
+   * FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 — `browser` | `bot` | `unknown` from
+   * `classifyBrowserIntent()`. Optional so every incumbent caller keeps its exact behaviour
+   * (CLAUDE.md's enum-widening rule: never insert a required param); absent ⇒ NULL ⇒ the row
+   * reads as pre-classification, which is what the raw diagnostic series needs it to mean.
+   */
+  classification?: string | null;
+  /** The `classifyClient().name` slug — `unknown` (no UA) or `other` (unmatched). */
+  uaClass?: string | null;
 }
 
 /** DI seam — tests inject a throwing/recording writer to prove fail-open. */
@@ -106,8 +164,8 @@ export function recordSignupAttribution(
     const channel = deriveChannel(input.clientReferenceId, input.utmSource ?? null);
     writer.run(
       `INSERT INTO signup_attribution
-        (client_reference_id, channel, utm_source, utm_medium, utm_campaign, referrer, landing_path, tier_requested, ip_hash, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (client_reference_id, channel, utm_source, utm_medium, utm_campaign, referrer, landing_path, tier_requested, ip_hash, user_agent, classification, ua_class)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (client_reference_id) DO NOTHING`,
       input.clientReferenceId,
       channel,
@@ -119,6 +177,8 @@ export function recordSignupAttribution(
       input.tierRequested ?? null,
       input.ipHash ?? null,
       input.userAgent ?? null,
+      input.classification ?? null,
+      input.uaClass ?? null,
     );
   } catch (err) {
     console.warn('[recordSignupAttribution] capture failed (fail-open):', err instanceof Error ? err.message : err);

@@ -1,0 +1,43 @@
+-- 038 — FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1
+-- Two columns on `signup_attribution` that turn the human funnel's top stage from a REQUEST
+-- COUNT into a HUMAN denominator.
+--
+-- WHY. `GET /signup?plan=…` is a public URL: it mints a live Stripe Checkout Session AND writes
+-- a row here on every fetch, so anything that can issue an HTTP GET can mint a billable object
+-- and inflate the funnel's first stage. Measured over the 28d window to 2026-09-05: 268 rows, of
+-- which `isbot@5.1.44` flags 113 (42.2 %) — curl 37, aiohttp 20, Baiduspider 12, bingbot 6,
+-- GPTBot 4, SemrushBot 4, DataForSeoBot 3, a copyright prober 5 — while Plausible counted THREE
+-- human pricing-CTA clicks in that same window. `/dashboard/funnel`'s headline "5.0 % click →
+-- signup leak" is a ratio over that denominator, and a whole wave (FUNNEL-FIX-HUMAN-SIGNUP-W1)
+-- was already dispatched against it.
+--
+--   classification — 'browser' | 'bot' | 'unknown', from `classifyBrowserIntent()`
+--                    (src/lib/browser-intent.ts), which PROJECTS the UA verdict from the ONE
+--                    canonical `classifyTraffic()` and adds the Sec-Fetch / Accept navigation
+--                    evidence that classifier has no input for.
+--   ua_class       — the client slug from the ONE UA→identity map (`classifyClient().name`):
+--                    a named agent/crawler/SDK/browser, `unknown` (no UA) or `other` (unmatched).
+--
+-- WHY BOTH ARE NULLABLE WITH NO DEFAULT. NULL has to keep meaning "written before CH1". The
+-- scoreboard keeps a `raw requests (all classes)` diagnostic row precisely so the pre-wave series
+-- stays readable (Data Integrity: add before you remove), and a DEFAULT would silently relabel
+-- all 770 incumbent rows as a real verdict. There is NO backfill and none is owed — the headers
+-- that decide the verdict were never stored, so any backfill would be a guess wearing a
+-- measurement's clothes.
+--
+-- ADDITIVE AND SAFE TO PRE-APPLY. Nullable TEXT on an existing table is a metadata-only catalog
+-- change on PG 11+ — no rewrite, no long lock. Pre-applied on signal-1 via SSH BEFORE the code
+-- deploys (CLAUDE.md's pre-apply rule), which is what makes the boot-path ALTER in
+-- `ensureSignupAttributionSchema()` a no-op there rather than a race: that function is called
+-- from the fire-and-forget capture on the /signup path, so an ALTER landing after the first
+-- INSERT naming these columns would throw into a swallowed catch — silent attribution loss.
+--
+-- THE BOOT PATH IS THE OTHER HALF, NOT A DUPLICATE. `signup_attribution` is created lazily by
+-- `src/lib/subscriber-attribution.ts` (`CREATE TABLE IF NOT EXISTS`), not by this directory, so
+-- a migration alone would never reach a fresh DB or the SQLite test/dev backend. Both DDLs
+-- therefore exist, and `tests/unit/signup-attribution-ddl-parity.test.ts` asserts they name the
+-- same columns so the pair cannot drift.
+
+ALTER TABLE signup_attribution
+  ADD COLUMN IF NOT EXISTS classification TEXT,
+  ADD COLUMN IF NOT EXISTS ua_class TEXT;

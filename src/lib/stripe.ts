@@ -587,6 +587,78 @@ export interface CheckoutSessionOptions {
    * untouched and no caller can pass it in the wrong slot. Defaults to 'month'.
    */
   interval?: BillingInterval;
+  /**
+   * FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 — the second, Stripe-side copy of the attribution
+   * we already persist in `signup_attribution`. All optional; an absent value omits its key
+   * rather than writing an empty string, because Stripe metadata is a 50-key/500-char budget and
+   * an empty key is indistinguishable from a real empty answer downstream.
+   */
+  utmMedium?: string;
+  /** The CTA that produced the click (`landing_*`, `quota_notice`, …). */
+  upgradeFrom?: string;
+  /** `browser` | `bot` | `unknown` from `classifyBrowserIntent()`. */
+  classification?: string;
+  /** Signup-moment `Referer` path. See the note on `buildCheckoutMetadata`. */
+  landingPath?: string;
+}
+
+/**
+ * FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 R3 — the Stripe-side attribution copy, built by ONE
+ * pure exported function so `tests/unit/stripe-checkout-params.test.ts` can assert the key set
+ * without a Stripe client or a network call (CLAUDE.md's test-importable rule).
+ *
+ * WHAT THIS IS FOR. Attribution lives in our DB keyed by `client_reference_id`, which is
+ * excellent until the question is asked from the Stripe side — a refund, a dispute, a churn
+ * review, an export. Stamping the same facts onto the Session AND the Subscription means every
+ * subscription created from now on carries its own provenance for its whole life, with no join.
+ *
+ * WHAT IS DELIBERATELY ABSENT, and why (architect ruling Q5, 2026-09-06 — these were specified
+ * and then measured to be fictional or duplicated; do not "restore" them):
+ *   - `plan` / `interval`  — DUPLICATES of the incumbent `tier` / `billing_interval` keys. Two
+ *                            names for one fact is the drift CLAUDE.md forbids; the incumbents
+ *                            win because `handleCheckoutCompleted` already reads them.
+ *   - `first_touch_source` — exists ONLY on `agent_sessions` (the AGENT funnel). There is no
+ *                            producer for it on `/signup`; the key would always be absent.
+ *   - `attribution_id`     — `client_reference_id` already IS the attribution id, and is sent as
+ *                            a first-class Stripe field rather than metadata.
+ *   - `src`                — `?src=` is the MCP-connection carrier on `agent_sessions`; the
+ *                            signup path's carrier is `utm_*`, which is already read and
+ *                            persisted. CONVERSION-SURFACES-W2 tags the landing pricing hrefs
+ *                            `utm_source=landing&utm_medium=pricing-<plan>` — no new reader.
+ *   - `customer_email`     — `GET /signup` has NO authenticated account session (`/account`
+ *                            authenticates by pasted API key on POST), so a conditional
+ *                            `customer_email` could never be populated. A reader for a value
+ *                            nothing writes is dead code that reads as a shipped feature.
+ *
+ * `landingPath` is the SIGNUP-MOMENT `Referer` path. Under the modern default referrer policy
+ * (`strict-origin-when-cross-origin`) a cross-origin referer carries the ORIGIN only, so this
+ * will usually read `https://algovault.com/` rather than a page. Store it; never read it as a
+ * page-level fact — that is the same FLOOR caveat `getHumanFunnel`'s `ai_referral` already
+ * carries for the same column.
+ *
+ * Values are truncated to Stripe's 500-char metadata limit; the practical caps here are much
+ * tighter and match the incumbent 64/16-char slices so a hostile query string cannot bloat a
+ * Session object.
+ */
+export function buildCheckoutMetadata(
+  plan: PaidPlanId,
+  interval: BillingInterval,
+  opts: CheckoutSessionOptions = {},
+): Record<string, string> {
+  const metadata: Record<string, string> = { tier: plan, billing_interval: interval };
+  const put = (key: string, value: string | undefined, max: number): void => {
+    if (!value) return;
+    metadata[key] = value.slice(0, max);
+  };
+  put('utm_source', opts.utmSource, 64);
+  put('utm_medium', opts.utmMedium, 64);
+  put('utm_campaign', opts.utmCampaign, 64);
+  // REFERRAL-LIGHT-W1 (C3): ref_code on the session (read in checkout.session.completed).
+  put('ref_code', opts.refCode, 16);
+  put('upgrade_from', opts.upgradeFrom, 40);
+  put('classification', opts.classification, 16);
+  put('landing_path', opts.landingPath, 200);
+  return metadata;
 }
 
 export async function createCheckoutSession(
@@ -607,11 +679,9 @@ export async function createCheckoutSession(
   // ACTIVATION-PAYWALL-W1: optional UTM round-trip — Stripe persists metadata
   // on the Checkout Session, retrievable in checkout.session.completed event
   // for attribution-aware request_log write.
-  const metadata: Record<string, string> = { tier: plan, billing_interval: interval };
-  if (opts.utmSource) metadata.utm_source = opts.utmSource.slice(0, 64);
-  if (opts.utmCampaign) metadata.utm_campaign = opts.utmCampaign.slice(0, 64);
-  // REFERRAL-LIGHT-W1 (C3): ref_code on the session (read in checkout.session.completed).
-  if (opts.refCode) metadata.ref_code = opts.refCode.slice(0, 16);
+  // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 R3: widened, and built by ONE pure exported
+  // function so the key set is testable without a Stripe client.
+  const metadata = buildCheckoutMetadata(plan, interval, opts);
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
@@ -619,9 +689,19 @@ export async function createCheckoutSession(
     success_url: `${baseUrl}/welcome?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${baseUrl}/signup?cancelled=true`,
     metadata,
-    // REFERRAL-LIGHT-W1 (C3): also stamp ref_code on the SUBSCRIPTION object so
-    // handleSubscriptionCreated (where the api key is minted) reads it in one event.
-    ...(opts.refCode ? { subscription_data: { metadata: { ref_code: opts.refCode.slice(0, 16) } } } : {}),
+    // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 R3 — the SUBSCRIPTION carries the WHOLE metadata
+    // object, not just `ref_code`. REFERRAL-LIGHT-W1 (C3) put `ref_code` here so
+    // handleSubscriptionCreated (where the api key is minted) reads it in one event without a
+    // cross-event race; every other attribution field had the same need and no copy, so a churn
+    // or refund review could see the code but not the channel. Now UNCONDITIONAL: `metadata`
+    // always carries at least `tier` + `billing_interval`, so there is no case where omitting
+    // `subscription_data` is correct.
+    subscription_data: { metadata },
+    // PROMO CODES: the field is on the Session, never on `subscription_data`. Enabling it only
+    // reveals the redemption box — it creates no code and discounts nothing until a Promotion
+    // Code exists in Stripe, so this is inert today and is the prerequisite for W2 being able to
+    // run one without a code change on the revenue path.
+    allow_promotion_codes: true,
     // client_reference_id is bounded to 200 chars per Stripe; we cap at 128
     // to leave headroom + sanitize down to safe URL-ish chars.
     ...(opts.clientReferenceId
@@ -1103,6 +1183,57 @@ export function summarizeCheckoutCompleted(event: any): CheckoutCompletedSummary
     utmSource: session.metadata?.utm_source ?? null,
     utmCampaign: session.metadata?.utm_campaign ?? null,
     clientReferenceId: session.client_reference_id ?? null,
+  };
+}
+
+/**
+ * FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 R4 — the `checkout.session.expired` payload, reduced
+ * to what the `checkout_abandoned` funnel row needs.
+ *
+ * Same shape and the same reason as `summarizeCheckoutCompleted` above: the webhook `switch`
+ * lives inside `startHttp()` and is not importable, so the PARSING — which is where the payload
+ * assumptions live — is extracted here where a test can reach it (CLAUDE.md's test-importable
+ * rule). The handler keeps only the idempotency claim and the write.
+ *
+ * `classification` FALLS BACK TO `'unknown'`, never to `'bot'`. Every Session created before CH1
+ * R3 shipped carries no `classification` at all, and those Sessions expire in a burst within 24h
+ * of the deploy. Most of them genuinely were crawler-minted — but writing that down would be a
+ * fabrication, and `unknown` is the honest label for "we did not measure this one".
+ *
+ * NEVER touches `customer_details.email` or `customer_email`. The Stripe account is Malaysian, so
+ * `consent_collection.promotions` (US-only) does not exist for us: there is no consent path for
+ * an abandoned-cart email, and storing an address we can never contact is collection with no
+ * purpose. `summarizeCheckoutCompleted` reads the email because a COMPLETED checkout is a
+ * customer relationship; an expired one is not.
+ *
+ * Returns `null` when the payload has no session id — the caller logs and breaks rather than
+ * writing a row it cannot key.
+ */
+export interface CheckoutExpiredSummary {
+  sessionId: string;
+  /** `browser` | `bot` | `unknown` — from the Session metadata, defaulted to `unknown`. */
+  classification: string;
+  /** The tier from Session metadata when present; `null` on pre-wave Sessions. */
+  tier: string | null;
+  /** The Session's whole metadata bag, carried into `funnel_events.meta`. Never contains PII. */
+  metadata: Record<string, unknown>;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function summarizeCheckoutExpired(event: any): CheckoutExpiredSummary | null {
+  const session = event?.data?.object;
+  if (!session || typeof session !== 'object') return null;
+  const sessionId = typeof session.id === 'string' ? session.id : null;
+  if (!sessionId) return null;
+
+  const metadata: Record<string, unknown> =
+    session.metadata && typeof session.metadata === 'object' ? { ...session.metadata } : {};
+  const rawClass = metadata.classification;
+  return {
+    sessionId,
+    classification: typeof rawClass === 'string' && rawClass ? rawClass : 'unknown',
+    tier: typeof metadata.tier === 'string' ? metadata.tier : null,
+    metadata,
   };
 }
 

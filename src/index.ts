@@ -99,6 +99,10 @@ import {
 } from './lib/track-token.js';
 import { recordMcpToolsListEvent } from './lib/tools-list-event.js';
 import { classifyTraffic } from './lib/traffic-classifier.js';
+// FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 — the navigation-intent verdict for public CTA routes.
+// It PROJECTS from `classifyTraffic` above (never a second `isbot` call site) and adds the
+// Sec-Fetch / Accept evidence that classifier has no input for.
+import { classifyBrowserIntent } from './lib/browser-intent.js';
 import { resolveSource, classifySource, shouldEmitConnect } from './lib/attribution-sources.js';
 import {
   isStripeConfigured,
@@ -110,6 +114,8 @@ import {
   getCustomerApiKey,
   validateApiKey,
   summarizeCheckoutCompleted,
+  // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 R4 — the abandoned-checkout payload reducer.
+  summarizeCheckoutExpired,
 } from './lib/stripe.js';
 import { UpstreamRateLimitError, EXCHANGE_FALLBACKS, TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError, buildInsufficientCandlesPayload, buildTierLimitPayload } from './lib/errors.js';
 // FUNNEL-FIX-AGENT-X402-NUDGE-W1: at the quota edge, offer the agent an in-protocol x402
@@ -1779,6 +1785,66 @@ async function startHttp() {
           }
           break;
         }
+        case 'checkout.session.expired': {
+          // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 R4 — abandoned checkout as a REAL stage.
+          //
+          // A Checkout Session Stripe never completes expires ~24h after creation. Until now
+          // that produced nothing: a start with no finish left no trace, so "how many people
+          // reached Stripe and did not pay?" was unanswerable and the funnel jumped straight
+          // from intent to paid. This is the only event that answers it.
+          //
+          // It arrives on the EXISTING destination `we_1TKJVZKGleoEgU2HdSvmIUIl`
+          // (`/webhooks/stripe`, same `STRIPE_WEBHOOK_SECRET`) — verified via the Stripe API at
+          // Step 0: ONE destination, 10 enabled events, this one among them. Adding a SECOND
+          // destination would carry its OWN signing secret and could never verify here.
+          //
+          // EXPECT A BURST on day one. Every crawler-minted Session created before CH1 R2 shipped
+          // expires within 24h of this deploy, and those Sessions predate the metadata widening,
+          // so their `metadata.classification` is absent — recorded as `unknown`, never guessed
+          // at as `bot`. It IS a bot in most cases, and writing that down would be a fabrication.
+          //
+          // NEVER reads `customer_details.email`. The account is Malaysian, so Stripe's
+          // `consent_collection.promotions` (US-only) does not exist for us — there is no consent
+          // path for an abandoned-cart email, and storing an address we may never contact is
+          // collection without purpose.
+          // Parsing lives in `summarizeCheckoutExpired` (stripe.ts) so it is unit-testable — the
+          // same split `checkout.session.completed` above already uses. This case keeps only the
+          // idempotency claim and the write.
+          const expired = summarizeCheckoutExpired(event);
+          if (!expired) {
+            console.warn(`Stripe webhook: checkout.session.expired with unparseable session payload (event ${event.id})`);
+            break;
+          }
+          // Idempotency BEFORE the side-effect (CLAUDE.md's external-webhook rule). Keyed on the
+          // EVENT id like every sibling case: Stripe delivers at-least-once, and a redelivery
+          // would otherwise double-count one abandonment into a published stage.
+          const isNewExpiry = await tryClaimEvent({
+            event_id: event.id,
+            event_type: event.type,
+            session_id: expired.sessionId,
+            customer_email: null,
+            metadata: { source: 'checkout.session.expired' },
+          });
+          if (!isNewExpiry) {
+            console.log(`Stripe webhook: duplicate checkout.session.expired (event ${event.id}) — already processed`);
+            return res.json({ received: true, status: 'duplicate' });
+          }
+          try {
+            const { recordFunnelEvent } = await import('./lib/performance-db.js');
+            recordFunnelEvent({
+              eventType: 'checkout_abandoned',
+              sessionId: expired.sessionId,
+              licenseTier: expired.tier,
+              meta: { ...expired.metadata, session_id: expired.sessionId, classification: expired.classification },
+            });
+            console.log(`Stripe webhook: checkout.session.expired recorded — session=${expired.sessionId} classification=${expired.classification}`);
+          } catch (expErr) {
+            // Don't rethrow — the event-id is already claimed, so Stripe will not retry and a
+            // non-2xx would only make it retry an event we will never re-record.
+            console.error('Stripe webhook: checkout_abandoned write failed (fail-open):', expErr instanceof Error ? expErr.message : expErr);
+          }
+          break;
+        }
         case 'invoice.paid': {
           // REFERRAL-LIGHT-W1 (C3): accrue 30% referral commission (idempotent on
           // the event id; auto Stripe-credit or usdc_pending). Fail-open internally.
@@ -1988,6 +2054,15 @@ async function startHttp() {
     // Derive a session-unique client_reference_id for downstream attribution
     // join even when UTM tags are absent (e.g. direct /signup typing).
     const clientReferenceId = `${utmSource ?? 'direct'}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 R1/R2 — classify the request ONCE, here, and let
+    // every writer below project from that one value (single-derivation LAW). PURE and
+    // synchronous: no I/O, no await, so it cannot add latency to the revenue path.
+    //
+    // `classifyBrowserIntent` PROJECTS the UA verdict from the canonical `classifyTraffic()` and
+    // adds the fetch-metadata evidence that classifier has no input for. It is imported
+    // statically because it is a pure leaf with no DB and no network — a lazy import here would
+    // put a dynamic `import()` on the redirect path for no benefit.
+    const intent = classifyBrowserIntent(req.headers);
     // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28) + LANDING-CONVERSION-TRUST-W1 (2026-06-19):
     // capture the CTA click BEFORE the plan-gate so keyless / plan-less landing clicks are
     // measured too (the early-return on an absent/invalid plan previously skipped them).
@@ -2008,6 +2083,12 @@ async function startHttp() {
             upgrade_from: upgradeFrom,
             utm_source: utmSource ?? null,
             utm_campaign: utmCampaign ?? null,
+            // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1: additive TAG, never a filter. The CTA
+            // stage keeps counting every click exactly as before (Data Integrity — events are
+            // tagged, never dropped); this only makes the same rows separable later, the way
+            // `mcp_connect` was tagged by OPS-ACTIVATION-LEAK-FIX-W1.
+            classification: intent.cls,
+            ua_class: intent.uaClass,
           },
         });
       } catch (err) {
@@ -2080,17 +2161,10 @@ async function startHttp() {
         return res.redirect(302, `/signup?${q.toString()}`);
       }
       const interval = req.query.interval === '6month' ? '6month' : 'month';
-      const url = await createCheckoutSession(plan, baseUrl, {
-        utmSource,
-        utmCampaign,
-        clientReferenceId,
-        refCode,
-        interval,
-      });
-      // A configured plan with an unconfigured interval lands here too (e.g. annual requested
-      // before the Price exists in Stripe) — same operator-actionable failure, not a silent
-      // downgrade to a price the caller did not choose.
-      if (!url) return res.status(500).send('Stripe not configured or missing price IDs');
+      const landingPath = typeof req.query.landing_path === 'string'
+        ? req.query.landing_path
+        : (req.headers['referer'] as string | undefined) ?? null;
+
       // SUBSCRIBER-ATTRIBUTION-SPINE-W1 (C1): persist the click attribution so
       // the conversion webhook (C2) can JOIN to it by client_reference_id —
       // closing the blind spot SUBSCRIBER-ATTRIBUTION-DIAGNOSIS-W1 hit. Lazy-
@@ -2099,28 +2173,80 @@ async function startHttp() {
       // or the client_reference_id value. ip_hash via the existing hashIp helper
       // (the requestContext ALS is only entered for /mcp, so derive the IP from
       // the proxy headers like the /mcp handler does).
-      try {
-        // OPS-MCP-DEFENSE-IN-DEPTH-W1 R2: derive from req.ip (trust proxy=1) via the
-        // shared clientIp helper — byte-identical to the prior raw-XFF leftmost parse
-        // under the deployed Caddy replace-mode topology, robust to a proxy reconfig.
-        const ip = clientIp(req);
-        const { recordSignupAttribution } = await import('./lib/subscriber-attribution.js');
-        recordSignupAttribution({
-          clientReferenceId,
-          utmSource: utmSource ?? null,
-          utmMedium: typeof req.query.utm_medium === 'string' ? req.query.utm_medium : null,
-          utmCampaign: utmCampaign ?? null,
-          referrer: (req.headers['referer'] as string | undefined) ?? null,
-          landingPath: typeof req.query.landing_path === 'string'
-            ? req.query.landing_path
-            : (req.headers['referer'] as string | undefined) ?? null,
-          tierRequested: plan,
-          ipHash: ip ? hashIp(ip) : null,
-          userAgent: (req.headers['user-agent'] as string | undefined) ?? null,
-        });
-      } catch (err) {
-        console.warn('[/signup attribution] capture failed (fail-open):', err instanceof Error ? err.message : err);
+      //
+      // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1: hoisted into ONE closure because there are now
+      // TWO exits that must record — the 303 and the new bot 200 — and two copies of a writer is
+      // how the two drift. It is still CALLED from each exit rather than before the branch, and
+      // that ordering is deliberate: `funnel-snapshot.ts` documents stage 8 as "distinct Stripe
+      // Checkout Sessions CREATED", a meaning that holds only while the row is written after a
+      // Session exists. The bot arm creates no Session by construction, so recording it there is
+      // not an exception to that rule — those rows carry `classification='bot'` and are excluded
+      // from the human stage by the same predicate CH3 reads.
+      const captureAttribution = async (): Promise<void> => {
+        try {
+          // OPS-MCP-DEFENSE-IN-DEPTH-W1 R2: derive from req.ip (trust proxy=1) via the
+          // shared clientIp helper — byte-identical to the prior raw-XFF leftmost parse
+          // under the deployed Caddy replace-mode topology, robust to a proxy reconfig.
+          const ip = clientIp(req);
+          const { recordSignupAttribution } = await import('./lib/subscriber-attribution.js');
+          recordSignupAttribution({
+            clientReferenceId,
+            utmSource: utmSource ?? null,
+            utmMedium: typeof req.query.utm_medium === 'string' ? req.query.utm_medium : null,
+            utmCampaign: utmCampaign ?? null,
+            referrer: (req.headers['referer'] as string | undefined) ?? null,
+            landingPath,
+            tierRequested: plan,
+            ipHash: ip ? hashIp(ip) : null,
+            userAgent: (req.headers['user-agent'] as string | undefined) ?? null,
+            classification: intent.cls,
+            uaClass: intent.uaClass,
+          });
+        } catch (err) {
+          console.warn('[/signup attribution] capture failed (fail-open):', err instanceof Error ? err.message : err);
+        }
+      };
+
+      // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 R2 — a positively-identified bot gets the plan
+      // page, never a Checkout Session.
+      //
+      // The body is the EXISTING bare-`/signup` plan picker (`getSignupPageHtml()`), byte-for-byte
+      // — no new copy, and a crawler still indexes a complete, correct, 200 page rather than
+      // anything that reads as broken. What it does NOT get is a live `cs_live_` object: before
+      // this branch, anything able to issue a GET could mint one, and 42.2 % of the 268 rows in
+      // the 28d window to 2026-09-05 were `isbot`-flagged.
+      //
+      // `Cache-Control: no-store` because this response is CONDITIONAL on request headers a cache
+      // does not key on. Without it a shared cache could serve the plan page to the human whose
+      // request would have redirected — turning a measurement fix into a revenue outage.
+      //
+      // A misclassified human self-heals in one click: the plan page's buttons issue a real
+      // navigation (`text/html` Accept + `Sec-Fetch-Mode: navigate`), which classifies as
+      // `browser` and 303s. `unknown` never reaches here — it is fail-open by design.
+      if (intent.cls === 'bot') {
+        await captureAttribution();
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).send(getSignupPageHtml());
       }
+
+      const url = await createCheckoutSession(plan, baseUrl, {
+        utmSource,
+        utmCampaign,
+        clientReferenceId,
+        refCode,
+        interval,
+        // CH1 R3 — the Stripe-side attribution copy. See `buildCheckoutMetadata` for the four
+        // fields that were specified, measured fictional, and deliberately NOT added.
+        utmMedium: typeof req.query.utm_medium === 'string' ? req.query.utm_medium : undefined,
+        upgradeFrom,
+        classification: intent.cls,
+        landingPath: landingPath ?? undefined,
+      });
+      // A configured plan with an unconfigured interval lands here too (e.g. annual requested
+      // before the Price exists in Stripe) — same operator-actionable failure, not a silent
+      // downgrade to a price the caller did not choose.
+      if (!url) return res.status(500).send('Stripe not configured or missing price IDs');
+      await captureAttribution();
       res.redirect(303, url);
     } catch (err) {
       console.error('Stripe checkout error:', err instanceof Error ? err.message : err);
