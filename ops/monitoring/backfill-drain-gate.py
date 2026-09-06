@@ -12,17 +12,27 @@ replace a TRUE alarm with a green light over a still-frozen public series, which
 worse than the outage. The re-key is only honest once the queue has demonstrably drained, and
 "demonstrably" has to mean a measurement, not a glance at one reading.
 
-── What it measures, and why these two quantities ───────────────────────────────────────────
-  * QUEUE FRONTIER AGE — `now - max(created_at)` over the rows the producer can ACTUALLY SEE
-    (the capped, backed-off window). This is the quantity that paged 12.1h. If A1 worked, the
-    frontier races forward and its age collapses.
-  * UNCAPPED BACKLOG — `count(*) WHERE outcome_price IS NULL`, with NO LIMIT. Never aggregate
-    over the LIMIT-capped read: both sides would come from the same capped array and the gate
-    would confirm the tree matches itself. It was 11,748-11,823 against a 5,000 cap at diagnosis.
+── What it measures (CORRECTED 2026-09-06, b1) ──────────────────────────────────────────────
+  * CUMULATIVE NET DRAIN — `backlog[last] - backlog[first]` over the whole span, which IS
+    `arrivals - fills` by definition. Negative means draining.
+  * A PROJECTION to the only threshold that matters — the time for the UNCAPPED backlog to fall
+    below the producer's own cap, against a horizon DERIVED from the alarm's own STALE_HOURS.
+  * PRODUCER WRITING — `matured_total` strictly rising. A queue that empties because emission
+    stopped is not a drain.
 
-Both must improve. Frontier age alone can fall while the backlog grows (the producer chewing the
-head faster than emission for one window); backlog alone can fall while the frontier stays pinned
-(sediment ageing out with no fresh reach). Neither on its own is a drain.
+The uncapped backlog is `count(*) WHERE outcome_price IS NULL`, with NO LIMIT, while the frontier
+is read from the CAPPED window. Never aggregate over the LIMIT-capped read: both sides would come
+from the same capped array and the gate would confirm the tree matches itself.
+
+FRONTIER AGE IS REPORTED, NOT A GATE LEG, and that is the correction. The first version required
+frontier age AND backlog to fall STRICTLY MONOTONICALLY across three samples. Backlog is
+`arrivals - fills` over a bursty ~860/h arrival process, so strict monotonicity tests the ARRIVAL
+RATE, not producer throughput — the population-vs-producer conflation this whole wave exists to
+retire, reproduced inside the gate built to verify the fix for it. Measured on the first live
+series: net drain **-599 rows over 2h** (filled 1,470 vs emitted 871 — genuinely draining),
+reported FAIL on sample noise (ages_h [10.22, 9.32, 9.77], backlog [10884, 10043, 10235]).
+The correction was made and RE-BASELINED on the pre-fix state BEFORE the producer change it
+judges was allowed to land, so a later PASS is attributable to the fix and not to the gate.
 
 ── The 3-reading rule ───────────────────────────────────────────────────────────────────────
 A single before/after pair cannot distinguish a drain from the ~2x productive phase that follows
@@ -83,6 +93,15 @@ def _int_env(name, default, floor=1):
 
 MIN_GAP_S = _int_env("BDG_MIN_GAP_S", 3000)
 READINGS_REQUIRED = _int_env("BDG_READINGS", 3, floor=2)
+
+# The projection horizon is DERIVED from the alarm this gate exists to clear, never chosen: it is
+# `outcome-backfill-freshness`'s own STALE_HOURS (12). If the backlog cannot fall below the
+# producer's cap inside that horizon, the queue frontier cannot get inside it either, so a drain
+# that slow does not clear the condition the alarm fires on. Overridable for the self-test only.
+try:
+    PROJECTION_HORIZON_H = float(os.environ.get("BDG_PROJECTION_HORIZON_H", "12"))
+except (TypeError, ValueError):
+    PROJECTION_HORIZON_H = 12.0
 
 
 class Indeterminate(Exception):
@@ -162,20 +181,44 @@ def frontier_age_h(reading, at):
     return max(0.0, (at - reading["frontier"]) / 3600.0)
 
 
-def classify(history, required=None, min_gap_s=None):
+def classify(history, required=None, min_gap_s=None, cap=None, horizon_h=None):
     """PURE. `history` is a list of {'at', 'backlog', 'frontier', 'matured_total'}, oldest first.
 
-    PASS requires ALL of:
-      * `required` readings, each >= `min_gap_s` after the previous one;
-      * frontier age STRICTLY decreasing across every consecutive pair;
-      * uncapped backlog non-increasing overall AND strictly lower than the first reading;
-      * matured_total strictly increasing (the producer is actually writing, not merely idle —
-        a queue that empties because emission stopped is not a drain).
+    ── CORRECTED 2026-09-06 (A2 b1). THE FIRST VERSION'S INSTRUMENT WAS DEFECTIVE. ────────────
+    It required frontier age and backlog to fall STRICTLY MONOTONICALLY across three samples.
+    Backlog is `arrivals - fills` over a bursty ~860/h arrival process, so a strict-monotonicity
+    test is coupled to the ARRIVAL RATE rather than to producer throughput — the very
+    population-vs-producer conflation this whole wave exists to retire, reproduced inside the
+    gate meant to verify the fix for it. Measured on the first live series: net drain was
+    **-599 rows over 2h** (filled 1,470 vs emitted 871 — genuinely draining) and it returned
+    FAIL, on sample-to-sample noise: ages_h [10.22, 9.32, 9.77], backlog [10884, 10043, 10235].
+
+    The correction is NOT a relaxation, and the ordering enforces that: the instrument is fixed
+    and RE-BASELINED on the pre-fix state BEFORE the producer change it judges is allowed to
+    land. "The gate failed so I widened the gate" is the guard-blunting class this estate has
+    recorded seven times.
+
+    ── What it measures now ───────────────────────────────────────────────────────────────────
+    CUMULATIVE NET DRAIN over the whole span — `backlog[last] - backlog[first]`, which is
+    exactly `arrivals - fills` by definition — plus a PROJECTION to the only threshold that
+    matters:
+
+      FAIL           net_drain >= 0            (not draining at all)
+      INDETERMINATE  draining, but the projected time for backlog to fall below `cap` exceeds
+                     `horizon_h`, or the span cannot support a projection
+      PASS           draining AND projected inside `horizon_h` AND producer_writing
+
+    `horizon_h` is DERIVED, never chosen: it is the alarm's own staleness threshold. If the
+    backlog cannot reach the cap inside that horizon then the frontier cannot reach it either,
+    so a "drain" that slow does not clear the condition the alarm fires on.
+
     Anything short of `required` readings is INDETERMINATE: this gate builds its own corpus, so
     an under-filled one is vacuity and refusing is the only honest verdict.
     """
     req = READINGS_REQUIRED if required is None else required
     gap = MIN_GAP_S if min_gap_s is None else min_gap_s
+    lim = QUEUE_LIMIT if cap is None else cap
+    hz = PROJECTION_HORIZON_H if horizon_h is None else horizon_h
     usable = history[-req:] if len(history) >= req else history
     if len(usable) < req:
         return {"verdict": "INDETERMINATE", "reason":
@@ -188,31 +231,69 @@ def classify(history, required=None, min_gap_s=None):
     ages = [frontier_age_h(r, r["at"]) for r in usable]
     backlogs = [r["backlog"] for r in usable]
     matured = [r["matured_total"] for r in usable]
+    span_h = (usable[-1]["at"] - usable[0]["at"]) / 3600.0
+    net_drain = backlogs[-1] - backlogs[0]          # negative == draining
+    fills = matured[-1] - matured[0]
+    arrivals = fills + net_drain                     # identity, not a second measurement
+
+    if span_h <= 0:
+        return {"verdict": "INDETERMINATE",
+                "reason": "span is not positive (%.4fh) — cannot project" % span_h, "checks": []}
+
+    rate_per_h = net_drain / span_h
+    draining = net_drain < 0
+    over_cap = max(0, backlogs[-1] - lim)
+    if not draining:
+        eta_h = None
+    elif over_cap == 0:
+        eta_h = 0.0                                  # already under the cap
+    else:
+        eta_h = over_cap / abs(rate_per_h)
+
+    producer_writing = all(matured[i] > matured[i - 1] for i in range(1, len(matured)))
+    within = eta_h is not None and eta_h <= hz
 
     checks = [
-        ("frontier_age_falling",
-         all(ages[i] < ages[i - 1] for i in range(1, len(ages))),
-         "ages_h=%s" % ["%.2f" % a for a in ages]),
-        ("backlog_falling",
-         backlogs[-1] < backlogs[0] and all(backlogs[i] <= backlogs[i - 1] for i in range(1, len(backlogs))),
-         "backlog=%s" % backlogs),
-        ("producer_writing",
-         all(matured[i] > matured[i - 1] for i in range(1, len(matured))),
-         "matured_total=%s" % matured),
+        ("net_drain_negative", draining,
+         "net_drain=%+d over %.2fh (%.1f/h) — fills=%d arrivals=%d; backlog=%s"
+         % (net_drain, span_h, rate_per_h, fills, arrivals, backlogs)),
+        ("projected_within_horizon", bool(within),
+         "backlog=%d cap=%d over_cap=%d eta_h=%s horizon=%.1fh"
+         % (backlogs[-1], lim, over_cap,
+            "n/a (not draining)" if eta_h is None else "%.1f" % eta_h, hz)),
+        ("producer_writing", producer_writing, "matured_total=%s" % matured),
     ]
-    ok = all(c[1] for c in checks)
-    return {"verdict": "PASS" if ok else "FAIL",
-            "reason": "all three legs improved" if ok else
-                      "not draining: " + ", ".join(n for n, p, _ in checks if not p),
-            "checks": checks, "ages_h": ages, "backlogs": backlogs, "matured": matured}
+    # Reported for continuity with the first instrument, and because the frontier age is the
+    # quantity the alarm itself keys on — but it is REPORTED, never a pass/fail leg, precisely
+    # because its sample-to-sample movement is arrival-coupled.
+    info = "frontier_age_h=%s (reported, not a gate leg)" % ["%.2f" % a for a in ages]
+
+    if not draining or not producer_writing:
+        verdict = "FAIL"
+        reason = "not draining: " + ", ".join(n for n, p, _ in checks if not p)
+    elif not within:
+        verdict = "INDETERMINATE"
+        reason = ("draining at %.1f rows/h, but backlog %d is %d over the cap — projected %.1fh "
+                  "to clear, beyond the %.1fh horizon derived from the alarm's own threshold"
+                  % (rate_per_h, backlogs[-1], over_cap, eta_h, hz))
+    else:
+        verdict = "PASS"
+        reason = ("draining at %.1f rows/h; backlog %d clears the %d cap in ~%.1fh, inside the "
+                  "%.1fh horizon" % (rate_per_h, backlogs[-1], lim, eta_h, hz))
+    return {"verdict": verdict, "reason": reason, "checks": checks, "info": info,
+            "ages_h": ages, "backlogs": backlogs, "matured": matured,
+            "net_drain": net_drain, "span_h": span_h, "eta_h": eta_h}
 
 
 def render_lines(result):
     """POSITIVE per-check output. A run silently skipped must never look like one that passed."""
     if not result["checks"]:
         return ["CHECK backfill_drain: verdict=%s (%s)" % (result["verdict"], result["reason"])]
-    return ["CHECK %-22s %-4s %s" % (name, "PASS" if ok else "FAIL", detail)
-            for name, ok, detail in result["checks"]]
+    lines = ["CHECK %-24s %-4s %s" % (name, "PASS" if ok else "FAIL", detail)
+             for name, ok, detail in result["checks"]]
+    if result.get("info"):
+        lines.append("INFO  %s" % result["info"])
+    return lines
 
 
 # ── state ────────────────────────────────────────────────────────────────────────────────────
@@ -279,7 +360,7 @@ def main():
 # deleting a scenario left exactly 18 and the suite reported PASS. A floor with slack in it is a
 # floor that licenses exactly one silent deletion, which is the vacuity hole this line exists to
 # close. Raise it in the same edit that adds a scenario.
-_SELF_TEST_MIN_CHECKS = 19
+_SELF_TEST_MIN_CHECKS = 25
 
 
 def self_test():
@@ -351,22 +432,53 @@ def self_test():
           lambda: frontier_age_h({"frontier": None}, T) == 0.0)
 
     # ── classification: every FAIL has a PASS twin differing in ONE input ────────────────────
-    good = hist([11.3, 7.0, 2.0], [11800, 9000, 6000], [586000, 587000, 588000])
-    check("PASS when all three legs improve",
+    #
+    # These scenarios were REWRITTEN when the instrument was corrected (b1). The old suite
+    # asserted strict monotonicity of frontier age and backlog; those are no longer gate legs,
+    # so a scenario demanding FAIL on a stalled frontier now encodes the RETIRED rule. Deleting
+    # it silently would have been the absence-fixture trap — it is replaced by the regression
+    # test directly below, which pins the exact false-FAIL the old instrument produced.
+    good = hist([11.3, 7.0, 2.0], [11800, 9000, 4500], [586000, 587000, 588000])
+    check("PASS when it drains, clears the cap inside the horizon, and the producer is writing",
           lambda: classify(good)["verdict"] == "PASS")
-    check("FAIL when the frontier age stalls (ONE input changed vs the PASS twin)",
-          lambda: classify(hist([11.3, 11.3, 11.3], [11800, 9000, 6000],
-                                [586000, 587000, 588000]))["verdict"] == "FAIL")
-    check("FAIL when the backlog grows (ONE input changed vs the PASS twin)",
+    check("REGRESSION (the defect that produced this correction): a NOISY frontier and a "
+          "non-monotonic backlog still PASS when the CUMULATIVE net drain clears the cap in time",
+          # Shaped from the real 2026-09-06 series that the old instrument false-FAILed:
+          # ages 10.22 -> 9.32 -> 9.77 (up at the end), backlog 11800 -> 9000 -> 9500 (up at the
+          # end), but net drain -2300 over the span. The old rule failed both legs; the corrected
+          # rule reads one cumulative quantity and a projection.
+          lambda: classify(hist([10.22, 9.32, 9.77], [11800, 9000, 9500],
+                                [586000, 587000, 588000]))["verdict"] == "PASS")
+    check("FAIL when the backlog GROWS over the span (net drain >= 0)",
           lambda: classify(hist([11.3, 7.0, 2.0], [11800, 12000, 13000],
                                 [586000, 587000, 588000]))["verdict"] == "FAIL")
+    check("FAIL when the backlog is exactly FLAT — zero is not draining",
+          lambda: classify(hist([11.3, 7.0, 2.0], [11800, 11800, 11800],
+                                [586000, 587000, 588000]))["verdict"] == "FAIL")
     check("FAIL when the queue empties but the producer is NOT writing",
-          lambda: classify(hist([11.3, 7.0, 2.0], [11800, 9000, 6000],
+          lambda: classify(hist([11.3, 7.0, 2.0], [11800, 9000, 4500],
                                 [586000, 586000, 586000]))["verdict"] == "FAIL")
+    check("INDETERMINATE when draining but too SLOWLY to clear the cap inside the horizon",
+          # -30 rows over ~1.75h against 6,000 over the cap is centuries; draining, not clearing.
+          lambda: classify(hist([11.3, 11.2, 11.1], [11030, 11015, 11000],
+                                [586000, 587000, 588000]))["verdict"] == "INDETERMINATE")
+    check("...and it says so, naming the projected ETA against the derived horizon",
+          lambda: "beyond the" in classify(hist([11.3, 11.2, 11.1], [11030, 11015, 11000],
+                                                [586000, 587000, 588000]))["reason"])
+    check("PASS immediately when the backlog is ALREADY under the cap and still draining",
+          lambda: classify(hist([2.0, 1.5, 1.0], [4000, 3500, 3000],
+                                [586000, 587000, 588000]))["verdict"] == "PASS")
+    check("the horizon is DERIVED, not hardcoded into the verdict: widening it flips the same "
+          "slow-drain series from INDETERMINATE to PASS",
+          lambda: classify(hist([11.3, 11.2, 11.1], [11030, 11015, 11000],
+                                [586000, 587000, 588000]), horizon_h=1e9)["verdict"] == "PASS")
+    check("frontier age is REPORTED but is not a gate leg (its movement is arrival-coupled)",
+          lambda: "reported, not a gate leg" in classify(good)["info"]
+          and not any(n == "frontier_age_falling" for n, _, _ in classify(good)["checks"]))
     check("INDETERMINATE on fewer than the required readings — vacuity, never PASS",
           lambda: classify(good[:2])["verdict"] == "INDETERMINATE")
     check("INDETERMINATE when readings are crowded inside the min gap",
-          lambda: classify(hist([11.3, 7.0, 2.0], [11800, 9000, 6000],
+          lambda: classify(hist([11.3, 7.0, 2.0], [11800, 9000, 4500],
                                 [586000, 587000, 588000], gap=10))["verdict"] == "INDETERMINATE")
 
     # ── the token -> exit-code MAPPING, not just the token ───────────────────────────────────
@@ -398,7 +510,8 @@ if __name__ == "__main__":
         sys.exit(self_test())
     if args.show_config:
         print("  queue_limit=%d max_attempts=%d cooldown_s=%d" % (QUEUE_LIMIT, MAX_ATTEMPTS, ATTEMPT_COOLDOWN_S))
-        print("  readings_required=%d min_gap_s=%d" % (READINGS_REQUIRED, MIN_GAP_S))
+        print("  readings_required=%d min_gap_s=%d projection_horizon_h=%.1f"
+              % (READINGS_REQUIRED, MIN_GAP_S, PROJECTION_HORIZON_H))
         print("  state_file=%s" % STATE_FILE)
         print("  psql_cmd=%s" % os.environ.get("BDG_PSQL_CMD", PSQL_DEFAULT))
         sys.exit(0)

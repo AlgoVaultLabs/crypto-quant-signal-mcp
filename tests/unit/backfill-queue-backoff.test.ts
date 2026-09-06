@@ -48,9 +48,15 @@ type Row = {
  * which is the characterisation-test trap. This parses the actual string the producer runs.
  */
 function admits(sql: string, row: Row): boolean {
-  const m = sql.match(/WHERE (.+) ORDER BY/);
-  if (!m) throw new Error(`no WHERE..ORDER BY in: ${sql}`);
-  const expr = m[1];
+  // SCOPED TO THE BACKOFF CLAUSE, deliberately. A1b added a second `AND (...)` group carrying the
+  // per-timeframe MATURITY arms, and this interpreter knows only the three backoff columns — so
+  // evaluating the whole WHERE made every fixture here fail on a clause it was never about. That
+  // is the absence-fixture trap: the fixture predated a capability, and "fixing" it by widening
+  // this interpreter would make one test depend on the other's subject. Maturity is owned, in
+  // full, by `tests/unit/backfill-maturity-single-derivation.test.ts`; this file owns backoff.
+  const m = sql.match(/WHERE outcome_price IS NULL AND (\([^)]*outcome_attempts[^)]*\)) AND /);
+  if (!m) throw new Error(`no backoff group in: ${sql}`);
+  const expr = `outcome_price IS NULL AND ${m[1]}`;
   // Translate SQL to JS with SQL's NULL semantics preserved by using `null`-aware comparisons.
   const js = expr
     .replace(/(\w+) IS NULL/g, '($1 === null)')
@@ -78,6 +84,14 @@ describe('OPS-OUTCOME-BACKFILL-STALL-W1 A1 — backfill queue predicate', () => 
   it('preserves oldest-first ordering and the NULL-outcome subject', () => {
     expect(sql).toContain('outcome_price IS NULL');
     expect(sql).toContain('ORDER BY created_at ASC');
+  });
+
+  it('A1b: the maturity clause is PRESENT and is a SEPARATE conjunct from the backoff clause', () => {
+    // This file scopes its interpreter to the backoff group, so it must assert that the other
+    // group still exists — otherwise deleting maturity entirely would leave this suite green and
+    // the scoping would have hidden a real regression rather than separated two subjects.
+    expect(sql).toMatch(/AND \(\(timeframe = '[^']+' AND created_at <= \d+\)/);
+    expect(sql).toContain('outcome_attempts');
   });
 
   it('carries an explicit NULL arm for a never-attempted row', () => {

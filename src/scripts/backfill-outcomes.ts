@@ -31,7 +31,7 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 import { getDexForCoin } from '../lib/asset-tiers.js';
 import { runAsBatch, runAsCaller, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
 import type { ExchangeId, SignalRecord } from '../types.js';
-import { computePFEMAE, toSignalOutcomeUpdate, EVAL_CANDLES, TF_MS } from '../lib/pfe-mae.js';
+import { computePFEMAE, toSignalOutcomeUpdate, EVAL_CANDLES, TF_MS, maturityHorizonMs } from '../lib/pfe-mae.js';
 
 const DELAY_BETWEEN_FETCHES_MS = 300; // polite to HL API
 
@@ -117,7 +117,10 @@ async function main() {
         try {
           const signalTimeMs = sig.created_at * 1000;
           // Need evalCount candles after signal time + 1 buffer
-          const endTimeNeeded = signalTimeMs + (evalCount + 1) * candleMs;
+          // A1b: ONE derivation, shared with the queue's admission clause. This site used to
+          // recompute the horizon inline while the queue admitted at a single candle.
+          const horizonMs = maturityHorizonMs(timeframe);
+          const endTimeNeeded = signalTimeMs + (horizonMs ?? Number.POSITIVE_INFINITY);
           const now = Date.now();
 
           // Double-check: enough time has passed for full evaluation window

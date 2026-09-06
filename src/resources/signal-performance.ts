@@ -2,7 +2,7 @@ import { getPerformanceStatsAsync, getSignalsNeedingUnifiedBackfillAsync, update
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { runAsBatch } from '../lib/upstream-weight-budget.js';
 import type { ExchangeId, PerformanceStats } from '../types.js';
-import { computePFEMAE, toSignalOutcomeUpdate, EVAL_CANDLES, TF_MS } from '../lib/pfe-mae.js';
+import { computePFEMAE, toSignalOutcomeUpdate, EVAL_CANDLES, TF_MS, maturityHorizonMs } from '../lib/pfe-mae.js';
 
 /**
  * Run a lightweight backfill pass with PFE/MAE multi-candle tracking.
@@ -23,7 +23,8 @@ export async function runBackfill(): Promise<void> {
         if (!candleMs || !evalCount) continue;
 
         const signalTimeMs = sig.created_at * 1000;
-        const endTimeNeeded = signalTimeMs + (evalCount + 1) * candleMs;
+        // A1b: ONE derivation, shared with the queue's admission clause.
+        const endTimeNeeded = signalTimeMs + (maturityHorizonMs(sig.timeframe) ?? Number.POSITIVE_INFINITY);
         if (Date.now() < endTimeNeeded) continue; // not ready yet
 
         const adapter = getAdapter((sig.exchange as ExchangeId) || 'HL');

@@ -55,6 +55,56 @@ export const TF_MS: Record<string, number> = {
   '8h': 28_800_000, '12h': 43_200_000, '1d': 86_400_000,
 };
 
+/**
+ * THE maturity horizon — how long after emission a row CAN be evaluated. ONE derivation.
+ *
+ * OPS-OUTCOME-BACKFILL-STALL-W1 A1b. This is the generator fix for a class A1 closed in one lane
+ * and left open in three others: a queue's ADMISSION predicate and each consumer's ATTEMPT
+ * predicate were independent derivations of "is this row workable?", and they disagreed.
+ *
+ * Measured live 2026-09-06 12:13:41Z: `getSignalsNeedingUnifiedBackfillAsync` admitted rows at
+ * **ONE candle** old (via its own private `TIMEFRAME_SECONDS` map) while every consumer refuses
+ * to attempt before `(EVAL_CANDLES + 1)` candles. Result: **2,133 of the 5,000 window slots
+ * (43%) were held by IMMATURE rows** that could not possibly fill, were re-skipped on every
+ * batch, and displaced fillable work — surfacing as `Batch 14 done: 0 filled, 1970 skipped,
+ * 0 errors`, the same shape as the pre-A1 sediment defect for an entirely different reason.
+ *
+ * FOUR call sites derived this independently before this function existed:
+ *   src/lib/performance-db.ts            queue admission — at ONE candle, the divergent one
+ *   src/scripts/backfill-outcomes.ts     the 3-minute cron
+ *   src/resources/signal-performance.ts  the MCP resource's lazy backfill
+ *   src/lib/band-outcome-lane.ts         the band lane's own queue
+ * All four now call this. `tests/unit/backfill-maturity-single-derivation.test.ts` FAILS if a
+ * fifth derivation appears, or if admission and attempt ever disagree at the boundary.
+ *
+ * Returns `null` for a timeframe this module does not know. An unknown timeframe has no horizon
+ * and must never be silently given one: a wrong horizon either admits rows that cannot fill (the
+ * defect above) or hides rows that can.
+ */
+export function maturityHorizonMs(timeframe: string): number | null {
+  const candles = EVAL_CANDLES[timeframe];
+  const ms = TF_MS[timeframe];
+  if (candles === undefined || ms === undefined) return null;
+  return (candles + 1) * ms;
+}
+
+/** Seconds form, for the epoch-SECOND columns (`signals.created_at`) and the queue SQL. */
+export function maturityHorizonS(timeframe: string): number | null {
+  const ms = maturityHorizonMs(timeframe);
+  return ms === null ? null : ms / 1000;
+}
+
+/**
+ * Is a row emitted at `createdAtS` (epoch SECONDS) evaluable at `nowS`?
+ *
+ * An unknown timeframe is NOT mature — the same default the queue's filter has always applied,
+ * and the safe one: a row we cannot reason about must not be attempted.
+ */
+export function isMatureAtS(createdAtS: number, timeframe: string, nowS: number): boolean {
+  const horizon = maturityHorizonS(timeframe);
+  return horizon !== null && nowS >= createdAtS + horizon;
+}
+
 export interface PFEMAEResult {
   outcomePrice: number;
   outcomeReturnPct: number;

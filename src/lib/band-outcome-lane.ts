@@ -53,7 +53,7 @@
 import { getAdapter } from './exchange-adapter.js';
 import { runAsBatch } from './upstream-weight-budget.js';
 import { getVenueBudget } from './venue-budget-registry.js';
-import { computePFEMAE, toSignalOutcomeUpdate, EVAL_CANDLES, TF_MS } from './pfe-mae.js';
+import { computePFEMAE, toSignalOutcomeUpdate, EVAL_CANDLES, TF_MS, maturityHorizonMs } from './pfe-mae.js';
 import { getBandSignalsNeedingOutcome, updateBandSignalOutcomes } from './performance-db.js';
 import { isTrackedBackfillInflight } from '../resources/signal-performance.js';
 import type { ExchangeId } from '../types.js';
@@ -181,7 +181,8 @@ export async function runBandOutcomeSweep(): Promise<BandOutcomeSweepResult> {
         if (!candleMs || !evalCount) { tally.skipped_unevaluable += 1; continue; }
 
         const signalTimeMs = sig.created_at * 1000;
-        const endTimeNeeded = signalTimeMs + (evalCount + 1) * candleMs;
+        // A1b: ONE derivation. The band lane has its own queue but the same maturity question.
+        const endTimeNeeded = signalTimeMs + (maturityHorizonMs(sig.timeframe) ?? Number.POSITIVE_INFINITY);
         if (Date.now() < endTimeNeeded) { tally.skipped_not_ready += 1; continue; }
 
         // POISON GUARD. Without it, a coin whose venue permanently 4xxs sits at the `created_at

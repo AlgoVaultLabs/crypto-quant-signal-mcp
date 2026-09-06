@@ -9,6 +9,8 @@ import type { SignalRecord, SignalVerdict, PerformanceStats } from '../types.js'
 import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js';
 import { isShortLivedScript } from './runtime.js';
 import { isPfeEligible, SQL_PFE_ELIGIBLE } from './pfe-scoring.js';
+// A1b: the ONE maturity derivation. `pfe-mae.ts` is a type-only-import leaf, so this cannot cycle.
+import { EVAL_CANDLES, maturityHorizonS, isMatureAtS } from './pfe-mae.js';
 import { SQL_PUBLISHED_POPULATION, sqlPublishedPopulation, isPublishedPopulation, MIN_TRACKABLE_CONFIDENCE } from './published-population.js';
 import { scorerCaptureEnabled, type ScorerParts } from './scorer-input-codes.js';
 import { formatWriteLossLog } from './log-redact.js';
@@ -2937,10 +2939,30 @@ export async function updateSignalOutcomes(id: number, data: {
  * Only returns signals where outcome_price IS NULL and enough time has passed
  * for the signal's own timeframe.
  */
-const TIMEFRAME_SECONDS: Record<string, number> = {
-  '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800,
-  '1h': 3600, '2h': 7200, '4h': 14400, '8h': 28800, '12h': 43200, '1d': 86400,
-};
+/**
+ * OPS-OUTCOME-BACKFILL-STALL-W1 A1b — the maturity clause, GENERATED from the one shared horizon.
+ *
+ * There is deliberately no timeframe→duration literal in this file any more. The private
+ * `TIMEFRAME_SECONDS` map that used to live here is DELETED: it was a second derivation of the
+ * candle duration AND it encoded a different rule from every consumer — admission at ONE candle
+ * against an attempt guard of `(EVAL_CANDLES + 1)` candles. That divergence is what filled 43% of
+ * the live 5,000-row window with rows that could not possibly fill.
+ *
+ * Emitted as an explicit per-timeframe OR-chain rather than a CASE so the clause is inspectable
+ * in the log and assertable in a test, and so a timeframe the code does not know is EXCLUDED
+ * rather than defaulted — the same refusal `isMatureAtS` makes.
+ */
+function buildMaturityClause(nowEpoch: number): string {
+  const arms = Object.keys(EVAL_CANDLES)
+    .map((tf) => ({ tf, horizon: maturityHorizonS(tf) }))
+    .filter((r): r is { tf: string; horizon: number } => r.horizon !== null)
+    .sort((a, b) => a.horizon - b.horizon)
+    .map(({ tf, horizon }) => `(timeframe = '${tf}' AND created_at <= ${Math.trunc(nowEpoch) - horizon})`);
+  // An empty arm set would make this `()` — a syntax error — and, worse, an unguarded caller
+  // could read it as "no maturity restriction". Refuse loudly instead.
+  if (arms.length === 0) throw new Error('buildMaturityClause: no known timeframes — refusing to emit an unrestricted queue');
+  return `(${arms.join(' OR ')})`;
+}
 
 /**
  * OPS-OUTCOME-BACKFILL-STALL-W1 A1 — the queue predicate, built as a PURE fn.
@@ -2963,6 +2985,10 @@ export function buildBackfillQueueSql(nowEpoch: number, limit = BACKFILL_QUEUE_L
     ` OR outcome_attempts < ${BACKFILL_MAX_ATTEMPTS}` +
     ` OR outcome_last_attempt_at IS NULL` +
     ` OR outcome_last_attempt_at <= ${cutoff})` +
+    // A1b: admission now uses the SAME horizon every consumer's attempt guard uses. Before this,
+    // admission was `>= 1 candle` and attempt was `>= (EVAL_CANDLES + 1) candles`, so the window
+    // filled with rows no consumer would touch.
+    ` AND ${buildMaturityClause(nowEpoch)}` +
     ` ORDER BY created_at ASC LIMIT ${Math.trunc(limit)}`
   );
 }
@@ -2971,14 +2997,12 @@ export async function getSignalsNeedingUnifiedBackfillAsync(): Promise<SignalRec
   const b = getBackend();
   const now = Math.floor(Date.now() / 1000);
 
-  // Build a CASE-based query: only select signals old enough for their timeframe
-  // We use a generous approach: fetch all pending, then filter in JS (simpler across SQLite/PG)
-  //
   // OPS-OUTCOME-BACKFILL-STALL-W1: the cap is unchanged at BACKFILL_QUEUE_LIMIT. Raising it was
   // considered and REJECTED — a capacity constant is a COUNTDOWN, not a lifecycle change, and
   // with permanently-unfillable rows at the head of a FIFO any raised constant is consumed by
   // sediment first and returns as a fresh incident at the next volume step. What changed is that
-  // sediment now AGES OUT of the window under a bounded backoff, so the cap governs live work.
+  // sediment now AGES OUT of the window under a bounded backoff (A1), and immature rows never
+  // ENTER it (A1b), so the cap governs live, workable work.
   const sql = buildBackfillQueueSql(now);
 
   let rows: SignalRecord[];
@@ -2988,12 +3012,11 @@ export async function getSignalsNeedingUnifiedBackfillAsync(): Promise<SignalRec
     rows = b.all(sql);
   }
 
-  // Filter: only signals old enough for their timeframe
-  return rows.filter(s => {
-    const evalWindow = TIMEFRAME_SECONDS[s.timeframe];
-    if (!evalWindow) return false;
-    return (now - s.created_at) >= evalWindow;
-  });
+  // A1b: kept as defence-in-depth, and it is now the SAME predicate the SQL applied rather than a
+  // second, looser one. It is not redundant: SQLite and Postgres both run the clause above, but
+  // this also covers a timeframe that appears in the data and not in EVAL_CANDLES — which the SQL
+  // excludes by omission and this excludes by refusal, for the same reason.
+  return rows.filter(s => isMatureAtS(s.created_at, s.timeframe, now));
 }
 
 /**
