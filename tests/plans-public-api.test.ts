@@ -111,14 +111,14 @@ describe('ALLOW-list — the response carries public fields and nothing else', (
     expect(Object.keys(body).sort()).toEqual(['_algovault', 'free', 'generated_at', 'tiers']);
   });
 
-  it('every tier carries exactly the five declared keys', async () => {
+  it('every tier carries exactly the six declared keys', async () => {
     const { body } = await getBody(await boot());
     const tiers = body.tiers as Array<Record<string, unknown>>;
     // Vacuity guard: an empty tiers[] would make the per-tier assertion below vacuously true.
     expect(tiers.length).toBeGreaterThan(0);
     for (const t of tiers) {
       expect(Object.keys(t).sort()).toEqual([
-        'daily_calls', 'id', 'label', 'monthly_calls', 'price_usd',
+        'daily_calls', 'id', 'label', 'monthly_calls', 'price_usd', 'price_usd_6month',
       ]);
     }
   });
@@ -173,7 +173,7 @@ describe('tier coverage — a new plan cannot silently vanish from the public la
     const baseUrl = await boot();
     const { PLANS } = await import('../src/lib/plans.js');
     const { body } = await getBody(baseUrl);
-    const tiers = body.tiers as Array<{ id: string; label: string; monthly_calls: number; daily_calls: number | null; price_usd: number }>;
+    const tiers = body.tiers as Array<{ id: string; label: string; monthly_calls: number; daily_calls: number | null; price_usd: number; price_usd_6month: number | null }>;
     expect(tiers.map((t) => t.id).sort()).toEqual(Object.keys(PLANS).sort());
     for (const t of tiers) {
       const sot = PLANS[t.id as keyof typeof PLANS];
@@ -181,6 +181,29 @@ describe('tier coverage — a new plan cannot silently vanish from the public la
       expect(t.monthly_calls).toBe(sot.monthlyCalls);
       expect(t.price_usd).toBe(sot.priceUsdMonthly);
       expect(t.daily_calls).toBe(typeof sot.dailyCalls === 'number' ? sot.dailyCalls : null);
+      // GROWTH-TG-PLAN-PICKER-W1 R1. `?? null` is the whole assertion: a plan with no 6-month
+      // Price must reach the wire as null, never as `undefined` (which JSON.stringify DELETES,
+      // silently shrinking the key set this file's ALLOW-list test pins) and never as 0.
+      expect(t.price_usd_6month).toBe(sot.priceUsd6Month ?? null);
+    }
+  });
+
+  it('the six-month term is a TOTAL from plans.ts, and enterprise REFUSES it', async () => {
+    const baseUrl = await boot();
+    const { PLANS, PREPAY_6MONTH_MONTHS, planPrepayTotalUsd } = await import('../src/lib/plans.js');
+    const { body } = await getBody(baseUrl);
+    const tiers = body.tiers as Array<{ id: string; price_usd: number; price_usd_6month: number | null }>;
+    for (const t of tiers) {
+      expect(t.price_usd_6month).toBe(planPrepayTotalUsd(t.id as keyof typeof PLANS, PREPAY_6MONTH_MONTHS));
+    }
+    // Enterprise is the null case, and null here means "not sold on this term" — the same
+    // refusal daily_calls carries. A consumer coercing it to 0 would advertise a free plan.
+    expect(tiers.find((t) => t.id === 'enterprise')!.price_usd_6month).toBeNull();
+    // ...and it is a TOTAL, not a monthly rate: a six-month prepay costs strictly more than one
+    // month and strictly less than six at the monthly rate, or the discount claim is false.
+    for (const t of tiers.filter((x) => x.price_usd_6month !== null)) {
+      expect(t.price_usd_6month!).toBeGreaterThan(t.price_usd);
+      expect(t.price_usd_6month!).toBeLessThan(t.price_usd * PREPAY_6MONTH_MONTHS);
     }
   });
 });

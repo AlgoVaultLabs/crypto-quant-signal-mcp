@@ -1,6 +1,8 @@
 {
   "wave": "GROWTH-TG-QUOTA-PARITY-W1",
   "chapter": "CH1",
+  "superseded_by": "api-plans-public-shape-snapshot-2026-09-06.json",
+  "superseded_reason": "GROWTH-TG-PLAN-PICKER-W1 R1 added `price_usd_6month` to every tier, so this file no longer describes the live shape. ONE snapshot per endpoint: the knowledge-bundle builder projects every audits/*-shape-snapshot-*.json into response_shapes keyed by `endpoint`, and both files carry the SAME `/api/plans/public` string — leaving this one live is a DUPLICATE DOC ID, which winkBM25S rejects OUTRIGHT (`winkBM25S: Duplicate document encountered: \"response_shape:/api/plans/public\"`, measured 2026-09-06: it failed KnowledgeIndex.build and took tests/integration/knowledge-flow.test.ts down with it, not merely publishing a contradiction). Supersession is the ratified way to correct a shape (Q1 ruling, 2026-08-21) and it keeps the file on disk as history. Nothing inside was altered — these two keys are the only addition, which is the mechanism check-shape-snapshot-integrity.mjs:74-90, tests/unit/shape-snapshot-drift-checks.test.ts:127-152 and tests/unit/knowledge-bundle.test.ts require.",
   "endpoint": "/api/plans/public",
   "snapshot_date": "2026-08-27",
   "captured_at_utc": "2026-08-27T08:21:50Z",

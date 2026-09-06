@@ -43,6 +43,8 @@ import {
   PLANS,
   FREE_MONTHLY_CALLS,
   FREE_DAILY_CALLS,
+  PREPAY_6MONTH_MONTHS,
+  planPrepayTotalUsd,
   type PaidPlanId,
 } from './plans.js';
 import { buildPublicCtaBlock, type PublicCtaBlock } from './public-cta.js';
@@ -73,6 +75,23 @@ export interface PublicPlanTier {
    */
   readonly daily_calls: number | null;
   readonly price_usd: number;
+  /**
+   * TOTAL charged for the six-month prepay term, or `null` when the plan is not sold on it.
+   *
+   * 🛑 `null` is a REFUSAL, exactly as `daily_calls` above — "not sold on this term", never zero
+   * and never a scaled-down monthly. `plans.ts::planPrepayTotalUsd` already refuses to fabricate a
+   * term nobody priced, and this field is that refusal projected onto the wire. Enterprise is
+   * `null` because it has no self-serve prepay Price.
+   *
+   * It is a TOTAL, not a monthly rate: `39.9` is what the buyer's card is charged once. A consumer
+   * rendering it beside `price_usd` must say so (`$39.90/6mo`), or it reads as a price cut.
+   *
+   * Added by GROWTH-TG-PLAN-PICKER-W1 R1, discharging `OPS-PLANS-PUBLIC-PREPAY-FIELD-W1`. The
+   * Telegram bot's plan picker renders four SKUs — two of them prepay — and before this field the
+   * two 6-month prices were hand-typed in three places, which is the `_TIER_QUOTA` generator defect
+   * `scripts/check-quota-refusal-seam.py` L4 exists to make unwritable.
+   */
+  readonly price_usd_6month: number | null;
 }
 
 /** The free tier's two meters. Both are REAL caps: a call is refused when EITHER is exhausted. */
@@ -110,6 +129,11 @@ export function buildPublicPlansBody(now: Date = new Date()): PublicPlansBody {
         monthly_calls: plan.monthlyCalls,
         daily_calls: typeof plan.dailyCalls === 'number' ? plan.dailyCalls : null,
         price_usd: plan.priceUsdMonthly,
+        // Projected through `planPrepayTotalUsd`, never off `plan.priceUsd6Month` directly: that
+        // helper is where "a term nobody priced must never be fabricated by scaling a term that
+        // was priced" lives, and reading the field raw here would be a second derivation of the
+        // same decision — the drift the single-derivation rule exists to prevent.
+        price_usd_6month: planPrepayTotalUsd(id, PREPAY_6MONTH_MONTHS),
       };
     }),
     generated_at: now.toISOString(),
