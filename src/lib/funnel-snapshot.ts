@@ -26,6 +26,9 @@
  *     (ACTIVATION-FUNNEL-AUDIT-W1) — null on network failure.
  */
 import fs from 'node:fs';
+// FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3: the ONE definition of checkout intent, shared with
+// funnel-scoreboard.ts so the snapshot and the dashboard can finally be reconciled.
+import { intentCountSql, type IntentSeries } from './signup-intent.js';
 import { execSync } from 'node:child_process';
 import { dbQuery } from './performance-db.js';
 import { externalPayerSql } from './x402-operator-wallets.js';
@@ -90,6 +93,14 @@ export interface FunnelSnapshot {
     quota_hit_block: number | null;         // stage 6: COUNT from funnel_events WHERE event_type='quota_hit_block'
     upgrade_cta_clicked: number | null;     // stage 7: COUNT from funnel_events WHERE event_type='upgrade_cta_clicked'
     stripe_checkout_started: number | null; // stage 8: COUNT(DISTINCT client_reference_id) from signup_attribution, PAID tiers only (see getCheckoutStartedCount)
+    // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3 — ADD-ONLY, alongside the unchanged key above.
+    // `intent_raw` is deliberately the SAME value as `stripe_checkout_started`: the pair names one
+    // number under both its historical key and its honest label, which is what lets a consumer
+    // migrate to the human series without a flag day.
+    intent_human?: number | null;
+    intent_unknown?: number | null;
+    intent_raw?: number | null;
+    checkout_abandoned_human?: number | null;
     tg_bot_start: number | null;            // stage 10: COUNT from bot SQLite subscribers WHERE created_at BETWEEN ? AND ?
     tg_bot_first_command: number | null;    // stage 11: alerts.log grep "event": "tg_bot_first_command"
     tg_bot_watchlist_add: number | null;    // stage 12: COUNT(DISTINCT chat_id) from bot SQLite watchlists WHERE created_at BETWEEN ? AND ?
@@ -501,12 +512,20 @@ async function getStripeEventCount(
 async function getCheckoutStartedCount(
   windowFromIso: string,
   windowToIso: string,
+  series: IntentSeries = 'raw',
 ): Promise<number | null> {
+  // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3: the SQL is no longer written here. It comes from
+  // `src/lib/signup-intent.ts`, the one definition `funnel-scoreboard.ts` also projects from —
+  // the two files previously answered "how much checkout intent?" with different aggregates over
+  // different populations, so the dashboard and this snapshot could never be reconciled.
+  //
+  // `stripe_checkout_started` keeps `series: 'raw'` and therefore its EXACT historical meaning:
+  // every paid-tier start in the window, whoever made it. That continuity is deliberate — this
+  // key has a series going back to REVENUE-METER-TRUTH-W6 CH5, and silently changing what a
+  // published number counts is the defect, not the fix. The human figure ships ALONGSIDE it as a
+  // new key (add before you remove).
   const rows = await dbQuery<{ c: number | string }>(
-    `SELECT COUNT(DISTINCT client_reference_id) AS c
-       FROM signup_attribution
-      WHERE tier_requested IN ('starter', 'pro', 'enterprise')
-        AND created_at >= ? AND created_at <= ?`,
+    intentCountSql(series, { toBound: true }),
     [windowFromIso, windowToIso],
   );
   return safeInt(rows[0]?.c) ?? 0;
@@ -1761,10 +1780,32 @@ export async function generateFunnelSnapshot(
   }
 
   let stripeCheckoutStarted: number | null = null;
+  let intentHuman: number | null = null;
+  let intentUnknown: number | null = null;
   try {
-    stripeCheckoutStarted = await getCheckoutStartedCount(windowFromIso, windowToIso);
+    stripeCheckoutStarted = await getCheckoutStartedCount(windowFromIso, windowToIso, 'raw');
+    intentHuman = await getCheckoutStartedCount(windowFromIso, windowToIso, 'human');
+    intentUnknown = await getCheckoutStartedCount(windowFromIso, windowToIso, 'unknown');
   } catch (err) {
     warnings.push(`signup_attribution checkout-started query failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 R4 → CH3: abandoned checkout as a real stage. Only
+  // the human-classified ones; a crawler-minted Session expiring is not an abandonment, it is the
+  // contamination CH1 stopped creating. Pre-CH1 Sessions carry no `classification` in their
+  // metadata and are recorded `unknown`, so they never enter this count.
+  let checkoutAbandonedHuman: number | null = null;
+  try {
+    const rows = await dbQuery<{ c: number | string }>(
+      `SELECT COUNT(DISTINCT session_id) AS c
+         FROM funnel_events
+        WHERE event_type = 'checkout_abandoned'
+          AND ts >= ? AND ts <= ?`,
+      [windowFromIso, windowToIso],
+    );
+    checkoutAbandonedHuman = safeInt(rows[0]?.c) ?? 0;
+  } catch (err) {
+    warnings.push(`checkout_abandoned query failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // Bot-side stages (Q-C Option α: alerts.log + bot SQLite).
@@ -1895,6 +1936,12 @@ export async function generateFunnelSnapshot(
       quota_hit_block: quotaHitBlock,
       upgrade_cta_clicked: upgradeCtaClicked,
       stripe_checkout_started: stripeCheckoutStarted,
+      // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3 — ADD-ONLY. `stripe_checkout_started` above is
+      // unchanged (every paid-tier start, whoever made it); these name what is actually human.
+      intent_human: intentHuman,
+      intent_unknown: intentUnknown,
+      intent_raw: stripeCheckoutStarted,
+      checkout_abandoned_human: checkoutAbandonedHuman,
       tg_bot_start: tgBotStart,
       tg_bot_first_command: tgBotFirstCommand,
       tg_bot_watchlist_add: tgBotWatchlistAdd,

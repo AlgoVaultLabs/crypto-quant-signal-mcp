@@ -124,11 +124,24 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
 
   it('produces snapshot with all 14 funnel stages + 13 stage_retentions + canonical key set', async () => {
     const snap = await generateFunnelSnapshot({ days: 7 });
-    // Funnel object has exactly 19 keys (5 legacy + 11 ACTIVATION-FUNNEL-AUDIT-W1
+    // Funnel object has exactly 23 keys (5 legacy + 11 ACTIVATION-FUNNEL-AUDIT-W1
     // + 1 CONVERSION-MEASUREMENT-W1 aha quality signal + 2 LANDING-CONVERSION-TRUST-W1
-    // landing CTA quality signals).
+    // landing CTA quality signals + 4 FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3 intent keys).
+    //
+    // The CH3 four are ADD-ONLY and the UNION is what this test asserts: every incumbent key is
+    // still present with its meaning intact — `stripe_checkout_started` in particular still counts
+    // every paid-tier start regardless of class, because a published series must not silently
+    // start counting a different population. `intent_raw` is deliberately the same number under an
+    // honest name, so a consumer can migrate without a flag day.
     const funnelKeys = Object.keys(snap.funnel).sort();
-    expect(funnelKeys.length).toBe(19);
+    expect(funnelKeys.length).toBe(23);
+    expect(funnelKeys).toContain('intent_human');
+    expect(funnelKeys).toContain('intent_unknown');
+    expect(funnelKeys).toContain('intent_raw');
+    expect(funnelKeys).toContain('checkout_abandoned_human');
+    // `intent_raw` and the incumbent key are ONE number under two names — asserted, not assumed,
+    // because a drift between them would mean the definition forked again.
+    expect(snap.funnel.intent_raw).toBe(snap.funnel.stripe_checkout_started);
     expect(funnelKeys).toContain('install');
     expect(funnelKeys).toContain('first_call');
     expect(funnelKeys).toContain('paid_upgrade');

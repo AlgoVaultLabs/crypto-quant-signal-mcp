@@ -47,6 +47,15 @@ import { classifySource, mediumForSource, type AttributionSource } from './attri
 import { externalPayerSql, truncateWallet } from './x402-operator-wallets.js';
 // The cutover date is DERIVED, never a second literal (single-derivation rule).
 import { FLAT_BILLING_CUTOVER_DATE } from './call-class.js';
+// FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3: the ONE definition of checkout intent. A pure LEAF —
+// all four derivations in this file project from it rather than re-writing the predicate.
+import {
+  intentCountSql,
+  intentClassPredicate,
+  PAID_TIER_PREDICATE,
+  HUMAN_INTENT_CLASS,
+  INTENT_LABELS,
+} from './signup-intent.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_WINDOWS_DAYS = [7, 14, 30, 90] as const;
@@ -563,6 +572,14 @@ export interface HumanFunnel {
   /** OPS-ATTRIBUTION-AI-REFERRAL-W1: AI-referred SIGNUPS (sum of ai_* first-touch, medium==='ai'),
    *  classified from the stored referrer + utm_source via the SHARED classifier. A FLOOR — see note. */
   ai_referral: { total: number; by_source: Array<{ source: string; count: number; pct: number | null }>; floor_note: string };
+  /** FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3 — the three intent series, add-only. */
+  intent_diagnostic: {
+    human: number | null;
+    unknown: number | null;
+    raw: number | null;
+    labels: Readonly<Record<string, string>>;
+    note: string;
+  };
 }
 
 /** Human funnel (web → account → Stripe sub), windowed. Visitors is a proxy CONTEXT band
@@ -574,11 +591,26 @@ export async function getHumanFunnel(window: FunnelWindow, deps: ScoreboardDeps 
   const warnings: string[] = [];
   const trackRecord = await scalar(deps, 'human_track_record', `SELECT COUNT(DISTINCT session_id) AS c FROM funnel_events WHERE event_type = 'track_record_viewed' AND ts >= ?`, [iso], warnings);
   const landingCta = await scalar(deps, 'human_landing_cta', `SELECT COUNT(DISTINCT session_id) AS c FROM funnel_events WHERE event_type = 'landing_cta_clicked' AND ts >= ?`, [iso], warnings);
-  const subscribeClicks = await scalar(deps, 'human_subscribe', `SELECT COUNT(*) AS c FROM signup_attribution WHERE created_at >= ?`, [iso], warnings);
+  // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3 — three series from ONE definition
+  // (`src/lib/signup-intent.ts`), not three hand-written queries. Before this wave the stage was
+  // `COUNT(*)` over EVERY row of `signup_attribution`: all tiers (so the `free` rows
+  // `deferred-signup.ts` writes counted as checkout starts) and all classes (so every crawler
+  // that fetched a public URL counted as a human). Measured on the 28d window to 2026-09-05:
+  // 268 rows, of which isbot flags 113, against THREE human pricing-CTA clicks in Plausible.
+  //
+  // `human` is the stage. `unknown` and `raw` are rendered beside it and never folded in —
+  // `unknown` is the fail-open residual (still redirected, still minting a Session) and `raw`
+  // keeps the pre-CH1 series readable across the cutover (add before you remove).
+  const subscribeClicks = await scalar(deps, 'human_subscribe', intentCountSql('human'), [iso], warnings);
+  const intentUnknown = await scalar(deps, 'human_subscribe_unknown', intentCountSql('unknown'), [iso], warnings);
+  const intentRaw = await scalar(deps, 'human_subscribe_raw', intentCountSql('raw'), [iso], warnings);
   const signups = await scalar(deps, 'human_signup', `SELECT COUNT(*) AS c FROM free_keys WHERE created_at >= ?`, [iso], warnings);
   const paid = await scalar(deps, 'human_paid', `SELECT COUNT(*) AS c FROM subscriber_profiles WHERE converted_at >= ?`, [iso], warnings);
   let chanRows: Array<{ channel: string | null; referrer: string | null; utm_source: string | null }> = [];
-  try { chanRows = await deps.query<{ channel: string | null; referrer: string | null; utm_source: string | null }>(`SELECT channel, referrer, utm_source FROM signup_attribution WHERE created_at >= ?`, [iso]); }
+  // CH3: the SAME predicate as the stage above. Re-keying the headline while leaving the channel
+  // split on every row would make the dashboard contradict itself — the "direct 86.7 %" figure was
+  // computed over exactly the population the stage no longer counts.
+  try { chanRows = await deps.query<{ channel: string | null; referrer: string | null; utm_source: string | null }>(`SELECT channel, referrer, utm_source FROM signup_attribution WHERE ${PAID_TIER_PREDICATE} AND ${intentClassPredicate(HUMAN_INTENT_CLASS)} AND created_at >= ?`, [iso]); }
   catch (err) { warnings.push(`human channel read failed: ${err instanceof Error ? err.message : String(err)}`); }
   const chanCounts: Record<string, number> = {};
   // OPS-ATTRIBUTION-AI-REFERRAL-W1: AI-referral family = signups whose stored referrer/utm classify to
@@ -602,7 +634,7 @@ export async function getHumanFunnel(window: FunnelWindow, deps: ScoreboardDeps 
     floor_note: 'FLOOR — AI-referred signups (Referer/utm-classified). signup_attribution.referrer is the signup-moment referer, so only direct-to-/signup clicks from an AI host count today; anonymous AI visitors surface once the self-hosted Plausible referrer view lands (parked: a custom beacon would duplicate Plausible). Referer-only ~30%; AI Overviews + native apps uncapturable.',
   };
   const stages: FunnelStage[] = [
-    { key: 'subscribe_click', label: 'Subscribe click', sublabel: 'Intent · /signup CTA', count: subscribeClicks },
+    { key: 'subscribe_click', label: INTENT_LABELS.human, sublabel: 'Intent · classified-human /signup navigation', count: subscribeClicks },
     { key: 'signup', label: 'Signup', sublabel: 'Account · free key + referral', count: signups },
     { key: 'paid', label: 'Paid', sublabel: 'Conversion · Stripe sub', count: paid },
   ];
@@ -612,6 +644,18 @@ export async function getHumanFunnel(window: FunnelWindow, deps: ScoreboardDeps 
     window,
     engagement_proxy: { track_record_viewed: trackRecord, landing_cta_clicked: landingCta, caveat: 'engagement proxy — real visitor count NOT instrumented (landing is CDN/static; /signup is reachable directly). Not a funnel parent.' },
     stages, transitions, biggest_leak: pickBiggestLeak(transitions, benches), by_channel, ai_referral,
+    // CH3: reported BESIDE the stage, never folded into it. `unknown` is the fail-open residual
+    // — no positive bot signal, so it still got a live Checkout Session — and `raw` keeps the
+    // pre-CH1 series readable across the cutover. `unclassified` is `raw` minus the three
+    // classified series: rows written before the columns existed, which are genuinely unknown
+    // rather than either verdict, and are never guessed at.
+    intent_diagnostic: {
+      human: subscribeClicks,
+      unknown: intentUnknown,
+      raw: intentRaw,
+      labels: INTENT_LABELS,
+      note: 'Stage = classified-human paid-tier checkout intent (COUNT DISTINCT client_reference_id). `unknown` is fail-open — still redirected to Stripe, still counted separately. `raw` is every class including pre-CH1 NULL rows and exists so the historical series stays readable; it is NOT a conversion denominator.',
+    },
   };
 }
 

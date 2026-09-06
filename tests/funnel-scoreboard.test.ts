@@ -252,7 +252,17 @@ describe('getHumanFunnel', () => {
   const deps = funnelDeps((sql) => {
     if (sql.includes("'track_record_viewed'")) return [{ c: 71 }];
     if (sql.includes("'landing_cta_clicked'")) return [{ c: 88 }];
-    if (sql.includes('COUNT(*)') && sql.includes('FROM signup_attribution')) return [{ c: 100 }];
+    // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3: the stage is no longer `COUNT(*)` over every row.
+    // Three series now come from ONE definition (src/lib/signup-intent.ts), separated by their
+    // class predicate — so the fixture must answer each SEPARATELY or the test cannot tell a
+    // re-key from a no-op. 100 raw requests decompose into 12 classified-human, 18 fail-open
+    // unknown and 70 bots + pre-CH1 nulls, which is the shape the live 28d population actually
+    // has (isbot flagged 42.2% of 268 rows against 3 human CTA clicks in Plausible).
+    if (sql.includes('FROM signup_attribution') && sql.includes('COUNT(DISTINCT client_reference_id)')) {
+      if (sql.includes("classification = 'browser'")) return [{ c: 12 }];
+      if (sql.includes("classification = 'unknown'")) return [{ c: 18 }];
+      return [{ c: 100 }]; // raw — no class filter
+    }
     if (sql.includes('referrer, utm_source FROM signup_attribution')) return [
       ...Array(88).fill({ channel: 'direct', referrer: null, utm_source: null }),
       ...Array(10).fill({ channel: 'tg_bot', referrer: null, utm_source: null }),
@@ -266,10 +276,17 @@ describe('getHumanFunnel', () => {
   it('renders stages + proxy band + channel + biggest leak', async () => {
     const h = await getHumanFunnel('all', deps);
     expect(h.engagement_proxy).toMatchObject({ track_record_viewed: 71, landing_cta_clicked: 88 });
-    expect(h.stages.map(s => s.count)).toEqual([100, 6, 1]);
-    expect(h.transitions[0].rate).toBeCloseTo(0.06); // click→signup 6%
-    expect(h.transitions[0].verdict).toBe('r');
-    expect(h.biggest_leak?.from).toBe('Subscribe click');
+    // The stage is the HUMAN count now, not the raw one — that is the whole re-key.
+    expect(h.stages.map(s => s.count)).toEqual([12, 6, 1]);
+    expect(h.transitions[0].rate).toBeCloseTo(0.5); // click→signup on a human denominator
+    expect(h.biggest_leak?.from).toBe('Checkout intent (human)');
+    // The two other series are REPORTED, never folded in. `raw` is kept so the pre-cutover series
+    // stays readable; `unknown` is the fail-open residual that still reached Stripe.
+    expect(h.intent_diagnostic).toMatchObject({ human: 12, unknown: 18, raw: 100 });
+    expect(h.intent_diagnostic.labels.human).toBe('Checkout intent (human)');
+    // A ratio computed on `raw` would read 6% — the number the withdrawn "leak persists → demand"
+    // conclusion was drawn from. Pin that the stage is NOT that.
+    expect(h.stages[0].count).not.toBe(h.intent_diagnostic.raw);
     expect(h.by_channel[0]).toMatchObject({ channel: 'direct', count: 90 });
     expect(h.by_channel[0].pct).toBeCloseTo(0.9);
     // OPS-ATTRIBUTION-AI-REFERRAL-W1: AI-referral family = the 2 AI-classified signups (1 Referer + 1 utm), medium==='ai'

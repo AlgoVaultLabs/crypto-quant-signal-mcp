@@ -178,8 +178,19 @@ describeOrSkip('attribution by_source — connection-layer source breakdown', ()
     const ours = snap.by_source!.filter((r) => r.source === SRC_ALPHA || r.source === SRC_BETA);
     expect(ours.map((r) => r.source)).toEqual([SRC_ALPHA, SRC_BETA]); // connects desc
 
-    // mcp_connect must NOT become a 15th stage: funnel still 19 keys, retentions still 13.
-    expect(Object.keys(snap.funnel).length).toBe(19);
+    // mcp_connect must NOT become a 15th stage.
+    //
+    // This asserted `Object.keys(snap.funnel).length === 19` as a PROXY for that property, and the
+    // proxy is the wrong instrument: it fails on ANY key added to the payload for ANY reason, and
+    // it passes if `mcp_connect` were added while some other key were dropped. It went stale the
+    // first time an unrelated wave added four ADD-ONLY keys (FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1
+    // CH3's intent series), reporting a regression in a property that had not moved. The count
+    // that IS load-bearing here is the STAGE count — `stage_retentions` is derived from
+    // `CANONICAL_STAGE_ORDER`, so 13 transitions across 14 stages is the real invariant, and the
+    // two `not.toHaveProperty` assertions below answer the question directly.
+    //
+    // Snapshot-key-set breadth is owned by `tests/funnel-snapshot.test.ts`, which asserts the
+    // union deliberately. One home per fact.
     expect(Object.keys(snap.stage_retentions).length).toBe(13);
     expect(snap.funnel).not.toHaveProperty('mcp_connect');
     expect(snap.stage_retentions).not.toHaveProperty('mcp_connect_to_first_call');

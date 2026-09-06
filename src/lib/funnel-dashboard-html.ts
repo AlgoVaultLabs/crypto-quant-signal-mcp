@@ -15,6 +15,9 @@
  * NO backticks / ${} inside the embedded <script> — avoids template-literal collision
  * per CLAUDE.md. All render logic is string concatenation.
  */
+// CH3: the ONE set of intent labels, shared with the scoreboard payload.
+import { INTENT_LABELS } from './signup-intent.js';
+
 export function renderFunnelDashboardHtml(): string {
   const css = [
     ':root{color-scheme:dark}*{margin:0;padding:0;box-sizing:border-box}',
@@ -109,8 +112,15 @@ export function renderFunnelDashboardHtml(): string {
     "  var ep=hf.engagement_proxy;",
     "  var proxy='<div class=\"proxyband\">Engagement (proxy \\u00b7 not a funnel parent): track-record views <b>'+f(ep.track_record_viewed)+'</b> \\u00b7 landing CTA <b>'+f(ep.landing_cta_clicked)+'</b><div class=\"hint\">'+esc(ep.caveat)+'</div></div>';",
     "  funnel(el('human'),{title:'Human funnel',path:'Web \\u2192 account \\u2192 subscription',money:'Stripe',moneyCls:'money-stripe',stages:hf.stages,transitions:hf.transitions,leak:hf.biggest_leak,proxyBand:proxy,",
-    "    leakExtra:'Human web-flow friction, not traffic. vs the 30\\u201355% signup-form norm.',",
-    "    fixHtml:'<div class=\"fixline\"><b>\\u2705 Fix shipped (FUNNEL-FIX-HUMAN-SIGNUP-W1, live):</b> OAuth/one-tap + defer email/referral to after first value. Leak persists post-ship \\u2192 the binding constraint is traffic/demand, not signup friction.</div>',",
+    // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3 R2 — both annotations REWRITTEN. They asserted a
+    // CONCLUSION ("the binding constraint is traffic/demand, not signup friction") drawn from a
+    // ratio whose denominator counted every crawler that fetched a public URL. Measured on the 28d
+    // window to 2026-09-05: 268 rows into that denominator, 113 isbot-flagged, against THREE human
+    // pricing-CTA clicks in Plausible. A wave was dispatched against that conclusion. It is
+    // WITHDRAWN here rather than softened, and the replacement states what is now measured and
+    // what is not yet — never a new conclusion on a series that is days old.
+    "    leakExtra:'Human web-flow friction, not traffic. vs the 30\\u201355% signup-form norm. Denominator is CLASSIFIED-HUMAN since 2026-09-07 \\u2014 not comparable to pre-cutover ratios.',",
+    "    fixHtml:'<div class=\"fixline\"><b>\\u2705 Fix shipped (FUNNEL-FIX-HUMAN-SIGNUP-W1, live):</b> OAuth/one-tap + defer email/referral to after first value. <b>\\u26a0 Its \\u201cleak persists \\u2192 demand, not friction\\u201d conclusion is WITHDRAWN</b> (FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1): it was computed on an UNCLASSIFIED denominator \\u2014 a public URL fetch minted a funnel row, and isbot flagged 42.2% of the 28d population. The human series starts 2026-09-07; re-read this after \\u226514 days of it.</div>',",
     "    chLab:'By channel (human source)',chans:hc});",
     // OPS-ATTRIBUTION-AI-REFERRAL-W1 — AI-referral family (human funnel · floor): AI-referred signups
     "  var air=hf.ai_referral;if(air){var airRows=(air.by_source||[]).map(function(s){return [String(s.source).replace('ai_',''),f(s.count),pct(s.pct)];});if(!airRows.length)airRows=[['\\u2014 none yet',0,'\\u2014']];table(el('aireferral'),['AI surface','Signups','Share'],airRows);el('aireferral-note').textContent='AI-referred signups (floor): '+f(air.total)+'. '+air.floor_note;}",
@@ -148,14 +158,24 @@ export function renderFunnelDashboardHtml(): string {
     "    el('wallsplit-note').innerHTML=notes;",
     "  }",
     // HOLD volume + per-price revenue sensitivity (post-cutover HOLDs are metered calls)
-    "  var up=hu.upside.map(function(u){return '<div class=\"up\"><div class=\"pr\">$'+u.price+' / HOLD</div><div class=\"amt\">$'+f(u.amount)+'</div><div class=\"yr\">this window</div></div>';}).join('');",
+    // CH3 R3: the `up` price-card builder is retired with the panel it fed. `hu.upside` is still
+    // COMPUTED and still in the JSON (add before you remove \u2014 nothing else derives from it,
+    // but a consumer might, and removing a payload key is a separate, auditable act). It is simply
+    // no longer RENDERED, because a projection at a price that no longer exists is not a number an
+    // operator should be reading beside real metered counts.
     "  el('hold').innerHTML='<div class=\"hold-grid\">'",
     "    +'<div class=\"hm\"><div class=\"lab\">Avg calls / active agent</div><div class=\"val b\">'+(hu.avg_calls_per_active_agent==null?'\\u2014':hu.avg_calls_per_active_agent.toFixed(1))+'</div><div class=\"hint\">'+f(hu.external_calls)+' external \\u00f7 '+f(hu.active_agents)+' active</div></div>'",
     "    +'<div class=\"hm\"><div class=\"lab\">HOLD calls (metered)</div><div class=\"val o\">'+f(hu.hold_calls)+'</div><div class=\"hint\">'+pct(hu.hold_rate)+' HOLD \\u00b7 one metered call each</div></div>'",
     "    +'<div class=\"hm\"><div class=\"lab\">Trade calls (metered)</div><div class=\"val g\">'+f(hu.trade_calls)+'</div><div class=\"hint\">BUY/SELL \\u00b7 same flat rate</div></div>'",
     "    +'<div class=\"hm\"><div class=\"lab\">Non-verdict calls</div><div class=\"val\">'+f(hu.non_verdict_calls)+'</div><div class=\"hint\">chat/search/regime \\u00b7 excl. from split</div></div>'",
-    "    +'</div><div style=\"font-size:11.5px;color:#8b949e;margin-bottom:9px\">Revenue sensitivity of <b style=\"color:#c9d1d9\">this window\\u2019s</b> external HOLD volume, at three per-call prices:</div>'",
-    "    +'<div class=\"upside\">'+up+'</div>'",
+    // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3 R3 — the three-per-call-price REVENUE SENSITIVITY
+    // panel is RETIRED. It modelled $0.001/$0.002/$0.005 per HOLD, a pricing shape that stopped
+    // existing on 2026-08-08 when billing went flat with HOLD included. It was not merely stale:
+    // it projected revenue from a counterfactual price, on an operator dashboard read for
+    // decisions. The metered split it sat on is REAL and is kept verbatim in the grid above
+    // (HOLD metered / trade metered / non-verdict excluded) \u2014 what goes is the projection,
+    // not a measurement, so nothing is removed that anything else derives from.
+    "    +'</div><div style=\"font-size:11.5px;color:#8b949e;margin-bottom:9px\">Flat per-call billing since 2026-08-08 \\u2014 every verdict is one metered call, HOLD included. No per-price projection: there is one price.</div>'",
     "    +'<div style=\"font-size:11px;color:#6e7681;margin-top:10px;line-height:1.5\">'+esc(hu.caveat)+'</div>';",
     // bridge + cross-cutting
     "  el('bridge').innerHTML='<b>The bridge:</b> the two funnels connect through the API key \\u2014 a human signs up \\u2192 gets a key + referral code \\u2192 wires it into agents, which then appear \\u201crecognized\\u201d in the agent funnel. Most agents never enter the human funnel (free tier needs no signup). <b>Humans are the buyers; agents are the consumers.</b>';",
@@ -190,6 +210,18 @@ export function renderFunnelDashboardHtml(): string {
     '<div id="warnbox" class="warnbox"></div>',
     '<div class="splitnote"><b>Primary split = Human vs Agent.</b> The journeys don\'t share stages — "signup / referral" is human-only, "x402 pay-per-call" is agent-only, on different rails (Stripe vs x402). Channel is the secondary breakdown inside each.</div>',
     '<div class="duo"><div class="fcard" id="human"></div><div class="fcard" id="agent"></div></div>',
+    // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH3 — the intent legend is SERVED, not fetched.
+    //
+    // Everything else on this page arrives from `/dashboard/api/funnel-scoreboard` and is rendered
+    // client-side, so a `curl | grep` of this route sees only the shell. That is fine for numbers
+    // and wrong for the DEFINITION: an operator (and the chapter gate) must be able to see what
+    // the top stage now counts without executing JavaScript, because the whole point of the wave
+    // is that the stage silently meant something other than what it was labelled.
+    //
+    // The three labels interpolate from `INTENT_LABELS` — the same constant the scoreboard emits
+    // in its payload — so the legend and the rendered stage can never drift into naming one
+    // quantity two ways.
+    `<div class="splitnote" id="intentlegend"><b>${INTENT_LABELS.human}</b> is the human funnel's top stage since 2026-09-07: DISTINCT paid-tier <code>/signup?plan=</code> navigations classified <code>browser</code>. Shown beside it, never folded in \u2014 <b>${INTENT_LABELS.unknown}</b> (no positive bot signal, so it still reached Stripe) and <b>${INTENT_LABELS.raw}</b>, which keeps the pre-cutover series readable. A positively-identified bot no longer mints a Checkout Session or a funnel row.</div>`,
     '<div class="st">Quota wall split — daily vs monthly vs unknown <span style="font-size:11px;font-weight:400;color:#8b949e;float:right">a wall that clears at midnight and one that clears in weeks are different facts</span></div>',
     '<div id="wallsplit"></div><div class="muted" id="wallsplit-mix"></div>',
     '<div class="muted" style="margin-top:10px">Per stage — each with its OWN data-derived cutover bounds</div><div id="wallsplit-stages"></div>',
