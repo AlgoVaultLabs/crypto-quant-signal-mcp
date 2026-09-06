@@ -24,6 +24,9 @@ import { sendKeyRecoveryEmail } from './email.js';
 import type { ReferralStatsView } from './referral-pages.js';
 import { renderBrandFooter } from './footer-content.js';
 import { renderSiteNav } from './site-nav.js';
+// FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2: the ONE analytics region. /account is api-origin
+// only (404 on the apex), so the entire self-service account path was invisible to Plausible.
+import { renderAnalyticsRegion } from './analytics-snippet.js';
 import { renderSigninComponent } from './signin-component.js';
 import { isUnifiedSigninEnabled, isNewSignupEnabled, getAuthProvider } from './auth-providers.js';
 import { resolveLicense } from './license.js';
@@ -87,7 +90,8 @@ tailwind.config = {
   }
 }
 </script>
-<style>${ACCOUNT_PAGE_STYLES}</style>`;
+<style>${ACCOUNT_PAGE_STYLES}</style>
+${renderAnalyticsRegion()}`;
 
 // NAV-PLATFORM-GENERATOR-W1: nav via the shared renderSiteNav() (src/lib/site-nav.ts),
 // now arg-less — one byte-identical Platform mega-menu region for every surface (absolute

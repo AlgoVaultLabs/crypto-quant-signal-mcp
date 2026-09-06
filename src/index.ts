@@ -103,6 +103,11 @@ import { classifyTraffic } from './lib/traffic-classifier.js';
 // It PROJECTS from `classifyTraffic` above (never a second `isbot` call site) and adds the
 // Sec-Fetch / Accept evidence that classifier has no input for.
 import { classifyBrowserIntent } from './lib/browser-intent.js';
+// FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2: the ONE analytics region, for the two public pages
+// rendered inline in this file — `/track-record` (apex-proxied, the landing's #2 CTA destination,
+// 0 views in Plausible while the scoreboard counted 175 server-side in 90d) and the bare `/signup`
+// plan picker (api-origin, also the body the CH1 bot branch serves).
+import { renderAnalyticsRegion } from './lib/analytics-snippet.js';
 import { resolveSource, classifySource, shouldEmitConnect } from './lib/attribution-sources.js';
 import {
   isStripeConfigured,
@@ -4777,6 +4782,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Live Track Record — AlgoVault Labs</title>
+${renderAnalyticsRegion()}
 <meta name="description" content="AlgoVault's live trade-call track record. Every signal is Merkle-anchored on Base L2 for independent on-chain verification. Don't trust; verify.">
 <link rel="canonical" href="https://algovault.com/track-record">
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W3 / C4, cross-origin) -->
@@ -5648,6 +5654,7 @@ function getSignupPageHtml(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AlgoVault — Subscribe</title>
+${renderAnalyticsRegion()}
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C, cross-origin) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

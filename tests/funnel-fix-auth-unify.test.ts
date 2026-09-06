@@ -6,6 +6,15 @@
  * AC4 (?src threaded through the sign-in + OAuth href; referral reachable via a
  * non-email identity), the outer-flag byte-parity (legacy layout intact when off),
  * and Q5 (a returning email returns its EXISTING key — no duplicate).
+ *
+ * SNAPSHOT MAINTENANCE — FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 (CH2, 2026-09-07): regenerated for
+ * the analytics region. All three pages this file snapshots — `/welcome`, `/account`, `/referral`
+ * — carried NO Plausible tag at all, so the entire account and referral path was invisible;
+ * `/welcome` is where the goal `Form: Submission` fires, and it read 0 across 28 days. The diff
+ * was verified BEFORE regenerating and is EXACTLY the eight-line `<!-- ANALYTICS:START -->`
+ * region in `<head>`: measured 0 lines removed and 0 added lines that are not part of that
+ * region, across every snapshot in this file. Nothing in any body moved, which is the property
+ * this guard actually protects — the OFF path's LAYOUT.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { renderSigninComponent } from '../src/lib/signin-component.js';

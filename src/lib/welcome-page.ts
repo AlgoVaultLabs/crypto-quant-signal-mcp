@@ -22,6 +22,10 @@ import {
 } from './plans.js';
 // FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1: brand footer from the one SoT.
 import { renderBrandFooter } from './footer-content.js';
+// FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2: the ONE analytics region. /welcome IS the signup
+// page — the Plausible goal `Form: Submission` fires here and read 0 in 28d because this
+// api-origin surface carried no tag at all.
+import { renderAnalyticsRegion } from './analytics-snippet.js';
 
 /**
  * Sanitize a UTM-ish param to safe URL-injection-free chars. Anything outside
@@ -141,6 +145,7 @@ export function getWelcomePageHtml(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Welcome to AlgoVault ${tier ? `(${tier})` : ''}</title>
+${renderAnalyticsRegion()}
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here

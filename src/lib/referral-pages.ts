@@ -20,6 +20,10 @@ import { renderPlanCards, PLAN_CARDS_CSS } from './signup-flow.js';
 import { renderSigninComponent } from './signin-component.js';
 // FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1: brand footer from the one SoT.
 import { renderBrandFooter } from './footer-content.js';
+// FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2: the ONE analytics region. These three pages
+// (/referral, /referral-terms, /join) are apex-served and were untagged, so a referral share
+// link — the whole point of the surface — produced no measurable visit.
+import { renderAnalyticsRegion } from './analytics-snippet.js';
 
 const FTC_URL = 'https://www.ecfr.gov/current/title-16/chapter-I/subchapter-B/part-255';
 const TERMS_PATH = '/referral-terms';
@@ -50,6 +54,7 @@ function shell(title: string, body: string, opts?: { index?: boolean; descriptio
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 ${robots}${desc}
 <title>${esc(title)}</title>
+${renderAnalyticsRegion()}
 <style>
   :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--fg:#e6edf3;--fg-3:#8b949e;--mint:#3fb950}
   *{box-sizing:border-box}

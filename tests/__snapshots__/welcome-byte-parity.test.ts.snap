@@ -7,6 +7,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Welcome to AlgoVault </title>
+<!-- ANALYTICS:START -->
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="/js/insights.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init({endpoint:"/pa/event"})
+</script>
+<!-- ANALYTICS:END -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here
@@ -162,6 +170,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Welcome to AlgoVault </title>
+<!-- ANALYTICS:START -->
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="/js/insights.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init({endpoint:"/pa/event"})
+</script>
+<!-- ANALYTICS:END -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here
@@ -336,6 +352,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Welcome to AlgoVault </title>
+<!-- ANALYTICS:START -->
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="/js/insights.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init({endpoint:"/pa/event"})
+</script>
+<!-- ANALYTICS:END -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here
@@ -510,6 +534,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Welcome to AlgoVault </title>
+<!-- ANALYTICS:START -->
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="/js/insights.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init({endpoint:"/pa/event"})
+</script>
+<!-- ANALYTICS:END -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here
@@ -684,6 +716,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Welcome to AlgoVault </title>
+<!-- ANALYTICS:START -->
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="/js/insights.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init({endpoint:"/pa/event"})
+</script>
+<!-- ANALYTICS:END -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here
@@ -858,6 +898,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Welcome to AlgoVault (starter)</title>
+<!-- ANALYTICS:START -->
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="/js/insights.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init({endpoint:"/pa/event"})
+</script>
+<!-- ANALYTICS:END -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here
@@ -993,6 +1041,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Welcome to AlgoVault (starter)</title>
+<!-- ANALYTICS:START -->
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="/js/insights.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init({endpoint:"/pa/event"})
+</script>
+<!-- ANALYTICS:END -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here

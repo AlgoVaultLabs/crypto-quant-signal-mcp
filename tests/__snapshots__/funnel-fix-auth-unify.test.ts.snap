@@ -52,6 +52,14 @@ tailwind.config = {
   .success-box h2 { color: var(--mint); font-size: 18px; margin-bottom: 12px; }
   .success-box p { color: var(--fg-2); font-size: 14px; line-height: 1.5; margin-bottom: 8px; }
 </style>
+<!-- ANALYTICS:START -->
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="/js/insights.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init({endpoint:"/pa/event"})
+</script>
+<!-- ANALYTICS:END -->
 <title>AlgoVault — Account</title>
 </head>
 <body>
@@ -263,6 +271,14 @@ exports[`outer-flag integration on the 3 pages > /account + /referral OFF snapsh
 <meta name="robots" content="index,follow">
 <meta name="description" content="Refer a friend to AlgoVault and you both win: they get 500 bonus calls, you earn 30% of their subscription for 12 months, paid automatically.">
 <title>AlgoVault — Refer a friend, both win</title>
+<!-- ANALYTICS:START -->
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="/js/insights.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init({endpoint:"/pa/event"})
+</script>
+<!-- ANALYTICS:END -->
 <style>
   :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--fg:#e6edf3;--fg-3:#8b949e;--mint:#3fb950}
   *{box-sizing:border-box}

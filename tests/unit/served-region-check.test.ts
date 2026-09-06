@@ -34,6 +34,8 @@ import {
   selfTest,
   EXIT,
   VERDICT_KEY,
+  FUNCTION_RENDERED_ROUTES,
+  apiOriginFor,
 } from '../../ops/monitoring/served-region-check.mjs';
 import { NAV_START, NAV_END, DESKTOP_SIG, listHtml } from '../../scripts/build_nav.mjs';
 import { ANALYTICS_START, isExcluded } from '../../scripts/build_analytics.mjs';
@@ -90,9 +92,23 @@ describe('derived page set (a hardcoded array must fail)', () => {
 
   it('analytics set matches an independent recomputation and is a superset of nav', () => {
     const nav = derivePageSet('nav', ROOT).map((p) => p.rel);
-    const ana = derivePageSet('analytics', ROOT).map((p) => p.rel).sort();
-    expect(ana).toEqual(expectedSet('analytics'));
+    const ana = derivePageSet('analytics', ROOT).map((p) => p.rel);
+    // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2: the analytics set is now landing-DERIVED plus the
+    // DECLARED function-rendered routes. Both halves are still recomputed independently here —
+    // the file half from the tree, the route half from the exported constant — so a hardcoded
+    // page array still fails, and a route silently dropped from the constant fails too.
+    const expectedRoutes = FUNCTION_RENDERED_ROUTES.map((r) => `route:${r.host}${r.path}`);
+    expect(ana.slice(0, ana.length - expectedRoutes.length).sort()).toEqual(expectedSet('analytics'));
+    expect(ana.slice(ana.length - expectedRoutes.length)).toEqual(expectedRoutes);
     for (const p of nav) expect(ana).toContain(p);
+  });
+
+  it('the nav set does NOT claim the function-rendered routes', () => {
+    // They carry the analytics markers and deliberately not the nav ones. Claiming them for nav
+    // would report seven false missing-markers on the first run, and a guard that cries wolf once
+    // is ignored forever.
+    const nav = derivePageSet('nav', ROOT).map((p) => p.rel);
+    expect(nav.some((r) => r.startsWith('route:'))).toBe(false);
   });
 
   it('the helper source declares NO literal page/URL list', () => {
@@ -107,7 +123,10 @@ describe('derived page set (a hardcoded array must fail)', () => {
   it('URL derivation is total and injective over the derived set', () => {
     for (const region of ['nav', 'analytics'] as const) {
       const urls = derivePageSet(region, ROOT).map((p) => p.url);
-      for (const u of urls) expect(u).toMatch(/^https:\/\/algovault\.com\//);
+      // Two origins are legitimate now: `/welcome`, `/account` and bare `/signup` are served ONLY
+      // on api. (all three 404 on the apex, measured 2026-09-06), so pinning the apex alone would
+      // demand they be checked at a URL that does not exist.
+      for (const u of urls) expect(u).toMatch(/^https:\/\/(api\.)?algovault\.com\//);
       expect(new Set(urls).size).toBe(urls.length);
     }
   });
@@ -122,7 +141,18 @@ describe('derived page set (a hardcoded array must fail)', () => {
     for (const region of ['nav', 'analytics'] as const) {
       const pages = derivePageSet(region, ROOT, 'https://example.test');
       expect(pages.length).toBeGreaterThan(0);
-      for (const p of pages) expect(p.url.startsWith('https://example.test/')).toBe(true);
+      // The api-origin routes must move WITH the override too — hardcoding their host would make
+      // exactly those seven pass vacuously under the force-fire smoke, which is this test's
+      // whole subject in a new place.
+      for (const p of pages) {
+        expect(
+          p.url.startsWith('https://example.test/') || p.url.startsWith('https://api.example.test/'),
+        ).toBe(true);
+      }
+      const apiRouted = pages.filter((p) => p.url.startsWith('https://api.example.test/'));
+      if (region === 'analytics') {
+        expect(apiRouted.length).toBe(FUNCTION_RENDERED_ROUTES.filter((r) => r.host === 'api').length);
+      }
     }
   });
 

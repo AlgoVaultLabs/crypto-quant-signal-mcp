@@ -93,6 +93,11 @@ export const REGIONS = {
     distModule: 'lib/analytics-snippet.js',
     renderFn: 'renderAnalyticsSnippet',
     shouldCarry: (_html, relFromLanding) => !isExcluded(relFromLanding),
+    // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2: also cover the pages that are NOT files.
+    // Only the analytics region — the seven function-rendered surfaces carry the analytics
+    // markers and deliberately not the nav ones, so claiming them for `nav` would report seven
+    // false missing-markers on the first run, and a guard that cries wolf once is ignored forever.
+    functionRendered: true,
   },
 };
 
@@ -144,7 +149,57 @@ export function derivePageSet(regionName, root = REPO_ROOT, origin = 'https://al
     if (!cfg.shouldCarry(html, relFromLanding)) continue;
     out.push({ rel: path.relative(root, file), relFromLanding, url: urlForPage(relFromLanding, origin) });
   }
-  return out.sort((a, b) => a.rel.localeCompare(b.rel));
+  out.sort((a, b) => a.rel.localeCompare(b.rel));
+  if (cfg.functionRendered) out.push(...functionRenderedPages(origin));
+  return out;
+}
+
+/**
+ * FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2 — the pages that are NOT files.
+ *
+ * Everything above is DERIVED from `landing/**`, which is the right shape for the ~54 static
+ * pages and structurally blind to the seven surfaces built in TypeScript at request time. Those
+ * seven were the entire untagged set: `/track-record` (the landing's #2 CTA destination — 0 views
+ * in Plausible while the scoreboard counted 175 server-side views in 90d), the three referral
+ * surfaces, and the whole api-origin account path including `/welcome`, which IS the signup page.
+ *
+ * DECLARED, not derived, and that is the honest shape: there is no file tree to walk. The only
+ * alternative — grepping `app.get(` out of `src/index.ts` — would silently drop every route
+ * registered through a handler module (`/account` is one), and a derivation that under-collects
+ * without saying so is worse than a short list a human must extend. The parity test asserts every
+ * route here is one the repo actually serves, so a stale row FAILS rather than skipping a page.
+ *
+ * URLs are built FROM the caller's `origin` rather than hardcoded, so the force-fire smoke — which
+ * passes a deliberately wrong origin to prove this guard can fail — still moves them. Hardcoding
+ * would make these seven pass vacuously under exactly the run that exists to falsify a green,
+ * which is the defect the docblock above records being found on the host in 2026-08.
+ */
+export const FUNCTION_RENDERED_ROUTES = Object.freeze([
+  // apex — reverse-proxied to the app by a `handle` block in the algovault.com vhost.
+  { path: '/track-record', host: 'apex' },
+  { path: '/referral', host: 'apex' },
+  { path: '/referral-terms', host: 'apex' },
+  { path: '/join', host: 'apex' },
+  // api origin — these three are 404 on the apex (measured 2026-09-06), so `api.` is where they
+  // live. The snippet's relative `/js/insights.js` + `/pa/event` resolve here only because the
+  // api vhost carries the same two Caddy handle blocks the apex does; without them the tag is
+  // present and DEAD, which a bare `grep -c insights.js` cannot tell apart from working.
+  { path: '/welcome', host: 'api' },
+  { path: '/account', host: 'api' },
+  { path: '/signup', host: 'api' },
+]);
+
+/** `https://algovault.com` -> `https://api.algovault.com`. Preserves a wrong smoke origin. */
+export function apiOriginFor(origin) {
+  return origin.replace(/^(https?:\/\/)/, '$1api.');
+}
+
+function functionRenderedPages(origin) {
+  return FUNCTION_RENDERED_ROUTES.map((r) => ({
+    rel: `route:${r.host}${r.path}`,
+    relFromLanding: null,
+    url: `${r.host === 'api' ? apiOriginFor(origin) : origin}${r.path}`,
+  }));
 }
 
 /**

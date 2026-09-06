@@ -15,6 +15,14 @@
  * 3,000 -> 10,000 + its daily cap, and the added "Every verdict counts, HOLD included."
  * Nothing outside `.paywall-headline` / `.paywall-body` moved, which is the property this
  * guard actually protects — the OFF path's LAYOUT, not its copy.
+ *
+ * SNAPSHOT MAINTENANCE — FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 (CH2, 2026-09-07): regenerated for
+ * the analytics region. `/welcome` is api-origin only (404 on the apex) and carried NO Plausible
+ * tag at all, which is why the goal `Form: Submission` — the goal that fires on this very page —
+ * read 0 across 28 days. The diff was verified BEFORE regenerating and is EXACTLY the eight-line
+ * `<!-- ANALYTICS:START -->` region in `<head>`: measured 0 lines removed and 0 added lines that
+ * are not part of that region, across every snapshot in this file. Nothing in the body moved,
+ * which is the property this guard actually protects — the OFF path's LAYOUT.
  */
 import { describe, expect, it } from 'vitest';
 import { getWelcomePageHtml } from '../src/lib/welcome-page.js';

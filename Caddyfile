@@ -47,6 +47,35 @@ api.algovault.com {
         root * /var/www/algovault
         file_server
     }
+    # FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2 — first-party analytics on the API ORIGIN.
+    #
+    # `/welcome`, `/account` and bare `/signup` are served ONLY here (all three are 404 on the
+    # apex, measured), and `/welcome` IS the post-checkout signup page — so the entire account
+    # path was invisible to Plausible. Tagging those renderers is half the fix; the other half is
+    # this, because the ONE analytics snippet SoT is RELATIVE (`/js/insights.js`, `/pa/event`)
+    # and before this block both 404'd on api.: injecting the tag alone would have shipped a DEAD
+    # tag that a `grep -c insights.js` check still reports as present.
+    #
+    # These are the apex's own two blocks VERBATIM (see the `handle /js/insights.js` and
+    # `handle /pa/event` in the algovault.com block below). Same rewrite targets, same CE
+    # upstream, same `X-Forwarded-For` from CF-Connecting-IP — api. is CF-orange too (cf-ray on
+    # every response), so CE's bot filtering and geo see the real client rather than the origin.
+    # Deliberately NOT a redirect to the apex: a cross-origin beacon is exactly what the
+    # first-party proxy exists to avoid, and it would re-expose the tag to ad-blockers.
+    #
+    # The `data-domain` question does not arise: there is no such attribute anywhere — the site
+    # is baked into the served `pa-<hash>.js`, so api-origin pageviews land in the SAME Plausible
+    # site and surface under `Hostnames` as `api.algovault.com`.
+    handle /js/insights.js {
+        rewrite * /js/pa-gfOGxVcQKNfocPr5V3vR8.js
+        reverse_proxy 127.0.0.1:8000
+    }
+    handle /pa/event {
+        rewrite * /api/event
+        reverse_proxy 127.0.0.1:8000 {
+            header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+        }
+    }
     # OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-07) — {remote_host} is the CLOUDFLARE EDGE, not the
     # client: api. is CF-orange (cf-ray on every response). With `trust proxy 1`, Express read
     # that edge IP as req.ip, so the free-tier `free:${ipHash}` meter and every
