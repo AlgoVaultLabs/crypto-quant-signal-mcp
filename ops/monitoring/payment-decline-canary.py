@@ -654,6 +654,19 @@ def render_payer_line(p):
     return "\n".join(lines)
 
 
+def flatten_payer_line(rendered):
+    """Collapse a multi-line payer render into ONE log line, preserving field boundaries.
+
+    Strips each line's own indent rather than deleting any run of six spaces. The naive
+    `.replace("      ", "")` ate the state column's `%-12s` padding and produced
+    `HEALTHYcard:v1:…` — cosmetic here, but the same edit silently deletes any six-space run
+    that ever appears inside a rendered value, which is a content bug wearing a formatting bug's
+    clothes. Caught on the first live host run, not by a unit assertion, which is why it now has
+    one.
+    """
+    return " | ".join(ln.strip() for ln in rendered.splitlines() if ln.strip())
+
+
 def build_body(reasons, facts, payer_states=None):
     lines = ["🛑 %s" % ALERT_ID]
     lines.extend(reasons)
@@ -940,7 +953,7 @@ def main():
            facts["rate_predicate"], facts["linkage_epoch"], facts["epoch0_rows"]))
     for p in payer_states:
         if p["counts"] or (p["events"] > 0 and p["onset"] == "NEW"):
-            log("  %s" % render_payer_line(p).replace("\n", " | ").replace("      ", ""))
+            log("  %s" % flatten_payer_line(render_payer_line(p)))
 
     return finish(verdict, reasons, facts, payer_states)
 
@@ -949,7 +962,7 @@ def main():
 # 🛑 EVERY FIXTURE BELOW IS SYNTHETIC. Earlier rungs of this file pasted live Stripe customer
 # ids and a raw cross-merchant card fingerprint into prose that ships in a PUBLIC repo; this
 # wave redacted them. Use `cus_TEST…` / `card:v1:aaaa…` and never a real handle.
-SELF_TEST_MIN_CHECKS = 127
+SELF_TEST_MIN_CHECKS = 130
 
 
 def _read_last_json(path):
@@ -1307,6 +1320,14 @@ def self_test():
     check("a card holding two records states the fan-out IN WORDS, never as '(2)'",
           "2 customer records on 1 card" in lineB and "(2)" not in lineB)
     check("...and pluralises the noun from the ID count", "customer ids" in lineB)
+    flat = flatten_payer_line(render_payer_line(by[KEY_A]))
+    check("🛑 the log flattener preserves the state column instead of eating its padding",
+          flat.startswith("HEALTHY ") and "HEALTHYcard" not in flat)
+    check("...and joins the render's lines with an explicit separator, losing nothing",
+          flat.count(" | ") == len(render_payer_line(by[KEY_A]).splitlines()) - 1
+          and "cus_TESTAAA" in flat and "dashboard.stripe.com" in flat)
+    check("...and a six-space run inside a VALUE survives the flatten",
+          "a      b" in flatten_payer_line("  x\n      a      b"))
     check("a single-id line uses the singular noun",
           "customer id " in render_payer_line(nst[0])
           and "customer ids" not in render_payer_line(nst[0]))
@@ -1388,7 +1409,7 @@ def self_test():
     if total < SELF_TEST_MIN_CHECKS:
         failed.append("VACUITY: ran %d checks, floor is %d — the suite collapsed"
                       % (total, SELF_TEST_MIN_CHECKS))
-    if SELF_TEST_MIN_CHECKS < 127:
+    if SELF_TEST_MIN_CHECKS < 130:
         failed.append("VACUITY: SELF_TEST_MIN_CHECKS was lowered below its committed value")
 
     for label in failed:
