@@ -822,16 +822,36 @@ def emit_result(verdict, exit_code, facts, path=None):
 
 _LAST_BODY = {"text": None}
 _LAST_CLEAR = {"reason": None}
+_LAST_ARGV = {"fire": None, "clear": None}
+
+# 🛑 THE WRAPPER'S ARGV CONTRACT, WRITTEN ONCE AND ASSERTED.
+#   send_telegram.sh <alert_id> <severity> [body_file|-]   # fire
+#   send_telegram.sh --clear <alert_id> [reason]           # FIRING -> CLEAR
+# The mode flag comes FIRST and the clear reason is POSITIONAL. Getting this wrong is silent:
+# `send_telegram.sh <id> --clear` parses as a FIRE with severity `--clear`, and the wrapper
+# answers `SUPPRESSED_SEVERITY: severity=--clear not in TG-fire set` at EXIT 0. Measured live
+# 2026-09-07 09:27 and 09:28 — two runs logged "clear dispatched (rc=0)" while the cooldown
+# marker sat untouched. A hermetic self-test is structurally blind to exactly what its own seam
+# replaces, so the argv is captured and asserted rather than inferred from a return code.
+
+
+def fire_argv():
+    return [WRAPPER, ALERT_ID, "CRITICAL_PERSISTENT", "-"]
+
+
+def clear_argv(reason):
+    return [WRAPPER, "--clear", ALERT_ID, reason]
 
 
 def fire(body):
     _LAST_BODY["text"] = body
+    argv = fire_argv()
+    _LAST_ARGV["fire"] = argv
     if os.environ.get("ALGOVAULT_CANARY_SELFTEST") == "1":
         log("WOULD_FIRE: (self-test — wrapper skipped)")
         return
     try:
-        subprocess.run([WRAPPER, ALERT_ID, "CRITICAL_PERSISTENT", "-"], input=body,
-                       capture_output=True, text=True, timeout=30)
+        subprocess.run(argv, input=body, capture_output=True, text=True, timeout=30)
     except Exception as exc:                                    # noqa: BLE001
         log("wrapper invocation failed (fail-open): %s" % exc)
 
@@ -854,13 +874,18 @@ def dispatch_clear(reason):
     The two had to land together; neither alone is correct.
     """
     _LAST_CLEAR["reason"] = reason
+    argv = clear_argv(reason)
+    _LAST_ARGV["clear"] = argv
     if os.environ.get("ALGOVAULT_CANARY_SELFTEST") == "1":
         log("WOULD_CLEAR: %s (self-test — wrapper skipped)" % reason)
         return
     try:
-        out = subprocess.run([WRAPPER, ALERT_ID, "--clear"], capture_output=True, text=True,
-                             timeout=30, env=dict(os.environ, CLEAR_REASON=reason))
-        log("clear dispatched (rc=%d)" % out.returncode)
+        out = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+        # Report the MODE we asked for, not just a return code: this wrapper exits 0 on the
+        # suppressed-fire path too, so "rc=0" was exactly the signal that hid the argv defect.
+        log("clear dispatched: argv[1]=%s rc=%d%s"
+            % (argv[1], out.returncode,
+               (" stderr=" + out.stderr.strip()[:120]) if out.stderr.strip() else ""))
     except Exception as exc:                                    # noqa: BLE001
         log("clear invocation failed (fail-open): %s" % exc)
 
@@ -962,7 +987,7 @@ def main():
 # 🛑 EVERY FIXTURE BELOW IS SYNTHETIC. Earlier rungs of this file pasted live Stripe customer
 # ids and a raw cross-merchant card fingerprint into prose that ships in a PUBLIC repo; this
 # wave redacted them. Use `cus_TEST…` / `card:v1:aaaa…` and never a real handle.
-SELF_TEST_MIN_CHECKS = 130
+SELF_TEST_MIN_CHECKS = 136
 
 
 def _read_last_json(path):
@@ -1348,19 +1373,23 @@ def self_test():
     # token↔exit-code pairing assertable end to end rather than by inspection.
     def drive(verdict, reasons, facts_, states):
         _LAST_CLEAR["reason"], _LAST_BODY["text"] = None, None
+        _LAST_ARGV["fire"] = _LAST_ARGV["clear"] = None
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc = finish(verdict, reasons, facts_, states)
-        return rc, buf.getvalue().strip()
+        # Snapshot PER CALL. Reading the module globals after both drives sees only the LAST
+        # one, so the PASS drive's argv would be unobservable — the assertion would then be
+        # about the FAIL drive while claiming to be about the PASS path.
+        return rc, buf.getvalue().strip(), dict(_LAST_ARGV)
 
-    rc_pass, tok_pass = drive("PASS", [], f, st)
+    rc_pass, tok_pass, argv_pass = drive("PASS", [], f, st)
     check("🛑 a PASS verdict DISPATCHES --clear, so the episode closes instead of the channel "
           "staying pinned to the worst thing that ever happened",
           _LAST_CLEAR["reason"] is not None and "stuck payers" in _LAST_CLEAR["reason"])
     check("...and a PASS fires nothing, prints exactly one PASS token, and exits 0",
           _LAST_BODY["text"] is None and rc_pass == EXIT_PASS
           and tok_pass == "PAYMENT_DECLINE_VERDICT=PASS")
-    rc_fail, tok_fail = drive("FAIL", rB, fB, classify_payers(three, NOW))
+    rc_fail, tok_fail, argv_fail = drive("FAIL", rB, fB, classify_payers(three, NOW))
     check("...while a FAIL verdict FIRES and never clears — a clear on a firing condition "
           "would erase the episode",
           _LAST_BODY["text"] is not None and _LAST_CLEAR["reason"] is None)
@@ -1368,6 +1397,24 @@ def self_test():
           rc_fail == EXIT_FAIL and tok_fail == "PAYMENT_DECLINE_VERDICT=FAIL")
     check("...and the FAIL body is the one built from the same facts (no second derivation)",
           _LAST_BODY["text"] == build_body(rB, fB, classify_payers(three, NOW)))
+    # ── BYPASSED ARTIFACT: the wrapper ARGV. The seam replaces the subprocess, so the one
+    # thing the suite can never observe by running is the command line it would have run.
+    ca = clear_argv("because")
+    ca = ca + [None] * (4 - len(ca)) if len(ca) < 4 else ca   # short argv fails a check, never raises
+    check("🛑 the clear argv puts --clear FIRST — `<id> --clear` parses as a FIRE with severity "
+          "'--clear' and is answered SUPPRESSED_SEVERITY at exit 0 (measured live 2026-09-07)",
+          ca[1] == "--clear" and ca[2] == ALERT_ID)
+    check("...and passes the reason POSITIONALLY, as the wrapper reads it (never via env)",
+          ca[3] == "because" and len(clear_argv("because")) == 4)
+    check("...while the FIRE argv keeps <id> <severity> <body> and a severity the wrapper "
+          "actually accepts", fire_argv()[1:] == [ALERT_ID, "CRITICAL_PERSISTENT", "-"])
+    check("...the two argv shapes are DIFFERENT — a clear is not a fire with a flag bolted on",
+          fire_argv()[1] != clear_argv("x")[1])
+    check("...and the PASS path actually invoked the CLEAR argv and never the fire argv",
+          argv_pass["clear"] is not None and argv_pass["clear"][1] == "--clear"
+          and argv_pass["fire"] is None)
+    check("...while the FAIL path invoked the FIRE argv and never the clear argv",
+          argv_fail["fire"] is not None and argv_fail["clear"] is None)
     selftest_results = os.path.join(tempfile.gettempdir(),
                                     "payment-decline-canary-selftest-results.jsonl")
     # 🛑 UNLINK FIRST. Asserting only that the temp file exists is satisfied by a STALE file
@@ -1409,7 +1456,7 @@ def self_test():
     if total < SELF_TEST_MIN_CHECKS:
         failed.append("VACUITY: ran %d checks, floor is %d — the suite collapsed"
                       % (total, SELF_TEST_MIN_CHECKS))
-    if SELF_TEST_MIN_CHECKS < 130:
+    if SELF_TEST_MIN_CHECKS < 136:
         failed.append("VACUITY: SELF_TEST_MIN_CHECKS was lowered below its committed value")
 
     for label in failed:
