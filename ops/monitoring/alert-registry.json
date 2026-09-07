@@ -503,11 +503,11 @@
       "alert_id": "PAYMENT_DECLINE_DRIFT",
       "owner": "ops/monitoring/payment-decline-canary.py",
       "hosts": [
-        "<never fired on either host>"
+        "signal-1"
       ],
-      "adopted": false,
+      "adopted": true,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-PAYMENT_DECLINE_DRIFT-W{NEXT}",
+      "adoption_note": "payment-decline-canary.py calls --clear on its PASS path (OPS-PAYMENT-DECLINE-RECOVERY-PREDICATE-W1). The prior hosts value '<never fired on either host>' was TRUE when this registry was generated 2026-08-21 and became FALSE on 2026-09-07 07:53:03Z, when the alert fired on signal-1 and wrote its cooldown marker; a derived field nobody re-derives is a fact with an expiry date. adopted flips because the owner now calls --clear at all, which also makes this row visible to the reconciler's FIRING_STALE episode-age check \u2014 previously unreachable for the one alert whose entire defect was a stale episode.",
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-PAYMENT_DECLINE_DRIFT-W{NEXT}"
     },
