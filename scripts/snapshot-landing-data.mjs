@@ -30,6 +30,9 @@
 import { readFile, writeFile, access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve as pathResolve } from "node:path";
+// CONVERSION-SURFACES-W2 CH3: ONE derivation of "which files does this claim apply to",
+// shared with scripts/check-claim-coverage.mjs. Two copies of that question would drift.
+import { claimTargets } from "./lib/manifest-targets.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = pathResolve(__dirname, "..");
@@ -284,7 +287,7 @@ async function main() {
       continue;
     }
     claimsResolved++;
-    for (const file of claim.apply_to_files) {
+    for (const file of claimTargets(claim, REPO_ROOT)) {
       if (!claimsByFile.has(file)) claimsByFile.set(file, []);
       claimsByFile.get(file).push({ claim, value: formatted });
     }

@@ -38,6 +38,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
+// CONVERSION-SURFACES-W2 CH3: the SAME expansion the injector uses. A manifest entry may be a
+// glob, and two implementations of "which files does this claim apply to" would drift — the bug
+// then lives in whichever copy nobody is watching.
+import { claimTargets } from './lib/manifest-targets.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '..');
 const TOKEN = 'CLAIM_COVERAGE_VERDICT';
@@ -121,7 +125,7 @@ export function scan(docs, claims, exemptions) {
     } catch {
       continue; // an unparseable pattern covers nothing; the injector will surface it separately
     }
-    compiled.push({ id: c.id, rx, files: new Set(c.apply_to_files || []) });
+    compiled.push({ id: c.id, rx, files: new Set(claimTargets(c, REPO_ROOT)) });
   }
 
   for (const d of docs) {
@@ -220,7 +224,7 @@ export function claimCoveredPairs(docs, claims) {
     if (!fm) continue;
     let rx;
     try { rx = new RegExp(c.find_pattern); } catch { continue; }
-    for (const f of c.apply_to_files || []) {
+    for (const f of claimTargets(c, REPO_ROOT)) {
       const t = byFile.get(f);
       if (t && rx.test(t)) covered.add(`${f}\u0000${fm[1]}`);
     }
@@ -253,7 +257,7 @@ export function cov2Vacuous(docs, claims) {
   for (const c of claims) {
     let rx;
     try { rx = new RegExp(c.find_pattern); } catch { continue; }
-    for (const f of c.apply_to_files || []) {
+    for (const f of claimTargets(c, REPO_ROOT)) {
       const t = byFile.get(f);
       if (t === undefined) { zero.push({ id: c.id, file: f, why: 'FILE_MISSING' }); continue; }
       if (!rx.test(t)) zero.push({ id: c.id, file: f, why: 'ZERO_MATCH' });

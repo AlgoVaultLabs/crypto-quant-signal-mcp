@@ -86,7 +86,7 @@
         "landing/docs.html",
         "landing/faq.html",
         "landing/glossary.html",
-      "landing/how-it-works.html",
+        "landing/how-it-works.html",
         "landing/index.html",
         "landing/integrations.html",
         "landing/integrations/alpaca.html",
@@ -274,11 +274,10 @@
       "accessor": "timeframe_count",
       "format": "integer",
       "apply_to_files": [
-        "landing/faq.html",
-        "landing/how-it-works.html",
-        "landing/index.html"
+        "landing/**/*.html"
       ],
-      "replace_all": true
+      "replace_all": true,
+      "_comment": "CONVERSION-SURFACES-W2 CH3 — was a 3-file hand list (faq/how-it-works/index). The conversion band puts this span on every content page, and check-claim-coverage COV-3 refuses a field that reads LIVE on some pages and FROZEN on others. Widened to a GLOB rather than to 54 more paths: a hand-maintained target list is the staleness generator this estate retired twice (the footer's TARGETS array went stale TWICE). scripts/lib/manifest-targets.mjs resolves it for BOTH the injector and the coverage gate, and filters the expansion by this claim's own find_pattern so no zero-match pairing is manufactured."
     },
     {
       "id": "dtrf-asset-count",

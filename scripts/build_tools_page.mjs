@@ -12,6 +12,7 @@
 //   node scripts/build_tools_page.mjs --check   # 0 = in sync, 1 = drift
 // Also invoked by scripts/build_landing.mjs (so `npm run build:landing` regenerates it).
 import * as fs from 'node:fs';
+import { stampHtml, assetHashes } from './build_asset_versions.mjs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
@@ -54,6 +55,11 @@ function toolCard(entry, cap) {
 // reads as drift forever and the two rewrite the same file on every build. This note is a JS
 // comment, NOT an HTML one: check-rendered-comment-hygiene.mjs blocks a developer note reaching
 // View Source, and a rationale baked into the template is exactly that.
+// CONVERSION-SURFACES-W2 CH3: this page now carries a data-tr-field span (the band's
+// sub-line live-binds its timeframe count), and a span without track-record-proxy.js is a
+// DEAD HOOK — it renders the deploy-baked fallback forever and is indistinguishable from a
+// live one by inspection. check-live-numeric-claims.mjs R4 is fail-closed on exactly that and
+// blocked the deploy for it. The ?v= cache-buster is stamped by build_asset_versions.mjs.
 function preservedJsonLd(existingHtml) {
   const blocks = [...existingHtml.matchAll(/<script type="application\/ld\+json" data-algovault-jsonld="[^"]+">[\s\S]*?<\/script>/g)].map((m) => m[0]);
   return blocks.length ? `${blocks.join('\n')}\n` : '';
@@ -96,6 +102,7 @@ export function renderToolsPage(existingHtml = '') {
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/_design/algovault-design.css">
 <!-- END: AlgoVault canonical design loader -->
+<script defer src="/js/track-record-proxy.js"></script>
 <script>
 tailwind.config = {
   theme: {
@@ -153,9 +160,15 @@ ${renderBrandFooter('desktop')}
 export function buildToolsPage({ check = false, root = REPO_ROOT } = {}) {
   const file = path.join(root, 'landing', 'tools.html');
   const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+  // CONVERSION-SURFACES-W2 CH3: stamp the asset hash HERE rather than leaving it to
+  // build_asset_versions.mjs. This is a full-page generator whose --check compares its output
+  // byte-for-byte, so emitting the unstamped ref and letting the stamper rewrite it afterwards
+  // makes the page read as drift on every single run. stampHtml is idempotent and shared, so
+  // there is still exactly one definition of the hash.
   const html = renderToolsPage(existing ?? ''); // preserve managed JSON-LD blocks across regens
-  const drift = existing !== html;
-  if (drift && !check) fs.writeFileSync(file, html);
+  const stamped = stampHtml(html, assetHashes()).out;
+  const drift = existing !== stamped;
+  if (drift && !check) fs.writeFileSync(file, stamped);
   return { file: 'landing/tools.html', changed: drift && !check, drift };
 }
 
