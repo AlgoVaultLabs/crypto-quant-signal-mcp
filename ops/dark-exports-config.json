@@ -23,7 +23,11 @@
     "Both are handled in code, so no one can be tempted to allowlist an entire class."
   ],
   "verdict_token": "DARK_EXPORTS_VERDICT",
-  "exit_codes": { "PASS": 0, "FAIL": 1, "INDETERMINATE": 3 },
+  "exit_codes": {
+    "PASS": 0,
+    "FAIL": 1,
+    "INDETERMINATE": 3
+  },
   "mode": "block",
   "promotion": {
     "max_unexplained": 0,
@@ -56,7 +60,6 @@
       "FP=0 / FN=0. Blast radius at flip time was measured, not assumed: of 103 worktrees, 10 were",
       "unlanded, 9 of those lack the script entirely (they skip loudly) and the 10th returns PASS."
     ],
-
     "instrument": {
       "population": "Dark exports in TRACKED SOURCE, per run — the unexplained exported symbols themselves, not the log rows that record how many there were.",
       "written_by": "scripts/check-new-dark-exports.mjs",
@@ -108,6 +111,18 @@
     {
       "symbol": "SECURITY_TXT_EXPIRY_DAYS",
       "reason": "GEO-WELLKNOWN-DISCOVERY-W1 R2. Same class and same rationale as AI_CRAWLER_ALLOWLIST directly above: this is an OPS-FACING discovery-policy SoT whose consumers are scripts/generate-wellknown.mjs (which EMITS the /.well-known/ documents from it) and scripts/check-robots-ai-allowlist.mjs (which PROBES them), plus tests/unit/robots-ai-allowlist.test.ts asserting the text reader's output EQUALS this constant so the two cannot drift. Both scripts run on the deploy host, whose node is 20 with no TypeScript loader and whose dist/ is a stale April artifact, so they read this file's literal as TEXT rather than importing it. Zero src/ consumers is the INTENDED end state: these govern static documents served by Caddy and a response-header policy surface, neither of which the runtime ever touches. The RFC 9116 Expires window is consumed only by the generator at deploy time."
+    },
+    {
+      "symbol": "COPY_BUTTON_IDLE_LABEL",
+      "reason": "CONVERSION-SURFACES-W2 CH2. The quickstart COPY button's labels + restore delay. Its ONLY consumer is scripts/render-jsx-static.mjs, which interpolates them into the appended vanilla controller through dist/lib/conversion-copy.js — the same createRequire path that file already uses for renderBrandFooter. Zero src/ consumers is the INTENDED end state: the button lives in a statically-rendered artboard, so a src/ import would make a build-time string a runtime dependency for no reader. Asserted by tests/unit/landing-cta-events.test.ts, which drives the shipped controller and checks the label round-trip COPY -> COPIED -> COPY. Scoped to the three C4 symbols on purpose: C1 (the conversion band) and C2 (/welcome) land in the same module in CH3/CH4 and ARE imported from src/, so they must stay visible to this gate."
+    },
+    {
+      "symbol": "COPY_BUTTON_COPIED_LABEL",
+      "reason": "CONVERSION-SURFACES-W2 CH2. The quickstart COPY button's labels + restore delay. Its ONLY consumer is scripts/render-jsx-static.mjs, which interpolates them into the appended vanilla controller through dist/lib/conversion-copy.js — the same createRequire path that file already uses for renderBrandFooter. Zero src/ consumers is the INTENDED end state: the button lives in a statically-rendered artboard, so a src/ import would make a build-time string a runtime dependency for no reader. Asserted by tests/unit/landing-cta-events.test.ts, which drives the shipped controller and checks the label round-trip COPY -> COPIED -> COPY. Scoped to the three C4 symbols on purpose: C1 (the conversion band) and C2 (/welcome) land in the same module in CH3/CH4 and ARE imported from src/, so they must stay visible to this gate."
+    },
+    {
+      "symbol": "COPY_BUTTON_COPIED_MS",
+      "reason": "CONVERSION-SURFACES-W2 CH2. The quickstart COPY button's labels + restore delay. Its ONLY consumer is scripts/render-jsx-static.mjs, which interpolates them into the appended vanilla controller through dist/lib/conversion-copy.js — the same createRequire path that file already uses for renderBrandFooter. Zero src/ consumers is the INTENDED end state: the button lives in a statically-rendered artboard, so a src/ import would make a build-time string a runtime dependency for no reader. Asserted by tests/unit/landing-cta-events.test.ts, which drives the shipped controller and checks the label round-trip COPY -> COPIED -> COPY. Scoped to the three C4 symbols on purpose: C1 (the conversion band) and C2 (/welcome) land in the same module in CH3/CH4 and ARE imported from src/, so they must stay visible to this gate."
     }
   ]
 }
