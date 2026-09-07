@@ -607,6 +607,12 @@ function techArticleSchema(exchange, display) {
 //
 // The design-loader BEGIN:/END: pair STAYS in the HTML — it is a functional marker other tooling
 // keys on. Only its `(DESIGN-W2 / D2-C)` parenthetical was stripped; the marker text is untouched.
+// CONVERSION-SURFACES-W2 CH3: this generator rewrites the whole tutorial page, so it emits the
+// band region itself. Without it an authoring run strips the band from all 26 tutorial pages and
+// the next deploy goes RED at inject-footer --check (deploy.yml) — a hard stop on a wave that has
+// nothing to do with integrations. `exchange` is the slug. Kept as a JS comment, never an HTML
+// one: check-rendered-comment-hygiene.mjs blocks a developer note reaching View Source, and
+// landing/integrations/** is its BLOCKING surface.
 function htmlShell(exchange, bodyHtml) {
   const title = pageTitle(exchange);
   const display = DISPLAY_NAMES[exchange] ?? (exchange.charAt(0).toUpperCase() + exchange.slice(1));
@@ -703,10 +709,6 @@ ${wrapH2InTierStatCard(stripInternalHeadingAnnotations(stripTLDRSection(stripSna
   </div>
 </main>
 
-<!-- CONVERSION-SURFACES-W2 CH3: this generator rewrites the whole tutorial page, so it must emit
-     the band region itself. Without this line an authoring run would strip the band from all 26
-     tutorial pages and the next deploy would go RED at inject-footer --check (deploy.yml) —
-     a hard stop on a wave that has nothing to do with integrations. The exchange variable is the slug. -->
 ${renderConversionBandRegion({ route: `/integrations/${exchange}` })}
 ${CANONICAL_FOOTER_HTML}
 </body>

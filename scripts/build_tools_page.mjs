@@ -49,6 +49,11 @@ function toolCard(entry, cap) {
 // we PRESERVE any existing managed blocks (carry them into the new <head>) so a build:landing
 // run never strips the JSON-LD — generate_jsonld stays the single owner of their content, and
 // the geo_jsonld_consistency canary keeps passing.
+// CONVERSION-SURFACES-W2 CH3: a FULL-PAGE generator must emit the band region ITSELF —
+// build_landing --check compares its output byte-for-byte, so without it the injector's band
+// reads as drift forever and the two rewrite the same file on every build. This note is a JS
+// comment, NOT an HTML one: check-rendered-comment-hygiene.mjs blocks a developer note reaching
+// View Source, and a rationale baked into the template is exactly that.
 function preservedJsonLd(existingHtml) {
   const blocks = [...existingHtml.matchAll(/<script type="application\/ld\+json" data-algovault-jsonld="[^"]+">[\s\S]*?<\/script>/g)].map((m) => m[0]);
   return blocks.length ? `${blocks.join('\n')}\n` : '';
@@ -137,10 +142,6 @@ ${NAV_END}
 ${cards}
   </div>
 </main>
-  <!-- CONVERSION-SURFACES-W2 CH3: this is a FULL-PAGE generator, so it must emit the band
-       itself — build_landing --check compares its output byte-for-byte and would report the
-       injector's band as drift forever. Emitting the same region here means the generator and
-       the injector converge instead of fighting. -->
 ${renderConversionBandRegion({ route: '/tools' })}
 ${renderBrandFooter('desktop')}
 </body>

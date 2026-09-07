@@ -172,6 +172,11 @@ function faqJsonLd(c) {
   );
 }
 
+// CONVERSION-SURFACES-W2 CH3: a FULL-PAGE generator must emit the band region ITSELF —
+// build_landing --check compares its output byte-for-byte, so without it the injector's band
+// reads as drift forever and the two rewrite the same file on every build. This note is a JS
+// comment, NOT an HTML one: check-rendered-comment-hygiene.mjs blocks a developer note reaching
+// View Source, and a rationale baked into the template is exactly that.
 function renderChannelPage(c, deps) {
   const { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet, renderConversionBandRegion } = deps;
   const anchor = c.docsAnchors[0] ?? '';
@@ -296,10 +301,6 @@ ${faqHtml}
 
   <a class="ch-cta" href="https://algovault.com/tools">Explore the tools →</a>
 </main>
-  <!-- CONVERSION-SURFACES-W2 CH3: this is a FULL-PAGE generator, so it must emit the band
-       itself — build_landing --check compares its output byte-for-byte and would report the
-       injector's band as drift forever. Emitting the same region here means the generator and
-       the injector converge instead of fighting. -->
 ${renderConversionBandRegion({ route: `/${c.slug}` })}
 ${renderBrandFooter('desktop')}
 </body>

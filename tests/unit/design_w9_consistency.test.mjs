@@ -69,13 +69,20 @@ test('landing/verify.html: C2 JSX sections render in canonical order (VHero H1 �
     'VRecent must stay deleted — a fabricated feed behind a LIVE badge on the verify page');
 });
 
-test('landing/verify.html: C2 H1 + H2 + H3 counts match JSX SoT dual-render + R2-3 additions − VRecent (2 H1 + 8 H2 + 2 H3)', async () => {
+test('landing/verify.html: C2 H1 + H2 + H3 counts match JSX SoT dual-render + R2-3 additions − VRecent + the conversion band (2 H1 + 9 H2 + 2 H3)', async () => {
   const html = await read('landing/verify.html');
   assert.strictEqual(countOcc(html, /<h1[^>]*>/), 2, 'expected 2 H1 (1 per artboard)');
   // R2-3 added "How to Verify" + "How It Works" (2 new H2s × dual = 4); 3 JSX H2s × dual = 6;
   // PUBLIC-VERIFY-FAKE-FEED-REMOVAL-W1 then removed VRecent's H2 ("Recent verifications")
   // from BOTH artboards: 10 − 2 = 8.
-  assert.strictEqual(countOcc(html, /<h2[^>]*>/), 8, 'expected 8 H2 (4 JSX/R2-3 × 2 dual-render, VRecent removed)');
+  // CONVERSION-SURFACES-W2 CH3 adds ONE more: the conversion band's own H2 ("Get the next
+  // verdict in your agent."), rendered ONCE here because verify.html carries a single brand
+  // footer and the band is placed per-footer. It is NOT a dual-render addition, which is why
+  // this went 8 → 9 rather than 8 → 10, and the distinction is the point of counting at all —
+  // a band that had landed inside one artboard would have added 1 too, so the count alone does
+  // not prove placement. tests/unit/conversion-band.test.ts asserts bands === brand footers,
+  // which is what actually pins it.
+  assert.strictEqual(countOcc(html, /<h2[^>]*>/), 9, 'expected 9 H2 (4 JSX/R2-3 × 2 dual-render, VRecent removed, + 1 conversion band)');
   assert.strictEqual(countOcc(html, /<h3[^>]*>/), 2, 'expected 2 H3 (VFooter × 2 dual-render)');
 });
 
