@@ -1262,12 +1262,28 @@ export async function handleSubscriptionDeleted(event: any): Promise<void> {
   // existing row. It is armed for the first cancellation, not a repair of a past one.
   await propagateSubscriptionToRecord(customerId, {
     status: asSubscriptionStatus(subscription?.status) ?? 'canceled',
+    subscriptionId: typeof subscription?.id === 'string' ? subscription.id : null,
+    occurredAtMs: eventOccurredAtMs(event),
   }, 'customer.subscription.deleted');
 }
 
 /** The subscription status as Stripe reports it, or null when the payload carries none. */
 function asSubscriptionStatus(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+/**
+ * The EVENT's own `created`, in ms — the watermark that makes an out-of-order delivery a no-op.
+ *
+ * 🛑 THE EVENT'S TIMESTAMP, NOT THE SUBSCRIPTION'S. `subscription.created` is when the
+ * subscription was born and never moves, so using it would give every event on one subscription
+ * the same watermark and order nothing at all. Stripe stamps `event.created` per delivery, which
+ * is the only field that orders two events about the same object. Null when absent — the
+ * precedence rule treats a missing watermark as "cannot compare", never as "oldest".
+ */
+function eventOccurredAtMs(event: any): number | null {
+  const c = event?.created;
+  return typeof c === 'number' && Number.isFinite(c) ? c * 1000 : null;
 }
 
 /**
@@ -1284,7 +1300,10 @@ function asSubscriptionStatus(v: unknown): string | null {
  */
 async function propagateSubscriptionToRecord(
   customerId: string,
-  fields: { tier?: string | null; billingInterval?: StoredBillingInterval; status?: string | null; subscriptionId?: string | null },
+  fields: {
+    tier?: string | null; billingInterval?: StoredBillingInterval; status?: string | null;
+    subscriptionId?: string | null; occurredAtMs?: number | null;
+  },
   source: string,
 ): Promise<void> {
   try {
@@ -1336,6 +1355,11 @@ export async function handleSubscriptionUpdated(event: any): Promise<void> {
     console.warn(`Stripe: customer.subscription.updated for ${customerId} on an unrecognised price — tier/interval left unchanged`);
     await propagateSubscriptionToRecord(customerId, {
       status: asSubscriptionStatus(subscription?.status),
+      // The id travels even on the unrecognised-price branch: the status precedence needs to know
+      // WHICH subscription this status describes, and that question is independent of whether we
+      // recognise the price. Omitting it made a foreign subscription's status look like the row's.
+      subscriptionId: typeof subscription?.id === 'string' ? subscription.id : null,
+      occurredAtMs: eventOccurredAtMs(event),
     }, 'customer.subscription.updated');
     return;
   }
@@ -1345,6 +1369,7 @@ export async function handleSubscriptionUpdated(event: any): Promise<void> {
     billingInterval: resolved.interval,
     status: asSubscriptionStatus(subscription?.status),
     subscriptionId: typeof subscription?.id === 'string' ? subscription.id : null,
+    occurredAtMs: eventOccurredAtMs(event),
   }, 'customer.subscription.updated');
 }
 

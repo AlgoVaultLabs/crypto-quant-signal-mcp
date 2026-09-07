@@ -987,7 +987,7 @@ def main():
 # 🛑 EVERY FIXTURE BELOW IS SYNTHETIC. Earlier rungs of this file pasted live Stripe customer
 # ids and a raw cross-merchant card fingerprint into prose that ships in a PUBLIC repo; this
 # wave redacted them. Use `cus_TEST…` / `card:v1:aaaa…` and never a real handle.
-SELF_TEST_MIN_CHECKS = 136
+SELF_TEST_MIN_CHECKS = 139
 
 
 def _read_last_json(path):
@@ -1004,6 +1004,19 @@ def _read_last_json(path):
     except Exception:                                           # noqa: BLE001
         return {}
 
+
+
+def _capture_status_vocabulary():
+    """Run the real `--status-vocabulary` printer and capture what it emitted.
+
+    Capturing the PRINTER rather than re-reading the constants is the point: a test that
+    re-listed the frozensets would pass with the printer deleted, which is the assertion-that-
+    cannot-fail shape this file has already paid for twice.
+    """
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        status_vocabulary()
+    return buf.getvalue()
 
 
 def _pr(key, cust, status, first="-", last="-", events=1):
@@ -1059,6 +1072,16 @@ def self_test():
                        "unpaid": "NOT_ENTITLED", "canceled": "NOT_ENTITLED",
                        "incomplete": "NOT_ENTITLED", "incomplete_expired": "NOT_ENTITLED",
                        "paused": "NOT_ENTITLED"}
+    vocab = json.loads(_capture_status_vocabulary())
+    check("the --status-vocabulary seam emits all four buckets",
+          sorted(vocab.keys()) == ["ENDED", "HEALTHY", "MONEY_STUCK", "NOT_STARTED"])
+    check("...and its contents ARE the live constants, not a hand-typed copy",
+          vocab["MONEY_STUCK"] == sorted(STATUS_MONEY_STUCK)
+          and vocab["HEALTHY"] == sorted(STATUS_HEALTHY)
+          and vocab["NOT_STARTED"] == sorted(STATUS_NOT_STARTED)
+          and vocab["ENDED"] == sorted(STATUS_ENDED))
+    check("...and it partitions Stripe's enum with nothing missing and nothing spare",
+          sorted(v for b in vocab.values() for v in b) == sorted(documented))
     check("🛑 the stuck set DIFFERS from src/'s entitlement map, and `unpaid` is the difference",
           STATUS_MONEY_STUCK != {k for k, v in src_entitlement.items() if v == "DUNNING"}
           and "unpaid" in STATUS_MONEY_STUCK and src_entitlement["unpaid"] == "NOT_ENTITLED")
@@ -1456,7 +1479,7 @@ def self_test():
     if total < SELF_TEST_MIN_CHECKS:
         failed.append("VACUITY: ran %d checks, floor is %d — the suite collapsed"
                       % (total, SELF_TEST_MIN_CHECKS))
-    if SELF_TEST_MIN_CHECKS < 136:
+    if SELF_TEST_MIN_CHECKS < 139:
         failed.append("VACUITY: SELF_TEST_MIN_CHECKS was lowered below its committed value")
 
     for label in failed:
@@ -1466,6 +1489,28 @@ def self_test():
     ok = not failed
     print("PAYMENT_DECLINE_VERDICT=%s" % ("PASS" if ok else "FAIL"))
     return EXIT_PASS if ok else EXIT_FAIL
+
+
+def status_vocabulary():
+    """Print the 4-bucket status partition as JSON, for the CROSS-LANGUAGE PARITY test.
+
+    🛑 THIS EXISTS BECAUSE THE SECOND IMPLEMENTATION CANNOT IMPORT THE FIRST. `src/lib/
+    subscriber-status.ts` owns this vocabulary for every TypeScript consumer; this file owns it
+    for the host canary, and a JS test cannot import a Python module. Two independent
+    re-derivations of one classification drift to contradiction — that is the defect class the
+    single-derivation rule exists to retire — so `tests/unit/subscriber-status-parity.test.ts`
+    feeds ONE corpus to both sides and demands identical output.
+
+    It prints the map rather than answering one query, so the test compares the WHOLE partition:
+    a per-value probe would pass while a bucket the test forgot to ask about had drifted.
+    """
+    print(json.dumps({
+        "HEALTHY": sorted(STATUS_HEALTHY),
+        "MONEY_STUCK": sorted(STATUS_MONEY_STUCK),
+        "NOT_STARTED": sorted(STATUS_NOT_STARTED),
+        "ENDED": sorted(STATUS_ENDED),
+    }, sort_keys=True))
+    return EXIT_PASS
 
 
 def show_config():
@@ -1496,9 +1541,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Payment decline-rate canary (small-n design).")
     parser.add_argument("--self-test", action="store_true", help="run the hermetic scenario suite and exit")
     parser.add_argument("--show-config", action="store_true", help="print resolved config and exit")
+    parser.add_argument("--status-vocabulary", action="store_true",
+                        help="print the 4-bucket status partition as JSON (cross-language parity seam)")
     a = parser.parse_args()
     if a.self_test:
         sys.exit(self_test())
+    if a.status_vocabulary:
+        sys.exit(status_vocabulary())
     if a.show_config:
         sys.exit(show_config())
     sys.exit(main())

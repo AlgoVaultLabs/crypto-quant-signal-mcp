@@ -56,6 +56,7 @@ import {
   HUMAN_INTENT_CLASS,
   INTENT_LABELS,
 } from './signup-intent.js';
+import { countsInActiveCensus } from './subscriber-status.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_WINDOWS_DAYS = [7, 14, 30, 90] as const;
@@ -1075,7 +1076,12 @@ export async function getFunnelScoreboard(
     warnings.push(`listProfiles failed: ${err instanceof Error ? err.message : String(err)}`);
   }
   const profAgg = aggregateProfiles(profiles);
-  const activeProfiles = profiles.filter(p => (p.status ?? '').toLowerCase() === 'active');
+  // OPS-SUBSCRIBER-STATUS-SOT-W1: projects the ONE owner of the column's meaning instead of
+  // re-deriving it inline. Behaviour is UNCHANGED and must be: `countsInActiveCensus` is exactly
+  // `active`, deliberately NOT the HEALTHY bucket, because the other side of this reconciliation
+  // is a Stripe census built from `subscriptions.list({ status: 'active' })`. Widening it to
+  // include `trialing` would compare two populations and move a PUBLISHED number.
+  const activeProfiles = profiles.filter(p => countsInActiveCensus(p.status));
   // OPS-STRIPE-SUBSCRIPTION-TRUTH-W3 CH1: compare COMPOSITION, not just totals. The Stripe side
   // is the interval-aware census W1-CH2 added; the profiles side is folded from the same ACTIVE
   // rows the total uses, so the two figures can never be computed off different populations.

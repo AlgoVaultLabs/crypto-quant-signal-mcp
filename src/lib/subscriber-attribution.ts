@@ -21,6 +21,9 @@ import { PLANS, planMonthlyRateUsd, planPrepayMonthlyRateUsd, PREPAY_ANNUAL_MONT
 // Type-only: the pure resolver module is a LEAF (no I/O, no imports of its own), so this
 // cannot introduce a cycle. PAY-UNIONPAY-ATTRIBUTION-W1.
 import type { PaymentMethodAttribution } from './payment-method-attribution.js';
+import {
+  CHECKOUT_IMPLIED_STATUS, classifyStoredStatus, decideStatusWrite, STORED_STATUS_CLASS,
+} from './subscriber-status.js';
 
 const PG = !!process.env.DATABASE_URL;
 const TS = PG ? 'TIMESTAMPTZ' : 'TIMESTAMP';
@@ -417,7 +420,10 @@ export function assembleProfile(session: any, signals: ProfileSignals): Subscrib
       ? session.subscription
       : asString(session?.subscription?.id),
     tier,
-    status: 'active', // checkout.session.completed ⇒ the subscription is live
+    // OPS-SUBSCRIBER-STATUS-SOT-W1: an INFERENCE from the event type, not a Stripe read — this
+    // path never sees a subscription object. It is named in one place so the upsert below can
+    // refuse to let it downgrade a measured `past_due`, which is what it silently did before.
+    status: CHECKOUT_IMPLIED_STATUS,
     amountUsd: amountTotal != null ? Math.round(amountTotal) / 100 : null,
     billingInterval,
     monthlyRateUsd: deriveMonthlyRateUsd(tier, billingInterval),
@@ -473,6 +479,21 @@ const SUBSCRIBER_BRIDGE_COLUMNS: { column: string; pgType: string; sqliteType: s
 const SUBSCRIBER_INTERVAL_COLUMNS: { column: string; pgType: string; sqliteType: string }[] = [
   { column: 'billing_interval', pgType: "TEXT NOT NULL DEFAULT 'unknown'", sqliteType: "TEXT NOT NULL DEFAULT 'unknown'" },
   { column: 'monthly_rate_usd', pgType: 'NUMERIC(10,4)', sqliteType: 'REAL' },
+];
+
+// OPS-SUBSCRIBER-STATUS-SOT-W1. The status WATERMARK, and the subscription the status describes.
+//
+// 🛑 THESE TWO COLUMNS ARE WHAT MAKE THE COLUMN ORDER-INDEPENDENT. Before them, the status write
+// was `WHERE customer_id = ?` with no subscription scope and no timestamp, so a customer holding
+// two subscriptions kept whichever event the webhook happened to process LAST, and an
+// out-of-order Stripe delivery left the row permanently on the older value. `subscription_id`
+// already existed but was written ONLY by the checkout upsert and never read by the update path —
+// a declared, populated, silently discarded field. `status_subscription_id` records which
+// subscription the STATUS came from, which is a different question from which subscription the
+// profile was created for, and conflating them is what made the first look sufficient.
+const SUBSCRIBER_STATUS_COLUMNS: { column: string; pgType: string; sqliteType: string }[] = [
+  { column: 'status_updated_at', pgType: TS, sqliteType: 'TEXT' },
+  { column: 'status_subscription_id', pgType: 'TEXT', sqliteType: 'TEXT' },
 ];
 
 // Payment-method attribution columns (PAY-UNIONPAY-ATTRIBUTION-W1 / R2). Same dual-backend
@@ -553,6 +574,47 @@ export async function ensureSubscriberIntervalColumns(): Promise<void> {
 /** Reset the interval-column-init latch — tests only. */
 export function _resetIntervalColumnsInitForTest(): void {
   _intervalColumnsInit = false;
+}
+
+/**
+ * The MONEY_STUCK statuses as a SQL literal list, DERIVED from the owner module at module load.
+ * Hand-writing them in the upsert would be a second copy of the vocabulary; deriving it means a
+ * change to STORED_STATUS_CLASS moves the SQL too, and the parity test pins the whole map.
+ */
+const MONEY_STUCK_SQL_LITERALS = Object.entries(STORED_STATUS_CLASS)
+  .filter(([, cls]) => cls === 'MONEY_STUCK')
+  .map(([status]) => `'${status}'`)
+  .sort()
+  .join(', ');
+
+let _statusColumnsInit = false;
+/**
+ * Idempotently add the 2 status-provenance columns. Same dual-backend shape as
+ * `ensureSubscriberIntervalColumns`: PG has `ADD COLUMN IF NOT EXISTS`, SQLite does not.
+ */
+export async function ensureSubscriberStatusColumns(): Promise<void> {
+  if (_statusColumnsInit) return;
+  ensureSubscriberProfilesSchema();
+  if (PG) {
+    dbExec(
+      SUBSCRIBER_STATUS_COLUMNS
+        .map((c) => `ALTER TABLE subscriber_profiles ADD COLUMN IF NOT EXISTS ${c.column} ${c.pgType};`)
+        .join('\n'),
+    );
+  } else {
+    const rows = await dbQuery<{ name: string }>(`PRAGMA table_info(subscriber_profiles)`, []);
+    const existing = new Set(rows.map((r) => r.name));
+    const missing = SUBSCRIBER_STATUS_COLUMNS.filter((c) => !existing.has(c.column));
+    if (missing.length > 0) {
+      dbExec(missing.map((c) => `ALTER TABLE subscriber_profiles ADD COLUMN ${c.column} ${c.sqliteType};`).join('\n'));
+    }
+  }
+  _statusColumnsInit = true;
+}
+
+/** Reset the status-column-init latch — tests only. */
+export function _resetStatusColumnsInitForTest(): void {
+  _statusColumnsInit = false;
 }
 
 let _bridgeColumnsInit = false;
@@ -749,6 +811,8 @@ export interface ProfileDeps {
    * inject a full deps object.
    */
   ensureInterval?: () => Promise<void>;
+  /** Same contract as `ensureInterval`: idempotent, dual-backend, safe to call repeatedly. */
+  ensureStatus?: () => Promise<void>;
   /**
    * Optional async hook ensuring the PAY-UNIONPAY-ATTRIBUTION-W1 payment-method columns exist.
    * Same contract as `ensureBridge` / `ensureInterval`.
@@ -775,6 +839,7 @@ const defaultProfileDeps: ProfileDeps = {
   run: dbRun,
   ensureBridge: ensureSubscriberBridgeColumns,
   ensureInterval: ensureSubscriberIntervalColumns,
+  ensureStatus: ensureSubscriberStatusColumns,
   ensurePaymentMethod: ensureSubscriberPaymentMethodColumns,
   resolvePaymentMethod: async (session) => {
     const { fetchPaymentMethodForSession } = await import('./stripe.js');
@@ -883,7 +948,22 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (customer_id) DO UPDATE SET
          email = EXCLUDED.email, name = EXCLUDED.name, subscription_id = EXCLUDED.subscription_id,
-         tier = EXCLUDED.tier, status = EXCLUDED.status, amount_usd = EXCLUDED.amount_usd, currency = EXCLUDED.currency,
+         tier = EXCLUDED.tier,
+         -- OPS-SUBSCRIBER-STATUS-SOT-W1: NOT a bare EXCLUDED. EXCLUDED.status on this path is
+         -- always the INFERRED literal CHECKOUT_IMPLIED_STATUS -- no subscription object is in
+         -- scope here -- so a bare assignment let ANY completed checkout by a past_due customer
+         -- rewrite them to active, and the PAYMENT_DECLINE_DRIFT floor stopped seeing a payer
+         -- whose money was stuck. Exactly the fail-open clobber the four COALESCE guards below
+         -- were added for, on the one column where it silences a revenue alarm.
+         --
+         -- The MONEY-STUCK set is generated from STORED_STATUS_CLASS, never hand-written here: a
+         -- second copy of the vocabulary is a second thing to drift, and this file has already
+         -- paid for one (an invented status literal beside a sibling contract that forbade it).
+         -- NOTE: no backticks anywhere in this comment. It lives inside a TS template literal,
+         -- so one would terminate the SQL string -- which is exactly how this landed broken once.
+         status = CASE WHEN subscriber_profiles.status IN (${MONEY_STUCK_SQL_LITERALS})
+                       THEN subscriber_profiles.status ELSE EXCLUDED.status END,
+         amount_usd = EXCLUDED.amount_usd, currency = EXCLUDED.currency,
          channel = EXCLUDED.channel, country = EXCLUDED.country, country_source = EXCLUDED.country_source,
          client_reference_id = EXCLUDED.client_reference_id, signup_at = EXCLUDED.signup_at,
          converted_at = EXCLUDED.converted_at, latency_seconds = EXCLUDED.latency_seconds,
@@ -930,6 +1010,8 @@ export interface SubscriptionRecordUpdate {
   /** Read from the event's own `status`, never a literal we invent. */
   status?: string | null;
   subscriptionId?: string | null;
+  /** Stripe event `created`, in ms. The watermark that makes an out-of-order delivery a no-op. */
+  occurredAtMs?: number | null;
 }
 
 /**
@@ -965,9 +1047,14 @@ export async function applySubscriptionRecordUpdate(
 ): Promise<RecordUpdateOutcome> {
   deps.ensure();
   if (deps.ensureInterval) await deps.ensureInterval();
+  if (deps.ensureStatus) await deps.ensureStatus();
 
-  const rows = await deps.query<{ tier: string | null; status: string | null; billing_interval: string | null }>(
-    `SELECT tier, status, billing_interval FROM subscriber_profiles WHERE customer_id = ?`,
+  const rows = await deps.query<{
+    tier: string | null; status: string | null; billing_interval: string | null;
+    subscription_id: string | null; status_updated_at: string | null; status_subscription_id: string | null;
+  }>(
+    `SELECT tier, status, billing_interval, subscription_id, status_updated_at, status_subscription_id
+       FROM subscriber_profiles WHERE customer_id = ?`,
     [u.customerId],
   );
   if (rows.length === 0) return 'absent';
@@ -976,12 +1063,39 @@ export async function applySubscriptionRecordUpdate(
   // An absent field means "this event says nothing about that dimension" — keep what is stored.
   const tier = u.tier ?? cur.tier;
   const interval: StoredBillingInterval = u.billingInterval ?? normalizeBillingInterval(cur.billing_interval);
-  const status = u.status ?? cur.status;
+
+  // 🛑 THE STATUS IS NOT A PLAIN `??`. OPS-SUBSCRIBER-STATUS-SOT-W1.
+  // `u.status ?? cur.status` treated every event as equally authoritative, on a row whose only
+  // predicate was `customer_id`. Three ways that lost money silently: a SECOND subscription's
+  // event took the row over, an OUT-OF-ORDER delivery left the row on the older value, and a
+  // status-less event could never correct a wrong one. `decideStatusWrite` is the single declared
+  // precedence — worst-wins across subscriptions, newest-wins within one — and it is pure, so the
+  // order-independence property is pinned by a test rather than rented from Stripe's delivery.
+  const statusAt = u.occurredAtMs ?? null;
+  const storedStatusAt = cur.status_updated_at ? Date.parse(cur.status_updated_at) : null;
+  const verdict = decideStatusWrite({
+    storedStatus: cur.status,
+    storedSubscriptionId: cur.status_subscription_id ?? cur.subscription_id,
+    storedStatusAt: Number.isNaN(storedStatusAt as number) ? null : storedStatusAt,
+    incomingStatus: u.status,
+    incomingSubscriptionId: u.subscriptionId,
+    incomingAt: statusAt,
+  });
+  const status = verdict.status;
+  const statusAccepted = verdict.decision === 'accept' && status !== cur.status;
+  if (verdict.decision !== 'accept' && u.status != null && u.status !== cur.status) {
+    // POSITIVE output on the refusal path: a status we declined to write is an operator-visible
+    // fact, not an absence. A silent drop here is indistinguishable from never having received it.
+    console.log(
+      `[applySubscriptionRecordUpdate] ${u.customerId} status ${cur.status}→${u.status} REFUSED (${verdict.decision})`
+      + ` sub=${u.subscriptionId ?? '-'} storedSub=${cur.status_subscription_id ?? cur.subscription_id ?? '-'}`,
+    );
+  }
 
   const unchanged =
     tier === cur.tier &&
     interval === normalizeBillingInterval(cur.billing_interval) &&
-    status === cur.status;
+    !statusAccepted;
   if (unchanged) return 'noop';
 
   // The rate is DERIVED from the (tier, interval) pair, never carried by the event and never
@@ -989,11 +1103,22 @@ export async function applySubscriptionRecordUpdate(
   // date, which stays true regardless of what the subscription later became.
   const monthlyRateUsd = deriveMonthlyRateUsd(tier, interval);
 
+  // The status PROVENANCE moves with the status, never independently: a row whose
+  // status_subscription_id disagreed with its status would make the next precedence decision on
+  // a fact about a different subscription.
+  const nextStatusSub = statusAccepted
+    ? (u.subscriptionId ?? cur.status_subscription_id ?? cur.subscription_id ?? null)
+    : (cur.status_subscription_id ?? cur.subscription_id ?? null);
+  const nextStatusAt = statusAccepted
+    ? new Date(statusAt ?? Date.now()).toISOString()
+    : (cur.status_updated_at ?? null);
+
   await deps.query(
     `UPDATE subscriber_profiles
-        SET tier = ?, status = ?, billing_interval = ?, monthly_rate_usd = ?
+        SET tier = ?, status = ?, billing_interval = ?, monthly_rate_usd = ?,
+            status_updated_at = ?, status_subscription_id = ?
       WHERE customer_id = ?`,
-    [tier, status, interval, monthlyRateUsd, u.customerId],
+    [tier, status, interval, monthlyRateUsd, nextStatusAt, nextStatusSub, u.customerId],
   );
 
   // Verify by RESULT — re-read before claiming success.
@@ -1324,8 +1449,8 @@ export async function backfillMissingSubscriberProfiles(
 /** One row's before/after, for the operator-facing backfill report. */
 export interface IntervalBackfillRow {
   customerId: string;
-  before: { tier: string | null; interval: string | null; rate: number | null };
-  after: { tier: string | null; interval: StoredBillingInterval; rate: number | null };
+  before: { tier: string | null; interval: string | null; rate: number | null; status: string | null };
+  after: { tier: string | null; interval: StoredBillingInterval; rate: number | null; status: string | null };
   changed: boolean;
 }
 
@@ -1375,23 +1500,61 @@ export async function backfillSubscriberIntervals(
   const execute = opts.execute === true;
   deps.ensure();
   if (deps.ensureInterval) await deps.ensureInterval();
+  if (deps.ensureStatus) await deps.ensureStatus();
 
   const { getStripeClient, resolveSubscription } = await import('./stripe.js');
   const stripe = getStripeClient();
   if (!stripe) throw new Error('Stripe is not configured — refusing to backfill against nothing');
 
-  // customerId → what Stripe says they actually bought.
-  const truth = new Map<string, { tier: string; interval: StoredBillingInterval }>();
-  // STATUS-SOT-EXEMPT: a backfill of what customers BOUGHT, keyed on live subscriptions. This
-  // writes `subscriber_profiles.tier`, and the status column beside it is maintained by the
-  // `customer.subscription.updated` webhook — which is where `past_due` already reaches the
-  // record. Widening this loop would duplicate that path, not fix a gap.
-  for await (const sub of stripe.subscriptions.list({ status: 'active', limit: 100 })) {
+  // customerId → what Stripe says they actually bought, AND what state it is in.
+  const truth = new Map<string, {
+    tier?: string; interval?: StoredBillingInterval;
+    status: string; statusSubscriptionId: string;
+  }>();
+
+  // 🛑 `status: 'all'`, NOT `status: 'active'`. OPS-SUBSCRIBER-STATUS-SOT-W1 — this DELETES the
+  // exemption that sat here rather than adding one. (Its marker literal is deliberately NOT
+  // written in this comment: check-subscription-status-sot.mjs scans the 8 lines above a
+  // subscriptions.list call for that exact token, so quoting it here would silently re-exempt
+  // this call the moment anyone re-narrowed it — a self-granting exemption.)
+  // The exemption's own justification was that "the
+  // status column beside it is maintained by the customer.subscription.updated webhook", which
+  // is true of the FORWARD path and was never true of REPAIR: a row whose status went wrong by
+  // any means had no way back, because the only sweep that could have corrected it could not see
+  // a non-active subscription at all. That made "wrong" mean "wrong forever" on a column the
+  // PAYMENT_DECLINE_DRIFT floor now depends on.
+  //
+  // The iterator is UNCAPPED on purpose (CLAUDE.md: never aggregate over a LIMIT-capped
+  // collection) — `limit` is the PAGE size and the SDK pages automatically.
+  for await (const sub of stripe.subscriptions.list({ status: 'all', limit: 100 })) {
     const cid = typeof sub.customer === 'string' ? sub.customer : (sub.customer as { id?: string })?.id;
+    if (!cid) continue;
+    const status = typeof sub.status === 'string' ? sub.status : null;
+    if (!status) continue;
+    const subId = typeof sub.id === 'string' ? sub.id : '';
     const r = resolveSubscription(sub as never);
-    // An unrecognised price is NOT a tier. Skipping leaves the row untouched and visible to the
-    // reconciliation, which is strictly better than writing a guess over it.
-    if (cid && r) truth.set(cid, { tier: r.tier, interval: r.interval });
+    const prev = truth.get(cid);
+
+    // WORST-WINS across a customer's subscriptions, through the ONE declared precedence. A
+    // customer holding one healthy and one delinquent subscription must not read as healthy —
+    // the live book already carries that shape. `classifyCustomerSubscriptions` folds the other
+    // way on purpose because it answers a different question; see subscriber-status.ts.
+    const winner = !prev
+      ? { status, statusSubscriptionId: subId }
+      : (decideStatusWrite({
+          storedStatus: prev.status, storedSubscriptionId: prev.statusSubscriptionId, storedStatusAt: null,
+          incomingStatus: status, incomingSubscriptionId: subId, incomingAt: null,
+        }).decision === 'accept'
+          ? { status, statusSubscriptionId: subId }
+          : { status: prev.status, statusSubscriptionId: prev.statusSubscriptionId });
+
+    // An unrecognised price is NOT a tier — the tier legs stay undefined and the row's tier is
+    // left untouched, which is strictly better than writing a guess. The STATUS is still known.
+    truth.set(cid, {
+      tier: r ? r.tier : prev?.tier,
+      interval: r ? r.interval : prev?.interval,
+      ...winner,
+    });
   }
 
   const existing = await deps.query<{ customer_id: string; tier: string | null; status: string | null; billing_interval: string | null; monthly_rate_usd: number | null }>(
@@ -1402,28 +1565,41 @@ export async function backfillSubscriberIntervals(
   const rows: IntervalBackfillRow[] = [];
   for (const row of existing) {
     const t = truth.get(row.customer_id);
-    if (!t) continue; // no active Stripe subscription — a cancelled or unknown row; leave it be.
-    const rate = deriveMonthlyRateUsd(t.tier, t.interval);
-    const changed = row.tier !== t.tier
-      || normalizeBillingInterval(row.billing_interval) !== t.interval
-      || Number(row.monthly_rate_usd ?? NaN) !== Number(rate ?? NaN);
+    if (!t) continue; // no Stripe subscription at all — an unknown row; leave it be.
+    // A price we cannot resolve leaves the tier legs alone; the status leg still converges.
+    const tier = t.tier ?? row.tier;
+    const interval = t.interval ?? normalizeBillingInterval(row.billing_interval);
+    const rate = (t.tier && t.interval) ? deriveMonthlyRateUsd(t.tier, t.interval) : row.monthly_rate_usd;
+    const changed = row.tier !== tier
+      || normalizeBillingInterval(row.billing_interval) !== interval
+      || Number(row.monthly_rate_usd ?? NaN) !== Number(rate ?? NaN)
+      || row.status !== t.status;
     rows.push({
       customerId: row.customer_id,
-      before: { tier: row.tier, interval: row.billing_interval, rate: row.monthly_rate_usd },
-      after: { tier: t.tier, interval: t.interval, rate },
+      before: { tier: row.tier, interval: row.billing_interval, rate: row.monthly_rate_usd, status: row.status },
+      after: { tier, interval, rate, status: t.status },
       changed,
     });
   }
 
   let written = 0;
+  // ONE clock read for the whole sweep: every row repaired by this run shares its watermark, so
+  // the ordering between them is "same observation", not an artifact of loop position.
+  const nowIso = new Date().toISOString();
   if (execute) {
     for (const r of rows) {
       if (!r.changed) continue; // idempotent: a second run finds nothing to do.
+      // The status PROVENANCE moves with the status — a repaired status whose
+      // status_subscription_id still named the old subscription would make the NEXT webhook's
+      // precedence decision on a stale fact, which is how a repair reintroduces the bug.
+      const t = truth.get(r.customerId);
       await deps.query(
         `UPDATE subscriber_profiles
-            SET tier = ?, billing_interval = ?, monthly_rate_usd = ?
+            SET tier = ?, billing_interval = ?, monthly_rate_usd = ?,
+                status = ?, status_updated_at = ?, status_subscription_id = ?
           WHERE customer_id = ?`,
-        [r.after.tier, r.after.interval, r.after.rate, r.customerId],
+        [r.after.tier, r.after.interval, r.after.rate,
+         r.after.status, nowIso, t ? t.statusSubscriptionId : null, r.customerId],
       );
       written++;
     }
@@ -1433,13 +1609,15 @@ export async function backfillSubscriberIntervals(
   let verifiedConverged: number | null = null;
   let mrrFromRecord: number | null = null;
   if (execute) {
-    const after = await deps.query<{ customer_id: string; tier: string | null; billing_interval: string | null; monthly_rate_usd: number | null }>(
-      `SELECT customer_id, tier, billing_interval, monthly_rate_usd FROM subscriber_profiles`,
+    const after = await deps.query<{ customer_id: string; tier: string | null; billing_interval: string | null; monthly_rate_usd: number | null; status: string | null }>(
+      `SELECT customer_id, tier, billing_interval, monthly_rate_usd, status FROM subscriber_profiles`,
       [],
     );
     verifiedConverged = after.filter((a) => {
       const t = truth.get(a.customer_id);
-      return !!t && a.tier === t.tier && normalizeBillingInterval(a.billing_interval) === t.interval;
+      if (!t) return false;
+      const tierOk = t.tier === undefined || (a.tier === t.tier && normalizeBillingInterval(a.billing_interval) === t.interval);
+      return tierOk && a.status === t.status;
     }).length;
     mrrFromRecord = after.reduce((sum, a) => truth.has(a.customer_id) && a.monthly_rate_usd != null
       ? sum + Number(a.monthly_rate_usd) : sum, 0);

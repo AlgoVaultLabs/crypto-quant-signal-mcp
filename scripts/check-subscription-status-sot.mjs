@@ -125,6 +125,78 @@ export function hasExemption(source, line) {
   return lines.slice(from, line).some((l) => l.includes(EXEMPT_MARKER));
 }
 
+/**
+ * ── RULE 2: THE WRITE SIDE ────────────────────────────────────────────────────────────────────
+ * OPS-SUBSCRIBER-STATUS-SOT-W1. The rule above governs how we ASK Stripe. It was structurally
+ * blind to how we WRITE the answer down, and all three defects that wave fixed lived on the
+ * write side — including `status: 'active'` sitting four lines from a sibling contract that said
+ * in prose "Read from the event's own status, never a literal we invent."
+ *
+ * Prose addressed to whoever happens to read it is not a control. These are the three shapes:
+ *
+ *  (a) INVENTED LITERAL — a `status:` property assigned a Stripe status string. The status must
+ *      come from the event, or from the ONE named constant that declares itself an inference.
+ *  (b) BARE CLOBBER — `status = EXCLUDED.status` in an upsert, which let any completed checkout
+ *      rewrite a measured `past_due` to `active` and silence the revenue floor.
+ *  (c) UNPROVENANCED UPDATE — a statement that SETs `status` on subscriber_profiles without also
+ *      setting `status_updated_at`, i.e. a write that leaves the row unable to order the NEXT one.
+ *
+ * Each is exemptible by the same declaration marker as rule 1: the point is to force the author
+ * to answer for it in the diff, not to forbid it outright.
+ */
+const STRIPE_STATUS_WORDS = [
+  'incomplete_expired', 'incomplete', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'paused',
+];
+/** `status: 'active'` as an object property. Not `status === 'active'`, which is a READ. */
+const INVENTED_STATUS_RE = new RegExp(`\\bstatus\\s*:\\s*['"](${STRIPE_STATUS_WORDS.join('|')})['"]`, 'g');
+const BARE_EXCLUDED_STATUS_RE = /\bstatus\s*=\s*EXCLUDED\.status\b/g;
+
+/** Every `UPDATE subscriber_profiles … ;`-ish statement, as a {index,line,text} span. */
+export function findProfileUpdates(source) {
+  const out = [];
+  const needle = 'UPDATE subscriber_profiles';
+  for (let i = source.indexOf(needle); i !== -1; i = source.indexOf(needle, i + 1)) {
+    // The statement ends at the closing backtick of the template literal it lives in, or at the
+    // next semicolon — whichever comes first. Either bound contains the whole SET…WHERE clause.
+    let end = source.length;
+    for (const ch of ['`', ';']) {
+      const j = source.indexOf(ch, i);
+      if (j !== -1 && j < end) end = j;
+    }
+    out.push({ index: i, line: source.slice(0, i).split('\n').length, text: source.slice(i, end) });
+  }
+  return out;
+}
+
+export function scanWriteSide(files, read) {
+  const violations = [];
+  let sites = 0;
+  for (const f of files) {
+    const src = read(f);
+    const codeOnly = stripComments(src);
+    for (const m of codeOnly.matchAll(INVENTED_STATUS_RE)) {
+      sites++;
+      const line = codeOnly.slice(0, m.index).split('\n').length;
+      if (hasExemption(src, line)) continue;
+      violations.push({ file: f, line, rule: 'invented-literal', detail: m[0] });
+    }
+    for (const m of codeOnly.matchAll(BARE_EXCLUDED_STATUS_RE)) {
+      sites++;
+      const line = codeOnly.slice(0, m.index).split('\n').length;
+      if (hasExemption(src, line)) continue;
+      violations.push({ file: f, line, rule: 'bare-clobber', detail: m[0] });
+    }
+    for (const u of findProfileUpdates(codeOnly)) {
+      if (!/\bstatus\s*=\s*\?/.test(u.text)) continue;
+      sites++;
+      if (/status_updated_at/.test(u.text)) continue;
+      if (hasExemption(src, u.line)) continue;
+      violations.push({ file: f, line: u.line, rule: 'unprovenanced-update', detail: 'SET status without status_updated_at' });
+    }
+  }
+  return { sites, violations };
+}
+
 export function scan(files, read) {
   const violations = [];
   let calls = 0;
@@ -156,6 +228,7 @@ function run() {
   }
 
   const r = scan(files, (f) => readFileSync(f, 'utf8'));
+  const w = scanWriteSide(files, (f) => readFileSync(f, 'utf8'));
 
   // VACUITY GUARD, at the site where the corpus is CONSTRUCTED. Zero call sites means the SDK
   // call moved or was renamed — the gate is then verifying nothing while reporting PASS, which is
@@ -166,14 +239,28 @@ function run() {
     return 3;
   }
 
+  // The write-side corpus has its OWN vacuity guard: the two rules count different things, and a
+  // zero here would mean the WRITE patterns moved even while the read patterns are healthy.
+  if (w.sites === 0) {
+    console.error('[status-sot] found ZERO status WRITE sites — the write patterns moved; rule 2 is checking nothing.');
+    console.log('SUBSCRIPTION_STATUS_SOT_VERDICT=INDETERMINATE');
+    return 3;
+  }
+
   console.log(`[status-sot] ${r.calls} subscriptions.list() call site(s); ${r.exempt} declared exempt; ${r.violations.length} undeclared.`);
+  console.log(`[status-sot] ${w.sites} status WRITE site(s) scanned; ${w.violations.length} undeclared.`);
+  for (const v of w.violations) {
+    console.error(`  ✖ ${relative(ROOT, v.file)}:${v.line}  [${v.rule}] ${v.detail}`);
+    console.error(`     Read the status from the event, or declare why not: // ${EXEMPT_MARKER} <reason>`);
+  }
   for (const v of r.violations) {
     console.error(`  ✖ ${relative(ROOT, v.file)}:${v.line}  status:'active' with no ${EXEMPT_MARKER} declaration`);
     console.error("     Either classify via `classifyCustomerSubscriptions` on a status:'all' list,");
     console.error(`     or declare why active-only is right here: // ${EXEMPT_MARKER} <reason>`);
   }
-  console.log(`SUBSCRIPTION_STATUS_SOT_VERDICT=${r.violations.length === 0 ? 'PASS' : 'FAIL'}`);
-  return r.violations.length === 0 ? 0 : 1;
+  const total = r.violations.length + w.violations.length;
+  console.log(`SUBSCRIPTION_STATUS_SOT_VERDICT=${total === 0 ? 'PASS' : 'FAIL'}`);
+  return total === 0 ? 0 : 1;
 }
 
 // ── self-test ────────────────────────────────────────────────────────────────
@@ -200,6 +287,35 @@ function selfTest() {
   t('double quotes are caught too', one(dirty.replace(/'active'/, '"active"')).violations.length === 1);
   t('a file with no list call contributes no violation', one('const x = 1;').violations.length === 0);
   t('call counting is what the vacuity guard reads', one(dirty).calls === 1);
+
+  // ── RULE 2, the WRITE side. Same two-way discipline: every clean case has a dirty twin. ──
+  const w = (src) => scanWriteSide(['x.ts'], () => src);
+  const invented = `return { customerId, status: 'active', tier };`;
+  const fromEvent = `return { customerId, status: asSubscriptionStatus(event.status), tier };`;
+  const namedConst = `return { customerId, status: CHECKOUT_IMPLIED_STATUS, tier };`;
+  const bareClobber = 'const q = `INSERT INTO t VALUES (?) ON CONFLICT (c) DO UPDATE SET status = EXCLUDED.status, x = 1`;';
+  const guardedClobber = "const q = `… DO UPDATE SET status = CASE WHEN t.status IN ('past_due') THEN t.status ELSE EXCLUDED.status END`;";
+  const unprovenanced = 'const q = `UPDATE subscriber_profiles SET tier = ?, status = ? WHERE customer_id = ?`;';
+  const provenanced = 'const q = `UPDATE subscriber_profiles SET status = ?, status_updated_at = ? WHERE customer_id = ?`;';
+
+  t('an INVENTED status literal is CAUGHT', w(invented).violations.length === 1);
+  t('…and it is named as the invented-literal rule', w(invented).violations[0].rule === 'invented-literal');
+  t('a status read FROM THE EVENT is clean', w(fromEvent).violations.length === 0);
+  t('a status from the ONE named constant is clean', w(namedConst).violations.length === 0);
+  t('a BARE `status = EXCLUDED.status` clobber is CAUGHT', w(bareClobber).violations.length === 1);
+  t('…and it is named as the bare-clobber rule', w(bareClobber).violations[0].rule === 'bare-clobber');
+  t('a CASE-guarded upsert status is clean', w(guardedClobber).violations.length === 0);
+  t('an UPDATE setting status with no provenance is CAUGHT', w(unprovenanced).violations.length === 1);
+  t('…and it is named as the unprovenanced-update rule', w(unprovenanced).violations[0].rule === 'unprovenanced-update');
+  t('an UPDATE carrying status_updated_at is clean', w(provenanced).violations.length === 0);
+  t('a declared exemption clears a write-side violation',
+    w(`// ${EXEMPT_MARKER} the census owns this one\n${invented}`).violations.length === 0);
+  t('a write-side literal QUOTED IN A COMMENT is not a write',
+    w(`// once wrote status: 'active' here\nconst x = 1;`).violations.length === 0);
+  t('a status COMPARISON is a read, not a write', w(`if (s.status === 'active') return 1;`).violations.length === 0);
+  t('write-site counting is what rule 2 vacuity reads', w(invented).sites === 1);
+  t('every Stripe status word is matchable, not just active',
+    STRIPE_STATUS_WORDS.every((k) => w(`const o = { status: '${k}' };`).violations.length === 1));
 
   // THE REGRESSION THIS GATE'S OWN FIRST RUN PRODUCED. Prose describing the defect must not BE
   // the defect — otherwise the only way to green the gate is to delete the documentation.
