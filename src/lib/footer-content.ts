@@ -151,6 +151,7 @@ import {
   BAND_LINK_LABEL,
   BAND_LINK_HREF,
   bandSubLine,
+  bandSubLineHtml,
 } from './conversion-copy.js';
 
 /** Stamp the AC greps on, and the hook the scoped stylesheet is keyed to. */
@@ -268,7 +269,7 @@ export function renderConversionBand(opts: { route: string }): string {
     '<span style="width:5px;height:5px;border-radius:50%;background:var(--accent, var(--mint, oklch(0.86 0.16 165)))"></span>' +
     `${BAND_EYEBROW}</div>` +
     `<h2 style="font-family:var(--font-display, inherit);font-size:clamp(26px,4vw,38px);line-height:1.08;letter-spacing:-0.022em;font-weight:500;margin:0;text-wrap:balance;color:var(--fg, #e6edf3)">${BAND_HEADING}</h2>` +
-    `<p style="font-size:15px;color:var(--fg-3, #8b949e);max-width:680px;margin:14px 0 26px;line-height:1.6">${bandSubLine()}</p>` +
+    `<p style="font-size:15px;color:var(--fg-3, #8b949e);max-width:680px;margin:14px 0 26px;line-height:1.6">${bandSubLineHtml()}</p>` +
     '<div class="avcb-row">' +
     `<a class="avcb-btn avcb-a ${tag('quickstart', page)}" href="${BAND_CTA_PRIMARY_HREF}">${BAND_CTA_PRIMARY_LABEL}</a>` +
     `<a class="avcb-btn avcb-b ${tag('telegram', page)}" href="${BAND_CTA_SECONDARY_HREF}" target="_blank" rel="noopener noreferrer">${BAND_CTA_SECONDARY_LABEL}</a>` +

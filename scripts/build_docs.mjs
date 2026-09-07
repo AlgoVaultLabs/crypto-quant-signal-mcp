@@ -455,7 +455,11 @@ function renderFooterFromSot() {
   if (!fs.existsSync(dist)) {
     throw new Error(`build_docs: ${dist} not found. Run \`npm run build\` (tsc) first.`);
   }
-  return createRequire(import.meta.url)(dist).renderBrandFooter('desktop');
+  const sot = createRequire(import.meta.url)(dist);
+  // CONVERSION-SURFACES-W2 CH3: docs.html is a FULL-PAGE generator, so it emits the band region
+  // itself. Without this, `build_docs --check` reports the injector's band as drift forever and
+  // the two fight over the same file on every build.
+  return sot.renderConversionBandRegion({ route: '/docs' }) + '\n' + sot.renderBrandFooter('desktop');
 }
 
 function generate(outlineMod, schemaMod) {

@@ -49,6 +49,31 @@ export function bandSubLine(): string {
 }
 
 /**
+ * The same sentence, with its counter literal LIVE-BOUND — this is what the band renders.
+ *
+ * WHY, and it is not cosmetic. `tests/unit/tool-description-forward-stability.test.ts`
+ * (OPS-SKILLS-MAF-COPY-W1) refuses a baked exchange/asset/venue/timeframe count in bare prose on
+ * a rendered page and says, in its own failure text, that "a live count belongs in a live-bound
+ * data-tr-field span". It caught this band on all 26 integration subpages before it shipped. The
+ * landing page has always solved the identical problem the identical way — `render-jsx-static.mjs`
+ * wraps `11 timeframes` in exactly this span — so this is the estate's existing mechanism applied
+ * to a new surface, not a new convention.
+ *
+ * The WORDS still come from the copy SoT byte-for-byte, so the copy-lock is untouched; only the
+ * digits are wrapped. `tests/unit/conversion-copy-locked.test.ts` asserts that the number inside
+ * that SoT sentence still equals TIMEFRAME_COUNT, so the inherited literal cannot drift from the
+ * capability registry without a red build. That assertion lives in a TEST rather than a runtime
+ * guard on purpose: `renderConversionBand` runs on the live `/track-record` path, and a guard
+ * there must refuse, never throw.
+ */
+export function bandSubLineHtml(): string {
+  return bandSubLine().replace(
+    /\b(\d+) (timeframes)\b/,
+    '<span data-tr-field="timeframe_count">$1</span> $2',
+  );
+}
+
+/**
  * C4 — the quickstart COPY button's transient, JS-only confirmation label.
  *
  * NEVER present in static HTML. The served markup keeps `COPY`; the appended controller swaps
