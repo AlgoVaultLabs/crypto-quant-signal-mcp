@@ -1,0 +1,227 @@
+{
+  "generated_at": "2026-09-07T10:05:41.230Z",
+  "window": {
+    "from": "2026-08-24T10:05:40.194Z",
+    "to": "2026-09-07T10:05:40.194Z"
+  },
+  "sessions": {
+    "total": 101,
+    "unique_ips": 101,
+    "new_in_window": 101
+  },
+  "funnel": {
+    "install": 7117,
+    "first_call": 101,
+    "second_call": 99,
+    "fifth_plus_call": 20,
+    "first_non_hold_verdict": 9,
+    "track_record_viewed": 16,
+    "landing_cta_clicked": 0,
+    "paid_upgrade": 0,
+    "mcp_tools_list": 519,
+    "quota_hit_soft": 5,
+    "quota_hit_hard": 4,
+    "quota_hit_block": 8,
+    "upgrade_cta_clicked": 0,
+    "stripe_checkout_started": 155,
+    "intent_human": 4,
+    "intent_unknown": 11,
+    "intent_raw": 155,
+    "checkout_abandoned_human": 7,
+    "tg_bot_start": 37,
+    "tg_bot_first_command": 3,
+    "tg_bot_watchlist_add": null,
+    "tg_bot_quota_hit": 0,
+    "tg_bot_upgrade_clicked": null
+  },
+  "paid_upgrade_detail": {
+    "stripe_tier_sessions": 0,
+    "x402_settled_wallets": 0,
+    "unit_note": "stripe_tier_sessions counts SESSIONS (agent_sessions.tiers_seen, windowed on first_seen epoch-ms); x402_settled_wallets counts DISTINCT EXTERNAL PAYER WALLETS whose payment SETTLED (processed_x402_payments, windowed on created_at, operator self-settlement excluded). The two share no join key, so paid_upgrade is their sum, not a single population. Base/USDC rail only — OKX a2mcp settlements are not in this ledger."
+  },
+  "conversion": {
+    "install_to_first_call": 0.01419137276942532,
+    "first_to_second": 0.9801980198019802,
+    "second_to_fifth": 0.20202020202020202,
+    "fifth_to_paid": 0
+  },
+  "stage_retentions": {
+    "install_to_mcp_tools_list": 0.07292398482506675,
+    "mcp_tools_list_to_first_call": 0.19460500963391136,
+    "first_call_to_quota_hit_soft": 0.04950495049504951,
+    "quota_hit_soft_to_quota_hit_hard": 0.8,
+    "quota_hit_hard_to_quota_hit_block": null,
+    "quota_hit_block_to_upgrade_cta_clicked": 0,
+    "upgrade_cta_clicked_to_stripe_checkout_started": null,
+    "stripe_checkout_started_to_paid_upgrade": 0,
+    "paid_upgrade_to_tg_bot_start": null,
+    "tg_bot_start_to_tg_bot_first_command": 0.08108108108108109,
+    "tg_bot_first_command_to_tg_bot_watchlist_add": null,
+    "tg_bot_watchlist_add_to_tg_bot_quota_hit": null,
+    "tg_bot_quota_hit_to_tg_bot_upgrade_clicked": null
+  },
+  "stage_ratio_anomalies": [
+    {
+      "from": "quota_hit_hard",
+      "to": "quota_hit_block",
+      "from_count": 4,
+      "to_count": 8,
+      "ratio": 2,
+      "reason": "quota_hit_block exceeds quota_hit_hard, so these stages are not sequential — a session can reach quota_hit_block without ever emitting quota_hit_hard. Not a retention; reported here instead."
+    }
+  ],
+  "weakest_stage_transition": {
+    "from": "quota_hit_block",
+    "to": "upgrade_cta_clicked",
+    "retention": 0
+  },
+  "stick_rate": 0.9801980198019802,
+  "time_to_first_call_ms": {
+    "p50": 6698,
+    "p90": 176554687.4000002
+  },
+  "tool_call_distribution": {
+    "get_trade_signal": 19,
+    "get_market_regime": 40750,
+    "scan_funding_arb": 74,
+    "other": 65778
+  },
+  "hold_rate_get_trade_signal": 1,
+  "tier_cohort_sizes": {
+    "free": 120,
+    "starter": 2,
+    "pro": 1,
+    "enterprise": 0,
+    "x402": 0
+  },
+  "by_source": [
+    {
+      "source": "unknown",
+      "connects": 616,
+      "deterministic": 0,
+      "first_call": 100,
+      "conversion": 0
+    },
+    {
+      "source": "claude",
+      "connects": 10,
+      "deterministic": 0,
+      "first_call": 1,
+      "conversion": 0
+    }
+  ],
+  "identity_coverage": {
+    "identified": 2,
+    "fallback": 624,
+    "anonymous": 0,
+    "coverage_pct": 0.003194888178913738
+  },
+  "by_authenticity": {
+    "raw_denominator": 626,
+    "human_denominator": 203,
+    "automated_count": 423,
+    "human_first_call_pct": 0.4236453201970443
+  },
+  "quota_wall_split": {
+    "stages": [
+      {
+        "event_type": "quota_hit_soft",
+        "sessions": {
+          "daily": 4,
+          "monthly": 3,
+          "unknown": 0
+        },
+        "rows": {
+          "daily": 32,
+          "monthly": 52,
+          "unknown": 0
+        },
+        "multi_bucket_sessions": 2,
+        "discriminator_cutover": {
+          "absent_until": "2026-08-14T05:01:54.732Z",
+          "live_since": "2026-08-15T21:39:50.063Z"
+        },
+        "window_predates_cutover": false
+      },
+      {
+        "event_type": "quota_hit_hard",
+        "sessions": {
+          "daily": 4,
+          "monthly": 2,
+          "unknown": 0
+        },
+        "rows": {
+          "daily": 34,
+          "monthly": 42,
+          "unknown": 0
+        },
+        "multi_bucket_sessions": 2,
+        "discriminator_cutover": {
+          "absent_until": "2026-08-14T06:02:02.952Z",
+          "live_since": "2026-08-15T22:39:54.581Z"
+        },
+        "window_predates_cutover": false
+      },
+      {
+        "event_type": "quota_hit_block",
+        "sessions": {
+          "daily": 5,
+          "monthly": 5,
+          "unknown": 0
+        },
+        "rows": {
+          "daily": 3106,
+          "monthly": 53909,
+          "unknown": 0
+        },
+        "multi_bucket_sessions": 2,
+        "discriminator_cutover": {
+          "absent_until": "2026-08-09T08:32:21.957Z",
+          "live_since": "2026-08-09T08:35:52.505Z"
+        },
+        "window_predates_cutover": false
+      }
+    ],
+    "pooled": {
+      "sessions": {
+        "daily": 5,
+        "monthly": 5,
+        "unknown": 0
+      },
+      "rows": {
+        "daily": 3140,
+        "monthly": 53951,
+        "unknown": 0
+      },
+      "multi_bucket_sessions": 2,
+      "distinct_sessions": 8
+    },
+    "claim": {
+      "claims": 0,
+      "with_inherited_usage": 0,
+      "inherited_usage_total": null,
+      "inherited_usage_max": null,
+      "first_claim_at": "2026-08-16T07:44:49.919Z"
+    },
+    "pending": [
+      {
+        "id": "keyed_vs_keyless",
+        "question": "Do callers who CLAIMED a free key hit the wall differently from anonymous ones?",
+        "blocker": "`funnel_events.session_id` never carries an `av_free_` key — it is the resolved analytics identity (track token / ipHash / uuid), which is a different namespace from the quota key. There is no join from a walled session to a claimed key.",
+        "evidence": "measured live this window: 0 of 8 distinct quota-stage sessions carry an `av_free_` prefix"
+      },
+      {
+        "id": "wall_to_paid",
+        "question": "Does a daily wall convert to payment at a different rate than a monthly one?",
+        "blocker": "`processed_x402_payments` carries no `session_id` (nonce · tool · amount · created_at · payer_wallet · settlement_state · rail · settlement_ref), so a payment cannot be attributed to the wall that preceded it. The existing quota→paid rate is already unit-approximate (walled SESSIONS vs paying WALLETS); splitting it by wall would multiply that approximation rather than resolve it.",
+        "evidence": "structural — the join column does not exist on either side"
+      }
+    ],
+    "unit_note": "sessions = DISTINCT session_id (the rate basis, same unit as the canonical stages). rows = raw event count, VOLUME ONLY — never a rate denominator, because a handful of sessions produce most rows. Buckets do NOT sum to the stage total: a session that hits both walls is counted in both (see multi_bucket_sessions).",
+    "cutover_note": "Each stage carries its OWN bounds, derived from data, never a shared deploy timestamp. The true cutover lies between absent_until and live_since; live_since is traffic-bounded (the first caller to trip that wall after the deploy), so it is an upper bound and not the deploy instant."
+  },
+  "warnings": [
+    "unknown license_tier 'internal' in request_log — ignored",
+    "bot SQLite watchlists count failed: Command failed: sqlite3 -readonly /var/lib/algovault-bot/state.db \"SELECT COUNT(DISTINCT chat_id) FROM watchlists WHERE created_at >= '2026-08-24T10:05:40.194Z' AND created_at <= '2026-09-07T10:05:40.194Z';\"\nError: in prepare, no such column: created_at\n  ECT COUNT(DISTINCT chat_id) FROM watchlists WHERE created_at >= '2026-08-24T10\n                                      error here ---^\n"
+  ]
+}
