@@ -1258,8 +1258,16 @@ export async function handleSubscriptionDeleted(event: any): Promise<void> {
   // The value is READ FROM THE EVENT (`canceled`), never a literal invented here: Stripe owns
   // that vocabulary and it is the only party that knows the terminal state.
   //
-  // FORWARD GUARD, NO BACKFILL: zero cancelled subscriptions exist today, so this changes no
-  // existing row. It is armed for the first cancellation, not a repair of a past one.
+  // FORWARD GUARD, NO BACKFILL: this changes no existing row. It is armed for the next
+  // cancellation, not a repair of a past one.
+  //
+  // ⚠️ CORRECTED 2026-09-07 (OPS-SUBSCRIBER-STATUS-SOT-W1). This said "zero cancelled
+  // subscriptions exist today". Measured against live Stripe: `status:'all'` returns 9
+  // subscriptions — 5 active, 2 past_due and **2 canceled** (cancelled 2026-04-28 and
+  // 2026-06-08). The CONCLUSION still holds, but for a different reason than the one recorded:
+  // neither cancelled customer has a `subscriber_profiles` row at all, because both predate the
+  // profile table's coverage. A claim that happens to be safe for a reason nobody wrote down is
+  // the shape a later wave reasons from and gets wrong.
   await propagateSubscriptionToRecord(customerId, {
     status: asSubscriptionStatus(subscription?.status) ?? 'canceled',
     subscriptionId: typeof subscription?.id === 'string' ? subscription.id : null,
