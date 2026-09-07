@@ -25,6 +25,11 @@ import {
 const HOVER = 'hover:text-white transition';
 const SIGNUP_PILL =
   'px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition';
+// CONVERSION-SURFACES-W2 CH1 — the SAME pill, made visible OUTSIDE the collapsed hamburger below
+// 640px. Accent classes are the desktop pill's verbatim (one accent, not a second one); the two
+// added tokens exist only to reach the WCAG 2.5.5 44px target that `py-1 text-xs` (~26px) misses.
+// Desktop is untouched: this string is used ONLY by the `sm:hidden` mobile cluster.
+const MOBILE_SIGNUP_PILL = `${SIGNUP_PILL} min-h-[44px] inline-flex items-center`;
 const PANEL_CARD = 'rounded-xl border border-white/10 p-4'; // navy card shared by mega + simple dropdown panels
 const PANEL_STYLE =
   'background:rgba(10,14,26,0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)';
@@ -108,6 +113,25 @@ const MOBILE_BUTTON = `      <button type="button" data-mobile-nav-toggle id="mo
         <svg data-mobile-nav-icon-open class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
         <svg data-mobile-nav-icon-close class="w-6 h-6 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>`;
+
+/**
+ * CONVERSION-SURFACES-W2 CH1 — the <640px header cluster: Signup pill + hamburger, right-aligned.
+ *
+ * WHY A WRAPPER AND NOT A BARE SIBLING. The header row is `flex justify-between` over three
+ * children (brand · desktop bar · hamburger). The desktop bar is `hidden sm:flex`, i.e. removed
+ * from flex layout below 640px, so a bare pill sibling would be distributed to the middle of the
+ * row rather than sitting beside the ☰. Wrapping pill + ☰ in ONE `sm:hidden` child keeps the row
+ * at two laid-out children at every width, so the desktop layout is byte-identical in effect:
+ * above 640px this whole cluster is display:none and the row is brand · desktop bar exactly as
+ * before. MOBILE_BUTTON is interpolated verbatim — its own `sm:hidden` is now redundant and is
+ * deliberately left in place so the hamburger markup stays unchanged.
+ */
+function mobileHeaderCluster(model: NavModel): string {
+  return `      <div class="sm:hidden flex items-center gap-2">
+        <a href="${model.cta.href}" class="${MOBILE_SIGNUP_PILL}" data-mobile-signup-pill data-nav-link>${esc(model.cta.label)}</a>
+${MOBILE_BUTTON}
+      </div>`;
+}
 
 function mobileAccordion(g: NavDropdown): string {
   const id = panelId(g.label, 'm-');
@@ -223,7 +247,7 @@ export function renderSiteNav(): string {
       <span class="text-white font-semibold text-sm">${esc(model.brand.label)}</span>
     </a>
     ${desktopBar(model)}
-${MOBILE_BUTTON}
+${mobileHeaderCluster(model)}
   </div>
       ${mobileDrawer(model)}
 </nav>
