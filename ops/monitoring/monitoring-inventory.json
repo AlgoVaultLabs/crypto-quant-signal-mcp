@@ -1504,7 +1504,7 @@
       "schedule": null,
       "invoked_by": "operator (manual, from a developer checkout; the BLOCKING gate between OPS-OUTCOME-BACKFILL-STALL-W1 A1 and A3)",
       "install_state": "installed",
-      "sha256": "730a6bf128f8d191e8d0be5bb49634346bd8475acc3fa88ca836633a3363454e",
+      "sha256": "9c2e52249b5b90707c0cba77322e699433b92b47f21ae6a3e6b636f9c7232631",
       "alert_ids": [],
       "owner_wave": "OPS-OUTCOME-BACKFILL-STALL-W1",
       "repo_resident": true,
@@ -1730,7 +1730,7 @@
       "schedule": "13 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "a1bbb060ce9777158afabe2b04af9761936e4439bc795d0242c50fc0a3a69244",
+      "sha256": "a187835b59b210d2b33c23173432689ebabcddc3900146f73133d8f0f9607f0c",
       "alert_ids": [
         "OUTCOME_BACKFILL_STALLED"
       ],

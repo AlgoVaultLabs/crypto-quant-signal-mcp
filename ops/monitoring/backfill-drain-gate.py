@@ -78,6 +78,26 @@ QUEUE_LIMIT = int(os.environ.get("BDG_QUEUE_LIMIT", "5000"))
 MAX_ATTEMPTS = int(os.environ.get("BDG_MAX_ATTEMPTS", "3"))
 ATTEMPT_COOLDOWN_S = int(os.environ.get("BDG_ATTEMPT_COOLDOWN_S", "86400"))
 
+# Maturity horizons, mirrored from src/lib/pfe-mae.ts — same map the canary and the producer use.
+EVAL_CANDLES = {"1m": 12, "3m": 12, "5m": 12, "15m": 12, "30m": 8, "1h": 8,
+                "2h": 6, "4h": 6, "8h": 4, "12h": 4, "1d": 3}
+TF_SECONDS = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600,
+              "2h": 7200, "4h": 14400, "8h": 28800, "12h": 43200, "1d": 86400}
+
+
+def horizon_s(tf):
+    if tf not in EVAL_CANDLES or tf not in TF_SECONDS:
+        return None
+    return (EVAL_CANDLES[tf] + 1) * TF_SECONDS[tf]
+
+
+def maturity_sql(now):
+    """The producer's maturity clause, generated from the shared horizon map."""
+    arms = sorted(((tf, horizon_s(tf)) for tf in EVAL_CANDLES), key=lambda r: r[1])
+    return "(%s)" % " OR ".join(
+        "(timeframe = '%s' AND created_at <= %d)" % (tf, int(now) - hor) for tf, hor in arms)
+
+
 PSQL_DEFAULT = (
     "docker exec crypto-quant-signal-mcp-postgres-1 "
     "psql -U aoe_readonly -d signal_performance -tA"
@@ -130,12 +150,17 @@ def build_drain_sql(now):
         " OR outcome_last_attempt_at IS NULL OR outcome_last_attempt_at <= %d)"
         " ORDER BY created_at ASC LIMIT %d" % (MAX_ATTEMPTS, cutoff, QUEUE_LIMIT)
     )
+    mat = maturity_sql(now)
     return (
         "SET default_transaction_read_only=on; "
         "SELECT (SELECT COUNT(*) FROM signals WHERE outcome_price IS NULL) AS backlog_uncapped, "
         "(SELECT MAX(created_at) FROM (%s) v) AS frontier, "
-        "(SELECT COUNT(*) FROM signals WHERE pfe_return_pct IS NOT NULL) AS matured_total;"
-        % visible
+        "(SELECT COUNT(*) FROM signals WHERE pfe_return_pct IS NOT NULL) AS matured_total, "
+        "(SELECT COUNT(*) FROM signals WHERE outcome_price IS NULL AND NOT (%s)) AS immature, "
+        "(SELECT COUNT(*) FROM signals WHERE outcome_price IS NULL "
+        "AND outcome_attempts IS NOT NULL AND outcome_attempts >= %d "
+        "AND outcome_last_attempt_at IS NOT NULL AND outcome_last_attempt_at > %d) AS parked;"
+        % (visible, mat, MAX_ATTEMPTS, cutoff)
     )
 
 
@@ -149,15 +174,18 @@ def parse_reading(stdout):
         if "|" not in line:
             continue  # SET tag / notices
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) != 3:
+        if len(parts) != 5:
             continue
-        backlog, frontier, matured = parts
-        if not (backlog.isdigit() and matured.isdigit()):
+        backlog, frontier, matured, immature, parked = parts
+        if not (backlog.isdigit() and matured.isdigit() and immature.isdigit()
+                and parked.isdigit()):
             continue
         return {
             "backlog": int(backlog),
             "frontier": int(frontier) if frontier.isdigit() else None,
             "matured_total": int(matured),
+            "immature": int(immature),
+            "parked": int(parked),
         }
     raise Indeterminate(
         "no parseable drain row in psql output (got %r)" % stdout.strip()[:200])
@@ -229,7 +257,22 @@ def classify(history, required=None, min_gap_s=None, cap=None, horizon_h=None):
                 "readings too close together (min gap %ds, saw %s)" % (gap, gaps), "checks": []}
 
     ages = [frontier_age_h(r, r["at"]) for r in usable]
-    backlogs = [r["backlog"] for r in usable]
+    raws = [r["backlog"] for r in usable]
+    immatures = [r.get("immature", 0) for r in usable]
+    parkeds = [r.get("parked", 0) for r in usable]
+    # RE-KEYED (SPLIT, 2026-09-06). The drain leg is WORKABLE = raw - immature, and ONLY that.
+    #
+    # `immature` is EXOGENOUS — a clock, and since A1b literally the queue's own admission
+    # predicate; an immature row cannot starve a window it is not in. Comparing a TABLE population
+    # to a QUEUE capacity was a category error that made this leg unable to pass at any nonzero
+    # emission rate: raw floors at `immature`, which is proportional to emission rate x maturation
+    # horizon and GROWS as emission grows (269 -> 20,644 signals/day in ten days).
+    #
+    # `parked` is ENDOGENOUS — the producer's own failure population — and is DELIBERATELY NOT
+    # subtracted. `raw - immature - parked` would read greener the more the producer fails. That
+    # proposal was refuted 5/5 by adversarial review; parked is REPORTED here and gated in the
+    # canary's own arm 3c, never as a subtrahend in a verdict input.
+    backlogs = [raws[i] - immatures[i] for i in range(len(usable))]
     matured = [r["matured_total"] for r in usable]
     span_h = (usable[-1]["at"] - usable[0]["at"]) / 3600.0
     net_drain = backlogs[-1] - backlogs[0]          # negative == draining
@@ -255,7 +298,7 @@ def classify(history, required=None, min_gap_s=None, cap=None, horizon_h=None):
 
     checks = [
         ("net_drain_negative", draining,
-         "net_drain=%+d over %.2fh (%.1f/h) — fills=%d arrivals=%d; backlog=%s"
+         "net_drain=%+d over %.2fh (%.1f/h) — fills=%d arrivals=%d; workable=%s"
          % (net_drain, span_h, rate_per_h, fills, arrivals, backlogs)),
         ("projected_within_horizon", bool(within),
          "backlog=%d cap=%d over_cap=%d eta_h=%s horizon=%.1fh"
@@ -266,7 +309,16 @@ def classify(history, required=None, min_gap_s=None, cap=None, horizon_h=None):
     # Reported for continuity with the first instrument, and because the frontier age is the
     # quantity the alarm itself keys on — but it is REPORTED, never a pass/fail leg, precisely
     # because its sample-to-sample movement is arrival-coupled.
-    info = "frontier_age_h=%s (reported, not a gate leg)" % ["%.2f" % a for a in ages]
+    # REPORTED EVERY RUN, never verdict inputs. Raw growth is real signal about arrival rate vs
+    # total capacity; it is just not a statement about reachability. The `immature` series is what
+    # settles from DATA whether raw can ever cross the cap — flat-or-growing near the cap means it
+    # cannot, and a successor wave derives any margin trigger from these series rather than
+    # choosing one.
+    info = ("population leg=drain counts=workable(raw-immature) excludes=immature:EXOGENOUS "
+            "reported_not_subtracted=parked:ENDOGENOUS | raw=%s immature=%s parked=%s "
+            "workable=%s cap=%d ratio=%.1f%% | frontier_age_h=%s"
+            % (raws, immatures, parkeds, backlogs, lim, 100.0 * backlogs[-1] / lim,
+               ["%.2f" % a for a in ages]))
 
     if not draining or not producer_writing:
         verdict = "FAIL"
@@ -360,7 +412,7 @@ def main():
 # deleting a scenario left exactly 18 and the suite reported PASS. A floor with slack in it is a
 # floor that licenses exactly one silent deletion, which is the vacuity hole this line exists to
 # close. Raise it in the same edit that adds a scenario.
-_SELF_TEST_MIN_CHECKS = 25
+_SELF_TEST_MIN_CHECKS = 34
 
 
 def self_test():
@@ -394,7 +446,10 @@ def self_test():
         out = []
         for i, (a, b, m) in enumerate(zip(ages_h, backlogs, matured)):
             at = T + i * gap
-            out.append({"at": at, "frontier": int(at - a * 3600), "backlog": b, "matured_total": m})
+            # `backlogs` in these fixtures are WORKABLE figures; immature is carried alongside so
+            # the decomposition is exercised and the raw series is non-degenerate.
+            out.append({"at": at, "frontier": int(at - a * 3600), "backlog": b + 4000,
+                        "immature": 4000, "parked": 100, "matured_total": m})
         return out
 
     # ── the SQL string: the artifact the psql seam bypasses ──────────────────────────────────
@@ -412,12 +467,13 @@ def self_test():
 
     # ── the parser: the other bypassed artifact ──────────────────────────────────────────────
     check("parser reads a well-formed row",
-          lambda: parse_reading("11748|1788632173|586414\n") ==
-                  {"backlog": 11748, "frontier": 1788632173, "matured_total": 586414})
+          lambda: parse_reading("11748|1788632173|586414|400|20\n") ==
+                  {"backlog": 11748, "frontier": 1788632173, "matured_total": 586414,
+                   "immature": 400, "parked": 20})
     check("parser tolerates a psql SET tag line",
-          lambda: parse_reading("SET\n11748|1788632173|586414\n")["backlog"] == 11748)
+          lambda: parse_reading("SET\n11748|1788632173|586414|400|20\n")["backlog"] == 11748)
     check("parser treats an EMPTY frontier as 'nothing pending', not as a refusal",
-          lambda: parse_reading("0||586414\n")["frontier"] is None)
+          lambda: parse_reading("0||586414|0|0\n")["frontier"] is None)
 
     def refuses(s):
         try:
@@ -472,8 +528,45 @@ def self_test():
           "slow-drain series from INDETERMINATE to PASS",
           lambda: classify(hist([11.3, 11.2, 11.1], [11030, 11015, 11000],
                                 [586000, 587000, 588000]), horizon_h=1e9)["verdict"] == "PASS")
+    check("SPLIT: the drain leg is keyed on WORKABLE (raw - immature), not raw",
+          # A raw-keyed leg cannot pass at any nonzero emission rate: raw floors at `immature`,
+          # which is proportional to emission x horizon and grows as emission grows.
+          lambda: classify(hist([2.0, 1.5, 1.0], [4000, 3500, 3000],
+                                [586000, 587000, 588000]))["verdict"] == "PASS")
+    check("SPLIT: a huge NOT-YET-DUE population does not make the leg fail",
+          lambda: classify([{"at": T + i * (G + 60), "frontier": T, "backlog": 9000 - 200 * i,
+                             "immature": 6000, "parked": 100,
+                             "matured_total": 586000 + 1000 * i} for i in range(3)]
+                           )["verdict"] == "PASS")
+    check("SPLIT: ENDOGENOUS `parked` is NOT subtracted — a GROWING parked cohort cannot turn a "
+          "non-draining workable series into a PASS",
+          # Discriminating by construction: workable (raw-immature) RISES 5000->5400, so the leg
+          # must FAIL; but raw-immature-parked FALLS 4000->3400, so a gate that also subtracted
+          # the endogenous term would report PASS. The producer failing more would buy the green.
+          # A first version of this check used a constant `parked` and could not tell the two
+          # apart — it FAILed either way, so it proved nothing.
+          lambda: classify([{"at": T + i * (G + 60), "frontier": T, "backlog": 9000 + 200 * i,
+                             "immature": 4000, "parked": 1000 + 500 * i,
+                             "matured_total": 586000 + 1000 * i} for i in range(3)]
+                           )["verdict"] == "FAIL")
+    check("SPLIT: the info line carries the `population leg=` PREFIX, not just the tags",
+          lambda: "population leg=drain counts=workable(raw-immature)" in classify(good)["info"])
+    check("drain SQL MIRRORS the producer: maturity clause present for every known timeframe",
+          lambda: all("(timeframe = '%s' AND created_at <= %d)" % (tf, T - horizon_s(tf))
+                      in build_drain_sql(T) for tf in EVAL_CANDLES))
+    check("drain SQL counts `immature` as the NEGATION of that clause",
+          lambda: "outcome_price IS NULL AND NOT (" in build_drain_sql(T))
+    check("drain SQL's `parked` carries explicit IS NOT NULL arms (three-valued-logic trap)",
+          lambda: "outcome_attempts IS NOT NULL" in build_drain_sql(T)
+          and "outcome_last_attempt_at IS NOT NULL" in build_drain_sql(T))
+    check("SPLIT: the info line declares the leg's population with EXOGENOUS/ENDOGENOUS tags",
+          lambda: "excludes=immature:EXOGENOUS" in classify(good)["info"]
+          and "reported_not_subtracted=parked:ENDOGENOUS" in classify(good)["info"])
+    check("SPLIT: raw, immature, parked and the ratio are REPORTED every run",
+          lambda: all(k in classify(good)["info"]
+                      for k in ("raw=", "immature=", "parked=", "workable=", "ratio=")))
     check("frontier age is REPORTED but is not a gate leg (its movement is arrival-coupled)",
-          lambda: "reported, not a gate leg" in classify(good)["info"]
+          lambda: "frontier_age_h=" in classify(good)["info"]
           and not any(n == "frontier_age_falling" for n, _, _ in classify(good)["checks"]))
     check("INDETERMINATE on fewer than the required readings — vacuity, never PASS",
           lambda: classify(good[:2])["verdict"] == "INDETERMINATE")

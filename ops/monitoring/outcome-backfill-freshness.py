@@ -212,6 +212,20 @@ def horizon_s(tf):
     return (EVAL_CANDLES[tf] + 1) * TF_SECONDS[tf]
 
 
+def maturity_sql(now):
+    """The producer's maturity clause, GENERATED from the same horizon map the arms use.
+
+    Mirrors `buildMaturityClause` in `src/lib/performance-db.ts` (A1b). Emitted as an explicit
+    per-timeframe OR-chain so an unknown timeframe is EXCLUDED by omission rather than defaulted —
+    the same refusal `horizon_s` makes by returning None.
+    """
+    arms = sorted(((tf, horizon_s(tf)) for tf in EVAL_CANDLES), key=lambda r: r[1])
+    if not arms:
+        raise Indeterminate("no known timeframes — refusing to emit an unrestricted maturity clause")
+    return "(%s)" % " OR ".join(
+        "(timeframe = '%s' AND created_at <= %d)" % (tf, int(now) - hor) for tf, hor in arms)
+
+
 class Indeterminate(Exception):
     """The run verified NOTHING it was supposed to verify. Never laundered into a pass."""
 
@@ -253,12 +267,22 @@ def build_census_sql(now):
     """
     window_start = int(now) - INPUT_WINDOW_HOURS * 3600
     cutoff = int(now) - ATTEMPT_COOLDOWN_S
+    mature = maturity_sql(now)
+    # MIRROR OF THE PRODUCER, not an approximation of it. `visible` must carry BOTH clauses
+    # `getSignalsNeedingUnifiedBackfillAsync` carries — backoff AND maturity — or the canary's
+    # frontier is read from a window the producer does not have. Before A1b the producer had no
+    # maturity clause and this matched by accident; after A1b it would have silently diverged.
     visible = (
         "SELECT created_at FROM signals WHERE outcome_price IS NULL"
         " AND (outcome_attempts IS NULL OR outcome_attempts < {maxa}"
         " OR outcome_last_attempt_at IS NULL OR outcome_last_attempt_at <= {cut})"
+        " AND {mat}"
         " ORDER BY created_at ASC LIMIT {lim}"
-    ).format(maxa=MAX_ATTEMPTS, cut=cutoff, lim=QUEUE_LIMIT)
+    ).format(maxa=MAX_ATTEMPTS, cut=cutoff, mat=mature, lim=QUEUE_LIMIT)
+    # NOTE the explicit `outcome_attempts IS NOT NULL` arm on `parked`. Without it SQL's
+    # three-valued logic drops every never-attempted row from the FILTER silently. That trap is
+    # not hypothetical here: it produced a 24-instead-of-3,517 reading in this wave's own
+    # reconciliation query, one wave after A1's predicate was written to avoid it.
     return (
         "SET default_transaction_read_only=on; "
         "SELECT MAX(outcome_filled_at) AS newest_filled, "
@@ -267,9 +291,12 @@ def build_census_sql(now):
         "COUNT(*) FILTER (WHERE created_at > {ws}) AS emitted_recent, "
         "COUNT(*) FILTER (WHERE outcome_price IS NULL) AS backlog_uncapped, "
         "(SELECT MAX(created_at) FROM ({vis}) v) AS frontier, "
-        "COUNT(*) FILTER (WHERE outcome_price IS NULL AND outcome_attempts >= {maxa}) AS sediment "
+        "COUNT(*) FILTER (WHERE outcome_price IS NULL AND outcome_attempts IS NOT NULL "
+        "AND outcome_attempts >= {maxa} AND outcome_last_attempt_at IS NOT NULL "
+        "AND outcome_last_attempt_at > {cut}) AS parked, "
+        "COUNT(*) FILTER (WHERE outcome_price IS NULL AND NOT ({mat})) AS immature "
         "FROM signals;"
-    ).format(ws=window_start, vis=visible, maxa=MAX_ATTEMPTS)
+    ).format(ws=window_start, vis=visible, maxa=MAX_ATTEMPTS, cut=cutoff, mat=mature)
 
 
 def build_population_sql(now):
@@ -301,10 +328,11 @@ def parse_census(stdout):
         if "|" not in line:
             continue  # SET tag / notices
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) != 7:
+        if len(parts) != 8:
             continue
-        nf, st, mt, er, bl, fr, sed = parts
-        if not (st.isdigit() and mt.isdigit() and er.isdigit() and bl.isdigit() and sed.isdigit()):
+        nf, st, mt, er, bl, fr, parked, imm = parts
+        if not (st.isdigit() and mt.isdigit() and er.isdigit() and bl.isdigit()
+                and parked.isdigit() and imm.isdigit()):
             continue
         return {
             "newest_filled": int(nf) if nf.isdigit() else None,
@@ -313,7 +341,8 @@ def parse_census(stdout):
             "emitted_recent": int(er),
             "backlog_uncapped": int(bl),
             "frontier": int(fr) if fr.isdigit() else None,
-            "sediment": int(sed),
+            "parked": int(parked),
+            "immature": int(imm),
         }
     raise Indeterminate(
         "no parseable census row in psql output (got %r) — handed input we could not parse is "
@@ -356,6 +385,35 @@ def query_all(now):
 
 # ── pure classification: three arms, each independently verdicted ─────────────────────────────
 
+# ── POPULATION DECLARATIONS — every arm names what it counts and what it excludes ────────────
+#
+# The generator fix for THREE conflations this wave produced, each a metric mixing the thing under
+# test with a population term:
+#   (1) the original key      backfill staleness + the emitted mix's maturation horizon
+#   (2) the A2 drain gate     producer throughput + arrival rate (b1)
+#   (3) ARM 3a's first re-key unreachable work + not-yet-due work — and then, in the proposed
+#                             repair, + the producer's OWN FAILURE population
+#
+# Each exclusion carries a tag. EXOGENOUS terms are fixed by something outside the monitored
+# system (a clock, a calendar). ENDOGENOUS terms are functions of the monitored system's own
+# behaviour. THE LAW, asserted by the self-test: an ENDOGENOUS term may be REPORTED and may carry
+# its OWN arm, but may NEVER appear as a subtrahend in a VERDICT INPUT — subtracting a failure
+# population from a health metric makes the metric improve as the system degrades.
+PRODUCER_POPULATION = {
+    "counts": "age of the newest producer write (max outcome_filled_at)",
+    "excludes": [],
+    "reported_not_subtracted": [],
+    "verdict_subtrahends": [],
+}
+LANE_POPULATION = {
+    "counts": "per-timeframe maturation high-water marks, judged against each lane's own horizon",
+    "excludes": [("lanes with no known horizon", "EXOGENOUS"),
+                 ("lanes not currently emitting", "EXOGENOUS")],
+    "reported_not_subtracted": [],
+    "verdict_subtrahends": [],
+}
+
+
 WORST_FIRST = {"FAIL": 0, "INDETERMINATE": 1, "PASS": 2}
 
 
@@ -373,7 +431,7 @@ def arm_producer(census, now, stale_hours=None):
         # The NULL bootstrap. Not PASS (fail-open on the arm the re-key exists to create) and not
         # FAIL (a spurious page on deploy night). Self-resolves on the producer's next write.
         return {"name": "producer", "verdict": "INDETERMINATE", "lag_h": None,
-                "input_flowing": input_flowing,
+                "input_flowing": input_flowing, "population": PRODUCER_POPULATION,
                 "detail": "BOOTSTRAP: no row carries outcome_filled_at yet — A1 deliberately did "
                           "not backfill history; resolves on the producer's next write "
                           "(stamped_total=%d)" % census["stamped_total"]}
@@ -381,7 +439,7 @@ def arm_producer(census, now, stale_hours=None):
     stuck = lag_h > stale_h
     breach = bool(input_flowing and stuck)
     return {"name": "producer", "verdict": "FAIL" if breach else "PASS", "lag_h": lag_h,
-            "input_flowing": input_flowing,
+            "input_flowing": input_flowing, "population": PRODUCER_POPULATION,
             "detail": "producer_lag_h=%.2f threshold=%dh input_flowing=%s (emitted_last_%dh=%d) "
                       "stamped_total=%d"
                       % (lag_h, stale_h, "Y" if input_flowing else "N", INPUT_WINDOW_HOURS,
@@ -404,12 +462,14 @@ def arm_population(rows, now, stale_hours=None):
     emitting = [r for r in rows if r["emitted"] > 0 and horizon_s(r["timeframe"]) is not None]
     if not emitting:
         return {"name": "population", "verdict": "INDETERMINATE", "lanes": [],
+                "population": LANE_POPULATION,
                 "detail": "NOT_IDENTIFIABLE: no lane with a known horizon is emitting"}
     attainable = [r for r in emitting if horizon_s(r["timeframe"]) <= stale_h * 3600]
     if not attainable:
         widths = ", ".join("%s %.2fh" % (r["timeframe"], horizon_s(r["timeframe"]) / 3600.0)
                            for r in emitting)
         return {"name": "population", "verdict": "INDETERMINATE", "lanes": [],
+                "population": LANE_POPULATION,
                 "detail": "NOT_IDENTIFIABLE: every emitting lane matures slower than the %dh "
                           "threshold (%s) — unattainable by construction, so a breach would carry "
                           "no information about the producer" % (stale_h, widths)}
@@ -428,6 +488,7 @@ def arm_population(rows, now, stale_hours=None):
         if bad:
             stalled.append(r["timeframe"])
     return {"name": "population", "verdict": "FAIL" if stalled else "PASS", "lanes": lanes,
+            "population": LANE_POPULATION,
             "detail": ("lanes " + " · ".join(
                 "%s(h=%.2f lag=%s)" % (ln["tf"], ln["horizon_h"],
                                        "never" if ln["lag_h"] is None else "%.2f" % ln["lag_h"])
@@ -448,21 +509,41 @@ def arm_reachability(census, now, stale_hours=None):
         state of the original outage.
     """
     stale_h = STALE_HOURS if stale_hours is None else stale_hours
-    backlog, sediment = census["backlog_uncapped"], census["sediment"]
+    backlog, parked, immature = census["backlog_uncapped"], census["parked"], census["immature"]
+    # ARM 3a's SUBJECT. `raw - immature`, and ONLY that.
+    #
+    # `immature` is EXOGENOUS: fixed by `created_at + (EVAL_CANDLES+1)xTF`, a clock the producer
+    # cannot influence, and since A1b it is literally the queue's own admission predicate — an
+    # immature row cannot starve a window it is not in. Subtracting it is a units fix.
+    #
+    # `parked` is ENDOGENOUS and is DELIBERATELY NOT SUBTRACTED. It is the producer's own failure
+    # population, so `raw - immature - parked` would read GREENER the more the producer fails —
+    # a metric that improves as the system degrades. That proposal was made in this wave and
+    # refuted 5/5 by adversarial review; it survives only as its own arm (3c) and as a reported
+    # field. An endogenous term may never shrink the denominator of the thing it is a symptom of.
+    workable = backlog - immature
     frontier_age_h = 0.0 if census["frontier"] is None else \
         max(0.0, (now - census["frontier"]) / 3600.0)
     checks = [
-        ("backlog_within_cap", backlog < QUEUE_LIMIT,
-         "backlog_uncapped=%d cap=%d" % (backlog, QUEUE_LIMIT)),
+        ("workable_within_cap", workable < QUEUE_LIMIT,
+         "workable=%d (raw=%d - immature=%d) cap=%d ratio=%.1f%%  [raw reported, not a verdict "
+         "input]" % (workable, backlog, immature, QUEUE_LIMIT, 100.0 * workable / QUEUE_LIMIT)),
         ("frontier_reachable", frontier_age_h <= stale_h,
          "queue_frontier_age_h=%.2f threshold=%dh" % (frontier_age_h, stale_h)),
-        ("sediment_bounded", sediment < QUEUE_LIMIT,
-         "sediment=%d (attempts>=%d, cooldown %ds) cap=%d"
-         % (sediment, MAX_ATTEMPTS, ATTEMPT_COOLDOWN_S, QUEUE_LIMIT)),
+        ("parked_cohort_bounded", parked < QUEUE_LIMIT,
+         "parked=%d (attempts>=%d AND within %ds cooldown) cap=%d — a breaker that has parked "
+         "more rows than the window can hold is broken at any baseline"
+         % (parked, MAX_ATTEMPTS, ATTEMPT_COOLDOWN_S, QUEUE_LIMIT)),
     ]
     bad = [n for n, ok, _ in checks if not ok]
     return {"name": "reachability", "verdict": "FAIL" if bad else "PASS", "checks": checks,
-            "frontier_age_h": frontier_age_h, "backlog": backlog, "sediment": sediment,
+            "population": {
+                "counts": "pending rows the producer could work on now",
+                "excludes": [("immature", "EXOGENOUS")],
+                "reported_not_subtracted": [("parked", "ENDOGENOUS")],
+                "verdict_subtrahends": [("immature", "EXOGENOUS")]},
+            "frontier_age_h": frontier_age_h, "backlog": backlog, "parked": parked,
+            "immature": immature, "workable": workable,
             "detail": " | ".join(d for _, _, d in checks)
                       + ("" if not bad else "  FAILING: " + ",".join(bad))}
 
@@ -481,7 +562,8 @@ def classify(census, rows, now, stale_hours=None):
             "matured_total": census["matured_total"],
             "stamped_total": census["stamped_total"],
             "backlog_uncapped": census["backlog_uncapped"],
-            "sediment": census["sediment"]}
+            "parked": census["parked"],
+            "immature": census["immature"]}
 
 
 def render_eval_lines(v, streak):
@@ -491,7 +573,21 @@ def render_eval_lines(v, streak):
              % (v["verdict"], streak, CONSECUTIVE_TO_PAGE)]
     for a in v["arms"]:
         lines.append("  ARM %-13s %-13s %s" % (a["name"], a["verdict"], a["detail"]))
+        lines.append("      %s" % render_population(a))
     return lines
+
+
+def render_population(arm):
+    """One line per arm naming what it counts and what it excludes, each exclusion TAGGED.
+
+    Printed every run, not just on failure: an arm whose population is only legible in a code
+    review is an arm whose population drifts. All three of this wave's conflations would have
+    been visible on sight in this line."""
+    pop = arm.get("population") or {}
+    ex = ", ".join("%s:%s" % (n, t) for n, t in pop.get("excludes", [])) or "none"
+    rep = ", ".join("%s:%s" % (n, t) for n, t in pop.get("reported_not_subtracted", [])) or "none"
+    return ("population arm=%s counts=%s excludes=%s reported_not_subtracted=%s"
+            % (arm["name"], pop.get("counts", "<UNDECLARED>"), ex, rep))
 
 
 def build_body(v, streak):
@@ -642,7 +738,9 @@ def publish_result(v, exit_code, path=None):
                 a for a in v["arms"] if a["name"] == "reachability")["frontier_age_h"],
             "backlog_uncapped": v["backlog_uncapped"],
             "queue_limit": QUEUE_LIMIT,
-            "sediment": v["sediment"],
+            "parked": v["parked"],
+            "immature": v["immature"],
+            "workable": v["backlog_uncapped"] - v["immature"],
             "matured_total": v["matured_total"],
             "stamped_total": v["stamped_total"],
             "emitted_recent": v["emitted_recent"],
@@ -756,12 +854,12 @@ def self_test():
     H = 3600
 
     def census(filled_lag_h=0.1, emitted=100, matured=467094, stamped=467094,
-               backlog=900, frontier_lag_h=0.5, sediment=100):
+               backlog=900, frontier_lag_h=0.5, parked=100, immature=0):
         return {"newest_filled": None if filled_lag_h is None else int(NOW - filled_lag_h * H),
                 "stamped_total": stamped, "matured_total": matured, "emitted_recent": emitted,
                 "backlog_uncapped": backlog,
                 "frontier": None if frontier_lag_h is None else int(NOW - frontier_lag_h * H),
-                "sediment": sediment}
+                "parked": parked, "immature": immature}
 
     def pop(lanes=(("3m", 500, 0.6), ("5m", 400, 1.0), ("1h", 200, 8.0))):
         return [{"timeframe": tf, "emitted": e,
@@ -829,12 +927,25 @@ def self_test():
           lambda: "3m(h=0.65" in arm_population(pop((("3m", 500, 0.6),)), NOW)["detail"])
 
     # ── ARM 3: REACHABILITY — the arm that names this wave's own cause ───────────────────────
-    check("arm3 PASS: backlog under cap, frontier fresh, sediment bounded",
+    check("arm3 PASS: workable under cap, frontier fresh, parked cohort bounded",
           lambda: arm_reachability(census(), NOW)["verdict"] == "PASS")
-    check("arm3 FAIL: backlog AT the producer's cap (the 2026-09-05 cause, by name)",
-          lambda: arm_reachability(census(backlog=QUEUE_LIMIT), NOW)["verdict"] == "FAIL")
-    check("arm3 TWIN: one row under the cap -> PASS",
-          lambda: arm_reachability(census(backlog=QUEUE_LIMIT - 1), NOW)["verdict"] == "PASS")
+    check("arm3 3a is keyed on raw MINUS IMMATURE, not on raw",
+          lambda: arm_reachability(census(backlog=6000, immature=1500), NOW)["workable"] == 4500)
+    check("arm3 FAIL: WORKABLE at the producer's cap",
+          lambda: arm_reachability(census(backlog=QUEUE_LIMIT, immature=0), NOW)["verdict"]
+          == "FAIL")
+    check("arm3 TWIN: one workable row under the cap -> PASS",
+          lambda: arm_reachability(census(backlog=QUEUE_LIMIT - 1, immature=0), NOW)["verdict"]
+          == "PASS")
+    check("arm3 a LARGE raw backlog that is mostly NOT YET DUE is not a starvation — the defect "
+          "that made the raw-keyed arm permanently red on a healthy producer",
+          lambda: arm_reachability(census(backlog=9000, immature=4600), NOW)["verdict"] == "PASS")
+    check("arm3 THE ENDOGENEITY LAW: a large PARKED cohort does NOT make the arm greener",
+          # `raw - immature - parked` would read 900-0-4000 = -3100 and PASS trivially. The
+          # shipped metric ignores parked in 3a, so this state is judged on workable alone and
+          # parked gets its OWN arm below.
+          lambda: arm_reachability(census(backlog=6000, immature=0, parked=4000), NOW)["workable"]
+          == 6000)
     check("arm3 FAIL: queue frontier older than the threshold",
           lambda: arm_reachability(census(frontier_lag_h=STALE_HOURS + 1), NOW)["verdict"]
           == "FAIL")
@@ -842,13 +953,16 @@ def self_test():
           lambda: arm_reachability(census(frontier_lag_h=STALE_HOURS), NOW)["verdict"] == "PASS")
     check("arm3 an EMPTY frontier is the BEST case (no pending work), never an error",
           lambda: arm_reachability(census(frontier_lag_h=None), NOW)["verdict"] == "PASS")
-    check("arm3 FAIL when sediment alone would fill the window",
-          lambda: arm_reachability(census(sediment=QUEUE_LIMIT), NOW)["verdict"] == "FAIL")
-    check("arm3 reports backlog, frontier age and sediment ALWAYS, so the series exists",
+    check("arm3c FAIL when the PARKED cohort alone would fill the window",
+          lambda: arm_reachability(census(parked=QUEUE_LIMIT), NOW)["verdict"] == "FAIL")
+    check("arm3c TWIN: one under the cap -> PASS",
+          lambda: arm_reachability(census(parked=QUEUE_LIMIT - 1), NOW)["verdict"] == "PASS")
+    check("arm3 reports raw, immature, workable, ratio, frontier and parked ALWAYS",
           lambda: all(k in arm_reachability(census(), NOW)["detail"]
-                      for k in ("backlog_uncapped=", "queue_frontier_age_h=", "sediment=")))
+                      for k in ("workable=", "raw=", "immature=", "ratio=",
+                                "queue_frontier_age_h=", "parked=")))
     check("arm3 names WHICH sub-check failed, never a bare FAIL",
-          lambda: "FAILING: backlog_within_cap" in
+          lambda: "FAILING: workable_within_cap" in
           arm_reachability(census(backlog=QUEUE_LIMIT), NOW)["detail"])
 
     # ── the composition rule ─────────────────────────────────────────────────────────────────
@@ -877,6 +991,22 @@ def self_test():
           lambda: "COUNT(*) FILTER (WHERE outcome_price IS NULL) AS backlog_uncapped" in sql)
     check("census SQL reads the frontier from the CAPPED, backed-off window",
           lambda: "LIMIT %d" % QUEUE_LIMIT in sql and "outcome_attempts" in sql)
+    check("census SQL MIRRORS the producer: the visible window carries the MATURITY clause too",
+          # Added after a mutation deleting the clause left the whole suite green. Before A1b the
+          # producer had no maturity clause and this matched by accident; after A1b, a canary
+          # without it reads a frontier from a window the producer does not have.
+          lambda: sql.count("timeframe = '3m' AND created_at <=") >= 2)
+    check("census SQL's maturity clause names EVERY known timeframe, from the shared horizon map",
+          lambda: all("(timeframe = '%s' AND created_at <= %d)" % (tf, NOW - horizon_s(tf)) in sql
+                      for tf in EVAL_CANDLES))
+    check("census SQL's `parked` carries an explicit IS NOT NULL arm — three-valued logic would "
+          "otherwise drop every never-attempted row from the FILTER, silently",
+          # Not hypothetical: this exact trap produced a 24-instead-of-3,517 reading in this
+          # wave's own reconciliation query, one wave after A1's predicate was written to avoid it.
+          lambda: "outcome_attempts IS NOT NULL" in sql
+          and "outcome_last_attempt_at IS NOT NULL" in sql)
+    check("census SQL counts `immature` as the NEGATION of the same maturity clause",
+          lambda: "AND NOT (" in sql.replace("\n", " "))
     check("census SQL carries the integer input window (created_at is an epoch int)",
           lambda: "created_at > %d" % (NOW - INPUT_WINDOW_HOURS * H) in sql)
     check("census SQL carries the backoff cutoff derived from `now`",
@@ -892,15 +1022,15 @@ def self_test():
           in build_population_sql(NOW))
 
     # ── the PARSERS the hermetic seam bypasses ───────────────────────────────────────────────
-    row = "1786599000|467094|467094|577|900|1786598000|100"
-    check("census parser reads a 7-field psql -tA row",
+    row = "1786599000|467094|467094|577|900|1786598000|100|0"
+    check("census parser reads an 8-field psql -tA row",
           lambda: parse_census(row)["backlog_uncapped"] == 900)
     check("census parser skips the SET command tag before the data row",
-          lambda: parse_census("SET\n" + row)["sediment"] == 100)
+          lambda: parse_census("SET\n" + row)["parked"] == 100)
     check("census parser accepts an EMPTY stamp as None (the bootstrap FACT, not vacuity)",
-          lambda: parse_census("|0|0|577|900|1786598000|0")["newest_filled"] is None)
+          lambda: parse_census("|0|0|577|900|1786598000|0|0")["newest_filled"] is None)
     check("census parser accepts an EMPTY frontier as None (nothing pending, the best case)",
-          lambda: parse_census("1786599000|1|1|577|0||0")["frontier"] is None)
+          lambda: parse_census("1786599000|1|1|577|0||0|0")["frontier"] is None)
 
     def raises_indeterminate(fn):
         try:
@@ -914,7 +1044,7 @@ def self_test():
     check("census parser: empty output -> INDETERMINATE (handed input we could not parse)",
           lambda: raises_indeterminate(lambda: parse_census("")))
     check("census parser: a non-numeric row -> INDETERMINATE, never a silent 0",
-          lambda: raises_indeterminate(lambda: parse_census("a|b|c|d|e|f|g")))
+          lambda: raises_indeterminate(lambda: parse_census("a|b|c|d|e|f|g|h")))
     check("census parser: wrong field count -> INDETERMINATE",
           lambda: raises_indeterminate(lambda: parse_census("1|2|3")))
     check("population parser reads rows and decodes -1 as 'never matured'",
@@ -1055,10 +1185,49 @@ def self_test():
     check("BODY renders all three arms, not only the failing one",
           lambda: all(k in body for k in ("producer     :", "reachability :", "population   :")))
     lines = render_eval_lines(classify(census(), pop(), NOW), 0)
-    check("per-check output is POSITIVE and per-ARM — one line each, all three present",
-          lambda: len(lines) == 4 and all(
+    check("per-check output is POSITIVE and per-ARM — a verdict line and a POPULATION line each",
+          lambda: len(lines) == 7 and all(
               any(("ARM %-13s" % n) in ln for ln in lines)
               for n in ("producer", "population", "reachability")))
+
+    # ── RIDER 4: the generator gate for the population-conflation class ──────────────────────
+    #
+    # Three conflations in one wave, each a metric mixing the thing under test with a population
+    # term — the third of which nearly shipped a metric that reads GREENER as the producer fails.
+    # These two assertions make that class unwritable rather than merely discouraged.
+    # Collected across EVERY state an arm can be in, not just the healthy one. Written first
+    # against the healthy fixture only, and MEASURED to miss: deleting the declaration from
+    # arm_producer's INDETERMINATE branch left the whole suite green, because the healthy
+    # fixture takes the PASS branch. A declaration gate that only inspects one branch is the
+    # same blindness as a mutation test whose patch never runs.
+    all_arms = [a for fixture in (
+        (census(), pop()),                                            # healthy
+        (census(filled_lag_h=STALE_HOURS + 1), pop()),                # producer FAIL
+        (census(filled_lag_h=None, stamped=0), pop()),                # producer INDETERMINATE
+        (census(), pop((("4h", 50, 30.0),))),                         # population NOT_IDENTIFIABLE
+        (census(), []),                                               # population empty
+        (census(backlog=QUEUE_LIMIT), pop()),                         # reachability FAIL
+    ) for a in classify(fixture[0], fixture[1], NOW)["arms"]]
+    check("RIDER 4: EVERY arm declares its population — an undeclared one fails on sight",
+          lambda: all(isinstance(a.get("population"), dict)
+                      and a["population"].get("counts") for a in all_arms))
+    check("RIDER 4: every arm's population line is PRINTED, not merely held in the dict",
+          lambda: all(("population arm=%s" % a["name"]) in " ".join(lines) for a in all_arms))
+    check("RIDER 4: every declared exclusion carries an EXOGENOUS|ENDOGENOUS tag",
+          lambda: all(t in ("EXOGENOUS", "ENDOGENOUS")
+                      for a in all_arms
+                      for _, t in (a["population"].get("excludes", [])
+                                   + a["population"].get("reported_not_subtracted", []))))
+    check("RIDER 4 THE LAW: no ENDOGENOUS term is a SUBTRAHEND in any VERDICT INPUT — "
+          "a failure population may never shrink the denominator of the thing it is a symptom of",
+          lambda: all(t == "EXOGENOUS"
+                      for a in all_arms
+                      for _, t in a["population"].get("verdict_subtrahends", [])))
+    check("RIDER 4 is not vacuous: an ENDOGENOUS term IS present, reported and NOT subtracted",
+          lambda: any(("parked", "ENDOGENOUS") in a["population"].get("reported_not_subtracted", [])
+                      for a in all_arms)
+          and not any(n == "parked" for a in all_arms
+                      for n, _ in a["population"].get("verdict_subtrahends", [])))
     check("per-arm lines carry the measured values, not just verdicts",
           lambda: any("producer_lag_h=" in ln for ln in lines)
           and any("queue_frontier_age_h=" in ln for ln in lines))
@@ -1141,7 +1310,7 @@ def self_test():
 # slack in it licenses exactly one silent deletion, which is the hole it exists to close — this
 # wave measured that hole in its sibling gate while proving the suite could fail, and corrected it
 # there too. Raise this in the SAME edit that adds a scenario.
-_SELF_TEST_MIN_CHECKS = 85
+_SELF_TEST_MIN_CHECKS = 98
 
 
 def _token_exit_map():
