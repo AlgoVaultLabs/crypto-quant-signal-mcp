@@ -44,6 +44,9 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // dist/lib/footer-content.js; run `npm run build` before this generator).
 const require = Module.createRequire(import.meta.url);
 const { renderBrandFooter } = require(path.join(REPO_ROOT, 'dist', 'lib', 'footer-content.js'));
+// CONVERSION-SURFACES-W2 CH2 — C4 comes from the copy SoT, never typed here (Build Rule 4).
+const { COPY_BUTTON_IDLE_LABEL, COPY_BUTTON_COPIED_LABEL, COPY_BUTTON_COPIED_MS } =
+  require(path.join(REPO_ROOT, 'dist', 'lib', 'conversion-copy.js'));
 // LANDING-MCP-CLIENT-REGISTRY-W1: the quickstart client grid is DATA-driven from
 // the one MCP-client SoT (compiled dist/lib/integrations-data/mcp-clients.js).
 // The vault JSX owns the card layout and never names a client, so adding client
@@ -337,9 +340,14 @@ function landingClientRows(surface) {
 }
 
 function preserveQuickstartAnchor(html) {
-  // Existing landing/index.html has internal-page links href="#quickstart" (line 245 hero CTA + 739).
-  // JSX TryIn30 renders id="try-it". Substitute id="try-it" → id="quickstart" to preserve internal-link contract.
-  return html.replace(/id="try-it"/g, 'id="quickstart"');
+  // Existing landing/index.html has internal-page links href="#quickstart". JSX TryIn30 renders
+  // id="try-it", so substitute id="try-it" -> id="quickstart" to preserve the internal-link contract.
+  // CONVERSION-SURFACES-W2 CH2: LRBlock now also stamps data-anchor={id}, and the anchor resolver
+  // matches on THAT. Both halves must be renamed together — renaming only the id would leave the
+  // mobile twin advertising `data-anchor="try-it"` for a link that says `#quickstart`, i.e. the
+  // resolver would find nothing and the dead-anchor defect would survive the fix that exists to
+  // retire it. One substitution site, both attributes.
+  return html.replace(/id="try-it"/g, 'id="quickstart"').replace(/data-anchor="try-it"/g, 'data-anchor="quickstart"');
 }
 
 // RETIRED by WEBSITE-X402-SURFACING-W1 (2026-06-08): grid stays 5-col now that the
@@ -471,6 +479,24 @@ function w7HeroCTAUrls(html) {
   //   Per external-link-target-blank-noopener-rel-discipline skill: target="_blank" + rel="noopener
   //   noreferrer" on every t.me anchor.
   // - "View Track Record" → /track-record per Mr.1 explicit directive (internal, in-page nav).
+  // CONVERSION-SURFACES-W2 CH2 (Q2-A): the same two anchors also carry the CLASS-TAGGED
+  // `CTA Click` emitter. The served /js/insights.js matches /plausible-event-name(=|--)(.+)/ on
+  // the element or <=3 ancestors and `+` decodes to a space, so `CTA+Click` is the event name.
+  // MEASURED CONSEQUENCE, recorded because it is not obvious and it is deliberate: that script's
+  // click handler is `if (!E(n,0)) { ... return Outbound Link: Click }`, so a TAGGED anchor
+  // early-returns past the outbound branch. The t.me CTA therefore emits `CTA Click` INSTEAD OF
+  // `Outbound Link: Click`, not in addition to it. The 2026-09-21 readout counts Telegram intent
+  // as CTA Click{cta=telegram} UNION Outbound Link: Click{url~t.me} across the cutover so the
+  // series does not read as a drop. Untagged external links keep firing outbound as before.
+  // The Telegram branch below is a MEASURED NO-OP and is kept only so a JSX revert cannot
+  // silently un-wire the href: v1-minimal.jsx already authors the real t.me href + className on
+  // both viewport blocks, so nothing matches `href="#" class="btn btn-primary accent-cyan"`.
+  // Its CTA tag therefore lives in the JSX SoT beside that className, NOT here — tagging a
+  // pattern that never fires would have shipped a dead tag, which is exactly what CH2 exists to
+  // stop. The track-record branch below DOES fire (its href is supplied here), so its tag stays
+  // here; if it ever moves to the JSX, this regex must move with it — the class literal it
+  // matches on is the same attribute the tag extends.
+  const TAG_TR = 'plausible-event-name=CTA+Click plausible-event-location=hero plausible-event-cta=track-record';
   return html
     .replace(
       /<a href="#" class="btn btn-primary accent-cyan"([^>]*)>(\s*Try Free in Telegram)/g,
@@ -478,7 +504,7 @@ function w7HeroCTAUrls(html) {
     )
     .replace(
       /<a href="#" class="btn btn-secondary"([^>]*)>(\s*View Track Record)/g,
-      '<a href="/track-record" class="btn btn-secondary"$1>$2'
+      `<a href="/track-record" class="btn btn-secondary ${TAG_TR}"$1>$2`
     );
 }
 
@@ -692,6 +718,126 @@ const W7_RECENT_CALL_POLLER_JS = `<script>
 </script>`;
 
 // FAQ accordion vanilla-JS (appended after FAQ render)
+// ── CONVERSION-SURFACES-W2 CH2 R0 — hash anchors that resolve at EVERY viewport width ────────
+//
+// THE DEFECT THIS RETIRES, measured 2026-09-07 and not theorised. Every section id on `/` —
+// #quickstart, #pricing, #faq, #developers, #track-record — lives inside `.lp-rest-desktop`,
+// which landing/_design/algovault-design.css sets to `display:none !important` below 768px. At
+// 375px, navigating to https://algovault.com/#quickstart measured scrollY 0, offsetParent null
+// and a 0x0 rect: the browser cannot scroll to an element that is not rendered, and the page has
+// no scrollIntoView and no hashchange handler. So the nav's Pricing link and all six on-page
+// "Start free" CTAs were DEAD on mobile, which is 156 of 193 /verify entrants.
+//
+// The fix is at the GENERATOR, not the lane: LRBlock now stamps `data-anchor={id}` on the
+// section in BOTH artboards (a data attribute has no uniqueness constraint, so the mobile twin
+// can carry it while the single `id` stays on the desktop twin), and this controller sends a
+// hash to whichever twin is actually rendered. It retires the whole class — every future section
+// inherits it — rather than repairing two links.
+//
+// FAIL-SAFE BY CONSTRUCTION, which is why desktop is provably untouched: if the natural target
+// exists AND is visible, this returns false and never calls preventDefault, so the browser's own
+// behaviour runs exactly as before. It only acts where the native behaviour is already broken.
+//
+// The hash is attacker-controllable, so it is validated against a strict allowlist BEFORE it is
+// ever interpolated into a selector — never build a selector from unvalidated input.
+const ANCHOR_RESOLVER_JS = `<script>
+(function(){
+  'use strict';
+  if (window.__avAnchorResolver) return;
+  window.__avAnchorResolver = true;
+  var SAFE = /^[A-Za-z0-9_-]+$/;
+  function navOffset(){ var n = document.querySelector('nav'); return (n && n.offsetHeight) ? n.offsetHeight : 56; }
+  function visible(el){ return !!(el && el.offsetParent !== null); }
+  function resolve(hash){
+    if (!hash || hash.charAt(0) !== '#') return false;
+    var name = hash.slice(1);
+    if (!SAFE.test(name)) return false;
+    if (visible(document.getElementById(name))) return false;
+    var twins = document.querySelectorAll('[data-anchor="' + name + '"]');
+    for (var i = 0; i < twins.length; i++) {
+      if (!visible(twins[i])) continue;
+      var top = twins[i].getBoundingClientRect().top + (window.pageYOffset || 0) - navOffset();
+      try { window.scrollTo({ top: top < 0 ? 0 : top, behavior: 'smooth' }); }
+      catch (_) { window.scrollTo(0, top < 0 ? 0 : top); }
+      return true;
+    }
+    return false;
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target;
+    for (var d = 0; a && d <= 4; d++, a = a.parentNode) {
+      if (a.tagName && a.tagName.toLowerCase() === 'a') break;
+    }
+    if (!a || !a.tagName || a.tagName.toLowerCase() !== 'a') return;
+    var href = a.getAttribute('href') || '';
+    if (href.charAt(0) !== '#') return;
+    if (resolve(href)) {
+      e.preventDefault();
+      if (history.replaceState) { try { history.replaceState(null, '', href); } catch (_) {} }
+    }
+  }, true);
+  window.addEventListener('hashchange', function(){ resolve(location.hash); });
+  function onReady(){ if (location.hash) resolve(location.hash); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
+  else onReady();
+})();
+</script>`;
+
+// ── CONVERSION-SURFACES-W2 CH2 R2 — the quickstart COPY button actually copies ───────────────
+//
+// The JSX SoT has carried `onClick={() => navigator.clipboard?.writeText(s.copyable)}` all along,
+// but renderToString drops synthetic React handlers (Design.md §3,
+// `jsx-useeffect-useinterval-ssr-broken-by-default`), so the DEPLOYED button has always been
+// inert: measured 0 occurrences of navigator.clipboard and 0 of execCommand in landing/index.html.
+// It looked like a copy button and copied nothing. This is strategy (b) — a post-render vanilla
+// controller — for that handler.
+//
+// It copies the DISPLAYED text node (`[data-av-copy-src]` inside the same <article>), never a
+// constant baked in here. That is deliberate: a constant can drift from what the visitor is
+// looking at, and "copies something other than what it shows" is a worse bug than not copying.
+// It also means the pending `?src=landing` follow-up changes one text node and the button follows.
+const QUICKSTART_COPY_JS = `<script>
+(function(){
+  'use strict';
+  if (window.__avCopyUrlInit) return;
+  window.__avCopyUrlInit = true;
+  var IDLE = ${JSON.stringify(COPY_BUTTON_IDLE_LABEL)}, DONE = ${JSON.stringify(COPY_BUTTON_COPIED_LABEL)}, MS = ${Number(COPY_BUTTON_COPIED_MS)};
+  function displayedUrl(btn){
+    var scope = btn.closest ? btn.closest('article') : null;
+    var src = scope && scope.querySelector('[data-av-copy-src]');
+    return src ? (src.textContent || '').trim() : '';
+  }
+  function legacyCopy(text){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed'; ta.style.top = '0'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (_) { return false; }
+  }
+  function flash(btn){
+    if (btn.__avCopyT) clearTimeout(btn.__avCopyT);
+    btn.textContent = DONE;
+    btn.__avCopyT = setTimeout(function(){ btn.textContent = IDLE; btn.__avCopyT = null; }, MS);
+  }
+  document.addEventListener('click', function(e){
+    var btn = e.target;
+    for (var d = 0; btn && d <= 3; d++, btn = btn.parentNode) {
+      if (btn.getAttribute && btn.getAttribute('data-av-copy-url') !== null) break;
+    }
+    if (!btn || !btn.getAttribute || btn.getAttribute('data-av-copy-url') === null) return;
+    var url = displayedUrl(btn);
+    if (!url) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function(){ flash(btn); }, function(){ if (legacyCopy(url)) flash(btn); });
+    } else if (legacyCopy(url)) { flash(btn); }
+  });
+})();
+</script>`;
+
 const FAQ_ACCORDION_JS = `<script>
 (function(){
   // DESIGN-W6 FAQ accordion: collapse items 2-N on load; wire click-to-toggle.
@@ -2203,7 +2349,8 @@ async function main() {
       // SEO-SITE-NAME-AND-PREFERRED-SOURCES-W1: the button sits in the closing seam — after the
       // FAQ, BEFORE the injected brand footer, so it is visually adjacent to it and never inside it.
       const ps = preferredSourceButton(mobile);
-      html = wrapCounterLiteralsInProse(lv + ltr + tp + tb + sp + wt + vs + uc + try30 + fd + fq + ps + ft);
+      html = wrapCounterLiteralsInProse(lv + ltr + tp + tb + sp + wt + vs + uc + try30 + fd + fq + ps + ft)
+        + ANCHOR_RESOLVER_JS + QUICKSTART_COPY_JS;
     } else if (target === 'hero') {
       // DESIGN-W7 hero render — V1Hero from v1-minimal.jsx with `count=32, diagram='flow'`
       // (matches canonical AlgoVault Landing.html bootstrap line 59).
