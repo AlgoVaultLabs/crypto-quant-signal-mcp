@@ -20,7 +20,20 @@
 #        token. tests/unit/conversion-band.test.ts asserts the real property (bands === brand
 #        footers) over the committed artifact.
 set -u
-cd "$(git rev-parse --show-toplevel)"
+# REFUSE LOUDLY when invoked from outside the repo. Measured: run from the vault, the `cd` fails,
+# the script keeps the caller's cwd, and CH1/CH2 report INDETERMINATE with `rc=127` and
+# `missing_snapshot` — the right DIRECTION (a gate that cannot see its corpus must never pass) but
+# a verdict that names the wrong cause and sends the reader after a phantom regression. A gate has
+# to say what it could not do.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$ROOT" ] || [ ! -f "$ROOT/scripts/check_mobile_nav_parity.sh" ]; then
+  echo "CH1_INDETERMINATE not_in_the_repo — run this from a crypto-quant-signal-mcp checkout"
+  echo "CH2_INDETERMINATE not_in_the_repo"
+  echo "CH3_INDETERMINATE not_in_the_repo"
+  echo "CH4_INDETERMINATE not_in_the_repo"
+  exit 3
+fi
+cd "$ROOT"
 FAIL=0
 
 # ── CH1 — the Signup pill renders in the <640px header row, not inside the panel ──────────────
