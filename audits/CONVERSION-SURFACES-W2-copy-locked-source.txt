@@ -25,3 +25,11 @@ COPY_BUTTON_COPIED_LABEL	COPIED
 # landingCopy('hero.free_tier_note','desktop') — the live hero line — so the copy-lock is an
 # IDENTITY assertion against that SoT, not a second transcription of the sentence. Typing it
 # here would create the very duplicate the projection exists to avoid.
+
+# C2 — /welcome. The subtitle is the canonical tagline (brand-facts.md §Taglines, THE LAW).
+WELCOME_SUBTITLE	The Brain Layer for AI Trading Agents
+
+# The upgrade line is NOT listed as a literal: §Copy specifies the allowances as `plans.ts`
+# values, so the lock is an IDENTITY assertion against that SoT (10,000 / 1,000 are never typed).
+# tests/unit/conversion-copy-locked.test.ts asserts the rendered sentence word-for-word around
+# those two interpolations, and asserts the three retired claims are gone.

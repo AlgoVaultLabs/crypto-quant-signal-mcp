@@ -13,15 +13,13 @@
 import { renderSigninComponent } from './signin-component.js';
 import {
   PLANS,
-  DEFAULT_UPGRADE_PLAN,
   planPriceLabel,
-  planCallsLabel,
-  planDailyCallsLabel,
   freeCallsLabel,
   freeDailyCallsLabel,
 } from './plans.js';
 // FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1: brand footer from the one SoT.
 import { renderBrandFooter } from './footer-content.js';
+import { WELCOME_SUBTITLE, welcomeUpgradeLine } from './conversion-copy.js';
 // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2: the ONE analytics region. /welcome IS the signup
 // page — the Plausible goal `Form: Submission` fires here and read 0 in 28d because this
 // api-origin surface carried no tag at all.
@@ -83,7 +81,7 @@ export function getWelcomePageHtml(
   const paywallCta = isOrganicVisit
     ? `<div class="paywall-cta">
          <div class="paywall-headline">Free-tier MCP access — ${freeCallsLabel()} calls per month, up to ${freeDailyCallsLabel()} per day</div>
-         <p class="paywall-body">Upgrade to ${PLANS[DEFAULT_UPGRADE_PLAN].label} for ${planCallsLabel(DEFAULT_UPGRADE_PLAN)} calls per month (up to ${planDailyCallsLabel(DEFAULT_UPGRADE_PLAN)} per day), full asset coverage, and unlimited Telegram bot alerts.</p>
+         <p class="paywall-body">${welcomeUpgradeLine()}</p>
          ${opts.unifiedSignin ? unifiedCard : `${opts.newSignupEnabled ? `
          <div class="startfree-block" style="margin:10px 0">
            <button type="button" class="paywall-btn" style="background:#238636;width:100%;border:0;cursor:pointer" onclick="avStartFree(this)">⚡ Start free — no card, no email · get a live BTC signal now</button>
@@ -201,7 +199,7 @@ ${renderAnalyticsRegion()}
 <main class="page-main">
 <div class="container">
   <h1>Welcome to AlgoVault! &#x1f389;</h1>
-  <div class="subtitle">${tier ? tier.charAt(0).toUpperCase() + tier.slice(1) + ' plan activated' : isOrganicVisit ? 'AlgoVault MCP — the crypto signal layer for AI agents' : 'Setting up your account...'}</div>
+  <div class="subtitle">${tier ? tier.charAt(0).toUpperCase() + tier.slice(1) + ' plan activated' : isOrganicVisit ? WELCOME_SUBTITLE : 'Setting up your account...'}</div>
   ${paywallCta}
   ${keyDisplay}
   ${tgConnect}

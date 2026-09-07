@@ -15,6 +15,8 @@ import * as copy from '../../src/lib/conversion-copy.js';
 import { renderConversionBand } from '../../src/lib/footer-content.js';
 import { landingCopy } from '../../src/lib/landing-content.js';
 import { TIMEFRAME_COUNT } from '../../src/lib/capabilities.js';
+import { PLANS, DEFAULT_UPGRADE_PLAN, planCallsLabel, planDailyCallsLabel } from '../../src/lib/plans.js';
+import { getWelcomePageHtml } from '../../src/lib/welcome-page.js';
 
 const SOURCE = join(process.cwd(), 'audits', 'CONVERSION-SURFACES-W2-copy-locked-source.txt');
 
@@ -111,5 +113,47 @@ describe('conversion copy — forbidden phrases and positive presence', () => {
       copy.BAND_CTA_PRIMARY_LABEL, copy.BAND_CTA_SECONDARY_LABEL, copy.BAND_LINK_LABEL,
     ].join(' ');
     expect(visible).toBe(expected);
+  });
+});
+
+describe('C2 — /welcome carries the canonical tagline and no live-false claim', () => {
+  // An ORGANIC visit is the branch a new visitor and a bare curl both take (no apiKey, no tier,
+  // no email), and it is the only branch that renders the subtitle and the upgrade line — so it
+  // is the branch the CH4 gate greps and the one asserted here.
+  // Signature is (apiKey, tier, email, opts) — all three null IS the organic branch, which is
+  // the branch a new visitor and a bare curl both take and the only one that renders these two
+  // strings. It is therefore also the branch the CH4 gate greps.
+  const html = getWelcomePageHtml(null, null, null, {});
+
+  it('renders the canonical tagline, from the copy SoT', () => {
+    expect(copy.WELCOME_SUBTITLE).toBe('The Brain Layer for AI Trading Agents');
+    expect(html).toContain(copy.WELCOME_SUBTITLE);
+  });
+
+  it('renders the upgrade line with the allowances interpolated from plans.ts', () => {
+    const line = copy.welcomeUpgradeLine();
+    expect(line).toBe(
+      `Upgrade to ${PLANS[DEFAULT_UPGRADE_PLAN].label} for ${planCallsLabel(DEFAULT_UPGRADE_PLAN)} calls a month ` +
+        `(up to ${planDailyCallsLabel(DEFAULT_UPGRADE_PLAN)} a day) — Telegram alerts included.`,
+    );
+    expect(html).toContain(line);
+    // never hand-typed: the meter's numbers and the copy's numbers are one value
+    expect(line).toContain(planCallsLabel(DEFAULT_UPGRADE_PLAN));
+    expect(line).toContain(planDailyCallsLabel(DEFAULT_UPGRADE_PLAN));
+  });
+
+  it('retires all three claims, each of which had gone live-false', () => {
+    // "crypto signal layer"          — a WEAKENING of the positioning chain (brand-facts §Taglines)
+    // "full asset coverage"          — free already has ALL assets, so it upsold what they had
+    // "unlimited Telegram bot alerts" — bot deliveries have DEBITED the plan since 2026-08-17
+    for (const gone of ['crypto signal layer', 'full asset coverage', 'unlimited Telegram']) {
+      expect(html.toLowerCase()).not.toContain(gone.toLowerCase());
+    }
+  });
+
+  it('renders no forbidden positioning form anywhere on the page', () => {
+    for (const bad of ['Quant Layer', 'AI Trading Platform', 'Crypto Signal API', 'intelligence layer']) {
+      expect(html).not.toContain(bad);
+    }
   });
 });

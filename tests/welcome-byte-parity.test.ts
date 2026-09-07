@@ -16,6 +16,18 @@
  * Nothing outside `.paywall-headline` / `.paywall-body` moved, which is the property this
  * guard actually protects — the OFF path's LAYOUT, not its copy.
  *
+ * SNAPSHOT MAINTENANCE — CONVERSION-SURFACES-W2 (CH4, 2026-09-07): regenerated for C2. The word-level
+ * diff was verified BEFORE regenerating and is exactly TWO edits, one per line, both inside the
+ * strings this wave was signed off to change:
+ *   .subtitle     'AlgoVault MCP — the crypto signal layer for AI agents'
+ *              -> 'The Brain Layer for AI Trading Agents'   (the canonical tagline; the old form
+ *                 weakened the positioning chain on the one page every new account sees)
+ *   .paywall-body dropped 'full asset coverage' (free already has ALL assets, so it upsold what
+ *                 the visitor already had) and 'unlimited Telegram bot alerts' (bot deliveries
+ *                 have DEBITED the plan since 2026-08-17, so it was live-false).
+ * Nothing outside those two elements moved — which is the property this guard protects: the OFF
+ * path's LAYOUT, not its copy.
+ *
  * SNAPSHOT MAINTENANCE — FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 (CH2, 2026-09-07): regenerated for
  * the analytics region. `/welcome` is api-origin only (404 on the apex) and carried NO Plausible
  * tag at all, which is why the goal `Form: Submission` — the goal that fires on this very page —

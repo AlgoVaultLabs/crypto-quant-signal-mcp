@@ -1,4 +1,5 @@
 import { landingCopy } from './landing-content.js';
+import { PLANS, DEFAULT_UPGRADE_PLAN, planCallsLabel, planDailyCallsLabel } from './plans.js';
 
 /**
  * CONVERSION-SURFACES-W2 — the ONE module for every string this wave puts in front of a visitor.
@@ -72,6 +73,43 @@ export function bandSubLineHtml(): string {
     '<span data-tr-field="timeframe_count">$1</span> $2',
   );
 }
+
+// ── C2 · /welcome ───────────────────────────────────────────────────────
+//
+// The page every new account lands on carried a weakened tagline and two claims that had gone
+// live-false. Both are corrected here, and both corrections are gated by
+// tests/unit/conversion-copy-locked.test.ts so they cannot silently drift back.
+
+/**
+ * The canonical positioning line (brand-facts.md §Taglines, THE LAW).
+ *
+ * It replaces `AlgoVault MCP — the crypto signal layer for AI agents`, which is a WEAKENING:
+ * "Quant Layer" / "AI Trading Platform" / "Crypto Signal API" and their neighbours are named
+ * forbidden forms because the positioning chain is TradingView → MT4 → AlgoVault as the brain,
+ * and "signal layer" drops the brain claim on the one page a new account is guaranteed to see.
+ */
+export const WELCOME_SUBTITLE = 'The Brain Layer for AI Trading Agents';
+
+/**
+ * The upgrade line, with BOTH live-false claims removed.
+ *
+ *   "full asset coverage"          — free already has ALL assets (brand-facts.md §Free tier), so
+ *                                    this offered as an upgrade what the visitor already had.
+ *   "unlimited Telegram bot alerts" — bot deliveries have DEBITED the plan since 2026-08-17, so
+ *                                    "unlimited" was false, and `unlimited` is a forbidden word
+ *                                    for exactly this reason.
+ *
+ * The allowances interpolate from `plans.ts`, so `10,000` and `1,000` are never literal here and
+ * cannot drift from what the meter actually enforces.
+ */
+export function welcomeUpgradeLine(): string {
+  return (
+    `Upgrade to ${PLANS[DEFAULT_UPGRADE_PLAN].label} for ${planCallsLabel(DEFAULT_UPGRADE_PLAN)} calls a month ` +
+    `(up to ${planDailyCallsLabel(DEFAULT_UPGRADE_PLAN)} a day) — Telegram alerts included.`
+  );
+}
+
+// ── C4 · the quickstart COPY button
 
 /**
  * C4 — the quickstart COPY button's transient, JS-only confirmation label.
