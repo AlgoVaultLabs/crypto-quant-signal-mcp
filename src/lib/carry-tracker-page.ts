@@ -37,7 +37,7 @@
  * compounding, holding period and capital that this measurement does not make.
  */
 import { getCarryTrackerPublic, type CarryTrackerPublic } from './carry-tracker-public.js';
-import { renderBrandFooter } from './footer-content.js';
+import { renderBrandFooter, renderConversionBand } from './footer-content.js';
 
 /** The scope banner. Copy-locked — it states exactly which venue the evidence covers and why the
  *  others are withheld, which is the honest answer to "why only one venue?". */
@@ -183,7 +183,7 @@ ${banner}
 <p>${esc(REFUSAL_EXHIBIT)}</p>
 <p class="note">The chart shows the series as measured, including weeks where the lift falls. A tracker that only renders favourable weeks is not evidence of anything.</p>
 
-</main>${renderBrandFooter('desktop')}
+</main>${renderConversionBand({ route: '/carry-tracker' })}${renderBrandFooter('desktop')}
 <script>
 // Live-bind: re-read the endpoint the page was server-rendered from, so a tab left open does not
 // quietly show yesterday's figures. The server render is the fallback — with JS off the page is

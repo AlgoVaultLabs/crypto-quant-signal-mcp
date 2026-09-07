@@ -1,0 +1,27 @@
+# CONVERSION-SURFACES-W2 — copy-locked source (Build Rule 4)
+#
+# Every visitor-facing string this wave introduces, VERBATIM from the spec's §Copy block.
+# Dispatch was the sign-off, so these are not drafts: tests/unit/conversion-copy-locked.test.ts
+# asserts src/lib/conversion-copy.ts against this file, and a paraphrase, a synonym swap or
+# punctuation drift fails the build rather than shipping.
+#
+# Format: KEY<TAB>VALUE. A leading '#' is a comment. Blank lines ignored.
+# Arrows are U+2192, the middot is U+00B7 — copied from the spec, not retyped.
+
+BAND_EYEBROW	· next step
+BAND_HEADING	Get the next verdict in your agent.
+BAND_CTA_PRIMARY_LABEL	Connect your agent →
+BAND_CTA_PRIMARY_HREF	https://algovault.com/#quickstart
+BAND_CTA_SECONDARY_LABEL	Try free in Telegram
+BAND_CTA_SECONDARY_HREF	https://t.me/algovaultofficialbot
+BAND_LINK_LABEL	See pricing →
+BAND_LINK_HREF	https://algovault.com/#pricing
+
+# C4 — transient, JS-only. Never present in static HTML.
+COPY_BUTTON_IDLE_LABEL	COPY
+COPY_BUTTON_COPIED_LABEL	COPIED
+
+# The band's sub-line is NOT listed as a literal, deliberately. §Copy defines it as
+# landingCopy('hero.free_tier_note','desktop') — the live hero line — so the copy-lock is an
+# IDENTITY assertion against that SoT, not a second transcription of the sentence. Typing it
+# here would create the very duplicate the projection exists to avoid.

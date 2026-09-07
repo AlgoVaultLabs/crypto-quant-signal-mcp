@@ -173,7 +173,7 @@ function faqJsonLd(c) {
 }
 
 function renderChannelPage(c, deps) {
-  const { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet } = deps;
+  const { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet, renderConversionBandRegion } = deps;
   const anchor = c.docsAnchors[0] ?? '';
   // The channel's docs sections, projected WHOLE and verbatim (Rule 3) — tables, notes and
   // response-field blocks included, not just the first code block.
@@ -296,6 +296,11 @@ ${faqHtml}
 
   <a class="ch-cta" href="https://algovault.com/tools">Explore the tools →</a>
 </main>
+  <!-- CONVERSION-SURFACES-W2 CH3: this is a FULL-PAGE generator, so it must emit the band
+       itself — build_landing --check compares its output byte-for-byte and would report the
+       injector's band as drift forever. Emitting the same region here means the generator and
+       the injector converge instead of fighting. -->
+${renderConversionBandRegion({ route: `/${c.slug}` })}
 ${renderBrandFooter('desktop')}
 </body>
 </html>
@@ -308,12 +313,12 @@ export function buildChannelPages({ check = false, root = REPO_ROOT } = {}) {
   const { publicToolEntries } = require(path.join(root, 'dist', 'lib', 'nav-manifest.js'));
   const { renderSiteNav } = require(path.join(root, 'dist', 'lib', 'site-nav.js'));
   const { renderAnalyticsSnippet } = require(path.join(root, 'dist', 'lib', 'analytics-snippet.js'));
-  const { renderBrandFooter } = require(path.join(root, 'dist', 'lib', 'footer-content.js'));
+  const { renderBrandFooter, renderConversionBandRegion } = require(path.join(root, 'dist', 'lib', 'footer-content.js'));
   const docsHtml = fs.readFileSync(path.join(root, 'landing', 'docs.html'), 'utf8');
   // The projection brings `.param-row` / `.code-block` content onto these pages; those rules live
   // only in the docs template, so they are READ from it rather than copied into this file.
   const projectedCss = projectedContentCss(fs.readFileSync(path.join(root, 'docs-src', 'template.html'), 'utf8'));
-  const deps = { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet };
+  const deps = { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet, renderConversionBandRegion };
 
   const changed = [];
   const drifted = [];

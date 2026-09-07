@@ -33,7 +33,7 @@ const ROOT = resolve(__dirname, '..');
 // dist/lib/footer-content.js; run `npm run build` before this generator).
 // createRequire loads the tsc-emitted CJS module from this ESM script.
 const require = createRequire(import.meta.url);
-const { renderBrandFooter } = require(join(ROOT, 'dist', 'lib', 'footer-content.js'));
+const { renderBrandFooter, renderConversionBandRegion } = require(join(ROOT, 'dist', 'lib', 'footer-content.js'));
 // OPS-INTEGRATIONS-LIVE-SOT-W1: the supported-exchange COUNT comes from the one
 // venue SoT (src/lib/capabilities.ts → dist/lib/capabilities.js), never a hand-
 // typed literal, so the page count can't diverge from /api/performance-public.
@@ -703,6 +703,11 @@ ${wrapH2InTierStatCard(stripInternalHeadingAnnotations(stripTLDRSection(stripSna
   </div>
 </main>
 
+<!-- CONVERSION-SURFACES-W2 CH3: this generator rewrites the whole tutorial page, so it must emit
+     the band region itself. Without this line an authoring run would strip the band from all 26
+     tutorial pages and the next deploy would go RED at inject-footer --check (deploy.yml) —
+     a hard stop on a wave that has nothing to do with integrations. The exchange variable is the slug. -->
+${renderConversionBandRegion({ route: `/integrations/${exchange}` })}
 ${CANONICAL_FOOTER_HTML}
 </body>
 </html>

@@ -204,6 +204,82 @@ export function applyFooter(html, render, matchers) {
   };
 }
 
+/**
+ * CONVERSION-SURFACES-W2 CH3 — place the conversion band immediately ABOVE the brand footer.
+ *
+ * WHY ITS OWN REGION AND NOT A PREFIX ON THE FOOTER STRING. The brand matcher matches the
+ * `<footer …>` element and nothing else, so a band merely PREPENDED to the footer's markup would
+ * be outside what the next run replaces — every re-run would insert another copy and the page
+ * would accumulate bands. Idempotence has to come from the band owning a region the injector can
+ * find and overwrite, exactly as the nav and analytics injectors do.
+ *
+ * REMOVAL IS PART OF THE CONTRACT: on an EXCLUDED path an existing region is stripped, so adding
+ * a page to CONVERSION_BAND_EXCLUDE.paths actually takes the band off it. A pass that only ever
+ * adds would leave the exclusion list describing an intent the artifact does not honour.
+ *
+ * @returns {{html:string, action:'replaced'|'inserted'|'removed'|'none'}}
+ */
+export function applyBand(html, rel, renderRegion, isExcluded, markers) {
+  const { start, end } = markers;
+
+  // STRIP-THEN-INSERT, not find-and-patch. Idempotence then holds by construction for ANY number
+  // of regions, which matters because the page count is not the band count — see below.
+  const stripped = stripBandRegions(html, start, end);
+  const had = stripped !== html;
+
+  if (isExcluded(rel)) return { html: stripped, action: had ? 'removed' : 'none' };
+
+  const region = renderRegion(routeForPath(rel));
+  if (!region) return { html: stripped, action: had ? 'removed' : 'none' };
+
+  // ONE BAND PER BRAND FOOTER, and this is the correction that matters most in this pass.
+  // A DUAL-RENDERED page ships two artboards swapped by an @media rule and a footer inside each
+  // (landing/how-it-works.html: lp-howit-desktop + lp-howit-mobile). Anchoring on the FIRST
+  // footer put the band inside the DESKTOP artboard, where `display:none` below 768px made it
+  // invisible on mobile — reproducing, inside this very wave, the exact dead-below-768px class
+  // CH2 exists to retire, on the audience the band is for. Measured before the fix: the band's
+  // enclosing element on /how-it-works was `lp-howit-desktop`. Mirroring the footer's own
+  // per-artboard treatment is the fix; only one artboard is ever rendered, so a visitor still
+  // sees exactly one band.
+  const parts = [];
+  let last = 0;
+  let n = 0;
+  const re = /<footer\s+data-av-brand-footer=/g;
+  let m;
+  while ((m = re.exec(stripped)) !== null) {
+    parts.push(stripped.slice(last, m.index), region, '\n');
+    last = m.index;
+    n++;
+  }
+  if (n === 0) return { html: stripped, action: 'none' };
+  parts.push(stripped.slice(last));
+  return { html: parts.join(''), action: had ? 'replaced' : 'inserted' };
+}
+
+/** Remove every band region, markers included, leaving the rest byte-identical. */
+export function stripBandRegions(html, start, end) {
+  let out = html;
+  for (;;) {
+    const s = out.indexOf(start);
+    if (s === -1) break;
+    const e = out.indexOf(end, s);
+    if (e === -1) break;
+    const after = out.slice(e + end.length);
+    out = out.slice(0, s) + (after.startsWith('\n') ? after.slice(1) : after);
+  }
+  return out;
+}
+
+/**
+ * Repo-relative page path -> the route it answers on, which is what the band's `page` prop and
+ * the route exclusion are keyed to. `landing/index.html` -> `/`, `landing/verify.html` ->
+ * `/verify`, `landing/integrations/cline.html` -> `/integrations/cline`.
+ */
+export function routeForPath(rel) {
+  const p = rel.replace(/^\.\//, '').replace(/^landing\//, '').replace(/\.html$/, '');
+  return p === 'index' ? '/' : `/${p}`;
+}
+
 export function variantOf(footerHtml) {
   if (footerHtml.includes('padding:44px 80px 56px')) return 'desktop';
   if (footerHtml.includes('padding:32px 22px 36px')) return 'mobile';
@@ -230,14 +306,26 @@ async function main(argv) {
     verdict('INDETERMINATE', `missing ${footerDist} — run \`npm run build\` first`);
   }
   let renderBrandFooter, BRAND_FOOTER_BG_SIGNATURE;
+  let renderConversionBandRegion, isBandExcludedPath, CONVERSION_BAND_START, CONVERSION_BAND_END;
   try {
-    ({ renderBrandFooter, BRAND_FOOTER_BG_SIGNATURE } = createRequire(SELF)(footerDist));
+    ({
+      renderBrandFooter, BRAND_FOOTER_BG_SIGNATURE,
+      renderConversionBandRegion, isBandExcludedPath, CONVERSION_BAND_START, CONVERSION_BAND_END,
+    } = createRequire(SELF)(footerDist));
   } catch (e) {
     verdict('INDETERMINATE', `could not load the footer SoT from ${footerDist}: ${e.message}`);
   }
   if (typeof renderBrandFooter !== 'function' || typeof BRAND_FOOTER_BG_SIGNATURE !== 'string') {
     verdict('INDETERMINATE', 'the footer SoT did not export renderBrandFooter + BRAND_FOOTER_BG_SIGNATURE');
   }
+  // Fail CLOSED on a half-loaded SoT. A missing band export would otherwise mean every page is
+  // silently processed with no band and the run still prints PASS — the dark-guard shape.
+  if (typeof renderConversionBandRegion !== 'function' || typeof isBandExcludedPath !== 'function'
+      || typeof CONVERSION_BAND_START !== 'string' || typeof CONVERSION_BAND_END !== 'string') {
+    verdict('INDETERMINATE', 'the footer SoT did not export the conversion-band region API (CONVERSION-SURFACES-W2 CH3)');
+  }
+  const bandMarkers = { start: CONVERSION_BAND_START, end: CONVERSION_BAND_END };
+  const renderRegion = (route) => renderConversionBandRegion({ route });
 
   let config;
   try {
@@ -254,11 +342,16 @@ async function main(argv) {
   let rewritten = 0;
   let inSync = 0;
   let totalBrand = 0;
+  let bandCount = 0;
 
   for (const rel of derived.targets) {
     const abs = path.join(root, rel);
     const before = await readFile(abs, 'utf8');
-    const res = applyFooter(before, renderBrandFooter, matchers);
+    const footered = applyFooter(before, renderBrandFooter, matchers);
+    // Band AFTER the footer pass so it anchors on the footer this run just wrote.
+    const banded = applyBand(footered.html, rel, renderRegion, isBandExcludedPath, bandMarkers);
+    const res = { ...footered, html: banded.html, action: `${footered.action}+band:${banded.action}` };
+    if (banded.action === 'inserted' || banded.action === 'replaced') bandCount++;
 
     if (res.unknownVariant > 0) {
       problems.push(`${rel}: ${res.unknownVariant} brand footer(s) with unrecognized padding`);
@@ -296,8 +389,8 @@ async function main(argv) {
   verdict(
     'PASS',
     checkMode
-      ? `${derived.targets.length} page(s) carry ${totalBrand} SoT footer(s); ${derived.exempt.length} exempt`
-      : `${rewritten} page(s) rewritten, ${inSync} already in sync, ${totalBrand} SoT footer(s) across ${derived.targets.length} target(s)`,
+      ? `${derived.targets.length} page(s) carry ${totalBrand} SoT footer(s) + ${bandCount} banded page(s); ${derived.exempt.length} exempt`
+      : `${rewritten} page(s) rewritten, ${inSync} already in sync, ${totalBrand} SoT footer(s) + ${bandCount} banded page(s) across ${derived.targets.length} target(s)`,
   );
 }
 
@@ -328,9 +421,17 @@ function selfTest() {
   const fakeDist = path.join(tmp, 'footer-sot.cjs');
   writeFileSync(
     fakeDist,
+    // CONVERSION-SURFACES-W2 CH3: the stand-in SoT exports the BAND API too. It has to — the
+    // loader now fails CLOSED on a half-loaded SoT, and a fake that omitted these would make
+    // every scenario below report INDETERMINATE. That is the seam this self-test replaces, so
+    // the band cases at the end assert the artifacts the fake stands in for.
     `const BG='oklch(0.13 0.012 265)';
      exports.BRAND_FOOTER_BG_SIGNATURE=BG;
-     exports.renderBrandFooter=(v)=>'<footer data-av-brand-footer="'+v+'" style="'+(v==='desktop'?'padding:44px 80px 56px':'padding:32px 22px 36px')+';background:'+BG+'">SOT</footer>';`,
+     exports.renderBrandFooter=(v)=>'<footer data-av-brand-footer="'+v+'" style="'+(v==='desktop'?'padding:44px 80px 56px':'padding:32px 22px 36px')+';background:'+BG+'">SOT</footer>';
+     exports.CONVERSION_BAND_START='<!-- CONVERSION-BAND:START -->';
+     exports.CONVERSION_BAND_END='<!-- CONVERSION-BAND:END -->';
+     exports.isBandExcludedPath=(rel)=>rel==='landing/index.html';
+     exports.renderConversionBandRegion=({route})=>exports.CONVERSION_BAND_START+'\\n<section data-conversion-band data-page="'+route+'">BAND</section>\\n'+exports.CONVERSION_BAND_END;`,
   );
 
   const mkRoot = (name, files) => {
@@ -390,6 +491,52 @@ function selfTest() {
     const noneOut = readFileSync(path.join(rNone, 'landing/a.html'), 'utf8');
     expect('inserted SOT', noneOut.includes('>SOT<'), true);
     expect('inserted BEFORE </body>', noneOut.indexOf('>SOT<') < noneOut.indexOf('</body>'), true);
+
+    // ── conversion band (CONVERSION-SURFACES-W2 CH3) ────────────────────────
+    // These four assert the artifacts the stand-in SoT above REPLACES: the band's region
+    // markers, its placement relative to the footer, its idempotence, and its removal on an
+    // excluded path. A self-test that only exercised the footer would be structurally blind to
+    // every one of them while still printing PASS.
+    produce += 1;
+    const rBand = mkRoot('band', { 'landing/a.html': '<html><body>only text</body></html>' });
+    expectVerdict('band inserted', run(rBand, okCfg), 'PASS');
+    const bandOut = readFileSync(path.join(rBand, 'landing/a.html'), 'utf8');
+    expect('band present', bandOut.includes('data-conversion-band'), true);
+    expect('band ABOVE the footer', bandOut.indexOf('data-conversion-band') < bandOut.indexOf('data-av-brand-footer'), true);
+    expect('band keyed on the route, not the path', bandOut.includes('data-page="/a"'), true);
+
+    map += 1;
+    // A second run replaces the region in place rather than stacking a second band — the whole
+    // reason the band owns markers instead of riding on the footer string.
+    run(rBand, okCfg);
+    const bandTwice = readFileSync(path.join(rBand, 'landing/a.html'), 'utf8');
+    expect('band still exactly once after a 2nd run', (bandTwice.match(/data-conversion-band/g) || []).length, 1);
+    expect('2nd run byte-identical', bandTwice === bandOut, true);
+
+    map += 1;
+    // DUAL-RENDER: a page with two artboards gets a band in EACH. Anchoring on the first footer
+    // put the band inside lp-*-desktop, where display:none below 768px made it invisible on
+    // mobile — the exact dead-below-768px class this wave exists to retire, reproduced by the
+    // band. Measured on landing/how-it-works.html before the fix.
+    const rDualBand = mkRoot('dualband', {
+      'landing/a.html':
+        '<html><body><div class="lp-x-desktop"><footer data-av-brand-footer="desktop" style="padding:44px 80px 56px;background:oklch(0.13 0.012 265)">A</footer></div>' +
+        '<div class="lp-x-mobile"><footer data-av-brand-footer="mobile" style="padding:32px 22px 36px;background:oklch(0.13 0.012 265)">B</footer></div></body></html>',
+    });
+    expectVerdict('dual-render page', run(rDualBand, okCfg), 'PASS');
+    const dualBandOut = readFileSync(path.join(rDualBand, 'landing/a.html'), 'utf8');
+    expect('one band per artboard', (dualBandOut.match(/data-conversion-band/g) || []).length, 2);
+    run(rDualBand, okCfg);
+    expect('dual-render still 2 after a 2nd run', (readFileSync(path.join(rDualBand, 'landing/a.html'), 'utf8').match(/data-conversion-band/g) || []).length, 2);
+
+    map += 1;
+    // An EXCLUDED path must have an existing band REMOVED, or the exclusion list would describe
+    // an intent the artifact does not honour.
+    const rBandEx = mkRoot('bandex', { 'landing/index.html': bandOut });
+    expectVerdict('band removed on an excluded path', run(rBandEx, okCfg), 'PASS');
+    const exOut = readFileSync(path.join(rBandEx, 'landing/index.html'), 'utf8');
+    expect('excluded page carries no band', exOut.includes('data-conversion-band'), false);
+    expect('excluded page keeps its footer', exOut.includes('data-av-brand-footer'), true);
 
     // ── must-map ────────────────────────────────────────────────────────────
     map += 1;

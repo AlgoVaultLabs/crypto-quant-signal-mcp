@@ -123,6 +123,14 @@
     {
       "symbol": "COPY_BUTTON_COPIED_MS",
       "reason": "CONVERSION-SURFACES-W2 CH2. The quickstart COPY button's labels + restore delay. Its ONLY consumer is scripts/render-jsx-static.mjs, which interpolates them into the appended vanilla controller through dist/lib/conversion-copy.js — the same createRequire path that file already uses for renderBrandFooter. Zero src/ consumers is the INTENDED end state: the button lives in a statically-rendered artboard, so a src/ import would make a build-time string a runtime dependency for no reader. Asserted by tests/unit/landing-cta-events.test.ts, which drives the shipped controller and checks the label round-trip COPY -> COPIED -> COPY. Scoped to the three C4 symbols on purpose: C1 (the conversion band) and C2 (/welcome) land in the same module in CH3/CH4 and ARE imported from src/, so they must stay visible to this gate."
+    },
+    {
+      "symbol": "renderConversionBandRegion",
+      "reason": "CONVERSION-SURFACES-W2 CH3. The band wrapped in its replaceable injector region. Consumed by the BUILD path only, and enumerated rather than described: scripts/inject-footer.mjs (static injection into 53 landing pages), scripts/build_tools_page.mjs (/tools), scripts/build_channel_pages.mjs (/mcp, /rest-api, /webhooks) and scripts/render-integrations.mjs (26 tutorial pages) — all through dist/lib/footer-content.js via createRequire. src/ callers use renderConversionBand() directly, because a server-rendered page interpolates the band and never needs the markers an injector uses to FIND it again. Exercised by tests/unit/conversion-band.test.ts and by inject-footer's own --self-test, which deploy.yml runs on every push."
+    },
+    {
+      "symbol": "isBandExcludedPath",
+      "reason": "CONVERSION-SURFACES-W2 CH3. The PATH half of the two-key-space exclusion. Only the static injector has a file path to test; every src/ caller has a ROUTE and uses isBandExcludedRoute(), which IS consumed from src/. Two predicates because the two render paths genuinely see different identifiers — collapsing them would mean inventing a path for a page that has none. Consumer: scripts/inject-footer.mjs through dist/. Asserted by tests/unit/conversion-band.test.ts."
     }
   ]
 }

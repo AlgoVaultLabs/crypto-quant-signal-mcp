@@ -60,7 +60,7 @@ export function renderToolsPage(existingHtml = '') {
   const { projectCapabilities } = require(path.join(REPO_ROOT, 'dist', 'lib', 'feature-registry.js'));
   const { renderSiteNav } = require(path.join(REPO_ROOT, 'dist', 'lib', 'site-nav.js'));
   const { renderAnalyticsSnippet } = require(path.join(REPO_ROOT, 'dist', 'lib', 'analytics-snippet.js'));
-  const { renderBrandFooter } = require(path.join(REPO_ROOT, 'dist', 'lib', 'footer-content.js'));
+  const { renderBrandFooter, renderConversionBandRegion } = require(path.join(REPO_ROOT, 'dist', 'lib', 'footer-content.js'));
 
   const caps = projectCapabilities().tools;
   const capOf = (name) => caps.find((t) => t.name === name) || { description: '', channels: {} };
@@ -137,6 +137,11 @@ ${NAV_END}
 ${cards}
   </div>
 </main>
+  <!-- CONVERSION-SURFACES-W2 CH3: this is a FULL-PAGE generator, so it must emit the band
+       itself — build_landing --check compares its output byte-for-byte and would report the
+       injector's band as drift forever. Emitting the same region here means the generator and
+       the injector converge instead of fighting. -->
+${renderConversionBandRegion({ route: '/tools' })}
 ${renderBrandFooter('desktop')}
 </body>
 </html>

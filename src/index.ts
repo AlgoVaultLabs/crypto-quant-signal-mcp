@@ -28,7 +28,7 @@ import { getSignalPerformance, runBackfill } from './resources/signal-performanc
 // `GET /api/performance-public`, and by `src/tools/get-track-record.ts`. Single derivation.
 import { formatPublicPerformance, resolvePublicPerformanceAllowList } from './lib/public-performance-formatter.js';
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
-import { renderBrandFooter } from './lib/footer-content.js';
+import { renderBrandFooter, renderConversionBand } from './lib/footer-content.js';
 import {
   resolveAdminAuth,
   buildAdminSessionCookie,
@@ -5633,6 +5633,11 @@ setInterval(updateNextBatchCountdown, 60000);
   </div>
 </main>
 <!-- FOOTER-UNIFY-W1: canonical brand footer from the single SoT (src/lib/footer-content.ts renderBrandFooter). Was the inline DESIGN-W11 literal + PH-BADGE-COMPACT-W1 badge. -->
+<!-- CONVERSION-SURFACES-W2 CH3: the band renders on the PUBLIC /track-record only. This one
+     function also serves the operator dashboard, which never sees a visitor — passing the
+     operator route lets renderConversionBand's own exclusion list decide, so the rule stays in
+     one place instead of becoming a branch here that the exclusion list cannot see. -->
+${renderConversionBand({ route: opts?.isPublic ? '/track-record' : '/dashboard' })}
 ${renderBrandFooter('desktop')}
 </body>
 </html>`;
