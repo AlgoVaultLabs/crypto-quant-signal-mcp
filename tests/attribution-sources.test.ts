@@ -37,9 +37,14 @@ describe('attribution-sources — SoT enum', () => {
     expect(set.has('direct' as never)).toBe(false);
     // 15 original + 12 FUNNEL-FIX-ATTRIBUTION-W1 + 6 OPS-ATTRIBUTION-AI-REFERRAL-W1
     // + 1 BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1 (`binance_agent_os`)
-    // + 1 LANDING-DSH-CLIENT-SURFACE-W1 (`deepseek_harness`) = 35 slugs, no dupes.
-    expect(ATTRIBUTION_SOURCES.length).toBe(35);
-    expect(new Set(ATTRIBUTION_SOURCES).size).toBe(35);
+    // + 1 LANDING-DSH-CLIENT-SURFACE-W1 (`deepseek_harness`)
+    // + 1 IDENTITY-LIFECYCLE-W3 (`lifecycle` — utm_source on links inside a lifecycle email;
+    //   the `chan-email` TRACK TOKEN is a different namespace, already live in src/lib/email.ts,
+    //   and regex-validated rather than enumerated, so it is deliberately NOT a row here)
+    // = 36 slugs, no dupes.
+    expect(ATTRIBUTION_SOURCES.length).toBe(36);
+    expect(new Set(ATTRIBUTION_SOURCES).size).toBe(36);
+    expect(set.has('lifecycle' as never)).toBe(true);
     // BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1: every slug must match /^[a-z0-9_]+$/. This is not a
     // style rule — check-attribution-src-coverage.mjs extracts this enum with that exact
     // character class, so a HYPHENATED slug is invisible to the gate and every connect URL

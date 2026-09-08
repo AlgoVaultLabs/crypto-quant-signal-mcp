@@ -1,0 +1,81 @@
+IDENTITY-LIFECYCLE-W3 — copy-locked source
+Architect-signed §Copy as amended by the Rev 2 rulings table (2026-09-08, Q5 = A).
+Every string below is asserted against the RENDERED output by
+tests/unit/lifecycle-copy-locked.test.ts — over the rendered bytes, never over the constants,
+because a test comparing a constant to itself asserts nothing.
+
+Numbers are NOT part of the locked text. They interpolate from plans.ts
+(FREE_MONTHLY_CALLS=200, FREE_DAILY_CALLS=100, PLANS.starter = 10,000 / 1,000 / $9.99),
+referral-constants.ts (REFERRAL_TERMS.BONUS_CALLS=500) and capabilities.ts
+(TIMEFRAME_COUNT=11). A literal here would be a numerical-citation violation the moment any
+of those moved.
+
+RULING Q5(A) — every "this month" / "This month's" is REMOVED from E2-E4. The free allowance is
+a ROLLING 30-DAY WINDOW anchored at each caller's first call (MONTH_MS, src/lib/license.ts;
+plans.ts records that the rolling window is not statable in copy). Measured 2026-09-08, two of
+the three metered email-bound buckets on signal-1 carried an already-expired period_start, so
+"this month" was not imprecise — it was false. Starter's "10,000 calls a month" STAYS: that is
+the plan ladder's canonical phrase and Starter's allowance genuinely is monthly.
+
+--- E1 · activation_nudge ---
+SUBJECT: Your AlgoVault key is ready — first call in 30 seconds
+Your key {key_masked} hasn't made a call yet. Paste this into Claude Desktop, Cursor or any MCP client:
+{mcp_config_snippet}
+Then ask: "Get me a trade call for SOL on the 5-minute timeframe."
+Free tier: all assets, all {timeframe_count} timeframes, {free_monthly} calls/month (up to {free_daily}/day).
+CTA: Open the quickstart -> {landing}/#quickstart?utm_source=lifecycle&utm_medium=email&utm_campaign=activation_nudge
+
+--- E2 · quota_80 ---
+SUBJECT: {used} of {total} free calls used
+Your agent has used {used} of its {total} free calls. The count resets on {reset_date}.
+Need more? Starter is {starter_monthly} calls a month (up to {starter_daily} a day) for {starter_price}.
+CTA: Upgrade to Starter -> {api}/signup?plan=starter&utm_source=lifecycle&utm_medium=email&utm_campaign=quota_80
+Or keep going free: refer a friend and they get {bonus_calls} bonus calls.
+CTA: Your referral link -> {api}/account?utm_source=lifecycle&utm_medium=email&utm_campaign=quota_80
+
+--- E3 · quota_wall ---
+SUBJECT: Free calls used up — they reset on {reset_date}
+Your agent hit its {total}-call limit. Calls resume on {reset_date}.
+Starter removes the wait: {starter_monthly} calls a month for {starter_price}.
+CTA: Upgrade to Starter -> {api}/signup?plan=starter&utm_source=lifecycle&utm_medium=email&utm_campaign=quota_wall
+
+--- E4 · reset_return ---
+SUBJECT: Your free calls are back
+Your free calls reset today. Your key still works — nothing to do.
+If {total} a month is getting tight, Starter is {starter_monthly} for {starter_price}.
+CTA: See plans -> {api}/signup?utm_source=lifecycle&utm_medium=email&utm_campaign=reset_return
+
+--- E5 · product_updates ---
+SUBJECT: What's new in AlgoVault — {Month YYYY}
+BODY: the README "## What's new in vX.Y.0" block(s) published since the previous digest,
+converted to email HTML VERBATIM. No new prose. Followed by exactly:
+You asked for product updates when you signed up (about one a month).
+
+--- §Footer (every message, verbatim) ---
+AlgoVault Labs · Unsubscribe · Manage email preferences
+HEADERS: List-Unsubscribe: <{unsubscribe_url}>
+         List-Unsubscribe-Post: List-Unsubscribe=One-Click
+
+--- Unsubscribe page (CH1 R3) ---
+You're unsubscribed from AlgoVault emails. Your key and account are unchanged.
+
+--- C1 · /welcome benefit line (CH3) ---
+Sign in to keep your key, see your usage, and get a heads-up before you hit the cap.
+
+--- C2 · envelope claim strings (CH3) ---
+claim_url:  https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim
+claim_hint: Sign in to keep this key and get a heads-up before the cap.
+PLACEMENT (ruling Q3 = A): stamped beside _algovault.auth by the generic 7/7 helper, for
+auth.outcome === 'ABSENT' ONLY. The STRINGS are byte-identical to the signed-off C2; only the
+JSON parent changed, which the architect ratified as NOT a copy change.
+
+--- C3 · /account usage block (CH3) ---
+Usage
+This month: {used} / {total} · resets {reset_date}
+Today: {daily_used} / {daily_total} · resets 00:00 UTC
+Email me at 80% and at the cap
+
+--- Forbidden anywhere in this wave ---
+unlimited · no daily cap · 100 calls/month · trial · bonus (except E2's referral sentence,
+which is the existing referral SoT string) · MOST POPULAR · Quant Layer · AI Trading Platform ·
+Crypto Signal API · intelligence layer · powerful / seamless / robust / cutting-edge

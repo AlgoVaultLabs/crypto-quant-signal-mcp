@@ -12,11 +12,11 @@
   "_enumeration": {
     "signal-1": {
       "host": "signal-1 (204.168.185.24)",
-      "verified_at": "2026-08-31T13:43Z",
+      "verified_at": "2026-09-08T07:47Z",
       "command": "crontab -l | grep -vE '^\\s*(#|$)'   # then resolve each entry to its script and grep that script for a command-position `docker exec`",
-      "active_cron_lines": 106,
+      "active_cron_lines": 118,
       "lines_with_direct_docker_exec": 46,
-      "note": "Rows are keyed by PROCESS PATTERN, not by cron line: the interlock matches patterns, and one pattern (seed-signals.js) covers 28 cron lines. `cron_lines` on each row records the fan-out so the enumeration stays recoverable. The prior enumeration measured 91 active lines (OPS-HOST-KERNEL-REBOOT-W2) and 75 before that (W1) — re-derive, never inherit. Re-derived 2026-08-31T13:43Z by OPS-BAND-OUTCOME-WIRE-W1: 100 -> 106 active lines in two days, `docker exec` lines unchanged at 46. The growth is entirely in host-process lines, so no row's classification moves; the count is corrected because a stale enumeration makes every interlock decision built on it wrong, and this file's own instruction is to re-derive rather than inherit."
+      "note": "Rows are keyed by PROCESS PATTERN, not by cron line: the interlock matches patterns, and one pattern (seed-signals.js) covers 28 cron lines. `cron_lines` on each row records the fan-out so the enumeration stays recoverable. The prior enumeration measured 91 active lines (OPS-HOST-KERNEL-REBOOT-W2) and 75 before that (W1) — re-derive, never inherit. Re-derived 2026-08-31T13:43Z by OPS-BAND-OUTCOME-WIRE-W1: 100 -> 106 active lines in two days, `docker exec` lines unchanged at 46. The growth is entirely in host-process lines, so no row's classification moves; the count is corrected because a stale enumeration makes every interlock decision built on it wrong, and this file's own instruction is to re-derive rather than inherit. || Re-derived 2026-09-08T07:47Z by IDENTITY-LIFECYCLE-W3 CH1: 106 -> 118 active lines. The registry's own instruction is to re-derive rather than inherit, and a stale enumeration makes every interlock decision built on it wrong. The +12 are host-process and third-party lines (mcp-intelligence, monitoring canaries); no existing row changes class. This wave adds 2 lines of its own (dispatch + health), counted in the 118."
     },
     "aoe-1": {
       "host": "aoe-1 (178.104.200.44)",
@@ -445,6 +445,23 @@
       "catchup_cmd": null,
       "source": "host-only",
       "verified_at": "2026-08-29"
+    },
+    {
+      "id": "lifecycle-dispatch",
+      "host": "signal-1",
+      "script": "ops/cron/lifecycle-dispatch.sh",
+      "container": "crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "dist/scripts/lifecycle-dispatch",
+      "class": "safe-to-kill",
+      "reason": "Every write is guarded by UNIQUE(recipient_id, step, period_key), so a run SIGKILLed mid-tick by a deploy loses nothing durable: the next tick re-evaluates the same eligible set and lands the same rows. Exit 137 is EXPECTED and is not a failure. The cost of preemption is at most ONE tick of latency on a non-urgent email (15 min), which does not justify holding a deploy. Deliberately NOT preempt-and-catchup: there is no partial state to repair, and the ledger's own constraint is the catch-up.",
+      "max_runtime_s": 120,
+      "runtime_instrument": "NOT YET MEASURED — CH1 registers zero step evaluators, so every tick is a no-op that only stamps the heartbeat. The 120s value is a CEILING chosen to bound a hung docker exec, not a measurement, and it is labelled as such rather than presented as one. CH2 registers the four predicates and re-derives this from /var/log/lifecycle-dispatch.log.",
+      "cron_lines": 1,
+      "cron": "7,22,37,52 * * * * (every 15 min on a FIXED-MINUTE offset). NOT */15: that form fires on the :00 boundary the snapshot-sampler rule forbids, AND */15 is already occupied on this host by mcp-intelligence launch_triggers. 7/22/37/52 checked clear against all 118 active lines on 2026-09-08.",
+      "catchup_cmd": null,
+      "source": "repo",
+      "verified_at": "2026-09-08",
+      "notes": "Ships with an EMPTY step registry by design — CH1 is the harness, CH2 the predicates. A no-op tick still stamps lifecycle_heartbeats so the health canary can tell a healthy idle dispatcher from a dead one; with three of four steps at ZERO eligible recipients (measured 2026-09-08) the ledger alone cannot answer that question."
     }
   ],
   "exclusions": [

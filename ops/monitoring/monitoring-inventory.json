@@ -838,7 +838,7 @@
         "ops/cron/nav-drift-canary.sh",
         "ops/cron/analytics-drift-canary.sh"
       ],
-      "notes": "THE ONE served-page region checker, consumed by both region drift canaries; a third region canary inherits the shape rather than adding a third copy. Retires the class 'a canary that inspects the BUILT artifact when its stated subject is the SERVED artifact' — see the nav-drift-canary and analytics-drift-canary rows for the measured defect and the inverted root cause it corrects. PLACEMENT: host_path is the REPO CHECKOUT, not /opt/algovault-monitoring, following the ops/cron/snapshot-landing-daily.sh precedent — it must read $REPO/landing/** to DERIVE its page set, so installing a second copy under /opt/algovault-monitoring would add a third sha256 to keep in sync without removing the cross-tree dependency. It therefore ships with the deploy's `git pull` and needs no installer step; HASH_DRIFT compares it against the same checkout the deploy materialises, and ops/cron/checkout-parity.sh already asserts that checkout is a clean ancestor of origin/main. NO own schedule: it is a library invoked by its two consumers, so the DARK check (which reads only rows carrying a schedule) correctly does not apply. `repo_resident: true` because host_path IS the repo copy — HASH_DRIFT skips such rows deliberately, since on the host both sides of that comparison come from the same checkout and reporting them in-sync would be a lie by construction. KNOWN GAP, recorded rather than papered over: nothing detects the host CHECKOUT being merely BEHIND origin/main — checkout-parity.sh's HEAD_UNMERGED check only catches a HEAD that is NOT an ancestor, so it passes on a stale-but-ancestral tree. This affects all 11 repo-resident rows equally and predates this wave. It bites here specifically because `ops/monitoring/**` is in deploy.yml's paths-ignore, so a future commit touching ONLY this helper would not trigger the deploy that refreshes the checkout. Mitigation today: any behavioural change to this helper also touches its two consumers under `ops/cron/**`, which is NOT paths-ignored and does deploy. Follow-up if that stops holding: OPS-REPO-RESIDENT-CHECKOUT-STALENESS-W{NEXT}. Contract: exactly one terminal SERVED_REGION_VERDICT=PASS|FAIL|INDETERMINATE line, exit 0/1/3 (3 = the token-law default for a new gate); callers gate on the TOKEN, never the exit code. Zero pages checked and any unfetchable page are both INDETERMINATE, never a clean PASS. `--self-test` covers 19 checks including the artifacts its own injectable seams bypass (URL derivation, region extraction, the docker argv) and the token->exit-code mapping itself. Pinned by tests/unit/served-region-check.test.ts, which recomputes the derived page set independently so a hardcoded array fails. WIDENED 2026-09-07 by FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2: the analytics region's page set is now landing-DERIVED plus seven DECLARED function-rendered routes (FUNCTION_RENDERED_ROUTES) \u2014 /track-record, /referral, /referral-terms and /join on the apex, /welcome, /account and bare /signup on api. Those seven are built in TypeScript at request time, so no file-tree derivation can see them, and they were the ENTIRE untagged set \u2014 including /welcome, which IS the signup page and where the Plausible goal `Form: Submission` fires (it read 0 in 28d). DECLARED rather than derived deliberately: grepping `app.get(` out of src/index.ts would silently drop every route registered through a handler module (/account is one), and a derivation that under-collects without saying so is worse than a list a human must extend \u2014 tests/unit/analytics-snippet-parity.test.ts fails on a stale row. Their URLs are built FROM the caller's origin (apiOriginFor) so the wrong-origin force-fire smoke still moves them; hardcoding the host would make exactly those seven pass vacuously under the one run that exists to falsify a green. The nav region does NOT claim them \u2014 they carry the analytics markers and not the nav ones.",
+      "notes": "THE ONE served-page region checker, consumed by both region drift canaries; a third region canary inherits the shape rather than adding a third copy. Retires the class 'a canary that inspects the BUILT artifact when its stated subject is the SERVED artifact' — see the nav-drift-canary and analytics-drift-canary rows for the measured defect and the inverted root cause it corrects. PLACEMENT: host_path is the REPO CHECKOUT, not /opt/algovault-monitoring, following the ops/cron/snapshot-landing-daily.sh precedent — it must read $REPO/landing/** to DERIVE its page set, so installing a second copy under /opt/algovault-monitoring would add a third sha256 to keep in sync without removing the cross-tree dependency. It therefore ships with the deploy's `git pull` and needs no installer step; HASH_DRIFT compares it against the same checkout the deploy materialises, and ops/cron/checkout-parity.sh already asserts that checkout is a clean ancestor of origin/main. NO own schedule: it is a library invoked by its two consumers, so the DARK check (which reads only rows carrying a schedule) correctly does not apply. `repo_resident: true` because host_path IS the repo copy — HASH_DRIFT skips such rows deliberately, since on the host both sides of that comparison come from the same checkout and reporting them in-sync would be a lie by construction. KNOWN GAP, recorded rather than papered over: nothing detects the host CHECKOUT being merely BEHIND origin/main — checkout-parity.sh's HEAD_UNMERGED check only catches a HEAD that is NOT an ancestor, so it passes on a stale-but-ancestral tree. This affects all 11 repo-resident rows equally and predates this wave. It bites here specifically because `ops/monitoring/**` is in deploy.yml's paths-ignore, so a future commit touching ONLY this helper would not trigger the deploy that refreshes the checkout. Mitigation today: any behavioural change to this helper also touches its two consumers under `ops/cron/**`, which is NOT paths-ignored and does deploy. Follow-up if that stops holding: OPS-REPO-RESIDENT-CHECKOUT-STALENESS-W{NEXT}. Contract: exactly one terminal SERVED_REGION_VERDICT=PASS|FAIL|INDETERMINATE line, exit 0/1/3 (3 = the token-law default for a new gate); callers gate on the TOKEN, never the exit code. Zero pages checked and any unfetchable page are both INDETERMINATE, never a clean PASS. `--self-test` covers 19 checks including the artifacts its own injectable seams bypass (URL derivation, region extraction, the docker argv) and the token->exit-code mapping itself. Pinned by tests/unit/served-region-check.test.ts, which recomputes the derived page set independently so a hardcoded array fails. WIDENED 2026-09-07 by FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2: the analytics region's page set is now landing-DERIVED plus seven DECLARED function-rendered routes (FUNCTION_RENDERED_ROUTES) — /track-record, /referral, /referral-terms and /join on the apex, /welcome, /account and bare /signup on api. Those seven are built in TypeScript at request time, so no file-tree derivation can see them, and they were the ENTIRE untagged set — including /welcome, which IS the signup page and where the Plausible goal `Form: Submission` fires (it read 0 in 28d). DECLARED rather than derived deliberately: grepping `app.get(` out of src/index.ts would silently drop every route registered through a handler module (/account is one), and a derivation that under-collects without saying so is worse than a list a human must extend — tests/unit/analytics-snippet-parity.test.ts fails on a stale row. Their URLs are built FROM the caller's origin (apiOriginFor) so the wrong-origin force-fire smoke still moves them; hardcoding the host would make exactly those seven pass vacuously under the one run that exists to falsify a green. The nav region does NOT claim them — they carry the analytics markers and not the nav ones.",
       "verification": "node ops/monitoring/served-region-check.mjs --self-test && node ops/monitoring/served-region-check.mjs --region=nav"
     },
     {
@@ -1205,7 +1205,7 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 — is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "24b533f18273826df7eacb31f3332226c1a64b826ada77a21ea6636ed376ff28",
+      "sha256": "44a0f04cf87a6a881ea97a0604ef3054e2a8e71e9380827eafe5a0bee890c2bc",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. DECLARED LIMITATION: unlike signal-1's, this copy CAN go stale between installs. The detector is the daily reconciler's HASH_DRIFT against this row's sha256 — which is precisely why it gets a row rather than being scp'd by hand. Re-install with ops/scripts/install-monitoring-artifact.sh cron-interlock-registry-aoe1 --apply after any registry edit, and re-stamp this sha256 in the same commit. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot."
@@ -1385,7 +1385,7 @@
       "install_state": "installed",
       "sha256": "19b160037b8072d2264973b7145489f3d5e09da92bdac53390c3601eb056d690",
       "owner_wave": "SIGNAL-CLOSEDBAR-FLIP-W1",
-      "notes": "Hourly liveness proof that watchlist dispatch is bucket-deterministic and lands in the band the bot is CONFIGURED for. SIGNAL-CLOSEDBAR-FLIP-W1 CH5 fixed three defects at once: (1) the band was hardcoded at '>= 2/3 of the bar', true only for OFFSET_PCT=75 — after the flip to 0 it would have paged CLOSEDBAR_DISPATCH_OFFSET_FAULT on every CORRECT fire; it is now derived from /etc/algovault-bot/env. (2) the probe row was a hardcoded SUBSCRIBER watch (chat 8776880162 ETH/15m/BINANCE) which that subscriber unwatched after 2026-08-02, so the guard resolved nothing and reported RATCHET_REGRESSION — a CRITICAL page caused by a stranger tidying their watchlist; the row is now selected at runtime and an empty corpus is INSUFFICIENT, never a page. (3) it was NEVER ON A CRON — written in SHADOW-W1, run by hand twice, dark ever since; scheduled here at :44 hourly. Emits no verdict token by design: the alert contract owns delivery via send_telegram.sh. 29 self-test assertions, RED-verified 4 ways. \u2014 OPS-BOT-DISPATCH-LATENCY-W1 CH1c corrected FIVE fields that had drifted from the running artifact: host_path and installed_at[0].path named /usr/local/bin/closedbar-w1-liveness.sh, a DEAD 16631-byte pre-flip copy the crontab has never invoked, while the recorded sha256 was the digest of the /opt copy \u2014 the row asserted the right hash against the wrong path, which no reconciler check can catch (HASH_DRIFT skips a file it cannot find; ORPHAN runs host\u2192repo). invoked_by claimed systemd:transient while crontab:root has owned it since SIGNAL-CLOSEDBAR-FLIP-W1 CH5. The dead copy is deliberately LEFT IN PLACE, not deleted \u2014 removal is a separate decision this wave was not asked to make. SCHEDULE MOVED :44 \u2192 :11, load-bearing rather than cosmetic: CHECK1 reads each row's CURRENT last_fetched_at, so the cron minute silently decides WHICH bar is audited, and :44 is always the :30 bar \u2014 no 1h cohort, so it cannot exhibit budget contention. Measured: 26 budget-capped ticks in 26h, all at minute :03, none ever sampled. :11 sits in the :06-:15 window where the :00 bar's fires are complete and the :15 bar's have not yet overwritten them. The coupling is now ENFORCED, not documented: bar_open_minute() plus a SAMPLE_BLIND arm make a non-:00 sample INDETERMINATE instead of PASS, because a run that audited the uncontended bar verified nothing. Self-test 53 \u2192 61 assertions; the 8 new ones caught a real defect in bar_open_minute on their FIRST execution (an empty epoch returned 0, which reads as contended and would have silently certified)."
+      "notes": "Hourly liveness proof that watchlist dispatch is bucket-deterministic and lands in the band the bot is CONFIGURED for. SIGNAL-CLOSEDBAR-FLIP-W1 CH5 fixed three defects at once: (1) the band was hardcoded at '>= 2/3 of the bar', true only for OFFSET_PCT=75 — after the flip to 0 it would have paged CLOSEDBAR_DISPATCH_OFFSET_FAULT on every CORRECT fire; it is now derived from /etc/algovault-bot/env. (2) the probe row was a hardcoded SUBSCRIBER watch (chat 8776880162 ETH/15m/BINANCE) which that subscriber unwatched after 2026-08-02, so the guard resolved nothing and reported RATCHET_REGRESSION — a CRITICAL page caused by a stranger tidying their watchlist; the row is now selected at runtime and an empty corpus is INSUFFICIENT, never a page. (3) it was NEVER ON A CRON — written in SHADOW-W1, run by hand twice, dark ever since; scheduled here at :44 hourly. Emits no verdict token by design: the alert contract owns delivery via send_telegram.sh. 29 self-test assertions, RED-verified 4 ways. — OPS-BOT-DISPATCH-LATENCY-W1 CH1c corrected FIVE fields that had drifted from the running artifact: host_path and installed_at[0].path named /usr/local/bin/closedbar-w1-liveness.sh, a DEAD 16631-byte pre-flip copy the crontab has never invoked, while the recorded sha256 was the digest of the /opt copy — the row asserted the right hash against the wrong path, which no reconciler check can catch (HASH_DRIFT skips a file it cannot find; ORPHAN runs host→repo). invoked_by claimed systemd:transient while crontab:root has owned it since SIGNAL-CLOSEDBAR-FLIP-W1 CH5. The dead copy is deliberately LEFT IN PLACE, not deleted — removal is a separate decision this wave was not asked to make. SCHEDULE MOVED :44 → :11, load-bearing rather than cosmetic: CHECK1 reads each row's CURRENT last_fetched_at, so the cron minute silently decides WHICH bar is audited, and :44 is always the :30 bar — no 1h cohort, so it cannot exhibit budget contention. Measured: 26 budget-capped ticks in 26h, all at minute :03, none ever sampled. :11 sits in the :06-:15 window where the :00 bar's fires are complete and the :15 bar's have not yet overwritten them. The coupling is now ENFORCED, not documented: bar_open_minute() plus a SAMPLE_BLIND arm make a non-:00 sample INDETERMINATE instead of PASS, because a run that audited the uncontended bar verified nothing. Self-test 53 → 61 assertions; the 8 new ones caught a real defect in bar_open_minute on their FIRST execution (an empty epoch returned 0, which reads as contended and would have silently certified)."
     },
     {
       "id": "algovault-bot-dispatch-schedule",
@@ -1841,7 +1841,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "7bdaef696f5aeec1e7e0b86a5329f09b018229d89fff6f34dace5c50104cd774",
+      "sha256": "f178d71ae10f7360f179e1700e4a1c18657dfb101baf72d724f3b629b8c74f73",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -2212,7 +2212,10 @@
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/canary_result_log.py",
       "installed_at": [
-        { "host": "signal-1", "path": "/opt/algovault-monitoring/canary_result_log.py" }
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/canary_result_log.py"
+        }
       ],
       "criticality": "advisory",
       "repo_resident": true,
@@ -2221,7 +2224,9 @@
       "install_state": "installed",
       "sha256": "604591ce41e78474438272cf3bfb0342ebfa218a5e8c8a6a3a340484dba975de",
       "alert_ids": [],
-      "consumed_by": ["ops/monitoring/scorer-input-identity-canary.py"],
+      "consumed_by": [
+        "ops/monitoring/scorer-input-identity-canary.py"
+      ],
       "owner_wave": "OPS-SCORER-CAPTURE-DAY3-HEALTH-READOUT-W1",
       "notes": "R6 THE GENERATOR FIX: appends one structured JSON line per canary run to /var/lib/algovault-monitoring/canary-results.jsonl, which ops/scripts/monitoring-results-sync.sh pulls into the private vault. Retires the class 'a scheduled on-host canary publishes its result only to host stdout, so any readout of it needs an SSH key'. RECORDER, NOT A GATE: it emits NO *_VERDICT= token of its own and NEVER raises - a canary's verdict, exit code and alert dispatch must be identical whether the append works, or a logging bug becomes a paging bug. It may not fail SILENTLY though: append_result returns (ok, detail) and the caller prints CANARY_RESULT_LOG=ok line=N or =FAILED <reason> either way. BOUNDED by two refusals rather than truncations: MAX_LINE_BYTES=8192 refuses a pathological record whole, and MAX_LINES=2000 (~500 days at four canaries/day, ~700 KB) trims to the most recent N atomically via a same-directory temp + os.replace. THE CAP AND THE VAULT-SIDE UNION MERGE ARE A PAIR: trimming discards the oldest HOST lines, which is only safe because the pull unions instead of copying; changing that pull to a plain scp turns this cap into data loss. Append+trim run under flock. Self-test 24 assertions, hermetic, PROVEN ABLE TO FAIL by 5 deliberate mutations (trim keeps the oldest; record key ORDER scrambled; the MAX_LINE_BYTES refusal disabled; NaN allowed into the record; append_result raising instead of reporting) - all 5 caught. Proving that found a REAL defect first: the key-order assertion was written as tuple(parsed.keys()) == RECORD_KEYS, which is the vacuous self-comparison (it asks whether the output matches whatever the constant happens to be) and survived a deliberate reordering of that very constant; it now asserts against an INDEPENDENT literal. Same shape as the parent wave's vacuous weight assertion. INHERITORS, named not wired (3-example-threshold rule): disk-headroom-canary, book-liveness-canary, regime-budget-starvation-canary - each is two lines.",
       "first_install": {
@@ -2286,7 +2291,10 @@
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/population_comparison.py",
       "installed_at": [
-        { "host": "signal-1", "path": "/opt/algovault-monitoring/population_comparison.py" }
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/population_comparison.py"
+        }
       ],
       "criticality": "load-bearing",
       "repo_resident": true,
@@ -2294,8 +2302,10 @@
       "install_state": "installed",
       "sha256": "c167f6dfc7de25ead2116ba2be42c0a35a1015e60e83a2c98cc490e44a50e519",
       "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
-      "consumes": ["ops/monitoring/population-comparison.schema.json"],
-      "notes": "THE ONE DERIVATION for comparing a rate across two populations. It REFUSES rather than repairs: an arm's excess over its own mix-matched null is bounded by its marginals, so when a declared floor exceeds either arm's attainable range the comparison is NOT_IDENTIFIABLE and resolves to INDETERMINATE. Measured 2026-09-02, the firing that produced this file: attainable width 1.06pp (v1, 99.47% one-sided) vs 38.93pp (v2) against a 3.0pp floor \u2014 so the v1 term could never influence the verdict and the 'cross-arm delta' was a single-arm level test wearing a delta's clothes. No schedule: it is a library, imported by trend-mode-readout-gate.py, and has no cron of its own."
+      "consumes": [
+        "ops/monitoring/population-comparison.schema.json"
+      ],
+      "notes": "THE ONE DERIVATION for comparing a rate across two populations. It REFUSES rather than repairs: an arm's excess over its own mix-matched null is bounded by its marginals, so when a declared floor exceeds either arm's attainable range the comparison is NOT_IDENTIFIABLE and resolves to INDETERMINATE. Measured 2026-09-02, the firing that produced this file: attainable width 1.06pp (v1, 99.47% one-sided) vs 38.93pp (v2) against a 3.0pp floor — so the v1 term could never influence the verdict and the 'cross-arm delta' was a single-arm level test wearing a delta's clothes. No schedule: it is a library, imported by trend-mode-readout-gate.py, and has no cron of its own."
     },
     {
       "id": "population-comparison-schema",
@@ -2304,7 +2314,10 @@
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/population-comparison.schema.json",
       "installed_at": [
-        { "host": "signal-1", "path": "/opt/algovault-monitoring/population-comparison.schema.json" }
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/population-comparison.schema.json"
+        }
       ],
       "criticality": "load-bearing",
       "repo_resident": true,
@@ -2312,8 +2325,10 @@
       "install_state": "installed",
       "sha256": "ef8906da0697834242b1532affe27990a18a47b6d24aa6d89f9fbfa5a75e9329",
       "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
-      "consumed_by": ["ops/monitoring/population_comparison.py"],
-      "notes": "The SoT for the cross-population comparator contract, and it is DATA so both languages read one file \u2014 same discipline as detector-envelope.schema.json. Carries the banned-basis list (MAX_NAIVE, ALWAYS_LONG, ALWAYS_SHORT, RANDOM, PRIOR_WINDOW_RATE, OTHER_COHORT_RATE), the pinned ALL_SCORED denominator convention, and the identifiability rule. An unreadable schema is INDETERMINATE, never a permissive default."
+      "consumed_by": [
+        "ops/monitoring/population_comparison.py"
+      ],
+      "notes": "The SoT for the cross-population comparator contract, and it is DATA so both languages read one file — same discipline as detector-envelope.schema.json. Carries the banned-basis list (MAX_NAIVE, ALWAYS_LONG, ALWAYS_SHORT, RANDOM, PRIOR_WINDOW_RATE, OTHER_COHORT_RATE), the pinned ALL_SCORED denominator convention, and the identifiability rule. An unreadable schema is INDETERMINATE, never a permissive default."
     },
     {
       "id": "population-comparison-registry",
@@ -2328,8 +2343,56 @@
       "install_state": "installed",
       "sha256": "51be7f6781ee5f3b338e1a6f26e96f7bb18fb427c355b9be398571ab11da127b",
       "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
-      "reconcile_exempt_reason": "REPO-SIDE ONLY by design \u2014 the ledger is read by a pre-push gate in scripts/, never on a host, so it has no host_path and no installed_at row. Declared here so the enumeration is complete rather than because anything installs it.",
-      "notes": "The census of every cross-population comparison site in this repo, with a monotonic ratchet on the UNMIGRATED count. Detection is strictly weaker than enumeration: measured 2026-09-02, the pattern sweep reaches 3 of the 4 known sites \u2014 edge-stats.ts carries the banned comparator only in a docstring while its naiveBest value arrives from a caller, so the lint provably cannot see it. That gap is the reason this file exists."
+      "reconcile_exempt_reason": "REPO-SIDE ONLY by design — the ledger is read by a pre-push gate in scripts/, never on a host, so it has no host_path and no installed_at row. Declared here so the enumeration is complete rather than because anything installs it.",
+      "notes": "The census of every cross-population comparison site in this repo, with a monotonic ratchet on the UNMIGRATED count. Detection is strictly weaker than enumeration: measured 2026-09-02, the pattern sweep reaches 3 of the 4 known sites — edge-stats.ts carries the banned comparator only in a docstring while its naiveBest value arrives from a caller, so the lint provably cannot see it. That gap is the reason this file exists."
+    },
+    {
+      "id": "lifecycle-dispatch",
+      "artifact": "ops/cron/lifecycle-dispatch.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/lifecycle-dispatch.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/lifecycle-dispatch.sh",
+          "schedule": "7,22,37,52 * * * *"
+        }
+      ],
+      "criticality": "advisory",
+      "schedule": "7,22,37,52 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "77fb7e1f27d748a87da1d572bc27eb838fb4ca606b7c2e257e0c8c50dc0bfcb3",
+      "alert_ids": [],
+      "owner_wave": "IDENTITY-LIFECYCLE-W3",
+      "repo_resident": true,
+      "notes": "DATA PIPELINE, not a guard — it writes the lifecycle_sends ledger and stamps lifecycle_heartbeats; nothing pages from here (the health canary owns the alert). Verdict token LIFECYCLE_DISPATCH_VERDICT= maps PASS=0/FAIL=1/INDETERMINATE=3; 3 is the token-law default for a NEW gate and must NOT be aligned to check_test_baseline.sh's 2. Invokes the APP (docker exec ... node dist/scripts/lifecycle-dispatch.js) rather than psql, and that is not a style choice: the monthly meter is a ROLLING 30-DAY window whose expiry rule lives in loadQuotaRows (src/lib/license.ts), and MEASURED 2026-09-08 two of the three metered email-bound buckets on signal-1 sit in EXPIRED periods — a psql implementation would mail 'you hit the wall' from a window that closed weeks ago. Schedule is a FIXED-MINUTE offset, never */15: that form fires on the :00 boundary the snapshot-sampler rule forbids AND */15 is already occupied on this host by mcp-intelligence launch_triggers. CH1 registers ZERO step evaluators by design, so every tick is currently a no-op that still stamps the heartbeat — a skip stamping liveness is what lets the health canary tell an idle dispatcher from a dead one, which the ledger cannot do while three of four steps have zero eligible recipients. Interlock class safe-to-kill (cron-interlock-registry.json): UNIQUE(recipient_id, step, period_key) makes a SIGKILLed tick lossless, so exit 137 is EXPECTED. max_runtime_s 120 is a declared CEILING, not a measurement — CH2 re-derives it once the predicates are registered."
+    },
+    {
+      "id": "lifecycle-health",
+      "artifact": "ops/cron/lifecycle-health.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/lifecycle-health.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/lifecycle-health.sh",
+          "schedule": "43 8 * * *"
+        }
+      ],
+      "criticality": "advisory",
+      "schedule": "43 8 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "834c965867c88b5786cf7559de1a2afd0a1da6c45e0c166e56fc1de4737aad37",
+      "alert_ids": [
+        "LIFECYCLE_EMAIL_HEALTH"
+      ],
+      "owner_wave": "IDENTITY-LIFECYCLE-W3",
+      "repo_resident": true,
+      "notes": "Daily health verdict on the lifecycle email engine. LIFECYCLE_HEALTH_VERDICT= maps PASS=0/FAIL=1/INDETERMINATE=3 (token-law default for a NEW gate). TWO LEGS, and the decision lives in ONE function `classify` that BOTH the live path and --self-test drive — an earlier draft had the self-test re-implement the branch, which proves only that two copies agree. LEG 1 rate: (bounce+complaint)/sent over 7d > 5% with n >= 20. Below MIN_N it is INERT and the verdict is PASS, never INDETERMINATE — the WORLD builds this corpus, so empty is a fact, not a verification failure. LEG 2 stall: the dispatcher has not stamped lifecycle_heartbeats in > 60 min WHILE eligible > 0; the eligible conjunct is required, or an idle cron pages. It reads a PRODUCER heartbeat and not the ledger, because with three of four steps at zero eligible recipients (measured 2026-09-08) a healthy dispatcher and a dead one write byte-identical ledgers. DB unreachable or an unparseable row is INDETERMINATE, never PASS. Reads via the host-bash psql pattern (docker exec <pg-ctr> psql -tA -q), never docker exec <app> node -e. Publishes one structured record per run through canary_result_log.append_result so the verdict is readable OFF-HOST via canary-results.jsonl; the import is GUARDED so a partial install degrades to a no-op that SAYS SO rather than losing the verdict. Self-test: 11 checks, floor pinned EXACTLY (not >=) — measured, a `-lt` floor let the guard be disarmed from 11 to 1 with every check still present and stay green. PROVEN ABLE TO FAIL by 8 deliberate mutations (stall leg losing its eligible conjunct; rate leg losing MIN_N; the 5% ceiling loosened to 50%; MIN_N raised to 200; the stall ceiling raised to 6000; the floor lowered; the rate query re-pointed at another table; and a truncated corpus) — 8/8 caught, byte-identical restore."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

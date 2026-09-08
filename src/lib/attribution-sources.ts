@@ -71,6 +71,14 @@ export const ATTRIBUTION_SOURCES = [
   // arrivals into `docs` makes the channel unmeasurable, and an unmeasurable channel cannot
   // justify the follow-on work it is supposed to earn.
   'deepseek_harness',
+  // IDENTITY-LIFECYCLE-W3 CH1 — arrivals from a lifecycle email's own utm_source. UNDERSCORE
+  // rule does not bite (single word), but the slug is still lowercase because
+  // check-attribution-src-coverage.mjs parses this enum with a lowercase-plus-underscore class.
+  // NOTE: the `chan-email` TRACK TOKEN is a different namespace and ALREADY SHIPS — it is
+  // emitted inside the welcome/recovery MCP config snippet (src/lib/email.ts). Track tokens are
+  // validated by regex (subscriber-attribution.ts TRACK_TOKEN_RE), never declared in a list, so
+  // there is no row to add for it here and adding one would be a second, drifting registry.
+  'lifecycle',
   'unknown', // default-deny terminal — an untagged/unclassified hit is unknown, not "direct"
 ] as const;
 

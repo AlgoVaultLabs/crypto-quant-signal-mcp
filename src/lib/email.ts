@@ -8,6 +8,7 @@
  * Graceful degradation: if RESEND_API_KEY is unset, getResendClient() returns null
  * and sends become no-ops with a console.warn (dev/staging without the key won't crash).
  */
+import { createHash } from 'node:crypto';
 import { Resend } from 'resend';
 // REFERRAL-LIGHT-W1 (C4): welcome-email referral block + referred-free key variant.
 // Program numbers interpolate from REFERRAL_TERMS renderers (never hardcoded —
@@ -934,4 +935,64 @@ export async function sendContactLeadEmail(args: ContactLeadEmailArgs): Promise<
   );
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
+}
+
+// ── IDENTITY-LIFECYCLE-W3 CH1 — the lifecycle transport ────────────────────────────────────
+//
+// `sendLifecycleMessage` sits BESIDE the 12 transactional senders above and shares their client
+// and from-address. It is deliberately NOT a 13th bespoke sender: it takes an already-rendered
+// message and adds only what every lifecycle email must carry and no transactional one does —
+// RFC 8058 one-click unsubscribe headers, a `step` tag, and a request-level `Idempotency-Key`.
+//
+// WHY THE HEADERS LIVE HERE AND NOT IN THE RENDERER. `List-Unsubscribe` is a TRANSPORT header,
+// not body copy. Putting it at the one place that talks to Resend makes "every lifecycle message
+// carries one-click unsubscribe" structurally true rather than a convention each step has to
+// remember. Gmail (>=5k/day) and Yahoo have required the pair since 2024; we are far below that
+// volume bar and adopt it as hygiene, not obligation.
+//
+// WHY THIS THROWS WHERE THE OTHERS RETURN NULL. The 12 senders above fail open because they run
+// inside a user request — a Resend outage must not break signup. This one runs only from the
+// every-15-minute dispatcher cron, and its caller (`sendLifecycle`) records the failure in the ledger and
+// retries on the next tick. Swallowing the error would write `sent` for a message that was never
+// accepted, which is the one lie the ledger must not contain.
+export interface LifecycleMessageArgs {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  unsubscribeUrl: string;
+  step: string;
+  /** `<recipient>|<step>|<period>` — hashed here into the request-level Idempotency-Key. */
+  idempotencyKey: string;
+}
+
+export async function sendLifecycleMessage(args: LifecycleMessageArgs): Promise<string | null> {
+  const client = getResendClient();
+  if (!client) throw new Error('RESEND_API_KEY not set — lifecycle send refused');
+
+  const idem = createHash('sha256').update(args.idempotencyKey).digest('hex').slice(0, 48);
+
+  const sent = await client.emails.send(
+    {
+      from: getFromAddress(),
+      to: args.to,
+      replyTo: REPLY_TO_ADDRESS,
+      subject: args.subject,
+      html: args.html,
+      text: args.text,
+      headers: {
+        'List-Unsubscribe': `<${args.unsubscribeUrl}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+      tags: [{ name: 'step', value: args.step }],
+    },
+    // Resend's request-level options: the Idempotency-Key is a HEADER on the POST, not a body
+    // field, and it is honoured for 24 h. Belt-and-braces with the ledger's UNIQUE constraint —
+    // the constraint stops us ASKING twice, this stops Resend ACTING twice if we do.
+    { headers: { 'Idempotency-Key': idem } },
+  );
+
+  const err = (sent as { error?: { message?: string } | null }).error;
+  if (err) throw new Error(`Resend rejected the lifecycle send: ${err.message ?? 'unknown error'}`);
+  return (sent as { data?: { id?: string } | null }).data?.id ?? null;
 }

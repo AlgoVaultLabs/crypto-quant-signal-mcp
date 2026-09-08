@@ -507,7 +507,7 @@
       ],
       "adopted": true,
       "announce_resolution": false,
-      "adoption_note": "payment-decline-canary.py calls --clear on its PASS path (OPS-PAYMENT-DECLINE-RECOVERY-PREDICATE-W1). The prior hosts value '<never fired on either host>' was TRUE when this registry was generated 2026-08-21 and became FALSE on 2026-09-07 07:53:03Z, when the alert fired on signal-1 and wrote its cooldown marker; a derived field nobody re-derives is a fact with an expiry date. adopted flips because the owner now calls --clear at all, which also makes this row visible to the reconciler's FIRING_STALE episode-age check \u2014 previously unreachable for the one alert whose entire defect was a stale episode.",
+      "adoption_note": "payment-decline-canary.py calls --clear on its PASS path (OPS-PAYMENT-DECLINE-RECOVERY-PREDICATE-W1). The prior hosts value '<never fired on either host>' was TRUE when this registry was generated 2026-08-21 and became FALSE on 2026-09-07 07:53:03Z, when the alert fired on signal-1 and wrote its cooldown marker; a derived field nobody re-derives is a fact with an expiry date. adopted flips because the owner now calls --clear at all, which also makes this row visible to the reconciler's FIRING_STALE episode-age check — previously unreachable for the one alert whose entire defect was a stale episode.",
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-PAYMENT_DECLINE_DRIFT-W{NEXT}"
     },
@@ -967,6 +967,19 @@
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SECURITY_AUDIT_CADENCE_INDETERMINATE-W{NEXT}",
       "notes": "announce_resolution FALSE — always fixed by the person reading it (an absent, unparseable or empty ledger), so its resolution is chatter by construction. It IS dispatched at CRITICAL_PERSISTENT and therefore delivered: a blind cadence guard is exactly the dark-guard class this wave exists to retire, so it must escalate rather than go quiet. Silent recovery with forensics in the log stays the default for this row."
+    },
+    {
+      "alert_id": "LIFECYCLE_EMAIL_HEALTH",
+      "owner": "ops/cron/lifecycle-health.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-LIFECYCLE_EMAIL_HEALTH-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-LIFECYCLE_EMAIL_HEALTH-W{NEXT}",
+      "notes": "announce_resolution FALSE. Both failure modes are resolved by the person reading the page — a stalled dispatcher is fixed by restoring the cron, and a bounce/complaint breach is fixed by the per-step rollback the day-7 readout performs on its own. Recovery CHATTER is noise and silent recovery with forensics in the log stays the default; a resolution notice here would announce something the operator already did. It IS dispatched at CRITICAL_PERSISTENT with the standard 24h cooldown: a deliverability breach threatens EVERY transactional email AlgoVault sends, not only lifecycle mail, and a stalled dispatcher means real people are waiting on an email nothing is sending."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",

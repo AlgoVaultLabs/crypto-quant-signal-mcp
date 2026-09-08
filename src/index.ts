@@ -267,6 +267,12 @@ import {
   accountReferralsHandler,
   accountPayoutAddressHandler,
 } from './lib/account-handlers.js';
+// IDENTITY-LIFECYCLE-W3 CH1 — the lifecycle email surfaces (unsubscribe + Resend inbound).
+import {
+  unsubscribeGetHandler,
+  unsubscribePostHandler,
+  resendWebhookHandler,
+} from './lib/lifecycle/routes.js';
 import { renderSiteNav } from './lib/site-nav.js';
 import { getTopAssetsByOI } from './lib/oi-ranking.js';
 
@@ -1679,6 +1685,28 @@ async function startHttp() {
   // /dashboard. New endpoint: /dashboard/api/skills-analytics (JSON, admin-only).
   // The X-AlgoVault-Skill-Slug header interceptor in app.all('/mcp', ...) is
   // UNTOUCHED — slug logging continues; only the public surface was removed.
+
+  // ── IDENTITY-LIFECYCLE-W3 CH1 — Resend inbound (raw body required, same reason as Stripe:
+  // the Svix signature is computed over the exact bytes, so express.json() must not have
+  // re-serialised them first). Inherits the /webhooks 20/min limiter mounted above; Resend
+  // retries a non-2xx, so a limiter rejection costs a delay, never an event.
+  // `type: () => true` accepts every content-type, and is a FUNCTION rather than the wildcard
+  // STRING for a measured reason: the literal form contains the two characters that close a
+  // block comment, and scripts/lib/dark-artifacts.mjs strips line comments BEFORE block comments
+  // with a lazy `/\*[\s\S]*?\*/`. That literal therefore terminated an earlier JSDoc block
+  // early and swallowed a large span of this file, zeroing the reference counts for 17 unrelated
+  // exports (contact-leads, referral, turnstile) and turning the dark-artifact gate RED on
+  // symbols this wave never touched. Bisected 2026-09-08: pristine origin/main n=0, +this file
+  // n=17. A wildcard content-type is worth having — Resend's signature is computed over the raw
+  // bytes and a type mismatch would silently hand the verifier an empty body — so the fix is the
+  // function form, not a narrower type.
+  app.post('/webhooks/resend', express.raw({ type: () => true }), resendWebhookHandler);
+
+  // ── IDENTITY-LIFECYCLE-W3 CH1 — RFC 8058 one-click unsubscribe + its human page.
+  // GET renders a one-button form and MUTATES NOTHING (mail scanners follow every link in a
+  // message); POST is the one-click endpoint named by the List-Unsubscribe header.
+  app.get('/email/unsubscribe/:token', unsubscribeGetHandler);
+  app.post('/email/unsubscribe/:token', express.urlencoded({ extended: false }), unsubscribePostHandler);
 
   // ── Stripe Webhook (raw body required — must be before express.json()) ──
   app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {

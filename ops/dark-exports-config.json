@@ -131,6 +131,18 @@
     {
       "symbol": "isBandExcludedPath",
       "reason": "CONVERSION-SURFACES-W2 CH3. The PATH half of the two-key-space exclusion. Only the static injector has a file path to test; every src/ caller has a ROUTE and uses isBandExcludedRoute(), which IS consumed from src/. Two predicates because the two render paths genuinely see different identifiers — collapsing them would mean inventing a path for a page that has none. Consumer: scripts/inject-footer.mjs through dist/. Asserted by tests/unit/conversion-band.test.ts."
+    },
+    {
+      "symbol": "stepGoLiveBlocker",
+      "reason": "IDENTITY-LIFECYCLE-W3 CH1. Per-step go-live STATE is CH1's ledger contract by explicit architect scope ruling (Q1(A), 2026-09-08: 'ADD CH1: per-step state in the ledger'), while its only consumer is CH2's readout ('ADD CH2: per-step readout + per-step flip/rollback in ops/cron/lifecycle-readout.sh'). So this is a CHAPTER BOUNDARY inside one sequential wave, not a wiring gap and not a permanent CI-facing contract: the row exists so the gate reports the symbol as `exempt` rather than going quiet about it. REMOVAL TRIGGER, and it is not a 'TODO: verify later' — CH2 of this same wave deletes this row in the commit that adds the readout; if CH2 lands and the row survives, the gate is describing a state that no longer exists and the row is the defect. The alternative considered and rejected was shipping the symbols in CH2 instead: the migration that defines lifecycle_step_state is CH1's, and a table whose accessors live in a later chapter is a schema nothing can read."
+    },
+    {
+      "symbol": "setStepLive",
+      "reason": "IDENTITY-LIFECYCLE-W3 CH1. Per-step go-live STATE is CH1's ledger contract by explicit architect scope ruling (Q1(A), 2026-09-08: 'ADD CH1: per-step state in the ledger'), while its only consumer is CH2's readout ('ADD CH2: per-step readout + per-step flip/rollback in ops/cron/lifecycle-readout.sh'). So this is a CHAPTER BOUNDARY inside one sequential wave, not a wiring gap and not a permanent CI-facing contract: the row exists so the gate reports the symbol as `exempt` rather than going quiet about it. REMOVAL TRIGGER, and it is not a 'TODO: verify later' — CH2 of this same wave deletes this row in the commit that adds the readout; if CH2 lands and the row survives, the gate is describing a state that no longer exists and the row is the defect. The alternative considered and rejected was shipping the symbols in CH2 instead: the migration that defines lifecycle_step_state is CH1's, and a table whose accessors live in a later chapter is a schema nothing can read."
+    },
+    {
+      "symbol": "rollbackStep",
+      "reason": "IDENTITY-LIFECYCLE-W3 CH1. Per-step go-live STATE is CH1's ledger contract by explicit architect scope ruling (Q1(A), 2026-09-08: 'ADD CH1: per-step state in the ledger'), while its only consumer is CH2's readout ('ADD CH2: per-step readout + per-step flip/rollback in ops/cron/lifecycle-readout.sh'). So this is a CHAPTER BOUNDARY inside one sequential wave, not a wiring gap and not a permanent CI-facing contract: the row exists so the gate reports the symbol as `exempt` rather than going quiet about it. REMOVAL TRIGGER, and it is not a 'TODO: verify later' — CH2 of this same wave deletes this row in the commit that adds the readout; if CH2 lands and the row survives, the gate is describing a state that no longer exists and the row is the defect. The alternative considered and rejected was shipping the symbols in CH2 instead: the migration that defines lifecycle_step_state is CH1's, and a table whose accessors live in a later chapter is a schema nothing can read."
     }
   ]
 }
