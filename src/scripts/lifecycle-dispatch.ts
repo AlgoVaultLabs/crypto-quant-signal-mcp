@@ -16,6 +16,7 @@
  * Exit contract: `LIFECYCLE_DISPATCH_VERDICT=PASS|FAIL|INDETERMINATE` → 0 / 1 / 3.
  * 3 is the token-law default for a NEW gate. Callers gate on the TOKEN, never the bare code.
  */
+import { runScript } from '../lib/script-lifecycle.js';
 import { ensureLifecycleSchema } from '../lib/lifecycle/schema.js';
 import {
   listStepStates, listRetryable, markSent, markFailed, stampHeartbeat,
@@ -46,14 +47,17 @@ const RETRY_BATCH = 25;
  * The stamp is best-effort: if the DB is the thing that is broken, we still owe the caller a
  * verdict token, and losing the heartbeat is strictly better than losing the token.
  */
-async function emit(verdict: 'PASS' | 'FAIL' | 'INDETERMINATE', note: string, eligible = 0): Promise<never> {
+async function emit(verdict: 'PASS' | 'FAIL' | 'INDETERMINATE', note: string, eligible = 0): Promise<number> {
   try {
     await stampHeartbeat('lifecycle-dispatch', verdict, eligible, new Date(), note.slice(0, 200));
   } catch {
     console.log(`${TAG} heartbeat stamp failed — verdict still reported below`);
   }
   console.log(`${TAG} ${new Date().toISOString()} LIFECYCLE_DISPATCH_VERDICT=${verdict} ${note}`);
-  process.exit(verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 3);
+  // RETURNS the code; it does NOT call process.exit(). `runScript` owns termination — it drains
+  // the Postgres pool and arms a watchdog, and a bare process.exit() here would skip the drain
+  // and pin a connection for the life of the container (OPS-SCRIPT-EXIT-LIFECYCLE-W1).
+  return verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 3;
 }
 
 export interface StepCandidate {
@@ -147,22 +151,22 @@ async function drainRetries(mode: string): Promise<{ retried: number; recovered:
   return { retried: rows.length, recovered };
 }
 
-async function main(): Promise<void> {
+async function main(): Promise<number> {
   let mode: string;
   try {
     ensureLifecycleSchema();
     mode = resolveMode();
   } catch (err) {
-    await emit('INDETERMINATE', `schema/mode unavailable: ${err instanceof Error ? err.message : err}`);
+    return await emit('INDETERMINATE', `schema/mode unavailable: ${err instanceof Error ? err.message : err}`);
   }
 
-  if (mode! === 'off') await emit('PASS', 'mode=off registered_steps=0 nothing_evaluated=1');
+  if (mode! === 'off') return await emit('PASS', 'mode=off registered_steps=0 nothing_evaluated=1');
 
   let states;
   try {
     states = await listStepStates();
   } catch (err) {
-    await emit('INDETERMINATE', `step-state read failed: ${err instanceof Error ? err.message : err}`);
+    return await emit('INDETERMINATE', `step-state read failed: ${err instanceof Error ? err.message : err}`);
   }
 
   // Iterated in STEP_PRIORITY order, not registration order. When the <=1/day cap forces a
@@ -179,7 +183,7 @@ async function main(): Promise<void> {
       totals.wouldSend += r.wouldSend; totals.sent += r.sent;
       totals.suppressed += r.suppressed; totals.capped += r.capped;
     } catch (err) {
-      await emit('FAIL', `step '${step}' candidate source threw: ${err instanceof Error ? err.message : err}`);
+      return await emit('FAIL', `step '${step}' candidate source threw: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -187,7 +191,7 @@ async function main(): Promise<void> {
   try {
     retry = await drainRetries(mode!);
   } catch (err) {
-    await emit('INDETERMINATE', `retry drain failed: ${err instanceof Error ? err.message : err}`);
+    return await emit('INDETERMINATE', `retry drain failed: ${err instanceof Error ? err.message : err}`);
   }
 
   // POSITIVE PER-CHECK OUTPUT. "Installed is not working" — a tick that printed only a verdict
@@ -196,7 +200,7 @@ async function main(): Promise<void> {
   const liveSteps = states!.filter((s) => s.live_since).map((s) => s.step);
   const prev = await readHeartbeat('lifecycle-dispatch').catch(() => null);
   const sinceLast = prev ? Math.round((Date.now() - Date.parse(String(prev.last_run_at).replace(' ', 'T'))) / 60000) : -1;
-  await emit('PASS',
+  return await emit('PASS',
     `mode=${mode!} registered_steps=${registered.length} live_steps=${liveSteps.length}` +
     `${liveSteps.length ? `(${liveSteps.join(',')})` : ''} canary_batch=${CANARY_BATCH_SIZE} ` +
     `would_send=${totals.wouldSend} sent=${totals.sent} suppressed=${totals.suppressed} ` +
@@ -210,7 +214,13 @@ async function main(): Promise<void> {
 // import would RUN a dispatcher tick, and in `live` mode a tick SENDS EMAIL TO REAL PEOPLE.
 // Live cron invokes `node dist/scripts/lifecycle-dispatch.js`, so the guard is TRUE there.
 if (require.main === module) {
-  main().catch(async (err) => {
-    await emit('INDETERMINATE', `unhandled: ${err instanceof Error ? err.message : err}`);
+  // `runScript` owns the exit: it awaits `main`, uses its returned number as the exit code,
+  // drains the DB pool, and forces exit if a handle outlives the work.
+  void runScript('lifecycle-dispatch', async () => {
+    try {
+      return await main();
+    } catch (err) {
+      return await emit('INDETERMINATE', `unhandled: ${err instanceof Error ? err.message : err}`);
+    }
   });
 }
