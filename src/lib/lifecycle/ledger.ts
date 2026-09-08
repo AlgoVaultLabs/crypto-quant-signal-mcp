@@ -79,9 +79,25 @@ export function toIso8601(s: string): string {
   return t;
 }
 
-export function parseDbTimestamp(value: string | null | undefined): number {
-  if (!value) return NaN;
-  const s = String(value).trim();
+export function parseDbTimestamp(value: unknown): number {
+  if (value === null || value === undefined || value === '') return NaN;
+
+  // 🛑 THE DRIVER DOES NOT HAND BACK A STRING. `node-postgres` maps TIMESTAMPTZ to a JS **Date**,
+  // and SQLite hands back TEXT — so this function receives two different types depending on the
+  // backend, and only one of them is what the tests naturally supply.
+  //
+  // MEASURED on signal-1 2026-09-08, AFTER a first fix that handled only strings:
+  //   typeof last_run_at -> [object Date]
+  //   String(it)         -> 'Tue Sep 08 2026 14:04:57 GMT+0000 (Coordinated Universal Time)'
+  //   parseDbTimestamp   -> NaN
+  // Stringifying a Date produces a form this normaliser then mangles, so the PG path was STILL
+  // NaN and `stepGoLiveBlocker` would STILL have frozen every step in shadow for ever. The first
+  // fix was verified against strings, which is precisely the type production never sends.
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  if (typeof value !== 'string') return NaN;
+
+  const s = value.trim();
   if (!s) return NaN;
 
   // NORMALISE FIRST, THEN PARSE — never `Date.parse` first and normalise on failure.
@@ -231,10 +247,11 @@ export async function countDeliveredStepSince(
 
 export interface StepState {
   step: LifecycleStep;
-  first_would_send_at: string | null;
-  live_since: string | null;
+  // `string | Date`: SQLite returns TEXT, node-postgres returns a Date. Never assume one.
+  first_would_send_at: string | Date | null;
+  live_since: string | Date | null;
   canary_batch_done: boolean;
-  rolled_back_at: string | null;
+  rolled_back_at: string | Date | null;
   rollback_reason: string | null;
 }
 
@@ -249,11 +266,11 @@ export async function getStepState(step: LifecycleStep): Promise<StepState> {
   }
   return {
     step,
-    first_would_send_at: (r.first_would_send_at as string) ?? null,
-    live_since: (r.live_since as string) ?? null,
+    first_would_send_at: (r.first_would_send_at as string | Date) ?? null,
+    live_since: (r.live_since as string | Date) ?? null,
     // SQLite stores booleans as 0/1; PG returns a real boolean. One coercion, here.
     canary_batch_done: r.canary_batch_done === true || r.canary_batch_done === 1 || r.canary_batch_done === '1',
-    rolled_back_at: (r.rolled_back_at as string) ?? null,
+    rolled_back_at: (r.rolled_back_at as string | Date) ?? null,
     rollback_reason: (r.rollback_reason as string) ?? null,
   };
 }
@@ -311,7 +328,7 @@ export async function rollbackStep(step: LifecycleStep, atIso: string, reason: s
 
 export interface Heartbeat {
   job: string;
-  last_run_at: string;
+  last_run_at: string | Date;
   last_verdict: string;
   eligible_count: number;
 }

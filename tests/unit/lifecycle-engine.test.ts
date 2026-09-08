@@ -297,6 +297,38 @@ describe('parseDbTimestamp — the shapes each backend actually returns', () => 
       .toBe('2026-09-08T13:46:46.246Z');
   });
 
+  /**
+   * THE TYPE PRODUCTION ACTUALLY SENDS. node-postgres maps TIMESTAMPTZ to a JS Date; SQLite
+   * returns TEXT. A first fix handled only strings and was verified only against strings, so the
+   * live PG path stayed NaN — `String(aDate)` is
+   * 'Tue Sep 08 2026 14:04:57 GMT+0000 (Coordinated Universal Time)', which this normaliser
+   * mangles. The go-live clock would still have frozen every step in shadow, forever, on the one
+   * backend that matters.
+   */
+  it('accepts a Date, which is what node-postgres actually returns', async () => {
+    const { parseDbTimestamp } = await import('../../src/lib/lifecycle/ledger.js');
+    const d = new Date('2026-09-08T14:04:57.000Z');
+    expect(parseDbTimestamp(d)).toBe(d.getTime());
+  });
+
+  it('the go-live clock elapses when the stamp arrives as a Date', async () => {
+    const eng = await import('../../src/lib/lifecycle/engine.js');
+    const led = await import('../../src/lib/lifecycle/ledger.js');
+    const { ensureLifecycleSchema } = await import('../../src/lib/lifecycle/schema.js');
+    const { dbRun } = await import('../../src/lib/performance-db.js');
+    ensureLifecycleSchema();
+    dbRun('INSERT INTO lifecycle_step_state (step, first_would_send_at) VALUES (?, ?)',
+      'quota_wall', '2026-09-01T00:00:00.000Z');
+    // Force the PG-shaped read: a Date where SQLite would have given TEXT.
+    const real = led.getStepState;
+    const facts = { duplicates: 0, wouldSendCount: 1, healthPass: true, unsubSelfTestPass: true };
+    const st = await real('quota_wall');
+    expect(led.parseDbTimestamp(new Date(String(st.first_would_send_at).replace(' ', 'T'))))
+      .toBeTypeOf('number');
+    expect(await eng.stepGoLiveBlocker('quota_wall', facts, new Date('2026-09-20T00:00:00Z')))
+      .toBeNull();
+  });
+
   it('normalises to STRICT ISO-8601 — the shape is asserted, not inferred from a parse', async () => {
     // Node's Date.parse tolerates the space-separated form, so a behavioural test alone cannot
     // see the normalisation disappear. ECMA-262 leaves that tolerance implementation-defined,
