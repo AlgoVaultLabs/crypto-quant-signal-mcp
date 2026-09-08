@@ -1,0 +1,50 @@
+{
+  "_doc": [
+    "OPS-FORBIDDEN-PHRASE-ENUMERATION-AND-WEBHOOKS-DOC-W1 CH1 R1.1 — estate-sampled DIRTY fixtures.",
+    "",
+    "WHY THIS FILE EXISTS. scripts/check-forbidden-phrases.mjs used to claim, in a comment, that its",
+    "DIRTY fixtures were 'the ACTUAL retired phrases from the estate census'. For retired-tier-quotas",
+    "that was FALSE: the fixture was authored FROM the regex ('Starter includes 3,000 calls and Pro",
+    "15,000 calls a month.') rather than sampled from live copy, so the pattern and its proof shared",
+    "one author and one blind spot. The pattern demanded the unit noun `calls` immediately after the",
+    "figure; the live estate rendered the ladder as a slash-delimited enumeration with the noun far to",
+    "the left, and the gate reported PASS over it for 30 days.",
+    "",
+    "A fixture recorded here is bytes LIFTED from a live surface at a named SHA — never retyped, never",
+    "reconstructed from the pattern it is supposed to test. scripts/check-forbidden-phrases.mjs reads",
+    "this file in --self-test and asserts its own DIRTY fixture for each id EQUALS the sample recorded",
+    "here, so the provenance is VERIFIED rather than declared (CH3). A phrase with no estate sample",
+    "declares `synthetic_reason` in ops/forbidden-phrases.json instead; synthetic is permitted,",
+    "undeclared is not.",
+    "",
+    "🛑 THE RETIRED BYTES BELOW ARE THE POINT. Do not 'fix' them to current copy — this file is a",
+    "record of what the gate MISSED, and correcting it would delete the only evidence the miss ever",
+    "happened. tests/** is deliberately outside the scan corpus of ops/forbidden-phrase-targets.json",
+    "(measured: 0 of 444 resolved rows), so these bytes cannot trip the gate they exist to prove."
+  ],
+  "retired-tier-quotas": {
+    "sample": "a pull call (Free 100 / Starter 3,000 / Pro 15,000 / Enterprise 100,000).",
+    "source_path": "docs/WEBHOOKS.md",
+    "source_line": 33,
+    "source_sha": "c80041af3963be7807298b30749183e44289cfb0",
+    "captured_on": "2026-09-08",
+    "note": "Sampled from live estate copy, NOT authored from the regex. This is the shape the pattern missed: the unit noun appears ONCE, far to the left ('a pull call'), so `\\b3,000\\s+calls` could never match it. Verified plain ASCII — no NBSP, thin space or zero-width character — by JSON round-trip of the raw line."
+  },
+  "_unpatterned_samples": {
+    "_doc": [
+      "NOT keyed by a phrase id, and deliberately so: no pattern in ops/forbidden-phrases.json addresses",
+      "webhook lifecycle semantics, so this passage was invisible to the gate and would have stayed",
+      "invisible even if the quota pattern were widened. It is recorded as the second half of the CH1",
+      "defect and as the standing counter-example to 'the gate is green, therefore the doc is true'.",
+      "Underscore-prefixed so a per-id lookup can never mistake it for a phrase entry."
+    ],
+    "webhook-auto-disable-recreate": {
+      "sample": "- **Auto-disable:** an endpoint that fails 20 deliveries in a row is paused\n  automatically. Fix it (it must return `2xx`), then recreate the subscription.",
+      "source_path": "docs/WEBHOOKS.md",
+      "source_line": 180,
+      "source_sha": "c80041af3963be7807298b30749183e44289cfb0",
+      "captured_on": "2026-09-08",
+      "note": "FALSE since OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1. The lifecycle self-heals: consecutive failures move a subscription to `quarantined` (src/lib/webhooks-store.ts), a health probe resumes it on any 2xx (src/lib/webhook-delivery.ts, '[webhook-probe] sub N probe 2xx -> resumed active'), and the recovery window is tier-differentiated 30d paid / 7d free (src/lib/webhook-quarantine-policy.ts). A subscriber who followed this sentence would destroy and recreate a subscription that was about to recover on its own."
+    }
+  }
+}

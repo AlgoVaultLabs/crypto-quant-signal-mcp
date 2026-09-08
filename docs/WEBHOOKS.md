@@ -29,8 +29,13 @@ Nautilus. Every delivery is HMAC-signed, idempotent, retried, and self-healing.
 ## Quickstart
 
 Registration needs an API key (a free-tier key works). Send it as a Bearer
-token. Each **delivered** event draws down your monthly call quota, exactly like
-a pull call (Free 100 / Starter 3,000 / Pro 15,000 / Enterprise 100,000).
+token. Each **delivered** event draws down your call quota, exactly like a pull
+call — and **both meters apply**, the monthly budget and the per-UTC-day cap,
+which refuse independently (Free 200/mo · 100/day · Starter 10,000/mo ·
+1,000/day · Pro 100,000/mo · 10,000/day · Enterprise — custom volume, contact
+us). Only a **2xx** delivery is charged, once, under an idempotency key; failed,
+timed-out and SSRF-blocked deliveries cost nothing. A `scan_digest` delivery
+costs `max(1, calls)`.
 
 ```bash
 # Create a subscription (the signing secret is returned ONCE — store it now)
@@ -172,15 +177,31 @@ def hook():
 ## Delivery semantics
 
 - **Respond 2xx fast.** Return `2xx` within 10s. Non-2xx or a timeout is retried.
-- **Retries:** up to 5 attempts with exponential backoff.
+- **Retries:** 5 attempts, backoff 1s / 2s / 4s / 8s.
 - **Idempotency:** each event is delivered at most once per subscription
   (`X-AlgoVault-Delivery` is unique; dedupe on it).
 - **Cooldown:** `regime_shift` for a given `(coin, timeframe, exchange)` is
   debounced to at most once per hour, so a flapping regime won't spam you.
-- **Auto-disable:** an endpoint that fails 20 deliveries in a row is paused
-  automatically. Fix it (it must return `2xx`), then recreate the subscription.
-- **Quota:** if your monthly quota is exhausted, deliveries pause and resume on
-  the next reset or when you upgrade — no events are lost in between.
+- **Self-healing lifecycle.** `delivery_state` ∈ `active | degraded |
+  quarantined | disabled`, echoed on every `GET /api/webhooks`. Consecutive
+  failures move a subscription to `quarantined`, which pauses delivery and
+  starts health-probing your endpoint on a widening backoff. **A 2xx probe
+  resumes it automatically — you do not recreate the subscription.** The
+  recovery window is tier-differentiated: **30 days on a paid tier, 7 days on
+  free**; only after it expires does the subscription become `disabled`
+  (`disabled_reason: quarantine_expired`). A `410 Gone` from your endpoint is
+  treated as permanent revocation and disables immediately — do not return 410
+  for a transient fault. `quarantine_expires_at`, `failure_class`,
+  `next_probe_at` and `last_success_at` are echoed for monitoring when set.
+- **Quota:** both meters gate delivery and refuse independently. When either is
+  exhausted the delivery **pauses** — not attempted, not failed, not retried
+  against your endpoint — and resumes at the next reset (00:00 UTC for the daily
+  meter) or on upgrade. No events are lost.
+- **Only 2xx counts. A 3xx redirect is a failure** — deliveries do not follow
+  redirects. Register the final URL, not one that 301/308s to it.
+- **Rate limits:** `/api/webhooks` 20 req/min; `/api/webhooks/:id/test` 5
+  req/min per key (it triggers real outbound delivery). Responses carry
+  `RateLimit-*` headers.
 
 ---
 
