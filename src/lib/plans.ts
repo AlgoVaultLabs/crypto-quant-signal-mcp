@@ -154,11 +154,61 @@ export function freeDailyCallsLabel(): string {
   return FREE_DAILY_CALLS.toLocaleString('en-US');
 }
 
-/** Price as it renders in copy (`$9.99`, `$49`). Trailing `.00` is never emitted. */
-export function planPriceLabel(id: PaidPlanId): string {
-  const p = PLANS[id].priceUsdMonthly;
+/**
+ * Price as it renders in copy (`$9.99`, `$49`), or `null` for a plan sold by CONTACT.
+ *
+ * 🛑 `null` is a REFUSAL, not a zero and not "free" — the same refusal `planDailyCallsLabel`,
+ * `planPrepayTotalUsd` and `planPrepayMonthlyRateUsd` already carry. A caller rendering copy must
+ * OMIT the price entirely; printing `null`, `$null`, `$0` or a fabricated figure is the defect
+ * this refusal exists to make unwritable. Trailing `.00` is never emitted.
+ *
+ * WHY IT NEEDED ONE. Until OPS-PLANS-PUBLIC-ENTERPRISE-DEPRICE-W1 this was the ONLY price helper
+ * in this file with no null branch: it returned `"$299"` for enterprise, because `priceUsdMonthly`
+ * is a required field and enterprise genuinely carries 299 (ENTERPRISE_PRICE_ID stays live and
+ * unarchived in Stripe so an in-flight subscription never breaks). But 299 is an ENFORCEMENT and
+ * billing value, never publishable copy: `brand-facts.md:552` lists "$299/mo as an Enterprise list
+ * price" as a HIGH-severity forbidden phrase and `:143` states Enterprise no longer publishes a
+ * price. CH1 of that wave found the same loaded gun already fired on `/api/plans/public`; this is
+ * the same gun behind a different door, and the next surface to call this for enterprise would
+ * have re-published the number.
+ *
+ * Enforcement is not the commercial offer. `license.ts` keeps enforcing enterprise's quota
+ * unchanged; only what is RENDERED refuses.
+ */
+export function planPriceLabel(id: PaidPlanId): string | null {
+  const spec = PLANS[id];
+  if (!planPublishesSelfServePrice(id)) return null;
+  const p = spec.priceUsdMonthly;
   return `$${Number.isInteger(p) ? p : p.toFixed(2)}`;
 }
+
+/**
+ * Does this plan publish a self-serve monthly price at all?
+ *
+ * DECLARED, never inferred. Every tempting inference is wrong: `dailyCalls === null` is about
+ * PACING, `priceUsd6Month === undefined` is about a TERM nobody priced, and `priceUsdMonthly`
+ * cannot carry it because a contact-us tier still needs a live Stripe Price for in-flight
+ * subscriptions. There is no existing field that means "sold by contact", which is precisely why
+ * every renderer had hardcoded the judgement separately — `signup-flow.ts` its contact-us line,
+ * `emit-pricing-tokens.mjs` its "Custom volume — contact us" string — and why the ONE surface
+ * nobody had told, the machine-readable `/api/plans/public`, published the figure.
+ *
+ * ⚠️ RESIDUAL DEBT, named rather than hidden: `plans-public-api.ts` declares the same set as
+ * `CONTACT_US_PLANS` because that wave's chapter firewall split the two files across chapters, so
+ * no single chapter could create one predicate. `tests/plans-public-api.test.ts` pins the two
+ * against each other so they cannot silently disagree, and
+ * `OPS-PLANS-CONTACT-US-PREDICATE-W{NEXT}` collapses them into this one.
+ */
+export function planPublishesSelfServePrice(id: PaidPlanId): boolean {
+  return !CONTACT_SALES_PLANS.includes(id);
+}
+
+/**
+ * Plans sold by CONTACT, with no publishable self-serve figures.
+ *
+ * Exported so a renderer can ask the question rather than hardcoding the answer a sixth time.
+ */
+export const CONTACT_SALES_PLANS: readonly PaidPlanId[] = ['enterprise'];
 
 // ── Prepay terms (PRICING-ANNUAL-AND-HOLD-PROMISE-W1 → PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1) ──
 //

@@ -200,8 +200,20 @@ describe('the limited-time supporting line is ONE sentence, not three copies (AC
 describe('renderPlanCards — Enterprise is contact-us (R4)', () => {
   it('shows NO self-serve price on the Enterprise card', () => {
     const c = renderPlanCards();
-    expect(c).not.toContain(`${planPriceLabel('enterprise')}<span>/mo</span>`);
-    expect(c).not.toContain('$299<span>/mo</span>');
+    // OPS-PLANS-PUBLIC-ENTERPRISE-DEPRICE-W1 CH3. This line used to read
+    //   expect(c).not.toContain(`${planPriceLabel('enterprise')}<span>/mo</span>`)
+    // which was fine while the helper returned "$299" — and went VACUOUS the moment it began
+    // refusing: the template renders "null<span>/mo</span>", so the assertion became trivially
+    // true and would have passed over a card that really did print a price. Assert the REFUSAL
+    // itself, then the rendered absence, so neither half can silently stop meaning anything.
+    expect(planPriceLabel('enterprise'), 'enterprise must publish no self-serve price').toBeNull();
+    expect(c).not.toContain('<span>/mo</span>\n            </div>\n            <p class="plan-desc">Custom volume');
+    expect(c).not.toContain('$299');
+    expect(c).not.toContain('null');
+    // The self-serve cards are unaffected — without this the assertions above are satisfiable by
+    // a page that renders no prices at all.
+    expect(c).toContain(String(planPriceLabel('starter')));
+    expect(c).toContain(String(planPriceLabel('pro')));
   });
 
   it('has NO Enterprise checkout CTA', () => {
