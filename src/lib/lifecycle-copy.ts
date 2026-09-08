@@ -77,6 +77,31 @@ export const UNSUB_INVALID_LINE = 'That unsubscribe link is not valid. Email adm
 // CH3's constants early would have put user-facing strings in the tree a chapter before anything
 // rendered them — which is what the dark-artifact gate flagged, correctly. CH3 adds them.
 
+/**
+ * The MCP-client config snippet E1 renders.
+ *
+ * ONE builder. The same JSON currently appears by hand in three places — `email.ts` twice (the
+ * welcome and key-recovery shells) and `welcome-page.ts` once — and a fourth hand-copy is how a
+ * config snippet starts telling different users different things. CH3 owns `welcome-page.ts` and
+ * converges it onto this function; the two in `email.ts` are named as a follow-up rather than
+ * edited here, because CH2's Scope does not include the transactional templates.
+ *
+ * `chan-email` is the track token, and it ALREADY SHIPS at `email.ts:552`/`:593` — this reuses
+ * the live value rather than declaring a new one.
+ */
+export const EMAIL_TRACK_TOKEN = 'chan-email';
+
+export function mcpConfigSnippet(apiKey: string): string {
+  return `{
+  "mcpServers": {
+    "algovault": {
+      "url": "${API_BASE}/mcp",
+      "headers": { "Authorization": "Bearer ${apiKey}", "X-AlgoVault-Track-Token": "${EMAIL_TRACK_TOKEN}" }
+    }
+  }
+}`;
+}
+
 // ── E1–E5 · the emails ─────────────────────────────────────────────────────────────────────
 
 export interface StepCopyContext {

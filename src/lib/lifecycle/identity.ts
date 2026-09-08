@@ -96,5 +96,14 @@ export function verifyUnsubscribeToken(token: string): string | null {
   return timingSafeEqual(a, b) ? recipientId : null;
 }
 
-// `maskKey` lands in CH2, with the E1 template that renders `{key_masked}`. CH1 has no caller
-// for it, and an unused export is a promise the tree cannot keep.
+/**
+ * `av_free_…a1b2` — enough for a human to recognise WHICH key, never enough to use it.
+ *
+ * §Build Rule 9: emails show the mask, never the secret. Key recovery stays the existing flow,
+ * which is authenticated; an email is not.
+ */
+export function maskKey(apiKey: string): string {
+  if (!apiKey) return '';
+  if (apiKey.length <= 12) return `${apiKey.slice(0, 4)}…`;
+  return `${apiKey.slice(0, 8)}…${apiKey.slice(-4)}`;
+}

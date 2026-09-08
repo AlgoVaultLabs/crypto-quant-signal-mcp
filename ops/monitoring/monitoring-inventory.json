@@ -1205,7 +1205,7 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 — is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "199ab407762028262eb0e3dfa3c574892e20735f21b393224827de82db2fa4c9",
+      "sha256": "d011fde0dd9a44b6997a5fdf0b74c9549054f1aac5290df33102018e819039b1",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. DECLARED LIMITATION: unlike signal-1's, this copy CAN go stale between installs. The detector is the daily reconciler's HASH_DRIFT against this row's sha256 — which is precisely why it gets a row rather than being scp'd by hand. Re-install with ops/scripts/install-monitoring-artifact.sh cron-interlock-registry-aoe1 --apply after any registry edit, and re-stamp this sha256 in the same commit. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot."
@@ -1841,7 +1841,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "f178d71ae10f7360f179e1700e4a1c18657dfb101baf72d724f3b629b8c74f73",
+      "sha256": "183c80726568b6bd0103c8e5fb6e0366b31321c51c78e6274862da410b7bfb53",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -2393,6 +2393,48 @@
       "owner_wave": "IDENTITY-LIFECYCLE-W3",
       "repo_resident": true,
       "notes": "Daily health verdict on the lifecycle email engine. LIFECYCLE_HEALTH_VERDICT= maps PASS=0/FAIL=1/INDETERMINATE=3 (token-law default for a NEW gate). TWO LEGS, and the decision lives in ONE function `classify` that BOTH the live path and --self-test drive — an earlier draft had the self-test re-implement the branch, which proves only that two copies agree. LEG 1 rate: (bounce+complaint)/sent over 7d > 5% with n >= 20. Below MIN_N it is INERT and the verdict is PASS, never INDETERMINATE — the WORLD builds this corpus, so empty is a fact, not a verification failure. LEG 2 stall: the dispatcher has not stamped lifecycle_heartbeats in > 60 min WHILE eligible > 0; the eligible conjunct is required, or an idle cron pages. It reads a PRODUCER heartbeat and not the ledger, because with three of four steps at zero eligible recipients (measured 2026-09-08) a healthy dispatcher and a dead one write byte-identical ledgers. DB unreachable or an unparseable row is INDETERMINATE, never PASS. Reads via the host-bash psql pattern (docker exec <pg-ctr> psql -tA -q), never docker exec <app> node -e. Publishes one structured record per run through canary_result_log.append_result so the verdict is readable OFF-HOST via canary-results.jsonl; the import is GUARDED so a partial install degrades to a no-op that SAYS SO rather than losing the verdict. Self-test: 11 checks, floor pinned EXACTLY (not >=) — measured, a `-lt` floor let the guard be disarmed from 11 to 1 with every check still present and stay green. PROVEN ABLE TO FAIL by 8 deliberate mutations (stall leg losing its eligible conjunct; rate leg losing MIN_N; the 5% ceiling loosened to 50%; MIN_N raised to 200; the stall ceiling raised to 6000; the floor lowered; the rate query re-pointed at another table; and a truncated corpus) — 8/8 caught, byte-identical restore."
+    },
+    {
+      "id": "lifecycle-readout-cron",
+      "artifact": "ops/cron/lifecycle-readout.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/lifecycle-readout.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/lifecycle-readout.sh",
+          "schedule": "19 9 * * *"
+        }
+      ],
+      "criticality": "advisory",
+      "schedule": "19 9 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "32a759e58abd3655d1cd85da6b70bda6ae7d6c4967e97f045ccf0562c32bd8be",
+      "alert_ids": [
+        "LIFECYCLE_GOLIVE_ROLLBACK"
+      ],
+      "owner_wave": "IDENTITY-LIFECYCLE-W3",
+      "repo_resident": true,
+      "notes": "THE DECIDING HALF, and the only thing in the estate that flips a lifecycle step to live. Verdict token LIFECYCLE_GOLIVE_VERDICT=LIVE|HOLD|ROLLED_BACK|INDETERMINATE, exit 0/0/1/3. PER-STEP (architect Q1(A)): each step has its own 7-day shadow clock, its own <=5 canary batch on the first live tick, and its own rollback; measured 2026-09-08, three of the four steps have ZERO eligible recipients and simply stay in shadow indefinitely at zero cost, which a wave-level flip could not express. It MEASURES both preconditions (health canary + a live unsubscribe-refusal probe) immediately before deciding rather than reading a stored verdict. Rollback legs are armed only for the first 72h live: bounce+complaint >=5% of sends with n>=10, or unsubscribes >=20% of sends with NO floor (one opt-out in three is a louder signal than five in a hundred). A rolled-back step does NOT re-light itself. Shares `assess()` with the read-only twin so the table an operator reads and the decision the cron applies are one derivation."
+    },
+    {
+      "id": "lifecycle-readout-readonly",
+      "artifact": "ops/scripts/lifecycle-readout.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/scripts/lifecycle-readout.sh",
+      "installed_at": [],
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "operator, on demand",
+      "install_state": "installed",
+      "sha256": "92256f08d02f5c983ce144d24a5a0540181f1a5bbeecec8107f9b952308ab7d2",
+      "alert_ids": [],
+      "owner_wave": "IDENTITY-LIFECYCLE-W3",
+      "repo_resident": true,
+      "notes": "READ-ONLY operator twin of the deciding cron. Prints the per-step table and LIFECYCLE_READOUT_VERDICT=PASS|FAIL|INDETERMINATE (0/1/3). Mutates nothing — no flip, no rollback, no ledger write — so an operator can read the numbers with no chance of causing a send. FAIL is reserved for DUPLICATES, which the ledger's UNIQUE(recipient_id, step, period_key) makes structurally impossible; a FAIL here means that constraint is gone. Not host-scheduled by design: it is a human tool, and giving it a cron would create a second thing that looks like the decider."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

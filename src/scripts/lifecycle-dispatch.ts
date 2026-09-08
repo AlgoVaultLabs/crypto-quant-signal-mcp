@@ -18,20 +18,17 @@
  */
 import { runScript } from '../lib/script-lifecycle.js';
 import { awaitDbWrites } from '../lib/performance-db.js';
+import { primeMeter } from '../lib/lifecycle/meter.js';
+import { candidatesFor, type StepCandidate } from '../lib/lifecycle/steps.js';
 import { ensureLifecycleSchema } from '../lib/lifecycle/schema.js';
 import {
   listStepStates, listRetryable, markSent, markFailed, stampHeartbeat,
   getStepState, markCanaryBatchDone, readHeartbeat, parseDbTimestamp,
 } from '../lib/lifecycle/ledger.js';
-import {
-  resolveMode, sendLifecycle, CANARY_BATCH_SIZE,
-  type LifecycleRecipient,
-} from '../lib/lifecycle/engine.js';
+import { resolveMode, sendLifecycle, CANARY_BATCH_SIZE } from '../lib/lifecycle/engine.js';
 import { sendLifecycleMessage } from '../lib/email.js';
 import { unsubscribeUrl } from '../lib/lifecycle/identity.js';
-import {
-  API_BASE, LIFECYCLE_STEPS, STEP_PRIORITY, type LifecycleStep, type StepCopyContext,
-} from '../lib/lifecycle-copy.js';
+import { API_BASE, STEP_PRIORITY, type LifecycleStep } from '../lib/lifecycle-copy.js';
 
 const TAG = '[lifecycle-dispatch]';
 const MAX_ATTEMPTS = 5;
@@ -70,11 +67,6 @@ async function emit(verdict: 'PASS' | 'FAIL' | 'INDETERMINATE', note: string, el
   return verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 3;
 }
 
-export interface StepCandidate {
-  recipient: LifecycleRecipient;
-  ctx: StepCopyContext & { periodKey: string };
-}
-
 /**
  * A step supplies CANDIDATES. It does not send, meter, cap or decide — `runStep` below does all
  * of that, identically for every step.
@@ -83,15 +75,23 @@ export interface StepCandidate {
  * the canary batch, mis-order the gates, or skip the suppression check, because no step is given
  * the chance to. A per-step send loop would have been four opportunities to diverge.
  */
-type StepCandidateSource = () => Promise<StepCandidate[]>;
+type StepCandidateSource = (now: Date) => Promise<StepCandidate[]>;
 
 /**
- * CH2 registers the four predicates here. An EMPTY registry is a FACT in CH1, not vacuity — the
- * corpus is one WE construct and in this chapter we deliberately construct none. It is reported
- * as an explicit positive line so the pass is never a silent one.
+ * CH2 — the four usage predicates, registered.
+ *
+ * `product_updates` is deliberately absent: it is CH4's, it reads `signup_emails` rather than the
+ * meter, and its cadence is monthly rather than every 15 minutes. Registering it here would make
+ * the digest a function of this cron's schedule instead of its own.
+ *
+ * Each entry is a CANDIDATE SOURCE, not a sender. `runStep` below owns the canary batch, the
+ * ordering and every gate, so no predicate can forget one.
  */
 const STEP_CANDIDATES: Partial<Record<LifecycleStep, StepCandidateSource>> = {
-  // CH2 populates this. Intentionally empty in CH1 — the DRIVER below is complete and tested.
+  quota_wall: (now) => candidatesFor('quota_wall', now),
+  quota_80: (now) => candidatesFor('quota_80', now),
+  reset_return: (now) => candidatesFor('reset_return', now),
+  activation_nudge: (now) => candidatesFor('activation_nudge', now),
 };
 
 export interface StepTotals { wouldSend: number; sent: number; suppressed: number; capped: number; skipped: number }
@@ -183,12 +183,22 @@ async function main(): Promise<number> {
   // choice between two eligible steps, whichever runs FIRST wins the slot — so the order is the
   // policy, and leaving it to object-key order would rent a user-visible decision from the
   // iteration behaviour of a language construct. quota_wall outranks everything; the digest yields.
+  // SEED THE METER BEFORE ANY PREDICATE RUNS. This is a fresh process, so `callTrackers` is
+  // empty until `initQuotaDb` loads `quota_usage` — and an unseeded read reports every bucket at
+  // zero usage, which means `quota_80` finds nobody and `reset_return` finds everybody. An
+  // unprimed tick would be silently, confidently wrong in BOTH directions.
+  try {
+    await primeMeter();
+  } catch (err) {
+    return await emit('INDETERMINATE', `meter prime failed: ${err instanceof Error ? err.message : err}`);
+  }
+
   const registered = STEP_PRIORITY.filter((s) => STEP_CANDIDATES[s]);
   const totals = { wouldSend: 0, sent: 0, suppressed: 0, capped: 0 };
   const now = new Date();
   for (const step of registered) {
     try {
-      const candidates = await STEP_CANDIDATES[step]!();
+      const candidates = await STEP_CANDIDATES[step]!(now);
       const r = await runStep(step, candidates, now);
       totals.wouldSend += r.wouldSend; totals.sent += r.sent;
       totals.suppressed += r.suppressed; totals.capped += r.capped;

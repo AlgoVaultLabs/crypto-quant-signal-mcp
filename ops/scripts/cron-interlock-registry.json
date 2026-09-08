@@ -462,6 +462,23 @@
       "source": "repo",
       "verified_at": "2026-09-08",
       "notes": "Ships with an EMPTY step registry by design — CH1 is the harness, CH2 the predicates. A no-op tick still stamps lifecycle_heartbeats so the health canary can tell a healthy idle dispatcher from a dead one; with three of four steps at ZERO eligible recipients (measured 2026-09-08) the ledger alone cannot answer that question."
+    },
+    {
+      "id": "lifecycle-readout",
+      "host": "signal-1",
+      "script": "ops/cron/lifecycle-readout.sh",
+      "container": "crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "dist/scripts/lifecycle-readout",
+      "class": "safe-to-kill",
+      "reason": "Idempotent by construction and cheap to repeat. A SIGKILLed run has either already applied a per-step flip (the ledger row is the record, and re-deciding the same evidence yields the same answer) or applied none. The flip predicate is a pure function of recorded evidence, so a lost run costs at most ONE DAY of go-live latency on a step that is deliberately waiting seven — nowhere near enough to hold a deploy. Deliberately NOT preempt-and-catchup: there is no partial state to repair.",
+      "max_runtime_s": 120,
+      "runtime_instrument": "NOT YET MEASURED — first install 2026-09-08; the job reads the ledger, runs the health canary and one curl. 120s is a CEILING bounding a hung docker exec, labelled as such rather than presented as a measurement. Re-derive from /var/log/lifecycle-readout.log once a week of runs exists.",
+      "cron_lines": 1,
+      "cron": "19 9 * * * (daily). After the 08:43 health canary so today's verdict already exists, and off the :00 boundary; minute 19 of hour 9 checked clear against the live crontab.",
+      "catchup_cmd": null,
+      "source": "repo",
+      "verified_at": "2026-09-08",
+      "notes": "THE ONLY THING THAT EVER FLIPS A STEP TO LIVE. No human does, by design (architect ruling Q1(A)). Runs `lifecycle-readout.js --decide`, which applies PER-STEP go-live and rollback; the read-only twin is ops/scripts/lifecycle-readout.sh and both share one `assess()` so the numbers an operator reads are the numbers the flip acts on. It MEASURES its two preconditions immediately before deciding rather than trusting a stored value — a go-live gated on yesterday's health verdict is gated on nothing. Alert LIFECYCLE_GOLIVE_ROLLBACK fires only on ROLLED_BACK."
     }
   ],
   "exclusions": [
