@@ -1205,7 +1205,7 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 — is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "d011fde0dd9a44b6997a5fdf0b74c9549054f1aac5290df33102018e819039b1",
+      "sha256": "b210c505ae7c935699ff76d3e793ef4825ba81d74eb9ece638343285b7e9e509",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. DECLARED LIMITATION: unlike signal-1's, this copy CAN go stale between installs. The detector is the daily reconciler's HASH_DRIFT against this row's sha256 — which is precisely why it gets a row rather than being scp'd by hand. Re-install with ops/scripts/install-monitoring-artifact.sh cron-interlock-registry-aoe1 --apply after any registry edit, and re-stamp this sha256 in the same commit. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot."
@@ -2435,6 +2435,29 @@
       "owner_wave": "IDENTITY-LIFECYCLE-W3",
       "repo_resident": true,
       "notes": "READ-ONLY operator twin of the deciding cron. Prints the per-step table and LIFECYCLE_READOUT_VERDICT=PASS|FAIL|INDETERMINATE (0/1/3). Mutates nothing — no flip, no rollback, no ledger write — so an operator can read the numbers with no chance of causing a send. FAIL is reserved for DUPLICATES, which the ledger's UNIQUE(recipient_id, step, period_key) makes structurally impossible; a FAIL here means that constraint is gone. Not host-scheduled by design: it is a human tool, and giving it a cron would create a second thing that looks like the decider."
+    },
+    {
+      "id": "product-updates-digest",
+      "artifact": "ops/cron/product-updates-digest.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/product-updates-digest.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/product-updates-digest.sh",
+          "schedule": "27 9 * * 2"
+        }
+      ],
+      "criticality": "advisory",
+      "schedule": "27 9 * * 2",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "39718659384fbe2c4c922c7526d5c6a0f5d3bf21522b70f687dc1a3f7e7001ca",
+      "alert_ids": [],
+      "owner_wave": "IDENTITY-LIFECYCLE-W3",
+      "repo_resident": true,
+      "notes": "CRON LINE IS `27 9 * * 2` AND THE FIRST-TUESDAY RESTRICTION IS A GUARD INSIDE THE SCRIPT, not part of this expression — cron ORs day-of-month with weekday, so `27 9 1-7 * 2` would fire on every day of the first week AND every Tuesday. Keeping the expression bare also keeps it PARSEABLE: an earlier version carried the \"(first Tuesday only)\" note in this field and turned check-monitoring-schedules.mjs INDETERMINATE, which blocks. The monthly product-updates digest. Makes true a promise the opt-in checkbox has made since it shipped: MEASURED 2026-09-08 six people consented to '~1/mo product updates' and had never been sent one. DATA PIPELINE, not a guard — nothing pages from here; the lifecycle health canary covers deliverability for every step including this one. FIRST-TUESDAY GUARD IS IN THE SCRIPT, not the crontab, because cron ORs day-of-month with weekday: `27 9 1-7 * 2` fires on every day of the first week AND every Tuesday, a well-known trap. Body is the README What's-new block converted verbatim with no new prose; the period key is the VERSION, so a block is sent once ever per recipient, batching multiple releases into one email and sending NOTHING in a month with no release. Verdict LIFECYCLE_DIGEST_VERDICT= 0/1/3."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

@@ -275,6 +275,7 @@ import {
   unsubscribePostHandler,
   resendWebhookHandler,
 } from './lib/lifecycle/routes.js';
+import { capabilityFromInitialize, recordHandshake } from './lib/lifecycle/census.js';
 import { renderSiteNav } from './lib/site-nav.js';
 import { getTopAssetsByOI } from './lib/oi-ranking.js';
 
@@ -4104,6 +4105,15 @@ async function startHttp() {
     // once-per-session `mcp_connect` emit — byte-identical for tier!=='internal', so
     // `funnel_events.meta_json.is_automated` / `by_authenticity` do NOT drift. Computed
     // for every request; only consumed on POST tool-calls (harmless on GET/handshake).
+    // IDENTITY-LIFECYCLE-W3 CH4 R2 — the elicitation census, read off the ALREADY-PARSED
+    // JSON-RPC envelope. It touches no MCP semantics: it does not answer `initialize`, does not
+    // implement elicitation, and does not change a byte of what the SDK returns. Fire-and-forget
+    // and internally guarded, because a measurement must never be able to fail a tool call.
+    try {
+      const cap = capabilityFromInitialize(req.body);
+      if (cap) recordHandshake(sessionId, cap);
+    } catch { /* telemetry only */ }
+
     const requestAuthenticity = classifyTraffic({
       ua: req.headers['user-agent'] as string | undefined,
       ip: clientIp(req),

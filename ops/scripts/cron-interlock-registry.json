@@ -479,6 +479,23 @@
       "source": "repo",
       "verified_at": "2026-09-08",
       "notes": "THE ONLY THING THAT EVER FLIPS A STEP TO LIVE. No human does, by design (architect ruling Q1(A)). Runs `lifecycle-readout.js --decide`, which applies PER-STEP go-live and rollback; the read-only twin is ops/scripts/lifecycle-readout.sh and both share one `assess()` so the numbers an operator reads are the numbers the flip acts on. It MEASURES its two preconditions immediately before deciding rather than trusting a stored value — a go-live gated on yesterday's health verdict is gated on nothing. Alert LIFECYCLE_GOLIVE_ROLLBACK fires only on ROLLED_BACK."
+    },
+    {
+      "id": "product-updates-digest",
+      "host": "signal-1",
+      "script": "ops/cron/product-updates-digest.sh",
+      "container": "crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "dist/scripts/product-updates-digest",
+      "class": "safe-to-kill",
+      "reason": "Every write is guarded by UNIQUE(recipient_id, step, period_key) where the period IS the release version, so a SIGKILLed run re-sends nothing and the next monthly run picks up whatever was missed. The cost of preemption is at most one month of latency on a message that is explicitly 'about one a month' — nowhere near enough to hold a deploy.",
+      "max_runtime_s": 120,
+      "runtime_instrument": "NOT YET MEASURED — first install 2026-09-08. The run is one README parse plus one pass over the opt-in list (6 rows, measured). 120s is a CEILING bounding a hung docker exec, labelled as such.",
+      "cron_lines": 1,
+      "cron": "27 9 * * 2 with a first-Tuesday guard IN THE SCRIPT. cron cannot express 'first Tuesday', and the day-of-month + weekday fields are OR'd not AND'd, so `27 9 1-7 * 2` would fire on every day of the first week AND every Tuesday. The guard is one line of bash and cannot be misread.",
+      "catchup_cmd": null,
+      "source": "repo",
+      "verified_at": "2026-09-08",
+      "notes": "Same engine, same suppression, same caps as the four usage steps — a fifth step, not a second mailer. Deliberately NOT registered in the 15-minute dispatcher: its cadence is the RELEASE cadence, and registering it there would evaluate a 'what's new' 96 times a day for a message that can be sent once a month. Body is the README `## What's new in vX.Y.0` block converted VERBATIM; recap sub-sections are excluded because they are a rolling 3-minor window and would re-send content a reader already had. Blocks BATCH into one email so two releases in a month is still one message. Verdict token LIFECYCLE_DIGEST_VERDICT= maps PASS=0/FAIL=1/INDETERMINATE=3. Zero opt-ins and zero blocks are both reported as explicit PASS facts, never as a silent success."
     }
   ],
   "exclusions": [

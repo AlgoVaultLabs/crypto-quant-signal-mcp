@@ -1000,8 +1000,113 @@ export interface FunnelScoreboard {
     coverage_pct: number | null; // classified / total (share NOT direct/unknown)
     note: string;
   };
+  /**
+   * IDENTITY-LIFECYCLE-W3 CH4 R3 — ADD-ONLY. Nothing above is re-keyed.
+   *
+   * `identity_claim_rate` is identity-bound buckets over ACTIVATED buckets, not over all keys:
+   * a key that has never made a call has not chosen anything, and putting it in the denominator
+   * would measure key minting rather than the decision this wave is trying to move.
+   *
+   * `elicitation` is reported over HANDSHAKING sessions only, with `low_sample` beside it. The
+   * transport is stateless and `initialize` is optional, so sessions that never handshake are
+   * counted separately and NEVER as "not capable" — that distinction is the whole reason the
+   * column is nullable.
+   */
+  lifecycle: {
+    sends_by_step: Array<{ step: string; would_send: number; sent: number; suppressed: number; capped: number; state: string }>;
+    unsubscribes: number;
+    bounces_complaints: number;
+    bounce_rate_pct: number | null;
+    identity_claim_rate: { bound: number; activated: number; pct: number | null };
+    attributed_upgrades: number | null;
+    elicitation: { handshaking: number; capable: number; no_handshake: number; capable_share: number | null; low_sample: boolean };
+  };
   daily: Array<{ date: string; signup_intent: number; conversions: number }>;
   warnings: string[];
+}
+
+/**
+ * The lifecycle panel. Add-only, fail-soft, and honest about every zero.
+ *
+ * A zero here is a FACT for most of this wave's life: the engine ships dark, so `sent` is 0 by
+ * construction until a step's own day-7 clock elapses. That is why the STATE is rendered beside
+ * the counts — `shadow` next to a zero reads as "not lit yet", where a bare 0 reads as "broken".
+ */
+async function computeLifecyclePanel(
+  deps: ScoreboardDeps,
+  thresholdMs: number,
+  warnings: string[],
+): Promise<FunnelScoreboard['lifecycle']> {
+  const empty: FunnelScoreboard['lifecycle'] = {
+    sends_by_step: [], unsubscribes: 0, bounces_complaints: 0, bounce_rate_pct: null,
+    identity_claim_rate: { bound: 0, activated: 0, pct: null },
+    attributed_upgrades: null,
+    elicitation: { handshaking: 0, capable: 0, no_handshake: 0, capable_share: null, low_sample: true },
+  };
+  try {
+    const { LIFECYCLE_STEPS } = await import('./lifecycle-copy.js');
+    const { listStepStates } = await import('./lifecycle/ledger.js');
+    const { readCensus } = await import('./lifecycle/census.js');
+    const states = new Map((await listStepStates()).map((st) => [st.step, st]));
+
+    const rows = await deps.query<{ step: string; status: string; c: number | string }>(
+      `SELECT step, status, COUNT(*) AS c FROM lifecycle_sends GROUP BY step, status`, []);
+    const sends_by_step = LIFECYCLE_STEPS.map((step) => {
+      const of = (st: string) => Number(rows.find((r) => r.step === step && r.status === st)?.c ?? 0);
+      const s2 = states.get(step);
+      return {
+        step,
+        would_send: of('would_send'), sent: of('sent'),
+        suppressed: of('suppressed'), capped: of('capped'),
+        state: s2?.rolled_back_at ? 'rolled-back' : s2?.live_since ? 'live' : 'shadow',
+      };
+    });
+
+    const supp = await deps.query<{ reason: string; c: number | string }>(
+      `SELECT reason, COUNT(*) AS c FROM lifecycle_suppressions GROUP BY reason`, []);
+    const n = (reason: string) => Number(supp.find((r) => r.reason === reason)?.c ?? 0);
+    const unsubscribes = n('unsubscribe');
+    const bounces_complaints = n('bounce') + n('complaint');
+    const totalSent = sends_by_step.reduce((a, r) => a + r.sent, 0);
+
+    // Identity-claim rate: bound over ACTIVATED. `safeRatio` returns null on a zero denominator,
+    // which is the honest answer while nothing has been activated yet.
+    const boundRows = await deps.query<{ c: number | string }>(
+      `SELECT COUNT(*) AS c FROM free_keys WHERE email IS NOT NULL AND email <> ''`, []);
+    const activatedRows = await deps.query<{ c: number | string }>(
+      `SELECT COUNT(*) AS c FROM agent_sessions WHERE call_count >= 1 AND first_tier <> 'internal' AND first_seen >= ?`,
+      [thresholdMs]);
+    const bound = Number(boundRows[0]?.c ?? 0);
+    const activated = Number(activatedRows[0]?.c ?? 0);
+
+    // Lifecycle-attributed upgrades ride W1's Stripe metadata. NULL rather than 0 when the
+    // column is unavailable: "we could not tell" and "there were none" are different findings.
+    let attributed_upgrades: number | null = null;
+    try {
+      const up = await deps.query<{ c: number | string }>(
+        `SELECT COUNT(*) AS c FROM subscriber_profiles WHERE channel = 'lifecycle'`, []);
+      attributed_upgrades = Number(up[0]?.c ?? 0);
+    } catch { attributed_upgrades = null; }
+
+    const census = await readCensus(thresholdMs);
+
+    return {
+      sends_by_step,
+      unsubscribes,
+      bounces_complaints,
+      bounce_rate_pct: totalSent > 0 ? (bounces_complaints / totalSent) * 100 : null,
+      identity_claim_rate: { bound, activated, pct: safeRatio(bound, activated) },
+      attributed_upgrades,
+      elicitation: {
+        handshaking: census.handshaking, capable: census.capable,
+        no_handshake: census.noHandshake, capable_share: census.capableShare,
+        low_sample: census.lowSample,
+      },
+    };
+  } catch (err) {
+    warnings.push(`lifecycle panel unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return empty;
+  }
 }
 
 // ── Dependency injection ──────────────────────────────────────────────────────
@@ -1294,9 +1399,15 @@ export async function getFunnelScoreboard(
     conversions: convDaily[i]?.count ?? 0,
   }));
 
+  // ── IDENTITY-LIFECYCLE-W3 CH4 R3 — lifecycle rows. Every read is wrapped: this panel is
+  // telemetry, and a scoreboard that 500s because one add-only section could not be computed is
+  // worse than a scoreboard that says it could not compute it. Failures land in `warnings`.
+  const lifecycle = await computeLifecyclePanel(deps, srcThresholdMs, warnings);
+
   return {
     computed_at: nowIso,
     window: { days, from: fromIso, to: nowIso },
+    lifecycle,
     data_freshness: {
       snapshot_generated_at: snap?.generated_at ?? null,
       stripe_source: census ? census.source : 'unavailable',
