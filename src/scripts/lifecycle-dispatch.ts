@@ -205,6 +205,12 @@ async function main(): Promise<void> {
     totals.wouldSend + totals.sent + totals.suppressed + totals.capped);
 }
 
-main().catch(async (err) => {
-  await emit('INDETERMINATE', `unhandled: ${err instanceof Error ? err.message : err}`);
-});
+// ENTRYPOINT GUARD — required, and here it is load-bearing rather than hygiene. This module
+// exports `runStep`, which CH2's tests and any future canary will import; without the guard, that
+// import would RUN a dispatcher tick, and in `live` mode a tick SENDS EMAIL TO REAL PEOPLE.
+// Live cron invokes `node dist/scripts/lifecycle-dispatch.js`, so the guard is TRUE there.
+if (require.main === module) {
+  main().catch(async (err) => {
+    await emit('INDETERMINATE', `unhandled: ${err instanceof Error ? err.message : err}`);
+  });
+}
