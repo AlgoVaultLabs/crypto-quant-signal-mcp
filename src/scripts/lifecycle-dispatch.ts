@@ -17,6 +17,7 @@
  * 3 is the token-law default for a NEW gate. Callers gate on the TOKEN, never the bare code.
  */
 import { runScript } from '../lib/script-lifecycle.js';
+import { awaitDbWrites } from '../lib/performance-db.js';
 import { ensureLifecycleSchema } from '../lib/lifecycle/schema.js';
 import {
   listStepStates, listRetryable, markSent, markFailed, stampHeartbeat,
@@ -50,6 +51,15 @@ const RETRY_BATCH = 25;
 async function emit(verdict: 'PASS' | 'FAIL' | 'INDETERMINATE', note: string, eligible = 0): Promise<number> {
   try {
     await stampHeartbeat('lifecycle-dispatch', verdict, eligible, new Date(), note.slice(0, 200));
+    // SETTLE IT BEFORE WE EXIT. `dbRun` is fire-and-forget on Postgres — it returns before the
+    // statement is even sent — and `runScript` ends the pool immediately after `main` resolves.
+    // MEASURED on signal-1: the tick logged `PG migration error: Cannot use a pool after calling
+    // end on the pool`, which is that race arriving. A lost heartbeat is not cosmetic: the health
+    // canary's stall leg reads exactly this row, so a dropped write eventually pages
+    // "dispatcher stalled" about a dispatcher that ran perfectly. `awaitDbWrites` settles
+    // in-flight writes WITHOUT closing, and is a no-op on SQLite, so this one line is correct on
+    // both backends without branching on DATABASE_URL.
+    await awaitDbWrites();
   } catch {
     console.log(`${TAG} heartbeat stamp failed — verdict still reported below`);
   }
