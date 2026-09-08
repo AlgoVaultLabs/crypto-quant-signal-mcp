@@ -61,11 +61,70 @@ import { buildPublicCtaBlock, type PublicCtaBlock } from './public-cta.js';
  */
 export const PUBLIC_PLAN_ORDER: readonly PaidPlanId[] = ['starter', 'pro', 'enterprise'];
 
+/**
+ * Plans sold by CONTACT, not from a page — the ones with no publishable self-serve figures.
+ *
+ * DECLARED, exactly like `PUBLIC_PLAN_ORDER` above and for the same stated reason: a load-bearing
+ * property must not be inferred from a coincidence in another module's data. The tempting
+ * inferences are all wrong. `dailyCalls === null` is about PACING and would couple two unrelated
+ * facts. `priceUsd6Month === undefined` is about a TERM nobody priced, not about whether a
+ * monthly figure may be published. And `priceUsdMonthly` cannot carry it: enterprise really is
+ * `299` in `plans.ts` because `ENTERPRISE_PRICE_ID` stays live and unarchived in Stripe so an
+ * in-flight subscription never breaks. **Enforcement is not the commercial offer**, and this
+ * constant is the line between them.
+ *
+ * WHY THIS EXISTS AT ALL. `GET /api/plans/public` published `price_usd: 299` on the enterprise
+ * rung while `brand-facts.md:552` listed "$299/mo as an Enterprise list price" as a HIGH-severity
+ * forbidden phrase and `:143` stated Enterprise no longer publishes a price. Every human surface
+ * already refused it — `signup-flow.ts` renders a contact-us line, `emit-pricing-tokens.mjs`
+ * emits "Custom volume — contact us" — but each of them hardcoded that judgement separately, so
+ * the ONE machine-readable surface, the one deliberately fed to AI crawlers, was the only place
+ * nobody had said it. That is the defect: the fact was real and encoded four times ad hoc, and a
+ * fifth renderer inherited none of them.
+ *
+ * ⚠️ RESIDUAL DEBT, named rather than hidden: this belongs in `plans.ts` as one exported
+ * predicate every renderer projects from. This wave's chapter firewall splits `plans.ts` (CH3)
+ * from this file (CH1), so no single chapter may create it. `tests/plans-public-api.test.ts`
+ * pins this set against `planPriceLabel`'s refusal so the two cannot silently disagree, and
+ * `OPS-PLANS-CONTACT-US-PREDICATE-W{NEXT}` collapses them into one derivation.
+ */
+export const CONTACT_US_PLANS: readonly PaidPlanId[] = ['enterprise'];
+
+/**
+ * The monthly price this plan PUBLISHES, or `null` when it is sold by contact.
+ *
+ * 🛑 `null` is a REFUSAL, in the same voice as `planDailyCallsLabel` and `planPrepayTotalUsd`: it
+ * means "there is no self-serve price to state", never zero and never "free". A consumer must
+ * OMIT the figure — rendering `null`, `0`, or a fabricated number is the defect this replaces.
+ */
+export function publishedMonthlyPriceUsd(id: PaidPlanId): number | null {
+  return CONTACT_US_PLANS.includes(id) ? null : PLANS[id].priceUsdMonthly;
+}
+
+/**
+ * The monthly call allowance this plan PUBLISHES, or `null` when it is sold by contact.
+ *
+ * `brand-facts.md:134` gives Enterprise's quota and daily cap as `custom` / `custom`. Publishing
+ * `100000` also made Enterprise indistinguishable from Pro on the public ladder, which is a
+ * second way of being wrong. `license.ts` keeps ENFORCING 100,000 — unchanged by this wave.
+ */
+export function publishedMonthlyCalls(id: PaidPlanId): number | null {
+  return CONTACT_US_PLANS.includes(id) ? null : PLANS[id].monthlyCalls;
+}
+
 /** One paid tier, as it appears in the public ladder. */
 export interface PublicPlanTier {
   readonly id: PaidPlanId;
   readonly label: string;
-  readonly monthly_calls: number;
+  /**
+   * Monthly call allowance, or `null` when the plan is sold by CONTACT and publishes no figure.
+   *
+   * 🛑 `null` is a REFUSAL, the same one `daily_calls` and `price_usd_6month` below already carry.
+   * It means "custom — ask us", never zero and never unlimited. `brand-facts.md:134` gives
+   * Enterprise's quota as `custom`; `license.ts` still ENFORCES 100,000, because enforcement is
+   * not the commercial offer. A consumer must render the absence, never substitute a number.
+   */
+  readonly monthly_calls: number | null;
   /**
    * Per-UTC-day cap, or `null` when the plan declares none.
    *
@@ -74,7 +133,18 @@ export interface PublicPlanTier {
    * consumer must render the absence, never substitute a number or the word "unlimited".
    */
   readonly daily_calls: number | null;
-  readonly price_usd: number;
+  /**
+   * Monthly price in USD, or `null` when the plan is sold by CONTACT and publishes no price.
+   *
+   * 🛑 `null` is a REFUSAL — "there is no self-serve price to state". Rendering `0`, `"null"` or a
+   * fabricated figure is the exact defect this field's nulling exists to retire: this endpoint
+   * published `299` for Enterprise while `brand-facts.md:552` listed that as a HIGH-severity
+   * forbidden phrase and every human surface already said "Contact us".
+   *
+   * The KEY REMAINS PRESENT. `tiers_value_keys` stays a stable six-key set so no consumer's
+   * key-set assertion breaks; only the value refuses.
+   */
+  readonly price_usd: number | null;
   /**
    * TOTAL charged for the six-month prepay term, or `null` when the plan is not sold on it.
    *
@@ -126,9 +196,13 @@ export function buildPublicPlansBody(now: Date = new Date()): PublicPlansBody {
       return {
         id,
         label: plan.label,
-        monthly_calls: plan.monthlyCalls,
+        // Both project through a helper that REFUSES, exactly as `price_usd_6month` below already
+        // does — never an `id === 'enterprise'` branch. The projection stays tier-agnostic and the
+        // judgement lives in ONE named place (`CONTACT_US_PLANS`), so a future contact-us tier
+        // inherits the refusal instead of needing a fifth renderer to be told about it.
+        monthly_calls: publishedMonthlyCalls(id),
         daily_calls: typeof plan.dailyCalls === 'number' ? plan.dailyCalls : null,
-        price_usd: plan.priceUsdMonthly,
+        price_usd: publishedMonthlyPriceUsd(id),
         // Projected through `planPrepayTotalUsd`, never off `plan.priceUsd6Month` directly: that
         // helper is where "a term nobody priced must never be fabricated by scaling a term that
         // was priced" lives, and reading the field raw here would be a second derivation of the

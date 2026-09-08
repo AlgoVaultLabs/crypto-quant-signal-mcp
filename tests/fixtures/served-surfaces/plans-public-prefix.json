@@ -1,0 +1,70 @@
+{
+  "_doc": [
+    "OPS-PLANS-PUBLIC-ENTERPRISE-DEPRICE-W1 CH1 R1.1 — the PRE-FIX served body, captured verbatim.",
+    "",
+    "WHY THIS FILE EXISTS. GET /api/plans/public is unauthenticated, listed in .well-known/api-catalog",
+    "and deliberately fed to AI crawlers. It published price_usd: 299 on the enterprise rung while",
+    "brand-facts.md:552 lists \"$299/mo as an Enterprise list price\" as a HIGH-severity forbidden phrase",
+    "and :143 states Enterprise no longer publishes a price. Every human surface already refused it;",
+    "this endpoint — the machine-readable one, the one fed to LLMs — did not.",
+    "",
+    "THREE controls missed it, each differently. check-forbidden-phrases.mjs globs FILES, and a served",
+    "HTTP response is in no glob and cannot be. The frozen shape snapshot bans key NAMES only — it has",
+    "no forbidden-VALUE concept at all — and it captured 299 as APPROVED. And that snapshot carries a",
+    "drift_check_command which is a shell string in a JSON field that nothing has ever executed.",
+    "",
+    "This body is CH2 proof fixture: --prove-catches-ch1 runs the offline rules against it and must",
+    "report FAIL. A gate never observed catching the defect it was built for is not evidence.",
+    "",
+    "CACHE DISCIPLINE (R1.5): the endpoint serves cache-control: public, max-age=300, so this read used",
+    "a unique cache-buster query parameter. An un-busted read can return a body up to five minutes old",
+    "and read as either a failure or a success.",
+    "",
+    "DO NOT correct the 299 below. It is the record of what was served."
+  ],
+  "captured_at": "2026-09-08T15:03:27Z",
+  "source_url": "https://api.algovault.com/api/plans/public?cb=1788879806-11711",
+  "cache_buster": "unique query parameter, per CH1 R1.5",
+  "observed_etag": "W/\"2b7-PsRAMMw6qjc+gJl6pOnnrDNd7Zg\"",
+  "observed_cache_control": "public, max-age=300",
+  "captured_from_sha": "cbc668d027caf86a1e643c4824b0529c5e842359",
+  "captured_body": {
+    "free": {
+      "monthly_calls": 200,
+      "daily_calls": 100
+    },
+    "tiers": [
+      {
+        "id": "starter",
+        "label": "Starter",
+        "monthly_calls": 10000,
+        "daily_calls": 1000,
+        "price_usd": 9.99,
+        "price_usd_6month": 39.9
+      },
+      {
+        "id": "pro",
+        "label": "Pro",
+        "monthly_calls": 100000,
+        "daily_calls": 10000,
+        "price_usd": 49,
+        "price_usd_6month": 129
+      },
+      {
+        "id": "enterprise",
+        "label": "Enterprise",
+        "monthly_calls": 100000,
+        "daily_calls": null,
+        "price_usd": 299,
+        "price_usd_6month": null
+      }
+    ],
+    "generated_at": "2026-09-08T15:03:26.906Z",
+    "_algovault": {
+      "brand": "The Brain Layer for AI Trading Agents",
+      "note": "Building an agent? Get a free API key — higher limits, all tools, x402 pay-per-call.",
+      "get_started": "https://algovault.com/#pricing",
+      "docs": "https://algovault.com/docs.html"
+    }
+  }
+}

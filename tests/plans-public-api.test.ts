@@ -134,6 +134,68 @@ describe('ALLOW-list — the response carries public fields and nothing else', (
     }
   });
 
+  it('enterprise publishes NO price and NO quota — both null, both REFUSALS', async () => {
+    // THE DEFECT THIS WAVE EXISTS FOR. This endpoint is unauthenticated, listed in
+    // .well-known/api-catalog and deliberately fed to AI crawlers, and it published
+    // `price_usd: 299` while brand-facts.md:552 listed "$299/mo as an Enterprise list price" as a
+    // HIGH-severity forbidden phrase and :143 stated Enterprise no longer publishes a price.
+    const { body } = await getBody(await boot());
+    const tiers = body.tiers as Array<{ id: string; price_usd: number | null; monthly_calls: number | null }>;
+    const ent = tiers.find((t) => t.id === 'enterprise');
+    expect(ent, 'the enterprise rung must still be PRESENT — refused, not removed').toBeDefined();
+    expect(ent!.price_usd).toBeNull();
+    expect(ent!.monthly_calls).toBeNull();
+    // null is a REFUSAL, so the wire must not carry a substitute either.
+    expect(ent!.price_usd).not.toBe(0);
+    expect(ent!.monthly_calls).not.toBe(0);
+    expect(JSON.stringify(body)).not.toContain('299');
+  });
+
+  it('the KEYS survive the refusal — a nulled value, never a removed field', async () => {
+    // Omitting the key instead of nulling it would break every consumer asserting the six-key set,
+    // and `undefined` is worse still: JSON.stringify DELETES it, silently shrinking the key set.
+    const { body } = await getBody(await boot());
+    const ent = (body.tiers as Array<Record<string, unknown>>).find((t) => t.id === 'enterprise')!;
+    expect(Object.keys(ent).sort()).toEqual([
+      'daily_calls', 'id', 'label', 'monthly_calls', 'price_usd', 'price_usd_6month',
+    ]);
+    expect('price_usd' in ent).toBe(true);
+    expect('monthly_calls' in ent).toBe(true);
+  });
+
+  it('the SELF-SERVE tiers still publish their figures — the other direction', async () => {
+    // Without this the contract is satisfiable by an endpoint that nulls EVERY price. A gate that
+    // only bans values passes hardest exactly when the surface is most broken.
+    const { body } = await getBody(await boot());
+    const tiers = body.tiers as Array<{ id: string; price_usd: number | null; monthly_calls: number | null; daily_calls: number | null; price_usd_6month: number | null }>;
+    const starter = tiers.find((t) => t.id === 'starter')!;
+    const pro = tiers.find((t) => t.id === 'pro')!;
+    expect(starter.price_usd).toBe(9.99);
+    expect(starter.monthly_calls).toBe(10_000);
+    expect(starter.daily_calls).toBe(1_000);
+    expect(starter.price_usd_6month).toBe(39.9);
+    expect(pro.price_usd).toBe(49);
+    expect(pro.monthly_calls).toBe(100_000);
+    expect(pro.daily_calls).toBe(10_000);
+    expect(pro.price_usd_6month).toBe(129);
+    // The free block is outside the tier ladder and this wave does not touch it.
+    expect(body.free).toEqual({ monthly_calls: 200, daily_calls: 100 });
+  });
+
+  it('CONTACT_US_PLANS is the ONE place the refusal is decided', async () => {
+    // Pins the projection to the declared set rather than to a tier id, so the refusal cannot be
+    // reintroduced as an inline `id === 'enterprise'` branch somewhere else in the file.
+    const { CONTACT_US_PLANS, publishedMonthlyPriceUsd, publishedMonthlyCalls } =
+      await import('../src/lib/plans-public-api.js');
+    const { PLANS } = await import('../src/lib/plans.js');
+    expect([...CONTACT_US_PLANS]).toEqual(['enterprise']);
+    for (const id of Object.keys(PLANS) as Array<keyof typeof PLANS>) {
+      const contact = CONTACT_US_PLANS.includes(id);
+      expect(publishedMonthlyPriceUsd(id) === null, id).toBe(contact);
+      expect(publishedMonthlyCalls(id) === null, id).toBe(contact);
+    }
+  });
+
   it('enterprise daily_calls is null — a REFUSAL, never 0 and never "unlimited"', async () => {
     const { body } = await getBody(await boot());
     const tiers = body.tiers as Array<{ id: string; daily_calls: number | null }>;
@@ -173,13 +235,21 @@ describe('tier coverage — a new plan cannot silently vanish from the public la
     const baseUrl = await boot();
     const { PLANS } = await import('../src/lib/plans.js');
     const { body } = await getBody(baseUrl);
-    const tiers = body.tiers as Array<{ id: string; label: string; monthly_calls: number; daily_calls: number | null; price_usd: number; price_usd_6month: number | null }>;
+    const { publishedMonthlyPriceUsd, publishedMonthlyCalls } = await import('../src/lib/plans-public-api.js');
+    const tiers = body.tiers as Array<{ id: string; label: string; monthly_calls: number | null; daily_calls: number | null; price_usd: number | null; price_usd_6month: number | null }>;
     expect(tiers.map((t) => t.id).sort()).toEqual(Object.keys(PLANS).sort());
     for (const t of tiers) {
       const sot = PLANS[t.id as keyof typeof PLANS];
+      const id = t.id as keyof typeof PLANS;
       expect(t.label).toBe(sot.label);
-      expect(t.monthly_calls).toBe(sot.monthlyCalls);
-      expect(t.price_usd).toBe(sot.priceUsdMonthly);
+      // OPS-PLANS-PUBLIC-ENTERPRISE-DEPRICE-W1 CH1. These two used to read `.toBe(sot.monthlyCalls)`
+      // and `.toBe(sot.priceUsdMonthly)` — raw SoT values — which is precisely how this endpoint came
+      // to publish enterprise `price_usd: 299` with a green test vouching for it. The expectation is
+      // now projected through the SAME refusal the response uses, so it stays DERIVED from the SoT
+      // rather than special-cased on a tier id, and a plan that starts or stops publishing a figure
+      // moves both sides together.
+      expect(t.monthly_calls).toBe(publishedMonthlyCalls(id));
+      expect(t.price_usd).toBe(publishedMonthlyPriceUsd(id));
       expect(t.daily_calls).toBe(typeof sot.dailyCalls === 'number' ? sot.dailyCalls : null);
       // GROWTH-TG-PLAN-PICKER-W1 R1. `?? null` is the whole assertion: a plan with no 6-month
       // Price must reach the wire as null, never as `undefined` (which JSON.stringify DELETES,

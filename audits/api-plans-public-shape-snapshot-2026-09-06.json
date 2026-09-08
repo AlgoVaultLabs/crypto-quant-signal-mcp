@@ -52,11 +52,35 @@
   ],
   "forbidden_keys_note": "UNCHANGED from 2026-08-27, and the camelCase priceUsd6Month entry deliberately SURVIVES the addition of the snake_case price_usd_6month. They are different strings: the public key is snake_case and the internal SoT field is camelCase, so the forbidden-substring test in tests/plans-public-api.test.ts still passes over a body that now carries the value. Keeping the entry is what stops a future wave from serialising the plans.ts record wholesale and shipping the internal field name alongside the public one.",
   "captured_body": {
-    "free": { "monthly_calls": 200, "daily_calls": 100 },
+    "free": {
+      "monthly_calls": 200,
+      "daily_calls": 100
+    },
     "tiers": [
-      { "id": "starter", "label": "Starter", "monthly_calls": 10000, "daily_calls": 1000, "price_usd": 9.99, "price_usd_6month": 39.9 },
-      { "id": "pro", "label": "Pro", "monthly_calls": 100000, "daily_calls": 10000, "price_usd": 49, "price_usd_6month": 129 },
-      { "id": "enterprise", "label": "Enterprise", "monthly_calls": 100000, "daily_calls": null, "price_usd": 299, "price_usd_6month": null }
+      {
+        "id": "starter",
+        "label": "Starter",
+        "monthly_calls": 10000,
+        "daily_calls": 1000,
+        "price_usd": 9.99,
+        "price_usd_6month": 39.9
+      },
+      {
+        "id": "pro",
+        "label": "Pro",
+        "monthly_calls": 100000,
+        "daily_calls": 10000,
+        "price_usd": 49,
+        "price_usd_6month": 129
+      },
+      {
+        "id": "enterprise",
+        "label": "Enterprise",
+        "monthly_calls": 100000,
+        "daily_calls": null,
+        "price_usd": 299,
+        "price_usd_6month": null
+      }
     ],
     "generated_at": "2026-09-06T14:58:22.411Z",
     "_algovault": {
@@ -83,5 +107,7 @@
   ],
   "proven_able_to_fail": "tests/plans-public-api.test.ts, 17 tests (16 before this wave, +1 for the six-month term). Two deliberate breaks were run against the new assertions on 2026-09-06 and both went RED, then were restored to 17/17 green. (1) Coercing the refusal to a number — `planPrepayTotalUsd(...) ?? 0` — failed 2 of 17: the SoT-parity assertion and the enterprise-REFUSES assertion. (2) Reading the raw SoT field instead of the helper — `plan.priceUsd6Month` — failed 3 of 17, because enterprise's `undefined` is DELETED by JSON.stringify and the tier loses a key: the six-key ALLOW-list test caught it in addition to the other two. Break (2) is the one that matters, and it is why the field is projected through the helper: `undefined` and `null` look identical in TypeScript at this call site and differ completely on the wire.",
   "drift_check_command": "curl -fsS https://api.algovault.com/api/plans/public | jq -e '(keys == [\"_algovault\",\"free\",\"generated_at\",\"tiers\"]) and (.free | keys == [\"daily_calls\",\"monthly_calls\"]) and ([.tiers[] | keys] | flatten | unique == [\"daily_calls\",\"id\",\"label\",\"monthly_calls\",\"price_usd\",\"price_usd_6month\"]) and ((.tiers | map(.id)) == [\"starter\",\"pro\",\"enterprise\"]) and ((.tiers[] | select(.id==\"enterprise\") | .daily_calls) == null) and ((.tiers[] | select(.id==\"enterprise\") | .price_usd_6month) == null) and (._algovault | keys == [\"brand\",\"docs\",\"get_started\",\"note\"])' >/dev/null && ! curl -fsS https://api.algovault.com/api/plans/public | grep -qE 'outcome_(return_pct|price|won)|priceUsd(Annual|6Month|Monthly)|monthlyCalls|dailyCalls|customer_?[Cc]ount|api_?[Kk]ey' && echo PLANS_PUBLIC_SHAPE_OK",
-  "drift_check_note": "The command asserts the ladder's SHAPE and its ordering, and separately greps for internal field names. It deliberately does NOT pin the VALUES 200/100/10000/39.9/129/etc: those are the ladder, and the ladder is allowed to change — pinning them here would make a legitimate price change look like a drift incident. What must never change without a wave is the key set, the tier order, enterprise's TWO nulls, and the absence of every forbidden key. Note that `[.tiers[] | keys] | flatten | unique` is a UNION across tiers, so it would not catch a single tier missing a key on its own; the per-tier equality that does catch that lives in tests/plans-public-api.test.ts, which is the right home for it because it runs on every push rather than on a cron. Value correctness lives in that same test (against plans.ts) and in scripts/emit-pricing-tokens.mjs --check (against dist/lib/plans.js) — two projections, one source."
+  "drift_check_note": "The command asserts the ladder's SHAPE and its ordering, and separately greps for internal field names. It deliberately does NOT pin the VALUES 200/100/10000/39.9/129/etc: those are the ladder, and the ladder is allowed to change — pinning them here would make a legitimate price change look like a drift incident. What must never change without a wave is the key set, the tier order, enterprise's TWO nulls, and the absence of every forbidden key. Note that `[.tiers[] | keys] | flatten | unique` is a UNION across tiers, so it would not catch a single tier missing a key on its own; the per-tier equality that does catch that lives in tests/plans-public-api.test.ts, which is the right home for it because it runs on every push rather than on a cron. Value correctness lives in that same test (against plans.ts) and in scripts/emit-pricing-tokens.mjs --check (against dist/lib/plans.js) — two projections, one source.",
+  "superseded_by": "api-plans-public-shape-snapshot-2026-09-08.json",
+  "superseded_reason": "OPS-PLANS-PUBLIC-ENTERPRISE-DEPRICE-W1 CH1 nulled tiers[id=enterprise].price_usd and .monthly_calls, so this file no longer describes the live shape — its captured_body records price_usd: 299, which brand-facts.md:552 lists as a HIGH-severity forbidden phrase. ONE SNAPSHOT PER ENDPOINT: scripts/build-knowledge-json.mjs projects every audits/*-shape-snapshot-*.json into the knowledge bundle keyed by `response_shape:${endpoint}`, and both files carry the SAME endpoint string, so leaving this one live would publish two contradictory descriptions of one doc id — winkBM25 refuses the duplicate outright. This field is the ratified way to retire a shape (Q1, 2026-08-21): the builder and tests/unit/shape-snapshot-drift-checks.test.ts both SKIP a snapshot carrying it. NOTHING ELSE IN THIS FILE IS TOUCHED — every measurement, captured_body, date and note is byte-identical, because a dated ledger states what was true when written. This is a forward pointer, not a correction. The tempting alternative — rewording this file's `endpoint` so both coexist — is rejected for the reason that test's own comment gives: it would silently split one contract's history into two lineages, and would leave search_knowledge answering with the retired price."
 }

@@ -1,0 +1,157 @@
+{
+  "wave": "OPS-PLANS-PUBLIC-ENTERPRISE-DEPRICE-W1",
+  "chapter": "CH1",
+  "endpoint": "/api/plans/public",
+  "snapshot_date": "2026-09-08",
+  "captured_at_utc": "2026-09-08T15:06:55Z",
+  "change_class": "BREAKING-BY-WIDENING — tiers[].price_usd and tiers[].monthly_calls widen from number to number|null. Keys are UNCHANGED and still present on every tier; only the enterprise rung's VALUES become null. A consumer asserting the six-key set is unaffected; a consumer assuming a numeric price on every rung must now handle the refusal — the same refusal daily_calls and price_usd_6month have always carried.",
+  "supersedes": "audits/api-plans-public-shape-snapshot-2026-09-06.json — KEPT ON DISK, BYTE-UNTOUCHED, as the dated record of what the contract was on 2026-09-06. A dated ledger states what was true when written; correcting one in place would make it a lie about its own moment (Build Rule 5). Supersede, never edit.",
+  "change_note": "GET /api/plans/public published {\"id\":\"enterprise\",\"price_usd\":299,\"monthly_calls\":100000} — unauthenticated, listed in .well-known/api-catalog, and deliberately fed to AI crawlers. brand-facts.md:552 lists \"$299/mo as an Enterprise list price\" as a HIGH-severity forbidden phrase, :143 states Enterprise no longer publishes a price, and :134 gives its quota and cap as custom/custom. Every human surface already refused it; this — the machine-readable one — did not. license.ts still ENFORCES 100,000 for enterprise: enforcement is not the commercial offer, and only the PUBLISHED value changed.",
+  "source": "src/lib/plans-public-api.ts::buildPublicPlansBody() projecting src/lib/plans.ts. The enterprise refusal is data-driven via CONTACT_US_PLANS + publishedMonthlyPriceUsd()/publishedMonthlyCalls(), never an id === \"enterprise\" branch in the projection.",
+  "allowed_keys": [
+    "_algovault",
+    "free",
+    "generated_at",
+    "tiers"
+  ],
+  "free_value_keys": [
+    "daily_calls",
+    "monthly_calls"
+  ],
+  "tiers_value_keys": [
+    "daily_calls",
+    "id",
+    "label",
+    "monthly_calls",
+    "price_usd",
+    "price_usd_6month"
+  ],
+  "algovault_sub_keys": [
+    "brand",
+    "docs",
+    "get_started",
+    "note"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "outcome_won",
+    "customerId",
+    "customer_id",
+    "stripe",
+    "api_key",
+    "apiKey",
+    "subscriber",
+    "subscriber_count",
+    "customer_count",
+    "priceUsdAnnual",
+    "priceUsd6Month",
+    "priceUsdMonthly",
+    "monthlyCalls",
+    "dailyCalls"
+  ],
+  "forbidden_keys_note": "UNCHANGED from 2026-09-06. These are KEY NAMES ONLY, and that limitation is precisely what let this defect ship: a forbidden-KEY list cannot express \"this key must not carry this VALUE\", so the 2026-09-06 snapshot captured price_usd: 299 as APPROVED. forbidden_values below is the concept it lacked.",
+  "captured_body": {
+    "free": {
+      "monthly_calls": 200,
+      "daily_calls": 100
+    },
+    "tiers": [
+      {
+        "id": "starter",
+        "label": "Starter",
+        "monthly_calls": 10000,
+        "daily_calls": 1000,
+        "price_usd": 9.99,
+        "price_usd_6month": 39.9
+      },
+      {
+        "id": "pro",
+        "label": "Pro",
+        "monthly_calls": 100000,
+        "daily_calls": 10000,
+        "price_usd": 49,
+        "price_usd_6month": 129
+      },
+      {
+        "id": "enterprise",
+        "label": "Enterprise",
+        "monthly_calls": null,
+        "daily_calls": null,
+        "price_usd": null,
+        "price_usd_6month": null
+      }
+    ],
+    "generated_at": "2026-09-08T15:06:55.000Z",
+    "_algovault": {
+      "brand": "The Brain Layer for AI Trading Agents",
+      "note": "Building an agent? Get a free API key — higher limits, all tools, x402 pay-per-call.",
+      "get_started": "https://algovault.com/#pricing",
+      "docs": "https://algovault.com/docs.html"
+    }
+  },
+  "forbidden_values": {
+    "_doc": "THE CONCEPT THE PREVIOUS SNAPSHOT LACKED ENTIRELY. Assertions are STRUCTURAL — a path plus a predicate — never a string ban on the serialized body. That is not a style preference: $299 CANNOT be string-banned, because it is simultaneously Pro's retired priceUsdAnnual and Enterprise's live priceUsdMonthly, which is why ops/forbidden-phrases.json deliberately leaves it un-enumerated and says so in its own bare_token_reason. A structural assertion names WHERE the value may not appear, so it stays correct when the figure changes.",
+    "enforced_by": "scripts/check-served-surface-values.mjs (SERVED_SURFACE_VALUES_VERDICT), offline mode, fail-closed in deploy.yml",
+    "assertions": [
+      {
+        "id": "enterprise-publishes-no-price",
+        "path": "tiers[id=enterprise].price_usd",
+        "predicate": "is_null",
+        "reason": "brand-facts.md:552 — \"$299/mo as an Enterprise list price\" is a HIGH-severity forbidden phrase; :143 — Enterprise no longer publishes a price. null is a REFUSAL, never 0 and never \"free\"."
+      },
+      {
+        "id": "enterprise-publishes-no-quota",
+        "path": "tiers[id=enterprise].monthly_calls",
+        "predicate": "is_null",
+        "reason": "brand-facts.md:134 gives Enterprise monthly quota as `custom`. Publishing 100000 also made Enterprise indistinguishable from Pro on the public ladder. license.ts keeps enforcing 100,000."
+      },
+      {
+        "id": "self-serve-tiers-still-publish-their-price",
+        "path": "tiers[id=starter].price_usd, tiers[id=pro].price_usd",
+        "predicate": "is_number",
+        "reason": "THE OTHER DIRECTION, and it is not optional. Without it the whole contract is satisfiable by an endpoint that nulls every price — a gate that only bans values passes hardest when the surface is broken."
+      },
+      {
+        "id": "tier-key-set-is-stable",
+        "path": "tiers[*]",
+        "predicate": "key_set_equals:daily_calls,id,label,monthly_calls,price_usd,price_usd_6month",
+        "reason": "The refusal is a VALUE change, never a key removal. A consumer asserting the six-key set must be unaffected; omitting the key instead of nulling it would break them."
+      }
+    ]
+  },
+  "price_usd_6month_note": "🛑 TWO PROPERTIES, both load-bearing. (1) null is a REFUSAL — 'not sold on this term' — exactly as daily_calls' null is. It is never 0 and never a scaled monthly: plans.ts::planPrepayTotalUsd already refuses to fabricate a term nobody priced, and this field is that refusal projected onto the wire. A consumer coercing enterprise's null to 0 would advertise a free plan. (2) It is a TOTAL, not a monthly rate: 39.9 is what the card is charged once, for six months. A consumer rendering it beside price_usd MUST say which ('$39.90/6mo'), or the pair reads as a price cut. The endpoint projects it through planPrepayTotalUsd rather than reading plan.priceUsd6Month directly, so the 'never fabricate an unpriced term' decision has exactly ONE derivation. Both properties are pinned in tests/plans-public-api.test.ts and both were proven able to fail — see proven_able_to_fail.",
+  "null_daily_calls_note": "enterprise.daily_calls is null, and null is a REFUSAL — not 'unlimited' and not zero. src/lib/plans.ts::planDailyCallsLabel carries the same warning for the copy path: no real Enterprise deal has set a daily cap, so a consumer must render the ABSENCE rather than substitute a number or the word 'unlimited', which PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-E removed from this ladder. A consumer that coerces null to 0 would refuse every Enterprise call; one that reads it as unlimited would publish a claim no contract supports. Pinned by tests/plans-public-api.test.ts.",
+  "null_price_usd_note": "🛑 enterprise.price_usd and enterprise.monthly_calls are null, and null is a REFUSAL — \"custom, ask us\" — never zero, never \"free\", never unlimited. This is the SAME refusal daily_calls and price_usd_6month already carried on this rung, so a nulled value was already in the wire format every consumer handles. A consumer must OMIT the figure; rendering \"null\" or substituting a number is the defect this snapshot records the end of.",
+  "generated_at_note": "🛑 generated_at is a RENDER STAMP, not a producer-freshness signal, and it is the ONLY per-request-varying field in the body. verification-gates.md — 'freshness alarms measure PRODUCERS, never rendered artifacts' — so no canary may key staleness on it: it reports the serving process's clock, not the ladder's cadence. The ladder changes only on deploy, and the container restart is its real invalidation boundary. It is emitted so a machine consumer can tell when a cached copy was minted, and it is documented here so a future freshness check does not mistake it for a producer stamp.",
+  "algovault_block_note": "_algovault IS on the ALLOW-list, ratified by Mr.1 2026-08-27 (Q3=b). src/lib/public-cta.ts declares that any public JSON endpoint merges buildPublicCtaBlock(), and audits/public-cta-shape-snapshot-2026-07-15.json lists _algovault plus these four sub-keys under each adopting endpoint's allowed_keys. The block is an exported pure formatter returning static approved copy — no I/O, no live figures — so it changes neither the cost profile nor the cacheability of a static projection. Unchanged by this wave.",
+  "error_contract": "No error path exists. buildPublicPlansBody() is total: it reads module-level constants and a frozen record, calls one pure total helper (planPrepayTotalUsd, which returns null rather than throwing on an unpriced term), performs no I/O, and cannot throw on any input — the route takes no parameters. There is no 4xx and no 5xx branch. An unreachable endpoint is an infrastructure fault, not an application state, and must be diagnosed as one.",
+  "auth_contract": "UNAUTHENTICATED by design, unlike its register-site neighbours /api/bot/validate-key, /api/entitlement/* and /api/ops/build. The consumer this exists for is a FREE, unlinked Telegram chat, which holds no api_key and no internal key. Every field served is already public copy on algovault.com/#pricing and on the /signup plan cards. Adding auth here would recreate the exact gap the endpoint closes.",
+  "cache_contract": {
+    "description": "Cache-Control: public, max-age=300. No in-process cache: the handler is a pure projection with no DB touch, so caching it in-process would add an invalidation problem to a function that has none. The 300s TTL matches the bot's EXISTING five-minute entitlement-drain cadence (the ladder mirror rides that cron — no new schedule), so the mirror can never be more than one drain cycle behind an edge copy. UNCHANGED by this wave: an additive field does not move the invalidation boundary.",
+    "ttl_seconds": 300,
+    "staleness_signal": "NONE, deliberately. The ladder changes only on deploy and the container restart is the invalidation boundary. Do not key a freshness alarm on generated_at — see generated_at_note."
+  },
+  "consumers": [
+    "algovault-bot free-tier ladder mirror — src/algovault_bot/ladder_client.py::parse_ladder, fetched by the EXISTING entitlement_drain cron every 5 minutes and written to the free_tier_ladder SQLite table. LIVE since GROWTH-TG-QUOTA-PARITY-W1 CH2. WIDENED IN THE SAME WAVE AS THIS FIELD (GROWTH-TG-PLAN-PICKER-W1 R2) to mirror the full four-SKU ladder: starter/pro x month/6month plus both daily caps. Unknown-key tolerance is pinned there by a fixture carrying two invented extra keys, so the deploy ORDER of the two repos is free — an older bot ignores this field, and a newer bot reads it as absent (None) and serves its pinned fallback rather than refusing.",
+    "ops/pricing-tokens.json via scripts/emit-pricing-tokens.mjs — NOT a consumer of this endpoint, but a SECOND PROJECTION of the same source (dist/lib/plans.js). tests/plans-public-api.test.ts asserts the two agree on the free and paid CALL ladders. It does NOT yet carry a prepay token, and that is a deliberate non-change: no copy surface consumes one. 🛑 On a mismatch the fix is to REGENERATE the tokens from plans.ts — never to hand-edit either artifact to match the other, which would convert two projections into two SoTs."
+  ],
+  "consumers_note": "Re-measured 2026-09-08, not inherited. AlgoVaultLabs/algovault-bot reads ONLY the starter and pro rungs — src/algovault_bot/ladder_client.py exposes _starter_rung() and there is no enterprise call site anywhere in the repo; messages.py declares SignupPlan = Literal[\"starter\",\"pro\"] with the comment \"enterprise is deliberately absent\", and tests/test_plan_picker.py asserts the picker never offers it. Its price parse guard is float(price) if isinstance(price, (int, float)) else None, so even a read would yield None, never a crash and never the string \"null\". NO bot-side change was required by this wave.",
+  "proven_able_to_fail": "tests/plans-public-api.test.ts — a deliberate break restoring plan.priceUsdMonthly into the projection path was observed FAILING before being reverted (CH1 R1.6). scripts/check-served-surface-values.mjs additionally ships --prove-catches-ch1, which runs these assertions against the pre-fix body captured verbatim in tests/fixtures/served-surfaces/plans-public-prefix.json and must report FAIL_AS_EXPECTED.",
+  "drift_check": {
+    "_doc": "REPLACES drift_check_command, which was a SHELL STRING IN A JSON FIELD. git grep for this snapshot family outside audits/ returned ZERO hits: it was in no script, no workflow and no cron, so it had never once run. Prose in a JSON field is not a control — the Completeness Standard says a rule that has failed as prose must become a gate or be deleted. It is now a named, executable script with a verdict token.",
+    "script": "scripts/check-served-surface-values.mjs",
+    "verdict_token": "SERVED_SURFACE_VALUES_VERDICT",
+    "exit_codes": {
+      "0": "PASS",
+      "1": "FAIL",
+      "3": "INDETERMINATE"
+    },
+    "modes": {
+      "offline": "default. Imports buildPublicPlansBody from dist/ and asserts forbidden_values against the produced object. Fail-closed in .github/workflows/deploy.yml. Needs no network.",
+      "live": "--live [baseUrl]. Fetches the deployed surface, cache-busted, and asserts the same rules. Scheduled canary only, NEVER a CI blocker; a transport failure is INDETERMINATE, never FAIL."
+    },
+    "registry": "ops/served-surface-values.json",
+    "note": "The OFFLINE mode is the gate. The projection is a pure function, so this class is catchable deterministically at build time and does not need the network. The live mode catches host/deploy drift the build cannot see. Neither substitutes for the other, and the live one must never be the only enforcement."
+  }
+}
