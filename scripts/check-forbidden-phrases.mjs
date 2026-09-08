@@ -428,6 +428,26 @@ export function gitObjectExists(sha, cwd = ROOT) {
 }
 
 /**
+ * Is this checkout SHALLOW — i.e. does it structurally lack history rather than disagree about it?
+ *
+ * This is not a detail, it is the difference between "the provenance claim is false" and "the
+ * evidence is not present here", and getting it wrong BLOCKED A DEPLOY. `actions/checkout@v4`
+ * defaults to `fetch-depth: 1`, so CI holds exactly ONE commit; the moment this wave landed, its
+ * own `source_sha` became the parent and was simply absent from the runner's object store. Five
+ * assertions that pass on any full clone failed there, and they failed as "REAL failures
+ * (assertion diffs present)" — the loudest possible way to be wrong about a non-problem.
+ *
+ * `null` when git could not answer at all.
+ */
+export function isShallowRepo(cwd = ROOT) {
+  try {
+    return execFileSync('git', ['rev-parse', '--is-shallow-repository'], { cwd, encoding: 'utf8' }).trim() === 'true';
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Per-entry provenance verdict. Returns { ok, detail }; never throws for a data problem, because
  * an assertion that RAISES aborts the suite instead of reporting FAIL.
  */
@@ -446,9 +466,32 @@ export function checkProvenance(entry, dirty, samples) {
   if (!existsSync(join(ROOT, f.source_path))) {
     return { ok: false, detail: `source_path ${f.source_path} does not resolve in the repo` };
   }
+  // ── HISTORY AVAILABLE, OR MERELY ABSENT? ────────────────────────────────────────────────────
+  //
+  // A blocking verdict must land on someone who can ACT on it. A CI runner on a `fetch-depth: 1`
+  // checkout cannot conjure the parent commit, so refusing there is the deadlock, not the guard —
+  // the same reasoning that makes an `unpublished` claim in check-claudemd-claims.mjs REPORT
+  // rather than block. So: when history is structurally unavailable, this REPORTS and says so in
+  // its own words; it never reads as verified, and it is never silent.
+  //
+  // What still BLOCKS is the case that is definitively somebody's doing: history IS available and
+  // the bytes are not there. That is caught on every full clone — every local run, and the
+  // pre-push gate that guards the only path by which a change reaches CI at all.
   const shaOk = gitObjectExists(f.source_sha);
-  if (shaOk === null) return { ok: false, detail: 'git is unavailable, so the source_sha could not be resolved — INDETERMINATE, not clean' };
-  if (!shaOk) return { ok: false, detail: `source_sha ${String(f.source_sha).slice(0, 12)} is not a resolvable git object` };
+  const shallow = isShallowRepo();
+  if (shaOk === null) {
+    return { ok: true, unverifiable: true, detail: 'git is unavailable here, so the source_sha could not be resolved — REPORTED, not verified' };
+  }
+  if (!shaOk) {
+    if (shallow === true) {
+      return {
+        ok: true,
+        unverifiable: true,
+        detail: `source_sha ${String(f.source_sha).slice(0, 8)} is outside this SHALLOW checkout — REPORTED, not verified (full clones enforce it)`,
+      };
+    }
+    return { ok: false, detail: `source_sha ${String(f.source_sha).slice(0, 12)} is not a resolvable git object` };
+  }
 
   const rec = samples[entry.id];
   if (!rec) return { ok: false, detail: `claims estate provenance but tests/fixtures/forbidden-phrases/estate-samples.json has no sample for ${entry.id}` };
@@ -477,6 +520,11 @@ export function checkProvenance(entry, dirty, samples) {
   try {
     atSha = execFileSync('git', ['show', `${f.source_sha}:${f.source_path}`], { cwd: ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   } catch (e) {
+    // The commit resolves but the blob at that path does not — on a shallow checkout that is a
+    // missing TREE, not a false claim. Same report-vs-block split as above.
+    if (shallow === true) {
+      return { ok: true, unverifiable: true, detail: `${f.source_path} is not present at ${String(f.source_sha).slice(0, 8)} in this SHALLOW checkout — REPORTED, not verified` };
+    }
     return { ok: false, detail: `cannot read ${f.source_path} at ${String(f.source_sha).slice(0, 8)}: ${String(e.message).split('\n')[0].slice(0, 90)}` };
   }
   if (!atSha.includes(rec.sample)) {
@@ -625,9 +673,19 @@ function selfTest() {
   // claim must be VERIFIABLE: path resolves, SHA resolves as a git object, and the fixture equals
   // the recorded bytes. This replaces the comment that used to assert all of it.
   check('the estate-sample fixture file loads', () => !samples.error, samples.error);
+  let unverifiable = 0;
   for (const p of ph.phrases) {
     const v = checkProvenance(p, DIRTY[p.id], samples.samples || {});
+    if (v.unverifiable) unverifiable++;
     check(`provenance ${p.id} — ${v.detail}`, () => v.ok);
+  }
+  // A REPORTED-not-verified leg must never be silent: print the count positively so a reader can
+  // never mistake "we could not look" for "we looked and it was clean".
+  if (unverifiable > 0) {
+    console.log(`  ⚠ ${unverifiable} provenance claim(s) REPORTED rather than verified — history is not `
+      + 'present in this checkout (shallow clone). Full clones, including the pre-push gate, enforce them.');
+  } else {
+    console.log(`  ⓘ all ${ph.phrases.length} provenance claims verified against real git history.`);
   }
 
   // (1) EVERY declared pattern must actually fire on a real example of what it retired. A
