@@ -230,6 +230,7 @@ tailwind.config = {
           <button class="tab active" id="tab-key" type="button" onclick="switchTab('key')">I have my API key</button>
           <button class="tab" id="tab-email" type="button" onclick="switchTab('email')">Recover lost key</button>
           <button class="tab" id="tab-referral" type="button" onclick="switchTab('referral')">Referrals</button>
+          <button class="tab" id="tab-usage" type="button" onclick="switchTab('usage')">Usage</button>
         </div>
         <form class="panel" id="panel-key" action="/account/portal" method="post">
           <div class="hint">Paste your API key to open the Stripe Billing Portal — cancel, change plan, or update payment method.</div>
@@ -250,6 +251,12 @@ tailwind.config = {
           <button type="submit">View my referrals &rarr;</button>
           <div class="hint" style="margin-top:12px">No API key yet? <a href="https://algovault.com/referral" style="color:var(--mint);text-decoration:none">Get a free account + referral link &rarr;</a></div>
         </form>
+        <form class="panel hidden" id="panel-usage" action="/account/usage" method="post">
+          <div class="hint">Paste your API key to see this month's usage and choose whether we email you before the cap.</div>
+          <label for="usage_api_key">API Key</label>
+          <input type="password" id="usage_api_key" name="api_key" placeholder="av_free_... or av_live_..." autocomplete="off" required>
+          <button type="submit">Show my usage &rarr;</button>
+        </form>
         <div class="help-line">Need help? <a href="/contact">Contact us</a></div>
       </div>
     </div>
@@ -258,7 +265,7 @@ tailwind.config = {
 <footer data-av-brand-footer="desktop" style="padding:44px 80px 56px;border-top:1px solid var(--line);background:oklch(0.13 0.012 265);display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;font-size:13px;color:var(--fg-3)"><div style="display:flex;align-items:center;gap:10px"><img src="/logo.png" alt="AlgoVault" style="width:22px;height:22px;border-radius:6px;object-fit:contain;flex-shrink:0"/><span style="color:var(--fg-2)">Built by AlgoVault Labs</span></div><div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap"><a href="https://algovault.com/" style="color:var(--fg-3);text-decoration:none">Home</a><a href="https://algovault.com/track-record" style="color:var(--fg-3);text-decoration:none">Track Record</a><a href="https://algovault.com/glossary" style="color:var(--fg-3);text-decoration:none">Glossary</a><a href="https://github.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">GitHub</a><a href="https://x.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">X / Twitter</a><a href="https://api.algovault.com/welcome" style="color:var(--fg-3);text-decoration:none">Signup</a><a href="https://algovault.com/referral" style="color:var(--fg-3);text-decoration:none">Refer &amp; Earn</a><a href="https://algovault.com/contact" style="color:var(--fg-3);text-decoration:none">Contact</a><a href="https://algovault.com/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a><a href="https://algovault.com/terms" style="color:var(--fg-3);text-decoration:none">Terms</a></div><div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?utm_source=badge-follow&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer" style="display:inline-flex;border:1px solid var(--line);border-radius:4px;line-height:0"><img src="https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1254662&theme=dark&size=small" alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" style="width: 86px; height: 32px;" width="86" height="32" /></a></div></footer>
 <script>
 function switchTab(which){
-  ['key','email','referral'].forEach(function(t){
+  ['key','email','referral','usage'].forEach(function(t){
     document.getElementById('tab-'+t).classList.toggle('active', which===t);
     document.getElementById('panel-'+t).classList.toggle('hidden', which!==t);
   });

@@ -266,6 +266,8 @@ import {
   accountRecoverKeyHandler,
   accountReferralsHandler,
   accountPayoutAddressHandler,
+  accountUsageHandler,
+  accountUsagePreferenceHandler,
 } from './lib/account-handlers.js';
 // IDENTITY-LIFECYCLE-W3 CH1 — the lifecycle email surfaces (unsubscribe + Resend inbound).
 import {
@@ -2337,6 +2339,10 @@ async function startHttp() {
   app.post('/account/recover-key', recoverKeyLimiter, express.urlencoded({ extended: false }), accountRecoverKeyHandler);
   // REFERRAL-LIGHT-W1 (C4): referral dashboard (paste key) + public terms page.
   app.post('/account/referrals', express.urlencoded({ extended: false }), accountReferralsHandler);
+  // IDENTITY-LIFECYCLE-W3 CH3 — usage + the lifecycle-email preference. Same paste-key shape as
+  // every other panel here: /account has no user session, only the admin cookie exists.
+  app.post('/account/usage', express.urlencoded({ extended: false }), accountUsageHandler);
+  app.post('/account/usage/preference', express.urlencoded({ extended: false }), accountUsagePreferenceHandler);
   // REFERRAL-PAYOUT-OPS-W1 (C1): save/clear the referrer's Base USDC payout address.
   app.post('/account/referrals/payout-address', express.urlencoded({ extended: false }), accountPayoutAddressHandler);
   app.get('/referral-terms', async (_req, res) => {

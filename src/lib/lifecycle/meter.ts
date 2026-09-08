@@ -83,9 +83,17 @@ export async function readMeters(trackerKeys: string[]): Promise<Map<string, Buc
   const out = new Map<string, BucketMeter>();
   if (trackerKeys.length === 0) return out;
 
-  const rows = await dbQuery<{ tracker_key: string; call_count: number | string }>(
-    `SELECT tracker_key, call_count FROM quota_usage`,
-  );
+  let rows: { tracker_key: string; call_count: number | string }[] = [];
+  try {
+    rows = await dbQuery<{ tracker_key: string; call_count: number | string }>(
+      `SELECT tracker_key, call_count FROM quota_usage`,
+    );
+  } catch {
+    // An unreadable meter reports every bucket at zero with no live period, which makes the two
+    // usage steps find NOBODY. That is the safe direction: the alternative reads a failure as
+    // usage and mails somebody about a cap they never hit.
+    rows = [];
+  }
   const counts = new Map(rows.map((r) => [r.tracker_key, Number(r.call_count) || 0]));
 
   for (const key of trackerKeys) {

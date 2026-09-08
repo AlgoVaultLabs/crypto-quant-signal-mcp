@@ -71,11 +71,32 @@ export const UNSUB_CONFIRM_BUTTON = 'Unsubscribe me';
 export const UNSUB_PROMPT_LINE = 'Confirm you want to stop receiving AlgoVault lifecycle emails.';
 export const UNSUB_INVALID_LINE = 'That unsubscribe link is not valid. Email admin@algovault.com and we will remove you by hand.';
 
-// ── C1 / C2 / C3 — DELIBERATELY NOT HERE IN CH1 ───────────────────────────────────────────
-// The /welcome benefit line, the envelope claim strings and the /account usage block are CH3's
-// scope. CH1's scope for this file is the §Footer and the shared partials only, and shipping
-// CH3's constants early would have put user-facing strings in the tree a chapter before anything
-// rendered them — which is what the dark-artifact gate flagged, correctly. CH3 adds them.
+// ── C1 · /welcome benefit line (CH3) ───────────────────────────────────────────────────────
+export const WELCOME_BENEFIT_LINE =
+  'Sign in to keep your key, see your usage, and get a heads-up before you hit the cap.';
+
+// ── C2 · envelope claim strings (CH3) ──────────────────────────────────────────────────────
+//
+// STAMPED BESIDE `_algovault.auth`, NOT INSIDE `_algovault.quota` (architect ruling Q3(A)).
+// The signed-off C2 said "inside _algovault.quota", but that block is built by `withQuotaState`,
+// which early-returns for the x402/internal tiers and reaches only 4 of the 7 live tools —
+// `scan_trade_calls`, `chat_knowledge` and `search_knowledge` build their `_algovault` by hand.
+// `tier-warning.ts` carries the recorded lesson against exactly that placement, which is why
+// `_algovault.auth` uses a generic 7/7 stamper. The STRINGS below are byte-identical to the
+// signed-off copy; only the JSON parent changed, and the architect ratified that as NOT a copy
+// change. ABSENT sessions only: a presented-but-failed credential is not an anonymous session.
+export const CLAIM_URL = `${API_BASE}/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim`;
+export const CLAIM_HINT = 'Sign in to keep this key and get a heads-up before the cap.';
+
+// ── C3 · /account usage block (CH3) ────────────────────────────────────────────────────────
+export const ACCOUNT_USAGE_HEADING = 'Usage';
+export const ACCOUNT_PREFERENCE_LABEL = 'Email me at 80% and at the cap';
+export function accountMonthlyRow(used: number, total: number, resetDate: string): string {
+  return `This month: ${used} / ${total} · resets ${resetDate}`;
+}
+export function accountDailyRow(used: number, total: number): string {
+  return `Today: ${used} / ${total} · resets 00:00 UTC`;
+}
 
 /**
  * The MCP-client config snippet E1 renders.
@@ -91,16 +112,25 @@ export const UNSUB_INVALID_LINE = 'That unsubscribe link is not valid. Email adm
  */
 export const EMAIL_TRACK_TOKEN = 'chan-email';
 
-export function mcpConfigSnippet(apiKey: string): string {
+/**
+ * @param trackToken the CHANNEL's own token. It is a parameter, not a constant, and that is the
+ * whole point: `/welcome` renders `chan-welcome` and a lifecycle email renders `chan-email`.
+ * Collapsing them onto one value would merge two acquisition channels into one bucket and make
+ * both unmeasurable — a shared SHAPE is the goal, never a shared token.
+ */
+export function mcpConfigSnippet(apiKey: string, trackToken: string = EMAIL_TRACK_TOKEN): string {
   return `{
   "mcpServers": {
     "algovault": {
       "url": "${API_BASE}/mcp",
-      "headers": { "Authorization": "Bearer ${apiKey}", "X-AlgoVault-Track-Token": "${EMAIL_TRACK_TOKEN}" }
+      "headers": { "Authorization": "Bearer ${apiKey}", "X-AlgoVault-Track-Token": "${trackToken}" }
     }
   }
 }`;
 }
+
+/** The `/welcome` page's own channel token. Distinct from `chan-email` by design. */
+export const WELCOME_TRACK_TOKEN = 'chan-welcome';
 
 // ── E1–E5 · the emails ─────────────────────────────────────────────────────────────────────
 

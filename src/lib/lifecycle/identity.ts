@@ -27,6 +27,7 @@ import { resolveIpHashKey } from '../analytics.js';
 export const LIFECYCLE_EMAIL_HASH_VERSION = 'lc1';
 const EMAIL_DOMAIN = 'lifecycle-email-v1:';
 const UNSUB_DOMAIN = 'lifecycle-unsub-v1:';
+const PREF_DOMAIN = 'lifecycle-pref-v1:';
 
 /**
  * `lc1:<32 hex>` for an email address. Case- and whitespace-normalised first, because
@@ -106,4 +107,43 @@ export function maskKey(apiKey: string): string {
   if (!apiKey) return '';
   if (apiKey.length <= 12) return `${apiKey.slice(0, 4)}…`;
   return `${apiKey.slice(0, 8)}…${apiKey.slice(-4)}`;
+}
+
+// ── Preference handle (CH3) ────────────────────────────────────────────────────────────────
+//
+// The /account usage page needs the toggle to post back "which key", and the obvious way — a
+// hidden field carrying the API key — puts the SECRET into rendered HTML. Caught by this wave's
+// own test. So the page carries an opaque signed handle instead: the key never appears in the
+// document, and a handle that leaks grants exactly one capability, flipping a mail preference.
+//
+// DOMAIN-SEPARATED FROM THE UNSUBSCRIBE TOKEN, deliberately. Reusing `unsubscribeToken` here
+// would have been one line, and it would mean a leaked preference handle could also permanently
+// unsubscribe somebody — a strictly larger capability than the form it came from. Two prefixes,
+// two namespaces, and a value from one is meaningless in the other.
+
+export function preferenceToken(apiKey: string): string {
+  const sig = createHmac('sha256', resolveIpHashKey()).update(PREF_DOMAIN + apiKey).digest('hex');
+  return `${Buffer.from(apiKey, 'utf8').toString('base64url')}.${sig}`;
+}
+
+export function verifyPreferenceToken(token: string): string | null {
+  if (typeof token !== 'string') return null;
+  const dot = token.indexOf('.');
+  if (dot <= 0 || dot === token.length - 1) return null;
+  const idPart = token.slice(0, dot);
+  const sigPart = token.slice(dot + 1);
+  if (!/^[A-Za-z0-9_-]+$/.test(idPart) || !/^[0-9a-f]{64}$/.test(sigPart)) return null;
+  let apiKey: string;
+  try { apiKey = Buffer.from(idPart, 'base64url').toString('utf8'); } catch { return null; }
+  if (!apiKey) return null;
+  let expected: string;
+  try {
+    expected = createHmac('sha256', resolveIpHashKey()).update(PREF_DOMAIN + apiKey).digest('hex');
+  } catch {
+    return null;  // unusable key: refuse, never throw on a serving path
+  }
+  const a = Buffer.from(expected, 'hex');
+  const b = Buffer.from(sigPart, 'hex');
+  if (a.length !== b.length) return null;
+  return timingSafeEqual(a, b) ? apiKey : null;
 }

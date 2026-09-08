@@ -27,6 +27,7 @@ import { bindingMeter } from './binding-meter.js';
 // branch. x402-nudge is a LEAF (imports only pure/SDK modules, never a tool handler / this
 // module) so tier-warning → x402-nudge adds no consumer init cycle. Dark behind X402_NUDGE_ENABLED.
 import { buildSuggestedX402, isX402NudgeEnabled } from './x402-nudge.js';
+import { CLAIM_URL, CLAIM_HINT } from './lifecycle-copy.js';
 
 // ACTIVATION-NUDGE-W1 (2026-06-18): thresholds now live in the pure
 // `activation-thresholds` module (single source shared with license.ts
@@ -340,5 +341,23 @@ export function withAuthState<T extends object>(
       presented: isPresented(outcome),
       tier: license.tier,
     },
+    // IDENTITY-LIFECYCLE-W3 CH3 (architect ruling Q3(A)) — an ANONYMOUS session is told where to
+    // claim the key it is already using.
+    //
+    // 🛑 STAMPED HERE, NOT IN `withQuotaState`. The signed-off copy said "inside
+    // `_algovault.quota`", and that would have been wrong for the reason recorded two functions
+    // above: the quota helper early-returns for x402/internal and reaches only 4 of the 7 live
+    // tools, because `scan_trade_calls`, `chat_knowledge` and `search_knowledge` build their
+    // `_algovault` by hand. Three tools would have shipped without the claim while CH3's gate —
+    // which exercises `get_trade_call` — printed GREEN. The STRINGS are byte-identical to the
+    // signed-off C2; only the JSON parent moved, which the architect ratified as not a copy
+    // change.
+    //
+    // ABSENT ONLY, and the enum has five values, not two. `MALFORMED`, `UNKNOWN` and
+    // `INDETERMINATE` all mean a credential WAS presented and could not be resolved — that is a
+    // caller with a broken key, and inviting them to "keep this key" would be advice to preserve
+    // the thing that is failing. Spread-on-presence keeps the RESOLVED envelope byte-identical
+    // to pre-wave, which the shape snapshots pin.
+    ...(outcome === 'ABSENT' ? { claim_url: CLAIM_URL, claim_hint: CLAIM_HINT } : {}),
   };
 }

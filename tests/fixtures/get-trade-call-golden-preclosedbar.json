@@ -43,7 +43,9 @@
       "outcome": "ABSENT",
       "presented": false,
       "tier": "free"
-    }
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
   },
   "_receipts": {
     "verdict": "HOLD",

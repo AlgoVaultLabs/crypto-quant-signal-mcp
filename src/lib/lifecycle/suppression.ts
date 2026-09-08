@@ -57,9 +57,22 @@ export async function addSuppression(args: {
   );
 }
 
-// `clearPreferenceSuppression` — the /account toggle's OFF->ON path — is CH3's scope and lands
-// with the handler that calls it. The `preference`/`usage` ROW SHAPE is CH1's contract and is
-// already honoured by `isSuppressed` below, so CH3 adds only the delete.
+/**
+ * Remove the /account preference suppression for one recipient — and ONLY that.
+ *
+ * The `reason = 'preference'` predicate is not decoration. Without it, toggling "email me at
+ * 80%" back ON would delete a bounce, a complaint or an unsubscribe row sitting at the same
+ * hash, silently re-subscribing somebody who never asked to be. A UI click must not be able to
+ * clear a deliverability signal we are obliged to honour.
+ */
+export async function clearPreferenceSuppression(emailHash: string): Promise<void> {
+  ensureLifecycleSchema();
+  dbRun(
+    `DELETE FROM lifecycle_suppressions
+      WHERE email_hash = ? AND reason = 'preference' AND step_scope = 'usage'`,
+    emailHash,
+  );
+}
 
 export async function listSuppressions(emailHash: string): Promise<SuppressionRow[]> {
   ensureLifecycleSchema();

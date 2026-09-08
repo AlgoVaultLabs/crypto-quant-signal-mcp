@@ -156,6 +156,7 @@ ${accountArtboardOpen()}
           <button class="tab active" id="tab-key" type="button" onclick="switchTab('key')">I have my API key</button>
           <button class="tab" id="tab-email" type="button" onclick="switchTab('email')">Recover lost key</button>
           <button class="tab" id="tab-referral" type="button" onclick="switchTab('referral')">Referrals</button>
+          <button class="tab" id="tab-usage" type="button" onclick="switchTab('usage')">Usage</button>
         </div>
         <form class="panel" id="panel-key" action="/account/portal" method="post">
           <div class="hint">Paste your API key to open the Stripe Billing Portal — cancel, change plan, or update payment method.</div>
@@ -176,13 +177,19 @@ ${accountArtboardOpen()}
           <button type="submit">View my referrals &rarr;</button>
           <div class="hint" style="margin-top:12px">No API key yet? <a href="https://algovault.com/referral" style="color:var(--mint);text-decoration:none">Get a free account + referral link &rarr;</a></div>
         </form>
+        <form class="panel hidden" id="panel-usage" action="/account/usage" method="post">
+          <div class="hint">Paste your API key to see this month's usage and choose whether we email you before the cap.</div>
+          <label for="usage_api_key">API Key</label>
+          <input type="password" id="usage_api_key" name="api_key" placeholder="av_free_... or av_live_..." autocomplete="off" required>
+          <button type="submit">Show my usage &rarr;</button>
+        </form>
         <div class="help-line">Need help? <a href="/contact">Contact us</a></div>
       </div>
 ${accountArtboardClose()}
 ${renderBrandFooter('desktop')}
 <script>
 function switchTab(which){
-  ['key','email','referral'].forEach(function(t){
+  ['key','email','referral','usage'].forEach(function(t){
     document.getElementById('tab-'+t).classList.toggle('active', which===t);
     document.getElementById('panel-'+t).classList.toggle('hidden', which!==t);
   });
@@ -464,5 +471,73 @@ export async function accountPayoutAddressHandler(req: Request, res: Response): 
   } catch (err) {
     console.error('/account/referrals/payout-address error:', err instanceof Error ? err.message : err);
     res.status(500).send(getAccountErrorPageHtml('Could not save your payout address. Please try again or contact admin@algovault.com.'));
+  }
+}
+
+// ── IDENTITY-LIFECYCLE-W3 CH3 R3 — the /account usage block + email preference ─────────────
+//
+// WHY THIS IS A PASTE-KEY PANEL AND NOT A "SIGNED-IN" VIEW. `/account` has no user session:
+// every existing panel takes an API key in a form POST, and the only session cookie in the
+// codebase is the ADMIN one. C3 says "for the signed-in/pasted key", and pasted is what exists.
+// Inventing a session here would be a bigger change than the block is worth, and would put an
+// auth surface in a chapter whose Scope is copy.
+//
+// THE USAGE NUMBERS COME FROM THE SAME READ THE ENVELOPE USES — `readMeters`, the read-only
+// snapshot from CH2. Not `checkQuotaByKey`: that MATERIALISES a tracker and RESTARTS an expired
+// window, so rendering a usage page with it would reset the very quota it claims to display.
+// Single derivation, and the one that does not mutate.
+
+/**
+ * POST /account/usage — render this key's meter and its lifecycle-email preference.
+ *
+ * Enumeration-safe in the same way the recovery panel is: an unknown key gets the same shaped
+ * page as a known one with no usage, so the response cannot be used to test whether a key exists.
+ */
+export async function accountUsageHandler(req: Request, res: Response): Promise<void> {
+  const apiKey = typeof (req.body as { api_key?: unknown })?.api_key === 'string'
+    ? String((req.body as { api_key: string }).api_key).trim() : '';
+  if (!apiKey) {
+    res.status(400).send(getAccountErrorPageHtml('Paste your API key to see your usage.'));
+    return;
+  }
+  try {
+    const { renderUsagePage } = await import('./lifecycle/account-usage.js');
+    res.status(200).type('html').send(await renderUsagePage(apiKey));
+  } catch (err) {
+    console.error('/account/usage error:', err instanceof Error ? err.message : err);
+    res.status(503).send(getAccountErrorPageHtml('Usage is temporarily unavailable. Please try again in a few minutes.'));
+  }
+}
+
+/**
+ * POST /account/usage/preference — the "Email me at 80% and at the cap" toggle.
+ *
+ * OFF writes `lifecycle_suppressions(reason='preference', step_scope='usage')`; ON deletes ONLY
+ * that row. The asymmetry is load-bearing and is enforced in `clearPreferenceSuppression`: a
+ * toggle must never be able to clear a bounce, a complaint or an unsubscribe.
+ */
+export async function accountUsagePreferenceHandler(req: Request, res: Response): Promise<void> {
+  const body = (req.body ?? {}) as { t?: unknown; enabled?: unknown };
+  const token = typeof body.t === 'string' ? body.t.trim() : '';
+  const { keyFromPreferenceToken } = await import('./lifecycle/account-usage.js');
+  // The form carries a SIGNED HANDLE, never the key. A forged or tampered handle resolves to
+  // null and is refused — it cannot be used to flip a stranger's preference.
+  const apiKey = token ? (keyFromPreferenceToken(token) ?? '') : '';
+  // Checkbox semantics: present means ON. Anything else is OFF, which is the fail-safe direction
+  // here — a mangled request suppresses mail rather than sending it.
+  const enabled = body.enabled === 'on' || body.enabled === 'true' || body.enabled === true;
+  if (!apiKey) {
+    res.status(400).send(getAccountErrorPageHtml('That preference link is not valid. Open /account and paste your key again.'));
+    return;
+  }
+  try {
+    const { setUsagePreference, renderUsagePage } = await import('./lifecycle/account-usage.js');
+    await setUsagePreference(apiKey, enabled);
+    res.status(200).type('html').send(await renderUsagePage(apiKey, enabled
+      ? 'Saved — we will email you at 80% and at the cap.'
+      : 'Saved — we will not email you about usage.'));
+  } catch (err) {
+    console.error('/account/usage/preference error:', err instanceof Error ? err.message : err);
+    res.status(503).send(getAccountErrorPageHtml('Could not save that just now. Please try again in a few minutes.'));
   }
 }

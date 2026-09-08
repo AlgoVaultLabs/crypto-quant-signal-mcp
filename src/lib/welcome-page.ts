@@ -24,6 +24,7 @@ import { WELCOME_SUBTITLE, welcomeUpgradeLine } from './conversion-copy.js';
 // page — the Plausible goal `Form: Submission` fires here and read 0 in 28d because this
 // api-origin surface carried no tag at all.
 import { renderAnalyticsRegion } from './analytics-snippet.js';
+import { WELCOME_BENEFIT_LINE, WELCOME_TRACK_TOKEN, mcpConfigSnippet } from './lifecycle-copy.js';
 
 /**
  * Sanitize a UTM-ish param to safe URL-injection-free chars. Anything outside
@@ -78,10 +79,30 @@ export function getWelcomePageHtml(
     ? renderSigninComponent({ page: 'welcome', oauthProviders: opts.oauthProviders, newSignupEnabled: opts.newSignupEnabled, src: opts.src })
     : '';
 
+  // IDENTITY-LIFECYCLE-W3 CH3 — the MCP config snippet below is rendered by the ONE shared
+  // builder (`mcpConfigSnippet`). The JSON had been hand-copied in three places (here and twice
+  // in email.ts) and a fourth copy is how a config snippet starts telling different users
+  // different things.
+  //
+  // The TOKEN stays `chan-welcome` and is a PARAMETER precisely so this page and a lifecycle
+  // email keep their own channels; collapsing them onto one value would merge two acquisition
+  // channels into one bucket and make both unmeasurable. The two copies in email.ts belong to
+  // the transactional templates and are a named follow-up rather than edited by this chapter.
+  //
+  // C1 (IDENTITY-LIFECYCLE-W3 CH3) is the one line added to the organic CTA below. The free tier
+  // is keyless BY DESIGN, so identity has to be worth volunteering, and until now nothing on this
+  // page said why. It sits in the paywall CTA rather than inside `renderSigninComponent` because
+  // that component is shared with /account and /referral, where "keep your key" would be
+  // addressed to somebody who already has one.
+  //
+  // BOTH of these explanations live HERE and not in HTML comments inside the template: the
+  // byte-parity suite caught the first version shipping these paragraphs to every visitor. A note
+  // for developers does not belong in bytes served to users.
   const paywallCta = isOrganicVisit
     ? `<div class="paywall-cta">
          <div class="paywall-headline">Free-tier MCP access — ${freeCallsLabel()} calls per month, up to ${freeDailyCallsLabel()} per day</div>
          <p class="paywall-body">${welcomeUpgradeLine()}</p>
+         <p class="paywall-body" style="color:#8b949e">${WELCOME_BENEFIT_LINE}</p>
          ${opts.unifiedSignin ? unifiedCard : `${opts.newSignupEnabled ? `
          <div class="startfree-block" style="margin:10px 0">
            <button type="button" class="paywall-btn" style="background:#238636;width:100%;border:0;cursor:pointer" onclick="avStartFree(this)">⚡ Start free — no card, no email · get a live BTC signal now</button>
@@ -205,14 +226,7 @@ ${renderAnalyticsRegion()}
   ${tgConnect}
   <div class="usage">
     <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
-    <pre>{
-  "mcpServers": {
-    "algovault": {
-      "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer ${apiKey || 'YOUR_API_KEY'}", "X-AlgoVault-Track-Token": "chan-welcome" }
-    }
-  }
-}</pre>
+    <pre>${mcpConfigSnippet(apiKey || 'YOUR_API_KEY', WELCOME_TRACK_TOKEN)}</pre>
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">curl guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
