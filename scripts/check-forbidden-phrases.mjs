@@ -39,7 +39,7 @@
  *   --self-test       two-way fixture proof; prints SELF-TEST: PASS|FAIL and its own verdict.
  */
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
-import { join, dirname, relative, sep } from 'node:path';
+import { join, dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { globSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -55,7 +55,7 @@ const VERDICT = (tok, code) => {
 };
 
 /** Load + compile the phrase SoT. A malformed file is INDETERMINATE, never a silent pass. */
-function loadPhrases(path = PHRASES) {
+export function loadPhrases(path = PHRASES) {
   let raw;
   try {
     raw = JSON.parse(readFileSync(path, 'utf8'));
@@ -77,8 +77,67 @@ function loadPhrases(path = PHRASES) {
     } catch (e) {
       return { error: `phrase ${p.id} has an invalid pattern: ${e.message}` };
     }
+    // ── SECOND-PASS declaration, validated HERE so a malformed one is INDETERMINATE ──
+    // This manifest is a config WE author, so a broken declaration is vacuity and not a fact —
+    // the same discipline as the empty-phrase-set branch above. It must never degrade into
+    // "the bare-token pass silently checked nothing."
+    const e = compiled[compiled.length - 1];
+    if (e.bare_token === undefined) {
+      if (typeof e.bare_token_na_reason !== 'string' || !e.bare_token_na_reason.trim()) {
+        return {
+          error: `phrase ${e.id} declares neither bare_token nor a non-empty bare_token_na_reason — `
+            + 'an omission is permitted, an UNDECLARED omission is not (see _bare_token_contract)',
+        };
+      }
+      e.tokens = [];
+    } else {
+      if (!Array.isArray(e.bare_token) || e.bare_token.length === 0
+          || e.bare_token.some((t) => typeof t !== 'string' || !t.trim())) {
+        return { error: `phrase ${e.id} has a malformed bare_token (want a non-empty array of non-empty strings)` };
+      }
+      try {
+        e.tokens = e.bare_token.map((t) => ({ token: t, re: bareTokenRe(t) }));
+      } catch (err) {
+        return { error: `phrase ${e.id} has a bare_token that will not compile: ${err.message}` };
+      }
+    }
+    for (const a of e.bare_token_allowlist || []) {
+      if (!a || typeof a.path !== 'string' || !a.path.trim()) {
+        return { error: `phrase ${e.id} has a bare_token_allowlist row without a path` };
+      }
+      if (typeof a.reason !== 'string' || !a.reason.trim()) {
+        return { error: `phrase ${e.id} allowlists ${a.path} without a reason — an exemption nobody argued for` };
+      }
+      if (a.token !== undefined && !e.bare_token.includes(a.token)) {
+        return { error: `phrase ${e.id} allowlists token ${JSON.stringify(a.token)} for ${a.path}, which it does not declare` };
+      }
+    }
   }
   return { phrases: compiled };
+}
+
+/**
+ * Word-bound a bare token for the second pass.
+ *
+ * NOT `\b…\b`, and the reason is measured rather than stylistic: `\b` before `$79` asserts that the
+ * PRECEDING character is a word character, so it fails on `**$79/yr**` — the exact shape a README
+ * release recap uses. The guards are derived from the token's own edges instead:
+ *
+ *   left   `(?<![\w,.])` when the token starts with a word char, so `3,000` does not match inside
+ *          `13,000`; else `(?<!\w)`, so `$79` still matches after `*`, `(` or a space.
+ *   right  `(?![\w,]|\.\d)` when the token ends with a word char — blocks a longer digit run
+ *          (`3,0005`), a thousands continuation (`3,000,000`) and a decimal (`$79.50`), while
+ *          still allowing a SENTENCE-ENDING period, which a naive `(?![\w,.])` swallows:
+ *          `See algovault.com/pricing.` must remain a hit.
+ *
+ * Case-insensitive, matching the primary pass — the two passes must never disagree about what an
+ * occurrence IS.
+ */
+export function bareTokenRe(token) {
+  const esc = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const left = /^\w/.test(token) ? '(?<![\\w,.])' : '(?<!\\w)';
+  const right = /\w$/.test(token) ? '(?![\\w,]|\\.\\d)' : '';
+  return new RegExp(left + esc + right, 'i');
 }
 
 /**
@@ -87,7 +146,7 @@ function loadPhrases(path = PHRASES) {
  * Exemptions are matched with the SAME glob engine as the includes, so an exemption pattern and
  * an include pattern cannot disagree about what a `**` means.
  */
-function loadTargets(path = TARGETS, root = ROOT) {
+export function loadTargets(path = TARGETS, root = ROOT) {
   let raw;
   try {
     raw = JSON.parse(readFileSync(path, 'utf8'));
@@ -140,10 +199,14 @@ function loadTargets(path = TARGETS, root = ROOT) {
  *
  * Prose files (.md/.txt/.html) are scanned WHOLE: there, the prose IS the shipped copy.
  */
-function scanText(text, phrases, filePath = 'x.md') {
-  const out = [];
+export function linesOf(text, filePath = 'x.md') {
   const CODE = /\.(ts|tsx|js|mjs|cjs|json)$/i.test(filePath);
-  const lines = (CODE ? stripComments(text, filePath) : text).split('\n');
+  return (CODE ? stripComments(text, filePath) : text).split('\n');
+}
+
+export function scanText(text, phrases, filePath = 'x.md') {
+  const out = [];
+  const lines = linesOf(text, filePath);
   for (const p of phrases) {
     for (let i = 0; i < lines.length; i++) {
       p.re.lastIndex = 0;
@@ -163,6 +226,59 @@ function scanText(text, phrases, filePath = 'x.md') {
           superseded_by: p.superseded_by,
         });
       }
+    }
+  }
+  return out;
+}
+
+/**
+ * THE SECOND PASS — enumerate the retired FIGURE, do not pattern-match the phrasing.
+ *
+ * The primary pass can only ever see the phrasings its author anticipated. That is not a
+ * hypothetical: `retired-tier-quotas` was `\b3,000\s+calls|\b15,000\s+calls`, transcribed from
+ * brand-facts.md's wording rather than sampled from the estate, and it reported PASS over
+ * `a pull call (Free 100 / Starter 3,000 / Pro 15,000 / Enterprise 100,000)` on a doc linked from
+ * EVERY webhook payload. Detection is strictly weaker than enumeration.
+ *
+ * So every occurrence of a declared `bare_token` must be ACCOUNTED FOR as exactly one of:
+ *
+ *   1. `pattern`          — the primary pass already catches it. Nothing to do.
+ *   2. `negative_context` — the primary pass already JUDGED this line and spared it (a release
+ *                           recap naming a retired price in order to retire it, an authoring
+ *                           runbook teaching "never write X"). Re-firing here would demand the
+ *                           deletion of exactly the sentences that record the retirement, and
+ *                           duplicating that judgement in an allowlist row would put ONE decision
+ *                           in TWO places.
+ *   3. allowlist row      — a reasoned, path-scoped exemption whose `reason` is a sentence.
+ *
+ * Anything else FAILS, naming file, line and token.
+ *
+ * Runs on the SAME `lines` the primary pass used — comment-stripped for code files, whole for
+ * prose. That sharing is load-bearing, not tidiness: measured 2026-09-08, a raw scan for `3,000`
+ * returns five DOCBLOCK mentions (nudge-copy.ts ×2, plans.ts, quota-notice.ts, and
+ * rate-limit-digest.ts's entirely unrelated "a 3,000-sample gate"). Those sentences are the most
+ * valuable lines in their files, the primary pass spares them by design, and a second pass that
+ * demanded their deletion would get this gate warn-moded within a week.
+ */
+export function bareTokenHits(lines, phrases, relPath) {
+  const out = [];
+  for (const p of phrases) {
+    for (const { token, re } of p.tokens || []) {
+      const allow = (p.bare_token_allowlist || []).find(
+        (a) => a.path === relPath && (a.token === undefined || a.token === token),
+      );
+      lines.forEach((line, i) => {
+        if (!re.test(line)) return;
+        p.re.lastIndex = 0;
+        if (p.re.test(line)) return out.push({ id: p.id, token, line: i + 1, by: 'pattern' });
+        if (p.negative_context && new RegExp(p.negative_context).test(line)) {
+          return out.push({ id: p.id, token, line: i + 1, by: 'negative_context' });
+        }
+        if (allow) return out.push({ id: p.id, token, line: i + 1, by: 'allowlist' });
+        out.push({
+          id: p.id, token, line: i + 1, by: null, excerpt: line.trim().slice(0, 110),
+        });
+      });
     }
   }
   return out;
@@ -190,6 +306,8 @@ function run() {
   let errors = 0;
   let warns = 0;
   let suppressed = 0;
+  const bt = { pattern: 0, negative_context: 0, allowlist: 0, unaccounted: [] };
+  const tokenCount = ph.phrases.reduce((n, p) => n + (p.tokens || []).length, 0);
   for (const f of tg.files) {
     let text;
     try {
@@ -199,6 +317,7 @@ function run() {
       console.error(`✗ cannot read ${relative(ROOT, f)}: ${e.message}`);
       VERDICT('INDETERMINATE', 3);
     }
+    const rel = relative(ROOT, f).split(sep).join('/');
     for (const hit of scanText(text, ph.phrases, f)) {
       if (hit.suppressed) { suppressed++; continue; }
       const where = `${relative(ROOT, f)}:${hit.line}`;
@@ -211,17 +330,38 @@ function run() {
         console.error(`⚠ ${where}  [${hit.id}]`);
       }
     }
+    // SAME derivation of `lines` as the primary pass — see bareTokenHits().
+    for (const h of bareTokenHits(linesOf(text, f), ph.phrases, rel)) {
+      if (h.by) { bt[h.by]++; continue; }
+      bt.unaccounted.push(h);
+      console.error(`✗ ${rel}:${h.line}  [${h.id}] bare token ${JSON.stringify(h.token)} is UNACCOUNTED`);
+      console.error(`    ${h.excerpt}`);
+      console.error('    → fix the copy, widen the pattern, or add a reasoned bare_token_allowlist row.');
+    }
   }
 
   // Print the corpus size beside every result: a sweep that searched nothing must never look
-  // like a clean one.
+  // like a clean one. The bare-token line is printed on EVERY run, pass or fail — a second pass
+  // you cannot tell ran is indistinguishable from one that silently did nothing, which is the
+  // dark-guard class this estate has now recorded five times.
   console.log(
     `scanned ${tg.files.length} files (${ph.phrases.length} patterns, ` +
       `${tg.exemptGlobs.length} exemption globs → ${tg.exemptCount} files excluded, ` +
       `${suppressed} hit(s) suppressed by negative context)`,
   );
-  if (errors > 0) {
-    console.error(`✗ ${errors} forbidden phrase(s) on live surfaces.`);
+  console.log(
+    `bare-token pass: ${tokenCount} token(s) enumerated across ` +
+      `${ph.phrases.filter((p) => (p.tokens || []).length).length} of ${ph.phrases.length} phrases ` +
+      `(${ph.phrases.length - ph.phrases.filter((p) => (p.tokens || []).length).length} declare ` +
+      `bare_token_na_reason) → ${bt.pattern} accounted by pattern, ${bt.negative_context} by ` +
+      `negative context, ${bt.allowlist} by reasoned allowlist, ${bt.unaccounted.length} unaccounted`,
+  );
+  if (errors > 0 || bt.unaccounted.length > 0) {
+    if (errors > 0) console.error(`✗ ${errors} forbidden phrase(s) on live surfaces.`);
+    if (bt.unaccounted.length > 0) {
+      console.error(`✗ ${bt.unaccounted.length} unaccounted bare-token occurrence(s) — a retired figure `
+        + 'is on a live surface in a shape no pattern anticipated.');
+    }
     VERDICT('FAIL', 1);
   }
   console.log(`✓ no forbidden phrase on any of the ${tg.files.length} scanned live surfaces.`);
@@ -240,6 +380,69 @@ function printTargets() {
   // NOTHING but paths on stdout — this is a machine surface.
   for (const f of tg.files) console.log(relative(ROOT, f));
   process.exit(0);
+}
+
+// ── R2.3: the second pass must be PROVEN to catch the CH1 defect ─────────────────────────────
+
+/**
+ * Reconstruct the exact pre-CH1 world and assert the bare-token pass FAILS on it.
+ *
+ * "The new pass would have caught it" is a claim, and a claim is not evidence. So this restores
+ * BOTH halves of the defect — the ORIGINAL narrow pattern AND the pre-fix bytes, read from
+ * tests/fixtures/forbidden-phrases/estate-samples.json rather than retyped here — and checks that
+ * the occurrence comes back UNACCOUNTED. A test that cannot demonstrate this is decoration.
+ *
+ * It also asserts the CONVERSE on the same bytes: under the WIDENED pattern the occurrence is
+ * accounted for. Without that leg the proof would be satisfied by any pattern that matches
+ * nothing, which would make it evidence of a broken gate rather than of a working one.
+ *
+ * Returns { ok, detail }. Never throws for a data problem — an assertion that RAISES aborts the
+ * suite instead of reporting FAIL.
+ */
+const ORIGINAL_NARROW_PATTERN = '\\b3,000\\s+calls|\\b15,000\\s+calls';
+const CH1_ID = 'retired-tier-quotas';
+
+export function proveCatchesCh1() {
+  const real = loadPhrases();
+  if (real.error) return { ok: false, detail: `real phrase SoT does not load: ${real.error}` };
+  const live = real.phrases.find((p) => p.id === CH1_ID);
+  if (!live) return { ok: false, detail: `no phrase entry ${CH1_ID}` };
+  if (!(live.tokens || []).length) return { ok: false, detail: `${CH1_ID} declares no bare_token — nothing to prove` };
+
+  let sample;
+  try {
+    const fx = JSON.parse(readFileSync(join(ROOT, 'tests', 'fixtures', 'forbidden-phrases', 'estate-samples.json'), 'utf8'));
+    sample = fx[CH1_ID]?.sample;
+  } catch (e) {
+    // Handed to us and unparseable => we could not verify. Never a silent pass.
+    return { ok: false, detail: `cannot read the estate sample fixture: ${e.message}` };
+  }
+  if (typeof sample !== 'string' || !sample.trim()) {
+    return { ok: false, detail: `estate-samples.json carries no usable sample for ${CH1_ID}` };
+  }
+  // Vacuity guard at the CONSTRUCTION site: we build this corpus, so a sample the tokens cannot
+  // even be found in would make both legs below trivially true.
+  if (!live.tokens.some(({ re }) => re.test(sample))) {
+    return { ok: false, detail: 'the recorded sample contains none of the declared bare tokens — the proof would be vacuous' };
+  }
+
+  const withPattern = (pattern) => {
+    const entry = { ...live, pattern, re: new RegExp(pattern, 'gi') };
+    return bareTokenHits([sample], [entry], 'docs/WEBHOOKS.md');
+  };
+
+  const before = withPattern(ORIGINAL_NARROW_PATTERN).filter((h) => !h.by);
+  const after = withPattern(live.pattern).filter((h) => !h.by);
+  if (before.length === 0) {
+    return { ok: false, detail: 'the ORIGINAL narrow pattern + the pre-fix bytes did NOT produce an unaccounted occurrence — the pass cannot demonstrate it catches CH1' };
+  }
+  if (after.length !== 0) {
+    return { ok: false, detail: `the WIDENED pattern leaves ${after.length} occurrence(s) unaccounted — the proof above would be satisfied by a gate that simply matches nothing` };
+  }
+  return {
+    ok: true,
+    detail: `narrow pattern ⇒ ${before.length} UNACCOUNTED (${before.map((h) => JSON.stringify(h.token)).join(', ')}) ⇒ FAIL; widened pattern ⇒ 0 unaccounted ⇒ PASS`,
+  };
 }
 
 // ── self-test ────────────────────────────────────────────────────────────────────────────────
@@ -364,12 +567,90 @@ function selfTest() {
   check('the REAL corpus contains landing/llms-full.txt', () =>
     (realTargets.files || []).some((f) => relative(ROOT, f).endsWith('landing/llms-full.txt')));
 
+  // (7) BARE-TOKEN PASS — the second pass, asserted rather than assumed.
+  //
+  // Its three accounting categories are exercised here and NOT left to the live corpus, because
+  // the corpus only exercises what it happens to contain: measured 2026-09-08, `negative_context`
+  // accounting has ZERO live instances (README's annual recap aged out of the What's-new window),
+  // so a suite that leaned on the real tree would ship that branch untested and call it covered.
+  const btEntry = {
+    id: 'fixture', pattern: '\\b3,000\\s+calls', re: /\b3,000\s+calls/gi,
+    negative_context: '[Ss]uperseded', tokens: [{ token: '3,000', re: bareTokenRe('3,000') }],
+    bare_token_allowlist: [{ path: 'landing/ok.txt', token: '3,000', reason: 'a sentence' }],
+  };
+  const by = (lines, path) => bareTokenHits(lines, [btEntry], path).map((h) => h.by);
+  check('bare token accounted by PATTERN when the primary pass already catches the line', () =>
+    by(['Starter includes 3,000 calls a month.'], 'docs/x.md').join() === 'pattern');
+  check('bare token accounted by NEGATIVE CONTEXT — one decision, not two', () =>
+    by(['Superseded: the 3,000 rung retired 2026-08-09.'], 'docs/x.md').join() === 'negative_context');
+  check('bare token accounted by a reasoned ALLOWLIST row, scoped to its path', () =>
+    by(['gates >=85% and >=3,000).'], 'landing/ok.txt').join() === 'allowlist');
+  check('the SAME line UNACCOUNTED on a path the allowlist does not name', () =>
+    by(['gates >=85% and >=3,000).'], 'landing/other.txt').join() === '');
+  check('word boundaries: 3,000 is not found inside 13,000, 3,000,000 or 3,0005', () =>
+    by(['Starter 13,000 calls', 'was 3,000,000 rows', 'n=3,0005'], 'docs/x.md').length === 0);
+  check('a token whose left edge is non-word ($79) is still found after ** or (', () =>
+    bareTokenHits(['Starter was **$79/yr** then'], [{
+      id: 'f2', pattern: 'ZZZ_NEVER', re: /ZZZ_NEVER/gi,
+      tokens: [{ token: '$79', re: bareTokenRe('$79') }],
+    }], 'README.md').length === 1);
+  check('a trailing sentence period does not hide a token (algovault.com/pricing.)', () =>
+    bareTokenHits(['See algovault.com/pricing.'], [{
+      id: 'f3', pattern: 'ZZZ_NEVER', re: /ZZZ_NEVER/gi,
+      tokens: [{ token: 'algovault.com/pricing', re: bareTokenRe('algovault.com/pricing') }],
+    }], 'docs/x.md').length === 1);
+
+  // Manifest declarations are a CONFIG WE AUTHOR, so each malformed shape must be INDETERMINATE
+  // at load time, never a silent pass. Fixtures are written through the REAL loader.
+  const tmp2 = mkdtempSync(join(tmpdir(), 'fpg-bt-'));
+  try {
+    const withEntry = (extra) => {
+      const f = join(tmp2, `${Math.random().toString(36).slice(2)}.json`);
+      writeFileSync(f, JSON.stringify({ phrases: [{ id: 'x', pattern: 'zz', ...extra }] }));
+      return loadPhrases(f);
+    };
+    check('an entry with neither bare_token nor bare_token_na_reason is REFUSED', () =>
+      Boolean(withEntry({}).error));
+    check('an entry with an empty bare_token_na_reason is REFUSED', () =>
+      Boolean(withEntry({ bare_token_na_reason: '   ' }).error));
+    check('a declared bare_token_na_reason is accepted', () =>
+      !withEntry({ bare_token_na_reason: 'no narrower form exists' }).error);
+    check('a malformed bare_token (empty array) is REFUSED', () =>
+      Boolean(withEntry({ bare_token: [] }).error));
+    check('an allowlist row without a reason is REFUSED', () =>
+      Boolean(withEntry({ bare_token: ['q'], bare_token_allowlist: [{ path: 'a.md' }] }).error));
+    check('an allowlist row naming a token the entry does not declare is REFUSED', () =>
+      Boolean(withEntry({ bare_token: ['q'], bare_token_allowlist: [{ path: 'a.md', token: 'zz', reason: 's' }] }).error));
+  } finally {
+    rmSync(tmp2, { recursive: true, force: true });
+  }
+
+  // (8) THE CH1 REGRESSION PROOF (R2.3). Not "it would have caught it" — restore the narrow
+  // pattern and the pre-fix bytes and watch it fail.
+  const proof = proveCatchesCh1();
+  check(`the bare-token pass DEMONSTRABLY catches the CH1 defect — ${proof.detail}`, () => proof.ok);
+
   console.log(`SELF-TEST: ${failed === 0 ? 'PASS' : 'FAIL'} (${passed} passed, ${failed} failed)`);
   if (failed > 0) VERDICT('FAIL', 1);
   VERDICT('PASS', 0);
 }
 
+// Test-importable (CLAUDE.md): a suite must be able to exercise these functions without the
+// module executing the whole gate and calling process.exit() on import. Same guard, and the same
+// hard-won lesson, as scripts/check-mcp-client-copy.mjs — this is not an injection point and
+// there is no lever here that could make a run report PASS.
+const INVOKED_DIRECTLY =
+  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
 const argv = process.argv.slice(2);
-if (argv.includes('--print-targets')) printTargets();
-else if (argv.includes('--self-test')) selfTest();
+if (!INVOKED_DIRECTLY) {
+  // Imported — expose the functions above and stop here.
+} else if (argv.includes('--print-targets')) printTargets();
+else if (argv.includes('--prove-catches-ch1')) {
+  // A standalone verdict for the R2.3 proof, so a chapter gate can assert it without reading
+  // 40 self-test lines. Same token contract: the proof either holds or the gate could not verify.
+  const r = proveCatchesCh1();
+  console.log(`bare-token CH1 regression proof: ${r.ok ? 'HOLDS' : 'BROKEN'} — ${r.detail}`);
+  VERDICT(r.ok ? 'PASS' : 'INDETERMINATE', r.ok ? 0 : 3);
+} else if (argv.includes('--self-test')) selfTest();
 else run();
