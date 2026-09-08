@@ -25,7 +25,7 @@ import { hashEmail } from './identity.js';
 import { isSuppressed } from './suppression.js';
 import {
   claimSlot, findSlot, markSent, markFailed, countDeliveredSince, countDeliveredStepSince,
-  getStepState, stampFirstWouldSend, type SendStatus,
+  getStepState, stampFirstWouldSend, parseDbTimestamp, type SendStatus,
 } from './ledger.js';
 import { renderLifecycleEmail } from './render.js';
 import { unsubscribeUrl as buildUnsubUrl } from './identity.js';
@@ -235,7 +235,7 @@ export async function stepGoLiveBlocker(
   if (state.rolled_back_at) return 'rolled_back';
   if (facts.wouldSendCount < 1) return 'no_would_send';
   if (!state.first_would_send_at) return 'clock_not_started';
-  const started = Date.parse(state.first_would_send_at.replace(' ', 'T'));
+  const started = parseDbTimestamp(state.first_would_send_at);
   if (!Number.isFinite(started)) return 'clock_unparseable';
   if (now.getTime() - started < SHADOW_CLOCK_MS) return 'shadow_clock_not_elapsed';
   if (facts.duplicates !== 0) return 'duplicates_present';

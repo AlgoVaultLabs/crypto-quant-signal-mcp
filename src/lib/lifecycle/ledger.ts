@@ -50,6 +50,51 @@ const NOW_SQL = process.env.DATABASE_URL ? 'NOW()' : "datetime('now')";
  *
  * One format, written by us, on both dialects.
  */
+/**
+ * Parse a timestamp back out of the database, on EITHER dialect. ONE derivation.
+ *
+ * `new Date(s.replace(' ', 'T'))` is the obvious version and it is WRONG on Postgres.
+ * MEASURED on signal-1 2026-09-08: `node-postgres` returns `2026-09-08 13:46:46.246+00`, and
+ * `Date.parse('2026-09-08T13:46:46.246+00')` is NaN — an ISO offset must be `+00:00` or `Z`,
+ * never a bare `+00`. The live dispatcher printed `min_since_last_tick=NaN` on its second tick.
+ *
+ * That was not a cosmetic log defect. The SAME parse decides go-live: `stepGoLiveBlocker` reads
+ * `first_would_send_at` to test whether a step's 7-day shadow clock has elapsed, and a NaN there
+ * lands on `clock_unparseable` — fail-safe, but permanently. Every step would have sat in shadow
+ * for ever on Postgres while every hermetic SQLite test said the clock worked.
+ *
+ * Returns NaN only for input that is genuinely unparseable, which callers still treat as a
+ * refusal — the fix narrows what counts as unparseable, it does not make anything optimistic.
+ */
+export function toIso8601(s: string): string {
+  // Emits a STRICT ISO-8601 string. `Date.parse` in Node happens to accept the space-separated
+  // form too, so dropping this normalisation passes every behavioural test — which is exactly
+  // why the shape is asserted directly rather than inferred from a parse result. ECMA-262 leaves
+  // non-ISO date strings implementation-defined, and a load-bearing property must never be
+  // RENTED from a dependency's tolerance: the day some runtime tightens, the caps and the go-live
+  // clock would start returning NaN and every step would freeze in shadow, fail-safe and silent.
+  let t = s.replace(' ', 'T');
+  if (/[+-]\d{2}$/.test(t)) t = `${t}:00`;                 // Postgres `+00` -> `+00:00`
+  else if (!/(Z|[+-]\d{2}:\d{2})$/.test(t)) t = `${t}Z`;  // offset-less means UTC here
+  return t;
+}
+
+export function parseDbTimestamp(value: string | null | undefined): number {
+  if (!value) return NaN;
+  const s = String(value).trim();
+  if (!s) return NaN;
+
+  // NORMALISE FIRST, THEN PARSE — never `Date.parse` first and normalise on failure.
+  //
+  // A "try Date.parse, fall back" version passes the Postgres case and is WRONG on SQLite, which
+  // is worse than the bug it fixes: `Date.parse('2026-09-08 13:46:46')` SUCCEEDS in Node and
+  // interprets the value as LOCAL time. SQLite's `datetime('now')` is UTC, so on this machine
+  // (UTC+8) that is an eight-hour error — silently shifting every frequency-cap window and the
+  // 7-day go-live clock, with no parse failure anywhere to notice. Caught by the test below,
+  // which is why the SQLite case is asserted against an exact ISO string and not just finiteness.
+  return Date.parse(toIso8601(s));
+}
+
 function isoNow(now?: Date): string {
   return (now ?? new Date()).toISOString();
 }

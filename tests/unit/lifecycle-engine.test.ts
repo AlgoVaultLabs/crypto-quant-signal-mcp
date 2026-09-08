@@ -267,3 +267,66 @@ describe('per-step go-live blocker (architect Q1(A))', () => {
     expect((await led.getStepState('quota_wall')).live_since).not.toBeNull();
   });
 });
+
+describe('parseDbTimestamp — the shapes each backend actually returns', () => {
+  beforeEach(freshEnv);
+
+  /**
+   * REGRESSION, measured live on signal-1 2026-09-08. node-postgres returns
+   * `2026-09-08 13:46:46.246+00`; `Date.parse` of that with a bare `' ' -> T` swap is NaN,
+   * because an ISO offset must be `+00:00` or `Z`. The dispatcher printed
+   * `min_since_last_tick=NaN`, and the SAME parse gates go-live via `first_would_send_at` —
+   * so on Postgres every step would have sat in shadow FOREVER while the SQLite suite passed.
+   */
+  it('parses the Postgres shape with a bare +00 offset', async () => {
+    const { parseDbTimestamp } = await import('../../src/lib/lifecycle/ledger.js');
+    const ms = parseDbTimestamp('2026-09-08 13:46:46.246+00');
+    expect(Number.isFinite(ms)).toBe(true);
+    expect(new Date(ms).toISOString()).toBe('2026-09-08T13:46:46.246Z');
+  });
+
+  it('parses the SQLite shape, treating an offset-less value as UTC', async () => {
+    const { parseDbTimestamp } = await import('../../src/lib/lifecycle/ledger.js');
+    expect(new Date(parseDbTimestamp('2026-09-08 13:46:46')).toISOString())
+      .toBe('2026-09-08T13:46:46.000Z');
+  });
+
+  it('parses a plain ISO value unchanged', async () => {
+    const { parseDbTimestamp } = await import('../../src/lib/lifecycle/ledger.js');
+    expect(new Date(parseDbTimestamp('2026-09-08T13:46:46.246Z')).toISOString())
+      .toBe('2026-09-08T13:46:46.246Z');
+  });
+
+  it('normalises to STRICT ISO-8601 — the shape is asserted, not inferred from a parse', async () => {
+    // Node's Date.parse tolerates the space-separated form, so a behavioural test alone cannot
+    // see the normalisation disappear. ECMA-262 leaves that tolerance implementation-defined,
+    // so the shape is pinned here rather than rented from the runtime.
+    const { toIso8601 } = await import('../../src/lib/lifecycle/ledger.js');
+    const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+    for (const raw of ['2026-09-08 13:46:46.246+00', '2026-09-08 13:46:46', '2026-09-08T13:46:46.246Z']) {
+      expect(toIso8601(raw), raw).toMatch(ISO);
+    }
+  });
+
+  it('still REFUSES genuine garbage — the fix narrows unparseable, it does not widen acceptance', async () => {
+    const { parseDbTimestamp } = await import('../../src/lib/lifecycle/ledger.js');
+    for (const bad of ['', null, undefined, 'not a date', 'yesterday']) {
+      expect(Number.isNaN(parseDbTimestamp(bad as string))).toBe(true);
+    }
+  });
+
+  it('the go-live clock ELAPSES against a Postgres-shaped stamp', async () => {
+    // The end-to-end version of the bug: a PG timestamp must let a step reach day 7.
+    const eng = await import('../../src/lib/lifecycle/engine.js');
+    const { dbRun } = await import('../../src/lib/performance-db.js');
+    const { ensureLifecycleSchema } = await import('../../src/lib/lifecycle/schema.js');
+    ensureLifecycleSchema();
+    dbRun('INSERT INTO lifecycle_step_state (step, first_would_send_at) VALUES (?, ?)',
+      'quota_80', '2026-09-01 00:00:00.123+00');
+    const facts = { duplicates: 0, wouldSendCount: 1, healthPass: true, unsubSelfTestPass: true };
+    expect(await eng.stepGoLiveBlocker('quota_80', facts, new Date('2026-09-05T00:00:00Z')))
+      .toBe('shadow_clock_not_elapsed');
+    expect(await eng.stepGoLiveBlocker('quota_80', facts, new Date('2026-09-20T00:00:00Z')))
+      .toBeNull();
+  });
+});

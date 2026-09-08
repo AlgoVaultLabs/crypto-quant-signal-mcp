@@ -20,7 +20,7 @@ import { runScript } from '../lib/script-lifecycle.js';
 import { ensureLifecycleSchema } from '../lib/lifecycle/schema.js';
 import {
   listStepStates, listRetryable, markSent, markFailed, stampHeartbeat,
-  getStepState, markCanaryBatchDone, readHeartbeat,
+  getStepState, markCanaryBatchDone, readHeartbeat, parseDbTimestamp,
 } from '../lib/lifecycle/ledger.js';
 import {
   resolveMode, sendLifecycle, CANARY_BATCH_SIZE,
@@ -199,7 +199,8 @@ async function main(): Promise<number> {
   // line, including the zeros.
   const liveSteps = states!.filter((s) => s.live_since).map((s) => s.step);
   const prev = await readHeartbeat('lifecycle-dispatch').catch(() => null);
-  const sinceLast = prev ? Math.round((Date.now() - Date.parse(String(prev.last_run_at).replace(' ', 'T'))) / 60000) : -1;
+  const prevMs = prev ? parseDbTimestamp(prev.last_run_at) : NaN;
+  const sinceLast = Number.isFinite(prevMs) ? Math.round((Date.now() - prevMs) / 60000) : -1;
   return await emit('PASS',
     `mode=${mode!} registered_steps=${registered.length} live_steps=${liveSteps.length}` +
     `${liveSteps.length ? `(${liveSteps.join(',')})` : ''} canary_batch=${CANARY_BATCH_SIZE} ` +
