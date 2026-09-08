@@ -27,6 +27,9 @@
       "superseded_by": "200 calls/month · 100 per UTC day",
       "reason": "PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 moved the free ladder. Canonical only from v1.10.3 → v1.25.x.",
       "bare_token_na_reason": "The retired figure is `100`, and `100` is a LIVE number: it is the free tier's per-UTC-day cap (FREE_DAILY_CALLS, src/lib/plans.ts) and a component of the live 100,000 Pro rung. Measured 2026-09-08: 530 corpus lines carry it. Enumerating it would put this gate at war with the copy it steers authors toward, which is how a gate gets warn-moded within a week. The `calls/month` unit noun is what makes the RETIRED sense identifiable, so the pattern is already the narrowest honest form.",
+      "fixture_provenance": {
+        "synthetic_reason": "Its fixture in scripts/check-forbidden-phrases.mjs was HAND-AUTHORED, not lifted from a named surface at a named SHA. That is permitted and it is declared here rather than implied: the file's former comment asserted every fixture was 'the ACTUAL retired phrases from the estate census', which was FALSE for retired-tier-quotas and is what let a pattern and the proof of that pattern share one author and one blind spot. Nobody re-verified the other nine at the time, so claiming estate provenance for them now would repeat the original error in the opposite direction. Upgrade a row to the estate form by sampling live bytes into tests/fixtures/forbidden-phrases/estate-samples.json and recording source_path + source_sha + captured_on."
+      },
       "severity": "error",
       "negative_context": "[Ss]uperseded|[Rr]etired|no\\s+longer|~~"
     },
@@ -37,6 +40,9 @@
       "superseded_by": "200/mo free",
       "reason": "Same retirement as free-quota-100-per-month, in the shorthand form the FAQ used.",
       "bare_token_na_reason": "Same token and same collision as free-quota-100-per-month: the retired sense of `100` is not separable from the live one without the `/mo free` context the pattern already requires.",
+      "fixture_provenance": {
+        "synthetic_reason": "Its fixture in scripts/check-forbidden-phrases.mjs was HAND-AUTHORED, not lifted from a named surface at a named SHA. That is permitted and it is declared here rather than implied: the file's former comment asserted every fixture was 'the ACTUAL retired phrases from the estate census', which was FALSE for retired-tier-quotas and is what let a pattern and the proof of that pattern share one author and one blind spot. Nobody re-verified the other nine at the time, so claiming estate provenance for them now would repeat the original error in the opposite direction. Upgrade a row to the estate form by sampling live bytes into tests/fixtures/forbidden-phrases/estate-samples.json and recording source_path + source_sha + captured_on."
+      },
       "severity": "error",
       "negative_context": "[Ss]uperseded|[Rr]etired|no\\s+longer|~~"
     },
@@ -47,6 +53,9 @@
       "superseded_by": "After 200, pay per call",
       "reason": "The llms-full.txt FAQ phrasing of the same retired figure. Kept as its own entry because the generic pattern cannot see it — there is no unit noun beside the number.",
       "bare_token_na_reason": "Same token, same collision. Here the pattern carries the entire distinguishing context ('After 100, pay per call') precisely BECAUSE there is no unit noun beside the number — which is why enumeration cannot help: the bare figure IS the ambiguity.",
+      "fixture_provenance": {
+        "synthetic_reason": "Its fixture in scripts/check-forbidden-phrases.mjs was HAND-AUTHORED, not lifted from a named surface at a named SHA. That is permitted and it is declared here rather than implied: the file's former comment asserted every fixture was 'the ACTUAL retired phrases from the estate census', which was FALSE for retired-tier-quotas and is what let a pattern and the proof of that pattern share one author and one blind spot. Nobody re-verified the other nine at the time, so claiming estate provenance for them now would repeat the original error in the opposite direction. Upgrade a row to the estate form by sampling live bytes into tests/fixtures/forbidden-phrases/estate-samples.json and recording source_path + source_sha + captured_on."
+      },
       "severity": "error"
     },
     {
@@ -56,6 +65,9 @@
       "superseded_by": "100 calls/day",
       "reason": "`20 calls/day` was the pre-v1.10.3 free daily cap. NARROWED 2026-08-27: the first cut bundled `100 calls/day` into this pattern and fired on the CANONICAL copy in docs/RUNBOOK-INTEGRATION-TUTORIAL-AUTHORING.md — a gate that fails on the phrasing it steers authors toward is one that gets warn-moded. The stale-monthly form (`100 calls/day` used AS the monthly figure) is caught by legacy-asset-gate, which sees the `BTC+ETH` it always travels with.",
       "bare_token_na_reason": "The retired figure is `20`, which is LIVE in at least two unrelated senses — the /api/webhooks rate limit of 20 req/min (src/lib/webhook-api.ts) and the published Skills count in README.md. Measured 2026-09-08: 144 corpus lines. The `calls/day` unit noun is the only thing that makes the retired sense identifiable.",
+      "fixture_provenance": {
+        "synthetic_reason": "Its fixture in scripts/check-forbidden-phrases.mjs was HAND-AUTHORED, not lifted from a named surface at a named SHA. That is permitted and it is declared here rather than implied: the file's former comment asserted every fixture was 'the ACTUAL retired phrases from the estate census', which was FALSE for retired-tier-quotas and is what let a pattern and the proof of that pattern share one author and one blind spot. Nobody re-verified the other nine at the time, so claiming estate provenance for them now would repeat the original error in the opposite direction. Upgrade a row to the estate form by sampling live bytes into tests/fixtures/forbidden-phrases/estate-samples.json and recording source_path + source_sha + captured_on."
+      },
       "severity": "error",
       "negative_context": "never\\s+write|forbidden|[Rr]etired|[Ss]uperseded|blocklist"
     },
@@ -66,6 +78,9 @@
       "superseded_by": "state the per-UTC-day cap explicitly",
       "reason": "INVERTED, not merely retired: a per-UTC-day cap now exists on both the API and (since 2026-08-27) the Telegram bot, so copy denying it is a live falsehood rather than stale phrasing.",
       "bare_token_na_reason": "SEMANTIC, not numeric. What was retired is an assertion ('no daily cap'), not a figure, so no token is narrower than the pattern itself.",
+      "fixture_provenance": {
+        "synthetic_reason": "Its fixture in scripts/check-forbidden-phrases.mjs was HAND-AUTHORED, not lifted from a named surface at a named SHA. That is permitted and it is declared here rather than implied: the file's former comment asserted every fixture was 'the ACTUAL retired phrases from the estate census', which was FALSE for retired-tier-quotas and is what let a pattern and the proof of that pattern share one author and one blind spot. Nobody re-verified the other nine at the time, so claiming estate provenance for them now would repeat the original error in the opposite direction. Upgrade a row to the estate form by sampling live bytes into tests/fixtures/forbidden-phrases/estate-samples.json and recording source_path + source_sha + captured_on."
+      },
       "severity": "error"
     },
     {
@@ -75,6 +90,9 @@
       "superseded_by": "all assets · all 11 timeframes",
       "reason": "The free tier's coin/timeframe gate was removed in v1.10.3 FREE-UNLOCK-W1. Forbidden in brand-facts.md since 2026-08-09 and never enforced until now.",
       "bare_token_na_reason": "SEMANTIC, not numeric. The retired thing is a coverage claim ('BTC and ETH only') and the pattern already IS its narrowest form.",
+      "fixture_provenance": {
+        "synthetic_reason": "Its fixture in scripts/check-forbidden-phrases.mjs was HAND-AUTHORED, not lifted from a named surface at a named SHA. That is permitted and it is declared here rather than implied: the file's former comment asserted every fixture was 'the ACTUAL retired phrases from the estate census', which was FALSE for retired-tier-quotas and is what let a pattern and the proof of that pattern share one author and one blind spot. Nobody re-verified the other nine at the time, so claiming estate provenance for them now would repeat the original error in the opposite direction. Upgrade a row to the estate form by sampling live bytes into tests/fixtures/forbidden-phrases/estate-samples.json and recording source_path + source_sha + captured_on."
+      },
       "severity": "error"
     },
     {
@@ -87,6 +105,9 @@
         "$79"
       ],
       "bare_token_reason": "GENUINELY ADDITIVE. The pattern requires the `/yr` suffix, so 'Starter was $79 a year' or 'the $79 tier' would sail past it. Measured 2026-09-08: 0 occurrences on the corpus. `$299` is DELIBERATELY not enumerated — it is simultaneously Pro's priceUsdAnnual and Enterprise's priceUsdMonthly in src/lib/plans.ts, so a bare `$299` cannot tell the retired annual list price from a live enforcement figure. Same live-collision that makes `100` and `20` unenumerable.",
+      "fixture_provenance": {
+        "synthetic_reason": "Its fixture in scripts/check-forbidden-phrases.mjs was HAND-AUTHORED, not lifted from a named surface at a named SHA. That is permitted and it is declared here rather than implied: the file's former comment asserted every fixture was 'the ACTUAL retired phrases from the estate census', which was FALSE for retired-tier-quotas and is what let a pattern and the proof of that pattern share one author and one blind spot. Nobody re-verified the other nine at the time, so claiming estate provenance for them now would repeat the original error in the opposite direction. Upgrade a row to the estate form by sampling live bytes into tests/fixtures/forbidden-phrases/estate-samples.json and recording source_path + source_sha + captured_on."
+      },
       "severity": "error",
       "negative_context": "[Ss]uperseded|[Rr]etired|was\\s+\\*\\*\\$|no\\s+longer|~~"
     },
@@ -127,6 +148,12 @@
           "reason": "The line reads 'PFE Win Rate 92.42% across 3,959 evaluated samples; gates >=85% and >=3,000'. That 3,000 is the shadow-mode SAMPLE-COUNT threshold the 3m timeframe had to clear before joining the public track record — a statistics gate, not a call quota. It shares nothing with the retired Starter rung but its digits. Measured 2026-09-08: this is the SOLE unaccounted occurrence of either token across the whole 452-file corpus, which is why the allowlist is one row and not a policy."
         }
       ],
+      "fixture_provenance": {
+        "source_path": "docs/WEBHOOKS.md",
+        "source_sha": "c80041af3963be7807298b30749183e44289cfb0",
+        "captured_on": "2026-09-08",
+        "note": "ESTATE-SOURCED. The bytes are recorded in tests/fixtures/forbidden-phrases/estate-samples.json and the self-test asserts the DIRTY fixture EQUALS them, so this provenance is VERIFIED rather than declared. This is the id whose fixture was authored from the regex — the pattern demanded the unit noun beside the figure, live copy put it far to the left, and the gate reported PASS over a doc linked from every webhook payload."
+      },
       "severity": "error"
     },
     {
@@ -136,6 +163,9 @@
       "superseded_by": "The Brain Layer for AI Trading Agents",
       "reason": "brand-facts.md Positioning LAW: 'Never weaken to Quant Layer, AI Trading Platform, or Crypto Signal API.' Prose-only until this wave.",
       "bare_token_na_reason": "SEMANTIC, not numeric. A positioning line has no figure to enumerate; the pattern already IS the literal.",
+      "fixture_provenance": {
+        "synthetic_reason": "Its fixture in scripts/check-forbidden-phrases.mjs was HAND-AUTHORED, not lifted from a named surface at a named SHA. That is permitted and it is declared here rather than implied: the file's former comment asserted every fixture was 'the ACTUAL retired phrases from the estate census', which was FALSE for retired-tier-quotas and is what let a pattern and the proof of that pattern share one author and one blind spot. Nobody re-verified the other nine at the time, so claiming estate provenance for them now would repeat the original error in the opposite direction. Upgrade a row to the estate form by sampling live bytes into tests/fixtures/forbidden-phrases/estate-samples.json and recording source_path + source_sha + captured_on."
+      },
       "severity": "error",
       "negative_context": "Buyers\\s+often\\s+use|Is\\s+this\\s+a\\s+|\\\"name\\\":|<h3>|often\\s+search"
     },
@@ -149,9 +179,13 @@
         "algovault.com/pricing"
       ],
       "bare_token_reason": "COEXTENSIVE WITH THE PATTERN TODAY, and recorded as such rather than sold as added reach. `algovault\\.com/pricing\\b` and this token accept the same strings, so the second pass here is always-accounted and finds nothing the primary pass would miss. Kept because it is evaluated on every run and holds the line if the pattern is ever narrowed — NOT because it widens coverage now. Measured 2026-09-08: 0 occurrences.",
+      "fixture_provenance": {
+        "synthetic_reason": "Its fixture in scripts/check-forbidden-phrases.mjs was HAND-AUTHORED, not lifted from a named surface at a named SHA. That is permitted and it is declared here rather than implied: the file's former comment asserted every fixture was 'the ACTUAL retired phrases from the estate census', which was FALSE for retired-tier-quotas and is what let a pattern and the proof of that pattern share one author and one blind spot. Nobody re-verified the other nine at the time, so claiming estate provenance for them now would repeat the original error in the opposite direction. Upgrade a row to the estate form by sampling live bytes into tests/fixtures/forbidden-phrases/estate-samples.json and recording source_path + source_sha + captured_on."
+      },
       "severity": "error"
     }
   ],
   "_negative_context_contract": "negative_context: a regex tested against the SAME LINE. On a match the hit is SUPPRESSED and COUNTED, and the run prints the suppression total — 'detect the thing, then JUDGE it separately, and print what the predicate excludes'. This exists because a live surface may legitimately NAME a retired phrase in order to retire it: a README release recap saying '$79/yr … Superseded: annual was retired 2026-08-09', or an authoring runbook teaching 'never write 20 calls/day'. Deleting those sentences would destroy the record that the retirement happened, which is the opposite of what this gate exists for.",
-  "_bare_token_contract": "bare_token: the retired FIGURE or IDENTIFIER in its narrowest unambiguous form, enumerated rather than pattern-matched. The second pass scans the SAME corpus for each token as a word-bounded literal and requires EVERY occurrence to be accounted for as exactly one of: (1) matched by this entry's own `pattern`; (2) suppressed by this entry's `negative_context` on that line — the primary pass already judged it, and duplicating that judgement in an allowlist row would put one decision in two places; (3) a `bare_token_allowlist` row whose `reason` is a sentence, optionally narrowed to one `token`. Anything else is a FAIL naming the file, the line and the token. WHY: detection is strictly weaker than enumeration — a pattern only ever sees the phrasings its author anticipated, and `retired-tier-quotas` reported PASS over a live falsehood for that reason. An entry with no narrower unambiguous token declares `bare_token_na_reason`; the omission is permitted, undeclared is not."
+  "_bare_token_contract": "bare_token: the retired FIGURE or IDENTIFIER in its narrowest unambiguous form, enumerated rather than pattern-matched. The second pass scans the SAME corpus for each token as a word-bounded literal and requires EVERY occurrence to be accounted for as exactly one of: (1) matched by this entry's own `pattern`; (2) suppressed by this entry's `negative_context` on that line — the primary pass already judged it, and duplicating that judgement in an allowlist row would put one decision in two places; (3) a `bare_token_allowlist` row whose `reason` is a sentence, optionally narrowed to one `token`. Anything else is a FAIL naming the file, the line and the token. WHY: detection is strictly weaker than enumeration — a pattern only ever sees the phrasings its author anticipated, and `retired-tier-quotas` reported PASS over a live falsehood for that reason. An entry with no narrower unambiguous token declares `bare_token_na_reason`; the omission is permitted, undeclared is not.",
+  "_fixture_provenance_contract": "fixture_provenance: where this entry's DIRTY self-test fixture CAME FROM. Either the ESTATE form — {source_path, source_sha, captured_on}, meaning the bytes were lifted from that path at that commit and are recorded verbatim in tests/fixtures/forbidden-phrases/estate-samples.json — or {synthetic_reason: '<sentence>'} when no estate sample exists. SYNTHETIC IS PERMITTED; UNDECLARED IS NOT. The self-test enforces it per entry: provenance present, and for the estate form the source_path must resolve in the repo, the source_sha must resolve as a git object, and the DIRTY fixture must EQUAL the recorded sample byte for byte. A missing or unresolvable provenance is a FAIL, never a silent skip — matching the 'no fixture == unproven == FAIL' rule the fixture loop already applied. This replaces a COMMENT that asserted every fixture was drawn from the estate census; that claim was false for retired-tier-quotas, and a rule that has once failed as prose must become a gate or be deleted."
 }

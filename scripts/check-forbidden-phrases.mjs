@@ -38,7 +38,8 @@
  *                     hand-listed three files and passed over six it never looked at).
  *   --self-test       two-way fixture proof; prints SELF-TEST: PASS|FAIL and its own verdict.
  */
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { globSync } from 'node:fs';
@@ -382,6 +383,108 @@ function printTargets() {
   process.exit(0);
 }
 
+// ── R3: fixture provenance — VERIFIED, not claimed ───────────────────────────────────────────
+
+const SAMPLES_PATH = join(ROOT, 'tests', 'fixtures', 'forbidden-phrases', 'estate-samples.json');
+
+/**
+ * Read the estate-sampled fixtures. Keys are phrase ids; underscore-prefixed keys are docs and
+ * deliberately-unpatterned samples, never phrase entries.
+ *
+ * Handed to us and unparseable => we could not verify => the caller reports INDETERMINATE. Empty
+ * vs unparseable is the line, and this file is one WE author, so a missing sample for an entry
+ * that CLAIMS estate provenance is a defect rather than a fact.
+ */
+export function loadEstateSamples(path = SAMPLES_PATH) {
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (e) {
+    return { error: `cannot read ${relative(ROOT, path)}: ${e.message}` };
+  }
+  const samples = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (k.startsWith('_')) continue;
+    if (!v || typeof v.sample !== 'string' || !v.sample) {
+      return { error: `estate sample ${k} carries no usable "sample" string` };
+    }
+    samples[k] = v;
+  }
+  return { samples };
+}
+
+/** True when `sha` resolves to an object in THIS repo. `null` when git itself could not answer. */
+export function gitObjectExists(sha, cwd = ROOT) {
+  try {
+    execFileSync('git', ['cat-file', '-e', `${sha}^{object}`], { cwd, stdio: 'ignore' });
+    return true;
+  } catch (e) {
+    // Distinguish "git says no" from "there is no git here". The second is INDETERMINATE: a gate
+    // that reports a clean provenance because it could not run git is the fail-open shape this
+    // whole contract exists to prevent.
+    if (e && (e.code === 'ENOENT' || e.status === undefined)) return null;
+    return false;
+  }
+}
+
+/**
+ * Per-entry provenance verdict. Returns { ok, detail }; never throws for a data problem, because
+ * an assertion that RAISES aborts the suite instead of reporting FAIL.
+ */
+export function checkProvenance(entry, dirty, samples) {
+  const f = entry.fixture_provenance;
+  if (!f || typeof f !== 'object') return { ok: false, detail: 'no fixture_provenance declared' };
+  const estate = Boolean(f.source_path || f.source_sha || f.captured_on);
+  if (!estate) {
+    return typeof f.synthetic_reason === 'string' && f.synthetic_reason.trim().length > 20
+      ? { ok: true, detail: 'synthetic, declared' }
+      : { ok: false, detail: 'neither an estate form nor a synthetic_reason worth the name' };
+  }
+  if (!(f.source_path && f.source_sha && f.captured_on)) {
+    return { ok: false, detail: 'PARTIAL estate provenance — want source_path + source_sha + captured_on' };
+  }
+  if (!existsSync(join(ROOT, f.source_path))) {
+    return { ok: false, detail: `source_path ${f.source_path} does not resolve in the repo` };
+  }
+  const shaOk = gitObjectExists(f.source_sha);
+  if (shaOk === null) return { ok: false, detail: 'git is unavailable, so the source_sha could not be resolved — INDETERMINATE, not clean' };
+  if (!shaOk) return { ok: false, detail: `source_sha ${String(f.source_sha).slice(0, 12)} is not a resolvable git object` };
+
+  const rec = samples[entry.id];
+  if (!rec) return { ok: false, detail: `claims estate provenance but tests/fixtures/forbidden-phrases/estate-samples.json has no sample for ${entry.id}` };
+  if (rec.source_path !== f.source_path || rec.source_sha !== f.source_sha) {
+    return { ok: false, detail: 'the fixture file and the manifest disagree about where the bytes came from' };
+  }
+  // ONE DERIVATION. An estate row must NOT also be hand-written into SYNTHETIC_DIRTY: two
+  // definitions of one fixture is how the bytes drift apart silently.
+  if (dirty !== rec.sample) {
+    return { ok: false, detail: 'the DIRTY fixture in use is not the recorded sample — something is defining this id twice' };
+  }
+
+  // 🛑 THE ASSERTION THAT MAKES THE PROVENANCE REAL, and it must be INDEPENDENT of the fixture.
+  //
+  // The obvious check — "does the recorded sample equal the DIRTY fixture?" — is VACUOUS here,
+  // and this is not a hypothesis: it was written, it passed, and then a deliberate mutation of the
+  // recorded sample left the whole suite GREEN. The reason is that DIRTY is DERIVED from the
+  // sample, so the comparison was the sample against itself. An assertion whose two sides come
+  // from one source can only ever agree.
+  //
+  // So verify against the one thing the fixture cannot rewrite: git history. The bytes must
+  // actually appear at `source_path` as of `source_sha`. That is what "provenance" claims, and it
+  // stays true even though CH1 deliberately REMOVED those bytes from the current tree — which is
+  // precisely why the check reads the recorded commit and not HEAD.
+  let atSha;
+  try {
+    atSha = execFileSync('git', ['show', `${f.source_sha}:${f.source_path}`], { cwd: ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  } catch (e) {
+    return { ok: false, detail: `cannot read ${f.source_path} at ${String(f.source_sha).slice(0, 8)}: ${String(e.message).split('\n')[0].slice(0, 90)}` };
+  }
+  if (!atSha.includes(rec.sample)) {
+    return { ok: false, detail: `the recorded bytes do NOT appear in ${f.source_path} at ${String(f.source_sha).slice(0, 8)} — the provenance claim is false` };
+  }
+  return { ok: true, detail: `estate-sourced from ${f.source_path} @ ${String(f.source_sha).slice(0, 8)}, bytes found at that commit` };
+}
+
 // ── R2.3: the second pass must be PROVEN to catch the CH1 defect ─────────────────────────────
 
 /**
@@ -450,9 +553,9 @@ export function proveCatchesCh1() {
 function selfTest() {
   let passed = 0;
   let failed = 0;
-  const check = (name, fn) => {
+  const check = (name, fn, extra = '') => {
     let ok = false;
-    let detail = '';
+    let detail = extra ? ` (${extra})` : '';
     try {
       ok = fn() === true;
     } catch (e) {
@@ -473,12 +576,27 @@ function selfTest() {
   }
 
   // Fixtures are built with the REAL loader, not hand-written shapes: a hermetic suite is blind
-  // to exactly what its own seam replaces, and hand-rolled fixtures are how that blindness gets
-  // in. These strings are the ACTUAL retired phrases from the estate census.
-  const DIRTY = {
+  // to exactly what its own seam replaces, and hand-rolled fixtures are how that blindness gets in.
+  //
+  // WHERE EACH STRING COMES FROM IS NOW ENFORCED, NOT ASSERTED IN PROSE. This comment used to
+  // state, as a blanket fact, that every fixture below had been drawn from the retired-phrase
+  // census of the live estate. That was FALSE for retired-tier-quotas — its fixture was authored
+  // FROM the regex, so the pattern and the proof of the pattern had one author and one blind
+  // spot, and the gate reported PASS over a live falsehood on a doc linked from every webhook
+  // payload. A rule that has once failed as prose must become a gate or be deleted, so the claim
+  // is now `fixture_provenance` in ops/forbidden-phrases.json and check (0) below verifies it per
+  // entry: synthetic rows must declare WHY, and an estate row must resolve its path, resolve its
+  // SHA, and have its recorded bytes actually present in that file at that commit.
+  //
+  // (The old sentence's exact wording is deliberately NOT quoted here: it is itself a banned
+  // literal in this repo's own drift checks, and a ban line that matches its own literal is a
+  // false positive this estate has already paid for once.)
+  //
+  // An ESTATE-sourced fixture is therefore NOT written here — it is read from
+  // tests/fixtures/forbidden-phrases/estate-samples.json, so the bytes exist in exactly one place.
+  const SYNTHETIC_DIRTY = {
     'free-quota-100-per-month': 'The free tier gives you 100 calls/month across every asset.',
     'free-quota-100-mo-shorthand': 'counts as one call against your 100/mo free quota; a market scan',
-    'retired-tier-quotas': 'Starter includes 3,000 calls and Pro 15,000 calls a month.',
     'free-quota-after-100': 'After 100, pay per call via x402 (USDC on Base) — no signup.',
     'free-quota-20-per-day': 'Free tier: 20 calls/day, no card needed.',
     'month-only-enforcement': 'Every tier has no daily cap, so burst as hard as you like.',
@@ -487,6 +605,11 @@ function selfTest() {
     'weakened-positioning': 'AlgoVault is the Quant Layer for crypto.',
     'nonexistent-pricing-page': 'See algovault.com/pricing for the full ladder.',
   };
+  const samples = loadEstateSamples();
+  const DIRTY = { ...SYNTHETIC_DIRTY };
+  if (!samples.error) {
+    for (const [id, s] of Object.entries(samples.samples)) DIRTY[id] = s.sample;
+  }
   const CLEAN = [
     '200 calls/month, up to 100 per UTC day.',
     'Upgrade to Starter ($9.99/mo or $39.90/6mo → 10,000 API calls/mo).',
@@ -497,6 +620,15 @@ function selfTest() {
   ];
 
   console.log('SELF-TEST — forbidden-phrase gate');
+
+  // (0) PROVENANCE. Every entry must declare where its DIRTY fixture came from, and an estate
+  // claim must be VERIFIABLE: path resolves, SHA resolves as a git object, and the fixture equals
+  // the recorded bytes. This replaces the comment that used to assert all of it.
+  check('the estate-sample fixture file loads', () => !samples.error, samples.error);
+  for (const p of ph.phrases) {
+    const v = checkProvenance(p, DIRTY[p.id], samples.samples || {});
+    check(`provenance ${p.id} — ${v.detail}`, () => v.ok);
+  }
 
   // (1) EVERY declared pattern must actually fire on a real example of what it retired. A
   // pattern with no fixture is a pattern nobody has ever seen match.

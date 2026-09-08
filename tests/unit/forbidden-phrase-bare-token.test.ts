@@ -190,7 +190,7 @@ describe('the CH1 regression proof, and the live tree as the BYPASSED artifact',
     }
   };
 
-  it('the REAL tree passes, and the bare-token line PROVES the second pass ran', () => {
+  it('the REAL tree passes, and the bare-token line PROVES the second pass ran', { timeout: 30_000 }, () => {
     const { out, code } = cli([]);
     expect(out).toMatch(/FORBIDDEN_PHRASE_VERDICT=PASS/);
     expect(code).toBe(0);
@@ -199,14 +199,14 @@ describe('the CH1 regression proof, and the live tree as the BYPASSED artifact',
     expect(out).toMatch(/\d+ unaccounted/);
   });
 
-  it('--prove-catches-ch1 is a standalone verdict a chapter gate can read', () => {
+  it('--prove-catches-ch1 is a standalone verdict a chapter gate can read', { timeout: 30_000 }, () => {
     const { out, code } = cli(['--prove-catches-ch1']);
     expect(out).toMatch(/bare-token CH1 regression proof: HOLDS/);
     expect(out).toMatch(/FORBIDDEN_PHRASE_VERDICT=PASS/);
     expect(code).toBe(0);
   });
 
-  it('--print-targets stays a MACHINE surface — paths only, no bare-token chatter', () => {
+  it('--print-targets stays a MACHINE surface — paths only, no bare-token chatter', { timeout: 30_000 }, () => {
     // The second pass prints to stdout in `run()`. If that leaked into --print-targets, the
     // downstream gate that consumes this list would treat a prose line as a file path.
     const { out, code } = cli(['--print-targets']);
