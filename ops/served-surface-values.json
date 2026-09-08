@@ -1,0 +1,88 @@
+{
+  "_doc": [
+    "OPS-PLANS-PUBLIC-ENTERPRISE-DEPRICE-W1 CH2 — the enumeration of PUBLICLY-SERVED surfaces and",
+    "the VALUES they may not publish. Read by scripts/check-served-surface-values.mjs.",
+    "",
+    "WHY THIS EXISTS. GET /api/plans/public published price_usd: 299 on the enterprise rung while",
+    "brand-facts.md:552 listed that as a HIGH-severity forbidden phrase. THREE independent controls",
+    "missed it, and each missed it differently:",
+    "  · check-forbidden-phrases.mjs globs FILES. A served HTTP response is in no glob and cannot be.",
+    "  · the frozen shape snapshot banned KEY NAMES only — it had no forbidden-VALUE concept at all —",
+    "    and captured 299 as APPROVED.",
+    "  · that snapshot's drift_check_command was a shell string in a JSON field. git grep outside",
+    "    audits/ returned ZERO hits: it had never once run.",
+    "The bug class is 'the gate's corpus is files on disk, so a value published by a RUNTIME",
+    "PROJECTION is structurally invisible'. Fixing only the endpoint would leave all three blind.",
+    "",
+    "ENUMERATION, NOT DETECTION. The corpus is seeded from API_CATALOG_ENDPOINTS in",
+    "src/lib/ai-crawler-allowlist.ts — the estate's own producer for .well-known/api-catalog, which",
+    "scripts/generate-wellknown.mjs renders from it. Those are precisely the endpoints deliberately",
+    "fed to LLMs. Seeding from the PRODUCER rather than the generated file keeps one derivation, and",
+    "a surface present in the producer but ABSENT here is itself a finding the gate reports.",
+    "",
+    "ASSERTIONS LIVE IN THE CONTRACT, NOT HERE. A row points at its dated shape snapshot and the",
+    "gate reads forbidden_values.assertions from it. Copying them here would be a second derivation",
+    "of one contract, which is the drift the single-derivation rule exists to prevent. A row may add",
+    "`extra_assertions` for things no snapshot covers — value-regex over the stringified body, for",
+    "cases where the structure is not known in advance."
+  ],
+  "_coverage_contract": [
+    "coverage declares HOW a surface can be checked, and every value other than `offline` must carry",
+    "a coverage_reason. Declared omission is permitted; UNDECLARED omission is not — the same rule",
+    "bare_token_na_reason follows in ops/forbidden-phrases.json, and for the same reason: a registry",
+    "that silently skips four of five surfaces reads exactly like one that covers them.",
+    "",
+    "  offline         a pure builder is importable from dist/, so the gate asserts against the",
+    "                  object it produces. DETERMINISTIC and needs no network — this is the",
+    "                  fail-closed CI gate.",
+    "  live_only       the surface is served by another runtime (Cloudflare Pages) or has no",
+    "                  importable builder in this repo, so only --live can reach it.",
+    "  not_applicable  the surface has no JSON value contract of this shape at all (a protocol",
+    "                  endpoint, an HTML page).",
+    "",
+    "MEASURED 2026-09-08: of the five surfaces the producer enumerates, exactly ONE has an importable",
+    "pure builder. That is a fact about the estate, not a shortfall in this gate — and stating it is",
+    "what stops the next reader assuming five surfaces are covered offline."
+  ],
+  "_verdict_contract": "SERVED_SURFACE_VALUES_VERDICT=PASS|FAIL|INDETERMINATE · exit 0|1|3. Callers gate on the TOKEN, never the exit code. An empty registry, zero evaluated assertions, an unreadable contract or a dist/ that does not export a declared builder is INDETERMINATE — never PASS. Exit 0 may never encode both 'verified, clean' and 'verified nothing'.",
+  "producer": {
+    "module": "dist/lib/ai-crawler-allowlist.js",
+    "export": "API_CATALOG_ENDPOINTS",
+    "source": "src/lib/ai-crawler-allowlist.ts",
+    "note": "Enumerates ENDPOINTS. Do not confuse it with AI_CRAWLER_ALLOWLIST in the same module, which enumerates crawler USER-AGENTS — a registry seeded from that one would list bot names, not surfaces."
+  },
+  "surfaces": [
+    {
+      "id": "api-plans-public",
+      "href": "https://api.algovault.com/api/plans/public",
+      "coverage": "offline",
+      "builder": { "module": "dist/lib/plans-public-api.js", "export": "buildPublicPlansBody" },
+      "contract": "audits/api-plans-public-shape-snapshot-2026-09-08.json",
+      "note": "The surface this wave exists for. Unauthenticated, listed in .well-known/api-catalog, and the machine-readable face of the pricing ladder — so a wrong figure here propagates into LLM answers about AlgoVault pricing."
+    },
+    {
+      "id": "mcp",
+      "href": "https://api.algovault.com/mcp",
+      "coverage": "not_applicable",
+      "coverage_reason": "The MCP streamable-HTTP transport. Its responses are protocol frames whose payload varies per tools/call, not a fixed JSON document with a value contract of this shape. Tool-description drift is already gated by tests/unit/tool-description-forward-stability.test.ts, and the response ALLOW-list by scripts/check-scan-digest-parity.mjs — this gate would duplicate neither well."
+    },
+    {
+      "href": "https://algovault.com/api/performance-public",
+      "id": "api-performance-public",
+      "coverage": "live_only",
+      "coverage_reason": "Served from algovault.com, not this Express app, and this repo exports no pure builder for it — grep for `export function build*Body` in src/ returns buildPublicPlansBody alone. Offline assertion is therefore impossible here without inventing a second derivation of a body this repo does not construct. Reachable by --live once a contract is written for it."
+    },
+    {
+      "id": "api-merkle-batches",
+      "href": "https://algovault.com/api/merkle-batches",
+      "coverage": "live_only",
+      "coverage_reason": "Same as api-performance-public: served from algovault.com with no importable builder in this repo. Its own no-data-loss invariant is already canaried by the on-chain/dashboard equality check; this gate would add value only once it carries a forbidden_values contract."
+    },
+    {
+      "id": "docs",
+      "href": "https://algovault.com/docs",
+      "coverage": "not_applicable",
+      "coverage_reason": "An HTML service-doc, not a JSON value surface. Its numbers are already gated by scripts/check-docs-samples-live.mjs (DOCS_SAMPLES_LIVE_VERDICT), which compares the rendered parameter tables against the live tools/list projection."
+    }
+  ]
+}

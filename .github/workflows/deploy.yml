@@ -659,6 +659,29 @@ jobs:
           V="$(printf '%s\n' "$OUT" | grep -oE '^FORBIDDEN_PHRASE_VERDICT=[A-Z]+' | tail -1)"
           test "$V" = "FORBIDDEN_PHRASE_VERDICT=PASS" || { echo "::error::$V"; exit 1; }
 
+      # OPS-PLANS-PUBLIC-ENTERPRISE-DEPRICE-W1 CH2. The forbidden-phrase gate above globs FILES, so
+      # a value published by a RUNTIME PROJECTION is structurally invisible to it — that is how
+      # /api/plans/public came to serve `price_usd: 299` on the enterprise rung, unauthenticated and
+      # fed to AI crawlers, while brand-facts.md listed it as a HIGH-severity forbidden phrase and
+      # every human surface already refused it. This gate asserts the VALUES a served surface
+      # publishes, structurally (path + predicate), because $299 provably cannot be string-banned:
+      # it is simultaneously Pro's retired annual price and Enterprise's live monthly figure.
+      #
+      # OFFLINE ON PURPOSE. The projection is a pure function, so this runs against dist/ with no
+      # network at all — a gate that needs the network degrades to a pass exactly when the network
+      # is degraded. The `--live` mode exists for host/deploy drift and is a scheduled canary, never
+      # a CI blocker.
+      - name: Served-surface value gate (fail-closed)
+        run: |
+          node scripts/check-served-surface-values.mjs --self-test
+          node scripts/check-served-surface-values.mjs --prove-catches-ch1
+          set +e
+          OUT="$(node scripts/check-served-surface-values.mjs 2>&1)"
+          set -e
+          printf '%s\n' "$OUT"
+          V="$(printf '%s\n' "$OUT" | grep -oE '^SERVED_SURFACE_VALUES_VERDICT=[A-Z]+' | tail -1)"
+          test "$V" = "SERVED_SURFACE_VALUES_VERDICT=PASS" || { echo "::error::$V"; exit 1; }
+
       - name: Source greppability gate (fail-closed)
         run: |
           node scripts/check-source-greppable.mjs --self-test
