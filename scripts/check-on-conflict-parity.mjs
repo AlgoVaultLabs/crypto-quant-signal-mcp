@@ -137,8 +137,27 @@ export function conflictSites(sourceText, file = '<src>') {
  * costs a RED on a healthy table. A gate that cries wolf once is ignored forever, so the
  * over-reporting direction is the one to close.
  */
+export function stripSqlComments(sql) {
+  // Block comments first, then line comments. SQL has no nested block comments in the dialect we
+  // write, and a `--` inside a block comment is already gone by the time the second pass runs.
+  return sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+}
+
 export function tablesTouchedByMigrations(migrationTexts) {
-  const all = migrationTexts.join('\n').toLowerCase();
+  // COMMENTS ARE STRIPPED FIRST, and that narrowing makes the predicate mean what its own
+  // docstring says. "Any mention counts" is justified above by *a migration that so much as
+  // INDEXES a table has become a second source of DDL* — but a table NAMED IN PROSE creates no
+  // DDL at all, so counting it reports a second source that does not exist.
+  //
+  // Measured 2026-09-08 (IDENTITY-LIFECYCLE-W3 CH1): migration 040 carries a comment explaining
+  // that its heartbeat table follows the same skip-still-stamps-liveness rule as
+  // `seed_heartbeats`. That single prose mention flipped `seed_heartbeats` from
+  // "absent, not checked" to "absent AND touched by a migration" and turned this gate
+  // ON_CONFLICT_PARITY_VERDICT=MISMATCH on a wave that touches neither the table nor its store.
+  // The gate was right to be coarse and wrong to read prose; the false direction it already
+  // names as the one to close ("a gate that cries wolf once is ignored forever") is exactly the
+  // direction a comment triggers.
+  const all = migrationTexts.map(stripSqlComments).join('\n').toLowerCase();
   return (name) => new RegExp(`(^|[^a-z0-9_])${name.toLowerCase()}([^a-z0-9_]|$)`).test(all);
 }
 
@@ -312,6 +331,31 @@ function selfTest() {
   if (dyn.length !== 1 || dyn[0].columns !== null) fails.push('interpolated clause must be UNRESOLVED, not parsed');
   if (!sameSet(['b', 'a'], ['a', 'b'])) fails.push('sameSet must ignore order');
   if (sameSet(['a'], ['a', 'b'])) fails.push('sameSet must reject a subset');
+
+  // tablesTouchedByMigrations — BOTH directions, because the false direction is the expensive one.
+  // A table named only in a COMMENT is not a second source of DDL and must NOT count; a table
+  // named in real DDL must. Regression case is live: migration 040's header explains its
+  // heartbeat table by reference to `seed_heartbeats`, and before this narrowing that one prose
+  // mention turned the whole gate MISMATCH on a wave touching neither.
+  {
+    const proseOnly = [
+      '-- the same rule seed_heartbeats follows: a skip still stamps liveness.',
+      '/* see seed_heartbeats for the precedent */',
+      'CREATE TABLE IF NOT EXISTS lifecycle_heartbeats (job TEXT PRIMARY KEY);',
+    ].join('\n');
+    const t1 = tablesTouchedByMigrations([proseOnly]);
+    if (t1('seed_heartbeats')) fails.push('migration-touch: a COMMENT-only mention must not count as DDL');
+    if (!t1('lifecycle_heartbeats')) fails.push('migration-touch: real DDL must still count');
+
+    const realDdl = 'CREATE INDEX idx ON seed_heartbeats (exchange);';
+    if (!tablesTouchedByMigrations([realDdl])('seed_heartbeats')) {
+      fails.push('migration-touch: an INDEX on a table must count — that is the whole point of being coarse');
+    }
+    // Word-boundedness must survive the narrowing.
+    if (tablesTouchedByMigrations(['CREATE TABLE band_signals (x INT);'])('signals')) {
+      fails.push('migration-touch: must stay word-bounded');
+    }
+  }
 
   // The DB-shape seam. A hermetic self-test is blind to exactly what its seam replaces, and this
   // gate's first live run proved it: everything below passed while the real query returned a shape
