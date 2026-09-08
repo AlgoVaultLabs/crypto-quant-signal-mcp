@@ -107,6 +107,21 @@ Cross-checked every cited identifier across prompt sections — **internally con
 
 **RESOLVED (C3 live probe, 2026-05-29) → YES, post-insert hook is sufficient.** Prod `signal_performance` 30-day distribution: `TRENDING_UP` 34,638 / `RANGING` 21,493 / `TRENDING_DOWN` 10,698 / `VOLATILE` 0. RANGING rows = **8,270 in the last 7d (~32% of all calls)**; ~2,785 calls/day across 1,044 distinct (coin,tf,exchange) tuples. BUY/SELL calls fire frequently enough in RANGING that the transition INTO hostile regime is caught promptly by the post-insert hook — no poller / `seed-signals.ts` expansion needed this wave. Caveat: `VOLATILE` is never emitted by the current classifier (0 rows), so detectable transitions are among {TRENDING_UP, TRENDING_DOWN, RANGING}; a standalone regime poller (catching idle-market flips with no tradeable call, + VOLATILE once the classifier emits it) is filed as follow-up `OPS-WEBHOOK-REGIME-POLL-EMITTER-W1`.
 
+> **⚠️ CORRECTION 2026-09-08 (`OPS-FORBIDDEN-PHRASE-ENUMERATION-AND-WEBHOOKS-DOC-W1` CH4) — appended in place; the paragraph above is left exactly as written on 2026-05-29, because it records what was measured on that date.**
+>
+> The sentence *"`VOLATILE` is never emitted by the current classifier (0 rows)"* does not name WHICH classifier, and **there are two**. The measurement is true of only one of them.
+>
+> | Function | File | Labels | Feeds |
+> |---|---|---|---|
+> | `classifyRegimeLabel` | `src/tools/get-trade-call.ts` | **3** — structurally cannot emit `VOLATILE` | the `signals.regime` column ⇒ the webhook `regime_shift` lane |
+> | `classifyRegime` | `src/tools/get-market-regime.ts` | **4**, including `VOLATILE` | `get_market_regime` — the MCP tool + x402/REST path a customer polls |
+>
+> The `VOLATILE 0` row count above was taken from `signal_performance`, which is written from the **3-label** `classifyRegimeLabel`. Zero rows there is therefore a *structural certainty*, not a discovered gap: that function has no `VOLATILE` in its reachable label set at all (proven from its source by `tests/unit/trend-mode-enable.test.ts`).
+>
+> **`VOLATILE` IS reachable on the polling path.** Executed 2026-09-08: `classifyRegime` returns `VOLATILE` once `volatilityRatio > 0.03` in the non-trending branch, and `generateSuggestion` carries a live `case 'VOLATILE':` arm producing customer-facing copy. **So the public four-state documentation is CORRECT — there is no public-copy defect here.** Pinned going forward by `tests/unit/get-market-regime-volatile-reachability.test.ts`.
+>
+> **What this corrects downstream.** `OPS-WEBHOOK-REGIME-POLL-EMITTER-W1` was filed as *"+ VOLATILE once the classifier emits it"*. That premise is **wrong**: the polling classifier already emits it. The webhook lane cannot see it because it reads a column written by a *different function* — so the follow-up wave's real job is to source `regime_shift` from `classifyRegime` (or to poll it), NOT to wait on a classifier change that has nothing to deliver. Restated in `status.md` under this wave's entry, because until now that premise existed only inside this sentence.
+
 ---
 
 ## 6. Postgres safe-window + pre-apply plan (C2)

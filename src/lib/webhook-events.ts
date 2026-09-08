@@ -10,8 +10,18 @@
  * A 30-day prod probe found RANGING rows are ~32% of all calls (8,270 in 7d),
  * so BUY/SELL calls fire frequently enough in hostile regimes that transitions
  * INTO RANGING are caught promptly — no standalone regime poller needed this
- * wave. (VOLATILE is currently never emitted by the classifier; the detectable
- * regimes are TRENDING_UP / TRENDING_DOWN / RANGING.) HOLD calls never reach
+ * wave. (VOLATILE is never emitted by `classifyRegimeLabel` in
+ * src/tools/get-trade-call.ts — the 3-label classifier that writes the
+ * `signals.regime` column THIS lane reads — so the detectable regimes here are
+ * TRENDING_UP / TRENDING_DOWN / RANGING. That says nothing about the OTHER
+ * classifier: `classifyRegime` in src/tools/get-market-regime.ts is 4-label and
+ * DOES emit VOLATILE on the polling path, above volatilityRatio > 0.03, with a
+ * live `case 'VOLATILE':` arm in generateSuggestion — so the public four-state
+ * documentation is CORRECT. Qualified 2026-09-08 by
+ * OPS-FORBIDDEN-PHRASE-ENUMERATION-AND-WEBHOOKS-DOC-W1 CH4: unqualified, "the
+ * classifier" reads as an estate-wide claim, and a queued follow-up wave was
+ * filed on exactly that misreading. Reachability is pinned by
+ * tests/unit/get-market-regime-volatile-reachability.test.ts.) HOLD calls never reach
  * recordSignal (they go to hold_counts), so HOLD trade_call events are a
  * documented follow-up, not this wave.
  *
