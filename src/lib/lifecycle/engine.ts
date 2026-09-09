@@ -27,7 +27,7 @@ import {
   claimSlot, findSlot, markSent, markFailed, countDeliveredSince, countDeliveredStepSince,
   getStepState, stampFirstWouldSend, parseDbTimestamp, type SendStatus,
 } from './ledger.js';
-import { renderLifecycleEmail } from './render.js';
+import { renderLifecycleEmail, scanOutboundCredentials } from './render.js';
 import { unsubscribeUrl as buildUnsubUrl } from './identity.js';
 import { API_BASE, type LifecycleStep, type StepCopyContext } from '../lifecycle-copy.js';
 import { sendLifecycleMessage } from '../email.js';
@@ -146,6 +146,18 @@ export async function sendLifecycle(
   } catch (err) {
     console.error(`[lifecycle] render failed for ${step}:`, err instanceof Error ? err.message : err);
     return { status: 'skipped', reason: 'render_failed' };
+  }
+
+  // ── 5b. OUTBOUND CREDENTIAL GUARD (ruling Q7). Runs BEFORE the ledger claim, so a body
+  // carrying a paid secret is never even stored at rest — shadow mode persists the rendered
+  // bytes, so a guard placed after the claim would still have written the thing it refuses.
+  const scan = scanOutboundCredentials(rendered.subject, rendered.text, rendered.html);
+  if (!scan.ok) {
+    console.error(
+      `[lifecycle] REFUSED ${step} for ${recipient.recipientId}: rendered body carries a ` +
+      `non-free credential (${scan.offending.join(', ')}). Build Rule 9 as amended permits a ` +
+      `free-tier key in the activation snippet and nothing else.`);
+    return { status: 'skipped', reason: 'non_free_credential_in_body' };
   }
 
   // ── 6. Claim the slot. The read above is not the safety mechanism — this is: two ticks
