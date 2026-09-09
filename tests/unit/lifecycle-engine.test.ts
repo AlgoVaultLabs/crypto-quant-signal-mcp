@@ -362,3 +362,78 @@ describe('parseDbTimestamp — the shapes each backend actually returns', () => 
       .toBeNull();
   });
 });
+
+describe('the REPORT must agree with the LEDGER — the defect no SQLite test could see', () => {
+  beforeEach(freshEnv);
+
+  /**
+   * MEASURED IN PRODUCTION 2026-09-08T15:37: the dispatcher wrote 6 `would_send` rows at .725 and
+   * reported `would_send=0` at .997. `claimSlot` read the row back immediately after a
+   * FIRE-AND-FORGET Postgres INSERT, got nothing, and returned `skipped/ledger_unavailable` — so
+   * `stampFirstWouldSend` was never reached, `lifecycle_step_state` stayed empty, and NO STEP
+   * COULD EVER GO LIVE. The whole mechanism was inert in production while 8,600 tests passed,
+   * because SQLite's `dbRun` is synchronous and the suite only ever exercised SQLite.
+   *
+   * A backend-specific race cannot be reproduced here. What CAN be asserted on any backend is the
+   * INVARIANT it violated: for every row the ledger holds, the call that created it reported the
+   * matching status. That equality is what was false, and it is checkable everywhere.
+   */
+  it('every ledger row has a call that reported its status', async () => {
+    const eng = await import('../../src/lib/lifecycle/engine.js');
+    const { dbQuery } = await import('../../src/lib/performance-db.js');
+    const now = new Date('2026-09-08T15:37:00.000Z');
+
+    const reported: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const r = await eng.sendLifecycle('activation_nudge',
+        { recipientId: `fk_r${i}`, email: `r${i}@example.com`, identityBound: true },
+        { ...CTX, periodKey: 'once' }, { now });
+      reported.push(r.status);
+    }
+
+    const rows = await dbQuery<{ status: string }>('SELECT status FROM lifecycle_sends');
+    // The counts must MATCH. Under the bug the ledger held 6 and the report held 0.
+    expect(rows).toHaveLength(6);
+    expect(reported.filter((x) => x === 'would_send')).toHaveLength(6);
+    expect(reported.filter((x) => x === 'skipped')).toHaveLength(0);
+  });
+
+  it('and the first would_send STARTS the step clock — the consequence that mattered', async () => {
+    const eng = await import('../../src/lib/lifecycle/engine.js');
+    const led = await import('../../src/lib/lifecycle/ledger.js');
+    expect((await led.getStepState('activation_nudge')).first_would_send_at).toBeNull();
+    await eng.sendLifecycle('activation_nudge',
+      { recipientId: 'fk_clock', email: 'clock@example.com', identityBound: true },
+      { ...CTX, periodKey: 'once' });
+    // If this is null, the step can never reach day 7 and the wave is decoration.
+    expect((await led.getStepState('activation_nudge')).first_would_send_at).not.toBeNull();
+  });
+});
+
+describe('claimSlot settles its write before reading it back — STRUCTURAL', () => {
+  /**
+   * The behavioural test above CANNOT catch this: SQLite's `dbRun` is synchronous, so the read
+   * never races the write here, and the suite stays green with the fix removed. That is the whole
+   * lesson — the seam is the DRIVER'S WRITE SEMANTICS, and a hermetic suite is blind to exactly
+   * what its seam replaces.
+   *
+   * So the property is asserted on the SOURCE, where it is backend-independent: the settle must
+   * appear between the INSERT and the read-back. Crude, and it is the only instrument that works
+   * on both backends. Production on Postgres is the other half of the proof.
+   */
+  it('the source has awaitDbWrites between the INSERT and the SELECT', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('src/lib/lifecycle/ledger.ts', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
+    const claim = src.slice(src.indexOf('export async function claimSlot'));
+    const body = claim.slice(0, claim.indexOf('\nexport '));
+    const insertAt = body.indexOf('INSERT INTO lifecycle_sends');
+    const settleAt = body.indexOf('awaitDbWrites()');
+    const selectAt = body.indexOf('SELECT * FROM lifecycle_sends');
+    expect(insertAt, 'INSERT not found in claimSlot').toBeGreaterThan(-1);
+    expect(selectAt, 'read-back not found in claimSlot').toBeGreaterThan(-1);
+    expect(settleAt, 'awaitDbWrites() missing — the PG read will race the write').toBeGreaterThan(-1);
+    expect(settleAt, 'settle must come AFTER the INSERT').toBeGreaterThan(insertAt);
+    expect(settleAt, 'settle must come BEFORE the read-back').toBeLessThan(selectAt);
+  });
+});

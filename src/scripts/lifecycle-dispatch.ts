@@ -194,14 +194,14 @@ async function main(): Promise<number> {
   }
 
   const registered = STEP_PRIORITY.filter((s) => STEP_CANDIDATES[s]);
-  const totals = { wouldSend: 0, sent: 0, suppressed: 0, capped: 0 };
+  const totals = { wouldSend: 0, sent: 0, suppressed: 0, capped: 0, skipped: 0 };
   const now = new Date();
   for (const step of registered) {
     try {
       const candidates = await STEP_CANDIDATES[step]!(now);
       const r = await runStep(step, candidates, now);
       totals.wouldSend += r.wouldSend; totals.sent += r.sent;
-      totals.suppressed += r.suppressed; totals.capped += r.capped;
+      totals.suppressed += r.suppressed; totals.capped += r.capped; totals.skipped += r.skipped;
     } catch (err) {
       return await emit('FAIL', `step '${step}' candidate source threw: ${err instanceof Error ? err.message : err}`);
     }
@@ -225,7 +225,7 @@ async function main(): Promise<number> {
     `mode=${mode!} registered_steps=${registered.length} live_steps=${liveSteps.length}` +
     `${liveSteps.length ? `(${liveSteps.join(',')})` : ''} canary_batch=${CANARY_BATCH_SIZE} ` +
     `would_send=${totals.wouldSend} sent=${totals.sent} suppressed=${totals.suppressed} ` +
-    `capped=${totals.capped} retried=${retry.retried} recovered=${retry.recovered} ` +
+    `capped=${totals.capped} skipped=${totals.skipped} retried=${retry.retried} recovered=${retry.recovered} ` +
     `min_since_last_tick=${sinceLast}`,
     totals.wouldSend + totals.sent + totals.suppressed + totals.capped);
 }

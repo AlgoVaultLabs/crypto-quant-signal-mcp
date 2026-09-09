@@ -7,7 +7,7 @@
  * ledger that recorded only successes could not answer "who did we decline to mail, and why",
  * which is the question shadow mode exists to answer.
  */
-import { dbQuery, dbRun } from '../performance-db.js';
+import { dbQuery, dbRun, awaitDbWrites } from '../performance-db.js';
 import { ensureLifecycleSchema } from './schema.js';
 import { LIFECYCLE_STEPS, type LifecycleStep } from '../lifecycle-copy.js';
 
@@ -147,6 +147,20 @@ export async function claimSlot(args: {
     args.recipientId, args.emailHash, args.recipientEmail, args.step, args.periodKey,
     args.status, args.subject ?? null, args.html ?? null, args.text ?? null, at, at,
   );
+  // 🛑 SETTLE THE INSERT BEFORE READING IT BACK. `dbRun` is FIRE-AND-FORGET on Postgres — it
+  // returns before the statement is sent — so the read below raced the write and answered EMPTY.
+  //
+  // MEASURED in production 2026-09-08T15:37: the tick wrote 6 `would_send` rows at .725 and
+  // reported `would_send=0` at .997. Every call had returned `skipped/ledger_unavailable`
+  // because `rows[0]` was undefined, which meant `stampFirstWouldSend` was NEVER REACHED — so
+  // `lifecycle_step_state` stayed empty and NO STEP COULD EVER GO LIVE. Fail-safe, and entirely
+  // inert: the wave's central mechanism did not work in production while 8,600 tests passed.
+  //
+  // They passed because SQLite's `dbRun` is SYNCHRONOUS. The seam the hermetic suite replaces is
+  // the DB DRIVER'S WRITE SEMANTICS, and it is invisible to every test that uses the other
+  // backend — the third time this wave has been bitten by exactly that, after the timestamp
+  // shape and the Date-vs-string type.
+  await awaitDbWrites();
   const rows = await dbQuery<LedgerRow>(
     `SELECT * FROM lifecycle_sends WHERE recipient_id = ? AND step = ? AND period_key = ?`,
     [args.recipientId, args.step, args.periodKey],
