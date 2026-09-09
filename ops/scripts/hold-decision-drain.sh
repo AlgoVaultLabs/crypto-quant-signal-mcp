@@ -66,6 +66,27 @@
 #   hold-decision-drain.sh --dry-run       # print the plan and the per-venue backlog; write nothing
 #   hold-decision-drain.sh --self-test     # hermetic; no docker, no DB, no network
 #   hold-decision-drain.sh --venues GATE,HTX
+#   hold-decision-drain.sh --timeframe 1d --per-cell 1 --max-decisions 800 --time-budget-min 25
+#
+# ── THE FOUR PASSTHROUGH FLAGS — EDGE-SELL-ATTRIBUTION-CENTERED-CHECK-W2 R1 ─────────────
+#
+# `--timeframe` / `--per-cell` / `--max-decisions` / `--time-budget-min` set the SAME four
+# variables the `HOLD_DRAIN_*` env vars already set, so there is ONE derivation of each knob and
+# the flag simply wins over the env. They exist because W2 must drain a NAMED timeframe: W1's
+# untargeted pass reached ZERO 12h and 1d rows, and this script had no way to ask for them.
+#
+# `backfill-hold-decision-labels.ts` has carried `--timeframe` since it was written; the gap was
+# only here. The alternative — a wave-specific launcher calling the labeler directly — was
+# REFUSED: it would give `combine_verdict` and `leg_was_container_fault` a second derivation, and
+# a second copy of a verdict contract is the copy nobody watches.
+#
+# With every flag absent the emitted `docker exec` argv is BYTE-IDENTICAL to the pre-flag one:
+# `--timeframe` is appended only when set, exactly as the labeler's own optional filters are.
+#
+# An UNKNOWN timeframe is REFUSED through this script's existing exit-3 / INDETERMINATE contract,
+# never thrown and never passed through. The labeler would accept any string and silently return
+# an empty work-list, which is indistinguishable from "there was nothing left to label" — the
+# exact pair the token contract exists to keep apart.
 set -uo pipefail
 
 CTR="${HOLD_DRAIN_CTR:-crypto-quant-signal-mcp-mcp-server-1}"
@@ -77,6 +98,19 @@ SINCE_EPOCH="${HOLD_DRAIN_SINCE_EPOCH:-1788172475}"
 PER_CELL="${HOLD_DRAIN_PER_CELL:-3}"
 MAX_PER_VENUE="${HOLD_DRAIN_MAX_PER_VENUE:-1500}"
 TIME_PER_VENUE_MIN="${HOLD_DRAIN_TIME_PER_VENUE_MIN:-12}"
+
+# Empty = every timeframe, the pre-W2 behaviour. Set = one named timeframe per invocation.
+TIMEFRAME="${HOLD_DRAIN_TIMEFRAME:-}"
+
+# DECLARED, never inferred. Mirrors `EVAL_CANDLES` in src/lib/pfe-mae.ts, which is the one table
+# that decides whether a row's barrier window can close at all — a timeframe absent from it has
+# no horizon and the labeler's `windowClosed` returns false for it forever.
+#
+# `1m` is deliberately NOT here and is refused BY NAME below: `buildEligibleWhere` hardcodes
+# `h.timeframe <> '1m'` (the retired lane, OPS-1M-SEED-DECOM-W1), so a `--timeframe 1m` run would
+# be admitted by this script, rejected by the query, and report a clean zero-row PASS.
+KNOWN_TIMEFRAMES="3m,5m,15m,30m,1h,2h,4h,8h,12h,1d"
+RETIRED_TIMEFRAMES="1m"
 
 # Widest measured batch headroom first. See the exclusions block above for HL / WEEX.
 DEFAULT_VENUES="HTX,GATE,WHITEBIT,BYBIT,BITGET,BINANCE,BINGX,ASTER,KUCOIN,PHEMEX,OKX,XT,MEXC"
@@ -175,6 +209,35 @@ resolve_venues() {
   printf '%s' "$out"
 }
 
+# The declared timeframe set. Empty input is the DEFAULT (every timeframe), not an error — the
+# asymmetry with `resolve_venues` is deliberate and is the whole difference between the two: an
+# empty VENUE set means the caller asked for nothing, while an empty TIMEFRAME means the caller
+# did not narrow. A retired lane is refused with its own reason rather than folded into "unknown",
+# because the two need different fixes.
+resolve_timeframe() {
+  local tf="$1"
+  [ -z "$tf" ] && { printf ''; return 0; }
+  case ",$RETIRED_TIMEFRAMES," in
+    *",$tf,"*) printf 'REFUSED %s — retired lane; the work-list excludes it by construction\n' "$tf" >&2; return 2 ;;
+  esac
+  case ",$KNOWN_TIMEFRAMES," in
+    *",$tf,"*) printf '%s' "$tf"; return 0 ;;
+  esac
+  printf 'REFUSED %s — not in the declared set (%s)\n' "$tf" "$KNOWN_TIMEFRAMES" >&2
+  return 2
+}
+
+# A caller error is "could not observe", never "observed a failure" — so a non-numeric or
+# non-positive knob is refused HERE with the script's 3, rather than passed down to the labeler
+# where `posInt` would throw and the leg would be scored FAIL. One derivation, three consumers.
+resolve_posint() {  # <name> <value>
+  case "$2" in
+    ''|*[!0-9]*) printf 'REFUSED %s=%s — must be a positive integer\n' "$1" "$2" >&2; return 2 ;;
+  esac
+  [ "$2" -ge 1 ] || { printf 'REFUSED %s=%s — must be >= 1\n' "$1" "$2" >&2; return 2; }
+  printf '%s' "$2"
+}
+
 # ── self-test ────────────────────────────────────────────────────────────────────────────────
 
 if [ "${1:-}" = "--self-test" ]; then
@@ -244,9 +307,83 @@ if [ "${1:-}" = "--self-test" ]; then
       *) printf 'SELF-TEST: ok   default set excludes %s\n' "$v" ;;
     esac
   done
+  # ── W2 R1 passthrough — resolve_timeframe ─────────────────────────────────────────────────
+  # An unknown timeframe must REFUSE through the exit-3 contract, never reach the labeler: the
+  # labeler would accept any string, return an empty work-list, and print a clean zero-row PASS
+  # that is indistinguishable from "there was nothing left to label".
+  check "a declared timeframe resolves"          "1d"  "$(resolve_timeframe '1d')"
+  check "the coarsest declared timeframe resolves" "12h" "$(resolve_timeframe '12h')"
+  check "EMPTY resolves to empty — the DEFAULT, not an error" "" "$(resolve_timeframe '')"
+  resolve_timeframe ''    >/dev/null 2>&1; check "and empty exits 0, unlike an empty venue set" 0 "$?"
+  resolve_timeframe '2d'  >/dev/null 2>&1; check "an undeclared timeframe is refused"           2 "$?"
+  resolve_timeframe '1D'  >/dev/null 2>&1; check "the set is case-SENSITIVE — '1D' is refused"   2 "$?"
+  resolve_timeframe '1d,12h' >/dev/null 2>&1; check "a LIST is refused — one timeframe per leg"  2 "$?"
+  resolve_timeframe '1m'  >/dev/null 2>&1; check "the retired 1m lane is refused"               2 "$?"
+  # ASSERT THE REASON, NOT THE CODE. Found by mutation: deleting the retired-lane branch entirely
+  # left every exit code unchanged, because `1m` is absent from KNOWN_TIMEFRAMES and the
+  # fall-through refuses it too. Two mechanisms, one code — so the code alone asserts nothing.
+  # A retired lane and an unknown string need DIFFERENT fixes, so they must read differently.
+  check "and refused with the RETIRED reason, not the unknown one" "retired" \
+    "$(resolve_timeframe '1m' 2>&1 >/dev/null | grep -o 'retired' | head -1)"
+  check "an undeclared timeframe gives the UNKNOWN reason"         "declared set" \
+    "$(resolve_timeframe '2d' 2>&1 >/dev/null | grep -o 'declared set' | head -1)"
+  # POSITIVE MEMBERSHIP over the whole declared set, not just two samples: the same one-sided
+  # gap that R2 found in the venue rows would let a timeframe silently vanish from the set.
+  tf_missing=0
+  for tf in ${KNOWN_TIMEFRAMES//,/ }; do
+    [ "$(resolve_timeframe "$tf")" = "$tf" ] || tf_missing=$((tf_missing+1))
+  done
+  check "every declared timeframe resolves to itself" 0 "$tf_missing"
+  # the declared set and the retired list must not disagree — same rule the venue rows enforce
+  for tf in ${RETIRED_TIMEFRAMES//,/ }; do
+    case ",$KNOWN_TIMEFRAMES," in
+      *",$tf,"*) printf 'SELF-TEST: FAIL declared set contains retired timeframe %s\n' "$tf"; fails=$((fails+1)) ;;
+      *) printf 'SELF-TEST: ok   declared set excludes retired %s\n' "$tf" ;;
+    esac
+  done
+  # A floor, not an equality: the set grows when a lane is added, and an equality check would go
+  # red on that legitimate change while still catching a silent shrink.
+  tf_n=$(printf '%s' "$KNOWN_TIMEFRAMES" | tr ',' ' ' | wc -w | tr -d ' ')
+  if [ "$tf_n" -ge 10 ]; then printf 'SELF-TEST: ok   declared set holds %s timeframes (floor 10)\n' "$tf_n"
+  else printf 'SELF-TEST: FAIL declared set shrank to %s timeframes (floor 10)\n' "$tf_n"; fails=$((fails+1)); fi
+
+  # ── W2 R1 passthrough — resolve_posint ────────────────────────────────────────────────────
+  # A caller typo is "could not observe", not "observed a failure"; it must not reach the
+  # labeler's posInt, where a throw would score the leg FAIL.
+  check "a positive integer resolves"    "25" "$(resolve_posint TIME_PER_VENUE_MIN 25)"
+  check "one is the smallest accepted"    "1" "$(resolve_posint PER_CELL 1)"
+  resolve_posint PER_CELL 0     >/dev/null 2>&1; check "zero is refused"          2 "$?"
+  resolve_posint PER_CELL -1    >/dev/null 2>&1; check "a negative is refused"    2 "$?"
+  resolve_posint PER_CELL 1.5   >/dev/null 2>&1; check "a decimal is refused"     2 "$?"
+  resolve_posint PER_CELL abc   >/dev/null 2>&1; check "a non-number is refused"  2 "$?"
+  resolve_posint PER_CELL ''    >/dev/null 2>&1; check "an empty value is refused" 2 "$?"
+  # ASSERT THE REASON HERE TOO, for the same measured cause. Deleting the numeric branch left all
+  # five rows green: `[ abc -ge 1 ]` is a bash ERROR that also returns non-zero, so the refusal
+  # survived by accident with no message and no meaning. A guard whose failure mode is an
+  # interpreter error is not a guard.
+  check "a non-number gives the numeric reason"  "positive integer" \
+    "$(resolve_posint PER_CELL abc 2>&1 >/dev/null | grep -o 'positive integer' | head -1)"
+  check "a decimal gives the numeric reason"     "positive integer" \
+    "$(resolve_posint PER_CELL 1.5 2>&1 >/dev/null | grep -o 'positive integer' | head -1)"
+  check "an empty value gives the numeric reason" "positive integer" \
+    "$(resolve_posint PER_CELL '' 2>&1 >/dev/null | grep -o 'positive integer' | head -1)"
+  check "zero gives the FLOOR reason, not the numeric one" ">= 1" \
+    "$(resolve_posint PER_CELL 0 2>&1 >/dev/null | grep -o '>= 1' | head -1)"
+
+  # ── W2 R1 passthrough — the argv must stay byte-identical with no --timeframe ──────────────
+  # This is the property that lets the flag ship without re-baselining anything: the default
+  # invocation must emit exactly the argv it emitted before the flag existed.
+  tf_argv() { local tf="$1" f=""; [ -n "$tf" ] && f="--timeframe $tf"; printf '%s' "--side sell $f --per-cell 1"; }
+  check "no timeframe => argv unchanged" "--side sell  --per-cell 1" "$(tf_argv '')"
+  check "a timeframe => argv carries it" "--side sell --timeframe 1d --per-cell 1" "$(tf_argv '1d')"
+  unset -f tf_argv
+
   # vacuity: this corpus is one WE construct, so an empty one means the test built nothing
   if [ -z "$DEFAULT_VENUES" ]; then
     printf 'SELF-TEST: FAIL default venue set is empty\n'; fails=$((fails+1))
+  fi
+  if [ -z "$KNOWN_TIMEFRAMES" ]; then
+    printf 'SELF-TEST: FAIL declared timeframe set is empty\n'; fails=$((fails+1))
   fi
   printf 'HOLD_DRAIN_SELFTEST=%s failures=%s\n' "$([ "$fails" -eq 0 ] && echo PASS || echo FAIL)" "$fails"
   [ "$fails" -eq 0 ] && exit 0 || exit 1
@@ -258,12 +395,33 @@ DRY_RUN=0
 VENUES_REQ="$DEFAULT_VENUES"
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dry-run) DRY_RUN=1; shift ;;
-    --venues)  VENUES_REQ="${2:-}"; shift 2 ;;
+    --dry-run)        DRY_RUN=1; shift ;;
+    --venues)         VENUES_REQ="${2:-}"; shift 2 ;;
+    --timeframe)      TIMEFRAME="${2:-}"; shift 2 ;;
+    --per-cell)       PER_CELL="${2:-}"; shift 2 ;;
+    --max-decisions)  MAX_PER_VENUE="${2:-}"; shift 2 ;;
+    --time-budget-min) TIME_PER_VENUE_MIN="${2:-}"; shift 2 ;;
     *) echo "$LOG_TAG unknown argument '$1'" >&2
        echo "HOLD_DRAIN_VERDICT=INDETERMINATE"; exit 3 ;;
   esac
 done
+
+# Every knob is validated BEFORE the container check, so a typo costs nothing and cannot be
+# mistaken for a venue budget or a deploy.
+if ! TIMEFRAME=$(resolve_timeframe "$TIMEFRAME"); then
+  echo "$LOG_TAG refusing: --timeframe is not in the declared set ($KNOWN_TIMEFRAMES)" >&2
+  echo "HOLD_DRAIN_VERDICT=INDETERMINATE"; exit 3
+fi
+for _knob in "PER_CELL:$PER_CELL" "MAX_PER_VENUE:$MAX_PER_VENUE" "TIME_PER_VENUE_MIN:$TIME_PER_VENUE_MIN"; do
+  if ! resolve_posint "${_knob%%:*}" "${_knob#*:}" >/dev/null; then
+    echo "$LOG_TAG refusing: ${_knob%%:*} is not a positive integer" >&2
+    echo "HOLD_DRAIN_VERDICT=INDETERMINATE"; exit 3
+  fi
+done
+
+# Appended only when set, so with no --timeframe the emitted argv is byte-identical to pre-W2.
+TF_FLAG=""
+[ -n "$TIMEFRAME" ] && TF_FLAG="--timeframe $TIMEFRAME"
 
 if ! VENUES=$(resolve_venues "$VENUES_REQ"); then
   echo "$LOG_TAG refusing: the venue set is empty or names an excluded venue ($EXCLUDED_VENUES)" >&2
@@ -282,7 +440,8 @@ ledger_of() { # venue -> raw JSON (or '' when the ledger does not exist yet)
 }
 
 echo "$LOG_TAG $(date -u +%FT%TZ) start since=$SINCE_EPOCH per_cell=$PER_CELL" \
-     "max_per_venue=$MAX_PER_VENUE time_per_venue_min=$TIME_PER_VENUE_MIN dry_run=$DRY_RUN"
+     "max_per_venue=$MAX_PER_VENUE time_per_venue_min=$TIME_PER_VENUE_MIN dry_run=$DRY_RUN" \
+     "timeframe=${TIMEFRAME:-<all>}"
 echo "$LOG_TAG venues=$VENUES"
 echo "$LOG_TAG excluded=$EXCLUDED_VENUES (measured batch saturation / open HL observation window)"
 
@@ -291,7 +450,7 @@ for v in $VENUES; do
   before=$(parse_ledger "$(ledger_of "$v")")
   # --check first: the per-venue backlog, and the --require-parts vs --since disagreement count.
   docker exec "$CTR" node dist/scripts/backfill-hold-decision-labels.js --check \
-    --venue "$v" --since "$SINCE_EPOCH" --require-parts --side sell \
+    --venue "$v" --since "$SINCE_EPOCH" --require-parts --side sell $TF_FLAG \
     --per-cell "$PER_CELL" --max-decisions "$MAX_PER_VENUE" 2>&1 | sed "s/^/$LOG_TAG [$v] /" || true
 
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -308,7 +467,7 @@ for v in $VENUES; do
 
   legout=$(mktemp)
   docker exec "$CTR" node dist/scripts/backfill-hold-decision-labels.js \
-    --venue "$v" --since "$SINCE_EPOCH" --require-parts --side sell \
+    --venue "$v" --since "$SINCE_EPOCH" --require-parts --side sell $TF_FLAG \
     --per-cell "$PER_CELL" --max-decisions "$MAX_PER_VENUE" \
     --time-budget-min "$TIME_PER_VENUE_MIN" > "$legout" 2>&1
   rc=$?
