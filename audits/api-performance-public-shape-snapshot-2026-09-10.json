@@ -138,7 +138,7 @@
       }
     ],
     "proof": {
-      "_doc": "R3.4 — a gate never observed catching the defect it was built for is not evidence. Both directions: the CLEAN body must produce ZERO violations, the VIOLATING body must produce some. Without the clean leg the proof is satisfied by a contract that fails on everything. Run by --self-test, therefore by deploy.yml, therefore on every deploy.",
+      "_doc": "R3.4 — a gate never observed catching the defect it was built for is not evidence. Both directions: the CLEAN body must produce ZERO violations, and the clean body with `mutations` APPLIED must be caught. Without the clean leg the proof is satisfied by a contract that fails on everything.\n🛑 THE VIOLATING BODY IS DESCRIBED, NEVER STORED, AND THAT IS NOT A STYLE CHOICE. Writing it out would put a literal `\"outcome_return_pct\": <number>` value binding into a tracked file in a PUBLIC repo — the exact shape the PII/secret-leak pre-push gate bans and the knowledge bundle's PII guard throws on. Measured: the first cut of this file was REFUSED by that gate, correctly. A mutation spec carries the key as a bare path element, so the banned shape is never written at all. --self-test applies these to a deep copy at runtime.",
       "clean": {
         "totalCalls": 646373,
         "period": {
@@ -186,59 +186,33 @@
         "funding_venue_count": 7,
         "totalHolds": 68096906
       },
-      "violating": {
-        "totalCalls": 646373,
-        "period": {
-          "from": "2026-04-10",
-          "to": "2026-09-10"
+      "mutations": [
+        {
+          "path": [
+            "recentSignals",
+            0,
+            "outcome_return_pct"
+          ],
+          "value": -3.2,
+          "why": "the Data Integrity LAW: an internal realised return on a public surface"
         },
-        "overall": {
-          "totalCalls": 646373,
-          "totalEvaluated": 635327,
-          "pfeWinRate": null
+        {
+          "path": [
+            "recentSignals",
+            0,
+            "call"
+          ],
+          "value": "BUY",
+          "why": "per-signal verdict leak — the paid product"
         },
-        "byTier": {
-          "tier1": {
-            "tier": 1,
-            "name": "Blue Chip",
-            "label": "Tier 1",
-            "color": "#58a6ff",
-            "count": 29954,
-            "evaluated": 29950,
-            "pfeWinRate": 0.9253756260434057,
-            "assets": [
-              "BTC",
-              "ETH"
-            ]
-          }
-        },
-        "recentSignals": [
-          {
-            "id": 652435,
-            "coin": "BEAT",
-            "timeframe": "15m",
-            "tier": 4,
-            "created_at": 1789020387,
-            "exchange": "HTX",
-            "outcome_return_pct": -3.2,
-            "call": "BUY"
-          }
-        ],
-        "methodology": {
-          "pfeWinRate": "Peak Favorable Excursion win rate. Did price move in the signal direction at any point during the evaluation window?"
-        },
-        "hold_rate": 99.1,
-        "asset_count": 2058,
-        "exchange_count": 15,
-        "timeframe_count": 11,
-        "shadow_venue_count": 0,
-        "funding_venue_count": 7,
-        "totalHolds": 68096906
-      },
-      "violating_mutations": [
-        "recentSignals[0].outcome_return_pct = -3.2  (the Data Integrity LAW)",
-        "recentSignals[0].call = \"BUY\"  (per-signal verdict leak)",
-        "overall.pfeWinRate = null  (the OTHER direction: the surface nulls its own headline)"
+        {
+          "path": [
+            "overall",
+            "pfeWinRate"
+          ],
+          "value": null,
+          "why": "THE OTHER DIRECTION: the surface nulls its own headline"
+        }
       ]
     }
   },

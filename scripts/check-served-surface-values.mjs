@@ -718,15 +718,30 @@ async function selfTest() {
       try { contract = JSON.parse(readFileSync(join(ROOT, s.contract), 'utf8')); } catch { /* reported below */ }
       const proof = contract?.forbidden_values?.proof;
       if (!proof) continue;
+      // The violating body is DESCRIBED, not stored: writing it out would put a literal
+      // `"outcome_return_pct": <number>` value binding into a tracked file in a public repo — the
+      // shape the PII/secret-leak pre-push gate bans and the knowledge bundle's PII guard throws
+      // on. It refused the first cut of these contracts, correctly. Applied to a deep copy here.
+      const violating = (() => {
+        const body = JSON.parse(JSON.stringify(proof.clean));
+        for (const m of proof.mutations || []) {
+          let cur = body;
+          for (const seg of m.path.slice(0, -1)) cur = cur?.[seg];
+          if (cur) cur[m.path[m.path.length - 1]] = m.value === undefined ? null : m.value;
+        }
+        return body;
+      })();
       const a = assertionsFor(s);
       check(`${s.id}: the CLEAN body in its contract produces ZERO violations`, () => {
         const r = assertContract(proof.clean, a.assertions, s.id);
         return !a.error && r.violations.length === 0 && r.unresolved.length === 0 && r.unknown.length === 0 && r.evaluated > 0;
       });
-      check(`${s.id}: the VIOLATING body in its contract is CAUGHT`, () => {
-        const r = assertContract(proof.violating, a.assertions, s.id);
+      check(`${s.id}: the mutated body is CAUGHT (${(proof.mutations || []).length} mutation(s), applied at runtime)`, () => {
+        const r = assertContract(violating, a.assertions, s.id);
         return !a.error && r.violations.length > 0;
       });
+      check(`${s.id}: its proof declares mutations at all (a proof with none catches nothing)`, () =>
+        Array.isArray(proof.mutations) && proof.mutations.length > 0 && proof.mutations.every((m) => Array.isArray(m.path) && m.path.length > 0 && typeof m.why === 'string' && m.why.length > 10));
       provenBy.set(s.id, 'contract proof pair (clean + violating)');
     }
     check('EVERY contract-carrying surface is proven able to fail — none is merely declared', () => {

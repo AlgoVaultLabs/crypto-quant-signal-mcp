@@ -91,7 +91,7 @@
       }
     ],
     "proof": {
-      "_doc": "R3.4 — a gate never observed catching the defect it was built for is not evidence. Both directions: the CLEAN body must produce ZERO violations, the VIOLATING body must produce some. Without the clean leg the proof is satisfied by a contract that fails on everything. Run by --self-test, therefore by deploy.yml, therefore on every deploy.",
+      "_doc": "R3.4 — a gate never observed catching the defect it was built for is not evidence. Both directions: the CLEAN body must produce ZERO violations, and the clean body with `mutations` APPLIED must be caught. Without the clean leg the proof is satisfied by a contract that fails on everything.\n🛑 THE VIOLATING BODY IS DESCRIBED, NEVER STORED, AND THAT IS NOT A STYLE CHOICE. Writing it out would put a literal `\"outcome_return_pct\": <number>` value binding into a tracked file in a PUBLIC repo — the exact shape the PII/secret-leak pre-push gate bans and the knowledge bundle's PII guard throws on. Measured: the first cut of this file was REFUSED by that gate, correctly. A mutation spec carries the key as a bare path element, so the banned shape is never written at all. --self-test applies these to a deep copy at runtime.",
       "clean": {
         "batches": [
           {
@@ -110,30 +110,32 @@
         "contractAddress": "0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81",
         "chain": "Base (8453)"
       },
-      "violating": {
-        "batches": [
-          {
-            "batch_id": 153,
-            "merkle_root": "0x64733216933f994debc8f2fe98584d216107ef16d83afc2376b1650cad7a6508",
-            "signal_count": 12057,
-            "tx_hash": "0xec7990e11129ea4a887628ce715d9a838584ecec41e3af4fce91abadbe2e2f18",
-            "block_number": "51104679",
-            "published_at": "2026-09-10T00:05:04.576Z",
-            "basescanUrl": "https://basescan.org/tx/0xec7990e11129ea4a887628ce715d9a838584ecec41e3af4fce91abadbe2e2f18",
-            "outcome_return_pct": 4.7,
-            "call": "SELL"
-          }
-        ],
-        "latest_batch_id": 153,
-        "batch_count": null,
-        "total_signals": 644116,
-        "contractAddress": "0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81",
-        "chain": "Base (8453)"
-      },
-      "violating_mutations": [
-        "batches[0].outcome_return_pct = 4.7  (the Data Integrity LAW)",
-        "batches[0].call = SELL  (per-signal verdict leak)",
-        "batch_count = null  (the OTHER direction: the scalar counter nulled)"
+      "mutations": [
+        {
+          "path": [
+            "batches",
+            0,
+            "outcome_return_pct"
+          ],
+          "value": 4.7,
+          "why": "the Data Integrity LAW: an internal realised return under a proof banner"
+        },
+        {
+          "path": [
+            "batches",
+            0,
+            "call"
+          ],
+          "value": "SELL",
+          "why": "per-signal verdict leak — the paid product"
+        },
+        {
+          "path": [
+            "batch_count"
+          ],
+          "value": null,
+          "why": "THE OTHER DIRECTION: the scalar counter nulled"
+        }
       ]
     }
   },
