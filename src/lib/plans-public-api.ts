@@ -84,9 +84,14 @@ export const PUBLIC_PLAN_ORDER: readonly PaidPlanId[] = ['starter', 'pro', 'ente
  *
  * ⚠️ RESIDUAL DEBT, named rather than hidden: this belongs in `plans.ts` as one exported
  * predicate every renderer projects from. This wave's chapter firewall splits `plans.ts` (CH3)
- * from this file (CH1), so no single chapter may create it. `tests/plans-public-api.test.ts`
- * pins this set against `planPriceLabel`'s refusal so the two cannot silently disagree, and
- * `OPS-PLANS-CONTACT-US-PREDICATE-W{NEXT}` collapses them into one derivation.
+ * from this file (CH1), so no single chapter may create it. NO TEST CROSS-CHECKS THEM — an earlier
+ * version of this comment claimed this file's test "pins this set against `planPriceLabel`'s
+ * refusal", and it does not: `tests/plans-public-api.test.ts` imports neither `planPriceLabel` nor
+ * `CONTACT_SALES_PLANS`. The true, weaker property: each set is pinned INDEPENDENTLY to the same
+ * literal `['enterprise']` — this one here, `CONTACT_SALES_PLANS` in
+ * `tests/unit/plan-price-label-refusal.test.ts` — so a divergence fails loudly through a shared
+ * literal asserted twice, never through a comparison. `OPS-PLANS-CONTACT-US-PREDICATE-W{NEXT}` owns
+ * collapsing them into one derivation; the cross-check is owed to that wave, not to this comment.
  */
 export const CONTACT_US_PLANS: readonly PaidPlanId[] = ['enterprise'];
 

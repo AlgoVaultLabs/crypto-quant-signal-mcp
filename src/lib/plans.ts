@@ -195,9 +195,15 @@ export function planPriceLabel(id: PaidPlanId): string | null {
  *
  * ⚠️ RESIDUAL DEBT, named rather than hidden: `plans-public-api.ts` declares the same set as
  * `CONTACT_US_PLANS` because that wave's chapter firewall split the two files across chapters, so
- * no single chapter could create one predicate. `tests/plans-public-api.test.ts` pins the two
- * against each other so they cannot silently disagree, and
- * `OPS-PLANS-CONTACT-US-PREDICATE-W{NEXT}` collapses them into this one.
+ * no single chapter could create one predicate. NO TEST CROSS-CHECKS THEM — an earlier version of
+ * this comment claimed `tests/plans-public-api.test.ts` "pins the two against each other", and it
+ * does not: that file imports neither `CONTACT_SALES_PLANS` nor `planPriceLabel`. What is actually
+ * true is weaker and worth stating precisely, because a reader who believes in a cross-check that
+ * does not exist stops looking for one: each set is pinned INDEPENDENTLY to the same literal
+ * `['enterprise']` — here by `tests/unit/plan-price-label-refusal.test.ts`, there by
+ * `tests/plans-public-api.test.ts` — so a divergence does fail loudly, but via a shared literal
+ * asserted twice, never via a comparison of the two. `OPS-PLANS-CONTACT-US-PREDICATE-W{NEXT}` owns
+ * collapsing them into this one; building the cross-check here would duplicate that wave.
  */
 export function planPublishesSelfServePrice(id: PaidPlanId): boolean {
   return !CONTACT_SALES_PLANS.includes(id);
