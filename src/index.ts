@@ -4144,9 +4144,11 @@ async function startHttp() {
       }
     }
 
-    // TG-BROADCAST-STACK-W1 CH6 (2026-05-28): track-token capture for the
-    // /unlock_premium_alerts npm-install verification path β. Header
-    // `X-AlgoVault-Track-Token` (set by stdio-client wrapper) takes
+    // TG-BROADCAST-STACK-W1 CH6 (2026-05-28): track-token capture, BORN as the
+    // /unlock_premium_alerts npm-install verification path β and since repurposed
+    // as the integrations attribution header — that command no longer exists, this
+    // capture is live; see src/lib/track-token.ts before deleting anything here.
+    // Header `X-AlgoVault-Track-Token` (set by stdio-client wrapper) takes
     // precedence over `--track-token=` argv (process-wide fallback).
     // Idempotent per (session_id, token); first tools/call emits one
     // funnel_events row, subsequent calls suppressed. The bot's */10 cron
@@ -5754,8 +5756,10 @@ ${renderBrandFooter('desktop')}
 
 // ── Entry Point ──
 // TG-BROADCAST-STACK-W1 CH6 (2026-05-28): capture `--track-token=` from
-// process.argv at startup (no-op if absent). Used by the /unlock_premium_alerts
-// viral mechanic — see src/lib/track-token.ts for full semantics.
+// process.argv at startup (no-op if absent). Built for the /unlock_premium_alerts
+// viral mechanic, which no longer exists; this argv path is its one genuine
+// residue and is deliberately kept — see src/lib/track-token.ts, whose header
+// explains why a grep of `unlock_premium` must not delete that module.
 // OPS-MCP-SESSION-RESILIENCE-W1: boot only as the entrypoint (node dist/index.js / npx
 // stdio). The guard makes this module import-safe so the stateless handler + correlation
 // resolver can be unit-tested without binding a port or connecting upstreams.

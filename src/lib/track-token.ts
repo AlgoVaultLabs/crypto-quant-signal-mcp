@@ -1,8 +1,37 @@
 /**
- * TG-BROADCAST-STACK-W1 CH6 (2026-05-28): track-token capture for
- * /unlock_premium_alerts npm-install verification path β.
+ * Session identity + track-token capture for `/mcp`.
  *
- * Architecture (Q-A Path β server-side argv capture, architect-ratified):
+ * 🛑 DO NOT DELETE THIS MODULE ON A GREP OF `unlock_premium`. It was BORN as the
+ * `/unlock_premium_alerts` npm-install verification path β (TG-BROADCAST-STACK-W1
+ * CH6, 2026-05-28) and has since been REPURPOSED twice over. That command no
+ * longer exists anywhere in the estate — OPS-BOT-DEAD-SURFACE-SWEEP-W1 retired it
+ * on 2026-09-09 — but almost nothing here died with it:
+ *
+ *  - `X-AlgoVault-Track-Token` is the INTEGRATIONS attribution header, documented
+ *    in 15 files under `landing/` (12 under `landing/integrations/`, plus
+ *    `docs.html`, `mcp.html` and `llms-full.txt`). Deleting the capture would
+ *    silently break every one of them.
+ *  - `resolveSessionIdentity()` below is the ONE session-identity derivation on
+ *    the `/mcp` hot path (single-derivation LAW). Its consumers:
+ *      · `src/index.ts` — via `resolveSessionCorrelationId()`, whose own comment
+ *        cites that law
+ *      · `src/lib/x402-http-routes.ts`
+ *      · `src/lib/funnel-snapshot.ts`
+ *      · `src/lib/tools-list-event.ts`
+ *    The funnel's `identity_coverage` and its correlation id derive from ONE
+ *    branch here precisely so they can never disagree.
+ *
+ * Only the `--track-token=` ARGV path is genuine residue of the retired command,
+ * and removing it would edit a `/mcp` hot-path primitive to reclaim ~40 lines.
+ * It is deliberately left in place; it is not a TODO.
+ *
+ * (Corrected 2026-09-10 FUNNEL-ATTRIBUTION-CLASSIFY-BACKFILL-W1 R9. The opening
+ * line used to describe the module AS the unlock path, which stopped being true
+ * the day that command was swept — leaving the estate's single session-identity
+ * derivation looking like dead code attached to a deleted feature. Comments only;
+ * zero behaviour change.)
+ *
+ * Original architecture (Q-A Path β server-side argv capture, architect-ratified):
  *  - Subscriber's `npx crypto-quant-signal-mcp --track-token=<UUID>` puts
  *    the token on the local MCP server's process.argv.
  *  - When the local stdio server proxies tools/call to the production HTTP
