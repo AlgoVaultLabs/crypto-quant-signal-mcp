@@ -40,9 +40,12 @@ const DIRTY = JSON.parse(JSON.stringify(CLEAN));
 DIRTY.tiers[1].price_usd = 299;
 DIRTY.tiers[1].monthly_calls = 100_000;
 
-const cli = (args: string[]): { out: string; code: number } => {
+const cli = (args: string[], env: Record<string, string> = {}): { out: string; code: number } => {
   try {
-    return { out: execFileSync('node', [GATE, ...args], { encoding: 'utf8', cwd: ROOT }), code: 0 };
+    return {
+      out: execFileSync('node', [GATE, ...args], { encoding: 'utf8', cwd: ROOT, env: { ...process.env, ...env } }),
+      code: 0,
+    };
   } catch (e) {
     const err = e as { stdout?: string; stderr?: string; status?: number };
     return { out: `${err.stdout ?? ''}${err.stderr ?? ''}`, code: err.status ?? -1 };
@@ -159,8 +162,14 @@ describe('the registry is a config WE author — malformed shapes REFUSE', () =>
 });
 
 describe('the LIVE registry, contracts and producer — the bypassed artifacts', () => {
-  // Everything above replaces the real registry, contract and builder with fixtures, so a hermetic
-  // suite is structurally blind to all three. These assert the real ones.
+  // NAME THE SEAM. Everything above replaces exactly three artifacts with fixtures — the REGISTRY
+  // (temp files through `loadRegistry(path)`, and `SERVED_SURFACE_REGISTRY` through the CLI), the
+  // CONTRACT (inline assertion arrays instead of the dated snapshot), and the BUILDER (hand-written
+  // CLEAN/DIRTY bodies instead of `dist/`). A hermetic suite is structurally blind to precisely what
+  // its own seam replaces, so those three are the ones that must ALSO be asserted for real. The
+  // block below is that assertion, and it reads DEFAULT_REGISTRY inside the gate — the override
+  // cannot reach it, because a seam that can redirect the real-artifact check is a bypass that
+  // reports success.
   const reg = loadRegistry() as { error?: string; registry: Record<string, unknown>; surfaces: Array<Record<string, string>> };
 
   it('the real registry loads and every surface declares a coverage', () => {
@@ -247,16 +256,27 @@ describe('the CH1 regression proof, and the CLI verdict contract', () => {
 
   it('TOKEN→EXIT MAPPING: INDETERMINATE is exit 3, never 0', { timeout: 30_000 }, () => {
     // The recorded incident this guards: a self-test asserted verdict TOKENS but never the
-    // MAPPING, so re-coding INDETERMINATE to 0 left it fully green. Drive the real CLI into the
-    // vacuity branch with a temp registry — the repo's own registry is never touched.
+    // MAPPING, so re-coding INDETERMINATE to 0 left it fully green.
+    //
+    // 🛑 THE PREVIOUS VERSION OF THIS BLOCK WAS THAT INCIDENT, under a heading naming it. It called
+    // `loadRegistry(empty)` IN-PROCESS and then asserted `PASS`/exit 0 — every exit assertion in the
+    // whole file was `toBe(0)`, so re-coding INDETERMINATE to 0 left it green. The cause was not
+    // carelessness: `main()` called `loadRegistry()` with no argument against a module constant, so
+    // there was NO CLI-reachable way to reach the vacuity branch. `SERVED_SURFACE_REGISTRY` exists
+    // to close that, and the gate ECHOES the registry it read so a redirect can never be silent.
     const dir = mkdtempSync(join(tmpdir(), 'ssv-vac-'));
     try {
       const empty = join(dir, 'empty.json');
       writeFileSync(empty, JSON.stringify({ producer: { module: 'x', export: 'y' }, surfaces: [] }));
-      // loadRegistry is exported, so assert the vacuity verdict at the seam the CLI uses...
-      expect((loadRegistry(empty) as { error?: string }).error).toBeTruthy();
+      const { out, code } = cli([], { SERVED_SURFACE_REGISTRY: empty });
+      expect(tokenOf(out)).toBe('INDETERMINATE');
+      expect(code).toBe(3);
+      // The echo is part of the contract: a redirected registry must be visible in the output.
+      expect(out).toContain('OVERRIDDEN via SERVED_SURFACE_REGISTRY');
+      expect(out).toContain(empty);
     } finally { rmSync(dir, { recursive: true, force: true }); }
-    // ...and assert the CLI's own mapping on a real terminal state: PASS must be exit 0.
+    // The converse leg. Without it, "INDETERMINATE is 3" is satisfiable by a gate that returns 3
+    // for everything — the same shape as the contract's own positive assertion.
     const { out, code } = cli([]);
     expect(tokenOf(out)).toBe('PASS');
     expect(code).toBe(0);

@@ -69,7 +69,34 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const REGISTRY = join(ROOT, 'ops', 'served-surface-values.json');
+/**
+ * THE REGISTRY THIS RUN READS, and why it is overridable.
+ *
+ * `main()` used to call `loadRegistry()` with no argument against a module constant, so there was
+ * NO CLI-reachable way to drive the process into the vacuity branch. That is exactly how the
+ * `TOKEN→EXIT MAPPING` test came to assert `PASS`/exit 0 under a heading about exit 3: the branch
+ * it named could not be reached through the process boundary at all, only in-process.
+ *
+ * Two hardening rules, both load-bearing:
+ *   1. every run ECHOES the registry it read (see `announceRegistry`), so a redirected registry is
+ *      visible in the output and can never be silent;
+ *   2. CI MUST NOT set it. `.github/workflows/deploy.yml` carrying this variable would let the
+ *      fail-closed deploy gate be pointed at a fixture — asserted in `--self-test`.
+ *
+ * `DEFAULT_REGISTRY` is kept separate and used directly wherever the subject IS the real registry
+ * (the self-test's bypassed-artifacts block, and the CH1 proof). A seam that can redirect the
+ * assertion about the real artifact is a bypass that reports success.
+ */
+const DEFAULT_REGISTRY = join(ROOT, 'ops', 'served-surface-values.json');
+const REGISTRY = process.env.SERVED_SURFACE_REGISTRY
+  ? resolve(process.env.SERVED_SURFACE_REGISTRY)
+  : DEFAULT_REGISTRY;
+
+/** Printed on EVERY run, before anything can exit. A run you cannot attribute proves nothing. */
+function announceRegistry() {
+  const overridden = REGISTRY !== DEFAULT_REGISTRY;
+  console.log(`served-surface registry: ${REGISTRY}${overridden ? '  ⚠️ OVERRIDDEN via SERVED_SURFACE_REGISTRY' : ''}`);
+}
 const PREFIX_FIXTURE = join(ROOT, 'tests', 'fixtures', 'served-surfaces', 'plans-public-prefix.json');
 
 /**
@@ -321,6 +348,7 @@ function emit(verdict, why) {
 }
 
 async function main(argv = process.argv) {
+  announceRegistry();
   const live = argv.includes('--live');
   const reg = loadRegistry();
   if (reg.error) emit('INDETERMINATE', reg.error);
@@ -408,7 +436,8 @@ export function proveCatchesCh1() {
   }
   const before = fixture.captured_body;
   if (!before || !Array.isArray(before.tiers)) return { ok: false, detail: 'the pre-fix fixture carries no usable captured_body' };
-  const reg = loadRegistry();
+  // The proof is about the SHIPPED contract, so it never reads an overridden registry.
+  const reg = loadRegistry(DEFAULT_REGISTRY);
   if (reg.error) return { ok: false, detail: reg.error };
   const surface = reg.surfaces.find((s) => s.id === 'api-plans-public');
   if (!surface) return { ok: false, detail: 'no api-plans-public surface in the registry' };
@@ -446,6 +475,7 @@ function selfTest() {
     if (ok) { passed += 1; console.log(`  ✓ ${name}`); } else { failed += 1; console.log(`  ✗ ${name}${detail}`); }
   };
 
+  announceRegistry();
   console.log('SELF-TEST — served-surface value gate');
 
   const BODY = {
@@ -545,7 +575,8 @@ function selfTest() {
 
   // (6) THE BYPASSED ARTIFACTS — everything above replaces the real registry, the real contract
   // and the real builder with fixtures, so a hermetic suite is structurally blind to all three.
-  const real = loadRegistry();
+  // DEFAULT_REGISTRY, never REGISTRY: this block's whole subject is the artifact that ships.
+  const real = loadRegistry(DEFAULT_REGISTRY);
   check('the REAL registry loads and declares surfaces', () => !real.error && real.surfaces.length > 0);
   check('every REAL offline surface has a readable contract with assertions', () => {
     if (real.error) return false;
@@ -557,6 +588,16 @@ function selfTest() {
     if (real.error) return false;
     const g = enumerationGap(real.registry);
     return !g.error && g.missing.length === 0 && g.producerCount > 0;
+  });
+
+  // (6b) THE OVERRIDE'S OWN GUARD RAIL. `SERVED_SURFACE_REGISTRY` exists so a test can reach the
+  // vacuity branch through the real process boundary. That same lever, set in CI, would let the
+  // fail-closed deploy gate be pointed at a fixture — so the committed workflow is asserted here,
+  // in the gate itself, rather than trusted to a review that has already missed this class once.
+  check('the committed deploy.yml does NOT set SERVED_SURFACE_REGISTRY', () => {
+    const wf = readFileSync(join(ROOT, '.github', 'workflows', 'deploy.yml'), 'utf8');
+    if (!wf.includes('check-served-surface-values.mjs')) return false; // vacuity: wrong file
+    return !wf.includes('SERVED_SURFACE_REGISTRY');
   });
 
   // (7) the CH1 regression proof.
@@ -579,6 +620,7 @@ if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(
     const code = selfTest();
     emit(code === 0 ? 'PASS' : 'FAIL', null);
   } else if (process.argv.includes('--prove-catches-ch1')) {
+    announceRegistry();
     const r = proveCatchesCh1();
     if (r.ok) {
       console.log(`  ${r.detail}`);

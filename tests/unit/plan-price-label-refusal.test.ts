@@ -93,17 +93,32 @@ describe('no caller can render the refusal — the control tsc cannot provide', 
   /** Arguments provable safe from the call site alone. */
   const SAFE_ARGS = new Set(["'starter'", "'pro'", '"starter"', '"pro"', 'DEFAULT_UPGRADE_PLAN']);
 
+  /** A call site's identity: the file plus the ARGUMENT EXPRESSION it passes. */
+  const siteKey = (c: { file: string; arg: string }): string => `${c.file}::${c.arg}`;
+
   /**
    * PARAMETERISED call sites, each carrying the binding that makes it safe.
    *
-   * A textual scan cannot see an enclosing binding, so these three are declared rather than
+   * A textual scan cannot see an enclosing binding, so each row below is declared rather than
    * inferred — the same shape as `bare_token_allowlist` and the served-surface registry's
    * `coverage_reason`: a declared exemption with a reason is fine, an undeclared one is not.
    * Each was traced to a literal before being listed here.
+   *
+   * 🛑 KEYED BY CALL SITE, NOT BY FILE, and the difference is the whole control. This record used
+   * to be `Record<file, reason>` and the lookup `!DECLARED_PARAMETERISED[c.file]`, which exempted
+   * `src/lib/signup-flow.ts` WHOLESALE — the file that renders the public pricing cards. A future
+   * `planPriceLabel('enterprise')` added anywhere in it would have passed silently and emitted the
+   * literal text "null" into public copy, which is the exact defect this file exists to prevent.
+   * `callSites()` already collected `arg` and then discarded it at the lookup.
+   *
+   * The key is `<file>::<argument expression>`. A LINE NUMBER would go stale on any edit above it;
+   * the argument expression is stable, and it is what the reason is actually about — so two call
+   * sites in one file passing the same binding share one row, and a call site passing anything
+   * else is a new, undeclared one.
    */
   const DECLARED_PARAMETERISED: Record<string, string> = {
-    'src/lib/nudge-copy.ts': 'upgradeOfferPhrase() binds `const id = DEFAULT_UPGRADE_PLAN`, which is asserted self-serve below.',
-    'src/lib/signup-flow.ts': 'prepayPriceBlock(id) is module-private and renderPlanCards() calls it only with the literals starter and pro.',
+    'src/lib/nudge-copy.ts::id': 'upgradeOfferPhrase() binds `const id = DEFAULT_UPGRADE_PLAN`, which is asserted self-serve below.',
+    'src/lib/signup-flow.ts::id': 'prepayPriceBlock(id) is module-private and renderPlanCards() calls it only with the literals starter and pro — asserted below, not trusted.',
   };
 
   it('every shipped call site passes an id that PUBLISHES a price', () => {
@@ -111,7 +126,7 @@ describe('no caller can render the refusal — the control tsc cannot provide', 
     // render the literal text "null" into public copy, and tsc would not say a word — because
     // every call site interpolates into a template literal, where `string | null` compiles clean.
     // This is the assertion that would.
-    const risky = callSites().filter((c) => !SAFE_ARGS.has(c.arg) && !DECLARED_PARAMETERISED[c.file]);
+    const risky = callSites().filter((c) => !SAFE_ARGS.has(c.arg) && !DECLARED_PARAMETERISED[siteKey(c)]);
     expect(
       risky,
       'a planPriceLabel() call whose argument this test cannot prove is a self-serve plan. Either '
@@ -124,9 +139,20 @@ describe('no caller can render the refusal — the control tsc cannot provide', 
   it('no DECLARED_PARAMETERISED row is stale — an exemption for a call site that no longer exists', () => {
     // A dead exemption reads as vetted and covers nothing. If a file stops calling the helper, its
     // row must go, so the next reader is never reassured by a rule about code that has moved on.
-    const files = new Set(callSites().map((c) => c.file));
-    const stale = Object.keys(DECLARED_PARAMETERISED).filter((f) => !files.has(f));
+    // Call-site granularity, matching the key: a row survives only while a call site in that file
+    // still passes that exact argument. A file-level check would keep a row alive after the one
+    // call it described was rewritten to pass something else — an exemption covering nothing.
+    const sites = new Set(callSites().map(siteKey));
+    const stale = Object.keys(DECLARED_PARAMETERISED).filter((k) => !sites.has(k));
     expect(stale, `DECLARED_PARAMETERISED rows with no matching call site: ${stale.join(', ')}`).toEqual([]);
+  });
+
+  it('every exemption carries a prose reason — a bare key is not a declaration', () => {
+    for (const [k, reason] of Object.entries(DECLARED_PARAMETERISED)) {
+      expect(k, `${k} is not <file>::<arg>`).toMatch(/^[^:]+\.(ts|mjs|js)::.+$/);
+      expect(reason.trim().length, `${k} has no usable reason`).toBeGreaterThan(30);
+    }
+    expect(Object.keys(DECLARED_PARAMETERISED).length).toBeGreaterThan(0);
   });
 
   it('the declared bindings really are self-serve — the exemption is not a loophole', async () => {
