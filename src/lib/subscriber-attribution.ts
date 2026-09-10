@@ -45,17 +45,24 @@ const CREATE_SIGNUP_ATTRIBUTION_SQL = `
     ip_hash TEXT,
     user_agent TEXT,
     classification TEXT,
-    ua_class TEXT
+    ua_class TEXT,
+    backfilled_at ${TS}
   );
   CREATE INDEX IF NOT EXISTS idx_signup_attribution_created_at ON signup_attribution (created_at);
 `;
 
 /**
- * FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 — the two columns that turn the funnel's top stage
- * from a request count into a HUMAN denominator.
+ * The columns added to `signup_attribution` after its original CREATE — the two that turn the
+ * funnel's top stage from a request count into a HUMAN denominator, plus the backfill's
+ * provenance stamp.
  *
  * `classification` — `browser` | `bot` | `unknown` from `classifyBrowserIntent()`.
+ *                    (FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1, migration 038.)
  * `ua_class`       — the client slug from the ONE UA→identity map (`classifyClient().name`).
+ * `backfilled_at`  — set by `src/scripts/backfill-signup-attribution-class.ts` on every row it
+ *                    touches, so a recovered verdict is distinguishable from a live one, and so a
+ *                    re-run is a no-op by construction.
+ *                    (FUNNEL-ATTRIBUTION-CLASSIFY-BACKFILL-W1 CH2, migration 042.)
  *
  * THEY LIVE HERE, NOT in `performance-db.ts`'s `SIGNAL_MIGRATIONS`, for the reason that file
  * records verbatim against `request_log`: `signup_attribution` is created by THIS module,
@@ -63,30 +70,46 @@ const CREATE_SIGNUP_ATTRIBUTION_SQL = `
  * there would ALTER a table that does not exist yet and the throw aborts the rest of DB init.
  * Add a column where its table is owned.
  *
- * Both are NULLABLE with no default, deliberately. On PG 11+ that is a metadata-only catalog
- * change (no rewrite), and NULL has to keep meaning "written before CH1" — which is precisely
- * what the scoreboard's raw/`unknown` diagnostic rows must still be able to see. A DEFAULT would
- * silently relabel every pre-classification row as a real verdict.
+ * ALL are NULLABLE with no default, deliberately. On PG 11+ that is a metadata-only catalog
+ * change (no rewrite), and NULL has to keep meaning "written before this column existed" — which
+ * is precisely what the scoreboard's raw/`unknown` diagnostic rows must still be able to see. A
+ * DEFAULT would silently relabel every incumbent row as a real verdict.
  *
- * PG gets `IF NOT EXISTS` (idempotent — `migrations/038_signup_attribution_classification.sql`
- * pre-applies it on prod via SSH before this code deploys, so the runtime path is a no-op
- * there). SQLite has NO `ADD COLUMN IF NOT EXISTS` (verified 3.49,
- * DASH-EXTERNAL-ONLY-W1-PATCH-A), so it gets a bare ALTER that throws "duplicate column" on
- * re-run — caught below, ONE try/catch EACH so a throw on the first cannot skip the second.
+ * PG gets `IF NOT EXISTS` (idempotent — the matching migration pre-applies it on prod via SSH
+ * before this code deploys, so the runtime path is a no-op there). SQLite has NO
+ * `ADD COLUMN IF NOT EXISTS` (verified 3.49, DASH-EXTERNAL-ONLY-W1-PATCH-A), so it gets a bare
+ * ALTER that throws "duplicate column" on re-run — caught below, ONE try/catch EACH so a throw on
+ * the first cannot skip the rest.
  *
- * The column list is EXPORTED so `tests/unit/signup-attribution-ddl-parity.test.ts` can assert
- * that this boot path and migration 038 name the same columns: two DDLs for one schema is a
- * drift generator unless something compares them.
+ * ── WHY EACH ENTRY CARRIES ITS TYPE ──────────────────────────────────────────────────────────
+ * This was a bare `readonly string[]` and the ALTER template hard-coded ` TEXT`, which was fine
+ * while every added column happened to be TEXT. `backfilled_at` is a timestamp, and a hard-coded
+ * type would have emitted it as TEXT on the boot path while migration 042 declared TIMESTAMPTZ —
+ * two DDLs disagreeing about one column, on the very axis the parity test exists to police, and
+ * visible only on whichever backend was not the one you tested. The type is now DECLARED once
+ * here and projected into both the CREATE and the ALTER, reusing the dialect-correct `TS` const
+ * above so Postgres gets `TIMESTAMPTZ` and SQLite `TIMESTAMP`.
+ *
+ * The list is EXPORTED so `tests/unit/signup-attribution-ddl-parity.test.ts` can assert that this
+ * boot path and the migrations name the same columns with the same types: two DDLs for one schema
+ * is a drift generator unless something compares them.
  */
-export const SIGNUP_ATTRIBUTION_ADDED_COLUMNS: readonly string[] = Object.freeze([
-  'classification',
-  'ua_class',
+export interface SignupAttributionColumn {
+  readonly name: string;
+  /** Dialect-resolved SQL type, as it appears in BOTH the CREATE and the ALTER. */
+  readonly type: string;
+}
+
+export const SIGNUP_ATTRIBUTION_ADDED_COLUMNS: readonly SignupAttributionColumn[] = Object.freeze([
+  Object.freeze({ name: 'classification', type: 'TEXT' }),
+  Object.freeze({ name: 'ua_class', type: 'TEXT' }),
+  Object.freeze({ name: 'backfilled_at', type: TS }),
 ]);
 
 const ALTER_SIGNUP_ATTRIBUTION_SQL: readonly string[] = SIGNUP_ATTRIBUTION_ADDED_COLUMNS.map((c) =>
   PG
-    ? `ALTER TABLE signup_attribution ADD COLUMN IF NOT EXISTS ${c} TEXT;`
-    : `ALTER TABLE signup_attribution ADD COLUMN ${c} TEXT;`,
+    ? `ALTER TABLE signup_attribution ADD COLUMN IF NOT EXISTS ${c.name} ${c.type};`
+    : `ALTER TABLE signup_attribution ADD COLUMN ${c.name} ${c.type};`,
 );
 
 let _signupAttributionInit = false;

@@ -1,0 +1,41 @@
+-- 042 — FUNNEL-ATTRIBUTION-CLASSIFY-BACKFILL-W1 CH2
+-- One additive nullable provenance stamp on `signup_attribution`.
+--
+-- WHY A STAMP AND NOT A GUESS. After the backfill runs, a reader looking at a row with
+-- `classification='bot'` cannot tell whether the live classifier wrote it from request headers on
+-- the /signup path, or whether this wave recovered it from the stored `user_agent` alone. Those
+-- are different epistemic objects: the live verdict saw six layers of evidence, the recovered one
+-- saw exactly one (see `src/lib/attribution-backfill.ts` for the six-step table). "Record the
+-- instrument beside the number" is this estate's own rule, and without this column the number and
+-- its instrument are separated forever.
+--
+-- IT IS ALSO THE IDEMPOTENCE KEY. `src/scripts/backfill-signup-attribution-class.ts` selects
+-- `WHERE backfilled_at IS NULL AND (classification IS NULL OR ua_class IS NULL)`, so a re-run is a
+-- no-op BY CONSTRUCTION rather than by a flag somebody has to remember to pass.
+--
+-- NULLABLE WITH NO DEFAULT, exactly as 038's two columns are, and for the same reason: NULL here
+-- means "this row was never touched by the backfill", and a DEFAULT would stamp all 826 incumbent
+-- rows as though they had been. On PG 11+ a nullable column with no default is a metadata-only
+-- catalog change — no rewrite, no long lock — which is what makes it safe to pre-apply on a live
+-- table during serving hours.
+--
+-- NO INDEX. The only consumer is a one-shot script scanning a table of hundreds of rows; an index
+-- on a column the /signup write path touches would cost every insert to save a scan nobody runs
+-- twice.
+--
+-- PRE-APPLIED ON signal-1 VIA SSH BEFORE THE CODE DEPLOYS (the 038 precedent, CLAUDE.md's
+-- pre-apply rule), which is what makes the boot-path ALTER in `ensureSignupAttributionSchema()` a
+-- no-op there rather than a race against the fire-and-forget INSERT that names the column.
+--
+-- THE BOOT PATH IS THE OTHER HALF. `signup_attribution` is created lazily by
+-- `src/lib/subscriber-attribution.ts`, not by this directory, so a migration alone would never
+-- reach a fresh DB or the SQLite test/dev backend. `tests/unit/signup-attribution-ddl-parity.test.ts`
+-- asserts the two agree — and as of this wave its migration corpus is a DECLARED LIST covering
+-- BOTH 038 and 042, because it previously compared the boot path against exactly one migration and
+-- a second migration on this table could not be added without reddening it.
+--
+-- TYPE. `TIMESTAMPTZ` on Postgres; the boot path emits the dialect-correct `TIMESTAMP` on SQLite
+-- via the existing `TS` const. The parity test asserts the declared type reaches both DDLs.
+
+ALTER TABLE signup_attribution
+  ADD COLUMN IF NOT EXISTS backfilled_at TIMESTAMPTZ;
