@@ -13,6 +13,21 @@
 #
 #   push   status.md            ->  root@<host>:/var/lib/algovault-monitoring/status.md
 #   pull   canary-results.jsonl ->  <vault>/Claude files/canary-results.jsonl   (UNION-MERGED)
+#   mirror repo audits/*preregistration*.md -> <vault>/Claude files/repo-preregistrations/
+#
+# ── WHY THE THIRD LEG LIVES HERE AND NOT IN A SCRIPT OF ITS OWN ─────────────────────────────
+# OPS-PREREG-VAULT-MIRROR-W1. Pre-registrations are committed to the REPO, so the PLANNING
+# agent — whose mount is the vault only — cannot read the commitments it must plan against.
+# That is this file's own defect class in the opposite direction, and it made
+# `EDGE-HOLD-DISCIPLINE-W1` undispatchable (audits/EDGE-HOLD-DISCIPLINE-readiness-2026-09-09.md
+# §2, blocker A).
+#
+# It rides THIS script rather than arriving as a fourth thing somebody has to remember, because
+# this one already runs at step 6 of EVERY wave. A new script that must be remembered will rot;
+# a step that already runs will not. The leg itself is a SEPARATE executable
+# (`ops/scripts/prereg-vault-mirror.sh`) so that each script emits exactly ONE verdict token —
+# this file keeps `MONITORING_RESULTS_SYNC_VERDICT`, the mirror keeps `PREREG_MIRROR_VERDICT`,
+# and neither has to speak for the other.
 #
 # ── THE PULL MERGES; IT NEVER OVERWRITES, AND THAT IS A PAIRED CONTRACT ─────────────────────
 # `ops/monitoring/canary_result_log.py` caps the host file at MAX_LINES and DISCARDS the oldest
@@ -36,15 +51,25 @@
 # `ALGOVAULT_TEST_GATE=warn`: one convention, not a second dialect.
 #
 # Usage:
-#   monitoring-results-sync.sh                 # push status.md, then pull the results log
+#   monitoring-results-sync.sh                 # push status.md, pull the results log, mirror preregs
 #   monitoring-results-sync.sh push
 #   monitoring-results-sync.sh pull
+#   monitoring-results-sync.sh mirror
 #   monitoring-results-sync.sh --self-test     # hermetic: no ssh, no scp, no host
 #   monitoring-results-sync.sh --show-config
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
+
+# SELF-PATH, RESOLVED ONCE AND ABSOLUTE. The load-time refusal can only be reached through a
+# REAL invocation, so the self-test re-executes this file — and `"${BASH_SOURCE[0]}"` is
+# whatever string the caller typed. MEASURED 2026-09-10 on origin/main: run as
+# `bash monitoring-results-sync.sh` from ops/scripts, that re-invocation is a bare name, hits
+# `command not found`, and the two refusal assertions fail — a suite green from one directory
+# and red from another, which also makes any mutation proof run there VACUOUS. `$HERE` is
+# already absolute, so the fix is to project the self-path from it and never from argv.
+SELF="$HERE/$(basename "${BASH_SOURCE[0]}")"
 
 # The vault root is PROJECTED from the one declared vault path, never restated. A second absolute
 # string is a duplicated fact, and after a vault move the two would disagree about which file —
@@ -173,6 +198,36 @@ do_pull() {
   case "$stats" in *"unparseable=0"*) : ;; *) note "pull: WARNING — unparseable lines preserved at end of file"; downgrade FAIL ;; esac
 }
 
+PREREG_MIRROR=${MONITORING_SYNC_PREREG_MIRROR:-$REPO/ops/scripts/prereg-vault-mirror.sh}
+
+do_mirror_prereg() {
+  # A worktree that predates OPS-PREREG-VAULT-MIRROR-W1 does not carry the sibling. That is a
+  # "could not verify", never a failure of the sync and never an abort: step 6 runs at the END
+  # of a wave and must not turn a stale checkout into a blocked wave. Same shape as every
+  # pre-push block, and it SAYS SO rather than skipping quietly.
+  if [ ! -r "$PREREG_MIRROR" ]; then
+    note "mirror: SKIPPED — $PREREG_MIRROR not present in this worktree; run: git checkout origin/main -- ops/scripts/prereg-vault-mirror.sh"
+    downgrade INDETERMINATE; return
+  fi
+  local out tok
+  out="$(bash "$PREREG_MIRROR" both 2>&1)"
+  tok="$(printf '%s\n' "$out" | grep -o 'PREREG_MIRROR_VERDICT=[A-Z]*' | tail -1)"
+  # Gate on the TOKEN, never the exit code — the whole point of the token law. A run that died
+  # without emitting one is INDETERMINATE, which is the one outcome that law forbids going
+  # unreported.
+  case "$tok" in
+    PREREG_MIRROR_VERDICT=PASS) : ;;
+    PREREG_MIRROR_VERDICT=FAIL) downgrade FAIL ;;
+    PREREG_MIRROR_VERDICT=*)    downgrade INDETERMINATE ;;
+    *) note "mirror: the prereg mirror emitted NO verdict token — treating as INDETERMINATE"
+       downgrade INDETERMINATE ;;
+  esac
+  # POSITIVE per-step output: its own notes are reproduced, so "nothing moved" and "the leg
+  # never ran" cannot look the same from this file's output alone.
+  printf '%s\n' "$out" | sed -n 's/^  /  prereg /p'
+  note "mirror: ${tok:-PREREG_MIRROR_VERDICT=<none>}"
+}
+
 self_test() {
   local fails=0 ran=0 tmp
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/mrst.XXXXXX")" || { echo "SELF-TEST: FAIL (mktemp)"; return 1; }
@@ -214,6 +269,30 @@ self_test() {
   t "a first pull creates the vault file"     "$out"                    "merged=1 unparseable=0"
   t "the created file has the record"         "$(wc -l <"$tmp/fresh/new.jsonl" | tr -d ' ')" "1"
 
+  # ── THE MIRROR LEG'S TOKEN MAPPING ────────────────────────────────────────────────────────
+  # The leg delegates to a sibling executable, so the INVOCATION is a seam and a hermetic suite
+  # is structurally blind to it. Point the seam at a stub that emits a chosen token and drive
+  # the real `do_mirror_prereg`, so what gets asserted is the mapping this file actually owns.
+  local stub="$tmp/stub-mirror.sh"
+  for pair in "PASS:PASS" "FAIL:FAIL" "INDETERMINATE:INDETERMINATE"; do
+    printf '#!/usr/bin/env bash\necho "  stub note"\necho "PREREG_MIRROR_VERDICT=%s"\n' "${pair%%:*}" > "$stub"
+    chmod +x "$stub"
+    VERDICT=PASS
+    MONITORING_SYNC_PREREG_MIRROR="$stub" PREREG_MIRROR="$stub" do_mirror_prereg >/dev/null
+    t "a mirror ${pair%%:*} maps to sync ${pair##*:}" "$VERDICT" "${pair##*:}"
+  done
+  # A run that emits NO token is the one outcome the token law forbids going unreported.
+  printf '#!/usr/bin/env bash\necho "it died before saying anything"\nexit 0\n' > "$stub"; chmod +x "$stub"
+  VERDICT=PASS
+  PREREG_MIRROR="$stub" do_mirror_prereg >/dev/null
+  t "a mirror emitting NO token is INDETERMINATE" "$VERDICT" "INDETERMINATE"
+  # A worktree predating the mirror must degrade, SAY SO, and never abort the sync.
+  VERDICT=PASS; NOTES=()
+  PREREG_MIRROR="$tmp/does-not-exist.sh" do_mirror_prereg >/dev/null
+  t "an absent sibling is INDETERMINATE"  "$VERDICT" "INDETERMINATE"
+  t "and it names the remediation"        "$(printf '%s\n' "${NOTES[@]}" | grep -c 'git checkout origin/main')" "1"
+  VERDICT=PASS; NOTES=()
+
   # The verdict ladder never upgrades.
   VERDICT=PASS;          downgrade FAIL;          t "PASS downgrades to FAIL"            "$VERDICT" "FAIL"
   downgrade INDETERMINATE;                        t "FAIL downgrades to INDETERMINATE"   "$VERDICT" "INDETERMINATE"
@@ -240,8 +319,15 @@ self_test() {
   # `--show-config` touches no network, so on a healthy load it CANNOT emit this token, and the
   # token's presence is therefore evidence of the refusal and of nothing else. The reason line is
   # asserted too, so a token from some future third cause still cannot masquerade as this one.
+  # CWD-INDEPENDENT, asserted directly. Proving the mutation above only goes red when the
+  # suite happens to be invoked by a bare name, and a proof that depends on how it was
+  # called is luck. This asserts the property itself.
+  # Parameter expansion, NOT `case`: bash 3.2 (which is what /bin/bash is on this Mac) mis-parses
+  # a `case` pattern's `)` inside `$( )` and returns the tail of the expression as a STRING.
+  # Measured here — the assertion read back " echo yes ;; *) echo no ;; esac)".
+  t "the self-path is absolute" "$([ "${SELF#/}" != "$SELF" ] && echo yes || echo no)" "yes"
   local refuse
-  refuse="$(SYSTEM_MAP_PATH="$tmp/no-such-vault/system-map.md" "${BASH_SOURCE[0]}" --show-config 2>&1)"
+  refuse="$(SYSTEM_MAP_PATH="$tmp/no-such-vault/system-map.md" "$SELF" --show-config 2>&1)"
   t "an unresolvable vault root REFUSES" \
     "$(printf '%s' "$refuse" | tail -1)" "MONITORING_RESULTS_SYNC_VERDICT=INDETERMINATE"
   t "and it says WHY" \
@@ -249,7 +335,7 @@ self_test() {
   # The healthy control: the same flag on a real vault emits NO verdict token at all, which is
   # what makes the assertion above discriminating rather than merely true.
   t "a healthy load emits no refusal token" \
-    "$("${BASH_SOURCE[0]}" --show-config 2>&1 | grep -c 'MONITORING_RESULTS_SYNC_VERDICT')" "0"
+    "$("$SELF" --show-config 2>&1 | grep -c 'MONITORING_RESULTS_SYNC_VERDICT')" "0"
 
   if [ "$fails" -gt 0 ]; then
     echo "SELF-TEST: FAIL ($fails of $ran)"
@@ -269,13 +355,14 @@ for a in "$@"; do
     --show-config) printf 'HOST=%s\nREMOTE_RESULTS=%s\nLOCAL_STATUS=%s\nLOCAL_RESULTS=%s\nVAULT_ROOT=%s\n' \
                      "$HOST" "$REMOTE_RESULTS" "$LOCAL_STATUS" "$LOCAL_RESULTS" "$VAULT_ROOT"; exit 0 ;;
     --fail-open)   FAIL_OPEN=1 ;;
-    push|pull|both) MODE="$a" ;;
+    push|pull|mirror|both) MODE="$a" ;;
     *) echo "unknown argument: $a" >&2; echo "MONITORING_RESULTS_SYNC_VERDICT=INDETERMINATE"; exit 3 ;;
   esac
 done
 
 [ "$MODE" = both ] || [ "$MODE" = push ] && do_push
 [ "$MODE" = both ] || [ "$MODE" = pull ] && do_pull
+[ "$MODE" = both ] || [ "$MODE" = mirror ] && do_mirror_prereg
 
 for n in "${NOTES[@]:-}"; do [ -n "$n" ] && echo "  $n"; done
 echo "MONITORING_RESULTS_SYNC_VERDICT=$VERDICT"
