@@ -5,6 +5,21 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.0] - 2026-09-10
+
+### Added
+- `claim_url` and `claim_hint` in the `_algovault` envelope of every tool response that carries an auth block — a direct link to keep the key in use, and a heads-up before the cap. Tools with no auth block carry neither.
+- `price_usd_6month` on every tier of `GET /api/plans/public`, so six-month prepay pricing no longer has to be hardcoded by a client.
+- Two routes: a one-click email unsubscribe endpoint and a signature-verified delivery webhook. Plumbing for the email lifecycle; no message is sent by this release.
+
+### Changed
+- `GET /api/plans/public` now returns `null` for the Enterprise price and call limits instead of a published figure. Enterprise is quoted directly. No key was removed.
+- The webhook documentation no longer publishes per-tier call quotas that were retired in August, and no longer tells you to recreate a subscription after an automatic disable — the subscription re-enables itself.
+- The site carries a sign-up control in the header at mobile widths and a conversion band above the footer; the home page's in-page links and copy button now work below the desktop breakpoint.
+
+### Fixed
+- Two upgrade claims on the welcome page that were not true have been removed — one about asset coverage, one about alert limits.
+
 ## [1.29.0] - 2026-09-04
 
 ### Added
