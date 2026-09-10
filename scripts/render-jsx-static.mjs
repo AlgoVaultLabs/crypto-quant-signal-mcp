@@ -329,11 +329,21 @@ function landingClientRows(surface) {
       .replace(/\s+/g, ' ')
       .trim();
 
+  // LANDING-QUICKSTART-SRC-TAG-W1 — a LANDING-SCOPED substitution, deliberately NOT a SoT edit.
+  // `mcp-clients.ts` is SHARED: the same setupSummary renders landing/integrations/<slug>.html,
+  // whose connect URLs carry `?src=docs` and must NEVER carry `?src=landing`. This function is the
+  // landing projection of that SoT and is called exactly once (the TryIn30 client grid), so
+  // tagging here reaches the two landing artboards and nothing else. Only an UNTAGGED URL is
+  // tagged — an existing `?src=`/`?`/`&` is left alone, so a SoT row that already declares its own
+  // channel keeps it.
+  const tagForLanding = (text) =>
+    text.replace(/https:\/\/api\.algovault\.com\/mcp(?![?&\w])/g, 'https://api.algovault.com/mcp?src=landing');
+
   return surface.entries.map((e) => ({
     slug: e.slug,
     label: e.displayName,
     kind: e.kind || 'native',
-    connect: stripToText(e.setupSummary),
+    connect: tagForLanding(stripToText(e.setupSummary)),
     // Empty string → null so the JSX's truthiness test reads cleanly.
     tutorial: e.fullTutorialUrl || null,
   }));

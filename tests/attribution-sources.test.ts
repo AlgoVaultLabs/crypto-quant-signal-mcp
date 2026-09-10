@@ -41,10 +41,13 @@ describe('attribution-sources — SoT enum', () => {
     // + 1 IDENTITY-LIFECYCLE-W3 (`lifecycle` — utm_source on links inside a lifecycle email;
     //   the `chan-email` TRACK TOKEN is a different namespace, already live in src/lib/email.ts,
     //   and regex-validated rather than enumerated, so it is deliberately NOT a row here)
-    // = 36 slugs, no dupes.
-    expect(ATTRIBUTION_SOURCES.length).toBe(36);
-    expect(new Set(ATTRIBUTION_SOURCES).size).toBe(36);
+    // + 1 LANDING-QUICKSTART-SRC-TAG-W1 (`landing` — the `?src=landing` tag on every MCP URL
+    //   rendered inside algovault.com/#quickstart; `?src=`-only class, like `docs`)
+    // = 37 slugs, no dupes.
+    expect(ATTRIBUTION_SOURCES.length).toBe(37);
+    expect(new Set(ATTRIBUTION_SOURCES).size).toBe(37);
     expect(set.has('lifecycle' as never)).toBe(true);
+    expect(set.has('landing' as never)).toBe(true);
     // BINANCE-AGENT-OS-TRUTH-AND-PAGE-W1: every slug must match /^[a-z0-9_]+$/. This is not a
     // style rule — check-attribution-src-coverage.mjs extracts this enum with that exact
     // character class, so a HYPHENATED slug is invisible to the gate and every connect URL

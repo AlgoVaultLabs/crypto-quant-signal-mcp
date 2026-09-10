@@ -79,6 +79,16 @@ export const ATTRIBUTION_SOURCES = [
   // validated by regex (subscriber-attribution.ts TRACK_TOKEN_RE), never declared in a list, so
   // there is no row to add for it here and adding one would be a second, drifting registry.
   'lifecycle',
+  // LANDING-QUICKSTART-SRC-TAG-W1 — algovault.com/#quickstart. A `?src=`-only slug like `docs`:
+  // there is no referer rule and no UA rule for it, because the tag is on the URL the visitor
+  // copies out of the quickstart section, and the connect that follows carries no Referer at all.
+  // It gets its OWN slug rather than riding `docs` because the landing page is the highest-traffic
+  // entry surface and merging it into the in-repo docs bucket makes both unmeasurable. The
+  // accepted caveat is the SAME one `docs` carries: a third party who quotes our snippet inherits
+  // the tag. Repo-side surfaces (README, server.json, docs quick-starts) stay BARE on purpose —
+  // a `?src` tag OUTRANKS Referer in classifySource, so tagging a surface that registries render
+  // would misattribute their traffic to us.
+  'landing',
   'unknown', // default-deny terminal — an untagged/unclassified hit is unknown, not "direct"
 ] as const;
 
@@ -247,7 +257,11 @@ export function mediumForSource(source: AttributionSource): SourceMedium {
     case 'agentkit': case 'elizaos': case 'llamahub': case 'npm': case 'lobehub':
     case 'producthunt': return 'listing';
     case 'organic': return 'organic';
-    case 'github': case 'docs': case 'devto': case 'medium': case 'reddit': return 'referral';
+    case 'github': case 'docs': case 'devto': case 'medium': case 'reddit':
+    // LANDING-QUICKSTART-SRC-TAG-W1: our own entry page, same medium class as `docs`. Omitting it
+    // would drop `landing` through to the `default` branch and bucket a MEASURED channel into the
+    // direct/unknown residual — silently, since the switch is not exhaustive over the enum.
+    case 'landing': return 'referral';
     // OPS-ATTRIBUTION-AI-REFERRAL-W1 — the ai_* human-referral family, grouped as its OWN medium so
     // the scoreboard sums by `medium === 'ai'` (single-derivation), never a hardcoded slug list.
     case 'ai_chatgpt': case 'ai_perplexity': case 'ai_claude': case 'ai_gemini':

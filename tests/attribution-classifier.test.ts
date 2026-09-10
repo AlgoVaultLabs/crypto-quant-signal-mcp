@@ -134,6 +134,10 @@ describe('resolveSource back-compat + mediumForSource', () => {
     expect(mediumForSource('smithery')).toBe('listing');
     expect(mediumForSource('x')).toBe('social');
     expect(mediumForSource('unknown')).toBe('direct');
+    // LANDING-QUICKSTART-SRC-TAG-W1: `landing` must NOT fall through the switch's `default` into
+    // the direct/unknown residual — it is our own entry page, same medium class as `docs`.
+    expect(mediumForSource('landing')).toBe('referral');
+    expect(mediumForSource('docs')).toBe('referral');
   });
 });
 
