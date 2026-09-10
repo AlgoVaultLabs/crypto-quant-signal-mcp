@@ -562,6 +562,29 @@
       }
     },
     {
+      "id": "ci-workflow-readme-snapshot-writeback",
+      "path": ".github/workflows/readme-snapshot-writeback.yml",
+      "kind": "ci-workflow",
+      "contended_target": "refs/heads/main (it commits README.md and pushes with the default GITHUB_TOKEN)",
+      "writers": [
+        ".github/workflows/readme-snapshot-writeback.yml"
+      ],
+      "_writers_reason": "A ci-workflow row's resource IS the workflow's run lane; the writer is the workflow file itself, and the concurrent writers are two runs of it. The >=2-writers rule therefore does not decide these rows — the CI_SERIALIZATION checks do, and they require a non-empty serialization.key on EVERY ci-workflow row regardless of writer count.",
+      "consumers": [
+        "refs/heads/main (it commits README.md and pushes with the default GITHUB_TOKEN)"
+      ],
+      "invariant": "Carries a TOP-LEVEL concurrency block whose group equals serialization.key, with queue: max and NO cancel-in-progress. This is the SECOND CI writer of refs/heads/main and the only one that deliberately does NOT re-trigger deploy.yml: it pushes with the default GITHUB_TOKEN, and GitHub's documented recursion rule means a GITHUB_TOKEN push fires no `push`-triggered workflow. regenerate-landing.yml is the deliberate opposite — it passes MCP_REPO_DISPATCH_TOKEN precisely so deploy.yml DOES fire. Adding a `token:` to this workflow's checkout would turn a three-number nightly refresh into a nightly production redeploy, because README.md is NOT in deploy.yml's paths-ignore (the Dockerfile COPYs it).",
+      "severity": "report",
+      "sha256": null,
+      "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
+      "serialization": {
+        "mechanism": "gha-concurrency",
+        "key": "${{ github.workflow }}",
+        "scope": "all runs of this workflow, repository-wide",
+        "_scope_reason": "One README, one git channel, one global group. Two overlapping runs would each bake the same three literals and then race each other's rebase for no gain. Like regenerate-landing.yml this is a CI writer named in ref-main's residual — it can move main underneath a local session and no local lock can prevent it — so it tolerates losing the race (fetch/rebase/retry, never force) instead of taking a lock it cannot reach."
+      }
+    },
+    {
       "id": "ci-workflow-regenerate-landing",
       "path": ".github/workflows/regenerate-landing.yml",
       "kind": "ci-workflow",

@@ -166,10 +166,21 @@ jobs:
       - name: Compile TS
         run: npm run build
 
-      # Refresh the published README's SNAPSHOT-LINE track-record numbers from live SoT
-      # so the npm/GitHub README can never go stale. Wired by OPS-NPM-README-SINGLE-SOT-W1
-      # (2026-05-31): the snapshot injector now covers README.md (manifest claims
-      # dtrf-pfe-wr / dtrf-hold-rate / dtrf-readme-total-calls / dtrf-readme-merkle-batches).
+      # Refresh the published README's SNAPSHOT-LINE track-record numbers from live SoT so THE
+      # NPM TARBALL can never ship a stale one. Wired by OPS-NPM-README-SINGLE-SOT-W1
+      # (2026-05-31): the snapshot injector covers README.md (manifest claims
+      # dtrf-pfe-wr / dtrf-readme-total-calls / dtrf-readme-merkle-batches).
+      #
+      # ⚠️ SCOPE — corrected by OPS-README-GIT-CHANNEL-PRODUCER-W1 (2026-09-10). This step used
+      # to claim it kept "the npm/GitHub README" fresh. It never did, and could not: it rewrites
+      # bytes in the RUNNER's checkout and NOTHING HERE COMMITS THEM, so what it guarantees is
+      # the tarball `npm publish` packs and nothing else. The git channel that
+      # raw.githubusercontent.com and every LLM crawler read is refreshed by
+      # .github/workflows/readme-snapshot-writeback.yml (`17 1 * * *`), and the band gate
+      # scripts/check-readme-snapshot-freshness.mjs is what fails when that producer dies.
+      # (The retired `dtrf-hold-rate` is dropped from the claim list above — HOLD-DEEMPHASIS-
+      # SWEEP-W1 removed it from the manifest on 2026-08-10, in the same commit as its spans.)
+      #
       # Fail-open if SoT unreachable (exit 0 → publish proceeds with the committed fallbacks);
       # catastrophic >50%-zero-match → exit 1 (blocks publishing a structurally-drifted README).
       - name: Refresh README track-record numbers (snapshot injector)

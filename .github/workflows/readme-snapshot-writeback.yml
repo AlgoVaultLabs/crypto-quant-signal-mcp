@@ -1,0 +1,250 @@
+name: README snapshot writeback
+
+# ─── WHY THIS EXISTS — OPS-README-GIT-CHANNEL-PRODUCER-W1 CH1 ────────────────────────────────
+#
+# `README.md` is the only snapshot-injector target served from THREE channels, and until this
+# workflow only two of them had a producer writing to them:
+#
+#   host webroot   — deploy.yml:890 + ops/cron/snapshot-landing-daily.sh (`39 0 * * *`) run the
+#                    injector in the Hetzner checkout at /opt/crypto-quant-signal-mcp.
+#   npm tarball    — publish-npm.yml:176 runs it in the CI runner's checkout, and `npm publish`
+#                    packs the refreshed bytes.
+#   git channel    — raw.githubusercontent.com/.../main/README.md. NOBODY WROTE HERE.
+#
+# Neither of the first two paths commits. `regenerate-landing.yml:153` is the only workflow that
+# ever `git add`s README.md, and it runs algovault-skills' build_landing.mjs — never the injector.
+# So the three managed literals moved EXACTLY ONCE in 40 days on origin/main, and that once
+# (9c7dce51, 2026-08-25) was a local session's live injector run swept into an unrelated commit,
+# not a producer firing.
+#
+# Measured 2026-09-10, committed-on-main vs live SoT:
+#   dtrf-pfe-wr              91.7%    vs  91.4%   ← OVERSTATES the headline win rate by 0.3pp
+#   dtrf-readme-total-calls  508,268  vs  646,362
+#   dtrf-readme-merkle-batches   136  vs  153
+#
+# This is the THIRD application of a shape this repo already owns. OPS-FRESHNESS-SOURCE-TRUTH-W1
+# (2026-07-28) retired "baked literals track the DEPLOY clock instead of the PRODUCER clock" for
+# the host channel by running the same injector on the producer's cadence. Same bug class, one
+# channel over, never covered.
+#
+# ─── SCHEDULE ───────────────────────────────────────────────────────────────────────────────
+#
+# `17 1 * * *`. Off the `:00` boundary per the CLAUDE.md cron rule (offset = min(17, 43) = 17
+# minutes), and >= 30 min after BOTH upstream producers so the daily batch is already live:
+#   00:05  publish-merkle-batch    (batch_count moves here)
+#   00:39  snapshot-landing-daily  (host webroot bake)
+#   01:17  THIS WORKFLOW           (git channel bake)
+# It also sits inside the 18:00-02:59 UTC deploy-free window, so it never races a deploy's own
+# injector run on the host.
+#
+# ─── WHY GITHUB_TOKEN, AND WHY THAT IS THE WHOLE DESIGN ─────────────────────────────────────
+#
+# README.md is NOT in deploy.yml's `paths-ignore` — deliberately, because the Dockerfile COPYs it
+# and a commit touching it MUST rebuild. So a PAT push from here would rebuild and restart PROD
+# EVERY NIGHT for a three-number refresh. GitHub's documented recursion rule closes that:
+#
+#   "if a workflow run pushes code using the repository's GITHUB_TOKEN, a new workflow will not
+#    run even when the repository contains a workflow configured to run when push events occur"
+#   — https://docs.github.com/en/actions/concepts/security/github_token (read 2026-09-10)
+#
+# The documented exceptions are `workflow_dispatch`, `repository_dispatch` and `pull_request`;
+# deploy.yml uses none of them, so its `push` trigger stays silent for this workflow's commits.
+#
+# Therefore: GITHUB_TOKEN, NEVER a PAT. `actions/checkout` is given no `token:`, which is what
+# makes the push authenticate as github-actions[bot]. This is the DELIBERATE OPPOSITE of
+# regenerate-landing.yml, which passes MCP_REPO_DISPATCH_TOKEN precisely so that deploy.yml DOES
+# fire on its landing/* commits. Two writers, two intents, one knob.
+#
+# 🛑 DO NOT "fix" a missed deploy by adding README.md to deploy.yml's paths-ignore instead. That
+# would also silence deploys for HAND-AUTHORED release copy — a different and wanted trigger.
+#
+# ─── ZERO npm INSTALL, MEASURED NOT ASSUMED ─────────────────────────────────────────────────
+#
+# The dispatching spec called for `npm ci`. Probed 2026-09-10 instead of assumed: the injector's
+# entire import closure is `node:fs/promises`, `node:url`, `node:path` and the repo-local
+# `scripts/lib/manifest-targets.mjs` (itself `node:fs` + `node:path` only) — its own header says
+# "Zero npm deps". Verified empirically by moving node_modules aside and running it: full
+# 58-file pass, 381 replacements, no resolution error. So `npm ci` here would be ~90s of nightly
+# cost and an extra failure surface for a script that cannot use it. If a future manifest claim
+# ever needs a dependency, the import fails BEFORE main()'s fail-open catch and this run goes red
+# loudly rather than baking nothing in silence.
+
+on:
+  schedule:
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+
+# ─── CONCURRENCY ────────────────────────────────────────────────────────────────────────────
+#
+# Matches deploy.yml / regenerate-landing.yml / monitoring-schedules.yml exactly. `queue: max`,
+# never the `single` default: waves cite run IDs as acceptance evidence, and a run cancelled
+# while PENDING is not a failure anywhere — it is simply missing.
+#
+# `cancel-in-progress` is deliberately absent, as on every workflow in this repo: it scopes to
+# the in-progress run, its `false` value appears nowhere in GitHub's documentation, and combining
+# it with `queue: max` is an explicit workflow validation error.
+#
+# No job-level concurrency block: GitHub does not document how workflow-level and job-level
+# groups interact, and a load-bearing safety property must never be rented from undocumented
+# behaviour. Declared in ops/shared-worktree-state.json (`ci-workflow-readme-snapshot-writeback`)
+# and asserted in BOTH directions by scripts/check-shared-state.mjs +
+# tests/unit/workflow-concurrency.test.ts.
+concurrency:
+  group: ${{ github.workflow }}
+  queue: max
+
+permissions:
+  # The default GITHUB_TOKEN is read-only on contents (GitHub 2023+ org defaults). The push step
+  # needs write. Nothing else here touches any other scope.
+  contents: write
+
+jobs:
+  writeback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          # Full history: the push step REBASES onto a moved origin/main, which a shallow clone
+          # cannot do.
+          fetch-depth: 0
+          # NO `token:` — see the GITHUB_TOKEN rationale in the header. Adding a PAT here is the
+          # one edit that turns this into a nightly production redeploy.
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'   # tracks the runtime, same pin as deploy.yml / publish-npm.yml
+
+      # Run the injector UNFILTERED, never `--only=readme`. `dtrf-pfe-wr` is one of the three
+      # README claims and its id does not contain "readme"; scoping the WRITE would leave the
+      # overstated win rate — the one number this workflow exists to correct — unbaked.
+      #
+      # The injector is fail-open on an unreachable SoT (exit 0, stale literals survive) and
+      # exits 1 only on its catastrophic >=50%-zero-match guard. Both are the right behaviours
+      # here: a network blip must not fail the run, and a structurally-drifted manifest must.
+      - name: Run the snapshot injector (unfiltered)
+        run: node scripts/snapshot-landing-data.mjs
+
+      # ─── COMMIT README.md ALONE ───────────────────────────────────────────────────────────
+      #
+      # The unfiltered injector also rewrites landing/*.html and docs-src/template.html in this
+      # checkout. Those are regenerate-landing.yml's and the host cron's territory, and
+      # committing a baked docs-src/template.html is exactly what killed publish run 32980710335
+      # at prepublishOnly with "docs.html DRIFT" (publish-npm.yml:178-188) — the template and the
+      # generated artifact get patched independently and then disagree.
+      #
+      # The restore set is ENUMERATED FROM THE REAL DIFF, never inferred from a path glob: an
+      # inferred set reports phantom entries on its first run, and a guard that cries wolf once
+      # is ignored forever. Then the result is ASSERTED, so "only README.md is staged" is a
+      # measured post-condition rather than a hope.
+      - name: Restore every injector target except README.md
+        run: |
+          set -euo pipefail
+
+          CHANGED="$(git diff --name-only)"
+          if [ -n "$CHANGED" ]; then
+            printf '%s\n' "$CHANGED" | sed -e 's/^/  touched: /'
+          fi
+
+          while IFS= read -r p; do
+            if [ -n "$p" ] && [ "$p" != "README.md" ]; then
+              git restore --source=HEAD --staged --worktree -- "$p"
+            fi
+          done <<< "$CHANGED"
+
+          # `git status --porcelain`, not `git diff` — this also catches an UNTRACKED file, which
+          # a diff-only view is blind to. If the injector ever starts creating one, this refuses
+          # rather than committing it by accident.
+          REMAINING="$(git status --porcelain | sed -e 's/^...//' | grep -v '^README\.md$' || true)"
+          if [ -n "$REMAINING" ]; then
+            echo "::error::readme-snapshot-writeback: paths other than README.md are still dirty after the restore. Refusing to commit."
+            printf '%s\n' "$REMAINING" | sed -e 's/^/  /'
+            exit 1
+          fi
+          echo "readme-snapshot-writeback: working tree carries README.md and nothing else."
+
+      # ─── LAND IT, TOLERATING A LOST RACE ──────────────────────────────────────────────────
+      #
+      # Same shape as regenerate-landing.yml:160-222, deliberately: a GitHub runner cannot
+      # participate in scripts/land.sh's mutex, which lives on the operator's laptop, so this
+      # writer takes the OTHER half of the invariant — it survives being beaten to the ref.
+      #
+      # NEVER a force, NEVER a lease, NEVER `-X ours/theirs`. README.md is the canonical
+      # npm-README SoT and carries hand-authored "What's new" copy; a CI writer that settles a
+      # collision by overwriting is a data-integrity defect wearing a fix's clothes. A conflict
+      # aborts and fails the run, naming the paths.
+      #
+      # 3 attempts, matching scripts/land.sh's MAX_ATTEMPTS and regenerate-landing.yml's, so
+      # every side of the `ref-main` residual behaves identically rather than each carrying a
+      # locally-tuned constant. Backoff is jittered because the case being retried IS contention;
+      # identical backoffs re-collide in lockstep.
+      - name: Commit and push README.md
+        run: |
+          set -uo pipefail
+
+          if git diff --quiet -- README.md; then
+            echo "readme-snapshot-writeback: README.md already matches the live SoT; nothing to commit."
+            exit 0
+          fi
+
+          git config user.email "ci@algovault.com"
+          git config user.name "AlgoVault CI"
+          git add -- README.md
+          git commit \
+            -m "chore(readme): re-bake SNAPSHOT-LINE track-record numbers from live SoT" \
+            -m "Machine-generated by .github/workflows/readme-snapshot-writeback.yml (OPS-README-GIT-CHANNEL-PRODUCER-W1). Values come from scripts/snapshot-landing-data.mjs reading /api/performance-public + /api/merkle-batches; do not hand-edit them. Pushed with GITHUB_TOKEN so it does not re-trigger Deploy to Hetzner."
+
+          BRANCH=main
+          MAX_ATTEMPTS=3
+          attempt=0
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+
+            # Every attempt RE-FETCHES. A retry against a stale view of the remote is not a
+            # retry — it is the same push again.
+            if ! git fetch origin "$BRANCH"; then
+              echo "::error::readme-snapshot-writeback: git fetch origin $BRANCH failed; cannot establish what to rebase onto."
+              exit 1
+            fi
+
+            if ! git rebase "origin/$BRANCH"; then
+              CONFLICTED="$(git diff --name-only --diff-filter=U 2>/dev/null || true)"
+              git rebase --abort || true
+              echo "::error::readme-snapshot-writeback: rebase onto origin/$BRANCH CONFLICTS. Aborted; nothing was pushed. This job will never auto-resolve a conflict, because README.md carries authored release copy."
+              echo "Conflicted paths:"
+              printf '%s\n' "$CONFLICTED" | sed -e 's/^/  /'
+              exit 1
+            fi
+
+            PUSH_OUT="$(mktemp)"
+            if git push origin "HEAD:$BRANCH" >"$PUSH_OUT" 2>&1; then
+              cat "$PUSH_OUT"
+              echo "readme-snapshot-writeback: landed on attempt $attempt/$MAX_ATTEMPTS."
+              exit 0
+            fi
+            cat "$PUSH_OUT"
+
+            # Only a LOST RACE is retryable. Anything else (auth, network, a protected ref) will
+            # not heal by trying again, and looping on it hides the real cause. `cannot lock ref`
+            # is in this set because a lost race has TWO shapes: if the competing writer lands
+            # before our fetch git refuses locally ("fetch first"), and if it lands DURING the
+            # transfer the REMOTE refuses the compare-and-swap instead. Matching `cannot lock
+            # ref` rather than the bare `[remote rejected]` is deliberate: a pre-receive hook
+            # DECLINING a push prints that too, and retrying a refusing gate is routing around it.
+            if ! grep -qE 'non-fast-forward|fetch first|stale info|Updates were rejected|cannot lock ref' "$PUSH_OUT"; then
+              echo "::error::readme-snapshot-writeback: push failed for a reason this job does not treat as retryable. Not retrying."
+              exit 1
+            fi
+
+            if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then break; fi
+            SLEEP=$(( 2 * attempt + (RANDOM % 3) ))
+            echo "::warning::readme-snapshot-writeback: non-fast-forward — a writer OUTSIDE this workflow moved origin/$BRANCH. Attempt $attempt/$MAX_ATTEMPTS; re-fetching and rebasing in ${SLEEP}s."
+            sleep "$SLEEP"
+          done
+
+          # Wording deliberately mirrors scripts/land.sh's own exhaustion path, so both sides of
+          # the ref-main residual read identically to whoever is debugging at 3am.
+          echo "::error::readme-snapshot-writeback: $MAX_ATTEMPTS attempts exhausted landing HEAD onto origin/$BRANCH. Every attempt was refused non-fast-forward, so a writer outside this workflow is landing faster than this job can rebase. Escalate rather than loop: see the residual-scope note in scripts/land.sh's header and the ref-main row in ops/shared-worktree-state.json."
+          exit 1
