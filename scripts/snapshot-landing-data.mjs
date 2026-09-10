@@ -33,6 +33,14 @@ import { dirname, resolve as pathResolve } from "node:path";
 // CONVERSION-SURFACES-W2 CH3: ONE derivation of "which files does this claim apply to",
 // shared with scripts/check-claim-coverage.mjs. Two copies of that question would drift.
 import { claimTargets } from "./lib/manifest-targets.mjs";
+// OPS-README-GIT-CHANNEL-PRODUCER-W1 CH2: ONE derivation of "what does the live SoT say this
+// claim is", shared with scripts/check-readme-snapshot-freshness.mjs. A watcher that
+// re-implements its producer's formatter agrees with it only by coincidence.
+import {
+  resolveValue,
+  formatValue,
+  fetchSoT as fetchSoTShared,
+} from "./lib/snapshot-sot.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = pathResolve(__dirname, "..");
@@ -84,115 +92,19 @@ function logDebug(msg) {
   if (VERBOSE) log("DEBUG", msg);
 }
 
-// ─────────── Accessors ───────────
-// Accept a dot-path or a small DSL: 'totalCalls', 'overall.pfeWinRate*100',
-// 'batches.length', 'batches.latest.published_at', 'totalCalls+totalHolds',
-// 'asset_count_rounded_to_10'.
+// ─────────── Accessors · Formatters · Fetch ───────────
+//
+// MOVED to scripts/lib/snapshot-sot.mjs by OPS-README-GIT-CHANNEL-PRODUCER-W1 CH2 — bodies
+// unchanged, so no baked value can move as a result of the extraction. They live there
+// because scripts/check-readme-snapshot-freshness.mjs is the READ side of this same lane and
+// must resolve and format a claim EXACTLY as this writer does; two copies of that question
+// would drift, and the bug would live in whichever copy nobody is watching. Same reason
+// claimTargets already lives in ./lib/manifest-targets.mjs.
 
-function getNestedValue(obj, path) {
-  return path.split(".").reduce((acc, key) => {
-    if (acc === undefined || acc === null) return undefined;
-    if (key === "length") return acc.length;
-    if (key === "latest" && Array.isArray(acc)) {
-      // Return the array element with the most recent .published_at
-      return acc
-        .slice()
-        .sort(
-          (a, b) =>
-            new Date(b.published_at).getTime() -
-            new Date(a.published_at).getTime(),
-        )[0];
-    }
-    return acc[key];
-  }, obj);
-}
-
-function evalAccessor(accessor, dataMap) {
-  // Special derived accessors
-  if (accessor === "totalCalls+totalHolds") {
-    const tc = dataMap.performance?.totalCalls;
-    const th = dataMap.performance?.totalHolds;
-    if (typeof tc !== "number" || typeof th !== "number") return null;
-    return tc + th;
-  }
-  if (accessor === "asset_count_rounded_to_10") {
-    const v = dataMap.performance?.asset_count;
-    if (typeof v !== "number") return null;
-    return Math.floor(v / 10) * 10;
-  }
-  if (accessor === "overall.pfeWinRate*100") {
-    const v = dataMap.performance?.overall?.pfeWinRate;
-    if (typeof v !== "number") return null;
-    return v * 100;
-  }
-  // Default: dot-path resolution against the SoT root (caller must pass right root)
-  return null; // Handled by caller via getNestedValue + claim.sot
-}
-
-function resolveValue(claim, dataMap) {
-  // Try special accessors first
-  const special = evalAccessor(claim.accessor, dataMap);
-  if (special !== null && special !== undefined) return special;
-
-  // Otherwise dot-path resolution against the SoT root
-  const root = dataMap[claim.sot];
-  if (!root) return null;
-  return getNestedValue(root, claim.accessor);
-}
-
-// ─────────── Formatters ───────────
-
-function formatValue(value, format) {
-  if (value === null || value === undefined) return null;
-  switch (format) {
-    case "integer":
-      if (typeof value !== "number" || !Number.isFinite(value)) return null;
-      return String(Math.floor(value));
-    case "integer_with_commas":
-      if (typeof value !== "number" || !Number.isFinite(value)) return null;
-      return Math.floor(value).toLocaleString("en-US");
-    case "float_1dp":
-      if (typeof value !== "number" || !Number.isFinite(value)) return null;
-      return value.toFixed(1);
-    case "iso_to_human": {
-      // "2026-05-25T00:05:07.733Z" -> "2026-05-25 00:05 UTC"
-      if (typeof value !== "string") return null;
-      const d = new Date(value);
-      if (isNaN(d.getTime())) return null;
-      const pad = (x) => (x < 10 ? `0${x}` : String(x));
-      const ymd = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-      const hm = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
-      return `${ymd} ${hm}`;
-    }
-    default:
-      return null;
-  }
-}
-
-// ─────────── Fetch ───────────
-
-async function fetchSoT(url, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "algovault-snapshot-landing/1.0",
-      },
-    });
-    if (!res.ok) {
-      logWarn(`SoT_FETCH_NON_200: ${url} -> ${res.status}`);
-      return null;
-    }
-    return await res.json();
-  } catch (err) {
-    logWarn(`SoT_FETCH_FAILED: ${url} -> ${err.message || err}`);
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
+// Local wrapper only: routes the shared fetch's diagnostic through this script's own
+// timestamped logger, so the log format stays owned here rather than by the shared module.
+function fetchSoT(url, timeoutMs) {
+  return fetchSoTShared(url, timeoutMs, logWarn);
 }
 
 // ─────────── Replacement ───────────
