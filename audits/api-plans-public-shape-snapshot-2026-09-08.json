@@ -149,7 +149,7 @@
     },
     "modes": {
       "offline": "default. Imports buildPublicPlansBody from dist/ and asserts forbidden_values against the produced object. Fail-closed in .github/workflows/deploy.yml. Needs no network.",
-      "live": "--live [baseUrl]. Fetches the deployed surface, cache-busted, and asserts the same rules. Scheduled canary only, NEVER a CI blocker; a transport failure is INDETERMINATE, never FAIL."
+      "live": "--live [baseUrl]. Fetches the deployed surface, cache-busted, and asserts the same rules. Scheduled canary only, NEVER a CI blocker; a transport failure is INDETERMINATE, never FAIL. SCHEDULED FOR REAL since OPS-SERVED-SURFACE-CANARY-AND-CLAIM-TRUTH-W1 CH4: ops/cron/served-surface-values-canary.sh, crontab 47 7 * * * on signal-1 (host 204.168.185.24), alert SERVED_SURFACE_VALUE_DRIFT, inventory row served-surface-values-canary. When this sentence was first written nothing scheduled it at all."
     },
     "registry": "ops/served-surface-values.json",
     "note": "The OFFLINE mode is the gate. The projection is a pure function, so this class is catchable deterministically at build time and does not need the network. The live mode catches host/deploy drift the build cannot see. Neither substitutes for the other, and the live one must never be the only enforcement."

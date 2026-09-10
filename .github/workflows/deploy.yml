@@ -670,7 +670,9 @@ jobs:
       # OFFLINE ON PURPOSE. The projection is a pure function, so this runs against dist/ with no
       # network at all — a gate that needs the network degrades to a pass exactly when the network
       # is degraded. The `--live` mode exists for host/deploy drift and is a scheduled canary, never
-      # a CI blocker.
+      # a CI blocker — scheduled as ops/cron/served-surface-values-canary.sh, crontab 47 7 * * * on
+      # signal-1, alert SERVED_SURFACE_VALUE_DRIFT. That was aspirational when written (nothing
+      # scheduled it) and was made true by OPS-SERVED-SURFACE-CANARY-AND-CLAIM-TRUTH-W1 CH4.
       - name: Served-surface value gate (fail-closed)
         run: |
           node scripts/check-served-surface-values.mjs --self-test

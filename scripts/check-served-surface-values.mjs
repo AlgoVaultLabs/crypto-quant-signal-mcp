@@ -35,7 +35,11 @@
  *                      catchable deterministically at build time with no network at all. Wired
  *                      fail-closed into `.github/workflows/deploy.yml`.
  *   --live [baseUrl]   fetches the deployed surface (cache-busted) and asserts the same rules.
- *                      A scheduled canary only — NEVER a CI blocker.
+ *                      A scheduled canary only — NEVER a CI blocker. SCHEDULED, and this is now
+ *                      a fact rather than an aspiration: ops/cron/served-surface-values-canary.sh,
+ *                      crontab 47 7 * * * on signal-1, alert SERVED_SURFACE_VALUE_DRIFT. It was
+ *                      asserted to be scheduled in three shipped artifacts and was scheduled
+ *                      nowhere; OPS-SERVED-SURFACE-CANARY-AND-CLAIM-TRUTH-W1 CH4 made it true.
  *
  * Neither substitutes for the other. The offline mode cannot see host/deploy drift; the live mode
  * must never be the only enforcement, because a gate that needs the network degrades to a pass
