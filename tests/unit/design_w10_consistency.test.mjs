@@ -156,8 +156,13 @@ test('/account preservation-LAW: Stripe portal POST + key recovery POST + switch
   // reach us — only the mechanism moved to one that cannot be obfuscated away.
   assert.ok(countOcc(src, 'href="/contact"') >= 3,
     'a reachable contact path preserved on all 3 page renders');
+  // CONTACT-FALLBACK-SUPPORT-ALIAS-W1 (2026-09-10): the "unverified" half of this row's original
+  // rationale is now FALSE — support@algovault.com was verified working by the operator and is
+  // the address /contact, /privacy and /terms all publish. The assertion stands unchanged on the
+  // OTHER half, which was always the load-bearing one: a `mailto:` is the link shape Cloudflare
+  // rewrites into /cdn-cgi/l/email-protection#, so these three help lines point at /contact.
   assert.strictEqual(countOcc(src, 'mailto:support@algovault.com'), 0,
-    'the unverified support@ mailbox is no longer offered to users');
+    'account help lines reach us via /contact, never a Cloudflare-rewritable mailto:');
   // ACCOUNT_PAGE_STYLES class skeleton preserved (.tabs/.tab/.panel/.subtitle).
   assert.ok(src.includes('.tabs {'), '.tabs CSS class preserved');
   assert.ok(src.includes('.tab '), '.tab CSS class preserved');
