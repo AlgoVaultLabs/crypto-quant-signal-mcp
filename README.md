@@ -93,7 +93,7 @@ Under the hood, a self-tuning model fuses momentum, trend structure, derivatives
     { "coin": "SOL", "timeframe": "15m", "confidence": 73 }
   ],
   "_algovault": {
-    "version": "1.29.0",
+    "version": "1.30.0",
     "tool": "get_trade_call",
     "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
   }
@@ -255,28 +255,25 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 
 ---
 
-## What's new in v1.29.0
+## What's new in v1.30.0
 
-- **📊 The track record is a tool now, not only a resource.** `get_track_record` returns the same verified aggregate as `performance://signal-performance`, so a harness that bridges tools but not resources can read it. Compact by default; `include` opens the per-asset, per-venue and recent-call sections.
-- **✋ HOLD means HOLD.** When a book is not currently trading, the call returns HOLD instead of a direction, and the reasoning says so and says when it resumes. Previously a still book read as a flat market.
-- **📡 A degraded read looks degraded.** `get_market_regime` no longer reports neutral cross-venue funding when the upstream request was refused — a refused read is now distinguishable from a genuine neutral one.
-- **🔓 Allowances are machine-readable.** `GET /api/plans/public` returns the current free and paid call limits, unauthenticated, so you can stop hard-coding them.
-- **🧩 [DeepSeek Harness](https://algovault.com/integrations/deepseek-harness) has a guide.** Plus `/.well-known/security.txt` and `/.well-known/api-catalog`, both of which used to 404.
+- **🔑 Your key, one click away.** Every tool response that carries an auth block now returns `claim_url` and `claim_hint` in the `_algovault` envelope — a direct link to keep the key you are already using, and a heads-up before you reach the cap.
+- **💵 Six-month pricing is machine-readable.** `GET /api/plans/public` gains `price_usd_6month` on every tier, so a client can render prepay pricing instead of hardcoding it.
+- **🤝 Enterprise is quoted, not published.** The plans endpoint now returns `null` for Enterprise price and limits rather than a fixed figure. No key was removed — the values are null.
 
-**Upgrading from v1.28.x** — one breaking change: `BITMART` is no longer a valid `exchange` value and now returns `-32602`. Check any hard-coded `exchange` value against the published enum. `get_track_record` is new; nothing was renamed or removed from the tool list.
+**Upgrading from v1.29.x** — nothing breaking, but one value changed: if you rendered an Enterprise price from `GET /api/plans/public`, it is now `null` and Enterprise is quoted directly. Every tier key is still present. Two response fields were added, no tool was added or renamed.
+
+### v1.29.x highlights (recap)
+
+- **📊 The track record is a tool, not only a resource.** `get_track_record` returns the same verified aggregate as `performance://signal-performance`, so a harness that bridges tools but not resources can read it.
+- **✋ HOLD means HOLD.** When a book is not currently trading, the call returns HOLD instead of a direction, and the reasoning says so and says when it resumes.
+- **🔓 Allowances are machine-readable.** `GET /api/plans/public` returns the current free and paid call limits, unauthenticated.
 
 ### v1.28.x highlights (recap)
 
 - **🔐 Authentication tells you what happened.** Every response carries `_algovault.auth`. A well-formed but unrecognised key is refused instead of being quietly served free-tier data, and "malformed", "unknown" and "we couldn't verify" are three distinct outcomes.
 - **📘 Two parameters that were always there, now documented.** `assetClass` on the trade-call tools and `minLiquidityUsd` on `scan_trade_calls`, both projected from the live schema so the docs cannot drift from the server.
 - **🤝 Pair with [Binance Agent OS](https://algovault.com/integrations/binance-agent-os).** One MCP client, two servers: AlgoVault returns the verdict, Binance Agent OS executes it. OAuth at connect time — no API keys on your machine, and trading confined to a sub-account you fund yourself.
-
-### v1.27.x highlights (recap)
-
-- **🧮 Counted per call.** Your allowance covers every call the engine answers, on both the MCP and HTTP rails.
-- **📶 A new call ladder.** Free: 200/month plus 100/day. Starter: 10,000/month plus 1,000/day. Pro: 100,000/month plus 10,000/day.
-- **💳 6-month prepay replaces annual.** Starter is **$39.90** (~$6.65/mo, 33% off monthly) and Pro is **$129** (~$21.50/mo, 56% off monthly). Pick it at [signup](https://api.algovault.com/signup) with `?interval=6month`. Enterprise remains contact-us.
-- **⏱️ Daily limits say when they reset.** Hit a daily cap and the refusal tells you the hours remaining, not a monthly figure.
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
