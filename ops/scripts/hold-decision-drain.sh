@@ -67,6 +67,44 @@
 #   hold-decision-drain.sh --self-test     # hermetic; no docker, no DB, no network
 #   hold-decision-drain.sh --venues GATE,HTX
 #   hold-decision-drain.sh --timeframe 1d --per-cell 1 --max-decisions 800 --time-budget-min 25
+#   hold-decision-drain.sh --conf-min 62 --conf-max 62
+#
+# ── THE CONFIDENCE PASSTHROUGH — EDGE-WITHHELD-COUNTERFACTUAL-DWR-W2 R1 ──────────────────
+#
+# SAME SHAPE, SAME REASONING, ONE WAVE LATER. `--conf-min` / `--conf-max` join the four flags
+# below because W2 must drain a NAMED CONFIDENCE BAND, and without them this script cannot.
+#
+# MEASURED 2026-09-10, this script's own work-list (`rn <= 3`, unlabelled, `--require-parts`,
+# SELL, `--since` capture-start), by withheld band:
+#
+#     atom (conf 62)   1,130 rows    1.0%
+#     52-61            3,823         3.5%
+#     45-51            5,731         5.2%
+#     below-45       105,226        90.3%   <- already 17x over its cluster floor
+#
+# So 90.3% of an untargeted pass lands in the ONE band that needs nothing. Worse, `ROW_NUMBER`
+# is computed over the UNFILTERED set, so a cell whose three oldest SELL rows are all below-45
+# offers the atom NOTHING: the atom's entire reachable pool is those 1,130 rows, a ceiling of
+# ~685 decided against a floor of 1,064. THE UNTARGETED DRAIN CANNOT REACH THAT FLOOR AT ANY
+# BUDGET — a reach defect, not a budget one, and no `--max-decisions` repairs it.
+#
+# It also could not satisfy its own dispatch term ("`--max-decisions` above every leg's measured
+# `--check` backlog, so the outer `ORDER BY` never truncates"): the unfiltered backlog is
+# 107,637 decisions across 13 venues, which does not fit one deploy-free window at MEXC's
+# measured 10.6 cells/min. Band-filtered it is 3,862 / 14,949 / 22,136 — and because the filter
+# sits INSIDE the CTE, `ROW_NUMBER` then partitions the BAND, so per-cell breadth is per-band.
+#
+# `backfill-hold-decision-labels.ts` has carried `--conf-min` / `--conf-max` since
+# EDGE-WITHHELD-COUNTERFACTUAL-DWR-W1 R2; as with `--timeframe`, the gap was only here. The
+# alternative — a wave-specific launcher calling the labeler directly — is REFUSED for exactly
+# the reason recorded below: a second derivation of `combine_verdict` / `leg_was_container_fault`
+# is the copy nobody watches.
+#
+# BOUNDS ARE REFUSED, NEVER PASSED THROUGH, and the three refusals READ DIFFERENTLY because they
+# need different fixes: a non-integer, an out-of-range value, and an INVERTED pair
+# (`--conf-min` > `--conf-max`). The last matters most: the labeler would accept it, return an
+# empty work-list, and print a clean zero-row PASS — indistinguishable from "there was nothing
+# left to label", the exact pair the token contract exists to keep apart.
 #
 # ── THE FOUR PASSTHROUGH FLAGS — EDGE-SELL-ATTRIBUTION-CENTERED-CHECK-W2 R1 ─────────────
 #
@@ -101,6 +139,18 @@ TIME_PER_VENUE_MIN="${HOLD_DRAIN_TIME_PER_VENUE_MIN:-12}"
 
 # Empty = every timeframe, the pre-W2 behaviour. Set = one named timeframe per invocation.
 TIMEFRAME="${HOLD_DRAIN_TIMEFRAME:-}"
+
+# Empty = every confidence, the pre-DWR-W2 behaviour. Set = one bound per invocation. Either may
+# be set without the other, exactly as the labeler treats them.
+CONF_MIN="${HOLD_DRAIN_CONF_MIN:-}"
+CONF_MAX="${HOLD_DRAIN_CONF_MAX:-}"
+
+# `hold_decisions.confidence` is a smallint the scorer emits on a 0-100 scale. The bound is
+# DECLARED here rather than inferred from the data, for the same reason KNOWN_TIMEFRAMES is: a
+# range derived from "what the table currently holds" silently narrows the day the scorer's own
+# range moves, and the caller would never learn that the bound they asked for was clipped.
+CONF_SCALE_MIN=0
+CONF_SCALE_MAX=100
 
 # DECLARED, never inferred. Mirrors `EVAL_CANDLES` in src/lib/pfe-mae.ts, which is the one table
 # that decides whether a row's barrier window can close at all — a timeframe absent from it has
@@ -236,6 +286,59 @@ resolve_posint() {  # <name> <value>
   esac
   [ "$2" -ge 1 ] || { printf 'REFUSED %s=%s — must be >= 1\n' "$1" "$2" >&2; return 2; }
   printf '%s' "$2"
+}
+
+# A confidence bound is NOT a posInt: 0 is a legitimate lower bound ("no floor") while
+# `resolve_posint` refuses it, and a confidence has an UPPER bound that a count does not. Reusing
+# resolve_posint would therefore refuse a valid `--conf-min 0` and accept a meaningless
+# `--conf-max 5000`, so this is a separate predicate rather than a widened one.
+#
+# EMPTY resolves to empty — the DEFAULT (no bound), the same asymmetry `resolve_timeframe` has
+# against `resolve_venues`: an empty bound means the caller did not narrow, not that they asked
+# for nothing.
+#
+# The two refusals READ DIFFERENTLY on purpose. Found by the same mutation that found the
+# retired-lane hole: a range check and a numeric check can share an exit code while needing
+# different fixes, so the CODE alone asserts nothing and the REASON is what the self-test pins.
+resolve_conf() {  # <name> <value>
+  local name="$1" v="$2"
+  [ -z "$v" ] && { printf ''; return 0; }
+  case "$v" in
+    *[!0-9]*) printf 'REFUSED %s=%s — must be an integer\n' "$name" "$v" >&2; return 2 ;;
+  esac
+  if [ "$v" -lt "$CONF_SCALE_MIN" ] || [ "$v" -gt "$CONF_SCALE_MAX" ]; then
+    printf 'REFUSED %s=%s — outside the declared confidence scale (%s..%s)\n' \
+      "$name" "$v" "$CONF_SCALE_MIN" "$CONF_SCALE_MAX" >&2
+    return 2
+  fi
+  printf '%s' "$v"
+}
+
+# AN INVERTED PAIR IS ITS OWN REFUSAL, and it is the one that actually costs something.
+# `--conf-min 62 --conf-max 45` is accepted by the labeler, matches nothing, and prints a clean
+# zero-row PASS — indistinguishable from "there was nothing left to label". That is precisely the
+# pair this script's token contract exists to keep apart, so it is refused HERE, by name.
+# A bound set on only one side is NOT an inversion and stays legal.
+resolve_conf_pair() {  # <min> <max>  -> 0 legal, 2 inverted
+  [ -n "$1" ] && [ -n "$2" ] || return 0
+  [ "$1" -le "$2" ] && return 0
+  printf 'REFUSED --conf-min=%s > --conf-max=%s — an inverted band matches nothing and would report a zero-row PASS\n' \
+    "$1" "$2" >&2
+  return 2
+}
+
+# THE REAL APPENDER, extracted so the self-test cannot be blind to it.
+#
+# A hermetic self-test is structurally blind to exactly what its own seam replaces, and a
+# self-test that rebuilds the argv with its own local helper asserts only that the HELPER agrees
+# with itself. The byte-identity property this flag ships on lives in THIS function, so this
+# function is what the self-test calls. (`$TF_FLAG` predates the lesson and keeps its inline
+# form; a second consumer of that shape would be the moment to extract it too.)
+conf_flags() {  # <min> <max> -> the argv fragment, empty when neither bound is set
+  local lo="$1" hi="$2" f=""
+  [ -n "$lo" ] && f="--conf-min $lo"
+  [ -n "$hi" ] && f="${f:+$f }--conf-max $hi"
+  printf '%s' "$f"
 }
 
 # ── self-test ────────────────────────────────────────────────────────────────────────────────
@@ -378,12 +481,74 @@ if [ "${1:-}" = "--self-test" ]; then
   check "a timeframe => argv carries it" "--side sell --timeframe 1d --per-cell 1" "$(tf_argv '1d')"
   unset -f tf_argv
 
+  # ── DWR-W2 R1 passthrough — resolve_conf ──────────────────────────────────────────────────
+  # A confidence bound is not a posInt: 0 is legal here and refused there, and there is an UPPER
+  # bound a count does not have. Both directions are asserted, because a predicate that only
+  # rejects is the one-sided shape R2 already found in the venue rows.
+  check "a bound inside the scale resolves"        "62" "$(resolve_conf --conf-min 62)"
+  check "ZERO is a legal lower bound, unlike posInt" "0" "$(resolve_conf --conf-min 0)"
+  check "the scale ceiling resolves"              "100" "$(resolve_conf --conf-max 100)"
+  check "EMPTY resolves to empty — the DEFAULT, not an error" "" "$(resolve_conf --conf-min '')"
+  resolve_conf --conf-min ''   >/dev/null 2>&1; check "and empty exits 0, like a timeframe"   0 "$?"
+  resolve_conf --conf-min 101  >/dev/null 2>&1; check "above the scale is refused"            2 "$?"
+  resolve_conf --conf-max -1   >/dev/null 2>&1; check "a negative is refused"                 2 "$?"
+  resolve_conf --conf-min 6.5  >/dev/null 2>&1; check "a decimal is refused"                  2 "$?"
+  resolve_conf --conf-min abc  >/dev/null 2>&1; check "a non-number is refused"               2 "$?"
+  resolve_conf --conf-min 45,51 >/dev/null 2>&1; check "a LIST is refused — one bound per flag" 2 "$?"
+  # ASSERT THE REASON, NOT THE CODE — the same mutation lesson the timeframe and posint rows
+  # carry. Deleting the range branch leaves every exit code unchanged, because `101` is caught by
+  # nothing else and `-1` is caught by the numeric branch (the `-` is a non-digit). Two
+  # mechanisms, one code, so the code alone asserts nothing — and a caller who typed a value
+  # outside the scale needs a different fix from one who typed a word.
+  check "an out-of-scale value gives the SCALE reason, not the numeric one" "confidence scale" \
+    "$(resolve_conf --conf-min 101 2>&1 >/dev/null | grep -o 'confidence scale' | head -1)"
+  check "a non-number gives the INTEGER reason"    "must be an integer" \
+    "$(resolve_conf --conf-min abc 2>&1 >/dev/null | grep -o 'must be an integer' | head -1)"
+  # POSITIVE MEMBERSHIP over the whole declared scale, sampled at both ends and the interior, so
+  # a silently narrowed CONF_SCALE_* is caught rather than assumed.
+  conf_missing=0
+  for c in 0 1 44 45 51 52 61 62 99 100; do
+    [ "$(resolve_conf --conf-min "$c")" = "$c" ] || conf_missing=$((conf_missing+1))
+  done
+  check "every in-scale sample resolves to itself" 0 "$conf_missing"
+
+  # ── DWR-W2 R1 — an INVERTED band is its own refusal ────────────────────────────────────────
+  # THE ROW THAT EARNS ITS KEEP. `--conf-min 62 --conf-max 45` is accepted by the labeler, matches
+  # nothing, and prints a clean zero-row PASS that reads exactly like "nothing left to label".
+  resolve_conf_pair 62 45 >/dev/null 2>&1; check "an inverted band is refused"          2 "$?"
+  resolve_conf_pair 45 62 >/dev/null 2>&1; check "an ordered band is legal"             0 "$?"
+  resolve_conf_pair 62 62 >/dev/null 2>&1; check "a single-value band is legal"         0 "$?"
+  resolve_conf_pair 62 '' >/dev/null 2>&1; check "min alone is legal — not an inversion" 0 "$?"
+  resolve_conf_pair '' 45 >/dev/null 2>&1; check "max alone is legal — not an inversion" 0 "$?"
+  resolve_conf_pair '' '' >/dev/null 2>&1; check "neither bound is legal"               0 "$?"
+  check "and the inversion names the zero-row PASS it prevents" "zero-row PASS" \
+    "$(resolve_conf_pair 62 45 2>&1 >/dev/null | grep -o 'zero-row PASS' | head -1)"
+
+  # ── DWR-W2 R1 — the argv must stay byte-identical with NEITHER bound set ───────────────────
+  # Same property as the timeframe block above, and the reason it is asserted separately: the two
+  # bounds are appended INDEPENDENTLY, so "both absent" and "one absent" are different shapes and
+  # a single assertion would cover neither pair.
+# It calls the REAL `conf_flags` — the function the live `docker exec` line interpolates — rather
+  # than a local rebuild of it, so the seam is exercised instead of replaced.
+  cf_argv() { printf '%s' "--side sell $(conf_flags "$1" "$2") --per-cell 1"; }
+  check "no bounds => argv unchanged"    "--side sell  --per-cell 1"                  "$(cf_argv '' '')"
+  check "both bounds => argv carries both" "--side sell --conf-min 45 --conf-max 51 --per-cell 1" "$(cf_argv 45 51)"
+  check "min only => argv carries min"   "--side sell --conf-min 62 --per-cell 1"     "$(cf_argv 62 '')"
+  check "max only => argv carries max"   "--side sell --conf-max 44 --per-cell 1"     "$(cf_argv '' 44)"
+  unset -f cf_argv
+
   # vacuity: this corpus is one WE construct, so an empty one means the test built nothing
   if [ -z "$DEFAULT_VENUES" ]; then
     printf 'SELF-TEST: FAIL default venue set is empty\n'; fails=$((fails+1))
   fi
   if [ -z "$KNOWN_TIMEFRAMES" ]; then
     printf 'SELF-TEST: FAIL declared timeframe set is empty\n'; fails=$((fails+1))
+  fi
+  # The confidence scale is ours too, and an inverted or empty one would make every resolve_conf
+  # row above vacuous while leaving them all green.
+  if [ "$CONF_SCALE_MIN" -ge "$CONF_SCALE_MAX" ]; then
+    printf 'SELF-TEST: FAIL declared confidence scale is empty or inverted (%s..%s)\n' \
+      "$CONF_SCALE_MIN" "$CONF_SCALE_MAX"; fails=$((fails+1))
   fi
   printf 'HOLD_DRAIN_SELFTEST=%s failures=%s\n' "$([ "$fails" -eq 0 ] && echo PASS || echo FAIL)" "$fails"
   [ "$fails" -eq 0 ] && exit 0 || exit 1
@@ -401,6 +566,8 @@ while [ $# -gt 0 ]; do
     --per-cell)       PER_CELL="${2:-}"; shift 2 ;;
     --max-decisions)  MAX_PER_VENUE="${2:-}"; shift 2 ;;
     --time-budget-min) TIME_PER_VENUE_MIN="${2:-}"; shift 2 ;;
+    --conf-min)       CONF_MIN="${2:-}"; shift 2 ;;
+    --conf-max)       CONF_MAX="${2:-}"; shift 2 ;;
     *) echo "$LOG_TAG unknown argument '$1'" >&2
        echo "HOLD_DRAIN_VERDICT=INDETERMINATE"; exit 3 ;;
   esac
@@ -419,9 +586,28 @@ for _knob in "PER_CELL:$PER_CELL" "MAX_PER_VENUE:$MAX_PER_VENUE" "TIME_PER_VENUE
   fi
 done
 
+if ! CONF_MIN=$(resolve_conf --conf-min "$CONF_MIN"); then
+  echo "$LOG_TAG refusing: --conf-min is not an integer inside $CONF_SCALE_MIN..$CONF_SCALE_MAX" >&2
+  echo "HOLD_DRAIN_VERDICT=INDETERMINATE"; exit 3
+fi
+if ! CONF_MAX=$(resolve_conf --conf-max "$CONF_MAX"); then
+  echo "$LOG_TAG refusing: --conf-max is not an integer inside $CONF_SCALE_MIN..$CONF_SCALE_MAX" >&2
+  echo "HOLD_DRAIN_VERDICT=INDETERMINATE"; exit 3
+fi
+if ! resolve_conf_pair "$CONF_MIN" "$CONF_MAX"; then
+  echo "$LOG_TAG refusing: --conf-min > --conf-max — an inverted band reports a zero-row PASS" >&2
+  echo "HOLD_DRAIN_VERDICT=INDETERMINATE"; exit 3
+fi
+
 # Appended only when set, so with no --timeframe the emitted argv is byte-identical to pre-W2.
 TF_FLAG=""
 [ -n "$TIMEFRAME" ] && TF_FLAG="--timeframe $TIMEFRAME"
+
+# Same rule, same reason: with both bounds absent the emitted argv is byte-identical to the
+# pre-DWR-W2 one, and each bound is appended INDEPENDENTLY because the labeler accepts either
+# alone. Unquoted on the docker exec line exactly as $TF_FLAG is — the values are integers this
+# script has already validated, never caller text reaching the shell unchecked.
+CONF_FLAGS="$(conf_flags "$CONF_MIN" "$CONF_MAX")"
 
 if ! VENUES=$(resolve_venues "$VENUES_REQ"); then
   echo "$LOG_TAG refusing: the venue set is empty or names an excluded venue ($EXCLUDED_VENUES)" >&2
@@ -441,7 +627,7 @@ ledger_of() { # venue -> raw JSON (or '' when the ledger does not exist yet)
 
 echo "$LOG_TAG $(date -u +%FT%TZ) start since=$SINCE_EPOCH per_cell=$PER_CELL" \
      "max_per_venue=$MAX_PER_VENUE time_per_venue_min=$TIME_PER_VENUE_MIN dry_run=$DRY_RUN" \
-     "timeframe=${TIMEFRAME:-<all>}"
+     "timeframe=${TIMEFRAME:-<all>} conf_min=${CONF_MIN:-<none>} conf_max=${CONF_MAX:-<none>}"
 echo "$LOG_TAG venues=$VENUES"
 echo "$LOG_TAG excluded=$EXCLUDED_VENUES (measured batch saturation / open HL observation window)"
 
@@ -450,7 +636,7 @@ for v in $VENUES; do
   before=$(parse_ledger "$(ledger_of "$v")")
   # --check first: the per-venue backlog, and the --require-parts vs --since disagreement count.
   docker exec "$CTR" node dist/scripts/backfill-hold-decision-labels.js --check \
-    --venue "$v" --since "$SINCE_EPOCH" --require-parts --side sell $TF_FLAG \
+    --venue "$v" --since "$SINCE_EPOCH" --require-parts --side sell $TF_FLAG $CONF_FLAGS \
     --per-cell "$PER_CELL" --max-decisions "$MAX_PER_VENUE" 2>&1 | sed "s/^/$LOG_TAG [$v] /" || true
 
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -467,7 +653,7 @@ for v in $VENUES; do
 
   legout=$(mktemp)
   docker exec "$CTR" node dist/scripts/backfill-hold-decision-labels.js \
-    --venue "$v" --since "$SINCE_EPOCH" --require-parts --side sell $TF_FLAG \
+    --venue "$v" --since "$SINCE_EPOCH" --require-parts --side sell $TF_FLAG $CONF_FLAGS \
     --per-cell "$PER_CELL" --max-decisions "$MAX_PER_VENUE" \
     --time-budget-min "$TIME_PER_VENUE_MIN" > "$legout" 2>&1
   rc=$?
