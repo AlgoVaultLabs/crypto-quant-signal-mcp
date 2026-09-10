@@ -81,7 +81,12 @@ describe('a "Contact us" CTA must resolve to the form, never to a mailbox', () =
     // The fallback is for someone whose JS is off. It is not labelled "Contact us", so the rule
     // above does not reach it, and it must NOT be swept away by a future tightening.
     const page = renderContactPage();
-    expect(page).toContain(`mailto:${CONTACT_FALLBACK_EMAIL}`);
+    expect(page).toContain(CONTACT_FALLBACK_EMAIL);
+    // ...and it is PLAIN TEXT now. The address used to be wrapped in a `mailto:`, which is the
+    // one link shape Cloudflare rewrites into `/cdn-cgi/l/email-protection#` at the edge — the
+    // very defect the rest of this file exists to prevent. Assert the absence so a future edit
+    // cannot quietly re-link it.
+    expect(page).not.toContain('mailto:');
     expect(contactCtas(page)).toEqual([]);
   });
 });

@@ -232,7 +232,10 @@ describe('renderPlanCards — Enterprise is contact-us (R4)', () => {
     expect(c).toContain('for custom volume'); // R-E: no published Enterprise quota or price
     expect(c).not.toContain('mailto:');
     // The address survives as the contact page's own secondary fallback, with ONE owner.
-    expect(CONTACT_FALLBACK_EMAIL).toBe('admin@algovault.com');
+    // CONTACT-FALLBACK-SUPPORT-ALIAS-W1 moved it admin@ -> support@: outbound transactional mail
+    // keeps the admin identity (`email.ts:REPLY_TO_ADDRESS`), the inbound address the public
+    // sees is the support alias. Pinned here so the swap can never happen unnoticed.
+    expect(CONTACT_FALLBACK_EMAIL).toBe('support@algovault.com');
   });
 
   it('renders NO Enterprise card at all — the contact line carries it', () => {

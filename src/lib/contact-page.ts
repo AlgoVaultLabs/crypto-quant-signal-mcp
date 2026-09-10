@@ -10,11 +10,20 @@
  * surface depended on the visitor's desktop configuration. A form removes both failure modes.
  *
  * The plain address stays visible as a secondary fallback: the form is the primary path, not the
- * only one, and someone whose JS is off must still be able to reach us.
+ * only one, and someone whose JS is off must still be able to reach us. It is PLAIN TEXT, not a
+ * `mailto:` link, for the same measured reason as everything above — Cloudflare rewrote the one
+ * that used to be here into `/cdn-cgi/l/email-protection#`, exactly as it does on every page it
+ * serves. An address a reader can copy beats a link a browser may not be able to open.
  */
 
-/** Where a lead lands. Mirrors `email.ts:REPLY_TO_ADDRESS`; the operator holds this mailbox. */
-export const CONTACT_FALLBACK_EMAIL = 'admin@algovault.com';
+/**
+ * Where a lead lands when they would rather write than fill a form. The operator holds this
+ * mailbox. It deliberately does NOT mirror `email.ts:REPLY_TO_ADDRESS` (`admin@`): outbound
+ * transactional mail keeps the admin identity, while the inbound address the public sees is the
+ * support alias. ONE owner for the public-facing address — this constant — so the page and any
+ * future consumer cannot drift apart.
+ */
+export const CONTACT_FALLBACK_EMAIL = 'support@algovault.com';
 
 /**
  * The honeypot field name — re-exported from the handler so the rendered input and the check
@@ -154,7 +163,7 @@ export function renderContactPage(opts: { error?: string | null; src?: string | 
     <input type="hidden" name="src" value="${src}">${turnstileBlock}
     <button type="submit">Send</button>
   </form>
-  <div class="fallback">Prefer email? <a href="mailto:${CONTACT_FALLBACK_EMAIL}">${CONTACT_FALLBACK_EMAIL}</a></div>`);
+  <div class="fallback">Alternatively, you can reach us at ${CONTACT_FALLBACK_EMAIL}</div>`);
 }
 
 export function renderContactConfirmation(): string {
