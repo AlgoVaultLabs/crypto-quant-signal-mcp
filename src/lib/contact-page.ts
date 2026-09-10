@@ -10,10 +10,22 @@
  * surface depended on the visitor's desktop configuration. A form removes both failure modes.
  *
  * The plain address stays visible as a secondary fallback: the form is the primary path, not the
- * only one, and someone whose JS is off must still be able to reach us. It is PLAIN TEXT, not a
- * `mailto:` link, for the same measured reason as everything above — Cloudflare rewrote the one
- * that used to be here into `/cdn-cgi/l/email-protection#`, exactly as it does on every page it
- * serves. An address a reader can copy beats a link a browser may not be able to open.
+ * only one. It is PLAIN TEXT, not a `mailto:` link, for the same measured reason as everything
+ * above — Cloudflare rewrote the one that used to be here into `/cdn-cgi/l/email-protection#`,
+ * exactly as it does on every page it serves. An address a reader can copy beats a link a
+ * browser may not be able to open.
+ *
+ * WHAT PLAIN TEXT DOES AND DOES NOT BUY, measured live 2026-09-10 against algovault.com/contact:
+ * Cloudflare's Email Address Obfuscation intercepts a BARE ADDRESS IN TEXT too, not only a
+ * `mailto:` href. The origin sends `…reach us at support@algovault.com`; the edge ships
+ * `<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="…">[email protected]</a>`.
+ * With JS on, `email-decode.min.js` replaces that anchor with the plain address and the rendered
+ * DOM carries ZERO anchors — measured, `.fallback` innerHTML is the bare sentence. So the copy
+ * the reader sees is exactly what this file writes. With JS OFF the reader sees
+ * `[email protected]`, which means the "someone whose JS is off" clause above is now only half
+ * true and this page cannot make it whole on its own — the remaining half is a Cloudflare
+ * setting (Scrape Shield -> Email Address Obfuscation), not a code change. Do not "fix" this by
+ * re-linking or by splicing the address across elements to evade the scanner.
  */
 
 /**
