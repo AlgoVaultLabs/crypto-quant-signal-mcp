@@ -50,7 +50,9 @@
  *
  * Prints exactly ONE terminal line: `SIGNUP_ATTRIBUTION_BACKFILL_VERDICT=PASS|INDETERMINATE`.
  * INDETERMINATE (exit 3 — the token-law default for a gate with no incumbent code) when the DB is
- * unreachable or a batch throws. Never FAIL: "nothing to do" is a legitimate PASS, and this script
+ * unreachable or a batch throws. The code is RETURNED to `runScript`, which drains the pool and
+ * exits with it: a `process.exit` here would skip that drain, and OPS-SCRIPT-EXIT-LIFECYCLE-W1
+ * records what an undrained exit costs. Never FAIL: "nothing to do" is a legitimate PASS, and this script
  * has no notion of a wrong answer — only of an answer it could not obtain.
  *
  * Usage:
@@ -58,7 +60,12 @@
  *   npm run backfill:signup-class -- --execute
  */
 import { dbQuery } from '../lib/performance-db.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { classifyStoredUa } from '../lib/attribution-backfill.js';
+
+/** Exit codes. 3 = INDETERMINATE — the token-law default for a gate with no incumbent code. */
+const EXIT_PASS = 0;
+const EXIT_INDETERMINATE = 3;
 
 /** Batch size for the `IN (…)` lists. Bounds the parameter count per statement. */
 export const BATCH_SIZE = 500;
@@ -197,7 +204,28 @@ function fmt(t: BackfillTally): string {
     + `skipped_no_ua=${t.skipped_no_ua} already_classified_skipped=${t.already_classified_skipped}`;
 }
 
-async function main(): Promise<void> {
+/**
+ * Returns the process exit code; `runScript` drains the pool and exits with it.
+ *
+ * ONE try/catch owns the verdict token, and the inner handlers only add context before
+ * rethrowing. A token printed from two places is two places that can disagree — and a path that
+ * throws PAST all of them exits with no token at all, which is the one outcome the token law
+ * forbids. That was the shape of the original tail here (`main().catch()` beside
+ * `process.exit(3)` in two branches), and it is why this returns a code instead of calling
+ * `process.exit` itself: `process.exit` inside `main` would also skip the drain that
+ * `runScript` exists to guarantee.
+ */
+async function main(): Promise<number> {
+  try {
+    return await run();
+  } catch (err) {
+    console.error(`[backfill-signup-class] ${err instanceof Error ? err.message : err}`);
+    console.log('SIGNUP_ATTRIBUTION_BACKFILL_VERDICT=INDETERMINATE');
+    return EXIT_INDETERMINATE;
+  }
+}
+
+async function run(): Promise<number> {
   const execute = process.argv.includes('--execute');
   const stampedAt = new Date().toISOString();
 
@@ -207,9 +235,7 @@ async function main(): Promise<void> {
   } catch (err) {
     // Could not READ. "Could not see" is never "saw nothing" — the row count is the denominator
     // every downstream figure is a fraction of, so an unreadable table must not print a tally.
-    console.error(`[backfill-signup-class] SELECT failed: ${err instanceof Error ? err.message : err}`);
-    console.log('SIGNUP_ATTRIBUTION_BACKFILL_VERDICT=INDETERMINATE');
-    process.exit(3);
+    throw new Error(`SELECT failed: ${err instanceof Error ? err.message : err}`);
   }
 
   const { groups, tally } = planBackfill(rows);
@@ -223,7 +249,7 @@ async function main(): Promise<void> {
   if (!execute) {
     console.log('[backfill-signup-class] DRY RUN — nothing written. Re-run with --execute to apply.');
     console.log('SIGNUP_ATTRIBUTION_BACKFILL_VERDICT=PASS');
-    return;
+    return EXIT_PASS;
   }
 
   let written = 0;
@@ -238,22 +264,22 @@ async function main(): Promise<void> {
         // A batch that threw leaves the run PARTIAL, and a partial run's tally is not the tally
         // CH3 compares against. Stop and say so rather than continuing into a number nobody can
         // reconcile; `backfilled_at` makes the completed batches a safe resume point.
-        console.error(`[backfill-signup-class] batch failed: ${err instanceof Error ? err.message : err}`);
-        console.log('SIGNUP_ATTRIBUTION_BACKFILL_VERDICT=INDETERMINATE');
-        process.exit(3);
+        throw new Error(`batch failed after ${written} row(s): ${err instanceof Error ? err.message : err}`);
       }
     }
   }
 
   console.log(`[backfill-signup-class] EXECUTED · rows stamped=${written} (expected ${tally.scanned})`);
   console.log('SIGNUP_ATTRIBUTION_BACKFILL_VERDICT=PASS');
+  return EXIT_PASS;
 }
 
 // Import-safe: the test suite imports the pure helpers above without touching a database.
+//
+// `runScript` and not a bare `main().catch()` — OPS-SCRIPT-EXIT-LIFECYCLE-W1. `buildPoolConfig`
+// leaves `allowExitOnIdle` unset deliberately, so an explicit drain is the ONLY exit path: a
+// SUCCESSFUL run without it becomes immortal and pins Postgres connections forever. It also
+// carries the watchdog, so a handle nobody has identified still cannot outlive the work.
 if (require.main === module) {
-  main().catch((err) => {
-    console.error(`[backfill-signup-class] fatal: ${err instanceof Error ? err.message : err}`);
-    console.log('SIGNUP_ATTRIBUTION_BACKFILL_VERDICT=INDETERMINATE');
-    process.exit(3);
-  });
+  void runScript('backfill-signup-attribution-class', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

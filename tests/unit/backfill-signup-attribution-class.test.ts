@@ -19,7 +19,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -39,6 +39,17 @@ const HUMAN_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36';
 
 const STAMP = '2026-09-10T12:00:00.000Z';
+
+const SCRIPT_SRC = readFileSync(
+  join(__dirname, '..', '..', 'src', 'scripts', 'backfill-signup-attribution-class.ts'), 'utf8');
+
+/** Drop comment lines so a source-level ban does not also ban the prose explaining it. */
+function stripComments(src: string): string {
+  return src.split('\n').filter((l) => {
+    const t = l.trimStart();
+    return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+  }).join('\n');
+}
 
 let dir: string;
 let db: Database.Database;
@@ -189,19 +200,31 @@ describe('R6(f) — a dry run writes nothing', () => {
 });
 
 describe('R6(g) — the verdict token is the only line a caller parses', () => {
-  it('the script prints exactly one terminal token line, and exits 3 on INDETERMINATE', async () => {
-    const src = (await import('node:fs')).readFileSync(
-      join(__dirname, '..', '..', 'src', 'scripts', 'backfill-signup-attribution-class.ts'), 'utf8');
+  it('the script prints exactly one terminal token line, and exits 3 on INDETERMINATE', () => {
+    const src = SCRIPT_SRC;
     const tokens = [...src.matchAll(/SIGNUP_ATTRIBUTION_BACKFILL_VERDICT=(\w+)/g)].map((m) => m[1]);
     expect(new Set(tokens)).toEqual(new Set(['PASS', 'INDETERMINATE']));
     // Never FAIL: "nothing to do" is a legitimate pass and this job has no notion of a wrong
     // answer, only of one it could not obtain.
     expect(tokens).not.toContain('FAIL');
-    // Every INDETERMINATE path exits 3 — the token-law default for a gate with no incumbent code.
-    for (const m of src.matchAll(/SIGNUP_ATTRIBUTION_BACKFILL_VERDICT=INDETERMINATE'\);\s*\n\s*process\.exit\((\d+)\)/g)) {
-      expect(m[1]).toBe('3');
-    }
-    expect(src).toMatch(/VERDICT=INDETERMINATE'\);\s*\n\s*process\.exit\(3\)/);
+    expect(src).toContain('const EXIT_INDETERMINATE = 3;');
+    // The INDETERMINATE token is printed from exactly ONE place, and that place returns the code
+    // rather than calling process.exit — two printers can disagree, and a process.exit inside main
+    // would skip runScript's drain.
+    expect([...src.matchAll(/console\.log\('SIGNUP_ATTRIBUTION_BACKFILL_VERDICT=INDETERMINATE'\)/g)]).toHaveLength(1);
+    expect(src).toMatch(/VERDICT=INDETERMINATE'\);\s*\n\s*return EXIT_INDETERMINATE;/);
+    // Strip comments before banning `process.exit` — the docstring EXPLAINS why the code returns
+    // instead of calling it, and a naive grep would demand deleting the explanation. Same
+    // discipline as `signup-intent.test.ts:101-108`.
+    expect(stripComments(src)).not.toMatch(/process\.exit\(/);
+  });
+
+  it('terminates through runScript(), so a successful run cannot pin a Postgres connection', () => {
+    // OPS-SCRIPT-EXIT-LIFECYCLE-W1: `allowExitOnIdle` is deliberately unset, so an explicit drain
+    // is the ONLY exit path and a bare `main().catch()` tail makes a SUCCESSFUL run immortal. The
+    // structural canary (tests/unit/script-exit-lifecycle-canary.test.ts) polices this across all
+    // of src/scripts; asserted here too so this file's own contract is legible where it is edited.
+    expect(SCRIPT_SRC).toMatch(/if \(require\.main === module\) \{\s*\n\s*void runScript\('backfill-signup-attribution-class', main\);/);
   });
 });
 
