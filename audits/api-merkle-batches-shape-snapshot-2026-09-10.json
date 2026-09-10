@@ -1,0 +1,156 @@
+{
+  "wave": "OPS-SERVED-SURFACE-CANARY-AND-CLAIM-TRUTH-W1",
+  "chapter": "CH3",
+  "endpoint": "/api/merkle-batches",
+  "snapshot_date": "2026-09-10",
+  "captured_at_utc": "2026-09-10T06:34Z",
+  "source": "LIVE GET https://algovault.com/api/merkle-batches (cache-busted). HTTP 200, 37771 B, application/json; charset=utf-8, NO cache-control header on the response.",
+  "change_class": "NO KEY CHANGE — the top-level key set is BYTE-IDENTICAL to the 2026-07-21 snapshot allowed_keys (7). What this snapshot ADDS is a forbidden_values contract.",
+  "change_note": "The on-chain anchor surface. Its no-data-loss invariant was already canaried by the on-chain/dashboard equality check, but its VALUES were gated by nobody. Measured at capture: totalCalls 646373 on /api/performance-public >= total_signals 644116 here, so that equality canary holds.",
+  "supersedes": "audits/api-merkle-batches-shape-snapshot-2026-07-21.json — superseded, not edited away. That file is KEPT ON DISK and gains exactly TWO appended keys (superseded_by + superseded_reason) and nothing else; the per-file jq semantic-equality proof runs in this wave's CH3 gate. The append is REQUIRED, not cosmetic: build-knowledge-json.mjs projects every audits/*-shape-snapshot-*.json into the PUBLIC knowledge bundle and knowledge-index.ts keys each document response_shape:<endpoint>, so two LIVE files carrying /api/merkle-batches are a duplicate document id, which winkBM25S rejects outright: KnowledgeIndex.build() THROWS (Error: winkBM25S: Duplicate document encountered: response_shape:<endpoint>), tests/integration/knowledge-flow.test.ts fails, and at runtime the lazily-constructed index behind search_knowledge / chat_knowledge cannot be built. MEASURED CORRECTION, kept visible because the instrument matters: `npm run build:knowledge` TOLERATES the duplicate and exits 0 reporting response_shapes=39, so the builder succeeding is NOT evidence the bundle is usable — the rejection lives in the INDEX, not the build. A non-empty superseded_by is the ONLY thing that excludes a snapshot from that projection.",
+  "allowed_keys": [
+    "_algovault",
+    "batch_count",
+    "batches",
+    "chain",
+    "contractAddress",
+    "latest_batch_id",
+    "total_signals"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "outcome_won",
+    "call",
+    "confidence",
+    "pfe_return_pct",
+    "mae_return_pct"
+  ],
+  "batches_value_keys": [
+    "basescanUrl",
+    "batch_id",
+    "block_number",
+    "merkle_root",
+    "published_at",
+    "signal_count",
+    "tx_hash"
+  ],
+  "error_contract": {
+    "description": "Unchanged from 2026-07-21, restated as an OBJECT rather than a string — a FIX, not a reformat: build-knowledge-json.mjs only projects error_contract when typeof === object, so the previous string reached the public knowledge bundle as an empty object.",
+    "behaviour": "HTTP 500 with a Failed-to-load-batches error body on throw. getMerkleBatchSummary() is awaited in the SAME Promise.all as getMerkleBatches(), so a summary failure degrades identically to a batches failure — it cannot half-render."
+  },
+  "cache_contract": {
+    "description": "MEASURED 2026-09-10: NO cache-control header on the response. The 2026-07-21 snapshot recorded a Cloudflare edge Cache Rule (45s) as a system-map annotation — an EDGE rule, which does not appear as an origin response header, so the two records do not contradict each other.",
+    "ttl_seconds": null,
+    "staleness_signal": "NONE on this body. Publish liveness is watched by its own producer-side canary, per the freshness law: freshness alarms measure PRODUCERS, never rendered artifacts."
+  },
+  "consumers": [
+    "LANDING /verify badge + chip (data-tr-field latest_batch, latest_batch_n, latest_batch_at)",
+    "SIGNAL /track-record function-rendered page — inline merkle-stats block + data-tr-field merkle_batch_count (src/index.ts; uses batch_count + total_signals + latest_batch_id)",
+    "LANDING /skills + /integrations/* (data-tr-field batch_count)",
+    "landing/js/track-record-proxy.js (runtime hydration — latest_batch_id / batch_count, row-derived fallback for mid-deploy skew)",
+    "scripts/render-integrations.mjs + scripts/refresh-integrations-numbers.mjs (baked batchCount fallback — use batch_count)",
+    "scripts/snapshot-landing-data.mjs (deploy-time injector; accessor batches.latest.batch_id was ALREADY correct, unchanged)",
+    "ops/monitoring/website-drift-canary.py"
+  ],
+  "anchors_at_capture": {
+    "top_level_keys": 7,
+    "latest_batch_id": 153,
+    "batch_count": 153,
+    "total_signals": 644116,
+    "returned_rows": 100,
+    "note": "returned_rows (100) < batch_count (153) BY DESIGN — batches[] is LIMIT-capped at 100 while batch_count is the scalar COUNT(*). This is the capped-collection trap OPS-CAPPED-COLLECTION-GUARD-W1 exists for: a consumer reading batches.length publishes 100 and diverges +1/day. Every assertion below keys on the SCALAR."
+  },
+  "forbidden_values": {
+    "_doc": "Assertions are STRUCTURAL (path + predicate) or VALUE-REGEX over the stringified body, never a bare string ban. The positive rows deliberately assert the SCALAR counters and never batches.length — see anchors_at_capture.note.",
+    "enforced_by": "scripts/check-served-surface-values.mjs (SERVED_SURFACE_VALUES_VERDICT). live_only — reached by --live, scheduled as ops/cron/served-surface-values-canary.sh on signal-1. The clean/violating proof pair below runs OFFLINE in --self-test, which deploy.yml runs fail-closed.",
+    "assertions": [
+      {
+        "id": "internal-outcome-fields-absent",
+        "body_regex": "\"(outcome_return_pct|outcome_price|outcome_won)\"\\s*:",
+        "must": "absent",
+        "reason": "CLAUDE.md Data Integrity LAW: outcome WR is INTERNAL ONLY and must never be exposed via MCP/API/landing/README. This surface anchors signal batches on-chain; leaking a realised return here would publish the internal series under a proof banner."
+      },
+      {
+        "id": "per-signal-verdict-fields-absent",
+        "body_regex": "\"(call|confidence|pfe_return_pct|mae_return_pct)\"\\s*:",
+        "must": "absent",
+        "reason": "The 2026-07-21 forbidden_keys list, now enforced instead of documented. A batch row commits to a merkle_root and a COUNT; the verdicts inside the batch are the paid product and are only revealed by /api/verify-signal against a hash the caller already holds."
+      },
+      {
+        "id": "scalar-counts-still-published",
+        "path": "batch_count, total_signals, latest_batch_id",
+        "predicate": "is_number",
+        "reason": "THE OTHER DIRECTION, and it is keyed on the SCALARS on purpose. batches[] is LIMIT-capped at 100; batch_count is COUNT(*) = 153 at capture. Never aggregate over a capped collection — that defect published 100 merkle batches while the real count was 109 and diverging daily."
+      },
+      {
+        "id": "chain-anchor-still-published",
+        "path": "contractAddress, chain",
+        "predicate": "is_string",
+        "reason": "The proof is worthless without the chain and contract it is anchored to. A verifier that cannot locate the contract cannot verify anything, so these travel with the counts."
+      }
+    ],
+    "proof": {
+      "_doc": "R3.4 — a gate never observed catching the defect it was built for is not evidence. Both directions: the CLEAN body must produce ZERO violations, the VIOLATING body must produce some. Without the clean leg the proof is satisfied by a contract that fails on everything. Run by --self-test, therefore by deploy.yml, therefore on every deploy.",
+      "clean": {
+        "batches": [
+          {
+            "batch_id": 153,
+            "merkle_root": "0x64733216933f994debc8f2fe98584d216107ef16d83afc2376b1650cad7a6508",
+            "signal_count": 12057,
+            "tx_hash": "0xec7990e11129ea4a887628ce715d9a838584ecec41e3af4fce91abadbe2e2f18",
+            "block_number": "51104679",
+            "published_at": "2026-09-10T00:05:04.576Z",
+            "basescanUrl": "https://basescan.org/tx/0xec7990e11129ea4a887628ce715d9a838584ecec41e3af4fce91abadbe2e2f18"
+          }
+        ],
+        "latest_batch_id": 153,
+        "batch_count": 153,
+        "total_signals": 644116,
+        "contractAddress": "0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81",
+        "chain": "Base (8453)"
+      },
+      "violating": {
+        "batches": [
+          {
+            "batch_id": 153,
+            "merkle_root": "0x64733216933f994debc8f2fe98584d216107ef16d83afc2376b1650cad7a6508",
+            "signal_count": 12057,
+            "tx_hash": "0xec7990e11129ea4a887628ce715d9a838584ecec41e3af4fce91abadbe2e2f18",
+            "block_number": "51104679",
+            "published_at": "2026-09-10T00:05:04.576Z",
+            "basescanUrl": "https://basescan.org/tx/0xec7990e11129ea4a887628ce715d9a838584ecec41e3af4fce91abadbe2e2f18",
+            "outcome_return_pct": 4.7,
+            "call": "SELL"
+          }
+        ],
+        "latest_batch_id": 153,
+        "batch_count": null,
+        "total_signals": 644116,
+        "contractAddress": "0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81",
+        "chain": "Base (8453)"
+      },
+      "violating_mutations": [
+        "batches[0].outcome_return_pct = 4.7  (the Data Integrity LAW)",
+        "batches[0].call = SELL  (per-signal verdict leak)",
+        "batch_count = null  (the OTHER direction: the scalar counter nulled)"
+      ]
+    }
+  },
+  "drift_check": {
+    "_doc": "NOT a drift_check_command shell string. That form was measured to have never run once. This names an executable script and its verdict token.",
+    "script": "scripts/check-served-surface-values.mjs",
+    "verdict_token": "SERVED_SURFACE_VALUES_VERDICT",
+    "exit_codes": {
+      "0": "PASS",
+      "1": "FAIL",
+      "3": "INDETERMINATE"
+    },
+    "modes": {
+      "offline": "NOT APPLICABLE to this surface. It is served from algovault.com and this repo exports no pure builder for it, so coverage is live_only. The clean/violating proof pair IS the offline leg.",
+      "live": "--live [baseUrl]. Fetches the deployed surface, cache-busted, and asserts these rules. SCHEDULED as ops/cron/served-surface-values-canary.sh, crontab 47 7 * * * on signal-1, alert SERVED_SURFACE_VALUE_DRIFT. A transport failure is INDETERMINATE, never FAIL."
+    },
+    "registry": "ops/served-surface-values.json"
+  },
+  "proven_able_to_fail": "The clean/violating pair above is executed by scripts/check-served-surface-values.mjs --self-test on every deploy. The mutations were observed producing violations before this file was committed; the clean body was observed producing none."
+}

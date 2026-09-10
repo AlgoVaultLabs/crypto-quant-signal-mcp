@@ -1,0 +1,261 @@
+{
+  "wave": "OPS-SERVED-SURFACE-CANARY-AND-CLAIM-TRUTH-W1",
+  "chapter": "CH3",
+  "endpoint": "/api/performance-public",
+  "snapshot_date": "2026-09-10",
+  "captured_at_utc": "2026-09-10T06:34Z",
+  "source": "LIVE GET https://algovault.com/api/performance-public (cache-busted). HTTP 200, 641693 B, application/json; charset=utf-8, NO cache-control header.",
+  "change_class": "NO KEY CHANGE — the top-level key set is BYTE-IDENTICAL to the 2026-07-15 snapshot allowed_keys (19). What this snapshot ADDS is a forbidden_values contract, the concept that snapshot lacked entirely.",
+  "change_note": "This surface carries the estate performance data and was, until now, gated for VALUES by review alone. CLAUDE.md Data Integrity: outcome_return_pct / Phase E WR are INTERNAL ONLY and must never reach MCP/API/landing/README. That LAW was enforced on a DIFFERENT endpoint (/api/plans/public forbidden_keys) and by nobody here. It is now an executable assertion on the surface that actually carries performance data.",
+  "supersedes": "audits/api-performance-public-shape-snapshot-2026-07-15.json — superseded, not edited away. That file is KEPT ON DISK and gains exactly TWO appended keys (superseded_by + superseded_reason) and nothing else; the per-file jq semantic-equality proof is in this wave CH3 gate. The append is REQUIRED, not cosmetic: scripts/build-knowledge-json.mjs projects EVERY audits/*-shape-snapshot-*.json into the PUBLIC knowledge bundle and src/lib/knowledge-index.ts keys each document response_shape:${endpoint}, so two LIVE files carrying /api/performance-public are a duplicate document id, which winkBM25S rejects outright: KnowledgeIndex.build() THROWS (Error: winkBM25S: Duplicate document encountered: response_shape:<endpoint>), tests/integration/knowledge-flow.test.ts fails, and at runtime the lazily-constructed index behind search_knowledge / chat_knowledge cannot be built. MEASURED CORRECTION, kept visible because the instrument matters: `npm run build:knowledge` TOLERATES the duplicate and exits 0 reporting response_shapes=39, so the builder succeeding is NOT evidence the bundle is usable — the rejection lives in the INDEX, not the build. A non-empty superseded_by is the ONLY thing that excludes a snapshot from that projection.",
+  "allowed_keys": [
+    "_algovault",
+    "asset_count",
+    "byAsset",
+    "byCallType",
+    "byExchange",
+    "byTier",
+    "byTimeframe",
+    "exchange_count",
+    "funding_venue_count",
+    "hold_rate",
+    "holdsByTier",
+    "methodology",
+    "overall",
+    "period",
+    "recentSignals",
+    "shadow_venue_count",
+    "timeframe_count",
+    "totalCalls",
+    "totalHolds"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "outcome_won",
+    "call",
+    "confidence",
+    "signal_hash",
+    "merkle_root",
+    "merkle_proof",
+    "pfe_return_pct",
+    "mae_return_pct"
+  ],
+  "byAsset_value_keys": [
+    "count",
+    "tier",
+    "pfeWinRate"
+  ],
+  "byTier_value_keys": [
+    "tier",
+    "name",
+    "label",
+    "color",
+    "count",
+    "evaluated",
+    "pfeWinRate",
+    "assets"
+  ],
+  "recentSignals_value_keys": [
+    "id",
+    "coin",
+    "timeframe",
+    "tier",
+    "created_at",
+    "exchange"
+  ],
+  "error_contract": {
+    "description": "Unchanged from 2026-07-15, restated as an OBJECT rather than a string. That is a FIX, not a reformat: scripts/build-knowledge-json.mjs only projects error_contract when typeof === object, so the previous string was published into the public knowledge bundle as {} — a contract that said nothing.",
+    "behaviour": "Fail-open per-venue detector: byExchange degrades to empty, never 5xx. funding_venue_count is a compile-time constant (|FUNDING_VENUE_META|) and cannot fail at request time."
+  },
+  "cache_contract": {
+    "description": "MEASURED 2026-09-10: NO cache-control header on this response (bucket-keyed rolling aggregate, in-process). The 2026-07-15 snapshot did not state the header either way.",
+    "ttl_seconds": null,
+    "staleness_signal": "NONE. Do not key a freshness alarm on this body — CLAUDE.md: freshness alarms measure PRODUCERS, never rendered artifacts."
+  },
+  "consumers": [
+    "LANDING /track-record leaderboard (renderLeaderboard reads byExchange/byAsset/byTimeframe/byTier)",
+    "track-record-proxy (now also hydrates data-tr-field=\"funding_venue_count\")",
+    "scripts/snapshot-landing-data.mjs (deploy-time injector: dtrf-funding-venue-count + jsonld venue-count rows)",
+    "ops/monitoring/website-drift-canary.py"
+  ],
+  "anchors_at_capture": {
+    "top_level_keys": 19,
+    "totalCalls": 646373,
+    "exchange_count": 15,
+    "asset_count": 2058,
+    "timeframe_count": 11,
+    "funding_venue_count": 7,
+    "shadow_venue_count": 0,
+    "hold_rate": 99.1,
+    "note": "Anchors, deliberately NOT a full captured_body — this response is 641693 B and embedding it would put a 640 KB duplicate of a live aggregate into the public knowledge bundle. The clean/violating PROOF PAIR below is the reviewable fixture; the REAL body is asserted by --live, which is the non-hermetic half."
+  },
+  "forbidden_values": {
+    "_doc": "Assertions are STRUCTURAL (path + predicate) or VALUE-REGEX over the stringified body, never a bare string ban. The absence rows use body_regex because this body nests 2134 distinct keys (byAsset alone contributes 2058 asset names), so a per-path enumeration would be unreviewable and would go stale the moment a venue is added. The positive rows use path + predicate, because THE OTHER DIRECTION is not optional: a contract that only forbids is satisfied by an endpoint that nulls every number.",
+    "enforced_by": "scripts/check-served-surface-values.mjs (SERVED_SURFACE_VALUES_VERDICT). live_only — reached by --live, scheduled as ops/cron/served-surface-values-canary.sh on signal-1. The clean/violating proof pair below runs OFFLINE in --self-test, which deploy.yml runs fail-closed.",
+    "assertions": [
+      {
+        "id": "internal-outcome-fields-absent",
+        "body_regex": "\"(outcome_return_pct|outcome_price|outcome_won)\"\\s*:",
+        "must": "absent",
+        "reason": "CLAUDE.md Data Integrity LAW: outcome WR is INTERNAL ONLY — outcome_return_pct / Phase E WR must NEVER be exposed via MCP/API/landing/README. Public is aggregated PFE WR only. This is that LAW as an executable assertion on the surface that actually carries performance data."
+      },
+      {
+        "id": "per-signal-verdict-fields-absent",
+        "body_regex": "\"(call|confidence|signal_hash|merkle_root|merkle_proof)\"\\s*:",
+        "must": "absent",
+        "reason": "The 2026-07-15 forbidden_keys list, now enforced instead of documented. recentSignals is a teaser: id/coin/timeframe/tier/created_at/exchange. Publishing the verdict or its confidence here would give away the paid product, and signal_hash/merkle_root belong to the verify surface."
+      },
+      {
+        "id": "internal-excursion-fields-absent",
+        "body_regex": "\"(pfe_return_pct|mae_return_pct)\"\\s*:",
+        "must": "absent",
+        "reason": "Per-signal excursion magnitudes are internal. The PUBLIC figure is the aggregated rate (overall.pfeWinRate), never the per-row return that produced it."
+      },
+      {
+        "id": "pfe-win-rate-still-published",
+        "path": "overall.pfeWinRate",
+        "predicate": "is_number",
+        "reason": "THE OTHER DIRECTION. Without it every absence row above is satisfied by an endpoint that returns {}. This is the headline the landing page and every data-tr-field consumer hydrate from."
+      },
+      {
+        "id": "totals-still-published",
+        "path": "totalCalls, overall.totalCalls, overall.totalEvaluated",
+        "predicate": "is_number",
+        "reason": "The denominator behind the rate. A rate with no denominator is uncheckable, and the on-chain equality canary compares totalCalls against /api/merkle-batches total_signals."
+      },
+      {
+        "id": "coverage-counters-still-published",
+        "path": "exchange_count, asset_count, timeframe_count, funding_venue_count",
+        "predicate": "is_number",
+        "reason": "Every one of these is a live data-tr-field target and a snapshot-landing-data.mjs injector source. Nulling one silently blanks a public number rather than failing loudly."
+      },
+      {
+        "id": "methodology-still-disclosed",
+        "path": "methodology.pfeWinRate",
+        "predicate": "is_string",
+        "reason": "A published win rate with no methodology is a numerical-citation violation. The disclosure must travel with the number, on the same surface."
+      }
+    ],
+    "proof": {
+      "_doc": "R3.4 — a gate never observed catching the defect it was built for is not evidence. Both directions: the CLEAN body must produce ZERO violations, the VIOLATING body must produce some. Without the clean leg the proof is satisfied by a contract that fails on everything. Run by --self-test, therefore by deploy.yml, therefore on every deploy.",
+      "clean": {
+        "totalCalls": 646373,
+        "period": {
+          "from": "2026-04-10",
+          "to": "2026-09-10"
+        },
+        "overall": {
+          "totalCalls": 646373,
+          "totalEvaluated": 635327,
+          "pfeWinRate": 0.9139781561306225
+        },
+        "byTier": {
+          "tier1": {
+            "tier": 1,
+            "name": "Blue Chip",
+            "label": "Tier 1",
+            "color": "#58a6ff",
+            "count": 29954,
+            "evaluated": 29950,
+            "pfeWinRate": 0.9253756260434057,
+            "assets": [
+              "BTC",
+              "ETH"
+            ]
+          }
+        },
+        "recentSignals": [
+          {
+            "id": 652435,
+            "coin": "BEAT",
+            "timeframe": "15m",
+            "tier": 4,
+            "created_at": 1789020387,
+            "exchange": "HTX"
+          }
+        ],
+        "methodology": {
+          "pfeWinRate": "Peak Favorable Excursion win rate. Did price move in the signal direction at any point during the evaluation window?"
+        },
+        "hold_rate": 99.1,
+        "asset_count": 2058,
+        "exchange_count": 15,
+        "timeframe_count": 11,
+        "shadow_venue_count": 0,
+        "funding_venue_count": 7,
+        "totalHolds": 68096906
+      },
+      "violating": {
+        "totalCalls": 646373,
+        "period": {
+          "from": "2026-04-10",
+          "to": "2026-09-10"
+        },
+        "overall": {
+          "totalCalls": 646373,
+          "totalEvaluated": 635327,
+          "pfeWinRate": null
+        },
+        "byTier": {
+          "tier1": {
+            "tier": 1,
+            "name": "Blue Chip",
+            "label": "Tier 1",
+            "color": "#58a6ff",
+            "count": 29954,
+            "evaluated": 29950,
+            "pfeWinRate": 0.9253756260434057,
+            "assets": [
+              "BTC",
+              "ETH"
+            ]
+          }
+        },
+        "recentSignals": [
+          {
+            "id": 652435,
+            "coin": "BEAT",
+            "timeframe": "15m",
+            "tier": 4,
+            "created_at": 1789020387,
+            "exchange": "HTX",
+            "outcome_return_pct": -3.2,
+            "call": "BUY"
+          }
+        ],
+        "methodology": {
+          "pfeWinRate": "Peak Favorable Excursion win rate. Did price move in the signal direction at any point during the evaluation window?"
+        },
+        "hold_rate": 99.1,
+        "asset_count": 2058,
+        "exchange_count": 15,
+        "timeframe_count": 11,
+        "shadow_venue_count": 0,
+        "funding_venue_count": 7,
+        "totalHolds": 68096906
+      },
+      "violating_mutations": [
+        "recentSignals[0].outcome_return_pct = -3.2  (the Data Integrity LAW)",
+        "recentSignals[0].call = \"BUY\"  (per-signal verdict leak)",
+        "overall.pfeWinRate = null  (the OTHER direction: the surface nulls its own headline)"
+      ]
+    }
+  },
+  "drift_check": {
+    "_doc": "NOT a drift_check_command shell string. That form was measured to have never run once — it was in no script, no workflow and no cron. This names an executable script and its verdict token.",
+    "script": "scripts/check-served-surface-values.mjs",
+    "verdict_token": "SERVED_SURFACE_VALUES_VERDICT",
+    "exit_codes": {
+      "0": "PASS",
+      "1": "FAIL",
+      "3": "INDETERMINATE"
+    },
+    "modes": {
+      "offline": "NOT APPLICABLE to this surface. It is served from algovault.com and this repo exports no pure builder for it (measured: `export function build*Body` in src/ returns buildPublicPlansBody alone), so coverage is live_only. The clean/violating proof pair IS the offline leg.",
+      "live": "--live [baseUrl]. Fetches the deployed surface, cache-busted, and asserts these rules. SCHEDULED as ops/cron/served-surface-values-canary.sh, crontab 47 7 * * * on signal-1, alert SERVED_SURFACE_VALUE_DRIFT. A transport failure is INDETERMINATE, never FAIL."
+    },
+    "registry": "ops/served-surface-values.json"
+  },
+  "proven_able_to_fail": "The clean/violating pair above is executed by scripts/check-served-surface-values.mjs --self-test on every deploy. The mutations were observed producing violations before this file was committed; the clean body was observed producing none."
+}

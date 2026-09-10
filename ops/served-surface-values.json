@@ -49,6 +49,8 @@
     "module": "dist/lib/ai-crawler-allowlist.js",
     "export": "API_CATALOG_ENDPOINTS",
     "source": "src/lib/ai-crawler-allowlist.ts",
+    "live_url": "https://algovault.com/.well-known/api-catalog",
+    "live_url_note": "API_CATALOG_URL from the same module. --live enumerates against THIS, the DEPLOYED catalog, not against dist/. Two reasons, both measured: (a) it catches a catalog/registry divergence on the HOST that a dist-vs-registry comparison structurally cannot see, since both sides of that comparison come from one commit; (b) the host checkout /opt/crypto-quant-signal-mcp carries an April-7 dist/ with no lib/ai-crawler-allowlist.js, so a dist-based live enumeration returned INDETERMINATE on every host run and would have paged nightly forever. Offline/CI still enumerates from dist/, fail-closed.",
     "note": "Enumerates ENDPOINTS. Do not confuse it with AI_CRAWLER_ALLOWLIST in the same module, which enumerates crawler USER-AGENTS — a registry seeded from that one would list bot names, not surfaces."
   },
   "surfaces": [
@@ -70,13 +72,15 @@
       "href": "https://algovault.com/api/performance-public",
       "id": "api-performance-public",
       "coverage": "live_only",
-      "coverage_reason": "Served from algovault.com, not this Express app, and this repo exports no pure builder for it — grep for `export function build*Body` in src/ returns buildPublicPlansBody alone. Offline assertion is therefore impossible here without inventing a second derivation of a body this repo does not construct. Reachable by --live once a contract is written for it."
+      "contract": "audits/api-performance-public-shape-snapshot-2026-09-10.json",
+      "coverage_reason": "Served from algovault.com, not this Express app, and this repo exports no pure builder for it — grep for `export function build*Body` in src/ returns buildPublicPlansBody alone. Offline assertion against a produced object is therefore impossible without inventing a second derivation of a body this repo does not construct, so coverage stays live_only. IT IS NO LONGER UNCOVERED: the contract above is attached and reached by --live, which is now genuinely scheduled (ops/cron/served-surface-values-canary.sh, crontab 47 7 * * * on signal-1, alert SERVED_SURFACE_VALUE_DRIFT). The previous wording ended \"Reachable by --live once a contract is written for it\", which stopped being true the moment this row gained one. The contract additionally ships a clean/violating PROOF PAIR that runs OFFLINE in --self-test, so a live_only surface is not an unproven one."
     },
     {
       "id": "api-merkle-batches",
       "href": "https://algovault.com/api/merkle-batches",
       "coverage": "live_only",
-      "coverage_reason": "Same as api-performance-public: served from algovault.com with no importable builder in this repo. Its own no-data-loss invariant is already canaried by the on-chain/dashboard equality check; this gate would add value only once it carries a forbidden_values contract."
+      "contract": "audits/api-merkle-batches-shape-snapshot-2026-09-10.json",
+      "coverage_reason": "Same as api-performance-public: served from algovault.com with no importable builder in this repo, so coverage stays live_only. Its no-data-loss invariant remains canaried by the on-chain/dashboard equality check; what this gate adds is the VALUE contract above, which it now carries — the previous wording said this gate \"would add value only once it carries a forbidden_values contract\", and that condition is met. Reached by --live, scheduled as ops/cron/served-surface-values-canary.sh (47 7 * * *, signal-1, alert SERVED_SURFACE_VALUE_DRIFT), with a clean/violating proof pair running OFFLINE in --self-test."
     },
     {
       "id": "docs",

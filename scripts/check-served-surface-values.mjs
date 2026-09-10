@@ -309,6 +309,56 @@ export function enumerationGap(registry, root = ROOT) {
   return { missing, producerCount: rows.length };
 }
 
+/**
+ * LIVE-MODE PRODUCER ENUMERATION — from the SERVED catalog, not from `dist/`.
+ *
+ * This is not a workaround for a missing build. It is a STRICTLY BETTER producer for live mode,
+ * and the reason is what the offline one structurally cannot see: `enumerationGap()` compares the
+ * COMMITTED registry against a producer compiled from the SAME commit, so the two can only ever
+ * disagree about the repo. Comparing the committed registry against the DEPLOYED
+ * `.well-known/api-catalog` catches the case that actually matters to a canary — a catalog serving
+ * an endpoint set the registry does not cover, on the host, right now.
+ *
+ * It also removes a hard dependency the host cannot satisfy: MEASURED 2026-09-10 on signal-1,
+ * `/opt/crypto-quant-signal-mcp/dist` is an April 7 artifact with no `lib/ai-crawler-allowlist.js`
+ * at all (the host checkout is source only; the app runs from a Docker image). Wired to the
+ * `dist/` enumeration, this gate returned `SERVED_SURFACE_VALUES_VERDICT=INDETERMINATE` rc=3 on
+ * every host run — a canary that would have paged CRITICAL_PERSISTENT nightly, forever, which is
+ * strictly worse than no canary and is the exact dark-guard class this wave exists to retire.
+ *
+ * Verdict split, deliberate and not symmetric:
+ *   · unreachable / unparseable catalog -> the CALLER learned nothing  -> INDETERMINATE
+ *   · catalog set != registry set       -> that IS the finding          -> FAIL, naming both sides
+ * Offline/CI keeps `enumerationGap()` fail-closed and unchanged: a build-time gate must not depend
+ * on the network, or it degrades to a pass exactly when the network is degraded.
+ */
+export function parseCatalogHrefs(body) {
+  const linkset = body && Array.isArray(body.linkset) ? body.linkset : null;
+  if (!linkset || linkset.length === 0) return { error: 'catalog carries no linkset[] (RFC 9727 §4.2)' };
+  const anchor = linkset[0] || {};
+  const rows = [...(Array.isArray(anchor.item) ? anchor.item : []), ...(Array.isArray(anchor['service-doc']) ? anchor['service-doc'] : [])];
+  const hrefs = rows.map((r) => r && r.href).filter((h) => typeof h === 'string' && h);
+  if (hrefs.length === 0) return { error: 'catalog linkset[0] carries no item[] or service-doc[] hrefs' };
+  return { hrefs };
+}
+
+export async function liveEnumerationGap(registry, fetcher = fetchSurface) {
+  const url = registry?.producer?.live_url;
+  if (!url) return { error: 'registry declares no producer.live_url to enumerate against in live mode' };
+  const r = await fetcher(url);
+  if (r.transport) return { transport: `${url}: ${r.transport}` };
+  const parsed = parseCatalogHrefs(r.body);
+  if (parsed.error) return { unparseable: `${url}: ${parsed.error}` };
+  const declared = new Set((registry.surfaces || []).map((s) => s.href).filter(Boolean));
+  const served = new Set(parsed.hrefs);
+  return {
+    missing: [...served].filter((h) => !declared.has(h)),
+    extra: [...declared].filter((h) => !served.has(h)),
+    producerCount: served.size,
+    url,
+  };
+}
+
 // ── live mode ────────────────────────────────────────────────────────────────────────────────
 
 /** `--live <baseUrl>` — shape borrowed from check-docs-samples-live.mjs. */
@@ -353,10 +403,16 @@ async function main(argv = process.argv) {
   const reg = loadRegistry();
   if (reg.error) emit('INDETERMINATE', reg.error);
 
-  const gap = enumerationGap(reg.registry);
+  // The producer differs by mode ON PURPOSE — see liveEnumerationGap's header.
+  const gap = live ? await liveEnumerationGap(reg.registry) : enumerationGap(reg.registry);
+  if (gap.transport) emit('INDETERMINATE', `producer catalog unreachable — ${gap.transport}. A caller that could not read the catalog has proven nothing about it.`);
+  if (gap.unparseable) emit('INDETERMINATE', `producer catalog unparseable — ${gap.unparseable}. Handed input we could not parse is INDETERMINATE, never a pass.`);
   if (gap.error) emit('INDETERMINATE', gap.error);
   if (gap.missing.length) {
     emit('FAIL', `${gap.missing.length} surface(s) the producer advertises are ABSENT from ops/served-surface-values.json — declare them with a coverage and a reason:\n      ${gap.missing.join('\n      ')}`);
+  }
+  if (gap.extra && gap.extra.length) {
+    emit('FAIL', `${gap.extra.length} surface(s) are declared in ops/served-surface-values.json but the DEPLOYED catalog no longer serves them — the registry is asserting on something that is gone:\n      ${gap.extra.join('\n      ')}`);
   }
 
   const wanted = reg.surfaces.filter((s) => s.coverage === 'offline' || (live && s.coverage === 'live_only'));
@@ -376,15 +432,16 @@ async function main(argv = process.argv) {
       emit('INDETERMINATE', `surface ${s.id} is offline but carries no assertions — nothing would be verified`);
     }
     let body;
-    if (live && s.coverage === 'live_only') {
+    if (live && s.href) {
+      // BASE SUBSTITUTION APPLIES TO EVERY SURFACE, not just `live_only`. It used to apply only to
+      // live_only rows, so `--live http://127.0.0.1:1` still fetched the REAL
+      // api.algovault.com for the `offline` row — which made the override silently mean something
+      // narrower than it says, and made any test using it reach PRODUCTION on every run. A base
+      // that redirects some surfaces and not others is not a base.
       const base = resolveBase(argv);
-      const href = base && s.href ? s.href.replace(/^https?:\/\/[^/]+/, base) : s.href;
+      const href = base ? s.href.replace(/^https?:\/\/[^/]+/, base) : s.href;
       const r = await fetchSurface(href);
-      if (r.transport) { emit('INDETERMINATE', `surface ${s.id}: ${r.transport} — a caller that could not reach the host has proven nothing`); }
-      body = r.body;
-    } else if (live && s.coverage === 'offline' && s.href) {
-      const r = await fetchSurface(s.href);
-      if (r.transport) emit('INDETERMINATE', `surface ${s.id}: ${r.transport}`);
+      if (r.transport) emit('INDETERMINATE', `surface ${s.id}: ${r.transport} — a caller that could not reach the host has proven nothing`);
       body = r.body;
     } else {
       const b = callBuilder(s);
@@ -410,7 +467,7 @@ async function main(argv = process.argv) {
   console.log(
     `served-surface values: ${checked} surface(s) checked ${live ? '(LIVE, cache-busted)' : '(offline, from dist/)'}, `
     + `${evaluated} assertion(s) evaluated · registry ${reg.surfaces.length} surface(s) `
-    + `[${Object.entries(cov).map(([k, v]) => `${v} ${k}`).join(', ')}] · producer advertises ${gap.producerCount}`,
+    + `[${Object.entries(cov).map(([k, v]) => `${v} ${k}`).join(', ')}] · producer advertises ${gap.producerCount} (${live ? `served catalog ${gap.url}` : 'dist/ API_CATALOG_ENDPOINTS'})`,
   );
   if (skippedLive.length) console.log(`  (${skippedLive.length} live_only surface(s) have no contract yet: ${skippedLive.join(', ')})`);
   if (violations.length) {
@@ -464,9 +521,17 @@ export function proveCatchesCh1() {
   };
 }
 
-function selfTest() {
+async function selfTest() {
   let passed = 0;
   let failed = 0;
+  /** Async sibling of `check`. Same contract: a THROW is a FAIL, never an aborted suite. */
+  const checkAsync = async (name, fn) => {
+    let ok = false;
+    let detail = '';
+    try { ok = (await fn()) === true; } catch (e) { ok = false; detail = ` (threw: ${String(e.message).slice(0, 90)})`; }
+    if (ok) { passed += 1; console.log(`  ✓ ${name}`); } else { failed += 1; console.log(`  ✗ ${name}${detail}`); }
+  };
+
   const check = (name, fn) => {
     let ok = false;
     let detail = '';
@@ -590,6 +655,83 @@ function selfTest() {
     return !g.error && g.missing.length === 0 && g.producerCount > 0;
   });
 
+  // (5b) THE LIVE-CATALOG SEAM. `--live`'s producer enumeration is a network fetch, so all of it is
+  // exactly the code no hermetic scenario executes — and the recorded rule is that a self-test is
+  // structurally blind to precisely what its own seam replaces (the two live bugs behind that rule
+  // were a query builder and a seam PARSER). The parser is therefore asserted on fixtures, and
+  // liveEnumerationGap is driven through an INJECTED fetcher so its verdict SPLIT is observed too.
+  check('the catalog parser reads item[] AND service-doc[] hrefs (RFC 9727 linkset)', () => {
+    const r = parseCatalogHrefs({ linkset: [{ item: [{ href: 'a' }, { href: 'b' }], 'service-doc': [{ href: 'c' }] }] });
+    return !r.error && r.hrefs.join(',') === 'a,b,c';
+  });
+  check('a catalog with no linkset is an ERROR, never an empty-and-therefore-clean set', () =>
+    Boolean(parseCatalogHrefs({}).error) && Boolean(parseCatalogHrefs({ linkset: [] }).error));
+  check('a linkset carrying zero hrefs is an ERROR, not a silently empty producer', () =>
+    Boolean(parseCatalogHrefs({ linkset: [{ item: [] }] }).error));
+
+  const REG_FIX = { producer: { live_url: 'https://x/.well-known/api-catalog' }, surfaces: [{ href: 'a' }, { href: 'b' }] };
+  const servedFetcher = (hrefs) => async () => ({ body: { linkset: [{ item: hrefs.map((h) => ({ href: h })) }] } });
+  await checkAsync('live enumeration: catalog == registry is clean, both directions empty', async () => {
+    const g = await liveEnumerationGap(REG_FIX, servedFetcher(['a', 'b']));
+    return !g.error && g.missing.length === 0 && g.extra.length === 0 && g.producerCount === 2;
+  });
+  await checkAsync('a catalog serving an UNDECLARED surface is reported as missing (the FAIL leg)', async () => {
+    const g = await liveEnumerationGap(REG_FIX, servedFetcher(['a', 'b', 'c']));
+    return g.missing.length === 1 && g.missing[0] === 'c' && g.extra.length === 0;
+  });
+  await checkAsync('a surface the catalog NO LONGER serves is reported as extra (the other FAIL leg)', async () => {
+    const g = await liveEnumerationGap(REG_FIX, servedFetcher(['a']));
+    return g.extra.length === 1 && g.extra[0] === 'b' && g.missing.length === 0;
+  });
+  await checkAsync('an UNREACHABLE catalog is TRANSPORT — INDETERMINATE, never a clean enumeration', async () => {
+    const g = await liveEnumerationGap(REG_FIX, async () => ({ transport: 'ECONNREFUSED' }));
+    return Boolean(g.transport) && !g.missing;
+  });
+  await checkAsync('an UNPARSEABLE catalog is INDETERMINATE, never an empty-and-clean producer', async () => {
+    const g = await liveEnumerationGap(REG_FIX, async () => ({ body: { nope: true } }));
+    return Boolean(g.unparseable) && !g.missing;
+  });
+  await checkAsync('a registry with no producer.live_url REFUSES rather than skipping the check', async () => {
+    const g = await liveEnumerationGap({ surfaces: [] }, servedFetcher(['a']));
+    return Boolean(g.error);
+  });
+
+  // (6a) R3.4 — EVERY contract must be OBSERVED catching something, and observed NOT catching a
+  // clean body. A gate never seen catching the defect it was built for is not evidence, and a
+  // proof with only the failing leg is satisfied by a contract that fails on everything.
+  //
+  // This is an ENUMERATION, not a spot check: it walks every contract-carrying surface in the real
+  // registry and requires each one to be accounted for. A new contract shipped without a proof
+  // pair FAILS here rather than quietly joining the unproven. `api-plans-public` is proven instead
+  // by --prove-catches-ch1, which replays the real pre-fix bytes — a stronger proof than a
+  // hand-written pair, so it is credited rather than duplicated.
+  {
+    const provenBy = new Map([['api-plans-public', '--prove-catches-ch1 (real pre-fix captured bytes)']]);
+    const contracted = real.error ? [] : real.surfaces.filter((s) => s.contract);
+    check('the registry declares at least one contract to prove (vacuity)', () => contracted.length > 0);
+    for (const s of contracted) {
+      let contract = null;
+      try { contract = JSON.parse(readFileSync(join(ROOT, s.contract), 'utf8')); } catch { /* reported below */ }
+      const proof = contract?.forbidden_values?.proof;
+      if (!proof) continue;
+      const a = assertionsFor(s);
+      check(`${s.id}: the CLEAN body in its contract produces ZERO violations`, () => {
+        const r = assertContract(proof.clean, a.assertions, s.id);
+        return !a.error && r.violations.length === 0 && r.unresolved.length === 0 && r.unknown.length === 0 && r.evaluated > 0;
+      });
+      check(`${s.id}: the VIOLATING body in its contract is CAUGHT`, () => {
+        const r = assertContract(proof.violating, a.assertions, s.id);
+        return !a.error && r.violations.length > 0;
+      });
+      provenBy.set(s.id, 'contract proof pair (clean + violating)');
+    }
+    check('EVERY contract-carrying surface is proven able to fail — none is merely declared', () => {
+      const unproven = contracted.map((s) => s.id).filter((id) => !provenBy.has(id));
+      if (unproven.length) console.log(`      unproven: ${unproven.join(', ')}`);
+      return unproven.length === 0;
+    });
+  }
+
   // (6b) THE OVERRIDE'S OWN GUARD RAIL. `SERVED_SURFACE_REGISTRY` exists so a test can reach the
   // vacuity branch through the real process boundary. That same lever, set in CI, would let the
   // fail-closed deploy gate be pointed at a fixture — so the committed workflow is asserted here,
@@ -617,8 +759,7 @@ function selfTest() {
 const realOrSelf = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
 if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   if (process.argv.includes('--self-test')) {
-    const code = selfTest();
-    emit(code === 0 ? 'PASS' : 'FAIL', null);
+    selfTest().then((code) => emit(code === 0 ? 'PASS' : 'FAIL', null));
   } else if (process.argv.includes('--prove-catches-ch1')) {
     announceRegistry();
     const r = proveCatchesCh1();

@@ -254,6 +254,27 @@ describe('the CH1 regression proof, and the CLI verdict contract', () => {
     expect(code).toBe(0);
   });
 
+  it('TOKEN→EXIT MAPPING: a TRANSPORT failure is INDETERMINATE/3 too — a second, different branch', { timeout: 30_000 }, () => {
+    // Two distinct routes reach INDETERMINATE and they must BOTH map to 3: vacuity (the registry
+    // verified nothing) and transport (the caller could not reach the host). Asserting one and
+    // assuming the other is how a mapping regression hides in the branch nobody drove.
+    //
+    // THIS LEG BELONGS TO CH3, NOT CH2, AND THE REASON IS THE POINT OF THE WAVE. Before the two
+    // live_only surfaces carried contracts, a contract-less live_only row was skipped BEFORE any
+    // fetch, so this command returned PASS/0 — the leg could not fire, which is exactly the
+    // vacuous assertion this wave exists to retire. It is added at the chapter that makes it real.
+    //
+    // It is also hermetic ONLY because base substitution now applies to every surface. It used to
+    // apply to live_only rows alone, so this same command still fetched the real
+    // api.algovault.com for the offline row — a unit test reaching production on every run.
+    const { out, code } = cli(['--live', 'http://127.0.0.1:1']);
+    expect(tokenOf(out)).toBe('INDETERMINATE');
+    expect(code).toBe(3);
+    expect(out).toMatch(/could not reach the host has proven nothing/);
+    // and nothing in the run may have gone to the real hosts
+    expect(out).not.toContain('algovault.com');
+  });
+
   it('TOKEN→EXIT MAPPING: INDETERMINATE is exit 3, never 0', { timeout: 30_000 }, () => {
     // The recorded incident this guards: a self-test asserted verdict TOKENS but never the
     // MAPPING, so re-coding INDETERMINATE to 0 left it fully green.
