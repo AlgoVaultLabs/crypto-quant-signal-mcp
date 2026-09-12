@@ -12,7 +12,7 @@
  * 38cbb7e, `git merge-base --is-ancestor <tag> HEAD` -> NO.
  *
  * The correct ordering — land, re-read the landed SHA, tag THAT, push the tag alone — is
- * documented in CLAUDE.md and Prompt/release-wave-daily-template.md, and both rejected
+ * documented in CLAUDE.md and release-wave-daily-template.md, and both rejected
  * alternatives are recorded there so neither is re-proposed.
  *
  * ── TWO HALVES, AND WHY THEY BEHAVE DIFFERENTLY ─────────────────────────────────────────────
@@ -21,7 +21,7 @@
  * everywhere the suite runs, including both CI lanes.
  *
  * The VAULT half cannot. The two live documentation surfaces are CLAUDE.md and
- * Prompt/release-wave-daily-template.md, and both live in the operator's Obsidian vault, which
+ * release-wave-daily-template.md, and both live in the operator's Obsidian vault, which
  * does not exist on a GitHub runner. `npm test` runs in CI twice (deploy.yml and postgres-lane.yml
  * on branches:['**']), so a test that hard-failed on vault-absence would red every push.
  *
@@ -234,7 +234,12 @@ describe('the LIVE vault release surfaces (present-only, and it says which)', ()
     if (!r?.error && r?.vaultDir && existsSync(r.vaultDir)) vaultDir = r.vaultDir;
   } catch { vaultDir = null; }
 
-  const LIVE = ['CLAUDE.md', 'Prompt/release-wave-daily-template.md'];
+  // `release-wave-daily-template.md` lives at the VAULT ROOT, not under `Prompt/`, and that is
+  // deliberate: the 2026-09-11 prompt-archive sweep moved 767 files out of `Prompt/` — this one
+  // among them — which silently wedged every LOCAL push (CI has no vault, so it skipped and saw
+  // nothing). The operator relocated it above the sweep line so it cannot be archived again.
+  // Repointed by OPS-HOST-KERNEL-REBOOT-W4; surface COUNT and both content assertions unchanged.
+  const LIVE = ['CLAUDE.md', 'release-wave-daily-template.md'];
 
   it('reports whether the corpus resolved, and scans a POSITIVE number of surfaces when it did', () => {
     if (!vaultDir) {
