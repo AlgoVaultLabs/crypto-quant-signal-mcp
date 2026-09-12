@@ -54,6 +54,31 @@
  * So `operatorFacingBlocks()` below extracts the text that can REACH an operator rather than
  * subtracting the text that cannot — a smaller, checkable claim.
  *
+ * ── DIRECTION 2: REALITY -> CITATION (OPS-HOST-KERNEL-REBOOT-W4) ────────────────────────────
+ * Everything above validates the citations a body ALREADY MAKES. It is structurally blind to the
+ * opposite defect: a body that never mentions a component the world GAINED. Measured 2026-09-12 —
+ * OPS-HOST-AUTO-REBOOT-W1 shipped ops/monitoring/kernel-auto-reboot.sh, which performs unattended
+ * on aoe-1 the very reboot KERNEL_STALENESS's body recommends by hand, and never touched that
+ * body. For 15 days the alert told the operator to "rehearse on aoe-1" — a hand reboot that RESETS
+ * the running-vs-installed delta and destroys one of the two clean unattended cycles gating
+ * signal-1's own promotion. ALERT_COPY_VERDICT was OK on every run, because that sentence cites no
+ * repo path at all and PATH_RE therefore never saw it.
+ *
+ * A one-way reconciliation goes stale the moment the world moves. This repo already wrote that law
+ * for containers — boot-contract-canary.sh reports `acknowledged_but_absent` so the list closes in
+ * BOTH directions — and this is the same law in a second substrate.
+ *
+ * So: ops/monitoring/alert-registry.json rows may declare `related_automation[]`
+ * ({artifact, hosts[], reason}, reason MANDATORY). If a declared artifact is SCHEDULED on a host
+ * that is also in the alert's own hosts[], the owner's operator-facing body MUST cite it. Uncited
+ * is a DRIFT with key `<owner>::<artifact>::UNCITED`, so the existing baseline ratchet applies
+ * unchanged. The reverse leg reports a declaration whose artifact is scheduled NOWHERE.
+ *
+ * HONEST SCOPE, stated because it bounds the guarantee: direction 2 is an ALLOW-LIST. It polices
+ * DECLARED relationships only — automation nobody declares is invisible to it. That gap fails
+ * toward NOISE rather than silence: every run prints how many alert rows carry a declaration and
+ * how many do not, so an empty declaration set can never read as a clean one.
+ *
  * ── HONEST SCOPE ────────────────────────────────────────────────────────────────────────────
  * Body extraction is per-language and approximate: shell heredocs, JS/TS template literals, and
  * Python triple-quoted strings that are NOT a module/def/class docstring. An artifact from which
@@ -84,6 +109,7 @@ const REPO = path.resolve(HERE, '..');
 export const ARTIFACT_DIR = 'ops/monitoring';
 export const INVENTORY_REL = 'ops/monitoring/monitoring-inventory.json';
 export const BASELINE_REL = 'audits/alert-copy-baseline.json';
+export const REGISTRY_REL = 'ops/monitoring/alert-registry.json';
 /** The wrapper every alert-emitting artifact calls. Membership of the corpus is defined by it. */
 export const WRAPPER = 'send_telegram';
 
@@ -175,6 +201,64 @@ export function scheduledPaths(root) {
 }
 
 /**
+ * artifact -> Set(host) for every artifact with a real schedule ON that host. `scheduledPaths`
+ * above answers "scheduled anywhere", which direction 1 needs; direction 2 needs "scheduled on a
+ * host this alert actually covers", because a harness installed on one host says nothing about a
+ * page fired from the other. Same inventory, a strictly finer question.
+ */
+export function scheduledHosts(root) {
+  const p = path.join(root, INVENTORY_REL);
+  if (!existsSync(p)) return null;
+  let rows;
+  try { rows = JSON.parse(readFileSync(p, 'utf8')).artifacts; } catch { return null; }
+  if (!Array.isArray(rows)) return null;
+  const map = new Map();
+  for (const r of rows) {
+    if (!r || !r.artifact) continue;
+    for (const e of r.installed_at || []) {
+      if (!e || !e.schedule || !e.host) continue;
+      if (!map.has(r.artifact)) map.set(r.artifact, new Set());
+      map.get(r.artifact).add(e.host);
+    }
+  }
+  return map;
+}
+
+/**
+ * The DECLARED alert -> automation relationships. Returns null when the registry cannot be read
+ * (INDETERMINATE: we cannot tell an undeclared world from an unreadable one), and surfaces
+ * malformed rows separately — a declaration is a corpus WE author, so an entry missing its
+ * mandatory `reason` is VACUITY and must refuse, never silently satisfy the check.
+ */
+export function declaredAutomation(root) {
+  const p = path.join(root, REGISTRY_REL);
+  if (!existsSync(p)) return null;
+  let alerts;
+  try { alerts = JSON.parse(readFileSync(p, 'utf8')).alerts; } catch { return null; }
+  if (!Array.isArray(alerts)) return null;
+  const entries = [];
+  const malformed = [];
+  let declaredRows = 0;
+  for (const a of alerts) {
+    if (!a || !a.alert_id) continue;
+    const rel = a.related_automation;
+    if (rel === undefined) continue;
+    if (!Array.isArray(rel) || rel.length === 0) { malformed.push(`${a.alert_id}: related_automation is present but not a non-empty array`); continue; }
+    declaredRows += 1;
+    for (const e of rel) {
+      if (!e || typeof e.artifact !== 'string' || !e.artifact) { malformed.push(`${a.alert_id}: an entry has no artifact`); continue; }
+      if (!Array.isArray(e.hosts) || e.hosts.length === 0) { malformed.push(`${a.alert_id}/${e.artifact}: hosts[] is missing or empty`); continue; }
+      if (typeof e.reason !== 'string' || !e.reason.trim()) { malformed.push(`${a.alert_id}/${e.artifact}: reason is MANDATORY and must be non-empty`); continue; }
+      // `reason` is carried, not merely validated: a consumer that cannot read the justification
+      // cannot tell a deliberate declaration from a copy-paste, and the mandatory field becomes
+      // ceremony. It is also what a reviewer reads when the gate fires.
+      entries.push({ alertId: a.alert_id, owner: a.owner, artifact: e.artifact, hosts: e.hosts, reason: e.reason, alertHosts: Array.isArray(a.hosts) ? a.hosts : [] });
+    }
+  }
+  return { entries, malformed, declaredRows, totalRows: alerts.length };
+}
+
+/**
  * Every repo path WIRED as a build-time gate. This delegates to check-canaries-wired.mjs's own
  * `invokerFiles`/`findInvocations` rather than re-deriving "wired" here — that script already owns
  * the question, strips comments so a mention in prose is not an invocation, and counts workflows
@@ -250,12 +334,20 @@ export function evaluate(root) {
       let m;
       while ((m = PATH_RE.exec(b))) { hits.push({ cited: m[0], verb: qualifyingVerb(b, m[0]) }); citedPaths.add(m[0]); }
     }
-    raw.push({ file: f.rel, blocks: blocks.length, hits });
+    raw.push({ file: f.rel, blocks: blocks.length, hits, text: blocks.join('\n') });
   }
   // VACUITY: zero blocks across the WHOLE corpus means the extractor broke, not that alert copy
   // cites nothing. A single artifact with no block is a fact and is reported, not a refusal.
   // Checked BEFORE the wiring walk: it is the cheaper predicate and there is nothing to resolve.
   if (withBlocks === 0) return { verdict: 'INDETERMINATE', reason: `not one of ${files.length} artifact(s) yielded an operator-facing block — the extractor is broken, not the tree` };
+  // Direction-2 inputs are read HERE, not earlier: the extractor-vacuity guard above is the
+  // cheaper and more SPECIFIC diagnosis, and pre-empting it with a registry error would rename
+  // "the extractor is broken" to "the registry is missing" on a tree where both are true.
+  const perHost = scheduledHosts(root);
+  const declared = declaredAutomation(root);
+  if (perHost === null) return { verdict: 'INDETERMINATE', reason: `${INVENTORY_REL} is absent or unparseable — cannot resolve per-host schedules for direction 2` };
+  if (declared === null) return { verdict: 'INDETERMINATE', reason: `${REGISTRY_REL} is absent or unparseable — cannot tell an undeclared world from an unreadable one` };
+  if (declared.malformed.length) return { verdict: 'INDETERMINATE', reason: `related_automation declaration(s) are incomplete — ${declared.malformed.join('; ')}` };
   const buildTime = buildTimePaths(root, wired, citedPaths);
   if (buildTime === null) return { verdict: 'INDETERMINATE', reason: 'the wiring authority (check-canaries-wired.mjs) could not be consulted — cannot tell build-time from unknown' };
   const rows = raw.map((r) => ({
@@ -274,7 +366,32 @@ export function evaluate(root) {
       }
     }
   }
-  return { verdict: violations.length ? 'DRIFT' : 'OK', violations, rows, files: files.length, withBlocks };
+  // ── DIRECTION 2 — reality -> citation ──────────────────────────────────────────────────────
+  // An alert whose body omits a SCHEDULED automation declared against it is the defect direction 1
+  // cannot see: there is no citation to classify, so PATH_RE never fires.
+  const byFile = new Map(raw.map((r) => [r.file, r.text || '']));
+  const stale = [];
+  let d2checked = 0;
+  for (const e of declared.entries) {
+    const on = perHost.get(e.artifact);
+    // Reverse leg, mirroring boot-contract-canary.sh's `acknowledged_but_absent`: a declaration
+    // pointing at something scheduled NOWHERE has gone stale and must say so out loud.
+    if (!on || on.size === 0) { stale.push({ ...e, why: 'declared, but scheduled on no host' }); continue; }
+    const overlap = e.hosts.filter((h) => on.has(h) && e.alertHosts.includes(h));
+    if (overlap.length === 0) { stale.push({ ...e, why: `scheduled on [${[...on].join(', ')}] but that never meets this alert's hosts [${e.alertHosts.join(', ')}]` }); continue; }
+    d2checked += 1;
+    const body = byFile.get(e.owner);
+    if (body === undefined) { stale.push({ ...e, why: `owner ${e.owner} is not in the alert-emitting corpus` }); continue; }
+    if (!body.includes(e.artifact)) {
+      violations.push({
+        file: e.owner, cited: e.artifact, reality: 'UNCITED', verb: null,
+        hosts: overlap, alertId: e.alertId, key: `${e.owner}::${e.artifact}::UNCITED`,
+      });
+    }
+  }
+  const d2 = { declaredRows: declared.declaredRows, totalRows: declared.totalRows, checked: d2checked, stale };
+
+  return { verdict: violations.length ? 'DRIFT' : 'OK', violations, rows, files: files.length, withBlocks, d2 };
 }
 
 /** Pre-existing violations REPORT; a new one, or a baselined one that moved, BLOCKS. */
@@ -308,6 +425,14 @@ function emit(r, baseline) {
     const note = row.blocks ? `${row.blocks} block(s), ${row.citations.length} citation(s)` : 'no operator-facing block extracted';
     console.log(`  ${mark} ${path.basename(row.file).padEnd(38)} ${note}`);
   }
+  // POSITIVE direction-2 output on EVERY path. The undeclared count is printed because direction 2
+  // is an allow-list: an empty declaration set must never be indistinguishable from a clean one.
+  const d2 = r.d2 || { declaredRows: 0, totalRows: 0, checked: 0, stale: [] };
+  console.log(`alert-copy: direction 2 — ${d2.declaredRows}/${d2.totalRows} alert row(s) declare related_automation; ${d2.checked} declared+scheduled pair(s) checked; ${d2.stale.length} stale declaration(s); ${d2.totalRows - d2.declaredRows} row(s) declare none (allow-list gap, reported not silent)`);
+  for (const st of d2.stale) {
+    console.log(`  REPORT stale declaration: ${st.alertId} -> ${st.artifact} — ${st.why}`);
+  }
+
   const fresh = (r.violations || []).filter((v) => !baseline.keys.has(v.key));
   const known = (r.violations || []).filter((v) => baseline.keys.has(v.key));
   for (const v of known) {
@@ -316,8 +441,14 @@ function emit(r, baseline) {
   if (fresh.length) {
     console.log('');
     for (const v of fresh) {
-      console.log(`  ✗ ${v.file} — alert copy says "${v.verb}" about ${v.cited}, whose reality is ${v.reality}.`);
-      console.log(`      A body may claim a cadence only for a path with an installed_at[].schedule in ${INVENTORY_REL}.`);
+      if (v.reality === 'UNCITED') {
+        console.log(`  ✗ ${v.file} — ${v.alertId} declares ${v.cited} as related automation, scheduled on [${(v.hosts || []).join(', ')}], and the operator-facing body never names it.`);
+        console.log(`      A body that omits the automation already performing its recommended action sends the operator to do it by hand.`);
+        console.log(`      Cite it in the body, or drop the related_automation entry from ${REGISTRY_REL}.`);
+      } else {
+        console.log(`  ✗ ${v.file} — alert copy says "${v.verb}" about ${v.cited}, whose reality is ${v.reality}.`);
+        console.log(`      A body may claim a cadence only for a path with an installed_at[].schedule in ${INVENTORY_REL}.`);
+      }
       console.log(`      key: ${v.key}`);
     }
     console.log('ALERT_COPY_VERDICT=DRIFT');
@@ -325,7 +456,7 @@ function emit(r, baseline) {
   }
   console.log(known.length
     ? `  no NEW violation; ${known.length} baselined and reported (the baseline only ever shrinks)`
-    : '  every cadence claim in operator-facing copy names a scheduled guard');
+    : '  every cadence claim names a scheduled guard, and every declared+scheduled automation is cited');
   console.log('ALERT_COPY_VERDICT=OK');
   return 0;
 }
@@ -427,6 +558,76 @@ function selfTest() {
     rmSync(tmp, { recursive: true, force: true }); rmSync(bare, { recursive: true, force: true });
   }
 
+  const silence0 = () => { const o = console.log; console.log = () => {}; return () => { console.log = o; }; };
+  console.log('--- DIRECTION 2: reality -> citation, driven by a FIXTURE TREE ---');
+  {
+    // A hermetic assertion over hand-built objects would be blind to exactly the seam it replaces,
+    // so every case below is a real tree run through the real evaluate().
+    const mk = (opts) => {
+      const t = mkdtempSync(path.join(tmpdir(), 'alertcopy-d2-'));
+      mkdirSync(path.join(t, 'ops/monitoring'), { recursive: true });
+      writeFileSync(path.join(t, 'ops/monitoring/monitoring-inventory.json'), JSON.stringify({
+        artifacts: [
+          { artifact: 'ops/monitoring/owner-canary.sh', installed_at: [{ host: 'signal-1', schedule: '0 1 * * *' }] },
+          { artifact: 'ops/monitoring/robot.sh', installed_at: opts.robotOn.map((h) => ({ host: h, schedule: '7 * * * *' })) },
+        ],
+      }));
+      writeFileSync(path.join(t, 'ops/monitoring/alert-registry.json'), opts.rawRegistry !== undefined ? opts.rawRegistry : JSON.stringify({
+        alerts: [{
+          alert_id: 'OWNER_ALERT', owner: 'ops/monitoring/owner-canary.sh', hosts: opts.alertHosts,
+          ...(opts.declare === null ? {} : { related_automation: [opts.declare] }),
+        }],
+      }));
+      writeFileSync(path.join(t, 'ops/monitoring/owner-canary.sh'),
+        `#!/usr/bin/env bash\nsend_telegram\ncat <<EOF\nsomething is wrong.\n${opts.body}\nEOF\n`);
+      return t;
+    };
+    const OK_DECL = { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'], reason: 'it does the thing' };
+    const cases = [
+      ['a declared+scheduled automation the body never names -> DRIFT',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1', 'signal-1'], declare: OK_DECL, body: 'Action: do it by hand.' }, 'DRIFT'],
+      ['  the same tree with the citation added -> OK',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1', 'signal-1'], declare: OK_DECL, body: 'Action: ops/monitoring/robot.sh already does this on aoe-1.' }, 'OK'],
+      ['a declaration with NO reason -> INDETERMINATE (mandatory, never a silent pass)',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'] }, body: 'Action: by hand.' }, 'INDETERMINATE'],
+      ['a declaration with an EMPTY hosts[] -> INDETERMINATE',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: { artifact: 'ops/monitoring/robot.sh', hosts: [], reason: 'r' }, body: 'Action: by hand.' }, 'INDETERMINATE'],
+      ['a declared artifact scheduled on NO host -> stale REPORT, not a violation',
+        { robotOn: [], alertHosts: ['aoe-1'], declare: OK_DECL, body: 'Action: by hand.' }, 'OK'],
+      ['scheduled, but on a host this alert does not cover -> stale REPORT, not a violation',
+        { robotOn: ['aoe-1'], alertHosts: ['signal-1'], declare: OK_DECL, body: 'Action: by hand.' }, 'OK'],
+      ['no declaration at all -> OK (allow-list: undeclared is invisible, and SAID so)',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: null, body: 'Action: by hand.' }, 'OK'],
+      ['an unparseable registry -> INDETERMINATE',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: null, body: 'x', rawRegistry: '{ not json' }, 'INDETERMINATE'],
+    ];
+    for (const [label, opts, want] of cases) {
+      const t = mk(opts);
+      ck(label, evaluate(t).verdict, want);
+      rmSync(t, { recursive: true, force: true });
+    }
+
+    // The UNCITED key must be baseline-ratchet compatible, or a known violation could never be
+    // baselined and the gate would be un-adoptable on a corpus with legacy debt.
+    const t = mk({ robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: OK_DECL, body: 'Action: by hand.' });
+    const v = evaluate(t).violations[0];
+    ck('  the UNCITED violation carries a ratchet key', v && v.key, 'ops/monitoring/owner-canary.sh::ops/monitoring/robot.sh::UNCITED');
+    ck('  and names the intersecting host, not every host', v && v.hosts.join(','), 'aoe-1');
+    {
+      const restore = silence0();
+      const code = emit(evaluate(t), { keys: new Set([v.key]), present: true });
+      restore();
+      ck('  a BASELINED uncited violation reports instead of blocking', code, 0);
+    }
+    rmSync(t, { recursive: true, force: true });
+
+    // The stale leg must be VISIBLE, not merely non-blocking.
+    const st = mk({ robotOn: [], alertHosts: ['aoe-1'], declare: OK_DECL, body: 'Action: by hand.' });
+    ck('  a stale declaration is reported on its own line', evaluate(st).d2.stale.length, 1);
+    ck('  and the allow-list gap is counted, so empty can never read as clean', evaluate(st).d2.totalRows - evaluate(st).d2.declaredRows, 0);
+    rmSync(st, { recursive: true, force: true });
+  }
+
   console.log('--- token -> exit-code mapping (asserted, not assumed) ---');
   const silence = () => { const o = console.log; console.log = () => {}; return () => { console.log = o; }; };
   const empty = { keys: new Set(), present: false };
@@ -443,7 +644,7 @@ function selfTest() {
     ck(label, got, code);
   }
 
-  const MIN_ASSERTIONS = 31;
+  const MIN_ASSERTIONS = 44;
   if (checked < MIN_ASSERTIONS) {
     console.log(`SELF_TEST_VERDICT=INDETERMINATE — only ${checked} assertions ran (expected >= ${MIN_ASSERTIONS})`);
     console.log('ALERT_COPY_VERDICT=INDETERMINATE');
@@ -454,7 +655,7 @@ function selfTest() {
     console.log('ALERT_COPY_VERDICT=DRIFT');
     return 1;
   }
-  console.log(`SELF_TEST_VERDICT=PASS — ${checked} assertions (7 extraction, 3 classification, 4 sentence-scope, 4 regression fixture, 2 post-fix, 3 live, 4 vacuity, 5 token-map)`);
+  console.log(`SELF_TEST_VERDICT=PASS — ${checked} assertions (7 extraction, 3 classification, 4 sentence-scope, 4 regression fixture, 2 post-fix, 3 live, 4 vacuity, 13 direction-2, 5 token-map)`);
   console.log('ALERT_COPY_VERDICT=OK');
   return 0;
 }

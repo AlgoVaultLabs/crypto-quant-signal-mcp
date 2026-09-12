@@ -19,7 +19,11 @@ import {
   evaluate,
   loadBaseline,
   CONTINUITY_VERBS,
+  scheduledHosts,
+  declaredAutomation,
 } from '../../scripts/check-alert-copy-claims.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -160,5 +164,124 @@ describe('the verb list is a promise about cadence, not a mention', () => {
 
   it('does not contain bare pointer words that would flag every cross-reference', () => {
     for (const noise of ['see', 'by', 'in', 'the']) expect(CONTINUITY_VERBS).not.toContain(noise);
+  });
+});
+
+/**
+ * ── OPS-HOST-KERNEL-REBOOT-W4 — DIRECTION 2 ──────────────────────────────────────────────────
+ * W3 (above) pinned the defect where a body CITES something whose reality it misstates. This is
+ * the opposite defect, and the gate W3 shipped was structurally blind to it: a body that never
+ * mentions a component the world GAINED. The sentence that shipped —
+ *   "(verify Hetzner console access first, rehearse on aoe-1, then signal-1)"
+ * — cites no repo path at all, so PATH_RE never saw it, and ALERT_COPY_VERDICT stayed OK for the
+ * 15 days between OPS-HOST-AUTO-REBOOT-W1 landing the unattended harness and this wave.
+ */
+const STALE_REHEARSAL = 'rehearse on aoe-1, then signal-1';
+
+describe('W4 regression: the alert must not instruct a rehearsal that voids an unattended cycle', () => {
+  const live = readFileSync(path.join(ROOT, 'ops/monitoring/kernel-staleness-canary.sh'), 'utf8');
+
+  it('the stale rehearsal instruction can no longer reach an operator', () => {
+    // Scoped to the OPERATOR-FACING corpus, not the raw file, because that is the actual claim:
+    // hand-rebooting aoe-1 resets the running-vs-installed delta, which only a real reboot can
+    // reset — destroying one of the two clean unattended cycles gating signal-1's promotion.
+    const blocks = operatorFacingBlocks(live, 'kernel-staleness-canary.sh').join('|');
+    expect(blocks).not.toContain(STALE_REHEARSAL);
+  });
+
+  it('but the file KEEPS the phrase in a provenance comment — history is not erased', () => {
+    // CLAUDE.md's correction style: the wrong thing stays visible with its correction beside it,
+    // so the next reader learns why the sentence changed instead of rediscovering the incident.
+    expect(live).toContain(STALE_REHEARSAL);
+    expect(operatorFacingBlocks(live, 'kernel-staleness-canary.sh').join('|')).not.toContain(STALE_REHEARSAL);
+  });
+
+  it('and the body names the harness that actually performs the action', () => {
+    const blocks = operatorFacingBlocks(live, 'kernel-staleness-canary.sh').join('\n');
+    expect(blocks).toContain('ops/monitoring/kernel-auto-reboot.sh');
+  });
+
+  it('on EVERY coverage branch, not just the one this host happens to take', () => {
+    // decide_action has three branches; a branch that drops the citation is a DRIFT nobody would
+    // see until that branch fires on a host in trouble.
+    const branches = live.match(/Action:[\s\S]*?ACT/g) ?? [];
+    expect(branches.length).toBeGreaterThanOrEqual(3);
+    for (const b of branches) expect(b).toContain('ops/monitoring/kernel-auto-reboot.sh');
+  });
+});
+
+describe('W4: the declaration is real, complete, and matches the live schedule', () => {
+  it('KERNEL_STALENESS declares the auto-reboot harness with a non-empty reason', () => {
+    const d = declaredAutomation(ROOT);
+    expect(d).not.toBeNull();
+    const e = d!.entries.find((x) => x.alertId === 'KERNEL_STALENESS');
+    expect(e).toBeDefined();
+    expect(e!.artifact).toBe('ops/monitoring/kernel-auto-reboot.sh');
+    expect(e!.reason ?? '').not.toBe('');
+    expect(d!.malformed).toHaveLength(0);
+  });
+
+  it('the harness is scheduled on aoe-1 ONLY — the signal-1 firewall, asserted not assumed', () => {
+    const m = scheduledHosts(ROOT);
+    expect(m).not.toBeNull();
+    const on = m!.get('ops/monitoring/kernel-auto-reboot.sh');
+    expect(on).toBeDefined();
+    expect([...on!].sort()).toEqual(['aoe-1']);
+  });
+
+  it('while the alert itself covers both hosts — which is why the body must say which is which', () => {
+    const m = scheduledHosts(ROOT);
+    expect([...m!.get('ops/monitoring/kernel-staleness-canary.sh')!].sort()).toEqual(['aoe-1', 'signal-1']);
+  });
+});
+
+describe('W4: direction 2 fires on the defect and stays silent on the fix', () => {
+  const mk = (body: string, declare: unknown) => {
+    const t = mkdtempSync(path.join(tmpdir(), 'd2-vitest-'));
+    mkdirSync(path.join(t, 'ops/monitoring'), { recursive: true });
+    writeFileSync(path.join(t, 'ops/monitoring/monitoring-inventory.json'), JSON.stringify({
+      artifacts: [
+        { artifact: 'ops/monitoring/owner.sh', installed_at: [{ host: 'signal-1', schedule: '0 1 * * *' }] },
+        { artifact: 'ops/monitoring/robot.sh', installed_at: [{ host: 'aoe-1', schedule: '7 * * * *' }] },
+      ],
+    }));
+    writeFileSync(path.join(t, 'ops/monitoring/alert-registry.json'), JSON.stringify({
+      alerts: [{ alert_id: 'A', owner: 'ops/monitoring/owner.sh', hosts: ['aoe-1', 'signal-1'], related_automation: [declare] }],
+    }));
+    writeFileSync(path.join(t, 'ops/monitoring/owner.sh'), `#!/usr/bin/env bash\nsend_telegram\ncat <<EOF\n${body}\nEOF\n`);
+    return t;
+  };
+  const DECL = { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'], reason: 'it already does this' };
+
+  it('an uncited declared+scheduled automation is a DRIFT with a ratchet key', () => {
+    const t = mk('Action: do it by hand.', DECL);
+    const r = evaluate(t);
+    expect(r.verdict).toBe('DRIFT');
+    expect(r.violations[0].key).toBe('ops/monitoring/owner.sh::ops/monitoring/robot.sh::UNCITED');
+    rmSync(t, { recursive: true, force: true });
+  });
+
+  it('citing it clears the drift', () => {
+    const t = mk('Action: ops/monitoring/robot.sh already handles aoe-1.', DECL);
+    expect(evaluate(t).verdict).toBe('OK');
+    rmSync(t, { recursive: true, force: true });
+  });
+
+  it('a missing reason is INDETERMINATE — mandatory, never a silent pass', () => {
+    const t = mk('Action: by hand.', { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'] });
+    expect(evaluate(t).verdict).toBe('INDETERMINATE');
+    rmSync(t, { recursive: true, force: true });
+  });
+});
+
+describe('W4: honest scope — the allow-list gap is counted, never silent', () => {
+  it('every run reports how many alert rows declare nothing', () => {
+    const d2 = evaluate(ROOT).d2;
+    expect(d2).toBeDefined();
+    expect(d2.totalRows).toBeGreaterThan(0);
+    expect(d2.declaredRows).toBeGreaterThanOrEqual(1);
+    // The undeclared remainder is a REPORTED gap. Asserting it is non-negative is not the point;
+    // asserting the counter EXISTS is — an allow-list whose coverage nobody prints reads clean.
+    expect(d2.totalRows - d2.declaredRows).toBeGreaterThanOrEqual(0);
   });
 });
