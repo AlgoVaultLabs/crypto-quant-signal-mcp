@@ -137,6 +137,8 @@ Env / test seams:
   OBF_PSQL_CMD    override the psql command (default: docker exec … psql -U aoe_readonly …)
   OBF_STATE_FILE  streak state       OBF_LOG            log path
   OBF_WRAPPER     send_telegram.sh   OBF_NOW_EPOCH      freeze "now"
+  OBF_ALERT_STATE_DIR the wrapper's marker dir — the resolution gate READS <ALERT_ID>-last-fired-at
+                  there (episode_open); this canary never writes it
   OBF_STALE_HOURS threshold (12)     OBF_INPUT_WINDOW_HOURS input guard window (3)
   OBF_CONSECUTIVE_TO_PAGE sustain (2)
   OBF_QUEUE_LIMIT / OBF_MAX_ATTEMPTS / OBF_ATTEMPT_COOLDOWN_S — the producer's own constants,
@@ -166,6 +168,9 @@ CANARY_NAME = "outcome_backfill_freshness"
 WRAPPER = os.environ.get("OBF_WRAPPER", "/opt/algovault-monitoring/send_telegram.sh")
 STATE_FILE = os.environ.get(
     "OBF_STATE_FILE", "/opt/algovault-monitoring/.alert-state/outcome-backfill-freshness.json")
+# send_telegram.sh's STATE_DIR — where it writes `<ALERT_ID>-last-fired-at` on a delivered fire and
+# removes it on a delivered clear. The resolution gate READS it (episode_open); nothing here writes.
+ALERT_STATE_DIR = os.environ.get("OBF_ALERT_STATE_DIR", "/opt/algovault-monitoring/.alert-state")
 LOG = os.environ.get("OBF_LOG", "/var/log/algovault-outcome-backfill-freshness.log")
 
 PSQL_DEFAULT = (
@@ -637,13 +642,21 @@ def read_streak():
         return 0
 
 
-def read_paged():
-    """Did a page actually reach the operator for the current episode?
+def episode_open():
+    """Is an episode open — did a page actually reach the operator and not yet resolve?
 
-    This is the gate on announcing a resolution. Announcing a recovery for an episode nobody was
-    told about is chatter, and chatter is what the silent-by-default rule exists to prevent.
+    Answered from send_telegram.sh's OWN cooldown marker, which the wrapper writes on a DELIVERED
+    fire and removes on a delivered clear: the same file its cooldown gate, its --clear path and the
+    reconciler's FIRING_STALE check already read. Announcing a recovery for an episode nobody was
+    told about is chatter, and the marker is the one record of "told about" that cannot disagree
+    with the wrapper.
+
+    OPS-DRIFT-ALERT-GENERATORS-W1 retired a private `paged` flag that stood here. It was a SECOND
+    record of that one fact, and it arrived with A3 two days AFTER the 2026-09-05 page — so it read
+    false for that entire episode, every healthy run skipped --clear, and the reconciler reported
+    the marker 8.6 days old as FIRING_STALE while this canary sat at consecutive_pass 169.
     """
-    return bool(_read_state().get("paged", False))
+    return os.path.exists(os.path.join(ALERT_STATE_DIR, "%s-last-fired-at" % ALERT_ID))
 
 
 def read_recovery_streak():
@@ -653,12 +666,14 @@ def read_recovery_streak():
         return 0
 
 
-def write_state(streak, v, now, paged=False, recovery_streak=0):
+def write_state(streak, v, now, recovery_streak=0):
+    # No page memory is written here, by design — see episode_open(). A field that recorded
+    # "paged" would be a second copy of the wrapper's marker, and it is the copy that went stale.
     try:
         os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
         with open(STATE_FILE, "w") as fh:
             json.dump({"consecutive_breaches": streak, "consecutive_pass": recovery_streak,
-                       "paged": bool(paged), "last_run_epoch": now,
+                       "last_run_epoch": now,
                        "last_verdict": v["verdict"],
                        "last_arms": {a["name"]: a["verdict"] for a in v["arms"]}}, fh, indent=1)
     except OSError as e:
@@ -760,7 +775,6 @@ def run(census, rows, now):
     # could not evaluate is not evidence of sustained drift, and letting it accumulate would page
     # on two consecutive unreadable runs.
     prior = read_streak()
-    paged = read_paged()
     recovery = read_recovery_streak()
     streak = prior + 1 if v["breach"] else (0 if v["verdict"] == "PASS" else prior)
 
@@ -775,15 +789,17 @@ def run(census, rows, now):
     for line in render_eval_lines(v, streak):
         log(line)
 
+    # The resolution gate PROJECTS from the wrapper's marker (episode_open) — the record of a
+    # delivered page that cannot drift from the wrapper, whichever version or path delivered it.
+    # The recovery streak is deliberately NOT reset by a clear: the marker disappearing is what
+    # stops further clears, and a resolution the wrapper could not deliver (it keeps the marker to
+    # retry) is then retried on the very next healthy run instead of after another full sustain.
+    open_episode = episode_open()
     will_page = v["breach"] and streak >= CONSECUTIVE_TO_PAGE
     will_clear = (not v["breach"] and v["verdict"] == "PASS"
-                  and paged and recovery >= CONSECUTIVE_TO_PAGE)
-    if will_page:
-        paged = True
-    if will_clear:
-        paged, recovery = False, 0
+                  and open_episode and recovery >= CONSECUTIVE_TO_PAGE)
 
-    write_state(streak, v, now, paged=paged, recovery_streak=recovery)
+    write_state(streak, v, now, recovery_streak=recovery)
 
     if will_page:
         fire(build_body(v, streak))
@@ -792,8 +808,8 @@ def run(census, rows, now):
             % CONSECUTIVE_TO_PAGE)
     elif will_clear:
         clear("outcome-backfill healthy on %d consecutive checks (all three arms PASS)"
-              % CONSECUTIVE_TO_PAGE)
-    elif v["verdict"] == "PASS" and read_paged():
+              % recovery)
+    elif v["verdict"] == "PASS" and open_episode:
         log("RECOVERY_HOLD: %d/%d consecutive PASS — a resolution needs the same sustain the "
             "page needed" % (recovery, CONSECUTIVE_TO_PAGE))
     return v, streak
@@ -831,10 +847,14 @@ def self_test():
     token->exit-code mapping. Assertions that would RAISE are wrapped — an assertion that aborts
     the suite is a crash, not a failure, and a crash reports nothing.
     """
-    global STATE_FILE, LOG
+    global STATE_FILE, LOG, ALERT_STATE_DIR
     tmp = tempfile.mkdtemp(prefix="outcome-backfill-selftest-")
     STATE_FILE = os.path.join(tmp, "state.json")
     LOG = os.path.join(tmp, "selftest.log")
+    # The wrapper's marker dir, redirected — a self-test must never read or touch PRODUCTION alert
+    # state, and episode_open() now reads that directory.
+    ALERT_STATE_DIR = os.path.join(tmp, "alert-state")
+    os.makedirs(ALERT_STATE_DIR, exist_ok=True)
     os.environ["OBF_SELFTEST"] = "1"
     os.environ["ALGOVAULT_TG_TEST_INERT"] = "1"
 
@@ -1119,39 +1139,62 @@ def self_test():
           lambda: s5 == s4 and not LAST_FIRE)
 
     # ── SYMMETRIC HYSTERESIS on the way out (the condition on announce_resolution: true) ─────
-    LAST_FIRE.clear()
-    LAST_CLEAR.clear()
-    if os.path.exists(STATE_FILE):
-        os.remove(STATE_FILE)
+    #
+    # The resolution gate reads send_telegram.sh's cooldown marker (episode_open). fire() and
+    # clear() are short-circuited in this suite, so the wrapper's two state transitions are modelled
+    # EXPLICITLY rather than left implicit: a delivered fire writes the marker, a delivered clear
+    # removes it. A suite that let the seam stand in silently would be blind to exactly the file
+    # this gate now depends on.
+    marker = os.path.join(ALERT_STATE_DIR, "%s-last-fired-at" % ALERT_ID)
+
+    def wrapper_delivers_fire():
+        if LAST_FIRE:
+            with open(marker, "w") as fh:
+                fh.write(str(NOW))
+
+    def wrapper_delivers_clear():
+        if LAST_CLEAR and os.path.exists(marker):
+            os.remove(marker)
+
+    def fresh():
+        LAST_FIRE.clear()
+        LAST_CLEAR.clear()
+        for p in (STATE_FILE, marker):
+            if os.path.exists(p):
+                os.remove(p)
+
+    fresh()
     run(bad, pop(), NOW)                       # day 1 — held
     run(bad, pop(), NOW)                       # day 2 — PAGES
-    check("resolution precondition: the episode is marked as DELIVERED once it pages",
-          lambda: read_paged() is True)
+    check("the canary writes NO page memory of its own — before the wrapper delivers, nothing is open",
+          lambda: "body" in LAST_FIRE and episode_open() is False)
+    wrapper_delivers_fire()
+    check("resolution precondition: a DELIVERED page leaves the wrapper's marker, and the gate sees it",
+          lambda: episode_open() is True)
     LAST_CLEAR.clear()
     run(census(), pop(), NOW)                  # first PASS
     check("ONE healthy check after a page does NOT announce a resolution (flap guard)",
-          lambda: not LAST_CLEAR and read_paged() is True)
+          lambda: not LAST_CLEAR and episode_open() is True)
     check("...and the hold is REPORTED, so an un-announced recovery is never silent-by-accident",
           lambda: "RECOVERY_HOLD: 1/2" in open(LOG).read())
     run(census(), pop(), NOW)                  # second consecutive PASS -> announce
-    check("TWO consecutive healthy checks announce exactly ONE resolution",
-          lambda: "reason" in LAST_CLEAR and read_paged() is False)
+    check("TWO consecutive healthy checks dispatch exactly ONE resolution",
+          lambda: "reason" in LAST_CLEAR)
+    wrapper_delivers_clear()
     LAST_CLEAR.clear()
     run(census(), pop(), NOW)                  # third PASS -> nothing more
-    check("a third healthy check announces NOTHING — one resolution per delivered episode",
+    check("a third healthy check dispatches NOTHING once the wrapper removed its marker — "
+          "one resolution per delivered episode",
           lambda: not LAST_CLEAR)
-    LAST_CLEAR.clear()
-    if os.path.exists(STATE_FILE):
-        os.remove(STATE_FILE)
+    fresh()
     run(census(), pop(), NOW)
     run(census(), pop(), NOW)
     check("healthy checks with NO delivered page announce nothing — recovery chatter stays off",
           lambda: not LAST_CLEAR)
-    LAST_CLEAR.clear()
-    if os.path.exists(STATE_FILE):
-        os.remove(STATE_FILE)
+    fresh()
     run(bad, pop(), NOW)
     run(bad, pop(), NOW)                       # paged
+    wrapper_delivers_fire()
     LAST_CLEAR.clear()
     run(census(), pop(), NOW)                  # PASS 1
     run(census(filled_lag_h=None, stamped=0), pop(), NOW)   # INDETERMINATE — holds
@@ -1160,17 +1203,41 @@ def self_test():
     run(census(), pop(), NOW)                  # PASS 2 -> now it announces
     check("...and the very next PASS completes the sustain and announces",
           lambda: "reason" in LAST_CLEAR)
-    LAST_CLEAR.clear()
-    if os.path.exists(STATE_FILE):
-        os.remove(STATE_FILE)
+    fresh()
     run(bad, pop(), NOW)
     run(bad, pop(), NOW)                       # paged
+    wrapper_delivers_fire()
     LAST_CLEAR.clear()
     run(census(), pop(), NOW)                  # PASS 1
     run(bad, pop(), NOW)                       # FAIL — resets the recovery streak
     run(census(), pop(), NOW)                  # PASS 1 again, not 2
     check("a FAIL between two PASSes RESETS the recovery streak (no announce on a flap)",
           lambda: not LAST_CLEAR and read_recovery_streak() == 1)
+
+    # ── THE INCIDENT, 2026-09-05 -> 2026-09-14 (OPS-DRIFT-ALERT-GENERATORS-W1) ────────────────
+    # The page was delivered by the version BEFORE a private `paged` flag existed, so that flag read
+    # false for the whole episode, every healthy run skipped --clear, and the reconciler reported the
+    # marker 8.6 days old as FIRING_STALE while this canary sat at consecutive_pass 169. Replayed
+    # exactly: the pre-fix state shape carrying `"paged": false`, and a marker the canary never wrote.
+    fresh()
+    with open(STATE_FILE, "w") as fh:
+        json.dump({"consecutive_breaches": 0, "consecutive_pass": 169, "paged": False,
+                   "last_verdict": "PASS"}, fh)
+    with open(marker, "w") as fh:
+        fh.write(str(NOW - 8 * 86400))
+    run(census(), pop(), NOW)
+    check("🛑 INCIDENT REPLAY: an episode the canary's own state never recorded is CLEARED on the "
+          "next healthy run",
+          lambda: "reason" in LAST_CLEAR)
+    check("...because the gate read the wrapper's marker and IGNORED the stale private `paged: false`",
+          lambda: episode_open() is True and read_recovery_streak() == 170)
+    wrapper_delivers_clear()
+    LAST_CLEAR.clear()
+    run(census(), pop(), NOW)
+    check("...and once the wrapper removes the marker, healthy runs dispatch nothing further",
+          lambda: not LAST_CLEAR and episode_open() is False)
+    check("the rewritten state carries no page memory — the wrapper's marker is the only record",
+          lambda: "paged" not in json.load(open(STATE_FILE)))
 
     # ── the rendered BODY + per-arm lines the seam bypasses ──────────────────────────────────
     check("BODY names the alert id", lambda: ALERT_ID in body)
@@ -1310,7 +1377,10 @@ def self_test():
 # slack in it licenses exactly one silent deletion, which is the hole it exists to close — this
 # wave measured that hole in its sibling gate while proving the suite could fail, and corrected it
 # there too. Raise this in the SAME edit that adds a scenario.
-_SELF_TEST_MIN_CHECKS = 98
+# Raised 98 -> 103 by OPS-DRIFT-ALERT-GENERATORS-W1: the resolution precondition split in two (the
+# canary writes no page memory / the wrapper's marker is what the gate sees) and four incident-replay
+# checks were added. Measured: the suite ran exactly 103.
+_SELF_TEST_MIN_CHECKS = 103
 
 
 def _token_exit_map():
