@@ -322,8 +322,10 @@ test('self-check: the heartbeat-key detectors fire on a known-bad fixture', () =
  * stamp without having taken the backup, which is what turns a 24h-late detection into a
  * commit-time refusal.
  */
-const UNSTAMPED_CEILING = 44; // 2026-09-02 baseline. 45 qualifying rows predated the stamp;
-// edge-crawler-report-canary was installed through the tool in this wave, so the floor is 44.
+const UNSTAMPED_CEILING = 38; // 2026-09-14, OPS-DRIFT-ALERT-GENERATORS-W1: measured 38 once that wave's
+// installs stamped deploy-drift-canary, outcome-backfill-freshness, declaration-sync and
+// monitoring-inventory-reconcile (origin/main read 40 before the last two). The 2026-09-02 baseline was 44:
+// 45 qualifying rows predated the stamp, and edge-crawler-report-canary was installed through the tool.
 // This number may only ever go DOWN. Never raise it to make a commit pass — raising it is exactly
 // the "register a load-bearing artifact without a sanctioned install" act the gate exists to stop.
 
