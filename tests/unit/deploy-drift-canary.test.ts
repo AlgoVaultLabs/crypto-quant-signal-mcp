@@ -14,8 +14,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   classifyDrift,
   decideRecovery,
@@ -30,6 +31,17 @@ import {
   isNonDeployingDelta,
   matchesPattern,
   renderAlertBody,
+  REPOS,
+  DEPLOY_KINDS,
+  BOT_DEPLOY_COMMAND,
+  validateDeployModel,
+  deltaCanTriggerDeploy,
+  resolveNonDeploying,
+  parseManifestPaths,
+  touchesDeployPaths,
+  parseCommitLog,
+  dispatchAlert,
+  dispatchClear,
 } from '../../ops/monitoring/deploy-drift-canary.mjs';
 
 const REPO = join(__dirname, '..', '..');
@@ -80,8 +92,13 @@ function liveGraphTouchers(): string[] {
     .filter(Boolean);
 }
 
+/** The gha-push model production declares for this repo — REQUIRED by classifyDrift since
+ *  OPS-DRIFT-ALERT-GENERATORS-W1, which refuses a behind repo with no declared deploy model. */
+const GHA = { deployKind: 'gha-push', workflow: 'Deploy to Hetzner', laneBadge: BADGE_URL };
+
 const graded = (over: Record<string, unknown> = {}) =>
   classifyDrift({
+    ...GHA,
     prodSha: 'a'.repeat(40),
     mainHead: 'b'.repeat(40),
     suiteVerdict: 'FAIL',
@@ -132,7 +149,14 @@ describe('THE GRADED CASE — 2026-08-17, prod at 9f44c72, main red', () => {
 });
 
 describe('the classifier refuses to guess', () => {
-  const base = { prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), failingFiles: [] };
+  const base = { ...GHA, prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), failingFiles: [] };
+
+  it('a behind repo with NO declared deploy model refuses — it never borrows a lane', () => {
+    const r = classifyDrift({ prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), laneHealth: 'unknown' });
+    expect(r.verdict).toBe('DRIFT_INDETERMINATE');
+    expect(r.cause).toBe('no-deploy-model');
+    expect(r.next ?? '').not.toContain('crypto-quant-signal-mcp/actions');
+  });
 
   it('unreadable provenance is INDETERMINATE, never "in sync"', () => {
     expect(classifyDrift({ ...base, prodSha: null }).verdict).toBe('DRIFT_INDETERMINATE');
@@ -236,11 +260,25 @@ const ROOT = join(__dirname, '../..');
 const DEPLOY_YML = readFileSync(join(ROOT, '.github/workflows/deploy.yml'), 'utf8');
 
 describe('the safety property — a branch-latest signal can never authorise recovery', () => {
-  it('no laneHealth x nonDeploying combination reaches DRIFT_RECOVERABLE', () => {
-    const base = { prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40) };
-    for (const laneHealth of [null, 'passing', 'failing', 'unknown', 'something-new'])
-      for (const nonDeploying of [null, true, false])
-        expect(classifyDrift({ ...base, laneHealth, nonDeploying }).verdict).not.toBe('DRIFT_RECOVERABLE');
+  it('no deployKind x laneHealth x nonDeploying x deploySet combination reaches DRIFT_RECOVERABLE', () => {
+    const base = { ...GHA, prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40) };
+    let evaluated = 0;
+    for (const deployKind of ['gha-push', 'manual-manifest', undefined, 'rsync'])
+      for (const laneHealth of [null, 'passing', 'failing', 'unknown', 'something-new'])
+        for (const nonDeploying of [null, true, false])
+          for (const deploySet of [null, { touched: true, files: ['scripts/x.sh'] }, { touched: false, files: [] }]) {
+            evaluated++;
+            expect(classifyDrift({ ...base, deployKind, laneHealth, nonDeploying, deploySet }).verdict)
+              .not.toBe('DRIFT_RECOVERABLE');
+          }
+    expect(evaluated).toBe(4 * 5 * 3 * 3); // the enumeration is a property, not a sample
+  });
+
+  it('...while the ONE input that can still reach it is honoured for gha-push and refused for manual', () => {
+    const base = { ...GHA, prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), suiteVerdict: 'PASS' };
+    expect(classifyDrift(base).verdict).toBe('DRIFT_RECOVERABLE');
+    expect(classifyDrift({ ...base, deployKind: 'manual-manifest', deploySet: { touched: true, files: ['s'] } }).verdict)
+      .toBe('DRIFT_MANUAL_DEPLOY_OWED'); // no workflow exists to re-trigger
   });
 
   it('production never supplies the ONE input that could — suiteVerdict is pinned null in main()', () => {
@@ -298,7 +336,7 @@ describe('the REAL deploy.yml — what the hermetic self-test cannot see', () =>
 });
 
 describe('the alert body an operator actually reads', () => {
-  const base = { prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40) };
+  const base = { ...GHA, prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40) };
   const render = (laneHealth: any, nonDeploying: any = null) =>
     renderAlertBody({
       repo: 'crypto-quant-signal-mcp',
@@ -328,5 +366,207 @@ describe('the alert body an operator actually reads', () => {
     expect(parseBadgeTitle('<title>Deploy to Hetzner - passing</title>')).toBe('passing');
     expect(parseBadgeTitle('<title>Deploy to Hetzner - no status</title>')).toBe('unknown');
     expect(parseBadgeTitle('')).toBe('unknown');
+  });
+});
+
+/* ══════════════ OPS-DRIFT-ALERT-GENERATORS-W1 ══════════════
+ *
+ * DEPLOY_DRIFT paged 2026-09-10..13 about algovault-bot with "deploy lane health unreadable", a
+ * `next:` pointing at THIS repo's badge, and every newline rendered as a literal `\n`; on 09-11 it
+ * paged about a README writeback that by design can never create a run. Each block below asserts
+ * against the REAL artifact the hermetic self-test substitutes — the committed REPOS rows, the
+ * workflow that justifies the GITHUB_TOKEN exemption, host-deploy.sh's own manifest parser, and the
+ * wrapper transport itself.
+ */
+const RS = String.fromCharCode(0x1e);
+const US = String.fromCharCode(0x1f);
+const cqsm = () => REPOS.find((r: any) => r.name === 'crypto-quant-signal-mcp') as any;
+const bot = () => REPOS.find((r: any) => r.name === 'algovault-bot') as any;
+const MANIFEST_PATH = join(ROOT, 'ops/deploy/algovault-bot.manifest');
+
+describe('THE DEPLOY MODEL — every watched repo declares how a push reaches prod', () => {
+  it('every REPOS row carries a model that validates, from the closed kind set', () => {
+    expect(REPOS.length).toBeGreaterThan(1);
+    for (const r of REPOS as any[]) {
+      expect(validateDeployModel(r.deploy), `${r.name}: ${validateDeployModel(r.deploy)}`).toBeNull();
+      expect(DEPLOY_KINDS).toContain(r.deploy.kind);
+    }
+  });
+
+  it('a missing, unknown or incomplete model is refused — never defaulted', () => {
+    expect(validateDeployModel(undefined)).toBe('no deploy model declared');
+    expect(validateDeployModel({ kind: 'rsync' })).toMatch(/unknown deploy kind/);
+    expect(validateDeployModel({ kind: 'gha-push', workflow: 'w', laneBadge: 'b', rawBase: 'r', pathsIgnoreFrom: 'p' }))
+      .toMatch(/nonTriggeringCommits/);
+    expect(validateDeployModel({ kind: 'manual-manifest', manifest: 'm' })).toMatch(/lacks manifestRemote/);
+  });
+
+  it('algovault-bot is manual-manifest, against a manifest that exists', () => {
+    expect(bot().deploy.kind).toBe('manual-manifest');
+    expect(existsSync(join(ROOT, bot().deploy.manifest)), bot().deploy.manifest).toBe(true);
+    expect(bot().deploy.deployCommand).toBe(BOT_DEPLOY_COMMAND);
+  });
+
+  it('no row points a lane, a raw read or a command at ANOTHER repo', () => {
+    const slug = (remote: string) => /github\.com\/AlgoVaultLabs\/([^/.]+)/.exec(remote)![1];
+    const c = cqsm();
+    expect(c.deploy.laneBadge).toContain(`/AlgoVaultLabs/${slug(c.remote)}/actions/workflows/`);
+    expect(c.deploy.rawBase).toContain(`/AlgoVaultLabs/${slug(c.remote)}`);
+    expect(existsSync(join(ROOT, c.deploy.pathsIgnoreFrom))).toBe(true);
+    expect(BOT_DEPLOY_COMMAND).toContain(`--repo ~/code/${slug(bot().remote)}`);
+    expect(BOT_DEPLOY_COMMAND).not.toContain('badge');
+  });
+});
+
+describe('the GITHUB_TOKEN exemption is bound to the workflow that earns it', () => {
+  const writer = () => cqsm().deploy.nonTriggeringCommits
+    .find((w: any) => w.producer === '.github/workflows/readme-snapshot-writeback.yml');
+  const WB = readFileSync(join(ROOT, '.github/workflows/readme-snapshot-writeback.yml'), 'utf8');
+
+  it('every declared writer names a producer that exists', () => {
+    for (const w of cqsm().deploy.nonTriggeringCommits) expect(existsSync(join(ROOT, w.producer)), w.producer).toBe(true);
+    expect(writer()).toBeTruthy();
+  });
+
+  it('the producer commits with EXACTLY the declared identity', () => {
+    expect(WB).toContain(`git config user.name "${writer().committerName}"`);
+    expect(WB).toContain(`git config user.email "${writer().committerEmail}"`);
+  });
+
+  it('the producer passes checkout no token — the GITHUB_TOKEN push that creates no run', () => {
+    const code = WB.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    expect(code).not.toMatch(/^\s*token:/m);
+  });
+
+  it('the producer commits ONLY the declared paths, and refuses otherwise', () => {
+    expect(writer().paths).toEqual(['README.md']);
+    expect(WB).toContain('paths other than README.md are still dirty after the restore');
+  });
+});
+
+describe('REAL HISTORY — the per-commit leg against the deltas that paged', () => {
+  const IGN = parsePathsIgnore(DEPLOY_YML)!;
+  const W = () => cqsm().deploy.nonTriggeringCommits;
+  const c = (sha: string, who: [string, string], files: string[], parents = 1) =>
+    ({ sha: sha.padEnd(40, '0'), parents, committerName: who[0], committerEmail: who[1], files });
+  const CI: [string, string] = ['AlgoVault CI', 'ci@algovault.com'];
+  const HUMAN: [string, string] = ['AlgoVaultFi', '264139505+AlgoVaultFi@users.noreply.github.com'];
+
+  it('2026-09-14 bdc9a893..6f36664b (inventory + 2 README writebacks, 0 Deploy runs) cannot trigger', () => {
+    const r = deltaCanTriggerDeploy([
+      c('6f36664b', CI, ['README.md']),
+      c('fe4be99c', CI, ['README.md']),
+      c('97d7c883', HUMAN, ['ops/monitoring/monitoring-inventory.json']),
+    ], IGN, W());
+    expect(r.canTrigger).toBe(false);
+    expect(r.cause).toContain('readme-snapshot-writeback.yml');
+    expect(resolveNonDeploying(isNonDeployingDelta(['README.md', 'ops/monitoring/monitoring-inventory.json'], IGN), r).value)
+      .toBe(true);
+  });
+
+  it('2026-09-11 1a6cc219..1dc3e0e0 (one writeback — that day\'s MCP page) cannot trigger', () => {
+    expect(deltaCanTriggerDeploy([c('1dc3e0e0', CI, ['README.md'])], IGN, W()).canTrigger).toBe(false);
+    // ...while the aggregate leg alone calls it deploying — which is exactly the page this retires.
+    expect(isNonDeployingDelta(['README.md'], IGN)).toBe(false);
+  });
+
+  it('a HUMAN README.md commit still deploys, and so does the writer touching anything else', () => {
+    expect(deltaCanTriggerDeploy([c('aaaaaaa', HUMAN, ['README.md'])], IGN, W()).canTrigger).toBe(true);
+    expect(deltaCanTriggerDeploy([c('bbbbbbb', CI, ['README.md', 'src/index.ts'])], IGN, W()).canTrigger).toBe(true);
+  });
+
+  it('a merge is INCONCLUSIVE, and inconclusive never silences a deploying aggregate', () => {
+    const r = deltaCanTriggerDeploy([c('ccccccc', CI, ['README.md'], 2)], IGN, W());
+    expect(r.canTrigger).toBeNull();
+    expect(resolveNonDeploying(false, r).value).toBe(false);
+  });
+
+  it('git log output parses into per-commit facts', () => {
+    const out = `${RS}${'a'.repeat(40)}${US}${'1'.repeat(40)}${US}AlgoVault CI${US}ci@algovault.com\n\nREADME.md\n`
+      + `${RS}${'b'.repeat(40)}${US}${'1'.repeat(40)} ${'2'.repeat(40)}${US}AlgoVaultFi${US}x@y\n\nsrc/a.ts\nsrc/b.ts\n`;
+    expect(parseCommitLog(out)!.map((x: any) => [x.parents, x.committerEmail, x.files]))
+      .toEqual([[1, 'ci@algovault.com', ['README.md']], [2, 'x@y', ['src/a.ts', 'src/b.ts']]]);
+    expect(parseCommitLog('not a log')).toBeNull();
+  });
+});
+
+describe('the manual-manifest leg agrees with host-deploy.sh — one deploy set, two readers', () => {
+  it('parseManifestPaths equals host-deploy.sh manifest_paths() on the committed manifest', { timeout: 30_000 }, () => {
+    const hd = readFileSync(join(ROOT, 'ops/scripts/host-deploy.sh'), 'utf8');
+    const fn = /manifest_paths\(\) \{[\s\S]*?\n\}/.exec(hd);
+    expect(fn, 'manifest_paths() not found in ops/scripts/host-deploy.sh').toBeTruthy();
+    const shell = (verb: string) =>
+      execFileSync('bash', ['-c', `${fn![0]}\nmanifest_paths "$1" "$2"`, 'manifest-parity', MANIFEST_PATH, verb], { encoding: 'utf8' })
+        .split('\n').filter(Boolean);
+    const text = readFileSync(MANIFEST_PATH, 'utf8');
+    expect(shell('deploy').length).toBeGreaterThan(0);
+    expect(parseManifestPaths(text, 'deploy')).toEqual(shell('deploy'));
+    expect(parseManifestPaths(text, 'ignore')).toEqual(shell('ignore'));
+  });
+
+  it('REAL HISTORY: c777e73 (scripts/tg-conversion-baseline.sh) is a deploy owed, and the page says how to deploy it', () => {
+    const deploy = parseManifestPaths(readFileSync(MANIFEST_PATH, 'utf8'), 'deploy')!;
+    const deploySet = touchesDeployPaths(['scripts/tg-conversion-baseline.sh'], deploy)!;
+    expect(deploySet.touched).toBe(true);
+    const prodSha = '65affdb419c11b3d36467bb00ea7c9d586a5c274';
+    const mainHead = 'c777e73c6ae73b615a0f559f9279d4398b2fd983';
+    const verdict = classifyDrift({ prodSha, mainHead, deployKind: 'manual-manifest', deployCommand: BOT_DEPLOY_COMMAND, deploySet });
+    expect(verdict.verdict).toBe('DRIFT_MANUAL_DEPLOY_OWED');
+    const body = renderAlertBody({ repo: 'algovault-bot', verdict, prodSha, mainHead, behindMs: 3_600_000, laneHealth: null });
+    expect(body).toContain(`next: ${BOT_DEPLOY_COMMAND}`);
+    expect(body).not.toMatch(/deploy lane|crypto-quant-signal-mcp\/actions/);
+  });
+
+  it('a delta outside the manifest (docs/, audits/) is not drift', () => {
+    const deploy = parseManifestPaths(readFileSync(MANIFEST_PATH, 'utf8'), 'deploy')!;
+    expect(touchesDeployPaths(['docs/METERING-DIVERGENCE.md', 'audits/x.md'], deploy)!.touched).toBe(false);
+  });
+
+  it('every flag in the deploy command is one host-deploy.sh accepts', () => {
+    const hd = readFileSync(join(ROOT, 'ops/scripts/host-deploy.sh'), 'utf8');
+    const flags = BOT_DEPLOY_COMMAND.split(/\s+/).filter((x: string) => /^--[a-z-]+$/.test(x));
+    expect(flags).toContain('--dry-run');
+    for (const f of flags) expect(hd, `host-deploy.sh has no case arm for ${f}`).toContain(`    ${f})`);
+  });
+});
+
+describe('the TRANSPORT — what reaches the wrapper, not what renderAlertBody returned', () => {
+  it('the body arrives byte-for-byte with REAL newlines; --clear goes first with stdin closed', { timeout: 30_000 }, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'drift-transport-'));
+    try {
+      const fake = join(dir, 'wrap.sh');
+      writeFileSync(fake, ['#!/bin/sh', 'd=$(dirname "$0")', "printf '%s\\n' \"$@\" > \"$d/argv\"", 'cat > "$d/stdin"', ''].join('\n'),
+        { mode: 0o755 });
+      const prodSha = 'a'.repeat(40);
+      const mainHead = 'b'.repeat(40);
+      const body = renderAlertBody({
+        repo: 'algovault-bot', prodSha, mainHead, behindMs: 3_600_000, laneHealth: null,
+        verdict: classifyDrift({ prodSha, mainHead, deployKind: 'manual-manifest', deployCommand: BOT_DEPLOY_COMMAND,
+          deploySet: { touched: true, files: ['scripts/tg-conversion-baseline.sh'] } }),
+      });
+      expect(dispatchAlert(body, { wrap: fake }).ok).toBe(true);
+      const got = readFileSync(join(dir, 'stdin'), 'utf8');
+      expect(got).toBe(body);
+      expect(got).not.toContain('\\n'); // the delivered defect: a literal backslash-n
+      expect(got.split('\n').length).toBeGreaterThan(5);
+      expect(readFileSync(join(dir, 'argv'), 'utf8').split('\n').filter(Boolean))
+        .toEqual(['DEPLOY_DRIFT', 'CRITICAL_PERSISTENT', '-']);
+      expect(dispatchClear('deploy drift verdict=DRIFT_NONE', { wrap: fake }).ok).toBe(true);
+      expect(readFileSync(join(dir, 'argv'), 'utf8').split('\n').filter(Boolean))
+        .toEqual(['--clear', 'DEPLOY_DRIFT', 'deploy drift verdict=DRIFT_NONE']);
+      expect(readFileSync(join(dir, 'stdin'), 'utf8')).toBe('');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('main() dispatches through those functions, and no shell-string transport remains in the code', () => {
+    const src = readFileSync(join(ROOT, 'ops/monitoring/deploy-drift-canary.mjs'), 'utf8');
+    const code = src.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'); // a mention is not a use
+    const mainBody = code.slice(code.indexOf('function main()'));
+    expect(mainBody).toMatch(/dispatchAlert\(body\)/);
+    expect(mainBody).toMatch(/dispatchClear\(/);
+    expect(code).not.toMatch(/JSON\.stringify\(body\)/);
+    expect(code).not.toMatch(/'-c',\s*`printf/);
   });
 });

@@ -28,8 +28,9 @@
  * forensics in the log. Only operator-action-required drift alerts.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 export const VERDICTS = /** @type {const} */ ([
   'DRIFT_NONE',
@@ -37,6 +38,10 @@ export const VERDICTS = /** @type {const} */ ([
   'DRIFT_RECOVERABLE',
   'DRIFT_BLOCKED_OWNED',
   'DRIFT_BLOCKED_MINE',
+  // OPS-DRIFT-ALERT-GENERATORS-W1: a manual-deploy repo is behind by a delta its manifest deploys.
+  // Not INDETERMINATE — nothing about it is unknown — and it pages, because no automation will
+  // ever resolve it.
+  'DRIFT_MANUAL_DEPLOY_OWED',
   'DRIFT_INDETERMINATE',
 ]);
 
@@ -149,6 +154,141 @@ export function isNonDeployingDelta(changedFiles, pathsIgnore) {
   return true;
 }
 
+/* ─────────────── 4a-ter. the DEPLOY MODEL — can ANY push in prod..main reach prod? ───────────────
+ *
+ * OPS-DRIFT-ALERT-GENERATORS-W1. The paths-ignore leg above answers ONE way a push fails to create
+ * a deploy run. Two more were live, and each paged the operator daily with an INDETERMINATE that
+ * described a lane that was never going to run:
+ *
+ *   · algovault-bot has NO deploy workflow at all (its repo carries only test.yml) — it is placed
+ *     by ops/scripts/host-deploy.sh from ops/deploy/algovault-bot.manifest. Its row carried no
+ *     lane, so laneHealth stayed null and the page read "deploy lane health unreadable" with a
+ *     `next:` pointing at THIS repo's badge. Delivered 2026-09-10, 09-12 and 09-13 for c777e73,
+ *     which touches scripts/ — a deploy that was genuinely owed, described as an unreadable lane.
+ *   · .github/workflows/readme-snapshot-writeback.yml pushes README.md with GITHUB_TOKEN BY DESIGN
+ *     (its header, "WHY GITHUB_TOKEN"), and GitHub creates no workflow run for such a push. Six
+ *     writebacks 2026-09-10..14, zero Deploy runs; the 2026-09-11 page was exactly this.
+ *
+ * So every repo now DECLARES how a push reaches prod, the kind set is CLOSED, and a row that
+ * declares nothing — or anything else — REFUSES rather than inheriting another repo's lane.
+ */
+
+export const DEPLOY_KINDS = /** @type {const} */ (['gha-push', 'manual-manifest']);
+
+/** @returns {string|null} null when the declared model is usable, otherwise WHY it is not. */
+export function validateDeployModel(d) {
+  if (!d || typeof d !== 'object') return 'no deploy model declared';
+  if (!DEPLOY_KINDS.includes(d.kind)) return `unknown deploy kind ${JSON.stringify(d.kind)}`;
+  const str = (k) => typeof d[k] === 'string' && d[k].length > 0;
+  if (d.kind === 'gha-push') {
+    for (const k of ['workflow', 'laneBadge', 'rawBase', 'pathsIgnoreFrom']) {
+      if (!str(k)) return `gha-push model lacks ${k}`;
+    }
+    if (!Array.isArray(d.nonTriggeringCommits)) return 'gha-push model lacks nonTriggeringCommits (declare [] for none)';
+    for (const r of d.nonTriggeringCommits) {
+      if (!r || typeof r.committerName !== 'string' || !r.committerName
+        || typeof r.committerEmail !== 'string' || !r.committerEmail
+        || !Array.isArray(r.paths) || !r.paths.length || typeof r.producer !== 'string' || !r.producer) {
+        return 'a nonTriggeringCommits row lacks committerName / committerEmail / paths / producer';
+      }
+    }
+    return null;
+  }
+  for (const k of ['manifest', 'manifestRemote', 'manifestRawBase', 'deployCommand']) {
+    if (!str(k)) return `manual-manifest model lacks ${k}`;
+  }
+  return null;
+}
+
+/**
+ * Could ANY push in prod..main have created a deploy run? Asked PER COMMIT, because the one pusher
+ * that cannot trigger — a workflow's GITHUB_TOKEN — is only visible per commit.
+ *
+ * A commit is non-triggering when its committer is a DECLARED GITHUB_TOKEN writer AND it touches
+ * ONLY that writer's declared paths. The paths clause keeps an identity match from becoming a mute
+ * button: the same identity changing anything else is judged as an ordinary push. Every other
+ * commit triggers unless all of its files are paths-ignored. Evaluating ordinary commits one at a
+ * time can only OVER-report a trigger (a change reverted inside one push), never under-report one.
+ *
+ * FAILS TOWARD PAGING: a merge (its own changes are not in its file list), a commit listing no
+ * files, or a pattern we cannot evaluate returns canTrigger null — never false.
+ *
+ * @param {Array<{sha:string, parents:number, committerName:string, committerEmail:string, files:string[]}>|null} commits
+ * @returns {{canTrigger: boolean|null, cause: string}}
+ */
+export function deltaCanTriggerDeploy(commits, pathsIgnore, nonTriggering = []) {
+  if (!Array.isArray(commits) || !commits.length) return { canTrigger: null, cause: 'commit list unreadable' };
+  if (!Array.isArray(pathsIgnore) || !pathsIgnore.length) return { canTrigger: null, cause: 'paths-ignore unreadable' };
+  const producers = new Set();
+  for (const c of commits) {
+    const sha = String(c?.sha ?? '').slice(0, 7);
+    if (c?.parents !== 1) {
+      return { canTrigger: null, cause: `commit ${sha} has ${c?.parents} parents — a merge's own changes are not in its file list` };
+    }
+    if (!Array.isArray(c.files) || !c.files.length) return { canTrigger: null, cause: `commit ${sha} lists no files` };
+    const w = nonTriggering.find((r) => r.committerName === c.committerName && r.committerEmail === c.committerEmail);
+    if (w && c.files.every((f) => w.paths.includes(f))) {
+      producers.add(w.producer);
+      continue;
+    }
+    const allIgnored = isNonDeployingDelta(c.files, pathsIgnore);
+    if (allIgnored === null) return { canTrigger: null, cause: `commit ${sha}: a paths-ignore pattern could not be evaluated` };
+    if (allIgnored === false) return { canTrigger: true, cause: `commit ${sha} changes a deploying path` };
+  }
+  return {
+    canTrigger: false,
+    cause: producers.size
+      ? `every deploying change in prod..main was pushed by a declared GITHUB_TOKEN writer (${[...producers].join(', ')}), which creates no workflow run; everything else is paths-ignore'd`
+      : "every commit in prod..main touches only paths-ignore'd files",
+  };
+}
+
+/**
+ * Fold the aggregate paths-ignore leg and the per-commit leg into ONE answer. `true` needs an
+ * explicit proof from either leg; `false` when a deploying change is proven and nothing proves it
+ * could not have triggered; null otherwise.
+ */
+export function resolveNonDeploying(aggregate, perCommit) {
+  if (aggregate === true) return { value: true, cause: "every file in prod..main is paths-ignore'd in deploy.yml" };
+  if (perCommit?.canTrigger === false) return { value: true, cause: perCommit.cause };
+  if (aggregate === false || perCommit?.canTrigger === true) {
+    return { value: false, cause: perCommit?.cause ?? 'a deploying file changed' };
+  }
+  return { value: null, cause: perCommit?.cause ?? 'could not determine whether the delta deploys' };
+}
+
+/**
+ * A manifest's `<verb>` paths, parsed EXACTLY as ops/scripts/host-deploy.sh's manifest_paths():
+ * `grep -vE '^[[:space:]]*#' | awk -v verb=… '$1 == verb { print $2 }' | grep -v '^$'`. A vitest
+ * runs that shell function on the committed manifest and asserts both parsers agree, so the deploy
+ * tool and this canary cannot disagree about what "deployed" means. null — never [] — when nothing
+ * parses: an empty set would read as "the delta touches nothing" and silence a real deploy owed.
+ */
+export function parseManifestPaths(text, verb = 'deploy') {
+  if (typeof text !== 'string') return null;
+  const out = [];
+  for (const line of text.split('\n')) {
+    if (/^\s*#/.test(line)) continue;
+    const f = line.trim().split(/\s+/);
+    if (f[0] === verb && f[1]) out.push(f[1]);
+  }
+  return out.length ? out : null;
+}
+
+/**
+ * Which changed files would host-deploy.sh materialize? It runs `git archive <sha> <deploy paths>`,
+ * which takes each path recursively — so a file is deployed when it IS a deploy path or sits under
+ * one. null when either side is unknown.
+ */
+export function touchesDeployPaths(files, deployPaths) {
+  if (!Array.isArray(files) || !files.length || !Array.isArray(deployPaths) || !deployPaths.length) return null;
+  const hit = files.filter((f) => deployPaths.some((p) => {
+    const root = p.replace(/\/+$/, '');
+    return f === root || f.startsWith(`${root}/`);
+  }));
+  return { touched: hit.length > 0, files: hit };
+}
+
 export const BADGE_URL =
   'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/actions/workflows/deploy.yml/badge.svg?branch=main';
 
@@ -202,6 +342,8 @@ export const ATTEMPT_COOLDOWN_MS = 20 * 60 * 1000;
  */
 export function classifyDrift(f) {
   const { prodSha, mainHead, suiteVerdict, laneHealth = null, nonDeploying = null,
+    nonDeployingCause = null, deployKind, deployModelError = null, deploySet = null,
+    workflow = null, laneBadge = null, deployCommand = null,
     graphTouchers = [], sessionCommits = [] } = f;
 
   // Provenance we could not read is INDETERMINATE, never "in sync". Assuming sync on a missing
@@ -211,13 +353,58 @@ export function classifyDrift(f) {
 
   if (prodSha === mainHead) return { verdict: 'DRIFT_NONE', reason: 'in sync' };
 
+  // OPS-DRIFT-ALERT-GENERATORS-W1. Behind — but HOW does this repo deploy? Every clause below
+  // presumes an answer, so without a declared, valid model the only honest verdict is a refusal.
+  // `deployKind` is REQUIRED, never defaulted: a default is how the bot inherited a lane it does not
+  // have, and a `next:` command from a repo it is not.
+  if (deployModelError || !DEPLOY_KINDS.includes(deployKind)) {
+    return {
+      verdict: 'DRIFT_INDETERMINATE',
+      reason: `no usable deploy model (${deployModelError ?? `deploy kind ${JSON.stringify(deployKind)}`}) — cannot say whether any push reaches prod`,
+      cause: 'no-deploy-model',
+      next: 'declare REPOS[].deploy in ops/monitoring/deploy-drift-canary.mjs',
+    };
+  }
+
+  // A manual-deploy repo has no lane and no run to wait for: the delta either touches what its
+  // manifest deploys, or it does not. Decided BEFORE any suite or lane reasoning, and it can never
+  // reach DRIFT_RECOVERABLE — there is no workflow to re-trigger.
+  if (deployKind === 'manual-manifest') {
+    if (deploySet?.touched === false) {
+      return {
+        verdict: 'DRIFT_NONE_NON_DEPLOYING',
+        reason: "no file in prod..main is inside the manifest's deploy paths — a deploy would materialize nothing new, so this is not drift",
+      };
+    }
+    if (deploySet?.touched === true) {
+      const files = Array.isArray(deploySet.files) ? deploySet.files : [];
+      const more = files.length > 5 ? ` +${files.length - 5} more` : '';
+      return {
+        verdict: 'DRIFT_MANUAL_DEPLOY_OWED',
+        reason: `prod..main changes the manifest's deploy paths (${files.slice(0, 5).join(', ')}${more}) and this repo has NO deploy automation — nothing deploys it until someone runs the deploy`,
+        cause: 'manual-deploy-owed',
+        next: deployCommand,
+      };
+    }
+    return {
+      verdict: 'DRIFT_INDETERMINATE',
+      reason: `could not determine whether prod..main touches the manifest's deploy paths${deploySet?.why ? ` (${deploySet.why})` : ''}`,
+      cause: 'deploy-set-unknown',
+      next: deployCommand,
+    };
+  }
+
   // CH1. Checked BEFORE any lane reasoning: a delta that cannot trigger a deploy is not drift,
   // and asking "why is the lane red" about it would be answering a question nobody asked. Only
   // an explicit `true` suppresses; false and null both fall through to the ordinary path.
   if (nonDeploying === true) {
     return {
       verdict: 'DRIFT_NONE_NON_DEPLOYING',
-      reason: 'every file in prod..main is paths-ignore\u0027d in deploy.yml — no run was ever created, so prod CANNOT catch up and this is not drift',
+      // The per-commit leg names its own cause (a GITHUB_TOKEN writer); the aggregate leg keeps
+      // the original sentence byte-for-byte.
+      reason: nonDeployingCause
+        ? `${nonDeployingCause} — no run was ever created, so prod CANNOT catch up and this is not drift`
+        : 'every file in prod..main is paths-ignore\u0027d in deploy.yml — no run was ever created, so prod CANNOT catch up and this is not drift',
     };
   }
 
@@ -234,12 +421,16 @@ export function classifyDrift(f) {
     // (measured — the only hex in that SVG is path/animation data). So it enriches the REASON
     // and can never reach DRIFT_RECOVERABLE, which is the one verdict decideRecovery() acts on.
     const caveat = nonDeploying === null ? '; could not determine whether the delta deploys' : '';
+    // Every `next:` below is PROJECTED from this repo's own declared model — never a literal that
+    // names one particular repo. The lane-unknown command used to hardcode this repo's badge URL,
+    // which is exactly what the bot's page printed. No model field, no command: an absent `next`
+    // is honest, a foreign one sends the operator to the wrong repo.
     if (laneHealth === 'failing') {
       return {
         verdict: 'DRIFT_INDETERMINATE',
         reason: `deploy lane RED — the latest Deploy run on main did not pass${caveat}`,
         cause: 'lane-red',
-        next: 'gh run list --workflow "Deploy to Hetzner" --limit 3',
+        next: workflow ? `gh run list --workflow "${workflow}" --limit 3` : undefined,
       };
     }
     if (laneHealth === 'passing') {
@@ -247,14 +438,16 @@ export function classifyDrift(f) {
         verdict: 'DRIFT_INDETERMINATE',
         reason: `deploy lane GREEN but prod is behind — a run may be in flight, or a deploy succeeded without advancing prod${caveat}`,
         cause: 'lane-green-prod-behind',
-        next: 'gh run list --workflow "Deploy to Hetzner" --limit 3   # if the newest run is green and OLDER than main, prod did not take the deploy',
+        next: workflow
+          ? `gh run list --workflow "${workflow}" --limit 3   # if the newest run is green and OLDER than main, prod did not take the deploy`
+          : undefined,
       };
     }
     return {
       verdict: 'DRIFT_INDETERMINATE',
       reason: `deploy lane health unreadable${caveat}`,
       cause: 'lane-unknown',
-      next: 'curl -sS "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/actions/workflows/deploy.yml/badge.svg?branch=main" | grep -o "<title>[^<]*"',
+      next: laneBadge ? `curl -sS "${laneBadge}" | grep -o "<title>[^<]*"` : undefined,
     };
   }
 
@@ -354,7 +547,11 @@ function selfTest() {
     }
   };
 
-  const base = { prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), failingFiles: [] };
+  // The gha-push model production declares — classifyDrift REQUIRES a deploy kind once prod is behind.
+  const base = {
+    prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), failingFiles: [],
+    deployKind: 'gha-push', workflow: 'Deploy to Hetzner', laneBadge: BADGE_URL,
+  };
   t('in sync', classifyDrift({ ...base, mainHead: 'a'.repeat(40) }).verdict, 'DRIFT_NONE');
   t('unreadable provenance', classifyDrift({ ...base, prodSha: null }).verdict, 'DRIFT_INDETERMINATE');
   t('green + behind', classifyDrift({ ...base, suiteVerdict: 'PASS' }).verdict, 'DRIFT_RECOVERABLE');
@@ -392,12 +589,19 @@ function selfTest() {
   // over every lane value AND every nonDeploying value, because a property asserted on one
   // sample is a sample, not a property.
   let recoverableLeak = 0;
-  for (const lh of [null, 'passing', 'failing', 'unknown', 'weird-new-state']) {
-    for (const nd of [null, true, false]) {
-      if (classifyDrift({ ...base, laneHealth: lh, nonDeploying: nd }).verdict === 'DRIFT_RECOVERABLE') recoverableLeak++;
+  let enumerated = 0;
+  for (const dk of ['gha-push', 'manual-manifest', undefined, 'rsync']) {
+    for (const lh of [null, 'passing', 'failing', 'unknown', 'weird-new-state']) {
+      for (const nd of [null, true, false]) {
+        for (const ds of [null, { touched: true, files: ['scripts/x.sh'] }, { touched: false, files: [] }]) {
+          enumerated++;
+          if (classifyDrift({ ...base, deployKind: dk, laneHealth: lh, nonDeploying: nd, deploySet: ds }).verdict === 'DRIFT_RECOVERABLE') recoverableLeak++;
+        }
+      }
     }
   }
-  t('no lane/delta combination can ever reach DRIFT_RECOVERABLE', recoverableLeak, 0);
+  t('no deploy-model/lane/delta combination can ever reach DRIFT_RECOVERABLE', recoverableLeak, 0);
+  t('...over the WHOLE enumeration, not a sample of it', enumerated, 4 * 5 * 3 * 3);
   // ...and the ONLY thing that still can is a per-SHA green, which production never supplies.
   t('a per-SHA green still does (pure classifier keeps its contract)',
     classifyDrift({ ...base, suiteVerdict: 'PASS', laneHealth: 'failing' }).verdict, 'DRIFT_RECOVERABLE');
@@ -443,6 +647,77 @@ function selfTest() {
   t('** does not leak across a sibling prefix', matchesPattern('ops/monitoring-x/a', 'ops/monitoring/**'), false);
   t('* does not cross a slash', matchesPattern('a/b/c', 'a/*'), false);
 
+  /* ── OPS-DRIFT-ALERT-GENERATORS-W1 — the deploy model ─────────────────────────────────── */
+
+  t('a repo with no deploy model is refused', validateDeployModel(undefined), 'no deploy model declared');
+  t('an unknown deploy kind is refused', /unknown deploy kind/.test(validateDeployModel({ kind: 'rsync' }) ?? ''), true);
+  t('a gha-push model must declare its non-triggering writers, even as []',
+    /nonTriggeringCommits/.test(validateDeployModel({ kind: 'gha-push', workflow: 'w', laneBadge: 'b', rawBase: 'r', pathsIgnoreFrom: 'p' }) ?? ''), true);
+  t('every REPOS row declares a usable model', REPOS.map((r) => validateDeployModel(r.deploy)), REPOS.map(() => null));
+  const noModel = classifyDrift({ ...base, deployKind: undefined, laneHealth: 'unknown' });
+  t('behind with no model => INDETERMINATE no-deploy-model', noModel.cause, 'no-deploy-model');
+  t("...and it borrows no other repo's lane command", /crypto-quant-signal-mcp\/actions/.test(noModel.next ?? ''), false);
+
+  const WRITER = { committerName: 'AlgoVault CI', committerEmail: 'ci@algovault.com', paths: ['README.md'], producer: 'readme-snapshot-writeback.yml' };
+  const cmt = (committerName, committerEmail, files, parents = 1) => ({ sha: 'f'.repeat(40), parents, committerName, committerEmail, files });
+  const ciCommit = (files, parents = 1) => cmt('AlgoVault CI', 'ci@algovault.com', files, parents);
+  const humanCommit = (files) => cmt('AlgoVaultFi', 'dev@users.noreply.github.com', files);
+  // REAL HISTORY 2026-09-14: bdc9a893..6f36664b = one ops/monitoring commit + two README writebacks, 0 Deploy runs.
+  t('today: inventory + 2 README writebacks cannot trigger a deploy',
+    deltaCanTriggerDeploy([ciCommit(['README.md']), ciCommit(['README.md']), humanCommit(['ops/monitoring/monitoring-inventory.json'])], IGN, [WRITER]).canTrigger, false);
+  t('...although the aggregate leg alone calls that delta deploying (the page this retires)',
+    isNonDeployingDelta(['README.md', 'ops/monitoring/monitoring-inventory.json'], IGN), false);
+  t('a HUMAN README.md commit does trigger', deltaCanTriggerDeploy([humanCommit(['README.md'])], IGN, [WRITER]).canTrigger, true);
+  t('🛑 the writer identity touching any other path is judged as an ordinary push',
+    deltaCanTriggerDeploy([ciCommit(['README.md', 'src/index.ts'])], IGN, [WRITER]).canTrigger, true);
+  t('an undeclared identity is never exempt', deltaCanTriggerDeploy([ciCommit(['README.md'])], IGN, []).canTrigger, true);
+  t('a merge in the range is INCONCLUSIVE, never exempt', deltaCanTriggerDeploy([ciCommit(['README.md'], 2)], IGN, [WRITER]).canTrigger, null);
+  t('an empty commit list is INCONCLUSIVE', deltaCanTriggerDeploy([], IGN, [WRITER]).canTrigger, null);
+  t('fold: aggregate deploying + a per-commit proof of no trigger => non-deploying',
+    resolveNonDeploying(false, { canTrigger: false, cause: 'c' }).value, true);
+  t('fold: aggregate deploying + per-commit inconclusive => deploying (fails toward paging)',
+    resolveNonDeploying(false, { canTrigger: null, cause: 'c' }).value, false);
+  t('fold: nothing known => null', resolveNonDeploying(null, { canTrigger: null, cause: 'c' }).value, null);
+  const writerExempt = classifyDrift({ ...base, nonDeploying: true, nonDeployingCause: 'pushed by a declared GITHUB_TOKEN writer (x)' });
+  t('a writer-exempt delta is not drift, and its reason says why',
+    [writerExempt.verdict, /GITHUB_TOKEN writer/.test(writerExempt.reason)], ['DRIFT_NONE_NON_DEPLOYING', true]);
+  const RS_ = String.fromCharCode(0x1e);
+  const US_ = String.fromCharCode(0x1f);
+  const logOut = `${RS_}${'a'.repeat(40)}${US_}${'1'.repeat(40)}${US_}AlgoVault CI${US_}ci@algovault.com\n\nREADME.md\n`
+    + `${RS_}${'b'.repeat(40)}${US_}${'1'.repeat(40)} ${'2'.repeat(40)}${US_}AlgoVaultFi${US_}x@y\n\nsrc/a.ts\nsrc/b.ts\n`;
+  const parsedLog = parseCommitLog(logOut);
+  t('git log output parses into per-commit facts',
+    parsedLog && parsedLog.map((c) => [c.parents, c.committerEmail, c.files]),
+    [[1, 'ci@algovault.com', ['README.md']], [2, 'x@y', ['src/a.ts', 'src/b.ts']]]);
+  t('an unparseable log is null, never []', parseCommitLog('not a log'), null);
+
+  // manual-manifest — REAL HISTORY: c777e73 changed scripts/tg-conversion-baseline.sh.
+  const MANIFEST_FIXTURE = '# header mentioning: deploy notreal\ndeploy  src      # r\ndeploy  scripts  # r\n                 # continuation: deploy fake\nignore  .venv    # r\n';
+  t('manifest deploy paths parse as host-deploy.sh does', parseManifestPaths(MANIFEST_FIXTURE, 'deploy'), ['src', 'scripts']);
+  t('a commented mention is never an entry', /notreal|fake/.test(JSON.stringify(parseManifestPaths(MANIFEST_FIXTURE, 'deploy'))), false);
+  t('ignore entries are their own verb', parseManifestPaths(MANIFEST_FIXTURE, 'ignore'), ['.venv']);
+  t('no entries is null, never []', parseManifestPaths('# nothing here\n', 'deploy'), null);
+  t('c777e73 touches the deploy set', touchesDeployPaths(['scripts/tg-conversion-baseline.sh'], ['src', 'scripts']),
+    { touched: true, files: ['scripts/tg-conversion-baseline.sh'] });
+  t('a docs-only delta does not', touchesDeployPaths(['docs/X.md'], ['src', 'scripts']).touched, false);
+  t('a sibling prefix is not a child', touchesDeployPaths(['scripts-old/a.sh'], ['scripts']).touched, false);
+  t('an unknown side is null', touchesDeployPaths(null, ['src']), null);
+  const man = { ...base, deployKind: 'manual-manifest', deployCommand: 'host-deploy.sh --dry-run' };
+  const owed = classifyDrift({ ...man, deploySet: { touched: true, files: ['scripts/tg-conversion-baseline.sh'] } });
+  t('manual + touched => DRIFT_MANUAL_DEPLOY_OWED', owed.verdict, 'DRIFT_MANUAL_DEPLOY_OWED');
+  t('...whose next is the declared deploy command', owed.next, 'host-deploy.sh --dry-run');
+  t('...and it pages', HEALTHY_VERDICTS.has(owed.verdict), false);
+  t('manual + untouched => not drift', classifyDrift({ ...man, deploySet: { touched: false, files: [] } }).verdict, 'DRIFT_NONE_NON_DEPLOYING');
+  t('manual + unknown => INDETERMINATE deploy-set-unknown, still naming the deploy command',
+    [classifyDrift({ ...man, deploySet: { touched: null, why: 'x' } }).cause, classifyDrift({ ...man, deploySet: null }).next],
+    ['deploy-set-unknown', 'host-deploy.sh --dry-run']);
+  t('manual never consults a lane, whatever it is handed',
+    classifyDrift({ ...man, deploySet: null, laneHealth: 'failing' }).cause, 'deploy-set-unknown');
+  t("the lane-unknown next is the repo's OWN badge",
+    classifyDrift({ ...base, laneHealth: 'unknown', laneBadge: 'https://example.invalid/own.svg' }).next.includes('https://example.invalid/own.svg'), true);
+  t('no badge declared => no next at all, never a foreign one',
+    classifyDrift({ ...base, laneHealth: 'unknown', laneBadge: null }).next, undefined);
+
   // The rendered BODY, not just the verdict.
   const body = renderAlertBody({
     repo: 'crypto-quant-signal-mcp', verdict: classifyDrift({ ...base, laneHealth: 'failing' }),
@@ -451,6 +726,38 @@ function selfTest() {
   t('body carries the lane AND its binding caveat', /deploy lane \(latest run on main, NOT necessarily this sha\): failing/.test(body), true);
   t('body carries the operator\u0027s next command', /next: gh run list --workflow "Deploy to Hetzner"/.test(body), true);
   t('body uses REAL newlines, never %0A', body.includes('%0A'), false);
+
+  // ── OPS-DRIFT-ALERT-GENERATORS-W1 — the TRANSPORT, not just the string. renderAlertBody() was
+  // right all along; the shell string that carried its output to the wrapper was not, and no check
+  // read what ARRIVED. These drive the real dispatch functions against a fake wrapper.
+  const botBody = renderAlertBody({
+    repo: 'algovault-bot', prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), behindMs: 60 * 60 * 1000, laneHealth: null,
+    verdict: classifyDrift({ ...man, deploySet: { touched: true, files: ['scripts/tg-conversion-baseline.sh'] } }),
+  });
+  t('a manual-deploy body names the deploy owed and its command',
+    /DRIFT_MANUAL_DEPLOY_OWED[\s\S]*next: host-deploy\.sh --dry-run/.test(botBody), true);
+  t('...and carries no lane line and no other repo', /deploy lane|crypto-quant-signal-mcp/.test(botBody), false);
+  const tdir = mkdtempSync(join(tmpdir(), 'drift-transport-'));
+  try {
+    const fake = join(tdir, 'wrap.sh');
+    writeFileSync(fake, ['#!/bin/sh', 'd=$(dirname "$0")', "printf '%s\\n' \"$@\" > \"$d/argv\"", 'cat > "$d/stdin"', ''].join('\n'),
+      { mode: 0o755 });
+    const sent = dispatchAlert(botBody, { wrap: fake });
+    const arrived = readFileSync(join(tdir, 'stdin'), 'utf8');
+    t('transport: the wrapper receives the body byte-for-byte', sent.ok && arrived === botBody, true);
+    t('transport: no literal backslash-n reaches the wrapper', arrived.includes('\\n'), false);
+    t('transport: fire argv is <id> CRITICAL_PERSISTENT -',
+      readFileSync(join(tdir, 'argv'), 'utf8').split('\n').filter(Boolean), ['DEPLOY_DRIFT', 'CRITICAL_PERSISTENT', '-']);
+    const cleared = dispatchClear('deploy drift verdict=DRIFT_NONE', { wrap: fake });
+    t('transport: --clear goes FIRST',
+      readFileSync(join(tdir, 'argv'), 'utf8').split('\n').filter(Boolean), ['--clear', 'DEPLOY_DRIFT', 'deploy drift verdict=DRIFT_NONE']);
+    t('transport: clear closes stdin, so the wrapper reads nothing and never blocks',
+      cleared.ok && readFileSync(join(tdir, 'stdin'), 'utf8'), '');
+    t('transport: a wrapper that cannot run is a typed failure, never a throw',
+      dispatchAlert('x', { wrap: join(tdir, 'absent.sh') }).ok, false);
+  } finally {
+    rmSync(tdir, { recursive: true, force: true });
+  }
   t('body still leads with the repo', body.split('\n')[0], '🚨 deploy drift — crypto-quant-signal-mcp');
 
   // ── the drift latch, keyed on the DELTA (OPS-DEPLOY-DRIFT-PROPAGATION-WINDOW-W1) ──────────
@@ -513,16 +820,46 @@ export function sh(cmd, args, opts = {}) {
 
 /* ─────────────────────────── 4a. the canary itself ─────────────────────────── */
 
+/** Blob-filtered BARE mirrors — one per repo, this canary's own runtime state (see ensureMirror). */
+export const MIRROR = '/var/lib/algovault-monitoring/cqsm-mirror.git';
+export const BOT_MIRROR = '/var/lib/algovault-monitoring/bot-mirror.git';
+export const CQSM_RAW_BASE = 'https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp';
+
+/** The operator's command for a bot deploy owed — ops/scripts/host-deploy.sh is its ONLY deploy path.
+ *  --dry-run first, always; a vitest asserts every flag here is a case arm host-deploy.sh accepts. */
+export const BOT_DEPLOY_COMMAND = 'cd ~/code/crypto-quant-signal-mcp && bash ops/scripts/host-deploy.sh'
+  + ' --repo ~/code/algovault-bot --ref origin/main --host root@204.168.185.24 --dest /opt/algovault-bot'
+  + ' --manifest ops/deploy/algovault-bot.manifest --owner algovault-bot:algovault-bot'
+  + ' --units algovault-bot.service,algovault-bot-cron.timer --dry-run';
+
 export const REPOS = [
   {
     name: 'crypto-quant-signal-mcp',
     remote: 'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp.git',
-    // Declared per repo, never assumed for all of them. algovault-bot deliberately has NEITHER:
-    // it has its own deploy path and its own workflow, and inventing a paths-ignore story for
-    // it here would be fiction. Absent => those legs stay null and the repo keeps today's
-    // behaviour exactly.
-    laneBadge: BADGE_URL,
-    deployPathsIgnore: true,
+    mirror: MIRROR,
+    // HOW a push reaches prod is DECLARED per repo and validated by validateDeployModel() — a row
+    // without a usable model REFUSES. (This comment used to say algovault-bot "has its own deploy
+    // path and its own workflow" and so needed no model. It has NO workflow — that premise is what
+    // left the bot's page describing a lane that does not exist. OPS-DRIFT-ALERT-GENERATORS-W1.)
+    deploy: {
+      kind: 'gha-push',
+      workflow: 'Deploy to Hetzner',
+      laneBadge: BADGE_URL,
+      rawBase: CQSM_RAW_BASE,
+      pathsIgnoreFrom: '.github/workflows/deploy.yml',
+      nonTriggeringCommits: [
+        {
+          // readme-snapshot-writeback.yml sets exactly this identity and commits README.md ALONE,
+          // pushed with GITHUB_TOKEN — which creates no workflow run BY DESIGN (its own header).
+          // A vitest binds identity, path set and the no-token checkout to that workflow, so a
+          // change there fails the build instead of silently re-arming or muting this page.
+          committerName: 'AlgoVault CI',
+          committerEmail: 'ci@algovault.com',
+          paths: ['README.md'],
+          producer: '.github/workflows/readme-snapshot-writeback.yml',
+        },
+      ],
+    },
     // Provenance comes from CH3's route, not from a file on disk: the container is the thing
     // actually serving, and a file beside it can be stale in ways the container never notices.
     readProdSha: () => {
@@ -541,6 +878,17 @@ export const REPOS = [
   {
     name: 'algovault-bot',
     remote: 'https://github.com/AlgoVaultLabs/algovault-bot.git',
+    mirror: BOT_MIRROR,
+    // NO deploy workflow exists in that repo (only test.yml). It is placed by host-deploy.sh from a
+    // manifest that lives in THIS repo, so "does the delta deploy?" is answered against that
+    // manifest, read at THIS repo's own pinned main head — never borrowed from iteration order.
+    deploy: {
+      kind: 'manual-manifest',
+      manifest: 'ops/deploy/algovault-bot.manifest',
+      manifestRemote: 'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp.git',
+      manifestRawBase: CQSM_RAW_BASE,
+      deployCommand: BOT_DEPLOY_COMMAND,
+    },
     readProdSha: () => {
       const r = sh('sh', ['-c', "sed -n 's/^sha=//p' /opt/algovault-bot/DEPLOYED_SHA 2>/dev/null | head -1"]);
       if (!r.ok || !/^[0-9a-f]{40}$/.test(r.out)) return { ok: false, err: 'DEPLOYED_SHA absent or malformed' };
@@ -601,7 +949,8 @@ export function readDeployLaneHealth(url = BADGE_URL) {
 
 /* ─────────────── the local, unmetered source for "does this delta deploy?" ─────────────── */
 
-export const MIRROR = '/var/lib/algovault-monitoring/cqsm-mirror.git';
+// MIRROR / BOT_MIRROR are declared above REPOS, which references them (a const is unusable before
+// its declaration, and REPOS is evaluated at import).
 
 /**
  * A blob-filtered BARE mirror, refreshed per run. Git protocol, so no REST budget; measured
@@ -637,12 +986,53 @@ export function changedFilesBetween(a, b, path = MIRROR) {
  * ref form: a CDN-cached raw read is controlled by a cache-buster or a pinned SHA. mainHead is
  * already in hand, so it is pinned and the cache question does not arise.
  */
-export function readPathsIgnoreAt(sha) {
-  if (!/^[0-9a-f]{40}$/.test(String(sha ?? ''))) return null;
-  const r = sh('curl', ['-sS', '-m', '20',
-    `https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/${sha}/.github/workflows/deploy.yml`]);
-  if (!r.ok || !r.out) return null;
-  return parsePathsIgnore(r.out);
+export function readPathsIgnoreAt(sha, rawBase = CQSM_RAW_BASE, file = '.github/workflows/deploy.yml') {
+  const text = fetchRawAt(rawBase, sha, file);
+  return text === null ? null : parsePathsIgnore(text);
+}
+
+/**
+ * ONE committed file at a PINNED sha, or null. `-f`, so an HTTP error is a null and never a body
+ * that happens to parse; the sha is validated first, so a ref form (and its CDN edge) cannot creep in.
+ */
+export function fetchRawAt(rawBase, sha, file) {
+  if (!/^[0-9a-f]{40}$/.test(String(sha ?? '')) || typeof rawBase !== 'string' || typeof file !== 'string') return null;
+  const r = sh('curl', ['-fsS', '-m', '20', `${rawBase}/${sha}/${file}`]);
+  return r.ok && r.out ? r.out : null;
+}
+
+const RS = String.fromCharCode(0x1e); // record separator between commits in the log below
+const US = String.fromCharCode(0x1f); // unit separator between a commit's header fields
+
+/**
+ * Per-commit facts for a..b from the blob-less mirror: parents, committer identity, and the files
+ * each commit changed. Trees only — --name-only needs no blob, --no-renames keeps it deterministic.
+ * null on any failure or an empty range (two differing SHAs always differ in at least one commit).
+ */
+export function commitsBetween(a, b, path = MIRROR) {
+  const r = sh('git', ['--git-dir', path, 'log', '--no-renames', '--name-only',
+    '--format=%x1e%H%x1f%P%x1f%cn%x1f%ce', `${a}..${b}`]);
+  return r.ok ? parseCommitLog(r.out) : null;
+}
+
+/** Pure, so the self-test drives the exact parser production runs. null — never [] — on garbage. */
+export function parseCommitLog(out) {
+  const records = String(out ?? '').split(RS).map((s) => s.trim()).filter(Boolean);
+  if (!records.length) return null;
+  const commits = [];
+  for (const rec of records) {
+    const [head, ...rest] = rec.split('\n');
+    const [sha, parents, committerName, committerEmail] = head.split(US);
+    if (!/^[0-9a-f]{40}$/.test(sha ?? '') || committerEmail === undefined) return null;
+    commits.push({
+      sha,
+      parents: String(parents ?? '').split(' ').filter(Boolean).length,
+      committerName,
+      committerEmail,
+      files: rest.map((l) => l.trim()).filter(Boolean),
+    });
+  }
+  return commits;
 }
 
 const LOG = '/var/log/deploy-drift-canary.log';
@@ -688,6 +1078,37 @@ export function renderAlertBody({ repo, verdict, prodSha, mainHead, behindMs, la
   return lines.join('\n');
 }
 
+/**
+ * Hand a rendered body to the wrapper on STDIN, through NO shell. OPS-DRIFT-ALERT-GENERATORS-W1:
+ * the previous transport interpolated a JSON-stringified body into a `sh -c` printf string, so
+ * every newline arrived as the two characters backslash + n, and all four DEPLOY_DRIFT pages of
+ * 2026-09-10..13 reached the operator as a single line. The self-test asserted renderAlertBody()'s
+ * RETURN value — the string before the transport — so it could not see it. With an argv array and
+ * `input` there is no string to mis-escape, and the self-test now reads what actually arrives.
+ * Fail-open like the wrapper itself: a dispatch fault is a typed failure, never a throw.
+ */
+export function dispatchAlert(body, { wrap = WRAP, exec = execFileSync } = {}) {
+  try {
+    exec(wrap, ['DEPLOY_DRIFT', 'CRITICAL_PERSISTENT', '-'], { input: body, encoding: 'utf8', timeout: 30_000 });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, err: String(e?.message ?? e).split('\n')[0] };
+  }
+}
+
+/**
+ * The FIRING -> CLEAR transition: `--clear` FIRST (a reversed argv parses as a fire and exits 0),
+ * stdin closed so the wrapper can never block reading it.
+ */
+export function dispatchClear(reason, { wrap = WRAP, exec = execFileSync } = {}) {
+  try {
+    exec(wrap, ['--clear', 'DEPLOY_DRIFT', reason], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 30_000 });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, err: String(e?.message ?? e).split('\n')[0] };
+  }
+}
+
 function main() {
   const now = Date.now();
   const ledger = readLedger(LEDGER);
@@ -695,22 +1116,54 @@ function main() {
   let worst = 'DRIFT_NONE';
 
   for (const repo of REPOS) {
+    // OPS-DRIFT-ALERT-GENERATORS-W1: validated on every run. A row whose model does not validate
+    // REFUSES inside classifyDrift instead of borrowing another repo's lane.
+    const modelError = validateDeployModel(repo.deploy);
     const prod = repo.readProdSha();
     const head = readMainHead(repo.remote);
     const prodSha = prod.ok ? prod.sha : null;
     const mainHead = head.ok ? head.sha : null;
 
-    // Both legs are consulted ONLY when prod is behind; in-sync short-circuits before either
-    // costs a network round-trip.
+    // Every deploy leg is consulted ONLY when prod is behind; in-sync short-circuits before any of
+    // them costs a network round-trip.
     const behind = Boolean(prodSha && mainHead && prodSha !== mainHead);
     let nonDeploying = null;
+    let nonDeployingCause = null;
     let laneHealth = null;
-    if (behind && repo.deployPathsIgnore) {
-      const mir = ensureMirror(repo.remote);
-      if (!mir.ok) log(`${repo.name}: mirror unavailable (${mir.err}) — non-deploying test INCONCLUSIVE`);
-      else nonDeploying = isNonDeployingDelta(changedFilesBetween(prodSha, mainHead), readPathsIgnoreAt(mainHead));
+    let deploySet = null;
+    if (behind && !modelError) {
+      const d = repo.deploy;
+      const mir = ensureMirror(repo.remote, repo.mirror);
+      if (!mir.ok) log(`${repo.name}: mirror unavailable (${mir.err}) — deploy-set test INCONCLUSIVE`);
+      if (d.kind === 'gha-push') {
+        if (mir.ok) {
+          const pathsIgnore = readPathsIgnoreAt(mainHead, d.rawBase, d.pathsIgnoreFrom);
+          const folded = resolveNonDeploying(
+            isNonDeployingDelta(changedFilesBetween(prodSha, mainHead, repo.mirror), pathsIgnore),
+            deltaCanTriggerDeploy(commitsBetween(prodSha, mainHead, repo.mirror), pathsIgnore, d.nonTriggeringCommits),
+          );
+          nonDeploying = folded.value;
+          nonDeployingCause = folded.cause;
+        }
+        laneHealth = readDeployLaneHealth(d.laneBadge);
+      } else if (!mir.ok) {
+        deploySet = { touched: null, why: `mirror unavailable: ${mir.err}` };
+      } else {
+        // manual-manifest: the manifest is read at the MANIFEST repo's own pinned main head,
+        // resolved here — never borrowed from whichever repo happened to be iterated first.
+        const manifestHead = readMainHead(d.manifestRemote);
+        const deployPaths = manifestHead.ok
+          ? parseManifestPaths(fetchRawAt(d.manifestRawBase, manifestHead.sha, d.manifest), 'deploy')
+          : null;
+        const files = changedFilesBetween(prodSha, mainHead, repo.mirror);
+        deploySet = touchesDeployPaths(files, deployPaths) ?? {
+          touched: null,
+          why: !manifestHead.ok ? 'manifest repo head unreadable'
+            : !deployPaths ? `${d.manifest} unreadable, or it declares no deploy paths`
+              : 'changed-file list unreadable',
+        };
+      }
     }
-    if (behind && repo.laneBadge) laneHealth = readDeployLaneHealth(repo.laneBadge);
 
     const verdict = classifyDrift({
       prodSha,
@@ -723,6 +1176,13 @@ function main() {
       suiteVerdict: null,
       laneHealth,
       nonDeploying,
+      nonDeployingCause,
+      deployKind: repo.deploy?.kind,
+      deployModelError: modelError,
+      deploySet,
+      workflow: repo.deploy?.workflow ?? null,
+      laneBadge: repo.deploy?.laneBadge ?? null,
+      deployCommand: repo.deploy?.deployCommand ?? null,
       failingFiles: [],
       graphTouchers: [],
       sessionCommits: [],
@@ -730,7 +1190,10 @@ function main() {
 
     // Per-check positive output. A guard that prints nothing when healthy is indistinguishable
     // from a guard that never ran.
-    log(`${repo.name}: prod=${prodSha ? prodSha.slice(0, 7) : 'UNKNOWN'} main=${mainHead ? mainHead.slice(0, 7) : 'UNKNOWN'} lane=${laneHealth ?? 'n-a'} nonDeploying=${nonDeploying === null ? 'unknown' : nonDeploying} -> ${verdict.verdict} (${verdict.reason})`);
+    const deploySetLog = deploySet === null ? 'n-a'
+      : deploySet.touched === null ? 'unknown'
+        : deploySet.touched ? `touched(${deploySet.files.length})` : 'untouched';
+    log(`${repo.name}: prod=${prodSha ? prodSha.slice(0, 7) : 'UNKNOWN'} main=${mainHead ? mainHead.slice(0, 7) : 'UNKNOWN'} kind=${repo.deploy?.kind ?? 'NONE'} lane=${laneHealth ?? 'n-a'} nonDeploying=${nonDeploying === null ? 'unknown' : nonDeploying} deploySet=${deploySetLog} -> ${verdict.verdict} (${verdict.reason})`);
 
     if (HEALTHY_VERDICTS.has(verdict.verdict)) {
       // Clear any drift latch: recovery and health are not events. NON_DEPLOYING clears it too —
@@ -787,8 +1250,8 @@ function main() {
     if (behindMs > BEHIND_GRACE_MS) {
       const body = renderAlertBody({ repo: repo.name, verdict, prodSha, mainHead, behindMs, laneHealth });
       // Fail-open, severity-gated, cooldown'd by the shared wrapper — never a raw Bot API call.
-      const sent = sh('sh', ['-c', `printf '%s' ${JSON.stringify(body)} | ${WRAP} DEPLOY_DRIFT CRITICAL_PERSISTENT - || true`]);
-      log(`${repo.name}: alert dispatched (ok=${sent.ok})`);
+      const sent = dispatchAlert(body);
+      log(`${repo.name}: alert dispatched (ok=${sent.ok}${sent.ok ? '' : `; ${sent.err}`})`);
     }
   }
 
@@ -804,8 +1267,8 @@ function main() {
   // firing, so nothing resolved), and whether the resolution is ANNOUNCED or merely logged is
   // the registry's `announce_resolution` decision, not this canary's.
   if (HEALTHY_VERDICTS.has(worst)) {
-    const cleared = sh('sh', ['-c', `${WRAP} --clear DEPLOY_DRIFT 'deploy drift verdict=${worst}' </dev/null || true`]);
-    log(`deploy-drift: healthy — clear dispatched (ok=${cleared.ok})`);
+    const cleared = dispatchClear(`deploy drift verdict=${worst}`);
+    log(`deploy-drift: healthy — clear dispatched (ok=${cleared.ok}${cleared.ok ? '' : `; ${cleared.err}`})`);
   }
 
   console.log(`DRIFT_VERDICT=${worst}`);
