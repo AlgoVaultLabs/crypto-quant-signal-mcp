@@ -1829,24 +1829,103 @@ def render_schedule_drift(items, rule=None):
     return out
 
 
-def build_body(findings, streak):
+# ─────────── the page BODY: every finding legible, bounded by COUNT, never cut inside a field ───────────
+#
+# OPS-DRIFT-ALERT-GENERATORS-W1. A list of dict findings used to render as
+# `', '.join(str(x) for x in v)[:220]` — a Python repr cut at character 220, so each finding lost
+# whichever keys happened to come last. The 2026-09-14 signal-1 page ended
+#     ALERT_EPISODE_STALE: {'host': ..., 'detail': 'episode open 8.6d, past the 7d bound — ...', 'a
+# and dropped age_days, bound_days and opened_at. The bounds now apply to WHOLE units: items per check,
+# characters per VALUE (the key survives and the cut is labelled), and whole lines per message.
+BODY_MAX_ITEMS_PER_CHECK = 5
+BODY_MAX_VALUE_CHARS = 200
+# One Telegram message holds 4096 characters; the headroom absorbs the wrapper's own framing.
+BODY_BUDGET_CHARS = 3500
+BODY_LOG_PATH = "/var/log/monitoring-inventory-reconcile.log"
+
+
+def render_finding_item(item):
+    """ONE finding as ONE line of `key=value` pairs — never a Python dict repr."""
+    if not isinstance(item, dict):
+        return str(item)
+    parts = []
+    for key, val in item.items():
+        text = val if isinstance(val, str) else json.dumps(val, ensure_ascii=False)
+        if len(text) > BODY_MAX_VALUE_CHARS:
+            text = "%s…(+%d chars in the log)" % (text[:BODY_MAX_VALUE_CHARS],
+                                                    len(text) - BODY_MAX_VALUE_CHARS)
+        parts.append("%s=%s" % (key, text))
+    return " · ".join(parts)
+
+
+def render_finding_lines(key, items, rule=None, orphan_notes=None):
+    """Every body line for ONE check. SCHEDULE_DRIFT keeps its labelled renderer; a scalar list stays the
+    one comma-joined line operators already read; dict findings get a line each. Both are capped by item
+    COUNT, and the remainder is named rather than silently dropped."""
+    if key == "SCHEDULE_DRIFT" and isinstance(items, list):
+        return [f"  {key}: {line}" for line in render_schedule_drift(items, rule)]
+    if not isinstance(items, list):
+        return [f"  {key}: {items}"]
+    shown = items[:BODY_MAX_ITEMS_PER_CHECK]
+    more = len(items) - len(shown)
+    tail = ([f"  {key}: +{more} more — every one is in the CHECK {key} line of {BODY_LOG_PATH}"]
+            if more > 0 else [])
+    if any(isinstance(x, dict) for x in shown):
+        return [f"  {key}: {render_finding_item(x)}" for x in shown] + tail
+    if key == "ORPHAN" and orphan_notes:
+        return [f"  {key}: {x}" + (f" — {orphan_notes[str(x)]}" if str(x) in orphan_notes else "")
+                for x in shown] + tail
+    return [f"  {key}: {', '.join(str(x) for x in shown)}"] + tail
+
+
+def annotate_orphans(orphans, host_hashes, rows):
+    """{basename: note} for every ORPHAN whose name, or bytes, a committed row already knows.
+
+    OPS-DRIFT-ALERT-GENERATORS-W1. `backfill-drain-gate.py` paged ORPHAN daily from 2026-09-08 while its
+    sha EQUALLED the committed row `backfill-drain-gate`, which declares host n-a: a known tool copied onto
+    a host outside its declared design, not an unknown file. The note names both remedies. It reads ALL
+    rows — a row owned by no host is exactly this case — and changes no finding: ORPHAN still compares the
+    host against the OWNED rows, and the CHECK log line is untouched.
+    """
+    notes = {}
+    for name in orphans or []:
+        live = (host_hashes or {}).get(name)
+        same_name = [r for r in rows or [] if os.path.basename(str(r.get("artifact") or "")) == name]
+        exact = [r for r in same_name if live and r.get("sha256") == live]
+        if exact:
+            r = exact[0]
+            notes[name] = (f"bytes match committed row '{r.get('id')}' (declares host={r.get('host')} "
+                           f"host_path={r.get('host_path')}) — declare this install on that row, or "
+                           "retire the stray copy")
+        elif same_name:
+            notes[name] = f"same name as committed row '{same_name[0].get('id')}', different bytes"
+    return notes
+
+
+def build_body(findings, streak, orphan_notes=None):
     rule = load_boundary_rule()
-    lines = [f"🛑 {ALERT_ID}",
-             "Condition: the committed monitoring inventory no longer matches the host "
-             f"({CONSECUTIVE_TO_PAGE} consecutive breaches)"]
+    head = [f"🛑 {ALERT_ID}",
+            "Condition: the committed monitoring inventory no longer matches the host "
+            f"({CONSECUTIVE_TO_PAGE} consecutive breaches)"]
+    foot = [f"State: breach streak {streak}",
+            f"Action: dispatch {RECOMMENDED_WAVE} via Cowork → Claude Code",
+            f"Audit shape: {AUDIT_DOC_REF}",
+            f"Source log: {BODY_LOG_PATH}"]
+    finding_lines = []
     for k, v in findings.items():
-        if not v:
-            continue
-        if k == "SCHEDULE_DRIFT" and isinstance(v, list):
-            for line in render_schedule_drift(v, rule):
-                lines.append(f"  {k}: {line}")
-            continue
-        lines.append(f"  {k}: {v if not isinstance(v, list) else ', '.join(str(x) for x in v)[:220]}")
-    lines += [f"State: breach streak {streak}",
-              f"Action: dispatch {RECOMMENDED_WAVE} via Cowork → Claude Code",
-              f"Audit shape: {AUDIT_DOC_REF}",
-              "Source log: /var/log/monitoring-inventory-reconcile.log"]
-    return "\n".join(lines)
+        if v:
+            finding_lines += render_finding_lines(k, v, rule, orphan_notes)
+    # WHOLE lines only, and an omission is itself a line, so a page can never end mid-field again.
+    budget = BODY_BUDGET_CHARS - len("\n".join(head + foot)) - 200
+    kept, used = [], 0
+    for i, line in enumerate(finding_lines):
+        if used + len(line) + 1 > budget:
+            kept.append(f"  … +{len(finding_lines) - i} finding line(s) omitted to fit one message — "
+                        f"every finding is in the CHECK lines of {BODY_LOG_PATH}")
+            break
+        kept.append(line)
+        used += len(line) + 1
+    return "\n".join(head + kept + foot)
 
 
 def call_wrapper(body, alert_id=ALERT_ID):
@@ -2314,6 +2393,7 @@ def main(check_mode=False):
     if (sot_cfg or {}).get("enforcement") == "block":
         drift_keys = drift_keys + ("SOT_PARITY",)
     drifted = any(f[k] for k in drift_keys)
+    orphan_notes = annotate_orphans(f["ORPHAN"], host_hashes, rows)
 
     if not check_mode:
         # POSITIVE per-check output — never absence-of-alert. A check silently skipped by a load
@@ -2325,6 +2405,10 @@ def main(check_mode=False):
         for k in drift_keys + report_only:
             v = f[k]
             log(f"CHECK {k}: {'BREACH ' + json.dumps(v) if v else 'OK (empty set)'}")
+        # POSITIVE accounting for what an ORPHAN IS, beside its unchanged CHECK line: a file whose name or
+        # bytes a committed row already knows is a named remedy, not a mystery (OPS-DRIFT-ALERT-GENERATORS-W1).
+        for name, note in orphan_notes.items():
+            log(f"ORPHAN_MATCH {name} — {note}")
         # Positive accounting for what this instance did NOT evaluate — a registry entry owned by
         # another host must be visibly deferred, never silently absent.
         rp = check_registry_parity(owned, host_hashes, HOST_LABELS)
@@ -2411,7 +2495,7 @@ def main(check_mode=False):
         streak = update_breach_streak(ALERT_ID, drifted)
         log(f"BREACH_STREAK {streak}/{CONSECUTIVE_TO_PAGE}")
         if drifted and streak >= CONSECUTIVE_TO_PAGE:
-            call_wrapper(build_body(f, streak))
+            call_wrapper(build_body(f, streak, orphan_notes))
             log(f"ALERT_SENT {ALERT_ID}")
         elif drifted:
             log(f"SUSTAIN_PENDING: breach {streak}/{CONSECUTIVE_TO_PAGE} — not paging yet")
@@ -3274,6 +3358,44 @@ def self_test():
     ck("build_body still carries the Action line", "Action: dispatch" in full, True)
     ck("build_body leaves non-schedule findings on the legacy path",
        "HASH_DRIFT: a, b" in build_body({"HASH_DRIFT": ["a", "b"]}, 1), True)
+
+    # ── the body renders EVERY field of a dict finding (OPS-DRIFT-ALERT-GENERATORS-W1) ──
+    # The real 2026-09-14 finding: the old renderer cut its repr at character 220 and the page ended `'a`.
+    EPISODE = {"host": "204.168.185.24", "alert_id": "OUTCOME_BACKFILL_STALLED", "verdict": "FIRING_STALE",
+               "detail": "episode open 8.6d, past the 7d bound — either the condition never cleared or "
+                         "nothing is calling --clear for it",
+               "age_days": 8.57, "bound_days": 7, "opened_at": "2026-09-05T17:13:01Z"}
+    ep_body = build_body({"ALERT_EPISODE_STALE": [EPISODE]}, 8)
+    ck("body keeps a dict finding's LAST field (the one the 220-char cut dropped)",
+       "opened_at=2026-09-05T17:13:01Z" in ep_body, True)
+    ck("body keeps every key of the finding", all(f"{k}=" in ep_body for k in EPISODE), True)
+    ck("body carries no python dict repr", "{'" in ep_body, False)
+    ck("a value over the per-value cap keeps its key and labels the cut",
+       ("detail=" + "x" * BODY_MAX_VALUE_CHARS + "…(+50 chars in the log)")
+       in build_body({"X": [{"detail": "x" * (BODY_MAX_VALUE_CHARS + 50)}]}, 1), True)
+    many = build_body({"HASH_DRIFT": [{"id": f"row-{i}"} for i in range(BODY_MAX_ITEMS_PER_CHECK + 2)]}, 1)
+    ck("items per check are capped by COUNT and the remainder is named",
+       many.count("  HASH_DRIFT: id=row-") == BODY_MAX_ITEMS_PER_CHECK and "HASH_DRIFT: +2 more" in many, True)
+    huge = build_body({f"K{i}": [{"detail": "y" * 190, "id": i}] for i in range(40)}, 1)
+    ck("the whole body fits one message, omitting WHOLE lines and saying so",
+       len(huge) <= BODY_BUDGET_CHARS and "finding line(s) omitted" in huge and "Action: dispatch" in huge, True)
+
+    # ── an ORPHAN whose bytes a committed row knows names its remedy (OPS-DRIFT-ALERT-GENERATORS-W1) ──
+    OROWS = [{"id": "backfill-drain-gate", "artifact": "ops/monitoring/backfill-drain-gate.py",
+              "host": "n-a", "host_path": "n-a", "sha256": "9c2e" * 16},
+             {"id": "other", "artifact": "ops/monitoring/other.py", "sha256": "aaaa" * 16}]
+    onotes = annotate_orphans(["backfill-drain-gate.py", "other.py", "stranger.py"],
+                              {"backfill-drain-gate.py": "9c2e" * 16, "other.py": "bbbb" * 16,
+                               "stranger.py": "cccc" * 16}, OROWS)
+    ck("an ORPHAN whose bytes equal a committed row names that row and both remedies",
+       "backfill-drain-gate" in onotes.get("backfill-drain-gate.py", "")
+       and "retire the stray copy" in onotes.get("backfill-drain-gate.py", ""), True)
+    ck("same name with different bytes is said plainly", "different bytes" in onotes.get("other.py", ""), True)
+    ck("a file no row knows gets no invented note", "stranger.py" in onotes, False)
+    orphan_body = build_body({"ORPHAN": ["backfill-drain-gate.py", "stranger.py"]}, 8, onotes)
+    ck("the ORPHAN body line carries the note",
+       "  ORPHAN: backfill-drain-gate.py — bytes match committed row 'backfill-drain-gate'" in orphan_body, True)
+    ck("...and an orphan no row knows still renders bare", "  ORPHAN: stranger.py\n" in orphan_body, True)
 
 
     # ── 10. CF-origin-lock checks, both directions, hermetically (OPS-CF-ORIGIN-LOCK-W1) ──

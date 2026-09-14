@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  evaluate, declarationCandidates, consumerFiles, declaredSet, NOT_A_CONSUMER,
+  evaluate, declarationCandidates, consumerFiles, declaredSet, declaredSources, NOT_A_CONSUMER,
 } from '../../scripts/check-declaration-coverage.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -36,14 +36,37 @@ const run = (args = []) => {
   }
 };
 
-/** A throwaway copy of the real ops/ tree, so a mutation proof never touches the checkout. */
+/**
+ * A throwaway copy of the real ops/ tree, so a mutation proof never touches the checkout — INCLUDING the
+ * committed home of every SOURCED declaration (a DECLARATIONS 5th field outside ops/monitoring,
+ * OPS-DRIFT-ALERT-GENERATORS-W1). Copying only ops/monitoring + ops/cron made the untouched copy
+ * INDETERMINATE the day cron-interlock-registry.json became a sourced row: the gate correctly refuses to
+ * count a declared source whose file is absent, so a partial copy is no longer "the real tree".
+ */
 function scratchTree() {
   const root = mkdtempSync(join(tmpdir(), 'declcov-test-'));
   mkdirSync(join(root, 'ops'), { recursive: true });
   cpSync(join(REPO, 'ops/monitoring'), join(root, 'ops/monitoring'), { recursive: true });
   cpSync(join(REPO, 'ops/cron'), join(root, 'ops/cron'), { recursive: true });
+  for (const { source } of declaredSources(REPO) ?? []) {
+    mkdirSync(dirname(join(root, source)), { recursive: true });
+    cpSync(join(REPO, source), join(root, source));
+  }
   return root;
 }
+
+test("a copy MISSING a sourced declaration's committed file is INDETERMINATE and names it — never PASS", () => {
+  const sources = declaredSources(REPO) ?? [];
+  assert.ok(sources.length > 0, 'no sourced declaration exists — this assertion would be vacuous');
+  const root = scratchTree();
+  try {
+    assert.equal(evaluate(root).verdict, 'PASS', 'control: the complete scratch copy must pass');
+    for (const { source } of sources) rmSync(join(root, source));
+    const after = evaluate(root);
+    assert.equal(after.verdict, 'INDETERMINATE');
+    for (const { name } of sources) assert.ok(after.reason.includes(name), `${name} is not named in: ${after.reason}`);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('the gate passes against the live tree, with exactly one verdict token', () => {
   const { out, code } = run();
