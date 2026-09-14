@@ -45,12 +45,15 @@ function run(...args: string[]): { out: string; code: number } {
  * will not match a 3-field row, so an entry written in the old shape fails the vacuity guard below
  * rather than being silently parsed with an undefined scope and synced everywhere.
  */
-function declaredSet(): { name: string; key: string; min: number; scope: string }[] {
+function declaredSet(): { name: string; key: string; min: number; scope: string; source?: string }[] {
   const src = readFileSync(SCRIPT, 'utf8');
   const block = /DECLARATIONS=\(([\s\S]*?)\n\)/.exec(src);
   if (!block) throw new Error('could not locate the DECLARATIONS array in the script');
-  return [...block[1].matchAll(/"([^"|]+)\|([^"|]+)\|(\d+)\|([^"]+)"/g)].map((m) => ({
-    name: m[1], key: m[2], min: Number(m[3]), scope: m[4].trim(),
+  // The optional 5th field (OPS-DRIFT-ALERT-GENERATORS-W1) names a declaration's repo-relative home when
+  // it is not ops/monitoring/. The scope group is `[^"|]+`, NOT `[^"]+`: the old greedy form would parse
+  // `aoe-1|ops/scripts/x.json` as ONE scope, an unknown label that silently starves the host.
+  return [...block[1].matchAll(/"([^"|]+)\|([^"|]+)\|(\d+)\|([^"|]+)(?:\|([^"|]+))?"/g)].map((m) => ({
+    name: m[1], key: m[2], min: Number(m[3]), scope: m[4].trim(), ...(m[5] ? { source: m[5].trim() } : {}),
   }));
 }
 
@@ -99,8 +102,15 @@ describe('the declared set is true of the repo', () => {
   });
 
   it.each(declared)('$name — exists, carries key "$key", and sits above its refusal floor', (d) => {
-    const p = path.join(ROOT, 'ops/monitoring', d.name);
-    expect(existsSync(p), `${d.name} is declared for sync but absent from ops/monitoring/`).toBe(true);
+    // A sourced row (5th field, OPS-DRIFT-ALERT-GENERATORS-W1) is checked at ITS committed home, and
+    // that home must end in the host filename — the host copy is still $DEST_DIR/<name>.
+    if (d.source) {
+      expect(path.basename(d.source), `${d.name}: source ${d.source} does not end in its host filename`).toBe(d.name);
+      expect(d.source.startsWith('/') || d.source.split('/').includes('..'),
+        `${d.name}: source ${d.source} must be repo-relative`).toBe(false);
+    }
+    const p = path.join(ROOT, d.source ?? path.join('ops/monitoring', d.name));
+    expect(existsSync(p), `${d.name} is declared for sync but absent from ${d.source ?? 'ops/monitoring/'}`).toBe(true);
 
     const doc = loadDeclaration(p);
     expect(doc[d.key], `${d.name}: required top-level key "${d.key}" is absent — the host sync would refuse every fetch`).toBeDefined();
@@ -274,8 +284,12 @@ describe('the declared set is COMPLETE against the inventory, not just correct',
     if (!r.artifact || r.artifact.startsWith('external:')) return { code: 'no_artifact', why: 'no in-repo artifact' };
     if (!existsSync(path.join(ROOT, r.artifact))) return { code: 'artifact_absent', why: `artifact absent: ${r.artifact}` };
     if (copies.length === 0) return { code: 'no_host_copy', why: 'no host copy exists' };
-    // Escape hatch for a genuine judgement call — on the ROW, with a reason, never in prose.
-    if (r.sync_exempt_reason) return { code: 'declared', why: `declared: ${r.sync_exempt_reason}` };
+    // NO `sync_exempt_reason` escape hatch any more (OPS-DRIFT-ALERT-GENERATORS-W1). Its only use on a
+    // row WITH a committed artifact was cron-interlock-registry-aoe1, and its stated reason was a
+    // CAPABILITY GAP in the sync (BASE_URL pinned to ops/monitoring) — the exemption is exactly how that
+    // aoe-1 copy went stale for six days behind a re-install instruction written in prose. The sync now
+    // reaches any repo path (a 5th DECLARATIONS field), so a committed, host-consumed declaration has no
+    // remaining reason not to sync. A row with NO committed artifact is already exempt above.
     return null;
   }
 
@@ -360,11 +374,6 @@ describe('the declared set is COMPLETE against the inventory, not just correct',
             `${at} — the claim is FALSE, this row has host copies at: ${rawCopies(r).join(', ')}. `
               + 'This is exactly how alert-registry.json shipped unwired on 2026-08-20.').toEqual([]);
           break;
-        case 'declared':
-          expect(typeof r.sync_exempt_reason === 'string', `${at} — no sync_exempt_reason on the row`).toBe(true);
-          expect(r.sync_exempt_reason!.length, `${at}: sync_exempt_reason is not substantive`)
-            .toBeGreaterThan(25);
-          break;
         default:
           throw new Error(`${at} — unrecognised exemption code; add its claim assertion here`);
       }
@@ -372,6 +381,30 @@ describe('the declared set is COMPLETE against the inventory, not just correct',
     // Vacuity guard on THIS test: if the switch never ran, it asserted nothing at all.
     expect(seen.size, 'no exemption code was exercised — this test asserted nothing')
       .toBeGreaterThanOrEqual(3);
+  });
+
+  it('no row WITH a committed artifact carries sync_exempt_reason — that escape hatch is retired', () => {
+    // A leftover field would read to the next author as an exemption while exempting nothing: prose
+    // shaped like a control. OPS-DRIFT-ALERT-GENERATORS-W1.
+    const offenders = rows
+      .filter((r) => r.sync_exempt_reason && r.artifact && !r.artifact.startsWith('external:'))
+      .map((r) => r.id);
+    expect(offenders, `rows still carrying sync_exempt_reason beside a committed artifact: ${offenders.join(', ')}`)
+      .toEqual([]);
+  });
+
+  it('a SOURCED declaration is scoped to exactly the hosts its inventory row installs it on', () => {
+    // A sourced row lives outside ops/monitoring, so `*` cannot be its default by habit: signal-1 reads
+    // ops/scripts/ straight from its checkout, and a synced copy there would be an ORPHAN.
+    const sourced = declaredSet().filter((d) => d.source);
+    expect(sourced.length, 'no sourced declaration exists — this assertion would be vacuous').toBeGreaterThan(0);
+    for (const d of sourced) {
+      const row = rows.find((r) => r.artifact === d.source);
+      expect(row, `${d.name}: no inventory row has artifact ${d.source}`).toBeTruthy();
+      const hosts = ((row as { installed_at?: { host: string }[] }).installed_at ?? []).map((e) => e.host).sort();
+      expect(d.scope.split(',').map((s) => s.trim()).sort(), `${d.name}: scope must equal its installed_at hosts`)
+        .toEqual(hosts);
+    }
   });
 
   it('nothing is declared that the inventory does not know about', () => {

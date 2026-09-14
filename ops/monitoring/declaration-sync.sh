@@ -55,6 +55,26 @@
 set -uo pipefail
 
 BASE_URL=${DECLARATION_SYNC_BASE_URL:-https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/ops/monitoring}
+# The REPO ROOT at the same ref, for a declaration whose committed home is NOT ops/monitoring — a
+# DECLARATIONS row names that repo-relative path in its optional 5th field (OPS-DRIFT-ALERT-GENERATORS-W1).
+# DERIVED from BASE_URL, so the two can never point at different refs. An explicit override exists only
+# for a test tree laid out like the repo; when BASE_URL is overridden to something that does not end in
+# /ops/monitoring and no override is given, REPO_BASE_URL stays EMPTY and source_url() REFUSES a sourced
+# row rather than guessing a path that would fetch some other file.
+derive_repo_base() {   # <BASE_URL> <explicit override or empty> -> repo root URL, EMPTY when underivable
+  if [ -n "${2:-}" ]; then printf '%s' "$2"; return 0; fi
+  case "$1" in */ops/monitoring) printf '%s' "${1%/ops/monitoring}" ;; esac
+}
+REPO_BASE_URL=$(derive_repo_base "$BASE_URL" "${DECLARATION_SYNC_REPO_BASE_URL:-}")
+
+# The URL one DECLARATIONS row is fetched from. A plain row keeps BASE_URL/<name>, byte-for-byte what
+# every row fetched before. A sourced row is fetched from REPO_BASE_URL/<source path>; rc 1 and no URL
+# when that root cannot be derived. Pure, so the hermetic self-test asserts it both ways.
+source_url() {   # <name> <source path or empty> -> URL on stdout
+  if [ -z "${2:-}" ]; then printf '%s/%s' "$BASE_URL" "$1"; return 0; fi
+  [ -n "$REPO_BASE_URL" ] || return 1
+  printf '%s/%s' "$REPO_BASE_URL" "$2"
+}
 DEST_DIR=${DECLARATION_SYNC_DEST_DIR:-/opt/algovault-monitoring}
 TG=${DECLARATION_SYNC_TG:-/opt/algovault-monitoring/send_telegram.sh}
 ALERT_ID=MONITORING_DECLARATION_SYNC_FAILED
@@ -143,7 +163,35 @@ scope_applies() {
   return 1
 }
 
-# <filename>|<required top-level key>|<min entry count, 0 = presence only>|<host scope>
+# ONE parser for a DECLARATIONS row, used by EVERY read site (OPS-DRIFT-ALERT-GENERATORS-W1). Four sites used
+# to split rows independently; a single site left at four fields would put `aoe-1|ops/scripts/x.json` into
+# $scope, match no host, and silently stop syncing that row — the starvation this 5th field exists to end.
+# One function makes that regression one place, and the self-test pins it both ways.
+row_fields() {   # <row> -> sets ROW_NAME ROW_KEY ROW_MIN ROW_SCOPE ROW_SRC (ROW_SRC empty for a 4-field row)
+  IFS='|' read -r ROW_NAME ROW_KEY ROW_MIN ROW_SCOPE ROW_SRC <<< "$1"
+}
+
+# The shape a row must have, as ONE pure function (OPS-DRIFT-ALERT-GENERATORS-W1), so the self-test can
+# prove each refusal on SYNTHETIC rows. Asserting it only over the real DECLARATIONS would pass forever:
+# every real row is valid, and a check that only ever sees valid input cannot fail.
+row_shape_error() {   # <row> -> the reason on stdout, nothing when the row is well-formed
+  row_fields "$1"
+  if [ -z "$ROW_NAME" ] || [ -z "$ROW_KEY" ] || ! [ "$ROW_MIN" -ge 0 ] 2>/dev/null || [ -z "$ROW_SCOPE" ]; then
+    printf 'malformed declaration row (name|key|min|scope[|source])'; return 0
+  fi
+  [ -z "$ROW_SRC" ] && return 0
+  # A 5th field's basename must BE <name>: the host file is always $DEST_DIR/<name>, so any other
+  # basename would fetch one file and install it under another's name.
+  case "$ROW_SRC" in
+    /*|*..*) printf 'source path is not repo-relative' ;;
+    *) [ "${ROW_SRC##*/}" = "$ROW_NAME" ] || printf "source basename '%s' is not '%s'" "${ROW_SRC##*/}" "$ROW_NAME" ;;
+  esac
+}
+
+# <filename>|<required top-level key>|<min entry count, 0 = presence only>|<host scope>[|<repo-relative source path>]
+# The optional 5th field is for a declaration whose committed home is NOT ops/monitoring/: it names that
+# path, its basename MUST equal <filename> (the host file is still $DEST_DIR/<filename>), and the row is
+# fetched from REPO_BASE_URL/<source path>. Absent, the row fetches BASE_URL/<filename> exactly as before.
 # The count floor is a REFUSAL threshold, not a target: it exists so a truncated or half-written
 # body can never replace a working file. Keep it well below the live value.
 # The scope is `*` for a declaration every host reads, or a comma-list of host labels.
@@ -267,6 +315,17 @@ DECLARATIONS=(
   # superset of `derived` — which its Vacuity Guard 3 correctly calls a broken scan and returns
   # INDETERMINATE for. The declaration must land WITH its consumer, and here it does.
   "audit-cadence.json|audits|1|signal-1"
+  # ── added by OPS-DRIFT-ALERT-GENERATORS-W1 — the FIRST row carrying a 5th field ──
+  # The deploy/cron interlock registry lives in ops/scripts/, beside its primary consumer
+  # ops/scripts/deploy-cron-interlock.sh; signal-1 reads it straight from the checkout deploy.yml
+  # refreshes. aoe-1 has NO checkout of this repo, and its kernel-auto-reboot.sh gate 4 reads
+  # /opt/algovault-monitoring/cron-interlock-registry.json. That copy was "installed once" behind a
+  # sync_exempt_reason whose only stated cause was this script's ops/monitoring-only BASE_URL, with the
+  # refresh left to a sentence in the row's notes. IDENTITY-LIFECYCLE-W3 edited the registry three
+  # times on 2026-09-08, re-stamped the row and never re-installed, so aoe-1 paged HASH_DRIFT +
+  # REGISTRY_PARITY daily from 2026-09-09. Scope `aoe-1` ONLY: signal-1 is fed by its checkout, and a
+  # synced copy there would be an ORPHAN. `rows` is live 27; 10 is a truncation refusal, not a target.
+  "cron-interlock-registry.json|rows|10|aoe-1|ops/scripts/cron-interlock-registry.json"
 )
 
 # Exactly one terminal token on stdout, plus — outside the hermetic suite — a durable record in
@@ -397,7 +456,7 @@ PY
 declares_yaml() {
   local d name scope
   for d in "${DECLARATIONS[@]}"; do
-    IFS='|' read -r name _ _ scope <<< "$d"
+    row_fields "$d"; name=$ROW_NAME; scope=$ROW_SCOPE
     scope_applies "$scope" || continue      # a YAML row for another host needs no parser here
     case "$name" in *.yaml|*.yml) return 0 ;; esac
   done
@@ -600,14 +659,41 @@ self_test() {
   fi
   checks=$((checks+1))
   # Every declared row must be well-formed, or the runtime loop silently skips it.
-  local d name key min scope
+  local d err scope
   for d in "${DECLARATIONS[@]}"; do
-    IFS='|' read -r name key min scope <<< "$d"
     checks=$((checks+1))
-    if [ -z "$name" ] || [ -z "$key" ] || ! [ "$min" -ge 0 ] 2>/dev/null || [ -z "$scope" ]; then
-      echo "  ✗ malformed declaration row (name|key|min|scope): '$d'"; fails=$((fails+1))
-    fi
+    err=$(row_shape_error "$d")
+    [ -z "$err" ] || { echo "  ✗ $err: '$d'"; fails=$((fails+1)); }
   done
+  # ...and every refusal PROVEN on a synthetic row, since each real row is valid.
+  ck 'row shape: a valid 4-field row passes'          "$(row_shape_error 'a.json|k|1|*')" ''
+  ck 'row shape: a valid sourced row passes'          "$(row_shape_error 'a.json|k|1|aoe-1|ops/scripts/a.json')" ''
+  ck 'row shape: a missing scope is REFUSED'          "$(row_shape_error 'a.json|k|1|')" 'malformed declaration row (name|key|min|scope[|source])'
+  ck 'row shape: a foreign basename is REFUSED'       "$(row_shape_error 'a.json|k|1|aoe-1|ops/scripts/b.json')" "source basename 'b.json' is not 'a.json'"
+  ck 'row shape: an absolute source is REFUSED'       "$(row_shape_error 'a.json|k|1|aoe-1|/etc/a.json')" 'source path is not repo-relative'
+  ck 'row shape: a parent-escaping source is REFUSED' "$(row_shape_error 'a.json|k|1|aoe-1|../x/a.json')" 'source path is not repo-relative'
+
+  # derive_repo_base() + source_url(): the resolver every fetch now goes through
+  # (OPS-DRIFT-ALERT-GENERATORS-W1). Both directions, and the refusal — a sourced row with no
+  # derivable repo root must yield NO url, never a guessed one.
+  ck 'repo root derives from a canonical BASE_URL' "$(derive_repo_base https://h/r/main/ops/monitoring '')" 'https://h/r/main'
+  ck 'an explicit repo-root override wins' "$(derive_repo_base https://h/r/main/ops/monitoring https://o/x)" 'https://o/x'
+  ck 'an underivable repo root is EMPTY, never a guess' "$(derive_repo_base file:///tmp/fixture '')" ''
+  ck 'a plain row keeps BASE_URL/<name>' \
+    "$(BASE_URL=https://h/r/main/ops/monitoring REPO_BASE_URL=https://h/r/main; source_url a.json '')" \
+    'https://h/r/main/ops/monitoring/a.json'
+  ck 'a sourced row fetches REPO_BASE_URL/<source>' \
+    "$(BASE_URL=https://h/r/main/ops/monitoring REPO_BASE_URL=https://h/r/main; source_url x.json ops/scripts/x.json)" \
+    'https://h/r/main/ops/scripts/x.json'
+  ( BASE_URL=file:///tmp/fixture REPO_BASE_URL=; source_url x.json ops/scripts/x.json ) >/dev/null 2>&1
+  ck 'a sourced row REFUSES when no repo root is derivable' "$?" 1
+  ck '...and yields no URL at all' "$(BASE_URL=file:///tmp/fixture REPO_BASE_URL=; source_url x.json ops/scripts/x.json)" ''
+  row_fields 'a.json|k|3|aoe-1|ops/scripts/a.json'
+  ck 'row_fields: a 5th field never leaks into the scope' "$ROW_SCOPE" 'aoe-1'
+  ck 'row_fields: the 5th field is the source path'      "$ROW_SRC"   'ops/scripts/a.json'
+  row_fields 'b.json|k|3|signal-1,aoe-1'
+  ck 'row_fields: a 4-field row carries NO source'       "$ROW_SRC"   ''
+  ck 'row_fields: a comma-list scope stays whole'        "$ROW_SCOPE" 'signal-1,aoe-1'
 
   # scope_applies(): the seam that decides what a host installs, so assert it directly rather
   # than trusting it. A wrong answer here either starves a host or plants ORPHANs on it.
@@ -643,7 +729,7 @@ self_test() {
   for l in signal-1 aoe-1; do
     n=0
     for d in "${DECLARATIONS[@]}"; do
-      IFS='|' read -r _ _ _ scope <<< "$d"
+      row_fields "$d"; scope=$ROW_SCOPE
       ( HOST_LABELS=$l; scope_applies "$scope" ) >/dev/null 2>&1 && n=$((n+1))
     done
     checks=$((checks+1))
@@ -711,7 +797,7 @@ fail_detail=""
 echo "declaration sync — ${#DECLARATIONS[@]} declared file(s) from $BASE_URL"
 
 for d in "${DECLARATIONS[@]}"; do
-  IFS='|' read -r name key min scope <<< "$d"
+  row_fields "$d"; name=$ROW_NAME; key=$ROW_KEY; min=$ROW_MIN; scope=$ROW_SCOPE; src=$ROW_SRC
   if ! scope_applies "$scope"; then
     # POSITIVE output, not silence: a skipped row must be distinguishable from a synced one, or
     # "nothing happened" reads the same as "everything was already current".
@@ -721,9 +807,16 @@ for d in "${DECLARATIONS[@]}"; do
   dest="$DEST_DIR/$name"
   cand="$WORK/$name"
 
+  # The fetch URL comes from the ONE resolver the self-test asserts (OPS-DRIFT-ALERT-GENERATORS-W1).
+  # A sourced row whose repo root cannot be derived REFUSES: a guessed path would install some other file.
+  if ! url=$(source_url "$name" "$src"); then
+    echo "  ✗ FAILED   $name — no repo root derivable from BASE_URL=$BASE_URL for source $src (kept the working file)"
+    fail_detail="${fail_detail}${name}: no repo root for source ${src}"$'\n'; failed=$((failed+1)); continue
+  fi
+
   # No `-f`, and NO `||` fallback: both facts curl knows are captured separately and neither is
   # discarded. `cx` must be read on the very next line — any command in between overwrites $?.
-  code=$(curl -sS -o "$cand" -w '%{http_code}' --max-time 30 "$BASE_URL/$name" 2>/dev/null)
+  code=$(curl -sS -o "$cand" -w '%{http_code}' --max-time 30 "$url" 2>/dev/null)
   cx=$?
   cause=$(fetch_cause "$code" "$cx" "$cand")
   if [ -n "$cause" ]; then

@@ -83,7 +83,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "df876a7d6beb19aae8f39c117494339758afbfca0d93e95ea58b3da271f5dcc8",
+      "sha256": "8227b742f8c550142ca1478363c2929063c1c0ed1a263c8f959f53134be3fea8",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
@@ -1194,7 +1194,6 @@
     },
     {
       "id": "cron-interlock-registry-aoe1",
-      "sync_exempt_reason": "declaration-sync.sh CANNOT fetch it: its BASE_URL is hardcoded to .../main/ops/monitoring, and this declaration lives in ops/scripts/ beside its PRIMARY consumer, ops/scripts/deploy-cron-interlock.sh. Moving it under ops/monitoring/ would make it syncable and is the right end-state now that a second consumer (kernel-auto-reboot.sh) reads it from there — the original placement argument (check-declaration-coverage.mjs pins CONSUMER_DIRS to ops/monitoring + ops/cron, so a file read only from ops/scripts/ sits half-declared) has dissolved, because it now HAS a reader in a CONSUMER_DIR. That move touches the registry path, the interlock default, the coverage gate's REGISTRY_REL, two test suites and the DECLARATIONS array, so it is a named follow-up rather than a mid-wave refactor: OPS-CRON-REGISTRY-SYNC-W1. UNTIL THEN the aoe-1 copy is installed by ops/scripts/install-monitoring-artifact.sh and its staleness detector is the daily reconciler's HASH_DRIFT against this row's sha256 — detection, which is strictly weaker than the sync would be, and is why the follow-up is named rather than deferred to nobody.",
       "artifact": "ops/scripts/cron-interlock-registry.json",
       "kind": "declaration",
       "host": "178.104.200.44",
@@ -1212,7 +1211,7 @@
       "sha256": "b210c505ae7c935699ff76d3e793ef4825ba81d74eb9ece638343285b7e9e509",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
-      "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. DECLARED LIMITATION: unlike signal-1's, this copy CAN go stale between installs. The detector is the daily reconciler's HASH_DRIFT against this row's sha256 — which is precisely why it gets a row rather than being scp'd by hand. Re-install with ops/scripts/install-monitoring-artifact.sh cron-interlock-registry-aoe1 --apply after any registry edit, and re-stamp this sha256 in the same commit. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot."
+      "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. SYNCED, NOT INSTALLED (OPS-DRIFT-ALERT-GENERATORS-W1, 2026-09-14): declaration-sync.sh fetches it on aoe-1 every hour (27 * * * *) through a DECLARATIONS row whose 5th field names ops/scripts/cron-interlock-registry.json, so a registry edit reaches the host within the hour with no re-install step. It used to be installed once behind a sync_exempt_reason (the sync could only reach ops/monitoring), with the refresh left to a sentence in these notes; IDENTITY-LIFECYCLE-W3 edited the registry three times on 2026-09-08, re-stamped this sha256, never re-installed, and aoe-1 paged HASH_DRIFT + REGISTRY_PARITY daily from 2026-09-09. Re-stamp this sha256 in the same commit as any registry edit; HASH_DRIFT on this row now means the hourly sync stopped landing, not that someone forgot a step. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot."
     },
     {
       "id": "arm-peer-watchdog",

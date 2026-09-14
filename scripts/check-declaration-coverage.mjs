@@ -74,12 +74,21 @@ function listFiles(root, rel) {
   return readdirSync(dir).map((n) => ({ name: n, abs: path.join(dir, n) }));
 }
 
-/** Every inert data file that could be a declaration. */
+/**
+ * Every inert data file that could be a declaration — including a SOURCED one (a DECLARATIONS row
+ * whose 5th field names a committed home outside DECLARATION_DIR, OPS-DRIFT-ALERT-GENERATORS-W1), by
+ * its host filename. Leaving it out would make GUARD 3 read a correctly declared, correctly read file
+ * as "the scan cannot see it". It counts ONLY when its source file really exists, so a declared row
+ * that nothing backs stays invisible and GUARD 3 still catches it.
+ */
 export function declarationCandidates(root) {
-  return listFiles(root, DECLARATION_DIR)
+  const inDir = listFiles(root, DECLARATION_DIR)
     .filter((f) => DATA_EXT.test(f.name))
-    .map((f) => f.name)
-    .sort();
+    .map((f) => f.name);
+  const sourced = (declaredSources(root) || [])
+    .filter((s) => DATA_EXT.test(s.name) && existsSync(path.join(root, s.source)))
+    .map((s) => s.name);
+  return [...new Set([...inDir, ...sourced])].sort();
 }
 
 /** Every host-side script that could read one, minus the self-referential one. */
@@ -106,6 +115,25 @@ export function declaredSet(root) {
     .filter((l) => l.startsWith('"'))
     .map((l) => l.replace(/^"/, '').split('|')[0])
     .sort();
+}
+
+/**
+ * The SOURCED rows — those whose optional 5th field names a repo-relative committed home outside
+ * DECLARATION_DIR (OPS-DRIFT-ALERT-GENERATORS-W1). [{ name, source }]; [] when there are none; null when
+ * the array cannot be located, which the caller treats exactly like declaredSet's null.
+ */
+export function declaredSources(root) {
+  const p = path.join(root, 'ops/monitoring/declaration-sync.sh');
+  if (!existsSync(p)) return null;
+  const block = /DECLARATIONS=\(([\s\S]*?)\n\)/.exec(readFileSync(p, 'utf8'));
+  if (!block) return null;
+  return block[1]
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('"'))
+    .map((l) => l.replace(/^"/, '').replace(/"$/, '').split('|'))
+    .filter((f) => f.length >= 5 && f[4].trim())
+    .map((f) => ({ name: f[0], source: f[4].trim() }));
 }
 
 /**
@@ -209,7 +237,8 @@ function emit(r) {
     console.log('');
     for (const v of r.violations) {
       console.log(`  ✗ ${v.file} is READ by ${v.readers.join(', ')} but is absent from DECLARATIONS in `
-        + 'ops/monitoring/declaration-sync.sh — add "<file>|<required top-level key>|<floor>|<host scope>"');
+        + 'ops/monitoring/declaration-sync.sh — add "<file>|<required top-level key>|<floor>|<host scope>'
+        + '[|<repo-relative source path>]" (the 5th field only when its committed home is not ops/monitoring/)');
     }
     console.log('DECLARATION_COVERAGE_VERDICT=FAIL');
     return 1;
@@ -363,6 +392,20 @@ function selfTest() {
     'ops/monitoring/declaration-sync.sh': syncScript(['a.json']),
   }), 'FAIL');
 
+  // ── a SOURCED declaration — committed outside ops/monitoring (OPS-DRIFT-ALERT-GENERATORS-W1) ──
+  const sourcedSync = '#!/usr/bin/env bash\nDECLARATIONS=(\n  "a.json|k|1|*"\n  "reg.json|rows|1|aoe-1|ops/scripts/reg.json"\n)\n';
+  ck('a sourced declaration that exists and is read -> PASS, not GUARD 3', v({
+    'ops/monitoring/a.json': '{}',
+    'ops/scripts/reg.json': '{}',
+    'ops/monitoring/reader.py': 'open("a.json"); open("reg.json")',
+    'ops/monitoring/declaration-sync.sh': sourcedSync,
+  }), 'PASS');
+  ck('  …but a sourced row whose committed file is ABSENT stays invisible -> GUARD 3 INDETERMINATE', v({
+    'ops/monitoring/a.json': '{}',
+    'ops/monitoring/reader.py': 'open("a.json"); open("reg.json")',
+    'ops/monitoring/declaration-sync.sh': sourcedSync,
+  }), 'INDETERMINATE');
+
   // ── THE HERMETIC SEAM'S OWN BLIND SPOT ─────────────────────────────────────────────────
   // Every check above replaces the repo root with a fixture, so all of them are structurally
   // blind to the real tree — a broken glob against the REAL layout would pass all thirteen.
@@ -376,6 +419,8 @@ function selfTest() {
     realConsumers.some((c) => c.name === 'declaration-sync.sh'), false);
   ck('SEAM — the real DECLARATIONS array parses', Array.isArray(realDeclared) && realDeclared.length >= 8, true);
   ck('SEAM — the real tree evaluates to a decided verdict', evaluate(REPO).verdict !== 'INDETERMINATE', true);
+  ck('SEAM — the real SOURCED registry is a candidate (committed in ops/scripts/, not ops/monitoring/)',
+    realCandidates.includes('cron-interlock-registry.json'), true);
 
   for (const r of roots) { try { rmSync(r, { recursive: true, force: true }); } catch { /* best effort */ } }
 
@@ -384,7 +429,7 @@ function selfTest() {
     console.log('DECLARATION_COVERAGE_VERDICT=FAIL');
     return 1;
   }
-  console.log(`SELF-TEST: PASS — ${checks} checks (happy path, both independence rules, all three vacuity guards, and five assertions against the REAL tree the fixture seam bypasses)`);
+  console.log(`SELF-TEST: PASS — ${checks} checks (happy path, both independence rules, all three vacuity guards, a sourced declaration both ways, and six assertions against the REAL tree the fixture seam bypasses)`);
   console.log('DECLARATION_COVERAGE_VERDICT=PASS');
   return 0;
 }
