@@ -81,26 +81,6 @@
       "block": "--self-test passes and is not vacuous"
     },
     {
-      "file": "tests/unit/check-system-map.test.ts",
-      "block": "(a) clean diff (no edge signals) + stale system-map.md → exit 0"
-    },
-    {
-      "file": "tests/unit/check-system-map.test.ts",
-      "block": "(b) edge signal (`server.tool(` add) + stale → exit 1 with BLOCK message"
-    },
-    {
-      "file": "tests/unit/check-system-map.test.ts",
-      "block": "(c) edge signal + fresh system-map.md (touched within 10 min) → exit 0"
-    },
-    {
-      "file": "tests/unit/check-system-map.test.ts",
-      "block": "(d) edge signal + stale + [skip-map-check] in commit msg → exit 0"
-    },
-    {
-      "file": "tests/unit/check-system-map.test.ts",
-      "block": "(e) edge signal in `migrations/` (NEW SQL file) + stale → exit 1"
-    },
-    {
       "file": "tests/unit/checkout-parity-allowlist.test.ts",
       "block": "the helper: exit 0 and exactly one verdict token"
     },

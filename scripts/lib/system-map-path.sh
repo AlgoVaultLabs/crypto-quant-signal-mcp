@@ -27,6 +27,15 @@
 # (tests/unit/check-system-map.test.ts). It is preserved EXACTLY, including its precedence, so
 # extracting this expression is a pure move: every caller that set it keeps working unchanged.
 #
-# Sourced, never executed. Defines one variable and nothing else.
+# ─── THE CARD DIRECTORY IS A PROJECTION, NEVER A SECOND LITERAL ─────────────────────────────
+# OPS-SYSTEM-MAP-DIRECTORY-W1: the map is a router plus one card per component —
+# system-map.md + system-map/<component>.md. The directory is the router path minus `.md`, so it
+# follows $SYSTEM_MAP_PATH with the SAME precedence and cannot disagree with the router about which
+# vault it lives in. The _PATH= line keeps its exact shape: tests/unit/check-map-shape.test.ts and
+# tests/unit/prereg-mirror-parity.test.ts both pin it.
+#
+# Sourced, never executed. Defines two variables and nothing else: the router path, and the card
+# directory projected from it.
 
 ALGOVAULT_SYSTEM_MAP_PATH="${SYSTEM_MAP_PATH:-/Users/tank/My Drive/Obsidian Vault/AlgoVault MCP/system-map.md}"
+ALGOVAULT_SYSTEM_MAP_DIR="${ALGOVAULT_SYSTEM_MAP_PATH%.md}"

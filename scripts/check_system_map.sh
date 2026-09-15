@@ -2,18 +2,22 @@
 # SYSTEM-MAP-ENFORCEMENT-W1 / C2 — pre-commit gate.
 #
 # Blocks commits with edge-mutation signals (per CLAUDE.md Execution flow
-# step 6 list) when system-map.md hasn't been touched within MAX_AGE_SEC
+# step 6 list) when the system map hasn't been touched within MAX_AGE_SEC
 # of NOW. The gate prevents the silent-drift class where a wave ships
 # new MCP tools / postgres columns / cron entries / env vars / route
-# handlers WITHOUT updating system-map.md in the same Code session.
+# handlers WITHOUT updating the map in the same Code session.
+#
+# The map is a router plus one card per component (OPS-SYSTEM-MAP-DIRECTORY-W1):
+# system-map.md + system-map/<component>.md. Freshness is the NEWEST mtime of
+# the router and its cards, so editing only the card a wave touched satisfies it.
 #
 # Honors `[skip-map-check]` in commit message as a documented escape
-# hatch for false positives. Commits that touch system-map.md directly
+# hatch for false positives. Commits that stage the router or a card
 # (the C3-style backfill case) are exempt automatically.
 #
 # Reads SYSTEM_MAP_PATH env var if set; otherwise the absolute vault path
-# declared in scripts/lib/system-map-path.sh (shared with check_map_shape.sh).
-# Tests pass a tmp path via env var.
+# declared in scripts/lib/system-map-path.sh (shared with check_map_shape.sh),
+# which also projects the card directory from it. Tests pass a tmp path via env var.
 #
 # Maintenance: pattern array below is the SoT for the gate's notion of
 # "edge mutation". Keep aligned with CLAUDE.md Execution flow step 6
@@ -97,10 +101,15 @@ if [ -n "$GIT_DIR" ] && [ -f "$GIT_DIR/COMMIT_EDITMSG" ] && \
   exit 0
 fi
 
-# ── system-map.md-touching commits exempt automatically (C3 backfill case) ──
+# ── map-touching commits exempt automatically (C3 backfill case) ──
+# The router (system-map.md) or a component card (system-map/<component>.md). The card
+# alternative is INERT today and kept deliberately: the vault is not a git repository, so neither
+# file can ever appear in a repo's staged diff (scripts/lib/system-map-path.sh records the
+# measurement). It costs nothing and records the intent for the day the map is repo-resident. The
+# mtime leg below is what actually lets a card-only edit through (OPS-SYSTEM-MAP-DIRECTORY-W1 CH4).
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null || echo "")
-if echo "$STAGED_FILES" | grep -qE 'system-map\.md$'; then
-  echo "[system-map gate] OK — staged diff includes system-map.md; exempt."
+if echo "$STAGED_FILES" | grep -qE 'system-map\.md$|(^|/)system-map/[^/]+\.md$'; then
+  echo "[system-map gate] OK — staged diff includes system-map.md or a system-map/ card; exempt."
   exit 0
 fi
 
@@ -181,10 +190,17 @@ if [ -z "${SYSTEM_MAP_PATH:-}" ] && [ ! -f "$MAP_PATH_LIB" ]; then
   echo "  Escape hatch: ALGOVAULT_SKIP_MAP_CHECK=1 git commit …   (logged to the skip ledger)"
   exit 1
 fi
+# The card directory is PROJECTED by the same library (OPS-SYSTEM-MAP-DIRECTORY-W1 CH4), so it
+# follows SYSTEM_MAP_PATH with the router's precedence. With no library there is no second
+# derivation to fall back on: freshness is router-only, and the gate SAYS so below — never silently.
+MAP_DIR=""
+MAP_DIR_UNRESOLVED="scripts/lib/system-map-path.sh absent; an explicit SYSTEM_MAP_PATH needs no library"
 if [ -f "$MAP_PATH_LIB" ]; then
   # shellcheck source=scripts/lib/system-map-path.sh
   . "$MAP_PATH_LIB"
   SYSTEM_MAP_PATH="$ALGOVAULT_SYSTEM_MAP_PATH"
+  MAP_DIR="${ALGOVAULT_SYSTEM_MAP_DIR:-}"
+  MAP_DIR_UNRESOLVED="scripts/lib/system-map-path.sh defines no ALGOVAULT_SYSTEM_MAP_DIR"
 fi
 
 if [ ! -f "$SYSTEM_MAP_PATH" ]; then
@@ -232,21 +248,66 @@ case "$MAP_MTIME" in
     echo "  Escape hatch:    ALGOVAULT_SKIP_MAP_CHECK=1 git commit …   (logged to the skip ledger)"
     exit 1 ;;
 esac
-AGE=$((NOW - MAP_MTIME))
+# ── Freshness is the NEWEST mtime of the router AND its cards (OPS-SYSTEM-MAP-DIRECTORY-W1 CH4) ──
+# The map is a router plus one card per component: system-map.md + system-map/<component>.md. A
+# wave that edits only a card must satisfy this gate, and the staged-exempt leg above cannot do it
+# — the vault is not a git repository, so neither file can ever be staged. So the card directory
+# is scanned at depth 1 and the newest file wins.
+#
+# Every card gets the router's refusal rule: an mtime that does not read as a number BLOCKS. A
+# directory that exists but cannot be listed BLOCKS too — a glob over an unlistable directory
+# matches nothing, and "no cards" would then be a silent router-only pass over a corpus nobody
+# could read. Only a directory that is genuinely ABSENT falls back to the router, and it says so.
+NEWEST_MTIME="$MAP_MTIME"
+NEWEST_NAME="system-map.md"
+CARD_COUNT=0
+if [ -z "$MAP_DIR" ]; then
+  echo "[system-map gate] note: card directory unresolved ($MAP_DIR_UNRESOLVED) — router-only freshness."
+elif [ ! -e "$MAP_DIR" ] && [ ! -L "$MAP_DIR" ]; then
+  echo "[system-map gate] note: no card directory at $MAP_DIR — falling back to router-only freshness."
+elif [ ! -d "$MAP_DIR" ] || [ ! -r "$MAP_DIR" ] || [ ! -x "$MAP_DIR" ]; then
+  echo "[system-map gate] BLOCK: card directory $MAP_DIR exists but cannot be listed."
+  echo "  Freshness is undeterminable, so this gate REFUSES rather than falling back to the router."
+  echo "  Escape hatch:    ALGOVAULT_SKIP_MAP_CHECK=1 git commit …   (logged to the skip ledger)"
+  exit 1
+else
+  for card in "$MAP_DIR"/*.md; do
+    # Without nullglob an unmatched pattern stays literal — that is "zero cards", not a card.
+    [ -e "$card" ] || [ -L "$card" ] || continue
+    CARD_MTIME=$(map_mtime "$card" || true)
+    case "$CARD_MTIME" in
+      ''|*[!0-9]*)
+        echo "[system-map gate] BLOCK: could not read a numeric mtime for card $card"
+        echo "  stat flavour detected: $STAT_FLAVOUR"
+        echo "  probe returned: '$(printf '%s' "$CARD_MTIME" | head -1)'"
+        echo "  Freshness is undeterminable, so this gate REFUSES rather than assuming stale or fresh."
+        echo "  Escape hatch:    ALGOVAULT_SKIP_MAP_CHECK=1 git commit …   (logged to the skip ledger)"
+        exit 1 ;;
+    esac
+    CARD_COUNT=$((CARD_COUNT + 1))
+    if [ "$CARD_MTIME" -gt "$NEWEST_MTIME" ]; then
+      NEWEST_MTIME="$CARD_MTIME"
+      NEWEST_NAME="system-map/$(basename "$card")"
+    fi
+  done
+  echo "[system-map gate] note: freshness = newest of the router + $CARD_COUNT card(s) in $MAP_DIR."
+fi
+AGE=$((NOW - NEWEST_MTIME))
 
 if [ "$AGE" -le "$MAX_AGE_SEC" ]; then
-  echo "[system-map gate] OK — ${#HITS[@]} signals matched, system-map.md mtime fresh (${AGE}s ago)."
+  echo "[system-map gate] OK — ${#HITS[@]} signals matched, map mtime fresh via $NEWEST_NAME (${AGE}s ago)."
   exit 0
 fi
 
-# ── BLOCK — edge mutation + stale system-map.md ──
+# ── BLOCK — edge mutation + a stale map (the router AND every card) ──
 cat <<EOF
 [system-map gate] BLOCK: edge-mutation signals detected in staged diff:
 $(printf '  - %s\n' "${HITS[@]}")
 system-map.md path: $SYSTEM_MAP_PATH
-system-map.md age:  ${AGE}s ago — STALE (max allowed: ${MAX_AGE_SEC}s).
-Required action: touch the relevant component card / edge row in system-map.md,
-                 then re-attempt the commit.
+card directory:     ${MAP_DIR:-<unresolved>} — $CARD_COUNT card(s) considered
+newest map file:    $NEWEST_NAME, ${AGE}s ago — STALE (max allowed: ${MAX_AGE_SEC}s).
+Required action: touch the component card you changed in system-map/<component>.md (or the
+                 router, system-map.md), then re-attempt the commit.
 Escape hatch:    ALGOVAULT_SKIP_MAP_CHECK=1 git commit …   (reliable, non-interactive)
                  — or append [skip-map-check] to the message (interactive / amend commits).
 Reference:       CLAUDE.md "## Execution flow" step 6 + "## Plan Mode rules"
