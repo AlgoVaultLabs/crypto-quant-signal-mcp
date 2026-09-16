@@ -349,8 +349,17 @@ describe('check-map-edges.mjs — the committed artifacts', () => {
   });
 
   it('the pre-commit block, where installed, is REPORT-ONLY', { timeout: 60_000 }, () => {
-    const hooks = execFileSync('git', ['config', '--get', 'core.hooksPath'], { cwd: ROOT, encoding: 'utf8' }).trim();
-    const hook = join(hooks, 'pre-commit');
+    // `git config --get` EXITS 1 when the key is unset, so execFileSync THROWS rather than
+    // returning '' — and an unset core.hooksPath is the NORMAL state on a CI runner. Measured:
+    // this test passed on the workstation (where the key is set) and killed the pre-deploy suite
+    // on ubuntu, blocking the deploy. A readback that raises is not an assertion.
+    let hooks = '';
+    try {
+      hooks = execFileSync('git', ['config', '--get', 'core.hooksPath'], { cwd: ROOT, encoding: 'utf8' }).trim();
+    } catch {
+      hooks = '';
+    }
+    const hook = hooks ? join(hooks, 'pre-commit') : '';
     if (!hooks || !existsSync(hook)) return;   // nothing installed here — the installer's own test covers emission
     const text = readFileSync(hook, 'utf8');
     const block = /# >>> algovault map-edges \([^)]*\) >>>[\s\S]*?# <<< algovault map-edges <<</.exec(text);
