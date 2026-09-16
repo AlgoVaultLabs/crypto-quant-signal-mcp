@@ -705,6 +705,21 @@ jobs:
           node scripts/check-claudemd-claims.mjs --self-test
           node scripts/check-claudemd-claims.mjs --check
 
+      # OPS-SYSTEM-MAP-DIRECTORY-W1 CH5 — the system map is a router plus one card per component,
+      # and the §2 tree it replaced recorded each edge ONCE, under one end: "a produces to b" and
+      # "b consumes from a" were never the same fact, so a one-sided edge was undetectable. This
+      # gate makes a NEW one impossible — a counterpart is recognised only as a backticked §3 id
+      # after the coupling flag, those edges get reciprocity AND id-in-index enforced, and every
+      # other edge is per-card debt that may only SHRINK. The corpus is the vault: private and
+      # unreachable here, so this runs in LOCK MODE and verifies ops/system-map-edges.lock.json
+      # (identifiers only) against itself — the direction that catches a hand edit. Emits
+      # MAP_EDGES_VERDICT plus a coverage line; exit 3 (missing, unparseable or vacuous lock)
+      # blocks too, so a broken verify never reads as clean.
+      - name: System-map edge-set gate (lock mode, fail-closed)
+        run: |
+          node scripts/check-map-edges.mjs --self-test
+          node scripts/check-map-edges.mjs
+
       # OPS-AUDIT-REMEDIATION-LOW-W1 · SEC-22 — a cron/CLI entrypoint must guard its top-level
       # main(), or anything that imports it RUNS it (a test, a canary, another script reusing one
       # helper) and the failure is silent and expensive. CLAUDE.md already carried this as prose
