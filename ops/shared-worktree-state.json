@@ -634,6 +634,37 @@
         "_scope_reason": "A hook-block row is written only by its own installer. The FILE those installers share is hook-pre-push, and the contention lives on that row, not on this one."
       },
       "_backstopped_by_reason": "deploy.yml:315 is the ONLY other invocation \u2014 measured, not inherited from the row this was templated from. security-canary.mjs is NOT in package.json prepublishOnly, so a skipped block loses the pre-push half outright and the CI half is what remains."
+    },
+    {
+      "id": "block-map-edges",
+      "path": "$GIT_COMMON_DIR/hooks/pre-commit",
+      "kind": "hook-block",
+      "hook": "pre-commit",
+      "block_name": "map-edges",
+      "script": "scripts/check-map-edges.mjs",
+      "writers": [
+        "scripts/install_map_edges_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-commit"
+      ],
+      "invariant": "Prints MAP_EDGES_VERDICT over the system map: every backticked \u00a73 counterpart has its mirror edge, every counterpart exists in the router, every edge carries a coupling flag, and per-card unresolved debt may only SHRINK. REPORT-ONLY by construction \u2014 the emitted invocation ends in `|| true` and branches on the token, so it cannot fail a commit. That is not timidity: the corpus is the VAULT, authored by whoever edited a card, while the committer may be a different session that the Scope Rule forbids from writing cards. A blocking verdict must land on someone who can act on it, so the BLOCKING leg is .github/workflows/deploy.yml, which verifies the committed lock.",
+      "severity": "report",
+      "_severity_reason": "Report-only is the END STATE here, not a staged control: this block reports on a corpus outside the repo. The blocking half is the CI lock check named in backstopped_by, which fires on the artifact the committer does own.",
+      "report_only": true,
+      "_report_only_reason": "Absence of this block from a worktree costs MEASUREMENT, not protection \u2014 it blocks nothing anywhere. Declared so UNGUARDED_WORKTREE does not print 'those checkouts have NO protection from this gate at all', which would be a false statement about a detector.",
+      "backstopped_by": [
+        ".github/workflows/deploy.yml"
+      ],
+      "_backstopped_by_reason": "deploy.yml runs `check-map-edges.mjs --self-test` then the check in LOCK MODE (the vault is not mounted on a runner), so the committed identifier lock is verified on every deploy even when no local hook ran.",
+      "sha256": null,
+      "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
+      "serialization": {
+        "mechanism": "none-single-writer",
+        "key": null,
+        "scope": "the one installer named in writers[], run by hand from a checkout",
+        "_scope_reason": "A hook-block row is written only by its own installer. The FILE those installers share is hook-pre-commit, and the contention lives on that row, not on this one."
+      }
     }
   ],
   "worktree_roots": {
