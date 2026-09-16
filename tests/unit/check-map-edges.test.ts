@@ -357,6 +357,9 @@ describe('check-map-edges.mjs — the committed artifacts', () => {
     if (!block) return;                        // not installed in this checkout
     expect(block[0]).toContain('check-map-edges.mjs');
     expect(block[0], 'the map-edges block must never block a commit').not.toMatch(/\|\|\s*exit 1/);
+    // …and it must print its token on EVERY run: a block that is silent when healthy is
+    // indistinguishable from one nobody invokes, and this one can never block.
+    expect(block[0]).toMatch(/grep -E '\^MAP_EDGES_\(VERDICT\|RECIPROCITY_COVERAGE\)='/);
   });
 });
 

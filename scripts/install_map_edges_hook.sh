@@ -68,6 +68,10 @@ EOF
 
 read -r -d '' INVOCATION <<'EOF' || true
 ALGOVAULT_MAP_EDGES_OUT="$(node "$(git rev-parse --show-toplevel)/scripts/check-map-edges.mjs" 2>&1 || true)"
+# POSITIVE OUTPUT ON EVERY RUN, not only on failure. A block that prints nothing when healthy is
+# indistinguishable from a block nobody invokes — the dark-guard shape this estate has paid for
+# four times — and this one can never block, so silence would be its only observable state.
+printf '%s\n' "$ALGOVAULT_MAP_EDGES_OUT" | grep -E '^MAP_EDGES_(VERDICT|RECIPROCITY_COVERAGE)=' || true
 if ! printf '%s\n' "$ALGOVAULT_MAP_EDGES_OUT" | grep -qE '^MAP_EDGES_VERDICT=PASS$'; then
   printf '%s\n' "$ALGOVAULT_MAP_EDGES_OUT" | tail -n 12 >&2
   printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" MAP_EDGES_REPORT map-edges "$(git rev-parse --show-toplevel)" scripts/check-map-edges.mjs \
