@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <span data-tr-field="pfe_wr">91.1%</span> PFE win rate across <span data-tr-field="total_calls">705,830</span>+ verified calls. Merkle-verified on Base L2. Don't trust — verify. <!-- SNAPSHOT-LINE -->
+  <span data-tr-field="pfe_wr">91.1%</span> PFE win rate across <span data-tr-field="total_calls">716,408</span>+ verified calls. Merkle-verified on Base L2. Don't trust — verify. <!-- SNAPSHOT-LINE -->
 </p>
 
 <p align="center">
@@ -111,7 +111,7 @@ The `_algovault` block makes outputs composable: downstream risk and backtest to
      scripts/snapshot-landing-data.mjs at npm-publish + Hetzner-deploy. Do NOT hand-edit the
      numbers; edit "What's new" by hand. Wired by OPS-NPM-README-SINGLE-SOT-W1 (2026-05-31). -->
 <p align="center">
-  <strong><span data-tr-field="pfe_wr">91.1%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">705,830</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">159</span> on-chain batches</strong> <!-- SNAPSHOT-LINE -->
+  <strong><span data-tr-field="pfe_wr">91.1%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">716,408</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">160</span> on-chain batches</strong> <!-- SNAPSHOT-LINE -->
 </p>
 
 <p align="center">
