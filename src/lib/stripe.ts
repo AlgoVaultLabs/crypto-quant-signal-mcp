@@ -884,35 +884,55 @@ export async function resolveCustomerByApiKey(apiKey: string): Promise<ResolvedC
       limit: 1,
     });
     if (customers.data.length === 0) return null;
-    const customer = customers.data[0];
-    // A DELETED customer is genuinely unresolvable — no email, no portal, nothing to manage.
-    if ('deleted' in customer && customer.deleted) return null;
-
-    // ONE list call, `status: 'all'`. The previous code listed `status: 'active'` and could
-    // therefore only ever learn "active or nothing"; this costs the same request and returns
-    // both facts, so neither has to be inferred from the other's absence.
-    const subs = await stripe.subscriptions.list({ customer: customer.id, status: 'all', limit: 10 });
-    const active = subs.data.find((s) => s.status === 'active') ?? null;
-    // Newest-first is Stripe's documented list order, so [0] is the most recent subscription —
-    // the one whose status a human would recognise as "their current billing state".
-    const relevant = active ?? subs.data[0] ?? null;
-
-    const tier = (customer.metadata?.tier as string) || 'starter';
-    // `customer` is a Customer | DeletedCustomer union in the SDK types; a deleted
-    // customer carries no email. Guard rather than cast so a deleted-but-searchable
-    // record degrades to "unreachable" instead of throwing.
-    const email = 'email' in customer && typeof customer.email === 'string' ? customer.email : null;
-    return {
-      customerId: customer.id,
-      tier,
-      email,
-      subscriptionStatus: relevant?.status ?? null,
-      hasActiveSubscription: active !== null,
-    };
+    return await projectResolvedCustomer(customers.data[0]);
   } catch (err) {
     console.error('Stripe resolveCustomerByApiKey error:', err instanceof Error ? err.message : err);
     return null;
   }
+}
+
+/**
+ * Stripe `Customer` → `ResolvedCustomer`. The SINGLE derivation of "who is this, and what is
+ * their billing state", shared by the api-key resolver above and `resolveCustomerByEmail` below.
+ *
+ * It was inlined in `resolveCustomerByApiKey` until FUNNEL-FIX-SIGNIN-PAID-IDENTITY-W1 needed the
+ * same projection off a different lookup key. Copying it would have produced two answers to one
+ * question — the exact shape the single-derivation rule exists to prevent — so it is extracted
+ * rather than duplicated. Behaviour is byte-identical to the inlined original.
+ */
+// Derived from the SDK call that produces it rather than from a namespace path: the default
+// export is a constructor whose namespace does not re-export `Customer`, and a derived type
+// cannot drift when the SDK version moves.
+type SearchedCustomer = Awaited<
+  ReturnType<NonNullable<typeof stripe>['customers']['search']>
+>['data'][number];
+
+async function projectResolvedCustomer(customer: SearchedCustomer): Promise<ResolvedCustomer | null> {
+  if (!stripe) return null;
+  // A DELETED customer is genuinely unresolvable — no email, no portal, nothing to manage.
+  if ('deleted' in customer && customer.deleted) return null;
+
+  // ONE list call, `status: 'all'`. The previous code listed `status: 'active'` and could
+  // therefore only ever learn "active or nothing"; this costs the same request and returns
+  // both facts, so neither has to be inferred from the other's absence.
+  const subs = await stripe.subscriptions.list({ customer: customer.id, status: 'all', limit: 10 });
+  const active = subs.data.find((s) => s.status === 'active') ?? null;
+  // Newest-first is Stripe's documented list order, so [0] is the most recent subscription —
+  // the one whose status a human would recognise as "their current billing state".
+  const relevant = active ?? subs.data[0] ?? null;
+
+  const tier = (customer.metadata?.tier as string) || 'starter';
+  // `customer` is a Customer | DeletedCustomer union in the SDK types; a deleted
+  // customer carries no email. Guard rather than cast so a deleted-but-searchable
+  // record degrades to "unreachable" instead of throwing.
+  const email = 'email' in customer && typeof customer.email === 'string' ? customer.email : null;
+  return {
+    customerId: customer.id,
+    tier,
+    email,
+    subscriptionStatus: relevant?.status ?? null,
+    hasActiveSubscription: active !== null,
+  };
 }
 
 /**
@@ -985,6 +1005,62 @@ export async function getCustomerByEmail(email: string): Promise<{ apiKey: strin
   } catch (err) {
     console.error('Stripe getCustomerByEmail error:', err instanceof Error ? err.message : err);
     return null;
+  }
+}
+
+/**
+ * REACHABILITY BY EMAIL — the sign-in sibling of `resolveCustomerByApiKey`.
+ *
+ * ── 🛑 WHY THIS IS NOT `getCustomerByEmail` ─────────────────────────────────────────────────
+ * `getCustomerByEmail` is the ENTITLEMENT question ("may this person's key call the API?") and
+ * returns null for anyone who is not ENTITLED/DUNNING. Sign-in asks the IDENTITY question
+ * ("which credential belongs to this verified human?"), and the answer must not depend on
+ * billing state — a `past_due` or cancelled customer needs their key MORE than an active one
+ * does, because the billing portal is where a failed card gets fixed. That is the same
+ * reachability-vs-entitlement split `accountPortalHandler` already documents; this is its
+ * by-email half.
+ *
+ * ── 🛑 WHY THE RETURN IS THREE-STATE ────────────────────────────────────────────────────────
+ * Measured (`cus_UepUXyDjxzx99c`, 2026-07-17): every sign-in surface minted a free key for any
+ * email, so a paying customer was handed an `av_free_` key 27 minutes before her upgrade
+ * invoice and could no longer reach her own billing portal. Collapsing "Stripe says no such
+ * customer" and "Stripe did not answer" into one null would rebuild exactly that defect on
+ * every Stripe outage, silently, for every paying customer who signed in during it. NOT_FOUND
+ * is a fact; INDETERMINATE is the absence of one, and the caller must not mint on it.
+ *
+ * `isStripeConfigured() === false` is deliberately NOT_FOUND, not INDETERMINATE: a deployment
+ * with no Stripe key has no paid customers to shadow, and that is the state of every local dev
+ * run and the whole test suite. Treating it as INDETERMINATE would refuse free sign-up there.
+ */
+export type CustomerByEmailLookup =
+  | { outcome: 'RESOLVED'; customer: ResolvedCustomer; apiKey: string }
+  | { outcome: 'NOT_FOUND' }
+  | { outcome: 'INDETERMINATE' };
+
+export async function resolveCustomerByEmail(email: string): Promise<CustomerByEmailLookup> {
+  if (!stripe) return { outcome: 'NOT_FOUND' };
+  // Format-validated before interpolation into the search query — same guard as the entitlement
+  // lookup above, and the reason the quoting there is safe.
+  if (!EMAIL_RE.test(email)) return { outcome: 'NOT_FOUND' };
+
+  try {
+    const customers = await stripe.customers.search({ query: `email:'${email}'`, limit: 1 });
+    if (customers.data.length === 0) return { outcome: 'NOT_FOUND' };
+
+    const raw = customers.data[0];
+    const apiKey = raw.metadata?.api_key;
+    // No credential on the record is a FACT, not an outage: there is nothing to hand back, and
+    // the human belongs on the key-recovery path rather than on a minted free key.
+    if (!apiKey) return { outcome: 'NOT_FOUND' };
+
+    const customer = await projectResolvedCustomer(raw);
+    if (!customer) return { outcome: 'NOT_FOUND' };
+    return { outcome: 'RESOLVED', customer, apiKey };
+  } catch (err) {
+    // Stripe is configured and did not answer. Say so; never let a caller read this as "free".
+    recordIndeterminate('stripe_resolve_customer_by_email');
+    console.error('Stripe resolveCustomerByEmail error:', err instanceof Error ? err.message : err);
+    return { outcome: 'INDETERMINATE' };
   }
 }
 

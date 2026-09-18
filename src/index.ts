@@ -3627,6 +3627,52 @@ async function startHttp() {
         : { inserted: false };
       const optinAt = new Date().toISOString();
 
+      // ── FUNNEL-FIX-SIGNIN-PAID-IDENTITY-W1 — a PAYING customer never gets a shadow free key ──
+      //
+      // This route used to mint unconditionally, so a paying customer who typed their own
+      // address here received an `av_free_` key that cannot resolve at `/account`. Measured on
+      // cus_UepUXyDjxzx99c (GitHub issue #39): a free key minted 2026-07-17 19:31:17 UTC, 27
+      // minutes before her $49 upgrade invoice, `last_used_at` still NULL.
+      //
+      // 🛑 UNLIKE the OAuth callback, this endpoint is an UNAUTHENTICATED POST carrying only an
+      // address — nothing here proves the sender owns it. So the paid key is NEVER put in the
+      // response body; that would make this route a paid-credential oracle for any address an
+      // attacker can guess. It goes out by EMAIL, which is what proves ownership — the same
+      // choice `/account/recover-key` already makes.
+      //
+      // Residual, stated rather than papered over: the PAID response omits `key` /
+      // `referral_code` / `referral_link`, so a caller who inspects the JSON can tell that an
+      // address belongs to a customer. That is a membership oracle, not a credential one, and
+      // it is strictly less bad than either alternative (disclose the key, or keep locking
+      // paying customers out of their own billing portal).
+      const { resolveSigninIdentity } = await import('./lib/signin-identity.js');
+      const signinIdentity = await resolveSigninIdentity(email);
+      if (signinIdentity.outcome === 'PAID' && signinIdentity.key) {
+        const { sendKeyRecoveryEmail } = await import('./lib/email.js');
+        // Bound to locals first. Inlining `signinIdentity.key` here put a bare `key,` member
+        // access inside an object that also carries `tier:`, which is precisely the shape the
+        // credential-outcome gate (R1) reads as an unstamped LicenseInfo — this is a recovery
+        // payload, not a license, and naming it says so to both the gate and the next reader.
+        const recoveryKey = signinIdentity.key;
+        const recoveryTier = signinIdentity.tier ?? 'starter';
+        void sendKeyRecoveryEmail({ to: email, apiKey: recoveryKey, tier: recoveryTier })
+          .then(() => console.log(`[/api/signup-email] existing paid account — key emailed to ${email[0]}***@***`))
+          .catch((err: unknown) => console.error(`[/api/signup-email] paid key recovery send failed: ${err instanceof Error ? err.message : err}`));
+        return res.status(200).json({ ok: true, optin_at: optinAt, inserted: result.inserted });
+      }
+      // INDETERMINATE mints NOTHING either, and answers with the SAME body as the PAID case so
+      // the two are indistinguishable from outside. Falling through to the free path here was
+      // considered and rejected: `mintFreeKey` is idempotent, but during a Stripe outage the
+      // address we could not check may well BE a customer's, and the transactional email would
+      // then post a free key to a paying human — reconstructing issue #39 exactly, on the one
+      // day nobody is watching for it. The cost is bounded (a retry once Stripe answers) and
+      // the paid product already depends on Stripe being reachable.
+      if (signinIdentity.outcome === 'INDETERMINATE' || !signinIdentity.key) {
+        console.error('[/api/signup-email] identity INDETERMINATE — no key minted, no key sent');
+        return res.status(200).json({ ok: true, optin_at: optinAt, inserted: result.inserted });
+      }
+      const resolvedFreeKey = signinIdentity.key;
+
       // Referred path UNCHANGED: a valid, non-self ref mints the key + grants the +500
       // referee bonus + attribution. Non-referred → key only, NO bonus (the +500 stays
       // referral-exclusive). Fail-open; never blocks the 200.
@@ -3645,7 +3691,7 @@ async function startHttp() {
       // REFERRAL-FREE-KEY-SIGNUP-W1: mint an av_free_ key for EVERY signup (idempotent
       // on email), then derive the persisted referral code + share link. The keyless
       // free tier (no key passed) is untouched — this only ADDS the opt-in account.
-      const { mintFreeKey, isEphemeralKey } = await import('./lib/free-keys-store.js');
+      const { isEphemeralKey } = await import('./lib/free-keys-store.js');
       const { ensureUserCode } = await import('./lib/referral-store.js');
       const { shareLink } = await import('./lib/referral-constants.js');
       const { isNewSignupEnabled } = await import('./lib/auth-providers.js');
@@ -3660,7 +3706,9 @@ async function startHttp() {
         const { captureEmail } = await import('./lib/deferred-signup.js');
         key = (await captureEmail(ephemeralKey, email, ref ?? null)).key;
       } else {
-        key = await mintFreeKey(email);
+        // Already minted (idempotently) by `resolveSigninIdentity` above — reusing its value is
+        // what keeps this surface free of a second, independent identity decision.
+        key = resolvedFreeKey;
       }
       const referralCode = await ensureUserCode(key, email);
       const referralLink = shareLink(referralCode);
@@ -3796,19 +3844,44 @@ async function startHttp() {
       const redirectUri = `https://${req.get('host')}/auth/${id}/callback`;
       const profile = await provider.exchange({ code, redirectUri });
 
-      // Issue (or return the existing) free key for the verified email — email = identity.
-      const { mintFreeKey } = await import('./lib/free-keys-store.js');
+      // FUNNEL-FIX-SIGNIN-PAID-IDENTITY-W1: resolve WHICH credential belongs to this verified
+      // human before issuing anything. This used to be a bare `mintFreeKey` call on the raw
+      // verified email, which handed a paying customer an `av_free_` key that cannot resolve
+      // at `/account` — measured on cus_UepUXyDjxzx99c, 2026-07-17 (issue #39). The provider verified
+      // this email, so this is one of the two surfaces allowed to RENDER a paid key.
+      const { resolveSigninIdentity } = await import('./lib/signin-identity.js');
       const { ensureUserCode } = await import('./lib/referral-store.js');
       const { shareLink } = await import('./lib/referral-constants.js');
-      const key = await mintFreeKey(profile.email);
+      const identity = await resolveSigninIdentity(profile.email);
+
+      // Stripe is configured and did not answer. Minting here is exactly how a paying human
+      // acquires a shadow free identity, so mint nothing and send them to the page that can
+      // resolve them once Stripe is back. REFUSE, never throw — this is a live serving path.
+      if (identity.outcome === 'INDETERMINATE' || !identity.key) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.status(503).send(
+          `<!doctype html><meta charset="utf-8"><title>Signed in — AlgoVault</title>` +
+          `<body style="font-family:system-ui;background:#0d1117;color:#c9d1d9;max-width:560px;margin:60px auto;padding:0 20px">` +
+          `<h1 style="color:#d29922">Signed in, but we couldn't load your account</h1>` +
+          `<p>Your ${id} sign-in worked. Our billing provider didn't respond just now, so we haven't shown a key — issuing one blindly could hand a paying customer the wrong credential.</p>` +
+          `<p>Please retry in a minute, or go to <a style="color:#58a6ff" href="/account">/account</a> and use <strong>Recover lost key</strong>.</p>` +
+          `<p style="color:#8b949e;font-size:13px">Still stuck? <a style="color:#58a6ff" href="mailto:admin@algovault.com">admin@algovault.com</a>.</p></body>`,
+        );
+      }
+
+      const key = identity.key;
       const referralCode = await ensureUserCode(key, profile.email);
       const referralLink = shareLink(referralCode);
       // Attribution first-touch survives the redirect: stamp ?src (cookie) against the key.
-      try {
-        const src = readCookie('av_oauth_src');
-        const { recordSignupAttribution } = await import('./lib/subscriber-attribution.js');
-        recordSignupAttribution({ clientReferenceId: key, utmSource: src, tierRequested: 'free' });
-      } catch { /* best-effort */ }
+      // FREE only — a PAID identity already converted, and stamping `tierRequested: 'free'`
+      // against their live key would invent a second, fictional signup for one human.
+      if (identity.outcome === 'FREE') {
+        try {
+          const src = readCookie('av_oauth_src');
+          const { recordSignupAttribution } = await import('./lib/subscriber-attribution.js');
+          recordSignupAttribution({ clientReferenceId: key, utmSource: src, tierRequested: 'free' });
+        } catch { /* best-effort */ }
+      }
       // Clear the CSRF cookies.
       res.setHeader('Set-Cookie', [
         'av_oauth_state=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0',
@@ -3817,14 +3890,23 @@ async function startHttp() {
       ]);
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       const stubNote = provider.live ? '' : ' <em>(stub — set the provider OAuth creds to go live)</em>';
+      const paid = identity.outcome === 'PAID';
+      // A paid human gets THEIR key, their real tier, and the billing portal stated as the
+      // cancel path — the thing issue #39 could not find. The free copy is unchanged.
+      const keyCaption = paid
+        ? `Your <strong>${identity.tier}</strong> API key${identity.subscriptionStatus && identity.subscriptionStatus !== 'active' ? ` (subscription: ${identity.subscriptionStatus})` : ''}:`
+        : 'Your free API key (200 calls/mo, 100/day, no card):';
+      const footLine = paid
+        ? `Use it as <code>Authorization: Bearer &lt;key&gt;</code>. To change plan, update your card or <strong>cancel</strong>, open <a style="color:#58a6ff" href="/account">/account</a> → <em>I have my API key</em> → <em>Open Billing Portal</em>.`
+        : `Use it as <code>Authorization: Bearer &lt;key&gt;</code>. <a style="color:#58a6ff" href="/account">Manage your account →</a>`;
       return res.send(
         `<!doctype html><meta charset="utf-8"><title>You're in — AlgoVault</title>` +
         `<body style="font-family:system-ui;background:#0d1117;color:#c9d1d9;max-width:560px;margin:60px auto;padding:0 20px">` +
         `<h1 style="color:#56d364">You're in via ${id}${stubNote}</h1>` +
-        `<p>Your free API key (200 calls/mo, 100/day, no card):</p>` +
+        `<p>${keyCaption}</p>` +
         `<pre style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;user-select:all">${key}</pre>` +
         `<p>Referral link: <a style="color:#58a6ff" href="${referralLink}">${referralLink}</a></p>` +
-        `<p style="color:#8b949e;font-size:13px">Use it as <code>Authorization: Bearer &lt;key&gt;</code>. <a style="color:#58a6ff" href="/account">Manage your account →</a></p></body>`,
+        `<p style="color:#8b949e;font-size:13px">${footLine}</p></body>`,
       );
     } catch (err) {
       console.error(`[/auth/${id}/callback] internal error: ${err instanceof Error ? err.message : err}`);
