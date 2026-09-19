@@ -238,3 +238,159 @@ jobs:
           done
           echo "DIST_TAG_FAIL: dist-tags.latest still doesn't match after 60s"
           exit 1
+
+      # ─── OPS-SMITHERY-PUBLISH-LANE-W1 R3 — re-scan the Smithery listing, then VERIFY it ─────
+      #
+      # Smithery stores a SNAPSHOT of a server's tool list at publish time and never revisits it.
+      # `algovault/crypto-quant-signal-mcp` was submitted 2026-04-10 and never republished, so for
+      # five months a search-ranked listing advertised 3 tools and "across 5 perp venues" while the
+      # origin served 8. A one-off republish only resets that clock. This step is the generator
+      # fix: every tag that publishes a version also re-scans, and the lane fails closed.
+      #
+      # ── THE RACE THIS STEP'S FIRST PHASE EXISTS TO CLOSE ───────────────────────────────────
+      #
+      # `deploy.yml` triggers on `push: branches: [main]`; this workflow triggers on `push: tags`.
+      # The release ritual lands FIRST and tags second, so the two run CONCURRENTLY — and this
+      # lane (240 lines) finishes long before deploy.yml (1189 lines, docker build + SSH). A
+      # re-scan fired at the end of the tag workflow would therefore scan the PREVIOUS build's
+      # origin and write a stale snapshot carrying a FRESH timestamp, which is strictly worse than
+      # the drift being repaired: it would look repaired and be wrong. So phase 1 polls the origin
+      # until it reports the tag's own version, and reports INDETERMINATE rather than scanning
+      # something it cannot vouch for.
+      #
+      # ── WHY TWO TOKENS ────────────────────────────────────────────────────────────────────
+      #
+      # The verification read is a PUBLIC endpoint, so it works with or without a credential —
+      # deliberately, because a missing key must never suppress detection of real drift. But with
+      # one token `exit 0` would encode both "we re-scanned and the listing agrees" and "we could
+      # not re-scan and the stale listing happens to agree", which is exactly what the verdict-
+      # token law forbids. A missing key would then ride silently on an unchanged tool set and
+      # surface only at the next release that CHANGES tools — the worst possible moment. So the
+      # step emits a second, independent line:
+      #
+      #   SMITHERY_SYNC_VERDICT=PASS|FAIL|INDETERMINATE   the CONTENT verdict
+      #   SMITHERY_RESCAN=OK|SKIPPED_NO_CREDENTIAL|FAILED|NOT_ATTEMPTED   what the re-scan DID
+      #
+      # Both are printed AFTER the gate's own output, so `grep … | tail -1` always reads the
+      # lane's authoritative state and never the gate's standalone NOT_ATTEMPTED placeholder. The
+      # matrix below is `decideLaneOutcome()` in scripts/check-smithery-sync.mjs, where it is
+      # asserted by a self-test that RUNS it — this YAML is not exercised pre-merge by anything.
+      #
+      # 🛑 NO `continue-on-error` ON THIS STEP, EVER. A sibling repo answered this exact API's
+      # auth quirk with `continue-on-error: true`, and that surface then went stale in silence for
+      # months — which is the failure mode this step exists to retire. A fail-open lever may
+      # downgrade an exit code; it may never launder the token into a pass.
+      #
+      # 🛑 The secret is bound on THIS STEP ONLY, never at job level: a job-level `env:` would put
+      # it in scope of the publish step, whose whole invariant is that it carries no token env.
+      - name: Re-scan the Smithery listing and verify it against the live origin
+        env:
+          SMITHERY_API_KEY: ${{ secrets.SMITHERY_API_KEY }}
+        run: |
+          set -uo pipefail
+
+          # SINGLE DERIVATION of the slug; the %2F form is computed, never a second literal.
+          QUALIFIED='algovault/crypto-quant-signal-mcp'
+          ENC="${QUALIFIED/\//%2F}"
+          ORIGIN='https://api.algovault.com'
+          TARGET_VERSION="${GITHUB_REF_NAME#v}"
+          RESCAN=NOT_ATTEMPTED
+
+          # ── phase 1 — readiness poll (closes the deploy.yml race described above) ──────────
+          echo "waiting for $ORIGIN/health to report ${TARGET_VERSION} — deploy.yml runs concurrently"
+          READY=no
+          for i in $(seq 1 45); do
+            LIVE=$(curl -sS --max-time 15 "$ORIGIN/health" 2>/dev/null | jq -r '.version // empty' 2>/dev/null)
+            if [ "${LIVE:-}" = "$TARGET_VERSION" ]; then
+              READY=yes
+              echo "origin reports ${LIVE} after $(( (i - 1) * 20 ))s — safe to scan"
+              break
+            fi
+            echo "attempt ${i}/45: origin reports '${LIVE:-unreachable}', want ${TARGET_VERSION}"
+            sleep 20
+          done
+
+          if [ "$READY" != yes ]; then
+            echo "::warning::the origin never reported ${TARGET_VERSION} within 15 minutes, so the re-scan was NOT fired — scanning now would snapshot the PREVIOUS build under a fresh timestamp, which is worse than the drift it repairs. The npm publish above SUCCEEDED and is not affected. Re-run this workflow once deploy.yml has finished."
+            echo "SMITHERY_RESCAN=NOT_ATTEMPTED"
+            echo "SMITHERY_SYNC_VERDICT=INDETERMINATE"
+            exit 0
+          fi
+
+          # ── phase 2 — the re-scan ─────────────────────────────────────────────────────────
+          # `PUT /servers/{q}/releases` is multipart with ONE field for an external server:
+          # payload = {"type":"external","upstreamUrl":"…"}. Confirmed against both published CLI
+          # bundles and measured live (202 + deploymentId + status WORKING → SUCCESS).
+          if [ -z "${SMITHERY_API_KEY:-}" ]; then
+            RESCAN=SKIPPED_NO_CREDENTIAL
+            echo "::warning::SMITHERY_API_KEY is not set, so the listing was NOT re-scanned. The verification below still runs — the listing read needs no credential — so real drift is still DETECTED; what is lost is the recovery, not the detection."
+          else
+            # The key goes in a 600-mode curl config, never in argv: a bearer on a command line is
+            # visible to `ps` and to any `set -x` a later edit might add.
+            CURL_CFG=$(mktemp)
+            chmod 600 "$CURL_CFG"
+            printf 'header = "Authorization: Bearer %s"\n' "$SMITHERY_API_KEY" > "$CURL_CFG"
+            trap 'rm -f "$CURL_CFG"' EXIT
+
+            HTTP=$(curl -sS --config "$CURL_CFG" -o /tmp/smithery_rescan.json -w '%{http_code}' \
+              -X PUT "https://api.smithery.ai/servers/${ENC}/releases" \
+              -F "payload={\"type\":\"external\",\"upstreamUrl\":\"${ORIGIN}/mcp\"}" 2>/dev/null)
+
+            if [ "${HTTP:-000}" != 202 ] && [ "${HTTP:-000}" != 200 ]; then
+              RESCAN=FAILED
+              echo "::error::the Smithery re-scan was refused: HTTP ${HTTP:-000}"
+              head -c 2000 /tmp/smithery_rescan.json || true
+            else
+              DEPLOY_ID=$(jq -r '.deploymentId // empty' /tmp/smithery_rescan.json)
+              echo "re-scan accepted: deploymentId=${DEPLOY_ID:-<none>}"
+              RESCAN=FAILED
+              # The CLI's exit code is NOT a verdict — in non-TTY it returns PENDING immediately
+              # and forks a detached watcher. Poll the deployment to a terminal status ourselves.
+              for i in $(seq 1 60); do
+                STATUS=$(curl -sS --config "$CURL_CFG" --max-time 15 \
+                  "https://api.smithery.ai/servers/${ENC}/releases/${DEPLOY_ID}" 2>/dev/null \
+                  | jq -r '.status // empty' 2>/dev/null)
+                echo "deployment ${DEPLOY_ID} status: ${STATUS:-unreachable}"
+                case "${STATUS:-}" in
+                  SUCCESS) RESCAN=OK; break ;;
+                  FAILED|ERROR|CANCELLED)
+                    echo "::error::the Smithery re-scan reached terminal status ${STATUS}"
+                    break ;;
+                esac
+                sleep 5
+              done
+            fi
+            rm -f "$CURL_CFG"
+            trap - EXIT
+          fi
+
+          # ── phase 3 — verify, and branch on the TOKENS, never on an exit code ─────────────
+          node scripts/check-smithery-sync.mjs 2>&1 | tee /tmp/smithery_sync.log
+          SYNC=$(grep -oE 'SMITHERY_SYNC_VERDICT=[A-Z_]+' /tmp/smithery_sync.log | tail -1 | cut -d= -f2)
+
+          echo "SMITHERY_RESCAN=${RESCAN}"
+          echo "SMITHERY_SYNC_VERDICT=${SYNC:-NO_TOKEN_EMITTED}"
+
+          case "${SYNC:-}" in
+            FAIL)
+              echo "::error::the Smithery listing does not match the live origin — see the divergence named above. The npm publish SUCCEEDED; this step fails so the catalogue drift is not silently inherited by the next release."
+              exit 1 ;;
+            INDETERMINATE)
+              echo "::warning::the sync gate could not verify the listing (origin or Smithery unreachable) — this is not a divergence signal, and the npm publish is unaffected."
+              exit 0 ;;
+            PASS)
+              case "${RESCAN}" in
+                OK)
+                  echo "the Smithery listing was re-scanned and matches the live origin"
+                  exit 0 ;;
+                SKIPPED_NO_CREDENTIAL|NOT_ATTEMPTED)
+                  echo "::warning::the listing matches the live origin, but NO re-scan was performed (SMITHERY_RESCAN=${RESCAN}) — it is correct by luck, not by verification. Restore SMITHERY_API_KEY before the next release that changes the tool set."
+                  exit 0 ;;
+                *)
+                  echo "::error::the re-scan was ATTEMPTED and did not succeed (SMITHERY_RESCAN=${RESCAN}). The listing happens to agree today, which does not make a broken re-scan acceptable — the next tool change would ship undetected."
+                  exit 1 ;;
+              esac ;;
+            *)
+              echo "::error::the sync gate emitted no verdict token (${SYNC:-NO_TOKEN_EMITTED}). A gate that dies token-less is never a pass."
+              exit 1 ;;
+          esac
