@@ -659,6 +659,26 @@ jobs:
           V="$(printf '%s\n' "$OUT" | grep -oE '^FORBIDDEN_PHRASE_VERDICT=[A-Z]+' | tail -1)"
           test "$V" = "FORBIDDEN_PHRASE_VERDICT=PASS" || { echo "::error::$V"; exit 1; }
 
+      # OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 CH2. The gate above bans retired TEXT; this one
+      # asserts that a primitive we NAME actually RESOLVES — an npm package that is CLI-invocable,
+      # an MCP tool that is on the live tools/list. P16/full-3-tool-pipeline shipped an npx line for
+      # a 404 scope and two bin:null stubs because no predicate in the org could express either.
+      #
+      # 🛑 GATES ON THE TOKEN, NEVER THE BARE EXIT CODE. INDETERMINATE is 3, and a shell testing for
+      # "not 1" would read it as a pass — the fail-open this gate exists to prevent. A 404 is a
+      # measurement and FAILs; an unreachable npm or tools/list is INDETERMINATE and BLOCKS, because
+      # a deploy that verified nothing must not be indistinguishable from one that verified
+      # everything.
+      - name: Primitive resolution gate (fail-closed)
+        run: |
+          node scripts/check-primitive-resolution.mjs --self-test
+          set +e
+          OUT="$(node scripts/check-primitive-resolution.mjs 2>&1)"
+          set -e
+          printf '%s\n' "$OUT"
+          V="$(printf '%s\n' "$OUT" | grep -oE '^PRIMITIVE_RESOLUTION_VERDICT=[A-Z]+' | tail -1)"
+          test "$V" = "PRIMITIVE_RESOLUTION_VERDICT=PASS" || { echo "::error::$V"; exit 1; }
+
       # OPS-PLANS-PUBLIC-ENTERPRISE-DEPRICE-W1 CH2. The forbidden-phrase gate above globs FILES, so
       # a value published by a RUNTIME PROJECTION is structurally invisible to it — that is how
       # /api/plans/public came to serve `price_usd: 299` on the enterprise rung, unauthenticated and
