@@ -1,6 +1,6 @@
 {
   "generated_by": "scripts/check-map-edges.mjs --sync (edge-class grammar 2)",
-  "extracted_from_corpus_sha256": "fe0440508678a780585ab0e838db03575c6d6dba386cafaff3346e3fbdbf4c45",
+  "extracted_from_corpus_sha256": "9ba4a661718853c39c1d0fa4765aae16491dce35cea0c44b3332fef35ffa1e9d",
   "components": [
     "Plausible CE",
     "algovault-blog-assets",
@@ -24,6 +24,7 @@
   ],
   "surfaces_referenced": [
     "Anthropic plugins marketplace",
+    "Cursor",
     "Medium",
     "Smithery",
     "Telegram Bot",
@@ -105,6 +106,7 @@
     "crypto-quant-signal-mcp:produces:debt:4=tight",
     "crypto-quant-signal-mcp:produces:debt:5=tight",
     "crypto-quant-signal-mcp:produces:debt:6=tight",
+    "crypto-quant-signal-mcp:produces:ext:Cursor=tight",
     "crypto-quant-signal-mcp:produces:ext:Smithery=tight",
     "crypto-quant-signal-mcp:produces:ext:Telegram Bot=tight",
     "crypto-quant-signal-mcp:produces:infra:1=tight",
