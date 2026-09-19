@@ -124,11 +124,18 @@ const PATTERNS = [
   // `npm i|install <pkg>` — SAME LINE ONLY. `\s+` crosses a newline, and a code block reading
   // `npm install\nnpm run build` then yields the package name "npm". A bare `npm install` with
   // no argument installs from the lockfile and is not a partner coordinate at all.
-  { kind: 'npm', re: /npm[ \t]+(?:i|install)[ \t]+(?:-g[ \t]+)?(@?[a-z0-9][a-z0-9._/-]*(?:@[0-9][^\s"'`<>)]*)?)/g },
+  // ── `invocation` — OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 CH2, and it is what keeps the
+  // `bin` leg below from false-DRIFTing. `bin` non-null is a property of a CLI-INVOKED package,
+  // NOT of a real one. Measured 2026-09-19: @modelcontextprotocol/sdk, zod and express are all
+  // has_bin=false and all correct. The install FORM is the evidence, so each pattern carries it:
+  // `npm install -g X` and `npx X` run X, `npm install X` imports it, and a bare backticked
+  // `X@ver` says nothing either way and keeps the published-versions-exist predicate.
+  { kind: 'npm', invocation: 'cli', re: /npm[ \t]+(?:i|install)[ \t]+-g[ \t]+(@?[a-z0-9][a-z0-9._/-]*(?:@[0-9][^\s"'`<>)]*)?)/g },
+  { kind: 'npm', invocation: 'library', re: /npm[ \t]+(?:i|install)[ \t]+(@?[a-z0-9][a-z0-9._/-]*(?:@[0-9][^\s"'`<>)]*)?)/g },
   // `npx [flags] <pkg>` — the form `@smithery/cli` ships in on the smithery tutorial.
-  { kind: 'npm', re: /npx[ \t]+(?:-[a-zA-Z-]+[ \t]+)*(@?[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?(?:@[0-9][^\s"'`<>)]*)?)/g },
-  // a backticked `<pkg>@<ver>`
-  { kind: 'npm', re: /`(@?[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?@[0-9][A-Za-z0-9._-]*)`/g },
+  { kind: 'npm', invocation: 'cli', re: /npx[ \t]+(?:-[a-zA-Z-]+[ \t]+)*(@?[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?(?:@[0-9][^\s"'`<>)]*)?)/g },
+  // a backticked `<pkg>@<ver>` — an unknown invocation, deliberately. See `unknown` above.
+  { kind: 'npm', invocation: 'unknown', re: /`(@?[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?@[0-9][A-Za-z0-9._-]*)`/g },
   // `git clone <repo>` — the Gemini kit ships one, and it decays exactly like the others
   { kind: 'git-repo', re: /git[ \t]+clone[ \t]+(https?:\/\/[^\s"'`<>)]+)/g },
   // a remote MCP endpoint on someone else's host.
@@ -142,7 +149,14 @@ const PATTERNS = [
 ];
 
 /** `npx -y`, `npm i -g` and friends are flags, not packages. */
-const NPM_NOISE = new Set(['-y', '-g', '--yes', 'i', 'install', 'npx']);
+// Tokens the install regexes capture that are not package names. `not` was found by
+// OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 CH2: docs/integrations/mcp-clients/claude-desktop.md
+// carries the PROSE "**`npx not found`** (JSON path) — install Node 20+", and the `npx` pattern
+// swallowed the next English word. It is not benign — `not@0.1.0` is a REAL package with no bin,
+// so the incoming `bin` leg would have reported DRIFT on a line that is a troubleshooting note.
+// Fixed here, at extraction, and never by exempting a row: an exemption list is how a bad
+// extraction becomes permanent, and the next prose sentence would reintroduce it.
+const NPM_NOISE = new Set(['-y', '-g', '--yes', 'i', 'install', 'npx', 'not', 'found']);
 
 /**
  * Extract every partner coordinate from one file's text.
@@ -152,7 +166,7 @@ export function extractCoordinates(text, file) {
   const src = file.endsWith('.ts') ? stripComments(text) : text;
   const found = [];
   const seen = new Set();
-  for (const { kind, re, group } of PATTERNS) {
+  for (const { kind, re, group, invocation } of PATTERNS) {
     for (const m of src.matchAll(new RegExp(re.source, re.flags))) {
       let value = (m[group ?? 1] ?? '').trim();
       if (!value) continue;
@@ -169,7 +183,7 @@ export function extractCoordinates(text, file) {
       const key = `${kind}::${value}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      found.push({ kind, value, file, line });
+      found.push({ kind, value, file, line, invocation });
     }
   }
   return found;
@@ -231,7 +245,21 @@ function probeGithubPath(owner, repo, path) {
   }
 }
 
-function probeNpm(spec) {
+/**
+ * `bin` non-null ⟺ the package is CLI-INVOKABLE. Exported and asserted directly, because the
+ * self-test substitutes `probe` wholesale — so this classifier is exactly the logic no scenario
+ * would otherwise execute. Same reasoning as classifyPresenceProbe above.
+ */
+export function classifyNpmBin(invocation, bin, name, latest) {
+  if (invocation !== 'cli') return null;   // library or unknown: publication is the whole predicate
+  const usable = bin !== null && bin !== undefined
+    && (typeof bin === 'string' ? bin.trim().length > 0 : Object.keys(bin).length > 0);
+  return usable
+    ? null
+    : dead(`npm ${name}@${latest} is published but has NO bin — the copy tells a reader to RUN it, and it cannot be run`);
+}
+
+function probeNpm(spec, invocation = 'unknown') {
   const at = spec.lastIndexOf('@');
   const hasVersion = at > 0;
   const name = hasVersion ? spec.slice(0, at) : spec;
@@ -246,7 +274,29 @@ function probeNpm(spec) {
     if (wanted && !all.includes(wanted)) {
       return dead(`npm ${name} — pinned version ${wanted} is not published (latest ${all[all.length - 1]})`);
     }
-    return ok(`npm ${name}${wanted ? `@${wanted}` : ''} → ${wanted ?? all[all.length - 1]}`);
+    const latest = wanted ?? all[all.length - 1];
+
+    // ── The CONDITIONAL bin leg — OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 CH2 commit 2.
+    // Published-versions-exist was never the whole question for a coordinate our copy tells the
+    // reader to RUN. crypto-quant-risk-mcp is published, resolves 200, and is `bin: null` — so a
+    // published-only predicate calls "npx crypto-quant-risk-mcp" resolvable when it cannot execute.
+    // CONDITIONAL, never blanket: measured 2026-09-19, kucoin-universal-sdk in THIS corpus is a
+    // genuine library at has_bin=false, and a blanket leg would report DRIFT on correct data.
+    // A coordinate whose invocation cannot be derived keeps the published-only predicate.
+    if (invocation === 'cli') {
+      try {
+        const raw = execFileSync('npm', ['view', `${name}@${latest}`, 'bin', '--json'], {
+          encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000,
+        }).trim();
+        const bad = classifyNpmBin('cli', raw === '' ? null : JSON.parse(raw), name, latest);
+        if (bad) return bad;
+      } catch (e) {
+        // The bin read failing is NOT evidence the package is broken. Never launder it into dead.
+        return unknown(`npm bin probe failed for ${name}@${latest}: ${String(e.stderr || e.message).replace(/\s+/g, ' ').slice(0, 140)}`);
+      }
+    }
+
+    return ok(`npm ${name}${wanted ? `@${wanted}` : ''} → ${latest}${invocation === 'cli' ? ' (cli: bin present)' : ` (${invocation}: bin not asserted)`}`);
   } catch (e) {
     const msg = String(e.stderr || e.message || '');
     if (/E404|is not in this registry|404 Not Found/i.test(msg)) return dead(`npm ${name} → 404, not published`);
@@ -345,7 +395,7 @@ export function probeCoordinate(coord) {
       if (!m) return unknown(`unparseable skills repo URL: ${coord.value}`);
       return probeGithubPath(m[1], m[2].replace(/\.git$/, ''), 'skills');
     }
-    case 'npm': return probeNpm(coord.value);
+    case 'npm': return probeNpm(coord.value, coord.invocation ?? 'unknown');
     case 'git-repo': {
       const m = coord.value.match(/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/);
       if (!m) return probeDocUrl(coord.value);
@@ -533,6 +583,40 @@ export function selfTest() {
     check(`presence classifier: HTTP ${code} ⇒ ${want}`,
       () => classifyPresenceProbe(code, 'x').state === want || `got ${classifyPresenceProbe(code, 'x').state}`);
   }
+
+  // (4c') The CONDITIONAL bin leg — OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 CH2 commit 2.
+  // Seam-bypassed for the same reason as the presence classifier: `probe` is substituted
+  // wholesale, so classifyNpmBin is decision logic no scenario reaches. Both DIRECTIONS matter —
+  // a leg that never fires and a leg that fires on a library are equally wrong, and the second is
+  // worse, because a gate that pages on correct data is a gate that gets ignored.
+  check('bin leg: cli + bin:null ⇒ fictional (the crypto-quant-risk-mcp shape)',
+    () => classifyNpmBin('cli', null, 'x', '1.0.0')?.state === 'fictional' || 'did not fire');
+  check('bin leg: cli + empty bin object ⇒ fictional',
+    () => classifyNpmBin('cli', {}, 'x', '1.0.0')?.state === 'fictional' || 'did not fire');
+  check('bin leg: cli + a real bin ⇒ no objection',
+    () => classifyNpmBin('cli', { x: 'dist/x.js' }, 'x', '1.0.0') === null || 'objected to a real CLI');
+  check('bin leg: LIBRARY + bin:null ⇒ no objection (kucoin-universal-sdk, measured)',
+    () => classifyNpmBin('library', null, 'x', '1.0.0') === null || 'false-DRIFTed a library');
+  check('bin leg: UNKNOWN invocation keeps the published-only predicate',
+    () => classifyNpmBin('unknown', null, 'x', '1.0.0') === null || 'judged an underivable coordinate');
+
+  // The leg is only worth anything if the invocation reaches it. Assert the extractor labels the
+  // real install FORMS, not just that the classifier is correct in isolation.
+  check('extractor labels `npx X` cli', () => {
+    const c = extractCoordinates('run `npx mcp-remote https://x/mcp`', 'x.md').find((x) => x.value === 'mcp-remote');
+    return c?.invocation === 'cli' || `got ${c?.invocation}`;
+  });
+  check('extractor labels `npm install X` library', () => {
+    const c = extractCoordinates('run `npm install kucoin-universal-sdk`', 'x.md').find((x) => x.value === 'kucoin-universal-sdk');
+    return c?.invocation === 'library' || `got ${c?.invocation}`;
+  });
+  check('extractor labels `npm install -g X` cli', () => {
+    const c = extractCoordinates('run `npm install -g somepkg`', 'x.md').find((x) => x.value === 'somepkg');
+    return c?.invocation === 'cli' || `got ${c?.invocation}`;
+  });
+  check('the `npx not found` PROSE yields no coordinate (fixed at extraction, not by exemption)',
+    () => extractCoordinates('- **`npx not found`** (JSON path) — install Node 20+', 'x.md')
+      .every((c) => c.value !== 'not') || 'extracted `not` from an English sentence');
 
   // (4d) The discriminator must be WIRED, not merely correct. Asserting the pure function leaves
   // a break that deletes its call site invisible — measured.
