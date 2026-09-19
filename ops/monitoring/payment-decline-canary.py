@@ -175,6 +175,74 @@ ALERT_ID = "PAYMENT_DECLINE_DRIFT"
 RECOMMENDED_WAVE = "OPS-PAYMENT-DECLINE-W{NEXT}"
 WRAPPER = "/opt/algovault-monitoring/send_telegram.sh"
 
+# ── Reason classes, and the ACTION each one routes to ───────────────────────────────────
+# 🛑 THE ACTION IS A FUNCTION OF THE REASON, NEVER A TRAILING CONSTANT.
+#
+# Until OPS-PAYMENT-DECLINE-ACTION-ROUTING-W1, `build_body` appended ONE unconditional line —
+# "Action: dispatch <wave> via Cowork → Claude Code" — to every fire body, and `indeterminate`
+# hand-rolled the same sentence a second time. That sentence is correct for exactly TWO of this
+# canary's three fire classes and wrong for the one that actually fires.
+#
+# MEASURED 2026-09-18 07:53Z. The floor fired on three payers. All three were verified
+# `past_due` in LIVE Stripe with open, unpaid invoices — $29.97 of $120.45 book MRR uncollected,
+# one of them (`unpaid`-class, 9 dunning attempts, no next_payment_attempt) permanently
+# uncollectable without a human decision. A true positive, every figure correct. And its only
+# actionable line told the operator to dispatch a CODE WAVE to collect money that no code can
+# collect. The operator read the mismatch as the alert being wrong.
+#
+# So a reason is now a (class, text) PAIR, never a bare string: you cannot append a reason
+# without naming who acts on it, and the Action block is DERIVED from the classes present.
+REASON_FLOOR = "FLOOR_STUCK_PAYERS"   # customers owe money   -> BILLING decision, no code wave
+REASON_RATE = "DECLINE_RATE"          # declines up book-wide -> payment-integration question
+REASON_DARK = "CANARY_DARK"           # the canary is blind   -> code wave
+# Render order. Fixed so two runs carrying the same reasons render byte-identically.
+REASON_CLASSES = (REASON_FLOOR, REASON_RATE, REASON_DARK)
+
+_CODE_WAVE = "dispatch %s via Cowork → Claude Code" % RECOMMENDED_WAVE
+
+ACTION_BY_REASON_CLASS = {
+    REASON_FLOOR: (
+        "Action — BILLING, not engineering: this is money customers owe, and no code wave "
+        "collects it. Per payer above — status `unpaid` means Stripe has EXHAUSTED dunning and "
+        "will never retry, so that payer cannot self-clear and needs a cancel-or-write-off "
+        "decision; status `past_due` means Stripe is still retrying, so leave it unless it goes "
+        "chronic. Dispatch %s only if you believe the FIGURES above are wrong."
+        % RECOMMENDED_WAVE
+    ),
+    REASON_RATE: (
+        "Action — %s: declines are elevated across the whole book, which is a payment-integration "
+        "question rather than a per-customer one." % _CODE_WAVE
+    ),
+    REASON_DARK: (
+        "Action — %s: the canary could not evaluate the book, so this is the canary's own defect "
+        "and not a statement about any payer." % _CODE_WAVE
+    ),
+}
+
+
+def assert_action_exhaustive(classes, mapping):
+    """RAISE unless every reason class has exactly one registered Action, and vice versa.
+
+    🛑 A `raise`, never an `assert`: CLAUDE.md's verification-gates law says an assertion that
+    raises is not an assertion, and a bare `assert` is stripped entirely under `python3 -O` —
+    which would silently restore the exact unconditional-Action defect this wave exists to
+    remove. Called at MODULE LOAD, so a new reason class with no Action fails at import in CI,
+    never as a wrong Action line on a host at 07:53.
+
+    Extracted as a pure function so the self-test can PROVE it fails, by handing it a mapping
+    that is deliberately broken in each direction.
+    """
+    unmapped = [c for c in classes if c not in mapping]
+    unknown = [c for c in mapping if c not in classes]
+    if unmapped or unknown:
+        raise RuntimeError(
+            "ACTION_BY_REASON_CLASS is not exhaustive over REASON_CLASSES: "
+            "unmapped=%r unknown=%r" % (unmapped, unknown))
+    return True
+
+
+assert_action_exhaustive(REASON_CLASSES, ACTION_BY_REASON_CLASS)
+
 PG_CONTAINER = os.environ.get("ALGOVAULT_PG_CONTAINER", "crypto-quant-signal-mcp-postgres-1")
 PG_DB = os.environ.get("ALGOVAULT_PG_DB", "signal_performance")
 LEDGER = os.environ.get("ALGOVAULT_PAYMENT_DECLINE_LEDGER", "/var/lib/algovault-payment-decline/observations.jsonl")
@@ -550,6 +618,9 @@ def classify(payer_states, successes_30d, failures_30d=None, failures_7d=None,
              book_size=None, epoch0_rows=0, linkage_epoch=None):
     """Pure verdict. Returns (verdict, reasons, facts) — no I/O, no clock.
 
+    `reasons` is a list of (REASON_* class, text) PAIRS. The class is what `render_actions`
+    routes on; a bare string would let a new predicate ship with somebody else's Action.
+
     SINGLE DERIVATION: `payer_states` (from `classify_payers`) is the one value. The floor, the
     decomposition, the body and the ledger are all PROJECTIONS of it, so they cannot disagree.
 
@@ -594,20 +665,22 @@ def classify(payer_states, successes_30d, failures_30d=None, failures_7d=None,
 
     # ── THE LIVE PREDICATE. Level-triggered: true on every run until it stops being true. ──
     if len(stuck) >= FLOOR_FAILURES:
-        reasons.append(
+        reasons.append((
+            REASON_FLOOR,
             "ABSOLUTE FLOOR breached: %d payers currently have money stuck (threshold >= %d)"
             % (len(stuck), FLOOR_FAILURES)
-        )
+        ))
 
     # Rate predicate — structurally inert below MIN_N. Unchanged.
     if n >= MIN_N and facts["decline_rate_pct_30d"] is not None:
         if facts["decline_rate_pct_30d"] > DECLINE_RATE_PCT_MAX:
-            reasons.append(
+            reasons.append((
+                REASON_RATE,
                 "DECLINE RATE %.1f%% over Last %dd exceeds %.1f%% (n=%d: %d failing instruments / "
                 "%d converted)"
                 % (facts["decline_rate_pct_30d"], RATE_WINDOW_DAYS, DECLINE_RATE_PCT_MAX,
                    n, failures_30d or 0, successes_30d)
-            )
+            ))
 
     return ("FAIL" if reasons else "PASS"), reasons, facts
 
@@ -667,9 +740,33 @@ def flatten_payer_line(rendered):
     return " | ".join(ln.strip() for ln in rendered.splitlines() if ln.strip())
 
 
+def render_actions(reasons):
+    """The Action block, derived from the reason CLASSES present. The ONE derivation.
+
+    Both fire paths route through here — `build_body` for a verdict and `indeterminate` for a
+    blind run — so the two can no longer drift the way they did when each hand-rolled its own
+    trailing sentence.
+
+    HONEST SCOPE: this is an ALLOW-LIST. It routes classes that are REGISTERED, not all
+    conceivable ones. An unregistered class therefore fails toward NOISE — it renders a
+    self-announcing UNROUTED line naming the class — never toward a plausible-looking Action
+    that happens to be wrong, which is the failure mode this whole wave is about. Module load
+    already refuses that state; this branch covers a caller that hands us a class directly.
+    """
+    present = [rc for rc, _ in reasons]
+    unrouted = sorted({rc for rc in present if rc not in ACTION_BY_REASON_CLASS})
+    out = [ACTION_BY_REASON_CLASS[c] for c in REASON_CLASSES if c in present]
+    if unrouted:
+        out.append(
+            "🛑 UNROUTED reason %s: %s — no Action is registered for it, so this line is the "
+            "canary reporting its OWN defect, not a statement about any payer. Dispatch %s."
+            % (_plural(len(unrouted), "class", "classes"), ", ".join(unrouted), RECOMMENDED_WAVE))
+    return out
+
+
 def build_body(reasons, facts, payer_states=None):
     lines = ["🛑 %s" % ALERT_ID]
-    lines.extend(reasons)
+    lines.extend(text for _, text in reasons)
     lines.append(
         "%d of %d payers in the book have money stuck — %d new (first failure inside %dd), "
         "%d chronic, %d undated."
@@ -726,7 +823,7 @@ def build_body(reasons, facts, payer_states=None):
             "⚠️ %d failure %s an epoch-0 timestamp and %s excluded from every age above."
             % (facts["epoch0_rows"], _plural(facts["epoch0_rows"], "row carries", "rows carry"),
                _plural(facts["epoch0_rows"], "was", "were")))
-    lines.append("Action: dispatch %s via Cowork → Claude Code" % RECOMMENDED_WAVE)
+    lines.extend(render_actions(reasons))
     return "\n".join(lines)
 
 
@@ -893,8 +990,11 @@ def dispatch_clear(reason):
 def indeterminate(detail, facts=None):
     """One exit path for every 'we could not verify'. Fires, ledgers, publishes, returns 3."""
     log("INDETERMINATE: %s" % detail)
-    fire("🛑 %s\nCanary could not evaluate the subscriber book — decline monitoring is DARK.\n%s\n"
-         "Action: dispatch %s via Cowork → Claude Code" % (ALERT_ID, str(detail)[:300], RECOMMENDED_WAVE))
+    body = ["🛑 %s" % ALERT_ID,
+            "Canary could not evaluate the subscriber book — decline monitoring is DARK.",
+            str(detail)[:300]]
+    body.extend(render_actions([(REASON_DARK, "")]))
+    fire("\n".join(body))
     append_observation(facts or {}, "INDETERMINATE")
     emit_result("INDETERMINATE", EXIT_INDETERMINATE, facts or {})
     print("PAYMENT_DECLINE_VERDICT=INDETERMINATE")
@@ -987,7 +1087,7 @@ def main():
 # 🛑 EVERY FIXTURE BELOW IS SYNTHETIC. Earlier rungs of this file pasted live Stripe customer
 # ids and a raw cross-merchant card fingerprint into prose that ships in a PUBLIC repo; this
 # wave redacted them. Use `cus_TEST…` / `card:v1:aaaa…` and never a real handle.
-SELF_TEST_MIN_CHECKS = 139
+SELF_TEST_MIN_CHECKS = 150
 
 
 def _read_last_json(path):
@@ -1118,7 +1218,7 @@ def self_test():
              _pr(KEY_C, "cus_TESTCCC", "past_due", T_C, T_C, 4)]
     v3, r3, f3 = classify(classify_payers(three, NOW), successes_30d=4, failures_30d=3)
     check("three genuinely stuck payers DO page — the alarm is not disarmed",
-          v3 == "FAIL" and f3["stuck_payers"] == 3 and any("FLOOR" in x for x in r3))
+          v3 == "FAIL" and f3["stuck_payers"] == 3 and any(rc == REASON_FLOOR for rc, _ in r3))
 
     # ── THE F3 FIX: a payer Stripe has STOPPED retrying stays visible ─────────────────────
     # This is the assertion that fails under the rejected window-derived design. Card C's last
@@ -1167,7 +1267,7 @@ def self_test():
     check("an unknown-status payer counts", fo["unknown_status"] == 1)
     check("...and neither silently poisons the whole run to INDETERMINATE",
           vo == "PASS" and fo["stuck_payers"] == 2)
-    bo = build_body(["x"], fo, classify_payers(odd, NOW))
+    bo = build_body([(REASON_FLOOR, "x")], fo, classify_payers(odd, NOW))
     check("...the body NAMES the unattributed class and its generator",
           "NO subscriber_profiles row" in bo and "handleSubscriptionCreated" in bo)
     check("...and names the unknown-status class",
@@ -1326,11 +1426,11 @@ def self_test():
                              successes_30d=1, failures_30d=2)
     check("rate predicate INERT below MIN_N", f_lo["rate_predicate"].startswith("INERT"))
     check("...and a high rate below MIN_N does NOT fire it",
-          not any("DECLINE RATE" in x for x in r_lo))
+          not any(rc == REASON_RATE for rc, _ in r_lo))
     v_hi, r_hi, f_hi = classify([], successes_30d=10, failures_30d=15)
     check("n >= MIN_N activates the rate predicate", f_hi["rate_predicate"] == "ACTIVE")
     check("...and a rate breach above MIN_N ⇒ FAIL",
-          v_hi == "FAIL" and any("DECLINE RATE" in x for x in r_hi))
+          v_hi == "FAIL" and any("DECLINE RATE" in t for _, t in r_hi))
     v_e, r_e, f_e = classify([], successes_30d=0, failures_30d=0)
     check("empty world ⇒ PASS (a fact about the world, NOT indeterminate)",
           v_e == "PASS" and r_e == [])
@@ -1355,6 +1455,63 @@ def self_test():
           ALERT_ID in body and "W{NEXT}" in body and not re.search(r"-W\d+\b", body))
     check("body states the live unit in words",
           "PAYERS WHOSE MONEY IS STUCK RIGHT NOW" in body)
+
+    # ── ACTION ROUTING — the Action is a FUNCTION of the reason class ───────────────────
+    # 🛑 THE DEFECT THESE REPLACE. Before OPS-PAYMENT-DECLINE-ACTION-ROUTING-W1 the body ended
+    # in one unconditional "dispatch <wave> via Cowork → Claude Code", so a floor breach —
+    # customers owing money that no code can collect — and a blind canary rendered the SAME
+    # instruction. Measured live 2026-09-18 on three genuinely stuck payers. Nothing in the old
+    # suite could see it, because every assertion was about the figures and none about who acts.
+    _BILLING = "Action — BILLING, not engineering"
+    _DISPATCH = "Action — dispatch"
+    check("🛑 every reason carries a class, and every class is a declared member",
+          all(isinstance(r, tuple) and len(r) == 2 and r[0] in REASON_CLASSES
+              for r in (rB + r_hi)))
+    floor_only = [(REASON_FLOOR, "x")]
+    rate_only = [(REASON_RATE, "y")]
+    dark_only = [(REASON_DARK, "")]
+    a_floor, a_rate, a_dark = (render_actions(floor_only), render_actions(rate_only),
+                               render_actions(dark_only))
+    check("🛑 a FLOOR breach routes to BILLING and NEVER to a code wave — money customers owe "
+          "is not a thing a wave can fix",
+          len(a_floor) == 1 and a_floor[0].startswith(_BILLING)
+          and not a_floor[0].startswith(_DISPATCH))
+    check("...and it names BOTH stuck statuses so the operator need not re-derive which payer "
+          "can still self-clear",
+          "`unpaid`" in a_floor[0] and "`past_due`" in a_floor[0])
+    check("a RATE breach DOES route to a code wave — that one is an integration question",
+          len(a_rate) == 1 and a_rate[0].startswith(_DISPATCH))
+    check("a DARK canary routes to a code wave and says the defect is the canary's own",
+          len(a_dark) == 1 and a_dark[0].startswith(_DISPATCH) and "canary" in a_dark[0])
+    check("🛑 REGRESSION: the FLOOR action and the DARK action are DIFFERENT text — pre-wave "
+          "they were byte-identical, which is the whole defect",
+          a_floor != a_dark)
+    check("both reasons at once render BOTH actions, in REASON_CLASSES order regardless of the "
+          "order the reasons arrived in",
+          render_actions(rate_only + floor_only) == a_floor + a_rate)
+    check("the rendered FAIL body carries the billing action and no dispatch action",
+          _BILLING in body and _DISPATCH not in body)
+    check("...and the INDETERMINATE path renders its action through the SAME registry, so the "
+          "two fire paths cannot drift again",
+          a_dark[0] in "\n".join(["🛑 %s" % ALERT_ID, "x", "y"] + a_dark))
+    check("🛑 an UNREGISTERED reason class fails toward NOISE, not silence — it self-announces",
+          any("UNROUTED" in ln for ln in render_actions([("NOT_A_REAL_CLASS", "z")])))
+
+    # Exhaustiveness, PROVEN able to fail in both directions rather than merely present.
+    def _raises(classes, mapping):
+        try:
+            assert_action_exhaustive(classes, mapping)
+        except RuntimeError:
+            return True
+        return False
+    check("🛑 the exhaustiveness guard RAISES on a class with no registered Action "
+          "(deliberate break — a guard that cannot fail is decoration)",
+          _raises(REASON_CLASSES, {k: v for k, v in ACTION_BY_REASON_CLASS.items()
+                                   if k != REASON_RATE}))
+    check("...and RAISES on an Action registered for a class that does not exist",
+          _raises(REASON_CLASSES, dict(ACTION_BY_REASON_CLASS, GHOST="go")))
+    check("...and passes on the live pair, so the check is not red for everything",
+          assert_action_exhaustive(REASON_CLASSES, ACTION_BY_REASON_CLASS) is True)
     check("body carries the prior units so the instrument swap is auditable",
           "cards that emitted a decline" in body)
     check("body states the stuck count against the BOOK, not as a bare number",
@@ -1479,7 +1636,7 @@ def self_test():
     if total < SELF_TEST_MIN_CHECKS:
         failed.append("VACUITY: ran %d checks, floor is %d — the suite collapsed"
                       % (total, SELF_TEST_MIN_CHECKS))
-    if SELF_TEST_MIN_CHECKS < 139:
+    if SELF_TEST_MIN_CHECKS < 150:
         failed.append("VACUITY: SELF_TEST_MIN_CHECKS was lowered below its committed value")
 
     for label in failed:
