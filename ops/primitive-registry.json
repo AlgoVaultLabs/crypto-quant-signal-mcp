@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "_what_this_is": "Every product primitive AlgoVault names in public, as a row that a machine can resolve. Built by OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 after P16/full-3-tool-pipeline published an npx line for a scope that 404s and two bin:null stubs whose tools are not on tools/list.",
+  "_the_law_this_serves": "Single-derivation. A public surface may name a primitive only if a row here says it resolves. scripts/check-primitive-resolution.mjs machine-verifies every row against the npm registry and the live tools/list; src/lib/primitive-projection.ts projects the public-nameable subset into API responses.",
+  "_predicate": {
+    "npm_package + invocation=cli": "packument HTTP 200 AND versions[dist-tags.latest].bin non-null AND non-empty",
+    "npm_package + invocation=library": "packument HTTP 200 only",
+    "mcp_tool + invocation=n_a": "present in the live tools/list",
+    "_why_invocation_exists": "bin non-null is a property of a CLI-INVOKED package, not of a real one. Measured 2026-09-19: @modelcontextprotocol/sdk, zod and express are all has_bin=false and all correct. A blanket bin leg false-DRIFTs, and a gate that pages on correct data is a gate that gets ignored."
+  },
+  "_seeded": "Every row below was generated from live sources, never hand-typed: the abbreviated npm packument (Accept: application/vnd.npm.install-v1+json) and the live tools/list read through scripts/lib/mcp-tools-list.mjs. A PLANNED tool that the live list shows as live makes the seed refuse rather than emit a stale row.",
+  "_status_semantics": "live = the predicate resolves today. planned = it does not, and no public surface may name it. retired = it resolved once and must not be named again. A live row whose predicate disagrees is FAIL; so is a planned row that now resolves — a stale registry is how this bug class returns.",
+  "primitives": [
+    {
+      "id": "npm:crypto-quant-signal-mcp",
+      "kind": "npm_package",
+      "name": "crypto-quant-signal-mcp",
+      "invocation": "cli",
+      "status": "live",
+      "public_nameable": true,
+      "resolves_when": "npm_cli",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "npm:crypto-quant-risk-mcp",
+      "kind": "npm_package",
+      "name": "crypto-quant-risk-mcp",
+      "invocation": "cli",
+      "status": "planned",
+      "public_nameable": false,
+      "resolves_when": "npm_cli",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "npm:crypto-quant-backtest-mcp",
+      "kind": "npm_package",
+      "name": "crypto-quant-backtest-mcp",
+      "invocation": "cli",
+      "status": "planned",
+      "public_nameable": false,
+      "resolves_when": "npm_cli",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "npm:crypto-quant-execution-mcp",
+      "kind": "npm_package",
+      "name": "crypto-quant-execution-mcp",
+      "invocation": "cli",
+      "status": "planned",
+      "public_nameable": false,
+      "resolves_when": "npm_cli",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "tool:chat_knowledge",
+      "kind": "mcp_tool",
+      "name": "chat_knowledge",
+      "invocation": "n_a",
+      "status": "live",
+      "public_nameable": true,
+      "resolves_when": "tools_list",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "tool:get_market_regime",
+      "kind": "mcp_tool",
+      "name": "get_market_regime",
+      "invocation": "n_a",
+      "status": "live",
+      "public_nameable": true,
+      "resolves_when": "tools_list",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "tool:get_track_record",
+      "kind": "mcp_tool",
+      "name": "get_track_record",
+      "invocation": "n_a",
+      "status": "live",
+      "public_nameable": true,
+      "resolves_when": "tools_list",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "tool:get_trade_call",
+      "kind": "mcp_tool",
+      "name": "get_trade_call",
+      "invocation": "n_a",
+      "status": "live",
+      "public_nameable": true,
+      "resolves_when": "tools_list",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "tool:get_trade_signal",
+      "kind": "mcp_tool",
+      "name": "get_trade_signal",
+      "invocation": "n_a",
+      "status": "live",
+      "public_nameable": true,
+      "resolves_when": "tools_list",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "tool:scan_funding_arb",
+      "kind": "mcp_tool",
+      "name": "scan_funding_arb",
+      "invocation": "n_a",
+      "status": "live",
+      "public_nameable": true,
+      "resolves_when": "tools_list",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "tool:scan_trade_calls",
+      "kind": "mcp_tool",
+      "name": "scan_trade_calls",
+      "invocation": "n_a",
+      "status": "live",
+      "public_nameable": true,
+      "resolves_when": "tools_list",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "tool:search_knowledge",
+      "kind": "mcp_tool",
+      "name": "search_knowledge",
+      "invocation": "n_a",
+      "status": "live",
+      "public_nameable": true,
+      "resolves_when": "tools_list",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "tool:get_position_size",
+      "kind": "mcp_tool",
+      "name": "get_position_size",
+      "invocation": "n_a",
+      "status": "planned",
+      "public_nameable": false,
+      "resolves_when": "tools_list",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    },
+    {
+      "id": "tool:run_backtest",
+      "kind": "mcp_tool",
+      "name": "run_backtest",
+      "invocation": "n_a",
+      "status": "planned",
+      "public_nameable": false,
+      "resolves_when": "tools_list",
+      "owner_wave": "OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1",
+      "added": "2026-09-19"
+    }
+  ]
+}
