@@ -68,6 +68,31 @@ const MCP_ORIGIN = process.env.PRIMRES_MCP_ORIGIN || 'https://api.algovault.com/
 const ABBREVIATED = 'application/vnd.npm.install-v1+json';
 const TOOLS_LIST_PAGE_CAP = 50;
 
+/**
+ * TOTAL wall-clock budget for every network leg in one run, not a per-call timeout.
+ *
+ * A REFUSED connection fails in milliseconds; a BLACKHOLED route HANGS. This gate is the repo's
+ * first network-dependent pre-commit block, shared by 146 checkouts, so an unbounded hang is a
+ * fleet-wide stall — and a per-call `--max-time` does not bound it, because one run makes up to
+ * 4 npm fetches plus 3 + N tools/list POSTs. The budget is the whole phase: once it is spent,
+ * every remaining leg reports `unknown` and the run is INDETERMINATE.
+ *
+ * Measured healthy latency is 1.3–2.1 s, so 5 s leaves headroom without letting a commit hang.
+ */
+const NETWORK_BUDGET_MS = Number(process.env.PRIMRES_BUDGET_MS || 5000);
+
+/** Wall-clock deadline for one run's network phase. `remaining()` is what each curl gets. */
+function makeBudget(ms = NETWORK_BUDGET_MS) {
+  const started = Date.now();
+  return {
+    remainingMs: () => Math.max(0, ms - (Date.now() - started)),
+    spent: () => Date.now() - started,
+    exhausted() { return this.remainingMs() <= 0; },
+    /** curl's --max-time takes SECONDS and floors to 0, which means "no limit". Never emit 0. */
+    curlMaxTime() { return Math.max(1, Math.ceil(this.remainingMs() / 1000)); },
+  };
+}
+
 const VERDICT = (tok, code) => {
   console.log(`PRIMITIVE_RESOLUTION_VERDICT=${tok}`);
   process.exit(code);
@@ -133,10 +158,11 @@ export function classifyNpm(row, { httpCode, body, transportFailed }) {
     : { state: 'absent', detail: `latest ${latest} has no usable bin — published, but not CLI-invocable` };
 }
 
-function fetchPackument(name) {
+function fetchPackument(name, budget) {
+  if (budget.exhausted()) return { httpCode: 0, body: '', transportFailed: true, err: 'network budget exhausted' };
   const url = `${NPM_BASE}/${name.startsWith('@') ? encodeURIComponent(name) : name}`;
   try {
-    const raw = execFileSync('curl', ['-sS', '--max-time', '25', '-H', `Accept: ${ABBREVIATED}`,
+    const raw = execFileSync('curl', ['-sS', '--max-time', String(budget.curlMaxTime()), '-H', `Accept: ${ABBREVIATED}`,
       '-w', '\\n__HTTP__%{http_code}', url], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     const m = raw.match(/\n__HTTP__(\d+)\s*$/);
     return { httpCode: m ? parseInt(m[1], 10) : 0, body: m ? raw.slice(0, m.index) : raw, transportFailed: !m || m[1] === '000' };
@@ -147,8 +173,9 @@ function fetchPackument(name) {
 
 /* ── tools/list — exhausted, never a capped first page ───────────────────────────────────── */
 
-function postMcp(payload) {
-  return execFileSync('curl', ['-sS', '--max-time', '25', '-X', 'POST', MCP_ORIGIN,
+function postMcp(payload, budget) {
+  if (budget.exhausted()) throw new Error('network budget exhausted');
+  return execFileSync('curl', ['-sS', '--max-time', String(budget.curlMaxTime()), '-X', 'POST', MCP_ORIGIN,
     '-H', 'Content-Type: application/json', '-H', 'Accept: application/json, text/event-stream',
     '-d', JSON.stringify(payload)], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
@@ -167,14 +194,14 @@ export function parseNextCursor(body) {
 }
 
 /** All live tool names, or null when anything could not be read. */
-export function readLiveTools() {
+export function readLiveTools(budget = makeBudget()) {
   try {
-    postMcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'primitive-resolution-gate', version: '1' } } });
-    postMcp({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    postMcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'primitive-resolution-gate', version: '1' } } }, budget);
+    postMcp({ jsonrpc: '2.0', method: 'notifications/initialized' }, budget);
     const names = [];
     let cursor;
     for (let page = 0; page < TOOLS_LIST_PAGE_CAP; page += 1) {
-      const body = postMcp({ jsonrpc: '2.0', id: 2 + page, method: 'tools/list', params: cursor ? { cursor } : {} });
+      const body = postMcp({ jsonrpc: '2.0', id: 2 + page, method: 'tools/list', params: cursor ? { cursor } : {} }, budget);
       const got = parseToolNames(body);
       if (got === null) return null;
       names.push(...got);
@@ -223,10 +250,11 @@ function run() {
   }
   const { rows } = loaded;
 
+  const budget = makeBudget();
   const needsTools = rows.some((r) => r.kind === 'mcp_tool');
-  const liveTools = needsTools ? readLiveTools() : [];
+  const liveTools = needsTools ? readLiveTools(budget) : [];
   if (needsTools && liveTools === null) {
-    console.error('primitive-resolution: tools/list unreachable or unexhausted — verified nothing');
+    console.error(`primitive-resolution: tools/list unreachable or unexhausted after ${budget.spent()}ms — verified nothing`);
     VERDICT('INDETERMINATE', 3);
   }
 
@@ -238,7 +266,7 @@ function run() {
         : { state: 'absent', detail: `absent from tools/list (${liveTools.length} tools)` };
     }
     if (row.kind === 'npm_package') {
-      if (!npmCache.has(row.name)) npmCache.set(row.name, fetchPackument(row.name));
+      if (!npmCache.has(row.name)) npmCache.set(row.name, fetchPackument(row.name, budget));
       return classifyNpm(row, npmCache.get(row.name));
     }
     return { state: 'unknown', detail: `kind ${row.kind} has no predicate yet` };
@@ -249,7 +277,7 @@ function run() {
   // that passed. Absence-of-problem is not evidence.
   for (const n of notes) console.log(`  ${n}`);
   for (const p of problems) console.error(`  FAIL ${p}`);
-  console.log(`primitive-resolution: ${rows.length} rows, ${problems.length} problem(s)`);
+  console.log(`primitive-resolution: ${rows.length} rows, ${problems.length} problem(s), network ${budget.spent()}ms of ${NETWORK_BUDGET_MS}ms budget`);
   VERDICT(verdict, verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 3);
 }
 
@@ -352,6 +380,7 @@ if (argv.includes('--show-config')) {
   console.log(`NPM_BASE=${NPM_BASE}`);
   console.log(`MCP_ORIGIN=${MCP_ORIGIN}`);
   console.log(`TOOLS_LIST_PAGE_CAP=${TOOLS_LIST_PAGE_CAP}`);
+  console.log(`NETWORK_BUDGET_MS=${NETWORK_BUDGET_MS}`);
   process.exit(0);
 } else if (argv.includes('--self-test')) {
   const ok = selfTest();
