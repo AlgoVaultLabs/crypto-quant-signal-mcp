@@ -1187,3 +1187,42 @@ jobs:
             README_LINKS_VERDICT=INDETERMINATE) echo "::warning::a README link could not be verified (transport/rate-limit) — not a broken-link signal" ;;
             *) echo "::error::a README link or image is broken — see the named URL(s) above"; exit 1 ;;
           esac
+
+      # OPS-PLUGIN-MANIFESTS-GATE-WIRE-W1 — the plugin manifests, verified against their VENDOR'S
+      # LIVE SCHEMAS and against the origin they declare.
+      #
+      # WHY POST-DEPLOY AND NOT WITH THE FAIL-CLOSED PRE-DEPLOY GATES ABOVE. This gate's fifth leg
+      # asserts that the url written in `mcp.json` actually answers MCP with a non-empty tool list.
+      # That is a statement about the DEPLOYED origin, so it can only be true after the deploy.
+      # Its other legs are repo-only and are ALREADY enforced pre-push and in CI by
+      # `tests/unit/plugin-manifest-lockstep.test.ts` — running them again earlier would buy
+      # nothing and would put a third party's uptime in front of a deploy.
+      #
+      # WHY FAIL-OPEN ON TRANSPORT. Two of its inputs are fetched from `agent-plugins.org`, which
+      # is not ours. A gate that reds the deploy because someone else's CDN is down is one that
+      # gets ignored, and the estate has the scar tissue to prove it — same reasoning as the two
+      # canaries above. The token carries the distinction the exit code cannot: INDETERMINATE
+      # means "verified nothing" and warns; FAIL means a real divergence and is a red.
+      #
+      # IT NEEDS NO HEALTH-WAIT OF ITS OWN, AND THAT IS DELIBERATE. An origin that is still coming
+      # up reads as unreachable, which the gate already classifies INDETERMINATE — a warning, never
+      # a false red. Borrowing the loop above would couple this step to a sibling step's internals
+      # for no change in outcome.
+      #
+      # 🛑 THE SOFT-404 IS WHY THIS STEP IS WORTH HAVING AT ALL. A schema URL can answer HTTP 200
+      # with `text/html` — measured, `cursor.com/schemas/cursor-plugin/plugin.json` serves the
+      # Cursor homepage that way, 132233 bytes, `res.ok` true. The script asserts 2xx AND
+      # `application/json` AND a body that parses, so "validated against nothing" is reported as
+      # INDETERMINATE and can never arrive here as a PASS.
+      - name: Post-deploy plugin-manifest schema & origin gate (fail-open on transport)
+        run: |
+          set +e
+          node scripts/check-plugin-manifests.mjs | tee /tmp/plugin_manifests.log
+          set -e
+          TOKEN=$(grep -oE 'PLUGIN_MANIFESTS_VERDICT=[A-Z]+' /tmp/plugin_manifests.log | tail -1)
+          echo "plugin-manifests verdict: ${TOKEN:-NO_TOKEN_EMITTED}"
+          case "$TOKEN" in
+            PLUGIN_MANIFESTS_VERDICT=PASS) echo "plugin.json + mcp.json validate against the published schemas, and the declared origin serves tools" ;;
+            PLUGIN_MANIFESTS_VERDICT=INDETERMINATE) echo "::warning::a published schema or the declared origin could not be read (transport, or a non-JSON response) — the gate verified nothing, so this is not a divergence signal" ;;
+            *) echo "::error::a plugin manifest diverged from its published schema, its companion version, or the origin it declares — see the named reason(s) above"; exit 1 ;;
+          esac
