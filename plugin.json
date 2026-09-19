@@ -1,0 +1,33 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "crypto-quant-signal-mcp",
+  "version": "1.30.0",
+  "description": "Composite BUY/SELL/HOLD verdicts for crypto perpetual futures — cross-venue signal interpretation, funding-rate arbitrage scanning, market-regime detection, and an on-chain-anchored track record. Built for AI agents.",
+  "author": {
+    "name": "AlgoVault Labs",
+    "url": "https://algovault.com"
+  },
+  "homepage": "https://algovault.com",
+  "repository": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "trading",
+    "crypto",
+    "trade-call",
+    "signals",
+    "hyperliquid",
+    "binance",
+    "bybit",
+    "okx",
+    "bitget",
+    "funding-rate",
+    "quant",
+    "defi",
+    "arbitrage",
+    "technical-analysis",
+    "model-context-protocol",
+    "ai-agent",
+    "x402"
+  ]
+}
