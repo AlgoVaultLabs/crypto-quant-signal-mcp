@@ -129,6 +129,36 @@ cards ever observed were already permanently ineligible on the day it would have
 That is not a narrowed floor, it is an unreachable one — the same "decoration that pages
 nobody and reassures everybody" this module's header forbids 40 lines above.
 
+── 🛑 LEVEL-TRIGGERED IS WHY IT REPEATED FOREVER — PAGE ON CHANGE (2026-09-19) ──────────
+The predicate above is correct and stays exactly as it is. What was wrong is that a LEVEL
+trigger over a state only a HUMAN can clear pages every single day once the human decides not
+to clear it. Measured: the floor fired 2026-09-16, -17 and -18 on the same three payers, all
+three verified `past_due` in live Stripe with open unpaid invoices. Nothing was wrong with the
+figures. The operator had seen them, decided not to act, and kept being told.
+
+So the floor now pages on the DELTA and reports the LEVEL:
+
+  * `ACK_BASELINE` persists the stuck payer keys the operator has already been TOLD about.
+  * A run pages only when the floor is breached AND at least one stuck key is NOT in that
+    baseline. Everything in a fired body becomes acknowledged.
+  * A silent run PRUNES the baseline to the keys still stuck, and acknowledges NOTHING new. So
+    the baseline means "reported at least once AND still stuck" — a payer who recovers and
+    breaks again is a genuinely new event and pages again.
+  * The floor THRESHOLD is untouched and still conjunctive. A new stuck payer below the floor
+    does not page; it is reported and left unacknowledged, so it is still new when the floor is
+    crossed later.
+
+🛑 THE VERDICT DESCRIBES THE ALERTING DECISION; THE FACTS DESCRIBE THE WORLD. A suppressed run
+returns PASS, and `floor_breached` / `stuck_payers` / `acknowledged_stuck` are written to the
+ledger and the result record ANYWAY, and printed on the log line, so nobody can read a PASS as
+"no money is stuck". That distinction is the whole reason this is not a threshold change: the
+detector is not weakened, only its repetition is.
+
+🛑 A MISSING OR UNREADABLE BASELINE IS NOT "EVERYTHING IS OLD". It is "newness could not be
+evaluated", so it FAILS TOWARD NOISE: the run fires under CANARY_DARK — the canary reporting
+its own defect — and re-seeds. `--acknowledge-current` seeds it deliberately at install time,
+which is why the normal path never reaches that branch.
+
 ── AND THE STATUS VOCABULARY IS ITS OWN CONSTANT, DELIBERATELY NOT THE SHARED ONE ──────
 `src/lib/stripe.ts` SUBSCRIPTION_STATUS_CLASS maps `unpaid -> NOT_ENTITLED`, because it
 answers "may this caller use the API". This canary asks "is any money stuck", and `unpaid`
@@ -246,6 +276,11 @@ assert_action_exhaustive(REASON_CLASSES, ACTION_BY_REASON_CLASS)
 PG_CONTAINER = os.environ.get("ALGOVAULT_PG_CONTAINER", "crypto-quant-signal-mcp-postgres-1")
 PG_DB = os.environ.get("ALGOVAULT_PG_DB", "signal_performance")
 LEDGER = os.environ.get("ALGOVAULT_PAYMENT_DECLINE_LEDGER", "/var/lib/algovault-payment-decline/observations.jsonl")
+# The set of stuck payer keys the operator has ALREADY been told about. See the header section
+# "THE FLOOR IS LEVEL-TRIGGERED AND THAT IS WHY IT REPEATED FOREVER".
+ACK_BASELINE = os.environ.get("ALGOVAULT_PAYMENT_DECLINE_ACK",
+                              "/var/lib/algovault-payment-decline/acknowledged-stuck.json")
+ACK_VERSION = 1
 
 # ── Thresholds ──────────────────────────────────────────────────────────────────────────
 MIN_N = int(os.environ.get("ALGOVAULT_PAYMENT_DECLINE_MIN_N", "20"))
@@ -764,6 +799,114 @@ def render_actions(reasons):
     return out
 
 
+def _ack_path(path=None):
+    """Resolve the baseline path, honouring the self-test seam.
+
+    🛑 A SUITE MUST NOT WRITE PRODUCTION STATE — the same law `emit_result` documents. Redirect,
+    never no-op: a self-test that skips the write cannot prove the write works.
+    """
+    if path is not None:
+        return path
+    if os.environ.get("ALGOVAULT_CANARY_SELFTEST") == "1":
+        return os.path.join(tempfile.gettempdir(), "payment-decline-canary-selftest-ack.json")
+    return ACK_BASELINE
+
+
+def load_ack_baseline(path=None):
+    """Return (set_of_keys, detail) — or (None, why) when newness cannot be evaluated.
+
+    None is NOT an empty set. An empty set means "the operator has been told about nothing";
+    None means "we do not know what the operator has been told", and the caller must fail toward
+    noise rather than silently treat every stuck payer as already-seen.
+    """
+    target = _ack_path(path)
+    try:
+        with open(target, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except FileNotFoundError:
+        return None, "baseline absent at %s" % target
+    except Exception as exc:                                    # noqa: BLE001
+        return None, "baseline unreadable (%s: %s)" % (type(exc).__name__, exc)
+    if not isinstance(doc, dict) or not isinstance(doc.get("keys"), list):
+        return None, "baseline malformed (expected {'keys': [...]})"
+    keys = [k for k in doc["keys"] if isinstance(k, str) and k]
+    if len(keys) != len(doc["keys"]):
+        return None, "baseline holds %d non-string key(s)" % (len(doc["keys"]) - len(keys))
+    return set(keys), "%d acknowledged" % len(keys)
+
+
+def save_ack_baseline(keys, path=None):
+    """Persist the acknowledged set. BEST EFFORT — a write failure must never change a verdict.
+
+    It must, however, be VISIBLE: a silent write failure would re-page the same payers tomorrow,
+    which is the defect this file is removing, so the failure is logged and returned.
+    """
+    target = _ack_path(path)
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        payload = {"version": ACK_VERSION,
+                   "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                   "keys": sorted(keys)}
+        tmp = target + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=1, sort_keys=True)
+        os.replace(tmp, target)                                 # atomic: never a half-written set
+        return True, "%d key(s) -> %s" % (len(keys), target)
+    except Exception as exc:                                    # noqa: BLE001
+        log("acknowledgement write FAILED (the same payers will page again): %s: %s"
+            % (type(exc).__name__, exc))
+        return False, "%s: %s" % (type(exc).__name__, exc)
+
+
+def apply_acknowledgement(verdict, reasons, facts, baseline):
+    """Gate the FLOOR reason on NEWNESS. Pure — no I/O, no clock. Returns (verdict, reasons).
+
+    The floor's own predicate is untouched: `facts["stuck_payers"]` and the new `floor_breached`
+    still describe the world exactly as before. This decides only whether the operator is TOLD.
+    """
+    stuck_keys = set(facts.get("stuck_keys") or [])
+    floor_reasons = [r for r in reasons if r[0] == REASON_FLOOR]
+    facts["floor_breached"] = bool(floor_reasons)
+
+    if baseline is None:
+        # Fail toward NOISE. We cannot tell new from old, so we say so rather than guess either
+        # way — and we route it to CANARY_DARK because it is the canary's defect, not a payer's.
+        facts["ack_baseline_state"] = "MISSING"
+        facts["acknowledged_stuck"] = None
+        facts["new_stuck_keys"] = sorted(stuck_keys)
+        n_stuck = facts.get("stuck_payers") or 0
+        reasons = list(reasons) + [(
+            REASON_DARK,
+            "🛑 The acknowledgement baseline is missing or unreadable, so this run could not tell "
+            "a NEW stuck payer from one you have already been shown. Re-seeded from the %d %s "
+            "currently stuck; seed it deliberately with --acknowledge-current."
+            % (n_stuck, _plural(n_stuck, "payer", "payers")))]
+        return "FAIL", reasons
+
+    facts["ack_baseline_state"] = "LOADED"
+    new_keys = sorted(stuck_keys - baseline)
+    facts["acknowledged_stuck"] = len(stuck_keys & baseline)
+    facts["new_stuck_keys"] = new_keys
+    if floor_reasons and not new_keys:
+        # SUPPRESSED, not cleared. Every count above still says the floor is breached.
+        reasons = [r for r in reasons if r[0] != REASON_FLOOR]
+        return ("FAIL" if reasons else "PASS"), reasons
+    return verdict, reasons
+
+
+def next_ack_baseline(verdict, facts, baseline):
+    """The baseline to persist after this run.
+
+    PAGED  -> everything currently stuck is now acknowledged (it is all in the body).
+    SILENT -> prune to what is STILL stuck, acknowledging nothing new; a payer who recovers
+              leaves the set, so a later re-break is a genuinely new event and pages again.
+    """
+    stuck_keys = set(facts.get("stuck_keys") or [])
+    if verdict == "FAIL":
+        return stuck_keys
+    return (baseline or set()) & stuck_keys
+
+
 def build_body(reasons, facts, payer_states=None):
     lines = ["🛑 %s" % ALERT_ID]
     lines.extend(text for _, text in reasons)
@@ -787,6 +930,13 @@ def build_body(reasons, facts, payer_states=None):
                          % _plural(len(shown), "1 payer", "%d payers" % len(shown)))
             for p in shown:
                 lines.append(render_payer_line(p))
+    if facts.get("new_stuck_keys") is not None and facts.get("acknowledged_stuck"):
+        lines.append(
+            "You are being shown this because %d of them %s NEW. The other %d were reported "
+            "before and are repeated here only for context — this alert pages on the CHANGE, "
+            "not on the standing total."
+            % (len(facts["new_stuck_keys"]),
+               _plural(len(facts["new_stuck_keys"]), "is", "are"), facts["acknowledged_stuck"]))
     lines.append(
         "The floor counts PAYERS WHOSE MONEY IS STUCK RIGHT NOW, derived from the subscriber "
         "book and not from a window over the failure table. A card that declined and then paid "
@@ -872,6 +1022,13 @@ def append_observation(facts, verdict, path=None):
                "stuck_payers": facts.get("stuck_payers"), "book_size": facts.get("book_size"),
                "new_stuck": facts.get("new_stuck"), "chronic_stuck": facts.get("chronic_stuck"),
                "undated_stuck": facts.get("undated_stuck"),
+               # 🛑 WITHOUT THESE A SUPPRESSED RUN IS INDISTINGUISHABLE FROM A HEALTHY ONE.
+               # The verdict describes the alerting decision; these describe the world.
+               "floor_breached": facts.get("floor_breached"),
+               "acknowledged_stuck": facts.get("acknowledged_stuck"),
+               "new_stuck": facts.get("new_stuck"),
+               "new_stuck_keys": len(facts.get("new_stuck_keys") or []),
+               "ack_baseline_state": facts.get("ack_baseline_state"),
                "unattributed": facts.get("unattributed"),
                "unknown_status": facts.get("unknown_status"),
                "recovered_7d": facts.get("recovered_7d"),
@@ -907,7 +1064,9 @@ def emit_result(verdict, exit_code, facts, path=None):
         metrics = {k: facts.get(k) for k in
                    ("stuck_payers", "book_size", "new_stuck", "chronic_stuck", "undated_stuck",
                     "unattributed", "unknown_status", "recovered_7d", "failures_7d",
-                    "n_30d", "predicate_version", "floor_threshold")}
+                    "n_30d", "predicate_version", "floor_threshold",
+                    # Same law as the ledger row: a PASS must still publish the LEVEL.
+                    "floor_breached", "acknowledged_stuck", "ack_baseline_state")}
         ok, detail = canary_result_log.append_result(
             CANARY_NAME, verdict, exit_code, metrics, path=path)
         log("CANARY_RESULT_LOG=%s" % detail if ok else "CANARY_RESULT_LOG_FAILED=%s" % detail)
@@ -1014,7 +1173,14 @@ def finish(verdict, reasons, facts, payer_states):
         emit_result("FAIL", EXIT_FAIL, facts)
         print("PAYMENT_DECLINE_VERDICT=FAIL")
         return EXIT_FAIL
-    dispatch_clear("stuck payers %d < floor %d" % (facts["stuck_payers"], FLOOR_FAILURES))
+    # 🛑 The clear reason is READ BY A HUMAN in the channel, so it must not claim the floor is
+    # clear when it is merely acknowledged. A suppressed run and a genuinely-below-floor run are
+    # different facts and say so.
+    if facts.get("floor_breached"):
+        dispatch_clear("stuck payers %d >= floor %d but all already reported — silent by policy"
+                       % (facts["stuck_payers"], FLOOR_FAILURES))
+    else:
+        dispatch_clear("stuck payers %d < floor %d" % (facts["stuck_payers"], FLOOR_FAILURES))
     emit_result("PASS", EXIT_PASS, facts)
     print("PAYMENT_DECLINE_VERDICT=PASS")
     return EXIT_PASS
@@ -1059,6 +1225,11 @@ def main():
         book_size=sentinels["CENSUS"]["events"],
         epoch0_rows=sentinels["EPOCH0"]["events"],
         linkage_epoch=sentinels["LINKAGE"]["first_seen"])
+
+    # PAGE ON CHANGE. The predicate above already decided what is true; this decides what the
+    # operator is TOLD, and writes both into the ledger so the two can never be confused.
+    baseline, ack_detail = load_ack_baseline()
+    verdict, reasons = apply_acknowledgement(verdict, reasons, facts, baseline)
     append_observation(facts, verdict)
 
     # POSITIVE per-check output — never "absence of an alert". Every payer that counts is named,
@@ -1076,18 +1247,24 @@ def main():
            ("%.1f%%" % facts["decline_rate_pct_30d"])
            if facts["decline_rate_pct_30d"] is not None else "unmeasured",
            facts["rate_predicate"], facts["linkage_epoch"], facts["epoch0_rows"]))
+    log("acknowledgement: baseline %s (%s) | floor breached=%s | already reported=%s | new=%s"
+        % (facts.get("ack_baseline_state"), ack_detail, facts.get("floor_breached"),
+           _n(facts.get("acknowledged_stuck")), len(facts.get("new_stuck_keys") or [])))
     for p in payer_states:
         if p["counts"] or (p["events"] > 0 and p["onset"] == "NEW"):
             log("  %s" % flatten_payer_line(render_payer_line(p)))
 
-    return finish(verdict, reasons, facts, payer_states)
+    rc = finish(verdict, reasons, facts, payer_states)
+    # AFTER finish, so a payer is acknowledged only once it has actually been dispatched.
+    save_ack_baseline(next_ack_baseline(verdict, facts, baseline))
+    return rc
 
 
 # ── Hermetic self-test ──────────────────────────────────────────────────────────────────
 # 🛑 EVERY FIXTURE BELOW IS SYNTHETIC. Earlier rungs of this file pasted live Stripe customer
 # ids and a raw cross-merchant card fingerprint into prose that ships in a PUBLIC repo; this
 # wave redacted them. Use `cus_TEST…` / `card:v1:aaaa…` and never a real handle.
-SELF_TEST_MIN_CHECKS = 150
+SELF_TEST_MIN_CHECKS = 165
 
 
 def _read_last_json(path):
@@ -1512,6 +1689,62 @@ def self_test():
           _raises(REASON_CLASSES, dict(ACTION_BY_REASON_CLASS, GHOST="go")))
     check("...and passes on the live pair, so the check is not red for everything",
           assert_action_exhaustive(REASON_CLASSES, ACTION_BY_REASON_CLASS) is True)
+
+    # ── PAGE ON CHANGE — the floor is level-triggered over a state only a human clears ──
+    # 🛑 THE DEFECT THESE REPLACE. The floor fired 09-16, -17 and -18 on the SAME three payers,
+    # every figure correct, because "3 payers have money stuck" stays true until someone acts and
+    # the operator had decided not to. A level trigger over an operator-clearable state is a
+    # permanent page. The predicate is untouched; only its REPETITION is.
+    K1, K2, K3 = "card:v1:aaaa000000000001", "card:v1:aaaa000000000002", "cus:cus_TESTNEW"
+    def _f(keys, stuck=None):
+        return {"stuck_keys": list(keys), "stuck_payers": stuck if stuck is not None else len(keys)}
+    floor_r = [(REASON_FLOOR, "ABSOLUTE FLOOR breached: 3 ...")]
+
+    fa = _f([K1, K2, K3])
+    va, ra = apply_acknowledgement("FAIL", floor_r, fa, {K1, K2, K3})
+    check("🛑 a floor breach whose payers are ALL already reported goes SILENT",
+          va == "PASS" and ra == [])
+    check("...but the run still RECORDS that the floor is breached, so a PASS can never be read "
+          "as 'no money is stuck'",
+          fa["floor_breached"] is True and fa["stuck_payers"] == 3
+          and fa["acknowledged_stuck"] == 3 and fa["new_stuck_keys"] == [])
+    fb = _f([K1, K2, K3])
+    vb, rb2 = apply_acknowledgement("FAIL", floor_r, fb, {K1, K2})
+    check("🛑 one NEW stuck payer among acknowledged ones DOES page, and names which is new",
+          vb == "FAIL" and any(rc == REASON_FLOOR for rc, _ in rb2)
+          and fb["new_stuck_keys"] == [K3] and fb["acknowledged_stuck"] == 2)
+    fc = _f([K1, K2, K3])
+    vc, rc2 = apply_acknowledgement("FAIL", floor_r, fc, None)
+    check("🛑 a MISSING baseline fails toward NOISE — it fires, and as CANARY_DARK because it is "
+          "the canary's own defect, never silently treating every payer as already-seen",
+          vc == "FAIL" and any(rcx == REASON_DARK for rcx, _ in rc2)
+          and fc["ack_baseline_state"] == "MISSING")
+    check("...and a missing baseline NEVER suppresses the floor reason it could not evaluate",
+          any(rcx == REASON_FLOOR for rcx, _ in rc2))
+    check("🛑 load_ack_baseline returns None (unknown), NOT an empty set, on a malformed file — "
+          "an empty set would mean 'told about nothing' and re-page everybody",
+          load_ack_baseline(os.path.join(tempfile.gettempdir(), "no-such-ack-file.json"))[0] is None)
+    _ackp = os.path.join(tempfile.gettempdir(), "payment-decline-selftest-ack-roundtrip.json")
+    save_ack_baseline({K1, K2}, _ackp)
+    check("...and a saved baseline round-trips exactly",
+          load_ack_baseline(_ackp)[0] == {K1, K2})
+    with open(_ackp, "w", encoding="utf-8") as _fh:
+        _fh.write('{"keys": "not-a-list"}')
+    check("...and a structurally wrong baseline is None, not a silently-empty set",
+          load_ack_baseline(_ackp)[0] is None)
+    check("a PAGED run acknowledges everything it showed",
+          next_ack_baseline("FAIL", _f([K1, K2, K3]), {K1}) == {K1, K2, K3})
+    check("🛑 a SILENT run acknowledges nothing new and PRUNES payers who recovered, so a "
+          "recover-then-rebreak is a genuinely new event and pages again",
+          next_ack_baseline("PASS", _f([K1]), {K1, K2}) == {K1})
+    fd = _f([K1, K3])
+    apply_acknowledgement("PASS", [], fd, {K1})
+    check("a NEW stuck payer BELOW the floor is left UNACKNOWLEDGED, so it is still new when the "
+          "floor is crossed later",
+          fd["new_stuck_keys"] == [K3] and next_ack_baseline("PASS", fd, {K1}) == {K1})
+    fe = dict(fB, stuck_keys=[K1, K2, K3], acknowledged_stuck=2, new_stuck_keys=[K3])
+    check("the body states the new-vs-already-reported split instead of repeating a bare total",
+          "pages on the CHANGE" in build_body(rB, fe, classify_payers(three, NOW)))
     check("body carries the prior units so the instrument swap is auditable",
           "cards that emitted a decline" in body)
     check("body states the stuck count against the BOOK, not as a bare number",
@@ -1569,6 +1802,15 @@ def self_test():
     check("...and a PASS fires nothing, prints exactly one PASS token, and exits 0",
           _LAST_BODY["text"] is None and rc_pass == EXIT_PASS
           and tok_pass == "PAYMENT_DECLINE_VERDICT=PASS")
+    # 🛑 ASSERTED AT THE CALL SITE, like every other clear assertion in this file. A SUPPRESSED
+    # run also clears, and its reason is read by a human in the channel — so it must not claim the
+    # floor is below threshold when it is merely acknowledged. Those are different facts.
+    drive("PASS", [], dict(f, floor_breached=True, stuck_payers=3), st)
+    check("🛑 a SUPPRESSED run's clear reason says the payers are ALREADY REPORTED — it never "
+          "claims the floor is clear when the floor is breached",
+          _LAST_CLEAR["reason"] is not None
+          and "already reported" in _LAST_CLEAR["reason"]
+          and "< floor" not in _LAST_CLEAR["reason"])
     rc_fail, tok_fail, argv_fail = drive("FAIL", rB, fB, classify_payers(three, NOW))
     check("...while a FAIL verdict FIRES and never clears — a clear on a firing condition "
           "would erase the episode",
@@ -1636,7 +1878,7 @@ def self_test():
     if total < SELF_TEST_MIN_CHECKS:
         failed.append("VACUITY: ran %d checks, floor is %d — the suite collapsed"
                       % (total, SELF_TEST_MIN_CHECKS))
-    if SELF_TEST_MIN_CHECKS < 150:
+    if SELF_TEST_MIN_CHECKS < 165:
         failed.append("VACUITY: SELF_TEST_MIN_CHECKS was lowered below its committed value")
 
     for label in failed:
@@ -1646,6 +1888,32 @@ def self_test():
     ok = not failed
     print("PAYMENT_DECLINE_VERDICT=%s" % ("PASS" if ok else "FAIL"))
     return EXIT_PASS if ok else EXIT_FAIL
+
+
+def acknowledge_current():
+    """Seed the acknowledgement baseline from the CURRENT stuck set, alerting nobody.
+
+    The install-time bootstrap, and the ONLY sanctioned way to reach an acknowledged state
+    without a page. Without it the first run after deploy finds no baseline, correctly fails
+    toward noise, and pages about payers the operator has already seen three times.
+
+    READ-ONLY against Postgres; the only write is the baseline file itself.
+    """
+    try:
+        _sentinels, payer_rows = parse_payer_rows(_psql(build_payer_state_query()))
+    except Exception as exc:                                    # noqa: BLE001
+        log("acknowledge-current: payer-state read failed: %s: %s" % (type(exc).__name__, exc))
+        print("PAYMENT_DECLINE_VERDICT=INDETERMINATE")
+        return EXIT_INDETERMINATE
+    states = classify_payers(payer_rows, time.time())
+    keys = sorted({p["key"] for p in states if p["counts"]})
+    for p in states:
+        if p["counts"]:
+            log("  acknowledging %s" % flatten_payer_line(render_payer_line(p)))
+    ok, detail = save_ack_baseline(set(keys))
+    log("acknowledge-current: %s — %s" % ("WROTE" if ok else "FAILED", detail))
+    print("PAYMENT_DECLINE_VERDICT=%s" % ("PASS" if ok else "INDETERMINATE"))
+    return EXIT_PASS if ok else EXIT_INDETERMINATE
 
 
 def status_vocabulary():
@@ -1700,7 +1968,12 @@ if __name__ == "__main__":
     parser.add_argument("--show-config", action="store_true", help="print resolved config and exit")
     parser.add_argument("--status-vocabulary", action="store_true",
                         help="print the 4-bucket status partition as JSON (cross-language parity seam)")
+    parser.add_argument("--acknowledge-current", action="store_true",
+                        help="seed the acknowledgement baseline from the currently-stuck payers "
+                             "and exit WITHOUT alerting (install-time bootstrap)")
     a = parser.parse_args()
+    if a.acknowledge_current:
+        sys.exit(acknowledge_current())
     if a.self_test:
         sys.exit(self_test())
     if a.status_vocabulary:
