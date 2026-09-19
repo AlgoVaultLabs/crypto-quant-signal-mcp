@@ -115,19 +115,20 @@ const UA = 'algovault-smithery-sync-gate/1.0 (+https://algovault.com)';
 const TIMEOUT_MS = 20000;
 
 /**
- * The baked-venue-count predicate.
+ * The baked-venue-count predicate — RE-EXPORTED, no longer declared here.
  *
- * The public-copy HELD list forbids a hardcoded venue count on every surface, and that count is
- * the defect this wave repairs — the incumbent Smithery description reads "across 5 perp venues"
- * while real coverage has moved. Word-boundaried on both ends so `cross-venue` (no count) and
- * `4h timeframes` (a timeframe token, not a count) stay clean. Verified against the incumbent
- * string before shipping; both directions are asserted in the self-test.
+ * It moved to `scripts/lib/baked-venue-count.mjs` (OPS-CURSOR-PLUGIN-MANIFESTS-W1) the moment it
+ * acquired a second consumer. This file calls `main()` at module scope, so a sibling gate cannot
+ * import it without running the live gate and exiting the process — which left the second consumer
+ * a choice between re-declaring the regex and moving it. Two declarations of one rule is the drift
+ * generator this estate keeps retiring, and the divergence would be invisible: two regexes that
+ * agree on every string anyone happens to test still differ on the one that matters.
+ *
+ * The re-export is deliberate: every existing consumer and this file's own self-test keep reading
+ * the same two names from the same place, so the extraction is behaviour-identical by construction.
  */
-export const BAKED_VENUE_COUNT = /\b\d+\s*(perp|perpetual|derivatives?)?\s*venues?\b/i;
-
-export function hasBakedVenueCount(description) {
-  return BAKED_VENUE_COUNT.test(String(description ?? ''));
-}
+import { BAKED_VENUE_COUNT, hasBakedVenueCount } from './lib/baked-venue-count.mjs';
+export { BAKED_VENUE_COUNT, hasBakedVenueCount };
 
 // ── pure parsers, split from the fetch seam ───────────────────────────────────────────────────
 //
@@ -147,31 +148,17 @@ export function parseHealthVersion(body) {
 }
 
 /**
- * The MCP response body, which may be SSE-framed.
+ * The MCP `tools/list` response reader — RE-EXPORTED, no longer declared here.
  *
- * The remote transport runs STATELESS (`sessionIdGenerator: undefined`), so there is no
- * `Mcp-Session-Id` and its absence is CORRECT — this reader never asserts on one. What it must
- * handle is the framing: `content-type: text/event-stream` bodies arrive as `event: message\n
- * data: {…}`, and a plain `application/json` body arrives bare. Branch on the shape, never on an
- * assumption.
+ * Moved to `scripts/lib/mcp-tools-list.mjs` (OPS-CURSOR-PLUGIN-MANIFESTS-W1) when it acquired a
+ * second consumer, for the same reason as the venue-count predicate above: this file calls
+ * `main()` at module scope, so a sibling gate cannot import it, and the alternative — a second
+ * implementation of one wire format's framing rules — is how two readers come to disagree about
+ * it. The self-test below still pushes real SSE-framed and bare bodies through it, so the
+ * BYPASSED-ARTIFACT coverage is unchanged.
  */
-export function parseToolNames(body) {
-  const raw = String(body ?? '');
-  let json = raw;
-  if (/^data: /m.test(raw)) {
-    const frames = raw.split('\n').filter((l) => l.startsWith('data: ')).map((l) => l.slice(6));
-    if (frames.length === 0) return null;
-    json = frames[0];
-  }
-  try {
-    const tools = JSON.parse(json)?.result?.tools;
-    if (!Array.isArray(tools)) return null;
-    const names = tools.map((t) => t?.name).filter((n) => typeof n === 'string');
-    return names.length === tools.length ? names.slice().sort() : null;
-  } catch {
-    return null;
-  }
-}
+import { parseToolNames } from './lib/mcp-tools-list.mjs';
+export { parseToolNames };
 
 /**
  * The Smithery listing.
