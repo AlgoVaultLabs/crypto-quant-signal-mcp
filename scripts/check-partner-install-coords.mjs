@@ -589,7 +589,7 @@ export function selfTest() {
   // wholesale, so classifyNpmBin is decision logic no scenario reaches. Both DIRECTIONS matter —
   // a leg that never fires and a leg that fires on a library are equally wrong, and the second is
   // worse, because a gate that pages on correct data is a gate that gets ignored.
-  check('bin leg: cli + bin:null ⇒ fictional (the crypto-quant-risk-mcp shape)',
+  check('bin leg: cli + bin:null ⇒ fictional (the published-but-unrunnable stub shape)',
     () => classifyNpmBin('cli', null, 'x', '1.0.0')?.state === 'fictional' || 'did not fire');
   check('bin leg: cli + empty bin object ⇒ fictional',
     () => classifyNpmBin('cli', {}, 'x', '1.0.0')?.state === 'fictional' || 'did not fire');

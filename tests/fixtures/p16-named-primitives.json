@@ -1,0 +1,7 @@
+{
+  "_what_this_is": "The exact primitives the P16/full-3-tool-pipeline post named on 2026-09-18 before Mr.1 unpublished it. Captured by OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 as the wave's regression anchor.",
+  "_why_it_is_a_fixture_and_not_derived": "It must be INDEPENDENT of ops/primitive-registry.json. A test that derived this list from the registry would pass if someone deleted the rows — which is precisely the regression it exists to catch. It is the one path tests/unit/companion-package-literal-lock.test.ts exempts besides the registry itself, and the exemption carries this reason.",
+  "npm_packages": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"],
+  "npm_scope_404": "@algovault/crypto-quant-signal-mcp",
+  "mcp_tools": ["get_position_size", "run_backtest"]
+}

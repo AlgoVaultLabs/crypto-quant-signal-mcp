@@ -24,6 +24,8 @@ import {
   type PrimitiveRow,
 } from '../../src/lib/primitive-projection.js';
 
+const SELF = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).name as string;
+
 const row = (over: Partial<PrimitiveRow> = {}): PrimitiveRow => ({
   id: 'x', kind: 'npm_package', name: 'x', invocation: 'cli',
   status: 'live', public_nameable: true, ...over,
@@ -40,7 +42,7 @@ describe('primitive projection — allow-list, both directions', () => {
     ['not public_nameable', row({ public_nameable: false })],
     ['an mcp_tool, not a package', row({ kind: 'mcp_tool', invocation: 'n_a' })],
     ['an http_endpoint', row({ kind: 'http_endpoint', invocation: 'n_a' })],
-    ['this package itself — compatible_with is a COMPANION list', row({ name: 'crypto-quant-signal-mcp' })],
+    ['this package itself — compatible_with is a COMPANION list', row({ name: SELF })],
   ])('does NOT project %s', (_label, r) => {
     expect(isPubliclyNameablePackage(r)).toBe(false);
     expect(projectCompatibleWith([r])).toEqual([]);
@@ -59,10 +61,10 @@ describe('primitive projection — reads the shipped registry', () => {
     // flag to keep the server out of its own companion array would silently forbid the install
     // line. Two questions, two predicates, one registry.
     const doc = JSON.parse(readFileSync(join(process.cwd(), 'ops', 'primitive-registry.json'), 'utf8'));
-    const self = doc.primitives.find((r: PrimitiveRow) => r.name === 'crypto-quant-signal-mcp');
+    const self = doc.primitives.find((r: PrimitiveRow) => r.name === SELF);
     expect(self.status).toBe('live');
     expect(self.public_nameable).toBe(true);
-    expect(compatibleWith()).not.toContain('crypto-quant-signal-mcp');
+    expect(compatibleWith()).not.toContain(SELF);
   });
 
   it('yields [] today, which is the truthful value and not a bug to route around', () => {
@@ -87,12 +89,11 @@ describe('primitive projection — reads the shipped registry', () => {
     expect(compatibleWith('/nonexistent/primitive-registry.json')).toEqual([]);
   });
 
-  it('the registry it reads governs the stub packages', () => {
+  it('the registry it reads governs every package the P16 post named', () => {
+    const anchor = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'p16-named-primitives.json'), 'utf8'));
     const doc = JSON.parse(readFileSync(join(process.cwd(), 'ops', 'primitive-registry.json'), 'utf8'));
     const names = doc.primitives.map((r: PrimitiveRow) => r.name);
-    for (const n of ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp', 'crypto-quant-execution-mcp']) {
-      expect(names).toContain(n);
-    }
+    for (const n of anchor.npm_packages) expect(names).toContain(n);
   });
 });
 

@@ -70,11 +70,14 @@ describe('primitive-resolution — the shipped registry', () => {
     }
   });
 
-  it('carries the five primitives the P16 post named', () => {
-    // The regression corpus, as data. If a future edit drops one of these rows, the surface that
-    // names it stops being checked — which is precisely how this wave started.
+  it('carries every primitive the P16 post named', () => {
+    // The regression anchor, as data — tests/fixtures/p16-named-primitives.json. If a future edit
+    // drops one of these rows, the surface that names it stops being checked, which is precisely
+    // how this wave started. The anchor is a FIXTURE and not derived from the registry on purpose:
+    // deriving it would make the test pass if someone deleted the rows.
+    const anchor = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'p16-named-primitives.json'), 'utf8'));
     const names = loadRegistry(REGISTRY).rows.map((r: any) => r.name);
-    for (const n of ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp', 'get_position_size', 'run_backtest']) {
+    for (const n of [...anchor.npm_packages, ...anchor.mcp_tools]) {
       expect(names, `registry must govern ${n}`).toContain(n);
     }
   });
