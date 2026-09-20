@@ -40,6 +40,22 @@ COPY CHANGELOG.md ./
 # OPS-RECALIBRATE-HARNESS-RETIRE-W1 removed the lone `COPY ops/closedbar-recalibrate-config.json`
 # that sat here. Its consumer — the closed-bar readiness harness — was retired once its decision
 # was taken (DECISION-CLOSEDBAR-ARC-DEFER-W1), so the config had no reader left inside the image.
+#
+# OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 CH3 puts ONE ops/ file back, and unlike that one it
+# has a reader inside the image: src/lib/primitive-projection.ts resolves
+# path.resolve(__dirname, '..', '..', 'ops', 'primitive-registry.json') from dist/lib/, and every
+# tool response's `_algovault.compatible_with` projects from it.
+#
+# WITHOUT THIS LINE THE PROJECTION SHIPS DARK. The read is deliberately non-throwing — a guard on
+# a serving path refuses, it does not throw — so a missing registry yields `[]`, which is ALSO the
+# correct value today (no companion package is live). It would be right by accident and wrong the
+# moment a package goes live, with nothing failing anywhere.
+#
+# EVERY `COPY ops/…` LINE MUST BE DECLARED in the allow-list in
+# tests/unit/detector-envelope.test.ts, with its owner wave and a reason. That test used to assert
+# this image ships NO ops/ path at all; it now enforces the stronger property — you cannot lazily
+# read ops/ in prod, and anything you do need there is declared.
+COPY ops/primitive-registry.json ./ops/primitive-registry.json
 # It was a DEDICATED single-purpose COPY sharing nothing, which is what made removing it safe;
 # `ops/` is otherwise host-side and deliberately absent from the image. Deleted outright rather
 # than commented out, per the OPS-X402-SMOKE-HOLD-WAIVER-RETIRE-W1 precedent.

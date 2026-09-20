@@ -228,7 +228,7 @@ describe('R2 — the chat meter renders the same contract with its own semantics
 describe('R3 — `_algovault.quota` is strictly additive', () => {
   const base: AlgoVaultMeta = {
     version: '1.24.1', tool: 'get_trade_call',
-    compatible_with: ['crypto-quant-risk-mcp'], session_id: 'v2:abc',
+    compatible_with: [], session_id: 'v2:abc',
   };
 
   it('attaches usage / remaining / reset instant on a metered caller', () => {

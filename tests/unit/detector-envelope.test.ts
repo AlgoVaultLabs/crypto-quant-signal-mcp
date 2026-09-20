@@ -250,11 +250,53 @@ describe('DETECTOR_ENVELOPE — the embedded mirror is pinned to the SoT, field 
  * comment cannot satisfy the grep (the recorded false-positive shape, see the Dockerfile's own
  * note about the retired `COPY ops/closedbar-recalibrate-config.json`).
  */
-describe('DETECTOR_ENVELOPE — the runtime image really has no ops/ tree', () => {
-  it('the Dockerfile COPYs no ops/ path, which is why the SoT cannot be read in prod', () => {
+/**
+ * Every `ops/` path the runtime image is allowed to carry, with the wave that put it there and
+ * why. Anything not on this list fails the assertion below.
+ *
+ * GENERALIZED from "this image ships NO ops/ path at all" by
+ * OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 CH3. Incumbent owner: OPS-MONITORING-SIGNAL-CONTRACT-W1
+ * CH2, whose property is preserved and made enforceable for a whole class — you cannot LAZILY read
+ * `ops/` in prod; anything you genuinely need there is declared here, by name, with an owner.
+ *
+ * It was deliberately NOT narrowed to `COPY ops/monitoring/`. That would invert a deny-everything
+ * invariant into a deny-one, so a later `COPY ops/cron/` or `COPY ops/scripts/` would ship internal
+ * infrastructure into a public runtime image with nothing failing. Allow-list, never deny-list —
+ * the same rule the primitive projection applies to API responses, applied to the image.
+ *
+ * `ops/monitoring/detector_envelope.py` is still NOT here, which is why THIS file's own SoT still
+ * cannot be read in prod and why EMBEDDED_SCHEMA below exists.
+ */
+const ALLOWED_OPS_COPIES: ReadonlyArray<{ path: string; owner: string; reason: string }> = [
+  {
+    path: 'ops/primitive-registry.json',
+    owner: 'OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1',
+    reason:
+      'src/lib/primitive-projection.ts reads it from dist/lib/ to build every tool response\'s '
+      + '_algovault.compatible_with. The read refuses rather than throws, so without the COPY the '
+      + 'projection would return [] — correct today, silently wrong the moment a companion package '
+      + 'goes live.',
+  },
+];
+
+describe('DETECTOR_ENVELOPE — every ops/ path in the runtime image is declared', () => {
+  it('the Dockerfile COPYs only allow-listed ops/ paths, each with an owner and a reason', () => {
     const dockerfile = realReadFileSync(path.join(REPO, 'Dockerfile'), 'utf8');
-    const copies = dockerfile.split('\n').filter((l) => /^COPY\s+ops\//.test(l));
-    expect(copies).toEqual([]);
+    const copied = dockerfile
+      .split('\n')
+      .filter((l) => /^COPY\s+ops\//.test(l))
+      .map((l) => l.replace(/^COPY\s+/, '').split(/\s+/)[0]);
+    const allowed = ALLOWED_OPS_COPIES.map((e) => e.path);
+    expect(copied.filter((c) => !allowed.includes(c))).toEqual([]);
+    for (const e of ALLOWED_OPS_COPIES) {
+      expect(e.owner, `${e.path} must name its owner wave`).toMatch(/^[A-Z0-9-]+W\d+$/);
+      expect(e.reason.length, `${e.path} must carry a reason`).toBeGreaterThan(40);
+    }
+  });
+
+  it('ops/monitoring/detector_envelope.py is NOT shipped, which is why EMBEDDED_SCHEMA exists', () => {
+    const dockerfile = realReadFileSync(path.join(REPO, 'Dockerfile'), 'utf8');
+    expect(dockerfile).not.toMatch(/^COPY\s+ops\/monitoring\//m);
   });
 
   it('and the SoT path is inside that absent tree', () => {

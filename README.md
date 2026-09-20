@@ -95,12 +95,12 @@ Under the hood, a self-tuning model fuses momentum, trend structure, derivatives
   "_algovault": {
     "version": "1.30.0",
     "tool": "get_trade_call",
-    "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
+    "compatible_with": []
   }
 }
 ```
 
-The `_algovault` block makes outputs composable: downstream risk and backtest tools accept the object directly.
+The `_algovault` block is the envelope every tool response carries: the server version, the tool that answered, your quota, and `compatible_with` — the companion packages that accept this object directly. It projects from a machine-verified registry, so it lists a package only once that package is published and runnable. It is `[]` today, and that is the truthful answer: there is no companion package yet.
 
 ---
 

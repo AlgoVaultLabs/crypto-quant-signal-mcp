@@ -9,6 +9,7 @@ import { scanFundingArb, _resetScanFundingArbCaches, _resetPredictedFundingsCach
 import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { resetLicenseCache } from '../src/lib/license.js';
 import type { ExchangeAdapter, FundingData } from '../src/types.js';
+import { compatibleWith } from '../src/lib/primitive-projection.js';
 
 const mockFundings = (): FundingData[] => [
   {
@@ -80,8 +81,11 @@ describe('scanFundingArb', () => {
     const { PKG_VERSION } = await import('../src/lib/pkg-version.js');
     expect(result._algovault.version).toBe(PKG_VERSION);
     expect(result._algovault.tool).toBe('scan_funding_arb');
-    expect(result._algovault.compatible_with).toContain('crypto-quant-risk-mcp');
-    expect(result._algovault.compatible_with).toContain('crypto-quant-execution-mcp');
+    // OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 CH3: the envelope now PROJECTS from
+    // ops/primitive-registry.json, so assert it equals the projection rather than naming
+    // packages here. Naming them is exactly what let two bin:null stubs outlive the
+    // decision to stop advertising them. `[]` today, and that is the truthful value.
+    expect(result._algovault.compatible_with).toEqual(compatibleWith());
   });
 
   it('filters by minSpreadBps', async () => {

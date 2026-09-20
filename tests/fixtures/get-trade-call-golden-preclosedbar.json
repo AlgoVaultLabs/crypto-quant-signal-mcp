@@ -19,10 +19,7 @@
   "_algovault": {
     "version": "<PKG_VERSION>",
     "tool": "get_trade_call",
-    "compatible_with": [
-      "crypto-quant-risk-mcp",
-      "crypto-quant-backtest-mcp"
-    ],
+    "compatible_with": [],
     "session_id": null,
     "exchange": "BINANCE",
     "venue_status": "promoted",
