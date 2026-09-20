@@ -53,6 +53,7 @@ import { getOiScoreSource } from '../lib/oiscore-source-flag.js';
 import { splitCandleWindow } from '../lib/candle-window.js';
 import { getCandleBasis } from '../lib/candle-basis-flag.js';
 import { getTrendMode } from '../lib/trend-mode-flag.js';
+import { compatibleWith } from '../lib/primitive-projection.js';
 
 interface TradeSignalInput {
   coin: string;
@@ -1326,7 +1327,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   let meta: TradeCallResult['_algovault'] = {
     version: PKG_VERSION,
     tool: 'get_trade_call',
-    compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
+    compatible_with: compatibleWith(),
     session_id: getRequestSessionId() ?? null,
     exchange,
     venue_status: venueStatus,

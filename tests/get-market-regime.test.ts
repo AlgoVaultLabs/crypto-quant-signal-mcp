@@ -9,6 +9,7 @@ import { getMarketRegime } from '../src/tools/get-market-regime.js';
 import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { InsufficientCandlesError } from '../src/lib/errors.js';
 import type { ExchangeAdapter, Candle, FundingData } from '../src/types.js';
+import { compatibleWith } from '../src/lib/primitive-projection.js';
 
 const mockTrendingUpCandles = (count: number): Candle[] => {
   return Array.from({ length: count }, (_, i) => {
@@ -105,8 +106,11 @@ describe('getMarketRegime', () => {
     expect(result._algovault).toBeDefined();
     expect(result._algovault.version).toBe(PKG_VERSION);
     expect(result._algovault.tool).toBe('get_market_regime');
-    expect(result._algovault.compatible_with).toContain('crypto-quant-risk-mcp');
-    expect(result._algovault.compatible_with).toContain('crypto-quant-backtest-mcp');
+    // OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 CH3: the envelope now PROJECTS from
+    // ops/primitive-registry.json, so assert it equals the projection rather than naming
+    // packages here. Naming them is exactly what let two bin:null stubs outlive the
+    // decision to stop advertising them. `[]` today, and that is the truthful value.
+    expect(result._algovault.compatible_with).toEqual(compatibleWith());
   });
 
   it('includes cross-venue funding sentiment', async () => {

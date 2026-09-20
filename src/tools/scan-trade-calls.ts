@@ -70,6 +70,7 @@ import {
 } from '../tool-descriptions.js';
 import type { LicenseInfo, QuotaState, SuggestedX402 } from '../types.js';
 import { PROMOTED_VENUE_IDS, type PromotedVenueId } from '../lib/capabilities.js';
+import { compatibleWith } from '../lib/primitive-projection.js';
 
 export { SCAN_TRADE_CALLS_DESCRIPTION };
 
@@ -398,7 +399,7 @@ export async function runScanTradeCall(
           }
         : {}),
     },
-    compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
+    compatible_with: compatibleWith(),
     signal_performance: TRACK_RECORD_POINTER,
     session_id: sid,
   };

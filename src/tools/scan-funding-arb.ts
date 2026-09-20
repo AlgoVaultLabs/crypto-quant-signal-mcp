@@ -19,6 +19,7 @@ import { getRetiredVenueSet } from '../lib/venue-store.js';
 import { fetchVenueUniverse, effectiveLiquidityUsd } from '../lib/exchange-universe.js';
 import { getFreshCarryScores, carryKey, type CarryScores } from '../lib/carry-rank-reader.js';
 import { writeDivergenceLog } from '../lib/carry-divergence-log.js';
+import { compatibleWith } from '../lib/primitive-projection.js';
 
 // ── LATENCY-W1 C5: TTL caches for adapter calls (LRU-capped) ──
 //
@@ -271,7 +272,7 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
       _algovault: withAuthState({
         version: PKG_VERSION,
         tool: 'scan_funding_arb',
-        compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
+        compatible_with: compatibleWith(),
         session_id: getRequestSessionId() ?? null,
       }, license),
     };
@@ -478,7 +479,7 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
   let meta: FundingArbResult['_algovault'] = {
     version: PKG_VERSION,
     tool: 'scan_funding_arb',
-    compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
+    compatible_with: compatibleWith(),
     session_id: getRequestSessionId() ?? null,
   };
   if (upgradeHint) meta.upgrade_hint = upgradeHint;

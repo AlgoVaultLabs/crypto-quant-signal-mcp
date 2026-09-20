@@ -27,6 +27,7 @@ import { resetLicenseCache } from '../src/lib/license.js';
 import { _setSnapshotForTest, _clearCache, _setScorerOverride } from '../src/lib/cross-asset-grid.js';
 import { InsufficientCandlesError } from '../src/lib/errors.js';
 import type { ExchangeAdapter, Candle, AssetContext, FundingData } from '../src/types.js';
+import { compatibleWith } from '../src/lib/primitive-projection.js';
 
 const mockCandles = (count: number, basePrice: number = 3000, trend: 'up' | 'down' | 'flat' = 'flat'): Candle[] => {
   return Array.from({ length: count }, (_, i) => {
@@ -108,8 +109,11 @@ describe('getTradeSignal', () => {
     // regardless of whether MCP-callers invoke `get_trade_call` (canonical)
     // or `get_trade_signal` (alias). See src/index.ts dual-registration.
     expect(result._algovault.tool).toBe('get_trade_call');
-    expect(result._algovault.compatible_with).toContain('crypto-quant-risk-mcp');
-    expect(result._algovault.compatible_with).toContain('crypto-quant-backtest-mcp');
+    // OPS-EDITORIAL-PRIMITIVE-RESOLUTION-GATE-W1 CH3: the envelope now PROJECTS from
+    // ops/primitive-registry.json, so assert it equals the projection rather than naming
+    // packages here. Naming them is exactly what let two bin:null stubs outlive the
+    // decision to stop advertising them. `[]` today, and that is the truthful value.
+    expect(result._algovault.compatible_with).toEqual(compatibleWith());
     // v1.10.0 dual-emit: top-level `call` and `signal` both populated, equal.
     expect(result.call).toBe(result.call);
   });

@@ -17,6 +17,7 @@ import { withTierWarning, withQuotaState, withAuthState, DEFAULT_UPGRADE_URL } f
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId, Candle } from '../types.js';
 import type { PriceStructureResult } from '../lib/indicators.js';
+import { compatibleWith } from '../lib/primitive-projection.js';
 
 interface MarketRegimeInput {
   coin: string;
@@ -573,7 +574,7 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   let meta: MarketRegimeResult['_algovault'] = {
     version: PKG_VERSION,
     tool: 'get_market_regime',
-    compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
+    compatible_with: compatibleWith(),
     session_id: getRequestSessionId() ?? null,
     exchange,
     venue_status: venueStatus,
