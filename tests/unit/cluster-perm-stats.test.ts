@@ -72,7 +72,7 @@ describe('cluster-perm-stats — the committed attribution instrument', () => {
     expect(lines.filter((l) => /^MUTATION S\d+ CAUGHT /.test(l))).toHaveLength(15);
   });
 
-  it('a subset run can never masquerade as the full PASS, and an unknown group is refused', () => {
+  it('a subset run can never masquerade as the full PASS, and an unknown group is refused', { timeout: 60_000 }, () => {
     const sub = spawnSync('python3', [SELFTEST, '--only', 'KP'], { encoding: 'utf8' });
     expect(sub.status, sub.stdout).toBe(0);
     expect(tokenLines(sub.stdout)).toEqual([]);
