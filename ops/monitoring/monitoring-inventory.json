@@ -1871,7 +1871,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "c4b84a7da46958ba06ecc7d03c3c92d853cdc6dcaf8e93126e65309887ddf118",
+      "sha256": "c063c3d0fd725524532cecbecaf6bf4531ef0900fde2d0a94c02c80be98a62a0",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -2516,6 +2516,26 @@
         "at": "20260910T072630Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
+    },
+    {
+      "id": "cancel-path-live",
+      "artifact": "scripts/check-cancel-path-live.mjs",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/scripts/check-cancel-path-live.mjs",
+      "criticality": "load-bearing",
+      "schedule": "39 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "repo_resident": true,
+      "sha256": "157fb9de4550ed4530e67eabdc5004fd16f97c8cb6ffa237f85b2a14cb180104",
+      "alert_ids": [
+        "CANCEL_PATH_BROKEN",
+        "CANCEL_PATH_UNVERIFIED"
+      ],
+      "owner_wave": "CANCEL-PATH-CSP-FORM-ACTION-W1",
+      "verification": "node scripts/check-cancel-path-live.mjs --self-test && ALGOVAULT_TG_TEST_INERT=1 node scripts/check-cancel-path-live.mjs --live",
+      "notes": "The LIVE leg of the cancel path (CH3). CH2's form-action gate reads the tree; this asks production what a customer's browser asks: POST /account/portal as the fixture customer must answer a 200 text/html same-origin interstitial with a billing.stripe.com anchor and NO Location (PASS) — any 3xx / any Location / no anchor / 404 is FAIL, and key-unset / 400-401 (Stripe search lag) / 403 cf-mitigated / 429 / 5xx / network / a non-Stripe portal host (custom-domain switch) is INDETERMINATE. redirect:'manual' is load-bearing: Node's fetch follows a 303 by default, so a regressed prod would otherwise open real portal sessions on Stripe's host. TWO alert ids, separate because send_telegram.sh's fixed 24h per-id cooldown would let one silence the other: CANCEL_PATH_BROKEN on FAIL; CANCEL_PATH_UNVERIFIED after 24 CONSECUTIVE INDETERMINATE runs (streak in /var/lib/algovault-monitoring/cancel-path-live.state.json); PASS --clears both (announce_resolution true). The fixture key is read in-process from /etc/algovault-monitoring/cancel-canary.env (600 root), never argv; no key, portal URL or session id is printed, alerted or recorded. ITS OWN STRIPE WRITES, DISCLOSED: every run creates one billingPortal.sessions.create on the fixture customer — ~720/month — which is accepted: the fixture has no subscription and no payment method, so a leaked session grants nothing. One result line per run via ops/monitoring/canary_result_log.py (canary key cancel_path_live). cron 39 * * * *: offset(39)=21 >= 3; minute 39 has zero hourly neighbours."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

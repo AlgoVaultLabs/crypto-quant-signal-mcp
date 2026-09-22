@@ -1,6 +1,6 @@
 {
   "generated_by": "scripts/check-map-edges.mjs --sync (edge-class grammar 2)",
-  "extracted_from_corpus_sha256": "deb0b9b622b1f89bb207ca6dc7de54b4685fcf1ff47fcf07f2223667169822f7",
+  "extracted_from_corpus_sha256": "3fca7af2894da167177c6b0b4da24ecdcfe374ffa205828ec2f5466d9620c096",
   "components": [
     "Plausible CE",
     "algovault-blog-assets",
@@ -55,6 +55,7 @@
     "algovault-monitoring:consumes:aoe=tight",
     "algovault-monitoring:consumes:crypto-quant-signal-mcp=tight",
     "algovault-monitoring:produces:debt:1=tight",
+    "algovault-monitoring:produces:ext:Telegram Bot=tight",
     "algovault-monitoring:produces:ext:Telegram Bot=tight",
     "algovault-monitoring:produces:ext:Telegram Bot=tight",
     "algovault-monitoring:produces:ext:Telegram Bot=tight",
