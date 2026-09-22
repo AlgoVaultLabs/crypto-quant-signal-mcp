@@ -148,6 +148,19 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
     // in a vault-only driver — no model is persisted to any serving path. It adds NO file to the
     // allowlist: this canary's scope is unchanged. A FIFTH consumer needs its own ruling and line.
     //
+    // ── FIFTH CONSUMER, 2026-09-22 — EDGE-HURST-DISCRIMINATION-PROBE-W1 (architect Q10, ruled 2026-09-22) ──
+    // Its own ruling and its own line, admitted BY RESOLVED ID:
+    //   * EDGE-HURST-DISCRIMINATION-PROBE-W1 (2026-09-22, prereg
+    //     audits/hurst-discrimination-preregistration-2026-09-22.md) — on the Hurst-fired subgroup of the
+    //     ceiling corpus, the paired within-side AUC of the live score vs the score with the Hurst stage
+    //     removed, the term alone as a ranker, and a label-free reliability test of the estimator.
+    // Same three protections: it pre-registers its own hypotheses; its output may NEVER be cited for or
+    // against the HOLD-discipline hypothesis (disclosed in audits/hold-decision-preregistration-2026-08-26.md
+    // §14; no statistic per confidence stratum); nothing derived from it reaches public copy. It reads this
+    // store ONLY through a vault-only query layer, runs its statistics in the PURE module
+    // src/scripts/cluster-perm-stats.py (term-contribution layer; names no store), and fits nothing to any
+    // serving path. It adds NO file to the allowlist. A SIXTH consumer needs its own ruling and line.
+    //
     // What crosses the boundary is therefore still only a CARDINALITY — how many parents are
     // labelled — never a label value, never a win rate, never a return. The hard boundary the
     // Observed-Path Exception draws is around counterfactual OUTCOMES; a row count is not one.

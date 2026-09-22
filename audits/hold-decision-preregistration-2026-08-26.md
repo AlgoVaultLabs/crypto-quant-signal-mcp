@@ -183,3 +183,29 @@ Binding consequences, ratified with the examination:
 3. **`EDGE-SCORER-PREDICTIVE-CEILING-W1`'s output may NOT be cited as evidence for or against the HOLD-discipline hypothesis (§2/§3), in any artifact, ever.** Adjacent question, separate verdict.
 4. **It never reports an AUC, a DWR or any outcome statistic per confidence stratum.** The reason: §3a makes the HOLD-discipline headline **the top confidence stratum**, so a stratified AUC would read the pre-registered test's own headline cell ahead of it and pre-empt it. Its estimand is pooled within side over the whole withheld support, blocked by side × day × effective horizon. Confidence never appears as a stratum or a reported cut.
 5. Its figures are internal research under the Observed-Path Exception's hard boundary and live in the private vault only. None appear in this file or any repo artifact.
+
+## 14. Amendment 2026-09-22 — prior-examination disclosure (recorded per §11.6)
+
+**`EDGE-HURST-DISCRIMINATION-PROBE-W1`** was admitted on 2026-09-22 (architect Q10) as the fifth ratified consumer of `hold_decision_labels`, by resolved ID. It examines this corpus **before** the §3 test has run, for a **different question**: on the rows where the scorer's Hurst term fired, does the live score rank withheld-decision outcomes better than the same score with the Hurst stage removed? It measures this as a paired, within-side, day-blocked AUC, alongside the term alone as a ranker and a label-free reliability test of the estimator. The pre-registration is `audits/hurst-discrimination-preregistration-2026-09-22.md`. It reuses `EDGE-SCORER-PREDICTIVE-CEILING-W1`'s corpus (§13 above) and writes no labels.
+
+**Why this is recorded here.** One arm of its primary is the AUC of the live score `S ≅ confidence` on withheld decisions, restricted to the Hurst-fired rows. That is a statement about whether the engine's **selection** ranks outcomes, which is adjacent to the HOLD-discipline hypothesis, so §11.6 requires the disclosure in this file.
+
+Binding consequences, ratified with the examination:
+
+1. **The §3 test definition is unchanged and stays binding.** This wave neither gates nor substitutes it (§11.2 intact).
+2. **When `EDGE-HOLD-DISCIPLINE-W{NEXT}` runs, its result MUST carry this disclosure, as well as §12 and §13.**
+3. **`EDGE-HURST-DISCRIMINATION-PROBE-W1`'s output may NOT be cited as evidence for or against the HOLD-discipline hypothesis (§2/§3), in any artifact, ever.**
+4. **It never reports an AUC, a rate or any outcome statistic per confidence stratum.** Its strata and sub-populations are all listed here, and none is a confidence cut:
+   - side;
+   - Hurst branch (TREND / NEUTRAL / MR flip or side-creation / MR damp);
+   - side driver;
+   - served interval, and native vs fetch-and-relabel cells (the native arm);
+   - fired rows excluding the MR flip stratum (the flip-driven test);
+   - leave-one-UTC-day-out deletions;
+   - the common-support band on the counterfactual score `S_cf`, a band on the score **without** the Hurst stage, used as a support sensitivity and never as a reported confidence cut;
+   - blocks by (venue, tf);
+   - the test-window sub-window;
+   - the tau0.5 / tau2.0 barrier specs.
+
+   Its label-free arm (R1) reads no counterfactual store at all.
+5. Its figures live in the private vault only. None appear in this file or any repo artifact.
