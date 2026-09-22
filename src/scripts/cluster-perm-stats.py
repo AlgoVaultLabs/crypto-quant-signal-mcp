@@ -1463,7 +1463,8 @@ def recommendation(reliability, verdict_state, side_g, side_a, native):
       reliability BELOW_PC1 otherwise                                -> REMOVE_THIS_ESTIMATOR (outcome non-contradicting)
       any other reliability, verdict KEEP_AND_FIX / MAPPING_ONLY / REMOVE -> that verdict
       any other reliability, an INDETERMINATE verdict                -> NO_CHANGE
-    Every recommendation except NO_CHANGE is a serving change needing the operator's acknowledgement."""
+    Every recommendation except NO_CHANGE and CONFLICT is a serving change needing the operator's acknowledgement
+    (registration §0 / §15); an empty-scope REMOVE_THIS_ESTIMATOR is NO_CHANGE in effect (registration §3.7)."""
     if reliability not in RELIABILITY_READINGS:
         raise ValueError(f"reliability reading {reliability!r}")
     if verdict_state not in TERM_STATES:
