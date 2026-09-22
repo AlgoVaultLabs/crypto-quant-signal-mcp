@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "res.redirect(req.get('Referrer') || '/') FAILs, although the gate PASSes res.redirect('back'), which Express implements as exactly that expression and deprecates in its favour",
+  "why": "round-4 confirmed FALSE-ALARM reproduction (v4 blocked correct common code)"
+}

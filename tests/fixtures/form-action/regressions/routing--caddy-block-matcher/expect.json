@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/pages\\.ts:2 POST /account/email(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "Block-form named Caddy matchers (`@account { path … }`) are silently dropped from the apex proxy map, so the apex origin is never judged and a 303 to api.algovault.com from an apex page PASSes",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

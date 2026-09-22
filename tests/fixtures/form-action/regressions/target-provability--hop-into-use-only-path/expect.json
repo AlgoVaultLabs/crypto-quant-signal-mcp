@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/page\\.ts:1 POST /account/cancel(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A hop into a path served only by app.use() middleware is treated as terminal, contradicting the header",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

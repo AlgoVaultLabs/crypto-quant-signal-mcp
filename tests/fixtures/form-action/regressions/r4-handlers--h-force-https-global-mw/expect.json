@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/index\\.ts:21 POST /account/settings(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": null,
+  "why": "round-4 sibling / control tree for the same shape"
+}

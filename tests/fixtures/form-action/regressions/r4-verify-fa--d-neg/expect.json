@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/pages\\.ts:2 POST /account/preferences(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": null,
+  "why": "round-4 sibling / control tree for the same shape"
+}

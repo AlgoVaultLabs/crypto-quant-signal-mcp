@@ -1,0 +1,10 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/billing\\.ts:5 POST /account/portal(\\s|$)",
+    "✗ src/lib/billing\\.ts:6 POST /account/portal2(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": null,
+  "why": "round-3 sibling / control tree for the same shape"
+}

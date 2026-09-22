@@ -1,0 +1,10 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/pages\\.ts:2 POST /subscribe(\\s|$)",
+    "✗ src/lib/pages\\.ts:3 GET /checkout/start(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A router mounted as `export default router`, behind middleware (`app.use('/account', requireAuth, router)`) or through a factory (`app.use('/billing', createBillingRouter(deps))`) is left unmapped, and an own-origin 303 into it counts as terminal",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

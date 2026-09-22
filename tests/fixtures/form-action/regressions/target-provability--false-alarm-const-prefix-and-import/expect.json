@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "False FAIL: redirect targets built from an imported const or a const path prefix are rejected, though form actions resolve the same consts",
+  "why": "round-3 FALSE ALARM reproduction: v3 blocked correct code (FAIL or INDETERMINATE)"
+}

@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/pages\\.ts:2 POST /subscribe/\\$\\{…\\}(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "app.param() / router.param() callbacks are never read, so a param guard that redirects off-origin before the route handler runs is invisible",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "A config or env value passed straight to a package middleware factory, like cookieParser(process.env.COOKIE_SECRET), is HANDLER_UNRESOLVED on a global use(), so every form in the app is INDETERMINATE",
+  "why": "round-4 confirmed FALSE-ALARM reproduction (v4 blocked correct common code)"
+}

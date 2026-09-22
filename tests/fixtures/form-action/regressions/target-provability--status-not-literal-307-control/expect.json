@@ -1,0 +1,12 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/checkout\\.ts:4 POST /pay/legacy(\\s|$)",
+    "✗ src/lib/checkout\\.ts:5 POST /pay/old(\\s|$)",
+    "✗ src/lib/checkout\\.ts:6 POST /pay/raw(\\s|$)",
+    "✗ src/lib/checkout\\.ts:7 POST /pay/split(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": null,
+  "why": "round-3 sibling / control tree for the same shape"
+}

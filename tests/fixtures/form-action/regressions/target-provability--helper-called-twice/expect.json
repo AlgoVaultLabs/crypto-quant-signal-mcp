@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/account\\.ts:15 POST /account/portal(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A redirect helper called twice in one registration: only the first call's argument is ever judged",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

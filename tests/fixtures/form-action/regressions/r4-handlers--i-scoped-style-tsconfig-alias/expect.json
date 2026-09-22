@@ -1,0 +1,10 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/controllers/billing\\.ts:10 POST /account/portal(\\s|$)",
+    "✗ src/controllers/billing\\.ts:11 POST /account/upgrade(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "tsconfig path aliases shaped like package names (`@utils/*`, `@controllers/*`) and baseUrl bare imports (`controllers/billing`) are read as npm packages, so a handler or redirect helper imported through them is never read and gets a check mark",
+  "why": "round-4 confirmed FAIL-OPEN reproduction (v4 passed code the browser refuses)"
+}

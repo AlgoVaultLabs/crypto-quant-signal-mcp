@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/billing\\.ts:5 POST /account/portal(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A handler wrapped by a package wrapper (express-async-handler) is never read, so the /account/portal → billing.stripe.com shape passes",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

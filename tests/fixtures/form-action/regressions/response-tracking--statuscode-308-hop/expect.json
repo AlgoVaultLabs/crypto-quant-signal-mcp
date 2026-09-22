@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/billing\\.ts:5 POST /buy(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A 308/307 status set by assignment (`res.statusCode = 308`) is read as the default 302, so the gate follows the hop as a GET and never evaluates the POST handler",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

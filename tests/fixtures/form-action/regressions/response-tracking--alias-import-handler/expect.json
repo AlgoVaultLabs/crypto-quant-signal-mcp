@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/billing\\.ts:9 POST /account/portal(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A handler imported through a path alias (`#lib/...` subpath import or tsconfig `@/...`) is treated as package code and marked ✓ without being read",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari — v5 resolves the alias (tsconfig paths / package.json imports, dist→src) and judges the handler: FAIL is the correct verdict (303 billing.stripe.com)"
+}

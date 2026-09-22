@@ -1,0 +1,13 @@
+algovault.com {
+	@account path /account /account/*
+	handle @account {
+		reverse_proxy localhost:3000
+	}
+	handle /proxied/* {
+		reverse_proxy localhost:3000
+	}
+	handle {
+		header Content-Security-Policy "default-src 'self'; form-action 'self'; object-src 'none'"
+		file_server
+	}
+}

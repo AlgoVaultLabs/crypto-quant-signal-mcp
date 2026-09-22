@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ landing/index\\.html:3 POST https://api\\.algovault\\.com/subscribe(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": null,
+  "why": "round-4 sibling / control tree for the same shape"
+}

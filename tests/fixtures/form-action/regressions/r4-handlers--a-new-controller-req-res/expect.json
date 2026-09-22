@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "The response handed to a class constructor (`new BillingController(req, res).portal()`, `new Responder(res)`) is never tracked: NewExpression is not treated as a call, so the off-origin 303 inside the class passes",
+  "why": "round-4 unconfirmed FAIL-OPEN reproduction (v4 passed code the browser refuses)"
+}

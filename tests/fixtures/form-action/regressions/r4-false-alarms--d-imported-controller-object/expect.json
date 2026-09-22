@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "Controller methods (a named or default-imported object literal, or a class instance) cannot be resolved, so every controller-style route is INDETERMINATE",
+  "why": "round-4 confirmed FALSE-ALARM reproduction (v4 blocked correct common code)"
+}

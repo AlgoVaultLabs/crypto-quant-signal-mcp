@@ -1,0 +1,9 @@
+{
+  "verdict": "INDETERMINATE",
+  "has": [
+    "\\? src/lib/page\\.ts:4 .*SAME_DOCUMENT_POST"
+  ],
+  "lacks": [],
+  "finding": null,
+  "why": "round-3 sibling / control tree for the same shape"
+}

@@ -1,0 +1,8 @@
+import type { Router } from 'express';
+async function createCheckoutSession(): Promise<{ url: string }> { return { url: 'https://checkout.stripe.com/c/pay/cs_fixture_1' }; }
+export function registerBillingRoutes(router: Router): void {
+  router.get('/billing/checkout', async (req, res) => {
+    const session = await createCheckoutSession();
+    res.redirect(303, session.url);
+  });
+}

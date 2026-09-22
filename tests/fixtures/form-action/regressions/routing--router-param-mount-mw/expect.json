@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/pages\\.ts:2 POST /org/\\$\\{…\\}/billing(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "use() middleware whose mount path has a :param or * is never matched, so a router.use / app.use auth guard that redirects off-origin is skipped (mergeParams org router, app.use('*'), app.use('/account/*'))",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/auth\\.ts:10 POST /checkout(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A local higher-order wrapper's returned function, which is what Express runs, is never scanned; only its argument is",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

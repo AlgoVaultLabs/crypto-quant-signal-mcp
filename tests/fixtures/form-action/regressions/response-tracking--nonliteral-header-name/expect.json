@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "A global middleware that sets a header with a non-literal name fails every form as 'a 3xx' when no redirect exists",
+  "why": "round-3 FALSE ALARM reproduction: v3 blocked correct code (FAIL or INDETERMINATE)"
+}

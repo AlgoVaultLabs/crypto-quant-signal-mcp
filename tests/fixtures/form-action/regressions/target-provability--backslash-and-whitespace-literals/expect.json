@@ -1,0 +1,14 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/page\\.ts:1 POST /bs/double(\\s|$)",
+    "✗ src/lib/page\\.ts:2 POST /bs/slash(\\s|$)",
+    "✗ src/lib/page\\.ts:3 POST /bs/const(\\s|$)",
+    "✗ src/lib/page\\.ts:4 POST /ws/tab(\\s|$)",
+    "✗ src/lib/page\\.ts:5 POST /ws/space(\\s|$)",
+    "✗ src/lib/page\\.ts:6 POST /ws/tab\\-tpl(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "The path-relative and '/<char>' branches accept backslash, tab and leading-space literals that the URL parser turns into '//host'",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

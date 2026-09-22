@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/billing\\.ts:9 POST /account/portal(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": null,
+  "why": "round-3 sibling / control tree for the same shape — v5 resolves the alias (tsconfig paths / package.json imports, dist→src) and judges the handler: FAIL is the correct verdict (303 billing.stripe.com)"
+}

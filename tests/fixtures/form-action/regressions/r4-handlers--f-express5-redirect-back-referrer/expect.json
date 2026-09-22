@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "Express 5's documented replacement for `res.redirect('back')`, `res.redirect(req.get('Referrer') || '/')`, FAILs, although the gate accepts `'back'` itself as own-origin",
+  "why": "round-4 confirmed FALSE-ALARM reproduction (v4 blocked correct common code)"
+}

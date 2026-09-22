@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/page\\.ts:3 POST /billing(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "formmethod without formaction is ignored: a GET form (or a method=dialog form) whose button has formmethod=\"post\" is judged as GET only",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

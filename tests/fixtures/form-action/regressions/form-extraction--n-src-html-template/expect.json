@@ -1,0 +1,9 @@
+{
+  "verdict": "INDETERMINATE",
+  "has": [
+    "\\? src/lib/billing\\.html .*UNSCANNED_TEMPLATE"
+  ],
+  "lacks": [],
+  "finding": null,
+  "why": "round-3 sibling / control tree for the same shape"
+}

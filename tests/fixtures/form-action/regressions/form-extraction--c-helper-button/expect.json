@@ -1,0 +1,9 @@
+{
+  "verdict": "INDETERMINATE",
+  "has": [
+    "\\? src/lib/page\\.ts:2 .*ACTION_ORIGIN_UNRESOLVED"
+  ],
+  "lacks": [],
+  "finding": null,
+  "why": "round-3 sibling / control tree for the same shape"
+}

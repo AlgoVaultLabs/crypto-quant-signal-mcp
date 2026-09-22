@@ -1,0 +1,12 @@
+algovault.com {
+	handle {
+		header Content-Security-Policy "default-src 'self'; form-action 'self'"
+		file_server
+	}
+}
+api.algovault.com {
+	handle /privacy {
+		header Content-Security-Policy "default-src 'self'; form-action 'self'"
+		file_server
+	}
+}

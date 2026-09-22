@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/pages\\.ts:2 GET /billing/checkout(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A default-exported Router is never mounted, so a GET form to its route is reported as 'a static or 404 page' and passes",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

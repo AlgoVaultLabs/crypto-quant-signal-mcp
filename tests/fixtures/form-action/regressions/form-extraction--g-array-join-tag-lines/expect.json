@@ -1,0 +1,9 @@
+{
+  "verdict": "INDETERMINATE",
+  "has": [
+    "\\? src/lib/page\\.ts:4 .*FORM_UNPARSED"
+  ],
+  "lacks": [],
+  "finding": "A <form tag split across array elements ('<form', '  method=\"post\"', …).join('\\n') is dropped silently, with no FORM_UNPARSED",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

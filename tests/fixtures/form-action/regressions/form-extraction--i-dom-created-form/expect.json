@@ -1,0 +1,12 @@
+{
+  "verdict": "INDETERMINATE",
+  "has": [
+    "\\? src/lib/page\\.ts:10 .*SCRIPTED_FORM",
+    "\\? src/lib/page\\.ts:6 .*SCRIPTED_FORM",
+    "\\? src/lib/page\\.ts:7 .*SCRIPTED_FORM",
+    "\\? src/lib/page\\.ts:8 .*SCRIPTED_FORM"
+  ],
+  "lacks": [],
+  "finding": "Forms built or retargeted by script (createElement('form'), form.action = …, setAttribute) are invisible",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

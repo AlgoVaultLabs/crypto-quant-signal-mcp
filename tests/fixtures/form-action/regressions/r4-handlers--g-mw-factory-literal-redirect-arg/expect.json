@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "A local middleware factory's parameters are never bound to the call's arguments, so `requireLogin('/account/login')` / `validateBody(fields, '/x?error=1')` FAILs on a same-origin literal",
+  "why": "round-4 confirmed FALSE-ALARM reproduction (v4 blocked correct common code)"
+}

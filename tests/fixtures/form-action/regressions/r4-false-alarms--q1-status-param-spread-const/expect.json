@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "A response helper whose status is a parameter (`status = 200`), or an inline ternary of non-3xx literals, hard-FAILs as soon as it spreads a const headers object or takes a headers argument",
+  "why": "round-4 confirmed FALSE-ALARM reproduction (v4 blocked correct common code)"
+}

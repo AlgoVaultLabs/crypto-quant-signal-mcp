@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/account\\.ts:11 POST /account/portal(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "Target resolution diverges from JS scoping: a nested callback's parameter is mistaken for the helper's bound parameter, and a var in try/if does not shadow a module const",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

@@ -1,0 +1,7 @@
+{
+  "verdict": "INDETERMINATE",
+  "has": ["\\? src/lib/pages\\.ts:2 POST /p/x — FORM_UNROUTED"],
+  "lacks": [],
+  "finding": "A registration on a parameter router with no traceable call site is unplaceable, never placed at the root",
+  "why": "gate rule pinned after the v5 mutation proof: without it, mutation M48 (the unplaceable rule disabled) survived"
+}

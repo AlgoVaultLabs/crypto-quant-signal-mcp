@@ -1,0 +1,11 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/billing\\.ts:17 POST /account/portal(\\s|$)",
+    "✗ src/lib/billing\\.ts:18 POST /account/upgrade(\\s|$)",
+    "✗ src/lib/billing\\.ts:19 POST /account/cancel(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "The response reaches a helper inside an object (`{ req, res }`, a const `ctx`) or as `req.res`",
+  "why": "round-3 probe the finders wrote but did not report; found FAIL-OPEN at review: v3 printed PASS"
+}

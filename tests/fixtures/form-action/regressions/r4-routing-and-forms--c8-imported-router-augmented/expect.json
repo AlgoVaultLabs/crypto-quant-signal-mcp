@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/page\\.ts:1 POST /upgrade(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": null,
+  "why": "round-4 sibling / control tree for the same shape"
+}

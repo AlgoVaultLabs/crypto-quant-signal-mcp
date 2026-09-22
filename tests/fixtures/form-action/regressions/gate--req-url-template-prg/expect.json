@@ -1,0 +1,7 @@
+{
+  "verdict": "PASS",
+  "has": ["✓ src/lib/pages\\.ts:2 POST /prg/save "],
+  "lacks": ["^\\s+[✗?] "],
+  "finding": "`${req.originalUrl}?saved=1` — the request's own URL inside a template — is same-origin",
+  "why": "gate rule pinned after the v5 mutation proof: without it, mutation M44b (the template reading disabled) survived"
+}

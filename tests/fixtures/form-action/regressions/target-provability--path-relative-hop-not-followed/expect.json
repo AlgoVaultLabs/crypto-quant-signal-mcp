@@ -1,0 +1,13 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/checkout\\.ts:2 POST /checkout(\\s|$)",
+    "✗ src/lib/checkout\\.ts:3 POST /billing/start(\\s|$)",
+    "✗ src/lib/checkout\\.ts:4 POST /billing/start2(\\s|$)",
+    "✗ src/lib/checkout\\.ts:5 POST /billing/start3(\\s|$)",
+    "✗ src/lib/checkout\\.ts:6 POST /billing/start4(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "Own-origin Locations that are path-relative, query-only, dot-segment or 'back' are accepted but the hop is never followed",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

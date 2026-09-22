@@ -1,0 +1,10 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/pages\\.ts:2 POST /account(\\s|$)",
+    "✗ src/lib/pages\\.ts:3 POST /account(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A method-override `_method=DELETE` form is judged against the POST handler only; the DELETE handler that actually runs, and redirects off-origin, is never read",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

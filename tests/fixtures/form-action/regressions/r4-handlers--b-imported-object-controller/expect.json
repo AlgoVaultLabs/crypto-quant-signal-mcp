@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "Controller-method handlers (an imported object-literal controller, a shorthand `{ save }` / `export default { save }` controller, or a class-instance controller) come back HANDLER_UNRESOLVED / RESPONSE_ESCAPES, so correct code is INDETERMINATE",
+  "why": "round-4 confirmed FALSE-ALARM reproduction (v4 blocked correct common code)"
+}

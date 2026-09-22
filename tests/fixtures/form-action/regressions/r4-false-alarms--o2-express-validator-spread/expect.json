@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "A spread in a route's handler list (`app.post('/signup', ...signupRules, handler)`) is HANDLER_UNRESOLVED, although the same array passed without the spread PASSes",
+  "why": "round-4 confirmed FALSE-ALARM reproduction (v4 blocked correct common code)"
+}

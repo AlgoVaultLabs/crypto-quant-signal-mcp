@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/billing\\.ts:14 POST /billing/upgrade(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A helper parameter reassigned inside the helper is still treated as the caller's argument",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

@@ -405,6 +405,25 @@ jobs:
           node scripts/check-external-origin-csp.mjs --self-test
           node scripts/check-external-origin-csp.mjs
 
+      # CANCEL-PATH-CSP-FORM-ACTION-W1 CH2 — the form-action conformance gate. `form-action 'self'`
+      # makes Chrome/Safari refuse a cross-origin redirect after a form submission SILENTLY, so a
+      # form-reached handler that answers `303 <other origin>` ships green and does nothing in the
+      # browser — which is how /account -> Stripe billing portal (cancel) was dead for eight weeks.
+      # Reads the Express + apex policies with the shared parsers, every <form> in src/** and
+      # landing/**, and each form-reached handler body. STATIC and network-free. Fail-closed on
+      # FAIL and on INDETERMINATE: gated on the TOKEN, never on the exit code.
+      - name: Form-action conformance gate (fail-closed)
+        run: |
+          set +e
+          ST="$(node scripts/check-form-action-conformance.mjs --self-test 2>&1)"
+          OUT="$(node scripts/check-form-action-conformance.mjs --check 2>&1)"
+          set -e
+          printf '%s\n' "$ST" "$OUT"
+          VS="$(printf '%s\n' "$ST" | grep -oE '^FORM_ACTION_CONFORMANCE_VERDICT=[A-Z]+' | tail -1)"
+          V="$(printf '%s\n' "$OUT" | grep -oE '^FORM_ACTION_CONFORMANCE_VERDICT=[A-Z]+' | tail -1)"
+          test "$VS" = "FORM_ACTION_CONFORMANCE_VERDICT=PASS" || { echo "::error::self-test $VS"; exit 1; }
+          test "$V" = "FORM_ACTION_CONFORMANCE_VERDICT=PASS" || { echo "::error::$V"; exit 1; }
+
       # LANDING-MCP-CLIENT-REGISTRY-W1 CH5 — the vendor-UI-path drift gate. The
       # lockstep canary above proves a SLUG is wired across its six homes; this one
       # proves the COPY is not stale. Claude Desktop renamed Settings → Integrations

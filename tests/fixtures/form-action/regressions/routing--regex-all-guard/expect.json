@@ -1,0 +1,9 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/pages\\.ts:2 POST /account/portal(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "Regex-path registrations are dropped as 'not analysable' even when they run BEFORE a literal route that serves the form; the note '(a POST form to one surfaces as FORM_UNROUTED)' is false in that case",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}

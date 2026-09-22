@@ -1,0 +1,6 @@
+algovault.com {
+	handle {
+		header Content-Security-Policy "default-src 'self'; object-src 'none'"
+		file_server
+	}
+}

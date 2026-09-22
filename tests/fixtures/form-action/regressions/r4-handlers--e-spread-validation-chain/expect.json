@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "A spread handler argument (`router.post(path, ...validators, handler)`) is HANDLER_UNRESOLVED, so every express-validator chain written with spread is INDETERMINATE",
+  "why": "round-4 confirmed FALSE-ALARM reproduction (v4 blocked correct common code)"
+}

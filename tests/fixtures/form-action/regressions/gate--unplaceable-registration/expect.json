@@ -1,0 +1,10 @@
+{
+  "verdict": "INDETERMINATE",
+  "has": [
+    "\\? src/lib/pages\\.ts:2 POST /u/save — HOP_UNROUTED",
+    "\\? src/lib/pages\\.ts:3 GET /u/static — UNROUTED_UNPLACEABLE"
+  ],
+  "lacks": [],
+  "finding": "An unrouted own-origin hop / GET form is terminal only while EVERY registration was placed",
+  "why": "gate rule pinned after the v4 mutation proof: without it, mutation M30 (the rule disabled) survived"
+}

@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "A correct POST form to a route on an `export default` router is FORM_UNROUTED, so the gate returns INDETERMINATE and blocks the deploy",
+  "why": "round-3 FALSE ALARM reproduction: v3 blocked correct code (FAIL or INDETERMINATE)"
+}

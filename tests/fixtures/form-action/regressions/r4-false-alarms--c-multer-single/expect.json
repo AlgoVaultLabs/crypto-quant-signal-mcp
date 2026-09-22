@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "has": [],
+  "lacks": [
+    "^\\s+[✗?] "
+  ],
+  "finding": "An object a package factory returns is not treated as package code: multer's upload.single() is HANDLER_UNRESOLVED, and csv.pipe(res) or logger.info({ req, res }) is RESPONSE_ESCAPES",
+  "why": "round-4 confirmed FALSE-ALARM reproduction (v4 blocked correct common code)"
+}

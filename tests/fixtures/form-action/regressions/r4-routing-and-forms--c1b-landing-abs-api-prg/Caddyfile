@@ -1,0 +1,9 @@
+algovault.com {
+	handle /proxied/* {
+		reverse_proxy localhost:3000
+	}
+	handle {
+		header Content-Security-Policy "default-src 'self'; form-action 'self' https://api.algovault.com; object-src 'none'"
+		file_server
+	}
+}

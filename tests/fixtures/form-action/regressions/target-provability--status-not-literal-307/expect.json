@@ -1,0 +1,12 @@
+{
+  "verdict": "FAIL",
+  "has": [
+    "✗ src/lib/checkout\\.ts:4 POST /pay/legacy(\\s|$)",
+    "✗ src/lib/checkout\\.ts:5 POST /pay/old(\\s|$)",
+    "✗ src/lib/checkout\\.ts:6 POST /pay/raw(\\s|$)",
+    "✗ src/lib/checkout\\.ts:7 POST /pay/split(\\s|$)"
+  ],
+  "lacks": [],
+  "finding": "A 307/308 whose status is not a numeric literal is modelled as 302, so the method-preserving POST hop is never judged",
+  "why": "round-3 FAIL-OPEN reproduction: v3 printed PASS while the code as written is refused by form-action in Chrome/Safari"
+}
