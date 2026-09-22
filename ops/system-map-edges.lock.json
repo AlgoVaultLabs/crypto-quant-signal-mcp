@@ -1,6 +1,6 @@
 {
   "generated_by": "scripts/check-map-edges.mjs --sync (edge-class grammar 2)",
-  "extracted_from_corpus_sha256": "9ba4a661718853c39c1d0fa4765aae16491dce35cea0c44b3332fef35ffa1e9d",
+  "extracted_from_corpus_sha256": "deb0b9b622b1f89bb207ca6dc7de54b4685fcf1ff47fcf07f2223667169822f7",
   "components": [
     "Plausible CE",
     "algovault-blog-assets",
@@ -28,6 +28,8 @@
     "Medium",
     "Smithery",
     "Telegram Bot",
+    "TypeSafe AI Jev",
+    "Vercel AI Gateway",
     "npm registry"
   ],
   "edges": [
@@ -40,12 +42,15 @@
     "algovault-editorial:consumes:algovault-skills=tight",
     "algovault-editorial:consumes:crypto-quant-signal-mcp=tight",
     "algovault-editorial:consumes:crypto-quant-signal-mcp=tight",
+    "algovault-editorial:consumes:crypto-quant-signal-mcp=tight",
     "algovault-editorial:consumes:debt:1=tight",
     "algovault-editorial:consumes:infra:1=tight",
     "algovault-editorial:produces:algovault-monitoring=tight",
     "algovault-editorial:produces:debt:1=tight",
     "algovault-editorial:produces:ext:Medium=tight",
     "algovault-editorial:produces:infra:1=tight",
+    "algovault-integrations:consumes:ext:TypeSafe AI Jev=loose",
+    "algovault-integrations:consumes:ext:Vercel AI Gateway=loose",
     "algovault-monitoring:consumes:algovault-editorial=tight",
     "algovault-monitoring:consumes:aoe=tight",
     "algovault-monitoring:consumes:crypto-quant-signal-mcp=tight",
@@ -87,6 +92,7 @@
     "crypto-quant-signal-mcp:consumes:internal:2=tight",
     "crypto-quant-signal-mcp:produces:algovault-bot=tight",
     "crypto-quant-signal-mcp:produces:algovault-editorial=tight",
+    "crypto-quant-signal-mcp:produces:algovault-editorial=tight",
     "crypto-quant-signal-mcp:produces:algovault-monitoring=tight",
     "crypto-quant-signal-mcp:produces:algovault-monitoring=tight",
     "crypto-quant-signal-mcp:produces:algovault-monitoring=tight",
@@ -111,6 +117,7 @@
     "crypto-quant-signal-mcp:produces:ext:Telegram Bot=tight",
     "crypto-quant-signal-mcp:produces:infra:1=tight",
     "crypto-quant-signal-mcp:produces:infra:2=tight",
+    "crypto-quant-signal-mcp:produces:infra:3=tight",
     "crypto-quant-signal-mcp:produces:internal:10=tight",
     "crypto-quant-signal-mcp:produces:internal:11=tight",
     "crypto-quant-signal-mcp:produces:internal:12=tight",

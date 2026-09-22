@@ -34,6 +34,8 @@ import { resolveLicense } from './license.js';
 // byte-identical private copy of the regex; a third copy is now a build failure
 // (scripts/check-credential-outcome-conformance.mjs R3) rather than a code-review catch.
 import { AV_KEY_SHAPE, credentialOutcomeOf } from './credential-outcome.js';
+// CANCEL-PATH-CSP-FORM-ACTION-W1 CH1: the Stripe hand-off after the portal form POST.
+import { sendOffOriginRedirect } from './off-origin-redirect.js';
 
 // DESIGN-W10 / C2 / Q-W10-10: REPLACED body-flex-centering with var(--bg) layout.
 // Existing .tabs/.tab/.panel/.subtitle/.footer/.error/.success class blocks PRESERVED
@@ -294,7 +296,19 @@ export async function accountPortalHandler(req: Request, res: Response): Promise
       res.status(503).send(getAccountErrorPageHtml('Billing portal is temporarily unavailable. Please try again in a few minutes or contact admin@algovault.com.'));
       return;
     }
-    res.redirect(303, portalUrl);
+    // 🛑 NEVER a 3xx here. This handler is reached by a FORM POST, and the served CSP's
+    // `form-action 'self'` makes Chrome and Safari refuse a cross-origin redirect after a form
+    // submission — silently, with no error page. A `303 → billing.stripe.com` left every
+    // Chrome/Safari customer unable to reach the portal (cancel, change plan, update card) from
+    // 2026-07-28 until CANCEL-PATH-CSP-FORM-ACTION-W1. The 200 same-origin interstitial below
+    // navigates onward by mechanisms CSP does not govern, and shows a working link if they fail.
+    // Copy verified against the live portal configuration (R0, 2026-09-22): cancel, plan change
+    // and payment-method update are all enabled.
+    sendOffOriginRedirect(res, portalUrl, {
+      title: 'Opening your billing portal…',
+      body: 'Your billing portal is hosted by Stripe — that is where you can cancel, change your plan, or update your card.',
+      cta: 'Open Stripe Billing Portal →',
+    });
   } catch (err) {
     console.error('/account/portal error:', err instanceof Error ? err.message : err);
     res.status(500).send(getAccountErrorPageHtml('Something went wrong. Please contact admin@algovault.com.'));

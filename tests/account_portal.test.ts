@@ -27,12 +27,15 @@ interface MockResponse {
   redirect(status: number, url: string): MockResponse;
 }
 
-function mockRes(): MockResponse {
-  const res: MockResponse = {
+function mockRes(): MockResponse & { headers: Record<string, string>; setHeader(name: string, value: string): unknown } {
+  const res: MockResponse & { headers: Record<string, string>; setHeader(name: string, value: string): unknown } = {
     statusCode: 200,
     body: '',
     redirectStatus: null,
     redirectUrl: null,
+    // CANCEL-PATH-CSP-FORM-ACTION-W1: header store, so "no Location header" is assertable.
+    headers: {},
+    setHeader(name: string, value: string) { this.headers[name.toLowerCase()] = String(value); return this; },
     status(code: number) { this.statusCode = code; return this; },
     send(html: string) { this.body = html; return this; },
     redirect(status: number, url: string) { this.redirectStatus = status; this.redirectUrl = url; this.statusCode = status; return this; },
@@ -55,14 +58,20 @@ describe('/account/portal handler', () => {
     vi.mocked(stripeMock.createBillingPortalSession).mockReset();
   });
 
-  it('valid API key → 303 redirect to Stripe Billing Portal', async () => {
+  it('valid API key → 200 same-origin interstitial to Stripe Billing Portal (never a 303)', async () => {
     vi.mocked(stripeMock.resolveCustomerByApiKey).mockResolvedValue({ customerId: 'cus_test_123', tier: 'pro', email: null, subscriptionStatus: 'active', hasActiveSubscription: true });
     vi.mocked(stripeMock.createBillingPortalSession).mockResolvedValue('https://billing.stripe.com/session/abc123');
     const req = mockReq({ api_key: 'av_live_validkey' });
     const res = mockRes();
     await accountPortalHandler(req, res as never);
-    expect(res.redirectStatus).toBe(303);
-    expect(res.redirectUrl).toBe('https://billing.stripe.com/session/abc123');
+    // CANCEL-PATH-CSP-FORM-ACTION-W1: this used to assert redirectStatus 303 — truthfully, as the
+    // SERVER contract. But the served CSP's `form-action 'self'` makes Chrome/Safari refuse a
+    // cross-origin redirect after a form POST, so the 303 was the defect: customers saw nothing
+    // happen. The server now answers 200 same-origin HTML that navigates to the portal.
+    expect(res.statusCode).toBe(200);
+    expect(res.redirectStatus).toBeNull();
+    expect(res.headers.location).toBeUndefined();
+    expect(res.body).toContain('<a href="https://billing.stripe.com/session/abc123"');
     expect(stripeMock.createBillingPortalSession).toHaveBeenCalledWith({
       customerId: 'cus_test_123',
       returnUrl: 'https://api.algovault.com/account',
@@ -171,12 +180,14 @@ describe('🛑 /account/portal admits a customer whose subscription is not activ
   });
 
   for (const status of ['past_due', 'unpaid', 'canceled', 'incomplete', 'paused', null]) {
-    it(`subscription "${status ?? '(none)'}" → 303 to the portal, NOT 401`, async () => {
+    it(`subscription "${status ?? '(none)'}" → 200 interstitial to the portal, NOT 401`, async () => {
       vi.mocked(stripeMock.resolveCustomerByApiKey).mockResolvedValue(nonActive(status));
       const res = mockRes();
       await accountPortalHandler(mockReq({ api_key: 'av_live_25cb2a59a4dd793e24c6ddd0' }), res);
-      expect(res.statusCode).toBe(303);
-      expect(res.redirectUrl).toBe('https://billing.stripe.com/session/ok');
+      // CANCEL-PATH-CSP-FORM-ACTION-W1: 200 same-origin interstitial, never a cross-origin 303.
+      expect(res.statusCode).toBe(200);
+      expect(res.redirectUrl).toBeNull();
+      expect(res.body).toContain('<a href="https://billing.stripe.com/session/ok"');
       expect(res.body).not.toContain(res401);
     });
   }
