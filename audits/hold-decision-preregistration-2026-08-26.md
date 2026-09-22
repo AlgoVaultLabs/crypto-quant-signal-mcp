@@ -169,3 +169,17 @@ Binding consequences, ratified with the examination:
    verdict.
 4. Its figures are internal research under the Observed-Path Exception's hard boundary and live
    in the private vault only — none appear in this file or any repo artifact.
+
+## 13. Amendment 2026-09-21 — prior-examination disclosure (recorded per §11.6)
+
+**`EDGE-SCORER-PREDICTIVE-CEILING-W1`** was admitted on 2026-09-21 (architect Q1 and Q11) as the fourth ratified consumer of `hold_decision_labels`, by resolved ID. It examines this corpus (`hold_decisions` / `hold_decision_labels`) **before** the §3 test has run, for a **different question**. It asks whether a function fitted to the captured scorer inputs ranks withheld-decision outcomes out-of-sample better than the live raw score, measured as within-side, day-blocked AUC on both sides. The pre-registration is `audits/scorer-predictive-ceiling-preregistration-2026-09-21.md`. Its single authorised labelling pass also **densified coverage** of the test window on both sides, through the same labeler code path and the same barrier arithmetic.
+
+**Why this is recorded here and not absorbed there.** The AUC of the live score `S` on withheld decisions is a statement about whether the engine's **selection** ranks outcomes: `S ≅ confidence`, a monotone function of `|rawScore|`. That is adjacent to the HOLD-discipline hypothesis, so §11.6 requires the disclosure in this file.
+
+Binding consequences, ratified with the examination:
+
+1. **The §3 test definition is unchanged and stays binding.** This wave neither gates nor substitutes it (§11.2 intact).
+2. **When `EDGE-HOLD-DISCIPLINE-W{NEXT}` runs, its result MUST carry this disclosure.** A prior look does not invalidate the test; an undisclosed prior look would.
+3. **`EDGE-SCORER-PREDICTIVE-CEILING-W1`'s output may NOT be cited as evidence for or against the HOLD-discipline hypothesis (§2/§3), in any artifact, ever.** Adjacent question, separate verdict.
+4. **It never reports an AUC, a DWR or any outcome statistic per confidence stratum.** The reason: §3a makes the HOLD-discipline headline **the top confidence stratum**, so a stratified AUC would read the pre-registered test's own headline cell ahead of it and pre-empt it. Its estimand is pooled within side over the whole withheld support, blocked by side × day × effective horizon. Confidence never appears as a stratum or a reported cut.
+5. Its figures are internal research under the Observed-Path Exception's hard boundary and live in the private vault only. None appear in this file or any repo artifact.

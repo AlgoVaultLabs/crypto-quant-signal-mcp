@@ -133,6 +133,21 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
     // tests/unit/cluster-perm-stats.test.ts. The three protections are unchanged. A FOURTH consumer
     // needs its own ruling and its own line here — never an edit to this one.
     //
+    // ── FOURTH CONSUMER, 2026-09-21 — EDGE-SCORER-PREDICTIVE-CEILING-W1 (architect Q1, ruled 2026-09-21) ──
+    // Its own ruling and its own line, as required above. Admitted BY RESOLVED ID, never by a
+    // W{NEXT} placeholder — the third consumer's placeholder cost a ruling to resolve:
+    //   * EDGE-SCORER-PREDICTIVE-CEILING-W1 (2026-09-21, prereg
+    //     audits/scorer-predictive-ceiling-preregistration-2026-09-21.md) — out-of-sample
+    //     within-side AUC of fitted models vs the live raw score, BOTH sides, withheld support.
+    // Same three protections: it pre-registers its own hypotheses; its output may NEVER be cited
+    // for or against the HOLD-discipline hypothesis (disclosed as a prior examination in
+    // audits/hold-decision-preregistration-2026-08-26.md §13, and it never reports any statistic
+    // per confidence stratum); nothing derived from it reaches public copy. It reads this store
+    // ONLY through its registered SQL under audits/ and a session-local query layer, runs its
+    // statistics in the PURE module src/scripts/cluster-perm-stats.py (names no store), and fits
+    // in a vault-only driver — no model is persisted to any serving path. It adds NO file to the
+    // allowlist: this canary's scope is unchanged. A FIFTH consumer needs its own ruling and line.
+    //
     // What crosses the boundary is therefore still only a CARDINALITY — how many parents are
     // labelled — never a label value, never a win rate, never a return. The hard boundary the
     // Observed-Path Exception draws is around counterfactual OUTCOMES; a row count is not one.
