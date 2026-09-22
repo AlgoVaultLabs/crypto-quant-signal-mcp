@@ -160,6 +160,34 @@
       }
     },
     {
+      "id": "block-form-action-conformance",
+      "path": "$GIT_COMMON_DIR/hooks/pre-commit",
+      "kind": "hook-block",
+      "hook": "pre-commit",
+      "block_name": "form-action-conformance",
+      "script": "scripts/check-form-action-conformance.mjs",
+      "writers": [
+        "scripts/install_form_action_conformance_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-commit"
+      ],
+      "invariant": "Same publish precondition. The installer asserts the gate AND its three runtime imports (scripts/check-token-resolution.mjs, scripts/check-external-origin-csp.mjs, scripts/lib/strip-comments.mjs) are reachable from a remote ref before emitting the block.",
+      "severity": "block",
+      "backstopped_by": [
+        ".github/workflows/deploy.yml"
+      ],
+      "_backstopped_by_reason": "deploy.yml runs the same gate fail-closed on FAIL and INDETERMINATE; the pre-commit block gates its exit code on FAIL only (fleet-wedge protection), so CI is the strict caller.",
+      "sha256": null,
+      "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
+      "serialization": {
+        "mechanism": "none-single-writer",
+        "key": null,
+        "scope": "the one installer named in writers[], run by hand from a checkout",
+        "_scope_reason": "A hook-block row is written only by its own installer. The FILE those installers share is hook-pre-commit, and the contention lives on that row, not on this one."
+      }
+    },
+    {
       "id": "block-push-safety",
       "path": "$GIT_COMMON_DIR/hooks/pre-push",
       "kind": "hook-block",
