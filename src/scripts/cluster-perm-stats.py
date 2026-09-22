@@ -26,6 +26,16 @@ PROVENANCE
     side orientation, out-of-fold prediction, and the univariate re-map S* (`bin_map_fit` /
     `bin_map_apply`). Known answers K1-K13 live in the self-test, and the COMMITTED harness
     tests/unit/cluster-perm-stats.mutation.py proves each load-bearing line can turn it red.
+  * NEW in EDGE-HURST-DISCRIMINATION-PROBE-W1 (the term-contribution layer, last section of this file):
+    does an ADDITIVE TERM earn its place in a fixed score? `pair_reorder_share` / `untied_pair_share`
+    (what a term or a tied ranker can move at all), `materiality_delta` (q-unit materiality),
+    `counterfactual_without_stage` (the score with one stage removed, a later gated stage re-evaluated),
+    `gap_reading` / `level_reading` / `term_side_reading` / `term_verdict` / `lodo_stable` (a TOTAL
+    per-side map, an intersection-union verdict and a stability gate), the recommendation layer
+    (`reliability_reading`, its registration precondition `oc_gate`, `remove_scope`, `outcome_contradicts`,
+    `recommendation`, `flip_driven`, `keep_licence`, `native_sign`) and the label-free reliability statistics
+    `cohen_kappa` / `stratified_kappa` / `cluster_bootstrap_kappa` / `twoway_cluster_bootstrap_kappa` /
+    `total_variation`. Known answers: group KH; mutation set TERM.
 
 CONVENTIONS
   * `clusters` is a parallel list of hashable cluster ids (e.g. "VENUE|COIN"); rows sharing an id
@@ -1046,3 +1056,558 @@ def bin_map_apply(model, scores):
     edges, means = model["edges"], model["means"]
     _refuse_nan(scores, "scores")
     return [means[bisect.bisect_left(edges, s)] for s in scores]
+
+
+# ── the term-contribution layer (EDGE-HURST-DISCRIMINATION-PROBE-W1) ─────────────────────────────
+#
+# "Does this ADDITIVE TERM earn its place in a fixed score?" Two FIXED rankings on identical rows --
+# the score WITH the term and the score WITHOUT it -- compared by a paired, block-stratified AUC. No
+# model is fitted, so no holdout is needed; the joint cluster bootstrap above supplies the paired
+# interval. What this layer adds is everything the ceiling layer's decision map could not express:
+#
+#   * IDENTIFIABILITY. A term that changes the within-block order of only a share d of row pairs caps
+#     |dAUC| at d (midrank weighting). Materiality is therefore stated in q-units -- the share of the
+#     reordered pairs the WITH-term ranking orders correctly -- and converted per side with
+#     delta = d (2 q* - 1). A threshold the mechanism cannot reach is not a threshold.
+#   * A TOTAL per-side map over (paired gain) x (the term alone as a ranker), in which REMOVE needs an
+#     equivalence bound and a significant-but-immaterial gain is NEVER read as REMOVE.
+#   * An intersection-union verdict over sides, with a leave-one-day-out stability gate.
+#   * Label-free estimator reliability: Cohen's kappa of a classifier against itself across windows,
+#     with a cluster bootstrap, and total-variation distance between two class distributions.
+# Every rule below is pinned by group KH of the self-test and by the committed TERM mutation set.
+
+
+def pair_reorder_share(a, b, blocks):
+    """Share of WITHIN-BLOCK row pairs whose order differs between rankings `a` and `b`, midrank-weighted:
+    a strict reversal counts 1, a tie on one ranking against a strict order on the other counts 1/2, a
+    pair ordered (or tied) identically counts 0. Label-free. Returns (share, pairs); (None, 0) when no
+    block holds two rows. With the same tie weights as the AUC, |AUC(a) - AUC(b)| <= this share taken
+    over positive-negative pairs, which is why it bounds what a term can move."""
+    n = len(a)
+    if not (len(b) == n == len(blocks)):
+        raise ValueError("a, b and blocks differ in length")
+    _refuse_nan(a, "a")
+    _refuse_nan(b, "b")
+    by_block = {}
+    for i in range(n):
+        by_block.setdefault(blocks[i], []).append(i)
+    pairs = 0
+    moved = 0.0
+    for rows in by_block.values():
+        m = len(rows)
+        for x in range(m):
+            i = rows[x]
+            ai, bi = a[i], b[i]
+            for y in range(x + 1, m):
+                j = rows[y]
+                sa = (ai > a[j]) - (ai < a[j])
+                sb = (bi > b[j]) - (bi < b[j])
+                pairs += 1
+                if sa != sb:
+                    moved += 1.0 if sa * sb == -1 else 0.5
+    if pairs == 0:
+        return None, 0
+    return moved / pairs, pairs
+
+
+def untied_pair_share(x, blocks):
+    """Share of within-block row pairs NOT tied on `x` -- the most a ranker with heavy ties can move its
+    AUC away from 1/2 is half of this. Returns (share, pairs); (None, 0) when no block holds two rows."""
+    n = len(x)
+    if len(blocks) != n:
+        raise ValueError("x and blocks differ in length")
+    _refuse_nan(x, "x")
+    by_block = {}
+    for i in range(n):
+        by_block.setdefault(blocks[i], {}).setdefault(x[i], 0)
+        by_block[blocks[i]][x[i]] += 1
+    pairs = 0
+    tied = 0
+    for counts in by_block.values():
+        m = sum(counts.values())
+        pairs += m * (m - 1) // 2
+        tied += sum(c * (c - 1) // 2 for c in counts.values())
+    if pairs == 0:
+        return None, 0
+    return (pairs - tied) / pairs, pairs
+
+
+def materiality_delta(share, q_star):
+    """The registered materiality margin on the AUC scale: share * (2 q* - 1). q* = 1/2 gives 0 (nothing is
+    material); q* = 1 gives the whole attainable width."""
+    if share is None:
+        return None
+    if not (0.0 <= share <= 1.0) or not (0.5 <= q_star <= 1.0):
+        raise ValueError(f"share={share} or q_star={q_star} out of range")
+    return share * (2.0 * q_star - 1.0)
+
+
+def counterfactual_without_stage(pre, downstream_active, gate, bonus):
+    """The score with ONE stage removed when a LATER, sign-reading, magnitude-gated stage follows it.
+    `pre` is the running score before the removed stage; the downstream stage adds sign(score) * bonus only
+    when it is active AND |score| > gate (strict). Re-evaluating the downstream stage on `pre` -- not
+    subtracting the removed stage's delta from the final score -- is what "the score without that stage"
+    means: the subtraction leaves the downstream stage's gate and sign evaluated on a score that no longer
+    exists."""
+    if not downstream_active:
+        return pre
+    if abs(pre) > gate:
+        return pre + (bonus if pre > 0 else -bonus)
+    return pre
+
+
+def _bounds(reps, alpha, alpha_equiv):
+    return (ci_lower(reps, alpha), ci_upper(reps, alpha), ci_lower(reps, alpha_equiv), ci_upper(reps, alpha_equiv))
+
+
+def gap_reading(point, reps, delta, alpha=0.025, alpha_equiv=0.05):
+    """One side's reading of the PAIRED gain (AUC with the term minus AUC without it).
+    Returns (state, reason), state in G+ / G- / Gs / G0 / Gu, precedence in this order:
+      G+  CI_lo(alpha) > 0 and point >= delta          -- a material gain;
+      G-  CI_hi(alpha) < 0                              -- the term significantly HURTS the ranking;
+      Gs  (CI_lo(alpha) > 0 or CI_lo95 > 0) and point < delta
+                                                        -- statistically real but below materiality: NOT
+                                                           identifiable at q*. Tested at the equivalence
+                                                           test's OWN one-sided 0.05 level too, so a gain the
+                                                           TOST itself calls significant can never read G0;
+      G0  max(CI_hi95, point) < delta and min(CI_lo95, point) > -delta   -- equivalent to no gain;
+      Gu  anything else (unresolved), including a degenerate bound.
+    Without the Gs line a small, real gain would satisfy the equivalence test and read "adds nothing"."""
+    if point is None or delta is None:
+        return "Gu", "undefined point or delta"
+    lo, hi, lo95, hi95 = _bounds(reps, alpha, alpha_equiv)
+    if None in (lo, hi, lo95, hi95):
+        return "Gu", "degenerate bootstrap"
+    if lo > 0.0 and point >= delta:
+        return "G+", "material gain"
+    if hi < 0.0:
+        return "G-", "significant harm"
+    if (lo > 0.0 or lo95 > 0.0) and point < delta:
+        return "Gs", "significant but below materiality (not identifiable at q*)"
+    if max(hi95, point) < delta and min(lo95, point) > -delta:
+        return "G0", "equivalent to no gain"
+    return "Gu", "unresolved"
+
+
+def level_reading(point, reps, delta, level_floor_pass, alpha=0.025, alpha_equiv=0.05, null=0.5):
+    """The term ALONE as a ranker, two-sided about `null`. Returns (state, reason), state in A+ / A- / As /
+    A0 / Au, in that precedence: a level floor that is not literally True -> Au; A+ CI_lo(alpha) > null;
+    A- CI_hi(alpha) < null (a term that ranks BACKWARDS carries information with the wrong sign); As
+    significant only at the equivalence test's own one-sided 0.05 (CI_lo95 > null or CI_hi95 < null) --
+    never A0, so the TOST cannot certify 'no signal' for a ranking it itself calls significant (mirrors Gs);
+    A0 max(CI_hi95, point) < null + delta and min(CI_lo95, point) > null - delta; Au otherwise."""
+    if level_floor_pass is not True:
+        return "Au", "level floor not met"
+    if point is None or delta is None:
+        return "Au", "undefined point or delta"
+    lo, hi, lo95, hi95 = _bounds(reps, alpha, alpha_equiv)
+    if None in (lo, hi, lo95, hi95):
+        return "Au", "degenerate bootstrap"
+    if lo > null:
+        return "A+", "ranks the right way"
+    if hi < null:
+        return "A-", "ranks backwards"
+    if lo95 > null or hi95 < null:
+        return "As", "significant only at the equivalence level (never 'no signal')"
+    if max(hi95, point) < null + delta and min(lo95, point) > null - delta:
+        return "A0", "equivalent to no signal"
+    return "Au", "unresolved"
+
+
+TERM_SIDE_READINGS = ("P", "KEEP", "MAPPING", "MAPPING_INVERT", "MAPPING_PROVISIONAL", "REMOVE",
+                      "REMOVE_HARMFUL", "DISAGREE", "UNRESOLVED", "NOT_IDENTIFIABLE")
+
+
+def term_side_reading(g_state, a_state, gap_floor):
+    """The registered per-side map. `gap_floor` is an `auc_floor` result for the paired primary; ONLY its
+    `pass_gap` gates here -- the level half of that floor concerns AUC(score) > 1/2, which the paired
+    question never asks, and it binds far above the gap half.
+      floor pass_gap not True -> P
+      G+ : A- -> DISAGREE;  otherwise -> KEEP
+      G- : A- -> MAPPING_INVERT;  A+ -> DISAGREE;  A0/Au -> REMOVE_HARMFUL
+      G0 : A+/A- -> MAPPING;  A0 -> REMOVE;  Au -> UNRESOLVED
+      Gs : any A -> NOT_IDENTIFIABLE   (a real gain below materiality is not actionable either way)
+      Gu : A+/A- -> MAPPING_PROVISIONAL;  A0/Au -> UNRESOLVED
+    REMOVE is reached ONLY through G0 and A0 together: an unresolved gain can never be read as removal."""
+    if g_state not in ("G+", "G-", "Gs", "G0", "Gu"):
+        raise ValueError(f"gap state {g_state!r}")
+    if a_state not in ("A+", "A-", "As", "A0", "Au"):
+        raise ValueError(f"level state {a_state!r}")
+    if a_state == "As":
+        a_state = "Au"   # in the side map an equivalence-level-only ranking is unresolved: it can never read A0 / REMOVE
+    if gap_floor.get("pass_gap") is not True:
+        return "P"
+    if g_state == "Gs":
+        return "NOT_IDENTIFIABLE"
+    if g_state == "G+":
+        return "DISAGREE" if a_state == "A-" else "KEEP"
+    if g_state == "G-":
+        if a_state == "A-":
+            return "MAPPING_INVERT"
+        if a_state == "A+":
+            return "DISAGREE"
+        return "REMOVE_HARMFUL"
+    if g_state == "G0":
+        if a_state in ("A+", "A-"):
+            return "MAPPING"
+        if a_state == "A0":
+            return "REMOVE"
+        return "UNRESOLVED"
+    if a_state in ("A+", "A-"):
+        return "MAPPING_PROVISIONAL"
+    return "UNRESOLVED"
+
+
+_TERM_FAMILY = {"KEEP": "KEEP", "MAPPING": "MAPPING", "MAPPING_INVERT": "MAPPING",
+                "MAPPING_PROVISIONAL": "MAPPING", "REMOVE": "REMOVE", "REMOVE_HARMFUL": "REMOVE"}
+TERM_STATES = ("KEEP_AND_FIX", "MAPPING_ONLY", "REMOVE", "INDETERMINATE_UNDERPOWERED", "INDETERMINATE_DISAGREE",
+               "INDETERMINATE_NOT_IDENTIFIABLE", "INDETERMINATE_UNRESOLVED", "INDETERMINATE_UNSTABLE")
+_SIDES = ("SELL", "BUY")
+_A_STATES = ("A+", "A-", "As", "A0", "Au")
+_G_STATES = ("G+", "G-", "Gs", "G0", "Gu")
+_NATIVE_SIGNS = ("POS", "NEG", "NS")
+# the native-arm sign that CONTRADICTS each verdict family (its CI excludes 0 against the verdict)
+_NATIVE_AGAINST = {"KEEP": "NEG", "REMOVE": "POS", "MAPPING": "POS"}
+
+
+def _exact_sides(d, what):
+    if not isinstance(d, dict) or set(d) != set(_SIDES):
+        raise ValueError(f"{what} must name exactly SELL and BUY")
+
+
+def native_sign(lo, hi):
+    """The native arm's sign at alpha from its one-sided bounds: POS (lo > 0), NEG (hi < 0), NS otherwise
+    (including an undefined bound). Materiality plays no part: a sign disagreement is about direction."""
+    if lo is not None and lo > 0.0:
+        return "POS"
+    if hi is not None and hi < 0.0:
+        return "NEG"
+    return "NS"
+
+
+def lodo_stable(full_reading, dropped_readings):
+    """True iff EVERY leave-one-day-out reading equals the full-data reading. An empty list is refused:
+    a stability gate over zero deletions verified nothing."""
+    if not dropped_readings:
+        raise ValueError("no leave-one-day-out readings")
+    return all(r == full_reading for r in dropped_readings)
+
+
+def term_verdict(side_readings, side_a, side_stable, native=None):
+    """Intersection-union verdict over sides. `side_readings`, `side_a` (each side's level state) and
+    `side_stable` must each name EXACTLY {"SELL", "BUY"}; `native` optionally maps the same sides to the
+    native-served arm's sign ("POS"/"NEG"/"NS", or None where its floor failed). Every input is validated:
+    a malformed value is REFUSED (ValueError), never read as "no objection". Precedence:
+      any P                                   -> INDETERMINATE_UNDERPOWERED
+      any DISAGREE                            -> INDETERMINATE_DISAGREE
+      any NOT_IDENTIFIABLE                    -> INDETERMINATE_NOT_IDENTIFIABLE
+      any UNRESOLVED                          -> INDETERMINATE_UNRESOLVED
+      the two sides in different families     -> INDETERMINATE_DISAGREE
+      MAPPING with the level sign differing   -> INDETERMINATE_DISAGREE   (two findings, not one mapping)
+      a side not leave-one-day-out stable     -> INDETERMINATE_UNSTABLE
+      the native arm's CI excluding 0 against the verdict (NEG under KEEP; POS under REMOVE or MAPPING)
+                                              -> INDETERMINATE_DISAGREE
+      else the common family: KEEP -> KEEP_AND_FIX, MAPPING -> MAPPING_ONLY, REMOVE -> REMOVE.
+    Returns (state, detail). A native point-sign wobble is NOT an input here; callers print it, non-gating."""
+    _exact_sides(side_readings, "side_readings"); _exact_sides(side_a, "side_a"); _exact_sides(side_stable, "side_stable")
+    for s in _SIDES:
+        if side_readings[s] not in TERM_SIDE_READINGS:
+            raise ValueError(f"reading {side_readings[s]!r} for {s}")
+        if side_a[s] not in _A_STATES:
+            raise ValueError(f"level state {side_a[s]!r} for {s}")
+        if side_stable[s] is not True and side_stable[s] is not False:  # identity: `1 in (True, False)` is True
+            raise ValueError(f"stability {side_stable[s]!r} for {s}")
+    if native is not None:
+        _exact_sides(native, "native")
+        for s in _SIDES:
+            if native[s] is not None and native[s] not in _NATIVE_SIGNS:
+                raise ValueError(f"native sign {native[s]!r} for {s}")
+    rs = [side_readings[s] for s in _SIDES]
+    if "P" in rs:
+        return "INDETERMINATE_UNDERPOWERED", "below floor: " + ",".join(s for s in _SIDES if side_readings[s] == "P")
+    if "DISAGREE" in rs:
+        return "INDETERMINATE_DISAGREE", "gain and level disagree within: " + ",".join(
+            s for s in _SIDES if side_readings[s] == "DISAGREE")
+    if "NOT_IDENTIFIABLE" in rs:
+        return "INDETERMINATE_NOT_IDENTIFIABLE", "a real gain below materiality on: " + ",".join(
+            s for s in _SIDES if side_readings[s] == "NOT_IDENTIFIABLE")
+    if "UNRESOLVED" in rs:
+        return "INDETERMINATE_UNRESOLVED", "unresolved: " + ",".join(s for s in _SIDES if side_readings[s] == "UNRESOLVED")
+    fams = {s: _TERM_FAMILY[side_readings[s]] for s in _SIDES}
+    if fams["SELL"] != fams["BUY"]:
+        return "INDETERMINATE_DISAGREE", f"sides disagree: SELL {side_readings['SELL']} vs BUY {side_readings['BUY']}"
+    fam = fams["SELL"]
+    if fam == "MAPPING" and side_a["SELL"] != side_a["BUY"]:
+        return "INDETERMINATE_DISAGREE", f"the term alone ranks differently across sides: SELL {side_a['SELL']} vs BUY {side_a['BUY']}"
+    unstable = [s for s in _SIDES if side_stable[s] is not True]
+    if unstable:
+        return "INDETERMINATE_UNSTABLE", "a single-day deletion changes the reading: " + ",".join(unstable)
+    if native is not None:
+        against = [s for s in _SIDES if native[s] == _NATIVE_AGAINST[fam]]
+        if against:
+            return "INDETERMINATE_DISAGREE", f"native-served arm's CI excludes 0 against {fam} on: {','.join(against)}"
+    state = {"KEEP": "KEEP_AND_FIX", "MAPPING": "MAPPING_ONLY", "REMOVE": "REMOVE"}[fam]
+    detail = f"SELL {side_readings['SELL']}, BUY {side_readings['BUY']}"
+    if "MAPPING_PROVISIONAL" in rs:
+        detail += " (provisional)"
+    return state, detail
+
+
+def flip_driven(full_side_reading, subset_side_reading):
+    """A side's KEEP is flip-driven when it does NOT survive removing the MR flip/side-creation rows: the
+    full reading is KEEP and the reading on the remaining rows is anything else."""
+    if full_side_reading not in TERM_SIDE_READINGS or subset_side_reading not in TERM_SIDE_READINGS:
+        raise ValueError("unknown side reading")
+    return full_side_reading == "KEEP" and subset_side_reading != "KEEP"
+
+
+def keep_licence(verdict_state, native, native_g):
+    """The licence a verdict grants. KEEP_AND_FIX licenses 'keep firing where it fires'; enabling the term on
+    dead cells needs the native arm to read G+ on BOTH sides (its floors passed -> native[s] not None).
+    Anything else licenses nothing."""
+    if verdict_state != "KEEP_AND_FIX":
+        return "none"
+    _exact_sides(native_g, "native_g")
+    if native is not None and all(native[s] is not None and native_g[s] == "G+" for s in _SIDES):
+        return "keep firing where it fires; enabling on dead cells permitted subject to the successor re-measure"
+    return "keep firing where it fires"
+
+
+# ── the reliability reading, its registration precondition, and the recommendation ──────────────
+
+def oc_gate(p_below_under_pc, p_below_under_null, max_under_pc=0.20, min_under_null=0.80):
+    """THE DISCRIMINATING-POWER PRECONDITION (EDGE-HURST-DISCRIMINATION-PROBE-W1, architect Q13): a
+    reliability test may be REGISTERED only if its structure-matched operating characteristic shows it can
+    tell the hypotheses apart -- P(reads 'below the positive control' | positive-control truth) <= 0.20 AND
+    P(reads 'below the positive control' | null truth) >= 0.80. A test that returns the same answer under
+    both is not evidence. Returns {"pass": bool, "reason": str}; an undefined probability never passes."""
+    if p_below_under_pc is None or p_below_under_null is None:
+        return {"pass": False, "reason": "operating characteristic not computed"}
+    for v in (p_below_under_pc, p_below_under_null):
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"probability {v} out of range")
+    ok_pc = p_below_under_pc <= max_under_pc
+    ok_null = p_below_under_null >= min_under_null
+    if ok_pc and ok_null:
+        return {"pass": True, "reason": f"P(below|PC)={p_below_under_pc:.3f} <= {max_under_pc}; P(below|null)={p_below_under_null:.3f} >= {min_under_null}"}
+    why = []
+    if not ok_pc:
+        why.append(f"P(below|PC)={p_below_under_pc:.3f} > {max_under_pc} (cannot rule the control out)")
+    if not ok_null:
+        why.append(f"P(below|null)={p_below_under_null:.3f} < {min_under_null} (too imprecise to read below the control)")
+    return {"pass": False, "reason": "; ".join(why)}
+
+
+RELIABILITY_READINGS = ("BELOW_PC1", "ABOVE_PC1", "UNRESOLVED", "NOT_IDENTIFIABLE")
+
+
+def reliability_reading(lo, hi, kappa_pc1, oc_pass):
+    """Reading of a self-agreement kappa against ONE a-priori positive control. `oc_pass` must be literally
+    True (the `oc_gate` result for THIS design); otherwise NOT_IDENTIFIABLE. BELOW_PC1: CI_hi < kappa_pc1.
+    ABOVE_PC1: CI_lo >= kappa_pc1. UNRESOLVED otherwise, including an undefined bound."""
+    if oc_pass is not True:
+        return "NOT_IDENTIFIABLE"
+    if lo is None or hi is None or kappa_pc1 is None:
+        return "UNRESOLVED"
+    if hi < kappa_pc1:
+        return "BELOW_PC1"
+    if lo >= kappa_pc1:
+        return "ABOVE_PC1"
+    return "UNRESOLVED"
+
+
+def remove_scope(pooled_reading, group_readings):
+    """Where may REMOVE_THIS_ESTIMATOR apply? Only if the pooled reading is BELOW_PC1, and then only to the
+    interval groups that pass their OWN realized-skeleton gate AND read BELOW_PC1 on their own data.
+    `group_readings` maps group -> (reading, gate_pass). A group whose own design cannot tell the null from
+    the control (gate not literally True) is never in scope: a pooled reading cannot license removal where
+    the design has no discriminating power. Returns the sorted list of licensed groups."""
+    if pooled_reading not in RELIABILITY_READINGS:
+        raise ValueError(f"reliability reading {pooled_reading!r}")
+    if pooled_reading != "BELOW_PC1":
+        return []
+    out = []
+    for g, (reading, gate_pass) in group_readings.items():
+        if reading not in RELIABILITY_READINGS:
+            raise ValueError(f"group reading {reading!r}")
+        if gate_pass is True and reading == "BELOW_PC1":
+            out.append(g)
+    return sorted(out)
+
+
+def outcome_contradicts(side_g, side_a, native):
+    """Does the outcome arm CONTRADICT 'the estimator carries nothing'? Judged per side, never on the verdict
+    state: any side with a statistically real positive gain (G+ or Gs), any side whose term alone ranks
+    outcomes either way (A+, A-, or As at the equivalence level), or a native arm significantly positive.
+    Floors play no part -- callers pass the level state and native sign computed WITHOUT floor gating, because
+    a significant reading on an underpowered side is still evidence."""
+    _exact_sides(side_g, "side_g"); _exact_sides(side_a, "side_a")
+    for s in _SIDES:
+        if side_g[s] not in _G_STATES:
+            raise ValueError(f"gap state {side_g[s]!r} for {s}")
+        if side_a[s] not in _A_STATES:
+            raise ValueError(f"level state {side_a[s]!r} for {s}")
+    if native is not None:
+        _exact_sides(native, "native")
+    reasons = [f"{s} gain {side_g[s]}" for s in _SIDES if side_g[s] in ("G+", "Gs")]
+    reasons += [f"{s} term-alone {side_a[s]}" for s in _SIDES if side_a[s] in ("A+", "A-", "As")]
+    if native is not None:
+        reasons += [f"{s} native POS" for s in _SIDES if native[s] == "POS"]
+    return bool(reasons), reasons
+
+
+def recommendation(reliability, verdict_state, side_g, side_a, native):
+    """The registered recommendation. Returns (recommendation, detail).
+      reliability BELOW_PC1 and the outcome arm contradicting        -> CONFLICT (no serving change)
+      reliability BELOW_PC1 and verdict REMOVE                       -> REMOVE_THIS_ESTIMATOR (outcome supporting)
+      reliability BELOW_PC1 otherwise                                -> REMOVE_THIS_ESTIMATOR (outcome non-contradicting)
+      any other reliability, verdict KEEP_AND_FIX / MAPPING_ONLY / REMOVE -> that verdict
+      any other reliability, an INDETERMINATE verdict                -> NO_CHANGE
+    Every recommendation except NO_CHANGE is a serving change needing the operator's acknowledgement."""
+    if reliability not in RELIABILITY_READINGS:
+        raise ValueError(f"reliability reading {reliability!r}")
+    if verdict_state not in TERM_STATES:
+        raise ValueError(f"verdict state {verdict_state!r}")
+    contra, why = outcome_contradicts(side_g, side_a, native)
+    if reliability == "BELOW_PC1":
+        if contra:
+            return "CONFLICT", "estimator below the positive control but the outcome arm shows value: " + "; ".join(why)
+        if verdict_state == "REMOVE":
+            return "REMOVE_THIS_ESTIMATOR", "label-free basis; outcome arm supporting"
+        return "REMOVE_THIS_ESTIMATOR", "label-free basis; outcome arm non-contradicting (" + verdict_state + ")"
+    if verdict_state in ("KEEP_AND_FIX", "MAPPING_ONLY", "REMOVE"):
+        return verdict_state, f"reliability {reliability}"
+    return "NO_CHANGE", f"reliability {reliability}; outcome {verdict_state}"
+
+
+# ── label-free estimator reliability ─────────────────────────────────────────────────────────
+
+def cohen_kappa(a, b, w=None):
+    """Cohen's kappa of two parallel categorical lists, optionally with row weights (a bootstrap passes
+    multiplicities): (p_o - p_e) / (1 - p_e), with p_e from the TWO marginals. None when p_e == 1 (every
+    row in one category on both sides) or the total weight is 0."""
+    n = len(a)
+    if len(b) != n or (w is not None and len(w) != n):
+        raise ValueError("a, b (and w) differ in length")
+    tot = 0.0
+    agree = 0.0
+    pa = {}
+    pb = {}
+    for i in range(n):
+        wi = 1.0 if w is None else w[i]
+        if wi == 0:
+            continue
+        tot += wi
+        if a[i] == b[i]:
+            agree += wi
+        pa[a[i]] = pa.get(a[i], 0.0) + wi
+        pb[b[i]] = pb.get(b[i], 0.0) + wi
+    if tot <= 0.0:
+        return None
+    po = agree / tot
+    pe = sum((pa[k] / tot) * (pb.get(k, 0.0) / tot) for k in pa)
+    if pe >= 1.0:
+        return None
+    return (po - pe) / (1.0 - pe)
+
+
+def cluster_bootstrap_kappa(a, b, clusters, B, seed):
+    """Cluster bootstrap of `cohen_kappa`: each replicate draws the G cluster units with replacement and
+    weights every pair by its unit's multiplicity. Returns {point, reps, n_degenerate, units, rows}."""
+    n = len(a)
+    if not (len(b) == n == len(clusters)):
+        raise ValueError("a, b and clusters differ in length")
+    uid = {}
+    row_unit = [uid.setdefault(u, len(uid)) for u in clusters]
+    G = len(uid)
+    gen = random.Random(seed)  # a private stream, named apart from the AUC bootstrap's so each mutation target stays unique
+    point = cohen_kappa(a, b)
+    reps = []
+    n_deg = 0
+    for _ in range(B):
+        mult = [0] * G
+        for _ in range(G):
+            mult[gen.randrange(G)] += 1
+        k = cohen_kappa(a, b, [mult[u] for u in row_unit])
+        reps.append(k)
+        if k is None:
+            n_deg += 1
+    return {"point": point, "reps": reps, "n_degenerate": n_deg, "units": G, "rows": n}
+
+
+def stratified_kappa(a, b, strata, w=None):
+    """Stratum-conditioned (Mantel-Haenszel-type) kappa: chance agreement is taken from EACH stratum's own
+    two marginals and pooled with the observed agreement,
+
+        kappa_s = (sum_g W_g p_o,g - sum_g W_g p_e,g) / (sum_g W_g - sum_g W_g p_e,g),
+
+    W_g = total (weighted) pairs in stratum g. With strata = calendar time blocks, a market-wide swing in
+    the class shares of one block moves p_o AND p_e together and cancels, so what remains is agreement
+    WITHIN coins beyond the common state -- a per-coin persistence estimand. None when the denominator is
+    0. `w` are optional row weights (a bootstrap passes multiplicities)."""
+    n = len(a)
+    if not (len(b) == n == len(strata)) or (w is not None and len(w) != n):
+        raise ValueError("a, b, strata (and w) differ in length")
+    groups = {}
+    for i in range(n):
+        wi = 1.0 if w is None else w[i]
+        if wi == 0:
+            continue
+        g = groups.setdefault(strata[i], [0.0, 0.0, {}, {}])
+        g[0] += wi
+        if a[i] == b[i]:
+            g[1] += wi
+        g[2][a[i]] = g[2].get(a[i], 0.0) + wi
+        g[3][b[i]] = g[3].get(b[i], 0.0) + wi
+    num_o = num_e = den = 0.0
+    for W, agree, pa, pb in groups.values():
+        pe = sum((pa[k] / W) * (pb.get(k, 0.0) / W) for k in pa)
+        num_o += agree
+        num_e += W * pe
+        den += W
+    if den - num_e <= 0.0:
+        return None
+    return (num_o - num_e) / (den - num_e)
+
+
+def twoway_cluster_bootstrap_kappa(a, b, units1, units2, B, seed, strata=None):
+    """Two-way (crossed) cluster bootstrap of `cohen_kappa`: each replicate draws the G1 units of `units1`
+    (e.g. coin) AND, independently, the G2 units of `units2` (e.g. a calendar time block) with replacement;
+    a pair's weight is the PRODUCT of its two multiplicities. It carries both dependence sources at once --
+    a one-way coin bootstrap understates the SE when coins co-move within a time block. Returns
+    {point, reps, n_degenerate, units1, units2, rows}. With `strata`, the statistic is `stratified_kappa`
+    over those strata (the same multiplicity weights), else plain `cohen_kappa`."""
+    n = len(a)
+    if not (len(b) == n == len(units1) == len(units2)) or (strata is not None and len(strata) != n):
+        raise ValueError("a, b, units1, units2 (and strata) differ in length")
+    stat = (lambda w: cohen_kappa(a, b, w)) if strata is None else (lambda w: stratified_kappa(a, b, strata, w))
+    id1, id2 = {}, {}
+    r1 = [id1.setdefault(u, len(id1)) for u in units1]
+    r2 = [id2.setdefault(u, len(id2)) for u in units2]
+    G1, G2 = len(id1), len(id2)
+    gen2 = random.Random(seed)
+    point = stat(None)
+    reps = []
+    n_deg = 0
+    for _ in range(B):
+        m1 = [0] * G1
+        for _ in range(G1):
+            m1[gen2.randrange(G1)] += 1
+        m2 = [0] * G2
+        for _ in range(G2):
+            m2[gen2.randrange(G2)] += 1
+        k = stat([m1[x] * m2[y] for x, y in zip(r1, r2)])
+        reps.append(k)
+        if k is None:
+            n_deg += 1
+    return {"point": point, "reps": reps, "n_degenerate": n_deg, "units1": G1, "units2": G2, "rows": n}
+
+
+def total_variation(p, q):
+    """Total-variation distance 1/2 sum_k |p_k - q_k| between two class distributions given as dicts of
+    probabilities; each must sum to 1 (within 1e-9) and hold no negative mass."""
+    for name, d in (("p", p), ("q", q)):
+        if any(v < 0 for v in d.values()) or abs(sum(d.values()) - 1.0) > 1e-9:
+            raise ValueError(f"{name} is not a probability distribution")
+    keys = set(p) | set(q)
+    return 0.5 * sum(abs(p.get(k, 0.0) - q.get(k, 0.0)) for k in keys)

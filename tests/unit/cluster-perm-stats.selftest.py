@@ -10,6 +10,9 @@ model with cluster inference, the logistic propensity model and IPW. Groups K1-K
 new to EDGE-SCORER-PREDICTIVE-CEILING-W1 and cover the discrimination layer: AUC exactness, the
 block-stratified estimand, the JOINT cluster bootstrap, the order-statistic intervals, the label-blind
 power floor, the registered decision map, the purge, the targets, S* and the whole engine under a null.
+Group KH is new to EDGE-HURST-DISCRIMINATION-PROBE-W1 and covers the term-contribution layer: the
+within-block reorder share, q-unit materiality, the stage counterfactual, the total per-side map, the
+intersection-union verdict with its stability gate, and the label-free reliability statistics.
 
 Prints `SELF-TEST: PASS (N checks)` and exactly one `CLUSTER_PERM_SELFTEST=PASS|FAIL` token.
 Deterministic: every rng is seeded here, so a count printed by this file is REPRODUCIBLE -- which
@@ -1207,6 +1210,409 @@ def k13_engine_null():
     check(f"K13 planted corpora: the same engine DOES return C ({n_pc}/10 >= 8) -- the null bound is not vacuous", n_pc >= 8)
 
 
+# ── KH the term-contribution layer (EDGE-HURST-DISCRIMINATION-PROBE-W1) ─────────────────────────
+# Every rule of the per-side map (as amended by the architect's Q14), the materiality conversion, the stage
+# counterfactual, the verdict precedence, the reliability reading and its registration precondition
+# (`oc_gate`), the recommendation and the label-free reliability statistics has an answer known in
+# advance. Each segment is independent, so a raise in one never hides an assertion in another (the mutation
+# harness counts a raise as a miss).
+
+def _refuses(fn):
+    """True iff fn() RAISES. (Not `_raised`, which returns fn()'s value or a 'raised' string -- both truthy, so
+    using it as a refusal test is vacuous; the TERM mutation T25 surfaced exactly that.)"""
+    try:
+        fn()
+    except Exception:
+        return True
+    return False
+
+
+G5 = ("G+", "G-", "Gs", "G0", "Gu")
+A4 = ("A+", "A-", "A0", "Au")
+A5 = ("A+", "A-", "As", "A0", "Au")
+BOTH_OK = {"SELL": True, "BUY": True}
+
+
+def _grid_reps(lo, hi, m=400):
+    """m evenly spaced replicate values on [lo, hi] -- an exact, seed-free bootstrap stand-in whose
+    nearest-rank bounds are known in closed form."""
+    return [lo + (hi - lo) * i / (m - 1) for i in range(m)]
+
+
+def _expect_side(g, a):
+    """Independent restatement of the registered per-side table (Q14 amended)."""
+    if g == "Gs":
+        return "NOT_IDENTIFIABLE"
+    table = {
+        ("G+", "A-"): "DISAGREE", ("G+", "A+"): "KEEP", ("G+", "A0"): "KEEP", ("G+", "Au"): "KEEP",
+        ("G-", "A-"): "MAPPING_INVERT", ("G-", "A+"): "DISAGREE", ("G-", "A0"): "REMOVE_HARMFUL", ("G-", "Au"): "REMOVE_HARMFUL",
+        ("G0", "A+"): "MAPPING", ("G0", "A-"): "MAPPING", ("G0", "A0"): "REMOVE", ("G0", "Au"): "UNRESOLVED",
+        ("Gu", "A+"): "MAPPING_PROVISIONAL", ("Gu", "A-"): "MAPPING_PROVISIONAL", ("Gu", "A0"): "UNRESOLVED", ("Gu", "Au"): "UNRESOLVED",
+    }
+    return table[(g, a)]
+
+
+def kh_term_layer():
+    def reorder():
+        s, n = cps.pair_reorder_share([1, 2, 3, 4], [1, 2, 3, 4], [0, 0, 0, 0])
+        check(f"KH reorder share of identical rankings is 0 ({_f(s)}, {n} pairs)", s == 0.0 and n == 6)
+        s, _ = cps.pair_reorder_share([1, 2, 3, 4], [4, 3, 2, 1], [0, 0, 0, 0])
+        check(f"KH a fully reversed strict ranking reorders every pair ({_f(s)})", s == 1.0)
+        s, n = cps.pair_reorder_share([1, 1], [1, 2], [0, 0])
+        check(f"KH a tie against a strict order counts 1/2 ({_f(s)})", s == 0.5 and n == 1)
+        s, n = cps.pair_reorder_share([1, 2, 3, 4], [3, 4, 1, 2], [0, 0, 1, 1])
+        check(f"KH only WITHIN-block pairs count: cross-block reversals are ignored ({_f(s)}, {n} pairs)", s == 0.0 and n == 2)
+        s, n = cps.pair_reorder_share([1, 2, 3], [1, 3, 2], [0, 0, 0])
+        check(f"KH one strict swap in three rows reorders 1/3 of pairs ({_f(s, '.4f')})", abs(s - 1 / 3) < 1e-12 and n == 3)
+        s, n = cps.pair_reorder_share([1, 2], [1, 2], [0, 1])
+        check("KH no block with two rows -> (None, 0), never 0", s is None and n == 0)
+    segment("KH/reorder", reorder)
+
+    def untied():
+        s, n = cps.untied_pair_share([1, 1, 2, 2], [0, 0, 0, 0])
+        check(f"KH untied share: 2 tied of 6 pairs -> 4/6 ({_f(s, '.4f')})", abs(s - 4 / 6) < 1e-12 and n == 6)
+        s, n = cps.untied_pair_share([5, 5, 5], [0, 0, 0])
+        check("KH a constant ranker has untied share 0", s == 0.0 and n == 3)
+    segment("KH/untied", untied)
+
+    def materiality():
+        d = cps.materiality_delta(0.085, 0.60)
+        check(f"KH delta = d (2 q* - 1): 0.085 at q*=0.60 -> 0.017 ({_f(d, '.4f')})", abs(d - 0.017) < 1e-12)
+        check("KH q* = 1/2 makes nothing material", cps.materiality_delta(0.3, 0.5) == 0.0)
+        check("KH q* = 1 gives the whole attainable width", abs(cps.materiality_delta(0.25, 1.0) - 0.25) < 1e-12)
+        check("KH an undefined share gives an undefined delta", cps.materiality_delta(None, 0.6) is None)
+    segment("KH/materiality", materiality)
+
+    def counterfactual():
+        cf = cps.counterfactual_without_stage
+        check("KH counterfactual: an inactive downstream stage leaves the score", cf(-30.0, False, 10, 12) == -30.0)
+        check("KH counterfactual: active and |pre| > gate adds sign(pre) * bonus", cf(11.0, True, 10, 12) == 23.0 and cf(-11.0, True, 10, 12) == -23.0)
+        check("KH counterfactual: the gate is STRICT -- |pre| == gate is not boosted", cf(10.0, True, 10, 12) == 10.0 and cf(-10.0, True, 10, 12) == -10.0)
+        check("KH counterfactual: |pre| below the gate is not boosted", cf(5.0, True, 10, 12) == 5.0)
+        check("KH counterfactual: pre = 0 is not boosted", cf(0.0, True, 10, 12) == 0.0)
+    segment("KH/counterfactual", counterfactual)
+
+    def gap():
+        st, _ = cps.gap_reading(0.04, _grid_reps(0.03, 0.05), 0.017)
+        check(f"KH gap: a material significant gain -> G+ ({st})", st == "G+")
+        st, why = cps.gap_reading(0.008, _grid_reps(0.005, 0.012), 0.017)
+        check(f"KH gap: significant but BELOW materiality -> Gs, never G0 or G+ ({st}: {why})", st == "Gs" and "materiality" in why)
+        # significant at the equivalence test's OWN level (0.05) but not at alpha: on a 400-point grid over
+        # [-0.0005, 0.0160] the 95% lower bound is ~+0.0003 > 0 while the 97.5% lower bound is ~-0.0001; the whole
+        # 95% interval sits inside +-0.017, so without the TOST-level clause this would read G0 (-> REMOVE).
+        reps = _grid_reps(-0.0005, 0.0160)
+        lo95, lo975 = cps.ci_lower(reps, 0.05), cps.ci_lower(reps, 0.025)
+        st, _ = cps.gap_reading(0.007, reps, 0.017)
+        check(f"KH gap: significant at the TOST's own 0.05 (lo95 {_f(lo95, '.5f')} > 0 >= lo97.5 {_f(lo975, '.5f')}) -> Gs, never G0 ({st})",
+              lo95 > 0.0 >= lo975 and st == "Gs")
+        st, _ = cps.gap_reading(-0.002, _grid_reps(-0.004, -0.001), 0.017)
+        check(f"KH gap: a significant NEGATIVE gain, however small -> G- ({st})", st == "G-")
+        st, _ = cps.gap_reading(0.0, _grid_reps(-0.01, 0.01), 0.017)
+        check(f"KH gap: an interval inside +-delta around 0 -> G0 ({st})", st == "G0")
+        st, _ = cps.gap_reading(0.005, _grid_reps(-0.03, 0.04), 0.017)
+        check(f"KH gap: a wide interval straddling 0 -> Gu ({st})", st == "Gu")
+        # equivalence uses the one-sided 95% bounds, not the alpha bounds: on a 400-point grid over
+        # [-0.0160, 0.0180] the 95% bounds are (-0.0143, 0.0163), inside +-0.017, while the 97.5% upper
+        # bound is 0.0172, outside it.
+        reps = _grid_reps(-0.0160, 0.0180)
+        hi95, hi975 = cps.ci_upper(reps, 0.05), cps.ci_upper(reps, 0.025)
+        st, _ = cps.gap_reading(-0.001, reps, 0.017)
+        check(f"KH gap: equivalence reads the one-sided 95% bound (hi95 {_f(hi95, '.4f')} < 0.017 < hi97.5 {_f(hi975, '.4f')}) -> G0 ({st})",
+              hi95 < 0.017 < hi975 and st == "G0")
+        st, _ = cps.gap_reading(0.03, _grid_reps(0.02, 0.04), None)
+        check(f"KH gap: an undefined delta -> Gu ({st})", st == "Gu")
+        st, _ = cps.gap_reading(0.03, [None] * 400, 0.017)
+        check(f"KH gap: a degenerate bootstrap -> Gu ({st})", st == "Gu")
+    segment("KH/gap", gap)
+
+    def level():
+        st, _ = cps.level_reading(0.56, _grid_reps(0.53, 0.59), 0.05, True)
+        check(f"KH level: CI above 1/2 -> A+ ({st})", st == "A+")
+        st, _ = cps.level_reading(0.44, _grid_reps(0.41, 0.47), 0.05, True)
+        check(f"KH level: TWO-SIDED -- CI below 1/2 -> A- ({st})", st == "A-")
+        st, _ = cps.level_reading(0.50, _grid_reps(0.48, 0.52), 0.05, True)
+        check(f"KH level: CI inside 1/2 +- delta -> A0 ({st})", st == "A0")
+        st, _ = cps.level_reading(0.52, _grid_reps(0.44, 0.60), 0.05, True)
+        check(f"KH level: a wide CI -> Au ({st})", st == "Au")
+        st, _ = cps.level_reading(0.56, _grid_reps(0.53, 0.59), 0.05, False)
+        check(f"KH level: a failed level floor -> Au even when the CI clears ({st})", st == "Au")
+        st, _ = cps.level_reading(0.56, _grid_reps(0.53, 0.59), 0.05, None)
+        check(f"KH level: an unevaluated floor (None) is not a pass -> Au ({st})", st == "Au")
+    segment("KH/level", level)
+
+    def alpha_boundaries():
+        # G+ must need significance at ALPHA (0.025), not at the TOST's 0.05: grid [-0.0012, 0.0400] has
+        # lo97.5 ~ -0.0002 < 0 < lo95 ~ +0.0008; point 0.02 >= delta 0.017 -> Gu (never G+, never Gs).
+        reps = _grid_reps(-0.0012, 0.0400)
+        st, _ = cps.gap_reading(0.02, reps, 0.017)
+        check(f"KH alpha: G+ needs CI_lo at 0.025 (lo97.5 {_f(cps.ci_lower(reps, 0.025), '.5f')} < 0 < lo95 {_f(cps.ci_lower(reps, 0.05), '.5f')}) -> not G+ ({st})",
+              cps.ci_lower(reps, 0.025) < 0 < cps.ci_lower(reps, 0.05) and st == "Gu")
+        # G- at alpha too: grid [-0.0160, 0.0005]: hi97.5 ~ +0.0001 > 0 > hi95 ~ -0.0003 -> not G- (reads G0)
+        reps = _grid_reps(-0.0160, 0.0005)
+        st, _ = cps.gap_reading(-0.007, reps, 0.017)
+        check(f"KH alpha: G- needs CI_hi at 0.025 (hi97.5 {_f(cps.ci_upper(reps, 0.025), '.5f')} > 0 > hi95 {_f(cps.ci_upper(reps, 0.05), '.5f')}) -> not G- ({st})",
+              cps.ci_upper(reps, 0.025) > 0 > cps.ci_upper(reps, 0.05) and st == "G0")
+        # A+ / A- at alpha; significance only at 0.05 reads As (never A0, never A+/A-)
+        reps = _grid_reps(0.4985, 0.5385)
+        st, _ = cps.level_reading(0.5185, reps, 0.04, True)
+        check(f"KH alpha: A+ needs 0.025 (lo97.5 {_f(cps.ci_lower(reps, 0.025), '.4f')} <= 0.5 < lo95 {_f(cps.ci_lower(reps, 0.05), '.4f')}) -> As ({st})",
+              cps.ci_lower(reps, 0.025) <= 0.5 < cps.ci_lower(reps, 0.05) and st == "As")
+        reps = _grid_reps(0.4615, 0.5015)
+        st, _ = cps.level_reading(0.4815, reps, 0.04, True)
+        check(f"KH alpha: A- needs 0.025 (hi95 {_f(cps.ci_upper(reps, 0.05), '.4f')} < 0.5 <= hi97.5 {_f(cps.ci_upper(reps, 0.025), '.4f')}) -> As ({st})",
+              cps.ci_upper(reps, 0.05) < 0.5 <= cps.ci_upper(reps, 0.025) and st == "As")
+        ok_floor = {"pass_gap": True}
+        check("KH alpha: As is never A0 in the side map -- G0 x As reads UNRESOLVED, never REMOVE",
+              cps.term_side_reading("G0", "As", ok_floor) == "UNRESOLVED" and cps.term_side_reading("G+", "As", ok_floor) == "KEEP")
+    segment("KH/alpha-boundaries", alpha_boundaries)
+
+    def side_map():
+        ok_floor = {"pass_gap": True, "pass_lvl": False, "floor_pass": False}
+        bad = [(g, a, cps.term_side_reading(g, a, ok_floor)) for g in G5 for a in A5
+               if cps.term_side_reading(g, a, ok_floor) != _expect_side(g, "Au" if a == "As" else a)]
+        check(f"KH side map: all 25 cells map to the registered reading (As as Au; floor gated on pass_gap only) {bad}", not bad)
+        check("KH side map: REMOVE is reachable only through G0 x A0",
+              [(g, a) for g in G5 for a in A4 if cps.term_side_reading(g, a, ok_floor) == "REMOVE"] == [("G0", "A0")])
+        check("KH side map: Gs reads NOT_IDENTIFIABLE whatever A says (never MAPPING_PROVISIONAL)",
+              all(cps.term_side_reading("Gs", a, ok_floor) == "NOT_IDENTIFIABLE" for a in A4))
+        check("KH side map: pass_gap False -> P for every cell",
+              all(cps.term_side_reading(g, a, {"pass_gap": False, "pass_lvl": True, "floor_pass": False}) == "P" for g in G5 for a in A4))
+        check("KH side map: an unevaluated gap floor (pass_gap None) -> P", cps.term_side_reading("G+", "A+", {"pass_gap": None}) == "P")
+        check("KH side map: pass_gap True with the level half failing is NOT P (the level half never gates the gain)",
+              cps.term_side_reading("G0", "A0", ok_floor) == "REMOVE")
+    segment("KH/side-map", side_map)
+
+    def verdict():
+        v = cps.term_verdict
+        AA = {"SELL": "A0", "BUY": "A0"}
+        # FIRST, deliberately: with the P branch deleted this case still returns (as DISAGREE) instead of
+        # raising, so the precedence is caught by an ASSERTION before any later case can raise.
+        check("KH verdict: P outranks DISAGREE", v({"SELL": "P", "BUY": "DISAGREE"}, AA, BOTH_OK)[0] == "INDETERMINATE_UNDERPOWERED")
+        check("KH verdict: a side below floor -> UNDERPOWERED, whatever the other reads",
+              v({"SELL": "P", "BUY": "KEEP"}, AA, BOTH_OK)[0] == "INDETERMINATE_UNDERPOWERED"
+              and v({"SELL": "KEEP", "BUY": "P"}, AA, BOTH_OK)[0] == "INDETERMINATE_UNDERPOWERED")
+        check("KH verdict: a within-side DISAGREE -> DISAGREE", v({"SELL": "DISAGREE", "BUY": "KEEP"}, AA, BOTH_OK)[0] == "INDETERMINATE_DISAGREE")
+        # before any case whose mutant would raise: with the NOT_IDENTIFIABLE branch deleted this returns UNRESOLVED
+        check("KH verdict: NOT_IDENTIFIABLE outranks UNRESOLVED",
+              v({"SELL": "NOT_IDENTIFIABLE", "BUY": "UNRESOLVED"}, AA, BOTH_OK)[0] == "INDETERMINATE_NOT_IDENTIFIABLE")
+        check("KH verdict: NOT_IDENTIFIABLE on a side -> INDETERMINATE_NOT_IDENTIFIABLE, even beside a KEEP",
+              v({"SELL": "NOT_IDENTIFIABLE", "BUY": "KEEP"}, AA, BOTH_OK)[0] == "INDETERMINATE_NOT_IDENTIFIABLE")
+        check("KH verdict: DISAGREE outranks NOT_IDENTIFIABLE",
+              v({"SELL": "NOT_IDENTIFIABLE", "BUY": "DISAGREE"}, AA, BOTH_OK)[0] == "INDETERMINATE_DISAGREE")
+        check("KH verdict: an unresolved side -> UNRESOLVED", v({"SELL": "KEEP", "BUY": "UNRESOLVED"}, AA, BOTH_OK)[0] == "INDETERMINATE_UNRESOLVED")
+        check("KH verdict: sides in different families -> DISAGREE (intersection-union, never one side's reading)",
+              v({"SELL": "KEEP", "BUY": "REMOVE"}, AA, BOTH_OK)[0] == "INDETERMINATE_DISAGREE"
+              and v({"SELL": "REMOVE", "BUY": "MAPPING"}, {"SELL": "A0", "BUY": "A+"}, BOTH_OK)[0] == "INDETERMINATE_DISAGREE")
+        check("KH verdict: MAPPING with the term-alone sign differing across sides -> DISAGREE (two findings, not one mapping)",
+              v({"SELL": "MAPPING", "BUY": "MAPPING"}, {"SELL": "A+", "BUY": "A-"}, BOTH_OK)[0] == "INDETERMINATE_DISAGREE"
+              and v({"SELL": "MAPPING_INVERT", "BUY": "MAPPING_PROVISIONAL"}, {"SELL": "A-", "BUY": "A+"}, BOTH_OK)[0] == "INDETERMINATE_DISAGREE")
+        st, det = v({"SELL": "MAPPING", "BUY": "MAPPING_PROVISIONAL"}, {"SELL": "A+", "BUY": "A+"}, BOTH_OK)
+        check(f"KH verdict: same-sign MAPPING with a provisional side -> MAPPING_ONLY marked provisional ({st}; {det})",
+              st == "MAPPING_ONLY" and "provisional" in det)
+        check("KH verdict: both KEEP and stable -> KEEP_AND_FIX", v({"SELL": "KEEP", "BUY": "KEEP"}, AA, BOTH_OK)[0] == "KEEP_AND_FIX")
+        check("KH verdict: REMOVE with REMOVE_HARMFUL -> REMOVE", v({"SELL": "REMOVE", "BUY": "REMOVE_HARMFUL"}, AA, BOTH_OK)[0] == "REMOVE")
+        check("KH verdict: an unstable side turns an agreed KEEP into UNSTABLE (SELL or BUY)",
+              v({"SELL": "KEEP", "BUY": "KEEP"}, AA, {"SELL": False, "BUY": True})[0] == "INDETERMINATE_UNSTABLE"
+              and v({"SELL": "KEEP", "BUY": "KEEP"}, AA, {"SELL": True, "BUY": False})[0] == "INDETERMINATE_UNSTABLE")
+        check("KH verdict: stability outranks the native contradiction (UNSTABLE, not DISAGREE)",
+              v({"SELL": "KEEP", "BUY": "KEEP"}, AA, {"SELL": True, "BUY": False}, {"SELL": "NEG", "BUY": "NS"})[0] == "INDETERMINATE_UNSTABLE")
+        check("KH verdict: native NEG under KEEP -> DISAGREE",
+              v({"SELL": "KEEP", "BUY": "KEEP"}, AA, BOTH_OK, {"SELL": "NS", "BUY": "NEG"})[0] == "INDETERMINATE_DISAGREE")
+        check("KH verdict: native POS under REMOVE -> DISAGREE (a significant but IMMATERIAL native gain still contradicts)",
+              v({"SELL": "REMOVE_HARMFUL", "BUY": "REMOVE_HARMFUL"}, AA, BOTH_OK, {"SELL": "POS", "BUY": "NS"})[0] == "INDETERMINATE_DISAGREE")
+        check("KH verdict: native POS under MAPPING -> DISAGREE",
+              v({"SELL": "MAPPING", "BUY": "MAPPING"}, {"SELL": "A-", "BUY": "A-"}, BOTH_OK, {"SELL": "NS", "BUY": "POS"})[0] == "INDETERMINATE_DISAGREE")
+        check("KH verdict: native NS, or native NEG under REMOVE, does not block",
+              v({"SELL": "KEEP", "BUY": "KEEP"}, AA, BOTH_OK, {"SELL": "NS", "BUY": "NS"})[0] == "KEEP_AND_FIX"
+              and v({"SELL": "REMOVE", "BUY": "REMOVE"}, AA, BOTH_OK, {"SELL": "NEG", "BUY": None})[0] == "REMOVE")
+    segment("KH/verdict", verdict)
+
+    def verdict_refusals():
+        v = cps.term_verdict
+        AA = {"SELL": "A0", "BUY": "A0"}
+        check("KH verdict REFUSES a native value passed as gap_reading's (state, reason) tuple",
+              _refuses(lambda: v({"SELL": "KEEP", "BUY": "KEEP"}, AA, BOTH_OK, {"SELL": ("G-", "x"), "BUY": "NS"})))
+        check("KH verdict REFUSES a lower-case / unknown native sign",
+              _refuses(lambda: v({"SELL": "KEEP", "BUY": "KEEP"}, AA, BOTH_OK, {"SELL": "neg", "BUY": "NS"})))
+        check("KH verdict REFUSES native keys other than exactly SELL and BUY",
+              _refuses(lambda: v({"SELL": "KEEP", "BUY": "KEEP"}, AA, BOTH_OK, {"sell": "NEG", "BUY": "NS"})))
+        check("KH verdict REFUSES an unknown level state",
+              _refuses(lambda: v({"SELL": "KEEP", "BUY": "KEEP"}, {"SELL": "A?", "BUY": "A0"}, BOTH_OK)))
+        check("KH verdict REFUSES a non-boolean stability", _refuses(lambda: v({"SELL": "KEEP", "BUY": "KEEP"}, AA, {"SELL": 1, "BUY": True})))
+    segment("KH/verdict-refusals", verdict_refusals)
+
+    def native():
+        check("KH native_sign: lo > 0 -> POS; hi < 0 -> NEG; straddle -> NS; undefined -> NS",
+              cps.native_sign(0.001, 0.02) == "POS" and cps.native_sign(-0.02, -0.001) == "NEG"
+              and cps.native_sign(-0.01, 0.01) == "NS" and cps.native_sign(None, None) == "NS")
+    segment("KH/native", native)
+
+    def flip_and_licence():
+        check("KH flip_driven: KEEP that becomes UNRESOLVED without the flip rows -> flip-driven", cps.flip_driven("KEEP", "UNRESOLVED") is True)
+        check("KH flip_driven: KEEP that survives -> not flip-driven", cps.flip_driven("KEEP", "KEEP") is False)
+        check("KH flip_driven: a non-KEEP full reading is never flip-driven", cps.flip_driven("REMOVE", "KEEP") is False)
+        G = {"SELL": "G+", "BUY": "G+"}
+        check("KH licence: KEEP_AND_FIX with native G+ both sides (floors passed) -> may enable dead cells",
+              "enabling" in cps.keep_licence("KEEP_AND_FIX", {"SELL": "POS", "BUY": "POS"}, G))
+        check("KH licence: a native floor failed on one side -> keep firing where it fires only",
+              cps.keep_licence("KEEP_AND_FIX", {"SELL": "POS", "BUY": None}, G) == "keep firing where it fires")
+        check("KH licence: native G+ on ONE side only -> keep firing where it fires only",
+              cps.keep_licence("KEEP_AND_FIX", {"SELL": "POS", "BUY": "POS"}, {"SELL": "G+", "BUY": "Gs"}) == "keep firing where it fires")
+        check("KH licence: any other verdict -> none", cps.keep_licence("REMOVE", {"SELL": "POS", "BUY": "POS"}, G) == "none")
+    segment("KH/flip-licence", flip_and_licence)
+
+    def ocgate():
+        check("KH oc_gate: P(below|PC)=0.10, P(below|null)=0.85 -> PASS", cps.oc_gate(0.10, 0.85)["pass"] is True)
+        check("KH oc_gate: boundaries are inclusive (0.20 and 0.80 pass)", cps.oc_gate(0.20, 0.80)["pass"] is True)
+        check("KH oc_gate: the SAME answer under both hypotheses (0.95, 0.95) FAILS -- not evidence", cps.oc_gate(0.95, 0.95)["pass"] is False)
+        check("KH oc_gate: too imprecise under the null (0.05, 0.40) FAILS", cps.oc_gate(0.05, 0.40)["pass"] is False)
+        check("KH oc_gate: cannot rule the control out (0.30, 0.90) FAILS", cps.oc_gate(0.30, 0.90)["pass"] is False)
+        check("KH oc_gate: an uncomputed characteristic never passes", cps.oc_gate(None, 0.9)["pass"] is False)
+    segment("KH/oc-gate", ocgate)
+
+    def rel():
+        r = cps.reliability_reading
+        check("KH reliability: CI_hi below the control -> BELOW_PC1", r(-0.01, 0.02, 0.029, True) == "BELOW_PC1")
+        check("KH reliability: CI_lo at/above the control -> ABOVE_PC1 (a CI wholly above PC1 is NOT 'unreliable')",
+              r(0.029, 0.06, 0.029, True) == "ABOVE_PC1" and r(0.05, 0.11, 0.029, True) == "ABOVE_PC1")
+        check("KH reliability: CI_hi exactly at the control is not below", r(-0.01, 0.029, 0.029, True) == "UNRESOLVED")
+        check("KH reliability: a straddling CI -> UNRESOLVED", r(0.01, 0.05, 0.029, True) == "UNRESOLVED")
+        check("KH reliability: the OC gate not literally True -> NOT_IDENTIFIABLE, whatever the CI",
+              r(-0.01, 0.02, 0.029, False) == "NOT_IDENTIFIABLE" and r(-0.01, 0.02, 0.029, None) == "NOT_IDENTIFIABLE")
+        check("KH reliability: undefined bounds -> UNRESOLVED", r(None, None, 0.029, True) == "UNRESOLVED")
+        check("KH reliability: a truthy-but-not-True gate (1) is not a pass -> NOT_IDENTIFIABLE", r(-0.01, 0.02, 0.029, 1) == "NOT_IDENTIFIABLE")
+        sc = cps.remove_scope
+        groups = {"a": ("BELOW_PC1", True), "b": ("BELOW_PC1", False), "c": ("UNRESOLVED", True), "d": ("NOT_IDENTIFIABLE", False), "e": ("ABOVE_PC1", True)}
+        check("KH remove_scope: only groups passing their OWN gate AND reading BELOW_PC1", sc("BELOW_PC1", groups) == ["a"])
+        check("KH remove_scope: nothing unless the pooled reading is BELOW_PC1",
+              sc("UNRESOLVED", groups) == [] and sc("NOT_IDENTIFIABLE", groups) == [] and sc("ABOVE_PC1", groups) == [])
+        check("KH remove_scope REFUSES an unknown reading", _refuses(lambda: sc("BELOW_PC1", {"x": ("BELOW", True)})))
+    segment("KH/reliability", rel)
+
+    def recommend():
+        rec = cps.recommendation
+        G0 = {"SELL": "G0", "BUY": "G0"}; A0 = {"SELL": "A0", "BUY": "A0"}; NS = {"SELL": "NS", "BUY": "NS"}
+        check("KH recommendation: BELOW_PC1 + a side G+ beside an underpowered verdict -> CONFLICT, never REMOVE",
+              rec("BELOW_PC1", "INDETERMINATE_UNDERPOWERED", {"SELL": "G+", "BUY": "Gu"}, A0, NS)[0] == "CONFLICT")
+        check("KH recommendation: BELOW_PC1 + a Gs side -> CONFLICT (a real gain, however small, contradicts 'carries nothing')",
+              rec("BELOW_PC1", "INDETERMINATE_NOT_IDENTIFIABLE", {"SELL": "Gs", "BUY": "G0"}, A0, NS)[0] == "CONFLICT")
+        check("KH recommendation: BELOW_PC1 + a term-alone A- side -> CONFLICT",
+              rec("BELOW_PC1", "INDETERMINATE_UNRESOLVED", G0, {"SELL": "A-", "BUY": "A0"}, NS)[0] == "CONFLICT")
+        check("KH recommendation: BELOW_PC1 + native POS -> CONFLICT",
+              rec("BELOW_PC1", "REMOVE", G0, A0, {"SELL": "POS", "BUY": "NS"})[0] == "CONFLICT")
+        st, det = rec("BELOW_PC1", "REMOVE", G0, A0, NS)
+        check(f"KH recommendation: BELOW_PC1 + REMOVE, nothing contradicting -> REMOVE_THIS_ESTIMATOR (supporting) ({det})",
+              st == "REMOVE_THIS_ESTIMATOR" and "supporting" in det)
+        st, det = rec("BELOW_PC1", "INDETERMINATE_UNDERPOWERED", {"SELL": "G0", "BUY": "Gu"}, {"SELL": "A0", "BUY": "Au"}, NS)
+        check(f"KH recommendation: BELOW_PC1 + a silent INDETERMINATE -> REMOVE_THIS_ESTIMATOR (non-contradicting) ({det})",
+              st == "REMOVE_THIS_ESTIMATOR" and "non-contradicting" in det)
+        check("KH recommendation: ABOVE_PC1 / UNRESOLVED / NOT_IDENTIFIABLE follow the verdict",
+              rec("ABOVE_PC1", "KEEP_AND_FIX", {"SELL": "G+", "BUY": "G+"}, A0, NS)[0] == "KEEP_AND_FIX"
+              and rec("UNRESOLVED", "REMOVE", G0, A0, NS)[0] == "REMOVE"
+              and rec("NOT_IDENTIFIABLE", "INDETERMINATE_UNSTABLE", G0, A0, NS)[0] == "NO_CHANGE")
+        # every contradiction channel on the BUY side too (the side most likely to be underpowered)
+        for g, a, n, why in (("G+", "A0", "NS", "G+"), ("Gs", "A0", "NS", "Gs"), ("G0", "A+", "NS", "A+"),
+                             ("G0", "A-", "NS", "A-"), ("G0", "As", "NS", "As"), ("G0", "A0", "POS", "native POS")):
+            st, _ = rec("BELOW_PC1", "INDETERMINATE_UNDERPOWERED", {"SELL": "G0", "BUY": g}, {"SELL": "A0", "BUY": a}, {"SELL": "NS", "BUY": n})
+            check(f"KH recommendation: a BUY-side {why} contradicts -> CONFLICT ({st})", st == "CONFLICT")
+        st, _ = rec("BELOW_PC1", "INDETERMINATE_UNRESOLVED", G0, {"SELL": "A+", "BUY": "A0"}, NS)
+        check(f"KH recommendation: a SELL-side A+ contradicts -> CONFLICT ({st})", st == "CONFLICT")
+        check("KH recommendation REFUSES an unknown reliability or verdict",
+              _refuses(lambda: rec("BELOW", "REMOVE", G0, A0, NS)) and _refuses(lambda: rec("BELOW_PC1", "REMOVE!", G0, A0, NS)))
+    segment("KH/recommendation", recommend)
+
+    def lodo():
+        check("KH lodo: every deletion equal -> stable", cps.lodo_stable("KEEP", ["KEEP", "KEEP", "KEEP"]) is True)
+        check("KH lodo: ONE deletion differing (not the first) -> unstable", cps.lodo_stable("KEEP", ["KEEP", "KEEP", "UNRESOLVED"]) is False)
+        check("KH lodo: zero deletions is refused, never a pass", _refuses(lambda: cps.lodo_stable("KEEP", [])))
+    segment("KH/lodo", lodo)
+
+    def kappa():
+        a = [0] * 30 + [0] * 10 + [1] * 5 + [1] * 5
+        b = [0] * 30 + [1] * 10 + [0] * 5 + [1] * 5
+        k = cps.cohen_kappa(a, b)
+        check(f"KH kappa known answer: table [[30,10],[5,5]] -> (0.70 - 0.62) / 0.38 = 0.2105 ({_f(k, '.4f')})", abs(k - 0.08 / 0.38) < 1e-12)
+        check("KH kappa: perfect agreement -> 1", cps.cohen_kappa([1, 2, 3, 1], [1, 2, 3, 1]) == 1.0)
+        check("KH kappa: a balanced independent table -> 0", abs(cps.cohen_kappa([0, 0, 1, 1], [0, 1, 0, 1])) < 1e-12)
+        check("KH kappa: one category on both sides -> None (p_e = 1), never 1 or 0", cps.cohen_kappa([1, 1], [1, 1]) is None)
+        k2 = cps.cohen_kappa(a, b, [2] * len(a))
+        check("KH kappa: uniform weights leave it unchanged", abs(k2 - k) < 1e-12)
+    segment("KH/kappa", kappa)
+
+    def skappa():
+        # two strata, each an EXACTLY independent table (kappa 0 within), with DIFFERENT marginals (0.8 vs 0.2 on
+        # class 0): pooled Cohen kappa reads 0.36 from the between-stratum shift alone; the stratified kappa reads 0.
+        t1 = [(0, 0)] * 64 + [(0, 1)] * 16 + [(1, 0)] * 16 + [(1, 1)] * 4
+        t2 = [(1, 1)] * 64 + [(1, 0)] * 16 + [(0, 1)] * 16 + [(0, 0)] * 4
+        a = [x for x, _ in t1 + t2]; b = [y for _, y in t1 + t2]
+        s = ["T1"] * 100 + ["T2"] * 100
+        kp, ks = cps.cohen_kappa(a, b), cps.stratified_kappa(a, b, s)
+        check(f"KH stratified kappa cancels a between-block marginal swing: pooled {_f(kp, '.4f')} > 0, stratified {_f(ks, '.4f')} = 0",
+              kp > 0.1 and abs(ks) < 1e-12)
+        # within-stratum agreement is preserved: perfect agreement in both strata -> 1
+        check("KH stratified kappa: perfect within-stratum agreement -> 1", abs(cps.stratified_kappa([0, 1, 0, 1], [0, 1, 0, 1], ["a", "a", "b", "b"]) - 1.0) < 1e-12)
+        # known answer: one stratum [[30,10],[5,5]] alone equals Cohen's kappa
+        a1 = [0] * 30 + [0] * 10 + [1] * 5 + [1] * 5
+        b1 = [0] * 30 + [1] * 10 + [0] * 5 + [1] * 5
+        check("KH stratified kappa with ONE stratum equals Cohen's kappa", abs(cps.stratified_kappa(a1, b1, ["x"] * 50) - 0.08 / 0.38) < 1e-12)
+    segment("KH/stratified-kappa", skappa)
+
+    def kappa_boot():
+        rng = random.Random(4242)
+        A, Bv, C = [], [], []
+        for g in range(40):
+            agree = rng.random() < 0.5
+            for _ in range(25):
+                x = rng.randrange(2)
+                A.append(x); Bv.append(x if agree else 1 - x); C.append(f"G{g}")
+        r1 = cps.cluster_bootstrap_kappa(A, Bv, C, 300, 99)
+        r2 = cps.cluster_bootstrap_kappa(A, Bv, C, 300, 99)
+        check("KH kappa bootstrap: deterministic for a seed", r1["reps"] == r2["reps"] and r1["units"] == 40)
+        sd = _sd([x for x in r1["reps"] if x is not None])
+        # clusters are all-agree or all-disagree, so the unit of independence is the cluster: SD ~ 2 sqrt(p(1-p)/40) ~ 0.16.
+        # A row bootstrap would give ~ 2 sqrt(p(1-p)/1000) ~ 0.03.
+        check(f"KH kappa bootstrap resamples CLUSTERS (SD {_f(sd, '.3f')} > 0.08; a row bootstrap gives ~0.03)", sd > 0.08)
+    segment("KH/kappa-bootstrap", kappa_boot)
+
+    def twoway():
+        # 40 coins x 20 time blocks, one pair per cell. Agreement is decided by the TIME block (half the blocks
+        # all-agree, half all-disagree): the two-way bootstrap must carry the time dependence a coin-only one misses.
+        rng = random.Random(777)
+        A, Bv, CU, TU = [], [], [], []
+        for tb in range(20):
+            agree = tb % 2 == 0
+            for c in range(40):
+                x = rng.randrange(2)
+                A.append(x); Bv.append(x if agree else 1 - x); CU.append(f"C{c}"); TU.append(f"T{tb}")
+        two = cps.twoway_cluster_bootstrap_kappa(A, Bv, CU, TU, 300, 11)
+        one = cps.cluster_bootstrap_kappa(A, Bv, CU, 300, 11)
+        sd2 = _sd([x for x in two["reps"] if x is not None]); sd1 = _sd([x for x in one["reps"] if x is not None])
+        check(f"KH two-way bootstrap carries the time-block dependence (two-way SD {_f(sd2, '.3f')} > 3 x coin-only SD {_f(sd1, '.3f')})",
+              sd2 > 3 * sd1 and two["units1"] == 40 and two["units2"] == 20)
+        # TWO time blocks (one all-agree, one all-disagree) x 40 coins: each replicate must draw G2 = 2 blocks,
+        # so half the replicates hold one block only and kappa swings to about +-1 (SD ~ 0.7). Drawing the time
+        # units G1 = 40 times would average them away (SD ~ 0.16).
+        A2, B2, C2, T2 = [], [], [], []
+        for tb in range(2):
+            for c in range(40):
+                x = rng.randrange(2)
+                A2.append(x); B2.append(x if tb == 0 else 1 - x); C2.append(f"C{c}"); T2.append(f"T{tb}")
+        sd_two = _sd([x for x in cps.twoway_cluster_bootstrap_kappa(A2, B2, C2, T2, 400, 5)["reps"] if x is not None])
+        check(f"KH two-way bootstrap draws EXACTLY G2 time units per replicate (2 blocks: SD {_f(sd_two, '.3f')} > 0.5)", sd_two > 0.5)
+        three = cps.twoway_cluster_bootstrap_kappa(A, Bv, CU, TU, 300, 11)
+        check("KH two-way bootstrap: deterministic for a seed", three["reps"] == two["reps"])
+        st = cps.twoway_cluster_bootstrap_kappa(A, Bv, CU, TU, 50, 11, strata=TU)
+        check(f"KH two-way bootstrap with strata uses the STRATIFIED statistic (point {_f(st['point'], '.4f')} = stratified_kappa)",
+              abs(st["point"] - cps.stratified_kappa(A, Bv, TU)) < 1e-12)
+    segment("KH/twoway", twoway)
+
+    def tv():
+        check("KH TV: {.5,.5} vs {.7,.3} -> 0.2", abs(cps.total_variation({"a": 0.5, "b": 0.5}, {"a": 0.7, "b": 0.3}) - 0.2) < 1e-12)
+        check("KH TV: disjoint support -> 1", abs(cps.total_variation({"a": 1.0}, {"b": 1.0}) - 1.0) < 1e-12)
+        check("KH TV: an unnormalised input is refused", _refuses(lambda: cps.total_variation({"a": 0.6}, {"a": 1.0})))
+    segment("KH/tv", tv)
+
+
 GROUPS = [
     ("CORE", core_w1),
     ("K1", k1_auc_exactness),
@@ -1224,6 +1630,7 @@ GROUPS = [
     ("KT", kt_targets),
     ("KS", ks_bin_map),
     ("K13", k13_engine_null),
+    ("KH", kh_term_layer),
 ]
 
 

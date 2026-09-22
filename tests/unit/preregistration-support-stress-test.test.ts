@@ -102,6 +102,79 @@ export function stressTestVerdict(md: string): StressTestVerdict {
   return { ok: true, reason: '', rows: dataRows.length };
 }
 
+/**
+ * PROCEDURE §4b — the discriminating-power precondition (EDGE-HURST-DISCRIMINATION-PROBE-W1, architect Q13).
+ * A registration that reads a statistic against a POSITIVE CONTROL must carry `## Operating characteristic`
+ * with a table (truth · P(reads below the control) · required · result), at least one null row and one
+ * control row, and every result PASS. Presence and shape only — the numbers' truth is the author's.
+ */
+// Whitespace/hyphen-insensitive across line breaks, plus the reading's own vocabulary, so a hard-wrapped or
+// differently worded reliability registration cannot escape the precondition.
+const OC_TRIGGER_RE = /positive[\s-]+control|test[\s-]+retest|self[\s-]+agreement|reliability_reading|BELOW_PC\d/i;
+const OC_SECTION_RE = /^(#{2,6})\s+.*operating characteristic/im;
+const OC_COLUMNS = ['truth', 'p(reads below the control)', 'required', 'result'] as const;
+/** Exact, reasoned exemptions from §4b — the rule's own text is not a registration. Never a glob. */
+export const OC_EXEMPT: ReadonlyMap<string, string> = new Map([
+  ['audits/PREREGISTRATION-PROCEDURE.md', 'the procedure DEFINES §4b and names the positive control generically; it is the rule, not a registration of a test'],
+]);
+
+export interface OcVerdict {
+  applies: boolean;
+  ok: boolean;
+  reason: string;
+  rows: number;
+}
+
+export function ocSectionVerdict(md: string): OcVerdict {
+  if (!OC_TRIGGER_RE.test(md)) return { applies: false, ok: true, reason: '', rows: 0 };
+  const m = OC_SECTION_RE.exec(md);
+  if (!m) return { applies: true, ok: false, reason: 'mentions a positive control but has no "## Operating characteristic" section', rows: 0 };
+  const level = m[1].length;
+  const after = md.slice(m.index + m[0].length);
+  const end = after.search(new RegExp(`^#{1,${level}}\\s`, 'm'));
+  const section = end === -1 ? after : after.slice(0, end);
+  // The FIRST contiguous table of the section is the operating characteristic; a later (descriptive) table
+  // in a subsection is not part of it.
+  const all = section.split('\n').map((l) => l.trim());
+  const first = all.findIndex((l) => l.startsWith('|'));
+  const lines: string[] = [];
+  if (first !== -1) for (let i = first; i < all.length && all[i].startsWith('|'); i++) lines.push(all[i]);
+  if (lines.length < 4) return { applies: true, ok: false, reason: 'operating-characteristic table needs a header, a separator and >= 2 rows', rows: 0 };
+  const header = lines[0].toLowerCase();
+  for (const col of OC_COLUMNS) {
+    if (!header.includes(col)) return { applies: true, ok: false, reason: `operating-characteristic table lacks a "${col}" column`, rows: 0 };
+  }
+  const rows = lines.slice(2).map((l) => l.split('|').slice(1, -1).map((c) => c.trim()));
+  const cols = lines[0].split('|').slice(1, -1).map((c) => c.trim().toLowerCase());
+  const iTruth = cols.findIndex((c) => c.includes('truth'));
+  const iResult = cols.findIndex((c) => c.includes('result'));
+  if (rows.some((r) => r.length < cols.length || r.some((c) => c.length === 0))) {
+    return { applies: true, ok: false, reason: 'operating-characteristic row with an empty cell', rows: rows.length };
+  }
+  if (!rows.some((r) => /null/i.test(r[iTruth]))) return { applies: true, ok: false, reason: 'no null-truth row', rows: rows.length };
+  if (!rows.some((r) => /control|pc\d/i.test(r[iTruth]))) return { applies: true, ok: false, reason: 'no control-truth row', rows: rows.length };
+  const failed = rows.filter((r) => !/^\W*PASS\b/.test(r[iResult]));
+  if (failed.length) return { applies: true, ok: false, reason: `a row whose result is not PASS: ${failed[0].join(' | ')}`, rows: rows.length };
+  // The numbers, not the word: every row's probability must satisfy its own `required` bound, and the bounds
+  // must be at least as strict as oc_gate's (null >= 0.80, control <= 0.20).
+  const iP = cols.findIndex((c) => c.includes('p(reads below the control)'));
+  const iReq = cols.findIndex((c) => c.includes('required'));
+  for (const r of rows) {
+    const p = Number((r[iP].match(/[01](?:\.\d+)?/) ?? [''])[0]);
+    const m = r[iReq].match(/(>=|≥|<=|≤)\s*([01](?:\.\d+)?)/);
+    if (!Number.isFinite(p) || r[iP].match(/[01](?:\.\d+)?/) === null || !m) {
+      return { applies: true, ok: false, reason: `unparseable probability or bound: ${r.join(' | ')}`, rows: rows.length };
+    }
+    const bound = Number(m[2]);
+    const ge = m[1] === '>=' || m[1] === '≥';
+    const isNull = /null/i.test(r[iTruth]);
+    if (isNull && (!ge || bound < 0.8)) return { applies: true, ok: false, reason: `null row bound weaker than >= 0.80: ${r.join(' | ')}`, rows: rows.length };
+    if (!isNull && (ge || bound > 0.2)) return { applies: true, ok: false, reason: `control row bound weaker than <= 0.20: ${r.join(' | ')}`, rows: rows.length };
+    if (ge ? !(p >= bound) : !(p <= bound)) return { applies: true, ok: false, reason: `the number fails its bound although marked PASS: ${r.join(' | ')}`, rows: rows.length };
+  }
+  return { applies: true, ok: true, reason: '', rows: rows.length };
+}
+
 function discoverPreregistrations(): string[] {
   return readdirSync(AUDITS_DIR)
     .filter((f) => PREREG_FILE_RE.test(f))
@@ -136,6 +209,51 @@ describe('preregistration support stress-test gate', () => {
       }
     }
     expect(failures, failures.join('\n')).toEqual([]);
+  });
+
+  it('PROCEDURE §4b: every pre-registration that reads against a positive control carries a passing Operating characteristic table', () => {
+    const files = discoverPreregistrations();
+    expect(files.length).toBeGreaterThan(0);
+    const failures = files
+      .map((rel) => ({ rel, v: ocSectionVerdict(readFileSync(join(REPO_ROOT, rel), 'utf8')) }))
+      .filter(({ rel, v }) => v.applies && !v.ok && !OC_EXEMPT.has(rel))
+      .map(({ rel, v }) => `${rel}: ${v.reason} — see audits/PREREGISTRATION-PROCEDURE.md §4b`);
+    expect(failures, failures.join('\n')).toEqual([]);
+  });
+
+  it('§4b exemptions are exact, reasoned, and name existing files', () => {
+    for (const [path, reason] of OC_EXEMPT) {
+      expect(path).not.toMatch(/[*?[\]]/);
+      expect(reason.trim().length).toBeGreaterThanOrEqual(40);
+      expect(existsSync(join(REPO_ROOT, path)), `stale §4b exemption: ${path}`).toBe(true);
+    }
+  });
+
+  it('self-test (§4b): the OC predicate passes a compliant table and FAILS each defective shape', () => {
+    const good = [
+      '# R', 'We read kappa against a positive control.', '## 11. Operating characteristic', '',
+      '| truth | P(reads below the control) | required | result |', '|---|---|---|---|',
+      '| null (iid + factor) | 0.94 | >= 0.80 | PASS |', '| control PC1 | 0.00 | <= 0.20 | PASS |', '', '## 12. Next',
+    ].join('\n');
+    expect(ocSectionVerdict(good)).toEqual({ applies: true, ok: true, reason: '', rows: 2 });
+    expect(ocSectionVerdict('# no trigger here').applies).toBe(false);
+    expect(ocSectionVerdict(good.replace('## 11. Operating characteristic', '## 11. Something')).reason).toMatch(/no "## Operating characteristic" section/);
+    expect(ocSectionVerdict(good.replace('| 0.94 | >= 0.80 | PASS |', '| 0.47 | >= 0.80 | FAIL |')).reason).toMatch(/not PASS/);
+    expect(ocSectionVerdict(good.replace('| null (iid + factor) |', '| iid |')).reason).toMatch(/no null-truth row/);
+    expect(ocSectionVerdict(good.replace('| control PC1 |', '| alt |')).reason).toMatch(/no control-truth row/);
+    expect(ocSectionVerdict(good.replace('| result |', '| outcome |')).reason).toMatch(/lacks a "result" column/);
+    expect(ocSectionVerdict(good.replace('| control PC1 | 0.00 | <= 0.20 | PASS |', '')).ok).toBe(false);
+    // the numbers are checked, not the word
+    expect(ocSectionVerdict(good.replace('| 0.94 | >= 0.80 | PASS |', '| 0.47 | >= 0.80 | PASS |')).reason).toMatch(/fails its bound/);
+    expect(ocSectionVerdict(good.replace('| 0.00 | <= 0.20 | PASS |', '| 0.35 | <= 0.20 | PASS |')).reason).toMatch(/fails its bound/);
+    expect(ocSectionVerdict(good.replace('| 0.94 | >= 0.80 | PASS |', '| 0.94 | >= 0.60 | PASS |')).reason).toMatch(/weaker than >= 0.80/);
+    expect(ocSectionVerdict(good.replace('| 0.00 | <= 0.20 | PASS |', '| 0.00 | <= 0.50 | PASS |')).reason).toMatch(/weaker than <= 0.20/);
+    // the trigger survives a hard wrap and other vocabulary
+    expect(ocSectionVerdict('# R\nread against a positive\ncontrol').applies).toBe(true);
+    expect(ocSectionVerdict('# R\na test-retest of the estimator').applies).toBe(true);
+    // a descriptive table in a subsection after the OC table is not read as part of it
+    const withSub = good.replace('## 12. Next', '### 11b. Reported\n\n| truth | P(BELOW) |\n|---|---|\n| regime switch | 0.52 |\n\n## 12. Next');
+    expect(ocSectionVerdict(withSub)).toEqual({ applies: true, ok: true, reason: '', rows: 2 });
   });
 
   it('self-test: the predicate passes a compliant section and FAILS each defective shape with its named reason', () => {

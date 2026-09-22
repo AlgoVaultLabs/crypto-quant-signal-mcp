@@ -43,6 +43,18 @@ What the table must catch, from the incidents that produced it:
 
 The gate enforces **presence and shape** of this section — one row per registered check, four cells each. It cannot enforce truth; the author can. Pre-registrations landed before this step existed are grandfathered in the gate by an exact, reasoned, non-empty allowlist and never by a glob.
 
+## 4b. Discriminating power before registration — reliability tests (GATED)
+
+**A test that returns the same answer under both hypotheses is not evidence.** Any registration that reads a statistic against a **positive control** (a reliability, self-agreement, test-retest or stability test whose reading is "below / above the control") must, BEFORE it lands, simulate its **exact** design — the same units, pairing, clustering, bootstrap and reading rule, on synthetic data carrying the dependence the real data can carry — under the null and under the positive control, and register the result. The precondition is the pure function `oc_gate` in `src/scripts/cluster-perm-stats.py`:
+
+> **P(reads below the control | control truth) ≤ 0.20 AND P(reads below the control | null truth) ≥ 0.80.**
+
+A design that fails is **not registered** as a test; it is redesigned or reported as `NOT_IDENTIFIABLE`. When the realized design can differ from the planned one (drops, depth), the gate is re-evaluated on the **realized skeleton** before any real statistic is computed, and a failure there makes the reading `NOT_IDENTIFIABLE`. The operating characteristic itself is published beside the result, so a reader can see what the test could and could not have detected.
+
+The registration carries a section headed `## Operating characteristic` holding one table with the columns `truth` · `P(reads below the control)` · `required` · `result`, at least one null row and one control row, every `result` cell reading `PASS`. It is enforced by `tests/unit/preregistration-support-stress-test.test.ts` for every registration that mentions a positive control (presence and shape, never truth).
+
+_Origin: `EDGE-HURST-DISCRIMINATION-PROBE-W1`, architect Q13 (2026-09-22). A label-free self-agreement statistic was promoted to a wave's headline before anyone checked that it could separate the null from the control; on the corpus's real pair structure it read "unreliable" in 19/20 null runs AND 19/20 control runs, and the ruling built on it was withdrawn. This section makes that check a precondition of registration rather than a step to remember._
+
 ## 5. Floors and power — before the pull, in the independence unit
 
 State the cluster floor (never a row floor) and the power at the effect the study is powered for, with the instrument beside the number: the standard error's source, how it scales with the cluster count, and any calibration applied. An increment that cannot reach the floor returns `indeterminate — underpowered`, with the size and the date that would resolve it. That branch is registered, not improvised.

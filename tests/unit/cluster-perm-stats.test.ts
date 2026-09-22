@@ -38,10 +38,13 @@ describe('cluster-perm-stats — the committed attribution instrument', () => {
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
     // A FLOOR on the check count, never an equality: a silent shrink is caught, growth is allowed.
     // 48 (W1 + collider) + 114 (EDGE-SCORER-PREDICTIVE-CEILING-W1 discrimination layer, incl. the 23
-    // adversarial-review fixtures that pin the supplementary mutations S1-S15 and the sweep survivors) = 162.
+    // adversarial-review fixtures that pin the supplementary mutations S1-S15 and the sweep survivors) = 162,
+    // + 125 (EDGE-HURST-DISCRIMINATION-PROBE-W1 term-contribution layer, group KH, incl. the architect's Q14
+    // amendments, the alpha boundaries, the reliability reading, its `oc_gate` precondition, remove_scope and the
+    // per-side recommendation) = 287.
     const m = r.stdout.match(/^SELF-TEST: PASS \((\d+) checks\)$/m);
     expect(m, 'summary line missing').not.toBeNull();
-    expect(Number(m![1])).toBeGreaterThanOrEqual(162);
+    expect(Number(m![1])).toBeGreaterThanOrEqual(287);
     // The calibration count is printed with its instrument (trials, B, seed) so it can be re-cited.
     expect(r.stdout).toMatch(/^SELF-TEST: calibration fp=\d+\/\d+ rate=[0-9.]+ B=\d+ seed=\d+$/m);
     expect(r.stdout).not.toMatch(/^SELF-TEST: FAIL/m);
@@ -59,7 +62,18 @@ describe('cluster-perm-stats — the committed attribution instrument', () => {
   // against the fixtures as first committed. A catch must be an ASSERTION failure: a mutant that only
   // makes a group or segment raise is MISSED_RAISE_ONLY. A red baseline, a target that no longer
   // applies, or a survivor fails this test.
-  it('the committed mutation harness proves 14/14 registered + 15/15 supplementary mutations turn the selftest red', { timeout: 180_000 }, () => {
+  // EDGE-HURST-DISCRIMINATION-PROBE-W1 adds the TERM set T1-T53 for the term-contribution layer: the reorder
+  // share's tie weight and within-block pairing, q-unit materiality, the stage counterfactual's strict gate and
+  // active flag, G+ materiality, the significant-but-immaterial route (Gs, at alpha AND at the TOST's own level,
+  // never REMOVE and never MAPPING), the equivalence alpha, the two-sided level reading, the unevaluated level
+  // floor, REMOVE absorbing the unresolved region, the gap-only floor gate, intersection-union, the underpowered
+  // and not-identifiable precedences, MAPPING sign agreement, the native sign rule and its input refusal, the
+  // stability gate, the flip-driven test and the dead-cell licence, the oc_gate precondition, the reliability
+  // reading, the per-side contradiction test behind the recommendation, kappa's two marginals, the stratified
+  // kappa, the one- and two-way kappa bootstraps (incl. the time-unit draw count), the TV half, the untied share,
+  // the alpha boundaries of G+/G-/A+/A- and the As state, every contradiction channel on BOTH sides, the BUY-side
+  // stability gate and remove_scope.
+  it('the committed mutation harness proves 14/14 registered + 15/15 supplementary + 53/53 term mutations turn the selftest red', { timeout: 300_000 }, () => {
     const r = spawnSync('python3', [MUTATION], { encoding: 'utf8' });
     expect(r.error, `python3 could not be spawned: ${r.error?.message ?? ''}`).toBeUndefined();
     expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).toBe(0);
@@ -70,6 +84,8 @@ describe('cluster-perm-stats — the committed attribution instrument', () => {
     expect(lines.filter((l) => l.startsWith('MUTATION_PROOF_SUPPLEMENTARY '))).toEqual(['MUTATION_PROOF_SUPPLEMENTARY caught=15 missed=0']);
     expect(lines.filter((l) => /^MUTATION M\d+ CAUGHT /.test(l))).toHaveLength(14);
     expect(lines.filter((l) => /^MUTATION S\d+ CAUGHT /.test(l))).toHaveLength(15);
+    expect(lines.filter((l) => l.startsWith('MUTATION_PROOF_TERM '))).toEqual(['MUTATION_PROOF_TERM caught=53 missed=0']);
+    expect(lines.filter((l) => /^MUTATION T\d+ CAUGHT /.test(l))).toHaveLength(53);
   });
 
   it('a subset run can never masquerade as the full PASS, and an unknown group is refused', { timeout: 60_000 }, () => {

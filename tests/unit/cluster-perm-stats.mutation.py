@@ -23,10 +23,12 @@ PROTOCOL (stdlib only):
      "turned K9 red" only through a TypeError). A PASS token is MISSED. Anything else (no token, a
      crash before the token, a timeout) is a HARNESS FAILURE.
   5. Prints one line per mutant, then exactly `MUTATION_PROOF caught=N missed=M` for the REGISTERED
-     set M1-M14, and `MUTATION_PROOF_SUPPLEMENTARY caught=N missed=M` for the S-set, which pins
+     set M1-M14, and `MUTATION_PROOF_SUPPLEMENTARY caught=N missed=M` for the S-set, and (EDGE-HURST-DISCRIMINATION-PROBE-W1)
+     `MUTATION_PROOF_TERM caught=N missed=M` for the TERM set T1-T53 over the term-contribution layer (group
+     KH). The S-set pins
      registered rules the M-set leaves open (found in adversarial review: every S-mutant read GREEN,
      or was caught only by a raise, against the fixtures as first committed). Exit 0 only when both
-     sets have missed == 0 (harness
+     sets (M, S and TERM) have missed == 0 (harness
      failures count as missed); 1 when a mutant survived; 2 when the harness itself could not run a
      fair trial (bad target, red baseline).
 
@@ -119,6 +121,125 @@ SUPPLEMENTARY = [
 ]
 
 
+# EDGE-HURST-DISCRIMINATION-PROBE-W1: the term-contribution layer. Each load-bearing rule of the per-side
+# map, the materiality conversion, the stage counterfactual, the verdict precedence and the reliability
+# statistics must turn group KH red by an ASSERTION. Same protocol, its own token, so the M and S lines
+# keep their registered meaning.
+TERM = [
+    ("T1", "a tie against a strict order counted as a full reversal in the reorder share",
+     "moved += 1.0 if sa * sb == -1 else 0.5", "moved += 1.0 if sa * sb == -1 else 1.0", ["KH"]),
+    ("T2", "reorder share pooled across blocks (cross-block pairs counted)",
+     "        by_block.setdefault(blocks[i], []).append(i)\n    pairs = 0\n    moved = 0.0",
+     "        by_block.setdefault(0, []).append(i)\n    pairs = 0\n    moved = 0.0", ["KH"]),
+    ("T3", "materiality taken as the raw share (q* ignored)",
+     "return share * (2.0 * q_star - 1.0)", "return share", ["KH"]),
+    ("T4", "the downstream gate made non-strict (|pre| == gate boosted)",
+     "if abs(pre) > gate:", "if abs(pre) >= gate:", ["KH"]),
+    ("T5", "materiality dropped from G+ (any significant gain reads KEEP)",
+     'if lo > 0.0 and point >= delta:\n        return "G+"', 'if lo > 0.0:\n        return "G+"', ["KH"]),
+    ("T6", "a significant-but-immaterial gain routed to the equivalence test (it can read REMOVE)",
+     '    if (lo > 0.0 or lo95 > 0.0) and point < delta:\n        return "Gs"', '    if False:\n        return "Gs"', ["KH"]),
+    ("T7", "equivalence bounds taken at alpha instead of the one-sided 95%",
+     "ci_lower(reps, alpha_equiv), ci_upper(reps, alpha_equiv))", "ci_lower(reps, alpha), ci_upper(reps, alpha))", ["KH"]),
+    ("T8", "the level reading made one-sided (a backwards ranker reads unresolved)",
+     '    if hi < null:\n        return "A-"', '    if False:\n        return "A-"', ["KH"]),
+    ("T9", "an unevaluated level floor (None) read as a pass",
+     "if level_floor_pass is not True:", "if level_floor_pass is False:", ["KH"]),
+    ("T10", "REMOVE absorbs the unresolved region (Gu x A0 -> REMOVE)",
+     '        return "MAPPING_PROVISIONAL"\n    return "UNRESOLVED"',
+     '        return "MAPPING_PROVISIONAL"\n    return "REMOVE" if a_state == "A0" else "UNRESOLVED"', ["KH"]),
+    ("T11", "the per-side floor gated on floor_pass (the irrelevant level half) instead of pass_gap",
+     'if gap_floor.get("pass_gap") is not True:', 'if gap_floor.get("floor_pass") is not True:', ["KH"]),
+    ("T12", "intersection-union dropped (sides in different families return SELL's reading)",
+     '    if fams["SELL"] != fams["BUY"]:', '    if False:', ["KH"]),
+    ("T13", "the underpowered precedence deleted",
+     '    if "P" in rs:', '    if False:', ["KH"]),
+    ("T14", "leave-one-day-out stability checks only the first deletion",
+     "return all(r == full_reading for r in dropped_readings)", "return dropped_readings[0] == full_reading", ["KH"]),
+    ("T15", "kappa's chance agreement taken from ONE marginal",
+     "pe = sum((pa[k] / tot) * (pb.get(k, 0.0) / tot) for k in pa)", "pe = sum((pa[k] / tot) * (pa[k] / tot) for k in pa)", ["KH"]),
+    ("T16", "kappa bootstrap resamples rows instead of clusters",
+     "row_unit = [uid.setdefault(u, len(uid)) for u in clusters]", "row_unit = [uid.setdefault(u, len(uid)) for u in range(n)]", ["KH"]),
+    ("T17", "total variation without the 1/2",
+     "return 0.5 * sum(abs(p.get(k, 0.0) - q.get(k, 0.0)) for k in keys)", "return sum(abs(p.get(k, 0.0) - q.get(k, 0.0)) for k in keys)", ["KH"]),
+    ("T18", "the counterfactual boosts even when the downstream stage is inactive",
+     "    if not downstream_active:\n        return pre", "    if False:\n        return pre", ["KH"]),
+    ("T19", "the untied share returns the TIED share",
+     "return (pairs - tied) / pairs, pairs", "return tied / pairs, pairs", ["KH"]),
+    # ── architect Q14 amendments + the reliability / recommendation layer (second GO, 2026-09-22) ──
+    ("T20", "Gs tested at alpha only (a gain the TOST itself calls significant can read G0 -> REMOVE)",
+     "if (lo > 0.0 or lo95 > 0.0) and point < delta:", "if lo > 0.0 and point < delta:", ["KH"]),
+    ("T21", "Gs routed through the ordinary table (Gs x A+/- reads MAPPING_PROVISIONAL)",
+     '    if g_state == "Gs":\n        return "NOT_IDENTIFIABLE"', '    if False:\n        return "NOT_IDENTIFIABLE"', ["KH"]),
+    ("T22", "the NOT_IDENTIFIABLE precedence deleted from the verdict",
+     '    if "NOT_IDENTIFIABLE" in rs:', '    if False:', ["KH"]),
+    ("T23", "MAPPING accepted with the term-alone sign differing across sides",
+     '    if fam == "MAPPING" and side_a["SELL"] != side_a["BUY"]:', '    if False:', ["KH"]),
+    ("T24", "the native arm contradicts MAPPING on NEG instead of POS",
+     '_NATIVE_AGAINST = {"KEEP": "NEG", "REMOVE": "POS", "MAPPING": "POS"}', '_NATIVE_AGAINST = {"KEEP": "NEG", "REMOVE": "POS", "MAPPING": "NEG"}', ["KH"]),
+    ("T25", "a malformed native value is no longer refused (the check fails open)",
+     "            if native[s] is not None and native[s] not in _NATIVE_SIGNS:\n                raise ValueError",
+     "            if False:\n                raise ValueError", ["KH"]),
+    ("T26", "the native sign requires a margin (a significant but immaterial native gain stops contradicting)",
+     'if lo is not None and lo > 0.0:\n        return "POS"', 'if lo is not None and lo > 0.01:\n        return "POS"', ["KH"]),
+    ("T27", "flip_driven ignores whether the subset reading survived",
+     'return full_side_reading == "KEEP" and subset_side_reading != "KEEP"', 'return full_side_reading == "KEEP"', ["KH"]),
+    ("T28", "the dead-cell licence granted on ONE side's native G+",
+     'all(native[s] is not None and native_g[s] == "G+" for s in _SIDES)', 'any(native[s] is not None and native_g[s] == "G+" for s in _SIDES)', ["KH"]),
+    ("T29", "oc_gate stops requiring precision under the null",
+     "ok_null = p_below_under_null >= min_under_null", "ok_null = True", ["KH"]),
+    ("T30", "oc_gate stops requiring the control to be ruled out",
+     "ok_pc = p_below_under_pc <= max_under_pc", "ok_pc = True", ["KH"]),
+    ("T31", "an unevaluated OC gate (None) read as passed by the reliability reading",
+     "    if oc_pass is not True:\n        return \"NOT_IDENTIFIABLE\"", "    if oc_pass is False:\n        return \"NOT_IDENTIFIABLE\"", ["KH"]),
+    ("T32", "ABOVE_PC1 deleted (a CI wholly above the control reads unresolved)",
+     '    if lo >= kappa_pc1:\n        return "ABOVE_PC1"', '    if False:\n        return "ABOVE_PC1"', ["KH"]),
+    ("T33", "the recommendation ignores a contradicting outcome arm (REMOVE on any INDETERMINATE)",
+     '        if contra:\n            return "CONFLICT"', '        if False:\n            return "CONFLICT"', ["KH"]),
+    ("T34", "a significant-but-immaterial gain no longer contradicts 'carries nothing'",
+     'if side_g[s] in ("G+", "Gs")]', 'if side_g[s] in ("G+",)]', ["KH"]),
+    ("T35", "a right-way-ranking term alone (A+) no longer contradicts 'carries nothing'",
+     'if side_a[s] in ("A+", "A-", "As")]', 'if side_a[s] in ("A-", "As")]', ["KH"]),
+    ("T36", "the stratified kappa's chance term no longer taken from each stratum",
+     "        num_e += W * pe", "        num_e += W * 0.5", ["KH"]),
+    ("T37", "the two-way bootstrap drops the time-block multiplicity (coin-only in disguise)",
+     "k = stat([m1[x] * m2[y] for x, y in zip(r1, r2)])", "k = stat([m1[x] for x, y in zip(r1, r2)])", ["KH"]),
+    ("T39", "G+ tested at the TOST's 0.05 instead of alpha 0.025 (KEEP at half the registered level)",
+     'if lo > 0.0 and point >= delta:\n        return "G+"', 'if lo95 > 0.0 and point >= delta:\n        return "G+"', ["KH"]),
+    ("T40", "G- tested at 0.05 instead of alpha",
+     '    if hi < 0.0:\n        return "G-"', '    if hi95 < 0.0:\n        return "G-"', ["KH"]),
+    ("T41", "A+ tested at 0.05 instead of alpha",
+     '    if lo > null:\n        return "A+"', '    if lo95 > null:\n        return "A+"', ["KH"]),
+    ("T42", "A- tested at 0.05 instead of alpha",
+     '    if hi < null:\n        return "A-"', '    if hi95 < null:\n        return "A-"', ["KH"]),
+    ("T43", "As deleted (an equivalence-level-only ranking can read A0 -> REMOVE)",
+     '    if lo95 > null or hi95 < null:\n        return "As"', '    if False:\n        return "As"', ["KH"]),
+    ("T44", "As routed as A0 in the side map",
+     '        a_state = "Au"   # in the side map', '        a_state = "A0"   # in the side map', ["KH"]),
+    ("T45", "outcome_contradicts reads the gain on SELL only",
+     'for s in _SIDES if side_g[s] in ("G+", "Gs")]', 'for s in ("SELL",) if side_g[s] in ("G+", "Gs")]', ["KH"]),
+    ("T46", "outcome_contradicts reads the term alone on SELL only",
+     'for s in _SIDES if side_a[s] in ("A+", "A-", "As")]', 'for s in ("SELL",) if side_a[s] in ("A+", "A-", "As")]', ["KH"]),
+    ("T47", "outcome_contradicts reads the native arm on SELL only",
+     'for s in _SIDES if native[s] == "POS"]', 'for s in ("SELL",) if native[s] == "POS"]', ["KH"]),
+    ("T48", "the stability gate checks SELL only",
+     'unstable = [s for s in _SIDES if side_stable[s] is not True]', 'unstable = [s for s in ("SELL",) if side_stable[s] is not True]', ["KH"]),
+    ("T49", "a truthy OC gate (1) read as passed",
+     '    if oc_pass is not True:\n        return "NOT_IDENTIFIABLE"', '    if not oc_pass:\n        return "NOT_IDENTIFIABLE"', ["KH"]),
+    ("T50", "the two-way bootstrap draws the time units G1 times",
+     '        for _ in range(G2):\n            m2[gen2.randrange(G2)] += 1', '        for _ in range(G1):\n            m2[gen2.randrange(G2)] += 1', ["KH"]),
+    ("T51", "remove_scope ignores each group's own gate",
+     'if gate_pass is True and reading == "BELOW_PC1":', 'if reading == "BELOW_PC1":', ["KH"]),
+    ("T52", "remove_scope ignores the pooled reading",
+     '    if pooled_reading != "BELOW_PC1":\n        return []', '    if False:\n        return []', ["KH"]),
+    ("T53", "an equivalence-level-only term ranking (As) no longer contradicts",
+     'if side_a[s] in ("A+", "A-", "As")]', 'if side_a[s] in ("A+", "A-")]', ["KH"]),
+    ("T38", "the two-way bootstrap ignores strata (plain kappa where the stratified one was asked for)",
+     "stat = (lambda w: cohen_kappa(a, b, w)) if strata is None else (lambda w: stratified_kappa(a, b, strata, w))",
+     "stat = lambda w: cohen_kappa(a, b, w)", ["KH"]),
+]
+
+
 def _tree(module_src, selftest_src):
     root = tempfile.mkdtemp(prefix="cps-mutant-")
     for rel, src in ((MODULE_REL, module_src), (SELFTEST_REL, selftest_src)):
@@ -161,7 +282,7 @@ def main():
     with open(os.path.join(REPO, SELFTEST_REL), encoding="utf-8") as fh:
         selftest_src = fh.read()
 
-    everything = MUTATIONS + SUPPLEMENTARY
+    everything = MUTATIONS + SUPPLEMENTARY + TERM
     ids = [m[0] for m in everything]
     harness_errors = []
     if len(ids) != len(set(ids)):
@@ -227,13 +348,15 @@ def main():
 
     caught, missed = judge(MUTATIONS)
     s_caught, s_missed = judge(SUPPLEMENTARY)
+    t_caught, t_missed = judge(TERM)
     for e in harness_errors:
         print(f"MUTATION_HARNESS_ERROR {e}")
     print(f"MUTATION_PROOF caught={caught} missed={missed}")
     print(f"MUTATION_PROOF_SUPPLEMENTARY caught={s_caught} missed={s_missed}")
+    print(f"MUTATION_PROOF_TERM caught={t_caught} missed={t_missed}")
     if harness_errors:
         return 2
-    return 0 if missed == 0 and s_missed == 0 else 1
+    return 0 if missed == 0 and s_missed == 0 and t_missed == 0 else 1
 
 
 if __name__ == "__main__":
