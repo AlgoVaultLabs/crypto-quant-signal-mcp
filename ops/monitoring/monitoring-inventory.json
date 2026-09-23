@@ -1660,7 +1660,7 @@
       "schedule": "41 9 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "dbcb9b833d48c64b5d59dec63acb1f73eb2f19f3b2fe2cb8e807d0f2fa575094",
+      "sha256": "50818cd41ea39a6becc2d593d4a62475a3f9c8c5c3af149d7bdccc8014eb2409",
       "alert_ids": [
         "xrepo_ci_red",
         "xrepo_ci_dark"

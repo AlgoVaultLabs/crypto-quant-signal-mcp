@@ -145,6 +145,13 @@ EXPIRY_DISABLE_DAYS="${XREPO_CI_EXPIRY_DISABLE_DAYS:-60}"
 # stopped running is visible in the ledger rather than inferred from silence.
 LEDGER="${XREPO_CI_LEDGER:-/var/lib/algovault-monitoring/xrepo-ci-freshness.jsonl}"
 
+# Leg B. A run is STALE past `cadence x STALE_MULTIPLE`, DERIVED from the row's own declared
+# cadence and never a literal (the SYNC_LIVENESS rule). 2 is measured, not chosen: the longest
+# observed gap between runs of the watched job is 34.1 h (#105->#106) and the oldest the latest
+# run has ever been at this cron slot is 24.8 h (2026-08-27), so 48 h leaves 23.2 h of headroom
+# while 36 h would leave 1.9 h over the longest real gap.
+STALE_MULTIPLE="${XREPO_CI_STALE_MULTIPLE:-2}"
+
 # DECLARED watch list. Adding a workflow is a row here, not a code change.
 # Format: <owner/repo>|<workflow-file>|<human label>|<branch>|<cadence-seconds | "event-driven">
 # `${VAR-default}` NOT `${VAR:-default}`: an EXPLICITLY EMPTY watch list is a config
@@ -256,11 +263,52 @@ aggregate_freshness() {
 
 # One ledger line per row per run. A leg that stops running leaves a gap here rather than silence,
 # which is the difference between "measured healthy" and "not measured at all".
-ledger_append() { # <repo> <wf> <branch> <leg> <transport> <state> <age_s> <verdict>
-  local dir; dir=$(dirname "$LEDGER")
+ledger_append() { # <repo> <wf> <branch> <leg> <transport> <state> <age_s> <verdict> [run_id]
+  local dir extra=""; dir=$(dirname "$LEDGER")
   [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 0
-  printf '{"ts":"%s","repo":"%s","wf":"%s","branch":"%s","leg":"%s","transport":"%s","state":"%s","age_s":%s,"verdict":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-null}" "$8" >> "$LEDGER" 2>/dev/null || true
+  # Leg B records the run id it parsed, because that is what the monotonic guard reads back on the
+  # next run. A guard whose memory lives only in RAM cannot catch a latch that persists.
+  [ -n "${9:-}" ] && extra=",\"run_id\":\"$9\""
+  printf '{"ts":"%s","repo":"%s","wf":"%s","branch":"%s","leg":"%s","transport":"%s","state":"%s","age_s":%s,"verdict":"%s"%s}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-null}" "$8" "$extra" >> "$LEDGER" 2>/dev/null || true
+}
+
+# ── LEG B'S PARSER — STRUCTURED FIELDS ONLY, NEVER THE PROSE ─────────────────────────────────
+# Measured on the live page 2026-09-22, one run row carries:
+#   href="/<repo>/actions/runs/35732680339"                     <- structured (the run id)
+#   aria-label="completed successfully:  Run 132 of <name>."    <- the NUMBER is structured;
+#                                                                  the CONCLUSION is PROSE
+#   <relative-time datetime="2026-09-22T13:19:07Z">             <- structured (run START)
+#
+# CLAUDE.md: "MATCH ON THE STRUCTURED FIELD, NOT THE PROSE." `completed successfully` / `failed`
+# is human-facing copy on a product UI, so it may NEVER become a verdict here — the conclusion
+# stays badge-only. Consequences, all of them good: a GitHub markup change can degrade freshness
+# to UNKNOWN but can never flip a verdict, and the `api.github.com`-free guard keeps its intent
+# rather than only its letter.
+#
+# Fields are read PER ROW, keyed off the run anchor. A global "first datetime on the page" would
+# read a neighbouring row's value the moment GitHub reorders anything — the latch the monotonic
+# guard exists to catch, arriving silently.
+parse_runs_page() { # <html> -> "<run_number>|<run_id>|<iso-start>" for the NEWEST row, else 1
+  local flat row id num iso
+  flat=$(printf '%s' "$1" | tr '\n' ' ')
+  row=$(printf '%s' "$flat" | sed 's/id="check_suite_/\
+@@ROW@@/g' | grep '^@@ROW@@' | head -1)
+  [ -n "$row" ] || return 1
+  id=$(printf '%s' "$row" | grep -oE '/actions/runs/[0-9]+' | head -1 | sed 's|.*/||')
+  num=$(printf '%s' "$row" | grep -oE 'Run[[:space:]]+[0-9]+[[:space:]]+of' | head -1 | grep -oE '[0-9]+')
+  iso=$(printf '%s' "$row" | grep -oE '<relative-time[^>]*datetime="[^"]+"' | head -1 | sed -e 's/.*datetime="//' -e 's/"$//')
+  [ -n "$id" ] && [ -n "$num" ] && [ -n "$iso" ] || return 1
+  printf '%s|%s|%s' "$num" "$id" "$iso"
+}
+
+# The monotonic guard's memory. Run numbers only ever increase for a workflow, so a parse that
+# hands back an OLDER run than the one already recorded has latched onto the wrong element — a
+# failure mode that otherwise looks exactly like a legitimately quiet workflow.
+ledger_last_run_id() { # <repo> <wf> <branch> -> last recorded run id, or empty
+  [ -r "$LEDGER" ] || return 0
+  grep -F "\"repo\":\"$1\",\"wf\":\"$2\",\"branch\":\"$3\",\"leg\":\"B\"" "$LEDGER" 2>/dev/null \
+    | grep -oE '"run_id":"[0-9]+"' | tail -1 | grep -oE '[0-9]+' || true
 }
 
 # The feed-level <updated> is the FIRST one in the document; every later occurrence belongs to an
@@ -358,6 +406,83 @@ fetch_badge() {
 # FAIL-SOFT: a non-200, an unparseable feed or an unreadable timestamp makes that repo UNKNOWN.
 # It never fires, never suppresses a conclusion, and never feeds the dark streak — the worst case
 # is exactly today's behaviour.
+# ── LEG B — RUN RECENCY, ON A FRAGILE SURFACE, BEHIND THREE GUARDS ───────────────────────────
+# The badge says WHAT the latest run concluded and cannot say WHEN. Only the Actions HTML page
+# carries that timestamp — 425 KB of product UI, with no machine contract of any kind. So this leg
+# is deliberately NOT load-bearing: the catastrophic case (a disabled schedule) is Leg A's on the
+# atom contract, and everything here only buys the nuisance fix, a red that is hours stale.
+#
+# Three guards, each a named law, and every one of them degrades to UNKNOWN rather than to a value:
+#   vacuity       a 200 with bytes that yields ZERO rows is a PARSER failure, never "no runs"
+#   monotonic     a run id older than the one we last recorded means the parser latched wrong
+#   content-type  a 200 is not a contract — `<wf>.atom` answers 200 with text/html
+#
+# UNKNOWN feeds the existing 3-run `xrepo_ci_dark` streak, so a rotted parser announces itself
+# within three days instead of going quiet. Sets: LEGB_STATE, LEGB_REASON, LEGB_NUM, LEGB_ID,
+# LEGB_ISO, LEGB_AGE.
+leg_b_check() { # <repo> <wf> <branch> <cadence>
+  LEGB_STATE=""; LEGB_REASON=""; LEGB_NUM=""; LEGB_ID=""; LEGB_ISO=""; LEGB_AGE=""
+  local repo="$1" wf="$2" branch="$3" cadence="$4"
+  local body hdr url http ct parsed last now bound
+  url=$(actions_url "$repo" "$wf" "$branch")
+  # Guard 3a — the URL itself. The page is only ever fetched through actions_url(); an `.atom`
+  # suffix on a workflow returns 200 text/html and parses to nothing, so the form is asserted
+  # rather than assumed by whoever edits this next.
+  case "$url" in
+    *.atom)
+      LEGB_STATE=UNKNOWN; LEGB_REASON="refusing a .atom URL — there is no Actions runs feed, and that URL answers 200 with text/html"
+      return 0 ;;
+    *"/actions/workflows/$wf?query=branch%3A$branch") ;;
+    *)
+      LEGB_STATE=UNKNOWN; LEGB_REASON="URL is not the actions_url() form: $url"
+      return 0 ;;
+  esac
+  body=$(mktemp "${TMPDIR:-/tmp}/xrepopage.XXXXXX") || { LEGB_STATE=UNKNOWN; LEGB_REASON="no temp file"; return 0; }
+  hdr=$(mktemp "${TMPDIR:-/tmp}/xrepopageh.XXXXXX") || { rm -f "$body"; LEGB_STATE=UNKNOWN; LEGB_REASON="no temp file"; return 0; }
+  http=$(fetch_doc "$url" "$body" "$hdr" html)
+  ct=$(grep -i '^content-type:' "$hdr" 2>/dev/null | head -1 | tr -d '\r' | sed 's/^[Cc]ontent-[Tt]ype:[[:space:]]*//')
+  if [ "$http" != "200" ]; then
+    LEGB_STATE=UNKNOWN; LEGB_REASON="HTTP $http"
+  else
+    case "$ct" in
+      *html*) # Guard 3b — the content type must be what the URL promised.
+        parsed=$(parse_runs_page "$(cat "$body" 2>/dev/null || true)") || parsed=""
+        if [ -z "$parsed" ]; then
+          # Guard 1 — vacuity. WE pointed the parser at this page, so "nothing parsed" is a defect
+          # in the parser or in the markup, never a fact about how many runs exist.
+          LEGB_STATE=UNKNOWN; LEGB_REASON="200 with $(wc -c < "$body" | tr -d ' ') bytes parsed ZERO run rows"
+        else
+          LEGB_NUM=${parsed%%|*}; LEGB_ID=$(printf '%s' "$parsed" | cut -d'|' -f2); LEGB_ISO=${parsed##*|}
+          last=$(ledger_last_run_id "$repo" "$wf" "$branch")
+          if [ -n "$last" ] && [ "$LEGB_ID" -lt "$last" ] 2>/dev/null; then
+            # Guard 2 — monotonic. Run ids only grow; a smaller one is a latch, not a quiet job.
+            LEGB_STATE=UNKNOWN; LEGB_REASON="parsed run id $LEGB_ID is older than the recorded $last — the parser latched onto the wrong element"
+            LEGB_NUM=""; LEGB_ID=""; LEGB_ISO=""
+          elif ! now=$(iso_epoch "$LEGB_ISO"); then
+            LEGB_STATE=UNKNOWN; LEGB_REASON="run timestamp '$LEGB_ISO' did not parse"
+          else
+            LEGB_AGE=$(( $(now_epoch) - now ))
+            if [ "$cadence" = "event-driven" ]; then
+              LEGB_STATE="N/A"
+            else
+              bound=$(( cadence * STALE_MULTIPLE ))
+              if [ "$LEGB_AGE" -gt "$bound" ]; then LEGB_STATE=STALE; else LEGB_STATE=FRESH; fi
+            fi
+          fi
+        fi ;;
+      *) LEGB_STATE=UNKNOWN; LEGB_REASON="served '$ct', not HTML — a 200 is not a contract" ;;
+    esac
+  fi
+  [ -n "$LEGB_STATE" ] || LEGB_STATE=UNKNOWN
+  # THE DECLARED EXEMPTION OUTRANKS THE TRANSPORT. An `event-driven` row has no cadence, so there
+  # is no bound to evaluate and no such thing as a stale run for it — that is true whether the page
+  # parsed or not. Its metadata is a bonus for the RED body; its freshness is `N/A` either way, and
+  # a failed fetch on it must never feed the dark streak for a measurement nobody asked for.
+  [ "$cadence" = "event-driven" ] && LEGB_STATE="N/A"
+  ledger_append "$repo" "$wf" "$branch" B html "${LEGB_REASON:-OK}" "${LEGB_AGE:-null}" "$LEGB_STATE" "$LEGB_ID"
+  rm -f "$body" "$hdr" 2>/dev/null || true
+}
+
 leg_a_checks() { # reads SCHED_REPOS (one `repo|branch|wf` per line, deduped by repo)
   LEGA_CHECKED=0; LEGA_UNKNOWN=0; LEGA_EXPIRING=0; LEGA_DETAIL=""
   local body hdr REPO BRANCH WF URL HTTP CT FEED UPD UPD_EPOCH NOW AGE AGE_D DISABLE_ON
@@ -428,9 +553,9 @@ EOF
 
 run_checks() {
   CHECKED=0; RED=0; INDET=0; RED_DETAIL=""
-  SCHED_REPOS=""; ROW_FRESHNESS=""
+  SCHED_REPOS=""; ROW_FRESHNESS=""; LEGB_UNKNOWN=0; STALE_ROWS=0; STALE_DETAIL=""
   local body; body=$(mktemp "${TMPDIR:-/tmp}/xrepo.XXXXXX")
-  local REPO WF LABEL BRANCH CADENCE URL HTTP SVG STATUS CLASS
+  local REPO WF LABEL BRANCH CADENCE URL HTTP SVG STATUS CLASS ROW_META
   while IFS='|' read -r REPO WF LABEL BRANCH CADENCE; do
     [ -n "${REPO:-}" ] || continue
     CHECKED=$((CHECKED + 1))
@@ -460,13 +585,33 @@ $REPO|"*) ;;
 $REPO|$BRANCH|$WF" ;;
       esac
     fi
-    # Per-row freshness. `event-driven` is N/A BY DECLARATION and can never be STALE; a scheduled
-    # row is UNKNOWN until Leg B measures it.
-    if [ "$CADENCE" = "event-driven" ]; then
-      ROW_FRESHNESS="$ROW_FRESHNESS N/A"
+    # Per-row freshness, measured by Leg B. `event-driven` is N/A BY DECLARATION: it has no
+    # cadence, so no bound exists and inventing one would page on a job behaving exactly as
+    # designed. It still gets its run metadata, which is what a RED body needs.
+    leg_b_check "$REPO" "$WF" "$BRANCH" "$CADENCE"
+    ROW_FRESHNESS="$ROW_FRESHNESS $LEGB_STATE"
+    ROW_META=""
+    if [ -n "$LEGB_ID" ]; then
+      ROW_META="
+  run #$LEGB_NUM ($LEGB_ID) started $LEGB_ISO — $(human_age "$LEGB_AGE") ago
+  $BADGE_HOST/$REPO/actions/runs/$LEGB_ID"
     else
-      ROW_FRESHNESS="$ROW_FRESHNESS UNKNOWN"
+      # The line is NEVER omitted. An operator must not have to re-derive the age of the thing he
+      # is being paged about, and "no line" reads as "nobody thought about it".
+      ROW_META="
+  freshness unavailable (${LEGB_REASON:-unknown})"
     fi
+    case "$LEGB_STATE" in
+      UNKNOWN) LEGB_UNKNOWN=$((LEGB_UNKNOWN + 1)); echo "  ? $LABEL ($REPO@$BRANCH): run recency UNKNOWN — ${LEGB_REASON:-unknown}" ;;
+      STALE)   echo "  x $LABEL ($REPO@$BRANCH): newest run #$LEGB_NUM started $LEGB_ISO — $(human_age "$LEGB_AGE") ago, over the ${STALE_MULTIPLE}x${CADENCE}s bound" ;;
+      "N/A")   # no `;;&` — this file's self-test runs on bash 3.2, where that is a syntax error
+               if [ -n "$LEGB_ID" ]; then
+                 echo "  · $LABEL ($REPO@$BRANCH): event-driven, freshness N/A — newest run #$LEGB_NUM started $LEGB_ISO"
+               else
+                 echo "  · $LABEL ($REPO@$BRANCH): event-driven, freshness N/A — run metadata unavailable (${LEGB_REASON:-unknown})"
+               fi ;;
+      *)       echo "  + $LABEL ($REPO@$BRANCH): newest run #$LEGB_NUM started $LEGB_ISO — $(human_age "$LEGB_AGE") ago, within the ${STALE_MULTIPLE}x${CADENCE}s bound" ;;
+    esac
     URL=$(badge_url "$REPO" "$WF" "$BRANCH")
     HTTP=$(fetch_badge "$URL" "$body")
     if [ "$HTTP" != "200" ]; then
@@ -484,13 +629,24 @@ $REPO|$BRANCH|$WF" ;;
     case "$CLASS" in
       PASS)
         echo "  + $LABEL ($REPO@$BRANCH): latest run = $STATUS"
-        log "OK $REPO/$WF@$BRANCH $STATUS" ;;
+        log "OK $REPO/$WF@$BRANCH $STATUS"
+        # Green AND stale is the case nothing could see before: the badge is reporting a run old
+        # enough that the schedule behind it may have stopped. A DISTINCT alert id, because the
+        # wrapper cools down per id and riding `xrepo_ci_dark` would let one suppress the other.
+        if [ "$LEGB_STATE" = "STALE" ]; then
+          STALE_ROWS=$((STALE_ROWS + 1))
+          STALE_DETAIL="$STALE_DETAIL
+- $REPO/$WF (branch $BRANCH): badge says $STATUS, but its newest run is $(human_age "$LEGB_AGE") old
+  run #$LEGB_NUM ($LEGB_ID) started $LEGB_ISO — the declared cadence is ${CADENCE}s
+  $BADGE_HOST/$REPO/actions/runs/$LEGB_ID
+  $(actions_url "$REPO" "$WF" "$BRANCH")"
+        fi ;;
       FAIL)
         echo "  x $LABEL ($REPO@$BRANCH): latest run = $STATUS"
         log "RED $REPO/$WF@$BRANCH $STATUS"
         RED=$((RED + 1))
         RED_DETAIL="$RED_DETAIL
-- $REPO/$WF (branch $BRANCH): $STATUS
+- $REPO/$WF (branch $BRANCH): $STATUS$ROW_META
   $(actions_url "$REPO" "$WF" "$BRANCH")" ;;
       *)
         echo "  ? $LABEL ($REPO@$BRANCH): badge says '$STATUS' — not a conclusion, cannot verify"
@@ -519,16 +675,40 @@ red_body() {
 }
 
 dark_body() {
-  printf '%s\n\n%s\n' "🟡 AlgoVault Alert" \
-"cross-repo CI canary has been UNABLE TO VERIFY for $1 consecutive runs.
-It is dark, not green — no workflow conclusion has been read.
+  # $2 names WHICH reader went dark. It defaults to the badge wording this alert has always
+  # carried, so the pre-existing assertions read the same body they always did — but a Leg B
+  # parser rot must never page with a sentence about the badge's <title>, which is the class of
+  # false diagnosis that costs the next operator an hour.
+  local cause="${2:-badge}" detail
+  case "$cause" in
+    legb) detail="The conclusion reader (the badge) is fine; the RUN RECENCY leg is not. That leg
+parses the Actions HTML page, which is product UI with no machine contract, so
+GitHub changing its markup degrades it to UNKNOWN by design. Check the page shape
+against parse_runs_page(), or accept the loss of recency until it is re-fitted —
+Leg A (commits/<branch>.atom) still covers the schedule-expiry case meanwhile." ;;
+    *)    detail="It is dark, not green — no workflow conclusion has been read.
 The reader is the GitHub Actions badge endpoint, which is NOT metered by the
 REST API budget, so a rate limit is no longer a plausible cause: check
 that github.com is reachable from this host and that the badge markup still
-carries its <title>.
+carries its <title>." ;;
+  esac
+  printf '%s\n\n%s\n' "🟡 AlgoVault Alert" \
+"cross-repo CI canary has been UNABLE TO VERIFY for $1 consecutive runs.
+$detail
 
 Action: dispatch OPS-XREPO-CI-CANARY-DARK-W{NEXT}
 Source: ops/cron/xrepo-ci-conclusion-canary.sh"
+}
+
+# Green badge + stale run. The one case nothing in the estate could see before this wave.
+stale_body() {
+  local n="$1" detail="$2" noun="workflows are"
+  [ "$n" -eq 1 ] && noun="workflow is"
+  printf '%s\n\n%s watched %s GREEN ON A STALE RUN%s\n\n%s\n\nAction: dispatch OPS-XREPO-CI-STALE-W{NEXT}\nSource: ops/cron/xrepo-ci-conclusion-canary.sh' \
+    "🟡 AlgoVault Alert" "$n" "$noun" "$detail" \
+"A badge reports the LAST run, with no date attached. Past twice its declared cadence
+that is no longer evidence the job is still running — a disabled schedule, a deleted
+cron or a silently unregistered workflow all render as a green badge forever."
 }
 
 # Leg A's page. A distinct alert id, deliberately: the wrapper cools down PER alert id, so folding
@@ -585,6 +765,13 @@ main() {
   fi
   freshness "$(aggregate_freshness $ROW_FRESHNESS)"
 
+  # A green badge over a stale run is reported on EVERY path, including the red one: two rows can
+  # disagree, and the stale one does not stop being stale because a sibling is red.
+  if [ "${STALE_ROWS:-0}" -gt 0 ]; then
+    fire "xrepo_ci_stale" "$(stale_body "$STALE_ROWS" "$STALE_DETAIL")"
+    log "STALE rows=$STALE_ROWS — escalated"
+  fi
+
   if [ "$RED" -gt 0 ]; then
     fire "xrepo_ci_red" "$(red_body "$RED" "$RED_DETAIL")"
     verdict FAIL; exit 0
@@ -594,18 +781,25 @@ main() {
   # exiting 0 is indistinguishable from a healthy one, so persistent INDETERMINATE
   # escalates on its own rather than waiting to be noticed — which is precisely what
   # nobody did for the 40 runs that motivated this script.
-  if [ "$INDET" -gt 0 ]; then
-    local STREAK
+  # ONE streak, two causes. A run counts as unverified when a CONCLUSION could not be read, and
+  # now also when the run-recency leg could not answer: a parser that rots must announce itself
+  # rather than degrade quietly forever. The body names which reader went dark; the verdict token
+  # still reports only what the CONCLUSION reader saw, so a Leg B failure can never turn a
+  # verified-green run into INDETERMINATE.
+  if [ "$INDET" -gt 0 ] || [ "${LEGB_UNKNOWN:-0}" -gt 0 ]; then
+    local STREAK CAUSE=badge
+    [ "$INDET" -eq 0 ] && CAUSE=legb
     STREAK=$(cat "$STATE" 2>/dev/null || echo 0)
     case "$STREAK" in ''|*[!0-9]*) STREAK=0 ;; esac
     STREAK=$((STREAK + 1))
     echo "$STREAK" > "$STATE" 2>/dev/null || true
-    echo "  checked $CHECKED workflow(s): $INDET indeterminate, $RED red (consecutive indeterminate runs: $STREAK)"
+    echo "  checked $CHECKED workflow(s): $INDET indeterminate, $RED red, ${LEGB_UNKNOWN:-0} recency-unknown (consecutive unverified runs: $STREAK)"
     if [ "$STREAK" -ge 3 ]; then
-      fire "xrepo_ci_dark" "$(dark_body "$STREAK")"
-      log "DARK streak=$STREAK — escalated"
+      fire "xrepo_ci_dark" "$(dark_body "$STREAK" "$CAUSE")"
+      log "DARK streak=$STREAK cause=$CAUSE — escalated"
     fi
-    verdict INDETERMINATE; exit 0
+    if [ "$INDET" -gt 0 ]; then verdict INDETERMINATE; else verdict PASS; fi
+    exit 0
   fi
 
   echo 0 > "$STATE" 2>/dev/null || true
@@ -685,6 +879,36 @@ MOCK
     if [ -n "${4:-}" ]; then printf '%s' "$4" > "$f.ct"; fi
   }
 
+  # A run row as GitHub actually renders it, captured 2026-09-22. Two `<relative-time>` elements
+  # per row and an OLDER row underneath, both on purpose: a parser that takes "the first datetime
+  # on the page" or "the last row" passes a one-row fixture and fails live.
+  mkpage() { # <url> <run_number> <run_id> <iso> [http-code] [content-type] [dispatch]
+    local f lbl; f="$tmp/fx/$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_')"
+    mkdir -p "$tmp/fx"
+    if [ -n "${7:-}" ]; then lbl="completed successfully:  Run $2 of Regenerate Landing from Manifests. manifest-changed"
+    else lbl="completed successfully:  Run $2 of Some Workflow."; fi
+    {
+      printf '<html><body><div class="Box">'
+      printf '<div class="Box-row" id="check_suite_%s01" data-url="/x/actions/workflow-run/%s01">' "$2" "$2"
+      printf '<a href="/o/x/actions/runs/%s" aria-label="%s"><span>Some Workflow</span></a>' "$3" "$lbl"
+      printf '<span>#%s: <span>Scheduled</span></span>' "$2"
+      printf '<relative-time     datetime="%s"     threshold="PT1H"></relative-time>' "$4"
+      printf '<relative-time     datetime="%s"></relative-time>' "$4"
+      printf '<a class="branch-name" title="main">main</a></div>'
+      printf '<div class="Box-row" id="check_suite_%s00"><a href="/o/x/actions/runs/%s" aria-label="failed:  Run %s of Some Workflow."></a>' "$2" "$(( $3 - 7 ))" "$(( $2 - 1 ))"
+      printf '<relative-time datetime="2019-03-04T05:06:07Z"></relative-time></div>'
+      printf '</div></body></html>'
+    } > "$f.html"
+    printf '%s' "${5:-200}" > "$f.code"
+    if [ -n "${6:-}" ]; then printf '%s' "$6" > "$f.ct"; fi
+  }
+  mkpage_norows() { # <url> — a 200 with real bytes and no run rows at all
+    local f; f="$tmp/fx/$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_')"
+    mkdir -p "$tmp/fx"
+    printf '<html><body><div class="blankslate"><h3>There are no workflow runs yet.</h3></div></body></html>' > "$f.html"
+    printf '200' > "$f.code"
+  }
+
   run_case() { # <watched> <expect-verdict>
     MOCK_SINK="$tmp/sink" XREPO_CI_FIXTURE_DIR="$tmp/fx" XREPO_CI_WATCHED="$1" \
       XREPO_CI_SEND="$tmp/send.sh" XREPO_CI_LOG="$tmp/log" XREPO_CI_STATE="$tmp/streak" \
@@ -700,10 +924,16 @@ MOCK
   # FIXTURE DATA gains the 5th field; every assertion line below is unchanged.
   local ROWS="o/a|w.yml|Alpha|main|86400
 o/b|w.yml|Beta|main|86400"
-  # Keep both repos' activity recent in the shared cases, so Leg A is exercised on every one of
-  # them and can never become the reason a pre-existing assertion passes.
-  mkatom "$ATOM_A" "$(date -u -d '-3 days' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-3d +%Y-%m-%dT%H:%M:%SZ)"
-  mkatom "$ATOM_B" "$(date -u -d '-3 days' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-3d +%Y-%m-%dT%H:%M:%SZ)"
+  local PAGE_A="https://github.com/o/a/actions/workflows/w.yml?query=branch%3Amain"
+  local PAGE_B="https://github.com/o/b/actions/workflows/w.yml?query=branch%3Amain"
+  # Keep both repos' activity and both rows' runs recent in the shared cases, so BOTH legs are
+  # exercised on every one of them and neither can become the reason a pre-existing assertion
+  # passes. A fixture that makes a leg silently unavailable would make these cases vacuous.
+  local RECENT ACTIVE
+  ACTIVE=$(date -u -d '-3 days' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-3d +%Y-%m-%dT%H:%M:%SZ)
+  RECENT=$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-2H +%Y-%m-%dT%H:%M:%SZ)
+  mkatom "$ATOM_A" "$ACTIVE"; mkatom "$ATOM_B" "$ACTIVE"
+  mkpage "$PAGE_A" 132 35732680339 "$RECENT"; mkpage "$PAGE_B" 132 35732680339 "$RECENT"
 
   : > "$tmp/sink"; echo 0 > "$tmp/streak"
   mkfx "$A" passing; mkfx "$B" passing
@@ -834,6 +1064,115 @@ o/b|w.yml|Beta|main|event-driven")
   out=$(run_case "$ROWS")
   ckc "a 200 that is not atom is UNKNOWN, never a parsed feed" "$out" "not atom — repo activity UNKNOWN"
   ck  "a mistyped 200 fires nothing" "$(grep -c 'xrepo_ci_schedule_expiry' "$tmp/sink" | tr -d ' ')" "0"
+  CASE_NOW=""
+
+  echo "SELF-TEST: Leg B — run recency parsed from the Actions page, STRUCTURED FIELDS ONLY"
+  local ROW_SCHED ROW_DISPATCH
+  ROW_SCHED='<div id="check_suite_1"><a href="/o/a/actions/runs/35616111211" aria-label="failed:  Run 131 of Marketplace Health Check."></a><relative-time     datetime="2026-09-21T15:01:35Z"></relative-time><relative-time datetime="2026-09-21T15:01:35Z"></relative-time></div><div id="check_suite_0"><a href="/o/a/actions/runs/35512179431" aria-label="completed successfully:  Run 130 of Marketplace Health Check."></a><relative-time datetime="2026-09-20T12:59:25Z"></relative-time></div>'
+  ROW_DISPATCH='<div id="check_suite_9"><a href="/o/b/actions/runs/29813826072" aria-label="completed successfully:  Run 12 of Regenerate Landing from Manifests. manifest-changed"></a><relative-time datetime="2026-07-21T08:19:17Z"></relative-time></div>'
+  ck "parses the NEWEST row of a scheduled workflow" "$(parse_runs_page "$ROW_SCHED")" "131|35616111211|2026-09-21T15:01:35Z"
+  ck "parses a repository_dispatch label shape too"  "$(parse_runs_page "$ROW_DISPATCH")" "12|29813826072|2026-07-21T08:19:17Z"
+  ck "vacuity: a page with no run rows REFUSES rather than reporting zero runs" \
+     "$(parse_runs_page '<html><body><div class="blankslate">There are no workflow runs yet.</div></body></html>' || echo REFUSED)" "REFUSED"
+  ck "vacuity: an empty body REFUSES" "$(parse_runs_page '' || echo REFUSED)" "REFUSED"
+  # A row missing ANY structured field is a parse failure, never a partially-filled answer.
+  ck "a row with no datetime REFUSES" \
+     "$(parse_runs_page '<div id="check_suite_1"><a href="/o/a/actions/runs/9" aria-label="failed:  Run 1 of X."></a></div>' || echo REFUSED)" "REFUSED"
+  ck "a row with no run id REFUSES" \
+     "$(parse_runs_page '<div id="check_suite_1"><a aria-label="failed:  Run 1 of X."></a><relative-time datetime="2026-01-01T00:00:00Z"></relative-time></div>' || echo REFUSED)" "REFUSED"
+
+  # AC12/AC13 — the bound is DERIVED from the row's own declared cadence, never a literal.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 0 > "$tmp/streak"
+  mkfx "$A" passing; mkfx "$B" passing
+  mkatom "$ATOM_A" 2026-09-20T00:00:00Z; mkatom "$ATOM_B" 2026-09-20T00:00:00Z
+  mkpage "$PAGE_A" 131 35616111211 2026-09-18T00:00:00Z; mkpage "$PAGE_B" 132 35732680339 2026-09-22T08:00:00Z
+  CASE_NOW=2026-09-22T09:41:00Z
+  out=$(run_case "$ROWS")
+  ckc "a GREEN badge over a run older than 2x cadence FIRES xrepo_ci_stale" "$(cat "$tmp/sink")" "xrepo_ci_stale|CRITICAL_PERSISTENT|"
+  ckc "the stale body carries the age"      "$(cat "$tmp/sink")" "4d9h old"
+  ckc "the stale body carries the run URL"  "$(cat "$tmp/sink")" "/actions/runs/35616111211"
+  ck  "it fires ONCE for one stale row"     "$(grep -c 'xrepo_ci_stale' "$tmp/sink" | tr -d ' ')" "1"
+  ckc "the fresh row reports FRESH, not stale" "$out" "+ Beta (o/b@main): newest run #132 started 2026-09-22T08:00:00Z"
+  ckc "one stale and one fresh row aggregate to MIXED" "$out" "XREPO_CI_FRESHNESS=MIXED"
+  ckc "a stale run does NOT change the conclusion verdict" "$out" "XREPO_CI_VERDICT=PASS"
+
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 0 > "$tmp/streak"
+  mkpage "$PAGE_A" 132 35732680339 2026-09-22T08:00:00Z
+  out=$(run_case "$ROWS")
+  ck  "a run inside the bound fires NOTHING" "$(wc -l < "$tmp/sink" | tr -d ' ')" "0"
+  ckc "and reports FRESH"                    "$out" "XREPO_CI_FRESHNESS=FRESH"
+  ckc "and stays PASS"                       "$out" "XREPO_CI_VERDICT=PASS"
+  ck  "a verified run resets the streak"     "$(cat "$tmp/streak")" "0"
+
+  # AC14 — the declared exemption. An event-driven row cannot be stale HOWEVER old its last run.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 0 > "$tmp/streak"
+  mkpage "$PAGE_A" 12 29813826072 2019-03-04T05:06:07Z 200 '' dispatch
+  out=$(run_case "o/a|w.yml|Alpha|main|event-driven
+o/b|w.yml|Beta|main|86400")
+  ck  "an event-driven row NEVER fires xrepo_ci_stale, whatever its age" "$(grep -c 'xrepo_ci_stale' "$tmp/sink" | tr -d ' ')" "0"
+  ckc "an event-driven row reports N/A and still names its newest run"   "$out" "event-driven, freshness N/A — newest run #12 started 2019-03-04T05:06:07Z"
+  ckc "N/A drops out of the aggregate rather than making it MIXED"       "$out" "XREPO_CI_FRESHNESS=FRESH"
+
+  # AC19/AC20/AC22 — the enriched RED body, and the conclusion NEVER coming from the HTML.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 0 > "$tmp/streak"
+  mkfx "$A" failing; mkfx "$B" passing
+  mkpage "$PAGE_A" 131 35616111211 2026-09-21T15:01:35Z
+  mkpage "$PAGE_B" 132 35732680339 2026-09-22T08:00:00Z
+  CASE_NOW=2026-09-22T09:41:00Z
+  out=$(run_case "$ROWS")
+  ckc "a RED body names the run number and id"    "$(cat "$tmp/sink")" "run #131 (35616111211)"
+  ckc "a RED body says STARTED, the quantity the page actually carries" "$(cat "$tmp/sink")" "started 2026-09-21T15:01:35Z"
+  ckc "a RED body carries the human age — the 2026-09-22 incident, replayed" "$(cat "$tmp/sink")" "18h39m ago"
+  ckc "a RED body carries the run URL"            "$(cat "$tmp/sink")" "/actions/runs/35616111211"
+  ckc "a RED body carries the actions-page URL"   "$(cat "$tmp/sink")" "query=branch%3Amain"
+  # The page fixture's aria-label says "completed successfully" while the badge says failing. The
+  # verdict must follow the BADGE: a product-UI string may never decide a conclusion.
+  ckc "the conclusion comes from the badge, never from the page's prose" "$out" "XREPO_CI_VERDICT=FAIL"
+  ckc "and the alert fired is the RED one"        "$(cat "$tmp/sink")" "xrepo_ci_red|CRITICAL_PERSISTENT|"
+
+  # AC15 — vacuity end to end: a 200 with bytes and zero rows is a PARSER failure.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 0 > "$tmp/streak"
+  mkfx "$A" passing; mkfx "$B" passing
+  mkpage_norows "$PAGE_A"
+  out=$(run_case "$ROWS")
+  ckc "a 200 that parses ZERO rows is UNKNOWN"        "$out" "parsed ZERO run rows"
+  ckn "a 200 that parses zero rows never says FRESH"  "$out" "XREPO_CI_FRESHNESS=FRESH"
+  ckc "and it never launders into a verified green"   "$out" "XREPO_CI_FRESHNESS=MIXED"
+  ck  "a vacuous parse fires nothing on its own"      "$(wc -l < "$tmp/sink" | tr -d ' ')" "0"
+  ck  "a vacuous parse DOES feed the unverified streak" "$(cat "$tmp/streak")" "1"
+
+  # AC16 — monotonic. Run ids only grow; a smaller one means the parser latched onto something else.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 0 > "$tmp/streak"
+  mkpage "$PAGE_A" 132 35732680339 2026-09-22T08:00:00Z
+  CASE_NOW=2026-09-22T09:41:00Z
+  out=$(run_case "$ROWS")
+  ckc "the ledger records the run id it parsed" "$(cat "$tmp/ledger.jsonl")" '"run_id":"35732680339"'
+  mkpage "$PAGE_A" 131 35616111211 2026-09-21T15:01:35Z
+  out=$(run_case "$ROWS")
+  ckc "a run id OLDER than the recorded one is UNKNOWN" "$out" "is older than the recorded 35732680339"
+  ckn "a regressed run id never yields a freshness value" "$out" "XREPO_CI_FRESHNESS=FRESH"
+
+  # AC17 — the `.atom` trap, end to end: 200 + text/html + a body that parses to nothing.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 0 > "$tmp/streak"
+  mkpage "$PAGE_A" 132 35732680339 2026-09-22T08:00:00Z
+  mkpage_norows "$PAGE_B"
+  out=$(run_case "$ROWS")
+  ckc "the .atom trap shape (200 text/html, no rows) is UNKNOWN, never an empty success" "$out" "parsed ZERO run rows"
+  ck  "and it refuses a .atom URL outright" "$(XREPO_CI_FIXTURE_DIR= LEGB_STATE=; leg_b_check o/a w.yml.atom main 86400 >/dev/null 2>&1; printf '%s' "$LEGB_STATE")" "UNKNOWN"
+
+  # AC18 — three consecutive recency-unknowns escalate, naming the leg that went dark.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 1 > "$tmp/streak"
+  mkfx "$A" passing; mkfx "$B" passing
+  mkpage "$PAGE_A" 132 35732680339 2026-09-22T08:00:00Z 404
+  mkpage "$PAGE_B" 132 35732680339 2026-09-22T08:00:00Z 404
+  out=$(run_case "$ROWS")
+  ck  "the 2nd consecutive recency-unknown stays SILENT" "$(wc -l < "$tmp/sink" | tr -d ' ')" "0"
+  ck  "and advances the streak"                          "$(cat "$tmp/streak")" "2"
+  out=$(run_case "$ROWS")
+  ckc "the 3rd consecutive recency-unknown ESCALATES"     "$(cat "$tmp/sink")" "xrepo_ci_dark|CRITICAL_PERSISTENT|"
+  ckc "and the dark body names the RECENCY leg, not the badge" "$(cat "$tmp/sink")" "the RUN RECENCY leg is not"
+  ckn "and it does not blame the badge markup"            "$(cat "$tmp/sink")" "badge markup still"
+  ckc "a recency-only failure keeps the conclusion verdict PASS" "$out" "XREPO_CI_VERDICT=PASS"
   CASE_NOW=""
 
   echo "SELF-TEST: the two declarations of the watch list agree"

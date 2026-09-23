@@ -228,6 +228,49 @@ describe('xrepo-ci-conclusion-canary — the freshness legs', () => {
     expect(executableBody).not.toMatch(/gh\s+api\s+.*-X\s+(POST|PUT|PATCH)/);
   });
 
+  /**
+   * CH3. Leg B reads the Actions HTML page, which is product UI with no machine contract. It may
+   * extract `run_id`, `run_number` and the ISO timestamp — all structured — and NEVER the
+   * conclusion, which GitHub renders as prose inside an aria-label ("completed successfully:").
+   * CLAUDE.md: match on the structured field, not the prose. So a markup change can degrade
+   * freshness to UNKNOWN; it can never flip a verdict.
+   */
+  it('never lets the HTML page supply a conclusion — that stays badge-only', () => {
+    expect(executableBody).not.toMatch(/completed successfully/);
+    expect(executableBody).not.toMatch(/aria-label="failed/);
+    // The only classifier is the badge one, and it reads the badge <title>.
+    expect(executableBody).toMatch(/classify_status\(\)/);
+  });
+
+  /** The three guards, each degrading to UNKNOWN rather than to a value. */
+  it('guards the fragile leg three ways: vacuity, monotonic, content-type', () => {
+    expect(executableBody).toMatch(/parsed ZERO run rows/);
+    expect(executableBody).toMatch(/is older than the recorded/);
+    expect(executableBody).toMatch(/a 200 is not a contract/);
+    expect(executableBody).toMatch(/there is no Actions runs feed/);
+  });
+
+  /**
+   * The staleness bound is DERIVED from each row's own declared cadence (the SYNC_LIVENESS rule).
+   * A literal would silently mis-bound any row whose cadence differs from the one it was written
+   * for — and the watch list is designed to grow.
+   */
+  it('derives the staleness bound from the row cadence, never from a literal', () => {
+    expect(executableBody).toMatch(/STALE_MULTIPLE="\$\{XREPO_CI_STALE_MULTIPLE:-2\}"/);
+    expect(executableBody).toMatch(/bound=\$\(\( cadence \* STALE_MULTIPLE \)\)/);
+    // The ONLY comparison a run's age is subjected to is against that derived bound. (The 48h
+    // constant in human_age is a RENDERING switch — hours to days — and bounds nothing.)
+    expect(executableBody).toMatch(/\[ "\$LEGB_AGE" -gt "\$bound" \]/);
+  });
+
+  /** Two ids, because send_telegram.sh cools down per id: one must not suppress the other. */
+  it('fires stale and schedule-expiry under their own alert ids', () => {
+    expect(executableBody).toMatch(/fire "xrepo_ci_stale"/);
+    expect(executableBody).toMatch(/fire "xrepo_ci_schedule_expiry"/);
+    expect(executableBody).toMatch(/fire "xrepo_ci_dark"/);
+    expect(executableBody).toMatch(/fire "xrepo_ci_red"/);
+  });
+
   /** The ledger lives outside MONITORING_DIR so an unregistered file there cannot orphan. */
   it('appends its freshness ledger under /var/lib, not beside the installed artifacts', () => {
     expect(executableBody).toMatch(/\/var\/lib\/algovault-monitoring\/xrepo-ci-freshness\.jsonl/);
