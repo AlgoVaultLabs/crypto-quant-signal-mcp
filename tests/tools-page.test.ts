@@ -69,10 +69,14 @@ describe('CH3 — valid standalone page with nav region + footer', () => {
     expect(h).toContain('id="mobile-menu"');
     expect(h).toContain('https://algovault.com/tools'); // canonical
   });
-  it('matches the landing design system (Tailwind mint config + design css)', () => {
+  it('matches the landing design system (generated THEME region + design css)', () => {
     const h = html();
-    expect(h).toContain('cdn.tailwindcss.com');
-    expect(h).toContain("400: 'oklch(0.86 0.16 165)'"); // canonical mint-400 anchor
+    // DESIGN-SURFACE-TOKENS-W1: the palette is no longer typed here — the page carries the ONE
+    // generated region (src/lib/site-theme.ts), so this asserts the region and the PINNED CDN
+    // rather than a literal that now lives in exactly one place.
+    expect(h).toContain('<!-- THEME:START -->');
+    expect(h).toContain('https://cdn.tailwindcss.com/3.4.17');
+    expect(h).toContain("400: 'oklch(0.86 0.16 165 / <alpha-value>)'"); // canonical mint-400 anchor
     expect(h).toContain('/_design/algovault-design.css');
   });
 });

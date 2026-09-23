@@ -35,12 +35,29 @@
 /* ---------- Tokens ---------- */
 /* Verbatim from canonical styles.css; mint-anchor is byte-identical to D1-C */
 :root {
+  /* DESIGN-SURFACE-TOKENS-W1: channel twins added; values unchanged.
+     Tailwind v3 needs CHANNELS ONLY (no colour function) behind a `<alpha-value>` palette
+     entry, so every surface token is now `oklch(var(--X-lch))` over its twin. The twins are
+     mirrored (with fallbacks) into the generated theme region by src/lib/site-theme.ts;
+     scripts/build_theme.mjs --self-test leg (e) fails closed if the two ever disagree. */
+  --bg-lch: 0.16 0.012 265;
+  --bg-2-lch: 0.19 0.014 265;
+  --bg-3-lch: 0.22 0.014 265;
+  --line-lch: 0.28 0.012 265;
+  --line-2-lch: 0.34 0.012 265;
+  --surface-lch: 0.18 0.014 265;   /* card face — the landing's own 0.55-alpha card, solid */
+  --well-lch: 0.13 0.012 265;      /* code window / pre — the darkest step */
+  --brass-lch: 0.78 0.09 85;
+  --brass-2-lch: 0.68 0.12 85;
+
   /* Base + foreground (dark theme) */
-  --bg: oklch(0.16 0.012 265);
-  --bg-2: oklch(0.19 0.014 265);
-  --bg-3: oklch(0.22 0.014 265);
-  --line: oklch(0.28 0.012 265);
-  --line-2: oklch(0.34 0.012 265);
+  --bg: oklch(var(--bg-lch));
+  --bg-2: oklch(var(--bg-2-lch));
+  --bg-3: oklch(var(--bg-3-lch));
+  --line: oklch(var(--line-lch));
+  --line-2: oklch(var(--line-2-lch));
+  --surface: oklch(var(--surface-lch));
+  --well: oklch(var(--well-lch));
   --fg: oklch(0.97 0.005 265);
   --fg-2: oklch(0.78 0.008 265);
   --fg-3: oklch(0.58 0.01 265);

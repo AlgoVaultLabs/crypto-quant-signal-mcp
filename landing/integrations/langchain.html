@@ -11,8 +11,7 @@
 <meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with LangChain&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/langchain">
-<meta name="last-updated" content="2026-08-29">
-<script src="https://cdn.tailwindcss.com"></script>
+<meta name="last-updated" content="2026-09-23">
 <!-- BEGIN: AlgoVault canonical design loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -66,19 +65,25 @@
   plausible.init({endpoint:"/pa/event"})
 </script>
 <!-- ANALYTICS:END -->
+<!-- THEME:START -->
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
 <script>
 tailwind.config = {
   theme: {
     extend: {
       colors: {
-        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
+        navy: { 600: 'oklch(var(--line-2-lch, 0.34 0.012 265) / <alpha-value>)', 700: 'oklch(var(--surface-lch, 0.18 0.014 265) / <alpha-value>)', 800: 'oklch(var(--bg-3-lch, 0.22 0.014 265) / <alpha-value>)', 900: 'oklch(var(--bg-lch, 0.16 0.012 265) / <alpha-value>)' },
+        well: { DEFAULT: 'oklch(var(--well-lch, 0.13 0.012 265) / <alpha-value>)' },
+        line: { DEFAULT: 'oklch(var(--line-lch, 0.28 0.012 265) / <alpha-value>)' },
+        mint: { 50: 'oklch(0.97 0.03 165 / <alpha-value>)', 100: 'oklch(0.94 0.06 165 / <alpha-value>)', 200: 'oklch(0.91 0.09 165 / <alpha-value>)', 300: 'oklch(0.89 0.13 165 / <alpha-value>)', 400: 'oklch(0.86 0.16 165 / <alpha-value>)', 500: 'oklch(0.78 0.18 165 / <alpha-value>)', 600: 'oklch(0.66 0.18 165 / <alpha-value>)', 700: 'oklch(0.54 0.16 165 / <alpha-value>)', 800: 'oklch(0.42 0.12 165 / <alpha-value>)', 900: 'oklch(0.32 0.08 165 / <alpha-value>)' },
+        brass: { 400: 'oklch(var(--brass-lch, 0.78 0.09 85) / <alpha-value>)', 500: 'oklch(var(--brass-2-lch, 0.68 0.12 85) / <alpha-value>)' },
         steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
       }
     }
   }
 }
 </script>
+<!-- THEME:END -->
 <style>
   html { scroll-behavior: smooth; }
   /* DESIGN-W10 / C3 / Q-W10-10 cascade: use canonical CSS variables for body background.
@@ -274,7 +279,7 @@ tailwind.config = {
     <div style="position:relative;z-index:1">
       <div class="placeholder-cap" style="margin-bottom:14px">· langchain integration</div>
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">522,221</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.1%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">829,451</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>AlgoVault x LangChain — Composite Trade Calls for Your LangChain Agent</h1>
@@ -411,7 +416,7 @@ async def run():
 <!-- snapshot: 2026-07-21 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </li>
 </ul>
-<p><strong><span data-tr-field="pfe_wr">91.7%</span> PFE Win Rate · <span data-tr-field="call_count">522,221</span>+ calls · <span data-tr-field="merkle_batch_count">141</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'langchain',campaign:'track-record'}})">view live track record</a></p></div>
+<p><strong><span data-tr-field="pfe_wr">91.1%</span> PFE Win Rate · <span data-tr-field="call_count">829,451</span>+ calls · <span data-tr-field="merkle_batch_count">166</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'langchain',campaign:'track-record'}})">view live track record</a></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>
 <p>Run the demo at <code>examples/langchain/demo.py</code> · Pair with your LangChain agent at <code>https://api.algovault.com/mcp</code> · Verify the track record on <code>https://algovault.com/track-record</code>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Install (helper plugin)</h2>

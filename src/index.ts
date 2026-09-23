@@ -277,6 +277,7 @@ import {
 } from './lib/lifecycle/routes.js';
 import { capabilityFromInitialize, recordHandshake } from './lib/lifecycle/census.js';
 import { renderSiteNav } from './lib/site-nav.js';
+import { renderThemeBlock } from './lib/site-theme.js';
 import { getTopAssetsByOI } from './lib/oi-ranking.js';
 
 /** Timing-safe string comparison to prevent side-channel attacks on admin key. */
@@ -4921,20 +4922,7 @@ ${renderAnalyticsRegion()}
 <!-- END: AlgoVault canonical design loader -->
 <link rel="icon" type="image/png" href="/logo.png">
 <!-- DESIGN-W11 / C2 / R-2 inline-fix: Tailwind CDN for canonical Nav utility classes (hidden sm:flex, text-gray-400, hover:text-white, text-mint-400, bg-mint-500/15) -->
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
-        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
-      }
-    }
-  }
-}
-</script>
+${renderThemeBlock()}
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* DESIGN-W11 / C2 / Q-W11-2: REPLACED body styles per architect ratification. background/color/font-family use canonical CSS vars; padding+max-width move to artboard wrapper. Pre-W11: body { padding:24px; max-width:1400px; margin:0 auto; background:#0f1117; color:#e1e4e8 } */

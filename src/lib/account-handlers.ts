@@ -24,6 +24,7 @@ import { sendKeyRecoveryEmail } from './email.js';
 import type { ReferralStatsView } from './referral-pages.js';
 import { renderBrandFooter } from './footer-content.js';
 import { renderSiteNav } from './site-nav.js';
+import { renderThemeBlock } from './site-theme.js';
 // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH2: the ONE analytics region. /account is api-origin
 // only (404 on the apex), so the entire self-service account path was invisible to Plausible.
 import { renderAnalyticsRegion } from './analytics-snippet.js';
@@ -78,20 +79,7 @@ const ACCOUNT_HEAD_CHROME = `<meta charset="utf-8">
 <link rel="stylesheet" href="https://algovault.com/_design/algovault-design.css">
 <!-- END: AlgoVault canonical design loader -->
 <!-- DESIGN-W10 / C2 / Q-W10-8: Tailwind CDN for canonical Nav utility classes -->
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
-        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
-      }
-    }
-  }
-}
-</script>
+${renderThemeBlock()}
 <style>${ACCOUNT_PAGE_STYLES}</style>
 ${renderAnalyticsRegion()}`;
 

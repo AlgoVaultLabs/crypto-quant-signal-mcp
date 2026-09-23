@@ -41,6 +41,8 @@ const { renderBrandFooter, renderConversionBandRegion } = require(join(ROOT, 'di
 // `EXCHANGES` const, which is the list of 7 tutorial SLUGS (binance, gemini,
 // kraken, …), a DIFFERENT set from the 12 signal venues. Do not conflate them.
 const { EXCHANGE_COUNT: SOT_EXCHANGE_COUNT } = require(join(ROOT, 'dist', 'lib', 'capabilities.js'));
+// DESIGN-SURFACE-TOKENS-W1: the ONE theme region (pinned Tailwind CDN + palette from src/lib/site-theme.ts).
+const { renderThemeBlock } = require(join(ROOT, 'dist', 'lib', 'site-theme.js'));
 // BROKER-PAIRING-CRYPTO-W1 (2026-06-05): +3 crypto agentic-trading kits
 // (Gemini self-hosted MCP / Kraken CLI / Alpaca crypto MCP) extend the
 // exchange-kit tutorial pattern; sources in algovault-skills/docs/integrations/.
@@ -633,7 +635,6 @@ function htmlShell(exchange, bodyHtml) {
 <meta property="og:type" content="article">
 <meta property="og:url" content="${canonical}">
 <meta name="last-updated" content="${SNAPSHOT.date}">
-<script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -646,19 +647,7 @@ ${techArticle}
 </script>
 <!-- ANALYTICS:START -->
 <!-- ANALYTICS:END -->
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
-        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
-      }
-    }
-  }
-}
-</script>
+${renderThemeBlock()}
 <style>
   html { scroll-behavior: smooth; }
   /* DESIGN-W10 / C3 / Q-W10-10 cascade: use canonical CSS variables for body background.

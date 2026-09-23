@@ -39,7 +39,6 @@
 <meta name="twitter:title" content="<!-- SLOT:OG_TITLE -->">
 <meta name="twitter:description" content="<!-- SLOT:OG_DESC -->">
 <meta name="twitter:image" content="https://algovault.com/logo.png">
-<script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -48,15 +47,25 @@
 <!-- END: AlgoVault canonical design loader -->
 <!-- track-record-proxy.js hydrates [data-tr-field] spans from /api/performance-public on load -->
 <script defer src="/js/track-record-proxy.js?v=f485c24a"></script>
+<!-- THEME:START -->
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
 <script>
 tailwind.config = {
-  theme: { extend: { colors: {
-    navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-    mint: { 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)' },
-    steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
-  } } }
+  theme: {
+    extend: {
+      colors: {
+        navy: { 600: 'oklch(var(--line-2-lch, 0.34 0.012 265) / <alpha-value>)', 700: 'oklch(var(--surface-lch, 0.18 0.014 265) / <alpha-value>)', 800: 'oklch(var(--bg-3-lch, 0.22 0.014 265) / <alpha-value>)', 900: 'oklch(var(--bg-lch, 0.16 0.012 265) / <alpha-value>)' },
+        well: { DEFAULT: 'oklch(var(--well-lch, 0.13 0.012 265) / <alpha-value>)' },
+        line: { DEFAULT: 'oklch(var(--line-lch, 0.28 0.012 265) / <alpha-value>)' },
+        mint: { 50: 'oklch(0.97 0.03 165 / <alpha-value>)', 100: 'oklch(0.94 0.06 165 / <alpha-value>)', 200: 'oklch(0.91 0.09 165 / <alpha-value>)', 300: 'oklch(0.89 0.13 165 / <alpha-value>)', 400: 'oklch(0.86 0.16 165 / <alpha-value>)', 500: 'oklch(0.78 0.18 165 / <alpha-value>)', 600: 'oklch(0.66 0.18 165 / <alpha-value>)', 700: 'oklch(0.54 0.16 165 / <alpha-value>)', 800: 'oklch(0.42 0.12 165 / <alpha-value>)', 900: 'oklch(0.32 0.08 165 / <alpha-value>)' },
+        brass: { 400: 'oklch(var(--brass-lch, 0.78 0.09 85) / <alpha-value>)', 500: 'oklch(var(--brass-2-lch, 0.68 0.12 85) / <alpha-value>)' },
+        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+      }
+    }
+  }
 }
 </script>
+<!-- THEME:END -->
 <style>
   html { scroll-behavior: smooth; }
   body { background: #060a14; color: #cdd5e0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; }

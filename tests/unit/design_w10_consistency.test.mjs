@@ -97,13 +97,16 @@ test('/account: Q-W10-6 — tier-stat-card VCard wraps content on all 3 page ren
     'expected ≥3 tier-stat-card VCard wrappers (main + error + success)');
 });
 
-test('/account: Q-W10-8 — Tailwind CDN script tag + mint OKLCH config loaded (mirror render-integrations.mjs pattern)', async () => {
+test('/account: Q-W10-8 — the ONE generated theme region is emitted (DESIGN-SURFACE-TOKENS-W1 supersedes the inline palette)', async () => {
   const src = await read('src/lib/account-handlers.ts');
-  assert.ok(src.includes('https://cdn.tailwindcss.com'), 'Tailwind CDN script tag missing');
-  assert.ok(src.includes("mint: { 50: 'oklch(0.97 0.03 165)'"),
-    'Tailwind mint OKLCH config block missing (must mirror render-integrations.mjs)');
-  assert.ok(src.includes("400: 'oklch(0.86 0.16 165)'"),
-    'mint-400 anchor (oklch(0.86 0.16 165)) missing — canonical D1-C anchor');
+  const calls = countOcc(src, 'renderThemeBlock()');
+  assert.strictEqual(calls, 1, `expected exactly 1 renderThemeBlock() call; got ${calls}`);
+  assert.ok(src.includes("import { renderThemeBlock } from './site-theme.js'"), 'theme region import missing');
+  // The palette literals moved to the ONE producer — assert them THERE, not in a second copy.
+  const theme = await read('src/lib/site-theme.ts');
+  assert.ok(theme.includes("TAILWIND_CDN_VERSION = '3.4.17'"), 'pinned Tailwind CDN version missing');
+  assert.ok(theme.includes("literal('0.97 0.03 165')"), 'mint-50 entry missing from the palette SoT');
+  assert.ok(theme.includes("literal('0.86 0.16 165')"), 'mint-400 anchor (oklch(0.86 0.16 165)) missing — canonical D1-C anchor');
 });
 
 test('/account: Q-W10-10 — body-flex-centering REPLACED with var(--bg) layout', async () => {

@@ -44,6 +44,8 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // dist/lib/footer-content.js; run `npm run build` before this generator).
 const require = Module.createRequire(import.meta.url);
 const { renderBrandFooter } = require(path.join(REPO_ROOT, 'dist', 'lib', 'footer-content.js'));
+// DESIGN-SURFACE-TOKENS-W1: the ONE theme region (pinned Tailwind CDN + palette from src/lib/site-theme.ts).
+const { renderThemeBlock } = require(path.join(REPO_ROOT, 'dist', 'lib', 'site-theme.js'));
 // CONVERSION-SURFACES-W2 CH2 — C4 comes from the copy SoT, never typed here (Build Rule 4).
 const { COPY_BUTTON_IDLE_LABEL, COPY_BUTTON_COPIED_LABEL, COPY_BUTTON_COPIED_MS } =
   require(path.join(REPO_ROOT, 'dist', 'lib', 'conversion-copy.js'));
@@ -908,26 +910,13 @@ const VERIFY_HEAD_AND_NAV = `<!DOCTYPE html>
 <meta name="description" content="Verify any AlgoVault trade call on-chain. Every trade call is hashed on Base L2 before the outcome is known.">
 <meta name="last-updated" content="2026-05-11">
 <link rel="icon" type="image/png" href="/logo.png">
-<script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/_design/algovault-design.css">
 <!-- END: AlgoVault canonical design loader -->
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
-        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
-      }
-    }
-  }
-}
-</script>
+${renderThemeBlock()}
 <style>
   html { scroll-behavior: smooth; }
   body { background: #060a14; color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
@@ -2151,26 +2140,13 @@ const HOW_IT_WORKS_HEAD_AND_NAV = `<!DOCTYPE html>
 <meta name="twitter:title" content="How AlgoVault Works — The Trading Model API">
 <meta name="twitter:description" content="A self-tuning quant ML model with a published track record. One MCP call returns a composite verdict — Merkle-anchored on Base L2.">
 <meta name="twitter:image" content="https://algovault.com/logo.png">
-<script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/_design/algovault-design.css">
 <!-- END: AlgoVault canonical design loader -->
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
-        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
-      }
-    }
-  }
-}
-</script>
+${renderThemeBlock()}
 <style>
   html { scroll-behavior: smooth; }
   body { background: #0d1815; color: #d1d5db; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }

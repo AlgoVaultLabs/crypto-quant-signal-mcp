@@ -184,7 +184,7 @@ function faqJsonLd(c) {
 // live one by inspection. check-live-numeric-claims.mjs R4 is fail-closed on exactly that and
 // blocked the deploy for it. The ?v= cache-buster is stamped by build_asset_versions.mjs.
 function renderChannelPage(c, deps) {
-  const { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet, renderConversionBandRegion } = deps;
+  const { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderThemeBlock, renderBrandFooter, renderAnalyticsSnippet, renderConversionBandRegion } = deps;
   const anchor = c.docsAnchors[0] ?? '';
   // The channel's docs sections, projected WHOLE and verbatim (Rule 3) — tables, notes and
   // response-field blocks included, not just the first code block.
@@ -226,7 +226,6 @@ function renderChannelPage(c, deps) {
 <meta property="og:description" content="${esc(c.summary.slice(0, 155))}">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/${c.slug}">
-<script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -234,19 +233,7 @@ function renderChannelPage(c, deps) {
 <link rel="stylesheet" href="/_design/algovault-design.css">
 <!-- END: AlgoVault canonical design loader -->
 <script defer src="/js/track-record-proxy.js"></script>
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
-        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
-      }
-    }
-  }
-}
-</script>
+${renderThemeBlock()}
 <script type="application/ld+json" data-algovault-jsonld="TechArticle">
 ${techArticleJsonLd(c)}
 </script>
@@ -320,13 +307,14 @@ export function buildChannelPages({ check = false, root = REPO_ROOT } = {}) {
   const { hostedChannels, channelToolCoverage } = require(path.join(root, 'dist', 'lib', 'channel-registry.js'));
   const { publicToolEntries } = require(path.join(root, 'dist', 'lib', 'nav-manifest.js'));
   const { renderSiteNav } = require(path.join(root, 'dist', 'lib', 'site-nav.js'));
+  const { renderThemeBlock } = require(path.join(root, 'dist', 'lib', 'site-theme.js'));
   const { renderAnalyticsSnippet } = require(path.join(root, 'dist', 'lib', 'analytics-snippet.js'));
   const { renderBrandFooter, renderConversionBandRegion } = require(path.join(root, 'dist', 'lib', 'footer-content.js'));
   const docsHtml = fs.readFileSync(path.join(root, 'landing', 'docs.html'), 'utf8');
   // The projection brings `.param-row` / `.code-block` content onto these pages; those rules live
   // only in the docs template, so they are READ from it rather than copied into this file.
   const projectedCss = projectedContentCss(fs.readFileSync(path.join(root, 'docs-src', 'template.html'), 'utf8'));
-  const deps = { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet, renderConversionBandRegion };
+  const deps = { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderThemeBlock, renderBrandFooter, renderAnalyticsSnippet, renderConversionBandRegion };
 
   const changed = [];
   const drifted = [];

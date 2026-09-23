@@ -118,11 +118,14 @@ test('FOOTER-UNIFY-W1: the brand-footer SoT carries the "Built by AlgoVault Labs
   assert.ok(sot.includes('oklch(0.13 0.012 265)'), 'footer-content SoT must define the canonical brand-footer background');
 });
 
-test('/track-record: Tailwind CDN present in <head> (R-2 inline-fix per Q-W10-8 precedent)', async () => {
+test('/track-record: the ONE generated theme region is emitted in <head> (DESIGN-SURFACE-TOKENS-W1)', async () => {
   const src = await read('src/index.ts');
   const func = scopeToPerfFunc(src);
-  const tw = countOcc(func, 'cdn.tailwindcss.com');
-  assert.strictEqual(tw, 1, `Expected exactly 1 Tailwind CDN reference; got ${tw}`);
+  // The CDN tag itself now lives in src/lib/site-theme.ts (pinned to 3.4.17) and reaches this
+  // page through renderThemeBlock(), so the page-scoped assertion is on the CALL, not the URL.
+  const calls = countOcc(func, 'renderThemeBlock()');
+  assert.strictEqual(calls, 1, `Expected exactly 1 renderThemeBlock() call; got ${calls}`);
+  assert.strictEqual(countOcc(func, 'cdn.tailwindcss.com'), 0, 'the palette must not be re-inlined here');
 });
 
 // ── Artboard scaffolding assertions (Q-W11-3) ────────────────────────────────

@@ -11,6 +11,10 @@
   "_report_globs_reason": "Everything else under landing/. These files are emitted by build_nav.mjs, build_docs.mjs, build_landing.mjs, render-jsx-static.mjs, build_channel_pages.mjs and build_tools_page.mjs — cleaning them is a multi-generator public-copy sweep, a different risk class from this chapter, and CH1's Must-NOT-write forbids those generators outright.",
   "allowed_markers": [
     {
+      "pattern": "^THEME:(START|END)$",
+      "reason": "Theme-region injection markers \u2014 scripts/build_theme.mjs replaces the content between them (pinned Tailwind CDN + tailwind.config from src/lib/site-theme.ts); same contract as NAV:/ANALYTICS:/CONVERSION-BAND:."
+    },
+    {
       "pattern": "^NAV:(START|END)$",
       "reason": "Nav injection region. scripts/build_nav.mjs replaces the content between these two markers; they are load-bearing and must survive byte-identical."
     },

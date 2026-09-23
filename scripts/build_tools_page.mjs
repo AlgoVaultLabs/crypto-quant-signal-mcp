@@ -70,6 +70,7 @@ export function renderToolsPage(existingHtml = '') {
   const { publicToolEntries } = require(path.join(REPO_ROOT, 'dist', 'lib', 'nav-manifest.js'));
   const { projectCapabilities } = require(path.join(REPO_ROOT, 'dist', 'lib', 'feature-registry.js'));
   const { renderSiteNav } = require(path.join(REPO_ROOT, 'dist', 'lib', 'site-nav.js'));
+  const { renderThemeBlock } = require(path.join(REPO_ROOT, 'dist', 'lib', 'site-theme.js'));
   const { renderAnalyticsSnippet } = require(path.join(REPO_ROOT, 'dist', 'lib', 'analytics-snippet.js'));
   const { renderBrandFooter, renderConversionBandRegion } = require(path.join(REPO_ROOT, 'dist', 'lib', 'footer-content.js'));
 
@@ -95,7 +96,6 @@ export function renderToolsPage(existingHtml = '') {
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://algovault.com/tools">
-<script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -103,19 +103,7 @@ export function renderToolsPage(existingHtml = '') {
 <link rel="stylesheet" href="/_design/algovault-design.css">
 <!-- END: AlgoVault canonical design loader -->
 <script defer src="/js/track-record-proxy.js"></script>
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
-        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
-      }
-    }
-  }
-}
-</script>
+${renderThemeBlock()}
 <style>
   html { scroll-behavior: smooth; }
   body { background: var(--bg, #060a14); color: var(--fg-2, #d1d5db); font-family: var(--font-text, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); margin: 0; padding: 0; }

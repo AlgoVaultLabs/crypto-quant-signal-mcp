@@ -295,6 +295,19 @@ jobs:
       - name: Nav sync + coverage guard (build_nav --check)
         run: node scripts/build_nav.mjs --check
 
+      # DESIGN-SURFACE-TOKENS-W1 CH1: theme-region drift canary. Fails the push if any page's
+      # injected THEME region has drifted from src/lib/site-theme.ts, if a page carries a
+      # Tailwind signature OUTSIDE the markers (an un-migrated page, i.e. a second palette
+      # copy reappearing), or if a marked page stopped linking the design stylesheet. The
+      # self-test additionally proves the migration preserves the design loader / ANALYTICS /
+      # JSON-LD blocks, that every channel fallback still equals its :root twin, and — via a
+      # real tailwindcss@3.4.17 compile — that every palette utility in the corpus emits a
+      # rule (the `<alpha-value>` defect this wave fixed had 0 rules for 7 live classes).
+      - name: Theme region sync guard (build_theme --self-test + --check)
+        run: |
+          node scripts/build_theme.mjs --self-test
+          node scripts/build_theme.mjs --check
+
       # OPS-AUDIT-REMEDIATION-HIGH-W1 Ch5 (SEC-36): the mobile-nav parity invariant was committed
       # but executed by nothing — build_nav.mjs referenced it only inside a COMMENT, so "a desktop
       # nav shipped without its mobile replacement" was never actually gated. It runs here, next to
