@@ -247,7 +247,9 @@ test('Preservation-LAW (W3+W4+D1-C+D2-C+W5 regression-free)', async () => {
   // 0 residual gold (D1-C)
   assert.doesNotMatch(html, /\b(bg|text|border)-gold-[0-9]+/, '0 gold-class residual (D1-C)');
   // mint OKLCH config preserved (D2-C)
-  assert.match(html, /mint: \{ 50: 'oklch\(0\.97 0\.03 165\)'/, 'OKLCH mint config preserved (D2-C)');
+  // DESIGN-SURFACE-TOKENS-W1: same mint anchor, now carrying Tailwind's `<alpha-value>`
+  // placeholder — without it the palette emits NO rule for any opacity utility.
+  assert.match(html, /mint: \{ 50: 'oklch\(0\.97 0\.03 165 \/ <alpha-value>\)'/, 'OKLCH mint config preserved (D2-C)');
   // W7 architectural shift 2026-05-10: W3 hero deliverables (hero-flow-container / recent-calls-feed
   // / live-call-ticker) REPLACED with V1Hero canonical render. Data-source equivalence preserved
   // via different DOM. W6 below-fold + landing-rest preserved BYTE-IDENTICAL through W7.

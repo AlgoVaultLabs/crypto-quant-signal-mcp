@@ -51,7 +51,9 @@ test('landing/index.html: D2-C foundation preserved (W7 carry: V1Hero uses same 
 
 test('landing/index.html: D1-C foundation preserved', async () => {
   const html = await read('landing/index.html');
-  assert.match(html, /mint: \{ 50: 'oklch\(0\.97 0\.03 165\)'/, 'OKLCH mint config present');
+  // DESIGN-SURFACE-TOKENS-W1: same mint anchor, now carrying Tailwind's `<alpha-value>`
+  // placeholder — without it the palette emits NO rule for any opacity utility.
+  assert.match(html, /mint: \{ 50: 'oklch\(0\.97 0\.03 165 \/ <alpha-value>\)'/, 'OKLCH mint config present');
   assert.match(html, /\bbg-mint-/, 'mint Tailwind classes preserved');
   assert.doesNotMatch(html, /\b(bg|text|border)-gold-[0-9]+/, '0 residual gold-class');
   assert.doesNotMatch(html, /#d4af37|#ffd700/, '0 residual gold-hex');
