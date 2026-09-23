@@ -146,6 +146,8 @@ AlgoVault is drop-in for every MCP-spec client, every major agent framework, and
 | **Continue.dev** | `config.yaml` → `mcpServers: [{ name: algovault, type: streamable-http, url: "https://api.algovault.com/mcp" }]` |
 | Any other MCP-spec-compliant client | Configure the Streamable HTTP transport with URL `https://api.algovault.com/mcp` |
 
+**Agent plugin hosts.** The npm package ships `plugin.json`, `mcp.json` and `.cursor-plugin/plugin.json`, so an Agent-Plugins-compatible host — Cursor included — can read the server definition out of the installed package instead of being handed a config block to paste.
+
 **Agent frameworks.** First-party tutorials pair AlgoVault with each framework's canonical MCP adapter — copy-pasteable demo code, no SDK.
 
 | Framework | Tutorial | Runnable demo | Mirror |
@@ -255,25 +257,23 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 
 ---
 
-## What's new in v1.30.0
+## What's new in v1.31.0
+
+- **🧩 Install from the package, not from a pasted config block.** `plugin.json`, `mcp.json` and `.cursor-plugin/plugin.json` now ship inside the npm tarball, so an Agent-Plugins-compatible host — Cursor included — reads the server definition straight out of the installed package. Until this release those files lived in the repository only, and no npm consumer could obtain them.
+
+**Upgrading from v1.30.x** — one value in the response envelope changed: `_algovault.compatible_with` is now `[]` and names no companion package. If your client rendered those package names, stop rendering them; there is no companion package published today. Nothing else in the envelope changed, and no tool or parameter was added, renamed or removed.
+
+### v1.30.x highlights (recap)
 
 - **🔑 Your key, one click away.** Every tool response that carries an auth block now returns `claim_url` and `claim_hint` in the `_algovault` envelope — a direct link to keep the key you are already using, and a heads-up before you reach the cap.
 - **💵 Six-month pricing is machine-readable.** `GET /api/plans/public` gains `price_usd_6month` on every tier, so a client can render prepay pricing instead of hardcoding it.
 - **🤝 Enterprise is quoted, not published.** The plans endpoint now returns `null` for Enterprise price and limits rather than a fixed figure. No key was removed — the values are null.
-
-**Upgrading from v1.29.x** — nothing breaking, but one value changed: if you rendered an Enterprise price from `GET /api/plans/public`, it is now `null` and Enterprise is quoted directly. Every tier key is still present. Two response fields were added, no tool was added or renamed.
 
 ### v1.29.x highlights (recap)
 
 - **📊 The track record is a tool, not only a resource.** `get_track_record` returns the same verified aggregate as `performance://signal-performance`, so a harness that bridges tools but not resources can read it.
 - **✋ HOLD means HOLD.** When a book is not currently trading, the call returns HOLD instead of a direction, and the reasoning says so and says when it resumes.
 - **🔓 Allowances are machine-readable.** `GET /api/plans/public` returns the current free and paid call limits, unauthenticated.
-
-### v1.28.x highlights (recap)
-
-- **🔐 Authentication tells you what happened.** Every response carries `_algovault.auth`. A well-formed but unrecognised key is refused instead of being quietly served free-tier data, and "malformed", "unknown" and "we couldn't verify" are three distinct outcomes.
-- **📘 Two parameters that were always there, now documented.** `assetClass` on the trade-call tools and `minLiquidityUsd` on `scan_trade_calls`, both projected from the live schema so the docs cannot drift from the server.
-- **🤝 Pair with [Binance Agent OS](https://algovault.com/integrations/binance-agent-os).** One MCP client, two servers: AlgoVault returns the verdict, Binance Agent OS executes it. OAuth at connect time — no API keys on your machine, and trading confined to a sub-account you fund yourself.
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
