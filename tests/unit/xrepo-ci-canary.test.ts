@@ -133,3 +133,103 @@ describe('xrepo-ci-conclusion-canary — the watch list is declared in two place
     expect(norm(watchedRows)).toEqual(norm(row!.watches ?? []));
   });
 });
+
+/**
+ * OPS-XREPO-CI-CONCLUSION-FRESHNESS-W1-V2 CH2 — the freshness legs.
+ *
+ * The canary now answers two questions the badge cannot: is this repo about to have its scheduled
+ * workflows auto-disabled (Leg A, on `commits/<branch>.atom`, a real `application/atom+xml`
+ * contract), and how old is the run the badge just reported (Leg B, CH3, on the Actions HTML).
+ * Everything below pins a property that a green self-test alone would not.
+ */
+describe('xrepo-ci-conclusion-canary — the 5th watch-row field is a declared enum', () => {
+  const inventory = JSON.parse(readFileSync(resolve(ROOT, 'ops/monitoring/monitoring-inventory.json'), 'utf8')) as {
+    artifacts: Array<{ id: string; watches?: Array<Record<string, unknown>> }>;
+  };
+  const row = inventory.artifacts.find((a) => a.id === 'xrepo-ci-conclusion-canary');
+
+  const scriptRows = (src.match(/WATCHED="\$\{XREPO_CI_WATCHED-([\s\S]*?)\}"/)?.[1] ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => l.split('|'));
+
+  const validCadence = (v: unknown) =>
+    v === 'event-driven' || (typeof v === 'number' && Number.isInteger(v) && v > 0);
+
+  it('declares a cadence on every row of BOTH declarations — a bound is derived from it', () => {
+    expect(scriptRows.length).toBeGreaterThanOrEqual(2);
+    for (const r of scriptRows) {
+      expect(r.length, `row ${r.join('|')} does not carry 5 fields`).toBe(5);
+      const cadence = r[4] === 'event-driven' ? 'event-driven' : Number(r[4]);
+      expect(validCadence(cadence), `row ${r.join('|')} has an invalid cadence`).toBe(true);
+    }
+    for (const w of row!.watches ?? []) {
+      expect(validCadence(w.cadence_seconds), `inventory row ${String(w.workflow)} cadence`).toBe(true);
+    }
+  });
+
+  it('the event-driven row is the repository_dispatch one — the exemption is declared, not emergent', () => {
+    const evented = (row!.watches ?? []).filter((w) => w.cadence_seconds === 'event-driven');
+    expect(evented.map((w) => w.workflow)).toEqual(['regenerate-landing.yml']);
+  });
+
+  it('the script default and the inventory agree on cadence too, not only on the first four fields', () => {
+    const fromScript = scriptRows.map((r) => `${r[0]}|${r[1]}|${r[4]}`).sort();
+    const fromInventory = (row!.watches ?? [])
+      .map((w) => `${String(w.repo)}|${String(w.workflow)}|${String(w.cadence_seconds)}`)
+      .sort();
+    expect(fromScript).toEqual(fromInventory);
+  });
+});
+
+describe('xrepo-ci-conclusion-canary — the freshness legs', () => {
+  const r = runSelfTest();
+
+  it('emits BOTH token lines, so a caller can gate on recency separately from the conclusion', () => {
+    expect(r.out).toContain('XREPO_CI_FRESHNESS=');
+    expect(r.out.match(/XREPO_CI_FRESHNESS=/g)?.length).toBe(1);
+  });
+
+  /**
+   * The self-test skips the inventory-parity assertion when no checkout is reachable — correct on
+   * a host, where the file genuinely does not exist. In CI it always exists, so a SKIP here would
+   * mean the assertion had quietly stopped running: the seam-blindness class, in the one check
+   * that compares the script's declaration against the inventory's.
+   */
+  it('really ran the inventory-parity assertion here — it did not take the host SKIP branch', () => {
+    expect(r.out).not.toContain('inventory parity SKIPPED');
+  });
+
+  /**
+   * Leg A rides `commits/<branch>.atom` because it is a real machine contract. `…/<wf>.atom`
+   * answers 200 with `content-type: text/html` (measured 2026-09-22) — a 200 is not a contract,
+   * so every leg asserts the content type it was promised.
+   */
+  it('reads repo activity from the atom feed, never from a workflow .atom URL', () => {
+    expect(executableBody).toMatch(/commits\/%s\.atom|commits\/\$\{?\w+\}?\.atom/);
+    expect(executableBody).not.toMatch(/actions\/workflows\/[^\s"']*\.atom/);
+  });
+
+  /**
+   * Detect and alert; never mutate (Q3=A — no keepalive, because an unattended commit to a public
+   * repo is a public-surface write). The chapter gate greps the WHOLE file for a repo-mutating
+   * command, so not even the alert body may carry a copy-pasteable one: the body names the UI path
+   * and the runbook carries the CLI form.
+   *
+   * It scans the COMMENT-STRIPPED body, because a mention is not an invocation: this file has
+   * carried the line "publish-npm.yml's `git push` hit is a comment" since 2026-08-21, and a
+   * gate that demands the deletion of the estate's own explanatory prose is the gate-writing bug
+   * CLAUDE.md already records. Strings are NOT stripped — an alert body is executable text.
+   */
+  it('never writes to a watched repo — it detects and alerts, it does not keep anything alive', () => {
+    expect(executableBody).not.toMatch(/git\s+(push|commit)/);
+    expect(executableBody).not.toMatch(/gh\s+workflow\s+(enable|run)/);
+    expect(executableBody).not.toMatch(/gh\s+api\s+.*-X\s+(POST|PUT|PATCH)/);
+  });
+
+  /** The ledger lives outside MONITORING_DIR so an unregistered file there cannot orphan. */
+  it('appends its freshness ledger under /var/lib, not beside the installed artifacts', () => {
+    expect(executableBody).toMatch(/\/var\/lib\/algovault-monitoring\/xrepo-ci-freshness\.jsonl/);
+  });
+});
