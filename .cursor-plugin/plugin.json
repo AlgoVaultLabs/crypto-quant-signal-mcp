@@ -1,6 +1,6 @@
 {
   "name": "crypto-quant-signal-mcp",
-  "version": "1.30.0",
+  "version": "1.31.0",
   "description": "Composite BUY/SELL/HOLD verdicts for crypto perpetual futures — cross-venue signal interpretation, funding-rate arbitrage scanning, market-regime detection, and an on-chain-anchored track record. Built for AI agents.",
   "author": {
     "name": "AlgoVault Labs",
