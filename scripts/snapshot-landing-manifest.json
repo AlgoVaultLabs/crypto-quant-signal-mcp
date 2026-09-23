@@ -1,5 +1,5 @@
 {
-  "_comment": "OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25) snapshot manifest. Architect-ratified at Plan-Mode R1. Defines per-claim find/replace rules applied to landing/*.html on every Hetzner deploy. Script: scripts/snapshot-landing-data.mjs. Adding a new claim = manifest row, no code change. RETIREMENT LOG — dtrf-hold-rate (hold_rate span injector, 6 files) was retired 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1, in the SAME COMMIT as the spans it wrote. The rendered HOLD Rate stat left every public surface on architect ruling; a row kept without its spans zero-matches forever (1 row of 30 = 3.3%, far under the >=50% catastrophic gate, so the build stays GREEN while the guard is dark). /api/performance-public still serves hold_rate — this removed copy, not data. Re-publishing a hold-rate figure requires re-adding BOTH the span and this row.",
+  "_comment": "OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25) snapshot manifest. Architect-ratified at Plan-Mode R1. Defines per-claim find/replace rules applied to landing/*.html on every Hetzner deploy. Script: scripts/snapshot-landing-data.mjs. Adding a new claim = manifest row, no code change. RETIREMENT LOG \u2014 dtrf-hold-rate (hold_rate span injector, 6 files) was retired 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1, in the SAME COMMIT as the spans it wrote. The rendered HOLD Rate stat left every public surface on architect ruling; a row kept without its spans zero-matches forever (1 row of 30 = 3.3%, far under the >=50% catastrophic gate, so the build stays GREEN while the guard is dark). /api/performance-public still serves hold_rate \u2014 this removed copy, not data. Re-publishing a hold-rate figure requires re-adding BOTH the span and this row.",
   "sot_endpoints": {
     "performance": "https://api.algovault.com/api/performance-public",
     "merkle": "https://api.algovault.com/api/merkle-batches"
@@ -91,7 +91,6 @@
         "landing/integrations.html",
         "landing/integrations/alpaca.html",
         "landing/integrations/aster.html",
-        "landing/integrations/binance-agent-os.html",
         "landing/integrations/binance.html",
         "landing/integrations/bingx.html",
         "landing/integrations/bitget.html",
@@ -109,7 +108,15 @@
         "landing/skills.html",
         "landing/trade-calls-for-python-backtesting.html"
       ],
-      "replace_all": true
+      "replace_all": true,
+      "_removed_targets": [
+        {
+          "file": "landing/integrations/binance-agent-os.html",
+          "reason": "The page no longer quotes a venue COUNT: OPS-BITMART-ENUM-RECONCILE-W1 CH3 (7bbb3adc, 2026-09-03) rewrote the source docs/integrations/exchange-kits/binance-agent-os.md to 'Composite verdict across every supported perp venue' and did not re-bake, so the served HTML kept a stale `<span data-tr-field=\"exchange_count\">15</span>` for 20 days. DESIGN-SURFACE-TOKENS-W1 CH3 is the first regeneration since, so the span is gone BY CONSTRUCTION and this pairing would be a silent no-op for the daily re-baker. Narrowed rather than grandfathered: there is no defect to hold open, and the other 33 files keep the claim.",
+          "retired_by": "DESIGN-SURFACE-TOKENS-W1 CH3",
+          "date": "2026-09-23"
+        }
+      ]
     },
     {
       "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: funding-arb venue-count span (=7), single-derived from FUNDING_VENUE_COUNT via /api/performance-public.funding_venue_count. Mirrors dtrf-exchange-count.",
@@ -125,7 +132,7 @@
       "replace_all": true
     },
     {
-      "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: general perp venue count in ld+json / free-text descriptions ('N crypto perp venues') → keeps the digit synced to exchange_count. Venue-count substring ONLY; does NOT match data-tr-field spans ('12</span> crypto perp venues' is non-contiguous) and does NOT touch docs.html (DOCS-GENERATOR domain).",
+      "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: general perp venue count in ld+json / free-text descriptions ('N crypto perp venues') \u2192 keeps the digit synced to exchange_count. Venue-count substring ONLY; does NOT match data-tr-field spans ('12</span> crypto perp venues' is non-contiguous) and does NOT touch docs.html (DOCS-GENERATOR domain).",
       "id": "jsonld-perp-venue-count",
       "find_pattern": "\\d+( crypto perp venues)",
       "replace_template": "{value}$1",
@@ -140,7 +147,7 @@
       "replace_all": true
     },
     {
-      "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: general perp count in free-text 'N exchanges' prose/meta descriptions → exchange_count. On landing surfaces 'N exchanges' is always the venue count; data-tr-field spans are non-contiguous ('12</span> exchanges') so they are untouched.",
+      "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: general perp count in free-text 'N exchanges' prose/meta descriptions \u2192 exchange_count. On landing surfaces 'N exchanges' is always the venue count; data-tr-field spans are non-contiguous ('12</span> exchanges') so they are untouched.",
       "id": "text-perp-exchange-count",
       "find_pattern": "\\d+( exchanges)",
       "replace_template": "{value}$1",
@@ -153,7 +160,7 @@
       "replace_all": true
     },
     {
-      "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: index.html eyebrow 'N venues unified behind one MCP' → exchange_count.",
+      "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: index.html eyebrow 'N venues unified behind one MCP' \u2192 exchange_count.",
       "id": "eyebrow-venues-unified",
       "find_pattern": "\\d+( venues unified behind one MCP)",
       "replace_template": "{value}$1",
@@ -277,7 +284,7 @@
         "landing/**/*.html"
       ],
       "replace_all": true,
-      "_comment": "CONVERSION-SURFACES-W2 CH3 — was a 3-file hand list (faq/how-it-works/index). The conversion band puts this span on every content page, and check-claim-coverage COV-3 refuses a field that reads LIVE on some pages and FROZEN on others. Widened to a GLOB rather than to 54 more paths: a hand-maintained target list is the staleness generator this estate retired twice (the footer's TARGETS array went stale TWICE). scripts/lib/manifest-targets.mjs resolves it for BOTH the injector and the coverage gate, and filters the expansion by this claim's own find_pattern so no zero-match pairing is manufactured."
+      "_comment": "CONVERSION-SURFACES-W2 CH3 \u2014 was a 3-file hand list (faq/how-it-works/index). The conversion band puts this span on every content page, and check-claim-coverage COV-3 refuses a field that reads LIVE on some pages and FROZEN on others. Widened to a GLOB rather than to 54 more paths: a hand-maintained target list is the staleness generator this estate retired twice (the footer's TARGETS array went stale TWICE). scripts/lib/manifest-targets.mjs resolves it for BOTH the injector and the coverage gate, and filters the expansion by this claim's own find_pattern so no zero-match pairing is manufactured."
     },
     {
       "id": "dtrf-asset-count",
@@ -388,7 +395,7 @@
     },
     {
       "id": "jsonld-description-asset-count",
-      "_comment": "SEC-46 (OPS-AUDIT-REMEDIATION-LOW-W2). A THIRD phrasing of the asset count, in JSON-LD description PROSE — `venues, 850+ assets,`. jsonld-asset-count matches only the PropertyValue form and dtrf-asset-count only the span form, so this prose site was owned by no claim and sat at 850+ against a live 1502. Same phrasing-variant class OPS-JSONLD-PFE-PROPERTYVALUE-MANAGE-W1 retired for the PFE rate. The `+` is preserved: the sentence asserts a floor, and the live value only grows. SCOPE CORRECTION (same wave, post-deploy): this row first listed ONLY docs-src/template.html — the GENERATOR SOURCE — so the injector patched a file nobody serves while all five SERVED pages kept the stale literal. Verified live: /docs still read '850+ assets' after deploy. Every file below is confirmed to MATCH the pattern, so none is a CLAIM_MATCHED_ZERO waiting to happen.",
+      "_comment": "SEC-46 (OPS-AUDIT-REMEDIATION-LOW-W2). A THIRD phrasing of the asset count, in JSON-LD description PROSE \u2014 `venues, 850+ assets,`. jsonld-asset-count matches only the PropertyValue form and dtrf-asset-count only the span form, so this prose site was owned by no claim and sat at 850+ against a live 1502. Same phrasing-variant class OPS-JSONLD-PFE-PROPERTYVALUE-MANAGE-W1 retired for the PFE rate. The `+` is preserved: the sentence asserts a floor, and the live value only grows. SCOPE CORRECTION (same wave, post-deploy): this row first listed ONLY docs-src/template.html \u2014 the GENERATOR SOURCE \u2014 so the injector patched a file nobody serves while all five SERVED pages kept the stale literal. Verified live: /docs still read '850+ assets' after deploy. Every file below is confirmed to MATCH the pattern, so none is a CLAIM_MATCHED_ZERO waiting to happen.",
       "find_pattern": "(venues, )\\d+\\+( assets)",
       "replace_template": "$1{value}+$2",
       "sot": "performance",
@@ -494,7 +501,7 @@
       "sot": "performance",
       "accessor": "overall.pfeWinRate*100",
       "format": "float_1dp",
-      "_note": "The schema.org additionalProperty/PropertyValue form. It inverts the order the older jsonld-description-pfe-rate matches (that one needs the % to PRECEDE the label; here it follows), so it escaped management entirely and rotted to 91.8% against a live 91.7%. A crawler runs no JS, so unlike a data-tr-field span this can never self-heal — it is only ever as fresh as the last deploy-time injection. Same accessor as every other PFE claim on purpose: one fact, one SoT path. Third instance of 'a new phrasing escapes a phrasing-specific regex', which is why OPS-JSONLD-PFE-PROPERTYVALUE-MANAGE-W1 also shipped scripts/check-claim-coverage.mjs to invert match -> coverage.",
+      "_note": "The schema.org additionalProperty/PropertyValue form. It inverts the order the older jsonld-description-pfe-rate matches (that one needs the % to PRECEDE the label; here it follows), so it escaped management entirely and rotted to 91.8% against a live 91.7%. A crawler runs no JS, so unlike a data-tr-field span this can never self-heal \u2014 it is only ever as fresh as the last deploy-time injection. Same accessor as every other PFE claim on purpose: one fact, one SoT path. Third instance of 'a new phrasing escapes a phrasing-specific regex', which is why OPS-JSONLD-PFE-PROPERTYVALUE-MANAGE-W1 also shipped scripts/check-claim-coverage.mjs to invert match -> coverage.",
       "apply_to_files": [
         "docs-src/template.html",
         "landing/docs.html",
@@ -526,7 +533,7 @@
     },
     {
       "id": "jsonld-skills-pfe-wr-merkle-verified",
-      "_comment": "skills.html JSON-LD description phrases PFE WR as 'N.N%+ Merkle-verified PFE Win Rate' — a form the lowercase 'N.N% PFE win rate' row above does not match, so its 89.4% rotted (CRYPTO-PERF-COPY-REMEDIATION follow-up). Deploy-injected from the live SoT so it follows the same value the visible pfe_wr spans already show.",
+      "_comment": "skills.html JSON-LD description phrases PFE WR as 'N.N%+ Merkle-verified PFE Win Rate' \u2014 a form the lowercase 'N.N% PFE win rate' row above does not match, so its 89.4% rotted (CRYPTO-PERF-COPY-REMEDIATION follow-up). Deploy-injected from the live SoT so it follows the same value the visible pfe_wr spans already show.",
       "find_pattern": "(\\d+\\.\\d)(%\\+ Merkle-verified PFE Win Rate)",
       "replace_template": "{value}$2",
       "sot": "performance",
