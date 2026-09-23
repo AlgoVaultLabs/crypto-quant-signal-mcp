@@ -74,9 +74,9 @@ export function renderSignupFlowTailwind(): string {
   const items = SIGNUP_FLOW_STEPS.map((step) => `
         <li class="text-gray-300 text-sm leading-relaxed">
           <span class="font-semibold text-white">${step.title}</span>
-          <span class="text-gray-400"> — ${step.body.replace(/<code>/g, '<code class="text-xs bg-navy-700/60 border border-white/5 rounded px-1.5 py-0.5 text-emerald-400">')}</span>
+          <span class="text-gray-400"> — ${step.body.replace(/<code>/g, '<code class="text-xs bg-navy-700/60 border border-line rounded px-1.5 py-0.5 text-emerald-400">')}</span>
         </li>`).join('');
-  return `      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-8">
+  return `      <div class="bg-navy-700 border border-line rounded-xl p-5 mb-8">
         <ol class="list-decimal pl-5 space-y-2.5">${items}
         </ol>
       </div>`;

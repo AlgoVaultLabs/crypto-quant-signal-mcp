@@ -1,7 +1,7 @@
       <p class="text-gray-400 text-sm mb-5">Returns a composite BUY/SELL/HOLD trade call with confidence percentage, regime context, and reasoning. The <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> parameter below lists every venue this tool accepts.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -17,7 +17,7 @@
       <p class="text-gray-500 text-xs mb-5">Omit both <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code> and <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> and the router treats the call as bare: it infers the asset class from the symbol, then applies <code class="text-xs bg-navy-800 px-1 rounded">15m</code> on <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code> for a perpetual. Naming either one routes to the perpetual engine explicitly.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">{
   "call": "BUY",
@@ -46,7 +46,7 @@
       </div>
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
       <p class="text-gray-400 text-sm mb-3">The example above is abridged. Every response carries these top-level fields.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -70,7 +70,7 @@
       </table>
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3"><code class="text-sm bg-navy-800 px-1 rounded">_receipts</code> &mdash; the audit trail</h4>
       <p class="text-gray-400 text-sm mb-3">Ships on every <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code> response. It is what makes a verdict checkable rather than merely asserted: the ledger names each factor the engine weighed, which way it pointed, and whether it moved the result.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -90,7 +90,7 @@
       </table>
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3"><code class="text-sm bg-navy-800 px-1 rounded">_algovault.auth</code> &mdash; what happened to your key</h4>
       <p class="text-gray-400 text-sm mb-3">Read this before anything else when a paid key seems not to apply. A key that was presented but not accepted still returns a verdict &mdash; on the <strong class="text-white">free tier</strong> &mdash; so the response looks fine and the quota is wrong. This block says so explicitly, and replaces inferring it from the quota numbers.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-3">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-3">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -102,7 +102,7 @@
           <tr class="param-row" style="border-bottom:none"><td>tier</td><td class="text-gray-400">string</td><td class="text-gray-400">The tier actually applied to this call. <strong class="text-white">A paid key showing <code class="text-xs bg-navy-800 px-1 rounded">free</code> means it was not applied.</strong></td></tr>
         </tbody>
       </table>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">outcome</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-52">Where it surfaces</th>

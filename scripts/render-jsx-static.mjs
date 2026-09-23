@@ -919,7 +919,7 @@ const VERIFY_HEAD_AND_NAV = `<!DOCTYPE html>
 ${renderThemeBlock()}
 <style>
   html { scroll-behavior: smooth; }
-  body { background: #060a14; color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  body { background: var(--bg); color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
   code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
   .hash-text { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; word-break: break-all; }
   /* DESIGN-W9 dual-render @media swap (lp-verify-{desktop,mobile} per dual-render-desktop-mobile-media-swap skill) */
@@ -1040,7 +1040,7 @@ ${renderThemeBlock()}
 <body class="min-h-screen">
 
 <!-- Cross-page sticky nav (AlgoVault Labs canonical) — preserved across landing pages -->
-<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
     <div class="flex items-center gap-2.5">
       <a href="/" class="flex items-center gap-2.5">
@@ -2162,7 +2162,7 @@ ${renderThemeBlock()}
 <body class="min-h-screen">
 
 <!-- Cross-page sticky nav (AlgoVault Labs canonical) — preserved across landing pages -->
-<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
     <div class="flex items-center gap-2.5">
       <a href="/" class="flex items-center gap-2.5">

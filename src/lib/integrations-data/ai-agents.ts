@@ -39,11 +39,11 @@ const AI_AGENTS: SurfaceModule = {
       whatYouGet:
         'AlgoVault tools as LangChain <code class="text-xs">BaseTool</code> objects in any <code class="text-xs">create_react_agent</code> or LangGraph workflow.',
       walkthroughHtml: `      <p>Install the canonical bridge maintained by LangChain:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install langchain-mcp-adapters</code></pre>
       </div>
       <p>Connect once, then call tools from any LangChain agent:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">from langchain_mcp_adapters.client import MultiServerMCPClient
 
 client = MultiServerMCPClient({"algovault": {
@@ -65,11 +65,11 @@ verdict = await tools[0].ainvoke({"coin": "BTC", "timeframe": "4h"})</code></pre
       whatYouGet:
         'AlgoVault tools as LlamaIndex <code class="text-xs">FunctionTool</code> objects in any <code class="text-xs">FunctionAgent</code> or <code class="text-xs">ReActAgent</code>.',
       walkthroughHtml: `      <p>Install the canonical bridge maintained by LlamaIndex:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install llama-index-tools-mcp</code></pre>
       </div>
       <p>Call directly via <code class="text-xs bg-navy-800 px-1 rounded">BasicMCPClient</code>, or adapt its tools to <code class="text-xs">FunctionTool</code> via <code class="text-xs">McpToolSpec</code>:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">from llama_index.tools.mcp import BasicMCPClient
 
 client = BasicMCPClient("https://api.algovault.com/mcp")
@@ -89,11 +89,11 @@ result = await client.call_tool(
       whatYouGet:
         'AlgoVault tools called directly or handed to any <code class="text-xs">ChatAgent</code> in the MAF ecosystem.',
       walkthroughHtml: `      <p>Install the framework (MCP support is built in):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install agent-framework</code></pre>
       </div>
       <p>Open an MCP session, call tools directly, or hand the tool to a <code class="text-xs bg-navy-800 px-1 rounded">ChatAgent</code>:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">from agent_framework import MCPStreamableHTTPTool
 
 tool = MCPStreamableHTTPTool(
@@ -118,11 +118,11 @@ async with tool:
       whatYouGet:
         'AlgoVault tools as CrewAI <code class="text-xs">BaseTool</code> objects in any <code class="text-xs">Crew</code> or single <code class="text-xs">Agent</code> workflow.',
       walkthroughHtml: `      <p>Install CrewAI with the MCP extras (the canonical adapter):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install crewai 'crewai-tools[mcp]'</code></pre>
       </div>
       <p>Open the adapter as a context manager; all 4 AlgoVault tools land as CrewAI <code class="text-xs bg-navy-800 px-1 rounded">BaseTool</code> objects:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">from crewai_tools import MCPServerAdapter
 
 server_params = {"url": "https://api.algovault.com/mcp",

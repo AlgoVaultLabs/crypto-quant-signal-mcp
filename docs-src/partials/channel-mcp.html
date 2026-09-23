@@ -1,5 +1,5 @@
       <p class="text-gray-400 text-sm mb-4">Connect over the Model Context Protocol at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">https://api.algovault.com/mcp</code>. Any MCP-compatible client (Claude Desktop, Cursor, Cline, Claude Code) handles the protocol for you. See <a href="#connect-mcp" class="text-mint-400 hover:underline">Connect Your MCP Client</a> for per-client setup. Wiring a non-MCP system? POST <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/call</code> directly. The transport is stateless, so there is no <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">initialize</code> step and no session id to thread:</p>
-<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+<div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
 
@@ -11,11 +11,11 @@ curl -sS -X POST https://api.algovault.com/mcp \
       </div>
       <p class="text-gray-500 text-xs mb-6">No key? Drop the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">Authorization</code> header and the same call runs on the free tier.</p>
       <p class="text-gray-400 text-sm mb-2"><strong class="text-gray-300">Send both Accept types.</strong> The header must list <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">application/json</code> and <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">text/event-stream</code>. Sending only the first returns:</p>
-<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+<div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <pre><code class="text-sm text-gray-300">{"jsonrpc":"2.0","error":{"code":-32000,"message":"Not Acceptable: Client must accept both application/json and text/event-stream"},"id":null}</code></pre>
       </div>
       <p class="text-gray-400 text-sm mb-2"><strong class="text-gray-300">Parse twice.</strong> The reply is an SSE frame. The verdict is a JSON <em>string</em> nested at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">result.content[0].text</code>. Strip the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">data:</code> prefix, then decode the inner payload:</p>
-<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+<div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">curl -sS -X POST https://api.algovault.com/mcp \
   -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
@@ -23,7 +23,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
   | sed -n 's/^data: //p' | head -1 | jq -r '.result.content[0].text' | jq</code></pre>
       </div>
       <p class="text-gray-400 text-sm mb-2 mt-6"><strong class="text-gray-300">The same call in Python.</strong> Both parses in one place &mdash; the SSE frame, then the verdict string inside it. No MCP client library, no handshake, no session id.</p>
-<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+<div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector(&#39;code&#39;).textContent);this.textContent=&#39;Copied!&#39;;setTimeout(()=&gt;this.textContent=&#39;Copy&#39;,1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">import json, requests
 
@@ -58,7 +58,7 @@ print(verdict["call"], verdict["confidence"], verdict["regime"])
 print(verdict["_algovault"]["auth"])   # ABSENT / RESOLVED / MALFORMED</code></pre>
       </div>
       <p class="text-gray-400 text-sm mb-4 mt-6"><strong class="text-gray-300">Optional: the full MCP session handshake.</strong> You do not need this to call a tool. It is kept for clients that speak full MCP session semantics. It also reproduces what an MCP client does internally:</p>
-<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+<div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
 

@@ -25,12 +25,12 @@
       </div>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Verification Endpoints</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-4">
         <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/verify-signal?signalId=<ID>');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">GET /api/verify-signal?signalId=&lt;ID&gt;</code></pre>
         <p class="text-gray-500 text-xs mt-2">Returns: call details, hash, Merkle proof, batch info, Basescan tx link, and a boolean <code class="text-xs bg-navy-800 px-1 rounded">verified</code> field.</p>
       </div>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-6">
         <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/merkle-batches');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">GET /api/merkle-batches</code></pre>
         <p class="text-gray-500 text-xs mt-2">Returns: list of all published batches with root hashes, call counts, tx hashes, and Basescan links.</p>
@@ -40,7 +40,7 @@
       <p class="text-gray-400 text-sm mb-6">Visit <a href="/verify" class="text-mint-400 hover:underline">algovault.com/verify</a> to look up any call and see its on-chain proof in a human-readable format.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Contract Details</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-6">
         <tbody>
           <tr class="param-row"><td class="text-gray-400">Address</td><td class="text-gray-300"><code class="text-xs">0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81</code></td></tr>
           <tr class="param-row"><td class="text-gray-400">Chain</td><td class="text-gray-300">Base (chain ID 8453)</td></tr>

@@ -11,8 +11,10 @@ import { JSDOM, VirtualConsole } from 'jsdom';
 import { renderSiteNav } from '../src/lib/site-nav.js';
 
 const fx = (n: string): string => readFileSync(join(process.cwd(), 'tests', 'fixtures', n), 'utf8');
+// DESIGN-SURFACE-TOKENS-W1: the nav background is a TOKEN now (with its fallback triple, for
+// the 4h-cached-stylesheet window). The `border-white/5` hairline stays — a nav is not a card.
 const NAV_OPEN =
-  '<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">';
+  '<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.85);backdrop-filter:blur(12px)">';
 const BRAND = '<a href="https://algovault.com/" class="flex items-center gap-2.5" aria-label="AlgoVault home">';
 
 describe('renderSiteNav — whole-nav byte-equivalence (frozen oracle)', () => {

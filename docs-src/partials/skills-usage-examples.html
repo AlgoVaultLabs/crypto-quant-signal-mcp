@@ -3,14 +3,14 @@
       <div class="grid gap-4">
 
         <!-- 1 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">01</span>
             <h3 class="text-white font-semibold text-sm">Quick BTC Check</h3>
             <span class="text-xs text-gray-600 ml-auto">Beginner</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">The simplest possible call. Ask your agent for a single trade call.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get me a trade call for BTC on the 1h timeframe"</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get me a trade call for BTC on the 1h timeframe"</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code></div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -21,14 +21,14 @@
         </div>
 
         <!-- 2 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">02</span>
             <h3 class="text-white font-semibold text-sm">Portfolio Scanner</h3>
             <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Loop through the top 10 assets, get trade calls for each, and filter by high confidence.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, SOL, DOGE, XRP, ADA, AVAX, LINK, DOT, and MATIC on the 15m timeframe. Only show me the ones with confidence above 70%."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, SOL, DOGE, XRP, ADA, AVAX, LINK, DOT, and MATIC on the 15m timeframe. Only show me the ones with confidence above 70%."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 10 &nbsp;|&nbsp; Pattern: batch calling, confidence filtering</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -39,14 +39,14 @@
         </div>
 
         <!-- 3 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">03</span>
             <h3 class="text-white font-semibold text-sm">Regime-Aware Trading</h3>
             <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Check the market regime first. Only request trade calls when the regime is favorable for directional trading.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"First check the market regime for ETH on the 4h timeframe. If it's TRENDING_UP or TRENDING_DOWN, get me a trade call on the 15m timeframe. If it's RANGING or VOLATILE, skip it."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"First check the market regime for ETH on the 4h timeframe. If it's TRENDING_UP or TRENDING_DOWN, get me a trade call on the 15m timeframe. If it's RANGING or VOLATILE, skip it."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: conditional chaining</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -57,14 +57,14 @@
         </div>
 
         <!-- 4 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">04</span>
             <h3 class="text-white font-semibold text-sm">Funding Arb Monitor</h3>
             <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Scan for cross-venue funding rate arbitrage opportunities. Alert when the annualized spread exceeds your threshold.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan for funding arbitrage opportunities with a minimum spread of 10 basis points. Show me the top 5 ranked by annualized return."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan for funding arbitrage opportunities with a minimum spread of 10 basis points. Show me the top 5 ranked by annualized return."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: threshold-based alerting</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -75,14 +75,14 @@
         </div>
 
         <!-- 5 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">05</span>
             <h3 class="text-white font-semibold text-sm">Full 3-Tool Pipeline</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">The complete AlgoVault workflow: regime detection, trade call, then arb check for the same asset. Maximum context for one decision.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For SOL: first get the market regime on 4h, then get a trade call on 15m, then check if there are any funding arb opportunities. Give me a combined recommendation based on all three."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For SOL: first get the market regime on 4h, then get a trade call on 15m, then check if there are any funding arb opportunities. Give me a combined recommendation based on all three."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &rarr; <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: full pipeline composition</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -93,14 +93,14 @@
         </div>
 
         <!-- 6 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">06</span>
             <h3 class="text-white font-semibold text-sm">Multi-Timeframe Confirmation</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Get trade calls on multiple timeframes for the same asset. Only act when all timeframes agree on direction.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for ETH on the 5m, 15m, and 1h timeframes. Only tell me to trade if all three agree on the same direction (all BUY or all SELL)."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for ETH on the 5m, 15m, and 1h timeframes. Only tell me to trade if all three agree on the same direction (all BUY or all SELL)."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 3 &nbsp;|&nbsp; Pattern: multi-timeframe consensus</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -111,14 +111,14 @@
         </div>
 
         <!-- 7 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">07</span>
             <h3 class="text-white font-semibold text-sm">TradFi Rotation</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Compare regime and direction across TradFi perpetuals. Rotate into the asset with the strongest trend.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime and trade call for TSLA, GOLD, and SP500 on the 4h timeframe. Which one has the strongest trend with the highest confidence trade call? Recommend the best one to trade."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime and trade call for TSLA, GOLD, and SP500 on the 4h timeframe. Which one has the strongest trend with the highest confidence trade call? Recommend the best one to trade."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 3 + <code class="text-xs">get_trade_call</code> &times; 3 &nbsp;|&nbsp; Pattern: cross-asset comparison</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -129,14 +129,14 @@
         </div>
 
         <!-- 8 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">08</span>
             <h3 class="text-white font-semibold text-sm">Risk-Gated Entry</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Only enter trades when both confidence and regime alignment pass your risk filters. Skip everything else.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check BTC regime on 4h, then get a trade call on 15m. Only recommend entry if confidence is 75% or higher AND the regime is TRENDING (not VOLATILE or RANGING). Otherwise say 'no trade'."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check BTC regime on 4h, then get a trade call on 15m. Only recommend entry if confidence is 75% or higher AND the regime is TRENDING (not VOLATILE or RANGING). Otherwise say 'no trade'."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: dual risk filter</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -147,14 +147,14 @@
         </div>
 
         <!-- 9 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">09</span>
             <h3 class="text-white font-semibold text-sm">Funding Sentiment Dashboard</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Get market regime for major assets and use the cross-venue funding sentiment to gauge overall market bias.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for BTC, ETH, and SOL on the 4h timeframe. Summarize the cross-venue funding sentiment for each. Is the overall market leaning bullish or bearish based on where funding is concentrated?"</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for BTC, ETH, and SOL on the 4h timeframe. Summarize the cross-venue funding sentiment for each. Is the overall market leaning bullish or bearish based on where funding is concentrated?"</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 3 &nbsp;|&nbsp; Pattern: macro sentiment aggregation</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -165,14 +165,14 @@
         </div>
 
         <!-- 10 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">10</span>
             <h3 class="text-white font-semibold text-sm">Contrarian Meme Scanner</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Scan lower-tier assets for contrarian setups: high-confidence SELL calls during an uptrend may signal crowded longs about to unwind.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for DOGE, SHIB, PEPE, WIF, and BONK on 4h. For any that are TRENDING_UP, get a trade call on 15m. Flag any that return SELL with confidence above 70% &mdash; those might be crowded longs ready to unwind."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for DOGE, SHIB, PEPE, WIF, and BONK on 4h. For any that are TRENDING_UP, get a trade call on 15m. Flag any that return SELL with confidence above 70% &mdash; those might be crowded longs ready to unwind."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 5 + <code class="text-xs">get_trade_call</code> (conditional) &nbsp;|&nbsp; Pattern: contrarian divergence detection</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -183,14 +183,14 @@
         </div>
 
         <!-- 11 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">11</span>
             <h3 class="text-white font-semibold text-sm">Divergence Detector</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Compare trade call direction vs market regime. When they disagree, flag it as a high-risk divergence.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For BTC and ETH: get the market regime on 4h and a trade call on 15m. If the trade call says BUY but the regime is TRENDING_DOWN (or vice versa), flag it as a divergence with a risk warning."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For BTC and ETH: get the market regime on 4h and a trade call on 15m. If the trade call says BUY but the regime is TRENDING_DOWN (or vice versa), flag it as a divergence with a risk warning."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> + <code class="text-xs">get_trade_call</code> per asset &nbsp;|&nbsp; Pattern: signal-regime divergence</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -201,14 +201,14 @@
         </div>
 
         <!-- 12 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">12</span>
             <h3 class="text-white font-semibold text-sm">Hourly Digest Bot</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Build an automated digest: scan all tier-1 and tier-2 assets every hour, summarize trade calls and market regime into a brief report.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan BTC, ETH, SOL, AVAX, LINK, DOGE, XRP, ADA for trade calls on 1h. Also get the market regime for BTC and ETH on 4h. Summarize as a brief market digest: how many BUYs vs SELLs, overall regime, and top 3 highest-confidence calls."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan BTC, ETH, SOL, AVAX, LINK, DOGE, XRP, ADA for trade calls on 1h. Also get the market regime for BTC and ETH on 4h. Summarize as a brief market digest: how many BUYs vs SELLs, overall regime, and top 3 highest-confidence calls."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 8 + <code class="text-xs">get_market_regime</code> &times; 2 &nbsp;|&nbsp; Pattern: periodic digest, notification-ready</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -219,14 +219,14 @@
         </div>
 
         <!-- 13 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">13</span>
             <h3 class="text-white font-semibold text-sm">Hedging Advisor</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">You hold a long ETH position. Check regime and trade call — if both turn bearish, look for a funding arb to hedge via the cheaper venue.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I'm currently long ETH. Get the market regime on 4h and a trade call on 1h. If both are bearish, scan funding arb for ETH and tell me which venue has the cheapest short to hedge my position."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I'm currently long ETH. Get the market regime on 4h and a trade call on 1h. If both are bearish, scan funding arb for ETH and tell me which venue has the cheapest short to hedge my position."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &rarr; <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: defensive hedging</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -237,14 +237,14 @@
         </div>
 
         <!-- 14 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">14</span>
             <h3 class="text-white font-semibold text-sm">Volatility Breakout Watch</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Use regime detection as a screener: find assets in VOLATILE regime with high confidence — these are breakout candidates. Then get trade call for direction.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check the market regime for BTC, ETH, SOL, AVAX, LINK, and DOGE on 4h. For any in VOLATILE regime with confidence above 70%, get a trade call on 5m. Those are potential breakout trades."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check the market regime for BTC, ETH, SOL, AVAX, LINK, and DOGE on 4h. For any in VOLATILE regime with confidence above 70%, get a trade call on 5m. Those are potential breakout trades."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 6 + <code class="text-xs">get_trade_call</code> (conditional) &nbsp;|&nbsp; Pattern: regime as screener</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -255,14 +255,14 @@
         </div>
 
         <!-- 15 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">15</span>
             <h3 class="text-white font-semibold text-sm">Cross-Asset Correlation</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Get trade calls for BTC, ETH, SOL simultaneously. If all say SELL, it's a macro risk-off signal, not just one asset.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, and SOL on the 1h timeframe. If all three say the same direction, flag it as a market-wide move. If they disagree, note which ones are diverging."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, and SOL on the 1h timeframe. If all three say the same direction, flag it as a market-wide move. If they disagree, note which ones are diverging."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 3 &nbsp;|&nbsp; Pattern: correlation / macro signal</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -273,14 +273,14 @@
         </div>
 
         <!-- 16 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">16</span>
             <h3 class="text-white font-semibold text-sm">Funding Cash-and-Carry</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Find a funding arb spread, then get a trade call on the long side. If the trade call agrees with the long direction, you have double conviction.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan funding arb with minimum 10 bps spread. For the top opportunity, get a trade call for the asset on 15m. If the trade call agrees with the long side of the arb, flag it as a high-conviction cash-and-carry setup."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan funding arb with minimum 10 bps spread. For the top opportunity, get a trade call for the asset on 15m. If the trade call agrees with the long side of the arb, flag it as a high-conviction cash-and-carry setup."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">scan_funding_arb</code> &rarr; <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: arb + directional alignment</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -291,14 +291,14 @@
         </div>
 
         <!-- 17 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">17</span>
             <h3 class="text-white font-semibold text-sm">Weekend vs Weekday Patterns</h3>
             <span class="text-xs text-purple-400 ml-auto">Research</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Schedule trade calls every 4 hours, log results over time. Compare weekend vs weekday regime patterns to find exploitable edges.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Every 4 hours, get a trade call for BTC on 4h and log the regime, direction, and confidence. After a week, compare weekend vs weekday patterns. Are weekends more RANGING? Do SELL calls cluster on Sundays?"</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Every 4 hours, get a trade call for BTC on 4h and log the regime, direction, and confidence. After a week, compare weekend vs weekday patterns. Are weekends more RANGING? Do SELL calls cluster on Sundays?"</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> + <code class="text-xs">get_market_regime</code> (scheduled) &nbsp;|&nbsp; Pattern: data collection, research</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -309,14 +309,14 @@
         </div>
 
         <!-- 18 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">18</span>
             <h3 class="text-white font-semibold text-sm">Agent Portfolio Rebalance</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Daily regime check for each asset in your portfolio. Shift allocation toward TRENDING assets, reduce exposure to VOLATILE/RANGING positions.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"My portfolio holds BTC, ETH, SOL, AVAX, and LINK. Get the market regime for each on the 1d timeframe. Recommend which ones to overweight (TRENDING) and which to underweight (VOLATILE or RANGING)."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"My portfolio holds BTC, ETH, SOL, AVAX, and LINK. Get the market regime for each on the 1d timeframe. Recommend which ones to overweight (TRENDING) and which to underweight (VOLATILE or RANGING)."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 5 &nbsp;|&nbsp; Pattern: regime-based portfolio allocation</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -327,14 +327,14 @@
         </div>
 
         <!-- 19 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">19</span>
             <h3 class="text-white font-semibold text-sm">Smart DCA Bot</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Dollar-cost averaging, enhanced: skip buys when the trade call says SELL with high confidence. Only DCA when direction is neutral or favorable.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I DCA into BTC every day. Before today's buy, get a trade call on the 4h timeframe. If it says SELL with confidence above 70%, skip today's buy and wait. Otherwise proceed normally."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I DCA into BTC every day. Before today's buy, get a trade call on the 4h timeframe. If it says SELL with confidence above 70%, skip today's buy and wait. Otherwise proceed normally."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: strategy enhancement, DCA optimization</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -345,14 +345,14 @@
         </div>
 
         <!-- 20 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">20</span>
             <h3 class="text-white font-semibold text-sm">Multi-Agent War Room</h3>
             <span class="text-xs text-red-400 ml-auto">Expert</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Three specialized agents, one coordinator. Agent A handles regime detection, Agent B runs trade calls, Agent C monitors funding arbs. The coordinator synthesizes all three into a single decision.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Set up three agents: Agent A gets market regime for BTC, ETH, SOL on 4h. Agent B gets trade calls for the same assets on 15m. Agent C scans funding arb for spreads above 8 bps. Combine all results into a single dashboard showing: regime, direction, confidence, and best arb for each asset."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Set up three agents: Agent A gets market regime for BTC, ETH, SOL on 4h. Agent B gets trade calls for the same assets on 15m. Agent C scans funding arb for spreads above 8 bps. Combine all results into a single dashboard showing: regime, direction, confidence, and best arb for each asset."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: All core tools in parallel &nbsp;|&nbsp; Pattern: multi-agent orchestration</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>

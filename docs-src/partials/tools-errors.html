@@ -1,12 +1,12 @@
       <p class="text-gray-400 text-sm mb-5">Every failure this API can return, what it means, and what to change. Verified against the live server.</p>
 
-      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+      <div class="bg-navy-700 border border-line rounded-xl p-5 mb-5">
         <h4 class="text-sm font-semibold text-white mb-2">Failures arrive in two shapes &mdash; check both</h4>
         <p class="text-gray-400 text-sm leading-relaxed mb-3">Check <code class="text-xs bg-navy-800 px-1 rounded">response.error</code> first. If it is absent, check <code class="text-xs bg-navy-800 px-1 rounded">response.result.isError</code>.</p>
         <p class="text-gray-400 text-sm leading-relaxed">A <strong class="text-white">parameter validation failure returns HTTP 200</strong> with <code class="text-xs bg-navy-800 px-1 rounded">result.isError: true</code> and the code as plain text inside <code class="text-xs bg-navy-800 px-1 rounded">result.content[0].text</code> &mdash; there is no <code class="text-xs bg-navy-800 px-1 rounded">error</code> object at all. A client that only inspects <code class="text-xs bg-navy-800 px-1 rounded">error</code> reads that failure as a success, then fails again trying to parse the message as a verdict. This is the single most common cause of a working integration appearing broken.</p>
       </div>
 
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Code</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-56">Where to read it</th>

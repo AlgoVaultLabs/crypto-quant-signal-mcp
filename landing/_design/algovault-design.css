@@ -1290,3 +1290,14 @@
   margin: 0 auto;
   padding-top: 80px;
 }
+
+/* ---------- Canonical card interaction — DESIGN-SURFACE-TOKENS-W1 ---------- */
+/* Was three inline copies of a PRE-MINT gold glow (index/integrations/skills) plus two
+   orphan .glow definitions. The recipe is the landing's own featured-card treatment: a mint
+   hairline, a 1px ring and an underglow — and NO translateY, because the landing's cards do
+   not move (Q-DST-3). Inline copies are deleted in the same commit; check-legacy-navy-literals
+   keeps them from coming back. */
+.card-hover { transition: border-color .2s ease, box-shadow .2s ease; }
+.card-hover:hover { border-color: oklch(0.5 0.14 165 / 0.5); box-shadow: 0 0 0 1px oklch(0.86 0.16 165 / 0.08), 0 12px 30px -18px oklch(0.86 0.16 165 / 0.4); }
+.glow { box-shadow: 0 0 40px oklch(0.86 0.16 165 / 0.08); }
+.glow-text { text-shadow: 0 0 30px oklch(0.86 0.16 165 / 0.25); }

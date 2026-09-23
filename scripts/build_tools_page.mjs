@@ -106,7 +106,7 @@ export function renderToolsPage(existingHtml = '') {
 ${renderThemeBlock()}
 <style>
   html { scroll-behavior: smooth; }
-  body { background: var(--bg, #060a14); color: var(--fg-2, #d1d5db); font-family: var(--font-text, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--fg-2, #d1d5db); font-family: var(--font-text, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); margin: 0; padding: 0; }
   .tools-wrap { max-width: 1024px; margin: 0 auto; padding: 112px 24px 72px; }
   .tools-eyebrow { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12px; letter-spacing: 0.12em; color: var(--mint, oklch(0.86 0.16 165)); text-transform: uppercase; margin: 0 0 14px; }
   .tools-h1 { font-family: var(--font-display, 'Inter Tight', sans-serif); font-size: 44px; line-height: 1.05; letter-spacing: -0.02em; font-weight: 600; color: var(--fg, #f5f7fa); margin: 0 0 16px; }

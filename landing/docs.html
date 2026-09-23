@@ -35,7 +35,7 @@ tailwind.config = {
 <!-- THEME:END -->
 <style>
   html { scroll-behavior: smooth; }
-  body { background: #060a14; color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  body { background: var(--bg); color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
   code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
   pre { overflow-x: auto; }
   .code-block { position: relative; }
@@ -163,7 +163,7 @@ tailwind.config = {
 
 <!-- Nav -->
 <!-- NAV:START -->
-<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
     <a href="https://algovault.com/" class="flex items-center gap-2.5" aria-label="AlgoVault home">
       <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
@@ -173,7 +173,7 @@ tailwind.config = {
       <div class="relative" data-nav-dropdown>
       <button type="button" data-nav-dropdown-toggle aria-haspopup="true" aria-expanded="false" aria-controls="nav-platform-panel" class="inline-flex items-center gap-1 hover:text-white transition">Platform <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
       <div id="nav-platform-panel" data-nav-dropdown-panel class="hidden absolute left-0 top-full pt-3 z-50">
-        <div class="w-[640px] grid grid-cols-3 gap-6 rounded-xl border border-white/10 p-4" style="background:rgba(10,14,26,0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
+        <div class="w-[640px] grid grid-cols-3 gap-6 rounded-xl border border-white/10 p-4" style="background:oklch(var(--bg-2-lch, 0.19 0.014 265) / 0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
         <div>
           <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Tools</div>
           <div class="text-[11px] text-gray-500 mb-2.5">What the brain does</div>
@@ -204,7 +204,7 @@ tailwind.config = {
       <div class="relative" data-nav-dropdown>
       <button type="button" data-nav-dropdown-toggle aria-haspopup="true" aria-expanded="false" aria-controls="nav-track-record-panel" class="inline-flex items-center gap-1 hover:text-white transition">Track Record <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
       <div id="nav-track-record-panel" data-nav-dropdown-panel class="hidden absolute left-0 top-full pt-3 z-50">
-        <div class="w-60 rounded-xl border border-white/10 p-4" style="background:rgba(10,14,26,0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
+        <div class="w-60 rounded-xl border border-white/10 p-4" style="background:oklch(var(--bg-2-lch, 0.19 0.014 265) / 0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
         <a href="https://algovault.com/track-record" class="block px-3 py-2 rounded-lg hover:bg-white/5 transition group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Live Dashboard</span><span class="block text-[11px] text-gray-500">Real-time PFE win rate</span></a>
         <a href="https://algovault.com/verify" class="block px-3 py-2 rounded-lg hover:bg-white/5 transition group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Verify</span><span class="block text-[11px] text-gray-500">On-chain Merkle proofs</span></a>
         </div>
@@ -224,7 +224,7 @@ tailwind.config = {
       </button>
       </div>
   </div>
-      <div id="mobile-menu" data-mobile-nav-panel class="hidden sm:hidden border-t border-white/5" style="background:rgba(6,10,20,0.97);backdrop-filter:blur(12px)">
+      <div id="mobile-menu" data-mobile-nav-panel class="hidden sm:hidden border-t border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.97);backdrop-filter:blur(12px)">
         <button type="button" data-nav-accordion-toggle aria-expanded="false" aria-controls="nav-m-platform-panel" class="w-full flex items-center justify-between px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Platform <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
         <div id="nav-m-platform-panel" data-nav-accordion-panel class="hidden">
           <a href="https://algovault.com/tools#get-trade-call" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call</a>
@@ -367,7 +367,7 @@ tailwind.config = {
         <section id="quick-start" class="mb-16">
       <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Quick Start</h2>
       <p class="text-gray-400 text-sm mb-4">Add AlgoVault to Claude Desktop in under 30 seconds. Paste this into your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">claude_desktop_config.json</code>:</p>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-4">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">{
   "mcpServers": {
@@ -379,7 +379,7 @@ tailwind.config = {
 }</code></pre>
       </div>
       <p class="text-gray-400 text-sm mb-3">Then ask Claude:</p>
-      <div class="bg-navy-700 border border-white/5 rounded-xl px-5 py-3 text-sm text-gray-300 italic mb-4">
+      <div class="bg-navy-700 border border-line rounded-xl px-5 py-3 text-sm text-gray-300 italic mb-4">
         "Get me a trade call for BTC on the 1h timeframe"
       </div>
       <p class="text-gray-500 text-xs">Free tier: all supported assets, all 11 timeframes (1m&ndash;1d), 200 calls/month (up to 100/day). No signup needed. <a href="https://api.algovault.com/signup" class="text-mint-400 hover:underline">Upgrade to Starter ($9.99/mo) or Pro</a> for higher monthly limits and unlimited funding-arb results.</p>
@@ -405,7 +405,7 @@ tailwind.config = {
       <p class="text-gray-400 text-sm mb-5">Returns a composite BUY/SELL/HOLD trade call with confidence percentage, regime context, and reasoning. The <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> parameter below lists every venue this tool accepts.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -424,7 +424,7 @@ tailwind.config = {
       <p class="text-gray-500 text-xs mb-5">Omit both <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code> and <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> and the router treats the call as bare: it infers the asset class from the symbol, then applies <code class="text-xs bg-navy-800 px-1 rounded">15m</code> on <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code> for a perpetual. Naming either one routes to the perpetual engine explicitly.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">{
   "call": "BUY",
@@ -453,7 +453,7 @@ tailwind.config = {
       </div>
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
       <p class="text-gray-400 text-sm mb-3">The example above is abridged. Every response carries these top-level fields.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -477,7 +477,7 @@ tailwind.config = {
       </table>
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3"><code class="text-sm bg-navy-800 px-1 rounded">_receipts</code> &mdash; the audit trail</h4>
       <p class="text-gray-400 text-sm mb-3">Ships on every <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code> response. It is what makes a verdict checkable rather than merely asserted: the ledger names each factor the engine weighed, which way it pointed, and whether it moved the result.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -497,7 +497,7 @@ tailwind.config = {
       </table>
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3"><code class="text-sm bg-navy-800 px-1 rounded">_algovault.auth</code> &mdash; what happened to your key</h4>
       <p class="text-gray-400 text-sm mb-3">Read this before anything else when a paid key seems not to apply. A key that was presented but not accepted still returns a verdict &mdash; on the <strong class="text-white">free tier</strong> &mdash; so the response looks fine and the quota is wrong. This block says so explicitly, and replaces inferring it from the quota numbers.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-3">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-3">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -509,7 +509,7 @@ tailwind.config = {
           <tr class="param-row" style="border-bottom:none"><td>tier</td><td class="text-gray-400">string</td><td class="text-gray-400">The tier actually applied to this call. <strong class="text-white">A paid key showing <code class="text-xs bg-navy-800 px-1 rounded">free</code> means it was not applied.</strong></td></tr>
         </tbody>
       </table>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">outcome</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-52">Where it surfaces</th>
@@ -531,7 +531,7 @@ tailwind.config = {
       <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset, on any venue this tool accepts. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -547,7 +547,7 @@ tailwind.config = {
       </table>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">{
   "regime": "TRENDING_UP",
@@ -574,7 +574,7 @@ tailwind.config = {
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
       <p class="text-gray-400 text-sm mb-3">Transcribed from a live response. The example above is abridged; every response carries these top-level fields.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -598,7 +598,7 @@ tailwind.config = {
       <p class="text-gray-400 text-sm mb-5">Scans cross-venue funding rate differences across 7 venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Returns top arbitrage opportunities ranked by annualized spread, with a per-leg liquidity filter so only tradeable spreads surface.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -611,7 +611,7 @@ tailwind.config = {
       </table>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">{
   "opportunities": [
@@ -643,7 +643,7 @@ tailwind.config = {
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
       <p class="text-gray-400 text-sm mb-3">Transcribed from a live response. The example above is abridged; every response carries these top-level fields.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -663,7 +663,7 @@ tailwind.config = {
       <p class="text-gray-400 text-sm mb-5">Scans a whole promoted-venue universe in one call and returns the top-ranked <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">get_trade_call</code> verdicts, ordered by a selectable lens (open interest, OI change, volume, momentum, &hellip;). One request instead of N per-asset calls &mdash; ideal for an agent building a watchlist or a scheduled digest.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -688,7 +688,7 @@ tailwind.config = {
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Ranking lenses</h3>
       <p class="text-gray-400 text-sm mb-3">Every value <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> accepts. Pass the lens or its alias &mdash; both resolve to the same universe.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Lens</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Alias</th>
@@ -710,7 +710,7 @@ tailwind.config = {
       </table>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">scan_trade_calls({
   topN: 20,
@@ -725,7 +725,7 @@ tailwind.config = {
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
       <p class="text-gray-400 text-sm mb-3">The scan returns counters alongside the results, so you can tell &ldquo;nothing qualified&rdquo; from &ldquo;nothing was scanned&rdquo; without a second call.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -740,7 +740,7 @@ tailwind.config = {
           <tr class="param-row" style="border-bottom:none"><td>calls</td><td class="text-gray-400">array</td><td class="text-gray-400">The ranked results. Each entry carries <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">call</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code> and <code class="text-xs bg-navy-800 px-1 rounded">regime</code>.</td></tr>
         </tbody>
       </table>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector(&#39;code&#39;).textContent);this.textContent=&#39;Copied!&#39;;setTimeout(()=&gt;this.textContent=&#39;Copy&#39;,1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">{
   "scanned": 30,
@@ -755,7 +755,7 @@ tailwind.config = {
 }</code></pre>
       </div>
 
-      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+      <div class="bg-navy-700 border border-line rounded-xl p-5 mb-5">
         <h4 class="text-sm font-semibold text-white mb-2">An empty <code class="text-xs bg-navy-800 px-1 rounded">calls</code> array is the ordinary outcome</h4>
         <p class="text-gray-400 text-sm leading-relaxed mb-3">Most assets are HOLD most of the time, and <code class="text-xs bg-navy-800 px-1 rounded">includeHolds</code> defaults to <code class="text-xs bg-navy-800 px-1 rounded">false</code> &mdash; so a scan that filters every result out is working correctly, not failing. A live 30-asset scan on <code class="text-xs bg-navy-800 px-1 rounded">1h</code> at the time of writing returned <strong class="text-white">29 HOLD</strong> against <strong class="text-white">1</strong> actionable call.</p>
         <p class="text-gray-400 text-sm leading-relaxed">Read <code class="text-xs bg-navy-800 px-1 rounded">scanned</code> to confirm the universe was evaluated. To widen the result set, lower <code class="text-xs bg-navy-800 px-1 rounded">minConfidence</code>, or set <code class="text-xs bg-navy-800 px-1 rounded">includeHolds: true</code> to see the HOLD verdicts alongside the rest.</p>
@@ -767,7 +767,7 @@ tailwind.config = {
       <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Knowledge Chat <span class="text-gray-500 text-sm font-normal">chat_knowledge</span></h3>
       <p class="text-gray-400 text-sm mb-5">Ask AlgoVault a natural-language question &mdash; get a synthesized answer with citations, grounded in the canonical knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use this when you need an explanation, code pattern, or "how do I" answer. For raw ranked snippets without LLM synthesis, use search_knowledge (faster, no quota cost).</p>
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h4>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -781,7 +781,7 @@ tailwind.config = {
 
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h4>
       <p class="text-gray-400 text-sm mb-3">Transcribed from a live response.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -801,7 +801,7 @@ tailwind.config = {
       <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Knowledge Search <span class="text-gray-500 text-sm font-normal">search_knowledge</span></h3>
       <p class="text-gray-400 text-sm mb-5">Ask AlgoVault any question about its MCP tools, response shapes, integration patterns (LangChain / LlamaIndex / MAF / CrewAI), or code examples. Returns ranked snippets from the canonical knowledge bundle. Use this BEFORE attempting any tool call to confirm correct parameter usage and avoid hallucinating tool shapes. Fast (BM25 lexical search, no LLM call, no quota cost). For natural-language synthesized answers, use chat_knowledge instead.</p>
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h4>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -815,7 +815,7 @@ tailwind.config = {
 
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h4>
       <p class="text-gray-400 text-sm mb-3">Transcribed from a live response.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -832,7 +832,7 @@ tailwind.config = {
 
     <section id="tools-when-to-use" class="mb-16"><span id="knowledge-tools-when" aria-hidden="true"></span>
       <h4 class="text-base font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> When to use which</h4>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-6">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Use case</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Pick</th>
@@ -851,7 +851,7 @@ tailwind.config = {
       <h4 class="text-base font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Worked examples</h4>
 
       <p class="text-gray-300 text-sm mb-2 mt-4"><strong>1. Discovery query</strong> &mdash; agent asks for trade-call docs before calling <code class="text-xs">get_trade_call</code>:</p>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">search_knowledge({
   query: "how do I get a trade call with stop loss for BTC"
@@ -860,7 +860,7 @@ tailwind.config = {
       </div>
 
       <p class="text-gray-300 text-sm mb-2"><strong>2. Comparison query</strong> &mdash; ask for synthesis across two tool descriptions:</p>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">chat_knowledge({
   question: "what's the difference between get_trade_call and get_market_regime"
@@ -869,7 +869,7 @@ tailwind.config = {
       </div>
 
       <p class="text-gray-300 text-sm mb-2"><strong>3. Integration discovery</strong> &mdash; agent finds the LangChain tutorial:</p>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">search_knowledge({
   query: "how do I integrate with LangChain"
@@ -878,7 +878,7 @@ tailwind.config = {
       </div>
 
       <p class="text-gray-300 text-sm mb-2"><strong>4. Direct HTTP &mdash; search</strong>:</p>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/search \
   -H "Content-Type: application/json" \
@@ -888,7 +888,7 @@ tailwind.config = {
       </div>
 
       <p class="text-gray-300 text-sm mb-2"><strong>5. Direct HTTP &mdash; chat</strong>:</p>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-6">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/chat \
   -H "Content-Type: application/json" \
@@ -900,7 +900,7 @@ tailwind.config = {
 
     <section id="tools-rate-limits" class="mb-16"><span id="knowledge-tools-quota" aria-hidden="true"></span>
       <h4 class="text-base font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Rate limits & cost</h4>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-3">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-3">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-32">Tier</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">search_knowledge</th>
@@ -921,13 +921,13 @@ tailwind.config = {
       <h4 class="text-base font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Errors & troubleshooting</h4>
       <p class="text-gray-400 text-sm mb-5">Every failure this API can return, what it means, and what to change. Verified against the live server.</p>
 
-      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+      <div class="bg-navy-700 border border-line rounded-xl p-5 mb-5">
         <h4 class="text-sm font-semibold text-white mb-2">Failures arrive in two shapes &mdash; check both</h4>
         <p class="text-gray-400 text-sm leading-relaxed mb-3">Check <code class="text-xs bg-navy-800 px-1 rounded">response.error</code> first. If it is absent, check <code class="text-xs bg-navy-800 px-1 rounded">response.result.isError</code>.</p>
         <p class="text-gray-400 text-sm leading-relaxed">A <strong class="text-white">parameter validation failure returns HTTP 200</strong> with <code class="text-xs bg-navy-800 px-1 rounded">result.isError: true</code> and the code as plain text inside <code class="text-xs bg-navy-800 px-1 rounded">result.content[0].text</code> &mdash; there is no <code class="text-xs bg-navy-800 px-1 rounded">error</code> object at all. A client that only inspects <code class="text-xs bg-navy-800 px-1 rounded">error</code> reads that failure as a success, then fails again trying to parse the message as a verdict. This is the single most common cause of a working integration appearing broken.</p>
       </div>
 
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Code</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-56">Where to read it</th>
@@ -954,7 +954,7 @@ tailwind.config = {
     <section id="mcp" class="mb-16"><span id="testing-with-curl" aria-hidden="true"></span>
       <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> MCP Server</h3>
       <p class="text-gray-400 text-sm mb-4">Connect over the Model Context Protocol at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">https://api.algovault.com/mcp</code>. Any MCP-compatible client (Claude Desktop, Cursor, Cline, Claude Code) handles the protocol for you. See <a href="#connect-mcp" class="text-mint-400 hover:underline">Connect Your MCP Client</a> for per-client setup. Wiring a non-MCP system? POST <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/call</code> directly. The transport is stateless, so there is no <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">initialize</code> step and no session id to thread:</p>
-<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+<div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
 
@@ -966,11 +966,11 @@ curl -sS -X POST https://api.algovault.com/mcp \
       </div>
       <p class="text-gray-500 text-xs mb-6">No key? Drop the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">Authorization</code> header and the same call runs on the free tier.</p>
       <p class="text-gray-400 text-sm mb-2"><strong class="text-gray-300">Send both Accept types.</strong> The header must list <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">application/json</code> and <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">text/event-stream</code>. Sending only the first returns:</p>
-<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+<div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <pre><code class="text-sm text-gray-300">{"jsonrpc":"2.0","error":{"code":-32000,"message":"Not Acceptable: Client must accept both application/json and text/event-stream"},"id":null}</code></pre>
       </div>
       <p class="text-gray-400 text-sm mb-2"><strong class="text-gray-300">Parse twice.</strong> The reply is an SSE frame. The verdict is a JSON <em>string</em> nested at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">result.content[0].text</code>. Strip the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">data:</code> prefix, then decode the inner payload:</p>
-<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+<div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">curl -sS -X POST https://api.algovault.com/mcp \
   -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
@@ -978,7 +978,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
   | sed -n 's/^data: //p' | head -1 | jq -r '.result.content[0].text' | jq</code></pre>
       </div>
       <p class="text-gray-400 text-sm mb-2 mt-6"><strong class="text-gray-300">The same call in Python.</strong> Both parses in one place &mdash; the SSE frame, then the verdict string inside it. No MCP client library, no handshake, no session id.</p>
-<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+<div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector(&#39;code&#39;).textContent);this.textContent=&#39;Copied!&#39;;setTimeout(()=&gt;this.textContent=&#39;Copy&#39;,1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">import json, requests
 
@@ -1013,7 +1013,7 @@ print(verdict["call"], verdict["confidence"], verdict["regime"])
 print(verdict["_algovault"]["auth"])   # ABSENT / RESOLVED / MALFORMED</code></pre>
       </div>
       <p class="text-gray-400 text-sm mb-4 mt-6"><strong class="text-gray-300">Optional: the full MCP session handshake.</strong> You do not need this to call a tool. It is kept for clients that speak full MCP session semantics. It also reproduces what an MCP client does internally:</p>
-<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+<div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
 
@@ -1052,7 +1052,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
       <p class="text-gray-400 text-sm mb-5 leading-relaxed">No signup. No API key. No billing. Your agent pays per HTTP call with USDC on <a href="https://www.base.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">Base</a> &mdash; the payment receipt <em>is</em> the credential. Works with any x402-compatible client or wallet.</p>
 
       <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">How it works</h4>
-      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+      <div class="bg-navy-700 border border-line rounded-xl p-5 mb-6">
         <ol class="list-decimal pl-5 space-y-2.5">
           <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Call the endpoint</span><span class="text-gray-400"> &mdash; your agent POSTs to an x402 route (e.g. <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">/x402/get_trade_call</code>) with no payment attached.</span></li>
           <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Receive a 402 quote</span><span class="text-gray-400"> &mdash; the server replies <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">402 Payment Required</code> with the price, asset (USDC), network (Base), and recipient address.</span></li>
@@ -1063,7 +1063,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
 
       <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick start (TypeScript)</h4>
       <p class="text-gray-400 text-sm mb-3 leading-relaxed">The official <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code> client wraps <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">fetch</code> and runs the 402 &rarr; sign &rarr; retry handshake for you. Your wallet just needs USDC on Base.</p>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-6">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">// npm i x402-fetch viem
 import { wrapFetchWithPayment } from "x402-fetch";
@@ -1100,7 +1100,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
       </div>
 
       <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Endpoints &amp; pricing</h4>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-4">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-4">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Endpoint</th>
           <th class="text-right text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Price / call</th>
@@ -1116,7 +1116,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
             <h4 id="knowledge-tools-api" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-8">HTTP API (search &amp; chat)</h4>
       <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. Send a JSON body, read a JSON response &mdash; no JSON-RPC envelope, no dual <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">Accept</code> header, no SSE to unwrap.</p>
       <p class="text-gray-400 text-sm mb-5">Trade calls are served over <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST /mcp</code> and the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">/x402/*</code> routes. There is no separate <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">/api/trade-call</code> endpoint.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Endpoint</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Body</th>
@@ -1136,7 +1136,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
       <p class="text-gray-500 text-sm mb-6">Stop polling. Register an HTTPS endpoint and AlgoVault POSTs you a signed event the instant a new trade call fires, the regime shifts, or a scheduled scan completes &mdash; every delivery is HMAC-signed, idempotent, and retried. Needs a free or paid <code class="text-xs bg-navy-800 px-1 rounded">av_live_</code> key (get one in your <a href="https://api.algovault.com/account" class="text-mint-400 hover:underline">account</a>).</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Events</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-6">
         <tbody>
           <tr class="param-row"><td class="text-gray-400 align-top w-40"><code class="text-xs">trade_call</code></td><td class="text-gray-300 text-sm">A new BUY/SELL trade call is recorded for an asset you track.</td></tr>
           <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">regime_shift</code></td><td class="text-gray-300 text-sm">The market regime for <code class="text-xs bg-navy-800 px-1 rounded">(coin, timeframe, exchange)</code> changes vs the previous call.</td></tr>
@@ -1145,7 +1145,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
       </table>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Subscribe</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/webhooks \
   -H "Authorization: Bearer av_live_..." \
@@ -1161,7 +1161,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
       <p class="text-gray-500 text-xs mb-6">Filters are optional &mdash; omit them to receive every call. <code class="text-xs bg-navy-800 px-1 rounded">assets</code> accepts coin symbols or a <code class="text-xs bg-navy-800 px-1 rounded">top:N</code> token (N 1&ndash;100); <code class="text-xs bg-navy-800 px-1 rounded">min_confidence</code> is 0&ndash;100. For <code class="text-xs bg-navy-800 px-1 rounded">scan_digest</code> add <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">top_n</code> (1&ndash;100) and <code class="text-xs bg-navy-800 px-1 rounded">cadence</code> (1h/4h/1d). The response includes a per-subscription <code class="text-xs bg-navy-800 px-1 rounded">secret</code> &mdash; store it to verify signatures.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Manage</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-6">
         <tbody>
           <tr class="param-row"><td class="text-gray-300 align-top w-64"><code class="text-xs">GET /api/webhooks</code></td><td class="text-gray-400 text-sm">List your active subscriptions.</td></tr>
           <tr class="param-row"><td class="text-gray-300 align-top"><code class="text-xs">DELETE /api/webhooks/:id</code></td><td class="text-gray-400 text-sm">Remove a subscription.</td></tr>
@@ -1171,7 +1171,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Delivery &amp; signature</h3>
       <p class="text-gray-400 text-sm mb-4">Each delivery is a POST to your URL with these headers:</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-4">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-4">
         <tbody>
           <tr class="param-row"><td class="text-gray-400 align-top w-56"><code class="text-xs">X-AlgoVault-Event</code></td><td class="text-gray-300 text-sm">The event type.</td></tr>
           <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Delivery</code></td><td class="text-gray-300 text-sm">Unique delivery id &mdash; use it as an idempotency key.</td></tr>
@@ -1179,7 +1179,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
           <tr class="param-row" style="border-bottom:none"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Signature</code></td><td class="text-gray-300 text-sm"><code class="text-xs bg-navy-800 px-1 rounded">HMAC-SHA256(secret, "{timestamp}.{rawBody}")</code> in hex &mdash; recompute and constant-time compare before trusting a payload.</td></tr>
         </tbody>
       </table>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">{
   "event": "trade_call",
@@ -1226,7 +1226,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
   <p class="text-gray-400 text-sm mb-6">Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier (no key) also works for <strong>every coin + every timeframe</strong>, capped at 200 calls/month, and at 100 calls per UTC day.</p>
 
   <div class="overflow-x-auto mb-6">
-    <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden text-sm">
+    <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden text-sm">
       <thead><tr class="border-b border-white/5">
         <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Surface</th>
         <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Setup</th>
@@ -1297,12 +1297,12 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
     </table>
   </div>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Claude Desktop &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p><strong>Easiest path (UI):</strong> Open Claude Desktop &rarr; <em>Settings</em> &rarr; <em>Connectors</em> &rarr; <em>Add custom connector</em>. Name it <code class="text-xs bg-navy-800 px-1 rounded">AlgoVault</code>. URL: <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp?src=docs</code>. Add <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code> as a custom header (paid tier). Save and restart Claude Desktop.</p>
       <p><strong>JSON path:</strong> Edit <code class="text-xs bg-navy-800 px-1 rounded">~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or <code class="text-xs bg-navy-800 px-1 rounded">%APPDATA%\Claude\claude_desktop_config.json</code> (Windows):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {
@@ -1319,11 +1319,11 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Cursor &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.cursor/mcp.json</code> (global, all projects) or <code class="text-xs bg-navy-800 px-1 rounded">.cursor/mcp.json</code> in the project root (per-project, commit-friendly):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {
@@ -1340,11 +1340,11 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Cline (VSCode) &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Open the Cline panel in VSCode &rarr; <em>MCP Servers</em> &rarr; <em>Remote Servers</em> tab &rarr; <em>Add server</em>. Or edit <code class="text-xs bg-navy-800 px-1 rounded">cline_mcp_settings.json</code> (path varies by OS; access via <em>Configure MCP Servers</em>):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {
@@ -1364,17 +1364,17 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Claude Code &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p><strong>One-liner (recommended):</strong></p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">claude mcp add --transport http --scope project algovault https://api.algovault.com/mcp?src=docs \
   --header "Authorization: Bearer $AV_API_KEY" \
   --header "X-AlgoVault-Track-Token:chan-docs"</code></pre>
       </div>
       <p>This writes a <code class="text-xs bg-navy-800 px-1 rounded">.mcp.json</code> in your repo root which you can commit so every teammate gets the same MCP config:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {
@@ -1392,11 +1392,11 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Smithery &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>The Smithery CLI installs and configures the MCP server in your client of choice automatically:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300"># Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code
 npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</code></pre>
       </div>
@@ -1404,23 +1404,23 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Plain HTTP / curl &mdash; advanced testing</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. The transport is stateless, so a single POST of <em>tools/call</em> works: no <em>initialize</em>, no session id. See <a href="#testing-with-curl" class="text-mint-400 hover:underline">Testing with raw HTTP / curl</a> for the one-shot call, the two <code class="text-xs bg-navy-800 px-1 rounded">Accept</code> types you must send, and the optional session handshake.</p>
       <p><strong>One-shot smoke (free tier, no auth):</strong></p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">curl -sS https://api.algovault.com/health</code></pre>
       </div>
       <p>Returns <code class="text-xs bg-navy-800 px-1 rounded">{"status":"ok","version":"1.10.3","stripe":true}</code>.</p>
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Codex &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Codex reads MCP servers from <code class="text-xs bg-navy-800 px-1 rounded">~/.codex/config.toml</code>. Add a table for AlgoVault:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">[mcp_servers.algovault]
 url = "https://api.algovault.com/mcp?src=docs"
 bearer_token_env_var = "AV_API_KEY"
@@ -1434,11 +1434,11 @@ bearer_token_env_var = "AV_API_KEY"
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Kimi Code &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.kimi-code/mcp.json</code> (user level) or <code class="text-xs bg-navy-800 px-1 rounded">.kimi-code/mcp.json</code> (project level). An entry carrying a <code class="text-xs">url</code> and no <code class="text-xs">transport</code> is an HTTP server:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {
@@ -1456,11 +1456,11 @@ bearer_token_env_var = "AV_API_KEY"
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">ZCode (GLM) &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Open <em>Settings</em> &rarr; <em>MCP Servers</em>, then click <em>New MCP Server</em> at the top right. Choose <code class="text-xs bg-navy-800 px-1 rounded">HTTP</code> as the type and enter:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">https://api.algovault.com/mcp?src=docs</code></pre>
       </div>
       <p>For paid tier, expand <em>Headers (optional)</em> and add <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code>. Free tier needs no header.</p>
@@ -1469,13 +1469,13 @@ bearer_token_env_var = "AV_API_KEY"
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">DeepSeek Harness &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>One step: patch the profile. There is no plugin to install &mdash; the <code class="text-xs bg-navy-800 px-1 rounded">dsh</code> CLI ships <code class="text-xs">@deepseek-ai/dsh-mcp-client</code> in its own dependency closure, and the bridge’s README says one entry per server is the entire setup.</p>
       <p>The bundles are a red herring: <code class="text-xs">base</code>, <code class="text-xs">headless</code> and <code class="text-xs">web-app</code> declare zero MCP dependencies, but a bare plugin <code class="text-xs">name</code> resolves through the profile’s Node parent walk to <code class="text-xs">$DSH_HOME/profiles/node_modules</code>, which the CLI closure feeds. Nothing is enabled by default because DSH treats each server as trusted code outside the sandbox &mdash; the entry below is the opt-in.</p>
       <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.dsh/profiles/&lt;name&gt;/cordis.patch.yml</code>, or <code class="text-xs">~/.dsh/cordis.patch.yml</code> for every profile:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">- insert:
     - id: mcp-algovault
       name: '@deepseek-ai/dsh-mcp-client'
@@ -1495,11 +1495,11 @@ bearer_token_env_var = "AV_API_KEY"
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Z.ai API &mdash; server-side, no client needed</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Z.ai dials the MCP server itself, so there is nothing to install locally. Declare AlgoVault as a tool on the request:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "model": "glm-4.6",
   "messages": [{"role": "user", "content": "Trade call for BTC on the 1h timeframe"}],
@@ -1517,11 +1517,11 @@ bearer_token_env_var = "AV_API_KEY"
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">DeepSeek &mdash; bring your own model</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>DeepSeek’s own harness connects to AlgoVault directly &mdash; see the <a class="text-mint-400 hover:underline" href="/integrations/deepseek-harness">DeepSeek Harness tutorial</a>. This row is the other path: keep the harness you already run and swap the model behind it. The DeepSeek API itself still exposes no MCP parameter, so the harness carries the tools.</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
 export ANTHROPIC_AUTH_TOKEN="$DEEPSEEK_API_KEY"
 
@@ -1559,7 +1559,7 @@ claude mcp add --transport http --scope project algovault \
   <p class="text-gray-400 text-sm mb-6">Building on a major agent framework? AlgoVault MCP plugs into 4 of them via the framework's canonical MCP-adapter library. Each pairing ships with a runnable Python demo.</p>
 
   <div class="overflow-x-auto mb-6">
-    <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden text-sm">
+    <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden text-sm">
       <thead><tr class="border-b border-white/5">
         <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Framework</th>
         <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Setup</th>
@@ -1590,15 +1590,15 @@ claude mcp add --transport http --scope project algovault \
     </table>
   </div>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">LangChain &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Install the canonical bridge maintained by LangChain:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install langchain-mcp-adapters</code></pre>
       </div>
       <p>Connect once, then call tools from any LangChain agent:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">from langchain_mcp_adapters.client import MultiServerMCPClient
 
 client = MultiServerMCPClient({"algovault": {
@@ -1611,15 +1611,15 @@ verdict = await tools[0].ainvoke({"coin": "BTC", "timeframe": "4h"})</code></pre
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">LlamaIndex &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Install the canonical bridge maintained by LlamaIndex:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install llama-index-tools-mcp</code></pre>
       </div>
       <p>Call directly via <code class="text-xs bg-navy-800 px-1 rounded">BasicMCPClient</code>, or adapt its tools to <code class="text-xs">FunctionTool</code> via <code class="text-xs">McpToolSpec</code>:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">from llama_index.tools.mcp import BasicMCPClient
 
 client = BasicMCPClient("https://api.algovault.com/mcp")
@@ -1630,15 +1630,15 @@ result = await client.call_tool(
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Microsoft Agent Framework &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Install the framework (MCP support is built in):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install agent-framework</code></pre>
       </div>
       <p>Open an MCP session, call tools directly, or hand the tool to a <code class="text-xs bg-navy-800 px-1 rounded">ChatAgent</code>:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">from agent_framework import MCPStreamableHTTPTool
 
 tool = MCPStreamableHTTPTool(
@@ -1654,15 +1654,15 @@ async with tool:
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">CrewAI &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Install CrewAI with the MCP extras (the canonical adapter):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install crewai 'crewai-tools[mcp]'</code></pre>
       </div>
       <p>Open the adapter as a context manager; all 4 AlgoVault tools land as CrewAI <code class="text-xs bg-navy-800 px-1 rounded">BaseTool</code> objects:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">from crewai_tools import MCPServerAdapter
 
 server_params = {"url": "https://api.algovault.com/mcp",
@@ -1697,7 +1697,7 @@ with MCPServerAdapter(server_params) as tools:
   <p class="text-gray-400 text-sm mb-6">Already running an exchange's Agent Trade Kit? Pair AlgoVault's composite verdict with the kit's execution layer. AlgoVault returns analytics; the exchange kit places orders; your agent decides.</p>
 
   <div class="overflow-x-auto mb-6">
-    <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden text-sm">
+    <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden text-sm">
       <thead><tr class="border-b border-white/5">
         <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Exchange</th>
         <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Setup</th>
@@ -1773,12 +1773,12 @@ with MCPServerAdapter(server_params) as tools:
     </table>
   </div>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Binance &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p><strong>On Binance Agent OS?</strong> That path needs no API keys &mdash; OAuth, an isolated Agentic sub-account, and no withdrawal scope. <a href="/integrations/binance-agent-os" class="text-mint-400 hover:underline">Start there instead &rarr;</a></p>
       <p>For the direct API path, install AlgoVault&rsquo;s plugin and the Binance Skills Hub:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">claude plugin install AlgoVaultLabs/algovault-skills
 npx skills add https://github.com/binance/binance-skills-hub</code></pre>
       </div>
@@ -1788,11 +1788,11 @@ npx skills add https://github.com/binance/binance-skills-hub</code></pre>
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Binance Agent OS &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Add both servers to one MCP client &mdash; AlgoVault decides, Binance executes:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic
 claude mcp add --transport http --scope project algovault \
   https://api.algovault.com/mcp?src=binance_agent_os</code></pre>
@@ -1803,11 +1803,11 @@ claude mcp add --transport http --scope project algovault \
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">OKX &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Install OKX's official trade MCP server in your client config:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {"url": "https://api.algovault.com/mcp"},
@@ -1820,11 +1820,11 @@ claude mcp add --transport http --scope project algovault \
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Bybit &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Wire Bybit's official server next to AlgoVault:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {"url": "https://api.algovault.com/mcp"},
@@ -1837,11 +1837,11 @@ claude mcp add --transport http --scope project algovault \
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Bitget &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Bitget exposes a dedicated AI sub-account ("GetClaw") for agent execution:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {"url": "https://api.algovault.com/mcp"},
@@ -1854,11 +1854,11 @@ claude mcp add --transport http --scope project algovault \
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Gemini &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Build Gemini's self-hosted MCP from source, alongside AlgoVault:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">git clone https://github.com/gemini/developer-platform
 cd developer-platform/packages/mcp-server
 npm install
@@ -1869,11 +1869,11 @@ npm run build</code></pre>
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Kraken &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Install the Kraken CLI (one binary), then serve it over MCP next to AlgoVault:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">curl --proto '=https' --tlsv1.2 -LsSf https://github.com/krakenfx/kraken-cli/releases/latest/download/kraken-cli-installer.sh | sh
 kraken mcp -s all</code></pre>
       </div>
@@ -1882,11 +1882,11 @@ kraken mcp -s all</code></pre>
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Alpaca &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Run Alpaca's crypto MCP Server zero-install, scoped to crypto toolsets, alongside AlgoVault:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {"url": "https://api.algovault.com/mcp"},
@@ -1899,11 +1899,11 @@ kraken mcp -s all</code></pre>
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Hyperliquid &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Hyperliquid signs orders with an EIP-712 wallet signature; the official Python SDK implements both signing schemes:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install hyperliquid-python-sdk
 
 from hyperliquid.exchange import Exchange
@@ -1915,11 +1915,11 @@ exchange = Exchange(wallet, constants.TESTNET_API_URL, account_address=MASTER)</
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Aster &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Aster publishes nothing to npm or PyPI &mdash; the official connector installs from git:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install git+https://github.com/asterdex/aster-connector-python.git
 
 # testnet base: https://fapi.asterdex-testnet.com
@@ -1930,11 +1930,11 @@ exchange = Exchange(wallet, constants.TESTNET_API_URL, account_address=MASTER)</
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">BingX &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>BingX publishes no official client SDK, so the demo is dependency-free:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300"># demo host (paper trading, no real funds)
 https://open-api-vst.bingx.com
 
@@ -1946,11 +1946,11 @@ POST /openApi/swap/v2/trade/getVst       # top up demo balance</code></pre>
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">KuCoin &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>KuCoin has no sandbox &mdash; it was delisted on 2023-07-10 and every sandbox host is NXDOMAIN. The demo uses the order-validation endpoint instead:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">npm install kucoin-universal-sdk
 
 POST https://api-futures.kucoin.com/api/v1/orders/test
@@ -1961,11 +1961,11 @@ POST https://api-futures.kucoin.com/api/v1/orders/test
     </div>
   </details>
 
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Gate.io &mdash; setup walkthrough</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
       <p>Gate moved its futures testnet &mdash; and <code class="text-xs bg-navy-800 px-1 rounded">gate-api</code> 7.2.100 still ships the old host as its default, so set the base URL explicitly:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">import gate_api
 cfg = gate_api.Configuration(
     host="https://api-testnet.gateapi.io/api/v4",   # NOT the SDK default
@@ -2004,14 +2004,14 @@ cfg = gate_api.Configuration(
       <div class="grid gap-4">
 
         <!-- 1 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">01</span>
             <h3 class="text-white font-semibold text-sm">Quick BTC Check</h3>
             <span class="text-xs text-gray-600 ml-auto">Beginner</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">The simplest possible call. Ask your agent for a single trade call.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get me a trade call for BTC on the 1h timeframe"</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get me a trade call for BTC on the 1h timeframe"</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code></div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2022,14 +2022,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 2 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">02</span>
             <h3 class="text-white font-semibold text-sm">Portfolio Scanner</h3>
             <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Loop through the top 10 assets, get trade calls for each, and filter by high confidence.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, SOL, DOGE, XRP, ADA, AVAX, LINK, DOT, and MATIC on the 15m timeframe. Only show me the ones with confidence above 70%."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, SOL, DOGE, XRP, ADA, AVAX, LINK, DOT, and MATIC on the 15m timeframe. Only show me the ones with confidence above 70%."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 10 &nbsp;|&nbsp; Pattern: batch calling, confidence filtering</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2040,14 +2040,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 3 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">03</span>
             <h3 class="text-white font-semibold text-sm">Regime-Aware Trading</h3>
             <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Check the market regime first. Only request trade calls when the regime is favorable for directional trading.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"First check the market regime for ETH on the 4h timeframe. If it's TRENDING_UP or TRENDING_DOWN, get me a trade call on the 15m timeframe. If it's RANGING or VOLATILE, skip it."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"First check the market regime for ETH on the 4h timeframe. If it's TRENDING_UP or TRENDING_DOWN, get me a trade call on the 15m timeframe. If it's RANGING or VOLATILE, skip it."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: conditional chaining</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2058,14 +2058,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 4 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">04</span>
             <h3 class="text-white font-semibold text-sm">Funding Arb Monitor</h3>
             <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Scan for cross-venue funding rate arbitrage opportunities. Alert when the annualized spread exceeds your threshold.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan for funding arbitrage opportunities with a minimum spread of 10 basis points. Show me the top 5 ranked by annualized return."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan for funding arbitrage opportunities with a minimum spread of 10 basis points. Show me the top 5 ranked by annualized return."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: threshold-based alerting</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2076,14 +2076,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 5 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">05</span>
             <h3 class="text-white font-semibold text-sm">Full 3-Tool Pipeline</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">The complete AlgoVault workflow: regime detection, trade call, then arb check for the same asset. Maximum context for one decision.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For SOL: first get the market regime on 4h, then get a trade call on 15m, then check if there are any funding arb opportunities. Give me a combined recommendation based on all three."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For SOL: first get the market regime on 4h, then get a trade call on 15m, then check if there are any funding arb opportunities. Give me a combined recommendation based on all three."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &rarr; <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: full pipeline composition</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2094,14 +2094,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 6 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">06</span>
             <h3 class="text-white font-semibold text-sm">Multi-Timeframe Confirmation</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Get trade calls on multiple timeframes for the same asset. Only act when all timeframes agree on direction.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for ETH on the 5m, 15m, and 1h timeframes. Only tell me to trade if all three agree on the same direction (all BUY or all SELL)."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for ETH on the 5m, 15m, and 1h timeframes. Only tell me to trade if all three agree on the same direction (all BUY or all SELL)."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 3 &nbsp;|&nbsp; Pattern: multi-timeframe consensus</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2112,14 +2112,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 7 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">07</span>
             <h3 class="text-white font-semibold text-sm">TradFi Rotation</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Compare regime and direction across TradFi perpetuals. Rotate into the asset with the strongest trend.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime and trade call for TSLA, GOLD, and SP500 on the 4h timeframe. Which one has the strongest trend with the highest confidence trade call? Recommend the best one to trade."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime and trade call for TSLA, GOLD, and SP500 on the 4h timeframe. Which one has the strongest trend with the highest confidence trade call? Recommend the best one to trade."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 3 + <code class="text-xs">get_trade_call</code> &times; 3 &nbsp;|&nbsp; Pattern: cross-asset comparison</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2130,14 +2130,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 8 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">08</span>
             <h3 class="text-white font-semibold text-sm">Risk-Gated Entry</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Only enter trades when both confidence and regime alignment pass your risk filters. Skip everything else.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check BTC regime on 4h, then get a trade call on 15m. Only recommend entry if confidence is 75% or higher AND the regime is TRENDING (not VOLATILE or RANGING). Otherwise say 'no trade'."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check BTC regime on 4h, then get a trade call on 15m. Only recommend entry if confidence is 75% or higher AND the regime is TRENDING (not VOLATILE or RANGING). Otherwise say 'no trade'."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: dual risk filter</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2148,14 +2148,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 9 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">09</span>
             <h3 class="text-white font-semibold text-sm">Funding Sentiment Dashboard</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Get market regime for major assets and use the cross-venue funding sentiment to gauge overall market bias.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for BTC, ETH, and SOL on the 4h timeframe. Summarize the cross-venue funding sentiment for each. Is the overall market leaning bullish or bearish based on where funding is concentrated?"</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for BTC, ETH, and SOL on the 4h timeframe. Summarize the cross-venue funding sentiment for each. Is the overall market leaning bullish or bearish based on where funding is concentrated?"</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 3 &nbsp;|&nbsp; Pattern: macro sentiment aggregation</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2166,14 +2166,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 10 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">10</span>
             <h3 class="text-white font-semibold text-sm">Contrarian Meme Scanner</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Scan lower-tier assets for contrarian setups: high-confidence SELL calls during an uptrend may signal crowded longs about to unwind.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for DOGE, SHIB, PEPE, WIF, and BONK on 4h. For any that are TRENDING_UP, get a trade call on 15m. Flag any that return SELL with confidence above 70% &mdash; those might be crowded longs ready to unwind."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for DOGE, SHIB, PEPE, WIF, and BONK on 4h. For any that are TRENDING_UP, get a trade call on 15m. Flag any that return SELL with confidence above 70% &mdash; those might be crowded longs ready to unwind."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 5 + <code class="text-xs">get_trade_call</code> (conditional) &nbsp;|&nbsp; Pattern: contrarian divergence detection</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2184,14 +2184,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 11 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">11</span>
             <h3 class="text-white font-semibold text-sm">Divergence Detector</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Compare trade call direction vs market regime. When they disagree, flag it as a high-risk divergence.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For BTC and ETH: get the market regime on 4h and a trade call on 15m. If the trade call says BUY but the regime is TRENDING_DOWN (or vice versa), flag it as a divergence with a risk warning."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For BTC and ETH: get the market regime on 4h and a trade call on 15m. If the trade call says BUY but the regime is TRENDING_DOWN (or vice versa), flag it as a divergence with a risk warning."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> + <code class="text-xs">get_trade_call</code> per asset &nbsp;|&nbsp; Pattern: signal-regime divergence</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2202,14 +2202,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 12 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">12</span>
             <h3 class="text-white font-semibold text-sm">Hourly Digest Bot</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Build an automated digest: scan all tier-1 and tier-2 assets every hour, summarize trade calls and market regime into a brief report.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan BTC, ETH, SOL, AVAX, LINK, DOGE, XRP, ADA for trade calls on 1h. Also get the market regime for BTC and ETH on 4h. Summarize as a brief market digest: how many BUYs vs SELLs, overall regime, and top 3 highest-confidence calls."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan BTC, ETH, SOL, AVAX, LINK, DOGE, XRP, ADA for trade calls on 1h. Also get the market regime for BTC and ETH on 4h. Summarize as a brief market digest: how many BUYs vs SELLs, overall regime, and top 3 highest-confidence calls."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 8 + <code class="text-xs">get_market_regime</code> &times; 2 &nbsp;|&nbsp; Pattern: periodic digest, notification-ready</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2220,14 +2220,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 13 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">13</span>
             <h3 class="text-white font-semibold text-sm">Hedging Advisor</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">You hold a long ETH position. Check regime and trade call — if both turn bearish, look for a funding arb to hedge via the cheaper venue.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I'm currently long ETH. Get the market regime on 4h and a trade call on 1h. If both are bearish, scan funding arb for ETH and tell me which venue has the cheapest short to hedge my position."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I'm currently long ETH. Get the market regime on 4h and a trade call on 1h. If both are bearish, scan funding arb for ETH and tell me which venue has the cheapest short to hedge my position."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &rarr; <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: defensive hedging</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2238,14 +2238,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 14 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">14</span>
             <h3 class="text-white font-semibold text-sm">Volatility Breakout Watch</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Use regime detection as a screener: find assets in VOLATILE regime with high confidence — these are breakout candidates. Then get trade call for direction.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check the market regime for BTC, ETH, SOL, AVAX, LINK, and DOGE on 4h. For any in VOLATILE regime with confidence above 70%, get a trade call on 5m. Those are potential breakout trades."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check the market regime for BTC, ETH, SOL, AVAX, LINK, and DOGE on 4h. For any in VOLATILE regime with confidence above 70%, get a trade call on 5m. Those are potential breakout trades."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 6 + <code class="text-xs">get_trade_call</code> (conditional) &nbsp;|&nbsp; Pattern: regime as screener</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2256,14 +2256,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 15 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">15</span>
             <h3 class="text-white font-semibold text-sm">Cross-Asset Correlation</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Get trade calls for BTC, ETH, SOL simultaneously. If all say SELL, it's a macro risk-off signal, not just one asset.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, and SOL on the 1h timeframe. If all three say the same direction, flag it as a market-wide move. If they disagree, note which ones are diverging."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, and SOL on the 1h timeframe. If all three say the same direction, flag it as a market-wide move. If they disagree, note which ones are diverging."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 3 &nbsp;|&nbsp; Pattern: correlation / macro signal</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2274,14 +2274,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 16 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">16</span>
             <h3 class="text-white font-semibold text-sm">Funding Cash-and-Carry</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Find a funding arb spread, then get a trade call on the long side. If the trade call agrees with the long direction, you have double conviction.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan funding arb with minimum 10 bps spread. For the top opportunity, get a trade call for the asset on 15m. If the trade call agrees with the long side of the arb, flag it as a high-conviction cash-and-carry setup."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan funding arb with minimum 10 bps spread. For the top opportunity, get a trade call for the asset on 15m. If the trade call agrees with the long side of the arb, flag it as a high-conviction cash-and-carry setup."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">scan_funding_arb</code> &rarr; <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: arb + directional alignment</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2292,14 +2292,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 17 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">17</span>
             <h3 class="text-white font-semibold text-sm">Weekend vs Weekday Patterns</h3>
             <span class="text-xs text-purple-400 ml-auto">Research</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Schedule trade calls every 4 hours, log results over time. Compare weekend vs weekday regime patterns to find exploitable edges.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Every 4 hours, get a trade call for BTC on 4h and log the regime, direction, and confidence. After a week, compare weekend vs weekday patterns. Are weekends more RANGING? Do SELL calls cluster on Sundays?"</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Every 4 hours, get a trade call for BTC on 4h and log the regime, direction, and confidence. After a week, compare weekend vs weekday patterns. Are weekends more RANGING? Do SELL calls cluster on Sundays?"</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> + <code class="text-xs">get_market_regime</code> (scheduled) &nbsp;|&nbsp; Pattern: data collection, research</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2310,14 +2310,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 18 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">18</span>
             <h3 class="text-white font-semibold text-sm">Agent Portfolio Rebalance</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Daily regime check for each asset in your portfolio. Shift allocation toward TRENDING assets, reduce exposure to VOLATILE/RANGING positions.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"My portfolio holds BTC, ETH, SOL, AVAX, and LINK. Get the market regime for each on the 1d timeframe. Recommend which ones to overweight (TRENDING) and which to underweight (VOLATILE or RANGING)."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"My portfolio holds BTC, ETH, SOL, AVAX, and LINK. Get the market regime for each on the 1d timeframe. Recommend which ones to overweight (TRENDING) and which to underweight (VOLATILE or RANGING)."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 5 &nbsp;|&nbsp; Pattern: regime-based portfolio allocation</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2328,14 +2328,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 19 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">19</span>
             <h3 class="text-white font-semibold text-sm">Smart DCA Bot</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Dollar-cost averaging, enhanced: skip buys when the trade call says SELL with high confidence. Only DCA when direction is neutral or favorable.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I DCA into BTC every day. Before today's buy, get a trade call on the 4h timeframe. If it says SELL with confidence above 70%, skip today's buy and wait. Otherwise proceed normally."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I DCA into BTC every day. Before today's buy, get a trade call on the 4h timeframe. If it says SELL with confidence above 70%, skip today's buy and wait. Otherwise proceed normally."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: strategy enhancement, DCA optimization</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2346,14 +2346,14 @@ cfg = gate_api.Configuration(
         </div>
 
         <!-- 20 -->
-        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="example-card bg-navy-700 border border-line rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
             <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">20</span>
             <h3 class="text-white font-semibold text-sm">Multi-Agent War Room</h3>
             <span class="text-xs text-red-400 ml-auto">Expert</span>
           </div>
           <p class="text-gray-400 text-sm mb-3">Three specialized agents, one coordinator. Agent A handles regime detection, Agent B runs trade calls, Agent C monitors funding arbs. The coordinator synthesizes all three into a single decision.</p>
-          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Set up three agents: Agent A gets market regime for BTC, ETH, SOL on 4h. Agent B gets trade calls for the same assets on 15m. Agent C scans funding arb for spreads above 8 bps. Combine all results into a single dashboard showing: regime, direction, confidence, and best arb for each asset."</div>
+          <div class="bg-well rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Set up three agents: Agent A gets market regime for BTC, ETH, SOL on 4h. Agent B gets trade calls for the same assets on 15m. Agent C scans funding arb for spreads above 8 bps. Combine all results into a single dashboard showing: regime, direction, confidence, and best arb for each asset."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: All core tools in parallel &nbsp;|&nbsp; Pattern: multi-agent orchestration</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
@@ -2412,12 +2412,12 @@ cfg = gate_api.Configuration(
       </div>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Verification Endpoints</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-4">
         <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/verify-signal?signalId=<ID>');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">GET /api/verify-signal?signalId=&lt;ID&gt;</code></pre>
         <p class="text-gray-500 text-xs mt-2">Returns: call details, hash, Merkle proof, batch info, Basescan tx link, and a boolean <code class="text-xs bg-navy-800 px-1 rounded">verified</code> field.</p>
       </div>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-6">
         <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/merkle-batches');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">GET /api/merkle-batches</code></pre>
         <p class="text-gray-500 text-xs mt-2">Returns: list of all published batches with root hashes, call counts, tx hashes, and Basescan links.</p>
@@ -2427,7 +2427,7 @@ cfg = gate_api.Configuration(
       <p class="text-gray-400 text-sm mb-6">Visit <a href="/verify" class="text-mint-400 hover:underline">algovault.com/verify</a> to look up any call and see its on-chain proof in a human-readable format.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Contract Details</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-6">
         <tbody>
           <tr class="param-row"><td class="text-gray-400">Address</td><td class="text-gray-300"><code class="text-xs">0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81</code></td></tr>
           <tr class="param-row"><td class="text-gray-400">Chain</td><td class="text-gray-300">Base (chain ID 8453)</td></tr>
@@ -2450,7 +2450,7 @@ cfg = gate_api.Configuration(
       <p class="text-gray-500 text-sm mb-6">Two payment rails: Stripe subscriptions for human developers, x402 micropayments (USDC on Base) for autonomous agents.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Subscription Tiers</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-8">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-8">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3"></th>
           <th class="text-center text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Free</th>
@@ -2475,7 +2475,7 @@ cfg = gate_api.Configuration(
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">What happens after you subscribe</h3>
       <!-- BUILD:signup-flow:start -->
-      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-8">
+      <div class="bg-navy-700 border border-line rounded-xl p-5 mb-8">
         <ol class="list-decimal pl-5 space-y-2.5">
         <li class="text-gray-300 text-sm leading-relaxed">
           <span class="font-semibold text-white">Click "Subscribe to [Plan]"</span>
@@ -2487,11 +2487,11 @@ cfg = gate_api.Configuration(
         </li>
         <li class="text-gray-300 text-sm leading-relaxed">
           <span class="font-semibold text-white">Land on the Welcome page</span>
-          <span class="text-gray-400"> — Your API key is shown in green — copy it. We also email it to your billing address (check spam, sender: <code class="text-xs bg-navy-700/60 border border-white/5 rounded px-1.5 py-0.5 text-emerald-400">noreply@algovault.com</code>).</span>
+          <span class="text-gray-400"> — Your API key is shown in green — copy it. We also email it to your billing address (check spam, sender: <code class="text-xs bg-navy-700/60 border border-line rounded px-1.5 py-0.5 text-emerald-400">noreply@algovault.com</code>).</span>
         </li>
         <li class="text-gray-300 text-sm leading-relaxed">
           <span class="font-semibold text-white">Make your first call</span>
-          <span class="text-gray-400"> — <code class="text-xs bg-navy-700/60 border border-white/5 rounded px-1.5 py-0.5 text-emerald-400">curl -H "Authorization: Bearer av_live_…" https://api.algovault.com/mcp …</code> or paste the key into your Claude Desktop / Cursor / Claude Code MCP config. Need to find your key later? Visit <code class="text-xs bg-navy-700/60 border border-white/5 rounded px-1.5 py-0.5 text-emerald-400">/account</code>.</span>
+          <span class="text-gray-400"> — <code class="text-xs bg-navy-700/60 border border-line rounded px-1.5 py-0.5 text-emerald-400">curl -H "Authorization: Bearer av_live_…" https://api.algovault.com/mcp …</code> or paste the key into your Claude Desktop / Cursor / Claude Code MCP config. Need to find your key later? Visit <code class="text-xs bg-navy-700/60 border border-line rounded px-1.5 py-0.5 text-emerald-400">/account</code>.</span>
         </li>
         </ol>
       </div>
@@ -2504,7 +2504,7 @@ cfg = gate_api.Configuration(
       <h2 class="text-2xl font-bold text-white mb-5 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> FAQ</h2>
 
       <div class="space-y-3">
-        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <details class="bg-navy-700 border border-line rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
             How often should I call get_trade_call?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
@@ -2514,7 +2514,7 @@ cfg = gate_api.Configuration(
           </div>
         </details>
 
-        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <details class="bg-navy-700 border border-line rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
             Can I combine multiple tools in one workflow?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
@@ -2524,7 +2524,7 @@ cfg = gate_api.Configuration(
           </div>
         </details>
 
-        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <details class="bg-navy-700 border border-line rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
             What's the latency per call?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
@@ -2534,7 +2534,7 @@ cfg = gate_api.Configuration(
           </div>
         </details>
 
-        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <details class="bg-navy-700 border border-line rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
             How is trade call performance tracked?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
@@ -2544,7 +2544,7 @@ cfg = gate_api.Configuration(
           </div>
         </details>
 
-        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <details class="bg-navy-700 border border-line rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
             What assets are supported?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
@@ -2554,7 +2554,7 @@ cfg = gate_api.Configuration(
           </div>
         </details>
 
-        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <details class="bg-navy-700 border border-line rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
             Do you provide exit calls?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
@@ -2564,7 +2564,7 @@ cfg = gate_api.Configuration(
           </div>
         </details>
 
-        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <details class="bg-navy-700 border border-line rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
             What is x402 and how do agent payments work?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
@@ -2574,7 +2574,7 @@ cfg = gate_api.Configuration(
           </div>
         </details>
 
-        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <details class="bg-navy-700 border border-line rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
             How do I verify a call's integrity?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
@@ -2584,7 +2584,7 @@ cfg = gate_api.Configuration(
           </div>
         </details>
 
-        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <details class="bg-navy-700 border border-line rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
             Can I run AlgoVault locally?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>

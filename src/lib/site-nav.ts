@@ -32,7 +32,7 @@ const SIGNUP_PILL =
 const MOBILE_SIGNUP_PILL = `${SIGNUP_PILL} min-h-[44px] inline-flex items-center`;
 const PANEL_CARD = 'rounded-xl border border-white/10 p-4'; // navy card shared by mega + simple dropdown panels
 const PANEL_STYLE =
-  'background:rgba(10,14,26,0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)';
+  'background:oklch(var(--bg-2-lch, 0.19 0.014 265) / 0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)';
 
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 /** Off-site items (t.me, …) get target=_blank + rel=noopener (tabnabbing + external-link discipline). */
@@ -158,7 +158,7 @@ function mobileDrawer(model: NavModel): string {
         : mobileAccordion(g as NavDropdown),
     )
     .join('\n');
-  return `<div id="mobile-menu" data-mobile-nav-panel class="hidden sm:hidden border-t border-white/5" style="background:rgba(6,10,20,0.97);backdrop-filter:blur(12px)">
+  return `<div id="mobile-menu" data-mobile-nav-panel class="hidden sm:hidden border-t border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.97);backdrop-filter:blur(12px)">
 ${body}
         <div class="px-6 py-3">
           <a href="${model.cta.href}" class="block px-4 py-3 rounded-lg text-sm text-center bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 font-semibold transition">${esc(model.cta.label)}</a>
@@ -240,7 +240,7 @@ const NAV_SCRIPT = `<script>
  */
 export function renderSiteNav(): string {
   const model = buildNavModel();
-  return `<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+  return `<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
     <a href="${model.brand.href}" class="flex items-center gap-2.5" aria-label="AlgoVault home">
       <img src="${model.brand.logo}" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">

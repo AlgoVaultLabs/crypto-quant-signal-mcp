@@ -3,7 +3,7 @@
       <p class="text-gray-400 text-sm mb-5 leading-relaxed">No signup. No API key. No billing. Your agent pays per HTTP call with USDC on <a href="https://www.base.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">Base</a> &mdash; the payment receipt <em>is</em> the credential. Works with any x402-compatible client or wallet.</p>
 
       <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">How it works</h4>
-      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+      <div class="bg-navy-700 border border-line rounded-xl p-5 mb-6">
         <ol class="list-decimal pl-5 space-y-2.5">
           <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Call the endpoint</span><span class="text-gray-400"> &mdash; your agent POSTs to an x402 route (e.g. <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">/x402/get_trade_call</code>) with no payment attached.</span></li>
           <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Receive a 402 quote</span><span class="text-gray-400"> &mdash; the server replies <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">402 Payment Required</code> with the price, asset (USDC), network (Base), and recipient address.</span></li>
@@ -14,7 +14,7 @@
 
       <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick start (TypeScript)</h4>
       <p class="text-gray-400 text-sm mb-3 leading-relaxed">The official <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code> client wraps <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">fetch</code> and runs the 402 &rarr; sign &rarr; retry handshake for you. Your wallet just needs USDC on Base.</p>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-6">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">// npm i x402-fetch viem
 import { wrapFetchWithPayment } from "x402-fetch";
@@ -51,7 +51,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
       </div>
 
       <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Endpoints &amp; pricing</h4>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-4">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-4">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Endpoint</th>
           <th class="text-right text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Price / call</th>
@@ -67,7 +67,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
             <h4 id="knowledge-tools-api" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-8">HTTP API (search &amp; chat)</h4>
       <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. Send a JSON body, read a JSON response &mdash; no JSON-RPC envelope, no dual <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">Accept</code> header, no SSE to unwrap.</p>
       <p class="text-gray-400 text-sm mb-5">Trade calls are served over <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST /mcp</code> and the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">/x402/*</code> routes. There is no separate <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">/api/trade-call</code> endpoint.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Endpoint</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Body</th>

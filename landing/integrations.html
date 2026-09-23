@@ -43,11 +43,8 @@ tailwind.config = {
 <!-- THEME:END -->
 <style>
   html { scroll-behavior: smooth; }
-  body { background: #060a14; color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  body { background: var(--bg); color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
   code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-  .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
-  .card-hover:hover { transform: translateY(-2px); box-shadow: 0 0 30px rgba(196, 163, 74, 0.1); }
-  .glow-text { text-shadow: 0 0 30px rgba(196, 163, 74, 0.3); }
 </style>
 <script type="application/ld+json">
 {
@@ -241,7 +238,7 @@ tailwind.config = {
 
 <!-- Nav (8 items in cleanup-W1 order: Track Record / Pricing / Integrations / Skills / Docs / Verify / GitHub / Signup) -->
 <!-- NAV:START -->
-<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
     <a href="https://algovault.com/" class="flex items-center gap-2.5" aria-label="AlgoVault home">
       <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
@@ -251,7 +248,7 @@ tailwind.config = {
       <div class="relative" data-nav-dropdown>
       <button type="button" data-nav-dropdown-toggle aria-haspopup="true" aria-expanded="false" aria-controls="nav-platform-panel" class="inline-flex items-center gap-1 hover:text-white transition">Platform <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
       <div id="nav-platform-panel" data-nav-dropdown-panel class="hidden absolute left-0 top-full pt-3 z-50">
-        <div class="w-[640px] grid grid-cols-3 gap-6 rounded-xl border border-white/10 p-4" style="background:rgba(10,14,26,0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
+        <div class="w-[640px] grid grid-cols-3 gap-6 rounded-xl border border-white/10 p-4" style="background:oklch(var(--bg-2-lch, 0.19 0.014 265) / 0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
         <div>
           <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Tools</div>
           <div class="text-[11px] text-gray-500 mb-2.5">What the brain does</div>
@@ -282,7 +279,7 @@ tailwind.config = {
       <div class="relative" data-nav-dropdown>
       <button type="button" data-nav-dropdown-toggle aria-haspopup="true" aria-expanded="false" aria-controls="nav-track-record-panel" class="inline-flex items-center gap-1 hover:text-white transition">Track Record <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
       <div id="nav-track-record-panel" data-nav-dropdown-panel class="hidden absolute left-0 top-full pt-3 z-50">
-        <div class="w-60 rounded-xl border border-white/10 p-4" style="background:rgba(10,14,26,0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
+        <div class="w-60 rounded-xl border border-white/10 p-4" style="background:oklch(var(--bg-2-lch, 0.19 0.014 265) / 0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
         <a href="https://algovault.com/track-record" class="block px-3 py-2 rounded-lg hover:bg-white/5 transition group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Live Dashboard</span><span class="block text-[11px] text-gray-500">Real-time PFE win rate</span></a>
         <a href="https://algovault.com/verify" class="block px-3 py-2 rounded-lg hover:bg-white/5 transition group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Verify</span><span class="block text-[11px] text-gray-500">On-chain Merkle proofs</span></a>
         </div>
@@ -302,7 +299,7 @@ tailwind.config = {
       </button>
       </div>
   </div>
-      <div id="mobile-menu" data-mobile-nav-panel class="hidden sm:hidden border-t border-white/5" style="background:rgba(6,10,20,0.97);backdrop-filter:blur(12px)">
+      <div id="mobile-menu" data-mobile-nav-panel class="hidden sm:hidden border-t border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.97);backdrop-filter:blur(12px)">
         <button type="button" data-nav-accordion-toggle aria-expanded="false" aria-controls="nav-m-platform-panel" class="w-full flex items-center justify-between px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Platform <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
         <div id="nav-m-platform-panel" data-nav-accordion-panel class="hidden">
           <a href="https://algovault.com/tools#get-trade-call" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call</a>
@@ -420,7 +417,7 @@ tailwind.config = {
 <!-- BUILD:INTEGRATIONS_INDEX_MCP_CLIENTS:start -->
       <a href="/integrations/claude-desktop"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'claude-desktop',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Claude Desktop</h3>
@@ -433,7 +430,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/cursor"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'cursor',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Cursor</h3>
@@ -446,7 +443,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/cline"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'cline',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Cline (VSCode)</h3>
@@ -459,7 +456,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/claude-code"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'claude-code',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Claude Code</h3>
@@ -472,7 +469,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/smithery"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'smithery',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Smithery</h3>
@@ -485,7 +482,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/codex"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'codex',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Codex</h3>
@@ -498,7 +495,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/kimi"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'kimi',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Kimi Code</h3>
@@ -511,7 +508,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/glm-zcode"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'glm-zcode',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">ZCode (GLM)</h3>
@@ -524,7 +521,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/deepseek-harness"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'deepseek-harness',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">DeepSeek Harness</h3>
@@ -549,7 +546,7 @@ tailwind.config = {
 <!-- BUILD:INTEGRATIONS_INDEX_AI_AGENTS:start -->
       <a href="/integrations/langchain"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'langchain',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">LangChain</h3>
@@ -562,7 +559,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/llamaindex"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'llamaindex',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">LlamaIndex</h3>
@@ -575,7 +572,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/maf"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'maf',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Microsoft Agent Framework</h3>
@@ -588,7 +585,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/crewai"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'crewai',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">CrewAI</h3>
@@ -612,15 +609,15 @@ tailwind.config = {
 
     <!-- How it works (3-line) — MOVED here per Q-3STEP-CARDS=MOVE -->
     <div class="max-w-4xl mx-auto grid sm:grid-cols-3 gap-4 text-center text-sm mb-10">
-      <div class="bg-navy-700/60 border border-white/5 rounded-xl p-5">
+      <div class="bg-navy-700/60 border border-line rounded-xl p-5">
         <div class="text-mint-400 font-semibold mb-2">1. AlgoVault returns analytics</div>
         <div class="text-gray-500 text-xs">Composite verdict: call, confidence, regime, factors. One JSON per call.</div>
       </div>
-      <div class="bg-navy-700/60 border border-white/5 rounded-xl p-5">
+      <div class="bg-navy-700/60 border border-line rounded-xl p-5">
         <div class="text-mint-400 font-semibold mb-2">2. Exchange kit executes</div>
         <div class="text-gray-500 text-xs">Your chosen Agent Trade Kit places orders, manages positions, queries balances.</div>
       </div>
-      <div class="bg-navy-700/60 border border-white/5 rounded-xl p-5">
+      <div class="bg-navy-700/60 border border-line rounded-xl p-5">
         <div class="text-mint-400 font-semibold mb-2">3. Your agent decides</div>
         <div class="text-gray-500 text-xs">Risk policy, position sizing, kill-switches &mdash; all in your code.</div>
       </div>
@@ -630,7 +627,7 @@ tailwind.config = {
 <!-- BUILD:INTEGRATIONS_INDEX_EXCHANGE_KITS:start -->
       <a href="/integrations/binance"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'binance',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/binance.svg" alt="Binance logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Binance &times; AlgoVault</h3>
@@ -644,7 +641,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/binance-agent-os"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'binance-agent-os',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Binance Agent OS &times; AlgoVault</h3>
@@ -657,7 +654,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/okx"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'okx',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/okx.svg" alt="OKX logo" class="w-10 h-10 object-contain invert">
           <h3 class="text-white font-semibold text-base">OKX &times; AlgoVault</h3>
@@ -671,7 +668,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/bybit"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'bybit',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/bybit.png" alt="Bybit logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Bybit &times; AlgoVault</h3>
@@ -685,7 +682,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/bitget"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'bitget',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/bitget.png" alt="Bitget logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Bitget &times; AlgoVault</h3>
@@ -699,7 +696,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/gemini"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'gemini',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/gemini.png" alt="Gemini logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Gemini &times; AlgoVault</h3>
@@ -713,7 +710,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/kraken"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'kraken',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/kraken.png" alt="Kraken logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Kraken &times; AlgoVault</h3>
@@ -727,7 +724,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/alpaca"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'alpaca',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/alpaca.png" alt="Alpaca logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Alpaca &times; AlgoVault</h3>
@@ -741,7 +738,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/hyperliquid"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'hyperliquid',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Hyperliquid &times; AlgoVault</h3>
@@ -754,7 +751,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/aster"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'aster',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Aster &times; AlgoVault</h3>
@@ -767,7 +764,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/bingx"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'bingx',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">BingX &times; AlgoVault</h3>
@@ -780,7 +777,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/kucoin"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'kucoin',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">KuCoin &times; AlgoVault</h3>
@@ -793,7 +790,7 @@ tailwind.config = {
       </a>
       <a href="/integrations/gateio"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'gateio',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Gate.io &times; AlgoVault</h3>
@@ -823,7 +820,7 @@ tailwind.config = {
       <a href="https://github.com/AlgoVaultLabs/algovault-integrations/tree/main/examples/ai4trade?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-ai4trade"
          target="_blank" rel="noopener"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'trading-platform',slug:'ai4trade',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">AI-Trader (ai4trade.ai)</h3>
@@ -837,7 +834,7 @@ tailwind.config = {
       <a href="https://github.com/AlgoVaultLabs/algovault-integrations/tree/main/examples/nautilus_trader?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-nautilus_trader"
          target="_blank" rel="noopener"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'trading-platform',slug:'nautilus_trader',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Nautilus Trader</h3>
@@ -851,7 +848,7 @@ tailwind.config = {
       <a href="https://github.com/AlgoVaultLabs/algovault-integrations/tree/main/examples/3commas?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-3commas"
          target="_blank" rel="noopener"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'trading-platform',slug:'3commas',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">3Commas</h3>
@@ -865,7 +862,7 @@ tailwind.config = {
       <a href="https://github.com/AlgoVaultLabs/algovault-integrations/tree/main/examples/quantdinger?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-quantdinger"
          target="_blank" rel="noopener"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'trading-platform',slug:'quantdinger',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">QuantDinger</h3>
@@ -879,7 +876,7 @@ tailwind.config = {
       <a href="https://github.com/AlgoVaultLabs/algovault-integrations/tree/main/examples/cryptohopper?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-cryptohopper"
          target="_blank" rel="noopener"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'trading-platform',slug:'cryptohopper',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Cryptohopper</h3>
@@ -893,7 +890,7 @@ tailwind.config = {
       <a href="https://github.com/AlgoVaultLabs/algovault-integrations/tree/main/examples/hummingbot?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-hummingbot"
          target="_blank" rel="noopener"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'trading-platform',slug:'hummingbot',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Hummingbot</h3>
@@ -907,7 +904,7 @@ tailwind.config = {
       <a href="https://github.com/AlgoVaultLabs/algovault-integrations/tree/main/examples/freqtrade?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-freqtrade"
          target="_blank" rel="noopener"
          onclick="if(window.plausible)plausible('Integration View',{props:{surface:'trading-platform',slug:'freqtrade',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">FreqTrade</h3>
@@ -930,7 +927,7 @@ tailwind.config = {
     <h2 class="text-2xl font-bold text-white text-center mb-3">React the moment the regime turns.</h2>
     <p class="text-gray-400 text-sm text-center max-w-2xl mx-auto mb-1">Register an endpoint. We POST a signed event the instant a Trade Call fires or the regime shifts.</p>
     <p class="text-gray-400 text-sm text-center max-w-2xl mx-auto mb-8">Your bot flattens or widens stops before the drawdown.</p>
-    <div class="bg-navy-700 border border-white/5 rounded-xl p-6 max-w-3xl mx-auto">
+    <div class="bg-navy-700 border border-line rounded-xl p-6 max-w-3xl mx-auto">
       <p class="text-gray-300 text-sm mb-4 flex items-start gap-2"><span class="text-mint-400 mt-1" aria-hidden="true">&diams;</span><span>Every event carries an on-chain verify link. Verify, don&rsquo;t trust.</span></p>
       <pre class="bg-navy-800 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed text-gray-300 mb-5"><code>curl -s -X POST https://api.algovault.com/api/webhooks \
   -H "Authorization: Bearer $ALGOVAULT_API_KEY" \
@@ -964,7 +961,7 @@ tailwind.config = {
       </a>
       <a href="/skills"
          onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integrations_index',medium:'footer',campaign:'skills'}})"
-         class="bg-navy-700 border border-white/5 hover:border-mint-500/30 rounded-xl p-5 block transition">
+         class="bg-navy-700 border border-line hover:border-mint-500/30 rounded-xl p-5 block transition">
         <div class="text-gray-300 text-sm font-semibold">Browse 20 Skills &rarr;</div>
         <div class="text-gray-500 text-xs mt-1">Pre-built prompt wrappers</div>
       </a>

@@ -28,7 +28,7 @@ function renderTableRow(entry: IntegrationEntry, isLast: boolean): string {
 
 function renderWalkthrough(entry: IntegrationEntry): string {
   const summary = entry.walkthroughSummary ?? `${entry.displayName} &mdash; setup walkthrough`;
-  return `  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+  return `  <details class="bg-navy-700 border border-line rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">${summary}</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
 ${entry.walkthroughHtml}
@@ -62,7 +62,7 @@ export function renderSurfaceSection(surface: SurfaceModule): string {
   <p class="text-gray-400 text-sm mb-6">${meta.introHtml}</p>
 
   <div class="overflow-x-auto mb-6">
-    <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden text-sm">
+    <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden text-sm">
       <thead><tr class="border-b border-white/5">
         <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">${meta.firstColumnHeader}</th>
         <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Setup</th>
@@ -175,7 +175,7 @@ function renderIndexCard(entry: IntegrationEntry): string {
     : '';
   return `      <a href="${cleanHref}"
          onclick="if(window.plausible)plausible('Integration View',${plausibleProps})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           ${headIcon}
           <h3 class="text-white font-semibold text-base">${heading}</h3>

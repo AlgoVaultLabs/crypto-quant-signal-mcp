@@ -1,7 +1,7 @@
       <p class="text-gray-400 text-sm mb-5">Scans a whole promoted-venue universe in one call and returns the top-ranked <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">get_trade_call</code> verdicts, ordered by a selectable lens (open interest, OI change, volume, momentum, &hellip;). One request instead of N per-asset calls &mdash; ideal for an agent building a watchlist or a scheduled digest.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -22,7 +22,7 @@
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Ranking lenses</h3>
       <p class="text-gray-400 text-sm mb-3">Every value <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> accepts. Pass the lens or its alias &mdash; both resolve to the same universe.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Lens</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Alias</th>
@@ -35,7 +35,7 @@
       </table>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">scan_trade_calls({
   topN: 20,
@@ -50,7 +50,7 @@
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
       <p class="text-gray-400 text-sm mb-3">The scan returns counters alongside the results, so you can tell &ldquo;nothing qualified&rdquo; from &ldquo;nothing was scanned&rdquo; without a second call.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
@@ -65,7 +65,7 @@
           <tr class="param-row" style="border-bottom:none"><td>calls</td><td class="text-gray-400">array</td><td class="text-gray-400">The ranked results. Each entry carries <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">call</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code> and <code class="text-xs bg-navy-800 px-1 rounded">regime</code>.</td></tr>
         </tbody>
       </table>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector(&#39;code&#39;).textContent);this.textContent=&#39;Copied!&#39;;setTimeout(()=&gt;this.textContent=&#39;Copy&#39;,1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">{
   "scanned": 30,
@@ -80,7 +80,7 @@
 }</code></pre>
       </div>
 
-      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+      <div class="bg-navy-700 border border-line rounded-xl p-5 mb-5">
         <h4 class="text-sm font-semibold text-white mb-2">An empty <code class="text-xs bg-navy-800 px-1 rounded">calls</code> array is the ordinary outcome</h4>
         <p class="text-gray-400 text-sm leading-relaxed mb-3">Most assets are HOLD most of the time, and <code class="text-xs bg-navy-800 px-1 rounded">includeHolds</code> defaults to <code class="text-xs bg-navy-800 px-1 rounded">false</code> &mdash; so a scan that filters every result out is working correctly, not failing. A live 30-asset scan on <code class="text-xs bg-navy-800 px-1 rounded">1h</code> at the time of writing returned <strong class="text-white">29 HOLD</strong> against <strong class="text-white">1</strong> actionable call.</p>
         <p class="text-gray-400 text-sm leading-relaxed">Read <code class="text-xs bg-navy-800 px-1 rounded">scanned</code> to confirm the universe was evaluated. To widen the result set, lower <code class="text-xs bg-navy-800 px-1 rounded">minConfidence</code>, or set <code class="text-xs bg-navy-800 px-1 rounded">includeHolds: true</code> to see the HOLD verdicts alongside the rest.</p>

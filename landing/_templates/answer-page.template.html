@@ -68,7 +68,7 @@ tailwind.config = {
 <!-- THEME:END -->
 <style>
   html { scroll-behavior: smooth; }
-  body { background: #060a14; color: #cdd5e0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; }
+  body { background: var(--bg); color: #cdd5e0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; }
   h1, h2, h3 { font-family: 'Inter Tight', 'Inter', system-ui, sans-serif; color: #eef2f7; }
   a { color: #5BEEB3; text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -77,16 +77,16 @@ tailwind.config = {
   .prose h3 { margin: 26px 0 8px; font-size: 18px; font-weight: 600; }
   .prose ul { margin: 0 0 18px; padding-left: 22px; }
   .prose li { margin: 6px 0; }
-  pre { background: #0a0e1a; border: 1px solid #1c2536; border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+  pre { background: var(--well); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
   code { font-family: 'JetBrains Mono', 'SF Mono', monospace; font-size: 13.5px; color: #aeeedb; }
-  p code, li code, td code { background: #0f1526; padding: 1px 6px; border-radius: 5px; color: #aeeedb; }
+  p code, li code, td code { background: var(--bg-3); padding: 1px 6px; border-radius: 5px; color: #aeeedb; }
   table { width: 100%; border-collapse: collapse; margin: 0 0 22px; font-size: 14.5px; }
-  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid #1c2536; vertical-align: top; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: #8b9bb5; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
   .lede { font-size: 19px; color: #dfe6ef; margin: 0 0 8px; max-width: 68ch; }
   .stat { color: #eef2f7; font-weight: 600; }
   .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; color: #5BEEB3; letter-spacing: 0.12em; text-transform: uppercase; }
-  .card { background: #0a0e1a; border: 1px solid #1c2536; border-radius: 12px; padding: 20px 22px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; }
   .btn { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 22px; border-radius: 999px; font-size: 15px; font-weight: 600; background: #5BEEB3; color: #0a1813; }
   .btn:hover { text-decoration: none; filter: brightness(1.05); }
   .btn-ghost { background: transparent; color: #eef2f7; border: 1px solid #2a3650; }
@@ -97,7 +97,7 @@ tailwind.config = {
 <!-- SLOT:JSONLD — inline Article/TechArticle + FAQPage; publisher {"@id":"https://algovault.com/#organization"}; NO aggregateRating -->
 </head>
 <body>
-<nav style="position:sticky;top:0;z-index:20;background:rgba(6,10,20,0.85);backdrop-filter:blur(10px);border-bottom:1px solid #141c2e">
+<nav style="position:sticky;top:0;z-index:20;background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)">
   <div style="max-width:1100px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;justify-content:space-between">
     <a href="https://algovault.com/" style="display:flex;align-items:center;gap:9px;color:#eef2f7;font-weight:700;font-family:'Inter Tight',sans-serif"><img src="/logo.png" alt="AlgoVault Labs" width="26" height="26" style="border-radius:6px">AlgoVault</a>
     <div style="display:flex;align-items:center;gap:22px">

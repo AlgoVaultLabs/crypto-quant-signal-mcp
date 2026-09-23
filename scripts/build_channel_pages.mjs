@@ -245,7 +245,7 @@ ${JSON.stringify({ '@context': 'https://schema.org', '@id': ORG_ID }, null, 2)}
 </script>
 <style>
   html { scroll-behavior: smooth; }
-  body { background: var(--bg, #060a14); color: var(--fg-2, #d1d5db); font-family: var(--font-text, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--fg-2, #d1d5db); font-family: var(--font-text, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); margin: 0; padding: 0; }
   .ch-wrap { max-width: 760px; margin: 0 auto; padding: 112px 24px 72px; }
   .ch-eyebrow { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12px; letter-spacing: 0.12em; color: var(--mint, oklch(0.86 0.16 165)); text-transform: uppercase; margin: 0 0 14px; }
   .ch-h1 { font-family: var(--font-display, 'Inter Tight', sans-serif); font-size: 42px; line-height: 1.05; letter-spacing: -0.02em; font-weight: 600; color: var(--fg, #f5f7fa); margin: 0 0 20px; }
@@ -263,7 +263,7 @@ ${projectedCss}
   .ch-faq { border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 10px; padding: 14px 18px; margin: 10px 0; background: oklch(0.18 0.014 265 / 0.4); }
   .ch-faq summary { cursor: pointer; font-weight: 600; color: var(--fg, #f5f7fa); font-size: 15px; }
   .ch-faq p { margin: 12px 0 2px; }
-  .ch-cta { display: inline-block; margin-top: 28px; padding: 11px 22px; border-radius: 10px; background: var(--mint, oklch(0.86 0.16 165)); color: #060a14; font-weight: 600; text-decoration: none; font-size: 15px; }
+  .ch-cta { display: inline-block; margin-top: 28px; padding: 11px 22px; border-radius: 10px; background: var(--mint, oklch(0.86 0.16 165)); color: var(--bg); font-weight: 600; text-decoration: none; font-size: 15px; }
 </style>
 <!-- ANALYTICS:START -->
 ${renderAnalyticsSnippet()}

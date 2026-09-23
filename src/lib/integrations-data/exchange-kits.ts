@@ -58,7 +58,7 @@ const EXCHANGE_KITS: SurfaceModule = {
         "Composite verdict + official Binance Skills Hub, on the direct API path. You issue keys and sign requests; the demo runs against Spot Testnet.",
       walkthroughHtml: `      <p><strong>On Binance Agent OS?</strong> That path needs no API keys &mdash; OAuth, an isolated Agentic sub-account, and no withdrawal scope. <a href="/integrations/binance-agent-os" class="text-mint-400 hover:underline">Start there instead &rarr;</a></p>
       <p>For the direct API path, install AlgoVault&rsquo;s plugin and the Binance Skills Hub:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">claude plugin install AlgoVaultLabs/algovault-skills
 npx skills add https://github.com/binance/binance-skills-hub</code></pre>
       </div>
@@ -79,7 +79,7 @@ npx skills add https://github.com/binance/binance-skills-hub</code></pre>
       whatYouGet:
         'Your agent asks AlgoVault what to do and Binance to do it. No API keys on the machine, no HMAC signing, and no withdrawal scope exists.',
       walkthroughHtml: `      <p>Add both servers to one MCP client &mdash; AlgoVault decides, Binance executes:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic
 claude mcp add --transport http --scope project algovault \\
   https://api.algovault.com/mcp?src=binance_agent_os</code></pre>
@@ -99,7 +99,7 @@ claude mcp add --transport http --scope project algovault \\
       whatYouGet:
         "Composite verdict + OKX's full execution surface. Agent reads signals, places orders across spot or derivatives via one MCP server.",
       walkthroughHtml: `      <p>Install OKX's official trade MCP server in your client config:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {"url": "https://api.algovault.com/mcp"},
@@ -121,7 +121,7 @@ claude mcp add --transport http --scope project algovault \\
       whatYouGet:
         "Composite verdict + Bybit's official MCP server. Agent fetches AlgoVault signals, places perpetual + conditional orders via Bybit testnet.",
       walkthroughHtml: `      <p>Wire Bybit's official server next to AlgoVault:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {"url": "https://api.algovault.com/mcp"},
@@ -143,7 +143,7 @@ claude mcp add --transport http --scope project algovault \\
       whatYouGet:
         "Composite verdict + Bitget's MCP server inside a dedicated AI account. Agent-native execution; isolate from your main funds.",
       walkthroughHtml: `      <p>Bitget exposes a dedicated AI sub-account ("GetClaw") for agent execution:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {"url": "https://api.algovault.com/mcp"},
@@ -165,7 +165,7 @@ claude mcp add --transport http --scope project algovault \\
       whatYouGet:
         "Composite verdict + Gemini's Agentic Trading MCP. Agent reads signals, places sandbox orders via gemini_new_order; subaccounts isolate each agent.",
       walkthroughHtml: `      <p>Build Gemini's self-hosted MCP from source, alongside AlgoVault:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">git clone https://github.com/gemini/developer-platform
 cd developer-platform/packages/mcp-server
 npm install
@@ -185,7 +185,7 @@ npm run build</code></pre>
       whatYouGet:
         "Composite verdict + the Kraken CLI's stdio MCP. Agent reads signals, simulates orders on the keyless paper engine before going live.",
       walkthroughHtml: `      <p>Install the Kraken CLI (one binary), then serve it over MCP next to AlgoVault:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">curl --proto '=https' --tlsv1.2 -LsSf https://github.com/krakenfx/kraken-cli/releases/latest/download/kraken-cli-installer.sh | sh
 kraken mcp -s all</code></pre>
       </div>
@@ -203,7 +203,7 @@ kraken mcp -s all</code></pre>
       whatYouGet:
         "Composite verdict + Alpaca's crypto MCP Server. Agent reads signals, places notional BTC/USD paper orders via place_crypto_order.",
       walkthroughHtml: `      <p>Run Alpaca's crypto MCP Server zero-install, scoped to crypto toolsets, alongside AlgoVault:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {"url": "https://api.algovault.com/mcp"},
@@ -229,7 +229,7 @@ kraken mcp -s all</code></pre>
       whatYouGet:
         "Composite verdict + Hyperliquid's testnet perps API. Keyless demo builds the exact EIP-712 order action and prints it — nothing is signed or sent.",
       walkthroughHtml: `      <p>Hyperliquid signs orders with an EIP-712 wallet signature; the official Python SDK implements both signing schemes:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install hyperliquid-python-sdk
 
 from hyperliquid.exchange import Exchange
@@ -250,7 +250,7 @@ exchange = Exchange(wallet, constants.TESTNET_API_URL, account_address=MASTER)</
       whatYouGet:
         "Composite verdict + Aster's futures testnet on BNB Chain Testnet. V3 EIP-712 auth; V1 API-key creation closed 2026-03-25.",
       walkthroughHtml: `      <p>Aster publishes nothing to npm or PyPI &mdash; the official connector installs from git:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install git+https://github.com/asterdex/aster-connector-python.git
 
 # testnet base: https://fapi.asterdex-testnet.com
@@ -270,7 +270,7 @@ exchange = Exchange(wallet, constants.TESTNET_API_URL, account_address=MASTER)</
       whatYouGet:
         "Composite verdict + BingX's VST demo-trading environment. Dry-run order validation plus an API-callable demo-funds faucet.",
       walkthroughHtml: `      <p>BingX publishes no official client SDK, so the demo is dependency-free:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300"># demo host (paper trading, no real funds)
 https://open-api-vst.bingx.com
 
@@ -291,7 +291,7 @@ POST /openApi/swap/v2/trade/getVst       # top up demo balance</code></pre>
       whatYouGet:
         'Composite verdict + KuCoin Futures order VALIDATION. KuCoin retired its sandbox in 2023, so this validates payloads rather than simulating fills.',
       walkthroughHtml: `      <p>KuCoin has no sandbox &mdash; it was delisted on 2023-07-10 and every sandbox host is NXDOMAIN. The demo uses the order-validation endpoint instead:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">npm install kucoin-universal-sdk
 
 POST https://api-futures.kucoin.com/api/v1/orders/test
@@ -313,7 +313,7 @@ POST https://api-futures.kucoin.com/api/v1/orders/test
       whatYouGet:
         "Composite verdict + Gate.io's futures testnet. Keyless demo converts coins to CONTRACTS from the live quanto_multiplier and prints the order \u2014 nothing is signed or sent.",
       walkthroughHtml: `      <p>Gate moved its futures testnet &mdash; and <code class="text-xs bg-navy-800 px-1 rounded">gate-api</code> 7.2.100 still ships the old host as its default, so set the base URL explicitly:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">import gate_api
 cfg = gate_api.Configuration(
     host="https://api-testnet.gateapi.io/api/v4",   # NOT the SDK default

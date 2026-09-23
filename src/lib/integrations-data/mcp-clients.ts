@@ -66,7 +66,7 @@ const MCP_CLIENTS: SurfaceModule = {
         'Native Streamable-HTTP MCP. AlgoVault tools (<code class="text-xs">get_trade_call</code>, <code class="text-xs">scan_funding_arb</code>, <code class="text-xs">get_market_regime</code>) callable in any chat.',
       walkthroughHtml: `      <p><strong>Easiest path (UI):</strong> Open Claude Desktop &rarr; <em>Settings</em> &rarr; <em>Connectors</em> &rarr; <em>Add custom connector</em>. Name it <code class="text-xs bg-navy-800 px-1 rounded">AlgoVault</code>. URL: <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp?src=docs</code>. Add <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code> as a custom header (paid tier). Save and restart Claude Desktop.</p>
       <p><strong>JSON path:</strong> Edit <code class="text-xs bg-navy-800 px-1 rounded">~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or <code class="text-xs bg-navy-800 px-1 rounded">%APPDATA%\\Claude\\claude_desktop_config.json</code> (Windows):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {
@@ -95,7 +95,7 @@ const MCP_CLIENTS: SurfaceModule = {
       whatYouGet:
         "IDE-native MCP. Cursor's coding agent pulls live signals while editing strategy code.",
       walkthroughHtml: `      <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.cursor/mcp.json</code> (global, all projects) or <code class="text-xs bg-navy-800 px-1 rounded">.cursor/mcp.json</code> in the project root (per-project, commit-friendly):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {
@@ -123,7 +123,7 @@ const MCP_CLIENTS: SurfaceModule = {
         'Cline panel &rarr; MCP Servers &rarr; Remote Servers tab, or edit <code class="text-xs bg-navy-800 px-1 rounded">cline_mcp_settings.json</code>',
       whatYouGet: 'VSCode-side coding agent with AlgoVault tools available.',
       walkthroughHtml: `      <p>Open the Cline panel in VSCode &rarr; <em>MCP Servers</em> &rarr; <em>Remote Servers</em> tab &rarr; <em>Add server</em>. Or edit <code class="text-xs bg-navy-800 px-1 rounded">cline_mcp_settings.json</code> (path varies by OS; access via <em>Configure MCP Servers</em>):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {
@@ -155,13 +155,13 @@ const MCP_CLIENTS: SurfaceModule = {
       whatYouGet:
         'Per-project MCP. Useful for backtest / strategy-dev repos. Team-shared via <code class="text-xs">.mcp.json</code>.',
       walkthroughHtml: `      <p><strong>One-liner (recommended):</strong></p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">claude mcp add --transport http --scope project algovault https://api.algovault.com/mcp?src=docs \\
   --header "Authorization: Bearer \$AV_API_KEY" \\
   --header "X-AlgoVault-Track-Token:chan-docs"</code></pre>
       </div>
       <p>This writes a <code class="text-xs bg-navy-800 px-1 rounded">.mcp.json</code> in your repo root which you can commit so every teammate gets the same MCP config:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {
@@ -191,7 +191,7 @@ const MCP_CLIENTS: SurfaceModule = {
       whatYouGet:
         'Auto-managed connection via Smithery registry. Easiest install across clients.',
       walkthroughHtml: `      <p>The Smithery CLI installs and configures the MCP server in your client of choice automatically:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300"># Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code
 npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</code></pre>
       </div>
@@ -213,7 +213,7 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
       walkthroughSummary: 'Plain HTTP / curl &mdash; advanced testing',
       walkthroughHtml: `      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. The transport is stateless, so a single POST of <em>tools/call</em> works: no <em>initialize</em>, no session id. See <a href="#testing-with-curl" class="text-mint-400 hover:underline">Testing with raw HTTP / curl</a> for the one-shot call, the two <code class="text-xs bg-navy-800 px-1 rounded">Accept</code> types you must send, and the optional session handshake.</p>
       <p><strong>One-shot smoke (free tier, no auth):</strong></p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">curl -sS https://api.algovault.com/health</code></pre>
       </div>
       <p>Returns <code class="text-xs bg-navy-800 px-1 rounded">{"status":"ok","version":"1.10.3","stripe":true}</code>.</p>`,
@@ -238,7 +238,7 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
       whatYouGet:
         'Coding agent for terminal and IDE. AlgoVault tools available in every Codex session.',
       walkthroughHtml: `      <p>Codex reads MCP servers from <code class="text-xs bg-navy-800 px-1 rounded">~/.codex/config.toml</code>. Add a table for AlgoVault:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">[mcp_servers.algovault]
 url = "https://api.algovault.com/mcp?src=docs"
 bearer_token_env_var = "AV_API_KEY"
@@ -264,7 +264,7 @@ bearer_token_env_var = "AV_API_KEY"
       whatYouGet:
         'Moonshot’s coding agent. Pulls AlgoVault verdicts while you edit strategy code.',
       walkthroughHtml: `      <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.kimi-code/mcp.json</code> (user level) or <code class="text-xs bg-navy-800 px-1 rounded">.kimi-code/mcp.json</code> (project level). An entry carrying a <code class="text-xs">url</code> and no <code class="text-xs">transport</code> is an HTTP server:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "mcpServers": {
     "algovault": {
@@ -294,7 +294,7 @@ bearer_token_env_var = "AV_API_KEY"
       whatYouGet:
         'Z.ai’s GLM harness. AlgoVault verdicts alongside the GLM model family.',
       walkthroughHtml: `      <p>Open <em>Settings</em> &rarr; <em>MCP Servers</em>, then click <em>New MCP Server</em> at the top right. Choose <code class="text-xs bg-navy-800 px-1 rounded">HTTP</code> as the type and enter:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">https://api.algovault.com/mcp?src=docs</code></pre>
       </div>
       <p>For paid tier, expand <em>Headers (optional)</em> and add <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code>. Free tier needs no header.</p>
@@ -317,7 +317,7 @@ bearer_token_env_var = "AV_API_KEY"
       walkthroughHtml: `      <p>One step: patch the profile. There is no plugin to install &mdash; the <code class="text-xs bg-navy-800 px-1 rounded">dsh</code> CLI ships <code class="text-xs">@deepseek-ai/dsh-mcp-client</code> in its own dependency closure, and the bridge’s README says one entry per server is the entire setup.</p>
       <p>The bundles are a red herring: <code class="text-xs">base</code>, <code class="text-xs">headless</code> and <code class="text-xs">web-app</code> declare zero MCP dependencies, but a bare plugin <code class="text-xs">name</code> resolves through the profile’s Node parent walk to <code class="text-xs">$DSH_HOME/profiles/node_modules</code>, which the CLI closure feeds. Nothing is enabled by default because DSH treats each server as trusted code outside the sandbox &mdash; the entry below is the opt-in.</p>
       <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.dsh/profiles/&lt;name&gt;/cordis.patch.yml</code>, or <code class="text-xs">~/.dsh/cordis.patch.yml</code> for every profile:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">- insert:
     - id: mcp-algovault
       name: '@deepseek-ai/dsh-mcp-client'
@@ -350,7 +350,7 @@ bearer_token_env_var = "AV_API_KEY"
         'No app to install. Z.ai reaches AlgoVault server-side while it answers.',
       walkthroughSummary: 'Z.ai API &mdash; server-side, no client needed',
       walkthroughHtml: `      <p>Z.ai dials the MCP server itself, so there is nothing to install locally. Declare AlgoVault as a tool on the request:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
   "model": "glm-4.6",
   "messages": [{"role": "user", "content": "Trade call for BTC on the 1h timeframe"}],
@@ -381,7 +381,7 @@ bearer_token_env_var = "AV_API_KEY"
         'Bring your own model. DeepSeek does the thinking; your existing harness carries the AlgoVault tools.',
       walkthroughSummary: 'DeepSeek &mdash; bring your own model',
       walkthroughHtml: `      <p>DeepSeek’s own harness connects to AlgoVault directly &mdash; see the <a class="text-mint-400 hover:underline" href="/integrations/deepseek-harness">DeepSeek Harness tutorial</a>. This row is the other path: keep the harness you already run and swap the model behind it. The DeepSeek API itself still exposes no MCP parameter, so the harness carries the tools.</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+      <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
 export ANTHROPIC_AUTH_TOKEN="$DEEPSEEK_API_KEY"
 

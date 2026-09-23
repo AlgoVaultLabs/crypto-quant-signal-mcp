@@ -308,6 +308,16 @@ jobs:
           node scripts/build_theme.mjs --self-test
           node scripts/build_theme.mjs --check
 
+      # DESIGN-SURFACE-TOKENS-W1 CH2: the legacy-palette canary. The wave retired a hand-copied
+      # navy palette (card #0f1526 / page #060a14 / chip #0a0e1a / the nav rgbas / the pre-mint
+      # gold glow) that had reached 62 files because nothing forbade the next copy. Every one of
+      # them now has a token, so a literal reappearing is a second palette forming. Fail-closed,
+      # with a reasoned 4-row allow-list and MUST-CATCH fixtures in the real token order.
+      - name: Legacy navy literal canary (check-legacy-navy-literals)
+        run: |
+          node scripts/check-legacy-navy-literals.mjs --self-test
+          node scripts/check-legacy-navy-literals.mjs
+
       # OPS-AUDIT-REMEDIATION-HIGH-W1 Ch5 (SEC-36): the mobile-nav parity invariant was committed
       # but executed by nothing — build_nav.mjs referenced it only inside a COMMENT, so "a desktop
       # nav shipped without its mobile replacement" was never actually gated. It runs here, next to

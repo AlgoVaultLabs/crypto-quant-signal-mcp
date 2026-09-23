@@ -103,6 +103,13 @@
  * claim rotting. It asserts BYTES, so it goes red only once someone edits the sentence — it has
  * no opinion on whether the sentence is TRUE. That hole is what
  * `scripts/check-docs-samples-live.mjs` (CH2) closes by executing the samples.
+ *
+ * FIXTURE MAINTENANCE — DESIGN-SURFACE-TOKENS-W1 (CH2, 2026-09-23): regenerated to absorb the
+ * class-string sweep and nothing else. Word-diff verified before regenerating: 39 lines change,
+ * every one a `class="…"` value — `border-white/5` → `border-line` on card contexts (16 details
+ * wrappers + 2 tables + 21 code blocks) and `bg-navy-800` → `bg-well` on the 21 code blocks
+ * (Q-DST-1: a code block is a WELL, darker than its card, not a raised slab). No prose, no href,
+ * no structure moved.
  */
 
 import { describe, it, expect } from 'vitest';
