@@ -303,10 +303,32 @@ jobs:
       # JSON-LD blocks, that every channel fallback still equals its :root twin, and — via a
       # real tailwindcss@3.4.17 compile — that every palette utility in the corpus emits a
       # rule (the `<alpha-value>` defect this wave fixed had 0 rules for 7 live classes).
-      - name: Theme region sync guard (build_theme --self-test + --check)
+      #
+      # DESIGN-THEME-UNIVERSAL-COVERAGE-W1 R1 extends this step from the inside: --check now
+      # also runs the COVERAGE leg (ops/theme-coverage-config.json). Before it, a page with no
+      # Tailwind signature and no markers was skipped by the region writer entirely, so a plain
+      # <style>-only page in any colour passed every gate. Coverage asserts the positive
+      # per-page outcome — every landing page and docs-src/template.html carries both markers
+      # and the design loader, or is declared with a reason — and a STALE exemption (one naming
+      # a missing file, or one that now self-covers) fails too. Config missing or malformed is
+      # INDETERMINATE(3), never a quiet pass.
+      - name: Theme region sync guard (build_theme --self-test + --check, incl. coverage leg)
         run: |
           node scripts/build_theme.mjs --self-test
           node scripts/build_theme.mjs --check
+
+      # DESIGN-THEME-UNIVERSAL-COVERAGE-W1 R2: the colour-literal RATCHET. The legacy-navy canary
+      # above fails closed on nine NAMED literals; a new page painting #111827 or rgb(17,24,39) is
+      # invisible to it, and the corpus still carries 864 literals across 95 files — a zero-
+      # tolerance gate is not shippable, a ratchet is. Per-file counts may only go DOWN;
+      # --write-baseline lowers and never raises; the only way up is --allow-raise <path>
+      # --reason "…", which stores the argument next to the allowance. Counting is context-scoped
+      # (<style> blocks, style="" attributes, -[#…] utilities) and generated marker regions are
+      # billed to their SoT module, not to the 58 pages that host them.
+      - name: Colour-literal ratchet (fail-closed)
+        run: |
+          node scripts/check-colour-literal-ratchet.mjs --self-test
+          node scripts/check-colour-literal-ratchet.mjs
 
       # DESIGN-SURFACE-TOKENS-W1 CH2: the legacy-palette canary. The wave retired a hand-copied
       # navy palette (card #0f1526 / page #060a14 / chip #0a0e1a / the nav rgbas / the pre-mint
