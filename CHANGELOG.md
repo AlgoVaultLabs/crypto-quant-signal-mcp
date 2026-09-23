@@ -5,6 +5,19 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.31.0] - 2026-09-23
+
+### Added
+- `plugin.json`, `mcp.json` and `.cursor-plugin/plugin.json` now ship inside the published npm package. An Agent-Plugins-compatible host — Cursor included — can read the server definition straight from the installed package. The files existed in the repository before this release but were not part of the tarball, so no npm consumer could obtain them.
+
+### Changed
+- `_algovault.compatible_with` no longer names any companion package. It is projected from a machine-verified registry and is `[]` today, which is the truthful answer: no companion package is published. The README previously printed two package names and stated that downstream tools accept the object directly; both statements are gone. A client that rendered those names should stop.
+- Every colour on every public page now comes from one generated theme region, so the site, the docs and the page templates cannot drift apart.
+
+### Fixed
+- Signing in with an email that already holds a paid subscription now returns that subscription's key instead of minting a free one, and the page shown afterwards states the real tier and links the billing portal. A free key cannot resolve at `/account`, so the portal was unreachable for those accounts.
+- The billing-portal link from `/account` works again. A `form-action` directive in the page's Content-Security-Policy was blocking the form that opens it.
+
 ## [1.30.0] - 2026-09-10
 
 ### Added
