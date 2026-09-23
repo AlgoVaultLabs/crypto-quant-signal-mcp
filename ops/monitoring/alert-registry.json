@@ -821,6 +821,30 @@
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-xrepo_ci_dark-W{NEXT}"
     },
     {
+      "alert_id": "xrepo_ci_stale",
+      "owner": "ops/cron/xrepo-ci-conclusion-canary.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-XREPO_CI_STALE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-xrepo_ci_stale-W{NEXT}"
+    },
+    {
+      "alert_id": "xrepo_ci_schedule_expiry",
+      "owner": "ops/cron/xrepo-ci-conclusion-canary.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-XREPO_CI_SCHEDULE_EXPIRY-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-xrepo_ci_schedule_expiry-W{NEXT}"
+    },
+    {
       "alert_id": "xrepo_ci_red",
       "owner": "ops/cron/xrepo-ci-conclusion-canary.sh",
       "hosts": [
