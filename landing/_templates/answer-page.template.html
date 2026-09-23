@@ -94,6 +94,12 @@ tailwind.config = {
   nav a:hover { color: #5BEEB3; text-decoration: none; }
   footer a { color: #8b9bb5; font-size: 13px; }
 </style>
+<!-- DESIGN-THEME-UNIVERSAL-COVERAGE-W1 R3: the analytics region every one of the 16 live
+     answer pages carries. It was absent here — landing/_templates/ is excluded from
+     build_analytics by the leading-underscore rule, so the template could drift from its
+     own output family in silence, and a page authored from it would be analytics-dark. -->
+<!-- ANALYTICS:START -->
+<!-- ANALYTICS:END -->
 <!-- SLOT:JSONLD — inline Article/TechArticle + FAQPage; publisher {"@id":"https://algovault.com/#organization"}; NO aggregateRating -->
 </head>
 <body>

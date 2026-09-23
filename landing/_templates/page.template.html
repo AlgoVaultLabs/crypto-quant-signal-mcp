@@ -1,0 +1,254 @@
+<!--
+  DESIGN-THEME-UNIVERSAL-COVERAGE-W1 R3 — the canonical page skeleton (NON-SERVED).
+
+  Lives under landing/_templates/ so the `cp landing/*.html` deploy glob does not copy it
+  (subdir templates 404 — the same placement answer-page.template.html already relies on).
+
+  DO NOT COPY THIS FILE BY HAND. Run:
+
+      node scripts/new-landing-page.mjs --slug <slug> --title "…" --description "…"
+
+  The scaffold substitutes the SLOT markers, BLANKS the four generated regions, writes
+  landing/<slug>.html, then runs build_theme / build_nav / inject-footer / build_analytics /
+  build_asset_versions and every --check. The page is therefore complete, on-theme and green
+  before the author types a word — which is the point: the only way to ship an off-theme page
+  is now to argue with ops/theme-coverage-config.json or ops/colour-literal-baseline.json.
+
+  THREE PROPERTIES THIS FILE MUST KEEP, each gated:
+   1. It carries a THEME marker pair AND the design loader, so it is a covered page in its own
+      right (build_theme --check coverage leg, R1).
+   2. It carries ZERO colour literals — every colour comes from the generated THEME region or
+      from landing/_design/algovault-design.css :root (ops/colour-literal-baseline.json row 0).
+   3. The loader block below is BYTE-IDENTICAL to landing/_design/loader-snippet.html; the
+      scaffold asserts it, so the canonical loader cannot drift into a second copy here.
+
+  The marker pairs below are filled by the injectors in the committed file, and BLANKED again
+  by the scaffold on the way out — a page should be born with the region its generator emits
+  today, never with a snapshot of the region this template was committed with.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title><!-- SLOT:TITLE -->New page | AlgoVault Labs</title>
+<meta name="description" content="<!-- SLOT:META_DESC -->">
+<link rel="canonical" href="https://algovault.com/<!-- SLOT:SLUG -->">
+<link rel="icon" type="image/png" href="/logo.png">
+<meta property="og:title" content="<!-- SLOT:OG_TITLE -->">
+<meta property="og:description" content="<!-- SLOT:OG_DESC -->">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://algovault.com/<!-- SLOT:SLUG -->">
+<meta property="og:image" content="https://algovault.com/logo.png">
+<meta property="og:site_name" content="AlgoVault Labs">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@AlgoVaultLabs">
+<meta name="twitter:title" content="<!-- SLOT:OG_TITLE -->">
+<meta name="twitter:description" content="<!-- SLOT:OG_DESC -->">
+<meta name="twitter:image" content="https://algovault.com/logo.png">
+<!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/_design/algovault-design.css">
+<!-- END: AlgoVault canonical design loader -->
+<!-- track-record-proxy.js hydrates [data-tr-field] spans from /api/performance-public on load -->
+<script defer src="/js/track-record-proxy.js?v=f485c24a"></script>
+<!-- THEME:START -->
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        navy: { 600: 'oklch(var(--line-2-lch, 0.34 0.012 265) / <alpha-value>)', 700: 'oklch(var(--surface-lch, 0.18 0.014 265) / <alpha-value>)', 800: 'oklch(var(--bg-3-lch, 0.22 0.014 265) / <alpha-value>)', 900: 'oklch(var(--bg-lch, 0.16 0.012 265) / <alpha-value>)' },
+        well: { DEFAULT: 'oklch(var(--well-lch, 0.13 0.012 265) / <alpha-value>)' },
+        line: { DEFAULT: 'oklch(var(--line-lch, 0.28 0.012 265) / <alpha-value>)' },
+        mint: { 50: 'oklch(0.97 0.03 165 / <alpha-value>)', 100: 'oklch(0.94 0.06 165 / <alpha-value>)', 200: 'oklch(0.91 0.09 165 / <alpha-value>)', 300: 'oklch(0.89 0.13 165 / <alpha-value>)', 400: 'oklch(0.86 0.16 165 / <alpha-value>)', 500: 'oklch(0.78 0.18 165 / <alpha-value>)', 600: 'oklch(0.66 0.18 165 / <alpha-value>)', 700: 'oklch(0.54 0.16 165 / <alpha-value>)', 800: 'oklch(0.42 0.12 165 / <alpha-value>)', 900: 'oklch(0.32 0.08 165 / <alpha-value>)' },
+        brass: { 400: 'oklch(var(--brass-lch, 0.78 0.09 85) / <alpha-value>)', 500: 'oklch(var(--brass-2-lch, 0.68 0.12 85) / <alpha-value>)' },
+        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+      }
+    }
+  }
+}
+</script>
+<!-- THEME:END -->
+<style>
+  /* Every colour here is a token. A hand-written colour literal in this block is a second
+     palette forming, and scripts/check-colour-literal-ratchet.mjs holds this file at 0. */
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--fg-2); font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; }
+  h1, h2, h3 { font-family: 'Inter Tight', 'Inter', system-ui, sans-serif; color: var(--fg); }
+  a { color: var(--mint); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  main { max-width: 1100px; margin: 0 auto; padding: 48px 22px 24px; }
+</style>
+<!-- ANALYTICS:START -->
+<!-- ANALYTICS:END -->
+</head>
+<body class="min-h-screen">
+<!-- NAV:START -->
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.85);backdrop-filter:blur(12px)">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+    <a href="https://algovault.com/" class="flex items-center gap-2.5" aria-label="AlgoVault home">
+      <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
+      <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
+    </a>
+    <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+      <div class="relative" data-nav-dropdown>
+      <button type="button" data-nav-dropdown-toggle aria-haspopup="true" aria-expanded="false" aria-controls="nav-platform-panel" class="inline-flex items-center gap-1 hover:text-white transition">Platform <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
+      <div id="nav-platform-panel" data-nav-dropdown-panel class="hidden absolute left-0 top-full pt-3 z-50">
+        <div class="w-[640px] grid grid-cols-3 gap-6 rounded-xl border border-white/10 p-4" style="background:oklch(var(--bg-2-lch, 0.19 0.014 265) / 0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Tools</div>
+          <div class="text-[11px] text-gray-500 mb-2.5">What the brain does</div>
+          <a href="https://algovault.com/tools#get-trade-call" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Trade Call</span></a>
+          <a href="https://algovault.com/tools#get-market-regime" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Market Regime</span></a>
+          <a href="https://algovault.com/tools#scan-funding-arb" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Funding Arbitrage</span></a>
+          <a href="https://algovault.com/tools#scan-trade-calls" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Trade Call Scanner</span></a>
+          <a href="https://algovault.com/tools#chat-knowledge" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Knowledge Chat</span></a>
+          <a href="https://algovault.com/tools" class="inline-block mt-2 text-xs font-medium text-mint-400 hover:text-mint-300 transition">See all tools →</a>
+        </div>
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Channels</div>
+          <div class="text-[11px] text-gray-500 mb-2.5">How you connect</div>
+          <a href="https://algovault.com/mcp" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">MCP Server</span><span class="block text-[11px] text-gray-500 leading-snug">Native Model Context Protocol endpoint</span></a>
+          <a href="https://algovault.com/rest-api" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">REST API</span><span class="block text-[11px] text-gray-500 leading-snug">Call over HTTP — keyless x402 or API key</span></a>
+          <a href="https://algovault.com/webhooks" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Webhooks</span><span class="block text-[11px] text-gray-500 leading-snug">Push trade calls + regime shifts to your endpoint</span></a>
+          <a href="https://t.me/algovaultofficialbot" target="_blank" rel="noopener noreferrer" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Telegram Bot</span><span class="block text-[11px] text-gray-500 leading-snug">Trade calls delivered in Telegram</span></a>
+        </div>
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Ecosystem</div>
+          <div class="text-[11px] text-gray-500 mb-2.5">Extend &amp; explore</div>
+          <a href="https://algovault.com/integrations" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Integrations</span><span class="block text-[11px] text-gray-500 leading-snug">Exchanges + AI clients</span></a>
+          <a href="https://algovault.com/skills" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Skills</span><span class="block text-[11px] text-gray-500 leading-snug">Prebuilt agent skills</span></a>
+        </div>
+        </div>
+      </div>
+    </div>
+      <div class="relative" data-nav-dropdown>
+      <button type="button" data-nav-dropdown-toggle aria-haspopup="true" aria-expanded="false" aria-controls="nav-track-record-panel" class="inline-flex items-center gap-1 hover:text-white transition">Track Record <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
+      <div id="nav-track-record-panel" data-nav-dropdown-panel class="hidden absolute left-0 top-full pt-3 z-50">
+        <div class="w-60 rounded-xl border border-white/10 p-4" style="background:oklch(var(--bg-2-lch, 0.19 0.014 265) / 0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
+        <a href="https://algovault.com/track-record" class="block px-3 py-2 rounded-lg hover:bg-white/5 transition group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Live Dashboard</span><span class="block text-[11px] text-gray-500">Real-time PFE win rate</span></a>
+        <a href="https://algovault.com/verify" class="block px-3 py-2 rounded-lg hover:bg-white/5 transition group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Verify</span><span class="block text-[11px] text-gray-500">On-chain Merkle proofs</span></a>
+        </div>
+      </div>
+    </div>
+      <a href="https://algovault.com/how-it-works" class="hover:text-white transition" data-nav-link>How it works</a>
+      <a href="https://algovault.com/#pricing" class="hover:text-white transition" data-nav-link>Pricing</a>
+      <a href="https://algovault.com/docs" class="hover:text-white transition" data-nav-link>Docs</a>
+      <a href="https://api.algovault.com/account" class="hover:text-white transition" data-nav-link>Account</a>
+      <a href="https://api.algovault.com/welcome" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition" data-nav-link>Signup</a>
+    </div>
+      <div class="sm:hidden flex items-center gap-2">
+        <a href="https://api.algovault.com/welcome" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition min-h-[44px] inline-flex items-center" data-mobile-signup-pill data-nav-link>Signup</a>
+      <button type="button" data-mobile-nav-toggle id="mobile-nav-toggle" aria-label="Open menu" aria-controls="mobile-menu" aria-expanded="false" class="sm:hidden inline-flex items-center justify-center w-11 h-11 -mr-2 text-gray-400 hover:text-white transition">
+        <svg data-mobile-nav-icon-open class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <svg data-mobile-nav-icon-close class="w-6 h-6 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+      </div>
+  </div>
+      <div id="mobile-menu" data-mobile-nav-panel class="hidden sm:hidden border-t border-white/5" style="background:oklch(var(--bg-lch, 0.16 0.012 265) / 0.97);backdrop-filter:blur(12px)">
+        <button type="button" data-nav-accordion-toggle aria-expanded="false" aria-controls="nav-m-platform-panel" class="w-full flex items-center justify-between px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Platform <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
+        <div id="nav-m-platform-panel" data-nav-accordion-panel class="hidden">
+          <a href="https://algovault.com/tools#get-trade-call" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call</a>
+          <a href="https://algovault.com/tools#get-market-regime" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Market Regime</a>
+          <a href="https://algovault.com/tools#scan-funding-arb" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Funding Arbitrage</a>
+          <a href="https://algovault.com/tools#scan-trade-calls" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call Scanner</a>
+          <a href="https://algovault.com/tools#chat-knowledge" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Knowledge Chat</a>
+          <a href="https://algovault.com/tools" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">See all tools</a>
+          <a href="https://algovault.com/mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
+          <a href="https://algovault.com/rest-api" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">REST API</a>
+          <a href="https://algovault.com/webhooks" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Webhooks</a>
+          <a href="https://t.me/algovaultofficialbot" target="_blank" rel="noopener noreferrer" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Telegram Bot</a>
+          <a href="https://algovault.com/integrations" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Integrations</a>
+          <a href="https://algovault.com/skills" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Skills</a>
+        </div>
+        <button type="button" data-nav-accordion-toggle aria-expanded="false" aria-controls="nav-m-track-record-panel" class="w-full flex items-center justify-between px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Track Record <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
+        <div id="nav-m-track-record-panel" data-nav-accordion-panel class="hidden">
+          <a href="https://algovault.com/track-record" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Live Dashboard</a>
+          <a href="https://algovault.com/verify" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Verify</a>
+        </div>
+        <a href="https://algovault.com/how-it-works" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">How it works</a>
+        <a href="https://algovault.com/#pricing" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Pricing</a>
+        <a href="https://algovault.com/docs" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Docs</a>
+        <a href="https://api.algovault.com/account" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Account</a>
+        <div class="px-6 py-3">
+          <a href="https://api.algovault.com/welcome" class="block px-4 py-3 rounded-lg text-sm text-center bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 font-semibold transition">Signup</a>
+        </div>
+      </div>
+</nav>
+<script>
+/* NAV-PLATFORM-GENERATOR-W1 controller (shared, identical across all surfaces) */
+(function(){
+  var mToggle = document.querySelector('[data-mobile-nav-toggle]');
+  var mPanel = document.getElementById('mobile-menu');
+  var navEl = mToggle ? mToggle.closest('nav') : document.querySelector('nav');
+  function mIsOpen(){ return mPanel && !mPanel.classList.contains('hidden'); }
+  function mSet(open){
+    if(!mPanel||!mToggle) return;
+    mPanel.classList.toggle('hidden', !open);
+    mToggle.setAttribute('aria-expanded', open ? 'true':'false');
+    mToggle.setAttribute('aria-label', open ? 'Close menu':'Open menu');
+    var io=mToggle.querySelector('[data-mobile-nav-icon-open]'), ic=mToggle.querySelector('[data-mobile-nav-icon-close]');
+    if(io) io.classList.toggle('hidden', open);
+    if(ic) ic.classList.toggle('hidden', !open);
+  }
+  if(mToggle&&mPanel){
+    mToggle.addEventListener('click', function(e){ e.stopPropagation(); mSet(!mIsOpen()); });
+  }
+  // desktop dropdowns
+  var dropdowns = [].slice.call(document.querySelectorAll('[data-nav-dropdown]'));
+  function ddClose(dd){
+    var b=dd.querySelector('[data-nav-dropdown-toggle]'), p=dd.querySelector('[data-nav-dropdown-panel]');
+    if(p) p.classList.add('hidden'); if(b) b.setAttribute('aria-expanded','false');
+  }
+  function ddSet(dd, open){
+    var b=dd.querySelector('[data-nav-dropdown-toggle]'), p=dd.querySelector('[data-nav-dropdown-panel]');
+    if(!b||!p) return;
+    dropdowns.forEach(function(o){ if(o!==dd) ddClose(o); });
+    p.classList.toggle('hidden', !open); b.setAttribute('aria-expanded', open?'true':'false');
+  }
+  dropdowns.forEach(function(dd){
+    var b=dd.querySelector('[data-nav-dropdown-toggle]'), p=dd.querySelector('[data-nav-dropdown-panel]');
+    if(!b||!p) return;
+    b.addEventListener('click', function(e){ e.stopPropagation(); ddSet(dd, p.classList.contains('hidden')); });
+    dd.addEventListener('mouseenter', function(){ ddSet(dd, true); });
+    dd.addEventListener('mouseleave', function(){ ddClose(dd); });
+    dd.addEventListener('focusout', function(e){ if(!dd.contains(e.relatedTarget)) ddClose(dd); });
+  });
+  // mobile accordions
+  [].slice.call(document.querySelectorAll('[data-nav-accordion-toggle]')).forEach(function(b){
+    var p=document.getElementById(b.getAttribute('aria-controls'));
+    if(!p) return;
+    b.addEventListener('click', function(){ var open=p.classList.contains('hidden'); p.classList.toggle('hidden', !open); b.setAttribute('aria-expanded', open?'true':'false'); });
+  });
+  // global close
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ dropdowns.forEach(ddClose); if(mIsOpen()) mSet(false); } });
+  document.addEventListener('click', function(e){
+    dropdowns.forEach(function(dd){ if(!dd.contains(e.target)) ddClose(dd); });
+    if(mIsOpen() && navEl && !navEl.contains(e.target)) mSet(false);
+  });
+  if(mPanel) mPanel.addEventListener('click', function(e){ if(e.target.closest('a')) mSet(false); });
+  // client-side current-page highlight (byte-identical HTML on every page; JS marks active)
+  try {
+    var here = location.origin + location.pathname.replace(/\/$/, '');
+    [].slice.call(document.querySelectorAll('nav [data-nav-link]')).forEach(function(a){
+      var h = (a.getAttribute('href')||'').split('#')[0].replace(/\/$/, '');
+      if(h && h === here){ a.classList.remove('text-gray-400'); a.classList.add('text-mint-400','font-medium'); }
+    });
+  } catch(_){}
+})();
+</script>
+<!-- NAV:END -->
+<main>
+  <!-- SLOT:MAIN — the page. Numbers ONLY via <span data-tr-field="KEY">fallback</span>; colours
+       ONLY via the palette utilities the THEME region defines or the :root tokens above. -->
+</main>
+<!-- CONVERSION-BAND:START -->
+<section data-conversion-band data-page="_templates.page-template" style="padding:56px 22px;border-top:1px solid var(--line, #30363d);background:transparent"><style id="av-conversion-band-css">[data-conversion-band] .avcb-row{display:flex;flex-direction:row;align-items:center;gap:12px;flex-wrap:wrap}[data-conversion-band] .avcb-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:9px;font-size:14px;font-weight:500;text-decoration:none;white-space:nowrap}[data-conversion-band] .avcb-a{background:var(--accent, var(--mint, oklch(0.86 0.16 165)));color:oklch(0.16 0.05 165);box-shadow:0 8px 24px -10px oklch(0.86 0.16 165 / 0.5)}[data-conversion-band] .avcb-b{border:1px solid var(--line-2, var(--line, #30363d));background:oklch(0.22 0.012 265 / 0.6);color:var(--fg, #e6edf3)}[data-conversion-band] .avcb-link{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;font-size:13.5px;text-decoration:none;color:var(--accent, var(--mint, oklch(0.86 0.16 165)))}@media (max-width:639px){[data-conversion-band] .avcb-row{flex-direction:column;align-items:stretch}[data-conversion-band] .avcb-a{order:2}[data-conversion-band] .avcb-b{order:1}[data-conversion-band] .avcb-link{order:3;justify-content:center}}</style><div style="max-width:1440px;margin:0 auto"><div style="display:inline-flex;align-items:center;gap:10px;margin-bottom:16px;font-family:var(--font-mono, ui-monospace, monospace);font-size:11px;color:var(--fg-3, #8b949e);letter-spacing:0.14em;text-transform:uppercase"><span style="width:5px;height:5px;border-radius:50%;background:var(--accent, var(--mint, oklch(0.86 0.16 165)))"></span>· next step</div><h2 style="font-family:var(--font-display, inherit);font-size:clamp(26px,4vw,38px);line-height:1.08;letter-spacing:-0.022em;font-weight:500;margin:0;text-wrap:balance;color:var(--fg, #e6edf3)">Get the next verdict in your agent.</h2><p style="font-size:15px;color:var(--fg-3, #8b949e);max-width:680px;margin:14px 0 26px;line-height:1.6">No signup required. Free tier: all assets, all <span data-tr-field="timeframe_count">11</span> timeframes, 200 calls/month (up to 100/day).</p><div class="avcb-row"><a class="avcb-btn avcb-a plausible-event-name=CTA+Click plausible-event-location=band plausible-event-cta=quickstart plausible-event-page=_templates.page-template" href="https://algovault.com/#quickstart">Connect your agent →</a><a class="avcb-btn avcb-b plausible-event-name=CTA+Click plausible-event-location=band plausible-event-cta=telegram plausible-event-page=_templates.page-template" href="https://t.me/algovaultofficialbot" target="_blank" rel="noopener noreferrer">Try free in Telegram</a><a class="avcb-link plausible-event-name=CTA+Click plausible-event-location=band plausible-event-cta=pricing plausible-event-page=_templates.page-template" href="https://algovault.com/#pricing">See pricing →</a></div></div></section>
+<!-- CONVERSION-BAND:END -->
+<footer data-av-brand-footer="desktop" style="padding:44px 80px 56px;border-top:1px solid var(--line);background:oklch(0.13 0.012 265);display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;font-size:13px;color:var(--fg-3)"><div style="display:flex;align-items:center;gap:10px"><img src="/logo.png" alt="AlgoVault" style="width:22px;height:22px;border-radius:6px;object-fit:contain;flex-shrink:0"/><span style="color:var(--fg-2)">Built by AlgoVault Labs</span></div><div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap"><a href="https://algovault.com/" style="color:var(--fg-3);text-decoration:none">Home</a><a href="https://algovault.com/track-record" style="color:var(--fg-3);text-decoration:none">Track Record</a><a href="https://algovault.com/glossary" style="color:var(--fg-3);text-decoration:none">Glossary</a><a href="https://github.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">GitHub</a><a href="https://x.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">X / Twitter</a><a href="https://api.algovault.com/welcome" style="color:var(--fg-3);text-decoration:none">Signup</a><a href="https://algovault.com/referral" style="color:var(--fg-3);text-decoration:none">Refer &amp; Earn</a><a href="https://algovault.com/contact" style="color:var(--fg-3);text-decoration:none">Contact</a><a href="https://algovault.com/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a><a href="https://algovault.com/terms" style="color:var(--fg-3);text-decoration:none">Terms</a></div><div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?utm_source=badge-follow&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer" style="display:inline-flex;border:1px solid var(--line);border-radius:4px;line-height:0"><img src="https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1254662&theme=dark&size=small" alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" style="width: 86px; height: 32px;" width="86" height="32" /></a></div></footer>
+</body>
+</html>
