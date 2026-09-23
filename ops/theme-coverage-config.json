@@ -1,0 +1,32 @@
+{
+  "_doc": [
+    "DESIGN-THEME-UNIVERSAL-COVERAGE-W1 R1 — the declared exemption set for the theme-region",
+    "coverage leg of scripts/build_theme.mjs --check.",
+    "",
+    "WHY THIS FILE EXISTS. DESIGN-SURFACE-TOKENS-W1 made every EXISTING page take its colours",
+    "from the generated THEME region, and gated the nine retired navy literals. But its --check",
+    "only ever flagged a page that carried a Tailwind signature OUTSIDE the markers, or that was",
+    "marked and had dropped the design stylesheet. Measured at 75ba70a: a page with NO Tailwind",
+    "and NO markers was skipped by the loop entirely (build_theme.mjs `if (!outside) continue`),",
+    "so an author could ship a plain <style>-only page in any colour and every gate stayed green.",
+    "That is the same hole the footer injector had twice — a page silently outside the target set",
+    "— and it is closed the same proven way: targets are DERIVED, and the only thing a human",
+    "maintains is the far smaller set of pages that must NOT carry the region, each with its",
+    "reason in DATA. An exemption that lives only in a code comment gets 'fixed' by a future wave",
+    "enforcing the contract; one that lives here has to be argued with.",
+    "",
+    "THE TARGET SET IS THE INJECTOR'S OWN ANSWER. `glob` below declares the landing half and is",
+    "ASSERTED against targets() rather than re-derived from — a second derivation of 'what is a",
+    "page' is a second thing that can drift, and the gate would then disagree with the writer",
+    "about exactly the files nobody is looking at. docs-src/template.html joins it from targets()",
+    "itself. A stale exemption — one naming a file that no longer exists, or one that DOES carry",
+    "both markers and the loader — is itself a FAIL: it silently shrinks coverage."
+  ],
+  "glob": "landing/**/*.html",
+  "exempt": [
+    {
+      "path": "landing/_design/loader-snippet.html",
+      "reason": "HTML FRAGMENT — it is the canonical design loader itself, injected INTO the <head> of other pages. It carries no <html>, no <head> and no <body>, so a THEME region here would be pasted a second time into every host page that already has one. Same file, same reason, as the one row in ops/footer-coverage-config.json."
+    }
+  ]
+}

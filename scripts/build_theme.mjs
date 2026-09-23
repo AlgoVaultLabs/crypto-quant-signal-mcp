@@ -26,6 +26,7 @@
 // token-law default for a new gate): missing dist/, zero targets, or a missing tailwindcss
 // binary for leg (f) — never a pass.
 import * as fs from 'node:fs';
+import { globSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -125,17 +126,141 @@ export function targets(root = REPO_ROOT) {
   return [...set].filter((f) => fs.existsSync(f)).sort();
 }
 
+// ── universal coverage (R1) ──────────────────────────────────────────────────────────────
+//
+// The gap this closes, measured at 75ba70a: `run()`'s loop skips an unmarked page that carries
+// no Tailwind signature (`if (!outside) continue`), so a plain <style>-only page in any colour
+// was invisible to --check. Coverage asserts the POSITIVE per-page outcome instead: every
+// target carries BOTH markers and the loader link, or is exempt with a stated reason.
+export const COVERAGE_CONFIG_REL = path.join('ops', 'theme-coverage-config.json');
+
 /**
- * @returns {{changed, drifted, missingMarker, missingLoader, migrated, refused, targets}}
+ * Read the declared coverage config. Fail-closed: absent or unparseable is INDETERMINATE, never
+ * an empty pass — a gate that cannot read its own declaration has verified nothing.
+ * @returns {{status:'PASS'|'INDETERMINATE', config:object|null, why:string}}
+ */
+export function loadCoverageConfig(root = REPO_ROOT) {
+  const p = path.join(root, COVERAGE_CONFIG_REL);
+  if (!fs.existsSync(p)) return { status: 'INDETERMINATE', config: null, why: `${COVERAGE_CONFIG_REL} is missing` };
+  try {
+    return { status: 'PASS', config: JSON.parse(fs.readFileSync(p, 'utf8')), why: '' };
+  } catch (e) {
+    return { status: 'INDETERMINATE', config: null, why: `${COVERAGE_CONFIG_REL} is not valid JSON: ${e.message}` };
+  }
+}
+
+/**
+ * Derive the coverage set from the injector's OWN answer (`targets()`) minus the declared
+ * exemptions. Same shape as inject-footer's deriveFooterTargets, and deliberately so: that one
+ * is the proven form, and two gates over one corpus should not invent two vocabularies.
+ *
+ * `config.glob` is not decoration and is not a second derivation either — it is ASSERTED to
+ * reproduce the landing half of targets(). A config that silently narrows or widens the gate is
+ * therefore a FAIL rather than a quiet shrink, while the writer and the gate keep exactly one
+ * definition of "a page".
+ *
+ * @returns {{status:'PASS'|'FAIL'|'INDETERMINATE', targets:string[], exempt:string[], why:string}}
+ */
+export function deriveCoverageTargets(root = REPO_ROOT, config = null) {
+  const no = (status, why) => ({ status, targets: [], exempt: [], why });
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return no('INDETERMINATE', 'config is not an object');
+  if (typeof config.glob !== 'string' || !config.glob.trim()) return no('INDETERMINATE', '`glob` is absent or not a string');
+  if (!Array.isArray(config.exempt)) {
+    return no('INDETERMINATE', `\`exempt\` is ${config.exempt === undefined ? 'absent' : 'not an array'}`);
+  }
+
+  const exempt = new Set();
+  for (const [i, row] of config.exempt.entries()) {
+    const id = (row && row.path) || `#${i}`;
+    if (!row || typeof row !== 'object' || typeof row.path !== 'string' || !row.path.trim()) {
+      return no('FAIL', `exemption ${id} has no usable \`path\``);
+    }
+    // An exemption with no stated reason is the failure mode this config exists to prevent.
+    if (typeof row.reason !== 'string' || row.reason.trim().length < 10) {
+      return no('FAIL', `exemption ${row.path} has no substantive \`reason\``);
+    }
+    exempt.add(row.path.split(path.sep).join('/'));
+  }
+
+  const all = targets(root).map((f) => path.relative(root, f).split(path.sep).join('/')).sort();
+
+  // The glob assertion. Never used to BUILD the set — only to prove the declaration still
+  // describes it, so `glob` can never drift into a silent narrowing of the gate.
+  let globbed;
+  try {
+    globbed = globSync(config.glob, { cwd: root }).map((p) => p.split(path.sep).join('/')).sort();
+  } catch (e) {
+    return no('INDETERMINATE', `glob \`${config.glob}\` failed: ${e.message}`);
+  }
+  const landingHalf = all.filter((p) => p.startsWith('landing/'));
+  if (JSON.stringify(globbed) !== JSON.stringify(landingHalf)) {
+    const only = (a, b) => a.filter((x) => !b.includes(x));
+    return no(
+      'FAIL',
+      `\`glob\` no longer describes the injector's target set — glob-only: [${only(globbed, landingHalf).join(', ')}], targets-only: [${only(landingHalf, globbed).join(', ')}]`,
+    );
+  }
+
+  const set = all.filter((p) => !exempt.has(p));
+  // Constructed-corpus vacuity: this repo authors these pages, so zero targets means the
+  // derivation matched nothing — REFUSE rather than report an empty pass.
+  if (set.length === 0) {
+    return { status: 'INDETERMINATE', targets: [], exempt: [...exempt], why: `zero coverage targets after ${exempt.size} exemption(s)` };
+  }
+  return { status: 'PASS', targets: set, exempt: [...exempt], why: '' };
+}
+
+/** A page is covered when it carries BOTH THEME markers and links the design stylesheet. */
+export function isCovered(html) {
+  return html.includes(THEME_START) && html.includes(THEME_END) && html.includes(LOADER_LINK);
+}
+
+/**
+ * @returns {{status, uncovered:string[], staleExempt:string[], scanned:number, why:string}}
+ *   uncovered   = a coverage target missing the markers or the loader link
+ *   staleExempt = an exemption naming a file that does not exist, or one that DOES carry both
+ *                 (its reason has expired — keeping it silently shrinks the gate)
+ */
+export function coverageAudit(root = REPO_ROOT, config = null) {
+  const derived = deriveCoverageTargets(root, config);
+  if (derived.status !== 'PASS') {
+    return { status: derived.status, uncovered: [], staleExempt: [], scanned: 0, why: derived.why };
+  }
+  const uncovered = [];
+  for (const rel of derived.targets) {
+    const abs = path.join(root, rel);
+    if (!fs.existsSync(abs)) continue; // targets() already filtered; belt and braces
+    if (!isCovered(fs.readFileSync(abs, 'utf8'))) uncovered.push(rel);
+  }
+  const staleExempt = [];
+  for (const rel of derived.exempt) {
+    const abs = path.join(root, rel);
+    if (!fs.existsSync(abs)) { staleExempt.push(`${rel} (names a file that does not exist)`); continue; }
+    if (isCovered(fs.readFileSync(abs, 'utf8'))) staleExempt.push(`${rel} (already carries both markers and the loader — the exemption has expired)`);
+  }
+  return { status: uncovered.length || staleExempt.length ? 'FAIL' : 'PASS', uncovered, staleExempt, scanned: derived.targets.length, why: '' };
+}
+
+/**
+ * @returns {{changed, drifted, missingMarker, missingLoader, migrated, refused, targets,
+ *            uncovered, staleExempt, coverageStatus, coverageWhy, coverageScanned}}
  *   drifted        = marked files whose region != freshly rendered
  *   missingMarker  = files carrying a Tailwind signature outside the markers (un-migrated)
  *   missingLoader  = marked files that do not link the design stylesheet (their var() twins
  *                    would have nothing to resolve against — fallbacks cover the colour, but
  *                    a marked page without the sheet has lost the whole design system)
  *   refused        = files whose shape migrateLegacyBlock would not touch
+ *   uncovered      = coverage targets carrying neither the markers nor the loader — the class
+ *                    the loop below SKIPS (`if (!outside) continue`), i.e. a plain <style>-only
+ *                    page in any colour, which was invisible to every gate before R1
+ *   staleExempt    = declared exemptions that no longer earn their row
+ *
+ * `coverageConfig` is loaded from `root` when not supplied, so a temp root exercises the real
+ * loader rather than a stub — the seam a hermetic self-test would otherwise be blind to.
  */
-export function run({ check = false, root = REPO_ROOT, region = null } = {}) {
+export function run({ check = false, root = REPO_ROOT, region = null, coverageConfig = undefined } = {}) {
   const theRegion = region ?? renderThemeRegion();
+  const loaded = coverageConfig === undefined ? loadCoverageConfig(root) : { status: 'PASS', config: coverageConfig, why: '' };
   const files = targets(root);
   const changed = [];
   const drifted = [];
@@ -167,7 +292,19 @@ export function run({ check = false, root = REPO_ROOT, region = null } = {}) {
       if (!check) { fs.writeFileSync(file, next); changed.push(rel); }
     }
   }
-  return { changed, drifted, missingMarker, missingLoader, migrated, refused, targets: files };
+  // AFTER the loop on purpose: in write mode the loop migrates pages, so auditing beforehand
+  // would report a page as uncovered in the same run that just covered it.
+  const cov = loaded.status === 'PASS'
+    ? coverageAudit(root, loaded.config)
+    : { status: loaded.status, uncovered: [], staleExempt: [], scanned: 0, why: loaded.why };
+  return {
+    changed, drifted, missingMarker, missingLoader, migrated, refused, targets: files,
+    uncovered: cov.uncovered,
+    staleExempt: cov.staleExempt,
+    coverageStatus: cov.status,
+    coverageWhy: cov.why,
+    coverageScanned: cov.scanned,
+  };
 }
 
 // ── twin parity (leg e) ──────────────────────────────────────────────────────────────────
@@ -410,6 +547,92 @@ export async function selfTest() {
     }
   }
 
+  // (h) universal coverage — the R1 leg. Fixtures are written INLINE rather than copied from
+  // tests/fixtures/theme/: the whole point of these three is the config seam, and a config plus
+  // its corpus read far better side by side than as two files that must be kept in step.
+  {
+    const COVERED = `<!DOCTYPE html><html><head>\n<link rel="stylesheet" href="${LOADER_LINK}">\n${THEME_START}\n${THEME_END}\n</head><body></body></html>\n`;
+    // No Tailwind signature and no markers: the class `run()`'s loop SKIPS. This is the hole.
+    const PLAIN = '<!DOCTYPE html><html><head><style>body { background: #123456; }</style></head><body></body></html>\n';
+    const FRAGMENT = `<!-- BEGIN: AlgoVault canonical design loader -->\n<link rel="stylesheet" href="${LOADER_LINK}">\n${LOADER_END}\n`;
+
+    const mk = (files, config) => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-coverage-'));
+      fs.mkdirSync(path.join(root, 'landing', '_design'), { recursive: true });
+      fs.mkdirSync(path.join(root, 'ops'), { recursive: true });
+      for (const [rel, body] of Object.entries(files)) fs.writeFileSync(path.join(root, rel), body);
+      fs.writeFileSync(path.join(root, COVERAGE_CONFIG_REL), JSON.stringify(config, null, 2));
+      return root;
+    };
+    const exemptFragment = {
+      glob: 'landing/**/*.html',
+      exempt: [{ path: 'landing/_design/loader-snippet.html', reason: 'HTML fragment — injected INTO other pages, so a region here renders twice.' }],
+    };
+
+    // MUST-CATCH: a plain <style>-only page in any colour, which every pre-R1 gate passed.
+    {
+      const root = mk({ 'landing/ok.html': COVERED, 'landing/plain.html': PLAIN, 'landing/_design/loader-snippet.html': FRAGMENT }, exemptFragment);
+      const res = run({ root, region, check: true });
+      t('(h) MUST-CATCH an uncovered page (no markers, no Tailwind, no loader)', res.uncovered, ['landing/plain.html']);
+      // The load-bearing half: that same page is reported by NONE of the pre-R1 legs, which is
+      // exactly why it could ship in any colour. (ok.html drifts here because its fixture
+      // markers are empty — that is the region writer doing its job, not the hole.)
+      t('(h) …and it is INVISIBLE to the pre-R1 legs',
+        [res.missingMarker, res.missingLoader, res.drifted].map((l) => l.includes('landing/plain.html')), [false, false, false]);
+      t('(h) MUST-PASS the exempt fragment (not reported uncovered)', res.staleExempt, []);
+      t('(h) coverage status is FAIL', res.coverageStatus, 'FAIL');
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+
+    // MUST-CATCH: a stale exemption — one naming a file that is gone, one that now self-covers.
+    {
+      const root = mk({ 'landing/ok.html': COVERED, 'landing/_design/loader-snippet.html': COVERED }, {
+        glob: 'landing/**/*.html',
+        exempt: [
+          { path: 'landing/_design/loader-snippet.html', reason: 'HTML fragment — injected INTO other pages, so a region here renders twice.' },
+          { path: 'landing/deleted-last-wave.html', reason: 'a page that was removed and whose exemption outlived it.' },
+        ],
+      });
+      const res = run({ root, region, check: true });
+      t('(h) MUST-CATCH both stale-exemption shapes', res.staleExempt.length, 2);
+      t('(h) …naming the vanished file', res.staleExempt.some((s) => s.startsWith('landing/deleted-last-wave.html')), true);
+      t('(h) …and the one that now carries both', res.staleExempt.some((s) => s.startsWith('landing/_design/loader-snippet.html')), true);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+
+    // MUST-PASS: the real shape — every page covered, the fragment exempt and still a fragment.
+    {
+      const root = mk({ 'landing/ok.html': COVERED, 'landing/_design/loader-snippet.html': FRAGMENT }, exemptFragment);
+      const res = run({ root, region, check: true });
+      t('(h) MUST-PASS a fully covered tree', [res.uncovered, res.staleExempt, res.coverageStatus], [[], [], 'PASS']);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+
+    // The config seam itself: absent and malformed are INDETERMINATE, never a quiet pass.
+    {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-coverage-'));
+      fs.mkdirSync(path.join(root, 'landing'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'landing', 'ok.html'), COVERED);
+      t('(h) MUST-REFUSE a missing config', run({ root, region, check: true }).coverageStatus, 'INDETERMINATE');
+      fs.mkdirSync(path.join(root, 'ops'), { recursive: true });
+      fs.writeFileSync(path.join(root, COVERAGE_CONFIG_REL), '{ not json');
+      t('(h) MUST-REFUSE a malformed config', run({ root, region, check: true }).coverageStatus, 'INDETERMINATE');
+      fs.writeFileSync(path.join(root, COVERAGE_CONFIG_REL), JSON.stringify({ glob: 'landing/**/*.html', exempt: [{ path: 'landing/ok.html', reason: 'x' }] }));
+      t('(h) MUST-REFUSE an exemption with no substantive reason', run({ root, region, check: true }).coverageStatus, 'FAIL');
+      fs.writeFileSync(path.join(root, COVERAGE_CONFIG_REL), JSON.stringify({ glob: 'landing/*.htm', exempt: [] }));
+      t('(h) MUST-CATCH a glob that no longer describes the target set', run({ root, region, check: true }).coverageStatus, 'FAIL');
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+
+    // The live tree: this is the assertion AC1 gates on.
+    {
+      const live = run({ check: true, region });
+      t('(h) live coverage: uncovered=0', live.uncovered, []);
+      t('(h) live coverage: staleExempt=0', live.staleExempt, []);
+      t('(h) live coverage scanned a non-empty corpus', live.coverageScanned > 0, true);
+    }
+  }
+
   // (g) CDN pin banner (never fails the gate).
   {
     const { TAILWIND_CDN_VERSION } = require(path.join(REPO_ROOT, 'dist', 'lib', 'site-theme.js'));
@@ -449,23 +672,47 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
     process.exit(3);
   }
   const res = run({ check });
+  // R1: an unreadable or malformed coverage declaration is INDETERMINATE — the gate could not
+  // verify coverage, and that is never a pass. Checked before any other verdict.
+  if (res.coverageStatus === 'INDETERMINATE') {
+    console.error(`✗ build_theme: coverage leg could not run — ${res.coverageWhy}`);
+    console.log('THEME_SYNC_VERDICT=INDETERMINATE');
+    process.exit(3);
+  }
+  const coverageBad = res.uncovered.length + res.staleExempt.length;
+  const printCoverage = () => {
+    if (res.uncovered.length) {
+      console.error(`✗ build_theme: ${res.uncovered.length} page(s) NOT covered by the theme region (no ${THEME_START}/${THEME_END} pair, or no ${LOADER_LINK}):\n  ${res.uncovered.join('\n  ')}`);
+      console.error(`  A page with no Tailwind and no markers is skipped by the region writer, so it can ship in any colour.`);
+      console.error(`  Fix it, or declare it in ${COVERAGE_CONFIG_REL} with a reason. New pages: node scripts/new-landing-page.mjs --slug <slug> --title "…" --description "…"`);
+    }
+    if (res.staleExempt.length) {
+      console.error(`✗ build_theme: ${res.staleExempt.length} stale exemption(s) in ${COVERAGE_CONFIG_REL}:\n  ${res.staleExempt.join('\n  ')}`);
+      console.error('  A stale exemption silently shrinks coverage — delete the row.');
+    }
+  };
   if (check) {
     const problems = [...res.drifted, ...res.missingMarker, ...res.missingLoader];
-    if (problems.length > 0) {
+    if (problems.length > 0 || coverageBad > 0) {
       if (res.drifted.length) console.error(`✗ build_theme --check: ${res.drifted.length} region(s) OUT OF SYNC:\n  ${res.drifted.join('\n  ')}`);
       if (res.missingMarker.length) console.error(`✗ build_theme --check: ${res.missingMarker.length} un-migrated page(s) (Tailwind signature outside the markers):\n  ${res.missingMarker.join('\n  ')}`);
       if (res.missingLoader.length) console.error(`✗ build_theme --check: ${res.missingLoader.length} marked page(s) NOT linking ${LOADER_LINK}:\n  ${res.missingLoader.join('\n  ')}`);
-      console.error('  Run: node scripts/build_theme.mjs');
+      printCoverage();
+      if (problems.length > 0) console.error('  Run: node scripts/build_theme.mjs');
       console.log('THEME_SYNC_VERDICT=FAIL');
       process.exit(1);
     }
     console.log(`✓ build_theme --check: ${res.targets.length} target(s) scanned, every theme region in sync.`);
+    console.log(`✓ coverage: ${res.coverageScanned} page(s) carry the region + the loader — uncovered=0 staleExempt=0.`);
     console.log('THEME_SYNC_VERDICT=PASS');
   } else {
     console.log(`✓ build_theme: ${res.changed.length} region(s) written${res.migrated.length ? `, ${res.migrated.length} page(s) migrated` : ''} across ${res.targets.length} target(s).`);
     if (res.refused.length) console.error(`  REFUSED (unknown shape, untouched):\n  ${res.refused.join('\n  ')}`);
     if (res.missingLoader.length) console.error(`  note: ${res.missingLoader.length} marked page(s) lack ${LOADER_LINK}: ${res.missingLoader.join(', ')}`);
-    console.log(`THEME_SYNC_VERDICT=${res.refused.length ? 'FAIL' : 'PASS'}`);
-    if (res.refused.length) process.exit(1);
+    printCoverage();
+    if (!coverageBad) console.log(`✓ coverage: ${res.coverageScanned} page(s) carry the region + the loader — uncovered=0 staleExempt=0.`);
+    const bad = res.refused.length || coverageBad;
+    console.log(`THEME_SYNC_VERDICT=${bad ? 'FAIL' : 'PASS'}`);
+    if (bad) process.exit(1);
   }
 }
