@@ -14,9 +14,10 @@ import {
   orderVenuesFullPanelFirst,
   buildGroupsSql,
   CRITICAL_HORIZON_MARGIN_S,
+  worklistPreamble,
   type PrioritizedGroup,
 } from '../../src/scripts/backfill-directional-labels.js';
-import { candleHorizonDays, CANDLE_HORIZON_DAYS } from '../../src/lib/venue-candle-horizons.js';
+import { candleHorizonDays, CANDLE_HORIZON_DAYS, CANDLE_HORIZONS_MEASURED_AT } from '../../src/lib/venue-candle-horizons.js';
 import { FULL_PANEL_VENUES, MAJOR_VENUES } from '../../src/lib/venue-slo-tiers.js';
 
 const NOW = 1_790_420_000; // seconds
@@ -165,5 +166,17 @@ describe('buildGroupsSql — the eligibility is the labeler’s own, the order d
       for (const tf of Object.keys(tfs)) expect(sql).toContain(`('${venue}', '${tf}', `);
     }
     expect(sql).toMatch(/todo_past_horizon/);
+  });
+});
+
+describe('worklistPreamble — the run log names the order it used', () => {
+  // A horizon table goes stale when a venue changes its retention; the log line is how a reader of
+  // any night's run knows WHICH measured table and WHICH FULL set ordered it.
+  it('names the horizon measurement date, the critical margin and the FULL-eligible set', () => {
+    const line = worklistPreamble();
+    expect(line.startsWith('[worklist] ')).toBe(true);
+    expect(line).toContain(`horizons_measured=${CANDLE_HORIZONS_MEASURED_AT}`);
+    expect(line).toContain(`critical_margin_h=${CRITICAL_HORIZON_MARGIN_S / 3600}`);
+    expect(line).toContain(`full_panel=${FULL_PANEL_VENUES.join(',')}`);
   });
 });

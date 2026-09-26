@@ -43,8 +43,8 @@ import {
   barrierPct,
   runTripleBarrier,
 } from './directional-labeler.js';
-import { sloHoursFor as defaultSloHoursFor, isFullPanelVenue, FRESHNESS_BARRIER_SPEC } from '../lib/venue-slo-tiers.js';
-import { candleHorizonDays, CANDLE_HORIZON_DAYS } from '../lib/venue-candle-horizons.js';
+import { sloHoursFor as defaultSloHoursFor, isFullPanelVenue, FRESHNESS_BARRIER_SPEC, FULL_PANEL_VENUES } from '../lib/venue-slo-tiers.js';
+import { candleHorizonDays, CANDLE_HORIZON_DAYS, CANDLE_HORIZONS_MEASURED_AT } from '../lib/venue-candle-horizons.js';
 import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
 import { buildEnvelope, isConforming, type Verdict } from '../lib/detector-envelope.js';
 
@@ -325,6 +325,16 @@ export function orderGroupsForVenue<G extends PrioritizedGroup>(groups: G[], now
   );
   idle.sort(byName);
   return [...critical.map((c) => c.g), ...interleaved, ...idle];
+}
+
+/** The run's `[worklist]` preamble: WHICH measured horizon table and WHICH FULL-eligible set ordered this
+ *  run — a horizon table goes stale when a venue changes its retention, and the log must say which one a
+ *  given night used. Pure. */
+export function worklistPreamble(): string {
+  return (
+    `[worklist] order=full-panel-first,horizon-first,breadth horizons_measured=${CANDLE_HORIZONS_MEASURED_AT} ` +
+    `critical_margin_h=${CRITICAL_HORIZON_MARGIN_S / 3600} full_panel=${FULL_PANEL_VENUES.join(',')}`
+  );
 }
 
 /** Per-venue worklist figures for the run's `[worklist]` line. Pure. */
@@ -836,6 +846,7 @@ async function main(): Promise<void> {
   // One line per venue, before any work: what the run is about to face. `past_horizon_todo` counts
   // unlabelled rows already older than the venue's candle depth — lost to its API, reported, never
   // retried — so the per-night horizon-crossing figure is read from the producer, not reconstructed.
+  console.log(worklistPreamble());
   for (const venue of venueOrder) {
     const s = worklistStats(byVenue.get(venue) ?? [], nowSec);
     console.log(
