@@ -203,14 +203,59 @@ async function fetchHL(coin: string, earliest: number): Promise<FundingPoint[]> 
   return dedupeSort(out);
 }
 
-/** OKX/GATE — recent forward-seed via the shipped adapter (OKX ~3mo, Gate ~30d). Reuse getFundingHistory. */
-async function fetchSeed(venue: 'OKX' | 'GATE', coin: string): Promise<FundingPoint[]> {
+/** OKX/GATE — recent forward-seed via the shipped adapter (OKX ~3mo, Gate ~30d). Reuse getFundingHistory.
+ *  OKX follows the incremental checkpoint: its adapter pages FORWARD from `startMs` (OPS-BDIR-V3-PANEL-
+ *  READINESS-W1 CH1), so the nightly/hourly fetch is the new prints only and a lagging symbol catches up
+ *  in one run. Before that fix OKX ignored the checkpoint and its adapter returned only the OLDEST page,
+ *  which kept every OKX row ~60 days behind. GATE keeps the wide window it has always used — its leg
+ *  measured healthy (62/62 manifest symbols fresh, 2026-09-26) and is deliberately not changed here. */
+async function fetchSeed(venue: 'OKX' | 'GATE', coin: string, startMs?: number): Promise<FundingPoint[]> {
   try {
     const wide = Date.now() - 400 * 24 * H; // adapter returns whatever the venue retains within the window
-    const pts = await getAdapter(venue).getFundingHistory(coin, wide);
+    const since = venue === 'OKX' && startMs != null ? startMs : wide;
+    const pts = await getAdapter(venue).getFundingHistory(coin, since);
     await sleep(PACING_MS[venue]);
     return dedupeSort(pts as FundingPoint[]);
   } catch { return []; }
+}
+
+// ── HL wire names (OPS-BDIR-V3-PANEL-READINESS-W1 CH1) ──
+// HL's `fundingHistory` is case-sensitive, but the manifest carries the estate's upper-cased coin
+// (`exchange-universe.ts` upper-cases HL names): 'KPEPE' returned null while 'kPEPE' returned prints
+// (measured 2026-09-26), so kPEPE and kBONK had never accrued a row. The wire name comes from HL's OWN
+// `meta`, read once per process — never a hardcoded k-list. The STORED symbol stays the manifest's
+// upper-cased coin, which is what signals, oi_snapshots and the checkpoint query all key on.
+let hlNativeNames: Promise<Map<string, string | null>> | null = null;
+function loadHlNativeNames(): Promise<Map<string, string | null>> {
+  if (!hlNativeNames) {
+    hlNativeNames = upstreamFetch<{ universe?: Array<{ name?: unknown }> }>(VENUE_FETCH_CONFIGS.HL, {
+      url: 'https://api.hyperliquid.xyz/info',
+      method: 'POST',
+      body: JSON.stringify({ type: 'meta' }),
+      headers: { 'content-type': 'application/json' },
+      weightHint: 20,
+    })
+      .then((meta) => {
+        const byUpper = new Map<string, string | null>();
+        for (const u of meta?.universe ?? []) {
+          if (typeof u.name !== 'string' || u.name === '') continue;
+          const key = u.name.toUpperCase();
+          const prior = byUpper.get(key);
+          // two native names folding to one key is ambiguous → null → the manifest name is used
+          byUpper.set(key, prior === undefined || prior === u.name ? u.name : null);
+        }
+        return byUpper;
+      })
+      .catch(() => new Map<string, string | null>()); // best-effort: the manifest name, as before
+  }
+  return hlNativeNames;
+}
+async function hlWireName(coin: string): Promise<string> {
+  return (await loadHlNativeNames()).get(coin.toUpperCase()) ?? coin;
+}
+/** Test seam (`_…ForTest` convention): each test starts with no memoised meta. */
+export function _resetHlNativeNamesForTest(): void {
+  hlNativeNames = null;
 }
 
 async function fetchVenueFunding(venue: ExchangeId, coin: string, startMs?: number): Promise<FundingPoint[]> {
@@ -218,8 +263,8 @@ async function fetchVenueFunding(venue: ExchangeId, coin: string, startMs?: numb
   if (venue === 'KUCOIN') { const p = await getAdapter('KUCOIN').getFundingHistory(coin, startMs ?? m.earliest!); await sleep(PACING_MS.KUCOIN); return dedupeSort(p as FundingPoint[]); }
   if (venue === 'BINANCE' || venue === 'ASTER') return fetchBinanceLike(venue, coin, startMs ?? m.earliest!);
   if (venue === 'BYBIT') return fetchBybit(coin, startMs ?? m.earliest!);
-  if (venue === 'HL') return fetchHL(coin, startMs ?? m.earliest!);
-  if (venue === 'OKX' || venue === 'GATE') return fetchSeed(venue, coin); // adapter window-bounded; ON CONFLICT dedupes
+  if (venue === 'HL') return fetchHL(await hlWireName(coin), startMs ?? m.earliest!);
+  if (venue === 'OKX' || venue === 'GATE') return fetchSeed(venue, coin, startMs); // ON CONFLICT dedupes the overlap
   return [];
 }
 

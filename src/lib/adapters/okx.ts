@@ -91,6 +91,31 @@ async function throttle(): Promise<void> {
   lastRequestTime = Date.now();
 }
 
+// ── Funding-history paging (OPS-BDIR-V3-PANEL-READINESS-W1 CH1) ──
+
+/** The `funding-rate-history` endpoint's maximum page size. */
+const OKX_FUNDING_HISTORY_PAGE_LIMIT = 100;
+
+/**
+ * Upper bound on pages per `getFundingHistory` call. OKX retained 96 days of prints when measured
+ * (2026-09-26); at the densest funding interval (1h) that is 2,304 records = 24 pages, so 30
+ * covers it with margin while stopping an endpoint that keeps returning full pages from looping.
+ */
+export const OKX_FUNDING_HISTORY_MAX_PAGES = 30;
+
+/**
+ * Pause between pages of ONE instrument's walk. OKX limits this endpoint to 10 requests / 2 s per
+ * IP + instrument; 1,000 ms is 1 req/s (20 %) and keeps a full backfill at ≤ 60 req/min against
+ * the OKX interactive reserve (architect ruling Q-B, 2026-09-26). Only a window holding more than
+ * one page ever pays it — the steady-state checkpoint fetch is a single request.
+ */
+let okxFundingPageDelayMs = 1_000;
+
+/** Test seam (`_set…ForTest` convention): hermetic tests page without real sleeps. */
+export function _setOkxFundingPageDelayForTest(ms: number): void {
+  okxFundingPageDelayMs = ms;
+}
+
 interface OKXResponse<T> {
   code: string;
   msg: string;
@@ -320,24 +345,54 @@ export class OKXAdapter implements ExchangeAdapter {
     return results;
   }
 
+  /**
+   * Every retained funding print with `fundingTime > startTime`, ascending.
+   *
+   * OPS-BDIR-V3-PANEL-READINESS-W1 CH1. OKX answers `before=C` with up to `limit` records newer
+   * than C — the ones CLOSEST to C, i.e. the OLDEST page after the cursor (measured 2026-09-26:
+   * before=now−400d returned 06-22..07-25 while the newest print was 09-26). The single request
+   * this method used to send therefore returned only the first 100 records of any longer window,
+   * and every OKX row in `funding_rates_hist` trailed real time by ~60 days from the 2026-07-05
+   * seed onward. It now walks FORWARD, re-using `before` with the newest time seen as the cursor,
+   * so what it returns is always a contiguous run starting at `startTime` — a truncated walk
+   * (page bound, transport failure) leaves no hole for the next checkpoint run to skip over.
+   *
+   * The first request is byte-identical to the old one, so any window of ≤ 100 records (the
+   * steady-state checkpoint fetch; `scan_funding_arb` never calls OKX here) behaves exactly as
+   * before. Best-effort as before: never throws; a first-page failure returns [].
+   */
   async getFundingHistory(coin: string, startTime: number): Promise<{ time: number; fundingRate: number }[]> {
-    try {
-      const instId = toOKXInstId(coin);
-      const resp = await okxGet<OKXFundingHistory[]>('/api/v5/public/funding-rate-history', {
-        instId,
-        before: startTime,
-        limit: 100,
-      });
-
-      // OKX returns descending — reverse to ascending
-      const records = (resp.data || []).reverse();
-
-      return records
-        .map(r => ({ time: parseInt(r.fundingTime, 10), fundingRate: safeUpstreamNum(r.fundingRate) }))
-        .filter((r): r is { time: number; fundingRate: number } => r.fundingRate !== null);
-    } catch {
-      return [];
+    const instId = toOKXInstId(coin);
+    const byTime = new Map<number, number>();
+    let cursor = startTime;
+    for (let page = 0; page < OKX_FUNDING_HISTORY_MAX_PAGES; page++) {
+      let rows: OKXFundingHistory[];
+      try {
+        const resp = await okxGet<OKXFundingHistory[]>('/api/v5/public/funding-rate-history', {
+          instId,
+          before: cursor,
+          limit: OKX_FUNDING_HISTORY_PAGE_LIMIT,
+        });
+        rows = resp.data || [];
+      } catch {
+        break; // keep the contiguous prefix already collected
+      }
+      let newest = cursor;
+      for (const r of rows) {
+        const time = parseInt(r.fundingTime, 10);
+        if (!Number.isFinite(time)) continue;
+        if (time > newest) newest = time;
+        const fundingRate = safeUpstreamNum(r.fundingRate);
+        if (fundingRate !== null) byTime.set(time, fundingRate);
+      }
+      // A short page is the newest page. A full page that did not move the cursor would repeat.
+      if (rows.length < OKX_FUNDING_HISTORY_PAGE_LIMIT || newest <= cursor) break;
+      cursor = newest;
+      if (okxFundingPageDelayMs > 0) await new Promise((r) => setTimeout(r, okxFundingPageDelayMs));
     }
+    return [...byTime.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([time, fundingRate]) => ({ time, fundingRate }));
   }
 
   async getCurrentPrice(coin: string, _dex?: DexType): Promise<number | null> {
