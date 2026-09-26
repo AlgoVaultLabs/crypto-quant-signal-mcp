@@ -19,6 +19,7 @@
  */
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from '../lib/adapters/_upstream-fetch.js';
 import { runScript } from '../lib/script-lifecycle.js';
+import { runAsCaller } from '../lib/upstream-weight-budget.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { fetchVenueUniverse } from '../lib/exchange-universe.js';
 import { buildPoolConfig } from '../lib/performance-db.js';
@@ -364,7 +365,7 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  void runScript('backfill-funding-episodes', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
+  void runScript('backfill-funding-episodes', () => runAsCaller('funding_episodes_backfill', main)); // OPS-SCRIPT-EXIT-LIFECYCLE-W1; caller tag OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1 (class unchanged: interactive, as before)
 }
 
 export { buildManifest, fetchVenueFunding, META, halfSpread, mondayOf, SCHEMA_SQL, phaseRaw, phaseEpisodes };

@@ -69,6 +69,8 @@
     "credential:outcome:selftest": "node scripts/check-credential-outcome-conformance.mjs --self-test",
     "formaction:check": "node scripts/check-form-action-conformance.mjs --check",
     "formaction:selftest": "node scripts/check-form-action-conformance.mjs --self-test",
+    "callertags:check": "node scripts/check-caller-tags.mjs --check",
+    "callertags:selftest": "node scripts/check-caller-tags.mjs --self-test",
     "docs:samples:live": "node scripts/check-docs-samples-live.mjs",
     "docs:samples:selftest": "node scripts/check-docs-samples-live.mjs --self-test",
     "test:budget:check": "node scripts/check-test-budget.mjs",

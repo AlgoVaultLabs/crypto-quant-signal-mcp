@@ -15,3 +15,22 @@
 export function isShortLivedScript(scriptPath: string | undefined): boolean {
   return /[\\/]scripts[\\/]/.test(scriptPath ?? '');
 }
+
+/**
+ * OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1 CH1 — the process's ENTRYPOINT NAME: the basename of the
+ * script node was started with, extension stripped. `node dist/index.js` → `index` (PID 1);
+ * `node dist/scripts/seed-signals.js` → `seed-signals`. Pure (path passed in) and total: an absent
+ * or empty path yields `unknown-entrypoint`, never a throw — this feeds the weight-budget recorder on
+ * the serving path, where a throw would be worse than a vague name.
+ */
+export function entrypointName(scriptPath: string | undefined): string {
+  const base = (scriptPath ?? '').split(/[\\/]/).pop() ?? '';
+  const name = base.replace(/\.(?:c|m)?[jt]s$/, '');
+  return name.length > 0 ? name : 'unknown-entrypoint';
+}
+
+/** This process's entrypoint name, derived ONCE per process (argv[1] does not change). */
+const PROCESS_ENTRYPOINT: string = entrypointName(process.argv[1]);
+export function processEntrypoint(): string {
+  return PROCESS_ENTRYPOINT;
+}

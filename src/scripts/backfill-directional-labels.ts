@@ -715,7 +715,7 @@ async function main(): Promise<void> {
       venueDelta,
       { stopRequested: isStopRequested, progress: () => ({ written: cov.written, errors: cov.errors }), circuit },
     );
-  });
+  }, 'dwr-backfill');
 
   // Capacity-honesty (Objective #2), now under the DETECTOR_ENVELOPE contract (CH3).
   //

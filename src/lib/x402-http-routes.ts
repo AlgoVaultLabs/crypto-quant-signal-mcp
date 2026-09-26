@@ -51,6 +51,7 @@ import { getMarketRegime } from '../tools/get-market-regime.js';
 import { runScanTradeCall } from '../tools/scan-trade-calls.js';
 import { getEquityCall, getEquityRegime } from './equities/equity-tool-formatters.js';
 import { runAsCaller } from './upstream-weight-budget.js';
+import { x402CallerTag } from './caller-tags.js';
 import type { ScanExchangeId } from './trade-call-scanner.js';
 import type { ExchangeId, LicenseInfo, TradeCallResult } from '../types.js';
 
@@ -243,7 +244,7 @@ export async function callCoreHandler(
   // OPS-RATELIMIT-CALLER-ATTRIBUTION-W1: tag x402 HTTP traffic (the HTTP-twin of the MCP
   // tools — same lib fns, separate handlers) so paid-HTTP demand is attributed distinctly
   // from MCP demand. Weight class unchanged (interactive) — zero behavior change.
-  return runAsCaller(`x402:${tool}`, () => {
+  return runAsCaller(x402CallerTag(tool), () => {
   switch (tool) {
     case 'get_trade_signal':
       return getTradeSignal({

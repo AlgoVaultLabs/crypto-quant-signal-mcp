@@ -593,5 +593,5 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 }
 
 if (process.argv[1] && process.argv[1].includes('backfill-hold-decision-labels')) {
-  void runScript('backfill-hold-decision-labels', () => runAsBatch(() => main()));
+  void runScript('backfill-hold-decision-labels', () => runAsBatch(() => main(), 'hold_decision_labeler'));
 }

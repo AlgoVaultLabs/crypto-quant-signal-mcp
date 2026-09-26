@@ -469,6 +469,24 @@ jobs:
           test "$VS" = "FORM_ACTION_CONFORMANCE_VERDICT=PASS" || { echo "::error::self-test $VS"; exit 1; }
           test "$V" = "FORM_ACTION_CONFORMANCE_VERDICT=PASS" || { echo "::error::$V"; exit 1; }
 
+      # OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1 CH1 — caller-tag integrity. The per-caller acquisition
+      # ledger keys on the ALS caller tag, so one tag naming two spenders silently merges them. Every
+      # runAsCaller/runAsBatch/runAsInteractive name must be a literal, a conditional of literals, or a
+      # registered builder (src/lib/caller-tags.ts), and no emitted name may be shared by two
+      # entrypoints (import graph incl. dynamic import()). STATIC and network-free. Fail-closed on FAIL
+      # and INDETERMINATE: gated on the TOKEN, never on the exit code.
+      - name: Caller-tag integrity gate (fail-closed)
+        run: |
+          set +e
+          ST="$(node scripts/check-caller-tags.mjs --self-test 2>&1)"
+          OUT="$(node scripts/check-caller-tags.mjs --check 2>&1)"
+          set -e
+          printf '%s\n' "$ST" "$OUT"
+          VS="$(printf '%s\n' "$ST" | grep -oE '^CALLER_TAG_VERDICT=[A-Z]+' | tail -1)"
+          V="$(printf '%s\n' "$OUT" | grep -oE '^CALLER_TAG_VERDICT=[A-Z]+' | tail -1)"
+          test "$VS" = "CALLER_TAG_VERDICT=PASS" || { echo "::error::caller-tags self-test $VS"; exit 1; }
+          test "$V" = "CALLER_TAG_VERDICT=PASS" || { echo "::error::$V"; exit 1; }
+
       # LANDING-MCP-CLIENT-REGISTRY-W1 CH5 — the vendor-UI-path drift gate. The
       # lockstep canary above proves a SLUG is wired across its six homes; this one
       # proves the COPY is not stale. Claude Desktop renamed Settings → Integrations

@@ -427,5 +427,5 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  void runScript('frozen-window-attribution', () => runAsCaller('dwr-backfill', main));
+  void runScript('frozen-window-attribution', () => runAsCaller('frozen_window_attribution', main));
 }

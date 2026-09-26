@@ -199,7 +199,7 @@ describe('R2 batch weight-class priority', () => {
 
   it('the entry point runs main() inside runAsBatch', () => {
     expect(code).toContain('runAsBatch');
-    expect(code).toMatch(/runScript\([^)]*,\s*\(\)\s*=>\s*runAsBatch\(\(\)\s*=>\s*main\(\)\)\s*\)/);
+    expect(code).toMatch(/runScript\([^)]*,\s*\(\)\s*=>\s*runAsBatch\(\(\)\s*=>\s*main\(\),\s*'hold_decision_labeler'\)\s*\)/);
   });
 
   it('it is imported from the budget engine, not shadowed locally', () => {

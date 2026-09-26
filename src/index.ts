@@ -514,7 +514,7 @@ function createServer(): McpServer {
         // Single-derivation: resolve the route once + dispatch to the perp or equity
         // engine. The model picking get_trade_call or get_equity_call yields the same
         // contract-correct engine. Quota is handled inside whichever engine runs.
-        const { route, result } = await runAsCaller(toolNameForAnalytics, () => routeTradeCall({ coin, timeframe, includeReasoning, exchange, assetClass, license }));
+        const { route, result } = await runAsCaller(toolNameForAnalytics === 'get_trade_signal' ? 'get_trade_signal' : 'get_trade_call', () => routeTradeCall({ coin, timeframe, includeReasoning, exchange, assetClass, license }));
         const verdict = (result as { call?: 'BUY' | 'SELL' | 'HOLD' }).call;
         logRequest({
           sessionId: getRequestSessionId(),
@@ -4555,8 +4555,8 @@ async function startHttp() {
     // OPS-HL-RATELIMITER-W2: the in-server backfill is bulk → run in `batch`
     // weight class so its HL candle fetches wait behind the shared weight budget
     // and yield the interactive reserve to live MCP tool callers.
-    setTimeout(() => runAsBatch(() => runBackfill(), 'backfill').catch(() => {}), 10_000); // first run after 10s
-    setInterval(() => runAsBatch(() => runBackfill(), 'backfill').catch(() => {}), 300_000); // then every 5 min
+    setTimeout(() => runAsBatch(() => runBackfill(), 'backfill_outcomes_server').catch(() => {}), 10_000); // first run after 10s
+    setInterval(() => runAsBatch(() => runBackfill(), 'backfill_outcomes_server').catch(() => {}), 300_000); // then every 5 min
 
     // CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): outbound webhook delivery worker.
     // Ships DARK — only starts when WEBHOOK_DELIVERY_ENABLED=true. Flag-off = zero

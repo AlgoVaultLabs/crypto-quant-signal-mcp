@@ -237,7 +237,7 @@ async function main() {
 
   closeDb();
   console.log(`[${ts()}] Backfill complete: ${totalFilled} filled, ${totalSkipped} skipped (not ready), ${totalErrors} errors across ${batchNum} batch(es).`);
-  });
+  }, 'backfill_outcomes_cron');
 }
 
 // OPS-PFE-MAE-EXTRACTION-W1: main-guard. Without it this module's last statement is a
@@ -254,5 +254,5 @@ if (require.main === module) {
   // OPS-SCRIPT-EXIT-LIFECYCLE-W1: drain-then-exit on EVERY path. `runAsCaller`
   // (weight-budget attribution) stays wrapped INSIDE main so the caller tag still
   // covers all async work it spawns.
-  void runScript('backfill-outcomes', () => runAsCaller('backfill', main));
+  void runScript('backfill-outcomes', () => runAsCaller('backfill_outcomes_cron', main));
 }

@@ -36,6 +36,7 @@ import { getTradeSignal } from '../tools/get-trade-call.js';
 import { UpstreamRateLimitError } from './errors.js';
 import { isShortLivedScript } from './performance-db.js';
 import { runAsBatch } from './upstream-weight-budget.js';
+import { processScopedTag } from './caller-tags.js';
 
 export const GRID_ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE'] as const;
 
@@ -338,7 +339,7 @@ async function refreshGrid(): Promise<void> {
  */
 function ensureRefreshInflight(): Promise<void> {
   if (inflight === null) {
-    inflight = runAsBatch(() => refreshGrid(), 'grid_warmer').finally(() => {
+    inflight = runAsBatch(() => refreshGrid(), processScopedTag('grid_warmer')).finally(() => {
       inflight = null;
     });
   }

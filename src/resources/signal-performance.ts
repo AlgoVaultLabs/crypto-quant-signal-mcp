@@ -1,6 +1,7 @@
 import { getPerformanceStatsAsync, getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes, recordBackfillAttempt } from '../lib/performance-db.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { runAsBatch } from '../lib/upstream-weight-budget.js';
+import { processScopedTag } from '../lib/caller-tags.js';
 import type { ExchangeId, PerformanceStats } from '../types.js';
 import { computePFEMAE, toSignalOutcomeUpdate, EVAL_CANDLES, TF_MS, maturityHorizonMs } from '../lib/pfe-mae.js';
 
@@ -110,7 +111,9 @@ export async function getSignalPerformance(): Promise<PerformanceStats> {
   // Fire-and-forget — never blocks the read: `getPerformanceStatsAsync` below is untouched,
   // so returned-stats freshness is identical (only the background backfill coalesces).
   if (backfillInflight === null) {
-    backfillInflight = runAsBatch(() => runBackfill(), 'signal_perf_backfill').finally(() => {
+    // OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1: process-scoped — seed-signals.ts ALSO calls getSignalPerformance(),
+    // which runs this backfill inside the seed process; bare in PID 1, `signal_perf_backfill@<entrypoint>` elsewhere.
+    backfillInflight = runAsBatch(() => runBackfill(), processScopedTag('signal_perf_backfill')).finally(() => {
       backfillInflight = null;
     });
   }

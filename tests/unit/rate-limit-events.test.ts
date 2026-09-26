@@ -126,8 +126,9 @@ describe('evaluateRateLimitTriggers — both sides of every threshold', () => {
 });
 
 describe('caller-attribution ALS (OPS-RATELIMIT-CALLER-ATTRIBUTION-W1)', () => {
-  it('defaults to "unknown" outside any runAsCaller scope', () => {
-    expect(currentCaller()).toBe('unknown');
+  it('defaults to unattributed:<entrypoint> outside any runAsCaller scope (OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1 replaced the shared "unknown")', () => {
+    expect(currentCaller()).toMatch(/^unattributed:.+/);
+    expect(currentCaller()).not.toBe('unknown');
   });
 
   it('runAsCaller tags the context and propagates across awaits; restored on exit', async () => {
@@ -136,16 +137,16 @@ describe('caller-attribution ALS (OPS-RATELIMIT-CALLER-ATTRIBUTION-W1)', () => {
       return currentCaller();
     });
     expect(tagged).toBe('get_trade_call');
-    expect(currentCaller()).toBe('unknown'); // scope-local — restored after exit
+    expect(currentCaller()).toMatch(/^unattributed:/); // scope-local — restored after exit
   });
 
   it('runAsBatch(fn, caller) sets the caller too (the one-line batch entry-point tag)', async () => {
     expect(await runAsBatch(async () => currentCaller(), 'grid_warmer')).toBe('grid_warmer');
   });
 
-  it('runAsBatch(fn) without a caller leaves it "unknown" (back-compat preserved)', async () => {
-    expect(await runAsBatch(async () => currentCaller())).toBe('unknown');
-  });
+  // The former "runAsBatch(fn) without a caller leaves it 'unknown' (back-compat preserved)" case is RETIRED
+  // with the contract it pinned: a caller name is now REQUIRED at the type level, so that call does not
+  // compile. The replacement assertion (TS2554 on an untagged call) lives in tests/unit/caller-tags.test.ts.
 
   it('nested runAsCaller — innermost wins; outer restored after the inner scope', async () => {
     const r = await runAsCaller('outer', async () => {

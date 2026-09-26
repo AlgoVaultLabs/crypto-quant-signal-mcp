@@ -35,6 +35,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import * as fs from 'node:fs';
 import { UpstreamRateLimitError } from './errors.js';
 import { recordRateLimitEvent } from './rate-limit-events.js';
+import { processEntrypoint } from './runtime.js';
 
 export type WeightClass = 'interactive' | 'batch';
 
@@ -65,13 +66,20 @@ const weightClassContext = new AsyncLocalStorage<WeightClass>();
 // Sibling ALS carrying WHICH entry point issued the demand (tool name / grid_warmer /
 // backfill / seed:<tf>). Read by the recorder at the throw/wait/skip + ban sites so the
 // rate_limit_events stream self-pins the driver. Orthogonal to weight class — caller is
-// the WHO, class is the priority lane. Default 'unknown' (fail-open: an untagged path
-// attributes to 'unknown', never breaks).
+// the WHO, class is the priority lane. A path with no caller context attributes to
+// `unattributed:<entrypoint>` (OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1 CH1 — it replaced the single
+// 'unknown' bucket every untagged process shared): fail-open, it never throws, and it still NAMES the
+// spending process, so no acquisition is anonymous.
 const callerContext = new AsyncLocalStorage<string>();
 
-/** Current caller for the running async context. Defaults to `'unknown'`. */
+/** The no-context caller name for this process: `unattributed:<entrypoint>`. */
+export function unattributedCaller(entrypoint: string = processEntrypoint()): string {
+  return `unattributed:${entrypoint}`;
+}
+
+/** Current caller for the running async context. Defaults to `unattributed:<entrypoint>`. */
 export function currentCaller(): string {
-  return callerContext.getStore() ?? 'unknown';
+  return callerContext.getStore() ?? unattributedCaller();
 }
 
 /** Run `fn` (and all async work it spawns) tagged with `caller` (weight class unchanged). */
@@ -84,14 +92,19 @@ export function currentWeightClass(): WeightClass {
   return weightClassContext.getStore() ?? 'interactive';
 }
 
-/** Run `fn` (and all async work it spawns) under the `batch` weight class; optionally tag `caller`. */
-export function runAsBatch<T>(fn: () => Promise<T>, caller?: string): Promise<T> {
-  return weightClassContext.run('batch', caller === undefined ? fn : () => callerContext.run(caller, fn));
+/**
+ * Run `fn` (and all async work it spawns) under the `batch` weight class, tagged `caller`.
+ * The caller is REQUIRED (OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1 CH1): an untagged batch wrapper does
+ * not compile. A nested wrapper must pass its enclosing scope's name — a named inner call OVERRIDES the
+ * outer caller. Names are checked by scripts/check-caller-tags.mjs (CALLER_TAG_VERDICT).
+ */
+export function runAsBatch<T>(fn: () => Promise<T>, caller: string): Promise<T> {
+  return weightClassContext.run('batch', () => callerContext.run(caller, fn));
 }
 
-/** Run `fn` under the `interactive` weight class (explicit override of a batch scope); optionally tag `caller`. */
-export function runAsInteractive<T>(fn: () => Promise<T>, caller?: string): Promise<T> {
-  return weightClassContext.run('interactive', caller === undefined ? fn : () => callerContext.run(caller, fn));
+/** Run `fn` under the `interactive` weight class (explicit override of a batch scope), tagged `caller` (REQUIRED). */
+export function runAsInteractive<T>(fn: () => Promise<T>, caller: string): Promise<T> {
+  return weightClassContext.run('interactive', () => callerContext.run(caller, fn));
 }
 
 interface Ledger {

@@ -23,7 +23,7 @@ import { listVenues } from '../lib/venue-store.js';
 import { getLatestSeedHeartbeatPerVenue } from '../lib/seed-heartbeats.js';
 import { hlInfoPost } from '../lib/adapters/hyperliquid.js';
 import { UpstreamRateLimitError } from '../lib/errors.js';
-import { WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
+import { WeightBudgetSkipError, runAsCaller } from '../lib/upstream-weight-budget.js';
 import {
   evaluateGasQuorum,
   parseGasBalanceResult,
@@ -854,5 +854,5 @@ async function main(): Promise<void> {
 // test-importable (see agent-activity-format.ts, which only exists because
 // importing monitor.ts used to fire main() on load).
 if (require.main === module) {
-  void runScript('monitor', main);
+  void runScript('monitor', () => runAsCaller('monitor', main)); // caller tag OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1 (class unchanged)
 }

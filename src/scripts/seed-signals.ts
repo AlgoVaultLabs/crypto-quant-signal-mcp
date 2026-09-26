@@ -51,6 +51,7 @@ import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers
 import { getTicker24hrFullCoalesced } from '../lib/adapters/binance.js';
 import { hlInfoPost } from '../lib/adapters/hyperliquid.js';
 import { runAsBatch, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
+import { seedCallerTag } from '../lib/caller-tags.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from '../lib/adapters/_upstream-fetch.js';
 import type { LicenseInfo, ExchangeId, VenueStatus } from '../types.js';
 import { VENUE_IDS_ALL } from '../lib/tool-param-schema.js';
@@ -1044,7 +1045,10 @@ async function main() {
   // per-timeframe caller `seed:<tf>` (closes the deferred attribution gap from
   // OPS-RATELIMIT-CALLER-ATTRIBUTION-W1). parseArgs is pure for valid args (exits
   // identically on invalid), so the second parse for the inner destructure is safe.
-  const seedTf = parseArgs().timeframe;
+  // OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1: the tag is now LANE-specific, `seed:<tf>:<lane>`
+  // (seedCallerTag, the one registered builder) — `seed:<tf>` named the HL, promoted, shadow and
+  // WEEX lanes at once. Class unchanged (batch). Built INLINE at the call site: check-caller-tags.mjs
+  // accepts only a literal or a registered builder CALL as the name, never a variable holding one.
   return runAsBatch(async () => {
   const fireStartedAt = Date.now();
   const { timeframe, top, exchanges, restrictedUniverse, statusFilter, explicitExchanges, concurrency, exclude } = parseArgs();
@@ -1132,7 +1136,7 @@ async function main() {
     const cadenceS = TF_CADENCE_S[timeframe] ?? 0;
     console.warn(`[seed-orchestrator] WARN overrun tf=${timeframe} duration_s=${durationS.toFixed(1)} cadence_s=${cadenceS} threshold_s=${(0.8 * cadenceS).toFixed(0)} — fire exceeded 0.8× cadence; next idempotent fire self-heals.`);
   }
-  }, 'seed:' + seedTf);
+  }, seedCallerTag(parseArgs()));
 }
 
 // Auto-run only when invoked as a script (`node dist/scripts/seed-signals.js`),
