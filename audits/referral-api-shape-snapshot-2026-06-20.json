@@ -45,7 +45,7 @@
         "algovault-bot /referral command (earnings parity, C2)",
         "algovault-bot ref-join greet + compounding prompt"
       ],
-      "drift_check_command": "curl -s 'http://127.0.0.1:3000/api/referral/code?tg=1793689937' -H \"X-AlgoVault-Internal-Key: $KEY\" | jq '.terms, .stats | keys'"
+      "drift_check_command": "curl -s 'http://127.0.0.1:3000/api/referral/code?tg=<tg_chat_id>' -H \"X-AlgoVault-Internal-Key: $KEY\" | jq '.terms, .stats | keys'"
     },
     {
       "endpoint": "POST /api/referral/attribute {ref_code, tg_chat_id}",
@@ -75,7 +75,7 @@
         "algovault-bot /start ref_<CODE> capture",
         "REFERRAL-PARITY-NOTIFS-W1: also fires friend_joined notification (C1)"
       ],
-      "drift_check_command": "curl -s -XPOST http://127.0.0.1:3000/api/referral/attribute -H \"X-AlgoVault-Internal-Key: $KEY\" -H 'content-type: application/json' -d '{\"ref_code\":\"<code>\",\"tg_chat_id\":\"999000111\"}' | jq 'keys'"
+      "drift_check_command": "curl -s -XPOST http://127.0.0.1:3000/api/referral/attribute -H \"X-AlgoVault-Internal-Key: $KEY\" -H 'content-type: application/json' -d '{\"ref_code\":\"<code>\",\"tg_chat_id\":\"<tg_chat_id>\"}' | jq 'keys'"
     },
     {
       "endpoint": "GET /api/referral/notifications?status=pending&channel=tg&limit=N",

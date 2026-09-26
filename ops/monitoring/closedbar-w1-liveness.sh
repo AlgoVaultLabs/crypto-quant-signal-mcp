@@ -57,7 +57,7 @@ if [ -r "$DEPLOY_STAMP" ]; then
   [ -n "$_stamped" ] && DEPLOY_EPOCH="$_stamped"
 fi
 # ── The probe row is SELECTED at runtime, never hardcoded ────────────────────
-# SIGNAL-CLOSEDBAR-FLIP-W1 CH5. This used to pin chat 8776880162 / ETH / 15m / BINANCE. That
+# SIGNAL-CLOSEDBAR-FLIP-W1 CH5. This used to pin chat last4 0162 / ETH / 15m / BINANCE. That
 # row is a SUBSCRIBER'S watch — they unwatched it after 2026-08-02, so by the time this wave
 # ran the guard resolved nothing and reported CLOSEDBAR_DISPATCH_RATCHET_REGRESSION: a
 # CRITICAL page produced by a stranger tidying their watchlist. A guard whose subject any user

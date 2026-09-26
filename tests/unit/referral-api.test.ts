@@ -42,10 +42,13 @@ beforeEach(() => {
 
 describe('tgIdentity', () => {
   it('is deterministic, opaque, and prefixed', () => {
-    const a = tgIdentity(1793689937);
-    expect(a).toBe(tgIdentity('1793689937')); // number vs string → same
+    // A SYNTHETIC chat id that keeps the live chat's last4. tgIdentity is an HMAC, so the value is
+    // immaterial here; the real id is withheld from this public repo and
+    // scripts/check-chat-id-literals.mjs refuses one in an identity context.
+    const a = tgIdentity(19937);
+    expect(a).toBe(tgIdentity('19937')); // number vs string → same
     expect(a.startsWith('tg:')).toBe(true);
-    expect(a).not.toContain('1793689937'); // raw chat_id never appears
+    expect(a).not.toContain('19937'); // raw chat_id never appears
   });
   it('maps distinct chat_ids to distinct identities', () => {
     expect(tgIdentity(111)).not.toBe(tgIdentity(222));
