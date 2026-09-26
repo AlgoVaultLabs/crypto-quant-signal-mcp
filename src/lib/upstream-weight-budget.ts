@@ -27,6 +27,19 @@
  * window's lane counters `{ used, batch_used, interactive_used, waits, skips,
  * throws }`. // TODO: revisit constants by 2026-06-18 with one week of telemetry.
  *
+ * Per-caller acquisition accounting (OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1 CH2): the ledger knew every
+ * granted weight and discarded who asked. A per-venue SIDECAR (`<ledger>.callers.json`, beside the ledger,
+ * whose keys are untouched) records (caller, class) → {weight, grants, waits, skips, throws} in the SAME
+ * critical section that mutates `used`, and each window roll emits one flat line per (caller, class):
+ *   {"tag":"upstream-weight-budget","event":"window_caller","venue":…,"window_start":…,"caller":…,
+ *    "class":…,"weight":…,"grants":…,"waits":…,"skips":…,"throws":…,"accounting_errors":…}
+ * Invariant per venue per window: Σ weight == used, Σ batch == batchUsed, Σ interactive ==
+ * interactiveUsed — by construction for every acquisition whose sidecar write succeeds. Past a key cap
+ * the weight folds into `_overflow`; an accounting fault puts it into `_error` where possible and is
+ * counted in `accounting_errors`; a sidecar that cannot be written leaves a visible `used − Σ` shortfall.
+ * ADMISSION IS UNCHANGED: every decision is taken from the ledger before the sidecar is touched, and an
+ * accounting fault never throws. The existing `window` line is byte-identical.
+ *
  * Build note: this module is compiled CJS (tsconfig module=Node16); it uses
  * synchronous `fs` for the lock critical section and absolute ledger/lock paths
  * — no `import.meta.url`.
@@ -142,6 +155,41 @@ export interface WeightBudgetOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Structured-log sink (default console.log). NO Telegram. */
   log?: (line: string) => void;
+  /** Per-caller accounting sidecar (default `<ledger>.callers.json`). Test seam for fault injection. */
+  callersPath?: string;
+  /** Distinct named (caller, class) keys per window before weight folds into `_overflow` (default 64). */
+  callerKeyCap?: number;
+}
+
+type Decision = 'acquired' | 'throw' | 'wait' | 'skip';
+
+/** One (caller, class) row of the per-caller sidecar. */
+interface CallerEntry {
+  caller: string;
+  cls: WeightClass;
+  weight: number;
+  grants: number;
+  waits: number;
+  skips: number;
+  throws: number;
+}
+
+/** The per-venue, per-window caller sidecar. `accountingErrors` counts faults, never guesses. */
+interface CallerSidecar {
+  windowStartMs: number;
+  entries: CallerEntry[];
+  accountingErrors: number;
+}
+
+/** Weight past the key cap. It still carries weight, so Σ == used holds. */
+const OVERFLOW_CALLER = '_overflow';
+/** Weight whose attribution faulted after admission. */
+const ERROR_CALLER = '_error';
+const DEFAULT_CALLER_KEY_CAP = 64;
+
+/** The per-caller sidecar beside a ledger: `/tmp/algovault-hl-weight.json` → `/tmp/algovault-hl-weight.callers.json`. */
+export function callerSidecarPath(ledgerPath: string): string {
+  return ledgerPath.endsWith('.json') ? `${ledgerPath.slice(0, -5)}.callers.json` : `${ledgerPath}.callers.json`;
 }
 
 const WAIT_LOG_THRESHOLD_MS = 5_000;
@@ -159,6 +207,8 @@ export class WeightBudget {
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly log: (line: string) => void;
+  private readonly callersPath: string;
+  private readonly callerKeyCap: number;
 
   constructor(opts: WeightBudgetOptions) {
     this.venue = opts.venue;
@@ -174,6 +224,8 @@ export class WeightBudget {
     this.sleep =
       opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     this.log = opts.log ?? ((line: string) => console.log(line));
+    this.callersPath = opts.callersPath ?? callerSidecarPath(opts.ledgerPath);
+    this.callerKeyCap = opts.callerKeyCap ?? DEFAULT_CALLER_KEY_CAP;
   }
 
   /**
@@ -186,6 +238,7 @@ export class WeightBudget {
   async acquire(weight: number, cls: WeightClass): Promise<void> {
     const deadline = this.now() + this.maxBatchWaitMs;
     let totalWaitMs = 0; // accumulated across wait iterations → exactly 1 'wait'/'skip' telemetry row per acquire
+    const caller = currentCaller(); // read ONCE: the ALS context is fixed for this acquire
 
     for (;;) {
       const fd = this.tryLock();
@@ -196,7 +249,7 @@ export class WeightBudget {
         continue;
       }
 
-      let decision: 'acquired' | 'throw' | 'wait' | 'skip' = 'acquired';
+      let decision: Decision = 'acquired';
       let secondsToRoll = 0;
       try {
         const now = this.now();
@@ -223,6 +276,9 @@ export class WeightBudget {
           this.writeLedger(ledger);
           decision = 'wait';
         }
+        // Per-caller accounting, in the SAME critical section, AFTER the decision is final. It reads
+        // nothing the decision depends on and never throws, so admission is byte-identical.
+        this.account(ledger, decision, weight, cls, caller);
       } finally {
         this.releaseLock(fd);
       }
@@ -315,6 +371,117 @@ export class WeightBudget {
     const ledger = this.readLedgerRaw(now);
     if (ledger.windowStartMs !== this.windowStartFor(now)) return cap; // window already rolled
     return Math.max(0, cap - ledger.batchUsed);
+  }
+
+  // ── per-caller accounting (OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1 CH2) — fail-open, never throws ──
+
+  /** Read the sidecar. ENOENT → none; unparseable → none + corrupt; any other read error THROWS (→ fault path). */
+  private readSidecar(): { side: CallerSidecar | null; corrupt: boolean } {
+    let raw: string;
+    try {
+      raw = fs.readFileSync(this.callersPath, 'utf8');
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { side: null, corrupt: false };
+      throw e;
+    }
+    try {
+      const p = JSON.parse(raw) as Partial<CallerSidecar>;
+      if (typeof p.windowStartMs !== 'number' || !Array.isArray(p.entries)) return { side: null, corrupt: true };
+      const entries = p.entries.filter(
+        (e): e is CallerEntry => !!e && typeof e.caller === 'string' && (e.cls === 'batch' || e.cls === 'interactive') && typeof e.weight === 'number',
+      );
+      return { side: { windowStartMs: p.windowStartMs, entries, accountingErrors: Number(p.accountingErrors) || 0 }, corrupt: false };
+    } catch {
+      return { side: null, corrupt: true };
+    }
+  }
+
+  private writeSidecar(side: CallerSidecar): void {
+    fs.writeFileSync(this.callersPath, JSON.stringify(side));
+  }
+
+  /** The row for (caller, cls), created on first use; past the key cap the weight folds into `_overflow`. */
+  private entryFor(side: CallerSidecar, caller: string, cls: WeightClass): CallerEntry {
+    let e = side.entries.find((x) => x.caller === caller && x.cls === cls);
+    if (e) return e;
+    const named = side.entries.filter((x) => x.caller !== OVERFLOW_CALLER && x.caller !== ERROR_CALLER).length;
+    const key = named >= this.callerKeyCap && caller !== ERROR_CALLER ? OVERFLOW_CALLER : caller;
+    e = side.entries.find((x) => x.caller === key && x.cls === cls);
+    if (!e) {
+      e = { caller: key, cls, weight: 0, grants: 0, waits: 0, skips: 0, throws: 0 };
+      side.entries.push(e);
+    }
+    return e;
+  }
+
+  private static apply(e: CallerEntry, decision: Decision, weight: number): void {
+    if (decision === 'acquired') { e.weight += weight; e.grants += 1; }
+    else if (decision === 'throw') e.throws += 1;
+    else if (decision === 'skip') e.skips += 1;
+    else e.waits += 1;
+  }
+
+  /** Emit one flat `window_caller` line per (caller, class) of a CLOSED window. Key order is fixed. */
+  private emitCallerWindow(side: CallerSidecar): void {
+    const rows = [...side.entries].sort((a, b) => (a.cls === b.cls ? a.caller.localeCompare(b.caller) : a.cls.localeCompare(b.cls)));
+    const windowStart = new Date(side.windowStartMs).toISOString();
+    for (const e of rows) {
+      this.log(
+        JSON.stringify({
+          tag: 'upstream-weight-budget',
+          event: 'window_caller',
+          venue: this.venue,
+          window_start: windowStart,
+          caller: e.caller,
+          class: e.cls,
+          weight: e.weight,
+          grants: e.grants,
+          waits: e.waits,
+          skips: e.skips,
+          throws: e.throws,
+          accounting_errors: side.accountingErrors,
+        }),
+      );
+    }
+  }
+
+  /** Record this decision against (caller, cls). Called under the lock, after the decision. NEVER throws. */
+  private account(ledger: Ledger, decision: Decision, weight: number, cls: WeightClass, caller: string): void {
+    try {
+      const read = this.readSidecar();
+      let side = read.side;
+      if (side && side.windowStartMs !== ledger.windowStartMs) {
+        if (side.entries.length > 0) this.emitCallerWindow(side); // the closed window's attribution
+        side = null;
+      }
+      if (side === null) {
+        // A fresh sidecar for THIS window. If the ledger already shows activity from before this decision,
+        // that earlier activity has no attribution (a lost, corrupt or unwritable sidecar): count it as ONE
+        // accounting error and leave the shortfall visible — never re-attribute it to anyone.
+        const priorWeight = ledger.used - (decision === 'acquired' ? weight : 0);
+        const priorEvents = ledger.waits + ledger.skips + ledger.throws - (decision === 'acquired' ? 0 : 1);
+        const fault = read.corrupt || priorWeight > 0 || priorEvents > 0;
+        side = { windowStartMs: ledger.windowStartMs, entries: [], accountingErrors: fault ? 1 : 0 };
+      }
+      WeightBudget.apply(this.entryFor(side, caller, cls), decision, weight);
+      this.writeSidecar(side);
+    } catch {
+      this.accountFault(ledger.windowStartMs, decision, weight, cls);
+    }
+  }
+
+  /** The fault path: put the decision into `_error` and count it, if the sidecar can be written at all. */
+  private accountFault(windowStartMs: number, decision: Decision, weight: number, cls: WeightClass): void {
+    try {
+      let side: CallerSidecar | null = null;
+      try { side = this.readSidecar().side; } catch { side = null; }
+      if (!side || side.windowStartMs !== windowStartMs) side = { windowStartMs, entries: [], accountingErrors: 0 };
+      side.accountingErrors += 1;
+      WeightBudget.apply(this.entryFor(side, ERROR_CALLER, cls), decision, weight);
+      this.writeSidecar(side);
+    } catch {
+      /* the sidecar cannot be written at all: the `used − Σ` shortfall is what CH3's UNATTRIB_PCT reads */
+    }
   }
 
   // ── internals ──
