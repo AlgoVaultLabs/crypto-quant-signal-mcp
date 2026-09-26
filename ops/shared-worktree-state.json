@@ -11,6 +11,7 @@
       "path": "$GIT_COMMON_DIR/hooks/pre-push",
       "kind": "git-hook",
       "writers": [
+        "scripts/install_chat_id_literals_hook.sh",
         "scripts/install_dark_exports_hook.sh",
         "scripts/install_push_safety_hook.sh",
         "scripts/install_secret_scan_hook.sh",
@@ -123,6 +124,34 @@
       "backstopped_by": [
         ".github/workflows/deploy.yml",
         "package.json:prepublishOnly"
+      ],
+      "sha256": null,
+      "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
+      "serialization": {
+        "mechanism": "none-single-writer",
+        "key": null,
+        "scope": "the one installer named in writers[], run by hand from a checkout",
+        "_scope_reason": "A hook-block row is written only by its own installer. The FILE those installers share is hook-pre-push, and the contention lives on that row, not on this one."
+      }
+    },
+    {
+      "id": "block-chat-id-literals",
+      "path": "$GIT_COMMON_DIR/hooks/pre-push",
+      "kind": "hook-block",
+      "hook": "pre-push",
+      "block_name": "chat-id-literals",
+      "script": "scripts/check-chat-id-literals.mjs",
+      "writers": [
+        "scripts/install_chat_id_literals_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-push"
+      ],
+      "invariant": "Refuses a push that would PUBLISH a Telegram chat id: a Telegram-shaped number beside chat / tg / telegram / subscriber in an ADDED line or a commit MESSAGE of HEAD's unpushed commits (a message is read by nothing else, and an id added then deleted inside the range is still published). Reads NO stdin — redirected from /dev/null, because the push-safety block owns the hook's ref lines and a second reader would starve it. Same publish precondition as every block. OPS-MCP-CHATID-SCRUB-W1.",
+      "severity": "block",
+      "backstopped_by": [
+        ".github/workflows/deploy.yml",
+        "tests/unit/chat-id-literals.test.ts"
       ],
       "sha256": null,
       "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
