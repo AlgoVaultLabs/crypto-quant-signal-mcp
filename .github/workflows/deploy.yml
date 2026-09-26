@@ -773,6 +773,19 @@ jobs:
           node scripts/check-source-greppable.mjs --self-test
           node scripts/check-source-greppable.mjs --check
 
+      # OPS-MCP-CHATID-SCRUB-W1 — no Telegram chat id in an identity context anywhere in the tracked
+      # tree. This repo is PUBLIC and one leaked here as incident evidence; findings print masked
+      # (last4 only) because this log is public too. Gates on the TOKEN, never the bare exit code.
+      - name: Chat-id literal gate (fail-closed)
+        run: |
+          node scripts/check-chat-id-literals.mjs --self-test
+          set +e
+          OUT="$(node scripts/check-chat-id-literals.mjs 2>&1)"
+          set -e
+          printf '%s\n' "$OUT"
+          V="$(printf '%s\n' "$OUT" | grep -oE '^CHAT_ID_LITERALS_VERDICT=[A-Z]+' | tail -1)"
+          test "$V" = "CHAT_ID_LITERALS_VERDICT=PASS" || { echo "::error::${V:-CHAT_ID_LITERALS_VERDICT missing}"; exit 1; }
+
       # OPS-CLAUDEMD-CLAIM-VERIFIER-W1 — the vault CLAUDE.md is the prescriptive SoT every wave
       # spec derives from, and it had no verifier: five recorded incidents of claims rotting
       # silently (a gate cited for months that was never built; a dist/index.js grep whose
