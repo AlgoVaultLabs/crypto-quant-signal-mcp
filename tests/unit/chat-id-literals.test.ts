@@ -68,6 +68,29 @@ describe('chat-id literal gate — the real tree', () => {
     expect(r.code).toBe(0);
   });
 
+  it('survives the environment git EXPORTS into hooks — GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE', { timeout: 120_000 }, () => {
+    // The pre-push block runs this gate inside a hook, where git exports these. The first install
+    // refused its own landing push: the self-test's fixture TREE runs inherited GIT_DIR, so
+    // `git ls-files` in a throwaway repo listed the REAL index and 5 assertions failed — while the
+    // same self-test passed standalone and here. Standalone is not where the block lives.
+    const q = (args: string[]) => execFileSync('git', args, { cwd: ROOT, env: GIT_ENV, encoding: 'utf8' }).trim();
+    const hookEnv = {
+      ...GIT_ENV,
+      GIT_DIR: q(['rev-parse', '--absolute-git-dir']),
+      GIT_INDEX_FILE: resolve(ROOT, q(['rev-parse', '--git-path', 'index'])),
+      GIT_WORK_TREE: ROOT,
+    };
+    for (const args of [['--self-test'], [], ['--push-range', 'origin']]) {
+      let out = '';
+      try {
+        out = execFileSync('node', [resolve(ROOT, GATE), ...args], { cwd: ROOT, env: hookEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch (e: any) {
+        out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+      }
+      expect(out, `${args.join(' ') || '(tree)'} under the hook env\n${out}`).toContain(`${TOKEN}PASS`);
+    }
+  });
+
   it('emits exactly one verdict token per run, in every mode', { timeout: 120_000 }, () => {
     for (const args of [[], ['--self-test'], ['--push-range', 'origin']]) {
       const r = runGate(resolve(ROOT, GATE), args);

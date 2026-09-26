@@ -160,9 +160,12 @@ function git(args, cwd, env) {
 }
 
 // ── mode 1: the tracked tree ─────────────────────────────────────────────────────────────────
-/** @param {string} root */
-export function scanTree(root) {
-  const paths = git(['ls-files', '-z'], root).split('\0').filter(Boolean);
+/**
+ * @param {string} root
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+export function scanTree(root, env) {
+  const paths = git(['ls-files', '-z'], root, env).split('\0').filter(Boolean);
   /** @type {{ where: string, last4: string }[]} */
   const findings = [];
   let scanned = 0, binary = 0, absent = 0;
@@ -252,7 +255,7 @@ export function scanPush(root, remote, env) {
  */
 export function run(mode, root, remote = 'origin', env) {
   try {
-    const r = mode === 'push' ? scanPush(root, remote, env) : scanTree(root);
+    const r = mode === 'push' ? scanPush(root, remote, env) : scanTree(root, env);
     return { verdict: r.findings.length ? 'FAIL' : 'PASS', ...r };
   } catch (e) {
     const msg = e instanceof Indeterminate ? e.message : `unexpected: ${/** @type {Error} */ (e).message}`;
@@ -390,7 +393,7 @@ export function selfTest() {
   try {
     // (d) TREE mode, both ways; the printed output never carries the full literal.
     const dirty = fxRepo(join(tmp, 'dirty'), { 'ops/x.sh': `# pin chat ${ID10}\n`, 'README.md': 'ok\n' });
-    const d = run('tree', dirty);
+    const d = run('tree', dirty, 'origin', GIT_ENV);
     check('(d) tree with an id in context → FAIL', d.verdict, 'FAIL');
     check('(d) tree names the file', d.findings.map((f) => f.where), ['ops/x.sh:1']);
     /** @type {string[]} */
@@ -399,12 +402,12 @@ export function selfTest() {
     check('(d) FAIL output never prints the full literal', lines.join('\n').includes(ID10), false);
     check('(d) FAIL output prints the masked form', lines.join('\n').includes('…' + ID10.slice(-4)), true);
     const clean = fxRepo(join(tmp, 'clean'), { 'ops/x.sh': '# pin chat last4 4521\n' });
-    check('(d) clean tree → PASS', run('tree', clean).verdict, 'PASS');
+    check('(d) clean tree → PASS', run('tree', clean, 'origin', GIT_ENV).verdict, 'PASS');
 
     // (e) TREE vacuity: WE build this corpus, so building nothing is INDETERMINATE.
-    check('(e) no tracked files → INDETERMINATE', run('tree', fxRepo(join(tmp, 'empty'), {})).verdict, 'INDETERMINATE');
+    check('(e) no tracked files → INDETERMINATE', run('tree', fxRepo(join(tmp, 'empty'), {}), 'origin', GIT_ENV).verdict, 'INDETERMINATE');
     mkdirSync(join(tmp, 'plain'));
-    check('(e) not a git checkout → INDETERMINATE', run('tree', join(tmp, 'plain')).verdict, 'INDETERMINATE');
+    check('(e) not a git checkout → INDETERMINATE', run('tree', join(tmp, 'plain'), 'origin', GIT_ENV).verdict, 'INDETERMINATE');
 
     // (f) PUSH mode — the corpus a tree scan structurally cannot see.
     const r = fxRepo(join(tmp, 'push'), { 'src/a.ts': 'const x = 1;\n' });
@@ -421,7 +424,7 @@ export function selfTest() {
     fxCommit(r, 'src/a.ts', `const tg = ${ID10};\n`, 'add');
     fxCommit(r, 'src/a.ts', 'const x = 3;\n', 'remove again');
     check('(f) added then deleted inside the range → FAIL (history publishes it)', push(), 'FAIL');
-    check('(f) ...though the final TREE is clean', run('tree', r).verdict, 'PASS');
+    check('(f) ...though the final TREE is clean', run('tree', r, 'origin', GIT_ENV).verdict, 'PASS');
     const prior = fxCommit(r, 'src/a.ts', `const tg = ${ID10};\n`, 'reintroduce');
     fx(r, 'update-ref', 'refs/remotes/origin/main', prior); // it went out earlier
     fxCommit(r, 'src/a.ts', 'const x = 4;\n', 'redact');
