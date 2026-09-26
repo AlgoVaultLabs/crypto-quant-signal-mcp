@@ -62,7 +62,58 @@
       "adopted": false,
       "announce_resolution": false,
       "follow_up_wave": "OPS-ALERT-ADOPT-AOE_OUTPUT_LIVENESS_STALLED-W{NEXT}",
-      "envelope_adopted": true
+      "envelope_adopted": true,
+      "suppression": {
+        "source_of_truth": "autonomous-optimizer:monitoring/aoe-host/aoe-output-liveness-manifest.yaml rows[0].suppress_while — the canary enforces THAT file; the values here are the ratified record as of decided_at",
+        "kind": "steady_state_tuples",
+        "tuples": [
+          {
+            "verdict": "FAIL",
+            "reason": "promoted_set=0",
+            "cohort_state": "empty"
+          },
+          {
+            "verdict": "FAIL",
+            "reason": "all-demoted",
+            "cohort_state": "populated_untestable"
+          }
+        ],
+        "require": {
+          "promote_eligible": 0,
+          "live_serving": 0,
+          "verdict_cycle_stale": false,
+          "gate_cycle_stale": false
+        },
+        "review_by": "2026-10-31",
+        "review_event": {
+          "id": "aoe-0930-quarterly-goals-review",
+          "fires_at": "2026-09-30T02:00:00Z",
+          "instruction_path": "/Users/tank/Documents/Claude/Scheduled/aoe-0930-quarterly-goals-review/SKILL.md"
+        },
+        "both_or_neither": "a block missing a valid review_by OR a well-formed review_event is not a suppression, and the canary pages; review_by is inclusive and past it the block itself pages",
+        "reason": "Both tuples are AOE's deliberately-unrepaired state: nothing is promote-eligible, and aoe-config-reader.ts has no importer. They are the only two envelope tuples in 610 cycles (2026-09-01 to 2026-09-26); the second is that state expressed daily, the gate evaluating a batch and declining all of it.",
+        "decided_by": "architect (Cowork Main-AOE)",
+        "decided_at": "2026-09-26",
+        "wave": "OPS-AOE-LIVENESS-SUPPRESS-W2-V2",
+        "supersedes": "OPS-AOE-LIVENESS-SUPPRESS-W1 (e18495f): kind cohort_state, met_when empty, review_by 2026-09-26",
+        "history": "2026-09-02 widening to populated_untestable was DECLINED (OPS-AOE-MONITORING-DWR-REFOCUS-W1): it would have silenced the only signal the alarm had produced in six days. That reason expired once the signal had been delivered 13 times (2026-09-02 to 2026-09-25) and its content was known: one-cycle blips, promote_eligible=0 on every one."
+      },
+      "transition_fires": {
+        "_exception": "RATIFIED EXCEPTION to the silent-recovery default (OPS-AOE-LIVENESS-SUPPRESS-W2-V2, ruling Q4). These are transitions OUT of an accepted state, not resolutions, so adopted and announce_resolution stay false.",
+        "fires": [
+          {
+            "id": "live",
+            "when": "the first PASS after a zero-run >= consecutive_zero_threshold"
+          },
+          {
+            "id": "state-lost",
+            "when": "a FAIL cycle whose state file was absent or unreadable"
+          }
+        ],
+        "bound": "<= 1 per zero-run episode, same alert_id, the 24h send_telegram.sh cooldown applies",
+        "decided_by": "architect (Cowork Main-AOE)",
+        "decided_at": "2026-09-26"
+      }
     },
     {
       "alert_id": "AOE_PROMOTED_KEY_AGE_STALE",
