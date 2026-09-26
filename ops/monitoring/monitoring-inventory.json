@@ -636,7 +636,11 @@
         "DIRECTIONAL_LABEL_COVERAGE_SHORTFALL"
       ],
       "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
-      "notes": "OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (Q3): now status-aware — a venue with venues.status='retired' renders `retired`, never BREACH, via a SEPARATE LF_RETIRED_CMD seam (reads `SELECT exchange_id FROM venues WHERE status='retired'` as aoe_readonly; SELECT-on-venues privilege probed present). Fail-safe: a retired-set read error yields an empty set (a retired venue keeps its old long-tail digest line; a real major breach is never suppressed because a major is never retired). PRIOR (SEC-13, OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch4): --force-stale accepts ALGOVAULT_TG_TEST_INERT=1, which suppresses BEFORE the cooldown gate and writes no marker; it previously REQUIRED DRY_RUN_TG=1, which DOES write the 24h marker. EXTENDED 2026-09-26 by OPS-BDIR-V3-PANEL-READINESS-W1 CH2: (1) a per-venue COVERAGE arm (labelled/emitted, primary spec, trailing 7 d, window closed >= 1 d; FAIL < 90% pages DIRECTIONAL_LABEL_COVERAGE_SHORTFALL for the FULL-eligible venues only, every other venue REPORTS with a declared reason; its own DIRECTIONAL_LABEL_COVERAGE_VERDICT= token; LF_COVERAGE_CMD seam). The PAGE (never the token) follows this canary's sustained-drift idiom: day 1 holds, a later run pages unless the venue gained >= 2 pp since the previous run (the nightly is the recovery), and any venue still FAIL after 7 consecutive runs pages regardless; the streak lives in the same state file under `coverage`. (2) the capacity forward's D3 filter CORRECTED: a named venue counts as repaired only if the recovery step ATTEMPTED it and it no longer breaches — the old `named - still_breaching` dropped every long-tail venue and every not-yet-breaching major as 'repaired', which is why DIRECTIONAL_LABEL_CAPACITY_SHORTFALL never fired after 2026-08-27; a capacity FAIL now pages FULL-eligible venues and reports the rest (ruling Q-F). Frontier arm unchanged. Hermetic suite 79 assertions; 7 mutants of the page gate each killed."
+      "notes": "OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (Q3): now status-aware — a venue with venues.status='retired' renders `retired`, never BREACH, via a SEPARATE LF_RETIRED_CMD seam (reads `SELECT exchange_id FROM venues WHERE status='retired'` as aoe_readonly; SELECT-on-venues privilege probed present). Fail-safe: a retired-set read error yields an empty set (a retired venue keeps its old long-tail digest line; a real major breach is never suppressed because a major is never retired). PRIOR (SEC-13, OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch4): --force-stale accepts ALGOVAULT_TG_TEST_INERT=1, which suppresses BEFORE the cooldown gate and writes no marker; it previously REQUIRED DRY_RUN_TG=1, which DOES write the 24h marker. EXTENDED 2026-09-26 by OPS-BDIR-V3-PANEL-READINESS-W1 CH2: (1) a per-venue COVERAGE arm (labelled/emitted, primary spec, trailing 7 d, window closed >= 1 d; FAIL < 90% pages DIRECTIONAL_LABEL_COVERAGE_SHORTFALL for the FULL-eligible venues only, every other venue REPORTS with a declared reason; its own DIRECTIONAL_LABEL_COVERAGE_VERDICT= token; LF_COVERAGE_CMD seam). The PAGE (never the token) follows this canary's sustained-drift idiom: day 1 holds, a later run pages unless the venue gained >= 2 pp since the previous run (the nightly is the recovery), and any venue still FAIL after 7 consecutive runs pages regardless; the streak lives in the same state file under `coverage`. (2) the capacity forward's D3 filter CORRECTED: a named venue counts as repaired only if the recovery step ATTEMPTED it and it no longer breaches — the old `named - still_breaching` dropped every long-tail venue and every not-yet-breaching major as 'repaired', which is why DIRECTIONAL_LABEL_CAPACITY_SHORTFALL never fired after 2026-08-27; a capacity FAIL now pages FULL-eligible venues and reports the rest (ruling Q-F). Frontier arm unchanged. Hermetic suite 79 assertions; 7 mutants of the page gate each killed.",
+      "first_install": {
+        "at": "20260926T130725Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "test-directional-label-freshness",
@@ -644,13 +648,23 @@
       "kind": "test",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/test-directional-label-freshness.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/test-directional-label-freshness.py"
+        }
+      ],
       "criticality": "advisory",
       "schedule": null,
       "invoked_by": "manual",
       "install_state": "installed",
       "sha256": "c91475ef1d464d335bccfedc5a8e91ea775baaf6b118468d6e2adf8dd665aaea",
       "alert_ids": [],
-      "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1"
+      "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
+      "first_install": {
+        "at": "20260926T130803Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "tier-misclassification-canary",
