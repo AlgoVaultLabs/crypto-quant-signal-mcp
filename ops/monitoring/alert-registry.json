@@ -1062,6 +1062,18 @@
       "adoption_note": "check-cancel-path-live.mjs fires after 24 consecutive INDETERMINATE runs and calls --clear on PASS or FAIL",
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-CANCEL_PATH_UNVERIFIED-W{NEXT}"
+    },
+    {
+      "alert_id": "funding_accrual_stale",
+      "owner": "ops/monitoring/funding-accrual-freshness.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-funding_accrual_stale-W{NEXT}",
+      "notes": "OPS-BDIR-V3-PANEL-READINESS-W1 CH1. Fires when a declared funding venue's accrual on the PRODUCER table funding_rates_hist stalls: its newest print is older than 2 funding intervals, OR fewer than 80% of its live OI top-60 printed within 14 days, OR fewer than 90% of those printed within the last 2 intervals. WHY: OKX rows trailed real time by ~60 days from the 2026-07-05 seed to 2026-09-26 (the adapter answered every fetch with the OLDEST page of its history) and nothing paged, because nothing read the table. The OI top-60 denominator is an INDEPENDENT producer on purpose: a denominator built from the producer's own recent output shrinks with it (measured 2026-09-26: 'printed within 14 d' read OKX as 0/1 while the OI sampler listed 60 live OKX coins). ASTER is held to the age arm only, with its declared reason in the predicate. The decision lives in ops/monitoring/funding_accrual_predicate.py, a shared primitive (vendored to the AOE BDIR panel-readiness job). adopted=true: --clear on PASS so a healed breach does not pin the channel; announce_resolution stays FALSE per the law's default. INDETERMINATE (psql unreadable, predicate missing, OI sampler silent) is an instrument fault and is SILENT at exit 3 — the reconciler's DARK check covers a canary that stops producing. DETECT AND ALERT ONLY: it never writes to the database and never re-runs the producer. Reads as aoe_readonly."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",

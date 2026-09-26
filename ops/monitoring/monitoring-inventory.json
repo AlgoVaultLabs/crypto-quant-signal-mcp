@@ -1886,7 +1886,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "7d7d6f5b9865a060836ae9053e529f362375f80c5e612f86bebaf81a24b4c662",
+      "sha256": "a86407fc8e0eec9249b1219261cf0e944900ab431f1bf910aa43eba4d1054dca",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -2551,6 +2551,48 @@
       "owner_wave": "CANCEL-PATH-CSP-FORM-ACTION-W1",
       "verification": "node scripts/check-cancel-path-live.mjs --self-test && ALGOVAULT_TG_TEST_INERT=1 node scripts/check-cancel-path-live.mjs --live",
       "notes": "The LIVE leg of the cancel path (CH3). CH2's form-action gate reads the tree; this asks production what a customer's browser asks: POST /account/portal as the fixture customer must answer a 200 text/html same-origin interstitial with a billing.stripe.com anchor and NO Location (PASS) — any 3xx / any Location / no anchor / 404 is FAIL, and key-unset / 400-401 (Stripe search lag) / 403 cf-mitigated / 429 / 5xx / network / a non-Stripe portal host (custom-domain switch) is INDETERMINATE. redirect:'manual' is load-bearing: Node's fetch follows a 303 by default, so a regressed prod would otherwise open real portal sessions on Stripe's host. TWO alert ids, separate because send_telegram.sh's fixed 24h per-id cooldown would let one silence the other: CANCEL_PATH_BROKEN on FAIL; CANCEL_PATH_UNVERIFIED after 24 CONSECUTIVE INDETERMINATE runs (streak in /var/lib/algovault-monitoring/cancel-path-live.state.json); PASS --clears both (announce_resolution true). The fixture key is read in-process from /etc/algovault-monitoring/cancel-canary.env (600 root), never argv; no key, portal URL or session id is printed, alerted or recorded. ITS OWN STRIPE WRITES, DISCLOSED: every run creates one billingPortal.sessions.create on the fixture customer — ~720/month — which is accepted: the fixture has no subscription and no payment method, so a leaked session grants nothing. One result line per run via ops/monitoring/canary_result_log.py (canary key cancel_path_live). cron 39 * * * *: offset(39)=21 >= 3; minute 39 has zero hourly neighbours."
+    },
+    {
+      "id": "funding-accrual-freshness",
+      "artifact": "ops/monitoring/funding-accrual-freshness.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/funding-accrual-freshness.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/funding-accrual-freshness.py",
+          "schedule": "49 19 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": "49 19 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "e0dbc71004ae4bf1b05503b454115bec8fbf7c1595fb09b5d141832a181c0d12",
+      "alert_ids": [
+        "funding_accrual_stale"
+      ],
+      "owner_wave": "OPS-BDIR-V3-PANEL-READINESS-W1",
+      "notes": "CH1 funding-accrual freshness canary. Watches the PRODUCER table funding_rates_hist (writer: backfill-funding-episodes.js raw --since-checkpoint, run by the nightly carry labeler 02:23 AND the AOE hourly top-up :07) per declared funding venue: age arm (newest print <= 2 intervals), coverage arm (>= 80% of the live OI top-60 printed within 14 d), share arm (>= 90% of covered printed within 2 intervals); ASTER age-arm only, declared. One FUNDING_ACCRUAL_VERDICT= token per run, 0/1/3 (3 = the token-law default for a NEW gate). Decision imported from the sibling funding_accrual_predicate.py (guarded import: a partial install is INDETERMINATE that says so). Appends one JSON line per run via canary_result_log (off-host readout through monitoring-results-sync.sh). Cron 49 19: inside the 18:00-02:59 deploy-free band (a deploy recreates the postgres container it reads) and after the :07 top-up has settled. PROVEN ABLE TO FAIL before install: 11 deliberate mutations, all caught by --self-test (40 assertions); the one that first survived — the coverage arm flipped to PASS on oi_top=0, masked at venue level by the share arm — is why the self-test asserts per ARM. Driven end-to-end through the shipped main() by tests/unit/funding-accrual-canary.test.ts (stubbed psql/TG). Reads as aoe_readonly (SELECT on funding_rates_hist + oi_snapshots measured 2026-09-26)."
+    },
+    {
+      "id": "funding-accrual-predicate",
+      "artifact": "ops/monitoring/funding_accrual_predicate.py",
+      "kind": "executable",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/funding_accrual_predicate.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "install_state": "installed",
+      "sha256": "958cc7e32540ea6b1f60c0660f944e3bec9711ad94d79efb4d44d43ea19b99c2",
+      "owner_wave": "OPS-BDIR-V3-PANEL-READINESS-W1",
+      "notes": "SHARED PRIMITIVE (consumer-registry law): the one derivation of 'is this venue's funding accruing'. Canonical home here; consumers = funding-accrual-freshness.py on signal-1 (this installation) and, from CH3 of the owning wave, a sha-pinned vendored copy in the AOE repo run on aoe-1 by the BDIR panel-readiness job to derive its fr= field. Every installation is listed in installed_at; the row's sha256 is the ONE canonical hash. Stdlib only, no I/O: callers run the SQL it builds. No schedule: it is imported, never invoked by cron, so DARK does not apply; its liveness is the canary's."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
