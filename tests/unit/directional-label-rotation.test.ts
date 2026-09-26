@@ -408,7 +408,7 @@ describe('CH3 — the consumer refuses what it cannot stand behind', () => {
   const PYDIR = path.join(REPO_ROOT, 'ops/monitoring');
 
   /** Run forward_capacity_signal over a fixture log; report whether a page was sent, and its body. */
-  function forward(envelope: Record<string, unknown> | null, opts: { runId?: string; stillBreaching?: string[] | null } = {}) {
+  function forward(envelope: Record<string, unknown> | null, opts: { runId?: string; stillBreaching?: string[] | null; attempted?: string[] | null } = {}) {
     const dir = mkdtempSync(path.join(tmpdir(), 'ch3-'));
     const wrapper = path.join(dir, 'fake-wrapper.sh');
     const captured = path.join(dir, 'body.txt');
@@ -423,11 +423,12 @@ describe('CH3 — the consumer refuses what it cannot stand behind', () => {
     ].join('\n'));
     const sb = opts.stillBreaching === undefined ? 'None'
       : opts.stillBreaching === null ? 'None' : JSON.stringify(opts.stillBreaching);
+    const at = opts.attempted === undefined || opts.attempted === null ? 'None' : `set(${JSON.stringify(opts.attempted)})`;
     const driver = [
       'import importlib.util, json, sys',
       `spec = importlib.util.spec_from_file_location('dlf', ${JSON.stringify(path.join(PYDIR, 'directional-label-freshness.py'))})`,
       'm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)',
-      `sent = m.forward_capacity_signal(${JSON.stringify(wrapper)}, ${JSON.stringify(log)}, ${sb === 'None' ? 'None' : `set(${sb})`})`,
+      `sent = m.forward_capacity_signal(${JSON.stringify(wrapper)}, ${JSON.stringify(log)}, ${sb === 'None' ? 'None' : `set(${sb})`}, ${at})`,
       'print(json.dumps({"sent": bool(sent)}))',
     ].join('\n');
     const r = spawnSync('python3', ['-c', driver], { encoding: 'utf8' });
@@ -510,12 +511,39 @@ describe('CH3 — the consumer refuses what it cannot stand behind', () => {
 
   it('D3 — a venue repaired by THIS run is dropped; if all were, nothing pages', { timeout: 30_000 }, () => {
     // The measured 2026-08-22 timeline: BINANCE repaired 06:44:40Z, BITGET 06:52:30Z, page 06:53:19Z.
-    const allHealed = forward(base({ verdict: 'FAIL', run_outcome: 'global-budget' }), { stillBreaching: [] });
+    // "Repaired" now requires that this run's recovery step ATTEMPTED the venue (see the next case).
+    const attempted = ['BINANCE', 'BITGET', 'BYBIT'];
+    const allHealed = forward(base({ verdict: 'FAIL', run_outcome: 'global-budget' }), { stillBreaching: [], attempted });
     expect(allHealed.sent).toBe(false);
-    const oneLeft = forward(base({ verdict: 'FAIL', run_outcome: 'global-budget' }), { stillBreaching: ['BYBIT'] });
+    const oneLeft = forward(base({ verdict: 'FAIL', run_outcome: 'global-budget' }), { stillBreaching: ['BYBIT'], attempted });
     expect(oneLeft.sent).toBe(true);
     expect(oneLeft.body).toContain('unreached_in_danger=BYBIT');
     expect(oneLeft.body).toContain('dropped_after_recovery=BINANCE,BITGET');
+  });
+
+  it('D3 CORRECTED — a venue that was NEVER ATTEMPTED is not "repaired": the 2026-09-26 shape pages', { timeout: 30_000 }, () => {
+    // MEASURED 2026-09-26 06:41Z on signal-1: "CAPACITY_SIGNAL dropped ['BYBIT', 'OKX', 'KUCOIN',
+    // 'PHEMEX'] — repaired by this run's recovery step" with NO recovery having run for any of them —
+    // `still_breaching` only ever holds frontier-breaching majors. The page could not fire after 08-27.
+    const env = base({ verdict: 'FAIL', run_outcome: 'global-budget',
+      evidence: { ...base().evidence as Record<string, unknown>, unreached_in_danger: 'BYBIT,OKX,KUCOIN,PHEMEX', unreached_count: 4 } });
+    const r = forward(env, { stillBreaching: [], attempted: [] });
+    expect(r.sent).toBe(true);
+    expect(r.body).toContain('unreached_in_danger=BYBIT,OKX,KUCOIN');
+    expect(r.body).toContain('reported_not_paged=PHEMEX');
+  });
+
+  it('Q-F — a capacity FAIL naming only non-FULL venues REPORTS and pages nobody', { timeout: 30_000 }, () => {
+    const env = base({ verdict: 'FAIL', run_outcome: 'global-budget',
+      evidence: { ...base().evidence as Record<string, unknown>, unreached_in_danger: 'GATE,MEXC,HL', unreached_count: 3 } });
+    expect(forward(env, { stillBreaching: [], attempted: [] }).sent).toBe(false);
+  });
+
+  it('Q-F — an INDETERMINATE run is still forwarded whatever it names (it is about the run, not a venue)', { timeout: 30_000 }, () => {
+    const env = base({ evidence: { ...base().evidence as Record<string, unknown>, unreached_in_danger: 'GATE,MEXC', unreached_count: 2 } });
+    const r = forward(env, { stillBreaching: [], attempted: [] });
+    expect(r.sent).toBe(true);
+    expect(r.body).toContain('INDETERMINATE');
   });
 
   it('a missing envelope pages nobody but is NOT silent in the log', { timeout: 30_000 }, () => {

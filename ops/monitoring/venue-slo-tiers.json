@@ -9,5 +9,12 @@
   ],
   "major_slo_hours": 24,
   "longtail_slo_hours": 72,
-  "barrier_spec": "tau1.0-floor0.30-v1"
+  "barrier_spec": "tau1.0-floor0.30-v1",
+  "full_panel_venues": [
+    "KUCOIN",
+    "BITGET",
+    "OKX",
+    "BINANCE",
+    "BYBIT"
+  ]
 }

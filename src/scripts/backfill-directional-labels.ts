@@ -43,7 +43,8 @@ import {
   barrierPct,
   runTripleBarrier,
 } from './directional-labeler.js';
-import { sloHoursFor as defaultSloHoursFor } from '../lib/venue-slo-tiers.js';
+import { sloHoursFor as defaultSloHoursFor, isFullPanelVenue, FRESHNESS_BARRIER_SPEC } from '../lib/venue-slo-tiers.js';
+import { candleHorizonDays, CANDLE_HORIZON_DAYS } from '../lib/venue-candle-horizons.js';
 import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
 import { buildEnvelope, isConforming, type Verdict } from '../lib/detector-envelope.js';
 
@@ -176,31 +177,192 @@ export function lookbackCutoff(cli: Pick<Cli, 'lookbackDays'>, nowMs: number): n
   return cli.lookbackDays ? Math.floor(nowMs / 1000) - cli.lookbackDays * 86_400 : 0;
 }
 
-async function loadGroups(cli: Cli): Promise<{ exchange: string; coin: string; timeframe: string }[]> {
+/**
+ * OPS-BDIR-V3-PANEL-READINESS-W1 CH2 — a group carrying what its ORDER needs. `todoOldest` is the
+ * oldest eligible, unlabelled row still INSIDE its (venue, timeframe) candle horizon (epoch s), null
+ * when there is none; `todoLabelable` / `todoPastHorizon` split the unlabelled rows by that horizon.
+ * "Unlabelled" is judged on the primary spec — the three specs are written in one batch, and a group
+ * whose primary is complete is still visited (last) so a partial row's missing specs still complete.
+ */
+export interface PrioritizedGroup {
+  exchange: string;
+  coin: string;
+  timeframe: string;
+  todoOldest: number | null;
+  todoLabelable: number;
+  todoPastHorizon: number;
+}
+
+/**
+ * The group work-list with its order data in ONE aggregate. The eligibility filters are
+ * processGroup's own (BUY/SELL, pfe present, the recency window) plus the rotation's (no 1m, not
+ * retired) — verbatim, so the list can never admit a row the labeler would not label. Every measured
+ * short horizon rides in as a created_at cut-off so rows already past it are counted apart: they can
+ * never be labelled from the venue's API, and ranking a group by one of them would spend the slice on
+ * a fetch that returns nothing. Integers are inlined (computed here); CLI strings stay parameters.
+ */
+export function buildGroupsSql(opts: {
+  lookbackCutoff: number;
+  nowSec: number;
+  venue?: string;
+  coin?: string;
+  timeframe?: string;
+}): { text: string; params: unknown[] } {
+  const hz: string[] = [];
+  for (const [venue, tfs] of Object.entries(CANDLE_HORIZON_DAYS)) {
+    for (const [tf, days] of Object.entries(tfs)) {
+      hz.push(`('${venue}', '${tf}', ${Math.floor(opts.nowSec - days * 86_400)})`);
+    }
+  }
+  // A CTE column list over VALUES is the form both Postgres and SQLite accept; the empty fallback is
+  // TYPED so `s.created_at <= hz.cut` never compares an integer with an untyped (text) NULL.
+  const hzCte = hz.length
+    ? `WITH hz(exchange, timeframe, cut) AS (VALUES ${hz.join(', ')}) `
+    : 'WITH hz(exchange, timeframe, cut) AS (SELECT CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS BIGINT) WHERE 1 = 0) ';
   const where: string[] = [
-    "signal IN ('BUY','SELL')",
-    'pfe_return_pct IS NOT NULL',
-    "timeframe <> '1m'", // retired lane (OPS-1M-SEED-DECOM-W1) — never labeled
+    "s.signal IN ('BUY','SELL')",
+    's.pfe_return_pct IS NOT NULL',
+    "s.timeframe <> '1m'", // retired lane (OPS-1M-SEED-DECOM-W1) — never labeled
     // OPS-BITMART-RETIRE-W1: exclude RETIRED venues from the labeler. A retired venue (e.g. BitMart, whose
     // kline API went dead at its 2026-08-26 trading halt) still has historical unlabeled signals; without
     // this the rotation keeps visiting it, the dead API errors dominate its writes, the A2 circuit-breaker
     // trips, and outcome=venue-circuit-break voids the whole nightly capacity claim. Data-driven off
     // venues.status — deletes/mutates NO rows; the retired venue's unlabeled signals simply stay unlabeled
     // (a frozen, disclosed coverage hole, not an ongoing shortfall).
-    "exchange NOT IN (SELECT exchange_id FROM venues WHERE status = 'retired')",
+    "s.exchange NOT IN (SELECT exchange_id FROM venues WHERE status = 'retired')",
   ];
   const params: unknown[] = [];
-  if (cli.venue) { params.push(cli.venue); where.push(`exchange = $${params.length}`); }
-  if (cli.coin) { params.push(cli.coin); where.push(`coin = $${params.length}`); }
-  if (cli.timeframe) { params.push(cli.timeframe); where.push(`timeframe = $${params.length}`); }
-  const cutoff = lookbackCutoff(cli, Date.now());
-  if (cutoff > 0) { params.push(cutoff); where.push(`created_at > $${params.length}`); }
-  const rows = await dbQuery<{ exchange: string; coin: string; timeframe: string }>(
-    `SELECT exchange, coin, timeframe FROM signals WHERE ${where.join(' AND ')}
-     GROUP BY exchange, coin, timeframe ORDER BY exchange, coin, timeframe`,
-    params,
-  );
+  if (opts.venue) { params.push(opts.venue); where.push(`s.exchange = $${params.length}`); }
+  if (opts.coin) { params.push(opts.coin); where.push(`s.coin = $${params.length}`); }
+  if (opts.timeframe) { params.push(opts.timeframe); where.push(`s.timeframe = $${params.length}`); }
+  if (opts.lookbackCutoff > 0) where.push(`s.created_at > ${Math.floor(opts.lookbackCutoff)}`);
+  const unlabelled = 'd.signal_id IS NULL';
+  const inside = '(hz.cut IS NULL OR s.created_at > hz.cut)';
+  const text =
+    hzCte +
+    `SELECT s.exchange, s.coin, s.timeframe, ` +
+    `MIN(s.created_at) FILTER (WHERE ${unlabelled} AND ${inside}) AS todo_oldest, ` +
+    `COUNT(*) FILTER (WHERE ${unlabelled} AND ${inside}) AS todo_labelable, ` +
+    `COUNT(*) FILTER (WHERE ${unlabelled} AND hz.cut IS NOT NULL AND s.created_at <= hz.cut) AS todo_past_horizon ` +
+    `FROM signals s ` +
+    `LEFT JOIN directional_labels d ON d.signal_id = s.id AND d.barrier_spec = '${FRESHNESS_BARRIER_SPEC}' ` +
+    `LEFT JOIN hz ON hz.exchange = s.exchange AND hz.timeframe = s.timeframe ` +
+    `WHERE ${where.join(' AND ')} ` +
+    `GROUP BY s.exchange, s.coin, s.timeframe ORDER BY s.exchange, s.coin, s.timeframe`;
+  return { text, params };
+}
+
+async function loadGroups(cli: Cli): Promise<PrioritizedGroup[]> {
+  const nowMs = Date.now();
+  const { text, params } = buildGroupsSql({
+    lookbackCutoff: lookbackCutoff(cli, nowMs),
+    nowSec: Math.floor(nowMs / 1000),
+    venue: cli.venue,
+    coin: cli.coin,
+    timeframe: cli.timeframe,
+  });
+  const raw = await dbQuery<{
+    exchange: string; coin: string; timeframe: string;
+    todo_oldest: string | number | null; todo_labelable: string | number; todo_past_horizon: string | number;
+  }>(text, params);
+  const rows: PrioritizedGroup[] = raw.map((r) => ({
+    exchange: r.exchange,
+    coin: r.coin,
+    timeframe: r.timeframe,
+    todoOldest: r.todo_oldest == null ? null : Number(r.todo_oldest),
+    todoLabelable: Number(r.todo_labelable ?? 0),
+    todoPastHorizon: Number(r.todo_past_horizon ?? 0),
+  }));
   return cli.limitGroups ? rows.slice(0, cli.limitGroups) : rows;
+}
+
+/**
+ * A row that crosses its candle horizon before the next nightly (24 h away) is lost unless THIS run
+ * labels it; the extra 12 h covers a late or deploy-truncated run. Such groups are served first.
+ */
+export const CRITICAL_HORIZON_MARGIN_S = 36 * 3600;
+
+/**
+ * OPS-BDIR-V3-PANEL-READINESS-W1 CH2 R1 — the order a venue's slice reaches its groups.
+ *
+ * THE DEFECT: groups were walked `ORDER BY exchange, coin, timeframe`, so on a venue whose backlog
+ * outruns its 45-minute slice the labelled set was an ALPHABETICAL COIN PREFIX (HL reached ~149 of
+ * ~541 groups per visit, measured 2026-09-26) — any DWR read there measured the prefix, not the venue —
+ * and rows past the reach silently aged across short candle horizons (57,053 such rows counted).
+ *
+ * THE ORDER (architect ruling Q-F): (1) HORIZON-FIRST — groups holding a row that crosses its candle
+ * horizon within CRITICAL_HORIZON_MARGIN_S, nearest first; (2) BREADTH — every other group with work,
+ * interleaved by per-coin rank so every coin gets its first group before any coin gets a second, each
+ * round led by the coin whose oldest unlabelled row is oldest; (3) groups with nothing labelable,
+ * last — still visited, so a partially-written row's other specs complete. Pure and total: the same
+ * set in any input order yields the same output. It decides WHICH rows are reached, never WHAT label.
+ */
+export function orderGroupsForVenue<G extends PrioritizedGroup>(groups: G[], nowSec: number): G[] {
+  const byName = (a: G, b: G): number => a.coin.localeCompare(b.coin) || a.timeframe.localeCompare(b.timeframe);
+  const critical: Array<{ g: G; leftS: number }> = [];
+  const breadth: G[] = [];
+  const idle: G[] = [];
+  for (const g of groups) {
+    if (g.todoOldest == null || g.todoLabelable <= 0) { idle.push(g); continue; }
+    const depthS = candleHorizonDays(g.exchange, g.timeframe) * 86_400;
+    const leftS = Number.isFinite(depthS) ? g.todoOldest + depthS - nowSec : Infinity;
+    if (leftS <= CRITICAL_HORIZON_MARGIN_S) critical.push({ g, leftS }); else breadth.push(g);
+  }
+  critical.sort((a, b) => a.leftS - b.leftS || byName(a.g, b.g));
+
+  const perCoin = new Map<string, G[]>();
+  for (const g of breadth) {
+    const list = perCoin.get(g.coin);
+    if (list) list.push(g); else perCoin.set(g.coin, [g]);
+  }
+  const rounds: G[][] = [];
+  for (const list of perCoin.values()) {
+    list.sort((a, b) => (a.todoOldest as number) - (b.todoOldest as number) || byName(a, b));
+    list.forEach((g, rank) => (rounds[rank] ??= []).push(g));
+  }
+  const interleaved = rounds.flatMap((round) =>
+    round.sort((a, b) => (a.todoOldest as number) - (b.todoOldest as number) || byName(a, b)),
+  );
+  idle.sort(byName);
+  return [...critical.map((c) => c.g), ...interleaved, ...idle];
+}
+
+/** Per-venue worklist figures for the run's `[worklist]` line. Pure. */
+export function worklistStats(
+  groups: PrioritizedGroup[],
+  nowSec: number,
+): { groups: number; critical: number; labelable: number; pastHorizon: number } {
+  let critical = 0;
+  let labelable = 0;
+  let pastHorizon = 0;
+  for (const g of groups) {
+    labelable += g.todoLabelable;
+    pastHorizon += g.todoPastHorizon;
+    if (g.todoOldest == null || g.todoLabelable <= 0) continue;
+    const depthS = candleHorizonDays(g.exchange, g.timeframe) * 86_400;
+    if (Number.isFinite(depthS) && g.todoOldest + depthS - nowSec <= CRITICAL_HORIZON_MARGIN_S) critical++;
+  }
+  return { groups: groups.length, critical, labelable, pastHorizon };
+}
+
+/**
+ * OPS-BDIR-V3-PANEL-READINESS-W1 CH2 — the FULL-eligible venues (venue-slo-tiers.ts) are served
+ * before every other venue, each class keeping the SLO-deadline order within itself. Measured steady
+ * state: the five need ~100 of the 210 nightly minutes once their backlog clears, so they are reached
+ * every night; the rest share what remains and are REPORTED, not paged, when it is not enough.
+ */
+export function orderVenuesFullPanelFirst(
+  venues: string[],
+  frontier: Map<string, number>,
+  nowSec: number,
+  sloHoursFor: (venue: string) => number = defaultSloHoursFor,
+): string[] {
+  const full = venues.filter((v) => isFullPanelVenue(v));
+  const rest = venues.filter((v) => !isFullPanelVenue(v));
+  return [
+    ...orderVenuesBySloDeadline(full, frontier, nowSec, sloHoursFor),
+    ...orderVenuesBySloDeadline(rest, frontier, nowSec, sloHoursFor),
+  ];
 }
 
 /**
@@ -500,7 +662,10 @@ async function fetchRangeInto(
   }
 }
 
-async function processGroup(cli: Cli, g: { exchange: string; coin: string; timeframe: string }): Promise<void> {
+/** Exported for tests/unit/directional-label-golden.test.ts only — a seam, not an API: that golden
+ *  pins the labels this function writes for a fixed fixture, which is how "the worklist order changed
+ *  WHICH rows are reached, never WHAT label they get" is proven rather than asserted. */
+export async function processGroup(cli: Cli, g: { exchange: string; coin: string; timeframe: string }): Promise<void> {
   const W = EVAL_CANDLES[g.timeframe];
   const tfMs = TF_MS[g.timeframe];
   if (!W || !tfMs) return; // unknown/retired timeframe — already filtered, defensive
@@ -651,7 +816,10 @@ async function main(): Promise<void> {
   const frontier = await loadVenueFrontier();
   const byVenue = partitionByVenue(groups);
   const nowSec = Math.floor(Date.now() / 1000);
-  const venueOrder = orderVenuesBySloDeadline([...byVenue.keys()], frontier, nowSec);
+  // OPS-BDIR-V3-PANEL-READINESS-W1 CH2 R1 — within a venue: horizon-first, then breadth across coins
+  // (never an alphabetical prefix); across venues: the FULL-eligible set first, each class SLO-ordered.
+  for (const [venue, list] of byVenue) byVenue.set(venue, orderGroupsForVenue(list, nowSec));
+  const venueOrder = orderVenuesFullPanelFirst([...byVenue.keys()], frontier, nowSec);
   const budget = makeBudget(cli);
   // ONE run identity, PRINTED BY THE PRODUCER — never re-derived by the consumer from a log
   // timestamp. `budget.startMs` and the `DWR backfill start` line's own `ts()` are milliseconds
@@ -665,6 +833,16 @@ async function main(): Promise<void> {
     `${cli.timeBudgetMin ? ` budget=${cli.timeBudgetMin}m/venue≤${cli.venueBudgetMin ?? '∞'}m` : ''}` +
     `${cli.check ? ' (CHECK — no writes)' : ''}`,
   );
+  // One line per venue, before any work: what the run is about to face. `past_horizon_todo` counts
+  // unlabelled rows already older than the venue's candle depth — lost to its API, reported, never
+  // retried — so the per-night horizon-crossing figure is read from the producer, not reconstructed.
+  for (const venue of venueOrder) {
+    const s = worklistStats(byVenue.get(venue) ?? [], nowSec);
+    console.log(
+      `[worklist] ${venue}: groups=${s.groups} critical=${s.critical} labelable_todo=${s.labelable} ` +
+      `past_horizon_todo=${s.pastHorizon}${isFullPanelVenue(venue) ? ' full_panel=1' : ''}`,
+    );
+  }
 
   // Per-venue counter snapshots feed the load-bearing summary line (F4).
   let snap = { ...cov };

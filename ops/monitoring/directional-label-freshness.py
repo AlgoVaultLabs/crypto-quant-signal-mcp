@@ -80,6 +80,207 @@ def load_tiers(path: str | None = None):
 
 
 MAJORS, MAJOR_SLO_H, LONGTAIL_SLO_H, BARRIER_SPEC = load_tiers()
+
+
+# ── OPS-BDIR-V3-PANEL-READINESS-W1 CH2 — the FULL-eligible panel and the COVERAGE arm ─────────────
+#
+# The ONE page-worthy venue set for coverage and capacity (architect ruling Q-F, 2026-09-26): the
+# venues the B-DIR v3 FULL test can still admit. Read from the SAME tier mirror as the majors
+# (`full_panel_venues`, emitted from src/lib/venue-slo-tiers.ts), fail-SAFE to the ruled set, so the
+# labeler's venue order and this canary's paging set can never disagree.
+FULL_PANEL_DEFAULT = frozenset({"KUCOIN", "BITGET", "OKX", "BINANCE", "BYBIT"})
+
+
+def load_full_panel(path: str | None = None) -> frozenset[str]:
+    path = path or os.environ.get("LF_TIERS_FILE", str(Path(__file__).parent / "venue-slo-tiers.json"))
+    try:
+        venues = json.loads(Path(path).read_text())["full_panel_venues"]
+        if isinstance(venues, list) and venues and all(isinstance(v, str) and v for v in venues):
+            return frozenset(venues)
+    except Exception as exc:  # fail-safe: never blind the canary on a mirror hiccup
+        print(f"[label-freshness] FULL_PANEL_FALLBACK {path}: {exc}", file=sys.stderr)
+    return FULL_PANEL_DEFAULT
+
+
+FULL_PANEL = load_full_panel()
+
+# The coverage arm: labelled / emitted on the PRIMARY spec — the FULL test's panel rule (c) with its
+# own denominator (emitted BUY/SELL) — over the trailing 7 days, on rows whose label window CLOSED at
+# least a day ago, so the nightly had its chance. FAIL below 90 % pages for a FULL-eligible venue;
+# every other venue REPORTS with its declared reason. Before this arm the canary measured only the
+# FRONTIER (the newest labelled row), which an alphabetical prefix keeps fresh at 40 % coverage.
+COVERAGE_WINDOW_D = 7
+COVERAGE_GRACE_S = 86_400
+COVERAGE_FLOOR = 0.90
+COVERAGE_ALERT_ID = "DIRECTIONAL_LABEL_COVERAGE_SHORTFALL"
+# A FULL venue below the floor that gained at least this much since the previous run is RECOVERING
+# (the nightly is closing the gap) and is held, not paged — see coverage_page_decision(). Below
+# 2 pp/night the gap is not closing on any useful horizon, so it counts as a stall and pages; and a
+# hold never outlives COVERAGE_WINDOW_D consecutive FAIL runs, whatever the gain.
+COVERAGE_RECOVERING_MIN_GAIN = 0.02
+# Evaluation windows in candles — MUST equal src/scripts/directional-labeler.ts EVAL_CANDLES
+# (pinned by tests/unit/directional-label-coverage-arm.test.ts). +2 is the labeler's fetch buffer.
+EVAL_W = {"3m": 12, "5m": 12, "15m": 12, "30m": 8, "1h": 8, "2h": 6, "4h": 6, "8h": 4, "12h": 4, "1d": 3}
+TF_S = {"3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400,
+        "8h": 28800, "12h": 43200, "1d": 86400}
+# Declared reasons a non-FULL venue REPORTS instead of paging. Data, not prose: an exemption that
+# lives only in a comment gets "fixed" by the next wave enforcing the contract.
+REPORT_REASONS = {
+    "HL": ("not FULL-eligible: rule (d) fails by candle horizon (76.5% of HL rows are sub-1h; 5m depth "
+           "17.48 d); also lane-bound (~1 HL request/min in its slot)"),
+}
+REPORT_REASON_DEFAULT = ("not FULL-eligible: served after the FULL panel inside the 210-min nightly "
+                         "budget (capacity by declaration, ruling Q-F)")
+
+
+def coverage_sql(now: int) -> str:
+    """PURE — returned as a string so the hermetic suite asserts its SHAPE."""
+    windows = ", ".join(f"('{tf}', {(w + 2) * TF_S[tf]})" for tf, w in EVAL_W.items())
+    return (
+        "SET default_transaction_read_only=on; "
+        f"WITH w(timeframe, window_s) AS (VALUES {windows}) "
+        "SELECT s.exchange, COUNT(*) AS emitted, COUNT(d.signal_id) AS labelled "
+        "FROM signals s JOIN w ON w.timeframe = s.timeframe "
+        "LEFT JOIN directional_labels d ON d.signal_id = s.id "
+        f"AND d.barrier_spec = '{BARRIER_SPEC}' "
+        "WHERE s.signal IN ('BUY','SELL') "
+        f"AND s.created_at >= {now - COVERAGE_WINDOW_D * 86400} "
+        f"AND s.created_at + w.window_s + {COVERAGE_GRACE_S} <= {now} "
+        "AND s.exchange NOT IN (SELECT exchange_id FROM venues WHERE status = 'retired') "
+        "GROUP BY 1 ORDER BY 1;"
+    )
+
+
+def coverage_census(now: int) -> list[tuple[str, int, int]]:
+    cmd = os.environ.get("LF_COVERAGE_CMD", PSQL_DEFAULT)
+    out = subprocess.run(cmd.split() + ["-c", coverage_sql(now)], capture_output=True, text=True, timeout=180)
+    if out.returncode != 0:
+        raise RuntimeError(f"coverage psql rc={out.returncode}: {out.stderr.strip()[:160]}")
+    rows: list[tuple[str, int, int]] = []
+    for line in out.stdout.strip().splitlines():
+        if "|" not in line:
+            continue  # SET tag / noise
+        parts = line.split("|")
+        if len(parts) != 3 or not parts[1].strip().isdigit() or not parts[2].strip().isdigit():
+            raise ValueError(f"unparseable coverage row {line[:80]!r}")
+        rows.append((parts[0].strip(), int(parts[1]), int(parts[2])))
+    return rows
+
+
+def evaluate_coverage(rows: list[tuple[str, int, int]], full: frozenset[str]):
+    """PURE. Returns (verdict, lines, failing) — verdict over the FULL venues only.
+    A FULL venue with no measured rows is INDETERMINATE (we cannot vouch for it); a check that could
+    not run never reads as PASS. Non-FULL venues are reported, never counted into the verdict."""
+    by = {v: (e, lab) for v, e, lab in rows}
+    lines, verdicts, failing = [], [], []
+    for venue in sorted(set(by) | set(full)):
+        emitted, labelled = by.get(venue, (0, 0))
+        ratio = labelled / emitted if emitted else None
+        arm = "PAGE" if venue in full else "REPORT"
+        if ratio is None:
+            v = "INDETERMINATE"
+        else:
+            v = "PASS" if ratio >= COVERAGE_FLOOR else "FAIL"
+        ratio_s = "n/a" if ratio is None else f"{ratio * 100:.1f}%"
+        line = f"COVERAGE {venue} emitted={emitted} labelled={labelled} ratio={ratio_s} arm={arm} verdict={v}"
+        if arm == "REPORT" and v != "PASS":
+            line += f" reason={REPORT_REASONS.get(venue, REPORT_REASON_DEFAULT)}"
+        lines.append(line)
+        if arm == "PAGE":
+            verdicts.append(v)
+            if v == "FAIL":
+                failing.append((venue, emitted, labelled, ratio_s))
+    if "FAIL" in verdicts:
+        verdict = "FAIL"
+    elif "INDETERMINATE" in verdicts or not verdicts:
+        verdict = "INDETERMINATE"
+    else:
+        verdict = "PASS"
+    return verdict, lines, failing
+
+
+def coverage_page_decision(failing, prior: dict, full: frozenset[str], measured: set[str]):
+    """PURE. Which FAIL venues page NOW, which are held and why, and the coverage state to persist.
+
+    The verdict (token) is not decided here — a venue below 90% is FAIL whatever this returns. Only
+    the PAGE is gated, with this canary's own sustained-drift idiom: the nightly labeler IS the
+    recovery for a coverage gap, so paging before it had a night to act is recovery chatter.
+      * day 1 (first consecutive FAIL run)                              → hold
+      * later, and gained >= COVERAGE_RECOVERING_MIN_GAIN since the last run → hold (recovering)
+      * later, and not gaining                                          → PAGE (the recovery stalled)
+      * past COVERAGE_WINDOW_D consecutive FAIL runs                    → PAGE whatever the gain (the
+        7-day window has fully turned over, so "still catching up" no longer explains it)
+    State keeps FULL venues currently in FAIL only; a PASS forgets the streak. A FULL venue this run
+    could not measure keeps its prior entry untouched — no reset, no advance."""
+    to_page, held, state = [], [], {}
+    for v in full:
+        if v not in measured and v in prior:
+            state[v] = prior[v]
+    for venue, emitted, labelled, ratio_s in failing:
+        ratio = labelled / emitted
+        p = prior.get(venue) if isinstance(prior.get(venue), dict) else {}
+        fails = int(p.get("fails", 0)) + 1
+        prev = p.get("ratio")
+        gain = None if prev is None else ratio - float(prev)
+        state[venue] = {"ratio": round(ratio, 4), "fails": fails}
+        prev_s = "n/a" if prev is None else f"{float(prev) * 100:.1f}%"
+        entry = (venue, emitted, labelled, ratio_s, fails, prev_s)
+        if fails > COVERAGE_WINDOW_D:
+            to_page.append(entry)
+        elif fails < CONSECUTIVE_TO_PAGE:
+            held.append((venue, fails, f"day {fails} — the sustained-drift gate holds the page until day "
+                                       f"{CONSECUTIVE_TO_PAGE}"))
+        elif gain is not None and gain >= COVERAGE_RECOVERING_MIN_GAIN - 1e-9:
+            held.append((venue, fails, f"recovering {gain * 100:+.1f} pp since the previous run ({prev_s} → {ratio_s})"))
+        else:
+            to_page.append(entry)
+    return to_page, held, state
+
+
+def coverage_arm(wrapper: str, now: int, prior: dict | None = None) -> tuple[str, dict]:
+    """Run the arm: positive per-venue lines, ONE token, page on a SUSTAINED FAIL that is not
+    recovering, clear on PASS, silent on INDETERMINATE. Fail-open like the rest of this canary: a
+    read failure is INDETERMINATE and leaves the coverage state exactly as it was. Returns
+    (verdict, coverage state to persist)."""
+    prior = prior if isinstance(prior, dict) else {}
+    try:
+        rows = coverage_census(now)
+        verdict, lines, failing = evaluate_coverage(rows, FULL_PANEL)
+    except Exception as exc:
+        log(f"COVERAGE INDETERMINATE — could not read the coverage census: {str(exc)[:160]}")
+        print("DIRECTIONAL_LABEL_COVERAGE_VERDICT=INDETERMINATE")
+        return "INDETERMINATE", prior
+    for line in lines:
+        log(line)
+    measured = {v for v, e, _ in rows if e}
+    to_page, held, state = coverage_page_decision(failing, prior, FULL_PANEL, measured)
+    for venue, fails, why in held:
+        log(f"COVERAGE_HOLD {venue} fails={fails} — {why}")
+    if to_page:
+        body = "\n".join([
+            f"🛑 {COVERAGE_ALERT_ID}",
+            "Directional-label COVERAGE below 90% on a venue the B-DIR v3 FULL test can still admit "
+            "(panel rule (c)), and the nightly is not closing the gap:",
+            *[f"venue {v}: {lab} of {e} emitted rows labelled = {r} over the trailing "
+              f"{COVERAGE_WINDOW_D} d (rows whose label window closed >= 1 d ago); {n} consecutive "
+              f"FAIL runs, previous run {p}" for v, e, lab, r, n, p in to_page],
+            "Action: dispatch OPS-LABEL-COVERAGE-W{NEXT} via Cowork → Claude Code",
+            "Source log: /var/log/directional-label-freshness.log",
+        ])
+        try:
+            subprocess.run([wrapper, COVERAGE_ALERT_ID, SEVERITY, "-"], input=body, text=True, timeout=60)
+            log(f"COVERAGE_PAGE_SENT venues={[v for v, *_ in to_page]}")
+        except Exception as exc:
+            log(f"COVERAGE FAIL_OPEN wrapper error: {exc}")
+    elif verdict == "PASS":
+        try:
+            # stdin closed: a clear carries no body, and must never block on an inherited open stdin
+            subprocess.run([wrapper, "--clear", COVERAGE_ALERT_ID, "every FULL-eligible venue >= 90% coverage"],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        except Exception as exc:
+            log(f"COVERAGE clear FAIL_OPEN: {exc}")
+    print(f"DIRECTIONAL_LABEL_COVERAGE_VERDICT={verdict}")
+    return verdict, state
 INPUT_FLOWING_H = 48          # venue must have >=1 eligible signal this recent
 CONSECUTIVE_TO_PAGE = 2       # sustained-drift criterion (majors only)
 
@@ -256,7 +457,7 @@ def _classify_recovery_exit(code: int) -> str:
     return "unclassified non-zero exit"
 
 
-def forward_capacity_signal(wrapper: str, log_path: str | None = None, still_breaching=None) -> bool:
+def forward_capacity_signal(wrapper: str, log_path: str | None = None, still_breaching=None, attempted=None) -> bool:
     """Forward the labeler's DETECTOR_ENVELOPE (Objective #2) from the LAST nightly run.
 
     OPS-MONITORING-SIGNAL-CONTRACT-W1 CH3 — D2 + D3.
@@ -355,20 +556,45 @@ def forward_capacity_signal(wrapper: str, log_path: str | None = None, still_bre
     # D3 — drop venues this run's recovery already repaired. `still_breaching is None` means the
     # caller could not determine the post-recovery set, which is NOT the same as "none healed":
     # in that case nothing is dropped and the envelope is forwarded as measured.
+    #
+    # CORRECTED (OPS-BDIR-V3-PANEL-READINESS-W1 CH2, R0.4 "never fired → fix its predicate"): a venue
+    # counts as REPAIRED only if this run's recovery step actually ATTEMPTED it and it no longer
+    # breaches. The rule was `named − still_breaching`, but `still_breaching` holds only the
+    # frontier-breaching MAJORS — so every long-tail venue, and every major not yet past its frontier
+    # SLO, was dropped as "repaired" with no recovery having run for it. That is why this page never
+    # fired after 2026-08-27 (measured: 09-26 "dropped ['BYBIT', 'OKX', 'KUCOIN', 'PHEMEX']", none of
+    # them attempted). `attempted is None` (unknown) drops nothing, exactly like `still_breaching`.
     named = [v for v in str(env["evidence"].get("unreached_in_danger", "")).split(",") if v and v != "none"]
-    if still_breaching is not None and named:
-        healed = [v for v in named if v not in still_breaching]
-        remaining = [v for v in named if v in still_breaching]
-        if healed:
-            log(f"CAPACITY_SIGNAL dropped {healed} — repaired by this run's recovery step")
-        if not remaining:
-            log("CAPACITY_SIGNAL REFUSED (PASS): every named venue was repaired before this page")
+    if still_breaching is not None and attempted is not None and named:
+        healed = [v for v in named if v in attempted and v not in still_breaching]
+    else:
+        healed = []
+    remaining = [v for v in named if v not in healed]
+    if healed:
+        log(f"CAPACITY_SIGNAL dropped {healed} — repaired by this run's recovery step")
+    if named and not remaining:
+        log("CAPACITY_SIGNAL REFUSED (PASS): every named venue was repaired before this page")
+        return False
+    # Ruling Q-F: a capacity CONCLUSION (verdict FAIL) pages only for FULL-eligible venues; a non-FULL
+    # venue short of capacity is the declared trade-off and is REPORTED with its reason. A run that
+    # could not measure (INDETERMINATE) is still forwarded as-is — that is about the run, not a venue.
+    reported: list[str] = []
+    if decision.verdict == "FAIL":
+        reported = [v for v in remaining if v not in FULL_PANEL]
+        remaining = [v for v in remaining if v in FULL_PANEL]
+        for v in reported:
+            log(f"CAPACITY_SIGNAL REPORTED {v} (not paged) — {REPORT_REASONS.get(v, REPORT_REASON_DEFAULT)}")
+        if named and not remaining:
+            log("CAPACITY_SIGNAL REFUSED (PASS for the FULL panel): no FULL-eligible venue is in danger")
             return False
+    if named:
         env = dict(env)
         env["evidence"] = dict(env["evidence"])
-        env["evidence"]["unreached_in_danger"] = ",".join(remaining)
+        env["evidence"]["unreached_in_danger"] = ",".join(remaining) or "none"
         env["evidence"]["unreached_count"] = len(remaining)
         env["evidence"]["dropped_after_recovery"] = ",".join(healed) or "none"
+        if reported:
+            env["evidence"]["reported_not_paged"] = ",".join(reported)
 
     body = "\n".join([
         f"{'🛑' if decision.verdict == 'FAIL' else '❓'} DIRECTIONAL_LABEL_CAPACITY_SHORTFALL",
@@ -446,6 +672,7 @@ def main(argv: list[str]) -> int:
     # never pages (silent — recovery alerts are noise). A synthetic --force-stale venue has
     # no real target, so it is skipped (the page path still proves the two-tier contract).
     still_breaching = {v for v, _ in majors_bad}
+    attempted: list[str] = []  # the venues this run's recovery step actually ran for (D3's input)
     if RECOVERY_ENABLED and majors_bad:
         attempted = [v for v, _ in majors_bad if v != force_stale and attempt_recovery(v)]
         if attempted:
@@ -494,12 +721,18 @@ def main(argv: list[str]) -> int:
     # (the wrapper owns severity/cooldown/DRY_RUN gates). Independent of the page path, but NOT
     # independent of the recovery step above — it is handed the POST-recovery breach set so it
     # cannot page for a venue this same invocation already repaired.
-    forward_capacity_signal(wrapper, still_breaching=still_breaching)
-
     try:
         state = json.loads(state_file.read_text()) if state_file.exists() else {}
     except Exception:
         state = {}
+
+    # OPS-BDIR-V3-PANEL-READINESS-W1 CH2 R3 — the per-venue COVERAGE arm (its own token; independent of
+    # the frontier page path above and of the capacity forward below). Its streak lives in the SAME
+    # state file (so a --force-stale smoke's SEC-30 redirect isolates it too) under its own key.
+    _, coverage_state = coverage_arm(wrapper, now, state.get("coverage"))
+
+    forward_capacity_signal(wrapper, still_breaching=still_breaching, attempted=set(attempted))
+
     prior: dict[str, int] = state.get("consecutive", {})
     # A healed venue drops out of state entirely (no zero-key accumulation);
     # only currently-breaching MAJORS are tracked (long-tail never pages).
@@ -518,7 +751,7 @@ def main(argv: list[str]) -> int:
 
     try:
         state_file.parent.mkdir(parents=True, exist_ok=True)
-        state_file.write_text(json.dumps({"consecutive": consecutive, "updated": now}, indent=1))
+        state_file.write_text(json.dumps({"consecutive": consecutive, "coverage": coverage_state, "updated": now}, indent=1))
         digest_file.parent.mkdir(parents=True, exist_ok=True)
         digest_file.write_text("\n".join(digest) + "\n")
     except Exception as exc:

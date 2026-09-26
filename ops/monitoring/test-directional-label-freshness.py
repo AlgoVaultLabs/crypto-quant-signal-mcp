@@ -39,7 +39,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
     print(f"ok   {name}")
 
 
-def run(tmp: Path, rows: list[tuple[str, int, int | None]], *, state=None, argv=(), env_extra=None, retired=()):
+def run(tmp: Path, rows: list[tuple[str, int, int | None]], *, state=None, argv=(), env_extra=None, retired=(), coverage=None):
     stub = tmp / "psql_stub.sh"
     lines = "\n".join(f"{v}|{s}|{'' if l is None else l}" for v, s, l in rows)
     stub.write_text(f"#!/bin/bash\necho 'SET'\ncat <<'EOF'\n{lines}\nEOF\n")
@@ -78,6 +78,16 @@ def run(tmp: Path, rows: list[tuple[str, int, int | None]], *, state=None, argv=
         "LF_RECOVERY_ENABLED": "0",  # hermetic by default; recovery cases opt in via env_extra
         "LF_RETIRED_CMD": str(retired_stub),
     } | (env_extra or {})
+    # OPS-BDIR-V3-PANEL-READINESS-W1 CH2 R3: a SEPARATE stub for the coverage arm (LF_COVERAGE_CMD).
+    # Absent → the arm reads nothing and reports INDETERMINATE (existing cases are unaffected).
+    if coverage is not None:
+        cov_stub = tmp / "coverage_stub.sh"
+        clines = "\n".join(f"{v}|{e}|{l}" for v, e, l in coverage)
+        cov_stub.write_text(f"#!/bin/bash\necho 'SET'\ncat <<'EOF'\n{clines}\nEOF\n")
+        cov_stub.chmod(0o755)
+        env["LF_COVERAGE_CMD"] = str(cov_stub)
+    else:
+        env["LF_COVERAGE_CMD"] = "false"  # a command that fails → the arm is INDETERMINATE, never PASS
     out = subprocess.run([sys.executable, str(CANARY), *argv], capture_output=True, text=True, env=env)
     calls = (tmp / "wrapper.sh.calls").read_text() if (tmp / "wrapper.sh.calls").exists() else ""
     body = (tmp / "wrapper.sh.body").read_text() if (tmp / "wrapper.sh.body").exists() else ""
@@ -244,6 +254,136 @@ with tempfile.TemporaryDirectory() as d:
     out2, calls2, _, digest2, _ = run(tmp, fixture, retired=[])
     check("retired-control: same fixture breaches when NOT retired", "BREACH" in digest2, digest2)
     check("retired-control: still never pages (long-tail)", calls2 == "")
+
+# ── OPS-BDIR-V3-PANEL-READINESS-W1 CH2 R3 — the per-venue COVERAGE arm ─────────────────────────
+# labelled / emitted (primary spec) over the trailing 7 days on rows whose label window has closed.
+# PAGES only for the FULL-eligible venues (tier mirror `full_panel_venues`); every other venue REPORTS
+# with its declared reason (architect ruling Q-F, 2026-09-26).
+HEALTHY_FULL = [("BINANCE", 1000, 995), ("BYBIT", 800, 796), ("OKX", 700, 680), ("BITGET", 1200, 1100), ("KUCOIN", 1000, 950)]
+KUCOIN_69 = [v for v in HEALTHY_FULL if v[0] != "KUCOIN"] + [("KUCOIN", 1000, 690)]
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    healthy_census = [("BINANCE", fresh(0.5), fresh(3))]
+    # C1 — DAY 1: a FULL-eligible venue below 90% is FAIL (token) but the page is HELD — the canary's
+    # own sustained-drift idiom (CONSECUTIVE_TO_PAGE); the nightly labeler IS the recovery, and a page
+    # for a gap the next nightly may close is recovery chatter. The run is remembered in state.
+    out, calls, body, _, st = run(tmp, healthy_census, coverage=KUCOIN_69)
+    check("coverage: token FAIL on day 1", "DIRECTIONAL_LABEL_COVERAGE_VERDICT=FAIL" in out.stdout, out.stdout[-400:])
+    check("coverage: day 1 does NOT page", "COVERAGE_SHORTFALL" not in calls, calls)
+    check("coverage: day 1 logs the HOLD naming the venue", "COVERAGE_HOLD KUCOIN" in out.stdout, out.stdout[-600:])
+    check("coverage: day 1 is remembered (ratio + consecutive fails)",
+          st.get("coverage", {}).get("KUCOIN") == {"ratio": 0.69, "fails": 1}, json.dumps(st))
+    check("coverage: positive per-venue line for every FULL venue",
+          all(f"COVERAGE {v}" in out.stdout for v, _, _ in HEALTHY_FULL), out.stdout[-600:])
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C7 — DAY 2, STALLED: still below 90% and no real gain since the previous run → PAGE
+    out, calls, body, _, st = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], coverage=KUCOIN_69,
+                                  state={"coverage": {"KUCOIN": {"ratio": 0.69, "fails": 1}}})
+    check("coverage: day-2 stalled FULL venue pages", "DIRECTIONAL_LABEL_COVERAGE_SHORTFALL CRITICAL_PERSISTENT" in calls, calls)
+    check("coverage: body names the venue with its noun + ratio", "venue KUCOIN" in body and "69.0%" in body, body)
+    check("coverage: body carries the streak and the previous run", "2 consecutive" in body and "69.0%" in body, body)
+    check("coverage: streak advances to 2", st.get("coverage", {}).get("KUCOIN", {}).get("fails") == 2, json.dumps(st))
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C8 — DAY 2, RECOVERING: below 90% but gained >= 2 pp since the previous run → HOLD (the nightly
+    # is closing the gap)
+    out, calls, _, _, st = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], coverage=KUCOIN_69,
+                               state={"coverage": {"KUCOIN": {"ratio": 0.40, "fails": 1}}})
+    check("coverage: a recovering FULL venue does not page", "COVERAGE_SHORTFALL" not in calls, calls)
+    check("coverage: the hold says recovering, with the gain", "COVERAGE_HOLD KUCOIN" in out.stdout and "recovering" in out.stdout
+          and "+29.0 pp" in out.stdout, out.stdout[-600:])
+    check("coverage: token is still FAIL while recovering", "DIRECTIONAL_LABEL_COVERAGE_VERDICT=FAIL" in out.stdout, out.stdout[-300:])
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C9 — the gain boundary: +2.0 pp holds, +1.9 pp pages
+    out_at, calls_at, _, _, _ = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], coverage=KUCOIN_69,
+                                    state={"coverage": {"KUCOIN": {"ratio": 0.67, "fails": 1}}})
+    check("coverage: +2.0 pp is recovering (held)", "COVERAGE_SHORTFALL" not in calls_at, calls_at)
+    (tmp / "wrapper.sh.calls").unlink(missing_ok=True)
+    out_below, calls_below, _, _, _ = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], coverage=KUCOIN_69,
+                                          state={"coverage": {"KUCOIN": {"ratio": 0.671, "fails": 1}}})
+    check("coverage: +1.9 pp is not recovering (pages)", "DIRECTIONAL_LABEL_COVERAGE_SHORTFALL CRITICAL_PERSISTENT" in calls_below, calls_below)
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C10 — the 7-day window has fully turned over: still below 90% after COVERAGE_WINDOW_D consecutive
+    # runs pages EVEN IF gaining — "recovering" no longer explains a whole window of shortfall
+    out, calls, _, _, st = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], coverage=KUCOIN_69,
+                               state={"coverage": {"KUCOIN": {"ratio": 0.60, "fails": 7}}})
+    check("coverage: FAIL past the window turnover pages despite a gain",
+          "DIRECTIONAL_LABEL_COVERAGE_SHORTFALL CRITICAL_PERSISTENT" in calls, calls)
+    check("coverage: streak advances to 8", st.get("coverage", {}).get("KUCOIN", {}).get("fails") == 8, json.dumps(st))
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C11 — PASS forgets the streak (a later FAIL is day 1 again) and clears the alert
+    out, calls, _, _, st = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], coverage=HEALTHY_FULL,
+                               state={"coverage": {"KUCOIN": {"ratio": 0.69, "fails": 3}}})
+    check("coverage: PASS drops the venue from coverage state", st.get("coverage") == {}, json.dumps(st))
+    check("coverage: PASS clears", "--clear DIRECTIONAL_LABEL_COVERAGE_SHORTFALL" in calls, calls)
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C12 — an unreadable coverage census keeps the streak exactly as it was (no reset, no advance)
+    seeded = {"KUCOIN": {"ratio": 0.5, "fails": 2}}
+    out, calls, _, _, st = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], state={"coverage": seeded})
+    check("coverage: INDETERMINATE keeps the streak unchanged", st.get("coverage") == seeded, json.dumps(st))
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C13 — non-FULL venues are never tracked (they never page); C14 — the frontier arm's own state is
+    # written alongside, not clobbered by the coverage write
+    out, calls, _, _, st = run(tmp, [("BYBIT", fresh(0.5), fresh(30))], coverage=HEALTHY_FULL + [("GATE", 5000, 2020)],
+                               state={"consecutive": {"BYBIT": 1}})
+    check("coverage: a non-FULL shortfall is never tracked", "GATE" not in st.get("coverage", {"GATE": 1}), json.dumps(st))
+    check("coverage state does not clobber the frontier streak", st.get("consecutive", {}).get("BYBIT") == 2, json.dumps(st))
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C2 — non-FULL venues below 90% REPORT with their declared reason and never page; FULL all healthy → PASS
+    cov = HEALTHY_FULL + [("GATE", 5000, 2020), ("HL", 2000, 780)]
+    out, calls, body, _, _ = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], coverage=cov)
+    check("coverage: non-FULL shortfall never pages", "CRITICAL_PERSISTENT" not in calls, calls)
+    check("coverage: GATE reported, not paged", "COVERAGE GATE" in out.stdout and "arm=REPORT" in out.stdout, out.stdout[-800:])
+    check("coverage: HL's declared reason names rule (d) and the candle horizon",
+          "rule (d)" in out.stdout and "horizon" in out.stdout, out.stdout[-800:])
+    check("coverage: token PASS when every FULL venue >= 90%", "DIRECTIONAL_LABEL_COVERAGE_VERDICT=PASS" in out.stdout, out.stdout[-400:])
+    check("coverage: PASS clears the coverage alert state", "--clear DIRECTIONAL_LABEL_COVERAGE_SHORTFALL" in calls, calls)
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C3 — a FULL venue MISSING from the coverage result is INDETERMINATE, never PASS; nothing pages
+    cov = [v for v in HEALTHY_FULL if v[0] != "BYBIT"]
+    out, calls, _, _, _ = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], coverage=cov)
+    check("coverage: a missing FULL venue is INDETERMINATE", "DIRECTIONAL_LABEL_COVERAGE_VERDICT=INDETERMINATE" in out.stdout, out.stdout[-400:])
+    check("coverage: INDETERMINATE never pages", "COVERAGE_SHORTFALL CRITICAL" not in calls, calls)
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C4 — the boundary: exactly 90.0% passes, 89.9% fails
+    at = [v for v in HEALTHY_FULL if v[0] != "OKX"] + [("OKX", 1000, 900)]
+    below = [v for v in HEALTHY_FULL if v[0] != "OKX"] + [("OKX", 1000, 899)]
+    out_at, _, _, _, _ = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], coverage=at)
+    out_below, _, _, _, _ = run(tmp, [("BINANCE", fresh(0.5), fresh(3))], coverage=below)
+    check("coverage: exactly 90.0% passes", "DIRECTIONAL_LABEL_COVERAGE_VERDICT=PASS" in out_at.stdout, out_at.stdout[-300:])
+    check("coverage: 89.9% fails", "DIRECTIONAL_LABEL_COVERAGE_VERDICT=FAIL" in out_below.stdout, out_below.stdout[-300:])
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # C5 — an unreadable coverage query is INDETERMINATE (the census path still runs; exit stays 0)
+    out, calls, _, digest, _ = run(tmp, [("BINANCE", fresh(0.5), fresh(3))])
+    check("coverage: unreadable input is INDETERMINATE", "DIRECTIONAL_LABEL_COVERAGE_VERDICT=INDETERMINATE" in out.stdout, out.stdout[-300:])
+    check("coverage: the freshness digest is unaffected", "BINANCE" in digest, digest)
+    check("coverage: exit still 0 (fail-open canary)", out.returncode == 0, out.stderr)
+
+# C6 — THE BYPASSED ARTIFACT: the coverage SQL is asserted by SHAPE (a hermetic run never executes it)
+import importlib.util as _ilu
+_spec = _ilu.spec_from_file_location("dlf", CANARY)
+_m = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_m)
+# getattr, not attribute access: a missing builder must report FAIL on every shape check below,
+# not abort the suite (an assertion that RAISES is not an assertion)
+_sql = getattr(_m, "coverage_sql", lambda _n: "")(NOW)
+_EVAL_W = getattr(_m, "EVAL_W", {"__missing__": 0})
+check("coverage SQL: primary spec only", "d.barrier_spec = 'tau1.0-floor0.30-v1'" in _sql, _sql)
+check("coverage SQL: emitted = BUY/SELL (rule (c)'s denominator)", "s.signal IN ('BUY','SELL')" in _sql, _sql)
+check("coverage SQL: 7-day window", f"s.created_at >= {NOW - 7 * 86400}" in _sql, _sql)
+check("coverage SQL: only rows whose label window has closed (+ grace)", "s.created_at + w.window_s + 86400 <= " in _sql, _sql)
+check("coverage SQL: retired venues excluded", "status = 'retired'" in _sql, _sql)
+check("coverage SQL: no % token", "%" not in _sql, _sql)
+check("coverage SQL: every labelled timeframe carries its window", all(f"('{tf}', " in _sql for tf in _EVAL_W), _sql)
 
 TOTAL = PASSED + len(FAILURES)
 if FAILURES:

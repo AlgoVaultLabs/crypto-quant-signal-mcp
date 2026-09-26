@@ -23,6 +23,21 @@
 export const MAJOR_VENUES = ['BINANCE', 'BYBIT', 'OKX', 'BITGET', 'HL'] as const;
 export type MajorVenue = (typeof MAJOR_VENUES)[number];
 
+/**
+ * The venues the B-DIR v3 FULL test can still admit to its panel (architect ruling Q-F,
+ * OPS-BDIR-V3-PANEL-READINESS-W1, 2026-09-26). The nightly labeler serves them FIRST, and the
+ * freshness canary PAGES only for them on label coverage; every other venue REPORTS with a declared
+ * capacity reason. HL is deliberately absent: 76.5 % of its rows are sub-1h and its candle endpoint
+ * serves 17.48 d of 5m history, so the FULL test's TA recompute (rule d) cannot reach its earliest
+ * rows whatever their label coverage. Same single-derivation path as the majors: the labeler imports
+ * this, the canary reads `full_panel_venues` from the emitted mirror.
+ */
+export const FULL_PANEL_VENUES = ['KUCOIN', 'BITGET', 'OKX', 'BINANCE', 'BYBIT'] as const;
+const FULL_PANEL_SET: ReadonlySet<string> = new Set<string>(FULL_PANEL_VENUES);
+export function isFullPanelVenue(venue: string): boolean {
+  return FULL_PANEL_SET.has(venue);
+}
+
 export const MAJOR_SLO_HOURS = 24;
 export const LONGTAIL_SLO_HOURS = 72;
 /** The barrier spec the freshness SLO (and this rotation's frontier) is measured on. */
@@ -48,6 +63,7 @@ export interface TierSot {
   major_slo_hours: number;
   longtail_slo_hours: number;
   barrier_spec: string;
+  full_panel_venues: string[];
 }
 
 export const TIER_SOT: TierSot = {
@@ -56,6 +72,7 @@ export const TIER_SOT: TierSot = {
   major_slo_hours: MAJOR_SLO_HOURS,
   longtail_slo_hours: LONGTAIL_SLO_HOURS,
   barrier_spec: FRESHNESS_BARRIER_SPEC,
+  full_panel_venues: [...FULL_PANEL_VENUES],
 };
 
 /** Canonical JSON serialisation (2-space indent, trailing newline) — the emitted mirror. */

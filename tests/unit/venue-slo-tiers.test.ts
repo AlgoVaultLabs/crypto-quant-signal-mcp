@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   FRESHNESS_BARRIER_SPEC,
+  FULL_PANEL_VENUES,
+  isFullPanelVenue,
   LONGTAIL_SLO_HOURS,
   MAJOR_SLO_HOURS,
   MAJOR_VENUES,
@@ -50,5 +52,12 @@ describe('venue-slo-tiers SoT', () => {
     expect(mirror.major_slo_hours).toBe(MAJOR_SLO_HOURS);
     expect(mirror.longtail_slo_hours).toBe(LONGTAIL_SLO_HOURS);
     expect(mirror.barrier_spec).toBe(FRESHNESS_BARRIER_SPEC);
+  });
+
+  it('the mirror carries the SAME FULL-eligible panel the labeler serves first (OPS-BDIR-V3-PANEL-READINESS-W1)', () => {
+    const mirror = JSON.parse(readFileSync(MIRROR, 'utf8'));
+    expect(mirror.full_panel_venues.slice().sort()).toEqual([...FULL_PANEL_VENUES].sort());
+    expect(FULL_PANEL_VENUES.every((v) => isFullPanelVenue(v))).toBe(true);
+    expect(isFullPanelVenue('HL')).toBe(false);
   });
 });

@@ -629,13 +629,14 @@
       "schedule": "41 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "7ae250556841dc9d435eb5e84bc9171cf9fc49d10c2b71bd46dff2923a69b4b6",
+      "sha256": "9cbcb619810f0788697737eab7710208172b2637a9b72d63bf2b457bd00d1e55",
       "alert_ids": [
         "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
-        "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL"
+        "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL",
+        "DIRECTIONAL_LABEL_COVERAGE_SHORTFALL"
       ],
       "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
-      "notes": "OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (Q3): now status-aware — a venue with venues.status='retired' renders `retired`, never BREACH, via a SEPARATE LF_RETIRED_CMD seam (reads `SELECT exchange_id FROM venues WHERE status='retired'` as aoe_readonly; SELECT-on-venues privilege probed present). Fail-safe: a retired-set read error yields an empty set (a retired venue keeps its old long-tail digest line; a real major breach is never suppressed because a major is never retired). PRIOR (SEC-13, OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch4): --force-stale accepts ALGOVAULT_TG_TEST_INERT=1, which suppresses BEFORE the cooldown gate and writes no marker; it previously REQUIRED DRY_RUN_TG=1, which DOES write the 24h marker."
+      "notes": "OPS-VENUE-STATUS-DERIVED-REGISTRIES-W1 (Q3): now status-aware — a venue with venues.status='retired' renders `retired`, never BREACH, via a SEPARATE LF_RETIRED_CMD seam (reads `SELECT exchange_id FROM venues WHERE status='retired'` as aoe_readonly; SELECT-on-venues privilege probed present). Fail-safe: a retired-set read error yields an empty set (a retired venue keeps its old long-tail digest line; a real major breach is never suppressed because a major is never retired). PRIOR (SEC-13, OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch4): --force-stale accepts ALGOVAULT_TG_TEST_INERT=1, which suppresses BEFORE the cooldown gate and writes no marker; it previously REQUIRED DRY_RUN_TG=1, which DOES write the 24h marker. EXTENDED 2026-09-26 by OPS-BDIR-V3-PANEL-READINESS-W1 CH2: (1) a per-venue COVERAGE arm (labelled/emitted, primary spec, trailing 7 d, window closed >= 1 d; FAIL < 90% pages DIRECTIONAL_LABEL_COVERAGE_SHORTFALL for the FULL-eligible venues only, every other venue REPORTS with a declared reason; its own DIRECTIONAL_LABEL_COVERAGE_VERDICT= token; LF_COVERAGE_CMD seam). The PAGE (never the token) follows this canary's sustained-drift idiom: day 1 holds, a later run pages unless the venue gained >= 2 pp since the previous run (the nightly is the recovery), and any venue still FAIL after 7 consecutive runs pages regardless; the streak lives in the same state file under `coverage`. (2) the capacity forward's D3 filter CORRECTED: a named venue counts as repaired only if the recovery step ATTEMPTED it and it no longer breaches — the old `named - still_breaching` dropped every long-tail venue and every not-yet-breaching major as 'repaired', which is why DIRECTIONAL_LABEL_CAPACITY_SHORTFALL never fired after 2026-08-27; a capacity FAIL now pages FULL-eligible venues and reports the rest (ruling Q-F). Frontier arm unchanged. Hermetic suite 79 assertions; 7 mutants of the page gate each killed."
     },
     {
       "id": "test-directional-label-freshness",
@@ -647,7 +648,7 @@
       "schedule": null,
       "invoked_by": "manual",
       "install_state": "installed",
-      "sha256": "4cd97fdbcc86b1c971764301b6c88ed95d3d88f2650f3e607341e18d77b503c2",
+      "sha256": "c91475ef1d464d335bccfedc5a8e91ea775baaf6b118468d6e2adf8dd665aaea",
       "alert_ids": [],
       "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1"
     },
@@ -694,7 +695,7 @@
       "schedule": null,
       "invoked_by": "called-by:venue-slo-tiers-drift-canary",
       "install_state": "installed",
-      "sha256": "f0f9575fcf62dd99e94f71dd5e12e9f9769c211ae9b7a7c9fc3f72715dfad01e",
+      "sha256": "3872baa2eb7b2dc1730fe5e55e2eb5b4c44903ff268ff32575ca3c9735bcb0e0",
       "alert_ids": [],
       "owner_wave": "OPS-VENUE-SLO-TIERS-W1"
     },
@@ -1886,7 +1887,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "a86407fc8e0eec9249b1219261cf0e944900ab431f1bf910aa43eba4d1054dca",
+      "sha256": "2c10ae9b7044a5d158b5f911e1414b27e76a93ff05edfbb6c828ad276d533c81",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -2600,7 +2601,8 @@
       "first_install": {
         "at": "20260926T115024Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
-      }
+      },
+      "invoked_by": "imported-by:funding-accrual-freshness.py"
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
