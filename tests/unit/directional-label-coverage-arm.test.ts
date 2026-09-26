@@ -46,7 +46,10 @@ describe('directional-label-freshness coverage arm — constants restated from t
   });
 
   it("HL carries a declared REPORT reason naming rule (d) — an exemption that lives only in prose gets 'fixed'", () => {
-    expect(SRC).toMatch(/"HL": \(\s*"not FULL-eligible: rule \(d\) fails by candle horizon/);
+    // \x28 and \x29 are the literal open and close parenthesis: scripts/check-test-budget.mjs spans a test
+    // block by counting raw parenthesis characters, so an escaped unbalanced one in a regex literal would
+    // run this block into the next, process-spawning block.
+    expect(SRC).toMatch(/"HL": \x28\s*"not FULL-eligible: rule \x28d\x29 fails by candle horizon/);
   });
 
   it('the hermetic suite passes (coverage arm, capacity forward, frontier arm)', { timeout: 120_000 }, () => {
