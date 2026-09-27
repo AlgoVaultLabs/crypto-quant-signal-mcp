@@ -2,7 +2,7 @@
 # ads1-ch2-gate.sh — EDGE-ADS1-SCORECARD-W1-V2 CH2 (the ADS-1 library, the complete label, the expiry column).
 #
 # Runs, in order, from the repo root:
-#   1. npm run build                                   (tsc)
+#   1. npm run build && npm run build:knowledge      (deploy.yml's order: tsc, then the KB bundle)
 #   2. the full vitest suite with the CI reporters, then scripts/classify-suite-verdict.mjs — the SAME
 #      verdict deploy.yml gates on (SUITE_VERDICT=PASS|PASS_AFTER_ISOLATION|FAIL|INDETERMINATE). The raw
 #      vitest exit code is NOT the gate: measured 2026-09-27 it was 1 in 3/3 runs on an untouched main
@@ -70,10 +70,15 @@ run_gate() {
   cd "$root" || { echo CH2_INDETERMINATE; exit 3; }
 
   local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/ads1-ch2-gate.XXXXXX")" || { echo CH2_INDETERMINATE; exit 3; }
-  trap 'rm -rf "$tmp"' EXIT
+  # the evidence outlives any verdict but GREEN: a RED whose report was deleted cannot be diagnosed
+  # (measured 2026-09-27 — a one-off suite FAIL, PASS on the rerun, and nothing left to say which test)
 
+  # deploy.yml's exact build order: tsc, THEN the knowledge bundle. `rm -rf dist` + tsc alone leaves
+  # dist/knowledge/latest.json missing, and kb-reachability's spawned gate then reads INDETERMINATE —
+  # measured 2026-09-27: two gate runs RED on exactly that, while a suite run on a dist a previous run had
+  # already filled read PASS.
   rm -rf dist
-  npm run build >"$tmp/build.log" 2>&1
+  { npm run build && npm run build:knowledge; } >"$tmp/build.log" 2>&1
   local build_rc=$?
   # a failed build must not leave the other legs reading a stale dist
   local suite="" diff="missing" st="" ddl=""
@@ -95,8 +100,11 @@ run_gate() {
   fi
   printf '[ads1-ch2-gate] build_rc=%s suite=%s differential=%s\n[ads1-ch2-gate] %s\n[ads1-ch2-gate] %s\n' \
     "$build_rc" "${suite:-none}" "$diff" "${st:-no selftest line}" "${ddl:-no ddl line}" >&2
-  decide "$build_rc" "$suite" "$diff" "$st" "$ddl"
-  exit $?
+  local rc
+  decide "$build_rc" "$suite" "$diff" "$st" "$ddl"; rc=$?
+  if [ "$rc" -eq 0 ]; then rm -rf "$tmp"
+  else printf '[ads1-ch2-gate] evidence kept: %s (build.log, vitest.log, report.json, shapes.json)\n' "$tmp" >&2; fi
+  exit "$rc"
 }
 
 self_test() {

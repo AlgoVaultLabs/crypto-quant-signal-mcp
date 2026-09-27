@@ -90,7 +90,7 @@ branch, an exit-code mapping, or the missing-tool precondition turns the self-te
 ## Gates
 
 - CH1 `scripts/gates/ads1-ch1-gate.sh <addendum>` — ten `PROBE_<n>` lines → `CH1_GREEN` / `CH1_RED` / `CH1_INDETERMINATE`.
-- CH2 `scripts/gates/ads1-ch2-gate.sh` — build, the full suite through `scripts/classify-suite-verdict.mjs`
+- CH2 `scripts/gates/ads1-ch2-gate.sh` — build (`tsc`, then the knowledge bundle — `deploy.yml`'s order), the full suite through `scripts/classify-suite-verdict.mjs`
   (the verdict deploy gates on; the raw vitest exit code is not the gate), the python3 differential
   against `src/scripts/cluster-perm-stats.py` (mandatory — python3 absent is RED), `ADS1_SELFTEST`,
   `DDL_PARITY` → `CH2_GREEN` / `CH2_RED` / `CH2_INDETERMINATE`.
