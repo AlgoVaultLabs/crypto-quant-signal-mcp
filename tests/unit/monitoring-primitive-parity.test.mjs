@@ -170,8 +170,15 @@ test('the hash check covers the WHOLE inventory, not the slice one wave cared ab
   // on aoe-1 with no inventory row — invisible rather than merely unhashable. Cross-repo hash
   // parity remains OPS-ALERT-REGISTRY-CROSS-REPO-FLAG-W{NEXT}'s problem; until then these rows
   // are verified by the reconciler ON aoe-1, which CAN read them.
+  //
+  // RAISED 11 -> 12 by OPS-BDIR-V3-PANEL-READINESS-W1 CH3, for `bdir-panel-readiness` — the weekly
+  // B-DIR v3 panel-readiness job on aoe-1. Identical structural ground to the 7 -> 9 and 9 -> 11
+  // raises: it carries `repo: autonomous-optimizer`, so this checkout cannot hash it, and the
+  // per-row structural assertion above holds for all 12. The alternative was a scheduled job on
+  // aoe-1 with no inventory row — invisible rather than merely unhashable. It is verified by the
+  // reconciler ON aoe-1, and it retires itself on 2027-01-17, after which its row can go.
   assert.ok(
-    excluded.length <= 11,
+    excluded.length <= 12,
     `${excluded.length} rows are excluded from hash parity — that set must stay small and ` +
       'structural. Growth here means coverage is being lost quietly.',
   );
