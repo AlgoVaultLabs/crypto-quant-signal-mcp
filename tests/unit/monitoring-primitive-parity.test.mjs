@@ -329,7 +329,9 @@ test('self-check: the heartbeat-key detectors fire on a known-bad fixture', () =
  * stamp without having taken the backup, which is what turns a 24h-late detection into a
  * commit-time refusal.
  */
-const UNSTAMPED_CEILING = 38; // 2026-09-14, OPS-DRIFT-ALERT-GENERATORS-W1: measured 38 once that wave's
+const UNSTAMPED_CEILING = 35; // 2026-09-27, OPS-AOE-LIVENESS-SUPPRESS-W2-V2: measured 35 once
+// aoe-output-liveness-canary was reinstalled through the tool; origin/main read 36 while the ceiling sat at 38.
+// 2026-09-14, OPS-DRIFT-ALERT-GENERATORS-W1: measured 38 once that wave's
 // installs stamped deploy-drift-canary, outcome-backfill-freshness, declaration-sync and
 // monitoring-inventory-reconcile (origin/main read 40 before the last two). The 2026-09-02 baseline was 44:
 // 45 qualifying rows predated the stamp, and edge-crawler-report-canary was installed through the tool.
