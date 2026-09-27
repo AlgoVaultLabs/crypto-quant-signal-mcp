@@ -1519,10 +1519,10 @@
       "schedule": null,
       "invoked_by": "operator (manual, from a developer checkout; CLAUDE.md execution-flow step 6)",
       "install_state": "installed",
-      "sha256": "9483260bd4972a0ac79cf225d724d146cffb652ed1b3faed29b14f87f62c2633",
+      "sha256": "0fd31c7b09d6f6771f7c2925dc236b6c1f808f6a0e0e32c0c0d4d76fffd5fe15",
       "owner_wave": "OPS-SCORER-CAPTURE-DAY3-HEALTH-READOUT-W1",
       "repo_resident": true,
-      "notes": "R6, the INVERTED half of CLAUDE.md execution-flow step 6. push: status.md -> host (the pre-existing behaviour). pull: /var/lib/algovault-monitoring/canary-results.jsonl -> '<vault>/Claude files/canary-results.jsonl', UNION-MERGED. The merge is the paired contract with canary_result_log.py's MAX_LINES cap - a plain scp down would delete vault history the moment the host file rolled. Dedupe is on the FULL LINE, never on (canary, at): two records sharing an instant are two real observations (a cron run and an operator's on-demand run), and collapsing them is the row-dedupe defect that once deleted 8.4M legitimate rows here. Unparseable lines are PRESERVED and REPORTED, never dropped. Vault root is PROJECTED from scripts/lib/system-map-path.sh (the one declared vault path) - never a second absolute string. That derivation REFUSES rather than degrading: measured while proving the self-test can fail, under set -uo pipefail a missing lib aborted only the SUBSHELL, so VAULT_ROOT came back EMPTY and the script would have moved files into '/'. MONITORING_RESULTS_SYNC_VERDICT=PASS|FAIL|INDETERMINATE, 0/1/3; --fail-open downgrades the CODE and never the token, the same lever shape as ALGOVAULT_TEST_GATE=warn. Self-test 19 assertions, hermetic (no ssh, no scp), PROVEN ABLE TO FAIL by 8 deliberate mutations. Proving it found a REAL defect: the refusal assertion was first written against the 'pull' subcommand and passed with the guard DELETED, because pull reaches scp and scp's failure emits the SAME INDETERMINATE token - right subject, wrong quantity. It now drives --show-config, which touches no network and therefore cannot emit the token on a healthy load, and asserts the reason line too. WIDENED 2026-09-10 by OPS-PREREG-VAULT-MIRROR-W1: a THIRD leg, `mirror`, delegates to ops/scripts/prereg-vault-mirror.sh, which copies the repo's audits/*preregistration*.md into the vault so the PLANNING agent - whose mount is vault-only - can read the commitments it must plan against. It rides THIS script because this one already runs at step 6 of every wave; a fourth thing to remember would rot. The leg is a SEPARATE executable so each script emits exactly ONE verdict token, and it gates on the sibling's TOKEN, never its exit code: PASS->PASS, FAIL->FAIL, anything else (including NO token at all) -> INDETERMINATE. An absent sibling in a worktree predating that wave is INDETERMINATE with a printed remediation, never an abort - step 6 runs at the END of a wave and must not turn a stale checkout into a blocked wave. Self-test 19 -> 26 assertions; the 7 new ones drive the real do_mirror_prereg through a stub sibling, because the INVOCATION is the seam a hermetic suite is otherwise blind to, and all 5 mutations aimed at them were caught. That work also fixed a PRE-EXISTING defect measured on origin/main: the two refusal assertions used \"${BASH_SOURCE[0]}\" to re-invoke this file, so running it as `bash monitoring-results-sync.sh` from ops/scripts hit `command not found` and the suite was RED from that directory and green from the repo root - which would also have made any mutation proof run there vacuous. $SELF is now projected from $HERE and asserted absolute."
+      "notes": "R6, the INVERTED half of CLAUDE.md execution-flow step 6. push: status.md -> host (the pre-existing behaviour). pull: /var/lib/algovault-monitoring/canary-results.jsonl -> '<vault>/Claude files/canary-results.jsonl', UNION-MERGED. The merge is the paired contract with canary_result_log.py's MAX_LINES cap - a plain scp down would delete vault history the moment the host file rolled. Dedupe is on the FULL LINE, never on (canary, at): two records sharing an instant are two real observations (a cron run and an operator's on-demand run), and collapsing them is the row-dedupe defect that once deleted 8.4M legitimate rows here. Unparseable lines are PRESERVED and REPORTED, never dropped. Vault root is PROJECTED from scripts/lib/system-map-path.sh (the one declared vault path) - never a second absolute string. That derivation REFUSES rather than degrading: measured while proving the self-test can fail, under set -uo pipefail a missing lib aborted only the SUBSHELL, so VAULT_ROOT came back EMPTY and the script would have moved files into '/'. MONITORING_RESULTS_SYNC_VERDICT=PASS|FAIL|INDETERMINATE, 0/1/3; --fail-open downgrades the CODE and never the token, the same lever shape as ALGOVAULT_TEST_GATE=warn. Self-test 19 assertions, hermetic (no ssh, no scp), PROVEN ABLE TO FAIL by 8 deliberate mutations. Proving it found a REAL defect: the refusal assertion was first written against the 'pull' subcommand and passed with the guard DELETED, because pull reaches scp and scp's failure emits the SAME INDETERMINATE token - right subject, wrong quantity. It now drives --show-config, which touches no network and therefore cannot emit the token on a healthy load, and asserts the reason line too. WIDENED 2026-09-10 by OPS-PREREG-VAULT-MIRROR-W1: a THIRD leg, `mirror`, delegates to ops/scripts/prereg-vault-mirror.sh, which copies the repo's audits/*preregistration*.md into the vault so the PLANNING agent - whose mount is vault-only - can read the commitments it must plan against. It rides THIS script because this one already runs at step 6 of every wave; a fourth thing to remember would rot. The leg is a SEPARATE executable so each script emits exactly ONE verdict token, and it gates on the sibling's TOKEN, never its exit code: PASS->PASS, FAIL->FAIL, anything else (including NO token at all) -> INDETERMINATE. An absent sibling in a worktree predating that wave is INDETERMINATE with a printed remediation, never an abort - step 6 runs at the END of a wave and must not turn a stale checkout into a blocked wave. Self-test 19 -> 26 assertions; the 7 new ones drive the real do_mirror_prereg through a stub sibling, because the INVOCATION is the seam a hermetic suite is otherwise blind to, and all 5 mutations aimed at them were caught. That work also fixed a PRE-EXISTING defect measured on origin/main: the two refusal assertions used \"${BASH_SOURCE[0]}\" to re-invoke this file, so running it as `bash monitoring-results-sync.sh` from ops/scripts hit `command not found` and the suite was RED from that directory and green from the repo root - which would also have made any mutation proof run there vacuous. $SELF is now projected from $HERE and asserted absolute. EXTENDED 2026-09-27 by OPS-BDIR-V3-PANEL-READINESS-W1 CH3: the pull leg runs for EVERY label in MONITORING_SYNC_PULL_LABELS (default 'signal-1 aoe-1'), each address resolved from the host SoT scripts/data/boot-critical-units.json (never a second literal), each union-merged into the ONE vault file; an unresolvable label or an unreachable host is INDETERMINATE and blocks nothing. Self-test 35 assertions."
     },
     {
       "id": "prereg-vault-mirror",
@@ -1901,7 +1901,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "2c10ae9b7044a5d158b5f911e1414b27e76a93ff05edfbb6c828ad276d533c81",
+      "sha256": "e8a9dca98699430bc21b2e681954ec5c53c3cc4b0bddbd5a3e290d5d8a945e57",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -2275,12 +2275,16 @@
         {
           "host": "signal-1",
           "path": "/opt/algovault-monitoring/canary_result_log.py"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/canary_result_log.py"
         }
       ],
       "criticality": "advisory",
       "repo_resident": true,
       "schedule": null,
-      "invoked_by": "imported-by:scorer-input-identity-canary.py,outcome-backfill-freshness.py",
+      "invoked_by": "imported-by:scorer-input-identity-canary.py,outcome-backfill-freshness.py,funding-accrual-freshness.py (signal-1); bdir-panel-readiness.py (aoe-1, AOE vendored copy monitoring/aoe-host/canary_result_log.py + .sha256)",
       "install_state": "installed",
       "sha256": "604591ce41e78474438272cf3bfb0342ebfa218a5e8c8a6a3a340484dba975de",
       "alert_ids": [],
@@ -2290,7 +2294,7 @@
       "owner_wave": "OPS-SCORER-CAPTURE-DAY3-HEALTH-READOUT-W1",
       "notes": "R6 THE GENERATOR FIX: appends one structured JSON line per canary run to /var/lib/algovault-monitoring/canary-results.jsonl, which ops/scripts/monitoring-results-sync.sh pulls into the private vault. Retires the class 'a scheduled on-host canary publishes its result only to host stdout, so any readout of it needs an SSH key'. RECORDER, NOT A GATE: it emits NO *_VERDICT= token of its own and NEVER raises - a canary's verdict, exit code and alert dispatch must be identical whether the append works, or a logging bug becomes a paging bug. It may not fail SILENTLY though: append_result returns (ok, detail) and the caller prints CANARY_RESULT_LOG=ok line=N or =FAILED <reason> either way. BOUNDED by two refusals rather than truncations: MAX_LINE_BYTES=8192 refuses a pathological record whole, and MAX_LINES=2000 (~500 days at four canaries/day, ~700 KB) trims to the most recent N atomically via a same-directory temp + os.replace. THE CAP AND THE VAULT-SIDE UNION MERGE ARE A PAIR: trimming discards the oldest HOST lines, which is only safe because the pull unions instead of copying; changing that pull to a plain scp turns this cap into data loss. Append+trim run under flock. Self-test 24 assertions, hermetic, PROVEN ABLE TO FAIL by 5 deliberate mutations (trim keeps the oldest; record key ORDER scrambled; the MAX_LINE_BYTES refusal disabled; NaN allowed into the record; append_result raising instead of reporting) - all 5 caught. Proving that found a REAL defect first: the key-order assertion was written as tuple(parsed.keys()) == RECORD_KEYS, which is the vacuous self-comparison (it asks whether the output matches whatever the constant happens to be) and survived a deliberate reordering of that very constant; it now asserts against an INDEPENDENT literal. Same shape as the parent wave's vacuous weight assertion. INHERITORS, named not wired (3-example-threshold rule): disk-headroom-canary, book-liveness-canary, regime-budget-starvation-canary - each is two lines.",
       "first_install": {
-        "at": "20260904T035328Z",
+        "at": "20260927T113934Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
     },
@@ -2604,6 +2608,10 @@
         {
           "host": "signal-1",
           "path": "/opt/algovault-monitoring/funding_accrual_predicate.py"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/bdir-readiness/aoe/monitoring/aoe-host/funding_accrual_predicate.py"
         }
       ],
       "criticality": "load-bearing",
@@ -2616,7 +2624,37 @@
         "at": "20260926T115024Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       },
-      "invoked_by": "imported-by:funding-accrual-freshness.py"
+      "invoked_by": "imported-by:funding-accrual-freshness.py (signal-1); src/research/bdir3ready/readiness.py in the bdir-panel-readiness measure container (aoe-1, AOE vendored copy + .sha256, placed by git archive)"
+    },
+    {
+      "id": "bdir-panel-readiness",
+      "artifact": "monitoring/aoe-host/bdir-panel-readiness.py",
+      "repo": "autonomous-optimizer",
+      "kind": "executable",
+      "host": "aoe-1",
+      "host_path": "/opt/algovault-monitoring/bdir-panel-readiness.py",
+      "installed_at": [
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/bdir-panel-readiness.py",
+          "schedule": "13 5 * * 1"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "13 5 * * 1",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "882ecbbf52f5868cf78039225a5d73de8513e3d4b878a24856bddb06c7b78ebb",
+      "alert_ids": [
+        "BDIR_PANEL_READINESS_REGRESSION"
+      ],
+      "owner_wave": "OPS-BDIR-V3-PANEL-READINESS-W1",
+      "retires_at": "2027-01-17T10:00:00Z",
+      "notes": "OPS-BDIR-V3-PANEL-READINESS-W1 CH3. The weekly B-DIR v3 panel-readiness line: per candidate venue (the five majors + KUCOIN) the FULL test's panel rule — (a) OI, (b) basis, (c) labelled >= 90 %, (d) v1-harness pre-flight >= 95 % on 200 sampled rows, plus the CH1 funding verdict (BITGET fr=NA, declared no-leg) — on rows AFTER T_DIAG_END, with cardinalities / feature presence / label EXISTENCE only. One line + one canary_result_log record per venue (+ one summary) into /var/lib/algovault-monitoring/canary-results.jsonl, pulled into the vault by monitoring-results-sync.sh. Pages BDIR_PANEL_READINESS_REGRESSION ONLY on a venue moving PASS -> FAIL; a steadily failing venue is reported weekly and never re-pages; anything unmeasured is INDETERMINATE, never PASS. BDIR_PANEL_READINESS_VERDICT=PASS|FAIL|INDETERMINATE|RETIRED, exits 0/1/3/0. RETIRES ITSELF at 2027-01-17T10:00:00Z (the FULL test's census date): a date-gated no-op that starts no container, writes one RETIRED record and exits 0 — remove the cron line after that date. Runs three containers: measure (AOE prefect-worker image on autonomous-optimizer_aoe-net = the read-only aoe_readonly PG tunnel, DSN from /etc/bdir-readiness/pg.env mode 600, the ONLY container that sees it), harness (node:20-bookworm-slim, pinned v1 harness under bdir3diag venue_guard.cjs, venue egress from aoe-1's own IP — aoe-1's own venue traffic measured 0 — caps = bdir3diag VENUE_CAP_REQ_PER_MIN, <= 50 % of documented limits), evaluate (--network none). Placed code: /opt/bdir-readiness/aoe = git archive of monitoring/aoe-host/bdir-panel-readiness.manifest at a landed AOE SHA (DEPLOYED_SHA stamped); /opt/bdir-readiness/cqsm-8071a0b = git archive of crypto-quant-signal-mcp 8071a0b + npm ci + tsc, its 900-file dist byte-identical to the diagnostic's pinned clone (manifest sha a41c96f9…). Run as cron: MONITORING_HOST_LABEL=aoe-1 so records carry host=aoe-1.",
+      "first_install": {
+        "at": "20260927T113946Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

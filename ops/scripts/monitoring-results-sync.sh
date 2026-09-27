@@ -13,6 +13,10 @@
 #
 #   push   status.md            ->  root@<host>:/var/lib/algovault-monitoring/status.md
 #   pull   canary-results.jsonl ->  <vault>/Claude files/canary-results.jsonl   (UNION-MERGED)
+#          from EVERY host in MONITORING_SYNC_PULL_LABELS (default: signal-1 aoe-1), each resolved
+#          through the host SoT scripts/data/boot-critical-units.json — never a second literal.
+#          OPS-BDIR-V3-PANEL-READINESS-W1 CH3 added aoe-1: its weekly B-DIR panel-readiness line
+#          would otherwise be host stdout again, unreadable without an SSH key.
 #   mirror repo audits/*preregistration*.md -> <vault>/Claude files/repo-preregistrations/
 #
 # ── WHY THE THIRD LEG LIVES HERE AND NOT IN A SCRIPT OF ITS OWN ─────────────────────────────
@@ -107,6 +111,11 @@ LOCAL_STATUS=${MONITORING_SYNC_STATUS:-$VAULT_ROOT/status.md}
 # `Claude files/` is the lazy-load quarantine zone: nothing there is auto-read at session start,
 # which is where an append-only ops record belongs.
 LOCAL_RESULTS=${MONITORING_SYNC_RESULTS:-$VAULT_ROOT/Claude files/canary-results.jsonl}
+# Every host whose results file is PULLED (push stays signal-1 only). A label, never an address:
+# addresses are resolved from the ONE host SoT, so a host move is one edit, not a hunt.
+PULL_LABELS=${MONITORING_SYNC_PULL_LABELS:-signal-1 aoe-1}
+HOSTS_SOT=${MONITORING_SYNC_HOSTS_SOT:-$REPO/scripts/data/boot-critical-units.json}
+SCP=${MONITORING_SYNC_SCP:-scp}  # the seam the self-test replaces to drive the real pull path
 
 VERDICT=PASS
 NOTES=()
@@ -173,29 +182,57 @@ do_push() {
   fi
 }
 
+# Label -> "root@<address>" through the host SoT (the same file install-monitoring-artifact.sh
+# resolves labels from). signal-1 keeps honouring MONITORING_SYNC_HOST, so every existing override
+# still works. Prints nothing when the label cannot be resolved — the caller reports that.
+resolve_pull_host() { # <label>
+  if [ "$1" = signal-1 ]; then echo "$HOST"; return; fi
+  python3 - "$HOSTS_SOT" "$1" <<'PY' 2>/dev/null
+import json, sys
+try:
+    entry = json.load(open(sys.argv[1], encoding="utf-8")).get("hosts", {}).get(sys.argv[2])
+except Exception:  # noqa: BLE001 — unreadable SoT: resolve nothing, the caller says so
+    raise SystemExit(0)
+if isinstance(entry, dict) and entry.get("address"):
+    print("root@" + entry["address"])
+PY
+}
+
 do_pull() {
+  local label host
+  for label in $PULL_LABELS; do
+    host="$(resolve_pull_host "$label")"
+    if [ -z "$host" ]; then
+      note "pull[$label]: FAILED — no address for label '$label' in $HOSTS_SOT"; downgrade INDETERMINATE; continue
+    fi
+    pull_one "$label" "$host"
+  done
+}
+
+pull_one() { # <label> <user@host>
+  local label="$1" from="$2"
   local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/mrsync.XXXXXX")" || {
-    note "pull: FAILED — mktemp"; downgrade INDETERMINATE; return; }
+    note "pull[$label]: FAILED — mktemp"; downgrade INDETERMINATE; return; }
   # shellcheck disable=SC2064
   trap "rm -rf '$tmp'" RETURN
   # `XXXXXX` is TERMINAL in that template and the file name is fixed INSIDE the directory: BSD
   # mktemp does not substitute the placeholder when a suffix follows it, so the suffixed form
   # creates a literal `.XXXXXX.` file on the operator's Mac while working fine on GNU CI.
   local inc="$tmp/incoming.jsonl"
-  if ! scp -i "$SSH_KEY" $SSH_OPTS "$HOST:$REMOTE_RESULTS" "$inc" >/dev/null 2>&1; then
-    note "pull: FAILED — could not fetch $REMOTE_RESULTS (host unreachable, or no canary has run yet)"
+  if ! "$SCP" -i "$SSH_KEY" $SSH_OPTS "$from:$REMOTE_RESULTS" "$inc" >/dev/null 2>&1; then
+    note "pull[$label]: FAILED — could not fetch $REMOTE_RESULTS (host unreachable, or no canary has run yet)"
     downgrade INDETERMINATE; return
   fi
   local before after stats
   before=$( [ -f "$LOCAL_RESULTS" ] && wc -l <"$LOCAL_RESULTS" | tr -d ' ' || echo 0 )
   if ! stats="$(merge_jsonl "$LOCAL_RESULTS" "$inc" "$LOCAL_RESULTS")"; then
-    note "pull: FAILED — merge refused the payload"; downgrade FAIL; return
+    note "pull[$label]: FAILED — merge refused the payload"; downgrade FAIL; return
   fi
   after=$(wc -l <"$LOCAL_RESULTS" | tr -d ' ')
   # POSITIVE per-step output. "no new records" and "the pull silently did nothing" must not look
   # the same, so the numbers are printed whether or not anything moved.
-  note "pull: $REMOTE_RESULTS -> $LOCAL_RESULTS  lines ${before}->${after} (+$((after - before)))  $stats"
-  case "$stats" in *"unparseable=0"*) : ;; *) note "pull: WARNING — unparseable lines preserved at end of file"; downgrade FAIL ;; esac
+  note "pull[$label]: $from:$REMOTE_RESULTS -> $LOCAL_RESULTS  lines ${before}->${after} (+$((after - before)))  $stats"
+  case "$stats" in *"unparseable=0"*) : ;; *) note "pull[$label]: WARNING — unparseable lines preserved at end of file"; downgrade FAIL ;; esac
 }
 
 PREREG_MIRROR=${MONITORING_SYNC_PREREG_MIRROR:-$REPO/ops/scripts/prereg-vault-mirror.sh}
@@ -268,6 +305,38 @@ self_test() {
   out="$(merge_jsonl "$tmp/does-not-exist.jsonl" "$B" "$tmp/fresh/new.jsonl")"
   t "a first pull creates the vault file"     "$out"                    "merged=1 unparseable=0"
   t "the created file has the record"         "$(wc -l <"$tmp/fresh/new.jsonl" | tr -d ' ')" "1"
+
+  # ── THE PULL LEG, BOTH HOSTS, THROUGH THE REAL CODE PATH ───────────────────────────────────
+  # scp is the seam; point it at a stub that serves one fixture per host, and drive the REAL
+  # do_pull -> resolve_pull_host -> pull_one -> merge_jsonl chain.
+  local sot="$tmp/hosts.json" pst="$tmp/pull-scp.sh" dest="$tmp/pulled.jsonl"
+  printf '%s\n' '{"hosts":{"signal-1":{"address":"10.0.0.1"},"aoe-1":{"address":"10.0.0.2"}}}' > "$sot"
+  printf '%s\n' '{"at":"2026-03-01T00:00:00Z","host":"signal-1","canary":"s"}' > "$tmp/from-10.0.0.1.jsonl"
+  printf '%s\n' '{"at":"2026-03-02T00:00:00Z","host":"aoe-1","canary":"a"}' > "$tmp/from-10.0.0.2.jsonl"
+  cat > "$pst" <<STUB
+#!/usr/bin/env bash
+src=""; for x in "\$@"; do case "\$x" in *@*:*) src="\$x" ;; esac; done
+h="\${src#*@}"; h="\${h%%:*}"
+[ -f "$tmp/from-\$h.jsonl" ] || exit 1
+eval "last=\\\${\$#}"; cp "$tmp/from-\$h.jsonl" "\$last"
+STUB
+  chmod +x "$pst"
+  t "aoe-1 resolves from the host SoT" "$(HOSTS_SOT="$sot" resolve_pull_host aoe-1)" "root@10.0.0.2"
+  t "an unknown label resolves to nothing" "$(HOSTS_SOT="$sot" resolve_pull_host no-such-host)" ""
+  VERDICT=PASS; NOTES=()
+  HOST="root@10.0.0.1" HOSTS_SOT="$sot" SCP="$pst" LOCAL_RESULTS="$dest" PULL_LABELS="signal-1 aoe-1" do_pull
+  t "both hosts' records land in ONE vault file" "$(wc -l <"$dest" | tr -d ' ')" "2"
+  t "the aoe-1 record is there" "$(grep -c '"host":"aoe-1"' "$dest")" "1"
+  t "a two-host pull that fetched both is PASS" "$VERDICT" "PASS"
+  VERDICT=PASS; NOTES=()
+  HOST="root@10.0.0.1" HOSTS_SOT="$sot" SCP="$pst" LOCAL_RESULTS="$dest" PULL_LABELS="signal-1 ghost" do_pull
+  t "an unresolvable label is INDETERMINATE, never a silent skip" "$VERDICT" "INDETERMINATE"
+  t "and it names the label" "$(printf '%s\n' "${NOTES[@]}" | grep -c "no address for label 'ghost'")" "1"
+  rm -f "$tmp/from-10.0.0.2.jsonl"; VERDICT=PASS; NOTES=()
+  HOST="root@10.0.0.1" HOSTS_SOT="$sot" SCP="$pst" LOCAL_RESULTS="$dest" PULL_LABELS="signal-1 aoe-1" do_pull
+  t "an unreachable aoe-1 is INDETERMINATE and blocks nothing" "$VERDICT" "INDETERMINATE"
+  t "the reachable host was still merged" "$(printf '%s\n' "${NOTES[@]}" | grep -c 'pull\[signal-1\]: root@10.0.0.1')" "1"
+  VERDICT=PASS; NOTES=()
 
   # ── THE MIRROR LEG'S TOKEN MAPPING ────────────────────────────────────────────────────────
   # The leg delegates to a sibling executable, so the INVOCATION is a seam and a hermetic suite
@@ -352,8 +421,9 @@ MODE=both
 for a in "$@"; do
   case "$a" in
     --self-test)   self_test; exit $? ;;
-    --show-config) printf 'HOST=%s\nREMOTE_RESULTS=%s\nLOCAL_STATUS=%s\nLOCAL_RESULTS=%s\nVAULT_ROOT=%s\n' \
-                     "$HOST" "$REMOTE_RESULTS" "$LOCAL_STATUS" "$LOCAL_RESULTS" "$VAULT_ROOT"; exit 0 ;;
+    --show-config) printf 'HOST=%s\nREMOTE_RESULTS=%s\nLOCAL_STATUS=%s\nLOCAL_RESULTS=%s\nVAULT_ROOT=%s\nPULL_LABELS=%s\n' \
+                     "$HOST" "$REMOTE_RESULTS" "$LOCAL_STATUS" "$LOCAL_RESULTS" "$VAULT_ROOT" "$PULL_LABELS"
+                   for l in $PULL_LABELS; do printf 'PULL[%s]=%s\n' "$l" "$(resolve_pull_host "$l")"; done; exit 0 ;;
     --fail-open)   FAIL_OPEN=1 ;;
     push|pull|mirror|both) MODE="$a" ;;
     *) echo "unknown argument: $a" >&2; echo "MONITORING_RESULTS_SYNC_VERDICT=INDETERMINATE"; exit 3 ;;
