@@ -1,0 +1,14 @@
+-- 043_directional_labels_expiry.sql — EDGE-ADS1-SCORECARD-W1-V2 CH2 (architect ruling Q2 = A)
+-- The return at the vertical barrier: close of the W-th forward candle over signals.price_at_signal,
+-- PERCENT, price-perspective (not side-signed; the convention of signals.outcome_return_pct). The ADS-1
+-- complete label resolves a timeout from it (>= +0.30 % in the called direction WIN, <= -0.30 % LOSS,
+-- else FLAT); L4 reads it as the magnitude companion.
+-- INTERNAL-ONLY (same data class as outcome_return_pct): never exposed via MCP / API / landing / README.
+-- Additive, NULLABLE, no default: NULL means "not resolved", never zero. The single INSERT names its
+-- columns, and no reader selects *, so every existing statement keeps working unchanged.
+-- Written by the labeler for every new row (from the candle it already holds) and back-filled once by
+-- `backfill-directional-labels.js --expiry-only` for rows under T_CAP; rows the venue no longer serves
+-- stay NULL (disclosed per venue, never estimated).
+-- Pre-applied via SSH as the table owner before the code lands (the postgres pattern); idempotent.
+-- Rollback: migrations/043_directional_labels_expiry.down.sql.
+ALTER TABLE directional_labels ADD COLUMN IF NOT EXISTS ret_at_expiry_pct DOUBLE PRECISION;

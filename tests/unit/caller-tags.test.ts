@@ -133,11 +133,27 @@ describe('class preservation — tags moved, classes did not', () => {
     'src/scripts/monitor.ts': { runAsCaller: 1 },
   };
 
+  // A LATER, DELIBERATE class-setting addition — reviewed, not drift. EDGE-ADS1-SCORECARD-W1-V2 CH2 gave
+  // backfill-directional-labels.ts a second mode (`--expiry-only`, the one-shot ret_at_expiry_pct fill),
+  // whose rotation must run in the BATCH lane like the labeling rotation beside it (it must never spend a
+  // venue's interactive reserve). One more runAsBatch site, same entrypoint, its own literal name.
+  const LATER_CLASS_SETTING: Record<string, Record<string, number>> = {
+    'src/scripts/backfill-directional-labels.ts': { runAsBatch: 2, runAsCaller: 1 },
+  };
+
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {
     const now: Record<string, Record<string, number>> = {};
     for (const s of realSites()) { now[s.file] ??= {}; now[s.file][s.helper] = (now[s.file][s.helper] ?? 0) + 1; }
-    expect(now).toEqual({ ...PRE_WAVE, ...ADDED });
+    expect(now).toEqual({ ...PRE_WAVE, ...ADDED, ...LATER_CLASS_SETTING });
     for (const f of Object.keys(ADDED)) for (const h of Object.keys(ADDED[f])) expect(h).toBe('runAsCaller');
+  });
+
+  it('the expiry backfill site is BATCH class under its own name, in the labeler entrypoint only', () => {
+    const site = realSites().find((s) => s.names?.includes('dwr-expiry-backfill'));
+    expect(site?.file).toBe('src/scripts/backfill-directional-labels.ts');
+    expect(site?.helper).toBe('runAsBatch');
+    expect(site?.class).toBe('batch');
+    expect(site?.eps).toHaveLength(1);
   });
 });
 

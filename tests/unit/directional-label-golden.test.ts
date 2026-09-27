@@ -60,7 +60,7 @@ function signalsFor(key: Key) {
 }
 
 // ── seams ─────────────────────────────────────────────────────────────────────────────────────
-const env = vi.hoisted(() => ({ inserted: [] as unknown[][] }));
+const env = vi.hoisted(() => ({ inserted: [] as unknown[][], cols: 0 }));
 vi.mock('../../src/lib/performance-db.js', () => ({
   dbExec: () => undefined,
   dbQuery: async (sql: string, params: unknown[] = []) => {
@@ -69,8 +69,10 @@ vi.mock('../../src/lib/performance-db.js', () => ({
     }
     if (sql.includes('SELECT signal_id, barrier_spec FROM directional_labels')) return [];
     if (sql.includes('INSERT INTO directional_labels')) {
+      // the column list is parsed from the statement, so the chunking can never disagree with it
+      env.cols = (sql.match(/\(([^)]*)\)\s*VALUES/) ?? ['', ''])[1].split(',').length;
       const rows: unknown[][] = [];
-      for (let i = 0; i < params.length; i += 9) rows.push(params.slice(i, i + 9));
+      for (let i = 0; i < params.length; i += env.cols) rows.push(params.slice(i, i + env.cols));
       env.inserted.push(...rows);
       return rows.map((r) => ({ signal_id: r[0] }));
     }
@@ -87,7 +89,13 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
   }),
 }));
 
-import { processGroup, parseCli } from '../../src/scripts/backfill-directional-labels.js';
+import { processGroup, parseCli, INSERT_COLUMNS } from '../../src/scripts/backfill-directional-labels.js';
+import { EVAL_CANDLES } from '../../src/scripts/directional-labeler.js';
+
+/** The nine LABEL fields — what the a92bfb30 snapshot pins. EDGE-ADS1-SCORECARD-W1-V2 CH2 appended a
+ *  tenth column (ret_at_expiry_pct); it is a fact about the price path, pinned by its own test below,
+ *  and the label fields must stay byte-identical to the snapshot recorded before it existed. */
+const LABEL_FIELDS = 9;
 
 const GROUPS = [
   { exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' },
@@ -100,7 +108,7 @@ async function labelAll(order: typeof GROUPS): Promise<string[]> {
   for (const g of order) await processGroup(cli, g);
   // canonical: sorted by (signal_id, spec) so a processing order can never be mistaken for a label change
   return env.inserted
-    .map((r) => JSON.stringify(r))
+    .map((r) => JSON.stringify(r.slice(0, LABEL_FIELDS)))
     .sort();
 }
 
@@ -133,5 +141,52 @@ describe('directional labels — golden (WHICH rows, never WHAT label)', () => {
     const labels = new Set(rows.map((r) => r[2]));
     expect(labels.size, `labels seen: ${[...labels].join(',')}`).toBeGreaterThanOrEqual(2);
     expect(new Set(rows.map((r) => r[1])).size).toBe(3); // all three barrier specs
+  });
+
+  it('the tenth column is ret_at_expiry_pct = close(W-th forward candle) / entry − 1, in percent', { timeout: 30_000 }, async () => {
+    // Only Date is faked (the fetch delays stay real): the fixture's windows close after T0, so the
+    // labeler must be run at an instant after every window has closed for the expiry to be known.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(T0 + 400 * 86_400_000));
+    env.inserted.length = 0;
+    const cli = parseCli([]);
+    try {
+      for (const g of GROUPS) await processGroup(cli, g);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(env.cols).toBe(INSERT_COLUMNS.length);
+    expect(INSERT_COLUMNS[9]).toBe('ret_at_expiry_pct');
+    expect(env.inserted.length).toBe(48);
+    let checked = 0;
+    for (const g of GROUPS) {
+      const key = `${g.exchange}|${g.coin}|${g.timeframe}` as Key;
+      const W = EVAL_CANDLES[g.timeframe];
+      for (const sig of signalsFor(key)) {
+        const fwd = FIXTURE[key].candles.filter((c) => c.time >= sig.created_at * 1000);
+        const want = (fwd[W - 1].close / sig.price_at_signal - 1) * 100;
+        const got = env.inserted.filter((r) => r[0] === sig.id).map((r) => r[9]);
+        expect(got).toHaveLength(3); // one per spec, all equal — expiry is a fact of the path, not of tau
+        for (const v of got) expect(v as number).toBeCloseTo(want, 12);
+        checked++;
+      }
+    }
+    expect(checked).toBe(16);
+  });
+
+  it('a window that had not closed when the candles were fetched gets a NULL expiry, never a live price', { timeout: 30_000 }, async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // the first BINANCE signal's window (W = 8 hourly candles) closes ≤ 9 h after entry; stop the clock at +8.5 h
+    const first = signalsFor('BINANCE|BTC|1h')[0];
+    vi.setSystemTime(new Date(first.created_at * 1000 + 8.5 * 3_600_000));
+    env.inserted.length = 0;
+    try {
+      await processGroup(parseCli([]), GROUPS[0]);
+    } finally {
+      vi.useRealTimers();
+    }
+    const firstRows = env.inserted.filter((r) => r[0] === first.id);
+    expect(firstRows.length).toBeGreaterThan(0); // the race itself may still resolve early...
+    for (const r of firstRows) expect(r[9]).toBeNull(); // ...but its expiry is not known yet
   });
 });

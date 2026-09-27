@@ -42,7 +42,11 @@ import {
   computeSigmaW,
   barrierPct,
   runTripleBarrier,
+  expiryReturnPct,
+  BARRIER_SPECS,
+  DIRECTIONAL_LABELS_DDL_PG,
 } from './directional-labeler.js';
+import { T_DIAG_END } from './ads1/spec.js';
 import { sloHoursFor as defaultSloHoursFor, isFullPanelVenue, FRESHNESS_BARRIER_SPEC, FULL_PANEL_VENUES } from '../lib/venue-slo-tiers.js';
 import { candleHorizonDays, CANDLE_HORIZON_DAYS, CANDLE_HORIZONS_MEASURED_AT } from '../lib/venue-candle-horizons.js';
 import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
@@ -51,13 +55,15 @@ import { buildEnvelope, isConforming, type Verdict } from '../lib/detector-envel
 const DELAY_BETWEEN_FETCHES_MS = 250;
 const FETCH_BUFFER_CANDLES = 2; // pad each fetched range slightly
 const MAX_PAGES_PER_RANGE = 500; // runaway guard for one paginated range
-const INSERT_CHUNK_ROWS = 1000; // stay well under the PG bind-param ceiling (9 params/row)
+const INSERT_CHUNK_ROWS = 1000; // stay well under the PG bind-param ceiling (10 params/row)
 
-const ALL_SPECS = [
-  { tau: 1.0, spec: 'tau1.0-floor0.30-v1' },
-  { tau: 0.5, spec: 'tau0.5-floor0.30-v1' },
-  { tau: 2.0, spec: 'tau2.0-floor0.30-v1' },
+/** The INSERT's column list — one array, so the placeholder count can never disagree with it. */
+export const INSERT_COLUMNS = [
+  'signal_id', 'barrier_spec', 'label', 'ambiguous_candle', 'low_vol_history',
+  't_hit_candles', 'mfe_return_pct', 'mae_return_pct', 'barrier_pct', 'ret_at_expiry_pct',
 ] as const;
+
+const ALL_SPECS = BARRIER_SPECS; // one literal set, in directional-labeler.ts (EDGE-ADS1-SCORECARD-W1-V2 D1)
 
 export interface Cli {
   check: boolean;
@@ -72,6 +78,13 @@ export interface Cli {
   timeBudgetMin?: number;
   /** Per-venue wall-clock slice cap (minutes). UNSET = unbounded. */
   venueBudgetMin?: number;
+  /**
+   * EDGE-ADS1-SCORECARD-W1-V2 CH2 (ruling Q2 = A): fill `ret_at_expiry_pct` on EXISTING rows instead of
+   * labelling. Label-independent worklist, bounded by `T_CAP`, forward-only fetch, UPDATE path.
+   */
+  expiryOnly: boolean;
+  /** `--expiry-only` pass selector: only rows with `created_at > since` (epoch s). UNSET = every row under T_CAP. */
+  since?: number;
 }
 
 interface SignalRow {
@@ -149,27 +162,15 @@ export function parseCli(argv: string[]): Cli {
     lookbackDays: posInt('--lookback-days'),
     timeBudgetMin: posInt('--time-budget-min'),
     venueBudgetMin: posInt('--venue-budget-min'),
+    expiryOnly: has('--expiry-only'),
+    since: posInt('--since'),
   };
 }
 
-/** Ensure the internal table + index exist (idempotent; migrations/019 is the SoT). */
+/** Ensure the internal table + index + the additive expiry column exist (idempotent; migrations/019 +
+ *  migrations/043 are the SoT; DIRECTIONAL_LABELS_DDL_PG is pinned to them by a parity test). */
 function ensureTable(): void {
-  dbExec(`
-    CREATE TABLE IF NOT EXISTS directional_labels (
-      signal_id        INTEGER NOT NULL,
-      barrier_spec     TEXT NOT NULL,
-      label            SMALLINT NOT NULL,
-      ambiguous_candle BOOLEAN NOT NULL DEFAULT FALSE,
-      low_vol_history  BOOLEAN NOT NULL DEFAULT FALSE,
-      t_hit_candles    INT,
-      mfe_return_pct   DOUBLE PRECISION,
-      mae_return_pct   DOUBLE PRECISION,
-      barrier_pct      DOUBLE PRECISION NOT NULL,
-      computed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (signal_id, barrier_spec)
-    );
-    CREATE INDEX IF NOT EXISTS idx_dirlabels_spec_signal ON directional_labels (barrier_spec, signal_id);
-  `);
+  dbExec(DIRECTIONAL_LABELS_DDL_PG);
 }
 
 /** Epoch-seconds lower bound for the nightly recency window; 0 = full depth. */
@@ -679,6 +680,9 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
   const W = EVAL_CANDLES[g.timeframe];
   const tfMs = TF_MS[g.timeframe];
   if (!W || !tfMs) return; // unknown/retired timeframe — already filtered, defensive
+  // Taken BEFORE any fetch: a candle is only trusted as CLOSED if it closed before this instant
+  // (expiryReturnPct refuses a vertical-barrier candle that may have been forming at fetch time).
+  const groupStartMs = Date.now();
 
   // F3: the nightly recency window bounds the per-group scan too — aged-out
   // unlabelable signals (the noKlines re-attempt swamp) leave the nightly forever.
@@ -749,6 +753,9 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
 
     const { sigma } = computeSigmaW(trailingCloses, W);
     const lowVol = sigma == null;
+    // EDGE-ADS1-SCORECARD-W1-V2 (Q2 = A): the expiry return from the candle already in hand — the
+    // same entry and window the race uses; null when the window had not closed at fetch time.
+    const expiry = expiryReturnPct(forwardAsc, W, s.price_at_signal, entryMs, tfMs, groupStartMs);
 
     // Forward reachability: need a resolved race OR full-window coverage to call a timeout.
     for (const sp of cli.specs) {
@@ -773,7 +780,7 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
       }
       rows.push([
         s.id, sp.spec, race.label, race.ambiguousCandle, lowVol,
-        race.tHitCandles, storedMfe, storedMae, bpSpec,
+        race.tHitCandles, storedMfe, storedMae, bpSpec, expiry,
       ]);
       frontierByVenue.set(g.exchange, Math.max(frontierByVenue.get(g.exchange) ?? 0, s.created_at));
       cov.labeled++;
@@ -791,13 +798,13 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
     const values: string[] = [];
     const params: unknown[] = [];
     chunk.forEach((r, j) => {
-      const b = j * 9;
-      values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9})`);
+      const b = j * INSERT_COLUMNS.length;
+      values.push(`(${INSERT_COLUMNS.map((_, k) => `$${b + k + 1}`).join(',')})`);
       params.push(...r);
     });
     const res = await dbQuery<{ signal_id: number }>(
       `INSERT INTO directional_labels
-         (signal_id, barrier_spec, label, ambiguous_candle, low_vol_history, t_hit_candles, mfe_return_pct, mae_return_pct, barrier_pct)
+         (${INSERT_COLUMNS.join(', ')})
        VALUES ${values.join(',')}
        ON CONFLICT (signal_id, barrier_spec) DO NOTHING
        RETURNING signal_id`,
@@ -805,6 +812,256 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
     );
     cov.written += res.length;
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// EDGE-ADS1-SCORECARD-W1-V2 CH2 — `--expiry-only`: fill `ret_at_expiry_pct` on EXISTING rows (Q2 = A).
+//
+// THE SEAL. Every row this mode touches satisfies T_CAP: `created_at ≤ T_DIAG_END` AND its race END,
+// `created_at + (W+1)·tf`, ≤ T_DIAG_END — the label-independent price-path embargo (ruling Q1 = A). No
+// candle after T_DIAG_END is ever fetched for it, and rows above the cap stay NULL this wave.
+//
+// LABEL-INDEPENDENT. The worklist is "every row with a NULL expiry", never "every timeout": selecting
+// on the label would be an outcome-conditioned read, and L4's magnitude companion needs decided rows
+// too. The row's label is never SELECTed here.
+//
+// FORWARD-ONLY. The expiry needs the window candles, not the 60·W sigma history the labeler fetches,
+// so a backfill here costs ~1/60th of a labeling pass per row.
+//
+// NOTHING ESTIMATED. A row whose candles the venue no longer serves stays NULL (UNRESOLVED), counted
+// per venue as `past_reach` (skipped without a fetch: older than the measured depth) or `unreachable`
+// (fetched, window incomplete). Output is cardinalities only — no return value is ever printed.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Measured candle depth (days) for the (venue, timeframe) pairs SHALLOWER than their rows' age —
+ * EDGE-ADS1-SCORECARD-W1-V2 CH1 probe 4, 2026-09-27 (vault endpoint-truth addendum). Instrument: the
+ * SHIPPED adapter `getCandles` for BTC in the app container on the prod IP, batch class (a variant of
+ * `ops/scripts/probe-candle-horizons.cjs`), lower bounds at ≤ 1 d resolution; HL = 5,000 candles
+ * (`candleSnapshot`); WEEX = 1,000 candles (its kline endpoint takes no start time); the sub-21 d pairs
+ * are `venue-candle-horizons.ts` (2026-09-26). An absent pair served every row probed. The table only
+ * saves fetches that cannot succeed; a stale entry costs a skipped-but-reachable row (reported as
+ * `past_reach`), never a wrong value.
+ */
+export const EXPIRY_REACH_DAYS_MEASURED_AT = '2026-09-27';
+export const EXPIRY_REACH_DAYS: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  BINGX: { '3m': 2, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 83 },
+  BITGET: { '2h': 8.75, '8h': 51 },
+  GATE: { '3m': 34.5, '5m': 34.5, '15m': 104 },
+  HL: { '3m': 10.41, '5m': 17.36, '15m': 52.08, '30m': 104.16, '1h': 208.33 },
+  HTX: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
+  MEXC: { '3m': 6.75, '5m': 6.75, '15m': 20.75, '30m': 41, '1h': 83, '2h': 83 },
+  PHEMEX: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
+  WEEX: { '3m': 2.08, '5m': 3.47, '15m': 10.41, '30m': 20.83, '1h': 41.66, '2h': 83.33, '4h': 166.66 },
+  WHITEBIT: { '5m': 10.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
+  XT: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
+};
+
+export function expiryReachDays(venue: string, timeframe: string): number {
+  return EXPIRY_REACH_DAYS[venue]?.[timeframe] ?? Infinity;
+}
+
+/** One margin hour inside the measured depth, so a row on the edge is skipped rather than fetched empty. */
+const REACH_MARGIN_S = 3600;
+
+/** The `T_CAP` predicate as SQL over `s` (signals) and `tf` (timeframe → seconds, W). Integers inlined. */
+export function tCapSql(): string {
+  return `s.created_at <= ${T_DIAG_END} AND s.created_at + (tf.w + 1) * tf.sec <= ${T_DIAG_END}`;
+}
+
+/** `VALUES` rows for the timeframe table — from EVAL_CANDLES / TF_MS, never retyped. */
+export function tfValuesSql(): string {
+  return Object.keys(EVAL_CANDLES)
+    .map((t) => `('${t}', ${TF_MS[t] / 1000}, ${EVAL_CANDLES[t]})`)
+    .join(', ');
+}
+
+export interface ExpiryGroup {
+  exchange: string;
+  coin: string;
+  timeframe: string;
+  todo: number;
+  oldest: number;
+}
+
+/**
+ * The `--expiry-only` group work-list: (exchange, coin, timeframe) with at least one label row whose
+ * expiry is NULL, under T_CAP. Label-independent (no `d.label` predicate), the labeler's own eligibility
+ * (no 1m, not retired), optional `since` pass selector and CLI filters as parameters.
+ */
+export function buildExpiryGroupsSql(opts: { since?: number; venue?: string; coin?: string; timeframe?: string }): {
+  text: string;
+  params: unknown[];
+} {
+  const where: string[] = [
+    'd.ret_at_expiry_pct IS NULL',
+    tCapSql(),
+    "s.timeframe <> '1m'",
+    "s.exchange NOT IN (SELECT exchange_id FROM venues WHERE status = 'retired')",
+  ];
+  const params: unknown[] = [];
+  if (opts.since !== undefined) where.push(`s.created_at > ${Math.floor(opts.since)}`);
+  if (opts.venue) { params.push(opts.venue); where.push(`s.exchange = $${params.length}`); }
+  if (opts.coin) { params.push(opts.coin); where.push(`s.coin = $${params.length}`); }
+  if (opts.timeframe) { params.push(opts.timeframe); where.push(`s.timeframe = $${params.length}`); }
+  const text =
+    `WITH tf(t, sec, w) AS (VALUES ${tfValuesSql()}) ` +
+    `SELECT s.exchange, s.coin, s.timeframe, COUNT(DISTINCT s.id) AS todo, MIN(s.created_at) AS oldest ` +
+    `FROM directional_labels d JOIN signals s ON s.id = d.signal_id JOIN tf ON tf.t = s.timeframe ` +
+    `WHERE ${where.join(' AND ')} ` +
+    `GROUP BY s.exchange, s.coin, s.timeframe ORDER BY s.exchange, MIN(s.created_at), s.coin, s.timeframe`;
+  return { text, params };
+}
+
+/** The rows of ONE group still missing an expiry, under T_CAP. Label-independent; allow-listed columns. */
+export function buildExpiryRowsSql(opts: { since?: number }): string {
+  return (
+    `WITH tf(t, sec, w) AS (VALUES ${tfValuesSql()}) ` +
+    `SELECT DISTINCT s.id, s.created_at, s.price_at_signal ` +
+    `FROM directional_labels d JOIN signals s ON s.id = d.signal_id JOIN tf ON tf.t = s.timeframe ` +
+    `WHERE s.exchange = $1 AND s.coin = $2 AND s.timeframe = $3 AND d.ret_at_expiry_pct IS NULL AND ${tCapSql()}` +
+    (opts.since !== undefined ? ` AND s.created_at > ${Math.floor(opts.since)}` : '') +
+    ` ORDER BY s.created_at ASC`
+  );
+}
+
+/** Fill every spec's row of each signal in one statement; never overwrite a value already there. */
+export const EXPIRY_UPDATE_SQL =
+  `UPDATE directional_labels AS d SET ret_at_expiry_pct = v.r ` +
+  `FROM unnest($1::int[], $2::double precision[]) AS v(id, r) ` +
+  `WHERE d.signal_id = v.id AND d.ret_at_expiry_pct IS NULL ` +
+  `RETURNING d.signal_id`;
+
+interface ExpiryCounters {
+  groups: number;
+  rowsSeen: number;
+  filled: number;
+  labelRowsUpdated: number;
+  pastReach: number;
+  unreachable: number;
+  budgetSkips: number;
+  errors: number;
+  wouldFill: number; // --check only
+}
+const ecov: ExpiryCounters = {
+  groups: 0, rowsSeen: 0, filled: 0, labelRowsUpdated: 0, pastReach: 0, unreachable: 0, budgetSkips: 0, errors: 0, wouldFill: 0,
+};
+const expiryByVenue = new Map<string, { filled: number; pastReach: number; unreachable: number }>();
+function bumpVenue(venue: string, key: 'filled' | 'pastReach' | 'unreachable', n: number): void {
+  const v = expiryByVenue.get(venue) ?? { filled: 0, pastReach: 0, unreachable: 0 };
+  v[key] += n;
+  expiryByVenue.set(venue, v);
+}
+
+/** Exported for tests only — a seam, not an API (the golden-style fixture drives it with the DB and
+ *  the adapter replaced at their seams). */
+export async function processExpiryGroup(cli: Cli, g: { exchange: string; coin: string; timeframe: string }): Promise<void> {
+  const W = EVAL_CANDLES[g.timeframe];
+  const tfMs = TF_MS[g.timeframe];
+  if (!W || !tfMs) return;
+  const groupStartMs = Date.now();
+  const rows = await dbQuery<{ id: number; created_at: number | string; price_at_signal: number | string }>(
+    buildExpiryRowsSql({ since: cli.since }),
+    [g.exchange, g.coin, g.timeframe],
+  );
+  ecov.rowsSeen += rows.length;
+  if (rows.length === 0) return;
+  const reachDays = expiryReachDays(g.exchange, g.timeframe);
+  const reachCutS = Number.isFinite(reachDays) ? Math.floor(groupStartMs / 1000 - reachDays * 86_400 + REACH_MARGIN_S) : -Infinity;
+  const reachable = rows.filter((r) => Number(r.created_at) >= reachCutS);
+  const past = rows.length - reachable.length;
+  ecov.pastReach += past;
+  bumpVenue(g.exchange, 'pastReach', past);
+  if (cli.check) { ecov.wouldFill += reachable.length; return; }
+
+  const cache = new Map<number, Candle>();
+  let coveredUntil = -Infinity;
+  const ids: number[] = [];
+  const rets: number[] = [];
+  let unreachable = 0;
+  for (const r of reachable) {
+    const entryMs = Number(r.created_at) * 1000;
+    const neededEnd = entryMs + (W + FETCH_BUFFER_CANDLES) * tfMs;
+    try {
+      if (neededEnd > coveredUntil) {
+        const start = coveredUntil + tfMs >= entryMs ? coveredUntil + tfMs : entryMs; // extend vs new island
+        await fetchRangeInto(cache, g.exchange as ExchangeId, g.coin, g.timeframe, start, neededEnd);
+        coveredUntil = Math.max(coveredUntil, neededEnd);
+      }
+    } catch (err) {
+      if (err instanceof WeightBudgetSkipError) { ecov.budgetSkips++; break; } // the rest stay NULL → next run
+      ecov.errors++;
+      unreachable++;
+      continue;
+    }
+    const forwardAsc = [...cache.values()].filter((c) => c.time >= entryMs).sort((a, b) => a.time - b.time);
+    const v = expiryReturnPct(forwardAsc, W, Number(r.price_at_signal), entryMs, tfMs, groupStartMs);
+    if (v === null) { unreachable++; continue; }
+    ids.push(Number(r.id));
+    rets.push(v);
+  }
+  ecov.unreachable += unreachable;
+  bumpVenue(g.exchange, 'unreachable', unreachable);
+  for (let i = 0; i < ids.length; i += INSERT_CHUNK_ROWS) {
+    const res = await dbQuery<{ signal_id: number }>(EXPIRY_UPDATE_SQL, [ids.slice(i, i + INSERT_CHUNK_ROWS), rets.slice(i, i + INSERT_CHUNK_ROWS)]);
+    ecov.labelRowsUpdated += res.length;
+  }
+  ecov.filled += ids.length;
+  bumpVenue(g.exchange, 'filled', ids.length);
+}
+
+async function mainExpiry(cli: Cli): Promise<void> {
+  ensureTable();
+  const { text, params } = buildExpiryGroupsSql(cli);
+  const raw = await dbQuery<{ exchange: string; coin: string; timeframe: string; todo: string | number; oldest: string | number }>(text, params);
+  const groups: ExpiryGroup[] = raw.map((r) => ({
+    exchange: r.exchange, coin: r.coin, timeframe: r.timeframe, todo: Number(r.todo), oldest: Number(r.oldest),
+  }));
+  const limited = cli.limitGroups ? groups.slice(0, cli.limitGroups) : groups;
+  const byVenue = partitionByVenue(limited);
+  // Horizon-first inside a venue: the group whose oldest missing row is oldest is nearest its candle
+  // depth, so it is served first (the buildExpiryGroupsSql ORDER BY already sorts by it).
+  const venueOrder = [...byVenue.keys()].sort();
+  const budget = makeBudget(cli);
+  console.log(`[detector-run] run_id=dwr-expiry-${new Date(budget.startMs).toISOString()}`);
+  console.log(
+    `[${ts()}] EXPIRY backfill start — ${limited.length} groups over ${venueOrder.length} venues, ` +
+    `T_CAP=race_end<=${T_DIAG_END}${cli.since !== undefined ? ` since=${cli.since}` : ''} ` +
+    `reach_table=${EXPIRY_REACH_DAYS_MEASURED_AT}` +
+    `${cli.timeBudgetMin ? ` budget=${cli.timeBudgetMin}m/venue≤${cli.venueBudgetMin ?? '∞'}m` : ''}` +
+    `${cli.check ? ' (CHECK — no writes)' : ''}`,
+  );
+  let summaries: VenueRunSummary[] = [];
+  await runAsBatch(async () => {
+    summaries = await runVenueRotation(
+      venueOrder,
+      byVenue,
+      budget,
+      async (g) => {
+        ecov.groups++;
+        try {
+          await processExpiryGroup(cli, g);
+        } catch (err) {
+          ecov.errors++;
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[${ts()}] expiry group ${g.exchange}:${g.coin}:${g.timeframe} error: ${msg.slice(0, 200)}`);
+        }
+        if (ecov.groups % 200 === 0) {
+          console.log(`[${ts()}] ${ecov.groups}/${limited.length} groups | filled ${ecov.filled} | past_reach ${ecov.pastReach} | unreachable ${ecov.unreachable}`);
+        }
+      },
+      console.log,
+      Date.now,
+      (venue) => {
+        const v = expiryByVenue.get(venue) ?? { filled: 0, pastReach: 0, unreachable: 0 };
+        return `filled=${v.filled} past_reach=${v.pastReach} unreachable=${v.unreachable}`;
+      },
+      { stopRequested: isStopRequested },
+    );
+  }, 'dwr-expiry-backfill');
+  const outcome = deriveRunOutcome(summaries, budget.globalExpired());
+  // Cardinalities only — never a return value.
+  console.log(`[${ts()}] EXPIRY DONE ${JSON.stringify({ outcome, ...ecov, byVenue: Object.fromEntries(expiryByVenue) })}`);
 }
 
 /** Per-venue label frontier (MAX labeled created_at) — the F1 rotation key. */
@@ -821,6 +1078,7 @@ async function loadVenueFrontier(): Promise<Map<string, number>> {
 
 async function main(): Promise<void> {
   const cli = parseCli(process.argv.slice(2));
+  if (cli.expiryOnly) return mainExpiry(cli);
   ensureTable();
   const groups = await loadGroups(cli);
   const frontier = await loadVenueFrontier();

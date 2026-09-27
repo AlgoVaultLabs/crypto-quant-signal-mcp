@@ -176,3 +176,164 @@ export function clusterEdge(rows: LabelRow[]): ClusterEdgeSummary {
     rowsInClusters, verdict: 'PER_CLUSTER', reason: null,
   };
 }
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// EDGE-ADS1-SCORECARD-W1-V2 CH2 R2 (ruling Q4 = A) — THE SAME PER-DAY MIX-MATCHED EDGE, ON THE
+// COMPLETE LABEL, WITH A DAY-CLUSTER BOOTSTRAP LOWER BOUND.
+//
+// Everything above this line is unchanged, byte for byte (a test pins `clusterEdge`'s source hash):
+// the digest keeps its decided-basis figure. This export is the ADS-1 referee's version of the same
+// statistic, and only differs where ADS-1 differs:
+//   * BASIS — the complete label: a timeout resolved by its expiry return counts; a FLAT call is out of
+//     every term (engine and null alike); an UNRESOLVED / INCONSISTENT row is out and counted. The
+//     caller resolves each row to what an always-BUY and an always-SELL caller score on it
+//     (src/scripts/ads1/core.ts `sideOutcomes`), so this leaf never imports the standard.
+//   * INTERVAL — the unweighted day-mean gets a one-sided lower bound from a day-cluster bootstrap
+//     (resample DAYS with replacement, B replicates, FIXED seed so a re-run reproduces it), read off
+//     with cluster-perm-stats.py's nearest-rank rule (`ci_lower`) — ported below and differential-tested
+//     against the Python instrument, which stays untouched.
+//   * FLOORS — the same: MIN_ROWS_PER_CLUSTER rows per kept day, CLUSTER_EDGE_CONTRACT.minClusters days.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+export type CompleteOutcome = 'WIN' | 'LOSS' | 'FLAT' | 'UNRESOLVED' | 'INCONSISTENT';
+
+/** One call's race under the complete label: what the ENGINE's side and each always-side caller score. */
+export interface CompleteRaceRow {
+  createdAt: number; // unix seconds
+  side: 'BUY' | 'SELL';
+  buy: CompleteOutcome; // the always-BUY caller's outcome on this race
+  sell: CompleteOutcome; // the always-SELL caller's outcome on this race
+}
+
+export interface ClusterEdgeCompleteSummary extends ClusterEdgeSummary {
+  /** One-sided lower bound of the day-mean excess, pp (nearest-rank α percentile of the bootstrap). */
+  ciLbPp: number | null;
+  /** One-sided bootstrap p for "mean excess ≤ 0": (1 + #{replicate ≤ 0}) / (B + 1). */
+  p: number | null;
+  /** mean / (sd / √clusters). */
+  tStat: number | null;
+  alpha: number;
+  bootstrapB: number;
+  seed: number;
+  /** Rows whose engine side scored but whose always-side outcomes disagree with that — impossible for a
+   *  well-formed row; counted, never used. */
+  malformedRows: number;
+  /** The bootstrap replicates, pp — only when `keepReplicates` (the differential test reads them). */
+  replicates?: number[];
+}
+
+/** mulberry32 — a tiny, fully specified PRNG, so the bootstrap is reproducible in any runtime. */
+export function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Nearest-rank percentile (Hyndman-Fan type 1) — cluster-perm-stats.py `percentile`, ported exactly:
+ *  the k-th smallest with k = ceil(q·m − 1e-9), clamped to [1, m]; null on an empty input. */
+export function percentileNearestRank(values: number[], q: number): number | null {
+  if (!(q >= 0 && q <= 1)) throw new Error(`percentileNearestRank: q=${q} is outside [0, 1]`);
+  const v = values.filter((x) => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
+  const m = v.length;
+  if (m === 0) return null;
+  const k = Math.min(Math.max(Math.ceil(q * m - 1e-9), 1), m);
+  return v[k - 1];
+}
+
+/** cluster-perm-stats.py `ci_lower`: the nearest-rank α percentile. */
+export function ciLowerNearestRank(values: number[], alphaOneSided: number): number | null {
+  return percentileNearestRank(values, alphaOneSided);
+}
+
+function isScoredOutcome(o: CompleteOutcome): boolean {
+  return o === 'WIN' || o === 'LOSS';
+}
+
+/** One day's complete-label mix-matched excess (the complete-basis twin of `clusterEdgeOf`). */
+export function clusterEdgeCompleteOf(day: string, rows: CompleteRaceRow[]): { edge: ClusterEdge | null; malformed: number } {
+  let n = 0, wins = 0, buyWins = 0, sellWins = 0, buys = 0, malformed = 0;
+  for (const r of rows) {
+    const eng = r.side === 'BUY' ? r.buy : r.sell;
+    if (!isScoredOutcome(eng)) continue; // FLAT / UNRESOLVED / INCONSISTENT: out of every term
+    if (!isScoredOutcome(r.buy) || !isScoredOutcome(r.sell)) { malformed++; continue; }
+    n++;
+    if (eng === 'WIN') wins++;
+    if (r.buy === 'WIN') buyWins++;
+    if (r.sell === 'WIN') sellWins++;
+    if (r.side === 'BUY') buys++;
+  }
+  if (n === 0) return { edge: null, malformed };
+  const dwr = wins / n;
+  const pLong = buyWins / n;
+  const pShort = sellWins / n;
+  const q = buys / n;
+  const pStar = q * pLong + (1 - q) * pShort;
+  return { edge: { day, n, dwr, pLong, pShort, q, pStar, excessPp: 100 * (dwr - pStar) }, malformed };
+}
+
+/**
+ * Per-UTC-day, unweighted, mix-matched directional edge on the COMPLETE label, with a day-cluster
+ * bootstrap lower bound, bootstrap p and t. INDETERMINATE (all interval fields null) below the
+ * cluster floor — never a point estimate wearing a conclusion's clothes.
+ */
+export function clusterEdgeCompleteWithCi(
+  rows: CompleteRaceRow[],
+  opts: { alpha?: number; B?: number; seed?: number; keepReplicates?: boolean } = {},
+): ClusterEdgeCompleteSummary {
+  const alpha = opts.alpha ?? 0.05;
+  const B = opts.B ?? 2000;
+  const seed = opts.seed ?? 1;
+  const byDay = new Map<string, CompleteRaceRow[]>();
+  for (const r of rows) {
+    const d = utcDayOf(r.createdAt);
+    const g = byDay.get(d);
+    if (g) g.push(r); else byDay.set(d, [r]);
+  }
+  const kept: ClusterEdge[] = [];
+  let dropped = 0;
+  let malformedRows = 0;
+  for (const [day, group] of [...byDay.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const { edge: c, malformed } = clusterEdgeCompleteOf(day, group);
+    malformedRows += malformed;
+    if (c === null || c.n < MIN_ROWS_PER_CLUSTER) { dropped++; continue; }
+    kept.push(c);
+  }
+  const rowsInClusters = kept.reduce((acc, c) => acc + c.n, 0);
+  const base = { alpha, bootstrapB: B, seed, malformedRows, clusters: kept.length, clustersDropped: dropped, rowsInClusters };
+  if (kept.length < CLUSTER_EDGE_CONTRACT.minClusters) {
+    return {
+      ...base, meanPp: null, sdPp: null, ciLbPp: null, p: null, tStat: null, verdict: 'INDETERMINATE',
+      reason: `under-clustered: ${kept.length} < ${CLUSTER_EDGE_CONTRACT.minClusters} required`,
+    };
+  }
+  const xs = kept.map((c) => c.excessPp);
+  const G = xs.length;
+  const mean = xs.reduce((a, x) => a + x, 0) / G;
+  const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) ** 2, 0) / (G - 1));
+  const rand = mulberry32(seed);
+  const reps: number[] = new Array(B);
+  let atOrBelowZero = 0;
+  for (let b = 0; b < B; b++) {
+    let s = 0;
+    for (let i = 0; i < G; i++) s += xs[Math.floor(rand() * G)];
+    reps[b] = s / G;
+    if (reps[b] <= 0) atOrBelowZero++;
+  }
+  const out: ClusterEdgeCompleteSummary = {
+    ...base,
+    meanPp: mean,
+    sdPp: sd,
+    ciLbPp: ciLowerNearestRank(reps, alpha),
+    p: (1 + atOrBelowZero) / (B + 1),
+    tStat: sd > 0 ? mean / (sd / Math.sqrt(G)) : null,
+    verdict: 'PER_CLUSTER',
+    reason: null,
+  };
+  if (opts.keepReplicates) out.replicates = reps;
+  return out;
+}

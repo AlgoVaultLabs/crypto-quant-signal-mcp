@@ -58,6 +58,76 @@ export const FLOOR_PCT = 0.3; // 0.30% ≈ 3× round-trip taker (2 × 0.05%); ex
  * `FLOOR_PCT / 3` to 12 decimal places so the derivation cannot silently drift into a literal.
  */
 export const ROUND_TRIP_COST_PCT = Number((FLOOR_PCT / 3).toFixed(4));
+/**
+ * The three barrier specifications, primary first. ONE literal set for every writer and reader that
+ * lives in this repo — `backfill-directional-labels.ts` writes them, `src/scripts/ads1/spec.ts` reads
+ * them (EDGE-ADS1-SCORECARD-W1-V2 CH2, D1: "import, never retype"). The primary string is also
+ * `FRESHNESS_BARRIER_SPEC` in `src/lib/venue-slo-tiers.ts`; a test pins the two equal.
+ */
+export const BARRIER_SPECS = [
+  { tau: 1.0, spec: 'tau1.0-floor0.30-v1' },
+  { tau: 0.5, spec: 'tau0.5-floor0.30-v1' },
+  { tau: 2.0, spec: 'tau2.0-floor0.30-v1' },
+] as const;
+
+/**
+ * The Postgres DDL of `directional_labels`, the copy the labeler applies idempotently before it writes
+ * (`ensureTable`). `migrations/019_directional_labels.sql` + `migrations/043_directional_labels_expiry.sql`
+ * are the schema-as-code SoT; `tests/unit/directional-labels-ddl-parity.test.ts` and
+ * `dist/scripts/ads1/ddl-parity-check.js` assert both copies name the same columns, so they cannot drift.
+ *
+ * `ret_at_expiry_pct` (EDGE-ADS1-SCORECARD-W1-V2 CH2, ruling Q2 = A): the return at the vertical
+ * barrier — close of the W-th forward candle over the entry price, PERCENT, PRICE-perspective (not
+ * side-signed; the same convention as `signals.outcome_return_pct`). Additive and NULLABLE: NULL means
+ * "not resolved", never zero. A fact about the price path, not a label; no existing column changes.
+ */
+export const DIRECTIONAL_LABELS_DDL_PG = `
+    CREATE TABLE IF NOT EXISTS directional_labels (
+      signal_id        INTEGER NOT NULL,
+      barrier_spec     TEXT NOT NULL,
+      label            SMALLINT NOT NULL,
+      ambiguous_candle BOOLEAN NOT NULL DEFAULT FALSE,
+      low_vol_history  BOOLEAN NOT NULL DEFAULT FALSE,
+      t_hit_candles    INT,
+      mfe_return_pct   DOUBLE PRECISION,
+      mae_return_pct   DOUBLE PRECISION,
+      barrier_pct      DOUBLE PRECISION NOT NULL,
+      computed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (signal_id, barrier_spec)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dirlabels_spec_signal ON directional_labels (barrier_spec, signal_id);
+    ALTER TABLE directional_labels ADD COLUMN IF NOT EXISTS ret_at_expiry_pct DOUBLE PRECISION;
+  `;
+
+/**
+ * The return at the vertical barrier, or `null` when it cannot be known from what is in hand.
+ *
+ * `forwardAsc` holds the candles whose OPEN time is at/after the entry, ascending (the labeler's own
+ * window). The W-th of them is the vertical-barrier candle; its close over `entryPrice` is the expiry
+ * return, in PERCENT, price-perspective.
+ *
+ * `fetchedNotBeforeMs` is an instant no later than the moment the candles were fetched (the labeler
+ * passes the time it STARTED the group, before any fetch). The W-th forward candle closes no later than
+ * `entryMs + (W+1)·tf`; if that instant is after the fetch, the candle may still have been forming and
+ * its close would be a live price — so the answer is `null`, not a guess. The same `(W+1)·tf` bound is
+ * `T_CAP`'s race-end embargo and `pfe-mae.ts` `maturityHorizonMs`.
+ */
+export function expiryReturnPct(
+  forwardAsc: Candle[],
+  W: number,
+  entryPrice: number,
+  entryMs: number,
+  tfMs: number,
+  fetchedNotBeforeMs: number,
+): number | null {
+  if (!(W > 0) || !(tfMs > 0) || !(entryPrice > 0)) return null;
+  if (forwardAsc.length < W) return null;
+  if (entryMs + (W + 1) * tfMs > fetchedNotBeforeMs) return null;
+  const close = forwardAsc[W - 1].close;
+  if (!Number.isFinite(close) || close <= 0) return null;
+  return (close / entryPrice - 1) * 100;
+}
+
 export const SIGMA_TARGET_WINDOWS = 60; // trailing non-overlapping W-candle windows
 export const SIGMA_MIN_WINDOWS = 30; // < this ⇒ low_vol_history (excluded from cell stats)
 
