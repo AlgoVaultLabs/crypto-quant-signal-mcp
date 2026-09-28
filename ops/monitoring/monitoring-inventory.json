@@ -2483,13 +2483,13 @@
       "schedule": "19 9 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "32a759e58abd3655d1cd85da6b70bda6ae7d6c4967e97f045ccf0562c32bd8be",
+      "sha256": "22ef174a8aa3cf5d9214a995a50a54cf55b42d9cf6d3a45668ccf3ddff2bcaf4",
       "alert_ids": [
         "LIFECYCLE_GOLIVE_ROLLBACK"
       ],
       "owner_wave": "IDENTITY-LIFECYCLE-W3",
       "repo_resident": true,
-      "notes": "THE DECIDING HALF, and the only thing in the estate that flips a lifecycle step to live. Verdict token LIFECYCLE_GOLIVE_VERDICT=LIVE|HOLD|ROLLED_BACK|INDETERMINATE, exit 0/0/1/3. PER-STEP (architect Q1(A)): each step has its own 7-day shadow clock, its own <=5 canary batch on the first live tick, and its own rollback; measured 2026-09-08, three of the four steps have ZERO eligible recipients and simply stay in shadow indefinitely at zero cost, which a wave-level flip could not express. It MEASURES both preconditions (health canary + a live unsubscribe-refusal probe) immediately before deciding rather than reading a stored verdict. Rollback legs are armed only for the first 72h live: bounce+complaint >=5% of sends with n>=10, or unsubscribes >=20% of sends with NO floor (one opt-out in three is a louder signal than five in a hundred). A rolled-back step does NOT re-light itself. Shares `assess()` with the read-only twin so the table an operator reads and the decision the cron applies are one derivation."
+      "notes": "THE DECIDING HALF, and the only thing in the estate that flips a lifecycle step to live. Verdict token LIFECYCLE_GOLIVE_VERDICT=LIVE|BLOCKED_MASTER|BLOCKED_GATE|NOT_DUE|ROLLED_BACK (worst-wins across the steps it manages) or INDETERMINATE; exit 0 except a rollback EVENT this run (1) and INDETERMINATE (3); pages only on the event. PUBLISHES one canary_result_log record per run (canary `lifecycle-readout`, per-step {verdict, would_send, sent, expired, live, rollback_window}, counts only) \u2014 LIFECYCLE-GOLIVE-SEMANTICS-W1. The master (LIFECYCLE_MODE=live-permitted) is the FIRST go-live leg: a step whose evidence passed while the master blocks reports BLOCKED_MASTER and is not stamped. PER-STEP (architect Q1(A)): each step has its own 7-day shadow clock, its own <=5 canary batch on the first live tick, and its own rollback; measured 2026-09-08, three of the four steps have ZERO eligible recipients and simply stay in shadow indefinitely at zero cost, which a wave-level flip could not express. It MEASURES both preconditions (health canary + a live unsubscribe-refusal probe) immediately before deciding rather than reading a stored verdict. Rollback legs are armed only for the 72h after the step's FIRST REAL SEND (first_sent_at; not_opened before it): bounce+complaint >=5% of sends with n>=10, or unsubscribes >=20% of sends with NO floor (one opt-out in three is a louder signal than five in a hundred). A rolled-back step does NOT re-light itself. Shares `assess()` with the read-only twin so the table an operator reads and the decision the cron applies are one derivation."
     },
     {
       "id": "lifecycle-readout-readonly",

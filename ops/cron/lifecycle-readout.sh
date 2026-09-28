@@ -18,6 +18,14 @@
 # stale value, this wrapper RUNS both immediately before deciding and passes the results in. A
 # go-live gated on a health verdict from yesterday is gated on nothing.
 #
+# ── PUBLISHED, SO THE VAULT CAN READ IT (LIFECYCLE-GOLIVE-SEMANTICS-W1 R3) ─────────────────
+# Every run appends ONE `canary_result_log` record (canary `lifecycle-readout`): the aggregate
+# verdict (LIVE | BLOCKED_MASTER | BLOCKED_GATE | NOT_DUE | ROLLED_BACK, worst-wins across the
+# steps this cron manages) plus per-step {verdict, would_send, sent, expired, live,
+# rollback_window}. COUNTS AND VERDICTS ONLY — the ledger stays on the host (ruling Q7).
+# MEASURED 2026-09-28: this cron printed LIVE on 2026-09-16 and HOLD daily after, to host stdout
+# only, while nothing could send; the vault held health PASS lines and could not say why.
+#
 # ── SCHEDULE: 19 9 * * * ─────────────────────────────────────────────────────────────────
 # Daily, after the 08:43 health canary so today's verdict already exists, and off the :00
 # boundary. Minute 19 of hour 9 was checked clear against the live crontab (hour 9 holds 0, 29,
@@ -28,6 +36,7 @@ REPO="${LIFECYCLE_REPO:-/opt/crypto-quant-signal-mcp}"
 CTR="${LIFECYCLE_APP_CTR:-crypto-quant-signal-mcp-mcp-server-1}"
 SEND="${LIFECYCLE_SEND:-/opt/algovault-monitoring/send_telegram.sh}"
 LOG="${LIFECYCLE_READOUT_LOG:-/var/log/lifecycle-readout.log}"
+RESULT_LOG_DIR="${LIFECYCLE_RESULT_LOG_DIR:-/opt/algovault-monitoring}"
 ALERT_ID="LIFECYCLE_GOLIVE_ROLLBACK"
 TAG="[lifecycle-readout]"
 
@@ -39,7 +48,35 @@ alert() {
     || log "ESCALATE_UNSENT: send_telegram invocation failed"
 }
 
-finish() { echo "$TAG $(date -u +%Y-%m-%dT%H:%M:%SZ) LIFECYCLE_GOLIVE_VERDICT=$1 $2"; log "$1 $2"; exit "$3"; }
+# The structured record. Import GUARDED: a partial install degrades to a no-op that SAYS SO, and a
+# logging failure never changes this cron's verdict, exit code or alert (the recorder's contract).
+publish() { # verdict exit_code metrics_json
+  python3 - "$RESULT_LOG_DIR" "$1" "$2" "$3" <<'PYREC' 2>/dev/null || echo "$TAG CANARY_RESULT_LOG_FAILED=python_unavailable"
+import json, sys
+sys.path.insert(0, sys.argv[1])
+try:
+    from canary_result_log import append_result
+except Exception as e:
+    print(f"[lifecycle-readout] CANARY_RESULT_LOG_FAILED=import:{type(e).__name__}")
+    raise SystemExit(0)
+try:
+    metrics = json.loads(sys.argv[4]) if sys.argv[4] else {}
+    if not isinstance(metrics, dict):
+        metrics = {"metrics_unparseable": True}
+except Exception:
+    metrics = {"metrics_unparseable": True}
+ok, detail = append_result("lifecycle-readout", sys.argv[2], int(sys.argv[3]), metrics)
+print(f"[lifecycle-readout] CANARY_RESULT_LOG={detail}" if ok else f"[lifecycle-readout] CANARY_RESULT_LOG_FAILED={detail}")
+PYREC
+}
+
+# Every exit path publishes — an INDETERMINATE run is a record too, never silence.
+finish() { # verdict detail exit_code [metrics_json]
+  echo "$TAG $(date -u +%Y-%m-%dT%H:%M:%SZ) LIFECYCLE_GOLIVE_VERDICT=$1 $2"
+  log "$1 $2"
+  publish "$1" "$3" "${4:-}"
+  exit "$3"
+}
 
 if ! docker inspect -f '{{.State.Running}}' "$CTR" 2>/dev/null | grep -q true; then
   finish INDETERMINATE "container $CTR is not running — no decision was made" 3
@@ -65,17 +102,21 @@ printf '%s\n' "$OUT"
 
 VERDICT="$(printf '%s\n' "$OUT" | grep -o 'LIFECYCLE_GOLIVE_VERDICT=[A-Z_]*' | tail -1 | cut -d= -f2)"
 READOUT="$(printf '%s\n' "$OUT" | grep -o 'LIFECYCLE_READOUT_VERDICT=[A-Z]*' | tail -1 | cut -d= -f2)"
+ROLLED_NOW="$(printf '%s\n' "$OUT" | grep -o 'rolled_back_now=[0-9]*' | tail -1 | cut -d= -f2)"
+RESULT="$(printf '%s\n' "$OUT" | sed -n 's/^\[lifecycle-readout\] RESULT_JSON=//p' | tail -1)"
 
-if [ "$VERDICT" = "ROLLED_BACK" ]; then
+# PAGE ON THE EVENT, NOT THE STATE. A rolled-back step stays ROLLED_BACK in the aggregate every
+# day until a human clears it; paging on the state would page daily. The event is this run's.
+if [ "${ROLLED_NOW:-0}" -gt 0 ] 2>/dev/null; then
   alert "🛑 ${ALERT_ID}
-A lifecycle step was ROLLED BACK to shadow inside its first 72h live.
+A lifecycle step was ROLLED BACK to shadow inside the 72h after its first real send.
 $(printf '%s\n' "$OUT" | grep 'ROLLED_BACK' | head -3)
 The step stops sending immediately and does NOT re-light itself — a rolled-back step is held
 until a human clears it. Nothing else is affected; rollback is per step.
 Recommended wave: OPS-LIFECYCLE-DELIVERABILITY-W{NEXT}"
-  finish ROLLED_BACK "a step returned to shadow (rc=$RC)" 1
+  finish ROLLED_BACK "a step returned to shadow (rc=$RC)" 1 "$RESULT"
 fi
 
 [ "$READOUT" = "INDETERMINATE" ] && finish INDETERMINATE "readout could not read the ledger (rc=$RC)" 3
 [ -z "$VERDICT" ] && finish INDETERMINATE "no go-live token in output (rc=$RC)" 3
-finish "$VERDICT" "readout=$READOUT health=$HEALTH_TOK unsub=$UNSUB_CODE (rc=$RC)" 0
+finish "$VERDICT" "readout=$READOUT health=$HEALTH_TOK unsub=$UNSUB_CODE (rc=$RC)" 0 "$RESULT"
