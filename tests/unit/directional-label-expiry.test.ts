@@ -14,11 +14,17 @@ const env = vi.hoisted(() => ({
   fetches: [] as Array<{ start: number; end?: number }>,
   candles: [] as Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>,
   emptyPageStarts: new Set<number>(),
+  resets: [] as unknown[][],
 }));
 vi.mock('../../src/lib/performance-db.js', () => ({
   dbExec: () => undefined,
   dbQuery: async (sql: string, params: unknown[] = []) => {
     if (sql.includes('SELECT DISTINCT s.id, s.created_at, s.price_at_signal')) return env.rows;
+    if (sql.startsWith('SELECT count(*)::int AS n FROM directional_labels')) return [{ n: 7 }];
+    if (sql.startsWith('UPDATE directional_labels SET ret_at_expiry_pct = NULL')) {
+      env.resets.push(params);
+      return Array.from({ length: 7 }, (_, i) => ({ signal_id: i }));
+    }
     if (sql.startsWith('UPDATE directional_labels')) {
       env.updates.push(params);
       return (params[0] as number[]).flatMap((id) => [{ signal_id: id }, { signal_id: id }, { signal_id: id }]);
@@ -38,6 +44,10 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
 
 import { expiryReturnPct, EVAL_CANDLES, TF_MS } from '../../src/scripts/directional-labeler.js';
 import {
+  EXPIRY_COLUMN_CREATED_AT,
+  EXPIRY_RESET_SQL,
+  expiryResetWindow,
+  mainExpiryReset,
   parseCli,
   buildExpiryGroupsSql,
   buildExpiryRowsSql,
@@ -197,5 +207,38 @@ describe('processExpiryGroup (DB + adapter at their seams)', () => {
     } finally { vi.useRealTimers(); }
     expect(env.fetches).toHaveLength(0);
     expect(env.updates).toHaveLength(0);
+  });
+});
+
+describe('the bounded blind reset of values written by the pre-fix code', () => {
+  const NOW_S = EXPIRY_COLUMN_CREATED_AT + 86_400;
+  it('touches only this column, only values written inside the window, and reads nothing', () => {
+    expect(EXPIRY_RESET_SQL.startsWith('UPDATE directional_labels SET ret_at_expiry_pct = NULL WHERE ')).toBe(true);
+    expect(EXPIRY_RESET_SQL).toContain('computed_at >= to_timestamp($1) AND computed_at < to_timestamp($2)');
+    expect(EXPIRY_RESET_SQL).not.toMatch(/\blabel\b|barrier|created_at/);
+    expect((EXPIRY_RESET_SQL.match(/SET/g) ?? []).length).toBe(1);
+  });
+
+  it('refuses a window that could reach anything but this wave\'s own writes', () => {
+    const w = (from?: number, to?: number) => expiryResetWindow({ expiryResetFrom: from, expiryResetTo: to }, NOW_S);
+    expect(w(EXPIRY_COLUMN_CREATED_AT, NOW_S)).toEqual([EXPIRY_COLUMN_CREATED_AT, NOW_S]);
+    expect(() => w(EXPIRY_COLUMN_CREATED_AT, undefined)).toThrow(/BOTH/);
+    expect(() => w(EXPIRY_COLUMN_CREATED_AT - 1, NOW_S)).toThrow(/before the column existed/);
+    expect(() => w(NOW_S, EXPIRY_COLUMN_CREATED_AT)).toThrow(/inverted/);
+    expect(() => w(EXPIRY_COLUMN_CREATED_AT, NOW_S + 60)).toThrow(/future/);
+    expect(() => expiryResetWindow({ expiryResetFrom: EXPIRY_COLUMN_CREATED_AT, expiryResetTo: EXPIRY_COLUMN_CREATED_AT + 3 * 86_400 }, NOW_S + 3 * 86_400)).toThrow(/wider/);
+  });
+
+  it('--check counts and writes nothing; without it the one bounded UPDATE runs', { timeout: 30_000 }, async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(NOW_S * 1000));
+    env.resets = [];
+    const args = ['--expiry-only', '--expiry-reset-written-from', String(EXPIRY_COLUMN_CREATED_AT), '--expiry-reset-written-to', String(NOW_S - 60)];
+    try {
+      await mainExpiryReset(parseCli([...args, '--check']));
+      expect(env.resets).toHaveLength(0);
+      await mainExpiryReset(parseCli(args));
+      expect(env.resets).toEqual([[EXPIRY_COLUMN_CREATED_AT, NOW_S - 60]]);
+    } finally { vi.useRealTimers(); }
   });
 });

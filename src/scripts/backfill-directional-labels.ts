@@ -85,6 +85,10 @@ export interface Cli {
   expiryOnly: boolean;
   /** `--expiry-only` pass selector: only rows with `created_at > since` (epoch s). UNSET = every row under T_CAP. */
   since?: number;
+  /** `--expiry-only --expiry-reset-written-from <s> --expiry-reset-written-to <s>`: blind-NULL the expiry
+   *  values written in that `computed_at` window (see mainExpiryReset). */
+  expiryResetFrom?: number;
+  expiryResetTo?: number;
 }
 
 interface SignalRow {
@@ -164,6 +168,8 @@ export function parseCli(argv: string[]): Cli {
     venueBudgetMin: posInt('--venue-budget-min'),
     expiryOnly: has('--expiry-only'),
     since: posInt('--since'),
+    expiryResetFrom: posInt('--expiry-reset-written-from'),
+    expiryResetTo: posInt('--expiry-reset-written-to'),
   };
 }
 
@@ -926,6 +932,50 @@ export function buildExpiryRowsSql(opts: { since?: number }): string {
 }
 
 /** Fill every spec's row of each signal in one statement; never overwrite a value already there. */
+// ── the bounded reset (2026-09-28): values written by the pre-fix, index-based expiry code ──────────
+// Before 4d172810 `expiryReturnPct` took forwardAsc[W-1] BY INDEX, and the group cache can miss a candle
+// (its extension start was off the grid), so some values written between the column's creation and the fix
+// deploy are the close of a LATER candle. Reading a stored value to check it would read an outcome value on
+// sealed rows, so the reset is BLIND: every value written in the window becomes NULL again, the fixed
+// `--expiry-only` fill then recomputes the rows under T_CAP from time-verified candles, and rows past T_CAP
+// stay NULL (ruling Q2: "rows between T_CAP and the deploy stay NULL for this wave"). Only this column, only
+// rows whose value was written inside the window — never a label, never a row outside it.
+/** The column was created 2026-09-27T14:21:14Z; nothing before that can hold a value, so a reset window may
+ *  never start earlier (it can only ever touch this wave's own writes). */
+export const EXPIRY_COLUMN_CREATED_AT = 1790518874;
+export const EXPIRY_RESET_MAX_WINDOW_S = 2 * 86_400;
+export const EXPIRY_RESET_SQL =
+  `UPDATE directional_labels SET ret_at_expiry_pct = NULL ` +
+  `WHERE computed_at >= to_timestamp($1) AND computed_at < to_timestamp($2) AND ret_at_expiry_pct IS NOT NULL ` +
+  `RETURNING signal_id`;
+export const EXPIRY_RESET_COUNT_SQL =
+  `SELECT count(*)::int AS n FROM directional_labels ` +
+  `WHERE computed_at >= to_timestamp($1) AND computed_at < to_timestamp($2) AND ret_at_expiry_pct IS NOT NULL`;
+
+/** Refuses any window that is not wholly inside [column creation, now] or is wider than two days. */
+export function expiryResetWindow(cli: Pick<Cli, 'expiryResetFrom' | 'expiryResetTo'>, nowS: number): [number, number] {
+  const from = cli.expiryResetFrom;
+  const to = cli.expiryResetTo;
+  if (from === undefined || to === undefined) throw new Error('expiry reset needs BOTH --expiry-reset-written-from and --expiry-reset-written-to');
+  if (!(from < to)) throw new Error(`expiry reset window is empty or inverted: ${from} >= ${to}`);
+  if (from < EXPIRY_COLUMN_CREATED_AT) throw new Error(`expiry reset may not start before the column existed (${EXPIRY_COLUMN_CREATED_AT})`);
+  if (to > nowS) throw new Error(`expiry reset may not end in the future (${to} > ${nowS})`);
+  if (to - from > EXPIRY_RESET_MAX_WINDOW_S) throw new Error(`expiry reset window wider than ${EXPIRY_RESET_MAX_WINDOW_S}s`);
+  return [from, to];
+}
+
+export async function mainExpiryReset(cli: Cli): Promise<void> {
+  ensureTable();
+  const [from, to] = expiryResetWindow(cli, Math.floor(Date.now() / 1000));
+  const before = await dbQuery<{ n: number | string }>(EXPIRY_RESET_COUNT_SQL, [from, to]);
+  let reset = 0;
+  if (!cli.check) {
+    const res = await dbQuery<{ signal_id: number }>(EXPIRY_RESET_SQL, [from, to]);
+    reset = res.length;
+  }
+  console.log(`[${ts()}] EXPIRY RESET ${JSON.stringify({ window: [from, to], written_in_window: Number(before[0]?.n ?? 0), reset, check: cli.check })}`);
+}
+
 export const EXPIRY_UPDATE_SQL =
   `UPDATE directional_labels AS d SET ret_at_expiry_pct = v.r ` +
   `FROM unnest($1::int[], $2::double precision[]) AS v(id, r) ` +
@@ -1085,6 +1135,7 @@ async function loadVenueFrontier(): Promise<Map<string, number>> {
 
 async function main(): Promise<void> {
   const cli = parseCli(process.argv.slice(2));
+  if (cli.expiryOnly && (cli.expiryResetFrom !== undefined || cli.expiryResetTo !== undefined)) return mainExpiryReset(cli);
   if (cli.expiryOnly) return mainExpiry(cli);
   ensureTable();
   const groups = await loadGroups(cli);
