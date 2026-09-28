@@ -15,7 +15,7 @@
 import { runScript } from '../lib/script-lifecycle.js';
 import { awaitDbWrites } from '../lib/performance-db.js';
 import { ensureLifecycleSchema } from '../lib/lifecycle/schema.js';
-import { sendLifecycle, resolveMode } from '../lib/lifecycle/engine.js';
+import { sendLifecycle, resolveMode, stepLiveState } from '../lib/lifecycle/engine.js';
 import { getStepState, stampHeartbeat } from '../lib/lifecycle/ledger.js';
 import {
   readReadmeBlocks, optInRecipients, sentVersionsFor,
@@ -90,7 +90,7 @@ async function main(): Promise<number> {
   }
 
   return await emit('PASS',
-    `mode=${mode} live=${state.live_since ? 1 : 0} blocks=${blocks.length} opt_ins=${recipients.length} ` +
+    `mode=${mode} state=${stepLiveState(mode, state)} blocks=${blocks.length} opt_ins=${recipients.length} ` +
     `would_send=${wouldSend} sent=${sent} suppressed=${suppressed} capped=${capped} skipped=${skipped}`,
     wouldSend + sent);
 }

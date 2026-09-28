@@ -106,6 +106,16 @@ function recipientOf(b: Bucket): LifecycleRecipient {
 }
 
 /**
+ * ONE predicate per step, returning the eligibility AND, when ineligible, WHY.
+ *
+ * LIFECYCLE-GOLIVE-SEMANTICS-W1 R2: a live step re-evaluates its shadow claims against the step's
+ * predicate AS OF NOW and expires the ones it no longer selects — with a reason. Candidate
+ * selection and expiry therefore project from this ONE function; a second "why not" derivation
+ * beside the filter would be the next thing to drift.
+ */
+export type StepVerdict = { eligible: true; periodKey: string } | { eligible: false; reason: string };
+
+/**
  * E1 · activation_nudge — a key that has never been used.
  *
  * `period_key = 'once'` is the point: this is a lifetime-once message. A key that goes on never
@@ -117,38 +127,33 @@ function recipientOf(b: Bucket): LifecycleRecipient {
  * adopted bucket, while a zero meter alone would nudge somebody whose 30-day window merely
  * expired after real use.
  */
-export function activationNudgeCandidates(buckets: Bucket[], now: Date, flipAt?: Date): StepCandidate[] {
+function activationNudgeVerdict(b: Bucket, now: Date, flipAt?: Date): StepVerdict {
   const minAge = now.getTime() - ACTIVATION_MIN_AGE_H * 3600_000;
   // R5: at go-live, the eligible set is capped to recently-issued keys. Nudging somebody about a
   // key they minted eight months ago is a message about a decision they have already made.
   const maxAgeFloor = (flipAt ?? now).getTime() - ACTIVATION_MAX_AGE_D * 86_400_000;
-  return buckets
-    .filter((b) => b.createdAtMs > 0 && b.createdAtMs <= minAge && b.createdAtMs >= maxAgeFloor)
-    .filter((b) => b.lastUsedAtMs === null && b.meter.used === 0)
-    .map((b) => ({ recipient: recipientOf(b), ctx: { ...baseCtx(b), periodKey: 'once' } }));
+  if (!(b.createdAtMs > 0)) return { eligible: false, reason: 'key_age_unknown' };
+  if (b.createdAtMs > minAge) return { eligible: false, reason: 'key_too_new' };
+  if (b.createdAtMs < maxAgeFloor) return { eligible: false, reason: 'key_older_than_30d' };
+  if (b.lastUsedAtMs !== null || b.meter.used !== 0) return { eligible: false, reason: 'key_used' };
+  return { eligible: true, periodKey: 'once' };
 }
 
 /** E2 · quota_80 — at or past 80 % of the allowance, and not yet at the wall. */
-export function quota80Candidates(buckets: Bucket[]): StepCandidate[] {
-  return buckets
-    .filter((b) => b.meter.periodStart !== null && b.meter.total > 0)
-    .filter((b) => b.meter.used >= Math.floor(b.meter.total * QUOTA_80_FRACTION) && b.meter.used < b.meter.total)
-    .map((b) => ({
-      recipient: recipientOf(b),
-      // The period IS the idempotency key: one warning per window, and a new window earns a new
-      // one without any date arithmetic at the call site.
-      ctx: { ...baseCtx(b), periodKey: b.meter.periodStart as string },
-    }));
+function quota80Verdict(b: Bucket): StepVerdict {
+  if (b.meter.periodStart === null || !(b.meter.total > 0)) return { eligible: false, reason: 'no_active_period' };
+  if (b.meter.used < Math.floor(b.meter.total * QUOTA_80_FRACTION)) return { eligible: false, reason: 'below_80pct' };
+  if (b.meter.used >= b.meter.total) return { eligible: false, reason: 'at_wall' };
+  // The period IS the idempotency key: one warning per window, and a new window earns a new
+  // one without any date arithmetic at the call site.
+  return { eligible: true, periodKey: b.meter.periodStart };
 }
 
 /** E3 · quota_wall — at or past the monthly allowance. The DAILY wall never reaches here. */
-export function quotaWallCandidates(buckets: Bucket[]): StepCandidate[] {
-  return buckets
-    .filter((b) => b.meter.periodStart !== null && b.meter.total > 0 && b.meter.used >= b.meter.total)
-    .map((b) => ({
-      recipient: recipientOf(b),
-      ctx: { ...baseCtx(b), periodKey: b.meter.periodStart as string },
-    }));
+function quotaWallVerdict(b: Bucket): StepVerdict {
+  if (b.meter.periodStart === null || !(b.meter.total > 0)) return { eligible: false, reason: 'no_active_period' };
+  if (b.meter.used < b.meter.total) return { eligible: false, reason: 'below_wall' };
+  return { eligible: true, periodKey: b.meter.periodStart };
 }
 
 /**
@@ -163,33 +168,88 @@ export function quotaWallCandidates(buckets: Bucket[]): StepCandidate[] {
  * RECONSTRUCTION, and it is honest about being one — we do not store per-period history, and
  * inventing a table to hold it would be a bigger change than this signal is worth.
  */
+function resetReturnVerdict(b: Bucket, now: Date): StepVerdict {
+  if (b.meter.periodStart === null) return { eligible: false, reason: 'no_active_period' };
+  const startMs = Date.parse(b.meter.periodStart);
+  if (!Number.isFinite(startMs)) return { eligible: false, reason: 'period_unparseable' };
+  // A window that began within the last tick's reach is a fresh one.
+  if (now.getTime() - startMs > 24 * 3600_000) return { eligible: false, reason: 'not_freshly_rolled' };
+  if (b.lastUsedAtMs === null) return { eligible: false, reason: 'never_used' };
+  // Quiet for the last stretch of the previous window, which ended when this one began.
+  if (startMs - b.lastUsedAtMs < RESET_RETURN_SILENT_H * 3600_000) return { eligible: false, reason: 'not_quiet' };
+  return { eligible: true, periodKey: b.meter.periodStart };
+}
+
+/** The step's predicate, for ONE bucket. `product_updates` has no bucket predicate here. */
+export function stepVerdict(step: LifecycleStep, b: Bucket, now: Date, flipAt?: Date): StepVerdict {
+  switch (step) {
+    case 'activation_nudge': return activationNudgeVerdict(b, now, flipAt);
+    case 'quota_80': return quota80Verdict(b);
+    case 'quota_wall': return quotaWallVerdict(b);
+    case 'reset_return': return resetReturnVerdict(b, now);
+    default: return { eligible: false, reason: 'not_a_usage_step' };
+  }
+}
+
+function candidatesOf(step: LifecycleStep, buckets: Bucket[], now: Date, flipAt?: Date): StepCandidate[] {
+  const out: StepCandidate[] = [];
+  for (const b of buckets) {
+    const v = stepVerdict(step, b, now, flipAt);
+    if (v.eligible) out.push({ recipient: recipientOf(b), ctx: { ...baseCtx(b), periodKey: v.periodKey } });
+  }
+  return out;
+}
+
+export function activationNudgeCandidates(buckets: Bucket[], now: Date, flipAt?: Date): StepCandidate[] {
+  return candidatesOf('activation_nudge', buckets, now, flipAt);
+}
+
+export function quota80Candidates(buckets: Bucket[]): StepCandidate[] {
+  return candidatesOf('quota_80', buckets, new Date());
+}
+
+export function quotaWallCandidates(buckets: Bucket[]): StepCandidate[] {
+  return candidatesOf('quota_wall', buckets, new Date());
+}
+
 export function resetReturnCandidates(buckets: Bucket[], now: Date): StepCandidate[] {
-  return buckets
-    .filter((b) => b.meter.periodStart !== null)
-    .filter((b) => {
-      const startMs = Date.parse(b.meter.periodStart as string);
-      if (!Number.isFinite(startMs)) return false;
-      // A window that began within the last tick's reach is a fresh one.
-      const freshlyRolled = now.getTime() - startMs <= 24 * 3600_000;
-      if (!freshlyRolled) return false;
-      if (b.lastUsedAtMs === null) return false;
-      // Quiet for the last stretch of the previous window, which ended when this one began.
-      return startMs - b.lastUsedAtMs >= RESET_RETURN_SILENT_H * 3600_000;
-    })
-    .map((b) => ({
-      recipient: recipientOf(b),
-      ctx: { ...baseCtx(b), periodKey: b.meter.periodStart as string },
-    }));
+  return candidatesOf('reset_return', buckets, now);
+}
+
+/**
+ * Why is (recipient, period) NOT eligible right now? The SAME predicate as the candidate set.
+ *
+ * `not_email_bound` — the key left the email-bound set (deleted, or its address removed).
+ * `period_rolled`   — still eligible, but for a NEWER period: the claim's window has ended.
+ */
+export function explainAgainst(
+  step: LifecycleStep, buckets: Bucket[], now: Date, flipAt?: Date,
+): (recipientId: string, periodKey: string) => string {
+  const byKey = new Map(buckets.map((b) => [b.apiKey, b]));
+  return (recipientId, periodKey) => {
+    const b = byKey.get(recipientId);
+    if (!b) return 'not_email_bound';
+    const v = stepVerdict(step, b, now, flipAt);
+    if (!v.eligible) return v.reason;
+    return v.periodKey === periodKey ? 'eligible' : 'period_rolled';
+  };
+}
+
+/**
+ * What the dispatcher consumes: the eligible set, plus the ONE predicate's answer for anybody
+ * outside it. `explain` returns why a recipient/period is NOT eligible right now.
+ */
+export interface StepEvaluation {
+  candidates: StepCandidate[];
+  explain: (recipientId: string, periodKey: string) => string;
+}
+
+export async function evaluateStep(step: LifecycleStep, now: Date, flipAt?: Date): Promise<StepEvaluation> {
+  const buckets = await loadBuckets();
+  return { candidates: candidatesOf(step, buckets, now, flipAt), explain: explainAgainst(step, buckets, now, flipAt) };
 }
 
 /** The registry the dispatcher consumes. Keys are steps; values produce candidates. */
 export async function candidatesFor(step: LifecycleStep, now: Date, flipAt?: Date): Promise<StepCandidate[]> {
-  const buckets = await loadBuckets();
-  switch (step) {
-    case 'activation_nudge': return activationNudgeCandidates(buckets, now, flipAt);
-    case 'quota_80': return quota80Candidates(buckets);
-    case 'quota_wall': return quotaWallCandidates(buckets);
-    case 'reset_return': return resetReturnCandidates(buckets, now);
-    default: return [];
-  }
+  return candidatesOf(step, await loadBuckets(), now, flipAt);
 }

@@ -35,7 +35,9 @@ async function seed(step: string, rows: { status: string; recipient: string; per
 }
 
 describe('the day-7 flip, green path', () => {
-  beforeEach(freshEnv);
+  // Evidence legs, with the master declared permitted: since LIFECYCLE-GOLIVE-SEMANTICS-W1 the
+  // master is the FIRST leg and has its own tests (lifecycle-golive-semantics.test.ts).
+  beforeEach(() => { freshEnv(); process.env.LIFECYCLE_MODE = 'live-permitted'; });
 
   it('a step with evidence and an elapsed clock goes LIVE', async () => {
     const eng = await import('../../src/lib/lifecycle/engine.js');
@@ -71,11 +73,20 @@ describe('the day-7 flip, green path', () => {
 describe('rollbackReason — the first 72h', () => {
   beforeEach(freshEnv);
 
+  // LIFECYCLE-GOLIVE-SEMANTICS-W1: the window is keyed on the step's FIRST REAL SEND, carried on
+  // the row as `window` (built by `rollbackWindow`), never on hours since `live_since`.
+  const armed = (h: number) => {
+    const opened = Date.now() - h * 3_600_000;
+    return { status: 'armed', opensAt: new Date(opened).toISOString(),
+             closesAt: new Date(opened + 72 * 3_600_000).toISOString(), hoursOpen: h };
+  };
   const row = (over: Record<string, unknown> = {}) => ({
-    step: 'quota_80', wouldSend: 0, sent: 100, failed: 0, suppressed: 0, capped: 0,
-    recipients: 100, duplicates: 0, firstAt: null, lastAt: null, liveHours: 10,
+    step: 'quota_80', wouldSend: 0, sent: 100, failed: 0, suppressed: 0, capped: 0, expired: 0,
+    recipients: 100, duplicates: 0, firstAt: null, lastAt: null,
+    liveState: 'live', window: armed(10),
     bounces: 0, unsubs: 0,
     state: { step: 'quota_80', first_would_send_at: null, live_since: new Date().toISOString(),
+             first_sent_at: new Date().toISOString(),
              canary_batch_done: true, rolled_back_at: null, rollback_reason: null },
     ...over,
   }) as never;
@@ -106,14 +117,14 @@ describe('rollbackReason — the first 72h', () => {
     // The window is a launch guard, not a permanent tripwire — steady-state deliverability is
     // the health canary's job, and leaving this armed forever would make one bad week
     // retroactively un-ship a step that has been fine for months.
-    expect(rollbackReason(row({ bounces: 50, liveHours: 73 }))).toBeNull();
+    expect(rollbackReason(row({ bounces: 50, window: { ...armed(73), status: 'closed' } }))).toBeNull();
   });
 
   it('a step still in SHADOW can never roll back', async () => {
     const { rollbackReason } = await import('../../src/scripts/lifecycle-readout.js');
     expect(rollbackReason(row({
-      bounces: 99,
-      state: { step: 'quota_80', first_would_send_at: null, live_since: null,
+      bounces: 99, liveState: 'shadow',
+      state: { step: 'quota_80', first_would_send_at: null, live_since: null, first_sent_at: null,
                canary_batch_done: false, rolled_back_at: null, rollback_reason: null },
     }))).toBeNull();
   });

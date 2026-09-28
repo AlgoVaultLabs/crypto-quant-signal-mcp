@@ -7,11 +7,24 @@
  * ledger that recorded only successes could not answer "who did we decline to mail, and why",
  * which is the question shadow mode exists to answer.
  */
+import { randomUUID } from 'node:crypto';
 import { dbQuery, dbRun, awaitDbWrites } from '../performance-db.js';
 import { ensureLifecycleSchema } from './schema.js';
 import { LIFECYCLE_STEPS, type LifecycleStep } from '../lifecycle-copy.js';
 
-export type SendStatus = 'would_send' | 'sent' | 'failed' | 'suppressed' | 'capped';
+export type SendStatus = 'would_send' | 'sent' | 'failed' | 'suppressed' | 'capped' | 'expired';
+
+/**
+ * `would_send` is a SHADOW CLAIM, not an outcome (LIFECYCLE-GOLIVE-SEMANTICS-W1 R2). While its
+ * step is in shadow it is final; once the step is live, the dispatcher re-evaluates it against the
+ * step predicate AS OF NOW and moves the SAME row to `sent` (one send per tuple, ever) or to
+ * `expired` with a reason. Every other status is terminal. Before this, `findSlot` treated the
+ * claim as terminal too, so a recipient rendered in shadow could never be mailed — measured: all 16
+ * `activation_nudge` rows on signal-1, 2026-09-28.
+ */
+export function isShadowClaim(row: { status: string } | null): boolean {
+  return !!row && row.status === 'would_send';
+}
 
 export interface LedgerRow {
   id: number;
@@ -28,6 +41,7 @@ export interface LedgerRow {
   error: string | null;
   attempts: number;
   created_at: string;
+  expired_reason?: string | null;
 }
 
 const NOW_SQL = process.env.DATABASE_URL ? 'NOW()' : "datetime('now')";
@@ -214,6 +228,75 @@ export async function markFailed(id: number, error: string): Promise<void> {
   );
 }
 
+/**
+ * Record a real send: the row, then the step's FIRST-SEND stamp, then SETTLE both.
+ *
+ * `first_sent_at` is what the 72 h rollback window opens on (R1). It is stamped from here and only
+ * here — the one place a Resend acceptance is recorded — so the window can never open on a shadow
+ * write, a claim, or a flip. Settled before returning because `dbRun` is fire-and-forget on
+ * Postgres, and the NEXT read in the same tick (a cap count, the retry drain) must see `sent`.
+ */
+export async function recordSent(id: number, step: LifecycleStep, resendId: string | null, atIso: string): Promise<void> {
+  await markSent(id, resendId);
+  await stampFirstSent(step, atIso);
+  await awaitDbWrites();
+}
+
+/** Shadow claims of ONE step, oldest first — the order a live step consumes them in. */
+export async function listShadowClaims(step: LifecycleStep): Promise<LedgerRow[]> {
+  ensureLifecycleSchema();
+  return dbQuery<LedgerRow>(
+    `SELECT * FROM lifecycle_sends WHERE step = ? AND status = 'would_send' ORDER BY created_at ASC, id ASC`,
+    [step],
+  );
+}
+
+/**
+ * Take a shadow claim for a live send: `would_send` → the in-flight shape a fresh live claim has
+ * (`failed`, attempts 0), refreshed with the bytes about to be sent.
+ *
+ * A COMPARE-AND-SET, because two overlapping ticks must not both send it. The UPDATE only matches
+ * while the row is still `would_send`, and a per-call token in `error` says WHICH caller won — the
+ * SQLite wrapper surfaces no row count and no RETURNING, so the token is the honest signal. The
+ * loser reads someone else's token and reports `already_handled`. `markSent` / `markFailed` then
+ * overwrite `error`, exactly as for a fresh claim, so no token survives a settled row.
+ */
+export async function consumeClaim(id: number, next: {
+  emailHash: string; recipientEmail: string; subject: string; html: string; text: string;
+}): Promise<LedgerRow | null> {
+  ensureLifecycleSchema();
+  const token = `consuming:${randomUUID()}`;
+  dbRun(
+    `UPDATE lifecycle_sends
+        SET status = 'failed', attempts = 0, error = ?, email_hash = ?, recipient_email = ?,
+            rendered_subject = ?, rendered_html = ?, rendered_text = ?, updated_at = ${NOW_SQL}
+      WHERE id = ? AND status = 'would_send'`,
+    token, next.emailHash, next.recipientEmail, next.subject, next.html, next.text, id,
+  );
+  await awaitDbWrites();
+  const rows = await dbQuery<LedgerRow>('SELECT * FROM lifecycle_sends WHERE id = ?', [id]);
+  const row = rows[0] ?? null;
+  return row && row.error === token ? row : null;
+}
+
+/**
+ * Close a shadow claim WITHOUT a send. `suppressed` / `capped` are the same outcomes a fresh claim
+ * gets from the same gates; `expired` means the step predicate no longer selects the recipient.
+ * Only ever moves a row that is still `would_send` — a terminal outcome is never rewritten.
+ */
+export async function closeClaim(
+  id: number, status: 'suppressed' | 'capped' | 'expired', reason: string | null = null,
+): Promise<void> {
+  ensureLifecycleSchema();
+  dbRun(
+    `UPDATE lifecycle_sends
+        SET status = ?, expired_reason = ?, recipient_email = NULL, updated_at = ${NOW_SQL}
+      WHERE id = ? AND status = 'would_send'`,
+    status, status === 'expired' ? (reason ?? 'no_longer_eligible').slice(0, 120) : null, id,
+  );
+  await awaitDbWrites();
+}
+
 /** Rows a retry tick should pick up: failed, and not yet at the attempt ceiling. */
 export async function listRetryable(maxAttempts: number, limit: number): Promise<LedgerRow[]> {
   ensureLifecycleSchema();
@@ -235,24 +318,27 @@ export async function listRetryable(maxAttempts: number, limit: number): Promise
 
 const DELIVERED_STATUSES = "('sent','would_send')";
 
-export async function countDeliveredSince(emailHash: string, sinceIso: string): Promise<number> {
+// `excludeId` — a claim being CONSUMED is the very message about to be sent, not an additional
+// one, so it must not count against its own caps: a claim written earlier the same UTC day would
+// otherwise read `daily_cap` against itself (LIFECYCLE-GOLIVE-SEMANTICS-W1 R2).
+export async function countDeliveredSince(emailHash: string, sinceIso: string, excludeId?: number): Promise<number> {
   ensureLifecycleSchema();
   const rows = await dbQuery<{ c: number | string }>(
     `SELECT COUNT(*) AS c FROM lifecycle_sends
-      WHERE email_hash = ? AND status IN ${DELIVERED_STATUSES} AND created_at >= ?`,
-    [emailHash, sinceIso],
+      WHERE email_hash = ? AND status IN ${DELIVERED_STATUSES} AND created_at >= ? AND id <> ?`,
+    [emailHash, sinceIso, excludeId ?? -1],
   );
   return Number(rows[0]?.c ?? 0);
 }
 
 export async function countDeliveredStepSince(
-  emailHash: string, step: LifecycleStep, sinceIso: string,
+  emailHash: string, step: LifecycleStep, sinceIso: string, excludeId?: number,
 ): Promise<number> {
   ensureLifecycleSchema();
   const rows = await dbQuery<{ c: number | string }>(
     `SELECT COUNT(*) AS c FROM lifecycle_sends
-      WHERE email_hash = ? AND step = ? AND status IN ${DELIVERED_STATUSES} AND created_at >= ?`,
-    [emailHash, step, sinceIso],
+      WHERE email_hash = ? AND step = ? AND status IN ${DELIVERED_STATUSES} AND created_at >= ? AND id <> ?`,
+    [emailHash, step, sinceIso, excludeId ?? -1],
   );
   return Number(rows[0]?.c ?? 0);
 }
@@ -264,6 +350,8 @@ export interface StepState {
   // `string | Date`: SQLite returns TEXT, node-postgres returns a Date. Never assume one.
   first_would_send_at: string | Date | null;
   live_since: string | Date | null;
+  /** The step's first REAL send. The rollback window opens here (R1); NULL ⇒ not opened. */
+  first_sent_at: string | Date | null;
   canary_batch_done: boolean;
   rolled_back_at: string | Date | null;
   rollback_reason: string | null;
@@ -276,12 +364,13 @@ export async function getStepState(step: LifecycleStep): Promise<StepState> {
   );
   const r = rows[0];
   if (!r) {
-    return { step, first_would_send_at: null, live_since: null, canary_batch_done: false, rolled_back_at: null, rollback_reason: null };
+    return { step, first_would_send_at: null, live_since: null, first_sent_at: null, canary_batch_done: false, rolled_back_at: null, rollback_reason: null };
   }
   return {
     step,
     first_would_send_at: (r.first_would_send_at as string | Date) ?? null,
     live_since: (r.live_since as string | Date) ?? null,
+    first_sent_at: (r.first_sent_at as string | Date) ?? null,
     // SQLite stores booleans as 0/1; PG returns a real boolean. One coercion, here.
     canary_batch_done: r.canary_batch_done === true || r.canary_batch_done === 1 || r.canary_batch_done === '1',
     rolled_back_at: (r.rolled_back_at as string | Date) ?? null,
@@ -309,12 +398,30 @@ export async function stampFirstWouldSend(step: LifecycleStep, atIso: string): P
   );
 }
 
+/**
+ * Light a step. A (re-)light RE-ARMS the debut guards: the canary batch and the rollback window
+ * belong to the step's next first send, never to an earlier life — a re-lit step that kept its old
+ * `first_sent_at` would debut with an already-expired window, the exact defect R1 retires.
+ */
 export async function setStepLive(step: LifecycleStep, atIso: string): Promise<void> {
   ensureLifecycleSchema();
+  const FALSE = process.env.DATABASE_URL ? 'FALSE' : '0';
   dbRun(
     `INSERT INTO lifecycle_step_state (step, live_since, canary_batch_done, rolled_back_at, rollback_reason)
-     VALUES (?, ?, ${process.env.DATABASE_URL ? 'FALSE' : '0'}, NULL, NULL)
-     ON CONFLICT (step) DO UPDATE SET live_since = ?, rolled_back_at = NULL, rollback_reason = NULL, updated_at = ${NOW_SQL}`,
+     VALUES (?, ?, ${FALSE}, NULL, NULL)
+     ON CONFLICT (step) DO UPDATE SET live_since = ?, rolled_back_at = NULL, rollback_reason = NULL,
+       first_sent_at = NULL, canary_batch_done = ${FALSE}, updated_at = ${NOW_SQL}`,
+    step, atIso, atIso,
+  );
+}
+
+/** Stamp the step's first REAL send, once. `WHERE … IS NULL` makes it write-once. */
+export async function stampFirstSent(step: LifecycleStep, atIso: string): Promise<void> {
+  ensureLifecycleSchema();
+  dbRun(
+    `INSERT INTO lifecycle_step_state (step, first_sent_at) VALUES (?, ?)
+     ON CONFLICT (step) DO UPDATE SET first_sent_at = ?, updated_at = ${NOW_SQL}
+      WHERE lifecycle_step_state.first_sent_at IS NULL`,
     step, atIso, atIso,
   );
 }

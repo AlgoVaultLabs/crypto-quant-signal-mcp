@@ -59,6 +59,8 @@ import {
 import { countsInActiveCensus } from './subscriber-status.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** LIFECYCLE-GOLIVE-SEMANTICS-W1 R5 — the identity-claim rate's ONE window. */
+const IDENTITY_CLAIM_WINDOW_DAYS = 30;
 const RETENTION_WINDOWS_DAYS = [7, 14, 30, 90] as const;
 
 // ── Pure helpers (exported for unit tests — AC4) ──────────────────────────────
@@ -1013,11 +1015,19 @@ export interface FunnelScoreboard {
    * column is nullable.
    */
   lifecycle: {
-    sends_by_step: Array<{ step: string; would_send: number; sent: number; suppressed: number; capped: number; state: string }>;
+    /** `state` projects from the engine's ONE liveness predicate (LIFECYCLE-GOLIVE-SEMANTICS-W1 R3):
+     *  live · blocked-master · shadow · rolled-back. `expired` is add-only (R2). */
+    sends_by_step: Array<{ step: string; would_send: number; sent: number; suppressed: number; capped: number; expired: number; state: string }>;
+    /** The global master (`LIFECYCLE_MODE`) as this process resolves it. Add-only. */
+    master_mode: string;
     unsubscribes: number;
     bounces_complaints: number;
     bounce_rate_pct: number | null;
+    /** UNCHANGED (add-only discipline). `bound` is ALL-TIME; `activated` is the selected window —
+     *  so `pct` mixes windows and is rendered as `identity_claims_all_time` (the count), not a rate. */
     identity_claim_rate: { bound: number; activated: number; pct: number | null };
+    /** R5: numerator AND denominator on the SAME 30-day window, independent of the selected one. */
+    identity_claim_rate_30d: { bound: number; activated: number; pct: number | null; window_days: number };
     attributed_upgrades: number | null;
     elicitation: { handshaking: number; capable: number; no_handshake: number; capable_share: number | null; low_sample: boolean };
   };
@@ -1032,20 +1042,23 @@ export interface FunnelScoreboard {
  * construction until a step's own day-7 clock elapses. That is why the STATE is rendered beside
  * the counts — `shadow` next to a zero reads as "not lit yet", where a bare 0 reads as "broken".
  */
-async function computeLifecyclePanel(
+export async function computeLifecyclePanel(
   deps: ScoreboardDeps,
   thresholdMs: number,
   warnings: string[],
 ): Promise<FunnelScoreboard['lifecycle']> {
   const empty: FunnelScoreboard['lifecycle'] = {
-    sends_by_step: [], unsubscribes: 0, bounces_complaints: 0, bounce_rate_pct: null,
+    sends_by_step: [], master_mode: 'shadow', unsubscribes: 0, bounces_complaints: 0, bounce_rate_pct: null,
     identity_claim_rate: { bound: 0, activated: 0, pct: null },
+    identity_claim_rate_30d: { bound: 0, activated: 0, pct: null, window_days: IDENTITY_CLAIM_WINDOW_DAYS },
     attributed_upgrades: null,
     elicitation: { handshaking: 0, capable: 0, no_handshake: 0, capable_share: null, low_sample: true },
   };
   try {
     const { LIFECYCLE_STEPS } = await import('./lifecycle-copy.js');
     const { listStepStates } = await import('./lifecycle/ledger.js');
+    const { resolveMode, stepLiveState } = await import('./lifecycle/engine.js');
+    const mode = resolveMode();
     const { readCensus } = await import('./lifecycle/census.js');
     const states = new Map((await listStepStates()).map((st) => [st.step, st]));
 
@@ -1057,8 +1070,10 @@ async function computeLifecyclePanel(
       return {
         step,
         would_send: of('would_send'), sent: of('sent'),
-        suppressed: of('suppressed'), capped: of('capped'),
-        state: s2?.rolled_back_at ? 'rolled-back' : s2?.live_since ? 'live' : 'shadow',
+        suppressed: of('suppressed'), capped: of('capped'), expired: of('expired'),
+        // The ONE predicate. The copy this replaced read `live_since` alone and showed `live`
+        // for 12 days while the master held every send (measured 2026-09-28).
+        state: stepLiveState(mode, s2 ?? { live_since: null, rolled_back_at: null }),
       };
     });
 
@@ -1079,6 +1094,20 @@ async function computeLifecyclePanel(
     const bound = Number(boundRows[0]?.c ?? 0);
     const activated = Number(activatedRows[0]?.c ?? 0);
 
+    // R5 — the same ratio on ONE window. MEASURED 2026-09-28: the row above divided 44 all-time
+    // claims by 144 sessions from the 30D window (30.6 %); the windowed value was 14 / 144 = 9.7 %.
+    // Both reads below take the SAME instant; the ISO/epoch-ms split is only the two tables'
+    // column types (`free_keys.created_at` timestamp, `agent_sessions.first_seen` epoch-ms).
+    const since30 = deps.now() - IDENTITY_CLAIM_WINDOW_DAYS * DAY_MS;
+    const bound30Rows = await deps.query<{ c: number | string }>(
+      `SELECT COUNT(*) AS c FROM free_keys WHERE email IS NOT NULL AND email <> '' AND created_at >= ?`,
+      [new Date(since30).toISOString()]);
+    const activated30Rows = await deps.query<{ c: number | string }>(
+      `SELECT COUNT(*) AS c FROM agent_sessions WHERE call_count >= 1 AND first_tier <> 'internal' AND first_seen >= ?`,
+      [since30]);
+    const bound30 = Number(bound30Rows[0]?.c ?? 0);
+    const activated30 = Number(activated30Rows[0]?.c ?? 0);
+
     // Lifecycle-attributed upgrades ride W1's Stripe metadata. NULL rather than 0 when the
     // column is unavailable: "we could not tell" and "there were none" are different findings.
     let attributed_upgrades: number | null = null;
@@ -1095,7 +1124,11 @@ async function computeLifecyclePanel(
       unsubscribes,
       bounces_complaints,
       bounce_rate_pct: totalSent > 0 ? (bounces_complaints / totalSent) * 100 : null,
+      master_mode: mode,
       identity_claim_rate: { bound, activated, pct: safeRatio(bound, activated) },
+      identity_claim_rate_30d: {
+        bound: bound30, activated: activated30, pct: safeRatio(bound30, activated30), window_days: IDENTITY_CLAIM_WINDOW_DAYS,
+      },
       attributed_upgrades,
       elicitation: {
         handshaking: census.handshaking, capable: census.capable,

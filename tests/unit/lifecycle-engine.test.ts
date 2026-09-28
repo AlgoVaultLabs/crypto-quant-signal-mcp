@@ -211,7 +211,11 @@ describe('frequency caps', () => {
 });
 
 describe('per-step go-live blocker (architect Q1(A))', () => {
-  beforeEach(freshEnv);
+  // These pin the EVIDENCE legs. Since LIFECYCLE-GOLIVE-SEMANTICS-W1 the global master is the
+  // FIRST leg (its own tests: lifecycle-golive-semantics.test.ts), so the master is declared
+  // permitted here — with it unset, every one of these would now report
+  // `master_not_live_permitted` first, which is exactly the defect that wave fixed.
+  beforeEach(() => { freshEnv(); process.env.LIFECYCLE_MODE = 'live-permitted'; });
 
   const OK = { duplicates: 0, wouldSendCount: 1, healthPass: true, unsubSelfTestPass: true };
 
@@ -312,6 +316,7 @@ describe('parseDbTimestamp — the shapes each backend actually returns', () => 
   });
 
   it('the go-live clock elapses when the stamp arrives as a Date', async () => {
+    process.env.LIFECYCLE_MODE = 'live-permitted'; // evidence legs only — the master is its own leg
     const eng = await import('../../src/lib/lifecycle/engine.js');
     const led = await import('../../src/lib/lifecycle/ledger.js');
     const { ensureLifecycleSchema } = await import('../../src/lib/lifecycle/schema.js');
@@ -349,6 +354,7 @@ describe('parseDbTimestamp — the shapes each backend actually returns', () => 
 
   it('the go-live clock ELAPSES against a Postgres-shaped stamp', async () => {
     // The end-to-end version of the bug: a PG timestamp must let a step reach day 7.
+    process.env.LIFECYCLE_MODE = 'live-permitted'; // evidence legs only — the master is its own leg
     const eng = await import('../../src/lib/lifecycle/engine.js');
     const { dbRun } = await import('../../src/lib/performance-db.js');
     const { ensureLifecycleSchema } = await import('../../src/lib/lifecycle/schema.js');

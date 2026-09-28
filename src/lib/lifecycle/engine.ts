@@ -24,8 +24,9 @@
 import { hashEmail } from './identity.js';
 import { isSuppressed } from './suppression.js';
 import {
-  claimSlot, findSlot, markSent, markFailed, countDeliveredSince, countDeliveredStepSince,
-  getStepState, stampFirstWouldSend, parseDbTimestamp, type SendStatus,
+  claimSlot, findSlot, markFailed, countDeliveredSince, countDeliveredStepSince,
+  getStepState, stampFirstWouldSend, parseDbTimestamp, isShadowClaim, consumeClaim, closeClaim,
+  recordSent, type SendStatus, type LedgerRow, type StepState,
 } from './ledger.js';
 import { renderLifecycleEmail, scanOutboundCredentials } from './render.js';
 import { unsubscribeUrl as buildUnsubUrl } from './identity.js';
@@ -52,6 +53,61 @@ export function resolveMode(env: NodeJS.ProcessEnv = process.env): LifecycleMode
   if (raw === 'off') return 'off';
   if (raw === 'live-permitted' || raw === 'live') return 'live-permitted';
   return 'shadow';
+}
+
+/**
+ * THE one predicate behind "live" (LIFECYCLE-GOLIVE-SEMANTICS-W1 R3).
+ *
+ * A step is live only when the global master permits AND the step's own evidence stamp exists —
+ * "per-step live requires both" (W3 rev-2 ruling). MEASURED 2026-09-28: six call sites derived
+ * "live" from `live_since` alone, so for 12 days the deciding cron printed `LIVE lit=1`, the
+ * dispatcher heartbeat said `live_steps=1`, and the dashboard said `live` while the send path —
+ * the only one that read the master — sent nothing. Every consumer now projects from this.
+ *
+ *   live            master `live-permitted` AND `live_since` set — the send path mails
+ *   blocked-master  `live_since` set, master NOT `live-permitted` — evidence passed, nothing sends
+ *   rolled-back     a breach returned the step to shadow; a human clears it
+ *   shadow          no stamp yet
+ */
+export type StepLiveState = 'live' | 'blocked-master' | 'shadow' | 'rolled-back';
+
+export function stepLiveState(
+  mode: LifecycleMode, state: { live_since: unknown; rolled_back_at: unknown },
+): StepLiveState {
+  if (state.live_since) return mode === 'live-permitted' ? 'live' : 'blocked-master';
+  if (state.rolled_back_at) return 'rolled-back';
+  return 'shadow';
+}
+
+export function isStepLive(mode: LifecycleMode, state: { live_since: unknown; rolled_back_at: unknown }): boolean {
+  return stepLiveState(mode, state) === 'live';
+}
+
+/** The auto-rollback guard's length, from the step's FIRST REAL SEND (R1). */
+export const ROLLBACK_WINDOW_H = 72;
+
+export type RollbackWindow =
+  | { status: 'not_opened' }
+  | { status: 'armed' | 'closed'; opensAt: string; closesAt: string; hoursOpen: number };
+
+/**
+ * The rollback window, keyed on `first_sent_at` — never on `live_since`.
+ *
+ * A window that opens at the go-live STAMP can expire before anything is sent: measured on
+ * `activation_nudge`, stamped 2026-09-16, master blocked, window "72 h" already 291 h old on
+ * 2026-09-28 — its debut would have run with no auto-rollback. Before the first send the window is
+ * `not_opened`; it is never read as expired.
+ */
+export function rollbackWindow(state: { first_sent_at: unknown }, now: Date): RollbackWindow {
+  const opened = parseDbTimestamp(state.first_sent_at);
+  if (!Number.isFinite(opened)) return { status: 'not_opened' };
+  const closes = opened + ROLLBACK_WINDOW_H * 3600_000;
+  return {
+    status: now.getTime() <= closes ? 'armed' : 'closed',
+    opensAt: new Date(opened).toISOString(),
+    closesAt: new Date(closes).toISOString(),
+    hoursOpen: Math.floor((now.getTime() - opened) / 3600_000),
+  };
 }
 
 export interface LifecycleRecipient {
@@ -110,16 +166,33 @@ export async function sendLifecycle(
     return { status: 'skipped', reason: 'hash_key_unusable' };
   }
 
+  // The step's liveness, ONCE, from the one predicate. Gate 2 needs it: a shadow claim is only
+  // consumable while its step is live.
+  const state = await getStepState(step);
+  const live = isStepLive(mode, state);
+
   // ── 2. Idempotency FIRST. A slot with an outcome already recorded is finished, and no later
   // gate may overwrite that verdict. Ordering matters: evaluated after the caps, a re-run over
   // an already-sent slot matches its OWN earlier send in the daily window and reports `capped`.
+  //
+  // A `would_send` row is the one exception (R2): it is a SHADOW CLAIM, and once the step is live
+  // the claim is CONSUMED — the same row carries the real send, so there is still exactly one
+  // message per (recipient, step, period). In shadow the claim stays final.
   const existing = await findSlot(recipient.recipientId, step, ctx.periodKey);
+  let claim: LedgerRow | null = null;
   if (existing) {
-    return { status: 'skipped', reason: 'already_handled', ledgerId: existing.id };
+    if (!(live && isShadowClaim(existing))) {
+      return { status: 'skipped', reason: 'already_handled', ledgerId: existing.id };
+    }
+    claim = existing;
   }
 
   // ── 3. Suppression (fail-closed inside isSuppressed).
   if (await isSuppressed(emailHash, step)) {
+    if (claim) {
+      await closeClaim(claim.id, 'suppressed');
+      return { status: 'suppressed', ledgerId: claim.id };
+    }
     const { row } = await claimSlot({
       recipientId: recipient.recipientId, emailHash, recipientEmail: null,
       step, periodKey: ctx.periodKey, status: 'suppressed', now,
@@ -127,14 +200,27 @@ export async function sendLifecycle(
     return { status: 'suppressed', ledgerId: row?.id };
   }
 
-  // ── 4. Frequency caps.
-  const capReason = await capReasonFor(step, emailHash, now);
+  // ── 4. Frequency caps. A consumed claim is excluded from its own count — it IS this message.
+  const capReason = await capReasonFor(step, emailHash, now, claim?.id);
   if (capReason) {
+    if (claim) {
+      await closeClaim(claim.id, 'capped');
+      return { status: 'capped', reason: capReason, ledgerId: claim.id };
+    }
     const { row } = await claimSlot({
       recipientId: recipient.recipientId, emailHash, recipientEmail: null,
       step, periodKey: ctx.periodKey, status: 'capped', now,
     });
     return { status: 'capped', reason: capReason, ledgerId: row?.id };
+  }
+
+  // ── 4b. Canary budget — BEFORE any write. An over-budget candidate leaves NO trace: a claim
+  // stays `would_send`, a new candidate stays unclaimed, and both are simply eligible next tick.
+  // MEASURED defect this replaces: over-budget candidates used to be claimed as `failed`
+  // ("canary_budget_exhausted_this_tick", attempts 1), and the SAME tick's retry drain then resent
+  // every one of them — 7 eligible on a first live tick sent 7, not the approved <= 5.
+  if (live && typeof opts.liveBudget === 'number' && opts.liveBudget <= 0) {
+    return { status: 'skipped', reason: 'canary_budget' };
   }
 
   // ── 5. Render. Done BEFORE the mode branch on purpose: shadow mode's whole value is that the
@@ -161,39 +247,41 @@ export async function sendLifecycle(
   }
 
   // ── 6. Claim the slot. The read above is not the safety mechanism — this is: two ticks
-  // overlapping both pass the read, and only ON CONFLICT decides which one owns the slot.
-  const state = await getStepState(step);
-  const stepIsLive = mode === 'live-permitted' && !!state.live_since;
-  const initialStatus: SendStatus = stepIsLive ? 'failed' : 'would_send';
-  const { row } = await claimSlot({
-    recipientId: recipient.recipientId, emailHash,
-    // Plaintext ONLY where an identity table already holds it — which `identityBound` asserts.
-    recipientEmail: recipient.email,
-    step, periodKey: ctx.periodKey,
-    // In live mode the row starts as `failed` and is promoted on Resend's acceptance. Starting
-    // it as `sent` and demoting on error would record a send that never happened if the process
-    // died between the INSERT and the API call.
-    status: initialStatus, now,
-    subject: rendered.subject, html: rendered.html, text: rendered.text,
-  });
-  if (!row) return { status: 'skipped', reason: 'ledger_unavailable' };
-  if (row.status !== initialStatus || Number(row.attempts) > 0) {
-    return { status: 'skipped', reason: 'already_handled', ledgerId: row.id };
+  // overlapping both pass the read, and only ON CONFLICT (a fresh slot) or the compare-and-set
+  // (a consumed claim) decides which one owns it.
+  let row: LedgerRow | null;
+  if (claim) {
+    row = await consumeClaim(claim.id, {
+      emailHash, recipientEmail: recipient.email,
+      subject: rendered.subject, html: rendered.html, text: rendered.text,
+    });
+    if (!row) return { status: 'skipped', reason: 'already_handled', ledgerId: claim.id };
+  } else {
+    const initialStatus: SendStatus = live ? 'failed' : 'would_send';
+    const claimed = await claimSlot({
+      recipientId: recipient.recipientId, emailHash,
+      // Plaintext ONLY where an identity table already holds it — which `identityBound` asserts.
+      recipientEmail: recipient.email,
+      step, periodKey: ctx.periodKey,
+      // In live mode the row starts as `failed` and is promoted on Resend's acceptance. Starting
+      // it as `sent` and demoting on error would record a send that never happened if the process
+      // died between the INSERT and the API call.
+      status: initialStatus, now,
+      subject: rendered.subject, html: rendered.html, text: rendered.text,
+    });
+    row = claimed.row;
+    if (!row) return { status: 'skipped', reason: 'ledger_unavailable' };
+    if (row.status !== initialStatus || Number(row.attempts) > 0) {
+      return { status: 'skipped', reason: 'already_handled', ledgerId: row.id };
+    }
+    if (!live) {
+      // Start THIS step's own 7-day clock on its first would_send. Write-once.
+      await stampFirstWouldSend(step, now.toISOString());
+      return { status: 'would_send', ledgerId: row.id, subject: rendered.subject };
+    }
   }
 
-  if (!stepIsLive) {
-    // Start THIS step's own 7-day clock on its first would_send. Write-once.
-    await stampFirstWouldSend(step, now.toISOString());
-    return { status: 'would_send', ledgerId: row.id, subject: rendered.subject };
-  }
-
-  // ── 7. Live. Canary budget is enforced by the dispatcher; a budget of 0 here means the step
-  // has already spent its canary allowance this tick.
-  if (typeof opts.liveBudget === 'number' && opts.liveBudget <= 0) {
-    await markFailed(row.id, 'canary_budget_exhausted_this_tick');
-    return { status: 'failed', reason: 'canary_budget', ledgerId: row.id };
-  }
-
+  // ── 7. Live. The canary budget was enforced at 4b, before anything was written.
   try {
     const resendId = await sendLifecycleMessage({
       to: recipient.email,
@@ -204,7 +292,8 @@ export async function sendLifecycle(
       step,
       idempotencyKey: `${recipient.recipientId}|${step}|${ctx.periodKey}`,
     });
-    await markSent(row.id, resendId);
+    // Records the send AND opens the step's rollback window on its first real send (R1).
+    await recordSent(row.id, step, resendId, now.toISOString());
     return { status: 'sent', ledgerId: row.id, subject: rendered.subject };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -215,34 +304,45 @@ export async function sendLifecycle(
 
 /** Which cap, if any, refuses this send right now. Null ⇒ no cap applies. */
 export async function capReasonFor(
-  step: LifecycleStep, emailHash: string, now: Date,
+  step: LifecycleStep, emailHash: string, now: Date, excludeId?: number,
 ): Promise<string | null> {
   if (step === 'product_updates') {
     // Calendar month, not a rolling 30 days — the opt-in checkbox promises "~1/mo", and the
     // digest batches every unsent README block into one message, so a calendar cadence is what
     // was actually consented to.
-    const thisMonth = await countDeliveredStepSince(emailHash, step, monthStartIso(now));
+    const thisMonth = await countDeliveredStepSince(emailHash, step, monthStartIso(now), excludeId);
     if (thisMonth >= DIGEST_CAP_PER_MONTH) return 'digest_monthly_cap';
   }
-  const today = await countDeliveredSince(emailHash, utcDayStartIso(now));
+  const today = await countDeliveredSince(emailHash, utcDayStartIso(now), excludeId);
   if (today >= CAP_PER_UTC_DAY) return 'daily_cap';
-  const week = await countDeliveredSince(emailHash, daysAgoIso(now, 7));
+  const week = await countDeliveredSince(emailHash, daysAgoIso(now, 7), excludeId);
   if (week >= CAP_PER_7_DAYS) return 'weekly_cap';
   return null;
 }
 
+/** The master leg's refusal. FIRST in `stepGoLiveBlocker`, so a held step can never read "go". */
+export const MASTER_BLOCKER = 'master_not_live_permitted';
+
 /**
- * May this step go live now? Returns the reason it may NOT, or null when every condition holds.
- *
- * Deliberately a pure-ish predicate the CH2 readout calls — the flip itself is that cron's act,
- * never a human's and never this module's.
+ * The facts the deciding cron measures before deciding. `null` = NOT MEASURED in this run (the
+ * read-only `--report` twin measures neither), which is reported as such — never as a pass.
  */
-export async function stepGoLiveBlocker(
-  step: LifecycleStep,
-  facts: { duplicates: number; wouldSendCount: number; healthPass: boolean; unsubSelfTestPass: boolean },
-  now: Date = new Date(),
-): Promise<string | null> {
-  const state = await getStepState(step);
+export interface GoLiveFacts {
+  duplicates: number;
+  wouldSendCount: number;
+  healthPass: boolean | null;
+  unsubSelfTestPass: boolean | null;
+}
+
+export interface GoLiveLegs {
+  /** The global master permits live sends. */
+  master: boolean;
+  /** The first failing EVIDENCE leg, or null when every one passes (always null once stamped). */
+  evidence: string | null;
+  state: StepState;
+}
+
+function evidenceBlocker(state: StepState, facts: GoLiveFacts, now: Date): string | null {
   if (state.live_since) return null;
   if (state.rolled_back_at) return 'rolled_back';
   if (facts.wouldSendCount < 1) return 'no_would_send';
@@ -251,7 +351,36 @@ export async function stepGoLiveBlocker(
   if (!Number.isFinite(started)) return 'clock_unparseable';
   if (now.getTime() - started < SHADOW_CLOCK_MS) return 'shadow_clock_not_elapsed';
   if (facts.duplicates !== 0) return 'duplicates_present';
+  if (facts.healthPass === null) return 'health_unmeasured';
   if (!facts.healthPass) return 'health_not_pass';
+  if (facts.unsubSelfTestPass === null) return 'unsub_unmeasured';
   if (!facts.unsubSelfTestPass) return 'unsub_selftest_not_pass';
   return null;
+}
+
+/**
+ * Every go-live leg, evaluated — the master AND the evidence — so a report can say "evidence
+ * passed, master blocks" rather than stopping at the first refusal. ONE derivation feeds both the
+ * cron's decision (`stepGoLiveBlocker`) and its published verdict.
+ */
+export async function stepGoLiveLegs(
+  step: LifecycleStep, facts: GoLiveFacts, now: Date = new Date(), env: NodeJS.ProcessEnv = process.env,
+): Promise<GoLiveLegs> {
+  const state = await getStepState(step);
+  return { master: resolveMode(env) === 'live-permitted', evidence: evidenceBlocker(state, facts, now), state };
+}
+
+/**
+ * May this step go live now? Returns the reason it may NOT, or null when every condition holds.
+ *
+ * THE MASTER IS THE FIRST LEG (R3). Before this wave the function returned null for any stamped
+ * step without reading the master, and the cron printed `LIVE` for a step that could not send.
+ * The cron may still record evidence while the master blocks; it can never report `LIVE`.
+ */
+export async function stepGoLiveBlocker(
+  step: LifecycleStep, facts: GoLiveFacts, now: Date = new Date(), env: NodeJS.ProcessEnv = process.env,
+): Promise<string | null> {
+  const legs = await stepGoLiveLegs(step, facts, now, env);
+  if (!legs.master) return MASTER_BLOCKER;
+  return legs.evidence;
 }
