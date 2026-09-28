@@ -72,3 +72,31 @@ describe('040_lifecycle.sql ↔ src/lib/lifecycle/schema.ts', () => {
     expect(down).toMatch(/DROP\s+TABLE\s+IF\s+EXISTS\s+lifecycle_sends/i);
   });
 });
+
+/**
+ * LIFECYCLE-GOLIVE-SEMANTICS-W1 — `migrations/044_lifecycle_golive_semantics.sql` adds columns to
+ * EXISTING tables, so its boot-path twin is an ALTER in schema.ts, not a CREATE body. The pair is
+ * compared the same way: column names per table, both sides non-empty.
+ */
+describe('044 ↔ the schema.ts ALTER twin', () => {
+  const added = (sql: string, table: string) =>
+    [...sql.matchAll(new RegExp(`ALTER TABLE\\s+${table}\\s+ADD COLUMN IF NOT EXISTS\\s+([a-z_]+)`, 'g'))]
+      .map((m) => m[1]).sort();
+  const m044 = () => readFileSync(resolve(ROOT, 'migrations/044_lifecycle_golive_semantics.sql'), 'utf8');
+
+  for (const [table, cols] of [['lifecycle_step_state', ['first_sent_at']], ['lifecycle_sends', ['expired_reason']]] as const) {
+    it(`${table}: migration and boot path add exactly ${cols.join(', ')}`, () => {
+      const a = added(m044(), table);
+      expect(a.length, 'migration parser found nothing — refuse').toBeGreaterThan(0);
+      expect(a).toEqual([...cols]);
+      expect(added(BOOT, table)).toEqual(a);
+    });
+  }
+
+  it('the down migration drops only the two added columns', () => {
+    const down = readFileSync(resolve(ROOT, 'migrations/044_lifecycle_golive_semantics.down.sql'), 'utf8');
+    expect(down).toMatch(/ALTER TABLE\s+lifecycle_step_state\s+DROP COLUMN IF EXISTS\s+first_sent_at/);
+    expect(down).toMatch(/ALTER TABLE\s+lifecycle_sends\s+DROP COLUMN IF EXISTS\s+expired_reason/);
+    expect(down).not.toMatch(/DROP\s+TABLE/i);
+  });
+});

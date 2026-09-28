@@ -75,6 +75,21 @@ export function ensureLifecycleSchema(): void {
       note           TEXT NULL
     );
   `);
+  // LIFECYCLE-GOLIVE-SEMANTICS-W1 — the boot-path twin of `migrations/044_lifecycle_golive_semantics.sql`.
+  // The CREATE bodies above stay byte-aligned with 040; columns added later arrive as ALTERs so a
+  // database created by either path converges on the same shape.
+  if (IS_PG) {
+    dbExec(`
+      ALTER TABLE lifecycle_step_state ADD COLUMN IF NOT EXISTS first_sent_at TIMESTAMPTZ NULL;
+      ALTER TABLE lifecycle_sends ADD COLUMN IF NOT EXISTS expired_reason TEXT NULL;
+    `);
+  } else {
+    // SQLite has no ADD COLUMN IF NOT EXISTS; a duplicate-column error is the success case.
+    for (const ddl of ['ALTER TABLE lifecycle_step_state ADD COLUMN first_sent_at TEXT NULL',
+      'ALTER TABLE lifecycle_sends ADD COLUMN expired_reason TEXT NULL']) {
+      try { dbExec(ddl); } catch { /* already present */ }
+    }
+  }
   ensured = true;
 }
 
