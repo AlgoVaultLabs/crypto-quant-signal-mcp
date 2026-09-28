@@ -443,3 +443,29 @@ describe('R2 — expiry reasons come from the SAME predicate that selects candid
     expect(ids).toEqual(['a']);
   });
 });
+
+// ── R2 — a consumed claim is dated by its SEND, not by its shadow claim ──────────────────────
+//
+// MEASURED on signal-1 2026-09-28 15:52Z, first live tick: 5 claims consumed and sent, and the
+// health canary's next line read `sent_7d=0` — the rows kept their shadow-claim `created_at`
+// (09-09 … 09-16), and the canary and the frequency caps both date a delivery by `created_at`.
+// A consumed send must count on the day it was SENT, or a step debut escapes the <= 1/day cap.
+
+describe('R2 — consumption re-dates the row to the send', () => {
+  beforeEach(() => freshEnv('live-permitted'));
+  afterEach(() => vi.doUnmock('../../src/lib/email.js'));
+
+  it('a claim written 10 days ago, consumed today, counts against TODAY\'s cap', async () => {
+    const spy = stubResend();
+    const now = new Date();
+    await seedClaim('old10', new Date(now.getTime() - 10 * D));
+    await goLive();
+    const { runStep } = await import('../../src/scripts/lifecycle-dispatch.js');
+    const { countDeliveredSince } = await import('../../src/lib/lifecycle/ledger.js');
+    const { hashEmail } = await import('../../src/lib/lifecycle/identity.js');
+    await runStep('activation_nudge', evaluation(['old10']), now);
+    expect(spy).toHaveBeenCalledTimes(1);
+    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+    expect(await countDeliveredSince(hashEmail('old10@example.com'), dayStart)).toBe(1);
+  });
+});

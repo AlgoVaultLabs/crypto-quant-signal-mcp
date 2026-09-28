@@ -254,6 +254,7 @@ export async function sendLifecycle(
     row = await consumeClaim(claim.id, {
       emailHash, recipientEmail: recipient.email,
       subject: rendered.subject, html: rendered.html, text: rendered.text,
+      atIso: now.toISOString(),
     });
     if (!row) return { status: 'skipped', reason: 'already_handled', ledgerId: claim.id };
   } else {

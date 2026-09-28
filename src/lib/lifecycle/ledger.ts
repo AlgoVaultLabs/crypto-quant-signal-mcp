@@ -260,18 +260,27 @@ export async function listShadowClaims(step: LifecycleStep): Promise<LedgerRow[]
  * SQLite wrapper surfaces no row count and no RETURNING, so the token is the honest signal. The
  * loser reads someone else's token and reports `already_handled`. `markSent` / `markFailed` then
  * overwrite `error`, exactly as for a fresh claim, so no token survives a settled row.
+ *
+ * THE ROW IS RE-DATED TO THE SEND. The frequency caps and the health canary both date a delivery
+ * by `created_at`; a consumed claim that kept its shadow-claim date would count on the day it was
+ * CLAIMED, not the day it was SENT — so a step's debut could escape the <= 1/day cap, and the
+ * health canary read `sent_7d=0` after five real sends (measured on signal-1, 2026-09-28 15:52Z,
+ * first live tick). The claim's own timestamp is superseded: it never reached anybody. Written as
+ * app-clock ISO, the same format `claimSlot` writes, so the SQLite text comparison stays valid.
  */
 export async function consumeClaim(id: number, next: {
   emailHash: string; recipientEmail: string; subject: string; html: string; text: string;
+  /** The send instant. The row is RE-DATED to it — see below. */
+  atIso: string;
 }): Promise<LedgerRow | null> {
   ensureLifecycleSchema();
   const token = `consuming:${randomUUID()}`;
   dbRun(
     `UPDATE lifecycle_sends
         SET status = 'failed', attempts = 0, error = ?, email_hash = ?, recipient_email = ?,
-            rendered_subject = ?, rendered_html = ?, rendered_text = ?, updated_at = ${NOW_SQL}
+            rendered_subject = ?, rendered_html = ?, rendered_text = ?, created_at = ?, updated_at = ?
       WHERE id = ? AND status = 'would_send'`,
-    token, next.emailHash, next.recipientEmail, next.subject, next.html, next.text, id,
+    token, next.emailHash, next.recipientEmail, next.subject, next.html, next.text, next.atIso, next.atIso, id,
   );
   await awaitDbWrites();
   const rows = await dbQuery<LedgerRow>('SELECT * FROM lifecycle_sends WHERE id = ?', [id]);
