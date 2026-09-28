@@ -13,6 +13,7 @@ const env = vi.hoisted(() => ({
   updates: [] as unknown[][],
   fetches: [] as Array<{ start: number; end?: number }>,
   candles: [] as Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>,
+  emptyPageStarts: new Set<number>(),
 }));
 vi.mock('../../src/lib/performance-db.js', () => ({
   dbExec: () => undefined,
@@ -29,6 +30,7 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
   getAdapter: () => ({
     getCandles: async (_coin: string, _tf: string, start: number, _dex: unknown, end?: number) => {
       env.fetches.push({ start, end });
+      if (env.emptyPageStarts.has(start)) { env.emptyPageStarts.delete(start); return []; } // one transient empty page
       return env.candles.filter((c) => c.time >= start && (end === undefined || c.time <= end)).slice(0, 1000);
     },
   }),
@@ -59,6 +61,16 @@ describe('expiryReturnPct', () => {
   it('is NULL when the window may not have closed before the fetch', () => {
     expect(expiryReturnPct(fwd, 8, 100, 1_000 * H, H, 1_000 * H + 8.9 * H)).toBeNull();
     expect(expiryReturnPct(fwd, 8, 100, 1_000 * H, H, 1_000 * H + 9 * H)).not.toBeNull();
+  });
+  it('is NULL when a candle inside the window is missing — never the close of a LATER candle', () => {
+    const gapped = fwd.filter((c) => c.time !== 1_003 * H); // the 4th forward candle never arrived
+    expect(gapped[7].close).toBe(108); // by index, the "8th" would be the 9th candle in time
+    expect(expiryReturnPct(gapped, 8, 100, 1_000 * H, H, 2_000 * H)).toBeNull();
+  });
+  it('is NULL when the first candle in hand is not the first after the entry', () => {
+    expect(expiryReturnPct(fwd.slice(1), 8, 100, 1_000 * H, H, 2_000 * H)).toBeNull();
+    // an entry mid-candle: the first forward candle opens within one period after it, and that is fine
+    expect(expiryReturnPct(fwd, 8, 100, 1_000 * H - 0.4 * H, H, 2_000 * H)).toBeCloseTo(7, 12);
   });
   it('is NULL on a non-positive entry or close', () => {
     expect(expiryReturnPct(fwd, 8, 0, 1_000 * H, H, 2_000 * H)).toBeNull();
@@ -109,7 +121,7 @@ describe('--expiry-only CLI + SQL shape', () => {
 describe('processExpiryGroup (DB + adapter at their seams)', () => {
   const NOW = 1_790_600_000_000; // ms, fixed; every row below is under T_CAP
   beforeEach(() => {
-    env.rows = []; env.updates = []; env.fetches = [];
+    env.rows = []; env.updates = []; env.fetches = []; env.emptyPageStarts.clear();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(NOW));
   });
@@ -132,6 +144,50 @@ describe('processExpiryGroup (DB + adapter at their seams)', () => {
     const [ids, rets] = env.updates[0] as [number[], number[]];
     expect(ids).toEqual([11]); // row 22 is past HL 5m's depth: skipped, never fetched
     expect(rets[0]).toBeCloseTo(((200 + 11) / 200 - 1) * 100, 12);
+  });
+
+  // The review's reproduction (2026-09-28): rows off the candle grid, spaced 1.5 periods apart. The old
+  // extension start `coveredUntil + tf` skipped one candle per step and the third row got the close of the
+  // 10th candle after its entry instead of the 8th.
+  const T0 = 1_000 * H; // aligned
+  const gridCandles = () => Array.from({ length: 60 }, (_, i) => candle(T0 + i * H, 1000 + i));
+  const gridRows = () => [10.3, 11.8, 13.3].map((h, k) => ({ id: 100 + k, created_at: (T0 + h * H) / 1000, price_at_signal: 1000 }));
+  const trueExpiry = (entryH: number) => ((1000 + Math.ceil(entryH) + 7) / 1000 - 1) * 100; // 8th candle after the entry
+
+  it('off-grid rows spaced inside the window each get the TRUE W-th candle', { timeout: 30_000 }, async () => {
+    env.candles = gridCandles();
+    env.rows = gridRows();
+    vi.setSystemTime(new Date(T0 + 500 * H));
+    try {
+      await processExpiryGroup(parseCli(['--expiry-only']), { exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' });
+    } finally { vi.useRealTimers(); }
+    const [ids, rets] = env.updates[0] as [number[], number[]];
+    expect(ids).toEqual([100, 101, 102]);
+    [10.3, 11.8, 13.3].forEach((h, k) => expect(rets[k]).toBeCloseTo(trueExpiry(h), 12));
+  });
+
+  it('a transient empty page is fetched again for the next row, never left as a hole', { timeout: 30_000 }, async () => {
+    env.candles = gridCandles();
+    env.rows = gridRows();
+    env.emptyPageStarts.add(T0 + 21 * H); // the second row's extension comes back empty once
+    vi.setSystemTime(new Date(T0 + 500 * H));
+    try {
+      await processExpiryGroup(parseCli(['--expiry-only']), { exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' });
+    } finally { vi.useRealTimers(); }
+    const [ids, rets] = env.updates[0] as [number[], number[]];
+    expect(ids).toEqual([100, 101, 102]);
+    [10.3, 11.8, 13.3].forEach((h, k) => expect(rets[k]).toBeCloseTo(trueExpiry(h), 12));
+    expect(env.fetches.filter((f) => f.start === T0 + 21 * H)).toHaveLength(2); // retried, not skipped
+  });
+
+  it('a candle the venue never serves makes the affected rows NULL — never a later close', { timeout: 30_000 }, async () => {
+    env.candles = gridCandles().filter((c) => c.time !== T0 + 16 * H); // inside all three windows
+    env.rows = gridRows();
+    vi.setSystemTime(new Date(T0 + 500 * H));
+    try {
+      await processExpiryGroup(parseCli(['--expiry-only']), { exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' });
+    } finally { vi.useRealTimers(); }
+    expect(env.updates).toHaveLength(0); // nothing written: all three windows are missing a candle
   });
 
   it('--check reports and writes nothing', { timeout: 30_000 }, async () => {

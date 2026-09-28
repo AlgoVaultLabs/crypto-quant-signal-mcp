@@ -148,6 +148,8 @@ export function dwrComplete(rows: Ads1Row[]): DwrComplete {
 export interface MixMatchedNull {
   /** Scored rows (engine WIN or LOSS) — the only rows every term below is computed on. */
   n: number;
+  /** Scored BUY rows (the integer the minority share is taken from). */
+  buys: number;
   shareBuy: number;
   qBuy: number; // always-BUY complete hit rate on the scored rows
   qSell: number;
@@ -165,11 +167,11 @@ export function mixMatchedNull(rows: Ads1Row[]): MixMatchedNull {
     if (o.BUY === 'WIN') buyWins++;
     if (o.SELL === 'WIN') sellWins++;
   }
-  if (n === 0) return { n: 0, shareBuy: NaN, qBuy: NaN, qSell: NaN, p0: NaN };
+  if (n === 0) return { n: 0, buys: 0, shareBuy: NaN, qBuy: NaN, qSell: NaN, p0: NaN };
   const shareBuy = buys / n;
   const qBuy = buyWins / n;
   const qSell = sellWins / n;
-  return { n, shareBuy, qBuy, qSell, p0: shareBuy * qBuy + (1 - shareBuy) * qSell };
+  return { n, buys, shareBuy, qBuy, qSell, p0: shareBuy * qBuy + (1 - shareBuy) * qSell };
 }
 
 export interface Edge {
@@ -319,7 +321,9 @@ export function identifiability(rows: Ads1Row[]): Identifiability {
   if (nul.n === 0) {
     return { status: 'NOT_IDENTIFIABLE', reason: 'no-scored-rows', minorityShare: NaN, attainablePp: NaN, pt };
   }
-  const minorityShare = Math.min(nul.shareBuy, 1 - nul.shareBuy);
+  // From the integer counts, never `1 − shareBuy`: in floating point 1 − 0.9 is 0.0999…98, which would
+  // read an exact 10 % SELL minority as below the floor while the mirror 10 % BUY minority passes.
+  const minorityShare = Math.min(nul.buys, nul.n - nul.buys) / nul.n;
   const attainablePp = frechetAttainablePp(nul.shareBuy, nul.qBuy);
   if (minorityShare < MINORITY_SIDE_FLOOR) return { status: 'NOT_IDENTIFIABLE', reason: 'minority', minorityShare, attainablePp, pt };
   if (attainablePp < FRECHET_MIN_RANGE_PP) return { status: 'NOT_IDENTIFIABLE', reason: 'frechet', minorityShare, attainablePp, pt };

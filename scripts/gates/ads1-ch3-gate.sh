@@ -7,8 +7,9 @@
 #   GREEN iff  the audit exists
 #          ∧  its terminal line is `ADS1_SCORECARD_SELFCHECK: PASS (<k> checks)`
 #          ∧  no `verdict: EXCEPTIONAL` anywhere in it
-#          ∧  the registration commit it names EXISTS here, is an ancestor of origin/main (it LANDED), and
-#             its committer timestamp — read from git, not from the audit — precedes the recorded pull start
+#          ∧  the registration commit it names EXISTS here, is an ancestor of origin/main (it LANDED),
+#             CONTAINS the registration file the audit names, and its committer timestamp — read from git,
+#             not from the audit — precedes the recorded pull start
 #          ∧  every session part's token is `current_user=aoe_readonly transaction_read_only=on` (≥ 4 parts)
 #
 # Verdict — exactly one terminal line, the token is the contract:
@@ -48,13 +49,13 @@ check_audit() {
     const ro = process.argv[2];
     const t = Array.isArray(g.tokenLines) ? g.tokenLines : [];
     const ok = t.length >= 4 && t.every((x) => x === ro);
-    console.log([g.registrationCommit || "", Number(g.pullStartTs) || 0, ok ? "yes" : "no"].join(" "));
+    console.log([g.registrationCommit || "", Number(g.pullStartTs) || 0, ok ? "yes" : "no", g.registrationPath || ""].join(" "));
   ' "$json" "$RO_TOKEN" 2>/dev/null)" || facts=""
   if [ -z "$facts" ]; then
     printf '[ads1-ch3-gate] the audit json is unreadable\n' >&2
     echo CH3_INDETERMINATE; return 3
   fi
-  read -r commit pull tokens_ok <<EOF
+  read -r commit pull tokens_ok regpath <<EOF
 $facts
 EOF
   [ "$tokens_ok" = "yes" ] || red="$red token"
@@ -66,6 +67,11 @@ EOF
     echo CH3_INDETERMINATE; return 3
   fi
   git merge-base --is-ancestor "$commit" "$ref" 2>/dev/null || red="$red registration-not-landed"
+  # the named commit must CONTAIN the named registration — else any old landed commit would pass
+  case "$regpath" in
+    audits/*preregistration*.md) git cat-file -e "$commit:$regpath" 2>/dev/null || red="$red registration-file-not-in-commit" ;;
+    *) red="$red registration-path:'${regpath:-none}'" ;;
+  esac
   [ "$ts" -lt "$pull" ] || red="$red registration-after-pull($ts>=$pull)"
   if [ -n "$red" ]; then printf '[ads1-ch3-gate] RED:%s\n' "$red" >&2; echo CH3_RED; return 1; fi
   printf '[ads1-ch3-gate] self-check PASS · no EXCEPTIONAL · registration %s landed at %s < pull %s · RO tokens\n' "$commit" "$ts" "$pull" >&2
@@ -90,11 +96,13 @@ self_test() {
   cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)" || { echo "ADS1_CH3_GATE_SELFTEST: FAIL not in a checkout"; exit 1; }
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/ads1-ch3-selftest.XXXXXX")" || { echo "ADS1_CH3_GATE_SELFTEST: FAIL mktemp"; exit 1; }
   local head ts; head="$(git rev-parse HEAD)"; ts="$(git log -1 --format=%ct HEAD)"
+  local REG; REG="$(git ls-tree --name-only HEAD audits/ | grep -m 1 'preregistration.*\.md$')"
+  [ -n "$REG" ] || { echo "ADS1_CH3_GATE_SELFTEST: FAIL no registration in HEAD to build fixtures from"; exit 1; }
   # fixture <name> <selfcheck line> <extra md line> <commit> <pull ts> <tokens json array>
   fixture() {
     local d="$tmp/$1"; mkdir -p "$d"
     printf '# audit\n\n- Read-only tokens: `%s` · `%s` · `%s` · `%s`\n%s\n\n%s\n' "$RO_TOKEN" "$RO_TOKEN" "$RO_TOKEN" "$RO_TOKEN" "$3" "$2" > "$d/a.md"
-    printf '{"generatedFrom":{"registrationCommit":"%s","pullStartTs":%s,"tokenLines":%s}}\n' "$4" "$5" "$6" > "$d/a.json"
+    printf '{"generatedFrom":{"registrationCommit":"%s","pullStartTs":%s,"tokenLines":%s,"registrationPath":"%s"}}\n' "$4" "$5" "$6" "${7:-$REG}" > "$d/a.json"
     echo "$d/a.md"
   }
   check() { # <name> <want token> <want rc> <md> <ref>
@@ -117,6 +125,8 @@ self_test() {
   check writer-token-red CH3_RED 1 "$(fixture writer "$OK" '' "$head" "$later" "[\"$RO_TOKEN\",\"TOKEN current_user=algovault_app transaction_read_only=off\",\"$RO_TOKEN\",\"$RO_TOKEN\"]")" HEAD
   check too-few-tokens-red CH3_RED 1 "$(fixture few "$OK" '' "$head" "$later" "[\"$RO_TOKEN\"]")" HEAD
   check unknown-commit-indeterminate CH3_INDETERMINATE 3 "$(fixture ghost "$OK" '' 0000000000000000000000000000000000000000 "$later" "$T4")" HEAD
+  check registration-file-absent-red CH3_RED 1 "$(fixture nofile "$OK" '' "$head" "$later" "$T4" audits/nope-preregistration-2099-01-01.md)" HEAD
+  check registration-path-foreign-red CH3_RED 1 "$(fixture foreign "$OK" '' "$head" "$later" "$T4" README.md)" HEAD
   # a commit that exists but is not on the ref is NOT landed: HEAD measured against its own parent
   check not-landed-red CH3_RED 1 "$(fixture unlanded "$OK" '' "$head" "$later" "$T4")" HEAD~1
   # the missing-tool precondition, through the real entry point with a PATH that holds only bash
@@ -129,7 +139,7 @@ self_test() {
     pass=$((pass + 1)); echo "SELF-TEST: ok missing-tool-indeterminate"
   else fail=$((fail + 1)); echo "SELF-TEST: FAIL missing-tool-indeterminate (got '$out' rc=$rc)"; fi
   rm -rf "$tmp"
-  if [ "$cases" -lt 13 ]; then echo "ADS1_CH3_GATE_SELFTEST: FAIL vacuous ($cases cases)"; exit 1; fi
+  if [ "$cases" -lt 15 ]; then echo "ADS1_CH3_GATE_SELFTEST: FAIL vacuous ($cases cases)"; exit 1; fi
   if [ "$fail" -eq 0 ]; then echo "ADS1_CH3_GATE_SELFTEST: PASS ($pass checks)"; exit 0; fi
   echo "ADS1_CH3_GATE_SELFTEST: FAIL ($fail of $cases)"; exit 1
 }

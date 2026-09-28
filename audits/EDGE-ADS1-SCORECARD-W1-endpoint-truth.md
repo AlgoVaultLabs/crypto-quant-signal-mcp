@@ -29,7 +29,11 @@ different time from, the labeler; one retired venue's early cohort was evaluated
   and `dist/scripts/ads1/ddl-parity-check.js` pin the two copies equal.
 - The labeler writes it for every new row from the W-th forward candle it already holds
   (`directional-labeler.ts` `expiryReturnPct`), and only when that candle had closed before the fetch —
-  never a live price.
+  never a live price. The candle is identified BY TIME, never by array position: the first forward candle
+  must open within one period of the entry and the W-th exactly (W−1) periods after it; a window with a
+  missing candle is `null`. (Found by the pre-pull review, 2026-09-28: the group cache's extension start
+  `coveredUntil + tf` is off the candle grid, so one candle per extension step is never fetched — by index
+  the column would have taken a later candle's close.)
 - `backfill-directional-labels.js --expiry-only`: label-independent worklist (every NULL expiry under
   T_CAP), forward-only fetch, `UPDATE … WHERE ret_at_expiry_pct IS NULL` (never overwrites), rows past a
   measured candle depth skipped without a fetch (`EXPIRY_REACH_DAYS`), `--check` = zero writes,
@@ -70,7 +74,7 @@ barrier_pct`, so a floor-bound barrier (0.30 %) resolves only to FLAT.
 
 ## Self-test mutation matrices (each mutation must turn its self-test red)
 
-`node dist/scripts/ads1/selftest.js` (`ADS1_SELFTEST`, 42 known-answer checks):
+`node dist/scripts/ads1/selftest.js` (`ADS1_SELFTEST`, 43 known-answer checks):
 
 | Mutation | Result |
 |---|---|
@@ -82,6 +86,7 @@ barrier_pct`, so a floor-bound barrier (0.30 %) resolves only to FLAT.
 | drop the INCONSISTENT guard | FAIL |
 | percentile floor instead of nearest-rank ceiling | FAIL |
 | drop the AUDIT hit-rate branch | FAIL |
+| minority share as `1 − shareBuy` (float) instead of integer counts | FAIL (exact 10 % minority, both sides) |
 
 `scripts/gates/ads1-ch1-gate.sh --self-test` (11 checks) and `scripts/gates/ads1-ch2-gate.sh --self-test`
 (13 checks, drives the real decision function; the script is sourceable): every mutation of a verdict

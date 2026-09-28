@@ -984,9 +984,16 @@ export async function processExpiryGroup(cli: Cli, g: { exchange: string; coin: 
     const neededEnd = entryMs + (W + FETCH_BUFFER_CANDLES) * tfMs;
     try {
       if (neededEnd > coveredUntil) {
-        const start = coveredUntil + tfMs >= entryMs ? coveredUntil + tfMs : entryMs; // extend vs new island
+        // Extend from the first candle boundary AFTER what is covered — never `coveredUntil + tf`, which is
+        // off the grid (created_at is arbitrary seconds) and skips the one candle opening inside that step.
+        const nextOpen = (Math.floor(coveredUntil / tfMs) + 1) * tfMs;
+        const start = nextOpen >= entryMs ? nextOpen : entryMs; // extend vs new island
         await fetchRangeInto(cache, g.exchange as ExchangeId, g.coin, g.timeframe, start, neededEnd);
-        coveredUntil = Math.max(coveredUntil, neededEnd);
+        // Advance only as far as candles actually ARRIVED, so a short or empty page leaves the rest to be
+        // fetched again for the next row instead of silently becoming a hole.
+        let lastOpen = -Infinity;
+        for (const t of cache.keys()) if (t >= start && t <= neededEnd && t > lastOpen) lastOpen = t;
+        if (Number.isFinite(lastOpen)) coveredUntil = Math.max(coveredUntil, lastOpen);
       }
     } catch (err) {
       if (err instanceof WeightBudgetSkipError) { ecov.budgetSkips++; break; } // the rest stay NULL → next run

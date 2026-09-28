@@ -196,6 +196,50 @@
    "expected": 7
   }
  ],
+ "identifiability_cases": [
+  {
+   "buys": 3600,
+   "sells": 400,
+   "status": "OK",
+   "reason": null,
+   "minority_share": 0.1
+  },
+  {
+   "buys": 400,
+   "sells": 3600,
+   "status": "OK",
+   "reason": null,
+   "minority_share": 0.1
+  },
+  {
+   "buys": 9,
+   "sells": 1,
+   "status": "OK",
+   "reason": null,
+   "minority_share": 0.1
+  },
+  {
+   "buys": 1,
+   "sells": 9,
+   "status": "OK",
+   "reason": null,
+   "minority_share": 0.1
+  },
+  {
+   "buys": 3601,
+   "sells": 399,
+   "status": "NOT_IDENTIFIABLE",
+   "reason": "minority",
+   "minority_share": 0.09975
+  },
+  {
+   "buys": 399,
+   "sells": 3601,
+   "status": "NOT_IDENTIFIABLE",
+   "reason": "minority",
+   "minority_share": 0.09975
+  }
+ ],
  "rows": [
   {
    "created_at": 1788220800,

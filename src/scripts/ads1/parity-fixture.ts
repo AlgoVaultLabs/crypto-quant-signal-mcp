@@ -72,6 +72,22 @@ export function parityRows(): Ads1Row[] {
   return rows;
 }
 
+/** Identifiability at and around the 10 % boundary, both sides (buys, sells) — decided rows, alternating
+ *  race direction so the Fréchet range never binds. */
+export const IDENTIFIABILITY_CASES: ReadonlyArray<[number, number]> = [[3600, 400], [400, 3600], [9, 1], [1, 9], [3601, 399], [399, 3601]];
+
+export function identifiabilityCaseRows(buys: number, sells: number): Ads1Row[] {
+  const mk = (side: Ads1Row['side'], n: number, t0: number): Ads1Row[] =>
+    Array.from({ length: n }, (_, i) => {
+      const up = i % 2 === 1;
+      return {
+        createdAt: DAY0 + t0 + i, exchange: 'FIXTURE', coin: 'FIX', timeframe: '1h', side, confidence: 60,
+        label: (side === 'BUY') === up ? 1 : -1, ambiguous: false, barrierPct: 1, expiryRetPct: null,
+      };
+    });
+  return [...mk('BUY', buys, 0), ...mk('SELL', sells, 100_000)];
+}
+
 /** Nearest-rank cases where q·m is NOT an integer — at the production B (q·m = 100) a floor and a ceiling
  *  agree, so only these tell the rule apart. */
 export const PERCENTILE_CASES: ReadonlyArray<[number[], number]> = [
@@ -99,6 +115,10 @@ export function buildParityFixture(): Record<string, unknown> {
     bootstrap: { alpha: ALPHA_ONE_SIDED, b: BOOTSTRAP_B, seed: BOOTSTRAP_SEED },
     mulberry32_first8: Array.from({ length: 8 }, () => stream()),
     percentile_cases: PERCENTILE_CASES.map(([values, q]) => ({ values, q, expected: percentileNearestRank(values, q) })),
+    identifiability_cases: IDENTIFIABILITY_CASES.map(([buys, sells]) => {
+      const i = identifiability(identifiabilityCaseRows(buys, sells));
+      return { buys, sells, status: i.status, reason: i.reason, minority_share: r12(i.minorityShare) };
+    }),
     rows: rows.map((r) => ({
       created_at: r.createdAt, side: r.side, confidence: r.confidence, label: r.label, ambiguous: r.ambiguous,
       barrier_pct: r.barrierPct, expiry_ret_pct: r.expiryRetPct,

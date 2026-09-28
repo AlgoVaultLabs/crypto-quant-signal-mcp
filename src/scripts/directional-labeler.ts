@@ -103,8 +103,13 @@ export const DIRECTIONAL_LABELS_DDL_PG = `
  * The return at the vertical barrier, or `null` when it cannot be known from what is in hand.
  *
  * `forwardAsc` holds the candles whose OPEN time is at/after the entry, ascending (the labeler's own
- * window). The W-th of them is the vertical-barrier candle; its close over `entryPrice` is the expiry
- * return, in PERCENT, price-perspective.
+ * window). The vertical-barrier candle is the W-th forward candle BY TIME: the first one must open within
+ * one period of the entry, and the W-th must open exactly (W−1) periods after it. Its close over
+ * `entryPrice` is the expiry return, in PERCENT, price-perspective. The position in the array is never
+ * trusted on its own — a cache with a missing candle (measured 2026-09-28: the group cache's extension
+ * start `coveredUntil + tf` is off the candle grid, so the one candle opening inside that step is never
+ * fetched) would otherwise hand back a LATER candle's close, sometimes one that closes after the seal
+ * or was still forming at fetch time. A window that is not contiguous is `null`, not a guess.
  *
  * `fetchedNotBeforeMs` is an instant no later than the moment the candles were fetched (the labeler
  * passes the time it STARTED the group, before any fetch). The W-th forward candle closes no later than
@@ -123,6 +128,9 @@ export function expiryReturnPct(
   if (!(W > 0) || !(tfMs > 0) || !(entryPrice > 0)) return null;
   if (forwardAsc.length < W) return null;
   if (entryMs + (W + 1) * tfMs > fetchedNotBeforeMs) return null;
+  const first = forwardAsc[0].time;
+  if (!(first >= entryMs && first < entryMs + tfMs)) return null; // not the first candle after the entry
+  if (forwardAsc[W - 1].time - first !== (W - 1) * tfMs) return null; // a missing candle inside the window
   const close = forwardAsc[W - 1].close;
   if (!Number.isFinite(close) || close <= 0) return null;
   return (close / entryPrice - 1) * 100;

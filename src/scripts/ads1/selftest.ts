@@ -42,7 +42,7 @@ import {
 import { ROUND_TRIP_COST_PCT } from '../directional-labeler.js';
 
 /** The number of checks this file declares — a run that executes fewer is vacuous. */
-export const DECLARED_CHECKS = 42;
+export const DECLARED_CHECKS = 43;
 
 const DAY0 = 1788220800; // 2026-09-01T00:00:00Z
 const approx = (a: number, b: number, tol = 1e-9): boolean => Number.isFinite(a) && Math.abs(a - b) <= tol;
@@ -191,6 +191,14 @@ export function checks(): Check[] {
     // ── identifiability
     ['ID: 95/5 side mix -> NOT_IDENTIFIABLE (minority)', () => { const i = identifiability(skew95); return i.status === 'NOT_IDENTIFIABLE' && i.reason === 'minority'; }],
     ['ID: 85/15 side mix -> OK', () => identifiability(mix85).status === 'OK'],
+    ['ID: an exact 10 % minority passes on BOTH sides (9 BUY : 1 SELL and 1 BUY : 9 SELL)', () => {
+      const mk = (buys: number, sells: number) => [
+        ...many(buys, (i) => raced('BUY', i % 2 ? 'up' : 'down', { createdAt: DAY0 + i })),
+        ...many(sells, (i) => raced('SELL', i % 2 ? 'up' : 'down', { createdAt: DAY0 + 1000 + i })),
+      ];
+      return identifiability(mk(3600, 400)).status === 'OK' && identifiability(mk(400, 3600)).status === 'OK' &&
+        identifiability(mk(3601, 399)).reason === 'minority';
+    }],
     ['ID: balanced mix, always-BUY 0.4 % -> NOT_IDENTIFIABLE (frechet)', () => { const i = identifiability(frechetOnly); return i.status === 'NOT_IDENTIFIABLE' && i.reason === 'frechet'; }],
     // ── L2 calibration
     ['L2 calibrated fixture -> BSS > 0 and ECE ~ 0', () => { const k = calibration(calibRows(false)); return k.bss !== null && k.bss > 0 && k.ece < 1e-9; }],
