@@ -104,7 +104,9 @@ export const DIRECTIONAL_LABELS_DDL_PG = `
  *
  * `forwardAsc` holds the candles whose OPEN time is at/after the entry, ascending (the labeler's own
  * window). The vertical-barrier candle is the W-th forward candle BY TIME: the first one must open within
- * one period of the entry, and the W-th must open exactly (W−1) periods after it. Its close over
+ * one period of the entry, and the W-th must open exactly (W−1) periods after it — where a period is
+ * `tfMs`, the candle interval the venue actually SERVES (the race's own grid; 29 venue × timeframe pairs are
+ * fetch-and-relabel, e.g. 2h served as 1h candles), not necessarily the requested timeframe. Its close over
  * `entryPrice` is the expiry return, in PERCENT, price-perspective. The position in the array is never
  * trusted on its own — a cache with a missing candle (measured 2026-09-28: the group cache's extension
  * start `coveredUntil + tf` is off the candle grid, so the one candle opening inside that step is never

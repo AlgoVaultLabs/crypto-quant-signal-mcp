@@ -47,6 +47,23 @@ import {
   DIRECTIONAL_LABELS_DDL_PG,
 } from './directional-labeler.js';
 import { T_DIAG_END } from './ads1/spec.js';
+import { servedIntervalMs as SERVED_HL } from '../lib/adapters/hyperliquid.js';
+import { servedIntervalMs as SERVED_BINANCE } from '../lib/adapters/binance.js';
+import { servedIntervalMs as SERVED_BYBIT } from '../lib/adapters/bybit.js';
+import { servedIntervalMs as SERVED_OKX } from '../lib/adapters/okx.js';
+import { servedIntervalMs as SERVED_BITGET } from '../lib/adapters/bitget.js';
+import { servedIntervalMs as SERVED_ASTER } from '../lib/adapters/aster.js';
+import { servedIntervalMs as SERVED_EDGEX } from '../lib/adapters/edgex.js';
+import { servedIntervalMs as SERVED_GATE } from '../lib/adapters/gateio.js';
+import { servedIntervalMs as SERVED_MEXC } from '../lib/adapters/mexc.js';
+import { servedIntervalMs as SERVED_KUCOIN } from '../lib/adapters/kucoin.js';
+import { servedIntervalMs as SERVED_PHEMEX } from '../lib/adapters/phemex.js';
+import { servedIntervalMs as SERVED_BINGX } from '../lib/adapters/bingx.js';
+import { servedIntervalMs as SERVED_HTX } from '../lib/adapters/htx.js';
+import { servedIntervalMs as SERVED_WEEX } from '../lib/adapters/weex.js';
+import { servedIntervalMs as SERVED_BITMART } from '../lib/adapters/bitmart.js';
+import { servedIntervalMs as SERVED_XT } from '../lib/adapters/xt.js';
+import { servedIntervalMs as SERVED_WHITEBIT } from '../lib/adapters/whitebit.js';
 import { sloHoursFor as defaultSloHoursFor, isFullPanelVenue, FRESHNESS_BARRIER_SPEC, FULL_PANEL_VENUES } from '../lib/venue-slo-tiers.js';
 import { candleHorizonDays, CANDLE_HORIZON_DAYS, CANDLE_HORIZONS_MEASURED_AT } from '../lib/venue-candle-horizons.js';
 import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
@@ -658,8 +675,11 @@ async function fetchRangeInto(
   timeframe: string,
   startMs: number,
   endMs: number,
+  /** Paging step. Defaults to the REQUESTED interval (the race path's behaviour, unchanged); the expiry path
+   *  passes the SERVED interval so a finer-served venue does not skip one candle per page boundary. */
+  pageStepMs: number = TF_MS[timeframe],
 ): Promise<void> {
-  const tfMs = TF_MS[timeframe];
+  const tfMs = pageStepMs;
   const adapter = getAdapter(exchangeId);
   const dex = exchangeId === 'HL' ? getDexForCoin(coin) : undefined;
   let cursor = startMs;
@@ -761,7 +781,7 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
     const lowVol = sigma == null;
     // EDGE-ADS1-SCORECARD-W1-V2 (Q2 = A): the expiry return from the candle already in hand — the
     // same entry and window the race uses; null when the window had not closed at fetch time.
-    const expiry = expiryReturnPct(forwardAsc, W, s.price_at_signal, entryMs, tfMs, groupStartMs);
+    const expiry = expiryReturnPct(forwardAsc, W, s.price_at_signal, entryMs, servedStepMs(g.exchange, g.timeframe), groupStartMs);
 
     // Forward reachability: need a resolved race OR full-window coverage to call a timeout.
     for (const sp of cli.specs) {
@@ -932,6 +952,25 @@ export function buildExpiryRowsSql(opts: { since?: number }): string {
 }
 
 /** Fill every spec's row of each signal in one statement; never overwrite a value already there. */
+// ── the candle the venue actually serves (2026-09-28) ─────────────────────────────────────────────────
+// No adapter aggregates: 29 (venue, timeframe) pairs are fetch-and-relabel — e.g. 2h is served as 1h candles
+// on BITGET/GATE/HTX/MEXC/PHEMEX/WEEX/WHITEBIT/XT, 3m as 5m on GATE/MEXC/HTX/PHEMEX/WEEX/XT. The race runs on
+// the SERVED candles, so the expiry return must too: its W-th candle, spacing and alignment are on the served
+// grid. The functions are each adapter's own `servedIntervalMs` export (the ones src/lib/tf-support.ts reads);
+// the table is `Record<ExchangeId, …>`, so a venue added without an entry is a compile error.
+const SERVED_INTERVAL: Record<ExchangeId, (tf: string) => number | null> = {
+  HL: SERVED_HL, BINANCE: SERVED_BINANCE, BYBIT: SERVED_BYBIT, OKX: SERVED_OKX, BITGET: SERVED_BITGET,
+  ASTER: SERVED_ASTER, EDGEX: SERVED_EDGEX, GATE: SERVED_GATE, MEXC: SERVED_MEXC, KUCOIN: SERVED_KUCOIN,
+  PHEMEX: SERVED_PHEMEX, BINGX: SERVED_BINGX, HTX: SERVED_HTX, WEEX: SERVED_WEEX, BITMART: SERVED_BITMART,
+  XT: SERVED_XT, WHITEBIT: SERVED_WHITEBIT,
+};
+
+/** The candle interval `exchange` actually returns for `timeframe` (ms); the requested interval when the
+ *  adapter does not map it. */
+export function servedStepMs(exchange: string, timeframe: string): number {
+  return SERVED_INTERVAL[exchange as ExchangeId]?.(timeframe) ?? TF_MS[timeframe];
+}
+
 // ── the bounded reset (2026-09-28): values written by the pre-fix, index-based expiry code ──────────
 // Before 4d172810 `expiryReturnPct` took forwardAsc[W-1] BY INDEX, and the group cache can miss a candle
 // (its extension start was off the grid), so some values written between the column's creation and the fix
@@ -992,9 +1031,11 @@ interface ExpiryCounters {
   budgetSkips: number;
   errors: number;
   wouldFill: number; // --check only
+  /** Rows whose race on the SERVED candles would end after T_DIAG_END (a coarser-served venue): never written. */
+  sealEdge: number;
 }
 const ecov: ExpiryCounters = {
-  groups: 0, rowsSeen: 0, filled: 0, labelRowsUpdated: 0, pastReach: 0, unreachable: 0, budgetSkips: 0, errors: 0, wouldFill: 0,
+  groups: 0, rowsSeen: 0, filled: 0, labelRowsUpdated: 0, pastReach: 0, unreachable: 0, budgetSkips: 0, errors: 0, wouldFill: 0, sealEdge: 0,
 };
 const expiryByVenue = new Map<string, { filled: number; pastReach: number; unreachable: number }>();
 function bumpVenue(venue: string, key: 'filled' | 'pastReach' | 'unreachable', n: number): void {
@@ -1007,8 +1048,10 @@ function bumpVenue(venue: string, key: 'filled' | 'pastReach' | 'unreachable', n
  *  the adapter replaced at their seams). */
 export async function processExpiryGroup(cli: Cli, g: { exchange: string; coin: string; timeframe: string }): Promise<void> {
   const W = EVAL_CANDLES[g.timeframe];
-  const tfMs = TF_MS[g.timeframe];
+  // the SERVED candle interval: the race, and so the vertical-barrier candle, live on the venue's own grid
+  const tfMs = TF_MS[g.timeframe] ? servedStepMs(g.exchange, g.timeframe) : undefined;
   if (!W || !tfMs) return;
+  const sealEndMs = T_DIAG_END * 1000;
   const groupStartMs = Date.now();
   const rows = await dbQuery<{ id: number; created_at: number | string; price_at_signal: number | string }>(
     buildExpiryRowsSql({ since: cli.since }),
@@ -1029,8 +1072,12 @@ export async function processExpiryGroup(cli: Cli, g: { exchange: string; coin: 
   const ids: number[] = [];
   const rets: number[] = [];
   let unreachable = 0;
+  let sealEdge = 0;
   for (const r of reachable) {
     const entryMs = Number(r.created_at) * 1000;
+    // T_CAP's SQL bound uses the requested interval; a coarser-served venue's race runs longer. Its value
+    // would carry a post-seal close, so it is never written (NULL = UNRESOLVED, counted).
+    if (entryMs + (W + 1) * tfMs > sealEndMs) { sealEdge++; continue; }
     const neededEnd = entryMs + (W + FETCH_BUFFER_CANDLES) * tfMs;
     try {
       if (neededEnd > coveredUntil) {
@@ -1038,7 +1085,7 @@ export async function processExpiryGroup(cli: Cli, g: { exchange: string; coin: 
         // off the grid (created_at is arbitrary seconds) and skips the one candle opening inside that step.
         const nextOpen = (Math.floor(coveredUntil / tfMs) + 1) * tfMs;
         const start = nextOpen >= entryMs ? nextOpen : entryMs; // extend vs new island
-        await fetchRangeInto(cache, g.exchange as ExchangeId, g.coin, g.timeframe, start, neededEnd);
+        await fetchRangeInto(cache, g.exchange as ExchangeId, g.coin, g.timeframe, start, neededEnd, tfMs);
         // Advance only as far as candles actually ARRIVED, so a short or empty page leaves the rest to be
         // fetched again for the next row instead of silently becoming a hole.
         let lastOpen = -Infinity;
@@ -1058,6 +1105,7 @@ export async function processExpiryGroup(cli: Cli, g: { exchange: string; coin: 
     rets.push(v);
   }
   ecov.unreachable += unreachable;
+  ecov.sealEdge += sealEdge;
   bumpVenue(g.exchange, 'unreachable', unreachable);
   for (let i = 0; i < ids.length; i += INSERT_CHUNK_ROWS) {
     const res = await dbQuery<{ signal_id: number }>(EXPIRY_UPDATE_SQL, [ids.slice(i, i + INSERT_CHUNK_ROWS), rets.slice(i, i + INSERT_CHUNK_ROWS)]);

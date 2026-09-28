@@ -54,6 +54,7 @@ import {
   EXPIRY_UPDATE_SQL,
   expiryReachDays,
   processExpiryGroup,
+  servedStepMs,
   tfValuesSql,
 } from '../../src/scripts/backfill-directional-labels.js';
 
@@ -198,6 +199,36 @@ describe('processExpiryGroup (DB + adapter at their seams)', () => {
       await processExpiryGroup(parseCli(['--expiry-only']), { exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' });
     } finally { vi.useRealTimers(); }
     expect(env.updates).toHaveLength(0); // nothing written: all three windows are missing a candle
+  });
+
+  it('the served grid: a finer-served pair gets its W-th SERVED candle, never NULL for being "off" the requested grid', { timeout: 30_000 }, async () => {
+    expect(servedStepMs('GATE', '2h')).toBe(H); // fetch-and-relabel: 2h is served as 1h candles
+    expect(servedStepMs('BINANCE', '2h')).toBe(2 * H);
+    env.candles = gridCandles(); // 1h candles
+    env.rows = [{ id: 7, created_at: (T0 + 10.3 * H) / 1000, price_at_signal: 1000 }];
+    vi.setSystemTime(new Date(T0 + 500 * H));
+    try {
+      await processExpiryGroup(parseCli(['--expiry-only']), { exchange: 'GATE', coin: 'BTC', timeframe: '2h' });
+    } finally { vi.useRealTimers(); }
+    const [ids, rets] = env.updates[0] as [number[], number[]];
+    expect(ids).toEqual([7]);
+    expect(rets[0]).toBeCloseTo(((1000 + 11 + 5) / 1000 - 1) * 100, 12); // W = 6 served (1h) candles after the entry
+  });
+
+  it('a coarser-served row whose race on the served grid ends after T_DIAG_END is never written', { timeout: 30_000 }, async () => {
+    expect(servedStepMs('GATE', '3m')).toBe(5 * 60_000); // 3m is served as 5m candles
+    const M5 = 5 * 60_000;
+    const sealMs = 1790402400 * 1000;
+    // entry + 13·3m <= T_DIAG_END (so T_CAP's SQL admits it) but entry + 13·5m > T_DIAG_END
+    const entry = sealMs - 40 * 60_000;
+    env.candles = Array.from({ length: 40 }, (_, i) => candle(Math.floor(entry / M5) * M5 + (i + 1) * M5, 100 + i));
+    env.rows = [{ id: 9, created_at: entry / 1000, price_at_signal: 100 }];
+    vi.setSystemTime(new Date(sealMs + 10 * 86_400_000));
+    try {
+      await processExpiryGroup(parseCli(['--expiry-only']), { exchange: 'GATE', coin: 'BTC', timeframe: '3m' });
+    } finally { vi.useRealTimers(); }
+    expect(env.fetches).toHaveLength(0);
+    expect(env.updates).toHaveLength(0);
   });
 
   it('--check reports and writes nothing', { timeout: 30_000 }, async () => {
