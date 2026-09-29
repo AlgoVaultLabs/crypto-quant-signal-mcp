@@ -1,22 +1,24 @@
 /**
- * OPS-CLIENT-CLAIM-FRESHNESS-W1 CH2 — the canary's token grammar and exit-code contract,
- * pinned CROSS-LANGUAGE.
+ * client-claim-freshness.py — the canary's token grammar and exit-code contract, pinned
+ * CROSS-LANGUAGE (OPS-CLIENT-CLAIM-FRESHNESS-W1 CH2; rebuilt for v2 by OPS-CLIENT-CLAIM-EVIDENCE-W1 CH2).
  *
  * `ops/monitoring/client-claim-freshness.py` is a Python canary whose callers are shell: the
  * cron line, and every gate block that greps its verdict. Nothing in the TypeScript tree can
  * import it, so the only honest way to pin its contract is to RUN it and read what it emits.
  *
- * Why this file exists at all, given the canary already has a 47-assertion `--self-test`:
- * a hermetic self-test is structurally blind to exactly what its own seam replaces. It asserts
- * `_token_exit_map()` as DATA; it never proves `main()` actually returns those codes, nor that
- * the token reaches stdout exactly once, line-anchored, on every path. Those are the two facts
- * every caller depends on, and they are the ones a refactor silently breaks.
+ * Why this file exists at all, given the canary has its own `--self-test`: a hermetic self-test
+ * is structurally blind to exactly what its own seam replaces. It asserts `_token_exit_map()` as
+ * DATA; it never proves `main()` actually returns those codes, nor that the token reaches stdout
+ * exactly once, line-anchored, on every path. Those are the two facts every caller depends on.
  *
- * It also closes a gap in the estate's own coverage, stated rather than assumed:
- * `scripts/check-alert-recommended-wave.mjs` scans a HAND-MAINTAINED file list that contains no
- * Python canaries — its header names `OPS-ALERT-WAVE-GATE-PY-COVERAGE-W{NEXT}` as the wave that
- * would close that centrally, and asks each Python canary to assert the property itself in the
- * meantime. The templated-wave block below is this canary discharging that.
+ * v2 reads a GENERATED JSON corpus (src/lib/integrations-data/claim-evidence.json) instead of
+ * regex-parsing the TypeScript rows, so the fixtures here are JSON documents whose anchors the
+ * stubbed pages either evidence or do not — and the identifiers the canary and the TS contract
+ * both cite (corpus name, path) are locked against each other below.
+ *
+ * It also discharges a gap stated by `scripts/check-alert-recommended-wave.mjs`: that gate scans
+ * a HAND-MAINTAINED list containing no Python canaries and asks each one to assert the property
+ * itself (`OPS-ALERT-WAVE-GATE-PY-COVERAGE-W{NEXT}` would close it centrally).
  *
  * SPAWN BUDGET DECLARED — every block here shells out to `python3`, and
  * `scripts/check-test-budget.mjs` blocks a spawning block that declares none. The budget sits in
@@ -24,9 +26,11 @@
  * the callback, so `it(name, fn, 20_000)` declares nothing.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import { CLAIM_EVIDENCE_CORPUS, CLAIM_EVIDENCE_JSON } from '../../src/lib/integrations-data/claim-evidence.js';
 
 const REPO = path.resolve(__dirname, '../..');
 const PY = path.join(REPO, 'ops/monitoring/client-claim-freshness.py');
@@ -35,17 +39,22 @@ const SRC = readFileSync(PY, 'utf8');
 const TOKEN = 'CLIENT_CLAIM_FRESHNESS_VERDICT';
 const ALERT_ID = 'CLIENT_CLAIM_DRIFT';
 
+const TMP = mkdtempSync(path.join(tmpdir(), 'ccf-test-'));
+afterAll(() => rmSync(TMP, { recursive: true, force: true }));
+
 /** Every line that IS a terminal verdict token — anchored at column 0, nothing before it. */
 function tokenLines(stdout: string): string[] {
   return stdout.split('\n').filter((l) => l.startsWith(`${TOKEN}=`));
 }
 
 /**
- * Drive the SHIPPED `main()` with its two effects stubbed. This is the point of the file: the
- * self-test never calls main(), so the token print and the exit-code mapping are only ever
- * exercised here.
+ * Drive the SHIPPED `main()` with its effects stubbed. The self-test never calls main(), so the
+ * token print and the exit-code mapping are only ever exercised here. `statePath` is a file the
+ * run may READ (confirmations); writes are stubbed so no run can leak state into the next.
  */
-function runMain(fetchPy: string, extraEnv: Record<string, string> = {}) {
+function runMain(fetchPy: string, opts: { state?: object } = {}) {
+  const statePath = path.join(TMP, `state-${Math.random().toString(36).slice(2)}.json`);
+  if (opts.state) writeFileSync(statePath, JSON.stringify(opts.state));
   const code = [
     'import importlib.util, sys, json',
     `spec = importlib.util.spec_from_file_location("c", ${JSON.stringify(PY)})`,
@@ -54,37 +63,58 @@ function runMain(fetchPy: string, extraEnv: Record<string, string> = {}) {
     'm.scope_packages = lambda scope: ({}, True)',
     'm.fire = lambda body: None',
     'm.clear = lambda reason: None',
-    'm.write_state = lambda t, n: None',
+    'm.write_state = lambda *a: None',
     'sys.exit(m.main())',
   ].join('\n');
   return spawnSync('python3', ['-c', code], {
     encoding: 'utf8',
-    env: { ...process.env, CLIENT_CLAIM_TODAY: '2026-08-28', ...extraEnv },
+    env: {
+      ...process.env,
+      CLIENT_CLAIM_TODAY: '2026-09-29',
+      CLIENT_CLAIM_STATE: statePath,
+      CLIENT_CLAIM_LOG: path.join(TMP, 'run.log'),
+    },
   });
 }
 
-/** A synthetic committed-SoT body: `n` rows, all `native`, all stamped `stamp`. */
-function fakeSot(n: number, stamp: string): string {
-  return Array.from({ length: n }, (_, i) =>
-    `    {\n      slug: 'row${i}',\n      kind: 'native',\n` +
-    `      source: 'https://example.test/row${i}',\n      verifiedAt: '${stamp}',\n    },\n`,
-  ).join('');
+/** A synthetic generated corpus: `n` rows stamped `stamp`, each with one anchor on its own page. */
+function fakeCorpus(n: number, stamp: string, overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    _generated_by: 'test',
+    schema_version: 1,
+    corpus: 'mcp-clients',
+    rows: Array.from({ length: n }, (_, i) => ({
+      slug: `row${i}`,
+      kind: 'native',
+      verifiedAt: stamp,
+      source: `https://example.test/row${i}`,
+      evidence: [{ claim: 'fixture add --flag', source: `https://example.test/page/row${i}`, expect: ['fixture add'] }],
+    })),
+    ...overrides,
+  });
 }
 
-/** Stub `fetch`: the raw-SoT URL yields `sot`; every other URL yields an MCP-evidencing page. */
-function fetcher(sot: string, sourceStatus = 200): string {
+/**
+ * Stub `fetch` (v2 returns a 4-tuple: http, body, note, final_url). The raw-SoT URL yields
+ * `corpus`; `pages` maps a URL fragment to [status, body]; everything else evidences the anchor.
+ */
+function fetcher(corpus: string, pages: Record<string, [number, string]> = {}): string {
   return [
-    `SOT = ${JSON.stringify(sot)}`,
+    `SOT = ${JSON.stringify(corpus)}`,
+    `PAGES = ${JSON.stringify(pages)}`,
     'def _f(url, timeout=30):',
-    '    if "raw.githubusercontent.com" in url:',
-    '        return 200, SOT, ""',
-    `    return ${sourceStatus}, "mcp mcp mcp", ""`,
+    '    if "raw.githubusercontent.com/AlgoVaultLabs" in url:',
+    '        return 200, SOT, "", url',
+    '    for frag, resp in PAGES.items():',
+    '        if frag in url:',
+    '            return resp[0], resp[1], "", url',
+    '    return 200, "<p>fixture add --flag</p>", "", url',
     'm.fetch = _f',
   ].join('\n');
 }
 
 describe('client-claim-freshness — verdict token grammar', () => {
-  it('the --self-test emits EXACTLY ONE token line and exits 0', { timeout: 60_000 }, () => {
+  it('the --self-test emits EXACTLY ONE token line and exits 0', { timeout: 120_000 }, () => {
     const r = spawnSync('python3', [PY, '--self-test'], { encoding: 'utf8' });
     expect(r.status, r.stderr).toBe(0);
     const lines = tokenLines(r.stdout);
@@ -94,7 +124,6 @@ describe('client-claim-freshness — verdict token grammar', () => {
   });
 
   it('the token grammar admits exactly three values', { timeout: 20_000 }, () => {
-    // The vocabulary is asserted against the SHIPPED mapping, not against a copy in this file.
     const r = spawnSync('python3', ['-c', [
       'import importlib.util',
       `spec = importlib.util.spec_from_file_location("c", ${JSON.stringify(PY)})`,
@@ -107,49 +136,78 @@ describe('client-claim-freshness — verdict token grammar', () => {
 });
 
 describe('client-claim-freshness — exit-code contract, through the real main()', () => {
-  it('PASS exits 0 and prints one token', { timeout: 30_000 }, () => {
-    const r = runMain(fetcher(fakeSot(11, '2026-08-05')));
+  it('PASS exits 0 when every anchor is evidenced — even on rows whose human stamp is ancient',
+    { timeout: 30_000 }, () => {
+      // The whole point of v2: a 2020 verifiedAt is not a finding when the claim is confirmed today.
+      const r = runMain(fetcher(fakeCorpus(12, '2020-01-01')));
+      expect(r.status, r.stderr).toBe(0);
+      expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
+      expect(r.stdout).toMatch(/state=confirmed/);
+    });
+
+  it('FAIL exits 0 on a CONTRADICTED anchor — the alert IS the action', { timeout: 30_000 }, () => {
+    const r = runMain(fetcher(fakeCorpus(12, '2026-09-01'), { 'page/row3': [200, '<p>nothing here</p>'] }));
     expect(r.status, r.stderr).toBe(0);
-    expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
+    expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
+    expect(r.stdout).toMatch(/slug=row3 .*state=contradicted/);
+    expect(r.stdout).toMatch(/missing on source: "fixture add"/);
   });
 
-  it('FAIL exits 0 — the alert IS the action, so a finding must not bounce the cron line',
+  it('FAIL exits 0 on a STALE row: never confirmed, unreachable today, human stamp past 150 d',
     { timeout: 30_000 }, () => {
-      const r = runMain(fetcher(fakeSot(11, '2020-01-01')));   // every row far past 150d
+      const r = runMain(fetcher(fakeCorpus(12, '2026-09-01').replace(
+        '"slug":"row5","kind":"native","verifiedAt":"2026-09-01"',
+        '"slug":"row5","kind":"native","verifiedAt":"2026-01-01"'), { 'page/row5': [503, ''] }));
       expect(r.status, r.stderr).toBe(0);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
+      expect(r.stdout).toMatch(/slug=row5 .*confirmed=never .*state=stale/);
+    });
+
+  it('a recent CONFIRMATION keeps an unreachable row out of stale -> INDETERMINATE, never PASS',
+    { timeout: 30_000 }, () => {
+      // Same stale row as above, but the state file records a confirmation of THIS evidence 10 d ago.
+      const corpus = fakeCorpus(12, '2026-09-01').replace(
+        '"slug":"row5","kind":"native","verifiedAt":"2026-09-01"',
+        '"slug":"row5","kind":"native","verifiedAt":"2026-01-01"');
+      const row5 = JSON.parse(corpus).rows[5];
+      const sha = spawnSync('python3', ['-c', [
+        'import importlib.util, json, sys',
+        `spec = importlib.util.spec_from_file_location("c", ${JSON.stringify(PY)})`,
+        'm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)',
+        `print(m.evidence_sha(json.loads(${JSON.stringify(JSON.stringify(row5.evidence))})))`,
+      ].join('\n')], { encoding: 'utf8' }).stdout.trim();
+      expect(sha).toMatch(/^[0-9a-f]{64}$/);
+      const r = runMain(fetcher(corpus, { 'page/row5': [503, ''] }), {
+        state: { schema: 2, verdict: 'PASS', row_count: 12,
+          confirmations: { 'mcp-clients/row5': { date: '2026-09-19', evidence_sha: sha } } },
+      });
+      expect(r.status, r.stderr).toBe(3);
+      expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=INDETERMINATE`]);
+      expect(r.stdout).toMatch(/slug=row5 .*confirmed=2026-09-19 age=10d state=source unreachable/);
     });
 
   it('INDETERMINATE exits 3 when the SoT is unreadable — verified NOTHING never reads as clean',
     { timeout: 30_000 }, () => {
-      const r = runMain([
-        'def _f(url, timeout=30): return 503, "", ""',
-        'm.fetch = _f',
-      ].join('\n'));
+      const r = runMain('def _f(url, timeout=30): return 503, "", "", url\nm.fetch = _f');
       expect(r.status, r.stderr).toBe(3);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=INDETERMINATE`]);
     });
 
-  it('a truncated parse is INDETERMINATE, not a clean PASS over three rows',
+  it('INDETERMINATE exits 3 on a corpus below its floor, and on a corpus that is not JSON',
     { timeout: 30_000 }, () => {
-      const r = runMain(fetcher(fakeSot(3, '2026-08-05')));
-      expect(r.status, r.stderr).toBe(3);
-      expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=INDETERMINATE`]);
-    });
-
-  it('an unreachable per-row source degrades to INDETERMINATE, never to PASS',
-    { timeout: 30_000 }, () => {
-      const r = runMain(fetcher(fakeSot(11, '2026-08-05'), 503));
-      expect(r.status, r.stderr).toBe(3);
-      expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=INDETERMINATE`]);
+      for (const sot of [fakeCorpus(3, '2026-09-01'), 'export const MCP_CLIENTS = {};', fakeCorpus(12, '2026-09-01', { schema_version: 2 })]) {
+        const r = runMain(fetcher(sot));
+        expect(r.status, r.stderr).toBe(3);
+        expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=INDETERMINATE`]);
+      }
     });
 
   it('EVERY exit path emits exactly one token line — no path is silent, none doubles up',
     { timeout: 60_000 }, () => {
       const runs = [
-        runMain(fetcher(fakeSot(11, '2026-08-05'))),
-        runMain(fetcher(fakeSot(11, '2020-01-01'))),
-        runMain('def _f(url, timeout=30): return 503, "", ""\nm.fetch = _f'),
+        runMain(fetcher(fakeCorpus(12, '2026-09-01'))),
+        runMain(fetcher(fakeCorpus(12, '2026-09-01'), { 'page/row0': [200, '<p>gone</p>'] })),
+        runMain('def _f(url, timeout=30): return 503, "", "", url\nm.fetch = _f'),
       ];
       for (const r of runs) expect(tokenLines(r.stdout)).toHaveLength(1);
       // …and the three runs are not all the same verdict, or the assertion above is vacuous.
@@ -159,49 +217,47 @@ describe('client-claim-freshness — exit-code contract, through the real main()
 
 describe('client-claim-freshness — declarations the rest of the estate reads', () => {
   it('ALERT_ID is a module-level literal, which is what check-alert-registry.mjs matches', () => {
-    // Its SHAPE 1 is /\bALERT_ID\s*=\s*"?([A-Za-z][A-Za-z0-9_-]{3,})"?/m. Its SHAPE 3 anchors on
-    // a variable literally named `TG`; this canary uses the `WRAPPER` idiom, which SHAPE 3 does
-    // not match — so the module-level literal is the ONLY thing keeping the id enumerable.
     expect(SRC).toMatch(new RegExp(`^ALERT_ID = "${ALERT_ID}"$`, 'm'));
   });
 
   it('the recommended wave is TEMPLATED W{NEXT}, never a literal wave number', () => {
-    // check-alert-recommended-wave.mjs scans a hand-maintained list carrying no Python canaries
-    // (its header defers that to OPS-ALERT-WAVE-GATE-PY-COVERAGE-W{NEXT} and asks each Python
-    // canary to assert the property itself). This is that assertion.
-    expect(SRC).toContain('LANDING-{VENDOR}-CLIENT-SURFACE-W{{NEXT}}');
-    // Scoped to the TEMPLATE CONSTANT, not to the rest of the file. The ban is on emitting a
-    // literal wave number as an Action line; CITING the wave that made a change is how every
-    // correction in this estate is written, and a whole-remainder ban fails on the canary's own
-    // correction record (VENDOR_SCOPE_REASON names LANDING-DSH-CLIENT-SURFACE-W1 as history).
-    // Same over-broad-regex defect the canary's own --self-test hit on the same day.
+    expect(SRC).toContain('RECOMMENDED_WAVE = "LANDING-{CORPUS}-CLAIMS-W{{NEXT}}"');
     const template = SRC.split('RECOMMENDED_WAVE = ')[1].split('\n')[0];
     expect(template).not.toMatch(/-W\d+/);
   });
 
-  it('the CORPUS uses declaration-sync.sh\'s name|path|fields idiom', () => {
+  it('the CORPUS line names the SAME corpus and path as the TS contract (identifier lock)', () => {
     const line = SRC.match(/^\s*"(mcp-clients\|[^"]+)",$/m)?.[1];
     expect(line).toBeDefined();
-    expect(line!.split('|')).toEqual([
-      'mcp-clients', 'src/lib/integrations-data/mcp-clients.ts', 'kind,source,verifiedAt',
-    ]);
+    const [name, file, fields, floor] = line!.split('|');
+    expect(name).toBe(CLAIM_EVIDENCE_CORPUS);
+    expect(file).toBe(CLAIM_EVIDENCE_JSON);
+    expect(fields.split(',')).toEqual(['slug', 'kind', 'verifiedAt', 'evidence']);
+    expect(Number(floor)).toBe(8);
   });
 
   it('the SoT is read from the committed ref with a cache-buster, never a bare branch path', () => {
-    // raw.githubusercontent.com is CDN-cached at max-age=300 in BOTH ref forms. The ref form is
-    // not a freshness control and never was; the cache-buster is.
     expect(SRC).toContain('RAW_REF = "refs/heads/main"');
     expect(SRC).toMatch(/\?cb=%s/);
   });
 
   it('the age threshold is 150d and its justification travels with it', () => {
-    // A number with no recorded derivation gets widened by the next wave that finds it noisy.
     expect(SRC).toContain('os.environ.get("CLIENT_CLAIM_AGE_DAYS", "150")');
     expect(SRC).toContain('AGE THRESHOLD: 150 DAYS, AND WHY NOT THE SPEC\'S 120');
   });
 
+  it('the retired arms stay retired: no mcp-token SOURCE arm, no kind-keyed vendor table', () => {
+    // A4: the evidence arm strictly supersedes the token count. A5: the vendor arm is keyed on the
+    // CLAIM (npmScopeAbsence), so the kind-keyed table and its hand-maintained reasons are gone.
+    expect(SRC).not.toMatch(/^def source_arm\(/m);
+    expect(SRC).not.toMatch(/^VENDOR_SCOPE\b/m);
+    expect(SRC).not.toMatch(/^VENDOR_SCOPE_REASON\b/m);
+    expect(SRC).not.toMatch(/^VENDOR_ARTIFACT_KINDS\b/m);
+    expect(SRC).not.toMatch(/^def parse_rows\(/m);
+    expect(SRC).toContain('npmScopeAbsence');
+  });
+
   it('the --clear invocation passes /dev/null on stdin', () => {
-    // A wrapper left reading stdin hung a real cron run.
     const clearFn = SRC.split('def clear(')[1].split('\ndef ')[0];
     expect(clearFn).toContain('os.devnull');
     expect(clearFn).toContain('--clear');

@@ -1,110 +1,85 @@
 #!/usr/bin/env python3
-"""client-claim-freshness.py — OPS-CLIENT-CLAIM-FRESHNESS-W1 (CH2)
+"""client-claim-freshness.py — v2: confirm every rendered claim against the live page that makes it true.
 
-A generic DECLARED-CLAIM vs LIVE-SOURCE prober. `verifiedAt` becomes an enforced expiry with a
-live re-probe, not a frozen stamp.
+Built by OPS-CLIENT-CLAIM-FRESHNESS-W1 (v1, 2026-08-28); arms rebuilt by OPS-CLIENT-CLAIM-EVIDENCE-W1 CH2.
 
-── The bug class ────────────────────────────────────────────────────────────────────────────
-`src/lib/integrations-data/mcp-clients.ts` carries 11 rows, each asserting a THIRD PARTY's MCP
-capability via `kind`, with a `source` URL and a `verifiedAt` date. Nothing re-checked them, and
-a third-party capability does not hold still.
+── What v1 measured, and why its arms are gone ──────────────────────────────────────────────
+v1 aged a hand-typed `verifiedAt` (AGE arm) and counted the token `mcp` on each row's `source`
+page (SOURCE arm). On the page this rewrite answers (2026-09-29) it:
+  * paged five rows `stale` on age ALONE — claude-code, cline and cursor were fully true;
+  * scored `ok` on claude-desktop and codex, whose own sources now CONTRADICT what we render;
+  * headlined "no longer match their live source" when no arm had compared anything.
+Precision 2/5, recall 2/4. Every measured drift in this class happened INSIDE the 150-day window
+(DeepSeek 5 d after its stamp, Codex and Claude Desktop within 55 d), so an age arm cannot catch it
+in time, and it pages rows that are still true. A token count cannot see a claim at all.
 
-Measured 2026-08-28, and it is why this file exists rather than a one-row edit: the `deepseek`
-row renders on algovault.com stating verbatim
+── What v2 measures ─────────────────────────────────────────────────────────────────────────
+The corpus is src/lib/integrations-data/claim-evidence.json, GENERATED from mcp-clients.ts by
+scripts/emit-claim-evidence.mjs (lockstep asserted in CI, tests/unit/claim-evidence.test.ts R5).
+Every row carries evidence entries: {claim, source, expect[], reject[]?, npmScopeAbsence?}.
 
-    "DeepSeek ships no MCP application of its own, and its API exposes no MCP parameter."
+  EVIDENCE — per anchor. Each distinct URL is fetched ONCE per run. An anchor is `confirmed` iff
+    every `expect` string is present and no `reject` string is present in the page's MATCH SPACE:
+        whitespace-collapsed raw body
+      ∪ whitespace-collapsed html.unescape(body with every tag replaced by a SPACE)
+      ∪ (when the body parses as JSON) each whitespace-collapsed string leaf.
+    Case-SENSITIVE — measured: the Claude support page carries "Organization settings > Connectors",
+    so a case-insensitive match would CONFIRM the false "Settings > Connectors". Tags become
+    SPACES — measured: "mcp_servers Ignored" exists only across a </td><td> boundary.
+    A non-200 is `unreachable`. A final URL on a different host + path (ignoring a trailing `/`,
+    the query and the fragment) is a `moved` NOTE — reported, never a finding on its own.
+    Row evidence: any contradicted -> contradicted; else any unreachable -> unreachable; else
+    confirmed. A row is confirmed only when EVERY one of its anchors confirms.
 
-True when it was stamped `2026-08-05`. FALSE since `@deepseek-ai/dsh-mcp-client` was published
-(npm `created` 2026-08-10, repo `github.com/deepseek-ai/deepseek-harness`, directory
-`packages/mcp/mcp-client`, maintainer `tianyicui-deepseek`, dependency
-`@modelcontextprotocol/sdk`). Its own README: "MCP client bridge plugin: connects to external
-Model Context Protocol servers and registers their tools on `ctx.tools`". Worse,
-`tests/unit/integrations-data.test.ts` LOCKS `deepseek.kind === 'byo-model'` with a comment
-restating the false claim — so the Factuality gate was defending a Factuality violation.
+  VENDOR — re-keyed from the row's `kind` to the CLAIM. It runs only for an anchor that declares
+    `npmScopeAbsence` (the claim asserts the vendor ships NO first-party MCP client in that npm
+    scope), paging the scope to exhaustion. v1 keyed it on `kind` and so had to be switched off by
+    hand for a correct row (`OPS-CLIENT-CLAIM-PREDICATE-CLAIMTEXT-W{NEXT}` — closed here). Zero rows
+    declare it today: dormant BY DECLARATION, and it re-arms itself the day a row asserts an absence.
 
-Fixing the one row leaves the next Cursor / Codex / Kimi / GLM shift to be found by a customer.
-This probes the whole corpus daily. The other 10 mcp-clients rows inherit it for free, and
-`ai-agents.ts` (4 rows) + `exchange-kits.ts` (13 rows) share the same `IntegrationEntry`
-interface and the same optional `source`/`verifiedAt`, so they extend it by ONE `CORPUS` line.
-
-── WHY THE SOURCE URL ALONE CANNOT DECIDE, WHICH IS THE WHOLE DESIGN ────────────────────────
-The commissioning spec said "fetch each row's `source` and apply the per-`kind` predicate".
-MEASURED: that is structurally incapable of finding the defect that commissioned the wave. The
-deepseek row's own source, `https://api-docs.deepseek.com/guides/anthropic_api`, returns 200 and
-says `mcp_servers` -> "Ignored" and `mcp_tool_use` -> "Not Supported". It SUPPORTS the api-level
-half of the claim. The half that is false — "ships no MCP application of its own" — is evidenced
-only on npm and GitHub, which that page never mentions. A source-only predicate classifies
-deepseek as CONFIRMS and this canary is dark on day one.
-
-So a `byo-model` / `api-level` row takes a SECOND, independent input: the vendor's own npm scope,
-probed for a first-party MCP client. The rows may not be edited by this wave, so the scope map is
-DECLARED here, in `VENDOR_SCOPE`, with three states and a mandatory reason for the middle one:
-  "@scope"        -> probe it
-  None + reason   -> declared not-applicable; the reason is MANDATORY and lives on the entry,
-                     never in prose, so a future wave enforcing the contract cannot "fix" it away
-  absent entirely -> INDETERMINATE for that row. Adding a corpus module must not silently skip
-                     the arm — a skipped row looks exactly like a healthy one.
+  AGE — from the last CONFIRMATION, not from the hand-typed date:
+        age = today − max(verifiedAt, last machine confirmation whose evidence_sha matches)
+    `verifiedAt` is the last HUMAN review. A row confirmed today is age 0 and can never be stale. A
+    row whose sources go unreachable ages from its last confirmation and turns stale after the
+    threshold — an unreachable source fails toward NOISE, never toward silence. Editing a row's
+    evidence changes its evidence_sha, so a confirmation of the OLD anchors is never credited to
+    the new ones.
 
 ── AGE THRESHOLD: 150 DAYS, AND WHY NOT THE SPEC'S 120 ──────────────────────────────────────
-The commissioning spec offered 120d as a no-signal default, justified as "the smallest round
-number above the observed 119-day maximum, so it fires on the next stamp that ages past today's
-worst row rather than on the whole back catalogue at install."
-
-CH1 measured the distribution and it gives signal, so the default does not apply. As of the
-2026-08-28 run date: n=11, min 23d, median 23d, MAX 120d (6 rows stamped `2026-08-05` = 23d,
-5 stamped `2026-04-30` = 120d). One day of drift since the spec was authored made the maximum
-120, so a 120d threshold fires on FIVE rows on day one — precisely the outcome the spec's own
-justification rules out, and it would bury the CONTRADICTION finding that is this wave's proof
-of life under back-catalogue noise.
-
-150d leaves the Apr-30 cohort 30 days of runway (first AGE fire 2026-09-27), still bounds any
-vendor claim to <= 5 months, and keeps the first live FAIL attributable to the CONTRADICTION arm
-alone. Widen it only with a measurement, never to quiet the alert — that is guard-blunting.
+Derived by v1 from the measured stamp distribution on 2026-08-28 (n=11, max 120 d): 120 would have
+fired on five rows at install and buried the first contradiction; 150 still bounds any vendor
+claim to <= 5 months. Unchanged here. In v2 it bounds how long a row may go UNCONFIRMED, not how
+old a human's date may be. Widen it only with a measurement, never to quiet the alert.
 
 ── Contract ─────────────────────────────────────────────────────────────────────────────────
-Corpus: the `CORPUS` list below, in `ops/monitoring/declaration-sync.sh`'s pipe idiom. The host
-has NO checkout, so each module is fetched from the committed SoT over HTTPS and parsed with a
-regex over the row literals.
-
-Two INDEPENDENT arms per row, each rendering one of
-`ok` / `stale` / `contradicted` / `source unreachable` / `predicate indeterminate`:
-  1. AGE           now - verifiedAt > AGE_THRESHOLD_DAYS
-  2. CONTRADICTION the source must still evidence the declared `kind`; `byo-model`/`api-level`
-                   additionally get the vendor npm-scope probe described above.
-
-Row state = the strongest arm, in this precedence:
-    contradicted > stale > (predicate indeterminate | source unreachable) > ok
-A definite finding always beats an unknown. This is the direction the law requires: an
-unavailable arm may never SILENCE the alert, so it never downgrades a FAIL — it only decides
-what happens when nothing definite was found.
-
+Row state = the strongest of: evidence (contradicted | unreachable | indeterminate | confirmed)
+and age (stale), in this precedence:
+    contradicted > stale > (predicate indeterminate | source unreachable) > confirmed
 Aggregation:
-  any contradicted                          -> FAIL
-  else any stale                            -> FAIL
-  else any indeterminate/unreachable        -> INDETERMINATE
-  else                                      -> PASS
-  parse yields < MIN_ROWS, or the row count moved by > ROW_COUNT_TOLERANCE vs the previous run
-                                            -> INDETERMINATE
-The third line closes a gap in the commissioning spec, which defined "all rows ok -> PASS" and
-"EVERY row indeterminate -> INDETERMINATE" and left mixed ok/indeterminate undefined. Certifying
-a partially-unverified corpus as PASS is exactly the fail-open the verdict-token law forbids.
+  any contradicted -> FAIL · else any stale -> FAIL · else any unknown -> INDETERMINATE · else PASS
+  plus, at CONSTRUCTION (vacuity guards — WE build this corpus): an unreadable SoT, a document that
+  is not JSON, schema_version != 1, a corpus name that is not the declared one, rows below that
+  corpus's floor, a row with zero evidence or a malformed anchor -> INDETERMINATE; and a row count
+  that moved by more than ROW_COUNT_TOLERANCE since the last run -> INDETERMINATE.
+The row floor is PER CORPUS, declared on its CORPUS line. v1's single global MIN_ROWS = 8 would
+have raised INDETERMINATE for the WHOLE run the day the 4-row ai-agents module joined, blinding the
+12 mcp-clients rows with it.
 
 Verdict token: exactly one terminal `CLIENT_CLAIM_FRESHNESS_VERDICT=PASS|FAIL|INDETERMINATE`.
 Exit: 0 = evaluated (PASS, or FAIL with the alert dispatched) · 3 = INDETERMINATE (verified
-NOTHING). 3 is the token-law default for a NEW gate. Callers gate on the TOKEN, never the bare
-exit code — FAIL exits 0 because the alert IS the action.
+NOTHING it could stand behind). Callers gate on the TOKEN — FAIL exits 0 because the alert IS the
+action.
 
-── Two fetch behaviours that are corrections, not conveniences ──────────────────────────────
-* REDIRECTS ARE FOLLOWED EXPLICITLY. Python's default redirect handler does not follow 308, and
-  three of the eleven sources (cursor, cline, modelcontextprotocol.io) answer 308. Without this
-  they read UNREACHABLE forever while `curl -L` gets 200 — an instrument structurally incapable
-  of seeing its subject, returning a confident wrong answer. Caught in CH1 by cross-checking
-  against curl; the fixture-driven self-test pins it.
-* `www.npmjs.com/package/<pkg>` IS REWRITTEN TO `registry.npmjs.org/<pkg>`. The `smithery` row's
-  source is an npmjs.com package page, which answers 403 to every headless fetch. This is the
-  estate's existing law ("package readme verification via REGISTRY source, not CDN-protected
-  page"), not a new exemption, and the rewrite is NAMED in that row's output line so it is a
-  reported substitution rather than a silent one.
+The page states only what was measured: "contradicted" appears only when an anchor was
+contradicted; an age finding says "not confirmed … for more than 150 days", never "no longer
+match". Unverifiable rows and moved sources are listed as housekeeping, never as findings.
+
+── Fetch behaviours kept from v1 (corrections, not conveniences) ────────────────────────────
+* Redirects are followed EXPLICITLY — urllib does not follow 308.
+* `www.npmjs.com/package/<pkg>` is rewritten to `registry.npmjs.org/<pkg>` — the page 403s every
+  headless fetch; the substitution is named in the output line.
+* The committed SoT is read from refs/heads/main WITH A CACHE-BUSTER — both ref forms share one
+  5-minute CDN TTL; the buster is the freshness control, the ref form is not.
 
 ── Env / test seams ─────────────────────────────────────────────────────────────────────────
   CLIENT_CLAIM_LOG            log path            CLIENT_CLAIM_STATE      state file path
@@ -120,11 +95,13 @@ exit code — FAIL exits 0 because the alert IS the action.
                               back-to-back dry runs FALSE-GREEN on cooldown suppression).
   --self-test                 hermetic scenario suite; no network, no wrapper, no state file.
 
-Cron: 17 2 * * * (canonical off-:00 minute per ops/monitoring/schedule-boundary-rule.json).
-Daily, never hourly: vendor capability moves on a scale of weeks, and an hourly probe of eleven
-third-party doc sites is rude and rate-limit bait.
+Cron: 17 2 * * * (canonical off-:00 minute per ops/monitoring/schedule-boundary-rule.json). Daily,
+never hourly: vendor docs move on a scale of weeks, and an hourly probe of a dozen third-party doc
+sites is rude and rate-limit bait.
 """
 import argparse
+import hashlib
+import html
 import json
 import os
 import re
@@ -135,7 +112,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 ALERT_ID = "CLIENT_CLAIM_DRIFT"
@@ -144,96 +121,87 @@ LOG = os.environ.get("CLIENT_CLAIM_LOG", "/var/log/algovault-client-claim-freshn
 STATE = os.environ.get("CLIENT_CLAIM_STATE",
                        "/var/lib/algovault-monitoring/client-claim-freshness-state.json")
 
-# See the AGE THRESHOLD paragraph in the module docstring. 150, derived from CH1's measured
-# distribution (max 120d on 2026-08-28), not from a round number.
+# See the AGE THRESHOLD paragraph in the module docstring.
 AGE_THRESHOLD_DAYS = max(1, int(os.environ.get("CLIENT_CLAIM_AGE_DAYS", "150")))
 
-# Vacuity floor. WE construct this corpus by declaring modules, so a parse yielding almost
-# nothing means the parser broke against a refactor, not that the claims vanished. mcp-clients
-# ships 11; 8 is a truncation refusal, never a target.
-MIN_ROWS = 8
-# A corpus that moves by more than this between runs is a parser or a refactor event, not a
-# content change, and an aggregate over it would be an aggregate over a truncated collection.
+# A corpus that moves by more than this between runs is a parser or refactor event, not a content
+# change, and an aggregate over it would be an aggregate over a truncated collection.
 ROW_COUNT_TOLERANCE = 2
 
 RAW_HOST = "https://raw.githubusercontent.com"
 RAW_REPO = "AlgoVaultLabs/crypto-quant-signal-mcp"
-# refs/heads/main AND /main/ share ONE 5-minute CDN TTL — the ref FORM is not a freshness
-# control and never was. The control is the cache-buster below. (Measured twice; the "short-ref
-# serves a stale edge" claim is false and is not re-litigated here.)
+# refs/heads/main AND /main/ share ONE 5-minute CDN TTL — the ref FORM is not a freshness control
+# and never was. The control is the cache-buster in raw_url().
 RAW_REF = "refs/heads/main"
 
-# The declared corpus, in ops/monitoring/declaration-sync.sh's idiom: name|path|fields.
-# Extending this canary to another claim-bearing module is ONE line.
+CORPUS_SCHEMA_VERSION = 1
+STATE_SCHEMA = 2
+
+# The declared corpus: name|path|required row fields|row floor. The floor is PER CORPUS (see the
+# Contract paragraph). Extending the canary to another evidenced module is ONE line — and the module
+# leaves UNCOVERED_CLAIM_MODULES in src/lib/integrations-data/claim-evidence.ts in the same change.
 CORPUS = [
-    "mcp-clients|src/lib/integrations-data/mcp-clients.ts|kind,source,verifiedAt",
+    "mcp-clients|src/lib/integrations-data/claim-evidence.json|slug,kind,verifiedAt,evidence|8",
 ]
 
-# Vendor npm scope per slug — the second, independent contradiction input. Three states; see the
-# module docstring. An entry is REQUIRED for every byo-model/api-level row.
-VENDOR_SCOPE = {
-    "deepseek": None,
-    "zai-api": None,
-}
-VENDOR_SCOPE_REASON = {
-    # LANDING-DSH-CLIENT-SURFACE-W1 (2026-08-28) FLIPPED this row from "@deepseek-ai" to None, and
-    # the flip is a CORRECTION of this arm's aim rather than a suppression of its finding.
-    #
-    # The arm fired correctly on 2026-08-28: the row asserted "DeepSeek ships no MCP application of
-    # its own" and @deepseek-ai/dsh-mcp-client falsified it. That wave retired the false sentence and
-    # split the subject into two rows — `deepseek-harness` (native, DeepSeek's own runtime) and this
-    # one, which now claims only the bring-your-own-model PATH and asserts no absence at all.
-    #
-    # But the predicate keys on `kind`, not on what the row actually claims, so it would keep
-    # returning `contradicted` on a factually-correct row every day for as long as DeepSeek ships an
-    # MCP client — i.e. permanently. A guard that cannot stop firing is one that gets ignored, and
-    # the finding it would be reporting is already fixed.
-    #
-    # THIS IS DECLARED DEBT, NOT A CLOSED QUESTION. The real fix is to fire only when the row's
-    # RENDERED TEXT asserts the absence, which makes the arm re-arm itself automatically for this row
-    # and every future one. Owner: OPS-CLIENT-CLAIM-PREDICATE-CLAIMTEXT-W{NEXT}. Until it lands this
-    # row keeps its AGE arm and its SOURCE arm, which is what still checks its surviving claim that
-    # the DeepSeek API exposes no MCP parameter.
-    "deepseek": (
-        "the row no longer asserts an absence, so there is nothing here for a vendor-artifact "
-        "probe to falsify: LANDING-DSH-CLIENT-SURFACE-W1 moved the native-client subject to the "
-        "`deepseek-harness` row and left this one claiming only the bring-your-own-model path. "
-        "The arm keys on `kind` rather than on the asserted claim, so re-enabling it here would "
-        "page daily and forever on correct copy. Re-arm at "
-        "OPS-CLIENT-CLAIM-PREDICATE-CLAIMTEXT-W{NEXT}"),
-    "zai-api": ("no first-party npm scope located 2026-08-28 (probed @z-ai, @zai-org, @zhipuai, "
-                "@zai — 0 in-scope packages each) AND the row's api-level claim asserts a "
-                "PRESENCE, so a new Z.ai MCP client would EXTEND it rather than falsify it. "
-                "Declare a scope here the day one appears."),
-}
+# Ships VERBATIM: send_telegram.sh's resolve_template() substitutes OPS-<CLASS>-W{NEXT} only, so
+# the operator sees the placeholder — which is honest, and never a completed wave's number.
+RECOMMENDED_WAVE = "LANDING-{CORPUS}-CLAIMS-W{{NEXT}}"
 
-# Kinds whose claim can be falsified by the vendor shipping its own MCP client.
-VENDOR_ARTIFACT_KINDS = ("byo-model", "api-level")
+# Row states. Strongest first: a definite finding beats an unknown; an unknown never silences one.
+ST_CONTRADICTED = "contradicted"
+ST_STALE = "stale"
+ST_INDETERMINATE = "predicate indeterminate"
+ST_UNREACHABLE = "source unreachable"
+ST_CONFIRMED = "confirmed"
+STATE_PRECEDENCE = (ST_CONTRADICTED, ST_STALE, ST_INDETERMINATE, ST_UNREACHABLE, ST_CONFIRMED)
 
-RECOMMENDED_WAVE = "LANDING-{VENDOR}-CLIENT-SURFACE-W{{NEXT}}"
-
-ARM_OK = "ok"
-ARM_STALE = "stale"
-ARM_CONTRADICTED = "contradicted"
-ARM_UNREACHABLE = "source unreachable"
-ARM_INDETERMINATE = "predicate indeterminate"
-# Strongest first. A definite finding beats an unknown; an unknown never silences a finding.
-STATE_PRECEDENCE = (ARM_CONTRADICTED, ARM_STALE, ARM_INDETERMINATE, ARM_UNREACHABLE, ARM_OK)
+# Anchor verdicts.
+AN_CONFIRMED = "confirmed"
+AN_CONTRADICTED = "contradicted"
+AN_UNREACHABLE = "unreachable"
+AN_INDETERMINATE = "indeterminate"
+ANCHOR_PRECEDENCE = (AN_CONTRADICTED, AN_INDETERMINATE, AN_UNREACHABLE, AN_CONFIRMED)
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
+# The vendor arm's first-party-client detector (both halves required — see scope_hits()).
 MCP_TOKEN_RE = re.compile(r"mcp", re.I)
 MCP_CLIENT_RE = re.compile(r"\bclient\b|\bbridge\b|\bconnector\b", re.I)
+
+_WS_RE = re.compile(r"\s+")
+_TAG_RE = re.compile(r"<[^>]+>")
 
 
 class Indeterminate(Exception):
     """Raised where the run verified NOTHING it was supposed to verify. Never a silent skip."""
 
 
+def _fd_is_file(fd, path):
+    """True when file descriptor `fd` IS `path` (same device + inode)."""
+    try:
+        a, b = os.fstat(fd), os.stat(path)
+        return (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
+    except (OSError, ValueError):
+        return False
+
+
 def log(msg):
+    """Print, and append to LOG — unless stdout already IS the log.
+
+    The cron line appends stdout to the same file, and v1 appended from here as well, so every v1
+    log line exists TWICE (measured on signal-1: two copies of every EVAL and AGGREGATE line, one
+    of the token). Detected by inode rather than by an env flag, so a manual run still logs.
+    """
     line = "[%s] %s" % (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), msg)
     print(line, flush=True)
+    try:
+        stdout_fd = sys.stdout.fileno()
+    except (AttributeError, OSError, ValueError):
+        stdout_fd = -1
+    if stdout_fd >= 0 and _fd_is_file(stdout_fd, LOG):
+        return
     try:
         with open(LOG, "a") as fh:
             fh.write(line + "\n")
@@ -249,28 +217,26 @@ def today():
 # ── pure logic (fixture-drivable — this is what --self-test exercises) ────────────────────────
 
 def parse_corpus_line(line):
-    """`name|path|fields` -> dict. A malformed declaration is vacuity: WE wrote it."""
+    """`name|path|fields|floor` -> dict. A malformed declaration is vacuity: WE wrote it."""
     parts = [p.strip() for p in line.split("|")]
-    if len(parts) != 3 or not all(parts):
-        raise Indeterminate("malformed CORPUS line %r — expected name|path|fields" % line)
-    return {"name": parts[0], "path": parts[1], "fields": parts[2].split(",")}
+    if len(parts) != 4 or not all(parts):
+        raise Indeterminate("malformed CORPUS line %r — expected name|path|fields|floor" % line)
+    try:
+        floor = int(parts[3])
+    except ValueError:
+        raise Indeterminate("CORPUS line %r: floor %r is not an integer" % (line, parts[3]))
+    if floor < 1:
+        raise Indeterminate("CORPUS line %r: floor must be >= 1" % line)
+    return {"name": parts[0], "path": parts[1], "fields": parts[2].split(","), "min_rows": floor}
 
 
 def raw_url(path, buster):
-    """The committed-SoT URL. The cache-buster is the freshness CONTROL — not the ref form.
-
-    Asserted directly by --self-test: this is a seam the hermetic suite otherwise bypasses
-    entirely, and a URL built wrong fails only in production.
-    """
+    """The committed-SoT URL. The cache-buster is the freshness CONTROL — not the ref form."""
     return "%s/%s/%s/%s?cb=%s" % (RAW_HOST, RAW_REPO, RAW_REF, path.lstrip("/"), buster)
 
 
 def rewrite_source(url):
-    """(url, note). npmjs.com package pages 403 every headless fetch; the registry API does not.
-
-    Returns the note so the substitution appears in the row's output line — a rewrite nobody
-    sees is a rewrite that silently changes what was verified.
-    """
+    """(url, note). npmjs.com package pages 403 every headless fetch; the registry API does not."""
     m = re.match(r"https?://(?:www\.)?npmjs\.com/package/(.+?)/?$", url)
     if m:
         return ("https://registry.npmjs.org/" + urllib.parse.quote(m.group(1), safe=""),
@@ -278,59 +244,99 @@ def rewrite_source(url):
     return url, ""
 
 
-def parse_rows(text, module):
-    """Regex over the row literals. The host has no checkout and no TypeScript toolchain.
-
-    VACUITY GUARD sits here, where the corpus is CONSTRUCTED: a parser that silently matches
-    zero rows is the failure this class of gate exists to prevent, and 'no claims found' would
-    otherwise render as a clean PASS.
-    """
+def parse_corpus(text, mod):
+    """The generated JSON corpus -> rows. VACUITY GUARDS sit here, where the corpus is CONSTRUCTED."""
+    try:
+        doc = json.loads(text)
+    except ValueError as e:
+        raise Indeterminate("%s is not JSON (%s)" % (mod["path"], e))
+    if not isinstance(doc, dict) or doc.get("schema_version") != CORPUS_SCHEMA_VERSION:
+        raise Indeterminate("%s: schema_version %r, expected %d"
+                            % (mod["path"], doc.get("schema_version") if isinstance(doc, dict) else None,
+                               CORPUS_SCHEMA_VERSION))
+    if doc.get("corpus") != mod["name"]:
+        raise Indeterminate("%s declares corpus %r, the CORPUS line says %r"
+                            % (mod["path"], doc.get("corpus"), mod["name"]))
+    rows_in = doc.get("rows")
+    if not isinstance(rows_in, list):
+        raise Indeterminate("%s carries no rows array" % mod["path"])
+    if len(rows_in) < mod["min_rows"]:
+        raise Indeterminate("%s: %d row(s), floor is %d — a corpus that shrank below its floor is a "
+                            "generator or refactor event, not an empty claim set"
+                            % (mod["name"], len(rows_in), mod["min_rows"]))
     rows = []
-    for m in re.finditer(r"slug:\s*'([^']+)'", text):
-        chunk_start = m.end()
-        nxt = text.find("slug:", chunk_start)
-        chunk = text[chunk_start: nxt if nxt != -1 else len(text)]
-
-        def field(k):
-            hit = re.search(r"%s:\s*'([^']*)'" % k, chunk)
-            return hit.group(1) if hit else None
-
-        rows.append({"module": module, "slug": m.group(1), "kind": field("kind"),
-                     "source": field("source"), "verifiedAt": field("verifiedAt"),
-                     "text": chunk})
-    if len(rows) < MIN_ROWS:
-        raise Indeterminate(
-            "parsed %d row(s) from %s, floor is %d — a parser matching almost nothing is a "
-            "refactor event, not an empty claim set" % (len(rows), module, MIN_ROWS))
+    for r in rows_in:
+        if not isinstance(r, dict):
+            raise Indeterminate("%s: a row is not an object" % mod["name"])
+        missing = [f for f in mod["fields"] if f not in r]
+        if missing:
+            raise Indeterminate("%s row %r lacks %s" % (mod["name"], r.get("slug"), ", ".join(missing)))
+        ev = r.get("evidence")
+        if not isinstance(ev, list) or not ev:
+            raise Indeterminate("%s row %r carries ZERO evidence — nothing to confirm is not a "
+                                "confirmation" % (mod["name"], r.get("slug")))
+        for a in ev:
+            if (not isinstance(a, dict) or not isinstance(a.get("source"), str) or not a["source"]
+                    or not isinstance(a.get("expect"), list) or not a["expect"]
+                    or not all(isinstance(t, str) and t for t in a["expect"])
+                    or not all(isinstance(t, str) and t for t in (a.get("reject") or []))):
+                raise Indeterminate("%s row %r carries a malformed anchor" % (mod["name"], r.get("slug")))
+        rows.append({"module": mod["name"], "slug": r["slug"], "kind": r.get("kind"),
+                     "verifiedAt": r.get("verifiedAt"), "source": r.get("source"),
+                     "evidence": ev})
     return rows
 
 
-def age_days(verified_at, ref_day):
-    """None when the stamp is missing or unparseable — an unreadable date is not a fresh one."""
-    if not verified_at:
-        return None
+def collapse(s):
+    return _WS_RE.sub(" ", s).strip()
+
+
+def _json_strings(obj):
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from _json_strings(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _json_strings(v)
+
+
+def match_space(body):
+    """Every rendering of the page an anchor may match in (see the module docstring)."""
+    spaces = [collapse(body), collapse(html.unescape(_TAG_RE.sub(" ", body)))]
     try:
-        return (ref_day - date.fromisoformat(verified_at)).days
+        doc = json.loads(body)
     except ValueError:
+        doc = None
+    if doc is not None:
+        spaces.extend(collapse(s) for s in _json_strings(doc))
+    return spaces
+
+
+def present(token, spaces):
+    """Case-SENSITIVE substring membership in any rendering. See the module docstring for why."""
+    return any(token in s for s in spaces)
+
+
+def _url_key(u):
+    p = urllib.parse.urlsplit(u)
+    return (p.hostname or "").lower(), urllib.parse.unquote(p.path).rstrip("/")
+
+
+def moved_to(declared, final):
+    """The final URL when the page now lives at a different host + path, else None."""
+    if not final:
         return None
-
-
-def age_arm(age, threshold=None):
-    """(arm, evidence). A missing/unparseable stamp is INDETERMINATE, never implicitly fresh."""
-    limit = AGE_THRESHOLD_DAYS if threshold is None else threshold
-    if age is None:
-        return ARM_INDETERMINATE, "verifiedAt missing or unparseable — age cannot be computed"
-    if age > limit:
-        return ARM_STALE, "age %dd exceeds the %dd threshold" % (age, limit)
-    return ARM_OK, "age %dd within the %dd threshold" % (age, limit)
+    requested = rewrite_source(declared)[0]
+    return final if _url_key(requested) != _url_key(final) else None
 
 
 def scope_hits(packages, scope):
     """Names in `scope` that look like a first-party MCP CLIENT. `packages` is {name: desc}.
 
-    Both halves are required: `mcp` alone matches an MCP *server* or a docs package, and
-    `client` alone matches every SDK in the scope. The pair is what made this return exactly
-    one hit across 241 in-scope @deepseek-ai packages with zero false positives.
+    Both halves are required: `mcp` alone matches an MCP *server* or a docs package, and `client`
+    alone matches every SDK in the scope.
     """
     prefix = scope + "/"
     out = []
@@ -343,75 +349,105 @@ def scope_hits(packages, scope):
     return out
 
 
-def vendor_arm(row, scope_result):
-    """(arm, evidence) for the vendor-artifact input. `scope_result` is
-    (packages, exhausted) | None when the row declares no scope."""
-    slug = row["slug"]
-    if slug not in VENDOR_SCOPE:
-        return (ARM_INDETERMINATE,
-                "no VENDOR_SCOPE entry declared for %s — the vendor-artifact arm cannot run, and "
-                "a skipped arm must never read as a healthy one" % slug)
-    scope = VENDOR_SCOPE[slug]
-    if scope is None:
-        reason = VENDOR_SCOPE_REASON.get(slug)
-        if not reason:
-            return (ARM_INDETERMINATE,
-                    "%s declares scope=None with NO reason — a not-applicable arm needs a stated "
-                    "why, or it is indistinguishable from an oversight" % slug)
-        return ARM_OK, "vendor-artifact arm N/A: %s" % reason
-    packages, exhausted = scope_result
-    if not exhausted:
-        return (ARM_INDETERMINATE,
-                "%s: could not prove scope exhaustion — never aggregate over a LIMIT-capped "
-                "collection" % scope)
-    hits = scope_hits(packages, scope)
-    if hits:
-        return (ARM_CONTRADICTED,
-                "vendor ships a first-party MCP client: %s (%d in-scope packages scanned, "
-                "exhausted)" % (", ".join(hits), len(packages)))
-    return ARM_OK, "%s: %d in-scope packages, no first-party MCP client" % (scope, len(packages))
+def evidence_sha(evidence):
+    """sha256 of the row's canonical evidence JSON — what a confirmation is a confirmation OF."""
+    canon = json.dumps(evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
 
-def source_arm(row, http, body):
-    """(arm, evidence) for the row's own `source` URL."""
-    if http != 200:
-        return ARM_UNREACHABLE, "source http=%s" % http
-    hits = len(MCP_TOKEN_RE.findall(body or ""))
-    if hits == 0:
-        return (ARM_CONTRADICTED,
-                "source returned 200 but contains ZERO 'mcp' occurrences — the page no longer "
-                "evidences the declared kind=%s" % row.get("kind"))
-    return ARM_OK, "source evidences MCP (%d occurrences)" % hits
+def strongest(values, precedence):
+    present_ = set(values)
+    for v in precedence:
+        if v in present_:
+            return v
+    return precedence[-1]
 
 
-def combine(arms):
-    """Row state = the strongest arm. Precedence is a DECLARED order, not max()/min() luck."""
-    present = {a for a, _ in arms}
-    for state in STATE_PRECEDENCE:
-        if state in present:
-            return state
-    return ARM_OK
+def evaluate_anchor(anchor, page, scope_fn):
+    """One anchor -> {verdict, …}. `page` = {http, spaces, note, final} for anchor["source"]."""
+    out = {"claim": anchor.get("claim", ""), "source": anchor["source"], "note": page.get("note", ""),
+           "moved": moved_to(anchor["source"], page.get("final")) if page["http"] == 200 else None}
+    parts = []
+    if page["http"] != 200:
+        parts.append(AN_UNREACHABLE)
+        out["why"] = "source http=%s%s" % (page["http"], "; " + page["note"] if page.get("note") else "")
+    else:
+        missing = next((t for t in anchor["expect"] if not present(t, page["spaces"])), None)
+        rejected = next((t for t in (anchor.get("reject") or []) if present(t, page["spaces"])), None)
+        if missing is not None:
+            parts.append(AN_CONTRADICTED)
+            out["missing"] = missing
+        elif rejected is not None:
+            parts.append(AN_CONTRADICTED)
+            out["rejected"] = rejected
+        else:
+            parts.append(AN_CONFIRMED)
+    scope = anchor.get("npmScopeAbsence")
+    if scope:
+        packages, exhausted = scope_fn(scope)
+        if not exhausted:
+            parts.append(AN_INDETERMINATE)
+            out["why"] = ("%s: could not prove scope exhaustion — never aggregate over a "
+                          "LIMIT-capped collection" % scope)
+        else:
+            hits = scope_hits(packages, scope)
+            if hits:
+                parts.append(AN_CONTRADICTED)
+                out["vendor"] = hits
+            else:
+                parts.append(AN_CONFIRMED)
+    out["verdict"] = strongest(parts, ANCHOR_PRECEDENCE)
+    return out
 
 
-def classify_row(row, age, arms):
-    """One row -> exactly one state, carrying every arm's own verdict for the output line."""
-    return {"module": row["module"], "slug": row["slug"], "kind": row["kind"],
-            "verifiedAt": row["verifiedAt"], "source": row["source"], "age_days": age,
-            "arms": arms, "state": combine(arms)}
+def age_days(verified_at, confirmed_on, ref_day):
+    """Days since max(verifiedAt, confirmation). None when neither date is usable."""
+    points = []
+    if verified_at:
+        try:
+            points.append(date.fromisoformat(verified_at))
+        except ValueError:
+            pass
+    if confirmed_on is not None:
+        points.append(confirmed_on)
+    return (ref_day - max(points)).days if points else None
 
 
-def render_row_line(v):
-    """The POSITIVE per-row line. Every row evaluated appears here, healthy or not — a row
-    silently skipped by a load error must never look identical to one that passed."""
-    age = "n/a" if v["age_days"] is None else "%dd" % v["age_days"]
-    arms = " ".join("%s=%s" % (name, arm) for name, (arm, _) in v["arms_by_name"].items()) \
-        if v.get("arms_by_name") else ""
-    return ("EVAL module=%s slug=%s kind=%s verifiedAt=%s age=%s state=%s %s"
-            % (v["module"], v["slug"], v["kind"], v["verifiedAt"], age, v["state"], arms)).rstrip()
-
-
-def render_evidence_lines(v):
-    return ["    %s: %s" % (name, ev) for name, (_, ev) in (v.get("arms_by_name") or {}).items()]
+def evaluate_row(row, pages, ref_day, prior, scope_fn, threshold=None):
+    """One row -> (verdict dict, confirmation record to persist or None)."""
+    limit = AGE_THRESHOLD_DAYS if threshold is None else threshold
+    anchors = [evaluate_anchor(a, pages[a["source"]], scope_fn) for a in row["evidence"]]
+    ev_state = {AN_CONTRADICTED: ST_CONTRADICTED, AN_INDETERMINATE: ST_INDETERMINATE,
+                AN_UNREACHABLE: ST_UNREACHABLE, AN_CONFIRMED: ST_CONFIRMED}[
+        strongest([a["verdict"] for a in anchors], ANCHOR_PRECEDENCE)]
+    sha = evidence_sha(row["evidence"])
+    prior_ok = (isinstance(prior, dict) and prior.get("evidence_sha") == sha
+                and isinstance(prior.get("date"), str))
+    confirmed_on = None
+    if ev_state == ST_CONFIRMED:
+        confirmed_on = ref_day
+        record = {"date": ref_day.isoformat(), "evidence_sha": sha}
+    else:
+        record = prior if isinstance(prior, dict) else None
+        if prior_ok:
+            try:
+                confirmed_on = date.fromisoformat(prior["date"])
+            except ValueError:
+                confirmed_on = None
+    age = age_days(row.get("verifiedAt"), confirmed_on, ref_day)
+    if ev_state == ST_CONTRADICTED:
+        state = ST_CONTRADICTED
+    elif age is not None and age > limit:
+        state = ST_STALE
+    elif age is None:
+        state = ST_INDETERMINATE
+    else:
+        state = ev_state
+    v = {"module": row["module"], "slug": row["slug"], "kind": row.get("kind"),
+         "verifiedAt": row.get("verifiedAt"), "source": row.get("source"), "age_days": age,
+         "confirmed": confirmed_on.isoformat() if confirmed_on else None,
+         "evidence_state": ev_state, "anchors": anchors, "state": state}
+    return v, record
 
 
 def aggregate(verdicts, prev_count):
@@ -421,63 +457,134 @@ def aggregate(verdicts, prev_count):
     if prev_count is not None and abs(len(verdicts) - prev_count) > ROW_COUNT_TOLERANCE:
         return ("INDETERMINATE",
                 "row count moved %d -> %d, more than the tolerance of %d — a corpus that changed "
-                "size by that much is a parser or refactor event, and an aggregate over it would "
+                "size by that much is a generator or refactor event, and an aggregate over it would "
                 "be an aggregate over a truncated collection"
                 % (prev_count, len(verdicts), ROW_COUNT_TOLERANCE))
     states = [v["state"] for v in verdicts]
-    if ARM_CONTRADICTED in states:
-        return "FAIL", "%d contradicted row(s)" % states.count(ARM_CONTRADICTED)
-    if ARM_STALE in states:
-        return "FAIL", "%d stale row(s)" % states.count(ARM_STALE)
-    unknown = states.count(ARM_INDETERMINATE) + states.count(ARM_UNREACHABLE)
+    if ST_CONTRADICTED in states:
+        return "FAIL", "%d contradicted row(s)" % states.count(ST_CONTRADICTED)
+    if ST_STALE in states:
+        return "FAIL", "%d stale row(s)" % states.count(ST_STALE)
+    unknown = states.count(ST_INDETERMINATE) + states.count(ST_UNREACHABLE)
     if unknown:
         return ("INDETERMINATE",
-                "%d of %d row(s) could not be verified — certifying a partially-unverified "
-                "corpus as PASS is the fail-open the token law forbids" % (unknown, len(states)))
-    return "PASS", "all %d row(s) fresh and confirming" % len(states)
+                "%d of %d row(s) could not be verified — certifying a partially-unverified corpus "
+                "as PASS is the fail-open the token law forbids" % (unknown, len(states)))
+    return "PASS", "all %d row(s) confirmed against their live sources" % len(states)
 
 
-def recommended_wave(slug):
-    """Template form. A literal W<n> is forbidden: send_telegram.sh resolves {NEXT} at send
-    time from status.md, and a hardcoded number ships a COMPLETED wave as the action."""
-    return RECOMMENDED_WAVE.format(VENDOR=re.sub(r"[^A-Z0-9]+", "-", slug.upper()).strip("-"))
+def recommended_wave(corpus):
+    """Template form. A literal W<n> is forbidden — it would ship a COMPLETED wave as the action."""
+    return RECOMMENDED_WAVE.format(CORPUS=re.sub(r"[^A-Z0-9]+", "-", corpus.upper()).strip("-"))
 
 
-def build_body(findings):
-    """Alert body. Entity ids carry their entity NOUN and are pluralised from the id COUNT; the
-    count and the ids live on SEPARATE lines. A bare parenthesised number beside a count cost a
-    real operator misread once (WEBHOOK_DELIVERY_DRIFT, 2026-08-01) and the rendered BODY is
-    asserted in --self-test, not merely the action verdict."""
-    noun = "claim" if len(findings) == 1 else "claims"
+def _plural(n, one, many):
+    return one if n == 1 else many
+
+
+def _anchor_lines(a):
+    lines = ['    claim: "%s"' % a["claim"]]
+    if a.get("missing") is not None:
+        lines.append('    missing on source: "%s"' % a["missing"])
+    if a.get("rejected") is not None:
+        lines.append('    present on source (contradicts the claim): "%s"' % a["rejected"])
+    if a.get("vendor"):
+        lines.append("    vendor ships a first-party MCP client: %s" % ", ".join(a["vendor"]))
+    if a.get("why"):
+        lines.append("    unverifiable today: %s" % a["why"])
+    lines.append("    source: %s%s" % (a["source"], " (moved → %s)" % a["moved"] if a.get("moved") else ""))
+    return lines
+
+
+def build_body(verdicts):
+    """Alert body. States ONLY what the arms measured. Counts and ids live on SEPARATE lines, ids
+    carry their entity noun (the '(new: 6)' misread class), and the rendered body is asserted in
+    --self-test, not merely the verdict."""
+    contra = sorted((v for v in verdicts if v["state"] == ST_CONTRADICTED), key=lambda v: v["slug"])
+    stale = sorted((v for v in verdicts if v["state"] == ST_STALE), key=lambda v: v["slug"])
+    findings = sorted(contra + stale, key=lambda v: v["slug"])
+    n_contra = sum(1 for v in contra for a in v["anchors"] if a["verdict"] == AN_CONTRADICTED)
+    n_stale = sum(1 for v in stale for a in v["anchors"] if a["verdict"] != AN_CONFIRMED)
     lines = ["\U0001F6D1 %s" % ALERT_ID, ""]
-    lines.append("%d vendor-capability %s no longer match their live source." % (len(findings), noun))
-    lines.append("Affected row %s: %s"
-                 % ("slug" if len(findings) == 1 else "slugs",
-                    ", ".join(sorted(f["slug"] for f in findings))))
+    if contra:
+        lines.append("%d public integration %s contradicted by %s live source."
+                     % (n_contra, _plural(n_contra, "claim", "claims"), _plural(n_contra, "its", "their")))
+    if stale:
+        lines.append("%d public integration %s not confirmed against %s live source for more than "
+                     "%d days." % (n_stale, _plural(n_stale, "claim", "claims"),
+                                   _plural(n_stale, "its", "their"), AGE_THRESHOLD_DAYS))
+    lines.append("Affected row %s: %s" % (_plural(len(findings), "slug", "slugs"),
+                                          ", ".join(v["slug"] for v in findings)))
     lines.append("")
-    for f in sorted(findings, key=lambda x: x["slug"]):
-        age = "unknown" if f["age_days"] is None else "%dd" % f["age_days"]
-        lines.append("  %s (%s) — declared kind=%s, verifiedAt=%s, age %s"
-                     % (f["slug"], f["module"], f["kind"], f["verifiedAt"], age))
-        lines.append("    state: %s" % f["state"])
-        for name, (arm, ev) in (f.get("arms_by_name") or {}).items():
-            if arm != ARM_OK:
-                lines.append("    %s: %s" % (name, ev))
-        lines.append("    source: %s" % f["source"])
+    for v in findings:
+        lines.append("  %s (%s) — kind=%s, human-verified %s, last machine confirmation %s"
+                     % (v["slug"], v["module"], v["kind"], v["verifiedAt"], v["confirmed"] or "never"))
+        lines.append("    state: %s" % v["state"])
+        for a in v["anchors"]:
+            if a["verdict"] == AN_CONFIRMED:
+                continue
+            if v["state"] == ST_CONTRADICTED and a["verdict"] != AN_CONTRADICTED:
+                continue
+            lines.extend(_anchor_lines(a))
+    unverifiable = sorted((v for v in verdicts if v["state"] in (ST_UNREACHABLE, ST_INDETERMINATE)),
+                          key=lambda v: v["slug"])
+    if unverifiable:
+        lines.append("")
+        for v in unverifiable:
+            why = next((a["why"] for a in v["anchors"] if a.get("why")), v["state"])
+            lines.append("Also unverifiable today (not a finding): %s — %s" % (v["slug"], why))
+    moved = sorted({(v["slug"], a["moved"]) for v in verdicts for a in v["anchors"]
+                    if a.get("moved") and a["verdict"] == AN_CONFIRMED})
+    if moved:
+        lines.append("")
+        for slug, final in moved:
+            lines.append("Evidence source moved (claim still evidenced — update the URL): %s → %s"
+                         % (slug, final))
     lines += ["",
-              "The row is public copy: it renders on algovault.com/integrations and in the "
-              "landing quickstart grid. A wrong capability claim is a Factuality violation, not "
-              "a stale note.",
+              "These rows are public copy: they render on algovault.com/docs, /mcp, /integrations "
+              "and the landing quickstart grid.",
               "",
-              "Action: dispatch %s via Cowork -> Claude Code"
-              % recommended_wave(sorted(findings, key=lambda x: x["slug"])[0]["slug"]),
+              "Action: dispatch %s via Cowork -> Claude Code" % recommended_wave(findings[0]["module"]
+                                                                            if findings else "unknown"),
               "Source log: %s" % LOG]
     return "\n".join(lines)
 
 
 def clear_reason(verdicts):
-    return ("all %d declared vendor-capability claim(s) are fresh and confirmed against their "
-            "live sources" % len(verdicts))
+    n = sum(len(v["anchors"]) for v in verdicts)
+    return ("all %d declared public integration claim(s) across %d row(s) are confirmed against "
+            "their live sources" % (n, len(verdicts)))
+
+
+def render_row_line(v):
+    """The POSITIVE per-row line — every row evaluated appears, healthy or not."""
+    age = "n/a" if v["age_days"] is None else "%dd" % v["age_days"]
+    ok = sum(1 for a in v["anchors"] if a["verdict"] == AN_CONFIRMED)
+    per = " ".join("a%d=%s" % (i + 1, a["verdict"]) for i, a in enumerate(v["anchors"]))
+    return ("EVAL module=%s slug=%s kind=%s verifiedAt=%s confirmed=%s age=%s state=%s evidence=%s "
+            "anchors=%d/%d %s" % (v["module"], v["slug"], v["kind"], v["verifiedAt"],
+                                  v["confirmed"] or "never", age, v["state"], v["evidence_state"],
+                                  ok, len(v["anchors"]), per)).rstrip()
+
+
+def render_evidence_lines(v):
+    out = []
+    for i, a in enumerate(v["anchors"]):
+        if a["verdict"] == AN_CONFIRMED:
+            detail = "every expect string present, no reject present"
+        elif a.get("missing") is not None:
+            detail = 'missing on source: "%s"' % a["missing"]
+        elif a.get("rejected") is not None:
+            detail = 'present on source (contradicts the claim): "%s"' % a["rejected"]
+        elif a.get("vendor"):
+            detail = "vendor ships a first-party MCP client: %s" % ", ".join(a["vendor"])
+        else:
+            detail = a.get("why") or a["verdict"]
+        extra = "".join(["; moved → %s" % a["moved"] if a.get("moved") else "",
+                         "; %s" % a["note"] if a.get("note") else ""])
+        out.append('    a%d %s: "%s" — %s (%s%s)' % (i + 1, a["verdict"], a["claim"], detail,
+                                                    a["source"], extra))
+    return out
 
 
 # ── effects ──────────────────────────────────────────────────────────────────────────────────
@@ -491,8 +598,7 @@ def _selftest_mode():
 
 
 def fire(body):
-    """Hand the body to the wrapper, which OWNS severity / cooldown / DRY_RUN / fail-open.
-    This consumer re-implements none of those gates."""
+    """Hand the body to the wrapper, which OWNS severity / cooldown / DRY_RUN / fail-open."""
     LAST_FIRE[ALERT_ID] = body
     if _selftest_mode():
         log("WOULD_FIRE: %s (self-test — wrapper skipped)" % ALERT_ID)
@@ -527,19 +633,14 @@ def clear(reason):
 
 
 def follows_redirect(code, location):
-    """The shipped redirect predicate, extracted so --self-test asserts the BEHAVIOUR.
-
-    It was first written inline and the self-test "proved" it by grepping this function's own
-    prose for the string "308" — which the surrounding comment supplies, so deleting 308 from
-    the tuple left the suite fully GREEN. That is an assertion reading its own documentation.
-    A pure predicate is the only shape a fixture can actually drive.
-    """
+    """The shipped redirect predicate, extracted so --self-test asserts the BEHAVIOUR (an assertion
+    that grepped this function's prose for "308" once stayed green with 308 deleted)."""
     return bool(location) and code in (301, 302, 303, 307, 308)
 
 
 def fetch(url, timeout=30):
-    """(http, body, note). Follows redirects EXPLICITLY — see the module docstring: urllib does
-    not follow 308 and three of eleven sources answer 308."""
+    """(http, body, note, final_url). Follows redirects EXPLICITLY — urllib does not follow 308.
+    The final URL is what `moved` is measured from."""
     url, note = rewrite_source(url)
     hops = 0
     for _ in range(8):
@@ -548,31 +649,27 @@ def fetch(url, timeout=30):
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 if hops:
                     note = (note + "; " if note else "") + "followed %d redirect(s)" % hops
-                return r.status, r.read().decode("utf-8", "replace"), note
+                return r.status, r.read().decode("utf-8", "replace"), note, (r.geturl() or url)
         except urllib.error.HTTPError as e:
             loc = e.headers.get("Location") if e.headers else None
             if follows_redirect(e.code, loc):
                 url = urllib.parse.urljoin(url, loc)
                 hops += 1
                 continue
-            return e.code, "", note or ("HTTPError %d" % e.code)
+            return e.code, "", note or ("HTTPError %d" % e.code), url
         except Exception as e:  # noqa: BLE001 — an unreachable source is REPORTED, never dropped
-            return 0, "", note or ("%s: %s" % (type(e).__name__, e))
-    return 0, "", note or "redirect loop"
+            return 0, "", note or ("%s: %s" % (type(e).__name__, e)), url
+    return 0, "", note or "redirect loop", url
 
 
 def scope_packages(scope):
-    """(packages, exhausted). Pages with `from=` until the scope's ranked block is exhausted.
-
-    npm's search `size` caps at 250 and @deepseek-ai/* alone fills ~200 of one page, so a single
-    unpaged request is a LIMIT-capped collection — aggregating over one is forbidden, and the
-    honest answer when exhaustion cannot be proven is INDETERMINATE for that row.
-    """
+    """(packages, exhausted). Pages with `from=` until the scope's ranked block is exhausted —
+    npm search caps `size` at 250, so a single unpaged request is a LIMIT-capped collection."""
     out, frm, page = {}, 0, 250
     for _ in range(20):
         url = ("https://registry.npmjs.org/-/v1/search?text=%s&size=%d&from=%d"
                % (urllib.parse.quote(scope), page, frm))
-        http, body, _note = fetch(url)
+        http, body, _note, _final = fetch(url)
         if http != 200:
             return out, False
         try:
@@ -589,8 +686,6 @@ def scope_packages(scope):
                 out[name] = pkg.get("description") or ""
                 in_scope += 1
         frm += len(objs)
-        # Relevance ranking clusters the scope's own packages first, so a page contributing none
-        # means the scope's block is behind us.
         if len(objs) < page or in_scope == 0:
             return out, True
     return out, False
@@ -603,64 +698,68 @@ def read_state():
         return {}
 
 
-def write_state(token, row_count):
-    payload = {"verdict": token, "row_count": row_count,
-               "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+def prior_confirmations(prev_state):
+    """A v1 state (no `confirmations`) or a malformed one reads as NO confirmations — never as a
+    confirmation of anything."""
+    c = (prev_state or {}).get("confirmations")
+    return c if isinstance(c, dict) else {}
+
+
+def write_state(token, row_count, confirmations):
+    payload = {"schema": STATE_SCHEMA, "verdict": token, "row_count": row_count,
+               "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+               "confirmations": confirmations}
     try:
         Path(STATE).parent.mkdir(parents=True, exist_ok=True)
-        Path(STATE).write_text(json.dumps(payload))
+        Path(STATE).write_text(json.dumps(payload, sort_keys=True))
     except OSError as e:
         log("state file unwritable at %s: %s (verdict still reported)" % (STATE, e))
 
 
 # ── orchestration ────────────────────────────────────────────────────────────────────────────
 
-def evaluate(rows, ref_day, fetch_fn, scope_fn):
-    """The whole shipped decision path, driven by injected effects so --self-test exercises IT
-    rather than a re-implementation beside it."""
-    verdicts = []
+def evaluate(rows, ref_day, fetch_fn, scope_fn, prior):
+    """The whole shipped decision path, driven by injected effects so --self-test exercises IT.
+    Returns (verdicts, confirmations to persist)."""
+    pages = {}
     for row in rows:
-        arms = {}
-        age = age_days(row["verifiedAt"], ref_day)
-        arms["age"] = age_arm(age)
-
-        if not row.get("source"):
-            arms["source"] = (ARM_INDETERMINATE, "row declares no source URL")
-        else:
-            http, body, note = fetch_fn(row["source"])
-            arm, ev = source_arm(row, http, body)
-            arms["source"] = (arm, ev + ("; " + note if note else ""))
-
-        if row.get("kind") in VENDOR_ARTIFACT_KINDS:
-            scope = VENDOR_SCOPE.get(row["slug"], "__absent__")
-            result = scope_fn(scope) if isinstance(scope, str) and scope != "__absent__" else None
-            arms["vendor"] = vendor_arm(row, result)
-
-        v = classify_row(row, age, list(arms.values()))
-        v["arms_by_name"] = arms
+        for a in row["evidence"]:
+            if a["source"] not in pages:
+                http, body, note, final = fetch_fn(a["source"])
+                pages[a["source"]] = {"http": http, "note": note, "final": final,
+                                      "spaces": match_space(body) if http == 200 else []}
+    verdicts, confirmations = [], {}
+    for row in rows:
+        key = "%s/%s" % (row["module"], row["slug"])
+        v, record = evaluate_row(row, pages, ref_day, prior.get(key), scope_fn)
         verdicts.append(v)
-    return verdicts
+        if record is not None:
+            confirmations[key] = record
+    return verdicts, confirmations
 
 
 def run(rows, ref_day, fetch_fn, scope_fn, prev_state):
-    verdicts = evaluate(rows, ref_day, fetch_fn, scope_fn)
+    verdicts, confirmations = evaluate(rows, ref_day, fetch_fn, scope_fn,
+                                       prior_confirmations(prev_state))
     for v in verdicts:
         log(render_row_line(v))
         for line in render_evidence_lines(v):
             log(line)
     counts = {s: sum(1 for v in verdicts if v["state"] == s) for s in STATE_PRECEDENCE}
-    log("SUMMARY: %d claim(s) evaluated — %s"
-        % (len(verdicts), ", ".join("%s=%d" % (s, n) for s, n in counts.items())))
+    an = [a["verdict"] for v in verdicts for a in v["anchors"]]
+    log("SUMMARY: %d row(s), %d anchor(s) evaluated — rows: %s — anchors: %s — moved=%d"
+        % (len(verdicts), len(an), ", ".join("%s=%d" % (s, n) for s, n in counts.items()),
+           ", ".join("%s=%d" % (s, an.count(s)) for s in ANCHOR_PRECEDENCE),
+           sum(1 for v in verdicts for a in v["anchors"] if a.get("moved"))))
 
     token, reason = aggregate(verdicts, (prev_state or {}).get("row_count"))
     log("AGGREGATE: %s — %s" % (token, reason))
 
     if token == "FAIL":
-        findings = [v for v in verdicts if v["state"] in (ARM_CONTRADICTED, ARM_STALE)]
-        fire(build_body(findings))
+        fire(build_body(verdicts))
     elif token == "PASS" and (prev_state or {}).get("verdict") == "FAIL":
         clear(clear_reason(verdicts))
-    return verdicts, token
+    return verdicts, token, confirmations
 
 
 def main():
@@ -671,14 +770,14 @@ def main():
         for line in CORPUS:
             mod = parse_corpus_line(line)
             url = raw_url(mod["path"], buster)
-            http, body, note = fetch(url)
+            http, body, note, _final = fetch(url)
             if http != 200:
                 raise Indeterminate("SoT unreadable: %s -> http=%s %s" % (url, http, note))
-            rows.extend(parse_rows(body, mod["name"]))
-        log("START corpus=%d module(s) rows=%d threshold=%dd state=%s"
-            % (len(CORPUS), len(rows), AGE_THRESHOLD_DAYS, STATE))
-        verdicts, token = run(rows, today(), fetch, scope_packages, prev)
-        write_state(token, len(verdicts))
+            rows.extend(parse_corpus(body, mod))
+        log("START corpus=%d module(s) rows=%d anchors=%d threshold=%dd state=%s"
+            % (len(CORPUS), len(rows), sum(len(r["evidence"]) for r in rows), AGE_THRESHOLD_DAYS, STATE))
+        verdicts, token, confirmations = run(rows, today(), fetch, scope_packages, prev)
+        write_state(token, len(verdicts), confirmations)
         print("CLIENT_CLAIM_FRESHNESS_VERDICT=%s" % token)
         return _token_exit_map()[token]
     except Indeterminate as e:
@@ -692,9 +791,7 @@ def main():
 
 
 def _token_exit_map():
-    """The mapping main() deploys, in ONE place so the self-test asserts the shipped fact rather
-    than a copy. Asserting tokens without their exit codes is how re-coding INDETERMINATE to 0
-    once stayed fully green across an entire suite."""
+    """The mapping main() deploys, in ONE place so the self-test asserts the shipped fact."""
     return {"PASS": 0, "FAIL": 0, "INDETERMINATE": 3}
 
 
@@ -703,12 +800,10 @@ def _token_exit_map():
 def self_test():
     """Hermetic scenarios — no network, no wrapper, no state file, temp log.
 
-    A hermetic suite is structurally blind to exactly what its seam replaces, so the artifacts
-    the seam bypasses are asserted DIRECTLY: the raw-SoT URL is built and checked, the
-    npmjs->registry rewriter is driven with a real scoped package name, the redirect follower's
-    status set is pinned, and the scope filter is run over a fixture page set including a
-    truncated one. Assertions that would RAISE are wrapped — an assertion that aborts the suite
-    is not an assertion, it is a crash that reads as "no output".
+    A hermetic suite is structurally blind to exactly what its seam replaces, so the artifacts the
+    seam bypasses are asserted DIRECTLY: the raw-SoT URL, the npmjs rewrite, the redirect predicate,
+    the corpus parser over real JSON text, the match space over real HTML/JSON fragments. Assertions
+    that would RAISE are wrapped — an assertion that aborts the suite is a crash, not an assertion.
     """
     global LOG, STATE
     tmp = tempfile.mkdtemp(prefix="client-claim-selftest-")
@@ -716,13 +811,6 @@ def self_test():
     STATE = os.path.join(tmp, "state.json")
     os.environ["CLIENT_CLAIM_SELFTEST"] = "1"
     os.environ["ALGOVAULT_TG_TEST_INERT"] = "1"
-
-    # The vendor-arm scenarios below own their fixture instead of borrowing a production row.
-    # They used to drive `deepseek`, whose scope was "@deepseek-ai" — until
-    # LANDING-DSH-CLIENT-SURFACE-W1 legitimately flipped it to None and three assertions went
-    # RED for a reason that had nothing to do with the capability they exist to pin. A suite
-    # that borrows a production value as a fixture inherits that value's politics.
-    VENDOR_SCOPE["selftest-vendor"] = "@selftest"
 
     failures, ran = [], []
 
@@ -736,185 +824,294 @@ def self_test():
         if not ok:
             failures.append(name)
 
-    DAY = date(2026, 8, 28)
+    DAY = date(2026, 9, 29)
+    MOD = {"name": "mcp-clients", "path": "src/lib/integrations-data/claim-evidence.json",
+           "fields": ["slug", "kind", "verifiedAt", "evidence"], "min_rows": 8}
 
-    def row(slug="s1", kind="native", src_=None, verified="2026-08-05"):
-        # The source URL carries the slug so a per-slug fetcher can target ONE row — a fixture
-        # whose stub can never match is a scenario that silently tests nothing.
-        return {"module": "m", "slug": slug, "kind": kind,
-                "source": src_ or ("https://example.test/%s" % slug),
-                "verifiedAt": verified, "text": ""}
+    def anchor(src="https://v.example/docs", expect=("fixture add",), reject=(), claim="fixture add",
+               scope=None):
+        a = {"claim": claim, "source": src, "expect": list(expect)}
+        if reject:
+            a["reject"] = list(reject)
+        if scope:
+            a["npmScopeAbsence"] = scope
+        return a
 
-    def corpus(n=11, **kw):
+    def row(slug="s1", verified="2026-08-05", evidence=None, kind="native"):
+        return {"module": "mcp-clients", "slug": slug, "kind": kind, "verifiedAt": verified,
+                "source": "https://v.example/%s" % slug,
+                "evidence": evidence or [anchor(src="https://v.example/%s" % slug)]}
+
+    def corpus(n=12, **kw):
         return [row(slug="s%d" % i, **kw) for i in range(n)]
 
-    def fetcher(status=200, body="mcp mcp mcp", per_slug=None):
+    def fetcher(default=(200, "<p>fixture add</p>"), per_url=None):
         def f(url):
-            if per_slug:
-                for frag, resp in per_slug.items():
-                    if frag in url:
-                        return resp
-            return status, body, ""
+            for frag, resp in (per_url or {}).items():
+                if frag in url:
+                    status, body = resp[0], resp[1]
+                    final = resp[2] if len(resp) > 2 else url
+                    return status, body, "", final
+            return default[0], default[1], "", url
         return f
 
-    def scoper(packages=None, exhausted=True):
-        return lambda scope: (packages or {}, exhausted)
+    def scoper(packages=None, exhausted=True, calls=None):
+        def s(scope):
+            if calls is not None:
+                calls.append(scope)
+            return packages or {}, exhausted
+        return s
 
-    def tok(rows_, ref=DAY, fetch_fn=None, scope_fn=None, prev=None):
+    def page(body, http=200, final=None):
+        return {"http": http, "note": "", "final": final, "spaces": match_space(body) if http == 200 else []}
+
+    def tok(rows_, fetch_fn=None, scope_fn=None, prev=None, ref=DAY):
         LAST_FIRE.clear(); LAST_CLEAR.clear()
-        return run(rows_, ref, fetch_fn or fetcher(), scope_fn or scoper(), prev)[1]
+        return run(rows_, ref, fetch_fn or fetcher(), scope_fn or scoper(), prev)
 
-    # ── bypassed seams: the artifacts a hermetic suite never otherwise touches ───────────────
-    u = raw_url("src/lib/integrations-data/mcp-clients.ts", "123")
+    def doc(rows_n=12, **over):
+        d = {"_generated_by": "x", "schema_version": 1, "corpus": "mcp-clients",
+             "rows": [{"slug": "r%d" % i, "kind": "native", "verifiedAt": "2026-08-05",
+                       "source": "https://v.example/r%d" % i,
+                       "evidence": [anchor(src="https://v.example/r%d" % i)]} for i in range(rows_n)]}
+        d.update(over)
+        return json.dumps(d)
+
+    # ── bypassed seams ──────────────────────────────────────────────────────────────────────
+    u = raw_url("src/lib/integrations-data/claim-evidence.json", "123")
     check("raw SoT URL targets the committed ref with a CACHE-BUSTER (the freshness control)",
           lambda: u.startswith("https://raw.githubusercontent.com/AlgoVaultLabs/"
                                "crypto-quant-signal-mcp/refs/heads/main/")
-          and u.endswith("src/lib/integrations-data/mcp-clients.ts?cb=123"))
-    check("npmjs.com/package/<scoped pkg> is rewritten to the registry API",
+          and u.endswith("src/lib/integrations-data/claim-evidence.json?cb=123"))
+    check("npmjs.com/package/<scoped pkg> is rewritten to the registry API, and says so",
           lambda: rewrite_source("https://www.npmjs.com/package/@smithery/cli")[0]
           == "https://registry.npmjs.org/%40smithery%2Fcli"
           and "403" in rewrite_source("https://www.npmjs.com/package/@smithery/cli")[1])
     check("a non-npmjs source is left untouched and carries no note",
-          lambda: rewrite_source("https://cursor.com/docs/context/mcp")
-          == ("https://cursor.com/docs/context/mcp", ""))
+          lambda: rewrite_source("https://cursor.com/docs/mcp") == ("https://cursor.com/docs/mcp", ""))
     check("the SHIPPED redirect predicate follows 308 (urllib's default handler does not)",
           lambda: follows_redirect(308, "https://x.test/y") is True
-          and follows_redirect(307, "https://x.test/y") is True
           and follows_redirect(301, "https://x.test/y") is True)
-    check("a redirect status with NO Location, and a non-redirect status, are not followed",
-          lambda: follows_redirect(308, None) is False
-          and follows_redirect(200, "https://x.test/y") is False
-          and follows_redirect(403, "https://x.test/y") is False)
-    check("CORPUS lines parse in declaration-sync.sh's name|path|fields idiom",
-          lambda: parse_corpus_line(CORPUS[0])["path"]
-          == "src/lib/integrations-data/mcp-clients.ts"
-          and parse_corpus_line(CORPUS[0])["fields"] == ["kind", "source", "verifiedAt"])
-    check("a malformed CORPUS line is vacuity, not a skip",
-          lambda: _raises(Indeterminate, lambda: parse_corpus_line("only-two|parts")))
-    check("the row parser reads a real TypeScript row literal",
-          lambda: [r["slug"] for r in _parse_ok(_TS_FIXTURE)] [:2] == ["alpha", "bravo"]
-          and _parse_ok(_TS_FIXTURE)[10]["kind"] == "byo-model")
+    check("a redirect with NO Location, and a non-redirect status, are not followed",
+          lambda: follows_redirect(308, None) is False and follows_redirect(200, "https://x.test/y") is False)
+
+    # ── corpus declaration + construction-time vacuity ──────────────────────────────────────
+    check("the shipped CORPUS line parses: JSON path, required fields, per-corpus floor 8",
+          lambda: parse_corpus_line(CORPUS[0]) == {
+              "name": "mcp-clients", "path": "src/lib/integrations-data/claim-evidence.json",
+              "fields": ["slug", "kind", "verifiedAt", "evidence"], "min_rows": 8})
+    check("a 3-field CORPUS line (no floor) is vacuity, not a skip",
+          lambda: _raises(Indeterminate, lambda: parse_corpus_line("a|b|c")))
+    check("a non-integer floor is vacuity",
+          lambda: _raises(Indeterminate, lambda: parse_corpus_line("a|b|c|eight")))
+    check("a valid JSON corpus parses into rows carrying their evidence",
+          lambda: [r["slug"] for r in parse_corpus(doc(), MOD)][:2] == ["r0", "r1"]
+          and parse_corpus(doc(), MOD)[0]["evidence"][0]["expect"] == ["fixture add"])
+    check("a body that is not JSON -> INDETERMINATE",
+          lambda: _raises(Indeterminate, lambda: parse_corpus("export const x = 1;", MOD)))
+    check("schema_version != 1 -> INDETERMINATE",
+          lambda: _raises(Indeterminate, lambda: parse_corpus(doc(schema_version=2), MOD)))
+    check("a document for a different corpus -> INDETERMINATE",
+          lambda: _raises(Indeterminate, lambda: parse_corpus(doc(corpus="ai-agents"), MOD)))
+    check("rows below the corpus floor -> INDETERMINATE",
+          lambda: _raises(Indeterminate, lambda: parse_corpus(doc(rows_n=3), MOD)))
+    # Through parse_corpus_line, never a hand-built dict: a floor the self-test constructs itself is
+    # exactly the seam that let a hardcoded global floor survive the first break-proof run.
+    ai_line = parse_corpus_line("ai-agents|src/lib/integrations-data/claim-evidence-ai.json|"
+                                "slug,kind,verifiedAt,evidence|4")
+    check("the floor is PER CORPUS, read from its own CORPUS line: a 4-row corpus declaring 4 passes "
+          "(v1's global 8 blinded the whole run)",
+          lambda: ai_line["min_rows"] == 4
+          and len(parse_corpus(json.dumps(dict(json.loads(doc(rows_n=4)), corpus="ai-agents")), ai_line)) == 4)
+    d_empty = json.loads(doc()); d_empty["rows"][5]["evidence"] = []
+    check("a row with ZERO evidence -> INDETERMINATE (nothing to confirm is not a confirmation)",
+          lambda: _raises(Indeterminate, lambda: parse_corpus(json.dumps(d_empty), MOD)))
+    d_bad = json.loads(doc()); d_bad["rows"][2]["evidence"][0]["expect"] = []
+    check("an anchor with no expect strings -> INDETERMINATE",
+          lambda: _raises(Indeterminate, lambda: parse_corpus(json.dumps(d_bad), MOD)))
+    d_missing = json.loads(doc()); del d_missing["rows"][0]["verifiedAt"]
+    check("a row missing a declared field -> INDETERMINATE (the fields column has a consumer)",
+          lambda: _raises(Indeterminate, lambda: parse_corpus(json.dumps(d_missing), MOD)))
+
+    # ── the match space ─────────────────────────────────────────────────────────────────────
+    check("raw-body match", lambda: present("fixture add", match_space("<p>fixture add</p>")))
+    check("entity-unescaped match: &gt; in HTML confirms '>' in an anchor",
+          lambda: present("Customize > Connectors", match_space("<li>Customize &gt; Connectors</li>")))
+    check("tags become SPACES: a table cell boundary still reads as one phrase",
+          lambda: present("mcp_servers Ignored",
+                          match_space("<td><code>mcp_servers</code></td><td>Ignored</td>")))
+    check("JSON string leaves are matched decoded (an escaped quote does not hide the claim)",
+          lambda: present('"hi" --header', match_space(json.dumps({"readme": 'say "hi" --header'})))
+          and not present('"hi" --header', [collapse(json.dumps({"readme": 'say "hi" --header'}))]))
+    check("matching is CASE-SENSITIVE: 'Organization settings > Connectors' never confirms "
+          "'Settings > Connectors'",
+          lambda: not present("Settings > Connectors",
+                              match_space("<p>Organization settings &gt; Connectors</p>")))
+
+    # ── the evidence arm, per anchor ────────────────────────────────────────────────────────
+    ok_page = page("<p>claude mcp add --transport http --scope project --header</p>")
+    check("every expect present, no reject -> confirmed",
+          lambda: evaluate_anchor(anchor(expect=("claude mcp add --transport http", "--header")),
+                                  ok_page, scoper())["verdict"] == AN_CONFIRMED)
+    miss = evaluate_anchor(anchor(expect=("--header", "Settings > Connectors")), ok_page, scoper())
+    check("one expect missing -> contradicted, and the MISSING string is named",
+          lambda: miss["verdict"] == AN_CONTRADICTED and miss["missing"] == "Settings > Connectors")
+    rej = evaluate_anchor(anchor(expect=("--header",), reject=("--scope project",)), ok_page, scoper())
+    check("a reject string present -> contradicted, and the PRESENT string is named",
+          lambda: rej["verdict"] == AN_CONTRADICTED and rej["rejected"] == "--scope project")
+    un = evaluate_anchor(anchor(), page("", http=400), scoper())
+    check("a non-200 -> unreachable, carrying the http code",
+          lambda: un["verdict"] == AN_UNREACHABLE and "400" in un["why"])
+    mv = evaluate_anchor(anchor(src="https://v.example/old/path"),
+                         page("<p>fixture add</p>", final="https://v.example/new/path"), scoper())
+    check("a cross-path redirect -> still CONFIRMED, plus a `moved` note naming the final URL",
+          lambda: mv["verdict"] == AN_CONFIRMED and mv["moved"] == "https://v.example/new/path")
+    check("a trailing slash, a query or a fragment is NOT a move",
+          lambda: moved_to("https://v.example/a/b", "https://v.example/a/b/") is None
+          and moved_to("https://v.example/a/b", "https://v.example/a/b?x=1#y") is None
+          and moved_to("https://www.npmjs.com/package/@s/cli", "https://registry.npmjs.org/%40s%2Fcli") is None)
+
+    # ── the re-keyed vendor arm ─────────────────────────────────────────────────────────────
+    hit = evaluate_anchor(anchor(scope="@selftest"), page("<p>fixture add</p>"),
+                          scoper({"@selftest/dsh-mcp-client": "MCP client bridge"}))
+    check("npmScopeAbsence + a first-party MCP client in that scope -> contradicted, naming it",
+          lambda: hit["verdict"] == AN_CONTRADICTED and hit["vendor"] == ["@selftest/dsh-mcp-client"])
+    calls = []
+    plain = evaluate_anchor(anchor(), page("<p>fixture add</p>"), scoper(calls=calls))
+    check("no npmScopeAbsence declared -> the arm is ABSENT (confirmed, scope never probed), "
+          "never indeterminate",
+          lambda: plain["verdict"] == AN_CONFIRMED and calls == [])
+    check("npmScopeAbsence with unproven exhaustion -> indeterminate (capped-collection law)",
+          lambda: evaluate_anchor(anchor(scope="@selftest"), page("<p>fixture add</p>"),
+                                  scoper(exhausted=False))["verdict"] == AN_INDETERMINATE)
     check("scope filter needs BOTH an mcp token and a client word",
-          lambda: scope_hits({"@v/dsh-mcp-client": "MCP client bridge",
-                              "@v/dsh-mcp-server": "an MCP server",
-                              "@v/http-client": "a plain client",
-                              "@other/mcp-client": "wrong scope"}, "@v")
+          lambda: scope_hits({"@v/dsh-mcp-client": "MCP client bridge", "@v/dsh-mcp-server": "an MCP server",
+                              "@v/http-client": "a plain client", "@o/mcp-client": "wrong scope"}, "@v")
           == ["@v/dsh-mcp-client"])
 
-    # ── AGE arm ─────────────────────────────────────────────────────────────────────────────
-    check("fresh stamp -> ok", lambda: age_arm(23)[0] == ARM_OK)
-    check("stamp past the threshold -> stale", lambda: age_arm(151)[0] == ARM_STALE)
-    check("exactly at the threshold is NOT stale (the comparison is strict)",
-          lambda: age_arm(150)[0] == ARM_OK and age_arm(AGE_THRESHOLD_DAYS + 1)[0] == ARM_STALE)
-    check("a missing verifiedAt is INDETERMINATE, never implicitly fresh",
-          lambda: age_arm(None)[0] == ARM_INDETERMINATE
-          and age_days("not-a-date", DAY) is None)
-    check("age is computed from the stamp, not assumed",
-          lambda: age_days("2026-04-30", DAY) == 120 and age_days("2026-08-05", DAY) == 23)
+    # ── rows: confirmation state and age ────────────────────────────────────────────────────
+    r_old = row(slug="s1", verified="2020-01-01")
+    sha_old = evidence_sha(r_old["evidence"])
+    pages_ok = {"https://v.example/s1": page("<p>fixture add</p>")}
+    pages_dead = {"https://v.example/s1": page("", http=503)}
+    v_ok, rec_ok = evaluate_row(r_old, pages_ok, DAY, None, scoper())
+    check("a row confirmed TODAY is age 0 and never stale, whatever its verifiedAt",
+          lambda: v_ok["state"] == ST_CONFIRMED and v_ok["age_days"] == 0
+          and rec_ok == {"date": "2026-09-29", "evidence_sha": sha_old})
+    v10, _ = evaluate_row(r_old, pages_dead, DAY, {"date": "2026-09-19", "evidence_sha": sha_old}, scoper())
+    check("confirmed 10 d ago (sha matches) + unreachable today -> NOT stale; state unreachable",
+          lambda: v10["state"] == ST_UNREACHABLE and v10["age_days"] == 10
+          and v10["confirmed"] == "2026-09-19")
+    check("…and that aggregates INDETERMINATE, never PASS",
+          lambda: aggregate([v10] + [dict(v_ok, slug="x%d" % i) for i in range(11)], 12)[0] == "INDETERMINATE")
+    vmis, _ = evaluate_row(r_old, pages_dead, DAY, {"date": "2026-09-19", "evidence_sha": "0" * 64}, scoper())
+    check("a confirmation of DIFFERENT evidence (sha mismatch) is ignored -> age from verifiedAt -> stale",
+          lambda: vmis["state"] == ST_STALE and vmis["confirmed"] is None)
+    vlong, _ = evaluate_row(r_old, pages_dead, DAY, {"date": "2026-03-01", "evidence_sha": sha_old}, scoper())
+    check("last confirmation > 150 d + unreachable -> stale",
+          lambda: vlong["state"] == ST_STALE and vlong["age_days"] == 212)
+    vnone, _ = evaluate_row(row(verified="not-a-date"), {"https://v.example/s1": page("", http=503)},
+                            DAY, None, scoper())
+    check("no usable date and never confirmed -> predicate indeterminate (never implicitly fresh)",
+          lambda: vnone["state"] == ST_INDETERMINATE and vnone["age_days"] is None)
+    two = row(evidence=[anchor(src="https://v.example/a"),
+                        anchor(src="https://v.example/b", expect=("gone phrase",))])
+    vtwo, rtwo = evaluate_row(two, {"https://v.example/a": page("<p>fixture add</p>"),
+                                    "https://v.example/b": page("<p>fixture add</p>")}, DAY, None, scoper())
+    check("a row is confirmed only when EVERY anchor confirms (one contradicted -> row contradicted)",
+          lambda: vtwo["state"] == ST_CONTRADICTED and rtwo is None)
+    check("a v1 state (no confirmations key) and a malformed one read as NO confirmations",
+          lambda: prior_confirmations({"verdict": "FAIL", "row_count": 12}) == {}
+          and prior_confirmations({"confirmations": ["x"]}) == {})
+    _, tok_c, conf_c = tok([row(slug="s%d" % i) for i in range(12)])
+    check("a confirmed run persists one confirmation per row, keyed module/slug",
+          lambda: tok_c == "PASS" and sorted(conf_c) == sorted("mcp-clients/s%d" % i for i in range(12)))
 
-    # ── source arm ──────────────────────────────────────────────────────────────────────────
-    check("200 evidencing MCP -> ok", lambda: source_arm(row(), 200, "mcp MCP")[0] == ARM_OK)
-    check("200 with ZERO mcp mentions -> contradicted",
-          lambda: source_arm(row(), 200, "nothing here")[0] == ARM_CONTRADICTED)
-    check("non-200 -> source unreachable (reported, never dropped)",
-          lambda: source_arm(row(), 404, "")[0] == ARM_UNREACHABLE
-          and "404" in source_arm(row(), 404, "")[1])
-
-    # ── vendor arm ──────────────────────────────────────────────────────────────────────────
-    check("a first-party MCP client in the vendor scope -> contradicted",
-          lambda: vendor_arm(row(slug="selftest-vendor", kind="byo-model"),
-                             ({"@selftest/dsh-mcp-client": "MCP client bridge"}, True))[0]
-          == ARM_CONTRADICTED)
-    check("…and the evidence NAMES the package",
-          lambda: "@selftest/dsh-mcp-client" in vendor_arm(
-              row(slug="selftest-vendor", kind="byo-model"),
-              ({"@selftest/dsh-mcp-client": "MCP client bridge"}, True))[1])
-    check("a clean vendor scope -> ok",
-          lambda: vendor_arm(row(slug="selftest-vendor", kind="byo-model"),
-                             ({"@selftest/dsh-fs": "filesystem"}, True))[0] == ARM_OK)
-    check("unproven scope exhaustion -> predicate indeterminate (capped-collection law)",
-          lambda: vendor_arm(row(slug="selftest-vendor", kind="byo-model"), ({}, False))[0]
-          == ARM_INDETERMINATE)
-    check("a declared N/A scope WITH a reason -> ok, and the reason is rendered",
-          lambda: vendor_arm(row(slug="zai-api", kind="api-level"), None)[0] == ARM_OK
-          and "npm scope" in vendor_arm(row(slug="zai-api", kind="api-level"), None)[1])
-    check("EVERY declared-None row carries a reason — a silent N/A is indistinguishable from a "
-          "forgotten one",
-          lambda: all(VENDOR_SCOPE_REASON.get(s) for s, v in VENDOR_SCOPE.items() if v is None))
-    # The ban is on a literal wave number as the RE-ARM TARGET, not on citing the wave that made
-    # a change: `LANDING-DSH-CLIENT-SURFACE-W1` is history and belongs in the prose. A whole-string
-    # /-W\d+/ ban conflated the two and failed on its own correction record.
-    check("deepseek is declared N/A and its RE-ARM target is templated, never a literal wave",
-          lambda: VENDOR_SCOPE["deepseek"] is None
-          and re.search(r"Re-arm at [A-Z][A-Z0-9-]*-W\{NEXT\}",
-                        VENDOR_SCOPE_REASON["deepseek"]) is not None)
-    check("an UNDECLARED row -> predicate indeterminate, never a silent pass",
-          lambda: vendor_arm(row(slug="brand-new", kind="byo-model"), None)[0]
-          == ARM_INDETERMINATE)
-
-    # ── precedence + aggregation ────────────────────────────────────────────────────────────
-    check("a definite finding beats an unknown (unreachable never silences contradicted)",
-          lambda: combine([(ARM_UNREACHABLE, ""), (ARM_CONTRADICTED, "")]) == ARM_CONTRADICTED
-          and combine([(ARM_INDETERMINATE, ""), (ARM_STALE, "")]) == ARM_STALE)
-    check("all-ok -> PASS", lambda: tok(corpus()) == "PASS")
-    check("one stale row -> FAIL",
-          lambda: tok(corpus(10) + [row(slug="old", verified="2026-01-01")]) == "FAIL")
+    # ── aggregation ─────────────────────────────────────────────────────────────────────────
+    check("precedence: a definite finding beats an unknown",
+          lambda: strongest([AN_UNREACHABLE, AN_CONTRADICTED], ANCHOR_PRECEDENCE) == AN_CONTRADICTED)
+    check("all confirmed -> PASS", lambda: tok(corpus())[1] == "PASS")
     check("one contradicted row -> FAIL",
-          lambda: tok(corpus(10) + [row(slug="gone")],
-                      fetch_fn=fetcher(per_slug={"gone": (200, "no tokens here", "")})) == "FAIL")
+          lambda: tok(corpus(11) + [row(slug="gone")],
+                      fetcher(per_url={"gone": (200, "<p>nothing</p>")}))[1] == "FAIL")
+    check("one stale row -> FAIL",
+          lambda: tok(corpus(11) + [row(slug="old", verified="2020-01-01")],
+                      fetcher(per_url={"old": (503, "")}))[1] == "FAIL")
     check("an unreachable source does NOT silently PASS the aggregate",
-          lambda: tok(corpus(10) + [row(slug="dead")],
-                      fetch_fn=fetcher(per_slug={"dead": (503, "", "")})) == "INDETERMINATE")
-    check("mixed ok/indeterminate is INDETERMINATE, not PASS (the spec's undefined case)",
-          lambda: aggregate([{"state": ARM_OK}] * 9 + [{"state": ARM_INDETERMINATE}], None)[0]
-          == "INDETERMINATE")
-    check("every row indeterminate -> INDETERMINATE",
-          lambda: aggregate([{"state": ARM_INDETERMINATE}] * 11, None)[0] == "INDETERMINATE")
-    check("a parse yielding 3 rows -> INDETERMINATE (vacuity guard at CONSTRUCTION)",
-          lambda: _raises(Indeterminate, lambda: parse_rows(_TS_FIXTURE_SHORT, "m")))
-    check("…and the guard's floor is the shipped MIN_ROWS, not a copy",
-          lambda: MIN_ROWS == 8 and len(_parse_ok(_TS_FIXTURE)) >= MIN_ROWS)
-    check("a collapsed row count -> INDETERMINATE even when every row is ok",
-          lambda: aggregate([{"state": ARM_OK}] * 8, 11)[0] == "INDETERMINATE")
+          lambda: tok(corpus(11) + [row(slug="dead")],
+                      fetcher(per_url={"dead": (503, "")}))[1] == "INDETERMINATE")
+    check("zero rows -> INDETERMINATE", lambda: aggregate([], None)[0] == "INDETERMINATE")
+    check("a row count that moved beyond tolerance -> INDETERMINATE even when every row confirms",
+          lambda: aggregate([{"state": ST_CONFIRMED}] * 8, 12)[0] == "INDETERMINATE")
     check("a row count moving within tolerance is NOT indeterminate",
-          lambda: aggregate([{"state": ARM_OK}] * 9, 11)[0] == "PASS")
+          lambda: aggregate([{"state": ST_CONFIRMED}] * 10, 12)[0] == "PASS")
+    check("each distinct evidence URL is fetched ONCE per run",
+          lambda: _count_fetches([row(slug="a", evidence=[anchor(src="https://v.example/same")] * 3),
+                                  row(slug="b", evidence=[anchor(src="https://v.example/same")])]) == 1)
 
-    # ── rendered artifacts: body, per-row line, recommended wave ────────────────────────────
-    LAST_FIRE.clear()
-    tok(corpus(10) + [row(slug="deepseek", kind="byo-model", verified="2026-01-01")])
-    body = LAST_FIRE.get(ALERT_ID, "")
-    check("FAIL fires exactly one alert, with the drifting slug named",
-          lambda: list(LAST_FIRE) == [ALERT_ID] and "deepseek" in body)
-    check("the body keeps the COUNT and the IDS on separate lines (the '(new: 6)' misread class)",
-          lambda: "1 vendor-capability claim" in body and "Affected row slug: deepseek" in body
-          and "(1)" not in body)
-    check("the body names the declared kind and the measured age, not just the slug",
-          lambda: "declared kind=byo-model" in body and "age 239d" in body)
-    check("the Action line is TEMPLATED W{NEXT}, never a literal wave number",
-          lambda: "LANDING-DEEPSEEK-CLIENT-SURFACE-W{NEXT}" in body
-          and not re.search(r"-W\d+\b", body))
-    check("the recommended wave derives the VENDOR from the slug",
-          lambda: recommended_wave("glm-zcode") == "LANDING-GLM-ZCODE-CLIENT-SURFACE-W{NEXT}")
-    v0 = evaluate([row(slug="kimi", verified="2026-04-30")], DAY, fetcher(), scoper())[0]
-    line = render_row_line(v0)
-    check("the per-row line is POSITIVE — slug, kind, stamp, measured age and per-arm verdicts",
-          lambda: "slug=kimi" in line and "kind=native" in line and "age=120d" in line
-          and "age=ok" in line and "source=ok" in line and "state=ok" in line)
-    check("a healthy row is rendered too (absence of an alert is not evidence)",
-          lambda: "state=ok" in render_row_line(
-              evaluate([row()], DAY, fetcher(), scoper())[0]))
+    # ── rendered artifacts ──────────────────────────────────────────────────────────────────
+    tok(corpus(11) + [row(slug="stale-row", verified="2020-01-01")], fetcher(per_url={"stale-row": (503, "")}))
+    body_stale = LAST_FIRE.get(ALERT_ID, "")
+    check("a stale-only body says 'not confirmed … for more than 150 days' and NEVER 'contradicted' "
+          "or 'no longer match'",
+          lambda: "1 public integration claim not confirmed against its live source for more than 150 days."
+          in body_stale and "contradict" not in body_stale and "no longer match" not in body_stale)
+    tok(corpus(10) + [row(slug="codex", evidence=[anchor(src="https://v.example/codex", claim="only stdio",
+                                                          expect=("codex mcp add",), reject=("--url",))]),
+                      row(slug="dead")],
+        fetcher(per_url={"codex": (200, "<p>codex mcp add example --url https://m.example</p>"),
+                         "dead": (503, "")}))
+    body_c = LAST_FIRE.get(ALERT_ID, "")
+    check("a contradicted body headlines it, and names claim / present string / source",
+          lambda: "1 public integration claim contradicted by its live source." in body_c
+          and '    claim: "only stdio"' in body_c
+          and '    present on source (contradicts the claim): "--url"' in body_c
+          and "    source: https://v.example/codex" in body_c
+          and "not confirmed against" not in body_c)
+    check("the COUNT and the SLUGS are on separate lines (the '(new: 6)' misread class)",
+          lambda: "Affected row slug: codex" in body_c and "(1)" not in body_c)
+    check("an unreachable row is housekeeping, never a finding",
+          lambda: "Also unverifiable today (not a finding): dead — source http=503" in body_c
+          and "Affected row slug: codex" in body_c)
+    check("the Action line is TEMPLATED W{NEXT} from the corpus, never a literal wave number",
+          lambda: "Action: dispatch LANDING-MCP-CLIENTS-CLAIMS-W{NEXT} via Cowork -> Claude Code" in body_c
+          and not re.search(r"-W\d+\b", body_c) and not re.search(r"-W\d+\b", body_stale))
+    check("the body names where the rows render",
+          lambda: "algovault.com/docs, /mcp, /integrations and the landing quickstart grid" in body_c)
+    tok(corpus(11) + [row(slug="gone")],
+        fetcher(per_url={"gone": (200, "<p>nothing</p>"),
+                         "s3": (200, "<p>fixture add</p>", "https://v.example/elsewhere")}))
+    body_m = LAST_FIRE.get(ALERT_ID, "")
+    check("a moved-but-confirmed source is listed as housekeeping with its final URL",
+          lambda: "Evidence source moved (claim still evidenced — update the URL): s3 → "
+                  "https://v.example/elsewhere" in body_m)
+    check("…and the housekeeping sections are ABSENT when empty",
+          lambda: "Evidence source moved" not in body_c and "Also unverifiable" not in body_stale)
+    line = render_row_line(v10)
+    check("the per-row line is POSITIVE: slug, kind, stamp, confirmation, age, state, per-anchor verdicts",
+          lambda: "slug=s1" in line and "kind=native" in line and "verifiedAt=2020-01-01" in line
+          and "confirmed=2026-09-19" in line and "age=10d" in line
+          and "state=source unreachable" in line and "a1=unreachable" in line)
+    check("a never-confirmed row says confirmed=never", lambda: "confirmed=never" in render_row_line(vmis))
 
     # ── recovery ────────────────────────────────────────────────────────────────────────────
     LAST_CLEAR.clear()
-    tok(corpus(), prev={"verdict": "FAIL", "row_count": 11})
+    tok(corpus(), prev={"verdict": "FAIL", "row_count": 12})
     check("FAIL -> PASS clears the alert exactly once",
-          lambda: list(LAST_CLEAR) == [ALERT_ID] and "fresh" in LAST_CLEAR[ALERT_ID])
+          lambda: list(LAST_CLEAR) == [ALERT_ID] and "confirmed" in LAST_CLEAR[ALERT_ID])
     LAST_CLEAR.clear()
-    tok(corpus(), prev={"verdict": "PASS", "row_count": 11})
-    check("PASS -> PASS clears NOTHING (recovery chatter stays silent)",
-          lambda: not LAST_CLEAR)
+    tok(corpus(), prev={"verdict": "PASS", "row_count": 12})
+    check("PASS -> PASS clears NOTHING (recovery chatter stays silent)", lambda: not LAST_CLEAR)
 
-    # ── token -> exit-code mapping ──────────────────────────────────────────────────────────
+    # ── the log is written once ─────────────────────────────────────────────────────────────
+    probe_a, probe_b = os.path.join(tmp, "a.log"), os.path.join(tmp, "b.log")
+    Path(probe_a).write_text(""); Path(probe_b).write_text("")
+    with open(probe_a, "a") as fh:
+        same, other = _fd_is_file(fh.fileno(), probe_a), _fd_is_file(fh.fileno(), probe_b)
+    check("stdout-is-the-log detection: same inode -> skip the second append; different -> append",
+          lambda: same is True and other is False and _fd_is_file(-1, probe_a) is False)
+
+    # ── token -> exit-code mapping, and the token's shape ───────────────────────────────────
     check("INDETERMINATE maps to exit 3; PASS and FAIL to 0 (FAIL: the alert IS the action)",
           lambda: _token_exit_map() == {"PASS": 0, "FAIL": 0, "INDETERMINATE": 3})
     src_text = Path(__file__).read_text()
@@ -924,10 +1121,7 @@ def self_test():
           == main_body.count("        return ") == 3)
     check("the token is line-anchored — never embedded mid-line",
           lambda: all(not before.rstrip("\n").split("\n")[-1].strip().startswith(("log(", "#"))
-                      for before in src_text.split('"CLIENT_CLAIM_FRESHNESS_VERDICT=')[:-1])
-          and "CLIENT_CLAIM_FRESHNESS_VERDICT=" not in src_text.replace(
-              '"CLIENT_CLAIM_FRESHNESS_VERDICT=', "").replace(
-              "CLIENT_CLAIM_FRESHNESS_VERDICT=PASS|FAIL|INDETERMINATE", ""))
+                      for before in src_text.split('"CLIENT_CLAIM_FRESHNESS_VERDICT=')[:-1]))
     check("ALERT_ID is a module-level literal (what makes it visible to check-alert-registry)",
           lambda: re.search(r'^ALERT_ID = "CLIENT_CLAIM_DRIFT"', src_text, re.M) is not None)
 
@@ -942,6 +1136,16 @@ def self_test():
     return 0 if ok else 1
 
 
+def _count_fetches(rows):
+    seen = []
+
+    def f(url):
+        seen.append(url)
+        return 200, "<p>fixture add</p>", "", url
+    evaluate(rows, date(2026, 9, 29), f, lambda s: ({}, True), {})
+    return len(seen)
+
+
 def _raises(exc, fn):
     try:
         fn()
@@ -952,36 +1156,14 @@ def _raises(exc, fn):
     return False
 
 
-def _parse_ok(text):
-    return parse_rows(text, "m")
-
-
-_TS_FIXTURE = "".join(
-    """    {
-      slug: '%s',
-      kind: '%s',
-      source: 'https://example.test/%s',
-      verifiedAt: '2026-08-05',
-    },
-""" % (s, k, s)
-    for s, k in [("alpha", "native"), ("bravo", "native"), ("charlie", "native"),
-                 ("delta", "native"), ("echo", "native"), ("foxtrot", "native"),
-                 ("golf", "native"), ("hotel", "native"), ("india", "native"),
-                 ("juliet", "api-level"), ("kilo", "byo-model")])
-
-_TS_FIXTURE_SHORT = "".join(
-    "    {\n      slug: '%s',\n      kind: 'native',\n"
-    "      source: 'https://example.test/%s',\n      verifiedAt: '2026-08-05',\n    },\n"
-    % (s, s) for s in ("alpha", "bravo", "charlie"))
-
-# Floor, not a target — set to the ACTUAL check count so removing any scenario trips it. Raise
-# it when scenarios are added; it exists so a suite that stops running its scenarios cannot
-# report a confident pass over nothing.
-_SELF_TEST_MIN_CHECKS = 49
+# Floor, not a target — set to the ACTUAL check count so removing any scenario trips it. Raise it
+# when scenarios are added; it exists so a suite that stops running its scenarios cannot report a
+# confident pass over nothing.
+_SELF_TEST_MIN_CHECKS = 67
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="declared-claim vs live-source freshness canary")
+    ap = argparse.ArgumentParser(description="rendered-claim vs live-evidence canary")
     ap.add_argument("--self-test", action="store_true",
                     help="hermetic scenario suite; exit non-zero on failure")
     a = ap.parse_args()
