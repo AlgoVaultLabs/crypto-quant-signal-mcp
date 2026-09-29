@@ -23,6 +23,9 @@ describe('exchange-universe — rich fetchers for the newly-promoted venues', ()
       { contract: 'BTC_USDT', total_size: '1000', quanto_multiplier: '0.0001', mark_price: '60000', volume_24h_quote: '5', change_percentage: '-1.5', funding_rate: '0.0001' },
       { contract: 'ETH_USDT', total_size: '1000', quanto_multiplier: '0.001', mark_price: '3000', volume_24h_quote: '9', change_percentage: '2.0', funding_rate: '-0.0002' },
       { contract: 'SOL_USDC', total_size: '9', quanto_multiplier: '1', mark_price: '1', volume_24h_quote: '1' }, // non-USDT → excluded
+    ])).mockResolvedValueOnce(resp([ // OPS-ALARM-SINGLE-DERIVATION-W1 CH2: the admission status, fetched second
+      { name: 'BTC_USDT', in_delisting: false, status: 'trading' },
+      { name: 'ETH_USDT', in_delisting: false, status: 'trading' },
     ]));
     const assets = await getExchangeTopAssetsWithVolume('GATE', 5);
     expect(assets.map((a) => a.coin)).toEqual(['BTC', 'ETH']); // BTC 1000×0.0001×60000=6000 > ETH 1000×0.001×3000=3000
@@ -37,7 +40,10 @@ describe('exchange-universe — rich fetchers for the newly-promoted venues', ()
       { symbol: 'BTCUSDT', quoteVolume: '1000', priceChangePercent: '1.2' },
       { symbol: '1000PEPEUSDT', quoteVolume: '5000', priceChangePercent: '-3.4' },
       { symbol: 'ETHUSDC', quoteVolume: '9999' }, // non-USDT → excluded
-    ]));
+    ])).mockResolvedValueOnce(resp({ symbols: [ // OPS-ALARM-SINGLE-DERIVATION-W1 CH2: admission status
+      { symbol: 'BTCUSDT', status: 'TRADING' },
+      { symbol: '1000PEPEUSDT', status: 'TRADING' },
+    ] }));
     const assets = await fetchVenueUniverse('ASTER');
     expect(assets.map((a) => a.coin)).toEqual(['PEPE', 'BTC']); // volume-desc; 1000PEPE → PEPE
     expect(assets[0].oiIsProxy).toBe(true);

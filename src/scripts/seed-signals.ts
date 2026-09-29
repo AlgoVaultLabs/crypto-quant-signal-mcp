@@ -58,7 +58,7 @@ import { VENUE_IDS_ALL } from '../lib/tool-param-schema.js';
 import { listVenues, stampSeedingStarted } from '../lib/venue-store.js';
 import { recordSeedHeartbeat } from '../lib/seed-heartbeats.js';
 import { isTimeframeFaithful, servedTimeframeLabel } from '../lib/tf-support.js';
-import { fetchVenueUniverse } from '../lib/exchange-universe.js';
+import { fetchVenueUniverse, admitVenueRows } from '../lib/exchange-universe.js';
 import { BINANCE_OVERRIDES } from '../lib/coin-overrides.js';
 // Single-derivation: the seed fetcher and the adapter must agree on WEEX's symbol
 // grammar, aliases included. Two copies of that rule would drift the moment one moved.
@@ -471,10 +471,16 @@ async function fetchHLCoins(topN: number): Promise<string[]> {
   }
   const xyzData = await hlInfoPost<HLMetaTuple>({ type: 'metaAndAssetCtxs', dex: 'xyz' }).catch(() => null);
 
-  const assets: HLAssetInfo[] = stdData[0].universe.map((u, i) => ({
+  const stdAll: HLAssetInfo[] = stdData[0].universe.map((u, i) => ({
     name: u.name,
     notionalOI: parseFloat(stdData[1][i]?.openInterest || '0') * parseFloat(stdData[1][i]?.markPx || '0'),
   }));
+  // OPS-ALARM-SINGLE-DERIVATION-W1 CH2: the standard dex passes the SAME admission step as the scan
+  // SoT (HL's declaration: notionalOI > 0, measured ≡ meta isDelisted). Before this the uncapped HL
+  // lanes evaluated every delisted coin on every fire (56 on 2026-09-29) and discarded them silently.
+  const assets: HLAssetInfo[] = (await admitVenueRows(
+    'HL', stdAll.map((a) => ({ symbol: a.name, notionalOI_usd: a.notionalOI, a })), 'seed',
+  )).map((r) => r.a);
 
   if (xyzData) {
     try {
@@ -527,8 +533,10 @@ async function fetchBinanceCoins(topN: number): Promise<string[]> {
   const usdtPairs = data
     .filter(t => t.symbol.endsWith('USDT'))
     .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
+  // OPS-ALARM-SINGLE-DERIVATION-W1 CH2 — the one admission step, before the cut.
+  const admitted = (await admitVenueRows('BINANCE', usdtPairs.map((t) => ({ symbol: t.symbol, t })), 'seed')).map((r) => r.t);
 
-  const limited = topN > 0 ? usdtPairs.slice(0, topN) : usdtPairs;
+  const limited = topN > 0 ? admitted.slice(0, topN) : admitted;
 
   return limited.map(t => {
     const coin = t.symbol.replace(/USDT$/, '');
@@ -552,8 +560,10 @@ async function fetchBybitCoins(topN: number): Promise<string[]> {
       notionalOI: parseFloat(t.openInterest || '0') * parseFloat(t.lastPrice || '0'),
     }))
     .sort((a, b) => b.notionalOI - a.notionalOI);
+  // OPS-ALARM-SINGLE-DERIVATION-W1 CH2 — the one admission step, before the cut.
+  const admitted = await admitVenueRows('BYBIT', usdtPairs, 'seed');
 
-  const limited = topN > 0 ? usdtPairs.slice(0, topN) : usdtPairs;
+  const limited = topN > 0 ? admitted.slice(0, topN) : admitted;
   return limited.map(t => t.symbol.replace(/USDT$/, ''));
 }
 
@@ -570,8 +580,10 @@ async function fetchOKXCoins(topN: number): Promise<string[]> {
   const usdtSwaps = (data.data || [])
     .filter(t => t.instId.endsWith('-USDT-SWAP'))
     .sort((a, b) => parseFloat(b.oiUsd || '0') - parseFloat(a.oiUsd || '0'));
+  // OPS-ALARM-SINGLE-DERIVATION-W1 CH2 — the one admission step, before the cut.
+  const admitted = (await admitVenueRows('OKX', usdtSwaps.map((t) => ({ symbol: t.instId, t })), 'seed')).map((r) => r.t);
 
-  const limited = topN > 0 ? usdtSwaps.slice(0, topN) : usdtSwaps;
+  const limited = topN > 0 ? admitted.slice(0, topN) : admitted;
   return limited.map(t => t.instId.replace(/-USDT-SWAP$/, ''));
 }
 
@@ -591,8 +603,10 @@ async function fetchBitgetCoins(topN: number): Promise<string[]> {
       notionalOI: parseFloat(t.holdingAmount || '0') * parseFloat(t.lastPr || '0'),
     }))
     .sort((a, b) => b.notionalOI - a.notionalOI);
+  // OPS-ALARM-SINGLE-DERIVATION-W1 CH2 — the one admission step, before the cut.
+  const admitted = await admitVenueRows('BITGET', usdtPairs, 'seed');
 
-  const limited = topN > 0 ? usdtPairs.slice(0, topN) : usdtPairs;
+  const limited = topN > 0 ? admitted.slice(0, topN) : admitted;
   return limited.map(t => t.symbol.replace(/USDT$/, ''));
 }
 
@@ -697,30 +711,30 @@ export async function fetchWeexCoins(topN: number): Promise<string[]> {
   if (!Array.isArray(data)) return [];
   const rows = (data as Array<{ symbol?: string; quoteVolume?: string }>)
     .filter(t => typeof t.symbol === 'string' && /USDT$/i.test(t.symbol))
-    .map(t => ({ coin: fromWeexSymbol(t.symbol as string), score: parseFloat(t.quoteVolume || '0') }));
-  return rankTopN(rows, topN);
+    .map(t => ({ symbol: t.symbol as string, coin: fromWeexSymbol(t.symbol as string), score: parseFloat(t.quoteVolume || '0') }));
+  return rankTopN(await admitVenueRows('WEEX', rows, 'seed'), topN);
 }
 
 // BITMART — /contract/public/details (open_interest; vol_24h often null); product_type 1 = perp.
 export async function fetchBitmartCoins(topN: number): Promise<string[]> {
   const data = await fetchUniverseJson('https://api-cloud-v2.bitmart.com/contract/public/details', 'BITMART');
-  const arr = (data as { data?: { symbols?: Array<{ base_currency?: string; quote_currency?: string; product_type?: number; open_interest?: string }> } })?.data?.symbols;
+  const arr = (data as { data?: { symbols?: Array<{ symbol?: string; base_currency?: string; quote_currency?: string; product_type?: number; open_interest?: string }> } })?.data?.symbols;
   if (!Array.isArray(arr)) return [];
   const rows = arr
     .filter(s => s.product_type === 1 && s.quote_currency === 'USDT' && typeof s.base_currency === 'string')
-    .map(s => ({ coin: s.base_currency as string, score: parseFloat(s.open_interest || '0') }));
-  return rankTopN(rows, topN);
+    .map(s => ({ symbol: s.symbol ?? (s.base_currency as string), coin: s.base_currency as string, score: parseFloat(s.open_interest || '0') }));
+  return rankTopN(await admitVenueRows('BITMART', rows, 'seed'), topN);
 }
 
 // WHITEBIT — /api/v4/public/futures (stock_volume); money_currency USDT; stock_currency = coin.
 export async function fetchWhitebitCoins(topN: number): Promise<string[]> {
   const data = await fetchUniverseJson('https://whitebit.com/api/v4/public/futures', 'WHITEBIT');
-  const arr = (data as { result?: Array<{ stock_currency?: string; money_currency?: string; stock_volume?: string }> })?.result;
+  const arr = (data as { result?: Array<{ ticker_id?: string; stock_currency?: string; money_currency?: string; stock_volume?: string }> })?.result;
   if (!Array.isArray(arr)) return [];
   const rows = arr
     .filter(m => m.money_currency === 'USDT' && typeof m.stock_currency === 'string')
-    .map(m => ({ coin: m.stock_currency as string, score: parseFloat(m.stock_volume || '0') }));
-  return rankTopN(rows, topN);
+    .map(m => ({ symbol: m.ticker_id ?? `${m.stock_currency as string}_PERP`, coin: m.stock_currency as string, score: parseFloat(m.stock_volume || '0') }));
+  return rankTopN(await admitVenueRows('WHITEBIT', rows, 'seed'), topN);
 }
 
 // XT — symbol/list (contractType PERPETUAL, state 0) ∩ agg-tickers (volume `a`).
@@ -735,6 +749,13 @@ export async function fetchXtCoins(topN: number): Promise<string[]> {
       perp.set(s.symbol, (s.baseCoin || s.symbol.split('_')[0] || '').toUpperCase());
     }
   }
+  // OPS-ALARM-SINGLE-DERIVATION-W1 CH2: `state === 0` is NOT "tradeable" on XT — 339 of 1,108
+  // PERPETUAL∧state0 contracts were closed to new positions or past their offTime on 2026-09-29
+  // (EPT, D, GOLD, …). The SAME admission step the scan SoT applies, from the payload already in hand.
+  const admittedXt = new Set((await admitVenueRows(
+    'XT', [...perp.keys()].map((symbol) => ({ symbol })), 'seed', { inlineStatusPayload: listData },
+  )).map((r) => r.symbol));
+  for (const sym of [...perp.keys()]) if (!admittedXt.has(sym)) perp.delete(sym);
   const tickData = await fetchUniverseJson('https://fapi.xt.com/future/market/v1/public/q/agg-tickers', 'XT');
   const ticks = (tickData as { result?: Array<{ s?: string; a?: string }> })?.result;
   if (Array.isArray(ticks)) {
@@ -752,8 +773,9 @@ export async function fetchXtCoins(topN: number): Promise<string[]> {
 // ticker → unranked top-N (seedExchange's liquidity filter drops illiquid). Fail-soft.
 export async function fetchEdgexCoins(topN: number): Promise<string[]> {
   const data = await fetchUniverseJson('https://pro.edgex.exchange/api/v1/public/meta/getMetaData', 'EDGEX');
-  const arr = (data as { data?: { contractList?: Array<{ contractName?: string }> } })?.data?.contractList;
-  if (!Array.isArray(arr)) return [];
+  const listed = (data as { data?: { contractList?: Array<{ contractName?: string }> } })?.data?.contractList;
+  if (!Array.isArray(listed)) return [];
+  const arr = await admitVenueRows('EDGEX', listed.map((c) => ({ ...c, symbol: c.contractName ?? '' })), 'seed');
   const coins = [...new Set(arr
     .map(c => (c.contractName || '').replace(/USDT$/, '').replace(/USD$/, '').toUpperCase())
     .filter(Boolean))];

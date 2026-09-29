@@ -30,7 +30,7 @@ describe('C2 shadow universe-fetchers — shape mapping + ranking + filters', ()
       { symbol: 'BTCUSDT', quoteVolume: '1000' },
       { symbol: '1000PEPEUSDT', quoteVolume: '5000' },
       { symbol: 'ETHUSDC', quoteVolume: '9999' }, // non-USDT → excluded
-    ]);
+    ], { symbols: [{ symbol: 'BTCUSDT', status: 'TRADING' }, { symbol: '1000PEPEUSDT', status: 'TRADING' }] });
     expect(await fetchAsterCoins(5)).toEqual(['PEPE', 'BTC']);
   });
 
@@ -51,7 +51,7 @@ describe('C2 shadow universe-fetchers — shape mapping + ranking + filters', ()
     mockFetch({ data: [
       { symbol: 'BTC-USDT', quoteVolume: '100' },
       { symbol: 'ETH-USDT', quoteVolume: '200' },
-    ] });
+    ] }, { data: [{ symbol: 'BTC-USDT', status: 1 }, { symbol: 'ETH-USDT', status: 1 }] });
     expect(await fetchBingxCoins(5)).toEqual(['ETH', 'BTC']);
   });
 
@@ -102,7 +102,7 @@ describe('C2 shadow universe-fetchers — shape mapping + ranking + filters', ()
       { ticker_id: 'BTC_PERP', stock_currency: 'BTC', money_currency: 'USDT', stock_volume: '100' },
       { ticker_id: 'ETH_PERP', stock_currency: 'ETH', money_currency: 'USDT', stock_volume: '200' },
       { ticker_id: 'X_PERP', stock_currency: 'X', money_currency: 'BTC', stock_volume: '9999' }, // non-USDT → excl
-    ] });
+    ] }, [{ name: 'BTC_PERP', tradesEnabled: true, delistedAt: null }, { name: 'ETH_PERP', tradesEnabled: true, delistedAt: null }]);
     expect(await fetchWhitebitCoins(5)).toEqual(['ETH', 'BTC']);
   });
 
@@ -151,7 +151,7 @@ describe('C2 fetchers — fail-soft (no throw)', () => {
       { contract: 'A_USDT', volume_24h_quote: '5' },
       { contract: 'B_USDT', volume_24h_quote: '4' },
       { contract: 'C_USDT', volume_24h_quote: '3' },
-    ]);
+    ], ['A_USDT', 'B_USDT', 'C_USDT'].map((name) => ({ name, in_delisting: false, status: 'trading' })));
     expect(await fetchGateCoins(2)).toEqual(['A', 'B']);
   });
 });
