@@ -2374,12 +2374,12 @@
       "schedule": "43 21 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "29707b7f345798b865ba62080062c05ccaf0ec9334d93e4df59c6e62f8c62048",
+      "sha256": "c2316f5046c35f97e58b8c556fe7030f9a81a38ad853b0218339fb4d486dd976",
       "alert_ids": [
         "regime_budget_starvation"
       ],
       "owner_wave": "OPS-HL-INTERACTIVE-STARVATION-W1",
-      "notes": "CH3. Watches interactive BUDGET_CEILING refusals per venue, NORMALISED per get_market_regime call over a trailing 24h, because the raw count cannot distinguish a fix from a demand drop: on 2026-08-28 throws hit EXACTLY ZERO while nothing had been fixed and traffic had simply fallen from ~2,900 calls/day to 581. Below 1500 calls the verdict is INDETERMINATE and never PASS; a breach FAILS at any volume. Exists because the defect it watches ran from 2026-07-07, at ~1,000/day from 2026-08-21, on a PAID tool, with nothing watching it for ten days. REGIME_STARVATION_VERDICT= token per run, 0/1/3 (3 = the token-law default for a NEW gate; deliberately NOT check_test_baseline.sh's 2, which is 2 only because it already deployed 2). Three modes: --check (the alert), --observability-gate (CH1's assertion that new get_market_regime rows carry a non-NULL verdict; zero new rows is INDETERMINATE, never PASS), --self-test (hermetic). DETECT AND ALERT ONLY — never mutates a budget, reserve, ceiling or network rule. An unreadable psql is an instrument fault: SILENT INDETERMINATE, since the inventory's own DARK check already covers a canary that stops producing. Runs as aoe_readonly — MEASURED 2026-08-31, algovault_autopilot has NO SELECT on rate_limit_events, and a table a role cannot read comes back ABSENT rather than DENIED, i.e. a silent zero on the arm that matters. Cron 43 21: hour 21 is inside the 18:00-02:59 deploy-free band and carried no other job at all; minute 43 is off the :00 boundary. PROVEN ABLE TO FAIL before install — removing the volume floor and re-coding INDETERMINATE to 0 each turned the self-test red (2 caught). INSTALLED AND PROVEN FIRING on the real defect, not a synthetic one: the first live run on signal-1 at 2026-08-31T17:03Z reported Hyperliquid FAIL at 27.85 throws per 100 calls (981/3,522) with positive PASS output on the other four venues, exit 1. Cron row added the same minute (active lines 106 -> 107, diff shows exactly one addition, crontab backed up first)."
+      "notes": "OPS-ALARM-SINGLE-DERIVATION-W1 CH1 REBUILT the predicate: it now pages on refusals (ERR_UPSTREAM_RATE_LIMIT + DEGRADED_FUNDING_BUDGET) among PAID get_market_regime calls (subscription + x402 rails, MCP + x402 rows, every requested exchange) from ONE statement via population_rate.py; internal/free slices are reported, never paged; the PAID label is verified each run (dev-key hatch closed + Stripe/x402 counts) or the body says paid-tagged (unverified). Interactive BUDGET_CEILING throws are EVIDENCE by venue x caller, never divided. Why: the old quotient divided every caller's HL throws by one tool's calls on every venue and labelled it PAID; the 2026-09-28T21:43Z page (203 / 3,920) reproduced exactly and was 189 scan_trade_calls + 14 funding_episodes_backfill throws, 0 of the tool's own, 0 paid refusals. Paid floor 2,030 (p10 of 14 full days). Writes canary_result_log line 'regime_budget_starvation'. Imports population_rate.py (row population-rate-derivation) and canary_result_log.py. PRIOR NOTES: CH3. Watches interactive BUDGET_CEILING refusals per venue, NORMALISED per get_market_regime call over a trailing 24h, because the raw count cannot distinguish a fix from a demand drop: on 2026-08-28 throws hit EXACTLY ZERO while nothing had been fixed and traffic had simply fallen from ~2,900 calls/day to 581. Below 1500 calls the verdict is INDETERMINATE and never PASS; a breach FAILS at any volume. Exists because the defect it watches ran from 2026-07-07, at ~1,000/day from 2026-08-21, on a PAID tool, with nothing watching it for ten days. REGIME_STARVATION_VERDICT= token per run, 0/1/3 (3 = the token-law default for a NEW gate; deliberately NOT check_test_baseline.sh's 2, which is 2 only because it already deployed 2). Three modes: --check (the alert), --observability-gate (CH1's assertion that new get_market_regime rows carry a non-NULL verdict; zero new rows is INDETERMINATE, never PASS), --self-test (hermetic). DETECT AND ALERT ONLY — never mutates a budget, reserve, ceiling or network rule. An unreadable psql is an instrument fault: SILENT INDETERMINATE, since the inventory's own DARK check already covers a canary that stops producing. Runs as aoe_readonly — MEASURED 2026-08-31, algovault_autopilot has NO SELECT on rate_limit_events, and a table a role cannot read comes back ABSENT rather than DENIED, i.e. a silent zero on the arm that matters. Cron 43 21: hour 21 is inside the 18:00-02:59 deploy-free band and carried no other job at all; minute 43 is off the :00 boundary. PROVEN ABLE TO FAIL before install — removing the volume floor and re-coding INDETERMINATE to 0 each turned the self-test red (2 caught). INSTALLED AND PROVEN FIRING on the real defect, not a synthetic one: the first live run on signal-1 at 2026-08-31T17:03Z reported Hyperliquid FAIL at 27.85 throws per 100 calls (981/3,522) with positive PASS output on the other four venues, exit 1. Cron row added the same minute (active lines 106 -> 107, diff shows exactly one addition, crontab backed up first)."
     },
     {
       "id": "population-comparison-derivation",
@@ -2403,6 +2403,26 @@
         "ops/monitoring/population-comparison.schema.json"
       ],
       "notes": "THE ONE DERIVATION for comparing a rate across two populations. It REFUSES rather than repairs: an arm's excess over its own mix-matched null is bounded by its marginals, so when a declared floor exceeds either arm's attainable range the comparison is NOT_IDENTIFIABLE and resolves to INDETERMINATE. Measured 2026-09-02, the firing that produced this file: attainable width 1.06pp (v1, 99.47% one-sided) vs 38.93pp (v2) against a 3.0pp floor — so the v1 term could never influence the verdict and the 'cross-arm delta' was a single-arm level test wearing a delta's clothes. No schedule: it is a library, imported by trend-mode-readout-gate.py, and has no cron of its own."
+    },
+    {
+      "id": "population-rate-derivation",
+      "artifact": "ops/monitoring/population_rate.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/population_rate.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/population_rate.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "invoked_by": "imported by regime-budget-starvation-canary.py",
+      "install_state": "installed",
+      "sha256": "9f5e605e7eabe769032a063a397fa9179ae1c65f6a426d3c2962a521fc9d1677",
+      "alert_ids": [],
+      "owner_wave": "OPS-ALARM-SINGLE-DERIVATION-W1",
+      "notes": "THE ONE DERIVATION for an alarm rate over a SINGLE population: build_sql emits count(*) FILTER (WHERE event) and count(*) over ONE FROM and ONE WHERE, so a numerator is a subset of its denominator by construction; evaluate() refuses num > den as instrument_defect, then empty, then FAILs above tolerance at any volume, then INDETERMINATE below the floor; bounded_fraction makes '29 of 28' unwritable. Sibling of population_comparison.py (rates ACROSS populations), kept separate on purpose. scripts/check-ratio-derivation.py fails a new raw ratio reaching a comparison in any paging canary, and any PopulationCounts built outside this module. No schedule: a library."
     },
     {
       "id": "population-comparison-schema",
