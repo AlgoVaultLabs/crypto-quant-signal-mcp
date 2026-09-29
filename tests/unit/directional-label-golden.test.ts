@@ -90,7 +90,7 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
 }));
 
 import { processGroup, parseCli, INSERT_COLUMNS } from '../../src/scripts/backfill-directional-labels.js';
-import { EVAL_CANDLES } from '../../src/scripts/directional-labeler.js';
+import { EVAL_CANDLES, BARRIER_SPECS, BARRIER_SPECS_V2 } from '../../src/scripts/directional-labeler.js';
 
 /** The nine LABEL fields — what the a92bfb30 snapshot pins. EDGE-ADS1-SCORECARD-W1-V2 CH2 appended a
  *  tenth column (ret_at_expiry_pct); it is a fact about the price path, pinned by its own test below,
@@ -102,12 +102,19 @@ const GROUPS = [
   { exchange: 'GATE', coin: 'ETH', timeframe: '5m' },
 ];
 
-async function labelAll(order: typeof GROUPS): Promise<string[]> {
+/** EDGE-LABELER-RACE-WINDOW-V2-W1 CH2: the labeller now also writes the corrected `-v2` family beside `-v1`.
+ *  The snapshot pins the `-v1` rows ONLY — they must stay byte-identical to what origin/main wrote before
+ *  either change (this fixture's rows sit on its candle grid, so the corrected cache has no hole to fill here). */
+const V1 = new Set<string>(BARRIER_SPECS.map((s) => s.spec));
+const V2 = new Set<string>(BARRIER_SPECS_V2.map((s) => s.spec));
+
+async function labelAll(order: typeof GROUPS, family: Set<string> = V1): Promise<string[]> {
   env.inserted.length = 0;
   const cli = parseCli([]);
   for (const g of order) await processGroup(cli, g);
   // canonical: sorted by (signal_id, spec) so a processing order can never be mistaken for a label change
   return env.inserted
+    .filter((r) => family.has(r[1] as string))
     .map((r) => JSON.stringify(r.slice(0, LABEL_FIELDS)))
     .sort();
 }
@@ -115,8 +122,29 @@ async function labelAll(order: typeof GROUPS): Promise<string[]> {
 beforeEach(() => { env.inserted.length = 0; });
 
 describe('directional labels — golden (WHICH rows, never WHAT label)', () => {
-  it('the fixture writes every (signal, spec) row — 16 signals x 3 specs', { timeout: 30_000 }, async () => {
+  it('the fixture writes every (signal, spec) row — 16 signals x 3 specs, in each family', { timeout: 30_000 }, async () => {
     expect(await labelAll(GROUPS)).toHaveLength(48);
+    expect(env.inserted).toHaveLength(96); // + the 48 -v2 rows the same run writes (ruling LRW-Q6)
+    expect(env.inserted.filter((r) => V2.has(r[1] as string))).toHaveLength(48);
+  });
+
+  it('-v2 on a gap-free same-grid fixture IS -v1: same label, barrier, t_hit, same-candle flag (E1 at unit level)', { timeout: 30_000 }, async () => {
+    await labelAll(GROUPS);
+    const key = (r: unknown[], spec: string) => `${r[0]}|${spec}`;
+    const v1 = new Map(env.inserted.filter((r) => V1.has(r[1] as string)).map((r) => [key(r, String(r[1]).replace(/-v1$/, '')), r]));
+    const v2 = env.inserted.filter((r) => V2.has(r[1] as string));
+    expect(v2).toHaveLength(48);
+    for (const r of v2) {
+      const twin = v1.get(key(r, String(r[1]).replace(/-v2$/, '')))!;
+      expect(twin, `v1 twin of ${r[0]} ${r[1]}`).toBeDefined();
+      // label, ambiguous_candle, t_hit_candles, mfe, mae, barrier_pct, ret_at_expiry_pct
+      for (const c of ['label', 'ambiguous_candle', 't_hit_candles', 'mfe_return_pct', 'mae_return_pct', 'barrier_pct', 'ret_at_expiry_pct'] as const) {
+        expect(r[INSERT_COLUMNS.indexOf(c)], `${c} of ${r[0]} ${r[1]}`).toEqual(twin[INSERT_COLUMNS.indexOf(c)]);
+      }
+      expect(r[INSERT_COLUMNS.indexOf('low_vol_history')]).toBe(false); // -v2 never writes a floor-barrier row
+      expect(r[INSERT_COLUMNS.indexOf('race_gap_candles')]).toBe(0); // 0 by construction
+      expect(twin[INSERT_COLUMNS.indexOf('race_gap_candles')]).toBe(0); // the live count: the -v1 race saw its whole window
+    }
   });
 
   it('labels are byte-identical to the snapshot recorded from origin/main before the change', { timeout: 30_000 }, async () => {
@@ -140,7 +168,7 @@ describe('directional labels — golden (WHICH rows, never WHAT label)', () => {
     const rows = (await labelAll(GROUPS)).map((s) => JSON.parse(s) as unknown[]);
     const labels = new Set(rows.map((r) => r[2]));
     expect(labels.size, `labels seen: ${[...labels].join(',')}`).toBeGreaterThanOrEqual(2);
-    expect(new Set(rows.map((r) => r[1])).size).toBe(3); // all three barrier specs
+    expect(new Set(rows.map((r) => r[1])).size).toBe(3); // all three -v1 barrier specs
   });
 
   it('the tenth column is ret_at_expiry_pct = close(W-th forward candle) / entry − 1, in percent', { timeout: 30_000 }, async () => {
@@ -157,7 +185,8 @@ describe('directional labels — golden (WHICH rows, never WHAT label)', () => {
     }
     expect(env.cols).toBe(INSERT_COLUMNS.length);
     expect(INSERT_COLUMNS[9]).toBe('ret_at_expiry_pct');
-    expect(env.inserted.length).toBe(48);
+    expect(INSERT_COLUMNS[10]).toBe('race_gap_candles');
+    expect(env.inserted.length).toBe(96);
     let checked = 0;
     for (const g of GROUPS) {
       const key = `${g.exchange}|${g.coin}|${g.timeframe}` as Key;
@@ -166,7 +195,7 @@ describe('directional labels — golden (WHICH rows, never WHAT label)', () => {
         const fwd = FIXTURE[key].candles.filter((c) => c.time >= sig.created_at * 1000);
         const want = (fwd[W - 1].close / sig.price_at_signal - 1) * 100;
         const got = env.inserted.filter((r) => r[0] === sig.id).map((r) => r[9]);
-        expect(got).toHaveLength(3); // one per spec, all equal — expiry is a fact of the path, not of tau
+        expect(got).toHaveLength(6); // one per spec and family, all equal — expiry is a fact of the path, not of tau
         for (const v of got) expect(v as number).toBeCloseTo(want, 12);
         checked++;
       }
@@ -186,7 +215,10 @@ describe('directional labels — golden (WHICH rows, never WHAT label)', () => {
       vi.useRealTimers();
     }
     const firstRows = env.inserted.filter((r) => r[0] === first.id);
-    expect(firstRows.length).toBeGreaterThan(0); // the race itself may still resolve early...
+    expect(firstRows.length).toBeGreaterThan(0); // the -v1 race itself may still resolve early...
     for (const r of firstRows) expect(r[9]).toBeNull(); // ...but its expiry is not known yet
+    // ...and the corrected race does not run at all on a window that had not closed: DEFERRED, no -v2 row
+    expect(firstRows.filter((r) => V2.has(r[1] as string))).toHaveLength(0);
+    expect(firstRows.every((r) => V1.has(r[1] as string))).toBe(true);
   });
 });

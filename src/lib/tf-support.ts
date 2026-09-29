@@ -47,6 +47,22 @@ const SERVED_INTERVAL_MS: Record<ExchangeId, (tf: string) => number | null> = {
   HL, BINANCE, BYBIT, OKX, BITGET, ASTER, EDGEX, GATE, MEXC, KUCOIN, PHEMEX, BINGX, HTX, WEEX, BITMART, XT, WHITEBIT,
 };
 
+/**
+ * EDGE-LABELER-RACE-WINDOW-V2-W1 — the candle interval `venue` actually SERVES for `tf`, in ms: the grid a
+ * directional label race runs on and the step a candle fetch pages by. The requested interval when the adapter
+ * substitutes nothing; null for an unknown `tf`. The ONE served-step lookup for both directional labellers — the
+ * directional labeller's own copy of this table is retired onto it, and the hold labeller (which may import no
+ * other script) reads it here. Built from the same adapter exports as `isTimeframeFaithful`, so the two can
+ * never disagree about what a venue serves.
+ */
+export function servedCandleStepMs(venue: string, tf: string): number | null {
+  return SERVED_INTERVAL_MS[venue as ExchangeId]?.(tf) ?? TF_MS[tf] ?? null;
+}
+
+/** Every venue the served-step table knows, in its declaration order — the domain of every per-pair derivation
+ *  built on `servedCandleStepMs` (the coarser `-v1` lag, the hold `-v2` retry bounds). tsc-exhaustive above. */
+export const SERVED_VENUES = Object.keys(SERVED_INTERVAL_MS) as ExchangeId[];
+
 /** Coarsening threshold: a served base candle ≥ this × the requested horizon is unfaithful (resolution-inflating). */
 export const FAITHFUL_MAX_RATIO = 2;
 

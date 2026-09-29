@@ -108,3 +108,75 @@ A cell holds a **validated** directional edge only if ALL hold on the primary sp
 Zero validated cells is the **expected** and **honest** baseline for the current engine and
 counts as SUCCESS for this wave. No public claim, version bump, or copy change is authorized by
 a green result here — that is a separate, Mr.1-gated remediation wave.
+
+## 5. `-v2` — the corrected race window (EDGE-LABELER-RACE-WINDOW-V2-W1)
+
+**Why a new version.** The `-v1` labeller (`backfill-directional-labels.ts`, since `20129e14`) extended its
+per-group candle cache from `coveredUntil + tf`, where `coveredUntil` is off the candle grid (`created_at` is
+arbitrary seconds), so the one candle opening inside that step was never fetched; the race then scanned the
+first W cached candles BY INDEX, skipping the missing candle and running past its vertical barrier. The same
+holes sat in later rows' σ history, and finer-served pairs lost a candle per page boundary. A material share of
+the `-v1` corpus is affected (measured label-free; prevalence classes and figures in the private vault record —
+this public doc carries none). `-v1` labels are **never edited**: the corrected race is a new version written
+**beside** them, and every consumer migrates by its own wave.
+
+**Definition — same formula, corrected inputs.** Barriers `max(τ · σ_w, 0.30%)`, the σ formula, the −1
+same-candle rule, the floor and `W` are exactly §1's. What changes is how the window and the σ history are
+taken:
+
+- **Window by time on the served grid.** The race runs on the candle interval the venue actually SERVES for the
+  timeframe (30 venue × timeframe pairs are fetch-and-relabel, e.g. 2h served as 1h candles, 3m as 5m). The
+  window is the first served candle opening in `[entry, entry + step)` — anchored on the data, never on
+  `ceil(entry / step) · step`, because some venues' daily and 12-hour candles open on UTC+8 boundaries — and the
+  next W−1 served candles, each exactly one step apart. The vertical barrier is the close of candle W−1.
+- **All W or no row.** A window with any missing candle is **refused** — no `-v2` row is written (a label-0 row
+  would read as a timeout to every consumer), and the refusal is counted per run. A window that had not closed
+  when its candles were fetched (`entry + (W+1)·step` after the fetch) is **deferred** — no row, and retried
+  under the retry contract below.
+- **σ on a gap-free history.** σ_w uses §1's formula over the contiguous run of served candles ending just before
+  the window; fewer than 30 contiguous windows ⇒ **no `-v2` row** (`unreachable:history`), never a floor-barrier
+  `low_vol_history` row.
+- **Coarser-served pairs** (the served candle is coarser than the timeframe) race W **served** candles, a longer
+  horizon than `-v1`, which raced a window cut at `(W+2)·requested` and could only ever write decided labels
+  there. Readings on these pairs are reported apart, never pooled with same-grid cells.
+- **Specs:** `tau1.0-floor0.30-v2` (primary) · `tau0.5-floor0.30-v2` · `tau2.0-floor0.30-v2`. The nightly writes
+  `-v2` for the signals whose `-v1` attempt the same run completes: a written `-v1` row, or — on a coarser-served
+  pair — a `-v1` timeout its cut window cannot write, so `-v2` there is never limited to decided outcomes. Such a
+  `-v2` row has no `-v1` twin: it is a named, counted class (`V2_NO_V1_TWIN`), written once, and never an input
+  to any `-v1`/`-v2` comparison. History is filled by a separate bounded relabel. `mfe_return_pct` /
+  `mae_return_pct` and `ret_at_expiry_pct` carry the same values as the `-v1` twin.
+
+**Retry contract.** A `-v2` window that has not closed is retried, never dropped. On a coarser-served pair `-v1`
+is due at `(W+1)·requested` but the `-v2` window closes at `(W+1)·served`; a signal in between is **held back
+whole** — neither version is written — and the first run after its window closes writes both (`V2_HELDBACK
+pending` counts the signals held back in a run; `released` is a clock estimate of those a nominal previous
+nightly held back, not a record). The hold-back waits on the clock only: a refused `-v2` window never delays or
+removes the `-v1` row. A held-back `-v1` row is computed by the unchanged `-v1` rule in the run that writes it —
+from that run's fetch extents and the candles then in hand — so its values can differ from what the run it was
+held back from would have written (a `ret_at_expiry_pct` that run would have left empty is filled, for one). The
+instant `-v1` becomes writable moves by the pair's **coarser `-v1` lag** `(W+1)·(served − requested)`; rows land
+at a nightly, so the row lands at most `⌈lag / 24 h⌉` nightlies later — a per-pair bound, not a constant:
+
+<!-- coarser-v1-lag:begin (must equal renderCoarserV1LagTable() in src/scripts/backfill-directional-labels.ts; tests/unit/lrw-race-window-v2.test.ts fails otherwise — change the code, then paste its output here) -->
+| Venue | Timeframe | Served candle | Coarser `-v1` lag | Nightlies late, at most |
+|---|---|---|---|---|
+| GATE | 3m | 5m | 26 min | 1 |
+| MEXC | 3m | 5m | 26 min | 1 |
+| PHEMEX | 3m | 5m | 26 min | 1 |
+| PHEMEX | 12h | 1d | 3600 min | 3 |
+| HTX | 3m | 5m | 26 min | 1 |
+| WEEX | 3m | 5m | 26 min | 1 |
+| XT | 3m | 5m | 26 min | 1 |
+| WHITEBIT | 3m | 15m | 156 min | 1 |
+| WHITEBIT | 5m | 15m | 130 min | 1 |
+<!-- coarser-v1-lag:end -->
+
+**Provenance column `race_gap_candles`** (migration 045): the number of served-grid slots of the row's true
+W-window absent from the candles it was raced on — NULL = not annotated; historical `-v1` rows carry a label-free
+replay's lower bound; rows the corrected labeller writes carry the live count (expected 0); `-v2` rows are 0 by
+construction.
+
+**`-v1` from the same corrected cache.** After this change the nightly `-v1` rows come from the corrected cache
+too (the hole is a bug, never reproduced on purpose), clipped to the union of `-v1`'s own requested fetch extents
+so its definition — including the cut window on coarser-served pairs — does not move. The deprecation notice and the consumer
+migration table are added with the consumer registry.

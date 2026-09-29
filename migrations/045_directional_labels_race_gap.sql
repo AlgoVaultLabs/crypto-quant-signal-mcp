@@ -1,0 +1,15 @@
+-- 045_directional_labels_race_gap.sql — EDGE-LABELER-RACE-WINDOW-V2-W1 CH2 (architect rulings Q9 = A, LRW-Q3)
+-- race_gap_candles: PROVENANCE, not a label — the number of served-grid slots of the row's TRUE W-candle window
+-- (the first served candle at/after the entry and the next W-1) that were absent from the cache the row was
+-- raced on. 0 = the race saw its whole window.
+--   * historical tau*-floor0.30-v1 rows: the label-free replay's value (a lower bound, extension-hole class;
+--     sha-pinned artifact, written once by `--annotate-gaps`, never over a non-NULL value);
+--   * rows the corrected labeller writes: the live count (expected 0; > 0 on a venue-side hole, or where a
+--     coarser-served pair's -v1 window is cut short by its registered definition);
+--   * tau*-floor0.30-v2 rows: 0 by construction (a window with a hole is refused, never written).
+-- INTERNAL-ONLY. Additive, NULLABLE, no default: NULL means "not annotated", never "gap-free" — a default of 0
+-- would stamp gap-free on every unannotated row (a sentinel). The single INSERT names its columns and no
+-- reader selects *, so every existing statement keeps working unchanged.
+-- Pre-applied via SSH as the table owner before the code lands (lock_timeout 5s), after replaying the deployed
+-- INSERT in a rolled-back transaction; idempotent. Rollback: migrations/045_directional_labels_race_gap.down.sql.
+ALTER TABLE directional_labels ADD COLUMN IF NOT EXISTS race_gap_candles SMALLINT;
