@@ -1,6 +1,7 @@
 <p align="center">
   <a href="https://algovault.com">
     <img src="https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/logo.png" alt="AlgoVault" width="120" />
+[![MCP Queen operational grade](https://mcpqueen.com/badge/io.github.AlgoVaultFi/crypto-quant-signal-mcp.svg)](https://mcpqueen.com/s/io.github.AlgoVaultFi/crypto-quant-signal-mcp)
   </a>
 </p>
 
