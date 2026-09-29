@@ -21,11 +21,19 @@
  *
  * Every row carries `source` + `verifiedAt`. A connect string with no primary
  * source does not ship.
+ *
+ * Every row also carries `evidence` — its LAST property, on purpose: each
+ * load-bearing sentence the row renders, bound to the live page that makes it
+ * true (EvidencedEntry, ./types.ts). The copy may not move away from its
+ * evidence (tests/unit/claim-evidence.test.ts R2), and the host canary confirms
+ * every anchor daily through the generated claim-evidence.json. An anchor that
+ * is false today is still declared: it is the canary's proof of life, and the
+ * fix is the copy, never a softer anchor.
  */
 
-import type { SurfaceModule } from './types.js';
+import type { EvidencedEntry, SurfaceModule } from './types.js';
 
-const MCP_CLIENTS: SurfaceModule = {
+const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
   meta: {
     anchorId: 'connect-mcp',
     title: 'Connect Your MCP Client',
@@ -85,6 +93,28 @@ const MCP_CLIENTS: SurfaceModule = {
       kind: 'native',
       source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
       verifiedAt: '2026-08-05',
+      evidence: [
+        {
+          claim: 'Settings → Connectors → Add custom connector',
+          source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
+          expect: ['Settings > Connectors'],
+        },
+        {
+          claim: 'as a custom header (paid tier)',
+          source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
+          expect: ['custom header'],
+        },
+        {
+          claim: 'claude_desktop_config.json',
+          source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
+          expect: ['claude_desktop_config.json'],
+        },
+        {
+          claim: '"mcp-remote"',
+          source: 'https://registry.npmjs.org/mcp-remote',
+          expect: ['--header'],
+        },
+      ],
     },
     {
       slug: 'cursor',
@@ -114,6 +144,18 @@ const MCP_CLIENTS: SurfaceModule = {
       kind: 'native',
       source: 'https://cursor.com/docs/context/mcp',
       verifiedAt: '2026-04-30',
+      evidence: [
+        {
+          claim: '~/.cursor/mcp.json',
+          source: 'https://cursor.com/docs/mcp',
+          expect: ['~/.cursor/mcp.json', '.cursor/mcp.json'],
+        },
+        {
+          claim: '"Bearer ${env:AV_API_KEY}"',
+          source: 'https://cursor.com/docs/mcp',
+          expect: ['${env:NAME}', '"Bearer ${env:'],
+        },
+      ],
     },
     {
       slug: 'cline',
@@ -145,6 +187,24 @@ const MCP_CLIENTS: SurfaceModule = {
       kind: 'native',
       source: 'https://docs.cline.bot/mcp/connecting-to-a-remote-server',
       verifiedAt: '2026-04-30',
+      evidence: [
+        {
+          claim: 'Remote Servers tab',
+          source: 'https://docs.cline.bot/mcp/mcp-overview',
+          expect: ['Remote Servers tab', 'Configure MCP Servers'],
+        },
+        {
+          claim: '"type": "streamableHttp"',
+          source: 'https://docs.cline.bot/mcp/mcp-overview',
+          expect: ['streamableHttp'],
+        },
+        {
+          // Cline's docs carry no `${env:` at all; only its source does (McpHub.ts).
+          claim: '"Bearer ${env:AV_API_KEY}"',
+          source: 'https://raw.githubusercontent.com/cline/cline/main/apps/vscode/src/services/mcp/McpHub.ts',
+          expect: ['${env:VAR_NAME}', 'expandEnvironmentVariables'],
+        },
+      ],
     },
     {
       slug: 'claude-code',
@@ -181,6 +241,18 @@ const MCP_CLIENTS: SurfaceModule = {
       kind: 'native',
       source: 'https://code.claude.com/docs/en/mcp',
       verifiedAt: '2026-04-30',
+      evidence: [
+        {
+          claim: 'claude mcp add --transport http --scope project',
+          source: 'https://code.claude.com/docs/en/mcp',
+          expect: ['claude mcp add --transport http', '--scope project', '--header'],
+        },
+        {
+          claim: '.mcp.json',
+          source: 'https://code.claude.com/docs/en/mcp',
+          expect: ['.mcp.json', 'Environment variable expansion'],
+        },
+      ],
     },
     {
       slug: 'smithery',
@@ -201,6 +273,13 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
       kind: 'native',
       source: 'https://www.npmjs.com/package/@smithery/cli',
       verifiedAt: '2026-04-30',
+      evidence: [
+        {
+          claim: 'npx -y @smithery/cli install crypto-quant-signal-mcp --client',
+          source: 'https://registry.npmjs.org/@smithery%2Fcli',
+          expect: ['@smithery/cli install'],
+        },
+      ],
     },
     {
       slug: 'plain-http',
@@ -222,6 +301,18 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
       kind: 'native',
       source: 'https://modelcontextprotocol.io/quickstart/user',
       verifiedAt: '2026-04-30',
+      evidence: [
+        {
+          claim: '"status":"ok"',
+          source: 'https://api.algovault.com/health',
+          expect: ['"status":"ok"'],
+        },
+        {
+          claim: '"version":"1.10.3"',
+          source: 'https://api.algovault.com/health',
+          expect: ['"version":"1.10.3"'],
+        },
+      ],
     },
     // ── Rows added LANDING-MCP-CLIENT-REGISTRY-W1, each verified 2026-08-05
     // against the vendor's own documentation. APPENDED, never interleaved: the
@@ -254,6 +345,21 @@ bearer_token_env_var = "AV_API_KEY"
       kind: 'native',
       source: 'https://learn.chatgpt.com/docs/extend/mcp',
       verifiedAt: '2026-08-05',
+      evidence: [
+        {
+          claim: 'bearer_token_env_var',
+          source: 'https://learn.chatgpt.com/docs/extend/mcp',
+          expect: ['bearer_token_env_var', 'http_headers', 'config.toml'],
+        },
+        {
+          claim: 'codex mcp add covers local stdio servers only',
+          source: 'https://learn.chatgpt.com/docs/extend/mcp',
+          expect: ['codex mcp add'],
+          // Present iff the command documents a URL flag — a longer form would bind to the
+          // vendor's placeholder names and silently re-confirm when they rename the example.
+          reject: ['--url'],
+        },
+      ],
     },
     {
       slug: 'kimi',
@@ -284,6 +390,13 @@ bearer_token_env_var = "AV_API_KEY"
       kind: 'native',
       source: 'https://moonshotai.github.io/kimi-code/en/customization/mcp.html',
       verifiedAt: '2026-08-05',
+      evidence: [
+        {
+          claim: 'bearerTokenEnvVar',
+          source: 'https://moonshotai.github.io/kimi-code/en/customization/mcp.html',
+          expect: ['bearerTokenEnvVar', '~/.kimi-code', '/mcp-config'],
+        },
+      ],
     },
     {
       slug: 'glm-zcode',
@@ -305,6 +418,13 @@ bearer_token_env_var = "AV_API_KEY"
       kind: 'native',
       source: 'https://zcode.z.ai/en/docs/mcp-services',
       verifiedAt: '2026-08-05',
+      evidence: [
+        {
+          claim: 'New MCP Server',
+          source: 'https://zcode.z.ai/en/docs/mcp-services',
+          expect: ['New MCP Server', 'Full configuration'],
+        },
+      ],
     },
     {
       slug: 'deepseek-harness',
@@ -339,6 +459,15 @@ bearer_token_env_var = "AV_API_KEY"
       kind: 'native',
       source: 'https://github.com/deepseek-ai/deepseek-harness',
       verifiedAt: '2026-08-29',
+      evidence: [
+        {
+          // github.com HTML is not reliably fetchable headless; the raw README on the default
+          // branch (`master`) is the same document.
+          claim: '@deepseek-ai/dsh-mcp-client',
+          source: 'https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/master/packages/mcp/mcp-client/README.md',
+          expect: ['serverName', 'streamable-http'],
+        },
+      ],
     },
     {
       slug: 'zai-api',
@@ -370,6 +499,13 @@ bearer_token_env_var = "AV_API_KEY"
       kind: 'api-level',
       source: 'https://docs.z.ai/guides/capabilities/mcp-call',
       verifiedAt: '2026-08-05',
+      evidence: [
+        {
+          claim: 'server_label',
+          source: 'https://docs.z.ai/guides/capabilities/mcp-call',
+          expect: ['server_label', 'server_url', 'transport_type', 'allowed_tools'],
+        },
+      ],
     },
     {
       slug: 'deepseek',
@@ -396,6 +532,21 @@ claude mcp add --transport http --scope project algovault \\
       kind: 'byo-model',
       source: 'https://api-docs.deepseek.com/guides/anthropic_api',
       verifiedAt: '2026-08-28',
+      evidence: [
+        {
+          // Evidence is per CLAIM: this one lives on a different DeepSeek page than the row's source.
+          // Trailing slash on both: the slash-less form redirects through a hop that answered 400
+          // on 3 of 10 probes from the canary's host; the canonical form answered 200 on 20 of 20.
+          claim: 'ANTHROPIC_AUTH_TOKEN',
+          source: 'https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code/',
+          expect: ['api.deepseek.com/anthropic', 'ANTHROPIC_AUTH_TOKEN'],
+        },
+        {
+          claim: 'The DeepSeek API itself still exposes no MCP parameter',
+          source: 'https://api-docs.deepseek.com/guides/anthropic_api/',
+          expect: ['mcp_servers Ignored'],
+        },
+      ],
     },
   ],
 };

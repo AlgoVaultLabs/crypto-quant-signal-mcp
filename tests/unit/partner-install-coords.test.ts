@@ -109,6 +109,10 @@ describe('"contains mcp" is not "is an MCP endpoint"', () => {
     ['https://www.npmjs.com/package/bitget-mcp-server', false],
     ['https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues', false],
     ['https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp', false],
+    // A raw file host serves repository files, never JSON-RPC. OPS-CLIENT-CLAIM-EVIDENCE-W1 cites
+    // Cline's McpHub.ts as claim evidence; before the exclusion this read as an endpoint, the gate
+    // POSTed `initialize`, got 403 with no challenge, and flipped CLEAN -> INDETERMINATE.
+    ['https://raw.githubusercontent.com/cline/cline/main/apps/vscode/src/services/mcp/McpHub.ts', false],
   ])('%s ⇒ %s', (url, want) => {
     expect(isLikelyMcpEndpoint(url as string)).toBe(want);
   });

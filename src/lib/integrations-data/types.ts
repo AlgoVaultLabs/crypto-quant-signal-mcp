@@ -95,17 +95,51 @@ export interface IntegrationEntry {
    */
   kind?: ClientKind;
   /**
-   * Vendor documentation URL that `setupSummary` was verified against. Required
-   * in practice for every mcp-clients row — a connect string with no primary
-   * source does not ship.
+   * Vendor documentation URL a PERSON verified this row against — row-level
+   * provenance, and the URL the tutorials' "verified … against" twin cites.
+   * Required in practice for every mcp-clients row — a connect string with no
+   * primary source does not ship. It is NOT what the canary checks: a row's
+   * truths often live on different pages (docs, source, registry), so the
+   * machine-checked evidence is per CLAIM, in `EvidencedEntry.evidence`.
    */
   source?: string;
   /**
-   * ISO date `setupSummary` was last checked against `source`. Vendor UI paths
-   * drift; scripts/check-mcp-client-copy.mjs REPORTS any row older than 180
-   * days, naming the row and its source.
+   * ISO date a PERSON last verified this row end-to-end against `source`.
+   * Freshness = max(verifiedAt, the canary's last evidence confirmation) — see
+   * ops/monitoring/client-claim-freshness.py.
    */
   verifiedAt?: string;
+}
+
+/**
+ * A load-bearing sentence a row RENDERS, bound to the live page that makes it true.
+ * External-truth sibling of plans.ts `ClaimEvidence` (internal truth, resolved at build time).
+ * External truth can only be checked live, so ops/monitoring/client-claim-freshness.py probes
+ * these daily through src/lib/integrations-data/claim-evidence.json.
+ */
+export interface LiveClaimEvidence {
+  /** Verbatim substring of whitespace-collapsed renderedRowText(row). */
+  readonly claim: string;
+  /** Live URL that evidences `claim` — PER CLAIM, not per row. */
+  readonly source: string;
+  /** Every string must appear on `source` (whitespace-collapsed, case-sensitive). Distinctive tokens only. */
+  readonly expect: readonly [string, ...string[]];
+  /** Strings whose PRESENCE on `source` contradicts the claim — for "only …" / "no …" claims. */
+  readonly reject?: readonly string[];
+  /** The claim asserts the vendor ships NO first-party MCP client in this npm scope (the re-keyed vendor arm). */
+  readonly npmScopeAbsence?: string;
+}
+
+/**
+ * An mcp-clients row: provenance fields required, plus at least one piece of live evidence.
+ * The tuple type makes a row with ZERO evidence unrepresentable; tests/unit/claim-evidence.test.ts
+ * guards the emitted JSON the host canary actually reads.
+ */
+export interface EvidencedEntry extends IntegrationEntry {
+  kind: ClientKind;
+  source: string;
+  verifiedAt: string;
+  evidence: readonly [LiveClaimEvidence, ...LiveClaimEvidence[]];
 }
 
 /**
@@ -140,8 +174,10 @@ export interface SurfaceMeta {
 
 /**
  * A complete surface module — what each data file exports as its default.
+ * Generic so a surface can require more of its rows (mcp-clients: `EvidencedEntry`) while
+ * every renderer keeps accepting the plain shape — the default parameter IS today's shape.
  */
-export interface SurfaceModule {
+export interface SurfaceModule<E extends IntegrationEntry = IntegrationEntry> {
   meta: SurfaceMeta;
-  entries: IntegrationEntry[];
+  entries: E[];
 }
