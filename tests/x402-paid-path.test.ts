@@ -96,6 +96,13 @@ let nextVerdict: 'BUY' | 'SELL' | 'HOLD' = 'BUY';
 let settleCalls = 0;
 /** Every `logRequest` entry this route emitted, in order (see the analytics mock below). */
 let loggedRequests: Record<string, unknown>[] = [];
+/**
+ * OPS-ALARM-SINGLE-DERIVATION-W1 CH1 — the get_market_regime outcome seam. `nextRegimeThrow` makes
+ * the mocked core handler throw; `nextRegimeDegraded` is what the (mocked) ALS accessor
+ * `getRequestRegimeFundingDegraded()` reports for the call — the SAME accessor the MCP handler reads.
+ */
+let nextRegimeThrow: unknown = null;
+let nextRegimeDegraded = false;
 
 /** Settle is fire-and-forget AFTER res.json(), so give the server a tick before asserting. */
 const settleTick = () => new Promise((r) => setTimeout(r, 60));
@@ -125,6 +132,8 @@ beforeEach(async () => {
   nextVerdict = 'BUY';
   settleCalls = 0;
   loggedRequests = [];
+  nextRegimeThrow = null;
+  nextRegimeDegraded = false;
 
   vi.resetModules();
   const { closeDb } = await import('../src/lib/performance-db.js');
@@ -164,6 +173,7 @@ beforeEach(async () => {
         ? { license: { tier: 'x402', key: null }, pendingSettlement: nextSettlement }
         : { license: { tier: 'free', key: null } },
     requestContext: { run: (_ctx: unknown, fn: () => unknown) => fn() },
+    getRequestRegimeFundingDegraded: () => nextRegimeDegraded,
   }));
   // Mock the 3 core tool handlers to fixed outputs (we assert serve-vs-402).
   vi.doMock('../src/tools/get-trade-call.js', () => ({
@@ -182,7 +192,10 @@ beforeEach(async () => {
     scanFundingArb: () => ({ opportunities: [], scannedPairs: 1 }),
   }));
   vi.doMock('../src/tools/get-market-regime.js', () => ({
-    getMarketRegime: () => ({ regime: 'RANGING', confidence: 50, coin: 'BTC' }),
+    getMarketRegime: () => {
+      if (nextRegimeThrow) throw nextRegimeThrow;
+      return { regime: 'RANGING', confidence: 50, coin: 'BTC' };
+    },
   }));
   // Analytics stays out of the DB, but logRequest is RECORDED rather than discarded:
   // TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1 needs the emitted row to be assertable, and a
@@ -583,5 +596,80 @@ describe('paid rail stamps a session id — the calls/sessions dimensions must a
       expect(loggedRequests, `${tool} logged no request`).toHaveLength(1);
       expect(loggedRequests[0].sessionId, `${tool} logged a NULL session id`).toBe('h');
     }
+  });
+});
+
+/**
+ * OPS-ALARM-SINGLE-DERIVATION-W1 CH1 — the x402 twin writes the SAME `request_log` fields as the MCP
+ * handler for the same outcome. Before this wave it logged `verdict: undefined` and no `exchange`
+ * for `get_market_regime`, and its catch wrote no row at all — so the one explicitly paid rail was
+ * INVISIBLE to the canary that pages on paid refusals, and `--observability-gate` would FAIL on any
+ * x402 regime row.
+ *
+ * The MCP side cannot be booted in a unit test (`index.ts` starts the server at import), so its
+ * formula is pinned against the real source below and evaluated here on the same outcome; the x402
+ * side is driven through the REAL route.
+ */
+describe('get_market_regime — the x402 twin logs the MCP handler\'s fields (single derivation)', () => {
+  const INDEX = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.ts'), 'utf8');
+  const mcpArm = INDEX.slice(INDEX.indexOf("toolName: 'get_market_regime'"), INDEX.indexOf('// ── Tools: get_equity_call'));
+
+  it('the MCP formula this parity is measured against is still the one in src/index.ts', () => {
+    expect(mcpArm).toContain('verdict: regimeSuccessVerdict(getRequestRegimeFundingDegraded()),');
+    expect(mcpArm).toContain("regime: (result as { regime?: string }).regime ?? null,");
+    expect(mcpArm).toContain('verdict: regimeErrorVerdict(err),');
+    expect(mcpArm).toContain('regime: null,');
+    expect(mcpArm.match(/^\s+exchange,$/gm)?.length).toBe(2);
+  });
+
+  async function regimeRow(body: Record<string, unknown>) {
+    setProof(req(0.02), freshNonce());
+    const res = await post('get_market_regime', body);
+    const rows = loggedRequests.filter((r) => r.toolName === 'get_market_regime');
+    expect(rows, 'exactly one get_market_regime row per call — none is the blind spot, two double-counts').toHaveLength(1);
+    return { res, row: rows[0] };
+  }
+
+  it('clean success → OK, the regime, and the DEFAULTED exchange (the MCP zod default)', async () => {
+    const { regimeSuccessVerdict } = await import('../src/lib/regime-request-verdict.js');
+    const { REGIME_EXCHANGE_DEFAULT } = await import('../src/lib/tool-param-schema.js');
+    const { res, row } = await regimeRow({ coin: 'BTC', timeframe: '4h' });
+    expect(res.status).toBe(200);
+    expect(row).toMatchObject({ licenseTier: 'x402', verdict: regimeSuccessVerdict(false), regime: 'RANGING',
+      exchange: REGIME_EXCHANGE_DEFAULT });
+  });
+
+  it('funding leg refused → DEGRADED_FUNDING_BUDGET through the same ALS accessor', async () => {
+    const { regimeSuccessVerdict } = await import('../src/lib/regime-request-verdict.js');
+    nextRegimeDegraded = true;
+    const { row } = await regimeRow({ coin: 'BTC', timeframe: '4h', exchange: 'BINANCE' });
+    expect(row).toMatchObject({ verdict: regimeSuccessVerdict(true), regime: 'RANGING', exchange: 'BINANCE' });
+  });
+
+  it('a refused call writes an ERROR-ARM row (it wrote none) — ERR_UPSTREAM_RATE_LIMIT', async () => {
+    const { regimeErrorVerdict } = await import('../src/lib/regime-request-verdict.js');
+    const { UpstreamRateLimitError } = await import('../src/lib/errors.js');
+    const err = new UpstreamRateLimitError('Hyperliquid');
+    nextRegimeThrow = err;
+    const { res, row } = await regimeRow({ coin: 'BTC', timeframe: '4h', exchange: 'HL' });
+    expect(res.status).toBe(500);
+    expect(row).toMatchObject({ licenseTier: 'x402', verdict: regimeErrorVerdict(err), regime: null, exchange: 'HL' });
+    expect(row.verdict).toBe('ERR_UPSTREAM_RATE_LIMIT');
+    await settleTick();
+    expect(settleCalls, 'an error still never settles').toBe(0);
+  });
+
+  it('an uncoded error is ERR_UNKNOWN, exactly as on MCP', async () => {
+    nextRegimeThrow = new Error('HL API 500: Internal Server Error');
+    const { row } = await regimeRow({ coin: 'XAU', timeframe: '1h' });
+    expect(row.verdict).toBe('ERR_UNKNOWN');
+  });
+
+  it('other tools are untouched: no exchange/regime keys, and a failing one still writes no row', async () => {
+    setProof(req(0.02), freshNonce());
+    await post('get_trade_signal', { coin: 'BTC', timeframe: '4h' });
+    expect(loggedRequests).toHaveLength(1);
+    expect('exchange' in loggedRequests[0]).toBe(false);
+    expect('regime' in loggedRequests[0]).toBe(false);
   });
 });
