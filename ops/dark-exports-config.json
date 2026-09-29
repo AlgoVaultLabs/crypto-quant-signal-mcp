@@ -143,6 +143,10 @@
     {
       "symbol": "rollbackStep",
       "reason": "IDENTITY-LIFECYCLE-W3 CH1. Per-step go-live STATE is CH1's ledger contract by explicit architect scope ruling (Q1(A), 2026-09-08: 'ADD CH1: per-step state in the ledger'), while its only consumer is CH2's readout ('ADD CH2: per-step readout + per-step flip/rollback in ops/cron/lifecycle-readout.sh'). So this is a CHAPTER BOUNDARY inside one sequential wave, not a wiring gap and not a permanent CI-facing contract: the row exists so the gate reports the symbol as `exempt` rather than going quiet about it. REMOVAL TRIGGER, and it is not a 'TODO: verify later' — CH2 of this same wave deletes this row in the commit that adds the readout; if CH2 lands and the row survives, the gate is describing a state that no longer exists and the row is the defect. The alternative considered and rejected was shipping the symbols in CH2 instead: the migration that defines lifecycle_step_state is CH1's, and a table whose accessors live in a later chapter is a schema nothing can read."
+    },
+    {
+      "symbol": "renderCoarserV1LagTable",
+      "reason": "EDGE-LABELER-RACE-WINDOW-V2-W1 CH2 (ruling LRW-Q15 = A). Renders the per-pair 'coarser -v1 lag' table that docs/Directional-Accuracy-SoT.md §5 must print byte for byte; tests/unit/lrw-race-window-v2.test.ts fails when the doc region differs, and CH4's consumer registry is its second consumer. DOC/CI-FACING BY DESIGN: the derivation it renders (coarserV1LagMs / coarserV1LagTable) is the src/ code; rendering markdown in a serving path would add nothing. An explanation, not a suppression — the row is still printed and counted as `exempt` on every run."
     }
   ]
 }

@@ -44,26 +44,16 @@ import {
   runTripleBarrier,
   expiryReturnPct,
   BARRIER_SPECS,
+  BARRIER_SPECS_V2,
   DIRECTIONAL_LABELS_DDL_PG,
+  nextFetchStartMs,
+  advanceCoverage,
+  raceGapCandles,
+  prepareRaceV2,
+  windowClosed,
 } from './directional-labeler.js';
-import { T_DIAG_END } from './ads1/spec.js';
-import { servedIntervalMs as SERVED_HL } from '../lib/adapters/hyperliquid.js';
-import { servedIntervalMs as SERVED_BINANCE } from '../lib/adapters/binance.js';
-import { servedIntervalMs as SERVED_BYBIT } from '../lib/adapters/bybit.js';
-import { servedIntervalMs as SERVED_OKX } from '../lib/adapters/okx.js';
-import { servedIntervalMs as SERVED_BITGET } from '../lib/adapters/bitget.js';
-import { servedIntervalMs as SERVED_ASTER } from '../lib/adapters/aster.js';
-import { servedIntervalMs as SERVED_EDGEX } from '../lib/adapters/edgex.js';
-import { servedIntervalMs as SERVED_GATE } from '../lib/adapters/gateio.js';
-import { servedIntervalMs as SERVED_MEXC } from '../lib/adapters/mexc.js';
-import { servedIntervalMs as SERVED_KUCOIN } from '../lib/adapters/kucoin.js';
-import { servedIntervalMs as SERVED_PHEMEX } from '../lib/adapters/phemex.js';
-import { servedIntervalMs as SERVED_BINGX } from '../lib/adapters/bingx.js';
-import { servedIntervalMs as SERVED_HTX } from '../lib/adapters/htx.js';
-import { servedIntervalMs as SERVED_WEEX } from '../lib/adapters/weex.js';
-import { servedIntervalMs as SERVED_BITMART } from '../lib/adapters/bitmart.js';
-import { servedIntervalMs as SERVED_XT } from '../lib/adapters/xt.js';
-import { servedIntervalMs as SERVED_WHITEBIT } from '../lib/adapters/whitebit.js';
+import { T_DIAG_END, withinTCap } from './ads1/spec.js';
+import { servedCandleStepMs, SERVED_VENUES, CRON_TIMEFRAMES } from '../lib/tf-support.js';
 import { sloHoursFor as defaultSloHoursFor, isFullPanelVenue, FRESHNESS_BARRIER_SPEC, FULL_PANEL_VENUES } from '../lib/venue-slo-tiers.js';
 import { candleHorizonDays, CANDLE_HORIZON_DAYS, CANDLE_HORIZONS_MEASURED_AT } from '../lib/venue-candle-horizons.js';
 import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
@@ -72,12 +62,13 @@ import { buildEnvelope, isConforming, type Verdict } from '../lib/detector-envel
 const DELAY_BETWEEN_FETCHES_MS = 250;
 const FETCH_BUFFER_CANDLES = 2; // pad each fetched range slightly
 const MAX_PAGES_PER_RANGE = 500; // runaway guard for one paginated range
-const INSERT_CHUNK_ROWS = 1000; // stay well under the PG bind-param ceiling (10 params/row)
+const INSERT_CHUNK_ROWS = 1000; // stay well under the PG bind-param ceiling (11 params/row)
 
 /** The INSERT's column list — one array, so the placeholder count can never disagree with it. */
 export const INSERT_COLUMNS = [
   'signal_id', 'barrier_spec', 'label', 'ambiguous_candle', 'low_vol_history',
   't_hit_candles', 'mfe_return_pct', 'mae_return_pct', 'barrier_pct', 'ret_at_expiry_pct',
+  'race_gap_candles',
 ] as const;
 
 const ALL_SPECS = BARRIER_SPECS; // one literal set, in directional-labeler.ts (EDGE-ADS1-SCORECARD-W1-V2 D1)
@@ -125,10 +116,23 @@ interface Coverage {
   written: number; // rows actually inserted this run
   noKlines: number; // forward window unreachable (signal×spec)
   lowVolHistory: number; // labeled but flagged (excluded from cell stats)
-  ambiguous: number; // same-candle -1 conservative
-  timeouts: number; // label 0
-  wins: number;
-  losses: number;
+  // EDGE-LABELER-RACE-WINDOW-V2-W1 (LRW-Q7-D): no outcome tally (wins / losses / timeouts / same-candle) is
+  // counted or printed here any more — this run's DONE line lands in a host log, over rows that include the
+  // sealed holdout, and nothing parsed those fields. Cardinalities only.
+  v2Labeled: number; // -v2 rows raced (signal×spec)
+  v2Deferred: number; // -v2 not raced: the window had not closed at fetch (signal) — same-grid / finer pairs only in
+  // practice; a coarser signal meets the hold-back first and is counted apart, as V2_HELDBACK
+  v2Refused: number; // -v2 not raced: a candle missing inside the window (signal)
+  v2UnreachableDepth: number; // -v2 not raced: no candle of the window in hand (signal)
+  v2UnreachableHistory: number; // -v2 not raced: < 30 contiguous σ windows (signal)
+  // The counted classes of the LRW-Q15 / LRW-Q16 amendment (registration, 2026-09-29) — cardinalities, never a
+  // comparator input:
+  v2HeldBack: number; // V2_HELDBACK pending — coarser signal held back WHOLE: its -v2 window is still open (signal)
+  // V2_HELDBACK released — passed the hold-back this run AND its -v2 window was open at a nominal run one
+  // NIGHTLY_CADENCE_MS earlier, when -v1 was already due: a CLOCK ESTIMATE, not a record. It does not reconcile with
+  // the previous run's `pending` (catch-up runs, visit-time drift, groups a run never reached, the first night).
+  v2HeldBackReleased: number;
+  v2NoV1Twin: number; // V2_NO_V1_TWIN written — -v2 rows with no same-τ -v1 row, written or already present (rows)
   sanityWarn: number; // kline-derived vs stored mfe/mae gross mismatch
   budgetSkips: number; // groups deferred on WeightBudgetSkipError (retry on re-run)
   errors: number;
@@ -136,9 +140,69 @@ interface Coverage {
 
 const cov: Coverage = {
   groups: 0, groupsSkipped: 0, signalsSeen: 0, labeled: 0, written: 0,
-  noKlines: 0, lowVolHistory: 0, ambiguous: 0, timeouts: 0, wins: 0, losses: 0,
+  noKlines: 0, lowVolHistory: 0,
+  v2Labeled: 0, v2Deferred: 0, v2Refused: 0, v2UnreachableDepth: 0, v2UnreachableHistory: 0,
+  v2HeldBack: 0, v2HeldBackReleased: 0, v2NoV1Twin: 0,
   sanityWarn: 0, budgetSkips: 0, errors: 0,
 };
+
+/** A copy of this process's coverage counters — a test seam, not an API (the `_…ForTest` name exemption). */
+export function _coverageForTest(): Readonly<Coverage> {
+  return { ...cov };
+}
+
+/** The amendment's counted classes as the nightly prints them, beside its DONE line (LRW-Q15 / LRW-Q16). */
+export function formatV2Tokens(c: Pick<Coverage, 'v2HeldBack' | 'v2HeldBackReleased' | 'v2NoV1Twin'>): string[] {
+  return [
+    `V2_HELDBACK pending=${c.v2HeldBack} released=${c.v2HeldBackReleased}`,
+    `V2_NO_V1_TWIN written=${c.v2NoV1Twin}`,
+  ];
+}
+
+/** The directional nightly's cadence: "the previous nightly" is one of these before this run. */
+export const NIGHTLY_CADENCE_MS = 86_400_000;
+
+/**
+ * THE coarser `-v1` lag (ruling LRW-Q15 = A): on a pair whose served candle is coarser than the timeframe, a
+ * signal whose `-v2` window is still open when `-v1` is due is held back WHOLE, so the instant its `-v1` row
+ * becomes writable moves by `(W+1)·(served − requested)` — a per-pair bound, never a constant. Rows land at a
+ * nightly, so the row itself lands at the first run at or after `entry + (W+1)·served`: at most
+ * `⌈lag / NIGHTLY_CADENCE_MS⌉` nightlies later (coarserV1LagTable's `nightlies`). 0 on a same-grid or finer pair.
+ * Derived from the served table and EVAL_CANDLES; the SoT §5 table must equal renderCoarserV1LagTable().
+ */
+export function coarserV1LagMs(venue: string, timeframe: string): number {
+  const W = EVAL_CANDLES[timeframe];
+  const requested = TF_MS[timeframe];
+  const served = servedCandleStepMs(venue, timeframe);
+  if (!W || !requested || served == null || served <= requested) return 0;
+  return (W + 1) * (served - requested);
+}
+
+/** Every coarser-served pair of the seeded timeframes, with its lag and the most nightlies a `-v1` row can
+ *  land late by — venue order, then timeframe order. */
+export function coarserV1LagTable(): Array<{ venue: string; timeframe: string; servedMs: number; lagMs: number; nightlies: number }> {
+  const out: Array<{ venue: string; timeframe: string; servedMs: number; lagMs: number; nightlies: number }> = [];
+  for (const venue of SERVED_VENUES) {
+    for (const timeframe of CRON_TIMEFRAMES) {
+      const lagMs = coarserV1LagMs(venue, timeframe);
+      if (lagMs > 0) {
+        out.push({ venue, timeframe, servedMs: servedCandleStepMs(venue, timeframe)!, lagMs, nightlies: Math.ceil(lagMs / NIGHTLY_CADENCE_MS) });
+      }
+    }
+  }
+  return out;
+}
+
+const fmtInterval = (ms: number): string =>
+  ms % 86_400_000 === 0 ? `${ms / 86_400_000}d` : ms % 3_600_000 === 0 ? `${ms / 3_600_000}h` : `${ms / 60_000}m`;
+
+/** The SoT §5 "coarser -v1 lag" table, byte for byte (tests/unit/lrw-race-window-v2.test.ts fails if the doc
+ *  region between its markers differs — change the code, then paste this output there). */
+export function renderCoarserV1LagTable(): string {
+  const rows = coarserV1LagTable().map((r) =>
+    `| ${r.venue} | ${r.timeframe} | ${fmtInterval(r.servedMs)} | ${r.lagMs / 60_000} min | ${r.nightlies} |`);
+  return ['| Venue | Timeframe | Served candle | Coarser `-v1` lag | Nightlies late, at most |', '|---|---|---|---|---|', ...rows].join('\n');
+}
 const noKlinesByVenue = new Map<string, number>();
 /** Per-venue newest labeled signal created_at (s) written THIS run — the frontier evidence. */
 const frontierByVenue = new Map<string, number>();
@@ -678,16 +742,18 @@ async function fetchRangeInto(
   /** Paging step. Defaults to the REQUESTED interval (the race path's behaviour, unchanged); the expiry path
    *  passes the SERVED interval so a finer-served venue does not skip one candle per page boundary. */
   pageStepMs: number = TF_MS[timeframe],
-): Promise<void> {
+): Promise<boolean> {
   const tfMs = pageStepMs;
   const adapter = getAdapter(exchangeId);
   const dex = exchangeId === 'HL' ? getDexForCoin(coin) : undefined;
   let cursor = startMs;
   let pages = 0;
+  let answered = false; // the venue returned at least one candle — in range or not
   while (cursor <= endMs && pages < MAX_PAGES_PER_RANGE) {
     pages++;
     const page = await adapter.getCandles(coin, timeframe, cursor, dex, endMs);
     if (!page || page.length === 0) break;
+    answered = true;
     let maxTime = cursor;
     for (const c of page) {
       if (c.time >= startMs && c.time <= endMs) cache.set(c.time, c);
@@ -697,6 +763,47 @@ async function fetchRangeInto(
     cursor = maxTime + tfMs;
     await sleep(DELAY_BETWEEN_FETCHES_MS);
   }
+  return answered;
+}
+
+/**
+ * EDGE-LABELER-RACE-WINDOW-V2-W1 CH2 — the `-v1` fetch extents seen so far in one group run, merged.
+ *
+ * `-v1` raced on whatever its own fetches covered: each row asked for `[entry − (60W+2)·tf, entry + (W+2)·tf]`
+ * on the REQUESTED interval. The strict UNION of those requested extents is what `-v1` is allowed to see from
+ * the corrected cache. The candle its off-grid extension used to drop opened INSIDE the next row's own
+ * extent, so it is back; a candle strictly between two extents was never requested by any `-v1` row (the
+ * retired extension restarted at `previous end + tf`, which is at or past the next row's start), so it stays
+ * out on every pair class — merging only OVERLAPPING extents is what makes that so.
+ * Pure; rows arrive in `created_at` order, so extents only ever grow at the end.
+ */
+export function addV1Extent(extents: Array<[number, number]>, lo: number, hi: number): void {
+  const last = extents[extents.length - 1];
+  if (last && lo <= last[1]) last[1] = Math.max(last[1], hi);
+  else extents.push([lo, hi]);
+}
+
+/**
+ * THE seal edge — one derivation for the race path and the expiry-only path. A row that ADS-1's
+ * requested-interval T_CAP admits, but whose race on the SERVED grid ends after T_DIAG_END (a coarser-served
+ * venue), would carry a post-seal close in `ret_at_expiry_pct`: it is never written there (NULL). Pure.
+ */
+export function sealEdgeRow(createdAtS: number, timeframe: string, stepMs: number): boolean {
+  const W = EVAL_CANDLES[timeframe];
+  if (!W) return false;
+  return withinTCap(createdAtS, timeframe) && createdAtS * 1000 + (W + 1) * stepMs > T_DIAG_END * 1000;
+}
+
+/** The candles of `asc` (ascending) that lie inside the merged extents (ascending, disjoint). Pure. */
+export function withinExtents<T extends { time: number }>(asc: T[], extents: Array<[number, number]>): T[] {
+  const out: T[] = [];
+  let k = 0;
+  for (const c of asc) {
+    while (k < extents.length && extents[k][1] < c.time) k++;
+    if (k === extents.length) break;
+    if (c.time >= extents[k][0]) out.push(c);
+  }
+  return out;
 }
 
 /** Exported for tests/unit/directional-label-golden.test.ts only — a seam, not an API: that golden
@@ -706,8 +813,13 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
   const W = EVAL_CANDLES[g.timeframe];
   const tfMs = TF_MS[g.timeframe];
   if (!W || !tfMs) return; // unknown/retired timeframe — already filtered, defensive
+  // EDGE-LABELER-RACE-WINDOW-V2-W1 CH2 (rulings Q9, LRW-Q9c): the candle the venue SERVES — the grid the race
+  // runs on, the step pages advance by, the grid the cache extends on. One fetch covers both families: the
+  // `-v1` extent on the requested interval and the `-v2` extent on the served one.
+  const stepMs = servedStepMs(g.exchange, g.timeframe);
+  const spanMs = Math.max(tfMs, stepMs);
   // Taken BEFORE any fetch: a candle is only trusted as CLOSED if it closed before this instant
-  // (expiryReturnPct refuses a vertical-barrier candle that may have been forming at fetch time).
+  // (expiryReturnPct and the -v2 race refuse a window that may have been forming at fetch time).
   const groupStartMs = Date.now();
 
   // F3: the nightly recency window bounds the per-group scan too — aged-out
@@ -724,8 +836,11 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
   );
   if (sigs.length === 0) return;
 
+  // -v2 rides with the -v1 specs of this run, paired by τ (a --barrier-spec slice writes its own τ's -v2 only).
+  const v2Specs = BARRIER_SPECS_V2.filter((v) => cli.specs.some((s) => s.tau === v.tau));
+  const v1Names = cli.specs.map((s) => s.spec);
   // Which (signal_id, spec) already exist → skip (idempotency + resume).
-  const specNames = cli.specs.map((s) => s.spec);
+  const specNames = [...v1Names, ...v2Specs.map((s) => s.spec)];
   const ids = sigs.map((s) => s.id);
   const existing = await dbQuery<{ signal_id: number; barrier_spec: string }>(
     `SELECT signal_id, barrier_spec FROM directional_labels
@@ -733,9 +848,11 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
     [specNames, ids],
   );
   const done = new Set(existing.map((e) => `${e.signal_id}|${e.barrier_spec}`));
-  cov.labeled += existing.length;
+  cov.labeled += existing.filter((e) => v1Names.includes(e.barrier_spec)).length;
 
-  // Build the to-do list: signal × spec not yet present.
+  // Build the to-do list: signal × -v1 spec not yet present. Keyed on -v1 ONLY (ruling LRW-Q6): the nightly
+  // writes -v2 only alongside a -v1 attempt of the same run, so -v2 never joins the lookback's backlog (a
+  // coarser-served signal whose -v2 window is still open is held back whole until it closes — the retry contract below).
   const todo = sigs.filter((s) => cli.specs.some((sp) => !done.has(`${s.id}|${sp.spec}`)));
   cov.signalsSeen += sigs.length;
   if (todo.length === 0) {
@@ -748,20 +865,39 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
     return;
   }
 
-  // Incremental group candle cache (dense → contiguous; sparse → islands).
+  // Incremental group candle cache (dense → contiguous; sparse → islands), on the SERVED grid.
+  // `coveredUntil` is the last candle that ARRIVED — never a range end, never `coveredUntil + tf` (the
+  // off-grid extension that dropped one candle per step since 20129e14: EDGE-LABELER-RACE-WINDOW-V2-W1).
   const cache = new Map<number, Candle>();
   let coveredUntil = -Infinity;
+  // The venue ANSWERED a range but put no candle in it (a young coin's pre-listing history, an outage):
+  // that range is not asked again for the next row. Without this, `coveredUntil` never moves, every later row
+  // restarts at its own pre-listing start, and a venue whose history window returns its NEWEST bars when the
+  // window is empty (OKX, Bitget) never gets past the gap — rows the retired `coveredUntil = neededEnd` reached.
+  let probedThrough = -Infinity;
+  const v1Extents: Array<[number, number]> = [];
   const rows: unknown[][] = [];
+  let groupNoTwin = 0; // V2_NO_V1_TWIN rows of this group: added to cov only once the group's rows are inserted
 
   for (const s of todo) {
     const entryMs = s.created_at * 1000;
-    const neededStart = entryMs - (SIGMA_TARGET_WINDOWS * W + FETCH_BUFFER_CANDLES) * tfMs;
-    const neededEnd = entryMs + (W + FETCH_BUFFER_CANDLES) * tfMs;
+    const neededStart = entryMs - (SIGMA_TARGET_WINDOWS * W + FETCH_BUFFER_CANDLES) * spanMs;
+    const neededEnd = entryMs + (W + FETCH_BUFFER_CANDLES) * spanMs;
+    addV1Extent(
+      v1Extents,
+      entryMs - (SIGMA_TARGET_WINDOWS * W + FETCH_BUFFER_CANDLES) * tfMs,
+      entryMs + (W + FETCH_BUFFER_CANDLES) * tfMs,
+    );
     try {
-      if (neededEnd > coveredUntil) {
-        const start = coveredUntil + tfMs >= neededStart ? coveredUntil + tfMs : neededStart; // extend vs new island
-        await fetchRangeInto(cache, g.exchange as ExchangeId, g.coin, g.timeframe, start, neededEnd);
-        coveredUntil = Math.max(coveredUntil, neededEnd);
+      if (neededEnd > Math.max(coveredUntil, probedThrough)) {
+        // extend vs new island — never back into a range the venue already answered empty
+        const start = Math.max(nextFetchStartMs(coveredUntil, stepMs, neededStart), probedThrough + 1);
+        if (start <= neededEnd) {
+          const answered = await fetchRangeInto(cache, g.exchange as ExchangeId, g.coin, g.timeframe, start, neededEnd, stepMs);
+          const before = coveredUntil;
+          coveredUntil = advanceCoverage(coveredUntil, cache.keys(), start, neededEnd);
+          if (answered && coveredUntil === before) probedThrough = neededEnd;
+        }
       }
     } catch (err) {
       if (err instanceof WeightBudgetSkipError) {
@@ -774,22 +910,63 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
     }
 
     const asc = [...cache.values()].sort((a, b) => a.time - b.time);
-    const trailingCloses = asc.filter((c) => c.time < entryMs).map((c) => c.close);
-    const forwardAsc = asc.filter((c) => c.time >= entryMs);
-
+    // ── -v1 (ruling Q9; LRW-Q4): the UNCHANGED race and σ, on exactly the candles its own fetch extents cover —
+    // now without the holes. Clipping to those extents keeps -v1 byte-identical to its registered self where the
+    // corrected fetch reaches further for -v2 (a coarser-served pair's -v1 window stays cut at (W+2)·requested).
+    const v1View = withinExtents(asc, v1Extents);
+    const trailingCloses = v1View.filter((c) => c.time < entryMs).map((c) => c.close);
+    const forwardAsc = v1View.filter((c) => c.time >= entryMs);
     const { sigma } = computeSigmaW(trailingCloses, W);
     const lowVol = sigma == null;
-    // EDGE-ADS1-SCORECARD-W1-V2 (Q2 = A): the expiry return from the candle already in hand — the
-    // same entry and window the race uses; null when the window had not closed at fetch time.
-    const expiry = expiryReturnPct(forwardAsc, W, s.price_at_signal, entryMs, servedStepMs(g.exchange, g.timeframe), groupStartMs);
+    // EDGE-ADS1-SCORECARD-W1-V2 (Q2 = A): the expiry return from the candles in hand — on the served grid,
+    // time-verified, NULL when the window had not closed at fetch time. A fact of the path, the same for every
+    // spec and both families.
+    const fullForward = asc.filter((c) => c.time >= entryMs);
+    // The seal edge (sealEdgeRow): a row ADS-1's T_CAP admits never carries a post-seal close — the same
+    // predicate processExpiryGroup applies.
+    const expiry = sealEdgeRow(s.created_at, g.timeframe, stepMs)
+      ? null
+      : expiryReturnPct(fullForward, W, s.price_at_signal, entryMs, stepMs, groupStartMs);
+    // race_gap_candles (ruling LRW-Q3): the TRUE window's served slots absent from what -v1 raced on; any
+    // candle in hand fixes the venue's grid phase. Expected 0 — never asserted 0.
+    const anchor = forwardAsc[0]?.time ?? v1View[v1View.length - 1]?.time;
+    const gap = anchor === undefined ? null : raceGapCandles(new Set(v1View.map((c) => c.time)), entryMs, W, stepMs, anchor);
+
+    // THE RETRY CONTRACT (ruling LRW-Q15 = A; registration amendment 2026-09-29). The worklist keys on -v1 alone,
+    // so a -v2 window still open when the -v1 row is written would never be raced: on a coarser-served pair -v1
+    // is due at (W+1)·requested, -v2 at (W+1)·served. Such a signal is HELD BACK WHOLE — neither family this
+    // run; it stays in the worklist, and the first run after its -v2 window closes writes both. The hold-back
+    // waits on the CLOCK only, never on what the -v2 fetch finds: a refused -v2 window still writes -v1 in that
+    // run, so -v1 coverage can never shrink by a -v2 refusal. -v1 is computed by the UNCHANGED rule in the run that
+    // writes it — that run's LRW-Q4 extent union and the candles then in hand — so a held-back row's σ, label or
+    // expiry can differ from what its due-night run would have written (the fetch and extents above still run, so
+    // the held-back signal's extent does join this run's union). It becomes writable up to coarserV1LagMs later
+    // and lands at most ⌈lag / nightly⌉ nightlies later. On a same-grid or finer pair the -v2 window is closed
+    // whenever -v1 is due (maturityHorizonMs), so this never fires there.
+    const v2Missing = v2Specs.some((sp) => !done.has(`${s.id}|${sp.spec}`));
+    if (v2Missing && stepMs > tfMs) {
+      if (!windowClosed(entryMs, W, stepMs, groupStartMs)) { cov.v2HeldBack++; continue; }
+      // released (a clock ESTIMATE — see the Coverage field): at a nominal run one cadence ago -v1 was due and the
+      // -v2 window open
+      const prevRun = groupStartMs - NIGHTLY_CADENCE_MS;
+      if (prevRun >= entryMs + (W + 1) * tfMs && !windowClosed(entryMs, W, stepMs, prevRun)) cov.v2HeldBackReleased++;
+    }
 
     // Forward reachability: need a resolved race OR full-window coverage to call a timeout.
+    let wroteV1 = false;
+    // A coarser-served pair's -v1 window is cut at (W+2)·requested, which holds fewer than W served candles, so
+    // its timeout can never be written. That attempt still counts for the -v2 gate below — otherwise nightly -v2
+    // on those pairs would exist only where -v1 DECIDED, a population selected on the outcome.
+    let v1CutUnwritable = false;
+    const v1Written = new Set<string>(); // the -v1 specs this run wrote for this signal (the same-τ twin test)
     for (const sp of cli.specs) {
       if (done.has(`${s.id}|${sp.spec}`)) continue;
       const bpSpec = barrierPct(sigma, sp.tau);
       const race = runTripleBarrier(s.signal, s.price_at_signal, forwardAsc, bpSpec, W);
       const indeterminateTimeout = race.label === 0 && forwardAsc.length < W;
       if (forwardAsc.length === 0 || indeterminateTimeout) {
+        // an EMPTY forward is no-klines (the venue served nothing), not a completed -v1 attempt
+        if (indeterminateTimeout && forwardAsc.length > 0 && stepMs > tfMs) v1CutUnwritable = true;
         cov.noKlines++;
         noKlinesByVenue.set(g.exchange, (noKlinesByVenue.get(g.exchange) || 0) + 1);
         continue;
@@ -806,15 +983,42 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
       }
       rows.push([
         s.id, sp.spec, race.label, race.ambiguousCandle, lowVol,
-        race.tHitCandles, storedMfe, storedMae, bpSpec, expiry,
+        race.tHitCandles, storedMfe, storedMae, bpSpec, expiry, gap,
       ]);
+      wroteV1 = true;
+      v1Written.add(sp.spec);
       frontierByVenue.set(g.exchange, Math.max(frontierByVenue.get(g.exchange) ?? 0, s.created_at));
       cov.labeled++;
       if (lowVol) cov.lowVolHistory++;
-      if (race.ambiguousCandle) cov.ambiguous++;
-      if (race.label === 0) cov.timeouts++;
-      else if (race.label === 1) cov.wins++;
-      else cov.losses++;
+    }
+
+    // ── -v2 (rulings Q8, LRW-Q1, LRW-Q2, LRW-Q6 as amended by LRW-Q16): the corrected race, for the signals whose
+    // -v1 ATTEMPT this run completed — a written row, or a timeout the LRW-Q4 cut makes unwritable (the counted
+    // class V2_NO_V1_TWIN, never a comparator input). Written ONCE: a -v1-less signal is re-attempted every
+    // nightly, and its -v2 is skipped as soon as the row exists. By TIME on the served grid over all W candles;
+    // a hole is refused, an open window deferred, a short σ history unreachable — each a count, never a row.
+    // mfe/mae reuse the stored path values as -v1 does.
+    if (!(wroteV1 || v1CutUnwritable) || !v2Missing) continue;
+    const prep = prepareRaceV2(cache, fullForward, entryMs, W, stepMs, groupStartMs);
+    if (prep.kind === 'deferred') { cov.v2Deferred++; continue; }
+    if (prep.kind === 'refused') { cov.v2Refused++; continue; }
+    if (prep.kind === 'unreachable') {
+      if (prep.reason === 'depth') cov.v2UnreachableDepth++;
+      else cov.v2UnreachableHistory++;
+      continue;
+    }
+    for (const sp of v2Specs) {
+      if (done.has(`${s.id}|${sp.spec}`)) continue; // -v2 written once
+      const bpSpec = barrierPct(prep.sigma, sp.tau);
+      const race = runTripleBarrier(s.signal, s.price_at_signal, prep.window, bpSpec, W);
+      rows.push([
+        s.id, sp.spec, race.label, race.ambiguousCandle, false,
+        race.tHitCandles, s.pfe_return_pct, s.mae_return_pct, bpSpec, expiry, 0,
+      ]);
+      cov.v2Labeled++;
+      // no-twin is per τ: a -v2 row whose same-τ -v1 row neither exists nor was written this run
+      const twin = cli.specs.find((v) => v.tau === sp.tau)!.spec;
+      if (!done.has(`${s.id}|${twin}`) && !v1Written.has(twin)) groupNoTwin++;
     }
   }
 
@@ -838,6 +1042,8 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
     );
     cov.written += res.length;
   }
+  // counted once the rows are in: a group a budget skip abandons mid-way wrote nothing and counts nothing
+  cov.v2NoV1Twin += groupNoTwin;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -953,22 +1159,16 @@ export function buildExpiryRowsSql(opts: { since?: number }): string {
 
 /** Fill every spec's row of each signal in one statement; never overwrite a value already there. */
 // ── the candle the venue actually serves (2026-09-28) ─────────────────────────────────────────────────
-// No adapter aggregates: 29 (venue, timeframe) pairs are fetch-and-relabel — e.g. 2h is served as 1h candles
+// No adapter aggregates: 30 (venue, timeframe) pairs are fetch-and-relabel — e.g. 2h is served as 1h candles
 // on BITGET/GATE/HTX/MEXC/PHEMEX/WEEX/WHITEBIT/XT, 3m as 5m on GATE/MEXC/HTX/PHEMEX/WEEX/XT. The race runs on
-// the SERVED candles, so the expiry return must too: its W-th candle, spacing and alignment are on the served
-// grid. The functions are each adapter's own `servedIntervalMs` export (the ones src/lib/tf-support.ts reads);
-// the table is `Record<ExchangeId, …>`, so a venue added without an entry is a compile error.
-const SERVED_INTERVAL: Record<ExchangeId, (tf: string) => number | null> = {
-  HL: SERVED_HL, BINANCE: SERVED_BINANCE, BYBIT: SERVED_BYBIT, OKX: SERVED_OKX, BITGET: SERVED_BITGET,
-  ASTER: SERVED_ASTER, EDGEX: SERVED_EDGEX, GATE: SERVED_GATE, MEXC: SERVED_MEXC, KUCOIN: SERVED_KUCOIN,
-  PHEMEX: SERVED_PHEMEX, BINGX: SERVED_BINGX, HTX: SERVED_HTX, WEEX: SERVED_WEEX, BITMART: SERVED_BITMART,
-  XT: SERVED_XT, WHITEBIT: SERVED_WHITEBIT,
-};
+// the SERVED candles, so the expiry return, the `-v2` window and the fetch plan are all on the served grid.
+// EDGE-LABELER-RACE-WINDOW-V2-W1: the table itself now lives once, in src/lib/tf-support.ts (the hold labeller
+// reads the same one); this is the labeller's own name for it, falling back to the requested interval.
 
 /** The candle interval `exchange` actually returns for `timeframe` (ms); the requested interval when the
  *  adapter does not map it. */
 export function servedStepMs(exchange: string, timeframe: string): number {
-  return SERVED_INTERVAL[exchange as ExchangeId]?.(timeframe) ?? TF_MS[timeframe];
+  return servedCandleStepMs(exchange, timeframe) ?? TF_MS[timeframe];
 }
 
 // ── the bounded reset (2026-09-28): values written by the pre-fix, index-based expiry code ──────────
@@ -1051,7 +1251,6 @@ export async function processExpiryGroup(cli: Cli, g: { exchange: string; coin: 
   // the SERVED candle interval: the race, and so the vertical-barrier candle, live on the venue's own grid
   const tfMs = TF_MS[g.timeframe] ? servedStepMs(g.exchange, g.timeframe) : undefined;
   if (!W || !tfMs) return;
-  const sealEndMs = T_DIAG_END * 1000;
   const groupStartMs = Date.now();
   const rows = await dbQuery<{ id: number; created_at: number | string; price_at_signal: number | string }>(
     buildExpiryRowsSql({ since: cli.since }),
@@ -1077,20 +1276,17 @@ export async function processExpiryGroup(cli: Cli, g: { exchange: string; coin: 
     const entryMs = Number(r.created_at) * 1000;
     // T_CAP's SQL bound uses the requested interval; a coarser-served venue's race runs longer. Its value
     // would carry a post-seal close, so it is never written (NULL = UNRESOLVED, counted).
-    if (entryMs + (W + 1) * tfMs > sealEndMs) { sealEdge++; continue; }
+    if (sealEdgeRow(Number(r.created_at), g.timeframe, tfMs)) { sealEdge++; continue; }
     const neededEnd = entryMs + (W + FETCH_BUFFER_CANDLES) * tfMs;
     try {
       if (neededEnd > coveredUntil) {
         // Extend from the first candle boundary AFTER what is covered — never `coveredUntil + tf`, which is
-        // off the grid (created_at is arbitrary seconds) and skips the one candle opening inside that step.
-        const nextOpen = (Math.floor(coveredUntil / tfMs) + 1) * tfMs;
-        const start = nextOpen >= entryMs ? nextOpen : entryMs; // extend vs new island
+        // off the grid (created_at is arbitrary seconds) and skips the one candle opening inside that step —
+        // and advance only as far as candles actually ARRIVED. One derivation, shared with the race path
+        // (directional-labeler.ts nextFetchStartMs / advanceCoverage; EDGE-LABELER-RACE-WINDOW-V2-W1).
+        const start = nextFetchStartMs(coveredUntil, tfMs, entryMs); // extend vs new island
         await fetchRangeInto(cache, g.exchange as ExchangeId, g.coin, g.timeframe, start, neededEnd, tfMs);
-        // Advance only as far as candles actually ARRIVED, so a short or empty page leaves the rest to be
-        // fetched again for the next row instead of silently becoming a hole.
-        let lastOpen = -Infinity;
-        for (const t of cache.keys()) if (t >= start && t <= neededEnd && t > lastOpen) lastOpen = t;
-        if (Number.isFinite(lastOpen)) coveredUntil = Math.max(coveredUntil, lastOpen);
+        coveredUntil = advanceCoverage(coveredUntil, cache.keys(), start, neededEnd);
       }
     } catch (err) {
       if (err instanceof WeightBudgetSkipError) { ecov.budgetSkips++; break; } // the rest stay NULL → next run
@@ -1174,7 +1370,7 @@ async function loadVenueFrontier(): Promise<Map<string, number>> {
   const rows = await dbQuery<{ exchange: string; frontier: string | number | null }>(
     `SELECT s.exchange, MAX(s.created_at) FILTER (WHERE d.signal_id IS NOT NULL) AS frontier
      FROM signals s
-     LEFT JOIN directional_labels d ON d.signal_id = s.id AND d.barrier_spec = 'tau1.0-floor0.30-v1'
+     LEFT JOIN directional_labels d ON d.signal_id = s.id AND d.barrier_spec = '${FRESHNESS_BARRIER_SPEC}'
      WHERE s.signal IN ('BUY','SELL') AND s.pfe_return_pct IS NOT NULL AND s.timeframe <> '1m'
      GROUP BY 1`,
   );
@@ -1299,6 +1495,8 @@ async function main(): Promise<void> {
     }
   }
 
+  // Cardinalities only (LRW-Q7-D): no win / loss / timeout / same-candle tally — see the Coverage interface.
+  for (const line of formatV2Tokens(cov)) console.log(line);
   console.log(`[${ts()}] DONE ${JSON.stringify({ ...cov, noKlinesByVenue: Object.fromEntries(noKlinesByVenue) })}`);
 }
 

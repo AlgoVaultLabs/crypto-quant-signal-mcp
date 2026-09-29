@@ -71,6 +71,23 @@ export const BARRIER_SPECS = [
 ] as const;
 
 /**
+ * EDGE-LABELER-RACE-WINDOW-V2-W1 (rulings Q8 = A, LRW-Q9a) — the CORRECTED race, versioned BESIDE `-v1`.
+ *
+ * `-v2` = the `-v1` definition (same barriers `max(τ·σ_w, 0.30 %)`, same σ formula, same −1 same-candle
+ * rule) with corrected INPUTS: the window is W consecutive candles on the venue's SERVED grid BY TIME
+ * (`servedWindow`), a window with a missing candle is refused (no row) instead of raced, a window not
+ * closed at fetch is deferred (no row), and σ is computed on a gap-free served history of ≥ 30 windows
+ * (`prepareRaceV2`). A SEPARATE export on purpose: appending to `BARRIER_SPECS` would silently widen
+ * every `-v1` iterator (the nightly's default spec set, the ADS-1 extract / scorecard / spec lock, the
+ * golden). A `-v1` label is never edited; consumers migrate by their own waves.
+ */
+export const BARRIER_SPECS_V2 = [
+  { tau: 1.0, spec: 'tau1.0-floor0.30-v2' },
+  { tau: 0.5, spec: 'tau0.5-floor0.30-v2' },
+  { tau: 2.0, spec: 'tau2.0-floor0.30-v2' },
+] as const;
+
+/**
  * The Postgres DDL of `directional_labels`, the copy the labeler applies idempotently before it writes
  * (`ensureTable`). `migrations/019_directional_labels.sql` + `migrations/043_directional_labels_expiry.sql`
  * are the schema-as-code SoT; `tests/unit/directional-labels-ddl-parity.test.ts` and
@@ -80,6 +97,12 @@ export const BARRIER_SPECS = [
  * barrier — close of the W-th forward candle over the entry price, PERCENT, PRICE-perspective (not
  * side-signed; the same convention as `signals.outcome_return_pct`). Additive and NULLABLE: NULL means
  * "not resolved", never zero. A fact about the price path, not a label; no existing column changes.
+ *
+ * `race_gap_candles` (EDGE-LABELER-RACE-WINDOW-V2-W1, ruling LRW-Q3): provenance, NOT a label — the number of
+ * served-grid slots of the row's TRUE W-candle window that were absent from the cache the row was raced on
+ * (`raceGapCandles`). NULL = not annotated. Historical `-v1` rows carry the label-free replay's value (a lower
+ * bound, extension-hole class); rows written by the corrected labeller carry the live count (expected 0 — a
+ * venue-side hole or a window cut short on a coarser-served pair is > 0); a `-v2` row is 0 by construction.
  */
 export const DIRECTIONAL_LABELS_DDL_PG = `
     CREATE TABLE IF NOT EXISTS directional_labels (
@@ -97,6 +120,7 @@ export const DIRECTIONAL_LABELS_DDL_PG = `
     );
     CREATE INDEX IF NOT EXISTS idx_dirlabels_spec_signal ON directional_labels (barrier_spec, signal_id);
     ALTER TABLE directional_labels ADD COLUMN IF NOT EXISTS ret_at_expiry_pct DOUBLE PRECISION;
+    ALTER TABLE directional_labels ADD COLUMN IF NOT EXISTS race_gap_candles SMALLINT;
   `;
 
 /**
@@ -129,13 +153,148 @@ export function expiryReturnPct(
 ): number | null {
   if (!(W > 0) || !(tfMs > 0) || !(entryPrice > 0)) return null;
   if (forwardAsc.length < W) return null;
-  if (entryMs + (W + 1) * tfMs > fetchedNotBeforeMs) return null;
-  const first = forwardAsc[0].time;
-  if (!(first >= entryMs && first < entryMs + tfMs)) return null; // not the first candle after the entry
-  if (forwardAsc[W - 1].time - first !== (W - 1) * tfMs) return null; // a missing candle inside the window
-  const close = forwardAsc[W - 1].close;
+  if (!windowClosed(entryMs, W, tfMs, fetchedNotBeforeMs)) return null;
+  const w = servedWindow(forwardAsc, W, entryMs, tfMs); // not the first candle after the entry, or a missing one
+  if (!w.ok) return null;
+  const close = w.window[W - 1].close;
   if (!Number.isFinite(close) || close <= 0) return null;
   return (close / entryPrice - 1) * 100;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════
+// EDGE-LABELER-RACE-WINDOW-V2-W1 CH2 — the window and cache derivations, ONE copy for every path.
+//
+// Extracted from `processExpiryGroup` (EDGE-ADS1-SCORECARD-W1-V2, `4d172810` + `09e87c6c`), where they were
+// inline, so the race path, the expiry path and the hold labeller import the same arithmetic instead of
+// re-deriving it (the precedent: two copies of `EVAL_CANDLES` drifted). Pure: no I/O, no clock.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * THE closed-window predicate: the W-th candle after an entry closes no later than `entry + (W+1)·step`
+ * (the first opens within one step of the entry), so a window is known only if that instant is not after
+ * the moment the candles were fetched. The same bound is `T_CAP`'s race-end embargo.
+ */
+export function windowClosed(entryMs: number, W: number, stepMs: number, fetchedNotBeforeMs: number): boolean {
+  return entryMs + (W + 1) * stepMs <= fetchedNotBeforeMs;
+}
+
+export type ServedWindow =
+  | { ok: true; window: Candle[] }
+  | { ok: false; reason: 'short' | 'anchor' | 'gap' };
+
+/**
+ * THE race window, BY TIME on the served grid: the first cached candle must open within one step at/after
+ * the entry (the anchor is taken from the data, never `ceil(entry/step)·step` — six venue × interval pairs
+ * open on UTC+8 boundaries), and the next W−1 must open exactly one step apart. `forwardAsc` = the cached
+ * candles opening at/after the entry, ascending. Anything else is refused, never raced across.
+ */
+export function servedWindow(forwardAsc: Candle[], W: number, entryMs: number, stepMs: number): ServedWindow {
+  if (forwardAsc.length < W) return { ok: false, reason: 'short' };
+  const first = forwardAsc[0].time;
+  if (!(first >= entryMs && first < entryMs + stepMs)) return { ok: false, reason: 'anchor' };
+  for (let i = 1; i < W; i++) {
+    if (forwardAsc[i].time !== first + i * stepMs) return { ok: false, reason: 'gap' };
+  }
+  return { ok: true, window: forwardAsc.slice(0, W) };
+}
+
+/**
+ * Where the next fetch of a group cache starts: the first `step` boundary AFTER the last candle that
+ * actually arrived (never `coveredUntil + tf`, which is off the grid and drops the one candle opening
+ * inside that step), or a new island at `islandStartMs` when coverage ends before it. With a non-zero
+ * venue phase this is ≤ the true next open, so nothing is skipped.
+ */
+export function nextFetchStartMs(coveredUntilOpenMs: number, stepMs: number, islandStartMs: number): number {
+  const nextOpen = (Math.floor(coveredUntilOpenMs / stepMs) + 1) * stepMs;
+  return nextOpen >= islandStartMs ? nextOpen : islandStartMs;
+}
+
+/**
+ * Coverage advances only as far as candles actually ARRIVED in `[startMs, endMs]`, so a short or empty
+ * page leaves the rest to be fetched again for the next row instead of silently becoming a hole.
+ */
+export function advanceCoverage(coveredUntilOpenMs: number, openTimes: Iterable<number>, startMs: number, endMs: number): number {
+  let lastOpen = -Infinity;
+  for (const t of openTimes) if (t >= startMs && t <= endMs && t > lastOpen) lastOpen = t;
+  return Number.isFinite(lastOpen) ? Math.max(coveredUntilOpenMs, lastOpen) : coveredUntilOpenMs;
+}
+
+/** The first slot at/after `entryMs` on the grid `anchorOpenMs` sits on (the venue's own phase). */
+export function firstSlotAtOrAfter(entryMs: number, anchorOpenMs: number, stepMs: number): number {
+  return anchorOpenMs + Math.ceil((entryMs - anchorOpenMs) / stepMs) * stepMs;
+}
+
+/**
+ * `race_gap_candles` (ruling LRW-Q3): how many of the row's TRUE W window slots — the first served slot
+ * at/after the entry and the next W−1, on the grid of a candle in hand — are absent from the candles the row
+ * was raced on. 0 = the race saw its whole window.
+ */
+export function raceGapCandles(
+  openTimes: ReadonlySet<number>,
+  entryMs: number,
+  W: number,
+  stepMs: number,
+  anchorOpenMs: number,
+): number {
+  const s0 = firstSlotAtOrAfter(entryMs, anchorOpenMs, stepMs);
+  let missing = 0;
+  for (let i = 0; i < W; i++) if (!openTimes.has(s0 + i * stepMs)) missing++;
+  return missing;
+}
+
+/**
+ * σ history for `-v2`: the closes of the contiguous run of served candles ending at the slot just before
+ * the window's first candle (the same "every candle opening before the entry" the `-v1` σ reads), walking
+ * back until a slot is missing, at most `maxCloses`. Ascending.
+ */
+export function contiguousTrailingCloses(
+  byTime: ReadonlyMap<number, Candle>,
+  open0Ms: number,
+  stepMs: number,
+  maxCloses: number,
+): number[] {
+  const out: number[] = [];
+  for (let t = open0Ms - stepMs; out.length < maxCloses; t -= stepMs) {
+    const c = byTime.get(t);
+    if (!c) break;
+    out.push(c.close);
+  }
+  return out.reverse();
+}
+
+export type RaceV2Prep =
+  | { kind: 'ready'; window: Candle[]; sigma: number; nSigmaWindows: number }
+  | { kind: 'deferred' }
+  | { kind: 'refused'; reason: 'short' | 'anchor' | 'gap' }
+  | { kind: 'unreachable'; reason: 'depth' | 'history' };
+
+/**
+ * Everything the corrected race needs, or the reason it does not run (rulings LRW-Q1, LRW-Q2):
+ *   deferred     the window had not closed when the candles were fetched (retried later; no row)
+ *   unreachable  depth: no candle of the window in hand · history: fewer than SIGMA_MIN_WINDOWS
+ *                contiguous σ windows (no row — never a low-vol floor barrier on a history the fetch cut)
+ *   refused      the window has a missing candle (no row — never raced across)
+ *   ready        W served candles by time + σ from a gap-free history; the caller races each τ with
+ *                `runTripleBarrier(side, entry, window, barrierPct(sigma, τ), W)` — the window is exactly
+ *                W candles, so the index race IS the race by time.
+ */
+export function prepareRaceV2(
+  byTime: ReadonlyMap<number, Candle>,
+  forwardAsc: Candle[],
+  entryMs: number,
+  W: number,
+  stepMs: number,
+  fetchedNotBeforeMs: number,
+): RaceV2Prep {
+  if (!windowClosed(entryMs, W, stepMs, fetchedNotBeforeMs)) return { kind: 'deferred' };
+  if (!forwardAsc.some((c) => c.time < entryMs + W * stepMs)) return { kind: 'unreachable', reason: 'depth' };
+  const w = servedWindow(forwardAsc, W, entryMs, stepMs);
+  if (!w.ok) return { kind: 'refused', reason: w.reason };
+  const closes = contiguousTrailingCloses(byTime, w.window[0].time, stepMs, SIGMA_TARGET_WINDOWS * W + 1);
+  if (closes.length < SIGMA_MIN_WINDOWS * W + 1) return { kind: 'unreachable', reason: 'history' };
+  const { sigma, nWindows } = computeSigmaW(closes, W);
+  if (sigma == null) return { kind: 'unreachable', reason: 'history' };
+  return { kind: 'ready', window: w.window, sigma, nSigmaWindows: nWindows };
 }
 
 export const SIGMA_TARGET_WINDOWS = 60; // trailing non-overlapping W-candle windows
