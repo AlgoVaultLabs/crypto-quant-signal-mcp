@@ -391,6 +391,15 @@
       "kind": "executable",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/postgres-cpu-snapshot.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/postgres-cpu-snapshot.sh",
+          "schedule": "47 */6 * * *",
+          "install_state": "installed",
+          "installed_wave": "OPS-POSTGRES-CPU-WINDOW-INTEGRITY-W1"
+        }
+      ],
       "criticality": "load-bearing",
       "schedule": "47 */6 * * *",
       "invoked_by": "crontab:root",
@@ -408,6 +417,14 @@
       "kind": "executable",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/postgres-cpu-autopilot.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/postgres-cpu-autopilot.py",
+          "install_state": "installed",
+          "installed_wave": "OPS-POSTGRES-CPU-WINDOW-INTEGRITY-W1"
+        }
+      ],
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:postgres-cpu-snapshot",
