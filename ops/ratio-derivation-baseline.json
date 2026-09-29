@@ -1,0 +1,78 @@
+{
+  "_comment": "OPS-ALARM-SINGLE-DERIVATION-W1 — SHRINK-ONLY baseline for scripts/check-ratio-derivation.py. Each row is a pre-existing division that reaches a verdict comparison in a paging canary WITHOUT ops/monitoring/population_rate.py. Remove a row by migrating its site; `--write-baseline` only ever removes rows. There is no flag that adds one.",
+  "schema_version": 1,
+  "sites": [
+    {
+      "file": "ops/monitoring/book-liveness-canary.py",
+      "site": "main::100.0 * n_frozen / n_eval",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "OPS-PFE-METRIC-INTEGRITY-W1"
+    },
+    {
+      "file": "ops/monitoring/directional-label-freshness.py",
+      "site": "evaluate_coverage::labelled / emitted",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1"
+    },
+    {
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "is_significant_drop::(prev_rate - curr_rate) / prev_rate",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "ACTIVATION-FUNNEL-W1"
+    },
+    {
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "is_significant_drop::to_curr / from_curr",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "ACTIVATION-FUNNEL-W1"
+    },
+    {
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "is_significant_drop::to_prev / from_prev",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "ACTIVATION-FUNNEL-W1"
+    },
+    {
+      "file": "ops/monitoring/payment-decline-canary.py",
+      "site": "classify::(failures_30d or 0) * 100.0 / n",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "PAY-UNIONPAY-ATTRIBUTION-W1"
+    },
+    {
+      "file": "ops/monitoring/quota-exhaustion-canary.py",
+      "site": "classify::(now_s - start) / DAY_S",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "OPS-QUOTA-EXHAUSTION-NOTICE-W1"
+    },
+    {
+      "file": "ops/monitoring/quota-exhaustion-canary.py",
+      "site": "classify::count / max(1.0, (now_s - start) / DAY_S)",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "OPS-QUOTA-EXHAUSTION-NOTICE-W1"
+    },
+    {
+      "file": "ops/monitoring/quota-exhaustion-canary.py",
+      "site": "classify::float(f.get('window_calls') or 0) / window_days",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "OPS-QUOTA-EXHAUSTION-NOTICE-W1"
+    },
+    {
+      "file": "ops/monitoring/quota-exhaustion-canary.py",
+      "site": "self_test::(FIXTURE_WALL - FIXTURE_START) / DAY_S",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "OPS-QUOTA-EXHAUSTION-NOTICE-W1"
+    },
+    {
+      "file": "ops/monitoring/quota-exhaustion-canary.py",
+      "site": "self_test::100 / ((FIXTURE_WALL - FIXTURE_START) / DAY_S)",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "OPS-QUOTA-EXHAUSTION-NOTICE-W1"
+    },
+    {
+      "file": "ops/monitoring/webhook-delivery-canary.py",
+      "site": "classify_secondary::failed / total",
+      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
+      "owner": "OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1"
+    }
+  ]
+}

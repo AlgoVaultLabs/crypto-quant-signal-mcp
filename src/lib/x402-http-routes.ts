@@ -34,7 +34,7 @@
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
 import Ajv, { type ValidateFunction } from 'ajv';
 import { encodePaymentRequiredHeader } from '@x402/core/http';
-import { resolveLicense, requestContext } from './license.js';
+import { resolveLicense, requestContext, getRequestRegimeFundingDegraded } from './license.js';
 import { hashIp, logRequest } from './analytics.js';
 import { clientIp } from './client-ip.js';
 import { resolveSessionIdentity } from './track-token.js';
@@ -52,6 +52,8 @@ import { runScanTradeCall } from '../tools/scan-trade-calls.js';
 import { getEquityCall, getEquityRegime } from './equities/equity-tool-formatters.js';
 import { runAsCaller } from './upstream-weight-budget.js';
 import { x402CallerTag } from './caller-tags.js';
+import { regimeSuccessVerdict, regimeErrorVerdict } from './regime-request-verdict.js';
+import { REGIME_EXCHANGE_DEFAULT } from './tool-param-schema.js';
 import type { ScanExchangeId } from './trade-call-scanner.js';
 import type { ExchangeId, LicenseInfo, TradeCallResult } from '../types.js';
 
@@ -230,6 +232,15 @@ function send402(res: Response, tool: string, opts?: { resourceUrl?: string; dis
  */
 export const HTTP_TOOLS = ['get_trade_signal', 'scan_funding_arb', 'get_market_regime', 'scan_trade_calls', 'get_equity_call', 'get_equity_regime'] as const;
 export type HttpTool = (typeof HTTP_TOOLS)[number];
+
+/**
+ * OPS-ALARM-SINGLE-DERIVATION-W1 CH1 — the exchange a `get_market_regime` row records: the caller's,
+ * else the SAME default the MCP tool's zod schema applies (`REGIME_EXCHANGE_DEFAULT`), so a paid
+ * x402 row and an MCP row for the same call carry the same `exchange`.
+ */
+function regimeLogExchange(input: Record<string, unknown>): string {
+  return typeof input.exchange === 'string' && input.exchange.length > 0 ? input.exchange : REGIME_EXCHANGE_DEFAULT;
+}
 
 /**
  * Dispatch a validated body to the SAME core handler the MCP tool uses — called
@@ -524,9 +535,17 @@ export function mountX402HttpRoutes(app: Express): string[] {
         isInternalTier: false,
       });
       try {
+        // OPS-ALARM-SINGLE-DERIVATION-W1 CH1: the funding-leg flag is read INSIDE the request scope,
+        // through the SAME accessor the MCP handler reads (`src/index.ts`, get_market_regime). The
+        // logRequest below runs after run() resolves — outside the scope, where the flag is gone.
+        let regimeFundingDegraded = false;
         const result = await requestContext.run(
           { license, sessionId, ipHash, isAutomated: authenticity.is_automated },
-          () => callCoreHandler(tool, input, license),
+          async () => {
+            const out = await callCoreHandler(tool, input, license);
+            if (tool === 'get_market_regime') regimeFundingDegraded = getRequestRegimeFundingDegraded();
+            return out;
+          },
         );
 
         // Public output == MCP tool output (single source of truth).
@@ -554,7 +573,16 @@ export function mountX402HttpRoutes(app: Express): string[] {
             timeframe: typeof input.timeframe === 'string' ? (input.timeframe as string) : undefined,
             licenseTier: license.tier,
             responseTimeMs: Date.now() - startMs,
-            verdict: tool === 'get_trade_signal' ? (result as TradeCallResult).call : undefined,
+            // OPS-ALARM-SINGLE-DERIVATION-W1 CH1: get_market_regime writes the MCP handler's fields
+            // through the SAME `regime-request-verdict.ts` functions (it logged `verdict: undefined`
+            // and no `exchange`, so the paid rail was invisible to the paid-refusal canary). Every
+            // other tool's row is byte-identical — the spread adds no key for them.
+            verdict: tool === 'get_trade_signal'
+              ? (result as TradeCallResult).call
+              : tool === 'get_market_regime' ? regimeSuccessVerdict(regimeFundingDegraded) : undefined,
+            ...(tool === 'get_market_regime'
+              ? { regime: (result as { regime?: string }).regime ?? null, exchange: regimeLogExchange(input) }
+              : {}),
             ipHash,
             isBotInternal: false,
             // Explicit — this logRequest runs after run() resolves (outside the ALS).
@@ -562,6 +590,28 @@ export function mountX402HttpRoutes(app: Express): string[] {
           });
         } catch { /* best-effort; never blocks the request */ }
       } catch (err: unknown) {
+        // OPS-ALARM-SINGLE-DERIVATION-W1 CH1 — THE ERROR ARM, which this twin never had for
+        // get_market_regime: a refused paid call wrote NO row, so its failure rate was 0.0% by
+        // construction on the one explicitly paid rail. Same fields, same verdict function as the
+        // MCP handler's catch. Scoped to this tool only; best-effort, never changes the response.
+        if (tool === 'get_market_regime') {
+          try {
+            logRequest({
+              sessionId,
+              toolName: tool,
+              asset: typeof input.coin === 'string' ? (input.coin as string) : undefined,
+              timeframe: typeof input.timeframe === 'string' ? (input.timeframe as string) : undefined,
+              licenseTier: license.tier,
+              responseTimeMs: Date.now() - startMs,
+              verdict: regimeErrorVerdict(err),
+              regime: null,
+              exchange: regimeLogExchange(input),
+              ipHash,
+              isBotInternal: false,
+              isAutomated: authenticity.is_automated,
+            });
+          } catch { /* best-effort; never blocks the error response */ }
+        }
         if (!res.headersSent) {
           // SEC-50 (OPS-AUDIT-REMEDIATION-LOW-W1): the raw upstream message went to the client,
           // which leaks internal paths, hostnames and driver text on a PAID public route. Log it
