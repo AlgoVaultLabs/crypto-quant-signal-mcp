@@ -409,7 +409,11 @@
         "POSTGRES_CPU_DRIFT_UNIFIED",
         "POSTGRES_CPU_DRIFT_CRITICAL_BYPASS"
       ],
-      "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1"
+      "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1",
+      "first_install": {
+        "at": "20260929T061514Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "postgres-cpu-autopilot",
@@ -431,7 +435,11 @@
       "install_state": "installed",
       "sha256": "894f83cbe38536131fd88e63c4643e39c4184ae87ce308ea2a992cfd081b903f",
       "alert_ids": [],
-      "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1"
+      "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1",
+      "first_install": {
+        "at": "20260929T061523Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "postgres-cpu-autopilot-registry",
