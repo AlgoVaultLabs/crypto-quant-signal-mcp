@@ -329,7 +329,9 @@ test('self-check: the heartbeat-key detectors fire on a known-bad fixture', () =
  * stamp without having taken the backup, which is what turns a 24h-late detection into a
  * commit-time refusal.
  */
-const UNSTAMPED_CEILING = 35; // 2026-09-27, OPS-AOE-LIVENESS-SUPPRESS-W2-V2: measured 35 once
+const UNSTAMPED_CEILING = 33; // 2026-09-29, OPS-POSTGRES-CPU-WINDOW-INTEGRITY-W1: measured 33 once
+// postgres-cpu-snapshot and postgres-cpu-autopilot were installed through the tool (c21cc992).
+// 2026-09-27, OPS-AOE-LIVENESS-SUPPRESS-W2-V2: measured 35 once
 // aoe-output-liveness-canary was reinstalled through the tool; origin/main read 36 while the ceiling sat at 38.
 // 2026-09-14, OPS-DRIFT-ALERT-GENERATORS-W1: measured 38 once that wave's
 // installs stamped deploy-drift-canary, outcome-backfill-freshness, declaration-sync and
