@@ -395,7 +395,7 @@
       "schedule": "47 */6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "f516fbb619005afbc51f74b7a7876b455ea06afbe3922514fc02ad8b6a4a8a1f",
+      "sha256": "c67d11fe14dba958eb2c53064443f64bdb50ad3be9dcc57008b3250e69cbdf36",
       "alert_ids": [
         "POSTGRES_CPU_DRIFT_UNIFIED",
         "POSTGRES_CPU_DRIFT_CRITICAL_BYPASS"
