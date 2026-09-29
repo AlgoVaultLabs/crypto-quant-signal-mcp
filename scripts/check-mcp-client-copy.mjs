@@ -31,7 +31,9 @@
  * Checks:
  *   1. FAIL — a retired vendor UI path in any rendered surface.
  *   2. FAIL — a byo-model row whose copy calls itself an MCP client.
- *   3. REPORT — a row whose `verifiedAt` is older than 180 days.
+ *   (3. retired by OPS-CLIENT-CLAIM-EVIDENCE-W1: its 180-day REPORT was a second freshness rule
+ *       that already disagreed with the host canary's 150 days. Freshness is now ONE rule — the
+ *       canary's live confirmation of each row's evidence, ops/monitoring/client-claim-freshness.py.)
  *
  * Usage:
  *   node scripts/check-mcp-client-copy.mjs --self-test   # offline; proves both directions
@@ -60,8 +62,6 @@ const require = createRequire(import.meta.url);
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
-
-const STALE_AFTER_DAYS = 180;
 
 /**
  * Retired vendor UI paths. Each is matched in every encoding this repo actually
@@ -348,7 +348,7 @@ function verdictAndExit(verdict) {
   process.exit(verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 3);
 }
 
-// ── the three checks, as pure functions so the self-test can drive them ──
+// ── the registry checks, as pure functions so the self-test can drive them ──
 
 /** CHECK 1 — retired vendor UI path in a rendered surface. */
 export function checkRetiredPaths(files, readFile) {
@@ -443,19 +443,6 @@ export function checkLiveNumbersNote(files, readFile) {
   return hits;
 }
 
-/** CHECK 3 — REPORT rows whose vendor doc was last checked over 180 days ago. */
-export function checkStaleVerification(entries, nowMs) {
-  const stale = [];
-  for (const e of entries) {
-    if (!e.verifiedAt) continue;
-    const t = Date.parse(e.verifiedAt);
-    if (Number.isNaN(t)) continue;
-    const days = Math.floor((nowMs - t) / 86_400_000);
-    if (days > STALE_AFTER_DAYS) stale.push({ slug: e.slug, days, source: e.source || '(none)' });
-  }
-  return stale;
-}
-
 // ── self-test ─────────────────────────────────────────────────────────────────
 
 /**
@@ -513,17 +500,6 @@ function selfTest() {
   if (checkByoModelCopy(byoGood).hits.length !== 0) fails.push('check2 must NOT fire on clean byo-model copy');
   // vacuity: zero byo-model rows must be visible as zero, not silently "clean"
   if (checkByoModelCopy([{ slug: 'y', kind: 'native' }]).rows !== 0) fails.push('check2 row count wrong');
-
-  // CHECK 3, both directions
-  const now = Date.parse('2026-08-05T00:00:00Z');
-  mustFire++;
-  if (checkStaleVerification([{ slug: 'old', verifiedAt: '2025-01-01', source: 'https://x' }], now).length !== 1) {
-    fails.push('check3 must report a >180d row');
-  }
-  mustNotFire++;
-  if (checkStaleVerification([{ slug: 'new', verifiedAt: '2026-08-01', source: 'https://x' }], now).length !== 0) {
-    fails.push('check3 must NOT report a fresh row');
-  }
 
   // ── CHECKS 4-6 (tutorial copy). Fixtures are BLOCKQUOTES on purpose: that is the
   // shape the real defects take, and it is the shape stripComments() would erase.
@@ -750,18 +726,6 @@ if (byo.rows === 0) {
   console.error(`  ✗ ${byo.hits.length} byo-model row(s) call themselves an MCP client: ${byo.hits.join(', ')}`);
 } else {
   console.log(`✓ check 2: ${byo.rows} byo-model row(s), none described as an MCP client.`);
-}
-
-// CHECK 3 — REPORT only. Vendor UI paths drift; this names the row that rots next.
-const stale = checkStaleVerification(registry.entries, Date.now());
-if (stale.length) {
-  for (const s of stale) {
-    console.log(`  ⚠ REPORT: ${s.slug} last verified ${s.days}d ago (>${STALE_AFTER_DAYS}d) — re-check ${s.source}`);
-  }
-} else {
-  console.log(
-    `✓ check 3: all ${registry.entries.length} registry row(s) verified within ${STALE_AFTER_DAYS} days.`,
-  );
 }
 
 // ── CHECKS 4-6 — tutorial copy (INTEGRATIONS-TUTORIAL-COPY-SWEEP-V2-W1) ──

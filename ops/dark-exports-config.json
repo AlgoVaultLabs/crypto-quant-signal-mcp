@@ -147,6 +147,30 @@
     {
       "symbol": "renderCoarserV1LagTable",
       "reason": "EDGE-LABELER-RACE-WINDOW-V2-W1 CH2 (ruling LRW-Q15 = A). Renders the per-pair 'coarser -v1 lag' table that docs/Directional-Accuracy-SoT.md §5 must print byte for byte; tests/unit/lrw-race-window-v2.test.ts fails when the doc region differs, and CH4's consumer registry is its second consumer. DOC/CI-FACING BY DESIGN: the derivation it renders (coarserV1LagMs / coarserV1LagTable) is the src/ code; rendering markdown in a serving path would add nothing. An explanation, not a suppression — the row is still printed and counted as `exempt` on every run."
+    },
+    {
+      "symbol": "buildClaimEvidenceDoc",
+      "reason": "OPS-CLIENT-CLAIM-EVIDENCE-W1 CH1. src/lib/integrations-data/claim-evidence.ts is the PURE half of the live-claim evidence contract and is CI-FACING BY DESIGN, the same class as QUOTA_SURFACES: its consumers are scripts/emit-claim-evidence.mjs (through dist/, which writes src/lib/integrations-data/claim-evidence.json for the host canary) and tests/unit/claim-evidence.test.ts (R1-R7). The runtime never reads claim evidence - the host canary confirms it live - so importing it into src/ would turn a build-time contract into a runtime dependency for no gain. An explanation, not a suppression: the row is still printed and counted as `exempt` on every run. The ONE projection of the SoT into the host-read document: the emitter writes it, R5 diffs it byte-for-byte."
+    },
+    {
+      "symbol": "serializeClaimEvidenceDoc",
+      "reason": "OPS-CLIENT-CLAIM-EVIDENCE-W1 CH1. src/lib/integrations-data/claim-evidence.ts is the PURE half of the live-claim evidence contract and is CI-FACING BY DESIGN, the same class as QUOTA_SURFACES: its consumers are scripts/emit-claim-evidence.mjs (through dist/, which writes src/lib/integrations-data/claim-evidence.json for the host canary) and tests/unit/claim-evidence.test.ts (R1-R7). The runtime never reads claim evidence - the host canary confirms it live - so importing it into src/ would turn a build-time contract into a runtime dependency for no gain. An explanation, not a suppression: the row is still printed and counted as `exempt` on every run. The document's exact bytes (key order, trailing newline); shared by the emitter and R5 so the lockstep compares one serialisation, not two."
+    },
+    {
+      "symbol": "evidenceProblems",
+      "reason": "OPS-CLIENT-CLAIM-EVIDENCE-W1 CH1. src/lib/integrations-data/claim-evidence.ts is the PURE half of the live-claim evidence contract and is CI-FACING BY DESIGN, the same class as QUOTA_SURFACES: its consumers are scripts/emit-claim-evidence.mjs (through dist/, which writes src/lib/integrations-data/claim-evidence.json for the host canary) and tests/unit/claim-evidence.test.ts (R1-R7). The runtime never reads claim evidence - the host canary confirms it live - so importing it into src/ would turn a build-time contract into a runtime dependency for no gain. An explanation, not a suppression: the row is still printed and counted as `exempt` on every run. R1-R4 over the rows: the test asserts the SoT clean and each rule red on a broken fixture; the emitter refuses to write a corpus it rejects."
+    },
+    {
+      "symbol": "verifiedTwinProblems",
+      "reason": "OPS-CLIENT-CLAIM-EVIDENCE-W1 CH1. src/lib/integrations-data/claim-evidence.ts is the PURE half of the live-claim evidence contract and is CI-FACING BY DESIGN, the same class as QUOTA_SURFACES: its consumers are scripts/emit-claim-evidence.mjs (through dist/, which writes src/lib/integrations-data/claim-evidence.json for the host canary) and tests/unit/claim-evidence.test.ts (R1-R7). The runtime never reads claim evidence - the host canary confirms it live - so importing it into src/ would turn a build-time contract into a runtime dependency for no gain. An explanation, not a suppression: the row is still printed and counted as `exempt` on every run. R6: the tutorials' hand-typed 'verified <date> against <url>' twins agree with the row. Test-only consumer by design - a docs lint, not a runtime path."
+    },
+    {
+      "symbol": "moduleCoverageProblems",
+      "reason": "OPS-CLIENT-CLAIM-EVIDENCE-W1 CH1. src/lib/integrations-data/claim-evidence.ts is the PURE half of the live-claim evidence contract and is CI-FACING BY DESIGN, the same class as QUOTA_SURFACES: its consumers are scripts/emit-claim-evidence.mjs (through dist/, which writes src/lib/integrations-data/claim-evidence.json for the host canary) and tests/unit/claim-evidence.test.ts (R1-R7). The runtime never reads claim evidence - the host canary confirms it live - so importing it into src/ would turn a build-time contract into a runtime dependency for no gain. An explanation, not a suppression: the row is still printed and counted as `exempt` on every run. R7: every claim-bearing module is covered or declared uncovered with a reason. Test-only consumer by design."
+    },
+    {
+      "symbol": "CLAIM_EVIDENCE_JSON",
+      "reason": "OPS-CLIENT-CLAIM-EVIDENCE-W1 CH1. src/lib/integrations-data/claim-evidence.ts is the PURE half of the live-claim evidence contract and is CI-FACING BY DESIGN, the same class as QUOTA_SURFACES: its consumers are scripts/emit-claim-evidence.mjs (through dist/, which writes src/lib/integrations-data/claim-evidence.json for the host canary) and tests/unit/claim-evidence.test.ts (R1-R7). The runtime never reads claim evidence - the host canary confirms it live - so importing it into src/ would turn a build-time contract into a runtime dependency for no gain. An explanation, not a suppression: the row is still printed and counted as `exempt` on every run. The repo-relative path of the host-read document - the emitter's output path and R5's input path, derived from this ONE constant so the two cannot disagree."
     }
   ]
 }

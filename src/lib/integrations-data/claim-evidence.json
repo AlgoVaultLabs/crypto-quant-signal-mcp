@@ -1,0 +1,277 @@
+{
+  "_generated_by": "scripts/emit-claim-evidence.mjs from src/lib/integrations-data/mcp-clients.ts — never hand-edit; regenerate with `npm run claims:evidence`",
+  "schema_version": 1,
+  "corpus": "mcp-clients",
+  "rows": [
+    {
+      "slug": "claude-desktop",
+      "kind": "native",
+      "verifiedAt": "2026-08-05",
+      "source": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
+      "evidence": [
+        {
+          "claim": "Settings → Connectors → Add custom connector",
+          "source": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
+          "expect": [
+            "Settings > Connectors"
+          ]
+        },
+        {
+          "claim": "as a custom header (paid tier)",
+          "source": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
+          "expect": [
+            "custom header"
+          ]
+        },
+        {
+          "claim": "claude_desktop_config.json",
+          "source": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
+          "expect": [
+            "claude_desktop_config.json"
+          ]
+        },
+        {
+          "claim": "\"mcp-remote\"",
+          "source": "https://registry.npmjs.org/mcp-remote",
+          "expect": [
+            "--header"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "cursor",
+      "kind": "native",
+      "verifiedAt": "2026-04-30",
+      "source": "https://cursor.com/docs/context/mcp",
+      "evidence": [
+        {
+          "claim": "~/.cursor/mcp.json",
+          "source": "https://cursor.com/docs/mcp",
+          "expect": [
+            "~/.cursor/mcp.json",
+            ".cursor/mcp.json"
+          ]
+        },
+        {
+          "claim": "\"Bearer ${env:AV_API_KEY}\"",
+          "source": "https://cursor.com/docs/mcp",
+          "expect": [
+            "${env:NAME}",
+            "\"Bearer ${env:"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "cline",
+      "kind": "native",
+      "verifiedAt": "2026-04-30",
+      "source": "https://docs.cline.bot/mcp/connecting-to-a-remote-server",
+      "evidence": [
+        {
+          "claim": "Remote Servers tab",
+          "source": "https://docs.cline.bot/mcp/mcp-overview",
+          "expect": [
+            "Remote Servers tab",
+            "Configure MCP Servers"
+          ]
+        },
+        {
+          "claim": "\"type\": \"streamableHttp\"",
+          "source": "https://docs.cline.bot/mcp/mcp-overview",
+          "expect": [
+            "streamableHttp"
+          ]
+        },
+        {
+          "claim": "\"Bearer ${env:AV_API_KEY}\"",
+          "source": "https://raw.githubusercontent.com/cline/cline/main/apps/vscode/src/services/mcp/McpHub.ts",
+          "expect": [
+            "${env:VAR_NAME}",
+            "expandEnvironmentVariables"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "claude-code",
+      "kind": "native",
+      "verifiedAt": "2026-04-30",
+      "source": "https://code.claude.com/docs/en/mcp",
+      "evidence": [
+        {
+          "claim": "claude mcp add --transport http --scope project",
+          "source": "https://code.claude.com/docs/en/mcp",
+          "expect": [
+            "claude mcp add --transport http",
+            "--scope project",
+            "--header"
+          ]
+        },
+        {
+          "claim": ".mcp.json",
+          "source": "https://code.claude.com/docs/en/mcp",
+          "expect": [
+            ".mcp.json",
+            "Environment variable expansion"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "smithery",
+      "kind": "native",
+      "verifiedAt": "2026-04-30",
+      "source": "https://www.npmjs.com/package/@smithery/cli",
+      "evidence": [
+        {
+          "claim": "npx -y @smithery/cli install crypto-quant-signal-mcp --client",
+          "source": "https://registry.npmjs.org/@smithery%2Fcli",
+          "expect": [
+            "@smithery/cli install"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "plain-http",
+      "kind": "native",
+      "verifiedAt": "2026-04-30",
+      "source": "https://modelcontextprotocol.io/quickstart/user",
+      "evidence": [
+        {
+          "claim": "\"status\":\"ok\"",
+          "source": "https://api.algovault.com/health",
+          "expect": [
+            "\"status\":\"ok\""
+          ]
+        },
+        {
+          "claim": "\"version\":\"1.10.3\"",
+          "source": "https://api.algovault.com/health",
+          "expect": [
+            "\"version\":\"1.10.3\""
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "codex",
+      "kind": "native",
+      "verifiedAt": "2026-08-05",
+      "source": "https://learn.chatgpt.com/docs/extend/mcp",
+      "evidence": [
+        {
+          "claim": "bearer_token_env_var",
+          "source": "https://learn.chatgpt.com/docs/extend/mcp",
+          "expect": [
+            "bearer_token_env_var",
+            "http_headers",
+            "config.toml"
+          ]
+        },
+        {
+          "claim": "codex mcp add covers local stdio servers only",
+          "source": "https://learn.chatgpt.com/docs/extend/mcp",
+          "expect": [
+            "codex mcp add"
+          ],
+          "reject": [
+            "--url"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "kimi",
+      "kind": "native",
+      "verifiedAt": "2026-08-05",
+      "source": "https://moonshotai.github.io/kimi-code/en/customization/mcp.html",
+      "evidence": [
+        {
+          "claim": "bearerTokenEnvVar",
+          "source": "https://moonshotai.github.io/kimi-code/en/customization/mcp.html",
+          "expect": [
+            "bearerTokenEnvVar",
+            "~/.kimi-code",
+            "/mcp-config"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "glm-zcode",
+      "kind": "native",
+      "verifiedAt": "2026-08-05",
+      "source": "https://zcode.z.ai/en/docs/mcp-services",
+      "evidence": [
+        {
+          "claim": "New MCP Server",
+          "source": "https://zcode.z.ai/en/docs/mcp-services",
+          "expect": [
+            "New MCP Server",
+            "Full configuration"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "deepseek-harness",
+      "kind": "native",
+      "verifiedAt": "2026-08-29",
+      "source": "https://github.com/deepseek-ai/deepseek-harness",
+      "evidence": [
+        {
+          "claim": "@deepseek-ai/dsh-mcp-client",
+          "source": "https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/master/packages/mcp/mcp-client/README.md",
+          "expect": [
+            "serverName",
+            "streamable-http"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "zai-api",
+      "kind": "api-level",
+      "verifiedAt": "2026-08-05",
+      "source": "https://docs.z.ai/guides/capabilities/mcp-call",
+      "evidence": [
+        {
+          "claim": "server_label",
+          "source": "https://docs.z.ai/guides/capabilities/mcp-call",
+          "expect": [
+            "server_label",
+            "server_url",
+            "transport_type",
+            "allowed_tools"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "deepseek",
+      "kind": "byo-model",
+      "verifiedAt": "2026-08-28",
+      "source": "https://api-docs.deepseek.com/guides/anthropic_api",
+      "evidence": [
+        {
+          "claim": "ANTHROPIC_AUTH_TOKEN",
+          "source": "https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code/",
+          "expect": [
+            "api.deepseek.com/anthropic",
+            "ANTHROPIC_AUTH_TOKEN"
+          ]
+        },
+        {
+          "claim": "The DeepSeek API itself still exposes no MCP parameter",
+          "source": "https://api-docs.deepseek.com/guides/anthropic_api/",
+          "expect": [
+            "mcp_servers Ignored"
+          ]
+        }
+      ]
+    }
+  ]
+}

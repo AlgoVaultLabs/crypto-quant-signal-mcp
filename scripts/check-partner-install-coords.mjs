@@ -110,7 +110,11 @@ export function isLikelyMcpEndpoint(url) {
   const segments = u.pathname.split('/').filter(Boolean);
   if (!segments.includes('mcp')) return false;
   if (/^(docs|support|learn|help|developer|developers)\./i.test(u.hostname)) return false;
-  if (/^(github\.com|www\.npmjs\.com|pypi\.org|registry\.npmjs\.org)$/i.test(u.hostname)) return false;
+  // raw.githubusercontent.com is a raw FILE host — it serves repository files and never answers
+  // JSON-RPC. Omitting it made a cited source file (`…/services/mcp/McpHub.ts`) read as an endpoint;
+  // the POST drew 403 with no challenge and turned a CLEAN run INDETERMINATE
+  // (OPS-CLIENT-CLAIM-EVIDENCE-W1 R0).
+  if (/^(github\.com|raw\.githubusercontent\.com|www\.npmjs\.com|pypi\.org|registry\.npmjs\.org)$/i.test(u.hostname)) return false;
   if (segments.some((s) => /^(docs?|guides?|articles?|blog)$/i.test(s))) return false;
   if (/\.(html?|md)$/i.test(u.pathname)) return false;
   return true;
