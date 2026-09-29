@@ -10,19 +10,14 @@ classes:
   expected_max_duration_s: 30
   tg_fires_on_failure: true
   recommended_wave_template: OPS-POSTGRES-AUTOPILOT-MANIFEST-EXPAND-W{NEXT}
-- name: runaway-cron
-  classifier_type: process_count
-  classifier_args:
-    pattern: /bin/sh -c.*seed-signals|/bin/sh -c.*matview-refresh
-    max_concurrent: 6
-  recovery_action: escalate
-  recovery_action_args: {}
-  expected_max_duration_s: 5
-  tg_fires_on_failure: true
-  recommended_wave_template: OPS-POSTGRES-AUTOPILOT-MANIFEST-EXPAND-W{NEXT}
-  _w1_note: W1 ships diagnose-only (recovery=escalate); kill_term_excess_pids requires
-    registry expansion W2 with stable PID classification (host wrappers vs container-internal
-    vs docker exec)
+# RETIRED 2026-09-29 by OPS-POSTGRES-CPU-WINDOW-INTEGRITY-W1 — `runaway-cron` (process_count,
+# pattern `/bin/sh -c.*seed-signals|/bin/sh -c.*matview-refresh`, max_concurrent 6, recovery escalate).
+#   Measured on signal-1: its own pattern matched 15 live processes at a quiet minute; all 37
+#   matching crons carry `flock -n`, so a duplicate pile-up, the only thing a concurrent count
+#   can mean, cannot happen; it matched on 5 of 5 invocations and, first match winning, shadowed
+#   log-fills-disk and UNKNOWN. Its recovery was diagnose-only, so no recovery is lost.
+#   REPLACED BY: the `flock -n` guard on every seed/matview cron (it prevents the pile-up this row
+#   tried to detect) + the UNKNOWN escalation, whose body now carries the classifier evidence.
 - name: cron-daemon-hung
   classifier_type: systemctl_status
   classifier_args:

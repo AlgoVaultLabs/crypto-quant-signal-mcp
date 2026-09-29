@@ -412,7 +412,7 @@
       "schedule": null,
       "invoked_by": "called-by:postgres-cpu-snapshot",
       "install_state": "installed",
-      "sha256": "9fc2725d5c1725802d9bb4cdab5a68c2267e106458c4f90f25b38ee852a2d1dc",
+      "sha256": "894f83cbe38536131fd88e63c4643e39c4184ae87ce308ea2a992cfd081b903f",
       "alert_ids": [],
       "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1"
     },
@@ -426,7 +426,7 @@
       "schedule": null,
       "invoked_by": "called-by:postgres-cpu-autopilot",
       "install_state": "installed",
-      "sha256": "7f63c9e7346f6bc082293d02d9000ae984b9a28c698cf17325407645aa1f8a50",
+      "sha256": "6d083811544c625bf24447afa5f8e7d36db90316ca9fc0a6a39a1bfca864996a",
       "alert_ids": [],
       "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1"
     },
