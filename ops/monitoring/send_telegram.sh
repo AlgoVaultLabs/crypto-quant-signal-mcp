@@ -6,6 +6,10 @@
 #        send_telegram.sh --clear <alert_id> [reason]             # FIRING -> CLEAR
 #        send_telegram.sh --reconcile [alert_id]                  # adopt on-disk state, emit nothing
 #        send_telegram.sh --self-test                             # hermetic
+#        send_telegram.sh --acknowledge <alert_id>                # seed the ack from ALERT_KEYS; no POST
+#   ALERT_KEYS="<k1> <k2> …" opts a call into page-on-change — honoured ONLY for a registry row
+#   declaring page_on="change" + page_on_change (see PAGE-ON-CHANGE below). Every other row is
+#   byte-identical to before.
 #   body via stdin if 3rd arg is "-" or omitted.
 #
 # ── WHY --clear EXISTS (OPS-ALERT-RECOVERY-NOTICE-W1) ────────────────────────────────────────
@@ -28,6 +32,29 @@
 # unreadable file, no python3 — resolves to SILENT. The default lives in DATA and in the code
 # path, never in a sentence someone has to read.
 #
+# ── PAGE-ON-CHANGE (OPS-ALARM-SINGLE-DERIVATION-W1 CH3) — ONE primitive, opt-in per registry row ─
+# "A level trigger over a state nothing clears pages forever" was solved BESPOKE three times in ten
+# days (payment-decline's ACK_BASELINE, AOE output-liveness tuples, BDIR PASS->FAIL), each inside a
+# consumer, while this contract says consumers MUST NOT re-implement its gates. Only this wrapper
+# knows whether a page was DELIVERED, so only it can acknowledge correctly. The semantics are
+# PORTED from payment-decline-canary.py's ACK_BASELINE, not re-invented:
+#   * Opt-in in DATA: the row carries page_on="change" AND page_on_change{review_by, decided_by,
+#     decided_at, reason}. Anything missing or malformed, or a call without valid ALERT_KEYS,
+#     resolves to LEVEL and logs PAGE_ON_CHANGE_NOT_EARNED (fail toward noise). It holds THROUGH
+#     review_by inclusive; from the next UTC day the row pages on the LEVEL and the body says so.
+#   * The caller calls on EVERY run: ALERT_KEYS=<entity ids> for a non-empty set, `--clear` for an
+#     empty one (removing the marker AND the ack). Keys are entity ids such as dead:ASTER|NVO,
+#     never figures that change nightly. Without every-run calls nothing prunes, and a
+#     recovered-then-re-broken key would never page again.
+#   * Decided AFTER the severity and test-context gates and BEFORE the 24h gate, from
+#     $STATE_DIR/<alert_id>.ack.json (temp file + rename). No key outside the ack: prune the ack to
+#     the keys still present, log UNCHANGED_SUPPRESSED, exit; the 24h gate is not consulted. Some
+#     key outside it: continue, and ONLY a DELIVERED (2xx) page sets ack := keys. A 24h-suppressed,
+#     failed or DRY_RUN_TG run leaves the ack alone — an acknowledgment means an operator SAW it.
+#   * A missing or malformed ack is UNKNOWN, never "everything is old": it pages and re-seeds.
+#   * `--acknowledge <id>` seeds the ack from ALERT_KEYS WITHOUT a POST (ACKNOWLEDGED_BOOTSTRAP) —
+#     the one sanctioned way to acknowledge without paging.
+#
 # CONTRACT (CLAUDE.md ## Automation-first recovery → Operator-action-required alert contract):
 #   TG fires ONLY when:
 #     (a) severity == CRITICAL_PERSISTENT, AND
@@ -48,6 +75,7 @@ case "${1:-}" in
   --clear)     MODE=clear;     shift ;;
   --reconcile) MODE=reconcile; shift ;;
   --self-test) MODE=self-test; shift ;;
+  --acknowledge) MODE=acknowledge; shift ;;
 esac
 
 case "$MODE" in
@@ -62,6 +90,7 @@ case "$MODE" in
     ;;
   reconcile) ALERT_ID="${1:-ALL}" ;;
   self-test) ALERT_ID="SELF_TEST" ;;
+  acknowledge) ALERT_ID="${1:?alert_id required}" ;;
 esac
 
 # Every path below is overridable ONLY so the hermetic --self-test can redirect it. All four are
@@ -75,6 +104,11 @@ ALERT_REGISTRY="${ALERT_REGISTRY_PATH:-/opt/algovault-monitoring/alert-registry.
 # exactly what its own seam replaces.
 TG_CURL="${ALERT_WRAPPER_CURL:-curl}"
 COOLDOWN_SEC=86400  # 24h per CLAUDE.md operator-action-required contract
+# Page-on-change state (OPS-ALARM-SINGLE-DERIVATION-W1 CH3): beside the marker, in the same
+# sandboxable STATE_DIR. `--reconcile` never touches it — it globs *-last-fired-at only.
+ACK_FILE="$STATE_DIR/${ALERT_ID}.ack.json"
+POC_MODE=LEVEL POC_REASON="" POC_REVIEW_BY="" POC_KEYS="" POC_NKEYS=0 POC_ACK_STATE="" POC_ACK_WHY=""
+POC_NEW="" POC_NNEW=0 POC_NACKED=0 POC_PRUNED="" POC_NPRUNED=0 POC_PRUNE_CHANGED=0
 
 # fail-open: an unwritable STATE_DIR must not abort under `set -e`. The header has always
 # promised fail-open on every error path; before this line it was the one place that did not
@@ -180,6 +214,200 @@ except Exception:
 PY
 }
 
+# ── page_on_change helper — ONE python program, three subcommands, JSON in, KEY=value lines out ──
+# Every value it prints is either from a fixed vocabulary or a key that passed KEY_RE, so the shell
+# can read the lines back without quoting hazards. Any crash prints nothing, and nothing resolves to
+# LEVEL — the failure mode of this mechanism is noise, never silence.
+poc_py() {
+  python3 - "$@" <<'PY' 2>/dev/null
+import datetime, json, os, re, sys, tempfile
+KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:|/@+-]{0,127}$")
+DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+MAX_KEYS = 500
+FIELDS = ("review_by", "decided_by", "decided_at", "reason")
+
+def norm_keys(raw):
+    toks = [t for t in re.split(r"[\s,]+", raw or "") if t]
+    if not toks:
+        return None, "no keys supplied (ALERT_KEYS empty or unset)"
+    bad = sum(1 for t in toks if not KEY_RE.match(t))
+    if bad:
+        return None, "%d invalid key token(s) in ALERT_KEYS" % bad
+    keys = sorted(set(toks))
+    if len(keys) > MAX_KEYS:
+        return None, "%d keys exceeds the %d-key bound" % (len(keys), MAX_KEYS)
+    return keys, None
+
+def parse_date(s):
+    if not isinstance(s, str) or not DATE_RE.match(s):
+        return None
+    try:
+        return datetime.date.fromisoformat(s)
+    except ValueError:
+        return None
+
+def today():
+    seam = parse_date(os.environ.get("ALERT_WRAPPER_TODAY", ""))
+    return seam or datetime.datetime.now(datetime.timezone.utc).date()
+
+def load_ack(path, aid):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except FileNotFoundError:
+        return None, "absent"
+    except Exception:
+        return None, "unreadable"
+    if not isinstance(doc, dict) or not isinstance(doc.get("keys"), list):
+        return None, "malformed"
+    if doc.get("alert_id") not in (None, aid):
+        return None, "recorded for another alert id"
+    keys = [k for k in doc["keys"] if isinstance(k, str) and KEY_RE.match(k)]
+    if len(keys) != len(doc["keys"]):
+        return None, "holding an invalid key"
+    return set(keys), "loaded"
+
+def out(**kv):
+    for k, v in kv.items():
+        print("%s=%s" % (k, v))
+
+cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+if cmd == "norm":
+    keys, err = norm_keys(os.environ.get("ALERT_KEYS", ""))
+    out(**({"ERR": err} if err else {"KEYS": " ".join(keys), "NKEYS": len(keys)}))
+elif cmd == "write":
+    path, aid, source, keys = sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
+    if not keys or any(not KEY_RE.match(k) for k in keys):
+        print("ERR refusing to write an empty or invalid key set"); sys.exit(0)
+    try:
+        d = os.path.dirname(path) or "."
+        fd, tmp = tempfile.mkstemp(dir=d, prefix=".%s." % os.path.basename(path), suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"version": 1, "alert_id": aid, "source": source,
+                       "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                       "keys": sorted(set(keys))}, fh, indent=1, sort_keys=True)
+            fh.write("\n")
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)          # atomic: never a half-written acknowledgement
+        print("OK %d key(s)" % len(set(keys)))
+    except Exception as e:
+        print("ERR %s" % type(e).__name__)
+elif cmd == "eval":
+    registry, aid, ack_path = sys.argv[2], sys.argv[3], sys.argv[4]
+    try:
+        with open(registry, encoding="utf-8") as fh:
+            rows = json.load(fh).get("alerts", [])
+        row = next((r for r in rows if isinstance(r, dict) and r.get("alert_id") == aid), None)
+    except Exception:
+        row = None
+    if row is None or ("page_on" not in row and "page_on_change" not in row):
+        out(MODE="LEVEL"); sys.exit(0)     # the legacy path: no opt-in, no log line, byte-identical
+    poc = row.get("page_on_change")
+    reason = None
+    if row.get("page_on") != "change":
+        reason = "the row declares page_on_change but page_on is not \"change\""
+    elif not isinstance(poc, dict):
+        reason = "page_on=change without a page_on_change declaration"
+    elif any(not isinstance(poc.get(f), str) or not poc.get(f).strip() for f in FIELDS):
+        reason = "page_on_change lacks one of review_by, decided_by, decided_at, reason"
+    elif parse_date(poc.get("review_by")) is None:
+        reason = "page_on_change.review_by is not a YYYY-MM-DD date"
+    keys, kerr = norm_keys(os.environ.get("ALERT_KEYS", ""))
+    if reason is None and kerr:
+        reason = kerr
+    if reason:
+        out(MODE="NOT_EARNED", REASON=reason); sys.exit(0)
+    review_by = parse_date(poc["review_by"])
+    if today() > review_by:                # INCLUSIVE through review_by; LEVEL from the next UTC day
+        out(MODE="EXPIRED", REVIEW_BY=review_by.isoformat()); sys.exit(0)
+    ack, why = load_ack(ack_path, aid)
+    kset = set(keys)
+    new = sorted(kset) if ack is None else sorted(kset - ack)
+    acked = 0 if ack is None else len(kset & ack)
+    pruned = [] if ack is None else sorted(ack & kset)
+    changed = 1 if (ack is not None and ack - kset) else 0
+    out(MODE="EARNED", REVIEW_BY=review_by.isoformat(), KEYS=" ".join(keys), NKEYS=len(keys),
+        ACK_STATE="LOADED" if ack is not None else "UNKNOWN", ACK_WHY=why,
+        NEW=" ".join(new), NNEW=len(new), NACKED=acked,
+        PRUNED=" ".join(pruned), NPRUNED=len(pruned), PRUNE_CHANGED=changed)
+PY
+}
+
+# ── poc_eval — the page-on-change decision for $ALERT_ID, into the POC_* globals ───────────────
+# Anything it cannot establish leaves LEVEL, the pre-existing behaviour.
+poc_eval() {
+  POC_MODE=LEVEL
+  [[ -r "$ALERT_REGISTRY" ]] || return 0
+  # Fast path for every legacy caller: no key set supplied and no row anywhere declaring page_on
+  # means there is nothing to decide, and python is never started.
+  if [[ -z "${ALERT_KEYS:-}" ]] && ! grep -q '"page_on' "$ALERT_REGISTRY" 2>/dev/null; then return 0; fi
+  command -v python3 >/dev/null 2>&1 || return 0
+  local line
+  while IFS= read -r line; do
+    case "${line%%=*}" in
+      MODE)          POC_MODE="${line#*=}" ;;
+      REASON)        POC_REASON="${line#*=}" ;;
+      REVIEW_BY)     POC_REVIEW_BY="${line#*=}" ;;
+      KEYS)          POC_KEYS="${line#*=}" ;;
+      NKEYS)         POC_NKEYS="${line#*=}" ;;
+      ACK_STATE)     POC_ACK_STATE="${line#*=}" ;;
+      ACK_WHY)       POC_ACK_WHY="${line#*=}" ;;
+      NEW)           POC_NEW="${line#*=}" ;;
+      NNEW)          POC_NNEW="${line#*=}" ;;
+      NACKED)        POC_NACKED="${line#*=}" ;;
+      PRUNED)        POC_PRUNED="${line#*=}" ;;
+      NPRUNED)       POC_NPRUNED="${line#*=}" ;;
+      PRUNE_CHANGED) POC_PRUNE_CHANGED="${line#*=}" ;;
+    esac
+  done < <(ALERT_KEYS="${ALERT_KEYS:-}" poc_py eval "$ALERT_REGISTRY" "$ALERT_ID" "$ACK_FILE")
+  case "$POC_MODE" in
+    EARNED)
+      # A partial read is never a decision: every count the gate branches on must be numeric.
+      [[ "$POC_NNEW" =~ ^[0-9]+$ && "$POC_NKEYS" =~ ^[1-9][0-9]*$ && "$POC_NACKED" =~ ^[0-9]+$ ]] || POC_MODE=LEVEL ;;
+    NOT_EARNED|EXPIRED) ;;
+    *) POC_MODE=LEVEL ;;
+  esac
+}
+
+# ack_write <source> <key>... — atomic; logs and returns 1 on any failure (the keys page again).
+ack_write() {
+  local src="$1" res
+  shift
+  res=$(poc_py write "$ACK_FILE" "$ALERT_ID" "$src" "$@" || true)
+  if [[ "$res" == OK* ]]; then return 0; fi
+  log "ACK_WRITE_FAILED: ${res:-python3 unavailable} (source=$src)"
+  return 1
+}
+
+keys_word() { if [[ "$1" == 1 ]]; then echo "1 key"; else echo "$1 keys"; fi; }
+
+# poc_list "<space-separated keys>" -> "k1, k2, … and N more" (bounded: a Telegram message is too)
+poc_list() {
+  local max=15 n=0 k acc=""
+  # Keys passed KEY_RE (no glob or quote characters), so word splitting here is exact.
+  # shellcheck disable=SC2206
+  local arr=($1)
+  for k in "${arr[@]}"; do
+    n=$((n + 1))
+    if [[ $n -gt $max ]]; then break; fi
+    acc="${acc:+$acc, }$k"
+  done
+  if [[ ${#arr[@]} -gt $max ]]; then acc="$acc and $(( ${#arr[@]} - max )) more"; fi
+  echo "$acc"
+}
+
+# The derived header a delivered page-on-change page carries. Built HERE from the ack, never
+# supplied by the caller, so the caller cannot mislabel what is new.
+poc_header() {
+  local acked
+  if [[ "$POC_ACK_STATE" == LOADED ]]; then
+    acked=$(keys_word "$POC_NACKED")
+  else
+    acked="unknown — the acknowledgement was ${POC_ACK_WHY:-unreadable}, so every key is treated as new"
+  fi
+  printf 'NEW: %s · still present (acknowledged): %s\n' "$(poc_list "$POC_NEW")" "$acked"
+}
+
 # ── human_span <seconds> ────────────────────────────────────────────────────────────────────
 human_span() {
   local s=$1
@@ -200,6 +428,14 @@ do_clear() {
   if is_test_context; then
     log "SUPPRESSED_TEST_CONTEXT: --clear raised from a test process (NODE_TEST_CONTEXT=${NODE_TEST_CONTEXT:-} VITEST=${VITEST:-} ALGOVAULT_TG_TEST_INERT=${ALGOVAULT_TG_TEST_INERT:-0}); production alert state untouched"
     exit 0
+  fi
+
+  # 1b. PAGE-ON-CHANGE: `--clear` is how a page-on-change caller reports an EMPTY key set, and
+  #     nothing present means nothing stays acknowledged. Removed whether or not a marker exists;
+  #     a row that never adopted page-on-change has no ack file, so its path is unchanged.
+  if [[ -f "$ACK_FILE" ]]; then
+    rm -f "$ACK_FILE" 2>/dev/null || true
+    log "ACK_CLEARED: acknowledged key set removed (the caller reported an empty key set)"
   fi
 
   local marker="$STATE_DIR/${ALERT_ID}-last-fired-at"
@@ -293,6 +529,38 @@ do_reconcile() {
     log "RECONCILED: $id adopted silently — pre-existing marker dropped, no transition emitted"
   done
   log "RECONCILE_DONE: $n marker(s) adopted silently (scope=$ALERT_ID)"
+  exit 0
+}
+
+# ── do_acknowledge — seed the ack WITHOUT a POST (the bootstrap) ───────────────────────────────
+# The one sanctioned way to acknowledge without paging: an adopter's known set is recorded once,
+# at install, so its first real run pages only what is genuinely new. No marker, no POST.
+do_acknowledge() {
+  if is_test_context; then
+    log "SUPPRESSED_TEST_CONTEXT: --acknowledge raised from a test process; production alert state untouched"
+    exit 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    log "ACKNOWLEDGE_REFUSED: python3 unavailable; nothing written"
+    exit 0
+  fi
+  local line keys="" n=0 err=""
+  while IFS= read -r line; do
+    case "${line%%=*}" in
+      KEYS)  keys="${line#*=}" ;;
+      NKEYS) n="${line#*=}" ;;
+      ERR)   err="${line#*=}" ;;
+    esac
+  done < <(ALERT_KEYS="${ALERT_KEYS:-}" poc_py norm)
+  if [[ -n "$err" || -z "$keys" ]]; then
+    log "ACKNOWLEDGE_REFUSED: ${err:-no valid keys}; nothing written"
+    exit 0
+  fi
+  poc_eval
+  # shellcheck disable=SC2086
+  if ack_write bootstrap $keys; then
+    log "ACKNOWLEDGED_BOOTSTRAP: $(keys_word "$n") acknowledged without a POST (registry opt-in: ${POC_MODE})"
+  fi
   exit 0
 }
 
@@ -468,6 +736,151 @@ self_test() {
   ck '  …and the decoy still holds both of its markers' \
      "$(ls "$decoy"/*-last-fired-at 2>/dev/null | wc -l | tr -d ' ')" '2'
 
+  # ── PAGE-ON-CHANGE (OPS-ALARM-SINGLE-DERIVATION-W1 CH3) ───────────────────────────────────
+  # Every rule of the gate, two-way. A recording curl stub keeps the POSTed text, so the derived
+  # header is asserted in what an operator would actually receive, not in a log paraphrase.
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" >> "%s"\nprintf 200\n' "$tmp/posted" > "$tmp/curl-rec"
+  chmod +x "$tmp/curl-rec"
+  local ackf="$tmp/state/AID.ack.json"
+  ackkeys() { python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["keys"]))' "$ackf" 2>/dev/null || echo MISSING; }
+  ackseed() { printf '{"version":1,"alert_id":"AID","keys":[%s]}\n' "$1" > "$ackf"; }
+  pocrow() {
+    printf '{"alerts":[{"alert_id":"AID","page_on":"change","page_on_change":{"review_by":"%s","decided_by":"self-test","decided_at":"2026-09-30","reason":"fixture"}}]}\n' "$1" > "$tmp/registry.json"
+  }
+  pfresh() { fresh; rm -f "$ackf" "$tmp/posted" 2>/dev/null || true; }
+  posts() { if [[ -f "$tmp/posted" ]]; then grep -c '^https://api.telegram.org/' "$tmp/posted"; else echo 0; fi; }
+  firep() {  # <keys> [extra env...] — one alert-mode call through the recording stub, today pinned
+    local keys="$1"; shift
+    : > "$tmp/status.md"   # hermetic: a readable, template-free status.md, so the resolver logs nothing
+    printf 'b\n' | run "$tmp/state" ALERT_WRAPPER_CURL="$tmp/curl-rec" ALERT_WRAPPER_TODAY=2026-09-30 \
+      STATUS_MD_PATH="$tmp/status.md" ALERT_KEYS="$keys" "$@" bash "$me" AID CRITICAL_PERSISTENT -
+  }
+  vseq() { sed -E 's/.*\] ([A-Z_]+):.*/\1/' "$tmp/log" | tr '\n' ' '; }
+
+  # (1) first sighting, no ack -> UNKNOWN -> pages; header derived; ack seeded deduped + sorted
+  pfresh; pocrow 2099-12-31; firep 'dead:XT|B dead:XT|A dead:XT|A'
+  ck 'page-on-change: an absent ack is UNKNOWN and PAGES'       "$(verb)" 'PAGED_NEW_KEY'
+  ck '  …the delivered text leads with the derived NEW header'   "$(grep -c '^text=NEW: dead:XT|A, dead:XT|B · still present (acknowledged): unknown' "$tmp/posted")" '1'
+  ck '  …and the ack is seeded, deduped and sorted'              "$(ackkeys)" 'dead:XT|A dead:XT|B'
+  ck '  …and the key set is DEDUPED before anything counts it'  "$(grep -c 're-seeded to the 2 keys present' "$tmp/log")" '1'
+  # (2) the same set -> UNCHANGED_SUPPRESSED, no POST — even though the 24h gate WOULD allow a page
+  rm -f "$tmp/posted"; mark 1; firep 'dead:XT|A dead:XT|B'
+  ck 'the same key set is UNCHANGED_SUPPRESSED'                  "$(verb)" 'UNCHANGED_SUPPRESSED'
+  ck '  …and POSTs nothing'                                      "$(posts)" '0'
+  # (3) decided BEFORE the 24h gate: a fresh marker does not turn "unchanged" into "cooldown"
+  mark "$(( $(date +%s) - 60 ))"; firep 'dead:XT|A dead:XT|B'
+  ck 'unchanged is decided BEFORE the 24h gate'                  "$(verb)" 'UNCHANGED_SUPPRESSED'
+  # (4) a recovered key is PRUNED from the ack, silently
+  firep 'dead:XT|A'
+  ck 'a recovered key stays silent'                              "$(verb)" 'UNCHANGED_SUPPRESSED'
+  ck '  …and is pruned from the ack'                             "$(ackkeys)" 'dead:XT|A'
+  # (5) it re-breaks inside the 24h window -> suppressed there, ack NOT advanced (still new later)
+  firep 'dead:XT|A dead:XT|B'
+  ck 'a re-broken key inside 24h reaches the 24h gate'           "$(verb)" 'SUPPRESSED_COOLDOWN'
+  ck '  …and the ack is NOT advanced'                            "$(ackkeys)" 'dead:XT|A'
+  # (6) prune -> re-page once the 24h gate allows, naming only the NEW key
+  mark 1; rm -f "$tmp/posted"; firep 'dead:XT|A dead:XT|B'
+  ck 'prune -> re-page'                                          "$(verb)" 'PAGED_NEW_KEY'
+  ck '  …the header names only the NEW key and the acknowledged count' "$(grep -c '^text=NEW: dead:XT|B · still present (acknowledged): 1 key$' "$tmp/posted")" '1'
+  ck '  …and a delivered page advances the ack to every present key' "$(ackkeys)" 'dead:XT|A dead:XT|B'
+  # (7) a FAILED POST leaves the ack alone
+  pfresh; pocrow 2099-12-31; ackseed '"dead:XT|A"'
+  printf 'b\n' | run "$tmp/state" ALERT_WRAPPER_CURL="$tmp/curl-fail" ALERT_WRAPPER_TODAY=2026-09-30 \
+    ALERT_KEYS='dead:XT|A dead:XT|B' bash "$me" AID CRITICAL_PERSISTENT -
+  ck 'a failed POST is FAILED_TG_API'                            "$(verb)" 'FAILED_TG_API'
+  ck '  …and leaves the ack unchanged'                           "$(ackkeys)" 'dead:XT|A'
+  # (8) DRY_RUN_TG leaves the ack alone: an acknowledgment means an operator SAW it
+  pfresh; pocrow 2099-12-31; ackseed '"dead:XT|A"'; firep 'dead:XT|A dead:XT|B' DRY_RUN_TG=1
+  ck 'DRY_RUN_TG on a new key is DRY_RUN_FIRED'                  "$(verb)" 'DRY_RUN_FIRED'
+  ck '  …and does NOT advance the ack'                           "$(ackkeys)" 'dead:XT|A'
+  # (9) a malformed ack is UNKNOWN, never "everything is old": it pages and re-seeds
+  pfresh; pocrow 2099-12-31; echo 'not json' > "$ackf"; firep 'dead:XT|A'
+  ck 'a malformed ack PAGES'                                     "$(verb)" 'PAGED_NEW_KEY'
+  ck '  …and re-seeds'                                           "$(ackkeys)" 'dead:XT|A'
+  # (10) both-or-neither: page_on without its declaration is NOT earned -> the LEVEL
+  pfresh; printf '{"alerts":[{"alert_id":"AID","page_on":"change"}]}\n' > "$tmp/registry.json"
+  ackseed '"dead:XT|A"'; firep 'dead:XT|A'
+  ck 'page_on without page_on_change is NOT earned'             "$(grep -c 'PAGE_ON_CHANGE_NOT_EARNED' "$tmp/log")" '1'
+  ck '  …and pages on the LEVEL despite a covering ack'         "$(verb)" 'FIRED'
+  pfresh; printf '{"alerts":[{"alert_id":"AID","page_on":"change","page_on_change":{"review_by":"2099-12-31"}}]}\n' > "$tmp/registry.json"
+  ackseed '"dead:XT|A"'; firep 'dead:XT|A'
+  ck 'a declaration missing decided_by/decided_at/reason is NOT earned' "$(grep -c 'PAGE_ON_CHANGE_NOT_EARNED' "$tmp/log")" '1'
+  # (11) a malformed review_by is NOT earned
+  pfresh; pocrow 2026-13-45; ackseed '"dead:XT|A"'; firep 'dead:XT|A'
+  ck 'a malformed review_by is NOT earned'                       "$(grep -c 'PAGE_ON_CHANGE_NOT_EARNED' "$tmp/log")" '1'
+  # (12) a keyless call on an opted-in row is NOT earned -> the LEVEL
+  pfresh; pocrow 2099-12-31; firep ''
+  ck 'a call without keys is NOT earned'                         "$(grep -c 'PAGE_ON_CHANGE_NOT_EARNED' "$tmp/log")" '1'
+  ck '  …and pages on the LEVEL'                                 "$(verb)" 'FIRED'
+  # (13) one invalid token fails the whole set toward noise
+  pfresh; pocrow 2099-12-31; ackseed '"dead:XT|A"'; firep 'dead:XT|A dead"XT'
+  ck 'an invalid key token is NOT earned'                        "$(grep -c 'PAGE_ON_CHANGE_NOT_EARNED' "$tmp/log")" '1'
+  # (14) review_by is INCLUSIVE; the next UTC day is the LEVEL again and the body says so
+  pfresh; pocrow 2026-09-30; ackseed '"dead:XT|A"'; firep 'dead:XT|A'
+  ck 'review_by is inclusive (today == review_by is still earned)' "$(verb)" 'UNCHANGED_SUPPRESSED'
+  pfresh; pocrow 2026-09-29; ackseed '"dead:XT|A"'; firep 'dead:XT|A'
+  ck 'the day after review_by pages on the LEVEL'               "$(verb)" 'FIRED'
+  ck '  …the log says the opt-in expired'                        "$(grep -c 'PAGE_ON_CHANGE_EXPIRED' "$tmp/log")" '1'
+  ck '  …and the delivered body carries one line saying so'     "$(grep -c 'page-on-change expired after review_by 2026-09-29' "$tmp/posted")" '1'
+  # (15) a row WITHOUT page_on ignores ALERT_KEYS entirely: byte-identical verbs, no ack
+  pfresh; printf '{"alerts":[{"alert_id":"AID"}]}\n' > "$tmp/registry.json"; firep ''; firep ''
+  local legacy_verbs; legacy_verbs=$(vseq)
+  pfresh; printf '{"alerts":[{"alert_id":"AID"}]}\n' > "$tmp/registry.json"; firep 'dead:XT|A'; firep 'dead:XT|A'
+  ck 'a row without page_on ignores ALERT_KEYS (verb sequence identical)' "$(vseq)" "$legacy_verbs"
+  ck '  …the sequence is the legacy FIRED then SUPPRESSED_COOLDOWN' "$legacy_verbs" 'FIRED SUPPRESSED_COOLDOWN '
+  ck '  …and writes no ack'                                      "$([[ -f "$ackf" ]] && echo y || echo n)" 'n'
+  pfresh; firep 'dead:XT|A'
+  ck 'with NO registry at all, keys change nothing either'      "$(verb)" 'FIRED'
+  # (16) --acknowledge seeds the ack from ALERT_KEYS WITHOUT a POST and without a marker
+  pfresh; pocrow 2099-12-31
+  run "$tmp/state" ALERT_WRAPPER_CURL="$tmp/curl-rec" ALERT_KEYS='dead:XT|B dead:XT|A,dead:XT|A' bash "$me" --acknowledge AID
+  ck '--acknowledge is ACKNOWLEDGED_BOOTSTRAP'                   "$(verb)" 'ACKNOWLEDGED_BOOTSTRAP'
+  ck '  …counting the deduped set (comma or space separated)'    "$(grep -c 'ACKNOWLEDGED_BOOTSTRAP: 2 keys acknowledged' "$tmp/log")" '1'
+  ck '  …seeds the ack'                                          "$(ackkeys)" 'dead:XT|A dead:XT|B'
+  ck '  …POSTs nothing'                                          "$(posts)" '0'
+  ck '  …and writes no marker'                                   "$([[ -f "$tmp/state/AID-last-fired-at" ]] && echo y || echo n)" 'n'
+  firep 'dead:XT|A dead:XT|B'
+  ck '  …so the first real run of that set is UNCHANGED'        "$(verb)" 'UNCHANGED_SUPPRESSED'
+  pfresh; pocrow 2099-12-31; run "$tmp/state" bash "$me" --acknowledge AID
+  ck '--acknowledge without keys is REFUSED'                     "$(verb)" 'ACKNOWLEDGE_REFUSED'
+  ck '  …and writes nothing'                                     "$([[ -f "$ackf" ]] && echo y || echo n)" 'n'
+  # (17) --clear removes BOTH the marker and the ack; with no marker it still removes the ack
+  pfresh; pocrow 2099-12-31; mark 111; ackseed '"dead:XT|A"'; run "$tmp/state" bash "$me" --clear AID
+  ck '--clear removes the ack'                                   "$([[ -f "$ackf" ]] && echo y || echo n)" 'n'
+  ck '  …and the marker'                                         "$([[ -f "$tmp/state/AID-last-fired-at" ]] && echo y || echo n)" 'n'
+  pfresh; ackseed '"dead:XT|A"'; run "$tmp/state" bash "$me" --clear AID
+  ck '--clear with no marker still removes the ack'             "$([[ -f "$ackf" ]] && echo y || echo n)" 'n'
+  ck '  …and still reports CLEAR_NOOP for the marker'           "$(verb)" 'CLEAR_NOOP'
+  # (18) --reconcile never touches an ack: it globs the marker files only
+  pfresh; mark 111; ackseed '"dead:XT|A"'; run "$tmp/state" bash "$me" --reconcile
+  ck '--reconcile leaves the ack alone'                          "$([[ -f "$ackf" ]] && echo y || echo n)" 'y'
+  # (19) a TEST context can neither write nor clear production ack state, on any path
+  local sub
+  for sub in "--acknowledge AID" "--clear AID" "AID CRITICAL_PERSISTENT -"; do
+    seed_decoy; printf '{"version":1,"alert_id":"AID","keys":["dead:XT|Z"]}\n' > "$decoy/AID.ack.json"
+    pocrow 2099-12-31; manifest_before=$(dmanifest)
+    # shellcheck disable=SC2086
+    printf 'b\n' | env -u VITEST -u NODE_TEST_CONTEXT ALGOVAULT_TG_TEST_INERT=1 ALERT_KEYS='dead:XT|A' \
+        ALERT_WRAPPER_LOG="$tmp/log" ALERT_WRAPPER_STATE_DIR="$decoy" ALERT_WRAPPER_ENV="$tmp/env" \
+        ALERT_REGISTRY_PATH="$tmp/registry.json" ALERT_WRAPPER_CURL="$tmp/curl-ok" \
+        bash "$me" $sub >/dev/null 2>&1
+    ck "test-inert '$sub' leaves production ack state byte-identical" "$(dmanifest)" "$manifest_before"
+  done
+  # (20) a LIVE --acknowledge confined by ALERT_WRAPPER_STATE_DIR cannot reach outside it
+  seed_decoy; pfresh; pocrow 2099-12-31; manifest_before=$(dmanifest)
+  run "$tmp/state" ALERT_KEYS='dead:XT|A' bash "$me" --acknowledge AID
+  ck 'a sandboxed --acknowledge cannot touch a path outside its state dir' "$(dmanifest)" "$manifest_before"
+  ck '  …and it DID act inside the sandbox (not vacuous)'       "$(ackkeys)" 'dead:XT|A'
+  # (21) STRUCTURE — the order the whole design depends on, asserted on the shipped text
+  local i_test i_poc i_cool
+  i_test=$(grep -n '^if is_test_context; then$' "$me" | head -1 | cut -d: -f1 || true)
+  i_poc=$(grep -n '^poc_eval$' "$me" | head -1 | cut -d: -f1 || true)
+  i_cool=$(grep -n '^MARKER="\$STATE_DIR/\${ALERT_ID}-last-fired-at"$' "$me" | head -1 | cut -d: -f1 || true)
+  ck 'the gate sits after the test-context gate and before the 24h gate' \
+     "$([[ -n "$i_test" && -n "$i_poc" && -n "$i_cool" && $i_test -lt $i_poc && $i_poc -lt $i_cool ]] && echo y || echo n)" 'y'
+  ck 'the ack lives beside the marker in STATE_DIR'             "$(grep -c '^ACK_FILE="\$STATE_DIR/\${ALERT_ID}.ack.json"$' "$me")" '1'
+  ck '--reconcile still globs ONLY the marker files'            "$(grep -c 'for f in "\$STATE_DIR"/\*-last-fired-at; do' "$me")" '1'
+
   # ── legacy 3-arg path byte-identical ─────────────────────────────────────
   # The documented verb for each legacy scenario, pinned. Any reordering of the gates, or a new
   # gate slipped in front of one, changes the verb a scenario produces and fails here.
@@ -497,7 +910,7 @@ self_test() {
 
   # ── VACUITY GUARDS ───────────────────────────────────────────────────────
   checks=$((checks+1))
-  if [[ $checks -lt 25 ]]; then
+  if [[ $checks -lt 90 ]]; then
     echo "  ✗ this suite ran only $checks checks — it is asserting almost nothing"; fails=$((fails+1))
   fi
   checks=$((checks+1))
@@ -511,7 +924,7 @@ self_test() {
     echo "ALERT_WRAPPER_VERDICT=FAIL"
     exit 1
   fi
-  echo "SELF-TEST: PASS — $checks checks (transitions both ways, silent-by-default, failed-send retains state, test context cannot clear production state, legacy 3-arg path byte-identical, reconcile emits nothing, sandbox containment both ways, seam-blindness guard)"
+  echo "SELF-TEST: PASS — $checks checks (transitions both ways, silent-by-default, failed-send retains state, test context cannot clear production state, legacy 3-arg path byte-identical, reconcile emits nothing, sandbox containment both ways, seam-blindness guard, page-on-change: new/same/prune/re-page, 24h/failed/dry-run keep the ack, UNKNOWN ack pages, both-or-neither, review_by inclusive, --acknowledge, --clear, legacy rows ignore keys, gate order)"
   echo "ALERT_WRAPPER_VERDICT=PASS"
   exit 0
 }
@@ -520,6 +933,7 @@ case "$MODE" in
   clear)     do_clear ;;
   reconcile) do_reconcile ;;
   self-test) self_test ;;
+  acknowledge) do_acknowledge ;;
 esac
 
 # Severity gate
@@ -553,6 +967,30 @@ if is_test_context; then
   exit 0
 fi
 
+# ── PAGE-ON-CHANGE GATE (OPS-ALARM-SINGLE-DERIVATION-W1 CH3) ───────────────────────────────────
+# AFTER the severity and test-context gates (a test process never reaches it, so it can never read
+# or write an ack) and BEFORE the 24h gate. For a row that never opted in, poc_eval resolves LEVEL
+# and nothing below does anything: that path is byte-identical to before.
+poc_eval
+case "$POC_MODE" in
+  EARNED)
+    if [[ "$POC_NNEW" -eq 0 ]]; then
+      if [[ "$POC_PRUNE_CHANGED" == 1 ]]; then
+        # shellcheck disable=SC2086
+        ack_write prune $POC_PRUNED || true
+      fi
+      log "UNCHANGED_SUPPRESSED: all $(keys_word "$POC_NKEYS") already acknowledged (ack pruned to ${POC_NPRUNED}); no POST, the 24h gate was not consulted"
+      exit 0
+    fi
+    ;;
+  NOT_EARNED)
+    log "PAGE_ON_CHANGE_NOT_EARNED: ${POC_REASON}; paging on the LEVEL (fail toward noise)"
+    ;;
+  EXPIRED)
+    log "PAGE_ON_CHANGE_EXPIRED: review_by ${POC_REVIEW_BY} has passed; paging on the LEVEL until the registry row is re-decided"
+    ;;
+esac
+
 # Cooldown gate
 MARKER="$STATE_DIR/${ALERT_ID}-last-fired-at"
 if [[ -f "$MARKER" ]]; then
@@ -584,6 +1022,12 @@ fi
 
 # === PATCH-B: resolver invocation — AFTER body-read, AFTER cooldown, BEFORE DRY_RUN gate ===
 BODY=$(resolve_template "$BODY")
+# PAGE-ON-CHANGE: the header is DERIVED from the ack here, never supplied by the caller.
+if [[ "$POC_MODE" == EARNED ]]; then
+  BODY="$(poc_header)"$'\n\n'"$BODY"
+elif [[ "$POC_MODE" == EXPIRED ]]; then
+  BODY="$BODY"$'\n\n'"⏳ page-on-change expired after review_by ${POC_REVIEW_BY}: this alert pages on the LEVEL again until its registry row is re-decided."
+fi
 BODY_LOG=$(echo "$BODY" | tr '\n' ' ' | head -c 1500)
 
 # PATCH-A: DRY_RUN_TG gate — synthetic smokes + cred probes go through ALL gate logic
@@ -605,6 +1049,15 @@ HTTP_CODE=$("$TG_CURL" -sS -o "$TMP_RESP" -w "%{http_code}" -X POST \
 if [[ "$HTTP_CODE" =~ ^2 ]]; then
   date +%s > "$MARKER"
   log "FIRED: HTTP $HTTP_CODE body=${BODY_LOG}"
+  if [[ "$POC_MODE" == EARNED ]]; then
+    # Only a DELIVERED page acknowledges: ack := every key present now (the page named them all).
+    # shellcheck disable=SC2086
+    if ack_write delivered $POC_KEYS; then
+      log "PAGED_NEW_KEY: new $(keys_word "$POC_NNEW"): ${POC_NEW} · acknowledged before: ${POC_NACKED} · ack re-seeded to the $(keys_word "$POC_NKEYS") present"
+    else
+      log "PAGED_NEW_KEY: new $(keys_word "$POC_NNEW"): ${POC_NEW} · the ack could NOT be re-seeded, so these keys will page again"
+    fi
+  fi
   rm -f "$TMP_RESP"
   exit 0
 else
