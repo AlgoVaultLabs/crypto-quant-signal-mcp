@@ -96,6 +96,11 @@ const TRANSPORT_STATUSES = new Set([408, 425, 429, 503]);
  * So `classify` accepts EITHER the allowlisted status or an ordinary 2xx/3xx, rather than
  * demanding the exemption be hit. An entry here means "this status is also fine", never "this
  * status is required" — otherwise the gate would red from the vantage where the link is healthy.
+ *
+ * A 403 that HEALS does not qualify. `https://opensource.org/licenses/MIT` answered 403 to a
+ * runner, a laptop and signal-1 alike on 2026-09-30 (deploy run 36688203040, 08:17Z) and 200 to
+ * all of them by 09:35Z — a third-party edge event, not a property of any vantage. It was fixed at
+ * the link (the badge now points at the LICENSE this package ships), not with an entry here.
  */
 export const EXPECTED_STATUS = new Map([
   [
@@ -464,12 +469,30 @@ async function main() {
   return EXIT[result.verdict];
 }
 
-main().then(
-  (code) => process.exit(code),
-  (err) => {
-    // The one outcome the token law forbids is dying with no token at all.
-    console.error(`✗ unhandled: ${err?.stack ?? err}`);
-    console.log(`${TOKEN}=INDETERMINATE`);
-    process.exit(EXIT.INDETERMINATE);
-  },
-);
+/**
+ * Run only when executed, so a test can import the REAL extractor and allowlist instead of a copy
+ * (OPS-README-LICENSE-LINK-W1). Compared by realpath on both sides: a symlinked checkout would
+ * otherwise skip `main()` and emit no token at all. `tests/unit/readme-license-link.test.ts`
+ * spawns the CLI and asserts the token, so a guard that silences it cannot land green.
+ */
+function invokedDirectly() {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  try {
+    return fs.realpathSync(argv1) === fs.realpathSync(url.fileURLToPath(import.meta.url));
+  } catch {
+    return url.pathToFileURL(argv1).href === import.meta.url;
+  }
+}
+
+if (invokedDirectly()) {
+  main().then(
+    (code) => process.exit(code),
+    (err) => {
+      // The one outcome the token law forbids is dying with no token at all.
+      console.error(`✗ unhandled: ${err?.stack ?? err}`);
+      console.log(`${TOKEN}=INDETERMINATE`);
+      process.exit(EXIT.INDETERMINATE);
+    },
+  );
+}
