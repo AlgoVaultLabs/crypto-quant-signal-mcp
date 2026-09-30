@@ -1,0 +1,940 @@
+{
+ "wave": "OPS-ADAPTER-HISTORY-ANCHOR-W1",
+ "note": "OAH-Q9: active promoted venues × faithful cron timeframes (isTimeframeFaithful), plus the served≠requested pairs outside that set (captured for REACH, not in the contract universe). The promoted set is read from the venues table (a lifecycle read, not a label) and pinned here; BITMART and EDGEX are retired and excluded.",
+ "promotedReadAt": "2026-09-30T02:52:36Z",
+ "promoted": [
+  "ASTER",
+  "BINANCE",
+  "BINGX",
+  "BITGET",
+  "BYBIT",
+  "GATE",
+  "HL",
+  "HTX",
+  "KUCOIN",
+  "MEXC",
+  "OKX",
+  "PHEMEX",
+  "WEEX",
+  "WHITEBIT",
+  "XT"
+ ],
+ "retiredExcluded": [
+  "BITMART",
+  "EDGEX"
+ ],
+ "cronTimeframes": [
+  "3m",
+  "5m",
+  "15m",
+  "30m",
+  "1h",
+  "2h",
+  "4h",
+  "8h",
+  "12h",
+  "1d"
+ ],
+ "pairs": [
+  {
+   "pair": "ASTER/3m",
+   "faithful": true,
+   "servedMs": 180000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "ASTER/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "ASTER/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "ASTER/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "ASTER/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "ASTER/2h",
+   "faithful": true,
+   "servedMs": 7200000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "ASTER/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "ASTER/8h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "ASTER/12h",
+   "faithful": true,
+   "servedMs": 43200000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "ASTER/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "BINANCE/3m",
+   "faithful": true,
+   "servedMs": 180000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "BINANCE/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "BINANCE/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "BINANCE/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "BINANCE/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "BINANCE/2h",
+   "faithful": true,
+   "servedMs": 7200000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "BINANCE/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "BINANCE/8h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "BINANCE/12h",
+   "faithful": true,
+   "servedMs": 43200000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "BINANCE/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "BINGX/3m",
+   "faithful": true,
+   "servedMs": 180000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "BINGX/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "BINGX/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "BINGX/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "BINGX/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "BINGX/2h",
+   "faithful": true,
+   "servedMs": 7200000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "BINGX/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "BINGX/8h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "BINGX/12h",
+   "faithful": true,
+   "servedMs": 43200000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "BINGX/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "BITGET/3m",
+   "faithful": true,
+   "servedMs": 180000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "BITGET/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "BITGET/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "BITGET/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "BITGET/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "BITGET/2h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "BITGET/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "BITGET/8h",
+   "faithful": true,
+   "servedMs": 21600000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "BITGET/12h",
+   "faithful": true,
+   "servedMs": 43200000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "BITGET/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "BYBIT/3m",
+   "faithful": true,
+   "servedMs": 180000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "BYBIT/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "BYBIT/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "BYBIT/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "BYBIT/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "BYBIT/2h",
+   "faithful": true,
+   "servedMs": 7200000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "BYBIT/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "BYBIT/8h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "BYBIT/12h",
+   "faithful": true,
+   "servedMs": 43200000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "BYBIT/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "GATE/3m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "GATE/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "GATE/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "GATE/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "GATE/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "GATE/2h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "GATE/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "GATE/8h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "GATE/12h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "GATE/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "HL/3m",
+   "faithful": true,
+   "servedMs": 180000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "HL/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "HL/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "HL/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "HL/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "HL/2h",
+   "faithful": true,
+   "servedMs": 7200000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "HL/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "HL/8h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "HL/12h",
+   "faithful": true,
+   "servedMs": 43200000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "HL/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "HTX/3m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "HTX/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "HTX/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "HTX/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "HTX/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "HTX/2h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "HTX/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "HTX/8h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "HTX/12h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "HTX/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "KUCOIN/3m",
+   "faithful": true,
+   "servedMs": 180000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "KUCOIN/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "KUCOIN/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "KUCOIN/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "KUCOIN/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "KUCOIN/2h",
+   "faithful": true,
+   "servedMs": 7200000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "KUCOIN/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "KUCOIN/8h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "KUCOIN/12h",
+   "faithful": true,
+   "servedMs": 43200000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "KUCOIN/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "MEXC/3m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "MEXC/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "MEXC/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "MEXC/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "MEXC/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "MEXC/2h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "MEXC/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "MEXC/8h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "MEXC/12h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "MEXC/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "OKX/3m",
+   "faithful": true,
+   "servedMs": 180000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "OKX/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "OKX/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "OKX/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "OKX/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "OKX/2h",
+   "faithful": true,
+   "servedMs": 7200000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "OKX/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "OKX/8h",
+   "faithful": true,
+   "servedMs": 28800000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "OKX/12h",
+   "faithful": true,
+   "servedMs": 43200000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "OKX/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "PHEMEX/3m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "PHEMEX/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "PHEMEX/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "PHEMEX/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "PHEMEX/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "PHEMEX/2h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "PHEMEX/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "PHEMEX/8h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "PHEMEX/12h",
+   "faithful": false,
+   "servedMs": 86400000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "PHEMEX/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "WEEX/3m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "WEEX/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "WEEX/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "WEEX/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "WEEX/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "WEEX/2h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "WEEX/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "WEEX/8h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "WEEX/12h",
+   "faithful": true,
+   "servedMs": 43200000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "WEEX/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "WHITEBIT/3m",
+   "faithful": false,
+   "servedMs": 900000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "WHITEBIT/5m",
+   "faithful": false,
+   "servedMs": 900000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "WHITEBIT/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "WHITEBIT/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "WHITEBIT/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "WHITEBIT/2h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "WHITEBIT/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "WHITEBIT/8h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "WHITEBIT/12h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "WHITEBIT/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  },
+  {
+   "pair": "XT/3m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 180000
+  },
+  {
+   "pair": "XT/5m",
+   "faithful": true,
+   "servedMs": 300000,
+   "requestedMs": 300000
+  },
+  {
+   "pair": "XT/15m",
+   "faithful": true,
+   "servedMs": 900000,
+   "requestedMs": 900000
+  },
+  {
+   "pair": "XT/30m",
+   "faithful": true,
+   "servedMs": 1800000,
+   "requestedMs": 1800000
+  },
+  {
+   "pair": "XT/1h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 3600000
+  },
+  {
+   "pair": "XT/2h",
+   "faithful": true,
+   "servedMs": 3600000,
+   "requestedMs": 7200000
+  },
+  {
+   "pair": "XT/4h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 14400000
+  },
+  {
+   "pair": "XT/8h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 28800000
+  },
+  {
+   "pair": "XT/12h",
+   "faithful": true,
+   "servedMs": 14400000,
+   "requestedMs": 43200000
+  },
+  {
+   "pair": "XT/1d",
+   "faithful": true,
+   "servedMs": 86400000,
+   "requestedMs": 86400000
+  }
+ ]
+}

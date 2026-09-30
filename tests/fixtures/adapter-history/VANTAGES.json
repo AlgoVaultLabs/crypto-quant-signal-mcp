@@ -1,0 +1,2438 @@
+{
+ "wave": "OPS-ADAPTER-HISTORY-ANCHOR-W1",
+ "note": "Per scenario: the vantage that captured the fixture (primary) and every vantage whose replay of the SAME adapter requests, parsed by the SAME adapter, agrees on served grid, phase and error class. Mac = operator laptop; aoe-1 = 178.104.200.44 (not the prod IP, so the prod venue budgets are untouched). WEEX primary is aoe-1: the adapter timed out from the Mac at capture time (a Mac-side replay agreed later).",
+ "scenarios": [
+  {
+   "id": "ASTER/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "ASTER/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINANCE/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BINGX/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/1h/E",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/2h/D2",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/8h/D2",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BITGET/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "BYBIT/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "GATE/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HL/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "HTX/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "KUCOIN/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "MEXC/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/1h/E",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "OKX/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "PHEMEX/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WEEX/12h/D",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/12h/R",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/15m/D",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/15m/R",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/1d/D",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/1d/R",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/1h/D",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/1h/R",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/2h/D",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/2h/R",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/30m/D",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/30m/R",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/3m/D",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/3m/R",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/4h/D",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/4h/R",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/5m/D",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/5m/R",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/8h/D",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WEEX/8h/R",
+   "primary": "aoe-1",
+   "agreeing": [
+    "aoe-1",
+    "mac"
+   ]
+  },
+  {
+   "id": "WHITEBIT/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "WHITEBIT/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/12h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/12h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/15m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/15m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/1d/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/1d/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/1h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/1h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/2h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/2h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/30m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/30m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/3m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/3m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/4h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/4h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/5m/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/5m/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/8h/D",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  },
+  {
+   "id": "XT/8h/R",
+   "primary": "mac",
+   "agreeing": [
+    "mac",
+    "aoe-1"
+   ]
+  }
+ ]
+}

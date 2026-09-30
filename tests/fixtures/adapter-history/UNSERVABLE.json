@@ -1,0 +1,16 @@
+{
+ "wave": "OPS-ADAPTER-HISTORY-ANCHOR-W1",
+ "note": "OAH-Q9: pairs the served lookup reports as native but the venue does not serve. SKIPPED_UNSERVABLE in the contract and the canary. No served-map edit in this wave; the served-map truth moves in OPS-SERVED-CANDLE-TRUTH-W1. Evidence: the R and D scenarios of each pair in its venue fixture, agreeing across vantages in VANTAGES.json.",
+ "pairs": [
+  {
+   "pair": "OKX/8h",
+   "signature": "venue-rejects-interval",
+   "reason": "okx.ts maps 8h to '8H'; OKX offers no 8H bar and answers code 51000 'Parameter bar error' on /market/candles and /market/history-candles, so getCandles throws"
+  },
+  {
+   "pair": "BYBIT/8h",
+   "signature": "venue-returns-empty",
+   "reason": "bybit.ts maps 8h to '480'; Bybit answers retCode 0 with an empty list for interval 480, so getCandles returns []"
+  }
+ ]
+}

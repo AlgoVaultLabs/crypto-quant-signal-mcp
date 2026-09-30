@@ -1,0 +1,3602 @@
+{
+ "wave": "OPS-ADAPTER-HISTORY-ANCHOR-W1",
+ "note": "REPORT-class page facts per pair and scenario (OAH-Q1). A venue changing its reach reddens the contract suite; update consciously, never absorb.",
+ "pairs": {
+  "ASTER/3m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "ASTER/5m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "ASTER/15m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "ASTER/30m": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 16,
+    "outOfRangeBars": 184,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "ASTER/1h": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 16,
+    "outOfRangeBars": 184,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "ASTER/2h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 12,
+    "outOfRangeBars": 188,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "ASTER/4h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 12,
+    "outOfRangeBars": 188,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "ASTER/8h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 8,
+    "outOfRangeBars": 192,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "ASTER/12h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 8,
+    "outOfRangeBars": 192,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "ASTER/1d": {
+   "R": {
+    "returned": 7,
+    "inWindow": 7,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 6,
+    "outOfRangeBars": 194,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINANCE/3m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINANCE/5m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINANCE/15m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINANCE/30m": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 16,
+    "outOfRangeBars": 184,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINANCE/1h": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 16,
+    "outOfRangeBars": 184,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINANCE/2h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 12,
+    "outOfRangeBars": 188,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINANCE/4h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 12,
+    "outOfRangeBars": 188,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINANCE/8h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 8,
+    "outOfRangeBars": 192,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINANCE/12h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 8,
+    "outOfRangeBars": 192,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINANCE/1d": {
+   "R": {
+    "returned": 7,
+    "inWindow": 7,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 6,
+    "outOfRangeBars": 194,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINGX/3m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINGX/5m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINGX/15m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINGX/30m": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 222,
+    "inWindow": 16,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINGX/1h": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 222,
+    "inWindow": 16,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINGX/2h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 218,
+    "inWindow": 12,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINGX/4h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 218,
+    "inWindow": 12,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINGX/8h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 214,
+    "inWindow": 8,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINGX/12h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 214,
+    "inWindow": 8,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BINGX/1d": {
+   "R": {
+    "returned": 7,
+    "inWindow": 7,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 212,
+    "inWindow": 6,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BITGET/3m": {
+   "R": {
+    "returned": 26,
+    "inWindow": 25,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 199,
+    "inWindow": 24,
+    "outOfRangeBars": 175,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BITGET/5m": {
+   "R": {
+    "returned": 26,
+    "inWindow": 25,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 199,
+    "inWindow": 24,
+    "outOfRangeBars": 175,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BITGET/15m": {
+   "R": {
+    "returned": 26,
+    "inWindow": 25,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 199,
+    "inWindow": 24,
+    "outOfRangeBars": 175,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BITGET/30m": {
+   "R": {
+    "returned": 18,
+    "inWindow": 17,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 199,
+    "inWindow": 16,
+    "outOfRangeBars": 183,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BITGET/1h": {
+   "R": {
+    "returned": 18,
+    "inWindow": 17,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 199,
+    "inWindow": 16,
+    "outOfRangeBars": 183,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "E": {
+    "returned": 200,
+    "inWindow": 0,
+    "outOfRangeBars": 200,
+    "offGridBars": 0,
+    "expectedSlots": 240,
+    "emptyWindow": true,
+    "frontGapBars": null,
+    "gapSlots": 0,
+    "headGapBars": null
+   }
+  },
+  "BITGET/2h": {
+   "R": {
+    "returned": 14,
+    "inWindow": 13,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 0,
+    "outOfRangeBars": 200,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": true,
+    "frontGapBars": null,
+    "gapSlots": 0,
+    "headGapBars": null
+   },
+   "D2": {
+    "returned": 200,
+    "inWindow": 0,
+    "outOfRangeBars": 200,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": true,
+    "frontGapBars": null,
+    "gapSlots": 0,
+    "headGapBars": null
+   }
+  },
+  "BITGET/4h": {
+   "R": {
+    "returned": 14,
+    "inWindow": 13,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 199,
+    "inWindow": 12,
+    "outOfRangeBars": 187,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BITGET/8h": {
+   "R": {
+    "returned": 10,
+    "inWindow": 9,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 0,
+    "outOfRangeBars": 200,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": true,
+    "frontGapBars": null,
+    "gapSlots": 0,
+    "headGapBars": null
+   },
+   "D2": {
+    "returned": 200,
+    "inWindow": 0,
+    "outOfRangeBars": 200,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": true,
+    "frontGapBars": null,
+    "gapSlots": 0,
+    "headGapBars": null
+   }
+  },
+  "BITGET/12h": {
+   "R": {
+    "returned": 10,
+    "inWindow": 9,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 180,
+    "inWindow": 8,
+    "outOfRangeBars": 172,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BITGET/1d": {
+   "R": {
+    "returned": 8,
+    "inWindow": 7,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 90,
+    "inWindow": 6,
+    "outOfRangeBars": 84,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BYBIT/3m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BYBIT/5m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BYBIT/15m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BYBIT/30m": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 16,
+    "outOfRangeBars": 184,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BYBIT/1h": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 16,
+    "outOfRangeBars": 184,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BYBIT/2h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 12,
+    "outOfRangeBars": 188,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BYBIT/4h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 12,
+    "outOfRangeBars": 188,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BYBIT/12h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 8,
+    "outOfRangeBars": 192,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "BYBIT/1d": {
+   "R": {
+    "returned": 7,
+    "inWindow": 7,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 6,
+    "outOfRangeBars": 194,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "GATE/3m": {
+   "R": {
+    "returned": 26,
+    "inWindow": 25,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 201,
+    "inWindow": 24,
+    "outOfRangeBars": 177,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "GATE/5m": {
+   "R": {
+    "returned": 26,
+    "inWindow": 25,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 201,
+    "inWindow": 24,
+    "outOfRangeBars": 177,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "GATE/15m": {
+   "R": {
+    "returned": 26,
+    "inWindow": 25,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 201,
+    "inWindow": 24,
+    "outOfRangeBars": 177,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "GATE/30m": {
+   "R": {
+    "returned": 18,
+    "inWindow": 17,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 201,
+    "inWindow": 16,
+    "outOfRangeBars": 185,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "GATE/1h": {
+   "R": {
+    "returned": 18,
+    "inWindow": 17,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 201,
+    "inWindow": 16,
+    "outOfRangeBars": 185,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "GATE/2h": {
+   "R": {
+    "returned": 14,
+    "inWindow": 13,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 201,
+    "inWindow": 12,
+    "outOfRangeBars": 189,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "GATE/4h": {
+   "R": {
+    "returned": 14,
+    "inWindow": 13,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 201,
+    "inWindow": 12,
+    "outOfRangeBars": 189,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "GATE/8h": {
+   "R": {
+    "returned": 10,
+    "inWindow": 9,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 201,
+    "inWindow": 8,
+    "outOfRangeBars": 193,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "GATE/12h": {
+   "R": {
+    "returned": 10,
+    "inWindow": 9,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 201,
+    "inWindow": 8,
+    "outOfRangeBars": 193,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "GATE/1d": {
+   "R": {
+    "returned": 8,
+    "inWindow": 7,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 201,
+    "inWindow": 6,
+    "outOfRangeBars": 195,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HL/3m": {
+   "R": {
+    "returned": 26,
+    "inWindow": 25,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 25,
+    "inWindow": 24,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HL/5m": {
+   "R": {
+    "returned": 26,
+    "inWindow": 25,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 25,
+    "inWindow": 24,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HL/15m": {
+   "R": {
+    "returned": 26,
+    "inWindow": 25,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 25,
+    "inWindow": 24,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HL/30m": {
+   "R": {
+    "returned": 18,
+    "inWindow": 17,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 17,
+    "inWindow": 16,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HL/1h": {
+   "R": {
+    "returned": 18,
+    "inWindow": 17,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 17,
+    "inWindow": 16,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HL/2h": {
+   "R": {
+    "returned": 14,
+    "inWindow": 13,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 13,
+    "inWindow": 12,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HL/4h": {
+   "R": {
+    "returned": 14,
+    "inWindow": 13,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 13,
+    "inWindow": 12,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HL/8h": {
+   "R": {
+    "returned": 10,
+    "inWindow": 9,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 9,
+    "inWindow": 8,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HL/12h": {
+   "R": {
+    "returned": 10,
+    "inWindow": 9,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 9,
+    "inWindow": 8,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HL/1d": {
+   "R": {
+    "returned": 8,
+    "inWindow": 7,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 7,
+    "inWindow": 6,
+    "outOfRangeBars": 1,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HTX/3m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HTX/5m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HTX/15m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HTX/30m": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 222,
+    "inWindow": 16,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HTX/1h": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 222,
+    "inWindow": 16,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HTX/2h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 218,
+    "inWindow": 12,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HTX/4h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 218,
+    "inWindow": 12,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HTX/8h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 214,
+    "inWindow": 8,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HTX/12h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 214,
+    "inWindow": 8,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "HTX/1d": {
+   "R": {
+    "returned": 7,
+    "inWindow": 7,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 212,
+    "inWindow": 6,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "KUCOIN/3m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "KUCOIN/5m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "KUCOIN/15m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 24,
+    "outOfRangeBars": 176,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "KUCOIN/30m": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 16,
+    "outOfRangeBars": 184,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "KUCOIN/1h": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 16,
+    "outOfRangeBars": 184,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "KUCOIN/2h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 12,
+    "outOfRangeBars": 188,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "KUCOIN/4h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 12,
+    "outOfRangeBars": 188,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "KUCOIN/8h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 8,
+    "outOfRangeBars": 192,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "KUCOIN/12h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 8,
+    "outOfRangeBars": 192,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "KUCOIN/1d": {
+   "R": {
+    "returned": 7,
+    "inWindow": 7,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 200,
+    "inWindow": 6,
+    "outOfRangeBars": 194,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "MEXC/3m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "MEXC/5m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "MEXC/15m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "MEXC/30m": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 222,
+    "inWindow": 16,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "MEXC/1h": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 222,
+    "inWindow": 16,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "MEXC/2h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 218,
+    "inWindow": 12,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "MEXC/4h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 218,
+    "inWindow": 12,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "MEXC/8h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 214,
+    "inWindow": 8,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "MEXC/12h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 214,
+    "inWindow": 8,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "MEXC/1d": {
+   "R": {
+    "returned": 7,
+    "inWindow": 7,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 212,
+    "inWindow": 6,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "OKX/3m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 100,
+    "inWindow": 24,
+    "outOfRangeBars": 76,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "OKX/5m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 100,
+    "inWindow": 24,
+    "outOfRangeBars": 76,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "OKX/15m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 100,
+    "inWindow": 24,
+    "outOfRangeBars": 76,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "OKX/30m": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 100,
+    "inWindow": 16,
+    "outOfRangeBars": 84,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "OKX/1h": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 100,
+    "inWindow": 16,
+    "outOfRangeBars": 84,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "E": {
+    "returned": 100,
+    "inWindow": 0,
+    "outOfRangeBars": 100,
+    "offGridBars": 0,
+    "expectedSlots": 240,
+    "emptyWindow": true,
+    "frontGapBars": null,
+    "gapSlots": 0,
+    "headGapBars": null
+   }
+  },
+  "OKX/2h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 100,
+    "inWindow": 12,
+    "outOfRangeBars": 88,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "OKX/4h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 100,
+    "inWindow": 12,
+    "outOfRangeBars": 88,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "OKX/12h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 100,
+    "inWindow": 8,
+    "outOfRangeBars": 92,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "OKX/1d": {
+   "R": {
+    "returned": 7,
+    "inWindow": 7,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 100,
+    "inWindow": 6,
+    "outOfRangeBars": 94,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "PHEMEX/3m": {
+   "R": {
+    "returned": 24,
+    "inWindow": 24,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 229,
+    "inWindow": 24,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "PHEMEX/5m": {
+   "R": {
+    "returned": 24,
+    "inWindow": 24,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 229,
+    "inWindow": 24,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "PHEMEX/15m": {
+   "R": {
+    "returned": 24,
+    "inWindow": 24,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 229,
+    "inWindow": 24,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "PHEMEX/30m": {
+   "R": {
+    "returned": 16,
+    "inWindow": 16,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 221,
+    "inWindow": 16,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "PHEMEX/1h": {
+   "R": {
+    "returned": 16,
+    "inWindow": 16,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 221,
+    "inWindow": 16,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "PHEMEX/2h": {
+   "R": {
+    "returned": 12,
+    "inWindow": 12,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 217,
+    "inWindow": 12,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "PHEMEX/4h": {
+   "R": {
+    "returned": 12,
+    "inWindow": 12,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 217,
+    "inWindow": 12,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "PHEMEX/8h": {
+   "R": {
+    "returned": 8,
+    "inWindow": 8,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 213,
+    "inWindow": 8,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "PHEMEX/12h": {
+   "R": {
+    "returned": 8,
+    "inWindow": 8,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 213,
+    "inWindow": 8,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "PHEMEX/1d": {
+   "R": {
+    "returned": 6,
+    "inWindow": 6,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 211,
+    "inWindow": 6,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WEEX/3m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WEEX/5m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WEEX/15m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WEEX/30m": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 222,
+    "inWindow": 16,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WEEX/1h": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 222,
+    "inWindow": 16,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WEEX/2h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 218,
+    "inWindow": 12,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WEEX/4h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 218,
+    "inWindow": 12,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WEEX/8h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 214,
+    "inWindow": 8,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WEEX/12h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 214,
+    "inWindow": 8,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WEEX/1d": {
+   "R": {
+    "returned": 7,
+    "inWindow": 7,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 212,
+    "inWindow": 6,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WHITEBIT/3m": {
+   "R": {
+    "returned": 24,
+    "inWindow": 24,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 229,
+    "inWindow": 24,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WHITEBIT/5m": {
+   "R": {
+    "returned": 24,
+    "inWindow": 24,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 229,
+    "inWindow": 24,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WHITEBIT/15m": {
+   "R": {
+    "returned": 24,
+    "inWindow": 24,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 229,
+    "inWindow": 24,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WHITEBIT/30m": {
+   "R": {
+    "returned": 16,
+    "inWindow": 16,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 221,
+    "inWindow": 16,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WHITEBIT/1h": {
+   "R": {
+    "returned": 16,
+    "inWindow": 16,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 221,
+    "inWindow": 16,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WHITEBIT/2h": {
+   "R": {
+    "returned": 12,
+    "inWindow": 12,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 217,
+    "inWindow": 12,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WHITEBIT/4h": {
+   "R": {
+    "returned": 12,
+    "inWindow": 12,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 217,
+    "inWindow": 12,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WHITEBIT/8h": {
+   "R": {
+    "returned": 8,
+    "inWindow": 8,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 213,
+    "inWindow": 8,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WHITEBIT/12h": {
+   "R": {
+    "returned": 8,
+    "inWindow": 8,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 213,
+    "inWindow": 8,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "WHITEBIT/1d": {
+   "R": {
+    "returned": 6,
+    "inWindow": 6,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 211,
+    "inWindow": 6,
+    "outOfRangeBars": 205,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "XT/3m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "XT/5m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "XT/15m": {
+   "R": {
+    "returned": 25,
+    "inWindow": 25,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 230,
+    "inWindow": 24,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 24,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "XT/30m": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 222,
+    "inWindow": 16,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "XT/1h": {
+   "R": {
+    "returned": 17,
+    "inWindow": 17,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 222,
+    "inWindow": 16,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 16,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "XT/2h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 218,
+    "inWindow": 12,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "XT/4h": {
+   "R": {
+    "returned": 13,
+    "inWindow": 13,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 218,
+    "inWindow": 12,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 12,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "XT/8h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 214,
+    "inWindow": 8,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "XT/12h": {
+   "R": {
+    "returned": 9,
+    "inWindow": 9,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 214,
+    "inWindow": 8,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 8,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  },
+  "XT/1d": {
+   "R": {
+    "returned": 7,
+    "inWindow": 7,
+    "outOfRangeBars": 0,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   },
+   "D": {
+    "returned": 212,
+    "inWindow": 6,
+    "outOfRangeBars": 206,
+    "offGridBars": 0,
+    "expectedSlots": 6,
+    "emptyWindow": false,
+    "frontGapBars": 0,
+    "gapSlots": 0,
+    "headGapBars": 0
+   }
+  }
+ }
+}
