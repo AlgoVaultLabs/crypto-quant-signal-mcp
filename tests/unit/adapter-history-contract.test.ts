@@ -17,16 +17,18 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  ReplayVenue, measure,
+  ReplayVenue, SYNTHETIC_VENUES, measure,
   type Bar, type Control, type Measurement, type RunResult, type Scenario, type Unservable, type VenueFixture,
 } from '../harness/adapter-history-model.js';
+import { SyntheticVenue, listingFromProbes } from '../harness/adapter-history-synthetic.js';
+import { historyMetaOf } from '../../src/lib/adapters/_history-plan.js';
 
 const { replay } = vi.hoisted(() => ({ replay: { venue: null as null | { answer(url: string, body?: string | null): unknown } } }));
 
 vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (orig) => ({
   ...(await orig<typeof import('../../src/lib/adapters/_upstream-fetch.js')>()),
   upstreamFetch: vi.fn(async (_cfg: unknown, req: { url: string; body?: string }) => {
-    if (!replay.venue) throw new Error('adapter-history-contract: no replay venue loaded');
+    if (!replay.venue) throw new Error('adapter-history-contract: no venue loaded');
     return replay.venue.answer(req.url, req.body ?? null);
   }),
 }));
@@ -82,28 +84,31 @@ const unservable = readJson<{ pairs: Unservable[] }>('UNSERVABLE.json').pairs;
 const controls = readJson<{ controls: Control[] }>('CONTROLS.json').controls;
 const vantages = readJson<{ scenarios: { id: string; agreeing: string[]; singleVantageReason?: string }[] }>('VANTAGES.json').scenarios;
 const fixtures: VenueFixture[] = Object.keys(VENUES).map((v) => readJson<VenueFixture>(`${v}.json`));
+const modelProbes = readJson<{ bitgetListingMs: number; okxListingMs: number }>('MODEL-PROBES.json');
+const listingOf = listingFromProbes(modelProbes);
 
 const netSpy = vi.fn(() => { throw new Error('adapter-history-contract: a real network call was attempted'); });
 let measured: Measurement;
 
 async function runScenario(s: Scenario): Promise<RunResult> {
-  const venue = new ReplayVenue();
-  venue.load(s);
-  replay.venue = venue;
+  const synthetic = SYNTHETIC_VENUES.has(s.venue);
+  const venue = synthetic ? null : new ReplayVenue();
+  if (venue) { venue.load(s); replay.venue = venue; }
+  else replay.venue = new SyntheticVenue(s.venue as 'BITGET' | 'OKX', () => Date.now(), listingOf);
   vi.setSystemTime(s.calledAt);
   let out: Bar[] = [];
   let err: string | null = null;
   let meta: unknown = undefined;
   try {
     const page = await VENUES[s.venue].make().getCandles(s.coin, s.tf, s.from, undefined, s.to ?? undefined);
-    meta = Object.getOwnPropertyDescriptor(page, 'meta')?.value;
+    meta = historyMetaOf(page);
     out = page.map((c) => ({ ts: c.time, open: c.open }));
   } catch (e) {
     err = e instanceof Error ? e.message : String(e);
   } finally {
     replay.venue = null;
   }
-  return { out, err, drained: venue.drained(), meta };
+  return { out, err, drained: venue ? venue.drained() : true, meta, synthetic };
 }
 
 beforeAll(async () => {

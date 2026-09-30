@@ -180,3 +180,20 @@ construction.
 too (the hole is a bug, never reproduced on purpose), clipped to the union of `-v1`'s own requested fetch extents
 so its definition — including the cut window on coarser-served pairs — does not move. The deprecation notice and the consumer
 migration table are added with the consumer registry.
+
+## 6. Candle history input — anchored on the served grid (OPS-ADAPTER-HISTORY-ANCHOR-W1)
+
+**What changed.** From `T_ADAPTER` onward, venue history fetches are anchored on the **served** candle grid. `T_ADAPTER` is the start of the first production container running the change, recorded in the wave's status entry.
+
+- **The anchor rule.** A history page spans `page cap × served step`. The served step comes from each adapter's own `servedIntervalMs`, the leaf that `tf-support` projects.
+- **What it fixes.** Before this change, the Bitget adapter sized its history page on the *requested* step. The venue serves 2h as 1-hour candles and 8h as 6-hour candles, so every such page began well after its `startTime`. The front gap then fed the σ history of both `-v1` and `-v2` on those two timeframes.
+- **What is complete now.** From `T_ADAPTER`, BITGET 2h and 8h σ history is complete on the served grid. Rows labelled before the stamp keep the candle input they had.
+
+**What does not change.** No other venue's or timeframe's candle input moves. The recent branch, which serving reads, returns the same bars as before. This is proven by the wave's differential test against the retired code.
+
+**What every page reports.** Each page an adapter returns now carries non-enumerable page facts, read with `historyMetaOf(page)` from `src/lib/adapters/_history-plan.ts`:
+
+- the front gap, the holes, the head gap and the out-of-range bars;
+- whether the adapter returned the recent page because the history window held nothing (`substitutedNewest`).
+
+A consumer that counts gaps can read these facts instead of re-deriving them. A copy of the page carries no facts: that means unknown, never zero.

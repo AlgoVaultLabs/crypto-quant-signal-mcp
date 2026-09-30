@@ -15,9 +15,21 @@
  *   - gapSlots counts holes inside [open_0, last in-window open].
  *   - headGapBars counts closed slots after the last in-window open, up to e_last.
  *   - outOfRangeBars counts bars outside the window: [from, to) when `to` is given, else [from, now].
- * CH2 moves this accounting into src/lib/adapters/_history-plan.ts (accountPage) and this file imports it
- * from there. The contract then reads the one derivation.
+ * CH2 moved the accounting into src/lib/adapters/_history-plan.ts (`accountPage`), and this file re-exports it
+ * from there, so the contract, the adapters' own meta and the canary all read ONE derivation.
+ *
+ * Bitget and OKX are answered by the parametric venue in adapter-history-synthetic.ts. CH2 re-anchors their
+ * history request, and the capture cannot answer a request it never saw. The model is proven page-for-page
+ * against every captured Bitget/OKX page (adapter-history-synthetic-fidelity.test.ts).
  */
+
+import { accountPage, incompleteWindow, type PageFacts } from '../../src/lib/adapters/_history-plan.js';
+
+export { accountPage, type PageFacts };
+export type PageAccount = PageFacts;
+
+/** Venues answered by the synthetic model rather than by the capture (the ones CH2 edits). */
+export const SYNTHETIC_VENUES: ReadonlySet<string> = new Set(['BITGET', 'OKX']);
 
 export interface Bar { ts: number; open: number }
 
@@ -151,63 +163,8 @@ export class ReplayVenue {
 
 // ── accounting oracle ────────────────────────────────────────────────────────────────────────────────
 
-export interface PageAccount {
-  returned: number;
-  inWindow: number;
-  outOfRangeBars: number;
-  offGridBars: number;
-  expectedSlots: number;
-  emptyWindow: boolean;
-  frontGapBars: number | null;
-  gapSlots: number;
-  headGapBars: number | null;
-}
-
-const mod = (a: number, m: number) => ((a % m) + m) % m;
-
-/**
- * Account one returned page against its window, on the served grid.
- *   window = [from, to) when `to` is given; else [from, now] (the forming slot may be present, never required).
- *   phase  = open_0 mod s (from the data); `declaredPhaseMs` only when the window holds no bar.
- */
-export function accountPage(p: {
-  bars: readonly Bar[];
-  servedStepMs: number;
-  from: number;
-  to: number | null;
-  nowMs: number;
-  declaredPhaseMs?: number;
-}): PageAccount {
-  const s = p.servedStepMs;
-  const inW = (t: number) => (p.to != null ? t >= p.from && t < p.to : t >= p.from && t <= p.nowMs);
-  const times = [...new Set(p.bars.map((b) => b.ts))].sort((a, b) => a - b);
-  const win = times.filter(inW);
-  const outOfRangeBars = p.bars.length - p.bars.filter((b) => inW(b.ts)).length;
-  const phase = win.length > 0 ? mod(win[0], s) : (p.declaredPhaseMs ?? 0);
-  const offGridBars = win.filter((t) => mod(t - phase, s) !== 0).length;
-  const eFirst = p.from + mod(phase - p.from, s);
-  // last expected slot: D → last slot opening before `to`; R → last CLOSED slot (open + s <= now)
-  const eLast = p.to != null
-    ? p.to - 1 - mod(p.to - 1 - phase, s)
-    : p.nowMs - s - mod(p.nowMs - s - phase, s);
-  const expectedSlots = eLast >= eFirst ? Math.floor((eLast - eFirst) / s) + 1 : 0;
-  if (win.length === 0) {
-    return { returned: p.bars.length, inWindow: 0, outOfRangeBars, offGridBars: 0, expectedSlots, emptyWindow: true, frontGapBars: null, gapSlots: 0, headGapBars: null };
-  }
-  const onGrid = win.filter((t) => mod(t - phase, s) === 0);
-  const first = onGrid[0] ?? win[0];
-  const last = onGrid[onGrid.length - 1] ?? win[win.length - 1];
-  const frontGapBars = Math.max(0, Math.round((first - eFirst) / s));
-  const spanSlots = Math.round((last - first) / s) + 1;
-  const gapSlots = Math.max(0, spanSlots - onGrid.length);
-  const headGapBars = Math.max(0, Math.round((eLast - last) / s));
-  return { returned: p.bars.length, inWindow: win.length, outOfRangeBars, offGridBars, expectedSlots, emptyWindow: false, frontGapBars, gapSlots, headGapBars };
-}
-
 /** A window the page did not cover completely (the only shape C1 can take). */
-export function incomplete(a: PageAccount): boolean {
-  return a.emptyWindow ? a.expectedSlots > 0 : (a.frontGapBars ?? 0) > 0 || a.gapSlots > 0 || a.offGridBars > 0 || (a.headGapBars ?? 0) > 0;
-}
+export const incomplete = incompleteWindow;
 
 /**
  * C3 (OAH-Q5): adapter-side substitution. The adapter made a range request (≥ 2 requests: the recent probe,
@@ -239,7 +196,9 @@ export interface Control {
 
 export interface Unservable { pair: string; signature: 'venue-rejects-interval' | 'venue-returns-empty'; reason: string }
 
-export interface RunResult { out: Bar[]; err: string | null; drained: boolean; meta: unknown }
+/** `synthetic`: the scenario ran against the synthetic venue, so the adapter may legitimately differ from the
+ *  capture (CH2 re-anchors it); the differential test owns that comparison. */
+export interface RunResult { out: Bar[]; err: string | null; drained: boolean; meta: unknown; synthetic?: boolean }
 
 export type ReachFacts = Pick<PageAccount, 'returned' | 'inWindow' | 'outOfRangeBars' | 'offGridBars' | 'expectedSlots' | 'emptyWindow' | 'frontGapBars' | 'gapSlots' | 'headGapBars'>;
 
@@ -304,7 +263,7 @@ export async function measure(
       const r = await run(s);
       results.set(s, r);
       const recorded = JSON.stringify(s.output);
-      if (!r.drained || JSON.stringify(r.out) !== recorded || (r.err == null) !== (s.error == null)) {
+      if (!r.drained || (!r.synthetic && JSON.stringify(r.out) !== recorded) || (r.err == null) !== (s.error == null)) {
         replayFailures.push(`${s.venue}/${s.tf}/${s.tag}${r.err ? ` (${r.err})` : ''}`);
       }
     }

@@ -1,44 +1,5 @@
 {
  "wave": "OPS-ADAPTER-HISTORY-ANCHOR-W1",
- "note": "EDIT-class violations measured by tests/harness/adapter-history-model.ts measure(); CH1 pins them, CH2 empties this list (OAH-Q1).",
- "entries": [
-  {
-   "venue": "BITGET",
-   "tf": "1h",
-   "clause": "C3",
-   "disposition": "report",
-   "scenarios": [
-    "E"
-   ]
-  },
-  {
-   "venue": "BITGET",
-   "tf": "2h",
-   "clause": "C1",
-   "disposition": "fix",
-   "scenarios": [
-    "D",
-    "D2"
-   ]
-  },
-  {
-   "venue": "BITGET",
-   "tf": "8h",
-   "clause": "C1",
-   "disposition": "fix",
-   "scenarios": [
-    "D",
-    "D2"
-   ]
-  },
-  {
-   "venue": "OKX",
-   "tf": "1h",
-   "clause": "C3",
-   "disposition": "report",
-   "scenarios": [
-    "E"
-   ]
-  }
- ]
+ "note": "EDIT-class violations measured by tests/harness/adapter-history-model.ts measure(); CH1 pinned them, CH2 empties this list (OAH-Q1).",
+ "entries": []
 }
