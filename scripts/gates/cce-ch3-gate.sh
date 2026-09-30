@@ -10,8 +10,12 @@
 #      file and log: exactly one terminal token (PASS or FAIL — INDETERMINATE is not a cutover), one
 #      positive EVAL line per corpus row (the row count read from the committed claim-evidence.json),
 #      no row both freshly confirmed and stale, every contradicted row naming >= 1 contradicted anchor.
-#   3. RECONCILER — on the real synced declaration, MONITORING_STATE_DIR=$(mktemp -d), INERT:
-#      HASH_DRIFT / REGISTRY_PARITY / NO_BACKUP / SCHEDULE_DRIFT all `OK` for client-claim-freshness.
+#   3. RECONCILER — on the real synced declaration, MONITORING_STATE_DIR=$(mktemp -d), INERT. The
+#      reconciler prints ONE summary line per check (`CHECK <K>: OK (empty set)` or
+#      `CHECK <K>: BREACH <json findings>`, monitoring-inventory-reconcile.py main()): HASH_DRIFT /
+#      REGISTRY_PARITY / NO_BACKUP / SCHEDULE_DRIFT must each be OK, or BREACH without naming this row
+#      (a foreign row's drift is not this cutover's finding). A missing CHECK line, or no
+#      `END reconcile` line, means the run did not complete — INDETERMINATE, never a pass.
 #   4. MAP — npm run map:shape:check -> SYSTEM_MAP_SHAPE_VERDICT=PASS; npm run map:edges:check ->
 #      MAP_EDGES_VERDICT=PASS.
 #   5. RUNBOOK — the vault monitoring runbook carries a `## CLIENT_CLAIM_DRIFT` section (vault path
@@ -73,13 +77,19 @@ judge_run() {
   echo ok
 }
 
-# judge_reconcile <log-file> -> ok | bad:<why>
+# judge_reconcile <log-file> -> ok | bad:<why> | "" (the run did not complete: INDETERMINATE)
 judge_reconcile() {
-  local f="$1" chk missing=""
+  local f="$1" chk line bad=""
+  grep -qE '\] END reconcile ' "$f" || return 0
   for chk in HASH_DRIFT REGISTRY_PARITY NO_BACKUP SCHEDULE_DRIFT; do
-    if ! grep -qE "\] $chk [a-z0-9-]+ $ROW OK( |$)" "$f"; then missing="$missing,$chk"; fi
+    line="$(grep -E "\] CHECK $chk: " "$f" | tail -n 1)"
+    case "$line" in
+      *"CHECK $chk: OK (empty set)"*) ;;
+      *"CHECK $chk: BREACH "*) if printf '%s' "$line" | grep -qF "$ROW"; then bad="$bad,$chk"; fi ;;
+      *) return 0 ;;
+    esac
   done
-  if [ -n "$missing" ]; then echo "bad:not-OK${missing}"; else echo ok; fi
+  if [ -n "$bad" ]; then echo "bad:BREACH-names-row${bad}"; else echo ok; fi
 }
 
 run_gate() {
@@ -118,7 +128,7 @@ run_gate() {
   if [ -s "$tmp/cron-run.txt" ] && [ -n "$rows" ]; then run="$(judge_run "$tmp/cron-run.txt" "$rows" "$today")"; fi
 
   # 3 — reconciler on the real synced declaration (alert state in a temp dir; inert)
-  "${SSH[@]}" "D=\$(mktemp -d); MONITORING_STATE_DIR=\$D ALGOVAULT_TG_TEST_INERT=1 $HOST_RECONCILER 2>&1 | grep -E ' $ROW '; rm -rf \$D" \
+  "${SSH[@]}" "D=\$(mktemp -d); MONITORING_STATE_DIR=\$D ALGOVAULT_TG_TEST_INERT=1 $HOST_RECONCILER 2>&1; rm -rf \$D" \
     >"$tmp/reconcile.txt" 2>&1 || true
   if [ -s "$tmp/reconcile.txt" ]; then rec="$(judge_reconcile "$tmp/reconcile.txt")"; fi
 
@@ -190,12 +200,19 @@ self_test() {
   jcheck judge-run-confirmed-and-stale bad:a-row-confirmed-today-reads-stale "$(judge_run "$tmp/stale.txt" 2 2026-09-30)"
   sed 's/anchors=0\/1 a1=contradicted/anchors=0\/1 a1=unreachable/' "$tmp/good.txt" >"$tmp/noanchor.txt"
   jcheck judge-run-contradicted-without-anchor bad:contradicted-row-names-no-anchor "$(judge_run "$tmp/noanchor.txt" 2 2026-09-30)"
-  local R='[2026-09-30T06:57:38+00:00]'
-  printf '%s HASH_DRIFT signal-1 %s OK x\n%s REGISTRY_PARITY signal-1 %s OK x\n%s NO_BACKUP signal-1 %s OK path=y\n%s SCHEDULE_DRIFT signal-1 %s OK z\n' \
-    "$R" "$ROW" "$R" "$ROW" "$R" "$ROW" "$R" "$ROW" >"$tmp/rec.txt"
+  # the reconciler's REAL shape (captured 2026-09-30 on signal-1): one CHECK summary per check + END
+  local R='[2026-09-30T10:35:35+00:00]' k
+  { for k in HASH_DRIFT ORPHAN DARK SCHEDULE_DRIFT PENDING_STALE REGISTRY_PARITY NO_BACKUP; do printf '%s CHECK %s: OK (empty set)\n' "$R" "$k"; done
+    printf '%s NO_BACKUP signal-1 %s OK path=/opt/x\n%s END reconcile drifted=False rows=117\n' "$R" "$ROW" "$R"; } >"$tmp/rec.txt"
   jcheck judge-reconcile-all-ok ok "$(judge_reconcile "$tmp/rec.txt")"
-  sed 's/HASH_DRIFT signal-1 client-claim-freshness OK/HASH_DRIFT signal-1 client-claim-freshness DRIFT/' "$tmp/rec.txt" >"$tmp/rec2.txt"
-  jcheck judge-reconcile-hash-drift bad:not-OK,HASH_DRIFT "$(judge_reconcile "$tmp/rec2.txt")"
+  sed "s/CHECK HASH_DRIFT: OK (empty set)/CHECK HASH_DRIFT: BREACH [\"signal-1 $ROW sha mismatch\"]/" "$tmp/rec.txt" >"$tmp/rec2.txt"
+  jcheck judge-reconcile-breach-naming-row bad:BREACH-names-row,HASH_DRIFT "$(judge_reconcile "$tmp/rec2.txt")"
+  sed 's/CHECK HASH_DRIFT: OK (empty set)/CHECK HASH_DRIFT: BREACH ["signal-1 some-other-row sha mismatch"]/' "$tmp/rec.txt" >"$tmp/rec3.txt"
+  jcheck judge-reconcile-foreign-breach-is-not-ours ok "$(judge_reconcile "$tmp/rec3.txt")"
+  grep -v 'CHECK SCHEDULE_DRIFT' "$tmp/rec.txt" >"$tmp/rec4.txt"
+  jcheck judge-reconcile-missing-check-is-indeterminate "" "$(judge_reconcile "$tmp/rec4.txt")"
+  grep -v 'END reconcile' "$tmp/rec.txt" >"$tmp/rec5.txt"
+  jcheck judge-reconcile-incomplete-run-is-indeterminate "" "$(judge_reconcile "$tmp/rec5.txt")"
 
   # the missing-tool precondition, through the real entry point
   ln -s "$(command -v bash)" "$tmp/bash"
@@ -207,7 +224,7 @@ self_test() {
   if [ "$out" = "CH3_INDETERMINATE" ] && [ "$rc" -eq 3 ] && printf '%s' "$errtxt" | grep -q "required tool 'node'"; then
     pass=$((pass + 1)); echo "SELF-TEST: ok missing-tool-indeterminate"
   else fail=$((fail + 1)); echo "SELF-TEST: FAIL missing-tool-indeterminate (got '$out' rc=$rc)"; fi
-  if [ "$cases" -lt 20 ]; then echo "CCE_CH3_GATE_SELFTEST: FAIL vacuous ($cases cases)"; exit 1; fi
+  if [ "$cases" -lt 23 ]; then echo "CCE_CH3_GATE_SELFTEST: FAIL vacuous ($cases cases)"; exit 1; fi
   if [ "$fail" -eq 0 ]; then echo "CCE_CH3_GATE_SELFTEST: PASS ($pass checks)"; exit 0; fi
   echo "CCE_CH3_GATE_SELFTEST: FAIL ($fail of $cases)"; exit 1
 }
