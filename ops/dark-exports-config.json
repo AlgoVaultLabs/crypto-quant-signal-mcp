@@ -147,6 +147,10 @@
     {
       "symbol": "renderCoarserV1LagTable",
       "reason": "EDGE-LABELER-RACE-WINDOW-V2-W1 CH2 (ruling LRW-Q15 = A). Renders the per-pair 'coarser -v1 lag' table that docs/Directional-Accuracy-SoT.md §5 must print byte for byte; tests/unit/lrw-race-window-v2.test.ts fails when the doc region differs, and CH4's consumer registry is its second consumer. DOC/CI-FACING BY DESIGN: the derivation it renders (coarserV1LagMs / coarserV1LagTable) is the src/ code; rendering markdown in a serving path would add nothing. An explanation, not a suppression — the row is still printed and counted as `exempt` on every run."
+    },
+    {
+      "symbol": "historyMetaOf",
+      "reason": "OPS-ADAPTER-HISTORY-ANCHOR-W1 CH2 (ruling OAH-Q2). The reader of the non-enumerable page meta the rewired Bitget/OKX adapters attach. Its production consumer is the chapter that follows: CH3's src/scripts/adapter-history-contiguity.ts canary, then the labelers (EDGE-LABELER-META-CONSUME-W1, LRW-owned). Until then it is read by the contract, differential and budget suites. REMOVE this row in OPS-ADAPTER-HISTORY-ANCHOR-W1 CH3, the commit that adds the canary; a row that outlives that commit is a dark export wearing an explanation."
     }
   ]
 }

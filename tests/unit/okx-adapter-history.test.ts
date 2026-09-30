@@ -4,35 +4,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const calls: string[] = [];
 // `safeUpstreamNum` is a PURE strict-parse helper the candle mapper depends on — pull the
 // real one through rather than stubbing it, or the mapper silently sees `undefined`.
-vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (orig) => ({
-  ...(await orig<typeof import('../../src/lib/adapters/_upstream-fetch.js')>()),
-  VENUE_FETCH_CONFIGS: { OKX: {} },
-  upstreamFetch: vi.fn(async (_cfg: unknown, req: { url: string }) => {
-    calls.push(req.url);
-    const bar = 3_600_000; // 1H
-    if (req.url.includes('/market/history-candles')) {
-      // `after` anchors just past the wanted window → return desc candles at [startTime .. +100bars].
-      const after = Number(new URL(req.url).searchParams.get('after'));
-      const start = after - 100 * bar;
-      const data = Array.from({ length: 100 }, (_, i) => {
-        const t = after - (i + 1) * bar; // newest-first (descending)
-        return [String(t), '10', '11', '9', '10.5', '100'];
-      });
-      void start;
-      return { code: '0', msg: '', data };
-    }
-    // `/market/candles` — the RECENT-only endpoint. `before` = records newer than startTime, but it
-    // only holds the recent window, so for an OLD `before` it returns the NEWEST bars (~now), desc.
-    const before = Number(new URL(req.url).searchParams.get('before'));
-    const now = 2_000_000_000_000; // far newer than any historical `before`
-    const anchor = before > now - 200 * bar ? before : now; // recent → near before; historical → now
-    const data = Array.from({ length: 100 }, (_, i) => {
-      const t = anchor + (100 - i) * bar; // newer than anchor, descending
-      return [String(t), '20', '21', '19', '20.5', '200'];
-    });
-    return { code: '0', msg: '', data };
-  }),
-}));
+// OPS-ADAPTER-HISTORY-ANCHOR-W1 CH2: the venue is the synthetic OKX model (tests/harness/adapter-history-synthetic.ts),
+// proven page-for-page against live captures. The hand-written mock this replaced modelled the recent endpoint as
+// the OLDEST page after the cursor; measured from two vantages, the venue answers with its NEWEST page, so between
+// one and two pages back the old mock routed to the recent branch where the venue routes to the history fallback.
+// The assertions below are unchanged.
+const { venueNow } = vi.hoisted(() => ({ venueNow: 2_000_000_000_000 }));
+vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (orig) => {
+  const { SyntheticVenue } = await import('../harness/adapter-history-synthetic.js');
+  const venue = new SyntheticVenue('OKX', () => venueNow, () => ({ listingMs: Date.UTC(2019, 0, 1) }));
+  return {
+    ...(await orig<typeof import('../../src/lib/adapters/_upstream-fetch.js')>()),
+    VENUE_FETCH_CONFIGS: { OKX: {} },
+    upstreamFetch: vi.fn(async (_cfg: unknown, req: { url: string }) => {
+      calls.push(req.url);
+      return venue.answer(req.url);
+    }),
+  };
+});
 
 import { OKXAdapter } from '../../src/lib/adapters/okx.js';
 

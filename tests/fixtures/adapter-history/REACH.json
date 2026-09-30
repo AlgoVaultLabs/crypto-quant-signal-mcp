@@ -866,26 +866,26 @@
     "headGapBars": 0
    },
    "D": {
-    "returned": 200,
-    "inWindow": 0,
-    "outOfRangeBars": 200,
+    "returned": 199,
+    "inWindow": 12,
+    "outOfRangeBars": 187,
     "offGridBars": 0,
     "expectedSlots": 12,
-    "emptyWindow": true,
-    "frontGapBars": null,
+    "emptyWindow": false,
+    "frontGapBars": 0,
     "gapSlots": 0,
-    "headGapBars": null
+    "headGapBars": 0
    },
    "D2": {
-    "returned": 200,
-    "inWindow": 0,
-    "outOfRangeBars": 200,
+    "returned": 199,
+    "inWindow": 12,
+    "outOfRangeBars": 187,
     "offGridBars": 0,
     "expectedSlots": 12,
-    "emptyWindow": true,
-    "frontGapBars": null,
+    "emptyWindow": false,
+    "frontGapBars": 0,
     "gapSlots": 0,
-    "headGapBars": null
+    "headGapBars": 0
    }
   },
   "BITGET/4h": {
@@ -925,26 +925,26 @@
     "headGapBars": 0
    },
    "D": {
-    "returned": 200,
-    "inWindow": 0,
-    "outOfRangeBars": 200,
+    "returned": 199,
+    "inWindow": 8,
+    "outOfRangeBars": 191,
     "offGridBars": 0,
     "expectedSlots": 8,
-    "emptyWindow": true,
-    "frontGapBars": null,
+    "emptyWindow": false,
+    "frontGapBars": 0,
     "gapSlots": 0,
-    "headGapBars": null
+    "headGapBars": 0
    },
    "D2": {
-    "returned": 200,
-    "inWindow": 0,
-    "outOfRangeBars": 200,
+    "returned": 199,
+    "inWindow": 8,
+    "outOfRangeBars": 191,
     "offGridBars": 0,
     "expectedSlots": 8,
-    "emptyWindow": true,
-    "frontGapBars": null,
+    "emptyWindow": false,
+    "frontGapBars": 0,
     "gapSlots": 0,
-    "headGapBars": null
+    "headGapBars": 0
    }
   },
   "BITGET/12h": {
