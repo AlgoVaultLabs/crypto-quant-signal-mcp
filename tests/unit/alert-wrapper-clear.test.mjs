@@ -74,6 +74,32 @@ test('a test process cannot clear production alert state', () => {
 });
 
 /**
+ * OPS-ALARM-SINGLE-DERIVATION-W1 CH3 — the same hazard for the page-on-change ACK. An ack is an
+ * operator's acknowledgment: a test that SEEDS one silences a real key's first page, and a test that
+ * CLEARS one makes an acknowledged set page again. Both subcommands must sit behind the test gate,
+ * and this file runs under NODE_TEST_CONTEXT, the real production trigger.
+ */
+test('a test process can neither seed nor clear a production ack', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tgack-'));
+  const state = join(dir, 'state');
+  mkdirSync(state);
+  const ack = join(state, 'FIXTURE_ALERT.ack.json');
+  writeFileSync(ack, '{"version":1,"alert_id":"FIXTURE_ALERT","keys":["dead:XT|A"]}\n');
+  const before = readFileSync(ack, 'utf8');
+  for (const args of [['--acknowledge', 'FIXTURE_ALERT'], ['--clear', 'FIXTURE_ALERT']]) {
+    const { code } = run(args, {
+      ALERT_WRAPPER_STATE_DIR: state,
+      ALERT_WRAPPER_LOG: join(dir, 'log'),
+      ALERT_KEYS: 'dead:XT|B',
+    });
+    assert.equal(code, 0, 'fail-open: the wrapper must exit 0 on every path');
+    assert.ok(existsSync(ack), `a test process DELETED a production ack via ${args[0]}`);
+    assert.equal(readFileSync(ack, 'utf8'), before, `a test process REWROTE a production ack via ${args[0]}`);
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
+
+/**
  * The law's default, pinned in code rather than in prose. CLAUDE.md holds that recovery CHATTER
  * is noise and silence is the default; announcing is opt-in per alert via `announce_resolution`
  * on the registry row. Every failure mode of that lookup must resolve to SILENT, or the default

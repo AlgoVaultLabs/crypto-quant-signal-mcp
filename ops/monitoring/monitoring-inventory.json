@@ -815,12 +815,21 @@
       "schedule": "9 19 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "45a4da04cd7cd85fd506ea2af0215aadf00ac02edcbf947c78198e66b135791b",
+      "sha256": "25e971cc0abaa9cdf68daaec3c696e9112d6ccdf4b6374bfde3307c0b1cee75f",
       "alert_ids": [
-        "book_liveness_ceiling"
+        "book_liveness_ceiling",
+        "book_liveness_dead_book"
       ],
-      "owner_wave": "OPS-PFE-METRIC-INTEGRITY-W1",
-      "notes": "R8 RECURRENCE guard (its own docstring), not a one-shot — so 'retired' would be false. Watches the emit-time book-liveness gate: frozen-row rate, dead-book persistence, and a report-only suppression volume floor. INSTALLED 2026-08-28 by EDGE-SELL-RESOLUTION-ENFORCE-W1 CH1, cron `9 19 * * *` (hour 19 was empty and minute 9 is clear of every hourly job; the canonical :13/:17/:23... snapshot-sampler slots are all taken, and 18:00-02:59 is the deploy-free band). The FILE had been on the host since 2026-07-21 byte-identical to its committed ancestor — only the SCHEDULE was missing, so 'never installed' was never true of the artifact. `blocked_on` DELETED, not re-keyed to EMIT_BOOK_LIVENESS_MODE as docs/RUNBOOK-BOOK-LIVENESS-FLIP.md then instructed (architect ruling Q3, 2026-08-28): check_pending_stale reads only `pending`/`unclassified` rows (reconcile :710), so an installed row has no pending clock for a block to suppress, and a value-comparing `met_when` kind would have had zero consumers. The MODE-vs-ENABLED distinction it identified is real and now lives INSIDE the canary, which resolves the stage through a mirror of the shipped getBookLivenessMode() and scopes both its ceiling table and its emit_suppressions.reason filter by it. Promoted advisory -> load-bearing in the same wave so NO_BACKUP asserts the backup rather than leaving it a convention. Proven able to fail before going live: 4 deliberate mutations each produced SELF-TEST: FAIL with a verdict (never a crash), and a seeded live breach went red on the host."
+      "owner_wave": "OPS-ALARM-SINGLE-DERIVATION-W1",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/book-liveness-canary.py",
+          "install_state": "installed",
+          "installed_wave": "OPS-ALARM-SINGLE-DERIVATION-W1"
+        }
+      ],
+      "notes": "OPS-ALARM-SINGLE-DERIVATION-W1 CH4: ONE window derivation (window_bounds: exactly 28 dates; \"29 of 28\" is now an INDETERMINATE instrument_defect through population_rate.bounded_fraction), TWO alert ids with distinct templated remedies — book_liveness_ceiling (LEVEL: frozen-row rate + the floor, PROMOTED at 3 x the per-venue max measured 2026-09-30; --clear on a clean run) and book_liveness_dead_book (page-on-change keys dead:<VENUE>|<COIN>, fire-or-clear every run, review_by 2026-12-29) — and a canary_result_log line carrying the dead-set keys (bounded to the 8 KB line). Imports population_rate.py + canary_result_log.py from its own dir. R8 RECURRENCE guard (its own docstring), not a one-shot — so 'retired' would be false. Watches the emit-time book-liveness gate: frozen-row rate, dead-book persistence, and a report-only suppression volume floor. INSTALLED 2026-08-28 by EDGE-SELL-RESOLUTION-ENFORCE-W1 CH1, cron `9 19 * * *` (hour 19 was empty and minute 9 is clear of every hourly job; the canonical :13/:17/:23... snapshot-sampler slots are all taken, and 18:00-02:59 is the deploy-free band). The FILE had been on the host since 2026-07-21 byte-identical to its committed ancestor — only the SCHEDULE was missing, so 'never installed' was never true of the artifact. `blocked_on` DELETED, not re-keyed to EMIT_BOOK_LIVENESS_MODE as docs/RUNBOOK-BOOK-LIVENESS-FLIP.md then instructed (architect ruling Q3, 2026-08-28): check_pending_stale reads only `pending`/`unclassified` rows (reconcile :710), so an installed row has no pending clock for a block to suppress, and a value-comparing `met_when` kind would have had zero consumers. The MODE-vs-ENABLED distinction it identified is real and now lives INSIDE the canary, which resolves the stage through a mirror of the shipped getBookLivenessMode() and scopes both its ceiling table and its emit_suppressions.reason filter by it. Promoted advisory -> load-bearing in the same wave so NO_BACKUP asserts the backup rather than leaving it a convention. Proven able to fail before going live: 4 deliberate mutations each produced SELF-TEST: FAIL with a verdict (never a crash), and a seeded live breach went red on the host."
     },
     {
       "id": "nav-drift-canary",
@@ -1938,7 +1947,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "3b4fd5cde09ecab192570d0ce12c8813d683bf256f0a360810899f2230d304b8",
+      "sha256": "7fe3a0e3203fb9052e3f159e708e0404e863f862d8f55a30e32e7a8c6536dd33",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",

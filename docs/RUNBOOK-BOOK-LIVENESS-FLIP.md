@@ -207,11 +207,30 @@ ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
       `emit_suppressions` counter, 3d window: XT **6.14%** · HTX **5.32%** · ASTER **5.08%** ·
       GATE **0.29%** · 12 other venues exactly **0.00%** — the old box FAILS on four venues today
       and would have failed on the night of the flip.)_
-      The bar is now structural, not a percentage: a `(venue, coin)` suppressed on ≥ 24 of the
-      last 28 days is a **dead book**; anything recovering inside the window is a **closed
-      market**, which is correct behaviour. Known dead books at re-baseline: `XT|D`, `XT|EPT`,
-      `HTX|LRDS`, `HTX|SEI`, `HTX|VIRTUAL`. **A NEW one appearing ⇒ STOP and investigate the
-      adapter** — that is the parse-defect signal the old box was reaching for.
+      The bar is now structural, not a percentage: a `(venue, coin)` suppressed on ≥ 24 of
+      **exactly** the last 28 dates (`window_bounds`: `CURRENT_DATE - 27 … CURRENT_DATE`; the
+      earlier interval form spanned 29 dates) is a **dead book**; anything recovering inside the
+      window is a **closed market**, which is correct behaviour.
+
+      **Dead books page on ENTRY, not on the standing set** (`OPS-ALARM-SINGLE-DERIVATION-W1` CH4).
+      They have their own alert id, `book_liveness_dead_book`, declared `page_on: "change"` in
+      `ops/monitoring/alert-registry.json`. Every canary run sends the whole set as keys
+      `dead:<VENUE>|<COIN>`, or `--clear` when it is empty. `send_telegram.sh` pages only a key it
+      has not delivered before and prunes a key that recovers, so a book that recovers and dies
+      again pages again. `book_liveness_ceiling` keeps the LEVEL checks (frozen-row rate + the
+      promoted suppression floor) and clears itself on a clean run.
+      - **Bootstrap (once, at install), no POST:**
+        `ALERT_KEYS="<the dead set>" /opt/algovault-monitoring/send_telegram.sh --acknowledge book_liveness_dead_book`.
+        The set measured at the thin R0 (2026-09-30T06:15Z, after universe admission went live):
+        `XT|EPT`, `XT|D`, `HTX|LRDS` — switched off by the venue, now excluded by admission, so they
+        leave the ≥ 24-date set around 2026-10-05 — and the thin ASTER books `KSTR`, `NVO`, `HD`,
+        `BAY`, `EBAY`. The set actually acknowledged is recorded in the wave audit.
+      - **Review date:** page-on-change holds through **2026-12-29**; from 2026-12-30 the id pages
+        on the LEVEL again until its registry row is re-decided.
+      - **A NEW key paging ⇒ read the venue's own contract status first.** Switched off ⇒ a universe
+        admission declaration missed it (`OPS-UNIVERSE-ADMISSION-W{NEXT}`). Live ⇒ the book is thin
+        and the suppression is correct — or an adapter reads live volume as zero, which is the
+        parse-defect signal the old box was reaching for; investigate the adapter.
 - [ ] **The closed-market population still recovers.** _(Replaces **"ASTER within ~5pp of the
       measured 27%"**. ASTER measures **5.08%**, 21.9 pp below the old box, because the frozen
       population MIGRATED onto XT and HTX — so the old box FAILS on correct behaviour.)_ Confirm

@@ -3,7 +3,7 @@
   "_announce_resolution_semantics": "FALSE is the default and it is the LAW's default: CLAUDE.md holds that recovery CHATTER is noise and silent recovery with forensics in logs is the norm. TRUE opts a single alert into ONE bounded RESOLVED message per episode — emitted only on FIRING->CLEAR, only when a fire was actually DELIVERED, cooldown-exempt, and self-limiting because it removes the marker. Every failure mode of this lookup (absent file, absent row, malformed JSON, no python3) resolves to SILENT, so the default survives the mechanism breaking.",
   "_adopted_vs_announce": "`adopted` = the owner calls --clear on its healthy path at all. `announce_resolution` = that clear is announced rather than silent. They are separate on purpose: an owner may adopt --clear purely for the state hygiene (so a stale marker cannot pin the operator's view) without adding a message.",
   "_unadopted_behaviour": "Every row with adopted=false behaves EXACTLY as before this wave — same gates, same order, same log verbs, same exit codes. Adoption is opt-in and byte-identical until opted in.",
-  "_known_divergence": "The autonomous-optimizer repo vendors its own copy of send_telegram.sh at monitoring/aoe-host/send_telegram.sh, pinned by its own test to CANONICAL_SHA256 243ba4a7... — which is NOT the live canonical. PRE-EXISTING at the time of this wave (the aoe-1 HOST runs canonical, the AOE REPO's vendored copy is two revisions behind) and deliberately not changed here. Recorded rather than silently tolerated; re-vendoring is OPS-AOE-WRAPPER-REVENDOR-W{NEXT}.",
+  "_known_divergence": "RESOLVED 2026-09-30 by OPS-ALARM-SINGLE-DERIVATION-W1 CH3: autonomous-optimizer re-vendored monitoring/aoe-host/send_telegram.sh at the canonical 4f7db003 (AOE commit 2b60d9a), with CANONICAL_SHA256, the .sha256 and a behaviour pin for page-on-change moved together. History: the vendored copy had been pinned to 243ba4a7 (two, later five, revisions behind) while both HOSTS ran canonical.",
   "_generated_by": "OPS-ALERT-RECOVERY-NOTICE-W1 CH2 — union of source call sites and on-disk markers on both hosts, 2026-08-21. NEITHER SOURCE IS COMPLETE ALONE, measured three ways: 14 ids had a live cooldown marker and no discoverable call site; 4 more (incl. the lowercase `gate-shadow-cpu`) had a call site through a $WRAPPER variable and had NEVER fired, so no marker existed either — those 4 were invisible until the gate's own prove-it-can-fail step exposed the extractor's blind spot. This is the enumeration-beats-detection argument, measured rather than asserted.",
   "alerts": [
     {
@@ -179,11 +179,30 @@
       "hosts": [
         "signal-1"
       ],
-      "adopted": false,
+      "adopted": true,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-BOOK_LIVENESS_CEILING-W{NEXT}",
       "envelope_adopted": false,
-      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-book_liveness_ceiling-W{NEXT}"
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-book_liveness_ceiling-W{NEXT}",
+      "notes": "OPS-ALARM-SINGLE-DERIVATION-W1 CH4: LEVEL only — the frozen-row rate plus the suppression floor, PROMOTED to paging (pins = 3 x the per-venue maximum measured 2026-09-30 over 28 dates). Adopted: the canary calls --clear on every run without a level breach. Dead-book persistence moved to book_liveness_dead_book, which pages on the CHANGE."
+    },
+    {
+      "alert_id": "book_liveness_dead_book",
+      "owner": "ops/monitoring/book-liveness-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "page_on": "change",
+      "page_on_change": {
+        "review_by": "2026-12-29",
+        "decided_by": "architect — OPS-ALARM-SINGLE-DERIVATION-W1 spec, CH4",
+        "decided_at": "2026-09-29",
+        "reason": "A dead book is a STATE nothing clears until the universe or the venue changes; paging its LEVEL re-paged the same known books every cooldown since 2026-09-21. Entry into the set is the actionable event."
+      },
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-book_liveness_dead_book-W{NEXT}",
+      "notes": "OPS-ALARM-SINGLE-DERIVATION-W1 CH4: dead-book persistence (a venue|coin suppressed on >= 24 of exactly 28 dates), split from book_liveness_ceiling. The first adopter of send_telegram.sh page-on-change: the canary sends ALERT_KEYS=dead:<VENUE>|<COIN> for the whole dead set on EVERY run, or --clear for an empty one; the wrapper pages only a key outside its ack ($STATE_DIR/book_liveness_dead_book.ack.json). Bootstrapped once at install with --acknowledge from the post-admission dead set (recorded in the wave audit). From 2026-12-30 it pages on the LEVEL again until re-decided."
     },
     {
       "alert_id": "CANDLE_BASIS_FLIP_READY",
