@@ -29,8 +29,10 @@
  * a second thing that can drift.
  *
  * Checks:
- *   1. FAIL — a retired vendor UI path in any rendered surface.
+ *   1. FAIL — a retired vendor UI path in any rendered surface (Claude Desktop's Settings →
+ *      Integrations, then Settings → Connectors; the live path is Customize → Connectors).
  *   2. FAIL — a byo-model row whose copy calls itself an MCP client.
+ *   9. FAIL — an unquoted URL carrying a glob character on a shell command line (C-SHELL-GLOB).
  *   (3. retired by OPS-CLIENT-CLAIM-EVIDENCE-W1: its 180-day REPORT was a second freshness rule
  *       that already disagreed with the host canary's 150 days. Freshness is now ONE rule — the
  *       canary's live confirmation of each row's evidence, ops/monitoring/client-claim-freshness.py.)
@@ -72,9 +74,19 @@ const argv = process.argv.slice(2);
 const RETIRED_PATHS = [
   {
     label: 'Settings → Integrations (Claude Desktop; renamed to Connectors)',
-    replacement: 'Settings → Connectors → Add custom connector',
+    replacement: 'Customize → Connectors → + → Add custom connector',
     // eslint-disable-next-line no-useless-escape
     re: /Settings\s*(?:→|&rarr;|&#8594;|&#x2192;)\s*Integrations/gi,
+  },
+  {
+    // LANDING-MCP-CLIENTS-CLAIMS-W1: Claude moved custom connectors a second time, from
+    // Settings → Connectors to Customize → Connectors (support.claude.com article 11175166,
+    // measured 2026-10-01). Unscoped because R0 measured zero non-Claude uses of the phrase.
+    // Inline emphasis tags are tolerated: our own walkthrough wrapped each menu item in <em>,
+    // which a tag-blind pattern would have missed on the very page that carried the defect.
+    label: 'Settings → Connectors (Claude Desktop; moved to Customize → Connectors)',
+    replacement: 'Customize → Connectors → + → Add custom connector',
+    re: /Settings(?:\s*<\/?(?:em|strong|b|i)>)*\s*(?:→|&rarr;|&#8594;|&#x2192;)\s*(?:<\/?(?:em|strong|b|i)>\s*)*Connectors/gi,
   },
 ];
 
@@ -443,6 +455,172 @@ export function checkLiveNumbersNote(files, readFile) {
   return hits;
 }
 
+// ── CHECK 9 (C-SHELL-GLOB) — LANDING-MCP-CLIENTS-CLAIMS-W1 ──────────────────────
+//
+// An install command is a claim about the reader's SHELL too. zsh, the macOS default, reads
+// `?` `*` `[` in an unquoted word as a glob, and when nothing matches it aborts the whole line —
+// measured zsh 5.9: `echo https://api.algovault.com/mcp?src=docs` → "no matches found", exit 1.
+// Six producers shipped that shape. The command never ran, and nothing failed on our side.
+//
+// ZERO EXEMPTIONS (architect ruling R0-D8, 2026-10-01). A hit on a generated page is fixed at its
+// PRODUCER and regenerated — never by a hand edit of the page, never by an allow-list entry. A
+// hit whose producer is not already known is a stop-and-report, not a carve-out.
+
+/** Fence / class languages that ARE shell. Any other declared language is not scanned. */
+export const SHELL_LANG_RE = /^(?:bash|sh|shell|zsh|console)$/i;
+/** An UNTYPED block is shell when its first non-blank line starts with one of these commands. */
+export const SHELL_FIRST_WORD_RE = /^\s*(?:\$\s+)?(?:claude|codex|npx|npm|curl|smithery|export|git|uvx|pip|brew|docker|cd)\b/;
+/**
+ * A URL carrying a glob character. Quote characters end it, so a quoted URL is matched whole.
+ * The trailing `{0,}` is deliberate: a `*` right before the closing slash spells a block-comment
+ * terminator, and the naive comment strippers other gates run over scripts/** then swallow code.
+ */
+export const GLOB_URL_RE = /https?:\/\/[^\s"'`<>]*[?*[][^\s"'`<>]{0,}/g;
+
+/**
+ * stripCodeCommentsOnly()'s comment classes, blanked IN PLACE so offsets and line numbers stay
+ * true (`file:line` must name the line a reader sees). The self-test pins parity with
+ * stripCodeCommentsOnly() so the two cannot drift apart.
+ *
+ * @param {string} src @param {string} path
+ */
+export function blankCodeComments(src, path) {
+  const blank = (m) => m.replace(/[^\n]/g, ' ');
+  let s = src;
+  if (/\.html?$/.test(path) || /\.md$/.test(path)) s = s.replace(/<!--[\s\S]*?-->/g, blank);
+  if (/\.(mjs|js|ts|tsx)$/.test(path)) {
+    s = s.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/^[ \t]*\/\/.*$/gm, blank);
+  }
+  return s;
+}
+
+const HTML_ENTITIES = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'", nbsp: ' ', rarr: '→', mdash: '—', hellip: '…', middot: '·', rsquo: '’', lsquo: '‘' };
+/** @param {string} s */
+export function decodeEntities(s) {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] === '#') {
+      const cp = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return Number.isFinite(cp) ? String.fromCodePoint(cp) : m;
+    }
+    return HTML_ENTITIES[e.toLowerCase()] ?? m;
+  });
+}
+
+/**
+ * Every code block in one file: `{ lang, line, text }`, where `line` is the 1-based file line of
+ * the block's first content line and `text` is what a reader copies (inner tags stripped,
+ * entities decoded). Markdown fences in .md/.txt; `<pre>` (with or without `<code>`) in .html.
+ *
+ * @param {string} src @param {string} path
+ */
+export function codeBlocks(src, path) {
+  const s = blankCodeComments(src, path);
+  /** @type {{lang: string, line: number, text: string}[]} */
+  const out = [];
+  const lineAt = (offset) => s.slice(0, offset).split('\n').length;
+  if (/\.html?$/.test(path)) {
+    const re = /<pre\b[^>]*>(\s*<code\b([^>]*)>)?([\s\S]*?)(?:<\/code>\s*)?<\/pre>/gi;
+    let m;
+    while ((m = re.exec(s)) !== null) {
+      const cls = m[2] || '';
+      const lm = /language-([\w-]+)/i.exec(cls);
+      const start = m.index + m[0].indexOf(m[3]);
+      out.push({ lang: lm ? lm[1] : '', line: lineAt(start), text: decodeEntities(m[3].replace(/<[^>]*>/g, '')) });
+    }
+    return out;
+  }
+  const lines = s.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const open = /^\s*(`{3,}|~{3,})\s*([^\s`]*)/.exec(lines[i]);
+    if (!open) continue;
+    const fence = open[1];
+    const body = [];
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const close = /^\s*(`{3,}|~{3,})\s*$/.exec(lines[j]);
+      if (close && close[1][0] === fence[0] && close[1].length >= fence.length) break;
+      body.push(lines[j]);
+    }
+    out.push({ lang: open[2] || '', line: i + 2, text: body.join('\n') });
+    i = j;
+  }
+  return out;
+}
+
+/** Is this block shell? Declared language decides; an untyped block is judged by its first line. */
+export function isShellBlock(block) {
+  if (block.lang) return SHELL_LANG_RE.test(block.lang);
+  const first = block.text.split('\n').find((l) => l.trim() !== '') || '';
+  return SHELL_FIRST_WORD_RE.test(first);
+}
+
+/**
+ * Quote state at every offset of one logical shell line: 0 outside quotes, '"' or "'" inside.
+ * Backslash escapes the next character outside single quotes, as in POSIX sh and zsh.
+ *
+ * @param {string} line
+ */
+function quoteStates(line) {
+  const st = new Array(line.length);
+  let q = 0;
+  for (let k = 0; k < line.length; k++) {
+    st[k] = q;
+    const c = line[k];
+    if (q !== "'" && c === '\\') { if (k + 1 < line.length) st[k + 1] = q; k++; continue; }
+    if (q === 0 && (c === '"' || c === "'")) q = c;
+    else if (q !== 0 && c === q) q = 0;
+  }
+  return st;
+}
+
+/**
+ * CHECK 9 over one block: unquoted glob-bearing URLs, with backslash-continued lines joined.
+ * Returns `{ line, token }`, `line` = the file line the token physically sits on.
+ *
+ * @param {{line: number, text: string}} block
+ */
+export function shellGlobHits(block) {
+  const hits = [];
+  const phys = block.text.split('\n');
+  for (let i = 0; i < phys.length; i++) {
+    let logical = '';
+    /** @type {number[]} physical-line index of every character of the joined line */
+    const owner = [];
+    let j = i;
+    for (;;) {
+      const raw = phys[j];
+      const cont = /\\\s*$/.test(raw);
+      const part = cont ? raw.replace(/\\\s*$/, ' ') : raw;
+      for (let k = 0; k < part.length; k++) owner.push(j);
+      logical += part;
+      if (!cont || j + 1 >= phys.length) break;
+      j++;
+    }
+    const st = quoteStates(logical);
+    GLOB_URL_RE.lastIndex = 0;
+    let m;
+    while ((m = GLOB_URL_RE.exec(logical)) !== null) {
+      if (st[m.index] === 0) hits.push({ line: block.line + owner[m.index], token: m[0] });
+    }
+    i = j;
+  }
+  return hits;
+}
+
+/** CHECK 9 over a corpus. `blocks` = shell blocks examined, so a zero is visible as a zero. */
+export function checkShellGlobs(files, readFile) {
+  const hits = [];
+  let blocks = 0;
+  for (const f of files) {
+    for (const b of codeBlocks(readFile(f), f)) {
+      if (!isShellBlock(b)) continue;
+      blocks++;
+      for (const h of shellGlobHits(b)) hits.push({ file: f, line: h.line, token: h.token });
+    }
+  }
+  return { blocks, hits };
+}
+
 // ── self-test ─────────────────────────────────────────────────────────────────
 
 /**
@@ -462,13 +640,21 @@ function selfTest() {
   let mustNotFire = 0;
 
   const fixtures = {
-    '/fx/clean.html': '<p>Settings &rarr; Connectors &rarr; Add custom connector</p>',
+    '/fx/clean.html': '<p>Customize &rarr; Connectors &rarr; + &rarr; Add custom connector</p>',
     '/fx/stale-entity.html': '<p>Claude Desktop: Settings &rarr; Integrations &rarr; paste</p>',
     '/fx/stale-arrow.md': 'Open Claude → Settings → Integrations → Add custom connector',
     '/fx/stale-numeric.html': '<p>Settings &#8594; Integrations</p>',
     '/fx/comment-only.html':
-      '<!-- was: Settings &rarr; Integrations --><p>Settings &rarr; Connectors</p>',
-    '/fx/blockquote-only.md': '> Historical note: Settings → Integrations was the old path.',
+      '<!-- was: Settings &rarr; Integrations, then Settings &rarr; Connectors --><p>Customize &rarr; Connectors</p>',
+    '/fx/blockquote-only.md': '> Historical note: Settings → Integrations, then Settings → Connectors, were old paths.',
+    // LANDING-MCP-CLIENTS-CLAIMS-W1 — the second Claude move, in every encoding this repo uses,
+    // including the <em>-wrapped form our own walkthrough shipped.
+    '/fx/stale-conn-entity.html': '<p>Claude Desktop: Settings &rarr; Connectors &rarr; Add custom connector</p>',
+    '/fx/stale-conn-arrow.md': 'In Claude → Settings → Connectors → Add custom connector:',
+    '/fx/stale-conn-em.html': '<p>Open Claude Desktop &rarr; <em>Settings</em> &rarr; <em>Connectors</em> &rarr; <em>Add custom connector</em></p>',
+    '/fx/stale-conn-hex.html': '<p>Settings &#x2192; Connectors</p>',
+    // Another client's real "Settings → MCP Servers" path must stay legal.
+    '/fx/other-settings.html': '<p>Settings &rarr; MCP Servers &rarr; <em>New MCP Server</em></p>',
   };
   const readFixture = (p) => {
     if (!(p in fixtures)) throw new Error(`fixture missing: ${p}`);
@@ -481,14 +667,80 @@ function selfTest() {
   }
 
   // CHECK 1, must-fire
-  for (const f of ['/fx/stale-entity.html', '/fx/stale-arrow.md', '/fx/stale-numeric.html']) {
+  for (const f of ['/fx/stale-entity.html', '/fx/stale-arrow.md', '/fx/stale-numeric.html',
+                   '/fx/stale-conn-entity.html', '/fx/stale-conn-arrow.md', '/fx/stale-conn-em.html',
+                   '/fx/stale-conn-hex.html']) {
     mustFire++;
     if (checkRetiredPaths([f], readFixture).length !== 1) fails.push(`check1 must fire on ${f}`);
   }
   // CHECK 1, must-NOT-fire (incl. the comment/blockquote carve-outs)
-  for (const f of ['/fx/clean.html', '/fx/comment-only.html', '/fx/blockquote-only.md']) {
+  for (const f of ['/fx/clean.html', '/fx/comment-only.html', '/fx/blockquote-only.md', '/fx/other-settings.html']) {
     mustNotFire++;
     if (checkRetiredPaths([f], readFixture).length !== 0) fails.push(`check1 must NOT fire on ${f}`);
+  }
+  // The replacement hint is the CURRENT path, not a retired one (it is printed to whoever fixes the copy).
+  const hint = checkRetiredPaths(['/fx/stale-conn-arrow.md'], readFixture)[0];
+  if (!hint || hint.replacement !== 'Customize → Connectors → + → Add custom connector') {
+    fails.push('check1 replacement hint must name Customize → Connectors → + → Add custom connector');
+  }
+
+  // ── CHECK 9 (C-SHELL-GLOB). Fixtures are written as a reader copies them.
+  const sh = {
+    '/fx/sh-oneliner.md': '```bash\nclaude mcp add x https://api.example.com/mcp?src=docs\n```\n',
+    '/fx/sh-continuation.md':
+      'Intro.\n\n```\nclaude mcp add --transport http x \\\n  https://api.example.com/mcp?src=docs \\\n  --header "X-Track:1"\n```\n',
+    '/fx/sh-star.md': '```sh\ncurl https://example.com/files/a*.json\n```\n',
+    '/fx/sh-console.md': '```console\n$ curl https://x.example/a?b=1\n```\n',
+    '/fx/sh-html-untyped.html':
+      '<pre><code class="text-xs">claude mcp add --transport http algovault \\\n  https://api.example.com/mcp?src=docs</code></pre>',
+    '/fx/sh-html-typed.html': '<pre><code class="language-bash">npx -y tool https://x.example/a?b=1</code></pre>',
+    '/fx/sh-dq.md': '```bash\nclaude mcp add x "https://api.example.com/mcp?src=docs"\n```\n',
+    '/fx/sh-sq.md': "```bash\nclaude mcp add x 'https://api.example.com/mcp?src=docs'\n```\n",
+    '/fx/sh-html-entity-quoted.html':
+      '<pre><code class="language-bash">claude mcp add x &quot;https://x.example/a?b=1&quot;</code></pre>',
+    // A declared non-shell language is never scanned — the URL below is deliberately unquoted.
+    '/fx/sh-json.md': '```json\n{"note": 1, "u": https://x.example/a?b=1}\n```\n',
+    '/fx/sh-yaml.md': '```yaml\nurl: https://api.example.com/mcp?src=x\n```\n',
+    // An untyped block that does not start with a shell command is not a shell block.
+    '/fx/sh-yaml-untyped.md': '```\nurl: https://api.example.com/mcp?src=x\n```\n',
+    '/fx/sh-html-json.html': '<pre><code class="text-xs">{\n  "url": https://x.example/a?b=1\n}</code></pre>',
+    '/fx/sh-text.md': '```text\n$ npx tool https://x.example/a?b=1\n```\n',
+    '/fx/sh-prose.md': 'Run claude mcp add x https://api.example.com/mcp?src=docs in your terminal.\n',
+    '/fx/sh-noglob.md': '```bash\nclaude mcp add x https://api.example.com/mcp\n```\n',
+    '/fx/sh-in-comment.html': '<!-- <pre><code class="language-bash">curl https://x.example/a?b=1</code></pre> --><p>ok</p>',
+  };
+  Object.assign(fixtures, sh);
+  for (const f of ['/fx/sh-oneliner.md', '/fx/sh-continuation.md', '/fx/sh-star.md', '/fx/sh-console.md',
+                   '/fx/sh-html-untyped.html', '/fx/sh-html-typed.html']) {
+    mustFire++;
+    const r = checkShellGlobs([f], readFixture);
+    if (r.hits.length !== 1) fails.push(`check9 must fire exactly once on ${f} (got ${r.hits.length})`);
+  }
+  for (const f of ['/fx/sh-dq.md', '/fx/sh-sq.md', '/fx/sh-html-entity-quoted.html', '/fx/sh-json.md',
+                   '/fx/sh-yaml.md', '/fx/sh-yaml-untyped.md', '/fx/sh-html-json.html', '/fx/sh-text.md',
+                   '/fx/sh-prose.md', '/fx/sh-noglob.md', '/fx/sh-in-comment.html']) {
+    mustNotFire++;
+    const r = checkShellGlobs([f], readFixture);
+    if (r.hits.length !== 0) fails.push(`check9 must NOT fire on ${f} (got ${r.hits.length})`);
+  }
+  // file:line names the line the token physically sits on — line 5 of the continuation fixture.
+  const cont = checkShellGlobs(['/fx/sh-continuation.md'], readFixture).hits[0];
+  if (!cont || cont.line !== 5 || cont.token !== 'https://api.example.com/mcp?src=docs') {
+    fails.push(`check9 must report the continuation hit at line 5 (got ${cont ? cont.line : 'none'})`);
+  }
+  // A shell block that is quoted correctly still COUNTS as examined — zero blocks is visible.
+  if (checkShellGlobs(['/fx/sh-dq.md'], readFixture).blocks !== 1) fails.push('check9 must count a clean shell block');
+  if (checkShellGlobs(['/fx/sh-json.md'], readFixture).blocks !== 0) fails.push('check9 must not count a json block as shell');
+  // Parity: blankCodeComments() removes exactly what stripCodeCommentsOnly() removes, it only keeps
+  // the line structure. If they ever disagree, CHECK 9 and CHECKs 4-8 judge different texts.
+  for (const [p, src] of [['/fx/p.html', 'a<!-- x\ny -->b\n<p>c</p>'], ['/fx/p.md', 'a <!-- z --> b\n> q']]) {
+    const norm = (t) => t.replace(/\s+/g, ' ').trim();
+    if (norm(blankCodeComments(src, p)) !== norm(stripCodeCommentsOnly(src, p))) {
+      fails.push(`blankCodeComments() diverged from stripCodeCommentsOnly() on ${p}`);
+    }
+    if (blankCodeComments(src, p).split('\n').length !== src.split('\n').length) {
+      fails.push(`blankCodeComments() changed the line count of ${p}`);
+    }
   }
 
   // CHECK 2, both directions
@@ -817,6 +1069,30 @@ if (!blFiles || blFiles.length === 0) {
     }
   } else {
     console.log(`✓ check 8 (C-BLOCKLIST): checked ${blFiles.length} files against ${blocklist.length} phrase class(es), 0 violations.`);
+  }
+}
+
+// CHECK 9 — C-SHELL-GLOB over the same reader-facing corpus as CHECK 8. Zero exemptions.
+{
+  let r9;
+  try {
+    r9 = checkShellGlobs(blFiles, readTut);
+  } catch (e) {
+    console.error(`✗ check 9 could not read a corpus file: ${e && e.message}`);
+    verdictAndExit('INDETERMINATE');
+  }
+  if (r9.blocks === 0) {
+    // The corpus is known to carry install commands, so finding NO shell block means the block
+    // classifier read nothing — that is "could not verify", never a pass.
+    console.error(`✗ check 9 (C-SHELL-GLOB): ${blFiles.length} files yielded ZERO shell blocks — the classifier read nothing.`);
+    verdictAndExit('INDETERMINATE');
+  }
+  if (r9.hits.length) {
+    failed = true;
+    console.error(`  ✗ check 9 (C-SHELL-GLOB): checked ${r9.blocks} shell block(s) in ${blFiles.length} files, ${r9.hits.length} unquoted glob URL(s) — quote the URL, at its PRODUCER:`);
+    for (const h of r9.hits) console.error(`      ${rel(h.file)}:${h.line} ${h.token}`);
+  } else {
+    console.log(`✓ check 9 (C-SHELL-GLOB): checked ${r9.blocks} shell block(s) in ${blFiles.length} files, 0 unquoted glob URLs.`);
   }
 }
 

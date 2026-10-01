@@ -211,9 +211,13 @@ describe('mcp-clients: provenance (source + verifiedAt)', () => {
 
 describe('mcp-clients: retired Claude Desktop UI path', () => {
   // Claude Desktop moved custom MCP servers from Settings → Integrations to
-  // Settings → Connectors. Both the literal arrow and the &rarr; entity forms
-  // appear in this repo's HTML, so both are banned here.
-  const RETIRED = [/Settings\s*→\s*Integrations/i, /Settings\s*&rarr;\s*Integrations/i];
+  // Settings → Connectors, and then (LANDING-MCP-CLIENTS-CLAIMS-W1, measured 2026-10-01)
+  // to Customize → Connectors. Both the literal arrow and the &rarr; entity forms
+  // appear in this repo's HTML, so both are banned here, for both retired paths.
+  const RETIRED = [
+    /Settings\s*→\s*Integrations/i, /Settings\s*&rarr;\s*Integrations/i,
+    /Settings\s*→\s*Connectors/i, /Settings\s*&rarr;\s*Connectors/i,
+  ];
 
   for (const e of MCP_CLIENTS.entries) {
     it(`${e.slug} names no retired UI path`, () => {
