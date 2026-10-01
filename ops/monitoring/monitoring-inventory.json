@@ -2426,12 +2426,12 @@
       "repo_resident": true,
       "invoked_by": "imported by trend-mode-readout-gate.py",
       "install_state": "installed",
-      "sha256": "c167f6dfc7de25ead2116ba2be42c0a35a1015e60e83a2c98cc490e44a50e519",
+      "sha256": "282587c48242601ca3d94f6d748742d7722d49e57f5b975f6da85a94e0e258fb",
       "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
       "consumes": [
         "ops/monitoring/population-comparison.schema.json"
       ],
-      "notes": "THE ONE DERIVATION for comparing a rate across two populations. It REFUSES rather than repairs: an arm's excess over its own mix-matched null is bounded by its marginals, so when a declared floor exceeds either arm's attainable range the comparison is NOT_IDENTIFIABLE and resolves to INDETERMINATE. Measured 2026-09-02, the firing that produced this file: attainable width 1.06pp (v1, 99.47% one-sided) vs 38.93pp (v2) against a 3.0pp floor — so the v1 term could never influence the verdict and the 'cross-arm delta' was a single-arm level test wearing a delta's clothes. No schedule: it is a library, imported by trend-mode-readout-gate.py, and has no cron of its own."
+      "notes": "THE ONE DERIVATION for comparing a rate across two populations. It REFUSES rather than repairs: an arm's excess over its own mix-matched null is bounded by its marginals, so when a declared floor exceeds either arm's attainable range the comparison is NOT_IDENTIFIABLE and resolves to INDETERMINATE. Measured 2026-09-02, the firing that produced this file: attainable width 1.06pp (v1, 99.47% one-sided) vs 38.93pp (v2) against a 3.0pp floor — so the v1 term could never influence the verdict and the 'cross-arm delta' was a single-arm level test wearing a delta's clothes. No schedule: it is a library, imported by trend-mode-readout-gate.py, and has no cron of its own. OPS-PREREG-IDENTIFIABILITY-GATE-W1 added the DECLARATION-time half beside it: attainable_bound_from_share(q) = 200*min(q, 1-q) pp bounds Arm.attainable_pp from the side share alone, and declaration_identifiability refuses a declared floor above it before any data exists; the repo-side gates (scripts/check-population-comparison.mjs, tests/unit/preregistration-support-stress-test.test.ts) reach it through --declarations by subprocess, never through a second formula."
     },
     {
       "id": "population-rate-derivation",

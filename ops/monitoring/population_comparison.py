@@ -4,8 +4,14 @@
 THE ONE DERIVATION FOR COMPARING A RATE ACROSS TWO POPULATIONS.
 
 Read `population-comparison.schema.json` first — it is the SoT and it carries the WHY. This module
-is the Python binding; `src/lib/population-comparison.ts` is the TypeScript one, and
-`population-comparison.fixtures.json` is the differential corpus both must reproduce.
+is the ONLY binding of the derivation: the two JS gates that need it
+(`scripts/check-population-comparison.mjs`, `tests/unit/preregistration-support-stress-test.test.ts`)
+reach it by subprocess through `--declarations`, never through a second formula. An earlier version
+of this paragraph named a TypeScript binding (`src/lib/population-comparison.ts`) and a differential
+corpus (`population-comparison.fixtures.json`); neither has ever existed on main. One TypeScript
+port of `Arm.attainable_pp` does live outside this module — `frechetAttainablePp` in
+`src/scripts/ads1/core.ts`, with no parity test — and is recorded against its owning wave rather
+than gated here (OPS-PREREG-IDENTIFIABILITY-GATE-W1).
 
 ── WHAT THIS EXISTS TO PREVENT ──────────────────────────────────────────────────────────────────
 A rate compared across two populations reports `Δ = Δengine − Δcomparator`. That is a statement
@@ -27,7 +33,19 @@ declared floor of 3.0pp. A floor wider than an arm's ENTIRE attainable range mea
 influence the verdict, so the "cross-arm delta" was a single-arm level test wearing a delta's
 clothes. No comparator repair fixes that; only a refusal is honest.
 
+── …AND IT BELONGS AT DECLARATION, NOT AT READOUT (OPS-PREREG-IDENTIFIABILITY-GATE-W1) ───────────
+`compare_arms` refused that floor on 2026-09-02, two days AFTER it was declared and only because a
+false rollback page forced a look. The refusal never needed an outcome: `Arm.attainable_pp` is
+exactly `200·min(q, 1−q, u, 1−u)` on the binarised table (u = the arm's up-share), so the side share
+alone bounds it — `attainable_bound_from_share(q) = 200·min(q, 1−q)` pp, with equality whenever u
+lies between min(q, 1−q) and max(q, 1−q). A share is a CARDINALITY, which a pre-registration may
+probe before it lands (audits/PREREGISTRATION-PROCEDURE.md §1), so `declaration_identifiability`
+decides "can this declared floor ever be reached?" before any data exists, and refuses only what
+the readout refusal above would also refuse: the bound is never below the attainable width.
+
 Verdict token: `POPULATION_COMPARISON_VERDICT=PASS|FAIL|INDETERMINATE`, exit 0/0/3.
+`--declarations` is a computation, not a gate: one JSON document on stdout, exit 0 when the input
+parsed (NOT_IDENTIFIABLE is a result, not an error) and 3 when it did not.
 """
 from __future__ import annotations
 
@@ -38,6 +56,12 @@ from pathlib import Path
 
 PASS, FAIL, INDET = "PASS", "FAIL", "INDETERMINATE"
 NOT_IDENTIFIABLE = "NOT_IDENTIFIABLE"
+IDENTIFIABLE = "IDENTIFIABLE"
+
+# A declared floor is refused only when it exceeds the bound by more than float noise: 1 − 0.9 is
+# 0.0999…98 in binary, so a 20pp floor on a 90/10 arm must not read as unreachable. Equality
+# passes, exactly as `compare_arms`'s `floor > narrow` lets it.
+DECLARATION_EPS_PP = 1e-9
 
 SCHEMA_PATH = Path(os.environ.get(
     "POPULATION_COMPARISON_SCHEMA",
@@ -210,6 +234,98 @@ def compare_arms(a: Arm, b: Arm, declared_floor_pp: float, schema: dict | None =
     return Comparison(PASS, f"excess delta {delta:+.2f}pp within the {floor:.2f}pp floor", ev)
 
 
+# ─────────────── declaration-time identifiability (OPS-PREREG-IDENTIFIABILITY-GATE-W1) ───────────────
+
+def _is_number(x) -> bool:
+    # bool is an int subclass; a JSON `true` is not a share.
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def attainable_bound_from_share(q) -> float | None:
+    """Upper bound on `Arm.attainable_pp` from the side share ALONE, in pp (the unit of
+    `attainable_pp`, so callers compare like with like).
+
+    `attainable_pp` = 200·min(q, 1−q, u, 1−u) on the binarised {up, not-up} table, so
+    200·min(q, 1−q) bounds it for EVERY up-share u, with equality whenever u lies in
+    [min(q, 1−q), max(q, 1−q)]. Symmetric in q ↔ 1−q: pass the BUY share or the minority share,
+    the answer is the same. Ties only narrow the true range, so it stays an upper bound.
+
+    None for anything that is not a share in [0, 1] — a caller treats None as INDETERMINATE,
+    never as a bound of zero (which would refuse every floor and look like a verdict).
+    """
+    if not _is_number(q) or q < 0.0 or q > 1.0:
+        return None
+    return 100.0 * 2.0 * min(q, 1.0 - q)
+
+
+def declaration_identifiability(floor_pp, shares) -> dict:
+    """Can a DECLARED floor ever be reached? Decided from cardinalities only, before any outcome.
+
+    `shares`: the side share of EVERY arm the floor constrains (one for a single-arm excess, two for
+    a cross-arm delta). The binding arm is the narrowest — a floor wider than one arm's whole range
+    leaves that arm inert, which is the 2026-09-02 defect. The floor is taken as a magnitude, as
+    `compare_arms` takes it.
+
+    Returns {verdict, reason, floor_pp, bound_pp, bounds_pp, binding_index}. Malformed input is
+    INDETERMINATE with the reason — never a verdict, because a refusal computed from garbage would
+    read exactly like a real one.
+    """
+    out = {"verdict": INDET, "reason": "", "floor_pp": None, "bound_pp": None,
+           "bounds_pp": [], "binding_index": None}
+    if not _is_number(floor_pp):
+        out["reason"] = f"declared floor is not a finite number: {floor_pp!r}"
+        return out
+    floor = abs(float(floor_pp))
+    out["floor_pp"] = floor
+    if not isinstance(shares, list) or not shares:
+        out["reason"] = "no arm share was declared — a floor must name the share it was sized against"
+        return out
+    bounds = []
+    for i, s in enumerate(shares):
+        b = attainable_bound_from_share(s)
+        if b is None:
+            out["reason"] = f"arm {i}: side share {s!r} is not a number in [0, 1]"
+            return out
+        bounds.append(b)
+    narrow = min(bounds)
+    idx = bounds.index(narrow)
+    out.update(bounds_pp=bounds, bound_pp=narrow, binding_index=idx)
+    if floor > narrow + DECLARATION_EPS_PP:
+        out["verdict"] = NOT_IDENTIFIABLE
+        out["reason"] = (f"{NOT_IDENTIFIABLE}: declared floor {floor:.2f}pp exceeds 2m = {narrow:.2f}pp, "
+                         f"the most the narrowest arm (index {idx}) can ever show — refuse the floor "
+                         f"and restate the test (e.g. within the arm)")
+    else:
+        out["verdict"] = IDENTIFIABLE
+        out["reason"] = f"declared floor {floor:.2f}pp is within 2m = {narrow:.2f}pp"
+    return out
+
+
+def run_declarations(text: str) -> tuple[int, dict]:
+    """The `--declarations` contract, as a pure function so the self-test exercises the exact parser
+    the JS gates reach (a hermetic self-test is blind to whatever its seam replaces).
+
+    In:  {"declarations": [{"id": <str>, "floor_pp": <number>, "shares": [<number>, ...]}, ...]}
+    Out: (0, {"results": [{"id", "verdict", "reason", "floor_pp", "bound_pp", "bounds_pp",
+                           "binding_index"}, ...]})  — or (3, {"error": <why>}) when unparseable.
+    """
+    try:
+        doc = json.loads(text)
+    except (ValueError, TypeError) as e:
+        return 3, {"error": f"input is not JSON: {e}"}
+    decls = doc.get("declarations") if isinstance(doc, dict) else None
+    if not isinstance(decls, list):
+        return 3, {"error": "input must be an object carrying a 'declarations' list"}
+    results = []
+    for i, d in enumerate(decls):
+        if not isinstance(d, dict) or "floor_pp" not in d or "shares" not in d:
+            return 3, {"error": f"declaration {i} must be an object with floor_pp and shares"}
+        r = declaration_identifiability(d["floor_pp"], d["shares"])
+        r["id"] = d.get("id", i)
+        results.append(r)
+    return 0, {"results": results}
+
+
 # ─────────────────────────────── self-test ───────────────────────────────
 
 def _self_test() -> int:
@@ -290,6 +406,95 @@ def _self_test() -> int:
     check("schema: denominator convention is pinned",
           schema["denominator_convention"] == "ALL_SCORED")
 
+    # 7. THE DECLARATION-TIME BOUND, property-tested against `Arm.attainable_pp` in BOTH directions.
+    #    `>=` everywhere catches a bound that shrank; `==` on the equality region catches one that
+    #    grew — asserting only `>=` would let `300·min(q, 1−q)` pass while refusing nothing it should.
+    #    Built from COUNTS through the real `Arm`, never from a re-typed formula.
+    n_grid = 10_000
+    qs = sorted({i / 100 for i in range(101)} | {0.0, 0.0053, 0.5, 0.9947, 1.0})
+    us = [i / 100 for i in range(101)]
+    exceed = in_region = region_miss = points = 0
+    for q in qs:
+        buys = round(q * n_grid)
+        bound = attainable_bound_from_share(buys / n_grid)
+        lo, hi = min(buys, n_grid - buys), max(buys, n_grid - buys)
+        for u in us:
+            ups = round(u * n_grid)
+            ap = Arm("grid", n_grid, 0, ups, n_grid - ups, buys).attainable_pp
+            points += 1
+            if bound is None or ap > bound + DECLARATION_EPS_PP:
+                exceed += 1
+            if lo <= ups <= hi:
+                in_region += 1
+                if bound is None or abs(ap - bound) > DECLARATION_EPS_PP:
+                    region_miss += 1
+    check("the grid carries q in {0, 0.0053, 0.5, 0.9947, 1}",
+          all(x in qs for x in (0.0, 0.0053, 0.5, 0.9947, 1.0)))
+    check(f"bound >= Arm.attainable_pp at every grid point ({points} points, {exceed} exceed)",
+          points > 10_000 and exceed == 0)
+    check(f"bound == Arm.attainable_pp on the equality region ({in_region} points, {region_miss} miss)",
+          in_region > 1_000 and region_miss == 0)
+
+    # 8. The bound is symmetric and refuses non-shares rather than inventing a zero.
+    check("bound is symmetric in q <-> 1-q",
+          abs(attainable_bound_from_share(0.0053) - attainable_bound_from_share(1 - 0.0053)) < 1e-12)
+    check("bound of a non-share is None, never 0",
+          all(attainable_bound_from_share(x) is None
+              for x in (-0.01, 1.01, float("nan"), float("inf"), True, "0.5", None)))
+
+    # 9. TRIGGER A, refused at DECLARATION — the shape `compare_arms` refused at readout above,
+    #    decided here from the share alone, before a single outcome existed.
+    t_a = declaration_identifiability(3.0, [0.0053])
+    check(f"trigger A (m = 0.0053, floor 3.0pp) => NOT_IDENTIFIABLE, bound 1.06pp "
+          f"(got {t_a['verdict']}, {t_a['bound_pp']})",
+          t_a["verdict"] == NOT_IDENTIFIABLE and t_a["bound_pp"] is not None
+          and abs(t_a["bound_pp"] - 1.06) < 1e-9)
+    t_counts = declaration_identifiability(3.0, [v1.q])
+    check("…and from the incident's own COUNTS, not only the rounded share",
+          t_counts["verdict"] == NOT_IDENTIFIABLE)
+    cross = declaration_identifiability(3.0, [v2.q, v1.q])
+    check("a cross-arm floor binds on the NARROWER arm (v1, index 1)",
+          cross["verdict"] == NOT_IDENTIFIABLE and cross["binding_index"] == 1)
+    check("a floor inside the bound is IDENTIFIABLE (m = 0.2, floor 3.0pp)",
+          declaration_identifiability(3.0, [0.2])["verdict"] == IDENTIFIABLE)
+    check("floor == bound passes, as in compare_arms",
+          declaration_identifiability(1.06, [0.0053])["verdict"] == IDENTIFIABLE)
+    check("float noise at equality never refuses (20pp on a 90/10 arm, 1-0.9 = 0.0999…98)",
+          declaration_identifiability(20.0, [0.9])["verdict"] == IDENTIFIABLE)
+    check("the floor is a magnitude, as compare_arms takes it",
+          declaration_identifiability(-3.0, [0.0053])["verdict"] == NOT_IDENTIFIABLE)
+    check("malformed input is INDETERMINATE, never a verdict",
+          all(declaration_identifiability(f, s)["verdict"] == INDET
+              for f, s in ((3.0, []), (3.0, [1.5]), (3.0, [True]), ("3", [0.2]),
+                           (float("nan"), [0.2]), (3.0, "0.2"), (None, [0.2]))))
+
+    # 10. "Never refuses what the readout would accept": wherever the declaration refuses, the
+    #     readout's own attainable width is ALSO below the floor. Implied by section 7; asserted
+    #     directly because it is the property the procedure promises its authors.
+    contradictions = 0
+    for f in (0.5, 1.0, 1.06, 3.0, 10.0, 50.0):
+        for q in qs:
+            buys = round(q * n_grid)
+            refused = declaration_identifiability(f, [buys / n_grid])["verdict"] == NOT_IDENTIFIABLE
+            for u in us[::5]:
+                ups = round(u * n_grid)
+                ap = Arm("grid", n_grid, 0, ups, n_grid - ups, buys).attainable_pp
+                if refused and not ap < f:
+                    contradictions += 1
+    check(f"every declaration-time refusal is also a readout-time refusal ({contradictions} contradict)",
+          contradictions == 0)
+
+    # 11. THE SEAM BOTH JS GATES CALL — the `--declarations` parser, through the same pure function.
+    code, doc = run_declarations(json.dumps({"declarations": [
+        {"id": "trigger-A", "floor_pp": 3.0, "shares": [0.0053]},
+        {"id": "valid", "floor_pp": 3.0, "shares": [0.2]}]}))
+    check("--declarations: well-formed input exits 0 and keeps ids and order",
+          code == 0 and [r["id"] for r in doc["results"]] == ["trigger-A", "valid"]
+          and [r["verdict"] for r in doc["results"]] == [NOT_IDENTIFIABLE, IDENTIFIABLE])
+    check("--declarations: unparseable input exits 3 (INDETERMINATE), never 0",
+          all(run_declarations(t)[0] == 3 for t in
+              ("not json", "[]", '{"declarations": 1}', '{"declarations": [{"floor_pp": 3}]}')))
+
     total = len(failures)
     print(f"SELF-TEST: {'PASS' if total == 0 else f'FAIL ({total})'}")
     print(f"POPULATION_COMPARISON_VERDICT={PASS if total == 0 else INDET}")
@@ -298,4 +503,8 @@ def _self_test() -> int:
 
 if __name__ == "__main__":
     import sys
+    if sys.argv[1:] == ["--declarations"]:
+        _code, _doc = run_declarations(sys.stdin.read())
+        print(json.dumps(_doc))
+        sys.exit(_code)
     sys.exit(_self_test())
