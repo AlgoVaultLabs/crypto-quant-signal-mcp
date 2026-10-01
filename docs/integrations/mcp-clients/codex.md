@@ -2,7 +2,7 @@
 
 Give Codex a composite trade verdict in one call. Works in the Codex CLI and the IDE extension.
 
-> *Config verified 2026-08-05 against <https://learn.chatgpt.com/docs/extend/mcp>.*
+> *Config verified 2026-10-01 against <https://learn.chatgpt.com/docs/extend/mcp>.*
 
 ## Setup
 
@@ -19,7 +19,7 @@ bearer_token_env_var = "AV_API_KEY"
 
 Set `AV_API_KEY` in your shell for paid tier. On free tier, delete the `bearer_token_env_var` line and keep the rest.
 
-Note that `codex mcp add` covers **local stdio servers only**. Remote HTTP servers like AlgoVault are configured in the file, not through that command.
+`codex mcp add algovault --url "https://api.algovault.com/mcp?src=docs"` adds the free tier from the CLI; the paid tier's `bearer_token_env_var` is set in `config.toml`, as above.
 
 ### IDE extension
 
@@ -34,7 +34,6 @@ Chain it into edits: *"If BTC 4h is BUY, add a long entry at the current bar in 
 ## Troubleshooting
 
 - **AlgoVault tools not listed** — restart Codex. `config.toml` is read at startup.
-- **`codex mcp add` rejected the URL** — expected. That command adds stdio servers; use the TOML block above.
 - **`401 unauthorized`** — check the key shape (`av_live_…`). Free tier needs no key at all: remove `bearer_token_env_var`.
 - **TOML parse error** — header names contain a hyphen, so they must stay quoted inside `[mcp_servers.algovault.http_headers]`.
 - **Network timeout** — AlgoVault is hosted at `api.algovault.com`. Check VPN or firewall rules.

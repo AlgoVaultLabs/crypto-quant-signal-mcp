@@ -36,7 +36,7 @@ Scopes are chosen during that handshake: **market data** (no auth), **account**,
 
 ```bash
 claude mcp add --transport http --scope project algovault \
-  https://api.algovault.com/mcp?src=binance_agent_os \
+  "https://api.algovault.com/mcp?src=binance_agent_os" \
   --header "Authorization: Bearer $AV_API_KEY" \
   --header "X-AlgoVault-Track-Token:int-binance-agent-os"
 ```

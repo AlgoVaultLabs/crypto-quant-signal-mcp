@@ -6,7 +6,7 @@ Add AlgoVault's MCP tools to Claude Desktop as a custom connector. ≤5 minutes;
 
 Two paths. The UI path is easiest if you already use Claude Desktop daily.
 
-**Path 1 — UI (recommended).** Open Claude Desktop &rarr; Settings &rarr; Connectors &rarr; *Add custom connector*. Name: `AlgoVault`. URL: `https://api.algovault.com/mcp?src=docs`. Save and restart Claude Desktop. The free tier needs no header. Paid tier: add `Authorization: Bearer av_live_…` as a custom header.
+**Path 1 — UI (recommended).** Open Claude Desktop &rarr; Customize &rarr; Connectors &rarr; + &rarr; *Add custom connector*. Paste `https://api.algovault.com/mcp?src=docs`, then click *Add*. Enable it per chat from + &rarr; Connectors. The connector form takes OAuth credentials, not custom headers — for a paid-tier key, use the JSON path below.
 
 **Path 2 — JSON config.** Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
@@ -16,14 +16,15 @@ Two paths. The UI path is easiest if you already use Claude Desktop daily.
     "algovault": {
       "command": "npx",
       "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp?src=docs",
-               "--header", "Authorization: Bearer ${AV_API_KEY}",
-               "--header", "X-AlgoVault-Track-Token:int-claude-desktop"]
+               "--header", "Authorization:${AUTH_HEADER}",
+               "--header", "X-AlgoVault-Track-Token:int-claude-desktop"],
+      "env": { "AUTH_HEADER": "Bearer av_live_…" }
     }
   }
 }
 ```
 
-Set `AV_API_KEY` in the env block or your shell. Free tier: drop the `Authorization` header, but keep the `X-AlgoVault-Track-Token` header.
+Set your key in the env block. Free tier: drop the `Authorization` header and the env block, but keep the `X-AlgoVault-Track-Token` header.
 
 ## Example: get a BTC trade call
 
@@ -31,8 +32,8 @@ Ask Claude: *"Get me a trade call for BTC on the 1h timeframe."* The tool indica
 
 ## Troubleshooting
 
-- **Custom connector not appearing in tool list** — restart Claude Desktop after saving the connector. The connector list reads at app start.
-- **Authorization failed** — confirm `AV_API_KEY` is set in the JSON env block, not just your shell. Claude Desktop spawns the MCP process in its own env scope.
+- **Custom connector not appearing in tool list** — enable it for the chat from + → Connectors.
+- **Authorization failed** — confirm `AUTH_HEADER` is set in the JSON env block as `Bearer av_live_…`. Claude Desktop spawns the MCP process in its own env scope.
 - **Tool indicator never shows** — try the JSON config path. The UI's Streamable-HTTP transport sometimes fails handshake on flaky networks; the JSON config's `npx mcp-remote` shim is more resilient.
 - **`npx not found`** (JSON path) — install Node 20+ (`brew install node` on macOS). Claude Desktop spawns `npx` via PATH.
 

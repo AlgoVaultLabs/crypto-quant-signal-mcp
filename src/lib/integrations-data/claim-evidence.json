@@ -6,20 +6,25 @@
     {
       "slug": "claude-desktop",
       "kind": "native",
-      "verifiedAt": "2026-08-05",
+      "verifiedAt": "2026-10-01",
       "source": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
       "evidence": [
         {
-          "claim": "Settings → Connectors → Add custom connector",
+          "claim": "Customize → Connectors → + → Add custom connector",
           "source": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
           "expect": [
-            "Settings > Connectors"
+            "Customize > Connectors",
+            "Add custom connector"
           ]
         },
         {
-          "claim": "as a custom header (paid tier)",
+          "claim": "The connector form takes OAuth credentials, not custom headers",
           "source": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
           "expect": [
+            "OAuth Client ID",
+            "OAuth Client Secret"
+          ],
+          "reject": [
             "custom header"
           ]
         },
@@ -36,14 +41,21 @@
           "expect": [
             "--header"
           ]
+        },
+        {
+          "claim": "Authorization:${AUTH_HEADER}",
+          "source": "https://registry.npmjs.org/mcp-remote",
+          "expect": [
+            "Authorization:${AUTH_HEADER}"
+          ]
         }
       ]
     },
     {
       "slug": "cursor",
       "kind": "native",
-      "verifiedAt": "2026-04-30",
-      "source": "https://cursor.com/docs/context/mcp",
+      "verifiedAt": "2026-10-01",
+      "source": "https://cursor.com/docs/mcp",
       "evidence": [
         {
           "claim": "~/.cursor/mcp.json",
@@ -66,8 +78,8 @@
     {
       "slug": "cline",
       "kind": "native",
-      "verifiedAt": "2026-04-30",
-      "source": "https://docs.cline.bot/mcp/connecting-to-a-remote-server",
+      "verifiedAt": "2026-10-01",
+      "source": "https://docs.cline.bot/mcp/mcp-overview",
       "evidence": [
         {
           "claim": "Remote Servers tab",
@@ -97,7 +109,7 @@
     {
       "slug": "claude-code",
       "kind": "native",
-      "verifiedAt": "2026-04-30",
+      "verifiedAt": "2026-10-01",
       "source": "https://code.claude.com/docs/en/mcp",
       "evidence": [
         {
@@ -122,14 +134,28 @@
     {
       "slug": "smithery",
       "kind": "native",
-      "verifiedAt": "2026-04-30",
+      "verifiedAt": "2026-10-01",
       "source": "https://www.npmjs.com/package/@smithery/cli",
       "evidence": [
         {
-          "claim": "npx -y @smithery/cli install crypto-quant-signal-mcp --client",
-          "source": "https://registry.npmjs.org/@smithery%2Fcli",
+          "claim": "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp",
+          "source": "https://www.npmjs.com/package/@smithery/cli",
           "expect": [
-            "@smithery/cli install"
+            "smithery mcp add"
+          ]
+        },
+        {
+          "claim": "algovault/crypto-quant-signal-mcp",
+          "source": "https://registry.smithery.ai/servers/algovault/crypto-quant-signal-mcp",
+          "expect": [
+            "\"qualifiedName\":\"algovault/crypto-quant-signal-mcp\""
+          ]
+        },
+        {
+          "claim": "--client <client>",
+          "source": "https://unpkg.com/@smithery/cli/dist/index.js",
+          "expect": [
+            "Install directly to an AI client"
           ]
         }
       ]
@@ -137,8 +163,8 @@
     {
       "slug": "plain-http",
       "kind": "native",
-      "verifiedAt": "2026-04-30",
-      "source": "https://modelcontextprotocol.io/quickstart/user",
+      "verifiedAt": "2026-10-01",
+      "source": "https://api.algovault.com/health",
       "evidence": [
         {
           "claim": "\"status\":\"ok\"",
@@ -148,10 +174,10 @@
           ]
         },
         {
-          "claim": "\"version\":\"1.10.3\"",
+          "claim": "\"server\":\"crypto-quant-signal-mcp\"",
           "source": "https://api.algovault.com/health",
           "expect": [
-            "\"version\":\"1.10.3\""
+            "\"server\":\"crypto-quant-signal-mcp\""
           ]
         }
       ]
@@ -159,7 +185,7 @@
     {
       "slug": "codex",
       "kind": "native",
-      "verifiedAt": "2026-08-05",
+      "verifiedAt": "2026-10-01",
       "source": "https://learn.chatgpt.com/docs/extend/mcp",
       "evidence": [
         {
@@ -172,12 +198,10 @@
           ]
         },
         {
-          "claim": "codex mcp add covers local stdio servers only",
+          "claim": "codex mcp add algovault --url",
           "source": "https://learn.chatgpt.com/docs/extend/mcp",
           "expect": [
-            "codex mcp add"
-          ],
-          "reject": [
+            "codex mcp add",
             "--url"
           ]
         }
@@ -253,7 +277,7 @@
     {
       "slug": "deepseek",
       "kind": "byo-model",
-      "verifiedAt": "2026-08-28",
+      "verifiedAt": "2026-10-01",
       "source": "https://api-docs.deepseek.com/guides/anthropic_api",
       "evidence": [
         {

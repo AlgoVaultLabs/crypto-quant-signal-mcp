@@ -174,7 +174,7 @@ Two MCP servers in one client. AlgoVault decides, Binance executes.
 claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic
 
 claude mcp add --transport http --scope project algovault \
-  https://api.algovault.com/mcp?src=binance_agent_os \
+  "https://api.algovault.com/mcp?src=binance_agent_os" \
   --header "Authorization: Bearer $AV_API_KEY" \
   --header "X-AlgoVault-Track-Token:int-binance-agent-os"
 ```

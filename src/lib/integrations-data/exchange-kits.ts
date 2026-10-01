@@ -82,7 +82,7 @@ npx skills add https://github.com/binance/binance-skills-hub</code></pre>
       <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic
 claude mcp add --transport http --scope project algovault \\
-  https://api.algovault.com/mcp?src=binance_agent_os</code></pre>
+  "https://api.algovault.com/mcp?src=binance_agent_os"</code></pre>
       </div>
       <p>Authenticate Binance through <code class="text-xs bg-navy-800 px-1 rounded">/mcp</code> and grant the least scope you need: market data, account, trade or transfer. Trading runs inside an isolated Agentic sub-account you fund yourself.</p>
       <p>Name the tool you want. An exchange-shaped prompt routes to Binance and never reaches the verdict, so ask for <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code> explicitly.</p>

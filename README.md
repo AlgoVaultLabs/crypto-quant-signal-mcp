@@ -44,7 +44,7 @@
 
 No code. No API key. No install. The server speaks Streamable HTTP at `https://api.algovault.com/mcp` — any [Model Context Protocol](https://github.com/modelcontextprotocol) client connects directly.
 
-**1. Add the connector.** In Claude → Settings → Connectors → Add custom connector:
+**1. Add the connector.** In Claude → Customize → Connectors → + → Add custom connector:
 
 | Field | Value |
 |---|---|
@@ -139,9 +139,9 @@ AlgoVault is drop-in for every MCP-spec client, every major agent framework, and
 
 | Client | Config |
 |---|---|
-| **Claude Desktop** | Settings → Connectors → Add custom connector → `https://api.algovault.com/mcp` |
-| **Claude Code** (CLI) | `claude mcp add crypto-quant-signal https://api.algovault.com/mcp` |
-| **Cursor** | `~/.cursor/config.json` → `mcpServers` block → `url: "https://api.algovault.com/mcp"` |
+| **Claude Desktop** | Customize → Connectors → + → Add custom connector → `https://api.algovault.com/mcp` |
+| **Claude Code** (CLI) | `claude mcp add --transport http crypto-quant-signal https://api.algovault.com/mcp` |
+| **Cursor** | `~/.cursor/mcp.json` → `mcpServers` block → `url: "https://api.algovault.com/mcp"` |
 | **Cline** | VS Code Cline extension → MCP server settings → add Streamable HTTP server |
 | **Codex** (OpenAI CLI) | `~/.codex/config.toml` → `[mcp_servers.algovault]` table + `url = "https://api.algovault.com/mcp"` (or `codex mcp` CLI) |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` → `mcpServers.algovault.serverUrl = "https://api.algovault.com/mcp"` |

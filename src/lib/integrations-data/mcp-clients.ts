@@ -69,10 +69,10 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       displayName: 'Claude Desktop',
       surfaceType: 'mcp-client',
       setupSummary:
-        'Settings &rarr; Connectors &rarr; <em>Add custom connector</em>, or edit <code class="text-xs bg-navy-800 px-1 rounded">claude_desktop_config.json</code>',
+        'Customize &rarr; Connectors &rarr; + &rarr; <em>Add custom connector</em>, or edit <code class="text-xs bg-navy-800 px-1 rounded">claude_desktop_config.json</code>',
       whatYouGet:
         'Native Streamable-HTTP MCP. AlgoVault tools (<code class="text-xs">get_trade_call</code>, <code class="text-xs">scan_funding_arb</code>, <code class="text-xs">get_market_regime</code>) callable in any chat.',
-      walkthroughHtml: `      <p><strong>Easiest path (UI):</strong> Open Claude Desktop &rarr; <em>Settings</em> &rarr; <em>Connectors</em> &rarr; <em>Add custom connector</em>. Name it <code class="text-xs bg-navy-800 px-1 rounded">AlgoVault</code>. URL: <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp?src=docs</code>. Add <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code> as a custom header (paid tier). Save and restart Claude Desktop.</p>
+      walkthroughHtml: `      <p><strong>Easiest path (UI, free tier):</strong> Open Claude Desktop &rarr; <em>Customize</em> &rarr; <em>Connectors</em> &rarr; <em>+</em> &rarr; <em>Add custom connector</em>. Paste <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp?src=docs</code>, then click <em>Add</em>. Enable it per chat from <em>+</em> &rarr; <em>Connectors</em>. The connector form takes OAuth credentials, not custom headers &mdash; for a paid-tier key, use the JSON path below.</p>
       <p><strong>JSON path:</strong> Edit <code class="text-xs bg-navy-800 px-1 rounded">~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or <code class="text-xs bg-navy-800 px-1 rounded">%APPDATA%\\Claude\\claude_desktop_config.json</code> (Windows):</p>
       <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
@@ -80,29 +80,34 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
     "algovault": {
       "command": "npx",
       "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp?src=docs",
-               "--header", "Authorization: Bearer \${AV_API_KEY}",
-               "--header", "X-AlgoVault-Track-Token:chan-docs"]
+               "--header", "Authorization:\${AUTH_HEADER}",
+               "--header", "X-AlgoVault-Track-Token:chan-docs"],
+      "env": { "AUTH_HEADER": "Bearer av_live_&hellip;" }
     }
   }
 }</code></pre>
       </div>
-      <p>Set <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> in the env block or your shell. Free tier: drop the <code class="text-xs">Authorization</code> header, but keep the <code class="text-xs">X-AlgoVault-Track-Token</code> header.</p>
+      <p>Set your key in the env block. Free tier: drop the <code class="text-xs">Authorization</code> header and the env block, but keep the <code class="text-xs">X-AlgoVault-Track-Token</code> header.</p>
       <p><strong>Verify:</strong> ask Claude <em>"Get me a trade call for BTC on the 1h timeframe"</em>. Tool indicator appears bottom-right of the input box.</p>`,
       fullTutorialUrl: '/integrations/claude-desktop',
       hasDedicatedPage: true,
       kind: 'native',
       source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
-      verifiedAt: '2026-08-05',
+      verifiedAt: '2026-10-01',
       evidence: [
         {
-          claim: 'Settings → Connectors → Add custom connector',
+          claim: 'Customize → Connectors → + → Add custom connector',
           source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
-          expect: ['Settings > Connectors'],
+          expect: ['Customize > Connectors', 'Add custom connector'],
         },
         {
-          claim: 'as a custom header (paid tier)',
+          // The form's only optional fields are OAuth ones, and this API serves no OAuth metadata,
+          // so the UI path cannot carry a paid-tier key. If the article ever documents a header
+          // field, the reject fires and this sentence has to change.
+          claim: 'The connector form takes OAuth credentials, not custom headers',
           source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
-          expect: ['custom header'],
+          expect: ['OAuth Client ID', 'OAuth Client Secret'],
+          reject: ['custom header'],
         },
         {
           claim: 'claude_desktop_config.json',
@@ -113,6 +118,13 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
           claim: '"mcp-remote"',
           source: 'https://registry.npmjs.org/mcp-remote',
           expect: ['--header'],
+        },
+        {
+          // mcp-remote's own workaround for clients that split `args` on spaces (Claude Desktop on
+          // Windows among them): no space inside the header argument, the value comes from env.
+          claim: 'Authorization:${AUTH_HEADER}',
+          source: 'https://registry.npmjs.org/mcp-remote',
+          expect: ['Authorization:${AUTH_HEADER}'],
         },
       ],
     },
@@ -142,8 +154,8 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       fullTutorialUrl: '/integrations/cursor',
       hasDedicatedPage: true,
       kind: 'native',
-      source: 'https://cursor.com/docs/context/mcp',
-      verifiedAt: '2026-04-30',
+      source: 'https://cursor.com/docs/mcp',
+      verifiedAt: '2026-10-01',
       evidence: [
         {
           claim: '~/.cursor/mcp.json',
@@ -185,8 +197,8 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       fullTutorialUrl: '/integrations/cline',
       hasDedicatedPage: true,
       kind: 'native',
-      source: 'https://docs.cline.bot/mcp/connecting-to-a-remote-server',
-      verifiedAt: '2026-04-30',
+      source: 'https://docs.cline.bot/mcp/mcp-overview',
+      verifiedAt: '2026-10-01',
       evidence: [
         {
           claim: 'Remote Servers tab',
@@ -216,7 +228,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
         'Per-project MCP. Useful for backtest / strategy-dev repos. Team-shared via <code class="text-xs">.mcp.json</code>.',
       walkthroughHtml: `      <p><strong>One-liner (recommended):</strong></p>
       <div class="code-block bg-well border border-line rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">claude mcp add --transport http --scope project algovault https://api.algovault.com/mcp?src=docs \\
+        <pre><code class="text-xs text-gray-300">claude mcp add --transport http --scope project algovault "https://api.algovault.com/mcp?src=docs" \\
   --header "Authorization: Bearer \$AV_API_KEY" \\
   --header "X-AlgoVault-Track-Token:chan-docs"</code></pre>
       </div>
@@ -240,7 +252,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       hasDedicatedPage: true,
       kind: 'native',
       source: 'https://code.claude.com/docs/en/mcp',
-      verifiedAt: '2026-04-30',
+      verifiedAt: '2026-10-01',
       evidence: [
         {
           claim: 'claude mcp add --transport http --scope project',
@@ -259,25 +271,38 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       displayName: 'Smithery',
       surfaceType: 'mcp-client',
       setupSummary:
-        '<code class="text-xs bg-navy-800 px-1 rounded">npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;name&gt;</code>',
+        '<code class="text-xs bg-navy-800 px-1 rounded">npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;</code>',
       whatYouGet:
         'Auto-managed connection via Smithery registry. Easiest install across clients.',
       walkthroughHtml: `      <p>The Smithery CLI installs and configures the MCP server in your client of choice automatically:</p>
       <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300"># Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code
-npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</code></pre>
+npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;client&gt;</code></pre>
       </div>
-      <p>The CLI writes the right config file for your client and prompts for any required env vars (like <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> for paid-tier access). Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href="https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp" class="text-mint-400 hover:underline">smithery.ai</a>.</p>`,
+      <p>The CLI writes a Smithery-gateway entry into your client's config. It carries no API key, so this path is the free tier. Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href="https://smithery.ai/servers/algovault/crypto-quant-signal-mcp" class="text-mint-400 hover:underline">smithery.ai</a>.</p>`,
       fullTutorialUrl: '/integrations/smithery',
       hasDedicatedPage: true,
       kind: 'native',
       source: 'https://www.npmjs.com/package/@smithery/cli',
-      verifiedAt: '2026-04-30',
+      verifiedAt: '2026-10-01',
       evidence: [
         {
-          claim: 'npx -y @smithery/cli install crypto-quant-signal-mcp --client',
-          source: 'https://registry.npmjs.org/@smithery%2Fcli',
-          expect: ['@smithery/cli install'],
+          // The canary rewrites npmjs.com/package/* to the registry document (README included).
+          claim: 'npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp',
+          source: 'https://www.npmjs.com/package/@smithery/cli',
+          expect: ['smithery mcp add'],
+        },
+        {
+          claim: 'algovault/crypto-quant-signal-mcp',
+          source: 'https://registry.smithery.ai/servers/algovault/crypto-quant-signal-mcp',
+          expect: ['"qualifiedName":"algovault/crypto-quant-signal-mcp"'],
+        },
+        {
+          // `--client` is what lets `mcp add` run with no Smithery login (without it the CLI exits
+          // 1 asking for an API key); the README does not document it, the shipped bundle does.
+          claim: '--client <client>',
+          source: 'https://unpkg.com/@smithery/cli/dist/index.js',
+          expect: ['Install directly to an AI client'],
         },
       ],
     },
@@ -295,12 +320,12 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
       <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">curl -sS https://api.algovault.com/health</code></pre>
       </div>
-      <p>Returns <code class="text-xs bg-navy-800 px-1 rounded">{"status":"ok","version":"1.10.3","stripe":true}</code>.</p>`,
+      <p>Returns <code class="text-xs bg-navy-800 px-1 rounded">{"status":"ok","server":"crypto-quant-signal-mcp","version":"&lt;current release&gt;","stripe":true}</code>.</p>`,
       fullTutorialUrl: '',
       hasDedicatedPage: false,
       kind: 'native',
-      source: 'https://modelcontextprotocol.io/quickstart/user',
-      verifiedAt: '2026-04-30',
+      source: 'https://api.algovault.com/health',
+      verifiedAt: '2026-10-01',
       evidence: [
         {
           claim: '"status":"ok"',
@@ -308,9 +333,11 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
           expect: ['"status":"ok"'],
         },
         {
-          claim: '"version":"1.10.3"',
+          // No version literal (Q-B): a published version goes stale at the next release. The
+          // server name is the stable field of the same response.
+          claim: '"server":"crypto-quant-signal-mcp"',
           source: 'https://api.algovault.com/health',
-          expect: ['"version":"1.10.3"'],
+          expect: ['"server":"crypto-quant-signal-mcp"'],
         },
       ],
     },
@@ -337,14 +364,14 @@ bearer_token_env_var = "AV_API_KEY"
 [mcp_servers.algovault.http_headers]
 "X-AlgoVault-Track-Token" = "chan-docs"</code></pre>
       </div>
-      <p>Set <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> in your shell for paid tier; drop <code class="text-xs">bearer_token_env_var</code> for free tier. Note that <code class="text-xs bg-navy-800 px-1 rounded">codex mcp add</code> covers local stdio servers only, so remote HTTP servers are configured in the file.</p>
+      <p>Set <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> in your shell for paid tier; drop <code class="text-xs">bearer_token_env_var</code> for free tier. <code class="text-xs bg-navy-800 px-1 rounded">codex mcp add algovault --url "https://api.algovault.com/mcp?src=docs"</code> adds the free tier from the CLI; the paid tier's <code class="text-xs">bearer_token_env_var</code> is set in <code class="text-xs">config.toml</code>, as above.</p>
       <p><strong>IDE extension:</strong> open settings, choose <em>MCP servers</em>, add a server, pick <em>Streamable HTTP</em> and paste the same URL.</p>
       <p><strong>Verify:</strong> ask Codex <em>"Get me a trade call for BTC on the 1h timeframe"</em>.</p>`,
       fullTutorialUrl: '/integrations/codex',
       hasDedicatedPage: true,
       kind: 'native',
       source: 'https://learn.chatgpt.com/docs/extend/mcp',
-      verifiedAt: '2026-08-05',
+      verifiedAt: '2026-10-01',
       evidence: [
         {
           claim: 'bearer_token_env_var',
@@ -352,12 +379,11 @@ bearer_token_env_var = "AV_API_KEY"
           expect: ['bearer_token_env_var', 'http_headers', 'config.toml'],
         },
         {
-          claim: 'codex mcp add covers local stdio servers only',
+          // Two short tokens on purpose: a longer form would bind to the vendor's placeholder
+          // names (`example`, `mcp.example.com`) and break when they rename the example.
+          claim: 'codex mcp add algovault --url',
           source: 'https://learn.chatgpt.com/docs/extend/mcp',
-          expect: ['codex mcp add'],
-          // Present iff the command documents a URL flag — a longer form would bind to the
-          // vendor's placeholder names and silently re-confirm when they rename the example.
-          reject: ['--url'],
+          expect: ['codex mcp add', '--url'],
         },
       ],
     },
@@ -522,7 +548,7 @@ bearer_token_env_var = "AV_API_KEY"
 export ANTHROPIC_AUTH_TOKEN="$DEEPSEEK_API_KEY"
 
 claude mcp add --transport http --scope project algovault \\
-  https://api.algovault.com/mcp?src=docs \\
+  "https://api.algovault.com/mcp?src=docs" \\
   --header "X-AlgoVault-Track-Token:chan-docs"</code></pre>
       </div>
       <p>Claude Code then runs against DeepSeek while AlgoVault stays connected exactly as it would otherwise. Verdicts are unchanged: they are computed on our side and handed back as JSON.</p>
@@ -531,7 +557,7 @@ claude mcp add --transport http --scope project algovault \\
       hasDedicatedPage: false,
       kind: 'byo-model',
       source: 'https://api-docs.deepseek.com/guides/anthropic_api',
-      verifiedAt: '2026-08-28',
+      verifiedAt: '2026-10-01',
       evidence: [
         {
           // Evidence is per CLAIM: this one lives on a different DeepSeek page than the row's source.
