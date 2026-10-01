@@ -40,7 +40,8 @@ describe('MCP_USAGE_HTML — structural invariants', () => {
     ['Cursor',             /\.cursor\/mcp\.json/],
     ['Cline',              /cline_mcp_settings\.json|streamableHttp/],
     ['Claude Code',        /claude mcp add/],
-    ['Smithery',           /@smithery\/cli install/],
+    // LANDING-MCP-CLIENTS-CLAIMS-W1 R8/R9: `install` is gone from @smithery/cli; `mcp add` is the command.
+    ['Smithery',           /@smithery\/cli mcp add algovault\/crypto-quant-signal-mcp/],
     ['Plain HTTP',         /api\.algovault\.com\/mcp/],
   ])('mentions %s with verified config marker', (name, configPattern) => {
     expect(MCP_USAGE_HTML).toContain(name);

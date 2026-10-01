@@ -11,7 +11,7 @@
 <meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with Claude Desktop&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/claude-desktop">
-<meta name="last-updated" content="2026-09-23">
+<meta name="last-updated" content="2026-10-01">
 <!-- BEGIN: AlgoVault canonical design loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +26,7 @@
   "headline": "AlgoVault × Claude Desktop - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/claude-desktop",
   "datePublished": "2026-05-19T00:00:00+00:00",
-  "dateModified": "2026-08-09T15:00:00+00:00",
+  "dateModified": "2026-10-01T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -279,33 +279,34 @@ tailwind.config = {
     <div style="position:relative;z-index:1">
       <div class="placeholder-cap" style="margin-bottom:14px">· claude-desktop integration</div>
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.1%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">829,513</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">90.9%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">916,636</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Claude Desktop</h1>
 <p>Add AlgoVault’s MCP tools to Claude Desktop as a custom connector. ≤5 minutes; works on the free tier (200 calls/month, 100/day, no signup).</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Setup</h2>
 <p>Two paths. The UI path is easiest if you already use Claude Desktop daily.</p>
-<p><strong>Path 1 — UI (recommended).</strong> Open Claude Desktop → Settings → Connectors → <em>Add custom connector</em>. Name: <code>AlgoVault</code>. URL: <code>https://api.algovault.com/mcp?src=docs</code>. Save and restart Claude Desktop. The free tier needs no header. Paid tier: add <code>Authorization: Bearer av_live_…</code> as a custom header.</p>
+<p><strong>Path 1 — UI (recommended).</strong> Open Claude Desktop → Customize → Connectors → + → <em>Add custom connector</em>. Paste <code>https://api.algovault.com/mcp?src=docs</code>, then click <em>Add</em>. Enable it per chat from + → Connectors. The connector form takes OAuth credentials, not custom headers — for a paid-tier key, use the JSON path below.</p>
 <p><strong>Path 2 — JSON config.</strong> Edit <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or <code>%APPDATA%\Claude\claude_desktop_config.json</code> (Windows):</p>
 <pre><code class="language-json">{
   &quot;mcpServers&quot;: {
     &quot;algovault&quot;: {
       &quot;command&quot;: &quot;npx&quot;,
       &quot;args&quot;: [&quot;-y&quot;, &quot;mcp-remote&quot;, &quot;https://api.algovault.com/mcp?src=docs&quot;,
-               &quot;--header&quot;, &quot;Authorization: Bearer ${AV_API_KEY}&quot;,
-               &quot;--header&quot;, &quot;X-AlgoVault-Track-Token:int-claude-desktop&quot;]
+               &quot;--header&quot;, &quot;Authorization:${AUTH_HEADER}&quot;,
+               &quot;--header&quot;, &quot;X-AlgoVault-Track-Token:int-claude-desktop&quot;],
+      &quot;env&quot;: { &quot;AUTH_HEADER&quot;: &quot;Bearer av_live_…&quot; }
     }
   }
 }
 </code></pre>
-<p>Set <code>AV_API_KEY</code> in the env block or your shell. Free tier: drop the <code>Authorization</code> header, but keep the <code>X-AlgoVault-Track-Token</code> header.</p></div>
+<p>Set your key in the env block. Free tier: drop the <code>Authorization</code> header and the env block, but keep the <code>X-AlgoVault-Track-Token</code> header.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Example: get a BTC trade call</h2>
 <p>Ask Claude: <em>“Get me a trade call for BTC on the 1h timeframe.”</em> The tool indicator appears bottom-right of the input box during the call. Claude returns the parsed verdict (call, confidence, regime, indicators) without you seeing raw API JSON.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
 <ul>
-<li><strong>Custom connector not appearing in tool list</strong> — restart Claude Desktop after saving the connector. The connector list reads at app start.</li>
-<li><strong>Authorization failed</strong> — confirm <code>AV_API_KEY</code> is set in the JSON env block, not just your shell. Claude Desktop spawns the MCP process in its own env scope.</li>
+<li><strong>Custom connector not appearing in tool list</strong> — enable it for the chat from + → Connectors.</li>
+<li><strong>Authorization failed</strong> — confirm <code>AUTH_HEADER</code> is set in the JSON env block as <code>Bearer av_live_…</code>. Claude Desktop spawns the MCP process in its own env scope.</li>
 <li><strong>Tool indicator never shows</strong> — try the JSON config path. The UI’s Streamable-HTTP transport sometimes fails handshake on flaky networks; the JSON config’s <code>npx mcp-remote</code> shim is more resilient.</li>
 <li><strong><code>npx not found</code></strong> (JSON path) — install Node 20+ (<code>brew install node</code> on macOS). Claude Desktop spawns <code>npx</code> via PATH.</li>
 </ul></div>

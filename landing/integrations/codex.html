@@ -11,7 +11,7 @@
 <meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with Codex&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/codex">
-<meta name="last-updated" content="2026-09-23">
+<meta name="last-updated" content="2026-10-01">
 <!-- BEGIN: AlgoVault canonical design loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +26,7 @@
   "headline": "AlgoVault × Codex - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/codex",
   "datePublished": "2026-08-05T00:00:00+00:00",
-  "dateModified": "2026-08-09T15:00:00+00:00",
+  "dateModified": "2026-10-01T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -279,13 +279,13 @@ tailwind.config = {
     <div style="position:relative;z-index:1">
       <div class="placeholder-cap" style="margin-bottom:14px">· codex integration</div>
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.1%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">829,513</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">90.9%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">916,636</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Codex</h1>
 <p>Give Codex a composite trade verdict in one call. Works in the Codex CLI and the IDE extension.</p>
 <blockquote>
-<p><em>Config verified 2026-08-05 against <a href="https://learn.chatgpt.com/docs/extend/mcp">https://learn.chatgpt.com/docs/extend/mcp</a>.</em></p>
+<p><em>Config verified 2026-10-01 against <a href="https://learn.chatgpt.com/docs/extend/mcp">https://learn.chatgpt.com/docs/extend/mcp</a>.</em></p>
 </blockquote></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Setup</h2>
 <p>Codex reads MCP servers from <code>~/.codex/config.toml</code>. Add a table for AlgoVault:</p>
@@ -297,7 +297,7 @@ bearer_token_env_var = &quot;AV_API_KEY&quot;
 &quot;X-AlgoVault-Track-Token&quot; = &quot;int-codex&quot;
 </code></pre>
 <p>Set <code>AV_API_KEY</code> in your shell for paid tier. On free tier, delete the <code>bearer_token_env_var</code> line and keep the rest.</p>
-<p>Note that <code>codex mcp add</code> covers <strong>local stdio servers only</strong>. Remote HTTP servers like AlgoVault are configured in the file, not through that command.</p>
+<p><code>codex mcp add algovault --url &quot;https://api.algovault.com/mcp?src=docs&quot;</code> adds the free tier from the CLI; the paid tier’s <code>bearer_token_env_var</code> is set in <code>config.toml</code>, as above.</p>
 <h3>IDE extension</h3>
 <p>Open settings, choose <strong>MCP servers</strong>, add a server, pick <strong>Streamable HTTP</strong>, and paste the same URL. The extension and the CLI read separate config, so set up whichever you use.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Example: get a BTC trade call</h2>
@@ -306,7 +306,6 @@ bearer_token_env_var = &quot;AV_API_KEY&quot;
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
 <ul>
 <li><strong>AlgoVault tools not listed</strong> — restart Codex. <code>config.toml</code> is read at startup.</li>
-<li><strong><code>codex mcp add</code> rejected the URL</strong> — expected. That command adds stdio servers; use the TOML block above.</li>
 <li><strong><code>401 unauthorized</code></strong> — check the key shape (<code>av_live_…</code>). Free tier needs no key at all: remove <code>bearer_token_env_var</code>.</li>
 <li><strong>TOML parse error</strong> — header names contain a hyphen, so they must stay quoted inside <code>[mcp_servers.algovault.http_headers]</code>.</li>
 <li><strong>Network timeout</strong> — AlgoVault is hosted at <code>api.algovault.com</code>. Check VPN or firewall rules.</li>

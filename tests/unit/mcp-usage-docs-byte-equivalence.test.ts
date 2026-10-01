@@ -78,6 +78,16 @@
  *      optional session handshake.</p>"
  * Nothing else in the surface moved.
  *
+ * FIXTURE MAINTENANCE — LANDING-MCP-CLIENTS-CLAIMS-W1 (CH1, 2026-10-01): regenerated to absorb
+ * the ratified copy fix (Mr.1 sign-off 2026-10-01, R-table rows R1–R12) in four mcp-clients rows
+ * and the shell-quoting fix in two more. Reviewed BEFORE regenerating as a unit-level diff (HTML
+ * split at tag boundaries, whitespace normalized): 66 changed units, every one inside an R-row —
+ * claude-desktop R1–R4 (Customize → Connectors; the UI path is the free tier; the
+ * Authorization:${AUTH_HEADER} + env JSON form), codex R6, smithery R8–R10 (`mcp add`, the
+ * gateway entry, the /servers/algovault listing), plain-http R11 (no version literal), and the
+ * quoted `?src=docs` URL in claude-code and deepseek (R12). The raw file diff is 12 lines out,
+ * 13 in. Nothing else in the surface moved.
+ *
  * FIXTURE MAINTENANCE — OPS-DSH-TUTORIAL-INSTALL-CLAIM-W1 (2026-08-29): regenerated to absorb the
  * correction of a FALSE CONCLUSION in the `deepseek-harness` row's `setupSummary` +
  * `walkthroughHtml`. Both opened on an install step — `dsh plugin --profile <name> add
