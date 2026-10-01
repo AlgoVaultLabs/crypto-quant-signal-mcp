@@ -139,8 +139,12 @@ describe('class preservation — tags moved, classes did not', () => {
   // venue's interactive reserve). One more runAsBatch site, same entrypoint, its own literal name.
   // EDGE-LABELER-RACE-WINDOW-V2-W1 CH3 added the third: `--relabel-v2` (the historical -v2 relabel, ruling
   // LRW-Q13) — a batch rotation that must never displace interactive callers either, named `lrw-relabel-v2`.
+  // OPS-ADAPTER-HISTORY-ANCHOR-W1 CH3 added the live adapter-history canary (ruling OAH-Q10): a nightly read of
+  // every promoted venue THROUGH the adapters, BATCH class so it can never spend a venue's interactive reserve,
+  // its own entrypoint, literal name `adapter-history-canary`.
   const LATER_CLASS_SETTING: Record<string, Record<string, number>> = {
     'src/scripts/backfill-directional-labels.ts': { runAsBatch: 3, runAsCaller: 1 },
+    'src/scripts/adapter-history-contiguity.ts': { runAsBatch: 1 },
   };
 
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {
