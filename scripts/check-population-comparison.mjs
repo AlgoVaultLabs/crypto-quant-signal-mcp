@@ -22,6 +22,16 @@
  * the RATCHET is what makes the debt monotone. Together: the correct answer is the default, the
  * wrong answer must be declared in a file a human reads, and non-use is expensive rather than free.
  *
+ * ── DECLARATION-TIME IDENTIFIABILITY (OPS-PREREG-IDENTIFIABILITY-GATE-W1) ────────────────────
+ * A site that declares a floor must also declare the side share it was sized against, and a floor
+ * the narrowest arm can never show is refused HERE, when the site is declared, instead of at
+ * readout. The 2026-08-31 trend-mode trigger A (3.0pp floor; v1 minority share 0.0053, so 2m =
+ * 1.06pp) was refused by `compare_arms` only after it had already been declared and armed. The bound
+ * is NOT computed in this file: `attainable_bound_from_share` lives once, in
+ * ops/monitoring/population_comparison.py beside `Arm.attainable_pp`, and is reached by subprocess
+ * through `--declarations`. A second copy of the formula here is exactly what that module forbids.
+ * An evaluator that cannot run is INDETERMINATE — never a pass, and never a refusal.
+ *
  * Verdict contract: exactly one terminal `POPULATION_COMPARISON_GATE_VERDICT=PASS|FAIL|INDETERMINATE`.
  * Exit 0=PASS / 1=FAIL / 3=INDETERMINATE (3 is the token-law default for a NEW gate; do not
  * "align" it with check_test_baseline.sh's 2, which is 2 only because it already deployed 2).
@@ -36,6 +46,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const REGISTRY = join(ROOT, 'ops/monitoring/population-comparison.registry.json');
 const SCHEMA = join(ROOT, 'ops/monitoring/population-comparison.schema.json');
+const PY_DERIVATION = join(ROOT, 'ops/monitoring/population_comparison.py');
+const IDENT_FIXTURES = join(ROOT, 'tests/fixtures/identifiability');
 
 const PASS = 'PASS', FAIL = 'FAIL', INDET = 'INDETERMINATE';
 
@@ -97,6 +109,125 @@ export const SELF_EXCLUDED = new Set(['scripts/check-population-comparison.mjs']
 function tracked() {
   const out = execFileSync('git', ['-C', ROOT, 'ls-files', ...SCAN_DIRS], { encoding: 'utf8' });
   return out.split('\n').filter(f => f && SCAN_EXT.test(f) && !SELF_EXCLUDED.has(f));
+}
+
+const isFiniteNumber = (x) => typeof x === 'number' && Number.isFinite(x);
+const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
+/**
+ * SHAPE ONLY — which sites declare a floor, and is each declaration complete? Computes no bound.
+ * Optional fields, documented in the registry's `_site_floor_doc`: `declared_floor_pp` (pp) and
+ * `sized_against: [{arm, minority_side_share, probe}]`, one entry per arm the floor constrains.
+ */
+function siteFloorDeclarations(sites) {
+  const requests = [];
+  const errors = [];
+  for (const s of sites) {
+    const hasFloor = has(s, 'declared_floor_pp');
+    const hasShare = has(s, 'sized_against');
+    if (!hasFloor && !hasShare) continue;
+    if (!hasFloor) {
+      errors.push(`${s.id}: sized_against without a declared_floor_pp — a share sizes a floor; declare both or neither`);
+      continue;
+    }
+    if (!isFiniteNumber(s.declared_floor_pp)) {
+      errors.push(`${s.id}: declared_floor_pp must be a finite number of pp, got ${JSON.stringify(s.declared_floor_pp)}`);
+      continue;
+    }
+    if (!Array.isArray(s.sized_against) || s.sized_against.length === 0) {
+      errors.push(`${s.id}: declares a ${s.declared_floor_pp}pp floor without the side share it was sized against ` +
+                  `(sized_against: [{arm, minority_side_share, probe}])`);
+      continue;
+    }
+    const bad = s.sized_against.map((a, i) => {
+      if (!a || typeof a !== 'object') return `sized_against[${i}] is not an object`;
+      if (typeof a.arm !== 'string' || !a.arm.trim()) return `sized_against[${i}].arm must name the arm`;
+      const m = a.minority_side_share;
+      if (!isFiniteNumber(m) || m < 0 || m > 0.5) {
+        return `sized_against[${i}].minority_side_share must be the MINORITY share, a fraction in [0, 0.5], ` +
+               `got ${JSON.stringify(m)}`;
+      }
+      if (typeof a.probe !== 'string' || a.probe.trim().length < 10) {
+        return `sized_against[${i}].probe must name the cardinality probe that produced the share`;
+      }
+      return null;
+    }).filter(Boolean);
+    if (bad.length) {
+      errors.push(`${s.id}: ${bad.join('; ')}`);
+      continue;
+    }
+    requests.push({
+      id: s.id,
+      floor_pp: s.declared_floor_pp,
+      shares: s.sized_against.map(a => a.minority_side_share),
+      arms: s.sized_against.map(a => a.arm),
+    });
+  }
+  return { requests, errors };
+}
+
+/** The ONE bound, by subprocess. `{results}` or `{error}` — an error is INDETERMINATE, never a pass. */
+function evaluateDeclarations(requests, script = PY_DERIVATION) {
+  const payload = JSON.stringify({
+    declarations: requests.map(({ id, floor_pp, shares }) => ({ id, floor_pp, shares })),
+  });
+  let out;
+  try {
+    out = execFileSync('python3', [script, '--declarations'],
+      { input: payload, encoding: 'utf8', timeout: 30_000, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch (e) {
+    const detail = String(e.stdout || e.stderr || e.message || e).trim().slice(0, 200);
+    return { error: `python3 ${relative(ROOT, script)} --declarations failed (exit ${e.status ?? 'spawn'}): ${detail}` };
+  }
+  let doc;
+  try { doc = JSON.parse(out); } catch { return { error: `--declarations printed non-JSON: ${out.slice(0, 120)}` }; }
+  const results = doc && Array.isArray(doc.results) ? doc.results : null;
+  if (!results || results.length !== requests.length) {
+    return { error: `--declarations returned ${results ? results.length : 'no'} result(s) for ${requests.length} declaration(s)` };
+  }
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].id !== requests[i].id) {
+      return { error: `--declarations result ${i} is for ${JSON.stringify(results[i].id)}, expected ${JSON.stringify(requests[i].id)}` };
+    }
+    if (results[i].verdict !== 'IDENTIFIABLE' && results[i].verdict !== 'NOT_IDENTIFIABLE') {
+      return { error: `${requests[i].id}: --declarations could not decide (${results[i].verdict}: ${results[i].reason})` };
+    }
+  }
+  return { results };
+}
+
+/** Detect, then judge: every floor-declaring site, its verdict, and what the leg could not evaluate. */
+function identifiabilityLeg(sites, script = PY_DERIVATION) {
+  const { requests, errors } = siteFloorDeclarations(sites);
+  const lines = [];
+  const fails = [...errors];
+  const indet = [];
+  let refused = 0;
+  if (requests.length) {
+    const ev = evaluateDeclarations(requests, script);
+    if (ev.error) {
+      indet.push(ev.error);
+    } else {
+      ev.results.forEach((r, i) => {
+        const arm = requests[i].arms[r.binding_index];
+        const floor = Number(r.floor_pp).toFixed(2);
+        const bound = Number(r.bound_pp).toFixed(2);
+        lines.push(`  ${r.verdict === 'NOT_IDENTIFIABLE' ? 'NOT_IDENTIFIABLE' : 'IDENTIFIABLE    '} ${r.id}  ` +
+                   `floor ${floor}pp vs 2m ${bound}pp (narrowest arm: ${arm})`);
+        if (r.verdict === 'NOT_IDENTIFIABLE') {
+          refused++;
+          fails.push(`${r.id}: NOT_IDENTIFIABLE — declared floor ${floor}pp exceeds 2m = ${bound}pp, the most arm ` +
+                     `"${arm}" can ever show, so this site could never fire`);
+        }
+      });
+    }
+  }
+  const declaring = requests.length + errors.length;
+  const head = `[population-comparison] identifiability: ${declaring} site(s) declare a floor — ` +
+    `${requests.length} evaluated via population_comparison.py --declarations, ${refused} NOT_IDENTIFIABLE, ` +
+    `${errors.length} malformed` +
+    (declaring === 0 ? ' (no site sizes its floor here yet; one that adds declared_floor_pp must carry sized_against)' : '');
+  return { head, lines, fails, indet, evaluated: requests.length, refused, malformed: errors.length };
 }
 
 function run() {
@@ -178,15 +309,35 @@ function run() {
     return 3;
   }
 
-  if (notes.length) {
+  // Declaration-time identifiability — printed on EVERY run, including when nothing declares a floor.
+  const ident = identifiabilityLeg(registry.sites);
+  console.log(ident.head);
+  for (const l of ident.lines) console.log(l);
+
+  if (notes.length || ident.fails.length) {
     for (const n of notes) console.log(`[population-comparison] ✗ ${n}`);
-    console.log('[population-comparison] remediation: add a row to ' +
-                relative(ROOT, REGISTRY) + ' with status, purpose, basis and a migration_wave, ' +
-                'or migrate the site to population_comparison / population-comparison.ts');
+    if (notes.length) {
+      console.log('[population-comparison] remediation: add a row to ' +
+                  relative(ROOT, REGISTRY) + ' with status, purpose, basis and a migration_wave, ' +
+                  'or migrate the site to ops/monitoring/population_comparison.py');
+    }
+    for (const f of ident.fails) console.log(`[population-comparison] ✗ ${f}`);
+    if (ident.fails.length) {
+      console.log('[population-comparison] remediation (identifiability): a refused floor is restated — e.g. as ' +
+                  "a within-arm test — or sized to the narrowest arm's 2m; a floor needs the share it was sized against");
+    }
+    for (const i of ident.indet) console.log(`[population-comparison] ? ${i}`);
     console.log(`POPULATION_COMPARISON_GATE_VERDICT=${FAIL}`);
     return 1;
   }
-  console.log('[population-comparison] every banned-comparator site is declared; debt within ratchet');
+  if (ident.indet.length) {
+    for (const i of ident.indet) console.log(`[population-comparison] ? ${i}`);
+    console.log('[population-comparison] a floor-declaring site could not be evaluated — that is not a pass');
+    console.log(`POPULATION_COMPARISON_GATE_VERDICT=${INDET}`);
+    return 3;
+  }
+  console.log('[population-comparison] every banned-comparator site is declared; debt within ratchet; ' +
+              'every declared floor is identifiable');
   console.log(`POPULATION_COMPARISON_GATE_VERDICT=${PASS}`);
   return 0;
 }
@@ -242,6 +393,45 @@ function selfTest() {
      SELF_EXCLUDED.size === 1 && SELF_EXCLUDED.has('scripts/check-population-comparison.mjs'));
   ck('the excluded file is genuinely absent from the swept corpus',
      !tracked().includes('scripts/check-population-comparison.mjs'));
+
+  // ── Declaration-time identifiability, through the REAL python evaluator on the committed
+  //    fixtures. Stubbing the evaluator here would leave the subprocess seam — the only place the
+  //    bound is computed — exercised by no scenario at all.
+  const fx = {};
+  for (const name of ['trigger-a.site.json', 'valid.site.json']) {
+    try { fx[name] = JSON.parse(readFileSync(join(IDENT_FIXTURES, name), 'utf8')); }
+    catch (e) { console.log(`     (fixture ${name} unreadable: ${e.message})`); }
+  }
+  ck('both identifiability fixtures exist and parse (a corpus we construct may not be empty)',
+     Object.keys(fx).length === 2);
+  const trig = fx['trigger-a.site.json'];
+  const valid = fx['valid.site.json'];
+  const legA = identifiabilityLeg(trig ? [trig] : []);
+  ck('trigger-A fixture (v1 minority share 0.0053, floor 3.0pp) is REFUSED at declaration: NOT_IDENTIFIABLE, 2m = 1.06pp',
+     legA.refused === 1 && legA.indet.length === 0 &&
+     legA.lines.some(l => /NOT_IDENTIFIABLE .*floor 3\.00pp vs 2m 1\.06pp/.test(l)));
+  ck('…and it binds on the NARROWER arm (v1), not the wider v2',
+     legA.lines.some(l => /narrowest arm: verdict_rule_version=1/.test(l)));
+  const legV = identifiabilityLeg(valid ? [valid] : []);
+  ck('valid fixture passes: evaluated, IDENTIFIABLE, nothing refused',
+     legV.evaluated === 1 && legV.refused === 0 && legV.fails.length === 0 && legV.indet.length === 0);
+  const base = valid ?? { id: 'x', declared_floor_pp: 1, sized_against: [{ arm: 'a', minority_side_share: 0.2, probe: 'cardinality probe' }] };
+  const noShare = { ...base, id: 'x-floor-without-share' };
+  delete noShare.sized_against;
+  const noFloor = { ...base, id: 'x-share-without-floor' };
+  delete noFloor.declared_floor_pp;
+  const majority = { ...base, id: 'x-majority-share', sized_against: [{ ...base.sized_against[0], minority_side_share: 0.8 }] };
+  const shapes = identifiabilityLeg([noShare, noFloor, majority]);
+  ck('a floor without its share, a share without its floor, and a majority "minority" share are each refused as malformed',
+     shapes.malformed === 3 && shapes.fails.length === 3 && shapes.evaluated === 0);
+  const dark = identifiabilityLeg([base], join(ROOT, 'ops/monitoring/__absent_evaluator__.py'));
+  ck('an evaluator that cannot run is INDETERMINATE — never a pass, never a refusal',
+     dark.indet.length === 1 && dark.refused === 0 && dark.fails.length === 0);
+  let liveIds = [];
+  try { liveIds = JSON.parse(readFileSync(REGISTRY, 'utf8')).sites.map(s => s.id); } catch { /* ck below fails */ }
+  ck('fixtures are not live sites: fixture:-prefixed, and the registry carries none',
+     liveIds.length > 0 && [trig, valid].every(f => f && String(f.id).startsWith('fixture:')) &&
+     !liveIds.some(id => String(id).startsWith('fixture:')));
 
   console.log(`SELF-TEST: ${fails.length === 0 ? 'PASS' : `FAIL (${fails.length})`}`);
   console.log(`POPULATION_COMPARISON_GATE_VERDICT=${fails.length === 0 ? PASS : INDET}`);

@@ -1,0 +1,17 @@
+{
+  "_comment": "FIXTURE, not a live site (OPS-PREREG-IDENTIFIABILITY-GATE-W1). The valid counterpart of trigger-a.site.json: the same 3.0pp floor, sized against an arm whose minority side carries 20% of its rows. 2m = 40.0pp, so the floor is reachable and scripts/check-population-comparison.mjs must accept the row. Mirrored on the pre-registration surface by valid.identifiability.md.",
+  "id": "fixture:valid-within-bound",
+  "file": "ops/monitoring/trend-mode-readout-gate.py",
+  "status": "MIGRATED",
+  "purpose": "EFFECT_CLAIM",
+  "basis": "MIX_MATCHED_NULL",
+  "owner_wave": "OPS-PREREG-IDENTIFIABILITY-GATE-W1",
+  "declared_floor_pp": 3.0,
+  "sized_against": [
+    {
+      "arm": "within-arm excess, minority side 20%",
+      "minority_side_share": 0.2,
+      "probe": "count(*) FILTER (WHERE side = 'SELL') / count(*) over the arm's scored rows (a cardinality)"
+    }
+  ]
+}

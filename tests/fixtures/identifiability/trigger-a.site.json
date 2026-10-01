@@ -1,0 +1,22 @@
+{
+  "_comment": "FIXTURE, not a live site (OPS-PREREG-IDENTIFIABILITY-GATE-W1). The 2026-08-31 trend-mode trigger A as a population-comparison registry row: a 3.0pp floor on the cross-arm excess delta. v1 emitted SELL on 149 of 28,144 scored rows, a minority share of 0.0053, so its 2m bound is 1.06pp and it can never show a 3.0pp move: scripts/check-population-comparison.mjs must refuse this row as NOT_IDENTIFIABLE when it is declared, binding on v1, the narrower arm. Counts are the ones population_comparison.py's self-test already carries. The v2 share was measured 2026-09-02; at declaration it would have been a planning estimate, and v1 binds either way. Mirrored on the pre-registration surface by trigger-a.identifiability.md.",
+  "id": "fixture:trend-mode-trigger-A",
+  "file": "ops/monitoring/trend-mode-readout-gate.py",
+  "status": "MIGRATED",
+  "purpose": "EFFECT_CLAIM",
+  "basis": "MIX_MATCHED_NULL",
+  "owner_wave": "SIGNAL-TREND-MODE-ENABLE-W1",
+  "declared_floor_pp": 3.0,
+  "sized_against": [
+    {
+      "arm": "verdict_rule_version=1 (TREND_MODE off)",
+      "minority_side_share": 0.0053,
+      "probe": "count(*) FILTER (WHERE side = 'SELL') / count(*) over the v1 arm's scored signals rows: 149 / 28,144 (a cardinality)"
+    },
+    {
+      "arm": "verdict_rule_version=2 (TREND_MODE on)",
+      "minority_side_share": 0.1946,
+      "probe": "count(*) FILTER (WHERE side = 'SELL') / count(*) over the v2 arm's scored signals rows: 2,826 / 14,519 (a cardinality, measured 2026-09-02)"
+    }
+  ]
+}
