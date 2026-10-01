@@ -171,10 +171,6 @@
     {
       "symbol": "CLAIM_EVIDENCE_JSON",
       "reason": "OPS-CLIENT-CLAIM-EVIDENCE-W1 CH1. src/lib/integrations-data/claim-evidence.ts is the PURE half of the live-claim evidence contract and is CI-FACING BY DESIGN, the same class as QUOTA_SURFACES: its consumers are scripts/emit-claim-evidence.mjs (through dist/, which writes src/lib/integrations-data/claim-evidence.json for the host canary) and tests/unit/claim-evidence.test.ts (R1-R7). The runtime never reads claim evidence - the host canary confirms it live - so importing it into src/ would turn a build-time contract into a runtime dependency for no gain. An explanation, not a suppression: the row is still printed and counted as `exempt` on every run. The repo-relative path of the host-read document - the emitter's output path and R5's input path, derived from this ONE constant so the two cannot disagree."
-    },
-    {
-      "symbol": "historyMetaOf",
-      "reason": "OPS-ADAPTER-HISTORY-ANCHOR-W1 CH2 (ruling OAH-Q2). The reader of the non-enumerable page meta the rewired Bitget/OKX adapters attach. Its production consumer is the chapter that follows: CH3's src/scripts/adapter-history-contiguity.ts canary, then the labelers (EDGE-LABELER-META-CONSUME-W1, LRW-owned). Until then it is read by the contract, differential and budget suites. REMOVE this row in OPS-ADAPTER-HISTORY-ANCHOR-W1 CH3, the commit that adds the canary; a row that outlives that commit is a dark export wearing an explanation."
     }
   ]
 }

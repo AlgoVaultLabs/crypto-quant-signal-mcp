@@ -496,6 +496,23 @@
       "source": "repo",
       "verified_at": "2026-09-08",
       "notes": "Same engine, same suppression, same caps as the four usage steps — a fifth step, not a second mailer. Deliberately NOT registered in the 15-minute dispatcher: its cadence is the RELEASE cadence, and registering it there would evaluate a 'what's new' 96 times a day for a message that can be sent once a month. Body is the README `## What's new in vX.Y.0` block converted VERBATIM; recap sub-sections are excluded because they are a rolling 3-minor window and would re-send content a reader already had. Blocks BATCH into one email so two releases in a month is still one message. Verdict token LIFECYCLE_DIGEST_VERDICT= maps PASS=0/FAIL=1/INDETERMINATE=3. Zero opt-ins and zero blocks are both reported as explicit PASS facts, never as a silent success."
+    },
+    {
+      "id": "adapter-history-contiguity",
+      "host": "signal-1",
+      "script": "/opt/algovault-monitoring/adapter-history-contiguity-canary.sh",
+      "container": "crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "dist/scripts/adapter-history-contiguity",
+      "class": "safe-to-kill",
+      "reason": "Read-only: public candle reads through the adapters, no DB write, no label. A SIGKILLed run prints no verdict token, which the wrapper records as INDETERMINATE and which by ruling OAH-Q10 neither advances nor resets any FAIL streak; the next nightly fire re-derives every pair. A lost run costs one night of venue watching.",
+      "max_runtime_s": 1800,
+      "runtime_instrument": "NOT YET MEASURED at registration - 1800 s is the script's own runScript watchdog, a CEILING, labelled as such. Re-derive from /var/log/adapter-history-contiguity.log after the first live runs.",
+      "cron_lines": 1,
+      "cron": "24 10 * * * (daily, signal-1). Daytime, outside 02:20-06:30Z (labeler + relabel) and 18:30-02:15Z, per architect ruling OAH-Q10.",
+      "catchup_cmd": null,
+      "source": "repo",
+      "verified_at": "2026-10-01",
+      "notes": "OPS-ADAPTER-HISTORY-ANCHOR-W1 CH3. Alert ADAPTER_HISTORY_GAP after 3 consecutive FAILs of one pair."
     }
   ],
   "exclusions": [

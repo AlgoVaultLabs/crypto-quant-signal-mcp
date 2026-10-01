@@ -1169,6 +1169,19 @@
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-BDIR_PANEL_READINESS_REGRESSION-W{NEXT}",
       "notes": "OPS-BDIR-V3-PANEL-READINESS-W1 CH3 — fires when a venue the B-DIR v3 FULL test (2027-01-17, ONE shot) could admit moves PASS -> FAIL on its panel rule (a OI, b basis, c labelled >= 90 %, d harness pre-flight >= 95 %, plus the CH1 funding verdict) between two weekly runs. Steady FAILs are reported on the weekly line and never re-page; INDETERMINATE never pages. Severity CRITICAL, weekly cadence, so the wrapper's 24 h cooldown bounds it to one page per regression. Retires 2027-01-17T10:00:00Z with its owner."
+    },
+    {
+      "alert_id": "ADAPTER_HISTORY_GAP",
+      "owner": "ops/monitoring/adapter-history-contiguity-canary.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-ADAPTER_HISTORY_GAP-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-ADAPTER_HISTORY_GAP-W{NEXT}",
+      "notes": "Fires only when a (venue, tf) pair FAILs 3 consecutive nightly runs of the live adapter-history canary (architect ruling OAH-Q10); an INDETERMINATE night (venue unreachable, 418/429, container down) neither advances nor resets a streak. CRITICAL_PERSISTENT because a pair that drifted from its pinned reach class feeds wrong-shaped candle windows to the labelers and serving until someone re-captures. announce_resolution FALSE: a cleared streak is silent; the canary_result_log record carries the open streaks."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",
