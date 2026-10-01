@@ -8,7 +8,7 @@
     "algovault-editorial",
     "algovault-skills"
   ],
-  "rotation_slot": 0,
+  "rotation_slot": 1,
   "audits": [
     {
       "wave_id": "SECURITY-AUDIT-FULL-W1",
@@ -27,6 +27,16 @@
       "scope": [
         "crypto-quant-signal-mcp",
         "algovault-bot"
+      ]
+    },
+    {
+      "wave_id": "SECURITY-AUDIT-MONTHLY-W2",
+      "completed_utc": "2026-10-01T11:32:27Z",
+      "baseline_sha": "cc90e7c6291e6bc3fb8fad12c1f4a6b2dbf6aa88",
+      "head_sha": "c05ba6cb835f41e4ac242f3f12047ff520c4c2e2",
+      "scope": [
+        "crypto-quant-signal-mcp",
+        "autonomous-optimizer"
       ]
     }
   ]

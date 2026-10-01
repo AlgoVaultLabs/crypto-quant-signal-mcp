@@ -113,7 +113,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "0a585bfb5766f2efdfbde62cdb044d0262e396ebc63de881df9e6c1dcf80dbd0",
+      "sha256": "d6c4408b48fc08fcb491cb20cfe8f48809b1c147025dbdd09054d71db6402c60",
       "alert_ids": [],
       "owner_wave": "OPS-AUDIT-CADENCE-CANARY-W1",
       "notes": "The security-audit cadence ledger — the corpus audit-cadence-canary.py reads to decide PASS/DUE/OVERDUE. CLASSIFICATION: inert JSON DATA, i.e. a DECLARATION by this project's own artifact/declaration line, so it is SYNCED by declaration-sync.sh and never installed by SSH. Declared as `audit-cadence.json|audits|1|signal-1` — scope signal-1 and NOT `*`, because its only consumer runs there and syncing it to aoe-1 would make it an ORPHAN that host reads from nowhere. CRITICALITY IS `medium`, NOT `load-bearing`, and the reasoning is recorded so a later wave can challenge it rather than guess: this file's absence or corruption does not degrade a guarantee SILENTLY — the canary's INDETERMINATE arm catches every such case and escalates SECURITY_AUDIT_CADENCE_INDETERMINATE at CRITICAL_PERSISTENT, i.e. it fails LOUD. That is the same shape as alert-registry.json, also `medium`, whose read failures likewise resolve safely. A CONSEQUENCE of that honest grade — not a reason for it — is that this row does not qualify for the first_install stamp OPS-AOE-MONITORING-PARITY-W1 requires of load-bearing rows; if a future wave regrades it load-bearing, it must also install it via ops/scripts/install-monitoring-artifact.sh and carry that stamp. No `schedule`: it is DATA read by the canary's cron, not itself a scheduled job, so DARK does not apply."

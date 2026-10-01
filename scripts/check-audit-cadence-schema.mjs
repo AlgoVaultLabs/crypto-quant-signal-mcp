@@ -230,7 +230,13 @@ function selfTest() {
     console.log('AUDIT_CADENCE_SCHEMA_VERDICT=INDETERMINATE');
     return EXIT_FOR.INDETERMINATE;
   }
-  const NOW = Date.parse('2026-09-02T12:00:00Z');
+  // The fixture clock is DERIVED from the corpus, never pinned. A literal 2026-09-02 made every later
+  // monthly append read as a FUTURE stamp here, so the recurring producer could not append without
+  // failing prepublishOnly (SECURITY-AUDIT-MONTHLY-W2). One minute past the newest real completed_utc
+  // keeps the positive case honest and BREAK 2 deterministic. The WALL-clock future-stamp rule is not
+  // lost: the plain check (runCheck -> validate(doc, Date.now())) is the next prepublishOnly leg.
+  const audits = L.doc && Array.isArray(L.doc.audits) ? L.doc.audits : [];
+  const NOW = Math.max(...audits.map((a) => Date.parse(a && a.completed_utc)).filter(Number.isFinite)) + 60_000;
   const base = () => JSON.parse(JSON.stringify(L.doc));
   const results = [];
   const ck = (name, fn, want) => {
@@ -258,7 +264,8 @@ function selfTest() {
   }, 'FAIL');
 
   ck('BREAK 2 — a future completed_utc is refused', () => {
-    const d = base(); d.audits[d.audits.length - 1].completed_utc = '2027-01-01T00:00:00Z';
+    // NOW + 1 day, never a literal: a fixed future date stops being future once NOW passes it.
+    const d = base(); d.audits[d.audits.length - 1].completed_utc = new Date(NOW + 86_400_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
     return validate(d, NOW).verdict;
   }, 'FAIL');
 
