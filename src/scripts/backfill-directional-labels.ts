@@ -57,6 +57,9 @@ import { servedCandleStepMs, SERVED_VENUES, CRON_TIMEFRAMES } from '../lib/tf-su
 import { sloHoursFor as defaultSloHoursFor, isFullPanelVenue, FRESHNESS_BARRIER_SPEC, FULL_PANEL_VENUES } from '../lib/venue-slo-tiers.js';
 import { candleHorizonDays, CANDLE_HORIZON_DAYS, CANDLE_HORIZONS_MEASURED_AT } from '../lib/venue-candle-horizons.js';
 import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
+import { ADAPTER_PENDING_CELLS, type ManifestClass } from './lrw/registered.js';
+import { relabelUntil, buildRelabelGroupsSql } from './lrw/relabel-sql.js';
+import { parseGapWorklists, loadAnnotationSources } from './lrw/annotation-sources.js';
 import { buildEnvelope, isConforming, type Verdict } from '../lib/detector-envelope.js';
 
 const DELAY_BETWEEN_FETCHES_MS = 250;
@@ -97,6 +100,23 @@ export interface Cli {
    *  values written in that `computed_at` window (see mainExpiryReset). */
   expiryResetFrom?: number;
   expiryResetTo?: number;
+  /**
+   * EDGE-LABELER-RACE-WINDOW-V2-W1 CH3 (rulings LRW-Q5 = B, LRW-Q13): write the corrected `-v2` race for every
+   * eligible signal that lacks it — history included, ADD-ONLY (no `-v1` row is read, written or updated).
+   */
+  relabelV2: boolean;
+  /** `--relabel-v2` window: only signals with `created_at <= until` (epoch s). ALWAYS bounded by T_CUT
+   *  (`relabelUntil`): rows created after it are the fixed nightly's, so an unbounded relabel would chase the live
+   *  inflow and never converge. `--until` may lower the bound, never raise it. */
+  until?: number;
+  /** `--relabel-v2`: this process's OWN request ceiling per minute (ruling LRW-Q13: ≤ 50 % of the venue's
+   *  documented limit, never above its batch cap). UNSET = the existing per-page pacing only. */
+  maxReqPerMin?: number;
+  /** `--annotate-gaps <worklist.csv.gz>[,<delta.csv.gz>]`: write `race_gap_candles` on `-v1` rows from the
+   *  sha-pinned replay worklists (ruling LRW-Q3), only where NULL. */
+  annotateGaps?: string;
+  /** `--annotate-gaps` batch size, in rows (ruling LRW-Q13: 2–5k, ctid order). */
+  annotateBatch: number;
 }
 
 interface SignalRow {
@@ -237,6 +257,9 @@ export function parseCli(argv: string[]): Cli {
   const specSel = val('--barrier-spec');
   const specs = specSel ? ALL_SPECS.filter((s) => s.spec === specSel) : ALL_SPECS.slice();
   if (specSel && specs.length === 0) throw new Error(`unknown --barrier-spec '${specSel}'`);
+  // The adapter-pending cell is the registration's (lrw/registered.ts), never a flag: an opt-in set let a run
+  // without it write permanent -v2 rows into the cell the registration declares empty.
+  if (has('--adapter-pending')) throw new Error('--adapter-pending is refused: the cell is pinned in src/scripts/lrw/registered.ts');
   return {
     check: has('--check'),
     specs,
@@ -251,6 +274,11 @@ export function parseCli(argv: string[]): Cli {
     since: posInt('--since'),
     expiryResetFrom: posInt('--expiry-reset-written-from'),
     expiryResetTo: posInt('--expiry-reset-written-to'),
+    relabelV2: has('--relabel-v2'),
+    until: posInt('--until'),
+    maxReqPerMin: posInt('--max-req-per-min'),
+    annotateGaps: val('--annotate-gaps'),
+    annotateBatch: Math.min(5000, Math.max(2000, posInt('--annotate-batch') ?? 5000)),
   };
 }
 
@@ -751,6 +779,7 @@ async function fetchRangeInto(
   let answered = false; // the venue returned at least one candle — in range or not
   while (cursor <= endMs && pages < MAX_PAGES_PER_RANGE) {
     pages++;
+    await ownRateGate();
     const page = await adapter.getCandles(coin, timeframe, cursor, dex, endMs);
     if (!page || page.length === 0) break;
     answered = true;
@@ -764,6 +793,38 @@ async function fetchRangeInto(
     await sleep(DELAY_BETWEEN_FETCHES_MS);
   }
   return answered;
+}
+
+/**
+ * EDGE-LABELER-RACE-WINDOW-V2-W1 CH3 (ruling LRW-Q13) — this process's OWN request ceiling, on top of the shared
+ * weight budget (which meters every batch caller of a venue together). Off unless `--max-req-per-min` is set, so
+ * the nightly's pacing is unchanged.
+ */
+let ownMinIntervalMs = 0;
+let ownLastCallMs = -Infinity;
+export function setOwnRequestRate(perMin: number | undefined): void {
+  ownMinIntervalMs = perMin && perMin > 0 ? Math.ceil(60_000 / perMin) : 0;
+  ownLastCallMs = -Infinity;
+}
+/** The relabel's hard stop (LRW-Q13: 02:15Z, through `--time-budget-min`), checked before EVERY venue page, so a
+ *  long range fetch at a low own rate cannot run past it. Infinity (off) everywhere else — the nightly is unchanged. */
+let ownDeadlineMs = Infinity;
+let ownStopArmed = false;
+/** Arms the relabel's stop checks (the deadline, `Infinity` for none, and a SIGTERM) — called by --relabel-v2 only. */
+export function setOwnDeadline(ms: number): void {
+  ownDeadlineMs = ms;
+  ownStopArmed = true;
+}
+export class OwnStopError extends Error {}
+function ownStopDue(): boolean {
+  return ownStopArmed && (Date.now() >= ownDeadlineMs || isStopRequested());
+}
+async function ownRateGate(): Promise<void> {
+  if (ownStopDue()) throw new OwnStopError('relabel deadline / stop request');
+  if (ownMinIntervalMs <= 0) return;
+  const wait = ownLastCallMs + ownMinIntervalMs - Date.now();
+  if (wait > 0) await sleep(wait);
+  ownLastCallMs = Date.now();
 }
 
 /**
@@ -1365,6 +1426,282 @@ async function mainExpiry(cli: Cli): Promise<void> {
   console.log(`[${ts()}] EXPIRY DONE ${JSON.stringify({ outcome, ...ecov, byVenue: Object.fromEntries(expiryByVenue) })}`);
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// EDGE-LABELER-RACE-WINDOW-V2-W1 CH3 — the historical `-v2` relabel and the `race_gap_candles` annotation.
+//
+// ADD-ONLY, by construction and by test: the relabel INSERTs `-v2` rows (ON CONFLICT DO NOTHING) and never reads,
+// writes or updates a `-v1` row; the annotation UPDATEs exactly one column, `race_gap_candles`, on `-v1` rows where
+// it is NULL — never a label column, never `computed_at` (ruling LRW-Q7-C). Neither prints an outcome tally, and
+// above T_CAP only totals (LRW-Q7-B). Scope = every eligible signal (LRW-Q5 = B). Runs host-detached per venue in
+// the 18:30–02:15Z slots (LRW-Q13, ops/label-backfill/lrw-relabel-runner.sh), DB-state resumable.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+/** The registered refusal classes (registration §3, §3.2; derived once in lrw/registered.ts): every eligible
+ *  signal the relabel visits and cannot write is ONE manifest line `LRW_MANIFEST <signal_id> <class>` — a coverage
+ *  fact, never a fill. A signal the run did not finish (a fetch error, a budget skip, the deadline) is NOT a class:
+ *  it is counted (`errors` / `budgetSkips` / `cutShort`) and the run cannot report convergence. */
+export type RelabelClass = ManifestClass;
+
+interface RelabelCoverage {
+  groups: number; signalsSeen: number; todo: number; labeled: number; written: number;
+  classes: Record<string, number>;
+  nonV2Refused: number; // a row whose spec is not -v2 reached the INSERT — refused, never written (expected 0)
+  budgetSkips: number; errors: number; wouldWrite: number;
+  cutShort: number; // groups left part-way by the deadline or a stop request (the rest of the group: next pass)
+}
+const rcov: RelabelCoverage = {
+  groups: 0, signalsSeen: 0, todo: 0, labeled: 0, written: 0, classes: {}, nonV2Refused: 0,
+  budgetSkips: 0, errors: 0, wouldWrite: 0, cutShort: 0,
+};
+/** A copy of the relabel's counters — a test seam, not an API. */
+export function _relabelCoverageForTest(): Readonly<RelabelCoverage> {
+  return { ...rcov, classes: { ...rcov.classes } };
+}
+function manifest(signalId: number, cls: RelabelClass): void {
+  rcov.classes[cls] = (rcov.classes[cls] ?? 0) + 1;
+  console.log(`LRW_MANIFEST ${signalId} ${cls}`);
+}
+
+/** The `-v2` INSERT — the ONLY statement the relabel writes with (a test pins: no UPDATE, no DELETE). */
+export const RELABEL_INSERT_SQL_HEAD = `INSERT INTO directional_labels (${INSERT_COLUMNS.join(', ')}) VALUES `;
+export const RELABEL_INSERT_SQL_TAIL = ' ON CONFLICT (signal_id, barrier_spec) DO NOTHING RETURNING signal_id';
+
+export async function processRelabelGroup(
+  cli: Cli,
+  g: { exchange: string; coin: string; timeframe: string },
+  ctx: { retired: ReadonlySet<string>; nowMs: number },
+): Promise<void> {
+  const W = EVAL_CANDLES[g.timeframe];
+  const tfMs = TF_MS[g.timeframe];
+  if (!W || !tfMs) return;
+  const stepMs = servedStepMs(g.exchange, g.timeframe);
+  const v2Specs = BARRIER_SPECS_V2.filter((v) => cli.specs.some((s) => s.tau === v.tau));
+  if (v2Specs.length === 0) return;
+  const params: unknown[] = [g.exchange, g.coin, g.timeframe];
+  const bounds: string[] = [];
+  if (cli.since !== undefined) bounds.push(` AND created_at > ${Math.floor(cli.since)}`);
+  bounds.push(` AND created_at <= ${relabelUntil(cli.until)}`);
+  const sigs = await dbQuery<SignalRow>(
+    `SELECT id, created_at, price_at_signal, signal, pfe_return_pct, mae_return_pct FROM signals
+     WHERE exchange = $1 AND coin = $2 AND timeframe = $3
+       AND signal IN ('BUY','SELL') AND pfe_return_pct IS NOT NULL${bounds.join('')}
+     ORDER BY created_at ASC`,
+    params,
+  );
+  rcov.signalsSeen += sigs.length;
+  if (sigs.length === 0) return;
+  const existing = await dbQuery<{ signal_id: number; barrier_spec: string }>(
+    `SELECT signal_id, barrier_spec FROM directional_labels WHERE barrier_spec = ANY($1) AND signal_id = ANY($2)`,
+    [v2Specs.map((v) => v.spec), sigs.map((x) => x.id)],
+  );
+  const done = new Set(existing.map((e) => `${e.signal_id}|${e.barrier_spec}`));
+  const todo = sigs.filter((x) => v2Specs.some((v) => !done.has(`${x.id}|${v.spec}`)));
+  rcov.todo += todo.length;
+  if (todo.length === 0) return;
+  if (cli.check) {
+    for (const x of todo) for (const v of v2Specs) if (!done.has(`${x.id}|${v.spec}`)) rcov.wouldWrite++;
+    return;
+  }
+  // Coverage classes decided without a fetch (registration §3): a retired venue, the adapter-pending cell, and
+  // a window past the venue's measured candle depth.
+  if (ctx.retired.has(g.exchange)) { for (const x of todo) manifest(x.id, 'unreachable:retired'); return; }
+  if (ADAPTER_PENDING_CELLS.has(`${g.exchange}:${g.timeframe}`)) {
+    for (const x of todo) manifest(x.id, 'unreachable:adapter-pending');
+    return;
+  }
+  const reachDays = expiryReachDays(g.exchange, g.timeframe);
+  const reachCutS = Number.isFinite(reachDays) ? Math.floor(ctx.nowMs / 1000 - reachDays * 86_400 + REACH_MARGIN_S) : -Infinity;
+  const live = todo.filter((x) => {
+    if (x.created_at >= reachCutS) return true;
+    manifest(x.id, 'unreachable:depth');
+    return false;
+  });
+  if (live.length === 0) return;
+
+  // ONE corrected cache per group on the SERVED grid — merged islands, extend from the next grid boundary after
+  // the last candle that ARRIVED, never re-ask a range the venue answered empty (the CH2 derivations).
+  const groupStartMs = Date.now();
+  const cache = new Map<number, Candle>();
+  let coveredUntil = -Infinity;
+  let probedThrough = -Infinity;
+  const rows: unknown[][] = [];
+  for (const x of live) {
+    // the 02:15Z hard stop and a deploy's SIGTERM act INSIDE a group, not only between groups: what is computed
+    // so far is written below, the rest is the next pass's.
+    if (ownStopDue()) { rcov.cutShort++; break; }
+    const entryMs = x.created_at * 1000;
+    const neededStart = entryMs - (SIGMA_TARGET_WINDOWS * W + FETCH_BUFFER_CANDLES) * stepMs;
+    const neededEnd = entryMs + (W + FETCH_BUFFER_CANDLES) * stepMs;
+    try {
+      if (neededEnd > Math.max(coveredUntil, probedThrough)) {
+        const start = Math.max(nextFetchStartMs(coveredUntil, stepMs, neededStart), probedThrough + 1);
+        if (start <= neededEnd) {
+          const answered = await fetchRangeInto(cache, g.exchange as ExchangeId, g.coin, g.timeframe, start, neededEnd, stepMs);
+          const before = coveredUntil;
+          coveredUntil = advanceCoverage(coveredUntil, cache.keys(), start, neededEnd);
+          if (answered && coveredUntil === before) probedThrough = neededEnd;
+        }
+      }
+    } catch (err) {
+      if (err instanceof OwnStopError) { rcov.cutShort++; break; }
+      if (err instanceof WeightBudgetSkipError) { rcov.budgetSkips++; break; } // the rest stay absent → next run
+      rcov.errors++;
+      continue;
+    }
+    const fullForward = [...cache.values()].filter((c) => c.time >= entryMs).sort((a, b) => a.time - b.time);
+    const prep = prepareRaceV2(cache, fullForward, entryMs, W, stepMs, groupStartMs);
+    if (prep.kind === 'deferred') { manifest(x.id, 'deferred'); continue; }
+    if (prep.kind === 'refused') { manifest(x.id, `refused:${prep.reason}` as RelabelClass); continue; }
+    if (prep.kind === 'unreachable') { manifest(x.id, `unreachable:${prep.reason}` as RelabelClass); continue; }
+    const expiry = sealEdgeRow(x.created_at, g.timeframe, stepMs)
+      ? null
+      : expiryReturnPct(fullForward, W, x.price_at_signal, entryMs, stepMs, groupStartMs);
+    for (const v of v2Specs) {
+      if (done.has(`${x.id}|${v.spec}`)) continue;
+      const bp = barrierPct(prep.sigma, v.tau);
+      const race = runTripleBarrier(x.signal, x.price_at_signal, prep.window, bp, W);
+      rows.push([x.id, v.spec, race.label, race.ambiguousCandle, false, race.tHitCandles, x.pfe_return_pct, x.mae_return_pct, bp, expiry, 0]);
+      rcov.labeled++;
+    }
+  }
+  // ADD-ONLY guard at the write: a row whose spec is not a -v2 spec is refused here, counted, never written.
+  const v2Names = new Set<string>(BARRIER_SPECS_V2.map((v) => v.spec));
+  const safe = rows.filter((r) => {
+    if (v2Names.has(String(r[1]))) return true;
+    rcov.nonV2Refused++;
+    return false;
+  });
+  for (let i = 0; i < safe.length; i += INSERT_CHUNK_ROWS) {
+    const chunk = safe.slice(i, i + INSERT_CHUNK_ROWS);
+    const values: string[] = [];
+    const flat: unknown[] = [];
+    chunk.forEach((r, j) => {
+      const b = j * INSERT_COLUMNS.length;
+      values.push(`(${INSERT_COLUMNS.map((_, k) => `$${b + k + 1}`).join(',')})`);
+      flat.push(...r);
+    });
+    const res = await dbQuery<{ signal_id: number }>(RELABEL_INSERT_SQL_HEAD + values.join(',') + RELABEL_INSERT_SQL_TAIL, flat);
+    rcov.written += res.length;
+  }
+}
+
+async function mainRelabel(cli: Cli): Promise<void> {
+  if (!cli.check) ensureTable(); // --check runs no DDL (an ALTER … IF NOT EXISTS still takes ACCESS EXCLUSIVE)
+  setOwnRequestRate(cli.maxReqPerMin);
+  const until = relabelUntil(cli.until);
+  const v2Specs = BARRIER_SPECS_V2.filter((v) => cli.specs.some((s) => s.tau === v.tau)).map((v) => v.spec);
+  const { text, params } = buildRelabelGroupsSql({ v2Specs, since: cli.since, until, venue: cli.venue, coin: cli.coin, timeframe: cli.timeframe });
+  const raw = await dbQuery<{ exchange: string; coin: string; timeframe: string; todo: string | number; oldest: string | number }>(text, params);
+  const groups = raw.map((r) => ({ exchange: r.exchange, coin: r.coin, timeframe: r.timeframe, todo: Number(r.todo), oldest: Number(r.oldest) }));
+  const limited = cli.limitGroups ? groups.slice(0, cli.limitGroups) : groups;
+  const retired = new Set(
+    (await dbQuery<{ exchange_id: string }>(`SELECT exchange_id FROM venues WHERE status = 'retired'`)).map((r) => r.exchange_id),
+  );
+  const byVenue = partitionByVenue(limited);
+  const venueOrder = [...byVenue.keys()].sort();
+  const budget = makeBudget(cli);
+  setOwnDeadline(cli.timeBudgetMin ? budget.startMs + cli.timeBudgetMin * 60_000 : Infinity);
+  console.log(`[detector-run] run_id=lrw-relabel-${new Date(budget.startMs).toISOString()}`);
+  console.log(
+    `[${ts()}] RELABEL -v2 start — ${limited.length} groups over ${venueOrder.length} venues, specs=${v2Specs.join(',')}` +
+    `${cli.since !== undefined ? ` since=${cli.since}` : ''} until=${until}` +
+    ` adapter_pending=${[...ADAPTER_PENDING_CELLS].join(',')}` +
+    `${cli.maxReqPerMin ? ` own_rate=${cli.maxReqPerMin}/min` : ''}` +
+    `${cli.timeBudgetMin ? ` budget=${cli.timeBudgetMin}m/venue≤${cli.venueBudgetMin ?? '∞'}m` : ''}` +
+    `${cli.check ? ' (CHECK — no writes)' : ''}`,
+  );
+  const nowMs = Date.now();
+  let summaries: VenueRunSummary[] = [];
+  await runAsBatch(async () => {
+    summaries = await runVenueRotation(
+      venueOrder, byVenue, budget,
+      async (g) => {
+        rcov.groups++;
+        try {
+          await processRelabelGroup(cli, g, { retired, nowMs });
+        } catch (err) {
+          rcov.errors++;
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[${ts()}] relabel group ${g.exchange}:${g.coin}:${g.timeframe} error: ${msg.slice(0, 200)}`);
+        }
+        if (rcov.groups % 200 === 0) console.log(`[${ts()}] ${rcov.groups}/${limited.length} groups | written ${rcov.written}`);
+      },
+      console.log, Date.now, undefined, { stopRequested: isStopRequested },
+    );
+  }, 'lrw-relabel-v2');
+  let outcome = deriveRunOutcome(summaries, budget.globalExpired());
+  // a group cut short in the LAST group leaves the rotation 'complete' — it is not
+  if (outcome === 'complete' && rcov.cutShort > 0) outcome = isStopRequested() ? 'stopped' : 'global-budget';
+  // Cardinalities only — no outcome tally (LRW-Q7-D).
+  console.log(`[${ts()}] RELABEL DONE ${JSON.stringify({ outcome, ...rcov })}`);
+}
+
+/** The annotation's statements — the ONLY SQL it runs (a test pins: SET names `race_gap_candles` alone, never a
+ *  label column, never `computed_at`; `-v1` only; NULL only). ctid keyset paging keeps each batch a short scan. */
+export const ANNOTATE_SELECT_SQL =
+  `SELECT ctid::text AS t, signal_id, barrier_spec FROM directional_labels ` +
+  `WHERE barrier_spec IN ('tau0.5-floor0.30-v1', 'tau1.0-floor0.30-v1', 'tau2.0-floor0.30-v1') ` +
+  `AND race_gap_candles IS NULL AND ctid > $1::tid ORDER BY ctid LIMIT $2`;
+export const ANNOTATE_UPDATE_SQL =
+  `UPDATE directional_labels AS l SET race_gap_candles = v.gap ` +
+  `FROM unnest($1::tid[], $2::smallint[]) AS v(t, gap) ` +
+  `WHERE l.ctid = v.t AND l.race_gap_candles IS NULL ` +
+  `AND l.barrier_spec IN ('tau0.5-floor0.30-v1', 'tau1.0-floor0.30-v1', 'tau2.0-floor0.30-v1') RETURNING 1`;
+
+/** `outcome`: 'complete' = the ctid scan reached the end of the table; 'stopped' (SIGTERM) and 'global-budget'
+ *  (the deadline) left rows unscanned — never convergence. */
+interface AnnotateCoverage { outcome: 'complete' | 'stopped' | 'global-budget'; scanned: number; matched: number; annotated: number; unmatched: number; batches: number; wouldAnnotate: number }
+
+export async function runAnnotation(
+  gaps: ReadonlyMap<string, number>,
+  opts: { batch: number; check: boolean; deadlineMs?: number },
+): Promise<AnnotateCoverage> {
+  const a: AnnotateCoverage = { outcome: 'complete', scanned: 0, matched: 0, annotated: 0, unmatched: 0, batches: 0, wouldAnnotate: 0 };
+  if (!opts.check) {
+    // ruling LRW-Q13: every batch waits at most 5 s for a lock — set per process (PGOPTIONS, the runner). A run
+    // without it refuses rather than queue behind the nightly.
+    const lt = await dbQuery<{ v: string }>(`SELECT current_setting('lock_timeout') AS v`);
+    if (lt[0]?.v !== '5s') throw new Error(`lock_timeout is '${lt[0]?.v}', not '5s' — run with PGOPTIONS='-c lock_timeout=5s'`);
+  }
+  let last = '(0,0)';
+  for (;;) {
+    if (isStopRequested()) { a.outcome = 'stopped'; break; }
+    if (opts.deadlineMs !== undefined && Date.now() >= opts.deadlineMs) { a.outcome = 'global-budget'; break; }
+    const page = await dbQuery<{ t: string; signal_id: number | string; barrier_spec: string }>(ANNOTATE_SELECT_SQL, [last, opts.batch]);
+    if (page.length === 0) break;
+    a.scanned += page.length;
+    last = page[page.length - 1].t;
+    const tids: string[] = [];
+    const vals: number[] = [];
+    for (const r of page) {
+      const gap = gaps.get(`${Number(r.signal_id)}|${r.barrier_spec}`);
+      if (gap === undefined) { a.unmatched++; continue; }
+      tids.push(r.t);
+      vals.push(gap);
+    }
+    a.matched += tids.length;
+    a.batches++;
+    if (tids.length === 0) continue;
+    if (opts.check) { a.wouldAnnotate += tids.length; continue; }
+    const res = await dbQuery(ANNOTATE_UPDATE_SQL, [tids, vals]);
+    a.annotated += res.length;
+  }
+  return a;
+}
+
+async function mainAnnotate(cli: Cli): Promise<void> {
+  if (!cli.check) ensureTable(); // --check runs no DDL
+  const startMs = Date.now();
+  const files = loadAnnotationSources(cli.annotateGaps!.split(',').map((x) => x.trim()).filter(Boolean));
+  const gaps = parseGapWorklists(files);
+  console.log(`[${ts()}] ANNOTATE race_gap_candles start — ${gaps.size} worklist rows from ${files.length} pinned file(s) ${files.map((f) => f.sha256.slice(0, 12)).join(',')}, batch=${cli.annotateBatch}${cli.timeBudgetMin ? ` budget=${cli.timeBudgetMin}m` : ''}${cli.check ? ' (CHECK — no writes)' : ''}`);
+  const a = await runAnnotation(gaps, {
+    batch: cli.annotateBatch, check: cli.check, deadlineMs: cli.timeBudgetMin ? startMs + cli.timeBudgetMin * 60_000 : undefined,
+  });
+  // Totals only — never a value distribution (LRW-Q7-B).
+  console.log(`[${ts()}] ANNOTATE DONE ${JSON.stringify({ ...a, worklistRows: gaps.size, check: cli.check })}`);
+}
+
 /** Per-venue label frontier (MAX labeled created_at) — the F1 rotation key. */
 async function loadVenueFrontier(): Promise<Map<string, number>> {
   const rows = await dbQuery<{ exchange: string; frontier: string | number | null }>(
@@ -1381,6 +1718,9 @@ async function main(): Promise<void> {
   const cli = parseCli(process.argv.slice(2));
   if (cli.expiryOnly && (cli.expiryResetFrom !== undefined || cli.expiryResetTo !== undefined)) return mainExpiryReset(cli);
   if (cli.expiryOnly) return mainExpiry(cli);
+  if (cli.relabelV2 && cli.annotateGaps) throw new Error('--relabel-v2 and --annotate-gaps are separate runs');
+  if (cli.relabelV2) return mainRelabel(cli);
+  if (cli.annotateGaps) return mainAnnotate(cli);
   ensureTable();
   const groups = await loadGroups(cli);
   const frontier = await loadVenueFrontier();

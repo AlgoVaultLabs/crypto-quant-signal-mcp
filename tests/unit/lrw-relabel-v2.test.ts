@@ -1,0 +1,354 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
+
+// EDGE-LABELER-RACE-WINDOW-V2-W1 CH3 — the historical `-v2` relabel and the `race_gap_candles` annotation.
+// Drives the REAL processRelabelGroup / runAnnotation with the DB and the venue replaced at their seams. Every
+// statement either issues is captured, so ADD-ONLY is asserted on what ran, not on what the code says it does
+// (ruling LRW-Q7-C). Synthetic prices only.
+
+type C = { time: number; open: number; high: number; low: number; close: number; volume: number };
+type Sig = { id: number; created_at: number; price_at_signal: number; signal: 'BUY' | 'SELL'; pfe_return_pct: number; mae_return_pct: number };
+
+const env = vi.hoisted(() => ({
+  signals: [] as Sig[],
+  existing: [] as Array<{ signal_id: number; barrier_spec: string }>,
+  candles: [] as C[],
+  sql: [] as string[],
+  inserted: [] as unknown[][],
+  fetches: [] as number[], // real-time ms of each adapter call
+  advanceMsOnFetch: 0, // moves the faked clock on every venue call (the in-group deadline tests)
+  // annotation seams
+  labelRows: [] as Array<{ t: string; signal_id: number; barrier_spec: string; gap: number | null }>,
+  lockTimeout: '5s',
+  updates: [] as Array<{ tids: string[]; gaps: number[] }>,
+}));
+vi.mock('../../src/lib/performance-db.js', () => ({
+  dbExec: () => undefined,
+  dbQuery: async (sql: string, params: unknown[] = []) => {
+    env.sql.push(sql);
+    if (sql.includes('FROM signals') && sql.includes('WHERE exchange = $1 AND coin = $2 AND timeframe = $3')) return env.signals;
+    if (sql.includes('SELECT signal_id, barrier_spec FROM directional_labels')) {
+      const [specs, ids] = params as [string[], number[]];
+      return env.existing.filter((e) => specs.includes(e.barrier_spec) && ids.includes(e.signal_id));
+    }
+    if (sql.startsWith('INSERT INTO directional_labels')) {
+      const cols = (sql.match(/\(([^)]*)\)\s*VALUES/) ?? ['', ''])[1].split(',').length;
+      const rows: unknown[][] = [];
+      for (let i = 0; i < params.length; i += cols) rows.push(params.slice(i, i + cols));
+      env.inserted.push(...rows);
+      return rows.map((r) => ({ signal_id: r[0] }));
+    }
+    if (sql.includes("current_setting('lock_timeout')")) return [{ v: env.lockTimeout }];
+    if (sql.startsWith('SELECT ctid::text AS t')) {
+      const [last, limit] = params as [string, number];
+      const num = (t: string) => Number(t.slice(1, -1).split(',')[1]);
+      return env.labelRows
+        .filter((r) => r.gap === null && r.barrier_spec.endsWith('-v1') && num(r.t) > num(last))
+        .sort((a, b) => num(a.t) - num(b.t))
+        .slice(0, limit)
+        .map(({ t, signal_id, barrier_spec }) => ({ t, signal_id: String(signal_id), barrier_spec }));
+    }
+    if (sql.startsWith('UPDATE directional_labels')) {
+      const [tids, gaps] = params as [string[], number[]];
+      env.updates.push({ tids: [...tids], gaps: [...gaps] });
+      const out: unknown[] = [];
+      tids.forEach((t, i) => {
+        const row = env.labelRows.find((r) => r.t === t && r.gap === null && r.barrier_spec.endsWith('-v1'));
+        if (row) { row.gap = gaps[i]; out.push(1); }
+      });
+      return out;
+    }
+    throw new Error(`unexpected SQL in the relabel suite: ${sql.slice(0, 80)}`);
+  },
+}));
+vi.mock('../../src/lib/exchange-adapter.js', () => ({
+  getAdapter: () => ({
+    getCandles: async (coin: string, _tf: string, start: number, _dex: unknown, end?: number) => {
+      env.fetches.push(performance.now());
+      if (env.advanceMsOnFetch) vi.setSystemTime(Date.now() + env.advanceMsOnFetch);
+      if (coin === 'DELISTED') throw new Error('400 Invalid symbol');
+      return env.candles.filter((c) => c.time >= start && (end === undefined || c.time <= end)).slice(0, 1000);
+    },
+  }),
+}));
+
+import {
+  processRelabelGroup, parseCli, INSERT_COLUMNS, _relabelCoverageForTest, setOwnRequestRate, setOwnDeadline,
+  runAnnotation, ANNOTATE_SELECT_SQL, ANNOTATE_UPDATE_SQL, RELABEL_INSERT_SQL_HEAD, RELABEL_INSERT_SQL_TAIL,
+} from '../../src/scripts/backfill-directional-labels.js';
+import { buildRelabelGroupsSql, buildRelabelMissingSql, relabelUntil } from '../../src/scripts/lrw/relabel-sql.js';
+import { loadAnnotationSources, parseGapWorklists } from '../../src/scripts/lrw/annotation-sources.js';
+import { T_CUT_EPOCH, ADAPTER_PENDING_CELLS } from '../../src/scripts/lrw/registered.js';
+import { BARRIER_SPECS, BARRIER_SPECS_V2, EVAL_CANDLES } from '../../src/scripts/directional-labeler.js';
+
+const M = 60_000;
+const H = 60 * M;
+const D = 24 * H;
+const T = 497_000 * H; // 2026-09-12T08:00Z
+const PX = 100;
+const col = (n: (typeof INSERT_COLUMNS)[number]) => INSERT_COLUMNS.indexOf(n);
+const V1 = new Set<string>(BARRIER_SPECS.map((s) => s.spec));
+const V2 = new Set<string>(BARRIER_SPECS_V2.map((s) => s.spec));
+const flat = (t: number): C => ({ time: t, open: PX, high: PX * 1.0005, low: PX * 0.9995, close: PX, volume: 1 });
+const series = (from: number, to: number, step: number, at: (t: number) => C = flat) => {
+  const out: C[] = [];
+  for (let t = from; t <= to; t += step) out.push(at(t));
+  return out;
+};
+const sig = (id: number, entryMs: number): Sig => ({ id, created_at: entryMs / 1000, price_at_signal: PX, signal: 'BUY', pfe_return_pct: 5, mae_return_pct: -5 });
+
+async function relabel(g: { exchange: string; coin: string; timeframe: string }, argv: string[] = [], opts: { nowMs?: number; retired?: string[] } = {}) {
+  env.sql.length = 0;
+  env.inserted.length = 0;
+  env.fetches.length = 0;
+  const logs: string[] = [];
+  const spy = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => { logs.push(a.join(' ')); });
+  const nowMs = opts.nowMs ?? T + 30 * D;
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(nowMs));
+  const c0 = _relabelCoverageForTest();
+  try {
+    await processRelabelGroup(parseCli(['--relabel-v2', ...argv]), g, { retired: new Set(opts.retired ?? []), nowMs });
+  } finally {
+    vi.useRealTimers();
+    spy.mockRestore();
+  }
+  const c1 = _relabelCoverageForTest();
+  const manifest = logs.filter((l) => l.startsWith('LRW_MANIFEST ')).map((l) => l.split(' ').slice(1));
+  const classDelta: Record<string, number> = {};
+  for (const [k, v] of Object.entries(c1.classes)) if (v - (c0.classes[k] ?? 0) > 0) classDelta[k] = v - (c0.classes[k] ?? 0);
+  return {
+    manifest, classDelta, written: c1.written - c0.written, wouldWrite: c1.wouldWrite - c0.wouldWrite, nonV2: c1.nonV2Refused - c0.nonV2Refused,
+    errors: c1.errors - c0.errors, cutShort: c1.cutShort - c0.cutShort,
+  };
+}
+const writes = () => env.sql.filter((q) => /^\s*(INSERT|UPDATE|DELETE)/i.test(q));
+
+beforeEach(() => {
+  env.signals = [];
+  env.existing = [];
+  env.candles = [];
+  env.advanceMsOnFetch = 0;
+  setOwnRequestRate(undefined);
+  setOwnDeadline(Infinity);
+});
+
+describe('--relabel-v2 — ADD-ONLY, every eligible signal, every refusal counted', () => {
+  it('writes the three -v2 rows for a signal with NO -v1 row (LRW-Q5 = B) and nothing else — no UPDATE, no DELETE, no -v1', async () => {
+    const e = T + 17_000;
+    env.signals = [sig(1, e)];
+    env.candles = series(T - 600 * H, T + 20 * H, H); // ≥ 60·W + 1 contiguous served closes of σ history
+    const r = await relabel({ exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' });
+    const v2 = env.inserted.filter((x) => V2.has(String(x[col('barrier_spec')])));
+    expect(v2).toHaveLength(3);
+    expect(env.inserted.filter((x) => V1.has(String(x[col('barrier_spec')])))).toHaveLength(0);
+    for (const x of v2) {
+      expect(x[col('race_gap_candles')]).toBe(0);
+      expect(x[col('low_vol_history')]).toBe(false);
+    }
+    expect(writes().every((q) => q.startsWith(RELABEL_INSERT_SQL_HEAD) && q.endsWith(RELABEL_INSERT_SQL_TAIL))).toBe(true);
+    expect(r.written).toBe(3);
+    expect(r.nonV2).toBe(0);
+  });
+
+  it('write-once: an existing -v2 spec is never re-raced; a partial set is completed', async () => {
+    const e = T + 17_000;
+    env.signals = [sig(2, e), sig(3, e + H)];
+    env.existing = [
+      ...BARRIER_SPECS_V2.map((v) => ({ signal_id: 2, barrier_spec: v.spec })),
+      { signal_id: 3, barrier_spec: 'tau1.0-floor0.30-v2' },
+    ];
+    env.candles = series(T - 600 * H, T + 20 * H, H);
+    await relabel({ exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' });
+    expect(env.inserted.filter((x) => x[0] === 2)).toHaveLength(0);
+    expect(env.inserted.filter((x) => x[0] === 3).map((x) => x[1]).sort()).toEqual(['tau0.5-floor0.30-v2', 'tau2.0-floor0.30-v2']);
+  });
+
+  it('every refusal is ONE manifest line with its registered class — a hole, a short history, an open window', async () => {
+    const e1 = T + 17_000; // a hole inside its window → refused:gap
+    const e2 = T + 300 * H + 17_000; // its σ history starts after a long gap → unreachable:history
+    const e3 = T + 29 * D + 23 * H + 17_000; // its window is still open at "now" → deferred
+    env.signals = [sig(11, e1), sig(12, e2), sig(13, e3)];
+    env.candles = [
+      ...series(T - 100 * H, T + 20 * H, H).filter((c) => c.time !== T + 4 * H),
+      ...series(T + 290 * H, T + 320 * H, H),
+      ...series(T + 29 * D - 100 * H, T + 30 * D, H),
+    ];
+    const r = await relabel({ exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' });
+    expect(Object.fromEntries(r.manifest.map(([id, cls]) => [id, cls]))).toEqual({ 11: 'refused:gap', 12: 'unreachable:history', 13: 'deferred' });
+    expect(r.classDelta).toEqual({ 'refused:gap': 1, 'unreachable:history': 1, deferred: 1 });
+    expect(env.inserted).toHaveLength(0);
+  });
+
+  it('classes decided WITHOUT a fetch: a retired venue, the adapter-pending cell, a window past the measured depth', async () => {
+    env.signals = [sig(21, T + 17_000)];
+    env.candles = series(T - 100 * H, T + 20 * H, H);
+    const ret = await relabel({ exchange: 'BITMART', coin: 'BTC', timeframe: '1h' }, [], { retired: ['BITMART'] });
+    expect(ret.manifest).toEqual([['21', 'unreachable:retired']]);
+    // the adapter-pending cell is the registration's — no flag opts a run into it, none can opt out
+    expect([...ADAPTER_PENDING_CELLS].sort()).toEqual(['BITGET:2h', 'BITGET:8h']);
+    for (const tf of ['2h', '8h']) {
+      const pend = await relabel({ exchange: 'BITGET', coin: 'BTC', timeframe: tf });
+      expect(pend.manifest).toEqual([['21', 'unreachable:adapter-pending']]);
+      expect(env.fetches).toHaveLength(0);
+    }
+    expect(() => parseCli(['--relabel-v2', '--adapter-pending', 'BITGET:2h'])).toThrow(/refused/);
+    // a 3m GATE signal two years old is past the venue's measured candle depth
+    env.signals = [sig(22, T - 730 * D + 17_000)];
+    const deep = await relabel({ exchange: 'GATE', coin: 'BTC', timeframe: '3m' });
+    expect(deep.manifest).toEqual([['22', 'unreachable:depth']]);
+    expect(env.fetches).toHaveLength(0);
+  });
+
+  it('--check counts what it would write and writes nothing', async () => {
+    env.signals = [sig(31, T + 17_000), sig(32, T + H + 17_000)];
+    env.existing = [{ signal_id: 32, barrier_spec: 'tau1.0-floor0.30-v2' }];
+    env.candles = series(T - 100 * H, T + 20 * H, H);
+    const r = await relabel({ exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' }, ['--check']);
+    expect(writes()).toHaveLength(0);
+    expect(env.fetches).toHaveLength(0);
+    expect(r.wouldWrite).toBe(5);
+  });
+
+  it('its OWN request ceiling (LRW-Q13): consecutive venue calls are spaced by 60 000 / --max-req-per-min ms', async () => {
+    env.signals = [sig(41, T + 17_000), sig(42, T + 200 * H + 17_000)]; // two islands → ≥ 2 range fetches
+    env.candles = series(T - 100 * H, T + 400 * H, H);
+    // The interval must exceed the transport's own 250 ms inter-page sleep, or the assertion is vacuous: the
+    // baseline run below proves calls land closer than 480 ms WITHOUT the ceiling.
+    const gaps = () => env.fetches.slice(1).map((t, i) => t - env.fetches[i]);
+    setOwnRequestRate(undefined);
+    await relabel({ exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' });
+    expect(env.fetches.length).toBeGreaterThanOrEqual(2);
+    expect(Math.min(...gaps())).toBeLessThan(480);
+    setOwnRequestRate(120); // 500 ms
+    await relabel({ exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' });
+    setOwnRequestRate(undefined);
+    expect(env.fetches.length).toBeGreaterThanOrEqual(2);
+    expect(Math.min(...gaps())).toBeGreaterThanOrEqual(480);
+  }, 20_000);
+
+  it('the group list is label-free, keyed on the -v2 specs of the run, and ends at T_CUT', () => {
+    const { text, params } = buildRelabelGroupsSql({ v2Specs: BARRIER_SPECS_V2.map((v) => v.spec), since: 1788169595, until: relabelUntil(undefined), venue: 'OKX' });
+    expect(params).toEqual([BARRIER_SPECS_V2.map((v) => v.spec), 3, 'OKX']);
+    expect(text).toContain('s.created_at > 1788169595');
+    expect(text).toContain(`s.created_at <= ${Math.floor(T_CUT_EPOCH)}`);
+    for (const c of ['label', 'ambiguous_candle', 'barrier_pct', 'mfe_return_pct', 'mae_return_pct', 'ret_at_expiry_pct', 'outcome']) {
+      expect(new RegExp(`\\b${c}\\b`).test(text)).toBe(false);
+    }
+    expect(EVAL_CANDLES['1h']).toBe(8);
+  });
+
+  it('the relabel never chases the live inflow: its population ends at T_CUT; --until may lower it, never raise it', () => {
+    expect(relabelUntil(undefined)).toBe(Math.floor(T_CUT_EPOCH));
+    expect(relabelUntil(1790000000)).toBe(1790000000);
+    expect(() => relabelUntil(Math.floor(T_CUT_EPOCH) + 1)).toThrow(/above T_CUT/);
+  });
+
+  it('the completeness probe is the group list\'s own eligibility, inlined, over all three τ up to T_CUT', () => {
+    const groups = buildRelabelGroupsSql({ v2Specs: BARRIER_SPECS_V2.map((v) => v.spec), until: relabelUntil(undefined) }).text;
+    const probe = buildRelabelMissingSql();
+    const whereOf = (sql: string) => sql.slice(sql.indexOf(' WHERE ') + 7, sql.search(/ (GROUP|ORDER) BY /));
+    const inlined = whereOf(groups).replace('$1', `ARRAY[${BARRIER_SPECS_V2.map((v) => `'${v.spec}'`).join(', ')}]::text[]`).replace('$2', '3');
+    expect(whereOf(probe)).toBe(inlined);
+    expect(probe).toMatch(/^SELECT s\.id \|\| ',' \|\| s\.exchange \|\| ',' \|\| s\.timeframe FROM signals s WHERE /);
+  });
+
+  it('a fetch error is COUNTED, never a manifest class and never a write', async () => {
+    env.signals = [sig(61, T + 17_000)];
+    env.candles = series(T - 600 * H, T + 20 * H, H);
+    const r = await relabel({ exchange: 'BINANCE', coin: 'DELISTED', timeframe: '1h' });
+    expect(r.errors).toBe(1);
+    expect([r.written, r.manifest.length]).toEqual([0, 0]);
+  });
+
+  it('the hard stop acts INSIDE a group: rows raced before it are written, the rest is the next pass\'s (counted cutShort)', async () => {
+    env.signals = [sig(71, T + 17_000), sig(72, T + 200 * H + 17_000)]; // two islands: the second needs its own fetch
+    env.candles = series(T - 600 * H, T + 400 * H, H);
+    env.advanceMsOnFetch = 2_000;
+    setOwnDeadline(T + 30 * D + 1_000); // the helper's clock: passed by the first fetch
+    const r = await relabel({ exchange: 'BINANCE', coin: 'BTC', timeframe: '1h' });
+    expect(r.cutShort).toBe(1);
+    expect(r.written).toBe(3);
+    expect(env.inserted.every((x) => x[0] === 71)).toBe(true);
+    expect(r.manifest).toEqual([]);
+  });
+});
+
+describe('--annotate-gaps — one column, -v1 only, NULL only, totals only', () => {
+  const wl = (rows: string[]) => ['signal_id,barrier_spec,gap_served_L,sigma_holes_L', ...rows].join('\n');
+
+  it('the worklists are keyed (signal_id, barrier_spec) and refuse a non -v1 row, a non-integer gap, or two files that disagree', () => {
+    const m = parseGapWorklists([{ name: 'a', csv: wl(['5,tau1.0-floor0.30-v1,3,0', '5,tau0.5-floor0.30-v1,0,1']) }, { name: 'b', csv: wl(['6,tau2.0-floor0.30-v1,12,0']) }]);
+    expect([...m.entries()]).toEqual([['5|tau1.0-floor0.30-v1', 3], ['5|tau0.5-floor0.30-v1', 0], ['6|tau2.0-floor0.30-v1', 12]]);
+    expect(() => parseGapWorklists([{ name: 'v2', csv: wl(['5,tau1.0-floor0.30-v2,0,0']) }])).toThrow(/non -v1/);
+    expect(() => parseGapWorklists([{ name: 'x', csv: wl(['5,tau1.0-floor0.30-v1,1.5,0']) }])).toThrow(/SMALLINT/);
+    expect(() => parseGapWorklists([{ name: 'a', csv: wl(['5,tau1.0-floor0.30-v1,3,0']) }, { name: 'b', csv: wl(['5,tau1.0-floor0.30-v1,4,0']) }])).toThrow(/disagrees/);
+    expect(() => parseGapWorklists([{ name: 'h', csv: 'id,spec,gap\n1,x,0' }])).toThrow(/header/);
+  });
+
+  it('pages by ctid, writes only matched NULL -v1 rows, counts the rest, and a re-run (or --check after it) writes 0', async () => {
+    env.labelRows = [];
+    for (let i = 1; i <= 23; i++) {
+      env.labelRows.push({ t: `(0,${i})`, signal_id: 100 + i, barrier_spec: i % 2 ? 'tau1.0-floor0.30-v1' : 'tau1.0-floor0.30-v2', gap: i === 7 ? 4 : null });
+    }
+    const gaps = new Map<string, number>();
+    for (let i = 1; i <= 23; i += 2) if (i !== 9) gaps.set(`${100 + i}|tau1.0-floor0.30-v1`, i % 5);
+    env.updates.length = 0;
+    const a = await runAnnotation(gaps, { batch: 5, check: false });
+    expect(a.annotated).toBe(10); // 12 odd rows − #7 (already set) − #9 (not in the worklist)
+    expect(a.unmatched).toBe(1);
+    expect(env.labelRows.filter((r) => r.barrier_spec.endsWith('-v2')).every((r) => r.gap === null)).toBe(true);
+    expect(env.labelRows.find((r) => r.t === '(0,7)')!.gap).toBe(4); // never overwritten
+    expect(env.updates.every((u) => u.tids.length <= 5)).toBe(true);
+    env.updates.length = 0;
+    const again = await runAnnotation(gaps, { batch: 5, check: false });
+    expect(again.annotated).toBe(0);
+    const check = await runAnnotation(gaps, { batch: 5, check: true });
+    expect([check.wouldAnnotate, env.updates.length]).toEqual([0, 0]);
+  });
+
+  it('reports complete only when the ctid scan reached the end — a deadline leaves outcome global-budget', async () => {
+    env.labelRows = [{ t: '(0,1)', signal_id: 1, barrier_spec: 'tau1.0-floor0.30-v1', gap: null }];
+    expect((await runAnnotation(new Map(), { batch: 2000, check: true })).outcome).toBe('complete');
+    const cut = await runAnnotation(new Map(), { batch: 2000, check: true, deadlineMs: Date.now() - 1 });
+    expect([cut.outcome, cut.scanned]).toEqual(['global-budget', 0]);
+  });
+
+  it('writes only from the two pinned files: any other worklist is refused by sha256 before a row is read', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lrw-ann-'));
+    const p = join(dir, 'race-gap-worklist.csv.gz');
+    writeFileSync(p, gzipSync('signal_id,barrier_spec,gap_served_L\n1,tau1.0-floor0.30-v1,0\n'));
+    expect(() => loadAnnotationSources([p])).toThrow(/not a pinned annotation source/);
+    expect(() => loadAnnotationSources([])).toThrow(/names no file/);
+  });
+
+  it('refuses to write without lock_timeout = 5s (LRW-Q13), and --check needs no setting', async () => {
+    env.lockTimeout = '0';
+    env.labelRows = [{ t: '(0,1)', signal_id: 1, barrier_spec: 'tau1.0-floor0.30-v1', gap: null }];
+    await expect(runAnnotation(new Map([['1|tau1.0-floor0.30-v1', 2]]), { batch: 2000, check: false })).rejects.toThrow(/lock_timeout/);
+    const c = await runAnnotation(new Map([['1|tau1.0-floor0.30-v1', 2]]), { batch: 2000, check: true });
+    expect(c.wouldAnnotate).toBe(1);
+    env.lockTimeout = '5s';
+  });
+
+  it('LRW-Q7-C static assertion: the annotation SETs race_gap_candles alone; no -v1 label column, never computed_at, -v1 + NULL only', () => {
+    const set = ANNOTATE_UPDATE_SQL.slice(ANNOTATE_UPDATE_SQL.indexOf(' SET '), ANNOTATE_UPDATE_SQL.indexOf(' FROM '));
+    expect(set).toBe(' SET race_gap_candles = v.gap');
+    for (const sql of [ANNOTATE_SELECT_SQL, ANNOTATE_UPDATE_SQL]) {
+      for (const c of ['label', 'ambiguous_candle', 'low_vol_history', 't_hit_candles', 'mfe_return_pct', 'mae_return_pct', 'barrier_pct', 'ret_at_expiry_pct', 'computed_at']) {
+        expect(new RegExp(`\\b${c}\\b`).test(sql)).toBe(false);
+      }
+      expect(sql).toContain('race_gap_candles IS NULL');
+      expect(sql).toContain("('tau0.5-floor0.30-v1', 'tau1.0-floor0.30-v1', 'tau2.0-floor0.30-v1')");
+    }
+    // and in the source: the relabel / annotation code issues no UPDATE / DELETE but the one pinned statement
+    const src = readFileSync('src/scripts/backfill-directional-labels.ts', 'utf8');
+    const ch3 = src.slice(src.indexOf('EDGE-LABELER-RACE-WINDOW-V2-W1 CH3 — the historical'), src.indexOf('async function mainAnnotate'));
+    expect((ch3.match(/UPDATE directional_labels/g) ?? []).length).toBe(1); // ANNOTATE_UPDATE_SQL, nothing else
+    expect(/DELETE FROM|TRUNCATE/i.test(ch3)).toBe(false);
+    expect(RELABEL_INSERT_SQL_TAIL).toContain('ON CONFLICT (signal_id, barrier_spec) DO NOTHING');
+  });
+});
