@@ -129,7 +129,12 @@ run_gate() {
   { npm run build && npm run build:knowledge; } >"$tmp/build.log" 2>&1
   local build_rc=$? suite="" contract="IND suite-not-run" differential="IND suite-not-run" budget="IND suite-not-run"
   if [ "$build_rc" -eq 0 ]; then
-    npx vitest run --reporter=default --reporter=json --outputFile="$tmp/report.json" \
+    # Workers mirror the deploy runner (ubuntu-latest, 4 vCPU → vitest's default cpus−1 = 3). The operator Mac has
+    # 12 cores and shares them with parallel sessions; at the default 11 workers the suite drives load past 40 and
+    # spawn-heavy tests owned by other waves time out (measured 2026-10-01: lifecycle-readout-cron.test.ts 1.8 s
+    # alone, > 5 s at load 43), which the classifier then scores FAIL. The verdict must describe the code, not
+    # this machine's contention. OAH_GATE_MAX_WORKERS overrides.
+    npx vitest run --maxWorkers="${OAH_GATE_MAX_WORKERS:-3}" --reporter=default --reporter=json --outputFile="$tmp/report.json" \
       --reporter=./scripts/vitest-error-shape-reporter.mjs </dev/null >"$tmp/vitest.log" 2>&1 || true
     mv -f .vitest-error-shapes.json "$tmp/shapes.json" 2>/dev/null || true
     suite="$(node scripts/classify-suite-verdict.mjs "$tmp/report.json" --sidecar="$tmp/shapes.json" 2>/dev/null \
