@@ -217,6 +217,34 @@
       }
     },
     {
+      "id": "block-caller-tags",
+      "path": "$GIT_COMMON_DIR/hooks/pre-commit",
+      "kind": "hook-block",
+      "hook": "pre-commit",
+      "block_name": "caller-tags",
+      "script": "scripts/check-caller-tags.mjs",
+      "writers": [
+        "scripts/install_caller_tags_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-commit"
+      ],
+      "invariant": "Same publish precondition. The installer runs hook_block_assert_publishable on scripts/check-caller-tags.mjs (fail-closed) before emitting the block. The gate has no repo-local runtime imports: node builtins only, plus typescript resolved from node_modules via createRequire, whose absence is INDETERMINATE, not FAIL.",
+      "severity": "block",
+      "backstopped_by": [
+        ".github/workflows/deploy.yml"
+      ],
+      "_backstopped_by_reason": "deploy.yml's 'Caller-tag integrity gate (fail-closed)' step runs the gate's --self-test and --check and fails on any token but PASS; the pre-commit block exits non-zero on FAIL only (fleet-wedge protection), so CI is the strict caller.",
+      "sha256": null,
+      "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
+      "serialization": {
+        "mechanism": "none-single-writer",
+        "key": null,
+        "scope": "the one installer named in writers[], run by hand from a checkout",
+        "_scope_reason": "A hook-block row is written only by its own installer. The FILE those installers share is hook-pre-commit, and the contention lives on that row, not on this one."
+      }
+    },
+    {
       "id": "block-push-safety",
       "path": "$GIT_COMMON_DIR/hooks/pre-push",
       "kind": "hook-block",
