@@ -55,6 +55,26 @@ The registration carries a section headed `## Operating characteristic` holding 
 
 _Origin: `EDGE-HURST-DISCRIMINATION-PROBE-W1`, architect Q13 (2026-09-22). A label-free self-agreement statistic was promoted to a wave's headline before anyone checked that it could separate the null from the control; on the corpus's real pair structure it read "unreliable" in 19/20 null runs AND 19/20 control runs, and the ruling built on it was withdrawn. This section makes that check a precondition of registration rather than a step to remember._
 
+## 4c. Identifiability — a floor the arm cannot reach is refused at declaration (GATED)
+
+**A floor on a rate, edge or excess comparison is a promise that the comparison can move that far. Check that it can before the registration lands.** An arm's excess over its own mix-matched null is bounded by its side mix. If the minority side carries a share `m` of the arm's rows, no outcome distribution lets the arm's attainable range exceed `2m`. The bound is exact whenever the arm's up-share lies between `m` and `1 − m`, and ties only narrow it. `m` is a cardinality, so §1 allows it to be probed before landing; the check reads no outcome statistic.
+
+**Rule.** A declared floor `F` on an arm with minority share `m` is `NOT_IDENTIFIABLE` if `F > 2m`, i.e. `F > 200·m` in pp. Such a floor can never fire, so it is not registered as one: it is refused and the test is restated, usually as a within-arm test. A cross-arm delta gets one row per arm it constrains, so the narrower arm binds by construction. A floor equal to its bound passes.
+
+**What counts.** Floors on an edge or excess over the mix-matched null; on a cross-arm delta of such excesses; or on any rate comparison whose comparator follows the arm's own side mix. Cluster floors, row floors, coverage ratios and interval widths are §5 floors and are not rows here.
+
+**Every registration carries a section headed `## Identifiability`** holding EITHER one table, with one row per declared floor and per arm it constrains:
+
+| comparison | arm | minority-side share m (cardinality, with probe) | declared floor (pp) | bound 2m (pp) | verdict |
+|---|---|---|---|---|---|
+| the named comparison | the arm this row constrains | `m` as a fraction in [0, 0.5], the first number in its cell, then the probe that produced it (a backticked command or SQL) | the floor | `200·m` | `IDENTIFIABLE` · `NOT_IDENTIFIABLE → restated as …` |
+
+OR, when the registration declares no such floor, the single line `NO_RATE_FLOOR_DECLARED - <reason>`. Never both and never neither: the absence of a rate floor is stated, because no word trigger can tell a rate floor from a cluster floor.
+
+**The gate checks presence, shape AND arithmetic.** It recomputes `2m` from the stated `m` through `attainable_bound_from_share` in `ops/monitoring/population_comparison.py`, by subprocess (`--declarations`); the gate carries no copy of the formula. It requires the stated bound to match within its own stated precision, and the stated verdict to equal the recomputed one. A refused floor must name its restatement. Registrations landed before this section existed (2026-10-01) are grandfathered by an exact, reasoned allowlist, never by a glob. The population-comparison registry enforces the same rule on its sites: a site that declares a floor declares the share it was sized against (`scripts/check-population-comparison.mjs`, the registry's `_site_floor_doc`).
+
+_Origin: `OPS-PREREG-IDENTIFIABILITY-GATE-W1`. On 2026-08-31 the trend-mode trigger A declared a 3.0pp floor on a cross-arm delta whose v1 arm emitted SELL on 0.53% of its rows. Its `2m` was 1.06pp, so the trigger could never fire. `compare_arms` proved this on 2026-09-02, after the floor had been armed and a false rollback page had fired. The same arithmetic at declaration would have forced the within-arm test that eventually decided the question. Worked fixtures for both surfaces: `tests/fixtures/identifiability/`._
+
 ## 5. Floors and power — before the pull, in the independence unit
 
 State the cluster floor (never a row floor) and the power at the effect the study is powered for, with the instrument beside the number: the standard error's source, how it scales with the cluster count, and any calibration applied. An increment that cannot reach the floor returns `indeterminate — underpowered`, with the size and the date that would resolve it. That branch is registered, not improvised.
@@ -73,4 +93,4 @@ A deviation from the registration is recorded as a deviation with its reason, ne
 
 ## 9. Inheritors — named
 
-`EDGE-HOLD-DISCIPLINE-W{NEXT}` (the §3 test of `audits/hold-decision-preregistration-2026-08-26.md`, earliest answer ~2026-10-07) · `EDGE-SCORING-LADDER-REDESIGN-W2` and its W2A pre-registration · `EDGE-BUY-ARM-DRAIN-W{NEXT}` · `OPS-TRACK-RECORD-BAND-DECISION-W{NEXT}` (`band_signals`, gated on a resolved-row count) · every successor of `EDGE-SELL-ATTRIBUTION-CENTERED-CHECK-W1` · every future study on `hold_decision_labels`, `band_signals`, or any corpus conditioned on a selection event.
+`EDGE-HOLD-DISCIPLINE-W{NEXT}` (the §3 test of `audits/hold-decision-preregistration-2026-08-26.md`, earliest answer ~2026-10-07) · `EDGE-SCORING-LADDER-REDESIGN-W2` and its W2A pre-registration · `EDGE-BUY-ARM-DRAIN-W{NEXT}` · `OPS-TRACK-RECORD-BAND-DECISION-W{NEXT}` (`band_signals`, gated on a resolved-row count) · every successor of `EDGE-SELL-ATTRIBUTION-CENTERED-CHECK-W1` · every future study on `hold_decision_labels`, `band_signals`, or any corpus conditioned on a selection event · for §4c, every registration that declares a floor, every readout-canary contract, and per-cell floors such as `SIGNAL-VERDICT-RULE-REGISTRY-W1`'s.
