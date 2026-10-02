@@ -14,6 +14,9 @@
 #                   (named, read from the suite report).
 #   AC4  RENDERED   cmc-rendered-diff.mjs --check over EVERY row R1–R18 + R10b → MATCH.
 #   AC5  suite      the full vitest suite → classify-suite-verdict.mjs, as deploy.yml runs it;
+#        NODETEST   every node:test canary (tests/**/*.test.mjs that is not a vitest file), run exactly as
+#                   the pre-push test gate runs them — vitest green is not push green (measured: an
+#                   attribution canary blocked this wave's first landing that vitest never ran);
 #        landing    build_landing --check rc 0;
 #        PARTNER    check-partner-install-coords.mjs → PARTNER_INSTALL_VERDICT=CLEAN (the derived footer
 #                   leaves its `href: '…'` corpus; its vacuity guard must still find coordinates).
@@ -40,10 +43,10 @@ NAMED_TESTS='tests/unit/claim-evidence.test.ts tests/unit/readme-mcp-clients.tes
 ALL_ROWS='R1,R2,R3,R4,R5,R6,R7,R8,R9,R10,R10b,R11,R12,R13,R14,R15,R16,R17,R18'
 
 # decide <build_rc> <suite> <named> <footer> <readme> <anchors> <evidence> <rendered> <landing_rc>
-#        <partner> <copy> <grid> <homepage>
+#        <partner> <copy> <grid> <homepage> <nodetest>
 decide() {
   local build_rc="$1" suite="$2" named="$3" footer="$4" readme="$5" anchors="$6" ev="$7" rendered="$8"
-  local landing="$9" partner="${10}" copy="${11}" grid="${12}" homepage="${13}"
+  local landing="$9" partner="${10}" copy="${11}" grid="${12}" homepage="${13}" nodetest="${14}"
   red="" ind=""
   [ "$build_rc" = "0" ] || red="$red build"
   case "$suite" in PASS|PASS_AFTER_ISOLATION) ;; FAIL) red="$red suite" ;; *) ind="$ind suite:${suite:-none}" ;; esac
@@ -58,9 +61,10 @@ decide() {
   leg mcp-client-copy "$copy" PASS FAIL
   leg grid "$grid" PASS FAIL
   leg homepage "$homepage" PASS FAIL
+  leg node-test "$nodetest" PASS FAIL
   if [ -n "$red" ]; then printf '[cmc-ch2-gate] RED:%s%s\n' "$red" "${ind:+ (also unverified:$ind)}" >&2; echo CH2_RED; return 1; fi
   if [ -n "$ind" ]; then printf '[cmc-ch2-gate] cannot verify:%s\n' "$ind" >&2; echo CH2_INDETERMINATE; return 3; fi
-  printf '[cmc-ch2-gate] AC1-AC6: derived footer + R8, generated README + R9, anchors, rendered diff, suite, landing, partner coords, CHECK 10 + red-proof, byte-equal render — all passed\n' >&2
+  printf '[cmc-ch2-gate] AC1-AC6: derived footer + R8, generated README + R9, anchors, rendered diff, suite, node:test canaries, landing, partner coords, CHECK 10 + red-proof, byte-equal render — all passed\n' >&2
   echo CH2_GREEN; return 0
 }
 
@@ -111,7 +115,8 @@ for (const want of [
   '| **Continue.dev** | `config.yaml` → `mcpServers: [{ name: algovault, type: streamable-http, url: "https://api.algovault.com/mcp" }]` |',
   '| Any other MCP-spec-compliant client | Configure the Streamable HTTP transport with URL `https://api.algovault.com/mcp` |',
 ]) if (!readme.includes(want)) rb.push(`README.md lacks: ${want.slice(0, 80)}`);
-for (const r of mod.README_ONLY_MCP_CLIENT_ROWS) if (!r.reason.trim()) rb.push(`README-only row ${r.key} carries no reason`);
+const rmod = require(process.cwd() + '/dist/lib/integrations-data/readme-mcp-clients.js');
+for (const r of rmod.README_ONLY_MCP_CLIENT_ROWS) if (!r.reason.trim()) rb.push(`README-only row ${r.key} carries no reason`);
 out('README_CELLS', rb);
 /* AC3 — the three README-binding anchors are in the emitted corpus */
 const doc = JSON.parse(readFileSync('src/lib/integrations-data/claim-evidence.json', 'utf8'));
@@ -156,7 +161,7 @@ run_gate() {
   rm -rf dist
   { npm run build && npm run build:knowledge; } >"$tmp/build.log" 2>&1
   local build_rc=$?
-  local suite="" named="missing" footer="" readme="" anchors="" ev="" rendered="" landing="" partner="" copy="" grid="" homepage=""
+  local suite="" named="missing" footer="" readme="" anchors="" ev="" rendered="" landing="" partner="" copy="" grid="" homepage="" nodetest=""
   if [ "$build_rc" -eq 0 ]; then
     local sl; sl="$(sot_legs 2>"$tmp/sot.err")"
     footer="$(printf '%s\n' "$sl" | val FOOTER)"; grid="$(printf '%s\n' "$sl" | val GRID)"
@@ -181,6 +186,12 @@ run_gate() {
       --reporter=./scripts/vitest-error-shape-reporter.mjs </dev/null >"$tmp/vitest.log" 2>&1 || true
     mv -f .vitest-error-shapes.json "$tmp/shapes.json" 2>/dev/null || true
     suite="$(node scripts/classify-suite-verdict.mjs "$tmp/report.json" --sidecar="$tmp/shapes.json" 2>/dev/null | val SUITE_VERDICT)"
+    # node:test canaries — the file set and the worker cap scripts/check_test_baseline.sh uses (content-detected)
+    local -a nt=()
+    while IFS= read -r f; do grep -q "from 'vitest'" "$f" 2>/dev/null && continue; nt+=("$f"); done < <(find tests -name '*.test.mjs' 2>/dev/null | sort)
+    if [ "${#nt[@]}" -gt 0 ]; then
+      if node --test --test-concurrency="${ALGOVAULT_GATE_MAX_WORKERS:-6}" "${nt[@]}" </dev/null >"$tmp/nodetest.log" 2>&1; then nodetest=PASS; else nodetest=FAIL; fi
+    fi
     named="$(node -e '
       const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
       let out = "passed";
@@ -193,18 +204,18 @@ run_gate() {
       console.log(out);
     ' "$tmp/report.json" "$NAMED_TESTS" 2>/dev/null || echo missing)"
   fi
-  printf '[cmc-ch2-gate] build_rc=%s suite=%s named=%s footer=%s readme=%s anchors=%s evidence=%s rendered=%s landing_rc=%s partner=%s copy=%s grid=%s homepage=%s\n' \
+  printf '[cmc-ch2-gate] build_rc=%s suite=%s named=%s footer=%s readme=%s anchors=%s evidence=%s rendered=%s landing_rc=%s partner=%s copy=%s grid=%s homepage=%s nodetest=%s\n' \
     "$build_rc" "${suite:-none}" "$named" "${footer:-none}" "${readme:-none}" "${anchors:-none}" "${ev:-none}" "${rendered:-none}" \
-    "${landing:-none}" "${partner:-none}" "${copy:-none}" "${grid:-none}" "${homepage:-none}" >&2
+    "${landing:-none}" "${partner:-none}" "${copy:-none}" "${grid:-none}" "${homepage:-none}" "${nodetest:-none}" >&2
   local rc
-  decide "$build_rc" "$suite" "$named" "$footer" "$readme" "$anchors" "$ev" "$rendered" "$landing" "$partner" "$copy" "$grid" "$homepage"; rc=$?
+  decide "$build_rc" "$suite" "$named" "$footer" "$readme" "$anchors" "$ev" "$rendered" "$landing" "$partner" "$copy" "$grid" "$homepage" "$nodetest"; rc=$?
   if [ "$rc" -eq 0 ]; then rm -rf "$tmp"; else printf '[cmc-ch2-gate] evidence kept: %s\n' "$tmp" >&2; fi
   exit "$rc"
 }
 
 self_test() {
   local pass=0 fail=0 cases=0
-  check() { # <name> <want token> <want rc> <13 decide args>
+  check() { # <name> <want token> <want rc> <14 decide args>
     local name="$1" want="$2" want_rc="$3"; shift 3
     local out rc
     out="$(decide "$@" 2>/dev/null)"; rc=$?
@@ -212,14 +223,14 @@ self_test() {
     if [ "$out" = "$want" ] && [ "$rc" -eq "$want_rc" ]; then pass=$((pass + 1)); echo "SELF-TEST: ok $name"
     else fail=$((fail + 1)); echo "SELF-TEST: FAIL $name (got '$out' rc=$rc, want '$want' rc=$want_rc)"; fi
   }
-  local G=(0 PASS passed PASS PASS PASS IN_SYNC MATCH 0 CLEAN PASS PASS PASS)
+  local G=(0 PASS passed PASS PASS PASS IN_SYNC MATCH 0 CLEAN PASS PASS PASS PASS)
   check all-green CH2_GREEN 0 "${G[@]}"
   local -a args
   local spec
   for spec in "1:PASS_AFTER_ISOLATION:green" "0:2:red" "1:FAIL:red" "2:failed:red" "3:FAIL:red" "4:FAIL:red" "5:FAIL:red" \
-              "6:DRIFT:red" "7:MISMATCH:red" "8:1:red" "9:DRIFT:red" "10:FAIL:red" "11:FAIL:red" "12:FAIL:red" \
+              "6:DRIFT:red" "7:MISMATCH:red" "8:1:red" "9:DRIFT:red" "10:FAIL:red" "11:FAIL:red" "12:FAIL:red" "13:FAIL:red" \
               "1::ind" "2:missing:ind" "3::ind" "4:none/PASS:ind" "5::ind" "6:INDETERMINATE:ind" "7:INDETERMINATE:ind" \
-              "8:2:ind" "9:INDETERMINATE:ind" "10::ind" "11::ind" "12:INDETERMINATE:ind"; do
+              "8:2:ind" "9:INDETERMINATE:ind" "10::ind" "11::ind" "12:INDETERMINATE:ind" "13::ind"; do
     local i="${spec%%:*}" rest="${spec#*:}"; local v="${rest%%:*}" kind="${rest##*:}"
     args=("${G[@]}"); args[$i]="$v"
     case "$kind" in
@@ -240,7 +251,7 @@ self_test() {
   if [ "$out" = "CH2_INDETERMINATE" ] && [ "$rc" -eq 3 ] && printf '%s' "$errtxt" | grep -q "required tool 'node'"; then
     pass=$((pass + 1)); echo "SELF-TEST: ok missing-tool-indeterminate"
   else fail=$((fail + 1)); echo "SELF-TEST: FAIL missing-tool-indeterminate (got '$out' rc=$rc)"; fi
-  if [ "$cases" -lt 28 ]; then echo "CMC_CH2_GATE_SELFTEST: FAIL vacuous ($cases cases)"; exit 1; fi
+  if [ "$cases" -lt 30 ]; then echo "CMC_CH2_GATE_SELFTEST: FAIL vacuous ($cases cases)"; exit 1; fi
   if [ "$fail" -eq 0 ]; then echo "CMC_CH2_GATE_SELFTEST: PASS ($pass checks)"; exit 0; fi
   echo "CMC_CH2_GATE_SELFTEST: FAIL ($fail of $cases)"; exit 1
 }
