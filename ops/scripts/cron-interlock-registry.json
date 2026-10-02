@@ -1,6 +1,6 @@
 {
-  "_comment": "OPS-DEPLOY-INTERLOCK-CRON-DEFER-W1, made PER-HOST by OPS-HOST-AUTO-REBOOT-W1 — the DECLARED set of scheduled work a HOST-LEVEL DISRUPTION can decapitate. Read by ops/scripts/deploy-cron-interlock.sh (signal-1 deploys) and ops/monitoring/kernel-auto-reboot.sh (aoe-1 reboots), asserted by scripts/check-cron-interlock-coverage.mjs. THE CLASSIFICATION IS THE DELIVERABLE; the dispatch code around it is small. EVERY ROW DECLARES ITS `host`, and `_enumeration` / `_containers` / `_residual_no_safe_kill` are keyed by host — because the DISRUPTION EVENT differs per host and so does the enumeration that finds it. signal-1's event is `docker compose up --force-recreate`, which kills `docker exec`s; aoe-1's is a REBOOT, which is strictly larger — it stops every container, every host process and every in-flight Prefect run, so a `docker exec` grep is the WRONG INSTRUMENT there and would have produced a 1-row population and a structurally vacuous gate on the only host that reboots. Placement is DERIVED, not taste: check-declaration-coverage.mjs pins CONSUMER_DIRS = ['ops/monitoring','ops/cron'], so a declaration read only from ops/scripts/ has zero readers there and would sit half-declared; and it needs no sync because deploy.yml runs `git reset --hard origin/main` BEFORE it invokes the interlock, so this file is always current at the only moment it is ever read. (monitoring-inventory-reconcile.py's ORPHAN scan is scoped to MONITORING_DIR=/opt/algovault-monitoring and never sees ops/scripts/ — the CONSUMER_DIRS leg is the load-bearing one.)",
-  "schema_version": 1,
+  "_comment": "OPS-DEPLOY-INTERLOCK-CRON-DEFER-W1, made PER-HOST by OPS-HOST-AUTO-REBOOT-W1 — the DECLARED set of scheduled work a HOST-LEVEL DISRUPTION can decapitate. Read by ops/scripts/deploy-cron-interlock.sh (signal-1 deploys) and ops/monitoring/kernel-auto-reboot.sh (aoe-1 and, since OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1, signal-1 reboots — the `reboot` event; see `_disruption_events`), asserted by scripts/check-cron-interlock-coverage.mjs. THE CLASSIFICATION IS THE DELIVERABLE; the dispatch code around it is small. EVERY ROW DECLARES ITS `host`, and `_enumeration` / `_containers` / `_residual_no_safe_kill` are keyed by host — because the DISRUPTION EVENT differs per host and so does the enumeration that finds it. signal-1's event is `docker compose up --force-recreate`, which kills `docker exec`s; aoe-1's is a REBOOT, which is strictly larger — it stops every container, every host process and every in-flight Prefect run, so a `docker exec` grep is the WRONG INSTRUMENT there and would have produced a 1-row population and a structurally vacuous gate on the only host that reboots. Placement is DERIVED, not taste: check-declaration-coverage.mjs pins CONSUMER_DIRS = ['ops/monitoring','ops/cron'], so a declaration read only from ops/scripts/ has zero readers there and would sit half-declared; and it needs no sync because deploy.yml runs `git reset --hard origin/main` BEFORE it invokes the interlock, so this file is always current at the only moment it is ever read. (monitoring-inventory-reconcile.py's ORPHAN scan is scoped to MONITORING_DIR=/opt/algovault-monitoring and never sees ops/scripts/ — the CONSUMER_DIRS leg is the load-bearing one.)",
+  "schema_version": 2,
   "owner_wave": "OPS-DEPLOY-INTERLOCK-CRON-DEFER-W1 -> OPS-HOST-AUTO-REBOOT-W1",
   "verified_at": "2026-08-29",
   "_classes": {
@@ -11,22 +11,36 @@
   },
   "_enumeration": {
     "signal-1": {
-      "host": "signal-1 (204.168.185.24)",
-      "verified_at": "2026-09-08T07:47Z",
-      "command": "crontab -l | grep -vE '^\\s*(#|$)'   # then resolve each entry to its script and grep that script for a command-position `docker exec`",
-      "active_cron_lines": 118,
-      "lines_with_direct_docker_exec": 46,
-      "note": "Rows are keyed by PROCESS PATTERN, not by cron line: the interlock matches patterns, and one pattern (seed-signals.js) covers 28 cron lines. `cron_lines` on each row records the fan-out so the enumeration stays recoverable. The prior enumeration measured 91 active lines (OPS-HOST-KERNEL-REBOOT-W2) and 75 before that (W1) — re-derive, never inherit. Re-derived 2026-08-31T13:43Z by OPS-BAND-OUTCOME-WIRE-W1: 100 -> 106 active lines in two days, `docker exec` lines unchanged at 46. The growth is entirely in host-process lines, so no row's classification moves; the count is corrected because a stale enumeration makes every interlock decision built on it wrong, and this file's own instruction is to re-derive rather than inherit. || Re-derived 2026-09-08T07:47Z by IDENTITY-LIFECYCLE-W3 CH1: 106 -> 118 active lines. The registry's own instruction is to re-derive rather than inherit, and a stale enumeration makes every interlock decision built on it wrong. The +12 are host-process and third-party lines (mcp-intelligence, monitoring canaries); no existing row changes class. This wave adds 2 lines of its own (dispatch + health), counted in the 118."
+      "deploy": {
+        "host": "signal-1 (204.168.185.24)",
+        "verified_at": "2026-09-08T07:47Z",
+        "command": "crontab -l | grep -vE '^\\s*(#|$)'   # then resolve each entry to its script and grep that script for a command-position `docker exec`",
+        "active_cron_lines": 118,
+        "lines_with_direct_docker_exec": 46,
+        "note": "Rows are keyed by PROCESS PATTERN, not by cron line: the interlock matches patterns, and one pattern (seed-signals.js) covers 28 cron lines. `cron_lines` on each row records the fan-out so the enumeration stays recoverable. The prior enumeration measured 91 active lines (OPS-HOST-KERNEL-REBOOT-W2) and 75 before that (W1) — re-derive, never inherit. Re-derived 2026-08-31T13:43Z by OPS-BAND-OUTCOME-WIRE-W1: 100 -> 106 active lines in two days, `docker exec` lines unchanged at 46. The growth is entirely in host-process lines, so no row's classification moves; the count is corrected because a stale enumeration makes every interlock decision built on it wrong, and this file's own instruction is to re-derive rather than inherit. || Re-derived 2026-09-08T07:47Z by IDENTITY-LIFECYCLE-W3 CH1: 106 -> 118 active lines. The registry's own instruction is to re-derive rather than inherit, and a stale enumeration makes every interlock decision built on it wrong. The +12 are host-process and third-party lines (mcp-intelligence, monitoring canaries); no existing row changes class. This wave adds 2 lines of its own (dispatch + health), counted in the 118."
+      },
+      "reboot": {
+        "host": "signal-1 (204.168.185.24)",
+        "verified_at": "2026-10-02T12:2xZ",
+        "disruption_event": "kernel reboot",
+        "command": "crontab -l   # every active line   &&   systemctl list-units --type=service --state=running --no-legend --plain | awk '{print $1}'   &&   systemctl list-unit-files --type=timer --state=enabled --no-legend | awk '{print $1}'   — the UNION is the population, because a reboot stops all of it. This is exactly what kernel-auto-reboot.sh feeds check-cron-interlock-coverage.mjs --event reboot on every run, so the enumeration is re-derived live each hour rather than inherited from this block.",
+        "active_cron_lines": 125,
+        "running_services": 22,
+        "enabled_timers": 28,
+        "note": "A REBOOT kills every container AND every host process, so every live line/unit maps to a row or exclusion by explicit cron_match / units — none by inference. Measured 2026-10-02 (crontab sha256 93f9e3ef…): 125 active lines, 22 running services, 28 enabled timers. Transient run-*.service units are deliberately left unmapped: an operator one-shot in flight DEFERS the reboot until it ends."
+      }
     },
     "aoe-1": {
-      "host": "aoe-1 (178.104.200.44)",
-      "verified_at": "2026-08-29T06:2xZ",
-      "disruption_event": "kernel reboot",
-      "command": "crontab -l | grep -vE '^\\s*(#|$)'   # 7 lines   &&   docker exec aoe-prefect-server python -c '<read_deployments + schedules>'   # 11 deployments   &&   docker ps --format '{{.Names}}'   # 8 containers   — the UNION is the population, because a reboot stops all three. Deliberately NOT signal-1's `grep docker exec`: aoe-1 has ZERO direct docker-exec cron lines and exactly one indirect, so that command measures almost nothing here.",
-      "active_cron_lines": 7,
-      "prefect_deployments": 11,
-      "running_containers": 8,
-      "note": "Prefect INTERVAL schedules are derived from their anchor, never assumed: retune_nightly 86400s @ 2026-05-29T07:04:40Z, w2_gate_watcher 3600s and w3_gate_watcher 900s @ 07:04:41Z. Cron+Prefect union leaves :05-:12 as the longest contiguous clear run (8 min) — re-derived 2026-08-29, matching the W2/W3 hand-measured window rather than inheriting it."
+      "reboot": {
+        "host": "aoe-1 (178.104.200.44)",
+        "verified_at": "2026-10-02",
+        "disruption_event": "kernel reboot",
+        "command": "crontab -l | grep -vE '^\\s*(#|$)'   # 7 lines   &&   docker exec aoe-prefect-server python -c '<read_deployments + schedules>'   # 11 deployments   &&   docker ps --format '{{.Names}}'   # 8 containers   — the UNION is the population, because a reboot stops all three. Deliberately NOT signal-1's `grep docker exec`: aoe-1 has ZERO direct docker-exec cron lines and exactly one indirect, so that command measures almost nothing here.",
+        "active_cron_lines": 10,
+        "prefect_deployments": 11,
+        "running_containers": 8,
+        "note": "Prefect INTERVAL schedules are derived from their anchor, never assumed: retune_nightly 86400s @ 2026-05-29T07:04:40Z, w2_gate_watcher 3600s and w3_gate_watcher 900s @ 07:04:41Z. Cron+Prefect union leaves :05-:12 as the longest contiguous clear run (8 min) — re-derived 2026-08-29, matching the W2/W3 hand-measured window rather than inheriting it. || Re-derived 2026-10-02 by OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: 9 live active lines (kernel-auto-reboot.sh and bdir-panel-readiness.py had landed since the 08-29 count of 7, both unclassified until now — aoe-1 has no live population check, which is how they stayed invisible), plus the aoe-peer-watchdog line this wave installs = 10."
+      }
     }
   },
   "_containers": {
@@ -59,6 +73,10 @@
     {
       "id": "carry-labeler",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/backfill-directional-labels.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/backfill-directional-labels",
@@ -71,11 +89,19 @@
       "catchup_cmd": "flock -n /var/lock/algovault-nightly-carry-labeler-5d062010.lock docker exec <container> node dist/scripts/backfill-directional-labels.js --lookback-days 21 --time-budget-min <remaining> --venue-budget-min 45",
       "source": "repo",
       "verified_at": "2026-08-29",
-      "notes": "SEEDED FROM THE HARDCODED BEHAVIOUR WITH ZERO CHANGE. Every value here is what deploy-labeler-interlock.sh had inline: the same pattern, the same lock, the same catch-up argv, the same SLO gate. `pkill -0 -f 'dist/scripts/backfill-directional-labels'` verified live 2026-08-29 03:33Z (rc=0) against container PID 17365. Its PARENT nightly-carry-labeler.js is deliberately NOT the pattern — the child is the resumable half, and the parent dies with the container regardless."
+      "notes": "SEEDED FROM THE HARDCODED BEHAVIOUR WITH ZERO CHANGE. Every value here is what deploy-labeler-interlock.sh had inline: the same pattern, the same lock, the same catch-up argv, the same SLO gate. `pkill -0 -f 'dist/scripts/backfill-directional-labels'` verified live 2026-08-29 03:33Z (rc=0) against container PID 17365. Its PARENT nightly-carry-labeler.js is deliberately NOT the pattern — the child is the resumable half, and the parent dies with the container regardless.",
+      "cron_match": [
+        "dist/scripts/nightly-carry-labeler"
+      ],
+      "reboot_note": "REBOOT: no reboot_recovery is recorded, so the harness DEFERS while it is in flight — the SLO-gated catch-up exists only on the deploy path. Re-measured 2026-10-02: max 13981s from its own `ALL 3 LABEL STREAMS OK (Ns)` line (n=67), i.e. 02:23 -> ~06:16Z, inside signal-1's 03:00-13:59Z window; the nightly is budget-bound (last run 208.5/210 min), so a lost night is not absorbed by later ones."
     },
     {
       "id": "publish-merkle-batch",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/publish-merkle-batch.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/publish-merkle-batch",
@@ -88,11 +114,18 @@
       "catchup_cmd": null,
       "source": "repo",
       "verified_at": "2026-08-29",
-      "notes": "THIS IS THE ROW THAT KEEPS THE 18:00-02:59 UTC WINDOW ALIVE AS A DECLARED CONTROL. It fires at 00:05 UTC, inside that window, which is very likely what the folklore was protecting without anyone having written it down. The whole job is ~7s, so a 120s bounded wait covers it comfortably — the deploy is delayed by at most one job length and then PROCEEDS regardless."
+      "notes": "THIS IS THE ROW THAT KEEPS THE 18:00-02:59 UTC WINDOW ALIVE AS A DECLARED CONTROL. It fires at 00:05 UTC, inside that window, which is very likely what the folklore was protecting without anyone having written it down. The whole job is ~7s, so a 120s bounded wait covers it comfortably — the deploy is delayed by at most one job length and then PROCEEDS regardless.",
+      "cron_match": [
+        "dist/scripts/publish-merkle-batch"
+      ]
     },
     {
       "id": "geo-weekly-cron",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/geo-weekly-cron.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/geo-weekly-cron",
@@ -105,11 +138,18 @@
       "catchup_cmd": null,
       "source": "repo",
       "verified_at": "2026-08-29",
-      "notes": "Its own log tail carries `[pg-pool] idle client error (recovering): terminating connection due to administrator command` — the signature of a Postgres bounce hitting it mid-run. It RECOVERED from that one and kept extracting, so the pool is resilient to a postgres recreate; the exposure is the mcp-server recreate, which kills the `docker exec` itself with nothing to recover. Also fires inside the 18:00-02:59 window."
+      "notes": "Its own log tail carries `[pg-pool] idle client error (recovering): terminating connection due to administrator command` — the signature of a Postgres bounce hitting it mid-run. It RECOVERED from that one and kept extracting, so the pool is resilient to a postgres recreate; the exposure is the mcp-server recreate, which kills the `docker exec` itself with nothing to recover. Also fires inside the 18:00-02:59 window.",
+      "cron_match": [
+        "dist/scripts/geo-weekly-cron"
+      ]
     },
     {
       "id": "seed-signals",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/seed-signals.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/seed-signals",
@@ -117,16 +157,23 @@
       "reason": "Idempotent on next fire, and killing it is if anything corrective: every cron line is `flock -n`-guarded, so while one instance is stuck the next fire SKIPS rather than queues. A kill releases the lock and the following fire re-derives from live venue state. Nothing is lost that the next sweep does not recompute.",
       "max_runtime_s": 8341,
       "runtime_instrument": "host `ps -eo etimes,args`, n=32 samples @5s across two windows 2026-08-29 03:20Z/03:35Z, plus n=130 @1s; max observed lifetime of any single instance",
-      "cron_lines": 28,
-      "cron": "27 lines across timeframes 3m..1d x {HL, shadow, promoted} — see `_enumeration.command`",
+      "cron_lines": 37,
+      "cron": "37 lines across timeframes 3m..1d x {HL, shadow, promoted, WEEX} — re-derived 2026-10-02 by OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1 from the live crontab via this row's cron_match (was 27/28: the WEEX lanes landed since); see `_enumeration.command`",
       "catchup_cmd": null,
       "source": "repo",
       "verified_at": "2026-08-29",
-      "notes": "The single longest-lived non-labeler process measured on the box (2h19m). It is on this list because its LIFETIME makes a deploy collision near-certain, not because the collision is harmful."
+      "notes": "The single longest-lived non-labeler process measured on the box (2h19m). It is on this list because its LIFETIME makes a deploy collision near-certain, not because the collision is harmful.",
+      "cron_match": [
+        "dist/scripts/seed-signals"
+      ]
     },
     {
       "id": "backfill-outcomes",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/backfill-outcomes.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/backfill-outcomes",
@@ -140,11 +187,18 @@
       "catchup_cmd": null,
       "source": "repo",
       "verified_at": "2026-08-31",
-      "notes": "Runs far longer (2h20m+) than its 3-minute cadence, so an instance is alive essentially ALL of the time and a deploy always kills one. Harmless by construction, and recorded so that is a finding rather than an assumption. Re-measured 2026-08-31 by OPS-BAND-OUTCOME-WIRE-W1: 793s -> 8,410s, a 10.6x growth in two days, and the prior figure's '13m' framing understated the exposure by an order of magnitude. THE CONSEQUENCE IS NOT ONLY THIS ROW: that wave proposed gating a new band-outcome sweep on 'is the tracked backfill inflight', and this measurement is what retired the idea — a lane that yields whenever this process is alive would yield essentially always. Continuous liveness is a property to design around, not a transient to wait out."
+      "notes": "Runs far longer (2h20m+) than its 3-minute cadence, so an instance is alive essentially ALL of the time and a deploy always kills one. Harmless by construction, and recorded so that is a finding rather than an assumption. Re-measured 2026-08-31 by OPS-BAND-OUTCOME-WIRE-W1: 793s -> 8,410s, a 10.6x growth in two days, and the prior figure's '13m' framing understated the exposure by an order of magnitude. THE CONSEQUENCE IS NOT ONLY THIS ROW: that wave proposed gating a new band-outcome sweep on 'is the tracked backfill inflight', and this measurement is what retired the idea — a lane that yields whenever this process is alive would yield essentially always. Continuous liveness is a property to design around, not a transient to wait out.",
+      "cron_match": [
+        "dist/scripts/backfill-outcomes"
+      ]
     },
     {
       "id": "hold-decision-labeler",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "ops/cron/hold-decision-labeler.sh",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/backfill-hold-decision-labels",
@@ -156,11 +210,18 @@
       "cron": "41 3 * * *",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "ops/cron/hold-decision-labeler.sh"
+      ]
     },
     {
       "id": "oi-snapshot-sampler",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/oi-snapshot-sampler.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/oi-snapshot-sampler",
@@ -172,11 +233,18 @@
       "cron": "17 * * * *",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "dist/scripts/oi-snapshot-sampler"
+      ]
     },
     {
       "id": "agent-forum-post",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/agent-forum-post.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/agent-forum-post",
@@ -188,11 +256,18 @@
       "cron": "0 12 * * 0 (track-record) · 0 12 * * 3 (usage-example) · 0 12 * * 5 (market-insight) · 0 13 * * * (--self-audit)",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "dist/scripts/agent-forum-post"
+      ]
     },
     {
       "id": "monitor",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/monitor.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/monitor",
@@ -204,11 +279,18 @@
       "cron": "*/2 * * * * (--mode critical) · 0 8 * * * (--mode digest)",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "dist/scripts/monitor.js"
+      ]
     },
     {
       "id": "seed-coverage-canary",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "ops/cron/seed-coverage-canary.sh",
       "container": "crypto-quant-signal-mcp-postgres-1 + crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/lib/tf-support",
@@ -220,11 +302,18 @@
       "cron": "37 * * * *",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "ops/cron/seed-coverage-canary.sh"
+      ]
     },
     {
       "id": "dwr-baseline-snapshot",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "ops/cron/dwr-baseline-snapshot.sh",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/dwr-baseline-snapshot",
@@ -236,11 +325,18 @@
       "cron": "29 9 1 * *",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "ops/cron/dwr-baseline-snapshot.sh"
+      ]
     },
     {
       "id": "venue-readiness-report",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/venue-readiness-report.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/venue-readiness-report",
@@ -252,11 +348,18 @@
       "cron": "5 6 * * *",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "dist/scripts/venue-readiness-report"
+      ]
     },
     {
       "id": "chat-analytics-digest",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/chat-analytics-digest.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/chat-analytics-digest",
@@ -268,11 +371,18 @@
       "cron": "0 9 * * 0",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "dist/scripts/chat-analytics-digest"
+      ]
     },
     {
       "id": "rate-limit-digest-weekly",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/rate-limit-digest-weekly.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/rate-limit-digest-weekly",
@@ -284,11 +394,18 @@
       "cron": "0 0 * * 0",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "dist/scripts/rate-limit-digest-weekly"
+      ]
     },
     {
       "id": "referral-payout-batch-detect",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "src/scripts/referral-payout-batch-detect.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/referral-payout-batch-detect",
@@ -300,11 +417,18 @@
       "cron": "7 8 1 * *",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "dist/scripts/referral-payout-batch-detect"
+      ]
     },
     {
       "id": "refresh-knowledge-pages",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "scripts/refresh-knowledge-pages.mjs",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "scripts/refresh-knowledge-pages",
@@ -316,11 +440,18 @@
       "cron": "0 6 * * 0",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "scripts/refresh-knowledge-pages"
+      ]
     },
     {
       "id": "funding-stats-matview-refresh",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "crontab inline",
       "container": "crypto-quant-signal-mcp-postgres-1",
       "process_pattern": "REFRESH MATERIALIZED VIEW CONCURRENTLY funding_stats_14d",
@@ -332,11 +463,18 @@
       "cron": "3-58/5 * * * *",
       "catchup_cmd": null,
       "source": "host-only",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "REFRESH MATERIALIZED VIEW CONCURRENTLY funding_stats_14d"
+      ]
     },
     {
       "id": "oi-snapshots-vacuum",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "crontab inline",
       "container": "crypto-quant-signal-mcp-postgres-1",
       "process_pattern": "VACUUM (ANALYZE) oi_snapshots",
@@ -348,11 +486,18 @@
       "cron": "0 4 1 * *",
       "catchup_cmd": null,
       "source": "host-only",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "VACUUM (ANALYZE) oi_snapshots"
+      ]
     },
     {
       "id": "monitoring-inventory-reconcile",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "ops/monitoring/monitoring-inventory-reconcile.py",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "monitoring-inventory-reconcile",
@@ -364,11 +509,18 @@
       "cron": "57 6 * * *",
       "catchup_cmd": null,
       "source": "host-only",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "/opt/algovault-monitoring/monitoring-inventory-reconcile.py"
+      ]
     },
     {
       "id": "host-only-monitoring-canaries",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "/opt/algovault-monitoring/{db-superuser-canary.sh,directional-label-freshness.py,outcome-backfill-freshness.py,quota-exhaustion-canary.py,stripe-webhook-events-canary.sh,tier-misclassification-canary.sh,venue-slo-tiers-drift-canary.sh,webhook-delivery-canary.py}",
       "container": "crypto-quant-signal-mcp-mcp-server-1 + crypto-quant-signal-mcp-postgres-1",
       "process_pattern": "<eight distinct short read-only probes — see `script`>",
@@ -380,11 +532,24 @@
       "cron": "39 7 * * * · 41 6 * * * · 13 * * * * · 31 * * * * · 19 8 1 * * · 23 13 * * 1 · 27 12 * * 1 · 13,28,43,57 * * * *",
       "catchup_cmd": null,
       "source": "host-only",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-08-29",
+      "cron_match": [
+        "/opt/algovault-monitoring/db-superuser-canary.sh",
+        "/opt/algovault-monitoring/directional-label-freshness.py",
+        "/opt/algovault-monitoring/outcome-backfill-freshness.py",
+        "/opt/algovault-monitoring/quota-exhaustion-canary.py",
+        "/opt/algovault-monitoring/stripe-webhook-events-canary.sh",
+        "/opt/algovault-monitoring/tier-misclassification-canary.sh",
+        "/opt/algovault-monitoring/venue-slo-tiers-drift-canary.sh",
+        "/opt/algovault-monitoring/webhook-delivery-canary.py"
+      ]
     },
     {
       "id": "aoe-containers",
       "host": "aoe-1",
+      "events": [
+        "reboot"
+      ],
       "script": "docker-compose services on aoe-1 (8 containers — see _containers['aoe-1'].stopped_by_reboot)",
       "container": "n/a — these ARE the containers",
       "process_pattern": "n/a — a reboot stops every container; there is no pattern to match",
@@ -401,6 +566,9 @@
     {
       "id": "aoe-prefect-schedules",
       "host": "aoe-1",
+      "events": [
+        "reboot"
+      ],
       "script": "11 Prefect deployments: aoe_daily_digest · aoe_weekly_digest · chaos_nightly · promote_hourly · regime_burst · regression_gate · retune_nightly · shadow_advance · w2_gate_watcher · w3_gate_watcher · w3c4_budget_tick",
       "container": "aoe-prefect-worker (flows) / aoe-prefect-server (scheduler)",
       "process_pattern": "n/a — flow runs are container-native, not docker exec",
@@ -417,22 +585,48 @@
     {
       "id": "aoe-monitoring-crons",
       "host": "aoe-1",
-      "script": "/opt/algovault-monitoring/{aoe-shadow-writer-stall-canary.py,aoe-output-liveness-canary.py,aoe-promotion-health-canary.py,kernel-staleness-canary.sh,boot-contract-canary.sh,declaration-sync.sh}",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/{aoe-shadow-writer-stall-canary.py,aoe-output-liveness-canary.py,aoe-promotion-health-canary.py,kernel-staleness-canary.sh,boot-contract-canary.sh,declaration-sync.sh,kernel-auto-reboot.sh,aoe-peer-watchdog.sh}",
       "container": "n/a — host processes",
       "process_pattern": "n/a — host processes, not docker exec",
       "class": "safe-to-kill",
-      "reason": "Six read-only probes and one declaration sync, every one of which re-derives its verdict from live state on its next fire. None writes application data; the heaviest side effect is a cooldown marker, which is re-derived. A reboot costs at most one skipped evaluation cycle.",
+      "reason": "Six read-only probes and one declaration sync, every one of which re-derives its verdict from live state on its next fire. None writes application data; the heaviest side effect is a cooldown marker, which is re-derived. A reboot costs at most one skipped evaluation cycle. Re-enumerated 2026-10-02 by OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: kernel-auto-reboot.sh (7 * * * *, installed by OPS-HOST-AUTO-REBOOT-W1 and never added here) is the actor itself; aoe-peer-watchdog.sh (installed on aoe-1 by this wave) is a read-only TCP + HTTPS probe that pages the operator only while signal-1 holds an arm, and its counter is re-derived.",
       "max_runtime_s": 2,
-      "runtime_instrument": "direct timed runs on aoe-1 under ALGOVAULT_TG_TEST_INERT=1 and MONITORING_HOST_LABELS=aoe-1, 2026-08-29: shadow-writer-stall 0s · output-liveness 1s · promotion-health 1s · kernel-staleness 0s · boot-contract 0s · declaration-sync 2s. Recorded value is the max.",
-      "cron_lines": 6,
-      "cron": "13,18,23,28,33,38,43,48,53,57 * * * * · 47 * * * * · 41 * * * * · 37 7 * * * · 37 8 * * * · 27 * * * *",
+      "runtime_instrument": "direct timed runs on aoe-1 under ALGOVAULT_TG_TEST_INERT=1 and MONITORING_HOST_LABELS=aoe-1, 2026-08-29: shadow-writer-stall 0s · output-liveness 1s · promotion-health 1s · kernel-staleness 0s · boot-contract 0s · declaration-sync 2s. Recorded value is the max. The two lines added 2026-10-02 are bounded by construction, not measured here: the watchdog exits immediately with no arm, and with one its probe is `timeout 10` TCP + `curl -m 10`, so <=20s; the harness is the reboot itself.",
+      "cron_lines": 8,
+      "cron": "13,18,23,28,33,38,43,48,53,57 * * * * · 47 * * * * · 41 * * * * · 37 7 * * * · 37 8 * * * · 27 * * * * · 7 * * * * (kernel-auto-reboot.sh) · 3-58/5 * * * * (aoe-peer-watchdog.sh, from this wave's CH3)",
       "catchup_cmd": null,
       "source": "host-only",
-      "verified_at": "2026-08-29"
+      "verified_at": "2026-10-02"
+    },
+    {
+      "id": "aoe-bdir-panel-readiness",
+      "host": "aoe-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/bdir-panel-readiness.py (OPS-BDIR-V3-PANEL-READINESS-W1)",
+      "container": "three short-lived docker run containers (measure / harness / evaluate) it starts itself",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "class": "safe-to-kill",
+      "reason": "Weekly measurement for the B-DIR v3 panel rule: a read-only DSN, a pinned harness making venue reads from aoe-1's own IP, and an evaluate step with --network none. Its only writes are one canary_result_log line per venue + a summary (appended per line) and an operator page on a PASS -> FAIL transition. A kill loses that week's measurement, which the next Monday fire re-takes; it was missing from this registry (found by the 2026-10-02 live re-enumeration).",
+      "max_runtime_s": 1448,
+      "runtime_instrument": "canary-results.jsonl summary `at` minus the 05:13:01Z fire, the one scheduled run so far (2026-09-28: 05:37:09Z), n=1; the two 2026-09-27 records are install-time manual runs and excluded",
+      "cron_lines": 1,
+      "cron": "13 5 * * 1",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
     },
     {
       "id": "aoe-monitoring-inventory-reconcile",
       "host": "aoe-1",
+      "events": [
+        "reboot"
+      ],
       "script": "/opt/algovault-monitoring/monitoring-inventory-reconcile.py",
       "container": "reads aoe-1 host state; the only aoe-1 cron with an (indirect) docker exec",
       "process_pattern": "monitoring-inventory-reconcile",
@@ -449,6 +643,10 @@
     {
       "id": "lifecycle-dispatch",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "ops/cron/lifecycle-dispatch.sh",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/lifecycle-dispatch",
@@ -461,11 +659,18 @@
       "catchup_cmd": null,
       "source": "repo",
       "verified_at": "2026-09-08",
-      "notes": "Ships with an EMPTY step registry by design — CH1 is the harness, CH2 the predicates. A no-op tick still stamps lifecycle_heartbeats so the health canary can tell a healthy idle dispatcher from a dead one; with three of four steps at ZERO eligible recipients (measured 2026-09-08) the ledger alone cannot answer that question."
+      "notes": "Ships with an EMPTY step registry by design — CH1 is the harness, CH2 the predicates. A no-op tick still stamps lifecycle_heartbeats so the health canary can tell a healthy idle dispatcher from a dead one; with three of four steps at ZERO eligible recipients (measured 2026-09-08) the ledger alone cannot answer that question.",
+      "cron_match": [
+        "ops/cron/lifecycle-dispatch.sh"
+      ]
     },
     {
       "id": "lifecycle-readout",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "ops/cron/lifecycle-readout.sh",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/lifecycle-readout",
@@ -478,11 +683,18 @@
       "catchup_cmd": null,
       "source": "repo",
       "verified_at": "2026-09-08",
-      "notes": "THE ONLY THING THAT EVER FLIPS A STEP TO LIVE. No human does, by design (architect ruling Q1(A)). Runs `lifecycle-readout.js --decide`, which applies PER-STEP go-live and rollback; the read-only twin is ops/scripts/lifecycle-readout.sh and both share one `assess()` so the numbers an operator reads are the numbers the flip acts on. It MEASURES its two preconditions immediately before deciding rather than trusting a stored value — a go-live gated on yesterday's health verdict is gated on nothing. Alert LIFECYCLE_GOLIVE_ROLLBACK fires only on ROLLED_BACK."
+      "notes": "THE ONLY THING THAT EVER FLIPS A STEP TO LIVE. No human does, by design (architect ruling Q1(A)). Runs `lifecycle-readout.js --decide`, which applies PER-STEP go-live and rollback; the read-only twin is ops/scripts/lifecycle-readout.sh and both share one `assess()` so the numbers an operator reads are the numbers the flip acts on. It MEASURES its two preconditions immediately before deciding rather than trusting a stored value — a go-live gated on yesterday's health verdict is gated on nothing. Alert LIFECYCLE_GOLIVE_ROLLBACK fires only on ROLLED_BACK.",
+      "cron_match": [
+        "ops/cron/lifecycle-readout.sh"
+      ]
     },
     {
       "id": "product-updates-digest",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "ops/cron/product-updates-digest.sh",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/product-updates-digest",
@@ -495,11 +707,18 @@
       "catchup_cmd": null,
       "source": "repo",
       "verified_at": "2026-09-08",
-      "notes": "Same engine, same suppression, same caps as the four usage steps — a fifth step, not a second mailer. Deliberately NOT registered in the 15-minute dispatcher: its cadence is the RELEASE cadence, and registering it there would evaluate a 'what's new' 96 times a day for a message that can be sent once a month. Body is the README `## What's new in vX.Y.0` block converted VERBATIM; recap sub-sections are excluded because they are a rolling 3-minor window and would re-send content a reader already had. Blocks BATCH into one email so two releases in a month is still one message. Verdict token LIFECYCLE_DIGEST_VERDICT= maps PASS=0/FAIL=1/INDETERMINATE=3. Zero opt-ins and zero blocks are both reported as explicit PASS facts, never as a silent success."
+      "notes": "Same engine, same suppression, same caps as the four usage steps — a fifth step, not a second mailer. Deliberately NOT registered in the 15-minute dispatcher: its cadence is the RELEASE cadence, and registering it there would evaluate a 'what's new' 96 times a day for a message that can be sent once a month. Body is the README `## What's new in vX.Y.0` block converted VERBATIM; recap sub-sections are excluded because they are a rolling 3-minor window and would re-send content a reader already had. Blocks BATCH into one email so two releases in a month is still one message. Verdict token LIFECYCLE_DIGEST_VERDICT= maps PASS=0/FAIL=1/INDETERMINATE=3. Zero opt-ins and zero blocks are both reported as explicit PASS facts, never as a silent success.",
+      "cron_match": [
+        "ops/cron/product-updates-digest.sh"
+      ]
     },
     {
       "id": "adapter-history-contiguity",
       "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
       "script": "/opt/algovault-monitoring/adapter-history-contiguity-canary.sh",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/adapter-history-contiguity",
@@ -512,7 +731,680 @@
       "catchup_cmd": null,
       "source": "repo",
       "verified_at": "2026-10-01",
-      "notes": "OPS-ADAPTER-HISTORY-ANCHOR-W1 CH3. Alert ADAPTER_HISTORY_GAP after 3 consecutive FAILs of one pair."
+      "notes": "OPS-ADAPTER-HISTORY-ANCHOR-W1 CH3. Alert ADAPTER_HISTORY_GAP after 3 consecutive FAILs of one pair.",
+      "cron_match": [
+        "/opt/algovault-monitoring/adapter-history-contiguity-canary.sh"
+      ],
+      "reboot_note": "REBOOT: re-measured 2026-10-02 — the first CRON run took 484s (journal 10:24:01->10:32:04.9Z, n=1) vs the 407s manual run this row was seeded from; read-only, so still safe-to-kill."
+    },
+    {
+      "id": "host-monitoring-reboot-scope",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/* and repo-resident ops/cron + scripts/check-* canaries (see cron_match)",
+      "container": "n/a — host processes",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "cron_match": [
+        "/opt/algovault-monitoring/postgres-cpu-snapshot.sh",
+        "/opt/algovault-monitoring/website-drift-canary.py",
+        "/opt/algovault-monitoring/recommendation-drift-canary.py",
+        "/opt/algovault-monitoring/x402-bazaar-canary.py",
+        "/opt/algovault-monitoring/llm-spend-monitor.py",
+        "/opt/algovault-monitoring/docs-drift-canary.sh",
+        "/opt/algovault-monitoring/registry-conformance-canary.py",
+        "/opt/algovault-monitoring/kernel-staleness-canary.sh",
+        "/opt/algovault-monitoring/x402-claim-liveness-prober.py",
+        "/opt/algovault-monitoring/declaration-sync.sh",
+        "/opt/algovault-monitoring/revenue-meter-canary.py",
+        "/opt/algovault-monitoring/xrepo-ci-conclusion-canary.sh",
+        "/opt/algovault-monitoring/payment-decline-canary.py",
+        "/opt/algovault-monitoring/nav-drift-canary.sh",
+        "/opt/algovault-monitoring/analytics-drift-canary.sh",
+        "/opt/algovault-monitoring/decision-gate-orphan-canary.py",
+        "/opt/algovault-monitoring/deploy-drift-canary.mjs",
+        "/opt/algovault-monitoring/x402-settlement-reconciler.py",
+        "/opt/algovault-monitoring/binance-pr-disposition-canary.sh",
+        "/opt/algovault-monitoring/boot-contract-canary.sh",
+        "/opt/algovault-monitoring/client-claim-freshness.py",
+        "/opt/algovault-monitoring/book-liveness-canary.py",
+        "/opt/algovault-monitoring/aoe-peer-watchdog.sh",
+        "/opt/algovault-monitoring/robots-ai-allowlist-canary.sh",
+        "/opt/algovault-monitoring/edge-crawler-report-canary.sh",
+        "/opt/algovault-monitoring/trend-mode-readout-gate.py",
+        "/opt/algovault-monitoring/scorer-input-identity-canary.py",
+        "/opt/algovault-monitoring/disk-headroom-canary.py",
+        "/opt/algovault-monitoring/regime-budget-starvation-canary.py",
+        "/opt/algovault-monitoring/audit-cadence-canary.py",
+        "/opt/algovault-monitoring/promoted-set-drift-canary.py",
+        "/opt/algovault-monitoring/served-surface-values-canary.sh",
+        "/opt/algovault-monitoring/funding-accrual-freshness.py",
+        "/opt/algovault-monitoring/kernel-auto-reboot.sh",
+        "ops/cron/bot-deploy-parity.sh",
+        "ops/cron/checkout-parity.sh",
+        "ops/cron/lockfile-resolvability-canary.sh",
+        "ops/monitoring/closedbar-w1-liveness.sh",
+        "ops/cron/lifecycle-health.sh",
+        "scripts/check-feature-registry-drift.mjs",
+        "scripts/check-cancel-path-live.mjs"
+      ],
+      "class": "safe-to-kill",
+      "reason": "Every one is a read-only canary that pages the OPERATOR through send_telegram.sh, or writes only its own state atomically; the next scheduled fire re-evaluates. Three write elsewhere and stay safe by mechanism: x402-claim-liveness-prober inserts then deletes a sentinel row (a crash between them is swept at the next run, no reader counts it); declaration-sync copies to .tmp then mv -f; x402-settlement-reconciler --apply is forward-only autocommit UPDATEs pinned on the from-state (no on-chain write). kernel-auto-reboot.sh is the actor itself. checkout-parity runs `git fetch` in live checkouts: SIGTERM cleans git locks (a reboot signals before it kills).",
+      "max_runtime_s": 74,
+      "runtime_instrument": "per-script, read-only agent forensic 2026-10-02 ~11:42Z on signal-1: own-log start/finish (gap-filtered to scheduled fires), canary-results.jsonl at-minus-fire, START->VERDICT lines, cron journal; worst declaration-sync 74s (B n=1223, p50 5), then postgres-cpu-snapshot 63 (L n=246), registry-conformance 61 (L n=1905), check-cancel-path-live 53 (J n=240)",
+      "cron_lines": 40,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "snapshot-landing-daily",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "ops/cron/snapshot-landing-daily.sh",
+      "container": "n/a — host process (node on the checkout, then cp to the webroot)",
+      "process_pattern": "ops/cron/snapshot-landing-daily.sh",
+      "cron_match": [
+        "ops/cron/snapshot-landing-daily.sh"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Rewrites ~55 tracked files in the deploy checkout with a NON-atomic writeFile (scripts/snapshot-landing-data.mjs) and then `cp landing/*.html /var/www/algovault/`, also non-atomic — public pages Caddy serves. A kill mid-write can publish a truncated page, and a truncated CHECKOUT file is repaired only by the next deploy (git reset --hard); its CATASTROPHIC_PATTERN_DRIFT guard fires only at >=50% zero-match, so one torn file would be re-copied daily. Fires 00:39Z — outside signal-1's 03:00-13:59Z reboot window — so the gate can only meet it on a manual run.",
+      "max_runtime_s": 7,
+      "runtime_instrument": "own tagged lines in /var/log/snapshot-landing-daily.log, n=62 scheduled runs (p50 ~2s), read 2026-10-02",
+      "cron_lines": 1,
+      "cron": "39 0 * * *",
+      "source": "repo",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "apt-unattended-upgrade",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "systemd apt-daily-upgrade.timer -> /usr/lib/apt/apt.systemd.daily install -> unattended-upgrade -> dpkg",
+      "container": "n/a — OS package management",
+      "process_pattern": "apt.systemd.daily install",
+      "units": [
+        "apt-daily-upgrade.timer",
+        "apt-daily-upgrade.service"
+      ],
+      "class": "no-safe-kill",
+      "reason": "THE PACKAGE MANAGER INSTALLS THE KERNEL THIS HARNESS EXISTS TO LOAD. An interrupted dpkg leaves /var/lib/dpkg/updates dirty (u-u self-heals with `dpkg --configure -a` next run), but a kill during the kernel's initramfs/grub trigger can leave a broken initrd behind the default boot entry, and nothing repairs that before the next boot. unattended-upgrade-shutdown holds a logind delay inhibitor (InhibitDelayMaxSec=30) and lets the in-flight dpkg step finish, but that path has never been exercised on either host (its log is 0 bytes) — so the harness never reboots while it runs. The pattern is the SERVICE argv, not `unattended-upgrade` (that always matches the resident shutdown handler) and not `/usr/bin/dpkg` (the auto-fix path runs a PATH dpkg).",
+      "max_runtime_s": 159,
+      "runtime_instrument": "unattended-upgrades.log install runs n=64 over 6 months (median 16s, p95 35s, max 159s); journal apt-daily-upgrade.service n=29 max 43.6s; history.log longest dpkg transaction 13s (n=203). Observed install window 06:02:05-06:59:21Z (n=64); worst-case spill to ~07:02:38Z is arithmetic, not observed",
+      "cron_lines": 0,
+      "cron": "systemd OnCalendar=*-*-* 6:00, RandomizedDelaySec=60m, Persistent",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "os-maintenance-timers",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "systemd timers shipped by the OS image",
+      "container": "n/a — OS",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "units": [
+        "apt-daily.timer",
+        "apt-daily.service",
+        "dpkg-db-backup.timer",
+        "dpkg-db-backup.service",
+        "logrotate.timer",
+        "logrotate.service",
+        "man-db.timer",
+        "man-db.service",
+        "e2scrub_all.timer",
+        "e2scrub_all.service",
+        "fstrim.timer",
+        "fstrim.service",
+        "docker-builder-gc.timer",
+        "docker-builder-gc.service",
+        "sysstat-collect.timer",
+        "sysstat-collect.service",
+        "sysstat-summary.timer",
+        "sysstat-summary.service",
+        "motd-news.timer",
+        "motd-news.service",
+        "update-notifier-download.timer",
+        "update-notifier-download.service",
+        "update-notifier-motd.timer",
+        "update-notifier-motd.service",
+        "apport-autoreport.timer",
+        "apport-autoreport.service",
+        "snapd.snap-repair.timer",
+        "snapd.snap-repair.service",
+        "ua-timer.timer",
+        "ua-timer.service",
+        "systemd-tmpfiles-clean.timer",
+        "systemd-tmpfiles-clean.service",
+        "mdcheck_start.timer",
+        "mdcheck_start.service",
+        "mdcheck_continue.timer",
+        "mdcheck_continue.service",
+        "mdmonitor-oneshot.timer",
+        "mdmonitor-oneshot.service"
+      ],
+      "class": "safe-to-kill",
+      "reason": "Each either catches up on its own (Persistent timer or the next daily/weekly run) or loses something nothing depends on: apt-daily is `--download-only` (partial files re-fetched; fcntl locks die with the process), logrotate/man-db/sysstat/tmpfiles re-run, docker-builder-gc is a cache prune documented fail-open, e2scrub_reap runs at boot, and apport/snap-repair/ua-timer never run here (ConditionResult=no); the three mdadm timers are enabled but inactive with ConditionResult=no — /proc/mdstat lists no arrays (read 2026-10-02).",
+      "max_runtime_s": 452,
+      "runtime_instrument": "journal Started->Finished per service since 2026-09-03: apt-daily max 451.5s (n=57, the outlier was a kernel .deb download), docker-builder-gc 89s (n=4), fstrim 77s (n=4), every other <4s",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "bot-entitlement-drain",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-bot/scripts/entitlement-drain.sh (algovault-bot repo)",
+      "container": "n/a — host process",
+      "process_pattern": "algovault-bot/scripts/entitlement-drain",
+      "cron_match": [
+        "/opt/algovault-bot/scripts/entitlement-drain.sh"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Plan debits are idempotent (idempotency_key=bot:<chat>:<alerts_fired.id>; the server answers ALREADY_CHARGED on retry), but the user DMs it sends (wall follow-ups, downgrade notice) are sent FIRST and stamped AFTER, with no claim and no flock — a kill between Telegram's ack and the SQLite stamp re-sends the DM on the next fire.",
+      "max_runtime_s": 10,
+      "runtime_instrument": "cron PAM session open->close, n=6104 of 6944 fires 09-03..10-02: max 9.42s, p99 2.81, p50 1.62 — read-only agent forensic 2026-10-02 ~11:41-12:03Z on signal-1 (deployed bot SHA dd4ab2a)",
+      "cron_lines": 1,
+      "cron": "13,17,23,27,33,37,43,47,53,57 * * * *",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "bot-referral-notify-drain",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-bot/scripts/referral-notify-drain.sh (algovault-bot repo)",
+      "container": "n/a — host process",
+      "process_pattern": "algovault-bot/scripts/referral-notify-drain",
+      "cron_match": [
+        "/opt/algovault-bot/scripts/referral-notify-drain.sh"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Pending referral notices are fetched with no claim, DMed, then marked delivered via the engine API — a kill between send and mark re-sends the DM on the next */5 fire (at-least-once, no dedupe key).",
+      "max_runtime_s": 9,
+      "runtime_instrument": "cron PAM session open->close, n=7205 of 8330: max 8.25s, p99 1.95, p50 0.25 — read-only agent forensic 2026-10-02 ~11:41-12:03Z on signal-1 (deployed bot SHA dd4ab2a)",
+      "cron_lines": 1,
+      "cron": "*/5 * * * *",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "bot-daily-digest",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-bot/scripts/daily-digest.sh (algovault-bot repo)",
+      "container": "n/a — host process",
+      "process_pattern": "algovault-bot/scripts/daily-digest",
+      "cron_match": [
+        "/opt/algovault-bot/scripts/daily-digest.sh"
+      ],
+      "class": "no-safe-kill",
+      "reason": "A broadcast to every non-blocked subscriber whose tg_broadcasts ledger row is written only AFTER the whole send loop: a kill mid-loop leaves part of the cohort without the day's digest and no ledger row, and a manual re-run duplicates it for the part already reached. Harmless today only because every run since 08-02 ended suppressed_empty.",
+      "max_runtime_s": 30,
+      "runtime_instrument": "start/done lines in /var/log/algovault-bot/daily-digest.log, n=61 08-02..10-01 (max 2026-08-13) — read-only agent forensic 2026-10-02 ~11:41-12:03Z on signal-1 (deployed bot SHA dd4ab2a)",
+      "cron_lines": 1,
+      "cron": "3 12 * * *",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "bot-scan-showcase",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-bot/scripts/scan-showcase.sh (algovault-bot repo)",
+      "container": "n/a — host process",
+      "process_pattern": "algovault-bot/scripts/scan-showcase",
+      "cron_match": [
+        "/opt/algovault-bot/scripts/scan-showcase.sh"
+      ],
+      "class": "no-safe-kill",
+      "reason": "The same ledger-after-loop broadcast, and it really sends every run (9 of 9, 38-113 users each): a kill in the ~47s send loop leaves a partial cohort with no resume. Fires Monday 13:17Z, one minute after the 13:16 harness slot — a reboot there can also MISS the fire (cron does not replay), which no gate can see; recorded as a known cost of the last in-window slot.",
+      "max_runtime_s": 200,
+      "runtime_instrument": "/var/log/algovault-bot/scan-showcase.log, n=9 (max 2026-08-17 13:17:01->13:20:21) — read-only agent forensic 2026-10-02 ~11:41-12:03Z on signal-1 (deployed bot SHA dd4ab2a)",
+      "cron_lines": 1,
+      "cron": "17 13 * * 1",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "bot-daemon",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "algovault-bot.service (python -m algovault_bot)",
+      "container": "n/a — host process",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "units": [
+        "algovault-bot.service"
+      ],
+      "class": "safe-to-kill",
+      "reason": "The long-polling bot daemon. WantedBy=multi-user.target + Restart=on-failure: measured back 10s after the 2026-10-02 08:25:16 boot; five graceful stops measured <=4s.",
+      "max_runtime_s": 0,
+      "runtime_instrument": "n/a — daemon; read-only agent forensic 2026-10-02 ~11:41-12:03Z on signal-1 (deployed bot SHA dd4ab2a)",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "bot-alert-engine",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "algovault-bot-cron.timer -> python -m algovault_bot.alert_engine",
+      "container": "n/a — host process",
+      "process_pattern": "-m algovault_bot.alert_engine",
+      "units": [
+        "algovault-bot-cron.timer",
+        "algovault-bot-cron.service"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Sends trade-call / regime / scan-digest DMs to users, THEN records delivery and advances the watch — no claim (the hazard is named in alert_engine.py's own comment). A kill in that gap re-sends next tick and the first copy goes unmetered. Fires every minute at :10s; the harness's post-arm recheck exists for this row.",
+      "max_runtime_s": 64,
+      "runtime_instrument": "journal Starting->Finished pairs n=41653 09-03..10-02: max 63.1s (2026-09-08 05:30:10Z), p99 15.2, p50 0.37 — read-only agent forensic 2026-10-02 ~11:41-12:03Z on signal-1 (deployed bot SHA dd4ab2a)",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "bot-admin-digest",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "algovault-bot-digest.timer (03:00Z) -> python -m algovault_bot.digest",
+      "container": "n/a — host process",
+      "process_pattern": "-m algovault_bot.digest",
+      "units": [
+        "algovault-bot-digest.timer",
+        "algovault-bot-digest.service"
+      ],
+      "class": "preempt-and-catchup",
+      "reason": "One operator-chat message plus an idempotent bot_daily_metrics upsert. Persistent=true catches up only a trigger MISSED while down (the stamp is written at trigger time), so a run killed mid-flight is lost until a manual `systemctl start algovault-bot-digest.service` — bounded, but nothing launches it after a reboot.",
+      "max_runtime_s": 19,
+      "runtime_instrument": "journal Starting->Finished n=29 09-04..10-02: max 18.7s (2026-09-13 03:00), p50 1.3 — read-only agent forensic 2026-10-02 ~11:41-12:03Z on signal-1 (deployed bot SHA dd4ab2a)",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "carry-paper-tracker",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-carry/paper-carry-tracker.sh",
+      "container": "n/a — host process",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "cron_match": [
+        "/opt/algovault-carry/paper-carry-tracker.sh"
+      ],
+      "class": "safe-to-kill",
+      "reason": "Each per-venue insert is one psql transaction, ON CONFLICT DO NOTHING; the next night replays every interval since MAX(interval_ts) (45-day lookback).",
+      "max_runtime_s": 8,
+      "runtime_instrument": "last paper_carry_track.recorded_at minus 03:47, n=89 nights — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 1,
+      "cron": "47 3 * * *",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "carry-scorer",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-carry/carry-scorer.sh",
+      "container": "n/a — host process",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "cron_match": [
+        "/opt/algovault-carry/carry-scorer.sh"
+      ],
+      "class": "safe-to-kill",
+      "reason": "Top-up into funding_rates_hist is checkpointed + ON CONFLICT; carry_rank_scores is replaced in ONE transaction; the next hourly fire repairs, and the MCP reader falls back after 3h staleness. A killed run leaves only an uptime-ledger gap (no carry_scorer_runs row).",
+      "max_runtime_s": 712,
+      "runtime_instrument": "carry_scorer_runs.ts minus HH:07, n=1100: max 712s, p99 699 — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 1,
+      "cron": "7 0-1,3-23 * * *",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "carry-retrain",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-carry/carry-retrain.sh",
+      "container": "n/a — host process",
+      "process_pattern": "src.research.carry.retrain",
+      "cron_match": [
+        "/opt/algovault-carry/carry-retrain.sh"
+      ],
+      "class": "preempt-and-catchup",
+      "reason": "Weekly model retrain; the artifact pointer swaps atomically (tmp + os.replace), so a kill leaves the old model serving — but nothing re-runs it for 7 days, and a ~110s manual re-run is the repair.",
+      "max_runtime_s": 110,
+      "runtime_instrument": "artifact vN.joblib.gz mtime minus Sun 04:37, n=12 swaps; Sunday-only cron session 101-108s n=4 — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 1,
+      "cron": "37 4 * * 0",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "carry-tracker-publish",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "ops/cron/carry-tracker-publish.sh",
+      "container": "n/a — host process",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "cron_match": [
+        "ops/cron/carry-tracker-publish.sh"
+      ],
+      "class": "safe-to-kill",
+      "reason": "PUBLIC /api/carry-tracker-public data, but the next daily fire is a full idempotent recompute; a kill in the millisecond gap between its two transactions leaves weekly new / pooled old for <=24h.",
+      "max_runtime_s": 2,
+      "runtime_instrument": "n=1 (01:43:01 -> carry_tracker_pooled.computed_at 01:43:02.78); max UNMEASURED — 8 concurrent 01:43 cron sessions cannot be attributed — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 1,
+      "cron": "43 1 * * *",
+      "source": "repo",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "mcp-intel-weekly-competitors",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/mcp-intelligence components.weekly_competitors",
+      "container": "n/a — host process",
+      "process_pattern": "components.weekly_competitors",
+      "cron_match": [
+        "components.weekly_competitors"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Marks items seen BEFORE its commit + Telegram (_filter_new): a kill after the mark loses the week's items permanently; a SIGKILL inside `git commit` leaves .git/index.lock, which nothing clears.",
+      "max_runtime_s": 66,
+      "runtime_instrument": "supervisor `--- OK <ts>` minus Mon 00:00, n=23 — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 1,
+      "cron": "0 0 * * 1",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "mcp-intel-monthly-ecosystem",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/mcp-intelligence components.monthly_ecosystem",
+      "container": "n/a — host process",
+      "process_pattern": "components.monthly_ecosystem",
+      "cron_match": [
+        "components.monthly_ecosystem"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Same mark-before-send shape as the weekly (_dedupe_against_seen): a kill after the mark loses the items.",
+      "max_runtime_s": 71,
+      "runtime_instrument": "supervisor OK lines, n=6 — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 1,
+      "cron": "0 0 1 * *",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "mcp-intel-quarterly-review",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/mcp-intelligence components.quarterly_review",
+      "container": "n/a — host process",
+      "process_pattern": "components.quarterly_review",
+      "cron_match": [
+        "components.quarterly_review"
+      ],
+      "class": "preempt-and-catchup",
+      "reason": "Its dedupe row is written LAST, so a re-run inside the quarter repairs it — but the next cron fire is the next quarter.",
+      "max_runtime_s": 2,
+      "runtime_instrument": "supervisor OK lines, n=2 — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 1,
+      "cron": "0 0 1 1,4,7,10 *",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "mcp-intel-launch-triggers",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/mcp-intelligence components.launch_triggers",
+      "container": "n/a — host process",
+      "process_pattern": "components.launch_triggers",
+      "cron_match": [
+        "components.launch_triggers"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Marks an event fired BEFORE its commit + CRITICAL Telegram (\"Mark BEFORE side-effects\"): a kill there means the event is never alerted. No flock. Typical run ~1s.",
+      "max_runtime_s": 552,
+      "runtime_instrument": "supervisor OK lines, n=15407 (max 2026-06-04 17:15 -> 17:24:12) — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 1,
+      "cron": "*/15 * * * *",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "mcp-intel-healthcheck",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/mcp-intelligence/scripts/healthcheck.sh",
+      "container": "n/a — host process",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "cron_match": [
+        "/opt/mcp-intelligence/scripts/healthcheck.sh"
+      ],
+      "class": "safe-to-kill",
+      "reason": "Reads state.db and alerts only if a component is stale; stateless, re-evaluated next night.",
+      "max_runtime_s": 20,
+      "runtime_instrument": "UPPER BOUND, not a measurement: the longest of the 4 cron sessions opened at 03:00, 122 sessions / ~30d (its log has no timestamps) — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 1,
+      "cron": "0 3 * * *",
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "editorial-publish",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "editorial-publish.timer -> editorial-publish.sh",
+      "container": "n/a — host process",
+      "process_pattern": "editorial-publish.sh",
+      "units": [
+        "editorial-publish.timer",
+        "editorial-publish.service"
+      ],
+      "class": "no-safe-kill",
+      "reason": "dev.to POST, GitHub Discussion, git push to two content repos, Telegram and claude spend. Persistent=true does not re-fire a killed run; a kill after the POST and before the calendar step leaves a live post with no audit row, and a kill mid-git leaves index.lock.",
+      "max_runtime_s": 3374,
+      "runtime_instrument": "run-<start>.log filename -> mtime, n=122 since May (TimeoutStartSec=60min cap) — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "editorial-inject-watcher",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "editorial-inject-watcher.timer",
+      "container": "n/a — host process",
+      "process_pattern": "editorial-inject-watcher.sh",
+      "units": [
+        "editorial-inject-watcher.timer",
+        "editorial-inject-watcher.service"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Pushes calendar rows BEFORE writeStateAtomic: a kill between them re-appends and re-pushes the same rows next week; also the index.lock risk.",
+      "max_runtime_s": 9,
+      "runtime_instrument": "journal n=4 — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "editorial-override-currency-canary",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "editorial-override-currency-canary.timer -> run-override-canary.sh",
+      "container": "n/a — host process",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "units": [
+        "editorial-override-currency-canary.timer",
+        "editorial-override-currency-canary.service"
+      ],
+      "class": "safe-to-kill",
+      "reason": "Read-only scan with a WARNING on drift; stateless, and its timer's Requires= also runs it on every boot (observed 10-02 08:25:26, 09-12 08:48:26).",
+      "max_runtime_s": 10,
+      "runtime_instrument": "journal n=7 — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "mcp-spec-watcher",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "mcp-spec-watcher.timer -> /opt/mcp-spec-watcher/watch.sh",
+      "container": "n/a — host process",
+      "process_pattern": "/opt/mcp-spec-watcher/watch.sh",
+      "units": [
+        "mcp-spec-watcher.timer",
+        "mcp-spec-watcher.service"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Sends a CRITICAL Telegram on a keyword match BEFORE updating state.json: a kill between them duplicates the CRITICAL next day.",
+      "max_runtime_s": 1,
+      "runtime_instrument": "journal n=29 (the 30s retry path allows ~70s) — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "evaluate-venues",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "evaluate-venues.timer -> dist/scripts/evaluate-venues.js",
+      "container": "n/a — host process",
+      "process_pattern": "dist/scripts/evaluate-venues.js",
+      "units": [
+        "evaluate-venues.timer",
+        "evaluate-venues.service"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Records a venue transition in the DB, THEN sends its Telegram: a kill between them records the transition and loses the alert. Inert today (shadow=0 actions=0 on 09-30..10-02), but the shape loses alerts.",
+      "max_runtime_s": 1,
+      "runtime_instrument": "journal n=29 — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "funnel-snapshot",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "algovault-funnel-snapshot.timer -> commit-funnel-snapshot.sh",
+      "container": "n/a — host process",
+      "process_pattern": "commit-funnel-snapshot.sh",
+      "units": [
+        "algovault-funnel-snapshot.timer",
+        "algovault-funnel-snapshot.service"
+      ],
+      "class": "no-safe-kill",
+      "reason": "Writes JSON into the DEPLOY CHECKOUT, then commit + `pull --rebase --autostash` + push to the public repo: a kill mid-rebase leaves the deploy checkout mid-rebase/autostash, and mid-commit leaves index.lock.",
+      "max_runtime_s": 9,
+      "runtime_instrument": "journal n=4 (TimeoutStartSec=300) — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "funnel-leak-detector",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "algovault-funnel-leak-detector.timer -> funnel-leak-detector.py",
+      "container": "n/a — host process",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "units": [
+        "algovault-funnel-leak-detector.timer",
+        "algovault-funnel-leak-detector.service"
+      ],
+      "class": "safe-to-kill",
+      "reason": "A pure function of the snapshot files; alerts via send_telegram.sh only when all 4 gates clear, and the persistence gate re-evaluates next week.",
+      "max_runtime_s": 1,
+      "runtime_instrument": "journal n=4 — read-only agent forensic 2026-10-02 ~11:41-12:07Z on signal-1",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-02",
+      "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
     }
   ],
   "exclusions": [
@@ -522,7 +1414,10 @@
       "reason": "`docker compose up -d --build --force-recreate` recreates only the three services in /opt/crypto-quant-signal-mcp/docker-compose.yml. A cron that runs as a host process, or execs into a container belonging to another compose project, is not reachable by this deploy at all — there is nothing for an interlock to protect. Excluded by construction, not by judgement.",
       "re_derivation_command": "crontab -l | grep -vE '^\\s*(#|$)' | grep -v 'docker exec'   # then, for each resolved script path, `grep -E '(^|[;&|]|\\$\\(|\\bexec[[:space:]])[[:space:]]*docker[[:space:]]+exec' <script>` and confirm it is empty",
       "verified_at": "2026-08-29",
-      "host": "signal-1"
+      "host": "signal-1",
+      "events": [
+        "deploy"
+      ]
     },
     {
       "id": "entitlement-drain",
@@ -531,7 +1426,10 @@
       "re_derivation_command": "grep -cE 'docker[[:space:]]+exec' /opt/algovault-bot/scripts/entitlement-drain.sh   # expect 0",
       "verified_at": "2026-08-29",
       "separate_finding": "Its SCHEDULE is a different problem and is deliberately NOT fixed here: those ten minutes occupy every canonical off-boundary slot in the hour, which is why signal-1 has only :09 and :39 free and why OPS-HOST-AUTO-REBOOT-W1 faces a 2-minute target. Filed as OPS-BOT-CRON-SCHEDULE-GREED-W1; it is a bot-repo change and cannot ship from a signal-mcp wave. Note also that the script's own header docstring claims `*/5 * * * *`, which the live crontab contradicts — the docstring is stale and belongs to the same follow-up.",
-      "host": "signal-1"
+      "host": "signal-1",
+      "events": [
+        "deploy"
+      ]
     },
     {
       "id": "prose-only-docker-exec-mentions",
@@ -539,29 +1437,101 @@
       "reason": "Both contain the literal string `docker exec`, and neither invokes it. One occurrence is a `#` comment recording a RETIRED implementation; the other sits inside an alert-body heredoc ('... host dist/ unusable AND docker exec failed ...'). A mention is not an invocation — the same rule check-canaries-wired.mjs already carries for comments and check-test-budget.mjs carries for string literals. scripts/check-cron-interlock-coverage.mjs therefore matches `docker exec` only in COMMAND POSITION, after stripping comments.",
       "re_derivation_command": "sed -E 's/(^|[[:space:]])#.*$/\\1/' ops/cron/<f>.sh | grep -cE '(^|[;&|]|\\$\\(|\\bexec[[:space:]])[[:space:]]*(sudo[[:space:]]+)?docker[[:space:]]+exec\\b'   # expect 0 for these two, 1..2 for the three real ones",
       "verified_at": "2026-08-29",
-      "host": "signal-1"
+      "host": "signal-1",
+      "events": [
+        "deploy"
+      ]
+    },
+    {
+      "id": "os-and-boot-contract-daemons",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "what": "Long-running services with no in-flight batch work: OS daemons, the docker/containerd/caddy/ssh/cron set boot-contract-canary asserts, and the unattended-upgrades SHUTDOWN HANDLER (not the upgrade itself — that is row apt-unattended-upgrade).",
+      "units": [
+        "atd.service",
+        "caddy.service",
+        "containerd.service",
+        "cron.service",
+        "dbus.service",
+        "docker.service",
+        "fail2ban.service",
+        "getty@*.service",
+        "serial-getty@*.service",
+        "multipathd.service",
+        "qemu-guest-agent.service",
+        "rsyslog.service",
+        "ssh.service",
+        "systemd-*.service",
+        "unattended-upgrades.service",
+        "user@*.service",
+        "polkit.service"
+      ],
+      "reason": "A reboot stops these and systemd starts them again at boot; none holds work that a kill loses. The ones the host cannot live without are declared in scripts/data/boot-critical-units.json and asserted after every boot by boot-contract-canary.sh (W5: 12 units, 6 containers). A transient `run-*.service` (systemd-run) is deliberately NOT excluded: an operator one-shot in flight defers the reboot until it ends.",
+      "re_derivation_command": "systemctl list-units --type=service --state=running --no-legend --plain | awk '{print $1}'",
+      "verified_at": "2026-10-02"
     }
   ],
   "_residual_no_safe_kill": {
     "signal-1": {
-      "count": 2,
-      "ids": [
-        "publish-merkle-batch",
-        "geo-weekly-cron"
-      ],
-      "ruling": "The 18:00-02:59 UTC deploy-free window is NOT retired. It is now a DECLARED control with two named rows justifying it, both of which fire inside it (00:05 and Mon 01:00). What changes is that it stops being folklore carried by an agent-side memory file — a third rule source in an estate that declares two — and becomes data these rows own. OPS-HOST-AUTO-REBOOT-W1 should read this block, not the memory file.",
-      "retire_when": "publish-merkle-batch writes its batch row in the same transaction boundary as (or before) its on-chain send, and geo-weekly-cron gains a checkpoint. Neither is in scope here."
+      "deploy": {
+        "count": 2,
+        "ids": [
+          "publish-merkle-batch",
+          "geo-weekly-cron"
+        ],
+        "ruling": "The 18:00-02:59 UTC deploy-free window is NOT retired. It is now a DECLARED control with two named rows justifying it, both of which fire inside it (00:05 and Mon 01:00). What changes is that it stops being folklore carried by an agent-side memory file — a third rule source in an estate that declares two — and becomes data these rows own. OPS-HOST-AUTO-REBOOT-W1 should read this block, not the memory file.",
+        "retire_when": "publish-merkle-batch writes its batch row in the same transaction boundary as (or before) its on-chain send, and geo-weekly-cron gains a checkpoint. Neither is in scope here."
+      },
+      "reboot": {
+        "count": 17,
+        "ids": [
+          "publish-merkle-batch",
+          "geo-weekly-cron",
+          "snapshot-landing-daily",
+          "apt-unattended-upgrade",
+          "bot-entitlement-drain",
+          "bot-referral-notify-drain",
+          "bot-daily-digest",
+          "bot-scan-showcase",
+          "bot-alert-engine",
+          "mcp-intel-weekly-competitors",
+          "mcp-intel-monthly-ecosystem",
+          "mcp-intel-launch-triggers",
+          "editorial-publish",
+          "editorial-inject-watcher",
+          "mcp-spec-watcher",
+          "evaluate-venues",
+          "funnel-snapshot"
+        ],
+        "ruling": "Under a REBOOT these rows ABORT the run while in flight (retried next hour) — they never extend a window. Most finish in seconds (the bot drains <=10s, the alert engine p50 0.37s); the long ones are editorial-publish (<=3374s, 02:00Z timer) and geo-weekly-cron (Mon 01:00Z), both of which start before the 03:00Z window opens. The post-arm recheck closes the check-then-act gap for the every-minute bot alert engine.",
+        "retire_when": "Each row's own repair: a claim-before-send (or send-then-claim with a dedupe key) for the Telegram senders, a checkpoint for geo-weekly-cron, a transaction boundary around publish-merkle-batch's on-chain send, an atomic write for snapshot-landing-daily. Not in scope here."
+      }
     },
     "aoe-1": {
-      "count": 0,
-      "ids": [],
-      "ruling": "ZERO — and that is the measured reason aoe-1 is the right host to automate FIRST, not a gap in the enumeration. Every candidate is atomic-on-restart (8 containers, unless-stopped), idempotent on next fire (11 Prefect schedules, max 60.3s), or a read-only probe (7 crons, max 43s). Nothing on aoe-1 writes on-chain, publishes externally, or holds an unrepairable critical section — unlike signal-1, whose two no-safe-kill rows are exactly what keeps the 18:00-02:59 UTC deploy-free window alive.",
-      "gate_is_not_vacuous": "kernel-auto-reboot.sh's third gate can therefore never ABORT today. That is a REPORTED pass, never a silent one: the gate prints the aoe-1 row count it evaluated, so a zero that means 'nothing is unsafe' stays distinguishable from a zero that means 'the filter is broken'. Its value is forward-looking — the day a no-safe-kill job lands on aoe-1, the reboot starts deferring without anyone remembering to wire it."
+      "reboot": {
+        "count": 0,
+        "ids": [],
+        "ruling": "ZERO — and that is the measured reason aoe-1 is the right host to automate FIRST, not a gap in the enumeration. Every candidate is atomic-on-restart (8 containers, unless-stopped), idempotent on next fire (11 Prefect schedules, max 60.3s), or a read-only probe (7 crons, max 43s). Nothing on aoe-1 writes on-chain, publishes externally, or holds an unrepairable critical section — unlike signal-1, whose two no-safe-kill rows are exactly what keeps the 18:00-02:59 UTC deploy-free window alive.",
+        "gate_is_not_vacuous": "kernel-auto-reboot.sh's third gate can therefore never ABORT today. That is a REPORTED pass, never a silent one: the gate prints the aoe-1 row count it evaluated, so a zero that means 'nothing is unsafe' stays distinguishable from a zero that means 'the filter is broken'. Its value is forward-looking — the day a no-safe-kill job lands on aoe-1, the reboot starts deferring without anyone remembering to wire it."
+      }
     }
   },
   "_hosts": {
-    "signal-1": "204.168.185.24 — the revenue host. Disruption event: `docker compose up -d --build --force-recreate`.",
-    "aoe-1": "178.104.200.44 — the AOE tuner. Disruption event: an unattended kernel REBOOT (OPS-HOST-AUTO-REBOOT-W1).",
+    "signal-1": "204.168.185.24 — the revenue host. Disruption events: `deploy` (`docker compose up -d --build --force-recreate`) and, since OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1, `reboot` (kernel-auto-reboot.sh, 03:00-13:59Z).",
+    "aoe-1": "178.104.200.44 — the AOE tuner. Disruption event: `reboot` (an unattended kernel reboot, OPS-HOST-AUTO-REBOOT-W1).",
     "_why_per_host": "A row consulted for the wrong host is a guard reading a green light for a road it is not on. Every consumer MUST filter rows by the host it is acting on, resolved through the estate's identity chain (MONITORING_HOST_LABELS -> /etc/algovault-host-label -> REFUSE), never a default."
-  }
+  },
+  "_disruption_events": {
+    "_semantics": "Which disruption events each host has. Every row declares `events[]` (never a default) and every consumer filters by (host, event): deploy-cron-interlock.sh reads `deploy`, kernel-auto-reboot.sh reads `reboot`. A REBOOT is strictly larger than a deploy — it kills every container AND every host process — so a host that declares `reboot` must classify EVERY one of its rows for it; scripts/check-cron-interlock-coverage.mjs reports an unclassified row INDETERMINATE.",
+    "signal-1": [
+      "deploy",
+      "reboot"
+    ],
+    "aoe-1": [
+      "reboot"
+    ]
+  },
+  "_reboot_rule": "Under a REBOOT there is no post-kill catch-up launcher, so a `preempt-and-catchup` row IN FLIGHT => the harness DEFERS (next eligible run), unless the row records a measured `reboot_recovery`. A `no-safe-kill` row in flight => ABORTED, retried on the next run. `safe-to-kill` rows are never probed."
 }

@@ -74,6 +74,7 @@ function oneRowRegistry(dir: string, row: Record<string, unknown>) {
 const LABELER_ROW = {
   id: 'carry-labeler',
   host: 'signal-1',
+  events: ['deploy', 'reboot'],
   script: 'src/scripts/backfill-directional-labels.ts',
   container: 'ctr',
   process_pattern: 'dist/scripts/backfill-directional-labels',
@@ -168,7 +169,7 @@ describe('the protected set is DATA, and an unusable row is never a silent pass'
   it('a safe-to-kill row is not probed, and still prints a positive per-job line', { timeout: 60_000 }, () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'interlock-reg-'));
     const reg = oneRowRegistry(dir, {
-      id: 'seed-signals', host: 'signal-1', script: 'src/scripts/seed-signals.ts', container: 'ctr',
+      id: 'seed-signals', host: 'signal-1', events: ['deploy'], script: 'src/scripts/seed-signals.ts', container: 'ctr',
       process_pattern: 'dist/scripts/seed-signals', class: 'safe-to-kill',
       reason: 'idempotent on next fire, flock-guarded',
     });
@@ -184,7 +185,7 @@ describe('the protected set is DATA, and an unusable row is never a silent pass'
     const docker = path.join(dir, 'docker');
     writeFileSync(docker, `#!/bin/sh\necho "$@" >> ${argv}\nexit 0\n`, { mode: 0o755 });
     const reg = oneRowRegistry(dir, {
-      id: 'publish-merkle-batch', host: 'signal-1', script: 'src/scripts/publish-merkle-batch.ts', container: 'ctr',
+      id: 'publish-merkle-batch', host: 'signal-1', events: ['deploy'], script: 'src/scripts/publish-merkle-batch.ts', container: 'ctr',
       process_pattern: 'dist/scripts/publish-merkle-batch', class: 'no-safe-kill',
       reason: 'on-chain tx then DB write; a kill between them orphans a Merkle root',
     });
@@ -207,7 +208,7 @@ describe('the protected set is DATA, and an unusable row is never a silent pass'
   it('an EMPTY reason is INDETERMINATE, never a silent safe-to-kill', { timeout: 60_000 }, () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'interlock-noreason-'));
     const reg = oneRowRegistry(dir, {
-      id: 'unreasoned', host: 'signal-1', script: 'x', container: 'ctr', process_pattern: 'p',
+      id: 'unreasoned', host: 'signal-1', events: ['deploy'], script: 'x', container: 'ctr', process_pattern: 'p',
       class: 'safe-to-kill', reason: '   ',
     });
     const r = run('preempt', { dockerRc: 1, env: { INTERLOCK_REGISTRY: reg } });
@@ -521,6 +522,33 @@ describe('the interlock reads ONLY its own host\'s rows', () => {
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.filter((r) => !String(r.host || '').trim())).toEqual([]);
     expect([...new Set(rows.map((r) => r.host))].sort()).toEqual(['aoe-1', 'signal-1']);
+  });
+});
+
+/**
+ * OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1 — the interlock is the DEPLOY event's consumer. The same
+ * registry now classifies signal-1's whole population for a REBOOT; none of those rows may leak
+ * into a deploy decision, and a row with no events is a corpus defect, never a default.
+ *
+ * SPAWN BUDGET: 2 bash spawns.
+ */
+describe('the interlock reads ONLY the deploy event\'s rows', () => {
+  it('a REBOOT-only row is never evaluated during a deploy', { timeout: 60_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'interlock-ev-'));
+    const reg = oneRowRegistry(dir, { ...LABELER_ROW, events: ['reboot'] });
+    // dockerRc 0 would DEFER if the row were evaluated; with no deploy-scope row left the load refuses.
+    const r = run('preempt', { dockerRc: 0, env: { INTERLOCK_REGISTRY: reg } });
+    expect(r.verdict).toBe('INDETERMINATE');
+    expect(r.ledger).toContain('registry-unloadable');
+  });
+
+  it('a row with NO events refuses the load — never defaulted into the deploy scope', { timeout: 60_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'interlock-noev-'));
+    const { events: _drop, ...noEvents } = LABELER_ROW;
+    const reg = oneRowRegistry(dir, noEvents);
+    const r = run('preempt', { dockerRc: 0, env: { INTERLOCK_REGISTRY: reg } });
+    expect(r.verdict).toBe('INDETERMINATE');
+    expect(r.ledger).toContain('registry-unloadable');
   });
 });
 

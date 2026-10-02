@@ -296,21 +296,22 @@ describe('AC5 — the registry is per-host and aoe-1 is classified', () => {
     // The wave's core correction: the enumeration METHOD is host-scoped too, not just the rows.
     // A reboot stops every container, every host process and every in-flight Prefect run, so a
     // `docker exec` grep measures almost nothing on aoe-1 — it has zero such cron lines.
-    const en = doc._enumeration['aoe-1'];
+    // OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: the blocks are keyed per (host, EVENT) now.
+    const en = doc._enumeration['aoe-1'].reboot;
     expect(en).toBeDefined();
     expect(en.disruption_event).toBe('kernel reboot');
     expect(en.command).toContain('docker ps');
-    expect(en.command).not.toBe(doc._enumeration['signal-1'].command);
+    expect(en.command).not.toBe(doc._enumeration['signal-1'].deploy.command);
     expect(en.running_containers).toBeGreaterThan(0);
     expect(en.prefect_deployments).toBeGreaterThan(0);
   });
 
   it('the reboot gate reads a ruling that matches its rows', () => {
     const nsk = doc.rows.filter((r: Record<string, unknown>) => r.host === 'aoe-1' && r.class === 'no-safe-kill');
-    expect(doc._residual_no_safe_kill['aoe-1'].count).toBe(nsk.length);
+    expect(doc._residual_no_safe_kill['aoe-1'].reboot.count).toBe(nsk.length);
     // ZERO today, and that is the measured reason aoe-1 is automated first. If a future wave lands
     // a no-safe-kill job here, this goes red and forces an explicit ruling rather than a silent
     // reboot straight through the gate.
-    expect(doc._residual_no_safe_kill['aoe-1'].count).toBe(0);
+    expect(doc._residual_no_safe_kill['aoe-1'].reboot.count).toBe(0);
   });
 });

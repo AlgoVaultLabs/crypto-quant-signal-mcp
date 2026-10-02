@@ -56,20 +56,23 @@ describe('the gate decides the REAL tree, and says so with one token', () => {
       expect(r.stdout).toMatch(/ops\/cron\/nav-drift-canary\.sh\s+no docker exec/);
     });
 
-  it('BOTH hosts are evaluated, each with its own positive block', { timeout: 60_000 }, () => {
+  it('EVERY declared (host, event) scope is evaluated, each with its own positive block', { timeout: 60_000 }, () => {
+    // OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: the unit of evaluation is (host, event), not host.
     const r = runGate();
-    expect(r.stdout).toContain('cron-interlock-coverage [signal-1]:');
-    expect(r.stdout).toContain('cron-interlock-coverage [aoe-1]:');
-    // aoe-1 has no repo-side cron tree, and saying so positively is the honest answer — not a
-    // vacuity INDETERMINATE, because nobody was ever supposed to fill that corpus for this host.
-    expect(r.stdout).toMatch(/\[aoe-1\][\s\S]*repo cron corpus: none/);
+    expect(r.stdout).toContain('cron-interlock-coverage [signal-1 · deploy]:');
+    expect(r.stdout).toContain('cron-interlock-coverage [signal-1 · reboot]:');
+    expect(r.stdout).toContain('cron-interlock-coverage [aoe-1 · reboot]:');
+    expect(r.stdout).not.toContain('[aoe-1 · deploy]');
+    // A REBOOT scope is a LIVE-population question; saying so positively is the honest answer —
+    // not a vacuity INDETERMINATE, because no repo corpus was ever supposed to answer it.
+    expect(r.stdout).toMatch(/\[aoe-1 · reboot\][\s\S]*repo cron corpus: not the question for a reboot/);
   });
 
   it('--host narrows to one host and still prints exactly one token', { timeout: 60_000 }, () => {
     const r = runGate(['--host', 'aoe-1']);
     expect(r.verdict).toBe('PASS');
-    expect(r.stdout).toContain('cron-interlock-coverage [aoe-1]:');
-    expect(r.stdout).not.toContain('cron-interlock-coverage [signal-1]:');
+    expect(r.stdout).toContain('cron-interlock-coverage [aoe-1 · reboot]:');
+    expect(r.stdout).not.toContain('cron-interlock-coverage [signal-1');
     expect((r.stdout.match(/^CRON_INTERLOCK_COVERAGE_VERDICT=/gm) || []).length).toBe(1);
   });
 
@@ -113,7 +116,7 @@ describe('vacuity: an empty or broken corpus is INDETERMINATE, never PASS', () =
   };
 
   it('an EMPTY ops/cron tree is INDETERMINATE — the glob is broken, not the tree', { timeout: 60_000 }, async () => {
-    const r = await evaluateIn({ 'ops/scripts/cron-interlock-registry.json': '{"rows":[{"id":"a","host":"signal-1","script":"s","class":"safe-to-kill","reason":"r"}],"_enumeration":{"signal-1":{"command":"fixture"}},"_residual_no_safe_kill":{"signal-1":{"count":0,"ids":[]}}}' });
+    const r = await evaluateIn({ 'ops/scripts/cron-interlock-registry.json': '{"schema_version":2,"rows":[{"id":"a","host":"signal-1","events":["deploy"],"script":"s","class":"safe-to-kill","reason":"r"}],"exclusions":[],"_disruption_events":{"signal-1":["deploy"]},"_enumeration":{"signal-1":{"deploy":{"command":"fixture"}}},"_residual_no_safe_kill":{"signal-1":{"deploy":{"count":0,"ids":[]}}}}' });
     expect(r.verdict).toBe('INDETERMINATE');
     expect(r.reason).toContain('the glob is broken, not the tree');
   });
@@ -126,7 +129,7 @@ describe('vacuity: an empty or broken corpus is INDETERMINATE, never PASS', () =
   it('wrappers that exist but NEVER exec are INDETERMINATE — the matcher broke', { timeout: 60_000 }, async () => {
     const r = await evaluateIn({
       'ops/cron/a.sh': '#!/usr/bin/env bash\necho hi\n',
-      'ops/scripts/cron-interlock-registry.json': '{"rows":[{"id":"a","host":"signal-1","script":"s","class":"safe-to-kill","reason":"r"}],"_enumeration":{"signal-1":{"command":"fixture"}},"_residual_no_safe_kill":{"signal-1":{"count":0,"ids":[]}}}',
+      'ops/scripts/cron-interlock-registry.json': '{"schema_version":2,"rows":[{"id":"a","host":"signal-1","events":["deploy"],"script":"s","class":"safe-to-kill","reason":"r"}],"exclusions":[],"_disruption_events":{"signal-1":["deploy"]},"_enumeration":{"signal-1":{"deploy":{"command":"fixture"}}},"_residual_no_safe_kill":{"signal-1":{"deploy":{"count":0,"ids":[]}}}}',
     });
     expect(r.verdict).toBe('INDETERMINATE');
     expect(r.reason).toContain('the matcher is broken, not the tree');
@@ -181,32 +184,100 @@ describe('the registry is complete, classified, and carries its instruments', ()
     expect([...new Set(rows.map((r) => r.host))].sort()).toEqual(['aoe-1', 'signal-1']);
   });
 
-  it('the enumeration is reproducible per host, and each host records its OWN command', () => {
-    for (const h of ['signal-1', 'aoe-1']) {
-      const covered = rows.filter((r) => r.host === h).reduce((a, r) => a + (r.cron_lines as number), 0);
-      const en = doc._enumeration[h];
-      expect(en, `enumeration for ${h}`).toBeDefined();
-      expect(String(en.command ?? '').trim().length, `${h} command`).toBeGreaterThan(20);
-      expect(covered).toBeLessThanOrEqual(en.active_cron_lines);
-    }
-    // The two commands must DIFFER: signal-1's disruption event is a container recreate (a
-    // `docker exec` question) and aoe-1's is a reboot (strictly larger). Inheriting one command
-    // for both is the wrong-instrument defect this wave's R1 exists to fix.
-    expect(doc._enumeration['signal-1'].command).not.toBe(doc._enumeration['aoe-1'].command);
+  // The (host, event) scopes the registry declares — every per-scope assertion below iterates THIS,
+  // so a new host or event is covered the moment it is declared rather than when a test remembers it.
+  const scopes: Array<[string, string]> = Object.entries(doc._disruption_events as Record<string, unknown>)
+    .filter(([h]) => !h.startsWith('_'))
+    .flatMap(([h, evs]) => (evs as string[]).map((e) => [h, e] as [string, string]));
+  const inScope = (h: string, e: string) => rows.filter((r) => r.host === h && (r.events as string[]).includes(e));
+
+  it('the declared scopes are exactly signal-1 {deploy, reboot} and aoe-1 {reboot}', () => {
+    expect(scopes.map(([h, e]) => `${h}:${e}`).sort()).toEqual(['aoe-1:reboot', 'signal-1:deploy', 'signal-1:reboot']);
   });
 
-  it('the residual no-safe-kill ruling matches the rows PER HOST, so no control drifts from its evidence', () => {
-    // If a future wave reclassifies the last no-safe-kill row without updating the ruling, the
-    // deploy-free window (signal-1) or the reboot gate (aoe-1) would keep being justified by a row
-    // that no longer says so. The gate asserts this too; this pins it at the data layer.
-    for (const h of ['signal-1', 'aoe-1']) {
-      const actual = rows.filter((r) => r.host === h && r.class === 'no-safe-kill');
-      expect(doc._residual_no_safe_kill[h].count, h).toBe(actual.length);
-      expect([...doc._residual_no_safe_kill[h].ids].sort(), h).toEqual(actual.map((r) => r.id).sort());
+  it('EVERY row and exclusion declares a non-empty events[] drawn from its host\'s declared events', () => {
+    // No default: a row with no events would be in NO scope, i.e. invisible to every consumer.
+    for (const r of [...rows, ...doc.exclusions]) {
+      const declared: string[] = doc._disruption_events[r.host as string];
+      expect(Array.isArray(r.events) && (r.events as string[]).length > 0, `${r.id} events`).toBe(true);
+      for (const e of r.events as string[]) expect(declared, `${r.id} event ${e}`).toContain(e);
     }
-    // aoe-1 having ZERO is the measured reason it is the host automated first — assert it, so a
+  });
+
+  it('a REBOOT is strictly larger than a deploy: on a reboot host EVERY row is classified for it', () => {
+    for (const [h, e] of scopes.filter(([, e]) => e === 'reboot')) {
+      for (const r of rows.filter((x) => x.host === h)) expect(r.events, `${h} row ${r.id}`).toContain(e);
+    }
+  });
+
+  it('the enumeration is reproducible per (host, event), and each scope records its OWN command', () => {
+    for (const [h, e] of scopes) {
+      const en = doc._enumeration[h]?.[e];
+      expect(en, `enumeration for ${h}:${e}`).toBeDefined();
+      expect(String(en.command ?? '').trim().length, `${h}:${e} command`).toBeGreaterThan(20);
+      const covered = inScope(h, e).reduce((a, r) => a + ((r.cron_lines as number) || 0), 0);
+      expect(covered, `${h}:${e}`).toBeLessThanOrEqual(en.active_cron_lines);
+    }
+    // The commands must DIFFER per event: a deploy is a `docker exec` question, a reboot is the whole
+    // live population. Inheriting one command for both is the wrong-instrument defect W1's R1 fixed.
+    expect(doc._enumeration['signal-1'].deploy.command).not.toBe(doc._enumeration['signal-1'].reboot.command);
+    expect(doc._enumeration['signal-1'].deploy.command).not.toBe(doc._enumeration['aoe-1'].reboot.command);
+  });
+
+  it('the residual no-safe-kill ruling matches the rows PER (host, event), so no control drifts from its evidence', () => {
+    // If a future wave reclassifies the last no-safe-kill row without updating the ruling, the
+    // deploy-free window (signal-1 deploy) or a reboot gate would keep being justified by a row that
+    // no longer says so. The gate asserts this too; this pins it at the data layer.
+    for (const [h, e] of scopes) {
+      const actual = inScope(h, e).filter((r) => r.class === 'no-safe-kill');
+      expect(doc._residual_no_safe_kill[h][e].count, `${h}:${e}`).toBe(actual.length);
+      expect([...doc._residual_no_safe_kill[h][e].ids].sort(), `${h}:${e}`).toEqual(actual.map((r) => r.id).sort());
+    }
+    // aoe-1 having ZERO is the measured reason it was the host automated first — assert it, so a
     // future no-safe-kill row on aoe-1 cannot land without this test going red and forcing a ruling.
-    expect(doc._residual_no_safe_kill['aoe-1'].count).toBe(0);
+    expect(doc._residual_no_safe_kill['aoe-1'].reboot.count).toBe(0);
+  });
+
+  it('every probed REBOOT row (no-safe-kill / preempt-and-catchup) carries a process pattern', () => {
+    // The harness probes exactly these; a row with no pattern would be a probe that can never match.
+    for (const [h, e] of scopes.filter(([, e]) => e === 'reboot')) {
+      for (const r of inScope(h, e).filter((x) => x.class !== 'safe-to-kill')) {
+        expect(String(r.process_pattern ?? ''), `${h} row ${r.id}`).not.toMatch(/^\s*$|^n\/a/);
+      }
+    }
+  });
+});
+
+/**
+ * The LIVE-population CLI contract — what kernel-auto-reboot.sh feeds it before every signal-1 reboot.
+ *
+ * SPAWN BUDGET: 3 node spawns.
+ */
+describe('the live REBOOT population: every line and unit must map, by explicit cron_match / units', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'croncov-live-'));
+  const write = (name: string, body: string) => { const p = path.join(dir, name); writeFileSync(p, body); return p; };
+  const units = write('units', 'cron.service\nalgovault-bot.service\napt-daily-upgrade.timer\n');
+
+  it('a population that maps fully PASSES at exit 0', { timeout: 60_000 }, () => {
+    const ct = write('ct-ok', '*/5 * * * * /opt/algovault-bot/scripts/referral-notify-drain.sh >> /var/log/x 2>&1\n');
+    const r = runGate(['--host', 'signal-1', '--event', 'reboot', '--crontab', ct, '--units', units]);
+    expect(r.verdict).toBe('PASS');
+    expect(r.status).toBe(0);
+  });
+
+  it('ONE unclassified cron line FAILS at exit 1, and names the line', { timeout: 60_000 }, () => {
+    const ct = write('ct-new', '17 3 * * * /opt/brand-new-job.sh\n');
+    const r = runGate(['--host', 'signal-1', '--event', 'reboot', '--crontab', ct, '--units', units]);
+    expect(r.verdict).toBe('FAIL');
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('/opt/brand-new-job.sh');
+  });
+
+  it('live flags without --event reboot are INDETERMINATE at exit 3 — a deploy is not a live question', { timeout: 60_000 }, () => {
+    const ct = write('ct-any', '17 3 * * * /opt/x.sh\n');
+    const r = runGate(['--crontab', ct]);
+    expect(r.verdict).toBe('INDETERMINATE');
+    expect(r.status).toBe(3);
   });
 });
 

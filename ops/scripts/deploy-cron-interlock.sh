@@ -238,6 +238,14 @@ host = sys.argv[2]
 if any(not str((r or {}).get("host") or "").strip() for r in rows if isinstance(r, dict)):
     sys.exit(1)
 rows = [r for r in rows if isinstance(r, dict) and r.get("host") == host]
+# EVENT SCOPE (OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1). The registry classifies each row per
+# DISRUPTION EVENT, and this script is the DEPLOY event's consumer: a row classified only for the
+# reboot (a host cron, a systemd unit) is not reachable by a container recreate, and evaluating it
+# here would probe a pattern no deploy can touch. A row with NO `events` array is a corpus defect,
+# not a default — it refuses the load exactly like a hostless row.
+if any(not isinstance(r.get("events"), list) or not r.get("events") for r in rows):
+    sys.exit(1)
+rows = [r for r in rows if "deploy" in r["events"]]
 if not rows:
     sys.exit(1)
 out = []
@@ -600,12 +608,12 @@ cmd_self_test() {
   # driven deterministically. The real file is asserted separately at the end, because a hermetic
   # test is structurally blind to exactly what its seam replaces.
   reg() { printf '{"schema_version":1,"rows":[%s]}\n' "$2" > "$1"; }
-  local ROW_LABELER='{"id":"carry-labeler","host":"signal-1","container":"ctr","process_pattern":"dist/scripts/backfill-directional-labels","class":"preempt-and-catchup","reason":"seeded"}'
-  local ROW_SAFE='{"id":"seed-signals","host":"signal-1","container":"ctr","process_pattern":"dist/scripts/seed-signals","class":"safe-to-kill","reason":"idempotent on next fire"}'
-  local ROW_NOSAFE='{"id":"publish-merkle-batch","host":"signal-1","container":"ctr","process_pattern":"dist/scripts/publish-merkle-batch","class":"no-safe-kill","reason":"onchain then db"}'
-  local ROW_NOREASON='{"id":"unreasoned","host":"signal-1","container":"ctr","process_pattern":"p","class":"safe-to-kill","reason":"   "}'
-  local ROW_BADCLASS='{"id":"badclass","host":"signal-1","container":"ctr","process_pattern":"p","class":"probably-fine","reason":"stated"}'
-  local ROW_SECOND_PC='{"id":"other-job","host":"signal-1","container":"ctr","process_pattern":"dist/scripts/other","class":"preempt-and-catchup","reason":"stated"}'
+  local ROW_LABELER='{"id":"carry-labeler","host":"signal-1","events":["deploy","reboot"],"container":"ctr","process_pattern":"dist/scripts/backfill-directional-labels","class":"preempt-and-catchup","reason":"seeded"}'
+  local ROW_SAFE='{"id":"seed-signals","host":"signal-1","events":["deploy","reboot"],"container":"ctr","process_pattern":"dist/scripts/seed-signals","class":"safe-to-kill","reason":"idempotent on next fire"}'
+  local ROW_NOSAFE='{"id":"publish-merkle-batch","host":"signal-1","events":["deploy","reboot"],"container":"ctr","process_pattern":"dist/scripts/publish-merkle-batch","class":"no-safe-kill","reason":"onchain then db"}'
+  local ROW_NOREASON='{"id":"unreasoned","host":"signal-1","events":["deploy","reboot"],"container":"ctr","process_pattern":"p","class":"safe-to-kill","reason":"   "}'
+  local ROW_BADCLASS='{"id":"badclass","host":"signal-1","events":["deploy","reboot"],"container":"ctr","process_pattern":"p","class":"probably-fine","reason":"stated"}'
+  local ROW_SECOND_PC='{"id":"other-job","host":"signal-1","events":["deploy","reboot"],"container":"ctr","process_pattern":"dist/scripts/other","class":"preempt-and-catchup","reason":"stated"}'
   reg "$tmp/reg-labeler.json"  "$ROW_LABELER"
   reg "$tmp/reg-safe.json"     "$ROW_SAFE"
   reg "$tmp/reg-nosafe.json"   "$ROW_NOSAFE"
@@ -681,10 +689,22 @@ cmd_self_test() {
   ck "an unknown class is INDETERMINATE too" \
      "$(REGISTRY=$tmp/reg-badclass.json LEDGER=$tmp/r2 DOCKER_BIN=$tmp/rc0.sh cmd_preempt | tail -1)" "INTERLOCK_VERDICT=INDETERMINATE"
 
+  # ── EVENT scoping (OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1) ────────────────────────────────
+  # A row classified ONLY for the reboot (a host cron, a systemd unit) is out of a deploy's reach.
+  # Driven with rc0 — which would DEFER a deploy-scope no-safe-kill row — so PROCEED proves it was
+  # filtered out rather than probed and found idle.
+  reg "$tmp/reg-rebootonly.json" "$ROW_SAFE"',{"id":"host-digest","host":"signal-1","events":["reboot"],"container":"n/a","process_pattern":"scripts/host-digest","class":"no-safe-kill","reason":"sends to users; a kill mid-run loses the send"}'
+  ck "a REBOOT-only row is never evaluated by a deploy" \
+     "$(REGISTRY=$tmp/reg-rebootonly.json LEDGER=$tmp/e1 DOCKER_BIN=$tmp/rc0.sh cmd_preempt | tail -1)" "INTERLOCK_VERDICT=PROCEED"
+  ck "…and it never even gets a job line" "$(REGISTRY=$tmp/reg-rebootonly.json LEDGER=$tmp/e1b DOCKER_BIN=$tmp/rc0.sh cmd_preempt | grep -c 'INTERLOCK_JOB=host-digest')" "0"
+  reg "$tmp/reg-noevents.json" "$ROW_SAFE"',{"id":"no-events","host":"signal-1","container":"ctr","process_pattern":"p","class":"safe-to-kill","reason":"stated"}'
+  ck "a row with NO events array refuses the load — never a default scope" \
+     "$(REGISTRY=$tmp/reg-noevents.json LEDGER=$tmp/e2 DOCKER_BIN=$tmp/rc1.sh cmd_preempt | tail -1)" "INTERLOCK_VERDICT=INDETERMINATE"
+
   # ── PER-HOST scoping (OPS-HOST-AUTO-REBOOT-W1) ─────────────────────────────────────────────
   # A row belonging to ANOTHER host must not be probed here. Driven with rc0 (which would DEFER if
   # the row were evaluated) so a PROCEED is the assertion that it was filtered out.
-  reg "$tmp/reg-foreign.json" '{"id":"aoe-thing","host":"aoe-1","container":"ctr","process_pattern":"dist/scripts/aoe","class":"preempt-and-catchup","reason":"stated"}'
+  reg "$tmp/reg-foreign.json" '{"id":"aoe-thing","host":"aoe-1","events":["reboot"],"container":"ctr","process_pattern":"dist/scripts/aoe","class":"preempt-and-catchup","reason":"stated"}'
   ck "a row for ANOTHER host is never evaluated here" \
      "$(REGISTRY=$tmp/reg-foreign.json LEDGER=$tmp/h1 DOCKER_BIN=$tmp/rc0.sh cmd_preempt | tail -1)" "INTERLOCK_VERDICT=INDETERMINATE"
   ck "…and it says the registry yielded nothing for this host, not that the host is clean" \
