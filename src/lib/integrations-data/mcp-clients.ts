@@ -75,7 +75,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
         'Customize &rarr; Connectors &rarr; + &rarr; <em>Add custom connector</em>, or edit <code class="text-xs bg-navy-800 px-1 rounded">claude_desktop_config.json</code>',
       whatYouGet:
         'Native Streamable-HTTP MCP. AlgoVault tools (<code class="text-xs">get_trade_call</code>, <code class="text-xs">scan_funding_arb</code>, <code class="text-xs">get_market_regime</code>) callable in any chat.',
-      walkthroughHtml: `      <p><strong>Easiest path (UI, free tier):</strong> Open Claude Desktop &rarr; <em>Customize</em> &rarr; <em>Connectors</em> &rarr; <em>+</em> &rarr; <em>Add custom connector</em>. Paste <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp?src=docs</code>, then click <em>Add</em>. Enable it per chat from <em>+</em> &rarr; <em>Connectors</em>. The connector form takes OAuth credentials, not custom headers &mdash; for a paid-tier key, use the JSON path below.</p>
+      walkthroughHtml: `      <p><strong>Easiest path (UI, free tier):</strong> Open Claude Desktop &rarr; <em>Customize</em> &rarr; <em>Connectors</em> &rarr; <em>+</em> &rarr; <em>Add custom connector</em>. Paste <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp?src=docs</code>, then click <em>Add</em>. Enable it per chat from <em>+</em> &rarr; <em>Connectors</em>. For a paid-tier key, use the JSON path below.</p>
       <p><strong>JSON path:</strong> Edit <code class="text-xs bg-navy-800 px-1 rounded">~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or <code class="text-xs bg-navy-800 px-1 rounded">%APPDATA%\\Claude\\claude_desktop_config.json</code> (Windows):</p>
       <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">{
@@ -104,15 +104,6 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
           claim: 'Customize → Connectors → + → Add custom connector',
           source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
           expect: ['Customize > Connectors', 'Add custom connector'],
-        },
-        {
-          // The form's only optional fields are OAuth ones, and this API serves no OAuth metadata,
-          // so the UI path cannot carry a paid-tier key. If the article ever documents a header
-          // field, the reject fires and this sentence has to change.
-          claim: 'The connector form takes OAuth credentials, not custom headers',
-          source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
-          expect: ['OAuth Client ID', 'OAuth Client Secret'],
-          reject: ['custom header'],
         },
         {
           claim: 'claude_desktop_config.json',

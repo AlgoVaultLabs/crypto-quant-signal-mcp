@@ -18,17 +18,6 @@
           ]
         },
         {
-          "claim": "The connector form takes OAuth credentials, not custom headers",
-          "source": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
-          "expect": [
-            "OAuth Client ID",
-            "OAuth Client Secret"
-          ],
-          "reject": [
-            "custom header"
-          ]
-        },
-        {
           "claim": "claude_desktop_config.json",
           "source": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
           "expect": [

@@ -91,6 +91,10 @@
  * `source` + `sourceLabel` (row order, our own host excluded) instead of hand-typed. The raw diff is
  * the footer alone — 3 links out (MCP quickstart, the moved Cursor page, the retired Cline page),
  * 4 in (Claude custom connectors, Cursor and Cline at their live URLs, DeepSeek Harness).
+ * ...and in CH3b (2026-10-02, rev 4) for R19 (Mr.1 sign-off ≈ 11:30 UTC): Anthropic's connector form
+ * gained a Request-headers step (limited beta) after R0, so the claude-desktop walkthrough drops the
+ * clause "The connector form takes OAuth credentials, not custom headers &mdash;" and keeps "For a
+ * paid-tier key, use the JSON path below." The raw diff is that one sentence on one line.
  *
  * FIXTURE MAINTENANCE — OPS-DSH-TUTORIAL-INSTALL-CLAIM-W1 (2026-08-29): regenerated to absorb the
  * correction of a FALSE CONCLUSION in the `deepseek-harness` row's `setupSummary` +
