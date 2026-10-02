@@ -33,6 +33,13 @@
 
 import type { EvidencedEntry, SurfaceModule } from './types.js';
 
+/** R13: the surface footer, derived from the rows. Our own host is evidence, not vendor documentation. */
+function footerLinksFrom(entries: readonly EvidencedEntry[]): Array<{ label: string; href: string }> {
+  return entries
+    .filter((e) => !/(^|\.)algovault\.com$/.test(new URL(e.source).hostname))
+    .map((e) => ({ label: e.sourceLabel, href: e.source }));
+}
+
 const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
   meta: {
     anchorId: 'connect-mcp',
@@ -50,18 +57,13 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
     footerPreamble: 'Config formats verified per client against:',
     footerDriftNote:
       'Config formats can drift &mdash; if a snippet here doesn\'t work, please refer to the upstream doc and report it at <a class="text-mint-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.',
-    footerLinks: [
-      { label: 'MCP quickstart', href: 'https://modelcontextprotocol.io/quickstart/user' },
-      { label: 'Cursor MCP docs', href: 'https://cursor.com/docs/context/mcp' },
-      { label: 'Cline remote-server docs', href: 'https://docs.cline.bot/mcp/connecting-to-a-remote-server' },
-      { label: 'Claude Code MCP docs', href: 'https://code.claude.com/docs/en/mcp' },
-      { label: '@smithery/cli on npm', href: 'https://www.npmjs.com/package/@smithery/cli' },
-      { label: 'Codex MCP docs', href: 'https://learn.chatgpt.com/docs/extend/mcp' },
-      { label: 'Kimi Code MCP docs', href: 'https://moonshotai.github.io/kimi-code/en/customization/mcp.html' },
-      { label: 'ZCode MCP docs', href: 'https://zcode.z.ai/en/docs/mcp-services' },
-      { label: 'Z.ai MCP-call docs', href: 'https://docs.z.ai/guides/capabilities/mcp-call' },
-      { label: 'DeepSeek Anthropic API', href: 'https://api-docs.deepseek.com/guides/anthropic_api' },
-    ],
+    // R13 (LANDING-MCP-CLIENTS-CLAIMS-W1): DERIVED from the rows below — row order, our own host
+    // excluded, `{ label: sourceLabel, href: source }`. It was a hand-typed copy of those URLs and
+    // had drifted from them twice (a retired Cline page; Cursor's docs moved). Rule R8 then makes
+    // every link a page the canary confirms daily.
+    get footerLinks() {
+      return footerLinksFrom(MCP_CLIENTS.entries);
+    },
   },
   entries: [
     {
@@ -94,6 +96,11 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       kind: 'native',
       source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
       verifiedAt: '2026-10-01',
+      sourceLabel: 'Claude custom connectors',
+      readme: {
+        client: '**Claude Desktop**',
+        cell: 'Customize → Connectors → + → Add custom connector → `https://api.algovault.com/mcp`',
+      },
       evidence: [
         {
           claim: 'Customize → Connectors → + → Add custom connector',
@@ -156,6 +163,11 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       kind: 'native',
       source: 'https://cursor.com/docs/mcp',
       verifiedAt: '2026-10-01',
+      sourceLabel: 'Cursor MCP docs',
+      readme: {
+        client: '**Cursor**',
+        cell: '`~/.cursor/mcp.json` → `mcpServers` block → `url: "https://api.algovault.com/mcp"`',
+      },
       evidence: [
         {
           claim: '~/.cursor/mcp.json',
@@ -199,6 +211,11 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       kind: 'native',
       source: 'https://docs.cline.bot/mcp/mcp-overview',
       verifiedAt: '2026-10-01',
+      sourceLabel: 'Cline MCP docs',
+      readme: {
+        client: '**Cline**',
+        cell: 'VS Code Cline extension → MCP server settings → add Streamable HTTP server',
+      },
       evidence: [
         {
           claim: 'Remote Servers tab',
@@ -215,6 +232,12 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
           claim: '"Bearer ${env:AV_API_KEY}"',
           source: 'https://raw.githubusercontent.com/cline/cline/main/apps/vscode/src/services/mcp/McpHub.ts',
           expect: ['${env:VAR_NAME}', 'expandEnvironmentVariables'],
+        },
+        {
+          // R9: binds the README cell ("add Streamable HTTP server") to the vendor's page.
+          claim: 'Streamable HTTP',
+          source: 'https://docs.cline.bot/mcp/mcp-overview',
+          expect: ['Streamable HTTP'],
         },
       ],
     },
@@ -253,6 +276,11 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       kind: 'native',
       source: 'https://code.claude.com/docs/en/mcp',
       verifiedAt: '2026-10-01',
+      sourceLabel: 'Claude Code MCP docs',
+      readme: {
+        client: '**Claude Code** (CLI)',
+        cell: '`claude mcp add --transport http crypto-quant-signal https://api.algovault.com/mcp`',
+      },
       evidence: [
         {
           claim: 'claude mcp add --transport http --scope project',
@@ -263,6 +291,12 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
           claim: '.mcp.json',
           source: 'https://code.claude.com/docs/en/mcp',
           expect: ['.mcp.json', 'Environment variable expansion'],
+        },
+        {
+          // R9: binds the README cell (`claude mcp add --transport http …`) to the vendor's page.
+          claim: 'claude mcp add --transport http',
+          source: 'https://code.claude.com/docs/en/mcp',
+          expect: ['claude mcp add --transport http'],
         },
       ],
     },
@@ -285,9 +319,10 @@ npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;clie
       kind: 'native',
       source: 'https://www.npmjs.com/package/@smithery/cli',
       verifiedAt: '2026-10-01',
+      sourceLabel: '@smithery/cli on npm',
       evidence: [
         {
-          // The canary rewrites npmjs.com/package/* to the registry document (README included).
+          // The canary rewrites an npmjs.com package page to its registry document (README included).
           claim: 'npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp',
           source: 'https://www.npmjs.com/package/@smithery/cli',
           expect: ['smithery mcp add'],
@@ -326,6 +361,7 @@ npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;clie
       kind: 'native',
       source: 'https://api.algovault.com/health',
       verifiedAt: '2026-10-01',
+      sourceLabel: 'AlgoVault /health',
       evidence: [
         {
           claim: '"status":"ok"',
@@ -372,6 +408,11 @@ bearer_token_env_var = "AV_API_KEY"
       kind: 'native',
       source: 'https://learn.chatgpt.com/docs/extend/mcp',
       verifiedAt: '2026-10-01',
+      sourceLabel: 'Codex MCP docs',
+      readme: {
+        client: '**Codex** (OpenAI CLI)',
+        cell: '`~/.codex/config.toml` → `[mcp_servers.algovault]` table + `url = "https://api.algovault.com/mcp"` (or `codex mcp` CLI)',
+      },
       evidence: [
         {
           claim: 'bearer_token_env_var',
@@ -384,6 +425,12 @@ bearer_token_env_var = "AV_API_KEY"
           claim: 'codex mcp add algovault --url',
           source: 'https://learn.chatgpt.com/docs/extend/mcp',
           expect: ['codex mcp add', '--url'],
+        },
+        {
+          // R9: binds the README cell (`[mcp_servers.algovault]` table) to the vendor's page.
+          claim: '[mcp_servers.algovault]',
+          source: 'https://learn.chatgpt.com/docs/extend/mcp',
+          expect: ['[mcp_servers.'],
         },
       ],
     },
@@ -416,6 +463,7 @@ bearer_token_env_var = "AV_API_KEY"
       kind: 'native',
       source: 'https://moonshotai.github.io/kimi-code/en/customization/mcp.html',
       verifiedAt: '2026-08-05',
+      sourceLabel: 'Kimi Code MCP docs',
       evidence: [
         {
           claim: 'bearerTokenEnvVar',
@@ -444,6 +492,7 @@ bearer_token_env_var = "AV_API_KEY"
       kind: 'native',
       source: 'https://zcode.z.ai/en/docs/mcp-services',
       verifiedAt: '2026-08-05',
+      sourceLabel: 'ZCode MCP docs',
       evidence: [
         {
           claim: 'New MCP Server',
@@ -485,6 +534,7 @@ bearer_token_env_var = "AV_API_KEY"
       kind: 'native',
       source: 'https://github.com/deepseek-ai/deepseek-harness',
       verifiedAt: '2026-08-29',
+      sourceLabel: 'DeepSeek Harness',
       evidence: [
         {
           // github.com HTML is not reliably fetchable headless; the raw README on the default
@@ -525,6 +575,7 @@ bearer_token_env_var = "AV_API_KEY"
       kind: 'api-level',
       source: 'https://docs.z.ai/guides/capabilities/mcp-call',
       verifiedAt: '2026-08-05',
+      sourceLabel: 'Z.ai MCP-call docs',
       evidence: [
         {
           claim: 'server_label',
@@ -558,6 +609,7 @@ claude mcp add --transport http --scope project algovault \\
       kind: 'byo-model',
       source: 'https://api-docs.deepseek.com/guides/anthropic_api',
       verifiedAt: '2026-10-01',
+      sourceLabel: 'DeepSeek Anthropic API',
       evidence: [
         {
           // Evidence is per CLAIM: this one lives on a different DeepSeek page than the row's source.
@@ -578,3 +630,39 @@ claude mcp add --transport http --scope project algovault \\
 };
 
 export default MCP_CLIENTS;
+
+/**
+ * R14 — README.md's "MCP clients" table is GENERATED (scripts/build_readme_mcp_clients.mjs) into
+ * the <!-- MCP_CLIENTS_README_TABLE:start/end --> region: one row per key, in this order — the
+ * order the table has always had. A key is a row slug (whose `readme` cells render) or a key of
+ * README_ONLY_MCP_CLIENT_ROWS.
+ */
+export const README_MCP_CLIENT_ORDER: readonly string[] = Object.freeze([
+  'claude-desktop', 'claude-code', 'cursor', 'cline', 'codex', 'windsurf', 'continue', 'any-other',
+]);
+
+/**
+ * Rows the README carries that are not MCP_CLIENTS rows — kept VERBATIM, each with the reason it
+ * is not (yet) a row. A README-only row is a claim nothing binds to evidence, so the reason is
+ * mandatory: it is what tells the next editor whether the row is safe to keep.
+ */
+export const README_ONLY_MCP_CLIENT_ROWS: ReadonlyArray<{ key: string; client: string; cell: string; reason: string }> = Object.freeze([
+  {
+    key: 'windsurf',
+    client: '**Windsurf**',
+    cell: '`~/.codeium/windsurf/mcp_config.json` → `mcpServers.algovault.serverUrl = "https://api.algovault.com/mcp"`',
+    reason: 'unevidenced — vendor docs moved to docs.devin.ai and scope mcp_config.json to the legacy Cascade agent; re-verification pending a copy sign-off',
+  },
+  {
+    key: 'continue',
+    client: '**Continue.dev**',
+    cell: '`config.yaml` → `mcpServers: [{ name: algovault, type: streamable-http, url: "https://api.algovault.com/mcp" }]`',
+    reason: 'not an MCP_CLIENTS row (no tutorial page, no landing card); its cell is evidenced on docs.continue.dev/customize/deep-dives/mcp (streamable-http, mcpServers, config.yaml — measured 2026-10-01) but bound by nothing',
+  },
+  {
+    key: 'any-other',
+    client: 'Any other MCP-spec-compliant client',
+    cell: 'Configure the Streamable HTTP transport with URL `https://api.algovault.com/mcp`',
+    reason: 'a catch-all, not a client: it names no vendor and no vendor config, so there is no vendor page to bind; the one fact it states is our own Streamable HTTP endpoint',
+  },
+]);

@@ -18,6 +18,10 @@
  *   R6  hand-typed "verified <date> against <url>" twins in the tutorials agree with the SoT row
  *   R7  every claim-bearing integrations-data module is covered, or declared uncovered with a
  *       reason — a new module cannot appear silently
+ *   R8  every row's `source` (the link the DERIVED footer prints) is one of its own evidence
+ *       sources, or carries a reasoned SOURCE_EVIDENCE_EXEMPT entry (LANDING-MCP-CLIENTS-CLAIMS-W1)
+ *   R9  every row with README cells carries an evidence claim that sits in its `readme.cell`
+ *   R13 the surface footer equals the derivation from the rows — never a hand-typed list again
  *
  * Every rule is asserted TWO-WAY: once over the real SoT (must be clean) and once over a
  * synthetic broken fixture (must fire). A rule proven only on the clean side is a rule nobody
@@ -34,6 +38,7 @@ import {
   CLAIM_EVIDENCE_JSON,
   CLAIM_EVIDENCE_SCHEMA_VERSION,
   COVERED_CLAIM_MODULES,
+  SOURCE_EVIDENCE_EXEMPT,
   EXPECT_STOPLIST,
   MIN_ANCHOR_TOKEN_LENGTH,
   UNCOVERED_CLAIM_MODULES,
@@ -44,7 +49,9 @@ import {
   evidenceProblems,
   isAbsoluteHttpsUrl,
   moduleCoverageProblems,
+  readmeEvidenceProblems,
   serializeClaimEvidenceDoc,
+  sourceEvidenceProblems,
   verifiedTwinProblems,
 } from '../../src/lib/integrations-data/claim-evidence.js';
 // The ONE derivation of reader-visible row text. Imported, never re-implemented: a second copy
@@ -72,6 +79,7 @@ function fixtureRow(over: Partial<EvidencedEntry> = {}): EvidencedEntry {
     kind: 'native',
     source: 'https://vendor.example/docs',
     verifiedAt: '2026-09-01',
+    sourceLabel: 'Vendor docs',
     evidence: [{ claim: 'fixture add --flag', source: 'https://vendor.example/docs', expect: ['fixture add'] }],
     ...over,
   } as EvidencedEntry;
@@ -294,3 +302,102 @@ describe('collapseWhitespace — the one normaliser both sides of R2 use', () =>
     expect(collapseWhitespace('  a \n\t b  ')).toBe('a b');
   });
 });
+
+// ── LANDING-MCP-CLIENTS-CLAIMS-W1 CH2 ─────────────────────────────────────────────────────────────
+
+describe('R2 — a claim may live in the row\'s README cells', () => {
+  it('a claim found only in readme.cell satisfies R2; removing the cell makes it fire', () => {
+    const withCell = fixtureRow({
+      readme: { client: '**Fixture**', cell: '`fixture serve --port 9`' },
+      evidence: [{ claim: 'fixture serve --port 9', source: 'https://vendor.example/docs', expect: ['fixture serve'] }],
+    });
+    expect(rules([withCell])).not.toContain('R2');
+    const noCell = { ...withCell, readme: undefined } as EvidencedEntry;
+    expect(rules([noCell])).toContain('R2');
+  });
+});
+
+describe('R8 — every footer link is a page the canary confirms', () => {
+  it('the real SoT satisfies R8', () => {
+    const problems = sourceEvidenceProblems(ENTRIES);
+    expect(problems, problems.map((p) => `${p.slug}: ${p.detail}`).join('\n')).toEqual([]);
+  });
+
+  it('every exemption carries a non-empty reason and names a real row', () => {
+    for (const [slug, why] of Object.entries(SOURCE_EVIDENCE_EXEMPT)) {
+      expect(why.trim().length, slug).toBeGreaterThan(20);
+      expect(ENTRIES.some((e) => e.slug === slug), slug).toBe(true);
+    }
+  });
+
+  it('fires on a row whose source is none of its evidence sources', () => {
+    const broken = fixtureRow({ source: 'https://vendor.example/other-page' });
+    expect(sourceEvidenceProblems([broken], {}).map((p) => p.rule)).toEqual(['R8']);
+  });
+
+  it('a trailing slash is not a different page', () => {
+    const ok = fixtureRow({ source: 'https://vendor.example/docs/' });
+    expect(sourceEvidenceProblems([ok], {})).toEqual([]);
+  });
+
+  it('an exemption with an empty reason does not count', () => {
+    const broken = fixtureRow({ source: 'https://vendor.example/other-page' });
+    expect(sourceEvidenceProblems([broken], { fixture: '   ' }).length).toBe(1);
+  });
+
+  it('a stale exemption (the row IS evidenced now) fires', () => {
+    expect(sourceEvidenceProblems([fixtureRow()], { fixture: 'no longer needed' }).length).toBe(1);
+  });
+
+  it('an exemption for a row that does not exist fires', () => {
+    expect(sourceEvidenceProblems([fixtureRow()], { ghost: 'a reason' }).length).toBe(1);
+  });
+});
+
+describe('R9 — the generated README cells are bound to evidence', () => {
+  it('the real SoT satisfies R9, and the five README rows all carry cells', () => {
+    expect(readmeEvidenceProblems(ENTRIES)).toEqual([]);
+    expect(ENTRIES.filter((e) => e.readme).map((e) => e.slug).sort()).toEqual(['claude-code', 'claude-desktop', 'cline', 'codex', 'cursor']);
+  });
+
+  it('fires on a README cell that carries none of the row\'s claims', () => {
+    const broken = fixtureRow({ readme: { client: '**Fixture**', cell: '`something else entirely`' } });
+    expect(readmeEvidenceProblems([broken]).map((p) => p.rule)).toEqual(['R9']);
+  });
+
+  it('a row with no README cells is out of R9\'s scope', () => {
+    expect(readmeEvidenceProblems([fixtureRow()])).toEqual([]);
+  });
+});
+
+describe('R13 — the footer is derived from the rows, never hand-typed', () => {
+  // An independent oracle of the derivation, written from the spec rather than imported: row
+  // order, rows on our own host excluded, { label: sourceLabel, href: source }.
+  const oracle = (rows: EvidencedEntry[]) => rows
+    .filter((e) => !/(^|\.)algovault\.com$/.test(new URL(e.source).hostname))
+    .map((e) => ({ label: e.sourceLabel, href: e.source }));
+
+  it('meta.footerLinks deep-equals the derivation', () => {
+    expect(MCP_CLIENTS.meta.footerLinks).toEqual(oracle(ENTRIES));
+  });
+
+  it('is exactly the ratified R13 list, in order', () => {
+    expect(MCP_CLIENTS.meta.footerLinks.map((l) => l.label)).toEqual([
+      'Claude custom connectors', 'Cursor MCP docs', 'Cline MCP docs', 'Claude Code MCP docs', '@smithery/cli on npm',
+      'Codex MCP docs', 'Kimi Code MCP docs', 'ZCode MCP docs', 'DeepSeek Harness', 'Z.ai MCP-call docs', 'DeepSeek Anthropic API',
+    ]);
+    expect(MCP_CLIENTS.meta.footerLinks.find((l) => l.label === 'Cursor MCP docs')?.href).toBe('https://cursor.com/docs/mcp');
+    expect(MCP_CLIENTS.meta.footerLinks.find((l) => l.label === 'Cline MCP docs')?.href).toBe('https://docs.cline.bot/mcp/mcp-overview');
+  });
+
+  it('every row carries a non-empty sourceLabel, and our own host never reaches the footer', () => {
+    for (const e of ENTRIES) expect(e.sourceLabel?.trim(), e.slug).toBeTruthy();
+    expect(MCP_CLIENTS.meta.footerLinks.some((l) => /algovault\.com/.test(l.href))).toBe(false);
+  });
+
+  it('a new row reaches the footer without anyone typing a link', () => {
+    const extra = fixtureRow({ slug: 'newcomer', source: 'https://newcomer.example/mcp', sourceLabel: 'Newcomer docs' });
+    expect(oracle([...ENTRIES, extra]).at(-1)).toEqual({ label: 'Newcomer docs', href: 'https://newcomer.example/mcp' });
+  });
+});
+

@@ -10,7 +10,10 @@
  *     hand-edit inside a BUILD block, `build_landing --check` will fail)
  *   - src/index.ts  (Express route allow-list reads slugs from hasDedicatedPage:true entries)
  *   - scripts/render-jsx-static.mjs  (landing/index.html quickstart client grid —
- *     renders EVERY entry, deliberately unfiltered by hasDedicatedPage)
+ *     renders EVERY entry, deliberately unfiltered by hasDedicatedPage; the projection lives in
+ *     scripts/lib/landing-client-rows.mjs, which CHECK 10 of check-mcp-client-copy.mjs imports too)
+ *   - scripts/build_readme_mcp_clients.mjs  (README.md "MCP clients" table — the
+ *     <!-- MCP_CLIENTS_README_TABLE:start/end --> region, from each row's `readme` cells)
  *
  * Introduced via the Fix-at-Generator refactor of the integration surfaces.
  *
@@ -139,6 +142,18 @@ export interface EvidencedEntry extends IntegrationEntry {
   kind: ClientKind;
   source: string;
   verifiedAt: string;
+  /**
+   * The footer link label for `source`. The surface footer is DERIVED from rows — row order,
+   * own host excluded, `{ label: sourceLabel, href: source }` — never hand-typed, so it cannot
+   * drift from the URLs the rows (and the canary, via rule R8) actually stand on.
+   */
+  sourceLabel: string;
+  /**
+   * This row's cells in README.md's "MCP clients" table (markdown; README URLs stay bare —
+   * no `?src`). Generated into the MCP_CLIENTS_README_TABLE region by
+   * scripts/build_readme_mcp_clients.mjs; rule R9 binds the cell to the row's evidence.
+   */
+  readme?: { client: string; cell: string };
   evidence: readonly [LiveClaimEvidence, ...LiveClaimEvidence[]];
 }
 

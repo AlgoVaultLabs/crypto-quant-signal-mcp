@@ -12,7 +12,7 @@
  * a 3rd H3 section before the closing </section>.
  */
 
-import type { IntegrationEntry, SurfaceModule } from './types.js';
+import type { EvidencedEntry, IntegrationEntry, SurfaceModule } from './types.js';
 
 const DEFAULT_H2_INTRO =
   'Drop AlgoVault into any MCP-compatible client, or any major agent framework. Pick your path below.';
@@ -202,4 +202,40 @@ export function renderIndexGrid(surface: SurfaceModule): string {
     .filter((e) => e.hasDedicatedPage)
     .map(renderIndexCard)
     .join('\n');
+}
+
+/**
+ * README.md's "MCP clients" table (R14, LANDING-MCP-CLIENTS-CLAIMS-W1), generated into the
+ * <!-- MCP_CLIENTS_README_TABLE:start/end --> region by scripts/build_readme_mcp_clients.mjs.
+ * One row per `order` key: a row slug renders that row's `readme` cells; any other key must be a
+ * README-only row. Markdown, URLs bare. Throws on any mismatch rather than emitting a table that
+ * silently drops or duplicates a client — the writer turns the throw into INDETERMINATE.
+ */
+export function renderReadmeMcpClientsTable(
+  surface: SurfaceModule<EvidencedEntry>,
+  order: readonly string[],
+  readmeOnly: ReadonlyArray<{ key: string; client: string; cell: string; reason: string }>,
+): string {
+  const bySlug = new Map(surface.entries.filter((e) => e.readme).map((e) => [e.slug, e]));
+  const byKey = new Map(readmeOnly.map((r) => [r.key, r]));
+  for (const k of byKey.keys()) {
+    if (bySlug.has(k)) throw new Error(`README key "${k}" is both an MCP_CLIENTS row and a README-only row`);
+  }
+  const seen = new Set<string>();
+  const rows = order.map((k) => {
+    if (seen.has(k)) throw new Error(`README order lists "${k}" twice`);
+    seen.add(k);
+    const e = bySlug.get(k);
+    if (e?.readme) return `| ${e.readme.client} | ${e.readme.cell} |`;
+    const r = byKey.get(k);
+    if (r) {
+      if (!r.reason.trim()) throw new Error(`README-only row "${k}" carries no reason`);
+      return `| ${r.client} | ${r.cell} |`;
+    }
+    throw new Error(`README order key "${k}" is neither a row with readme cells nor a README-only row`);
+  });
+  for (const k of [...bySlug.keys(), ...byKey.keys()]) {
+    if (!seen.has(k)) throw new Error(`"${k}" has README cells but is missing from the README order`);
+  }
+  return ['| Client | Config |', '|---|---|', ...rows].join('\n');
 }

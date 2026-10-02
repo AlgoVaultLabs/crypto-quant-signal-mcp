@@ -52,12 +52,17 @@ describe('MCP_USAGE_HTML — structural invariants', () => {
     expect(MCP_USAGE_HTML).toContain('streamableHttp');
   });
 
-  it('cites all 5 verified upstream doc URLs in the footnote', () => {
-    expect(MCP_USAGE_HTML).toContain('modelcontextprotocol.io/quickstart/user');
-    expect(MCP_USAGE_HTML).toContain('cursor.com/docs/context/mcp');
-    expect(MCP_USAGE_HTML).toContain('docs.cline.bot/mcp');
+  it('cites the verified upstream doc URLs in the footnote — derived from the rows (R13)', () => {
+    // LANDING-MCP-CLIENTS-CLAIMS-W1 R13: the footer is generated from each row's source +
+    // sourceLabel, so it now names the pages the rows stand on — and not the retired ones.
+    expect(MCP_USAGE_HTML).toContain('support.claude.com/en/articles/11175166');
+    expect(MCP_USAGE_HTML).toContain('href="https://cursor.com/docs/mcp"');
+    expect(MCP_USAGE_HTML).toContain('href="https://docs.cline.bot/mcp/mcp-overview"');
     expect(MCP_USAGE_HTML).toContain('code.claude.com/docs/en/mcp');
     expect(MCP_USAGE_HTML).toContain('@smithery/cli');
+    expect(MCP_USAGE_HTML).not.toContain('modelcontextprotocol.io/quickstart/user');
+    expect(MCP_USAGE_HTML).not.toContain('cursor.com/docs/context/mcp');
+    expect(MCP_USAGE_HTML).not.toContain('connecting-to-a-remote-server');
   });
 
   it('cites the verification fetch date so future drift is auditable', () => {

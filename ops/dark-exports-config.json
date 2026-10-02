@@ -171,6 +171,26 @@
     {
       "symbol": "CLAIM_EVIDENCE_JSON",
       "reason": "OPS-CLIENT-CLAIM-EVIDENCE-W1 CH1. src/lib/integrations-data/claim-evidence.ts is the PURE half of the live-claim evidence contract and is CI-FACING BY DESIGN, the same class as QUOTA_SURFACES: its consumers are scripts/emit-claim-evidence.mjs (through dist/, which writes src/lib/integrations-data/claim-evidence.json for the host canary) and tests/unit/claim-evidence.test.ts (R1-R7). The runtime never reads claim evidence - the host canary confirms it live - so importing it into src/ would turn a build-time contract into a runtime dependency for no gain. An explanation, not a suppression: the row is still printed and counted as `exempt` on every run. The repo-relative path of the host-read document - the emitter's output path and R5's input path, derived from this ONE constant so the two cannot disagree."
+    },
+    {
+      "symbol": "sourceEvidenceProblems",
+      "reason": "LANDING-MCP-CLIENTS-CLAIMS-W1 CH2. Rule R8 (every footer link is one of its row's evidence sources) is a CI contract: CI-FACING BY DESIGN, the same class as the claim-evidence exports exempted by OPS-CLIENT-CLAIM-EVIDENCE-W1: its consumer is tests/unit/claim-evidence.test.ts (two-way) and the CH2 gate scripts/gates/cmc-ch2-gate.sh through dist/. Zero src/ consumers is the INTENDED end state — the README table is generated at build time, never at runtime. This is an explanation, not a suppression: the row is still printed and counted as `exempt` on every run."
+    },
+    {
+      "symbol": "readmeEvidenceProblems",
+      "reason": "LANDING-MCP-CLIENTS-CLAIMS-W1 CH2. Rule R9 (every README cell carries one of its row's evidence claims) is a CI contract: CI-FACING BY DESIGN, the same class as the claim-evidence exports exempted by OPS-CLIENT-CLAIM-EVIDENCE-W1: its consumer is tests/unit/claim-evidence.test.ts (two-way) and scripts/gates/cmc-ch2-gate.sh through dist/. Zero src/ consumers is the INTENDED end state — the README table is generated at build time, never at runtime. This is an explanation, not a suppression: the row is still printed and counted as `exempt` on every run."
+    },
+    {
+      "symbol": "README_MCP_CLIENT_ORDER",
+      "reason": "LANDING-MCP-CLIENTS-CLAIMS-W1 CH2. The README 'MCP clients' row order is CI-FACING BY DESIGN, the same class as the claim-evidence exports exempted by OPS-CLIENT-CLAIM-EVIDENCE-W1: its consumers are scripts/build_readme_mcp_clients.mjs (through dist/) and tests/unit/readme-mcp-clients.test.ts. Zero src/ consumers is the INTENDED end state — the README table is generated at build time, never at runtime. This is an explanation, not a suppression: the row is still printed and counted as `exempt` on every run."
+    },
+    {
+      "symbol": "README_ONLY_MCP_CLIENT_ROWS",
+      "reason": "LANDING-MCP-CLIENTS-CLAIMS-W1 CH2. The README-only rows (each with its mandatory reason) are CI-FACING BY DESIGN, the same class as the claim-evidence exports exempted by OPS-CLIENT-CLAIM-EVIDENCE-W1: their consumers are scripts/build_readme_mcp_clients.mjs (through dist/) and tests/unit/readme-mcp-clients.test.ts. Zero src/ consumers is the INTENDED end state — the README table is generated at build time, never at runtime. This is an explanation, not a suppression: the row is still printed and counted as `exempt` on every run."
+    },
+    {
+      "symbol": "renderReadmeMcpClientsTable",
+      "reason": "LANDING-MCP-CLIENTS-CLAIMS-W1 CH2. The README 'MCP clients' table renderer is CI-FACING BY DESIGN, the same class as the claim-evidence exports exempted by OPS-CLIENT-CLAIM-EVIDENCE-W1: its consumers are scripts/build_readme_mcp_clients.mjs (through dist/) and tests/unit/readme-mcp-clients.test.ts. Zero src/ consumers is the INTENDED end state — the README table is generated at build time, never at runtime. This is an explanation, not a suppression: the row is still printed and counted as `exempt` on every run."
     }
   ]
 }

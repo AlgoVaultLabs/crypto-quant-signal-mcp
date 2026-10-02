@@ -103,6 +103,13 @@
             "${env:VAR_NAME}",
             "expandEnvironmentVariables"
           ]
+        },
+        {
+          "claim": "Streamable HTTP",
+          "source": "https://docs.cline.bot/mcp/mcp-overview",
+          "expect": [
+            "Streamable HTTP"
+          ]
         }
       ]
     },
@@ -127,6 +134,13 @@
           "expect": [
             ".mcp.json",
             "Environment variable expansion"
+          ]
+        },
+        {
+          "claim": "claude mcp add --transport http",
+          "source": "https://code.claude.com/docs/en/mcp",
+          "expect": [
+            "claude mcp add --transport http"
           ]
         }
       ]
@@ -203,6 +217,13 @@
           "expect": [
             "codex mcp add",
             "--url"
+          ]
+        },
+        {
+          "claim": "[mcp_servers.algovault]",
+          "source": "https://learn.chatgpt.com/docs/extend/mcp",
+          "expect": [
+            "[mcp_servers."
           ]
         }
       ]

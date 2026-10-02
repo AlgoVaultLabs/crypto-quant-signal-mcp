@@ -87,6 +87,10 @@
  * gateway entry, the /servers/algovault listing), plain-http R11 (no version literal), and the
  * quoted `?src=docs` URL in claude-code and deepseek (R12). The raw file diff is 12 lines out,
  * 13 in. Nothing else in the surface moved.
+ * ...and again in CH2 (2026-10-02) for R13: the footer link list is now DERIVED from each row's
+ * `source` + `sourceLabel` (row order, our own host excluded) instead of hand-typed. The raw diff is
+ * the footer alone — 3 links out (MCP quickstart, the moved Cursor page, the retired Cline page),
+ * 4 in (Claude custom connectors, Cursor and Cline at their live URLs, DeepSeek Harness).
  *
  * FIXTURE MAINTENANCE — OPS-DSH-TUTORIAL-INSTALL-CLAIM-W1 (2026-08-29): regenerated to absorb the
  * correction of a FALSE CONCLUSION in the `deepseek-harness` row's `setupSummary` +

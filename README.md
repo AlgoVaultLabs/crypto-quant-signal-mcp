@@ -137,6 +137,7 @@ AlgoVault is drop-in for every MCP-spec client, every major agent framework, and
 
 **MCP clients.**
 
+<!-- MCP_CLIENTS_README_TABLE:start -->
 | Client | Config |
 |---|---|
 | **Claude Desktop** | Customize → Connectors → + → Add custom connector → `https://api.algovault.com/mcp` |
@@ -147,6 +148,7 @@ AlgoVault is drop-in for every MCP-spec client, every major agent framework, and
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` → `mcpServers.algovault.serverUrl = "https://api.algovault.com/mcp"` |
 | **Continue.dev** | `config.yaml` → `mcpServers: [{ name: algovault, type: streamable-http, url: "https://api.algovault.com/mcp" }]` |
 | Any other MCP-spec-compliant client | Configure the Streamable HTTP transport with URL `https://api.algovault.com/mcp` |
+<!-- MCP_CLIENTS_README_TABLE:end -->
 
 **Agent plugin hosts.** The npm package ships `plugin.json`, `mcp.json` and `.cursor-plugin/plugin.json`, so an Agent-Plugins-compatible host — Cursor included — can read the server definition out of the installed package instead of being handed a config block to paste.
 

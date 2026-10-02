@@ -94,8 +94,18 @@ export function anchorTokenProblem(token: string): string | null {
 
 export interface EvidenceProblem {
   slug: string;
-  rule: 'R1' | 'R2' | 'R3' | 'R4';
+  rule: 'R1' | 'R2' | 'R3' | 'R4' | 'R8' | 'R9';
   detail: string;
+}
+
+/**
+ * R2's haystack: what a reader can see for one row — its rendered text AND, since the README
+ * "MCP clients" table is generated from `readme` (LANDING-MCP-CLIENTS-CLAIMS-W1), that row's
+ * README cells. A claim may live in either; both are copy the row publishes.
+ */
+export function claimHaystack(e: EvidencedEntry, renderText: (e: EvidencedEntry) => string): string {
+  const readme = e.readme ? `\n${e.readme.client}\n${e.readme.cell}` : '';
+  return collapseWhitespace(renderText(e) + readme);
 }
 
 /**
@@ -114,11 +124,11 @@ export function evidenceProblems(
       out.push({ slug: e.slug, rule: 'R1', detail: 'row carries no evidence entry' });
       continue;
     }
-    const text = collapseWhitespace(renderText(e));
+    const text = claimHaystack(e, renderText);
     evidence.forEach((a: LiveClaimEvidence, i: number) => {
       const at = `evidence[${i}]`;
       if (typeof a.claim !== 'string' || a.claim.trim() === '' || !text.includes(a.claim)) {
-        out.push({ slug: e.slug, rule: 'R2', detail: `${at} claim "${a.claim}" is not a verbatim substring of the rendered row text` });
+        out.push({ slug: e.slug, rule: 'R2', detail: `${at} claim "${a.claim}" is not a verbatim substring of the rendered row text or its README cells` });
       }
       if (!isAbsoluteHttpsUrl(a.source)) {
         out.push({ slug: e.slug, rule: 'R3', detail: `${at} source "${a.source}" is not an absolute https URL` });
@@ -134,6 +144,61 @@ export function evidenceProblems(
         out.push({ slug: e.slug, rule: 'R4', detail: `${at} npmScopeAbsence "${a.npmScopeAbsence}" is not an npm scope (@name)` });
       }
     });
+  }
+  return out;
+}
+
+/**
+ * R8 exemptions: rows whose `source` cannot be one of their own evidence sources, each with the
+ * measured reason. An exemption that has stopped being needed is itself a problem (stale), so this
+ * list can only shrink honestly.
+ */
+export const SOURCE_EVIDENCE_EXEMPT: Readonly<Record<string, string>> = Object.freeze({
+  'deepseek-harness':
+    'github.com repo HTML is not reliably fetchable headless — 5 of 5 canary-shaped fetches from signal-1 answered 504 on 2026-10-02 (200 on 2026-10-01); the same README is confirmed daily through raw.githubusercontent.com/deepseek-ai/deepseek-harness/master/packages/mcp/mcp-client/README.md',
+});
+
+const sameUrl = (a: string, b: string): boolean => a.replace(/\/$/, '') === b.replace(/\/$/, '');
+
+/**
+ * R8. Every row's `source` — the link the DERIVED footer prints — equals, modulo a trailing `/`,
+ * the source of at least one of its own evidence entries, so every footer link is a page the
+ * canary confirms daily. Otherwise the row needs a reasoned SOURCE_EVIDENCE_EXEMPT entry.
+ */
+export function sourceEvidenceProblems(
+  entries: readonly EvidencedEntry[],
+  exempt: Readonly<Record<string, string>> = SOURCE_EVIDENCE_EXEMPT,
+): EvidenceProblem[] {
+  const out: EvidenceProblem[] = [];
+  const slugs = new Set(entries.map((e) => e.slug));
+  for (const e of entries) {
+    const bound = (e.evidence ?? []).some((a) => sameUrl(a.source, e.source));
+    const reason = exempt[e.slug];
+    if (!bound && !(typeof reason === 'string' && reason.trim())) {
+      out.push({ slug: e.slug, rule: 'R8', detail: `source ${e.source} is none of its evidence sources, and SOURCE_EVIDENCE_EXEMPT carries no reason for it` });
+    }
+    if (bound && reason !== undefined) {
+      out.push({ slug: e.slug, rule: 'R8', detail: 'SOURCE_EVIDENCE_EXEMPT entry is stale: the source IS evidenced now — delete the exemption' });
+    }
+  }
+  for (const slug of Object.keys(exempt)) {
+    if (!slugs.has(slug)) out.push({ slug, rule: 'R8', detail: 'SOURCE_EVIDENCE_EXEMPT names a row that does not exist' });
+  }
+  return out;
+}
+
+/**
+ * R9. A row that publishes README cells carries at least one evidence claim that is a verbatim
+ * substring of its `readme.cell` — the generated README table is bound to live evidence, not
+ * just copied from the row.
+ */
+export function readmeEvidenceProblems(entries: readonly EvidencedEntry[]): EvidenceProblem[] {
+  const out: EvidenceProblem[] = [];
+  for (const e of entries) {
+    if (!e.readme) continue;
+    if (!(e.evidence ?? []).some((a) => a.claim && e.readme!.cell.includes(a.claim))) {
+      out.push({ slug: e.slug, rule: 'R9', detail: `readme.cell carries none of the row's evidence claims: ${e.readme.cell}` });
+    }
   }
   return out;
 }
