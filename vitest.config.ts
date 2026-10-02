@@ -119,6 +119,9 @@ export default defineConfig({
       // "No test suite found"). The pre-push gate detects node:test files by CONTENT, so it
       // picks this up automatically.
       'tests/unit/monitoring-primitive-parity.test.mjs',
+      // OPS-HOST-KERNEL-REBOOT-W5 — node:test wave-history corpus parity (one WAVE_HISTORY_PATH, one
+      // completion predicate); canonical runner is node:test, so exclude it here ("No test suite found").
+      'tests/unit/wave-history-corpus.test.mjs',
       // OPS-HOST-EXPOSURE-POSTURE-W1 — node:test guard on the declared network posture
       // (canonical runner is node:test; exclude from vitest so it doesn't false-fail
       // "No test suite found"). Same content-detection note as the parity canary above.

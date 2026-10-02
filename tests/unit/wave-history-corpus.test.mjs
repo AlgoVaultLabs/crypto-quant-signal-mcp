@@ -138,7 +138,7 @@ function manifestRows() {
   return rows;
 }
 
-test('the manifest completion regex selects EXACTLY the lines the resolver predicate selects', () => {
+test('the manifest completion regex selects EXACTLY the lines the resolver predicate selects', { timeout: 60000 }, () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'wh-corpus-'));
   try {
     const f = path.join(dir, 'corpus.md');
@@ -164,7 +164,7 @@ test('the manifest completion regex selects EXACTLY the lines the resolver predi
   }
 });
 
-test('the real resolver agrees with the manifest on the highest GREEN wave (W3 -> W4)', () => {
+test('the real resolver agrees with the manifest on the highest GREEN wave (W3 -> W4)', { timeout: 60000 }, () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'wh-resolve-'));
   try {
     const status = path.join(dir, 'status.md');
