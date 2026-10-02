@@ -36,13 +36,13 @@ Restart Claude Desktop. Open a chat and ask *"Use AlgoVault to check BTC 4h."* A
 
 ## FAQ
 
-**Which clients does Smithery support?** Claude Desktop, Cursor, Cline, Claude Code. Continue.dev support is in beta.
+**Which clients does Smithery support?** Claude Desktop, Cursor, Cline, Claude Code and Codex, among others.
 
-**Free tier setup?** Yes. Hit Enter at the API-key prompt; Smithery writes a no-header config (free tier, 200 calls/month, 100/day).
+**Free tier setup?** Yes. Smithery's entry carries no API key, so this path is the free tier. The first time your client connects, Smithery asks you to authorize it in your browser.
 
 **Can I see AlgoVault on the Smithery registry?** Yes — [smithery.ai/servers/algovault/crypto-quant-signal-mcp](https://smithery.ai/servers/algovault/crypto-quant-signal-mcp).
 
-**What does Smithery actually do?** It generates the right `mcpServers` entry for your client's config file. Same result as hand-editing the JSON, but automated for each client's quirks.
+**What does Smithery actually do?** It adds an entry for Smithery's gateway (`server.smithery.ai/algovault/crypto-quant-signal-mcp/mcp`) to your client's config, and your calls reach AlgoVault through that gateway. For a paid-tier key, add AlgoVault by hand instead; that connects to `api.algovault.com` directly.
 
 ## Next steps
 
