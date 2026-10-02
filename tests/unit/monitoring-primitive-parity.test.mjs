@@ -336,7 +336,9 @@ test('self-check: the heartbeat-key detectors fire on a known-bad fixture', () =
  * stamp without having taken the backup, which is what turns a 24h-late detection into a
  * commit-time refusal.
  */
-const UNSTAMPED_CEILING = 32; // 2026-09-30, OPS-ALARM-SINGLE-DERIVATION-W1: measured 32 once
+const UNSTAMPED_CEILING = 25; // 2026-10-02, OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: measured 25 once
+// kernel-auto-reboot, aoe-peer-watchdog and cron-interlock-registry-aoe1 were installed through the tool
+// (origin/main read 28). Previously 32 at 2026-09-30, OPS-ALARM-SINGLE-DERIVATION-W1: measured 32 once
 // send_telegram.sh was installed through the tool (first_install 20260930T064159Z). Previously
 // 33 at 2026-09-29, OPS-POSTGRES-CPU-WINDOW-INTEGRITY-W1: measured 33 once
 // postgres-cpu-snapshot and postgres-cpu-autopilot were installed through the tool (c21cc992).

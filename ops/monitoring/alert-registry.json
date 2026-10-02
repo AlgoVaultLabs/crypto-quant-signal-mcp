@@ -436,9 +436,10 @@
         {
           "artifact": "ops/monitoring/kernel-auto-reboot.sh",
           "hosts": [
-            "aoe-1"
+            "aoe-1",
+            "signal-1"
           ],
-          "reason": "Performs unattended, on aoe-1 only, the reboot this alert recommends. Its EXPECTED_HOST is hardcoded to aoe-1 and deliberately NOT a seam, so it can never act on signal-1. A body that does not name it tells the operator to hand-run the procedure on a host that self-heals — which resets the running-vs-installed delta and destroys one of the two clean unattended cycles that are the ratified condition for extending the harness to signal-1."
+          "reason": "Performs unattended, on BOTH hosts, the reboot this alert recommends (OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1): aoe-1 any hour; signal-1 inside 03:00-13:59Z, never while aoe-1 is mid-cycle, a deploy or a no-safe-kill job is in flight, and never unwatched (a failed arm DEFERS). Its allow-list is a hardcoded constant, never a seam. A body that does not name it tells the operator to hand-run the procedure on a host that self-heals; on a COVERED host that is still stale, the harness log names the gate that keeps deferring — that, not a hand reboot, is the action."
         }
       ]
     },
@@ -446,7 +447,8 @@
       "alert_id": "KERNEL_AUTO_REBOOT",
       "owner": "ops/monitoring/kernel-auto-reboot.sh",
       "hosts": [
-        "aoe-1"
+        "aoe-1",
+        "signal-1"
       ],
       "adopted": false,
       "announce_resolution": false,

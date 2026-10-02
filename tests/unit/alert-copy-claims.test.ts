@@ -8,6 +8,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import {
   operatorFacingBlocks,
@@ -221,12 +222,20 @@ describe('W4: the declaration is real, complete, and matches the live schedule',
     expect(d!.malformed).toHaveLength(0);
   });
 
-  it('the harness is scheduled on aoe-1 ONLY — the signal-1 firewall, asserted not assumed', () => {
+  it('the harness is scheduled on EXACTLY its allow-list — the firewall, asserted not assumed', { timeout: 60_000 }, () => {
+    // OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1 retired "aoe-1 ONLY" (ratified: two clean aoe-1 cycles
+    // + a live peer watchdog). The invariant that replaces it: the hosts the harness is SCHEDULED on
+    // are exactly the hosts its hardcoded allow-list names, and the alert's declaration agrees — a
+    // third host appearing in either place without the other is a drift this test turns red.
     const m = scheduledHosts(ROOT);
     expect(m).not.toBeNull();
     const on = m!.get('ops/monitoring/kernel-auto-reboot.sh');
     expect(on).toBeDefined();
-    expect([...on!].sort()).toEqual(['aoe-1']);
+    expect([...on!].sort()).toEqual(['aoe-1', 'signal-1']);
+    const allow = spawnSync('bash', [path.join(ROOT, 'ops/monitoring/kernel-auto-reboot.sh'), '--print-allowed-hosts'], { encoding: 'utf8' });
+    expect(allow.stdout.trim().split(/\s+/).sort()).toEqual([...on!].sort());
+    const e = declaredAutomation(ROOT)!.entries.find((x) => x.alertId === 'KERNEL_STALENESS');
+    expect([...(e!.hosts ?? [])].sort()).toEqual([...on!].sort());
   });
 
   it('while the alert itself covers both hosts — which is why the body must say which is which', () => {

@@ -24,10 +24,10 @@
         "verified_at": "2026-10-02T12:2xZ",
         "disruption_event": "kernel reboot",
         "command": "crontab -l   # every active line   &&   systemctl list-units --type=service --state=running --no-legend --plain | awk '{print $1}'   &&   systemctl list-unit-files --type=timer --state=enabled --no-legend | awk '{print $1}'   — the UNION is the population, because a reboot stops all of it. This is exactly what kernel-auto-reboot.sh feeds check-cron-interlock-coverage.mjs --event reboot on every run, so the enumeration is re-derived live each hour rather than inherited from this block.",
-        "active_cron_lines": 125,
+        "active_cron_lines": 126,
         "running_services": 22,
         "enabled_timers": 28,
-        "note": "A REBOOT kills every container AND every host process, so every live line/unit maps to a row or exclusion by explicit cron_match / units — none by inference. Measured 2026-10-02 (crontab sha256 93f9e3ef…): 125 active lines, 22 running services, 28 enabled timers. Transient run-*.service units are deliberately left unmapped: an operator one-shot in flight DEFERS the reboot until it ends."
+        "note": "A REBOOT kills every container AND every host process, so every live line/unit maps to a row or exclusion by explicit cron_match / units — none by inference. Measured 2026-10-02 (crontab sha256 93f9e3ef…): 126 active lines (125 before this wave's own `16 * * * *` harness line), 22 running services, 28 enabled timers. Transient run-*.service units are deliberately left unmapped: an operator one-shot in flight DEFERS the reboot until it ends."
       }
     },
     "aoe-1": {
@@ -793,7 +793,7 @@
       "reason": "Every one is a read-only canary that pages the OPERATOR through send_telegram.sh, or writes only its own state atomically; the next scheduled fire re-evaluates. Three write elsewhere and stay safe by mechanism: x402-claim-liveness-prober inserts then deletes a sentinel row (a crash between them is swept at the next run, no reader counts it); declaration-sync copies to .tmp then mv -f; x402-settlement-reconciler --apply is forward-only autocommit UPDATEs pinned on the from-state (no on-chain write). kernel-auto-reboot.sh is the actor itself. checkout-parity runs `git fetch` in live checkouts: SIGTERM cleans git locks (a reboot signals before it kills).",
       "max_runtime_s": 74,
       "runtime_instrument": "per-script, read-only agent forensic 2026-10-02 ~11:42Z on signal-1: own-log start/finish (gap-filtered to scheduled fires), canary-results.jsonl at-minus-fire, START->VERDICT lines, cron journal; worst declaration-sync 74s (B n=1223, p50 5), then postgres-cpu-snapshot 63 (L n=246), registry-conformance 61 (L n=1905), check-cancel-path-live 53 (J n=240)",
-      "cron_lines": 40,
+      "cron_lines": 41,
       "source": "host-only",
       "verified_at": "2026-10-02",
       "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"

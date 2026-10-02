@@ -1248,7 +1248,7 @@
       "owner_wave": "OPS-HOST-KERNEL-REBOOT-W1",
       "notes": "Standing signal for SEC-18. Keyed on RUNNING-vs-newest-INSTALLED kernel, deliberately NOT on /var/run/reboot-required mtime: that file is re-stamped by every new kernel package, so its age is the age of the LATEST trigger and an alert keyed on it resets its own clock monthly (measured at R0 - both hosts read 2026-07-29 while one was 12 and the other 30 revisions behind). Same file on both hosts, ONE canonical sha256 on this row; per-host copies carry no hash of their own. `--self-test` is two-way and vacuity-guarded (>=20 assertions) and proves the send path by capturing the wrapper argv, because both hosts are freshly rebooted and the BREACH branch is unreachable from live state. Fires through send_telegram.sh, which owns severity/cooldown/{NEXT}; smoke it with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1 (that writes the 24h marker and false-greens run 2). OPS-HOST-KERNEL-REBOOT-W4: the Action paragraph is no longer a constant. decide_action() derives it from auto_reboot_coverage(), which reads THIS host's crontab for kernel-auto-reboot.sh — consuming the live schedule rather than re-deriving that script's hardcoded EXPECTED_HOST firewall. Three branches (COVERED/UNCOVERED/UNKNOWN), all asserted, all required to cite ops/monitoring/kernel-auto-reboot.sh because alert-registry.json declares it as related_automation and scripts/check-alert-copy-claims.mjs direction 2 enforces the citation. OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: COVERED now requires an ACTIVE crontab line that runs kernel-auto-reboot.sh WITH --apply — a dry-run soak or a commented line is UNCOVERED, so a real page can never claim a host is inside the harness while it only soaks. `--print-coverage` prints AUTO_REBOOT_COVERAGE=COVERED|UNCOVERED|UNKNOWN from the REAL crontab and touches nothing else (coverage was previously visible only inside fire(), i.e. never on a healthy host). The false 'hardcodes its target host' sentence is gone from the UNCOVERED action.",
       "first_install": {
-        "at": "20260912T092625Z",
+        "at": "20261002T124331Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
     },
@@ -1263,6 +1263,11 @@
           "host": "aoe-1",
           "path": "/opt/algovault-monitoring/kernel-auto-reboot.sh",
           "schedule": "7 * * * *"
+        },
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/kernel-auto-reboot.sh",
+          "schedule": "16 * * * *"
         }
       ],
       "criticality": "load-bearing",
@@ -1274,7 +1279,11 @@
         "KERNEL_AUTO_REBOOT"
       ],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1 -> OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1",
-      "notes": "A host reboots ITSELF for a kernel update, gated, watched by its peer, mutually exclusive with that peer, and recorded off-host. PROMOTED TO signal-1 by OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1 — the W1 ratification ('TWO clean unattended aoe-1 cycles AND a live peer watchdog') fired at PROMOTION_CLOCK=2/2 (OPS-HOST-KERNEL-REBOOT-W5). ALLOW-LIST, NOT A SEAM: ALLOWED_HOSTS='aoe-1 signal-1' and host_policy() are hardcoded case tables (peer, window, arm-failure policy, serving probe, registry path, peer arm marker, deploy signatures, population check); identity resolves MONITORING_HOST_LABELS -> /etc/algovault-host-label -> REFUSE with NO DEFAULT and is evaluated FIRST, so an unlisted label REFUSES with zero side effects (--print-allowed-hosts prints the constant). PER-HOST POLICY: aoe-1 any hour, arm failure DEGRADED-and-proceed, no serving probe, registry = the synced /opt/algovault-monitoring copy; signal-1 03:00-13:59Z (PR-1), arm failure DEFERRED (PR-3, never reboot the revenue host unwatched), post-boot serving probe http://127.0.0.1:3000/health = 200, registry = the deploy checkout copy. ELEVEN GATES, each printing a positive AUTO_REBOOT_GATE= line on every path (unreached = NOT_REACHED): identity -> post_boot -> due (KERNEL_STALENESS verdict) -> contract (BOOT_CONTRACT) -> window -> peer_busy (the PEER's arm marker present LOCALLY = it is mid-cycle -> DEFERRED; this is the mutual exclusion, from data each host already holds) -> deploy_in_flight (signal-1's bracketed deploy signatures -> DEFERRED) -> in_flight (signal-1: check-cron-interlock-coverage.mjs --event reboot over the LIVE crontab + units, unmapped -> DEFERRED; then the REBOOT-scope rows of cron-interlock-registry.json: no-safe-kill live -> ABORTED, preempt-and-catchup live without reboot_recovery -> DEFERRED) -> arm -> recheck (re-snapshot AFTER the arm; anything now in flight -> disarm + ABORTED — closes the check-then-act window against the every-minute bot alert engine) -> action. Process probe = ONE `ps -eww -o args=` snapshot matched in-process with bracketed EREs, so the probe can never match itself. Token AUTO_REBOOT_VERDICT=REBOOTED|NOT_DUE|DEFERRED|ABORTED|REFUSED|INDETERMINATE, one terminal line, exit ALWAYS 0 on the live path; pages only ABORTED (contract/post-boot)/REFUSED/INDETERMINATE via send_telegram.sh with a templated OPS-HOST-AUTO-REBOOT-W{NEXT}; a persistent DEFERRED is escalated by KERNEL_STALENESS's COVERED branch. OFF-HOST RECORD: every run appends ONE canary_result_log record (canary kernel-auto-reboot, MONITORING_HOST_LABEL = the resolved host, decided_by, peer, kernel before/after) which monitoring-results-sync.sh pulls into the vault — the clean-cycle count is now a file read. --dry-run IS THE DEFAULT. Self-test: 112 checks (floor enforced), SELF_TEST_VERDICT=PASS|FAIL|INDETERMINATE 0/1/3. Log /var/log/algovault-kernel-auto-reboot.log."
+      "notes": "A host reboots ITSELF for a kernel update, gated, watched by its peer, mutually exclusive with that peer, and recorded off-host. PROMOTED TO signal-1 by OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1 — the W1 ratification ('TWO clean unattended aoe-1 cycles AND a live peer watchdog') fired at PROMOTION_CLOCK=2/2 (OPS-HOST-KERNEL-REBOOT-W5). ALLOW-LIST, NOT A SEAM: ALLOWED_HOSTS='aoe-1 signal-1' and host_policy() are hardcoded case tables (peer, window, arm-failure policy, serving probe, registry path, peer arm marker, deploy signatures, population check); identity resolves MONITORING_HOST_LABELS -> /etc/algovault-host-label -> REFUSE with NO DEFAULT and is evaluated FIRST, so an unlisted label REFUSES with zero side effects (--print-allowed-hosts prints the constant). PER-HOST POLICY: aoe-1 any hour, arm failure DEGRADED-and-proceed, no serving probe, registry = the synced /opt/algovault-monitoring copy; signal-1 03:00-13:59Z (PR-1), arm failure DEFERRED (PR-3, never reboot the revenue host unwatched), post-boot serving probe http://127.0.0.1:3000/health = 200, registry = the deploy checkout copy. ELEVEN GATES, each printing a positive AUTO_REBOOT_GATE= line on every path (unreached = NOT_REACHED): identity -> post_boot -> due (KERNEL_STALENESS verdict) -> contract (BOOT_CONTRACT) -> window -> peer_busy (the PEER's arm marker present LOCALLY = it is mid-cycle -> DEFERRED; this is the mutual exclusion, from data each host already holds) -> deploy_in_flight (signal-1's bracketed deploy signatures -> DEFERRED) -> in_flight (signal-1: check-cron-interlock-coverage.mjs --event reboot over the LIVE crontab + units, unmapped -> DEFERRED; then the REBOOT-scope rows of cron-interlock-registry.json: no-safe-kill live -> ABORTED, preempt-and-catchup live without reboot_recovery -> DEFERRED) -> arm -> recheck (re-snapshot AFTER the arm; anything now in flight -> disarm + ABORTED — closes the check-then-act window against the every-minute bot alert engine) -> action. Process probe = ONE `ps -eww -o args=` snapshot matched in-process with bracketed EREs, so the probe can never match itself. Token AUTO_REBOOT_VERDICT=REBOOTED|NOT_DUE|DEFERRED|ABORTED|REFUSED|INDETERMINATE, one terminal line, exit ALWAYS 0 on the live path; pages only ABORTED (contract/post-boot)/REFUSED/INDETERMINATE via send_telegram.sh with a templated OPS-HOST-AUTO-REBOOT-W{NEXT}; a persistent DEFERRED is escalated by KERNEL_STALENESS's COVERED branch. OFF-HOST RECORD: every run appends ONE canary_result_log record (canary kernel-auto-reboot, MONITORING_HOST_LABEL = the resolved host, decided_by, peer, kernel before/after) which monitoring-results-sync.sh pulls into the vault — the clean-cycle count is now a file read. --dry-run IS THE DEFAULT. Self-test: 112 checks (floor enforced), SELF_TEST_VERDICT=PASS|FAIL|INDETERMINATE 0/1/3. Log /var/log/algovault-kernel-auto-reboot.log.",
+      "first_install": {
+        "at": "20261002T124514Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "cron-interlock-registry-aoe1",
@@ -1292,10 +1301,14 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 — is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "6f284869d8f6bc6a28b818a4c689da8f778a77ad498d1e6bb682cf265f8eeaea",
+      "sha256": "b2e05602114f1024e53daf818b76fdf51a003a41231c3861dbc9cbf9e76e31dc",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
-      "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. SYNCED, NOT INSTALLED (OPS-DRIFT-ALERT-GENERATORS-W1, 2026-09-14): declaration-sync.sh fetches it on aoe-1 every hour (27 * * * *) through a DECLARATIONS row whose 5th field names ops/scripts/cron-interlock-registry.json, so a registry edit reaches the host within the hour with no re-install step. It used to be installed once behind a sync_exempt_reason (the sync could only reach ops/monitoring), with the refresh left to a sentence in these notes; IDENTITY-LIFECYCLE-W3 edited the registry three times on 2026-09-08, re-stamped this sha256, never re-installed, and aoe-1 paged HASH_DRIFT + REGISTRY_PARITY daily from 2026-09-09. Re-stamp this sha256 in the same commit as any registry edit; HASH_DRIFT on this row now means the hourly sync stopped landing, not that someone forgot a step. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot."
+      "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. SYNCED, NOT INSTALLED (OPS-DRIFT-ALERT-GENERATORS-W1, 2026-09-14): declaration-sync.sh fetches it on aoe-1 every hour (27 * * * *) through a DECLARATIONS row whose 5th field names ops/scripts/cron-interlock-registry.json, so a registry edit reaches the host within the hour with no re-install step. It used to be installed once behind a sync_exempt_reason (the sync could only reach ops/monitoring), with the refresh left to a sentence in these notes; IDENTITY-LIFECYCLE-W3 edited the registry three times on 2026-09-08, re-stamped this sha256, never re-installed, and aoe-1 paged HASH_DRIFT + REGISTRY_PARITY daily from 2026-09-09. Re-stamp this sha256 in the same commit as any registry edit; HASH_DRIFT on this row now means the hourly sync stopped landing, not that someone forgot a step. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot.",
+      "first_install": {
+        "at": "20261002T125016Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "arm-peer-watchdog",
@@ -1307,6 +1320,10 @@
         {
           "host": "aoe-1",
           "path": "/opt/algovault-monitoring/arm-peer-watchdog.sh"
+        },
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/arm-peer-watchdog.sh"
         }
       ],
       "criticality": "advisory",
@@ -1316,7 +1333,11 @@
       "sha256": "3bbb542eea30765fd880e5764155e5c34fa78424abe7e2f6254d718af4e38c12",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1 -> OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1",
-      "notes": "Places and removes the arm file the PEER's aoe-peer-watchdog.sh reads. The arm lives on the watcher because a marker on the rebooting host is unreadable in exactly the scenario it exists for — and, since OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1, that same marker is what the watcher's OWN harness reads as peer_busy, so it doubles as the mutual-exclusion lock. PAIR TABLE (hardcoded, one implementation): aoe-1 -> signal-1 204.168.185.24 via /root/.ssh/aoe_to_smpg, remote .aoe-reboot-arm (unchanged from W1); signal-1 -> aoe-1 178.104.200.44 via /root/.ssh/algovault_deploy, remote .signal1-reboot-arm (an EXISTING direction — signal-1's watchdog already probes aoe-1 with that key). No credential minted. An unlisted host REFUSES. STANDING FINDING, NOT FIXED HERE: signal-1's authorized_keys entry for aoe_to_smpg carries no command=/restrict/permitopen= (full root, measured 2026-08-29) — OPS-AOE-TUNNEL-KEY-RESTRICT-W1; this script keeps ONE fixed argument-free remote command shape, which a forced-command entry would later allow. Token PEER_ARM_VERDICT=ARMED|DISARMED|FAILED|REFUSED; exit ALWAYS 0 — the caller reads the TOKEN (signal-1 DEFERS on anything but ARMED; aoe-1 proceeds DEGRADED). Self-test: 21 checks. No schedule."
+      "notes": "Places and removes the arm file the PEER's aoe-peer-watchdog.sh reads. The arm lives on the watcher because a marker on the rebooting host is unreadable in exactly the scenario it exists for — and, since OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1, that same marker is what the watcher's OWN harness reads as peer_busy, so it doubles as the mutual-exclusion lock. PAIR TABLE (hardcoded, one implementation): aoe-1 -> signal-1 204.168.185.24 via /root/.ssh/aoe_to_smpg, remote .aoe-reboot-arm (unchanged from W1); signal-1 -> aoe-1 178.104.200.44 via /root/.ssh/algovault_deploy, remote .signal1-reboot-arm (an EXISTING direction — signal-1's watchdog already probes aoe-1 with that key). No credential minted. An unlisted host REFUSES. STANDING FINDING, NOT FIXED HERE: signal-1's authorized_keys entry for aoe_to_smpg carries no command=/restrict/permitopen= (full root, measured 2026-08-29) — OPS-AOE-TUNNEL-KEY-RESTRICT-W1; this script keeps ONE fixed argument-free remote command shape, which a forced-command entry would later allow. Token PEER_ARM_VERDICT=ARMED|DISARMED|FAILED|REFUSED; exit ALWAYS 0 — the caller reads the TOKEN (signal-1 DEFERS on anything but ARMED; aoe-1 proceeds DEGRADED). Self-test: 21 checks. No schedule.",
+      "first_install": {
+        "at": "20261002T124354Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "aoe-peer-watchdog",
@@ -1329,6 +1350,11 @@
           "host": "signal-1",
           "path": "/opt/algovault-monitoring/aoe-peer-watchdog.sh",
           "schedule": "9 * * * *"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/aoe-peer-watchdog.sh",
+          "schedule": "3-58/5 * * * *"
         }
       ],
       "criticality": "load-bearing",
@@ -1341,7 +1367,11 @@
         "SIGNAL1_PEER_UNREACHABLE"
       ],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1 -> OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1",
-      "notes": "The escalation half of an unattended kernel reboot, in BOTH directions since OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1 — one implementation with a hardcoded PAIR TABLE keyed by the WATCHER. signal-1 watches aoe-1 (unchanged W1 behaviour): SSH probe with the existing /root/.ssh/algovault_deploy key, cron 9 * * * *, RETURN BUDGET 90s (measured 31-42s W2/W3 + 100%), alert AOE_PEER_UNREACHABLE. aoe-1 watches signal-1 (PR-4): CREDENTIAL-FREE — TCP connect to 204.168.185.24:22 (`timeout 10` /dev/tcp) AND https://api.algovault.com/health = 200 (`curl -m 10`); it NEVER invokes ssh (asserted on captured argv) and adds zero uses of aoe_to_smpg; cadence 3-58/5 (sub-10-min, clear of aoe-1's :07 harness); RETURN BUDGET 100s = measured 48.6s reboot->SSH (W5 M2) + 100%; alert SIGNAL1_PEER_UNREACHABLE. Both: SILENT with no arm (PR-5) — a positive IDLE line, never a page; a breach needs >=2 CONSECUTIVE unreachable probes past the budget; an arm older than the 6h STALE CEILING pages even while the target is reachable (the post-boot disarm never ran). DETECTION LATENCY is the cadence, never the budget. Arm/counter under /var/lib/algovault-monitoring/, one log per direction. Token PEER_WATCHDOG_VERDICT=IDLE|ARMED_WAITING|ARMED_OK|BREACH|STALE|REFUSED|INDETERMINATE, one terminal line, exit ALWAYS 0; an unlisted watcher REFUSES. Self-test: 38 checks, both directions in separate sandboxes."
+      "notes": "The escalation half of an unattended kernel reboot, in BOTH directions since OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1 — one implementation with a hardcoded PAIR TABLE keyed by the WATCHER. signal-1 watches aoe-1 (unchanged W1 behaviour): SSH probe with the existing /root/.ssh/algovault_deploy key, cron 9 * * * *, RETURN BUDGET 90s (measured 31-42s W2/W3 + 100%), alert AOE_PEER_UNREACHABLE. aoe-1 watches signal-1 (PR-4): CREDENTIAL-FREE — TCP connect to 204.168.185.24:22 (`timeout 10` /dev/tcp) AND https://api.algovault.com/health = 200 (`curl -m 10`); it NEVER invokes ssh (asserted on captured argv) and adds zero uses of aoe_to_smpg; cadence 3-58/5 (sub-10-min, clear of aoe-1's :07 harness); RETURN BUDGET 100s = measured 48.6s reboot->SSH (W5 M2) + 100%; alert SIGNAL1_PEER_UNREACHABLE. Both: SILENT with no arm (PR-5) — a positive IDLE line, never a page; a breach needs >=2 CONSECUTIVE unreachable probes past the budget; an arm older than the 6h STALE CEILING pages even while the target is reachable (the post-boot disarm never ran). DETECTION LATENCY is the cadence, never the budget. Arm/counter under /var/lib/algovault-monitoring/, one log per direction. Token PEER_WATCHDOG_VERDICT=IDLE|ARMED_WAITING|ARMED_OK|BREACH|STALE|REFUSED|INDETERMINATE, one terminal line, exit ALWAYS 0; an unlisted watcher REFUSES. Self-test: 38 checks, both directions in separate sandboxes.",
+      "first_install": {
+        "at": "20261002T124416Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "boot-contract-canary",
@@ -2011,7 +2041,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "6331bb4fec43e6dbd970c210bb0dd72a0c856ea3c17ef302187bd0ba93478b1d",
+      "sha256": "4bdf23dd3abc368c91a30e5db3ba9abb013218807db626eb71585ae9cfbea3a0",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
