@@ -32,6 +32,7 @@
  */
 
 import type { EvidencedEntry, SurfaceModule } from './types.js';
+import { README_CELLS } from './readme-mcp-clients.js';
 
 /** R13: the surface footer, derived from the rows. Our own host is evidence, not vendor documentation. */
 function footerLinksFrom(entries: readonly EvidencedEntry[]): Array<{ label: string; href: string }> {
@@ -97,10 +98,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
       verifiedAt: '2026-10-01',
       sourceLabel: 'Claude custom connectors',
-      readme: {
-        client: '**Claude Desktop**',
-        cell: 'Customize → Connectors → + → Add custom connector → `https://api.algovault.com/mcp`',
-      },
+      readme: README_CELLS['claude-desktop'],
       evidence: [
         {
           claim: 'Customize → Connectors → + → Add custom connector',
@@ -164,10 +162,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       source: 'https://cursor.com/docs/mcp',
       verifiedAt: '2026-10-01',
       sourceLabel: 'Cursor MCP docs',
-      readme: {
-        client: '**Cursor**',
-        cell: '`~/.cursor/mcp.json` → `mcpServers` block → `url: "https://api.algovault.com/mcp"`',
-      },
+      readme: README_CELLS['cursor'],
       evidence: [
         {
           claim: '~/.cursor/mcp.json',
@@ -212,10 +207,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       source: 'https://docs.cline.bot/mcp/mcp-overview',
       verifiedAt: '2026-10-01',
       sourceLabel: 'Cline MCP docs',
-      readme: {
-        client: '**Cline**',
-        cell: 'VS Code Cline extension → MCP server settings → add Streamable HTTP server',
-      },
+      readme: README_CELLS['cline'],
       evidence: [
         {
           claim: 'Remote Servers tab',
@@ -277,10 +269,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       source: 'https://code.claude.com/docs/en/mcp',
       verifiedAt: '2026-10-01',
       sourceLabel: 'Claude Code MCP docs',
-      readme: {
-        client: '**Claude Code** (CLI)',
-        cell: '`claude mcp add --transport http crypto-quant-signal https://api.algovault.com/mcp`',
-      },
+      readme: README_CELLS['claude-code'],
       evidence: [
         {
           claim: 'claude mcp add --transport http --scope project',
@@ -409,10 +398,7 @@ bearer_token_env_var = "AV_API_KEY"
       source: 'https://learn.chatgpt.com/docs/extend/mcp',
       verifiedAt: '2026-10-01',
       sourceLabel: 'Codex MCP docs',
-      readme: {
-        client: '**Codex** (OpenAI CLI)',
-        cell: '`~/.codex/config.toml` → `[mcp_servers.algovault]` table + `url = "https://api.algovault.com/mcp"` (or `codex mcp` CLI)',
-      },
+      readme: README_CELLS['codex'],
       evidence: [
         {
           claim: 'bearer_token_env_var',
@@ -631,38 +617,3 @@ claude mcp add --transport http --scope project algovault \\
 
 export default MCP_CLIENTS;
 
-/**
- * R14 — README.md's "MCP clients" table is GENERATED (scripts/build_readme_mcp_clients.mjs) into
- * the <!-- MCP_CLIENTS_README_TABLE:start/end --> region: one row per key, in this order — the
- * order the table has always had. A key is a row slug (whose `readme` cells render) or a key of
- * README_ONLY_MCP_CLIENT_ROWS.
- */
-export const README_MCP_CLIENT_ORDER: readonly string[] = Object.freeze([
-  'claude-desktop', 'claude-code', 'cursor', 'cline', 'codex', 'windsurf', 'continue', 'any-other',
-]);
-
-/**
- * Rows the README carries that are not MCP_CLIENTS rows — kept VERBATIM, each with the reason it
- * is not (yet) a row. A README-only row is a claim nothing binds to evidence, so the reason is
- * mandatory: it is what tells the next editor whether the row is safe to keep.
- */
-export const README_ONLY_MCP_CLIENT_ROWS: ReadonlyArray<{ key: string; client: string; cell: string; reason: string }> = Object.freeze([
-  {
-    key: 'windsurf',
-    client: '**Windsurf**',
-    cell: '`~/.codeium/windsurf/mcp_config.json` → `mcpServers.algovault.serverUrl = "https://api.algovault.com/mcp"`',
-    reason: 'unevidenced — vendor docs moved to docs.devin.ai and scope mcp_config.json to the legacy Cascade agent; re-verification pending a copy sign-off',
-  },
-  {
-    key: 'continue',
-    client: '**Continue.dev**',
-    cell: '`config.yaml` → `mcpServers: [{ name: algovault, type: streamable-http, url: "https://api.algovault.com/mcp" }]`',
-    reason: 'not an MCP_CLIENTS row (no tutorial page, no landing card); its cell is evidenced on docs.continue.dev/customize/deep-dives/mcp (streamable-http, mcpServers, config.yaml — measured 2026-10-01) but bound by nothing',
-  },
-  {
-    key: 'any-other',
-    client: 'Any other MCP-spec-compliant client',
-    cell: 'Configure the Streamable HTTP transport with URL `https://api.algovault.com/mcp`',
-    reason: 'a catch-all, not a client: it names no vendor and no vendor config, so there is no vendor page to bind; the one fact it states is our own Streamable HTTP endpoint',
-  },
-]);

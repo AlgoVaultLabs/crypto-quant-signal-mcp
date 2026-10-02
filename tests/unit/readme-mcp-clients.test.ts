@@ -17,7 +17,8 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import MCP_CLIENTS, { README_MCP_CLIENT_ORDER, README_ONLY_MCP_CLIENT_ROWS } from '../../src/lib/integrations-data/mcp-clients.js';
+import MCP_CLIENTS from '../../src/lib/integrations-data/mcp-clients.js';
+import { README_CELLS, README_MCP_CLIENT_ORDER, README_ONLY_MCP_CLIENT_ROWS } from '../../src/lib/integrations-data/readme-mcp-clients.js';
 import { renderReadmeMcpClientsTable } from '../../src/lib/integrations-data/render.js';
 
 const REPO = join(__dirname, '..', '..');
@@ -61,6 +62,16 @@ describe('order and README-only rows', () => {
       '| **Continue.dev** | `config.yaml` → `mcpServers: [{ name: algovault, type: streamable-http, url: "https://api.algovault.com/mcp" }]` |',
       '| Any other MCP-spec-compliant client | Configure the Streamable HTTP transport with URL `https://api.algovault.com/mcp` |',
     ]) expect(lines).toContain(want);
+  });
+});
+
+describe('every README cell is attached to its row by slug', () => {
+  it('each MCP_CLIENTS row with README cells carries exactly README_CELLS[slug]', () => {
+    for (const e of MCP_CLIENTS.entries) {
+      if (README_CELLS[e.slug]) expect(e.readme, e.slug).toBe(README_CELLS[e.slug]);
+      else expect(e.readme, e.slug).toBeUndefined();
+    }
+    expect(Object.keys(README_CELLS).every((k) => MCP_CLIENTS.entries.some((e) => e.slug === k))).toBe(true);
   });
 });
 

@@ -32,11 +32,12 @@ export const END = '<!-- MCP_CLIENTS_README_TABLE:end -->';
 /** The compiled renderer + SoT. Null = cannot verify (run `npm run build`). */
 function loadSot(root = ROOT) {
   const dir = join(root, 'dist', 'lib', 'integrations-data');
-  if (!existsSync(join(dir, 'render.js')) || !existsSync(join(dir, 'mcp-clients.js'))) return null;
+  if (!existsSync(join(dir, 'render.js')) || !existsSync(join(dir, 'mcp-clients.js')) || !existsSync(join(dir, 'readme-mcp-clients.js'))) return null;
   try {
     const render = require(join(dir, 'render.js'));
     const mod = require(join(dir, 'mcp-clients.js'));
-    return { render, mod };
+    const readme = require(join(dir, 'readme-mcp-clients.js'));
+    return { render, mod, readme };
   } catch {
     return null;
   }
@@ -94,7 +95,7 @@ if (INVOKED) {
   if (!sot) done('INDETERMINATE', '✗ dist/lib/integrations-data not loadable — run `npm run build`.');
   let table;
   try {
-    table = sot.render.renderReadmeMcpClientsTable(sot.mod.default, sot.mod.README_MCP_CLIENT_ORDER, sot.mod.README_ONLY_MCP_CLIENT_ROWS);
+    table = sot.render.renderReadmeMcpClientsTable(sot.mod.default, sot.readme.README_MCP_CLIENT_ORDER, sot.readme.README_ONLY_MCP_CLIENT_ROWS);
   } catch (e) {
     done('INDETERMINATE', `✗ the renderer refused: ${e && e.message}`);
   }
