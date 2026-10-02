@@ -333,7 +333,7 @@
       ],
       "notes": "OPS-ALARM-SINGLE-DERIVATION-W1 CH3: opt-in PAGE-ON-CHANGE, the one primitive for 'a level trigger over a state nothing clears pages forever' (solved bespoke 3x: payment-decline ACK_BASELINE, AOE liveness tuples, BDIR). Declared in DATA on the alert-registry row (page_on='change' + page_on_change{review_by, decided_by, decided_at, reason}); callers pass ALERT_KEYS on every run or --clear when the set is empty; state $STATE_DIR/<id>.ack.json; decided after the severity + test-context gates and before the 24h gate; only a DELIVERED page acknowledges; --acknowledge seeds without a POST. Rows without page_on are byte-identical (28/28 differential scenarios, self-test 102 checks, 17/17 mutations incl. 'restore the level trigger verbatim'). The single operator-action-required ALERT contract; consumers MUST NOT re-implement its gates (see exempt_consumers for the one ruled-out class). Canonical home is this repo; autonomous-optimizer VENDORS a copy at monitoring/aoe-host/ with a committed .sha256 and a pytest that pins BOTH behaviours (a hash alone cannot catch a re-vendor from a stale source that also re-records the hash). CORRECTION 2026-07-29 (OPS-AOE-MONITORING-PARITY-W1): the prior note claimed the 2026-07-28T14:09:12Z mid-wave change left 'no backup — the prior revision is unrecoverable'. That is FALSE. send_telegram.sh.bak.PRE-C5-FAILOPEN (7144 B, sha b122a5eb…30299, mtime …14:09:12.482861130Z, 2 ms before the new file) IS that revision; the concurrent session took the backup as part of the same write. A .bak.<REASON> convention exists on signal-1 and was followed. It is now MANDATORY on every host and asserted by the NO_BACKUP check. OPS-CLOSEDBAR-LIVENESS-BAND-W1 R4: resolve_template()'s regex demanded ' — ' immediately after the wave id, a position CLAUDE.md mandates for the '(Target ICP tier(s): …)' block — so it matched 0 of 96 OPS-*-W<N> headings and had NEVER resolved for ANY class; every templated recommended_wave it shipped said 'W1', a COMPLETED wave whenever the class had one. Fixed: anchor on the wave id, ship the placeholder verbatim on no-match (its own documented contract, which the code contradicted by asserting W1), and refuse a resolved wave that is already GREEN.",
       "first_install": {
-        "at": "20260930T064159Z",
+        "at": "20261002T091635Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
     },
@@ -465,6 +465,13 @@
       "kind": "executable",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/recommendation-drift-canary.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/recommendation-drift-canary.py",
+          "schedule": "27 12 * * 2"
+        }
+      ],
       "criticality": "load-bearing",
       "schedule": "27 12 * * 2",
       "invoked_by": "crontab:root",
@@ -1865,7 +1872,11 @@
         "DECISION_GATE_ORPHAN_SUSPECTED"
       ],
       "owner_wave": "OPS-RECALIBRATE-HARNESS-RETIRE-W1",
-      "notes": "THE GENERATOR FIX of OPS-RECALIBRATE-HARNESS-RETIRE-W1. Reads every row carrying decision_gate:true (see _decision_gate_semantics) and reports any whose once-ever alert has FIRED, whose retirement trigger is SATISFIED, and which is still `installed` — the state in which an instrument built to answer one question keeps running after the question is answered. Nothing else in this file can see that: HASH_DRIFT, ORPHAN, DARK, SCHEDULE_DRIFT and NO_BACKUP all PASS on an orphaned gate, because it is installed, hash-matching, on schedule and exiting 0. Two alert ids with DIFFERENT remedies, never one shared recommended_wave: DECISION_GATE_ORPHANED (decision on record -> retire it) and DECISION_GATE_ORPHAN_SUSPECTED (fired >14d ago with NO decision recorded -> decide or retire). The SUSPECTED branch is the one that would have caught candle-basis-shadow-report six days early with nobody having authored a retirement_trigger for it, which is the difference between detection and memory. An UNRECOGNISED retirement_trigger.kind is INDETERMINATE, never a silent skip — a skipped row looks exactly like a healthy one. RED-VERIFIED ON REAL ORPHANS, not synthetic ones: run #1 against the live inventory before the retirement reported both gates ORPHANED (marker ages 6.3d and 0.5d, DECISION_GATE_ORPHAN_VERDICT=FAIL); run #2 after the retirement reported 0. This is a RECURRENCE guard, NOT itself a decision gate — its subject is an open-ended class that keeps being instantiated, so `retired` would be false for it in the same way the book-liveness-canary row records for itself. Verdict token DECISION_GATE_ORPHAN_VERDICT= maps PASS=0/FAIL=0/INDETERMINATE=3; FAIL exits 0 because the alert is the action, and 3 is the token-law default for a NEW gate."
+      "notes": "THE GENERATOR FIX of OPS-RECALIBRATE-HARNESS-RETIRE-W1. Reads every row carrying decision_gate:true (see _decision_gate_semantics) and reports any whose once-ever alert has FIRED, whose retirement trigger is SATISFIED, and which is still `installed` — the state in which an instrument built to answer one question keeps running after the question is answered. Nothing else in this file can see that: HASH_DRIFT, ORPHAN, DARK, SCHEDULE_DRIFT and NO_BACKUP all PASS on an orphaned gate, because it is installed, hash-matching, on schedule and exiting 0. Two alert ids with DIFFERENT remedies, never one shared recommended_wave: DECISION_GATE_ORPHANED (decision on record -> retire it) and DECISION_GATE_ORPHAN_SUSPECTED (fired >14d ago with NO decision recorded -> decide or retire). The SUSPECTED branch is the one that would have caught candle-basis-shadow-report six days early with nobody having authored a retirement_trigger for it, which is the difference between detection and memory. An UNRECOGNISED retirement_trigger.kind is INDETERMINATE, never a silent skip — a skipped row looks exactly like a healthy one. RED-VERIFIED ON REAL ORPHANS, not synthetic ones: run #1 against the live inventory before the retirement reported both gates ORPHANED (marker ages 6.3d and 0.5d, DECISION_GATE_ORPHAN_VERDICT=FAIL); run #2 after the retirement reported 0. This is a RECURRENCE guard, NOT itself a decision gate — its subject is an open-ended class that keeps being instantiated, so `retired` would be false for it in the same way the book-liveness-canary row records for itself. Verdict token DECISION_GATE_ORPHAN_VERDICT= maps PASS=0/FAIL=0/INDETERMINATE=3; FAIL exits 0 because the alert is the action, and 3 is the token-law default for a NEW gate.",
+      "first_install": {
+        "at": "20261002T091656Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "outcome-backfill-freshness",
