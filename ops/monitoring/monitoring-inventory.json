@@ -478,7 +478,11 @@
       "install_state": "installed",
       "sha256": "9aba2c7a0b13e5b3d4816ce32d5767504f321386394795b6eaf590dfd288ab19",
       "alert_ids": [],
-      "owner_wave": "OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1"
+      "owner_wave": "OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1",
+      "first_install": {
+        "at": "20261002T092759Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "recommendation-drift-manifest",
