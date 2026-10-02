@@ -183,7 +183,7 @@ describe('🛑 /account/portal admits a customer whose subscription is not activ
     it(`subscription "${status ?? '(none)'}" → 200 interstitial to the portal, NOT 401`, async () => {
       vi.mocked(stripeMock.resolveCustomerByApiKey).mockResolvedValue(nonActive(status));
       const res = mockRes();
-      await accountPortalHandler(mockReq({ api_key: 'av_live_25cb2a59a4dd793e24c6ddd0' }), res);
+      await accountPortalHandler(mockReq({ api_key: 'av_live_a1a1a1a1a1a1a1a1a1a1a1a1' }), res);
       // CANCEL-PATH-CSP-FORM-ACTION-W1: 200 same-origin interstitial, never a cross-origin 303.
       expect(res.statusCode).toBe(200);
       expect(res.redirectUrl).toBeNull();

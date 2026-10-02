@@ -72,7 +72,7 @@ describe('renderReferralTermsPage', () => {
 
 // REFERRAL-PAYOUT-OPS-W1 / C1 — payout-address card on the referral dashboard.
 describe('renderReferralStatsPage — payout address card', () => {
-  const KEY = 'av_free_0123456789abcdef01234567';
+  const KEY = 'av_free_d4d4d4d4d4d4d4d4d4d4d4d4';
   const ADDR = '0x1234567890AbcdEF1234567890aBcdef12345678';
   const base = { code: 'MYCODE1', clicks: 0, signups: 0, conversions: 0, bonusRemaining: 0, accruedUsdE2: 0, creditedUsdE2: 0, usdcPaidUsdE2: 0 };
 

@@ -25,7 +25,7 @@ import {
 
 // Realistic secret-bearing values from the actual leaking call sites
 // (free-keys-store.ts:91 / :156, referral-store.ts:291).
-const API_KEY = 'av_free_a1b2c3d4e5f6a7b8c9d0e1f2';
+const API_KEY = 'av_free_c3c3c3c3c3c3c3c3c3c3c3c3';
 const EMAIL = 'customer@example.com';
 const SIGNUP_SQL = 'INSERT INTO free_keys (api_key, email, ref_code) VALUES ($1,$2,$3)';
 

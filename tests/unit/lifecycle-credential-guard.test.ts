@@ -20,8 +20,8 @@ function freshEnv(): void {
   delete process.env.LIFECYCLE_MODE;
 }
 
-const FREE = 'av_free_16322c186f8aa6b01a9853d0';
-const PAID = 'av_live_deadbeefcafe0123456789ab';
+const FREE = 'av_free_b2b2b2b2b2b2b2b2b2b2b2b2';
+const PAID = 'av_live_070707070707070707070707';
 
 const CTX = {
   keyMasked: 'av_free_…53d0',

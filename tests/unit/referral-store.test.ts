@@ -83,7 +83,7 @@ describe('referral-constants (SoT renderers)', () => {
 
 describe('deriveUserCode (deterministic + idempotent)', () => {
   it('is stable for the same key', () => {
-    const k = 'av_live_deadbeefdeadbeefdeadbeef';
+    const k = 'av_live_181818181818181818181818';
     expect(deriveUserCode(k)).toBe(deriveUserCode(k));
   });
   it('produces a CODE_RE-valid 8-char code', () => {
@@ -247,14 +247,14 @@ describe('pendingPayouts — minUsd gate', () => {
 // REFERRAL-PAYOUT-OPS-W1 / C1 — payout-address column get/set.
 describe('payout address get/set', () => {
   it('round-trips an address on a referrer code (null until set)', async () => {
-    const code = await ensureUserCode('av_free_0123456789abcdef01234567');
+    const code = await ensureUserCode('av_free_d4d4d4d4d4d4d4d4d4d4d4d4');
     expect(await getPayoutAddress(code)).toBeNull();
     const addr = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
     await setPayoutAddress(code, addr);
     expect(await getPayoutAddress(code)).toBe(addr);
   });
   it('clears with null', async () => {
-    const code = await ensureUserCode('av_free_abcdef0123456789abcdef01');
+    const code = await ensureUserCode('av_free_e5e5e5e5e5e5e5e5e5e5e5e5');
     await setPayoutAddress(code, '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed');
     await setPayoutAddress(code, null);
     expect(await getPayoutAddress(code)).toBeNull();

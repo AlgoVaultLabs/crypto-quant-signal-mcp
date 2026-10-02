@@ -21,7 +21,7 @@ import { ensureUserCode, getPayoutAddress, ensureReferralSchema } from '../../sr
 import { ensureFreeKeysSchema, _resetFreeKeyCacheForTest } from '../../src/lib/free-keys-store.js';
 import { dbRun } from '../../src/lib/performance-db.js';
 
-const KEY = 'av_free_0123456789abcdef01234567';
+const KEY = 'av_free_d4d4d4d4d4d4d4d4d4d4d4d4';
 const VALID = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'; // EIP-55 checksummed
 
 function mockRes() {

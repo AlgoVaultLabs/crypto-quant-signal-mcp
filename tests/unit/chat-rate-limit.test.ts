@@ -67,7 +67,7 @@ describe('client-IP wiring (SEC-07)', () => {
 
 describe('the two wirings compose into per-caller metering', () => {
   it('a paid caller and two distinct anonymous callers occupy three separate buckets', () => {
-    const paid = chatQuotaApiKey('av_live_deadbeefdeadbeefdeadbeef', 'hash_a');
+    const paid = chatQuotaApiKey('av_live_181818181818181818181818', 'hash_a');
     const anonA = chatQuotaApiKey(null, 'hash_a');
     const anonB = chatQuotaApiKey(null, 'hash_b');
     expect(new Set([paid, anonA, anonB]).size).toBe(3);

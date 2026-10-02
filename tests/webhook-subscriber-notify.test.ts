@@ -537,7 +537,7 @@ describe('🛑 reachability is not entitlement', () => {
   it('a past_due owner is still emailed — the notice reaches them', async () => {
     const { mod, sends } = await loadNotify({ email: 'lapsed@example.com' });
     const r = await mod.notifySubscriber({
-      ownerKey: 'av_live_25cb2a59a4dd793e24c6ddd0', event: 'webhook_disabled',
+      ownerKey: 'av_live_a1a1a1a1a1a1a1a1a1a1a1a1', event: 'webhook_disabled',
       context: { subscriptionId: 6, stateEpochBucket: 1784907276 },
     });
     expect(r.outcome).toBe('sent');

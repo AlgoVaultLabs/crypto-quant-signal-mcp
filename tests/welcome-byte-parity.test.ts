@@ -60,7 +60,7 @@ describe('welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact
     expect(getWelcomePageHtml(null, null, null, { newSignupEnabled: true, oauthProviders: OAUTH_BOTH, utmSource: 'lobehub', utmCampaign: 'launch' })).toMatchSnapshot();
   });
   it('post-checkout · key + tier + email', () => {
-    expect(getWelcomePageHtml('av_live_deadbeefcafe0123456789ab', 'starter', 'buyer@example.com', { newSignupEnabled: true, oauthProviders: OAUTH_BOTH })).toMatchSnapshot();
+    expect(getWelcomePageHtml('av_live_070707070707070707070707', 'starter', 'buyer@example.com', { newSignupEnabled: true, oauthProviders: OAUTH_BOTH })).toMatchSnapshot();
   });
   it('pending · no key · tier + email', () => {
     expect(getWelcomePageHtml(null, 'starter', 'buyer@example.com', { newSignupEnabled: true, oauthProviders: OAUTH_BOTH })).toMatchSnapshot();

@@ -80,7 +80,7 @@ describe('referral mint requires an EXISTING principal (SEC-08)', () => {
 
 
 // ── Behavioural proof: the guard actually stops the write ────────────────────────────────────
-const REAL_KEY = 'av_free_0123456789abcdef01234567';
+const REAL_KEY = 'av_free_d4d4d4d4d4d4d4d4d4d4d4d4';
 const GHOST_KEY = 'av_free_ffffffffffffffffffffffff'; // well-formed, never issued
 
 function mockRes() {

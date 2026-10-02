@@ -132,12 +132,48 @@ const NOT_A_SECRET = [
   /0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/,
 ];
 
+/**
+ * OPS-AUDIT-REMEDIATION-CRITICAL-W2. This gate was blind to an AlgoVault API key in a TEST file for
+ * two reasons at once: no pattern carried the bare key shape (only `Bearer …` did), and every
+ * `.test.` / fixture path was excluded from the scan wholesale.
+ *
+ * The shape is exactly what `generateApiKey` / the free-key minter emit: prefix + 24 hex.
+ * It now runs on test paths too. Every OTHER pattern keeps the test exclusion, because test files
+ * legitimately hold fake `sk_live_…` / `whsec_…` shapes. See `lineHit`.
+ */
+const AV_KEY = /\bav_(live|free)_([0-9a-f]{24})(?![0-9a-f])/g;
+/** The documented sequential probe fixture: verified to match no Stripe customer and no key row. */
+const AV_KEY_DOC_FIXTURE = '0123456789abcdef01234567';
+/**
+ * SYNTHETIC by construction, never by allow-listing a literal. A minted key body is
+ * `randomBytes(12)` as hex, and 24 uniform hex digits use at most 4 distinct values with
+ * probability ~6e-12. So `'a'.repeat(24)` or `'a1'.repeat(12)` is a fixture, and anything with a
+ * real key's spread is treated as a key.
+ */
+export function isSyntheticAvKeyBody(hex) {
+  return new Set(hex).size <= 4 || hex === AV_KEY_DOC_FIXTURE;
+}
+/** Every key-shaped match on the line, judged separately: one synthetic key must not mask a real one. */
+function matchAvKey(line) {
+  for (const m of line.matchAll(AV_KEY)) if (!isSyntheticAvKeyBody(m[2])) return 'av-key';
+  return null;
+}
+
 function matchSecret(line) {
   for (const [name, re] of SECRET_PATTERNS) {
     const m = re.exec(line);
     if (m && !NOT_A_SECRET.some((p) => p.test(m[0]))) return name;
   }
-  return null;
+  return matchAvKey(line);
+}
+
+/** Test / fixture paths: hidden from the generic patterns, never from the AlgoVault key shape. */
+export function isTestPath(f) {
+  return /\.test\.|\.spec\.|__fixtures__|\bfixtures?\b/.test(f);
+}
+/** The ONE per-line decision the full-tree scan and the self-test share. */
+function lineHit(path, line) {
+  return isTestPath(path) ? matchAvKey(line) : matchSecret(line);
 }
 
 function redactLine(line) {
@@ -182,26 +218,66 @@ export function corpusVerdict(trackedCount, scannableCount) {
   return 'PASS';
 }
 
-/** ALL tracked files, minus binaries/lockfiles/test fixtures. Was: 4 dirs × 6 extensions. */
+/**
+ * ALL tracked files, minus binaries/lockfiles. Was: 4 dirs × 6 extensions. `files` is the generic
+ * corpus; `testFiles` is scanned for the AlgoVault key shape only (OPS-AUDIT-REMEDIATION-CRITICAL-W2 —
+ * test paths used to be dropped from the corpus entirely, so a key-shaped fixture was invisible).
+ */
 function secretScanFiles() {
   const tracked = sh('git', ['ls-files']).split('\n').filter(Boolean);
-  const files = tracked
+  const scannable = tracked
     .filter(Boolean)
     .filter((f) => !/\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|eot|pdf|zip|gz|mp4|webm)$/i.test(f))
     .filter((f) => !/(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/.test(f))
-    .filter((f) => !/\.test\.|\.spec\.|__fixtures__|\bfixtures?\b/.test(f))
     // This file necessarily CONTAINS the shapes it hunts for (SECRET_PATTERNS + the self-test
     // corpus), so scanning itself is a guaranteed false positive. The self-test — not the file
     // scan — is what proves the matcher still works, so nothing is lost by skipping it.
     .filter((f) => f !== 'scripts/security-canary.mjs');
-  return { tracked: tracked.length, files };
+  return {
+    tracked: tracked.length,
+    files: scannable.filter((f) => !isTestPath(f)),
+    testFiles: scannable.filter((f) => isTestPath(f)),
+  };
 }
 
 /**
  * Two-way self-test: the gate must FIRE on the real SEC-02 shape and must NOT fire on the
  * placeholdered form that replaced it. Without this a widened regex can silently stop matching.
  */
-const SELF_TEST_COUNTS = { fire: 0, noFire: 0, leakFire: 0, leakNoFire: 0, corpus: 0 };
+const SELF_TEST_COUNTS = { fire: 0, noFire: 0, leakFire: 0, leakNoFire: 0, corpus: 0, avFire: 0, avNoFire: 0 };
+
+/**
+ * Two-way self-test for the AlgoVault key shape AND its path routing (OPS-AUDIT-REMEDIATION-CRITICAL-W2).
+ * The must-fire keys are made-up high-spread values (descending hex), not real keys. The routing
+ * rows are what pin the fix itself: a key-shaped literal in a TEST path must fire, while a generic
+ * fake secret in a test path must stay exempt, exactly as before.
+ */
+function selfTestAvKey() {
+  const T = 'tests/unit/example.test.ts';
+  const mustFire = [
+    [T, "const KEY = 'av_live_fedcba9876543210fedcba98';"],
+    [T, "  apiKey: 'av_free_fedcba9876543210fedcba98',"],
+    // One synthetic key on the line must not mask a real-shaped one after it.
+    [T, "const keys = ['av_free_aaaaaaaaaaaaaaaaaaaaaaaa', 'av_live_fedcba9876543210fedcba98'];"],
+    ['tests/__snapshots__/welcome.test.ts.snap', '<code>av_live_fedcba9876543210fedcba98</code>'],
+    ['docs/runbook.md', 'paste av_live_fedcba9876543210fedcba98 into /account'], // non-test path, no Bearer
+  ];
+  const mustNotFire = [
+    [T, "const K = 'av_live_aaaaaaaaaaaaaaaaaaaaaaaa';"],                 // 1 distinct digit
+    [T, "const K = 'av_free_a1a1a1a1a1a1a1a1a1a1a1a1';"],                 // the remediated fixture form
+    [T, "expect(src).toMatch(/Bearer av_live_0123456789abcdef01234567/);"], // the documented sequential fixture
+    [T, 'const shown = "av_live_0123…4567";'],                         // abbreviated, not a key
+    [T, "const shape = /^av_(live|free)_[0-9a-f]{24}$/;"],                  // the shape regex itself
+    [T, "const notAKey = 'av_live_fedcba9876543210fedcba987';"],          // 25 hex: not the minted shape
+    [T, 'const k = "sk_live_ABCDEFGHIJKLMNOP0123";'],                        // generic fake secret: test paths stay exempt
+  ];
+  SELF_TEST_COUNTS.avFire = mustFire.length;
+  SELF_TEST_COUNTS.avNoFire = mustNotFire.length;
+  const fails = [];
+  mustFire.forEach(([p, l]) => { if (!lineHit(p, l)) fails.push(`MISSED (${p}): ${l.slice(0, 60)}`); });
+  mustNotFire.forEach(([p, l]) => { const h = lineHit(p, l); if (h) fails.push(`FALSE POSITIVE (${h}, ${p}): ${l.slice(0, 60)}`); });
+  return fails;
+}
 
 /**
  * Two-way self-test for corpusVerdict — the branch that used to fail OPEN.
@@ -323,7 +399,7 @@ function selfTestSecrets() {
 function gatePii() {
   log('\n[B] PII / secret-leak gate');
   // Fail closed if either matcher is broken — a vacuous gate is worse than no gate.
-  const stFails = [...selfTestSecrets(), ...selfTestLeakValue()];
+  const stFails = [...selfTestSecrets(), ...selfTestLeakValue(), ...selfTestAvKey()];
   if (stFails.length) {
     stFails.forEach((f) => log('    ✖ self-test: ' + f));
     // A broken matcher means we verified NOTHING, not that we verified and found nothing.
@@ -334,6 +410,8 @@ function gatePii() {
   }
   const hits = [];
   let files;
+  let testFilesScanned = 0;
+  let testKeysExempt = 0;
   if (DIFF_ONLY) {
     const diff = sh('git', ['diff', 'HEAD', '--unified=0']);
     diff.split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++')).forEach((l) => {
@@ -355,12 +433,25 @@ function gatePii() {
       const txt = readFileSync(abs, 'utf8');
       txt.split('\n').forEach((line, i) => {
         if (LEAK_VALUE.test(line)) hits.push(`${f}:${i + 1} leak-value → ${line.trim().slice(0, 120)}`);
-        if (matchSecret(line)) hits.push(`${f}:${i + 1} secret-literal (${matchSecret(line)}) [redacted]`);
+        const hit = lineHit(f, line);
+        if (hit) hits.push(`${f}:${i + 1} secret-literal (${hit}) [redacted]`);
       });
     }
+    // Test paths: the AlgoVault key shape only. Synthetic keys are judged, then COUNTED, so the
+    // exemption is visible rather than silent.
+    for (const f of corpus.testFiles) {
+      const abs = join(ROOT, f); if (!existsSync(abs)) continue;
+      readFileSync(abs, 'utf8').split('\n').forEach((line, i) => {
+        for (const m of line.matchAll(AV_KEY)) if (isSyntheticAvKeyBody(m[2])) testKeysExempt += 1;
+        const hit = lineHit(f, line);
+        if (hit) hits.push(`${f}:${i + 1} secret-literal (${hit}) [redacted]`);
+      });
+    }
+    testFilesScanned = corpus.testFiles.length;
   }
   if (hits.length) { log('    ✖ leak/secret candidates:'); hits.slice(0, 40).forEach((h) => log('      - ' + h)); }
   else log(`    ✓ no outcome_return_pct/Phase-E value-binding or secret literal in ${DIFF_ONLY ? 'git diff' : (files?.length || 0) + ' source files'}.`);
+  if (!DIFF_ONLY) log(`    · av-key shape: ${testFilesScanned} test/fixture files scanned; ${testKeysExempt} synthetic key literal(s) exempt (≤4 distinct hex digits or the documented sequential fixture).`);
   record('pii', hits.length === 0, hits.length ? `${hits.length} candidate(s)` : 'clean');
   emitSecretScanVerdict(hits.length === 0 ? 'PASS' : 'FAIL');
   return hits.length === 0;
@@ -437,7 +528,8 @@ if (argv.includes('--self-test')) {
   const secretFails = selfTestSecrets();
   const leakFails = selfTestLeakValue();
   const corpusFails = selfTestCorpus();
-  const fails = [...secretFails, ...leakFails, ...corpusFails];
+  const avFails = selfTestAvKey();
+  const fails = [...secretFails, ...leakFails, ...corpusFails, ...avFails];
   if (fails.length) { console.error('✖ matcher self-test FAILED:'); fails.forEach((f) => console.error('   - ' + f)); process.exit(1); }
   // Assert the corpora are NON-EMPTY before reporting a pass. A self-test that ran zero
   // assertions prints exactly the same ✓ as one that ran fifty — which is the vacuous-guard
@@ -452,6 +544,7 @@ if (argv.includes('--self-test')) {
   console.log(`✓ secret-matcher self-test passed (${SELF_TEST_COUNTS.fire} must-fire, ${SELF_TEST_COUNTS.noFire} must-not-fire)`);
   console.log(`✓ leak-value self-test passed (${SELF_TEST_COUNTS.leakFire} must-fire, ${SELF_TEST_COUNTS.leakNoFire} must-not-fire)`);
   console.log(`✓ corpus-vacuity self-test passed (${SELF_TEST_COUNTS.corpus} cases)`);
+  console.log(`✓ av-key self-test passed (${SELF_TEST_COUNTS.avFire} must-fire, ${SELF_TEST_COUNTS.avNoFire} must-not-fire)`);
   process.exit(0);
 }
 

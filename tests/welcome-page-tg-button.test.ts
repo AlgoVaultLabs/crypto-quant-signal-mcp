@@ -12,9 +12,9 @@ import { getWelcomePageHtml } from '../src/lib/welcome-page.js';
 
 describe('BOT-W2 /welcome page deep-link button', () => {
   it('renders the Connect-Telegram button when apiKey is non-null', () => {
-    const html = getWelcomePageHtml('av_live_abc123def456789012345678', 'starter', 'u@example.com');
+    const html = getWelcomePageHtml('av_live_f6f6f6f6f6f6f6f6f6f6f6f6', 'starter', 'u@example.com');
     expect(html).toContain('Connect @algovaultofficialbot');
-    expect(html).toContain('https://t.me/algovaultofficialbot?start=auth_av_live_abc123def456789012345678');
+    expect(html).toContain('https://t.me/algovaultofficialbot?start=auth_av_live_f6f6f6f6f6f6f6f6f6f6f6f6');
     expect(html).toContain('class="tg-btn"');
   });
 

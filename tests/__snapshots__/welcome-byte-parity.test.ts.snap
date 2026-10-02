@@ -1111,15 +1111,15 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   <h1>Welcome to AlgoVault! &#x1f389;</h1>
   <div class="subtitle">Starter plan activated</div>
   
-  <div class="key-box"><div class="label">Your API Key</div><code id="api-key">av_live_deadbeefcafe0123456789ab</code><button onclick="navigator.clipboard.writeText(document.getElementById('api-key').textContent);this.textContent='Copied!'">Copy</button></div>
-  <div class="tg-connect"><div class="label">Connect to Telegram bot</div><p>Get regime alerts + trade calls pushed to your Telegram, with your paid quota honored automatically.</p><a href="https://t.me/algovaultofficialbot?start=auth_av_live_deadbeefcafe0123456789ab" target="_blank" rel="noopener" class="tg-btn">📱 Connect @algovaultofficialbot</a></div>
+  <div class="key-box"><div class="label">Your API Key</div><code id="api-key">av_live_070707070707070707070707</code><button onclick="navigator.clipboard.writeText(document.getElementById('api-key').textContent);this.textContent='Copied!'">Copy</button></div>
+  <div class="tg-connect"><div class="label">Connect to Telegram bot</div><p>Get regime alerts + trade calls pushed to your Telegram, with your paid quota honored automatically.</p><a href="https://t.me/algovaultofficialbot?start=auth_av_live_070707070707070707070707" target="_blank" rel="noopener" class="tg-btn">📱 Connect @algovaultofficialbot</a></div>
   <div class="usage">
     <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
     <pre>{
   "mcpServers": {
     "algovault": {
       "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer av_live_deadbeefcafe0123456789ab", "X-AlgoVault-Track-Token": "chan-welcome" }
+      "headers": { "Authorization": "Bearer av_live_070707070707070707070707", "X-AlgoVault-Track-Token": "chan-welcome" }
     }
   }
 }</pre>
