@@ -57,7 +57,7 @@ import { servedCandleStepMs, SERVED_VENUES, CRON_TIMEFRAMES } from '../lib/tf-su
 import { sloHoursFor as defaultSloHoursFor, isFullPanelVenue, FRESHNESS_BARRIER_SPEC, FULL_PANEL_VENUES } from '../lib/venue-slo-tiers.js';
 import { candleHorizonDays, CANDLE_HORIZON_DAYS, CANDLE_HORIZONS_MEASURED_AT } from '../lib/venue-candle-horizons.js';
 import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
-import { ADAPTER_PENDING_CELLS, type ManifestClass } from './lrw/registered.js';
+import { ADAPTER_CELL, ADAPTER_PENDING_CELLS, type ManifestClass } from './lrw/registered.js';
 import { relabelUntil, buildRelabelGroupsSql } from './lrw/relabel-sql.js';
 import { parseGapWorklists, loadAnnotationSources } from './lrw/annotation-sources.js';
 import { buildEnvelope, isConforming, type Verdict } from '../lib/detector-envelope.js';
@@ -1502,14 +1502,17 @@ export async function processRelabelGroup(
     for (const x of todo) for (const v of v2Specs) if (!done.has(`${x.id}|${v.spec}`)) rcov.wouldWrite++;
     return;
   }
-  // Coverage classes decided without a fetch (registration §3): a retired venue, the adapter-pending cell, and
-  // a window past the venue's measured candle depth.
+  // Coverage classes decided without a fetch (registration §3): a retired venue, a pending adapter cell (none
+  // since T_ADAPTER), and a window past the venue's measured candle depth.
   if (ctx.retired.has(g.exchange)) { for (const x of todo) manifest(x.id, 'unreachable:retired'); return; }
   if (ADAPTER_PENDING_CELLS.has(`${g.exchange}:${g.timeframe}`)) {
     for (const x of todo) manifest(x.id, 'unreachable:adapter-pending');
     return;
   }
-  const reachDays = expiryReachDays(g.exchange, g.timeframe);
+  // The BITGET 2h / 8h depths in EXPIRY_REACH_DAYS were measured (2026-09-27) through the history fallback that
+  // OPS-ADAPTER-HISTORY-ANCHOR-W1 replaced at T_ADAPTER; the registration amendment of 2026-10-01 (OAH-Q8) has the
+  // relabel ATTEMPT that cell, so the fetch decides its class (unreachable:history / refused), never a stale depth.
+  const reachDays = ADAPTER_CELL.has(`${g.exchange}:${g.timeframe}`) ? Infinity : expiryReachDays(g.exchange, g.timeframe);
   const reachCutS = Number.isFinite(reachDays) ? Math.floor(ctx.nowMs / 1000 - reachDays * 86_400 + REACH_MARGIN_S) : -Infinity;
   const live = todo.filter((x) => {
     if (x.created_at >= reachCutS) return true;

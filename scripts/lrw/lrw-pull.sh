@@ -3,7 +3,8 @@
 #
 # Runs, from a repo checkout on the Mac, after `npm run build`:
 #   preconditions  the registration commit is an ancestor of origin/main and contains the file (§1.1); the ADS-1
-#                  `-v2` amendment commit is an ancestor of origin/main AND touches the ADS-1 registration (§1.2);
+#                  `-v2` amendment commit is an ancestor of origin/main AND introduces the amendment — its copy of
+#                  the ADS-1 registration carries exactly one `## <n>. Amendment ` heading, its parent's none (§1.2);
 #                  both committed BEFORE this pull; the clock is outside 02:20–06:30Z and no labeller / relabel
 #                  runner is alive on signal-1; the relabel and the annotation are DONE — measured on the rows,
 #                  read-only (dist/scripts/lrw/completeness.js), and every runner's own last line was CONVERGED (§1.3)
@@ -52,6 +53,9 @@ decide() {
   if [ -n "$ind" ]; then printf '[lrw-pull] cannot verify:%s\n' "$ind" >&2; echo 'LRW_PULL_VERDICT=INDETERMINATE'; return 3; fi
   echo 'LRW_PULL_VERDICT=PASS'; return 0
 }
+
+# amendment_state <headings at the commit> <headings at its first parent> → introduces | not
+amendment_state() { if [ "$1" = 1 ] && [ "$2" = 0 ]; then echo introduces; else echo not; fi; }
 
 # summary_state <file> → ok | fail:<why> | ind:<why> — every runner's terminal verdict, one line each
 # (`<name> <verdict>`); an unreadable, empty or malformed file is never ok, a non-CONVERGED runner is a fail.
@@ -110,9 +114,13 @@ run_pull() {
   fi
   if [ "$pre" = ok ]; then git cat-file -e "$REG_COMMIT:$REG_FILE" 2>/dev/null || pre='fail:registration-commit-lacks-file'; fi
   if [ "$pre" = ok ]; then git merge-base --is-ancestor "$ads1" origin/main 2>/dev/null || pre='fail:ads1-amendment-not-on-origin-main'; fi
-  # §1.2: the amendment is a commit that changes the ADS-1 registration — not any landed SHA
+  # §1.2: the commit that INTRODUCES the amendment — not the registration commit, and not any commit that merely
+  # touches the file (the predicate ADS-1's own pull applies, so the two pulls agree on what "the amendment" is)
   if [ "$pre" = ok ]; then
-    git diff-tree --no-commit-id --name-only -r "$ads1" 2>/dev/null | grep -qx "$ADS1_REG_FILE" || pre='fail:ads1-amendment-does-not-touch-the-ads1-registration'
+    local here before
+    here="$(git show "$ads1:$ADS1_REG_FILE" 2>/dev/null | grep -cE '^## [0-9]+\. Amendment ')"
+    before="$(git show "$ads1^:$ADS1_REG_FILE" 2>/dev/null | grep -cE '^## [0-9]+\. Amendment ')"
+    [ "$(amendment_state "${here:-0}" "${before:-0}")" = introduces ] || pre="fail:ads1-commit-does-not-introduce-the-amendment(${here:-0}/${before:-0})"
   fi
   local reg_ts ads1_ts
   reg_ts="$(git log -1 --format=%ct "$REG_COMMIT" 2>/dev/null)"; ads1_ts="$(git log -1 --format=%ct "$ads1" 2>/dev/null)"
@@ -197,6 +205,14 @@ self_test() {
   ck empty-output 'LRW_PULL_VERDICT=INDETERMINATE' 3 ok ok equal ind
   ck fail-outranks-ind 'LRW_PULL_VERDICT=FAIL' 1 ok fail ind ind
   ck relabel-not-done 'LRW_PULL_VERDICT=FAIL' 1 fail:relabel-not-done ind ind ind
+  # the amendment predicate: exactly one heading at the commit and none before it — the registration commit (0/0),
+  # a later touch (1/1) and a double amendment (2/0) are all refused
+  local pair
+  for pair in '1 0 introduces' '0 0 not' '1 1 not' '2 1 not' '2 0 not'; do
+    set -- $pair
+    if [ "$(amendment_state "$1" "$2")" = "$3" ]; then pass=$((pass + 1)); echo "SELF-TEST: ok amendment-$1-$2"
+    else fail=$((fail + 1)); echo "SELF-TEST: FAIL amendment-$1-$2"; fi
+  done
   # the writer pattern never matches its own text (the remote shell's command line), and matches every writer
   local wp_ok=1 cmd
   printf '%s' "bash -c pgrep -fc '$WRITER_PATTERN' || true" | grep -Eq "$WRITER_PATTERN" && wp_ok=0
@@ -222,7 +238,7 @@ self_test() {
   # the guard itself must fire (it names the tool), not some later failure
   if [ "$(printf '%s\n' "$out" | tail -n 1)" = 'LRW_PULL_VERDICT=INDETERMINATE' ] && [ "$rc" -eq 3 ] && printf '%s' "$out" | grep -q "required tool 'ssh' not on PATH"; then pass=$((pass + 1)); echo 'SELF-TEST: ok missing-tool'
   else fail=$((fail + 1)); echo "SELF-TEST: FAIL missing-tool (got '$out' rc=$rc)"; fi
-  if [ "$fail" -eq 0 ] && [ "$pass" -ge 19 ]; then echo "LRW_PULL_SELFTEST: PASS ($pass checks)"; exit 0; fi
+  if [ "$fail" -eq 0 ] && [ "$pass" -ge 24 ]; then echo "LRW_PULL_SELFTEST: PASS ($pass checks)"; exit 0; fi
   echo "LRW_PULL_SELFTEST: FAIL ($fail of $((pass + fail)))"; exit 1
 }
 

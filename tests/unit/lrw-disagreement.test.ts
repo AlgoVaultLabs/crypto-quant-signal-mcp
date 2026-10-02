@@ -17,7 +17,7 @@ import { T_CUT_EPOCH } from '../../src/scripts/lrw/registered.js';
 import { coarserV1LagTable } from '../../src/scripts/backfill-directional-labels.js';
 
 const T0 = 1789000000; // inside T_CAP, after T_FLIP
-const empty = (): Strata => ({ worklist: new Map(), delta: new Map(), crossed: new Map(), retiredUc: new Set(), manifest: new Map() });
+const empty = (): Strata => ({ worklist: new Map(), delta: new Map(), crossed: new Map(), retiredUc: new Set(), manifest: new Map(), adapterBefore: new Set() });
 const row = (o: Partial<ExtractRow> & { id: number }): ExtractRow => ({
   createdAt: T0, exchange: 'BINANCE', coin: 'BTC', timeframe: '1h', side: 'BUY', spec: 'tau1.0-floor0.30-v1',
   labelV1: 1, ambV1: false, lowvolV1: false, barrierV1: 1, gapV1: 0, computedV1: T0 + 3600, hasV2: true,
@@ -43,6 +43,7 @@ describe('parsing — the allow-list header, typed or refused', () => {
       delta: 'signal_id,barrier_spec,gap_served_L,sigma_holes_L\n6,tau1.0-floor0.30-v1,1,0',
       crossed: 'signal_id,barrier_spec,crossed_L,fwd_len_L\n5,tau1.0-floor0.30-v1,0,8',
       retiredUc: 'signal_id,barrier_spec,gap_served_L,gap_served_Uc_worklist,gap_served_Uc_with_retired\n7,tau1.0-floor0.30-v1,0,0,2',
+      adapterBefore: 'signal_id,barrier_spec\n11,tau1.0-floor0.30-v2\n11,tau0.5-floor0.30-v2',
       manifest: ['noise\nLRW_MANIFEST 8 deferred\nLRW_MANIFEST 9 unreachable:history\n', 'LRW_MANIFEST 8 refused:gap\n'],
     });
     expect(s.worklist.get('5|tau1.0-floor0.30-v1')).toEqual({ sigmaHoles: 3, ambiguousUc: 1, forming: 0 });
@@ -50,6 +51,8 @@ describe('parsing — the allow-list header, typed or refused', () => {
     expect(s.crossed.get('5|tau1.0-floor0.30-v1')).toBe(0);
     expect(s.retiredUc.has('7|tau1.0-floor0.30-v1')).toBe(true);
     expect([...s.manifest.entries()]).toEqual([[8, 'refused:gap'], [9, 'unreachable:history']]); // the later log wins
+    // the pre-T_ADAPTER -v2 rows are keyed on their -v1 twin's spec
+    expect([...s.adapterBefore].sort()).toEqual(['11|tau0.5-floor0.30-v1', '11|tau1.0-floor0.30-v1']);
   });
 
   it('a header-only stratum is a wrong file, not an empty stratum; an unregistered manifest class refuses', () => {
@@ -58,16 +61,20 @@ describe('parsing — the allow-list header, typed or refused', () => {
       delta: 'signal_id,barrier_spec,gap_served_L,sigma_holes_L\n6,tau1.0-floor0.30-v1,1,0',
       crossed: 'signal_id,barrier_spec,crossed_L,fwd_len_L\n5,tau1.0-floor0.30-v1,0,8',
       retiredUc: 'signal_id,barrier_spec,gap_served_L,gap_served_Uc_worklist,gap_served_Uc_with_retired\n7,tau1.0-floor0.30-v1,0,0,2',
+      adapterBefore: 'signal_id,barrier_spec\n',
       manifest: [''],
     };
     expect(() => parseStrata(ok)).not.toThrow();
     expect(() => parseStrata({ ...ok, delta: 'signal_id,barrier_spec,gap_served_L,sigma_holes_L\n' })).toThrow(/delta: no data row/);
     expect(() => parseStrata({ ...ok, manifest: ['LRW_MANIFEST 8 error'] })).toThrow(/registered form/);
+    // the pinned pre-T_ADAPTER snapshot may be empty (pinned by sha), but its header and its -v2 rows are checked
+    expect(() => parseStrata({ ...ok, adapterBefore: 'id,spec\n' })).toThrow(/adapter-before: header/);
+    expect(() => parseStrata({ ...ok, adapterBefore: 'signal_id,barrier_spec\n11,tau1.0-floor0.30-v1' })).toThrow(/not a -v2 row/);
   });
 });
 
 describe('§4.1 strata of a row', () => {
-  it('race gap, σ input, crossed, grid, WEEX-pre, phase, adapter-pending, model ambiguity, provenance', () => {
+  it('race gap, σ input, crossed, grid, WEEX-pre, phase, the BITGET 2h/8h cell, model ambiguity, provenance', () => {
     const s = empty();
     s.worklist.set('1|tau1.0-floor0.30-v1', { sigmaHoles: 0, ambiguousUc: 0, forming: 0 });
     s.worklist.set('2|tau1.0-floor0.30-v1', { sigmaHoles: 4, ambiguousUc: 1, forming: 0 });
@@ -83,7 +90,8 @@ describe('§4.1 strata of a row', () => {
     expect(axesOf(row({ id: 5, exchange: 'WEEX', timeframe: '30m', computedV1: 1788432899 }), s).weexPre).toBe(true);
     expect(axesOf(row({ id: 5, exchange: 'WEEX', timeframe: '30m', computedV1: 1788432900 }), s).weexPre).toBe(false);
     expect(axesOf(row({ id: 6, exchange: 'OKX', timeframe: '1d' }), s).phase).toBe(true);
-    expect(axesOf(row({ id: 7, exchange: 'BITGET', timeframe: '8h' }), s)).toMatchObject({ adapterPending: true, phase: true });
+    expect(axesOf(row({ id: 7, exchange: 'BITGET', timeframe: '8h' }), s)).toMatchObject({ adapterCell: true, phase: true });
+    expect(axesOf(row({ id: 7, exchange: 'BITGET', timeframe: '4h' }), s).adapterCell).toBe(false);
     expect(gridClass('GATE', '2h')).toBe('finer');
   });
 
@@ -215,6 +223,26 @@ describe('the table, the headline and the CLI verdict', () => {
     expect(E4_PAIRS.length).toBeGreaterThan(0);
   });
 
+  it('the BITGET 2h/8h cell (amendment 2026-10-01): pre-T_ADAPTER -v2 rows counted unreachable-pending, the rest its own cell, never pooled', () => {
+    const s = empty();
+    s.adapterBefore.add('201|tau1.0-floor0.30-v1');
+    const rows: ExtractRow[] = [];
+    for (let i = 0; i < 40; i++) rows.push(row({ id: i, timeframe: '2h' })); // BINANCE 2h, identical twins
+    rows.push(row({ id: 201, exchange: 'BITGET', timeframe: '2h', labelV2: -1 })); // -v2 written before T_ADAPTER
+    for (let i = 0; i < 35; i++) rows.push(row({ id: 300 + i, exchange: 'BITGET', timeframe: '8h', labelV2: 0 })); // reached
+    const t = buildTable({ rows, strata: s, countsApart: [], v2WithoutV1: [], meta: {} });
+    const full = (pred: (k: Record<string, string>) => boolean) => t.cells.filter((c) => c.key.spec === 'tau1.0-floor0.30-v1' && c.key.window === 'FULL' && pred(c.key));
+    // pooled lines carry BINANCE only
+    expect(full((k) => k.cell === 'fleet')[0].read).toMatchObject({ registered: 40, twins: 40, p_differ: 0 });
+    expect(full((k) => k.timeframe === '2h')[0].read).toMatchObject({ registered: 40 });
+    expect(t.headline).toMatchObject({ n: 40, k: 0 });
+    expect(t.comparators.find((c) => c.key.window === 'FULL' && c.key.spec === 'tau1.0-floor0.30-v1' && c.key.rollup.startsWith('fleet'))!.read.twins).toBe(40);
+    // the cell: 35 reached twins compared; the pre-T_ADAPTER row counted under its kept class, its labels never compared
+    const e5 = full((k) => k.registered_cell === 'E5 BITGET 2h/8h reached via adapter fix')[0].read;
+    expect(e5).toMatchObject({ registered: 36, twins: 35, p_differ: 1, non_twins: { 'unreachable:adapter-pending': 1 } });
+    expect(full((k) => k['timeframe|venue'] === '2h|BITGET')[0].read).toMatchObject({ registered: 1, twins: 0, non_twins: { 'unreachable:adapter-pending': 1 } });
+  });
+
   it('every registered cell is printed — EMPTY when no row occupies it, UNDEFINED with rows but no twin; §8 states', () => {
     const rows = Array.from({ length: 31 }, (_, i) => row({ id: i }));
     rows.push(row({ id: 500, exchange: 'BITGET', timeframe: '8h', hasV2: false, labelV2: null, ambV2: null, barrierV2: null }));
@@ -222,9 +250,10 @@ describe('the table, the headline and the CLI verdict', () => {
     const reg = t.cells.filter((c) => c.key.window === 'FULL' && c.key.registered_cell !== undefined);
     expect(reg.map((c) => c.key.registered_cell).sort()).toEqual([...Object.keys(E_CELLS), ...E4_PAIRS.map((p) => `E4 coarser ${p}`)].sort());
     expect(reg.find((c) => c.key.registered_cell === 'E2 race-invariant')!.read.status).toBe('EMPTY');
-    expect(reg.find((c) => c.key.registered_cell === 'E5 adapter-pending')!.read).toMatchObject({ status: 'UNDEFINED', registered: 1, twins: 0 });
+    expect(reg.find((c) => c.key.registered_cell === 'E5 BITGET 2h/8h reached via adapter fix')!.read).toMatchObject({ status: 'UNDEFINED', registered: 1, twins: 0 });
     const st = (e: string) => t.expectations.find((x) => x.window === 'FULL' && x.expectation === e)!;
-    expect(st('E5')).toMatchObject({ state: 'consistent' });
+    // E5's "no twins" expectation was amended away (2026-10-01, OAH-Q8): the cell is read as its own, never judged
+    expect(st('E5').state).toMatch(/^amended 2026-10-01 \(OAH-Q8\)/);
     expect(st('E3')).toMatchObject({ state: 'indeterminate' });
     expect(st('E1')).toMatchObject({ state: 'indeterminate' }); // all facts unknown here → the E1 cell is EMPTY
   });
@@ -283,6 +312,7 @@ describe('the table, the headline and the CLI verdict', () => {
       '--delta', w('d.csv.gz', 'signal_id,barrier_spec,gap_served_L,sigma_holes_L\n2,tau1.0-floor0.30-v1,0,0', true),
       '--crossed', w('k.csv.gz', 'signal_id,barrier_spec,crossed_L,fwd_len_L\n1,tau1.0-floor0.30-v1,0,8', true),
       '--retired-uc', w('r.csv', 'signal_id,barrier_spec,gap_served_L,gap_served_Uc_worklist,gap_served_Uc_with_retired\n3,tau1.0-floor0.30-v1,0,0,0'),
+      '--adapter-before', w('a.csv', 'signal_id,barrier_spec\n'),
       '--manifest', man, '--out-dir', join(dir, 'out'),
     ];
     const logs: string[] = [];

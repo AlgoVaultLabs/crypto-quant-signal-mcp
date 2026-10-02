@@ -81,7 +81,7 @@ import {
 } from '../../src/scripts/backfill-directional-labels.js';
 import { buildRelabelGroupsSql, buildRelabelMissingSql, relabelUntil } from '../../src/scripts/lrw/relabel-sql.js';
 import { loadAnnotationSources, parseGapWorklists } from '../../src/scripts/lrw/annotation-sources.js';
-import { T_CUT_EPOCH, ADAPTER_PENDING_CELLS } from '../../src/scripts/lrw/registered.js';
+import { T_CUT_EPOCH, ADAPTER_PENDING_CELLS, ADAPTER_CELL } from '../../src/scripts/lrw/registered.js';
 import { BARRIER_SPECS, BARRIER_SPECS_V2, EVAL_CANDLES } from '../../src/scripts/directional-labeler.js';
 
 const M = 60_000;
@@ -183,17 +183,20 @@ describe('--relabel-v2 — ADD-ONLY, every eligible signal, every refusal counte
     expect(env.inserted).toHaveLength(0);
   });
 
-  it('classes decided WITHOUT a fetch: a retired venue, the adapter-pending cell, a window past the measured depth', async () => {
+  it('classes decided WITHOUT a fetch: a retired venue, a window past the measured depth — and BITGET 2h/8h is ATTEMPTED since T_ADAPTER', async () => {
     env.signals = [sig(21, T + 17_000)];
     env.candles = series(T - 100 * H, T + 20 * H, H);
     const ret = await relabel({ exchange: 'BITMART', coin: 'BTC', timeframe: '1h' }, [], { retired: ['BITMART'] });
     expect(ret.manifest).toEqual([['21', 'unreachable:retired']]);
-    // the adapter-pending cell is the registration's — no flag opts a run into it, none can opt out
-    expect([...ADAPTER_PENDING_CELLS].sort()).toEqual(['BITGET:2h', 'BITGET:8h']);
+    // the pending set is the registration's — no flag opts a run into it or out of it. The amendment of 2026-10-01
+    // (OPS-ADAPTER-HISTORY-ANCHOR-W1, OAH-Q8) EMPTIED it: from T_ADAPTER the relabel attempts the BITGET 2h/8h cell,
+    // whose identity stays fixed (ADAPTER_CELL) for the table's cell assignment
+    expect(ADAPTER_PENDING_CELLS.size).toBe(0);
+    expect([...ADAPTER_CELL].sort()).toEqual(['BITGET:2h', 'BITGET:8h']);
     for (const tf of ['2h', '8h']) {
-      const pend = await relabel({ exchange: 'BITGET', coin: 'BTC', timeframe: tf });
-      expect(pend.manifest).toEqual([['21', 'unreachable:adapter-pending']]);
-      expect(env.fetches).toHaveLength(0);
+      const r = await relabel({ exchange: 'BITGET', coin: 'BTC', timeframe: tf });
+      expect(r.manifest.some(([, cls]) => cls === 'unreachable:adapter-pending')).toBe(false);
+      expect(env.fetches.length).toBeGreaterThan(0);
     }
     expect(() => parseCli(['--relabel-v2', '--adapter-pending', 'BITGET:2h'])).toThrow(/refused/);
     // a 3m GATE signal two years old is past the venue's measured candle depth

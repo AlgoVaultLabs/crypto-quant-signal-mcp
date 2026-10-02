@@ -25,6 +25,8 @@
 #                   D6 the annotation is DONE on the rows: no NULL -v1 row the pinned worklists could annotate
 #                   D7 the relabel is DONE on the rows: every signal it would still visit carries a registered
 #                      manifest class (none deferred), AND every runner's own last word was CONVERGED
+#                   D8 the BITGET 2h/8h `-v2` rows written before T_ADAPTER (amendment 2026-10-01, OAH-Q8) re-read
+#                      now are byte-identical to the pinned snapshot the table classes them by — a closed set
 #                 → CH3_GREEN / CH3_RED / CH3_INDETERMINATE
 # A leg that could not READ its input is INDETERMINATE, never RED and never clean; RED is a measured violation.
 #
@@ -45,7 +47,7 @@ HOST='root@204.168.185.24'
 KEY="$HOME/.ssh/algovault_deploy"
 PG_CTR='crypto-quant-signal-mcp-postgres-1'
 SUITES=(tests/unit/lrw-relabel-v2.test.ts tests/unit/lrw-extract-sql.test.ts tests/unit/lrw-completeness.test.ts tests/unit/lrw-disagreement.test.ts)
-MIN_MUTATIONS=38
+MIN_MUTATIONS=45
 
 # decide <mode> <build_rc> <suites> <subtests> <reg31> <mut_line> <data>
 #   suites/subtests: passed | failed | missing   reg31: equal | differ | ind
@@ -93,8 +95,9 @@ decide() {
 #  8 before        digest-before.txt      9 bmeta  digest-before.meta      10 after  the read-only digest output
 # 11 d6            the completeness line for the annotation      12 d7  … for the relabel
 # 13 summary       the runner summary's state (lrw-pull.sh --summary-state)
+# 14 d8            the re-read snapshot line (LRW_ADAPTER_SNAPSHOT=PASS sha256=… rows=…)   15 pin  its pinned sha256
 judge_data() {
-  local d1="$1" meta="$2" start_s="$3" reg_ts="$4" tcut="$5" d3="$6" d4="$7" before="$8" bmeta="$9" after="${10}" d6="${11}" d7="${12}" summary="${13}"
+  local d1="$1" meta="$2" start_s="$3" reg_ts="$4" tcut="$5" d3="$6" d4="$7" before="$8" bmeta="$9" after="${10}" d6="${11}" d7="${12}" summary="${13}" d8="${14}" pin="${15}"
   local red="" ind="" tok='TOKEN current_user=aoe_readonly transaction_read_only=on' digest_re='^DIGEST n=[0-9]+ x0=-?[0-9]+ x1=-?[0-9]+$'
   case "$d1" in ok) ;; fail) red="$red D1:registration" ;; *) ind="$ind D1:unread" ;; esac
   local meta_extract=""
@@ -130,6 +133,9 @@ judge_data() {
   case "$d6" in LRW_ANNOTATION_COMPLETE=YES*) ;; LRW_ANNOTATION_COMPLETE=NO*) red="$red D6:annotation-not-done" ;; *) ind="$ind D6:unread" ;; esac
   case "$d7" in LRW_RELABEL_COMPLETE=YES*) ;; LRW_RELABEL_COMPLETE=NO*) red="$red D7:relabel-not-done" ;; *) ind="$ind D7:unread" ;; esac
   case "$summary" in ok) ;; fail:*) red="$red D7:${summary#fail:}" ;; *) ind="$ind D7:${summary#ind:}" ;; esac
+  local sha8; sha8="$(printf '%s' "$d8" | sed -nE 's/^LRW_ADAPTER_SNAPSHOT=PASS sha256=([0-9a-f]{64}) rows=[0-9]+$/\1/p')"
+  if [ -z "$sha8" ] || ! printf '%s' "$pin" | grep -qE '^[0-9a-f]{64}$'; then ind="$ind D8:unread"
+  elif [ "$sha8" != "$pin" ]; then red="$red D8:pre-t_adapter-set-moved"; fi
   if [ -n "$red" ]; then echo "red:$red${ind:+ ind:$ind}"; elif [ -n "$ind" ]; then echo "ind:$ind"; else echo ok; fi
 }
 
@@ -156,7 +162,7 @@ mutation_table() {
  ["R16","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts",".map(Number).sort((p, q) => q - p)",".map(Number).sort((p, q) => p - q)"],
  ["R17","scripts/lrw/lrw-pull.sh","sh:bash scripts/lrw/lrw-pull.sh --self-test","moved) red=\"$red concurrent-writer\" ;;","moved) ;;"],
  ["R18","ops/label-backfill/lrw-relabel-runner.sh","sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh","echo $((24 * 60 - now + SLOT_END_MIN))","echo $((24 * 60 - now))"],
- ["R19","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","const pooled = sel.filter((r) => ax(r).grid !== 'coarser');","const pooled = sel;"],
+ ["R19","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","const pooled = sel.filter((r) => ax(r).grid !== 'coarser' && !ax(r).adapterCell);","const pooled = sel.filter((r) => !ax(r).adapterCell);"],
  ["R20","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","tri(wl !== undefined, wl?.ambiguousUc === 1)","(wl?.ambiguousUc === 1 ? 'yes' : 'no')"],
  ["R21","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","    cells.push({ key: { ...base, registered_cell: name }, read: readAcc(a) });","    if (a.registered > 0) cells.push({ key: { ...base, registered_cell: name }, read: readAcc(a) });"],
  ["R22","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","=> d.v1 !== null && d.v2 !== null);","=> d.v1 !== null);"],
@@ -164,7 +170,7 @@ mutation_table() {
  ["R24","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","if (sha(files[flag]) !== pin) throw","if (false) throw"],
  ["R25","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","const out: string[] = [HEADER_CLAUSE, ''];","const out: string[] = [];"],
  ["R26","src/scripts/lrw/relabel-sql.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (until !== undefined && until > cut) throw","if (false) throw"],
- ["R27","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (ADAPTER_PENDING_CELLS.has(","if (false && ADAPTER_PENDING_CELLS.has("],
+ ["R27","src/scripts/lrw/registered.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","export const ADAPTER_PENDING_CELLS: ReadonlySet<string> = new Set<string>([]);","export const ADAPTER_PENDING_CELLS: ReadonlySet<string> = new Set<string>(['BITGET:2h', 'BITGET:8h']);"],
  ["R28","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","return ownStopArmed && (Date.now() >= ownDeadlineMs || isStopRequested());","return false;"],
  ["R29","src/scripts/lrw/annotation-sources.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (!ANNOTATION_SOURCE_SHA256.has(sha256)) throw","if (false) throw"],
  ["R30","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (opts.deadlineMs !== undefined && Date.now() >= opts.deadlineMs) { a.outcome = 'global-budget'; break; }",""],
@@ -175,7 +181,14 @@ mutation_table() {
  ["R35","ops/label-backfill/lrw-relabel-runner.sh","sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh","for f in written errors budgetSkips cutShort; do","for f in written; do"],
  ["R36","ops/label-backfill/lrw-relabel-runner.sh","sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh","grep -q '\"outcome\":\"stopped\"' && { echo stopped; return; }","false && { echo stopped; return; }"],
  ["R37","src/scripts/lrw/extract-sql.ts","vitest:tests/unit/lrw-extract-sql.test.ts","if (argv.includes('--t-cut')) {","if (false) {"],
- ["R38","src/scripts/lrw/annotation-sources.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","    if (iId < 0 || iSpec < 0 || iGap < 0) throw","    if (false) throw"]
+ ["R38","src/scripts/lrw/annotation-sources.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","    if (iId < 0 || iSpec < 0 || iGap < 0) throw","    if (false) throw"],
+ ["R39", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "const reachDays = ADAPTER_CELL.has(`${g.exchange}:${g.timeframe}`) ? Infinity : expiryReachDays(g.exchange, g.timeframe);", "const reachDays = expiryReachDays(g.exchange, g.timeframe);"],
+ ["R40", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "const pooled = sel.filter((r) => ax(r).grid !== 'coarser' && !ax(r).adapterCell);", "const pooled = sel.filter((r) => ax(r).grid !== 'coarser');"],
+ ["R41", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "ADAPTER_CELL.has(`${r.exchange}:${r.timeframe}`) && strata.adapterBefore.has(`${r.id}|${r.spec}`)", "false"],
+ ["R42", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "  if (s.adapterBefore.has(`${r.id}|${r.spec}`)) return 'unreachable:adapter-pending';\n", ""],
+ ["R43", "src/scripts/lrw/completeness.ts", "vitest:tests/unit/lrw-completeness.test.ts", "AND d.computed_at < to_timestamp(${T_ADAPTER})", "AND d.computed_at <= to_timestamp(${T_ADAPTER})"],
+ ["R44", "scripts/lrw/lrw-pull.sh", "sh:bash scripts/lrw/lrw-pull.sh --self-test", "if [ \"$1\" = 1 ] && [ \"$2\" = 0 ]; then echo introduces;", "if [ \"$1\" -ge 1 ]; then echo introduces;"],
+ ["R45", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (ab[0] !== 'signal_id,barrier_spec') throw", "if (false) throw"]
 ]
 JSON
 }
@@ -282,8 +295,13 @@ collect_data() { # <audit-dir> <manifest> <worklists> <tmp> → prints judge_dat
     d7="$(node dist/scripts/lrw/completeness.js --relabel --missing "$tmp/missing-v2.txt" --manifest "$manifest" 2>/dev/null)"
   fi
   summary="$(bash scripts/lrw/lrw-pull.sh --summary-state "$dir/runner-summary.txt" 2>/dev/null)"
-  printf '[lrw-ch3-gate] D6: %s\n[lrw-ch3-gate] D7: %s\n' "${d6:-unread}" "${d7:-unread}" >&2
-  judge_data "$d1" "$meta" "$start_s" "$reg_ts" "$tcut" "$d3" "$d4" "$before" "$bmeta" "$after" "$d6" "$d7" "${summary:-ind:unread}"
+  local d8="" pin8
+  if ro_query "$(node dist/scripts/lrw/completeness.js --emit ADAPTER_V2_BEFORE)" > "$tmp/adapter-v2-before.txt" 2>/dev/null; then
+    d8="$(node dist/scripts/lrw/completeness.js --adapter-snapshot --session "$tmp/adapter-v2-before.txt" --out "$tmp/adapter-v2-before.csv" 2>/dev/null)"
+  fi
+  pin8="$(node -e "console.log(require('./dist/scripts/lrw/registered.js').PINNED_SHA256.adapterBefore)" 2>/dev/null)"
+  printf '[lrw-ch3-gate] D6: %s\n[lrw-ch3-gate] D7: %s\n[lrw-ch3-gate] D8: %s\n' "${d6:-unread}" "${d7:-unread}" "${d8:-unread}" >&2
+  judge_data "$d1" "$meta" "$start_s" "$reg_ts" "$tcut" "$d3" "$d4" "$before" "$bmeta" "$after" "$d6" "$d7" "${summary:-ind:unread}" "$d8" "$pin8"
 }
 
 run_gate() {
@@ -341,7 +359,7 @@ self_test() {
     local out rc; out="$(decide "$@" 2>/dev/null)"; rc=$?
     if [ "$out" = "$want" ] && [ "$rc" -eq "$want_rc" ]; then ok_ "$name"; else no_ "$name (got '$out' rc=$rc)"; fi
   }
-  local K='MUTATIONS killed=38 of=38 errored=0'
+  local K='MUTATIONS killed=45 of=45 errored=0'
   ck code-green CH3_CODE_GREEN 0 code 0 passed passed equal "$K" n/a
   ck full-green CH3_GREEN 0 full 0 passed passed equal "$K" ok
   ck build-red CH3_RED 1 code 2 missing missing ind "" n/a
@@ -349,8 +367,8 @@ self_test() {
   ck subtests-red CH3_RED 1 code 0 passed failed equal "$K" n/a
   ck registration-drift-red CH3_RED 1 code 0 passed passed differ "$K" n/a
   ck registration-unread-ind CH3_INDETERMINATE 3 code 0 passed passed ind "$K" n/a
-  ck survivor-red CH3_RED 1 code 0 passed passed equal 'MUTATIONS killed=37 of=38 errored=0' n/a
-  ck errored-ind CH3_INDETERMINATE 3 code 0 passed passed equal 'MUTATIONS killed=37 of=38 errored=1' n/a
+  ck survivor-red CH3_RED 1 code 0 passed passed equal 'MUTATIONS killed=44 of=45 errored=0' n/a
+  ck errored-ind CH3_INDETERMINATE 3 code 0 passed passed equal 'MUTATIONS killed=44 of=45 errored=1' n/a
   ck short-matrix-ind CH3_INDETERMINATE 3 code 0 passed passed equal 'MUTATIONS killed=5 of=5 errored=0' n/a
   ck control-failed-ind CH3_INDETERMINATE 3 code 0 passed passed equal 'MUTATIONS control=FAIL (x)' n/a
   ck data-red CH3_RED 1 full 0 passed passed equal "$K" 'red: D5:v1-digest-moved'
@@ -365,33 +383,36 @@ self_test() {
   local D3="t_cut=$TC cells_tested=0 n=1234 extract_sha=$X" D4; D4="$(printf '%s\nV2_ROWS=10\nV2_GAP_NONZERO=0' "$TOK")"
   local DG='DIGEST n=5 x0=-12 x1=34' AFT; AFT="$(printf '%s\nDIGEST n=5 x0=-12 x1=34' "$TOK")"
   local BM="t_cut=$TC" Y6='LRW_ANNOTATION_COMPLETE=YES {}' Y7='LRW_RELABEL_COMPLETE=YES {}'
+  local PIN='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' D8; D8="LRW_ADAPTER_SNAPSHOT=PASS sha256=$PIN rows=3"
   jd() { # <name> <want prefix> <args…>
     local name="$1" want="$2"; shift 2
     local got; got="$(judge_data "$@")"
     case "$got" in "$want"*) ok_ "judge-$name" ;; *) no_ "judge-$name (got '$got')" ;; esac
   }
-  jd clean ok ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d1-fail 'red: D1:registration' fail "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d2-not-pass 'red: D2:pull-not-pass' ok "${META/PASS/FAIL}" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d2-tcut 'red: D2:pull-t_cut' ok "${META/t_cut=$TC/t_cut=1790754894}" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d2-order 'red: D2:registration-not-before-pull' ok "$META" 1789000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d2-clock 'ind: D2:clock-unread' ok "$META" '' 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d2-absent 'ind: D2:no-pull-meta' ok '' 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d3-tcut 'red: D3:table-t_cut' ok "$META" 1791000000 1790000000 "$TC" "${D3/t_cut=$TC/t_cut=1}" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d3-no-twin 'ind: D3:no-twin' ok "$META" 1791000000 1790000000 "$TC" "${D3/n=1234/n=0}" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d3-other-extract 'red: D3:table-not-on-the-pulled-extract' ok "$META" 1791000000 1790000000 "$TC" "${D3/extract_sha=$X/extract_sha=b}" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d4-gap 'red: D4:v2-gap-nonzero' ok "$META" 1791000000 1790000000 "$TC" "$D3" "${D4/NONZERO=0/NONZERO=3}" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d4-empty 'ind: D4:no-v2-row' ok "$META" 1791000000 1790000000 "$TC" "$D3" "${D4/V2_ROWS=10/V2_ROWS=0}" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d4-unread 'ind: D4:unread' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$TOK" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d5-moved 'red: D5:v1-digest-moved' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "${AFT/x1=34/x1=35}" "$Y6" "$Y7" ok
-  jd d5-after-unread 'ind: D5:after-unread' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$TOK" "$Y6" "$Y7" ok
-  jd d5-before-unread 'ind: D5:before-unread' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" '' "$BM" "$AFT" "$Y6" "$Y7" ok
-  jd d5-other-tcut 'red: D5:before-on-another-t_cut' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" 't_cut=1790754894' "$AFT" "$Y6" "$Y7" ok
-  jd d6-no 'red: D6:annotation-not-done' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" 'LRW_ANNOTATION_COMPLETE=NO {}' "$Y7" ok
-  jd d6-unread 'ind: D6:unread' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" 'LRW_ANNOTATION_COMPLETE=INDETERMINATE x' "$Y7" ok
-  jd d7-no 'red: D7:relabel-not-done' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" 'LRW_RELABEL_COMPLETE=NO {}' ok
-  jd d7-runner 'red: D7:runner-not-converged' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" 'fail:runner-not-converged'
-  jd d7-summary-unread 'ind: D7:runner-summary-unreadable' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" 'ind:runner-summary-unreadable'
+  jd clean ok ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d1-fail 'red: D1:registration' fail "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d2-not-pass 'red: D2:pull-not-pass' ok "${META/PASS/FAIL}" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d2-tcut 'red: D2:pull-t_cut' ok "${META/t_cut=$TC/t_cut=1790754894}" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d2-order 'red: D2:registration-not-before-pull' ok "$META" 1789000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d2-clock 'ind: D2:clock-unread' ok "$META" '' 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d2-absent 'ind: D2:no-pull-meta' ok '' 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d3-tcut 'red: D3:table-t_cut' ok "$META" 1791000000 1790000000 "$TC" "${D3/t_cut=$TC/t_cut=1}" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d3-no-twin 'ind: D3:no-twin' ok "$META" 1791000000 1790000000 "$TC" "${D3/n=1234/n=0}" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d3-other-extract 'red: D3:table-not-on-the-pulled-extract' ok "$META" 1791000000 1790000000 "$TC" "${D3/extract_sha=$X/extract_sha=b}" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d4-gap 'red: D4:v2-gap-nonzero' ok "$META" 1791000000 1790000000 "$TC" "$D3" "${D4/NONZERO=0/NONZERO=3}" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d4-empty 'ind: D4:no-v2-row' ok "$META" 1791000000 1790000000 "$TC" "$D3" "${D4/V2_ROWS=10/V2_ROWS=0}" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d4-unread 'ind: D4:unread' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$TOK" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d5-moved 'red: D5:v1-digest-moved' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "${AFT/x1=34/x1=35}" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d5-after-unread 'ind: D5:after-unread' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$TOK" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d5-before-unread 'ind: D5:before-unread' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" '' "$BM" "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d5-other-tcut 'red: D5:before-on-another-t_cut' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" 't_cut=1790754894' "$AFT" "$Y6" "$Y7" ok "$D8" "$PIN"
+  jd d6-no 'red: D6:annotation-not-done' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" 'LRW_ANNOTATION_COMPLETE=NO {}' "$Y7" ok "$D8" "$PIN"
+  jd d6-unread 'ind: D6:unread' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" 'LRW_ANNOTATION_COMPLETE=INDETERMINATE x' "$Y7" ok "$D8" "$PIN"
+  jd d7-no 'red: D7:relabel-not-done' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" 'LRW_RELABEL_COMPLETE=NO {}' ok "$D8" "$PIN"
+  jd d7-runner 'red: D7:runner-not-converged' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" 'fail:runner-not-converged' "$D8" "$PIN"
+  jd d7-summary-unread 'ind: D7:runner-summary-unreadable' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" 'ind:runner-summary-unreadable' "$D8" "$PIN"
+  jd d8-moved 'red: D8:pre-t_adapter-set-moved' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok "${D8/sha256=$PIN/sha256=$X}" "$PIN"
+  jd d8-unread 'ind: D8:unread' ok "$META" 1791000000 1790000000 "$TC" "$D3" "$D4" "$DG" "$BM" "$AFT" "$Y6" "$Y7" ok 'LRW_ADAPTER_SNAPSHOT=INDETERMINATE x' "$PIN"
 
   # the tool guard fires BY NAME: every required tool but ssh on PATH → INDETERMINATE naming ssh
   local tmp t out rc; tmp="$(mktemp -d)"
@@ -403,7 +424,7 @@ self_test() {
   out="$(bash "${BASH_SOURCE[0]}" --audit-dir 2>/dev/null)"; rc=$?
   if [ "$out" = CH3_INDETERMINATE ] && [ "$rc" -eq 3 ]; then ok_ missing-value; else no_ "missing-value (got '$out' rc=$rc)"; fi
   rm -rf "$tmp"
-  if [ "$fail" -eq 0 ] && [ "$pass" -ge 39 ]; then echo "LRW_CH3_GATE_SELFTEST: PASS ($pass checks)"; exit 0; fi
+  if [ "$fail" -eq 0 ] && [ "$pass" -ge 41 ]; then echo "LRW_CH3_GATE_SELFTEST: PASS ($pass checks)"; exit 0; fi
   echo "LRW_CH3_GATE_SELFTEST: FAIL ($fail of $((pass + fail)))"; exit 1
 }
 

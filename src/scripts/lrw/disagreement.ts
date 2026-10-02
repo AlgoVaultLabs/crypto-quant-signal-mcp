@@ -6,7 +6,8 @@
 // repo is public — it carries no figure).
 //
 //   node dist/scripts/lrw/disagreement.js --extract <csv> --counts-apart <csv> --v2-without-v1 <csv> --pull-meta <txt>
-//     --worklist <gz> --delta <gz> --crossed <gz> --retired-uc <csv> --manifest <log>[,<log>…] --out-dir <dir>
+//     --worklist <gz> --delta <gz> --crossed <gz> --retired-uc <csv> --adapter-before <csv> --manifest <log>[,<log>…]
+//     --out-dir <dir>
 //
 // Every input is verified before a cell is computed: the pull's own verdict is PASS, its T_CUT is the pinned one,
 // the extract / counts-apart / v2-without-v1 / manifest files are the ones the pull hashed, and each off-DB
@@ -14,15 +15,18 @@
 // INDETERMINATE when an input cannot be read, parsed or verified — never a table over an unverified corpus.
 //
 // Coarser-served pairs (registration §0, §7 E4) are their own cells, per pair: they enter no pooled cell — not
-// the fleet, a timeframe, a fleet-wide or per-timeframe stratum, a comparator roll-up or a headline. A stratum
-// fact the strata files do not carry for a row reads `unknown`, never the clean level.
+// the fleet, a timeframe, a fleet-wide or per-timeframe stratum, a comparator roll-up or a headline. Neither does
+// the BITGET 2h / 8h cell (registration amendment 2026-10-01, OPS-ADAPTER-HISTORY-ANCHOR-W1, ruling OAH-Q8): a
+// twin whose `-v2` row was written at or after T_ADAPTER is "reached via adapter fix", its own cell; a row whose
+// `-v2` row was written before T_ADAPTER (the pinned snapshot) keeps "unreachable pending" and is counted, never
+// compared. A stratum fact the strata files do not carry for a row reads `unknown`, never the clean level.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import { EXTRACT_HEADER, COUNTS_APART_HEADER, V2_WITHOUT_V1_HEADER } from './extract-sql.js';
-import { ADAPTER_PENDING_CELLS, PINNED_SHA256, T_CUT_EPOCH } from './registered.js';
+import { ADAPTER_CELL, PINNED_SHA256, T_CUT_EPOCH } from './registered.js';
 import { parseManifest } from './completeness.js';
 import { deriveRaceOutcome } from '../dwr-baseline.js';
 import { TF_MS } from '../directional-labeler.js';
@@ -92,11 +96,13 @@ export interface Strata {
   crossed: Map<string, number>;
   retiredUc: Set<string>;
   manifest: Map<number, string>;
+  /** BITGET 2h / 8h rows whose `-v2` row was written before T_ADAPTER, keyed `${signal_id}|${spec_v1}`. */
+  adapterBefore: Set<string>;
 }
 
 /** Parse the strata. Each file must carry at least one row (a header-only file is a wrong file, not an empty
  *  stratum); the manifest parses through the ONE manifest reader, which refuses an unregistered class. */
-export function parseStrata(input: { worklist: string; delta: string; crossed: string; retiredUc: string; manifest: readonly string[] }): Strata {
+export function parseStrata(input: { worklist: string; delta: string; crossed: string; retiredUc: string; adapterBefore: string; manifest: readonly string[] }): Strata {
   const idx = (header: string[], name: string, file: string) => {
     const i = header.indexOf(name);
     if (i < 0) throw new Error(`${file}: no column ${name}`);
@@ -120,7 +126,16 @@ export function parseStrata(input: { worklist: string; delta: string; crossed: s
   const [rId, rSpec] = ['signal_id', 'barrier_spec'].map((n) => idx(ru.header, n, 'retired-uc'));
   const retiredUc = new Set(ru.rows.map((r) => `${num(r[rId])}|${r[rSpec]}`));
   const manifest = new Map<number, string>(parseManifest(input.manifest));
-  return { worklist, delta, crossed, retiredUc, manifest };
+  // the pinned pre-T_ADAPTER snapshot may hold no row in principle (it is pinned by sha, not judged by size); its
+  // rows carry the -v2 spec, keyed here on the -v1 twin's spec
+  const ab = input.adapterBefore.split('\n').filter((l) => l.length > 0);
+  if (ab[0] !== 'signal_id,barrier_spec') throw new Error(`adapter-before: header '${ab[0] ?? ''}' is not 'signal_id,barrier_spec'`);
+  const adapterBefore = new Set(ab.slice(1).map((l) => {
+    const [id, spec] = l.split(',');
+    if (!/-v2$/.test(spec ?? '')) throw new Error(`adapter-before: '${l.slice(0, 60)}' is not a -v2 row`);
+    return `${num(id)}|${spec.replace(/-v2$/, '-v1')}`;
+  }));
+  return { worklist, delta, crossed, retiredUc, manifest, adapterBefore };
 }
 
 export type GridClass = 'same' | 'finer' | 'coarser';
@@ -143,7 +158,7 @@ export interface Axes {
   grid: GridClass;
   weexPre: boolean;
   phase: boolean;
-  adapterPending: boolean;
+  adapterCell: boolean;
   modelAmbiguity: Tri;
   provenance: 'replay' | 'delta' | 'none';
   forming: Tri;
@@ -166,7 +181,7 @@ export function axesOf(r: ExtractRow, s: Strata): Axes {
     grid,
     weexPre: r.exchange === 'WEEX' && (r.timeframe === '30m' || r.timeframe === '12h') && r.computedV1 < WEEX_V3_DEPLOYED,
     phase: PHASE_PAIRS.has(`${r.exchange}:${r.timeframe}`),
-    adapterPending: ADAPTER_PENDING_CELLS.has(`${r.exchange}:${r.timeframe}`),
+    adapterCell: ADAPTER_CELL.has(`${r.exchange}:${r.timeframe}`),
     modelAmbiguity: s.retiredUc.has(key) ? 'yes' : tri(wl !== undefined, wl?.ambiguousUc === 1),
     provenance: wl ? 'replay' : dl ? 'delta' : 'none',
     forming: tri(wl !== undefined, wl?.forming === 1),
@@ -187,6 +202,7 @@ export function newAcc(): Acc {
 }
 const nonTwinClass = (r: ExtractRow, s: Strata): string => {
   if (RETIRED.has(r.exchange)) return 'unreachable:retired';
+  if (s.adapterBefore.has(`${r.id}|${r.spec}`)) return 'unreachable:adapter-pending';
   return s.manifest.get(r.id) ?? 'not-reached';
 };
 export function addRow(a: Acc, r: ExtractRow, s: Strata): void {
@@ -300,14 +316,15 @@ export const E_CELLS: Record<string, (x: Axes) => boolean> = {
   'E3 gap 1 (same grid, sigma unchanged)': (x) => x.grid === 'same' && x.sigmaChanged === 'no' && x.gap === '1',
   'E3 gap 2 (same grid, sigma unchanged)': (x) => x.grid === 'same' && x.sigmaChanged === 'no' && x.gap === '2',
   'E3 gap 3+ (same grid, sigma unchanged)': (x) => x.grid === 'same' && x.sigmaChanged === 'no' && x.gap === '3+',
-  'E5 adapter-pending': (x) => x.adapterPending,
+  'E5 BITGET 2h/8h reached via adapter fix': (x) => x.adapterCell,
 };
 /** E4: one cell per coarser-served pair (registration §7: the horizon change is disclosed per pair) — derived from
  *  the served table here (a test pins it to the labeller's coarserV1LagTable), never by importing the writer: this
  *  file is an entrypoint, and the writer's batch-caller names must stay emitted by the writer alone. */
 export const E4_PAIRS: readonly string[] = SERVED_VENUES.flatMap((v) => CRON_TIMEFRAMES.filter((tf) => gridClass(v, tf) === 'coarser').map((tf) => `${v}:${tf}`)).sort();
 
-const DIMS = ['gap', 'gapDetail', 'sigmaChanged', 'crossed', 'grid', 'weexPre', 'phase', 'adapterPending', 'modelAmbiguity', 'provenance'] as const;
+// the BITGET 2h / 8h cell is no stratum of a pooled cell (amendment 2026-10-01): it is its own registered cell (E5)
+const DIMS = ['gap', 'gapDetail', 'sigmaChanged', 'crossed', 'grid', 'weexPre', 'phase', 'modelAmbiguity', 'provenance'] as const;
 
 export interface Cell { key: Record<string, string>; read: Record<string, unknown> }
 export interface Table {
@@ -340,15 +357,16 @@ export function headlineOf(twins: readonly ExtractRow[], spec: string, window: s
     hole_count_holding_half_the_flips_at_or_above: atLeast(0.5),
     hole_count_holding_90pct_of_flips_at_or_above: atLeast(0.9),
     line: twins.length
-      ? `of ${twins.length} -v1 labels under T_CAP with a -v2 twin (same-grid and finer-served; coarser-served pairs apart), ` +
+      ? `of ${twins.length} -v1 labels under T_CAP with a -v2 twin (same-grid and finer-served; coarser-served pairs and BITGET 2h/8h apart), ` +
         `${flips.length} (${((100 * flips.length) / twins.length).toFixed(2)} %) differ; ` +
         `half the flips sit at hole-count >= ${atLeast(0.5)} (90 % at >= ${atLeast(0.9)})`
       : 'no twin under T_CAP — UNDEFINED',
   };
 }
 
-/** §8 states where the registration fixes the reading mechanically (E3 monotone, E5 no twins); E1 / E2 / E4 are
- *  printed with their cells for the architect's reading (no numeric tolerance is registered for "≈"). */
+/** §8 states where the registration fixes the reading mechanically (E3 monotone); E1 / E2 / E4 are printed with
+ *  their cells for the architect's reading (no numeric tolerance is registered for "≈"); E5's expectation ("no
+ *  twins") was amended away 2026-10-01 (OAH-Q8) — the cell is printed as its own, never judged against it. */
 function expectationsOf(cells: readonly Cell[], spec: string, window: string): Array<Record<string, unknown>> {
   const reg = (name: string) => cells.find((c) => c.key.spec === spec && c.key.window === window && c.key.registered_cell === name)!.read;
   const out: Array<Record<string, unknown>> = [];
@@ -360,8 +378,7 @@ function expectationsOf(cells: readonly Cell[], spec: string, window: string): A
     const broken = [p[0] > p[1] ? 'gap 1 > gap 2' : '', p[1] > p[2] ? 'gap 2 > gap 3+' : ''].filter(Boolean);
     out.push({ spec, window, expectation: 'E3', state: broken.length ? 'inconsistent' : 'consistent', cells: broken });
   }
-  const e5 = reg('E5 adapter-pending');
-  out.push({ spec, window, expectation: 'E5', state: (e5.twins as number) === 0 ? 'consistent' : 'inconsistent', cells: (e5.twins as number) === 0 ? [] : ['E5 adapter-pending'] });
+  out.push({ spec, window, expectation: 'E5', state: 'amended 2026-10-01 (OAH-Q8) — read as its own cell, the architect reads it', cells: ['E5 BITGET 2h/8h reached via adapter fix'] });
   for (const e of ['E1 noise floor', 'E2 race-invariant']) {
     const r = reg(e);
     out.push({ spec, window, expectation: e.slice(0, 2), state: r.status === 'ok' ? 'reported — the architect reads it' : 'indeterminate', cause: r.status === 'ok' ? undefined : String(r.status) });
@@ -375,7 +392,12 @@ function expectationsOf(cells: readonly Cell[], spec: string, window: string): A
 export function buildTable(input: {
   rows: ExtractRow[]; strata: Strata; countsApart: string[][]; v2WithoutV1: string[][]; meta: Record<string, unknown>;
 }): Table {
-  const { rows, strata } = input;
+  const { strata } = input;
+  // amendment 2026-10-01 (OAH-Q8): a BITGET 2h / 8h row whose -v2 row was written before T_ADAPTER keeps
+  // "unreachable pending" — counted as a non-twin of that class, its label pair never compared
+  const rows = input.rows.map((r) => (ADAPTER_CELL.has(`${r.exchange}:${r.timeframe}`) && strata.adapterBefore.has(`${r.id}|${r.spec}`)
+    ? { ...r, hasV2: false, labelV2: null, ambV2: null, barrierV2: null }
+    : r));
   const axes = new Map<ExtractRow, Axes>();
   for (const r of rows) axes.set(r, axesOf(r, strata));
   const ax = (r: ExtractRow) => axes.get(r)!;
@@ -404,7 +426,7 @@ export function buildTable(input: {
   for (const spec of specs) {
     for (const [w, inW] of windows) {
       const sel = rows.filter((r) => r.spec === spec && inW(r));
-      const pooled = sel.filter((r) => ax(r).grid !== 'coarser');
+      const pooled = sel.filter((r) => ax(r).grid !== 'coarser' && !ax(r).adapterCell);
       const base = { spec, window: w };
       group(pooled, () => 'fleet', base, 'cell');
       group(pooled, (r) => r.timeframe, base, 'timeframe');
@@ -419,9 +441,9 @@ export function buildTable(input: {
         fixed((name.startsWith('E5') ? sel : pooled).filter((r) => pred(ax(r))), name, base);
       }
       for (const pair of E4_PAIRS) fixed(sel.filter((r) => `${r.exchange}:${r.timeframe}` === pair), `E4 coarser ${pair}`, base);
-      comps.push({ key: { ...base, rollup: 'fleet (coarser-served apart)' }, read: comparators(pooled) });
+      comps.push({ key: { ...base, rollup: 'fleet (coarser-served and BITGET 2h/8h apart)' }, read: comparators(pooled) });
       for (const tf of [...new Set(pooled.map((r) => r.timeframe))].sort()) {
-        comps.push({ key: { ...base, rollup: `timeframe ${tf} (coarser-served apart)` }, read: comparators(pooled.filter((r) => r.timeframe === tf)) });
+        comps.push({ key: { ...base, rollup: `timeframe ${tf} (coarser-served and BITGET 2h/8h apart)` }, read: comparators(pooled.filter((r) => r.timeframe === tf)) });
       }
       heads.push(headlineOf(pooled.filter((r) => r.hasV2 && !r.lowvolV1), spec, w));
       expectations.push(...expectationsOf(cells, spec, w));
@@ -443,7 +465,7 @@ const fmt = (x: unknown): string => (typeof x === 'number' ? (Number.isInteger(x
 export function renderMarkdown(t: Table): string {
   const out: string[] = [HEADER_CLAUSE, ''];
   out.push('# EDGE-LABELER-RACE-WINDOW-V2-W1 — the `-v1` vs `-v2` disagreement table (registered; under T_CAP)', '');
-  out.push('> A DATA-QUALITY MEASUREMENT, not a directional test (`cells_tested = 0`). Private vault only. Comparators are the mix-matched null and the always-side decided shares; never an edge, never max(). Coarser-served pairs are their own cells and enter no pooled line.', '');
+  out.push('> A DATA-QUALITY MEASUREMENT, not a directional test (`cells_tested = 0`). Private vault only. Comparators are the mix-matched null and the always-side decided shares; never an edge, never max(). Coarser-served pairs and the BITGET 2h/8h cell (amendment 2026-10-01, OAH-Q8) are their own cells and enter no pooled line.', '');
   out.push('## Meta', '', '```json', JSON.stringify(t.meta, null, 1), '```', '');
   out.push('## Headline (FULL, primary spec, pooled twins, low-vol excluded)', '', `**${t.headline.line}**`, '', '```json', JSON.stringify(t.headline, null, 1), '```', '');
   out.push('## Sensitivity lines (the other specs × windows, same form)', '', ...t.sensitivity.map((h) => `- ${h.spec} · ${h.window}: ${h.line}`), '');
@@ -455,8 +477,8 @@ export function renderMarkdown(t: Table): string {
   };
   const head = '| cell | registered | twins | low-vol excl. | status | P(differ) | decided Δ | same-candle Δ | barrier ratio med | ratio ≠ 1 |\n|---|---|---|---|---|---|---|---|---|---|';
   const sections: Array<[string, string]> = [
-    ['Registered cells (§6)', 'registered_cell'], ['Fleet (coarser-served apart)', 'cell'], ['By timeframe (coarser-served apart)', 'timeframe'],
-    ...DIMS.map((d): [string, string] => [`By ${d} (coarser-served apart)`, d]),
+    ['Registered cells (§6)', 'registered_cell'], ['Fleet (coarser-served and BITGET 2h/8h apart)', 'cell'], ['By timeframe (coarser-served and BITGET 2h/8h apart)', 'timeframe'],
+    ...DIMS.map((d): [string, string] => [`By ${d} (coarser-served and BITGET 2h/8h apart)`, d]),
     ['Timeframe × venue', 'timeframe|venue'],
     ...DIMS.map((d): [string, string] => [`Timeframe × ${d}`, `timeframe|${d}`]),
     ...DIMS.map((d): [string, string] => [`Timeframe × venue × ${d}`, `timeframe|venue|${d}`]),
@@ -501,7 +523,7 @@ export function parsePullMeta(text: string): { tCut: number; shas: Map<string, s
 export function main(argv: string[] = process.argv.slice(2)): number {
   try {
     const files = Object.fromEntries(
-      ['--extract', '--counts-apart', '--v2-without-v1', '--pull-meta', '--worklist', '--delta', '--crossed', '--retired-uc', '--out-dir'].map((f) => [f, arg(argv, f)]),
+      ['--extract', '--counts-apart', '--v2-without-v1', '--pull-meta', '--worklist', '--delta', '--crossed', '--retired-uc', '--adapter-before', '--out-dir'].map((f) => [f, arg(argv, f)]),
     );
     const manifestPaths = arg(argv, '--manifest').split(',').filter(Boolean);
     const pull = parsePullMeta(readFileSync(files['--pull-meta'], 'utf8'));
@@ -512,7 +534,10 @@ export function main(argv: string[] = process.argv.slice(2)): number {
     if (manifestShas.size !== pull.manifestShas.size || [...manifestShas].some((h) => !pull.manifestShas.has(h))) {
       throw new Error('--manifest: not the manifest files the pull recorded');
     }
-    for (const [flag, pin] of [['--worklist', PINNED_SHA256.worklist], ['--delta', PINNED_SHA256.delta], ['--crossed', PINNED_SHA256.crossed], ['--retired-uc', PINNED_SHA256.retiredUc]] as const) {
+    for (const [flag, pin] of [
+      ['--worklist', PINNED_SHA256.worklist], ['--delta', PINNED_SHA256.delta], ['--crossed', PINNED_SHA256.crossed],
+      ['--retired-uc', PINNED_SHA256.retiredUc], ['--adapter-before', PINNED_SHA256.adapterBefore],
+    ] as const) {
       if (sha(files[flag]) !== pin) throw new Error(`${flag}: sha256 is not the registered ${pin.slice(0, 12)}…`);
     }
     const rows = parseExtract(readText(files['--extract']));
@@ -521,7 +546,8 @@ export function main(argv: string[] = process.argv.slice(2)): number {
     const v2WithoutV1 = csvRows(readText(files['--v2-without-v1']), V2_WITHOUT_V1_HEADER, 'v2-without-v1');
     const strata = parseStrata({
       worklist: readText(files['--worklist']), delta: readText(files['--delta']), crossed: readText(files['--crossed']),
-      retiredUc: readText(files['--retired-uc']), manifest: manifestPaths.map((p) => readFileSync(p, 'utf8')),
+      retiredUc: readText(files['--retired-uc']), adapterBefore: readText(files['--adapter-before']),
+      manifest: manifestPaths.map((p) => readFileSync(p, 'utf8')),
     });
     const outDir = files['--out-dir'];
     const meta = {
