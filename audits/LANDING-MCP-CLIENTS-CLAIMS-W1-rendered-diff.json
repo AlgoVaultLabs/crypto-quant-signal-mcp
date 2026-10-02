@@ -1,0 +1,2342 @@
+{
+  "wave": "LANDING-MCP-CLIENTS-CLAIMS-W1",
+  "generated_by": "scripts/gates/cmc-rendered-diff.mjs --emit",
+  "base": "c05ba6cb835f41e4ac242f3f12047ff520c4c2e2",
+  "unit_rule": "html: split after every \">\"; other files: lines; a newline inside a unit is written \\n",
+  "derived_classes": {
+    "render-date": "render-integrations.mjs stamps the render date",
+    "date-modified": "dateModified is DERIVED from the source markdown's last commit, which this wave made",
+    "live-snapshot": "render-integrations.mjs re-bakes the live /api/performance-public fallbacks into data-tr-field spans"
+  },
+  "rows": {
+    "R1": 6,
+    "R2": 54,
+    "R3": 12,
+    "R4": 20,
+    "R5": 11,
+    "R6": 38,
+    "R7": 7,
+    "R8": 6,
+    "R9": 8,
+    "R10": 44,
+    "R11": 4,
+    "R12": 20,
+    "R13": 0,
+    "R14": 6,
+    "R15": 12,
+    "R16": 4,
+    "R17": 2,
+    "R18": 12,
+    "R10b": 18
+  },
+  "entries": [
+    {
+      "file": "README.md",
+      "op": "-",
+      "unit": "**1. Add the connector.** In Claude → Settings → Connectors → Add custom connector:",
+      "r_row": "R17",
+      "kind": "copy"
+    },
+    {
+      "file": "README.md",
+      "op": "+",
+      "unit": "**1. Add the connector.** In Claude → Customize → Connectors → + → Add custom connector:",
+      "r_row": "R17",
+      "kind": "copy"
+    },
+    {
+      "file": "README.md",
+      "op": "-",
+      "unit": "| **Claude Desktop** | Settings → Connectors → Add custom connector → `https://api.algovault.com/mcp` |",
+      "r_row": "R14",
+      "kind": "copy"
+    },
+    {
+      "file": "README.md",
+      "op": "-",
+      "unit": "| **Claude Code** (CLI) | `claude mcp add crypto-quant-signal https://api.algovault.com/mcp` |",
+      "r_row": "R14",
+      "kind": "copy"
+    },
+    {
+      "file": "README.md",
+      "op": "-",
+      "unit": "| **Cursor** | `~/.cursor/config.json` → `mcpServers` block → `url: \"https://api.algovault.com/mcp\"` |",
+      "r_row": "R14",
+      "kind": "copy"
+    },
+    {
+      "file": "README.md",
+      "op": "+",
+      "unit": "| **Claude Desktop** | Customize → Connectors → + → Add custom connector → `https://api.algovault.com/mcp` |",
+      "r_row": "R14",
+      "kind": "copy"
+    },
+    {
+      "file": "README.md",
+      "op": "+",
+      "unit": "| **Claude Code** (CLI) | `claude mcp add --transport http crypto-quant-signal https://api.algovault.com/mcp` |",
+      "r_row": "R14",
+      "kind": "copy"
+    },
+    {
+      "file": "README.md",
+      "op": "+",
+      "unit": "| **Cursor** | `~/.cursor/mcp.json` → `mcpServers` block → `url: \"https://api.algovault.com/mcp\"` |",
+      "r_row": "R14",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/exchange-kits/binance-agent-os.md",
+      "op": "-",
+      "unit": "  https://api.algovault.com/mcp?src=binance_agent_os \\\\",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/exchange-kits/binance-agent-os.md",
+      "op": "+",
+      "unit": "  \"https://api.algovault.com/mcp?src=binance_agent_os\" \\\\",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-code.md",
+      "op": "-",
+      "unit": "  https://api.algovault.com/mcp?src=docs \\\\",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-code.md",
+      "op": "+",
+      "unit": "  \"https://api.algovault.com/mcp?src=docs\" \\\\",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "-",
+      "unit": "**Path 1 — UI (recommended).** Open Claude Desktop &rarr; Settings &rarr; Connectors &rarr; *Add custom connector*. Name: `AlgoVault`. URL: `https://api.algovault.com/mcp?src=docs`. Save and restart Claude Desktop. The free tier needs no header. Paid tier: add `Authorization: Bearer av_live_…` as a custom header.",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "+",
+      "unit": "**Path 1 — UI (recommended).** Open Claude Desktop &rarr; Customize &rarr; Connectors &rarr; + &rarr; *Add custom connector*. Paste `https://api.algovault.com/mcp?src=docs`, then click *Add*. Enable it per chat from + &rarr; Connectors. The connector form takes OAuth credentials, not custom headers — for a paid-tier key, use the JSON path below.",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "-",
+      "unit": "               \"--header\", \"Authorization: Bearer ${AV_API_KEY}\",",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "-",
+      "unit": "               \"--header\", \"X-AlgoVault-Track-Token:int-claude-desktop\"]",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "+",
+      "unit": "               \"--header\", \"Authorization:${AUTH_HEADER}\",",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "+",
+      "unit": "               \"--header\", \"X-AlgoVault-Track-Token:int-claude-desktop\"],",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "+",
+      "unit": "      \"env\": { \"AUTH_HEADER\": \"Bearer av_live_…\" }",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "-",
+      "unit": "Set `AV_API_KEY` in the env block or your shell. Free tier: drop the `Authorization` header, but keep the `X-AlgoVault-Track-Token` header.",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "+",
+      "unit": "Set your key in the env block. Free tier: drop the `Authorization` header and the env block, but keep the `X-AlgoVault-Track-Token` header.",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "-",
+      "unit": "- **Custom connector not appearing in tool list** — restart Claude Desktop after saving the connector. The connector list reads at app start.",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "-",
+      "unit": "- **Authorization failed** — confirm `AV_API_KEY` is set in the JSON env block, not just your shell. Claude Desktop spawns the MCP process in its own env scope.",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "+",
+      "unit": "- **Custom connector not appearing in tool list** — enable it for the chat from + → Connectors.",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "+",
+      "unit": "- **Authorization failed** — confirm `AUTH_HEADER` is set in the JSON env block as `Bearer av_live_…`. Claude Desktop spawns the MCP process in its own env scope.",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/codex.md",
+      "op": "-",
+      "unit": "> *Config verified 2026-08-05 against <https://learn.chatgpt.com/docs/extend/mcp>.*",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/codex.md",
+      "op": "+",
+      "unit": "> *Config verified 2026-10-01 against <https://learn.chatgpt.com/docs/extend/mcp>.*",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/codex.md",
+      "op": "-",
+      "unit": "Note that `codex mcp add` covers **local stdio servers only**. Remote HTTP servers like AlgoVault are configured in the file, not through that command.",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/codex.md",
+      "op": "+",
+      "unit": "`codex mcp add algovault --url \"https://api.algovault.com/mcp?src=docs\"` adds the free tier from the CLI; the paid tier's `bearer_token_env_var` is set in `config.toml`, as above.",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/codex.md",
+      "op": "-",
+      "unit": "- **`codex mcp add` rejected the URL** — expected. That command adds stdio servers; use the TOML block above.",
+      "r_row": "R7",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "npx -y @smithery/cli install crypto-quant-signal-mcp --client <name>",
+      "r_row": "R9",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client <name>",
+      "r_row": "R9",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "Smithery writes the right MCP-server entry into your client's config file. If your client needs an API key, the CLI prompts for `AV_API_KEY` (or skip to use the free tier).",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "The CLI writes a Smithery-gateway entry into your client's config. It carries no API key, so this path is the free tier.",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "$ npx -y @smithery/cli install crypto-quant-signal-mcp --client claude",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "✔ AlgoVault MCP installed for Claude Desktop.",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "✔ Config written to ~/Library/Application Support/Claude/claude_desktop_config.json.",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "ℹ Restart Claude Desktop to load.",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "$ npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client claude",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "? Would you like to help improve Smithery by sending anonymized usage data? No",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "✔ Successfully resolved algovault/crypto-quant-signal-mcp",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "* Installing remote server. Please ensure you trust the server author, especially when sharing sensitive data.",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "✓ algovault/crypto-quant-signal-mcp successfully installed for claude",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "- **\"Client not detected\"** — Smithery probes your machine for installed clients. If your client lives in a non-default path, pass `--config-path` manually.",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "**Which clients does Smithery support?** Claude Desktop, Cursor, Cline, Claude Code. Continue.dev support is in beta.",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "**Which clients does Smithery support?** Claude Desktop, Cursor, Cline, Claude Code and Codex, among others.",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "**Free tier setup?** Yes. Hit Enter at the API-key prompt; Smithery writes a no-header config (free tier, 200 calls/month, 100/day).",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "**Free tier setup?** Yes. Smithery's entry carries no API key, so this path is the free tier. The first time your client connects, Smithery asks you to authorize it in your browser.",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "**Can I see AlgoVault on the Smithery registry?** Yes — [smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp](https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp).",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "**Can I see AlgoVault on the Smithery registry?** Yes — [smithery.ai/servers/algovault/crypto-quant-signal-mcp](https://smithery.ai/servers/algovault/crypto-quant-signal-mcp).",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "**What does Smithery actually do?** It generates the right `mcpServers` entry for your client's config file. Same result as hand-editing the JSON, but automated for each client's quirks.",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "**What does Smithery actually do?** It adds an entry for Smithery's gateway (`server.smithery.ai/algovault/crypto-quant-signal-mcp/mcp`) to your client's config, and your calls reach AlgoVault through that gateway. For a paid-tier key, add AlgoVault by hand instead; that connects to `api.algovault.com` directly.",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "-",
+      "unit": "One-command install: get AlgoVault in your client right now. [Verify the track record on-chain](https://algovault.com/track-record). The full AlgoVault listing is at [smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp](https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp).",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/smithery.md",
+      "op": "+",
+      "unit": "One-command install: get AlgoVault in your client right now. [Verify the track record on-chain](https://algovault.com/track-record). The full AlgoVault listing is at [smithery.ai/servers/algovault/crypto-quant-signal-mcp](https://smithery.ai/servers/algovault/crypto-quant-signal-mcp).",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "Settings &rarr; Connectors &rarr; <em>",
+      "r_row": "R1",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "Customize &rarr; Connectors &rarr; + &rarr; <em>",
+      "r_row": "R1",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;name&gt;</code>",
+      "r_row": "R8",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;</code>",
+      "r_row": "R8",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "Easiest path (UI):</strong>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "Easiest path (UI, free tier):</strong>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "Settings</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "Customize</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "+</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": " &rarr; <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": ". Name it <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "AlgoVault</code>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": ". URL: <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": ". Paste <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": ". Add <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "Authorization: Bearer av_live_&hellip;</code>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": " as a custom header (paid tier). Save and restart Claude Desktop.</p>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": ", then click <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "Add</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": ". Enable it per chat from <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "+</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": " &rarr; <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "Connectors</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": ". The connector form takes OAuth credentials, not custom headers &mdash; for a paid-tier key, use the JSON path below.</p>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "{\\n  \"mcpServers\": {\\n    \"algovault\": {\\n      \"command\": \"npx\",\\n      \"args\": [\"-y\", \"mcp-remote\", \"https://api.algovault.com/mcp?src=docs\",\\n               \"--header\", \"Authorization: Bearer ${AV_API_KEY}\",\\n               \"--header\", \"X-AlgoVault-Track-Token:chan-docs\"]\\n    }\\n  }\\n}</code>",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "{\\n  \"mcpServers\": {\\n    \"algovault\": {\\n      \"command\": \"npx\",\\n      \"args\": [\"-y\", \"mcp-remote\", \"https://api.algovault.com/mcp?src=docs\",\\n               \"--header\", \"Authorization:${AUTH_HEADER}\",\\n               \"--header\", \"X-AlgoVault-Track-Token:chan-docs\"],\\n      \"env\": { \"AUTH_HEADER\": \"Bearer av_live_&hellip;\" }\\n    }\\n  }\\n}</code>",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "Set <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "AV_API_KEY</code>",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": " in the env block or your shell. Free tier: drop the <code class=\"text-xs\">",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "Set your key in the env block. Free tier: drop the <code class=\"text-xs\">",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": " header, but keep the <code class=\"text-xs\">",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": " header and the env block, but keep the <code class=\"text-xs\">",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "claude mcp add --transport http --scope project algovault https://api.algovault.com/mcp?src=docs \\\\\\n  --header \"Authorization: Bearer $AV_API_KEY\" \\\\\\n  --header \"X-AlgoVault-Track-Token:chan-docs\"</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "claude mcp add --transport http --scope project algovault \"https://api.algovault.com/mcp?src=docs\" \\\\\\n  --header \"Authorization: Bearer $AV_API_KEY\" \\\\\\n  --header \"X-AlgoVault-Track-Token:chan-docs\"</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "# Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code\\nnpx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</code>",
+      "r_row": "R9",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "# Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code\\nnpx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;client&gt;</code>",
+      "r_row": "R9",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "The CLI writes the right config file for your client and prompts for any required env vars (like <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "AV_API_KEY</code>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": " for paid-tier access). Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href=\"https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp\" class=\"text-mint-400 hover:underline\">",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "The CLI writes a Smithery-gateway entry into your client's config. It carries no API key, so this path is the free tier. Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href=\"https://smithery.ai/servers/algovault/crypto-quant-signal-mcp\" class=\"text-mint-400 hover:underline\">",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "{\"status\":\"ok\",\"version\":\"1.10.3\",\"stripe\":true}</code>",
+      "r_row": "R11",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "{\"status\":\"ok\",\"server\":\"crypto-quant-signal-mcp\",\"version\":\"&lt;current release&gt;\",\"stripe\":true}</code>",
+      "r_row": "R11",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": " for free tier. Note that <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "codex mcp add</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": " covers local stdio servers only, so remote HTTP servers are configured in the file.</p>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": " for free tier. <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "codex mcp add algovault --url \"https://api.algovault.com/mcp?src=docs\"</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": " adds the free tier from the CLI; the paid tier's <code class=\"text-xs\">",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "bearer_token_env_var</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": " is set in <code class=\"text-xs\">",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "config.toml</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": ", as above.</p>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "export ANTHROPIC_BASE_URL=\"https://api.deepseek.com/anthropic\"\\nexport ANTHROPIC_AUTH_TOKEN=\"$DEEPSEEK_API_KEY\"\\n\\nclaude mcp add --transport http --scope project algovault \\\\\\n  https://api.algovault.com/mcp?src=docs \\\\\\n  --header \"X-AlgoVault-Track-Token:chan-docs\"</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "export ANTHROPIC_BASE_URL=\"https://api.deepseek.com/anthropic\"\\nexport ANTHROPIC_AUTH_TOKEN=\"$DEEPSEEK_API_KEY\"\\n\\nclaude mcp add --transport http --scope project algovault \\\\\\n  \"https://api.algovault.com/mcp?src=docs\" \\\\\\n  --header \"X-AlgoVault-Track-Token:chan-docs\"</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic\\nclaude mcp add --transport http --scope project algovault \\\\\\n  https://api.algovault.com/mcp?src=binance_agent_os</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic\\nclaude mcp add --transport http --scope project algovault \\\\\\n  \"https://api.algovault.com/mcp?src=binance_agent_os\"</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/faq.html",
+      "op": "-",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"FAQPage\",\\n  \"mainEntity\": [\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"If your trading model works, why sell access instead of trading it yourself?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"AlgoVault is infrastructure, not an alpha bet. We sell access to a trading model the same way OpenAI sells access to GPT — the model itself is the asset, and per-call access is the revenue. See algovault.com/how-it-works and algovault.com/glossary#aoe for the substrate frame.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"Won't alpha decay if everyone uses your signals?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"A composite verdict isn't a single trade. Alpha decay applies to discrete strategies ('buy at 50-MA cross'). A continuous multi-factor regime-aware verdict updating across 730+ assets has no single trade to crowd. Market depth also swamps subscriber flow — Hyperliquid alone clears $10B+ daily perp volume; subscriber volume is invisible against that.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"How does selling calls strengthen the model?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"Selling calls strengthens the model. Like OpenAI's API traffic improves GPT, every AlgoVault call adds to the outcome dataset that the Autonomous Optimization Engine learns from. See algovault.com/how-it-works for the substrate frame.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"What is AlgoVault?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"AlgoVault is an MCP server for AI trading agents. It returns composite BUY/SELL/HOLD trade calls, market regime classification, and cross-venue funding-rate arbitrage across major crypto perpetual-futures venues. Every call is Merkle-anchored on Base L2.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"What's the most accurate crypto signal MCP server for AI agents?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"AlgoVault: 91.7% PFE win rate across 79,527 verified calls on a rolling 30-day window. Every batch is Merkle-anchored on Base L2 — reconstruct any proof at algovault.com/verify. Compare any vendor by asking for their on-chain trail.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"What's AlgoVault's PFE win rate, and how is it verified?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"PFE (path-forward equity) win rate is 91.7% on a rolling 30-day window, refetched from /api/performance-public. Each batch is hashed into a Merkle root and published to a Base L2 contract (0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81). /verify reconstructs the proof tree for any call.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"How does AlgoVault compare to TradingView, Coinglass, and raw exchange APIs?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"TradingView: human chart-readers. Coinglass: human funding watchers. Raw exchange APIs: uninterpreted OHLC, funding, OI. AlgoVault: AI agents reading verdicts — one API call returns {call, confidence, regime, factors} across major crypto perpetual-futures venues. Skip N adapter integrations.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"Can a Claude / Cursor / custom AI agent trade crypto with AlgoVault?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"Yes. Connect to https://api.algovault.com/mcp from any MCP-compatible client — Claude Desktop, Cursor, Cline, or a custom agent over Streamable HTTP. AlgoVault provides the thesis (call + confidence + regime + factors); your agent decides whether and how to execute. See algovault.com/docs.html for the integration guide.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"Which exchanges, assets, and timeframes does AlgoVault cover?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"729+ assets, 11 timeframes (1m–1d), major crypto perpetual-futures venues. The public track record covers 10 of 11 timeframes (3m + 5m–1d, cron-seeded). The 1m timeframe remains API-on-demand while sample density accrues.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"What MCP tools does AlgoVault expose?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"Three tools. get_trade_call returns a composite BUY/SELL/HOLD verdict with confidence, regime, and contributing factors. scan_funding_arb returns top cross-venue funding-rate arbitrage spreads across Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. get_market_regime returns trending / ranging / volatile classification with strategy and sizing suggestions. All three return structured JSON with an _algovault metadata block.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"What does AlgoVault cost? Is there a free tier?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"Free tier: 200 calls per month (100 per UTC day), all assets, all 11 timeframes, no signup required. Paid tiers: Starter $9.99/mo or $39.90/6mo (10,000 calls/mo, up to 1,000/day), Pro $49/mo or $129/6mo (100,000 calls/mo, up to 10,000/day), Enterprise custom volume — contact us. Quota is counted per call, regardless of verdict. x402 micropayments (USDC on Base) provide pay-per-call as an alternative to subscriptions.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"How do I integrate AlgoVault with my AI agent?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"AlgoVault speaks Streamable HTTP at https://api.algovault.com/mcp, so any MCP client connects. Claude Desktop: Settings → Connectors → Add custom connector → paste the URL. Claude Code, Codex, Cursor, Cline, Kimi Code and ZCode take the same URL. Z.ai dials it server-side; for DeepSeek, point Claude Code at DeepSeek. /docs covers Streamable HTTP and stdio transports; /integrations links per-client and per-exchange tutorials. Free tier needs no API key.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"Does AlgoVault give investment advice or execute trades?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"No. AlgoVault provides signal interpretation — composite trade calls, regime context, and funding spreads — as a data-analytics API. Your agent decides whether and how to execute, and you remain responsible for any execution. AlgoVault does not place orders, hold custody, or provide personalized financial advice.\"\\n      }\\n    }\\n  ]\\n}\\n</script>",
+      "r_row": "R16",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/faq.html",
+      "op": "+",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"FAQPage\",\\n  \"mainEntity\": [\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"If your trading model works, why sell access instead of trading it yourself?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"AlgoVault is infrastructure, not an alpha bet. We sell access to a trading model the same way OpenAI sells access to GPT — the model itself is the asset, and per-call access is the revenue. See algovault.com/how-it-works and algovault.com/glossary#aoe for the substrate frame.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"Won't alpha decay if everyone uses your signals?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"A composite verdict isn't a single trade. Alpha decay applies to discrete strategies ('buy at 50-MA cross'). A continuous multi-factor regime-aware verdict updating across 730+ assets has no single trade to crowd. Market depth also swamps subscriber flow — Hyperliquid alone clears $10B+ daily perp volume; subscriber volume is invisible against that.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"How does selling calls strengthen the model?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"Selling calls strengthens the model. Like OpenAI's API traffic improves GPT, every AlgoVault call adds to the outcome dataset that the Autonomous Optimization Engine learns from. See algovault.com/how-it-works for the substrate frame.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"What is AlgoVault?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"AlgoVault is an MCP server for AI trading agents. It returns composite BUY/SELL/HOLD trade calls, market regime classification, and cross-venue funding-rate arbitrage across major crypto perpetual-futures venues. Every call is Merkle-anchored on Base L2.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"What's the most accurate crypto signal MCP server for AI agents?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"AlgoVault: 91.7% PFE win rate across 79,527 verified calls on a rolling 30-day window. Every batch is Merkle-anchored on Base L2 — reconstruct any proof at algovault.com/verify. Compare any vendor by asking for their on-chain trail.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"What's AlgoVault's PFE win rate, and how is it verified?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"PFE (path-forward equity) win rate is 91.7% on a rolling 30-day window, refetched from /api/performance-public. Each batch is hashed into a Merkle root and published to a Base L2 contract (0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81). /verify reconstructs the proof tree for any call.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"How does AlgoVault compare to TradingView, Coinglass, and raw exchange APIs?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"TradingView: human chart-readers. Coinglass: human funding watchers. Raw exchange APIs: uninterpreted OHLC, funding, OI. AlgoVault: AI agents reading verdicts — one API call returns {call, confidence, regime, factors} across major crypto perpetual-futures venues. Skip N adapter integrations.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"Can a Claude / Cursor / custom AI agent trade crypto with AlgoVault?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"Yes. Connect to https://api.algovault.com/mcp from any MCP-compatible client — Claude Desktop, Cursor, Cline, or a custom agent over Streamable HTTP. AlgoVault provides the thesis (call + confidence + regime + factors); your agent decides whether and how to execute. See algovault.com/docs.html for the integration guide.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"Which exchanges, assets, and timeframes does AlgoVault cover?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"729+ assets, 11 timeframes (1m–1d), major crypto perpetual-futures venues. The public track record covers 10 of 11 timeframes (3m + 5m–1d, cron-seeded). The 1m timeframe remains API-on-demand while sample density accrues.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"What MCP tools does AlgoVault expose?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"Three tools. get_trade_call returns a composite BUY/SELL/HOLD verdict with confidence, regime, and contributing factors. scan_funding_arb returns top cross-venue funding-rate arbitrage spreads across Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. get_market_regime returns trending / ranging / volatile classification with strategy and sizing suggestions. All three return structured JSON with an _algovault metadata block.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"What does AlgoVault cost? Is there a free tier?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"Free tier: 200 calls per month (100 per UTC day), all assets, all 11 timeframes, no signup required. Paid tiers: Starter $9.99/mo or $39.90/6mo (10,000 calls/mo, up to 1,000/day), Pro $49/mo or $129/6mo (100,000 calls/mo, up to 10,000/day), Enterprise custom volume — contact us. Quota is counted per call, regardless of verdict. x402 micropayments (USDC on Base) provide pay-per-call as an alternative to subscriptions.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"How do I integrate AlgoVault with my AI agent?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"AlgoVault speaks Streamable HTTP at https://api.algovault.com/mcp, so any MCP client connects. Claude Desktop: Customize → Connectors → + → Add custom connector → paste the URL. Claude Code, Codex, Cursor, Cline, Kimi Code and ZCode take the same URL. Z.ai dials it server-side; for DeepSeek, point Claude Code at DeepSeek. /docs covers Streamable HTTP and stdio transports; /integrations links per-client and per-exchange tutorials. Free tier needs no API key.\"\\n      }\\n    },\\n    {\\n      \"@type\": \"Question\",\\n      \"name\": \"Does AlgoVault give investment advice or execute trades?\",\\n      \"acceptedAnswer\": {\\n        \"@type\": \"Answer\",\\n        \"text\": \"No. AlgoVault provides signal interpretation — composite trade calls, regime context, and funding spreads — as a data-analytics API. Your agent decides whether and how to execute, and you remain responsible for any execution. AlgoVault does not place orders, hold custody, or provide personalized financial advice.\"\\n      }\\n    }\\n  ]\\n}\\n</script>",
+      "r_row": "R16",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/faq.html",
+      "op": "-",
+      "unit": ", so any MCP client connects. Claude Desktop: Settings &rarr; Connectors &rarr; Add custom connector &rarr; paste the URL. Claude Code, Codex, Cursor, Cline, Kimi Code and ZCode take the same URL. Z.ai dials it server-side; for DeepSeek, point Claude Code at DeepSeek. <a href=\"/docs.html\" class=\"text-mint-400 hover:underline\">",
+      "r_row": "R16",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/faq.html",
+      "op": "+",
+      "unit": ", so any MCP client connects. Claude Desktop: Customize &rarr; Connectors &rarr; + &rarr; Add custom connector &rarr; paste the URL. Claude Code, Codex, Cursor, Cline, Kimi Code and ZCode take the same URL. Z.ai dials it server-side; for DeepSeek, point Claude Code at DeepSeek. <a href=\"/docs.html\" class=\"text-mint-400 hover:underline\">",
+      "r_row": "R16",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "-",
+      "unit": "Open Claude → Settings → Connectors</div>",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "Open Claude → Customize → Connectors</div>",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "-",
+      "unit": "Add custom connector → paste the URL</div>",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "+ → Add custom connector → paste the URL</div>",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "<a href=\"/integrations/deepseek-harness\" style=\"padding:18px 20px;border:1px solid var(--line);border-radius:14px;background:oklch(0.18 0.014 265 / 0.55);display:flex;flex-direction:column;text-decoration:none\">",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "<div style=\"font-family:var(--font-display);font-size:16px;font-weight:500;color:var(--fg);letter-spacing:-0.01em;margin-bottom:6px\">",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "DeepSeek Harness</div>",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "<div style=\"font-family:var(--font-mono);font-size:11.5px;line-height:1.5;color:var(--accent, var(--mint));word-break:normal\">",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "Tutorial →</div>",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "</a>",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "-",
+      "unit": "Open Claude → Settings → Connectors</div>",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "Open Claude → Customize → Connectors</div>",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "-",
+      "unit": "Add custom connector → paste the URL</div>",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "+ → Add custom connector → paste the URL</div>",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "<a href=\"/integrations/deepseek-harness\" style=\"padding:16px 16px;border:1px solid var(--line);border-radius:14px;background:oklch(0.18 0.014 265 / 0.55);display:flex;flex-direction:column;text-decoration:none\">",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "<div style=\"font-family:var(--font-display);font-size:15px;font-weight:500;color:var(--fg);letter-spacing:-0.01em;margin-bottom:6px\">",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "DeepSeek Harness</div>",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "<div style=\"font-family:var(--font-mono);font-size:11.5px;line-height:1.5;color:var(--accent, var(--mint));word-break:normal\">",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "Tutorial →</div>",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/index.html",
+      "op": "+",
+      "unit": "</a>",
+      "r_row": "R18",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations.html",
+      "op": "-",
+      "unit": "Settings &rarr; Connectors &rarr; <em>",
+      "r_row": "R1",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations.html",
+      "op": "+",
+      "unit": "Customize &rarr; Connectors &rarr; + &rarr; <em>",
+      "r_row": "R1",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations.html",
+      "op": "-",
+      "unit": "npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;name&gt;</code>",
+      "r_row": "R8",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations.html",
+      "op": "+",
+      "unit": "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;</code>",
+      "r_row": "R8",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/binance-agent-os.html",
+      "op": "-",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-09-23\">",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/binance-agent-os.html",
+      "op": "+",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-10-01\">",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/binance-agent-os.html",
+      "op": "-",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Binance Agent OS - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/binance-agent-os\",\\n  \"datePublished\": \"2026-08-25T00:00:00+00:00\",\\n  \"dateModified\": \"2026-09-03T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Connect Binance Agent OS and AlgoVault MCP to one client: AlgoVault returns the composite verdict, Binance executes it under OAuth. No API keys, no HMAC signing, and no withdrawal scope exists. Trading is confined to an isolated Agentic sub-account you fund yourself.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Binance Agent OS integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/binance-agent-os.html",
+      "op": "+",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Binance Agent OS - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/binance-agent-os\",\\n  \"datePublished\": \"2026-08-25T00:00:00+00:00\",\\n  \"dateModified\": \"2026-10-01T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Connect Binance Agent OS and AlgoVault MCP to one client: AlgoVault returns the composite verdict, Binance executes it under OAuth. No API keys, no HMAC signing, and no withdrawal scope exists. Trading is confined to an isolated Agentic sub-account you fund yourself.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Binance Agent OS integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/binance-agent-os.html",
+      "op": "-",
+      "unit": "91.1%</span>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/binance-agent-os.html",
+      "op": "+",
+      "unit": "90.9%</span>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/binance-agent-os.html",
+      "op": "-",
+      "unit": "829,513</span>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/binance-agent-os.html",
+      "op": "+",
+      "unit": "916,636</span>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/binance-agent-os.html",
+      "op": "-",
+      "unit": "claude mcp add --transport http --scope project algovault \\\\\\n  https://api.algovault.com/mcp?src=binance_agent_os \\\\\\n  --header &quot;Authorization: Bearer $AV_API_KEY&quot; \\\\\\n  --header &quot;X-AlgoVault-Track-Token:int-binance-agent-os&quot;\\n</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/binance-agent-os.html",
+      "op": "+",
+      "unit": "claude mcp add --transport http --scope project algovault \\\\\\n  &quot;https://api.algovault.com/mcp?src=binance_agent_os&quot; \\\\\\n  --header &quot;Authorization: Bearer $AV_API_KEY&quot; \\\\\\n  --header &quot;X-AlgoVault-Track-Token:int-binance-agent-os&quot;\\n</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-code.html",
+      "op": "-",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-09-23\">",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/claude-code.html",
+      "op": "+",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-10-01\">",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/claude-code.html",
+      "op": "-",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Claude Code - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/claude-code\",\\n  \"datePublished\": \"2026-05-19T00:00:00+00:00\",\\n  \"dateModified\": \"2026-08-09T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Claude Code's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Claude Code integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/claude-code.html",
+      "op": "+",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Claude Code - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/claude-code\",\\n  \"datePublished\": \"2026-05-19T00:00:00+00:00\",\\n  \"dateModified\": \"2026-10-01T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Claude Code's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Claude Code integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/claude-code.html",
+      "op": "-",
+      "unit": "91.1%</span>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-code.html",
+      "op": "+",
+      "unit": "90.9%</span>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-code.html",
+      "op": "-",
+      "unit": "829,513</span>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-code.html",
+      "op": "+",
+      "unit": "916,636</span>",
+      "r_row": "R12",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-code.html",
+      "op": "-",
+      "unit": "claude mcp add --transport http --scope project algovault \\\\\\n  https://api.algovault.com/mcp?src=docs \\\\\\n  --header &quot;Authorization: Bearer $AV_API_KEY&quot; \\\\\\n  --header &quot;X-AlgoVault-Track-Token:int-claude-code&quot;\\n</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-code.html",
+      "op": "+",
+      "unit": "claude mcp add --transport http --scope project algovault \\\\\\n  &quot;https://api.algovault.com/mcp?src=docs&quot; \\\\\\n  --header &quot;Authorization: Bearer $AV_API_KEY&quot; \\\\\\n  --header &quot;X-AlgoVault-Track-Token:int-claude-code&quot;\\n</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-09-23\">",
+      "r_row": "R2",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-10-01\">",
+      "r_row": "R2",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Claude Desktop - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/claude-desktop\",\\n  \"datePublished\": \"2026-05-19T00:00:00+00:00\",\\n  \"dateModified\": \"2026-08-09T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Claude Desktop's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Claude Desktop integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R2",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Claude Desktop - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/claude-desktop\",\\n  \"datePublished\": \"2026-05-19T00:00:00+00:00\",\\n  \"dateModified\": \"2026-10-01T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Claude Desktop's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Claude Desktop integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R2",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "91.1%</span>",
+      "r_row": "R2",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "90.9%</span>",
+      "r_row": "R2",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "829,513</span>",
+      "r_row": "R2",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "916,636</span>",
+      "r_row": "R2",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": " Open Claude Desktop → Settings → Connectors → <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": " Open Claude Desktop → Customize → Connectors → + → <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": ". Name: <code>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "AlgoVault</code>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": ". URL: <code>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": ". Paste <code>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": ". Save and restart Claude Desktop. The free tier needs no header. Paid tier: add <code>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "Authorization: Bearer av_live_…</code>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": " as a custom header.</p>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": ", then click <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "Add</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": ". Enable it per chat from + → Connectors. The connector form takes OAuth credentials, not custom headers — for a paid-tier key, use the JSON path below.</p>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "{\\n  &quot;mcpServers&quot;: {\\n    &quot;algovault&quot;: {\\n      &quot;command&quot;: &quot;npx&quot;,\\n      &quot;args&quot;: [&quot;-y&quot;, &quot;mcp-remote&quot;, &quot;https://api.algovault.com/mcp?src=docs&quot;,\\n               &quot;--header&quot;, &quot;Authorization: Bearer ${AV_API_KEY}&quot;,\\n               &quot;--header&quot;, &quot;X-AlgoVault-Track-Token:int-claude-desktop&quot;]\\n    }\\n  }\\n}\\n</code>",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "{\\n  &quot;mcpServers&quot;: {\\n    &quot;algovault&quot;: {\\n      &quot;command&quot;: &quot;npx&quot;,\\n      &quot;args&quot;: [&quot;-y&quot;, &quot;mcp-remote&quot;, &quot;https://api.algovault.com/mcp?src=docs&quot;,\\n               &quot;--header&quot;, &quot;Authorization:${AUTH_HEADER}&quot;,\\n               &quot;--header&quot;, &quot;X-AlgoVault-Track-Token:int-claude-desktop&quot;],\\n      &quot;env&quot;: { &quot;AUTH_HEADER&quot;: &quot;Bearer av_live_…&quot; }\\n    }\\n  }\\n}\\n</code>",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "Set <code>",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "AV_API_KEY</code>",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": " in the env block or your shell. Free tier: drop the <code>",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "Set your key in the env block. Free tier: drop the <code>",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": " header, but keep the <code>",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": " header and the env block, but keep the <code>",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": " — restart Claude Desktop after saving the connector. The connector list reads at app start.</li>",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": " — enable it for the chat from + → Connectors.</li>",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "AV_API_KEY</code>",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": " is set in the JSON env block, not just your shell. Claude Desktop spawns the MCP process in its own env scope.</li>",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "AUTH_HEADER</code>",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": " is set in the JSON env block as <code>",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "Bearer av_live_…</code>",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": ". Claude Desktop spawns the MCP process in its own env scope.</li>",
+      "r_row": "R5",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-09-23\">",
+      "r_row": "R6",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-10-01\">",
+      "r_row": "R6",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Codex - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/codex\",\\n  \"datePublished\": \"2026-08-05T00:00:00+00:00\",\\n  \"dateModified\": \"2026-08-09T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Codex's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Codex integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R6",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Codex - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/codex\",\\n  \"datePublished\": \"2026-08-05T00:00:00+00:00\",\\n  \"dateModified\": \"2026-10-01T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Codex's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Codex integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R6",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "91.1%</span>",
+      "r_row": "R6",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": "90.9%</span>",
+      "r_row": "R6",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "829,513</span>",
+      "r_row": "R6",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": "916,636</span>",
+      "r_row": "R6",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "Config verified 2026-08-05 against <a href=\"https://learn.chatgpt.com/docs/extend/mcp\">",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": "Config verified 2026-10-01 against <a href=\"https://learn.chatgpt.com/docs/extend/mcp\">",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "Note that <code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "codex mcp add</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": " covers <strong>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "local stdio servers only</strong>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": ". Remote HTTP servers like AlgoVault are configured in the file, not through that command.</p>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": "<code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": "codex mcp add algovault --url &quot;https://api.algovault.com/mcp?src=docs&quot;</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": " adds the free tier from the CLI; the paid tier’s <code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": "bearer_token_env_var</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": " is set in <code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": "config.toml</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "+",
+      "unit": ", as above.</p>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "codex mcp add</code>",
+      "r_row": "R7",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": " rejected the URL</strong>",
+      "r_row": "R7",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": " — expected. That command adds stdio servers; use the TOML block above.</li>",
+      "r_row": "R7",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "\\n<li>",
+      "r_row": "R7",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "<strong>",
+      "r_row": "R7",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/codex.html",
+      "op": "-",
+      "unit": "<code>",
+      "r_row": "R7",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-09-23\">",
+      "r_row": "R9",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-10-02\">",
+      "r_row": "R9",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Smithery - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/smithery\",\\n  \"datePublished\": \"2026-05-19T00:00:00+00:00\",\\n  \"dateModified\": \"2026-08-09T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Smithery's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Smithery integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R9",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Smithery - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/smithery\",\\n  \"datePublished\": \"2026-05-19T00:00:00+00:00\",\\n  \"dateModified\": \"2026-10-02T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Smithery's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Smithery integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R9",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "91.1%</span>",
+      "r_row": "R9",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "90.8%</span>",
+      "r_row": "R9",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "829,513</span>",
+      "r_row": "R9",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "922,918</span>",
+      "r_row": "R9",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;name&gt;\\n</code>",
+      "r_row": "R9",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;\\n</code>",
+      "r_row": "R9",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "Smithery writes the right MCP-server entry into your client’s config file. If your client needs an API key, the CLI prompts for <code>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "AV_API_KEY</code>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": " (or skip to use the free tier).</p>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "The CLI writes a Smithery-gateway entry into your client’s config. It carries no API key, so this path is the free tier.</p>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "$ npx -y @smithery/cli install crypto-quant-signal-mcp --client claude\\n✔ AlgoVault MCP installed for Claude Desktop.\\n✔ Config written to ~/Library/Application Support/Claude/claude_desktop_config.json.\\nℹ Restart Claude Desktop to load.\\n</code>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "$ npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client claude\\n? Would you like to help improve Smithery by sending anonymized usage data? No\\n✔ Successfully resolved algovault/crypto-quant-signal-mcp\\n* Installing remote server. Please ensure you trust the server author, especially when sharing sensitive data.\\n\\n✓ algovault/crypto-quant-signal-mcp successfully installed for claude\\n</code>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "“Client not detected”</strong>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": " — Smithery probes your machine for installed clients. If your client lives in a non-default path, pass <code>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": " manually.</li>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "\\n<li>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "<strong>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": " Claude Desktop, Cursor, Cline, Claude Code. Continue.dev support is in beta.</p>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": " Claude Desktop, Cursor, Cline, Claude Code and Codex, among others.</p>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": " Yes. Hit Enter at the API-key prompt; Smithery writes a no-header config (free tier, 200 calls/month, 100/day).</p>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": " Yes. Smithery’s entry carries no API key, so this path is the free tier. The first time your client connects, Smithery asks you to authorize it in your browser.</p>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": " Yes — <a href=\"https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp\">",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp</a>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": " Yes — <a href=\"https://smithery.ai/servers/algovault/crypto-quant-signal-mcp\">",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "smithery.ai/servers/algovault/crypto-quant-signal-mcp</a>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": " It generates the right <code>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "mcpServers</code>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": " entry for your client’s config file. Same result as hand-editing the JSON, but automated for each client’s quirks.</p>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": " It adds an entry for Smithery’s gateway (<code>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "server.smithery.ai/algovault/crypto-quant-signal-mcp/mcp</code>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": ") to your client’s config, and your calls reach AlgoVault through that gateway. For a paid-tier key, add AlgoVault by hand instead; that connects to <code>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "api.algovault.com</code>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": " directly.</p>",
+      "r_row": "R10b",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": ". The full AlgoVault listing is at <a href=\"https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp\">",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "-",
+      "unit": "smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp</a>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": ". The full AlgoVault listing is at <a href=\"https://smithery.ai/servers/algovault/crypto-quant-signal-mcp\">",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/smithery.html",
+      "op": "+",
+      "unit": "smithery.ai/servers/algovault/crypto-quant-signal-mcp</a>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/llms-full.txt",
+      "op": "-",
+      "unit": "  https://api.algovault.com/mcp?src=binance_agent_os \\\\",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/llms-full.txt",
+      "op": "+",
+      "unit": "  \"https://api.algovault.com/mcp?src=binance_agent_os\" \\\\",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "Settings &rarr; Connectors &rarr; <em>",
+      "r_row": "R1",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "Customize &rarr; Connectors &rarr; + &rarr; <em>",
+      "r_row": "R1",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;name&gt;</code>",
+      "r_row": "R8",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;</code>",
+      "r_row": "R8",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "Easiest path (UI):</strong>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "Easiest path (UI, free tier):</strong>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "Settings</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "Customize</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "+</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": " &rarr; <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": ". Name it <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "AlgoVault</code>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": ". URL: <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": ". Paste <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": ". Add <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "Authorization: Bearer av_live_&hellip;</code>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": " as a custom header (paid tier). Save and restart Claude Desktop.</p>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": ", then click <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "Add</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": ". Enable it per chat from <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "+</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": " &rarr; <em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "Connectors</em>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": ". The connector form takes OAuth credentials, not custom headers &mdash; for a paid-tier key, use the JSON path below.</p>",
+      "r_row": "R2",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "{\\n  \"mcpServers\": {\\n    \"algovault\": {\\n      \"command\": \"npx\",\\n      \"args\": [\"-y\", \"mcp-remote\", \"https://api.algovault.com/mcp?src=docs\",\\n               \"--header\", \"Authorization: Bearer ${AV_API_KEY}\",\\n               \"--header\", \"X-AlgoVault-Track-Token:chan-docs\"]\\n    }\\n  }\\n}</code>",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "{\\n  \"mcpServers\": {\\n    \"algovault\": {\\n      \"command\": \"npx\",\\n      \"args\": [\"-y\", \"mcp-remote\", \"https://api.algovault.com/mcp?src=docs\",\\n               \"--header\", \"Authorization:${AUTH_HEADER}\",\\n               \"--header\", \"X-AlgoVault-Track-Token:chan-docs\"],\\n      \"env\": { \"AUTH_HEADER\": \"Bearer av_live_&hellip;\" }\\n    }\\n  }\\n}</code>",
+      "r_row": "R3",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "Set <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "AV_API_KEY</code>",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": " in the env block or your shell. Free tier: drop the <code class=\"text-xs\">",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "Set your key in the env block. Free tier: drop the <code class=\"text-xs\">",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": " header, but keep the <code class=\"text-xs\">",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": " header and the env block, but keep the <code class=\"text-xs\">",
+      "r_row": "R4",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "claude mcp add --transport http --scope project algovault https://api.algovault.com/mcp?src=docs \\\\\\n  --header \"Authorization: Bearer $AV_API_KEY\" \\\\\\n  --header \"X-AlgoVault-Track-Token:chan-docs\"</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "claude mcp add --transport http --scope project algovault \"https://api.algovault.com/mcp?src=docs\" \\\\\\n  --header \"Authorization: Bearer $AV_API_KEY\" \\\\\\n  --header \"X-AlgoVault-Track-Token:chan-docs\"</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "# Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code\\nnpx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</code>",
+      "r_row": "R9",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "# Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code\\nnpx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;client&gt;</code>",
+      "r_row": "R9",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "The CLI writes the right config file for your client and prompts for any required env vars (like <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "AV_API_KEY</code>",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": " for paid-tier access). Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href=\"https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp\" class=\"text-mint-400 hover:underline\">",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "The CLI writes a Smithery-gateway entry into your client's config. It carries no API key, so this path is the free tier. Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href=\"https://smithery.ai/servers/algovault/crypto-quant-signal-mcp\" class=\"text-mint-400 hover:underline\">",
+      "r_row": "R10",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "{\"status\":\"ok\",\"version\":\"1.10.3\",\"stripe\":true}</code>",
+      "r_row": "R11",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "{\"status\":\"ok\",\"server\":\"crypto-quant-signal-mcp\",\"version\":\"&lt;current release&gt;\",\"stripe\":true}</code>",
+      "r_row": "R11",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": " for free tier. Note that <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "codex mcp add</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": " covers local stdio servers only, so remote HTTP servers are configured in the file.</p>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": " for free tier. <code class=\"text-xs bg-navy-800 px-1 rounded\">",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "codex mcp add algovault --url \"https://api.algovault.com/mcp?src=docs\"</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": " adds the free tier from the CLI; the paid tier's <code class=\"text-xs\">",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "bearer_token_env_var</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": " is set in <code class=\"text-xs\">",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "config.toml</code>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": ", as above.</p>",
+      "r_row": "R6",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "export ANTHROPIC_BASE_URL=\"https://api.deepseek.com/anthropic\"\\nexport ANTHROPIC_AUTH_TOKEN=\"$DEEPSEEK_API_KEY\"\\n\\nclaude mcp add --transport http --scope project algovault \\\\\\n  https://api.algovault.com/mcp?src=docs \\\\\\n  --header \"X-AlgoVault-Track-Token:chan-docs\"</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "export ANTHROPIC_BASE_URL=\"https://api.deepseek.com/anthropic\"\\nexport ANTHROPIC_AUTH_TOKEN=\"$DEEPSEEK_API_KEY\"\\n\\nclaude mcp add --transport http --scope project algovault \\\\\\n  \"https://api.algovault.com/mcp?src=docs\" \\\\\\n  --header \"X-AlgoVault-Track-Token:chan-docs\"</code>",
+      "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "vault:Design/AlgoVault Landing Hero v1/v1-landing-rest.jsx",
+      "op": "-",
+      "unit": "    title: 'Open Claude → Settings → Connectors'",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "vault:Design/AlgoVault Landing Hero v1/v1-landing-rest.jsx",
+      "op": "+",
+      "unit": "    title: 'Open Claude → Customize → Connectors'",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "vault:Design/AlgoVault Landing Hero v1/v1-landing-rest.jsx",
+      "op": "-",
+      "unit": "    title: 'Add custom connector → paste the URL',",
+      "r_row": "R15",
+      "kind": "copy"
+    },
+    {
+      "file": "vault:Design/AlgoVault Landing Hero v1/v1-landing-rest.jsx",
+      "op": "+",
+      "unit": "    title: '+ → Add custom connector → paste the URL',",
+      "r_row": "R15",
+      "kind": "copy"
+    }
+  ]
+}

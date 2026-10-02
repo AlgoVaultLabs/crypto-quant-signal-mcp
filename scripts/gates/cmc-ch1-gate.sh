@@ -2,7 +2,7 @@
 # cmc-ch1-gate.sh — LANDING-MCP-CLIENTS-CLAIMS-W1 CH1 (the ratified copy at every producer).
 #
 # Legs, from the repo root, each mapped to the chapter's acceptance criteria:
-#   AC1  STRINGS     every R1–R12, R14–R17 BEFORE string is gone from its producers AND rendered pages,
+#   AC1  STRINGS     every R1–R12, R10b, R14–R18 BEFORE string is gone from its producers AND rendered pages,
 #                    every AFTER string is present (the exact-string table below; index.html's R15 in
 #                    both artboards).
 #   AC2  ANCHORS     the changed rows carry exactly the spec's anchors, no anchor survives on a removed
@@ -13,10 +13,10 @@
 #                    line must fire CHECK 9, restoring a retired path in a real page must fire CHECK 1, and
 #                    the gate source carries no CHECK 9 exemption list.
 #   AC4  RENDERED    scripts/gates/cmc-rendered-diff.mjs --check → RENDERED_DIFF_VERDICT=MATCH for the
-#                    chapter's rows (R1–R12, R14–R17).
+#                    chapter's rows (R1–R12, R10b, R14–R18).
 #   AC5  DATES       verifiedAt = the CH1 date on every edited row; codex.md's verified twin matches.
 #   AC6  HOMEPAGE    the vault JSX backup exists, and a fresh render-jsx-static of landing-rest equals
-#                    landing/index.html's #quickstart section byte for byte in BOTH artboards (the mobile
+#                    landing/index.html's #quickstart section (re-baked whole: R15 + R18) byte for byte in BOTH artboards (the mobile
 #                    artboard carries no id attributes — the same rule its assembly applies).
 #   AC7  suite       the full vitest suite → classify-suite-verdict.mjs, as deploy.yml runs it;
 #        docs/landing  build_docs --check + build_landing --check rc 0;
@@ -38,7 +38,7 @@ set -uo pipefail
 REQUIRED_TOOLS=(node npm npx python3 git grep)
 NAMED_TESTS='tests/unit/claim-evidence.test.ts tests/unit/integrations-data.test.ts tests/unit/mcp-usage-docs-byte-equivalence.test.ts tests/unit/mcp-usage-docs.test.ts'
 CH1_DATE='2026-10-01'   # the CH1 date (date -u +%F when CH1 ran) — verifiedAt on every edited row
-CH1_ROWS='R1,R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12,R14,R15,R16,R17'
+CH1_ROWS='R1,R2,R3,R4,R5,R6,R7,R8,R9,R10,R10b,R11,R12,R14,R15,R16,R17,R18'   # rev 3 adds R10b + R18
 TARGET_PAGES='claude-desktop codex smithery claude-code binance-agent-os'
 SKILLS_REPO='https://github.com/AlgoVaultLabs/algovault-skills.git'
 
@@ -115,12 +115,16 @@ T = {
    ["`codex mcp add algovault --url \"https://api.algovault.com/mcp?src=docs\"` adds the free tier from the CLI; the paid tier's `bearer_token_env_var` is set in `config.toml`, as above.",
     "Config verified " + ch1 + " against <https://learn.chatgpt.com/docs/extend/mcp>"]),
  "docs/integrations/mcp-clients/smithery.md": (
-   ["@smithery/cli install", "prompts for `AV_API_KEY`", "config-path", "smithery.ai/server/@AlgoVaultLabs", "AlgoVault MCP installed for Claude Desktop"],
+   ["@smithery/cli install", "prompts for `AV_API_KEY`", "config-path", "smithery.ai/server/@AlgoVaultLabs", "AlgoVault MCP installed for Claude Desktop",
+    "Continue.dev support is in beta", "Hit Enter at the API-key prompt", "Same result as hand-editing the JSON"],
    ["npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client <name>",
     "The CLI writes a Smithery-gateway entry into your client's config. It carries no API key, so this path is the free tier.",
     "$ npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client claude\n? Would you like to help improve Smithery by sending anonymized usage data? No\n✔ Successfully resolved algovault/crypto-quant-signal-mcp\n* Installing remote server. Please ensure you trust the server author, especially when sharing sensitive data.\n\n✓ algovault/crypto-quant-signal-mcp successfully installed for claude",
     "[smithery.ai/servers/algovault/crypto-quant-signal-mcp](https://smithery.ai/servers/algovault/crypto-quant-signal-mcp)",
-    "**Existing AlgoVault entry overwritten**"]),
+    "**Existing AlgoVault entry overwritten**",
+    "**Which clients does Smithery support?** Claude Desktop, Cursor, Cline, Claude Code and Codex, among others.",
+    "**Free tier setup?** Yes. Smithery's entry carries no API key, so this path is the free tier. The first time your client connects, Smithery asks you to authorize it in your browser.",
+    "**What does Smithery actually do?** It adds an entry for Smithery's gateway (`server.smithery.ai/algovault/crypto-quant-signal-mcp/mcp`) to your client's config, and your calls reach AlgoVault through that gateway. For a paid-tier key, add AlgoVault by hand instead; that connects to `api.algovault.com` directly."]),
  "docs/integrations/mcp-clients/claude-code.md": (
    ["\n  https://api.algovault.com/mcp?src=docs " + BS], ['\n  "https://api.algovault.com/mcp?src=docs" ' + BS]),
  "docs/integrations/exchange-kits/binance-agent-os.md": (
@@ -167,9 +171,11 @@ T = {
    ["local stdio servers only", "rejected the URL", "Config verified 2026-08-05"],
    ["codex mcp add algovault --url &quot;https://api.algovault.com/mcp?src=docs&quot;</code>", "Config verified " + ch1 + " against"]),
  "landing/integrations/smithery.html": (
-   ["@smithery/cli install", "config-path", "smithery.ai/server/@AlgoVaultLabs"],
+   ["@smithery/cli install", "config-path", "smithery.ai/server/@AlgoVaultLabs", "Continue.dev support is in beta", "Hit Enter at the API-key prompt"],
    ["@smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;", "Smithery-gateway entry",
-    "successfully installed for claude", "smithery.ai/servers/algovault/crypto-quant-signal-mcp"]),
+    "successfully installed for claude", "smithery.ai/servers/algovault/crypto-quant-signal-mcp",
+    "Claude Code and Codex, among others.", "entry carries no API key, so this path is the free tier. The first time your client connects, Smithery asks you to authorize it in your browser.",
+    "<code>server.smithery.ai/algovault/crypto-quant-signal-mcp/mcp</code>", "add AlgoVault by hand instead; that connects to <code>api.algovault.com</code> directly."]),
  "landing/integrations/claude-code.html": (
    ["\n  https://api.algovault.com/mcp?src=docs " + BS], ["\n  &quot;https://api.algovault.com/mcp?src=docs&quot; " + BS]),
  "landing/integrations/binance-agent-os.html": (
@@ -180,7 +186,8 @@ T = {
    ["title: 'Open Claude → Settings → Connectors'", "title: 'Add custom connector → paste the URL'"],
    ["title: 'Open Claude → Customize → Connectors'", "title: '+ → Add custom connector → paste the URL'"]),
 }
-COUNTS = {"landing/index.html": [("Open Claude → Customize → Connectors", 2), ("+ → Add custom connector → paste the URL", 2)]}
+COUNTS = {"landing/index.html": [("Open Claude → Customize → Connectors", 2), ("+ → Add custom connector → paste the URL", 2),
+                                  ('href="/integrations/deepseek-harness"', 2), (">DeepSeek Harness</div>", 2)]}
 bad, n = [], 0
 for path, (absent, present) in T.items():
     try:

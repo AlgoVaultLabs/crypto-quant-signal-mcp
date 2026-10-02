@@ -11,7 +11,7 @@
 <meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with Smithery&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/smithery">
-<meta name="last-updated" content="2026-10-01">
+<meta name="last-updated" content="2026-10-02">
 <!-- BEGIN: AlgoVault canonical design loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +26,7 @@
   "headline": "AlgoVault × Smithery - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/smithery",
   "datePublished": "2026-05-19T00:00:00+00:00",
-  "dateModified": "2026-10-01T15:00:00+00:00",
+  "dateModified": "2026-10-02T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -279,7 +279,7 @@ tailwind.config = {
     <div style="position:relative;z-index:1">
       <div class="placeholder-cap" style="margin-bottom:14px">· smithery integration</div>
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">90.9%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">916,636</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">90.8%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">922,918</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Install AlgoVault via Smithery</h1>
@@ -306,10 +306,10 @@ tailwind.config = {
 <li><strong>Install succeeds but client doesn’t see AlgoVault</strong> — restart the client after install. Most MCP clients read their config file once at app start; in-place edits during a running session won’t take effect until the next launch.</li>
 </ul></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>FAQ</h2>
-<p><strong>Which clients does Smithery support?</strong> Claude Desktop, Cursor, Cline, Claude Code. Continue.dev support is in beta.</p>
-<p><strong>Free tier setup?</strong> Yes. Hit Enter at the API-key prompt; Smithery writes a no-header config (free tier, 200 calls/month, 100/day).</p>
+<p><strong>Which clients does Smithery support?</strong> Claude Desktop, Cursor, Cline, Claude Code and Codex, among others.</p>
+<p><strong>Free tier setup?</strong> Yes. Smithery’s entry carries no API key, so this path is the free tier. The first time your client connects, Smithery asks you to authorize it in your browser.</p>
 <p><strong>Can I see AlgoVault on the Smithery registry?</strong> Yes — <a href="https://smithery.ai/servers/algovault/crypto-quant-signal-mcp">smithery.ai/servers/algovault/crypto-quant-signal-mcp</a>.</p>
-<p><strong>What does Smithery actually do?</strong> It generates the right <code>mcpServers</code> entry for your client’s config file. Same result as hand-editing the JSON, but automated for each client’s quirks.</p></div>
+<p><strong>What does Smithery actually do?</strong> It adds an entry for Smithery’s gateway (<code>server.smithery.ai/algovault/crypto-quant-signal-mcp/mcp</code>) to your client’s config, and your calls reach AlgoVault through that gateway. For a paid-tier key, add AlgoVault by hand instead; that connects to <code>api.algovault.com</code> directly.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>
 <p>One-command install: get AlgoVault in your client right now. <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'smithery',campaign:'track-record'}})">Verify the track record on-chain</a>. The full AlgoVault listing is at <a href="https://smithery.ai/servers/algovault/crypto-quant-signal-mcp">smithery.ai/servers/algovault/crypto-quant-signal-mcp</a>.</p></div>
       </article>

@@ -4,7 +4,7 @@
  * cmc-rendered-diff.mjs — LANDING-MCP-CLIENTS-CLAIMS-W1 Build Rule 4: ratified diff only.
  *
  * Every changed unit of reader-facing text this wave produces must belong to exactly one row of
- * the ratified copy table (R1–R17). The committed map
+ * the ratified copy table (R1–R18 and R10b). The committed map
  * audits/LANDING-MCP-CLIENTS-CLAIMS-W1-rendered-diff.json lists them; --check recomputes the diff
  * and asserts BOTH directions: every changed unit is listed with an R-row, every listed unit is a
  * real change, and every required R-row occurs at least once. An unlisted change is a ride-along.
@@ -40,7 +40,7 @@ export const REPO_PATHS = ['landing', 'README.md', 'docs'];
 export const VAULT_JSX_DIR = '/Users/tank/My Drive/Obsidian Vault/AlgoVault MCP/Design/AlgoVault Landing Hero v1';
 export const VAULT_JSX = 'v1-landing-rest.jsx';
 export const VAULT_KEY = `vault:Design/AlgoVault Landing Hero v1/${VAULT_JSX}`;
-export const ALL_ROWS = Array.from({ length: 17 }, (_, i) => `R${i + 1}`);
+export const ALL_ROWS = [...Array.from({ length: 18 }, (_, i) => `R${i + 1}`), 'R10b'];
 
 // ── units ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -89,8 +89,13 @@ export const ROW_RULES = [
   { row: 'R15', files: /^(landing\/index\.html|vault:)/, frags: ['Open Claude → Settings → Connectors', 'Open Claude → Customize → Connectors', 'Add custom connector → paste the URL'] },
   { row: 'R17', files: /^README\.md$/, frags: ['**1. Add the connector.**'] },
   { row: 'R14', files: /^README\.md$/, frags: ['| **Claude Desktop** |', '| **Claude Code** (CLI) |', '| **Cursor** |'] },
+  { row: 'R18', files: /^landing\/index\.html$/, frags: ['DeepSeek Harness', '/integrations/deepseek-harness'] },
   { row: 'R7', frags: ['rejected the URL'] },
   { row: 'R6', frags: ['covers local stdio servers only', 'local stdio servers only', 'codex mcp add algovault --url', 'adds the free tier from the CLI', 'Config verified 2026-08-05 against <https://learn.chatgpt.com', 'Config verified 2026-10-01 against <https://learn.chatgpt.com', 'Config verified 2026-08-05 against <a href="https://learn.chatgpt.com', 'Config verified 2026-10-01 against <a href="https://learn.chatgpt.com'] },
+  { row: 'R10b', frags: ['Continue.dev support is in beta', 'Claude Code and Codex, among others', 'Hit Enter at the API-key prompt',
+    'no-header config', 'entry carries no API key', 'asks you to authorize it in your browser', 'Same result as hand-editing the JSON',
+    'generates the right', 'server.smithery.ai/algovault/crypto-quant-signal-mcp/mcp', 'reach AlgoVault through that gateway',
+    'add AlgoVault by hand instead', 'Which clients does Smithery support?', 'Free tier setup?', 'What does Smithery actually do?'] },
   { row: 'R10', frags: ['prompts for any required env vars', 'Smithery-gateway entry', 'smithery.ai/server/@AlgoVaultLabs', 'smithery.ai/servers/algovault', 'Client not detected', 'config-path', 'AlgoVault MCP installed for Claude Desktop', 'successfully installed for claude', 'Successfully resolved algovault', 'help improve Smithery', 'Installing remote server', 'Config written to ~/Library', 'Restart Claude Desktop to load', 'the CLI prompts for', 'skip to use the free tier', 'right MCP-server entry', 'mcp add algovault/crypto-quant-signal-mcp --client claude', 'install crypto-quant-signal-mcp --client claude'] },
   { row: 'R9', files: /(^landing\/integrations\/smithery\.html$|smithery\.md$)/, frags: ['@smithery/cli install crypto-quant-signal-mcp --client', '@smithery/cli mcp add algovault/crypto-quant-signal-mcp --client'] },
   { row: 'R9', frags: ['--client &lt;client&gt;', '--client <client>'] },
