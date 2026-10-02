@@ -33,6 +33,7 @@
  *      Integrations, then Settings → Connectors; the live path is Customize → Connectors).
  *   2. FAIL — a byo-model row whose copy calls itself an MCP client.
  *   9. FAIL — an unquoted URL carrying a glob character on a shell command line (C-SHELL-GLOB).
+ *  10. FAIL — landing/index.html's #quickstart client grid differs from MCP_CLIENTS (C-LANDING-GRID-PARITY).
  *   (3. retired by OPS-CLIENT-CLAIM-EVIDENCE-W1: its 180-day REPORT was a second freshness rule
  *       that already disagreed with the host canary's 150 days. Freshness is now ONE rule — the
  *       canary's live confirmation of each row's evidence, ops/monitoring/client-claim-freshness.py.)
@@ -55,6 +56,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { createRequire } from 'node:module';
+import { landingClientRows, landingGridOrder } from './lib/landing-client-rows.mjs';
 
 // The registry is a tsc-emitted CJS module. createRequire is the documented way
 // to load one from an ESM script (a bare `require` is not defined here, and
@@ -621,6 +623,85 @@ export function checkShellGlobs(files, readFile) {
   return { blocks, hits };
 }
 
+// ── CHECK 10 (C-LANDING-GRID-PARITY) — LANDING-MCP-CLIENTS-CLAIMS-W1 ────────────
+//
+// landing/index.html is the one MCP_CLIENTS surface baked OUT OF BAND: render-jsx-static.mjs renders
+// it from the vault JSX, which CI cannot reach, so no generator --check covers it. It sat one card
+// behind the SoT — no DeepSeek Harness — from 2026-08-29 until R18, and one later wave hand-edited
+// around the gap instead of closing it. This compares the baked grid, per artboard, against the SAME
+// projection the renderer bakes from (scripts/lib/landing-client-rows.mjs), so the next row added to
+// MCP_CLIENTS fails CI until the homepage is re-baked.
+
+/** The ClientCard container (vault JSX): an <a> for a row with a tutorial, a <div> otherwise. */
+const CARD_RE = /<(a|div)\b(?: href="([^"]*)")? style="padding:[^"]*;border:1px solid var\(--line\);border-radius:14px;background:oklch\(0\.18 0\.014 265 \/ 0\.55\);display:flex;flex-direction:column;text-decoration:none">/g;
+/** The card's label line (16px desktop, 15px mobile). */
+const CARD_LABEL_RE = /<div style="font-family:var\(--font-display\);font-size:1[56]px;font-weight:500;[^"]*">([^<]*)<\/div>/;
+
+/** The balanced <section …> that starts at `opener`, searched from `from`. */
+function balancedSection(html, opener, from) {
+  const i = html.indexOf(opener, from);
+  if (i < 0) return null;
+  const tag = /<(\/?)section\b[^>]*>/g;
+  tag.lastIndex = i;
+  let depth = 0;
+  let m;
+  while ((m = tag.exec(html)) !== null) {
+    depth += m[1] ? -1 : 1;
+    if (depth === 0) return html.slice(i, m.index + m[0].length);
+  }
+  return null;
+}
+
+/** Both artboards' #quickstart sections (desktop carries the id; the mobile artboard carries none). */
+export function quickstartSections(html) {
+  const d = html.indexOf('<div class="lp-rest-desktop">');
+  const m = html.indexOf('<div class="lp-rest-mobile">');
+  return {
+    desktop: d < 0 ? null : balancedSection(html, '<section id="quickstart"', d),
+    mobile: m < 0 ? null : balancedSection(html, '<section data-anchor="quickstart"', m),
+  };
+}
+
+/** Every client card of one #quickstart section, in page order: `{ tag, href, label, start }`. */
+export function gridCards(section) {
+  const out = [];
+  CARD_RE.lastIndex = 0;
+  let m;
+  while ((m = CARD_RE.exec(section)) !== null) {
+    const label = CARD_LABEL_RE.exec(section.slice(m.index + m[0].length));
+    out.push({ tag: m[1], href: m[2] || null, label: label ? decodeEntities(label[1]) : null, start: m.index });
+  }
+  return out;
+}
+
+/**
+ * CHECK 10 over a page. `projection` = landingGridOrder(landingClientRows(registry)).
+ * @returns {{ indeterminate: string|null, problems: string[], counts: Record<string, number> }}
+ */
+export function checkLandingGrid(html, projection) {
+  const secs = quickstartSections(html);
+  const problems = [];
+  const counts = {};
+  for (const [name, sec] of Object.entries(secs)) {
+    if (!sec) return { indeterminate: `${name} artboard: no #quickstart section found`, problems, counts };
+    const cards = gridCards(sec);
+    counts[name] = cards.length;
+    if (cards.length === 0) return { indeterminate: `${name} artboard: the card pattern matched nothing — cannot verify`, problems, counts };
+    const want = projection.map((r) => r.label);
+    const got = cards.map((c) => c.label);
+    if (JSON.stringify(got) !== JSON.stringify(want)) {
+      problems.push(`${name}: card labels ${JSON.stringify(got)} ≠ the projection ${JSON.stringify(want)}`);
+    }
+    projection.forEach((r, i) => {
+      const c = cards[i];
+      if (!c) return;
+      if (r.tutorial && (c.tag !== 'a' || c.href !== r.tutorial)) problems.push(`${name}: card ${i + 1} (${r.label}) must link ${r.tutorial}, found ${c.href || 'no link'}`);
+      if (!r.tutorial && c.tag !== 'div') problems.push(`${name}: card ${i + 1} (${r.label}) has no tutorial but is a link to ${c.href}`);
+    });
+  }
+  return { indeterminate: null, problems, counts };
+}
+
 // ── self-test ─────────────────────────────────────────────────────────────────
 
 /**
@@ -882,6 +963,50 @@ function selfTest() {
     fails.push('CTA presence guard must NOT report a present CTA');
   }
 
+  // ── CHECK 10 (C-LANDING-GRID-PARITY). GREEN on the re-baked page; RED on the real pre-wave page
+  // (the five-week missing-card defect, frozen as a fixture) and on three mutations of the real one.
+  const reg10 = loadRegistry();
+  const readOr = (...parts) => { try { return readFileSync(join(ROOT, ...parts), 'utf8'); } catch { return null; } };
+  const page10 = readOr('landing', 'index.html');
+  const pre10 = readOr('tests', 'fixtures', 'landing-quickstart-pre-r18.html');
+  if (!reg10 || !page10 || !pre10) {
+    console.error('✗ self-test cannot load the registry (dist/), landing/index.html or the pre-R18 fixture — cannot verify CHECK 10.');
+    return 'INDETERMINATE';
+  }
+  const proj10 = landingGridOrder(landingClientRows(reg10));
+  mustNotFire++;
+  const g10 = checkLandingGrid(page10, proj10);
+  if (g10.indeterminate || g10.problems.length) fails.push(`check10 must be GREEN on the re-baked page (${g10.indeterminate || g10.problems[0]})`);
+  mustFire++;
+  const p10 = checkLandingGrid(pre10, proj10);
+  if (p10.indeterminate || p10.problems.length === 0) fails.push('check10 must be RED on the pre-wave homepage (no DeepSeek Harness card)');
+  const dSec = quickstartSections(page10).desktop || '';
+  const dAt = page10.indexOf(dSec);
+  const c10 = gridCards(dSec);
+  if (c10.length < 4 || dAt < 0) {
+    console.error('✗ self-test found fewer than 4 cards on the real page — cannot build the CHECK 10 mutations.');
+    return 'INDETERMINATE';
+  }
+  const mutate = (fn) => page10.slice(0, dAt) + fn(dSec) + page10.slice(dAt + dSec.length);
+  const mutants = {
+    'dropped card': mutate((x) => x.slice(0, c10[1].start) + x.slice(c10[2].start)),
+    'renamed label': mutate((x) => x.replace('>Codex</div>', '>Codex CLI</div>')),
+    'swapped pair': mutate((x) => x.slice(0, c10[1].start) + x.slice(c10[2].start, c10[3].start) + x.slice(c10[1].start, c10[2].start) + x.slice(c10[3].start)),
+    // labels intact, one tutorial link wrong — the only mutant the label comparison cannot see
+    'wrong tutorial link': mutate((x) => x.replace('href="/integrations/cursor"', 'href="/integrations/curso"')),
+  };
+  for (const [name, mutant] of Object.entries(mutants)) {
+    mustFire++;
+    if (mutant === page10) { fails.push(`check10 mutation "${name}" did not change the page`); continue; }
+    const r = checkLandingGrid(mutant, proj10);
+    if (r.indeterminate || r.problems.length === 0) fails.push(`check10 must be RED on a ${name}`);
+  }
+  // A redesign that changes the card markup makes the pattern match NOTHING: that is "cannot verify",
+  // never a pass and never a mismatch report about cards that were simply not recognised.
+  mustFire++;
+  const restyled = checkLandingGrid(page10.split('border-radius:14px;background:oklch(0.18 0.014 265 / 0.55)').join('border-radius:16px;background:var(--card)'), proj10);
+  if (!restyled.indeterminate) fails.push('check10 must be INDETERMINATE when no card is recognised');
+
   // token → exit-code mapping. Asserting the token alone is not enough: a
   // re-coded mapping would leave every token assertion green.
   const MAP = { PASS: 0, FAIL: 1, INDETERMINATE: 3 };
@@ -1093,6 +1218,30 @@ if (!blFiles || blFiles.length === 0) {
     for (const h of r9.hits) console.error(`      ${rel(h.file)}:${h.line} ${h.token}`);
   } else {
     console.log(`✓ check 9 (C-SHELL-GLOB): checked ${r9.blocks} shell block(s) in ${blFiles.length} files, 0 unquoted glob URLs.`);
+  }
+}
+
+// CHECK 10 — C-LANDING-GRID-PARITY: the homepage grid (baked out of band) equals the SoT projection.
+{
+  const proj = landingGridOrder(landingClientRows(registry));
+  let page;
+  try {
+    page = readFileSync(join(ROOT, 'landing', 'index.html'), 'utf8');
+  } catch (e) {
+    console.error(`✗ check 10 could not read landing/index.html: ${e && e.message}`);
+    verdictAndExit('INDETERMINATE');
+  }
+  const r10 = checkLandingGrid(page, proj);
+  if (r10.indeterminate) {
+    console.error(`✗ check 10 (C-LANDING-GRID-PARITY): ${r10.indeterminate}`);
+    verdictAndExit('INDETERMINATE');
+  }
+  if (r10.problems.length) {
+    failed = true;
+    console.error('  ✗ check 10 (C-LANDING-GRID-PARITY): the homepage #quickstart grid no longer equals MCP_CLIENTS — re-bake the whole section with render-jsx-static.mjs (never splice it):');
+    for (const p of r10.problems) console.error(`      ${p}`);
+  } else {
+    console.log(`✓ check 10 (C-LANDING-GRID-PARITY): desktop ${r10.counts.desktop} + mobile ${r10.counts.mobile} cards = the ${proj.length}-row projection, every tutorial link present.`);
   }
 }
 

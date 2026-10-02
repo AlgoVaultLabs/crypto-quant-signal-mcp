@@ -37,6 +37,7 @@ import { JSDOM } from 'jsdom';
 import babel from '@babel/core';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
+import { landingClientRows } from './lib/landing-client-rows.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -297,59 +298,8 @@ function injectUseCasesLogos(html) {
   );
 }
 
-/**
- * Project the MCP-client registry into the shape the quickstart grid renders.
- *
- * Two things this deliberately does NOT do:
- *
- *  - It does not apply renderIndexGrid()'s `hasDedicatedPage` filter. That
- *    filter is right for /integrations, where a card is a link to a tutorial
- *    page; here a card is "this works today", and Z.ai's API and DeepSeek work
- *    today while having nothing to install. Filtering them out of the landing
- *    page would hide the exact clients this section exists to advertise.
- *
- *  - It does not pass `setupSummary` through as HTML. That string is authored
- *    for /integrations and carries Tailwind classes (bg-navy-800, text-xs) that
- *    do not exist on landing/index.html, which styles inline off CSS variables.
- *    Injected raw it renders as unstyled markup, so tags are stripped and the
- *    handful of entities we actually author are decoded to their characters.
- */
-function landingClientRows(surface) {
-  const stripToText = (html) =>
-    html
-      .replace(/<[^>]*>/g, '')
-      .replace(/&rarr;/g, '→')
-      .replace(/&hellip;/g, '…')
-      .replace(/&mdash;/g, '—')
-      .replace(/&middot;/g, '·')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;|&rsquo;|&apos;/g, "'")
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  // LANDING-QUICKSTART-SRC-TAG-W1 — a LANDING-SCOPED substitution, deliberately NOT a SoT edit.
-  // `mcp-clients.ts` is SHARED: the same setupSummary renders landing/integrations/<slug>.html,
-  // whose connect URLs carry `?src=docs` and must NEVER carry `?src=landing`. This function is the
-  // landing projection of that SoT and is called exactly once (the TryIn30 client grid), so
-  // tagging here reaches the two landing artboards and nothing else. Only an UNTAGGED URL is
-  // tagged — an existing `?src=`/`?`/`&` is left alone, so a SoT row that already declares its own
-  // channel keeps it.
-  const tagForLanding = (text) =>
-    text.replace(/https:\/\/api\.algovault\.com\/mcp(?![?&\w])/g, 'https://api.algovault.com/mcp?src=landing');
-
-  return surface.entries.map((e) => ({
-    slug: e.slug,
-    label: e.displayName,
-    kind: e.kind || 'native',
-    connect: tagForLanding(stripToText(e.setupSummary)),
-    // Empty string → null so the JSX's truthiness test reads cleanly.
-    tutorial: e.fullTutorialUrl || null,
-  }));
-}
+// LANDING-MCP-CLIENTS-CLAIMS-W1: landingClientRows() moved verbatim to scripts/lib/landing-client-rows.mjs
+// (imported above) so CHECK 10 of check-mcp-client-copy.mjs can import it without running this file.
 
 function preserveQuickstartAnchor(html) {
   // Existing landing/index.html has internal-page links href="#quickstart". JSX TryIn30 renders
