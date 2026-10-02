@@ -1,0 +1,32 @@
+{
+ "generated_from": "8deaf4da src/lib/upstream-weight-budget.ts (pre-wave, byte-identical copy, sha256 f24db40436cd126e…)",
+ "config": {
+  "ceilingPerMin": 1150,
+  "interactiveReserve": 450,
+  "windowMs": 60000,
+  "maxBatchWaitMs": 300000,
+  "processes": 4,
+  "minutes": 150,
+  "seed": 20261002,
+  "t0": 1790988900000
+ },
+ "corpus_sha256": "e2d8d288e85a5011895514c39b6fc8674ac439e983765517877b0bf7e131714d",
+ "trace_sha256": "b037fbb2c70f943ac2bc45f7ab34bd0cc051d956942bd4771abd5dfc64486046",
+ "summary": {
+  "calls": 4853,
+  "outcomes": {
+   "ok": 4841,
+   "throw": 12
+  },
+  "interactive_throws_by_caller": {
+   "scan_trade_calls": 11,
+   "funding_episodes_backfill": 1
+  },
+  "log_events": {
+   "window": 150,
+   "window_caller": 1459,
+   "batch_wait": 86,
+   "interactive_throw": 12
+  }
+ }
+}

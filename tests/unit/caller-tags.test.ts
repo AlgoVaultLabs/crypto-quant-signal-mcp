@@ -10,8 +10,9 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import ts from 'typescript';
 import {
-  seedCallerTag, seedLane, processScopedTag, x402CallerTag, PID1_ENTRYPOINT,
+  seedCallerTag, seedLane, processScopedTag, x402CallerTag, PID1_ENTRYPOINT, KNOWN_CALLER_LITERALS,
 } from '../../src/lib/caller-tags.js';
+import { HL_SLOT_RESERVE_DEFAULTS } from '../../src/lib/venue-budget-registry.js';
 import { entrypointName, processEntrypoint } from '../../src/lib/runtime.js';
 import {
   runAsCaller, runAsBatch, runAsInteractive, currentCaller, currentWeightClass, unattributedCaller,
@@ -216,4 +217,30 @@ describe('a caller name is REQUIRED at the type level (item 1)', () => {
     expect(diags.map((d) => d.code)).toEqual([2554, 2554]); // the two untagged calls, and ONLY those
     expect(lines).toEqual([2, 3]);
   }, 60_000);
+});
+
+describe('KNOWN_CALLER_LITERALS — pinned as a SUBSET of the live gate manifest (OPS-HL-SCAN-SLOT-RESERVE-W1 R2)', () => {
+  it('every known literal is the PID-1 name of a live `literal` or `scoped` call site', () => {
+    const live = new Set<string>();
+    for (const s of realSites()) {
+      if (s.kind === 'literal' && s.names) for (const n of s.names) live.add(n);
+      if (s.kind === 'scoped' && s.base) live.add(s.base); // processScopedTag's bare PID-1 form
+    }
+    expect(live.size, 'the gate found no literal/scoped sites — the pin would be vacuous').toBeGreaterThan(10);
+    expect([...KNOWN_CALLER_LITERALS].filter((n) => !live.has(n))).toEqual([]);
+    expect(KNOWN_CALLER_LITERALS.size).toBeGreaterThan(0);
+  });
+  it('the HL stand-down names are known, with the classes the slot rule assumes (batch names batch; FEB never batch)', () => {
+    const sites = realSites();
+    const classes = (n: string) => new Set(sites.filter((s) => s.names?.includes(n) || s.base === n).map((s) => s.class));
+    for (const n of HL_SLOT_RESERVE_DEFAULTS.standDown.batch) {
+      expect(KNOWN_CALLER_LITERALS.has(n), n).toBe(true);
+      expect(classes(n).has('batch'), `${n} must have a batch-class site`).toBe(true);
+    }
+    for (const n of HL_SLOT_RESERVE_DEFAULTS.standDown.interactive) {
+      expect(KNOWN_CALLER_LITERALS.has(n), n).toBe(true);
+      expect(classes(n).size, `${n} must have a site`).toBeGreaterThan(0);
+      expect(classes(n).has('batch'), `${n} stays interactive (SCOPE DELTA)`).toBe(false);
+    }
+  });
 });

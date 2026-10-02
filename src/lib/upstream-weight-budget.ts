@@ -40,13 +40,33 @@
  * ADMISSION IS UNCHANGED: every decision is taken from the ledger before the sidecar is touched, and an
  * accounting fault never throws. The existing `window` line is byte-identical.
  *
+ * Time-shaped reserve (OPS-HL-SCAN-SLOT-RESERVE-W1): an optional, declared `slotReserve` makes the reserve a
+ * function of the window. In a SLOT window (UTC minute-of-hour ∈ `minutes`, read from the shared ledger's
+ * window, so every process agrees) batch admits only if `used + w ≤ C − R − Y`, and the declared stand-down
+ * batch callers only if `used + w ≤ C − R − Y − Y_b` — the same `used + w` operand as the batch test above, so
+ * the top Y_b band goes to the other batch callers alone. A declared interactive stand-down caller WAITS the
+ * slot window out instead of acquiring. Every other interactive caller is unchanged (`used + w ≤ C`).
+ *   - A slot refusal never produces a skip: past the batch deadline it waits once more, to the next window,
+ *     where today's rule decides. Only today's rule can skip or throw.
+ *   - Each slot window's roll emits one flat `slot_standdown` line per stand-down batch name, zeros included:
+ *     {"tag":"upstream-weight-budget","event":"slot_standdown","venue":…,"window_start":…,"caller":…,"refusals":n}
+ *     `refusals` = that caller's attempts refused by the sub-cap that the slot cap would have admitted. The
+ *     counts live in the ledger (`slotRefusals`, slot windows only), so they are cross-process like `used`.
+ *   - Load-time validation disables the reserve (one `slot_reserve_disabled` line) on any bad declaration, and
+ *     any error while evaluating the slot rule falls back to TODAY's decision for that call, with one
+ *     `slot_reserve_failopen` line per window. Neither ever throws on the serving path.
+ *   - Y = 0 (or no `slotReserve`) disables everything: decisions, the ledger and every log line are byte-identical
+ *     to the pre-wave engine (pinned by the replay goldens).
+ *
  * Build note: this module is compiled CJS (tsconfig module=Node16); it uses
  * synchronous `fs` for the lock critical section and absolute ledger/lock paths
  * — no `import.meta.url`.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import * as fs from 'node:fs';
+import { KNOWN_CALLER_LITERALS } from './caller-tags.js';
 import { UpstreamRateLimitError } from './errors.js';
+import { FEATURE_REGISTRY } from './feature-registry.js';
 import { recordRateLimitEvent } from './rate-limit-events.js';
 import { processEntrypoint } from './runtime.js';
 
@@ -128,6 +148,82 @@ interface Ledger {
   waits: number;
   skips: number;
   throws: number;
+  /** Slot windows only, while a slot reserve is active: stand-down batch caller → sub-cap refusals. */
+  slotRefusals?: Record<string, number>;
+}
+
+/**
+ * A declared, venue-agnostic time-shaped reserve (OPS-HL-SCAN-SLOT-RESERVE-W1). See the module header.
+ * Lists are CLOSED and match caller names exactly.
+ */
+export interface SlotReserveConfig {
+  /** UTC minutes-of-hour whose ledger windows are slot windows, e.g. [0, 30]. */
+  minutes: readonly number[];
+  /** Y — extra interactive room in slot windows. 0 disables everything, Y_b included. */
+  extraReserveWt: number;
+  /** Y_b — the band between the stand-down sub-cap and the slot batch cap, for the other batch callers only. */
+  standDownBandWt: number;
+  standDown: {
+    /** Batch callers held to C − R − Y − Y_b in slot windows. */
+    batch: readonly string[];
+    /** Interactive callers that wait slot windows out instead of acquiring. */
+    interactive: readonly string[];
+  };
+}
+
+/** The validated, normalized form a WeightBudget evaluates against. */
+interface SlotRule {
+  minutes: ReadonlySet<number>;
+  y: number;
+  yb: number;
+  batch: readonly string[];
+  batchSet: ReadonlySet<string>;
+  interactiveSet: ReadonlySet<string>;
+}
+
+/** Every registry tool name and alias, plus the x402 HTTP twins: never a stand-down caller (paying traffic). */
+export function isPayingToolCaller(name: string): boolean {
+  if (name.startsWith('x402:')) return true;
+  return FEATURE_REGISTRY.some((f) => f.name === name || f.aliases.includes(name));
+}
+
+/**
+ * Load-time validation of a slot-reserve declaration. Pure; never throws.
+ *   { ok: true, active: false } — no declaration, or Y = 0 (disabled, silently: today's engine).
+ *   { ok: true, active: true }  — evaluate it.
+ *   { ok: false, reason }       — the caller disables the reserve with one loud line.
+ */
+export function validateSlotReserve(
+  cfg: SlotReserveConfig | undefined, ceiling: number, reserve: number, windowMs: number,
+): { ok: true; active: boolean } | { ok: false; reason: string } {
+  try {
+    if (cfg === undefined) return { ok: true, active: false };
+    const y = cfg.extraReserveWt;
+    if (!Number.isInteger(y) || y < 0) return { ok: false, reason: 'extraReserveWt is not a non-negative integer' };
+    if (y === 0) return { ok: true, active: false };
+    const yb = cfg.standDownBandWt;
+    if (!Number.isInteger(yb) || yb < 0) return { ok: false, reason: 'standDownBandWt is not a non-negative integer' };
+    if (ceiling - reserve - y < 0) return { ok: false, reason: `extraReserveWt ${y} exceeds ceiling − reserve ${ceiling - reserve}` };
+    if (yb > ceiling - reserve - y) return { ok: false, reason: `standDownBandWt ${yb} outside [0, ceiling − reserve − Y = ${ceiling - reserve - y}]` };
+    if (!(windowMs > 0 && windowMs <= 60_000 && 60_000 % windowMs === 0)) return { ok: false, reason: `windowMs ${windowMs} does not divide a minute` };
+    const minutes = cfg.minutes;
+    if (!Array.isArray(minutes) || minutes.length === 0) return { ok: false, reason: 'minutes is empty' };
+    if (minutes.some((m) => !Number.isInteger(m) || m < 0 || m > 59) || new Set(minutes).size !== minutes.length) {
+      return { ok: false, reason: 'minutes must be unique integers in [0, 59]' };
+    }
+    const batch = cfg.standDown?.batch, inter = cfg.standDown?.interactive;
+    if (!Array.isArray(batch) || !Array.isArray(inter)) return { ok: false, reason: 'standDown.batch / standDown.interactive must be arrays' };
+    const all = [...batch, ...inter];
+    if (all.some((n) => typeof n !== 'string' || n.length === 0)) return { ok: false, reason: 'a stand-down name is not a non-empty string' };
+    if (new Set(all).size !== all.length) return { ok: false, reason: 'a stand-down name is listed twice' };
+    const paying = all.find((n) => isPayingToolCaller(n));
+    if (paying !== undefined) return { ok: false, reason: `stand-down name ${paying} is a paying-tool caller` };
+    const unknown = all.find((n) => !KNOWN_CALLER_LITERALS.has(n));
+    if (unknown !== undefined) return { ok: false, reason: `stand-down name ${unknown} is not a known caller literal (caller-tags.ts)` };
+    return { ok: true, active: true };
+  } catch (e) {
+    return { ok: false, reason: `validation error: ${e instanceof Error ? e.message : String(e)}` };
+  }
 }
 
 export interface WeightBudgetOptions {
@@ -159,6 +255,10 @@ export interface WeightBudgetOptions {
   callersPath?: string;
   /** Distinct named (caller, class) keys per window before weight folds into `_overflow` (default 64). */
   callerKeyCap?: number;
+  /** Optional time-shaped reserve (OPS-HL-SCAN-SLOT-RESERVE-W1). Absent or Y = 0 ⇒ today's engine, byte for byte. */
+  slotReserve?: SlotReserveConfig;
+  /** Test seam: called at the start of every slot-rule evaluation; a throw exercises the fail-open path. */
+  slotFaultInjectForTest?: (windowStartMs: number) => void;
 }
 
 type Decision = 'acquired' | 'throw' | 'wait' | 'skip';
@@ -209,6 +309,9 @@ export class WeightBudget {
   private readonly log: (line: string) => void;
   private readonly callersPath: string;
   private readonly callerKeyCap: number;
+  private readonly slot: SlotRule | null;
+  private readonly slotFault: ((windowStartMs: number) => void) | undefined;
+  private lastFailopenWindowMs = -1;
 
   constructor(opts: WeightBudgetOptions) {
     this.venue = opts.venue;
@@ -226,6 +329,49 @@ export class WeightBudget {
     this.log = opts.log ?? ((line: string) => console.log(line));
     this.callersPath = opts.callersPath ?? callerSidecarPath(opts.ledgerPath);
     this.callerKeyCap = opts.callerKeyCap ?? DEFAULT_CALLER_KEY_CAP;
+    this.slotFault = opts.slotFaultInjectForTest;
+    const v = validateSlotReserve(opts.slotReserve, this.ceiling, this.reserve, this.windowMs);
+    if (!v.ok) {
+      this.slot = null; // a bad declaration disables the reserve (Y = 0) — never a throw at construction
+      this.log(JSON.stringify({ tag: 'upstream-weight-budget', event: 'slot_reserve_disabled', venue: this.venue, reason: v.reason }));
+    } else if (v.active && opts.slotReserve) {
+      const s = opts.slotReserve;
+      this.slot = {
+        minutes: new Set(s.minutes), y: s.extraReserveWt, yb: s.standDownBandWt,
+        batch: [...s.standDown.batch], batchSet: new Set(s.standDown.batch), interactiveSet: new Set(s.standDown.interactive),
+      };
+    } else {
+      this.slot = null;
+    }
+  }
+
+  /** True when a slot reserve is active and the window starting at `windowStartMs` is a slot window. */
+  private isSlotWindow(windowStartMs: number): boolean {
+    return this.slot !== null && this.slot.minutes.has(new Date(windowStartMs).getUTCMinutes());
+  }
+
+  /**
+   * The batch cap for `caller` in the window starting at `windowStartMs`: today's `ceiling − reserve`, or in a
+   * slot window `ceiling − reserve − Y` (stand-down callers: `− Y_b` more). ONE derivation, read by `acquire()`
+   * and by `batchHeadroom()`. `slotCap` is the non-stand-down slot cap (null outside slot windows).
+   */
+  private batchCaps(windowStartMs: number, caller: string): { cap: number; slotCap: number | null } {
+    const base = this.ceiling - this.reserve;
+    if (!this.slot || !this.isSlotWindow(windowStartMs)) return { cap: base, slotCap: null };
+    const slotCap = base - this.slot.y;
+    return { cap: this.slot.batchSet.has(caller) ? slotCap - this.slot.yb : slotCap, slotCap };
+  }
+
+  /** One `slot_reserve_failopen` line per window per process. Never throws. */
+  private slotFailopen(windowStartMs: number, e: unknown): void {
+    if (windowStartMs === this.lastFailopenWindowMs) return;
+    this.lastFailopenWindowMs = windowStartMs;
+    try {
+      this.log(JSON.stringify({
+        tag: 'upstream-weight-budget', event: 'slot_reserve_failopen', venue: this.venue,
+        window_start: new Date(windowStartMs).toISOString(), error: (e instanceof Error ? e.message : String(e)).slice(0, 200),
+      }));
+    } catch { /* a log sink fault must not reach the serving path */ }
   }
 
   /**
@@ -239,6 +385,7 @@ export class WeightBudget {
     const deadline = this.now() + this.maxBatchWaitMs;
     let totalWaitMs = 0; // accumulated across wait iterations → exactly 1 'wait'/'skip' telemetry row per acquire
     const caller = currentCaller(); // read ONCE: the ALS context is fixed for this acquire
+    let slotExtended = false; // a slot refusal past the deadline waits ONE more window instead of skipping
 
     for (;;) {
       const fd = this.tryLock();
@@ -254,28 +401,54 @@ export class WeightBudget {
       try {
         const now = this.now();
         const ledger = this.roll(this.readLedgerRaw(now), now);
-        const cap = cls === 'interactive' ? this.ceiling : this.ceiling - this.reserve;
+        let cap = cls === 'interactive' ? this.ceiling : this.ceiling - this.reserve;
+        // Slot rule (OPS-HL-SCAN-SLOT-RESERVE-W1). Evaluated only when a reserve is active; any error falls back to
+        // TODAY's decision for this call. The operand stays `used + w`.
+        let slotWait = false; // a declared interactive stand-down caller waits the slot window out
+        let slotRefused = false; // the slot rule refused a batch attempt today's rule would admit
+        let subCapRefusal = false; // … and it was the stand-down sub-cap, not the slot cap, that refused it
+        if (this.slot) {
+          try {
+            this.slotFault?.(ledger.windowStartMs);
+            if (cls === 'batch') {
+              const caps = this.batchCaps(ledger.windowStartMs, caller);
+              if (caps.slotCap !== null) {
+                cap = caps.cap;
+                slotRefused = ledger.used + weight > caps.cap && ledger.used + weight <= this.ceiling - this.reserve;
+                subCapRefusal = caps.cap < caps.slotCap && ledger.used + weight > caps.cap && ledger.used + weight <= caps.slotCap;
+              }
+            } else if (now < deadline && this.slot.interactiveSet.has(caller) && this.isSlotWindow(ledger.windowStartMs)) {
+              slotWait = true;
+            }
+          } catch (e) {
+            cap = cls === 'interactive' ? this.ceiling : this.ceiling - this.reserve;
+            slotWait = false; slotRefused = false; subCapRefusal = false;
+            this.slotFailopen(ledger.windowStartMs, e);
+          }
+        }
 
-        if (ledger.used + weight <= cap) {
+        if (slotWait) {
+          ledger.waits += 1;
+          decision = 'wait';
+        } else if (ledger.used + weight <= cap) {
           ledger.used += weight;
           if (cls === 'batch') ledger.batchUsed += weight;
           else ledger.interactiveUsed += weight;
-          this.writeLedger(ledger);
           decision = 'acquired';
         } else if (cls === 'interactive') {
           ledger.throws += 1;
-          this.writeLedger(ledger);
           secondsToRoll = this.secondsToRoll(now);
           decision = 'throw';
-        } else if (now >= deadline) {
+        } else if (now >= deadline && !(slotRefused && !slotExtended)) {
           ledger.skips += 1;
-          this.writeLedger(ledger);
           decision = 'skip';
         } else {
+          if (now >= deadline) slotExtended = true; // only a slot refusal reaches here past the deadline
           ledger.waits += 1;
-          this.writeLedger(ledger);
           decision = 'wait';
         }
+        if (subCapRefusal && decision !== 'acquired') this.countSubCapRefusal(ledger, caller);
+        this.writeLedger(ledger);
         // Per-caller accounting, in the SAME critical section, AFTER the decision is final. It reads
         // nothing the decision depends on and never throws, so admission is byte-identical.
         this.account(ledger, decision, weight, cls, caller);
@@ -284,8 +457,9 @@ export class WeightBudget {
       }
 
       if (decision === 'acquired') {
-        // Telemetry: a batch acquire that WAITED before fitting (interactive never waits).
-        if (totalWaitMs > 0) recordRateLimitEvent(this.venue, 'wait', null, 'batch', totalWaitMs, currentCaller());
+        // Telemetry: an acquire that WAITED before fitting — batch backpressure, or a stand-down caller's
+        // slot wait (class `interactive`). Without a slot reserve interactive never waits, so this is unchanged.
+        if (totalWaitMs > 0) recordRateLimitEvent(this.venue, 'wait', null, cls, totalWaitMs, currentCaller());
         return;
       }
 
@@ -299,6 +473,8 @@ export class WeightBudget {
             retry_after_seconds: secondsToRoll,
           }),
         );
+        // A stand-down caller that waited a slot window out and then hit the ceiling still leaves its wait row.
+        if (totalWaitMs > 0) recordRateLimitEvent(this.venue, 'wait', null, cls, totalWaitMs, currentCaller());
         recordRateLimitEvent(this.venue, 'throw', 'BUDGET_CEILING', cls, undefined, currentCaller());
         throw new UpstreamRateLimitError(this.venue, secondsToRoll);
       }
@@ -323,7 +499,7 @@ export class WeightBudget {
       const msToRoll = this.windowMs - (now % this.windowMs);
       const msLeft = Math.max(0, deadline - now);
       const waitMs = Math.max(1, Math.min(msToRoll, msLeft) || msToRoll);
-      if (waitMs >= WAIT_LOG_THRESHOLD_MS) {
+      if (waitMs >= WAIT_LOG_THRESHOLD_MS && cls === 'batch') { // `batch_wait` stays batch-only
         this.log(
           JSON.stringify({
             tag: 'upstream-weight-budget',
@@ -367,10 +543,40 @@ export class WeightBudget {
    */
   batchHeadroom(): number {
     const now = this.now();
-    const cap = this.ceiling - this.reserve;
+    const ws = this.windowStartFor(now);
+    let cap = this.ceiling - this.reserve;
+    try {
+      cap = this.batchCaps(ws, currentCaller()).cap; // the slot-aware cap `acquire()` uses (OPS-HL-SCAN-SLOT-RESERVE-W1 R6)
+    } catch {
+      /* advisory only: today's cap */
+    }
     const ledger = this.readLedgerRaw(now);
-    if (ledger.windowStartMs !== this.windowStartFor(now)) return cap; // window already rolled
+    if (ledger.windowStartMs !== ws) return cap; // window already rolled
     return Math.max(0, cap - ledger.batchUsed);
+  }
+
+  /** Count a stand-down sub-cap refusal on the ledger's slot record (initialized with zeros at the window's start). */
+  private countSubCapRefusal(ledger: Ledger, caller: string): void {
+    try {
+      if (ledger.slotRefusals && Object.prototype.hasOwnProperty.call(ledger.slotRefusals, caller)) ledger.slotRefusals[caller] += 1;
+    } catch (e) {
+      this.slotFailopen(ledger.windowStartMs, e);
+    }
+  }
+
+  /** One flat `slot_standdown` line per declared stand-down batch name for a CLOSED slot window. Never throws. */
+  private emitSlotStanddown(ledger: Ledger): void {
+    try {
+      if (!this.slot || !ledger.slotRefusals) return;
+      const windowStart = new Date(ledger.windowStartMs).toISOString();
+      for (const name of this.slot.batch) {
+        const n = ledger.slotRefusals[name];
+        if (!Number.isInteger(n) || n < 0) continue; // a damaged count is left MISSING, never written as a zero
+        this.log(JSON.stringify({ tag: 'upstream-weight-budget', event: 'slot_standdown', venue: this.venue, window_start: windowStart, caller: name, refusals: n }));
+      }
+    } catch (e) {
+      this.slotFailopen(ledger.windowStartMs, e);
+    }
   }
 
   // ── per-caller accounting (OPS-UPSTREAM-ACQUISITION-ACCOUNTING-W1 CH2) — fail-open, never throws ──
@@ -495,7 +701,7 @@ export class WeightBudget {
   }
 
   private emptyLedger(now: number): Ledger {
-    return {
+    const ledger: Ledger = {
       windowStartMs: this.windowStartFor(now),
       used: 0,
       batchUsed: 0,
@@ -504,6 +710,10 @@ export class WeightBudget {
       skips: 0,
       throws: 0,
     };
+    // A slot window's record starts with every stand-down batch name at ZERO, so a zero at roll is a measured
+    // zero; a window started by no active process carries no record and emits no slot_standdown line at all.
+    if (this.slot && this.isSlotWindow(ledger.windowStartMs)) ledger.slotRefusals = Object.fromEntries(this.slot.batch.map((n) => [n, 0]));
+    return ledger;
   }
 
   private readLedgerRaw(now: number): Ledger {
@@ -512,7 +722,7 @@ export class WeightBudget {
       if (typeof parsed.windowStartMs !== 'number' || typeof parsed.used !== 'number') {
         return this.emptyLedger(now);
       }
-      return {
+      const ledger: Ledger = {
         windowStartMs: parsed.windowStartMs,
         used: parsed.used,
         batchUsed: parsed.batchUsed ?? 0,
@@ -521,6 +731,11 @@ export class WeightBudget {
         skips: parsed.skips ?? 0,
         throws: parsed.throws ?? 0,
       };
+      const sr = parsed.slotRefusals;
+      if (sr && typeof sr === 'object' && !Array.isArray(sr)) {
+        ledger.slotRefusals = Object.fromEntries(Object.entries(sr).filter(([, v]) => Number.isInteger(v) && (v as number) >= 0));
+      }
+      return ledger;
     } catch {
       // Missing or corrupt ledger → start a fresh window.
       return this.emptyLedger(now);
@@ -547,6 +762,7 @@ export class WeightBudget {
         }),
       );
     }
+    if (ledger.slotRefusals) this.emitSlotStanddown(ledger); // slot windows only; absent at Y = 0
     return this.emptyLedger(now);
   }
 

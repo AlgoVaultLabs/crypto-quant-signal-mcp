@@ -40,7 +40,7 @@
  * now lives in THIS module's compiled output — the smoke grep target moved from
  * `dist/lib/upstream-weight-budget.js` to `dist/lib/venue-budget-registry.js`.
  */
-import { WeightBudget } from './upstream-weight-budget.js';
+import { WeightBudget, type SlotReserveConfig } from './upstream-weight-budget.js';
 import type { PromotedVenueId } from './capabilities.js';
 
 export interface VenueBudgetEntry {
@@ -67,6 +67,42 @@ export interface VenueBudgetEntry {
 export const HL_WEIGHT_CEILING = 1150;
 export const HL_INTERACTIVE_RESERVE = 450;
 
+// OPS-HL-SCAN-SLOT-RESERVE-W1 (architect rulings Q2/Q3 2026-10-01, Q-SR-1/Q-SR-2 2026-10-02): HL's interactive reserve
+// is TIME-SHAPED. In the two windows the bot's 30m HL scan fires in (mm00/30), batch admits only up to
+// C − R − Y = 540 and the three background backfills only up to 540 − Y_b = 467, so the scan finds ≥ 610 instead
+// of 450. C and R are unchanged. Y = 160 is sized from observed slot demand (p95 155 outside 02:30). Y_b = 73 =
+// Y·(1 − b)/b at b = 0.686 (the backfills' share of slot batch) holds the other batch callers — the public-row
+// seed lanes included — at their slot weight in expectation, while the backfills lose exactly Y.
+// funding_episodes_backfill (interactive; the 02:30 collision) waits slot windows out. Env:
+// HL_WEIGHT_SLOT_RESERVE=0 disables everything, Y_b included (the rollback lever); HL_WEIGHT_SLOT_STANDDOWN_BAND
+// overrides Y_b. A malformed value disables the reserve with one loud line (default-deny), never a throw.
+export const HL_SLOT_RESERVE_DEFAULTS: SlotReserveConfig = Object.freeze({
+  minutes: Object.freeze([0, 30]),
+  extraReserveWt: 160,
+  standDownBandWt: 73,
+  standDown: Object.freeze({
+    batch: Object.freeze(['backfill_outcomes_server', 'backfill_outcomes_cron', 'signal_perf_backfill']),
+    interactive: Object.freeze(['funding_episodes_backfill']),
+  }),
+});
+
+/** A strict non-negative integer from an env value. Unset or empty → the default; anything else → NaN (validation then disables). */
+export function slotWtFromEnv(v: string | undefined, dflt: number): number {
+  if (v === undefined || v.trim() === '') return dflt;
+  return /^\d+$/.test(v.trim()) ? Number(v.trim()) : Number.NaN;
+}
+
+/** HL's slot reserve with its two env overrides applied. Pure given `env`. */
+export function hlSlotReserveFromEnv(env: { HL_WEIGHT_SLOT_RESERVE?: string; HL_WEIGHT_SLOT_STANDDOWN_BAND?: string }): SlotReserveConfig {
+  return {
+    ...HL_SLOT_RESERVE_DEFAULTS,
+    extraReserveWt: slotWtFromEnv(env.HL_WEIGHT_SLOT_RESERVE, HL_SLOT_RESERVE_DEFAULTS.extraReserveWt),
+    standDownBandWt: slotWtFromEnv(env.HL_WEIGHT_SLOT_STANDDOWN_BAND, HL_SLOT_RESERVE_DEFAULTS.standDownBandWt),
+  };
+}
+
+export const HL_SLOT_RESERVE: SlotReserveConfig = hlSlotReserveFromEnv(process.env);
+
 const HL_VITEST = process.env.VITEST === 'true';
 // Per-worker ledger + effectively-unbounded ceiling under vitest so fetch-mocked
 // adapter tests never throttle or contend on the shared production ledger.
@@ -78,6 +114,8 @@ export const hlWeightBudget = new WeightBudget({
   lockPath: process.env.HL_WEIGHT_LOCK ?? `/tmp/algovault-hl-weight${hlLedgerSuffix}.lock`,
   ceilingPerMin: HL_VITEST ? 1_000_000_000 : HL_WEIGHT_CEILING,
   interactiveReserve: HL_VITEST ? 0 : HL_INTERACTIVE_RESERVE,
+  // Off under vitest exactly as the ceiling is: fetch-mocked adapter tests never see slot windows.
+  slotReserve: HL_VITEST ? undefined : HL_SLOT_RESERVE,
   log: HL_VITEST ? () => {} : undefined,
 });
 

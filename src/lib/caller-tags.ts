@@ -78,3 +78,23 @@ export function seedLane(args: SeedLaneArgs): string {
 export function seedCallerTag(args: SeedLaneArgs): string {
   return `seed:${args.timeframe}:${seedLane(args)}`;
 }
+
+/**
+ * KNOWN CALLER LITERALS — the caller names a CONFIGURATION may reference by name (OPS-HL-SCAN-SLOT-RESERVE-W1 R2).
+ * A slot-reserve stand-down list (`upstream-weight-budget.ts` validateSlotReserve) must name callers from this set,
+ * so a typo disables the reserve loudly instead of standing down nobody.
+ *
+ * It is the PID-1 name of every `literal` and `scoped` call site in `node scripts/check-caller-tags.mjs --manifest`
+ * at 8deaf4da (scoped = processScopedTag's bare PID-1 form). Pinned as a SUBSET of the live manifest by
+ * tests/unit/caller-tags.test.ts, so a renamed or deleted call site fails there; a NEW call site does not need to be
+ * added here unless a configuration will name it. Builders' outputs are unchanged by this set.
+ */
+export const KNOWN_CALLER_LITERALS: ReadonlySet<string> = new Set(Object.freeze([
+  // MCP tool handlers (src/index.ts)
+  'get_trade_signal', 'get_trade_call', 'scan_funding_arb', 'get_market_regime', 'get_equity_call', 'get_equity_regime',
+  'scan_trade_calls', 'search_knowledge', 'chat_knowledge', 'get_track_record',
+  // background spenders
+  'backfill_outcomes_server', 'backfill_outcomes_cron', 'signal_perf_backfill', 'grid_warmer', 'band_outcome_backfill',
+  'adapter-history-canary', 'dwr-expiry-backfill', 'lrw-relabel-v2', 'dwr-backfill', 'funding_episodes_backfill',
+  'hold_decision_labeler', 'frozen_window_attribution', 'monitor',
+]));

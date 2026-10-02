@@ -89,3 +89,132 @@ export async function replay(Budget: BudgetCtor, runAsCaller?: RunCaller, dir?: 
   if (!dir) fs.rmSync(base, { recursive: true, force: true });
   return { config: CONFIG, results, windowLines };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// OPS-HL-SCAN-SLOT-RESERVE-W1 R7 — a SYNTHETIC production-scale corpus, replayed as DISCRETE EVENTS.
+//
+// The sequential `replay()` above awaits every call, so one batch wait advances the shared clock for everyone and
+// the rest of the minute lands in the next window: fine for proving byte-identity, useless for a slot window,
+// where the whole point is WHO acquires before the scan at ~s19. `replayEvents()` instead keeps a time-ordered
+// event queue: a call starts at its own time; a waiting call's `sleep` re-queues it at the window roll; the clock
+// only ever moves to the next event. Each acquire's critical section is synchronous, so the replay is
+// deterministic. Names are literal tool / lane names only — no x402 payer- or key-derived tag, no chat_id (the
+// repo is public). The golden (`weight-budget-replay-slot.golden.json`) comes from the PRE-WAVE engine at 8deaf4da.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+export const PROD_CONFIG = {
+  ceilingPerMin: 1150, interactiveReserve: 450, windowMs: 60_000, maxBatchWaitMs: 300_000,
+  processes: 4, minutes: 150, seed: 20261002, t0: 1_790_988_900_000, // 2026-10-03T00:55:00Z: slots 01:00 … 03:00
+};
+export interface ProdCall { i: number; t: number; proc: number; cls: 'interactive' | 'batch'; weight: number; caller: string }
+export interface ProdResult {
+  i: number; caller: string; cls: string; weight: number; t: number; tEnd: number; outcome: string;
+  ledgerAfter: Record<string, unknown> | null; // the ledger right after an admission (null otherwise)
+}
+
+/** The fixed synthetic corpus: per-minute batch backlog bursts at s0–s3, early interactive, the 30m scan at s19 of
+ * every slot window, and funding_episodes_backfill hourly at mm07–mm12 plus across 02:26–02:31. */
+export function buildProdCorpus(): ProdCall[] {
+  const r = lcg(PROD_CONFIG.seed); const out: ProdCall[] = []; let i = 0;
+  const add = (t: number, proc: number, cls: 'interactive' | 'batch', weight: number, caller: string) => { out.push({ i: i++, t: Math.round(t), proc, cls, weight, caller }); };
+  for (let m = 0; m < PROD_CONFIG.minutes; m++) {
+    const T = PROD_CONFIG.t0 + m * 60_000; const d = new Date(T); const mm = d.getUTCMinutes(); const hh = d.getUTCHours();
+    const slot = mm === 0 || mm === 30;
+    const burst = (n: number, proc: number, w: number, caller: string, from = 200, span = 2800) => {
+      for (let k = 0; k < n; k++) add(T + from + r() * span, proc, 'batch', w, caller);
+    };
+    burst(8 + Math.floor(r() * 3), 0, 21, 'backfill_outcomes_server');
+    burst(5 + Math.floor(r() * 3), 0, 21, 'signal_perf_backfill');
+    burst(2 + Math.floor(r() * 3), 2, 21, 'backfill_outcomes_cron');
+    burst(4, 1, 22, 'seed:5m:hl');
+    burst(2 + Math.floor(r() * 2), 1, 22, 'seed:15m:hl');
+    burst(mm % 30 === 3 ? 9 : 1, 1, 22, 'seed:30m:hl');
+    burst(1 + Math.floor(r() * 2), 1, 22, 'seed:1h:hl');
+    if (mm % 5 === 0) burst(1, 2, 20, 'hold_decision_labeler');
+    if (r() < 0.5) burst(1, 1, 20, 'seed:5m:promoted');
+    // interactive
+    add(T + 1_000 + r() * 2_000, 0, 'interactive', 21, 'get_market_regime');
+    add(T + 1_000 + r() * 2_000, 0, 'interactive', 22, 'get_market_regime');
+    if (mm % 2 === 0) add(T + 2_000 + r() * 500, 3, 'interactive', 20, 'monitor');
+    if (slot) {
+      add(T + 3_000 + r() * 2_000, 0, 'interactive', 21, 'get_trade_call');
+      add(T + 3_000 + r() * 2_000, 0, 'interactive', 21, 'get_trade_call');
+      add(T + 19_000, 0, 'interactive', 20, 'scan_trade_calls'); // universe
+      add(T + 19_050, 0, 'interactive', 20, 'scan_trade_calls'); // meta
+      for (let k = 0; k < 20; k++) add(T + 19_100 + k * 100, 0, 'interactive', 22, 'scan_trade_calls'); // candles
+    } else if (r() < 0.3) add(T + 5_000 + r() * 50_000, 0, 'interactive', 21, 'get_trade_call');
+    if (mm % 10 === 4) add(T + 7_000 + r() * 40_000, 0, 'interactive', 20, 'scan_funding_arb');
+    const febHourly = mm >= 7 && mm <= 12;
+    const feb0230 = hh === 2 && mm >= 26 && mm <= 31;
+    if (febHourly || feb0230) for (let k = 0; k < 4; k++) add(T + 4_000 + r() * 50_000, 3, 'interactive', 20, 'funding_episodes_backfill');
+  }
+  return out.sort((a, b) => a.t - b.t || a.i - b.i).map((c, k) => ({ ...c, i: k }));
+}
+
+/** Replay `corpus` as discrete events against `Budget` (the class under test, or the pre-wave copy for the golden). */
+export async function replayEvents(
+  Budget: BudgetCtor, runAsCaller: RunCaller, opts: { corpus?: ProdCall[]; budgetOpts?: Record<string, unknown>; dir?: string } = {},
+): Promise<{ results: ProdResult[]; logs: string[] }> {
+  const corpus = opts.corpus ?? buildProdCorpus();
+  const base = opts.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'wb-events-'));
+  const ledgerPath = path.join(base, 'algovault-events-weight.json');
+  const lockPath = path.join(base, 'algovault-events-weight.lock');
+  const clock = { t: PROD_CONFIG.t0 };
+  const logs: string[] = [];
+  type Ev = { t: number; seq: number; run: () => void };
+  const queue: Ev[] = []; let seq = 0;
+  const push = (t: number, run: () => void) => { queue.push({ t, seq: seq++, run }); };
+  const procs = Array.from({ length: PROD_CONFIG.processes }, () => new Budget({
+    venue: 'Hyperliquid', ledgerPath, lockPath, ceilingPerMin: PROD_CONFIG.ceilingPerMin, interactiveReserve: PROD_CONFIG.interactiveReserve,
+    windowMs: PROD_CONFIG.windowMs, maxBatchWaitMs: PROD_CONFIG.maxBatchWaitMs, staleLockMs: 60_000, lockRetryMs: 1,
+    now: () => clock.t, sleep: (ms: number) => new Promise<void>((res) => push(clock.t + ms, res)), log: (l: string) => logs.push(l),
+    ...(opts.budgetOpts ?? {}),
+  }));
+  const results: ProdResult[] = [];
+  const classify = (e: unknown) => {
+    const err = e as { retryAfterSeconds?: number | null; constructor?: { name?: string }; name?: string };
+    const name = err?.constructor?.name ?? err?.name ?? 'Error';
+    return name === 'UpstreamRateLimitError' ? `throw:${err.retryAfterSeconds}` : name === 'WeightBudgetSkipError' ? 'skip' : `error:${name}`;
+  };
+  for (const c of corpus) {
+    push(c.t, () => {
+      const t = clock.t; const b = procs[c.proc];
+      runAsCaller(c.caller, () => b.acquire(c.weight, c.cls)).then(
+        () => { results.push({ i: c.i, caller: c.caller, cls: c.cls, weight: c.weight, t, tEnd: clock.t, outcome: 'ok', ledgerAfter: { ...b._readLedger() } }); },
+        (e: unknown) => { results.push({ i: c.i, caller: c.caller, cls: c.cls, weight: c.weight, t, tEnd: clock.t, outcome: classify(e), ledgerAfter: null }); },
+      );
+    });
+  }
+  while (queue.length > 0) {
+    queue.sort((a, b) => a.t - b.t || a.seq - b.seq);
+    const ev = queue.shift()!;
+    clock.t = Math.max(clock.t, ev.t);
+    ev.run();
+    await new Promise<void>((res) => setImmediate(res)); // drain that acquire's continuation before the next event
+  }
+  // one roll after the corpus so its last window's lines are emitted
+  clock.t += 120_000;
+  await runAsCaller('roll_trigger', () => procs[0].acquire(1, 'batch')).catch(() => {});
+  if (results.length !== corpus.length) throw new Error(`replayEvents: ${results.length} of ${corpus.length} calls settled`);
+  if (!opts.dir) fs.rmSync(base, { recursive: true, force: true });
+  return { results: results.sort((a, b) => a.i - b.i), logs };
+}
+
+/** sha256 of a value's canonical JSON — the byte-for-byte identity the slot golden records (one derivation, used by the
+ * generator AND the test). */
+export function sha256Json(v: unknown): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createHash } = require('node:crypto') as typeof import('node:crypto');
+  return createHash('sha256').update(JSON.stringify(v)).digest('hex');
+}
+
+/** The compact, comparable facts of an event trace (stored in the slot golden beside its digest). */
+export function summarizeTrace(trace: { results: ProdResult[]; logs: string[] }) {
+  const outcomes: Record<string, number> = {}; const throwsBy: Record<string, number> = {};
+  for (const r of trace.results) {
+    const k = r.outcome.split(':')[0]; outcomes[k] = (outcomes[k] ?? 0) + 1;
+    if (r.cls === 'interactive' && k === 'throw') throwsBy[r.caller] = (throwsBy[r.caller] ?? 0) + 1;
+  }
+  const events: Record<string, number> = {};
+  for (const l of trace.logs) { try { const e = (JSON.parse(l) as { event: string }).event; events[e] = (events[e] ?? 0) + 1; } catch { events._unparseable = (events._unparseable ?? 0) + 1; } }
+  return { calls: trace.results.length, outcomes, interactive_throws_by_caller: throwsBy, log_events: events };
+}
