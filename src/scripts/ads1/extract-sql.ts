@@ -1,4 +1,5 @@
-// ads1/extract-sql.ts — EDGE-ADS1-SCORECARD-W1-V2 CH3 R5: the ONE generator of every statement the
+// ads1/extract-sql.ts — EDGE-ADS1-SCORECARD-W1-V2 CH3 R5 (amended EDGE-ADS1-SCORECARD-W1-V3 CH3-A, registration §10:
+// the `-v2` family, the max-form T_CAP, two provenance columns, the per-signal presence statement): the ONE generator of every statement the
 // scorecard's read session runs (ruling Q5 = A). The pre-registration quotes these texts; a test pins the
 // registration to the generator, so what was registered is what was run.
 //
@@ -13,8 +14,18 @@
 // race-end embargo, ruling Q1 = A). Label-FREE counts (census, side mix) are marked as such and may run to
 // now; they never read a label or an outcome column.
 
-import { BARRIER_SPECS, EVAL_CANDLES, TF_MS } from '../directional-labeler.js';
-import { T_DIAG_END, T_FLIP } from './spec.js';
+import { EVAL_CANDLES, TF_MS } from '../directional-labeler.js';
+import {
+  ADS1_BARRIER_SPECS,
+  COARSER_SERVED,
+  PRIMARY_BARRIER_SPEC,
+  PRIMARY_SPEC,
+  PRIMARY_V1_TWIN_SPEC,
+  SENSITIVITY_SPECS,
+  T_ADAPTER,
+  T_DIAG_END,
+  T_FLIP,
+} from './spec.js';
 
 /** Column suffix per barrier spec: tau 1.0 → t10, 0.5 → t05, 2.0 → t20. */
 export function specSuffix(tau: number): string {
@@ -29,11 +40,24 @@ const PER_SPEC_COLUMNS = [
   ['ret_at_expiry_pct', 'expiry'],
 ] as const;
 
+/** PROVENANCE columns, primary spec only (registration §10.3): the first-write stamp (the relabel / nightly split,
+ *  the T_ADAPTER split) and the generator's own contiguity count (0 on every `-v2` row by construction). Neither is a
+ *  label. `computed_at` is selected raw and parsed under the session's `SET TIME ZONE 'UTC'` (see `sessionScript`). */
+const PRIMARY_PROVENANCE_COLUMNS = [
+  ['computed_at', 'computed'],
+  ['race_gap_candles', 'gap'],
+] as const;
+
+/** One spec's selected columns, as `[column, alias]` — the primary carries the provenance pair after its five. */
+function specColumns(spec: string): ReadonlyArray<readonly [string, string]> {
+  return spec === PRIMARY_BARRIER_SPEC ? [...PER_SPEC_COLUMNS, ...PRIMARY_PROVENANCE_COLUMNS] : PER_SPEC_COLUMNS;
+}
+
 /** The extract's CSV header, in order. The scorecard's parser refuses any other header. */
 export const EXTRACT_HEADER: readonly string[] = [
   'id', 'created_at', 'exchange', 'coin', 'timeframe', 'side', 'confidence',
   'regime_rule_version', 'regime', 'verdict_rule_version', 'anchored',
-  ...BARRIER_SPECS.flatMap((b) => PER_SPEC_COLUMNS.map(([, alias]) => `${alias}_${specSuffix(b.tau)}`)),
+  ...ADS1_BARRIER_SPECS.flatMap((b) => specColumns(b.spec).map(([, alias]) => `${alias}_${specSuffix(b.tau)}`)),
 ];
 
 /** `(VALUES ('3m', 180, 20), …)` — the label window per timeframe, from the labeler's own tables. */
@@ -43,23 +67,36 @@ function tfValues(): string {
     .join(', ');
 }
 
-/** The T_CAP predicate on `s` joined to the `tf` window table. */
+/** `(VALUES ('GATE', '3m', 300), …)` — the coarser-served pairs, generated from `COARSER_SERVED` (spec.ts, derived
+ *  from `servedCandleStepMs`), never typed. */
+function coarserValues(): string {
+  return COARSER_SERVED.map((c) => `('${c.exchange}', '${c.timeframe}', ${c.servedSeconds})`).join(', ');
+}
+
+/** The two joins every T_CAP-bounded statement carries: the label window per timeframe and the served step. */
+function windowJoins(): string {
+  return `JOIN (VALUES ${tfValues()}) AS tf(t, sec, w) ON tf.t = s.timeframe
+  LEFT JOIN (VALUES ${coarserValues()}) AS coarser(exchange, t, sec) ON coarser.exchange = s.exchange AND coarser.t = s.timeframe`;
+}
+
+/** The T_CAP predicate in the ruled MAX form (registration §10.2; Q11 / LRW-Q8), on `s` joined to `tf` and
+ *  `coarser` — `max(requested, served)` is `GREATEST(tf.sec, COALESCE(coarser.sec, tf.sec))`. */
 export function tCapPredicate(): string {
-  return `s.created_at <= ${T_DIAG_END} AND s.created_at + (tf.w + 1) * tf.sec <= ${T_DIAG_END}`;
+  return `s.created_at <= ${T_DIAG_END}
+    AND s.created_at + (tf.w + 1) * GREATEST(tf.sec, COALESCE(coarser.sec, tf.sec)) <= ${T_DIAG_END}`;
 }
 
 /** THE label-bearing extract: one row per emitted call that carries a primary-spec label under T_CAP. The
  *  primary spec is an inner join (it defines the population); the two sensitivity specs are left joins on
  *  the same rows, so every spec is scored on one population. */
 export function extractSql(): string {
-  const [primary, ...sensitivity] = BARRIER_SPECS;
   const alias = (tau: number) => `d${specSuffix(tau).slice(1)}`;
-  const specCols = BARRIER_SPECS.flatMap((b) =>
-    PER_SPEC_COLUMNS.map(([col, a]) => `${alias(b.tau)}.${col} AS ${a}_${specSuffix(b.tau)}`),
+  const specCols = ADS1_BARRIER_SPECS.flatMap((b) =>
+    specColumns(b.spec).map(([col, a]) => `${alias(b.tau)}.${col} AS ${a}_${specSuffix(b.tau)}`),
   ).join(',\n         ');
   const joins = [
-    `JOIN directional_labels ${alias(primary.tau)} ON ${alias(primary.tau)}.signal_id = s.id AND ${alias(primary.tau)}.barrier_spec = '${primary.spec}'`,
-    ...sensitivity.map(
+    `JOIN directional_labels ${alias(PRIMARY_SPEC.tau)} ON ${alias(PRIMARY_SPEC.tau)}.signal_id = s.id AND ${alias(PRIMARY_SPEC.tau)}.barrier_spec = '${PRIMARY_SPEC.spec}'`,
+    ...SENSITIVITY_SPECS.map(
       (b) => `LEFT JOIN directional_labels ${alias(b.tau)} ON ${alias(b.tau)}.signal_id = s.id AND ${alias(b.tau)}.barrier_spec = '${b.spec}'`,
     ),
   ].join('\n  ');
@@ -69,8 +106,36 @@ export function extractSql(): string {
          (s.merkle_batch_id IS NOT NULL) AS anchored,
          ${specCols}
   FROM signals s
-  JOIN (VALUES ${tfValues()}) AS tf(t, sec, w) ON tf.t = s.timeframe
+  ${windowJoins()}
   ${joins}
+  WHERE ${tCapPredicate()}
+    AND s.signal IN ('BUY', 'SELL')
+  ORDER BY s.id
+) TO STDOUT WITH (FORMAT csv, HEADER)`;
+}
+
+/** The presence statement's CSV header, in order. */
+export const PRESENCE_HEADER: readonly string[] = ['id', 'exchange', 'coin', 'timeframe', 'win', 'v1_present', 'v2_present', 'v2_post_adapter'];
+
+/**
+ * LABEL-FREE presence (registration §10.3 / §10.4, the coverage chain): ONE ROW PER registered signal under the
+ * max-form T_CAP — its cell keys, its window, and three EXISTS booleans: a `-v1` primary row (presence only — the
+ * relabel's input; never a value), a `-v2` primary row (the population), and a `-v2` primary row first written at
+ * or after T_ADAPTER. Per signal, not grouped, so the chain is computable per UNIT (the tier comes from the coin),
+ * the `no_v1_twin` class is `v2 ∧ ¬v1`, and LRW's manifest (keyed by signal id only) can be placed. Reads no label
+ * and no outcome column of either family; its one provenance predicate is the `-v2` primary's `computed_at` inside
+ * the `v2_post_adapter` EXISTS — a boolean against T_ADAPTER, never a value.
+ */
+export function presenceSql(): string {
+  const exists = (alias: string, spec: string, extra = '') =>
+    `EXISTS (SELECT 1 FROM directional_labels ${alias} WHERE ${alias}.signal_id = s.id AND ${alias}.barrier_spec = '${spec}'${extra})`;
+  return `COPY (
+  SELECT s.id, s.exchange, s.coin, s.timeframe, CASE WHEN s.created_at > ${T_FLIP} THEN 'POST' ELSE 'PRE' END AS win,
+         ${exists('v1', PRIMARY_V1_TWIN_SPEC)} AS v1_present,
+         ${exists('v2', PRIMARY_SPEC.spec)} AS v2_present,
+         ${exists('v2', PRIMARY_SPEC.spec, ` AND v2.computed_at >= to_timestamp(${T_ADAPTER})`)} AS v2_post_adapter
+  FROM signals s
+  ${windowJoins()}
   WHERE ${tCapPredicate()}
     AND s.signal IN ('BUY', 'SELL')
   ORDER BY s.id
@@ -118,17 +183,16 @@ export function sideMixSql(): string {
 /** LABEL-FREE integrity counts: the rule-version assert (D2, to now) and the rows the primary-spec join
  *  leaves out because only a sensitivity spec labelled them (disclosed, never scored). */
 export function integritySql(): string {
-  const [primary, ...sensitivity] = BARRIER_SPECS;
-  const others = sensitivity.map((b) => `'${b.spec}'`).join(', ');
+  const others = SENSITIVITY_SPECS.map((b) => `'${b.spec}'`).join(', ');
   return `COPY (
   SELECT 'v1_after_flip' AS item, count(*)::bigint AS n FROM signals WHERE verdict_rule_version = 1 AND created_at > ${T_FLIP}
   UNION ALL
   SELECT 'sensitivity_only_under_tcap', count(DISTINCT s.id)::bigint
   FROM signals s
-  JOIN (VALUES ${tfValues()}) AS tf(t, sec, w) ON tf.t = s.timeframe
+  ${windowJoins()}
   JOIN directional_labels d ON d.signal_id = s.id AND d.barrier_spec IN (${others})
   WHERE ${tCapPredicate()}
-    AND NOT EXISTS (SELECT 1 FROM directional_labels p WHERE p.signal_id = s.id AND p.barrier_spec = '${primary.spec}')
+    AND NOT EXISTS (SELECT 1 FROM directional_labels p WHERE p.signal_id = s.id AND p.barrier_spec = '${PRIMARY_SPEC.spec}')
 ) TO STDOUT WITH (FORMAT csv, HEADER)`;
 }
 
@@ -151,11 +215,18 @@ export function sessionScript(part: SessionPart): string {
     part === 'counters'
       ? ["\\echo '===COUNTERS==='", `${countersSql()};`]
       : part === 'extract'
-        ? ["\\echo '===EXTRACT==='", `${extractSql()};`]
-        : ["\\echo '===CENSUS==='", `${censusSql()};`, "\\echo '===SIDEMIX==='", `${sideMixSql()};`, "\\echo '===INTEGRITY==='", `${integritySql()};`];
+        ? ["\\echo '===FAMILY==='", `\\echo '${PRIMARY_BARRIER_SPEC}'`, "\\echo '===EXTRACT==='", `${extractSql()};`]
+        : [
+            "\\echo '===CENSUS==='", `${censusSql()};`, "\\echo '===SIDEMIX==='", `${sideMixSql()};`,
+            "\\echo '===INTEGRITY==='", `${integritySql()};`, "\\echo '===PRESENCE==='", `${presenceSql()};`,
+          ];
   return [
     '\\set ON_ERROR_STOP 1',
     "SET statement_timeout = '900s';",
+    // `computed_t10` is a raw timestamptz: fix its text form so the parser's strict UTC pattern is the only one
+    // it can meet (a session default could otherwise print a local offset).
+    "SET TIME ZONE 'UTC';",
+    "SET DateStyle = 'ISO, YMD';",
     'BEGIN READ ONLY;',
     `${TOKEN_SQL};`,
     ...body,

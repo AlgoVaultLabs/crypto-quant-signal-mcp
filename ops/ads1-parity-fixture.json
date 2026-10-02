@@ -1,6 +1,6 @@
 {
  "purpose": "ADS-1 L0/L1 parity between the cqsm TypeScript library and the AOE Python port. Synthetic; no product data.",
- "primary_barrier_spec": "tau1.0-floor0.30-v1",
+ "primary_barrier_spec": "tau1.0-floor0.30-v2",
  "bootstrap": {
   "alpha": 0.05,
   "b": 2000,
@@ -15,6 +15,533 @@
   0.7336016881745309,
   0.6933910509105772,
   0.9516435686964542
+ ],
+ "tcap_cases": [
+  {
+   "exchange": "GATE",
+   "timeframe": "3m",
+   "created_at": 1790398499,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "GATE",
+   "timeframe": "3m",
+   "created_at": 1790398500,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "GATE",
+   "timeframe": "3m",
+   "created_at": 1790398501,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "GATE",
+   "timeframe": "3m",
+   "created_at": 1790400059,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "GATE",
+   "timeframe": "3m",
+   "created_at": 1790400060,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "GATE",
+   "timeframe": "3m",
+   "created_at": 1790400061,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "GATE",
+   "timeframe": "3m",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "MEXC",
+   "timeframe": "3m",
+   "created_at": 1790398499,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "MEXC",
+   "timeframe": "3m",
+   "created_at": 1790398500,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "MEXC",
+   "timeframe": "3m",
+   "created_at": 1790398501,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "MEXC",
+   "timeframe": "3m",
+   "created_at": 1790400059,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "MEXC",
+   "timeframe": "3m",
+   "created_at": 1790400060,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "MEXC",
+   "timeframe": "3m",
+   "created_at": 1790400061,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "MEXC",
+   "timeframe": "3m",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "3m",
+   "created_at": 1790398499,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "3m",
+   "created_at": 1790398500,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "3m",
+   "created_at": 1790398501,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "3m",
+   "created_at": 1790400059,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "3m",
+   "created_at": 1790400060,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "3m",
+   "created_at": 1790400061,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "3m",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "12h",
+   "created_at": 1789970399,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "12h",
+   "created_at": 1789970400,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "12h",
+   "created_at": 1789970401,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "12h",
+   "created_at": 1790186399,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "12h",
+   "created_at": 1790186400,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "12h",
+   "created_at": 1790186401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "PHEMEX",
+   "timeframe": "12h",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "HTX",
+   "timeframe": "3m",
+   "created_at": 1790398499,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "HTX",
+   "timeframe": "3m",
+   "created_at": 1790398500,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "HTX",
+   "timeframe": "3m",
+   "created_at": 1790398501,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "HTX",
+   "timeframe": "3m",
+   "created_at": 1790400059,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "HTX",
+   "timeframe": "3m",
+   "created_at": 1790400060,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "HTX",
+   "timeframe": "3m",
+   "created_at": 1790400061,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "HTX",
+   "timeframe": "3m",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "WEEX",
+   "timeframe": "3m",
+   "created_at": 1790398499,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "WEEX",
+   "timeframe": "3m",
+   "created_at": 1790398500,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "WEEX",
+   "timeframe": "3m",
+   "created_at": 1790398501,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "WEEX",
+   "timeframe": "3m",
+   "created_at": 1790400059,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "WEEX",
+   "timeframe": "3m",
+   "created_at": 1790400060,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "WEEX",
+   "timeframe": "3m",
+   "created_at": 1790400061,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "WEEX",
+   "timeframe": "3m",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "XT",
+   "timeframe": "3m",
+   "created_at": 1790398499,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "XT",
+   "timeframe": "3m",
+   "created_at": 1790398500,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "XT",
+   "timeframe": "3m",
+   "created_at": 1790398501,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "XT",
+   "timeframe": "3m",
+   "created_at": 1790400059,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "XT",
+   "timeframe": "3m",
+   "created_at": 1790400060,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "XT",
+   "timeframe": "3m",
+   "created_at": 1790400061,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "XT",
+   "timeframe": "3m",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "3m",
+   "created_at": 1790390699,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "3m",
+   "created_at": 1790390700,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "3m",
+   "created_at": 1790390701,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "3m",
+   "created_at": 1790400059,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "3m",
+   "created_at": 1790400060,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "3m",
+   "created_at": 1790400061,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "3m",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "5m",
+   "created_at": 1790390699,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "5m",
+   "created_at": 1790390700,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "5m",
+   "created_at": 1790390701,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "5m",
+   "created_at": 1790398499,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "5m",
+   "created_at": 1790398500,
+   "within_requested": true,
+   "within_max": false
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "5m",
+   "created_at": 1790398501,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "WHITEBIT",
+   "timeframe": "5m",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "BINANCE",
+   "timeframe": "1h",
+   "created_at": 1790369999,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "BINANCE",
+   "timeframe": "1h",
+   "created_at": 1790370000,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "BINANCE",
+   "timeframe": "1h",
+   "created_at": 1790370001,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "BINANCE",
+   "timeframe": "1h",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "OKX",
+   "timeframe": "5m",
+   "created_at": 1790398499,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "OKX",
+   "timeframe": "5m",
+   "created_at": 1790398500,
+   "within_requested": true,
+   "within_max": true
+  },
+  {
+   "exchange": "OKX",
+   "timeframe": "5m",
+   "created_at": 1790398501,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "OKX",
+   "timeframe": "5m",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "BINANCE",
+   "timeframe": "1m",
+   "created_at": 1790402339,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "BINANCE",
+   "timeframe": "1m",
+   "created_at": 1790402340,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "BINANCE",
+   "timeframe": "1m",
+   "created_at": 1790402341,
+   "within_requested": false,
+   "within_max": false
+  },
+  {
+   "exchange": "BINANCE",
+   "timeframe": "1m",
+   "created_at": 1790402401,
+   "within_requested": false,
+   "within_max": false
+  }
  ],
  "percentile_cases": [
   {

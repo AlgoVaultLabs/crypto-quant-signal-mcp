@@ -218,7 +218,6 @@ export const IDENT_GRANDFATHERED: ReadonlyMap<string, string> = new Map([
   ['audits/withheld-dwr-w2-preregistration-2026-09-10.md', 'landed 2026-09-10 by EDGE-WITHHELD-COUNTERFACTUAL-DWR-W2, before §4c existed; a landed registration is never edited after data accrues'],
   ['audits/scorer-predictive-ceiling-preregistration-2026-09-21.md', 'landed 2026-09-22 by EDGE-SCORER-PREDICTIVE-CEILING-W1, before §4c existed; its verdict (NO_CEILING) is read, so a retro-stated bound would be post-hoc'],
   ['audits/hurst-discrimination-preregistration-2026-09-22.md', 'landed 2026-09-22 by EDGE-HURST-DISCRIMINATION-PROBE-W1, before §4c existed; a landed registration is never edited after data accrues'],
-  ['audits/ads1-scorecard-preregistration-2026-09-27.md', 'landed 2026-09-27 by EDGE-ADS1-SCORECARD-W1-V2, before §4c existed; it carries its own readout-time identifiability verdict, and it is never rewritten'],
   ['audits/labeler-race-window-v2-preregistration-2026-09-28.md', 'landed 2026-09-28 by EDGE-LABELER-RACE-WINDOW-V2-W1, before §4c existed; a landed registration is never edited after data accrues'],
 ]);
 

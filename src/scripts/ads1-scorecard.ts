@@ -14,7 +14,11 @@
 //
 //   node dist/scripts/ads1-scorecard.js --extract <file[.gz]> --labelfree <file> --counters-before <file>
 //       --counters-after <file> --tiers <performance-public.json> --meta <pull-meta.json>
-//       --header-from <wave spec .md> --out-md <audit.md> --out-json <audit.json>
+//       --manifest <lrw log>[,<lrw log>…] --header-from <wave spec .md> --out-md <audit.md> --out-json <audit.json>
+//       (EDGE-ADS1-SCORECARD-W1-V3: the extract part carries `===FAMILY===`, the label-free part `===PRESENCE===`
+//       — the registration §10 presence statement; `--manifest` is LRW's refusal manifest, the relabel runner's logs,
+//       each file's sha256 recorded; the pull meta carries the amendment commit, the relabel launch epoch and LRW's
+//       DONE-probe lines — `scripts/ads1/ads1-pull.sh` writes it.)
 //       reads the session's outputs, scores every unit with the committed library, writes the PRIVATE
 //       vault audit, and prints exactly one terminal line:
 //         ADS1_SCORECARD_SELFCHECK: PASS (<k> checks)   exit 0
@@ -29,11 +33,13 @@ import { gunzipSync } from 'node:zlib';
 import { runScript } from '../lib/script-lifecycle.js';
 import { sessionScript, type SessionPart } from './ads1/extract-sql.js';
 import { serializeParityFixture } from './ads1/parity-fixture.js';
+import { parseManifest } from './lrw/completeness.js';
 import {
   buildScorecard,
   extractHeaderClause,
   parseCensus,
   parseExtract,
+  parsePresence,
   parseSideMix,
   renderMarkdown,
   selfCheck,
@@ -91,8 +97,12 @@ async function main(): Promise<number> {
   const extractSha256 = createHash('sha256').update(raw).digest('hex');
   const ex = sections((extractPath.endsWith('.gz') ? gunzipSync(raw) : raw).toString('utf8'));
   if (ex.parts.EXTRACT === undefined) throw new Error('extract: no ===EXTRACT=== section');
+  if (ex.parts.FAMILY === undefined) throw new Error('extract: no ===FAMILY=== section');
+  const extractFamily = ex.parts.FAMILY.split('\n').map((l) => l.trim()).filter((l) => l.length > 0).join(' ');
   const lf = sections(readFileSync(need('--labelfree'), 'utf8'));
-  for (const s of ['CENSUS', 'SIDEMIX', 'INTEGRITY']) if (lf.parts[s] === undefined) throw new Error(`labelfree: no ===${s}=== section`);
+  for (const s of ['CENSUS', 'SIDEMIX', 'INTEGRITY', 'PRESENCE']) if (lf.parts[s] === undefined) throw new Error(`labelfree: no ===${s}=== section`);
+  const manifestTexts = need('--manifest').split(',').map((f) => readFileSync(f));
+  const manifest = parseManifest(manifestTexts.map((b) => b.toString('utf8')));
   const cb = counters(readFileSync(need('--counters-before'), 'utf8'));
   const ca = counters(readFileSync(need('--counters-after'), 'utf8'));
   const tiersRaw = readFileSync(need('--tiers'));
@@ -106,6 +116,12 @@ async function main(): Promise<number> {
     registrationPath: String(meta0.registrationPath),
     registrationCommit: String(meta0.registrationCommit),
     registrationCommitTs: Number(meta0.registrationCommitTs),
+    amendmentCommit: String(meta0.amendmentCommit),
+    amendmentCommitTs: Number(meta0.amendmentCommitTs),
+    relabelLaunchTs: Number(meta0.relabelLaunchTs),
+    extractFamily,
+    doneTokens: Array.isArray(meta0.doneTokens) ? meta0.doneTokens.map(String) : [],
+    manifestSha256: manifestTexts.map((b) => createHash('sha256').update(b).digest('hex')),
     pullStartTs: Number(meta0.pullStartTs),
     pullEndTs: Number(meta0.pullEndTs),
     tiersFetchedAt: String(meta0.tiersFetchedAt),
@@ -121,6 +137,8 @@ async function main(): Promise<number> {
     tierMap: tierMapOf(JSON.parse(tiersRaw.toString('utf8'))),
     census: parseCensus(lf.parts.CENSUS),
     sideMix: parseSideMix(lf.parts.SIDEMIX),
+    presence: parsePresence(lf.parts.PRESENCE),
+    manifest,
     meta,
   });
   const check = selfCheck(sc);

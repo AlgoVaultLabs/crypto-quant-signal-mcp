@@ -1,4 +1,5 @@
-// ads1/spec.ts — EDGE-ADS1-SCORECARD-W1-V2 CH2 R1.
+// ads1/spec.ts — EDGE-ADS1-SCORECARD-W1-V2 CH2 R1; the `-v2` family, the max-form T_CAP and the coarser-served table
+// since EDGE-ADS1-SCORECARD-W1-V3 CH3-A (registration §10).
 //
 // THE ONE SOURCE of every ADS-1 constant. The AlgoVault Directional Standard, draft 1.0.0
 // (research/directional-edge-standard-deep-research-2026-09-27.md §4, §6), as ruled on 2026-09-27
@@ -14,9 +15,10 @@
 //
 // NON-PROMOTABLE. Nothing here feeds a gate, a threshold, a weight or a public figure.
 
-import { FRESHNESS_BARRIER_SPEC } from '../../lib/venue-slo-tiers.js';
-import { BARRIER_SPECS, EVAL_CANDLES, FLOOR_PCT, ROUND_TRIP_COST_PCT, TF_MS } from '../directional-labeler.js';
+import { SERVED_VENUES, servedCandleStepMs } from '../../lib/tf-support.js';
+import { BARRIER_SPECS, BARRIER_SPECS_V2, EVAL_CANDLES, FLOOR_PCT, ROUND_TRIP_COST_PCT, TF_MS } from '../directional-labeler.js';
 import { CLUSTER_EDGE_CONTRACT, MIN_ROWS_PER_CLUSTER as ESTATE_MIN_ROWS_PER_CLUSTER } from '../dwr-cluster-edge.js';
+import { T_CUT_EPOCH } from '../lrw/registered.js';
 
 export const ADS1_SPEC_VERSION = '1.0.0-draft';
 
@@ -87,15 +89,93 @@ export const Z_ONE_SIDED = 1.6448536269514722;
 export const BOOTSTRAP_B = 2000;
 export const BOOTSTRAP_SEED = 20260927;
 
-export const PRIMARY_BARRIER_SPEC = FRESHNESS_BARRIER_SPEC;
-export { BARRIER_SPECS };
+/**
+ * THE barrier family this study reads (registration §10.1, EDGE-ADS1-SCORECARD-W1-V3; rulings Q8 = A, LRW-Q12 = A):
+ * the `-v2` family, IMPORTED from the labeler's one constants module (`BARRIER_SPECS_V2`), primary first. A `-v3`
+ * family is a one-line change here and every ADS-1 artifact follows (the extract generator, `ops/ads1-spec.json`,
+ * the AOE vendored copy, the registration's pinned SQL via its pin test). No family literal lives in this module.
+ * The `-v1` family (`FRESHNESS_BARRIER_SPEC`, ruling Q9) is NOT read by ADS-1 — not its label, not its gap.
+ */
+export const ADS1_BARRIER_SPECS = BARRIER_SPECS_V2;
+export const PRIMARY_SPEC = ADS1_BARRIER_SPECS[0];
+export const SENSITIVITY_SPECS = ADS1_BARRIER_SPECS.slice(1);
+export const PRIMARY_BARRIER_SPEC: string = PRIMARY_SPEC.spec;
+/** The `-v1` twin of the primary spec (same τ) — used for PRESENCE only (the coverage chain's "`-v1` present" step,
+ *  label-free, an EXISTS), never for a value. Derived by τ from the labeler's `-v1` set, never typed. */
+export const PRIMARY_V1_TWIN_SPEC: string = (() => {
+  const twin = BARRIER_SPECS.find((b) => b.tau === PRIMARY_SPEC.tau);
+  if (!twin) throw new Error(`ads1/spec: no -v1 spec with tau ${PRIMARY_SPEC.tau}`);
+  return twin.spec;
+})();
 
-/** The race-end embargo T_CAP (ruling Q1 = A): true iff the row's whole price path is at/before T_DIAG_END. */
+/**
+ * The coarser-served pairs — (exchange, timeframe) where the venue SERVES a candle coarser than the timeframe —
+ * DERIVED from `servedCandleStepMs` (the one served-step lookup, src/lib/tf-support.ts) over every venue it knows ×
+ * the label window. `tests/unit/ads1-spec-lock.test.ts` asserts this set equals the nine-row literal of
+ * `audits/labeler-race-window-v2-preregistration-2026-09-28.md` §3.1 (parsed from that file), so the two
+ * registrations cannot disagree (as a SET — row order is the derivation's: `SERVED_VENUES` declaration order × the
+ * label window's order, the order LRW's own derived `coarserV1LagTable` prints).
+ */
+export interface CoarserServed {
+  exchange: string;
+  timeframe: string;
+  servedSeconds: number;
+}
+export const COARSER_SERVED: readonly CoarserServed[] = SERVED_VENUES.flatMap((exchange) =>
+  Object.keys(EVAL_CANDLES).flatMap((timeframe) => {
+    const served = servedCandleStepMs(exchange, timeframe);
+    return served !== null && served > TF_MS[timeframe] ? [{ exchange, timeframe, servedSeconds: served / 1000 }] : [];
+  }),
+);
+
+/** `max(requested, served)` in seconds for one (exchange, timeframe); null for a timeframe outside the label window. */
+export function raceStepSeconds(exchange: string, timeframe: string): number | null {
+  const tf = TF_MS[timeframe];
+  if (!EVAL_CANDLES[timeframe] || !tf) return null;
+  const c = COARSER_SERVED.find((p) => p.exchange === exchange && p.timeframe === timeframe);
+  return Math.max(tf / 1000, c ? c.servedSeconds : 0);
+}
+
+/**
+ * T_ADAPTER (registration §10.5, ruling OAH-Q8): the `StartedAt` of the first `mcp-server` container on the
+ * `OPS-ADAPTER-HISTORY-ANCHOR-W1` CH2 commit — 2026-10-01T14:27:16.460Z, recorded in `status.md`
+ * (`T_ADAPTER = 1790864836 (2026-10-01T14:27:16.460Z)`). Pinned ONCE here (no other module carries it). On the
+ * adapter-pending cells a `-v2` row computed at or after it was raced on a σ history the shipped adapter could reach.
+ */
+export const T_ADAPTER = 1790864836;
+/** The LRW cut (registration §10.4's `nightly` class starts here) — imported, never retyped. */
+export const T_CUT = T_CUT_EPOCH;
+/** The cells printed split at T_ADAPTER (registration §10.5: BITGET 2h / 8h). THIS STUDY'S registered set — a
+ *  sanctioned same-shape exception to single derivation: LRW's `ADAPTER_PENDING_CELLS` (src/scripts/lrw/registered.ts)
+ *  starts with the same two cells but means "not yet reachable by the relabel" and SHRINKS when the relabel reaches
+ *  them; this one means "printed split at T_ADAPTER" and is fixed by the registration. Pinned to §10.5 by
+ *  tests/unit/ads1-spec-lock.test.ts. Do not merge the two. */
+export const ADAPTER_SPLIT_CELLS: ReadonlySet<string> = new Set(['BITGET:2h', 'BITGET:8h']);
+
+/**
+ * The race-end embargo T_CAP in its REQUESTED-interval form (ruling Q1 = A, as first registered): true iff
+ * `created_at ≤ T_DIAG_END ∧ created_at + (W+1)·requested ≤ T_DIAG_END`. KEPT BYTE-IDENTICAL ON PURPOSE: the nightly
+ * labeller's seal edge (`sealEdgeRow`, src/scripts/backfill-directional-labels.ts) is defined against this form, so
+ * changing it would change what the labeller writes. ADS-1's population predicate is `withinTCapMax` below.
+ */
 export function withinTCap(createdAtS: number, timeframe: string): boolean {
   const W = EVAL_CANDLES[timeframe];
   const tf = TF_MS[timeframe];
   if (!W || !tf) return false;
   return createdAtS <= T_DIAG_END && createdAtS + ((W + 1) * tf) / 1000 <= T_DIAG_END;
+}
+
+/**
+ * T_CAP in the ruled MAX form (registration §10.2; ruling Q11, LRW-Q8): true iff
+ * `created_at ≤ T_DIAG_END ∧ created_at + (W+1)·max(requested, served) ≤ T_DIAG_END`. The extract's SQL predicate
+ * (`GREATEST(tf.sec, COALESCE(coarser.sec, tf.sec))`) is generated from the same `COARSER_SERVED`; the max form admits a
+ * SUBSET of the requested form (they differ only on the coarser-served pairs).
+ */
+export function withinTCapMax(createdAtS: number, exchange: string, timeframe: string): boolean {
+  const W = EVAL_CANDLES[timeframe];
+  const step = raceStepSeconds(exchange, timeframe);
+  if (!W || step === null) return false;
+  return createdAtS <= T_DIAG_END && createdAtS + (W + 1) * step <= T_DIAG_END;
 }
 
 function sortKeys(v: unknown): unknown {
@@ -141,7 +221,9 @@ export function serializeAds1Spec(): string {
     bootstrap_b: BOOTSTRAP_B,
     bootstrap_seed: BOOTSTRAP_SEED,
     primary_barrier_spec: PRIMARY_BARRIER_SPEC,
-    barrier_specs: BARRIER_SPECS.map((b) => ({ spec: b.spec, tau: b.tau })),
+    barrier_specs: ADS1_BARRIER_SPECS.map((b) => ({ spec: b.spec, tau: b.tau })),
+    coarser_served: COARSER_SERVED.map((c) => ({ exchange: c.exchange, timeframe: c.timeframe, served_seconds: c.servedSeconds })),
+    t_adapter: T_ADAPTER,
     eval_candles: { ...EVAL_CANDLES },
     tf_seconds: Object.fromEntries(Object.entries(TF_MS).map(([k, ms]) => [k, ms / 1000])),
   };

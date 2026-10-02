@@ -12,7 +12,18 @@
 
 import { clusterEdge, clusterEdgeCompleteWithCi, mulberry32, percentileNearestRank } from '../dwr-cluster-edge.js';
 import { dwrComplete, dwrDecided, identifiability, mixMatchedNull, sideOutcomes, toRaceRows, engineOutcome, type Ads1Row } from './core.js';
-import { ALPHA_ONE_SIDED, BOOTSTRAP_B, BOOTSTRAP_SEED, PRIMARY_BARRIER_SPEC } from './spec.js';
+import { EVAL_CANDLES, TF_MS } from '../directional-labeler.js';
+import {
+  ALPHA_ONE_SIDED,
+  BOOTSTRAP_B,
+  BOOTSTRAP_SEED,
+  COARSER_SERVED,
+  PRIMARY_BARRIER_SPEC,
+  T_DIAG_END,
+  raceStepSeconds,
+  withinTCap,
+  withinTCapMax,
+} from './spec.js';
 
 const DAY0 = 1788220800; // 2026-09-01T00:00:00Z
 const FIXTURE_SEED = 20260927;
@@ -98,6 +109,31 @@ export const PERCENTILE_CASES: ReadonlyArray<[number[], number]> = [
   [[7], 0.05],
 ];
 
+/**
+ * T_CAP predicate parity cases (EDGE-ADS1-SCORECARD-W1-V3 R10): every coarser-served pair plus two same-grid pairs and
+ * one timeframe outside the label window, each at its requested-form and max-form race-end edges (±1 s) and just past
+ * the seal. The AOE seal guard must reproduce `within_max` on every case; `within_requested` is carried so the fixture
+ * itself shows the max form admitting a SUBSET (cases the requested form admits and the max form excludes).
+ */
+export function tCapCases(): Array<{ exchange: string; timeframe: string; created_at: number; within_requested: boolean; within_max: boolean }> {
+  const pairs: Array<[string, string]> = [
+    ...COARSER_SERVED.map((c): [string, string] => [c.exchange, c.timeframe]),
+    ['BINANCE', '1h'], ['OKX', '5m'], ['BINANCE', '1m'],
+  ];
+  const out: Array<{ exchange: string; timeframe: string; created_at: number; within_requested: boolean; within_max: boolean }> = [];
+  for (const [exchange, timeframe] of pairs) {
+    const W = EVAL_CANDLES[timeframe] ?? 0;
+    const req = (TF_MS[timeframe] ?? 60_000) / 1000;
+    const step = raceStepSeconds(exchange, timeframe) ?? req;
+    const points = new Set<number>([T_DIAG_END + 1]);
+    for (const edge of [T_DIAG_END - (W + 1) * req, T_DIAG_END - (W + 1) * step]) for (const d of [-1, 0, 1]) points.add(edge + d);
+    for (const t of [...points].sort((a, b) => a - b)) {
+      out.push({ exchange, timeframe, created_at: t, within_requested: withinTCap(t, timeframe), within_max: withinTCapMax(t, exchange, timeframe) });
+    }
+  }
+  return out;
+}
+
 const r12 = (x: number | null): number | null => (x === null || !Number.isFinite(x) ? null : Math.round(x * 1e12) / 1e12);
 
 export function buildParityFixture(): Record<string, unknown> {
@@ -114,6 +150,7 @@ export function buildParityFixture(): Record<string, unknown> {
     primary_barrier_spec: PRIMARY_BARRIER_SPEC,
     bootstrap: { alpha: ALPHA_ONE_SIDED, b: BOOTSTRAP_B, seed: BOOTSTRAP_SEED },
     mulberry32_first8: Array.from({ length: 8 }, () => stream()),
+    tcap_cases: tCapCases(),
     percentile_cases: PERCENTILE_CASES.map(([values, q]) => ({ values, q, expected: percentileNearestRank(values, q) })),
     identifiability_cases: IDENTIFIABILITY_CASES.map(([buys, sells]) => {
       const i = identifiability(identifiabilityCaseRows(buys, sells));
