@@ -260,22 +260,22 @@ import { readFileSync } from 'node:fs';
 const m = await import(process.cwd() + '/scripts/check-mcp-client-copy.mjs');
 const fails = [];
 const real = (p) => readFileSync(p, 'utf8');
-// CHECK 9: the real claude-code tutorial passes; with its URL un-quoted it must fire, at that line.
+/* CHECK 9: the real claude-code tutorial passes; with its URL un-quoted it must fire, at that line. */
 const cc = 'docs/integrations/mcp-clients/claude-code.md';
 if (m.checkShellGlobs([cc], real).hits.length !== 0) fails.push('CHECK 9 fires on the corrected claude-code.md');
 const unq = (p) => real(p).replace('"https://api.algovault.com/mcp?src=docs"', 'https://api.algovault.com/mcp?src=docs');
 const h9 = m.checkShellGlobs([cc], unq).hits;
 if (h9.length !== 1 || !/mcp\?src=docs/.test(h9[0].token)) fails.push(`CHECK 9 did not fire on an un-quoted real producer (hits=${h9.length})`);
-// ...and on a real GENERATED page (docs.html), where the same producer renders.
+/* ...and on a real GENERATED page (docs.html), where the same producer renders. */
 const dh = 'landing/docs.html';
 const unqd = (p) => real(p).replace('algovault "https://api.algovault.com/mcp?src=docs" ', 'algovault https://api.algovault.com/mcp?src=docs ');
 if (m.checkShellGlobs([dh], unqd).hits.length < 1) fails.push('CHECK 9 did not fire on an un-quoted real generated page');
-// CHECK 1: the real /faq passes; with the retired path restored it must fire.
+/* CHECK 1: the real /faq passes; with the retired path restored it must fire. */
 const fq = 'landing/faq.html';
 if (m.checkRetiredPaths([fq], real).length !== 0) fails.push('CHECK 1 fires on the corrected faq.html');
 const stale = (p) => real(p).replace('Customize &rarr; Connectors &rarr; + &rarr;', 'Settings &rarr; Connectors &rarr;');
 if (m.checkRetiredPaths([fq], stale).length !== 1) fails.push('CHECK 1 did not fire on a restored retired path');
-// zero exemptions: CHECK 9 takes no allow-list, and the source declares none
+/* zero exemptions: CHECK 9 takes no allow-list, and the source declares none */
 const src = readFileSync('scripts/check-mcp-client-copy.mjs', 'utf8');
 if (/SHELL[_A-Z]*EXEMPT|EXEMPT[_A-Z]*SHELL|GLOB[_A-Z]*ALLOW/i.test(src)) fails.push('a CHECK 9 exemption/allow-list exists');
 if (m.checkShellGlobs.length !== 2) fails.push('checkShellGlobs grew a parameter (an exemption seam?)');
@@ -352,7 +352,7 @@ const base = process.argv[2];
 const f = 'tests/fixtures/mcp-usage-html-pre-refactor.txt';
 const old = execFileSync('git', ['show', `${base}:${f}`], { encoding: 'utf8', maxBuffer: 1 << 26 });
 const cur = readFileSync(f, 'utf8');
-// The fixture is HTML: classify it in HTML units, as a page that renders the mcp-clients surface.
+/* The fixture is HTML: classify it in HTML units, as a page that renders the mcp-clients surface. */
 const entries = rd.classifyFile('landing/docs.html', rd.diffUnits('fixture.html', old, cur), old, cur);
 const bad = entries.filter((e) => e.kind !== 'copy');
 for (const e of bad) console.error(`  ✗ fixture unit maps to no R-row: ${e.op} ${e.unit.slice(0, 120)}`);
