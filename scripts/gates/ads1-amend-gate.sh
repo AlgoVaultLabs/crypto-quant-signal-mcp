@@ -5,7 +5,8 @@
 # this gate proves nothing else moved. Every leg is a function of a TREE ROOT, so --self-test runs the SAME leg code
 # on a mutated copy of this tree (the seam is the tree, never the predicate).
 #
-#   GREEN iff  build   `npm run build` exit 0
+#   GREEN iff  build   `npm run build && npm run build:knowledge` exit 0 (deploy.yml's order: the suite reads the
+#                     knowledge bundle, so a gate that deletes dist/ and skips it reports a false RED)
 #          ∧  suite   the full vitest suite → scripts/classify-suite-verdict.mjs → SUITE_VERDICT ∈ {PASS, PASS_AFTER_ISOLATION}
 #          ∧  shape   the registration's `## ` heading list is EXACTLY the landed list (§1–§9, each once, in order)
 #                     followed by ONE `## 10. Amendment <date> — …` heading and ONE `## Identifiability` heading
@@ -225,7 +226,7 @@ run_gate() {
 
   local build suite="" report
   rm -rf dist
-  if npm run build >"$tmp/build.log" 2>&1; then build=OK; else build="RED build-failed"; fi
+  if { npm run build && npm run build:knowledge; } >"$tmp/build.log" 2>&1; then build=OK; else build="RED build-failed"; fi
   if [ "$build" = OK ]; then
     report="$tmp/report.json"
     npx vitest run --reporter=default --reporter=json --outputFile="$report" \

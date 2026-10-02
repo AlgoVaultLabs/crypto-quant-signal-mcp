@@ -62,6 +62,9 @@ check_audit() {
   esac
   if grep -q 'verdict: EXCEPTIONAL' "$md"; then red="$red exceptional-verdict"; fi
   if grep -q 'ADS1_PULL_WAIT' "$md"; then red="$red pull-wait-in-audit"; fi
+  # The facts line is "|"-joined with "-" for an empty field: `read` collapses runs of IFS WHITESPACE, so a space
+  # join would shift every later field left when one is empty (and tab is IFS whitespace too). (No `//` comment may
+  # live inside the embedded JS: the ops-surface guards read this file as shell.)
   facts="$(node -e '
     const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
     const g = j.generatedFrom || {};
@@ -74,8 +77,6 @@ check_audit() {
     const cOk = !!cb && !!ca && ["ins", "upd", "del"].every((k) => Number.isFinite(cb[k]) && cb[k] === ca[k]);
     const cv = j.coverage || {};
     const gOk = cv.gapNonZero === 0 && cv.gapNull === 0;
-    // "|"-joined with "-" for an empty field: `read` collapses runs of IFS WHITESPACE, so a space join would
-    // shift every later field left when one is empty (and tab is IFS whitespace too)
     const f = (x) => (String(x || "").trim() === "" ? "-" : String(x).replace(/[|\s]/g, "_"));
     console.log([f(g.registrationCommit), Number(g.pullStartTs) || 0, ok ? "yes" : "no", f(g.registrationPath),
       f(g.amendmentCommit), yes("LRW_RELABEL_COMPLETE") && yes("LRW_ANNOTATION_COMPLETE") ? "yes" : "no",
