@@ -7,11 +7,13 @@
 #        DEPLOY   the newest completed deploy.yml run on main that CONTAINS that commit succeeded;
 #   AC2  LIVE     every page this wave changed, fetched with a cache-buster, carries the AFTER strings
 #                 it owns and none of the BEFORE strings — /docs, /mcp, /integrations, five per-slug
-#                 tutorials, /faq and / — and README.md at the landed SHA carries R14 + R17;
+#                 tutorials, /faq and / — and README.md at the landed SHA carries R14 + R17; R19 (CH3b,
+#                 rev 4) on /docs, /mcp and /integrations/claude-desktop;
 #   AC3  CANARY   on signal-1, the INSTALLED, UNCHANGED canary run as cron runs it (root, `env -i`, cron's
 #                 PATH, ALGOVAULT_TG_TEST_INERT=1, state + log in mktemp paths removed after) prints
 #                 CLIENT_CLAIM_FRESHNESS_VERDICT=PASS with every row confirmed, 0 contradicted,
-#                 0 unreachable, 0 indeterminate.
+#                 0 unreachable, 0 indeterminate — and every ANCHOR confirmed (rows AND anchors are
+#                 counted from claim-evidence.json: 12 / 27 after CH3b).
 #
 # Verdict — exactly one terminal line: CH3_GREEN 0 · CH3_RED 1 · CH3_INDETERMINATE 3 (a host or page
 # unreachable, a deploy still running, a leg with no verdict). --self-test drives the REAL decide() and
@@ -39,9 +41,9 @@ decide() {
   echo CH3_GREEN; return 0
 }
 
-# judge_pass <canary-stdout-file> <expected-rows>  -> ok | bad:<why> | "" (no verdict: INDETERMINATE)
+# judge_pass <canary-stdout-file> <expected-rows> [<expected-anchors>]  -> ok | bad:<why> | "" (no verdict: INDETERMINATE)
 judge_pass() {
-  local f="$1" rows="$2" toks evals summary
+  local f="$1" rows="$2" anchors="${3:-}" toks evals summary
   toks="$(grep -cE '^CLIENT_CLAIM_FRESHNESS_VERDICT=(PASS|FAIL|INDETERMINATE)$' "$f" || true)"
   [ "$toks" = "1" ] || { [ "$toks" = "0" ] && echo "" || echo "bad:token-lines=$toks"; return; }
   if grep -qE '^CLIENT_CLAIM_FRESHNESS_VERDICT=INDETERMINATE$' "$f"; then echo ""; return; fi
@@ -52,6 +54,10 @@ judge_pass() {
   summary="$(grep -E '\] SUMMARY: ' "$f" | tail -n 1)"
   printf '%s' "$summary" | grep -qE "rows: contradicted=0, stale=0, predicate indeterminate=0, source unreachable=0, confirmed=$rows " \
     || { echo "bad:summary-not-clean"; return; }
+  if [ -n "$anchors" ]; then
+    printf '%s' "$summary" | grep -qE "anchors: contradicted=0, indeterminate=0, unreachable=0, confirmed=$anchors " \
+      || { echo "bad:anchors-not-$anchors-confirmed"; return; }
+  fi
   echo ok
 }
 
@@ -67,19 +73,23 @@ PAGES = {
     'codex mcp add algovault --url "https://api.algovault.com/mcp?src=docs"</code>',
     "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;client&gt;",
     '"server":"crypto-quant-signal-mcp","version":"&lt;current release&gt;"', 'algovault "https://api.algovault.com/mcp?src=docs" \\',
-    '"https://api.algovault.com/mcp?src=binance_agent_os"</code>', ">Claude custom connectors</a>", 'href="https://cursor.com/docs/mcp">Cursor MCP docs</a>'],
-   ["Settings &rarr; Connectors &rarr; <em>", "covers local stdio servers only", "@smithery/cli install", '"version":"1.10.3"', ">MCP quickstart</a>"]),
+    '"https://api.algovault.com/mcp?src=binance_agent_os"</code>', ">Claude custom connectors</a>", 'href="https://cursor.com/docs/mcp">Cursor MCP docs</a>',
+    "Enable it per chat from <em>+</em> &rarr; <em>Connectors</em>. For a paid-tier key, use the JSON path below.</p>"],
+   ["Settings &rarr; Connectors &rarr; <em>", "covers local stdio servers only", "@smithery/cli install", '"version":"1.10.3"', ">MCP quickstart</a>",
+    "The connector form takes OAuth credentials, not custom headers"]),
  "https://algovault.com/mcp": (
    ["Customize &rarr; Connectors &rarr; + &rarr; <em>Add custom connector</em>", 'codex mcp add algovault --url "https://api.algovault.com/mcp?src=docs"</code>',
-    "Smithery-gateway entry", 'algovault "https://api.algovault.com/mcp?src=docs" \\', ">Claude custom connectors</a>"],
-   ["Settings &rarr; Connectors &rarr; <em>", "covers local stdio servers only", "@smithery/cli install", '"version":"1.10.3"', ">MCP quickstart</a>"]),
+    "Smithery-gateway entry", 'algovault "https://api.algovault.com/mcp?src=docs" \\', ">Claude custom connectors</a>",
+    "Enable it per chat from <em>+</em> &rarr; <em>Connectors</em>. For a paid-tier key, use the JSON path below.</p>"],
+   ["Settings &rarr; Connectors &rarr; <em>", "covers local stdio servers only", "@smithery/cli install", '"version":"1.10.3"', ">MCP quickstart</a>",
+    "The connector form takes OAuth credentials, not custom headers"]),
  "https://algovault.com/integrations": (
    ["Customize &rarr; Connectors &rarr; + &rarr; <em>Add custom connector</em>", "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;"],
    ["Settings &rarr; Connectors &rarr; <em>", "@smithery/cli install"]),
  "https://algovault.com/integrations/claude-desktop": (
-   ["Open Claude Desktop → Customize → Connectors → + → <em>Add custom connector</em>", "The connector form takes OAuth credentials, not custom headers",
+   ["Open Claude Desktop → Customize → Connectors → + → <em>Add custom connector</em>", "Enable it per chat from + → Connectors. For a paid-tier key, use the JSON path below.</p>",
     "&quot;Authorization:${AUTH_HEADER}&quot;"],
-   ["Settings → Connectors", "as a custom header", "after saving the connector"]),
+   ["Settings → Connectors", "as a custom header", "after saving the connector", "The connector form takes OAuth credentials, not custom headers"]),
  "https://algovault.com/integrations/codex": (
    ["codex mcp add algovault --url &quot;https://api.algovault.com/mcp?src=docs&quot;</code>"],
    ["local stdio servers only", "rejected the URL"]),
@@ -162,12 +172,13 @@ run_gate() {
   live="$(live_leg "$sha" 2>"$tmp/live.err" | val LIVE)"
   case "$live" in PASS) live=ok ;; FAIL) live="bad:see-$tmp/live.err" ;; *) live="" ;; esac
   # AC3 — the installed canary, cron-shaped, production state untouched
-  local rows
+  local rows anchors
   rows="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("src/lib/integrations-data/claim-evidence.json","utf8")).rows.length)' 2>/dev/null)"
+  anchors="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("src/lib/integrations-data/claim-evidence.json","utf8")).rows.reduce((n, r) => n + r.evidence.length, 0))' 2>/dev/null)"
   ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=12 -o ServerAliveInterval=10 "$HOST" \
     "S=\$(mktemp -d); env -i HOME=/root LOGNAME=root SHELL=/bin/sh PATH=/usr/bin:/bin ALGOVAULT_TG_TEST_INERT=1 CLIENT_CLAIM_STATE=\$S/state.json CLIENT_CLAIM_LOG=\$S/run.log $HOST_CANARY; rc=\$?; rm -rf \$S; echo \"__RC__=\$rc\"" \
     >"$tmp/canary.txt" 2>&1 || true
-  if [ -s "$tmp/canary.txt" ] && [ -n "$rows" ]; then canary="$(judge_pass "$tmp/canary.txt" "$rows")"; fi
+  if [ -s "$tmp/canary.txt" ] && [ -n "$rows" ] && [ -n "$anchors" ]; then canary="$(judge_pass "$tmp/canary.txt" "$rows" "$anchors")"; fi
   grep -E '\] (SUMMARY|AGGREGATE): ' "$tmp/canary.txt" | sed 's/^/[cmc-ch3-gate] canary /' >&2 || true
 
   printf '[cmc-ch3-gate] sha=%s landed=%s deploy=%s live=%s canary=%s\n' "${sha:0:12}" "${landed:-none}" "${deploy:-none}" "${live:-none}" "${canary:-none}" >&2
@@ -216,6 +227,10 @@ self_test() {
   jcheck judge-unconfirmed-row bad:a-row-is-not-confirmed "$(judge_pass "$tmp/unreach.txt" 2)"
   jcheck judge-dirty-summary bad:summary-not-clean "$(judge_pass "$tmp/summary.txt" 2)"
   jcheck judge-no-token "" "$(judge_pass "$tmp/notoken.txt" 2)"
+  jcheck judge-anchor-count-good ok "$(judge_pass "$tmp/good.txt" 2 3)"
+  jcheck judge-anchor-count-wrong bad:anchors-not-4-confirmed "$(judge_pass "$tmp/good.txt" 2 4)"
+  sed 's/anchors: contradicted=0, indeterminate=0, unreachable=0, confirmed=3/anchors: contradicted=1, indeterminate=0, unreachable=0, confirmed=2/' "$tmp/good.txt" >"$tmp/anchor.txt"
+  jcheck judge-contradicted-anchor bad:anchors-not-3-confirmed "$(judge_pass "$tmp/anchor.txt" 2 3)"
   rm -rf "$tmp"
   # the missing-tool precondition, through the real entry point with a PATH that holds only bash
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/cmc-ch3-selftest.XXXXXX")" || { echo "CMC_CH3_GATE_SELFTEST: FAIL mktemp"; exit 1; }
@@ -228,7 +243,7 @@ self_test() {
   if [ "$out" = "CH3_INDETERMINATE" ] && [ "$rc" -eq 3 ] && printf '%s' "$errtxt" | grep -q "required tool 'git'"; then
     pass=$((pass + 1)); echo "SELF-TEST: ok missing-tool-indeterminate"
   else fail=$((fail + 1)); echo "SELF-TEST: FAIL missing-tool-indeterminate (got '$out' rc=$rc)"; fi
-  if [ "$cases" -lt 18 ]; then echo "CMC_CH3_GATE_SELFTEST: FAIL vacuous ($cases cases)"; exit 1; fi
+  if [ "$cases" -lt 21 ]; then echo "CMC_CH3_GATE_SELFTEST: FAIL vacuous ($cases cases)"; exit 1; fi
   if [ "$fail" -eq 0 ]; then echo "CMC_CH3_GATE_SELFTEST: PASS ($pass checks)"; exit 0; fi
   echo "CMC_CH3_GATE_SELFTEST: FAIL ($fail of $cases)"; exit 1
 }

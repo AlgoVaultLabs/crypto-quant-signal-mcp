@@ -12,7 +12,8 @@
 #   AC3  ANCHORS    claim-evidence.json carries the three README-binding anchors (R9) and is IN_SYNC
 #                   (`emit-claim-evidence.mjs --check`); R1–R7 are tests/unit/claim-evidence.test.ts
 #                   (named, read from the suite report).
-#   AC4  RENDERED   cmc-rendered-diff.mjs --check over EVERY row R1–R18 + R10b → MATCH.
+#   AC4  RENDERED   cmc-rendered-diff.mjs --check over EVERY row R1–R18 + R10b → MATCH (after the CH1 + CH2
+#                   landing: CH3b's own diff, R19 only — rev 4).
 #   AC5  suite      the full vitest suite → classify-suite-verdict.mjs, as deploy.yml runs it;
 #        NODETEST   every node:test canary (tests/**/*.test.mjs that is not a vitest file), run exactly as
 #                   the pre-push test gate runs them — vitest green is not push green (measured: an
@@ -177,7 +178,15 @@ run_gate() {
     copy="$(node scripts/check-mcp-client-copy.mjs 2>"$tmp/copy.err" | val MCP_CLIENT_COPY_VERDICT)"
     git fetch origin --quiet >/dev/null 2>&1 || true
     local base; base="$(git merge-base HEAD origin/main 2>/dev/null)"
-    [ -n "$base" ] && rendered="$(node scripts/gates/cmc-rendered-diff.mjs --check --base "$base" --rows "$ALL_ROWS" 2>"$tmp/rendered.err" | val RENDERED_DIFF_VERDICT)"
+    if [ -n "$base" ]; then
+      # CH3b (rev 4): once CH1 + CH2 are on origin/main, the diff is CH3b's own (R19 only, its own map);
+      # CH12_LANDED / CH3B_MAP / CH3B_ROWS come from the sourced CH1 gate — one definition.
+      if git merge-base --is-ancestor "$CH12_LANDED" "$base" 2>/dev/null; then
+        rendered="$(node scripts/gates/cmc-rendered-diff.mjs --check --base "$base" --map "$CH3B_MAP" --rows "$CH3B_ROWS" --no-vault 2>"$tmp/rendered.err" | val RENDERED_DIFF_VERDICT)"
+      else
+        rendered="$(node scripts/gates/cmc-rendered-diff.mjs --check --base "$base" --rows "$ALL_ROWS" 2>"$tmp/rendered.err" | val RENDERED_DIFF_VERDICT)"
+      fi
+    fi
     node scripts/build_landing.mjs --check >"$tmp/build_landing.log" 2>&1; landing=$?
     partner="$(node scripts/check-partner-install-coords.mjs --check 2>"$tmp/partner.err" | tee "$tmp/partner.log" | val PARTNER_INSTALL_VERDICT)"
     homepage="$(homepage_leg "$tmp" 2>"$tmp/homepage.err" | val HOMEPAGE)"

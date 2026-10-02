@@ -4,7 +4,7 @@
  * cmc-rendered-diff.mjs — LANDING-MCP-CLIENTS-CLAIMS-W1 Build Rule 4: ratified diff only.
  *
  * Every changed unit of reader-facing text this wave produces must belong to exactly one row of
- * the ratified copy table (R1–R18 and R10b). The committed map
+ * the ratified copy table (R1–R19 and R10b). The committed map
  * audits/LANDING-MCP-CLIENTS-CLAIMS-W1-rendered-diff.json lists them; --check recomputes the diff
  * and asserts BOTH directions: every changed unit is listed with an R-row, every listed unit is a
  * real change, and every required R-row occurs at least once. An unlisted change is a ride-along.
@@ -21,7 +21,11 @@
  *
  * Modes:
  *   --emit  [--base <ref>] [--out <path>]   classify the current diff, write the map; exit 1 on any unmapped unit
- *   --check [--base <ref>] [--map <path>] [--rows R1,R2,…]   RENDERED_DIFF_VERDICT=MATCH|MISMATCH|INDETERMINATE
+ *   --check [--base <ref>] [--map <path>] [--rows R1,R2,…] [--no-vault]   RENDERED_DIFF_VERDICT=MATCH|MISMATCH|INDETERMINATE
+ *
+ * --no-vault (CH3b, rev 4) leaves the vault JSX out of the diff. CH3b writes no JSX: its diff is
+ * against origin/main, which already carries the CH1 re-bake, so the JSX-vs-backup diff would only
+ * replay CH1's R15 units. The CH1 gate's HOMEPAGE leg still proves the JSX renders the landed page.
  *   --self-test                              RENDERED_DIFF_SELFTEST=PASS|FAIL
  *
  * Exit: 0 MATCH/PASS · 1 MISMATCH/FAIL · 3 INDETERMINATE (the token-law default for a new gate).
@@ -40,7 +44,7 @@ export const REPO_PATHS = ['landing', 'README.md', 'docs'];
 export const VAULT_JSX_DIR = '/Users/tank/My Drive/Obsidian Vault/AlgoVault MCP/Design/AlgoVault Landing Hero v1';
 export const VAULT_JSX = 'v1-landing-rest.jsx';
 export const VAULT_KEY = `vault:Design/AlgoVault Landing Hero v1/${VAULT_JSX}`;
-export const ALL_ROWS = [...Array.from({ length: 18 }, (_, i) => `R${i + 1}`), 'R10b'];
+export const ALL_ROWS = [...Array.from({ length: 19 }, (_, i) => `R${i + 1}`), 'R10b'];
 
 // ── units ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -107,6 +111,9 @@ export const ROW_RULES = [
   { row: 'R5', frags: ['restart Claude Desktop after saving the connector', 'enable it for the chat from', 'is set in the JSON env block, not just your shell', 'is set in the JSON env block as'] },
   { row: 'R4', frags: ['in the env block or your shell', 'Set your key in the env block', 'header and the env block', ' header, but keep the '] },
   { row: 'R3', frags: ['AUTH_HEADER', 'Authorization: Bearer ${AV_API_KEY}', 'Authorization: Bearer \\${AV_API_KEY}'] },
+  // R19 (CH3b, rev 4) outranks R2: it rewrites the last sentence of R2's paragraph, and the md producer
+  // carries the whole paragraph on one line.
+  { row: 'R19', frags: ['The connector form takes OAuth credentials, not custom headers', 'For a paid-tier key, use the JSON path below.'] },
   { row: 'R2', frags: ['Easiest path (UI', 'Name it <code', '. Paste <code', 'as a custom header', 'The connector form takes OAuth credentials', 'Enable it per chat', 'Path 1 — UI (recommended)', 'Name: <code', ', then click', 'Open Claude Desktop → Customize', 'Open Claude Desktop → Settings',
     // the menu item alone, when git splits it off as its own hunk (only R2 wraps it in <em>)
     'Customize</em>', 'Settings</em>'] },
@@ -218,8 +225,8 @@ export function vaultBackup(dir = VAULT_JSX_DIR) {
   return hits.length === 1 ? join(dir, hits[0]) : null;
 }
 
-/** Recompute every changed unit (working tree vs base, plus the vault JSX vs its backup). */
-export function recompute(base) {
+/** Recompute every changed unit (working tree vs base, plus the vault JSX vs its backup unless `noVault`). */
+export function recompute(base, noVault = false) {
   const files = git(['diff', '--name-only', base, '--', ...REPO_PATHS]).split('\n').filter(Boolean);
   const entries = [];
   for (const f of files) {
@@ -227,6 +234,7 @@ export function recompute(base) {
     const newText = existsSync(join(ROOT, f)) ? readFileSync(join(ROOT, f), 'utf8') : '';
     entries.push(...classifyFile(f, diffUnits(f, oldText, newText), oldText, newText));
   }
+  if (noVault) return { entries, vault: 'skipped' };
   const bak = vaultBackup();
   if (!bak) return { entries, vault: 'missing' };
   const cur = join(VAULT_JSX_DIR, VAULT_JSX);
@@ -284,6 +292,10 @@ export function selfTest() {
   ok(rowOf('docs/integrations/mcp-clients/smithery.md', 'npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client <name>') === 'R9', 'smithery.md keeps <name> → R9');
   ok(rowOf('landing/docs.html', 'npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;</code>') === 'R8', 'setupSummary → R8');
   ok(rowOf('landing/docs.html', 'codex mcp add algovault --url "https://api.algovault.com/mcp?src=docs"</code>') === 'R6', 'R6 outranks R12');
+  ok(rowOf('landing/docs.html', '. For a paid-tier key, use the JSON path below.</p>') === 'R19', 'R19 AFTER unit → R19');
+  ok(rowOf('landing/integrations/claude-desktop.html', '. Enable it per chat from + → Connectors. The connector form takes OAuth credentials, not custom headers — for a paid-tier key, use the JSON path below.</p>') === 'R19', 'R19 outranks R2 on a shared unit');
+  ok(rowOf('docs/integrations/mcp-clients/claude-desktop.md', '**Path 1 — UI (recommended).** Open Claude Desktop … Enable it per chat from + &rarr; Connectors. For a paid-tier key, use the JSON path below.') === 'R19', 'R19 outranks R2 on the md line');
+  ok(rowOf('landing/docs.html', 'Easiest path (UI, free tier):</strong>') === 'R2', 'R2 keeps its own units');
   const inh = classifyFile('landing/docs.html', [[{ op: '-', unit: 'AV_API_KEY</code>' }, { op: '-', unit: ' in the env block or your shell. Free tier: drop the <code class="text-xs">' }]]);
   ok(inh.every((e) => e.r_row === 'R4' && e.kind === 'copy'), 'generic unit inherits its hunk row');
   // a markup-only hunk inherits from its neighbour; a worded unit in an unclassified hunk does not
@@ -351,7 +363,7 @@ if (INVOKED) {
     console.error(`cannot resolve the base: ${e.message}`); console.log('RENDERED_DIFF_VERDICT=INDETERMINATE'); process.exit(3);
   }
   let rec;
-  try { rec = recompute(base); } catch (e) {
+  try { rec = recompute(base, argv.includes('--no-vault')); } catch (e) {
     console.error(`cannot compute the diff: ${e.message}`); console.log('RENDERED_DIFF_VERDICT=INDETERMINATE'); process.exit(3);
   }
   if (rec.vault === 'missing') {

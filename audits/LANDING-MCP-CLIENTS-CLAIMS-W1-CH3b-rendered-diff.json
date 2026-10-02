@@ -1,0 +1,155 @@
+{
+  "wave": "LANDING-MCP-CLIENTS-CLAIMS-W1",
+  "generated_by": "scripts/gates/cmc-rendered-diff.mjs --emit",
+  "base": "2ef71dc88dd5cb9691a029318ce39e594c8ff7c9",
+  "unit_rule": "html: split after every \">\"; other files: lines; a newline inside a unit is written \\n",
+  "derived_classes": {
+    "render-date": "render-integrations.mjs stamps the render date",
+    "date-modified": "dateModified is DERIVED from the source markdown's last commit, which this wave made",
+    "live-snapshot": "render-integrations.mjs re-bakes the live /api/performance-public fallbacks into data-tr-field spans"
+  },
+  "rows": {
+    "R1": 0,
+    "R2": 0,
+    "R3": 0,
+    "R4": 0,
+    "R5": 0,
+    "R6": 0,
+    "R7": 0,
+    "R8": 0,
+    "R9": 0,
+    "R10": 0,
+    "R11": 0,
+    "R12": 0,
+    "R13": 0,
+    "R14": 0,
+    "R15": 0,
+    "R16": 0,
+    "R17": 0,
+    "R18": 0,
+    "R19": 8,
+    "R10b": 0
+  },
+  "entries": [
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "-",
+      "unit": "**Path 1 — UI (recommended).** Open Claude Desktop &rarr; Customize &rarr; Connectors &rarr; + &rarr; *Add custom connector*. Paste `https://api.algovault.com/mcp?src=docs`, then click *Add*. Enable it per chat from + &rarr; Connectors. The connector form takes OAuth credentials, not custom headers — for a paid-tier key, use the JSON path below.",
+      "r_row": "R19",
+      "kind": "copy"
+    },
+    {
+      "file": "docs/integrations/mcp-clients/claude-desktop.md",
+      "op": "+",
+      "unit": "**Path 1 — UI (recommended).** Open Claude Desktop &rarr; Customize &rarr; Connectors &rarr; + &rarr; *Add custom connector*. Paste `https://api.algovault.com/mcp?src=docs`, then click *Add*. Enable it per chat from + &rarr; Connectors. For a paid-tier key, use the JSON path below.",
+      "r_row": "R19",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": ". The connector form takes OAuth credentials, not custom headers &mdash; for a paid-tier key, use the JSON path below.</p>",
+      "r_row": "R19",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": ". For a paid-tier key, use the JSON path below.</p>",
+      "r_row": "R19",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-10-01\">",
+      "r_row": "R19",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "\\n<meta name=\"last-updated\" content=\"2026-10-02\">",
+      "r_row": "R19",
+      "kind": "derived",
+      "class": "render-date"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Claude Desktop - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/claude-desktop\",\\n  \"datePublished\": \"2026-05-19T00:00:00+00:00\",\\n  \"dateModified\": \"2026-10-01T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Claude Desktop's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Claude Desktop integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R19",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "\\n{\\n  \"@context\": \"https://schema.org\",\\n  \"@type\": \"TechArticle\",\\n  \"headline\": \"AlgoVault × Claude Desktop - Build Verifiable AI Trading Agents\",\\n  \"url\": \"https://algovault.com/integrations/claude-desktop\",\\n  \"datePublished\": \"2026-05-19T00:00:00+00:00\",\\n  \"dateModified\": \"2026-10-02T15:00:00+00:00\",\\n  \"author\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\"\\n  },\\n  \"publisher\": {\\n    \"@type\": \"Organization\",\\n    \"name\": \"AlgoVault Labs\",\\n    \"url\": \"https://algovault.com\",\\n    \"logo\": {\\n      \"@type\": \"ImageObject\",\\n      \"url\": \"https://algovault.com/logo.png\",\\n      \"width\": 512,\\n      \"height\": 512\\n    }\\n  },\\n  \"image\": {\\n    \"@type\": \"ImageObject\",\\n    \"url\": \"https://algovault.com/logo.png\",\\n    \"width\": 512,\\n    \"height\": 512\\n  },\\n  \"description\": \"Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Claude Desktop's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.\",\\n  \"proficiencyLevel\": \"Intermediate|Advanced\",\\n  \"about\": {\\n    \"@type\": \"Thing\",\\n    \"name\": \"Claude Desktop integration with AlgoVault MCP composite verdict\"\\n  }\\n}\\n</script>",
+      "r_row": "R19",
+      "kind": "derived",
+      "class": "date-modified"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "90.9%</span>",
+      "r_row": "R19",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "90.8%</span>",
+      "r_row": "R19",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": "916,636</span>",
+      "r_row": "R19",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": "924,395</span>",
+      "r_row": "R19",
+      "kind": "derived",
+      "class": "live-snapshot"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "-",
+      "unit": ". Enable it per chat from + → Connectors. The connector form takes OAuth credentials, not custom headers — for a paid-tier key, use the JSON path below.</p>",
+      "r_row": "R19",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/integrations/claude-desktop.html",
+      "op": "+",
+      "unit": ". Enable it per chat from + → Connectors. For a paid-tier key, use the JSON path below.</p>",
+      "r_row": "R19",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": ". The connector form takes OAuth credentials, not custom headers &mdash; for a paid-tier key, use the JSON path below.</p>",
+      "r_row": "R19",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": ". For a paid-tier key, use the JSON path below.</p>",
+      "r_row": "R19",
+      "kind": "copy"
+    }
+  ]
+}

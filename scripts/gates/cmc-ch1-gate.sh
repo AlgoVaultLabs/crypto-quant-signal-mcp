@@ -2,7 +2,7 @@
 # cmc-ch1-gate.sh — LANDING-MCP-CLIENTS-CLAIMS-W1 CH1 (the ratified copy at every producer).
 #
 # Legs, from the repo root, each mapped to the chapter's acceptance criteria:
-#   AC1  STRINGS     every R1–R12, R10b, R14–R18 BEFORE string is gone from its producers AND rendered pages,
+#   AC1  STRINGS     every R1–R12, R10b, R14–R19 BEFORE string is gone from its producers AND rendered pages,
 #                    every AFTER string is present (the exact-string table below; index.html's R15 in
 #                    both artboards).
 #   AC2  ANCHORS     the changed rows carry exactly the spec's anchors, no anchor survives on a removed
@@ -13,7 +13,8 @@
 #                    line must fire CHECK 9, restoring a retired path in a real page must fire CHECK 1, and
 #                    the gate source carries no CHECK 9 exemption list.
 #   AC4  RENDERED    scripts/gates/cmc-rendered-diff.mjs --check → RENDERED_DIFF_VERDICT=MATCH for the
-#                    chapter's rows (R1–R12, R10b, R14–R18).
+#                    chapter's rows (R1–R12, R10b, R14–R18); once CH1 + CH2 are on origin/main, CH3b's
+#                    own diff against its own map, R19 only (rev 4).
 #   AC5  DATES       verifiedAt = the CH1 date on every edited row; codex.md's verified twin matches.
 #   AC6  HOMEPAGE    the vault JSX backup exists, and a fresh render-jsx-static of landing-rest equals
 #                    landing/index.html's #quickstart section (re-baked whole: R15 + R18) byte for byte in BOTH artboards (the mobile
@@ -39,6 +40,12 @@ REQUIRED_TOOLS=(node npm npx python3 git grep)
 NAMED_TESTS='tests/unit/claim-evidence.test.ts tests/unit/integrations-data.test.ts tests/unit/mcp-usage-docs-byte-equivalence.test.ts tests/unit/mcp-usage-docs.test.ts'
 CH1_DATE='2026-10-01'   # the CH1 date (date -u +%F when CH1 ran) — verifiedAt on every edited row
 CH1_ROWS='R1,R2,R3,R4,R5,R6,R7,R8,R9,R10,R10b,R11,R12,R14,R15,R16,R17,R18'   # rev 3 adds R10b + R18
+# CH3b (rev 4): once CH1 + CH2 are on origin/main, the diff against origin/main is CH3b's own and
+# must map to R19 ONLY, both ways, against its own committed map. The vault JSX is not part of it:
+# CH3b writes no JSX, and the HOMEPAGE leg still proves the JSX re-renders the landed #quickstart.
+CH12_LANDED='cbe9cfc1cd36a3fcf42ef03ac445f2280489c0e6'   # the CH1 + CH2 landing (land.sh, 2026-10-02)
+CH3B_ROWS='R19'
+CH3B_MAP='audits/LANDING-MCP-CLIENTS-CLAIMS-W1-CH3b-rendered-diff.json'
 TARGET_PAGES='claude-desktop codex smithery claude-code binance-agent-os'
 SKILLS_REPO='https://github.com/AlgoVaultLabs/algovault-skills.git'
 
@@ -88,9 +95,10 @@ T = {
     "prompts for any required env vars", "smithery.ai/server/@AlgoVaultLabs", '"version":"1.10.3"',
     "algovault https://api.algovault.com/mcp?src=docs", "\n  https://api.algovault.com/mcp?src=docs " + BS + BS,
     "source: 'https://modelcontextprotocol.io/quickstart/user'", "source: 'https://cursor.com/docs/context/mcp'",
-    "source: 'https://docs.cline.bot/mcp/connecting-to-a-remote-server'"],
+    "source: 'https://docs.cline.bot/mcp/connecting-to-a-remote-server'",
+    "The connector form takes OAuth credentials, not custom headers"],   # R19 (CH3b, rev 4): BEFORE, and anchor a2's claim
    ["Customize &rarr; Connectors &rarr; + &rarr; <em>Add custom connector</em>, or edit",
-    "<strong>Easiest path (UI, free tier):</strong> Open Claude Desktop &rarr; <em>Customize</em> &rarr; <em>Connectors</em> &rarr; <em>+</em> &rarr; <em>Add custom connector</em>. Paste <code class=\"text-xs bg-navy-800 px-1 rounded\">https://api.algovault.com/mcp?src=docs</code>, then click <em>Add</em>. Enable it per chat from <em>+</em> &rarr; <em>Connectors</em>. The connector form takes OAuth credentials, not custom headers &mdash; for a paid-tier key, use the JSON path below.</p>",
+    "<strong>Easiest path (UI, free tier):</strong> Open Claude Desktop &rarr; <em>Customize</em> &rarr; <em>Connectors</em> &rarr; <em>+</em> &rarr; <em>Add custom connector</em>. Paste <code class=\"text-xs bg-navy-800 px-1 rounded\">https://api.algovault.com/mcp?src=docs</code>, then click <em>Add</em>. Enable it per chat from <em>+</em> &rarr; <em>Connectors</em>. For a paid-tier key, use the JSON path below.</p>",
     '"--header", "Authorization:' + BS + '${AUTH_HEADER}",', '"env": { "AUTH_HEADER": "Bearer av_live_&hellip;" }',
     "Set your key in the env block. Free tier: drop the <code class=\"text-xs\">Authorization</code> header and the env block, but keep the <code class=\"text-xs\">X-AlgoVault-Track-Token</code> header.",
     "codex mcp add algovault --url \"https://api.algovault.com/mcp?src=docs\"</code> adds the free tier from the CLI; the paid tier's <code class=\"text-xs\">bearer_token_env_var</code> is set in <code class=\"text-xs\">config.toml</code>, as above.",
@@ -105,8 +113,9 @@ T = {
    ["\n  https://api.algovault.com/mcp?src=binance_agent_os</code>"], ['\n  "https://api.algovault.com/mcp?src=binance_agent_os"</code>']),
  "docs/integrations/mcp-clients/claude-desktop.md": (
    ["Settings &rarr; Connectors", "Name: `AlgoVault`", "as a custom header", "Authorization: Bearer ${AV_API_KEY}",
-    "in the env block or your shell", "restart Claude Desktop after saving the connector", "is set in the JSON env block, not just your shell"],
-   ["**Path 1 — UI (recommended).** Open Claude Desktop &rarr; Customize &rarr; Connectors &rarr; + &rarr; *Add custom connector*. Paste `https://api.algovault.com/mcp?src=docs`, then click *Add*. Enable it per chat from + &rarr; Connectors. The connector form takes OAuth credentials, not custom headers — for a paid-tier key, use the JSON path below.",
+    "in the env block or your shell", "restart Claude Desktop after saving the connector", "is set in the JSON env block, not just your shell",
+    "The connector form takes OAuth credentials"],
+   ["**Path 1 — UI (recommended).** Open Claude Desktop &rarr; Customize &rarr; Connectors &rarr; + &rarr; *Add custom connector*. Paste `https://api.algovault.com/mcp?src=docs`, then click *Add*. Enable it per chat from + &rarr; Connectors. For a paid-tier key, use the JSON path below.",
     '"--header", "Authorization:${AUTH_HEADER}",', '"env": { "AUTH_HEADER": "Bearer av_live_…" }',
     "Set your key in the env block. Free tier: drop the `Authorization` header and the env block, but keep the `X-AlgoVault-Track-Token` header.",
     "— enable it for the chat from + → Connectors.", "— confirm `AUTH_HEADER` is set in the JSON env block as `Bearer av_live_…`."]),
@@ -145,9 +154,9 @@ T = {
    ["Settings &rarr; Connectors &rarr; <em>", "<em>Settings</em> &rarr; <em>Connectors</em>", "covers local stdio servers only",
     "@smithery/cli install", '"version":"1.10.3"', "prompts for any required env vars", "smithery.ai/server/@AlgoVaultLabs",
     "algovault https://api.algovault.com/mcp?src=docs", "\n  https://api.algovault.com/mcp?src=docs " + BS,
-    "\n  https://api.algovault.com/mcp?src=binance_agent_os</code>"],
+    "\n  https://api.algovault.com/mcp?src=binance_agent_os</code>", "The connector form takes OAuth credentials"],
    ["Customize &rarr; Connectors &rarr; + &rarr; <em>Add custom connector</em>", "Easiest path (UI, free tier):",
-    "The connector form takes OAuth credentials, not custom headers &mdash; for a paid-tier key, use the JSON path below.",
+    "<em>Connectors</em>. For a paid-tier key, use the JSON path below.</p>",
     '"--header", "Authorization:${AUTH_HEADER}",', '"env": { "AUTH_HEADER": "Bearer av_live_&hellip;" }',
     'codex mcp add algovault --url "https://api.algovault.com/mcp?src=docs"</code>',
     "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;client&gt;", "Smithery-gateway entry",
@@ -155,17 +164,20 @@ T = {
     '\n  "https://api.algovault.com/mcp?src=binance_agent_os"</code>']),
  "landing/mcp.html": (
    ["Settings &rarr; Connectors &rarr; <em>", "<em>Settings</em> &rarr; <em>Connectors</em>", "covers local stdio servers only",
-    "@smithery/cli install", '"version":"1.10.3"', "algovault https://api.algovault.com/mcp?src=docs", "\n  https://api.algovault.com/mcp?src=docs " + BS],
+    "@smithery/cli install", '"version":"1.10.3"', "algovault https://api.algovault.com/mcp?src=docs", "\n  https://api.algovault.com/mcp?src=docs " + BS,
+    "The connector form takes OAuth credentials"],
    ["Customize &rarr; Connectors &rarr; + &rarr; <em>Add custom connector</em>", "Easiest path (UI, free tier):",
+    "<em>Connectors</em>. For a paid-tier key, use the JSON path below.</p>",
     '"--header", "Authorization:${AUTH_HEADER}",', 'codex mcp add algovault --url "https://api.algovault.com/mcp?src=docs"</code>',
     "Smithery-gateway entry", '"server":"crypto-quant-signal-mcp","version":"&lt;current release&gt;"', 'algovault "https://api.algovault.com/mcp?src=docs" ' + BS]),
  "landing/integrations.html": (
    ["Settings &rarr; Connectors &rarr; <em>", "@smithery/cli install"],
    ["Customize &rarr; Connectors &rarr; + &rarr; <em>Add custom connector</em>", "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;"]),
  "landing/integrations/claude-desktop.html": (
-   ["Settings → Connectors", "as a custom header", "Authorization: Bearer ${AV_API_KEY}", "in the env block or your shell", "after saving the connector"],
+   ["Settings → Connectors", "as a custom header", "Authorization: Bearer ${AV_API_KEY}", "in the env block or your shell", "after saving the connector",
+    "The connector form takes OAuth credentials"],
    ["Open Claude Desktop → Customize → Connectors → + → <em>Add custom connector</em>",
-    "The connector form takes OAuth credentials, not custom headers — for a paid-tier key, use the JSON path below.",
+    "Enable it per chat from + → Connectors. For a paid-tier key, use the JSON path below.</p>",
     "&quot;Authorization:${AUTH_HEADER}&quot;", "Set your key in the env block.", "enable it for the chat from + → Connectors."]),
  "landing/integrations/codex.html": (
    ["local stdio servers only", "rejected the URL", "Config verified 2026-08-05"],
@@ -212,7 +224,6 @@ CODEX = "https://learn.chatgpt.com/docs/extend/mcp"
 WANT = {
  "claude-desktop": [
    {"claim": "Customize → Connectors → + → Add custom connector", "source": ART, "expect": ["Customize > Connectors", "Add custom connector"]},
-   {"claim": "The connector form takes OAuth credentials, not custom headers", "source": ART, "expect": ["OAuth Client ID", "OAuth Client Secret"], "reject": ["custom header"]},
    {"claim": "claude_desktop_config.json", "source": ART, "expect": ["claude_desktop_config.json"]},
    {"claim": '"mcp-remote"', "source": "https://registry.npmjs.org/mcp-remote", "expect": ["--header"]},
    {"claim": "Authorization:${AUTH_HEADER}", "source": "https://registry.npmjs.org/mcp-remote", "expect": ["Authorization:${AUTH_HEADER}"]}],
@@ -228,7 +239,8 @@ WANT = {
    {"claim": '"server":"crypto-quant-signal-mcp"', "source": "https://api.algovault.com/health", "expect": ['"server":"crypto-quant-signal-mcp"']}],
 }
 REMOVED = ["Settings → Connectors → Add custom connector", "as a custom header (paid tier)", "codex mcp add covers local stdio servers only",
-           "npx -y @smithery/cli install crypto-quant-signal-mcp --client", '"version":"1.10.3"']
+           "npx -y @smithery/cli install crypto-quant-signal-mcp --client", '"version":"1.10.3"',
+           "The connector form takes OAuth credentials, not custom headers"]   # rev 4 (CH3b): a2 removed with its claim
 try:
     doc = json.load(open("src/lib/integrations-data/claim-evidence.json", encoding="utf-8"))
     rows = {r["slug"]: r for r in doc["rows"]}
@@ -386,7 +398,11 @@ run_gate() {
     git fetch origin --quiet >/dev/null 2>&1 || true
     local base; base="$(git merge-base HEAD origin/main 2>/dev/null)"
     if [ -n "$base" ]; then
-      rendered="$(node scripts/gates/cmc-rendered-diff.mjs --check --base "$base" --rows "$CH1_ROWS" 2>"$tmp/rendered.err" | val RENDERED_DIFF_VERDICT)"
+      if git merge-base --is-ancestor "$CH12_LANDED" "$base" 2>/dev/null; then
+        rendered="$(node scripts/gates/cmc-rendered-diff.mjs --check --base "$base" --map "$CH3B_MAP" --rows "$CH3B_ROWS" --no-vault 2>"$tmp/rendered.err" | val RENDERED_DIFF_VERDICT)"
+      else
+        rendered="$(node scripts/gates/cmc-rendered-diff.mjs --check --base "$base" --rows "$CH1_ROWS" 2>"$tmp/rendered.err" | val RENDERED_DIFF_VERDICT)"
+      fi
       fixture="$(fixture_leg "$base" | tee "$tmp/fixture.log" | val FIXTURE)"
     fi
     homepage="$(homepage_leg "$tmp" 2>"$tmp/homepage.err" | val HOMEPAGE)"
