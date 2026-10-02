@@ -1,7 +1,7 @@
 {
   "wave": "LANDING-MCP-CLIENTS-CLAIMS-W1",
   "generated_by": "scripts/gates/cmc-rendered-diff.mjs --emit",
-  "base": "c05ba6cb835f41e4ac242f3f12047ff520c4c2e2",
+  "base": "6077f9abb86cb6c71034ad891d65c44de0fc9186",
   "unit_rule": "html: split after every \">\"; other files: lines; a newline inside a unit is written \\n",
   "derived_classes": {
     "render-date": "render-integrations.mjs stamps the render date",
@@ -21,8 +21,8 @@
     "R10": 44,
     "R11": 4,
     "R12": 20,
-    "R13": 0,
-    "R14": 6,
+    "R13": 24,
+    "R14": 8,
     "R15": 12,
     "R16": 4,
     "R17": 2,
@@ -42,6 +42,13 @@
       "op": "+",
       "unit": "**1. Add the connector.** In Claude → Customize → Connectors → + → Add custom connector:",
       "r_row": "R17",
+      "kind": "copy"
+    },
+    {
+      "file": "README.md",
+      "op": "+",
+      "unit": "<!-- MCP_CLIENTS_README_TABLE:start -->",
+      "r_row": "R14",
       "kind": "copy"
     },
     {
@@ -83,6 +90,13 @@
       "file": "README.md",
       "op": "+",
       "unit": "| **Cursor** | `~/.cursor/mcp.json` → `mcpServers` block → `url: \"https://api.algovault.com/mcp\"` |",
+      "r_row": "R14",
+      "kind": "copy"
+    },
+    {
+      "file": "README.md",
+      "op": "+",
+      "unit": "<!-- MCP_CLIENTS_README_TABLE:end -->",
       "r_row": "R14",
       "kind": "copy"
     },
@@ -791,6 +805,90 @@
       "op": "+",
       "unit": "export ANTHROPIC_BASE_URL=\"https://api.deepseek.com/anthropic\"\\nexport ANTHROPIC_AUTH_TOKEN=\"$DEEPSEEK_API_KEY\"\\n\\nclaude mcp add --transport http --scope project algovault \\\\\\n  \"https://api.algovault.com/mcp?src=docs\" \\\\\\n  --header \"X-AlgoVault-Track-Token:chan-docs\"</code>",
       "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://modelcontextprotocol.io/quickstart/user\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "MCP quickstart</a>",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": " &middot;\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://cursor.com/docs/context/mcp\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "Claude custom connectors</a>",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": " &middot;\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://cursor.com/docs/mcp\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": " &middot;\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://docs.cline.bot/mcp/connecting-to-a-remote-server\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "-",
+      "unit": "Cline remote-server docs</a>",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": " &middot;\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://docs.cline.bot/mcp/mcp-overview\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "Cline MCP docs</a>",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": " &middot;\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://github.com/deepseek-ai/deepseek-harness\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/docs.html",
+      "op": "+",
+      "unit": "DeepSeek Harness</a>",
+      "r_row": "R13",
       "kind": "copy"
     },
     {
@@ -2308,6 +2406,90 @@
       "op": "+",
       "unit": "export ANTHROPIC_BASE_URL=\"https://api.deepseek.com/anthropic\"\\nexport ANTHROPIC_AUTH_TOKEN=\"$DEEPSEEK_API_KEY\"\\n\\nclaude mcp add --transport http --scope project algovault \\\\\\n  \"https://api.algovault.com/mcp?src=docs\" \\\\\\n  --header \"X-AlgoVault-Track-Token:chan-docs\"</code>",
       "r_row": "R12",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://modelcontextprotocol.io/quickstart/user\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "MCP quickstart</a>",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": " &middot;\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://cursor.com/docs/context/mcp\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "Claude custom connectors</a>",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": " &middot;\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://cursor.com/docs/mcp\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": " &middot;\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://docs.cline.bot/mcp/connecting-to-a-remote-server\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "-",
+      "unit": "Cline remote-server docs</a>",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": " &middot;\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://docs.cline.bot/mcp/mcp-overview\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "Cline MCP docs</a>",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": " &middot;\\n    <a class=\"text-mint-400 hover:underline\" href=\"https://github.com/deepseek-ai/deepseek-harness\">",
+      "r_row": "R13",
+      "kind": "copy"
+    },
+    {
+      "file": "landing/mcp.html",
+      "op": "+",
+      "unit": "DeepSeek Harness</a>",
+      "r_row": "R13",
       "kind": "copy"
     },
     {

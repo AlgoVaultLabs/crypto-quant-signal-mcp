@@ -88,7 +88,10 @@ export const ROW_RULES = [
   { row: 'R16', files: /^landing\/faq\.html$/, frags: ['Add custom connector', 'Connectors'] },
   { row: 'R15', files: /^(landing\/index\.html|vault:)/, frags: ['Open Claude → Settings → Connectors', 'Open Claude → Customize → Connectors', 'Add custom connector → paste the URL'] },
   { row: 'R17', files: /^README\.md$/, frags: ['**1. Add the connector.**'] },
-  { row: 'R14', files: /^README\.md$/, frags: ['| **Claude Desktop** |', '| **Claude Code** (CLI) |', '| **Cursor** |'] },
+  { row: 'R14', files: /^README\.md$/, frags: ['| **Claude Desktop** |', '| **Claude Code** (CLI) |', '| **Cursor** |', 'MCP_CLIENTS_README_TABLE'] },
+  // R13: the derived footer — renderFooterLinks() writes each link as `    <a class="text-mint-400 hover:underline" href="…">`
+  { row: 'R13', frags: ['    <a class="text-mint-400 hover:underline" href="', 'MCP quickstart</a>', 'Claude custom connectors</a>',
+    'Cline remote-server docs</a>', 'Cline MCP docs</a>', 'DeepSeek Harness</a>'] },
   { row: 'R18', files: /^landing\/index\.html$/, frags: ['DeepSeek Harness', '/integrations/deepseek-harness'] },
   { row: 'R7', frags: ['rejected the URL'] },
   { row: 'R6', frags: ['covers local stdio servers only', 'local stdio servers only', 'codex mcp add algovault --url', 'adds the free tier from the CLI', 'Config verified 2026-08-05 against <https://learn.chatgpt.com', 'Config verified 2026-10-01 against <https://learn.chatgpt.com', 'Config verified 2026-08-05 against <a href="https://learn.chatgpt.com', 'Config verified 2026-10-01 against <a href="https://learn.chatgpt.com'] },
@@ -126,8 +129,13 @@ export function rowOf(file, unit) {
   }
   return null;
 }
-/** Markup with no readable word in it: tags, arrows, `+`, punctuation, whitespace. @param {string} unit */
+/**
+ * Markup with no readable word in it: tags, arrows, `+`, punctuation, whitespace. A tag that carries
+ * a link target (`href` / `src`) is never structural — a changed link IS content.
+ * @param {string} unit
+ */
 export function isStructural(unit) {
+  if (/\b(href|src)=/.test(unit)) return false;
   return unit.replace(/<[^>]*>/g, '').replace(/&(rarr|nbsp|mdash|middot);|\\n/g, ' ').replace(/[\s+→—·.,;:()-]/g, '') === '';
 }
 /** @param {string} unit */
@@ -287,6 +295,12 @@ export function selfTest() {
   ok(split[2].r_row === 'R2' && split[3].r_row === 'R2', 'markup-only hunk inherits the neighbouring row');
   fire++; ok(split[4].kind === 'unmapped', 'a worded unit never inherits across hunks');
   ok(isStructural('+</em>') && isStructural(' &rarr; <em>') && !isStructural('Add</em>'), 'isStructural separates markup from words');
+  ok(!isStructural(' &middot;\\n    <a class="x" href="https://new.example/">'), 'a changed link target is content, never structural');
+  const linkHunks = classifyFile('landing/docs.html', [
+    [{ op: '-', unit: 'Easiest path (UI):</strong>' }, { op: '+', unit: 'Easiest path (UI, free tier):</strong>' }],
+    [{ op: '+', unit: ' &middot;\\n    <a class="y" href="https://ride.example/">' }],
+  ]);
+  fire++; ok(linkHunks[2].kind === 'unmapped', 'a changed link in an unclassified hunk never inherits a neighbouring row');
   // compare(): MATCH, then each way of failing
   const real = classifyFile('landing/index.html', h);
   quiet++; ok(compare(real, real, ['R15']).verdict === 'MATCH', 'identical map and diff → MATCH');
@@ -355,13 +369,13 @@ if (INVOKED) {
       rows: Object.fromEntries(ALL_ROWS.map((r) => [r, rec.entries.filter((e) => e.r_row === r && e.kind === 'copy').length])),
       entries: rec.entries,
     };
-    writeFileSync(join(ROOT, opt('--out') || MAP_PATH), `${JSON.stringify(doc, null, 2)}\n`);
+    writeFileSync(resolve(ROOT, opt('--out') || MAP_PATH), `${JSON.stringify(doc, null, 2)}\n`);
     for (const u of unmapped) console.error(`  ✗ UNMAPPED ${u.file} ${u.op} ${u.unit.slice(0, 160)}`);
     console.log(`wrote ${opt('--out') || MAP_PATH}: ${rec.entries.length} unit(s), ${unmapped.length} unmapped`);
     process.exit(unmapped.length ? 1 : 0);
   }
   // --check
-  const mapFile = join(ROOT, opt('--map') || MAP_PATH);
+  const mapFile = resolve(ROOT, opt('--map') || MAP_PATH);
   if (!existsSync(mapFile)) { console.error(`map missing: ${mapFile}`); console.log('RENDERED_DIFF_VERDICT=INDETERMINATE'); process.exit(3); }
   let map;
   try { map = JSON.parse(readFileSync(mapFile, 'utf8')); } catch (e) {
