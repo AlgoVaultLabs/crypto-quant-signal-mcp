@@ -1,18 +1,24 @@
 /**
- * OPS-HOST-AUTO-REBOOT-W1 — aoe-1's unattended kernel reboot, and the signal-1 firewall.
- *
- * The reboot itself is proven: three hand-run cycles, every one uneventful. What is unproven — and
- * what this file exists to pin — is the HARNESS: the decision logic, the abort path, the
- * escalation, and above all the assertion that it CANNOT reboot signal-1.
+ * OPS-HOST-AUTO-REBOOT-W1 → OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1 — the unattended kernel reboot,
+ * now on BOTH hosts, and the allow-list firewall that bounds it.
  *
  * Each script's own `--self-test` covers its decision function against fixtures. THIS file covers
  * what a hermetic self-test structurally cannot: the real CLI contract (token AND exit code), the
- * real committed registry, and the wiring that makes any of it run.
+ * real committed registry, cross-FILE parity (the arm paths three scripts must agree on), and the
+ * wiring that makes any of it run.
+ *
+ * BUILD RULE 12 of Prompt/OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1.md: this file used to pin "a
+ * signal-1 label REFUSES" as the single most important assertion of W1. That invariant was RATIFIED
+ * as temporary — "TWO clean unattended aoe-1 cycles AND a live peer watchdog" — and the same
+ * ratification, now fired (PROMOTION_CLOCK=2/2, OPS-HOST-KERNEL-REBOOT-W5), retires it. The
+ * invariant it is replaced by is the one that was always load-bearing: the hosts this script may
+ * reboot are a HARDCODED constant, an UNLISTED host refuses with zero side effects, and no env can
+ * widen the list. This is not a weakened gate; do not route around it anywhere else.
  *
  * SPAWN BUDGET DECLARED on every block — each shells out to bash.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -34,6 +40,13 @@ function harness(args: string[], env: Record<string, string> = {}) {
   const rebooted = path.join(dir, 'rebooted');
   const armed = path.join(dir, 'armed');
   const paged = path.join(dir, 'paged');
+  const results = path.join(dir, 'results.jsonl');
+  mkdirSync(path.join(dir, 'rl'));
+  mkdirSync(path.join(dir, 'peer'));
+  writeFileSync(path.join(dir, 'rl', 'canary_result_log.py'),
+    'import json, os\ndef append_result(c, v, e, m=None, **k):\n'
+    + '    open(os.environ["CANARY_RESULT_LOG_PATH"], "a").write(json.dumps({"host": os.environ.get("MONITORING_HOST_LABEL"), "canary": c, "verdict": v, "metrics": m}) + "\\n")\n'
+    + '    return True, "line=1"\n');
   const stubs = {
     AUTO_REBOOT_LOG: path.join(dir, 'log'),
     AUTO_REBOOT_STATE: path.join(dir, 'state'),
@@ -44,78 +57,95 @@ function harness(args: string[], env: Record<string, string> = {}) {
     AUTO_REBOOT_REGISTRY: REGISTRY,
     AUTO_REBOOT_WRAPPER: mk('send.sh', `#!/bin/sh\ncat >> ${paged}\necho "ALERT=$1 SEV=$2" >> ${paged}\n`),
     AUTO_REBOOT_REBOOT_CMD: mk('reboot.sh', `#!/bin/sh\necho rebooted >> ${rebooted}\n`),
-    AUTO_REBOOT_ARM_CMD: mk('arm.sh', `#!/bin/sh\necho "$@" >> ${armed}\n`),
-    AUTO_REBOOT_PGREP: mk('pgrep.sh', '#!/bin/sh\nexit 1\n'),
+    AUTO_REBOOT_ARM_CMD: mk('arm.sh', `#!/bin/sh\necho "$@" >> ${armed}\necho PEER_ARM_VERDICT=ARMED\n`),
+    AUTO_REBOOT_PS: mk('ps.sh', '#!/bin/sh\nprintf "%s\\n" "/sbin/init" "node dist/index.js"\n'),
+    AUTO_REBOOT_CURL: mk('curl.sh', '#!/bin/sh\necho 200\n'),
+    AUTO_REBOOT_PEER_ARM_MARKER: path.join(dir, 'peer', 'marker'),
+    AUTO_REBOOT_POPULATION_GATE: mk('pop.sh', '#!/bin/sh\necho "CRON_INTERLOCK_COVERAGE_VERDICT=PASS"\n'),
+    AUTO_REBOOT_NODE: 'bash',
+    AUTO_REBOOT_CRONTAB: mk('crontab.sh', '#!/bin/sh\necho "17 3 * * * /opt/x.sh"\n'),
+    AUTO_REBOOT_SYSTEMCTL: mk('systemctl.sh', '#!/bin/sh\necho cron.service\n'),
+    AUTO_REBOOT_NOW_HOUR: '05',
+    AUTO_REBOOT_RESULT_LOG_DIR: path.join(dir, 'rl'),
+    CANARY_RESULT_LOG_PATH: results,
   };
   const r = spawnSync('bash', [HARNESS, ...args], {
     encoding: 'utf8',
     env: { ...process.env, MONITORING_HOST_LABELS: '', ...stubs, ...env },
   });
   return {
+    dir,
     status: r.status,
     stdout: r.stdout,
     verdict: (r.stdout.match(/AUTO_REBOOT_VERDICT=(\w+)/) || [])[1],
-    gates: r.stdout.match(/^AUTO_REBOOT_GATE=\S+/gm) || [],
+    gates: r.stdout.match(/^AUTO_REBOOT_GATE=\S+ state=\S+/gm) || [],
     rebooted: existsSync(rebooted),
     armed: existsSync(armed) ? readFileSync(armed, 'utf8') : '',
     paged: existsSync(paged) ? readFileSync(paged, 'utf8') : '',
+    results: existsSync(results) ? readFileSync(results, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [],
   };
 }
 
 /**
- * AC2 — THE SINGLE MOST IMPORTANT ASSERTION IN THIS WAVE.
+ * AC2 (rewritten per Build Rule 12) — the ALLOW-LIST is the firewall.
  *
- * signal-1 is the revenue host and has two free minutes in the hour; aoe-1 has eight. A harness
- * bug against eight minutes degrades, against two it lands mid-cron on the revenue host. So the
- * firewall is not "we won't point it at signal-1" — it is that pointing it there REFUSES.
- *
- * SPAWN BUDGET: 6 bash spawns.
+ * SPAWN BUDGET: 7 bash spawns.
  */
-describe('AC2 — the identity firewall refuses signal-1, with zero side effects', () => {
-  it('a signal-1 label REFUSES even with --apply and every other gate green', { timeout: 60_000 }, () => {
-    const r = harness(['--apply'], { MONITORING_HOST_LABELS: 'signal-1' });
+describe('AC2 — the allow-list firewall: an UNLISTED host refuses, with zero side effects', () => {
+  it('an unlisted label REFUSES even with --apply and every other gate green', { timeout: 60_000 }, () => {
+    const r = harness(['--apply'], { MONITORING_HOST_LABELS: 'mars-1' });
     expect(r.verdict).toBe('REFUSED');
     expect(r.rebooted).toBe(false);
     expect(r.armed).toBe('');
     expect(r.status).toBe(0);
   });
 
-  it('…and it never evaluates a single later gate', { timeout: 60_000 }, () => {
-    const r = harness(['--apply'], { MONITORING_HOST_LABELS: 'signal-1' });
-    // Identity is gate 1 and the ONLY gate that may run before the host is known to be aoe-1.
-    expect(r.gates).toEqual(['AUTO_REBOOT_GATE=identity']);
+  it('…and it evaluates NO later gate: every one is reported NOT_REACHED', { timeout: 60_000 }, () => {
+    const r = harness(['--apply'], { MONITORING_HOST_LABELS: 'mars-1' });
+    expect(r.gates[0]).toBe('AUTO_REBOOT_GATE=identity state=REFUSED');
+    expect(r.gates.slice(1).every((g) => g.endsWith('state=NOT_REACHED'))).toBe(true);
+    expect(r.gates.length).toBe(11);
   });
 
-  it('a signal-1 IDENTITY FILE refuses too — the env is not the only door', { timeout: 60_000 }, () => {
+  it('an unlisted IDENTITY FILE refuses too — the env is not the only door', { timeout: 60_000 }, () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'autoreboot-id-'));
-    const idFile = path.join(dir, 'label');
-    writeFileSync(idFile, 'signal-1\n');
+    const idFile = path.join(dir, 'id');
+    writeFileSync(idFile, 'mars-1\n');
     const r = harness(['--apply'], { AUTO_REBOOT_IDENTITY_FILE: idFile });
     expect(r.verdict).toBe('REFUSED');
     expect(r.rebooted).toBe(false);
   });
 
   it('an UNRESOLVABLE identity refuses — there is no default', { timeout: 60_000 }, () => {
-    const r = harness(['--apply'], { AUTO_REBOOT_IDENTITY_FILE: '/nonexistent/label' });
+    const r = harness(['--apply'], { AUTO_REBOOT_IDENTITY_FILE: '/nonexistent' });
     expect(r.verdict).toBe('REFUSED');
     expect(r.rebooted).toBe(false);
   });
 
   it('a refusal PAGES rather than failing quietly', { timeout: 60_000 }, () => {
-    const r = harness(['--apply'], { MONITORING_HOST_LABELS: 'signal-1' });
+    const r = harness(['--apply'], { MONITORING_HOST_LABELS: 'mars-1' });
     expect(r.paged).toContain('ALERT=KERNEL_AUTO_REBOOT SEV=CRITICAL_PERSISTENT');
     expect(r.paged).toContain('the reboot was NOT performed');
   });
 
-  it('the expected host is a HARDCODED constant, not an env seam', { timeout: 60_000 }, () => {
-    // A configurable firewall is not a firewall. Proven by trying to override it.
-    const r = spawnSync('bash', [HARNESS, '--print-expected-host'], {
+  it('the allow-list is a HARDCODED constant — no env can widen it', { timeout: 60_000 }, () => {
+    const r = spawnSync('bash', [HARNESS, '--print-allowed-hosts'], {
       encoding: 'utf8',
-      env: { ...process.env, AUTO_REBOOT_EXPECTED_HOST: 'signal-1', EXPECTED_HOST: 'signal-1' },
+      env: { ...process.env, ALLOWED_HOSTS: 'mars-1', AUTO_REBOOT_ALLOWED_HOSTS: 'mars-1', EXPECTED_HOST: 'mars-1' },
     });
-    expect(r.stdout.trim()).toBe('aoe-1');
-    // …and the constant appears in the source as a literal assignment, not a parameter expansion.
-    expect(readFileSync(HARNESS, 'utf8')).toContain('EXPECTED_HOST="aoe-1"');
+    expect(r.stdout.trim()).toBe('aoe-1 signal-1');
+    const src = readFileSync(HARNESS, 'utf8');
+    expect(src).toContain('ALLOWED_HOSTS="aoe-1 signal-1"');
+    // The policy table's host labels ARE the allow-list: exactly two, both named.
+    const labels = new Set([...src.matchAll(/^\s{4}(\S+?):peer\)/gm)].map((m) => m[1]));
+    expect([...labels].sort()).toEqual(['aoe-1', 'signal-1']);
+    expect(src).not.toMatch(/ALLOWED_HOSTS="\$\{/);
+  });
+
+  it('signal-1 is now ON the list: it reaches the gates and decides', { timeout: 60_000 }, () => {
+    const r = harness(['--dry-run'], { MONITORING_HOST_LABELS: 'signal-1' });
+    expect(r.verdict).toBe('NOT_DUE');
+    expect(r.stdout).toContain('AUTO_REBOOT_GATE=action state=DRY_RUN');
   });
 });
 
@@ -131,13 +161,13 @@ describe('AC3 — --dry-run is the default and --apply is required to reboot', (
   });
 
   it('every gate green + no flag does NOT reboot', { timeout: 60_000 }, () => {
-    const r = harness([], { MONITORING_HOST_LABELS: 'aoe-1' });
+    const r = harness([]);
     expect(r.rebooted).toBe(false);
     expect(r.stdout).toContain('AUTO_REBOOT_GATE=action state=DRY_RUN');
   });
 
   it('every gate green + --apply DOES reboot, and arms the watchdog FIRST', { timeout: 60_000 }, () => {
-    const r = harness(['--apply'], { MONITORING_HOST_LABELS: 'aoe-1' });
+    const r = harness(['--apply']);
     expect(r.verdict).toBe('REBOOTED');
     expect(r.rebooted).toBe(true);
     expect(r.armed).toContain('--arm');
@@ -145,63 +175,141 @@ describe('AC3 — --dry-run is the default and --apply is required to reboot', (
 });
 
 /**
- * The gates, each proven to stop the reboot for its own reason.
+ * The aoe-1 DIFFERENTIAL: every aoe-1 fixture W1 pinned yields the SAME verdict line now.
  *
- * SPAWN BUDGET: 5 bash spawns.
+ * SPAWN BUDGET: 6 bash spawns.
  */
-describe('the four gates each abort for their own stated reason', () => {
-  it('not due -> NOT_DUE, and SILENT because nothing is wrong', { timeout: 60_000 }, () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'autoreboot-ok-'));
-    const ok = path.join(dir, 'stale-ok.sh');
-    writeFileSync(ok, '#!/bin/sh\necho "VERDICT=OK host=x"\n', { mode: 0o755 });
-    const r = harness(['--apply'], { MONITORING_HOST_LABELS: 'aoe-1', AUTO_REBOOT_STALENESS: ok });
-    expect(r.verdict).toBe('NOT_DUE');
-    expect(r.rebooted).toBe(false);
-    expect(r.paged).toBe('');
+describe('aoe-1 is unchanged — W1 fixtures, byte-identical verdict lines', () => {
+  const W1 = [
+    { label: 'dry-run, all green', args: ['--dry-run'], env: {}, verdict: 'AUTO_REBOOT_VERDICT=NOT_DUE' },
+    { label: '--apply, all green', args: ['--apply'], env: {}, verdict: 'AUTO_REBOOT_VERDICT=REBOOTED' },
+    { label: 'staleness verdict unreadable', args: ['--apply'], env: { AUTO_REBOOT_STALENESS: '/bin/echo' }, verdict: 'AUTO_REBOOT_VERDICT=INDETERMINATE' },
+    { label: 'unreadable registry', args: ['--apply'], env: { AUTO_REBOOT_REGISTRY: '/nonexistent' }, verdict: 'AUTO_REBOOT_VERDICT=INDETERMINATE' },
+    { label: 'aoe-1 is any-hour (20Z)', args: ['--apply'], env: { AUTO_REBOOT_NOW_HOUR: '20' }, verdict: 'AUTO_REBOOT_VERDICT=REBOOTED' },
+  ];
+  it.each(W1)('$label → $verdict', { timeout: 60_000 }, ({ args, env, verdict }) => {
+    const r = harness(args, env as Record<string, string>);
+    expect((r.stdout.match(/^AUTO_REBOOT_VERDICT=.*$/m) || [])[0]).toBe(verdict);
   });
 
-  it('boot-contract DRIFT -> ABORTED + page — a reboot is not a repair tool', { timeout: 60_000 }, () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'autoreboot-drift-'));
-    const drift = path.join(dir, 'bc-drift.sh');
-    writeFileSync(drift, '#!/bin/sh\necho "BOOT_CONTRACT_VERDICT=DRIFT"\n', { mode: 0o755 });
-    const r = harness(['--apply'], { MONITORING_HOST_LABELS: 'aoe-1', AUTO_REBOOT_BOOT_CONTRACT: drift });
-    expect(r.verdict).toBe('ABORTED');
-    expect(r.rebooted).toBe(false);
-    expect(r.paged).toContain('ALERT=KERNEL_AUTO_REBOOT');
-  });
-
-  it('an unreadable registry is INDETERMINATE at exit 0 — never a reboot on an unknown cost', { timeout: 60_000 }, () => {
-    const r = harness(['--apply'], { MONITORING_HOST_LABELS: 'aoe-1', AUTO_REBOOT_REGISTRY: '/nonexistent/reg.json' });
-    expect(r.verdict).toBe('INDETERMINATE');
-    expect(r.status).toBe(0);
-    expect(r.rebooted).toBe(false);
-  });
-
-  it('the in-flight gate reports its row count even at ZERO, so a pass is never silent', { timeout: 60_000 }, () => {
-    const r = harness([], { MONITORING_HOST_LABELS: 'aoe-1' });
-    // The REAL committed registry: aoe-1 has rows, and none of them is no-safe-kill today.
-    expect(r.stdout).toMatch(/AUTO_REBOOT_GATE=in_flight state=PASS rows=\d+ no_safe_kill=0/);
-  });
-
-  it('every path prints exactly ONE terminal token', { timeout: 60_000 }, () => {
-    for (const env of [{ MONITORING_HOST_LABELS: 'aoe-1' }, { MONITORING_HOST_LABELS: 'signal-1' }]) {
-      const r = harness(['--apply'], env);
-      expect((r.stdout.match(/^AUTO_REBOOT_VERDICT=/gm) || []).length).toBe(1);
-    }
+  it('a failed arm on aoe-1 is DEGRADED and still reboots (now SEEN — the token is read)', { timeout: 60_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'autoreboot-armfail-'));
+    const armFail = path.join(dir, 'arm.sh');
+    writeFileSync(armFail, '#!/bin/sh\necho PEER_ARM_VERDICT=FAILED\n', { mode: 0o755 });
+    const r = harness(['--apply'], { AUTO_REBOOT_ARM_CMD: armFail });
+    expect(r.verdict).toBe('REBOOTED');
+    expect(r.stdout).toContain('AUTO_REBOOT_GATE=arm state=DEGRADED');
   });
 });
 
 /**
- * The three scripts' own self-tests, run as the wired suite runs them.
+ * signal-1's stricter per-host policy (PR-1 window, PR-3 arm failure).
+ *
+ * SPAWN BUDGET: 7 bash spawns.
+ */
+describe('signal-1 policy — window, arm failure, peer busy, deploy in flight', () => {
+  const S = { MONITORING_HOST_LABELS: 'signal-1' };
+  it.each([['02', 'NOT_DUE'], ['03', 'REBOOTED'], ['13', 'REBOOTED'], ['14', 'NOT_DUE']])(
+    'WINDOW 03:00-13:59Z — hour %s → %s', { timeout: 60_000 }, (hour, want) => {
+      const r = harness(['--apply'], { ...S, AUTO_REBOOT_NOW_HOUR: hour });
+      expect(r.verdict).toBe(want);
+    });
+
+  it('an arm FAILURE defers and never reboots the revenue host unwatched', { timeout: 60_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'autoreboot-armfail-'));
+    const armFail = path.join(dir, 'arm.sh');
+    writeFileSync(armFail, '#!/bin/sh\necho PEER_ARM_VERDICT=FAILED\n', { mode: 0o755 });
+    const r = harness(['--apply'], { ...S, AUTO_REBOOT_ARM_CMD: armFail });
+    expect(r.verdict).toBe('DEFERRED');
+    expect(r.rebooted).toBe(false);
+    expect(r.paged).toBe('');
+  });
+
+  // The REAL registry's REBOOT patterns against the argv shapes observed live on signal-1
+  // (R0.4 agents, 2026-10-02) — through the harness's own bracketed-ERE matcher, not a re-derivation.
+  it.each([
+    ['/bin/sh -c /opt/algovault-bot/scripts/entitlement-drain.sh >> /var/log/algovault-bot/entitlement-drain.log 2>&1', 'ABORTED'],
+    ['/opt/algovault-bot/.venv/bin/python -m algovault_bot.alert_engine', 'ABORTED'],
+    ['/opt/mcp-intelligence/.venv/bin/python -m components.launch_triggers', 'ABORTED'],
+    ['/usr/bin/python3 /usr/lib/apt/apt.systemd.daily install', 'ABORTED'],
+    ['/bin/sh -c /opt/crypto-quant-signal-mcp/ops/cron/snapshot-landing-daily.sh', 'ABORTED'],
+    ['python -m src.research.carry.retrain', 'DEFERRED'],
+    ['/usr/bin/python3 -m algovault_bot.digest', 'DEFERRED'],
+    ['python -m src.research.carry.hourly_scorer', 'REBOOTED'],
+    ['/usr/bin/python3 /usr/bin/unattended-upgrade-shutdown --wait-for-signal', 'REBOOTED'],
+  ])('REAL registry: in flight %s → %s', { timeout: 60_000 }, (argv, want) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'autoreboot-real-'));
+    const ps = path.join(dir, 'ps.sh');
+    writeFileSync(ps, `#!/bin/sh\nprintf '%s\\n' /sbin/init '${argv}'\n`, { mode: 0o755 });
+    const r = harness(['--apply'], { ...S, AUTO_REBOOT_PS: ps });
+    expect(r.verdict).toBe(want);
+    expect(r.rebooted).toBe(want === 'REBOOTED');
+  });
+
+  it('RECHECK: a job that starts between the probe and the reboot aborts it and withdraws the arm', { timeout: 60_000 }, () => {
+    // The bot alert engine fires every minute at :10s; the arm is a network round-trip in between.
+    const dir = mkdtempSync(path.join(tmpdir(), 'autoreboot-late-'));
+    const n = path.join(dir, 'n');
+    const ps = path.join(dir, 'ps.sh');
+    writeFileSync(ps, `#!/bin/sh\nc=$(cat ${n} 2>/dev/null || echo 0); c=$((c+1)); echo $c > ${n}\n`
+      + `if [ $c -ge 2 ]; then printf '%s\\n' /sbin/init '/opt/algovault-bot/.venv/bin/python -m algovault_bot.alert_engine'; else printf '%s\\n' /sbin/init; fi\n`, { mode: 0o755 });
+    const r = harness(['--apply'], { ...S, AUTO_REBOOT_PS: ps });
+    expect(r.verdict).toBe('ABORTED');
+    expect(r.stdout).toMatch(/AUTO_REBOOT_GATE=in_flight state=PASS/);
+    expect(r.stdout).toMatch(/AUTO_REBOOT_GATE=recheck state=ABORT .*bot-alert-engine/);
+    expect(r.armed).toMatch(/^--arm\n--disarm/);
+    expect(r.rebooted).toBe(false);
+    expect(existsSync(path.join(r.dir, 'state'))).toBe(false);
+  });
+
+  it('a peer arm present locally (aoe-1 mid-cycle) defers, with no arm call', { timeout: 60_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'autoreboot-peer-'));
+    const marker = path.join(dir, 'marker');
+    writeFileSync(marker, '1790000000 6.8.0-139-generic\n');
+    const r = harness(['--apply'], { ...S, AUTO_REBOOT_PEER_ARM_MARKER: marker });
+    expect(r.verdict).toBe('DEFERRED');
+    expect(r.armed).toBe('');
+    expect(r.rebooted).toBe(false);
+  });
+
+  it('a live cqsm deploy defers', { timeout: 60_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'autoreboot-deploy-'));
+    const ps = path.join(dir, 'ps.sh');
+    writeFileSync(ps, '#!/bin/sh\necho "bash -c cd /opt/crypto-quant-signal-mcp && docker compose up -d --build --force-recreate"\n', { mode: 0o755 });
+    const r = harness(['--apply'], { ...S, AUTO_REBOOT_PS: ps });
+    expect(r.verdict).toBe('DEFERRED');
+    expect(r.stdout).toContain('AUTO_REBOOT_GATE=deploy_in_flight state=DEFERRED');
+  });
+});
+
+/**
+ * The off-host record: ONE per run, carrying the RESOLVED host.
+ *
+ * SPAWN BUDGET: 2 bash spawns.
+ */
+describe('every run appends ONE canary_result_log record', () => {
+  it('a REFUSED run and a REBOOTED run each record once, under their own host', { timeout: 60_000 }, () => {
+    const refused = harness(['--apply'], { MONITORING_HOST_LABELS: 'mars-1' });
+    expect(refused.results.length).toBe(1);
+    expect(refused.results[0].verdict).toBe('REFUSED');
+    const ok = harness(['--apply']);
+    expect(ok.results.length).toBe(1);
+    expect(ok.results[0]).toMatchObject({ host: 'aoe-1', canary: 'kernel-auto-reboot', verdict: 'REBOOTED' });
+    expect(ok.results[0].metrics.decided_by).toBe('action');
+  });
+});
+
+/**
+ * The scripts' own self-tests, run as the wired suite runs them.
  *
  * SPAWN BUDGET: 3 bash spawns.
  */
-describe('every new artifact self-tests, with a vacuity floor', () => {
+describe('every artifact self-tests, with a vacuity floor', () => {
   it.each([
-    { name: 'kernel-auto-reboot.sh', script: HARNESS, floor: 25 },
-    { name: 'aoe-peer-watchdog.sh', script: WATCHDOG, floor: 20 },
-    { name: 'arm-peer-watchdog.sh', script: ARM, floor: 10 },
-  ])('$name --self-test PASSes with at least $floor assertions', { timeout: 120_000 }, ({ script, floor }) => {
+    { name: 'kernel-auto-reboot.sh', script: HARNESS, floor: 112 },
+    { name: 'aoe-peer-watchdog.sh', script: WATCHDOG, floor: 38 },
+    { name: 'arm-peer-watchdog.sh', script: ARM, floor: 21 },
+  ])('$name --self-test PASSes with at least $floor assertions', { timeout: 180_000 }, ({ script, floor }) => {
     const r = spawnSync('bash', [script, '--self-test'], { encoding: 'utf8' });
     expect(r.stdout).toContain('SELF_TEST_VERDICT=PASS');
     expect(r.status).toBe(0);
@@ -211,18 +319,50 @@ describe('every new artifact self-tests, with a vacuity floor', () => {
 });
 
 /**
- * AC8 — the watchdog fires on a simulated non-return and stays silent with no marker.
+ * Cross-FILE parity — mutual exclusion depends on three scripts naming the SAME arm path per
+ * direction. Two copies of a firewall disagree; this pins them to one.
  *
- * SPAWN BUDGET: 4 bash spawns.
+ * SPAWN BUDGET: 0 spawns (pure reads).
+ */
+describe('the arm paths agree across harness, arm helper and watchdog', () => {
+  const pick = (file: string, re: RegExp) => {
+    const m = readFileSync(file, 'utf8').match(re);
+    expect(m, `${path.basename(file)} ${re}`).toBeTruthy();
+    return (m as RegExpMatchArray)[1];
+  };
+  it('aoe-1 reboots -> its arm lands where signal-1 reads it', () => {
+    const armWrites = pick(ARM, /^\s+aoe-1:remote\)\s+echo (\S+) ;;/m);
+    const watchdogReads = pick(WATCHDOG, /^\s+signal-1:arm\)\s+echo (\S+) ;;/m);
+    const harnessReads = pick(HARNESS, /^\s+signal-1:peer_arm_marker\)\s+echo (\S+) ;;/m);
+    expect(new Set([armWrites, watchdogReads, harnessReads]).size).toBe(1);
+  });
+  it('signal-1 reboots -> its arm lands where aoe-1 reads it', () => {
+    const armWrites = pick(ARM, /^\s+signal-1:remote\)\s+echo (\S+) ;;/m);
+    const watchdogReads = pick(WATCHDOG, /^\s+aoe-1:arm\)\s+echo (\S+) ;;/m);
+    const harnessReads = pick(HARNESS, /^\s+aoe-1:peer_arm_marker\)\s+echo (\S+) ;;/m);
+    expect(new Set([armWrites, watchdogReads, harnessReads]).size).toBe(1);
+  });
+  it('the two directions use DIFFERENT markers (otherwise each host would block itself)', () => {
+    expect(pick(ARM, /^\s+aoe-1:remote\)\s+echo (\S+) ;;/m)).not.toBe(pick(ARM, /^\s+signal-1:remote\)\s+echo (\S+) ;;/m));
+  });
+});
+
+/**
+ * AC8 — the peer watchdog, both directions.
+ *
+ * SPAWN BUDGET: 5 bash spawns.
  */
 describe('AC8 — the peer watchdog', () => {
   function watchdog(env: Record<string, string>) {
     const dir = mkdtempSync(path.join(tmpdir(), 'watchdog-'));
     const paged = path.join(dir, 'paged');
+    const sshArgv = path.join(dir, 'ssh-argv');
     const send = path.join(dir, 'send.sh');
     const down = path.join(dir, 'ssh-down.sh');
+    const tcpDown = path.join(dir, 'tcp-down.sh');
     writeFileSync(send, `#!/bin/sh\ncat >> ${paged}\necho "ALERT=$1" >> ${paged}\n`, { mode: 0o755 });
-    writeFileSync(down, '#!/bin/sh\nexit 255\n', { mode: 0o755 });
+    writeFileSync(down, `#!/bin/sh\necho "$@" >> ${sshArgv}\nexit 255\n`, { mode: 0o755 });
+    writeFileSync(tcpDown, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
     const r = spawnSync('bash', [WATCHDOG], {
       encoding: 'utf8',
       env: {
@@ -233,15 +373,17 @@ describe('AC8 — the peer watchdog', () => {
         PEER_WATCHDOG_STATE: path.join(dir, 'breaches'),
         PEER_WATCHDOG_WRAPPER: send,
         PEER_WATCHDOG_SSH: down,
+        PEER_WATCHDOG_TCP: tcpDown,
+        PEER_WATCHDOG_CURL: tcpDown,
         ...env,
       },
     });
     return {
-      dir,
       status: r.status,
       stdout: r.stdout,
       verdict: (r.stdout.match(/PEER_WATCHDOG_VERDICT=(\w+)/) || [])[1],
       paged: existsSync(paged) ? readFileSync(paged, 'utf8') : '',
+      sshCalled: existsSync(sshArgv),
     };
   }
 
@@ -249,69 +391,77 @@ describe('AC8 — the peer watchdog', () => {
     const r = watchdog({});
     expect(r.verdict).toBe('IDLE');
     expect(r.paged).toBe('');
-    // Silent, but never invisible: the positive line is what stops IDLE reading as "did not run".
     expect(r.stdout).toContain('PEER_WATCHDOG_CHECK=arm state=IDLE');
   });
 
-  it('an armed, past-budget, unreachable target BREACHES on the second consecutive probe', { timeout: 60_000 }, () => {
+  it('an armed, past-budget, unreachable aoe-1 BREACHES on the second consecutive probe', { timeout: 60_000 }, () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'watchdog-arm-'));
     const arm = path.join(dir, 'arm');
     const state = path.join(dir, 'breaches');
     writeFileSync(arm, '1000000 old-kernel\n');
     const env = { PEER_WATCHDOG_ARM: arm, PEER_WATCHDOG_STATE: state, PEER_WATCHDOG_NOW: '1000200' };
-    // ONE probe is not a verdict — a flaky probe inside a real reboot window must not page.
     expect(watchdog(env).verdict).toBe('ARMED_WAITING');
     const second = watchdog(env);
     expect(second.verdict).toBe('BREACH');
     expect(second.paged).toContain('ALERT=AOE_PEER_UNREACHABLE');
   });
 
-  it('running it on aoe-1 REFUSES — it is the PEER half', { timeout: 60_000 }, () => {
-    const r = watchdog({ MONITORING_HOST_LABELS: 'aoe-1' });
+  it('on aoe-1 it watches signal-1 credential-free and pages its OWN alert id', { timeout: 60_000 }, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'watchdog-s1-'));
+    const arm = path.join(dir, 'arm');
+    const state = path.join(dir, 'breaches');
+    writeFileSync(arm, '1000000 old-kernel\n');
+    const env = { MONITORING_HOST_LABELS: 'aoe-1', PEER_WATCHDOG_ARM: arm, PEER_WATCHDOG_STATE: state, PEER_WATCHDOG_NOW: '1000200' };
+    expect(watchdog(env).verdict).toBe('ARMED_WAITING');
+    const second = watchdog(env);
+    expect(second.verdict).toBe('BREACH');
+    expect(second.paged).toContain('ALERT=SIGNAL1_PEER_UNREACHABLE');
+    expect(second.sshCalled).toBe(false);
+  });
+
+  it('an UNLISTED watcher REFUSES', { timeout: 60_000 }, () => {
+    const r = watchdog({ MONITORING_HOST_LABELS: 'mars-1' });
     expect(r.verdict).toBe('REFUSED');
     expect(r.paged).toBe('');
   });
 });
 
 /**
- * AC5 — the per-host registry the reboot gate reads.
+ * AC5 — the registry the reboot gate reads, per (host, event).
  *
  * SPAWN BUDGET: 0 spawns (pure reads).
  */
-describe('AC5 — the registry is per-host and aoe-1 is classified', () => {
+describe('AC5 — the registry is per-(host, event) and both hosts have a REBOOT scope', () => {
   const doc = JSON.parse(readFileSync(REGISTRY, 'utf8'));
 
-  it('aoe-1 has rows, every one classified with a measured runtime and its instrument', () => {
-    const rows = doc.rows.filter((r: Record<string, unknown>) => r.host === 'aoe-1');
-    expect(rows.length).toBeGreaterThan(0);
-    for (const r of rows) {
-      expect(['safe-to-kill', 'preempt-and-catchup', 'no-safe-kill']).toContain(r.class);
-      expect(String(r.reason).trim().length).toBeGreaterThan(20);
-      expect(typeof r.max_runtime_s).toBe('number');
-      expect(String(r.runtime_instrument).trim().length).toBeGreaterThan(20);
-    }
+  it('both hosts declare a reboot event; signal-1 declares deploy too', () => {
+    expect(doc._disruption_events['signal-1']).toEqual(['deploy', 'reboot']);
+    expect(doc._disruption_events['aoe-1']).toEqual(['reboot']);
   });
 
-  it("aoe-1's enumeration is REBOOT-scoped, not signal-1's docker-exec question", () => {
-    // The wave's core correction: the enumeration METHOD is host-scoped too, not just the rows.
-    // A reboot stops every container, every host process and every in-flight Prefect run, so a
-    // `docker exec` grep measures almost nothing on aoe-1 — it has zero such cron lines.
-    // OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: the blocks are keyed per (host, EVENT) now.
+  it('every row of a reboot-eligible host is classified for the reboot', () => {
+    for (const r of doc.rows) expect(r.events, `row ${r.id}`).toContain('reboot');
+  });
+
+  it("aoe-1's REBOOT enumeration is the container+Prefect+cron union, not a docker-exec grep", () => {
     const en = doc._enumeration['aoe-1'].reboot;
     expect(en).toBeDefined();
-    expect(en.disruption_event).toBe('kernel reboot');
     expect(en.command).toContain('docker ps');
     expect(en.command).not.toBe(doc._enumeration['signal-1'].deploy.command);
     expect(en.running_containers).toBeGreaterThan(0);
-    expect(en.prefect_deployments).toBeGreaterThan(0);
   });
 
-  it('the reboot gate reads a ruling that matches its rows', () => {
-    const nsk = doc.rows.filter((r: Record<string, unknown>) => r.host === 'aoe-1' && r.class === 'no-safe-kill');
-    expect(doc._residual_no_safe_kill['aoe-1'].reboot.count).toBe(nsk.length);
-    // ZERO today, and that is the measured reason aoe-1 is automated first. If a future wave lands
-    // a no-safe-kill job here, this goes red and forces an explicit ruling rather than a silent
-    // reboot straight through the gate.
+  it('each REBOOT residual matches its rows, and aoe-1 still has ZERO no-safe-kill rows', () => {
+    for (const h of ['signal-1', 'aoe-1']) {
+      const nsk = doc.rows.filter((r: Record<string, unknown>) => r.host === h && (r.events as string[]).includes('reboot') && r.class === 'no-safe-kill');
+      expect(doc._residual_no_safe_kill[h].reboot.count, h).toBe(nsk.length);
+    }
     expect(doc._residual_no_safe_kill['aoe-1'].reboot.count).toBe(0);
+  });
+
+  it('a preempt-and-catchup row that could block a reboot has a process pattern the harness can probe', () => {
+    for (const r of doc.rows.filter((x: Record<string, unknown>) => (x.events as string[]).includes('reboot') && x.class !== 'safe-to-kill')) {
+      expect(String(r.process_pattern ?? '').trim().length, `row ${r.id}`).toBeGreaterThan(3);
+    }
   });
 });

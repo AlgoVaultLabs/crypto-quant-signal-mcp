@@ -467,6 +467,18 @@
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-AOE_PEER_UNREACHABLE-W{NEXT}"
     },
     {
+      "alert_id": "SIGNAL1_PEER_UNREACHABLE",
+      "owner": "ops/monitoring/aoe-peer-watchdog.sh",
+      "hosts": [
+        "aoe-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-SIGNAL1_PEER_UNREACHABLE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SIGNAL1_PEER_UNREACHABLE-W{NEXT}"
+    },
+    {
       "alert_id": "LLM_SPEND_OVER_THRESHOLD",
       "owner": "ops/monitoring/llm-spend-monitor.py",
       "hosts": [

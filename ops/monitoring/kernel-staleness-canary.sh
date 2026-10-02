@@ -84,13 +84,21 @@ decide() {
 # Echoes COVERED | UNCOVERED | UNKNOWN for THIS host. UNKNOWN is a real third state: a crontab we
 # could not read is not evidence of absence, and reporting it as UNCOVERED would tell the operator
 # to hand-reboot a host that may already be self-healing.
+#
+# COVERED means an ACTIVE line schedules the harness WITH `--apply` (OPS-HOST-AUTO-REBOOT-SIGNAL1-
+# PROMOTE-W1). Matching the basename alone made a DRY-RUN soak read as coverage, so a real page
+# would have told the operator "this host IS inside the harness" while nothing would ever reboot
+# it. A commented-out line is not a schedule either. Here-strings, never `printf | grep -q`: under
+# pipefail an early-exiting grep can SIGPIPE its writer into a false miss.
 auto_reboot_coverage() {
-  local out
+  local out lines
   out="$("$CRONTAB_BIN" -l 2>/dev/null)" || { echo UNKNOWN; return; }
-  case "$out" in
-    *"$AUTO_REBOOT_BASENAME"*) echo COVERED ;;
-    *) echo UNCOVERED ;;
-  esac
+  lines="$(grep -vE '^[[:space:]]*#' <<<"$out" | grep -F "$AUTO_REBOOT_BASENAME")" || true
+  if [ -n "$lines" ] && grep -qE "${AUTO_REBOOT_BASENAME//./\\.}([^#]*[[:space:]])?--apply([[:space:]]|$)" <<<"$lines"; then
+    echo COVERED
+  else
+    echo UNCOVERED
+  fi
 }
 
 # The Action paragraph, as a pure function of coverage. Extracted ONLY so the self-test can drive
@@ -113,12 +121,11 @@ ACT
       ;;
     UNCOVERED)
       cat <<'ACT'
-Action: this host is deliberately OUTSIDE the unattended reboot harness, so a hand-run reboot is
-the correct response. ops/monitoring/kernel-auto-reboot.sh hardcodes its target host and cannot
-act here. Procedure: OPS-HOST-KERNEL-REBOOT-W1 — verify Hetzner console access FIRST.
-Do NOT reboot the harness-covered host to "rehearse". That resets its running-vs-installed delta,
-which only a real reboot can reset, and destroys one unattended cycle — and two clean unattended
-cycles are the ratified condition for extending the harness to THIS host.
+Action: this host is OUTSIDE the unattended reboot harness — its crontab schedules no
+ops/monitoring/kernel-auto-reboot.sh --apply line (a dry-run soak does not count) — so a hand-run
+reboot is the correct response. Procedure: OPS-HOST-KERNEL-REBOOT-W1 — verify Hetzner console
+access FIRST. Do NOT reboot a harness-covered host to "rehearse": that resets its
+running-vs-installed delta, which only a real reboot can reset, and destroys one unattended cycle.
 ACT
       ;;
     *)
@@ -196,8 +203,9 @@ if [ "${1:-}" = "--self-test" ]; then
   }
   act "IS inside the unattended reboot harness" COVERED   "COVERED sends the operator to the refusing gate"
   act "a GATE REFUSED"                          COVERED   "  and says a page means refusal, not neglect"
-  act "deliberately OUTSIDE"                    UNCOVERED "UNCOVERED authorises the hand-run"
-  act 'Do NOT reboot the harness-covered host'  UNCOVERED "  and forbids the rehearsal that voids a cycle"
+  act "is OUTSIDE the unattended reboot harness" UNCOVERED "UNCOVERED authorises the hand-run"
+  act 'a dry-run soak does not count'           UNCOVERED "  and says WHY a scheduled dry-run is not coverage"
+  act 'Do NOT reboot a harness-covered host'    UNCOVERED "  and forbids the rehearsal that voids a cycle"
   act "is UNKNOWN"                              UNKNOWN   "UNKNOWN refuses to guess"
   act "verify Hetzner console"                  UNKNOWN   "  and still names the console preflight"
 
@@ -214,17 +222,30 @@ if [ "${1:-}" = "--self-test" ]; then
 
   echo "--- coverage probe reads the LIVE schedule, not a hardcoded host ---"
   cov_dir="$(mktemp -d "${TMPDIR:-/tmp}/kernel-cov.XXXXXX")"
-  printf '#!/usr/bin/env bash\necho "7 * * * * /opt/algovault-monitoring/kernel-auto-reboot.sh --apply"\n' > "$cov_dir/crontab-yes"
+  printf '#!/usr/bin/env bash\necho "7 * * * * /opt/algovault-monitoring/kernel-auto-reboot.sh --apply >/dev/null 2>&1  # harness"\n' > "$cov_dir/crontab-yes"
+  printf '#!/usr/bin/env bash\necho "17 * * * * /opt/algovault-monitoring/kernel-auto-reboot.sh >/dev/null 2>&1  # dry-run soak"\n' > "$cov_dir/crontab-dryrun"
+  printf '#!/usr/bin/env bash\necho "# 7 * * * * /opt/algovault-monitoring/kernel-auto-reboot.sh --apply"\necho "23 7 * * * /opt/algovault-monitoring/kernel-staleness-canary.sh"\n' > "$cov_dir/crontab-commented"
   printf '#!/usr/bin/env bash\necho "23 7 * * * /opt/algovault-monitoring/kernel-staleness-canary.sh"\n' > "$cov_dir/crontab-no"
   printf '#!/usr/bin/env bash\nexit 1\n' > "$cov_dir/crontab-dead"
   chmod +x "$cov_dir"/crontab-*
-  for pair in "yes COVERED" "no UNCOVERED" "dead UNKNOWN"; do
+  for pair in "yes COVERED" "dryrun UNCOVERED" "commented UNCOVERED" "no UNCOVERED" "dead UNKNOWN"; do
     set -- $pair
     checked=$((checked + 1))
     got="$(CRONTAB_BIN="$cov_dir/crontab-$1" auto_reboot_coverage)"
     if [ "$got" = "$2" ]; then printf '  ✓ crontab-%s ⇒ %s\n' "$1" "$2"
     else printf '  ✗ crontab-%s ⇒ expected %s, got %s\n' "$1" "$2" "$got"; fails+=("cov-$1"); fi
   done
+  # --print-coverage reads the REAL crontab through the same function, prints ONE line, and touches
+  # nothing: no log line, no wrapper, no dpkg query. Asserted on its whole output.
+  checked=$((checked + 1))
+  got="$(KERNEL_CANARY_CRONTAB="$cov_dir/crontab-dryrun" KERNEL_CANARY_LOG="$cov_dir/should-not-exist.log" bash "$0" --print-coverage 2>&1)"
+  if [ "$got" = "AUTO_REBOOT_COVERAGE=UNCOVERED" ] && [ ! -e "$cov_dir/should-not-exist.log" ]; then
+    echo "  ✓ --print-coverage prints exactly AUTO_REBOOT_COVERAGE=<X> and writes nothing"
+  else echo "  ✗ --print-coverage printed [$got] or wrote a log"; fails+=("print-coverage"); fi
+  checked=$((checked + 1))
+  got="$(KERNEL_CANARY_CRONTAB="$cov_dir/crontab-yes" bash "$0" --print-coverage 2>&1)"
+  [ "$got" = "AUTO_REBOOT_COVERAGE=COVERED" ] && echo "  ✓ --print-coverage on an --apply crontab ⇒ COVERED" \
+    || { echo "  ✗ --print-coverage on an --apply crontab printed [$got]"; fails+=("print-coverage-covered"); }
   rm -rf "$cov_dir"
 
   echo "--- wrapper invocation ---"
@@ -262,13 +283,22 @@ PROBE
   fi
 
   # Vacuity guard: a self-test that asserts nothing must never report a pass.
-  if [ "$checked" -lt 20 ]; then
-    echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= 20)"; exit 3
+  if [ "$checked" -lt 25 ]; then
+    echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= 25)"; exit 3
   fi
   if [ "${#fails[@]}" -gt 0 ]; then
     echo "SELF_TEST_VERDICT=FAIL — ${#fails[@]}/$checked: ${fails[*]}"; exit 1
   fi
-  echo "SELF_TEST_VERDICT=PASS — $checked assertions (3 must-fire, 2 must-not-fire, 1 indeterminate, 6 action-branch, 3 direction-2 citation, 3 coverage-probe, wrapper path + assembled body proven)"
+  echo "SELF_TEST_VERDICT=PASS — $checked assertions (3 must-fire, 2 must-not-fire, 1 indeterminate, 7 action-branch, 3 direction-2 citation, 5 coverage-probe incl. dry-run-only + commented, 2 --print-coverage, wrapper path + assembled body proven)"
+  exit 0
+fi
+
+# --- --print-coverage: the coverage probe ALONE, read-only ---------------------------------
+# Coverage used to be computed only inside fire(), i.e. only on a host that is already stale — so
+# no live instrument could read it on a HEALTHY host, which is exactly when an install must be
+# verified. This prints the one line and touches nothing else: no log, no dpkg, no wrapper.
+if [ "${1:-}" = "--print-coverage" ]; then
+  echo "AUTO_REBOOT_COVERAGE=$(auto_reboot_coverage)"
   exit 0
 fi
 
