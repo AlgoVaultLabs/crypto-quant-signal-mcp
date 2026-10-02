@@ -3,11 +3,13 @@
   "failures": [
     {
       "kind": "test",
-      "file": "tests/fixtures/verdict-channel/__capture__/timeout.test.ts",
+      "file": "tests/fixtures/verdict-channel/__capture__/nested-timeout.test.ts",
       "titlePath": [
-        "a test that exceeds its own budget"
+        "an outer suite",
+        "an inner suite",
+        "a nested test that exceeds its own budget"
       ],
-      "name": "a test that exceeds its own budget",
+      "name": "an outer suite > an inner suite > a nested test that exceeds its own budget",
       "errors": [
         {
           "name": "Error",

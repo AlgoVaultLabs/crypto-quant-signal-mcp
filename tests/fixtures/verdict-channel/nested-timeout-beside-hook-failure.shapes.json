@@ -1,0 +1,40 @@
+{
+  "schema": 2,
+  "failures": [
+    {
+      "kind": "test",
+      "file": "tests/fixtures/verdict-channel/__capture__/nested-timeout-beside-hook-failure.test.ts",
+      "titlePath": [
+        "an outer suite",
+        "a nested test that exceeds its own budget"
+      ],
+      "name": "an outer suite > a nested test that exceeds its own budget",
+      "errors": [
+        {
+          "name": "Error",
+          "hasDiff": false,
+          "hasExpected": false,
+          "hasActual": false,
+          "message": "Test timed out in 250ms.\nIf this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\"."
+        }
+      ]
+    },
+    {
+      "kind": "suite",
+      "file": "tests/fixtures/verdict-channel/__capture__/nested-timeout-beside-hook-failure.test.ts",
+      "titlePath": [
+        "an outer suite"
+      ],
+      "name": "an outer suite",
+      "errors": [
+        {
+          "name": "Error",
+          "hasDiff": false,
+          "hasExpected": false,
+          "hasActual": false,
+          "message": "teardown exploded"
+        }
+      ]
+    }
+  ]
+}

@@ -217,32 +217,39 @@ jobs:
       # gate's response on the real runner. It does NOT prove all four links firing SIMULTANEOUSLY
       # in one live run. That observation is deferred to the next naturally-occurring timeout on
       # main, and is owned by OPS-VERDICT-PIPELINE-E2E-PROOF-W1 as a CAPTURE task.
-      - name: Verdict-channel floor proof (captured timeout must read INDETERMINATE, and BLOCK)
+      #
+      # OPS-SUITE-VERDICT-NESTED-KEY-W1: the floor now runs EVERY captured timeout shape, not just
+      # the top-level one. The top-level test was the only shape on which the old rendered-name
+      # join worked, so a floor proof built on it alone stayed green while every timeout inside a
+      # `describe` (nearly all of this repo's tests) read FAIL on this same runner.
+      - name: Verdict-channel floor proof (captured timeouts must read INDETERMINATE, and BLOCK)
         run: |
           set +e
-          out=$(node scripts/classify-suite-verdict.mjs \
-            tests/fixtures/verdict-channel/timeout-only.report.json \
-            --sidecar=tests/fixtures/verdict-channel/timeout-only.shapes.json \
-            --no-retry 2>&1)
-          rc=$?
-          printf '%s\n' "$out"
-          V=$(printf '%s\n' "$out" | grep '^SUITE_VERDICT=' | tail -1 | cut -d= -f2)
-          if [ "$V" != "INDETERMINATE" ]; then
-            echo "FLOOR FAIL: a captured REAL timeout classified '$V', expected INDETERMINATE."
-            echo "  That is the dark-gate defect this wave removed, back again."
-            exit 1
-          fi
-          if [ "$rc" -ne 3 ]; then
-            echo "FLOOR FAIL: token was INDETERMINATE but exit was $rc, expected 3."
-            echo "  The token->exit mapping is what callers other than this workflow gate on."
-            exit 1
-          fi
-          # The GATE's own response to that token, evaluated with the same case arms the real
-          # verdict step uses. Asserting the token alone would leave the decision unproven.
-          case "$V" in
-            PASS|PASS_AFTER_ISOLATION) echo "FLOOR FAIL: the gate would PERMIT a deploy on '$V'"; exit 1 ;;
-          esac
-          echo "FLOOR OK: token=$V exit=$rc -> deploy correctly BLOCKED on a contention-shaped red."
+          for label in timeout-only nested-timeout nested-hook-timeout; do
+            out=$(node scripts/classify-suite-verdict.mjs \
+              "tests/fixtures/verdict-channel/$label.report.json" \
+              --sidecar="tests/fixtures/verdict-channel/$label.shapes.json" \
+              --no-retry 2>&1)
+            rc=$?
+            printf '%s\n' "$out"
+            V=$(printf '%s\n' "$out" | grep '^SUITE_VERDICT=' | tail -1 | cut -d= -f2)
+            if [ "$V" != "INDETERMINATE" ]; then
+              echo "FLOOR FAIL [$label]: a captured REAL timeout classified '$V', expected INDETERMINATE."
+              echo "  That is the dark-gate defect this wave removed, back again."
+              exit 1
+            fi
+            if [ "$rc" -ne 3 ]; then
+              echo "FLOOR FAIL [$label]: token was INDETERMINATE but exit was $rc, expected 3."
+              echo "  The token->exit mapping is what callers other than this workflow gate on."
+              exit 1
+            fi
+            # The GATE's own response to that token, evaluated with the same case arms the real
+            # verdict step uses. Asserting the token alone would leave the decision unproven.
+            case "$V" in
+              PASS|PASS_AFTER_ISOLATION) echo "FLOOR FAIL [$label]: the gate would PERMIT a deploy on '$V'"; exit 1 ;;
+            esac
+            echo "FLOOR OK [$label]: token=$V exit=$rc -> deploy correctly BLOCKED on a contention-shaped red."
+          done
 
       - name: Docs structural drift canary (build_docs --check)
         run: node scripts/build_docs.mjs --check

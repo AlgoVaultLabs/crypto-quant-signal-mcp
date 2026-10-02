@@ -3,11 +3,13 @@
   "failures": [
     {
       "kind": "test",
-      "file": "tests/fixtures/verdict-channel/__capture__/assertion.test.ts",
+      "file": "tests/fixtures/verdict-channel/__capture__/nested-assertion.test.ts",
       "titlePath": [
-        "a test whose assertion is genuinely wrong"
+        "an outer suite",
+        "an inner suite",
+        "a nested test whose assertion is genuinely wrong"
       ],
-      "name": "a test whose assertion is genuinely wrong",
+      "name": "an outer suite > an inner suite > a nested test whose assertion is genuinely wrong",
       "errors": [
         {
           "name": "AssertionError",

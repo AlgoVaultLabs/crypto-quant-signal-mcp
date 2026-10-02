@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "failures": [
+    {
+      "kind": "suite",
+      "file": "tests/fixtures/verdict-channel/__capture__/nested-hook-timeout.test.ts",
+      "titlePath": [
+        "an outer suite"
+      ],
+      "name": "an outer suite",
+      "errors": [
+        {
+          "name": "Error",
+          "hasDiff": false,
+          "hasExpected": false,
+          "hasActual": false,
+          "message": "Hook timed out in 250ms.\nIf this is a long-running hook, pass a timeout value as the last argument or configure it globally with \"hookTimeout\"."
+        }
+      ]
+    }
+  ]
+}

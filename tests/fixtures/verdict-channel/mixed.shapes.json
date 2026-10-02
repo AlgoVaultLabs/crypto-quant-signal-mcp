@@ -1,8 +1,12 @@
 {
-  "schema": 1,
+  "schema": 2,
   "failures": [
     {
+      "kind": "test",
       "file": "tests/fixtures/verdict-channel/__capture__/assertion.test.ts",
+      "titlePath": [
+        "a test whose assertion is genuinely wrong"
+      ],
       "name": "a test whose assertion is genuinely wrong",
       "errors": [
         {
@@ -10,12 +14,16 @@
           "hasDiff": true,
           "hasExpected": true,
           "hasActual": true,
-          "message": "expected { a: 1 } to deeply equal { a: 2 }"
+          "message": "expected 1 to be 2 // Object.is equality"
         }
       ]
     },
     {
+      "kind": "test",
       "file": "tests/fixtures/verdict-channel/__capture__/timeout.test.ts",
+      "titlePath": [
+        "a test that exceeds its own budget"
+      ],
       "name": "a test that exceeds its own budget",
       "errors": [
         {

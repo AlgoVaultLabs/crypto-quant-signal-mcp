@@ -62,18 +62,25 @@
  * against a count in a spec.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join, relative, isAbsolute } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { KIND_SUITE, KIND_TEST, displayName, normFile, titlePathOfEntity } from './lib/vitest-test-identity.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Repo-relative, forward-slashed. Keeps a committed fixture identical on any machine. */
-export function relPath(p) {
-  if (!p) return '<unknown>';
-  const s = String(p);
-  const r = isAbsolute(s) ? relative(REPO, s) : s;
-  return r.split('\\').join('/');
-}
+/**
+ * Sidecar wire-format version. 2 = every entry carries `kind` + `titlePath`, the structured
+ * identity the classifier keys on (OPS-SUITE-VERDICT-NESTED-KEY-W1). Version 1 keyed on a rendered
+ * `name` and could not be joined for any test inside a `describe`.
+ */
+export const SIDECAR_SCHEMA = 2;
+
+/**
+ * Repo-relative, forward-slashed. The SAME function the classifier normalises with — not a second
+ * implementation of it. Two implementations of this once disagreed (`0fed536e`), which is why the
+ * export is an alias and not a body.
+ */
+export const relPath = normFile;
 
 /**
  * The per-error record. Deliberately small and JSON-primitive: this file is a WIRE FORMAT read by
@@ -95,21 +102,52 @@ export function errorShape(e) {
 export default class VitestErrorShapeReporter {
   #failures = [];
 
+  // Identity is the TITLE PATH, never `testCase.fullName`. vitest renders `fullName` with " > "
+  // here and with " " in the JSON report, so a rendered name joins only for a test with no
+  // enclosing `describe` — see scripts/lib/vitest-test-identity.mjs for the measured incident.
+  #record(kind, entity, errors) {
+    const titlePath = titlePathOfEntity(entity);
+    this.#failures.push({
+      kind,
+      file: normFile(entity?.module?.moduleId),
+      titlePath,
+      name: displayName(titlePath), // for humans reading the artifact; the classifier never keys on it
+      errors: (errors ?? []).map(errorShape),
+    });
+  }
+
   onTestCaseResult(testCase) {
     const result = typeof testCase?.result === 'function' ? testCase.result() : undefined;
     if (result?.state !== 'failed') return;
-    this.#failures.push({
-      file: relPath(testCase?.module?.moduleId),
-      name: typeof testCase?.fullName === 'string' ? testCase.fullName : (testCase?.name ?? '<test>'),
-      errors: (result.errors ?? []).map(errorShape),
-    });
+    this.#record(KIND_TEST, testCase, result.errors);
+  }
+
+  // A SUITE's own errors — a `beforeAll`/`afterAll` that threw or timed out inside a `describe`.
+  // The JSON report has no field for them: its per-file `message` reads only the MODULE's errors,
+  // and every test under the failed hook is reported `skipped`. Measured on vitest 3.2.4: such a
+  // run is `success: false` with `numFailedTests: 0` and an empty `message`, and the classifier
+  // read it as PASS. Recording them here is what lets it see the failure and judge its shape.
+  // Module-level errors are NOT recorded: they reach the JSON `message` faithfully, and the
+  // string channel is their pinned cover (the collection-error fixture).
+  onTestSuiteResult(testSuite) {
+    let state;
+    let errors;
+    try {
+      // vitest's `state()` THROWS on a state it does not know; a reporter must never take the run down.
+      state = typeof testSuite?.state === 'function' ? testSuite.state() : undefined;
+      errors = typeof testSuite?.errors === 'function' ? testSuite.errors() : [];
+    } catch {
+      return;
+    }
+    if (state !== 'failed' || !Array.isArray(errors) || errors.length === 0) return;
+    this.#record(KIND_SUITE, testSuite, errors);
   }
 
   onTestRunEnd() {
     const out = process.env.VITEST_ERROR_SHAPE_OUT || join(REPO, '.vitest-error-shapes.json');
     try {
       mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, `${JSON.stringify({ schema: 1, failures: this.#failures }, null, 2)}\n`);
+      writeFileSync(out, `${JSON.stringify({ schema: SIDECAR_SCHEMA, failures: this.#failures }, null, 2)}\n`);
     } catch (e) {
       // A reporter must never take the run down. The classifier treats a DECLARED-but-absent
       // sidecar as INDETERMINATE, so a write failure blocks the deploy loudly rather than

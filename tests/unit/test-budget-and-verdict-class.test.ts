@@ -27,6 +27,7 @@ import {
   indexSidecar,
   normFile,
   isolationRetry,
+  decideSuiteVerdict,
 } from '../../scripts/classify-suite-verdict.mjs';
 import { errorShape, relPath } from '../../scripts/vitest-error-shape-reporter.mjs';
 import { decide, parseBlock, scan, evaluate, promotionActive, parseConfig } from '../../scripts/check-test-budget.mjs';
@@ -306,14 +307,8 @@ describe('the gates run for real', () => {
 // through the real reporters (`--reporter=json` + the error-shape reporter), never hand-typed. That
 // is the rule this wave adds: a gate's fixture is captured from the channel the gate reads.
 //
-// REGENERATE (the sources are intentionally not kept in tests/, so they never join the suite):
-//   mkdir -p /tmp/cap && cat > /tmp/cap/timeout.test.ts <<'EOF'
-//   import { it } from 'vitest';
-//   it('a test that exceeds its own budget', async () => { await new Promise(r => setTimeout(r, 5000)); }, 250);
-//   EOF
-//   VITEST_ERROR_SHAPE_OUT=tests/fixtures/verdict-channel/timeout-only.shapes.json \
-//     npx vitest run <file> --reporter=json --outputFile=tests/fixtures/verdict-channel/timeout-only.report.json \
-//     --reporter=./scripts/vitest-error-shape-reporter.mjs
+// REGENERATE: `npm run suite:capture-fixtures` (scripts/capture-verdict-fixtures.mjs). It writes the
+// sources under tests/ only for the duration of the capture, so they never join the suite.
 describe('the structured channel — captured artifacts, not transcriptions', () => {
   const FX = join(REPO, 'tests/fixtures/verdict-channel');
   const load = (label: string) => {
@@ -388,8 +383,8 @@ describe('the structured channel — captured artifacts, not transcriptions', ()
   it('the reporter normalises paths so a committed fixture is machine-independent', () => {
     expect(relPath(join(REPO, 'tests/x.test.ts'))).toBe('tests/x.test.ts');
     expect(normFile(join(REPO, 'tests/x.test.ts'))).toBe('tests/x.test.ts');
-    // Both sides of the join agree, which is what makes file+name a usable key.
-    expect(normFile(join(REPO, 'tests/x.test.ts'))).toBe(relPath(join(REPO, 'tests/x.test.ts')));
+    // Both sides of the join use ONE function — agreement by construction, not by coincidence.
+    expect(relPath).toBe(normFile);
     expect(errorShape({ name: 'AssertionError', diff: '- 1\n+ 2', expected: '2', actual: '1', message: 'm' }))
       .toEqual({ name: 'AssertionError', hasDiff: true, hasExpected: true, hasActual: true, message: 'm' });
   });
@@ -404,12 +399,130 @@ describe('the structured channel — captured artifacts, not transcriptions', ()
     // this wave exists to remove, reintroduced by its own test data.
     //
     // Measured: run 32558592224 went SUITE_VERDICT=FAIL on three assertions for this reason.
+    //
+    // Widened by OPS-SUITE-VERDICT-NESTED-KEY-W1 from a leading-quote match to ANY occurrence:
+    // the capture script now scrubs the checkout path out of the stack traces too, so a machine
+    // path anywhere in a fixture means it was not produced by that script.
     const dir = join(REPO, 'tests/fixtures/verdict-channel');
     for (const f of readdirSync(dir)) {
       const body = readFileSync(join(dir, f), 'utf8');
       expect(body, `${f} must not embed an absolute path — it will not resolve on another machine`)
-        .not.toMatch(/"\/(Users|home)\//);
+        .not.toMatch(/\/(Users|home)\//);
     }
+  });
+
+  // OPS-SUITE-VERDICT-NESTED-KEY-W1 — a timeout inside a `describe` read FAIL (measured 2026-10-02,
+  // three consecutive full-suite runs, each on a different foreign spawning test), and a `beforeAll`
+  // failing inside a `describe` read PASS. Every fixture above is a top-level test, the one shape a
+  // rendered-name join happened to work on; these are captured from nested ones.
+  it('THE FIX: a CAPTURED nested timeout joins its sidecar entry and classifies INDETERMINATE', () => {
+    const { report, index } = load('nested-timeout');
+    expect(classifyReport(report).verdict).toBe('FAIL'); // the string channel alone: the defect, pinned
+    const res = classifyReport(report, index);
+    expect(res.verdict).toBe('INDETERMINATE');
+    expect(res.failures[0].channel).toBe('structured');
+    expect(res.unjoined).toEqual([]);
+    expect(res.unmatchedEntries).toEqual([]);
+  });
+
+  it('a CAPTURED nested assertion failure is FAIL and never enters the retry', () => {
+    const { report, index } = load('nested-assertion');
+    const res = classifyReport(report, index);
+    expect(res.verdict).toBe('FAIL');
+    expect(res.indeterminateFiles).toEqual([]);
+  });
+
+  it('a CAPTURED nested beforeAll that THROWS is FAIL — it was PASS, and permitted the deploy', () => {
+    const { report, index } = load('nested-hook-failure');
+    // What vitest itself said about that run: failed, with no failed test and no file message.
+    const raw = report as { success: boolean; numFailedTests: number; testResults: Array<{ message: string }> };
+    expect(raw.success).toBe(false);
+    expect(raw.numFailedTests).toBe(0);
+    expect(raw.testResults[0].message).toBe('');
+    expect(classifyReport(report, index).verdict).toBe('FAIL');
+    expect(classifyReport(report).verdict).toBe('FAIL');
+  });
+
+  it('a CAPTURED nested beforeAll that TIMES OUT is INDETERMINATE — contention, judged on its real message', () => {
+    const { report, index } = load('nested-hook-timeout');
+    expect(classifyReport(report, index).verdict).toBe('INDETERMINATE');
+  });
+
+  it('a real afterAll error beside a nested timeout is FAIL — never carried into the retry by its sibling', () => {
+    const { report, index } = load('nested-timeout-beside-hook-failure');
+    const res = classifyReport(report, index);
+    expect(res.verdict).toBe('FAIL');
+    expect(res.indeterminateFiles).toEqual([]);
+  });
+
+  it('a JOIN MISS is loud: INDETERMINATE, both sides named, never retried, never FAIL', () => {
+    const { report } = load('nested-timeout');
+    // Re-key the sidecar the way the PRE-FIX reporter did: one rendered " > " name.
+    const body = JSON.parse(readFileSync(join(FX, 'nested-timeout.shapes.json'), 'utf8'));
+    for (const f of body.failures) f.titlePath = [f.titlePath.join(' > ')];
+    const res = classifyReport(report, indexSidecar(body));
+    expect(res.verdict).toBe('INDETERMINATE');
+    expect(res.unjoined).toHaveLength(1);
+    expect(res.unmatchedEntries).toHaveLength(1);
+    expect(res.indeterminateFiles).toEqual([]);
+  });
+
+  it('a sidecar entry with no structured identity is REFUSED — a stale reporter cannot be joined by guessing', () => {
+    expect(indexSidecar({ schema: 1, failures: [{ file: 'f', name: 'outer > t', errors: [] }] })).toBeNull();
+    expect(indexSidecar({ schema: 2, failures: [{ kind: 'test', file: 'f', titlePath: [], errors: [] }] })).toBeNull();
+    expect(indexSidecar({ schema: 2, failures: [{ kind: 'nope', file: 'f', titlePath: ['t'], errors: [] }] })).toBeNull();
+  });
+
+  it('vitest reporting a FAILED run with nothing extractable is INDETERMINATE, never PASS', () => {
+    const res = classifyReport({ success: false, testResults: [] });
+    expect(res.verdict).toBe('INDETERMINATE');
+    expect(res.unaccounted).toBe(true);
+    // ...while a report that never states success keeps the shipped behaviour.
+    expect(classifyReport({ testResults: [] }).verdict).toBe('PASS');
+  });
+
+  describe('the WHOLE chain — classify -> retry -> verdict — through decideSuiteVerdict()', () => {
+    const pair = (l: string) => [join(FX, `${l}.report.json`), `--sidecar=${join(FX, `${l}.shapes.json`)}`];
+    const runnerReturning = (passed: boolean, calls: string[][]) => (files: string[]) => {
+      calls.push(files);
+      return {
+        ok: true,
+        index: null,
+        report: {
+          success: passed,
+          testResults: files.map((f) => ({
+            name: f,
+            status: passed ? 'passed' : 'failed',
+            assertionResults: [{ status: passed ? 'passed' : 'failed', ancestorTitles: ['an outer suite'], title: 't', failureMessages: passed ? [] : ['AssertionError: expected 1 to be 2'] }],
+          })),
+        },
+      };
+    };
+
+    it('a nested timeout is RETRIED in isolation and ends PASS_AFTER_ISOLATION — not FAIL', () => {
+      const calls: string[][] = [];
+      const d = decideSuiteVerdict(pair('nested-timeout'), { runner: runnerReturning(true, calls) });
+      expect(d.verdict).toBe('PASS_AFTER_ISOLATION');
+      expect(calls).toEqual([['tests/fixtures/verdict-channel/__capture__/nested-timeout.test.ts']]);
+    });
+
+    it('a nested timeout whose retry ALSO fails on an assertion ends FAIL', () => {
+      const calls: string[][] = [];
+      expect(decideSuiteVerdict(pair('nested-timeout'), { runner: runnerReturning(false, calls) }).verdict).toBe('FAIL');
+      expect(calls).toHaveLength(1);
+    });
+
+    it('THE PINNED BOUNDARY: a genuine nested assertion failure is FAIL and the retry is NEVER called', () => {
+      const calls: string[][] = [];
+      expect(decideSuiteVerdict(pair('nested-assertion'), { runner: runnerReturning(true, calls) }).verdict).toBe('FAIL');
+      expect(calls).toEqual([]);
+    });
+
+    it('a nested hook failure is FAIL and the retry is NEVER called', () => {
+      const calls: string[][] = [];
+      expect(decideSuiteVerdict(pair('nested-hook-failure'), { runner: runnerReturning(true, calls) }).verdict).toBe('FAIL');
+      expect(calls).toEqual([]);
+    });
   });
 
   it('the REAL CI-produced sidecar is usable — captured from the runner, not from a local run', () => {

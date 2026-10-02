@@ -42,6 +42,17 @@ import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import {
+  KIND_SUITE,
+  KIND_TEST,
+  displayName,
+  isTitlePath,
+  normFile,
+  testKey,
+  titlePathOfAssertion,
+} from './lib/vitest-test-identity.mjs';
+
+export { normFile };
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -77,11 +88,21 @@ export const ASSERTION_PATTERNS = [
   /ReferenceError|TypeError|SyntaxError/,
 ];
 
-export function classifyMessage(msg) {
+/**
+ * What a message affirmatively SAYS: 'assertion', 'indeterminate', or 'unknown'. Kept apart from
+ * `classifyMessage` because a JOIN MISS must tell positive assertion evidence (still a real
+ * failure, whatever else went wrong) from the safe default (which, on a miss, is a guess).
+ */
+export function messageEvidence(msg) {
   const s = String(msg ?? '');
   if (ASSERTION_PATTERNS.some((r) => r.test(s))) return 'assertion';
   if (INDETERMINATE_PATTERNS.some((r) => r.test(s))) return 'indeterminate';
-  return 'assertion'; // unknown shape -> treat as REAL. Safe default when classifying a red.
+  return 'unknown';
+}
+
+export function classifyMessage(msg) {
+  const e = messageEvidence(msg);
+  return e === 'unknown' ? 'assertion' : e; // unknown shape -> treat as REAL. Safe default when classifying a red.
 }
 
 // -- the STRUCTURED channel ---------------------------------------------------------------------
@@ -111,19 +132,20 @@ export function classifyMessage(msg) {
 // the message happens to be worded. That is checked FIRST, so a real failure can never be talked
 // into `indeterminate` by a message that happens to mention a timeout.
 
-/** Repo-relative + forward-slashed, so a sidecar path and a JSON-report path compare equal. */
-export function normFile(p) {
-  if (!p) return '<unknown>';
-  let s = String(p).split('\\').join('/');
-  const repo = REPO.split('\\').join('/').replace(/\/+$/, '');
-  if (s.startsWith(`${repo}/`)) s = s.slice(repo.length + 1);
-  return s;
-}
-
-/** `file::name` — the key both channels agree on. */
-export function shapeKey(file, name) {
-  return `${normFile(file)}::${name ?? '<test>'}`;
-}
+// -- the JOIN -----------------------------------------------------------------------------------
+//
+// Identity (file + title path -> key) lives in scripts/lib/vitest-test-identity.mjs, the ONE place
+// it is derived; the reporter writes with the same module. It used to be a rendered `fullName` on
+// each side, and the two renderings disagreed for every test inside a `describe` (" > " vs " "),
+// so a nested timeout missed its structured entry and was called a regression
+// (OPS-SUITE-VERDICT-NESTED-KEY-W1, the 4th time this gate read a timeout as FAIL).
+//
+// A MISS IS NO LONGER SILENT. With a sidecar DECLARED, every failed test must find its entry —
+// the reporter records every failed test case. A failure that does not is UNJOINED: positive
+// assertion evidence in its message still makes it a real FAIL, but otherwise the classifier
+// does not know what it is, so it neither calls it a regression nor retries it. It blocks as
+// INDETERMINATE and names both sides of the miss. A key drift is a defect in this pipeline, and
+// it must read as one rather than as a red on whoever happened to be deploying.
 
 /**
  * Classify ONE structured error. Order is the contract:
@@ -139,11 +161,30 @@ export function classifyShape(err) {
   return 'assertion';
 }
 
-/** Index a sidecar body into Map<`file::name`, errors[]>. Returns null for an unusable body. */
+/**
+ * Index a sidecar body into Map<testKey, { level, file, titlePath, errors[] }>. Returns null for an
+ * unusable body — including any entry that carries no structured identity (`level` + `titlePath`),
+ * which is what a schema-1 sidecar from a stale reporter looks like. An entry that cannot be keyed
+ * is refused rather than guessed at: guessing is how the rendered-name join failed. A sidecar with
+ * zero entries carries nothing to key and stays usable whatever its schema (the committed CI
+ * green-run artifact is one).
+ *
+ * Two entries with one key (vitest allows duplicate test names) are MERGED, never overwritten: an
+ * overwrite could hand an assertion failure its namesake's timeout shapes and route a real failure
+ * into the retry. Merged, the assertion evidence is always present.
+ */
 export function indexSidecar(sidecar) {
   if (!sidecar || !Array.isArray(sidecar.failures)) return null;
   const m = new Map();
-  for (const f of sidecar.failures) m.set(shapeKey(f?.file, f?.name), Array.isArray(f?.errors) ? f.errors : []);
+  for (const f of sidecar.failures) {
+    const level = f?.kind;
+    if ((level !== KIND_TEST && level !== KIND_SUITE) || !isTitlePath(f?.titlePath)) return null;
+    const key = testKey(level, f.file, f.titlePath);
+    const errors = Array.isArray(f.errors) ? f.errors : [];
+    const prev = m.get(key);
+    if (prev) prev.errors = [...prev.errors, ...errors];
+    else m.set(key, { level, file: normFile(f.file), titlePath: f.titlePath, errors });
+  }
   return m;
 }
 
@@ -172,60 +213,150 @@ export function readSidecar(path) {
     return { ok: false, reason: `sidecar unparseable: ${e.message}` };
   }
   const index = indexSidecar(body);
-  if (!index) return { ok: false, reason: 'sidecar has no `failures` array — unusable shape' };
+  if (!index) {
+    return {
+      ok: false,
+      reason: 'sidecar has no `failures` array, or an entry without a structured identity (kind + titlePath) — unusable shape',
+    };
+  }
   return { ok: true, sidecar: body, index };
 }
 
-/** Normalise vitest's JSON reporter into { file, name, messages[] } failures. */
+/**
+ * Normalise vitest's JSON reporter into { level, file, titlePath, name, messages[] } failures.
+ * `level` is 'test' for a failed test, 'suite' for a failure no test carries. `titlePath` is the
+ * structured identity the join keys on (null where the report gives none); `name` is display-only.
+ */
 export function extractFailures(report) {
   const out = [];
   const suites = Array.isArray(report?.testResults) ? report.testResults : [];
   for (const s of suites) {
     const file = s.name ?? s.testFilePath ?? '<unknown>';
     const specs = Array.isArray(s.assertionResults) ? s.assertionResults : [];
+    const suiteFailure = (messages) => ({ level: KIND_SUITE, file, titlePath: null, name: '<suite>', messages });
     // A suite can fail without any assertion result (collection error, worker death).
     if (specs.length === 0 && (s.status === 'failed' || s.message)) {
-      out.push({ file, name: '<suite>', messages: [s.message ?? ''] });
+      out.push(suiteFailure([s.message ?? '']));
       continue;
     }
     for (const a of specs) {
       if (a.status !== 'failed') continue;
-      out.push({ file, name: a.fullName ?? a.title ?? '<test>', messages: a.failureMessages ?? [] });
+      const titlePath = titlePathOfAssertion(a);
+      out.push({
+        level: KIND_TEST,
+        file,
+        titlePath,
+        name: titlePath ? displayName(titlePath) : (a.fullName ?? a.title ?? '<test>'),
+        messages: a.failureMessages ?? [],
+      });
     }
-    if (s.status === 'failed' && s.message && !specs.some((a) => a.status === 'failed')) {
-      out.push({ file, name: '<suite>', messages: [s.message] });
+    // A FILE that failed with no failed test is a suite-level failure WHETHER OR NOT it carries a
+    // message. This used to require one, and a `beforeAll` that throws inside a `describe` has
+    // none: the JSON report's `message` reads only the module's errors, and every test under the
+    // hook is `skipped`. Measured on vitest 3.2.4 — `success: false`, `numFailedTests: 0`,
+    // `message: ""` — and the gate printed SUITE_VERDICT=PASS and permitted the deploy.
+    if (s.status === 'failed' && !specs.some((a) => a.status === 'failed')) {
+      out.push(suiteFailure(s.message ? [s.message] : []));
     }
   }
   return out;
 }
 
+/** Classify a set of structured errors: any assertion evidence makes the whole failure real. */
+function judgeShapes(shapes, messages = []) {
+  const kinds = [...shapes.map(classifyShape), ...messages.map(classifyMessage)];
+  return kinds.includes('assertion') ? 'assertion' : 'indeterminate';
+}
+
+/** The string channel, unchanged since it shipped: no message at all is never assumed benign. */
+function judgeMessages(messages) {
+  if (messages.length === 0) return 'assertion';
+  return messages.map(classifyMessage).includes('assertion') ? 'assertion' : 'indeterminate';
+}
+
 /**
  * @param report  vitest JSON-reporter body
- * @param index   optional Map from `readSidecar().index`. When a failure has an entry, it is
- *                classified STRUCTURALLY; otherwise the string channel decides, unchanged.
+ * @param index   optional Map from `readSidecar().index`. Present means the caller DECLARED the
+ *                structured channel, and every failed test must join it (see THE JOIN above).
+ *                Absent, the string channel decides, unchanged.
+ * @returns { verdict, failures, indeterminateFiles, unjoined, unmatchedEntries, unaccounted }
+ *   unjoined          failures the declared sidecar holds no entry for (and with no positive
+ *                     assertion evidence) — INDETERMINATE, never retried
+ *   unmatchedEntries  sidecar entries no failure claimed — the other half of any miss
+ *   unaccounted       vitest's own `success` is false but nothing failed was extractable
  */
 export function classifyReport(report, index = null) {
   const failures = extractFailures(report);
-  if (failures.length === 0) return { verdict: 'PASS', failures, indeterminateFiles: [] };
-  const classified = failures.map((f) => {
-    const shapes = index?.get(shapeKey(f.file, f.name));
-    if (shapes && shapes.length > 0) {
-      // Structured: any error carrying assertion evidence makes the whole failure real.
-      const kind = shapes.map(classifyShape).includes('assertion') ? 'assertion' : 'indeterminate';
-      return { ...f, kind, channel: 'structured' };
+  const consumed = new Set();
+
+  if (index) {
+    // A nested hook error in a file whose tests ALSO failed has no suite-level record in the JSON
+    // report at all; the sidecar is the only place it exists. Surface it, so a real hook failure is
+    // never carried into the retry on the back of a sibling's timeout.
+    const suiteFiles = new Set(failures.filter((f) => f.level === KIND_SUITE).map((f) => normFile(f.file)));
+    for (const e of index.values()) {
+      if (e.level === KIND_SUITE && !suiteFiles.has(e.file)) {
+        suiteFiles.add(e.file);
+        failures.push({ level: KIND_SUITE, file: e.file, titlePath: null, name: '<suite>', messages: [] });
+      }
     }
-    // No per-test structured entry — a process-level collapse, or no sidecar in play.
-    const kind = f.messages.length === 0
-      ? 'assertion'
-      : (f.messages.map(classifyMessage).includes('assertion') ? 'assertion' : 'indeterminate');
-    return { ...f, kind, channel: 'string' };
+  }
+
+  const classified = failures.map((f) => {
+    if (f.level === KIND_SUITE) {
+      const entries = index
+        ? [...index.entries()].filter(([, e]) => e.level === KIND_SUITE && e.file === normFile(f.file))
+        : [];
+      for (const [k] of entries) consumed.add(k);
+      const shapes = entries.flatMap(([, e]) => e.errors);
+      const messages = f.messages.filter((m) => String(m ?? '') !== '');
+      if (shapes.length > 0) {
+        const suites = entries.map(([, e]) => displayName(e.titlePath)).join(', ');
+        return { ...f, name: `<suite: ${suites}>`, kind: judgeShapes(shapes, messages), channel: 'structured' };
+      }
+      // Module-level errors (collection errors, top-level hooks) reach the JSON `message` faithfully
+      // and have no sidecar entry by design — the string channel is their pinned cover.
+      if (messages.length > 0) return { ...f, kind: judgeMessages(messages), channel: 'string' };
+      // vitest says this file failed, nothing names why, and the declared sidecar holds nothing.
+      if (index) return { ...f, kind: 'unjoined', channel: 'join-miss' };
+      return { ...f, kind: 'assertion', channel: 'string' };
+    }
+
+    if (index) {
+      const key = f.titlePath ? testKey(KIND_TEST, f.file, f.titlePath) : null;
+      const entry = key ? index.get(key) : undefined;
+      if (entry) {
+        consumed.add(key);
+        if (entry.errors.length > 0) return { ...f, kind: judgeShapes(entry.errors), channel: 'structured' };
+        return { ...f, kind: judgeMessages(f.messages), channel: 'string' };
+      }
+      // JOIN MISS. Positive assertion evidence is still evidence; anything else is not known.
+      if (f.messages.map(messageEvidence).includes('assertion')) return { ...f, kind: 'assertion', channel: 'string' };
+      return { ...f, kind: 'unjoined', channel: 'join-miss', key };
+    }
+
+    // No sidecar declared — the string channel is the whole story.
+    return { ...f, kind: judgeMessages(f.messages), channel: 'string' };
   });
-  const real = classified.filter((c) => c.kind === 'assertion');
-  if (real.length > 0) return { verdict: 'FAIL', failures: classified, indeterminateFiles: [] };
+
+  const unmatchedEntries = index ? [...index.keys()].filter((k) => !consumed.has(k)) : [];
+  const base = { failures: classified, indeterminateFiles: [], unjoined: [], unmatchedEntries, unaccounted: false };
+
+  if (classified.length === 0) {
+    // vitest's own verdict is a fact about the run. If it says the run failed and this module can
+    // find nothing that did, the gap is in this module — and a gap is never a pass.
+    if (report?.success === false) return { ...base, verdict: 'INDETERMINATE', unaccounted: true };
+    return { ...base, verdict: 'PASS' };
+  }
+  if (classified.some((c) => c.kind === 'assertion')) return { ...base, verdict: 'FAIL' };
+  const unjoined = classified.filter((c) => c.kind === 'unjoined');
+  if (unjoined.length > 0) return { ...base, verdict: 'INDETERMINATE', unjoined };
   return {
+    ...base,
     verdict: 'INDETERMINATE',
-    failures: classified,
-    indeterminateFiles: [...new Set(classified.map((c) => c.file))],
+    // ONE path form, so a file reached through both channels is retried once (the sidecar stores
+    // repo-relative, the JSON report absolute). The retry runs with cwd = REPO, so relative resolves.
+    indeterminateFiles: [...new Set(classified.map((c) => normFile(c.file)))],
   };
 }
 
@@ -295,7 +426,33 @@ function emit(verdict, lines) {
   return 3;
 }
 
-function run(argv) {
+/** Lines for a result this module could not classify — both sides of a join miss, named. */
+function explainUnclassified(res) {
+  const lines = [];
+  if (res.unaccounted) {
+    lines.push(
+      'vitest reported the run FAILED (success: false) but no failed test or suite was extractable from its report',
+      'a failure this classifier cannot see is never a pass — this is a gap in the verdict pipeline, not a verdict on the code',
+    );
+  }
+  if (res.unjoined.length > 0) {
+    lines.push(
+      `JOIN MISS: ${res.unjoined.length} failure(s) have no entry in the structured sidecar the caller DECLARED, and carry no assertion evidence of their own.`,
+      '  The classifier cannot tell what they are, so it neither calls them a regression nor retries them:',
+    );
+    for (const f of res.unjoined.slice(0, 10)) lines.push(`  ? ${normFile(f.file)} :: ${f.name}${f.key ? `  (key ${f.key})` : ''}`);
+    lines.push(`  sidecar entries no failure claimed: ${res.unmatchedEntries.length === 0 ? '(none)' : res.unmatchedEntries.slice(0, 10).join(' | ')}`);
+    lines.push('  two channels disagree on test identity — see scripts/lib/vitest-test-identity.mjs');
+  }
+  return lines;
+}
+
+/**
+ * The whole classify -> retry -> verdict chain, minus printing. Returns { verdict, lines }.
+ * `runner` is the isolation re-run; it is injectable so the chain can be exercised end to end
+ * without spawning vitest — and so a test can assert it is never CALLED for a real failure.
+ */
+export function decideSuiteVerdict(argv, { runner = defaultRunner } = {}) {
   // Positional is the canonical form (what CI uses). `--report=PATH` is accepted too: the author
   // of this script reached for that spelling first when running it by hand, which is evidence
   // enough that the interface invites it. An unknown flag still falls through to INDETERMINATE
@@ -314,7 +471,7 @@ function run(argv) {
   const r = readReport(pathArg);
   if (!r.ok) {
     // Input we were HANDED and could not parse is INDETERMINATE, always — never PASS.
-    return emit('INDETERMINATE', [r.reason]);
+    return { verdict: 'INDETERMINATE', lines: [r.reason] };
   }
   let index = null;
   if (scPath !== undefined) {
@@ -322,51 +479,67 @@ function run(argv) {
     if (!sc.ok) {
       // DECLARED and unusable. A quiet degrade to the string channel here would restore the dark
       // gate while reporting green, which is the whole defect this wave exists to remove.
-      return emit('INDETERMINATE', [
-        `structured error sidecar was DECLARED (--sidecar=${scPath}) but is unusable: ${sc.reason}`,
-        'refusing to fall back to the string channel — that is the dark path this gate was fixed to stop trusting',
-      ]);
+      return {
+        verdict: 'INDETERMINATE',
+        lines: [
+          `structured error sidecar was DECLARED (--sidecar=${scPath}) but is unusable: ${sc.reason}`,
+          'refusing to fall back to the string channel — that is the dark path this gate was fixed to stop trusting',
+        ],
+      };
     }
     index = sc.index;
   }
   const first = classifyReport(r.report, index);
-  if (first.verdict === 'PASS') return emit('PASS', ['no failures']);
+  if (first.verdict === 'PASS') return { verdict: 'PASS', lines: ['no failures'] };
   if (first.verdict === 'FAIL') {
-    const lines = ['REAL failures (assertion diffs present) — not retried, because retrying a real failure could only launder it:'];
+    const lines = [
+      'REAL failures (assertion evidence, or a failure shape not recognised as contention — the safe default) — not retried, because retrying a real failure could only launder it:',
+    ];
     for (const f of first.failures.filter((f) => f.kind === 'assertion').slice(0, 10)) {
-      lines.push(`  x ${f.file} :: ${f.name}`);
+      lines.push(`  x ${normFile(f.file)} :: ${f.name}  [${f.channel}]`);
     }
-    return emit('FAIL', lines);
+    return { verdict: 'FAIL', lines };
+  }
+  if (first.unaccounted || first.unjoined.length > 0) {
+    return { verdict: 'INDETERMINATE', lines: [...explainUnclassified(first), 'not retried — deploy BLOCKED'] };
   }
 
   // INDETERMINATE: contention-shaped only.
   const lines = [
-    `all ${first.failures.length} failure(s) are contention-shaped (timeout / abort / OOM / worker crash) and NONE carries an assertion diff`,
+    `all ${first.failures.length} failure(s) are contention-shaped (timeout / abort / OOM / worker crash) and NONE carries assertion evidence`,
     `indeterminate files: ${first.indeterminateFiles.join(', ')}`,
   ];
-  if (noRetry) return emit('INDETERMINATE', [...lines, 'retry suppressed (--no-retry)']);
+  if (noRetry) return { verdict: 'INDETERMINATE', lines: [...lines, 'retry suppressed (--no-retry)'] };
 
   lines.push('re-running those files SERIALLY in a fresh process to obtain a determinate verdict');
-  const retry = isolationRetry(first.indeterminateFiles, defaultRunner);
+  const retry = isolationRetry(first.indeterminateFiles, runner);
   if (!retry.ok) {
     // An unknown never becomes a pass. Deploy stays blocked.
-    return emit('INDETERMINATE', [...lines, `retry report unusable: ${retry.reason} — deploy BLOCKED`]);
+    return { verdict: 'INDETERMINATE', lines: [...lines, `retry report unusable: ${retry.reason} — deploy BLOCKED`] };
   }
   const second = classifyReport(retry.report, retry.index ?? null);
   lines.push(`isolation retry finished in ${retry.durationMs}ms with verdict ${second.verdict}`);
   if (second.verdict === 'PASS') {
-    return emit('PASS_AFTER_ISOLATION', [
-      ...lines,
-      'the same assertions passed under isolation — contention, not regression. Nothing was skipped or quarantined.',
-    ]);
+    return {
+      verdict: 'PASS_AFTER_ISOLATION',
+      lines: [...lines, 'the same assertions passed under isolation — contention, not regression. Nothing was skipped or quarantined.'],
+    };
   }
   if (second.verdict === 'FAIL') {
     for (const f of second.failures.filter((f) => f.kind === 'assertion').slice(0, 10)) {
-      lines.push(`  x ${f.file} :: ${f.name}`);
+      lines.push(`  x ${normFile(f.file)} :: ${f.name}  [${f.channel}]`);
     }
-    return emit('FAIL', [...lines, 'a real failure surfaced under isolation — deploy BLOCKED']);
+    return { verdict: 'FAIL', lines: [...lines, 'a real failure surfaced under isolation — deploy BLOCKED'] };
   }
-  return emit('INDETERMINATE', [...lines, 'still indeterminate after isolation — deploy BLOCKED']);
+  return {
+    verdict: 'INDETERMINATE',
+    lines: [...lines, ...explainUnclassified(second), 'still indeterminate after isolation — deploy BLOCKED'],
+  };
+}
+
+function run(argv) {
+  const { verdict, lines } = decideSuiteVerdict(argv);
+  return emit(verdict, lines);
 }
 
 // -- self-test ---------------------------------------------------------------------------------
@@ -444,6 +617,95 @@ function selfTest() {
     classifyReport(capCollapse.report, capCollapse.index).verdict,
     'FAIL',
   );
+
+  // -- NESTED shapes (OPS-SUITE-VERDICT-NESTED-KEY-W1) -------------------------------------------
+  //
+  // Every fixture above is a TOP-LEVEL test — the one shape on which a rendered-name join happened
+  // to work. The corpus could not contain the bug, so the bug shipped. This guard refuses a corpus
+  // that has lost its nested cases, for both levels the classifier joins on.
+  const corpusEntries = Object.keys({
+    'nested-timeout': 1, 'nested-assertion': 1, 'nested-hook-failure': 1, 'nested-hook-timeout': 1,
+    'nested-timeout-beside-hook-failure': 1,
+  }).flatMap((l) => {
+    const sc = readSidecar(join(FIXTURES, `${l}.shapes.json`));
+    return sc.ok ? [...sc.index.values()] : [];
+  });
+  t(
+    'nested corpus present: a captured TEST inside a describe (vacuity guard)',
+    corpusEntries.some((e) => e.level === KIND_TEST && e.titlePath.length > 1),
+    true,
+  );
+  t(
+    'nested corpus present: a captured SUITE-level hook failure (vacuity guard)',
+    corpusEntries.some((e) => e.level === KIND_SUITE),
+    true,
+  );
+
+  const capNested = fx('nested-timeout');
+  t('CAPTURED nested timeout, structured channel -> INDETERMINATE (the fix)', classifyReport(capNested.report, capNested.index).verdict, 'INDETERMINATE');
+  t('CAPTURED nested timeout, string channel alone -> FAIL (pinned before-value)', classifyReport(capNested.report).verdict, 'FAIL');
+  const capNestedAssert = fx('nested-assertion');
+  t('CAPTURED nested assertion -> FAIL', classifyReport(capNestedAssert.report, capNestedAssert.index).verdict, 'FAIL');
+  const capHook = fx('nested-hook-failure');
+  t('CAPTURED nested beforeAll that THROWS -> FAIL, never PASS (it read PASS before this wave)', classifyReport(capHook.report, capHook.index).verdict, 'FAIL');
+  t('...and FAIL with no sidecar either — the string channel no longer needs a message to see it', classifyReport(capHook.report).verdict, 'FAIL');
+  const capHookTimeout = fx('nested-hook-timeout');
+  t('CAPTURED nested beforeAll that TIMES OUT -> INDETERMINATE', classifyReport(capHookTimeout.report, capHookTimeout.index).verdict, 'INDETERMINATE');
+  const capBeside = fx('nested-timeout-beside-hook-failure');
+  const beside = classifyReport(capBeside.report, capBeside.index);
+  t('CAPTURED nested timeout beside a real afterAll error -> FAIL (the hook error is not carried into a retry)', [beside.verdict, beside.indeterminateFiles.length], ['FAIL', 0]);
+
+  // -- the JOIN: one identity, and a miss that is loud --------------------------------------------
+  t('identity: the space-join collision is gone', testKey(KIND_TEST, 'f', ['a b', 'c']) === testKey(KIND_TEST, 'f', ['a', 'b c']), false);
+  t('identity: a suite and a test with the same path are distinct', testKey(KIND_TEST, 'f', ['x']) === testKey(KIND_SUITE, 'f', ['x']), false);
+  // Re-key the captured sidecar the way the PRE-FIX reporter did (one rendered " > " name). That is
+  // exactly the drift this wave removed, so it must now surface as a join miss, not as a FAIL.
+  const driftedBody = JSON.parse(readFileSync(join(FIXTURES, 'nested-timeout.shapes.json'), 'utf8'));
+  for (const f of driftedBody.failures) f.titlePath = [f.titlePath.join(' > ')];
+  const drifted = classifyReport(capNested.report, indexSidecar(driftedBody));
+  t(
+    'JOIN MISS with no assertion evidence -> INDETERMINATE, unjoined, NOT retried',
+    [drifted.verdict, drifted.unjoined.length, drifted.indeterminateFiles.length, drifted.unmatchedEntries.length],
+    ['INDETERMINATE', 1, 0, 1],
+  );
+  t(
+    'JOIN MISS with positive assertion evidence in the message -> still FAIL',
+    classifyReport(capNestedAssert.report, indexSidecar({ schema: 2, failures: [] })).verdict,
+    'FAIL',
+  );
+  t('a schema-1 entry (rendered name, no titlePath) is REFUSED, never guessed at', indexSidecar({ schema: 1, failures: [{ file: 'f', name: 'x', errors: [] }] }), null);
+  const dupe = indexSidecar({
+    schema: 2,
+    failures: [
+      // Assertion FIRST, timeout LAST: an overwrite keeps the last entry, so this order is the one
+      // that can fail. (The reverse order passed with the merge deleted — found by mutation.)
+      { kind: 'test', file: 'tests/a.test.ts', titlePath: ['same'], errors: [{ name: 'AssertionError', hasDiff: true, message: 'x' }] },
+      { kind: 'test', file: 'tests/a.test.ts', titlePath: ['same'], errors: [{ name: 'Error', message: 'Test timed out in 5ms.' }] },
+    ],
+  });
+  t(
+    'duplicate test names MERGE their shapes — an assertion is never masked by its namesake\'s timeout',
+    classifyReport(rep([{ status: 'failed', ancestorTitles: [], title: 'same', failureMessages: ['Error: STACK_TRACE_ERROR'] }]), dupe).verdict,
+    'FAIL',
+  );
+  t(
+    'vitest says the run FAILED but nothing is extractable -> INDETERMINATE, never PASS',
+    [classifyReport({ success: false, testResults: [] }).verdict, classifyReport({ success: false, testResults: [] }).unaccounted],
+    ['INDETERMINATE', true],
+  );
+
+  // -- the WHOLE chain, through decideSuiteVerdict(), with the retry injected ---------------------
+  const pair = (l) => [join(FIXTURES, `${l}.report.json`), `--sidecar=${join(FIXTURES, `${l}.shapes.json`)}`];
+  const greenRetry = (calls) => (files) => {
+    calls.push(files);
+    return { ok: true, report: { success: true, testResults: files.map((f) => ({ name: f, status: 'passed', assertionResults: [{ status: 'passed', ancestorTitles: [], title: 't' }] })) }, index: null };
+  };
+  let calls = [];
+  t('CHAIN: nested timeout -> retried -> PASS_AFTER_ISOLATION', [decideSuiteVerdict(pair('nested-timeout'), { runner: greenRetry(calls) }).verdict, calls.length], ['PASS_AFTER_ISOLATION', 1]);
+  calls = [];
+  t('CHAIN: nested assertion -> FAIL and the retry is NEVER called', [decideSuiteVerdict(pair('nested-assertion'), { runner: greenRetry(calls) }).verdict, calls.length], ['FAIL', 0]);
+  calls = [];
+  t('CHAIN: nested hook failure -> FAIL and the retry is NEVER called', [decideSuiteVerdict(pair('nested-hook-failure'), { runner: greenRetry(calls) }).verdict, calls.length], ['FAIL', 0]);
 
   // -- DECLARED-sidecar refusal ------------------------------------------------------------------
   t('sidecar DECLARED but absent -> unusable (INDETERMINATE at the caller)', readSidecar(join(REPO, 'no/such/sidecar.json')).ok, false);

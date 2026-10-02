@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "failures": [
+    {
+      "kind": "suite",
+      "file": "tests/fixtures/verdict-channel/__capture__/nested-hook-failure.test.ts",
+      "titlePath": [
+        "an outer suite"
+      ],
+      "name": "an outer suite",
+      "errors": [
+        {
+          "name": "Error",
+          "hasDiff": false,
+          "hasExpected": false,
+          "hasActual": false,
+          "message": "setup exploded"
+        }
+      ]
+    }
+  ]
+}
