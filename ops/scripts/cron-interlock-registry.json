@@ -596,7 +596,7 @@
       "max_runtime_s": 2,
       "runtime_instrument": "direct timed runs on aoe-1 under ALGOVAULT_TG_TEST_INERT=1 and MONITORING_HOST_LABELS=aoe-1, 2026-08-29: shadow-writer-stall 0s · output-liveness 1s · promotion-health 1s · kernel-staleness 0s · boot-contract 0s · declaration-sync 2s. Recorded value is the max. The two lines added 2026-10-02 are bounded by construction, not measured here: the watchdog exits immediately with no arm, and with one its probe is `timeout 10` TCP + `curl -m 10`, so <=20s; the harness is the reboot itself.",
       "cron_lines": 8,
-      "cron": "13,18,23,28,33,38,43,48,53,57 * * * * · 47 * * * * · 41 * * * * · 37 7 * * * · 37 8 * * * · 27 * * * * · 7 * * * * (kernel-auto-reboot.sh) · 3-58/5 * * * * (aoe-peer-watchdog.sh, from this wave's CH3)",
+      "cron": "13,18,23,28,33,38,43,48,53,57 * * * * · 47 * * * * · 41 * * * * · 37 7 * * * · 37 8 * * * · 27 * * * * · 7 * * * * (kernel-auto-reboot.sh) · 3-53/5 * * * * (aoe-peer-watchdog.sh, from this wave's CH3)",
       "catchup_cmd": null,
       "source": "host-only",
       "verified_at": "2026-10-02"
