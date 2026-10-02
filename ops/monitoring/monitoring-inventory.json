@@ -309,7 +309,7 @@
       "schedule": null,
       "invoked_by": "called-by:*",
       "install_state": "installed",
-      "sha256": "4f7db003757769289c6c9645ab511d0c7ede388272c577dfb1636b8cf84689d0",
+      "sha256": "1e3885eb546ce9a024437d1d4401778641ae70c55c96f73dc0a34837b2ab36f1",
       "alert_ids": [],
       "exempt_consumers": [
         {
@@ -469,7 +469,7 @@
       "schedule": "27 12 * * 2",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "8608cf0962cf1df11c61aeeaa979228e543ed7dd0664e4df8dc427673d78d1ac",
+      "sha256": "9aba2c7a0b13e5b3d4816ce32d5767504f321386394795b6eaf590dfd288ab19",
       "alert_ids": [],
       "owner_wave": "OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1"
     },
@@ -483,7 +483,7 @@
       "schedule": null,
       "invoked_by": "called-by:recommendation-drift-canary",
       "install_state": "installed",
-      "sha256": "265385a019e191d5727346a9c9404ae03b4af9732903a72b7939602cb2656f39",
+      "sha256": "c155895a67d6ddfb0f39736899d6ac2086b217f2b7a8d5e173e8c091c54eddc7",
       "alert_ids": [],
       "owner_wave": "OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1"
     },
@@ -1569,10 +1569,54 @@
       "schedule": null,
       "invoked_by": "operator (manual, from a developer checkout; CLAUDE.md execution-flow step 6)",
       "install_state": "installed",
-      "sha256": "0fd31c7b09d6f6771f7c2925dc236b6c1f808f6a0e0e32c0c0d4d76fffd5fe15",
+      "sha256": "a08ddaf4b7f8f43a90133bbbbd12c4bbc42cfc6dac0766de3b9aa65877c26607",
       "owner_wave": "OPS-SCORER-CAPTURE-DAY3-HEALTH-READOUT-W1",
       "repo_resident": true,
-      "notes": "R6, the INVERTED half of CLAUDE.md execution-flow step 6. push: status.md -> host (the pre-existing behaviour). pull: /var/lib/algovault-monitoring/canary-results.jsonl -> '<vault>/Claude files/canary-results.jsonl', UNION-MERGED. The merge is the paired contract with canary_result_log.py's MAX_LINES cap - a plain scp down would delete vault history the moment the host file rolled. Dedupe is on the FULL LINE, never on (canary, at): two records sharing an instant are two real observations (a cron run and an operator's on-demand run), and collapsing them is the row-dedupe defect that once deleted 8.4M legitimate rows here. Unparseable lines are PRESERVED and REPORTED, never dropped. Vault root is PROJECTED from scripts/lib/system-map-path.sh (the one declared vault path) - never a second absolute string. That derivation REFUSES rather than degrading: measured while proving the self-test can fail, under set -uo pipefail a missing lib aborted only the SUBSHELL, so VAULT_ROOT came back EMPTY and the script would have moved files into '/'. MONITORING_RESULTS_SYNC_VERDICT=PASS|FAIL|INDETERMINATE, 0/1/3; --fail-open downgrades the CODE and never the token, the same lever shape as ALGOVAULT_TEST_GATE=warn. Self-test 19 assertions, hermetic (no ssh, no scp), PROVEN ABLE TO FAIL by 8 deliberate mutations. Proving it found a REAL defect: the refusal assertion was first written against the 'pull' subcommand and passed with the guard DELETED, because pull reaches scp and scp's failure emits the SAME INDETERMINATE token - right subject, wrong quantity. It now drives --show-config, which touches no network and therefore cannot emit the token on a healthy load, and asserts the reason line too. WIDENED 2026-09-10 by OPS-PREREG-VAULT-MIRROR-W1: a THIRD leg, `mirror`, delegates to ops/scripts/prereg-vault-mirror.sh, which copies the repo's audits/*preregistration*.md into the vault so the PLANNING agent - whose mount is vault-only - can read the commitments it must plan against. It rides THIS script because this one already runs at step 6 of every wave; a fourth thing to remember would rot. The leg is a SEPARATE executable so each script emits exactly ONE verdict token, and it gates on the sibling's TOKEN, never its exit code: PASS->PASS, FAIL->FAIL, anything else (including NO token at all) -> INDETERMINATE. An absent sibling in a worktree predating that wave is INDETERMINATE with a printed remediation, never an abort - step 6 runs at the END of a wave and must not turn a stale checkout into a blocked wave. Self-test 19 -> 26 assertions; the 7 new ones drive the real do_mirror_prereg through a stub sibling, because the INVOCATION is the seam a hermetic suite is otherwise blind to, and all 5 mutations aimed at them were caught. That work also fixed a PRE-EXISTING defect measured on origin/main: the two refusal assertions used \"${BASH_SOURCE[0]}\" to re-invoke this file, so running it as `bash monitoring-results-sync.sh` from ops/scripts hit `command not found` and the suite was RED from that directory and green from the repo root - which would also have made any mutation proof run there vacuous. $SELF is now projected from $HERE and asserted absolute. EXTENDED 2026-09-27 by OPS-BDIR-V3-PANEL-READINESS-W1 CH3: the pull leg runs for EVERY label in MONITORING_SYNC_PULL_LABELS (default 'signal-1 aoe-1'), each address resolved from the host SoT scripts/data/boot-critical-units.json (never a second literal), each union-merged into the ONE vault file; an unresolvable label or an unreachable host is INDETERMINATE and blocks nothing. Self-test 35 assertions."
+      "notes": "R6, the INVERTED half of CLAUDE.md execution-flow step 6. push: status.md -> host (the pre-existing behaviour). pull: /var/lib/algovault-monitoring/canary-results.jsonl -> '<vault>/Claude files/canary-results.jsonl', UNION-MERGED. The merge is the paired contract with canary_result_log.py's MAX_LINES cap - a plain scp down would delete vault history the moment the host file rolled. Dedupe is on the FULL LINE, never on (canary, at): two records sharing an instant are two real observations (a cron run and an operator's on-demand run), and collapsing them is the row-dedupe defect that once deleted 8.4M legitimate rows here. Unparseable lines are PRESERVED and REPORTED, never dropped. Vault root is PROJECTED from scripts/lib/system-map-path.sh (the one declared vault path) - never a second absolute string. That derivation REFUSES rather than degrading: measured while proving the self-test can fail, under set -uo pipefail a missing lib aborted only the SUBSHELL, so VAULT_ROOT came back EMPTY and the script would have moved files into '/'. MONITORING_RESULTS_SYNC_VERDICT=PASS|FAIL|INDETERMINATE, 0/1/3; --fail-open downgrades the CODE and never the token, the same lever shape as ALGOVAULT_TEST_GATE=warn. Self-test 19 assertions, hermetic (no ssh, no scp), PROVEN ABLE TO FAIL by 8 deliberate mutations. Proving it found a REAL defect: the refusal assertion was first written against the 'pull' subcommand and passed with the guard DELETED, because pull reaches scp and scp's failure emits the SAME INDETERMINATE token - right subject, wrong quantity. It now drives --show-config, which touches no network and therefore cannot emit the token on a healthy load, and asserts the reason line too. WIDENED 2026-09-10 by OPS-PREREG-VAULT-MIRROR-W1: a THIRD leg, `mirror`, delegates to ops/scripts/prereg-vault-mirror.sh, which copies the repo's audits/*preregistration*.md into the vault so the PLANNING agent - whose mount is vault-only - can read the commitments it must plan against. It rides THIS script because this one already runs at step 6 of every wave; a fourth thing to remember would rot. The leg is a SEPARATE executable so each script emits exactly ONE verdict token, and it gates on the sibling's TOKEN, never its exit code: PASS->PASS, FAIL->FAIL, anything else (including NO token at all) -> INDETERMINATE. An absent sibling in a worktree predating that wave is INDETERMINATE with a printed remediation, never an abort - step 6 runs at the END of a wave and must not turn a stale checkout into a blocked wave. Self-test 19 -> 26 assertions; the 7 new ones drive the real do_mirror_prereg through a stub sibling, because the INVOCATION is the seam a hermetic suite is otherwise blind to, and all 5 mutations aimed at them were caught. That work also fixed a PRE-EXISTING defect measured on origin/main: the two refusal assertions used \"${BASH_SOURCE[0]}\" to re-invoke this file, so running it as `bash monitoring-results-sync.sh` from ops/scripts hit `command not found` and the suite was RED from that directory and green from the repo root - which would also have made any mutation proof run there vacuous. $SELF is now projected from $HERE and asserted absolute. EXTENDED 2026-09-27 by OPS-BDIR-V3-PANEL-READINESS-W1 CH3: the pull leg runs for EVERY label in MONITORING_SYNC_PULL_LABELS (default 'signal-1 aoe-1'), each address resolved from the host SoT scripts/data/boot-critical-units.json (never a second literal), each union-merged into the ONE vault file; an unresolvable label or an unreachable host is INDETERMINATE and blocks nothing. Self-test 35 assertions. OPS-HOST-KERNEL-REBOOT-W5 CH2: the push leg ALSO builds wave-history.md via ops/scripts/wave-history-build.sh and pushes it to every host in the `wave-history` row's installed_at[] (scp to .tmp, then chmod 0644 + mv -f); a builder that does not print PASS pushes nothing, and a shrinking corpus is refused per host (monotonic floor). The status.md leg is unchanged, so a stale copy of this script can lag the corpus but never regress it."
+    },
+    {
+      "id": "wave-history-build",
+      "artifact": "ops/scripts/wave-history-build.sh",
+      "kind": "executable",
+      "host": "n-a",
+      "host_path": "n-a",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "called-by:monitoring-results-sync.sh push leg (CLAUDE.md execution-flow step 6, from a developer checkout)",
+      "install_state": "installed",
+      "sha256": "e7eda4cd6b08b2ae2c517d705eed675db52a2674f53f1388bf41c04304dddad5",
+      "owner_wave": "OPS-HOST-KERNEL-REBOOT-W5",
+      "repo_resident": true,
+      "notes": "THE ONE DERIVATION of the wave-history corpus. Reads the vault's status.md, every SPLIT_FILES live file and every ARCHIVE_DIR file matching ARCHIVE_FILENAME_PATTERN — the set named by trim-status-config.md's own sections, never a second literal glob — and writes every `### ` heading verbatim, de-duplicated on the full line, behind a generated header (generator, UTC time, per-source sha256 + heading count). Token WAVE_HISTORY_VERDICT=PASS|FAIL|INDETERMINATE (0/1/3); --self-test -> SELF_TEST_VERDICT with a 35-check floor. Vacuity guard where the corpus is CONSTRUCTED: the written file is re-read and its heading count must equal the union and be >= status.md's own unique count. Repo-resident: it runs on the Mac, never on a host."
+    },
+    {
+      "id": "wave-history",
+      "artifact": null,
+      "kind": "declaration-data",
+      "host_path": "/var/lib/algovault-monitoring/wave-history.md",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/var/lib/algovault-monitoring/wave-history.md",
+          "install_state": "installed",
+          "installed_wave": "OPS-HOST-KERNEL-REBOOT-W5"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/var/lib/algovault-monitoring/wave-history.md",
+          "install_state": "installed",
+          "installed_wave": "OPS-HOST-KERNEL-REBOOT-W5"
+        }
+      ],
+      "criticality": "medium",
+      "schedule": null,
+      "invoked_by": "pushed-by:ops/scripts/monitoring-results-sync.sh; read-by: send_telegram.sh resolve_template() (both hosts), decision-gate-orphan-canary.py and recommendation-drift-canary.py (signal-1)",
+      "install_state": "installed",
+      "sha256": null,
+      "alert_ids": [],
+      "owner_wave": "OPS-HOST-KERNEL-REBOOT-W5",
+      "generated_by": "ops/scripts/wave-history-build.sh",
+      "notes": "GENERATED DATA, never hand-edited and never committed: the headings-only corpus of every wave the vault ledger has ever recorded, derived by ops/scripts/wave-history-build.sh and pushed by monitoring-results-sync.sh at CLAUDE.md execution-flow step 6. WHY: trim policy v3 (2026-08-12) keeps status.md to OPEN waves only, so every host consumer answering 'what has already shipped' from status.md alone was blind by design — measured 2026-10-02, 1 of 108 templated recommended_wave classes resolved from host status.md vs 21 from the union, and aoe-1 had no status.md at all. Consumers read status.md ∪ wave-history.md with their predicate UNCHANGED. THIS ROW'S installed_at[] IS THE PUSH TARGET LIST — monitoring-results-sync.sh reads it; there is no second list. sha256 is deliberately null: the content changes with every wave, so a pinned hash would be HASH_DRIFT by construction; null keeps the row inert to REGISTRY_PARITY and NO_BACKUP, and HASH_DRIFT/ORPHAN never see it because it lives outside MONITORING_DIR (same shape as host-identity-label). No in-repo artifact, so declaration-sync.sh does not (and must not) sync it. The default path is pinned byte-identical across every consumer by tests/unit/wave-history-corpus.test.mjs. criticality medium: an absent corpus degrades resolution to status.md alone and is LOGGED by every consumer (wave_history_absent), never silent."
     },
     {
       "id": "prereg-vault-mirror",
@@ -1815,7 +1859,7 @@
       "schedule": "27 7 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "be1618c14f679ee8582a5a56087fe395cef432a7ad0285dc59e5e367c7c946e2",
+      "sha256": "424b8c304d8d4454ec61f124e702f67c7e864ec906a4b8aedf8e7487360114cb",
       "alert_ids": [
         "DECISION_GATE_ORPHANED",
         "DECISION_GATE_ORPHAN_SUSPECTED"

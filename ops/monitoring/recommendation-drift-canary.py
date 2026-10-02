@@ -42,6 +42,12 @@ except ImportError:
 WRAPPER = "/opt/algovault-monitoring/send_telegram.sh"
 DEFAULT_MANIFEST = "/opt/algovault-monitoring/recommendation-drift-manifest.yaml"
 STATUS_MD = "/var/lib/algovault-monitoring/status.md"
+# The headings-only corpus of every shipped wave (ops/scripts/wave-history-build.sh, pushed by
+# monitoring-results-sync.sh). status.md alone is OPEN waves only since trim policy v3, so "highest
+# GREEN" read from it alone under-counts every class whose history was archived
+# (OPS-HOST-KERNEL-REBOOT-W5). Default pinned across consumers by
+# tests/unit/wave-history-corpus.test.mjs.
+WAVE_HISTORY_PATH = os.environ.get("WAVE_HISTORY_PATH", "/var/lib/algovault-monitoring/wave-history.md")
 LOG_FILE = "/var/log/recommendation-drift-canary.log"
 AUDIT_DOC = "audits/OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1-endpoint-truth.md"
 
@@ -82,23 +88,30 @@ def find_hardcoded(script_path: str, hardcoded_regex: str) -> Iterator[tuple[int
         logging.warning("READ_FAILED script_path=%s err=%s", script_path, e)
 
 
-def find_highest_green(status_md_path: str, status_md_regex: str) -> int:
-    """Return highest W<N> across all matching GREEN heading lines in status.md."""
+def find_highest_green(paths, status_md_regex: str) -> int:
+    """Return highest W<N> across all matching GREEN heading lines in the corpus.
+
+    `paths` is status.md ∪ wave-history.md (a single str is still accepted). Each unreadable file
+    is logged by name and skipped, so a missing corpus file is VISIBLE in the log rather than a
+    silent zero."""
+    if isinstance(paths, str):
+        paths = [paths]
     pattern = re.compile(status_md_regex)
     highest = 0
-    try:
-        with open(status_md_path, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                m = pattern.match(line)
-                if m and m.lastindex and m.lastindex >= 1:
-                    try:
-                        w = int(m.group(1))
-                    except (ValueError, TypeError):
-                        continue
-                    if w > highest:
-                        highest = w
-    except OSError as e:
-        logging.warning("STATUS_MD_UNREADABLE path=%s err=%s", status_md_path, e)
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    m = pattern.match(line)
+                    if m and m.lastindex and m.lastindex >= 1:
+                        try:
+                            w = int(m.group(1))
+                        except (ValueError, TypeError):
+                            continue
+                        if w > highest:
+                            highest = w
+        except OSError as e:
+            logging.warning("CORPUS_FILE_UNREADABLE path=%s err=%s", path, e)
     return highest
 
 
@@ -125,7 +138,7 @@ def build_body(alert_id: str, row: dict, drifted: list[tuple[int, str, int]], hi
     lines.append(f"🛑 {alert_id}")
     lines.append(f"Condition: hardcoded recommended_wave drift detected")
     lines.append(f"Script: {script_path}")
-    lines.append(f"Highest GREEN W<N> in status.md for class: W{highest_green}")
+    lines.append(f"Highest GREEN W<N> in status.md ∪ wave-history.md for class: W{highest_green}")
     lines.append(f"Drifted references ({len(drifted)}):")
     for line_no, matched_str, matched_W in drifted[:10]:  # cap to 10 to keep body sane
         lines.append(f"  L{line_no}: {matched_str} (matched_W={matched_W} <= highest_green_W={highest_green})")
@@ -146,10 +159,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default=os.environ.get("MANIFEST_OVERRIDE", DEFAULT_MANIFEST))
     parser.add_argument("--status-md", default=STATUS_MD)
+    parser.add_argument("--wave-history", default=WAVE_HISTORY_PATH)
     args = parser.parse_args()
 
     setup_logging()
-    logging.info("CANARY_START manifest=%s status_md=%s", args.manifest, args.status_md)
+    logging.info("CANARY_START manifest=%s status_md=%s wave_history=%s",
+                 args.manifest, args.status_md, args.wave_history)
 
     try:
         with open(args.manifest, "r", encoding="utf-8") as f:
@@ -184,7 +199,7 @@ def main() -> int:
             rows_skipped += 1
             continue
 
-        highest_green = find_highest_green(args.status_md, status_regex)
+        highest_green = find_highest_green([args.status_md, args.wave_history], status_regex)
         logging.info("CHECKING class=%s script=%s highest_green_W=%d", alert_class, script_path, highest_green)
 
         drifted: list[tuple[int, str, int]] = []

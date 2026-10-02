@@ -40,7 +40,11 @@ Per row, three independent facts are read and reported POSITIVELY (never absence
                               This is the fired-EVIDENCE locator. Without it "has it fired?"
                               is prose, and a canary cannot evaluate prose.
   3. retirement trigger     — evaluated, not read. `kind: status_md_entry` greps the host-local
-                              status.md for `match`.
+                              status.md ∪ wave-history.md for `match`. The union is load-bearing:
+                              trim policy v3 archives a CLOSED wave the moment it closes, so a
+                              decision recorded in a wave that has since closed is in the archive,
+                              not in status.md — and status.md alone would turn ORPHANED into
+                              ORPHAN_SUSPECTED, the opposite remedy (OPS-HOST-KERNEL-REBOOT-W5).
 
 Classification (one row → exactly one state):
   RETIRED           install_state != installed                       healthy, terminal
@@ -81,6 +85,7 @@ positive line. "Empty input" is only vacuity when you were supposed to fill it.)
 Env / test seams:
   MONITORING_INVENTORY_PATH   inventory override (same sibling rule as the reconciler)
   DECISION_GATE_STATUS_MD     status.md path        DECISION_GATE_LOG        log path
+  WAVE_HISTORY_PATH           wave-history.md path (the ONE default shared with send_telegram.sh)
   DECISION_GATE_GRACE_DAYS    suspicion grace (default 14)
   DECISION_GATE_NOW_EPOCH     freeze "now"          DECISION_GATE_SELFTEST=1 short-circuits fire()
   ALGOVAULT_TG_TEST_INERT=1   suppresses BEFORE the wrapper's cooldown gate and writes no marker.
@@ -105,6 +110,10 @@ ALERT_SUSPECTED = "DECISION_GATE_ORPHAN_SUSPECTED"
 WRAPPER = os.environ.get("TG_WRAPPER", "/opt/algovault-monitoring/send_telegram.sh")
 LOG = os.environ.get("DECISION_GATE_LOG", "/var/log/algovault-decision-gate-orphan-canary.log")
 STATUS_MD = os.environ.get("DECISION_GATE_STATUS_MD", "/var/lib/algovault-monitoring/status.md")
+# The headings-only corpus of every shipped wave (ops/scripts/wave-history-build.sh, pushed by
+# monitoring-results-sync.sh). Its default is pinned byte-identical across every consumer by
+# tests/unit/wave-history-corpus.test.mjs — one path, never a per-consumer dialect.
+WAVE_HISTORY_PATH = os.environ.get("WAVE_HISTORY_PATH", "/var/lib/algovault-monitoring/wave-history.md")
 
 # Grace before a fired-but-undecided gate becomes SUSPECT. 14d, not 7: a decision this class
 # gates is an architect call on a real question, and a week is a normal turnaround. Carries a
@@ -207,6 +216,30 @@ def trigger_matched(trigger, status_text):
     if not match:
         raise Indeterminate("retirement_trigger.kind=%s carries no `match`" % kind)
     return match in status_text
+
+
+def load_corpus(status_path, history_path):
+    """status.md ∪ wave-history.md as ONE text. Returns (text, note).
+
+    status.md is REQUIRED — handed input we could not read is INDETERMINATE, always. The history
+    corpus is not: before its first push, or on a host it never reached, its absence is reported
+    POSITIVELY and the run proceeds on status.md alone (exactly what send_telegram.sh's resolver
+    does — `wave_history_absent`), because refusing would blind the canary to the open waves it
+    can still see. Either way the note says which corpus the verdict was computed over.
+    """
+    try:
+        status_text = Path(status_path).read_text()
+    except OSError as e:
+        raise Indeterminate("status.md unreadable at %s: %s" % (status_path, e))
+    try:
+        history_text = Path(history_path).read_text()
+        note = "corpus=status.md+wave-history.md (%d + %d bytes)" % (len(status_text),
+                                                                     len(history_text))
+    except OSError:
+        history_text = ""
+        note = ("corpus=status.md ONLY — wave_history_absent at %s; a decision recorded in a "
+                "CLOSED (archived) wave is invisible to this run" % history_path)
+    return status_text + "\n" + history_text, note
 
 
 def classify_row(row, fired, age_days, decided, grace_days=None):
@@ -336,14 +369,12 @@ def main():
             inventory = json.loads(Path(inv_path).read_text())
         except (OSError, ValueError) as e:
             raise Indeterminate("inventory unreadable at %s: %s" % (inv_path, e))
-        try:
-            status_text = Path(STATUS_MD).read_text()
-        except OSError as e:
-            # Handed input we could not read => INDETERMINATE, always. Without status.md the
-            # retirement trigger cannot be evaluated, and "no decision found" would be a lie.
-            raise Indeterminate("status.md unreadable at %s: %s" % (STATUS_MD, e))
-        log("START inventory=%s status_md=%s grace_days=%d"
-            % (inv_path, STATUS_MD, GRACE_DAYS))
+        # Handed input we could not read => INDETERMINATE, always. Without status.md the
+        # retirement trigger cannot be evaluated, and "no decision found" would be a lie.
+        status_text, corpus_note = load_corpus(STATUS_MD, WAVE_HISTORY_PATH)
+        log("START inventory=%s status_md=%s wave_history=%s grace_days=%d"
+            % (inv_path, STATUS_MD, WAVE_HISTORY_PATH, GRACE_DAYS))
+        log("CORPUS %s" % corpus_note)
         verdicts = run(inventory, status_text, now_epoch())
         orphaned = [v for v in verdicts if v["state"] in FINDING_STATES]
         print("DECISION_GATE_ORPHAN_VERDICT=%s" % ("FAIL" if orphaned else "PASS"))
@@ -500,6 +531,27 @@ def self_test():
     check("run() over an all-retired corpus fires NOTHING (this canary's own steady state)",
           lambda: not LAST_FIRE)
 
+    # ── the CORPUS: status.md ∪ wave-history.md (OPS-HOST-KERNEL-REBOOT-W5) ─────────────────
+    # load_corpus() is the bypassed artifact here — evaluate() takes text — so it is driven with
+    # REAL files. The decision lives only in the archive-derived corpus, exactly the shape trim
+    # policy v3 produces the day a deciding wave closes.
+    cdir = tempfile.mkdtemp(prefix="decision-gate-corpus-")
+    sp, hp = os.path.join(cdir, "status.md"), os.path.join(cdir, "wave-history.md")
+    Path(sp).write_text("### 2026-10-02 — OPS-UNRELATED-W1 — ⏳ open\n")
+    Path(hp).write_text("<!-- generated -->\n### 2026-09-30 — WAVE-X-READOUT-W1 — ✅ GREEN\n")
+    gate = row(match="WAVE-X-READOUT-W")
+    check("a trigger present ONLY in wave-history.md -> ORPHANED (never ORPHAN_SUSPECTED)",
+          lambda: state_of(gate, stat_at(GRACE_DAYS + 1),
+                           load_corpus(sp, hp)[0]) == "ORPHANED")
+    check("TWIN: the same files WITHOUT wave-history.md -> ORPHAN_SUSPECTED (the misroute)",
+          lambda: state_of(gate, stat_at(GRACE_DAYS + 1),
+                           load_corpus(sp, os.path.join(cdir, "absent.md"))[0])
+          == "ORPHAN_SUSPECTED")
+    check("an absent wave-history.md is REPORTED in the corpus note, not hidden",
+          lambda: "wave_history_absent" in load_corpus(sp, os.path.join(cdir, "absent.md"))[1])
+    check("an unreadable status.md is INDETERMINATE even when wave-history.md is readable",
+          lambda: raises_indeterminate(lambda: load_corpus(os.path.join(cdir, "nope.md"), hp)))
+
     # ── token -> exit-code mapping (re-coding INDETERMINATE to 0 must go RED) ────────────────
     check("INDETERMINATE maps to exit 3, PASS/FAIL to 0",
           lambda: _token_exit_map() == {"PASS": 0, "FAIL": 0, "INDETERMINATE": 3})
@@ -526,7 +578,7 @@ def self_test():
 # it when scenarios are added; it exists so a suite that stops running its scenarios cannot
 # report a pass. It earned its keep on first run: the line it replaced printed a hardcoded "30"
 # while the suite really ran 27, so the summary had been lying from the moment it was written.
-_SELF_TEST_MIN_CHECKS = 27
+_SELF_TEST_MIN_CHECKS = 31  # 27 -> 31: OPS-HOST-KERNEL-REBOOT-W5 added the four corpus checks
 
 
 def _token_exit_map():

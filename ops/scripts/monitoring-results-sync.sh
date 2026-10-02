@@ -12,6 +12,9 @@
 # bidirectional.
 #
 #   push   status.md            ->  root@<host>:/var/lib/algovault-monitoring/status.md
+#          wave-history.md      ->  root@<host>:/var/lib/algovault-monitoring/wave-history.md
+#          to EVERY host in the `wave-history` inventory row's installed_at[] (OPS-HOST-KERNEL-
+#          REBOOT-W5 CH2 — see "THE WAVE-HISTORY PUSH" below)
 #   pull   canary-results.jsonl ->  <vault>/Claude files/canary-results.jsonl   (UNION-MERGED)
 #          from EVERY host in MONITORING_SYNC_PULL_LABELS (default: signal-1 aoe-1), each resolved
 #          through the host SoT scripts/data/boot-critical-units.json — never a second literal.
@@ -115,7 +118,14 @@ LOCAL_RESULTS=${MONITORING_SYNC_RESULTS:-$VAULT_ROOT/Claude files/canary-results
 # addresses are resolved from the ONE host SoT, so a host move is one edit, not a hunt.
 PULL_LABELS=${MONITORING_SYNC_PULL_LABELS:-signal-1 aoe-1}
 HOSTS_SOT=${MONITORING_SYNC_HOSTS_SOT:-$REPO/scripts/data/boot-critical-units.json}
-SCP=${MONITORING_SYNC_SCP:-scp}  # the seam the self-test replaces to drive the real pull path
+SCP=${MONITORING_SYNC_SCP:-scp}  # the seam the self-test replaces to drive the real push + pull paths
+SSH=${MONITORING_SYNC_SSH:-ssh}  # the seam for the wave-history push's remote count + atomic rename
+REMOTE_WAVE_HISTORY="$REMOTE_DIR/wave-history.md"
+WAVE_HISTORY_BUILDER=${MONITORING_SYNC_WAVE_HISTORY_BUILDER:-$REPO/ops/scripts/wave-history-build.sh}
+INVENTORY=${MONITORING_SYNC_INVENTORY:-$REPO/ops/monitoring/monitoring-inventory.json}
+# The operator lever for a DELIBERATE shrink (an archive heading legitimately deleted). Loud, never
+# the default — see the floor in do_push_wave_history.
+ALLOW_SHRINK=${MONITORING_SYNC_WAVE_HISTORY_ALLOW_SHRINK:-0}
 
 VERDICT=PASS
 NOTES=()
@@ -172,14 +182,101 @@ PY
 }
 
 do_push() {
+  do_push_status
+  do_push_wave_history
+}
+
+# The original leg, unchanged in behaviour (only `scp` became the "$SCP" seam). It names status.md
+# and NOTHING else — which is what makes a STALE producer safe: a session running a copy of this
+# script from before OPS-HOST-KERNEL-REBOOT-W5 runs only this, so it can refresh status.md but can
+# never truncate, replace or delete wave-history.md. The corpus can LAG; it cannot REGRESS.
+# (Measured 2026-10-02: the primary checkout sat 299 commits behind origin/main, so a stale producer
+# is the normal case, not an edge case.) The self-test asserts it.
+do_push_status() {
   if [ ! -f "$LOCAL_STATUS" ]; then
     note "push: SKIPPED — no status.md at $LOCAL_STATUS"; downgrade INDETERMINATE; return
   fi
-  if scp -i "$SSH_KEY" $SSH_OPTS "$LOCAL_STATUS" "$HOST:$REMOTE_STATUS" >/dev/null 2>&1; then
+  if "$SCP" -i "$SSH_KEY" $SSH_OPTS "$LOCAL_STATUS" "$HOST:$REMOTE_STATUS" >/dev/null 2>&1; then
     note "push: status.md -> $HOST:$REMOTE_STATUS ($(wc -c <"$LOCAL_STATUS" | tr -d ' ') bytes)"
   else
     note "push: FAILED — host unreachable or scp refused"; downgrade INDETERMINATE
   fi
+}
+
+# ── THE WAVE-HISTORY PUSH (OPS-HOST-KERNEL-REBOOT-W5 CH2) ───────────────────────────────────
+# Trim policy v3 empties status.md of every CLOSED wave, so a host consumer answering "what has
+# already shipped" from it alone was blind by design (1 of 108 templated classes resolved). The
+# builder derives the headings-only corpus ONCE from the whole ledger; this leg ships it.
+#   * TARGETS are the `wave-history` inventory row's installed_at[] — ONE SoT for "who consumes it",
+#     never a second list here — each label resolved through the host SoT exactly like the pull.
+#   * A builder that does not print PASS pushes NOTHING (a truncated corpus must never replace a
+#     good one) and downgrades this script's ONE token to INDETERMINATE.
+#   * ATOMIC: scp to `<path>.tmp`, then chmod 0644 + `mv -f` in ONE remote command, so a reader sees
+#     the old file or the new one, never half of one. 0644: every consumer runs as root today, but
+#     the wrapper is also reachable from non-root units, and reading is all any of them does.
+#   * MONOTONIC FLOOR: a corpus with FEWER headings than the host already holds is refused per host
+#     (INDETERMINATE) — the corpus is append-only history, so a shrink means a source went missing.
+#     MONITORING_SYNC_WAVE_HISTORY_ALLOW_SHRINK=1 is the loud operator lever for a deliberate one.
+wave_history_targets() { # one label per line from the inventory row; nothing if absent/unreadable
+  python3 - "$INVENTORY" <<'PY' 2>/dev/null
+import json, sys
+try:
+    rows = json.load(open(sys.argv[1], encoding="utf-8")).get("artifacts", [])
+except Exception:  # noqa: BLE001 — unreadable inventory: no targets, and the caller says so
+    raise SystemExit(0)
+row = next((r for r in rows if r.get("id") == "wave-history"), None)
+for e in (row or {}).get("installed_at") or []:
+    if isinstance(e, dict) and e.get("host"):
+        print(e["host"])
+PY
+}
+
+do_push_wave_history() {
+  local tmp out tok n labels label host remote_n
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/mrsync-wh.XXXXXX")" || {
+    note "wave-history: FAILED — mktemp"; downgrade INDETERMINATE; return; }
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+  if [ ! -r "$WAVE_HISTORY_BUILDER" ]; then
+    note "wave-history: SKIPPED — builder $WAVE_HISTORY_BUILDER not present in this worktree; NOTHING pushed"
+    downgrade INDETERMINATE; return
+  fi
+  out="$(bash "$WAVE_HISTORY_BUILDER" --out "$tmp/wave-history.md" 2>&1)"
+  tok="$(printf '%s\n' "$out" | grep -o 'WAVE_HISTORY_VERDICT=[A-Z]*' | tail -1)"
+  if [ "$tok" != "WAVE_HISTORY_VERDICT=PASS" ] || [ ! -s "$tmp/wave-history.md" ]; then
+    printf '%s\n' "$out" | sed -n 's/^  /  wave-history builder: /p'
+    note "wave-history: builder said ${tok:-<no verdict token>} — NOTHING pushed (a truncated corpus must never replace a good one)"
+    downgrade INDETERMINATE; return
+  fi
+  n=$(grep -c '^### ' "$tmp/wave-history.md")
+  labels="$(wave_history_targets)"
+  if [ -z "$labels" ]; then
+    note "wave-history: FAILED — no \`wave-history\` row with installed_at hosts in $INVENTORY; NOTHING pushed"
+    downgrade INDETERMINATE; return
+  fi
+  for label in $labels; do
+    host="$(resolve_pull_host "$label")"
+    if [ -z "$host" ]; then
+      note "wave-history[$label]: FAILED — no address for label '$label' in $HOSTS_SOT"; downgrade INDETERMINATE; continue
+    fi
+    if ! remote_n="$("$SSH" -i "$SSH_KEY" $SSH_OPTS "$host" \
+          "if [ -r '$REMOTE_WAVE_HISTORY' ]; then grep -c '^### ' '$REMOTE_WAVE_HISTORY' || true; else echo 0; fi" 2>/dev/null)"; then
+      note "wave-history[$label]: FAILED — host unreachable"; downgrade INDETERMINATE; continue
+    fi
+    remote_n="$(printf '%s' "$remote_n" | tr -dc '0-9')"; remote_n="${remote_n:-0}"
+    if [ "$n" -lt "$remote_n" ] && [ "$ALLOW_SHRINK" != 1 ]; then
+      note "wave-history[$label]: REFUSED — the new corpus has $n heading(s), the host holds $remote_n; history is append-only, so a source likely went missing (MONITORING_SYNC_WAVE_HISTORY_ALLOW_SHRINK=1 for a deliberate shrink)"
+      downgrade INDETERMINATE; continue
+    fi
+    [ "$n" -lt "$remote_n" ] && note "wave-history[$label]: ALLOW_SHRINK=1 — shrinking $remote_n -> $n on operator instruction"
+    if "$SCP" -i "$SSH_KEY" $SSH_OPTS "$tmp/wave-history.md" "$host:$REMOTE_WAVE_HISTORY.tmp" >/dev/null 2>&1 \
+       && "$SSH" -i "$SSH_KEY" $SSH_OPTS "$host" \
+          "chmod 0644 '$REMOTE_WAVE_HISTORY.tmp' && mv -f '$REMOTE_WAVE_HISTORY.tmp' '$REMOTE_WAVE_HISTORY'" >/dev/null 2>&1; then
+      note "wave-history[$label]: -> $host:$REMOTE_WAVE_HISTORY  headings ${remote_n}->${n}  ($(wc -c <"$tmp/wave-history.md" | tr -d ' ') bytes, atomic rename)"
+    else
+      note "wave-history[$label]: FAILED — scp or the remote rename refused"; downgrade INDETERMINATE
+    fi
+  done
 }
 
 # Label -> "root@<address>" through the host SoT (the same file install-monitoring-artifact.sh
@@ -338,6 +435,108 @@ STUB
   t "the reachable host was still merged" "$(printf '%s\n' "${NOTES[@]}" | grep -c 'pull\[signal-1\]: root@10.0.0.1')" "1"
   VERDICT=PASS; NOTES=()
 
+  # ── THE WAVE-HISTORY PUSH, THROUGH THE REAL CODE PATH (OPS-HOST-KERNEL-REBOOT-W5 CH2) ──────
+  # scp, ssh and the builder are seams; each stub emulates its real counterpart closely enough
+  # that do_push / do_push_status / do_push_wave_history run unmodified against a fake remote.
+  local R="$tmp/remote" WL="$tmp/wh.log" BLD="$tmp/stub-builder.sh" WSCP="$tmp/wh-scp.sh" WSSH="$tmp/wh-ssh.sh"
+  local inv="$tmp/inventory.json" st="$tmp/status.md"
+  mkdir -p "$R/10.0.0.1" "$R/10.0.0.2"
+  printf '### 2026-10-02 — OPS-OPEN-W1 — ⏳ open\n' > "$st"
+  printf '%s\n' '{"artifacts":[{"id":"wave-history","installed_at":[{"host":"signal-1","path":"/var/lib/algovault-monitoring/wave-history.md"},{"host":"aoe-1","path":"/var/lib/algovault-monitoring/wave-history.md"}]}]}' > "$inv"
+  cat > "$BLD" <<STUB
+#!/usr/bin/env bash
+# MODE comes from WH_STUB_MODE: PASS | FAIL | INDETERMINATE | NOTOKEN. FAIL and NOTOKEN still WRITE
+# a (truncated) file, so "a FAIL that pushes anyway" has something to push and cannot hide.
+o=""; while [ \$# -gt 0 ]; do [ "\$1" = --out ] && o="\$2"; shift; done
+case "\${WH_STUB_MODE:-PASS}" in
+  PASS) printf '<!-- generated -->\n### a — X-W1 — ✅ GREEN\n### b — X-W2 — ✅ GREEN\n### c — X-W3 — ✅ GREEN\n' > "\$o"; echo WAVE_HISTORY_VERDICT=PASS ;;
+  FAIL) printf '### a — X-W1 — ✅ GREEN\n' > "\$o"; echo WAVE_HISTORY_VERDICT=FAIL; exit 1 ;;
+  INDETERMINATE) echo WAVE_HISTORY_VERDICT=INDETERMINATE; exit 3 ;;
+  NOTOKEN) printf '### a — X-W1 — ✅ GREEN\n' > "\$o"; echo "it died before saying anything" ;;
+esac
+STUB
+  cat > "$WSCP" <<STUB
+#!/usr/bin/env bash
+# scp [-i key] [-o opt]... <src> <user@host:dst>  — option PAIRS are skipped, the rest are operands.
+ops=(); while [ \$# -gt 0 ]; do case "\$1" in -i|-o) shift 2 ;; *) ops+=("\$1"); shift ;; esac; done
+src="\${ops[0]}"; dst="\${ops[1]}"; h="\${dst#*@}"; h="\${h%%:*}"; f="\${dst##*/}"
+echo "SCP \$src -> \$dst" >> "$WL"
+[ -d "$R/\$h" ] || exit 1
+cp "\$src" "$R/\$h/\$f"
+STUB
+  cat > "$WSSH" <<STUB
+#!/usr/bin/env bash
+eval "cmd=\\\${\$#}"; eval "hostarg=\\\${\$((\$# - 1))}"
+h="\${hostarg#*@}"
+echo "SSH \$h \$cmd" >> "$WL"
+[ -d "$R/\$h" ] || exit 255
+case "\$cmd" in
+  *"grep -c"*) if [ -f "$R/\$h/count" ]; then cat "$R/\$h/count"; elif [ -f "$R/\$h/wave-history.md" ]; then grep -c '^### ' "$R/\$h/wave-history.md"; else echo 0; fi ;;
+  *"mv -f"*)   chmod 0644 "$R/\$h/wave-history.md.tmp" && mv -f "$R/\$h/wave-history.md.tmp" "$R/\$h/wave-history.md" ;;
+  *) exit 2 ;;
+esac
+STUB
+  chmod +x "$BLD" "$WSCP" "$WSSH"
+  export WH_STUB_MODE
+  whrun() { # <stub-mode> [allow_shrink] [builder] — the REAL do_push (both legs) against the fake remote
+    WH_STUB_MODE="$1"; VERDICT=PASS; NOTES=(); : > "$WL"
+    HOST="root@10.0.0.1" HOSTS_SOT="$sot" SCP="$WSCP" SSH="$WSSH" LOCAL_STATUS="$st" INVENTORY="$inv" \
+      ALLOW_SHRINK="${2:-0}" WAVE_HISTORY_BUILDER="${3:-$BLD}" do_push
+  }
+  whrun PASS
+  t "a PASS corpus lands on signal-1"                  "$(WH_STUB_MODE=PASS bash "$BLD" --out "$tmp/expect.md" >/dev/null; cmp -s "$R/10.0.0.1/wave-history.md" "$tmp/expect.md" && echo same || echo differ)" "same"
+  t "a PASS corpus lands on aoe-1 (installed_at, not a literal)" "$(grep -c '^### ' "$R/10.0.0.2/wave-history.md" 2>/dev/null)" "3"
+  t "status.md still goes to signal-1 only"           "$(grep -c 'SCP .*status.md -> root@10.0.0.1:/var/lib/algovault-monitoring/status.md' "$WL")" "1"
+  t "the copy goes to <path>.tmp first"               "$(grep -c 'wave-history.md -> root@10.0.0.[12]:/var/lib/algovault-monitoring/wave-history.md.tmp$' "$WL")" "2"
+  t "…then ONE remote chmod 0644 + mv -f per host"    "$(grep -c "chmod 0644 '/var/lib/algovault-monitoring/wave-history.md.tmp' && mv -f" "$WL")" "2"
+  t "no .tmp is left on either host"                  "$(ls "$R"/10.0.0.*/ | grep -c '\.tmp$')" "0"
+  t "the installed corpus is world-readable (0644)"   "$(ls -l "$R/10.0.0.2/wave-history.md" | cut -c1-10)" "-rw-r--r--"
+  t "a full push is PASS"                             "$VERDICT" "PASS"
+  t "the note is POSITIVE: headings before->after"    "$(printf '%s\n' "${NOTES[@]}" | grep -c 'headings 0->3')" "2"
+
+  for m in FAIL INDETERMINATE NOTOKEN; do
+    rm -f "$R"/10.0.0.*/wave-history.md
+    whrun "$m"
+    t "a builder $m pushes NOTHING to any host"        "$(grep -c 'wave-history' "$WL")" "0"
+    t "…and leaves no file on either host ($m)"        "$(ls "$R"/10.0.0.*/ | grep -c wave-history)" "0"
+    t "…and downgrades the ONE token to INDETERMINATE ($m)" "$VERDICT" "INDETERMINATE"
+    t "…and SAYS nothing was pushed ($m)"              "$(printf '%s\n' "${NOTES[@]}" | grep -c 'NOTHING pushed')" "1"
+    t "…while status.md was still pushed ($m)"         "$(grep -c 'status.md -> ' "$WL")" "1"
+  done
+
+  # The monotonic floor: aoe-1 already holds MORE history than this corpus carries.
+  rm -f "$R"/10.0.0.*/wave-history.md; printf 'OLD\n' > "$R/10.0.0.2/wave-history.md"; echo 99 > "$R/10.0.0.2/count"
+  whrun PASS
+  t "a SHRINKING corpus is refused for that host"     "$(cat "$R/10.0.0.2/wave-history.md")" "OLD"
+  t "…the other host is still pushed"                 "$(grep -c '^### ' "$R/10.0.0.1/wave-history.md")" "3"
+  t "…and the refusal is INDETERMINATE, named"        "$VERDICT:$(printf '%s\n' "${NOTES[@]}" | grep -c 'wave-history\[aoe-1\]: REFUSED')" "INDETERMINATE:1"
+  whrun PASS 1
+  t "ALLOW_SHRINK=1 is the deliberate, loud override" "$(grep -c '^### ' "$R/10.0.0.2/wave-history.md"):$(printf '%s\n' "${NOTES[@]}" | grep -c 'ALLOW_SHRINK=1')" "3:1"
+  rm -f "$R/10.0.0.2/count"
+
+  # Targets are the inventory row, never a list in this file.
+  printf '%s\n' '{"artifacts":[{"id":"wave-history","installed_at":[{"host":"aoe-1","path":"/x"}]}]}' > "$inv"
+  rm -f "$R"/10.0.0.*/wave-history.md; whrun PASS
+  t "a one-host installed_at pushes to that host only" "$(ls "$R"/10.0.0.1/ | grep -c wave-history):$(ls "$R"/10.0.0.2/ | grep -c wave-history)" "0:1"
+  printf '%s\n' '{"artifacts":[{"id":"something-else"}]}' > "$inv"
+  rm -f "$R"/10.0.0.*/wave-history.md; whrun PASS
+  t "no wave-history row: NOTHING pushed, INDETERMINATE" "$(grep -c 'wave-history' "$WL"):$VERDICT" "0:INDETERMINATE"
+  printf '%s\n' '{"artifacts":[{"id":"wave-history","installed_at":[{"host":"ghost"}]}]}' > "$inv"
+  whrun PASS
+  t "an unresolvable installed_at label is INDETERMINATE and named" "$VERDICT:$(printf '%s\n' "${NOTES[@]}" | grep -c "no address for label 'ghost'")" "INDETERMINATE:1"
+  whrun PASS 0 "$tmp/no-such-builder.sh"
+  t "an absent builder (a worktree predating it) pushes NOTHING" "$(grep -c 'wave-history' "$WL"):$VERDICT" "0:INDETERMINATE"
+
+  # STALE-PRODUCER SAFETY: the pre-W5 leg names status.md and nothing else, so a session running an
+  # old copy of this script can refresh status.md but can never touch wave-history.md.
+  printf 'KEEP\n' > "$R/10.0.0.1/wave-history.md"; : > "$WL"; VERDICT=PASS; NOTES=()
+  HOST="root@10.0.0.1" SCP="$WSCP" LOCAL_STATUS="$st" do_push_status
+  t "the status.md leg transfers ONLY status.md"      "$(grep -c '^SCP' "$WL"):$(grep -c 'wave-history' "$WL")" "1:0"
+  t "…and leaves an existing wave-history.md untouched" "$(cat "$R/10.0.0.1/wave-history.md")" "KEEP"
+  t "the status.md leg makes no ssh call at all"      "$(grep -c '^SSH' "$WL")" "0"
+  unset WH_STUB_MODE
+  VERDICT=PASS; NOTES=()
+
   # ── THE MIRROR LEG'S TOKEN MAPPING ────────────────────────────────────────────────────────
   # The leg delegates to a sibling executable, so the INVOCATION is a seam and a hermetic suite
   # is structurally blind to it. Point the seam at a stub that emits a chosen token and drive
@@ -406,6 +605,13 @@ STUB
   t "a healthy load emits no refusal token" \
     "$("$SELF" --show-config 2>&1 | grep -c 'MONITORING_RESULTS_SYNC_VERDICT')" "0"
 
+  # VACUITY floor (OPS-HOST-KERNEL-REBOOT-W5): the suite is constructed HERE, so a run that stops
+  # executing scenarios must not report a pass. Set to the actual count; raise it with new cases.
+  if [ "$ran" -lt 70 ]; then
+    echo "SELF-TEST: INDETERMINATE (only $ran assertions ran, floor 70)"
+    echo "MONITORING_RESULTS_SYNC_VERDICT=INDETERMINATE"
+    return 3
+  fi
   if [ "$fails" -gt 0 ]; then
     echo "SELF-TEST: FAIL ($fails of $ran)"
     echo "MONITORING_RESULTS_SYNC_VERDICT=INDETERMINATE"

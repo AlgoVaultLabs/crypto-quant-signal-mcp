@@ -1,6 +1,13 @@
 # Manifest for recommendation-drift-canary.py
 # Each row enumerates a monitoring script/manifest to audit for hardcoded
-# OPS-X-Y-W<N> references that drift behind highest GREEN W<N> in status.md.
+# OPS-X-Y-W<N> references that drift behind highest GREEN W<N> in status.md ∪ wave-history.md.
+#
+# status_md_completion_regex IS THE RESOLVER'S PREDICATE (send_telegram.sh resolve_template():
+# anchor on the wave id, GREEN anywhere later on the heading) — never a second dialect of "what
+# completed". The prior form demanded ` — ` IMMEDIATELY after the id, the position CLAUDE.md
+# mandates for the `(Target ICP tier(s): …)` block, so it matched 94 archived GREEN headings where
+# the resolver's form matches 436 (measured 2026-10-02, OPS-HOST-KERNEL-REBOOT-W5). Pinned by
+# tests/unit/wave-history-corpus.test.mjs: both forms must select identical lines over one corpus.
 #
 # IMPORTANT: hardcoded_template_regex MUST anchor on actionable context
 # ('Action: dispatch ...' OR 'recommended_wave: ...') so it doesn't false-positive
@@ -13,13 +20,13 @@ rows:
   - alert_class: POSTGRES_RECAUDIT
     script_path: /opt/algovault-monitoring/postgres-cpu-snapshot.sh
     hardcoded_template_regex: 'Action: dispatch OPS-POSTGRES-RECAUDIT-W([0-9]+)'
-    status_md_completion_regex: '^### .* — OPS-POSTGRES-RECAUDIT-W([0-9]+) — .*GREEN'
+    status_md_completion_regex: '^### .*OPS-POSTGRES-RECAUDIT-W([0-9]+).*GREEN'
     recommended_wave: 'OPS-POSTGRES-RECAUDIT-W{NEXT}'
 
   - alert_class: WEBSITE_DRIFT_CONSUMERS
     script_path: /opt/algovault-monitoring/website-drift-manifest.yaml
     hardcoded_template_regex: 'recommended_wave: OPS-[A-Z0-9-]+-W([0-9]+)'
-    status_md_completion_regex: '^### .* — OPS-[A-Z0-9-]+-W([0-9]+) — .*GREEN'
+    status_md_completion_regex: '^### .*OPS-[A-Z0-9-]+-W([0-9]+).*GREEN'
     recommended_wave: 'OPS-RECOMMENDATION-CANARY-MANIFEST-EXPAND-W{NEXT}'
 
 # ── RETIRED 2026-08-23 by OPS-AOE-LIVENESS-W2 CH2, and REPLACED — not merely deleted ────────

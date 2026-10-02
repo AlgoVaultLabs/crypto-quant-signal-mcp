@@ -177,8 +177,15 @@ test('the hash check covers the WHOLE inventory, not the slice one wave cared ab
   // per-row structural assertion above holds for all 12. The alternative was a scheduled job on
   // aoe-1 with no inventory row — invisible rather than merely unhashable. It is verified by the
   // reconciler ON aoe-1, and it retires itself on 2027-01-17, after which its row can go.
+  //
+  // RAISED 12 -> 13 by OPS-HOST-KERNEL-REBOOT-W5 CH2, for `wave-history` — GENERATED DATA pushed to
+  // both hosts by monitoring-results-sync.sh. It has no committed artifact and a deliberately null
+  // sha256 (its content changes with every wave, so a pinned hash would be HASH_DRIFT by
+  // construction) — the same structural ground as `host-identity-label`, and the per-row assertion
+  // above holds for it. The alternative was a host file with no inventory row at all, whose
+  // installed_at could not serve as the push target list.
   assert.ok(
-    excluded.length <= 12,
+    excluded.length <= 13,
     `${excluded.length} rows are excluded from hash parity — that set must stay small and ` +
       'structural. Growth here means coverage is being lost quietly.',
   );

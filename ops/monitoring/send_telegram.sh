@@ -7,6 +7,8 @@
 #        send_telegram.sh --reconcile [alert_id]                  # adopt on-disk state, emit nothing
 #        send_telegram.sh --self-test                             # hermetic
 #        send_telegram.sh --acknowledge <alert_id>                # seed the ack from ALERT_KEYS; no POST
+#        send_telegram.sh --resolve [-]                           # body on stdin -> resolved body on
+#                                                                 # stdout; no state, no log, no network
 #   ALERT_KEYS="<k1> <k2> …" opts a call into page-on-change — honoured ONLY for a registry row
 #   declaring page_on="change" + page_on_change (see PAGE-ON-CHANGE below). Every other row is
 #   byte-identical to before.
@@ -63,9 +65,10 @@
 #   All other paths log silently. Fail-open exit 0 on every error path.
 #
 # PATCH-B (RECRESOLVER-W1): resolve_template() substitutes OPS-<CLASS>-W{NEXT} placeholders
-#   in the body by greping /var/lib/algovault-monitoring/status.md for highest-completed
-#   GREEN W<N> of the class. Runs AFTER body read + AFTER cooldown gate + BEFORE DRY_RUN
-#   gate, so DRY_RUN_FIRED + FIRED log lines reflect the RESOLVED body.
+#   in the body by greping /var/lib/algovault-monitoring/status.md ∪ wave-history.md for the
+#   highest-completed GREEN W<N> of the class. Runs AFTER body read + AFTER cooldown gate +
+#   BEFORE DRY_RUN gate, so DRY_RUN_FIRED + FIRED log lines reflect the RESOLVED body.
+#   (Corpus widened to the union by OPS-HOST-KERNEL-REBOOT-W5 — see resolve_template().)
 
 set -euo pipefail
 
@@ -76,6 +79,7 @@ case "${1:-}" in
   --reconcile) MODE=reconcile; shift ;;
   --self-test) MODE=self-test; shift ;;
   --acknowledge) MODE=acknowledge; shift ;;
+  --resolve)   MODE=resolve;   shift ;;
 esac
 
 case "$MODE" in
@@ -91,6 +95,7 @@ case "$MODE" in
   reconcile) ALERT_ID="${1:-ALL}" ;;
   self-test) ALERT_ID="SELF_TEST" ;;
   acknowledge) ALERT_ID="${1:?alert_id required}" ;;
+  resolve)     ALERT_ID="RESOLVE"; BODY_INPUT="${1:--}" ;;
 esac
 
 # Every path below is overridable ONLY so the hermetic --self-test can redirect it. All four are
@@ -113,7 +118,8 @@ POC_NEW="" POC_NNEW=0 POC_NACKED=0 POC_PRUNED="" POC_NPRUNED=0 POC_PRUNE_CHANGED
 # fail-open: an unwritable STATE_DIR must not abort under `set -e`. The header has always
 # promised fail-open on every error path; before this line it was the one place that did not
 # honour it, and a wrapper that dies takes the caller's cron with it. (AC7.)
-mkdir -p "$STATE_DIR" 2>/dev/null || true
+# `--resolve` is a pure function (stdin -> stdout) and must not even create STATE_DIR.
+[[ "$MODE" == resolve ]] || mkdir -p "$STATE_DIR" 2>/dev/null || true
 
 # `|| true` is LOAD-BEARING: under `set -euo pipefail` an unwritable $LOG made the FIRST log()
 # call abort the wrapper, so every alert from a non-root caller died silently — the editorial units
@@ -121,22 +127,41 @@ mkdir -p "$STATE_DIR" 2>/dev/null || true
 # a logging failure must never be able to swallow an operator alert.
 # (OPS-AUTOPUB-FULL-REVIEW-FIX-W1 C5. The perms themselves are fixed too, incl. the logrotate
 # `create` line that regenerated them weekly — but the code must not depend on that.)
-log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [$ALERT_ID] $*" >> "$LOG" 2>/dev/null || true; }
+#
+# `--resolve` sends its diagnostics to STDERR instead: it is a read-only probe that a sweep may run
+# a hundred times, and its RESOLVER_MISS lines must never land in the forensic log beside real fires.
+# (Kept on ONE line: both repos' parity tests pin the fail-open `|| true` on the log() definition line.)
+log() { if [[ "$MODE" == resolve ]]; then echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [$ALERT_ID] $*" >&2 || true; else echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [$ALERT_ID] $*" >> "$LOG" 2>/dev/null || true; fi; }
 
-# === PATCH-B: resolve_template() — substitutes OPS-<CLASS>-W{NEXT} via status.md grep ===
+# === PATCH-B: resolve_template() — substitutes OPS-<CLASS>-W{NEXT} via a status.md ∪ wave-history.md grep ===
 # Reads STATUS_MD_PATH (default /var/lib/algovault-monitoring/status.md, refreshed per
-# CLAUDE.md ## Execution flow step 6 SOP after every wave's status.md append).
+# CLAUDE.md ## Execution flow step 6 SOP after every wave's status.md append) UNION
+# WAVE_HISTORY_PATH (default /var/lib/algovault-monitoring/wave-history.md, the headings-only
+# corpus ops/scripts/wave-history-build.sh derives and monitoring-results-sync.sh pushes).
+#
+# WHY THE UNION (OPS-HOST-KERNEL-REBOOT-W5): since trim policy v3 (2026-08-12) status.md holds
+# OPEN waves only — a closed GREEN wave is archived the moment it closes — so this resolver was
+# searching for exactly the records the policy removes. MEASURED 2026-10-02 over the 108 templated
+# classes in this repo: status.md alone resolved 1; the union resolves 21. The 2026-09-12 and
+# 2026-10-02 KERNEL_STALENESS pages both shipped OPS-HOST-KERNEL-REBOOT-W{NEXT} verbatim while
+# W1..W4 sat GREEN in the archive. The predicate below is UNCHANGED; only its corpus widened.
+#
 # Behavior:
 #   - Class has GREEN history: substitute W{NEXT} → W<max+1> (MAX-W<N> via grep -oE | sort -n | tail -1)
-#   - Class has zero GREEN history (greenfield): substitute → W1 + log RESOLVER_MISS
-#   - status.md unreachable OR regex extract fails: ship placeholder verbatim + log RESOLVER_MISS
-# Three RESOLVER_MISS reasons enumerated: reachable_status_md_path_not_found,
-# no_completed_waves_for_class, regex_extract_failed.
+#   - Class has zero GREEN history: ship the placeholder VERBATIM + log RESOLVER_MISS
+#   - neither file readable OR regex extract fails: ship placeholder verbatim + log RESOLVER_MISS
+# RESOLVER_MISS reasons: reachable_status_md_path_not_found (NEITHER file readable),
+# wave_history_absent (only status.md was read — resolution continues on it, but closed waves are
+# invisible), no_completed_waves_for_class, regex_extract_failed, resolved_wave_already_green.
 resolve_template() {
   local body="$1"
   local status_path="${STATUS_MD_PATH:-/var/lib/algovault-monitoring/status.md}"
-  if [[ ! -r "$status_path" ]]; then
-    log "RESOLVER_MISS: template=<not-extracted> reason=reachable_status_md_path_not_found"
+  local history_path="${WAVE_HISTORY_PATH:-/var/lib/algovault-monitoring/wave-history.md}"
+  local corpus=()
+  [[ -r "$status_path" ]] && corpus+=("$status_path")
+  [[ -r "$history_path" ]] && corpus+=("$history_path")
+  if [[ ${#corpus[@]} -eq 0 ]]; then
+    log "RESOLVER_MISS: template=<not-extracted> reason=reachable_status_md_path_not_found (neither ${status_path} nor ${history_path} is readable)"
     echo "$body"
     return 0
   fi
@@ -145,6 +170,9 @@ resolve_template() {
   if [[ -z "$templates" ]]; then
     echo "$body"
     return 0
+  fi
+  if [[ ! -r "$history_path" ]]; then
+    log "RESOLVER_MISS: template=<corpus> reason=wave_history_absent (${history_path} unreadable; resolving from ${status_path} alone, where trim policy v3 keeps OPEN waves only)"
   fi
   local tpl class highest next
   while IFS= read -r tpl; do
@@ -160,7 +188,7 @@ resolve_template() {
     # A regex that encodes a format its own SoT does not produce is a dark guard.
     # Anchor on the wave id; require GREEN anywhere on the heading (accepting
     # GREEN_WITH_CAVEAT / GREEN_RETROACTIVE_CLOSE, which are completions too).
-    highest=$(grep -oE "^### .*${class}-W[0-9]+.*GREEN" "$status_path" 2>/dev/null \
+    highest=$(grep -ohE "^### .*${class}-W[0-9]+.*GREEN" "${corpus[@]}" 2>/dev/null \
               | grep -oE "${class}-W[0-9]+" | grep -oE '[0-9]+$' | sort -n | tail -1 || true)
     if [[ -z "$highest" ]]; then
       # Ship the placeholder VERBATIM — exactly what this file's header has always documented.
@@ -176,7 +204,7 @@ resolve_template() {
     fi
     # Never hand the operator a wave that already shipped — re-running a completed wave is not
     # a remedy, and this alert family has now produced that Action line twice.
-    if grep -qE "^### .*${class}-W${next}.*GREEN" "$status_path" 2>/dev/null; then
+    if grep -qhE "^### .*${class}-W${next}.*GREEN" "${corpus[@]}" 2>/dev/null; then
       log "RESOLVER_MISS: template=${tpl} reason=resolved_wave_already_green (${class}-W${next}); placeholder shipped verbatim"
       continue
     fi
@@ -899,6 +927,53 @@ self_test() {
   ck 'legacy 3-arg path byte-identical: fires'           "$(verb)" 'FIRED'
   ck 'legacy 3-arg path byte-identical: writes the marker' "$([[ -f "$tmp/state/AID-last-fired-at" ]] && echo y || echo n)" 'y'
 
+  # ── RESOLVER CORPUS + --resolve (OPS-HOST-KERNEL-REBOOT-W5 CH2) ──────────────────────────
+  # The fixture mirrors 2026-10-02: status.md holds only the OPEN wave (trim policy v3), the
+  # class's GREEN history lives only in the archive-derived wave-history.md.
+  local rs="$tmp/resolver" rout
+  mkdir -p "$rs"
+  printf '%s\n' '### 2026-10-02 08:00 UTC — OPS-FIXTURE-REBOOT-W5 (Target ICP tier(s): META) — ⏳ open' > "$rs/status.md"
+  printf '%s\n' '<!-- generated -->' \
+    '### 2026-08-27 — OPS-FIXTURE-REBOOT-W3 (Target ICP tier(s): META) — ✅ GREEN' \
+    '### 2026-09-12 08:49 UTC — OPS-FIXTURE-REBOOT-W4 (Target ICP tier(s): META) — ✅ GREEN' > "$rs/wave-history.md"
+  printf '#!/usr/bin/env bash\ntouch "%s/curl-was-called"\nprintf 200\n' "$rs" > "$rs/curl-tripwire"; chmod +x "$rs/curl-tripwire"
+  resolve_body() {  # <status_path> <history_path> — stdin body -> stdout; stderr captured
+    env -u VITEST -u NODE_TEST_CONTEXT -u ALGOVAULT_TG_TEST_INERT \
+        ALERT_WRAPPER_LOG="$rs/log" ALERT_WRAPPER_STATE_DIR="$rs/state" ALERT_WRAPPER_ENV="$tmp/env" \
+        ALERT_REGISTRY_PATH="$tmp/registry.json" ALERT_WRAPPER_CURL="$rs/curl-tripwire" \
+        STATUS_MD_PATH="$1" WAVE_HISTORY_PATH="$2" bash "$me" --resolve - 2>"$rs/stderr"
+  }
+  rout=$(printf 'recommended_wave: OPS-FIXTURE-REBOOT-W{NEXT}\n' | resolve_body "$rs/status.md" "$rs/wave-history.md")
+  ck 'archive-only GREEN history resolves through wave-history.md'   "$rout" 'recommended_wave: OPS-FIXTURE-REBOOT-W5'
+  # TWO-DIRECTION REPRODUCTION: the same corpus WITHOUT wave-history.md is exactly origin/main's view.
+  rout=$(printf 'recommended_wave: OPS-FIXTURE-REBOOT-W{NEXT}\n' | resolve_body "$rs/status.md" "$rs/absent.md")
+  ck 'status.md alone ships the placeholder verbatim (the bug, reproduced)' "$rout" 'recommended_wave: OPS-FIXTURE-REBOOT-W{NEXT}'
+  ck '…and logs wave_history_absent'                    "$(grep -c 'reason=wave_history_absent' "$rs/stderr")" '1'
+  ck '…and no_completed_waves_for_class'                "$(grep -c 'reason=no_completed_waves_for_class' "$rs/stderr")" '1'
+  # The wave's own GREEN entry lands in status.md -> the next page names the NEXT wave.
+  printf '%s\n' '### 2026-10-02 09:30 UTC — OPS-FIXTURE-REBOOT-W5 (Target ICP tier(s): META) — ✅ GREEN' >> "$rs/status.md"
+  rout=$(printf 'recommended_wave: OPS-FIXTURE-REBOOT-W{NEXT}\n' | resolve_body "$rs/status.md" "$rs/wave-history.md")
+  ck 'a GREEN in status.md and history in the archive take the max of the UNION' "$rout" 'recommended_wave: OPS-FIXTURE-REBOOT-W6'
+  # aoe-1's shape: no status.md at all, only the pushed corpus.
+  rout=$(printf 'recommended_wave: OPS-FIXTURE-REBOOT-W{NEXT}\n' | resolve_body "$rs/absent.md" "$rs/wave-history.md")
+  ck 'wave-history.md alone resolves (the aoe-1 shape)'  "$rout" 'recommended_wave: OPS-FIXTURE-REBOOT-W5'
+  ck '…without a reachable_status_md_path_not_found'   "$(grep -c 'reachable_status_md_path_not_found' "$rs/stderr")" '0'
+  rout=$(printf 'recommended_wave: OPS-FIXTURE-REBOOT-W{NEXT}\n' | resolve_body "$rs/absent.md" "$rs/absent2.md")
+  ck 'NEITHER file readable ships the placeholder verbatim' "$rout" 'recommended_wave: OPS-FIXTURE-REBOOT-W{NEXT}'
+  ck '…as reachable_status_md_path_not_found'           "$(grep -c 'reason=reachable_status_md_path_not_found' "$rs/stderr")" '1'
+  rout=$(printf 'line one\nrecommended_wave: none here\n' | resolve_body "$rs/status.md" "$rs/wave-history.md")
+  ck 'a body with no template passes through unchanged' "$rout" "$(printf 'line one\nrecommended_wave: none here')"
+  ck '…and logs nothing'                                "$(wc -c < "$rs/stderr" | tr -d ' ')" '0'
+  # --resolve is a PURE function: no STATE_DIR, no marker, no log file, no network — ever.
+  ck '--resolve never creates STATE_DIR'               "$([[ -e "$rs/state" ]] && echo y || echo n)" 'n'
+  ck '--resolve never writes the shared log'           "$([[ -e "$rs/log" ]] && echo y || echo n)" 'n'
+  ck '--resolve never reaches the network'             "$([[ -e "$rs/curl-was-called" ]] && echo y || echo n)" 'n'
+  ck '--resolve never writes a cooldown marker anywhere' "$(find "$tmp" -name '*-last-fired-at' -newer "$rs/curl-tripwire" | grep -c RESOLVE)" '0'
+  # Both the max-extraction and the already-GREEN guard read the SAME union (single corpus).
+  ck 'the max-extraction reads the union corpus'       "$(grep -c 'grep -ohE "^### .\*\${class}-W\[0-9\]+.\*GREEN" "\${corpus\[@\]}"' "$me")" '1'
+  ck 'the already-GREEN guard reads the same union'    "$(grep -c 'grep -qhE "^### .\*\${class}-W\${next}.\*GREEN" "\${corpus\[@\]}"' "$me")" '1'
+  ck 'ONE pinned default for the corpus path'          "$(grep -cE '^  local history_path="\$\{WAVE_HISTORY_PATH:-/var/lib/algovault-monitoring/wave-history\.md\}"$' "$me")" '1'
+
   # ── SEAM-BLINDNESS GUARD ─────────────────────────────────────────────────
   # Every POST above went through a stubbed curl, so this suite is structurally blind to the real
   # invocation. Assert the bypassed artifact directly: both POST sites must still carry the flags
@@ -910,7 +985,7 @@ self_test() {
 
   # ── VACUITY GUARDS ───────────────────────────────────────────────────────
   checks=$((checks+1))
-  if [[ $checks -lt 90 ]]; then
+  if [[ $checks -lt 119 ]]; then  # raised 90 -> 119 by OPS-HOST-KERNEL-REBOOT-W5 (resolver corpus + --resolve)
     echo "  ✗ this suite ran only $checks checks — it is asserting almost nothing"; fails=$((fails+1))
   fi
   checks=$((checks+1))
@@ -924,12 +999,25 @@ self_test() {
     echo "ALERT_WRAPPER_VERDICT=FAIL"
     exit 1
   fi
-  echo "SELF-TEST: PASS — $checks checks (transitions both ways, silent-by-default, failed-send retains state, test context cannot clear production state, legacy 3-arg path byte-identical, reconcile emits nothing, sandbox containment both ways, seam-blindness guard, page-on-change: new/same/prune/re-page, 24h/failed/dry-run keep the ack, UNKNOWN ack pages, both-or-neither, review_by inclusive, --acknowledge, --clear, legacy rows ignore keys, gate order)"
+  echo "SELF-TEST: PASS — $checks checks (transitions both ways, silent-by-default, failed-send retains state, test context cannot clear production state, legacy 3-arg path byte-identical, reconcile emits nothing, sandbox containment both ways, seam-blindness guard, page-on-change: new/same/prune/re-page, 24h/failed/dry-run keep the ack, UNKNOWN ack pages, both-or-neither, review_by inclusive, --acknowledge, --clear, legacy rows ignore keys, gate order, resolver corpus status.md ∪ wave-history.md both directions, --resolve pure)"
   echo "ALERT_WRAPPER_VERDICT=PASS"
   exit 0
 }
 
+# ── --resolve: the resolver as a pure, read-only seam (OPS-HOST-KERNEL-REBOOT-W5) ──────────
+# A body on stdin (or a file argument) -> the resolved body on stdout. It reads the same corpus a
+# real fire reads and NOTHING else: no STATE_DIR (not even created), no cooldown marker, no ack, no
+# env file, no network, and its diagnostics go to stderr rather than the shared log. Any gate or
+# probe that wants to know what a page WOULD say calls this instead of firing one.
+do_resolve() {
+  local body
+  if [[ "$BODY_INPUT" == "-" ]]; then body=$(cat); else body=$(cat "$BODY_INPUT" 2>/dev/null || true); fi
+  resolve_template "$body"
+  exit 0
+}
+
 case "$MODE" in
+  resolve)   do_resolve ;;
   clear)     do_clear ;;
   reconcile) do_reconcile ;;
   self-test) self_test ;;
