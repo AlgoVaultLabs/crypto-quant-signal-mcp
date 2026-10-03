@@ -411,10 +411,14 @@ describe('the vocabulary is measured DATA — every entry is backed by a committ
 });
 
 describe('byte parity with the canary (the CH3 shims delegate here)', () => {
+  // The reference is FROZEN: the pre-migration bash parsers, verbatim (CH3 turned the canary's copies
+  // into shims over this module, so comparing against the live canary would compare the module with itself).
   const bashFns = () => {
-    const src = readFileSync(CANARY, 'utf8');
+    const src = fx('legacy-canary-parsers.sh');
     const grab = (name: string) => { const m = new RegExp(`^${name}\\(\\) \\{[\\s\\S]*?^\\}`, 'm').exec(src); expect(m, name).toBeTruthy(); return m![0]; };
-    return [grab('parse_badge_status'), grab('classify_status'), grab('parse_runs_page')].join('\n');
+    const all = [grab('parse_badge_status'), grab('classify_status'), grab('parse_runs_page')].join('\n');
+    expect(all).not.toMatch(/GHRC_JS|NODE_BIN/); // never a shim
+    return all;
   };
   const corpusPages = [
     ...readdirSync(FX).filter((f) => f.endsWith('.html')).map((f) => fx(f)),
@@ -449,6 +453,26 @@ describe('byte parity with the canary (the CH3 shims delegate here)', () => {
         const b = spawnSync('bash', ['-c', `source "${fns}"; classify_status "$1"`, '_', t], { encoding: 'utf8' }).stdout;
         const n = spawnSync('node', [MODULE, '--classify-status', t], { encoding: 'utf8' }).stdout;
         expect(n).toBe(b);
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('the CANARY\'s shims, sourced as cron runs them, equal the module sub-modes on the real corpus', { timeout: 120_000 }, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ghrc-shim-'));
+    try {
+      const src = readFileSync(CANARY, 'utf8');
+      const grab = (name: string) => new RegExp(`^${name}\\(\\) \\{[\\s\\S]*?^\\}`, 'm').exec(src)![0];
+      const fns = join(dir, 'shims.sh');
+      writeFileSync(fns, [grab('ghrc_ready'), grab('parse_badge_status'), grab('classify_status'), grab('parse_runs_page')].join('\n'));
+      const node = execFileSync('bash', ['-c', 'command -v node'], { encoding: 'utf8' }).trim();
+      for (const [kind, inputs] of [['parse_runs_page', corpusPages.slice(0, 6)], ['parse_badge_status', corpusBadges]] as const) {
+        for (const input of inputs) {
+          const inp = join(dir, 'in');
+          writeFileSync(inp, input);
+          const viaShim = spawnSync('bash', ['-c', `GHRC_JS="${MODULE}"; NODE_BIN="${node}"; source "${fns}"; x=$(cat "${inp}"); out=$(${kind} "$x"); printf '%s|rc=%s' "$out" "$?"`], { encoding: 'utf8' }).stdout;
+          const viaFrozen = spawnSync('bash', ['-c', `source "${FX}/legacy-canary-parsers.sh"; x=$(cat "${inp}"); out=$(${kind} "$x"); printf '%s|rc=%s' "$out" "$?"`], { encoding: 'utf8' }).stdout;
+          expect(viaShim).toBe(viaFrozen);
+        }
       }
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -491,7 +515,8 @@ describe('the CONSUMER REGISTRY — one classifier, a ratchet that may only shri
   const REGISTERED = ['ops/cron/xrepo-ci-conclusion-canary.sh', 'ops/monitoring/deploy-drift-canary.mjs', 'scripts/check-release-readiness.mjs'];
   /** CH2 baseline. CH3 removes the canary; CH4 empties it. Entries may only ever be REMOVED. */
   const CH2_BASELINE = ['ops/cron/xrepo-ci-conclusion-canary.sh', 'ops/monitoring/deploy-drift-canary.mjs', 'scripts/check-release-readiness.mjs'];
-  const PENDING = ['ops/cron/xrepo-ci-conclusion-canary.sh', 'ops/monitoring/deploy-drift-canary.mjs', 'scripts/check-release-readiness.mjs'];
+  // CH3 (OPS-XREPO-CI-RED-W1) migrated the canary: its parsers are shims over the module. CH4 empties this.
+  const PENDING = ['ops/monitoring/deploy-drift-canary.mjs', 'scripts/check-release-readiness.mjs'];
 
   const executableText = (file: string, text: string) => {
     if (/\.(sh|ya?ml|py)$/.test(file)) return text.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
@@ -537,7 +562,7 @@ describe('the CONSUMER REGISTRY — one classifier, a ratchet that may only shri
   });
   it('the ratchet only shrinks: PENDING ⊆ the CH2 baseline', () => {
     for (const p of PENDING) expect(CH2_BASELINE).toContain(p);
-    expect(PENDING.length).toBeLessThanOrEqual(3);
+    expect(PENDING.length).toBeLessThanOrEqual(2);
   });
 });
 
