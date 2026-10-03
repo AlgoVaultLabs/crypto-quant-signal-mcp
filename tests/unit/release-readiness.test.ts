@@ -104,7 +104,7 @@ describe('wiring', () => {
     // The defect that kept the pre-verify red unread: the rehearsal printed its verdict into a
     // pipe and process.exit() discarded it. This gate is read through `npm run`, i.e. a pipe.
     const code = stripJsComments(readFileSync(GATE, 'utf8'));
-    expect(code).not.toMatch(/process\.exit\s*\(/);
+    expect(code).not.toMatch(/process\.exit\s*\x28/);
     expect(code).toMatch(/process\.exitCode\s*=/);
   });
 });

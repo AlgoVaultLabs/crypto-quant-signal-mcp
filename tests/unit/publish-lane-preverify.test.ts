@@ -211,19 +211,19 @@ describe('the verdict contract', () => {
     expect(pipe, 'no rehearsal pipeline').toBeGreaterThanOrEqual(0);
     // PIPESTATUS is reset by the next command, so it must be read on the very next line.
     expect(lines[pipe + 1]).toBe('NODE_RC=${PIPESTATUS[0]}');
-    const noToken = /^\s*""\)([\s\S]*?);;/m.exec(runText)?.[1] ?? '';
+    const noToken = /^\s*""\x29([\s\S]*?);;/m.exec(runText)?.[1] ?? '';
     expect(noToken, 'no explicit empty-token branch').not.toBe('');
     expect(noToken).toMatch(/::error::/);
     expect(noToken).toMatch(/exit 1/);
     expect(noToken).toMatch(/NODE_RC/);
     expect(noToken, 'a missing token is not evidence that the lane is broken').not.toMatch(/BROKEN/);
-    const fail = /PUBLISH_LANE_PREVERIFY_VERDICT=FAIL\)([\s\S]*?);;/.exec(runText)?.[1] ?? '';
+    const fail = /PUBLISH_LANE_PREVERIFY_VERDICT=FAIL\x29([\s\S]*?);;/.exec(runText)?.[1] ?? '';
     expect(fail).toMatch(/::error::the publish lane is BROKEN/);
     expect(fail).toMatch(/exit 1/);
   });
 
   it('the gate exits through process.exitCode, never process.exit() — a queued pipe write would lose the token', () => {
-    expect(GATE_CODE).not.toMatch(/process\.exit\s*\(/);
+    expect(GATE_CODE).not.toMatch(/process\.exit\s*\x28/);
     expect(GATE_CODE).toMatch(/process\.exitCode\s*=/);
   });
 
