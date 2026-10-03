@@ -52,9 +52,12 @@ transition INTO a recommendation; a run with none calls `--clear` (silent). Neve
 INDETERMINATE, and never clears while blind.
 
 ── READ PATH ────────────────────────────────────────────────────────────────────────────────────
-Host psql, READ-ONLY: `docker exec <pg> psql -U aoe_readonly` with `default_transaction_read_only`.
-The emitted arm only (`signal_scorer_inputs` ⋈ `signals` for the outcome); never a withheld arm's
-store (the hold and band captures, or their labels), and never pooled with one.
+Host psql, READ-ONLY: `docker exec <pg> psql -U aoe_readonly` with `default_transaction_read_only`
+and a `statement_timeout` of ~10x the measured worst window. The emitted arm only
+(`signal_scorer_inputs` ⋈ `signals` for the outcome); never a withheld arm's store (the hold and band
+captures, or their labels), and never pooled with one. Refuses to read a decided window unless
+`signals` has a VALID index on (signal_hash, exchange) — `idx_signals_signal_hash_exchange`,
+migrations/047 — and a timed-out statement makes the whole run INDETERMINATE.
 
 Env:
   VRG_PG_CONTAINER  postgres container      (default crypto-quant-signal-mcp-postgres-1)
@@ -149,13 +152,32 @@ WHERE timeframe = :tf
 
 
 # The §3 read joins every captured row to `signals` by (signal_hash, exchange). Without an index on
-# that pair each lateral lookup scans the exchange's rows — measured 2026-10-03 on prod: 114 ms per
-# row, ~47k buffer hits per row, so one 14-day window would cost ~40 minutes and ~10^9 buffer hits
-# of the database the product serves from. An instrument must not degrade what it measures, so the
-# gate REFUSES (INDETERMINATE) before reading a window when no such index exists.
-INDEX_PROBE_SQL = """SELECT count(*) FROM pg_indexes
-WHERE schemaname = 'public' AND tablename = 'signals'
-  AND indexdef ~ '\\(signal_hash(, exchange)?\\)';"""
+# that pair each lateral lookup scans the exchange's rows — measured 2026-10-03 on prod: 114.9 ms and
+# ~46.8k buffer hits per row, 26–71 minutes per decided window of the database the product serves
+# from. `idx_signals_signal_hash_exchange` (migrations/047, architect ruling Q1 = A) is the index. An
+# instrument must not degrade what it measures, so the gate REFUSES (INDETERMINATE) before reading a
+# window unless such an index is VALID and READY: a failed CREATE INDEX CONCURRENTLY leaves an
+# INVALID index that pg_indexes still lists and the planner never uses — counting it would wave the
+# per-row scan straight through. Partial and expression indexes do not serve the lookup either.
+INDEX_PROBE_SQL = """SELECT count(*)
+FROM pg_index i
+JOIN pg_class t ON t.oid = i.indrelid
+JOIN pg_namespace n ON n.oid = t.relnamespace
+WHERE n.nspname = 'public' AND t.relname = 'signals'
+  AND i.indisvalid AND i.indisready AND i.indislive
+  AND i.indpred IS NULL AND i.indexprs IS NULL
+  AND pg_get_indexdef(i.indexrelid) ~ ' USING btree \\(signal_hash(, exchange)?\\)';"""
+
+# Every statement of the gate's read-only session runs under statement_timeout (ruling Q1 = A,
+# condition 3): ~10x the measured worst per-window read, capped at 300 s. A plan regression — the
+# index dropped, invalidated or ignored — then ends as a psql error, i.e. INDETERMINATE, instead of a
+# long scan of the serving database. Derivation (post-index EXPLAIN, vault endpoint truth §13.4):
+# the worst window is 5m — 21 days, 50,248 rows (2026-09-12..10-03) read in 625 ms on prod 2026-10-03:
+# a 182 ms scan of signal_scorer_inputs + 50,248 probes of idx_signals_signal_hash_exchange at 0.008 ms
+# (every other timeframe projects to 238-482 ms). 10 x 625 ms = 6,250 ms, far inside the cap.
+STATEMENT_TIMEOUT_MS = 6_250
+STATEMENT_TIMEOUT_CAP_MS = 300_000
+PGOPTIONS = f"-c default_transaction_read_only=on -c statement_timeout={STATEMENT_TIMEOUT_MS}"
 
 
 class Indeterminate(Exception):
@@ -474,14 +496,20 @@ def render(sql: str, tf: str, start: int, end: int) -> str:
                .replace(":tf", f"'{tf}'"))
 
 
+_RUN = subprocess.run  # the process seam; the self-test replaces it to drive the real read path
+
+
 def psql(sql: str) -> list[list[str]]:
+    """One read-only statement. Any non-zero exit — a statement timeout included — is INDETERMINATE,
+    never an empty result: a read that did not finish measured nothing."""
     container = os.environ.get("VRG_PG_CONTAINER", "crypto-quant-signal-mcp-postgres-1")
     user = os.environ.get("VRG_PG_USER", "aoe_readonly")
     db = os.environ.get("VRG_PG_DB", "signal_performance")
-    cmd = ["docker", "exec", "-e", "PGOPTIONS=-c default_transaction_read_only=on", container,
+    cmd = ["docker", "exec", "-e", f"PGOPTIONS={PGOPTIONS}", container,
            "psql", "-U", user, "-d", db, "-tA", "-F", "|", "-q", "-v", "ON_ERROR_STOP=1", "-c", sql]
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        # the process backstop outlives the server-side timeout, so the server cancels first
+        p = _RUN(cmd, capture_output=True, text=True, timeout=STATEMENT_TIMEOUT_MS // 1000 + 120)
     except Exception as exc:  # noqa: BLE001
         raise Indeterminate(f"psql invocation failed: {exc}") from exc
     if p.returncode != 0:
@@ -512,7 +540,7 @@ def require_hash_index() -> None:
     except (IndexError, ValueError) as exc:
         raise Indeterminate(f"index probe unparseable: {exc}") from exc
     if n < 1:
-        raise Indeterminate("no index on signals(signal_hash[, exchange]) — refusing a per-row "
+        raise Indeterminate("no VALID index on signals(signal_hash[, exchange]) — refusing a per-row "
                             "sequential scan of the serving database")
 
 
@@ -659,6 +687,17 @@ def evaluate_all(now: int, reader, pc, cps, index_guard=None) -> tuple[list[dict
     return decided, progress
 
 
+def evaluate_run(now: int, reader, pc, cps, index_guard=None) -> tuple[str, list[dict], list[dict], str | None]:
+    """(verdict, decided, progress, why). ANY input the run could not read — a refused index, a timed-out
+    statement, an unparseable row — makes the WHOLE run INDETERMINATE: one timeframe that could not be
+    read must never let the others fold to PASS."""
+    try:
+        decided, progress = evaluate_all(now, reader, pc, cps, index_guard=index_guard)
+    except Indeterminate as exc:
+        return INDET, [], [], str(exc)
+    return fold(decided), decided, progress, None
+
+
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return _self_test()
@@ -678,13 +717,16 @@ def main(argv: list[str]) -> int:
     run_id = f"{DETECTOR}-{datetime.fromtimestamp(started, timezone.utc):%Y%m%dT%H%M%SZ}"
     try:
         pc, cps, crl, de = load_libs()
-        decided, progress = evaluate_all(now, read_window, pc, cps, index_guard=require_hash_index)
     except Indeterminate as exc:
         print(f"[{DETECTOR}] could not evaluate: {exc}")
         print(f"{TOKEN}={INDET}")
         return 3
+    verdict, decided, progress, why = evaluate_run(now, read_window, pc, cps, index_guard=require_hash_index)
+    if why is not None:
+        print(f"[{DETECTOR}] could not evaluate: {why}")
+        print(f"{TOKEN}={INDET}")
+        return 3
 
-    verdict = fold(decided)
     # POSITIVE output for every timeframe and every cell, decided or not — a row silently skipped by
     # a load error must never look like a row that passed.
     shown = []
@@ -738,6 +780,9 @@ def show_config() -> dict:
         "timeframes": {tf: {"window_days": v[0], "horizon_s": v[1], "block_days": v[2],
                             "min_clusters": v[3], "watch": v[4]} for tf, v in TIMEFRAMES.items()},
         "window_sql": WINDOW_SQL, "alert_id": ALERT_ID, "severity": SEVERITY, "token": TOKEN,
+        # not registered parameters — the read path's own bounds (ruling Q1 = A), pinned by the same test
+        "read_path": {"statement_timeout_ms": STATEMENT_TIMEOUT_MS, "pgoptions": PGOPTIONS,
+                      "index_probe_sql": INDEX_PROBE_SQL},
     }
 
 
@@ -775,6 +820,7 @@ def _synthetic_rows(start: int, days: int, per_day: int, fade_edge: float, seed:
 
 
 def _self_test() -> int:
+    global _RUN  # section 11 drives the real read path through the process seam
     failures: list[str] = []
 
     def check(label, cond):
@@ -957,7 +1003,12 @@ def _self_test() -> int:
     check("a broken envelope is REFUSED", bool(de.validate({"schema_version": 1}, de.load_schema())))
     check("--show-config carries the registered SQL verbatim", show_config()["window_sql"] == WINDOW_SQL)
     check("the index probe targets signals(signal_hash[, exchange])",
-          "tablename = 'signals'" in INDEX_PROBE_SQL and "signal_hash" in INDEX_PROBE_SQL)
+          "t.relname = 'signals'" in INDEX_PROBE_SQL and "(signal_hash(, exchange)?" in INDEX_PROBE_SQL)
+    check("the index probe counts only a VALID, READY, LIVE index (pg_indexes alone lists an INVALID one)",
+          all(c in INDEX_PROBE_SQL for c in ("i.indisvalid", "i.indisready", "i.indislive"))
+          and "pg_indexes" not in INDEX_PROBE_SQL)
+    check("the index probe refuses partial and expression indexes (neither serves the lookup)",
+          "i.indpred IS NULL" in INDEX_PROBE_SQL and "i.indexprs IS NULL" in INDEX_PROBE_SQL)
     guarded = {"called": 0}
     def _guard():
         guarded["called"] += 1
@@ -970,6 +1021,47 @@ def _self_test() -> int:
                                    index_guard=_guard)[1]) == len(TIMEFRAMES) and guarded["called"] == 1)
     check("the page body names the switch and says the job never switches",
           "15m: switch MM -> FF" in page_body([{**res_s, "state": "DECIDED"}]) and "never switches" in page_body([res_s]))
+
+    # 11. THE STATEMENT TIMEOUT (ruling Q1 = A, condition 3), through the REAL read path — psql →
+    #     read_window → evaluate_run, the guard included — with only the process seam replaced. A read
+    #     that times out is INDETERMINATE for the whole RUN: never an empty window, never a PASS.
+    check("the timeout is set, positive and within the 300 s cap",
+          0 < STATEMENT_TIMEOUT_MS <= STATEMENT_TIMEOUT_CAP_MS == 300_000)
+    look = next_scheduled_run(w1 + 14 * DAY_S + 3 * 3600 + DAY_S)   # 15m/30m/1h/2h share this first look
+    ok_rows = "\n".join("|".join([str(r["id"]), r["regime"], "t" if r["decisive"] else "f", r["verdict_m"],
+                                  r["verdict_f"], r["served"], str(r["decided_at"]), repr(r["r"])])
+                        for r in null_rows) + "\n"
+    seen: list[list[str]] = []
+
+    def _fake(times_out):
+        def run(cmd, **_kw):
+            seen.append(cmd)
+            sql = cmd[-1]
+            if "pg_index" in sql:
+                return subprocess.CompletedProcess(cmd, 0, "1\n", "")
+            if not times_out(sql):
+                return subprocess.CompletedProcess(cmd, 0, ok_rows if "LATERAL" in sql else "0|0\n", "")
+            return subprocess.CompletedProcess(cmd, 1, "", "ERROR:  canceling statement due to statement timeout")
+        return run
+
+    real_run = _RUN
+    try:
+        _RUN = _fake(lambda sql: False)
+        ctl = evaluate_run(look, read_window, pc, cps, index_guard=require_hash_index)
+        check("CONTROL: every read clean ⇒ the run is evaluated (PASS), so the fake is not what fails",
+              lambda: ctl[0] == PASS and len(ctl[1]) == 4 and ctl[3] is None)
+        _RUN = _fake(lambda sql: "'15m'" not in sql)
+        out = evaluate_run(look, read_window, pc, cps, index_guard=require_hash_index)
+        check("a statement timeout on ONE timeframe (15m read clean) ⇒ the whole RUN is INDETERMINATE, never PASS",
+              lambda: out[0] == INDET and out[1] == [] and "statement timeout" in (out[3] or ""))
+        check("a timed-out statement raises (INDETERMINATE), never an empty result",
+              _raises(lambda: psql("SELECT 1")))
+        check("every statement ran read-only AND under the statement timeout",
+              lambda: len(seen) > 4 and all(c[3] == f"PGOPTIONS={PGOPTIONS}" for c in seen)
+              and f"-c statement_timeout={STATEMENT_TIMEOUT_MS}" in PGOPTIONS
+              and "-c default_transaction_read_only=on" in PGOPTIONS)
+    finally:
+        _RUN = real_run
 
     total = len(failures)
     print(f"SELF-TEST: {'PASS' if total == 0 else f'FAIL ({total})'}")

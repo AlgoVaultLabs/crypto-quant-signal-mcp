@@ -1,0 +1,25 @@
+-- 047_signals_signal_hash_exchange_idx.sql — SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 (architect Q1 = A, 2026-10-03).
+-- Written 2026-10-03 (live `date -u`). PRE-APPLIED to prod over SSH before this file was committed.
+--
+-- WHY. The forward gate's registered read (audits/verdict-rule-registry-preregistration-2026-10-02.md
+-- §3, executed by ops/monitoring/verdict-rule-gate.py) joins every captured row to `signals` on
+-- (signal_hash, exchange). `signals` had no index containing signal_hash, so each LATERAL lookup
+-- scanned the exchange's rows: measured on prod 2026-10-03, 114.9 ms and ~46.8k buffer hits PER ROW,
+-- i.e. 26-71 minutes per decided window on the database the product serves from. An index changes
+-- the read's COST, never its ROWS, so the registration stays byte-equal.
+--
+-- HOW TO APPLY: `psql -f` (autocommit). NEVER `psql -1`, `--single-transaction` or inside BEGIN —
+-- CREATE INDEX CONCURRENTLY refuses a transaction block, and CONCURRENTLY is what keeps the build from
+-- blocking the seeders' writes on a populated table. Nothing applies this file at app boot:
+-- runPgMigrationsAsync (src/lib/performance-db.ts) runs only its SIGNAL_MIGRATIONS column descriptors
+-- and never reads migrations/*.sql. The CI Postgres lane applies it with `psql -q -f`.
+--
+-- IDEMPOTENT. Where the index already exists (prod, pre-applied) this is a NOTICE and a no-op, and the
+-- only lock it takes first is SHARE UPDATE EXCLUSIVE, which blocks neither reads nor writes. A FAILED
+-- concurrent build leaves an INVALID index that IF NOT EXISTS would then skip, so after applying assert
+-- pg_index.indisvalid AND indisready; if invalid, `DROP INDEX CONCURRENTLY
+-- idx_signals_signal_hash_exchange;` and apply again. The gate's guard refuses (INDETERMINATE) on an
+-- invalid index rather than fall back to the per-row scan.
+--
+-- Rollback: migrations/047_signals_signal_hash_exchange_idx.down.sql.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_signals_signal_hash_exchange ON signals (signal_hash, exchange);
