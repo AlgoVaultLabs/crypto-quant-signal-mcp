@@ -276,3 +276,58 @@ describe('xrepo-ci-conclusion-canary — the freshness legs', () => {
     expect(executableBody).toMatch(/\/var\/lib\/algovault-monitoring\/xrepo-ci-freshness\.jsonl/);
   });
 });
+
+describe('xrepo-ci-conclusion-canary — the conclusion is BOUND to the run it names (OPS-XREPO-CI-RED-W1 CH3)', () => {
+  /**
+   * 2026-10-03T09:41Z: this canary paged xrepo_ci_red naming run #144, which had SUCCEEDED — the
+   * badge said `failing` and nothing asserted it described the run the alert named. The conclusion
+   * is now ops/monitoring/gh-run-conclusion.mjs's bound record; this file only renders it.
+   */
+  const fn = (name: string) => {
+    const m = new RegExp(`^${name}\\(\\) \\{[\\s\\S]*?^\\}`, 'm').exec(executableBody);
+    expect(m, name).toBeTruthy();
+    return m![0];
+  };
+
+  it('execs the module, one read per row, class alerting, with the ledger floor', () => {
+    expect(executableBody).toMatch(/gh-run-conclusion\.mjs/);
+    expect(executableBody).toMatch(/"\$NODE_BIN" "\$GHRC_JS" --repo "\$1" --workflow "\$2" --branch "\$3" --min-run-id "\$4" --class alerting/);
+    expect(fn('leg_b_check')).toMatch(/last=\$\(ledger_last_run_id /);
+  });
+
+  it('holds no private classifier: no <title> parse and no run-row split in its executable body', () => {
+    // a <title> PARSE (sed/grep/regex capture of its content); prose naming the badge's <title> in the
+    // pre-existing `badge` dark body is a mention, not a parse.
+    expect(executableBody).not.toMatch(/<title>\\?\(?\[\^</);
+    expect(executableBody).not.toMatch(/s\/id="check_suite_\//);
+    for (const shim of ['parse_badge_status', 'classify_status', 'parse_runs_page']) expect(fn(shim)).toMatch(/"\$NODE_BIN" "\$GHRC_JS" --/);
+  });
+
+  it('has no path to a failure run line without bound_run', () => {
+    const bound = fn('bound_run_line');
+    expect(bound).toMatch(/\[ -n "\$\{G_BOUND_ID:-\}" \] && \[ -n "\$\{G_BOUND_NUM:-\}" \] \|\| return 1/);
+    const red = fn('red_detail_for_row');
+    const bound24 = red.slice(red.indexOf('    2|4)'), red.indexOf('\n    *)'));
+    const other = red.slice(red.indexOf('\n    *)'));
+    expect(bound24.indexOf('if ! line=$(bound_run_line')).toBeGreaterThan(-1);
+    expect(bound24.indexOf('if ! line=$(bound_run_line')).toBeLessThan(bound24.indexOf('CONFIRMED'));
+    expect(other).not.toMatch(/CONFIRMED|FAILED|own record says/);
+    // the alert body is assembled ONLY from that renderer
+    expect(executableBody.match(/RED_DETAIL="\$RED_DETAIL/g)?.length).toBe(1);
+    expect(executableBody).toMatch(/RED_DETAIL="\$RED_DETAIL\$\(red_detail_for_row /);
+  });
+
+  it('every row prints its agreement, and the dark streak names four causes', () => {
+    expect(executableBody.match(/agreement=\$\{?G_AGR/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    const dark = fn('dark_body');
+    for (const cause of ['disagree)', 'corroboration)', 'legb)']) expect(dark).toContain(cause);
+    expect(executableBody).toMatch(/CAUSE=disagree/);
+    expect(executableBody).toMatch(/CAUSE=corroboration/);
+  });
+
+  it('records one structured result per run through canary_result_log (a recorder, never a gate)', () => {
+    expect(fn('record_result')).toMatch(/append_result\("xrepo-ci-conclusion"/);
+    expect(executableBody.match(/record_result (PASS|FAIL|INDETERMINATE)/g)?.length).toBeGreaterThanOrEqual(4);
+  });
+});
+

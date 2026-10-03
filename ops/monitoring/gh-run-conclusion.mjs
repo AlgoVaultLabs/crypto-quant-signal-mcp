@@ -593,7 +593,7 @@ export function renderLines(record, cls) {
     ['ROW', record.row], ['AGREEMENT', record.agreement], ['REASON', record.reason], ['VERDICT', verdictFor(record, cls)], ['READS', record.reads],
     ['BADGE_URL', record.badge_url], ['ACTIONS_URL', record.actions_url],
     ['BADGE_HTTP', record.badge?.http], ['BADGE_TITLE', record.badge?.title], ['BADGE_NAME', record.badge?.name], ['BADGE_STATE', record.badge?.state],
-    ['PAGE_HTTP', record.page?.http], ['PAGE_CONTENT_TYPE', record.page?.content_type], ['PAGE_ROWS', record.page?.rows_parsed], ['PAGE_GUARD', record.page?.guard],
+    ['PAGE_HTTP', record.page?.http], ['PAGE_CONTENT_TYPE', record.page?.content_type], ['PAGE_ROWS', record.page?.rows_parsed], ['PAGE_GUARD', record.page?.guard], ['PAGE_BYTES', record.page?.bytes],
     ['NEWEST_RUN_ID', n.run_id], ['NEWEST_RUN_NUMBER', n.run_number], ['NEWEST_NAME', n.name], ['NEWEST_STARTED_AT', n.started_at], ['NEWEST_STATE', n.state],
     ['TERMINAL_RUN_ID', t.run_id], ['TERMINAL_RUN_NUMBER', t.run_number], ['TERMINAL_STATE', t.state],
     ['BOUND_RUN_ID', b.run_id], ['BOUND_RUN_NUMBER', b.run_number], ['BOUND_STATE', b.state], ['BOUND_STARTED_AT', b.started_at], ['BOUND_URL', b.url],
