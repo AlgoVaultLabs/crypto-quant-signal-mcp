@@ -1022,7 +1022,7 @@
       "adopted": true,
       "announce_resolution": false,
       "envelope_adopted": true,
-      "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. Fires when TREND_MODE=on breaches a PRE-DECLARED rollback trigger (edge floor / edge-vs-long / volume ceiling / cell concentration / emission gap). adopted=true: the gate calls --clear on its healthy path, because send_telegram.sh writes its cooldown marker on a delivered fire and nothing else removes it, so a healed breach would pin the channel's last word to the worst thing that ever happened. announce_resolution stays FALSE per the law's default — a trigger flapping back is chatter, and the operator action here is a ROLLBACK DECISION, not an acknowledgement of a blip."
+      "notes": "RE-HOMED 2026-10-03 by SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R2: now fires only on the three OPERATIONAL bounds (B volume ceiling, C concentration, D emission gap) on the registry arm (verdict_rule_version >= 2) against the frozen v1 arm; trigger A (edge floor) is retired. The id is a HISTORICAL label kept for marker and registry continuity — the body names no change under test and gives the registry kill switch (VERDICT_RULE_FORCE_M=1), never v1. Original: SIGNAL-TREND-MODE-ENABLE-W1 CH2. Fires when TREND_MODE=on breaches a PRE-DECLARED rollback trigger (edge floor / edge-vs-long / volume ceiling / cell concentration / emission gap). adopted=true: the gate calls --clear on its healthy path, because send_telegram.sh writes its cooldown marker on a delivered fire and nothing else removes it, so a healed breach would pin the channel's last word to the worst thing that ever happened. announce_resolution stays FALSE per the law's default — a trigger flapping back is chatter, and the operator action here is a ROLLBACK DECISION, not an acknowledgement of a blip."
     },
     {
       "alert_id": "TREND_MODE_READOUT_DUE",
@@ -1034,7 +1034,25 @@
       "announce_resolution": false,
       "follow_up_wave": "OPS-ALERT-ADOPT-TREND_MODE_READOUT_DUE-W{NEXT}",
       "envelope_adopted": true,
-      "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. ONCE-EVER at flip+30d, behind /var/lib/algovault-monitoring/trend-mode-readout-due.fired. This is the scheduled half of 'the readout is scheduled, not remembered' — a follow-up that depends on someone remembering is prose, not a control. adopted=FALSE because a once-ever due-date alert has no FIRING->CLEAR edge, so --clear on it would be a no-op wearing the look of state hygiene. It STILL names a follow_up_wave: the repo requires every unadopted row to name who will revisit it, and that rule is not mine to argue with from inside a row — the follow-up may well conclude 'not applicable', but the conclusion belongs in that wave rather than in this note."
+      "notes": "RETIRED 2026-10-03 by SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R2 — no code raises it any more. It fired ONCE, at 2026-10-01T07:19:01Z (marker /var/lib/algovault-monitoring/trend-mode-readout-due.fired, kept as evidence), and the readout it scheduled was delivered by SIGNAL-TREND-MODE-READOUT-W1. The row is kept rather than deleted so the id's history stays enumerable. Original: SIGNAL-TREND-MODE-ENABLE-W1 CH2. ONCE-EVER at flip+30d, behind /var/lib/algovault-monitoring/trend-mode-readout-due.fired. This is the scheduled half of 'the readout is scheduled, not remembered' — a follow-up that depends on someone remembering is prose, not a control. adopted=FALSE because a once-ever due-date alert has no FIRING->CLEAR edge, so --clear on it would be a no-op wearing the look of state hygiene. It STILL names a follow_up_wave: the repo requires every unadopted row to name who will revisit it, and that rule is not mine to argue with from inside a row — the follow-up may well conclude 'not applicable', but the conclusion belongs in that wave rather than in this note."
+    },
+    {
+      "alert_id": "VERDICT_RULE_SWITCH_RECOMMENDED",
+      "owner": "ops/monitoring/verdict-rule-gate.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": true,
+      "page_on": "change",
+      "page_on_change": {
+        "review_by": "2027-01-04",
+        "decided_by": "architect — SIGNAL-VERDICT-RULE-REGISTRY-W1 spec CH3 R1 (\"once per transition into a switch recommendation\"), ruling Q1 2026-10-02 (per timeframe)",
+        "decided_at": "2026-10-02",
+        "reason": "A recommendation persists on every weekly run until the timeframe's next look, so paging its LEVEL would repeat one decision weekly; entry into the set is the actionable event."
+      },
+      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R1. Fires when a timeframe's latest decided window recommends SWITCH_TO an alternative joint assignment under the registered decision rule (Holm-rejected at FWER 0.025 one-sided, rule 1 admissible, magnitude not vetoed). ALERT_KEYS <tf>:<UP><DOWN>:w<k>; --clear (silent) on a run that evaluated something and recommends nothing; never on KEEP or INDETERMINATE, never while blind. The page is a RECOMMENDATION: Mr.1 approves, and a separate switch dispatch edits src/lib/verdict-rule-assignment.ts — the gate never does."
     },
     {
       "alert_id": "scorer_input_identity",

@@ -2050,7 +2050,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "e52832b5c301b3b54f81285f07a51816c5188b49f53536e01583ade7d621130e",
+      "sha256": "72200d5f014048ac64e98c3aa68e39fc9fd1f802eb03416b6f0a1637d2be01b0",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -2348,25 +2348,69 @@
       "schedule": "19 7 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "d9cd7cfd8eb9132a0f79b614aa55206d213f0392704ac5439c12fa4e98ca5373",
+      "sha256": "5a4861730223cb82d080d784881715d984716e9f1c555671eb21325fdd0ac0d3",
       "owner_wave": "SIGNAL-TREND-MODE-ENABLE-W1",
       "alert_ids": [
-        "TREND_MODE_TRIGGER_BREACH",
-        "TREND_MODE_READOUT_DUE"
+        "TREND_MODE_TRIGGER_BREACH"
       ],
       "consumes": [
         "ops/monitoring/detector_envelope.py",
         "ops/monitoring/detector-envelope.schema.json"
       ],
-      "decision_gate": true,
-      "once_ever_alert": "TREND_MODE_READOUT_DUE",
-      "once_ever_marker": "/var/lib/algovault-monitoring/trend-mode-readout-due.fired",
-      "retirement_trigger": {
-        "kind": "status_md_entry",
-        "match": "VRR_W1_CH3_TREND_GATE_REHOMED",
-        "note": "DECISION TAKEN — KEEP. The question this gate was built to inform (keep TREND_MODE on, or roll it back) is answered: rollback to v1 was DENIED by Mr.1 on 2026-09-02 and again on 2026-10-01 (SIGNAL-TREND-MODE-READOUT-W1 readout 2026-09-30; SIGNAL-VERDICT-RULE-REGISTRY-W1 rulings). The gate is SUPERSEDED by SIGNAL-VERDICT-RULE-REGISTRY-W1, whose CH3 R2 re-homes triggers B/C/D onto the registry arm and retires trigger A and this once-ever alert, removing decision_gate / once_ever_* / retirement_trigger from this row. RE-PINNED 2026-10-02 by that wave's CH1 (architect ruling): the original match `SIGNAL-TREND-MODE-READOUT-W` had fired, so decision-gate-orphan-canary read ORPHANED and sent DECISION_GATE_ORPHANED daily from 2026-10-01T07:27Z while the remaining work was already owned. The match is now a token only that re-home can write, so the row reads FIRED_RECENT (outcome recorded here, retirement owned by CH3). BACKSTOP, deliberate: if CH3 has not landed when the marker turns 14 days old (2026-10-15T07:19Z), the canary escalates to ORPHAN_SUSPECTED."
-      },
-      "notes": "SIGNAL-TREND-MODE-ENABLE-W1 CH2. Evaluates the four PRE-DECLARED rollback triggers daily against the in-repo contract audits/SIGNAL-TREND-MODE-ENABLE-W1-trigger-contract.md, and fires TREND_MODE_READOUT_DUE once-ever at flip+30d. BOTH ARMS COME FROM ONE QUERY — verdict_rule_version is the GROUP BY key, regime_rule_version=3 is held fixed on both sides, BITMART is excluded from both (retired mid-window) — so no baseline is ever baked in and no delta can span two instruments. DETECT->ALERT->ESCALATE ONLY: it NEVER unsets the flag, because an unattended job must not mutate a live scorer. Adopts DETECTOR_ENVELOPE and refuses its OWN non-conforming signal as INDETERMINATE rather than laundering it into a PASS. TREND_MODE_READOUT_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL exits 0 because the alert IS the action. The 1d cell reports INDETERMINATE for most of the window BY PRE-DECLARATION — ~3.6 rows/day is a directional watch, not a powered test. A fifth trigger (webhook regime_shift delivery volume) was DROPPED by architect ruling 2026-08-31: zero active subscriptions and zero deliveries across the whole BEFORE window made it dark by construction; the readout wave re-opens it if a subscription becomes active. Gate-test with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1. --self-test is hermetic, 26 assertions, vacuity-guarded, asserts the DB-seam-BYPASSED artifacts (the three SQL strings and the built envelope), and is PROVEN ABLE TO FAIL by two deliberate breaks: a code/contract threshold divergence, and INDETERMINATE laundered into PASS."
+      "notes": "RE-HOMED 2026-10-03 by SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R2 (status token VRR_W1_CH3_TREND_GATE_REHOMED). The decision this gate informed is TAKEN — KEEP: rollback to v1 was denied (Mr.1, 2026-09-02 and 2026-10-01) and the TREND_MODE selector is retired; the verdict rule is chosen per cell by src/lib/verdict-rule-registry.ts and judged forward by verdict-rule-gate. What remains: three OPERATIONAL bounds (B volume ceiling, C cell concentration, D emission gap) on the REGISTRY ARM (verdict_rule_version >= 2: 2 = rule M, 3 = served by a fade) against the frozen v1 arm, at their declared levels; the FAIL body names no change under test and gives the registry kill switch. RETIRED with records: trigger A (NOT_IDENTIFIABLE by construction — v1's attainable range is narrower than its 3.0 pp floor; superseded by verdict-rule-gate) and the once-ever TREND_MODE_READOUT_DUE, which FIRED ONCE at 2026-10-01T07:19:01Z (marker /var/lib/algovault-monitoring/trend-mode-readout-due.fired, kept as evidence; the readout was delivered by SIGNAL-TREND-MODE-READOUT-W1). decision_gate / once_ever_* / retirement_trigger removed as the CH1 re-pin promised. repo_resident stays true until the post-install stamp commit: the host copy is an install, not the checkout, but flipping it before the sanctioned reinstall writes first_install would breach the first-install ratchet. The crontab line still exports TMRG_FLIP_AT; nothing reads it. Original: SIGNAL-TREND-MODE-ENABLE-W1 CH2 — BOTH ARMS COME FROM ONE QUERY (the arm is the GROUP BY key, regime_rule_version = 3 fixed, BITMART excluded); DETECT->ALERT->ESCALATE only; adopts DETECTOR_ENVELOPE; TREND_MODE_READOUT_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3. Gate-test with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1. --self-test is hermetic, vacuity-guarded, asserts the bypassed SQL strings, the page body and the envelope, and is mutation-proven (registry-arm mapping, a body naming the change, a body offering v1, a dead bound, a retired constant)."
+    },
+    {
+      "id": "verdict-rule-gate",
+      "artifact": "ops/monitoring/verdict-rule-gate.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/verdict-rule-gate.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/verdict-rule-gate.py",
+          "schedule": "43 12 * * 1"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": false,
+      "schedule": "43 12 * * 1",
+      "invoked_by": "crontab:root",
+      "install_state": "pending",
+      "sha256": "af8f04ff1b54f3a979a48d1b605f3a13507e3f99fd732db906bafe2d5d7d4921",
+      "owner_wave": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
+      "alert_ids": [
+        "VERDICT_RULE_SWITCH_RECOMMENDED"
+      ],
+      "consumes": [
+        "ops/monitoring/population_comparison.py",
+        "src/scripts/cluster-perm-stats.py",
+        "ops/monitoring/canary_result_log.py",
+        "ops/monitoring/detector_envelope.py",
+        "ops/monitoring/detector-envelope.schema.json"
+      ],
+      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R1. The forward gate: executes the landed registration audits/verdict-rule-registry-preregistration-2026-10-02.md verbatim (query, windows, statistic, Holm, rule 1, magnitude veto, floors) — tests/unit/verdict-rule-registry.test.ts pins --show-config to it. RECOMMENDS per TIMEFRAME (joint UP/DOWN assignment in S1 = MM, FM, FF) and never writes src/lib/verdict-rule-assignment.ts. Weekly, Monday 12:43Z; the look instant is the SCHEDULED run, so the window chain is reproducible from the registration and the cron alone. Reads READ-ONLY as aoe_readonly (default_transaction_read_only) and REFUSES (INDETERMINATE) before reading a decided window when signals has no (signal_hash, exchange) index — measured 114 ms/row without one. VERDICT_RULE_GATE_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL = a switch is recommended and the page is the action. Pages VERDICT_RULE_SWITCH_RECOMMENDED through the wrapper's page-on-change (ALERT_KEYS <tf>:<UP><DOWN>:w<k> every evaluable run, --clear when none). One canary_result_log record per CELL per run (20). Gate-test with ALGOVAULT_TG_TEST_INERT=1. --self-test is hermetic, two-way, vacuity-guarded, asserts the bypassed SQL/binder/parser/record/envelope and is mutation-proven (12 breaks)."
+    },
+    {
+      "id": "cluster-perm-stats",
+      "artifact": "src/scripts/cluster-perm-stats.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/cluster-perm-stats.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/cluster-perm-stats.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": false,
+      "schedule": null,
+      "install_state": "pending",
+      "sha256": "6d82c1601a9ce1121deecaa1c88ac4685abef328ff27d35047fad37d69f60100",
+      "owner_wave": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
+      "alert_ids": [],
+      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 (architect correction 2026-10-02: CH3 installs it on signal-1). The PURE statistics library (cluster_bootstrap_ols, arm_seed, …) imported by verdict-rule-gate.py from beside it — the ONE implementation, never a second copy in the gate. The canonical home stays src/scripts/cluster-perm-stats.py (pinned pure by tests/unit/cluster-perm-stats.test.ts); this row is the consumer registry for the host copy."
     },
     {
       "id": "promoted-set-drift-canary",
@@ -2594,7 +2638,7 @@
       "repo_resident": true,
       "invoked_by": "scripts/check-population-comparison.mjs (repo-side gate, not host-installed)",
       "install_state": "installed",
-      "sha256": "ca17c41f8657e5ba0c13873c145f40d57c3cfec39282fdd83d0622da294c2a8a",
+      "sha256": "91696d370feb616c0a1ec9de92a687e4cae66fca442aca8c04e64c710fdaba46",
       "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
       "reconcile_exempt_reason": "REPO-SIDE ONLY by design — the ledger is read by a pre-push gate in scripts/, never on a host, so it has no host_path and no installed_at row. Declared here so the enumeration is complete rather than because anything installs it.",
       "notes": "The census of every cross-population comparison site in this repo, with a monotonic ratchet on the UNMIGRATED count. Detection is strictly weaker than enumeration: measured 2026-09-02, the pattern sweep reaches 3 of the 4 known sites — edge-stats.ts carries the banned comparator only in a docstring while its naiveBest value arrives from a caller, so the lint provably cannot see it. That gap is the reason this file exists."

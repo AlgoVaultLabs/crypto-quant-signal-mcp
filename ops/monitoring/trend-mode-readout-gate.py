@@ -1,6 +1,24 @@
 #!/usr/bin/env python3
-"""trend-mode-readout-gate.py — SIGNAL-TREND-MODE-ENABLE-W1 CH2.
+"""trend-mode-readout-gate.py — SIGNAL-TREND-MODE-ENABLE-W1 CH2, RE-HOMED by
+SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R2.
 
+── RE-HOMED 2026-10-03 — READ THIS FIRST ────────────────────────────────────────────────────────
+The question this gate was built to inform (keep `TREND_MODE` on, or roll it back) is ANSWERED:
+rollback to v1 was denied (Mr.1, 2026-09-02 and 2026-10-01), and the `TREND_MODE` selector itself is
+retired — the verdict rule is now chosen per cell by `src/lib/verdict-rule-registry.ts`. What
+remains here is three OPERATIONAL BOUNDS (B volume ceiling, C cell concentration, D emission gap) on
+the REGISTRY ARM — every row with `verdict_rule_version >= 2` (2 = rule M, 3 = served by a fade) —
+against the frozen v1 arm, at their declared levels. They are anomaly/liveness bounds, never effect
+claims, so the alert body names no change under test.
+  * Trigger A (edge floor vs v1) is RETIRED: it was NOT_IDENTIFIABLE by construction (v1's attainable
+    excess range is narrower than its 3.0 pp floor) and is superseded by the forward gate
+    `ops/monitoring/verdict-rule-gate.py`, which executes the registered per-timeframe decision rule.
+  * `TREND_MODE_READOUT_DUE` (once-ever, flip + 30 d) is RETIRED: it fired once, at
+    2026-10-01T07:19:01Z (marker `/var/lib/algovault-monitoring/trend-mode-readout-due.fired`, kept
+    as evidence), and the readout it scheduled was delivered (`SIGNAL-TREND-MODE-READOUT-W1`).
+The history below is kept as written; where it describes A or the readout, it is history.
+
+── ORIGINAL HEADER ──────────────────────────────────────────────────────────────────────────────
 THE DECISION GATE FOR THE `TREND_MODE` LIVE TEST.
 
 `TREND_MODE=on` went live on signal-1 and changed a LIVE, revenue-bearing verdict against a
@@ -40,9 +58,8 @@ Env:
   TMRG_PG_CONTAINER   postgres container            (default crypto-quant-signal-mcp-postgres-1)
   TMRG_PG_USER/DB     role + database               (default algovault / signal_performance)
   TMRG_WRAPPER        send_telegram.sh path         (default /opt/algovault-monitoring/send_telegram.sh)
-  TMRG_MARKER         once-ever marker              (default /var/lib/algovault-monitoring/trend-mode-readout-due.fired)
-  TMRG_FLIP_AT        flip instant, ISO-8601 UTC    (REQUIRED in prod; no default — a guessed
-                      cutover is the lie this wave's own CH1 refused to ship)
+  TMRG_MARKER, TMRG_FLIP_AT   RETIRED with TREND_MODE_READOUT_DUE (2026-10-03); still exported by
+                              the crontab line, read by nothing
 """
 from __future__ import annotations
 
@@ -50,15 +67,13 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import detector_envelope as de  # noqa: E402  (host-local sibling; see the inventory row)
-import population_comparison as pc  # noqa: E402  (EDGE-POPULATION-COMPARISON-W1)
 
 ALERT_ID_BREACH = "TREND_MODE_TRIGGER_BREACH"
-ALERT_ID_DUE = "TREND_MODE_READOUT_DUE"
 SEVERITY = "CRITICAL_PERSISTENT"
 DETECTOR = "trend-mode-readout-gate"
 
@@ -66,21 +81,21 @@ PASS, FAIL, INDET = "PASS", "FAIL", "INDETERMINATE"
 
 # ── Pre-declared thresholds. Contract file is the SoT; these mirror it and the self-test asserts
 #    the mirror, so a silent divergence between code and contract is not writable. ──
-EDGE_FLOOR_DROP_PP = 3.0      # A   v2 edge vs best naive baseline, below v1's by more than this
-# A2 RETIRED by EDGE-POPULATION-COMPARISON-W1 — mix-coupled basis; see the block in evaluate().
-EDGE_MIN_SCORED = 5000        # A/A2 minimum scored v2 rows
+# A (edge floor) and A2 RETIRED — see the header. Their constants went with them.
 VOLUME_CEILING_MULT = 8.0     # B   TRENDING_* rows/day above this multiple of v1's
 VOLUME_SUSTAIN_DAYS = 3       # B   consecutive days
 CONCENTRATION_MULT = 3.0      # C   4h+1d share above this multiple of v1's
 CONCENTRATION_MIN_N = 2000    # C   minimum v2 rows
 GAP_MULT = 2.0                # D   emission gap above this multiple of v1's max
 LOW_POWER_CELL_MIN_N = 30     # any per-cell figure below this is INDETERMINATE, never PASS
-READOUT_DAYS = 30
 
 POP = "regime_rule_version = 3 AND exchange <> 'BITMART'"
+# The two arms: 1 = the frozen v1 arm (contrarian ladder, before 2026-08-31); 2 = the REGISTRY ARM,
+# every row a registry rule produced — 2 (rule M) and 3 (served by a fade), and any later variant.
+ARM = "CASE WHEN verdict_rule_version >= 2 THEN 2 ELSE 1 END"
 
 ARMS_SQL = f"""
-SELECT verdict_rule_version,
+SELECT {ARM},
        count(*),
        count(outcome_return_pct),
        sum(CASE WHEN outcome_return_pct IS NOT NULL
@@ -101,15 +116,15 @@ GROUP BY 1 ORDER BY 1
 """
 
 DAILY_TRENDING_SQL = f"""
-SELECT verdict_rule_version, to_char(to_timestamp(created_at),'YYYY-MM-DD'), count(*)
+SELECT {ARM}, to_char(to_timestamp(created_at),'YYYY-MM-DD'), count(*)
 FROM signals
 WHERE {POP} AND regime IN ('TRENDING_UP','TRENDING_DOWN')
 GROUP BY 1,2 ORDER BY 1,2
 """
 
 MAX_GAP_SQL = f"""
-WITH g AS (SELECT verdict_rule_version AS a,
-                  created_at - lag(created_at) OVER (PARTITION BY verdict_rule_version
+WITH g AS (SELECT {ARM} AS a,
+                  created_at - lag(created_at) OVER (PARTITION BY {ARM}
                                                      ORDER BY created_at) AS gap
            FROM signals WHERE {POP})
 SELECT a, coalesce(max(gap), -1) FROM g WHERE gap IS NOT NULL GROUP BY a ORDER BY a
@@ -199,51 +214,28 @@ class Check:
         self.name, self.verdict, self.detail = name, verdict, detail
 
 
-def evaluate(v1: Arm | None, v2: Arm | None, daily: dict, gaps: dict, now: datetime,
-             flip_at: datetime | None) -> tuple[list[Check], dict]:
-    """Pure — no I/O, so the self-test exercises the REAL predicate rather than a stand-in."""
+def evaluate(v1: Arm | None, v2: Arm | None, daily: dict, gaps: dict, now: datetime) -> tuple[list[Check], dict]:
+    """Pure — no I/O, so the self-test exercises the REAL predicate rather than a stand-in.
+
+    `v2` is the REGISTRY ARM (verdict_rule_version >= 2); `v1` is the frozen v1 arm. B, C and D are
+    OPERATIONAL bounds — anomaly and liveness — never effect claims (EDGE-POPULATION-COMPARISON-W1),
+    which is why trigger A, the one effect claim this gate made, is retired rather than re-homed.
+    """
     checks: list[Check] = []
     ev: dict = {}
 
     if v1 is None:
-        checks.append(Check("population", INDET, "no v1 arm — the BEFORE arm is the comparator"))
+        checks.append(Check("population", INDET, "no v1 arm — the frozen comparator is missing"))
         return checks, ev
     if v2 is None or v2.n == 0:
-        # NOT vacuity: the world builds this corpus, and "the flag has not produced rows yet" is a
-        # FACT with an obvious correct verdict. Reported as an explicit positive line, never silent.
+        # NOT vacuity: the world builds this corpus. Reported as an explicit positive line.
         checks.append(Check("population", PASS,
-                            f"no v2 rows yet (v1 n={v1.n}) — flag not flipped, or not yet emitting"))
+                            f"no registry-arm rows yet (v1 n={v1.n}) — not yet emitting"))
         ev["v1_n"] = v1.n
-        ev["v2_n"] = 0
+        ev["registry_n"] = 0
         return checks, ev
 
-    ev.update(v1_n=v1.n, v2_n=v2.n, v1_scored=v1.scored, v2_scored=v2.scored)
-
-    # ── A — edge floor, via the ONE derivation, which REFUSES rather than repairs ──
-    #
-    # SHIPPED 2026-08-31 AS `engine - max(always_long, always_short)`, AND IT FIRED A FALSE FAIL ON
-    # 2026-09-02. Measured decomposition: always_short moved +2.97pp between the windows, which
-    # alone explained most of the -5.08pp "regression" with ZERO engine change. The comparator was
-    # market-coupled — and `max()` is additionally SELECTION-coupled, silently changing which
-    # quantity it names as the up-rate crosses 0.5.
-    #
-    # THE LAW WAS FOLLOWED, NOT BROKEN. CLAUDE.md's Benchmark-before-publish mandates edge against
-    # the naive baselines ON THE SAME ROWS; that controls the market WITHIN an arm and is silent
-    # BETWEEN arms. Following it is what produced this comparator.
-    #
-    # A2 (edge vs always_long) is DELETED as a gating trigger, not migrated: it is mix-coupled, it
-    # reported +0.44pp IMPROVEMENT on the same rows and the same day trigger A reported a 5.08pp
-    # regression, and migrating it to the mix-matched null just yields a second copy of A.
-    arm1 = pc.Arm("verdict_rule_version=1", v1.scored, v1.engine_wins, v1.long_wins,
-                  v1.short_wins, v1.buy_side)
-    arm2 = pc.Arm("verdict_rule_version=2", v2.scored, v2.engine_wins, v2.long_wins,
-                  v2.short_wins, v2.buy_side)
-    n_clusters = len(daily.get(2, {}))
-    cmpres = pc.compare_arms(arm1, arm2, EDGE_FLOOR_DROP_PP, n_clusters=n_clusters)
-    ev.update({k: val for k, val in cmpres.evidence.items()
-               if k in ("attainable_pp_a", "attainable_pp_b", "excess_pp_a", "excess_pp_b",
-                        "capacity_ratio", "delta_excess_pp", "diagnostic_max_naive_drift_pp")})
-    checks.append(Check("A_edge_floor", cmpres.verdict, cmpres.reason))
+    ev.update(v1_n=v1.n, registry_n=v2.n)
 
     # ── B — volume ceiling, sustained ──
     base_rate = v1.trending_per_day
@@ -254,10 +246,10 @@ def evaluate(v1: Arm | None, v2: Arm | None, daily: dict, gaps: dict, now: datet
         recent = sorted(daily.get(2, {}).items())[-VOLUME_SUSTAIN_DAYS:]
         if len(recent) < VOLUME_SUSTAIN_DAYS:
             checks.append(Check("B_volume_ceiling", INDET,
-                                f"only {len(recent)} v2 day(s), need {VOLUME_SUSTAIN_DAYS}"))
+                                f"only {len(recent)} registry-arm day(s), need {VOLUME_SUSTAIN_DAYS}"))
         else:
             over = [d for d, c in recent if c > ceiling]
-            ev["v2_trending_recent"] = [c for _, c in recent]
+            ev["registry_trending_recent"] = [c for _, c in recent]
             checks.append(Check(
                 "B_volume_ceiling", FAIL if len(over) == VOLUME_SUSTAIN_DAYS else PASS,
                 f"last {VOLUME_SUSTAIN_DAYS}d TRENDING_* {[c for _, c in recent]} vs ceiling "
@@ -267,21 +259,20 @@ def evaluate(v1: Arm | None, v2: Arm | None, daily: dict, gaps: dict, now: datet
     # ── C — cell concentration ──
     if v2.n < CONCENTRATION_MIN_N:
         checks.append(Check("C_concentration", INDET,
-                            f"v2 n={v2.n} < {CONCENTRATION_MIN_N} required"))
+                            f"registry arm n={v2.n} < {CONCENTRATION_MIN_N} required"))
     else:
         limit = CONCENTRATION_MULT * v1.concentration_share
-        ev["v2_concentration_pct"] = round(v2.concentration_share, 3)
+        ev["registry_concentration_pct"] = round(v2.concentration_share, 3)
         checks.append(Check(
             "C_concentration", FAIL if v2.concentration_share > limit else PASS,
-            f"v2 4h+1d share {v2.concentration_share:.3f}% vs limit {limit:.3f}% "
+            f"registry 4h+1d share {v2.concentration_share:.3f}% vs limit {limit:.3f}% "
             f"({CONCENTRATION_MULT}x v1 {v1.concentration_share:.3f}%)"))
 
-    # The 1d cell, pre-declared as a DIRECTIONAL WATCH. Reported every run so its weakness is
-    # visible in the log rather than rediscovered at readout.
+    # The 1d cell, a DIRECTIONAL WATCH — reported every run so its weakness stays visible.
     checks.append(Check(
         "C_1d_cell",
         INDET if v2.n_1d < LOW_POWER_CELL_MIN_N else PASS,
-        f"v2 1d n={v2.n_1d} (floor {LOW_POWER_CELL_MIN_N}) — pre-declared DIRECTIONAL WATCH, "
+        f"registry 1d n={v2.n_1d} (floor {LOW_POWER_CELL_MIN_N}) — a DIRECTIONAL WATCH, "
         f"not a powered test"))
 
     # ── D — operator-visible anomaly (emission liveness) ──
@@ -290,19 +281,9 @@ def evaluate(v1: Arm | None, v2: Arm | None, daily: dict, gaps: dict, now: datet
         checks.append(Check("D_emission_gap", INDET, "gap unavailable on one arm"))
     else:
         limit = GAP_MULT * g1
-        ev["v2_max_gap_s"] = g2
+        ev["registry_max_gap_s"] = g2
         checks.append(Check("D_emission_gap", FAIL if g2 > limit else PASS,
-                            f"v2 max gap {g2}s vs limit {limit:.0f}s ({GAP_MULT}x v1 max {g1}s)"))
-
-    # ── the +30d readout ──
-    if flip_at is None:
-        checks.append(Check("readout_due", INDET, "TMRG_FLIP_AT unset — cannot date the readout"))
-    else:
-        due = flip_at + timedelta(days=READOUT_DAYS)
-        ev["readout_due_at"] = due.strftime("%Y-%m-%dT%H:%M:%SZ")
-        checks.append(Check("readout_due", PASS,
-                            f"due {due:%Y-%m-%d} ({(due - now).days}d away)" if now < due
-                            else f"DUE since {due:%Y-%m-%d}"))
+                            f"registry max gap {g2}s vs limit {limit:.0f}s ({GAP_MULT}x v1 max {g1}s)"))
     return checks, ev
 
 
@@ -315,8 +296,22 @@ def fold(checks: list[Check]) -> str:
     return PASS
 
 
-def readout_is_due(checks: list[Check], now: datetime, flip_at: datetime | None) -> bool:
-    return flip_at is not None and now >= flip_at + timedelta(days=READOUT_DAYS)
+def fail_body(checks: list[Check]) -> str:
+    """The page for a breached OPERATIONAL bound. It names no change under test — a bound that names
+    one reads as an effect claim (population-comparison registry, OPERATIONAL_BOUND) — and it gives
+    the one lever that exists: the registry kill switch, which forces every cell to rule M and can
+    never select v1 (rollback denied)."""
+    return "\n".join([f"🛑 {ALERT_ID_BREACH}", ""]
+                     + [f"{c.verdict}  {c.name}: {c.detail}" for c in checks]
+                     + ["",
+                        "An OPERATIONAL bound on the registry arm breached (volume, concentration or",
+                        "emission gap). This job changes nothing.",
+                        "Operator: read rule_config_id on recent signals rows. If any cell is switched,",
+                        "VERDICT_RULE_FORCE_M=1 in /opt/crypto-quant-signal-mcp/.env, then",
+                        "  cd /opt/crypto-quant-signal-mcp && docker compose up -d mcp-server",
+                        "  (`docker compose restart` does NOT reload env_file — do not use it)",
+                        "forces every cell back to rule M. With every cell already on M, investigate the",
+                        "emission path; rule v1 cannot be selected."])
 
 
 def build_envelope(verdict: str, ev: dict, now: datetime, run_id: str,
@@ -334,15 +329,6 @@ def build_envelope(verdict: str, ev: dict, now: datetime, run_id: str,
     }
 
 
-def _iso(v: str | None):
-    if not v:
-        return None
-    try:
-        return datetime.strptime(v.replace("Z", "+0000"), "%Y-%m-%dT%H:%M:%S%z").astimezone(timezone.utc)
-    except ValueError:
-        return None
-
-
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return _self_test()
@@ -350,7 +336,7 @@ def main(argv: list[str]) -> int:
     now = datetime.now(timezone.utc)
     started = now
     run_id = f"{DETECTOR}-{now:%Y%m%dT%H%M%SZ}"
-    flip_at = _iso(os.environ.get("TMRG_FLIP_AT"))
+    # TMRG_FLIP_AT is still exported by the crontab line; since the re-home nothing reads it.
 
     try:
         arms = {int(r[0]): Arm(r) for r in psql(ARMS_SQL)}
@@ -364,7 +350,7 @@ def main(argv: list[str]) -> int:
         return 3
 
     v1, v2 = arms.get(1), arms.get(2)
-    checks, ev = evaluate(v1, v2, daily, gaps, now, flip_at)
+    checks, ev = evaluate(v1, v2, daily, gaps, now)
     verdict = fold(checks)
 
     # POSITIVE per-check output. A row silently skipped by a load error must not look like a row
@@ -387,62 +373,20 @@ def main(argv: list[str]) -> int:
     print(f"[{DETECTOR}] envelope={json.dumps(env, sort_keys=True)}")
 
     wrapper = os.environ.get("TMRG_WRAPPER", "/opt/algovault-monitoring/send_telegram.sh")
-    marker = Path(os.environ.get("TMRG_MARKER",
-                                 "/var/lib/algovault-monitoring/trend-mode-readout-due.fired"))
 
     if verdict == FAIL:
-        body = "\n".join([f"🛑 {ALERT_ID_BREACH}", ""]
-                         + [f"{c.verdict}  {c.name}: {c.detail}" for c in checks]
-                         + ["",
-                            "TREND_MODE=on breached a PRE-DECLARED rollback trigger.",
-                            "Rollback (OPERATOR ACTION — this job never touches the flag):",
-                            "  ssh signal-1; remove TREND_MODE=on from /opt/crypto-quant-signal-mcp/.env",
-                            "  cd /opt/crypto-quant-signal-mcp && docker compose up -d --force-recreate mcp-server",
-                            "  (`docker compose restart` does NOT reload env_file — do not use it)",
-                            "Contract: audits/SIGNAL-TREND-MODE-ENABLE-W1-trigger-contract.md"])
-        _send(wrapper, ALERT_ID_BREACH, body)
-
+        _send(wrapper, ALERT_ID_BREACH, fail_body(checks))
     else:
-        # ADOPTED --clear. State hygiene, NOT a recovery announcement: send_telegram.sh writes its
-        # cooldown marker on a delivered fire and nothing else ever removes it, so a breach that
-        # heals would leave the channel's last word pinned to the worst thing that ever happened.
-        # `announce_resolution` stays FALSE on this alert — the clear is SILENT, per the law's
-        # default. A trigger flapping back and forth is chatter; the operator action here is a
-        # rollback DECISION, not an acknowledgement of a blip.
-        # CLEAR ON "NOT FAILING AND NOT BLIND", not on PASS.
-        #
-        # Clearing only on PASS was wrong the moment trigger A became a structural REFUSAL: A is
-        # permanently INDETERMINATE for this pair of arms (NOT_IDENTIFIABLE is a determinate
-        # statement that the test cannot be run, not a transient read failure), so the fold can
-        # never reach PASS and the marker from the 2026-09-02 FALSE alarm would sit forever —
-        # pinning the channel's last word to the worst thing that ever happened, which is the exact
-        # defect the recovery-notice law names.
-        #
-        # But "clear whenever not FAIL" would clear while wholly blind, which is laundering. The
-        # condition is therefore BOTH: nothing is failing AND at least one trigger was genuinely
-        # evaluated. A run that measured nothing clears nothing.
+        # ADOPTED --clear, SILENT (announce_resolution false). Clear on "not failing AND not blind":
+        # a run that measured nothing clears nothing.
         evaluated_something = any(c.verdict == PASS for c in checks)
-        if verdict != FAIL and evaluated_something and Path(wrapper).exists():
+        if evaluated_something and Path(wrapper).exists():
             try:
                 subprocess.run([wrapper, "--clear", ALERT_ID_BREACH,
-                                "all pre-declared triggers within band"],
+                                "all operational bounds within band"],
                                capture_output=True, text=True, timeout=60)
             except Exception as exc:  # noqa: BLE001
                 print(f"[{DETECTOR}] WARNING: --clear failed: {exc}")
-
-    if readout_is_due(checks, now, flip_at) and not marker.exists():
-        body = "\n".join([f"📊 {ALERT_ID_DUE}", "",
-                          f"{READOUT_DAYS} days of live v2 data have accrued since the flip"
-                          f" ({flip_at:%Y-%m-%d}).",
-                          f"v1 n={v1.n if v1 else 0} · v2 n={v2.n if v2 else 0}",
-                          "",
-                          "Action: dispatch SIGNAL-TREND-MODE-READOUT-W{NEXT}."])
-        if _send(wrapper, ALERT_ID_DUE, body):
-            try:
-                marker.parent.mkdir(parents=True, exist_ok=True)
-                marker.write_text(now.strftime("%Y-%m-%dT%H:%M:%SZ\n"))
-            except OSError as exc:
-                print(f"[{DETECTOR}] WARNING: could not write once-ever marker: {exc}")
 
     print(f"TREND_MODE_READOUT_VERDICT={verdict}")
     return 3 if verdict == INDET else 0
@@ -478,112 +422,88 @@ def _self_test() -> int:
     failures = []
 
     def check(label, cond):
-        if cond:
-            print(f"  ok   {label}")
-        else:
-            print(f"  FAIL {label}")
+        try:
+            ok = bool(cond() if callable(cond) else cond)
+        except Exception as exc:  # noqa: BLE001 — an assertion that RAISES is not an assertion
+            ok, label = False, f"{label} (raised {type(exc).__name__}: {exc})"
+        print(f"  {'ok  ' if ok else 'FAIL'} {label}")
+        if not ok:
             failures.append(label)
 
-    now = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
-    flip = datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
     day = 86400
-    # v1: engine 46.89, long 46.85, short 51.98 → edge_best -5.09, edge_long +0.04
     v1 = Arm(_row(1, 28616, 26559, 12453, 12442, 13806, 18769, 1116, 33, 0, 9 * day))
-    daily_ok = {2: {"2026-09-27": 2000, "2026-09-28": 2100, "2026-09-29": 2050}}
+    daily_ok = {2: {"2026-10-01": 2000, "2026-10-02": 2100, "2026-10-03": 2050}}
     gaps_ok = {1: 1136, 2: 900}
 
-    # 1. the world being empty of v2 rows is a FACT, not vacuity → PASS with a positive line
-    checks, _ = evaluate(v1, None, {}, gaps_ok, now, flip)
-    check("no v2 rows ⇒ PASS with an explicit line (fact, not vacuity)",
-          fold(checks) == PASS and any("no v2 rows yet" in c.detail for c in checks))
+    # 1. an empty registry arm is a FACT, not vacuity → PASS with a positive line
+    checks, _ = evaluate(v1, None, {}, gaps_ok, now)
+    check("no registry-arm rows ⇒ PASS with an explicit line (fact, not vacuity)",
+          lambda: fold(checks) == PASS and any("no registry-arm rows" in c.detail for c in checks))
 
-    # 2. a healthy v2 arm passes the OPERATIONAL bounds
+    # 2. a healthy registry arm passes the OPERATIONAL bounds
     v2_ok = Arm(_row(2, 30000, 27000, 12700, 12650, 14000, 19000, 1150, 40, 0, 9 * day, buy=21870))
-    checks, ev = evaluate(v1, v2_ok, daily_ok, gaps_ok, now, flip)
-    check("healthy v2 ⇒ B/C/D all PASS",
+    checks, ev = evaluate(v1, v2_ok, daily_ok, gaps_ok, now)
+    check("healthy registry arm ⇒ B/C/D all PASS",
           all(c.verdict == PASS for c in checks if c.name.startswith(("B_", "C_conc", "D_"))))
-    check("evidence carries the capacity scalars the refusal is built from",
-          "attainable_pp_a" in ev and "excess_pp_a" in ev and "v2_n" in ev)
+    check("evidence names the registry arm", "registry_n" in ev and "v1_n" in ev)
 
-    # 3. THE REFUSAL, on the REAL 2026-09-02 shape. v1 is 99.5% one-sided, so its entire attainable
-    #    excess range is ~1.06pp — narrower than the declared 3.0pp floor. The comparison is
-    #    therefore NOT IDENTIFIABLE and must refuse rather than report a number.
-    check("A REFUSES a one-sided v1 against a floor wider than its attainable range",
-          any(c.name == "A_edge_floor" and c.verdict == INDET and "NOT_IDENTIFIABLE" in c.detail
-              for c in evaluate(v1, v2_ok, daily_ok, gaps_ok, now, flip)[0]))
+    # 3. trigger A and the readout are RETIRED — neither can come back unnoticed
+    check("no A check is evaluated any more", not any(c.name.startswith("A_") for c in checks))
+    check("no readout check is evaluated any more", not any(c.name == "readout_due" for c in checks))
+    check("the retired constants are gone",
+          all(n not in globals() for n in ("EDGE_FLOOR_DROP_PP", "EDGE_MIN_SCORED", "READOUT_DAYS", "ALERT_ID_DUE")))
 
-    # 3b. …and the refusal is NOT blanket. Give BOTH arms real two-sided capacity and A evaluates.
-    #     Without this the previous assertion would be satisfied by a trigger that always refuses,
-    #     which is a dark guard wearing a refusal's clothes.
-    # 25 clusters, because the day is the independence unit and the contract floors at 20. The
-    # first draft of this fixture carried 3 days and A returned "under-clustered" — correct
-    # behaviour that the test mistook for a broken refusal.
-    daily_many = {2: {f"2026-09-{d:02d}": 2000 for d in range(1, 26)}}
-    v1_2s = Arm(_row(1, 30000, 28000, 13300, 13300, 14000, 19000, 1100, 33, 0, 9 * day, buy=15000))
-    v2_2s = Arm(_row(2, 30000, 27000, 13000, 12900, 13900, 19000, 1150, 40, 0, 9 * day, buy=14000))
-    a_two_sided = [c for c in evaluate(v1_2s, v2_2s, daily_many, gaps_ok, now, flip)[0]
-                   if c.name == "A_edge_floor"]
-    check("A EVALUATES when both arms have capacity (the refusal is not blanket)",
-          bool(a_two_sided) and a_two_sided[0].verdict in (PASS, FAIL))
-
-    # 3c. MUST-FAIL — with capacity present, a genuine edge collapse still fires.
-    v2_bad = Arm(_row(2, 30000, 27000, 11200, 12900, 13900, 19000, 1150, 40, 0, 9 * day, buy=14000))
-    check("A still FIRES on a real edge collapse once it is identifiable",
-          any(c.name == "A_edge_floor" and c.verdict == FAIL
-              for c in evaluate(v1_2s, v2_bad, daily_many, gaps_ok, now, flip)[0]))
-    daily_hot = {2: {"2026-09-27": 99999, "2026-09-28": 99999, "2026-09-29": 99999}}
+    # 4. MUST-FIRE: each bound fires on its own breach
+    daily_hot = {2: {"2026-10-01": 99999, "2026-10-02": 99999, "2026-10-03": 99999}}
     check("B fires on 3 sustained days over the ceiling",
           any(c.name == "B_volume_ceiling" and c.verdict == FAIL
-              for c in evaluate(v1, v2_ok, daily_hot, gaps_ok, now, flip)[0]))
+              for c in evaluate(v1, v2_ok, daily_hot, gaps_ok, now)[0]))
     check("B does NOT fire on 2 of 3 days over",
           any(c.name == "B_volume_ceiling" and c.verdict == PASS
-              for c in evaluate(v1, v2_ok,
-                                {2: {"a": 99999, "b": 99999, "c": 10}}, gaps_ok, now, flip)[0]))
+              for c in evaluate(v1, v2_ok, {2: {"a": 99999, "b": 99999, "c": 10}}, gaps_ok, now)[0]))
     v2_conc = Arm(_row(2, 30000, 27000, 12700, 12650, 14000, 19000, 9000, 40, 0, 9 * day))
     check("C fires on cell concentration",
           any(c.name == "C_concentration" and c.verdict == FAIL
-              for c in evaluate(v1, v2_conc, daily_ok, gaps_ok, now, flip)[0]))
+              for c in evaluate(v1, v2_conc, daily_ok, gaps_ok, now)[0]))
     check("D fires on an emission gap",
           any(c.name == "D_emission_gap" and c.verdict == FAIL
-              for c in evaluate(v1, v2_ok, daily_ok, {1: 1136, 2: 5000}, now, flip)[0]))
+              for c in evaluate(v1, v2_ok, daily_ok, {1: 1136, 2: 5000}, now)[0]))
 
-    # 4. INDETERMINATE never folds to PASS
+    # 5. INDETERMINATE never folds to PASS
     v2_thin = Arm(_row(2, 100, 100, 50, 50, 50, 60, 5, 2, 0, day))
-    checks, _ = evaluate(v1, v2_thin, daily_ok, gaps_ok, now, flip)
-    check("underpowered v2 ⇒ INDETERMINATE, never PASS", fold(checks) == INDET)
+    checks, _ = evaluate(v1, v2_thin, daily_ok, gaps_ok, now)
+    check("underpowered registry arm ⇒ INDETERMINATE, never PASS", fold(checks) == INDET)
     check("the 1d cell reports INDETERMINATE below its floor",
           any(c.name == "C_1d_cell" and c.verdict == INDET for c in checks))
 
-    # 5. the readout fires only after +30d
-    check("readout not due at +29d", not readout_is_due([], flip + timedelta(days=29), flip))
-    check("readout due at +30d", readout_is_due([], flip + timedelta(days=30), flip))
-    check("readout INDETERMINATE with no flip instant",
-          any(c.name == "readout_due" and c.verdict == INDET
-              for c in evaluate(v1, v2_ok, daily_ok, gaps_ok, now, None)[0]))
-
-    # 6. THE BYPASSED ARTIFACTS — the seam replaces the DB, so these are the only code no scenario
-    #    above executes. Assert their SHAPE rather than trusting them.
+    # 6. THE BYPASSED ARTIFACTS — the SQL strings, the page body, the envelope
     for name, sql in (("ARMS_SQL", ARMS_SQL), ("DAILY_TRENDING_SQL", DAILY_TRENDING_SQL),
                       ("MAX_GAP_SQL", MAX_GAP_SQL)):
         check(f"{name} holds both arms on one instrument (regime_rule_version=3, no BITMART)",
               "regime_rule_version = 3" in sql and "BITMART" in sql)
-        check(f"{name} groups by verdict_rule_version rather than filtering to one arm",
-              "verdict_rule_version" in sql)
-    env = build_envelope(PASS, {"v2_n": 1}, now, "rid", now, ("2026-09-01T00:00:00Z",
-                                                             "2026-09-30T00:00:00Z"))
+        check(f"{name} maps every registry version (2, 3, …) into ONE arm against frozen v1",
+              "verdict_rule_version >= 2" in sql)
+    body = fail_body([Check("D_emission_gap", FAIL, "x")])
+    # The first line is the alert id, a HISTORICAL label kept so markers and the registry row stay
+    # continuous; the body below it is what an operator reads as a claim.
+    prose = body.split("\n", 1)[1]
+    check("the FAIL body names no change under test (OPERATIONAL_BOUND)",
+          "TREND_MODE" not in prose and "rollback trigger" not in prose.lower() and "fade" not in prose.lower())
+    check("the FAIL body gives the registry kill switch, and never offers v1",
+          "VERDICT_RULE_FORCE_M=1" in body and "docker compose up -d mcp-server" in body
+          and "cannot be selected" in body)
+    env = build_envelope(PASS, {"registry_n": 1}, now, "rid", now, ("2026-10-01T00:00:00Z",
+                                                                    "2026-10-03T00:00:00Z"))
     try:
         errs = de.validate(env, de.load_schema())
-    except Exception as exc:  # noqa: BLE001 — an assertion that RAISES is not an assertion
+    except Exception as exc:  # noqa: BLE001
         errs = [f"schema unreadable: {exc}"]
     check(f"the envelope we BUILD validates against the shipped schema ({errs or 'clean'})", not errs)
     check("a deliberately broken envelope is REFUSED (the validator can say no)",
           bool(de.validate({"schema_version": 1, "detector": DETECTOR}, de.load_schema())))
 
-    # 7. the code's thresholds match the in-repo contract — no silent divergence
-    # Resolve by SEARCHING UPWARD, never by a hardcoded parent index. `parents[1]` is `ops/`, not
-    # the repo root — and the first draft of this block used it, so the whole mirror assertion
-    # skipped while printing `ok`. That is the installed-script-relative-path dark guard, written
-    # into the very self-test whose job is to make dark guards unwritable. Kept visible.
+    # 7. the code's remaining thresholds match the in-repo contract — no silent divergence
     contract = None
     for anc in Path(__file__).resolve().parents:
         cand = anc / "audits" / "SIGNAL-TREND-MODE-ENABLE-W1-trigger-contract.md"
@@ -593,14 +513,11 @@ def _self_test() -> int:
     in_checkout = (Path(__file__).resolve().parents[2] / ".git").exists() \
         or (Path(__file__).resolve().parents[2] / "package.json").exists()
     if contract is None and in_checkout:
-        # A checkout that cannot find its own contract is a DEFECT, not a host install.
         check("contract is reachable from a checkout", False)
     elif contract is not None:
         txt = contract.read_text()
-        check("contract mirrors the edge floor", f"{EDGE_FLOOR_DROP_PP} pp" in txt)
         check("contract mirrors the volume multiple", f"{int(VOLUME_CEILING_MULT)}×" in txt)
         check("contract mirrors the concentration multiple", f"{int(CONCENTRATION_MULT)}×" in txt)
-        check("contract mirrors the min-n for the edge floors", f"{EDGE_MIN_SCORED:,}" in txt)
     else:
         print("  ok   contract absent and not in a checkout — host install, mirror check N/A")
 
