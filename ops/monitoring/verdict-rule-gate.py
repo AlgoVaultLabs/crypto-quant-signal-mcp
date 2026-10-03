@@ -53,8 +53,8 @@ INDETERMINATE, and never clears while blind.
 
 ── READ PATH ────────────────────────────────────────────────────────────────────────────────────
 Host psql, READ-ONLY: `docker exec <pg> psql -U aoe_readonly` with `default_transaction_read_only`.
-The emitted arm only (`signal_scorer_inputs` ⋈ `signals` for the outcome); never `hold_decisions`,
-`hold_decision_labels` or `band_signals`, never pooled with a withheld arm.
+The emitted arm only (`signal_scorer_inputs` ⋈ `signals` for the outcome); never a withheld arm's
+store (the hold and band captures, or their labels), and never pooled with one.
 
 Env:
   VRG_PG_CONTAINER  postgres container      (default crypto-quant-signal-mcp-postgres-1)
@@ -271,7 +271,7 @@ def day_index(row: dict, window_start: int) -> int:
 
 def coverage_ok(scored: int, rows: int) -> bool:
     """§5 coverage floor: scored ≥ 95% of the window's rows. An empty window never passes."""
-    return rows > 0 and scored / rows >= COVERAGE_FLOOR
+    return rows > 0 and scored / rows >= COVERAGE_FLOOR  # ratio-exempt: numerator and denominator are ONE registered result set (scored rows of the window's rows); registration section 5 floor
 
 
 def per_day(rows: list[dict], window_start: int, assignment: str) -> dict[int, tuple[float, float]]:
@@ -326,7 +326,7 @@ def holm(tests: list[tuple[str, float]], alpha: float) -> set[str]:
     m = len(ranked)
     rejected = set()
     for i, (tid, p) in enumerate(ranked):
-        if math.isnan(p) or p > alpha / (m - i):
+        if math.isnan(p) or p > alpha / (m - i):  # ratio-exempt: Holm step level alpha/(m-i), a multiple-testing threshold, not a population rate
             break
         rejected.add(tid)
     return rejected
