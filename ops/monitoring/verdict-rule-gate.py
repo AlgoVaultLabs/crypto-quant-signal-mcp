@@ -153,7 +153,7 @@ WHERE timeframe = :tf
 
 # The §3 read joins every captured row to `signals` by (signal_hash, exchange). Without an index on
 # that pair each lateral lookup scans the exchange's rows — measured 2026-10-03 on prod: 114.9 ms and
-# ~46.8k buffer hits per row, 26–71 minutes per decided window of the database the product serves
+# ~46.8k buffer hits per row, 38–96 minutes per decided window of the database the product serves
 # from. `idx_signals_signal_hash_exchange` (migrations/047, architect ruling Q1 = A) is the index. An
 # instrument must not degrade what it measures, so the gate REFUSES (INDETERMINATE) before reading a
 # window unless such an index is VALID and READY: a failed CREATE INDEX CONCURRENTLY leaves an
