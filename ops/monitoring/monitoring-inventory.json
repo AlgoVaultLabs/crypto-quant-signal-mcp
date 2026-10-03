@@ -1858,6 +1858,32 @@
       }
     },
     {
+      "id": "gh-run-conclusion",
+      "artifact": "ops/monitoring/gh-run-conclusion.mjs",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/gh-run-conclusion.mjs",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/gh-run-conclusion.mjs"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "exec'd by xrepo-ci-conclusion-canary.sh (signal-1, from CH3); imported by deploy-drift-canary.mjs (signal-1) and scripts/check-release-readiness.mjs (operator checkout of origin/main), from CH4",
+      "install_state": "pending",
+      "sha256": "fae684423db4122e416e61d933a1f3e2c8ad3d1194e287c0d4791b887de238fc",
+      "alert_ids": [],
+      "consumed_by": [
+        "ops/cron/xrepo-ci-conclusion-canary.sh",
+        "ops/monitoring/deploy-drift-canary.mjs",
+        "scripts/check-release-readiness.mjs"
+      ],
+      "owner_wave": "OPS-XREPO-CI-RED-W1",
+      "notes": "THE ONE DERIVATION of a GitHub workflow's latest-run conclusion, BOUND to the run it names. Reads the identity-less badge and the Actions page row of the newest TERMINAL run (status = the first <svg> inside that row's own /actions/runs/<id> anchor) and binds them by a data table: a RED pages, a release blocks and a lane is attributed only on what the run's own record supports; bound_run exists only for rows 1, 2 and 4. Retires the class that paged xrepo_ci_red on run #144 (37017230705), which had SUCCEEDED (2026-10-03T09:41Z), and the 2026-10-02 DEPLOY_DRIFT page that called a failed Deploy #1065 green: 6 priors by root cause. Recover re-reads both instruments on any non-AGREE outcome (3 reads, 60 s apart; the span is derived from a measured 97 s badge-episode envelope and asserted by --self-test). Vocabulary and table are DATA with measurement provenance. Reader only: no api.github.com, no network write, no alert dispatch. install_state pending until OPS-XREPO-CI-RED-W1 CH3 installs it beside the canary (module first). Self-test: node ops/monitoring/gh-run-conclusion.mjs --self-test (npm run ghrc:selftest)."
+    },
+    {
       "id": "closedbar-recalibrate-readiness",
       "artifact": "ops/cron/closedbar-recalibrate-readiness.sh",
       "kind": "executable",
