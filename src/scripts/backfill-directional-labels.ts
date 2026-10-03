@@ -1448,10 +1448,11 @@ interface RelabelCoverage {
   nonV2Refused: number; // a row whose spec is not -v2 reached the INSERT — refused, never written (expected 0)
   budgetSkips: number; errors: number; wouldWrite: number;
   cutShort: number; // groups left part-way by the deadline or a stop request (the rest of the group: next pass)
+  unservedGroups: number; // market × timeframe pairs the venue refuses outright while it serves a control market
 }
 const rcov: RelabelCoverage = {
   groups: 0, signalsSeen: 0, todo: 0, labeled: 0, written: 0, classes: {}, nonV2Refused: 0,
-  budgetSkips: 0, errors: 0, wouldWrite: 0, cutShort: 0,
+  budgetSkips: 0, errors: 0, wouldWrite: 0, cutShort: 0, unservedGroups: 0,
 };
 /** A copy of the relabel's counters — a test seam, not an API. */
 export function _relabelCoverageForTest(): Readonly<RelabelCoverage> {
@@ -1465,6 +1466,55 @@ function manifest(signalId: number, cls: RelabelClass): void {
 /** The `-v2` INSERT — the ONLY statement the relabel writes with (a test pins: no UPDATE, no DELETE). */
 export const RELABEL_INSERT_SQL_HEAD = `INSERT INTO directional_labels (${INSERT_COLUMNS.join(', ')}) VALUES `;
 export const RELABEL_INSERT_SQL_TAIL = ' ON CONFLICT (signal_id, barrier_spec) DO NOTHING RETURNING signal_id';
+
+/**
+ * A venue's refusal of ONE market × timeframe, told apart from a transient fault. Measured on the relabel's first
+ * night (2026-10-02): WhiteBIT "Market is not available", BingX 109418 "offline" / 109415 "pause", HTX
+ * `status=error`, OKX 51000 "Parameter bar error" on 8h — each refused on every pass, so the venue could never
+ * converge. A market is UNSERVED iff its own most recent page is refused too AND a control market (BTC 1h) on the
+ * same venue is served now: the venue then serves it no candles at all — fewer than 30 contiguous σ windows, the
+ * registered `unreachable:history` (registration §0), exactly as a venue that answers `[]` (Bybit 8h) is classed. A
+ * rate limit, a budget skip, or a venue that refuses its control too is never a class: it stays a counted error.
+ * Re-measured on every pass, and the last class wins, so a paused market that is served on a later pass is written.
+ */
+const CONTROL_COIN = 'BTC';
+const CONTROL_TIMEFRAME = '1h';
+const CONTROL_TTL_MS = 10 * 60_000;
+const venueControl = new Map<string, { served: boolean; atMs: number }>();
+/** Clears the per-process venue-control cache — a test seam, not an API. */
+export function _resetVenueControlForTest(): void {
+  venueControl.clear();
+}
+function isTransient(err: unknown): boolean {
+  if (err instanceof WeightBudgetSkipError || err instanceof OwnStopError) return true;
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === 'UPSTREAM_RATE_LIMIT' || code === 'WEIGHT_BUDGET_SKIP';
+}
+/** One label-free token for an error: its stable code, else its class and the first words of its message. */
+export function errKey(err: unknown): string {
+  const e = err as { code?: unknown; message?: unknown; constructor?: { name?: string } } | null;
+  if (typeof e?.code === 'string') return e.code;
+  return `${e?.constructor?.name ?? 'Error'}:${String(e?.message ?? err).replace(/\s+/g, ' ').slice(0, 100)}`;
+}
+async function recentPage(exchange: string, coin: string, timeframe: string): Promise<'served' | 'refused' | 'transient'> {
+  const stepMs = servedStepMs(exchange, timeframe);
+  try {
+    await ownRateGate();
+    await getAdapter(exchange as ExchangeId).getCandles(coin, timeframe, Date.now() - 5 * stepMs, exchange === 'HL' ? getDexForCoin(coin) : undefined);
+    return 'served';
+  } catch (err) {
+    if (err instanceof OwnStopError) throw err;
+    return isTransient(err) ? 'transient' : 'refused';
+  }
+}
+export async function marketUnserved(exchange: string, coin: string, timeframe: string): Promise<boolean> {
+  if ((await recentPage(exchange, coin, timeframe)) !== 'refused') return false;
+  const cached = venueControl.get(exchange);
+  if (cached && Date.now() - cached.atMs < CONTROL_TTL_MS) return cached.served;
+  const served = (await recentPage(exchange, CONTROL_COIN, CONTROL_TIMEFRAME)) === 'served';
+  venueControl.set(exchange, { served, atMs: Date.now() });
+  return served;
+}
 
 export async function processRelabelGroup(
   cli: Cli,
@@ -1528,6 +1578,7 @@ export async function processRelabelGroup(
   let coveredUntil = -Infinity;
   let probedThrough = -Infinity;
   const rows: unknown[][] = [];
+  let errorLogged = false;
   for (const x of live) {
     // the 02:15Z hard stop and a deploy's SIGTERM act INSIDE a group, not only between groups: what is computed
     // so far is written below, the rest is the next pass's.
@@ -1548,7 +1599,23 @@ export async function processRelabelGroup(
     } catch (err) {
       if (err instanceof OwnStopError) { rcov.cutShort++; break; }
       if (err instanceof WeightBudgetSkipError) { rcov.budgetSkips++; break; } // the rest stay absent → next run
+      if (!isTransient(err)) {
+        let unserved = false;
+        try {
+          unserved = await marketUnserved(g.exchange, g.coin, g.timeframe);
+        } catch (probeErr) {
+          if (probeErr instanceof OwnStopError) { rcov.cutShort++; break; }
+        }
+        if (unserved) {
+          // the venue serves this market × timeframe no candles while it serves its control: no σ history
+          console.log(`LRW_UNSERVED ${g.exchange}:${g.coin}:${g.timeframe} ${errKey(err)}`);
+          rcov.unservedGroups++;
+          for (const y of live.slice(live.indexOf(x))) manifest(y.id, 'unreachable:history');
+          break;
+        }
+      }
       rcov.errors++;
+      if (!errorLogged) { console.log(`LRW_ERROR ${g.exchange}:${g.coin}:${g.timeframe} ${errKey(err)}`); errorLogged = true; }
       continue;
     }
     const fullForward = [...cache.values()].filter((c) => c.time >= entryMs).sort((a, b) => a.time - b.time);

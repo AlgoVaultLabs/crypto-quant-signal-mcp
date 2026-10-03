@@ -15,6 +15,7 @@
 #   * OWN flock (/var/lock/algovault-lrw-relabel-<V>.lock) and OWN log (/var/log/lrw-relabel/<V>.log) — never
 #     /var/log/carry-labeler.log or the nightly lock.
 #   * lock_timeout 5s on every statement (PGOPTIONS) — the annotation refuses to write without it.
+#   * SCRIPT_WATCHDOG_MS sized past the slot (watchdog_ms): runScript's 6 h default would kill a pass mid-slot.
 #   * --rate = this process's OWN requests/min (≤ 50 % of the venue's documented limit, never above its batch cap;
 #     the shared weight budget still meters every batch caller together, so HL / WEEX seeders are never displaced).
 #   * DB-state RESUME: a pass skips every row that already has its `-v2`; a deploy that recreates the container
@@ -59,6 +60,11 @@ slot_minutes_left() {
   else echo 0; fi
 }
 
+# watchdog_ms <minutes left in the slot> → the process's SCRIPT_WATCHDOG_MS. runScript's default 6 h watchdog is shorter
+# than a slot (measured 2026-10-03: every runner exited 75 at 18:31Z + 6 h and lost its in-flight group); the slot's
+# own deadline (--time-budget-min, then the 02:14Z TERM) is the stop, so the watchdog sits 10 minutes past it.
+watchdog_ms() { echo $(( ($1 + 10) * 60000 )); }
+
 # pass_state <DONE line> → converged | stopped | progress — what one pass's own DONE line says
 pass_state() {
   local line="$1" f v
@@ -91,7 +97,16 @@ self_test() {
     want=${pair%%|*}; got=$(pass_state "${pair#*|}")
     if [ "$got" = "$want" ]; then ok=$((ok + 1)); else bad=$((bad + 1)); echo "SELF-TEST: FAIL pass_state: got $got want $want for ${pair#*|}"; fi
   done
-  if [ "$bad" -eq 0 ] && [ "$ok" -ge 16 ]; then echo "LRW_RUNNER_SELFTEST: PASS ($ok checks)"; exit 0; fi
+  for pair in "464:28440000" "1:660000" "0:600000"; do
+    want=${pair##*:}; got=$(watchdog_ms "${pair%%:*}")
+    if [ "$got" = "$want" ]; then ok=$((ok + 1)); else bad=$((bad + 1)); echo "SELF-TEST: FAIL watchdog_ms ${pair%%:*}: got $got want $want"; fi
+  done
+  # the watchdog reaches the process: the ONE pass command line (anchored at its indent, so this check's own text
+  # can never match it) carries it — a static check of this file
+  local dx; dx="$(grep -E '^  docker exec -e PGOPTIONS=' "${BASH_SOURCE[0]}")"
+  if [ "$(grep -c . <<<"$dx")" = 1 ] && grep -qF 'SCRIPT_WATCHDOG_MS="$(watchdog_ms "$left")"' <<<"$dx"; then ok=$((ok + 1))
+  else bad=$((bad + 1)); echo 'SELF-TEST: FAIL the docker exec line does not pass SCRIPT_WATCHDOG_MS'; fi
+  if [ "$bad" -eq 0 ] && [ "$ok" -ge 20 ]; then echo "LRW_RUNNER_SELFTEST: PASS ($ok checks)"; exit 0; fi
   echo "LRW_RUNNER_SELFTEST: FAIL ($bad)"; exit 1
 }
 [ "${LRW_RUNNER_SELFTEST:-0}" = 1 ] && self_test
@@ -109,7 +124,7 @@ log() { echo "$(date -u +%FT%TZ) [lrw-runner $name] $*" >> "$LOG"; }
 run_watched() {
   local left="$1" pat="$2"; shift 2
   local stop_at=$(( $(date -u +%s) + (left - 1) * 60 )) termed=0 pid rc
-  docker exec -e PGOPTIONS='-c lock_timeout=5s' "$CTR" "$@" >> "$LOG" 2>&1 &
+  docker exec -e PGOPTIONS='-c lock_timeout=5s' -e SCRIPT_WATCHDOG_MS="$(watchdog_ms "$left")" "$CTR" "$@" >> "$LOG" 2>&1 &
   pid=$!
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$termed" = 0 ] && [ "$(date -u +%s)" -ge "$stop_at" ]; then

@@ -47,7 +47,7 @@ HOST='root@204.168.185.24'
 KEY="$HOME/.ssh/algovault_deploy"
 PG_CTR='crypto-quant-signal-mcp-postgres-1'
 SUITES=(tests/unit/lrw-relabel-v2.test.ts tests/unit/lrw-extract-sql.test.ts tests/unit/lrw-completeness.test.ts tests/unit/lrw-disagreement.test.ts)
-MIN_MUTATIONS=45
+MIN_MUTATIONS=50
 
 # decide <mode> <build_rc> <suites> <subtests> <reg31> <mut_line> <data>
 #   suites/subtests: passed | failed | missing   reg31: equal | differ | ind
@@ -144,51 +144,56 @@ judge_data() {
 mutation_table() {
   cat <<'JSON'
 [
- ["R1","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","rows.push([x.id, v.spec,","rows.push([x.id, v.spec.replace('-v2', '-v1'),"],
- ["R2","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","      if (done.has(`${x.id}|${v.spec}`)) continue;\n      const bp","      const bp"],
- ["R3","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (prep.kind === 'refused') { manifest(x.id, `refused:${prep.reason}` as RelabelClass); continue; }","if (prep.kind === 'refused') { continue; }"],
- ["R4","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (x.created_at >= reachCutS) return true;","if (true) return true;"],
- ["R5","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (ctx.retired.has(g.exchange))","if (false)"],
- ["R6","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (ownMinIntervalMs <= 0) return;","return;"],
- ["R7","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","SET race_gap_candles = v.gap ","SET race_gap_candles = v.gap, computed_at = now() "],
- ["R8","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","WHERE l.ctid = v.t AND l.race_gap_candles IS NULL ","WHERE l.ctid = v.t "],
- ["R9","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (lt[0]?.v !== '5s') throw","if (false) throw"],
- ["R10","src/scripts/lrw/annotation-sources.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (prev !== undefined && prev !== gap) throw","if (false) throw"],
- ["R11","src/scripts/lrw/extract-sql.ts","vitest:tests/unit/lrw-extract-sql.test.ts","  ORDER BY s.id, v1.barrier_spec\n","  ORDER BY s.id\n"],
- ["R12","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","if (r.lowvolV1) { a.lowvol++; return; }","if (r.lowvolV1) { a.lowvol++; }"],
- ["R13","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","if (a.twins < THIN_FLOOR)","if (a.twins < 3)"],
- ["R14","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","if (o === 'upper') up++;","if (o === 'upper' || o === 'ambiguous') up++;"],
- ["R15","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","if (used.length >= MIN_CLUSTER_DAYS)","if (used.length >= 1)"],
- ["R16","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts",".map(Number).sort((p, q) => q - p)",".map(Number).sort((p, q) => p - q)"],
- ["R17","scripts/lrw/lrw-pull.sh","sh:bash scripts/lrw/lrw-pull.sh --self-test","moved) red=\"$red concurrent-writer\" ;;","moved) ;;"],
- ["R18","ops/label-backfill/lrw-relabel-runner.sh","sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh","echo $((24 * 60 - now + SLOT_END_MIN))","echo $((24 * 60 - now))"],
- ["R19","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","const pooled = sel.filter((r) => ax(r).grid !== 'coarser' && !ax(r).adapterCell);","const pooled = sel.filter((r) => !ax(r).adapterCell);"],
- ["R20","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","tri(wl !== undefined, wl?.ambiguousUc === 1)","(wl?.ambiguousUc === 1 ? 'yes' : 'no')"],
- ["R21","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","    cells.push({ key: { ...base, registered_cell: name }, read: readAcc(a) });","    if (a.registered > 0) cells.push({ key: { ...base, registered_cell: name }, read: readAcc(a) });"],
- ["R22","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","=> d.v1 !== null && d.v2 !== null);","=> d.v1 !== null);"],
- ["R23","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","if (tCut !== T_CUT_EPOCH) throw","if (false) throw"],
- ["R24","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","if (sha(files[flag]) !== pin) throw","if (false) throw"],
- ["R25","src/scripts/lrw/disagreement.ts","vitest:tests/unit/lrw-disagreement.test.ts","const out: string[] = [HEADER_CLAUSE, ''];","const out: string[] = [];"],
- ["R26","src/scripts/lrw/relabel-sql.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (until !== undefined && until > cut) throw","if (false) throw"],
- ["R27","src/scripts/lrw/registered.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","export const ADAPTER_PENDING_CELLS: ReadonlySet<string> = new Set<string>([]);","export const ADAPTER_PENDING_CELLS: ReadonlySet<string> = new Set<string>(['BITGET:2h', 'BITGET:8h']);"],
- ["R28","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","return ownStopArmed && (Date.now() >= ownDeadlineMs || isStopRequested());","return false;"],
- ["R29","src/scripts/lrw/annotation-sources.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (!ANNOTATION_SOURCE_SHA256.has(sha256)) throw","if (false) throw"],
- ["R30","src/scripts/backfill-directional-labels.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","if (opts.deadlineMs !== undefined && Date.now() >= opts.deadlineMs) { a.outcome = 'global-budget'; break; }",""],
- ["R31","src/scripts/lrw/completeness.ts","vitest:tests/unit/lrw-completeness.test.ts","if (cls === undefined || cls === 'deferred') {","if (cls === undefined) {"],
- ["R32","src/scripts/lrw/completeness.ts","vitest:tests/unit/lrw-completeness.test.ts","if (lines[0] !== RO_TOKEN_LINE) throw","if (false) throw"],
- ["R33","scripts/lrw/lrw-pull.sh","sh:bash scripts/lrw/lrw-pull.sh --self-test","grep -qv ' CONVERGED$' && { echo 'fail:runner-not-converged'; return; }","false && { echo 'fail:runner-not-converged'; return; }"],
- ["R34","scripts/lrw/lrw-pull.sh","sh:bash scripts/lrw/lrw-pull.sh --self-test","WRITER_PATTERN='[b]ackfill-directional-labels|","WRITER_PATTERN='backfill-directional-labels|"],
- ["R35","ops/label-backfill/lrw-relabel-runner.sh","sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh","for f in written errors budgetSkips cutShort; do","for f in written; do"],
- ["R36","ops/label-backfill/lrw-relabel-runner.sh","sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh","grep -q '\"outcome\":\"stopped\"' && { echo stopped; return; }","false && { echo stopped; return; }"],
- ["R37","src/scripts/lrw/extract-sql.ts","vitest:tests/unit/lrw-extract-sql.test.ts","if (argv.includes('--t-cut')) {","if (false) {"],
- ["R38","src/scripts/lrw/annotation-sources.ts","vitest:tests/unit/lrw-relabel-v2.test.ts","    if (iId < 0 || iSpec < 0 || iGap < 0) throw","    if (false) throw"],
+ ["R1", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "rows.push([x.id, v.spec,", "rows.push([x.id, v.spec.replace('-v2', '-v1'),"],
+ ["R2", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "      if (done.has(`${x.id}|${v.spec}`)) continue;\n      const bp", "      const bp"],
+ ["R3", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (prep.kind === 'refused') { manifest(x.id, `refused:${prep.reason}` as RelabelClass); continue; }", "if (prep.kind === 'refused') { continue; }"],
+ ["R4", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (x.created_at >= reachCutS) return true;", "if (true) return true;"],
+ ["R5", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (ctx.retired.has(g.exchange))", "if (false)"],
+ ["R6", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (ownMinIntervalMs <= 0) return;", "return;"],
+ ["R7", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "SET race_gap_candles = v.gap ", "SET race_gap_candles = v.gap, computed_at = now() "],
+ ["R8", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "WHERE l.ctid = v.t AND l.race_gap_candles IS NULL ", "WHERE l.ctid = v.t "],
+ ["R9", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (lt[0]?.v !== '5s') throw", "if (false) throw"],
+ ["R10", "src/scripts/lrw/annotation-sources.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (prev !== undefined && prev !== gap) throw", "if (false) throw"],
+ ["R11", "src/scripts/lrw/extract-sql.ts", "vitest:tests/unit/lrw-extract-sql.test.ts", "  ORDER BY s.id, v1.barrier_spec\n", "  ORDER BY s.id\n"],
+ ["R12", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (r.lowvolV1) { a.lowvol++; return; }", "if (r.lowvolV1) { a.lowvol++; }"],
+ ["R13", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (a.twins < THIN_FLOOR)", "if (a.twins < 3)"],
+ ["R14", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (o === 'upper') up++;", "if (o === 'upper' || o === 'ambiguous') up++;"],
+ ["R15", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (used.length >= MIN_CLUSTER_DAYS)", "if (used.length >= 1)"],
+ ["R16", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", ".map(Number).sort((p, q) => q - p)", ".map(Number).sort((p, q) => p - q)"],
+ ["R17", "scripts/lrw/lrw-pull.sh", "sh:bash scripts/lrw/lrw-pull.sh --self-test", "moved) red=\"$red concurrent-writer\" ;;", "moved) ;;"],
+ ["R18", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "echo $((24 * 60 - now + SLOT_END_MIN))", "echo $((24 * 60 - now))"],
+ ["R19", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "const pooled = sel.filter((r) => ax(r).grid !== 'coarser' && !ax(r).adapterCell);", "const pooled = sel.filter((r) => !ax(r).adapterCell);"],
+ ["R20", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "tri(wl !== undefined, wl?.ambiguousUc === 1)", "(wl?.ambiguousUc === 1 ? 'yes' : 'no')"],
+ ["R21", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "    cells.push({ key: { ...base, registered_cell: name }, read: readAcc(a) });", "    if (a.registered > 0) cells.push({ key: { ...base, registered_cell: name }, read: readAcc(a) });"],
+ ["R22", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "=> d.v1 !== null && d.v2 !== null);", "=> d.v1 !== null);"],
+ ["R23", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (tCut !== T_CUT_EPOCH) throw", "if (false) throw"],
+ ["R24", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (sha(files[flag]) !== pin) throw", "if (false) throw"],
+ ["R25", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "const out: string[] = [HEADER_CLAUSE, ''];", "const out: string[] = [];"],
+ ["R26", "src/scripts/lrw/relabel-sql.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (until !== undefined && until > cut) throw", "if (false) throw"],
+ ["R27", "src/scripts/lrw/registered.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "export const ADAPTER_PENDING_CELLS: ReadonlySet<string> = new Set<string>([]);", "export const ADAPTER_PENDING_CELLS: ReadonlySet<string> = new Set<string>(['BITGET:2h', 'BITGET:8h']);"],
+ ["R28", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "return ownStopArmed && (Date.now() >= ownDeadlineMs || isStopRequested());", "return false;"],
+ ["R29", "src/scripts/lrw/annotation-sources.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (!ANNOTATION_SOURCE_SHA256.has(sha256)) throw", "if (false) throw"],
+ ["R30", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (opts.deadlineMs !== undefined && Date.now() >= opts.deadlineMs) { a.outcome = 'global-budget'; break; }", ""],
+ ["R31", "src/scripts/lrw/completeness.ts", "vitest:tests/unit/lrw-completeness.test.ts", "if (cls === undefined || cls === 'deferred') {", "if (cls === undefined) {"],
+ ["R32", "src/scripts/lrw/completeness.ts", "vitest:tests/unit/lrw-completeness.test.ts", "if (lines[0] !== RO_TOKEN_LINE) throw", "if (false) throw"],
+ ["R33", "scripts/lrw/lrw-pull.sh", "sh:bash scripts/lrw/lrw-pull.sh --self-test", "grep -qv ' CONVERGED$' && { echo 'fail:runner-not-converged'; return; }", "false && { echo 'fail:runner-not-converged'; return; }"],
+ ["R34", "scripts/lrw/lrw-pull.sh", "sh:bash scripts/lrw/lrw-pull.sh --self-test", "WRITER_PATTERN='[b]ackfill-directional-labels|", "WRITER_PATTERN='backfill-directional-labels|"],
+ ["R35", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "for f in written errors budgetSkips cutShort; do", "for f in written; do"],
+ ["R36", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "grep -q '\"outcome\":\"stopped\"' && { echo stopped; return; }", "false && { echo stopped; return; }"],
+ ["R37", "src/scripts/lrw/extract-sql.ts", "vitest:tests/unit/lrw-extract-sql.test.ts", "if (argv.includes('--t-cut')) {", "if (false) {"],
+ ["R38", "src/scripts/lrw/annotation-sources.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "    if (iId < 0 || iSpec < 0 || iGap < 0) throw", "    if (false) throw"],
  ["R39", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "const reachDays = ADAPTER_CELL.has(`${g.exchange}:${g.timeframe}`) ? Infinity : expiryReachDays(g.exchange, g.timeframe);", "const reachDays = expiryReachDays(g.exchange, g.timeframe);"],
  ["R40", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "const pooled = sel.filter((r) => ax(r).grid !== 'coarser' && !ax(r).adapterCell);", "const pooled = sel.filter((r) => ax(r).grid !== 'coarser');"],
  ["R41", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "ADAPTER_CELL.has(`${r.exchange}:${r.timeframe}`) && strata.adapterBefore.has(`${r.id}|${r.spec}`)", "false"],
  ["R42", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "  if (s.adapterBefore.has(`${r.id}|${r.spec}`)) return 'unreachable:adapter-pending';\n", ""],
  ["R43", "src/scripts/lrw/completeness.ts", "vitest:tests/unit/lrw-completeness.test.ts", "AND d.computed_at < to_timestamp(${T_ADAPTER})", "AND d.computed_at <= to_timestamp(${T_ADAPTER})"],
  ["R44", "scripts/lrw/lrw-pull.sh", "sh:bash scripts/lrw/lrw-pull.sh --self-test", "if [ \"$1\" = 1 ] && [ \"$2\" = 0 ]; then echo introduces;", "if [ \"$1\" -ge 1 ]; then echo introduces;"],
- ["R45", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (ab[0] !== 'signal_id,barrier_spec') throw", "if (false) throw"]
+ ["R45", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (ab[0] !== 'signal_id,barrier_spec') throw", "if (false) throw"],
+ ["R46", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "        if (unserved) {", "        if (false) {"],
+ ["R47", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "  venueControl.set(exchange, { served, atMs: Date.now() });\n  return served;", "  venueControl.set(exchange, { served, atMs: Date.now() });\n  return true;"],
+ ["R48", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "return code === 'UPSTREAM_RATE_LIMIT' || code === 'WEIGHT_BUDGET_SKIP';", "return code === 'WEIGHT_BUDGET_SKIP';"],
+ ["R49", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "watchdog_ms() { echo $(( ($1 + 10) * 60000 )); }", "watchdog_ms() { echo 21600000; }"],
+ ["R50", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", " -e SCRIPT_WATCHDOG_MS=\"$(watchdog_ms \"$left\")\" \"$CTR\" \"$@\"", " \"$CTR\" \"$@\""]
 ]
 JSON
 }
@@ -359,7 +364,7 @@ self_test() {
     local out rc; out="$(decide "$@" 2>/dev/null)"; rc=$?
     if [ "$out" = "$want" ] && [ "$rc" -eq "$want_rc" ]; then ok_ "$name"; else no_ "$name (got '$out' rc=$rc)"; fi
   }
-  local K='MUTATIONS killed=45 of=45 errored=0'
+  local K='MUTATIONS killed=50 of=50 errored=0'
   ck code-green CH3_CODE_GREEN 0 code 0 passed passed equal "$K" n/a
   ck full-green CH3_GREEN 0 full 0 passed passed equal "$K" ok
   ck build-red CH3_RED 1 code 2 missing missing ind "" n/a
@@ -367,8 +372,8 @@ self_test() {
   ck subtests-red CH3_RED 1 code 0 passed failed equal "$K" n/a
   ck registration-drift-red CH3_RED 1 code 0 passed passed differ "$K" n/a
   ck registration-unread-ind CH3_INDETERMINATE 3 code 0 passed passed ind "$K" n/a
-  ck survivor-red CH3_RED 1 code 0 passed passed equal 'MUTATIONS killed=44 of=45 errored=0' n/a
-  ck errored-ind CH3_INDETERMINATE 3 code 0 passed passed equal 'MUTATIONS killed=44 of=45 errored=1' n/a
+  ck survivor-red CH3_RED 1 code 0 passed passed equal 'MUTATIONS killed=49 of=50 errored=0' n/a
+  ck errored-ind CH3_INDETERMINATE 3 code 0 passed passed equal 'MUTATIONS killed=49 of=50 errored=1' n/a
   ck short-matrix-ind CH3_INDETERMINATE 3 code 0 passed passed equal 'MUTATIONS killed=5 of=5 errored=0' n/a
   ck control-failed-ind CH3_INDETERMINATE 3 code 0 passed passed equal 'MUTATIONS control=FAIL (x)' n/a
   ck data-red CH3_RED 1 full 0 passed passed equal "$K" 'red: D5:v1-digest-moved'

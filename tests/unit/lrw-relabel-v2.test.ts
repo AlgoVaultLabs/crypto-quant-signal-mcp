@@ -20,6 +20,8 @@ const env = vi.hoisted(() => ({
   inserted: [] as unknown[][],
   fetches: [] as number[], // real-time ms of each adapter call
   advanceMsOnFetch: 0, // moves the faked clock on every venue call (the in-group deadline tests)
+  venueDown: false, // every market refused, the control too (a venue outage)
+  fetchLog: [] as string[], // coin:tf of each venue call
   // annotation seams
   labelRows: [] as Array<{ t: string; signal_id: number; barrier_spec: string; gap: number | null }>,
   lockTimeout: '5s',
@@ -69,6 +71,9 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
     getCandles: async (coin: string, _tf: string, start: number, _dex: unknown, end?: number) => {
       env.fetches.push(performance.now());
       if (env.advanceMsOnFetch) vi.setSystemTime(Date.now() + env.advanceMsOnFetch);
+      env.fetchLog.push(`${coin}:${_tf}`);
+      if (env.venueDown) throw new Error('503 Service Unavailable');
+      if (coin === 'RATELIMITED') throw Object.assign(new Error('Venue API rate-limited (429)'), { code: 'UPSTREAM_RATE_LIMIT' });
       if (coin === 'DELISTED') throw new Error('400 Invalid symbol');
       return env.candles.filter((c) => c.time >= start && (end === undefined || c.time <= end)).slice(0, 1000);
     },
@@ -77,6 +82,7 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
 
 import {
   processRelabelGroup, parseCli, INSERT_COLUMNS, _relabelCoverageForTest, setOwnRequestRate, setOwnDeadline,
+  _resetVenueControlForTest,
   runAnnotation, ANNOTATE_SELECT_SQL, ANNOTATE_UPDATE_SQL, RELABEL_INSERT_SQL_HEAD, RELABEL_INSERT_SQL_TAIL,
 } from '../../src/scripts/backfill-directional-labels.js';
 import { buildRelabelGroupsSql, buildRelabelMissingSql, relabelUntil } from '../../src/scripts/lrw/relabel-sql.js';
@@ -122,7 +128,7 @@ async function relabel(g: { exchange: string; coin: string; timeframe: string },
   for (const [k, v] of Object.entries(c1.classes)) if (v - (c0.classes[k] ?? 0) > 0) classDelta[k] = v - (c0.classes[k] ?? 0);
   return {
     manifest, classDelta, written: c1.written - c0.written, wouldWrite: c1.wouldWrite - c0.wouldWrite, nonV2: c1.nonV2Refused - c0.nonV2Refused,
-    errors: c1.errors - c0.errors, cutShort: c1.cutShort - c0.cutShort,
+    errors: c1.errors - c0.errors, cutShort: c1.cutShort - c0.cutShort, unserved: c1.unservedGroups - c0.unservedGroups, logs,
   };
 }
 const writes = () => env.sql.filter((q) => /^\s*(INSERT|UPDATE|DELETE)/i.test(q));
@@ -134,6 +140,9 @@ beforeEach(() => {
   env.advanceMsOnFetch = 0;
   setOwnRequestRate(undefined);
   setOwnDeadline(Infinity);
+  env.venueDown = false;
+  env.fetchLog = [];
+  _resetVenueControlForTest();
 });
 
 describe('--relabel-v2 — ADD-ONLY, every eligible signal, every refusal counted', () => {
@@ -259,12 +268,33 @@ describe('--relabel-v2 — ADD-ONLY, every eligible signal, every refusal counte
     expect(probe).toMatch(/^SELECT s\.id \|\| ',' \|\| s\.exchange \|\| ',' \|\| s\.timeframe FROM signals s WHERE /);
   });
 
-  it('a fetch error is COUNTED, never a manifest class and never a write', async () => {
-    env.signals = [sig(61, T + 17_000)];
+  it('a market the venue refuses outright while it serves its control is unreachable:history — every todo signal, no error', async () => {
+    env.signals = [sig(61, T + 17_000), sig(62, T + 300 * H + 17_000)];
+    env.candles = series(T - 600 * H, T + 400 * H, H);
+    const r = await relabel({ exchange: 'WHITEBIT', coin: 'DELISTED', timeframe: '1h' });
+    expect(r.manifest).toEqual([['61', 'unreachable:history'], ['62', 'unreachable:history']]);
+    expect([r.errors, r.written, r.unserved]).toEqual([0, 0, 1]);
+    // the market's own recent page and the control (BTC 1h) were both asked
+    expect(env.fetchLog).toContain('BTC:1h');
+    expect(r.logs.filter((l) => l.startsWith('LRW_UNSERVED '))).toEqual(['LRW_UNSERVED WHITEBIT:DELISTED:1h Error:400 Invalid symbol']);
+  });
+
+  it('a venue that refuses its control too is an outage, never a class: the signals stay counted errors', async () => {
+    env.signals = [sig(63, T + 17_000), sig(64, T + 300 * H + 17_000)];
+    env.candles = series(T - 600 * H, T + 400 * H, H);
+    env.venueDown = true;
+    const r = await relabel({ exchange: 'WHITEBIT', coin: 'DELISTED', timeframe: '1h' });
+    expect([r.errors, r.written, r.unserved, r.manifest.length]).toEqual([2, 0, 0, 0]);
+    expect(r.logs.filter((l) => l.startsWith('LRW_ERROR '))).toEqual(['LRW_ERROR WHITEBIT:DELISTED:1h Error:503 Service Unavailable']);
+  });
+
+  it('a rate limit is never a class and never triggers the market probe', async () => {
+    env.signals = [sig(65, T + 17_000)];
     env.candles = series(T - 600 * H, T + 20 * H, H);
-    const r = await relabel({ exchange: 'BINANCE', coin: 'DELISTED', timeframe: '1h' });
-    expect(r.errors).toBe(1);
-    expect([r.written, r.manifest.length]).toEqual([0, 0]);
+    const r = await relabel({ exchange: 'BINGX', coin: 'RATELIMITED', timeframe: '1h' });
+    expect([r.errors, r.unserved, r.manifest.length]).toEqual([1, 0, 0]);
+    expect(env.fetchLog.includes('BTC:1h')).toBe(false);
+    expect(r.logs.filter((l) => l.startsWith('LRW_ERROR '))).toEqual(['LRW_ERROR BINGX:RATELIMITED:1h UPSTREAM_RATE_LIMIT']);
   });
 
   it('the hard stop acts INSIDE a group: rows raced before it are written, the rest is the next pass\'s (counted cutShort)', async () => {
