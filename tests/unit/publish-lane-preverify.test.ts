@@ -202,6 +202,31 @@ describe('the verdict contract', () => {
     expect(runText).toMatch(/\*\)[\s\S]*?::error::[\s\S]*?exit 1/);
   });
 
+  // OPS-PREVERIFY-RED-UNREAD-W1. 51 of 53 reds were a token lost in transit while every chain
+  // segment passed, and the catch-all called each one "the publish lane is BROKEN". The missing-token
+  // case still blocks, but it names the CHECKER as the thing that failed and logs node's own exit.
+  it('a MISSING token blocks, names the checker rather than the lane, and logs node\'s exit code', () => {
+    const lines = runText.split('\n').map((l) => l.trim());
+    const pipe = lines.findIndex((l) => /check-publish-lane-preverify\.mjs \| tee /.test(l));
+    expect(pipe, 'no rehearsal pipeline').toBeGreaterThanOrEqual(0);
+    // PIPESTATUS is reset by the next command, so it must be read on the very next line.
+    expect(lines[pipe + 1]).toBe('NODE_RC=${PIPESTATUS[0]}');
+    const noToken = /^\s*""\)([\s\S]*?);;/m.exec(runText)?.[1] ?? '';
+    expect(noToken, 'no explicit empty-token branch').not.toBe('');
+    expect(noToken).toMatch(/::error::/);
+    expect(noToken).toMatch(/exit 1/);
+    expect(noToken).toMatch(/NODE_RC/);
+    expect(noToken, 'a missing token is not evidence that the lane is broken').not.toMatch(/BROKEN/);
+    const fail = /PUBLISH_LANE_PREVERIFY_VERDICT=FAIL\)([\s\S]*?);;/.exec(runText)?.[1] ?? '';
+    expect(fail).toMatch(/::error::the publish lane is BROKEN/);
+    expect(fail).toMatch(/exit 1/);
+  });
+
+  it('the gate exits through process.exitCode, never process.exit() — a queued pipe write would lose the token', () => {
+    expect(GATE_CODE).not.toMatch(/process\.exit\s*\(/);
+    expect(GATE_CODE).toMatch(/process\.exitCode\s*=/);
+  });
+
   it('runs the classifier self-test BEFORE letting it report on the lane', () => {
     const selfTestIdx = steps.findIndex((s) => /check-publish-lane-preverify\.mjs --self-test/.test(String(s?.run ?? '')));
     const reportIdx = steps.findIndex((s) => /check-publish-lane-preverify\.mjs \|/.test(String(s?.run ?? '')));
@@ -227,6 +252,11 @@ describe('the verdict contract', () => {
     // The two levers that could launder a red into a green are asserted by name.
     expect(out).toContain('a NON-transport content failure is NOT laundered to INDETERMINATE');
     expect(out).toContain('zero verdict tokens is INDETERMINATE even at exit 0');
+    // …and the two that were laundered in production, plus the exit path crossing a real pipe.
+    expect(out).toContain('✓ a token-less segment failing is FAIL, never INDETERMINATE (the 2026-09-03 replay)');
+    expect(out).toContain('✓ a failed mirrored lane step is FAIL even though prepublishOnly never ran');
+    expect(out).toMatch(/✓ a \d+ KiB burst followed by the token survives a pipe/);
+    expect(out).toContain('✓ …with every byte delivered, not just a pipe-capacity prefix');
   });
 });
 

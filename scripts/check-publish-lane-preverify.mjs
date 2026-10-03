@@ -22,7 +22,7 @@
  *   npm pack     → prepack → prepare → postpack                       — NO prepublishOnly
  *   npm publish  → prepublishOnly → prepack → prepare → postpack → …  — prepublishOnly FIRST
  *
- * `prepublishOnly` is where this repo's 23-step gate chain lives, and it is the chain that has
+ * `prepublishOnly` is where this repo's whole release-gate chain lives, and it is the chain that has
  * broken twice. A rehearsal built on `npm pack` alone would silently skip it. So this runs the
  * literal `npm run prepublishOnly` FIRST and `npm pack --dry-run` AFTER — that sequencing mirrors
  * the documented publish lifecycle and is deliberate, not incidental.
@@ -56,14 +56,16 @@
  *   the count of verdict tokens the chain emitted. Both are printed, so a green result is
  *   distinguishable from one that ran nothing.
  *
- * ── NO TELEGRAM LEG, DELIBERATELY ───────────────────────────────────────────────────────────
- * ops/monitoring/alert-registry.json is the real registry (65 rows) and it is derived from
- * send_telegram.sh call sites plus monitoring-inventory.json[].alert_ids. A CI-only job has
- * neither: send_telegram.sh's 24h cooldown is a marker file under /opt/algovault-monitoring that
- * an ephemeral runner cannot persist, and CI must never hold prod credentials. An alert from here
- * would ship without the safeguard CLAUDE.md requires of it. The named red workflow step IS the
- * operator signal — the same decision, for the same reason, already recorded on
- * `docs-samples-live-canary` and twice in deploy.yml.
+ * ── NO TELEGRAM LEG IN THIS SCRIPT — THE RED IS DELIVERED AND BLOCKED FROM OUTSIDE IT ──────
+ * ops/monitoring/alert-registry.json is derived from send_telegram.sh call sites plus
+ * monitoring-inventory.json[].alert_ids. A CI-only job has neither: send_telegram.sh's 24h
+ * cooldown is a marker file under /opt/algovault-monitoring that an ephemeral runner cannot
+ * persist, and CI must never hold prod credentials. So this script raises no alert itself. Its
+ * workflow's red has two declared consumers instead (OPS-PREVERIFY-RED-UNREAD-W1): the
+ * `publish-lane-preverify.yml` row in ops/cron/xrepo-ci-conclusion-canary.sh WATCHED delivers it
+ * through send_telegram.sh, and `npm run release:readiness` refuses a release bump while it is
+ * red. The earlier claim that "the named red workflow step IS the operator signal" is retired:
+ * measured, that red ran 49 consecutive times and nobody read it.
  *
  * Usage:
  *   node scripts/check-publish-lane-preverify.mjs             # rehearse the lane
@@ -149,7 +151,8 @@ export function chainSegments(chain) {
 export function classify(r) {
   const lines = [];
 
-  // ── Vacuity, first and unconditionally. A run that executed nothing must never report PASS. ──
+  // ── What the run observed. Printed whatever the verdict, so a green is distinguishable from a
+  //    run that executed nothing. ──
   const echoed = echoedChain(r.prepublishOutput, 'prepublishOnly');
   const declaredSegments = chainSegments(r.declaredChain);
   const echoedSegments = chainSegments(echoed);
@@ -160,9 +163,52 @@ export function classify(r) {
   lines.push(`verdict-emitting gates observed  : ${tokens.length}${tokens.length ? ` (${tokens.map((t) => t.gate).join(', ')})` : ''}`);
   lines.push(`prepublishOnly exit              : ${r.prepublishExit === null ? 'not run' : r.prepublishExit}`);
 
+  // ORDER IS THE CONTRACT (OPS-PREVERIFY-RED-UNREAD-W1 CH2). A non-zero exit from a step WE ran is
+  // an OBSERVED failure, and it is judged BEFORE any vacuity question. The vacuity branches below
+  // ask "did this run verify anything?", which is only a meaningful question when every step we ran
+  // exited 0. Asked first, they laundered real failures: on 2026-09-03 segment 2
+  // (`snapshot_capabilities --check`, which emits no token) failed with exit 1, the zero-token
+  // branch answered INDETERMINATE, and the workflow maps INDETERMINATE to green — a broken lane
+  // reported as a warning. A failed injector was worse still: prepublishOnly is skipped after it,
+  // so the "no lifecycle banner" branch answered INDETERMINATE for an observed content failure.
+  //
+  // 1. A chain WE cannot parse is a defect in what we were asked to rehearse — refuse.
   if (declaredSegments.length < 2) {
     return { verdict: 'INDETERMINATE', reason: 'package.json declares no parseable prepublishOnly chain — the rehearsal has nothing to reproduce', lines };
   }
+
+  // 2. Transport fails OPEN. A third party being down is not our lane breaking — a DECLARED
+  //    signature list, never a fuzzy heuristic, so this lever cannot launder content failures.
+  if (looksTransport(r.earlyOutput)) {
+    return { verdict: 'INDETERMINATE', reason: 'a mirrored lane step could not reach its live source', lines };
+  }
+  if (r.prepublishRan && r.prepublishExit !== 0 && looksTransport(r.prepublishOutput)) {
+    return { verdict: 'INDETERMINATE', reason: 'prepublishOnly failed against an unreachable live source', lines };
+  }
+  if (r.packExit !== null && r.packExit !== 0 && looksTransport(r.packOutput)) {
+    return { verdict: 'INDETERMINATE', reason: 'npm pack failed against an unreachable registry', lines };
+  }
+
+  // 3. Content fails CLOSED — every non-zero exit we observed, token or no token.
+  if (!r.ranEarlySteps) {
+    return { verdict: 'FAIL', reason: 'a mirrored lane step (injector / docs rebuild) failed — prepublishOnly was not reached', lines };
+  }
+  if (r.prepublishRan && r.prepublishExit !== 0) {
+    const last = tokens[tokens.length - 1];
+    return {
+      verdict: 'FAIL',
+      reason: last
+        ? `prepublishOnly failed (exit ${r.prepublishExit}) after ${tokens.length} verdict-emitting gate(s); last gate reached: ${last.gate}=${last.state}`
+        : `prepublishOnly failed (exit ${r.prepublishExit}) BEFORE any verdict-emitting gate — a token-less segment (\`npm run build\`, \`snapshot_capabilities --check\`, …) died; its own diagnosis is in the tail below`,
+      lines,
+    };
+  }
+  if (r.packExit !== null && r.packExit !== 0) {
+    return { verdict: 'FAIL', reason: `npm pack --dry-run failed (exit ${r.packExit})`, lines };
+  }
+
+  // 4. Vacuity — reachable only when every step we ran exited 0. A run that verified nothing is
+  //    never PASS.
   if (!r.prepublishRan || echoed === null) {
     return { verdict: 'INDETERMINATE', reason: 'npm printed no prepublishOnly lifecycle banner — the chain did not execute, so this run verified nothing', lines };
   }
@@ -171,34 +217,6 @@ export function classify(r) {
   }
   if (tokens.length === 0) {
     return { verdict: 'INDETERMINATE', reason: 'the chain emitted ZERO verdict tokens — it was skipped, cached or short-circuited', lines };
-  }
-
-  // ── Transport fails OPEN. A third party being down is not our lane breaking. ──
-  if (looksTransport(r.earlyOutput)) {
-    return { verdict: 'INDETERMINATE', reason: 'a mirrored lane step could not reach its live source', lines };
-  }
-  if (r.prepublishExit !== 0 && looksTransport(r.prepublishOutput)) {
-    return { verdict: 'INDETERMINATE', reason: 'prepublishOnly failed against an unreachable live source', lines };
-  }
-  if (r.packExit !== null && r.packExit !== 0 && looksTransport(r.packOutput)) {
-    return { verdict: 'INDETERMINATE', reason: 'npm pack failed against an unreachable registry', lines };
-  }
-
-  // ── Content fails CLOSED. ──
-  if (!r.ranEarlySteps) {
-    return { verdict: 'FAIL', reason: 'a mirrored lane step (injector / docs rebuild) failed', lines };
-  }
-  if (r.prepublishExit !== 0) {
-    const last = tokens[tokens.length - 1];
-    return {
-      verdict: 'FAIL',
-      reason: `prepublishOnly failed (exit ${r.prepublishExit}) after ${tokens.length} verdict-emitting gate(s)` +
-        `${last ? `; last gate reached: ${last.gate}=${last.state}` : ''}`,
-      lines,
-    };
-  }
-  if (r.packExit !== null && r.packExit !== 0) {
-    return { verdict: 'FAIL', reason: `npm pack --dry-run failed (exit ${r.packExit})`, lines };
   }
   return { verdict: 'PASS', reason: 'the publish lane rehearsed clean', lines };
 }
@@ -306,6 +324,36 @@ function rehearse() {
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * THE ONLY EXIT PATH. `process.exitCode`, NEVER `process.exit()`.
+ *
+ * stdout to a PIPE is asynchronous on POSIX (nodejs.org/api/process.html, "A note on process
+ * I/O"), and process.exit() abandons every write still queued. This script relays whole child
+ * outputs in single bursts — the `npm pack --dry-run` listing alone passed 64 KiB on 2026-08-31
+ * (1,318 packed files) — so the tail of the output, and with it the summary and the VERDICT TOKEN
+ * printed last, never reached the workflow's `| tee`. The workflow read "no token", called the
+ * publish lane BROKEN, and was red for 51 of the next 53 runs while every chain segment passed
+ * (OPS-PREVERIFY-RED-UNREAD-W1: the CHECKER, not the chain). Setting exitCode lets Node drain
+ * stdout and exit on its own once nothing is pending. Pinned by the `--pipe-probe` self-test.
+ */
+export function terminate(code) {
+  process.exitCode = code;
+}
+
+/** Bytes the pipe probe writes before its token — four times the Linux default pipe capacity. */
+export const PIPE_PROBE_BYTES = 256 * 1024;
+
+/**
+ * `--pipe-probe`: one large synchronous burst, then a token, then the REAL exit path. The self-test
+ * runs this in a child whose stdout is a pipe and asserts the token arrives — so the property
+ * that actually failed in CI (a token lost to a pipe) is exercised end to end, not paraphrased.
+ */
+function pipeProbe() {
+  process.stdout.write(`${'x'.repeat(PIPE_PROBE_BYTES - 1)}\n`);
+  console.log(`${TOKEN}=PASS`);
+  return EXIT.PASS;
+}
+
 function selfTest() {
   let passed = 0;
   let failed = 0;
@@ -336,6 +384,15 @@ function selfTest() {
   check('a FAIL names the last gate reached', () => classify({ ...base, prepublishExit: 1, prepublishOutput: `${BANNER}A_VERDICT=PASS\nB_VERDICT=FAIL\n` }).reason.includes('B_VERDICT=FAIL'));
   check('a failed pack is FAIL', () => classify({ ...base, packExit: 1, packOutput: 'npm ERR! bad manifest' }).verdict === 'FAIL');
   check('a failed mirrored lane step is FAIL', () => classify({ ...base, ranEarlySteps: false }).verdict === 'FAIL');
+  // OPS-PREVERIFY-RED-UNREAD-W1 — an observed non-zero exit outranks every vacuity question.
+  check('a token-less segment failing is FAIL, never INDETERMINATE (the 2026-09-03 replay)', () =>
+    classify({ ...base, prepublishExit: 1, prepublishOutput: `${BANNER}snapshot_capabilities: DRIFT detected in 1 file(s): [landing/index.html]\n` }).verdict === 'FAIL');
+  check('…and its reason says no gate emitted a token, rather than naming a passing one', () =>
+    /BEFORE any verdict-emitting gate/.test(classify({ ...base, prepublishExit: 1, prepublishOutput: `${BANNER}tsc: error TS2304\n` }).reason));
+  check('a failed mirrored lane step is FAIL even though prepublishOnly never ran', () =>
+    classify({ ...base, ranEarlySteps: false, earlyOutput: 'build_docs: 1 problem(s)', prepublishRan: false, prepublishExit: null, prepublishOutput: '', packExit: null, packOutput: '' }).verdict === 'FAIL');
+  check('a token-less TRANSPORT failure is still INDETERMINATE (fail-open stays declared)', () =>
+    classify({ ...base, prepublishExit: 1, prepublishOutput: `${BANNER}npm ERR! ETIMEDOUT reaching the registry\n` }).verdict === 'INDETERMINATE');
 
   console.log('── fail-OPEN on transport, never FAIL ──');
   for (const sig of TRANSPORT_SIGNATURES) {
@@ -390,6 +447,19 @@ function selfTest() {
     classify({ ...base, prepublishExit: 1, prepublishOutput: `${GREEN}npm ERR! docs.html DRIFT` }).verdict === 'FAIL');
   check('looksTransport does not fire on ordinary content output', () => looksTransport(GREEN) === false);
 
+  // The classifier was right for 51 of the 53 reds; the TOKEN never arrived. A hermetic self-test
+  // cannot see that, because it never crosses a pipe — so this one does, through the real exit path.
+  console.log('── the exit path, through a REAL pipe (the defect that kept this workflow red) ──');
+  const probe = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--pipe-probe'], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const probeOut = String(probe.stdout ?? '');
+  check(`a ${PIPE_PROBE_BYTES / 1024} KiB burst followed by the token survives a pipe`, () =>
+    probe.status === 0 && probeOut.trimEnd().endsWith(`${TOKEN}=PASS`));
+  check('…with every byte delivered, not just a pipe-capacity prefix', () =>
+    probeOut.length === PIPE_PROBE_BYTES + `${TOKEN}=PASS\n`.length);
+
   console.log('');
   console.log(`  self-test: ${passed} passed, ${failed} failed`);
   if (failed > 0) {
@@ -412,7 +482,7 @@ if (isMain) {
   const args = process.argv.slice(2);
   let code;
   try {
-    code = args.includes('--self-test') ? selfTest() : rehearse();
+    code = args.includes('--self-test') ? selfTest() : args.includes('--pipe-probe') ? pipeProbe() : rehearse();
   } catch (e) {
     // Never die without a token — process death with no verdict is the one outcome the token law
     // forbids outright.
@@ -420,7 +490,7 @@ if (isMain) {
     console.log(`${TOKEN}=INDETERMINATE`);
     code = EXIT.INDETERMINATE;
   }
-  process.exit(code);
+  terminate(code);
 }
 
 if (!existsSync(path.join(REPO, 'package.json'))) {

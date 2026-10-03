@@ -8,7 +8,7 @@ name: Publish lane pre-verify
 # "no build, no image, no SSH, no deploy". It is path-triggered on the host-monitoring declaration
 # files and carries no `schedule:` at all, so it is not the declared home for scheduled CI; it is
 # the declared home for ONE gate over ONE corpus. This job is the opposite shape: it installs
-# dependencies, compiles, reaches live sources and runs a 23-step lifecycle chain. Folding it in
+# dependencies, compiles, reaches live sources and runs the whole prepublishOnly lifecycle chain. Folding it in
 # would put a multi-minute build behind a lint that exists to be instant, and would make a
 # monitoring-JSON edit run the publish rehearsal for no reason.
 #
@@ -176,7 +176,7 @@ jobs:
       # `npm run prepublishOnly` (npm's own lifecycle invocation, not a re-execution of the chain)
       # and collects the file manifest with `npm pack --dry-run`. That ordering is the documented
       # npm lifecycle: `npm pack` runs prepack → prepare → postpack and NEVER prepublishOnly, so a
-      # rehearsal built on pack alone would silently skip the 23-step chain that has broken twice.
+      # rehearsal built on pack alone would silently skip the prepublishOnly chain that has broken twice.
       #
       # GATE ON THE TOKEN, NEVER THE BARE EXIT CODE.
       #   PASS          — the lane rehearsed clean.
@@ -184,20 +184,33 @@ jobs:
       #                   did not execute. Not a divergence signal, and deliberately NOT a red:
       #                   a third party being down is not our lane breaking, and a gate that reds
       #                   on someone else's outage is one that gets ignored.
-      #   anything else — fail-CLOSED: the lane is broken and the next release will fail.
+      #   FAIL          — fail-CLOSED: the lane is broken and the next release will fail.
+      #   NO TOKEN      — fail-CLOSED, but it is the CHECKER that failed to report, and the message
+      #                   says so. Calling a missing token "the publish lane is BROKEN" is what
+      #                   misdirected this workflow's readers for 30 days (OPS-PREVERIFY-RED-UNREAD-W1):
+      #                   51 of 53 reds were a token lost to a pipe while every chain segment passed.
+      #                   node's OWN exit code is logged beside it, so the two can never be confused
+      #                   again — PIPESTATUS is read on the very next line, before `set -e` resets it.
       - name: Rehearse the publish lane (fail-open on transport, fail-closed on content)
         run: |
           set +e
           node scripts/check-publish-lane-preverify.mjs | tee /tmp/publish_lane_preverify.log
+          NODE_RC=${PIPESTATUS[0]}
           set -e
-          TOKEN=$(grep -oE 'PUBLISH_LANE_PREVERIFY_VERDICT=[A-Z]+' /tmp/publish_lane_preverify.log | tail -1)
-          echo "publish-lane rehearsal verdict: ${TOKEN:-NO_TOKEN_EMITTED}"
+          TOKEN=$(grep -oE 'PUBLISH_LANE_PREVERIFY_VERDICT=[A-Z]+' /tmp/publish_lane_preverify.log | tail -1 || true)
+          echo "publish-lane rehearsal verdict: ${TOKEN:-NO_TOKEN_EMITTED} (node exit ${NODE_RC})"
           case "$TOKEN" in
             PUBLISH_LANE_PREVERIFY_VERDICT=PASS)
               echo "the publish lane rehearsed clean — a release today would reach the registry step" ;;
             PUBLISH_LANE_PREVERIFY_VERDICT=INDETERMINATE)
               echo "::warning::the rehearsal could not verify the lane (unreachable live source, or the chain did not execute) — not a divergence signal" ;;
+            PUBLISH_LANE_PREVERIFY_VERDICT=FAIL)
+              echo "::error::the publish lane is BROKEN — the next release will fail at this step. See the rehearsal summary above for the failing step's own diagnosis."
+              exit 1 ;;
+            "")
+              echo "::error::the rehearsal emitted NO verdict token (node exit ${NODE_RC}) — the CHECKER failed to report, so this run says nothing about the lane either way. Read where the output above stops; a node exit of 0 here means the token was lost in transit."
+              exit 1 ;;
             *)
-              echo "::error::the publish lane is BROKEN — the next release will fail at this step. See the rehearsal summary above for the last gate reached."
+              echo "::error::unrecognised verdict token '${TOKEN}' (node exit ${NODE_RC}) — the checker and this step disagree on the contract."
               exit 1 ;;
           esac
