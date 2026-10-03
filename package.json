@@ -60,6 +60,8 @@
     "quota:surface:selftest": "node scripts/check-quota-surface-conformance.mjs --self-test",
     "release:divergence": "node scripts/check-shipped-set-divergence.mjs",
     "release:divergence:selftest": "node scripts/check-shipped-set-divergence.mjs --self-test",
+    "release:readiness": "node scripts/check-release-readiness.mjs",
+    "release:readiness:selftest": "node scripts/check-release-readiness.mjs --self-test",
     "declaration:coverage:check": "node scripts/check-declaration-coverage.mjs",
     "declaration:coverage:selftest": "node scripts/check-declaration-coverage.mjs --self-test",
     "boot:contract:check": "node scripts/check-boot-contract-parity.mjs --check",

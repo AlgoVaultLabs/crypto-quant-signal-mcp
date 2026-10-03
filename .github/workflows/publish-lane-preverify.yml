@@ -41,15 +41,22 @@ name: Publish lane pre-verify
 # tree BY DESIGN — that is the whole point of rehearsing them — and the mutation is discarded with
 # the runner.
 #
-# ─── NO TELEGRAM LEG, DELIBERATELY ───────────────────────────────────────────────────────────
+# ─── NO TELEGRAM LEG IN THIS JOB — THE RED IS DELIVERED AND BLOCKED FROM OUTSIDE IT ─────────
 #
 # send_telegram.sh's 24h cooldown is a marker file under /opt/algovault-monitoring that an
 # ephemeral runner cannot persist, and CI must never hold prod credentials. An alert from here
 # would ship without the safeguard CLAUDE.md requires of it, and ops/monitoring/alert-registry.json
 # is derived from send_telegram.sh call sites + monitoring-inventory.json[].alert_ids — a CI-only
-# job has neither, so a row for it would declare an alert nothing can raise. The named red step IS
-# the operator signal, exactly as already recorded for docs-samples-live-canary and twice in
-# deploy.yml. A FAIL here means the NEXT RELEASE WILL FAIL; that is what makes the red actionable.
+# job has neither, so a row for it would declare an alert nothing can raise.
+#
+# This job's red therefore has TWO declared consumers, neither of which is a human opening the
+# Actions tab (OPS-PREVERIFY-RED-UNREAD-W1). DELIVERY: the `publish-lane-preverify.yml` row in
+# ops/cron/xrepo-ci-conclusion-canary.sh WATCHED reads this workflow's badge daily on signal-1 and
+# fires `xrepo_ci_red` through send_telegram.sh. BLOCKING: `npm run release:readiness`
+# (scripts/check-release-readiness.mjs) reads the same badge and refuses a release bump while it is
+# red; Version-Bump-SOP.md § 2 runs it before any release spec is written. A header that called
+# "the named red step" the operator signal was the whole defect: measured, this job went red 49
+# consecutive times across three release tags and nobody read it.
 
 on:
   # Daily, off-peak. 19:37 UTC sits inside the deploy-free window (18:00–02:59) and off the :00
