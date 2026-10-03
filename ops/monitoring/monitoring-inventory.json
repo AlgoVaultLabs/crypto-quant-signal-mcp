@@ -2377,7 +2377,7 @@
       "schedule": "43 12 * * 1",
       "invoked_by": "crontab:root",
       "install_state": "pending",
-      "sha256": "c6abf2c46f2dbdb22a8280c598317d56fb42582e5d103a399badbd317ba949d2",
+      "sha256": "629a0d1d79aadc357477f3bb91dc222d9549250dfe89e27bc03d1a1f8ffe29c7",
       "owner_wave": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
       "alert_ids": [
         "VERDICT_RULE_SWITCH_RECOMMENDED"
@@ -2389,7 +2389,7 @@
         "ops/monitoring/detector_envelope.py",
         "ops/monitoring/detector-envelope.schema.json"
       ],
-      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R1. The forward gate: executes the landed registration audits/verdict-rule-registry-preregistration-2026-10-02.md verbatim (query, windows, statistic, Holm, rule 1, magnitude veto, floors) — tests/unit/verdict-rule-registry.test.ts pins --show-config to it. RECOMMENDS per TIMEFRAME (joint UP/DOWN assignment in S1 = MM, FM, FF) and never writes src/lib/verdict-rule-assignment.ts. Weekly, Monday 12:43Z; the look instant is the SCHEDULED run, so the window chain is reproducible from the registration and the cron alone. Reads READ-ONLY as aoe_readonly (default_transaction_read_only) and REFUSES (INDETERMINATE) before reading a decided window when signals has no (signal_hash, exchange) index — measured 114 ms/row without one. VERDICT_RULE_GATE_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL = a switch is recommended and the page is the action. Pages VERDICT_RULE_SWITCH_RECOMMENDED through the wrapper's page-on-change (ALERT_KEYS <tf>:<UP><DOWN>:w<k> every evaluable run, --clear when none). One canary_result_log record per CELL per run (20). Gate-test with ALGOVAULT_TG_TEST_INERT=1. --self-test is hermetic, two-way, vacuity-guarded, asserts the bypassed SQL/binder/parser/record/envelope and is mutation-proven (12 breaks)."
+      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R1. The forward gate: executes the landed registration audits/verdict-rule-registry-preregistration-2026-10-02.md verbatim (query, windows, statistic, Holm, rule 1, magnitude veto, floors) — tests/unit/verdict-rule-registry.test.ts pins --show-config to it. RECOMMENDS per TIMEFRAME (joint UP/DOWN assignment in S1 = MM, FM, FF) and never writes src/lib/verdict-rule-assignment.ts. Weekly, Monday 12:43Z; the look instant is the SCHEDULED run, so the window chain is reproducible from the registration and the cron alone. Reads READ-ONLY as aoe_readonly (default_transaction_read_only) and REFUSES (INDETERMINATE) before reading a decided window unless signals has a VALID, READY, LIVE btree index on (signal_hash[, exchange]) — idx_signals_signal_hash_exchange, migrations/047, pre-applied 2026-10-03 (architect Q1 = A): 114.9 ms/row without it, 0.008 ms/row with it. Every statement runs under statement_timeout = 6250 ms (~10x the measured worst window, cap 300 s); a timeout makes the WHOLE run INDETERMINATE. VERDICT_RULE_GATE_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL = a switch is recommended and the page is the action. Pages VERDICT_RULE_SWITCH_RECOMMENDED through the wrapper's page-on-change (ALERT_KEYS <tf>:<UP><DOWN>:w<k> every evaluable run, --clear when none). One canary_result_log record per CELL per run (20). Gate-test with ALGOVAULT_TG_TEST_INERT=1. --self-test is hermetic, two-way, vacuity-guarded, asserts the bypassed SQL/binder/parser/record/envelope and is mutation-proven (12 + 6 breaks)."
     },
     {
       "id": "cluster-perm-stats",

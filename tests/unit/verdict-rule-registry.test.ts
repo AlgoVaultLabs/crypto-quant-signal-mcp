@@ -454,7 +454,7 @@ describe('R2–R4 — the wiring in getTradeSignal', () => {
 // otherwise run only on the host.
 //
 // SPAWN BUDGET: each spawning block declares its own timeout (python3 cold start + the gate's
-// 10,000-draw bootstraps over synthetic windows measured ~2.3 s locally).
+// 10,000-draw bootstraps over synthetic windows measured ~4.2 s locally).
 
 const GATE = join(REPO_ROOT, 'ops', 'monitoring', 'verdict-rule-gate.py');
 const TMRG = join(REPO_ROOT, 'ops', 'monitoring', 'trend-mode-readout-gate.py');
@@ -529,5 +529,65 @@ describe('CH3 — the gate is the registration, executed', () => {
   it("the re-homed trend-mode gate's --self-test passes", { timeout: 60_000 }, () => {
     const out = execFileSync('python3', [TMRG, '--self-test'], { encoding: 'utf8' });
     expect(out).toContain('SELF-TEST: PASS');
+  });
+
+  it('its read is bounded (statement_timeout ≤ 300 s) and its index guard demands a VALID index', () => {
+    const rp = config.read_path;
+    expect(rp.statement_timeout_ms).toBeGreaterThan(0);
+    expect(rp.statement_timeout_ms).toBeLessThanOrEqual(300_000);
+    expect(rp.pgoptions).toContain(`-c statement_timeout=${rp.statement_timeout_ms}`);
+    expect(rp.pgoptions).toContain('-c default_transaction_read_only=on');
+    for (const c of ['i.indisvalid', 'i.indisready', 'i.indislive']) expect(rp.index_probe_sql).toContain(c);
+  });
+});
+
+// ── CH3 — the index the registered read needs (architect ruling Q1 = A, 2026-10-03) ─────────────
+//
+// The §3 read joins `signals` on (signal_hash, exchange); without an index each row scanned the
+// exchange's rows (114.9 ms/row measured on prod). migrations/047 is that index, PRE-APPLIED on prod
+// with CREATE INDEX CONCURRENTLY. CONCURRENTLY refuses a transaction block, so these pin the two
+// facts that keep 047 harmless wherever it runs: the file is one autocommit statement, and the only
+// automated runner (the CI Postgres lane) applies it with `psql -f`, never inside a transaction. The
+// app's boot path never reads migrations/*.sql at all (runPgMigrationsAsync adds columns only).
+
+describe('CH3 — migrations/047, the index the registered read needs', () => {
+  const sqlOf = (f: string) => readFileSync(join(REPO_ROOT, 'migrations', f), 'utf8');
+  const statements = (sql: string) =>
+    sql.split('\n').filter((l) => !/^\s*--/.test(l)).join('\n').split(';').map((s) => s.trim()).filter(Boolean);
+
+  it('047 is ONE statement: CREATE INDEX CONCURRENTLY IF NOT EXISTS on signals (signal_hash, exchange)', () => {
+    expect(statements(sqlOf('047_signals_signal_hash_exchange_idx.sql'))).toEqual([
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_signals_signal_hash_exchange ON signals (signal_hash, exchange)',
+    ]);
+  });
+
+  it('its rollback is ONE statement: DROP INDEX CONCURRENTLY IF EXISTS', () => {
+    expect(statements(sqlOf('047_signals_signal_hash_exchange_idx.down.sql'))).toEqual([
+      'DROP INDEX CONCURRENTLY IF EXISTS idx_signals_signal_hash_exchange',
+    ]);
+  });
+
+  it('the CI Postgres lane applies migrations with `psql -f` in autocommit — never -1 / --single-transaction', () => {
+    const lane = readFileSync(join(REPO_ROOT, '.github', 'workflows', 'postgres-lane.yml'), 'utf8');
+    const step = lane.match(/- name: Apply migrations\n[\s\S]*?\n {8}run: \|\n([\s\S]*?)\n {6}- name:/);
+    expect(step, 'the lane keeps an "Apply migrations" step').not.toBeNull();
+    const run = step![1].split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    expect(run).toMatch(/psql "\$DATABASE_URL" -q -f "\$f"/);
+    expect(run).not.toMatch(/\s-1(\s|$)|--single-transaction|\bBEGIN\b/);
+  });
+
+  it('no app code reads migrations/*.sql — only the offline ads1 parity script parses their text', () => {
+    const readers: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of readdirSync(dir)) {
+        const p = join(dir, e);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (extname(p) === '.ts' && /(readdirSync|readFileSync|readdir|readFile)\([^)]*migrations/i.test(readFileSync(p, 'utf8'))) {
+          readers.push(p.slice(REPO_ROOT.length + 1));
+        }
+      }
+    };
+    walk(join(REPO_ROOT, 'src'));
+    expect(readers).toEqual(['src/scripts/ads1/ddl-parity-check.ts']);
   });
 });
