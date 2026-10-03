@@ -39,6 +39,7 @@
  * measured rate so it never binds in normal operation.
  */
 import type { ScorerParts } from './scorer-input-codes.js';
+import type { VerdictRuleVersion } from './verdict-rule-registry.js';
 import { resolveCaptureArm, type CaptureArm } from './hold-decision-capture.js';
 import { MIN_TRACKABLE_CONFIDENCE } from './published-population.js';
 
@@ -63,6 +64,12 @@ export interface BandSignalCapture {
    * it is data that never existed. The compiler refuses a capture that forgot them.
    */
   parts: ScorerParts;
+  /**
+   * SIGNAL-VERDICT-RULE-REGISTRY-W1 ruling Q4 = A — the verdict rule that produced this call, from
+   * the call's ONE registry resolution. REQUIRED for the same reason as `parts`: a writer that
+   * re-derived it would be a second derivation of the rule. The band arm carries the stamp only.
+   */
+  verdictRuleVersion: VerdictRuleVersion;
 }
 
 /**
@@ -168,7 +175,7 @@ export function recordBandSignalCapture(c: BandSignalCapture): void {
       const db = await import('./performance-db.js');
       db.recordBandSignal(
         c.coin, c.signal, c.confidence, c.timeframe, c.priceAtSignal,
-        c.exchange, c.regime, arm, c.isBotInternal, c.parts,
+        c.exchange, c.regime, arm, c.isBotInternal, c.parts, c.verdictRuleVersion,
       );
     })
     .catch((e) =>

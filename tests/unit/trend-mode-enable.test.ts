@@ -14,13 +14,12 @@
  *
  * SPAWN BUDGET: none required — nothing here spawns a process.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   computeIndicatorScores, deriveVerdict, classifyRegimeLabel, R4_THRESHOLDS,
   type IndicatorInputs,
 } from '../../src/tools/get-trade-call.js';
-import { currentVerdictRuleVersion } from '../../src/lib/performance-db.js';
 import type { Candle, RegimeType } from '../../src/types.js';
 
 function series(n: number, pct: number, px = 100): Candle[] {
@@ -42,28 +41,10 @@ const GATES = {
   r4Thresholds: R4_THRESHOLDS, buyThreshold: 40, sellThreshold: 55,
 };
 
-const priorFlag = process.env.TREND_MODE;
-const setFlag = (v: 'on' | undefined) => {
-  if (v === undefined) delete process.env.TREND_MODE; else process.env.TREND_MODE = v;
-};
-
-describe('CH2 — the stamp follows the flag that is about to be flipped', () => {
-  afterEach(() => {
-    if (priorFlag === undefined) delete process.env.TREND_MODE;
-    else process.env.TREND_MODE = priorFlag;
-  });
-
-  it('flag OFF ⇒ v1, flag ON ⇒ v2, re-read per call on ONE module instance', () => {
-    // The coupling CH2 depends on. If this were a build constant the flip would produce
-    // v1-stamped v2 rows and the whole 30-day readout would be unpartitionable.
-    setFlag(undefined);
-    expect(currentVerdictRuleVersion()).toBe(1);
-    setFlag('on');
-    expect(currentVerdictRuleVersion()).toBe(2);
-    setFlag(undefined);
-    expect(currentVerdictRuleVersion()).toBe(1);
-  });
-});
+// "The stamp follows the flag" (CH2 item 1) is RETIRED with the flag: SIGNAL-VERDICT-RULE-REGISTRY-W1
+// CH2 replaced the env-derived `currentVerdictRuleVersion()` with a per-call stamp from the
+// registry (2 = M, 3 = F, never 1). Pinned in `verdict-rule-version.test.ts` and
+// `verdict-rule-registry.test.ts`. Items 2–4 below are unchanged.
 
 describe('CH2 — the blast radius is confined to CONFIRMED trends', () => {
   it('a confirmed uptrend moves; the verdict changes and the score rises', () => {

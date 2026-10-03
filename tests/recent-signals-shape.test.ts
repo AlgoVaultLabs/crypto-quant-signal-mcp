@@ -36,6 +36,8 @@ function seedSignals() {
       `hash-${i}`,
       'HL',
       'TRENDING_UP',
+      // SIGNAL-VERDICT-RULE-REGISTRY-W1: every row now names the rule that produced it.
+      { verdictRuleVersion: 2, ruleConfigId: 'test-config' },
     );
   }
 }

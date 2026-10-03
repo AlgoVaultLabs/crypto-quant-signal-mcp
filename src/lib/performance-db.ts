@@ -18,10 +18,10 @@ import { formatWriteLossLog } from './log-redact.js';
 // it in public copy, and every trade-call test mocks THIS module wholesale — so a
 // constant declared here would arrive `undefined` at the renderer. See funding-window.ts.
 import { FUNDING_Z_MIN_SAMPLES, FUNDING_Z_WINDOW_SECONDS } from './funding-window.js';
-// SIGNAL-TREND-MODE-ENABLE-W1 CH1: the writer stamps which VERDICT rule produced each row, and
-// the stamp is a function of this flag's LIVE value. `trend-mode-flag.ts` imports nothing, so the
-// edge is a leaf and no cycle is introduced. See currentVerdictRuleVersion() below.
-import { getTrendMode } from './trend-mode-flag.js';
+// SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2: which VERDICT rule produced a row is now resolved ONCE per
+// call by the registry and handed to every writer as a stamp (ruling Q4 = A) — no writer derives
+// it. Type-only import: no runtime edge, no cycle.
+import type { VerdictRuleStamp, VerdictRuleVersion, VerdictRuleCaptureRow } from './verdict-rule-registry.js';
 import { DdlBarrier } from './ddl-barrier.js';
 
 /**
@@ -626,6 +626,29 @@ const SIGNAL_MIGRATIONS: MigrationDescriptor[] = [
   { table: 'signals', column: 'outcome_filled_at', type: 'INTEGER' },
   { table: 'signals', column: 'outcome_attempts', type: 'INTEGER' },
   { table: 'signals', column: 'outcome_last_attempt_at', type: 'INTEGER' },
+  // ── SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2 — the per-row rule stamp + the forward capture.
+  //
+  // Mirrors migrations/046_verdict_rule_registry.sql, PRE-APPLIED to prod over SSH before the code
+  // landed, so on PG this is an idempotent no-op and the real owner is the SQLite fixture backend.
+  // The pre-apply is not optional: the runner is fire-and-forget, and an INSERT naming a column
+  // the background ALTER has not yet added would throw into `recordSignal`'s caller-side catch —
+  // a silently lost signal row.
+  //
+  // EVERY ONE IS NULLABLE WITH NO DEFAULT: catalog-only on PG16 (microseconds of ACCESS EXCLUSIVE),
+  // and the INSERTs the previous code was running keep working unchanged across the ALTER. NULL
+  // means "written before the registry". `rule_config_id` is the only one on `signals`; the
+  // capture lives on the emitted arm's quarantined sibling.
+  { table: 'signals', column: 'rule_config_id', type: 'TEXT' },
+  { table: 'signal_scorer_inputs', column: 'rule_config_id', type: 'TEXT' },
+  { table: 'signal_scorer_inputs', column: 'trend_decisive', type: 'BOOLEAN', sqliteType: 'INTEGER' },
+  { table: 'signal_scorer_inputs', column: 'v1_signal', type: 'TEXT' },
+  { table: 'signal_scorer_inputs', column: 'v1_raw_final', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'signal_scorer_inputs', column: 'verdict_m', type: 'TEXT' },
+  { table: 'signal_scorer_inputs', column: 'verdict_f', type: 'TEXT' },
+  { table: 'signal_scorer_inputs', column: 'verdict_h', type: 'TEXT' },
+  { table: 'signal_scorer_inputs', column: 'rsi_value', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  { table: 'signal_scorer_inputs', column: 'rsi_score_pre', type: 'SMALLINT', sqliteType: 'INTEGER' },
+  { table: 'signal_scorer_inputs', column: 'funding_z', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
 ];
 
 /**
@@ -1030,6 +1053,18 @@ const CREATE_SIGNAL_SCORER_INPUTS_SQL = `
     funding_adjust_code  ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
     hurst_adjust_code    ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
     squeeze_adjust_code  ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'} NOT NULL,
+    -- SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2 (migration 046): nullable, no default; NULL = written
+    -- before the registry. Names fixed by the registration (§3).
+    rule_config_id       TEXT,
+    trend_decisive       ${process.env.DATABASE_URL ? 'BOOLEAN' : 'INTEGER'},
+    v1_signal            TEXT,
+    v1_raw_final         ${process.env.DATABASE_URL ? 'DOUBLE PRECISION' : 'REAL'},
+    verdict_m            TEXT,
+    verdict_f            TEXT,
+    verdict_h            TEXT,
+    rsi_value            ${process.env.DATABASE_URL ? 'DOUBLE PRECISION' : 'REAL'},
+    rsi_score_pre        ${process.env.DATABASE_URL ? 'SMALLINT' : 'INTEGER'},
+    funding_z            ${process.env.DATABASE_URL ? 'DOUBLE PRECISION' : 'REAL'},
     CONSTRAINT signal_scorer_inputs_signal_ck CHECK (signal IN ('BUY', 'SELL')),
     CONSTRAINT signal_scorer_inputs_arm_ck    CHECK (arm IN ('request', 'fleet'))
   );
@@ -1709,36 +1744,16 @@ export const REGIME_RULE_VERSION = 3;
  */
 export const REGIME_RULE_V2_CUTOVER_UTC = '2026-08-07T15:28:44Z';
 
-/**
- * The rule that produced a row's VERDICT. A FUNCTION rather than a constant, and that is the
- * whole point of it.
+/*
+ * `currentVerdictRuleVersion()` — RETIRED by SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2.
  *
- * 1 = `TREND_MODE` off — the contrarian RSI ladder in every regime. Every row written before
- *     SIGNAL-TREND-MODE-ENABLE-W1 carries it, correctly, through the column's DEFAULT.
- * 2 = `TREND_MODE` on — a CONFIRMED trend flips the saturated RSI region's sign. Blast radius is
- *     one rung of one ladder inside TRENDING_UP / TRENDING_DOWN; RANGING is untouched.
- *
- * WHY NOT A BUILD-TIME CONSTANT. `TREND_MODE` is an env var, so it moves with no deploy and no
- * diff — deliberately, because that is the revert path. A constant baked at build time would keep
- * stamping 1 while the engine ran rule 2, producing v1-stamped v2 rows: exactly the failure this
- * column exists to prevent, and undetectable after the fact. `getTrendMode()` reads `process.env`
- * per call and caches nothing, so this reads the flag's LIVE value at write time.
- *
- * WHY NO CUTOVER TIMESTAMP, for the same reason rule 3 above has none: a cutover constant solves
- * BACKFILL — labelling rows written before the column existed — and there are none to label, since
- * DEFAULT 1 already labels them correctly. A hardcoded best-estimate instead LIES whenever the
- * deploy slips, with `status.md` as its only remedy, which is prose-as-control.
- *
- * EXTENSION CONTRACT (single-derivation LAW). Every future verdict-rule change adds its case HERE
- * and ONLY here — a threshold move, a `WEIGHTS` retune, a bucket-ladder edit, and above all an AOE
- * weight promotion (`src/lib/aoe-config-reader.ts`), which is runtime-mutable by design and so
- * leaves no diff anywhere to observe. A second site deriving "which verdict rule ran" WILL drift
- * from this one. Note the limit honestly: an AOE promotion additionally needs an `aoe_config_id`
- * companion column, because a version number alone cannot say WHICH promoted vector produced a row.
+ * It derived the stamp from the live `TREND_MODE` env var (1 = off, 2 = on). That boolean could
+ * only switch a scoring rule for every timeframe at once, and it let an unset env var silently
+ * revert the engine. The verdict rule is now resolved per call by `src/lib/verdict-rule-registry.ts`
+ * — 2 for today's rule (M), 3 for a fade (F), never 1 again — and passed to all three writers below
+ * as a stamp argument, together with `rule_config_id`. The extension contract that lived here
+ * (every future verdict-rule change adds its case in ONE place) moved to the registry with it.
  */
-export function currentVerdictRuleVersion(): 1 | 2 {
-  return getTrendMode() === 'on' ? 2 : 1;
-}
 
 export function recordSignal(
   coin: string,
@@ -1746,22 +1761,26 @@ export function recordSignal(
   confidence: number,
   timeframe: string,
   priceAtSignal: number,
-  signalHash?: string,
-  exchange: string = 'HL',
-  regime?: string | null  // R5: regime label persisted for audit round H5
+  signalHash: string | undefined,
+  exchange: string,
+  regime: string | null | undefined,  // R5: regime label persisted for audit round H5
+  // SIGNAL-VERDICT-RULE-REGISTRY-W1 ruling Q4 = A: REQUIRED, so no caller can write a row without
+  // naming the rule that produced it. (That is why the three parameters above lost their defaults:
+  // a required parameter cannot follow optional ones.)
+  stamp: VerdictRuleStamp,
 ): void {
   const b = getBackend();
   const createdAt = Math.floor(Date.now() / 1000);
   b.run(
-    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash, regime, regime_rule_version, verdict_rule_version)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash, regime, regime_rule_version, verdict_rule_version, rule_config_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     coin, signal, confidence, timeframe, exchange, priceAtSignal, createdAt, signalHash || null, regime ?? null,
     REGIME_RULE_VERSION,
-    // Evaluated HERE, at write time, never hoisted to a module constant — see
-    // currentVerdictRuleVersion(). Note what is NOT touched: the Merkle leaf preimage is exactly
-    // (coin, signal, confidence, timeframe, timestamp, price) per hashSignal() in lib/merkle.ts,
-    // so neither this column nor its value can move any anchored root.
-    currentVerdictRuleVersion()
+    // From the call's ONE registry resolution. Note what is NOT touched: the Merkle leaf preimage
+    // is exactly (coin, signal, confidence, timeframe, timestamp, price) per hashSignal() in
+    // lib/merkle.ts, so neither stamp column nor its value can move any anchored root.
+    stamp.verdictRuleVersion,
+    stamp.ruleConfigId,
   );
   // CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): post-insert webhook event hook.
   // Flag-gated (default OFF → zero new behavior); fire-and-forget so it never
@@ -1823,6 +1842,8 @@ export function recordBandSignal(
   // the parts loses them permanently. The compiler is the only thing that can prevent that, and
   // it can only do it if the parameter is required.
   parts: ScorerParts,
+  // SIGNAL-VERDICT-RULE-REGISTRY-W1 ruling Q4 = A: the band writer takes the stamp argument only.
+  verdictRuleVersion: VerdictRuleVersion,
 ): void {
   const b = getBackend();
   const createdAt = Math.floor(Date.now() / 1000);
@@ -1831,7 +1852,7 @@ export function recordBandSignal(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     coin, signal, confidence, timeframe, exchange, priceAtSignal, createdAt, regime ?? null,
     REGIME_RULE_VERSION,
-    currentVerdictRuleVersion(),
+    verdictRuleVersion,
     arm,
     // SQLite binds no booleans (`SQLite3 can only bind numbers, strings, bigints, buffers, and
     // null`), so the same 0/1 coercion `recordHoldDecisionImpl` applies is needed here. Caught by
@@ -4131,17 +4152,24 @@ export function recordScorerInputs(c: {
   arm: 'request' | 'fleet';
   isBotInternal: boolean | null | undefined;
   parts: ScorerParts;
+  // SIGNAL-VERDICT-RULE-REGISTRY-W1 R3/R4: the stamp + the forward test's capture (registration §3).
+  stamp: VerdictRuleStamp;
+  capture: VerdictRuleCaptureRow;
 }): void {
   const b = getBackend();
   const p = c.parts;
+  const k = c.capture;
   b.run(
     `INSERT INTO signal_scorer_inputs
        (decided_at, signal_hash, coin, signal, confidence, timeframe, exchange, regime,
         arm, is_bot_internal, verdict_rule_version,
         rsi_score, ema_score, funding_score, oi_score, volume_score,
         raw0, funding_delta, hurst_delta, squeeze_delta, raw_final,
-        funding_adjust_code, hurst_adjust_code, squeeze_adjust_code)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        funding_adjust_code, hurst_adjust_code, squeeze_adjust_code,
+        rule_config_id, trend_decisive, v1_signal, v1_raw_final,
+        verdict_m, verdict_f, verdict_h, rsi_value, rsi_score_pre, funding_z)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT DO NOTHING`,
     c.decidedAt, c.signalHash, c.coin, c.signal, c.confidence, c.timeframe, c.exchange,
     c.regime ?? null, c.arm,
@@ -4150,12 +4178,17 @@ export function recordScorerInputs(c: {
     c.isBotInternal === null || c.isBotInternal === undefined
       ? null
       : (isPg ? c.isBotInternal : (c.isBotInternal ? 1 : 0)),
-    // Evaluated at WRITE time, never hoisted: TREND_MODE moves with no deploy and no diff, and it
-    // changes what a given `rsi_score` MEANS. Rows from two generations must not be pooled.
-    currentVerdictRuleVersion(),
+    // The rule that produced the row, from the call's ONE registry resolution — it decides what a
+    // given `rsi_score` MEANS, so rows from different rules must never be pooled.
+    c.stamp.verdictRuleVersion,
     p.rsiScore, p.emaScore, p.fundingScore, p.oiScore, p.volumeScore,
     p.raw0, p.fundingDelta, p.hurstDelta, p.squeezeDelta, p.rawFinal,
     p.fundingAdjustCode, p.hurstAdjustCode, p.squeezeAdjustCode,
+    c.stamp.ruleConfigId,
+    // SQLite binds no booleans — the same 0/1 coercion as `is_bot_internal` above.
+    isPg ? k.trendDecisive : (k.trendDecisive ? 1 : 0),
+    k.v1Signal, k.v1RawFinal, k.verdictM, k.verdictF, k.verdictH,
+    k.rsiValue, k.rsiScorePre, k.fundingZ,
   );
 }
 

@@ -52,7 +52,8 @@ import { recordOiScoreShadow } from '../lib/oiscore-shadow.js';
 import { getOiScoreSource } from '../lib/oiscore-source-flag.js';
 import { splitCandleWindow } from '../lib/candle-window.js';
 import { getCandleBasis } from '../lib/candle-basis-flag.js';
-import { getTrendMode } from '../lib/trend-mode-flag.js';
+// SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2: the per-cell rule replaces the retired TREND_MODE selector.
+import { resolveVerdictRule } from '../lib/verdict-rule-registry.js';
 import { compatibleWith } from '../lib/primitive-projection.js';
 
 interface TradeSignalInput {
@@ -490,6 +491,13 @@ export interface IndicatorScores extends VerdictScoreInputs {
   rsiVal: number | null;
   avgCandleVol: number;
   lastCandleVol: number;
+  /**
+   * SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2: the RSI bucket BEFORE the trend-mode negation — equal to
+   * `rsiScore` outside a confirmed trend or with `trendMode` off. The would-be (negation-off)
+   * verdict is `deriveVerdict` over this bucket with every other input unchanged, so the decisive
+   * flag is computed from the engine's own locals rather than re-derived later.
+   */
+  rsiScorePre: number;
 }
 
 /**
@@ -800,6 +808,10 @@ export function computeIndicatorScores(i: IndicatorInputs): IndicatorScores {
   //
   // RANGING and VOLATILE are untouched under both flag states: the blast radius is confined to
   // labels that survived a K-bar confirmation.
+  //
+  // SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2: the bucket is held BEFORE the negation so the caller can
+  // derive the would-be verdict from the same pass. The negation's math is unchanged.
+  const rsiScorePre = rsiScore;
   if (trendMode && rsiVal !== null) {
     if (regime === 'TRENDING_UP' && rsiVal > 70) rsiScore = -rsiScore;
     else if (regime === 'TRENDING_DOWN' && rsiVal < 30) rsiScore = -rsiScore;
@@ -853,6 +865,7 @@ export function computeIndicatorScores(i: IndicatorInputs): IndicatorScores {
   return {
     rsiScore, emaScore, fundingScore, oiScore, volumeScore,
     regime, hurstVal, squeezeActive, emaCross, rsiVal, avgCandleVol, lastCandleVol,
+    rsiScorePre,
   };
 }
 
@@ -1085,9 +1098,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     fundingRateAnnualized,
     priceChange,
     openInterest: assetCtx.openInterest,
-    // CH3: read ONCE here, so `computeIndicatorScores` stays pure and both candle bases see the
-    // same value. Default-deny — anything but the exact string 'on' is 'off'.
-    trendMode: getTrendMode() === 'on',
+    // SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2: the negation is part of rule M, which every cell serves
+    // by default, so it is always computed — no env var selects it any more. Rollback to the
+    // contrarian ladder (v1) is DENIED, and the registry's kill switch can only force M. Which rule
+    // is SERVED is decided once, below, by `resolveVerdictRule`; the would-be verdict comes from
+    // `rsiScorePre` on this same pass.
+    trendMode: true,
   };
   const liveBasisScores = computeIndicatorScores({ candles, ...indicatorInputs });
 
@@ -1210,8 +1226,22 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     { rsiScore, emaScore, fundingScore, oiScore: liveOiScore, volumeScore },
     liveVerdict,
   );
-  const signal: SignalVerdict = liveVerdict.signal;
-  const confidence = liveVerdict.confidence;
+
+  // ── SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2 — the verdict RULE, resolved ONCE ──
+  //
+  //    `liveVerdict` is rule M (today's). The would-be verdict is the same derivation over the
+  //    PRE-negation RSI bucket — same gates, same oi basis — so "decisive" is computed from the
+  //    engine's own locals at call time, never re-derived later. The registry then decides, per
+  //    cell, which variant's verdict is SERVED, and returns the stamp and the capture with it.
+  //    Every projection below — the response, the ledger, the three persist arms — reads `rule`.
+  //    With all 20 cells on M (this wave) `rule.served` IS `liveVerdict`, byte for byte.
+  const v1Verdict = deriveVerdict(
+    { rsiScore: emittedScores.rsiScorePre, emaScore, fundingScore, oiScore: liveOiScore, volumeScore },
+    verdictGates,
+  );
+  const rule = resolveVerdictRule({ timeframe, regime, m: liveVerdict, v1: v1Verdict });
+  const signal: SignalVerdict = rule.served.signal;
+  const confidence = rule.served.confidence;
 
   // ── OPS-PFE-METRIC-INTEGRITY-W1 R3: count the suppression. C3 — "the rate is MEASURED, not
   //    argued". Fires in BOTH shadow and enforce, so the shadow-compare report and the live
@@ -1428,6 +1458,9 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       // constants the internal note at the suppression branch interpolates, so the public
       // sentence and the telemetry note can never quote different pins.
       suppressionPin: { minGenuineBars: BOOK_LIVENESS_MIN_GENUINE_BARS, window: BOOK_LIVENESS_WINDOW },
+      // SIGNAL-VERDICT-RULE-REGISTRY-W1: names a fade/hold when one served this call. Absent
+      // under M (every cell this wave), so the sentence set is byte-unchanged.
+      ruleVariant: rule.variant === 'M' ? undefined : rule.variant,
     })
     : '';
 
@@ -1456,7 +1489,13 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     // fidelities of ONE derivation. `factors[]` stays byte-identical — both digest
     // renderers `slice(0,3)` it and the bot mirrors that in Python, so widening it here
     // would silently rewrite every Telegram scan line.
-    result._receipts = formatReceipts(result, { trackRecord: getReceiptTrackRecord(), ledger: factorLedger });
+    result._receipts = formatReceipts(result, {
+      trackRecord: getReceiptTrackRecord(),
+      ledger: factorLedger,
+      // SIGNAL-VERDICT-RULE-REGISTRY-W1: the ledger is the engine's own reading (rule M); when a
+      // fade or hold served the call instead, the receipt says so. Absent under M.
+      ruleVariant: rule.variant === 'M' ? undefined : rule.variant,
+    });
   }
 
   // v1.9.0 L2 + L4: HOLD rescue + next-calls hints.
@@ -1499,7 +1538,9 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
           coin, signal: signal as 'BUY' | 'SELL', confidence, timeframe,
           timestamp: Math.floor(Date.now() / 1000), price: currentPrice,
         });
-        recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash, exchange, regime);
+        // SIGNAL-VERDICT-RULE-REGISTRY-W1 ruling Q4 = A: the per-call stamp from `rule`, never a
+        // writer-side re-derivation. The Merkle leaf preimage above is untouched.
+        recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash, exchange, regime, rule.stamp);
         // ── OPS-SCORER-INPUT-PERSISTENCE-W1 R1b — the emitted arm's capture seam. ──
         //
         // Beside `recordSignal`, never inside it: that function writes the ANCHORED table and
@@ -1518,6 +1559,17 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
           regime: regime ?? null,
           isBotInternal: license.tier === 'internal',
           parts: scorerParts,
+          // SIGNAL-VERDICT-RULE-REGISTRY-W1 R3/R4: the stamp, and the forward test's capture —
+          // the cell key is (timeframe, regime) above; these are the decisive flag, the would-be
+          // verdict, each variant's verdict, and the inputs that make the flag re-checkable from
+          // stored parts (registration §3). All from this call's own locals.
+          stamp: rule.stamp,
+          capture: {
+            ...rule.capture,
+            rsiValue: emittedScores.rsiVal,
+            rsiScorePre: emittedScores.rsiScorePre,
+            fundingZ: fundingZScore,
+          },
         });
       } catch (e) {
         console.debug('recordSignal failed:', e instanceof Error ? e.message : e);
@@ -1546,6 +1598,13 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       // NO NEW LATENCY, STRUCTURALLY. Both projections are synchronous, non-awaited and
       // fail-open; the DB write happens in a microtask. Nothing here can delay or fail a response
       // — which is a property of the shape, not a benchmark that happened to come out flat.
+      //
+      // SIGNAL-VERDICT-RULE-REGISTRY-W1 ruling Q3 = A: a HOLD served by the H variant writes NO
+      // `hold_decisions` row — it would land labelled `below_threshold`, which it is not — and the
+      // request_log projection goes with it, since the two are one derivation. `hold_counts`
+      // above still counts it: the caller WAS served a HOLD. Unreachable while the registry
+      // refuses H (no H-hold store has shipped).
+      if (rule.variant !== 'H') {
       try {
         const capture = {
           decidedAt: Math.floor(Date.now() / 1000),
@@ -1583,6 +1642,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
         });
       } catch (e) {
         console.debug('hold-decision capture failed:', e instanceof Error ? e.message : e);
+      }
       }
     } else {
       // ── OPS-SIGNAL-PERSISTENCE-BAND-CAPTURE-W1 R2 — the band capture seam ──
@@ -1634,6 +1694,9 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
             // is permanently lost, and this is the arm the persistence-band wave just showed was
             // a blind spot.
             parts: scorerParts,
+            // SIGNAL-VERDICT-RULE-REGISTRY-W1 ruling Q4 = A: the band writer takes the stamp
+            // argument only (no capture columns on the band arm).
+            verdictRuleVersion: rule.stamp.verdictRuleVersion,
           });
         } catch (e) {
           console.debug('band-signal capture failed:', e instanceof Error ? e.message : e);

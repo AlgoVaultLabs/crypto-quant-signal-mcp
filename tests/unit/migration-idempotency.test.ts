@@ -79,7 +79,15 @@ const ALL_SIGNAL_COLS = [
   // here — it is a change to a gate this wave does not otherwise touch. Owner:
   // `OPS-MIGRATION-FIXTURE-DERIVE-W{NEXT}`.
   'outcome_filled_at', 'outcome_attempts', 'outcome_last_attempt_at',
+  // SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2: the per-row rule stamp on `signals`, and the stamp + the
+  // forward capture on `signal_scorer_inputs` — a 7th table. `rule_config_id` therefore APPEARS
+  // TWICE, correctly, for the same entries-not-names reason as `quarantined_at` above.
+  'rule_config_id',
+  'rule_config_id', 'trend_decisive', 'v1_signal', 'v1_raw_final', 'verdict_m', 'verdict_f', 'verdict_h', 'rsi_value', 'rsi_score_pre', 'funding_z',  // signal_scorer_inputs
 ];
+
+/** SIGNAL-VERDICT-RULE-REGISTRY-W1 — the ten capture columns, named for test 2c. */
+const REGISTRY_SSI_COLS = ['rule_config_id', 'trend_decisive', 'v1_signal', 'v1_raw_final', 'verdict_m', 'verdict_f', 'verdict_h', 'rsi_value', 'rsi_score_pre', 'funding_z'];
 
 interface MockPgBackend {
   query: ReturnType<typeof vi.fn>;
@@ -109,10 +117,11 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const alterCount = await runPgMigrationsAsync(b as any);
     expect(alterCount).toBe(0);
-    // Exactly one introspect query fired (NOT 13 individual ALTERs)
-    // 6 distinct tables: signals + agent_sessions + webhook_subscriptions + contact_leads,
-    // plus hold_decisions + band_signals (OPS-SCORER-INPUT-PERSISTENCE-W1 R1a).
-    expect(b.query).toHaveBeenCalledTimes(6);
+    // Exactly one introspect query per distinct table (NOT one per ALTER).
+    // 7 distinct tables: signals + agent_sessions + webhook_subscriptions + contact_leads,
+    // plus hold_decisions + band_signals (OPS-SCORER-INPUT-PERSISTENCE-W1 R1a),
+    // plus signal_scorer_inputs (SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2).
+    expect(b.query).toHaveBeenCalledTimes(7);
     expect(b.execAsync).toHaveBeenCalledTimes(0);
   });
 
@@ -126,7 +135,7 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const alterCount = await runPgMigrationsAsync(b as any);
     expect(alterCount).toBe(3);
-    expect(b.query).toHaveBeenCalledTimes(6); // 6 distinct tables — see the note in test 1
+    expect(b.query).toHaveBeenCalledTimes(7); // 7 distinct tables — see the note in test 1
     expect(b.execAsync).toHaveBeenCalledTimes(3);
 
     // Verify the ALTER calls target ONLY the missing columns
@@ -164,6 +173,23 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     }
   });
 
+  // ── Test 2c: the registry's columns are genuinely DECLARED, on the right tables, nullable ──
+  it('SIGNAL-VERDICT-RULE-REGISTRY-W1: rule_config_id on signals + the ten capture columns on signal_scorer_inputs, nullable, no default', async () => {
+    const b = mockPg([]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await runPgMigrationsAsync(b as any);
+    const altered = b.execAsync.mock.calls.map((call) => call[0] as string);
+    expect(altered).toContain('ALTER TABLE signals ADD COLUMN IF NOT EXISTS rule_config_id TEXT');
+    for (const c of REGISTRY_SSI_COLS) {
+      expect(altered.some((sql) => sql.startsWith(`ALTER TABLE signal_scorer_inputs ADD COLUMN IF NOT EXISTS ${c} `)), c).toBe(true);
+    }
+    // Nullable with no DEFAULT: catalog-only on PG16, and the INSERTs of the previously deployed
+    // code keep working across the pre-applied ALTER.
+    const registry = altered.filter((sql) => REGISTRY_SSI_COLS.some((c) => sql.includes(` ${c} `)));
+    expect(registry.length).toBe(11);
+    expect(registry.filter((sql) => /NOT NULL|DEFAULT/.test(sql))).toEqual([]);
+  });
+
   // ── Test 3: Empty schema → all SIGNAL_MIGRATIONS run ──
   it('empty schema (no migration columns present) → every declared ALTER fires', async () => {
     const b = mockPg([]); // No migration columns in the table
@@ -175,7 +201,7 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     // grown to 15 and the true total was 24. A count quoted in prose is a duplicated fact that
     // goes stale in silence; point at the enumeration instead (CLAUDE.md).
     expect(alterCount).toBe(ALL_SIGNAL_COLS.length);
-    expect(b.query).toHaveBeenCalledTimes(6); // 6 distinct tables — see the note in test 1
+    expect(b.query).toHaveBeenCalledTimes(7); // 7 distinct tables — see the note in test 1
     expect(b.execAsync).toHaveBeenCalledTimes(ALL_SIGNAL_COLS.length);
   });
 

@@ -74,8 +74,16 @@ const REPO_ROOT = join(__dirname, '..', '..');
  * src/scripts/cluster-perm-stats.py (no store, no column — pinned by its own test) and the query
  * layer is session-local. Nothing derived reaches public copy.
  */
+/**
+ * SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2 (2026-10-03): the nine forward-capture columns join the token
+ * set — the decisive flag, the would-be verdict, each variant's verdict and the inputs that make the
+ * flag re-checkable are the same internal corpus as the parts. Probed before adding: 0 hits for each
+ * across SCAN_ROOTS. `rule_config_id` is deliberately NOT a token — it is a stamp that also lives on
+ * the anchored `signals` table, not a scorer input. The gate's own allowlist row arrives with the
+ * gate in CH3 (ruling Q5 = A).
+ */
 const TOKEN_RE =
-  /\bsignal_scorer_inputs\b|\bscorer_input_id\b|\brecordScorerInputs\b|\brecordScorerInputCapture\b|\bgetScorerInputCounts\b|\braw0\b|\brsi_score\b|\bema_score\b|\bfunding_score\b|\boi_score\b|\bvolume_score\b|\bfunding_delta\b|\bhurst_delta\b|\bsqueeze_delta\b|\braw_final\b|\bfunding_adjust_code\b|\bhurst_adjust_code\b|\bsqueeze_adjust_code\b/;
+  /\bsignal_scorer_inputs\b|\bscorer_input_id\b|\brecordScorerInputs\b|\brecordScorerInputCapture\b|\bgetScorerInputCounts\b|\braw0\b|\brsi_score\b|\bema_score\b|\bfunding_score\b|\boi_score\b|\bvolume_score\b|\bfunding_delta\b|\bhurst_delta\b|\bsqueeze_delta\b|\braw_final\b|\bfunding_adjust_code\b|\bhurst_adjust_code\b|\bsqueeze_adjust_code\b|\btrend_decisive\b|\bv1_signal\b|\bv1_raw_final\b|\bverdict_m\b|\bverdict_f\b|\bverdict_h\b|\brsi_value\b|\brsi_score_pre\b|\bfunding_z\b/;
 
 /** Public-serving-capable corpus: everything that can reach a served surface or a generator.
  *  `tests/` and `migrations/` are deliberately outside it — a migration IS the sanctioned schema,

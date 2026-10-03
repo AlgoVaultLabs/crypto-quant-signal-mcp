@@ -148,6 +148,13 @@ export interface Receipts {
   stripped_remainder?: ReceiptStrippedRemainder;
   /** LIVE track record; OMITTED entirely when the source is unavailable (fail-open). */
   track_record?: ReceiptTrackRecord;
+  /**
+   * SIGNAL-VERDICT-RULE-REGISTRY-W1: a non-default verdict rule served this call — `fade` (the
+   * call is the opposite side of the ledger's reading) or `hold`. OMITTED under today's rule.
+   * Inactive this wave (no cell is switched); a public-shape addition, so the first switch
+   * dispatch owns its shape snapshot.
+   */
+  rule_variant?: 'fade' | 'hold';
   verification_uri: string;
   disclaimer: string;
 }
@@ -190,6 +197,8 @@ export interface FormatReceiptsOptions {
     }>;
     strippedRemainder: Parameters<typeof formatFactorLedgerRemainder>[0];
   } | null;
+  /** SIGNAL-VERDICT-RULE-REGISTRY-W1: the variant that served the call when it is not today's rule. */
+  ruleVariant?: 'F' | 'H';
 }
 
 /**
@@ -303,6 +312,10 @@ export function formatReceipts(verdict: VerdictContext, opts: FormatReceiptsOpti
     ...(tr
       ? { track_record: { pfe_win_rate: tr.pfe_win_rate, n: tr.n, window: tr.window, as_of: tr.as_of } }
       : {}),
+    // SIGNAL-VERDICT-RULE-REGISTRY-W1: present only when a non-default rule served the call — the
+    // ledger above is the engine's own reading, so a fade/hold must be named beside it. Absent
+    // under today's rule (every cell this wave), so the block is byte-identical.
+    ...(opts.ruleVariant ? { rule_variant: opts.ruleVariant === 'F' ? 'fade' as const : 'hold' as const } : {}),
     verification_uri: VERIFICATION_URI,
     disclaimer: RECEIPTS_DISCLAIMER,
   };

@@ -137,7 +137,7 @@ describe('R3 ARM A — the band corpus is ISOLATED from every published number',
   itSqlitePath('seeding band_signals moves NO public figure', () => {
     const before = publicFigures();
     // A real band row: below the gate, directional, fully populated — not a degenerate fixture.
-    recordBandSignal(coin, 'BUY', 47, '5m', 100, 'HL', 'TRENDING_UP', 'request', false, PARTS);
+    recordBandSignal(coin, 'BUY', 47, '5m', 100, 'HL', 'TRENDING_UP', 'request', false, PARTS, 2);
     const after = publicFigures();
     expect(after).toBe(before);
   });
@@ -146,7 +146,7 @@ describe('R3 ARM A — the band corpus is ISOLATED from every published number',
     // VACUITY GUARD, and it belongs here because THIS test constructs the corpus. If the insert
     // silently failed, the byte-identical assertion above would pass for the wrong reason and the
     // arm would be decorative forever.
-    recordBandSignal(coin, 'SELL', 30, '1h', 200, 'BINANCE', null, 'fleet', true, PARTS);
+    recordBandSignal(coin, 'SELL', 30, '1h', 200, 'BINANCE', null, 'fleet', true, PARTS, 2);
     // OPS-PG-LANE-BOOTSTRAP-W1: `recordBandSignal` reaches `dbRun`, which on Postgres RETURNS
     // BEFORE THE STATEMENT IS SENT. On SQLite the row exists when it returns. One signature,
     // two happens-before contracts — so this read was sound on SQLite and a coin flip on the

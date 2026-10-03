@@ -15,13 +15,12 @@
  * SPAWN BUDGET: none required — `scripts/check-test-budget.mjs` scopes to process-spawning blocks
  * and nothing here spawns.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   computeIndicatorScores, deriveVerdict, classifyRegimeLabel, R4_THRESHOLDS,
   type IndicatorInputs,
 } from '../../src/tools/get-trade-call.js';
-import { getTrendMode } from '../../src/lib/trend-mode-flag.js';
 import type { Candle } from '../../src/types.js';
 
 const WEIGHTS = { rsi: 0.30, ema: 0.10, funding: 0.25, oi: 0.15, volume: 0.20 };
@@ -42,19 +41,11 @@ const base = (candles: Candle[], over: Partial<IndicatorInputs> = {}): Indicator
   candles, fundingRateAnnualized: 0, priceChange: 0.03, openInterest: 1_000_000, ...over,
 });
 
-describe('CH3 — the flag is default-deny', () => {
-  const prior = process.env.TREND_MODE;
-  afterEach(() => { if (prior === undefined) delete process.env.TREND_MODE; else process.env.TREND_MODE = prior; });
-
-  it("only the exact string 'on' enables it", () => {
-    for (const v of [undefined, '', 'ON', 'On', 'true', '1', 'yes', 'off', 'onn']) {
-      if (v === undefined) delete process.env.TREND_MODE; else process.env.TREND_MODE = v;
-      expect(getTrendMode()).toBe('off');
-    }
-    process.env.TREND_MODE = 'on';
-    expect(getTrendMode()).toBe('on');
-  });
-});
+// The `TREND_MODE` env-var selector this file used to pin ("the flag is default-deny") was RETIRED
+// by SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2: serving always computes the negation (rule M) and the
+// per-cell registry decides which rule is served. Its retirement is pinned in
+// `verdict-rule-registry.test.ts`. The `trendMode` PARAMETER of the pure function stays — the
+// mechanics below are still the definition of rule M — so every block below is unchanged.
 
 describe('CH3 — flag OFF is byte-identical to pre-wave', () => {
   it('an ABSENT trendMode and an explicit false produce identical scores', () => {

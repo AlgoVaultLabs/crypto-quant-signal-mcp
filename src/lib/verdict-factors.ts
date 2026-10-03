@@ -1115,6 +1115,15 @@ export function renderVerdictReasoning(
      * and a test asserts it passes the real constants rather than literals.
      */
     suppressionPin?: { minGenuineBars: number; window: number };
+    /**
+     * SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2: a non-default verdict rule served this call. `'F'` = a
+     * fade (the call is the opposite side of the reading the ledger describes); `'H'` = a hold.
+     * Absent ⇒ today's rule served it, and every sentence below is byte-unchanged.
+     *
+     * ⚠ DRAFTED PUBLIC COPY, INACTIVE: no cell is assigned F or H. The two sentences below are
+     * flagged for Mr.1's review at the first switch dispatch. Number-free by construction.
+     */
+    ruleVariant?: 'F' | 'H';
   } = {},
 ): string {
   const { rows, netDirection, counterweight } = ledger;
@@ -1180,6 +1189,13 @@ export function renderVerdictReasoning(
     s2 = opts.marketClosed
       ? `Underlying market closed and the book is not trading, so the ${opts.suppressedSide}${conviction} was withheld until it reopens`
       : `Book not trading: ${bars}, so the ${opts.suppressedSide}${conviction} was withheld`;
+  } else if (opts.ruleVariant) {
+    // SIGNAL-VERDICT-RULE-REGISTRY-W1: the served call is NOT the reading slot 1 describes, so the
+    // reader must be told before anything else. A suppressed call is HOLD before a variant can
+    // apply, so the two states cannot co-occur.
+    s2 = opts.ruleVariant === 'F'
+      ? 'Fade rule active for this timeframe and trend, so the call is the opposite side of this reading'
+      : 'Hold rule active for this timeframe and trend, so this reading is not called';
   } else if (opts.marketClosed) {
     // A TradFi perp whose cash market is shut is priced off a CAPPED synthetic index,
     // so the directional read is provisional. This used to ride as a 4th appended
@@ -1225,7 +1241,11 @@ export function renderVerdictReasoning(
   // uncorrected one, which reads as deliberate.
   const s3 = opts.suppressedSide
     ? (opts.marketClosed ? 'Resumes when the underlying market reopens' : 'Resumes once the book trades again')
-    : flipSentence(ledger, call, driver);
+    // The ordinary flip sentence reasons from the reading toward the call; under a variant the
+    // call is not that reading's, so the sentence would be false. State the rule's cadence instead.
+    : opts.ruleVariant
+      ? 'The rule is re-tested on each forward window'
+      : flipSentence(ledger, call, driver);
 
   // Fit to the consumer's ceiling by DEGRADING slot 2, never by dropping a slot: the
   // driver and the flip are the two the reader cannot do without, and a 2-sentence
@@ -1237,11 +1257,11 @@ export function renderVerdictReasoning(
   // do it only on the longest responses, which is the worst possible way to lose it.
   const join = (a: string, b: string, c: string) => [a, b, c].map((s) => s.replace(/\.*$/, '')).join('. ') + '.';
   let out = join(s1, s2, s3);
-  if (out.length > REASONING_MAX_CHARS && !counterweight && !opts.marketClosed && !opts.suppressedSide) {
+  if (out.length > REASONING_MAX_CHARS && !counterweight && !opts.marketClosed && !opts.suppressedSide && !opts.ruleVariant) {
     const ctx = others.filter((r) => r.factor === 'regime' || r.factor === 'breakout_pending' || r.factor === 'oi_change_pct');
     if (ctx.length) out = join(s1, clauseFor(ctx[0]), s3);
   }
-  if (out.length > REASONING_MAX_CHARS && !opts.marketClosed && !opts.suppressedSide) {
+  if (out.length > REASONING_MAX_CHARS && !opts.marketClosed && !opts.suppressedSide && !opts.ruleVariant) {
     const short = counterweight
       ? `Against: ${counterweight.factor.replace(/_/g, ' ')} reads ${counterweight.direction}`
       : 'Nothing else cleared its threshold';
@@ -1252,6 +1272,10 @@ export function renderVerdictReasoning(
   // its confidence — the whole point of this state — live in slot 2. Ordinary and closed-market
   // responses are untouched: their >280 handling is the ladder above, exactly as before.
   if (out.length > REASONING_MAX_CHARS && opts.suppressedSide) {
+    out = join(`Signal computed ${netDirection}`, s2, s3);
+  }
+  // Same last resort under a variant: slot 2 carries the rule, so slot 1 is the one to shorten.
+  if (out.length > REASONING_MAX_CHARS && opts.ruleVariant) {
     out = join(`Signal computed ${netDirection}`, s2, s3);
   }
   return out;

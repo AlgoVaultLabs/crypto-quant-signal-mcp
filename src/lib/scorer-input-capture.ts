@@ -21,6 +21,7 @@
  * does not run is a day of permanently lost data.
  */
 import { scorerCaptureEnabled, type ScorerParts } from './scorer-input-codes.js';
+import type { VerdictRuleStamp, VerdictRuleCaptureRow } from './verdict-rule-registry.js';
 import { resolveCaptureArm, type CaptureArm } from './hold-decision-capture.js';
 
 export interface ScorerInputCapture {
@@ -39,6 +40,13 @@ export interface ScorerInputCapture {
   regime: string | null;
   isBotInternal: boolean | null;
   parts: ScorerParts;
+  /**
+   * SIGNAL-VERDICT-RULE-REGISTRY-W1 R3/R4 — the call's ONE registry resolution: the stamp the row
+   * carries, and the forward test's capture. REQUIRED, like `parts`: capture is forward-only, so a
+   * caller that omitted them would lose them permanently, and only the compiler can stop that.
+   */
+  stamp: VerdictRuleStamp;
+  capture: VerdictRuleCaptureRow;
 }
 
 /**
