@@ -25,6 +25,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, extname } from 'node:path';
 
 vi.mock('../../src/lib/exchange-adapter.js', () => ({ getAdapter: vi.fn() }));
@@ -64,6 +65,7 @@ import { recordHoldDecision } from '../../src/lib/hold-decision-capture.js';
 import { resetLicenseCache } from '../../src/lib/license.js';
 import { _setSnapshotForTest, _clearCache, _setScorerOverride } from '../../src/lib/cross-asset-grid.js';
 import type { AssetContext, Candle, ExchangeAdapter, LicenseInfo, SignalVerdict } from '../../src/types.js';
+import { EVAL_CANDLES, TF_MS } from '../../src/lib/pfe-mae.js';
 
 const REPO_ROOT = join(__dirname, '..', '..');
 
@@ -440,5 +442,92 @@ describe('R2–R4 — the wiring in getTradeSignal', () => {
     const r = await getTradeSignal({ coin: 'ETH', timeframe: '4h', license: LICENSE });
     expect(r.call).toBe('HOLD');
     expect(vi.mocked(recordHoldDecision)).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── CH3 — the gate executes the registration VERBATIM ─────────────────────────────────────────
+//
+// The registration names `ops/monitoring/verdict-rule-gate.py` as its executor and says "its query,
+// parameters and decision map must equal this file; CH3 pins that with a test". This is that test.
+// It reads the landed registration and the gate's own `--show-config`, so a number restated
+// differently in either place turns this red — and it runs both monitoring self-tests, which
+// otherwise run only on the host.
+//
+// SPAWN BUDGET: each spawning block declares its own timeout (python3 cold start + the gate's
+// 10,000-draw bootstraps over synthetic windows measured ~2.3 s locally).
+
+const GATE = join(REPO_ROOT, 'ops', 'monitoring', 'verdict-rule-gate.py');
+const TMRG = join(REPO_ROOT, 'ops', 'monitoring', 'trend-mode-readout-gate.py');
+const REGISTRATION = readFileSync(join(REPO_ROOT, 'audits', 'verdict-rule-registry-preregistration-2026-10-02.md'), 'utf8');
+
+function registrationSection(n: number): string {
+  const start = REGISTRATION.indexOf(`## ${n}.`);
+  const next = REGISTRATION.indexOf('\n## ', start + 4);
+  expect(start, `registration section ${n} exists`).toBeGreaterThanOrEqual(0);
+  return REGISTRATION.slice(start, next < 0 ? undefined : next);
+}
+
+function hoursOf(h: string): number {
+  const m = h.trim().match(/^(\d+)\s*(min|h)$/);
+  expect(m, `horizon cell "${h}" parses`).not.toBeNull();
+  return Number(m![1]) * (m![2] === 'min' ? 60 : 3600);
+}
+
+describe('CH3 — the gate is the registration, executed', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let config: Record<string, any>;
+  it('exposes its parameters (--show-config)', { timeout: 60_000 }, () => {
+    config = JSON.parse(execFileSync('python3', [GATE, '--show-config'], { encoding: 'utf8' }));
+    expect(config.registration).toBe('audits/verdict-rule-registry-preregistration-2026-10-02.md');
+  });
+
+  it('runs the registered §3 query byte for byte', () => {
+    const m = registrationSection(3).match(/```sql\n([\s\S]*?)\n```/);
+    expect(m, 'the registration carries one sql block in §3').not.toBeNull();
+    expect(config.window_sql).toBe(m![1]);
+  });
+
+  it('carries every §5 row: window, horizon, cluster block, minimum clusters, WATCH', () => {
+    const rows = registrationSection(5).split('\n').filter((l) => /^\|\s*\d+[mhd]\s*\|/.test(l));
+    expect(rows.map((r) => r.split('|')[1].trim())).toEqual([...REGISTRY_TIMEFRAMES]);
+    for (const r of rows) {
+      const [, tf, h, cluster, L, minC, status] = r.split('|').map((c) => c.trim());
+      const g = config.timeframes[tf];
+      expect(g.window_days, `${tf} window`).toBe(Number(L));
+      expect(g.horizon_s, `${tf} horizon vs the registration`).toBe(hoursOf(h));
+      expect(g.horizon_s, `${tf} horizon vs EVAL_CANDLES × TF_MS`).toBe((EVAL_CANDLES[tf] * TF_MS[tf]) / 1000);
+      expect(g.block_days, `${tf} cluster block`).toBe(cluster === 'day' ? 1 : Number(cluster.match(/^(\d+)-day block$/)![1]));
+      expect(g.watch, `${tf} WATCH`).toBe(/WATCH/.test(status));
+      expect(g.min_clusters, `${tf} minimum clusters`).toBe(minC === '—' ? null : Number(minC));
+      if (!g.watch) expect(g.min_clusters).toBe(Math.ceil((0.8 * g.window_days) / g.block_days));
+    }
+  });
+
+  it('carries the §4–§6 constants and S1 as registered', () => {
+    expect(registrationSection(4)).toContain('B = 10000');
+    expect(config.bootstrap_b).toBe(10000);
+    expect(registrationSection(6)).toContain('Holm step-down at FWER 0.025, one-sided');
+    expect(config.fwer_one_sided).toBe(0.025);
+    expect(registrationSection(6)).toContain('fewer than 5% of its `ΔM` draws are above zero');
+    expect(config.veto_min_positive).toBe(0.05);
+    expect(registrationSection(5)).toContain('scored rows ≥ 95% of window rows');
+    expect(config.coverage_floor).toBe(0.95);
+    expect(registrationSection(6)).toContain('attainable_bound_from_share(q̄_A) ≥ 3.0');
+    expect(config.floor_pp).toBe(3.0);
+    expect(REGISTRATION).toContain('S1 = {(M,M), (F,M), (F,F)}');
+    expect(config.s1).toEqual(['MM', 'FM', 'FF']);
+    expect(config.diagnostic).toEqual(['MF']);
+    expect(config.cron).toBe('43 12 * * 1');
+  });
+
+  it("the gate's own --self-test passes", { timeout: 120_000 }, () => {
+    const out = execFileSync('python3', [GATE, '--self-test'], { encoding: 'utf8' });
+    expect(out).toContain('SELF-TEST: PASS');
+    expect(out.trim().split('\n').pop()).toBe('VERDICT_RULE_GATE_VERDICT=PASS');
+  });
+
+  it("the re-homed trend-mode gate's --self-test passes", { timeout: 60_000 }, () => {
+    const out = execFileSync('python3', [TMRG, '--self-test'], { encoding: 'utf8' });
+    expect(out).toContain('SELF-TEST: PASS');
   });
 });

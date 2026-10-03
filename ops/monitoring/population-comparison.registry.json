@@ -14,24 +14,100 @@
 
   "_site_floor_doc": "DECLARATION-TIME IDENTIFIABILITY (OPS-PREREG-IDENTIFIABILITY-GATE-W1). A site that declares a floor carries `declared_floor_pp` (pp, taken as a magnitude) AND `sized_against`: one entry per arm the floor constrains, each `{arm, minority_side_share, probe}`. The share is the arm's minority-side fraction in [0, 0.5], a CARDINALITY probed before any outcome is read, and `probe` names the count that produced it. The gate obtains 2m from `attainable_bound_from_share` in ops/monitoring/population_comparison.py by subprocess (`--declarations`); it never carries a second copy of the formula. It FAILS a site whose floor exceeds the narrowest arm's 2m, because that arm can never show the floor and the site could never fire. That is the 2026-08-31 trend-mode trigger A (3.0pp floor, v1 minority share 0.0053, 2m = 1.06pp), now refused when it is declared instead of at readout. A floor without its share, or a share without its floor, is malformed and FAILS. Both fields are optional and NO existing row is back-annotated. Trigger A's floor is a code constant (trend-mode-readout-gate.py EDGE_FLOOR_DROP_PP), its readout-time refusal in compare_arms still stands, and writing it here would turn this gate red on a site that is already refused. Fixtures: tests/fixtures/identifiability/*.site.json.",
 
+  "_retired_sites": {
+    "_doc": "Sites whose CODE no longer exists, kept verbatim with the reason, so a retirement is never a silent deletion. The schema has no RETIRED status: a retired site makes no comparison, so it cannot be MIGRATED, OPERATIONAL_BOUND or UNMIGRATED.",
+    "retired": [
+      {
+        "id": "trend-mode-readout-gate:trigger-A",
+        "file": "ops/monitoring/trend-mode-readout-gate.py",
+        "status": "MIGRATED",
+        "purpose": "EFFECT_CLAIM",
+        "basis": "MIX_MATCHED_NULL",
+        "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
+        "note": "THE TRIPPING INSTANCE. Shipped 2026-08-31 with basis max(always_long, always_short); fired a FALSE FAIL 2026-09-02 whose -5.08pp was dominated by always_short moving +2.97pp between windows. Now derives through population_comparison.py, which REFUSES this particular comparison as NOT_IDENTIFIABLE — the declared 3.0pp floor exceeds arm v1's entire 1.06pp attainable range, so v1 could never influence the verdict.",
+        "retired_by": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R2",
+        "retired_at": "2026-10-03",
+        "retired_because": "trigger A was NOT_IDENTIFIABLE by construction and is superseded by verdict-rule-gate:timeframe-integrity; A2 survived only as a diagnostic of A's comparison and went with it"
+      },
+      {
+        "id": "trend-mode-readout-gate:trigger-A2",
+        "file": "ops/monitoring/trend-mode-readout-gate.py",
+        "status": "MIGRATED",
+        "purpose": "EFFECT_CLAIM",
+        "basis": "MIX_MATCHED_NULL",
+        "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
+        "note": "DELETED as a gating trigger rather than migrated: its basis (engine - always_long) is mix-coupled, and migrating it to the mix-matched null merely yields a second copy of trigger A, which is a second derivation of one value. Survives as a diagnostic. Measured 2026-09-02 it reported +0.44pp IMPROVEMENT while trigger A reported a 5.08pp regression on the same rows — two market artifacts of opposite sign from one dataset.",
+        "retired_by": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R2",
+        "retired_at": "2026-10-03",
+        "retired_because": "trigger A was NOT_IDENTIFIABLE by construction and is superseded by verdict-rule-gate:timeframe-integrity; A2 survived only as a diagnostic of A's comparison and went with it"
+      }
+    ]
+  },
+
   "sites": [
     {
-      "id": "trend-mode-readout-gate:trigger-A",
-      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "id": "verdict-rule-gate:timeframe-integrity",
+      "file": "ops/monitoring/verdict-rule-gate.py",
       "status": "MIGRATED",
       "purpose": "EFFECT_CLAIM",
       "basis": "MIX_MATCHED_NULL",
-      "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
-      "note": "THE TRIPPING INSTANCE. Shipped 2026-08-31 with basis max(always_long, always_short); fired a FALSE FAIL 2026-09-02 whose -5.08pp was dominated by always_short moving +2.97pp between windows. Now derives through population_comparison.py, which REFUSES this particular comparison as NOT_IDENTIFIABLE — the declared 3.0pp floor exceeds arm v1's entire 1.06pp attainable range, so v1 could never influence the verdict."
-    },
-    {
-      "id": "trend-mode-readout-gate:trigger-A2",
-      "file": "ops/monitoring/trend-mode-readout-gate.py",
-      "status": "MIGRATED",
-      "purpose": "EFFECT_CLAIM",
-      "basis": "MIX_MATCHED_NULL",
-      "owner_wave": "EDGE-POPULATION-COMPARISON-W1",
-      "note": "DELETED as a gating trigger rather than migrated: its basis (engine - always_long) is mix-coupled, and migrating it to the mix-matched null merely yields a second copy of trigger A, which is a second derivation of one value. Survives as a diagnostic. Measured 2026-09-02 it reported +0.44pp IMPROVEMENT while trigger A reported a 5.08pp regression on the same rows — two market artifacts of opposite sign from one dataset."
+      "aggregation": "PER_CLUSTER",
+      "cluster_unit": "calendar_day",
+      "owner_wave": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
+      "declared_floor_pp": 3.0,
+      "sized_against": [
+        {
+          "arm": "3m under an admissible alternative assignment",
+          "minority_side_share": 0.015,
+          "probe": "registered minimum (registration section 4c); measured at each look as the BUY share of the window's scored rows under the alternative"
+        },
+        {
+          "arm": "5m under an admissible alternative assignment",
+          "minority_side_share": 0.015,
+          "probe": "registered minimum (registration section 4c); measured at each look as the BUY share of the window's scored rows under the alternative"
+        },
+        {
+          "arm": "15m under an admissible alternative assignment",
+          "minority_side_share": 0.015,
+          "probe": "registered minimum (registration section 4c); measured at each look as the BUY share of the window's scored rows under the alternative"
+        },
+        {
+          "arm": "30m under an admissible alternative assignment",
+          "minority_side_share": 0.015,
+          "probe": "registered minimum (registration section 4c); measured at each look as the BUY share of the window's scored rows under the alternative"
+        },
+        {
+          "arm": "1h under an admissible alternative assignment",
+          "minority_side_share": 0.015,
+          "probe": "registered minimum (registration section 4c); measured at each look as the BUY share of the window's scored rows under the alternative"
+        },
+        {
+          "arm": "2h under an admissible alternative assignment",
+          "minority_side_share": 0.015,
+          "probe": "registered minimum (registration section 4c); measured at each look as the BUY share of the window's scored rows under the alternative"
+        },
+        {
+          "arm": "4h under an admissible alternative assignment",
+          "minority_side_share": 0.015,
+          "probe": "registered minimum (registration section 4c); measured at each look as the BUY share of the window's scored rows under the alternative"
+        },
+        {
+          "arm": "8h under an admissible alternative assignment",
+          "minority_side_share": 0.015,
+          "probe": "registered minimum (registration section 4c); measured at each look as the BUY share of the window's scored rows under the alternative"
+        },
+        {
+          "arm": "12h under an admissible alternative assignment",
+          "minority_side_share": 0.015,
+          "probe": "registered minimum (registration section 4c); measured at each look as the BUY share of the window's scored rows under the alternative"
+        },
+        {
+          "arm": "1d under an admissible alternative assignment",
+          "minority_side_share": 0.015,
+          "probe": "registered minimum (registration section 4c); measured at each look as the BUY share of the window's scored rows under the alternative"
+        }
+      ],
+      "note": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3. The forward per-timeframe gate: the paired change in each timeframe's excess over its OWN mix-matched null on the same rows (q*u + (1-q)*w per UTC day), aggregated per day-cluster (2-/3-day blocks for 8h/12h/1d), cluster-bootstrapped, Holm across the look. Rule 1 is the declaration-time identifiability of THIS site: an alternative is admissible only when 200*min(q, 1-q) >= 3.0 pp — the 3.0 pp floor trigger A could never reach on a 99.5% one-sided arm, here required of every alternative BEFORE its outcome is read. Supersedes trend-mode-readout-gate:trigger-A."
     },
     {
       "id": "trend-mode-readout-gate:B-volume-ceiling",

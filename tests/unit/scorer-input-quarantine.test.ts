@@ -163,6 +163,16 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
     'src/scripts/backfill-hold-decision-labels.ts',
     'work-list PRESENCE TEST only (`raw0 IS NOT NULL` + its inverse); never selects, binds or returns a parts value',
   ],
+  [
+    // ADDED 2026-10-03, SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 (ruling Q5 = A moved this row here from CH2,
+    // so the row and the reader land in ONE commit and the stale-row assertion never fires between them).
+    // The gate is the registration's SANCTIONED reader (audits/verdict-rule-registry-preregistration-
+    // 2026-10-02.md section 8): it SELECTs the EMITTED arm's capture columns by the registered query, emits
+    // a verdict token, per-timeframe statistics and transition-only pages — never a row, never a public
+    // figure — and never pools the emitted arm with a withheld one (no hold or band store in its SQL).
+    'ops/monitoring/verdict-rule-gate.py',
+    'the CH3 forward gate: reads the emitted arm capture by the registered query; outputs a verdict token and per-timeframe statistics only',
+  ],
 ]);
 
 /** Strip comments by dialect so a MENTION is not judged as a REFERENCE.
