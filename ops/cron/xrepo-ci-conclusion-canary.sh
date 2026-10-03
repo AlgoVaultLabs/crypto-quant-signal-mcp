@@ -177,8 +177,22 @@ STALE_MULTIPLE="${XREPO_CI_STALE_MULTIPLE:-2}"
 #
 # A row missing the field, or carrying anything else, REFUSES — this list is a corpus WE construct,
 # so a malformed row is a config defect, never a fact about the world.
+#
+# Row 3 — publish-lane-preverify.yml — is the RELEASE-BLOCKING row (OPS-PREVERIFY-RED-UNREAD-W1).
+# It rehearses the publish lane daily (`37 19 * * *`, firing 2–4 h late in practice; 86400 s with
+# the 2x STALE_MULTIPLE bound leaves ample margin). Its workflow header used to declare that "the
+# named red step IS the operator signal"; measured, that red ran 49 consecutive times across 33 days
+# and three release tags with ZERO readers, because nothing enumerated it, nothing delivered it and
+# nothing blocked on it. This row is the DELIVERY half; `npm run release:readiness`
+# (scripts/check-release-readiness.mjs, run by Version-Bump-SOP.md § 2 before a release spec) is
+# the BLOCKING half. The self-test asserts this row exists and that its red reaches the alerter.
+# publish-npm.yml is deliberately NOT a row: it runs on tag pushes, whose runs carry the TAG as
+# their branch, so `?branch=main` structurally cannot see one (measured 2026-10-03 — it reports a
+# 2026-08-26 manual dispatch). The readiness gate reads it with no branch filter instead, where it
+# is declared per entry; this canary keeps refusing an undeclared branch.
 WATCHED="${XREPO_CI_WATCHED-AlgoVaultLabs/algovault-skills|marketplace-check.yml|Marketplace Health Check|main|86400
-AlgoVaultLabs/crypto-quant-signal-mcp|regenerate-landing.yml|Landing Regeneration|main|event-driven}"
+AlgoVaultLabs/crypto-quant-signal-mcp|regenerate-landing.yml|Landing Regeneration|main|event-driven
+AlgoVaultLabs/crypto-quant-signal-mcp|publish-lane-preverify.yml|Publish Lane Pre-verify|main|86400}"
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG" >/dev/null 2>&1 || true; }
 verdict() { echo "XREPO_CI_VERDICT=$1"; }
@@ -1174,6 +1188,40 @@ o/b|w.yml|Beta|main|86400")
   ckn "and it does not blame the badge markup"            "$(cat "$tmp/sink")" "badge markup still"
   ckc "a recency-only failure keeps the conclusion verdict PASS" "$out" "XREPO_CI_VERDICT=PASS"
   CASE_NOW=""
+
+  echo "SELF-TEST: the release-blocking row is WATCHED, and its red reaches the alerter"
+  # OPS-PREVERIFY-RED-UNREAD-W1. The pre-verify red ran 49 consecutive times with no reader. The row
+  # is taken FROM THE SHIPPED DEFAULT, never re-typed here, so repointing or deleting it reds this
+  # section for its own reason — independently of the inventory-parity check below, which a
+  # matching edit to both declarations would satisfy.
+  local PV_ROW PV_REPO PV_WF PV_LABEL PV_BRANCH PV_CAD PV_BADGE PV_ATOM PV_PAGE
+  PV_ROW=$(printf '%s\n' "$WATCHED" | grep -E '^[^|]+\|publish-lane-preverify\.yml\|' | head -1)
+  ck "publish-lane-preverify.yml is a WATCHED row" "$([ -n "$PV_ROW" ] && echo YES || echo NO)" "YES"
+  IFS='|' read -r PV_REPO PV_WF PV_LABEL PV_BRANCH PV_CAD <<PVROW
+$PV_ROW
+PVROW
+  ck "it is watched on main" "${PV_BRANCH:-}" "main"
+  ck "it declares a numeric cadence (it is scheduled, so it CAN go stale)" \
+     "$( [ "${PV_CAD:-}" != "event-driven" ] && valid_cadence "${PV_CAD:-}" && echo OK || echo NO)" "OK"
+  if [ -n "$PV_ROW" ]; then
+    PV_BADGE=$(BADGE_HOST=https://github.com badge_url "$PV_REPO" "$PV_WF" "$PV_BRANCH")
+    PV_ATOM="https://github.com/$PV_REPO/commits/$PV_BRANCH.atom"
+    PV_PAGE=$(BADGE_HOST=https://github.com actions_url "$PV_REPO" "$PV_WF" "$PV_BRANCH")
+    mkatom "$PV_ATOM" "$ACTIVE"; mkpage "$PV_PAGE" 68 37076511035 "$RECENT"
+
+    : > "$tmp/sink"; echo 0 > "$tmp/streak"
+    mkfx "$PV_BADGE" failing
+    out=$(run_case "$PV_ROW")
+    ckc "a FAILING pre-verify badge is FAIL, never PASS"  "$out" "XREPO_CI_VERDICT=FAIL"
+    ckc "…and FIRES xrepo_ci_red at CRITICAL_PERSISTENT" "$(cat "$tmp/sink")" "xrepo_ci_red|CRITICAL_PERSISTENT|"
+    ckc "…with a body naming the pre-verify workflow"     "$(cat "$tmp/sink")" "$PV_REPO/$PV_WF (branch main): failing"
+
+    : > "$tmp/sink"; echo 0 > "$tmp/streak"
+    mkfx "$PV_BADGE" passing
+    out=$(run_case "$PV_ROW")
+    ckc "a PASSING pre-verify badge is PASS (the other direction)" "$out" "XREPO_CI_VERDICT=PASS"
+    ck  "…and fires nothing" "$(wc -l < "$tmp/sink" | tr -d ' ')" "0"
+  fi
 
   echo "SELF-TEST: the two declarations of the watch list agree"
   # The pipe-delimited default here and `watches[]` in the monitoring inventory are two statements
