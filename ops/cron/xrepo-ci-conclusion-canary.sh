@@ -128,7 +128,7 @@
 # 2026-08-21, 24h is far inside the window in which it would otherwise have gone unnoticed
 # indefinitely: before this row, nothing watched it at all.
 #
-# THE CONCLUSION IS BOUND TO THE RUN IT NAMES (OPS-XREPO-CI-RED-W1, 2026-10-04).
+# THE CONCLUSION IS BOUND TO THE RUN IT NAMES (OPS-XREPO-CI-RED-W1, 2026-10-03).
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 # On 2026-10-03T09:41:03Z this canary paged `xrepo_ci_red` naming run #144 (37017230705), which had
 # SUCCEEDED: the badge said `failing`, Leg B's page row for #144 carried a success icon in the same
