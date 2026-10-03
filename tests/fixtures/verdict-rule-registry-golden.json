@@ -1,0 +1,6988 @@
+{
+ "recorded_from": "pre-registry code, TREND_MODE=on",
+ "tally": {
+  "decisiveTrackedBuy": 12,
+  "decisiveSell": 11,
+  "decisiveBand": 1,
+  "nonDecisiveTrendingEmitted": 1,
+  "rangingEmitted": 3,
+  "hold": 19,
+  "negatedHold": 12
+ },
+ "scenarios": [
+  {
+   "id": "ripping-4h-highvol",
+   "response": {
+    "call": "BUY",
+    "confidence": 84,
+    "price": 524.9177251239895,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 84,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "BUY",
+     84,
+     "4h",
+     524.9177251239895,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "BUY",
+     "confidence": 84,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 60,
+      "volumeScore": 80,
+      "raw0": 65,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 75,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 84,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "ripping-4h-flatvol",
+   "response": {
+    "call": "BUY",
+    "confidence": 60,
+    "price": 524.9177251239895,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Funding at +0.0000% means neither side pays, but ETH funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "ETH",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 60,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "ETH",
+     "BUY",
+     60,
+     "4h",
+     524.9177251239895,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "ETH",
+     "signal": "BUY",
+     "confidence": 60,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 60,
+      "volumeScore": -30,
+      "raw0": 43,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 53,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 60,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "ripping-4h-lowvol-band",
+   "response": {
+    "call": "BUY",
+    "confidence": 51,
+    "price": 524.9177251239895,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Funding at +0.0000% means neither side pays, but SOL funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "SOL",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 51,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [
+    {
+     "coin": "SOL",
+     "signal": "BUY",
+     "confidence": 51,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "priceAtSignal": 524.9177251239895,
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 60,
+      "volumeScore": -70,
+      "raw0": 35,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 45,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 51,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "dumping-4h-lowvol",
+   "response": {
+    "call": "SELL",
+    "confidence": 82,
+    "price": 18.673051615748683,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 82,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "SELL",
+     82,
+     "4h",
+     18.673051615748683,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "SELL",
+     "confidence": 82,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 0,
+      "oiScore": -60,
+      "volumeScore": -70,
+      "raw0": -63,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -73,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 82,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "dumping-4h-lowvol-zsoft",
+   "response": {
+    "call": "HOLD",
+    "confidence": 60,
+    "price": 18.673051615748683,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Funding at +0.0000% is unusual for SOL over 14 days but too small to score. Turns directional if funding moves off neutral.",
+    "coin": "SOL",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 60,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "SOL",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "SOL",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "wouldBeSide": -1,
+     "confidence": 60,
+     "priceAtDecision": 18.673051615748683,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 0,
+      "oiScore": -60,
+      "volumeScore": -70,
+      "raw0": -63,
+      "fundingDelta": 20,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -53,
+      "fundingAdjustCode": 2,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "HOLD",
+    "confidence": 60,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "flat-1h",
+   "response": {
+    "call": "HOLD",
+    "confidence": 54,
+    "price": 100,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "MEDIUM",
+     "breakout_pending": "IMMINENT",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "RANGING",
+    "reasoning": "Funding at +0.0000% means neither side pays, but ETH funding history too short to score. Funding at +0.0000% means neither side pays, but ETH funding history too short to score. Becomes actionable if the breakout resolves.",
+    "coin": "ETH",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 54,
+     "regime": "RANGING",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "neutral",
+       "value": "flat",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "regime",
+       "direction": "neutral",
+       "value": "ranging",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "ETH",
+     "1h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "ETH",
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "RANGING",
+     "wouldBeSide": -1,
+     "confidence": 54,
+     "priceAtDecision": 100,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": 0,
+      "fundingScore": 0,
+      "oiScore": 0,
+      "volumeScore": -30,
+      "raw0": -36,
+      "fundingDelta": 0,
+      "hurstDelta": 0,
+      "squeezeDelta": -12,
+      "rawFinal": -48,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 0,
+      "squeezeAdjustCode": 2
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "RANGING",
+    "call": "HOLD",
+    "confidence": 54,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "ripping-4h-deadbook-enforce",
+   "response": {
+    "call": "HOLD",
+    "confidence": 66,
+    "price": 524.9177251239895,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Book not trading: under 12 of the last 24 bars carried volume, so the BUY (confidence 66) was withheld. Resumes once the book trades again.",
+    "coin": "BTC",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 66,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [
+       "volume"
+      ],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "BTC",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "BTC",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "wouldBeSide": 1,
+     "confidence": 66,
+     "priceAtDecision": 524.9177251239895,
+     "isBotInternal": false,
+     "suppressionReason": "book_liveness",
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 60,
+      "volumeScore": 0,
+      "raw0": 49,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 59,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "HOLD",
+    "confidence": 66,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d0.012-n0.006-1h-f0",
+   "response": {
+    "call": "BUY",
+    "confidence": 60,
+    "price": 423.8511617924552,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 60,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "BUY",
+     60,
+     "1h",
+     423.8511617924552,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "BUY",
+     "confidence": 60,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 60,
+      "volumeScore": -30,
+      "raw0": 43,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 53,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 60,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s11-d0.012-n0.006-4h-f9.5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 24,
+    "price": 398.9679465666814,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Against: funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Turns directional if the trend structure turns.",
+    "coin": "ETH",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 24,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "ETH",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "ETH",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "wouldBeSide": 1,
+     "confidence": 24,
+     "priceAtDecision": 398.9679465666814,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": -80,
+      "oiScore": 60,
+      "volumeScore": 10,
+      "raw0": 31,
+      "fundingDelta": -20,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 21,
+      "fundingAdjustCode": 1,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "HOLD",
+    "confidence": 24,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d0.012-n0.03-1h-f-5",
+   "response": {
+    "call": "BUY",
+    "confidence": 84,
+    "price": 397.02658786772713,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Regime is trending up on the moving-average cross → bullish and volatility is neither expanding nor compressed. Flips to HOLD if funding normalises.",
+    "coin": "SOL",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 84,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "SOL",
+     "BUY",
+     84,
+     "1h",
+     397.02658786772713,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "SOL",
+     "signal": "BUY",
+     "confidence": 84,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 80,
+      "oiScore": 60,
+      "volumeScore": -70,
+      "raw0": 55,
+      "fundingDelta": 10,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 75,
+      "fundingAdjustCode": 4,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 84,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s11-d0.012-n0.03-4h-f0",
+   "response": {
+    "call": "BUY",
+    "confidence": 60,
+    "price": 406.7433994921209,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 60,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "BUY",
+     60,
+     "4h",
+     406.7433994921209,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "BUY",
+     "confidence": 60,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 60,
+      "volumeScore": -30,
+      "raw0": 43,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 53,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 60,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s11-d0.005-n0.006-1h-f9.5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 24,
+    "price": 183.5968118669746,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Against: funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Turns directional if the trend structure turns.",
+    "coin": "ETH",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 24,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "ETH",
+     "1h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "ETH",
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "wouldBeSide": 1,
+     "confidence": 24,
+     "priceAtDecision": 183.5968118669746,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": -80,
+      "oiScore": 60,
+      "volumeScore": 10,
+      "raw0": 31,
+      "fundingDelta": -20,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 21,
+      "fundingAdjustCode": 1,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "HOLD",
+    "confidence": 24,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d0.005-n0.006-4h-f-5",
+   "response": {
+    "call": "BUY",
+    "confidence": 93,
+    "price": 179.04923151736267,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Regime is trending up on the moving-average cross → bullish and volatility is neither expanding nor compressed. Flips to HOLD if funding normalises.",
+    "coin": "SOL",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 93,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "SOL",
+     "BUY",
+     93,
+     "4h",
+     179.04923151736267,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "SOL",
+     "signal": "BUY",
+     "confidence": 93,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 80,
+      "oiScore": 60,
+      "volumeScore": -30,
+      "raw0": 63,
+      "fundingDelta": 10,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 83,
+      "fundingAdjustCode": 4,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 93,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s11-d0.005-n0.03-1h-f0",
+   "response": {
+    "call": "BUY",
+    "confidence": 69,
+    "price": 180.04346839877607,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 69,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "BUY",
+     69,
+     "1h",
+     180.04346839877607,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "BUY",
+     "confidence": 69,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 60,
+      "volumeScore": 10,
+      "raw0": 51,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 61,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 69,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s11-d0.005-n0.03-4h-f9.5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 17,
+    "price": 195.90726299103258,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Against: regime is trending up on the moving-average cross → bullish. Turns directional if funding normalises.",
+    "coin": "ETH",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 17,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "ETH",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "ETH",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "wouldBeSide": -1,
+     "confidence": 17,
+     "priceAtDecision": 195.90726299103258,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": -80,
+      "oiScore": 60,
+      "volumeScore": -70,
+      "raw0": 15,
+      "fundingDelta": -20,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -15,
+      "fundingAdjustCode": 1,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "HOLD",
+    "confidence": 17,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d0-n0.006-1h-f-5",
+   "response": {
+    "call": "BUY",
+    "confidence": 52,
+    "price": 99.12916484606193,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "MEDIUM",
+     "breakout_pending": "IMMINENT",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "RANGING",
+    "reasoning": "Funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Price is flat over 24h, with no momentum either way. Flips to HOLD if funding normalises.",
+    "coin": "SOL",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 52,
+     "regime": "RANGING",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "ranging",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "neutral",
+       "value": "flat",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "SOL",
+     "BUY",
+     52,
+     "1h",
+     99.12916484606193,
+     "BINANCE",
+     "RANGING"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "SOL",
+     "signal": "BUY",
+     "confidence": 52,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "RANGING",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 0,
+      "emaScore": 100,
+      "fundingScore": 80,
+      "oiScore": 0,
+      "volumeScore": -30,
+      "raw0": 24,
+      "fundingDelta": 10,
+      "hurstDelta": 0,
+      "squeezeDelta": 12,
+      "rawFinal": 46,
+      "fundingAdjustCode": 4,
+      "hurstAdjustCode": 1,
+      "squeezeAdjustCode": 2
+     }
+    }
+   ],
+   "cls": {
+    "regime": "RANGING",
+    "call": "BUY",
+    "confidence": 52,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d0-n0.006-4h-f0",
+   "response": {
+    "call": "HOLD",
+    "confidence": 11,
+    "price": 99.60345238403626,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "IMMINENT",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "RANGING",
+    "reasoning": "Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Against: regime is ranging with the moving averages inside the noise band → bullish. Becomes actionable if the breakout resolves.",
+    "coin": "BTC",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 11,
+     "regime": "RANGING",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "ranging",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "neutral",
+       "value": "flat",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "BTC",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "BTC",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "RANGING",
+     "wouldBeSide": -1,
+     "confidence": 11,
+     "priceAtDecision": 99.60345238403626,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": -40,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 0,
+      "volumeScore": 10,
+      "raw0": 0,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -10,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 1
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "RANGING",
+    "call": "HOLD",
+    "confidence": 11,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d0-n0.03-1h-f9.5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 43,
+    "price": 103.10011839063156,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "IMMINENT",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Against: regime is trending up on the moving-average cross → bullish. Becomes actionable if the breakout resolves.",
+    "coin": "ETH",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 43,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "neutral",
+       "value": "flat",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "ETH",
+     "1h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "ETH",
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "wouldBeSide": -1,
+     "confidence": 43,
+     "priceAtDecision": 103.10011839063156,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": 0,
+      "emaScore": 100,
+      "fundingScore": -80,
+      "oiScore": 0,
+      "volumeScore": -30,
+      "raw0": -16,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": -12,
+      "rawFinal": -38,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 2
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "HOLD",
+    "confidence": 43,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d0-n0.03-4h-f-5",
+   "response": {
+    "call": "BUY",
+    "confidence": 72,
+    "price": 93.65752639407145,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "IMMINENT",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Price is flat over 24h, with no momentum either way. Flips to HOLD if funding normalises.",
+    "coin": "SOL",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 72,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "neutral",
+       "value": "flat",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "SOL",
+     "BUY",
+     72,
+     "4h",
+     93.65752639407145,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "SOL",
+     "signal": "BUY",
+     "confidence": 72,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 0,
+      "emaScore": 100,
+      "fundingScore": 80,
+      "oiScore": 0,
+      "volumeScore": 10,
+      "raw0": 32,
+      "fundingDelta": 10,
+      "hurstDelta": 10,
+      "squeezeDelta": 12,
+      "rawFinal": 64,
+      "fundingAdjustCode": 4,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 2
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 72,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d-0.005-n0.006-1h-f0",
+   "response": {
+    "call": "SELL",
+    "confidence": 82,
+    "price": 54.65152222758575,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 82,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "SELL",
+     82,
+     "1h",
+     54.65152222758575,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "SELL",
+     "confidence": 82,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 0,
+      "oiScore": -60,
+      "volumeScore": -70,
+      "raw0": -63,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -73,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 82,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s11-d-0.005-n0.006-4h-f9.5",
+   "response": {
+    "call": "SELL",
+    "confidence": 96,
+    "price": 55.58308385201134,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Regime is trending down on the moving-average cross → bearish and volatility is neither expanding nor compressed. Flips to HOLD if funding normalises.",
+    "coin": "ETH",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 96,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "ETH",
+     "SELL",
+     96,
+     "4h",
+     55.58308385201134,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "ETH",
+     "signal": "SELL",
+     "confidence": 96,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": -80,
+      "oiScore": -60,
+      "volumeScore": -30,
+      "raw0": -75,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -85,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 96,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s11-d-0.005-n0.03-1h-f-5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 21,
+    "price": 43.53051483367609,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "MEDIUM",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Against: funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Turns directional if the trend structure turns.",
+    "coin": "SOL",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 21,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "SOL",
+     "1h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "SOL",
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "wouldBeSide": -1,
+     "confidence": 21,
+     "priceAtDecision": 43.53051483367609,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 80,
+      "oiScore": -60,
+      "volumeScore": 50,
+      "raw0": -19,
+      "fundingDelta": 0,
+      "hurstDelta": 0,
+      "squeezeDelta": 0,
+      "rawFinal": -19,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 1,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "HOLD",
+    "confidence": 21,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d-0.005-n0.03-4h-f0",
+   "response": {
+    "call": "HOLD",
+    "confidence": 26,
+    "price": 56.74505360923897,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Turns directional if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 26,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "BTC",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "BTC",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "wouldBeSide": -1,
+     "confidence": 26,
+     "priceAtDecision": 56.74505360923897,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": 40,
+      "emaScore": -100,
+      "fundingScore": 0,
+      "oiScore": -60,
+      "volumeScore": -30,
+      "raw0": -13,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -23,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "HOLD",
+    "confidence": 26,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d-0.012-n0.006-1h-f9.5",
+   "response": {
+    "call": "SELL",
+    "confidence": 87,
+    "price": 23.904705363936536,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Regime is trending down on the moving-average cross → bearish and volatility is neither expanding nor compressed. Flips to HOLD if funding normalises.",
+    "coin": "ETH",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 87,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "ETH",
+     "SELL",
+     87,
+     "1h",
+     23.904705363936536,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "ETH",
+     "signal": "SELL",
+     "confidence": 87,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": -80,
+      "oiScore": -60,
+      "volumeScore": 10,
+      "raw0": -67,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -77,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 87,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s11-d-0.012-n0.006-4h-f-5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 60,
+    "price": 23.586826139014924,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Against: funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Turns directional if the trend structure turns.",
+    "coin": "SOL",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 60,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "SOL",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "SOL",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "wouldBeSide": -1,
+     "confidence": 60,
+     "priceAtDecision": 23.586826139014924,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 80,
+      "oiScore": -60,
+      "volumeScore": -70,
+      "raw0": -43,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -53,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "HOLD",
+    "confidence": 60,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s11-d-0.012-n0.03-1h-f0",
+   "response": {
+    "call": "SELL",
+    "confidence": 73,
+    "price": 25.549553746732784,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 73,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "SELL",
+     73,
+     "1h",
+     25.549553746732784,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "SELL",
+     "confidence": 73,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 0,
+      "oiScore": -60,
+      "volumeScore": -30,
+      "raw0": -55,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -65,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 73,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s11-d-0.012-n0.03-4h-f9.5",
+   "response": {
+    "call": "SELL",
+    "confidence": 75,
+    "price": 23.90241167116595,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "MEDIUM",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Regime is trending down on the moving-average cross → bearish and volatility is neither expanding nor compressed. Flips to HOLD if funding normalises.",
+    "coin": "ETH",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 75,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "ETH",
+     "SELL",
+     75,
+     "4h",
+     23.90241167116595,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "ETH",
+     "signal": "SELL",
+     "confidence": 75,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": -80,
+      "oiScore": -60,
+      "volumeScore": 10,
+      "raw0": -67,
+      "fundingDelta": 0,
+      "hurstDelta": 0,
+      "squeezeDelta": 0,
+      "rawFinal": -67,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 1,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 75,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s29-d0.012-n0.006-1h-f-5",
+   "response": {
+    "call": "BUY",
+    "confidence": 100,
+    "price": 416.79679897681973,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Regime is trending up on the moving-average cross → bullish and volatility is neither expanding nor compressed. Flips to HOLD if funding normalises.",
+    "coin": "SOL",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 100,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "SOL",
+     "BUY",
+     100,
+     "1h",
+     416.79679897681973,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "SOL",
+     "signal": "BUY",
+     "confidence": 100,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 80,
+      "oiScore": 60,
+      "volumeScore": 50,
+      "raw0": 79,
+      "fundingDelta": 10,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 99,
+      "fundingAdjustCode": 4,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 100,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s29-d0.012-n0.006-4h-f0",
+   "response": {
+    "call": "BUY",
+    "confidence": 60,
+    "price": 418.7598131772968,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 60,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "BUY",
+     60,
+     "4h",
+     418.7598131772968,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "BUY",
+     "confidence": 60,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 60,
+      "volumeScore": -30,
+      "raw0": 43,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 53,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 60,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s29-d0.012-n0.03-1h-f9.5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 16,
+    "price": 387.4136108362981,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "LOW",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Against: regime is trending up on the moving-average cross → bullish. Turns directional if funding normalises.",
+    "coin": "ETH",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 16,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "LOW"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "LOW",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "ETH",
+     "1h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "ETH",
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "wouldBeSide": -1,
+     "confidence": 16,
+     "priceAtDecision": 387.4136108362981,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": -80,
+      "oiScore": 60,
+      "volumeScore": 10,
+      "raw0": 31,
+      "fundingDelta": -20,
+      "hurstDelta": -25,
+      "squeezeDelta": 0,
+      "rawFinal": -14,
+      "fundingAdjustCode": 1,
+      "hurstAdjustCode": 2,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "HOLD",
+    "confidence": 16,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s29-d0.012-n0.03-4h-f-5",
+   "response": {
+    "call": "BUY",
+    "confidence": 84,
+    "price": 446.6415671981921,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Regime is trending up on the moving-average cross → bullish and volatility is neither expanding nor compressed. Flips to HOLD if funding normalises.",
+    "coin": "SOL",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 84,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "SOL",
+     "BUY",
+     84,
+     "4h",
+     446.6415671981921,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "SOL",
+     "signal": "BUY",
+     "confidence": 84,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 80,
+      "oiScore": 60,
+      "volumeScore": -70,
+      "raw0": 55,
+      "fundingDelta": 10,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 75,
+      "fundingAdjustCode": 4,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 84,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s29-d0.005-n0.006-1h-f0",
+   "response": {
+    "call": "BUY",
+    "confidence": 60,
+    "price": 178.37488550529696,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 60,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "BUY",
+     60,
+     "1h",
+     178.37488550529696,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "BUY",
+     "confidence": 60,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 60,
+      "volumeScore": -30,
+      "raw0": 43,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 53,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 60,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s29-d0.005-n0.006-4h-f9.5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 12,
+    "price": 184.65404030075706,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "MEDIUM",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Against: funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Turns directional if the trend structure turns.",
+    "coin": "ETH",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 12,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "ETH",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "ETH",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "wouldBeSide": 1,
+     "confidence": 12,
+     "priceAtDecision": 184.65404030075706,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": -80,
+      "oiScore": 60,
+      "volumeScore": 10,
+      "raw0": 31,
+      "fundingDelta": -20,
+      "hurstDelta": 0,
+      "squeezeDelta": 0,
+      "rawFinal": 11,
+      "fundingAdjustCode": 1,
+      "hurstAdjustCode": 1,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "HOLD",
+    "confidence": 12,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s29-d0.005-n0.03-1h-f-5",
+   "response": {
+    "call": "BUY",
+    "confidence": 93,
+    "price": 175.79330222026218,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Regime is trending up on the moving-average cross → bullish and volatility is neither expanding nor compressed. Flips to HOLD if funding normalises.",
+    "coin": "SOL",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 93,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "SOL",
+     "BUY",
+     93,
+     "1h",
+     175.79330222026218,
+     "BINANCE",
+     "TRENDING_UP"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "SOL",
+     "signal": "BUY",
+     "confidence": 93,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 100,
+      "emaScore": 100,
+      "fundingScore": 80,
+      "oiScore": 60,
+      "volumeScore": -30,
+      "raw0": 63,
+      "fundingDelta": 10,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 83,
+      "fundingAdjustCode": 4,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "BUY",
+    "confidence": 93,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s29-d0.005-n0.03-4h-f0",
+   "response": {
+    "call": "HOLD",
+    "confidence": 21,
+    "price": 164.59148213473605,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_UP",
+    "reasoning": "Regime is trending up on the moving-average cross → bullish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Turns directional if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 21,
+     "regime": "TRENDING_UP",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "trending up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bullish",
+       "value": "sharply up",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "BTC",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "BTC",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_UP",
+     "wouldBeSide": 1,
+     "confidence": 21,
+     "priceAtDecision": 164.59148213473605,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": -40,
+      "emaScore": 100,
+      "fundingScore": 0,
+      "oiScore": 60,
+      "volumeScore": 10,
+      "raw0": 9,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 19,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_UP",
+    "call": "HOLD",
+    "confidence": 21,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s29-d0-n0.006-1h-f9.5",
+   "response": {
+    "call": "SELL",
+    "confidence": 74,
+    "price": 99.82725343828037,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "IMMINENT",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "RANGING",
+    "reasoning": "Funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Price is flat over 24h, with no momentum either way. Flips to HOLD if funding normalises.",
+    "coin": "ETH",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 74,
+     "regime": "RANGING",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "ranging",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "neutral",
+       "value": "flat",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "ETH",
+     "SELL",
+     74,
+     "1h",
+     99.82725343828037,
+     "BINANCE",
+     "RANGING"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "ETH",
+     "signal": "SELL",
+     "confidence": 74,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "RANGING",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 0,
+      "emaScore": -100,
+      "fundingScore": -80,
+      "oiScore": 0,
+      "volumeScore": -70,
+      "raw0": -44,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": -12,
+      "rawFinal": -66,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 2
+     }
+    }
+   ],
+   "cls": {
+    "regime": "RANGING",
+    "call": "SELL",
+    "confidence": 74,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s29-d0-n0.006-4h-f-5",
+   "response": {
+    "call": "BUY",
+    "confidence": 63,
+    "price": 97.33956392444418,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "IMMINENT",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "RANGING",
+    "reasoning": "Funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Price is flat over 24h, with no momentum either way. Flips to HOLD if funding normalises.",
+    "coin": "SOL",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "BUY",
+     "conviction_pct": 63,
+     "regime": "RANGING",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "IMMINENT",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "ranging",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "neutral",
+       "value": "flat",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "SOL",
+     "BUY",
+     63,
+     "4h",
+     97.33956392444418,
+     "BINANCE",
+     "RANGING"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "SOL",
+     "signal": "BUY",
+     "confidence": 63,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "RANGING",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": 0,
+      "emaScore": 100,
+      "fundingScore": 80,
+      "oiScore": 0,
+      "volumeScore": -30,
+      "raw0": 24,
+      "fundingDelta": 10,
+      "hurstDelta": 10,
+      "squeezeDelta": 12,
+      "rawFinal": 56,
+      "fundingAdjustCode": 4,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 2
+     }
+    }
+   ],
+   "cls": {
+    "regime": "RANGING",
+    "call": "BUY",
+    "confidence": 63,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s29-d0-n0.03-1h-f0",
+   "response": {
+    "call": "HOLD",
+    "confidence": 25,
+    "price": 83.96779883689321,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Against: regime is trending down on the moving-average cross → bearish. Turns directional if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 25,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "neutral",
+       "value": "flat",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bullish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "BTC",
+     "1h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "BTC",
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "wouldBeSide": 1,
+     "confidence": 25,
+     "priceAtDecision": 83.96779883689321,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": 40,
+      "emaScore": -100,
+      "fundingScore": 0,
+      "oiScore": 0,
+      "volumeScore": 50,
+      "raw0": 12,
+      "fundingDelta": 0,
+      "hurstDelta": 10,
+      "squeezeDelta": 0,
+      "rawFinal": 22,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "HOLD",
+    "confidence": 25,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s29-d0-n0.03-4h-f9.5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 3,
+    "price": 106.13454616854608,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "LOW",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "RANGING",
+    "reasoning": "Funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Against: regime is ranging with the moving averages inside the noise band → bullish. Turns directional if funding normalises.",
+    "coin": "ETH",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 3,
+     "regime": "RANGING",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "LOW"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "LOW",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bullish",
+       "value": "ranging",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "neutral",
+       "value": "flat",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "ETH",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "ETH",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "RANGING",
+     "wouldBeSide": -1,
+     "confidence": 3,
+     "priceAtDecision": 106.13454616854608,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": -40,
+      "emaScore": 100,
+      "fundingScore": -80,
+      "oiScore": 0,
+      "volumeScore": -30,
+      "raw0": -28,
+      "fundingDelta": 0,
+      "hurstDelta": 25,
+      "squeezeDelta": 0,
+      "rawFinal": -3,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 2,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "RANGING",
+    "call": "HOLD",
+    "confidence": 3,
+    "negated": false,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s29-d-0.005-n0.006-1h-f-5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 42,
+    "price": 55.37157787878236,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Against: funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Turns directional if the trend structure turns.",
+    "coin": "SOL",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 42,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "SOL",
+     "1h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "SOL",
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "wouldBeSide": -1,
+     "confidence": 42,
+     "priceAtDecision": 55.37157787878236,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 80,
+      "oiScore": -60,
+      "volumeScore": 10,
+      "raw0": -27,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -37,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "HOLD",
+    "confidence": 42,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s29-d-0.005-n0.006-4h-f0",
+   "response": {
+    "call": "SELL",
+    "confidence": 82,
+    "price": 54.97366195617358,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 82,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "SELL",
+     82,
+     "4h",
+     54.97366195617358,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "SELL",
+     "confidence": 82,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 0,
+      "oiScore": -60,
+      "volumeScore": -70,
+      "raw0": -63,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -73,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 82,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s29-d-0.005-n0.03-1h-f9.5",
+   "response": {
+    "call": "SELL",
+    "confidence": 84,
+    "price": 59.15504867443164,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "MEDIUM",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Regime is trending down on the moving-average cross → bearish and volatility is neither expanding nor compressed. Flips to HOLD if funding normalises.",
+    "coin": "ETH",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 84,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "MEDIUM",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "ETH",
+     "SELL",
+     84,
+     "1h",
+     59.15504867443164,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "ETH",
+     "signal": "SELL",
+     "confidence": 84,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": -80,
+      "oiScore": -60,
+      "volumeScore": -30,
+      "raw0": -75,
+      "fundingDelta": 0,
+      "hurstDelta": 0,
+      "squeezeDelta": 0,
+      "rawFinal": -75,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 1,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 84,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s29-d-0.005-n0.03-4h-f-5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 7,
+    "price": 53.73651489776513,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "LOW",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Against: regime is trending down on the moving-average cross → bearish. Turns directional if funding normalises.",
+    "coin": "SOL",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 7,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "LOW"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "LOW",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "SOL",
+     "4h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "SOL",
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "wouldBeSide": 1,
+     "confidence": 7,
+     "priceAtDecision": 53.73651489776513,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 80,
+      "oiScore": -60,
+      "volumeScore": 50,
+      "raw0": -19,
+      "fundingDelta": 0,
+      "hurstDelta": 25,
+      "squeezeDelta": 0,
+      "rawFinal": 6,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 2,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "HOLD",
+    "confidence": 7,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s29-d-0.012-n0.006-1h-f0",
+   "response": {
+    "call": "SELL",
+    "confidence": 73,
+    "price": 23.07315220791183,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 73,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "SELL",
+     73,
+     "1h",
+     23.07315220791183,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "SELL",
+     "confidence": 73,
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 0,
+      "oiScore": -60,
+      "volumeScore": -30,
+      "raw0": -55,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -65,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 73,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s29-d-0.012-n0.006-4h-f9.5",
+   "response": {
+    "call": "SELL",
+    "confidence": 87,
+    "price": 23.755051895942966,
+    "indicators": {
+     "funding_rate": 0.008675799086757991,
+     "funding_24h_avg": 0.008675799086757991,
+     "funding_state": "EXTREME",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Funding at +0.8676% is unusually positive for ETH over 14 days: longs pay shorts → bearish. Regime is trending down on the moving-average cross → bearish and volatility is neither expanding nor compressed. Flips to HOLD if funding normalises.",
+    "coin": "ETH",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 87,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "EXTREME"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bearish",
+       "value": "+0.8676%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "ETH",
+     "SELL",
+     87,
+     "4h",
+     23.755051895942966,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "ETH",
+     "signal": "SELL",
+     "confidence": 87,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": -80,
+      "oiScore": -60,
+      "volumeScore": 10,
+      "raw0": -67,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -77,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 87,
+    "negated": true,
+    "decisive": true
+   }
+  },
+  {
+   "id": "walk-s29-d-0.012-n0.03-1h-f-5",
+   "response": {
+    "call": "HOLD",
+    "confidence": 60,
+    "price": 25.693468406784003,
+    "indicators": {
+     "funding_rate": -0.0045662100456621,
+     "funding_24h_avg": -0.0045662100456621,
+     "funding_state": "ELEVATED",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Against: funding at -0.4566% is unusually negative for SOL over 14 days: shorts pay longs → bullish. Turns directional if the trend structure turns.",
+    "coin": "SOL",
+    "timeframe": "1h",
+    "_receipts": {
+     "verdict": "HOLD",
+     "conviction_pct": 60,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "ELEVATED"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "funding_state",
+       "direction": "bullish",
+       "value": "-0.4566%",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "supporting"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [],
+   "holdCount": [
+    [
+     "SOL",
+     "1h"
+    ]
+   ],
+   "holdDecision": [
+    {
+     "coin": "SOL",
+     "timeframe": "1h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "wouldBeSide": -1,
+     "confidence": 60,
+     "priceAtDecision": 25.693468406784003,
+     "isBotInternal": false,
+     "suppressionReason": "below_threshold",
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 80,
+      "oiScore": -60,
+      "volumeScore": -70,
+      "raw0": -43,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -53,
+      "fundingAdjustCode": 0,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "band": [],
+   "scorerInputs": [],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "HOLD",
+    "confidence": 60,
+    "negated": true,
+    "decisive": false
+   }
+  },
+  {
+   "id": "walk-s29-d-0.012-n0.03-4h-f0",
+   "response": {
+    "call": "SELL",
+    "confidence": 73,
+    "price": 23.313262425234935,
+    "indicators": {
+     "funding_rate": 0,
+     "funding_24h_avg": 0,
+     "funding_state": "NORMAL",
+     "volume_24h": 125000000,
+     "trend_persistence": "HIGH",
+     "breakout_pending": "INACTIVE",
+     "underlying_session": "ALWAYS_OPEN"
+    },
+    "regime": "TRENDING_DOWN",
+    "reasoning": "Regime is trending down on the moving-average cross → bearish. Funding at +0.0000% means neither side pays, but BTC funding history too short to score. Flips to HOLD if enough funding history accumulates to score.",
+    "coin": "BTC",
+    "timeframe": "4h",
+    "_receipts": {
+     "verdict": "SELL",
+     "conviction_pct": 73,
+     "regime": "TRENDING_DOWN",
+     "factors": [
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "NORMAL"
+      }
+     ],
+     "factor_ledger": [
+      {
+       "factor": "regime",
+       "direction": "bearish",
+       "value": "trending down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "trend_persistence",
+       "direction": "neutral",
+       "value": "HIGH",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "price_change_24h",
+       "direction": "bearish",
+       "value": "sharply down",
+       "contributes": true,
+       "strength": "primary"
+      },
+      {
+       "factor": "funding_state",
+       "direction": "neutral",
+       "value": "+0.0000%",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "breakout_pending",
+       "direction": "neutral",
+       "value": "INACTIVE",
+       "contributes": true,
+       "strength": "none"
+      },
+      {
+       "factor": "volume_24h",
+       "direction": "neutral",
+       "value": "$125.0M",
+       "contributes": false,
+       "strength": "none"
+      }
+     ],
+     "stripped_remainder": {
+      "count": 2,
+      "withheld_term_count": 2,
+      "unnameable_this_response": [],
+      "unevaluated_terms": [],
+      "net": "bearish"
+     },
+     "verification_uri": "https://algovault.com/track-record",
+     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+    }
+   },
+   "envelopeKeys": [
+    "auth",
+    "claim_hint",
+    "claim_url",
+    "compatible_with",
+    "exchange",
+    "session_id",
+    "tool",
+    "venue_status",
+    "version"
+   ],
+   "recordSignal": [
+    [
+     "BTC",
+     "SELL",
+     73,
+     "4h",
+     23.313262425234935,
+     "BINANCE",
+     "TRENDING_DOWN"
+    ]
+   ],
+   "holdCount": [],
+   "holdDecision": [],
+   "band": [],
+   "scorerInputs": [
+    {
+     "coin": "BTC",
+     "signal": "SELL",
+     "confidence": 73,
+     "timeframe": "4h",
+     "exchange": "BINANCE",
+     "regime": "TRENDING_DOWN",
+     "isBotInternal": false,
+     "parts": {
+      "rsiScore": -100,
+      "emaScore": -100,
+      "fundingScore": 0,
+      "oiScore": -60,
+      "volumeScore": -30,
+      "raw0": -55,
+      "fundingDelta": 0,
+      "hurstDelta": -10,
+      "squeezeDelta": 0,
+      "rawFinal": -65,
+      "fundingAdjustCode": 32,
+      "hurstAdjustCode": 3,
+      "squeezeAdjustCode": 0
+     }
+    }
+   ],
+   "cls": {
+    "regime": "TRENDING_DOWN",
+    "call": "SELL",
+    "confidence": 73,
+    "negated": true,
+    "decisive": true
+   }
+  }
+ ]
+}
