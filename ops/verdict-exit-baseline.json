@@ -1,0 +1,358 @@
+{
+  "_comment": "OPS-PREVERIFY-RED-UNREAD-W1 CH2 ratchet baseline (architect ruling Q-B). Per-file count of process.exit() calls in tracked scripts that emit a <GATE>_VERDICT= token. process.exit() abandons queued stdout writes to a pipe, so the token — printed last — can vanish (51 of 53 reds of publish-lane-preverify.yml). A NEW verdict-emitting script may not call process.exit(); a listed script may never exceed its count, and when it drops the count must drop here in the same commit. Enforced by tests/unit/verdict-exit-path.test.ts.",
+  "_measured": "2026-10-03 — the only script over the 64 KiB pipe cliff was scripts/check-publish-lane-preverify.mjs, fixed in the same commit and therefore absent here. Every entry below relays a small output (largest measured piped output 5,026 B, ≥13x headroom), so this is enumerated debt, not a live outage.",
+  "_piped_consumer": "true = this script's token IS read through a pipe or a $(...) capture, at the place named in `consumer` (measured once by the Plan-Mode inheritor census, recorded so a migration wave does not re-derive it). These are the subset to migrate first.",
+  "_total": 243,
+  "files": {
+    "ops/monitoring/deploy-drift-canary.mjs": {
+      "count": 2,
+      "piped_consumer": false
+    },
+    "ops/monitoring/served-region-check.mjs": {
+      "count": 1,
+      "piped_consumer": true,
+      "consumer": "signal-1 host cron ops/cron/nav-drift-canary.sh + ops/cron/analytics-drift-canary.sh `$(...)` + sed of SERVED_REGION_VERDICT"
+    },
+    "scripts/bootstrap-pg-schema.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/build_readme_mcp_clients.mjs": {
+      "count": 2,
+      "piped_consumer": false
+    },
+    "scripts/build_theme.mjs": {
+      "count": 7,
+      "piped_consumer": false
+    },
+    "scripts/check-adapter-numeric-guard.mjs": {
+      "count": 4,
+      "piped_consumer": false
+    },
+    "scripts/check-alert-copy-claims.mjs": {
+      "count": 2,
+      "piped_consumer": false
+    },
+    "scripts/check-alert-recommended-wave.mjs": {
+      "count": 2,
+      "piped_consumer": false
+    },
+    "scripts/check-alert-registry.mjs": {
+      "count": 11,
+      "piped_consumer": false
+    },
+    "scripts/check-audit-cadence-schema.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-boot-contract-parity.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-boot-readiness.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-build-context-hygiene.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-chat-id-literals.mjs": {
+      "count": 3,
+      "piped_consumer": true,
+      "consumer": ".github/workflows/deploy.yml `$(...)` + grep, and the pre-push hook scripts/install_chat_id_literals_hook.sh `$(...)` + grep (missing => INDETERMINATE => block)"
+    },
+    "scripts/check-claim-coverage.mjs": {
+      "count": 14,
+      "piped_consumer": false
+    },
+    "scripts/check-claudemd-claims.mjs": {
+      "count": 11,
+      "piped_consumer": false
+    },
+    "scripts/check-colour-literal-ratchet.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-credential-outcome-conformance.mjs": {
+      "count": 2,
+      "piped_consumer": false
+    },
+    "scripts/check-cron-interlock-coverage.mjs": {
+      "count": 4,
+      "piped_consumer": true,
+      "consumer": "host ops/monitoring/kernel-auto-reboot.sh population_verdict() `$(...)` + grep of CRON_INTERLOCK_COVERAGE_VERDICT (missing => INDETERMINATE)"
+    },
+    "scripts/check-declaration-coverage.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-delivery-assertion.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-docs-samples-live.mjs": {
+      "count": 2,
+      "piped_consumer": true,
+      "consumer": ".github/workflows/deploy.yml post-deploy step: `| tee` + grep of DOCS_SAMPLES_LIVE_VERDICT (missing => exit 1)"
+    },
+    "scripts/check-entitlement-channel-drift.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-entitlement-state-collapse.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-entrypoint-guards.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-external-origin-csp.mjs": {
+      "count": 4,
+      "piped_consumer": false
+    },
+    "scripts/check-external-surface-parity.mjs": {
+      "count": 8,
+      "piped_consumer": false
+    },
+    "scripts/check-footer-body-flow.mjs": {
+      "count": 4,
+      "piped_consumer": false
+    },
+    "scripts/check-forbidden-phrases.mjs": {
+      "count": 3,
+      "piped_consumer": true,
+      "consumer": ".github/workflows/deploy.yml `$(...)` + grep, and the pre-commit hook scripts/install_forbidden_phrases_hook.sh `$(...)` + grep -q PASS"
+    },
+    "scripts/check-hold-billing-claims.mjs": {
+      "count": 5,
+      "piped_consumer": false
+    },
+    "scripts/check-idempotency-helper.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-jq-truthiness.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-kb-reachability.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-legacy-navy-literals.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-live-numeric-claims.mjs": {
+      "count": 8,
+      "piped_consumer": false
+    },
+    "scripts/check-lockfile-resolvable.mjs": {
+      "count": 1,
+      "piped_consumer": true,
+      "consumer": "signal-1 host cron ops/cron/lockfile-resolvability-canary.sh `$(...)` + grep of LOCKFILE_RESOLVABLE_VERDICT (missing => FAIL_OPEN, logged)"
+    },
+    "scripts/check-map-edges.mjs": {
+      "count": 1,
+      "piped_consumer": true,
+      "consumer": "pre-commit hook scripts/install_map_edges_hook.sh `$(...)` + grep of MAP_EDGES_VERDICT"
+    },
+    "scripts/check-mcp-client-copy.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-monitoring-schedules.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-new-dark-exports.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-on-conflict-parity.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-paid-route-validation.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-partner-install-coords.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-plugin-manifests.mjs": {
+      "count": 2,
+      "piped_consumer": true,
+      "consumer": ".github/workflows/deploy.yml plugin-manifests step: `| tee` + grep of PLUGIN_MANIFESTS_VERDICT (missing => exit 1)"
+    },
+    "scripts/check-population-comparison.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-postgres-lane.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-primitive-resolution.mjs": {
+      "count": 2,
+      "piped_consumer": true,
+      "consumer": ".github/workflows/deploy.yml `$(...)` + grep, and the pre-commit hook scripts/install_primitive_resolution_hook.sh `$(...)` + grep"
+    },
+    "scripts/check-quota-surface-conformance.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-readme-links.mjs": {
+      "count": 2,
+      "piped_consumer": true,
+      "consumer": ".github/workflows/deploy.yml README link + badge step: `| tee` + grep of README_LINKS_VERDICT (missing => exit 1)"
+    },
+    "scripts/check-readme-snapshot-freshness.mjs": {
+      "count": 4,
+      "piped_consumer": false
+    },
+    "scripts/check-rendered-comment-hygiene.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-robots-ai-allowlist.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-runtime-node-eol.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-secret-log-redaction.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-served-surface-values.mjs": {
+      "count": 1,
+      "piped_consumer": true,
+      "consumer": ".github/workflows/deploy.yml `$(...)` + grep of SERVED_SURFACE_VALUES_VERDICT"
+    },
+    "scripts/check-session-drift.mjs": {
+      "count": 4,
+      "piped_consumer": false
+    },
+    "scripts/check-shape-snapshot-integrity.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/check-shared-state.mjs": {
+      "count": 2,
+      "piped_consumer": false
+    },
+    "scripts/check-shipped-set-divergence.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-smithery-sync.mjs": {
+      "count": 2,
+      "piped_consumer": true,
+      "consumer": ".github/workflows/publish-npm.yml Smithery re-scan step: `2>&1 | tee` + grep of SMITHERY_SYNC_VERDICT (missing => exit 1)"
+    },
+    "scripts/check-source-greppable.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-subscription-status-sot.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-test-budget.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-token-resolution.mjs": {
+      "count": 4,
+      "piped_consumer": false
+    },
+    "scripts/check-webhook-idempotency.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/check-weex-v2-retired.mjs": {
+      "count": 5,
+      "piped_consumer": false
+    },
+    "scripts/check-worktree-root.mjs": {
+      "count": 2,
+      "piped_consumer": false
+    },
+    "scripts/classify-suite-verdict.mjs": {
+      "count": 1,
+      "piped_consumer": true,
+      "consumer": ".github/workflows/deploy.yml test classify step `| tee` + grep, and the floor-proof step `$(...)` + grep of SUITE_VERDICT (missing => blocked)"
+    },
+    "scripts/emit-claim-evidence.mjs": {
+      "count": 6,
+      "piped_consumer": false
+    },
+    "scripts/emit-pricing-tokens.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/gates/cmc-rendered-diff.mjs": {
+      "count": 9,
+      "piped_consumer": false
+    },
+    "scripts/generate-wellknown.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/inject-footer.mjs": {
+      "count": 4,
+      "piped_consumer": false
+    },
+    "scripts/injector-target-set.mjs": {
+      "count": 4,
+      "piped_consumer": false
+    },
+    "scripts/lib/strip-comments.mjs": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "scripts/monitoring-census.mjs": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "scripts/new-landing-page.mjs": {
+      "count": 4,
+      "piped_consumer": false
+    },
+    "scripts/security-canary.mjs": {
+      "count": 4,
+      "piped_consumer": true,
+      "consumer": "pre-push hook scripts/install_secret_scan_hook.sh `$(...)` + grep of SECRET_SCAN_VERDICT (missing => INDETERMINATE => block)"
+    },
+    "src/scripts/agent-forum-post.ts": {
+      "count": 6,
+      "piped_consumer": false
+    },
+    "src/scripts/extend-venue.ts": {
+      "count": 3,
+      "piped_consumer": false
+    },
+    "src/scripts/lrw/disagreement.ts": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "src/scripts/promote-venue.ts": {
+      "count": 2,
+      "piped_consumer": false
+    },
+    "src/scripts/verdict-mix-r1-point.ts": {
+      "count": 1,
+      "piped_consumer": false
+    },
+    "src/scripts/verdict-mix-r1.ts": {
+      "count": 1,
+      "piped_consumer": false
+    }
+  }
+}
