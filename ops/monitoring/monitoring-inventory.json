@@ -2377,7 +2377,7 @@
       "schedule": "43 12 * * 1",
       "invoked_by": "crontab:root",
       "install_state": "pending",
-      "sha256": "629a0d1d79aadc357477f3bb91dc222d9549250dfe89e27bc03d1a1f8ffe29c7",
+      "sha256": "c493ad1b1f4ca2139f818446b7ebca25f9f160d9a6c01395c2cddb385cade0f1",
       "owner_wave": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
       "alert_ids": [
         "VERDICT_RULE_SWITCH_RECOMMENDED"

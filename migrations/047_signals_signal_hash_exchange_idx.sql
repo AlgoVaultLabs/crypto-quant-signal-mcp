@@ -5,8 +5,10 @@
 -- §3, executed by ops/monitoring/verdict-rule-gate.py) joins every captured row to `signals` on
 -- (signal_hash, exchange). `signals` had no index containing signal_hash, so each LATERAL lookup
 -- scanned the exchange's rows: measured on prod 2026-10-03, 114.9 ms and ~46.8k buffer hits PER ROW,
--- i.e. 26-71 minutes per decided window on the database the product serves from. An index changes
+-- i.e. 38-96 minutes per decided window on the database the product serves from. An index changes
 -- the read's COST, never its ROWS, so the registration stays byte-equal.
+-- It is ALSO load-bearing for a serving read: getSignalByHash (src/lib/performance-db.ts) looks a
+-- signal up by `signal_hash` — 92-184 ms full scans before this index, 0.14 ms with it (2026-10-03).
 --
 -- HOW TO APPLY: `psql -f` (autocommit). NEVER `psql -1`, `--single-transaction` or inside BEGIN —
 -- CREATE INDEX CONCURRENTLY refuses a transaction block, and CONCURRENTLY is what keeps the build from
