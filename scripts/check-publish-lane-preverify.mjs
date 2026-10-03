@@ -71,7 +71,7 @@
  *   node scripts/check-publish-lane-preverify.mjs             # rehearse the lane
  *   node scripts/check-publish-lane-preverify.mjs --self-test # prove the classifier both ways
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -129,6 +129,29 @@ export function looksTransport(output) {
   return verdictTokens(s).some((t) => t.state === 'INDETERMINATE');
 }
 
+/** npm's own lifecycle chatter around a failed segment — never the failing gate's diagnosis. */
+const NPM_NOISE = /^(npm (error|ERR!|warn|notice)\b|>\s)/;
+
+/**
+ * Did the segment that DIED fail on transport? Judged on THAT segment's own output — the text after
+ * the last verdict token — never on the whole chain. A whole-output scan let an EARLIER gate's
+ * fail-open INDETERMINATE (exit 0, so the `&&` chain continues) relabel a LATER gate's content FAIL
+ * as an outage (`readme:snapshot:check` fails open on a remote SoT and runs before three content
+ * gates). Transport when the dying segment printed a declared signature, or when the last gate to
+ * speak said INDETERMINATE and nothing substantive followed it — i.e. that gate is the one that died.
+ */
+export function diedOnTransport(output) {
+  const s = String(output ?? '');
+  const toks = [...s.matchAll(/^([A-Z0-9_]+_VERDICT)=([A-Z_]+)/gm)];
+  const last = toks[toks.length - 1];
+  const tail = last ? s.slice(last.index + last[0].length) : s;
+  if (TRANSPORT_SIGNATURES.some((sig) => tail.includes(sig))) return true;
+  if (last && last[2] === 'INDETERMINATE') {
+    return tail.split('\n').map((l) => l.trim()).filter((l) => l && !NPM_NOISE.test(l)).length === 0;
+  }
+  return false;
+}
+
 /** The `&&` chain npm echoes for a lifecycle script, or null when no banner was printed. */
 export function echoedChain(output, scriptName) {
   const re = new RegExp(`^> [^\\n]*${scriptName}\\n> ([^\\n]+)$`, 'm');
@@ -172,24 +195,20 @@ export function classify(r) {
   // reported as a warning. A failed injector was worse still: prepublishOnly is skipped after it,
   // so the "no lifecycle banner" branch answered INDETERMINATE for an observed content failure.
   //
-  // 1. A chain WE cannot parse is a defect in what we were asked to rehearse — refuse.
-  if (declaredSegments.length < 2) {
-    return { verdict: 'INDETERMINATE', reason: 'package.json declares no parseable prepublishOnly chain — the rehearsal has nothing to reproduce', lines };
-  }
-
-  // 2. Transport fails OPEN. A third party being down is not our lane breaking — a DECLARED
-  //    signature list, never a fuzzy heuristic, so this lever cannot launder content failures.
-  if (looksTransport(r.earlyOutput)) {
+  // 1. Transport fails OPEN — but ONLY for the step that actually failed, judged on that step's own
+  //    output. A fail-open WARNING from a step that exited 0 (the injector logs `fetch failed` for
+  //    one SoT endpoint and carries on) must never relabel a LATER step's content failure.
+  if (!r.ranEarlySteps && looksTransport(r.earlyFailOutput ?? r.earlyOutput)) {
     return { verdict: 'INDETERMINATE', reason: 'a mirrored lane step could not reach its live source', lines };
   }
-  if (r.prepublishRan && r.prepublishExit !== 0 && looksTransport(r.prepublishOutput)) {
+  if (r.ranEarlySteps && r.prepublishRan && r.prepublishExit !== 0 && diedOnTransport(r.prepublishOutput)) {
     return { verdict: 'INDETERMINATE', reason: 'prepublishOnly failed against an unreachable live source', lines };
   }
   if (r.packExit !== null && r.packExit !== 0 && looksTransport(r.packOutput)) {
     return { verdict: 'INDETERMINATE', reason: 'npm pack failed against an unreachable registry', lines };
   }
 
-  // 3. Content fails CLOSED — every non-zero exit we observed, token or no token.
+  // 2. Content fails CLOSED — every non-zero exit we observed, token or no token.
   if (!r.ranEarlySteps) {
     return { verdict: 'FAIL', reason: 'a mirrored lane step (injector / docs rebuild) failed — prepublishOnly was not reached', lines };
   }
@@ -207,8 +226,18 @@ export function classify(r) {
     return { verdict: 'FAIL', reason: `npm pack --dry-run failed (exit ${r.packExit})`, lines };
   }
 
-  // 4. Vacuity — reachable only when every step we ran exited 0. A run that verified nothing is
-  //    never PASS.
+  // 3. Reachable only when every step we ran exited 0.
+  //    A mirrored step that exited 0 but fell back from its live source means this run did not
+  //    exercise live injection — not a lane failure, not a pass.
+  if (looksTransport(r.earlyOutput)) {
+    return { verdict: 'INDETERMINATE', reason: 'a mirrored lane step fell back from an unreachable live source — live injection was not exercised', lines };
+  }
+  //    Vacuity — a run that verified nothing is never PASS. A chain WE cannot parse is a defect in
+  //    what we were asked to rehearse (judged here, AFTER exit codes: a one-command chain that
+  //    failed is a failure, not "unparseable").
+  if (declaredSegments.length < 2) {
+    return { verdict: 'INDETERMINATE', reason: 'package.json declares no parseable prepublishOnly chain — the rehearsal has nothing to reproduce', lines };
+  }
   if (!r.prepublishRan || echoed === null) {
     return { verdict: 'INDETERMINATE', reason: 'npm printed no prepublishOnly lifecycle banner — the chain did not execute, so this run verified nothing', lines };
   }
@@ -262,6 +291,7 @@ function rehearse() {
   const declaredChain = String(pkg.scripts?.prepublishOnly ?? '');
 
   let ranEarlySteps = true;
+  let earlyFailOutput;
   let earlyOutput = '';
   for (const step of MIRRORED_LANE_STEPS) {
     const [bin, args] = step.cmd;
@@ -271,6 +301,7 @@ function rehearse() {
     process.stdout.write(r.output);
     if (r.code !== 0) {
       ranEarlySteps = false;
+      earlyFailOutput = r.output;
       console.log(`─── ${step.id} exited ${r.code}`);
       break;
     }
@@ -299,7 +330,7 @@ function rehearse() {
   }
 
   const result = classify({
-    ranEarlySteps, earlyOutput, prepublishRan, prepublishExit, prepublishOutput,
+    ranEarlySteps, earlyOutput, earlyFailOutput, prepublishRan, prepublishExit, prepublishOutput,
     declaredChain, packExit, packOutput,
   });
 
@@ -310,7 +341,11 @@ function rehearse() {
   console.log(`  npm pack --dry-run entries       : ${packExit === null ? 'not collected (prepublishOnly did not pass)' : entries.length}`);
   console.log(`  reason                           : ${result.reason}`);
   if (result.verdict !== 'PASS') {
-    const failing = packExit !== null && packExit !== 0 ? packOutput : prepublishExit !== 0 ? prepublishOutput : earlyOutput;
+    // The step that actually failed. prepublishExit is null when prepublishOnly never ran (an early
+    // step failed first), and null !== 0 — so test "ran and failed", never "is not 0".
+    const failing = packExit !== null && packExit !== 0 ? packOutput
+      : prepublishRan && prepublishExit !== 0 ? prepublishOutput
+        : earlyFailOutput ?? earlyOutput;
     const tail = failureTail(failing);
     if (tail.length) {
       console.log('  the failing step said:');
@@ -393,6 +428,24 @@ function selfTest() {
     classify({ ...base, ranEarlySteps: false, earlyOutput: 'build_docs: 1 problem(s)', prepublishRan: false, prepublishExit: null, prepublishOutput: '', packExit: null, packOutput: '' }).verdict === 'FAIL');
   check('a token-less TRANSPORT failure is still INDETERMINATE (fail-open stays declared)', () =>
     classify({ ...base, prepublishExit: 1, prepublishOutput: `${BANNER}npm ERR! ETIMEDOUT reaching the registry\n` }).verdict === 'INDETERMINATE');
+  // Pre-landing adversarial review — four more ways an observed failure was laundered.
+  const WARN = '[WARN] SoT_FETCH_FAILED: https://api.algovault.com/api/merkle -> fetch failed\n';
+  check('an injector fail-open WARNING (exit 0) does not launder a LATER content failure', () =>
+    classify({ ...base, earlyOutput: WARN, prepublishExit: 1, prepublishOutput: `${BANNER}A_VERDICT=PASS\nB_VERDICT=FAIL\n` }).verdict === 'FAIL');
+  check('…while with everything else clean it is INDETERMINATE (live injection was not exercised)', () =>
+    classify({ ...base, earlyOutput: WARN }).verdict === 'INDETERMINATE');
+  check('a docs rebuild failing on CONTENT after an injector warning is FAIL', () =>
+    classify({ ...base, ranEarlySteps: false, earlyOutput: `${WARN}build_docs: 1 problem(s)\n`, earlyFailOutput: 'build_docs: 1 problem(s)\n', prepublishRan: false, prepublishExit: null, prepublishOutput: '', packExit: null, packOutput: '' }).verdict === 'FAIL');
+  check("an EARLIER gate's fail-open INDETERMINATE does not relabel a LATER gate's FAIL", () =>
+    classify({ ...base, prepublishExit: 1, prepublishOutput: `${BANNER}A_VERDICT=PASS\nREADME_SNAPSHOT_FRESHNESS_VERDICT=INDETERMINATE\nCLAIM_COVERAGE_VERDICT=FAIL\n` }).verdict === 'FAIL');
+  check('a token-less segment dying AFTER a fail-open INDETERMINATE is still FAIL', () =>
+    classify({ ...base, prepublishExit: 1, prepublishOutput: `${BANNER}A_VERDICT=PASS\nB_VERDICT=INDETERMINATE\nbuild_docs --check: 1 problem(s)\nnpm error code 1\n` }).verdict === 'FAIL');
+  check('a one-command prepublishOnly that FAILS is FAIL, not "unparseable"', () =>
+    classify({ ...base, declaredChain: 'node scripts/release-gates.mjs', prepublishExit: 1, prepublishOutput: '\n> pkg@1.0.0 prepublishOnly\n> node scripts/release-gates.mjs\nX_VERDICT=FAIL\n' }).verdict === 'FAIL');
+  check('diedOnTransport: the last gate to speak said INDETERMINATE and nothing followed → transport', () =>
+    diedOnTransport('A_VERDICT=PASS\nB_VERDICT=INDETERMINATE\nnpm error code 3\n') === true);
+  check('diedOnTransport: a signature only BEFORE the last token is not the dying segment\'s', () =>
+    diedOnTransport('fetch failed\nA_VERDICT=FAIL\n') === false);
 
   console.log('── fail-OPEN on transport, never FAIL ──');
   for (const sig of TRANSPORT_SIGNATURES) {
@@ -477,11 +530,18 @@ function selfTest() {
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+// realpath on BOTH sides: import.meta.url is already resolved, argv[1] is not, so a path through a
+// symlink (macOS /tmp -> /private/tmp) used to match neither branch and exit 0 with no token.
+const realOrSelf = (p) => { try { return realpathSync(p); } catch { return p; } };
+const isMain = !!process.argv[1] && realOrSelf(path.resolve(process.argv[1])) === realOrSelf(fileURLToPath(import.meta.url));
+const REPO_OK = existsSync(path.join(REPO, 'package.json'));
 if (isMain) {
   const args = process.argv.slice(2);
   let code;
   try {
+    // A wrong repo root must still end in a TOKEN — it used to throw at module scope, which became
+    // reachable once the exit stopped being process.exit(): exit 1 (a FAIL code) with no verdict.
+    if (!REPO_OK) throw new Error(`no package.json at ${REPO} — this script must run from its own checkout`);
     code = args.includes('--self-test') ? selfTest() : args.includes('--pipe-probe') ? pipeProbe() : rehearse();
   } catch (e) {
     // Never die without a token — process death with no verdict is the one outcome the token law
@@ -493,7 +553,7 @@ if (isMain) {
   terminate(code);
 }
 
-if (!existsSync(path.join(REPO, 'package.json'))) {
+if (!isMain && !REPO_OK) {
   // Importable-from-elsewhere safety: the module must not silently resolve a wrong repo root.
   throw new Error(`check-publish-lane-preverify: no package.json at ${REPO}`);
 }

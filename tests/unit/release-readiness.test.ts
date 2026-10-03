@@ -96,8 +96,11 @@ describe('wiring', () => {
     // would red the lane on a GitHub CDN hiccup.
     expect(pkg.scripts.prepublishOnly).not.toContain('check-release-readiness');
     expect(pkg.scripts.prepublishOnly).not.toContain('release:readiness');
+    // Comments may POINT at the gate (the header does); no executable line may RUN it — including
+    // a line inside a multi-line `run: |` block and the `npm run` form.
     const wf = readFileSync(join(ROOT, '.github/workflows/publish-lane-preverify.yml'), 'utf8');
-    expect(wf).not.toMatch(/^\s*run:.*check-release-readiness/m);
+    const code = wf.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    expect(code).not.toMatch(/check-release-readiness|release:readiness/);
   });
 
   it('never calls process.exit() — a queued pipe write would lose the token', () => {

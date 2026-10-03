@@ -50,6 +50,15 @@ const IN_CORPUS = (p: string) =>
   !/^(tests|node_modules|dist)\//.test(p) &&
   !/\.(test|spec)\.[cm]?[jt]s$/.test(p);
 
+/**
+ * The EMISSION shape, never the word. A script emits a token when a string or template carries
+ * `…_VERDICT=` (including the `${GATE}_VERDICT=` form, whose template part STARTS at `_VERDICT`), or
+ * when a string literal is a bare token NAME used to build `${TOKEN}=` (`'PUBLISH_LANE_PREVERIFY_VERDICT'`).
+ * Identifiers do not count: "verdict" is also a trading-domain word here (HOLD_VERDICT = 'HOLD',
+ * REGIME_VERDICT_OK), and importing one of those must never make a script a token emitter.
+ */
+const EMITS_TOKEN = (text: string) => /_VERDICT=/.test(text) || /^[A-Z0-9_]*_VERDICT$/.test(text);
+
 /** Pure: one source text → does it emit a verdict token, and where does it call process.exit? */
 function scanSource(file: string, text: string): { verdict: boolean; exitLines: number[] } {
   const kind = file.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS;
@@ -58,8 +67,8 @@ function scanSource(file: string, text: string): { verdict: boolean; exitLines: 
   const exitLines: number[] = [];
   const visit = (n: ts.Node): void => {
     if (
-      (ts.isStringLiteralLike(n) || ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n) || ts.isIdentifier(n)) &&
-      /[A-Z0-9]_VERDICT/.test(n.text)
+      (ts.isStringLiteralLike(n) || ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n)) &&
+      EMITS_TOKEN(n.text)
     ) verdict = true;
     if (
       ts.isCallExpression(n) &&
@@ -113,6 +122,16 @@ describe('the scanner reads code, not prose', () => {
 
   it('does not treat a _VERDICT mentioned only in a comment as a verdict emitter', () => {
     expect(scanSource('b.mjs', '// prints FOO_VERDICT=PASS\nprocess.exit(0);\n').verdict).toBe(false);
+  });
+
+  it('detects the `${GATE}_VERDICT=` template form (check-caller-tags.mjs shape)', () => {
+    const src = "const GATE = 'CALLER_TAG';\nconsole.log(`${GATE}_VERDICT=${'PASS'}`);\nprocess.exit(0);\n";
+    expect(scanSource('d.mjs', src)).toEqual({ verdict: true, exitLines: [3] });
+  });
+
+  it('does not treat a trading-domain constant (HOLD_VERDICT) as a token emitter', () => {
+    const src = "import { HOLD_VERDICT } from '../src/lib/call-class.js';\nconst REGIME_VERDICT_OK = 1;\nconsole.log(HOLD_VERDICT, REGIME_VERDICT_OK);\nprocess.exit(0);\n";
+    expect(scanSource('e.ts', src).verdict).toBe(false);
   });
 
   it('sees through TypeScript syntax and template literals', () => {
@@ -190,8 +209,15 @@ describe(`${BASELINE_PATH} is honest about itself`, () => {
     expect(baseline._total).toBe(entries.reduce((s, [, e]) => s + e.count, 0));
   });
 
-  it('the two clean exemplars stay clean and out of the baseline', () => {
-    for (const f of ['scripts/check-publish-lane-preverify.mjs', 'scripts/check-release-readiness.mjs']) {
+  it('the clean exemplars stay clean and out of the baseline', () => {
+    // The two this wave fixed or wrote, and the two prior same-class fixes (05802215, f81f7da9) —
+    // reverting any of them to process.exit() must red here, not just in review.
+    for (const f of [
+      'scripts/check-publish-lane-preverify.mjs',
+      'scripts/check-release-readiness.mjs',
+      'scripts/check-caller-tags.mjs',
+      'scripts/check-form-action-conformance.mjs',
+    ]) {
       expect(baseline.files[f], `${f} must never be baselined`).toBeUndefined();
       const h = live.hits.find((x) => x.file === f);
       expect(h, `${f} is no longer verdict-emitting?`).toBeTruthy();

@@ -21,6 +21,19 @@
  * read — unreachable, non-200, "no status", markup it cannot parse, a table entry that does not
  * declare its branch — falls toward INDETERMINATE (exit 3), never toward PASS.
  *
+ * Two limits of reading a BADGE, stated so nobody mistakes them for coverage:
+ *   · A badge carries a conclusion, not a token. publish-lane-preverify.yml maps its own
+ *     INDETERMINATE (an unreachable live source) to a passing job with a ::warning::, so a green
+ *     badge can be a run that verified nothing. The next scheduled run re-reads it; this gate
+ *     cannot tell the two apart without an authenticated API call it deliberately does not make.
+ *   · publish-npm.yml turns green ONLY through a successful publish-npm run, and today the only
+ *     run that can produce one is a release — npm refuses to republish an existing version, so a
+ *     re-run or a dispatch at the same version reds again. While its last run is red this gate
+ *     says FAIL by design, and a release spec cannot be written past it. Clearing that is the
+ *     owner's half: a publish-npm path that re-verifies the CURRENT version without publishing
+ *     (Owner: OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1, which owns the Verify dist-tag defect that made
+ *     v1.29.0–v1.31.0 red). Measured 2026-10-03; recorded so the block reads as a decision.
+ *
  * ── BRANCH SEMANTICS ARE DECLARED PER ENTRY, NEVER INFERRED ─────────────────────────────────
  * A badge reports the newest run on ONE branch when `?branch=` is given, and the newest run on ANY
  * ref when it is not. A tag-push run carries the TAG as its branch, so `?branch=main` structurally
@@ -56,6 +69,7 @@
  *   node scripts/check-release-readiness.mjs --self-test  # every state, both directions, offline
  */
 import path from 'node:path';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseBadgeTitle } from '../ops/monitoring/deploy-drift-canary.mjs';
 
@@ -252,7 +266,10 @@ async function selfTest() {
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+// realpath on BOTH sides: import.meta.url is already resolved and argv[1] is not, so a path
+// through a symlink (macOS /tmp -> /private/tmp) would match neither branch and exit 0, tokenless.
+const realOrSelf = (p) => { try { return realpathSync(p); } catch { return p; } };
+const isMain = !!process.argv[1] && realOrSelf(path.resolve(process.argv[1])) === realOrSelf(fileURLToPath(import.meta.url));
 if (isMain) {
   (async () => {
     try {

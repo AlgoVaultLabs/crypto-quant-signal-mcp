@@ -1,7 +1,7 @@
 {
   "_comment": "OPS-PREVERIFY-RED-UNREAD-W1 CH2 ratchet baseline (architect ruling Q-B). Per-file count of process.exit() calls in tracked scripts that emit a <GATE>_VERDICT= token. process.exit() abandons queued stdout writes to a pipe, so the token — printed last — can vanish (51 of 53 reds of publish-lane-preverify.yml). A NEW verdict-emitting script may not call process.exit(); a listed script may never exceed its count, and when it drops the count must drop here in the same commit. Enforced by tests/unit/verdict-exit-path.test.ts.",
   "_measured": "2026-10-03 — the only script over the 64 KiB pipe cliff was scripts/check-publish-lane-preverify.mjs, fixed in the same commit and therefore absent here. Every entry below relays a small output (largest measured piped output 5,026 B, ≥13x headroom), so this is enumerated debt, not a live outage.",
-  "_piped_consumer": "true = this script's token IS read through a pipe or a $(...) capture, at the place named in `consumer` (measured once by the Plan-Mode inheritor census, recorded so a migration wave does not re-derive it). These are the subset to migrate first.",
+  "_piped_consumer": "true = this script's token IS read through a pipe or a $(...) capture by a WIRED consumer (CI workflow, git hook, host cron), at the place named in `consumer` — measured by the Plan-Mode inheritor census plus the pre-landing review (which found the robots-allowlist cron the census missed). Not counted: the manual scripts/gates/*.sh wave gates, and hooks that gate on the exit code with `|| exit 1`. These are the subset to migrate first.",
   "_total": 243,
   "files": {
     "ops/monitoring/deploy-drift-canary.mjs": {
@@ -220,7 +220,8 @@
     },
     "scripts/check-robots-ai-allowlist.mjs": {
       "count": 1,
-      "piped_consumer": false
+      "piped_consumer": true,
+      "consumer": "signal-1 host cron ops/monitoring/robots-ai-allowlist-canary.sh (27 1 * * *, load-bearing) `OUT=$(node ...)` + sed of ROBOTS_ALLOWLIST_VERDICT (missing => INDETERMINATE, pages)"
     },
     "scripts/check-runtime-node-eol.mjs": {
       "count": 1,
@@ -233,7 +234,7 @@
     "scripts/check-served-surface-values.mjs": {
       "count": 1,
       "piped_consumer": true,
-      "consumer": ".github/workflows/deploy.yml `$(...)` + grep of SERVED_SURFACE_VALUES_VERDICT"
+      "consumer": ".github/workflows/deploy.yml `$(...)` + grep, and the signal-1 host cron ops/cron/served-surface-values-canary.sh `$(...)` of SERVED_SURFACE_VALUES_VERDICT"
     },
     "scripts/check-session-drift.mjs": {
       "count": 4,
