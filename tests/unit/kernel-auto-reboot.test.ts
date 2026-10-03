@@ -307,7 +307,7 @@ describe('every run appends ONE canary_result_log record', () => {
 describe('every artifact self-tests, with a vacuity floor', () => {
   it.each([
     { name: 'kernel-auto-reboot.sh', script: HARNESS, floor: 112 },
-    { name: 'aoe-peer-watchdog.sh', script: WATCHDOG, floor: 38 },
+    { name: 'aoe-peer-watchdog.sh', script: WATCHDOG, floor: 120 },
     { name: 'arm-peer-watchdog.sh', script: ARM, floor: 21 },
   ])('$name --self-test PASSes with at least $floor assertions', { timeout: 180_000 }, ({ script, floor }) => {
     const r = spawnSync('bash', [script, '--self-test'], { encoding: 'utf8' });
@@ -350,48 +350,66 @@ describe('the arm paths agree across harness, arm helper and watchdog', () => {
 /**
  * AC8 — the peer watchdog, both directions.
  *
- * SPAWN BUDGET: 5 bash spawns.
+ * `opts.curl: 'url'` swaps in a stub that answers per URL — the edge control from ST_CONTROL, the
+ * target's /health from ST_HEALTH — because the unarmed half needs two DIFFERENT vantages. The
+ * unarmed counter, episode marker and wrapper-marker dir default into the per-call sandbox: a test
+ * must never reach /var/lib or /opt on whatever box runs it. `send.sh` models the wrapper's argv:
+ * `--clear <id> <reason>` lands in `clears`, a fire reads its body into `paged`.
  */
-describe('AC8 — the peer watchdog', () => {
-  function watchdog(env: Record<string, string>) {
-    const dir = mkdtempSync(path.join(tmpdir(), 'watchdog-'));
-    const paged = path.join(dir, 'paged');
-    const sshArgv = path.join(dir, 'ssh-argv');
-    const send = path.join(dir, 'send.sh');
-    const down = path.join(dir, 'ssh-down.sh');
-    const tcpDown = path.join(dir, 'tcp-down.sh');
-    writeFileSync(send, `#!/bin/sh\ncat >> ${paged}\necho "ALERT=$1" >> ${paged}\n`, { mode: 0o755 });
-    writeFileSync(down, `#!/bin/sh\necho "$@" >> ${sshArgv}\nexit 255\n`, { mode: 0o755 });
-    writeFileSync(tcpDown, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-    const r = spawnSync('bash', [WATCHDOG], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        MONITORING_HOST_LABELS: 'signal-1',
-        PEER_WATCHDOG_LOG: path.join(dir, 'log'),
-        PEER_WATCHDOG_ARM: path.join(dir, 'arm'),
-        PEER_WATCHDOG_STATE: path.join(dir, 'breaches'),
-        PEER_WATCHDOG_WRAPPER: send,
-        PEER_WATCHDOG_SSH: down,
-        PEER_WATCHDOG_TCP: tcpDown,
-        PEER_WATCHDOG_CURL: tcpDown,
-        ...env,
-      },
-    });
-    return {
-      status: r.status,
-      stdout: r.stdout,
-      verdict: (r.stdout.match(/PEER_WATCHDOG_VERDICT=(\w+)/) || [])[1],
-      paged: existsSync(paged) ? readFileSync(paged, 'utf8') : '',
-      sshCalled: existsSync(sshArgv),
-    };
-  }
+type WatchdogOpts = { curl?: 'down' | 'url'; tcp?: 'down' | 'up' };
+function watchdog(env: Record<string, string>, opts: WatchdogOpts = {}) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'watchdog-'));
+  const paged = path.join(dir, 'paged');
+  const clears = path.join(dir, 'clears');
+  const sshArgv = path.join(dir, 'ssh-argv');
+  const send = path.join(dir, 'send.sh');
+  const down = path.join(dir, 'ssh-down.sh');
+  const tcpDown = path.join(dir, 'tcp-down.sh');
+  const tcpUp = path.join(dir, 'tcp-up.sh');
+  const curlUrl = path.join(dir, 'curl-url.sh');
+  writeFileSync(send, `#!/bin/sh\ncase "$1" in --clear\x29 echo "$1 $2|$3" >> ${clears} ;; *\x29 cat >> ${paged}; echo "ALERT=$1" >> ${paged} ;; esac\n`, { mode: 0o755 });
+  writeFileSync(down, `#!/bin/sh\necho "$@" >> ${sshArgv}\nexit 255\n`, { mode: 0o755 });
+  writeFileSync(tcpDown, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  writeFileSync(tcpUp, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  writeFileSync(curlUrl, '#!/bin/sh\ncase "$*" in *cdn-cgi/trace*\x29 echo "${ST_CONTROL:-200}" ;; *\x29 echo "${ST_HEALTH:-200}" ;; esac\n', { mode: 0o755 });
+  const r = spawnSync('bash', [WATCHDOG], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      MONITORING_HOST_LABELS: 'signal-1',
+      PEER_WATCHDOG_LOG: path.join(dir, 'log'),
+      PEER_WATCHDOG_ARM: path.join(dir, 'arm'),
+      PEER_WATCHDOG_STATE: path.join(dir, 'breaches'),
+      PEER_WATCHDOG_UNARMED_STATE: path.join(dir, 'ua'),
+      PEER_WATCHDOG_UNARMED_EPISODE: path.join(dir, 'ep'),
+      PEER_WATCHDOG_ALERT_STATE_DIR: path.join(dir, 'alert-state'),
+      PEER_WATCHDOG_WRAPPER: send,
+      PEER_WATCHDOG_SSH: down,
+      PEER_WATCHDOG_TCP: opts.tcp === 'up' ? tcpUp : tcpDown,
+      PEER_WATCHDOG_CURL: opts.curl === 'url' ? curlUrl : tcpDown,
+      ...env,
+    },
+  });
+  return {
+    status: r.status,
+    stdout: r.stdout,
+    verdict: (r.stdout.match(/PEER_WATCHDOG_VERDICT=(\w+)/) || [])[1],
+    tokens: (r.stdout.match(/^PEER_WATCHDOG_VERDICT=/gm) || []).length,
+    paged: existsSync(paged) ? readFileSync(paged, 'utf8') : '',
+    clears: existsSync(clears) ? readFileSync(clears, 'utf8') : '',
+    sshCalled: existsSync(sshArgv),
+  };
+}
 
-  it('with NO arm it is IDLE and silent, even while the target is unreachable', { timeout: 60_000 }, () => {
+/** SPAWN BUDGET: 5 bash spawns. */
+describe('AC8 — the peer watchdog', () => {
+  it('with NO arm and a blind watcher it is WATCHER_BLIND and silent, even while the target is unreachable', { timeout: 60_000 }, () => {
     const r = watchdog({});
-    expect(r.verdict).toBe('IDLE');
+    expect(r.verdict).toBe('WATCHER_BLIND');
+    expect(r.status).toBe(0);
     expect(r.paged).toBe('');
-    expect(r.stdout).toContain('PEER_WATCHDOG_CHECK=arm state=IDLE');
+    expect(r.stdout).toContain('PEER_WATCHDOG_CHECK=arm state=UNARMED');
+    expect(r.stdout).toContain('PEER_WATCHDOG_CHECK=control state=WATCHER_BLIND');
   });
 
   it('an armed, past-budget, unreachable aoe-1 BREACHES on the second consecutive probe', { timeout: 60_000 }, () => {
@@ -423,6 +441,80 @@ describe('AC8 — the peer watchdog', () => {
     const r = watchdog({ MONITORING_HOST_LABELS: 'mars-1' });
     expect(r.verdict).toBe('REFUSED');
     expect(r.paged).toBe('');
+  });
+});
+
+/**
+ * OPS-HOST-OUTAGE-WATCHDOG-W1 — the UNARMED half: an unplanned outage pages from the peer, once,
+ * classified by two agreeing vantages, and resolves with one --clear. Sequences share their state
+ * paths through env, exactly as consecutive cron fires share them on a host.
+ *
+ * SPAWN BUDGET: 12 bash spawns.
+ */
+describe('OW-1…OW-5 — unarmed outage liveness', () => {
+  const seq = () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'watchdog-seq-'));
+    return {
+      PEER_WATCHDOG_UNARMED_STATE: path.join(d, 'ua'),
+      PEER_WATCHDOG_UNARMED_EPISODE: path.join(d, 'ep'),
+      PEER_WATCHDOG_ALERT_STATE_DIR: path.join(d, 'alert-state'),
+      PEER_WATCHDOG_ARM: path.join(d, 'arm'),
+    };
+  };
+
+  it('signal-1 pages AOE1_UNREACHABLE on the 2nd consecutive TCP failure, never via ssh', { timeout: 60_000 }, () => {
+    const s = seq();
+    const first = watchdog({ ...s, PEER_WATCHDOG_NOW: '6000000' }, { curl: 'url' });
+    expect(first.verdict).toBe('UNARMED_WAITING');
+    expect(first.paged).toBe('');
+    const second = watchdog({ ...s, PEER_WATCHDOG_NOW: '6003600' }, { curl: 'url' });
+    expect(second.verdict).toBe('UNARMED_BREACH');
+    expect(second.paged).toContain('ALERT=AOE1_UNREACHABLE');
+    expect(second.paged).toContain('🛑 AOE1_UNREACHABLE — aoe-1 is HOST_DOWN (unplanned: no reboot arm present)');
+    expect(second.paged).toContain('HCLOUD_CONTEXT=algovault-mcp hcloud server request-console 127346106');
+    expect(second.sshCalled).toBe(false);
+    expect(second.tokens).toBe(1);
+    expect(second.status).toBe(0);
+  });
+
+  it('aoe-1 keeps PATH_ONLY silent and pages SERVING_DOWN with the container remedy', { timeout: 60_000 }, () => {
+    const s = { ...seq(), MONITORING_HOST_LABELS: 'aoe-1' };
+    const pathOnly = watchdog({ ...s, ST_HEALTH: '200' }, { curl: 'url' });
+    expect(pathOnly.verdict).toBe('PATH_ONLY');
+    expect(pathOnly.paged).toBe('');
+    watchdog({ ...s, ST_HEALTH: '502' }, { curl: 'url', tcp: 'up' });
+    const breach = watchdog({ ...s, ST_HEALTH: '502' }, { curl: 'url', tcp: 'up' });
+    expect(breach.verdict).toBe('UNARMED_BREACH');
+    expect(breach.paged).toContain('🛑 SIGNAL1_UNREACHABLE — signal-1 is SERVING_DOWN (unplanned: no reboot arm present)');
+    expect(breach.paged).toContain('check its containers');
+    expect(breach.paged).not.toContain('request-console');
+  });
+
+  it('one page per episode, then exactly one --clear with the mode flag FIRST', { timeout: 60_000 }, () => {
+    const s = { ...seq(), MONITORING_HOST_LABELS: 'aoe-1' };
+    const fail = { ...s, ST_HEALTH: '521' };
+    watchdog({ ...fail, PEER_WATCHDOG_NOW: '2000000' }, { curl: 'url' });
+    const paged = watchdog({ ...fail, PEER_WATCHDOG_NOW: '2000300' }, { curl: 'url' });
+    expect(paged.paged).toContain('ALERT=SIGNAL1_UNREACHABLE');
+    const third = watchdog({ ...fail, PEER_WATCHDOG_NOW: '2000600' }, { curl: 'url' });
+    expect(third.verdict).toBe('UNARMED_BREACH');
+    expect(third.paged).toBe('');
+    const ok = watchdog({ ...s, PEER_WATCHDOG_NOW: '2001000' }, { curl: 'url', tcp: 'up' });
+    expect(ok.verdict).toBe('UNARMED_RESOLVED');
+    expect(ok.clears).toBe('--clear SIGNAL1_UNREACHABLE|HOST_DOWN resolved after 16m\n');
+    const again = watchdog({ ...s, PEER_WATCHDOG_NOW: '2001300' }, { curl: 'url', tcp: 'up' });
+    expect(again.verdict).toBe('UNARMED_OK');
+    expect(again.clears).toBe('');
+  });
+
+  it('an arm present runs the ARMED logic and leaves the unarmed state untouched', { timeout: 60_000 }, () => {
+    const s = { ...seq(), MONITORING_HOST_LABELS: 'aoe-1' };
+    writeFileSync(s.PEER_WATCHDOG_UNARMED_STATE, '1 4000000\n');
+    writeFileSync(s.PEER_WATCHDOG_ARM, '4000100 some-kernel\n');
+    const r = watchdog({ ...s, ST_HEALTH: '521', PEER_WATCHDOG_NOW: '4000110' }, { curl: 'url' });
+    expect(r.verdict).toBe('ARMED_WAITING');
+    expect(r.stdout).not.toContain('PEER_WATCHDOG_CHECK=control');
+    expect(readFileSync(s.PEER_WATCHDOG_UNARMED_STATE, 'utf8')).toBe('1 4000000\n');
   });
 });
 

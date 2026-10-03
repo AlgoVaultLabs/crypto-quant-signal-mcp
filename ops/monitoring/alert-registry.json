@@ -481,6 +481,32 @@
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SIGNAL1_PEER_UNREACHABLE-W{NEXT}"
     },
     {
+      "alert_id": "SIGNAL1_UNREACHABLE",
+      "owner": "ops/monitoring/aoe-peer-watchdog.sh",
+      "hosts": [
+        "aoe-1"
+      ],
+      "adopted": true,
+      "announce_resolution": true,
+      "adoption_note": "OPS-HOST-OUTAGE-WATCHDOG-W1 (OW-1, OW-4): aoe-1's UNARMED half of aoe-peer-watchdog.sh pages an UNPLANNED signal-1 outage (no reboot arm present), classified HOST_DOWN vs SERVING_DOWN from two agreeing vantages (edge control cdn-cgi/trace 200, then TCP :22 + /health), after 2 consecutive failing probes, once per episode (its own episode marker). On the next OK it calls send_telegram.sh --clear SIGNAL1_UNREACHABLE '<class> resolved after <duration>' — also when only the wrapper's delivered-page marker remains, so a lost episode marker cannot strand FIRING_STALE. announce_resolution true: ONE resolution per DELIVERED outage page; an outage page with no 'it is back' leaves the operator re-checking by hand. Distinct from SIGNAL1_PEER_UNREACHABLE (OUR reboot did not return).",
+      "follow_up_wave": "OPS-HOST-OUTAGE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SIGNAL1_UNREACHABLE-W{NEXT}"
+    },
+    {
+      "alert_id": "AOE1_UNREACHABLE",
+      "owner": "ops/monitoring/aoe-peer-watchdog.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": true,
+      "adoption_note": "OPS-HOST-OUTAGE-WATCHDOG-W1 (OW-2, OW-4): signal-1's UNARMED half of aoe-peer-watchdog.sh pages an UNPLANNED aoe-1 outage — the watcher of the watcher, since aoe-1 carries signal-1's reboot escalation. Credential-free TCP :22 only at the existing hourly :09 cadence (never ssh), gated by the edge control; 2 consecutive failing probes; once per episode; --clear AOE1_UNREACHABLE on the next OK. Distinct from AOE_PEER_UNREACHABLE (aoe-1's own reboot did not return).",
+      "follow_up_wave": "OPS-HOST-OUTAGE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-AOE1_UNREACHABLE-W{NEXT}"
+    },
+    {
       "alert_id": "LLM_SPEND_OVER_THRESHOLD",
       "owner": "ops/monitoring/llm-spend-monitor.py",
       "hosts": [
