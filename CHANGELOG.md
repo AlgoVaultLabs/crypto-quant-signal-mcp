@@ -5,6 +5,14 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.31.1] - 2026-10-04
+
+### Changed
+- Verdict selection now comes from one declared rule per timeframe and trend direction instead of a global mode setting. Served calls are unchanged.
+
+### Fixed
+- The MCP-client setup steps in the README and on the integrations pages now match each client's current release: Claude Desktop's connector path, the Claude Code command (`--transport http`) and Cursor's config file (`~/.cursor/mcp.json`). Each install claim on those pages is confirmed against the client's own live source.
+
 ## [1.31.0] - 2026-09-23
 
 ### Added
