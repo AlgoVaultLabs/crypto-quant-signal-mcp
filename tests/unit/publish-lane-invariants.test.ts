@@ -71,12 +71,16 @@ interface Step {
   run?: string;
   with?: Record<string, unknown>;
   env?: Record<string, unknown>;
+  /** Widened by OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2 R7 for INVARIANT 5/6 — read, never relaxed. */
+  if?: string;
 }
 
 interface Lane {
   /** Steps of the job that actually publishes — never "the first job". */
   steps: Step[];
   jobId: string | null;
+  /** Widened by OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2 R7 for INVARIANT 7: the parsed `on:` block. */
+  on?: Record<string, unknown> | null;
 }
 
 /** Structural read of the publishing job's step list. Comments are gone by construction. */
@@ -102,9 +106,12 @@ function parseLane(src: string): Lane {
         run: typeof step.run === 'string' ? step.run : undefined,
         with: (step.with ?? undefined) as Record<string, unknown> | undefined,
         env: (step.env ?? undefined) as Record<string, unknown> | undefined,
+        if: step.if === undefined || step.if === null ? undefined : String(step.if),
       };
     });
-    if (steps.some((s) => /\bnpm publish\b/.test(s.run ?? ''))) return { steps, jobId };
+    if (steps.some((s) => /\bnpm publish\b/.test(s.run ?? ''))) {
+      return { steps, jobId, on: (doc.on ?? null) as Record<string, unknown> | null };
+    }
   }
   return { steps: [], jobId: null };
 }
@@ -310,5 +317,120 @@ describe('the canary is PROVEN able to fail', () => {
     const broken = parseLane('jobs:\n  publish:\n    steps:\n      - name: [unclosed\n');
     expect(broken.jobId).toBeNull();
     expect(broken.steps.length).toBe(0);
+  });
+});
+
+// ─── INVARIANT 5–7 — OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2 R7 ────────────────────────────────
+//
+// The verify-only door. `mode: verify-only` re-verifies the current version WITHOUT the upload, so
+// the three properties that keep it from becoming a second, unguarded publish path are pinned
+// here through the SAME parseLane(), widened (and only widened) to read `if:` and `on:`:
+//
+//   5 — the publish step's `if:` is EXACTLY `inputs.mode != 'verify-only'`. One input, one literal
+//       value, never a general expression that could skip (or not skip) for reasons nobody reviewed.
+//   6 — the ancestor guard is NOT conditional. It must run first and fail closed in every mode.
+//   7 — `verify-only` is the ONLY non-default `mode` value, and the input exists on
+//       workflow_dispatch ONLY: never on push, never on a schedule, never on workflow_call.
+
+const MODE_IF = "inputs.mode != 'verify-only'";
+/** Strip an optional `${{ … }}` wrapper and collapse whitespace — nothing else is normalised. */
+const normIf = (x?: string) =>
+  (x ?? '')
+    .replace(/^\s*\$\{\{\s*/, '')
+    .replace(/\s*\}\}\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** Every reason INVARIANT 7 fails, so a mutation can assert WHICH clause broke. */
+function invariant7Failures(l: Lane): string[] {
+  const fails: string[] = [];
+  const on = (l.on ?? {}) as Record<string, unknown>;
+  const wd = (on.workflow_dispatch ?? null) as { inputs?: Record<string, Record<string, unknown>> } | null;
+  const mode = wd?.inputs?.mode;
+  if (!mode) return ['no workflow_dispatch.inputs.mode'];
+  if (mode.type !== 'choice') fails.push(`mode.type is ${String(mode.type)}, not choice`);
+  if (mode.default !== 'publish') fails.push(`mode.default is ${String(mode.default)}, not publish`);
+  const options = Array.isArray(mode.options) ? (mode.options as unknown[]).map(String) : [];
+  if (!options.includes('publish')) fails.push('mode.options lacks the default, publish');
+  const nonDefault = options.filter((o) => o !== mode.default);
+  if (nonDefault.length !== 1 || nonDefault[0] !== 'verify-only') fails.push(`non-default mode values are [${nonDefault.join(', ')}], not exactly [verify-only]`);
+  for (const [trigger, cfg] of Object.entries(on)) {
+    if (trigger === 'workflow_dispatch') continue;
+    if (trigger === 'schedule') fails.push('the lane declares a schedule trigger');
+    const inputs = (cfg as { inputs?: Record<string, unknown> } | null)?.inputs;
+    if (inputs && Object.keys(inputs).length) fails.push(`${trigger} declares inputs`);
+  }
+  return fails;
+}
+
+describe('publish-npm.yml — the verify-only door (INVARIANT 5–7), over the same parsed lane', () => {
+  it('INVARIANT 5 — the publish step carries an `if:` that is EXACTLY the declared mode comparison', () => {
+    const publish = find(lane, isPublish);
+    expect(publish, 'INVARIANT 5: no `npm publish` step').toBeTruthy();
+    expect(
+      normIf(publish?.if),
+      'INVARIANT 5 (mode gate): the publish step must be skipped by exactly `' + MODE_IF + '` — one ' +
+        'input, one literal value. A missing `if:` lets verify-only reach `npm publish`; a general ' +
+        'expression lets it skip for reasons nobody reviewed.',
+    ).toBe(MODE_IF);
+  });
+
+  it('INVARIANT 6 — the ancestor guard is NOT conditional', () => {
+    const guard = find(lane, isAncestorGuard);
+    expect(guard, 'INVARIANT 6: no ancestor guard step').toBeTruthy();
+    expect(
+      guard?.if,
+      'INVARIANT 6 (unconditional guard): the ancestor-of-origin/main guard must run in EVERY mode and ' +
+        'fail closed. An `if:` on it would let one mode skip the refusal it exists to make.',
+    ).toBeUndefined();
+  });
+
+  it('INVARIANT 7 — verify-only is the only non-default mode, declared on workflow_dispatch only', () => {
+    expect(invariant7Failures(lane), 'INVARIANT 7 (mode input)').toEqual([]);
+  });
+});
+
+describe('INVARIANT 5–7 are PROVEN able to fail', () => {
+  // Same discipline as the block above: each mutation is the REAL lane broken ONE way, asserted to
+  // have APPLIED before the invariant is asserted broken.
+  const mutate57 = (from: string | RegExp, to: string) => {
+    const out = SRC.replace(from, to);
+    expect(out, `mutation did not apply: ${String(from)}`).not.toBe(SRC);
+    return out;
+  };
+
+  it('removing the publish step\'s `if:` breaks INVARIANT 5', () => {
+    const broken = parseLane(mutate57(`        if: ${MODE_IF}\n`, ''));
+    expect(normIf(find(broken, isPublish)?.if)).not.toBe(MODE_IF);
+  });
+
+  it('widening the `if:` to a general expression breaks INVARIANT 5', () => {
+    const broken = parseLane(mutate57(`        if: ${MODE_IF}\n`, "        if: inputs.mode != 'verify-only' && github.event_name != 'schedule'\n"));
+    expect(normIf(find(broken, isPublish)?.if)).not.toBe(MODE_IF);
+  });
+
+  it('conditioning the ancestor guard breaks INVARIANT 6', () => {
+    const broken = parseLane(
+      mutate57(
+        '      - name: Refuse a tree that is not an ancestor of origin/main\n',
+        `      - name: Refuse a tree that is not an ancestor of origin/main\n        if: ${MODE_IF}\n`,
+      ),
+    );
+    expect(find(broken, isAncestorGuard)?.if).toBeDefined();
+  });
+
+  it('adding a second non-default mode value breaks INVARIANT 7', () => {
+    const broken = parseLane(mutate57('          - verify-only\n', '          - verify-only\n          - republish\n'));
+    expect(invariant7Failures(broken).join(' | ')).toMatch(/not exactly \[verify-only\]/);
+  });
+
+  it('declaring the lane on a schedule breaks INVARIANT 7', () => {
+    const broken = parseLane(mutate57('on:\n  push:\n', "on:\n  schedule:\n    - cron: '13 3 * * *'\n  push:\n"));
+    expect(invariant7Failures(broken).join(' | ')).toMatch(/schedule/);
+  });
+
+  it('declaring the mode input on workflow_call breaks INVARIANT 7', () => {
+    const broken = parseLane(mutate57('on:\n  push:\n', 'on:\n  workflow_call:\n    inputs:\n      mode:\n        type: string\n  push:\n'));
+    expect(invariant7Failures(broken).join(' | ')).toMatch(/workflow_call declares inputs/);
   });
 });

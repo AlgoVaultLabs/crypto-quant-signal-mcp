@@ -54,7 +54,27 @@ on:
   # tag-order LAW was written against, where npm shipped a tag tree that a rebase had orphaned and
   # nothing failed anywhere. The ancestor-of-`origin/main` guard below is what makes this door
   # safe, and it fails CLOSED. Do not remove one without removing the other.
+  #
+  # `mode` — OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2 R5. `publish` (the default) is the release
+  # lane. `verify-only` runs the WHOLE lane except `npm publish`. It re-verifies the CURRENT
+  # package.json version against the registry and runs the Smithery leg. The ancestor guard runs
+  # first and fails closed in BOTH modes. It exists to retire a stale FALSE red: npm published on
+  # all four red releases v1.28.1–v1.31.0, and the gate misread propagation as failure. It is NOT a
+  # substitute for a proven publish. A verify-only green is weaker in two independent ways:
+  # `npm publish` never ran, and so `prepublishOnly`'s 38 segments never ran either (`npm publish`
+  # triggers that lifecycle; `npm pack` does not). Its run log therefore says
+  # NPM_PUBLISH_PERFORMED=false. `verify-only` is the ONLY non-default value, and the input exists on
+  # workflow_dispatch only — never on push, never on a schedule
+  # (tests/unit/publish-lane-invariants.test.ts INVARIANT 7).
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "publish (default) runs the release lane. verify-only re-verifies the current package.json version and runs the Smithery leg WITHOUT npm publish (and so without prepublishOnly)."
+        type: choice
+        options:
+          - publish
+          - verify-only
+        default: publish
 
 # ─── CONCURRENCY — OPS-SERIALIZE-LANDING-AND-DEPLOY-W1 CH3 ───────────────────────────────────
 #
@@ -219,25 +239,76 @@ jobs:
       # OIDC exchange (see the Phase-1 design-flaw note in the header). With no token, npm
       # authenticates via OIDC against the verified trusted-publisher config, and `--provenance`
       # auto-generates. (The NPM_TOKEN secret has been revoked + deleted; OIDC is the only path.)
+      #
+      # `if:` — OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2 R5. One input, one literal value, never a
+      # general expression. On a tag push `inputs.mode` is empty, so the condition is true and the
+      # release publishes. Only an explicit `mode: verify-only` dispatch skips it. npm refuses to
+      # republish an existing version, so a verify-only run that reached this step would red, and
+      # one that COULD publish would be a hole in the ancestor guard's purpose. `id: publish` feeds
+      # `steps.publish.outcome`, which the next two steps read as the evidence of whether an
+      # upload happened, rather than trusting a flag. Pinned by INVARIANT 5.
       - name: Publish to npm with provenance
         run: npm publish --provenance
+        id: publish
+        if: inputs.mode != 'verify-only'
 
-      - name: Verify dist-tag
+      # PUBLISH_LANE_MODE / NPM_PUBLISH_PERFORMED — OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2 R5.
+      # Derived from what the publish step DID (`steps.publish.outcome`), never from the input alone.
+      # The badge carries a conclusion, not a token, so this line is how anyone reading a green run
+      # can tell a release from a verify-only dispatch. A verify-only green is weaker in two
+      # independent ways: (1) the upload command never ran; (2) so `prepublishOnly`'s 38 segments
+      # never ran either. That lifecycle is triggered only by the upload; `npm pack` does not run it.
+      # 🛑 THIS STEP'S SCRIPT MUST NEVER CONTAIN THE LITERAL UPLOAD COMMAND TEXT. The invariant test's
+      # parser identifies the publish step as the FIRST step whose run text matches it, so a mention
+      # here would make this step "the publish step" and silently re-point INVARIANT 2–5.
+      - name: Record the lane mode and whether this run uploaded
+        env:
+          LANE_MODE: ${{ inputs.mode || 'publish' }}
+          UPLOAD_OUTCOME: ${{ steps.publish.outcome }}
         run: |
-          set -euo pipefail
-          PACKAGE_VERSION=$(jq -r .version package.json)
-          # npm registry replication lag — poll up to 3× at 20s
-          for i in 1 2 3; do
-            LIVE=$(curl -sS "https://registry.npmjs.org/crypto-quant-signal-mcp" | jq -r '.["dist-tags"].latest')
-            if [ "$LIVE" = "$PACKAGE_VERSION" ]; then
-              echo "DIST_TAG_OK: dist-tags.latest=$LIVE matches package.json.version=$PACKAGE_VERSION"
-              exit 0
-            fi
-            echo "Attempt $i: dist-tags.latest=$LIVE, expected $PACKAGE_VERSION (replication lag)"
-            sleep 20
-          done
-          echo "DIST_TAG_FAIL: dist-tags.latest still doesn't match after 60s"
-          exit 1
+          echo "PUBLISH_LANE_MODE=${LANE_MODE}"
+          echo "publish step outcome: ${UPLOAD_OUTCOME:-n/a}"
+          if [ "${UPLOAD_OUTCOME}" = success ]; then
+            echo "NPM_PUBLISH_PERFORMED=true"
+          else
+            echo "NPM_PUBLISH_PERFORMED=false"
+          fi
+
+      # ─── Verify dist-tag — OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2 R4 ──────────────────────────
+      #
+      # WAIT OUT PROPAGATION, ON UNCACHED READS. The step this replaces read the CACHED packument 3×
+      # at 20 s intervals and went red on every release from v1.28.0, each time AFTER npm had
+      # accepted the upload, which also took the Smithery step below down with it every time.
+      # Measured from the registry's own `time[v]`: since npm's publish-time malware scanning, a new
+      # version does not EXIST at origin for 249–307 s after `npm publish` returns. No endpoint,
+      # cached or not, can serve it sooner. So this step WAITS, polling every 15 s and stopping at the
+      # first full match. It polls only the two endpoints measured as not served from cache,
+      # through scripts/lib/npm-registry-read.mjs: dist-tags unbusted, and the version document
+      # with a fresh ?cb= on each read. scripts/check-packument-read.mjs forbids the packument shape.
+      #
+      # 🛑 Waiting on a CACHED read stays forbidden: it outlasts a TTL instead of measuring the
+      # thing. An error-swallowing step flag, a widened tolerance or a raised threshold are forbidden
+      # outright (smithery-sync-lane.test.ts ASSERTION 4 already refuses the first).
+      #
+      # Emits, each on its own line (scripts/verify-npm-propagation.mjs):
+      #   NPM_PROPAGATION_SECONDS=<n>|NOT_OBSERVED_WITHIN_<n>S  — the per-release evidence series
+      #   NPM_VERSION_PUBLISHED=PASS|FAIL|INDETERMINATE        — the version document exists
+      #   DIST_TAG_VERDICT=PASS|FAIL|INDETERMINATE             — dist-tags.latest == package.json version
+      #   NPM_VERSION_REASON=<REASON>                          — only when there is one
+      # Transport fails OPEN (INDETERMINATE, exit 0, ::warning::). Content fails CLOSED: a version npm
+      # ACCEPTED but still will not serve at the deadline is FAIL, exit 1, because npm can hold one
+      # for review. The message says accepted-not-refused and says to re-run with mode: verify-only,
+      # never to re-publish.
+      - name: Verify dist-tag
+        env:
+          # NPM_PROPAGATION_DEADLINE_S — measured 249-307 s over v1.28.1..v1.31.0 (2026-08-24..
+          # 2026-09-23): 4 clean tag-run points, max 307 s (6 publishing runs incl. two dispatch reruns:
+          # 249.0-307.6 s, origin time[v] minus the publish step's return). 1200 s is 3.9x that and
+          # brackets the 12-16 min lags reported elsewhere. Re-tune from NPM_PROPAGATION_SECONDS,
+          # never from taste. The script REFUSES (exit 1) if this is missing or not an integer.
+          NPM_PROPAGATION_DEADLINE_S: '1200'
+          NPM_PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+        run: node scripts/verify-npm-propagation.mjs
 
       # ─── OPS-SMITHERY-PUBLISH-LANE-W1 R3 — re-scan the Smithery listing, then VERIFY it ─────
       #
@@ -286,6 +357,10 @@ jobs:
       - name: Re-scan the Smithery listing and verify it against the live origin
         env:
           SMITHERY_API_KEY: ${{ secrets.SMITHERY_API_KEY }}
+          # What the publish step actually did, so this step never claims an upload that did not
+          # happen. In mode: verify-only it is `skipped` (OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2,
+          # honesty constraint R5).
+          NPM_PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
         run: |
           set -uo pipefail
 
@@ -293,8 +368,27 @@ jobs:
           QUALIFIED='algovault/crypto-quant-signal-mcp'
           ENC="${QUALIFIED/\//%2F}"
           ORIGIN='https://api.algovault.com'
-          TARGET_VERSION="${GITHUB_REF_NAME#v}"
+          # SINGLE DERIVATION of the target version: package.json, the same source `Verify dist-tag`
+          # asserts (OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2 R6). The ref name is `main` on a
+          # dispatch, so deriving it from the tag made this leg wait 15 min for a version called
+          # "main" and report NOT_ATTEMPTED on every non-tag run, a dark step. On a tag push the
+          # tag is still cross-checked, and a disagreement is surfaced rather than followed.
+          TARGET_VERSION="$(jq -r .version package.json)"
+          if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+            TAG_REF="${GITHUB_REF_NAME}"
+            if [ "${TAG_REF#v}" != "${TARGET_VERSION}" ]; then
+              echo "::warning::tag ${TAG_REF} disagrees with package.json version ${TARGET_VERSION}; the readiness poll and the re-scan follow package.json"
+            fi
+          fi
           RESCAN=NOT_ATTEMPTED
+          if [ "${NPM_PUBLISH_OUTCOME:-}" = success ]; then
+            UPLOAD_NOTE='The npm publish above SUCCEEDED and is not affected.'
+          else
+            UPLOAD_NOTE='No npm publish ran in this run (mode: verify-only), so nothing on npm is affected.'
+          fi
+          # A GitHub re-run replays the ORIGINAL event, so re-running a tag-push run would attempt the
+          # upload again (npm refuses an existing version). Re-verification is a NEW dispatch.
+          REVERIFY='start a NEW dispatch with mode: verify-only (gh workflow run publish-npm.yml --ref main -f mode=verify-only); the Re-run button replays the tag push and would attempt the upload again'
 
           # ── phase 1 — readiness poll (closes the deploy.yml race described above) ──────────
           echo "waiting for $ORIGIN/health to report ${TARGET_VERSION} — deploy.yml runs concurrently"
@@ -311,7 +405,7 @@ jobs:
           done
 
           if [ "$READY" != yes ]; then
-            echo "::warning::the origin never reported ${TARGET_VERSION} within 15 minutes, so the re-scan was NOT fired — scanning now would snapshot the PREVIOUS build under a fresh timestamp, which is worse than the drift it repairs. The npm publish above SUCCEEDED and is not affected. Re-run this workflow once deploy.yml has finished."
+            echo "::warning::the origin never reported ${TARGET_VERSION} within 15 minutes, so the re-scan was NOT fired — scanning now would snapshot the PREVIOUS build under a fresh timestamp, which is worse than the drift it repairs. ${UPLOAD_NOTE} Once deploy.yml has finished, ${REVERIFY}."
             echo "SMITHERY_RESCAN=NOT_ATTEMPTED"
             echo "SMITHERY_SYNC_VERDICT=INDETERMINATE"
             exit 0
@@ -373,10 +467,10 @@ jobs:
 
           case "${SYNC:-}" in
             FAIL)
-              echo "::error::the Smithery listing does not match the live origin — see the divergence named above. The npm publish SUCCEEDED; this step fails so the catalogue drift is not silently inherited by the next release."
+              echo "::error::the Smithery listing does not match the live origin — see the divergence named above. ${UPLOAD_NOTE} This step fails so the catalogue drift is not silently inherited by the next release."
               exit 1 ;;
             INDETERMINATE)
-              echo "::warning::the sync gate could not verify the listing (origin or Smithery unreachable) — this is not a divergence signal, and the npm publish is unaffected."
+              echo "::warning::the sync gate could not verify the listing (origin or Smithery unreachable) — this is not a divergence signal. ${UPLOAD_NOTE}"
               exit 0 ;;
             PASS)
               case "${RESCAN}" in

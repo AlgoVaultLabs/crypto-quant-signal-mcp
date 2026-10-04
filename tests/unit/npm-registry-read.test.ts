@@ -25,12 +25,14 @@
  * 3. THE RATCHET IS WIRED. scripts/check-packument-read.mjs runs here against the real tree, so it
  *    executes on every CI run and every push (scripts/check-canaries-wired.mjs counts a test
  *    reference as wiring).
- *    ⚠️ CH1 STATE, deliberate: the tree still carries ONE forbidden read, publish-npm.yml's
- *    `Verify dist-tag` packument read, which CH2 removes. The baseline is EMPTY on purpose, because
- *    baselining a live defect would launder it. So this file asserts the verdict is FAIL and that the
- *    violation set is EXACTLY that one read. Any NEW violation still reds the suite. CH2 flips the
- *    assertion to PASS in the same commit that deletes the read. An exemption and its test are a
- *    pair, and leaving either half behind makes the other a lie.
+ *    CH1 asserted FAIL with exactly one violation, publish-npm.yml's `Verify dist-tag` packument
+ *    read, because the baseline is EMPTY by design and that read was still live. CH2 deleted the
+ *    read and flipped the assertion to PASS in the same commit: an exemption and its test are a pair.
+ *
+ * 4. (CH2) THE VERIFIER, RUN. scripts/verify-npm-propagation.mjs's poll loop is driven through
+ *    injected readers and a fake clock: 404-then-200 inside the deadline, a version held past it,
+ *    a dist-tag that never moves, an unreachable registry (real refused sockets), and the
+ *    verify-only shape. No line it prints may say the publish failed.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -45,6 +47,12 @@ import {
   readVersionDoc,
 } from '../../scripts/lib/npm-registry-read.mjs';
 import { evaluate, selfTest, EXIT } from '../../scripts/check-packument-read.mjs';
+import { runVerification, classify, parseDeadline, POLL_INTERVAL_S } from '../../scripts/verify-npm-propagation.mjs';
+import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import yaml from 'js-yaml';
 
 const PKG = 'crypto-quant-signal-mcp';
 const V = '1.31.0';
@@ -320,14 +328,14 @@ describe('scripts/check-packument-read.mjs — wired into the suite', () => {
     expect(selfTest()).toBe(0);
   });
 
-  it('CH1: the ONLY forbidden read in the tree is publish-npm.yml\'s Verify dist-tag packument read (CH2 removes it)', { timeout: 60_000 }, () => {
+  it('the tree carries NO forbidden read-back of our own package (CH2 deleted the last one)', { timeout: 60_000 }, () => {
     const r = evaluate();
     expect(r.own).toBe(PKG);
     expect(r.corpus ?? 0, 'the scan read nothing — a scan of nothing is not a clean tree').toBeGreaterThan(100);
-    const forbidden = r.violations.map((v: { file: string; kind: string }) => `${v.file}:${v.kind}`);
-    expect(forbidden).toEqual(['.github/workflows/publish-npm.yml:OWN_PACKUMENT']);
-    expect(r.verdict).toBe('FAIL');
-    expect(EXIT[r.verdict as 'FAIL']).toBe(1);
+    const forbidden = r.violations.map((v: { file: string; line: number; kind: string }) => `${v.file}:${v.line}:${v.kind}`);
+    expect(forbidden).toEqual([]);
+    expect(r.verdict).toBe('PASS');
+    expect(EXIT[r.verdict as 'PASS']).toBe(0);
   });
 
   it('the setup-node registry-url line and every third-party read are exempt, never forbidden', { timeout: 60_000 }, () => {
@@ -339,5 +347,277 @@ describe('scripts/check-packument-read.mjs — wired into the suite', () => {
       expect(at(f).every((k: string) => k === 'THIRD_PARTY'), `${f}: ${at(f).join(',')}`).toBe(true);
     }
     expect(at('scripts/check-partner-install-coords.mjs')).toEqual(['RUNTIME_ASSEMBLED']);
+  });
+});
+
+// ─── scripts/verify-npm-propagation.mjs — the bounded wait, RUN (CH2 R4) ─────────────────────
+
+type VRead = { ok: boolean; found: boolean; version: string | null; integrity: string | null; status: number | null; cacheStatus: string | null; reason: string | null; url: string | null };
+type DRead = { ok: boolean; latest: string | null; status: number | null; cacheStatus: string | null; reason: string | null; url: string | null };
+const vFound = (): VRead => ({ ok: true, found: true, version: V, integrity: INTEGRITY, status: 200, cacheStatus: 'DYNAMIC', reason: null, url: 'x' });
+const v404 = (): VRead => ({ ok: true, found: false, version: null, integrity: null, status: 404, cacheStatus: null, reason: 'not found (404)', url: 'x' });
+const vDown = (): VRead => ({ ok: false, found: false, version: null, integrity: null, status: null, cacheStatus: null, reason: 'transport: TypeError: fetch failed (ECONNREFUSED)', url: 'x' });
+const dAt = (latest: string): DRead => ({ ok: true, latest, status: 200, cacheStatus: 'DYNAMIC', reason: null, url: 'x' });
+const dDown = (): DRead => ({ ok: false, latest: null, status: null, cacheStatus: null, reason: 'transport: TypeError: fetch failed (ECONNREFUSED)', url: 'x' });
+
+/** A fake clock + scripted registry: each reader is a function of SIMULATED seconds since start. */
+function simulate(versionAt: (s: number) => VRead, distAt: (s: number) => DRead, extra: Record<string, unknown> = {}) {
+  let t = 0;
+  const calls = { version: 0, dist: 0 };
+  return runVerification({
+    pkg: PKG,
+    version: V,
+    deadlineS: 1200,
+    publishOutcome: 'success',
+    readers: {
+      readVersionDoc: async () => (calls.version++, versionAt(t / 1000)),
+      readDistTags: async () => (calls.dist++, distAt(t / 1000)),
+    },
+    sleep: async (ms: number) => {
+      t += ms;
+    },
+    now: () => t,
+    ...extra,
+  }).then((r) => ({ ...r, calls, text: r.lines.join('\n') }));
+}
+
+const NEVER_SAYS_PUBLISH_FAILED = /publish(ed)? (has )?failed|failed to publish|publish (was )?refused/i;
+
+describe('verify-npm-propagation — the bounded wait, run', () => {
+  it('AC13: 404 until +255 s, then 200 + dist-tags moves → both PASS, NPM_PROPAGATION_SECONDS=255', async () => {
+    const r = await simulate((s) => (s >= 255 ? vFound() : v404()), (s) => (s >= 255 ? dAt(V) : dAt('1.30.0')));
+    expect(r.exitCode).toBe(0);
+    expect(r.text).toContain('NPM_VERSION_PUBLISHED=PASS');
+    expect(r.text).toContain('DIST_TAG_VERDICT=PASS');
+    expect(r.text).toContain('NPM_PROPAGATION_SECONDS=255');
+    expect(r.observedAt).toBe(255);
+    expect(r.calls.version).toBe(255 / POLL_INTERVAL_S + 1); // polled every 15 s, stopped at the FIRST match
+    expect(r.text).not.toMatch(/NPM_VERSION_REASON/);
+  });
+
+  it('the measured worst case (307 s) also lands inside the deadline', async () => {
+    const r = await simulate((s) => (s >= 307 ? vFound() : v404()), (s) => (s >= 307 ? dAt(V) : dAt('1.30.0')));
+    expect(r.exitCode).toBe(0);
+    expect(r.observedAt).toBe(315); // first 15 s poll at or after 307 s
+  });
+
+  it('AC12: a version npm accepted but still 404 at the deadline → FAIL + REASON line + exit 1, worded as ACCEPTED-not-refused', async () => {
+    const r = await simulate(() => v404(), () => dAt('1.30.0'));
+    expect(r.exitCode).toBe(1);
+    expect(r.text).toContain('NPM_VERSION_PUBLISHED=FAIL');
+    expect(r.text).toContain('NPM_VERSION_REASON=NOT_AVAILABLE_AFTER_1200S');
+    expect(r.text).toContain('NPM_PROPAGATION_SECONDS=NOT_OBSERVED_WITHIN_1200S');
+    expect(r.text).toMatch(/ACCEPTED/);
+    expect(r.text).toMatch(/not refused/);
+    expect(r.text).toMatch(/mode: verify-only/);
+    expect(r.text).toMatch(/Do NOT re-publish/);
+    expect(r.text).not.toMatch(NEVER_SAYS_PUBLISH_FAILED);
+    // The reason is its OWN line, never folded into the verdict token.
+    expect(r.lines).toContain('NPM_VERSION_REASON=NOT_AVAILABLE_AFTER_1200S');
+    expect(r.lines).toContain('NPM_VERSION_PUBLISHED=FAIL');
+    // It waited out the deadline and no longer: the last poll is the one that fits inside 1200 s.
+    expect(r.calls.version).toBe(Math.floor(1200 / POLL_INTERVAL_S) + 1);
+  });
+
+  it('version served but dist-tags never moves → PUBLISHED=PASS · DIST_TAG=FAIL, exit 1', async () => {
+    const r = await simulate(() => vFound(), () => dAt('1.30.0'));
+    expect(r.exitCode).toBe(1);
+    expect(r.text).toContain('NPM_VERSION_PUBLISHED=PASS');
+    expect(r.text).toContain('DIST_TAG_VERDICT=FAIL');
+    expect(r.text).not.toMatch(/NPM_VERSION_REASON/);
+    expect(r.text).not.toMatch(NEVER_SAYS_PUBLISH_FAILED);
+  });
+
+  it('AC11: an unreachable registry → both INDETERMINATE, exit 0, ::warning::, and it never says the publish failed', async () => {
+    const r = await simulate(() => vDown(), () => dDown());
+    expect(r.exitCode).toBe(0);
+    expect(r.text).toContain('NPM_VERSION_PUBLISHED=INDETERMINATE');
+    expect(r.text).toContain('DIST_TAG_VERDICT=INDETERMINATE');
+    expect(r.text).toMatch(/::warning::/);
+    expect(r.text).toMatch(/NOT evidence about the publish/);
+    expect(r.text).not.toMatch(/::error::/);
+    expect(r.text).not.toMatch(NEVER_SAYS_PUBLISH_FAILED);
+  });
+
+  it('AC11, real sockets: the real readers aimed at a refused port classify INDETERMINATE, exit 0', { timeout: 60_000 }, async () => {
+    const dead = ((url: string, init?: RequestInit) => fetch(String(url).replace(REGISTRY, 'http://127.0.0.1:9'), init)) as typeof fetch;
+    let t = 0;
+    const r = await runVerification({
+      pkg: PKG,
+      version: V,
+      deadlineS: 30,
+      publishOutcome: 'success',
+      readerOpts: { fetchImpl: dead, timeoutMs: 5_000 },
+      sleep: async (ms: number) => {
+        t += ms;
+      },
+      now: () => t,
+    });
+    expect(r.exitCode).toBe(0);
+    expect(r.published).toBe('INDETERMINATE');
+    expect(r.distTag).toBe('INDETERMINATE');
+    expect(r.lines.join('\n')).not.toMatch(NEVER_SAYS_PUBLISH_FAILED);
+  });
+
+  it('a transport blip mid-wait does not end the wait — it keeps polling to the first match', async () => {
+    const r = await simulate((s) => (s < 60 ? v404() : s < 120 ? vDown() : vFound()), (s) => (s < 120 ? dDown() : dAt(V)));
+    expect(r.exitCode).toBe(0);
+    expect(r.observedAt).toBe(120);
+  });
+
+  it('verify-only shape: already published, publish step skipped → PASS on the first read, 0 s', async () => {
+    const r = await simulate(() => vFound(), () => dAt(V), { publishOutcome: 'skipped' });
+    expect(r.exitCode).toBe(0);
+    expect(r.text).toContain('NPM_PROPAGATION_SECONDS=0');
+    expect(r.text).toContain('NPM_PUBLISH_OUTCOME=skipped');
+    expect(r.calls.version).toBe(1);
+  });
+
+  it('verify-only shape, version missing: FAIL that does NOT claim an upload was accepted', async () => {
+    const r = await simulate(() => v404(), () => dAt('1.30.0'), { publishOutcome: 'skipped' });
+    expect(r.exitCode).toBe(1);
+    expect(r.text).not.toMatch(/ACCEPTED/);
+    expect(r.text).toMatch(/No upload ran in this run/);
+  });
+
+  it('classify() — the last read of each endpoint decides, one meaning per token', () => {
+    expect(classify({ version: vFound(), distTags: dAt(V), v: V })).toEqual({ published: 'PASS', distTag: 'PASS' });
+    expect(classify({ version: v404(), distTags: dAt('1.30.0'), v: V })).toEqual({ published: 'FAIL', distTag: 'FAIL' });
+    expect(classify({ version: vDown(), distTags: dAt(V), v: V })).toEqual({ published: 'INDETERMINATE', distTag: 'PASS' });
+    expect(classify({ version: null, distTags: null, v: V })).toEqual({ published: 'INDETERMINATE', distTag: 'INDETERMINATE' });
+  });
+
+  it('parseDeadline() refuses anything but a positive integer — no silent default', () => {
+    expect(parseDeadline('1200')).toBe(1200);
+    for (const bad of [undefined, '', '0', '-5', '12.5', '1e3', 'twenty', ' ']) expect(parseDeadline(bad as string)).toBeNull();
+  });
+
+  it('the LANE declares the deadline once, with its measured basis beside it, and runs this script', () => {
+    const lane = readFileSync(resolve(__dirname, '..', '..', '.github', 'workflows', 'publish-npm.yml'), 'utf8');
+    expect(lane).toMatch(/NPM_PROPAGATION_DEADLINE_S: '1200'/);
+    expect(lane).toMatch(/measured 249-307 s/);
+    expect(lane).toMatch(/run: node scripts\/verify-npm-propagation\.mjs/);
+    expect(lane.match(/NPM_PROPAGATION_DEADLINE_S: /g)?.length).toBe(1);
+  });
+});
+
+// ─── CH2 adversarial-review fixes, pinned (OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2) ───────────
+
+describe('a blip on the FINAL poll cannot launder a definitive verdict', () => {
+  it('held version: 80 definitive 404s, then an unreadable last poll → still FAIL, exit 1', async () => {
+    const r = await simulate((s) => (s >= 1200 ? vDown() : v404()), (s) => (s >= 1200 ? dDown() : dAt('1.30.0')));
+    expect(r.exitCode).toBe(1);
+    expect(r.published).toBe('FAIL');
+    expect(r.distTag).toBe('FAIL');
+    expect(r.text).toMatch(/final version-doc read was unreadable/);
+    expect(r.text).toContain('NPM_VERSION_REASON=NOT_AVAILABLE_AFTER_1200S');
+  });
+  it('dist-tags definitively stale, then unreadable on the last poll → DIST_TAG FAIL, exit 1', async () => {
+    const r = await simulate(() => vFound(), (s) => (s >= 1200 ? dDown() : dAt('1.30.0')));
+    expect(r.exitCode).toBe(1);
+    expect(r.published).toBe('PASS');
+    expect(r.distTag).toBe('FAIL');
+  });
+  it('an endpoint NEVER definitively read stays INDETERMINATE (transport fails open)', async () => {
+    const r = await simulate(() => vDown(), () => dAt('1.30.0'));
+    expect(r.published).toBe('INDETERMINATE');
+    expect(r.distTag).toBe('FAIL');
+    expect(r.exitCode).toBe(1); // the definitive dist-tags FAIL still blocks
+  });
+  it('remediation points at a NEW dispatch, never at the Re-run button (which replays the tag push)', async () => {
+    const r = await simulate(() => v404(), () => dAt('1.30.0'));
+    expect(r.text).toMatch(/gh workflow run publish-npm\.yml --ref main -f mode=verify-only/);
+    expect(r.text).toMatch(/Re-run button replays the tag push/);
+    expect(r.text).not.toMatch(/re-run this workflow/i);
+  });
+});
+
+/** The Smithery step's run text, read through a structural parse — comments do not exist there. */
+function smitheryRun(src: string): string {
+  const doc = (yaml.load(src) as { jobs?: Record<string, { steps?: Array<{ run?: string }> }> }) ?? {};
+  for (const job of Object.values(doc.jobs ?? {})) {
+    const step = (job.steps ?? []).find((st) => /api\.smithery\.ai/.test(st.run ?? ''));
+    if (step) return step.run ?? '';
+  }
+  return '';
+}
+const LANE_PATH = resolve(__dirname, '..', '..', '.github', 'workflows', 'publish-npm.yml');
+
+describe('R6 + honesty: the Smithery leg follows package.json and never claims an upload that did not happen', () => {
+  const src = readFileSync(LANE_PATH, 'utf8');
+  /** Every reason the Smithery step's target-version / upload-wording contract is broken. */
+  const failures = (s: string): string[] => {
+    const run = smitheryRun(s);
+    const out: string[] = [];
+    if (!run) return ['no Smithery step'];
+    if (!/TARGET_VERSION="\$\x28jq -r \.version package\.json\x29"/.test(run)) out.push('TARGET_VERSION is not taken from package.json');
+    if (/TARGET_VERSION="\$\{GITHUB_REF_NAME/.test(run)) out.push('TARGET_VERSION is derived from the ref name (it is "main" on a dispatch)');
+    if (!/NPM_PUBLISH_OUTCOME/.test(run)) out.push('the step does not read what the publish step did');
+    // An unconditional claim that the publish succeeded may appear ONLY inside the UPLOAD_NOTE branch.
+    const claims = run.split('\n').filter((l) => /SUCCEEDED/.test(l) && !/UPLOAD_NOTE=/.test(l));
+    if (claims.length) out.push(`unconditional publish claim(s): ${claims.map((l) => l.trim().slice(0, 60)).join(' | ')}`);
+    return out;
+  };
+  it('holds on the real lane', () => expect(failures(src)).toEqual([]));
+  it('DELIBERATE BREAK: reverting TARGET_VERSION to the ref name is caught', () => {
+    const broken = src.replace('TARGET_VERSION="$(jq -r .version package.json)"', 'TARGET_VERSION="${GITHUB_REF_NAME#v}"');
+    expect(broken).not.toBe(src);
+    expect(failures(broken).join(' | ')).toMatch(/ref name/);
+  });
+  it('DELIBERATE BREAK: an unconditional "publish SUCCEEDED" message is caught', () => {
+    const broken = src.replace('see the divergence named above. ${UPLOAD_NOTE}', 'see the divergence named above. The npm publish SUCCEEDED;');
+    expect(broken).not.toBe(src);
+    expect(failures(broken).join(' | ')).toMatch(/unconditional publish claim/);
+  });
+});
+
+describe('the CLI path itself — main(), the entry guard and process.exitCode — run as the lane runs it', () => {
+  // The pure-function tests above cannot see main(). A deleted `process.exitCode = …` or a broken
+  // entry guard would leave every one of them green while the lane step exited 0 on a held version.
+  // So the REAL script runs here, in a copied tree whose package.json names a version that does not
+  // exist on npm, with a 1 s deadline: the honest outcome is FAIL and exit 1.
+  const SCRIPT = resolve(__dirname, '..', '..', 'scripts', 'verify-npm-propagation.mjs');
+  const LIB = resolve(__dirname, '..', '..', 'scripts', 'lib', 'npm-registry-read.mjs');
+  const tree = (version: string) => {
+    const root = mkdtempSync(join(tmpdir(), 'npm-verify-cli-'));
+    mkdirSync(join(root, 'scripts', 'lib'), { recursive: true });
+    copyFileSync(SCRIPT, join(root, 'scripts', 'verify-npm-propagation.mjs'));
+    copyFileSync(LIB, join(root, 'scripts', 'lib', 'npm-registry-read.mjs'));
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: PKG, version }));
+    return root;
+  };
+  const runCli = (root: string, env: Record<string, string>) =>
+    spawnSync(process.execPath, [join(root, 'scripts', 'verify-npm-propagation.mjs')], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH ?? '', ...env },
+      timeout: 60_000,
+    });
+
+  it('a missing deadline REFUSES: exit 1, CONFIG_INVALID on its own line, tokens last', { timeout: 60_000 }, () => {
+    const root = tree('0.0.0-npm-verify-cli-canary');
+    try {
+      const r = runCli(root, {});
+      expect(r.status).toBe(1);
+      const lines = r.stdout.trim().split('\n');
+      expect(lines).toContain('NPM_VERSION_REASON=CONFIG_INVALID');
+      expect(lines.at(-1)).toBe('DIST_TAG_VERDICT=INDETERMINATE');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('LIVE: a version npm does not serve → FAIL and exit 1 through the real entry point', { timeout: 60_000 }, ({ skip }) => {
+    const root = tree('0.0.0-npm-verify-cli-canary');
+    try {
+      const r = runCli(root, { NPM_PROPAGATION_DEADLINE_S: '1', NPM_PUBLISH_OUTCOME: 'success' });
+      const out = r.stdout;
+      if (/NPM_VERSION_PUBLISHED=INDETERMINATE/.test(out)) skip(); // registry unreachable: no verdict on the CLI
+      expect(out).toContain('NPM_VERSION_PUBLISHED=FAIL');
+      expect(out).toContain('NPM_VERSION_REASON=NOT_AVAILABLE_AFTER_1S');
+      expect(r.status).toBe(1);
+      expect(out.trim().split('\n').at(-1)).toMatch(/^DIST_TAG_VERDICT=/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
