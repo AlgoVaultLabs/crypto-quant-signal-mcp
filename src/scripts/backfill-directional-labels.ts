@@ -1471,20 +1471,19 @@ export const RELABEL_INSERT_SQL_TAIL = ' ON CONFLICT (signal_id, barrier_spec) D
  * A venue's refusal of ONE market × timeframe, told apart from a transient fault. Measured on the relabel's first
  * night (2026-10-02): WhiteBIT "Market is not available", BingX 109418 "offline" / 109415 "pause", HTX
  * `status=error`, OKX 51000 "Parameter bar error" on 8h — each refused on every pass, so the venue could never
- * converge. A market is UNSERVED iff its own most recent page is refused too AND a control market (BTC 1h) on the
- * same venue is served now: the venue then serves it no candles at all — fewer than 30 contiguous σ windows, the
- * registered `unreachable:history` (registration §0), exactly as a venue that answers `[]` (Bybit 8h) is classed. A
- * rate limit, a budget skip, or a venue that refuses its control too is never a class: it stays a counted error.
- * Re-measured on every pass, and the last class wins, so a paused market that is served on a later pass is written.
+ * converge. A market is UNSERVED iff its own most recent page is refused, a control market (BTC 1h) on the same
+ * venue is served when asked right after, AND the market's page is then refused AGAIN with the same error key: the
+ * venue serves it no candles at all — fewer than 30 contiguous σ windows, the registered `unreachable:history`
+ * (registration §0), exactly as a venue that answers `[]` (Bybit 8h) is classed. Night 2 (2026-10-03) is why the
+ * control is never cached and the refusal must repeat: with a 10-min control cache and one market probe, a Bybit
+ * rate limit (10006 "Too many visits" — an untyped error) was classed once (BYBIT ZEC 3m), while every genuine
+ * refusal carried the same key on every probe of both nights. A rate limit, a budget skip, a venue that refuses
+ * its control, or a refusal that does not repeat is never a class: it stays a counted error. Re-measured on every
+ * pass, and the last class wins, so a paused market that is served on a later pass is written.
  */
 const CONTROL_COIN = 'BTC';
 const CONTROL_TIMEFRAME = '1h';
-const CONTROL_TTL_MS = 10 * 60_000;
-const venueControl = new Map<string, { served: boolean; atMs: number }>();
-/** Clears the per-process venue-control cache — a test seam, not an API. */
-export function _resetVenueControlForTest(): void {
-  venueControl.clear();
-}
+type PageProbe = { kind: 'served' } | { kind: 'transient' } | { kind: 'refused'; key: string };
 function isTransient(err: unknown): boolean {
   if (err instanceof WeightBudgetSkipError || err instanceof OwnStopError) return true;
   const code = (err as { code?: unknown } | null)?.code;
@@ -1496,24 +1495,43 @@ export function errKey(err: unknown): string {
   if (typeof e?.code === 'string') return e.code;
   return `${e?.constructor?.name ?? 'Error'}:${String(e?.message ?? err).replace(/\s+/g, ' ').slice(0, 100)}`;
 }
-async function recentPage(exchange: string, coin: string, timeframe: string): Promise<'served' | 'refused' | 'transient'> {
+async function recentPage(exchange: string, coin: string, timeframe: string): Promise<PageProbe> {
   const stepMs = servedStepMs(exchange, timeframe);
   try {
     await ownRateGate();
     await getAdapter(exchange as ExchangeId).getCandles(coin, timeframe, Date.now() - 5 * stepMs, exchange === 'HL' ? getDexForCoin(coin) : undefined);
-    return 'served';
+    return { kind: 'served' };
   } catch (err) {
     if (err instanceof OwnStopError) throw err;
-    return isTransient(err) ? 'transient' : 'refused';
+    return isTransient(err) ? { kind: 'transient' } : { kind: 'refused', key: errKey(err) };
   }
 }
 export async function marketUnserved(exchange: string, coin: string, timeframe: string): Promise<boolean> {
-  if ((await recentPage(exchange, coin, timeframe)) !== 'refused') return false;
-  const cached = venueControl.get(exchange);
-  if (cached && Date.now() - cached.atMs < CONTROL_TTL_MS) return cached.served;
-  const served = (await recentPage(exchange, CONTROL_COIN, CONTROL_TIMEFRAME)) === 'served';
-  venueControl.set(exchange, { served, atMs: Date.now() });
-  return served;
+  const first = await recentPage(exchange, coin, timeframe);
+  if (first.kind !== 'refused') return false;
+  if ((await recentPage(exchange, CONTROL_COIN, CONTROL_TIMEFRAME)).kind !== 'served') return false;
+  const again = await recentPage(exchange, coin, timeframe);
+  return again.kind === 'refused' && again.key === first.key;
+}
+
+/**
+ * Venues that REFUSE a candle page older than a fixed count of SERVED candles back from now, where every other
+ * venue answers such a range empty. Measured 2026-10-04 from signal-1 on the endpoint the adapter calls: GATE
+ * `/api/v4/futures/usdt/candlesticks` answers 400 `INVALID_PARAM_VALUE` "Candlestick too long ago. Maximum 10000
+ * points recently are allowed" (BTC_USDT 15m served from now−103 d, refused from now−106 d; 5m 33 d / 35 d). On
+ * night 2 the relabel counted GATE 3m / 5m / 15m groups — BTC, ETH and SOL among them — as errors: the σ history
+ * of a signal near the depth edge starts past the limit, so those groups errored on every pass and could never
+ * converge. The relabel asks such a venue no further back than the limit less a margin; the σ history is
+ * then what the venue serves, and prepareRaceV2 classes it as registered (≥ 30 contiguous windows raced, else
+ * unreachable:history; a window past the limit unreachable:depth).
+ */
+const HISTORY_REFUSED_BEYOND_CANDLES: Readonly<Record<string, number>> = { GATE: 10_000 };
+/** Candles kept inside the limit: the limit slides with the clock while a group is fetched. */
+const HISTORY_REFUSAL_MARGIN_CANDLES = 20;
+/** The earliest open time `venue` answers on a `stepMs` grid at `nowMs`; −∞ for a venue with no such limit. */
+function historyFloorMs(venue: string, stepMs: number, nowMs: number): number {
+  const n = HISTORY_REFUSED_BEYOND_CANDLES[venue];
+  return n === undefined ? -Infinity : nowMs - (n - HISTORY_REFUSAL_MARGIN_CANDLES) * stepMs;
 }
 
 export async function processRelabelGroup(
@@ -1588,7 +1606,7 @@ export async function processRelabelGroup(
     const neededEnd = entryMs + (W + FETCH_BUFFER_CANDLES) * stepMs;
     try {
       if (neededEnd > Math.max(coveredUntil, probedThrough)) {
-        const start = Math.max(nextFetchStartMs(coveredUntil, stepMs, neededStart), probedThrough + 1);
+        const start = Math.max(nextFetchStartMs(coveredUntil, stepMs, neededStart), probedThrough + 1, historyFloorMs(g.exchange, stepMs, Date.now()));
         if (start <= neededEnd) {
           const answered = await fetchRangeInto(cache, g.exchange as ExchangeId, g.coin, g.timeframe, start, neededEnd, stepMs);
           const before = coveredUntil;

@@ -190,10 +190,15 @@ mutation_table() {
  ["R44", "scripts/lrw/lrw-pull.sh", "sh:bash scripts/lrw/lrw-pull.sh --self-test", "if [ \"$1\" = 1 ] && [ \"$2\" = 0 ]; then echo introduces;", "if [ \"$1\" -ge 1 ]; then echo introduces;"],
  ["R45", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (ab[0] !== 'signal_id,barrier_spec') throw", "if (false) throw"],
  ["R46", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "        if (unserved) {", "        if (false) {"],
- ["R47", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "  venueControl.set(exchange, { served, atMs: Date.now() });\n  return served;", "  venueControl.set(exchange, { served, atMs: Date.now() });\n  return true;"],
+ ["R47", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "  return again.kind === 'refused' && again.key === first.key;", "  return first.kind === 'refused';"],
  ["R48", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "return code === 'UPSTREAM_RATE_LIMIT' || code === 'WEIGHT_BUDGET_SKIP';", "return code === 'WEIGHT_BUDGET_SKIP';"],
  ["R49", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "watchdog_ms() { echo $(( ($1 + 10) * 60000 )); }", "watchdog_ms() { echo 21600000; }"],
- ["R50", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", " -e SCRIPT_WATCHDOG_MS=\"$(watchdog_ms \"$left\")\" \"$CTR\" \"$@\"", " \"$CTR\" \"$@\""]
+ ["R50", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", " -e SCRIPT_WATCHDOG_MS=\"$(watchdog_ms \"$left\")\" \"$CTR\" \"$@\"", " \"$CTR\" \"$@\""],
+ ["R51", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "again.kind === 'refused' && again.key === first.key", "again.kind === 'refused'"],
+ ["R52", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "  if ((await recentPage(exchange, CONTROL_COIN, CONTROL_TIMEFRAME)).kind !== 'served') return false;\n", ""],
+ ["R53", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "{ GATE: 10_000 }", "{}"],
+ ["R54", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "probedThrough + 1, historyFloorMs(g.exchange, stepMs, Date.now()));", "probedThrough + 1);"],
+ ["R55", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "nowMs - (n - HISTORY_REFUSAL_MARGIN_CANDLES) * stepMs", "nowMs - (n + HISTORY_REFUSAL_MARGIN_CANDLES) * stepMs"]
 ]
 JSON
 }

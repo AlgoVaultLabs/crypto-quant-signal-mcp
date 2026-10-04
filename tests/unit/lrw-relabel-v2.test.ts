@@ -21,7 +21,11 @@ const env = vi.hoisted(() => ({
   fetches: [] as number[], // real-time ms of each adapter call
   advanceMsOnFetch: 0, // moves the faked clock on every venue call (the in-group deadline tests)
   venueDown: false, // every market refused, the control too (a venue outage)
+  controlDown: false, // the control (BTC 1h) alone refused
+  flaky: {} as Record<string, string[]>, // coin → the errors its next calls throw, in order; served once spent
+  refuseBeforeMs: undefined as number | undefined, // a page starting before this is refused (Gate's history limit)
   fetchLog: [] as string[], // coin:tf of each venue call
+  fetchStarts: [] as number[], // the start of each venue call
   // annotation seams
   labelRows: [] as Array<{ t: string; signal_id: number; barrier_spec: string; gap: number | null }>,
   lockTimeout: '5s',
@@ -72,7 +76,12 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
       env.fetches.push(performance.now());
       if (env.advanceMsOnFetch) vi.setSystemTime(Date.now() + env.advanceMsOnFetch);
       env.fetchLog.push(`${coin}:${_tf}`);
+      env.fetchStarts.push(start);
       if (env.venueDown) throw new Error('503 Service Unavailable');
+      if (env.controlDown && coin === 'BTC' && _tf === '1h') throw new Error('503 Service Unavailable');
+      const queued = env.flaky[coin]?.shift();
+      if (queued !== undefined) throw new Error(queued);
+      if (env.refuseBeforeMs !== undefined && start < env.refuseBeforeMs) throw new Error('Gate API 400: Bad Request');
       if (coin === 'RATELIMITED') throw Object.assign(new Error('Venue API rate-limited (429)'), { code: 'UPSTREAM_RATE_LIMIT' });
       if (coin === 'DELISTED') throw new Error('400 Invalid symbol');
       return env.candles.filter((c) => c.time >= start && (end === undefined || c.time <= end)).slice(0, 1000);
@@ -82,7 +91,6 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
 
 import {
   processRelabelGroup, parseCli, INSERT_COLUMNS, _relabelCoverageForTest, setOwnRequestRate, setOwnDeadline,
-  _resetVenueControlForTest,
   runAnnotation, ANNOTATE_SELECT_SQL, ANNOTATE_UPDATE_SQL, RELABEL_INSERT_SQL_HEAD, RELABEL_INSERT_SQL_TAIL,
 } from '../../src/scripts/backfill-directional-labels.js';
 import { buildRelabelGroupsSql, buildRelabelMissingSql, relabelUntil } from '../../src/scripts/lrw/relabel-sql.js';
@@ -141,8 +149,11 @@ beforeEach(() => {
   setOwnRequestRate(undefined);
   setOwnDeadline(Infinity);
   env.venueDown = false;
+  env.controlDown = false;
+  env.flaky = {};
+  env.refuseBeforeMs = undefined;
   env.fetchLog = [];
-  _resetVenueControlForTest();
+  env.fetchStarts = [];
 });
 
 describe('--relabel-v2 — ADD-ONLY, every eligible signal, every refusal counted', () => {
@@ -212,6 +223,12 @@ describe('--relabel-v2 — ADD-ONLY, every eligible signal, every refusal counte
     env.signals = [sig(22, T - 730 * D + 17_000)];
     const deep = await relabel({ exchange: 'GATE', coin: 'BTC', timeframe: '3m' });
     expect(deep.manifest).toEqual([['22', 'unreachable:depth']]);
+    expect(env.fetches).toHaveLength(0);
+    // GATE's history floor would also stop that fetch, so the measured depth is proven on a venue that answers an
+    // old range empty instead of refusing it: there the depth table alone saves the fetch
+    env.signals = [sig(23, T - 730 * D + 17_000)];
+    const deepXt = await relabel({ exchange: 'XT', coin: 'BTC', timeframe: '3m' });
+    expect(deepXt.manifest).toEqual([['23', 'unreachable:depth']]);
     expect(env.fetches).toHaveLength(0);
   });
 
@@ -296,6 +313,52 @@ describe('--relabel-v2 — ADD-ONLY, every eligible signal, every refusal counte
     expect(env.fetchLog.includes('BTC:1h')).toBe(false);
     expect(r.logs.filter((l) => l.startsWith('LRW_ERROR '))).toEqual(['LRW_ERROR BINGX:RATELIMITED:1h UPSTREAM_RATE_LIMIT']);
   });
+
+  it('a refusal that does not repeat after the control is served is transient: counted, never a class (night 2: Bybit 10006)', async () => {
+    env.signals = [sig(66, T + 17_000)];
+    env.candles = series(T - 600 * H, T + 20 * H, H);
+    // the fetch and the first probe hit a rate limit the adapter does not type; the control is served; the repeat is served
+    env.flaky = { ZEC: ['Bybit API error 10006: Too many visits.', 'Bybit API error 10006: Too many visits.'] };
+    const r = await relabel({ exchange: 'BYBIT', coin: 'ZEC', timeframe: '1h' });
+    expect([r.errors, r.unserved, r.manifest.length, r.written]).toEqual([1, 0, 0, 0]);
+    expect(env.fetchLog).toEqual(['ZEC:1h', 'ZEC:1h', 'BTC:1h', 'ZEC:1h']); // market, market, control, market again
+    expect(r.logs.filter((l) => l.startsWith('LRW_ERROR '))).toEqual(['LRW_ERROR BYBIT:ZEC:1h Error:Bybit API error 10006: Too many visits.']);
+    // a repeat refused with ANOTHER key is no stable refusal either
+    env.flaky = { ZEC: ['500 Internal Server Error', 'Bybit API error 10006: Too many visits.', '502 Bad Gateway'] };
+    env.fetchLog = [];
+    const k = await relabel({ exchange: 'BYBIT', coin: 'ZEC', timeframe: '1h' });
+    expect([k.errors, k.unserved, k.manifest.length]).toEqual([1, 0, 0]);
+    expect(env.fetchLog).toEqual(['ZEC:1h', 'ZEC:1h', 'BTC:1h', 'ZEC:1h']);
+  });
+
+  it('the control is asked afresh for every refused market — never a remembered answer', async () => {
+    env.signals = [sig(67, T + 17_000)];
+    env.candles = series(T - 600 * H, T + 20 * H, H);
+    const a = await relabel({ exchange: 'WHITEBIT', coin: 'DELISTED', timeframe: '1h' });
+    expect([a.unserved, a.errors]).toEqual([1, 0]);
+    env.controlDown = true; // seconds later the venue stops serving its control: the next refusal is no class
+    const b = await relabel({ exchange: 'WHITEBIT', coin: 'DELISTED', timeframe: '4h' });
+    expect([b.unserved, b.errors, b.manifest.length]).toEqual([0, 1, 0]);
+    expect(env.fetchLog.filter((x) => x === 'BTC:1h')).toHaveLength(2);
+  });
+
+  it('a venue that REFUSES pages past its history limit (Gate, 10 000 candles) is asked no further back: σ from what it serves, never an error', async () => {
+    const S = 15 * M;
+    const W = EVAL_CANDLES['15m'];
+    const nowMs = T + 30 * D;
+    env.refuseBeforeMs = nowMs - 10_000 * S; // the venue's own rule, measured 2026-10-04
+    const L = env.refuseBeforeMs;
+    // id 91: 20·W candles after the limit → fewer than 30 σ windows served → unreachable:history (no error)
+    // id 92: 40·W candles after the limit → ≥ 30 windows (fewer than 60) → raced on what the venue serves
+    env.signals = [sig(91, L + 20 * W * S + 17_000), sig(92, L + 40 * W * S + 17_000)];
+    env.candles = series(L - 1_000 * S, L + 60 * W * S, S);
+    const r = await relabel({ exchange: 'GATE', coin: 'BTC', timeframe: '15m' }, [], { nowMs });
+    expect([r.errors, r.unserved, r.written]).toEqual([0, 0, 3]);
+    expect(r.manifest).toEqual([['91', 'unreachable:history']]);
+    expect(env.inserted.every((x) => x[0] === 92)).toBe(true);
+    expect(env.fetchStarts.length).toBeGreaterThan(0);
+    expect(env.fetchStarts.every((s) => s >= L)).toBe(true);
+  }, 20_000);
 
   it('the hard stop acts INSIDE a group: rows raced before it are written, the rest is the next pass\'s (counted cutShort)', async () => {
     env.signals = [sig(71, T + 17_000), sig(72, T + 200 * H + 17_000)]; // two islands: the second needs its own fetch
