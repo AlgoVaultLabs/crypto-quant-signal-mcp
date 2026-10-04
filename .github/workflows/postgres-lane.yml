@@ -269,6 +269,17 @@ jobs:
         # REPORTED, not failed — widening that coverage means widening the bootstrap module set.
         run: node scripts/check-on-conflict-parity.mjs
 
+      - name: Tree byproducts — snapshot before the suite (TREE_BYPRODUCT_VERDICT)
+        # OPS-CHECKOUT-PARITY-SIGNAL-MCP-W1 CH2. The suite may leave NO path it did not find. This
+        # records the tree AFTER every install/build/migrate step and immediately before the suite, so
+        # the compare below sees only what the tests themselves wrote. `8ddd5405`'s own unit test wrote
+        # `ops/monitoring/__pycache__/` here and nothing looked; the first signal was a host page.
+        # The snapshot lives in $RUNNER_TEMP — the script refuses a path inside the work tree.
+        run: |
+          set -o pipefail
+          node scripts/check-tree-byproducts.mjs --snapshot "$RUNNER_TEMP/tree-before.z" | tee "$RUNNER_TEMP/tree-snapshot.log"
+          grep -qx 'TREE_BYPRODUCT_VERDICT=PASS' "$RUNNER_TEMP/tree-snapshot.log"
+
       - name: Suite — POSTGRES lane
         id: pg
         # continue-on-error while the lane is being triaged. This is NOT a soft gate forever: the
@@ -285,3 +296,14 @@ jobs:
         # fixes it. Baseline lives at audits/postgres-lane-baseline.txt, one test-FILE per line,
         # each with an owner + reason in the ledger beside it.
         run: node scripts/check-postgres-lane.mjs /tmp/pg-lane.log
+
+      - name: Tree byproducts — the suite left nothing behind (TREE_BYPRODUCT_VERDICT)
+        # `if: always()` so it runs even when the baseline compare above fails. Gated on the TOKEN:
+        # FAIL (a path present after and absent before — each one is named) and INDETERMINATE (no
+        # snapshot, unparseable, git error) both fail the job. A finding is CLASSIFIED — a reproducible
+        # cache may earn a repo .gitignore rule, anything else must write to a temp dir — never baselined.
+        if: always()
+        run: |
+          set -o pipefail
+          node scripts/check-tree-byproducts.mjs --compare "$RUNNER_TEMP/tree-before.z" | tee "$RUNNER_TEMP/tree-byproducts.log"
+          grep -qx 'TREE_BYPRODUCT_VERDICT=PASS' "$RUNNER_TEMP/tree-byproducts.log"
