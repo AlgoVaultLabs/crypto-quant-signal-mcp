@@ -9,10 +9,11 @@
  *     its pre-row chrome traps and the two WRONG badge bodies GitHub served during the episodes;
  *   · Recover through the canary-compatible FIXTURE seam (AC9) — the read sequence `.svg.2`, `.html.2`;
  *   · byte parity of the legacy sub-modes and of the fixture mangling with the canary's own bash;
- *   · the twin: the module's badge parser agrees with deploy-drift's parseBadgeTitle until CH4;
- *   · the CONSUMER REGISTRY: every executable that reads the badge or the run page is the module or
- *     a registered consumer, and private classifiers live only on a PENDING ratchet that may only
- *     shrink (CH3 removes the canary, CH4 empties it).
+ *   · the twin with deploy-drift's parseBadgeTitle — RETIRED by CH4 (parseBadgeTitle removed; one parser left);
+ *   · the CONSUMER REGISTRY: every executable that reads the badge or the run page — or imports /
+ *     execs the module — is the module or a REGISTERED consumer, and the module is the ONLY classifier
+ *     (CH3 removed the canary from PENDING; CH4 emptied it — architect rulings Q7/Q8, 2026-10-04).
+ *   · any ref is SAME-REF (ruling Q9): resolved from the newest finished run's own row, on REAL markup.
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync, execFileSync } from 'node:child_process';
@@ -23,9 +24,9 @@ import { join, resolve } from 'node:path';
 import {
   BIND_TABLE, CLASSES, EXIT, ICON_VOCAB, TOKEN, RECOVER_DEFAULTS, EPISODE_ENVELOPE, CACHE_BUSTER,
   readConclusion, verdictFor, parsePage, parseBadge, classifyIcon, mangle, badgeUrl, actionsUrl,
-  memoryFetch, fixturePage, fixtureBadge, fixtureRow, spanCoversEnvelope,
+  memoryFetch, fixturePage, fixtureBadge, fixtureRow, spanCoversEnvelope, refOfRun, renderLines,
 } from '../../ops/monitoring/gh-run-conclusion.mjs';
-import { parseBadgeTitle } from '../../ops/monitoring/deploy-drift-canary.mjs';
+import ts from 'typescript';
 
 const ROOT = resolve(__dirname, '..', '..');
 const MODULE_REL = 'ops/monitoring/gh-run-conclusion.mjs';
@@ -515,70 +516,155 @@ describe('byte parity with the canary (the CH3 shims delegate here)', () => {
   });
 });
 
-describe('the twin — pinned until CH4 retires it', () => {
-  it("the module's badge state agrees with deploy-drift's parseBadgeTitle on the whole badge corpus", () => {
-    const corpus = [...readdirSync(FX).filter((f) => f.endsWith('.svg')).map((f) => fx(f)),
-      fixtureBadge('Deploy to Hetzner', 'passing'), fixtureBadge('Deploy to Hetzner', 'failing'), fixtureBadge('Deploy to Hetzner', 'no status'), '<svg></svg>'];
-    for (const svg of corpus) {
-      const mine = parseBadge(svg).state ?? 'unknown';
-      expect(mine).toBe(parseBadgeTitle(svg));
-    }
-  });
-});
+// The twin with deploy-drift's parseBadgeTitle (pinned CH2 → CH4) is RETIRED: CH4 removed
+// parseBadgeTitle, so there is no second badge parser left to agree with. Its replacement guarantee is
+// the registry's "exactly ONE classifier" below.
 
-describe('the CONSUMER REGISTRY — one classifier, a ratchet that may only shrink', () => {
-  /** Files that legitimately read the badge / run page through (or, until migrated, beside) the module. */
+describe('the CONSUMER REGISTRY — exactly ONE classifier, consumers found by what they import or exec', () => {
+  /** Every file that imports or execs the module (architect ruling Q8): enumerated here AND in the inventory row's consumed_by. */
   const REGISTERED = ['ops/cron/xrepo-ci-conclusion-canary.sh', 'ops/monitoring/deploy-drift-canary.mjs', 'scripts/check-release-readiness.mjs'];
-  /** CH2 baseline. CH3 removes the canary; CH4 empties it. Entries may only ever be REMOVED. */
+  /** CH2 baseline of private classifiers. CH3 removed the canary; CH4 emptied the ratchet. It may only ever shrink. */
   const CH2_BASELINE = ['ops/cron/xrepo-ci-conclusion-canary.sh', 'ops/monitoring/deploy-drift-canary.mjs', 'scripts/check-release-readiness.mjs'];
-  // CH3 (OPS-XREPO-CI-RED-W1) migrated the canary: its parsers are shims over the module. CH4 empties this.
-  const PENDING = ['ops/monitoring/deploy-drift-canary.mjs', 'scripts/check-release-readiness.mjs'];
+  const PENDING: string[] = [];
 
+  /**
+   * Executable text = the file with its COMMENTS removed by a LEXER, never by a regex. The CH2 regex
+   * strip ran /* … *\/ before //, so a "/*" inside a // comment or a string opened a false span that
+   * deleted LIVE code up to the next "*\/" — measured 52 files / 119 spans / 3,836 lines across the
+   * corpus (CH4 R0 §15.3), including deploy-drift's 'ops/monitoring/**' string: exactly where a private
+   * parser could hide (M10b). JS/TS go through the TypeScript parser's own comment ranges (regex vs
+   * division resolved by the parser); shell/YAML/Python keep the line-comment rule.
+   */
+  const stripJs = (file: string, text: string) => {
+    const kind = /\.ts$/.test(file) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
+    const ranges = new Map<number, number>();
+    const add = (rs: readonly ts.CommentRange[] | undefined) => { for (const r of rs ?? []) ranges.set(r.pos, r.end); };
+    const walk = (n: ts.Node) => {
+      add(ts.getLeadingCommentRanges(text, n.pos)); add(ts.getTrailingCommentRanges(text, n.end));
+      for (const c of n.getChildren(sf)) walk(c);
+    };
+    walk(sf);
+    add(ts.getLeadingCommentRanges(text, 0));
+    const chars = text.split('');
+    for (const [pos, end] of ranges) for (let k = pos; k < end; k++) if (chars[k] !== '\n') chars[k] = ' ';
+    return chars.join('');
+  };
   const executableText = (file: string, text: string) => {
     if (/\.(sh|ya?ml|py)$/.test(file)) return text.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-    return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    return stripJs(file, text);
   };
+  /** The CH2 regex strip, kept ONLY to prove the lexer is load-bearing (M10b is invisible to it). */
+  const naiveStrip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  // A CLASSIFIER is a file that INTERPRETS a badge or a run page — a PARSE construct, never a mention:
+  //   · a <title> CONTENT extraction: sed `<title>\([^<]`, grep `<title>[^<]`, a regex `<title>([^<]`;
+  //   · a run-row split: split('id="check_suite_'), sed 's/id="check_suite_/', or a regex literal
+  //     holding check_suite_ that is .exec/.test/.match-ed;
+  //   · a call into a private badge parser (parseBadgeTitle).
+  // A fixture WRITER (printf '<div id="check_suite_%s"…', `<title>${name}</title>`) is neither.
+  const isClassifierText = (text: string) => /<title>\\?\(?\[\^</.test(text)
+    || /split\(\s*['"`]id="check_suite_/.test(text) || /s\/id="check_suite_\//.test(text)
+    || /\/[^/\n]*check_suite_[^/\n]*\/[gimsuy]*\.(exec|test)\(|\.match\(\s*\/[^/\n]*check_suite_/.test(text)
+    || /\bparseBadgeTitle\s*\(/.test(text);
+  const classify = (f: string, text: string) => {
+    const literal = (/actions\/workflows\//.test(text) && /badge\.svg/.test(text)) || /check_suite_/.test(text);
+    // Ruling Q8: a consumer is found by what it IMPORTS or EXECS — never by a URL string it happens to keep.
+    const consumes = f !== MODULE_REL && /gh-run-conclusion\.mjs/.test(text);
+    const reads = literal || consumes;
+    // The classifier check covers every file that reads OR is registered (a registered file can never
+    // hide a private parser by dropping its last URL literal).
+    const classifier = (reads || REGISTERED.includes(f)) && isClassifierText(text);
+    return { f, literal, consumes, reads, classifier };
+  };
+
   // --others too: a rogue reader must fail BEFORE it is committed, not after.
   const tracked = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', 'ops', 'scripts', 'src', '.github'], { cwd: ROOT, encoding: 'utf8' })
     .split('\n').filter((f) => f && /\.(sh|mjs|cjs|js|ts|ya?ml|py)$/.test(f));
   const scan = tracked.map((f) => {
     let text = '';
     try { text = executableText(f, readFileSync(join(ROOT, f), 'utf8')); } catch { /* unreadable → skipped, counted below */ }
-    const reads = (/actions\/workflows\//.test(text) && /badge\.svg/.test(text)) || /check_suite_/.test(text);
-    // A CLASSIFIER is a reader that INTERPRETS what it read — a PARSE construct, never a mention:
-    //   · a <title> CONTENT extraction: sed `<title>\([^<]`, grep `<title>[^<]`, a regex `<title>([^<]`;
-    //   · a run-row split: split('id="check_suite_'), sed 's/id="check_suite_/', or a regex literal
-    //     holding check_suite_ that is .exec/.test/.match-ed;
-    //   · a call into a private badge parser (parseBadgeTitle).
-    // A fixture WRITER (printf '<div id="check_suite_%s"…', `<title>${name}</title>`) is neither, which
-    // is what lets the canary leave PENDING in CH3 while its self-test still writes run-row fixtures.
-    const titleExtract = /<title>\\?\(?\[\^</.test(text);
-    const rowSplit = /split\(\s*['"`]id="check_suite_/.test(text) || /s\/id="check_suite_\//.test(text)
-      || /\/[^/\n]*check_suite_[^/\n]*\/[gimsuy]*\.(exec|test)\(|\.match\(\s*\/[^/\n]*check_suite_/.test(text);
-    const classifier = reads && (titleExtract || rowSplit || /\bparseBadgeTitle\s*\(/.test(text));
-    return { f, reads, classifier };
+    return classify(f, text);
   });
 
-  it('vacuity: the scan covered the tree and found the module and every registered consumer', () => {
+  it('vacuity: the scan covered the tree, the module is a classifier, and EVERY registered file consumes the module', { timeout: 60_000 }, () => {
     expect(tracked.length).toBeGreaterThan(200);
-    const readers = scan.filter((s) => s.reads).map((s) => s.f);
-    expect(readers).toContain(MODULE_REL);
-    for (const r of REGISTERED) expect(readers, r).toContain(r);
+    const mod = scan.find((s) => s.f === MODULE_REL);
+    expect(mod?.literal && mod?.classifier).toBe(true);
+    for (const r of REGISTERED) expect(scan.find((s) => s.f === r)?.consumes, r).toBe(true);
+  });
+  it('every file that imports or execs the module is REGISTERED (a new importer reds until it is enumerated)', () => {
+    const unregistered = scan.filter((s) => s.consumes && !REGISTERED.includes(s.f)).map((s) => s.f);
+    expect(unregistered).toEqual([]);
   });
   it('every executable that reads the badge or the run page is the module or a REGISTERED consumer', () => {
     const rogue = scan.filter((s) => s.reads && s.f !== MODULE_REL && !REGISTERED.includes(s.f)).map((s) => s.f);
     expect(rogue).toEqual([]);
   });
-  it('a private classifier (<title> parse, row parse, parseBadgeTitle call) outside the module lives only on PENDING', () => {
-    const offenders = scan.filter((s) => s.classifier && s.f !== MODULE_REL && !PENDING.includes(s.f)).map((s) => s.f);
-    expect(offenders).toEqual([]);
+  it('exactly ONE classifier exists: the module (PENDING reached zero in CH4)', () => {
+    expect(scan.filter((s) => s.classifier).map((s) => s.f)).toEqual([MODULE_REL]);
   });
-  it('PENDING is honest: every entry still HAS a private classifier (a migrated file must leave the list)', () => {
-    for (const p of PENDING) expect(scan.find((s) => s.f === p)?.classifier, p).toBe(true);
-  });
-  it('the ratchet only shrinks: PENDING ⊆ the CH2 baseline', () => {
+  it('the ratchet reached zero and may only shrink: PENDING = [] ⊆ the CH2 baseline', () => {
+    expect(PENDING).toEqual([]);
     for (const p of PENDING) expect(CH2_BASELINE).toContain(p);
-    expect(PENDING.length).toBeLessThanOrEqual(2);
+  });
+  it('the inventory row enumerates every registered consumer in consumed_by', () => {
+    const inv = JSON.parse(readFileSync(join(ROOT, 'ops', 'monitoring', 'monitoring-inventory.json'), 'utf8'));
+    const row = inv.artifacts.find((r: { id: string }) => r.id === 'gh-run-conclusion');
+    expect([...row.consumed_by].sort()).toEqual([...REGISTERED].sort());
+  });
+
+  describe('mutations M10 / M10b (AC2) — proven able to fail, in memory, on the real deploy-drift text', () => {
+    const DD = 'ops/monitoring/deploy-drift-canary.mjs';
+    const raw = readFileSync(join(ROOT, DD), 'utf8');
+    const PARSER = "\nconst __m10 = (svg) => (/<title>([^<]*)<\\/title>/.exec(String(svg)) || [])[1];\n";
+    it('baseline: deploy-drift as shipped is a consumer and NOT a classifier', () => {
+      const s = classify(DD, executableText(DD, raw));
+      expect(s.consumes && !s.classifier).toBe(true);
+    });
+    it('M10: a private <title> parser appended to deploy-drift makes it a classifier (the registry reds)', () => {
+      expect(classify(DD, executableText(DD, raw + PARSER)).classifier).toBe(true);
+    });
+    it("M10b: the same parser inside the former false span (the self-test's 'ops/monitoring/**' strings) is caught by the lexer — and was INVISIBLE to the CH2 regex strip", () => {
+      // The span opens at the first "/**" inside a 'ops/monitoring/**' STRING and runs to the next "*/";
+      // the IGN declaration is a complete statement inside it, so the mutant stays syntactically valid.
+      const anchor = raw.indexOf("const IGN = ['ops/monitoring/**'");
+      expect(anchor, "deploy-drift's self-test still carries the IGN statement inside the false span").toBeGreaterThan(0);
+      const eol = raw.indexOf('\n', anchor);
+      const mutated = raw.slice(0, eol + 1) + PARSER + raw.slice(eol + 1);
+      expect(classify(DD, executableText(DD, mutated)).classifier).toBe(true);
+      expect(isClassifierText(naiveStrip(mutated))).toBe(false);
+    });
+  });
+});
+
+describe('any ref is SAME-REF (ruling Q9) — on REAL captured markup', () => {
+  const NPM = { repo: 'AlgoVaultLabs/crypto-quant-signal-mcp', workflow: 'publish-npm.yml', branch: null };
+  const ref = (r: string) => ({ ...NPM, branch: r });
+  const anyRefPage = () => realPage(fx('row-success-37201506699-anyref.html'), fx('row-success-37182060859-anyref.html'));
+  it('refOfRun reads the branch-name title of THAT run on the real rows (#29 → v1.31.1, #28 → main)', () => {
+    expect(refOfRun(anyRefPage(), '37201506699')).toEqual({ ref: 'v1.31.1', reason: null });
+    expect(refOfRun(anyRefPage(), '37182060859')).toEqual({ ref: 'main', reason: null });
+  });
+  it('the 2026-10-04 v1.31.1 release: resolved to v1.31.1, both instruments read ON it, bound #29 — the no-param badge never requested', () => {
+    const seen: string[] = [];
+    const inner = memoryFetch({
+      [actionsUrl(NPM)]: [{ body: anyRefPage() }],
+      [badgeUrl(ref('v1.31.1'))]: [{ body: fx('badge-passing-publish-npm-v1.31.1.svg') }],
+      [actionsUrl(ref('v1.31.1'))]: [{ body: realPage(fx('row-success-37201506699-anyref.html')) }],
+    });
+    const rec = readConclusion({ ...NPM, cls: 'blocking' }, { fetchDoc: (u: string, e: string, n: number, f: string) => { seen.push(u); return inner(u, e, n, f); }, sleep: noSleep, reads: 3, spacingS: 60, env: {}, host: 'https://github.com' });
+    expect(rec.row).toBe(1);
+    expect(rec.resolved_ref).toBe('v1.31.1');
+    expect(rec.bound_run?.run_id).toBe('37201506699');
+    expect(verdictFor(rec, 'blocking')).toBe('PASS');
+    expect(seen).not.toContain(badgeUrl(NPM));
+    expect(renderLines(rec, 'blocking')).toContain('GHRC_RESOLVED_REF=v1.31.1');
+  });
+  it('a ref the badge cannot take (a slash-ref) is refused with a named reason, never bound across runs', () => {
+    const slashed = fx('row-success-37201506699-anyref.html').replace(/title="v1\.31\.1"/g, 'title="release/v1.31.1"');
+    const rec = readConclusion({ ...NPM, cls: 'blocking' }, { fetchDoc: memoryFetch({ [actionsUrl(NPM)]: [{ body: realPage(slashed) }] }), sleep: noSleep, reads: 3, spacingS: 60, env: {}, host: 'https://github.com' });
+    expect([rec.row, rec.agreement, rec.reason, verdictFor(rec, 'blocking')]).toEqual(['R', 'UNCORROBORATED', 'ref_out_of_vocabulary', 'INDETERMINATE']);
   });
 });
 

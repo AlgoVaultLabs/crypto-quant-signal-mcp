@@ -31,6 +31,13 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
+// OPS-XREPO-CI-RED-W1 CH4: the deploy lane is read through THE ONE derivation of a workflow's
+// latest-run conclusion. It is a sibling file on the host (/opt/algovault-monitoring) and imports
+// node builtins only, so this canary still runs from /opt with no node_modules.
+import {
+  readConclusion, verdictFor, curlFetch, badgeUrl, actionsUrl, parseBadge, memoryFetch,
+  fixtureRow, fixturePage, fixtureBadge, RECOVER_DEFAULTS,
+} from './gh-run-conclusion.mjs';
 
 export const VERDICTS = /** @type {const} */ ([
   'DRIFT_NONE',
@@ -192,6 +199,20 @@ export function validateDeployModel(d) {
         return 'a nonTriggeringCommits row lacks committerName / committerEmail / paths / producer';
       }
     }
+    // OPS-XREPO-CI-RED-W1 CH4 — ONE lane declaration. The lane is read through the bound-record
+    // module, which needs the workflow FILE (deploy.yml), not its display name; and laneBadge must be
+    // DERIVED from that lane, so a hand-edited badge URL that drifts from it REFUSES rather than
+    // sending the operator to a different lane than the one the canary actually read.
+    const lane = d.lane;
+    if (!lane || typeof lane !== 'object'
+      || typeof lane.repo !== 'string' || !lane.repo
+      || typeof lane.workflow !== 'string' || !/\.ya?ml$/.test(lane.workflow)
+      || typeof lane.branch !== 'string' || !lane.branch) {
+      return 'gha-push model lacks lane { repo, workflow (a .yml file), branch }';
+    }
+    if (d.laneBadge !== badgeUrl(lane)) {
+      return `gha-push model laneBadge is not derived from its lane (one declaration): expected ${badgeUrl(lane)}`;
+    }
     return null;
   }
   for (const k of ['manifest', 'manifestRemote', 'manifestRawBase', 'deployCommand']) {
@@ -289,8 +310,15 @@ export function touchesDeployPaths(files, deployPaths) {
   return { touched: hit.length > 0, files: hit };
 }
 
-export const BADGE_URL =
-  'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/actions/workflows/deploy.yml/badge.svg?branch=main';
+/**
+ * The deploy LANE, declared ONCE (OPS-XREPO-CI-RED-W1 CH4). Every lane URL is DERIVED from it by the
+ * module's own badgeUrl() / actionsUrl() — never written a second time, because a second literal is
+ * a second thing that can drift. validateDeployModel() refuses a laneBadge that is not badgeUrl(lane),
+ * and the self-test pins BADGE_URL byte-identical to the literal it replaced.
+ */
+export const CQSM_LANE = Object.freeze({ repo: 'AlgoVaultLabs/crypto-quant-signal-mcp', workflow: 'deploy.yml', branch: 'main' });
+
+export const BADGE_URL = badgeUrl(CQSM_LANE);
 
 /**
  * Advance the drift latch for one repo. PURE — no clock, no I/O, so the self-test can execute the
@@ -343,7 +371,7 @@ export const ATTEMPT_COOLDOWN_MS = 20 * 60 * 1000;
 export function classifyDrift(f) {
   const { prodSha, mainHead, suiteVerdict, laneHealth = null, nonDeploying = null,
     nonDeployingCause = null, deployKind, deployModelError = null, deploySet = null,
-    workflow = null, laneBadge = null, deployCommand = null,
+    workflow = null, laneBadge = null, lane = null, deployCommand = null,
     graphTouchers = [], sessionCommits = [] } = f;
 
   // Provenance we could not read is INDETERMINATE, never "in sync". Assuming sync on a missing
@@ -447,7 +475,11 @@ export function classifyDrift(f) {
       verdict: 'DRIFT_INDETERMINATE',
       reason: `deploy lane health unreadable${caveat}`,
       cause: 'lane-unknown',
-      next: laneBadge ? `curl -sS "${laneBadge}" | grep -o "<title>[^<]*"` : undefined,
+      // Architect ruling Q7 (OPS-XREPO-CI-RED-W1 CH4): re-read the lane the way the canary read it,
+      // through the bound-record module, never a bare badge title. Only a badge URL: name it, nothing more.
+      next: lane
+        ? `node /opt/algovault-monitoring/gh-run-conclusion.mjs --repo ${lane.repo} --workflow ${lane.workflow} --branch ${lane.branch} --class attribution   # badge: ${laneBadge}`
+        : laneBadge ? `curl -sS "${laneBadge}"` : undefined,
     };
   }
 
@@ -619,10 +651,12 @@ function selfTest() {
   t('a determined-deploying delta adds no caveat',
     /could not determine/.test(classifyDrift({ ...base, laneHealth: 'failing', nonDeploying: false }).reason), false);
 
-  t('badge: passing', parseBadgeTitle('<title>Deploy to Hetzner - passing</title>'), 'passing');
-  t('badge: failing', parseBadgeTitle('<title>Deploy to Hetzner - failing</title>'), 'failing');
-  t('badge: no status is UNKNOWN, never a pass', parseBadgeTitle('<title>Deploy to Hetzner - no status</title>'), 'unknown');
-  t('badge: unparseable is UNKNOWN, never a pass', parseBadgeTitle('<svg></svg>'), 'unknown');
+  // OPS-XREPO-CI-RED-W1 CH4: the private badge parser is retired; these now pin the module's ONE parser.
+  const badgeState = (svg) => parseBadge(svg).state ?? 'unknown';
+  t('badge: passing', badgeState('<title>Deploy to Hetzner - passing</title>'), 'passing');
+  t('badge: failing', badgeState('<title>Deploy to Hetzner - failing</title>'), 'failing');
+  t('badge: no status is UNKNOWN, never a pass', badgeState('<title>Deploy to Hetzner - no status</title>'), 'unknown');
+  t('badge: unparseable is UNKNOWN, never a pass', badgeState('<svg></svg>'), 'unknown');
 
   // paths-ignore parsing, against the REAL shape of deploy.yml (comments interleaved, quoted).
   const yaml = ['on:', '  push:', '    branches: [main]', '    paths-ignore:',
@@ -801,6 +835,104 @@ function selfTest() {
   t('ledger counts per UTC day', attemptsFor(led, 'signal', 1e12).attemptsToday, 2);
   t('ledger resets on a new day', attemptsFor(led, 'signal', 1e12 + 864e5 * 2).attemptsToday, 0);
 
+  /* ── OPS-XREPO-CI-RED-W1 CH4 — the lane is read through the bound-record module ───────────────
+   * Every call into the module is wrapped: an assertion that RAISES is not an assertion, it aborts
+   * the suite instead of reporting FAIL. Hermetic on purpose (the host has no tests/fixtures): the
+   * N1 replay is built from the module's own row and badge builders with the REAL ids, through the
+   * in-memory transport and a no-op clock; the vitest replays the same through captured markup. */
+  const safe = (fn) => { try { return fn(); } catch (e) { return { threw: String(e?.message ?? e) }; } };
+
+  t('BADGE_URL is derived from the lane and byte-identical to the literal it replaced', BADGE_URL,
+    'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/actions/workflows/deploy.yml/badge.svg?branch=main');
+  const cq = safe(() => REPOS.find((r) => r.name === 'crypto-quant-signal-mcp').deploy);
+  t('the cqsm row declares the ONE lane, and its laneBadge is the derived URL', [cq.lane, cq.laneBadge], [CQSM_LANE, BADGE_URL]);
+  t('a laneBadge that drifts from the lane REFUSES (one declaration)',
+    /not derived from its lane/.test(safe(() => validateDeployModel({ ...cq, laneBadge: BADGE_URL.replace('branch=main', 'branch=master') })) ?? ''), true);
+  t('a gha-push model with no lane REFUSES', /lacks lane/.test(safe(() => validateDeployModel({ ...cq, lane: undefined })) ?? ''), true);
+  t('a lane naming the display name instead of the workflow file REFUSES',
+    /lacks lane/.test(safe(() => validateDeployModel({ ...cq, lane: { ...CQSM_LANE, workflow: 'Deploy to Hetzner' } })) ?? ''), true);
+
+  const lo = laneReadOpts();
+  t('the LIVE lane read pins host / reads / spacing / env, reads through curl, and sleeps for real',
+    // env as a KEY COUNT, never its values — a regression must not print the host's environment into a log.
+    [lo.host, lo.reads, lo.spacingS, Object.keys(lo.env ?? { x: 1 }).length, typeof lo.fetchDoc, 'sleep' in lo],
+    ['https://github.com', RECOVER_DEFAULTS.reads, RECOVER_DEFAULTS.spacingS, 0, 'function', false]);
+  const seamed = laneReadOpts({ fetchDoc: () => ({}), sleep: () => {} });
+  t('...and a test seam swaps ONLY the transport and the clock, never the pins',
+    [seamed.host, seamed.reads, seamed.spacingS, Object.keys(seamed.env ?? { x: 1 }).length],
+    ['https://github.com', RECOVER_DEFAULTS.reads, RECOVER_DEFAULTS.spacingS, 0]);
+
+  const LANE_NAME = 'Deploy to Hetzner';
+  const laneRow = (runId, runNumber, icon, started) =>
+    fixtureRow({ repo: CQSM_LANE.repo, runId, runNumber, name: LANE_NAME, icon, started, ref: 'main' });
+  const laneSeq = (badgeStatus, rows, pageHttp = 200) => ({
+    [badgeUrl(CQSM_LANE)]: [{ body: fixtureBadge(LANE_NAME, badgeStatus) }],
+    [actionsUrl(CQSM_LANE)]: [pageHttp === 200 ? { body: fixturePage(rows) } : { http: pageHttp }],
+  });
+  let sleeps = 0;
+  const readLane = (seq) => readDeployLaneHealth(CQSM_LANE, { fetchDoc: memoryFetch(seq), sleep: () => { sleeps++; } });
+
+  // N1 (prior incident, recorded in the module header): 2026-10-02 the deploy badge read passing for
+  // 2h25m while Deploy #1065 (37011492987) had FAILED. Real id, number and start time.
+  const n1 = safe(() => readLane(laneSeq('passing', [laneRow('37011492987', 1065, 'failure', '2026-10-02T13:12:46Z')])));
+  t('N1: badge passing + #1065 failed => row 4 DISAGREE, record-confirmed, after the full Recover window',
+    safe(() => [n1.record.row, n1.record.agreement, n1.record.reason, n1.record.reads]),
+    [4, 'DISAGREE', 'badge_passing_record_failure', RECOVER_DEFAULTS.reads]);
+  t('N1: ...Recover waited between reads on the injected clock, never a real one', sleeps, RECOVER_DEFAULTS.reads - 1);
+  t('N1: laneHealth is FAILING (the page that went out called this lane green)', n1.laneHealth, 'failing');
+  t('N1: the failed run is BOUND by its own record',
+    safe(() => [n1.record.bound_run.run_number, n1.record.bound_run.run_id, n1.record.bound_run.state]), [1065, '37011492987', 'failure']);
+  const n1Verdict = classifyDrift({ ...base, lane: CQSM_LANE, laneHealth: n1.laneHealth });
+  t('N1: the replay classifies lane-red, never green', n1Verdict.cause, 'lane-red');
+  const n1Body = safe(() => renderAlertBody({
+    repo: 'crypto-quant-signal-mcp', verdict: n1Verdict, prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40),
+    behindMs: 60 * 60 * 1000, laneHealth: n1.laneHealth, record: n1.record,
+  }));
+  const n1Lines = typeof n1Body === 'string' ? n1Body.split('\n') : [];
+  t('N1: the lane caveat line is byte-identical', n1Lines.includes('deploy lane (latest run on main, NOT necessarily this sha): failing'), true);
+  t('N1: the body names the bound run #1065 by id, state and branch, right after the caveat',
+    n1Lines[n1Lines.indexOf('deploy lane (latest run on main, NOT necessarily this sha): failing') + 1],
+    '  bound run: #1065 (37011492987) failure on main — https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/actions/runs/37011492987');
+  t('N1: the body says the badge disagrees with the run record',
+    n1Lines.includes("  the deploy badge disagrees: it reads passing; the run's own record says failure"), true);
+  t('N1: the body cites no repo path (alert-copy law)', /\b(?:scripts|ops)\//.test(String(n1Body)), false);
+  t('a body rendered with NO record is unchanged: no bound-run line, no disagreement line', /bound run:|disagrees/.test(body), false);
+
+  const r3 = safe(() => readLane(laneSeq('failing', [laneRow('90000000003', 3, 'success', '2026-10-04T00:00:00Z')])));
+  t('row 3 (badge failing, the run succeeded) => unknown, unbound — never a red',
+    safe(() => [r3.laneHealth, r3.record.row, 'bound_run' in r3.record]), ['unknown', 3, false]);
+  const r3Body = safe(() => renderAlertBody({
+    repo: 'crypto-quant-signal-mcp', verdict: classifyDrift({ ...base, lane: CQSM_LANE, laneHealth: r3.laneHealth }),
+    prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), behindMs: 60 * 60 * 1000, laneHealth: r3.laneHealth, record: r3.record,
+  }));
+  t('row 3: no bound-run line, and the disagreement names the run record state',
+    [/bound run:/.test(String(r3Body)), String(r3Body).includes("  the deploy badge disagrees: it reads failing; the run's own record says success")], [false, true]);
+  const r7 = safe(() => readLane({
+    [badgeUrl(CQSM_LANE)]: [{ body: fixtureBadge('Renamed Workflow', 'passing') }],
+    [actionsUrl(CQSM_LANE)]: [{ body: fixturePage([laneRow('90000000007', 7, 'success', '2026-10-04T00:00:00Z')]) }],
+  }));
+  const r7Body = safe(() => renderAlertBody({
+    repo: 'crypto-quant-signal-mcp', verdict: classifyDrift({ ...base, lane: CQSM_LANE, laneHealth: r7.laneHealth }),
+    prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), behindMs: 60 * 60 * 1000, laneHealth: r7.laneHealth, record: r7.record,
+  }));
+  t('row 7 (badge names another workflow): the body names the two WORKFLOWS, never two agreeing states',
+    safe(() => [r7.record.row, String(r7Body).includes('  the deploy badge names a different workflow ("Renamed Workflow") than the run record ("Deploy to Hetzner")'), /the deploy badge disagrees: it reads/.test(String(r7Body))]), [7, true, false]);
+  const unk = classifyDrift({ ...base, lane: CQSM_LANE, laneHealth: 'unknown' });
+  t('Q7: lane-unknown re-reads the lane through the module and names the badge', unk.next,
+    `node /opt/algovault-monitoring/gh-run-conclusion.mjs --repo AlgoVaultLabs/crypto-quant-signal-mcp --workflow deploy.yml --branch main --class attribution   # badge: ${BADGE_URL}`);
+  t('Q7: a badge-only model names the URL and nothing else', classifyDrift({ ...base, laneHealth: 'unknown' }).next, `curl -sS "${BADGE_URL}"`);
+  t('Q7: no lane-unknown next extracts a badge title',
+    [unk.next, classifyDrift({ ...base, laneHealth: 'unknown' }).next].some((n) => String(n).includes('title')), false);
+
+  const thrown = safe(() => readDeployLaneHealth(CQSM_LANE, { fetchDoc: () => { throw new Error('transport exploded'); }, sleep: () => {} }));
+  t('a lane read that THROWS refuses: laneHealth unknown, record null, the error kept for the log',
+    [thrown.laneHealth, thrown.record, thrown.err], ['unknown', null, 'transport exploded']);
+
+  t('log: a lane NOT read appends nothing', laneLogSuffix(false, null), '');
+  t('log: a bound record names the run', laneLogSuffix(true, n1.record), ' agreement=DISAGREE row=4 bound=#1065(37011492987)');
+  t('log: an unbound record names its reason', laneLogSuffix(true, r3.record), ' agreement=DISAGREE row=3 reason=badge_failing_record_success');
+  t('log: a read that threw says so', laneLogSuffix(true, null), ' agreement=n-a row=n-a reason=read_threw');
+
   console.log(`SELF-TEST: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} passed, ${fail} failed)`);
   // NOT `DRIFT_VERDICT=`. A self-test evaluates no real deploy state, so emitting the token a
   // caller gates on would let a run that checked nothing publish a verdict.
@@ -843,7 +975,10 @@ export const REPOS = [
     // left the bot's page describing a lane that does not exist. OPS-DRIFT-ALERT-GENERATORS-W1.)
     deploy: {
       kind: 'gha-push',
+      // The display name — it feeds the operator's "gh run list --workflow" next line. The lane read
+      // itself needs the workflow FILE, which the lane below declares (OPS-XREPO-CI-RED-W1 CH4).
       workflow: 'Deploy to Hetzner',
+      lane: CQSM_LANE,
       laneBadge: BADGE_URL,
       rawBase: CQSM_RAW_BASE,
       pathsIgnoreFrom: '.github/workflows/deploy.yml',
@@ -925,26 +1060,65 @@ export function readMainHead(remote) {
  * `core.remaining` was 0/60: badge HTTP 200. Same trick as OPS-XREPO-CI-CANARY-DARK-W1, and
  * the same trap it names — `cancelled` renders as `failing`.
  *
- * THE BINDING IS LOOSE AND THE NAME SAYS SO. The badge reports the newest run on the BRANCH; it
- * carries no SHA (measured — the only hex in that SVG is path and animation data). It is
- * therefore `laneHealth`, never `suiteVerdict`, and classifyDrift can never turn it into
- * DRIFT_RECOVERABLE. That is asserted by a test, not left to this comment.
+ * THE BINDING IS LOOSE AND THE NAME SAYS SO. The lane reports the newest TERMINAL run on the
+ * BRANCH, not a run of mainHead (the badge carries no SHA — measured: the only hex in that SVG is path
+ * and animation data). It is therefore `laneHealth`, never `suiteVerdict`, and classifyDrift can never
+ * turn it into DRIFT_RECOVERABLE. That is asserted by a test, not left to this comment.
  *
- * @returns {'passing'|'failing'|'unknown'}
+ * WHY NOT THE BADGE ALONE ANY MORE (OPS-XREPO-CI-RED-W1 CH4, prior N1). The badge carries no run
+ * identity, and GitHub serves it WRONG in short episodes: as gh-run-conclusion.mjs's own header
+ * records, on 2026-10-02 it read `passing` for 2h25m while Deploy #1065 (37011492987) had FAILED, and
+ * the DEPLOY_DRIFT page that went out called this lane green. A single badge sample (the curl plus a
+ * private title parse that this replaced) could not see it. The lane is now read through that module,
+ * which binds the badge to the run record (the Actions page row of the newest terminal run) and
+ * Recovers non-AGREE reads: the #1065 replay is BIND_TABLE row 4, attribution `failing`, with the
+ * failed run named in `bound_run`.
+ *
+ * REFUSES, NEVER THROWS. Any throw from the read is laneHealth `unknown` with record null: a guard on
+ * a live serving path refuses; it does not throw.
+ *
+ * @returns {{ laneHealth: 'passing'|'failing'|'unknown', record: object|null, err?: string }}
  */
-export function parseBadgeTitle(svg) {
-  const m = /<title>([^<]*)<\/title>/.exec(String(svg ?? ''));
-  if (!m) return 'unknown';
-  const state = m[1].split(' - ').pop().trim().toLowerCase();
-  if (state === 'passing') return 'passing';
-  if (state === 'failing') return 'failing';   // `cancelled` also renders here — deliberate
-  return 'unknown';                            // 'no status', 'unknown', anything new
+export function readDeployLaneHealth(lane, seam = {}) {
+  try {
+    const record = readConclusion({ ...lane, cls: 'attribution' }, laneReadOpts(seam));
+    return { laneHealth: verdictFor(record, 'attribution'), record };
+  } catch (e) {
+    return { laneHealth: 'unknown', record: null, err: String(e?.message ?? e).split('\n')[0] };
+  }
 }
 
-export function readDeployLaneHealth(url = BADGE_URL) {
-  const r = sh('curl', ['-sS', '-m', '20', '-H', 'Cache-Control: no-cache', url]);
-  if (!r.ok || !r.out) return 'unknown';
-  return parseBadgeTitle(r.out);
+/**
+ * The opts EVERY lane read runs with (architect-ratified). host, reads, spacingS and env are PINNED
+ * here and cannot be overridden, so a stale GHRC_FIXTURE_DIR / XREPO_CI_FIXTURE_DIR / GHRC_READS /
+ * GHRC_BADGE_HOST export in the cron environment can never redirect or shorten the live read. Only
+ * the transport and the clock may be substituted, and only a test does that; main() passes neither,
+ * so production always gets curlFetch() and the module's real Recover spacing.
+ */
+export function laneReadOpts({ fetchDoc, sleep } = {}) {
+  return {
+    fetchDoc: fetchDoc ?? curlFetch(),
+    ...(sleep ? { sleep } : {}),
+    host: 'https://github.com',
+    reads: RECOVER_DEFAULTS.reads,
+    spacingS: RECOVER_DEFAULTS.spacingS,
+    env: {},
+  };
+}
+
+/**
+ * The lane fields appended to main()'s per-repo log line — pure, so the self-test drives the exact
+ * text main() logs. Empty when the lane was NOT read (no new reads, nothing to say); otherwise the
+ * bound run when the record carries one, else the record's reason. Appended AFTER every existing
+ * field, so `lane=(passing|failing|unknown)` reads exactly as before.
+ */
+export function laneLogSuffix(laneRead, record) {
+  if (!laneRead) return '';
+  if (!record) return ' agreement=n-a row=n-a reason=read_threw';
+  const br = record.bound_run;
+  return br
+    ? ` agreement=${record.agreement} row=${record.row} bound=#${br.run_number}(${br.run_id})`
+    : ` agreement=${record.agreement} row=${record.row} reason=${record.reason}`;
 }
 
 /* ─────────────── the local, unmetered source for "does this delta deploy?" ─────────────── */
@@ -1058,7 +1232,7 @@ function log(msg) {
  * REAL NEWLINES, NEVER %0A. send_telegram.sh does its own --data-urlencode, and that wrapper is
  * frozen (OPS-XREPO-CI-CANARY-DARK-W1 D2 shipped a body rendering literal `%0A` to the operator).
  */
-export function renderAlertBody({ repo, verdict, prodSha, mainHead, behindMs, laneHealth }) {
+export function renderAlertBody({ repo, verdict, prodSha, mainHead, behindMs, laneHealth, record = null }) {
   const lines = [
     `🚨 deploy drift — ${repo}`,
     `verdict: ${verdict.verdict}`,
@@ -1073,6 +1247,20 @@ export function renderAlertBody({ repo, verdict, prodSha, mainHead, behindMs, la
     // loose can act on it; one who is not will over-trust a green lane. The badge reports the
     // newest run on main, which need not be main's CURRENT head.
     lines.push(`deploy lane (latest run on main, NOT necessarily this sha): ${laneHealth}`);
+  }
+  // OPS-XREPO-CI-RED-W1 CH4. A run is named ONLY from the bound record (BIND_TABLE rows 1, 2, 4,
+  // where the run's own record supports the claim), so a misattributed run line is unwritable here.
+  const br = record?.bound_run;
+  if (br) {
+    lines.push(`  bound run: #${br.run_number} (${br.run_id}) ${br.state} on ${record.resolved_ref ?? record.branch} — ${br.url}`);
+  }
+  if (record?.agreement === 'DISAGREE' && record.reason === 'identity_mismatch') {
+    // Row 7: the disagreement is about WHICH workflow, not about a state — never print two states here.
+    const rowName = record.page?.newest_terminal?.name ?? record.page?.newest?.name ?? 'unreadable';
+    lines.push(`  the deploy badge names a different workflow ("${record.badge?.name ?? 'unreadable'}") than the run record ("${rowName}")`);
+  } else if (record?.agreement === 'DISAGREE') {
+    const runSays = br?.state ?? record.page?.newest_terminal?.state ?? 'unavailable';
+    lines.push(`  the deploy badge disagrees: it reads ${record.badge?.state ?? 'unreadable'}; the run's own record says ${runSays}`);
   }
   if (verdict.next) lines.push(`next: ${verdict.next}`);
   return lines.join('\n');
@@ -1130,6 +1318,8 @@ function main() {
     let nonDeploying = null;
     let nonDeployingCause = null;
     let laneHealth = null;
+    let laneRecord = null;
+    let laneRead = false;
     let deploySet = null;
     if (behind && !modelError) {
       const d = repo.deploy;
@@ -1145,7 +1335,13 @@ function main() {
           nonDeploying = folded.value;
           nonDeployingCause = folded.cause;
         }
-        laneHealth = readDeployLaneHealth(d.laneBadge);
+        // OPS-XREPO-CI-RED-W1 CH4: the SAME single read, now a bound record. No new read, no skip;
+        // the live opts are pinned inside readDeployLaneHealth, which is why nothing is passed here.
+        const lr = readDeployLaneHealth(d.lane);
+        laneHealth = lr.laneHealth;
+        laneRecord = lr.record;
+        laneRead = true;
+        if (lr.err) log(`${repo.name}: lane read threw (${lr.err}) - laneHealth unknown`);
       } else if (!mir.ok) {
         deploySet = { touched: null, why: `mirror unavailable: ${mir.err}` };
       } else {
@@ -1182,6 +1378,7 @@ function main() {
       deploySet,
       workflow: repo.deploy?.workflow ?? null,
       laneBadge: repo.deploy?.laneBadge ?? null,
+      lane: repo.deploy?.lane ?? null,
       deployCommand: repo.deploy?.deployCommand ?? null,
       failingFiles: [],
       graphTouchers: [],
@@ -1193,7 +1390,7 @@ function main() {
     const deploySetLog = deploySet === null ? 'n-a'
       : deploySet.touched === null ? 'unknown'
         : deploySet.touched ? `touched(${deploySet.files.length})` : 'untouched';
-    log(`${repo.name}: prod=${prodSha ? prodSha.slice(0, 7) : 'UNKNOWN'} main=${mainHead ? mainHead.slice(0, 7) : 'UNKNOWN'} kind=${repo.deploy?.kind ?? 'NONE'} lane=${laneHealth ?? 'n-a'} nonDeploying=${nonDeploying === null ? 'unknown' : nonDeploying} deploySet=${deploySetLog} -> ${verdict.verdict} (${verdict.reason})`);
+    log(`${repo.name}: prod=${prodSha ? prodSha.slice(0, 7) : 'UNKNOWN'} main=${mainHead ? mainHead.slice(0, 7) : 'UNKNOWN'} kind=${repo.deploy?.kind ?? 'NONE'} lane=${laneHealth ?? 'n-a'} nonDeploying=${nonDeploying === null ? 'unknown' : nonDeploying} deploySet=${deploySetLog} -> ${verdict.verdict} (${verdict.reason})${laneLogSuffix(laneRead, laneRecord)}`);
 
     if (HEALTHY_VERDICTS.has(verdict.verdict)) {
       // Clear any drift latch: recovery and health are not events. NON_DEPLOYING clears it too —
@@ -1248,7 +1445,7 @@ function main() {
     }
 
     if (behindMs > BEHIND_GRACE_MS) {
-      const body = renderAlertBody({ repo: repo.name, verdict, prodSha, mainHead, behindMs, laneHealth });
+      const body = renderAlertBody({ repo: repo.name, verdict, prodSha, mainHead, behindMs, laneHealth, record: laneRecord });
       // Fail-open, severity-gated, cooldown'd by the shared wrapper — never a raw Bot API call.
       const sent = dispatchAlert(body);
       log(`${repo.name}: alert dispatched (ok=${sent.ok}${sent.ok ? '' : `; ${sent.err}`})`);

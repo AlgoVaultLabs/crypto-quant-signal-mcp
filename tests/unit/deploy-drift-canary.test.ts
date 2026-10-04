@@ -26,7 +26,6 @@ import {
   BADGE_URL,
   VERDICTS,
   HEALTHY_VERDICTS,
-  parseBadgeTitle,
   parsePathsIgnore,
   isNonDeployingDelta,
   matchesPattern,
@@ -42,7 +41,22 @@ import {
   parseCommitLog,
   dispatchAlert,
   dispatchClear,
+  CQSM_LANE,
+  readDeployLaneHealth,
+  laneReadOpts,
+  laneLogSuffix,
 } from '../../ops/monitoring/deploy-drift-canary.mjs';
+import {
+  readConclusion,
+  verdictFor,
+  memoryFetch,
+  fixtureRow,
+  fixturePage,
+  badgeUrl,
+  actionsUrl,
+  parseBadge,
+  RECOVER_DEFAULTS,
+} from '../../ops/monitoring/gh-run-conclusion.mjs';
 
 const REPO = join(__dirname, '..', '..');
 
@@ -362,10 +376,12 @@ describe('the alert body an operator actually reads', () => {
     for (const lh of ['passing', 'failing', 'unknown']) expect(render(lh)).not.toContain('%0A');
   });
 
-  it('parseBadgeTitle never invents a pass', () => {
-    expect(parseBadgeTitle('<title>Deploy to Hetzner - passing</title>')).toBe('passing');
-    expect(parseBadgeTitle('<title>Deploy to Hetzner - no status</title>')).toBe('unknown');
-    expect(parseBadgeTitle('')).toBe('unknown');
+  it("the module's badge parser never invents a pass", () => {
+    // OPS-XREPO-CI-RED-W1 CH4 retired the canary's private badge parser; the lane reads the module's ONE parser.
+    const badgeState = (svg: string) => parseBadge(svg).state ?? 'unknown';
+    expect(badgeState('<title>Deploy to Hetzner - passing</title>')).toBe('passing');
+    expect(badgeState('<title>Deploy to Hetzner - no status</title>')).toBe('unknown');
+    expect(badgeState('')).toBe('unknown');
   });
 });
 
@@ -568,5 +584,229 @@ describe('the TRANSPORT — what reaches the wrapper, not what renderAlertBody r
     expect(mainBody).toMatch(/dispatchClear\(/);
     expect(code).not.toMatch(/JSON\.stringify\(body\)/);
     expect(code).not.toMatch(/'-c',\s*`printf/);
+  });
+});
+
+/* ══════════════ OPS-XREPO-CI-RED-W1 CH4 — the deploy lane is a BOUND record ══════════════
+ *
+ * The lane used to be ONE badge sample through a private <title> parser. The badge carries no run
+ * identity and GitHub serves it wrong in short episodes; the module header records prior N1: on
+ * 2026-10-02 it read passing for 2h25m while Deploy #1065 (37011492987) had FAILED, and the
+ * DEPLOY_DRIFT page called the lane green. The lane is now read through gh-run-conclusion.mjs, which
+ * binds the badge to the run's own record. N1 is replayed below on REAL captured markup (the row and
+ * the badge, tests/fixtures/gh-run-conclusion/, provenance in each file header) — the canary's
+ * hermetic --self-test replays the same ids through the module's synthetic builders, because the host
+ * has no fixture directory.
+ *
+ * Every read here: in-memory transport, no-op clock, pinned host / reads / spacing, EMPTY env. A real
+ * clock is 60 s per Recover read, and a vitest timeout cannot interrupt a synchronous sleep.
+ */
+const GHRC_FX = join(ROOT, 'tests/fixtures/gh-run-conclusion');
+const ghrcFx = (f: string) => readFileSync(join(GHRC_FX, f), 'utf8');
+const noSleep = () => {};
+const LANE = CQSM_LANE as { repo: string; workflow: string; branch: string };
+const LANE_NAME = 'Deploy to Hetzner';
+const readLane = (seq: Record<string, any[]>) =>
+  readConclusion({ ...LANE, cls: 'attribution' }, {
+    fetchDoc: memoryFetch(seq), sleep: noSleep, env: {}, host: 'https://github.com',
+    reads: RECOVER_DEFAULTS.reads, spacingS: RECOVER_DEFAULTS.spacingS,
+  }) as any;
+/** The canary's OWN reader: its opts pin host / reads / spacing / env; the test swaps transport + clock only. */
+const readLaneViaCanary = (seq: Record<string, any[]>) =>
+  readDeployLaneHealth(LANE, { fetchDoc: memoryFetch(seq), sleep: noSleep }) as any;
+const laneSeq = (badgeBody: string, page: { body?: string; http?: number }) => ({
+  [badgeUrl(LANE)]: [{ body: badgeBody }],
+  [actionsUrl(LANE)]: [page],
+});
+const synthBadge = (status: string) => `<svg xmlns="http://www.w3.org/2000/svg"><title>${LANE_NAME} - ${status}</title></svg>`;
+const synthRow = (runId: string, runNumber: number, icon: string, started: string) =>
+  fixtureRow({ repo: LANE.repo, runId, runNumber, name: LANE_NAME, icon, started, ref: 'main' });
+const BEHIND = { ...GHA, lane: LANE, prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40) };
+const CAVEAT = (lh: string) => `deploy lane (latest run on main, NOT necessarily this sha): ${lh}`;
+const bodyFor = (laneHealth: string, record: any) => renderAlertBody({
+  repo: 'crypto-quant-signal-mcp', verdict: classifyDrift({ ...BEHIND, laneHealth }),
+  prodSha: BEHIND.prodSha, mainHead: BEHIND.mainHead, behindMs: 3_600_000, laneHealth, record,
+});
+const MODULE_NEXT = `node /opt/algovault-monitoring/gh-run-conclusion.mjs --repo AlgoVaultLabs/crypto-quant-signal-mcp --workflow deploy.yml --branch main --class attribution   # badge: ${BADGE_URL}`;
+
+describe('N1 REPLAY on REAL markup — Deploy #1065 failed while the deploy badge read passing', () => {
+  const realSeq = () => laneSeq(ghrcFx('badge-passing-deploy-main.svg'), { body: fixturePage([ghrcFx('row-failure-37011492987.html')]) });
+
+  it('the captured fixtures are what they claim: a passing deploy badge, and #1065 failure', () => {
+    expect(parseBadge(ghrcFx('badge-passing-deploy-main.svg'))).toMatchObject({ name: LANE_NAME, state: 'passing' });
+    const row = ghrcFx('row-failure-37011492987.html');
+    expect(row).toContain('/AlgoVaultLabs/crypto-quant-signal-mcp/actions/runs/37011492987"');
+    expect(row).toContain('octicon-x-circle-fill color-fg-danger');
+  });
+
+  it('binds BIND_TABLE row 4: DISAGREE, record-confirmed after the full Recover window, attribution failing', () => {
+    const rec = readLane(realSeq());
+    expect([rec.row, rec.agreement, rec.reason]).toEqual([4, 'DISAGREE', 'badge_passing_record_failure']);
+    expect(verdictFor(rec, 'attribution')).toBe('failing');
+    expect(rec.reads).toBe(RECOVER_DEFAULTS.reads);
+    expect(rec.bound_run).toMatchObject({ run_id: '37011492987', run_number: 1065, name: LANE_NAME, state: 'failure', started_at: '2026-10-02T13:12:46Z' });
+    expect(rec.badge.name).toBe(LANE_NAME); // the badge and the row are the same workflow (else row 7)
+  });
+
+  it("the canary's own lane reader gives the same answer through its pinned opts", () => {
+    const r = readLaneViaCanary(realSeq());
+    expect(r.laneHealth).toBe('failing');
+    expect([r.record.row, r.record.bound_run.run_id]).toEqual([4, '37011492987']);
+  });
+
+  it('classifies lane-red — never green — and the page names #1065, its id, and the disagreement', () => {
+    const r = readLaneViaCanary(realSeq());
+    expect(classifyDrift({ ...BEHIND, laneHealth: r.laneHealth }).cause).toBe('lane-red');
+    const body = bodyFor(r.laneHealth, r.record);
+    const lines = body.split('\n');
+    expect(lines).toContain(CAVEAT('failing')); // byte-identical caveat
+    expect(lines[lines.indexOf(CAVEAT('failing')) + 1])
+      .toBe('  bound run: #1065 (37011492987) failure on main — https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/actions/runs/37011492987');
+    expect(lines).toContain("  the deploy badge disagrees: it reads passing; the run's own record says failure");
+    expect(body).toContain('#1065');
+    expect(body).toContain('37011492987');
+    expect(body).toContain('disagrees');
+    expect(body).not.toMatch(/\b(?:scripts|ops)\//); // alert-copy law: the body cites no repo path
+  });
+});
+
+describe('row 4 — the other failed Deploy runs (synthetic rows, ids + failure state read off the live Actions page 2026-10-04)', () => {
+  it.each([
+    ['#1015', '35707619335', 1015, '2026-09-22T08:57:10Z'],
+    ['#973', '34229525605', 973, '2026-09-08T13:02:13Z'],
+  ])('%s: a passing badge over a failed run is row 4, failing, bound — and pages lane-red', (label, runId, runNumber, started) => {
+    const r = readLaneViaCanary(laneSeq(synthBadge('passing'), { body: fixturePage([synthRow(runId as string, runNumber as number, 'failure', started as string)]) }));
+    expect([r.laneHealth, r.record.row, r.record.agreement, r.record.reason]).toEqual(['failing', 4, 'DISAGREE', 'badge_passing_record_failure']);
+    expect(r.record.bound_run.run_id).toBe(runId);
+    expect(classifyDrift({ ...BEHIND, laneHealth: r.laneHealth }).cause).toBe('lane-red');
+    expect(bodyFor(r.laneHealth, r.record)).toContain(`  bound run: ${label} (${runId}) failure on main`);
+  });
+});
+
+describe('the lane reader over the other bind-table rows the canary can meet', () => {
+  const ok = (icon: string) => ({ body: fixturePage([synthRow('90000000001', 1, icon, '2026-10-04T00:00:00Z')]) });
+
+  it('row 1 — passing + success: passing, AGREE on the first read, bound; lane-green-prod-behind; no disagreement line', () => {
+    const r = readLaneViaCanary(laneSeq(synthBadge('passing'), ok('success')));
+    expect([r.laneHealth, r.record.row, r.record.agreement, r.record.reads]).toEqual(['passing', 1, 'AGREE', 1]);
+    expect(classifyDrift({ ...BEHIND, laneHealth: r.laneHealth }).cause).toBe('lane-green-prod-behind');
+    const body = bodyFor(r.laneHealth, r.record);
+    expect(body).toContain('  bound run: #1 (90000000001) success on main');
+    expect(body).not.toContain('disagrees');
+  });
+
+  it('row 2 — failing + failure: failing, AGREE, bound; lane-red', () => {
+    const r = readLaneViaCanary(laneSeq(synthBadge('failing'), ok('failure')));
+    expect([r.laneHealth, r.record.row, r.record.agreement]).toEqual(['failing', 2, 'AGREE']);
+    expect(r.record.bound_run.run_id).toBe('90000000001');
+    expect(classifyDrift({ ...BEHIND, laneHealth: r.laneHealth }).cause).toBe('lane-red');
+    expect(bodyFor(r.laneHealth, r.record)).not.toContain('disagrees');
+  });
+
+  it('row 3 — failing badge over a run that SUCCEEDED: unknown, unbound, never a red; lane-unknown re-reads via the module', () => {
+    const r = readLaneViaCanary(laneSeq(synthBadge('failing'), ok('success')));
+    expect([r.laneHealth, r.record.row, r.record.agreement, 'bound_run' in r.record]).toEqual(['unknown', 3, 'DISAGREE', false]);
+    const v = classifyDrift({ ...BEHIND, laneHealth: r.laneHealth });
+    expect([v.cause, v.next]).toEqual(['lane-unknown', MODULE_NEXT]);
+    const body = bodyFor(r.laneHealth, r.record);
+    expect(body).not.toContain('bound run:'); // a run is named ONLY from a bound record
+    expect(body).toContain("  the deploy badge disagrees: it reads failing; the run's own record says success");
+  });
+
+  it('row 6 — passing badge, run record unavailable (HTTP 503): unknown, UNCORROBORATED; lane-unknown', () => {
+    const r = readLaneViaCanary(laneSeq(synthBadge('passing'), { http: 503 }));
+    expect([r.laneHealth, r.record.row, r.record.agreement]).toEqual(['unknown', 6, 'UNCORROBORATED']);
+    expect(classifyDrift({ ...BEHIND, laneHealth: r.laneHealth }).cause).toBe('lane-unknown');
+    expect(bodyFor(r.laneHealth, r.record)).not.toMatch(/bound run:|disagrees/);
+  });
+
+  it('row 8 — badge "no status": unknown, UNREADABLE; lane-unknown', () => {
+    const r = readLaneViaCanary(laneSeq(synthBadge('no status'), ok('success')));
+    expect([r.laneHealth, r.record.row, r.record.agreement]).toEqual(['unknown', 8, 'UNREADABLE']);
+    expect(classifyDrift({ ...BEHIND, laneHealth: r.laneHealth }).cause).toBe('lane-unknown');
+  });
+
+  it('a read that THROWS refuses — laneHealth unknown, record null — it never throws', () => {
+    const r = readDeployLaneHealth(LANE, { fetchDoc: () => { throw new Error('transport exploded'); }, sleep: noSleep }) as any;
+    expect([r.laneHealth, r.record, r.err]).toEqual(['unknown', null, 'transport exploded']);
+    expect(laneLogSuffix(true, r.record)).toBe(' agreement=n-a row=n-a reason=read_threw');
+  });
+});
+
+describe('Q7 — the lane-unknown next re-reads the lane through the module, never a badge-title grep', () => {
+  it('with the lane declared: the module command, naming the badge', () => {
+    const next = classifyDrift({ ...BEHIND, laneHealth: 'unknown' }).next;
+    expect(next).toBe(MODULE_NEXT);
+    expect(next).toContain(BADGE_URL);
+    expect(next).not.toContain('<title>');
+  });
+  it('with only a badge: the URL and nothing else', () => {
+    expect(classifyDrift({ ...GHA, prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), laneHealth: 'unknown' }).next)
+      .toBe(`curl -sS "${BADGE_URL}"`);
+  });
+  it('the --class flag it prints is one the module CLI accepts', () => {
+    const mod = readFileSync(join(ROOT, 'ops/monitoring/gh-run-conclusion.mjs'), 'utf8');
+    for (const flag of ['--repo', '--workflow', '--branch', '--class']) expect(mod).toContain(`k === '${flag}'`);
+  });
+});
+
+describe('ONE lane declaration — what the hermetic self-test cannot see', () => {
+  it('BADGE_URL is DERIVED from the lane and byte-identical to the literal it replaced', () => {
+    expect(BADGE_URL).toBe('https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/actions/workflows/deploy.yml/badge.svg?branch=main');
+    expect(cqsm().deploy.lane).toEqual(LANE);
+    expect(cqsm().deploy.laneBadge).toBe(badgeUrl(cqsm().deploy.lane));
+  });
+  it('the lane names a workflow FILE that exists, whose display name is the declared workflow (the badge + row name)', () => {
+    const yml = readFileSync(join(ROOT, '.github/workflows', LANE.workflow), 'utf8');
+    expect(/^name:\s*(.+)$/m.exec(yml)?.[1].trim()).toBe(cqsm().deploy.workflow);
+    expect(cqsm().deploy.workflow).toBe(LANE_NAME);
+    expect(parseBadge(ghrcFx('badge-passing-deploy-main.svg')).name).toBe(cqsm().deploy.workflow);
+  });
+  it('a hand-edited laneBadge that drifts from the lane REFUSES; a missing or display-name lane refuses too', () => {
+    const d = cqsm().deploy;
+    expect(validateDeployModel({ ...d, laneBadge: BADGE_URL.replace('branch=main', 'branch=master') })).toMatch(/not derived from its lane/);
+    expect(validateDeployModel({ ...d, lane: undefined })).toMatch(/lacks lane/);
+    expect(validateDeployModel({ ...d, lane: { ...LANE, workflow: LANE_NAME } })).toMatch(/lacks lane/);
+    expect(validateDeployModel(d)).toBeNull();
+  });
+});
+
+describe('main() wiring — the live lane read is single, pinned, and where it always was', () => {
+  const src = readFileSync(join(ROOT, 'ops/monitoring/deploy-drift-canary.mjs'), 'utf8');
+  const code = src.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'); // a mention is not a use
+  const mainBody = code.slice(code.indexOf('function main()'));
+
+  it('exactly ONE readConclusion call in the canary, and it takes the pinned opts', () => {
+    expect(code.match(/\breadConclusion\(/g)).toHaveLength(1);
+    expect(code).toContain("readConclusion({ ...lane, cls: 'attribution' }, laneReadOpts(seam))");
+  });
+  it('the live opts pin host / reads / spacing / env and read through curl; a seam swaps only transport + clock', () => {
+    const live = laneReadOpts() as any;
+    expect([live.host, live.reads, live.spacingS, live.env, typeof live.fetchDoc, 'sleep' in live])
+      .toEqual(['https://github.com', RECOVER_DEFAULTS.reads, RECOVER_DEFAULTS.spacingS, {}, 'function', false]);
+    const seamed = laneReadOpts({ fetchDoc: () => ({}), sleep: noSleep }) as any;
+    expect([seamed.host, seamed.reads, seamed.spacingS, seamed.env]).toEqual(['https://github.com', RECOVER_DEFAULTS.reads, RECOVER_DEFAULTS.spacingS, {}]);
+  });
+  it('main() reads the lane ONCE, only on the gha-push branch, passing NO opts (so production cannot be un-pinned)', () => {
+    expect(mainBody.match(/readDeployLaneHealth\(/g)).toHaveLength(1);
+    expect(mainBody).toContain('readDeployLaneHealth(d.lane);');
+    const gha = mainBody.slice(mainBody.indexOf("if (d.kind === 'gha-push') {"), mainBody.indexOf('} else if (!mir.ok) {'));
+    expect(gha).toContain('readDeployLaneHealth(d.lane);');
+  });
+  it('main() hands classifyDrift the lane and renderAlertBody the record', () => {
+    expect(mainBody).toMatch(/lane: repo\.deploy\?\.lane \?\? null,/);
+    expect(mainBody).toContain('record: laneRecord });');
+  });
+  it('the log line keeps lane=<state> and APPENDS the record fields at the end', () => {
+    expect(mainBody).toContain("lane=${laneHealth ?? 'n-a'} nonDeploying=");
+    expect(mainBody).toContain('(${verdict.reason})${laneLogSuffix(laneRead, laneRecord)}`);');
+    const rec = readLane(laneSeq(ghrcFx('badge-passing-deploy-main.svg'), { body: fixturePage([ghrcFx('row-failure-37011492987.html')]) }));
+    expect(laneLogSuffix(true, rec)).toBe(' agreement=DISAGREE row=4 bound=#1065(37011492987)');
+    expect(laneLogSuffix(false, null)).toBe('');
+    const unbound = readLane(laneSeq(synthBadge('passing'), { http: 503 }));
+    expect(laneLogSuffix(true, unbound)).toBe(' agreement=UNCORROBORATED row=6 reason=http_503');
+    // The suffix can never carry a second `lane=` token, so the census regex keeps reading the real one
+    // (main()'s source above proves the suffix is appended AFTER it).
+    for (const r of [rec, unbound, null]) expect(laneLogSuffix(true, r)).not.toMatch(/\blane=/);
   });
 });

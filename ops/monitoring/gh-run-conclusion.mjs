@@ -37,7 +37,8 @@
  *   6 passing               unavailable     UNCORROBORATED   PASS           INDETERMINATE  unknown
  *   7 name != row name      —               DISAGREE         INDETERMINATE  INDETERMINATE  unknown
  *   8 unreadable/no status  any             UNREADABLE       INDETERMINATE  INDETERMINATE  unknown
- *   R input refused before any fetch (non-canonical / `.atom`)  UNCORROBORATED  INDETERMINATE ×2  unknown
+ *   R input refused before any fetch (non-canonical / `.atom`), or an any-ref read whose newest
+ *     finished run's ref could not be resolved (ruling Q9)       UNCORROBORATED  INDETERMINATE ×2  unknown
  *
  * THE AMENDED RULE (architect ruling, 2026-10-03): prose never decides. The row's structured icon
  * may VETO a badge RED (row 3) and may RAISE a RED the badge missed (row 4). It may never produce
@@ -76,6 +77,30 @@
  * Each samples[] entry records its `ghrc_cb` value and the response `Date` header — the
  * discriminator between a cached body (a stale Date re-served) and an origin glitch (a fresh one).
  *
+ * ── ANY REF IS SAME-REF (architect ruling Q9, 2026-10-04 — OPS-XREPO-CI-RED-W1 CH4) ─────────
+ * A badge with NO `?branch=` shows the DEFAULT branch (GitHub's docs), while the Actions page with no
+ * query lists ALL refs. Read as a pair they described two different runs: measured 2026-10-04T12:22Z,
+ * publish-npm.yml's page bound tag run #29 (37201506699, v1.31.1) while the no-param badge described
+ * main's #28 (37182060859) — an "AGREE" across two runs, the class this module exists to retire. So for
+ * `branch: null` EVERY read (Recover re-reads included): (1) reads the any-ref page and walks to its
+ * newest TERMINAL row; (2) takes that row's ref from its own `branch-name` element's `title` (refOfRun —
+ * a structured field, the SHORT ref name); (3) reads the badge with `?branch=<ref>` and the page with
+ * `?query=branch%3A<ref>`, and binds exactly as a named branch. Measured (Cowork, Mac, 2026-10-04
+ * ~12:30Z, cache-busted): `?branch=v1.31.1` passing = #29 success; `?branch=v1.31.0` failing = #27
+ * 35852161288; `?branch=v1.30.0` failing = #26 34451023162; `?branch=refs/tags/v1.31.1` and
+ * `?branch=v9.9.9` "no status" (the badge takes the short name only); `?query=branch%3Av1.31.1` lists
+ * exactly #29. A ref that is missing, unparseable (renders disagree / no title) or outside
+ * [A-Za-z0-9._-] (a slash-ref was never measured) binds NOTHING: row R, UNCORROBORATED, reason
+ * `ref_missing | ref_unparseable | ref_out_of_vocabulary | ref_page_<guard>`. The record carries
+ * `resolved_ref` + `ref_resolution`, and the CLI prints GHRC_RESOLVED_REF / GHRC_REF_REASON — for
+ * any-ref reads ONLY. A named-branch read takes the exact pre-Q9 path: its record, its GHRC lines and its
+ * fetch sequence are byte-identical — proven against the pre-Q9 module (origin/main 7be6c89a): 144 read
+ * scenarios (16 × 3 classes × 3 floor inputs) comparing the record, the GHRC lines, the token, the sleeps AND
+ * every fetch call, plus 48 CLI runs through the fixture-dir seam — 0 differences (vault audit
+ * OPS-XREPO-CI-RED-W1-endpoint-truth.md §16). The two any-ref guards it adds: a ref page that lags behind
+ * the resolved run reads `ref_page_behind` (never an older run on that ref), and Recover's newest-run rule
+ * counts the run a read resolved from.
+ *
  * ── HONEST SCOPE ────────────────────────────────────────────────────────────────────────────
  *   · Both instruments wrong in the same way at once makes AGREE wrong. Nothing removes that.
  *   · Recency is not this module's question (the canary's XREPO_CI_FRESHNESS owns it).
@@ -83,11 +108,13 @@
  *   · `job_groups_batch` (R0.8) was measured and NOT adopted: undocumented, job-level, blind to
  *     zero-job runs. No code path touches it.
  *
- * ── CONTRACT (frozen at CH2; CH3 + CH4 consume exactly this) ────────────────────────────────
+ * ── CONTRACT (frozen at CH2; CH3 + CH4 consume exactly this; ruling Q9 amended --any-ref ONLY) ──
  *   node ops/monitoring/gh-run-conclusion.mjs --repo R --workflow W (--branch B | --any-ref)
  *        [--min-run-id N] --class alerting|blocking|attribution
  *     → GHRC_<FIELD>=<single-line value> lines, GHRC_RECORD=<one-line JSON>, then exactly one
  *       GH_RUN_CONCLUSION_VERDICT=PASS|FAIL|INDETERMINATE  (exit 0 / 1 / 3 via process.exitCode)
+ *     (--any-ref adds GHRC_RESOLVED_REF + GHRC_REF_REASON after GHRC_BRANCH; --min-run-id there
+ *      floors the ANY-REF page — each page read keeps its own monotonic floor.)
  *   --parse-badge (stdin)      → byte-identical to the canary's parse_badge_status (rc 0/1)
  *   --classify-status <token>  → byte-identical to the canary's classify_status
  *   --parse-page (stdin)       → byte-identical to the canary's parse_runs_page (rc 0/1)
@@ -199,6 +226,12 @@ export function mangle(url) {
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const WORKFLOW_RE = /^[A-Za-z0-9_.-]+\.ya?ml$/;
 const BRANCH_RE = /^[A-Za-z0-9_./-]+$/;
+/**
+ * A RESOLVED ref (ruling Q9, 2026-10-04) — the measured vocabulary only. The badge takes the SHORT ref
+ * name (`?branch=v1.31.1` → #29; `?branch=refs/tags/v1.31.1` → "no status"), and a ref carrying a
+ * slash was never measured, so it is refused rather than guessed (Cowork, Mac, 2026-10-04 ~12:30Z).
+ */
+const REF_RE = /^[A-Za-z0-9._-]+$/;
 
 /** Refuse anything that would not produce a canonical URL — BEFORE any fetch. Reason code or null. */
 export function inputDefect({ repo, workflow, branch }) {
@@ -325,6 +358,31 @@ export function parsePage(html) {
 }
 
 const publicRow = (r) => (r ? { run_id: r.run_id, run_number: r.run_number, name: r.name, started_at: r.started_at, state: r.state } : null);
+
+/**
+ * The ref a run row was run on — ruling Q9. Read from the row's own `branch-name` element(s): the
+ * `title` attribute is the SHORT ref name (`main`, `v1.31.1`), a structured field, never prose. A row
+ * renders it twice (desktop + mobile); they must agree. Returns { ref } or { ref: null, reason }:
+ *   ref_missing (no branch-name element in that run's row) · ref_unparseable (no title, or the
+ *   renders disagree) · ref_out_of_vocabulary (outside [A-Za-z0-9._-] — a slash-ref is unmeasured).
+ * Kept OUT of parsePage on purpose: a named-branch read never calls it, so its output is unchanged.
+ */
+export function refOfRun(html, runId) {
+  const parts = String(html ?? '').replace(/<!--[\s\S]*?-->/g, '').split('id="check_suite_').slice(1);
+  const chunk = parts.find((c) => {
+    const a = /<a\b[^>]*\bhref="\/[^"/]+\/[^"/]+\/actions\/runs\/(\d+)"/.exec(c);
+    return a && a[1] === String(runId);
+  });
+  if (!chunk) return { ref: null, reason: 'ref_missing' };
+  const tags = chunk.match(/<a\b[^>]*\bclass="[^"]*\bbranch-name\b[^"]*"[^>]*>/g) ?? [];
+  if (tags.length === 0) return { ref: null, reason: 'ref_missing' };
+  // `title` exactly — never `data-title` / `aria-title` (\b would match after a '-').
+  const titles = tags.map((t) => { const m = /\stitle="([^"]*)"/.exec(t); return m ? decodeEntities(m[1]).trim() : null; });
+  if (titles.some((t) => !t) || new Set(titles).size !== 1) return { ref: null, reason: 'ref_unparseable' };
+  const ref = titles[0];
+  if (!REF_RE.test(ref) || ref.includes('..')) return { ref: null, reason: 'ref_out_of_vocabulary' };
+  return { ref, reason: null };
+}
 
 /**
  * The terminal walk. Newest-first; SKIP a measured non-terminal row; STOP at an unmeasured or
@@ -519,29 +577,74 @@ export function readConclusion(input, opts = {}) {
   let best = null;
   // The monotonic floor RISES inside the window: a later read whose newest run is older than one this
   // window already saw is a stale page, never a fresher answer (it could otherwise AGREE on an older
-  // run and launder a record-confirmed failure into PASS).
-  let floor = input.minRunId ?? null;
+  // run and launder a record-confirmed failure into PASS). One floor PER PAGE URL: an any-ref read
+  // (ruling Q9) reads two pages, and the ref page's newest run is legitimately older than the any-ref
+  // page's, so sharing one floor would trip `monotonic` on every resolved read.
+  const floors = new Map([[pUrl, input.minRunId ?? null]]);
+  const floorOf = (u) => (floors.has(u) ? floors.get(u) : null);
+  const raise = (u, page) => {
+    const f = floorOf(u);
+    if (page.newest?.run_id && (f === null || BigInt(page.newest.run_id) > BigInt(f))) floors.set(u, page.newest.run_id);
+  };
   const busterOn = opts.cacheBuster ?? CACHE_BUSTER.enabled;
   const nowEpoch = opts.nowEpoch ?? (() => Math.floor(Date.now() / 1000));
+  const anyRef = branch === null;
   for (let readNo = 1; readNo <= cfg.reads; readNo++) {
     if (readNo > 1) sleep(cfg.spacingS);
-    // One buster value per read, on BOTH documents: every re-read is an independent render (ruling Q6).
+    // One buster value per read, on EVERY document: every re-read is an independent render (ruling Q6).
     const epoch = nowEpoch();
     const cb = busterOn ? busterValue(epoch, readNo) : null;
-    const b = fetchDoc(bUrl, 'svg', readNo, cb ? bust(bUrl, epoch, readNo) : bUrl);
+    let readB = bUrl;
+    let readP = pUrl;
+    let resolution;
+    if (anyRef) {
+      // Ruling Q9: "any ref" is resolved on EVERY read, Recover re-reads included — (1) the any-ref
+      // page's newest TERMINAL row, (2) its ref from the row's own branch-name element, (3) both
+      // instruments re-read ON that ref and bound exactly as a named branch. Never a cross-run bind.
+      const rr = fetchDoc(pUrl, 'html', readNo, cb ? bust(pUrl, epoch, readNo) : pUrl);
+      const anyPage = evaluatePage({ http: rr.http, body: rr.body, contentType: rr.contentType }, { minRunId: floorOf(pUrl) });
+      raise(pUrl, anyPage);
+      const src = anyPage.newest_terminal;
+      const got = anyPage.terminal ? refOfRun(rr.body, anyPage.terminal.run_id) : { ref: null, reason: `ref_page_${anyPage.guard ?? 'unavailable'}` };
+      resolution = { ref: got.ref, reason: got.reason, page_url: pUrl, http: rr.http, cb, date: rr.date ?? null, guard: anyPage.guard, run: src ? { run_id: src.run_id, run_number: src.run_number, state: src.state } : null };
+      if (!got.ref) {
+        // A ref that cannot be resolved binds NOTHING (never the any-ref badge, which reads the default
+        // branch): UNCORROBORATED with a named reason — blocking INDETERMINATE, attribution unknown.
+        const bound = { row: 'R', agreement: 'UNCORROBORATED', reason: got.reason, bound: false };
+        const sample = {
+          read: readNo, at: nowIso(), resolved_ref: null, ref_resolution: resolution,
+          badge: { http: null, title: null, name: null, state: null, cb, date: null },
+          page: { http: rr.http, content_type: anyPage.content_type, rows_parsed: anyPage.rows_parsed, guard: anyPage.guard, cb, date: rr.date ?? null, newest: anyPage.newest, newest_terminal: anyPage.newest_terminal },
+          row: bound.row, agreement: bound.agreement, reason: bound.reason,
+        };
+        samples.push(sample);
+        cands.push({ badge: { title: null, name: null, status: null, state: null }, page: { ...anyPage, terminal: null }, bound, sample, resolution, readB: null, readP: null });
+        continue;
+      }
+      readB = badgeUrl({ ...input, branch: got.ref }, host);
+      readP = actionsUrl({ ...input, branch: got.ref }, host);
+    }
+    const b = fetchDoc(readB, 'svg', readNo, cb ? bust(readB, epoch, readNo) : readB);
     const badge = b.http === 200 ? parseBadge(b.body) : { title: null, name: null, status: null, state: null, reason: `badge_http_${b.http}` };
-    const pr = fetchDoc(pUrl, 'html', readNo, cb ? bust(pUrl, epoch, readNo) : pUrl);
-    const page = evaluatePage({ http: pr.http, body: pr.body, contentType: pr.contentType }, { minRunId: floor });
-    if (page.newest?.run_id && (floor === null || BigInt(page.newest.run_id) > BigInt(floor))) floor = page.newest.run_id;
+    const pr = fetchDoc(readP, 'html', readNo, cb ? bust(readP, epoch, readNo) : readP);
+    let page = evaluatePage({ http: pr.http, body: pr.body, contentType: pr.contentType }, { minRunId: floorOf(readP) });
+    raise(readP, page);
+    // Any-ref: the ref page must show (at least) the run the ref was RESOLVED from. A ref page that lags behind
+    // it (measured: a page keeps a finished run's in-progress icon ≥ 26 s after completion) would otherwise
+    // bind an OLDER run on that ref and could AGREE past a failure this same read just saw → record unavailable.
+    if (anyRef && page.terminal && resolution.run?.run_id && BigInt(page.terminal.run_id) < BigInt(resolution.run.run_id)) {
+      page = { ...page, guard: 'ref_page_behind', terminal: null, newest_terminal: null };
+    }
     const bound = bind(badge, page);
     const sample = {
       read: readNo, at: nowIso(),
+      ...(anyRef ? { resolved_ref: resolution.ref, ref_resolution: resolution } : {}),
       badge: { http: b.http, title: badge.title, name: badge.name, state: badge.state, cb, date: b.date ?? null },
       page: { http: pr.http, content_type: page.content_type, rows_parsed: page.rows_parsed, guard: page.guard, cb, date: pr.date ?? null, newest: page.newest, newest_terminal: page.newest_terminal },
       row: bound.row, agreement: bound.agreement, reason: bound.reason,
     };
     samples.push(sample);
-    const cand = { badge, page, bound, sample };
+    const cand = { badge, page, bound, sample, resolution, readB, readP };
     cands.push(cand);
     if (bound.agreement === 'AGREE') { best = cand; break; }
   }
@@ -549,7 +652,12 @@ export function readConclusion(input, opts = {}) {
 
   const { badge, page, bound } = best;
   const record = {
-    ...base, badge_url: bUrl, actions_url: pUrl,
+    ...base,
+    // An unresolved any-ref read never read a badge (badge_url null); the page it did read is the any-ref one.
+    badge_url: anyRef ? best.readB : bUrl, actions_url: anyRef ? (best.readP ?? pUrl) : pUrl,
+    // Any-ref only (ruling Q9): the ref both instruments were read on, and how it was resolved.
+    // Absent on a named-branch record, so a named-branch read is byte-identical to before Q9.
+    ...(anyRef ? { resolved_ref: best.resolution?.ref ?? null, ref_resolution: best.resolution ?? null } : {}),
     badge: { http: best.sample.badge.http, title: badge.title, name: badge.name, state: badge.state },
     page: { http: best.sample.page.http, content_type: page.content_type, bytes: page.bytes, rows_parsed: page.rows_parsed, guard: page.guard, newest: page.newest, newest_terminal: page.newest_terminal },
     row: bound.row, agreement: bound.agreement, reason: bound.reason, reads: samples.length, samples,
@@ -571,8 +679,15 @@ export function selectSample(cands) {
   const tally = states.reduce((m, s) => m.set(s, (m.get(s) ?? 0) + 1), new Map());
   const top = [...tally.entries()].sort((x, y) => y[1] - x[1]);
   const majority = top.length && (top.length === 1 || top[0][1] > top[1][1]) ? top[0][0] : null;
+  const newestRun = (c) => {
+    // Any-ref (Q9): the run the read RESOLVED from is newest-run evidence too, even when its ref page was
+    // unreadable — a newer finished run seen anywhere in the window outranks an older one. Named-branch
+    // samples carry no resolution, so their key is exactly the pre-Q9 one.
+    const ids = [c.page.terminal?.run_id, c.resolution?.run?.run_id].filter(Boolean).map((x) => BigInt(x));
+    return ids.length ? ids.reduce((a, b) => (b > a ? b : a)) : -1n;
+  };
   const key = (c, i) => [
-    c.page.terminal?.run_id ? BigInt(c.page.terminal.run_id) : -1n,
+    newestRun(c),
     BigInt(INFORMATIVENESS[c.bound.agreement] ?? 0),
     c.bound.bound ? 1n : 0n,
     majority !== null && c.badge.state === majority ? 1n : 0n,
@@ -612,7 +727,10 @@ export function renderLines(record, cls) {
   const t = record.page?.newest_terminal ?? {};
   const b = record.bound_run ?? {};
   const fields = [
-    ['REPO', record.repo], ['WORKFLOW', record.workflow], ['BRANCH', record.branch === null ? '*' : record.branch], ['CLASS', cls],
+    ['REPO', record.repo], ['WORKFLOW', record.workflow], ['BRANCH', record.branch === null ? '*' : record.branch],
+    // Any-ref records only (ruling Q9) — a named-branch read prints exactly the pre-Q9 lines.
+    ...('resolved_ref' in record ? [['RESOLVED_REF', record.resolved_ref], ['REF_REASON', record.ref_resolution?.reason]] : []),
+    ['CLASS', cls],
     ['ROW', record.row], ['AGREEMENT', record.agreement], ['REASON', record.reason], ['VERDICT', verdictFor(record, cls)], ['READS', record.reads],
     ['BADGE_URL', record.badge_url], ['ACTIONS_URL', record.actions_url],
     ['BADGE_HTTP', record.badge?.http], ['BADGE_TITLE', record.badge?.title], ['BADGE_NAME', record.badge?.name], ['BADGE_STATE', record.badge?.state],
@@ -688,17 +806,22 @@ const SVG_TAG = {
 const ARIA = { success: 'completed successfully', failure: 'failed', cancelled: 'cancelled', skipped: 'skipped', action_required: 'requires action with the application', in_progress: 'currently running', queued: 'queued', waiting: 'waiting', unknown: 'unknown' };
 
 /** One run row, structured like the real thing. `icon` null = a prose-only row. */
-export function fixtureRow({ repo = 'AlgoVaultLabs/algovault-skills', runId, runNumber, name = 'Marketplace Health Check', started = '2026-10-02T14:03:41Z', icon = 'success', aria, subtitleNumber, calendarDecoy = true }) {
+export function fixtureRow({ repo = 'AlgoVaultLabs/algovault-skills', runId, runNumber, name = 'Marketplace Health Check', started = '2026-10-02T14:03:41Z', icon = 'success', aria, subtitleNumber, calendarDecoy = true, ref, refTitles }) {
   const iconTag = icon === null ? '' : `<div >     ${SVG_TAG[icon]}<path d="M0 0"></path></svg> </div>`;
   const label = aria ?? `${ARIA[icon] ?? 'completed successfully'}:  Run ${runNumber} of ${name}.`;
   const decoy = calendarDecoy ? '<div class="mr-1"><svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-calendar"><path d="M0 0"></path></svg></div>' : '';
+  // Ruling Q9: the real row renders its ref twice (desktop + mobile) as a branch-name anchor whose
+  // `title` is the short ref name (measured 2026-10-04 on publish-npm.yml: #29 v1.31.1, #28 main).
+  // Absent unless asked for, so every pre-Q9 fixture renders byte-identically.
+  const titles = refTitles ?? (ref === undefined ? [] : [ref, ref]);
+  const refAnchors = titles.map((t) => `<a target="_parent" class="d-inline-block branch-name css-truncate css-truncate-target my-0 my-md-1" style="max-width: 200px;"${t === null ? '' : ` title="${t}"`} href="/${repo}/tree/refs/${/^v\d/.test(String(t)) ? 'tags' : 'heads'}/${t}">${t}</a>`).join('\n');
   return `<div class="Box-row js-socket-channel js-updatable-content" id="check_suite_${runId}0" data-channel="SCRUBBED" data-url="/${repo}/actions/workflow-run/${runId}0" data-batched="30000" >
 <div class="d-table col-12"><div class="d-table-cell v-align-top col-11 col-md-6 position-relative">
 <a href="/${repo}/actions/runs/${runId}" class="d-flex flex-items-center width-full mb-1" aria-label="${label}">${iconTag}
 <span class="h4 Link--primary text-bold width-full markdown-title css-truncate css-truncate-target pl-2" style="min-width: 95%">${name}</span></a>
 <span class="d-block text-small color-fg-muted mb-1 mb-md-0 tmp-pl-4"><span class="text-bold" >${name}</span> #${subtitleNumber ?? runNumber}: <span class="color-fg-muted">Scheduled</span></span>
 <div class="d-block d-md-none text-small tmp-pl-4"><span class="lh-condensed color-fg-muted my-1 pr-2 d-flex" >${decoy}<relative-time datetime="${started}" threshold="PT1H"></relative-time></span></div>
-</div></div></div>`;
+</div>${refAnchors ? `\n${refAnchors}\n` : ''}</div></div>`;
 }
 
 /** The page chrome R0.4 measured BEFORE the first row: every trap a page-global parser would hit. */
@@ -855,6 +978,68 @@ export function selfTest({ log = (s) => console.log(s) } = {}) {
   safe(() => readConclusion({ ...MC, cls: 'alerting' }, { fetchDoc: memoryFetch({ [B]: [badge('failing')], [P]: [page(r144())] }), sleep: (s) => { slept += s; }, reads: 3, spacingS: 60, host: DEFAULT_HOST }));
   check('a persistent DISAGREE stops at GHRC_READS, sleeping (reads − 1) × spacing via the INJECTED sleep', slept === 120, `slept ${slept}`);
   check('AGREE on read 1 never re-reads (the green path costs nothing)', read({ [B]: [badge('passing')], [P]: [page(r144())] }).reads === 1);
+
+  log('── any ref (ruling Q9): resolved to the newest finished run\'s OWN ref, both instruments read ON it ──');
+  {
+    const NPM = { repo: 'AlgoVaultLabs/crypto-quant-signal-mcp', workflow: 'publish-npm.yml', branch: null };
+    const NN = 'Publish to npm';
+    const P0 = actionsUrl(NPM);
+    const B0 = badgeUrl(NPM);
+    const rb = (ref) => badgeUrl({ ...NPM, branch: ref });
+    const rp = (ref) => actionsUrl({ ...NPM, branch: ref });
+    const row = (runId, runNumber, icon, ref, extra = {}) => fixtureRow({ repo: NPM.repo, runId, runNumber, name: NN, icon, ref, ...extra });
+    const t29 = (icon = 'success') => row('37201506699', 29, icon, 'v1.31.1');
+    const m28 = (icon = 'success') => row('37182060859', 28, icon, 'main');
+    const t27 = (icon = 'failure') => row('35852161288', 27, icon, 'v1.31.0');
+    const rd = (seq, extra = {}) => {
+      const seen = [];
+      const inner = memoryFetch(seq);
+      const r = safe(() => readConclusion({ ...NPM, cls: 'blocking', ...extra }, { fetchDoc: (u, e, n, f) => { seen.push({ u, n, f }); return inner(u, e, n, f); }, sleep: noSleep, reads: RECOVER_DEFAULTS.reads, spacingS: RECOVER_DEFAULTS.spacingS, host: DEFAULT_HOST, nowEpoch: () => 1791116558 }));
+      return { r, seen };
+    };
+    const ok = rd({ [P0]: [page(t29(), m28(), t27())], [rb('v1.31.1')]: [badge('passing', NN)], [rp('v1.31.1')]: [page(t29())] });
+    check('refOfRun reads the branch-name title of THAT run\'s row (#29 → v1.31.1, #28 → main)', refOfRun(fixturePage([t29(), m28()]), '37201506699').ref === 'v1.31.1' && refOfRun(fixturePage([t29(), m28()]), '37182060859').ref === 'main');
+    check('the newest finished run #29 on v1.31.1 → row 1 AGREE, resolved_ref v1.31.1, bound #29', ok.r.row === 1 && ok.r.resolved_ref === 'v1.31.1' && ok.r.bound_run?.run_id === '37201506699' && ok.r.reads === 1, `${ok.r.row}/${ok.r.resolved_ref}`);
+    check('…the badge and page actually read are the REF\'s (?branch=v1.31.1, ?query=branch%3Av1.31.1)', ok.r.badge_url === rb('v1.31.1') && ok.r.actions_url === rp('v1.31.1'));
+    check('…and the no-param badge (the DEFAULT branch) is NEVER requested', ok.seen.every((x) => x.u !== B0), JSON.stringify(ok.seen.map((x) => x.u)));
+    const failedTag = rd({ [P0]: [page(t29('failure'), m28())], [B0]: [badge('passing', NN)], [rb('v1.31.1')]: [badge('failing', NN)], [rp('v1.31.1')]: [page(t29('failure'))] });
+    check('a failed tag run after a green main: row 2 AGREE FAIL bound to the TAG run — never the cross-run row 4', failedTag.r.row === 2 && failedTag.r.agreement === 'AGREE' && verdictFor(failedTag.r, 'blocking') === 'FAIL' && failedTag.r.bound_run?.run_number === 29, `${failedTag.r.row}/${failedTag.r.agreement}`);
+    const ip30 = row('37209999999', 30, 'in_progress', 'main');
+    const skip = rd({ [P0]: [page(ip30, t29(), m28())], [rb('v1.31.1')]: [badge('passing', NN)], [rp('v1.31.1')]: [page(t29())] });
+    check('an in-progress newest any-ref row is skipped: the ref is the newest FINISHED run\'s (v1.31.1)', skip.r.row === 1 && skip.r.resolved_ref === 'v1.31.1');
+    check('one floor PER PAGE: the ref page\'s newest (#29) is older than the any-ref page\'s (#30) and is NOT `monotonic`', skip.r.page.guard === null);
+    const miss = rd({ [P0]: [page(row('37201506699', 29, 'success', undefined))] });
+    check('no branch-name element → UNCORROBORATED, reason ref_missing, blocking INDETERMINATE, nothing bound', miss.r.row === 'R' && miss.r.agreement === 'UNCORROBORATED' && miss.r.reason === 'ref_missing' && verdictFor(miss.r, 'blocking') === 'INDETERMINATE' && !('bound_run' in miss.r) && miss.r.resolved_ref === null, `${miss.r.row}/${miss.r.reason}`);
+    check('…an unresolved ref re-reads (Recover) and never reads a badge at all', miss.r.reads === RECOVER_DEFAULTS.reads && miss.seen.every((x) => x.u === P0) && miss.r.badge_url === null);
+    const slash = rd({ [P0]: [page(row('37201506699', 29, 'success', undefined, { refTitles: ['feature/x', 'feature/x'] }))] });
+    check('a slash-ref (unmeasured) → ref_out_of_vocabulary', slash.r.reason === 'ref_out_of_vocabulary' && slash.r.row === 'R');
+    const split = rd({ [P0]: [page(row('37201506699', 29, 'success', undefined, { refTitles: ['v1.31.1', 'v1.31.0'] }))] });
+    check('two renders of the ref that disagree → ref_unparseable', split.r.reason === 'ref_unparseable');
+    const untitled = rd({ [P0]: [page(row('37201506699', 29, 'success', undefined, { refTitles: [null, null] }))] });
+    check('a branch-name element with no title → ref_unparseable', untitled.r.reason === 'ref_unparseable');
+    const down = rd({ [P0]: [{ http: 503 }] });
+    check('an any-ref page outage → ref_page_http_503 (UNCORROBORATED)', down.r.reason === 'ref_page_http_503' && down.r.agreement === 'UNCORROBORATED');
+    const stop = rd({ [P0]: [page(row('37201506699', 29, 'unknown', 'v1.31.1'))] });
+    check('an any-ref walk that STOPS resolves nothing (ref_page_icon_unmeasured)', stop.r.reason === 'ref_page_icon_unmeasured');
+    const moving = rd({ [P0]: [page(t27()), page(t29(), t27())], [rb('v1.31.0')]: [badge('passing', NN)], [rp('v1.31.0')]: [page(t27())], [rb('v1.31.1')]: [badge('passing', NN)], [rp('v1.31.1')]: [page(t29())] });
+    check('the ref is re-resolved on EVERY read, Recover included (v1.31.0 row 4 → v1.31.1 row 1 AGREE)', moving.r.samples.map((x) => `${x.resolved_ref}:${x.row}`).join('>') === 'v1.31.0:4>v1.31.1:1' && moving.r.resolved_ref === 'v1.31.1', moving.r.samples.map((x) => `${x.resolved_ref}:${x.row}`).join('>'));
+    const cbOf = (x) => new URL(x.f).searchParams.get('ghrc_cb');
+    check('every document of a resolved read (any-ref page, ref badge, ref page) carries THE read\'s ghrc_cb', moving.seen.length === 6 && moving.seen.every((x) => cbOf(x) === `1791116558-${x.n}`), JSON.stringify(moving.seen.map(cbOf)));
+    check('each sample records how its ref was resolved (run, reason, page cb + Date)', moving.r.samples.every((x) => x.ref_resolution && 'date' in x.ref_resolution && x.ref_resolution.cb && x.ref_resolution.run?.run_id));
+    const m30f = row('37209999998', 30, 'failure', 'main');
+    const m30ip = row('37209999998', 30, 'in_progress', 'main');
+    const lag = rd({ [P0]: [page(m30f, t29(), m28())], [rb('main')]: [badge('passing', NN)], [rp('main')]: [page(m30ip, m28())] });
+    check('a ref page LAGGING behind the resolved run (#30 failed; the main page still shows it running) never binds the older #28 → ref_page_behind, INDETERMINATE', lag.r.agreement === 'UNCORROBORATED' && lag.r.page.guard === 'ref_page_behind' && verdictFor(lag.r, 'blocking') === 'INDETERMINATE' && !('bound_run' in lag.r), `${lag.r.row}/${lag.r.page.guard}/${lag.r.bound_run?.run_number}`);
+    const newerUnread = rd({ [P0]: [page(t27()), page(t29(), t27())], [rb('v1.31.0')]: [badge('passing', NN)], [rp('v1.31.0')]: [page(t27())], [rb('v1.31.1')]: [badge('passing', NN)], [rp('v1.31.1')]: [{ http: 503 }] });
+    check('Recover: a NEWER finished run resolved in a later read outranks an older bound one even when its ref page was unreadable (#29 > #27 → no FAIL on the stale #27)', newerUnread.r.reads === 3 && newerUnread.r.resolved_ref === 'v1.31.1' && verdictFor(newerUnread.r, 'blocking') === 'INDETERMINATE', `${newerUnread.r.samples.map((x) => `${x.resolved_ref}:${x.row}`).join('>')} → ${newerUnread.r.row}`);
+    const decoy = fixturePage([t29().replace(/ title="v1\.31\.1"/g, ' data-title="evil" title="v1.31.1"')]);
+    check('refOfRun reads `title` exactly — a data-title decoy is never the ref', refOfRun(decoy, '37201506699').ref === 'v1.31.1');
+    check('…and a branch-name with ONLY a data-title is ref_unparseable', refOfRun(fixturePage([t29().replace(/ title="v1\.31\.1"/g, ' data-title="v1.31.1"')]), '37201506699').reason === 'ref_unparseable');
+    const named = read({ [B]: [badge('passing')], [P]: [page(r144())] });
+    check('a NAMED-branch record carries no resolved_ref / ref_resolution (byte-identical to pre-Q9)', !('resolved_ref' in named) && !('ref_resolution' in named) && named.samples.every((x) => !('resolved_ref' in x)));
+    check('…and its GHRC lines carry no RESOLVED_REF line', !renderLines(named, 'alerting').some((l) => l.startsWith('GHRC_RESOLVED_REF=')));
+    check('an any-ref record prints GHRC_RESOLVED_REF + GHRC_REF_REASON', renderLines(ok.r, 'blocking').includes('GHRC_RESOLVED_REF=v1.31.1') && renderLines(miss.r, 'blocking').includes('GHRC_REF_REASON=ref_missing'));
+  }
 
   log('── the fetch seam: canary-identical fixture mangling ──');
   check('mangle = tr -c A-Za-z0-9 _', mangle('https://github.com/o/a/actions/workflows/w.yml?query=branch%3Amain') === 'https___github_com_o_a_actions_workflows_w_yml_query_branch_3Amain');

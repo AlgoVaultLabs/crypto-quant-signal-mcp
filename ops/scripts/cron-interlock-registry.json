@@ -791,11 +791,11 @@
       ],
       "class": "safe-to-kill",
       "reason": "Every one is a read-only canary that pages the OPERATOR through send_telegram.sh, or writes only its own state atomically; the next scheduled fire re-evaluates. Three write elsewhere and stay safe by mechanism: x402-claim-liveness-prober inserts then deletes a sentinel row (a crash between them is swept at the next run, no reader counts it); declaration-sync copies to .tmp then mv -f; x402-settlement-reconciler --apply is forward-only autocommit UPDATEs pinned on the from-state (no on-chain write). kernel-auto-reboot.sh is the actor itself. checkout-parity runs `git fetch` in live checkouts: SIGTERM cleans git locks (a reboot signals before it kills).",
-      "max_runtime_s": 74,
-      "runtime_instrument": "per-script, read-only agent forensic 2026-10-02 ~11:42Z on signal-1: own-log start/finish (gap-filtered to scheduled fires), canary-results.jsonl at-minus-fire, START->VERDICT lines, cron journal; worst declaration-sync 74s (B n=1223, p50 5), then postgres-cpu-snapshot 63 (L n=246), registry-conformance 61 (L n=1905), check-cancel-path-live 53 (J n=240)",
+      "max_runtime_s": 361,
+      "runtime_instrument": "OPS-XREPO-CI-RED-W1 CH4 (ruling Q12), 2026-10-04T13:12:10Z→13:18:11Z on signal-1: the INSTALLED /opt/algovault-monitoring/xrepo-ci-conclusion-canary.sh (b64d9ff4…, module e55bb07e…) run as cron does (env -i, PATH=/usr/bin:/bin) with a fixture dir forcing DISAGREE on all 3 WATCHED rows (badge failing over a newest terminal success run), GHRC_READS=3 + real GHRC_SPACING_S=60 sleeps, ALGOVAULT_TG_TEST_INERT=1, a mock sender, LEDGER/LOG/STATE/result log in a mktemp dir: wall 360.5 s (date +%s.%N around the run), XREPO_CI_VERDICT=INDETERMINATE, 0 sends. Worst case for the row: every DISAGREE row Recovers (3 reads, 2×60 s). deploy-drift-canary.mjs (one lane read, 120 s Recover + fetches) stays under it. Prior value 74 s (declaration-sync, 2026-10-02 forensic) predates Recover.",
       "cron_lines": 41,
       "source": "host-only",
-      "verified_at": "2026-10-02",
+      "verified_at": "2026-10-04",
       "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
     },
     {
