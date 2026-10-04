@@ -265,6 +265,8 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 
 - **🧩 Install from the package, not from a pasted config block.** `plugin.json`, `mcp.json` and `.cursor-plugin/plugin.json` now ship inside the npm tarball, so an Agent-Plugins-compatible host — Cursor included — reads the server definition straight out of the installed package. Until this release those files lived in the repository only, and no npm consumer could obtain them.
 
+- **v1.31.1** — Trade-call verdicts are now chosen by one declared rule per timeframe and trend direction, instead of a global mode setting. The calls you receive are unchanged by the switch.
+
 **Upgrading from v1.30.x** — one value in the response envelope changed: `_algovault.compatible_with` is now `[]` and names no companion package. If your client rendered those package names, stop rendering them; there is no companion package published today. Nothing else in the envelope changed, and no tool or parameter was added, renamed or removed.
 
 ### v1.30.x highlights (recap)
