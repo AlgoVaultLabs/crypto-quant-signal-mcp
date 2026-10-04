@@ -282,14 +282,15 @@ function parseFiles(argv) {
   return files.length ? files : null;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
-  const argv = process.argv.slice(2);
-  if (argv.includes('--self-test')) process.exit(selfTest());
+/** The CLI. Returns the exit code; the caller sets process.exitCode — never process.exit(), which
+ *  can drop the queued stdout write that carries the verdict token when stdout is a pipe. */
+export function main(argv) {
+  if (argv.includes('--self-test')) return selfTest();
   const r = run({ files: parseFiles(argv) });
   if (r.verdict === 'INDETERMINATE') {
     console.error(`check-card-markup: ${r.reason}`);
     console.log('CARD_MARKUP_VERDICT=INDETERMINATE');
-    process.exit(EXIT.INDETERMINATE);
+    return EXIT.INDETERMINATE;
   }
   for (const n of r.nested) console.error(`  leg 1  ${n.file}:${n.line}  <a> opened inside an open <a>  ${n.sample}`);
   for (const s of r.stray) console.error(`  leg 2  ${s.file}  #${s.section}  stray grid child  ${s.head}`);
@@ -299,8 +300,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
     console.error('  a primary a.card-link (its ::after overlays the card) and an a.card-secondary above it —');
     console.error('  see landing/_design/algovault-design.css and renderIndexCard() in src/lib/integrations-data/render.ts.');
     console.log('CARD_MARKUP_VERDICT=FAIL');
-    process.exit(EXIT.FAIL);
+    return EXIT.FAIL;
   }
   console.log(`✓ check-card-markup: leg 1 scanned ${r.sourceCount} source(s), leg 2 parsed ${r.domCount} page(s) — 0 nested anchors, 0 stray card-grid children.`);
   console.log('CARD_MARKUP_VERDICT=PASS');
+  return EXIT.PASS;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  process.exitCode = main(process.argv.slice(2));
 }
