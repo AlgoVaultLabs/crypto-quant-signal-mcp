@@ -347,6 +347,17 @@ jobs:
           node scripts/check-legacy-navy-literals.mjs --self-test
           node scripts/check-legacy-navy-literals.mjs
 
+      # DESIGN-INTEGRATIONS-CARD-NESTED-ANCHOR-W1: the card-markup canary. renderIndexCard() put a
+      # Demo <a> inside each card <a>; HTML forbids an `a` descendant of `a`, so the parser ejected
+      # 7 footers into the /integrations exchange-kit grid as stray cells (20 children, not 13).
+      # Leg 1 scans source for an <a> opened inside an open <a>; leg 2 parses every landing page
+      # with jsdom and asserts each card grid holds only card-hover children — what the browser
+      # builds, whichever generator (incl. the cross-repo skills bake) produced the bytes.
+      - name: Card-markup canary (check-card-markup --self-test + --check)
+        run: |
+          node scripts/check-card-markup.mjs --self-test
+          node scripts/check-card-markup.mjs
+
       # OPS-AUDIT-REMEDIATION-HIGH-W1 Ch5 (SEC-36): the mobile-nav parity invariant was committed
       # but executed by nothing — build_nav.mjs referenced it only inside a COMMENT, so "a desktop
       # nav shipped without its mobile replacement" was never actually gated. It runs here, next to

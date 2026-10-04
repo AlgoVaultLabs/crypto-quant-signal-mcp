@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>card-markup fixture: clean grids</title></head>
+<body>
+<section id="cards">
+  <p>MUST-PASS: a grid of div.card-hover cards, each with one ordinary link.</p>
+  <div class="grid sm:grid-cols-3 gap-4">
+    <div class="card-hover bg-navy-700 border border-line rounded-xl p-5"><h3>One</h3><a href="/one" class="text-mint-400">Open &rarr;</a></div>
+    <div class="card-hover bg-navy-700 border border-line rounded-xl p-5"><h3>Two</h3><a href="/two" class="text-mint-400">Open &rarr;</a></div>
+    <div class="card-hover bg-navy-700 border border-line rounded-xl p-5"><h3>Three</h3><a href="/three" class="text-mint-400">Open &rarr;</a></div>
+  </div>
+</section>
+<section id="steps">
+  <p>MUST-PASS: a grid whose first child is not a card is out of scope, whatever its children are.</p>
+  <div class="grid sm:grid-cols-3 gap-4">
+    <div class="bg-navy-700/60 border border-line rounded-xl p-5">1. Step</div>
+    <div class="card-hover bg-navy-700 border border-line rounded-xl p-5">2. Step</div>
+    <p class="text-xs">3. Step</p>
+  </div>
+</section>
+</body>
+</html>

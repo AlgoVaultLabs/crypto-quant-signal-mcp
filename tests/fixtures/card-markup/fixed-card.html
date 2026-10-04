@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>card-markup fixture: stretched-link cards</title></head>
+<body>
+<section id="connect-exchange-kit">
+  <p>MUST-PASS: the fixed template. The card is a positioned div; the primary link carries the overlay, the Demo link sits above it.</p>
+  <div class="grid sm:grid-cols-2 lg:grid-cols-2 gap-4">
+    <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
+      <div class="flex items-center gap-3 mb-3">
+        <img src="/assets/logos/binance.svg" alt="Binance logo" class="w-10 h-10 object-contain">
+        <h3 class="text-white font-semibold text-base">Binance &times; AlgoVault</h3>
+      </div>
+      <p class="text-gray-400 text-xs mb-3">What you get.</p>
+      <p class="text-gray-600 text-xs mb-3">Setup summary.</p>
+      <div class="flex items-center gap-3 text-xs">
+        <a href="/integrations/binance"
+           onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'binance',source:'integrations_index',medium:'card'}})"
+           class="card-link text-mint-400">View tutorial &rarr;</a>
+        <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance" class="card-secondary text-steel-400 hover:text-mint-400">Demo &rarr;</a>
+      </div>
+    </div>
+    <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+        <h3 class="text-white font-semibold text-base">Aster &times; AlgoVault</h3>
+      </div>
+      <p class="text-gray-400 text-xs mb-3">What you get.</p>
+      <p class="text-gray-600 text-xs mb-3">Setup summary.</p>
+      <div class="flex items-center gap-3 text-xs">
+        <a href="/integrations/aster"
+           onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'aster',source:'integrations_index',medium:'card'}})"
+           class="card-link text-mint-400">View tutorial &rarr;</a>
+      </div>
+    </div>
+  </div>
+</section>
+</body>
+</html>

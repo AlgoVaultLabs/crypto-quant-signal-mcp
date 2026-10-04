@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>card-markup fixture: grid with a stray child</title></head>
+<body>
+<section id="connect-exchange-kit">
+  <p>Leg 2 MUST-CATCH: every grid child in this SOURCE is an a.card-hover, but the second card nests a Demo link.
+  The parser closes the card at the inner a and ejects its footer div into the grid, exactly as Chrome did on /integrations.</p>
+  <div class="grid sm:grid-cols-2 lg:grid-cols-2 gap-4">
+    <a href="/integrations/aster" class="card-hover bg-navy-700 border border-line rounded-xl p-5 block">
+      <h3 class="text-white font-semibold text-base">Aster &times; AlgoVault</h3>
+      <p class="text-gray-400 text-xs mb-3">What you get.</p>
+      <div class="flex items-center gap-3 text-xs">
+        <span class="text-mint-400">View tutorial &rarr;</span>
+      </div>
+    </a>
+    <a href="/integrations/binance" class="card-hover bg-navy-700 border border-line rounded-xl p-5 block">
+      <h3 class="text-white font-semibold text-base">Binance &times; AlgoVault</h3>
+      <p class="text-gray-400 text-xs mb-3">What you get.</p>
+      <div class="flex items-center gap-3 text-xs">
+        <span class="text-mint-400">View tutorial &rarr;</span>
+        <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+      </div>
+    </a>
+    <a href="/integrations/bitmart" class="card-hover bg-navy-700 border border-line rounded-xl p-5 block">
+      <h3 class="text-white font-semibold text-base">BitMart &times; AlgoVault</h3>
+      <p class="text-gray-400 text-xs mb-3">What you get.</p>
+      <div class="flex items-center gap-3 text-xs">
+        <span class="text-mint-400">View tutorial &rarr;</span>
+      </div>
+    </a>
+  </div>
+</section>
+</body>
+</html>

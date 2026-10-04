@@ -140,7 +140,7 @@ const EXCHANGE_LOGO_OVERRIDES: Record<string, { src: string; classes: string }> 
   alpaca: { src: '/assets/logos/alpaca.png', classes: 'w-10 h-10 object-contain' },
 };
 
-const EXCHANGE_DEMO_URL: Record<string, string> = {
+export const EXCHANGE_DEMO_URL: Readonly<Record<string, string>> = {
   binance: 'https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance',
   okx: 'https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/okx',
   bybit: 'https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bybit',
@@ -169,13 +169,18 @@ function renderIndexCard(entry: IntegrationEntry): string {
     entry.surfaceType === 'exchange-kit'
       ? `${entry.displayName} &times; AlgoVault`
       : entry.displayName;
+  // DESIGN-INTEGRATIONS-CARD-NESTED-ANCHOR-W1: a STRETCHED-LINK card, never a nested anchor.
+  // The card was an <a> holding the Demo <a>; HTML forbids an `a` descendant of `a`, so the
+  // parser closed the card at the inner link and ejected its footer into the grid as a stray
+  // cell (7 on /integrations). Now the card is a positioned <div>; `.card-link`'s ::after
+  // overlay keeps the whole card clickable (and carries the Plausible event with the href), and
+  // `.card-secondary` sits above the overlay. `.card-hover:hover` is the single hover source.
+  // Gated by scripts/check-card-markup.mjs.
   const demoUrl = EXCHANGE_DEMO_URL[entry.slug];
   const demoLink = demoUrl
-    ? `\n          <a href="${demoUrl}" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>`
+    ? `\n          <a href="${demoUrl}" class="card-secondary text-steel-400 hover:text-mint-400">Demo &rarr;</a>`
     : '';
-  return `      <a href="${cleanHref}"
-         onclick="if(window.plausible)plausible('Integration View',${plausibleProps})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+  return `      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           ${headIcon}
           <h3 class="text-white font-semibold text-base">${heading}</h3>
@@ -183,9 +188,11 @@ function renderIndexCard(entry: IntegrationEntry): string {
         <p class="text-gray-400 text-xs mb-3">${entry.whatYouGet}</p>
         <p class="text-gray-600 text-xs mb-3">${entry.setupSummary}</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>${demoLink}
+          <a href="${cleanHref}"
+             onclick="if(window.plausible)plausible('Integration View',${plausibleProps})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>${demoLink}
         </div>
-      </a>`;
+      </div>`;
 }
 
 /**

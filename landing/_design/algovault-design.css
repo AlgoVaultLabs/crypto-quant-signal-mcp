@@ -1299,5 +1299,11 @@
    keeps them from coming back. */
 .card-hover { transition: border-color .2s ease, box-shadow .2s ease; }
 .card-hover:hover { border-color: oklch(0.5 0.14 165 / 0.5); box-shadow: 0 0 0 1px oklch(0.86 0.16 165 / 0.08), 0 12px 30px -18px oklch(0.86 0.16 165 / 0.4); }
+/* DESIGN-INTEGRATIONS-CARD-NESTED-ANCHOR-W1: a card with a second tap target is a stretched-link card, never an <a> inside an <a>. */
+.card-link::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: 0.75rem; }
+.card-hover:has(.card-link) { position: relative; }
+.card-secondary { position: relative; z-index: 2; }
+.card-link:focus-visible { outline: none; }
+.card-link:focus-visible::after { outline: 2px solid var(--mint); outline-offset: 2px; }
 .glow { box-shadow: 0 0 40px oklch(0.86 0.16 165 / 0.08); }
 .glow-text { text-shadow: 0 0 30px oklch(0.86 0.16 165 / 0.25); }

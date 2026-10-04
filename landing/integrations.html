@@ -415,9 +415,7 @@ tailwind.config = {
     <p class="text-gray-500 text-sm text-center mb-10">Your AlgoVault API key works across every MCP-compatible client. Free tier (no key) too &mdash; 200 calls/month (100/day), every coin, every timeframe.</p>
     <div class="grid sm:grid-cols-2 lg:grid-cols-2 gap-4">
 <!-- BUILD:INTEGRATIONS_INDEX_MCP_CLIENTS:start -->
-      <a href="/integrations/claude-desktop"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'claude-desktop',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Claude Desktop</h3>
@@ -425,12 +423,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Native Streamable-HTTP MCP. AlgoVault tools (<code class="text-xs">get_trade_call</code>, <code class="text-xs">scan_funding_arb</code>, <code class="text-xs">get_market_regime</code>) callable in any chat.</p>
         <p class="text-gray-600 text-xs mb-3">Customize &rarr; Connectors &rarr; + &rarr; <em>Add custom connector</em>, or edit <code class="text-xs bg-navy-800 px-1 rounded">claude_desktop_config.json</code></p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/claude-desktop"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'claude-desktop',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/cursor"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'cursor',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Cursor</h3>
@@ -438,12 +436,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">IDE-native MCP. Cursor's coding agent pulls live signals while editing strategy code.</p>
         <p class="text-gray-600 text-xs mb-3">Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.cursor/mcp.json</code> (global) or <code class="text-xs bg-navy-800 px-1 rounded">.cursor/mcp.json</code> (project)</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/cursor"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'cursor',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/cline"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'cline',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Cline (VSCode)</h3>
@@ -451,12 +449,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">VSCode-side coding agent with AlgoVault tools available.</p>
         <p class="text-gray-600 text-xs mb-3">Cline panel &rarr; MCP Servers &rarr; Remote Servers tab, or edit <code class="text-xs bg-navy-800 px-1 rounded">cline_mcp_settings.json</code></p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/cline"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'cline',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/claude-code"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'claude-code',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Claude Code</h3>
@@ -464,12 +462,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Per-project MCP. Useful for backtest / strategy-dev repos. Team-shared via <code class="text-xs">.mcp.json</code>.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">claude mcp add --transport http &hellip; --header &hellip;</code> &mdash; or commit <code class="text-xs bg-navy-800 px-1 rounded">.mcp.json</code> to repo root</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/claude-code"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'claude-code',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/smithery"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'smithery',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Smithery</h3>
@@ -477,12 +475,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Auto-managed connection via Smithery registry. Easiest install across clients.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;</code></p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/smithery"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'smithery',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/codex"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'codex',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Codex</h3>
@@ -490,12 +488,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Coding agent for terminal and IDE. AlgoVault tools available in every Codex session.</p>
         <p class="text-gray-600 text-xs mb-3">Add <code class="text-xs bg-navy-800 px-1 rounded">[mcp_servers.algovault]</code> to <code class="text-xs bg-navy-800 px-1 rounded">~/.codex/config.toml</code></p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/codex"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'codex',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/kimi"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'kimi',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Kimi Code</h3>
@@ -503,12 +501,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Moonshot’s coding agent. Pulls AlgoVault verdicts while you edit strategy code.</p>
         <p class="text-gray-600 text-xs mb-3">Add a <code class="text-xs bg-navy-800 px-1 rounded">url</code> entry to <code class="text-xs bg-navy-800 px-1 rounded">~/.kimi-code/mcp.json</code>, or run <code class="text-xs">/mcp-config</code></p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/kimi"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'kimi',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/glm-zcode"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'glm-zcode',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">ZCode (GLM)</h3>
@@ -516,12 +514,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Z.ai’s GLM harness. AlgoVault verdicts alongside the GLM model family.</p>
         <p class="text-gray-600 text-xs mb-3">Settings &rarr; MCP Servers &rarr; <em>New MCP Server</em> &rarr; <code class="text-xs bg-navy-800 px-1 rounded">HTTP</code>, then paste the URL</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/glm-zcode"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'glm-zcode',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/deepseek-harness"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'deepseek-harness',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">DeepSeek Harness</h3>
@@ -529,9 +527,11 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">DeepSeek’s own agent runtime. AlgoVault tools arrive as <code class="text-xs">mcp__algovault__*</code>; the free tier needs no key.</p>
         <p class="text-gray-600 text-xs mb-3">Insert one entry in <code class="text-xs">cordis.patch.yml</code> — the <code class="text-xs bg-navy-800 px-1 rounded">dsh</code> CLI already ships the MCP bridge</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/deepseek-harness"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'deepseek-harness',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
+      </div>
       <!-- BUILD:INTEGRATIONS_INDEX_MCP_CLIENTS:end -->
     </div>
   </div>
@@ -544,9 +544,7 @@ tailwind.config = {
     <p class="text-gray-500 text-sm text-center mb-10">Building on a major agent framework? AlgoVault MCP plugs into 4 of them via the framework's canonical MCP-adapter library. Each pairing ships with a runnable Python demo.</p>
     <div class="grid sm:grid-cols-2 lg:grid-cols-2 gap-4">
 <!-- BUILD:INTEGRATIONS_INDEX_AI_AGENTS:start -->
-      <a href="/integrations/langchain"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'langchain',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">LangChain</h3>
@@ -554,12 +552,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">AlgoVault tools as LangChain <code class="text-xs">BaseTool</code> objects in any <code class="text-xs">create_react_agent</code> or LangGraph workflow.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install langchain-mcp-adapters</code> &middot; <code class="text-xs">MultiServerMCPClient</code> with streamable HTTP</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/langchain"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'langchain',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/llamaindex"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'llamaindex',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">LlamaIndex</h3>
@@ -567,12 +565,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">AlgoVault tools as LlamaIndex <code class="text-xs">FunctionTool</code> objects in any <code class="text-xs">FunctionAgent</code> or <code class="text-xs">ReActAgent</code>.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install llama-index-tools-mcp</code> &middot; <code class="text-xs">BasicMCPClient</code> + <code class="text-xs">McpToolSpec</code></p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/llamaindex"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'llamaindex',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/maf"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'maf',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Microsoft Agent Framework</h3>
@@ -580,12 +578,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">AlgoVault tools called directly or handed to any <code class="text-xs">ChatAgent</code> in the MAF ecosystem.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install agent-framework</code> &middot; <code class="text-xs">MCPStreamableHTTPTool(url=&hellip;)</code></p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/maf"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'maf',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/crewai"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'crewai',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">CrewAI</h3>
@@ -593,9 +591,11 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">AlgoVault tools as CrewAI <code class="text-xs">BaseTool</code> objects in any <code class="text-xs">Crew</code> or single <code class="text-xs">Agent</code> workflow.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install crewai 'crewai-tools[mcp]'</code> &middot; <code class="text-xs">MCPServerAdapter</code></p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/crewai"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'ai-agent',slug:'crewai',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
+      </div>
       <!-- BUILD:INTEGRATIONS_INDEX_AI_AGENTS:end -->
     </div>
   </div>
@@ -625,9 +625,7 @@ tailwind.config = {
 
     <div class="grid sm:grid-cols-2 lg:grid-cols-2 gap-4">
 <!-- BUILD:INTEGRATIONS_INDEX_EXCHANGE_KITS:start -->
-      <a href="/integrations/binance"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'binance',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/binance.svg" alt="Binance logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Binance &times; AlgoVault</h3>
@@ -635,13 +633,13 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + official Binance Skills Hub, on the direct API path. You issue keys and sign requests; the demo runs against Spot Testnet.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">npx skills add https://github.com/binance/binance-skills-hub</code> &middot; Spot Testnet execution</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <a href="/integrations/binance"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'binance',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance" class="card-secondary text-steel-400 hover:text-mint-400">Demo &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/binance-agent-os"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'binance-agent-os',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Binance Agent OS &times; AlgoVault</h3>
@@ -649,12 +647,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Your agent asks AlgoVault what to do and Binance to do it. No API keys on the machine, no HMAC signing, and no withdrawal scope exists.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">claude mcp add binance-mcp-server --transport http https://agent.binance.com/mcp/agentic</code> &middot; OAuth, no API keys</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/binance-agent-os"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'binance-agent-os',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/okx"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'okx',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/okx.svg" alt="OKX logo" class="w-10 h-10 object-contain invert">
           <h3 class="text-white font-semibold text-base">OKX &times; AlgoVault</h3>
@@ -662,13 +660,13 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + OKX's full execution surface. Agent reads signals, places orders across spot or derivatives via one MCP server.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">npx -y @okx_ai/okx-trade-mcp</code> &middot; 83 execution tools (spot, swap, futures, options, grid)</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/okx" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <a href="/integrations/okx"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'okx',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/okx" class="card-secondary text-steel-400 hover:text-mint-400">Demo &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/bybit"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'bybit',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/bybit.png" alt="Bybit logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Bybit &times; AlgoVault</h3>
@@ -676,13 +674,13 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + Bybit's official MCP server. Agent fetches AlgoVault signals, places perpetual + conditional orders via Bybit testnet.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">npx -y bybit-official-trading-server</code> &middot; Linear Perpetual + conditional orders</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bybit" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <a href="/integrations/bybit"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'bybit',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bybit" class="card-secondary text-steel-400 hover:text-mint-400">Demo &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/bitget"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'bitget',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/bitget.png" alt="Bitget logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Bitget &times; AlgoVault</h3>
@@ -690,13 +688,13 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + Bitget's MCP server inside a dedicated AI account. Agent-native execution; isolate from your main funds.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">npx -y bitget-mcp-server</code> &middot; GetClaw agent-native execution</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bitget" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <a href="/integrations/bitget"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'bitget',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bitget" class="card-secondary text-steel-400 hover:text-mint-400">Demo &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/gemini"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'gemini',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/gemini.png" alt="Gemini logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Gemini &times; AlgoVault</h3>
@@ -704,13 +702,13 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + Gemini's Agentic Trading MCP. Agent reads signals, places sandbox orders via gemini_new_order; subaccounts isolate each agent.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">node packages/mcp-server/dist/index.js</code> &middot; Self-hosted Node MCP (Apache-2.0), sandbox-gated</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/gemini" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <a href="/integrations/gemini"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'gemini',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/gemini" class="card-secondary text-steel-400 hover:text-mint-400">Demo &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/kraken"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'kraken',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/kraken.png" alt="Kraken logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Kraken &times; AlgoVault</h3>
@@ -718,13 +716,13 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + the Kraken CLI's stdio MCP. Agent reads signals, simulates orders on the keyless paper engine before going live.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">kraken mcp -s all</code> &middot; Single Rust binary (MIT), 151 commands, keyless paper engine</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/kraken" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <a href="/integrations/kraken"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'kraken',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/kraken" class="card-secondary text-steel-400 hover:text-mint-400">Demo &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/alpaca"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'alpaca',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/alpaca.png" alt="Alpaca logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Alpaca &times; AlgoVault</h3>
@@ -732,13 +730,13 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + Alpaca's crypto MCP Server. Agent reads signals, places notional BTC/USD paper orders via place_crypto_order.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">uvx alpaca-mcp-server</code> &middot; Crypto toolsets, paper venue default-on</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/alpaca" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <a href="/integrations/alpaca"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'alpaca',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/alpaca" class="card-secondary text-steel-400 hover:text-mint-400">Demo &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/hyperliquid"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'hyperliquid',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Hyperliquid &times; AlgoVault</h3>
@@ -746,12 +744,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + Hyperliquid's testnet perps API. Keyless demo builds the exact EIP-712 order action and prints it — nothing is signed or sent.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install hyperliquid-python-sdk</code> &middot; official Python SDK (no official npm SDK)</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/hyperliquid"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'hyperliquid',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/aster"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'aster',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Aster &times; AlgoVault</h3>
@@ -759,12 +757,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + Aster's futures testnet on BNB Chain Testnet. V3 EIP-712 auth; V1 API-key creation closed 2026-03-25.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install git+https://github.com/asterdex/aster-connector-python.git</code> &middot; git-install only</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/aster"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'aster',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/bingx"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'bingx',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">BingX &times; AlgoVault</h3>
@@ -772,12 +770,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + BingX's VST demo-trading environment. Dry-run order validation plus an API-callable demo-funds faucet.</p>
         <p class="text-gray-600 text-xs mb-3">No SDK to install &middot; plain <code class="text-xs bg-navy-800 px-1 rounded">fetch</code> + <code class="text-xs">node:crypto</code> against the VST demo host</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/bingx"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'bingx',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/kucoin"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'kucoin',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">KuCoin &times; AlgoVault</h3>
@@ -785,12 +783,12 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + KuCoin Futures order VALIDATION. KuCoin retired its sandbox in 2023, so this validates payloads rather than simulating fills.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">npm install kucoin-universal-sdk</code> &middot; the only non-archived official SDK</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/kucoin"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'kucoin',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
-      <a href="/integrations/gateio"
-         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'gateio',source:'integrations_index',medium:'card'}})"
-         class="card-hover bg-navy-700 border border-line rounded-xl p-5 hover:border-mint-500/40 transition block">
+      </div>
+      <div class="card-hover bg-navy-700 border border-line rounded-xl p-5 relative">
         <div class="flex items-center gap-3 mb-3">
           <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
           <h3 class="text-white font-semibold text-base">Gate.io &times; AlgoVault</h3>
@@ -798,9 +796,11 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + Gate.io's futures testnet. Keyless demo converts coins to CONTRACTS from the live quanto_multiplier and prints the order — nothing is signed or sent.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install gate-api</code> &middot; official SDK 7.2.100 (PyPI + npm)</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="/integrations/gateio"
+             onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'gateio',source:'integrations_index',medium:'card'}})"
+             class="card-link text-mint-400">View tutorial &rarr;</a>
         </div>
-      </a>
+      </div>
       <!-- BUILD:INTEGRATIONS_INDEX_EXCHANGE_KITS:end -->
     </div>
 
