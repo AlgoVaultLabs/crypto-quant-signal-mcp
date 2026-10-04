@@ -2344,7 +2344,7 @@
         }
       ],
       "criticality": "load-bearing",
-      "repo_resident": true,
+      "repo_resident": false,
       "schedule": "19 7 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
@@ -2357,7 +2357,11 @@
         "ops/monitoring/detector_envelope.py",
         "ops/monitoring/detector-envelope.schema.json"
       ],
-      "notes": "RE-HOMED 2026-10-03 by SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R2 (status token VRR_W1_CH3_TREND_GATE_REHOMED). The decision this gate informed is TAKEN — KEEP: rollback to v1 was denied (Mr.1, 2026-09-02 and 2026-10-01) and the TREND_MODE selector is retired; the verdict rule is chosen per cell by src/lib/verdict-rule-registry.ts and judged forward by verdict-rule-gate. What remains: three OPERATIONAL bounds (B volume ceiling, C cell concentration, D emission gap) on the REGISTRY ARM (verdict_rule_version >= 2: 2 = rule M, 3 = served by a fade) against the frozen v1 arm, at their declared levels; the FAIL body names no change under test and gives the registry kill switch. RETIRED with records: trigger A (NOT_IDENTIFIABLE by construction — v1's attainable range is narrower than its 3.0 pp floor; superseded by verdict-rule-gate) and the once-ever TREND_MODE_READOUT_DUE, which FIRED ONCE at 2026-10-01T07:19:01Z (marker /var/lib/algovault-monitoring/trend-mode-readout-due.fired, kept as evidence; the readout was delivered by SIGNAL-TREND-MODE-READOUT-W1). decision_gate / once_ever_* / retirement_trigger removed as the CH1 re-pin promised. repo_resident stays true until the post-install stamp commit: the host copy is an install, not the checkout, but flipping it before the sanctioned reinstall writes first_install would breach the first-install ratchet. The crontab line still exports TMRG_FLIP_AT; nothing reads it. Original: SIGNAL-TREND-MODE-ENABLE-W1 CH2 — BOTH ARMS COME FROM ONE QUERY (the arm is the GROUP BY key, regime_rule_version = 3 fixed, BITMART excluded); DETECT->ALERT->ESCALATE only; adopts DETECTOR_ENVELOPE; TREND_MODE_READOUT_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3. Gate-test with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1. --self-test is hermetic, vacuity-guarded, asserts the bypassed SQL strings, the page body and the envelope, and is mutation-proven (registry-arm mapping, a body naming the change, a body offering v1, a dead bound, a retired constant)."
+      "notes": "RE-HOMED 2026-10-03 by SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R2 (status token VRR_W1_CH3_TREND_GATE_REHOMED). The decision this gate informed is TAKEN — KEEP: rollback to v1 was denied (Mr.1, 2026-09-02 and 2026-10-01) and the TREND_MODE selector is retired; the verdict rule is chosen per cell by src/lib/verdict-rule-registry.ts and judged forward by verdict-rule-gate. What remains: three OPERATIONAL bounds (B volume ceiling, C cell concentration, D emission gap) on the REGISTRY ARM (verdict_rule_version >= 2: 2 = rule M, 3 = served by a fade) against the frozen v1 arm, at their declared levels; the FAIL body names no change under test and gives the registry kill switch. RETIRED with records: trigger A (NOT_IDENTIFIABLE by construction — v1's attainable range is narrower than its 3.0 pp floor; superseded by verdict-rule-gate) and the once-ever TREND_MODE_READOUT_DUE, which FIRED ONCE at 2026-10-01T07:19:01Z (marker /var/lib/algovault-monitoring/trend-mode-readout-due.fired, kept as evidence; the readout was delivered by SIGNAL-TREND-MODE-READOUT-W1). decision_gate / once_ever_* / retirement_trigger removed as the CH1 re-pin promised. repo_resident stays true until the post-install stamp commit: the host copy is an install, not the checkout, but flipping it before the sanctioned reinstall writes first_install would breach the first-install ratchet. The crontab line still exports TMRG_FLIP_AT; nothing reads it. Original: SIGNAL-TREND-MODE-ENABLE-W1 CH2 — BOTH ARMS COME FROM ONE QUERY (the arm is the GROUP BY key, regime_rule_version = 3 fixed, BITMART excluded); DETECT->ALERT->ESCALATE only; adopts DETECTOR_ENVELOPE; TREND_MODE_READOUT_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3. Gate-test with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1. --self-test is hermetic, vacuity-guarded, asserts the bypassed SQL strings, the page body and the envelope, and is mutation-proven (registry-arm mapping, a body naming the change, a body offering v1, a dead bound, a retired constant).",
+      "first_install": {
+        "at": "20261004T073933Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "verdict-rule-gate",
@@ -2376,7 +2380,7 @@
       "repo_resident": false,
       "schedule": "43 12 * * 1",
       "invoked_by": "crontab:root",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "c493ad1b1f4ca2139f818446b7ebca25f9f160d9a6c01395c2cddb385cade0f1",
       "owner_wave": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
       "alert_ids": [
@@ -2389,7 +2393,11 @@
         "ops/monitoring/detector_envelope.py",
         "ops/monitoring/detector-envelope.schema.json"
       ],
-      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R1. The forward gate: executes the landed registration audits/verdict-rule-registry-preregistration-2026-10-02.md verbatim (query, windows, statistic, Holm, rule 1, magnitude veto, floors) — tests/unit/verdict-rule-registry.test.ts pins --show-config to it. RECOMMENDS per TIMEFRAME (joint UP/DOWN assignment in S1 = MM, FM, FF) and never writes src/lib/verdict-rule-assignment.ts. Weekly, Monday 12:43Z; the look instant is the SCHEDULED run, so the window chain is reproducible from the registration and the cron alone. Reads READ-ONLY as aoe_readonly (default_transaction_read_only) and REFUSES (INDETERMINATE) before reading a decided window unless signals has a VALID, READY, LIVE btree index on (signal_hash[, exchange]) — idx_signals_signal_hash_exchange, migrations/047, pre-applied 2026-10-03 (architect Q1 = A): 114.9 ms/row without it, 0.008 ms/row with it. Every statement runs under statement_timeout = 6250 ms (~10x the measured worst window, cap 300 s); a timeout makes the WHOLE run INDETERMINATE. VERDICT_RULE_GATE_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL = a switch is recommended and the page is the action. Pages VERDICT_RULE_SWITCH_RECOMMENDED through the wrapper's page-on-change (ALERT_KEYS <tf>:<UP><DOWN>:w<k> every evaluable run, --clear when none). One canary_result_log record per CELL per run (20). Gate-test with ALGOVAULT_TG_TEST_INERT=1. --self-test is hermetic, two-way, vacuity-guarded, asserts the bypassed SQL/binder/parser/record/envelope and is mutation-proven (12 + 6 breaks)."
+      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R1. The forward gate: executes the landed registration audits/verdict-rule-registry-preregistration-2026-10-02.md verbatim (query, windows, statistic, Holm, rule 1, magnitude veto, floors) — tests/unit/verdict-rule-registry.test.ts pins --show-config to it. RECOMMENDS per TIMEFRAME (joint UP/DOWN assignment in S1 = MM, FM, FF) and never writes src/lib/verdict-rule-assignment.ts. Weekly, Monday 12:43Z; the look instant is the SCHEDULED run, so the window chain is reproducible from the registration and the cron alone. Reads READ-ONLY as aoe_readonly (default_transaction_read_only) and REFUSES (INDETERMINATE) before reading a decided window unless signals has a VALID, READY, LIVE btree index on (signal_hash[, exchange]) — idx_signals_signal_hash_exchange, migrations/047, pre-applied 2026-10-03 (architect Q1 = A): 114.9 ms/row without it, 0.008 ms/row with it. Every statement runs under statement_timeout = 6250 ms (~10x the measured worst window, cap 300 s); a timeout makes the WHOLE run INDETERMINATE. VERDICT_RULE_GATE_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL = a switch is recommended and the page is the action. Pages VERDICT_RULE_SWITCH_RECOMMENDED through the wrapper's page-on-change (ALERT_KEYS <tf>:<UP><DOWN>:w<k> every evaluable run, --clear when none). One canary_result_log record per CELL per run (20). Gate-test with ALGOVAULT_TG_TEST_INERT=1. --self-test is hermetic, two-way, vacuity-guarded, asserts the bypassed SQL/binder/parser/record/envelope and is mutation-proven (12 + 6 breaks).",
+      "first_install": {
+        "at": "20261004T073910Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "cluster-perm-stats",
@@ -2406,11 +2414,15 @@
       "criticality": "load-bearing",
       "repo_resident": false,
       "schedule": null,
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "6d82c1601a9ce1121deecaa1c88ac4685abef328ff27d35047fad37d69f60100",
       "owner_wave": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
       "alert_ids": [],
-      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 (architect correction 2026-10-02: CH3 installs it on signal-1). The PURE statistics library (cluster_bootstrap_ols, arm_seed, …) imported by verdict-rule-gate.py from beside it — the ONE implementation, never a second copy in the gate. The canonical home stays src/scripts/cluster-perm-stats.py (pinned pure by tests/unit/cluster-perm-stats.test.ts); this row is the consumer registry for the host copy."
+      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 (architect correction 2026-10-02: CH3 installs it on signal-1). The PURE statistics library (cluster_bootstrap_ols, arm_seed, …) imported by verdict-rule-gate.py from beside it — the ONE implementation, never a second copy in the gate. The canonical home stays src/scripts/cluster-perm-stats.py (pinned pure by tests/unit/cluster-perm-stats.test.ts); this row is the consumer registry for the host copy.",
+      "first_install": {
+        "at": "20261004T073920Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "promoted-set-drift-canary",
