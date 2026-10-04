@@ -55,15 +55,26 @@
  * The span (reads − 1) × spacing is DERIVED from the measured EPISODE_ENVELOPE and the self-test
  * refuses a config whose span does not exceed it.
  *
- * ── THE CACHE-BUSTER, AND WHY IT SHIPS OFF ──────────────────────────────────────────────────
+ * ── THE CACHE-BUSTER — ON (architect ruling Q6, 2026-10-04) ────────────────────────────────
  * The canary's header says "NO CACHE-BUSTER, DELIBERATELY" because a daily read is far slower than
- * a 300 s cache. Recover re-reads are not, and episode #2 re-served one cached wrong body for
- * ≥ 20 s. The ruling: adopt `ghrc_cb=<epoch>-<read#>` ONLY if a busted read equals an unbusted
- * read taken in the same second on all 5 badges and all 5 pages. Measured 2026-10-03T15:34–15:35Z:
- * signal-1 30/30 equal; the Mac 28/30 — the two differing pairs were the PLAIN read serving a
- * wrong `failing` (#145 had succeeded at 12:41:43Z) while the BUSTED read was correct. The
- * condition is unmet in letter, so CACHE_BUSTER ships `false` (the path is built and tested) and
- * the measurement goes back to the architect. Flip the one constant on a re-ruling.
+ * a 300 s cache. Recover's re-reads are 60 s apart, and the mechanism is now MEASURED: GitHub's
+ * origin renders an occasional wrong badge, and a cache in front of the PLAIN URL can capture one
+ * and re-serve it — ~10–15 s windows on the Mac path, read off the `Date` header (episode #2: the
+ * same `Date: 12:02:06 GMT` on two reads 11 s apart; 2026-10-04: one body `Date: 04:55:15 GMT`
+ * re-served at 04:55:20 / :25 / :29). Re-reading a cached body recovers nothing, so every read
+ * carries `ghrc_cb=<epoch>-<read#>`, unique per read: busted reads are INDEPENDENT renders, which is
+ * what Recover needs. The buster buys independence, NOT correctness — a busted read can still be one
+ * wrong origin render (04:55:10Z) — so Recover and the run-record corroborator stay the deciding
+ * mechanisms, and the bind table does not change.
+ * Adoption criterion (ruling Q6, replacing Q3(b)'s plain-vs-busted equality, which used a plain read
+ * — itself possibly the cached wrong body — as ground truth): judge every read against the run
+ * record, adopt iff busted errors ≤ plain errors on the same pairs.
+ *   · 2026-10-03 15:34–15:35Z (truth #145 37123657814 success): Mac plain 2/30 wrong, busted 0/30;
+ *     signal-1 0/30 both.
+ *   · 2026-10-04 04:55Z (Mac): plain 3/12 wrong (ONE cached body), busted 1/12 (one origin render),
+ *     then busted-only 41/41 right over 150 s.
+ * Each samples[] entry records its `ghrc_cb` value and the response `Date` header — the
+ * discriminator between a cached body (a stale Date re-served) and an origin glitch (a fresh one).
  *
  * ── HONEST SCOPE ────────────────────────────────────────────────────────────────────────────
  *   · Both instruments wrong in the same way at once makes AGREE wrong. Nothing removes that.
@@ -113,11 +124,11 @@ export const EPISODE_ENVELOPE = {
 /** Recover defaults (architect ruling Q3 = A). Overridable by env; the self-test asserts the span. */
 export const RECOVER_DEFAULTS = { reads: 3, spacingS: 60 };
 
-/** Ruling Q3(b) — see the header. `false` until the architect re-rules on the 15:34Z measurement. */
+/** Ruling Q6 (2026-10-04): ON — see the header for the mechanism and both adoption proofs. */
 export const CACHE_BUSTER = {
-  enabled: false,
+  enabled: true,
   param: 'ghrc_cb',
-  provenance: '2026-10-03T15:34–15:35Z busted-vs-plain proof: signal-1 30/30 equal; Mac 28/30 — both differences were the PLAIN read wrong (failing) and the BUSTED read right (passing; #145 37123657814 success 12:41:43Z). Ruling condition "equal on all" unmet in letter → shipped OFF, returned to the architect.',
+  provenance: 'ruling Q6, 2026-10-04 — criterion: busted errors <= plain errors, judged against the run record. 2026-10-03T15:34-15:35Z (truth #145 37123657814 success): Mac plain 2/30 wrong, busted 0/30; signal-1 0/30 both. 2026-10-04T04:55Z (Mac): plain 3/12 wrong (one cached body, Date 04:55:15 GMT re-served at :20/:25/:29), busted 1/12 (one origin render, 04:55:10Z), then busted-only 41/41 right over 150 s.',
 };
 
 const DEFAULT_HOST = 'https://github.com';
@@ -216,9 +227,10 @@ export function isCanonicalActionsUrl(url, host = DEFAULT_HOST) {
   return typeof url === 'string' && !/\.atom(\?|$)/i.test(url) && re.test(url);
 }
 
-/** Cache-buster, applied to the LIVE fetch only; fixtures are keyed by the canonical URL. */
+/** The cache-buster value for one read, and the URL that carries it. Unique per read. */
+export const busterValue = (epochS, readNo) => `${epochS}-${readNo}`;
 export function bust(url, epochS, readNo) {
-  return `${url}${url.includes('?') ? '&' : '?'}${CACHE_BUSTER.param}=${epochS}-${readNo}`;
+  return `${url}${url.includes('?') ? '&' : '?'}${CACHE_BUSTER.param}=${busterValue(epochS, readNo)}`;
 }
 
 // ── legacy-compatible parsers (the canary's bash shims delegate here, byte-identical) ──
@@ -429,10 +441,14 @@ export function fixtureFetch(dir) {
   };
 }
 
-/** Live transport: curl — the transport proven on signal-1 (R0.6). Never throws. */
-export function curlFetch({ now = () => Math.floor(Date.now() / 1000) } = {}) {
-  return (canonicalUrl, _ext, readNo) => {
-    const url = CACHE_BUSTER.enabled ? bust(canonicalUrl, now(), readNo) : canonicalUrl;
+/**
+ * Live transport: curl — the transport proven on signal-1 (R0.6). Never throws. It fetches the URL
+ * the read hands it (`fetchUrl`, which carries the cache-buster); the fixture and in-memory seams key
+ * on the CANONICAL URL instead, so a buster can never change which fixture a test reads.
+ */
+export function curlFetch() {
+  return (canonicalUrl, _ext, _readNo, fetchUrl) => {
+    const url = fetchUrl ?? canonicalUrl;
     let dir = null;
     try {
       dir = mkdtempSync(path.join(tmpdir(), 'ghrc-'));
@@ -470,7 +486,9 @@ function sleepSync(seconds) {
 /**
  * Read both instruments, bind, Recover. Returns the record. Never throws on a GitHub failure.
  * input: { repo, workflow, branch (null = any ref), minRunId?, cls }
- * opts:  { fetchDoc, sleep, reads, spacingS, host, nowIso }
+ * opts:  { fetchDoc, sleep, reads, spacingS, host, nowIso, nowEpoch, cacheBuster }
+ * fetchDoc(canonicalUrl, ext, readNo, fetchUrl): the transport fetches `fetchUrl` (the buster rides
+ * on it); fixture and in-memory transports key on `canonicalUrl`.
  */
 export function readConclusion(input, opts = {}) {
   const cfg = { ...resolveConfig(opts.env ?? process.env), ...(opts.reads ? { reads: opts.reads } : {}), ...(opts.spacingS !== undefined ? { spacingS: opts.spacingS } : {}) };
@@ -503,18 +521,23 @@ export function readConclusion(input, opts = {}) {
   // window already saw is a stale page, never a fresher answer (it could otherwise AGREE on an older
   // run and launder a record-confirmed failure into PASS).
   let floor = input.minRunId ?? null;
+  const busterOn = opts.cacheBuster ?? CACHE_BUSTER.enabled;
+  const nowEpoch = opts.nowEpoch ?? (() => Math.floor(Date.now() / 1000));
   for (let readNo = 1; readNo <= cfg.reads; readNo++) {
     if (readNo > 1) sleep(cfg.spacingS);
-    const b = fetchDoc(bUrl, 'svg', readNo);
+    // One buster value per read, on BOTH documents: every re-read is an independent render (ruling Q6).
+    const epoch = nowEpoch();
+    const cb = busterOn ? busterValue(epoch, readNo) : null;
+    const b = fetchDoc(bUrl, 'svg', readNo, cb ? bust(bUrl, epoch, readNo) : bUrl);
     const badge = b.http === 200 ? parseBadge(b.body) : { title: null, name: null, status: null, state: null, reason: `badge_http_${b.http}` };
-    const pr = fetchDoc(pUrl, 'html', readNo);
+    const pr = fetchDoc(pUrl, 'html', readNo, cb ? bust(pUrl, epoch, readNo) : pUrl);
     const page = evaluatePage({ http: pr.http, body: pr.body, contentType: pr.contentType }, { minRunId: floor });
     if (page.newest?.run_id && (floor === null || BigInt(page.newest.run_id) > BigInt(floor))) floor = page.newest.run_id;
     const bound = bind(badge, page);
     const sample = {
       read: readNo, at: nowIso(),
-      badge: { http: b.http, title: badge.title, name: badge.name, state: badge.state, date: b.date ?? null },
-      page: { http: pr.http, content_type: page.content_type, rows_parsed: page.rows_parsed, guard: page.guard, newest: page.newest, newest_terminal: page.newest_terminal },
+      badge: { http: b.http, title: badge.title, name: badge.name, state: badge.state, cb, date: b.date ?? null },
+      page: { http: pr.http, content_type: page.content_type, rows_parsed: page.rows_parsed, guard: page.guard, cb, date: pr.date ?? null, newest: page.newest, newest_terminal: page.newest_terminal },
       row: bound.row, agreement: bound.agreement, reason: bound.reason,
     };
     samples.push(sample);
@@ -836,7 +859,23 @@ export function selfTest({ log = (s) => console.log(s) } = {}) {
   log('── the fetch seam: canary-identical fixture mangling ──');
   check('mangle = tr -c A-Za-z0-9 _', mangle('https://github.com/o/a/actions/workflows/w.yml?query=branch%3Amain') === 'https___github_com_o_a_actions_workflows_w_yml_query_branch_3Amain');
   check('mangle works per BYTE (a multi-byte char → one _ per byte)', mangle('é') === '__');
-  check('the buster is applied only when enabled, keyed by read number', bust('https://x/y?query=a', 1, 2) === 'https://x/y?query=a&ghrc_cb=1-2' && bust('https://x/y', 1, 3) === 'https://x/y?ghrc_cb=1-3');
+  check('the buster URL form: ghrc_cb=<epoch>-<read#>', bust('https://x/y?query=a', 1, 2) === 'https://x/y?query=a&ghrc_cb=1-2' && bust('https://x/y', 1, 3) === 'https://x/y?ghrc_cb=1-3');
+  check('ruling Q6: the cache-buster ships ON', CACHE_BUSTER.enabled === true);
+  {
+    // A recording transport around the in-memory seam: what URL did each read ACTUALLY request?
+    const seen = [];
+    const inner = memoryFetch({ [B]: [badge('failing')], [P]: [page(r144())] });
+    const rec = (u, ext, n, fetchUrl) => { seen.push({ u, n, fetchUrl }); return inner(u, ext, n, fetchUrl); };
+    const r = safe(() => readConclusion({ ...MC, cls: 'alerting' }, { fetchDoc: rec, sleep: noSleep, reads: 3, spacingS: 60, host: DEFAULT_HOST, nowEpoch: () => 1791100000 }));
+    const cbOf = (x) => (new URL(x.fetchUrl).searchParams.get('ghrc_cb'));
+    check('while ON, EVERY badge and page read carries a ghrc_cb (3 reads × 2 documents)', seen.length === 6 && seen.every((x) => cbOf(x)), JSON.stringify(seen.map(cbOf)));
+    check('…unique per read: no document is ever re-requested with the same value', [B, P].every((u) => new Set(seen.filter((x) => x.u === u).map(cbOf)).size === 3));
+    check('…and the buster never changes which fixture is read (the seam keys on the canonical URL)', seen.every((x) => x.u === B || x.u === P) && r.row === 3);
+    check('every sample records its ghrc_cb and the response Date header (the cached-vs-origin discriminator)', Array.isArray(r.samples) && r.samples.every((x) => x.badge.cb && x.page.cb && 'date' in x.badge && 'date' in x.page));
+    const off = [];
+    safe(() => readConclusion({ ...MC, cls: 'alerting' }, { fetchDoc: (u, e, n, f) => { off.push(f); return inner(u, e, n, f); }, sleep: noSleep, reads: 1, host: DEFAULT_HOST, cacheBuster: false }));
+    check('with the buster OFF a read requests the canonical URL unchanged', off.length === 2 && off[0] === B && off[1] === P);
+  }
 
   log('── legacy shims: byte-identical to the canary ──');
   check('parse_badge_status passing', legacyParseBadgeStatus('<svg><title>Marketplace Health Check - passing</title></svg>') === 'passing');
