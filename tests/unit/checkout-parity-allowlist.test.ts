@@ -238,8 +238,134 @@ describe('the allow_manifest row does real work', () => {
   });
 });
 
+/**
+ * OPS-CHECKOUT-PARITY-SIGNAL-MCP-W1 — interpreter caches are invisible, a lone .pyc is NOT.
+ *
+ * CHECKOUT_PARITY_SIGNAL_MCP went red for 12 consecutive daily runs on `?? ops/monitoring/__pycache__/`:
+ * bytecode the cancel-path canary's python recorder writes beside the module it imports, out of the
+ * deployed checkout. The fix is ONE `.gitignore` rule, `__pycache__`, and these cases pin it against
+ * the REAL file with git's OWN matcher, in both directions:
+ *   - a cache file must be invisible to the canary (the rule does the work — removing it re-fires);
+ *   - a legacy-location `ops/monitoring/m.pyc` must stay VISIBLE. PEP 3147: python imports a lone
+ *     pyc sitting where its source would be, so widening the rule to `*.pyc` would hide an
+ *     importable module from the provenance guard. That widening is what this direction refuses.
+ *
+ * Git judges, never a re-implementation: scripts/check-build-context-hygiene.mjs's ignoreMatches()
+ * was measured to get BOTH of these cases wrong. Isolation: the fixture repo's only ignore source is
+ * the committed copy (an uncommitted one reads `?? .gitignore` and pollutes every case),
+ * `core.excludesFile=/dev/null` so no machine-local exclude can lend a pass, and git's hook-exported
+ * GIT_* variables are dropped so nothing resolves to the real repository.
+ */
+const GITIGNORE = join(REPO, '.gitignore');
+const SERVICE = 'crypto-quant-signal-mcp';
+const GIT_ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => ![
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_QUARANTINE_PATH',
+  'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES'].includes(k)));
+const GIT_ISOLATE = ['-c', 'core.excludesFile=/dev/null', '-c', 'core.hooksPath=/dev/null',
+  '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false'];
+
+function git(repo: string, ...args: string[]): { out: string; status: number | null } {
+  const r = spawnSync('git', [...GIT_ISOLATE, ...args], { cwd: repo, env: GIT_ENV, encoding: 'utf8' });
+  expect(r.error, 'git spawned').toBeUndefined();
+  return { out: r.stdout ?? '', status: r.status };
+}
+
+/** A throwaway repo whose ONLY ignore source is `gitignoreBody`, committed alongside one tracked module. */
+function ignoreFixture(gitignoreBody: string): { dir: string; cleanup: () => void } {
+  const dir = mkdtempSync(join(tmpdir(), 'cparity-ignore-'));
+  expect(git(dir, 'init', '-q').status).toBe(0);
+  writeFileSync(join(dir, '.gitignore'), gitignoreBody);
+  mkdirSync(join(dir, 'ops', 'monitoring'), { recursive: true });
+  writeFileSync(join(dir, 'ops', 'monitoring', 'm.py'), 'x = 1\n');
+  expect(git(dir, 'add', '--', '.gitignore', 'ops/monitoring/m.py').status).toBe(0);
+  expect(git(dir, 'commit', '-q', '-m', 'fixture').status).toBe(0);
+  expect(git(dir, 'status', '--porcelain').out, 'the fixture starts clean').toBe('');
+  return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+/** Drop a file into the fixture (creating its directories). */
+function drop(dir: string, rel: string): void {
+  mkdirSync(join(dir, rel, '..'), { recursive: true });
+  writeFileSync(join(dir, rel), 'bytecode-or-not\n');
+}
+
+/**
+ * The canary's own question, end to end: porcelain from REAL git in its DEFAULT untracked mode (what
+ * the live path asks — never `-uall`), through the REAL filter_dirty, with the REAL conf's static rows
+ * AND its derived allow_manifest set for this service. Returns the lines the canary would page on.
+ */
+function unallowedIn(dir: string): string[] {
+  const porcelain = git(dir, 'status', '--porcelain').out.replace(/\n$/, '');
+  const driver = `
+set -o pipefail
+CHECKOUT_PARITY_LIB_ONLY=1 source "$1"
+set +u
+allows=(); while IFS= read -r l; do [ -n "$l" ] && allows+=("$l"); done < <(conf_allows "$2" "$3")
+rows=();   while IFS= read -r l; do [ -n "$l" ] && rows+=("$l");   done < <(conf_allow_manifests "$2" "$3")
+derived=()
+if [ "\${#rows[@]}" -gt 0 ]; then
+  while IFS= read -r l; do [ -n "$l" ] && derived+=("$l"); done < <(resolve_manifest_allows "$4" "\${rows[@]}")
+fi
+filter_dirty "$5" "\${allows[@]}" "\${derived[@]}"
+`;
+  const r = spawnSync('bash', ['-c', driver, 'driver', CANARY, CONF, SERVICE, REPO, porcelain], {
+    encoding: 'utf8', env: GIT_ENV,
+  });
+  expect(r.error, 'bash driver spawned').toBeUndefined();
+  // A dead shell prints nothing, which would read as "unallowed: none" — the inversion this file
+  // already guards against in wouldReport(). Assert the driver ran.
+  expect(r.status, `bash driver exited ${r.status}: ${r.stderr}`).toBe(0);
+  return (r.stdout || '').split('\n').filter(Boolean);
+}
+
+describe('interpreter caches: invisible to the canary; a lone .pyc is not (judged by git)', () => {
+  const real = readFileSync(GITIGNORE, 'utf8');
+
+  it('must-not-fire: a __pycache__ file is ignored by the real rule, so nothing is unallowed', { timeout: 60_000 }, () => {
+    const fx = ignoreFixture(real);
+    try {
+      drop(fx.dir, 'ops/monitoring/__pycache__/m.cpython-312.pyc');
+      expect(git(fx.dir, 'status', '--porcelain').out, 'porcelain is empty').toBe('');
+      expect(unallowedIn(fx.dir)).toEqual([]);
+      // …and it is THIS rule doing it, named by git with its line in the committed copy.
+      const why = git(fx.dir, 'check-ignore', '-v', 'ops/monitoring/__pycache__/m.cpython-312.pyc');
+      expect(why.status).toBe(0);
+      expect(why.out).toMatch(/^\.gitignore:\d+:__pycache__\t/);
+    } finally { fx.cleanup(); }
+  });
+
+  it('must-fire: a lone legacy-location .pyc stays VISIBLE (PEP 3147 — it is importable)', { timeout: 60_000 }, () => {
+    const fx = ignoreFixture(real);
+    try {
+      drop(fx.dir, 'ops/monitoring/m.pyc');
+      expect(unallowedIn(fx.dir)).toEqual(['?? ops/monitoring/m.pyc']);
+      expect(git(fx.dir, 'check-ignore', '-q', 'ops/monitoring/m.pyc').status, 'not ignored').toBe(1);
+    } finally { fx.cleanup(); }
+  });
+
+  it('must-fire: an ordinary stray file beside the module is reported', { timeout: 60_000 }, () => {
+    const fx = ignoreFixture(real);
+    try {
+      drop(fx.dir, 'ops/monitoring/stray.txt');
+      expect(unallowedIn(fx.dir)).toEqual(['?? ops/monitoring/stray.txt']);
+    } finally { fx.cleanup(); }
+  });
+
+  it('must-fire: with the rule REMOVED the same cache file is reported — the rule does the work', { timeout: 60_000 }, () => {
+    const lines = real.split('\n');
+    const withoutRule = lines.filter((l) => l.trim() !== '__pycache__');
+    // Exactly one rule line, or this two-way proof would compare the file with itself.
+    expect(lines.length - withoutRule.length, 'the real .gitignore carries exactly one `__pycache__` rule').toBe(1);
+    const fx = ignoreFixture(withoutRule.join('\n'));
+    try {
+      drop(fx.dir, 'ops/monitoring/__pycache__/m.cpython-312.pyc');
+      expect(unallowedIn(fx.dir)).toEqual(['?? ops/monitoring/__pycache__/']);
+    } finally { fx.cleanup(); }
+  });
+});
+
 describe('both gates self-test cleanly', () => {
-  it('the helper: exit 0 and exactly one verdict token', () => {
+  it('the helper: exit 0 and exactly one verdict token', { timeout: 60_000 }, () => {
     const r = spawnSync(process.execPath, [HELPER, '--self-test'], { encoding: 'utf8' });
     const tokens = `${r.stdout}${r.stderr}`.split('\n').filter((l) => l.includes('INJECTOR_TARGET_SET_VERDICT='));
     expect(tokens).toHaveLength(1);
@@ -247,7 +373,7 @@ describe('both gates self-test cleanly', () => {
     expect(r.status).toBe(0);
   });
 
-  it('the canary: exit 0 and exactly one verdict token', () => {
+  it('the canary: exit 0 and exactly one verdict token', { timeout: 60_000 }, () => {
     const r = spawnSync('bash', [CANARY, '--self-test'], { encoding: 'utf8' });
     const tokens = `${r.stdout}${r.stderr}`.split('\n').filter((l) => l.includes('CHECKOUT_PARITY_VERDICT='));
     expect(tokens, r.stdout + r.stderr).toHaveLength(1);
