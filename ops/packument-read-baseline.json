@@ -1,0 +1,12 @@
+{
+  "_doc": [
+    "OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH1 R3 — data file for scripts/check-packument-read.mjs.",
+    "baseline: forbidden read-backs of OUR OWN package's cached registry documents (the packument, /<pkg>/<dist-tag>) that are tolerated as debt. Rows are {file, count, reason, date}, and the list may only SHRINK: --write-baseline lowers rows and never raises one; raising needs --allow-raise <file> --reason \"<why>\", which also appends to raises[]. There is no env lever.",
+    "Seeded EMPTY on purpose. The one live violation when this landed, publish-npm.yml's Verify dist-tag packument read, is removed by CH2 of the same wave. Baselining it would have laundered the live defect into accepted debt.",
+    "allow: files permitted to NAME the packument shape. Only the reader module, which exports PACKUMENT_URL so the ratchet has one source for the forbidden shape and which never calls it for an assertion.",
+    "baseline and allow are SEPARATE keys and must never be merged: the gate refuses (INDETERMINATE) a file missing either one."
+  ],
+  "baseline": [],
+  "allow": ["scripts/lib/npm-registry-read.mjs"],
+  "raises": []
+}
