@@ -81,14 +81,6 @@
       "block": "--self-test passes and is not vacuous"
     },
     {
-      "file": "tests/unit/checkout-parity-allowlist.test.ts",
-      "block": "the helper: exit 0 and exactly one verdict token"
-    },
-    {
-      "file": "tests/unit/checkout-parity-allowlist.test.ts",
-      "block": "the canary: exit 0 and exactly one verdict token"
-    },
-    {
       "file": "tests/unit/credential-outcome-conformance.test.ts",
       "block": "a synthetic collapse drives the real CLI to FAIL at exit 1"
     },

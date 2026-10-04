@@ -71,3 +71,20 @@ ops/scripts/.disk-forensics-hosts
 # Machine-local and rebuilt on demand; committing it would let one machine's cached
 # probe results decide another machine's gate.
 .cache/
+
+# OPS-CHECKOUT-PARITY-SIGNAL-MCP-W1 CH1 — interpreter bytecode caches.
+# CPython writes `__pycache__/<module>.cpython-3XX.pyc` beside every module it imports, and host
+# executors run FROM this checkout: the cancel-path canary (cron :39, root) imports
+# ops/monitoring/canary_result_log.py out of /opt/crypto-quant-signal-mcp, so every run re-created
+# `?? ops/monitoring/__pycache__/` and CHECKOUT_PARITY_SIGNAL_MCP went red on it for 12 consecutive
+# daily runs, 2026-09-23 → 2026-10-04 (SEC-88). The full suite writes 11 such files in any shell
+# without PYTHONDONTWRITEBYTECODE — CI included.
+#
+# NO TRAILING SLASH, for the node_modules reason at the top of this file (a98f739a): the slashless
+# form matches a file, a directory or a symlink.
+#
+# Deliberately NOT `*.pyc` / `*.py[cod]`. PEP 3147: a pyc inside `__pycache__` is never imported
+# without its source beside it, but a lone legacy-location `.pyc` sitting where its source would be
+# IS importable — so it must stay visible to the provenance canary. Pinned both ways against this
+# file, with git's own matcher, by tests/unit/checkout-parity-allowlist.test.ts.
+__pycache__

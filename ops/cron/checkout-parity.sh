@@ -15,7 +15,7 @@
 #   HEAD_UNMERGED   HEAD is not an ancestor of origin/main -> prod is running a commit that
 #                   exists in no shared ref. Exactly the 2026-08-02 state that let a later rsync
 #                   delete a module nobody could recover from a branch.
-#   TREE_DIRTY      a tracked file differs from HEAD, outside the declared allowlist. On
+#   TREE_DIRTY      a tracked file differs from HEAD, or an untracked path exists, outside the declared allowlist. On
 #                   signal-MCP the build-time SoT injector makes README.md + landing/*.html dirty
 #                   on EVERY deploy by design; those are declared in checkout-parity.conf, so
 #                   this check stays credible instead of firing daily and being muted.
@@ -161,6 +161,102 @@ filter_dirty() {
   return 0
 }
 
+# ── TREE_DIRTY body: the noun and the remedy are DERIVED from the porcelain class ─
+# OPS-CHECKOUT-PARITY-SIGNAL-MCP-W1. The body used to call every unallowed line "tracked file(s)"
+# and prescribe an `allow` row for all of them. For `?? ops/monitoring/__pycache__/` — a bytecode
+# cache the cancel-path canary writes on every :39 run, red for 12 consecutive daily runs — that was
+# the wrong noun AND the wrong remedy: a constant remedy routed the operator to hand-copy into the
+# conf a fact git already models in .gitignore. The class is the porcelain XY code, so it is split
+# here and each class carries its own remedy, emitted only when that class is non-empty.
+#
+# PRESENTATION ONLY. The verdict is decided upstream by filter_dirty over the UNCHANGED default-mode
+# porcelain; nothing here can turn a FAIL into a PASS or back. In particular the evidence below is
+# NOT `git status -uall` fed into the filter: a bash `case` `*` crosses `/`, so an expanded list would
+# let `landing/*.html` silently allow a hand-dropped `landing/<dir>/x.html`.
+#
+# Evidence is read from the FILESYSTEM, not from git, so this function is pure and --self-test stays
+# hermetic. Per untracked entry: up to TREE_DIRTY_MAX_FILES files, each as name · owner · UTC mtime ·
+# size — never content. A :39 mtime owned by root names the hourly writer without anyone opening a
+# shell on the host. `find -P` never follows a symlink, and the entry's trailing `/` is stripped first
+# because `find -P link/` WOULD resolve it — so an untracked link pointing out of the checkout is
+# reported as the link itself. Accepted cost of reading the filesystem: a gitignored file inside a
+# wholly-untracked directory can appear in the evidence list.
+#
+# bash 3.2-safe (no mapfile, no associative arrays): --self-test runs on macOS /bin/bash.
+TREE_DIRTY_MAX_LINES=20
+TREE_DIRTY_MAX_FILES=5
+
+# `-f` means opposite things on the two stats (BSD: a format; GNU: --file-system, which exits 0
+# with non-numeric output), so the dialect is decided ONCE by asking GNU for an integer and
+# checking that an integer came back — the idiom scripts/lib/worktree-work-pending.sh uses.
+stat_dialect() {
+  case "$(stat -c %Y / 2>/dev/null)" in ''|*[!0-9]*) printf 'bsd';; *) printf 'gnu';; esac
+}
+
+# <file> -> "<owner> · <UTC mtime> · <size> B" ; "unreadable" when stat cannot answer
+entry_evidence() {
+  local f="$1" raw owner m size when
+  if [ "${STAT_DIALECT:-}" = gnu ]; then raw=$(stat -c '%U %Y %s' "$f" 2>/dev/null)
+  else raw=$(stat -f '%Su %m %z' "$f" 2>/dev/null); fi
+  read -r owner m size <<< "$raw"
+  case "$m" in ''|*[!0-9]*) printf 'unreadable'; return 0;; esac
+  when=$(date -u -d "@$m" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || when=""
+  [ -n "$when" ] || when=$(date -u -r "$m" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || when=""
+  printf '%s · %s · %s B' "${owner:-?}" "${when:-?}" "${size:-?}"
+}
+
+# <checkout-dir> <one porcelain path> -> indented evidence lines for that untracked entry
+untracked_evidence() {
+  local dir="$1" p="$2" target list n f
+  # A quoted path (git's escaping of unusual bytes) or any `..` segment is not expanded: the
+  # porcelain never emits `..`, so one appearing means the input is not what this assumes.
+  case "$p" in '"'*|/*) printf '     (evidence skipped: quoted or absolute path)\n'; return 0;; esac
+  case "/$p/" in */../*) printf '     (evidence skipped: path has a .. segment)\n'; return 0;; esac
+  target="$dir/${p%/}"
+  list=$(find -P "$target" \( -type f -o -type l \) 2>/dev/null | LC_ALL=C sort)
+  n=$(printf '%s' "$list" | grep -c . || true)
+  if [ "$n" -eq 0 ]; then printf '     (no file found under it at render time)\n'; return 0; fi
+  printf '%s\n' "$list" | head -n "$TREE_DIRTY_MAX_FILES" | while IFS= read -r f; do
+    printf '     %s · %s\n' "${f#"$dir"/}" "$(entry_evidence "$f")"
+  done
+  [ "$n" -gt "$TREE_DIRTY_MAX_FILES" ] && printf '     (+%s more)\n' $((n - TREE_DIRTY_MAX_FILES))
+  return 0
+}
+
+# <checkout-dir> <unallowed porcelain lines> -> the TREE_DIRTY alert body on stdout
+render_tree_dirty() {
+  local dir="$1" unallowed="$2" line tracked="" untracked="" nt=0 nu=0 shown=0
+  local STAT_DIALECT; STAT_DIALECT=$(stat_dialect)
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    case "$line" in
+      '?? '*) untracked="$untracked$line"$'\n'; nu=$((nu + 1));;
+      *)      tracked="$tracked$line"$'\n';     nt=$((nt + 1));;
+    esac
+  done <<< "$unallowed"
+
+  if [ "$nt" -gt 0 ]; then
+    printf '%s tracked file(s) differ from HEAD outside the declared allowlist:\n' "$nt"
+    printf '%s' "$tracked" | head -n "$TREE_DIRTY_MAX_LINES"
+    [ "$nt" -gt "$TREE_DIRTY_MAX_LINES" ] && printf '(+%s more)\n' $((nt - TREE_DIRTY_MAX_LINES))
+    printf '%s\n' "Remedy (tracked): the host was edited directly, or a deploy-time generator is undeclared. Declare the generator in scripts/snapshot-landing-manifest.json (the allowlist is derived from it) or as an \`allow\` row in checkout-parity.conf with its reason; otherwise restore the file and find who edited it."
+  fi
+  if [ "$nu" -gt 0 ]; then
+    [ "$nt" -gt 0 ] && printf '\n'
+    printf '%s untracked path(s) outside the declared allowlist:\n' "$nu"
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      shown=$((shown + 1))
+      [ "$shown" -gt "$TREE_DIRTY_MAX_LINES" ] && break
+      printf '%s\n' "$line"
+      untracked_evidence "$dir" "${line:3}"
+    done <<< "$untracked"
+    [ "$nu" -gt "$TREE_DIRTY_MAX_LINES" ] && printf '(+%s more)\n' $((nu - TREE_DIRTY_MAX_LINES))
+    printf '%s\n' "Remedy (untracked): it was placed by hand (remove it and find who), or a process running from this checkout writes into it (make it write elsewhere). Only a reproducible cache may be ignored, and only in the repo's .gitignore — never as an allow row."
+  fi
+  return 0
+}
+
 # ── --self-test: hermetic, no host, no git, vacuity-guarded ─────────────────
 self_test() {
   local pass=0 fire=0 nofire=0 map=0 fail=0 dl
@@ -257,6 +353,63 @@ EOF
   nofire=$((nofire+1)); check "a refusal yields no partial set" "" \
     "$(resolve_manifest_allows "$tmp/svc" scripts/empty.json 2>/dev/null)"
 
+  # ── TREE_DIRTY body: class split, derived remedy, untracked evidence ──────
+  # Every case reads the text render_tree_dirty RETURNS — the same function the live path pages
+  # with — because the body is what the operator acts on. A verdict-only suite stayed green while
+  # the body called `?? ops/monitoring/__pycache__/` a "tracked file" for 12 daily runs.
+  local svc2="$tmp/svc2" body pyc sz i lines=""
+  has() { case "$1" in *"$2"*) echo yes;; *) echo no;; esac; }
+  mkdir -p "$svc2/ops/monitoring/__pycache__" "$svc2/many" "$tmp/outside"
+  pyc="$svc2/ops/monitoring/__pycache__/m.cpython-312.pyc"
+  printf 'SECRET-CONTENT-NEVER-RENDERED\n' > "$pyc"
+  # TZ=UTC so the stamp IS 14:39:02Z; the assertion below then fails if rendering drifts to local
+  # time (this Mac is +0800, so a local-time render would read 22:39:02).
+  TZ=UTC touch -t 202609231439.02 "$pyc"
+  sz=$(wc -c < "$pyc" | tr -d ' ')
+  printf 'x\n' > "$svc2/stray.txt"
+  printf 'outside\n' > "$tmp/outside/secret.txt"
+  ln -s "$tmp/outside" "$svc2/link"
+  for i in 1 2 3 4 5 6 7; do printf 'x' > "$svc2/many/f$i"; done
+
+  # mixed: both classes, each with its own noun, count and remedy
+  body=$(render_tree_dirty "$svc2" ' M src/index.ts
+D  src/old.ts
+?? stray.txt')
+  fire=$((fire+1)); check "mixed: tracked noun counts only tracked lines" "yes" "$(has "$body" "2 tracked file(s) differ from HEAD")"
+  fire=$((fire+1)); check "mixed: untracked noun counts only ?? lines" "yes" "$(has "$body" "1 untracked path(s) outside the declared allowlist:")"
+  fire=$((fire+1)); check "mixed: tracked remedy present" "yes" "$(has "$body" "Remedy (tracked)")"
+  fire=$((fire+1)); check "mixed: untracked remedy present" "yes" "$(has "$body" "Remedy (untracked)")"
+
+  # untracked only — the incident's exact line
+  body=$(render_tree_dirty "$svc2" '?? ops/monitoring/__pycache__/')
+  fire=$((fire+1)); check "the incident line reads as UNTRACKED" "yes" "$(has "$body" "1 untracked path(s) outside the declared allowlist:")"
+  nofire=$((nofire+1)); check "untracked-only: no tracked noun" "no" "$(has "$body" "tracked file(s)")"
+  nofire=$((nofire+1)); check "untracked-only: no tracked remedy" "no" "$(has "$body" "Remedy (tracked)")"
+  nofire=$((nofire+1)); check "evidence never carries file content" "no" "$(has "$body" "SECRET-CONTENT")"
+  map=$((map+1)); check "evidence = name · owner · UTC mtime · size" \
+    "     ops/monitoring/__pycache__/m.cpython-312.pyc · $(id -un) · 2026-09-23T14:39:02Z · $sz B" \
+    "$(printf '%s\n' "$body" | grep 'm.cpython-312.pyc')"
+
+  # tracked only
+  body=$(render_tree_dirty "$svc2" ' M src/index.ts')
+  fire=$((fire+1)); check "tracked-only: tracked noun" "yes" "$(has "$body" "1 tracked file(s) differ from HEAD")"
+  nofire=$((nofire+1)); check "tracked-only: no untracked noun" "no" "$(has "$body" "untracked path(s)")"
+  nofire=$((nofire+1)); check "tracked-only: no untracked remedy" "no" "$(has "$body" "Remedy (untracked)")"
+
+  # a symlink pointing OUT of the checkout is reported as itself, never followed
+  body=$(render_tree_dirty "$svc2" '?? link')
+  fire=$((fire+1)); check "an untracked link is reported as the link" "yes" "$(has "$body" "     link · ")"
+  nofire=$((nofire+1)); check "an untracked link is never followed out of the checkout" "no" "$(has "$body" "secret.txt")"
+
+  # caps: <= 5 files per entry, <= 20 entries, the remainder counted rather than dropped
+  body=$(render_tree_dirty "$svc2" '?? many/')
+  map=$((map+1)); check "at most 5 files per untracked entry" "5" "$(printf '%s\n' "$body" | grep -c '^     many/f')"
+  map=$((map+1)); check "the files beyond the cap are counted" "1" "$(printf '%s\n' "$body" | grep -cx '     (+2 more)')"
+  i=0; while [ "$i" -lt 22 ]; do i=$((i+1)); lines="$lines?? u$i.txt"$'\n'; done
+  body=$(render_tree_dirty "$svc2" "$lines")
+  map=$((map+1)); check "at most 20 untracked lines" "20" "$(printf '%s\n' "$body" | grep -c '^?? u')"
+  map=$((map+1)); check "the lines beyond the cap are counted" "1" "$(printf '%s\n' "$body" | grep -cx '(+2 more)')"
+
   if [ "$fire" -eq 0 ] || [ "$nofire" -eq 0 ] || [ "$map" -eq 0 ]; then
     echo "self-test VACUOUS: $fire must-fire, $nofire must-not-fire, $map must-map"
     echo "CHECKOUT_PARITY_VERDICT=INDETERMINATE"; return 3
@@ -346,11 +499,13 @@ Merge or reset it to a shared commit."
   # reading as a healthy pass. `static` includes the global DEPLOYED_SHA row, as it always has.
   echo "     CHECK TREE_DIRTY:     $N_UNALLOWED unallowed  ($N_DIRTY dirty, ${#ALLOWS[@]} static + ${#DERIVED[@]} derived allow rule(s))"
   if [ "$N_UNALLOWED" -gt 0 ]; then
-    printf '%s\n' "$UNALLOWED" | sed 's/^/       /'
+    # ONE rendering, two sinks: the log line-for-line carries what the operator is paged with, so
+    # the evidence (owner · UTC mtime) survives in /var/log/checkout-parity.log even on a day the
+    # page is cooldown-suppressed.
+    BODY=$(render_tree_dirty "$DIR" "$UNALLOWED")
+    printf '%s\n' "$BODY" | sed 's/^/       /'
     FAILED=1
-    alert "$SVC" "$N_UNALLOWED tracked file(s) differ from HEAD outside the declared allowlist:
-$(printf '%s' "$UNALLOWED" | head -20)
-Either the host was edited directly, or a legitimate host-side generator needs an \`allow\` row in checkout-parity.conf with its reason."
+    alert "$SVC" "$BODY"
   fi
 
   # CHECK 3 — FOREIGN_UID
