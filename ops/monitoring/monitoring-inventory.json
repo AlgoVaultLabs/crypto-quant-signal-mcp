@@ -1873,7 +1873,7 @@
       "schedule": null,
       "invoked_by": "exec'd by xrepo-ci-conclusion-canary.sh (signal-1, from CH3); imported by deploy-drift-canary.mjs (signal-1) and scripts/check-release-readiness.mjs (operator checkout of origin/main), from CH4",
       "install_state": "pending",
-      "sha256": "de8d10ee545c64199aa6bf461d50febe7202b317d46f7633953f8cfc3696156c",
+      "sha256": "e55bb07e646ae5a2af7d031c7212b3c6e104d7521b2d40ba4ccf0cdb80357092",
       "alert_ids": [],
       "consumed_by": [
         "ops/cron/xrepo-ci-conclusion-canary.sh",

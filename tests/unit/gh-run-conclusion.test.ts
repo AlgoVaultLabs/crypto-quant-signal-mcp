@@ -287,9 +287,25 @@ describe('AC9 — Recover, through the canary-compatible FIXTURE seam (no test s
     expect(slept).toEqual([RECOVER_DEFAULTS.spacingS, RECOVER_DEFAULTS.spacingS]);
   });
 
-  it('the cache-buster ships OFF and the reason is recorded beside it (ruling Q3(b): plain ≠ busted on 2 of 60 pairs)', () => {
-    expect(CACHE_BUSTER.enabled).toBe(false);
-    expect(CACHE_BUSTER.provenance).toMatch(/28\/30/);
+  it('the cache-buster ships ON (ruling Q6), with both adoption proofs recorded beside it', () => {
+    expect(CACHE_BUSTER.enabled).toBe(true);
+    expect(CACHE_BUSTER.param).toBe('ghrc_cb');
+    expect(CACHE_BUSTER.provenance).toMatch(/plain 2\/30 wrong, busted 0\/30/);
+    expect(CACHE_BUSTER.provenance).toMatch(/plain 3\/12 wrong.*busted 1\/12/);
+  });
+
+  it('every live request carries a ghrc_cb unique per read, while the fixture seam keys on the canonical URL', () => {
+    const seen: Array<{ u: string; f: string }> = [];
+    const inner = memoryFetch({ [B]: [titleBadge('Marketplace Health Check', 'failing')], [P]: [{ body: realPage(fx('row-success-37017230705.html')) }] });
+    const rec = readConclusion({ ...MC, cls: 'alerting' }, {
+      fetchDoc: (u: string, e: string, n: number, f: string) => { seen.push({ u, f }); return inner(u, e, n, f); },
+      sleep: noSleep, reads: 3, spacingS: 60, nowEpoch: () => 1791100000,
+    });
+    expect(rec.row).toBe(3);
+    const cbs = (url: string) => seen.filter((x) => x.u === url).map((x) => new URL(x.f).searchParams.get('ghrc_cb'));
+    expect(cbs(B)).toEqual(['1791100000-1', '1791100000-2', '1791100000-3']);
+    expect(cbs(P)).toEqual(['1791100000-1', '1791100000-2', '1791100000-3']);
+    expect(rec.samples.map((x: { badge: { cb: string } }) => x.badge.cb)).toEqual(['1791100000-1', '1791100000-2', '1791100000-3']);
   });
 });
 
