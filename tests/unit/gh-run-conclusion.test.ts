@@ -585,9 +585,10 @@ describe('the CONSUMER REGISTRY — one classifier, a ratchet that may only shri
 describe('the inventory row — same commit as the module', () => {
   const inv = JSON.parse(readFileSync(join(ROOT, 'ops', 'monitoring', 'monitoring-inventory.json'), 'utf8'));
   const row = inv.artifacts.find((r: { id: string }) => r.id === 'gh-run-conclusion');
-  it('exists, models the shared-library precedent, and is pending until the CH3 install', () => {
+  it('exists, models the shared-library precedent, and is installed by the sanctioned installer (CH3)', () => {
     expect(row).toBeTruthy();
-    expect(row).toMatchObject({ artifact: MODULE_REL, kind: 'executable', schedule: null, host: 'signal-1', host_path: '/opt/algovault-monitoring/gh-run-conclusion.mjs', install_state: 'pending', alert_ids: [] });
+    expect(row).toMatchObject({ artifact: MODULE_REL, kind: 'executable', schedule: null, host: 'signal-1', host_path: '/opt/algovault-monitoring/gh-run-conclusion.mjs', install_state: 'installed', alert_ids: [] });
+    expect(row.first_install).toEqual({ at: '20261004T095347Z', by: 'ops/scripts/install-monitoring-artifact.sh' });
     expect(row.installed_at).toEqual([{ host: 'signal-1', path: '/opt/algovault-monitoring/gh-run-conclusion.mjs' }]);
     expect(row.notes).toMatch(/^THE ONE DERIVATION of a GitHub workflow's latest-run conclusion/);
     for (const c of ['xrepo-ci-conclusion-canary', 'deploy-drift-canary', 'check-release-readiness']) expect(JSON.stringify([row.invoked_by, row.consumed_by]), c).toContain(c);
