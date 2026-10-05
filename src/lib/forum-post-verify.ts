@@ -18,8 +18,6 @@
  *   - Moltbook: GET /api/v1/posts/:id returns is_spam / verification_status
  *     / is_deleted even though the public github source doesn't declare
  *     them. The route does SELECT p.* so these DB columns flow through.
- *   - Dev.to: GET /api/articles/:id returns no `published` boolean — we
- *     check `type_of === 'article' && published_at != null`.
  */
 
 export type VerifyResult =
@@ -354,71 +352,4 @@ export async function verifyMoltbookPost(
 
   const resolvedUrl = post.url ?? `https://www.moltbook.com/post/${post.id ?? postId}`;
   return { verified: true, platform: 'moltbook', url: resolvedUrl };
-}
-
-// ── Dev.to ──────────────────────────────────────────────────────────────
-
-interface DevtoArticleResponse {
-  id?: number;
-  url?: string;
-  type_of?: string;
-  published_at?: string | null;
-  title?: string;
-}
-
-/**
- * Re-query Dev.to after a publish. Dev.to has been 100% healthy in audit
- * — this hook is a safety net, not an expected failure path.
- */
-export async function verifyDevtoPost(
-  articleId: number,
-  apiKey: string,
-  opts: VerifyOptions = {}
-): Promise<VerifyResult> {
-  const doFetch = opts.fetchImpl ?? fetch;
-  await sleep(opts.delayMs ?? 5000);
-
-  const url = `https://dev.to/api/articles/${articleId}`;
-  let res: Response;
-  try {
-    res = await doFetch(url, {
-      method: 'GET',
-      headers: { 'api-key': apiKey, Accept: 'application/json' },
-    });
-  } catch (err) {
-    return {
-      verified: false,
-      platform: 'devto',
-      reason: `devto-network-error: ${(err as Error).message}`,
-    };
-  }
-
-  if (!res.ok) {
-    return {
-      verified: false,
-      platform: 'devto',
-      reason: `devto-http-${res.status}`,
-    };
-  }
-
-  let body: DevtoArticleResponse;
-  try {
-    body = (await res.json()) as DevtoArticleResponse;
-  } catch (err) {
-    return {
-      verified: false,
-      platform: 'devto',
-      reason: `devto-parse-error: ${(err as Error).message}`,
-    };
-  }
-
-  if (body.type_of !== 'article' || !body.published_at) {
-    return {
-      verified: false,
-      platform: 'devto',
-      reason: `devto-not-published (type_of=${body.type_of ?? 'unknown'})`,
-    };
-  }
-
-  return { verified: true, platform: 'devto', url: body.url ?? '' };
 }

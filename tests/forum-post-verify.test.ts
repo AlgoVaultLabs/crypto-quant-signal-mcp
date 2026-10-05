@@ -4,7 +4,6 @@ import {
   verifyHashnodePostMultiStage,
   verifyHashnodePostMultiStageDeferred,
   verifyMoltbookPost,
-  verifyDevtoPost,
 } from '../src/lib/forum-post-verify.js';
 
 const ZERO_DELAY = { delayMs: 0 };
@@ -245,57 +244,6 @@ describe('verifyHashnodePostMultiStageDeferred', () => {
     expect(result.verified).toBe(false);
     if (!result.verified) {
       expect(result.reason).toContain('hashnode-null-on-requery');
-    }
-  });
-});
-
-// ── Dev.to ──────────────────────────────────────────────────────────────
-
-describe('verifyDevtoPost', () => {
-  it('returns verified=true when type_of=article and published_at is set', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(
-      mockResponse(200, {
-        id: 3493463,
-        url: 'https://dev.to/algovaultlabs/algovault-mcp-v181-whats-new-47n',
-        type_of: 'article',
-        published_at: '2026-04-13T08:39:44Z',
-      })
-    );
-    const result = await verifyDevtoPost(3493463, 'devto-key', { ...ZERO_DELAY, fetchImpl });
-    expect(result).toEqual({
-      verified: true,
-      platform: 'devto',
-      url: 'https://dev.to/algovaultlabs/algovault-mcp-v181-whats-new-47n',
-    });
-    expect(fetchImpl).toHaveBeenCalledOnce();
-    const call = fetchImpl.mock.calls[0];
-    expect(call[0]).toBe('https://dev.to/api/articles/3493463');
-    expect((call[1] as RequestInit).headers).toMatchObject({ 'api-key': 'devto-key' });
-  });
-
-  it('returns verified=false on non-2xx (article not found by id)', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(mockResponse(404, null, false));
-    const result = await verifyDevtoPost(999999, 'devto-key', { ...ZERO_DELAY, fetchImpl });
-    expect(result.verified).toBe(false);
-    if (!result.verified) {
-      expect(result.reason).toContain('devto-http-404');
-    }
-  });
-
-  it('returns verified=false when type_of is draft', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(
-      mockResponse(200, {
-        id: 1,
-        url: 'https://dev.to/draft',
-        type_of: 'draft',
-        published_at: null,
-      })
-    );
-    const result = await verifyDevtoPost(1, 'devto-key', { ...ZERO_DELAY, fetchImpl });
-    expect(result.verified).toBe(false);
-    if (!result.verified) {
-      expect(result.reason).toContain('devto-not-published');
-      expect(result.reason).toContain('type_of=draft');
     }
   });
 });

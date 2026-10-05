@@ -1,8 +1,14 @@
 #!/usr/bin/env tsx
 /**
- * agent-forum-post.ts — Automated multi-platform forum marketing.
+ * agent-forum-post.ts — forum post generator; publishes to Moltbook only. A MANUAL tool.
  *
- * Publishes to Moltbook, Dev.to, and Hashnode (3x/week cron + on-demand).
+ * OPS-DEVTO-SPAM-GUARD-W1 CH2 (2026-10-05): every dev.to write is retired from this script — the
+ * editorial pipeline (algovault-editorial) is the ONLY dev.to writer, and this repo holds no dev.to
+ * credential and no dev.to API reference (pinned by tests/unit/no-devto-write-path.test.ts). The same
+ * wave removed its root-crontab schedules (track-record / usage-example / market-insight / --self-audit),
+ * its cron-interlock registry row, and the deploy.yml release-post step, so it has NO scheduled caller.
+ * Moltbook is unkeyed on signal-1 (MOLTBOOK_API_KEY absent), so a live run publishes nothing today; the
+ * script stays as a manual --dry-run / generator tool.
  * Pulls live data from AlgoVault public APIs. Never posts stale/cached data.
  *
  * Usage:
@@ -13,7 +19,7 @@
  *   npx tsx src/scripts/agent-forum-post.ts --self-audit
  *
  * Env vars (all optional — missing = skip that platform):
- *   MOLTBOOK_API_KEY, DEVTO_API_KEY, HASHNODE_PAT, HASHNODE_PUBLICATION_ID
+ *   MOLTBOOK_API_KEY (publish + audit), HASHNODE_PAT + HASHNODE_PUBLICATION_ID (audit of past posts only)
  *   FORUM_POST_KILL_SWITCH=1 — abort without publishing (for emergency halt)
  */
 
@@ -25,9 +31,7 @@ import { composeMarketInsightPost } from '../lib/market-insight-post.js';
 import { FUNDING_VENUE_LIST_TEXT } from '../lib/funding-venues.js';
 import {
   verifyHashnodePost,
-  verifyHashnodePostMultiStageDeferred,
   verifyMoltbookPost,
-  verifyDevtoPost,
   type VerifyResult,
 } from '../lib/forum-post-verify.js';
 import {
@@ -53,35 +57,13 @@ const COUNTER_FILE = '/opt/crypto-quant-signal-mcp/usage-example-counter.txt';
 // Fallback for local dev / dry-run
 const COUNTER_FILE_LOCAL = './usage-example-counter.txt';
 
-// Canonical back-link per post type — set on Hashnode via
-// `originalArticleURL` (the real name of the canonical field on the
-// current Hashnode schema — see
-// experiments/crypto-quant-signal/platform-api-schemas-2026-04-15.md)
-// and on Dev.to via `canonical_url`. Moltbook has no canonical-URL
-// field; its body is stripped and accepts the information loss.
-// Canonical back-link per post type. Appends a date suffix so Dev.to
-// doesn't reject weekly repeats with "Canonical url has already been taken"
-// (422 observed 2026-04-19 on the track-record post — same canonical URL
-// from the prior week was already registered). The date suffix makes each
-// week's post a unique canonical while still pointing at the real page.
-function getCanonical(postType: string): string {
-  const dateTag = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const base: Record<string, string> = {
-    'track-record': 'https://algovault.com/track-record',
-    'usage-example': 'https://algovault.com/docs.html',
-    'market-insight': 'https://algovault.com/track-record',
-    release: 'https://algovault.com/docs.html',
-  };
-  return `${base[postType] ?? 'https://algovault.com/'}?d=${dateTag}`;
-}
-
 const CANONICAL_DOMAIN = 'algovault.com';
 
 // ── Calls-to-action (FIX-CONVICTION-CALL-POSTS-W1) ──
 //
 // THE BUG THIS CLOSES: every CTA was authored as a BARE url —
 //     Real-time signals: https://api.algovault.com/mcp
-// and `publishDevTo` runs the body through `stripExternalUrlsForModeration`,
+// and the publishers ran the body through `stripExternalUrlsForModeration`,
 // whose Pass 2 deletes every bare URL *including* canonical-domain ones (the
 // strip is deliberate and test-locked; the docblock says intent must be
 // expressed as MARKUP). So the published post ended with two naked labels:
@@ -1075,184 +1057,6 @@ async function publishMoltbook(post: Post, postType: string): Promise<PublishRes
   return { url: postUrl, postId, verified: verify.verified, reason: verify.verified ? undefined : verify.reason };
 }
 
-async function publishDevTo(post: Post, postType: string): Promise<PublishResult> {
-  const key = process.env.DEVTO_API_KEY;
-  if (!key) { console.log('[devto] DEVTO_API_KEY not set — skipping'); return { url: null, postId: null, verified: null }; }
-
-  // Strip external URLs. Dev.to has been 100% healthy in audit, but the
-  // spec calls for uniform stripping across platforms to reduce
-  // moderation risk. The canonical back-link is preserved on Dev.to via
-  // the `canonical_url` field rather than in-body.
-  const strippedContent = stripExternalUrlsForModeration(post.content, STRIP_KEEP_OPTS);
-  const canonical = getCanonical(postType);
-
-  const body = JSON.stringify({
-    article: {
-      title: post.title,
-      body_markdown: strippedContent,
-      published: true,
-      tags: post.tags,
-      canonical_url: canonical,
-    },
-  });
-  const opts: RequestInit = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'api-key': key },
-    body,
-  };
-
-  let res = await fetch('https://dev.to/api/articles', opts);
-
-  if (res.status === 429) {
-    console.log('[devto] Rate limited — retrying in 30s');
-    await new Promise(r => setTimeout(r, 30_000));
-    res = await fetch('https://dev.to/api/articles', opts);
-  }
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    console.error(`[devto] Failed: ${res.status} — ${errBody}`);
-    await recordFailure('devto', postType, `devto-http-${res.status}`);
-    return { url: null, postId: null, verified: null, reason: `http-${res.status}` };
-  }
-
-  const data = await res.json() as { url?: string; id?: number };
-  const postUrl = data.url ?? null;
-  const postId = data.id != null ? String(data.id) : null;
-  console.log(`[devto] Published: ${postUrl}`);
-
-  if (data.id == null) {
-    console.error('[devto] No article id in response — cannot verify');
-    await recordFailure('devto', postType, 'devto-no-id-in-response', null, postUrl ?? undefined);
-    return { url: postUrl, postId: null, verified: false, reason: 'no-article-id' };
-  }
-
-  const verify = await verifyDevtoPost(data.id, key);
-  await logPublishResult('devto', postType, postId!, postUrl, verify);
-  return { url: postUrl, postId, verified: verify.verified, reason: verify.verified ? undefined : verify.reason };
-}
-
-async function publishHashnode(post: Post, postType: string, publishOpts: { stripAllUrls?: boolean } = {}): Promise<PublishResult> {
-  // R3 kill switch: HASHNODE_ENABLED=false skips Hashnode entirely.
-  if (process.env.HASHNODE_ENABLED === 'false') {
-    console.log('[hashnode] Publishing disabled via HASHNODE_ENABLED=false — skipping');
-    return { url: null, postId: null, verified: null };
-  }
-
-  const pat = process.env.HASHNODE_PAT;
-  const pubId = process.env.HASHNODE_PUBLICATION_ID;
-  if (!pat || !pubId) { console.log('[hashnode] HASHNODE_PAT or HASHNODE_PUBLICATION_ID not set — skipping'); return { url: null, postId: null, verified: null }; }
-
-  // Strip external URLs from the body — Hashnode's anti-spam filter on
-  // low-follower publications silently removes posts with multiple
-  // external URLs. The canonical back-link survives via the
-  // `originalArticleURL` input field (Hashnode's real name for the
-  // canonical-URL field — see the schemas report).
-  //
-  // R4 A/B test: when --hashnode-strip-urls is set, also strip the
-  // canonical-domain back-links from the body. This isolates whether URL
-  // density (regardless of domain) is what triggers anti-spam.
-  const strippedContent = publishOpts.stripAllUrls
-    ? stripExternalUrlsForModeration(post.content, {})
-    : stripExternalUrlsForModeration(post.content, STRIP_KEEP_OPTS);
-  const canonical = getCanonical(postType);
-
-  const mutation = `mutation PublishPost($input: PublishPostInput!) {
-    publishPost(input: $input) { post { id slug url } }
-  }`;
-
-  const variables = {
-    input: {
-      title: post.title,
-      contentMarkdown: strippedContent,
-      publicationId: pubId,
-      tags: post.tags.map(t => ({ slug: t, name: t })),
-      originalArticleURL: canonical,
-    },
-  };
-
-  const opts: RequestInit = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': pat },
-    body: JSON.stringify({ query: mutation, variables }),
-  };
-  let res = await fetch('https://gql.hashnode.com', opts);
-
-  if (res.status === 429) {
-    console.log('[hashnode] Rate limited — retrying in 30s');
-    await new Promise(r => setTimeout(r, 30_000));
-    res = await fetch('https://gql.hashnode.com', opts);
-  }
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    console.error(`[hashnode] Failed: ${res.status} — ${errBody}`);
-    await recordFailure('hashnode', postType, `hashnode-http-${res.status}`);
-    return { url: null, postId: null, verified: null, reason: `http-${res.status}` };
-  }
-
-  const data = await res.json() as {
-    data?: { publishPost?: { post?: { id?: string; slug?: string; url?: string } } };
-    errors?: Array<{ message?: string }>;
-  };
-  if (data.errors && data.errors.length > 0) {
-    const msg = data.errors.map(e => e.message ?? 'unknown').join('; ');
-    console.error(`[hashnode] GraphQL errors: ${msg}`);
-    await recordFailure('hashnode', postType, `hashnode-graphql-errors: ${msg}`);
-    return { url: null, postId: null, verified: null, reason: `graphql-errors: ${msg}` };
-  }
-  const postObj = data?.data?.publishPost?.post;
-  const postUrl = postObj?.url ?? null;
-  const postId = postObj?.id ?? null;
-  console.log(`[hashnode] Published: ${postUrl}`);
-
-  if (!postId) {
-    console.error('[hashnode] No post id in response — cannot verify');
-    await recordFailure('hashnode', postType, 'hashnode-no-post-id-in-response', null, postUrl ?? undefined);
-    return { url: postUrl, postId: null, verified: false, reason: 'no-post-id' };
-  }
-
-  // R2 multi-stage verify: 5s sync (records initial publish-time result),
-  // then 60s + 5min run in the background. On late deletion, fire a
-  // CRITICAL Telegram alert + record a drift failure.
-  const verify = await verifyHashnodePostMultiStageDeferred(
-    postId,
-    pat,
-    pubId,
-    async (lateResult) => {
-      const tag = publishOpts.stripAllUrls ? '[hashnode A/B URL-stripped]' : '[hashnode]';
-      if (lateResult.verified) {
-        console.log(
-          `${tag} Late verify OK at stage=${lateResult.stage} postId=${postId}`
-        );
-        return;
-      }
-      console.error(
-        `${tag} Late verify FAILED at stage=${lateResult.stage} postId=${postId} reason=${lateResult.reason}`
-      );
-      try {
-        await recordFailure(
-          'hashnode',
-          postType,
-          `late-verify-${lateResult.stage}: ${lateResult.reason}`,
-          postId,
-          postUrl ?? undefined
-        );
-      } catch (err) {
-        console.error('[hashnode] recordFailure error:', (err as Error).message);
-      }
-      try {
-        await sendAlert(
-          `Hashnode anti-spam deleted post ${postId} after ${lateResult.stage}.\n${tag}\nURL: ${postUrl ?? 'n/a'}\nReason: ${lateResult.reason}`,
-          'critical'
-        );
-      } catch { /* Telegram optional */ }
-    }
-  );
-  await logPublishResult('hashnode', postType, postId, postUrl, verify);
-  return { url: postUrl, postId, verified: verify.verified, reason: verify.verified ? undefined : verify.reason };
-}
-
 /**
  * Shared post-verify bookkeeping: write to the audit log (always), write
  * to the failures table when verify failed, and emit the structured log
@@ -1290,7 +1094,7 @@ function isTruthyEnv(v: string | undefined): boolean {
 async function runSelfAudit(ts: string): Promise<number> {
   console.log(`[${ts}] agent-forum-post: self-audit`);
   const platforms: Array<{
-    name: 'hashnode' | 'moltbook' | 'devto';
+    name: 'hashnode' | 'moltbook';
     verify: (postId: string) => Promise<VerifyResult>;
     credsOk: boolean;
   }> = [];
@@ -1307,12 +1111,6 @@ async function runSelfAudit(ts: string): Promise<number> {
     name: 'moltbook',
     credsOk: Boolean(mbKey),
     verify: (postId) => verifyMoltbookPost(postId, mbKey ?? '', { delayMs: 0 }),
-  });
-  const devKey = process.env.DEVTO_API_KEY;
-  platforms.push({
-    name: 'devto',
-    credsOk: Boolean(devKey),
-    verify: (postId) => verifyDevtoPost(Number(postId), devKey ?? '', { delayMs: 0 }),
   });
 
   const SELF_AUDIT_DAYS = 7;
@@ -1435,7 +1233,7 @@ async function runVerifyOnly(ts: string): Promise<void> {
   console.log(`[${ts}] agent-forum-post: --verify-only`);
 
   const platforms: Array<{
-    name: 'hashnode' | 'moltbook' | 'devto';
+    name: 'hashnode' | 'moltbook';
     verify: (postId: string) => Promise<VerifyResult>;
     credsOk: boolean;
   }> = [];
@@ -1452,12 +1250,6 @@ async function runVerifyOnly(ts: string): Promise<void> {
     name: 'moltbook',
     credsOk: Boolean(mbKey),
     verify: (postId) => verifyMoltbookPost(postId, mbKey ?? '', { delayMs: 0 }),
-  });
-  const devKey = process.env.DEVTO_API_KEY;
-  platforms.push({
-    name: 'devto',
-    credsOk: Boolean(devKey),
-    verify: (postId) => verifyDevtoPost(Number(postId), devKey ?? '', { delayMs: 0 }),
   });
 
   const VERIFY_DAYS = 14;
@@ -1494,9 +1286,8 @@ async function main() {
   const args = parseArgs();
   const ts = new Date().toISOString();
 
-  // Kill switch — an emergency halt controlled by an env var. Cron jobs
-  // can be flipped off without touching the crontab by setting this in
-  // /etc/algovault/forum.env (sourced by the wrapper).
+  // Kill switch — an emergency halt controlled by an env var in the container env
+  // (/opt/crypto-quant-signal-mcp/.env via compose `env_file`, applied on the next recreate).
   if (isTruthyEnv(process.env.FORUM_POST_KILL_SWITCH)) {
     console.warn(`[${ts}] FORUM_POST_KILL_SWITCH is set — aborting without publishing.`);
     try {
@@ -1572,15 +1363,11 @@ async function main() {
 
   if (args.dryRun) {
     const strippedPreview = stripExternalUrlsForModeration(post.content, STRIP_KEEP_OPTS);
-    const canonical = getCanonical(args.type);
     console.log('\n=== DRY RUN — Moltbook (m/' + post.moltbookSubmolt + ') ===');
     console.log(`Title: ${post.title}`);
     console.log(strippedPreview);
-    console.log('\n=== DRY RUN — Dev.to ===');
-    console.log(`Title: ${post.title}`);
-    console.log(`Tags: ${post.tags.join(', ')}`);
-    console.log(`canonical_url: ${canonical}`);
-    console.log(strippedPreview);
+    // No dev.to preview: dev.to publishing was retired here (OPS-DEVTO-SPAM-GUARD-W1) — the editorial
+    // pipeline is the only dev.to writer. A preview of a channel this script never writes would lie.
     // No Hashnode preview: the publish was removed (deprecated 2026-05-26). A preview
     // for a channel we do not publish to would misreport what actually ships — and a
     // dry run is the artifact this pipeline is verified against, so it must not lie.
@@ -1604,7 +1391,7 @@ async function main() {
   //      skipped and read that as "it didn't happen" rather than "it never ran".
   const results: Record<string, PublishResult> = {};
   results.moltbook = await publishMoltbook(post, args.type);
-  results.devto = await publishDevTo(post, args.type);
+  // dev.to: retired (OPS-DEVTO-SPAM-GUARD-W1 CH2) — the editorial pipeline is the only dev.to writer.
 
   const published = Object.entries(results).filter(([, v]) => v.url).map(([k]) => k);
   const skipped = Object.entries(results).filter(([, v]) => !v.url).map(([k]) => k);

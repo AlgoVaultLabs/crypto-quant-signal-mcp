@@ -239,29 +239,6 @@
       ]
     },
     {
-      "id": "agent-forum-post",
-      "host": "signal-1",
-      "events": [
-        "deploy",
-        "reboot"
-      ],
-      "script": "src/scripts/agent-forum-post.ts",
-      "container": "crypto-quant-signal-mcp-mcp-server-1",
-      "process_pattern": "dist/scripts/agent-forum-post",
-      "class": "safe-to-kill",
-      "reason": "A kill costs at most one skipped post of one type. Each weekday fire publishes a DIFFERENT --type, so a truncated run is never re-attempted with the same payload and cannot double-post; the loss is one advisory dev.to item, and nothing downstream depends on its presence.",
-      "max_runtime_s": 146,
-      "runtime_instrument": "/var/log/agent-forum.log mtime 2026-08-28T12:02:26Z minus its scheduled fire Fri 12:00:00Z = 146s; cross-checked against the same log's ISO-line run grouping (max span 21s over n=5 runs) — the mtime figure is the conservative one and is the one recorded",
-      "cron_lines": 4,
-      "cron": "0 12 * * 0 (track-record) · 0 12 * * 3 (usage-example) · 0 12 * * 5 (market-insight) · 0 13 * * * (--self-audit)",
-      "catchup_cmd": null,
-      "source": "repo",
-      "verified_at": "2026-08-29",
-      "cron_match": [
-        "dist/scripts/agent-forum-post"
-      ]
-    },
-    {
       "id": "monitor",
       "host": "signal-1",
       "events": [

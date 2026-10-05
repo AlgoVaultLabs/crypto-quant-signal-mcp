@@ -1,59 +1,22 @@
-// scripts/fetchers/devto.mjs
-// BUNDLE-EXPAND-BLOG-W1 (C2, 2026-05-19) — fetch AlgoVault's published dev.to
-// articles via Forem API v1 (api-key header auth).
+// scripts/fetchers/devto.mjs — PAUSED (OPS-DEVTO-SPAM-GUARD-W1 CH2, 2026-10-05, ruling Q1 = C).
 //
-// Public handle: `algovaultlabs` (lowercase, trailing s) per Mr.1 Q-4
-// ratification (handle is for URL verification only; API uses operator's
-// DEV_TO_API_KEY against the `me/published` endpoint).
+// BUNDLE-EXPAND-BLOG-W1 (2026-05-19) read the account's articles with an operator key — under an env var
+// name production never set, so this source returned [] on every weekly refresh it ever ran (20 of 20
+// since 2026-05-24). A key-less rewrite would have ingested up to 117 posts into the public knowledge
+// bundle on the first refresh after the dev.to account is restored: a first-ever ingestion nobody
+// approved. So the source is PAUSED: it returns [] with one log line, holds no credential and makes no
+// request. signal-MCP holds no dev.to API reference at all (tests/unit/no-devto-write-path.test.ts, empty
+// allowlist). Ingesting our posts again is its own future spec, reading our own published bodies — never
+// the dev.to API.
 //
-// Graceful-degradation contract: returns [] + WARNING log on any error path.
-// Never throws.
+// The registry entry stays (scripts/refresh-knowledge-pages.mjs FETCHERS) so each refresh still names
+// the source and logs why it is empty.
 
 const sourceType = 'devto';
 
 async function fetchAll() {
-  const apiKey = process.env.DEV_TO_API_KEY;
-  if (!apiKey) {
-    console.warn('[fetcher:devto] DEV_TO_API_KEY not set — returning [] (graceful degradation)');
-    return [];
-  }
-  try {
-    const res = await fetch('https://dev.to/api/articles/me/published?per_page=100', {
-      headers: { 'api-key': apiKey, Accept: 'application/vnd.forem.api-v1+json' },
-    });
-    if (!res.ok) {
-      console.warn(`[fetcher:devto] HTTP ${res.status} — returning [] (graceful degradation)`);
-      return [];
-    }
-    const articles = await res.json();
-    if (!Array.isArray(articles)) {
-      console.warn('[fetcher:devto] response is not an array — returning []');
-      return [];
-    }
-    const pages = articles
-      .filter((a) => a && typeof a.url === 'string' && typeof a.title === 'string')
-      .map((a) => ({
-        source_type: sourceType,
-        source_url: a.url,
-        title: a.title,
-        published_at: a.published_at ?? new Date().toISOString(),
-        content_markdown:
-          typeof a.body_markdown === 'string' && a.body_markdown.length > 0
-            ? a.body_markdown
-            : a.description ?? '',
-        author: a.user?.username ?? a.user?.name ?? 'AlgoVault Labs',
-        tags: Array.isArray(a.tag_list) ? a.tag_list : [],
-      }))
-      .filter((p) => p.content_markdown.length > 50);
-
-    console.log(`[fetcher:devto] returning ${pages.length} pages`);
-    return pages;
-  } catch (err) {
-    console.warn(
-      `[fetcher:devto] fetch failed (returning []): ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return [];
-  }
+  console.log('[fetcher:devto] source paused (OPS-DEVTO-SPAM-GUARD-W1) — returning []');
+  return [];
 }
 
 export default { sourceType, fetchAll };
