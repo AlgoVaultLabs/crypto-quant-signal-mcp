@@ -4,6 +4,7 @@
 # launched with nohup, one process per venue; never cron, never the nightly's lock or log.
 #
 #   relabel   lrw-relabel-runner.sh --venue <V> [--since <epoch>] [--cap-min <n>] [--rate <req/min>]
+#                                   [--order depth-deadline] [--slot night|day]
 #   annotate  lrw-relabel-runner.sh --annotate <host-path.csv.gz>[,<host-path.csv.gz>]
 # (the adapter-pending cell and T_CUT are pinned in the code — src/scripts/lrw/registered.ts — never flags)
 #
@@ -26,6 +27,10 @@
 #     fetch error or a budget skip is not a class: it keeps the runner from CONVERGED. The annotation converges on
 #     a DONE line with outcome "complete" — the ctid scan reached the end. The runner's word is still only a claim:
 #     the pull and the CH3 gate re-measure DONE on the rows (dist/scripts/lrw/completeness.js).
+#   * --slot day (ruling LRW-Q17, rider 2: HL only, and only when its measured pace asks for it): 06:31–17:45Z, a
+#     hard stop at 17:45Z, never 02:15–06:31Z. Day-time deploys SIGTERM the pass (DB-state resume, add-only); a
+#     completed pass resets the wait count, so a day of deploys never exhausts it.
+#   * --order depth-deadline is passed through to the relabel (HL only, ruling LRW-Q17 rider 1).
 # Prints one terminal line: LRW_RUNNER_VERDICT=CONVERGED | SLOT_END | MAX_PASSES | REFUSED | INDETERMINATE.
 # A deploy during a pass: the deploy interlock's `carry-labeler` row matches this process too (same script), so
 # it is SIGTERMed (checkpoint at the next group) and the runner resumes after the recreate. The 18–03Z
@@ -33,12 +38,14 @@
 set -u
 CTR=crypto-quant-signal-mcp-mcp-server-1
 LOGDIR=/var/log/lrw-relabel
-SLOT_START_MIN=$((18 * 60 + 30))
-SLOT_END_MIN=$((2 * 60 + 15))
+NIGHT_START_MIN=$((18 * 60 + 30))
+NIGHT_END_MIN=$((2 * 60 + 15))
+DAY_START_MIN=$((6 * 60 + 31))
+DAY_END_MIN=$((17 * 60 + 45))
 MAX_PASSES=8
 ERR_WAITS_MAX=20
 
-venue="" since="" cap="" rate="" annotate=""
+venue="" since="" cap="" rate="" annotate="" order="" slot="night"
 while [ $# -gt 0 ]; do
   [ $# -ge 2 ] || { echo "$1 needs a value" >&2; echo 'LRW_RUNNER_VERDICT=REFUSED'; exit 2; }
   case "$1" in
@@ -47,16 +54,29 @@ while [ $# -gt 0 ]; do
     --cap-min) cap="$2" ;;
     --rate) rate="$2" ;;
     --annotate) annotate="$2" ;;
+    --order) order="$2" ;;
+    --slot) slot="$2" ;;
     *) echo "unknown argument $1" >&2; echo 'LRW_RUNNER_VERDICT=REFUSED'; exit 2 ;;
   esac
   shift 2
 done
 
-# minutes left until the 02:15Z hard stop; 0 when outside the 18:30–02:15Z slot
+case "$slot" in
+  night) SLOT_START_MIN=$NIGHT_START_MIN SLOT_END_MIN=$NIGHT_END_MIN SLOT_NAME='18:30–02:15Z' ;;
+  day) SLOT_START_MIN=$DAY_START_MIN SLOT_END_MIN=$DAY_END_MIN SLOT_NAME='06:31–17:45Z' ;;
+  *) echo "unknown --slot $slot (night|day)" >&2; echo 'LRW_RUNNER_VERDICT=REFUSED'; exit 2 ;;
+esac
+
+# slot_minutes_left [<start min> <end min>] → minutes left until the slot's hard stop; 0 outside the slot. A slot
+# whose start is after its end wraps midnight (night); otherwise it is one day's span (day).
 slot_minutes_left() {
-  local now; now=${LRW_NOW_MIN:-$((10#$(date -u +%H) * 60 + 10#$(date -u +%M)))}
-  if [ "$now" -ge "$SLOT_START_MIN" ]; then echo $((24 * 60 - now + SLOT_END_MIN))
-  elif [ "$now" -lt "$SLOT_END_MIN" ]; then echo $((SLOT_END_MIN - now))
+  local start="${1:-$SLOT_START_MIN}" end="${2:-$SLOT_END_MIN}" now
+  now=${LRW_NOW_MIN:-$((10#$(date -u +%H) * 60 + 10#$(date -u +%M)))}
+  if [ "$start" -gt "$end" ]; then
+    if [ "$now" -ge "$start" ]; then echo $((24 * 60 - now + end))
+    elif [ "$now" -lt "$end" ]; then echo $((end - now))
+    else echo 0; fi
+  elif [ "$now" -ge "$start" ] && [ "$now" -lt "$end" ]; then echo $((end - now))
   else echo 0; fi
 }
 
@@ -80,8 +100,13 @@ pass_state() {
 self_test() {
   local ok=0 bad=0 hm want got
   for pair in "1110:465" "1380:195" "130:5" "135:0" "720:0" "1109:0" "0:135"; do
-    hm=${pair%%:*}; want=${pair##*:}; got=$(LRW_NOW_MIN=$hm slot_minutes_left)
-    if [ "$got" = "$want" ]; then ok=$((ok + 1)); else bad=$((bad + 1)); echo "SELF-TEST: FAIL slot at minute $hm: got $got want $want"; fi
+    hm=${pair%%:*}; want=${pair##*:}; got=$(LRW_NOW_MIN=$hm slot_minutes_left "$NIGHT_START_MIN" "$NIGHT_END_MIN")
+    if [ "$got" = "$want" ]; then ok=$((ok + 1)); else bad=$((bad + 1)); echo "SELF-TEST: FAIL night slot at minute $hm: got $got want $want"; fi
+  done
+  # the day slot never reaches into the nightly labellers' 02:15–06:31Z, nor past 17:45Z
+  for pair in "391:674" "1064:1" "1065:0" "390:0" "135:0" "1110:0" "0:0" "720:345"; do
+    hm=${pair%%:*}; want=${pair##*:}; got=$(LRW_NOW_MIN=$hm slot_minutes_left "$DAY_START_MIN" "$DAY_END_MIN")
+    if [ "$got" = "$want" ]; then ok=$((ok + 1)); else bad=$((bad + 1)); echo "SELF-TEST: FAIL day slot at minute $hm: got $got want $want"; fi
   done
   local D='RELABEL DONE {"outcome":"complete","groups":3,"written":0,"budgetSkips":0,"errors":0,"cutShort":0}'
   for pair in \
@@ -106,7 +131,11 @@ self_test() {
   local dx; dx="$(grep -E '^  docker exec -e PGOPTIONS=' "${BASH_SOURCE[0]}")"
   if [ "$(grep -c . <<<"$dx")" = 1 ] && grep -qF 'SCRIPT_WATCHDOG_MS="$(watchdog_ms "$left")"' <<<"$dx"; then ok=$((ok + 1))
   else bad=$((bad + 1)); echo 'SELF-TEST: FAIL the docker exec line does not pass SCRIPT_WATCHDOG_MS'; fi
-  if [ "$bad" -eq 0 ] && [ "$ok" -ge 20 ]; then echo "LRW_RUNNER_SELFTEST: PASS ($ok checks)"; exit 0; fi
+  # --order reaches the relabel: the ONE flags line that forwards it (anchored at its indent)
+  local ox; ox="$(grep -E '^\[ -n "\$order" \] && flags\+=' "${BASH_SOURCE[0]}")"
+  if [ "$(grep -c . <<<"$ox")" = 1 ] && grep -qF 'flags+=(--order "$order")' <<<"$ox"; then ok=$((ok + 1))
+  else bad=$((bad + 1)); echo 'SELF-TEST: FAIL --order is not forwarded to the relabel'; fi
+  if [ "$bad" -eq 0 ] && [ "$ok" -ge 29 ]; then echo "LRW_RUNNER_SELFTEST: PASS ($ok checks)"; exit 0; fi
   echo "LRW_RUNNER_SELFTEST: FAIL ($bad)"; exit 1
 }
 [ "${LRW_RUNNER_SELFTEST:-0}" = 1 ] && self_test
@@ -139,7 +168,7 @@ run_watched() {
 
 left="$(slot_minutes_left)"
 if [ "$left" -le 5 ]; then
-  log "REFUSED — outside the 18:30–02:15Z slot (minutes left $left)"
+  log "REFUSED — outside the $SLOT_NAME slot (minutes left $left)"
   echo 'LRW_RUNNER_VERDICT=REFUSED'; exit 1
 fi
 
@@ -174,16 +203,17 @@ fi
 flags=(--relabel-v2 --venue "$venue")
 [ -n "$since" ] && flags+=(--since "$since")
 [ -n "$rate" ] && flags+=(--max-req-per-min "$rate")
+[ -n "$order" ] && flags+=(--order "$order")
 started=$(date -u +%s)
 pass=1 err_waits=0
-log "START venue=$venue since=${since:-none} cap=${cap:-none} rate=${rate:-default}"
+log "START venue=$venue since=${since:-none} cap=${cap:-none} rate=${rate:-default} order=${order:-horizon-first} slot=$slot"
 while [ "$pass" -le "$MAX_PASSES" ]; do
   left="$(slot_minutes_left)"
   if [ -n "$cap" ]; then
     used=$(( ($(date -u +%s) - started) / 60 )); capleft=$((cap - used))
     [ "$capleft" -lt "$left" ] && left="$capleft"
   fi
-  if [ "$left" -le 5 ]; then log "SLOT_END — stopping before 02:15Z / cap (resumable)"; echo 'LRW_RUNNER_VERDICT=SLOT_END'; exit 0; fi
+  if [ "$left" -le 5 ]; then log "SLOT_END — stopping before the $SLOT_NAME slot's end / cap (resumable)"; echo 'LRW_RUNNER_VERDICT=SLOT_END'; exit 0; fi
   budget=$((left - 3))
   log "pass=$pass START budget=${budget}m"
   before=$(grep -c 'RELABEL DONE' "$LOG" 2>/dev/null); before=${before:-0}
@@ -211,6 +241,7 @@ while [ "$pass" -le "$MAX_PASSES" ]; do
       sleep 90
       continue ;;
   esac
+  err_waits=0 # a completed pass: the wait count bounds CONSECUTIVE failures, not a day's worth of deploys
   pass=$((pass + 1))
 done
 log "MAX_PASSES reached (resumable)"

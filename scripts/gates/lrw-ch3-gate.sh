@@ -161,7 +161,7 @@ mutation_table() {
  ["R15", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "if (used.length >= MIN_CLUSTER_DAYS)", "if (used.length >= 1)"],
  ["R16", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", ".map(Number).sort((p, q) => q - p)", ".map(Number).sort((p, q) => p - q)"],
  ["R17", "scripts/lrw/lrw-pull.sh", "sh:bash scripts/lrw/lrw-pull.sh --self-test", "moved) red=\"$red concurrent-writer\" ;;", "moved) ;;"],
- ["R18", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "echo $((24 * 60 - now + SLOT_END_MIN))", "echo $((24 * 60 - now))"],
+ ["R18", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "echo $((24 * 60 - now + end))", "echo $((24 * 60 - now))"],
  ["R19", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "const pooled = sel.filter((r) => ax(r).grid !== 'coarser' && !ax(r).adapterCell);", "const pooled = sel.filter((r) => !ax(r).adapterCell);"],
  ["R20", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "tri(wl !== undefined, wl?.ambiguousUc === 1)", "(wl?.ambiguousUc === 1 ? 'yes' : 'no')"],
  ["R21", "src/scripts/lrw/disagreement.ts", "vitest:tests/unit/lrw-disagreement.test.ts", "    cells.push({ key: { ...base, registered_cell: name }, read: readAcc(a) });", "    if (a.registered > 0) cells.push({ key: { ...base, registered_cell: name }, read: readAcc(a) });"],
@@ -198,7 +198,22 @@ mutation_table() {
  ["R52", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "  if ((await recentPage(exchange, CONTROL_COIN, CONTROL_TIMEFRAME)).kind !== 'served') return false;\n", ""],
  ["R53", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "{ GATE: 10_000 }", "{}"],
  ["R54", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "probedThrough + 1, historyFloorMs(g.exchange, stepMs, Date.now()));", "probedThrough + 1);"],
- ["R55", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "nowMs - (n - HISTORY_REFUSAL_MARGIN_CANDLES) * stepMs", "nowMs - (n + HISTORY_REFUSAL_MARGIN_CANDLES) * stepMs"]
+ ["R55", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "nowMs - (n - HISTORY_REFUSAL_MARGIN_CANDLES) * stepMs", "nowMs - (n + HISTORY_REFUSAL_MARGIN_CANDLES) * stepMs"],
+ ["R56", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", ".sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : a.i - b.i))", ".sort((a, b) => (a.k > b.k ? -1 : a.k < b.k ? 1 : a.i - b.i))"],
+ ["R57", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "g.atRiskOldest === null ? -Infinity :", "g.atRiskOldest === null ? Infinity :"],
+ ["R58", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "a.k > b.k ? 1 : a.i - b.i))", "a.k > b.k ? 1 : b.i - a.i))"],
+ ["R59", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (order !== undefined && val('--venue') !== 'HL') throw", "if (false) throw"],
+ ["R60", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "export const HL_CANDLE_DEPTH = 5_000;", "export const HL_CANDLE_DEPTH = 4_000;"],
+ ["R61", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "const groups = cli.order === 'depth-deadline' ? depthDeadlineOrder(listed, orderNowS, stepS) : listed;", "const groups = listed;"],
+ ["R62", "src/scripts/lrw/relabel-sql.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "MIN(s.created_at) FILTER (WHERE s.created_at > CASE s.timeframe", "MIN(s.created_at) FILTER (WHERE s.created_at < CASE s.timeframe"],
+ ["R63", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "  elif [ \"$now\" -ge \"$start\" ] && [ \"$now\" -lt \"$end\" ]; then echo $((end - now))", "  elif [ \"$now\" -gt \"$start\" ] && [ \"$now\" -lt \"$end\" ]; then echo $((end - now))"],
+ ["R64", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "DAY_END_MIN=$((17 * 60 + 45))", "DAY_END_MIN=$((18 * 60 + 45))"],
+ ["R65", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "[ -n \"$order\" ] && flags+=(--order \"$order\")", "[ -n \"$order\" ] && flags+=()"],
+ ["R66", "scripts/lrw/hl-seeder-displacement.sh", "sh:bash scripts/lrw/hl-seeder-displacement.sh --self-test", "if [ $((seeded * 100)) -lt $((FLOOR_NUM * min)) ]; then", "if [ $((seeded * 100)) -lt $((80 * min)) ]; then"],
+ ["R67", "scripts/lrw/hl-seeder-displacement.sh", "sh:bash scripts/lrw/hl-seeder-displacement.sh --self-test", "    if [ \"$runs\" -eq 0 ] || [ \"$seeded\" -eq 0 ]; then", "    if false; then"],
+ ["R68", "scripts/lrw/hl-seeder-displacement.sh", "sh:bash scripts/lrw/hl-seeder-displacement.sh --self-test", "if [ \"$first\" = \"-\" ] || [[ \"$first\" > \"$s\" ]] || [[ \"$last\" < \"$e\" ]]; then", "if [ \"$first\" = \"-\" ]; then"],
+ ["R69", "scripts/lrw/hl-seeder-displacement.sh", "sh:bash scripts/lrw/hl-seeder-displacement.sh --self-test", "if (ts >= s && ts < e && $0 ~", "if (ts >= s && ts <= e && $0 ~"],
+ ["R70", "scripts/lrw/hl-seeder-displacement.sh", "sh:bash scripts/lrw/hl-seeder-displacement.sh --self-test", "  if [ \"$runs\" -eq 0 ]; then echo \"HL_SEEDER_DISPLACEMENT=INDETERMINATE reason=no-seed-run-in-subject:$date\"; return 3; fi\n", ""]
 ]
 JSON
 }

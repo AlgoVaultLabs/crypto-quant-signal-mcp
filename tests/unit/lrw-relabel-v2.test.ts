@@ -26,6 +26,8 @@ const env = vi.hoisted(() => ({
   refuseBeforeMs: undefined as number | undefined, // a page starting before this is refused (Gate's history limit)
   fetchLog: [] as string[], // coin:tf of each venue call
   fetchStarts: [] as number[], // the start of each venue call
+  groupRows: [] as Array<Record<string, unknown>>, // what the group-list statement returns
+  visits: [] as string[], // exchange:coin:timeframe of each group whose signals the relabel read, in order
   // annotation seams
   labelRows: [] as Array<{ t: string; signal_id: number; barrier_spec: string; gap: number | null }>,
   lockTimeout: '5s',
@@ -35,7 +37,12 @@ vi.mock('../../src/lib/performance-db.js', () => ({
   dbExec: () => undefined,
   dbQuery: async (sql: string, params: unknown[] = []) => {
     env.sql.push(sql);
-    if (sql.includes('FROM signals') && sql.includes('WHERE exchange = $1 AND coin = $2 AND timeframe = $3')) return env.signals;
+    if (sql.includes('FROM signals') && sql.includes('WHERE exchange = $1 AND coin = $2 AND timeframe = $3')) {
+      env.visits.push(params.slice(0, 3).join(':'));
+      return env.signals;
+    }
+    if (sql.startsWith('SELECT s.exchange, s.coin, s.timeframe, COUNT(*) AS todo')) return env.groupRows;
+    if (sql.includes("FROM venues WHERE status = 'retired'")) return [];
     if (sql.includes('SELECT signal_id, barrier_spec FROM directional_labels')) {
       const [specs, ids] = params as [string[], number[]];
       return env.existing.filter((e) => specs.includes(e.barrier_spec) && ids.includes(e.signal_id));
@@ -91,12 +98,13 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
 
 import {
   processRelabelGroup, parseCli, INSERT_COLUMNS, _relabelCoverageForTest, setOwnRequestRate, setOwnDeadline,
+  depthDeadlineOrder, HL_CANDLE_DEPTH, EXPIRY_REACH_DAYS, mainRelabel,
   runAnnotation, ANNOTATE_SELECT_SQL, ANNOTATE_UPDATE_SQL, RELABEL_INSERT_SQL_HEAD, RELABEL_INSERT_SQL_TAIL,
 } from '../../src/scripts/backfill-directional-labels.js';
 import { buildRelabelGroupsSql, buildRelabelMissingSql, relabelUntil } from '../../src/scripts/lrw/relabel-sql.js';
 import { loadAnnotationSources, parseGapWorklists } from '../../src/scripts/lrw/annotation-sources.js';
 import { T_CUT_EPOCH, ADAPTER_PENDING_CELLS, ADAPTER_CELL } from '../../src/scripts/lrw/registered.js';
-import { BARRIER_SPECS, BARRIER_SPECS_V2, EVAL_CANDLES } from '../../src/scripts/directional-labeler.js';
+import { BARRIER_SPECS, BARRIER_SPECS_V2, EVAL_CANDLES, TF_MS } from '../../src/scripts/directional-labeler.js';
 
 const M = 60_000;
 const H = 60 * M;
@@ -154,6 +162,8 @@ beforeEach(() => {
   env.refuseBeforeMs = undefined;
   env.fetchLog = [];
   env.fetchStarts = [];
+  env.groupRows = [];
+  env.visits = [];
 });
 
 describe('--relabel-v2 — ADD-ONLY, every eligible signal, every refusal counted', () => {
@@ -359,6 +369,69 @@ describe('--relabel-v2 — ADD-ONLY, every eligible signal, every refusal counte
     expect(env.fetchStarts.length).toBeGreaterThan(0);
     expect(env.fetchStarts.every((s) => s >= L)).toBe(true);
   }, 20_000);
+
+  it('HL depth-deadline order (LRW-Q17 rider 1): time-to-depth-loss ascending, fully-lost groups first, ties keep horizon-first; HL only', () => {
+    expect(parseCli(['--relabel-v2', '--venue', 'HL', '--order', 'depth-deadline']).order).toBe('depth-deadline');
+    expect(parseCli(['--relabel-v2', '--venue', 'HL']).order).toBeUndefined();
+    expect(() => parseCli(['--relabel-v2', '--venue', 'MEXC', '--order', 'depth-deadline'])).toThrow(/needs --venue HL/);
+    expect(() => parseCli(['--relabel-v2', '--order', 'depth-deadline'])).toThrow(/needs --venue HL/);
+    expect(() => parseCli(['--relabel-v2', '--venue', 'HL', '--order', 'oldest-first'])).toThrow(/unknown --order/);
+    const nowS = 1_791_000_000;
+    const DS = 86_400;
+    const stepS = (tf: string) => TF_MS[tf] / 1000;
+    // arriving in horizon-first order (oldest first); deadlines: 1d far off, 5m in 0.36 d, 15m in 2.08 d (twice)
+    const g = (id: string, timeframe: string, atRiskOldest: number | null) => ({ id, timeframe, atRiskOldest });
+    const listed = [
+      g('A', '1d', nowS - 100 * DS), g('C', '15m', nowS - 50 * DS), g('E', '15m', nowS - 50 * DS),
+      g('B', '5m', nowS - 17 * DS), g('D', '5m', null),
+    ];
+    expect(depthDeadlineOrder(listed, nowS, stepS).map((x) => x.id)).toEqual(['D', 'B', 'C', 'E', 'A']);
+    expect(listed.map((x) => x.id)).toEqual(['A', 'C', 'E', 'B', 'D']); // the input is not reordered in place
+    // the order's depth and the measured HL depth table are ONE number: 5,000 candles × the step
+    for (const [tf, days] of Object.entries(EXPIRY_REACH_DAYS.HL)) {
+      expect(Math.abs(days - (HL_CANDLE_DEPTH * TF_MS[tf]) / 86_400_000)).toBeLessThan(0.01);
+    }
+  });
+
+  it('a run APPLIES the order: HL groups are visited deadline-first with --order depth-deadline, as listed (horizon-first) without it', async () => {
+    const nowMs = T + 30 * D;
+    const nowS = nowMs / 1000;
+    const DS = 86_400;
+    // the group statement's answer, horizon-first (oldest first): A 1d, C 15m, D 5m (every row past depth), B 5m
+    env.groupRows = [
+      { exchange: 'HL', coin: 'A', timeframe: '1d', todo: '3', oldest: nowS - 100 * DS, at_risk_oldest: nowS - 100 * DS },
+      { exchange: 'HL', coin: 'C', timeframe: '15m', todo: '2', oldest: nowS - 60 * DS, at_risk_oldest: nowS - 50 * DS },
+      { exchange: 'HL', coin: 'D', timeframe: '5m', todo: '4', oldest: nowS - 30 * DS, at_risk_oldest: null },
+      { exchange: 'HL', coin: 'B', timeframe: '5m', todo: '1', oldest: nowS - 17 * DS, at_risk_oldest: nowS - 17 * DS },
+    ];
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(nowMs));
+    try {
+      await mainRelabel(parseCli(['--relabel-v2', '--venue', 'HL', '--order', 'depth-deadline']));
+      expect(env.visits).toEqual(['HL:D:5m', 'HL:B:5m', 'HL:C:15m', 'HL:A:1d']);
+      expect(env.sql.some((q) => q.includes('AS at_risk_oldest'))).toBe(true);
+      env.visits = [];
+      env.sql.length = 0;
+      await mainRelabel(parseCli(['--relabel-v2', '--venue', 'HL']));
+      expect(env.visits).toEqual(['HL:A:1d', 'HL:C:15m', 'HL:D:5m', 'HL:B:5m']);
+      expect(env.sql.some((q) => q.includes('AS at_risk_oldest'))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      spy.mockRestore();
+    }
+  });
+
+  it('the group list\'s at-risk column leaves the eligibility untouched (the completeness probe still reads the same WHERE)', () => {
+    const base = { v2Specs: BARRIER_SPECS_V2.map((v) => v.spec), until: relabelUntil(undefined), venue: 'HL' };
+    const plain = buildRelabelGroupsSql(base);
+    const ranked = buildRelabelGroupsSql({ ...base, atRiskAfter: { '5m': 1_789_500_000, '15m': 1_786_500_000 } });
+    const whereOf = (sql: string) => sql.slice(sql.indexOf(' WHERE ') + 7, sql.search(/ (GROUP|ORDER) BY /));
+    expect(whereOf(ranked.text)).toBe(whereOf(plain.text));
+    expect(ranked.params).toEqual(plain.params);
+    expect(plain.text).not.toContain('at_risk_oldest');
+    expect(ranked.text).toContain("MIN(s.created_at) FILTER (WHERE s.created_at > CASE s.timeframe WHEN '5m' THEN 1789500000 WHEN '15m' THEN 1786500000 ELSE 0 END) AS at_risk_oldest");
+  });
 
   it('the hard stop acts INSIDE a group: rows raced before it are written, the rest is the next pass\'s (counted cutShort)', async () => {
     env.signals = [sig(71, T + 17_000), sig(72, T + 200 * H + 17_000)]; // two islands: the second needs its own fetch

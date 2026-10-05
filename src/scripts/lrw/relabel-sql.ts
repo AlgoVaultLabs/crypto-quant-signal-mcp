@@ -48,14 +48,23 @@ function relabelEligibleWhere(
 
 /** Every group with an eligible signal that lacks one of the `-v2` specs of this run — horizon-first inside a
  *  venue (oldest missing first). Label-free: existence of `(signal_id, barrier_spec)` only. Retired venues are
- *  listed so their rows are COUNTED (`unreachable:retired`), never fetched. */
+ *  listed so their rows are COUNTED (`unreachable:retired`), never fetched.
+ *  `atRiskAfter` (timeframe → epoch s) adds `at_risk_oldest`: the oldest eligible signal still created after its
+ *  timeframe's bound — the input of the depth-deadline order (ruling LRW-Q17). The eligibility is untouched, so
+ *  the completeness probe below still reads the same WHERE; a timeframe the map lacks counts every signal. */
 export function buildRelabelGroupsSql(opts: {
   v2Specs: readonly string[]; since?: number; until: number; venue?: string; coin?: string; timeframe?: string;
+  atRiskAfter?: Readonly<Record<string, number>>;
 }): { text: string; params: unknown[] } {
   const { where, params } = relabelEligibleWhere(opts, false);
+  const atRisk = opts.atRiskAfter
+    ? `, MIN(s.created_at) FILTER (WHERE s.created_at > CASE s.timeframe ${Object.entries(opts.atRiskAfter)
+        .map(([tf, after]) => `WHEN '${tf.replace(/'/g, "''")}' THEN ${Math.floor(after)}`)
+        .join(' ')} ELSE 0 END) AS at_risk_oldest`
+    : '';
   return {
     text:
-      `SELECT s.exchange, s.coin, s.timeframe, COUNT(*) AS todo, MIN(s.created_at) AS oldest FROM signals s ` +
+      `SELECT s.exchange, s.coin, s.timeframe, COUNT(*) AS todo, MIN(s.created_at) AS oldest${atRisk} FROM signals s ` +
       `WHERE ${where.join(' AND ')} ` +
       `GROUP BY s.exchange, s.coin, s.timeframe ORDER BY s.exchange, MIN(s.created_at), s.coin, s.timeframe`,
     params,

@@ -112,6 +112,9 @@ export interface Cli {
   /** `--relabel-v2`: this process's OWN request ceiling per minute (ruling LRW-Q13: ≤ 50 % of the venue's
    *  documented limit, never above its batch cap). UNSET = the existing per-page pacing only. */
   maxReqPerMin?: number;
+  /** `--relabel-v2 --venue HL --order depth-deadline` (ruling LRW-Q17, rider 1): HL's groups in
+   *  time-to-depth-loss order instead of horizon-first. HL only — its depth is a fixed candle count. */
+  order?: 'depth-deadline';
   /** `--annotate-gaps <worklist.csv.gz>[,<delta.csv.gz>]`: write `race_gap_candles` on `-v1` rows from the
    *  sha-pinned replay worklists (ruling LRW-Q3), only where NULL. */
   annotateGaps?: string;
@@ -260,7 +263,11 @@ export function parseCli(argv: string[]): Cli {
   // The adapter-pending cell is the registration's (lrw/registered.ts), never a flag: an opt-in set let a run
   // without it write permanent -v2 rows into the cell the registration declares empty.
   if (has('--adapter-pending')) throw new Error('--adapter-pending is refused: the cell is pinned in src/scripts/lrw/registered.ts');
+  const order = val('--order');
+  if (order !== undefined && order !== 'depth-deadline') throw new Error(`unknown --order '${order}' (one of: depth-deadline)`);
+  if (order !== undefined && val('--venue') !== 'HL') throw new Error('--order depth-deadline needs --venue HL: only HL has a fixed candle-count depth');
   return {
+    order,
     check: has('--check'),
     specs,
     venue: val('--venue'),
@@ -1154,6 +1161,27 @@ export function expiryReachDays(venue: string, timeframe: string): number {
   return EXPIRY_REACH_DAYS[venue]?.[timeframe] ?? Infinity;
 }
 
+/** HL's candle depth: `candleSnapshot` serves the newest 5,000 candles of an interval (the HL rows of
+ *  EXPIRY_REACH_DAYS are this count × the step; a test pins the two together). */
+export const HL_CANDLE_DEPTH = 5_000;
+
+/**
+ * Ruling LRW-Q17, rider 1 (2026-10-05): HL's relabel work-list in time-to-depth-loss order — ascending
+ * `created_at + 5,000 · served step − now` of each group's oldest signal still inside the depth, ties in the
+ * horizon-first order the list arrives in. A group whose every signal is already past the depth sorts first (its
+ * rows are classed `unreachable:depth` without a fetch). Label-independent: times and steps only. Recorded as a
+ * deviation from LRW-Q13's horizon-first order: HL's lane-bound pace let rows cross the depth before their turn.
+ */
+export function depthDeadlineOrder<T extends { timeframe: string; atRiskOldest: number | null }>(
+  groups: readonly T[], nowS: number, stepS: (timeframe: string) => number,
+): T[] {
+  const key = (g: T) => (g.atRiskOldest === null ? -Infinity : g.atRiskOldest + HL_CANDLE_DEPTH * stepS(g.timeframe) - nowS);
+  return groups
+    .map((g, i) => ({ g, i, k: key(g) }))
+    .sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : a.i - b.i))
+    .map((x) => x.g);
+}
+
 /** One margin hour inside the measured depth, so a row on the edge is skipped rather than fetched empty. */
 const REACH_MARGIN_S = 3600;
 
@@ -1673,14 +1701,24 @@ export async function processRelabelGroup(
   }
 }
 
-async function mainRelabel(cli: Cli): Promise<void> {
+/** The `--relabel-v2` run (exported as a test seam: the order a run APPLIES is asserted on it, not on a helper). */
+export async function mainRelabel(cli: Cli): Promise<void> {
   if (!cli.check) ensureTable(); // --check runs no DDL (an ALTER … IF NOT EXISTS still takes ACCESS EXCLUSIVE)
   setOwnRequestRate(cli.maxReqPerMin);
   const until = relabelUntil(cli.until);
   const v2Specs = BARRIER_SPECS_V2.filter((v) => cli.specs.some((s) => s.tau === v.tau)).map((v) => v.spec);
-  const { text, params } = buildRelabelGroupsSql({ v2Specs, since: cli.since, until, venue: cli.venue, coin: cli.coin, timeframe: cli.timeframe });
-  const raw = await dbQuery<{ exchange: string; coin: string; timeframe: string; todo: string | number; oldest: string | number }>(text, params);
-  const groups = raw.map((r) => ({ exchange: r.exchange, coin: r.coin, timeframe: r.timeframe, todo: Number(r.todo), oldest: Number(r.oldest) }));
+  const orderNowS = Math.floor(Date.now() / 1000);
+  const stepS = (tf: string) => servedStepMs('HL', tf) / 1000;
+  const atRiskAfter = cli.order === 'depth-deadline'
+    ? Object.fromEntries(Object.keys(TF_MS).map((tf) => [tf, orderNowS - HL_CANDLE_DEPTH * stepS(tf)]))
+    : undefined;
+  const { text, params } = buildRelabelGroupsSql({ v2Specs, since: cli.since, until, venue: cli.venue, coin: cli.coin, timeframe: cli.timeframe, atRiskAfter });
+  const raw = await dbQuery<{ exchange: string; coin: string; timeframe: string; todo: string | number; oldest: string | number; at_risk_oldest?: string | number | null }>(text, params);
+  const listed = raw.map((r) => ({
+    exchange: r.exchange, coin: r.coin, timeframe: r.timeframe, todo: Number(r.todo), oldest: Number(r.oldest),
+    atRiskOldest: r.at_risk_oldest === null || r.at_risk_oldest === undefined ? null : Number(r.at_risk_oldest),
+  }));
+  const groups = cli.order === 'depth-deadline' ? depthDeadlineOrder(listed, orderNowS, stepS) : listed;
   const limited = cli.limitGroups ? groups.slice(0, cli.limitGroups) : groups;
   const retired = new Set(
     (await dbQuery<{ exchange_id: string }>(`SELECT exchange_id FROM venues WHERE status = 'retired'`)).map((r) => r.exchange_id),
@@ -1695,6 +1733,7 @@ async function mainRelabel(cli: Cli): Promise<void> {
     `${cli.since !== undefined ? ` since=${cli.since}` : ''} until=${until}` +
     ` adapter_pending=${[...ADAPTER_PENDING_CELLS].join(',')}` +
     `${cli.maxReqPerMin ? ` own_rate=${cli.maxReqPerMin}/min` : ''}` +
+    ` order=${cli.order ?? 'horizon-first'}` +
     `${cli.timeBudgetMin ? ` budget=${cli.timeBudgetMin}m/venue≤${cli.venueBudgetMin ?? '∞'}m` : ''}` +
     `${cli.check ? ' (CHECK — no writes)' : ''}`,
   );
