@@ -23,11 +23,11 @@
 #   identifiers (deploy dir, container + service names) are pinned constants
 #   matching the canonical Hetzner layout.
 #
-#   Two deliberate differences from deploy.yml (see
+#   One deliberate difference from deploy.yml (see
 #   audits/DEPLOY-DIRECT-HETZNER-W1-endpoint-truth.md §3):
-#     DEV-1  the version-change release-post block (agent-forum-post) is NOT
-#            replicated — it is a release-pipeline side-effect, out of scope for
-#            a server deploy, and it depends on the very GitHub that is down.
+#     DEV-1  RETIRED 2026-10-05 (OPS-DEVTO-SPAM-GUARD-W1): deploy.yml no longer
+#            carries a release-post block — the editorial pipeline is the only
+#            dev.to writer — so there is nothing left here to not replicate.
 #     DEV-2  the container recreate is service-scoped + --no-deps
 #            (`up -d --build --force-recreate --no-deps mcp-server`) so postgres
 #            and the facilitator are never bounced. deploy.yml force-recreates

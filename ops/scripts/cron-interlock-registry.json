@@ -1296,6 +1296,50 @@
       "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
     },
     {
+      "id": "editorial-devto-visibility-canary",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "editorial-devto-visibility-canary.timer -> devto_visibility_canary.mjs",
+      "container": "n/a — host process",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "units": [
+        "editorial-devto-visibility-canary.timer",
+        "editorial-devto-visibility-canary.service"
+      ],
+      "class": "safe-to-kill",
+      "reason": "Logged-out GETs of dev.to pages plus ONE read-only authenticated GET (me/all?per_page=1), and its own atomically written state; it writes nothing to dev.to, so a killed run simply re-runs at the next 03:30/15:30 UTC fire.",
+      "max_runtime_s": 300,
+      "runtime_instrument": "declared bound: TimeoutStartSec=300 is a hard systemd cap and the script's own deadline is 60 s inside it (no run exists before its row — Build Rule 8)",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-05",
+      "owner_wave": "OPS-DEVTO-SPAM-GUARD-W1"
+    },
+    {
+      "id": "editorial-forem-rules-drift",
+      "host": "signal-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "editorial-forem-rules-drift.timer -> forem_rules_drift.mjs",
+      "container": "n/a — host process",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "units": [
+        "editorial-forem-rules-drift.timer",
+        "editorial-forem-rules-drift.service"
+      ],
+      "class": "safe-to-kill",
+      "reason": "Cache-busted raw reads of pinned Forem segments from raw.githubusercontent.com and its own atomically written state; read-only upstream, so a killed run simply re-runs at the next 01:30 UTC fire (Persistent=true catches a missed one).",
+      "max_runtime_s": 210,
+      "runtime_instrument": "declared bound: TimeoutStartSec=210 is a hard systemd cap and the script's own deadline is 60 s inside it (no run exists before its row — Build Rule 8)",
+      "cron_lines": 0,
+      "source": "host-only",
+      "verified_at": "2026-10-05",
+      "owner_wave": "OPS-DEVTO-SPAM-GUARD-W1"
+    },
+    {
       "id": "mcp-spec-watcher",
       "host": "signal-1",
       "events": [
