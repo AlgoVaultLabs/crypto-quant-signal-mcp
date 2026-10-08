@@ -87,6 +87,10 @@ export default defineConfig({
       // OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W1 — node:test alert-remedy canary (canonical
       // runner is node:test; exclude from vitest so it doesn't false-fail "No test suite found").
       'tests/unit/alert-recommended-wave.test.mjs',
+      // OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W2 — node:test wrapper running the closed-bar
+      // liveness probe's --self-test (canonical runner is node:test; exclude from vitest so it
+      // doesn't false-fail "No test suite found").
+      'tests/unit/closedbar-liveness-selftest.test.mjs',
       'tests/unit/alert-wrapper-clear.test.mjs',
       'tests/unit/alert-registry.test.mjs',
       // OPS-ALERT-REGISTRY-DECLARE-W1 — node:test consumption-derived declaration-coverage

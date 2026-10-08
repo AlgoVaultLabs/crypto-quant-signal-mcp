@@ -265,6 +265,18 @@
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-CLOSEDBAR_DISPATCH_RATCHET_REGRESSION-W{NEXT}"
     },
     {
+      "alert_id": "CLOSEDBAR_DISPATCH_CHRONIC_LATE",
+      "owner": "ops/monitoring/closedbar-w1-liveness.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-CLOSEDBAR_DISPATCH_CHRONIC_LATE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-CLOSEDBAR_DISPATCH_CHRONIC_LATE-W{NEXT}"
+    },
+    {
       "alert_id": "DB_SUPERUSER_DRIFT",
       "owner": "scripts/db-superuser-canary.sh",
       "hosts": [

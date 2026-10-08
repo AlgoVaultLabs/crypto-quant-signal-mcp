@@ -1,87 +1,45 @@
 #!/usr/bin/env bash
-# closedbar-w1-liveness.sh — SIGNAL-CLOSEDBAR-SHADOW-W1 CH6 AC8
-#                            + OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W1 R2
+# closedbar-w1-liveness.sh — the dispatch-timing guard for the Telegram bot's watchlist dispatcher.
+# Re-founded by OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W2.
 #
-# Live confirmation that watchlist dispatch is bucket-deterministic and late-bar. Determinism
-# itself is proven OFFLINE by unit test; this exists because it cannot be proven at gate time
-# (post-fix 15m fires need ~45-60 min of wall clock, and alerts_fired records only non-HOLD
-# verdicts).
+# This file holds NO schedule arithmetic. The bot records one disposition per due row per tick in
+# its own database (state.db `dispatch_ledger`), and the bot ships a read-only auditor
+# (`python -B -m algovault_bot.dispatch_audit`) that classifies every due row of each bar that
+# opened at HH:00 against that record. This script runs the auditor, routes its verdict, and pages
+# through send_telegram.sh. Rule: a guard that judges a producer against its own COPY of the
+# producer's schedule pages designed recovery as a fault every time the producer gains a behaviour
+# the copy does not have — so the producer records why each row ran when it ran, and the guard
+# judges that record. The history of the copy this replaced is in `git log`.
 #
-# ── R2: this probe used to recommend a HARMFUL action ────────────────────────
-# It inherited `recommended_wave` from the READINESS alert, so a genuine regression told the
-# operator to run the wave that sets ALGOVAULT_BOT_DISPATCH_OFFSET_PCT=0 — which would have
-# RATIFIED the broken state as intended, and additionally retuned live thresholds against a
-# shadow window one day old. One `recommended_wave` shared by two alerts with opposite
-# remedies is a generator bug: a correct detector pointing at the wrong action is worse than
-# no detector. This file now owns its remedy and never references that wave.
-#
-# ── R2: two DISTINCT faults, two ids ─────────────────────────────────────────
-# The 2026-08-01 incident fired RATCHET_REGRESSION and the name was RIGHT — a full-tree rsync
-# from a stale checkout had deleted dispatch_schedule.py, reverting prod to the relative-age
-# scheduler. Sixteen rows hand-computed at the time were scattered from 5s to 11,286s into
-# their bars (three 15m rows at 184s/184s/844s SIMULTANEOUSLY). No single offset value can
-# produce that; independent per-row drift can. So:
-#   scattered offsets  -> CLOSEDBAR_DISPATCH_RATCHET_REGRESSION  (the anchor is drifting)
-#   tight but early    -> CLOSEDBAR_DISPATCH_OFFSET_FAULT        (bucket ok, offset wrong)
-# Conflating them sends the operator to the wrong repair.
-#
-# ── Timestamp handling, corrected against the live DB ────────────────────────
-# `fired_at` / `last_fetched_at` are SQLite `datetime('now')` TEXT — 'YYYY-MM-DD HH:MM:SS',
-# SPACE separated, NOT 'YYYY-MM-DDTHH:MM:SSZ'. Two consequences, both measured:
-#   1. Comparing such a string to a T-separated deploy stamp is wrong in the DANGEROUS
-#      direction: ' ' (0x20) sorts BEFORE 'T' (0x54), so every row reads as older than the
-#      deploy, the filter matches nothing, and the check passes VACUOUSLY.
-#   2. `strftime('%s', …)` works correctly on this column (verified: '2026-08-01 09:15:09' ->
-#      1785575709) — but it returns TEXT, and SQLite orders every INTEGER before every TEXT,
-#      so `strftime('%s',…) > 1785589769` is ALWAYS TRUE. That bug was live in CHECK2 and was
-#      caught by this incident's R0: the predicate returned 1792 rows including 2026-07-31
-#      ones. Hence the explicit CAST below.
-#
-# Exit 0 always (a probe must not wedge its timer); operator-action-required failures go out
-# through the shared send_telegram.sh, which owns cooldown / severity / fail-open. Silent on
-# success.
+# Verdict token: exactly one terminal CLOSEDBAR_LIVENESS_VERDICT=PASS|FAIL|INDETERMINATE
+# (0 / 1 / 3). Pages are CRITICAL_PERSISTENT and need BREACH_STREAK_REQUIRED consecutive runs.
 set -uo pipefail
 
 DB=${CLOSEDBAR_DB:-/var/lib/algovault-bot/state.db}
-SQLITE=(sqlite3 -cmd '.timeout 5000')
 TG=${CLOSEDBAR_TG:-/opt/algovault-monitoring/send_telegram.sh}
-# When the CURRENTLY-RUNNING bot code went live. Read from a host stamp the deploy writes, so
-# a redeploy cannot leave this probe judging rows against a stale baseline — which is exactly
-# what happened on 2026-08-01: the constant still pointed at the 13:09 CH6 deploy while the
-# code had been replaced at 15:45, so the realignment window was silently skipped and the
-# probe judged rows that were still carrying pre-fix anchors. Falls back to the baked value.
+# When the running bot code went live — written by ops/scripts/host-deploy.sh beside DEPLOYED_SHA.
 DEPLOY_STAMP=${CLOSEDBAR_DEPLOY_STAMP:-/opt/algovault-bot/DEPLOYED_AT}
-DEPLOY_EPOCH="__DEPLOY_EPOCH__"
-if [ -r "$DEPLOY_STAMP" ]; then
-  _stamped=$(head -1 "$DEPLOY_STAMP" 2>/dev/null | tr -dc '0-9')
-  [ -n "$_stamped" ] && DEPLOY_EPOCH="$_stamped"
-fi
-# ── The probe row is SELECTED at runtime, never hardcoded ────────────────────
-# SIGNAL-CLOSEDBAR-FLIP-W1 CH5. This used to pin chat last4 0162 / ETH / 15m / BINANCE. That
-# row is a SUBSCRIBER'S watch — they unwatched it after 2026-08-02, so by the time this wave
-# ran the guard resolved nothing and reported CLOSEDBAR_DISPATCH_RATCHET_REGRESSION: a
-# CRITICAL page produced by a stranger tidying their watchlist. A guard whose subject any user
-# can delete is not a guard.
-#
-# So: probe the most-recently-dispatched row on the target timeframe, whoever owns it. If the
-# corpus is EMPTY that is a FACT about the world (nobody watches this TF), not a fault — the
-# world builds this corpus, so empty means INSUFFICIENT and never a page.
-TF=${CLOSEDBAR_TF:-15m}
-TF_SECONDS=${CLOSEDBAR_TF_SECONDS:-900}
+# The bot's env file. The auditor reads only its three dispatch knobs; this script never reads it.
+BOT_ENV=${CLOSEDBAR_BOT_ENV:-/etc/algovault-bot/env}
+# The producer's auditor, run from the bot's own venv. A command line, word-split on purpose.
+AUDITOR=${CLOSEDBAR_AUDITOR:-/opt/algovault-bot/.venv/bin/python -B -m algovault_bot.dispatch_audit}
+TF=${CLOSEDBAR_TF:-all}
 LOG=${CLOSEDBAR_LOG:-/var/log/closedbar-w1-liveness.log}
+BREACH_DIR=${CLOSEDBAR_BREACH_DIR:-/var/lib/algovault-monitoring/closedbar-breach}
+BREACH_STREAK_REQUIRED=${CLOSEDBAR_BREACH_STREAK:-3}
+# A run this soon after a bot deploy that cannot get a verdict out of the auditor is INDETERMINATE,
+# never a page: the deploy may be mid-swap. Two 15m bars — one run straddling a deploy never pages,
+# and the next scheduled run after a broken deploy does.
+REALIGN_WINDOW_SECONDS=1800
+# The verdicts this file can route. Checked against the auditor's own --print-verdicts on every
+# live run, so the producer cannot grow a verdict this route table silently mis-files.
+PINNED_VERDICTS="OK TIMING_FAULT DEPLOY_REGRESSION CHRONIC_LATE INDETERMINATE"
+OFFENDER_CAP=10
+INCIDENT_AUDIT="vault audits/CLOSEDBAR_DISPATCH_OFFSET_FAULT-2026-10-07.md"
 
-# Jitter may span ALGOVAULT_BOT_JITTER_WINDOW_MIN (default 3) minutes, plus one 60s scheduler
-# tick. 300s leaves headroom above that 240s legitimate spread without masking a real drift,
-# which grows by ~60s per period and blows past it within a few bars.
-SCATTER_THRESHOLD=300
-
-# stdout ONLY. The cron line already redirects stdout to $LOG, so tee-ing here wrote every
-# line TWICE (visible in the 13:44 incident log). One writer, one copy.
+# stdout ONLY: the cron line redirects stdout to $LOG, so tee-ing here would write every line twice.
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
-# ── R5: exactly one terminal verdict token; codes 0=PASS / 1=FAIL / 3=INDETERMINATE ──────────
-# 3 is the token-law default for a NEW gate — deliberately NOT aligned to check_test_baseline's
-# 2, which is 2 only because it already deployed that code for this meaning.
 CLOSEDBAR_VERDICT_EMITTED=0
 emit_verdict() {   # <PASS|FAIL|INDETERMINATE>
   [ "$CLOSEDBAR_VERDICT_EMITTED" -eq 1 ] && return 0
@@ -92,11 +50,7 @@ emit_verdict() {   # <PASS|FAIL|INDETERMINATE>
   esac
 }
 
-# ── R3: sustained-drift gating. A single 2-second excursion is not operator-action-required ──
-# The alert contract's CRITICAL_PERSISTENT shape, matching webhook-delivery-canary.py at 3.
-# The streak file is keyed by alert id so RATCHET and OFFSET_FAULT accrue independently.
-BREACH_DIR=${CLOSEDBAR_BREACH_DIR:-/var/lib/algovault-monitoring/closedbar-breach}
-BREACH_STREAK_REQUIRED=${CLOSEDBAR_BREACH_STREAK:-3}
+# Sustained-breach gating, keyed by alert id so the three ids accrue independently.
 breach_bump() {   # <alert_id> -> the new streak
   local f="$BREACH_DIR/$1"; local n=0
   mkdir -p "$BREACH_DIR" 2>/dev/null || true
@@ -106,463 +60,384 @@ breach_bump() {   # <alert_id> -> the new streak
 }
 breach_clear() { rm -f "$BREACH_DIR"/* 2>/dev/null || true; }
 
-# ── pure helpers (exercised hermetically by --self-test) ─────────────────────
+# 'YYYY-MM-DD HH:MM' (UTC) for an epoch — GNU date on the host, BSD date on a laptop.
+iso_from_epoch() {   # <epoch>
+  case "${1:-}" in ''|*[!0-9]*) printf '?'; return 1;; esac
+  date -u -d "@$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -u -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null \
+    || printf '?'
+}
 
-# Accepts either an all-digit epoch or SQLite's 'YYYY-MM-DD HH:MM:SS' TEXT. Empty on failure.
-iso_to_epoch() {
-  local v="${1:-}"
-  [ -z "$v" ] && { printf ''; return 1; }
-  case "$v" in
-    *[!0-9]*) ;;                      # has non-digits -> parse as a datetime
-    *) printf '%s' "$v"; return 0 ;;  # already an epoch
+# ── the route table: the auditor's verdict → this probe's class (exhaustive) ─────────────────
+route_for() {
+  case "$1" in
+    OK) printf 'PASS';;
+    INDETERMINATE) printf 'INDETERMINATE';;
+    TIMING_FAULT) printf 'OFFSET_FAULT';;
+    DEPLOY_REGRESSION) printf 'RATCHET';;
+    CHRONIC_LATE) printf 'CHRONIC_LATE';;
+    *) printf 'UNKNOWN';;
   esac
-  # GNU (the Hetzner host) first, then BSD/macOS — the committed copy has to be runnable
-  # from a laptop too, or "there is a committed ancestor" is true but useless. Third
-  # BSD-portability bug in this guard layer after `wc -l` and `mktemp`'s XXXXXX.
-  date -u -d "$v UTC" +%s 2>/dev/null \
-    || date -u -j -f '%Y-%m-%d %H:%M:%S' "$v" +%s 2>/dev/null \
-    || printf ''
 }
 
-# OPS-BOT-DISPATCH-LATENCY-W1 CH1c — WHICH BAR did a given fire belong to?
-# Returns the minute-of-hour at which that bar OPENED. Pure arithmetic on the instant, so it
-# is exercised by --self-test rather than being one of the seams the hermetic suite is blind to.
-bar_open_minute() {   # <epoch> <period_seconds> -> 0..59, empty on bad input
-  local e="${1:-}" p="${2:-}"
-  # Each argument checked SEPARATELY. Concatenating them first ("$e$p") is why the first
-  # revision of this helper returned 0 for an EMPTY epoch: '' + '900' is all digits, so the
-  # guard passed and the caller read minute 0 — i.e. "contended" — and would have certified a
-  # run that had no sample at all. Caught by the assertion below on its first execution.
-  case "$e" in ''|*[!0-9]*) printf ''; return 1 ;; esac
-  case "$p" in ''|*[!0-9]*) printf ''; return 1 ;; esac
-  [ "$p" -le 0 ] && { printf ''; return 1; }
-  printf '%s' "$(( (e - e % p) % 3600 / 60 ))"
-}
-
-secs_into_bar() {   # <timestamp|epoch> <period_seconds>
-  local e; e=$(iso_to_epoch "${1:-}") || { printf ''; return 1; }
-  [ -z "$e" ] && { printf ''; return 1; }
-  printf '%s' "$(( e % ${2} ))"
-}
-
-# ── The expected band is DERIVED from the bot's live dispatch config ─────────
-# SIGNAL-CLOSEDBAR-FLIP-W1 CH5. This used to hardcode "late is >= 2/3 of the bar, which is
-# where OFFSET_PCT=75 plus grace and jitter lands". That literal was correct only for the
-# offset in force when it was written, and the flip moved OFFSET_PCT 75 -> 0 — which would
-# have made EVERY correct post-flip fire (now ~1/60 of the bar in) read as OFFSET_FAULT. A
-# guard that pages on correct behaviour gets muted, and a muted guard is worse than none.
-#
-# So the band is a FUNCTION of the same knobs the dispatcher reads, taken from the bot's own
-# env file. Change the offset and this follows; there is no second copy to update.
-BOT_ENV=${CLOSEDBAR_BOT_ENV:-/etc/algovault-bot/env}
-_bot_cfg() {   # <VAR> <default>  — default applies when the file or key is unreadable
-  local v=""
-  [ -r "$BOT_ENV" ] && v=$(grep -E "^$1=" "$BOT_ENV" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\'' ')
-  case "$v" in (''|*[!0-9]*) printf '%s' "$2";; (*) printf '%s' "$v";; esac
-}
-# Named, so the self-test can assert the ACTUAL fallback rather than re-supplying its own —
-# an unreadable env must never fall back to a band that pages on correct behaviour.
-DEFAULT_OFFSET_PCT=0
-DEFAULT_GRACE_MIN=1
-DEFAULT_JITTER_WINDOW_MIN=3
-OFFSET_PCT=${CLOSEDBAR_OFFSET_PCT:-$(_bot_cfg ALGOVAULT_BOT_DISPATCH_OFFSET_PCT "$DEFAULT_OFFSET_PCT")}
-GRACE_MIN=${CLOSEDBAR_GRACE_MIN:-$(_bot_cfg ALGOVAULT_BOT_CLOSE_GRACE_MIN "$DEFAULT_GRACE_MIN")}
-# OPS-CLOSEDBAR-LIVENESS-BAND-W1 R0.5: the previous revision read
-# `ALGOVAULT_BOT_DISPATCH_JITTER_MIN`, WHICH DOES NOT EXIST. The bot reads
-# `ALGOVAULT_BOT_JITTER_WINDOW_MIN` (dispatch_schedule.py ENV_JITTER_WINDOW_MIN, default 3), so
-# this silently fell back to 1 while production ran 3 — the upper bound came out 180 instead of
-# 240 and the guard paged on correct dispatch. Read the name the PRODUCER reads.
-JITTER_WINDOW_MIN=${CLOSEDBAR_JITTER_WINDOW_MIN:-$(_bot_cfg ALGOVAULT_BOT_JITTER_WINDOW_MIN "$DEFAULT_JITTER_WINDOW_MIN")}
-TICK_SECONDS=60   # OnCalendar=*:*:00 — the scheduler grid, so a due time rounds UP to it
-
-# `--show-config` exists so the self-test can exercise the ASSIGNMENTS above against a fixture
-# env file. Without it the suite is structurally blind to the seam it replaces: it sets
-# OFFSET_PCT/GRACE_MIN/JITTER_WINDOW_MIN directly, so reverting a variable NAME to one that does
-# not exist stayed GREEN — which is precisely the defect this wave exists to fix (the guard read
-# ALGOVAULT_BOT_DISPATCH_JITTER_MIN, a name nothing writes, and silently used its default).
-if [ "${1:-}" = "--show-config" ]; then
-  printf 'OFFSET_PCT=%s GRACE_MIN=%s JITTER_WINDOW_MIN=%s\n' "$OFFSET_PCT" "$GRACE_MIN" "$JITTER_WINDOW_MIN"
-  exit 0
-fi
-
-# ── The band is derived from the instant we MEASURE, not the instant dispatch is DUE ─────────
-# OPS-CLOSEDBAR-LIVENESS-BAND-W1 R1. `last_fetched_at` is stamped AFTER the fetch + MCP call +
-# send; the schedule says when the work STARTS. A band built from pure scheduling arithmetic can
-# never accommodate a nonzero work time, so it is STRUCTURALLY guaranteed to overshoot on every
-# jitter-max row, forever. That is what paged CRITICAL on [63 182 182] and [67 187 188] — both
-# correct, each a due-time plus a few seconds of execution.
-#
-# MEASURED 2026-08-07, 44 fires across 5 timeframes, hand-computed from raw TEXT-ISO stamps:
-#   p50 = +6s   p95 = +8s   max = +8s   min = +2s   rows below the minimum due-time = 0
-#
-# The allowance is 30s. NOT a round number chosen to silence the alarm: it is ~3.7x the measured
-# p95, and it is bounded ABOVE by a principled constraint — it must stay under HALF a jitter step
-# (60/2 = 30) so consecutive due-time intervals can never merge. Keep that inequality true if it
-# is ever revised, or the grid degenerates into one wide band and stops discriminating.
-DISPATCH_LATENCY_ALLOWANCE_SECONDS=${CLOSEDBAR_LATENCY_ALLOWANCE:-30}
-
-# The DUE-TIME GRID: dispatch is due at offset + grace + j*60 for each jitter draw j < window.
-due_times() {   # <period> -> space-separated due-times inside the bar
-  local base=$(( $1 * OFFSET_PCT / 100 + GRACE_MIN * 60 )) j d out=""
-  j=0
-  while [ "$j" -lt "$JITTER_WINDOW_MIN" ]; do
-    d=$(( base + j * 60 ))
-    [ "$d" -lt "$1" ] && out="$out $d"
-    j=$((j + 1))
-  done
-  printf '%s' "${out# }"
-}
-
-# On design iff the measured offset lands in [due, due + allowance] for SOME due-time.
-# Deliberately a GRID rather than one wide [min, max+allowance] band: the grid still rejects a
-# value sitting BETWEEN two due-times, which a single band cannot.
-offset_on_grid() {   # <period> <offset> -> rc 0 on design
-  local d
-  for d in $(due_times "$1"); do
-    if [ "$2" -ge "$d" ] && [ "$2" -le $(( d + DISPATCH_LATENCY_ALLOWANCE_SECONDS )) ]; then return 0; fi
-  done
-  return 1
-}
-
-# R2: direction is decided against the GRID, never hardcoded. The previous revision emitted the
-# word "early" unconditionally, so 182 against an upper bound of 180 was reported as EARLY.
-offset_direction() {   # <period> <offset> -> on-design | early | late | off-grid
-  if offset_on_grid "$1" "$2"; then printf 'on-design'; return 0; fi
-  local grid; grid=$(due_times "$1")
-  local lo=${grid%% *} hi=${grid##* }
-  if   [ "$2" -lt "$lo" ]; then printf 'early'
-  elif [ "$2" -gt $(( hi + DISPATCH_LATENCY_ALLOWANCE_SECONDS )) ]; then printf 'late'
-  else printf 'off-grid'; fi
-}
-
-# <period> <offset…> -> OK | OFFSET_FAULT | RATCHET | INSUFFICIENT
-classify_offsets() {
-  local period="$1"; shift
-  local n=0 min=-1 max=-1 ondesign=0 o
-  for o in "$@"; do
-    [ -z "$o" ] && continue
-    n=$((n + 1))
-    [ "$min" -lt 0 ] && min=$o
-    [ "$o" -lt "$min" ] && min=$o
-    [ "$o" -gt "$max" ] && max=$o
-    if offset_on_grid "$period" "$o"; then ondesign=$((ondesign + 1)); fi
-  done
-  [ "$n" -eq 0 ] && { printf 'INSUFFICIENT'; return 0; }
-  [ "$ondesign" -eq "$n" ] && { printf 'OK'; return 0; }
-  if [ $(( max - min )) -gt "$SCATTER_THRESHOLD" ]; then printf 'RATCHET'; else printf 'OFFSET_FAULT'; fi
-}
-
-# recommended_wave is TEMPLATED — a literal wave number in this field is HALT-class, and it
-# must never resolve to the basis-flip wave, whose remedy is the opposite of this one.
+# recommended_wave is TEMPLATED (`W{NEXT}`), one distinct wave per alert id.
 alert_id_for() {
   case "$1" in
     RATCHET) printf 'CLOSEDBAR_DISPATCH_RATCHET_REGRESSION';;
     OFFSET_FAULT) printf 'CLOSEDBAR_DISPATCH_OFFSET_FAULT';;
+    CHRONIC_LATE) printf 'CLOSEDBAR_DISPATCH_CHRONIC_LATE';;
   esac
 }
 recommended_wave_for() {
   case "$1" in
     RATCHET) printf 'OPS-CLOSEDBAR-DISPATCH-RATCHET-INCIDENT-W{NEXT}';;
     OFFSET_FAULT) printf 'OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W{NEXT}';;
+    CHRONIC_LATE) printf 'OPS-BOT-FETCH-DEGRADATION-INCIDENT-W{NEXT}';;
   esac
 }
 
-fail() {   # <verdict: RATCHET|OFFSET_FAULT> <detail>
-  local verdict="$1"; shift
-  local aid; aid=$(alert_id_for "$verdict")
-  local wave; wave=$(recommended_wave_for "$verdict")
-  local streak; streak=$(breach_bump "$aid")
-  log "BREACH [$aid] streak=${streak}/${BREACH_STREAK_REQUIRED} — $*"
+if [ "${1:-}" = "--print-routes" ]; then
+  for v in $PINNED_VERDICTS; do printf '%s\n' "$v"; done
+  exit 0
+fi
+
+# ── reading the auditor's line protocol (prefix-keyed, no JSON in bash) ─────────────────────
+AUDIT_OUT=""
+SENTENCE=""
+
+proto_lines() {   # <prefix> -> every line of the auditor's output starting with it
+  printf '%s\n' "$AUDIT_OUT" | grep -E "^$1" || true
+}
+kv() {   # <line> <key> -> the value of key=value in a protocol line
+  printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1
+}
+
+# AUDIT_ROW lines whose verdict is a page (not OK, not unjudged).
+offender_rows() {
+  proto_lines 'AUDIT_ROW ' | grep -vE ' verdict=(OK|none)$' || true
+}
+
+render_offender() {   # <AUDIT_ROW line>
+  local l="$1" cls
+  cls=$(printf '%s\n' "$l" | awk '{print $2}')
+  printf '  chat …%s %s — %s cause=%s · first tick due+%ss · %s late tick(s) · +%ss exec\n' \
+    "$(kv "$l" last4)" "$(printf '%s\n' "$l" | awk '{print $7}')" "$cls" "$(kv "$l" cause)" \
+    "$(kv "$l" lag0)" "$(kv "$l" late_ticks)" "$(kv "$l" exec)"
+}
+
+summary_total() {   # <field> -> the field summed over every AUDIT_SUMMARY line
+  proto_lines 'AUDIT_SUMMARY ' | tr ' ' '\n' | sed -n "s/^$1=//p" | awk '{s+=$1} END {print s+0}'
+}
+
+render_body() {   # <alert_id> <streak> <wave>
+  local aid="$1" streak="$2" wave="$3" offenders n judged sha config line
+  offenders=$(offender_rows)
+  n=$(printf '%s' "$offenders" | grep -c . || true)
+  judged=$(summary_total judged)
+  sha=$(sed -n 's/^sha=//p' "$(dirname "$DEPLOY_STAMP")/DEPLOYED_SHA" 2>/dev/null | cut -c1-8)
+  config=$(proto_lines 'AUDIT_CONFIG ' | head -1 | sed 's/^AUDIT_CONFIG //')
+  printf '🛑 %s\n\n%s\n\nSustained: %s consecutive checks\n' "$aid" "$SENTENCE" "$streak"
+  proto_lines 'AUDIT_SUMMARY ' | while IFS= read -r line; do
+    [ "$(kv "$line" offenders)" = "0" ] && continue
+    printf 'Audited: %s bar %sZ\n' "$(kv "$line" tf)" "$(iso_from_epoch "$(kv "$line" bar)")"
+  done
+  if [ "$n" -gt 0 ]; then
+    printf 'Offenders (%s of %s judged):\n' "$n" "$judged"
+    printf '%s\n' "$offenders" | head -n "$OFFENDER_CAP" | while IFS= read -r line; do
+      render_offender "$line"
+    done
+    [ "$n" -gt "$OFFENDER_CAP" ] && printf '  …and %s more\n' $(( n - OFFENDER_CAP ))
+  fi
+  printf 'Explained, not paged: fetch_failed %s · errored %s · deferred %s (owner: fetch-budget saturation alarm) · skipped %s · first fetch %s\n' \
+    "$(summary_total fetch_failed)" "$(summary_total errored)" "$(summary_total deferred)" \
+    "$(summary_total skipped)" "$(summary_total first)"
+  printf 'Config: %s\n' "${config:-not reported}"
+  printf 'Auditor: algovault_bot.dispatch_audit @ bot %s\n' "${sha:-unknown}"
+  printf 'Audit: %s\nProbe: %s\n\nAction: dispatch %s via Cowork → Claude Code\n' \
+    "$INCIDENT_AUDIT" "$0" "$wave"
+}
+
+# Only what was MEASURED: the verdict, and the offending classes with their counts.
+class_counts() {
+  offender_rows | awk '{print $2}' | sort | uniq -c \
+    | awk '{printf "%s%s %s", sep, $1, $2; sep=", "}'
+}
+sentence_for() {   # <class>
+  local counts; counts=$(class_counts)
+  case "$1" in
+    OFFSET_FAULT)
+      if [ -n "$counts" ]; then
+        printf "The dispatcher's own record cannot explain these due rows (%s): no recorded deferral, retry, skip or first fetch accounts for them." "$counts"
+      else
+        printf "The bot's dispatch config was rejected or disagrees with what the dispatcher recorded (see Config) — the producer is not running the schedule its env file declares."
+      fi;;
+    RATCHET)
+      if [ -n "$(proto_lines 'AUDIT_REASON=schema_missing' | head -1)" ]; then
+        printf "state.db has no dispatch_ledger table: the running bot predates the ledger or its migration did not run."
+      elif [ -n "$counts" ]; then
+        printf "The dispatcher's record is missing, or the stamps contradict it (%s): a dark dispatcher, an absent ledger writer, or a second writer of last_fetched_at." "$counts"
+      else
+        printf "The dispatcher's record is missing for every due row of an audited bar."
+      fi;;
+    CHRONIC_LATE)
+      printf "Due rows are chronically late or slow (%s): late for a fetch failure, an exception or a give-up in 3 consecutive serviced buckets, or more than 30 s of execution after the tick." "$counts";;
+  esac
+}
+
+fail() {   # <RATCHET|OFFSET_FAULT|CHRONIC_LATE>
+  local cls="$1" aid wave streak
+  aid=$(alert_id_for "$cls")
+  wave=$(recommended_wave_for "$cls")
+  [ -n "$SENTENCE" ] || SENTENCE=$(sentence_for "$cls")
+  streak=$(breach_bump "$aid")
+  log "BREACH [$aid] streak=${streak}/${BREACH_STREAK_REQUIRED} — $SENTENCE"
   if [ "$streak" -lt "$BREACH_STREAK_REQUIRED" ]; then
-    log "CHECK1 breach recorded but NOT paged — ${streak}/${BREACH_STREAK_REQUIRED} consecutive. A single excursion is not operator-action-required."
+    log "breach recorded but NOT paged — ${streak}/${BREACH_STREAK_REQUIRED} consecutive. A single excursion is not operator-action-required."
+    log "DONE breach ${streak}/${BREACH_STREAK_REQUIRED} [$aid]"
     emit_verdict FAIL
   fi
-  printf '🛑 %s\n\n%s\n\nSustained: %s consecutive checks\nRow: chat %s %s/%s/%s\nMeasured: [%s] into the %ss bar\nOn design: due-times [%s] each +0..%ss execution latency\nConfig: OFFSET_PCT=%s grace=%smin jitter_window=%smin tick=%ss\nProbe: %s\n\nAction: dispatch %s via Cowork → Claude Code\n' \
-    "$aid" "$*" "$streak" "$CHAT_ID" "$COIN" "$TF" "$EXCHANGE" \
-    "${PEER_OFFSETS[*]:-n/a}" "$TF_SECONDS" \
-    "$(due_times "$TF_SECONDS")" "$DISPATCH_LATENCY_ALLOWANCE_SECONDS" \
-    "$OFFSET_PCT" "$GRACE_MIN" "$JITTER_WINDOW_MIN" "$TICK_SECONDS" "$0" "$wave" \
-    | "$TG" "$aid" CRITICAL_PERSISTENT - || true
+  render_body "$aid" "$streak" "$wave" | "$TG" "$aid" CRITICAL_PERSISTENT - || true
+  log "DONE paged [$aid]"
   emit_verdict FAIL
 }
 
-# ── --self-test: hermetic, no DB, no host access, vacuity-guarded ────────────
+# A run that could not get a verdict out of the auditor. Inside the realignment window after a bot
+# deploy that is INDETERMINATE; outside it the guard is blind, which pages RATCHET with the reason.
+route_failure() {   # <reason>
+  if [ "$DEPLOY_EPOCH" -gt 0 ] && [ $(( NOW - DEPLOY_EPOCH )) -lt "$REALIGN_WINDOW_SECONDS" ]; then
+    log "INDETERMINATE — $1 — inside the ${REALIGN_WINDOW_SECONDS}s window after the bot deploy; not paging"
+    log "DONE realigning"
+    emit_verdict INDETERMINATE
+  fi
+  SENTENCE="The dispatch-timing auditor could not deliver a verdict: $1. The guard is blind until it can — check the bot deploy (it ships the auditor) first."
+  fail RATCHET
+}
+
+run_auditor() {
+  # shellcheck disable=SC2086 # AUDITOR is a command line and is word-split on purpose
+  PYTHONDONTWRITEBYTECODE=1 $AUDITOR "$@"
+}
+
+# ── --self-test: hermetic, drives the LIVE path as a subprocess, vacuity-guarded ─────────────
 self_test() {
   local pass=0 fire=0 nofire=0 map=0 failures=0
-  check() {  # <label> <expected> <actual>
-    if [ "$2" = "$3" ]; then pass=$((pass + 1));
+  check() {   # <label> <expected> <actual>
+    if [ "$2" = "$3" ]; then pass=$((pass + 1))
     else echo "  FAIL $1: expected '$2' got '$3'"; failures=$((failures + 1)); fi
   }
+  contains() {   # <label> <needle> <haystack>
+    case "$3" in *"$2"*) pass=$((pass + 1));; *) echo "  FAIL $1: '$2' not found"; failures=$((failures + 1));; esac
+  }
+  lacks() {   # <label> <needle> <haystack>
+    case "$3" in *"$2"*) echo "  FAIL $1: '$2' must not appear"; failures=$((failures + 1));; *) pass=$((pass + 1));; esac
+  }
 
-  # must-map: the timestamp shapes that actually occur, ISO and epoch alike.
-  map=$((map + 1)); check "iso->epoch"        "1785575709" "$(iso_to_epoch '2026-08-01 09:15:09')"
-  map=$((map + 1)); check "epoch passthrough" "1785575709" "$(iso_to_epoch '1785575709')"
-  map=$((map + 1)); check "iso secs_into_bar" "9"          "$(secs_into_bar '2026-08-01 09:15:09' 900)"
-  map=$((map + 1)); check "epoch secs_into_bar" "9"        "$(secs_into_bar '1785575709' 900)"
-  # The literal that fired the 2026-08-01 incident, both shapes -> the same 5s.
-  map=$((map + 1)); check "incident iso"      "5"          "$(secs_into_bar '2026-08-01 14:45:05' 900)"
-  map=$((map + 1)); check "incident epoch"    "5"          "$(secs_into_bar '1785595505' 900)"
+  local here repo stub tmp
+  here=$(cd "$(dirname "$0")" && pwd)
+  repo=$(cd "$here/../.." && pwd)
+  stub="$repo/tests/fixtures/closedbar-liveness/stub-auditor.sh"
+  if [ ! -x "$stub" ]; then
+    echo "self-test: stub auditor not found or not executable at $stub"
+    echo "CLOSEDBAR_SELFTEST_VERDICT=INDETERMINATE"; return 3
+  fi
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/closedbar-selftest.XXXXXX") || {
+    echo "self-test: mktemp failed"; echo "CLOSEDBAR_SELFTEST_VERDICT=INDETERMINATE"; return 3; }
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" EXIT
 
-  # OPS-BOT-DISPATCH-LATENCY-W1 CH1c — bar_open_minute. This decides whether a run is
-  # certifying anything at all, so it is asserted here rather than left as one of the seams a
-  # hermetic suite cannot see. 1785595505 = 2026-08-01 14:45:05Z.
-  map=$((map + 1)); check "bar_open :45"      "45"         "$(bar_open_minute 1785595505 900)"
-  map=$((map + 1)); check "bar_open :30"      "30"         "$(bar_open_minute 1785594600 900)"
-  # THE CONTENDED CASE — the only sample that certifies. 1785592800 = 14:00:00Z.
-  map=$((map + 1)); check "bar_open :00"      "0"          "$(bar_open_minute 1785592800 900)"
-  map=$((map + 1)); check "bar_open :00 +2m"  "0"          "$(bar_open_minute 1785592920 900)"
-  # A 1h row's bar always opens at :00, so the arm can never mis-fire on coarse timeframes.
-  map=$((map + 1)); check "bar_open 1h"       "0"          "$(bar_open_minute 1785595505 3600)"
-  # Default-deny on junk: empty, non-numeric, zero period -> empty, never a spurious 0 that
-  # would read as "contended" and silently certify.
-  map=$((map + 1)); check "bar_open empty"    ""           "$(bar_open_minute '' 900)"
-  map=$((map + 1)); check "bar_open nonnum"   ""           "$(bar_open_minute 'abc' 900)"
-  map=$((map + 1)); check "bar_open zero per" ""           "$(bar_open_minute 1785592800 0)"
-  # A T-separated stamp must NOT silently parse to something plausible-but-wrong.
-  map=$((map + 1)); check "unparseable -> empty" ""        "$(secs_into_bar 'not-a-timestamp' 900)"
+  # The capture stands in for send_telegram.sh: records argv and the body, never sends.
+  cat > "$tmp/tg.sh" <<'TGEOF'
+#!/usr/bin/env bash
+n=$(ls "$CAPTURE_DIR" 2>/dev/null | wc -l | tr -d ' ')
+{ printf 'ARGV %s|%s|%s\n' "$1" "$2" "$3"; cat; } > "$CAPTURE_DIR/page.$n"
+TGEOF
+  chmod +x "$tmp/tg.sh"
+  printf '%s\n' "$(( $(date -u +%s) - 86400 ))" > "$tmp/DEPLOYED_AT"
+  printf 'sha=%s\nunmerged=false\n' "0123abcd4567ef89" > "$tmp/DEPLOYED_SHA"
+  mkdir -p "$tmp/fresh"
+  printf '%s\n' "$(( $(date -u +%s) - 60 ))" > "$tmp/fresh/DEPLOYED_AT"
+  : > "$tmp/env"
 
-  # ── The GRID follows the config, and THAT is the property under test ───────
-  # Each scenario names the dispatch regime it exercises. The band is a DUE-TIME GRID plus a
-  # measured latency allowance, so the same fixture must flip verdict when the config moves —
-  # a re-hardcoded band passes one half and fails the other.
-  _cfg_saved="$OFFSET_PCT $GRACE_MIN $JITTER_WINDOW_MIN"
-  _with_cfg() { OFFSET_PCT=$1; GRACE_MIN=$2; JITTER_WINDOW_MIN=$3; }
+  SC_OUT=""; SC_RC=0; SC_PAGE=""
+  run_live() {   # <scenario> <streak_required> <keep_breach:0|1> [auditor] [deploy_stamp]
+    rm -rf "$tmp/cap"; mkdir -p "$tmp/cap"
+    [ "$3" = "1" ] || rm -rf "$tmp/breach"
+    # `-u PYTHONDONTWRITEBYTECODE`: an inherited value would satisfy the bytecode assertion on
+    # behalf of a probe that no longer sets it (measured: this Mac's session exports it).
+    SC_OUT=$(env -u PYTHONDONTWRITEBYTECODE CLOSEDBAR_AUDITOR="${4:-$stub}" STUB_SCENARIO="$1" STUB_ARGV_FILE="$tmp/argv" \
+      CLOSEDBAR_TG="$tmp/tg.sh" CAPTURE_DIR="$tmp/cap" CLOSEDBAR_BREACH_DIR="$tmp/breach" \
+      CLOSEDBAR_BREACH_STREAK="$2" CLOSEDBAR_DEPLOY_STAMP="${5:-$tmp/DEPLOYED_AT}" \
+      CLOSEDBAR_DB="$tmp/state.db" CLOSEDBAR_BOT_ENV="$tmp/env" bash "$0" 2>&1)
+    SC_RC=$?
+    SC_PAGE=""
+    [ -f "$tmp/cap/page.0" ] && SC_PAGE=$(cat "$tmp/cap/page.0")
+    return 0
+  }
+  token() { printf '%s\n' "$SC_OUT" | sed -n 's/^CLOSEDBAR_LIVENESS_VERDICT=//p' | tail -1; }
+  tokens() { printf '%s\n' "$SC_OUT" | grep -c '^CLOSEDBAR_LIVENESS_VERDICT=' || true; }
 
-  # POST-FLIP: OFFSET_PCT=0, grace 1, window 3 -> due {60,120,180}, allowance 30
-  #   => on design = [60,90] u [120,150] u [180,210]
-  _with_cfg 0 1 3
-  map=$((map + 1));    check "post-flip 900s grid"  "60 120 180" "$(due_times 900)"
-  # THE REGRESSION FIXTURES: the two payloads that actually paged CRITICAL on correct dispatch.
-  nofire=$((nofire + 1)); check "real alert [63 182 182] -> OK"  "OK" "$(classify_offsets 900 63 182 182)"
-  nofire=$((nofire + 1)); check "real alert [67 187 188] -> OK"  "OK" "$(classify_offsets 900 67 187 188)"
-  nofire=$((nofire + 1)); check "exact due-times -> OK"          "OK" "$(classify_offsets 900 60 120 180)"
-  nofire=$((nofire + 1)); check "p95 latency on every due -> OK" "OK" "$(classify_offsets 900 68 128 188)"
-  fire=$((fire + 1));  check "before the first due -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 5 6 5)"
-  fire=$((fire + 1));  check "past the last due+allowance -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 824 824 824)"
-  # R2: the direction label, per case. 182 is LATE-of-180 only if it exceeds the allowance;
-  # inside the allowance it is ON DESIGN. This is the label that was hardcoded to "early".
-  map=$((map + 1)); check "direction: below the grid"      "early"     "$(offset_direction 900 5)"
-  map=$((map + 1)); check "direction: on a due-time"       "on-design" "$(offset_direction 900 180)"
-  map=$((map + 1)); check "direction: within allowance"    "on-design" "$(offset_direction 900 182)"
-  map=$((map + 1)); check "direction: past last+allowance" "late"      "$(offset_direction 900 824)"
-  map=$((map + 1)); check "direction: BETWEEN due-times"   "off-grid"  "$(offset_direction 900 100)"
-  # The grid must still reject a value between due-times — the property one wide band loses.
-  fire=$((fire + 1)); check "between due-times -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 100 100 100)"
-  # The allowance must stay under HALF a jitter step or the intervals merge.
-  map=$((map + 1)); check "allowance < half a jitter step" "ok" \
-    "$([ "$DISPATCH_LATENCY_ALLOWANCE_SECONDS" -lt 30 ] || [ "$DISPATCH_LATENCY_ALLOWANCE_SECONDS" -eq 30 ] && echo ok || echo MERGED)"
+  # must-fire: each reaches the pager with the right id AND wave, offenders rendered, last4 only.
+  expect_page() {   # <label> <scenario> <alert_id> <wave> <needle> [auditor]
+    run_live "$2" 1 0 "${6:-}"
+    fire=$((fire + 1))
+    check "$1: token" "FAIL" "$(token)"
+    check "$1: exit 1" "1" "$SC_RC"
+    check "$1: one token" "1" "$(tokens)"
+    contains "$1: paged with its id" "ARGV $3|CRITICAL_PERSISTENT|-" "$SC_PAGE"
+    contains "$1: names its own wave" "Action: dispatch $4 via Cowork" "$SC_PAGE"
+    contains "$1: says why" "$5" "$SC_PAGE"
+  }
+  expect_page "timing fault" timing_fault CLOSEDBAR_DISPATCH_OFFSET_FAULT \
+    'OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W{NEXT}' "2 LATE_UNEXPLAINED"
+  contains "timing fault: offender rendered" "chat …0240 XAU/15m/BINANCE — LATE_UNEXPLAINED" "$SC_PAGE"
+  contains "timing fault: offenders counted" "Offenders (2 of 14 judged):" "$SC_PAGE"
+  contains "timing fault: bar rendered" "Audited: 15m bar " "$SC_PAGE"
+  contains "timing fault: explained not paged" "deferred 3 (owner: fetch-budget saturation alarm)" "$SC_PAGE"
+  contains "timing fault: config line" "Config: OFFSET_PCT=0→0" "$SC_PAGE"
+  contains "timing fault: auditor provenance" "Auditor: algovault_bot.dispatch_audit @ bot 0123abcd" "$SC_PAGE"
+  lacks "timing fault: no full chat id (R8)" "$(printf '%s%s' 77123 40240)" "$SC_PAGE"
+  lacks "timing fault: an explained row is not an offender" "ETH/15m/HL" "$SC_PAGE"
+  expect_page "deploy regression" deploy_regression CLOSEDBAR_DISPATCH_RATCHET_REGRESSION \
+    'OPS-CLOSEDBAR-DISPATCH-RATCHET-INCIDENT-W{NEXT}' "UNPROVENANCED"
+  expect_page "chronic late" chronic_late CLOSEDBAR_DISPATCH_CHRONIC_LATE \
+    'OPS-BOT-FETCH-DEGRADATION-INCIDENT-W{NEXT}' "chronically late"
+  contains "chronic late: offender rendered" "chat …6131 XAU/15m/BINGX — LATE_EXPLAINED cause=fetch_failed" "$SC_PAGE"
+  expect_page "auditor missing" ok CLOSEDBAR_DISPATCH_RATCHET_REGRESSION \
+    'OPS-CLOSEDBAR-DISPATCH-RATCHET-INCIDENT-W{NEXT}' "auditor not executable" "$tmp/absent-auditor"
+  expect_page "no token" no_token CLOSEDBAR_DISPATCH_RATCHET_REGRESSION \
+    'OPS-CLOSEDBAR-DISPATCH-RATCHET-INCIDENT-W{NEXT}' "printed no verdict token"
+  expect_page "crash" crash CLOSEDBAR_DISPATCH_RATCHET_REGRESSION \
+    'OPS-CLOSEDBAR-DISPATCH-RATCHET-INCIDENT-W{NEXT}' "the auditor crashed: AUDIT_ERROR OperationalError"
+  expect_page "unknown token" unknown_token CLOSEDBAR_DISPATCH_RATCHET_REGRESSION \
+    'OPS-CLOSEDBAR-DISPATCH-RATCHET-INCIDENT-W{NEXT}' "outside the probe's pinned list: SOMETHING_NEW"
+  expect_page "route-list mismatch" route_mismatch CLOSEDBAR_DISPATCH_RATCHET_REGRESSION \
+    'OPS-CLOSEDBAR-DISPATCH-RATCHET-INCIDENT-W{NEXT}' "route list differs"
+  expect_page "schema missing" schema_missing CLOSEDBAR_DISPATCH_RATCHET_REGRESSION \
+    'OPS-CLOSEDBAR-DISPATCH-RATCHET-INCIDENT-W{NEXT}' "no dispatch_ledger table"
+  expect_page "offender cap" many_offenders CLOSEDBAR_DISPATCH_OFFSET_FAULT \
+    'OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W{NEXT}' "…and 2 more"
 
-  # PRE-FLIP: OFFSET_PCT=75, grace 1, window 3 -> due {735,795,855}. Same fixtures, inverted.
-  _with_cfg 75 1 3
-  map=$((map + 1));    check "pre-flip 900s grid" "735 795 855" "$(due_times 900)"
-  nofire=$((nofire + 1)); check "pre-flip on-grid -> OK" "OK" "$(classify_offsets 900 735 795 855)"
-  nofire=$((nofire + 1)); check "pre-flip +latency -> OK" "OK" "$(classify_offsets 900 740 800 860)"
-  fire=$((fire + 1)); check "pre-flip bar-close cluster -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 5 6 5)"
-  fire=$((fire + 1)); check "pre-flip mid-bar cluster -> OFFSET_FAULT"   "OFFSET_FAULT" "$(classify_offsets 900 300 310 295)"
-  # The post-flip fixture must be REFUSED under the pre-flip config — proof the grid moved.
-  fire=$((fire + 1)); check "post-flip payload under pre-flip cfg -> OFFSET_FAULT" "OFFSET_FAULT" \
-    "$(classify_offsets 900 63 182 182)"
+  # must-not-fire: designed recovery and unjudged runs never reach the pager.
+  expect_quiet() {   # <label> <scenario> <token> <exit> [auditor] [deploy_stamp]
+    run_live "$2" 1 0 "${5:-}" "${6:-}"
+    nofire=$((nofire + 1))
+    check "$1: token" "$3" "$(token)"
+    check "$1: exit" "$4" "$SC_RC"
+    check "$1: one token" "1" "$(tokens)"
+    check "$1: nothing paged" "" "$SC_PAGE"
+  }
+  expect_quiet "ok" ok PASS 0
+  expect_quiet "explained only" explained PASS 0
+  expect_quiet "deferred only" deferred_only PASS 0
+  expect_quiet "insufficient" insufficient INDETERMINATE 3
+  expect_quiet "auditor missing inside the realignment window" ok INDETERMINATE 3 \
+    "$tmp/absent-auditor" "$tmp/fresh/DEPLOYED_AT"
 
-  # Scatter dominates under either regime.
-  _with_cfg 0 1 3
-  fire=$((fire + 1)); check "incident scatter -> RATCHET (post-flip)" "RATCHET" "$(classify_offsets 900 184 184 844)"
-  _with_cfg 75 1 3
-  fire=$((fire + 1)); check "incident scatter -> RATCHET (pre-flip)"  "RATCHET" "$(classify_offsets 900 184 184 844)"
-  fire=$((fire + 1)); check "wide scatter -> RATCHET"                 "RATCHET" "$(classify_offsets 900 5 450 880)"
+  # The SEAM: what the live path actually hands the auditor. A hermetic suite is blind to exactly
+  # what its stub replaces, so the invocation itself is asserted.
+  run_live ok 1 0
+  map=$((map + 1))
+  local argv; argv=$(cat "$tmp/argv" 2>/dev/null)
+  contains "argv: bytecode off" "PYTHONDONTWRITEBYTECODE=1 " "$argv"
+  contains "argv: db" "--db $tmp/state.db --tf all --now " "$argv"
+  contains "argv: env file" "--env-file $tmp/env" "$argv"
+  check "argv: now and deploy epoch are numbers" "ok" \
+    "$(printf '%s\n' "$argv" | grep -Eq -- '--now [0-9]+ --deploy-epoch [0-9]+ ' && echo ok || echo bad)"
 
-  # Absent-env fallbacks: asserted against the REAL call-site constants, not re-supplied here.
-  map=$((map + 1)); check "absent-env default offset is post-flip" "0" "$DEFAULT_OFFSET_PCT"
-  map=$((map + 1)); check "absent-env default grace"               "1" "$DEFAULT_GRACE_MIN"
-  map=$((map + 1)); check "absent-env default jitter WINDOW"       "3" "$DEFAULT_JITTER_WINDOW_MIN"
-  map=$((map + 1)); check "_bot_cfg falls back when file absent"   "7" \
-    "$( BOT_ENV=/nonexistent _bot_cfg ALGOVAULT_BOT_JITTER_WINDOW_MIN 7 )"
+  # Sustain gate: 1/3 and 2/3 do not page, 3/3 does, a PASS clears, the next breach is 1/3 again.
+  nofire=$((nofire + 1)); run_live timing_fault 3 0; check "sustain 1/3 silent" "" "$SC_PAGE"
+  contains "sustain 1/3 logged" "streak=1/3" "$SC_OUT"
+  nofire=$((nofire + 1)); run_live timing_fault 3 1; check "sustain 2/3 silent" "" "$SC_PAGE"
+  fire=$((fire + 1)); run_live timing_fault 3 1
+  contains "sustain 3/3 pages" "ARGV CLOSEDBAR_DISPATCH_OFFSET_FAULT|CRITICAL_PERSISTENT|-" "$SC_PAGE"
+  contains "sustain 3/3 says so" "Sustained: 3 consecutive checks" "$SC_PAGE"
+  run_live ok 3 1
+  map=$((map + 1)); check "a PASS clears every streak" "0" "$(ls "$tmp/breach" 2>/dev/null | wc -l | tr -d ' ')"
+  nofire=$((nofire + 1)); run_live timing_fault 3 1; check "after a PASS the count restarts" "" "$SC_PAGE"
 
-  # THE SEAM ITSELF: a fixture written in the BOT's vocabulary must flow through the real
-  # assignment lines. This is the assertion whose absence let the wrong variable name ship.
-  _envf=$(mktemp)
-  printf 'ALGOVAULT_BOT_DISPATCH_OFFSET_PCT=11\nALGOVAULT_BOT_CLOSE_GRACE_MIN=2\nALGOVAULT_BOT_JITTER_WINDOW_MIN=7\n' > "$_envf"
-  map=$((map + 1)); check "reads the knob NAMES the bot writes" "OFFSET_PCT=11 GRACE_MIN=2 JITTER_WINDOW_MIN=7" \
-    "$( CLOSEDBAR_BOT_ENV="$_envf" bash "$0" --show-config )"
-  # and a file written in a vocabulary NOTHING produces must fall back, not silently half-resolve
-  _envbad=$(mktemp)
-  printf 'ALGOVAULT_BOT_DISPATCH_JITTER_MIN=7\n' > "$_envbad"
-  map=$((map + 1)); check "a non-existent knob name yields the DEFAULT" "OFFSET_PCT=0 GRACE_MIN=1 JITTER_WINDOW_MIN=3" \
-    "$( CLOSEDBAR_BOT_ENV="$_envbad" bash "$0" --show-config )"
-  rm -f "$_envf" "$_envbad"
-
-  # ── R5: the token AND its exit-code MAPPING. Asserting the token alone is not enough —
-  # a prior self-test in this family passed while the INDETERMINATE mapping had been re-coded
-  # to 0, because nothing checked the code. Run each in a subshell, since emit_verdict exits.
-  map=$((map + 1)); check "token PASS -> exit 0"          "0|CLOSEDBAR_LIVENESS_VERDICT=PASS" \
+  # Token + exit map, asserted on the CODE as well as the token.
+  map=$((map + 1)); check "token PASS -> exit 0" "0|CLOSEDBAR_LIVENESS_VERDICT=PASS" \
     "$( out=$( CLOSEDBAR_VERDICT_EMITTED=0; emit_verdict PASS ); printf '%s|%s' "$?" "$out" )"
-  map=$((map + 1)); check "token FAIL -> exit 1"          "1|CLOSEDBAR_LIVENESS_VERDICT=FAIL" \
+  map=$((map + 1)); check "token FAIL -> exit 1" "1|CLOSEDBAR_LIVENESS_VERDICT=FAIL" \
     "$( out=$( CLOSEDBAR_VERDICT_EMITTED=0; emit_verdict FAIL ); printf '%s|%s' "$?" "$out" )"
   map=$((map + 1)); check "token INDETERMINATE -> exit 3" "3|CLOSEDBAR_LIVENESS_VERDICT=INDETERMINATE" \
     "$( out=$( CLOSEDBAR_VERDICT_EMITTED=0; emit_verdict INDETERMINATE ); printf '%s|%s' "$?" "$out" )"
-  map=$((map + 1)); check "exactly one token per run" "1" \
-    "$( out=$( CLOSEDBAR_VERDICT_EMITTED=0; ( emit_verdict PASS; emit_verdict FAIL ) ); printf '%s' "$out" | grep -c CLOSEDBAR_LIVENESS_VERDICT= )"
 
-  # ── R3: sustained-drift gating. One excursion must NOT page; the Nth must.
-  _bd=$(mktemp -d)
-  map=$((map + 1)); check "streak 1st breach" "1" "$( BREACH_DIR=$_bd breach_bump T1 )"
-  map=$((map + 1)); check "streak 2nd breach" "2" "$( BREACH_DIR=$_bd breach_bump T1 )"
-  map=$((map + 1)); check "streak 3rd breach" "3" "$( BREACH_DIR=$_bd breach_bump T1 )"
-  nofire=$((nofire + 1)); check "a single excursion does NOT reach the pager" "below-threshold" \
-    "$( [ 1 -lt "$BREACH_STREAK_REQUIRED" ] && echo below-threshold || echo PAGES )"
-  fire=$((fire + 1)); check "the Nth consecutive excursion DOES page" "pages" \
-    "$( [ "$BREACH_STREAK_REQUIRED" -ge "$BREACH_STREAK_REQUIRED" ] && echo pages || echo silent )"
-  map=$((map + 1)); check "streaks are per-alert-id" "1" "$( BREACH_DIR=$_bd breach_bump T2 )"
-  map=$((map + 1)); check "a PASS clears the streak" "1" \
-    "$( BREACH_DIR=$_bd breach_clear; BREACH_DIR=$_bd breach_bump T1 )"
-  rm -rf "$_bd"
+  # Route table: exhaustive over the pinned list, one distinct templated wave per id.
+  local v
+  for v in $PINNED_VERDICTS; do
+    map=$((map + 1)); check "route for $v is known" "known" "$([ "$(route_for "$v")" != UNKNOWN ] && echo known || echo unknown)"
+  done
+  map=$((map + 1)); check "an unlisted token routes UNKNOWN" "UNKNOWN" "$(route_for SOMETHING_NEW)"
+  map=$((map + 1)); check "three ids, three distinct waves" "3" \
+    "$(for c in RATCHET OFFSET_FAULT CHRONIC_LATE; do recommended_wave_for "$c"; echo; done | sort -u | grep -c 'W{NEXT}$')"
+  map=$((map + 1)); check "--print-routes is the pinned list" "$PINNED_VERDICTS" \
+    "$(bash "$0" --print-routes | tr '\n' ' ' | sed 's/ $//')"
+  map=$((map + 1)); check "iso_from_epoch" "2026-10-07 04:00" "$(iso_from_epoch "$(( 1791 * 1000000 + 345600 ))")"
 
-  set -- $_cfg_saved; _with_cfg "$1" "$2" "$3"
-  nofire=$((nofire + 1)); check "empty -> INSUFFICIENT"  "INSUFFICIENT" "$(classify_offsets 900)"
-  # Ordering regression guard: a row whose last fire predates a JUST-completed deploy is
-  # REALIGNING, never a ratchet. Encoded as the arithmetic the live path uses, since the branch
-  # itself needs a database.
-  nofire=$((nofire + 1)); check "fresh deploy is inside the realignment window" "REALIGNING" \
-    "$( [ 100 -lt $(( 900 * 2 )) ] && echo REALIGNING || echo JUDGE )"
-  nofire=$((nofire + 1)); check "two bars past deploy leaves the window" "JUDGE" \
-    "$( [ 1900 -lt $(( 900 * 2 )) ] && echo REALIGNING || echo JUDGE )"
-
-  # The alert must never point at the basis-flip wave, and must stay templated.
-  map=$((map + 1)); check "ratchet wave" "OPS-CLOSEDBAR-DISPATCH-RATCHET-INCIDENT-W{NEXT}" "$(recommended_wave_for RATCHET)"
-  map=$((map + 1)); check "offset wave"  "OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W{NEXT}"  "$(recommended_wave_for OFFSET_FAULT)"
-  map=$((map + 1)); check "distinct waves per id" "distinct" \
-    "$([ "$(recommended_wave_for RATCHET)" != "$(recommended_wave_for OFFSET_FAULT)" ] && echo distinct || echo shared)"
-
-  # Vacuity guard — a corpus that is empty means this suite verified nothing.
   if [ "$fire" -eq 0 ] || [ "$nofire" -eq 0 ] || [ "$map" -eq 0 ]; then
     echo "self-test VACUOUS: ${fire} must-fire, ${nofire} must-not-fire, ${map} must-map"
-    return 1
+    echo "CLOSEDBAR_SELFTEST_VERDICT=INDETERMINATE"; return 3
   fi
   if [ "$failures" -ne 0 ]; then
     echo "self-test FAILED: ${failures} failure(s) across ${fire} must-fire, ${nofire} must-not-fire, ${map} must-map"
-    return 1
+    echo "CLOSEDBAR_SELFTEST_VERDICT=FAIL"; return 1
   fi
   echo "self-test passed: ${fire} must-fire, ${nofire} must-not-fire, ${map} must-map (${pass} assertions)"
-  return 0
+  echo "CLOSEDBAR_SELFTEST_VERDICT=PASS"; return 0
 }
 
 if [ "${1:-}" = "--self-test" ]; then self_test; exit $?; fi
 
-# ── live run ────────────────────────────────────────────────────────────────
-log "START deploy_epoch=$DEPLOY_EPOCH"
-
-PROBE_ROW=$("${SQLITE[@]}" "$DB" \
-  "SELECT chat_id||'|'||coin||'|'||exchange||'|'||last_fetched_at FROM watchlists
-    WHERE timeframe='$TF' AND last_fetched_at IS NOT NULL
-    ORDER BY last_fetched_at DESC LIMIT 1;" 2>/dev/null)
-if [ -z "$PROBE_ROW" ]; then
-  log "CHECK1 INSUFFICIENT — no dispatched ${TF} watchlist row exists. Nobody watches this"\
-" timeframe right now; the world builds this corpus, so empty is a FACT, not a fault."
-  log "DONE insufficient corpus — nobody watches ${TF}; the world builds this corpus, so empty is a FACT"
-  emit_verdict INDETERMINATE
+# ── live run ─────────────────────────────────────────────────────────────────────────────────
+NOW=$(date -u +%s)
+DEPLOY_EPOCH=0
+if [ -r "$DEPLOY_STAMP" ]; then
+  _stamped=$(head -1 "$DEPLOY_STAMP" 2>/dev/null | tr -dc '0-9')
+  [ -n "$_stamped" ] && DEPLOY_EPOCH="$_stamped"
 fi
-CHAT_ID=${PROBE_ROW%%|*}; _rest=${PROBE_ROW#*|}
-COIN=${_rest%%|*};        _rest=${_rest#*|}
-EXCHANGE=${_rest%%|*}
-LAST_RAW=${_rest#*|}
-LAST_EPOCH=$(iso_to_epoch "$LAST_RAW")
+log "START deploy_epoch=$DEPLOY_EPOCH tf=$TF"
 
-if [ -z "$LAST_EPOCH" ]; then
-  fail RATCHET "watchlist row not found or last_fetched_at unparseable (raw='$LAST_RAW')"
-fi
-# The realignment window is evaluated FIRST, against the WALL CLOCK rather than the row's own
-# stamp. Ordering matters and this got it wrong once: the "has not dispatched since deploy"
-# check below used to run first, so any run within two bars of a deploy paged a RATCHET for a
-# row that had simply not reached its next bar yet. A probe that false-pages after every deploy
-# trains the operator to ignore it, which is how a real one gets missed.
-NOW_EPOCH=$(date -u +%s)
-if [ $(( NOW_EPOCH - DEPLOY_EPOCH )) -lt $(( TF_SECONDS * 2 )) ]; then
-  log "CHECK1 REALIGNING — only $(( NOW_EPOCH - DEPLOY_EPOCH ))s of wall clock since deploy (< 2 bars); the row may legitimately not have reached its next bar yet. No alert."
-  exit 0
+# shellcheck disable=SC2086 # the first word of the auditor command line is its executable
+set -- $AUDITOR
+if [ ! -x "${1:-}" ]; then
+  route_failure "auditor not executable: ${1:-<empty>}"
 fi
 
-if [ "$LAST_EPOCH" -le "$DEPLOY_EPOCH" ]; then
-  fail RATCHET "row has not dispatched in the $(( NOW_EPOCH - DEPLOY_EPOCH ))s since deploy, which is over 2 bars (last=$LAST_EPOCH <= deploy=$DEPLOY_EPOCH) — the cron may be dark"
+LISTED=$(run_auditor --print-verdicts 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+if [ "$LISTED" != "$PINNED_VERDICTS" ]; then
+  route_failure "the auditor's route list differs from this probe's pinned list: auditor=[$LISTED] probe=[$PINNED_VERDICTS]"
 fi
 
-OFFSET=$(secs_into_bar "$LAST_EPOCH" "$TF_SECONDS")
-AGE=$(( LAST_EPOCH - DEPLOY_EPOCH ))
-log "CHECK1 last='$LAST_RAW' epoch=$LAST_EPOCH offset_into_bar=${OFFSET}s of ${TF_SECONDS}s age_since_deploy=${AGE}s"
+AUDIT_OUT=$(run_auditor --db "$DB" --tf "$TF" --now "$NOW" --deploy-epoch "$DEPLOY_EPOCH" --env-file "$BOT_ENV" 2>&1)
+AUDIT_RC=$?
+# Every line verbatim: the host log keeps the full ids the Telegram body masks.
+printf '%s\n' "$AUDIT_OUT" | while IFS= read -r line; do log "$line"; done
 
-# Second realignment guard, on the ROW's own age rather than the wall clock. NOT a duplicate of
-# the one above: that covers "no fire yet since the deploy", this covers "one fire, and it is
-# the ragged realignment one".
-# The first fire after a change is the REALIGNMENT fire: the anchor was written under the old
-# contract, so its first bucket comparison can come due anywhere in the bar (measured: 464s).
-# By design — judging it would be a false page.
-if [ "$AGE" -lt $(( TF_SECONDS * 2 )) ]; then
-  log "CHECK1 REALIGNING — only ${AGE}s since deploy (< 2 bars); not judging the realignment fire. No alert."
-  exit 0
+TOKEN=$(printf '%s\n' "$AUDIT_OUT" | sed -n 's/^DISPATCH_AUDIT_VERDICT=//p' | tail -1)
+REASON=$(printf '%s\n' "$AUDIT_OUT" | sed -n 's/^AUDIT_REASON=//p' | tail -1)
+if [ -z "$TOKEN" ]; then
+  route_failure "the auditor printed no verdict token (exit $AUDIT_RC)"
+fi
+if [ "$REASON" = "crash" ]; then
+  route_failure "the auditor crashed: $(printf '%s\n' "$AUDIT_OUT" | grep -m1 '^AUDIT_ERROR ' | cut -c1-200)"
 fi
 
-# Every row on this timeframe, so the verdict can DISCRIMINATE scatter from a uniform offset.
-PEERS=$("${SQLITE[@]}" "$DB" \
-  "SELECT last_fetched_at FROM watchlists WHERE timeframe='$TF' AND last_fetched_at IS NOT NULL;" 2>/dev/null)
-PEER_OFFSETS=()
-while IFS= read -r ts; do
-  [ -z "$ts" ] && continue
-  o=$(secs_into_bar "$ts" "$TF_SECONDS") || continue
-  [ -n "$o" ] && PEER_OFFSETS+=("$o")
-done <<< "$PEERS"
-
-# ── Did this run audit the CONTENDED bar? ────────────────────────────────────
-# OPS-BOT-DISPATCH-LATENCY-W1 CH1c. CHECK1 reads each row's CURRENT last_fetched_at, so the
-# CRON MINUTE silently decides which bar is under audit — and at the original `44 * * * *`
-# that was always the :30 bar. Budget contention happens at the :00 boundary, where the 73
-# 1h rows collapse onto the same ticks as the 15m/5m/3m rows and FETCH_BUDGET_PER_MIN defers
-# the overflow. The :30 bar has no 1h cohort and therefore cannot exhibit the defect at all.
-# Measured: 26 budget-capped ticks in 26h, every single one at minute :03 — and this guard,
-# running at :44, had never once looked at them.
-#
-# A run that audited the uncontended bar has not verified the property, it has verified
-# NOTHING, so the honest verdict is INDETERMINATE and never PASS. This is a VERDICT rather
-# than a log line on purpose: a comment telling a future wave "keep this cron in the :06-:15
-# window" is prose, and prose is not a control. With the cron at :11 this arm stays quiet;
-# move it back and the guard says so in its own token instead of silently re-blinding itself.
-if [ "${#PEER_OFFSETS[@]}" -gt 0 ]; then
-  SAMPLED_BAR_MIN=$(bar_open_minute "$LAST_EPOCH" "$TF_SECONDS")
-  if [ -n "$SAMPLED_BAR_MIN" ]; then
-    log "CHECK1 sampled_bar=:$(printf '%02d' "$SAMPLED_BAR_MIN") contended=$([ "$SAMPLED_BAR_MIN" -eq 0 ] && echo yes || echo no)"
-    if [ "$SAMPLED_BAR_MIN" -ne 0 ]; then
-      log "CHECK1 SAMPLE_BLIND — audited the :$(printf '%02d' "$SAMPLED_BAR_MIN") bar, which carries no 1h cohort and cannot exhibit budget contention. Verified nothing; not certifying. Move this cron into the :06-:15 window (currently expected at :11)."
+CLASS=$(route_for "$TOKEN")
+case "$CLASS" in
+  PASS)
+    log "PASS — every judged due row is on time or explained by the dispatcher's own record"
+    breach_clear
+    log "DONE all checks passed — silent success, no alert sent"
+    emit_verdict PASS ;;
+  INDETERMINATE)
+    if [ "$REASON" = "insufficient" ]; then
+      log "INDETERMINATE — nothing judgeable in the audited bars yet; not a fault, not a pass"
+      log "DONE insufficient"
       emit_verdict INDETERMINATE
     fi
-  fi
-fi
-
-VERDICT=$(classify_offsets "$TF_SECONDS" "${PEER_OFFSETS[@]:-}")
-log "CHECK1 peers_on_${TF}=${#PEER_OFFSETS[@]} offsets=[${PEER_OFFSETS[*]:-}] verdict=$VERDICT"
-
-case "$VERDICT" in
-  OK)           log "CHECK1 PASS — all ${#PEER_OFFSETS[@]} ${TF} rows on the due-time grid [$(due_times "$TF_SECONDS")] +0..${DISPATCH_LATENCY_ALLOWANCE_SECONDS}s latency; measured [${PEER_OFFSETS[*]}]"; breach_clear ;;
-  INSUFFICIENT) log "CHECK1 INSUFFICIENT_DATA — no ${TF} peer offsets; not judging. No alert."; emit_verdict INDETERMINATE ;;
-  RATCHET)      fail RATCHET "dispatch offsets are SCATTERED across ${#PEER_OFFSETS[@]} ${TF} rows ([${PEER_OFFSETS[*]}] into a ${TF_SECONDS}s bar). No single offset value produces that — the per-row anchor is drifting, i.e. bucket-deterministic dispatch is not in effect. Check that dispatch_schedule.py is present on the host and that db.list_due_watches uses target_epoch." ;;
-  OFFSET_FAULT) fail OFFSET_FAULT "dispatch is bucket-CONSISTENT but lands at [${PEER_OFFSETS[*]}] into a ${TF_SECONDS}s bar — $(offset_direction "$TF_SECONDS" "${PEER_OFFSETS[0]}") of the due-time grid [$(due_times "$TF_SECONDS")] (+0..${DISPATCH_LATENCY_ALLOWANCE_SECONDS}s latency). The ratchet is fixed; the offset value is wrong." ;;
+    route_failure "INDETERMINATE without a recognised reason (AUDIT_REASON=${REASON:-none})" ;;
+  OFFSET_FAULT|RATCHET|CHRONIC_LATE)
+    fail "$CLASS" ;;
+  *)
+    route_failure "a token outside the probe's pinned list: $TOKEN" ;;
 esac
-
-# ── Check 2 — constancy over post-deploy fires, when there are enough ────────
-# CAST is load-bearing: strftime returns TEXT and SQLite orders every INTEGER before every
-# TEXT, so the uncast comparison was ALWAYS TRUE and silently spanned all history.
-OFFSETS=$("${SQLITE[@]}" "$DB" \
-  "SELECT CAST(strftime('%s', fired_at) AS INTEGER) % $TF_SECONDS FROM alerts_fired
-    WHERE chat_id=$CHAT_ID AND CAST(strftime('%s', fired_at) AS INTEGER) > $DEPLOY_EPOCH
-    ORDER BY fired_at;" 2>/dev/null)
-N=$(printf '%s\n' "$OFFSETS" | grep -c . || true)
-log "CHECK2 post-deploy alerts_fired rows for chat $CHAT_ID: n=$N offsets=[$(printf '%s' "$OFFSETS" | tr '\n' ' ')]"
-
-if [ "$N" -ge 2 ]; then
-  SPREAD=$(( $(printf '%s\n' "$OFFSETS" | sort -n | tail -1) - $(printf '%s\n' "$OFFSETS" | sort -n | head -1) ))
-  log "CHECK2 spread=${SPREAD}s"
-  [ "$SPREAD" -gt "$SCATTER_THRESHOLD" ] && \
-    fail RATCHET "bucket offset drifted ${SPREAD}s across $N post-deploy fires — the ratchet is back"
-  log "CHECK2 PASS — bucket offset constant across $N fires"
-else
-  log "CHECK2 INSUFFICIENT_DATA — n=$N (<2). alerts_fired holds only non-HOLD verdicts; expected, not a failure. Check 1 carried the verdict."
-fi
-
-log "DONE all checks passed — silent success, no alert sent"
-emit_verdict PASS
