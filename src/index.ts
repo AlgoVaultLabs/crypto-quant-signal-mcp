@@ -4070,7 +4070,9 @@ async function startHttp() {
     // OPS-VALIDATE-KEY-INDETERMINATE-W1 CH2 — ONE projection, shared with /api/entitlement/*.
     // The `if (!valid || !tier) 404` this replaces answered a bare 404 for FOUR different facts,
     // including a Stripe outage that `validateApiKey` had already flagged `indeterminate`.
-    const result = await validateApiKey(apiKey);
+    // REVENUE-DUNNING-BOUND-W1-V2 CH3: the collection view — a past_due key whose retries Stripe
+    // has exhausted answers NOT_ENTITLED(dunning_exhausted), which the bot's drain lets lapse.
+    const result = await validateApiKey(apiKey, { collection: true });
     const p = projectEntitlementHttp(result);
     // `customer_id: null` is preserved for the ENTITLED shape the bot has always parsed.
     if (p.state === 'ENTITLED' && p.body.customer_id === undefined) p.body.customer_id = null;

@@ -125,7 +125,10 @@ export function registerEntitlementRoutes(app: Express): void {
     // `chargeableTier` is what decides, NOT `valid`. Deriving the meter from `valid` is exactly
     // what produced the leak: a customer can be un-ENTITLED for API access and still owe us for
     // every alert we deliver while their card is being retried.
-    const result = await validateApiKey(apiKey);
+    //
+    // REVENUE-DUNNING-BOUND-W1-V2 CH3: "being retried" is now checked, not assumed — the
+    // collection view answers NOT_ENTITLED(dunning_exhausted) once Stripe stops retrying.
+    const result = await validateApiKey(apiKey, { collection: true });
     const p = projectEntitlementHttp(result);
     if (!p.chargeableTier) return res.status(p.status).json(p.body);
 
@@ -149,7 +152,7 @@ export function registerEntitlementRoutes(app: Express): void {
     const channel = asChannelId(req.query.channel);
     if (!channel) return res.status(400).json({ error: 'unknown_channel' });
 
-    const result = await validateApiKey(apiKey);
+    const result = await validateApiKey(apiKey, { collection: true });
     const p = projectEntitlementHttp(result);
     if (!p.chargeableTier) return res.status(p.status).json(p.body);
 

@@ -270,7 +270,12 @@ export type NotEntitledReason =
   | 'customer_deleted'
   | 'no_subscription'
   | 'subscription_ended'
-  | 'unrecognised_price';
+  | 'unrecognised_price'
+  // REVENUE-DUNNING-BOUND-W1-V2 CH3: a `past_due` subscription whose retries Stripe has
+  // EXHAUSTED. algovault-bot lets this one reason advance its own lapse streak with no cohort
+  // corroborator (`SELF_CORROBORATING_REASONS`), so it is emitted ONLY after Stripe answered for
+  // the subscription on a recognised Price — see `needsCollectionState`.
+  | 'dunning_exhausted';
 
 /**
  * Stripe subscription status → entitlement class. THE one mapping; every consumer projects.
@@ -302,6 +307,51 @@ const STATE_RANK: Readonly<Record<'ENTITLED' | 'DUNNING' | 'NOT_ENTITLED', numbe
   DUNNING: 2,
   NOT_ENTITLED: 1,
 });
+
+/**
+ * REVENUE-DUNNING-BOUND-W1-V2 CH3 — where Stripe is in collecting ONE `past_due` subscription.
+ *
+ * `past_due` is a label whose LIFETIME the Dashboard's terminal setting owns. Under "Leave the
+ * subscription past-due" it never ends: after the last attempt the invoice stays open with
+ * `next_payment_attempt: null` and the status stays `past_due` for good. MEASURED 2026-10-08:
+ * 3 of 6 `past_due` subscriptions were in that state, and one was still taking 253 Telegram
+ * alerts a day as DUNNING. So entitlement keys on COLLECTION, not on the label:
+ *
+ *   RETRYING   every open invoice still has a scheduled retry      → DUNNING (served + charged)
+ *   EXHAUSTED  any open invoice has attempts and no next attempt    → NOT_ENTITLED(dunning_exhausted)
+ *   UNKNOWN    a partial invoice page that showed no exhausted one  → INDETERMINATE when it matters
+ *
+ * ANY exhausted invoice decides, so an exhausted OLDER invoice keeps the subscription lapsed while
+ * Stripe retries the newer one it keeps generating — no monthly flap back to DUNNING. Paying (or
+ * voiding) returns Stripe to `active`, which never reaches the leg at all.
+ */
+export type CollectionState = 'RETRYING' | 'EXHAUSTED' | 'UNKNOWN';
+
+/** The two invoice fields the leg reads. Structural, so the pure function needs no SDK type. */
+export interface OpenInvoiceFacts {
+  readonly attempt_count?: number | null;
+  readonly next_payment_attempt?: number | null;
+}
+
+/** Pure. `complete` is false when Stripe reported more open invoices than the page returned. */
+export function collectionStateOf(openInvoices: readonly OpenInvoiceFacts[], complete: boolean): CollectionState {
+  const exhausted = openInvoices.some(
+    (inv) => typeof inv.attempt_count === 'number' && inv.attempt_count >= 1 && inv.next_payment_attempt == null,
+  );
+  if (exhausted) return 'EXHAUSTED';
+  return complete ? 'RETRYING' : 'UNKNOWN';
+}
+
+/**
+ * THE predicate for "does this subscription's answer depend on its collection state?" — read by
+ * both the invoice fetch and the classification, so the two can never disagree about which
+ * subscriptions the leg covers. The recognised Price is part of it on purpose: a lost price-ID
+ * config must surface as `unrecognised_price`, never as `dunning_exhausted`.
+ */
+function needsCollectionState(sub: any): boolean {
+  const status = typeof sub?.status === 'string' ? sub.status : '';
+  return SUBSCRIPTION_STATUS_CLASS[status] === 'DUNNING' && highestTier(sub) !== null;
+}
 
 export interface StripeValidation {
   /**
@@ -370,17 +420,37 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+/**
+ * REVENUE-DUNNING-BOUND-W1-V2 CH3 (ruling Q-C) — the COLLECTION view's own cache. Deliberately
+ * not a second key in `cache`: that map is keyed on the raw api key, so sharing it would let a
+ * status-only DUNNING cached by a `/mcp` call answer a collection caller as if Stripe were still
+ * retrying. An INDETERMINATE is never stored here.
+ */
+const collectionCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export function invalidateCacheForCustomer(customerId: string): void {
-  for (const [key, entry] of cache) {
-    if (entry.result.customerId === customerId) {
-      cache.delete(key);
+  for (const view of [cache, collectionCache]) {
+    for (const [key, entry] of view) {
+      if (entry.result.customerId === customerId) {
+        view.delete(key);
+      }
     }
   }
 }
 
 // ── Validation ──
+
+/** REVENUE-DUNNING-BOUND-W1-V2 CH3 — which view of a key's entitlement the caller needs. */
+export interface ValidateApiKeyOptions {
+  /**
+   * Also ask whether Stripe is still COLLECTING. Set ONLY by `GET /api/bot/validate-key` and
+   * `/api/entitlement/{consume,state}`, where DUNNING and NOT_ENTITLED lead to different
+   * outcomes. `/mcp` (`license.ts`) treats the two identically, so it leaves this unset and pays
+   * no invoice call on the request path.
+   */
+  readonly collection?: boolean;
+}
 
 /**
  * OPS-VALIDATE-KEY-INDETERMINATE-W1 CH1 — resolve a key to ONE entitlement state.
@@ -404,8 +474,13 @@ export function invalidateCacheForCustomer(customerId: string): void {
  * `entitlementState` at the one return below. Two independent derivations of one classification
  * drift to contradiction, and here the contradiction would be a customer who is `valid:false`
  * and `entitlementState:'ENTITLED'` at the same time.
+ *
+ * REVENUE-DUNNING-BOUND-W1-V2 CH3 — TWO VIEWS (ruling Q-C). With `{ collection: true }` a DUNNING
+ * answer is refined by the collection leg (`CollectionState`): one `invoices.list` per dunning
+ * subscription, and any exhausted open invoice turns it into NOT_ENTITLED(`dunning_exhausted`).
+ * Only the bot-edge routes ask for it. Without the option the path is byte-identical to before.
  */
-export async function validateApiKey(apiKey: string): Promise<StripeValidation> {
+export async function validateApiKey(apiKey: string, opts: ValidateApiKeyOptions = {}): Promise<StripeValidation> {
   // Not configured is "cannot determine", NOT "invalid" — the distinction the caller needs.
   if (!stripe) return project({ state: 'INDETERMINATE' });
 
@@ -413,8 +488,18 @@ export async function validateApiKey(apiKey: string): Promise<StripeValidation> 
   // stays a DETERMINED negative even during an outage.
   if (!/^[a-zA-Z0-9_]+$/.test(apiKey)) return project({ state: 'NOT_ENTITLED', reason: 'malformed_key' });
 
+  // Each view reads and writes only its own cache. The collection view never stores an
+  // INDETERMINATE: an unanswered invoice question is asked again on the next pass.
+  const view = opts.collection ? collectionCache : cache;
+  const remember = (result: StripeValidation): StripeValidation => {
+    if (!(opts.collection && result.entitlementState === 'INDETERMINATE')) {
+      view.set(apiKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+    }
+    return result;
+  };
+
   // Check cache first
-  const cached = cache.get(apiKey);
+  const cached = view.get(apiKey);
   if (cached && Date.now() < cached.expiresAt) {
     return cached.result;
   }
@@ -427,16 +512,12 @@ export async function validateApiKey(apiKey: string): Promise<StripeValidation> 
     });
 
     if (customers.data.length === 0) {
-      const result = project({ state: 'NOT_ENTITLED', reason: 'no_customer' });
-      cache.set(apiKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
-      return result;
+      return remember(project({ state: 'NOT_ENTITLED', reason: 'no_customer' }));
     }
 
     const customer = customers.data[0];
     if ('deleted' in customer && customer.deleted) {
-      const result = project({ state: 'NOT_ENTITLED', reason: 'customer_deleted', customerId: customer.id });
-      cache.set(apiKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
-      return result;
+      return remember(project({ state: 'NOT_ENTITLED', reason: 'customer_deleted', customerId: customer.id }));
     }
 
     // ONE list call, `status: 'all'` — see the docblock. STATUS-SOT-OWNER.
@@ -447,8 +528,17 @@ export async function validateApiKey(apiKey: string): Promise<StripeValidation> 
     });
 
     const result = classifyCustomerSubscriptions(customer.id, subscriptions.data);
-    cache.set(apiKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
-    return result;
+    if (!opts.collection || result.entitlementState !== 'DUNNING') return remember(result);
+
+    // The leg. Only a DUNNING answer can change, so only it pays for the invoice question. A
+    // throw lands in the catch below: INDETERMINATE, counted, never cached.
+    const collection = new Map<string, CollectionState>();
+    for (const sub of subscriptions.data) {
+      if (!needsCollectionState(sub)) continue;
+      const open = await stripe.invoices.list({ subscription: sub.id, status: 'open', limit: 100 });
+      collection.set(sub.id, collectionStateOf(open.data, !open.has_more));
+    }
+    return remember(classifyCustomerSubscriptions(customer.id, subscriptions.data, collection));
   } catch (err) {
     // OPS-ZERO-VS-UNKNOWN-W1: an unreachable Stripe is INDETERMINATE, never "invalid".
     console.error('Stripe validateApiKey error:', err instanceof Error ? err.message : err);
@@ -474,8 +564,18 @@ function dunningSince(sub: any): string | null {
  * PRECEDENCE: best entitlement wins (ENTITLED > DUNNING > NOT_ENTITLED), and within ENTITLED the
  * highest tier by `TIER_RANK`. That is byte-identical to the previous behaviour for any customer
  * holding an active subscription — which is every customer the old code could see at all.
+ *
+ * REVENUE-DUNNING-BOUND-W1-V2 CH3 — `collection`, when supplied, refines each subscription that
+ * `needsCollectionState` names BEFORE the rank: EXHAUSTED → NOT_ENTITLED, RETRYING → DUNNING,
+ * UNKNOWN (or absent from the map) → unrankable, and INDETERMINATE if it could have outranked the
+ * answer. So a retrying subscription still outranks an exhausted one. Without `collection` every
+ * `past_due` stays DUNNING exactly as before — the `/mcp` and key-recovery view.
  */
-export function classifyCustomerSubscriptions(customerId: string, subs: any[]): StripeValidation {
+export function classifyCustomerSubscriptions(
+  customerId: string,
+  subs: any[],
+  collection?: ReadonlyMap<string, CollectionState>,
+): StripeValidation {
   // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: projects from the ONE price→tier registry, so a newly
   // added Price (annual, or any future interval) entitles its buyer the moment its env var is
   // set. The prior inline comparison chain knew only the three monthly ids, so an annual
@@ -483,6 +583,10 @@ export function classifyCustomerSubscriptions(customerId: string, subs: any[]): 
   let best: { rank: number; state: 'ENTITLED' | 'DUNNING' | 'NOT_ENTITLED'; sub: any; tier: PaidPlanId | null } | null = null;
   let sawUnclassifiable = false;
   let sawSubWithUnknownPrice = false;
+  // The collection leg's bookkeeping: the first exhausted subscription (it names the reason and
+  // the status reported), and the best rank an unreadable one could have had.
+  let exhaustedSub: any = null;
+  let unknownRank = 0;
 
   for (const sub of subs) {
     const status = typeof sub?.status === 'string' ? sub.status : '';
@@ -497,7 +601,17 @@ export function classifyCustomerSubscriptions(customerId: string, subs: any[]): 
     if (cls !== 'NOT_ENTITLED' && !tier) sawSubWithUnknownPrice = true;
     // A grant needs a recognised Price; without one the subscription cannot confer a tier, so it
     // can never out-rank a subscription that can.
-    const effective: 'ENTITLED' | 'DUNNING' | 'NOT_ENTITLED' = tier ? cls : 'NOT_ENTITLED';
+    let effective: 'ENTITLED' | 'DUNNING' | 'NOT_ENTITLED' = tier ? cls : 'NOT_ENTITLED';
+    if (collection && needsCollectionState(sub)) {
+      const state = collection.get(String(sub?.id ?? ''));
+      if (state === 'EXHAUSTED') {
+        effective = 'NOT_ENTITLED';
+        exhaustedSub ??= sub;
+      } else if (state !== 'RETRYING') {
+        unknownRank = Math.max(unknownRank, STATE_RANK.DUNNING * 10 + (tier ? TIER_RANK[tier] : 0));
+        continue;
+      }
+    }
     const rank = STATE_RANK[effective] * 10 + (tier ? TIER_RANK[tier] : 0);
     if (!best || rank > best.rank) best = { rank, state: effective, sub, tier };
   }
@@ -510,17 +624,27 @@ export function classifyCustomerSubscriptions(customerId: string, subs: any[]): 
     return project({ state: 'INDETERMINATE', customerId });
   }
 
+  if (unknownRank > 0 && unknownRank >= (best?.rank ?? 0)) {
+    // Same rule for a subscription whose collection state we could not read: INDETERMINATE only
+    // when it could have outranked — or tied and replaced — the answer. Never a guess either way.
+    recordIndeterminate('stripe_collection_state_unknown');
+    return project({ state: 'INDETERMINATE', customerId });
+  }
+
   if (!best || best.state === 'NOT_ENTITLED') {
     const reason: NotEntitledReason = subs.length === 0
       ? 'no_subscription'
       : sawSubWithUnknownPrice
         ? 'unrecognised_price'
-        : 'subscription_ended';
+        : exhaustedSub
+          ? 'dunning_exhausted'
+          : 'subscription_ended';
+    const reported = reason === 'dunning_exhausted' ? exhaustedSub : best?.sub;
     return project({
       state: 'NOT_ENTITLED',
       reason,
       customerId,
-      subscriptionStatus: typeof best?.sub?.status === 'string' ? best.sub.status : null,
+      subscriptionStatus: typeof reported?.status === 'string' ? reported.status : null,
     });
   }
 

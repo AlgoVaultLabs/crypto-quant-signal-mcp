@@ -18,6 +18,11 @@
  *   NOT_ENTITLED   404  { valid: false, entitlement_state: 'NOT_ENTITLED', reason }
  *   INDETERMINATE  503  { valid: false, entitlement_state: 'INDETERMINATE', retryable: true }
  *
+ * REVENUE-DUNNING-BOUND-W1-V2 CH3: `reason: 'dunning_exhausted'` (with `subscription_status:
+ * 'past_due'`) is a NOT_ENTITLED like any other on this wire — same 404, no fifth state. The bot
+ * lets that one reason lapse a link without a corroborating peer, which is why `validateApiKey`
+ * emits it only after Stripe answered for the subscription.
+ *
  * 🛑 ENTITLED AND DUNNING SHARE 200 ON PURPOSE, AND THE STATUS IS THEREFORE NOT THE DISCRIMINANT.
  * `entitlement_state` is, and it is present on EVERY response. A caller that branches on the
  * status code alone would still be collapsing two states — which is why
