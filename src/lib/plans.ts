@@ -110,6 +110,10 @@ export const PLANS: Readonly<Record<PaidPlanId, PlanSpec>> = {
  * verdict, which is the point, not an oversight.
  *
  * The amendment also un-breaks `recommendPath`: see `subscriptionBreakEvenCalls` below.
+ *
+ * 🛑 The API / MCP surface's number ONLY. The Telegram bot has its own allowance,
+ * `FREE_TELEGRAM_MONTHLY_ALERTS` below. The two are separate on purpose (different surface,
+ * different unit) and must not be re-coupled: moving this number must never move Telegram's.
  */
 export const FREE_MONTHLY_CALLS = 200;
 
@@ -119,6 +123,35 @@ export const FREE_MONTHLY_CALLS = 200;
  * own first call and therefore resets on a date nobody can be told in advance.
  */
 export const FREE_DAILY_CALLS = 100;
+
+/**
+ * The Telegram bot's free allowance: DELIVERED ALERTS per rolling 30-day window. Set to 100 by
+ * Mr.1 on 2026-10-08 ("Lower the Telegram free limit from 200 to 100"). The API / MCP free tier
+ * above is untouched.
+ *
+ * WHY A SEPARATE CONSTANT. GROWTH-TG-QUOTA-PARITY-W1 (2026-08-27) stopped the bot hand-typing its
+ * allowance by pointing it at `FREE_MONTHLY_CALLS`, the API's number. That made the bot DERIVE
+ * its figure, which stays, but it also COUPLED the two surfaces: moving either number moved both.
+ * This constant retires the coupling by surface, not globally. The bot still reads its allowance
+ * from this file, through `GET /api/plans/public` → `free.telegram`; only the shared number goes.
+ *
+ * THE UNIT DIFFERS TOO, and that is unchanged: the API meters a returned VERDICT (a HOLD is a
+ * call), while the bot meters a DELIVERED ALERT (a silent HOLD costs nothing). Copy says `alerts`
+ * for this number and `calls` for the API's (`algovault-bot` `docs/METERING-DIVERGENCE.md`).
+ *
+ * The bot stamps each 30-day window with the allowance it opened under and serves
+ * max(stamp, this value) while the window is open. So lowering this walls nobody mid-window,
+ * and raising it applies at once.
+ */
+export const FREE_TELEGRAM_MONTHLY_ALERTS = 100;
+
+/**
+ * The Telegram bot's per-UTC-day alert cap — the API's daily cap, DERIVED and never typed (the
+ * daily cap was not changed by the 2026-10-08 ruling). Against a 100-alert month it binds only
+ * for a chat whose monthly allowance is above 100 (a referral bonus, or a window opened under
+ * the old allowance). That is why Telegram copy states it only where it is material.
+ */
+export const FREE_TELEGRAM_DAILY_ALERTS = FREE_DAILY_CALLS;
 
 /** The plan a free caller is upsold to. Every free→paid CTA points here. */
 export const DEFAULT_UPGRADE_PLAN: PaidPlanId = 'starter';

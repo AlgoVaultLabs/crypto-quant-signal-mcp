@@ -33,7 +33,7 @@ let server: http.Server | null = null;
  * silently receive the perturbed ladder and its "the real value is 200" assertion would fail with
  * no hint as to why.
  */
-async function boot(perturb?: { monthly?: number; daily?: number }): Promise<string> {
+async function boot(perturb?: { monthly?: number; daily?: number; telegramMonthly?: number }): Promise<string> {
   vi.doUnmock('../src/lib/plans.js');
   vi.resetModules();
 
@@ -44,6 +44,7 @@ async function boot(perturb?: { monthly?: number; daily?: number }): Promise<str
         ...real,
         FREE_MONTHLY_CALLS: perturb.monthly ?? real.FREE_MONTHLY_CALLS,
         FREE_DAILY_CALLS: perturb.daily ?? real.FREE_DAILY_CALLS,
+        FREE_TELEGRAM_MONTHLY_ALERTS: perturb.telegramMonthly ?? real.FREE_TELEGRAM_MONTHLY_ALERTS,
       };
     });
     vi.resetModules();
@@ -102,6 +103,39 @@ describe('GET /api/plans/public — the free ladder is published', () => {
     const stamp = body.generated_at as string;
     expect(typeof stamp).toBe('string');
     expect(Number.isNaN(Date.parse(stamp))).toBe(false);
+  });
+});
+
+describe('free.telegram — the per-surface Telegram allowance (GROWTH-TG-FREE-ALLOWANCE-W1)', () => {
+  it('publishes the block projected from the plans.ts constants, with exactly its two keys', async () => {
+    const { FREE_TELEGRAM_MONTHLY_ALERTS, FREE_TELEGRAM_DAILY_ALERTS } = await import('../src/lib/plans.js');
+    const { body } = await getBody(await boot());
+    const tg = (body.free as { telegram: Record<string, unknown> }).telegram;
+    expect(Object.keys(tg).sort()).toEqual(['daily_alerts', 'monthly_alerts']);
+    expect(tg.monthly_alerts).toBe(FREE_TELEGRAM_MONTHLY_ALERTS);
+    expect(tg.daily_alerts).toBe(FREE_TELEGRAM_DAILY_ALERTS);
+  });
+
+  it('serves the ruled figure — 100 alerts a month (Mr.1, 2026-10-08)', async () => {
+    const { body } = await getBody(await boot());
+    expect((body.free as { telegram: { monthly_alerts: number } }).telegram.monthly_alerts).toBe(100);
+  });
+
+  it('derives the Telegram daily cap from the API daily cap — never a typed number', async () => {
+    const { FREE_TELEGRAM_DAILY_ALERTS, FREE_DAILY_CALLS } = await import('../src/lib/plans.js');
+    expect(FREE_TELEGRAM_DAILY_ALERTS).toBe(FREE_DAILY_CALLS);
+    // The value check alone passes for a typed `= 100` today and drifts the day the API cap moves.
+    // A module mock cannot see this either: a spread mock keeps the REAL module's evaluated value.
+    const src = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'lib', 'plans.ts'), 'utf8');
+    expect(src).toMatch(/^export const FREE_TELEGRAM_DAILY_ALERTS = FREE_DAILY_CALLS;$/m);
+  });
+
+  it('is additive — the API figures beside it are untouched', async () => {
+    const { body } = await getBody(await boot());
+    const free = body.free as Record<string, unknown>;
+    expect(Object.keys(free).sort()).toEqual(['daily_calls', 'monthly_calls', 'telegram']);
+    expect(free.monthly_calls).toBe(200);
+    expect(free.daily_calls).toBe(100);
   });
 });
 
@@ -178,8 +212,14 @@ describe('ALLOW-list — the response carries public fields and nothing else', (
     expect(pro.monthly_calls).toBe(100_000);
     expect(pro.daily_calls).toBe(10_000);
     expect(pro.price_usd_6month).toBe(129);
-    // The free block is outside the tier ladder and this wave does not touch it.
-    expect(body.free).toEqual({ monthly_calls: 200, daily_calls: 100 });
+    // The free block is outside the tier ladder and this wave does not touch it. Since
+    // GROWTH-TG-FREE-ALLOWANCE-W1 it also carries the additive `telegram` block (pinned in its own
+    // describe below), so the API pair is pinned here on its own.
+    const free = body.free as { monthly_calls: number; daily_calls: number };
+    expect({ monthly_calls: free.monthly_calls, daily_calls: free.daily_calls }).toEqual({
+      monthly_calls: 200,
+      daily_calls: 100,
+    });
   });
 
   it('CONTACT_US_PLANS is the ONE place the refusal is decided', async () => {
@@ -328,10 +368,27 @@ describe('the response is a PROJECTION of plans.ts, not a literal — proven abl
     expect((body.free as { daily_calls: number }).daily_calls).toBe(7);
   });
 
+  it('follows a perturbed FREE_TELEGRAM_MONTHLY_ALERTS — and the API figure does not move with it', async () => {
+    const { body } = await getBody(await boot({ telegramMonthly: 37 }));
+    const free = body.free as { monthly_calls: number; telegram: { monthly_alerts: number } };
+    expect(free.telegram.monthly_alerts).toBe(37);
+    expect(free.monthly_calls).toBe(200);
+  });
+
+  it('a perturbed FREE_MONTHLY_CALLS does not move the Telegram allowance — the coupling is retired', async () => {
+    // GROWTH-TG-QUOTA-PARITY-W1 coupled the bot to the API's figure, so moving one moved both.
+    // This is the property GROWTH-TG-FREE-ALLOWANCE-W1 exists for, expressed as a test.
+    const { body } = await getBody(await boot({ monthly: 999 }));
+    const free = body.free as { monthly_calls: number; telegram: { monthly_alerts: number } };
+    expect(free.monthly_calls).toBe(999);
+    expect(free.telegram.monthly_alerts).toBe(100);
+  });
+
   it('returns to the real SoT values once the perturbation is unmocked', async () => {
     const { body } = await getBody(await boot());
-    const free = body.free as { monthly_calls: number; daily_calls: number };
+    const free = body.free as { monthly_calls: number; daily_calls: number; telegram: { monthly_alerts: number } };
     expect(free.monthly_calls).toBe(200);
     expect(free.daily_calls).toBe(100);
+    expect(free.telegram.monthly_alerts).toBe(100);
   });
 });

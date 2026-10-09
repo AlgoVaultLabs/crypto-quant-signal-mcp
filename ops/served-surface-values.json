@@ -59,7 +59,7 @@
       "href": "https://api.algovault.com/api/plans/public",
       "coverage": "offline",
       "builder": { "module": "dist/lib/plans-public-api.js", "export": "buildPublicPlansBody" },
-      "contract": "audits/api-plans-public-shape-snapshot-2026-09-08.json",
+      "contract": "audits/api-plans-public-shape-snapshot-2026-10-09.json",
       "note": "The surface this wave exists for. Unauthenticated, listed in .well-known/api-catalog, and the machine-readable face of the pricing ladder — so a wrong figure here propagates into LLM answers about AlgoVault pricing."
     },
     {

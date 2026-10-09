@@ -1,13 +1,13 @@
 {
-  "wave": "OPS-PLANS-PUBLIC-ENTERPRISE-DEPRICE-W1",
+  "wave": "GROWTH-TG-FREE-ALLOWANCE-W1",
   "chapter": "CH1",
   "endpoint": "/api/plans/public",
-  "snapshot_date": "2026-09-08",
-  "captured_at_utc": "2026-09-08T15:06:55Z",
-  "change_class": "BREAKING-BY-WIDENING — tiers[].price_usd and tiers[].monthly_calls widen from number to number|null. Keys are UNCHANGED and still present on every tier; only the enterprise rung's VALUES become null. A consumer asserting the six-key set is unaffected; a consumer assuming a numeric price on every rung must now handle the refusal — the same refusal daily_calls and price_usd_6month have always carried.",
-  "supersedes": "audits/api-plans-public-shape-snapshot-2026-09-06.json — KEPT ON DISK as the dated record of what the contract was on 2026-09-06, with exactly TWO keys APPENDED to it by this wave's own commit aaf7da18 (superseded_by + superseded_reason) and its captured_body RESERIALIZED — whitespace only, compact single-line objects expanded across lines. So it is semantically append-only and NOT byte-identical, and this sentence says so because the previous wording claimed it was untouched, which was false. MEASURED, not asserted: diff <(jq -S 'del(.superseded_by,.superseded_reason)' <pre-aaf7da18>) <(jq -S 'del(.superseded_by,.superseded_reason)' <post-aaf7da18>) is EMPTY. No measurement, date, note or value changed. THE APPEND IS REQUIRED, not cosmetic: scripts/build-knowledge-json.mjs projects EVERY audits/*-shape-snapshot-*.json into the PUBLIC knowledge bundle and src/lib/knowledge-index.ts keys each document `response_shape:${endpoint}`, so two LIVE files carrying endpoint /api/plans/public are a duplicate document id, which winkBM25S rejects outright: KnowledgeIndex.build() THROWS (Error: winkBM25S: Duplicate document encountered: response_shape:<endpoint>), tests/integration/knowledge-flow.test.ts fails, and at runtime the lazily-constructed index behind search_knowledge / chat_knowledge cannot be built. MEASURED CORRECTION, kept visible because the instrument matters: `npm run build:knowledge` TOLERATES the duplicate and exits 0 reporting response_shapes=39, so the builder succeeding is NOT evidence the bundle is usable — the rejection lives in the INDEX, not the build. A non-empty superseded_by is the ONLY thing that excludes a snapshot from that projection. A dated ledger states what was true when written; correcting one in place would make it a lie about its own moment (Build Rule 5). Supersede, never edit — and the two appended keys ARE the supersession mechanism, not an edit to the record.",
-  "change_note": "GET /api/plans/public published {\"id\":\"enterprise\",\"price_usd\":299,\"monthly_calls\":100000} — unauthenticated, listed in .well-known/api-catalog, and deliberately fed to AI crawlers. brand-facts.md:552 lists \"$299/mo as an Enterprise list price\" as a HIGH-severity forbidden phrase, :143 states Enterprise no longer publishes a price, and :134 gives its quota and cap as custom/custom. Every human surface already refused it; this — the machine-readable one — did not. license.ts still ENFORCES 100,000 for enterprise: enforcement is not the commercial offer, and only the PUBLISHED value changed.",
-  "source": "src/lib/plans-public-api.ts::buildPublicPlansBody() projecting src/lib/plans.ts. The enterprise refusal is data-driven via CONTACT_US_PLANS + publishedMonthlyPriceUsd()/publishedMonthlyCalls(), never an id === \"enterprise\" branch in the projection.",
+  "snapshot_date": "2026-10-09",
+  "captured_at_utc": "2026-10-09T02:18:02Z",
+  "change_class": "ADDITIVE — `free` gains one object, `telegram: {monthly_alerts, daily_alerts}`. Every existing key and value is unchanged: free.monthly_calls and free.daily_calls are byte-identical, and so is every tier. A consumer that predates the block ignores it.",
+  "supersedes": "audits/api-plans-public-shape-snapshot-2026-09-08.json — KEPT ON DISK as the dated record of what the contract was until 2026-10-09, with exactly two keys APPENDED at its end (superseded_by + superseded_reason) and no other byte changed. The append is the supersession mechanism, not an edit: scripts/build-knowledge-json.mjs leaves a snapshot out of the PUBLIC knowledge bundle only when superseded_by is non-empty, and two live snapshots for one endpoint are a duplicate knowledge-index document id that KnowledgeIndex.build() rejects.",
+  "change_note": "Per-surface free allowance from the one ladder SoT. The Telegram bot's free allowance is now its own constant, FREE_TELEGRAM_MONTHLY_ALERTS = 100 delivered alerts per rolling 30-day window (ruled 2026-10-08), published as free.telegram.monthly_alerts; free.telegram.daily_alerts is FREE_TELEGRAM_DAILY_ALERTS, derived from FREE_DAILY_CALLS. The API / MCP free tier is unchanged at 200 calls a month and 100 per UTC day. Before this, the bot read free.monthly_calls — the API's figure — so the two surfaces could not move independently (GROWTH-TG-QUOTA-PARITY-W1, 2026-08-27).",
+  "source": "src/lib/plans-public-api.ts::buildPublicPlansBody() projecting src/lib/plans.ts (FREE_MONTHLY_CALLS, FREE_DAILY_CALLS, FREE_TELEGRAM_MONTHLY_ALERTS, FREE_TELEGRAM_DAILY_ALERTS, PLANS, planPrepayTotalUsd). captured_body is the builder's output on the CH1 tree with generated_at pinned to captured_at_utc; the deployed body is checked against it, generated_at aside, by the cache-busted live read after landing.",
   "allowed_keys": [
     "_algovault",
     "free",
@@ -16,7 +16,12 @@
   ],
   "free_value_keys": [
     "daily_calls",
-    "monthly_calls"
+    "monthly_calls",
+    "telegram"
+  ],
+  "free_telegram_value_keys": [
+    "daily_alerts",
+    "monthly_alerts"
   ],
   "tiers_value_keys": [
     "daily_calls",
@@ -50,11 +55,15 @@
     "monthlyCalls",
     "dailyCalls"
   ],
-  "forbidden_keys_note": "UNCHANGED from 2026-09-06. These are KEY NAMES ONLY, and that limitation is precisely what let this defect ship: a forbidden-KEY list cannot express \"this key must not carry this VALUE\", so the 2026-09-06 snapshot captured price_usd: 299 as APPROVED. forbidden_values below is the concept it lacked.",
+  "forbidden_keys_note": "UNCHANGED from 2026-09-08 (key names only; forbidden_values below carries the value rules).",
   "captured_body": {
     "free": {
       "monthly_calls": 200,
-      "daily_calls": 100
+      "daily_calls": 100,
+      "telegram": {
+        "monthly_alerts": 100,
+        "daily_alerts": 100
+      }
     },
     "tiers": [
       {
@@ -82,7 +91,7 @@
         "price_usd_6month": null
       }
     ],
-    "generated_at": "2026-09-08T15:06:55.000Z",
+    "generated_at": "2026-10-09T02:18:02.000Z",
     "_algovault": {
       "brand": "The Brain Layer for AI Trading Agents",
       "note": "Building an agent? Get a free API key — higher limits, all tools, x402 pay-per-call.",
@@ -117,9 +126,16 @@
         "path": "tiers[*]",
         "predicate": "key_set_equals:daily_calls,id,label,monthly_calls,price_usd,price_usd_6month",
         "reason": "The refusal is a VALUE change, never a key removal. A consumer asserting the six-key set must be unaffected; omitting the key instead of nulling it would break them."
+      },
+      {
+        "id": "free-key-set-is-stable",
+        "path": "free",
+        "predicate": "key_set_equals:daily_calls,monthly_calls,telegram",
+        "reason": "ADDITIVE, in both directions. The API pair must stay: every API consumer reads it, and the Telegram bot falls back to it against an older server. The per-surface telegram block must be present: the bot reads free.telegram.monthly_alerts as its allowance. Removing either is a breaking change, never a tidy-up. The path resolves on the pre-fix captured body too (free exists there), so --prove-catches-ch1 still evaluates every assertion; that body now yields one more violation (no telegram key) and the current body none."
       }
     ]
   },
+  "free_telegram_note": "free.telegram is the Telegram bot's own allowance, in the bot's own unit: a DELIVERED ALERT (a silent HOLD costs nothing), where the API meters a returned verdict. The bot stamps each 30-day window with the allowance it opened under and serves max(stamp, monthly_alerts) while that window is open, so a change to this figure never walls a chat mid-window. daily_alerts is a real cap but, against a 100-alert month, binds only for a chat whose monthly allowance is above it (a referral bonus, or a window opened under the old figure); Telegram copy states it only where that is material. Never quote this figure on an API surface, or the API's figure on a Telegram one.",
   "price_usd_6month_note": "🛑 TWO PROPERTIES, both load-bearing. (1) null is a REFUSAL — 'not sold on this term' — exactly as daily_calls' null is. It is never 0 and never a scaled monthly: plans.ts::planPrepayTotalUsd already refuses to fabricate a term nobody priced, and this field is that refusal projected onto the wire. A consumer coercing enterprise's null to 0 would advertise a free plan. (2) It is a TOTAL, not a monthly rate: 39.9 is what the card is charged once, for six months. A consumer rendering it beside price_usd MUST say which ('$39.90/6mo'), or the pair reads as a price cut. The endpoint projects it through planPrepayTotalUsd rather than reading plan.priceUsd6Month directly, so the 'never fabricate an unpriced term' decision has exactly ONE derivation. Both properties are pinned in tests/plans-public-api.test.ts and both were proven able to fail — see proven_able_to_fail.",
   "null_daily_calls_note": "enterprise.daily_calls is null, and null is a REFUSAL — not 'unlimited' and not zero. src/lib/plans.ts::planDailyCallsLabel carries the same warning for the copy path: no real Enterprise deal has set a daily cap, so a consumer must render the ABSENCE rather than substitute a number or the word 'unlimited', which PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-E removed from this ladder. A consumer that coerces null to 0 would refuse every Enterprise call; one that reads it as unlimited would publish a claim no contract supports. Pinned by tests/plans-public-api.test.ts.",
   "null_price_usd_note": "🛑 enterprise.price_usd and enterprise.monthly_calls are null, and null is a REFUSAL — \"custom, ask us\" — never zero, never \"free\", never unlimited. This is the SAME refusal daily_calls and price_usd_6month already carried on this rung, so a nulled value was already in the wire format every consumer handles. A consumer must OMIT the figure; rendering \"null\" or substituting a number is the defect this snapshot records the end of.",
@@ -133,11 +149,12 @@
     "staleness_signal": "NONE, deliberately. The ladder changes only on deploy and the container restart is the invalidation boundary. Do not key a freshness alarm on generated_at — see generated_at_note."
   },
   "consumers": [
-    "algovault-bot free-tier ladder mirror — src/algovault_bot/ladder_client.py::parse_ladder, fetched by the EXISTING entitlement_drain cron every 5 minutes and written to the free_tier_ladder SQLite table. LIVE since GROWTH-TG-QUOTA-PARITY-W1 CH2. WIDENED IN THE SAME WAVE AS THIS FIELD (GROWTH-TG-PLAN-PICKER-W1 R2) to mirror the full four-SKU ladder: starter/pro x month/6month plus both daily caps. Unknown-key tolerance is pinned there by a fixture carrying two invented extra keys, so the deploy ORDER of the two repos is free — an older bot ignores this field, and a newer bot reads it as absent (None) and serves its pinned fallback rather than refusing.",
+    "algovault-bot free-tier ladder mirror — src/algovault_bot/ladder_client.py::parse_ladder, fetched by the EXISTING entitlement drain (signal-1 root crontab, ten passes an hour) over loopback and written to the free_tier_ladder SQLite table. Since GROWTH-TG-FREE-ALLOWANCE-W1 it reads free.telegram.monthly_alerts / daily_alerts when present and valid, and free.monthly_calls / daily_calls otherwise (an older server) — that fallback is what keeps the deploy ORDER of the two repos free. Unknown keys are ignored by contract, pinned by a fixture carrying invented extra keys.",
+    "algovault-editorial brand-facts projection — scripts/build-brand-facts-projection.mjs binds pricing/quota digits in the projected brand-facts file to this endpoint (producer `plans`, baked snapshot ops/snapshots/plans-public.json, checked live by scripts/check-brand-facts-sync.mjs leg C). It reads free.monthly_calls, free.daily_calls and tier paths by SET membership; it does not read free.telegram. Not listed by the 2026-09-08 snapshot; added here because it is a real reader of this body.",
     "ops/pricing-tokens.json via scripts/emit-pricing-tokens.mjs — NOT a consumer of this endpoint, but a SECOND PROJECTION of the same source (dist/lib/plans.js). tests/plans-public-api.test.ts asserts the two agree on the free and paid CALL ladders. It does NOT yet carry a prepay token, and that is a deliberate non-change: no copy surface consumes one. 🛑 On a mismatch the fix is to REGENERATE the tokens from plans.ts — never to hand-edit either artifact to match the other, which would convert two projections into two SoTs."
   ],
-  "consumers_note": "Re-measured 2026-09-08, not inherited. AlgoVaultLabs/algovault-bot reads ONLY the starter and pro rungs — src/algovault_bot/ladder_client.py exposes _starter_rung() and there is no enterprise call site anywhere in the repo; messages.py declares SignupPlan = Literal[\"starter\",\"pro\"] with the comment \"enterprise is deliberately absent\", and tests/test_plan_picker.py asserts the picker never offers it. Its price parse guard is float(price) if isinstance(price, (int, float)) else None, so even a read would yield None, never a crash and never the string \"null\". NO bot-side change was required by this wave.",
-  "proven_able_to_fail": "tests/plans-public-api.test.ts — a deliberate break restoring plan.priceUsdMonthly into the projection path was observed FAILING before being reverted (CH1 R1.6). scripts/check-served-surface-values.mjs additionally ships --prove-catches-ch1, which runs these assertions against the pre-fix body captured verbatim in tests/fixtures/served-surfaces/plans-public-prefix.json and must report FAIL_AS_EXPECTED.",
+  "consumers_note": "Re-measured 2026-10-08 (GROWTH-TG-FREE-ALLOWANCE-W1 Plan Mode), not inherited. The bot's ladder mirror has exactly one writer (db.upsert_free_tier_ladder, called only by entitlement_drain) and reads the body over loopback, so it is not behind the 300 s edge cache. The editorial projection reads the API pair, not free.telegram, so its gate cannot tell the Telegram figure from the API daily cap when the two are equal — it fails closed if they diverge.",
+  "proven_able_to_fail": "tests/plans-public-api.test.ts — two deliberate breaks were observed FAILING before being reverted: (1) projecting monthly_alerts from FREE_MONTHLY_CALLS (re-coupling the surfaces) turned 5 tests red; (2) typing FREE_TELEGRAM_DAILY_ALERTS = 100 turned the derivation test red. scripts/check-served-surface-values.mjs --prove-catches-ch1 still replays the real pre-fix bytes from tests/fixtures/served-surfaces/plans-public-prefix.json (untouched — it is the record of what was served) and must report FAIL_AS_EXPECTED.",
   "drift_check": {
     "_doc": "REPLACES drift_check_command, which was a SHELL STRING IN A JSON FIELD. git grep for this snapshot family outside audits/ returned ZERO hits: it was in no script, no workflow and no cron, so it had never once run. Prose in a JSON field is not a control — the Completeness Standard says a rule that has failed as prose must become a gate or be deleted. It is now a named, executable script with a verdict token.",
     "script": "scripts/check-served-surface-values.mjs",
@@ -153,7 +170,5 @@
     },
     "registry": "ops/served-surface-values.json",
     "note": "The OFFLINE mode is the gate. The projection is a pure function, so this class is catchable deterministically at build time and does not need the network. The live mode catches host/deploy drift the build cannot see. Neither substitutes for the other, and the live one must never be the only enforcement."
-  },
-  "superseded_by": "api-plans-public-shape-snapshot-2026-10-09.json",
-  "superseded_reason": "GROWTH-TG-FREE-ALLOWANCE-W1 CH1 added free.telegram {monthly_alerts, daily_alerts} — the Telegram bot's own free allowance, published beside the unchanged API pair — so this file no longer describes the live contract: its free_value_keys lists two keys where the endpoint now serves three. Superseded, not edited: everything above this key is byte-identical, because a dated ledger states what was true when written. The two appended keys are the supersession mechanism — a non-empty superseded_by keeps this file out of the public knowledge bundle, where two live snapshots for one endpoint would be a duplicate document id."
+  }
 }

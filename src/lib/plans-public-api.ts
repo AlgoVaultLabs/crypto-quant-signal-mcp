@@ -43,6 +43,8 @@ import {
   PLANS,
   FREE_MONTHLY_CALLS,
   FREE_DAILY_CALLS,
+  FREE_TELEGRAM_MONTHLY_ALERTS,
+  FREE_TELEGRAM_DAILY_ALERTS,
   PREPAY_6MONTH_MONTHS,
   planPrepayTotalUsd,
   type PaidPlanId,
@@ -169,10 +171,34 @@ export interface PublicPlanTier {
   readonly price_usd_6month: number | null;
 }
 
-/** The free tier's two meters. Both are REAL caps: a call is refused when EITHER is exhausted. */
+/**
+ * The Telegram bot's own free allowance, in its own unit: DELIVERED ALERTS, not calls.
+ *
+ * GROWTH-TG-FREE-ALLOWANCE-W1. The bot used to read `monthly_calls`/`daily_calls` above, which
+ * coupled its allowance to the API's: moving either moved both. This block gives each surface its
+ * own figure from the ONE ladder SoT (`plans.ts`). It is ADDITIVE, so a consumer that predates it
+ * ignores it, and the bot falls back to the API figures only when talking to an older server.
+ */
+export interface PublicTelegramFreeTier {
+  /** `FREE_TELEGRAM_MONTHLY_ALERTS` — delivered alerts per rolling 30-day window. */
+  readonly monthly_alerts: number;
+  /**
+   * `FREE_TELEGRAM_DAILY_ALERTS`, derived from the API's daily cap. A real cap, but against the
+   * monthly figure it binds only for a chat whose monthly allowance is above it, so copy states
+   * it only where that is material.
+   */
+  readonly daily_alerts: number;
+}
+
+/**
+ * The free tier. `monthly_calls` and `daily_calls` are the API / MCP surface's two meters — both
+ * REAL caps, a call is refused when EITHER is exhausted. `telegram` is the bot's allowance, which
+ * is separate by design (see `PublicTelegramFreeTier`).
+ */
 export interface PublicFreeTier {
   readonly monthly_calls: number;
   readonly daily_calls: number;
+  readonly telegram: PublicTelegramFreeTier;
 }
 
 /** The complete public plan-ladder response. Every field is public by construction. */
@@ -195,6 +221,10 @@ export function buildPublicPlansBody(now: Date = new Date()): PublicPlansBody {
     free: {
       monthly_calls: FREE_MONTHLY_CALLS,
       daily_calls: FREE_DAILY_CALLS,
+      telegram: {
+        monthly_alerts: FREE_TELEGRAM_MONTHLY_ALERTS,
+        daily_alerts: FREE_TELEGRAM_DAILY_ALERTS,
+      },
     },
     tiers: PUBLIC_PLAN_ORDER.map((id) => {
       const plan = PLANS[id];
