@@ -1143,27 +1143,13 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
  * saves fetches that cannot succeed; a stale entry costs a skipped-but-reachable row (reported as
  * `past_reach`), never a wrong value.
  */
-export const EXPIRY_REACH_DAYS_MEASURED_AT = '2026-09-27';
-export const EXPIRY_REACH_DAYS: Readonly<Record<string, Readonly<Record<string, number>>>> = {
-  BINGX: { '3m': 2, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 83 },
-  BITGET: { '2h': 8.75, '8h': 51 },
-  GATE: { '3m': 34.5, '5m': 34.5, '15m': 104 },
-  HL: { '3m': 10.41, '5m': 17.36, '15m': 52.08, '30m': 104.16, '1h': 208.33 },
-  HTX: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
-  MEXC: { '3m': 6.75, '5m': 6.75, '15m': 20.75, '30m': 41, '1h': 83, '2h': 83 },
-  PHEMEX: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
-  WEEX: { '3m': 2.08, '5m': 3.47, '15m': 10.41, '30m': 20.83, '1h': 41.66, '2h': 83.33, '4h': 166.66 },
-  WHITEBIT: { '5m': 10.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
-  XT: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
-};
-
-export function expiryReachDays(venue: string, timeframe: string): number {
-  return EXPIRY_REACH_DAYS[venue]?.[timeframe] ?? Infinity;
-}
-
-/** HL's candle depth: `candleSnapshot` serves the newest 5,000 candles of an interval (the HL rows of
- *  EXPIRY_REACH_DAYS are this count × the step; a test pins the two together). */
-export const HL_CANDLE_DEPTH = 5_000;
+// OPS-ALARM-OWNER-DERIVATION-W1 CH1: the table, its date, its lookup, HL's depth and the margin now
+// live in src/lib/venue-candle-reach.ts — the ONE reach table the outcome backfill's queue and census
+// read too. Re-exported here so every existing importer compiles unchanged; values are byte-identical.
+import {
+  EXPIRY_REACH_DAYS, EXPIRY_REACH_DAYS_MEASURED_AT, HL_CANDLE_DEPTH, REACH_MARGIN_S, expiryReachDays,
+} from '../lib/venue-candle-reach.js';
+export { EXPIRY_REACH_DAYS, EXPIRY_REACH_DAYS_MEASURED_AT, HL_CANDLE_DEPTH, expiryReachDays };
 
 /**
  * Ruling LRW-Q17, rider 1 (2026-10-05): HL's relabel work-list in time-to-depth-loss order — ascending
@@ -1182,8 +1168,7 @@ export function depthDeadlineOrder<T extends { timeframe: string; atRiskOldest: 
     .map((x) => x.g);
 }
 
-/** One margin hour inside the measured depth, so a row on the edge is skipped rather than fetched empty. */
-const REACH_MARGIN_S = 3600;
+// REACH_MARGIN_S (one margin hour inside the measured depth) is imported from venue-candle-reach.ts above.
 
 /** The `T_CAP` predicate as SQL over `s` (signals) and `tf` (timeframe → seconds, W). Integers inlined. */
 export function tCapSql(): string {

@@ -94,6 +94,20 @@ describe('OPS-OUTCOME-BACKFILL-STALL-W1 A1 — backfill queue predicate', () => 
     expect(sql).toContain('outcome_attempts');
   });
 
+  it('OPS-ALARM-OWNER-DERIVATION-W1: the past-reach exclusion is its OWN conjunct, outside the backoff group', () => {
+    // Same reason as the A1b assertion above: this file's interpreter is scoped to the backoff
+    // group, so it must prove the other group exists. Its behaviour is owned, executed, by
+    // tests/unit/backfill-reach-terminal.test.ts; here it is enough that it is a separate NOT (...)
+    // and that the backoff group itself names no venue — a reach rule folded into the backoff
+    // would make the exit depend on attempt history, i.e. a tombstone.
+    expect(sql).toMatch(/\x29 AND NOT \x28\x28COALESCE\x28NULLIF\x28exchange,''\x29,'HL'\x29 = '/);
+    const head = 'WHERE outcome_price IS NULL AND ';
+    const from = sql.indexOf(head) + head.length;
+    const backoff = sql.slice(from, sql.indexOf(' AND NOT ', from));
+    expect(backoff).toContain('outcome_attempts');
+    expect(backoff).not.toContain('exchange');
+  });
+
   it('carries an explicit NULL arm for a never-attempted row', () => {
     // Not stylistic: without it, three-valued logic excludes the whole historical backlog.
     expect(sql).toContain('outcome_attempts IS NULL');

@@ -11,6 +11,7 @@ import { isShortLivedScript } from './runtime.js';
 import { isPfeEligible, SQL_PFE_ELIGIBLE } from './pfe-scoring.js';
 // A1b: the ONE maturity derivation. `pfe-mae.ts` is a type-only-import leaf, so this cannot cycle.
 import { EVAL_CANDLES, maturityHorizonS, isMatureAtS } from './pfe-mae.js';
+import { buildPastReachClause, SQL_VENUE_EXPR } from './venue-candle-reach.js';
 import { SQL_PUBLISHED_POPULATION, sqlPublishedPopulation, isPublishedPopulation, MIN_TRACKABLE_CONFIDENCE } from './published-population.js';
 import { scorerCaptureEnabled, type ScorerParts } from './scorer-input-codes.js';
 import { formatWriteLossLog } from './log-redact.js';
@@ -2999,18 +3000,117 @@ function buildMaturityClause(nowEpoch: number): string {
  * is the difference between a backoff and a total outage.
  */
 export function buildBackfillQueueSql(nowEpoch: number, limit = BACKFILL_QUEUE_LIMIT): string {
+  return `SELECT * FROM signals WHERE ${buildBackfillQueueWhere(nowEpoch)} ORDER BY created_at ASC LIMIT ${Math.trunc(limit)}`;
+}
+
+/** The backoff clause — `NOT (maxed AND still cooling)`, NULL arms explicit (see buildBackfillQueueSql). */
+function buildBackoffClause(nowEpoch: number): string {
   const cutoff = Math.trunc(nowEpoch) - BACKFILL_ATTEMPT_COOLDOWN_S;
   return (
-    `SELECT * FROM signals WHERE outcome_price IS NULL` +
-    ` AND (outcome_attempts IS NULL` +
+    `(outcome_attempts IS NULL` +
     ` OR outcome_attempts < ${BACKFILL_MAX_ATTEMPTS}` +
     ` OR outcome_last_attempt_at IS NULL` +
-    ` OR outcome_last_attempt_at <= ${cutoff})` +
-    // A1b: admission now uses the SAME horizon every consumer's attempt guard uses. Before this,
-    // admission was `>= 1 candle` and attempt was `>= (EVAL_CANDLES + 1) candles`, so the window
-    // filled with rows no consumer would touch.
-    ` AND ${buildMaturityClause(nowEpoch)}` +
-    ` ORDER BY created_at ASC LIMIT ${Math.trunc(limit)}`
+    ` OR outcome_last_attempt_at <= ${cutoff})`
+  );
+}
+
+/**
+ * The queue predicate's WHERE body — ONE derivation, read by the queue AND by the census builders
+ * below (OPS-ALARM-OWNER-DERIVATION-W1 CH1), so the canary counts the rows the producer serves rather
+ * than a re-derived copy of them.
+ *
+ * Conjuncts, in order: pending; the backoff; NOT past the venue's served depth; matured.
+ *  * PAST REACH (CH1): a row older than its (venue, timeframe) measured candle depth leaves the queue.
+ *    The venue cannot serve its window, so a retry either returns nothing (HL answers 500 and its
+ *    per-coin breaker then starves the coin's in-reach rows; Gate refuses — sediment) or, on the six
+ *    count-limited venues, fills the row from bars days after the signal. A predicate, never a stamp:
+ *    it reads no attempt column, and re-measuring the table deeper puts the rows back.
+ *  * MATURITY (A1b): admission uses the SAME horizon every consumer's attempt guard uses. Before A1b,
+ *    admission was `>= 1 candle` and attempt was `>= (EVAL_CANDLES + 1) candles`, so the window filled
+ *    with rows no consumer would touch.
+ */
+function buildBackfillQueueWhere(nowEpoch: number): string {
+  return (
+    `outcome_price IS NULL` +
+    ` AND ${buildBackoffClause(nowEpoch)}` +
+    ` AND NOT ${buildPastReachClause(nowEpoch)}` +
+    ` AND ${buildMaturityClause(nowEpoch)}`
+  );
+}
+
+// ── OPS-ALARM-OWNER-DERIVATION-W1 CH1 — the CENSUS of the queue, for the canary that judges it ─────
+//
+// `ops/monitoring/outcome-backfill-freshness.py` used to re-derive this queue in Python. A mirror is a
+// second derivation, and it is the one that drifts: the drain gate's copy never got A1b's maturity
+// clause, and the canary's parity check compared constants only, and only beside a checkout. The
+// canary now EXECUTES what these builders emit (via `dist/scripts/backfill-queue-census.js`), so every
+// count below is a projection of the producer's own clauses — no clause is written twice.
+// Label-blind by construction: cardinalities, timestamps and IS NULL predicates only.
+
+/** Column contract of `buildBackfillCensusSql`, in order — the canary's parser reads these names. */
+export const BACKFILL_CENSUS_COLUMNS = [
+  'backlog_uncapped', 'immature', 'parked', 'past_reach', 'servable_uncapped', 'frontier',
+] as const;
+
+/** Column contract of `buildBackfillVenueCensusSql`, in order. */
+export const BACKFILL_VENUE_CENSUS_COLUMNS = [
+  'venue', 'matured_24h', 'filled_24h', 'attempted_24h', 'past_reach_entered_24h', 'servable',
+] as const;
+
+/**
+ * ONE scalar row over the pending rows:
+ *  * backlog_uncapped  — every pending row (UNCAPPED — never aggregate over the LIMITed read);
+ *  * immature          — pending ∧ NOT matured (the maturity clause, negated);
+ *  * parked            — pending ∧ NOT backoff (maxed AND still cooling — the backoff, negated);
+ *  * past_reach        — pending ∧ matured ∧ past the venue's served depth;
+ *  * servable_uncapped — `count(*)` of the queue predicate itself, no LIMIT;
+ *  * frontier          — `MAX(created_at)` of the queue SQL itself, WITH its LIMIT.
+ */
+export function buildBackfillCensusSql(nowEpoch: number, limit = BACKFILL_QUEUE_LIMIT): string {
+  const now = Math.trunc(nowEpoch);
+  const mature = buildMaturityClause(now);
+  // Keyed by the column contract, so a column without an expression does not compile and the
+  // SELECT list's names and order ARE the contract — never a second, hand-typed copy of it.
+  const exprs: Record<(typeof BACKFILL_CENSUS_COLUMNS)[number], string> = {
+    backlog_uncapped: 'COUNT(*)',
+    immature: `COUNT(*) FILTER (WHERE NOT ${mature})`,
+    parked: `COUNT(*) FILTER (WHERE NOT ${buildBackoffClause(now)})`,
+    past_reach: `COUNT(*) FILTER (WHERE ${mature} AND ${buildPastReachClause(now)})`,
+    servable_uncapped: `COUNT(*) FILTER (WHERE ${buildBackfillQueueWhere(now)})`,
+    frontier: `(SELECT MAX(created_at) FROM (${buildBackfillQueueSql(now, limit)}) q)`,
+  };
+  return `SELECT ${BACKFILL_CENSUS_COLUMNS.map((c) => `${exprs[c]} AS ${c}`).join(', ')} FROM signals WHERE outcome_price IS NULL`;
+}
+
+/**
+ * Per venue (the fill path's venue key: an empty `exchange` is HL), over the trailing 24 h:
+ *  * matured_24h            — rows that became due in the window: matured now ∧ NOT matured 24 h ago;
+ *  * filled_24h             — `outcome_filled_at` in the window (the producer's own write stamp);
+ *  * attempted_24h          — `outcome_last_attempt_at` in the window (LAST attempt — a lower bound);
+ *  * past_reach_entered_24h — pending rows that crossed their venue's served depth in the window;
+ *  * servable               — the queue predicate, per venue (sums to `servable_uncapped`).
+ * The outer WHERE only bounds the scan to rows that can contribute to some column; every column is
+ * still decided by the composed clause in its own FILTER.
+ */
+export function buildBackfillVenueCensusSql(nowEpoch: number): string {
+  const now = Math.trunc(nowEpoch);
+  const day = 86_400;
+  const maxHorizon = Math.max(...Object.keys(EVAL_CANDLES).map((tf) => maturityHorizonS(tf) ?? 0));
+  const exprs: Record<(typeof BACKFILL_VENUE_CENSUS_COLUMNS)[number], string> = {
+    venue: SQL_VENUE_EXPR,
+    matured_24h: `COUNT(*) FILTER (WHERE ${buildMaturityClause(now)} AND NOT ${buildMaturityClause(now - day)})`,
+    filled_24h: `COUNT(*) FILTER (WHERE outcome_filled_at > ${now - day} AND outcome_filled_at <= ${now})`,
+    attempted_24h: `COUNT(*) FILTER (WHERE outcome_last_attempt_at > ${now - day} AND outcome_last_attempt_at <= ${now})`,
+    past_reach_entered_24h:
+      `COUNT(*) FILTER (WHERE outcome_price IS NULL AND ${buildMaturityClause(now)} AND ${buildPastReachClause(now)}` +
+      ` AND NOT ${buildPastReachClause(now - day)})`,
+    servable: `COUNT(*) FILTER (WHERE ${buildBackfillQueueWhere(now)})`,
+  };
+  return (
+    `SELECT ${BACKFILL_VENUE_CENSUS_COLUMNS.map((c) => `${exprs[c]} AS ${c}`).join(', ')}` +
+    ` FROM signals WHERE (outcome_price IS NULL OR created_at > ${now - day - maxHorizon}` +
+    ` OR outcome_filled_at > ${now - day} OR outcome_last_attempt_at > ${now - day})` +
+    ` GROUP BY 1 ORDER BY 1`
   );
 }
 

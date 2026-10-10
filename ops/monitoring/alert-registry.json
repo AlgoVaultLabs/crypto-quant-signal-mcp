@@ -631,6 +631,18 @@
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OUTCOME_BACKFILL_STALLED-W{NEXT}"
     },
     {
+      "alert_id": "OUTCOME_BACKFILL_VENUE_SILENT",
+      "owner": "ops/monitoring/outcome-backfill-freshness.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OUTCOME_BACKFILL_VENUE_SILENT-W{NEXT}",
+      "notes": "OPS-ALARM-OWNER-DERIVATION-W1 CH1: arm 3d of the outcome-backfill canary — FAIL iff a venue had >= N_MIN rows matured in the trailing 24 h, the producer attempted >= 1, and filled 0 (N_MIN = 1, calibrated 2026-10-10 over 512 venue-days: the only zero-fill-with-attempts venue-day was the retired BITMART at matured 0). Its own id and remedy (OPS-ADAPTER-FILL-SILENT-W{NEXT}) because it is a different question from OUTCOME_BACKFILL_STALLED: CH1 lets rows the venue can no longer serve leave the queue at the venue's measured candle depth, and this page is what keeps a broken adapter from hiding behind that exit. Same 2-run sustain as the parent; `adopted` because the canary calls --clear (mode flag first) after the same sustain on a delivered episode; resolution is SILENT by the registry default. Fire site is a literal `[TG, \"OUTCOME_BACKFILL_VENUE_SILENT\", \"CRITICAL_PERSISTENT\", \"-\"]` so scripts/check-alert-registry.mjs detects it by position."
+    },
+    {
       "alert_id": "PAYMENT_DECLINE_DRIFT",
       "owner": "ops/monitoring/payment-decline-canary.py",
       "hosts": [
