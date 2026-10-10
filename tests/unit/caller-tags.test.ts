@@ -143,9 +143,13 @@ describe('class preservation — tags moved, classes did not', () => {
   // OPS-ADAPTER-HISTORY-ANCHOR-W1 CH3 added the live adapter-history canary (ruling OAH-Q10): a nightly read of
   // every promoted venue THROUGH the adapters, BATCH class so it can never spend a venue's interactive reserve,
   // its own entrypoint, literal name `adapter-history-canary`.
+  // OPS-ALARM-OWNER-DERIVATION-W1 CH2 added the dead-book admission verdict: the book-liveness canary's read
+  // of each dead key's venue universe (and, for a live key, its hourly bars) THROUGH the production fetchers
+  // and adapters — BATCH class for the same reason, its own entrypoint, literal name `admission-verdict`.
   const LATER_CLASS_SETTING: Record<string, Record<string, number>> = {
     'src/scripts/backfill-directional-labels.ts': { runAsBatch: 3, runAsCaller: 1 },
     'src/scripts/adapter-history-contiguity.ts': { runAsBatch: 1 },
+    'src/scripts/admission-verdict.ts': { runAsBatch: 1 },
   };
 
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {

@@ -13,7 +13,9 @@ so a skipped check can never read like a passing one:
 
   2. DEAD-BOOK PERSISTENCE (the gate's blast radius, correctly typed).  Replaces the retired
      per-venue suppression RATE — see WHY_THE_RATE_WAS_RETIRED. Separates a book that is dead
-     from a market that is merely CLOSED, structurally rather than by calendar.
+     from a market that is merely CLOSED, structurally rather than by calendar. Each dead book is
+     then CLASSED by the app's own admission step (DEAD_BOOK_CLASS) and only the classes an
+     operator can act on page.
 
   3. SUPPRESSION VOLUME FLOOR (runaway-defect detector).  REPORT-ONLY until calibrated — see
      FLOOR_PROMOTION. Catches an adapter parse defect (a string/null volume read as "not
@@ -102,6 +104,32 @@ RUNBOOK_URL = ("https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/blob/ma
 RESULT_CANARY = "book-liveness"
 BODY_MAX_KEYS = 40              # a Telegram message is bounded too; the full set goes to the result line
 RESULT_LINE_MARGIN_BYTES = 64
+
+# -- DEAD_BOOK_CLASS — the admission step's own verdict per dead key (OPS-ALARM-OWNER-DERIVATION-W1 CH2) --
+#
+# "Dead" is a fact about the EMIT GATE (suppressed on >= 24 of 28 dates); it is not, by itself, a fact
+# about the venue. Until this wave every new dead book paged with a two-branch paragraph telling a human
+# to go and read the venue's contract status — and 9 of 9 Aster keys that ever entered the dead set
+# were venue-LIVE (R0.6, 2026-10-10: EWT KSTR USD1 NVO FUTU all `TRADING`, all thin). The gate was
+# suppressing correctly; the page was not. The status those humans were sent to read is the one the
+# universe admission step ALREADY reads on every fetch, so the canary now asks that step directly:
+# `admission-verdict.js` runs the production `fetchVenueUniverse` (the ONE admission step, the same
+# `venueStatus` path) in the app container and returns `classifyDeadBook` per key. Precedence, first
+# match wins: STATUS_UNKNOWN > VENUE_OFF > ADAPTER_CONTRADICTION > THIN_LIVE (src/lib/universe-admission.ts).
+#
+# Paged: the three classes with an operator action. THIN_LIVE is a positive line, never a page. A
+# failed verdict script makes EVERY key STATUS_UNKNOWN — noise, never silence.
+DEAD_CLASSES = ("STATUS_UNKNOWN", "VENUE_OFF", "ADAPTER_CONTRADICTION", "THIN_LIVE")   # precedence order
+PAGED_CLASSES = frozenset(("STATUS_UNKNOWN", "VENUE_OFF", "ADAPTER_CONTRADICTION"))
+# One remedy per class. ADAPTER_CONTRADICTION is the gate/adapter question, so it shares the LEVEL
+# remedy's template; the other two are admission questions.
+CLASS_REMEDY = {"STATUS_UNKNOWN": WAVE_DEAD_BOOK, "VENUE_OFF": WAVE_DEAD_BOOK, "ADAPTER_CONTRADICTION": WAVE_CEILING}
+ADMISSION_CMD = ["docker", "exec", APP_CONTAINER, "node", "dist/scripts/admission-verdict.js", "--keys"]
+ADMISSION_TOKEN = "ADMISSION_VERDICT_EMIT"
+ADMISSION_TIMEOUT_S = 240      # one universe fetch per venue + one 24-bar read per key, batch class
+THIN_LIVE_LINE = ("DEAD_BOOKS_THIN_LIVE=%d (not paged: the venue lists them tradeable; the emit gate is "
+                  "suppressing correctly)")
+REASON_MAX_CHARS = 140         # per-key reason in the page body; the full reason is in the run log
 
 VERDICT_TOKEN = "BOOK_LIVENESS_VERDICT"
 EXIT_INDETERMINATE = 3
@@ -554,32 +582,130 @@ def build_ceiling_body(breaches, mode, stamp, lo, hi):
     ])
 
 
-def build_dead_body(dead, mode, stamp, lo, hi):
-    """The page-on-change body: every dead book with its days and timeframes. The wrapper prepends
-    the derived `NEW: … · still present (acknowledged): n` header, so NEW is never guessed here."""
-    shown = dead[:BODY_MAX_KEYS]
+class AdmissionError(Exception):
+    """The admission verdict could not be obtained or parsed. Every dead key is then STATUS_UNKNOWN."""
+
+
+def parse_admission_output(stdout, keys):
+    """{key: verdict} from `admission-verdict.js` stdout. PURE. Raises AdmissionError unless the run
+    ended `ADMISSION_VERDICT_EMIT=PASS` with ONE JSON object classing EXACTLY the requested keys in the
+    four-class vocabulary. Log lines the app prints first (`[universe-admission] …`) are skipped."""
+    lines = (stdout or "").splitlines()
+    tok = [i for i, ln in enumerate(lines) if ln.startswith(ADMISSION_TOKEN + "=")]
+    if not tok:
+        raise AdmissionError("no %s token in the script output" % ADMISSION_TOKEN)
+    last = tok[-1]
+    if lines[last] != ADMISSION_TOKEN + "=PASS":
+        raise AdmissionError("the script said %s" % lines[last])
+    blob = next((ln for ln in reversed(lines[:last]) if ln.startswith("{")), None)
+    if blob is None:
+        raise AdmissionError("no JSON line before %s=PASS" % ADMISSION_TOKEN)
+    try:
+        doc = json.loads(blob)
+    except ValueError as e:
+        raise AdmissionError("unparseable JSON line: %s" % e)
+    rows = doc.get("keys") if isinstance(doc, dict) else None
+    if not isinstance(rows, list):
+        raise AdmissionError("the JSON line carries no keys list")
+    out = {}
+    for r in rows:
+        if not isinstance(r, dict) or r.get("class") not in DEAD_CLASSES or not isinstance(r.get("key"), str):
+            raise AdmissionError("a row outside the contract: %r" % (r,))
+        if r["key"] in out:
+            raise AdmissionError("key %s classed twice" % r["key"])
+        out[r["key"]] = r
+    if sorted(out) != sorted(keys):
+        raise AdmissionError("classed keys %s != requested %s" % (sorted(out), sorted(keys)))
+    return out
+
+
+def admission_verdicts(keys):
+    """The app's own admission verdict per dead key — the live seam (stubbed in tests). Read-only:
+    the script opens no database and writes nothing. Raises AdmissionError on any failure."""
+    try:
+        r = subprocess.run(ADMISSION_CMD + [" ".join(keys)], capture_output=True, text=True,
+                           timeout=ADMISSION_TIMEOUT_S, check=False)
+    except Exception as e:  # noqa: BLE001 — an unreachable container is a verdict we could not get
+        raise AdmissionError("could not run the admission verdict: %s" % e)
+    return parse_admission_output(r.stdout, keys)
+
+
+def classify_dead_set(dead, verdicts, failure=None):
+    """(classes, paged, thin). PURE. `classes` maps EVERY dead key to its verdict; `paged` and `thin`
+    keep the dead set's order. `verdicts` None (the script failed) ⇒ every key STATUS_UNKNOWN."""
+    classes = {}
+    for d in dead:
+        v = (verdicts or {}).get(d.key)
+        if v is None:
+            v = {"key": d.key, "class": "STATUS_UNKNOWN",
+                 "reason": "admission verdict unavailable: %s" % (failure or "no verdict for this key")}
+        classes[d.key] = v
+    paged = [d for d in dead if classes[d.key]["class"] in PAGED_CLASSES]
+    thin = [d for d in dead if classes[d.key]["class"] == "THIN_LIVE"]
+    return classes, paged, thin
+
+
+def dead_book_dispatch(evaluable, paged):
+    """What the dead-book id hears this run: ("fire", keys) · ("clear", None) · (None, None) when the
+    window could not be judged — "could not judge" is not "nothing is dead". PURE."""
+    if not evaluable:
+        return None, None
+    if paged:
+        return "fire", [d.key for d in paged]
+    return "clear", None
+
+
+def _class_detail(v):
+    """status · last trade · traded bars 24h · reason — what a reader needs to act on one key."""
+    def val(x):
+        return "n/a" if x is None else x
+    reason = str(v.get("reason") or "")
+    if len(reason) > REASON_MAX_CHARS:
+        reason = reason[:REASON_MAX_CHARS - 1] + "…"
+    return "status %s · last trade %s · traded bars 24h %s · %s" % (
+        val(v.get("status_state")), val(v.get("venue_last_trade")), val(v.get("traded_bars_24h")), reason)
+
+
+def build_dead_body(paged, thin, classes, mode, stamp, lo, hi):
+    """The page-on-change body: each PAGED dead book with its class, the venue's status, its last
+    trade and its traded bars, then ONE remedy per class present. The wrapper prepends the derived
+    `NEW: … · still present (acknowledged): n` header, so NEW is never guessed here."""
+    shown = paged[:BODY_MAX_KEYS]
     lines = [
-        "\U0001F9CA Book-liveness canary: dead book(s) — this alert pages on ENTRY; the header names "
-        "what is NEW",
+        "\U0001F9CA Book-liveness canary: dead book(s) the venue's own status does not explain — this "
+        "alert pages on ENTRY; the header names what is NEW",
         "",
         "Window: exactly %d dates %s..%s (UTC) · dead = suppressed on >= %d of them · gate mode %s · "
         "checked %s" % (DEAD_BOOK_WINDOW_DAYS, lo, hi, DEAD_BOOK_MIN_DAYS, mode, stamp),
         "",
-        "Dead books now: %d book%s" % (len(dead), "" if len(dead) == 1 else "s"),
-        *["  - %s — suppressed on %s across %d timeframe(s)" % (d.key, d.n_of_d, d.tfs) for d in shown],
+        "Paged dead books: %d · not paged (THIN_LIVE): %d" % (len(paged), len(thin)),
+        *["  - %s — suppressed on %s across %d timeframe(s) — %s: %s"
+          % (d.key, d.n_of_d, d.tfs, classes[d.key]["class"], _class_detail(classes[d.key])) for d in shown],
     ]
-    if len(dead) > len(shown):
+    if len(paged) > len(shown):
         lines.append("  … and %d more book(s) — the full key set is in canary-results.jsonl"
-                     % (len(dead) - len(shown)))
+                     % (len(paged) - len(shown)))
+    present = [c for c in DEAD_CLASSES if c in PAGED_CLASSES
+               and any(classes[d.key]["class"] == c for d in paged)]
+    unknown_venues = sorted({d.venue for d in paged if classes[d.key]["class"] == "STATUS_UNKNOWN"})
+    meaning = {
+        "VENUE_OFF": "the venue's own status switches the contract off (or no longer lists it) and it "
+                     "still reached the gate: fix the venue's admission declaration",
+        "ADAPTER_CONTRADICTION": "the venue's ticker says it traded inside the window and the adapter's "
+                                 "bars show nothing: the adapter is blind to a live market",
+        "STATUS_UNKNOWN": "admission could not read a trustworthy status: declare a status source for %s"
+                          % ", ".join(unknown_venues),
+    }
+    lines += ["", "Remedy by class:"]
+    lines += ["  %s — %s -> %s" % (c, meaning[c], CLASS_REMEDY[c]) for c in present]
     lines += [
         "",
-        "A NEW dead book on a venue that lists the contract as switched off means the universe",
-        "admission step (src/lib/universe-admission.ts) missed that venue's status. On a venue that",
-        "lists it as live, the book is genuinely thin and the emit gate is suppressing correctly.",
+        THIN_LIVE_LINE % len(thin),
         "",
         "Runbook: %s" % RUNBOOK_URL,
-        "recommended_wave: %s" % WAVE_DEAD_BOOK,
     ]
+    for w in sorted({CLASS_REMEDY[c] for c in present}, key=[CLASS_REMEDY[c] for c in present].index):
+        lines.append("recommended_wave: %s" % w)
     return "\n".join(lines)
 
 
@@ -594,8 +720,13 @@ def bound_keys(keys, render, cap_bytes):
 
 
 def build_result_metrics(verdict, exit_code, mode, lo, hi, dead, floor_rows, level_breaches,
-                         evaluable, counter_age):
-    """The structured result line. Counts plus the dead-set KEYS, bounded to the recorder's cap."""
+                         evaluable, counter_age, dead_class=None):
+    """The structured result line. Counts plus the dead-set KEYS, bounded to the recorder's cap.
+
+    `dead_keys` keeps its meaning — the FULL dead set (OPS-ALARM-SINGLE-DERIVATION-W1's CLOSE_WHEN
+    reads it). `dead_key_class` (key -> class) and `paged_keys` (the subset sent as ALERT_KEYS) ride
+    beside it, bounded by the SAME kept prefix so the three never disagree about which keys exist."""
+    dead_class = dead_class or {}
     per_venue = {}
     for d in dead:
         per_venue[d.venue] = per_venue.get(d.venue, 0) + 1
@@ -610,15 +741,21 @@ def build_result_metrics(verdict, exit_code, mode, lo, hi, dead, floor_rows, lev
         "level_breaches": len(level_breaches),
     }
 
+    def classed(keys):
+        return {
+            "dead_key_class": {k: dead_class[k] for k in keys if k in dead_class},
+            "paged_keys": [k for k in keys if dead_class.get(k) in PAGED_CLASSES],
+        }
+
     def render(keys):
-        m = dict(base, dead_keys=keys, dead_keys_dropped=len(dead) - len(keys))
+        m = dict(base, dead_keys=keys, dead_keys_dropped=len(dead) - len(keys), **classed(keys))
         if _build_record is not None:
             return _build_record(RESULT_CANARY, verdict, exit_code, m, at="2026-01-01T00:00:00Z")
         return json.dumps(m, separators=(",", ":"))
 
     kept, dropped = bound_keys([d.key for d in dead], render,
                                _RESULT_MAX_BYTES - RESULT_LINE_MARGIN_BYTES)
-    return dict(base, dead_keys=kept, dead_keys_dropped=dropped)
+    return dict(base, dead_keys=kept, dead_keys_dropped=dropped, **classed(kept))
 
 
 # == live plumbing ==
@@ -849,18 +986,36 @@ def main():
                                            DEAD_BOOK_WINDOW_DAYS, FLOOR_REPORT_ONLY))
     info.extend(floor_info)
 
-    # -- verdict: FAIL describes the WORLD (a level breach or a dead book exists). Whether the
-    #    operator is paged about it is the wrapper's decision, per alert id. --
+    # -- 2b. class every dead book through the admission step itself (DEAD_BOOK_CLASS) --
+    classes, paged, thin = {}, [], []
+    if evaluable and dead:
+        try:
+            verdicts, failure = admission_verdicts([d.key for d in dead]), None
+        except AdmissionError as e:
+            verdicts, failure = None, str(e)
+            print("[book-liveness-canary] %s admission verdict UNAVAILABLE - %s; every dead key is "
+                  "STATUS_UNKNOWN and pages (noise, never silence)" % (stamp, e), file=sys.stderr)
+        classes, paged, thin = classify_dead_set(dead, verdicts, failure)
+        info.append("dead-book classes (admission-verdict.js): %s" % (
+            "UNAVAILABLE (%s)" % failure if failure else " · ".join(
+                "%s %d" % (c, sum(1 for v in classes.values() if v["class"] == c)) for c in DEAD_CLASSES)))
+
+    # -- verdict: FAIL describes the WORLD (a level breach, or a dead book the venue's own status
+    #    does not explain). Whether the operator is paged about it is the wrapper's decision. --
     print("[book-liveness-canary] %s mode=%s - %d check(s) evaluated, %d line(s)"
           % (stamp, mode, evaluated, len(info) + len(breaches) + len(dead)))
     for ln in info:
         print("  %s" % ln)
     for ln in breaches:
         print("  BREACH %s" % ln)
-    for d in dead:
-        print("  BREACH dead book %s" % d.line)
+    for d in paged:
+        print("  BREACH dead book %s [%s] %s" % (d.line, classes[d.key]["class"], _class_detail(classes[d.key])))
+    for d in thin:
+        print("  dead book %s [THIN_LIVE, not paged] %s" % (d.line, _class_detail(classes[d.key])))
+    if evaluable:
+        print(THIN_LIVE_LINE % len(thin))
 
-    verdict = "FAIL" if (breaches or dead) else "PASS"
+    verdict = "FAIL" if (breaches or paged) else "PASS"
 
     # ONE ALERT ID, ONE REMEDY — and each id hears from this run EVERY time: fire on its
     # condition, `--clear` without it. An unevaluable dead-book window sends nothing at all:
@@ -871,16 +1026,17 @@ def main():
         print(body)
     else:
         clear_ceiling()
-    if evaluable:
-        if dead:
-            dbody = build_dead_body(dead, mode, stamp, lo, hi)
-            fire_dead_book(dbody, [d.key for d in dead])
-            print(dbody)
-        else:
-            clear_dead_book()
+    action, keys = dead_book_dispatch(evaluable, paged)
+    if action == "fire":
+        dbody = build_dead_body(paged, thin, classes, mode, stamp, lo, hi)
+        fire_dead_book(dbody, keys)
+        print(dbody)
+    elif action == "clear":
+        clear_dead_book()
 
-    record_result(verdict, 0, build_result_metrics(verdict, 0, mode, lo, hi, dead, frows, breaches,
-                                                   evaluable, counter_age))
+    record_result(verdict, 0, build_result_metrics(
+        verdict, 0, mode, lo, hi, dead, frows, breaches, evaluable, counter_age,
+        dead_class={k: v["class"] for k, v in classes.items()}))
     return emit(verdict, 0)
 
 
@@ -1075,11 +1231,25 @@ def _self_test():
     ck("the two alert ids are DISTINCT", lambda: ALERT_CEILING != ALERT_DEAD_BOOK, True)
     cbody = build_ceiling_body(["frozen XT: 8.00% (40/500), ceiling 6.0%"], "enforce", "T",
                                "2026-09-03", "2026-09-30")
-    dbody = build_dead_body(classify_persistence([dead_row], 24, 28, 28, 28)[0], "enforce", "T",
-                            "2026-09-03", "2026-09-30")
+    def _safe(name, fn, default):
+        """Build a fixture inside the suite: a builder that RAISES is a recorded FAIL, never a crash."""
+        nonlocal checks
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001
+            checks += 1
+            failures.append("%s: RAISED %r" % (name, e))
+            return default
+
+    one_dead = classify_persistence([dead_row], 24, 28, 28, 28)[0]
+    off_v = {"dead:XT|EPT": {"key": "dead:XT|EPT", "class": "VENUE_OFF", "status_state": "ok",
+                             "venue_last_trade": "2026-01-30T00:00:00.000Z", "traded_bars_24h": 0,
+                             "reason": "XT's own status switches it off"}}
+    oc, op, ot = _safe("classify VENUE_OFF fixture", lambda: classify_dead_set(one_dead, off_v), ({}, [], []))
+    dbody = _safe("VENUE_OFF body", lambda: build_dead_body(op, ot, oc, "enforce", "T", "2026-09-03", "2026-09-30"), "")
     ck("the LEVEL body names only the LEVEL remedy",
        lambda: (WAVE_CEILING in cbody, WAVE_DEAD_BOOK in cbody), (True, False))
-    ck("the dead-book body names only the ADMISSION remedy",
+    ck("a VENUE_OFF dead-book body names only the ADMISSION remedy",
        lambda: (WAVE_DEAD_BOOK in dbody, WAVE_CEILING in dbody), (True, False))
     ck("both bodies carry the runbook as a full blob URL",
        lambda: (RUNBOOK_URL.startswith("https://github.com/"), RUNBOOK_URL in cbody,
@@ -1087,8 +1257,82 @@ def _self_test():
     ck("no body carries a BARE runbook filename",
        lambda: any("RUNBOOK-BOOK-LIVENESS-FLIP.md" in b.replace(RUNBOOK_URL, "") for b in (cbody, dbody)),
        False)
-    ck("the dead-book body lists each key with its days and timeframes",
-       lambda: "dead:XT|EPT — suppressed on 26 of 28 days across 3 timeframe(s)" in dbody, True)
+    ck("the dead-book body lists each key with its days, timeframes, class, status, last trade, bars",
+       lambda: "dead:XT|EPT — suppressed on 26 of 28 days across 3 timeframe(s) — VENUE_OFF: status ok · "
+               "last trade 2026-01-30T00:00:00.000Z · traded bars 24h 0 · " in dbody, True)
+
+    # -- DEAD_BOOK_CLASS (OPS-ALARM-OWNER-DERIVATION-W1 CH2) ------------------------------------
+    ck("the paged classes are exactly the three with an operator action",
+       lambda: sorted(PAGED_CLASSES), ["ADAPTER_CONTRADICTION", "STATUS_UNKNOWN", "VENUE_OFF"])
+    ck("THIN_LIVE is never paged", lambda: "THIN_LIVE" in PAGED_CLASSES, False)
+    ck("the class vocabulary is the admission module's, in precedence order",
+       lambda: DEAD_CLASSES, ("STATUS_UNKNOWN", "VENUE_OFF", "ADAPTER_CONTRADICTION", "THIN_LIVE"))
+    ck("one remedy per paged class: admission · admission · the gate/adapter",
+       lambda: (CLASS_REMEDY["VENUE_OFF"], CLASS_REMEDY["STATUS_UNKNOWN"], CLASS_REMEDY["ADAPTER_CONTRADICTION"]),
+       (WAVE_DEAD_BOOK, WAVE_DEAD_BOOK, WAVE_CEILING))
+    ck("the seam is the app container's own admission step",
+       lambda: ADMISSION_CMD, ["docker", "exec", APP_CONTAINER, "node", "dist/scripts/admission-verdict.js", "--keys"])
+
+    two = [DeadBook("ASTER", "EWT", 25, 3, "25 of 28 days"), DeadBook("ASTER", "KSTR", 25, 3, "25 of 28 days")]
+    keys2 = [d.key for d in two]
+
+    def _row(key, cls, **kw):
+        return dict({"key": key, "class": cls, "symbol": None, "status_state": "ok", "venue_last_trade": None,
+                     "traded_bars_24h": 0, "contradiction_check": "outside_window", "reason": "r"}, **kw)
+
+    good = "\n".join(["[universe-admission] ASTER admitted 574 excluded 46",
+                      json.dumps({"generated_at": "T", "keys": [_row(k, "THIN_LIVE") for k in keys2]}),
+                      "ADMISSION_VERDICT_EMIT=PASS"])
+    ck("the parser reads the JSON line past the app's own log lines",
+       lambda: sorted(v["class"] for v in parse_admission_output(good, keys2).values()), ["THIN_LIVE", "THIN_LIVE"])
+    ck("an INDETERMINATE script run is an AdmissionError",
+       lambda: _raises(lambda: parse_admission_output("ADMISSION_VERDICT_EMIT=INDETERMINATE", keys2), AdmissionError), True)
+    ck("no token at all is an AdmissionError",
+       lambda: _raises(lambda: parse_admission_output(good.rsplit("\n", 1)[0], keys2), AdmissionError), True)
+    ck("a key the script did not class is an AdmissionError",
+       lambda: _raises(lambda: parse_admission_output(good, keys2 + ["dead:XT|EPT"]), AdmissionError), True)
+    ck("a class outside the vocabulary is an AdmissionError",
+       lambda: _raises(lambda: parse_admission_output(good.replace("THIN_LIVE", "MAYBE"), keys2), AdmissionError), True)
+
+    all_thin = {k: _row(k, "THIN_LIVE") for k in keys2}
+    tc, tp, tt = _safe("classify all-THIN fixture", lambda: classify_dead_set(two, all_thin), ({}, [], []))
+    ck("an all-THIN_LIVE dead set pages nothing", lambda: (len(tp), len(tt)), (0, 2))
+    ck("an all-THIN_LIVE dead set CLEARS the dead-book id", lambda: dead_book_dispatch(True, tp), ("clear", None))
+    ck("an all-THIN_LIVE dead set prints the positive line",
+       lambda: THIN_LIVE_LINE % len(tt),
+       "DEAD_BOOKS_THIN_LIVE=2 (not paged: the venue lists them tradeable; the emit gate is suppressing correctly)")
+    fc, fp, ft = _safe("classify failed-script fixture",
+                       lambda: classify_dead_set(two, None, "docker exec: no such container"), ({}, [], []))
+    ck("a failed verdict script pages EVERY key as STATUS_UNKNOWN",
+       lambda: ([d.key for d in fp], sorted({v["class"] for v in fc.values()}), len(ft)),
+       (keys2, ["STATUS_UNKNOWN"], 0))
+    ck("…and the failure is named in each key's reason",
+       lambda: all("docker exec: no such container" in v["reason"] for v in fc.values()), True)
+    ck("…and the dead-book id FIRES with every key", lambda: dead_book_dispatch(True, fp), ("fire", keys2))
+    ck("an unevaluable window says nothing to the dead-book id", lambda: dead_book_dispatch(False, fp), (None, None))
+    mixed = {keys2[0]: _row(keys2[0], "THIN_LIVE"), keys2[1]: _row(keys2[1], "ADAPTER_CONTRADICTION")}
+    mc, mp, mt = _safe("classify mixed fixture", lambda: classify_dead_set(two, mixed), ({}, [], []))
+    ck("a mixed set pages only the actionable key", lambda: dead_book_dispatch(True, mp), ("fire", [keys2[1]]))
+    mbody = _safe("mixed body", lambda: build_dead_body(mp, mt, mc, "enforce", "T", "2026-09-13", "2026-10-10"), "")
+    ck("an ADAPTER_CONTRADICTION body names the gate/adapter remedy, not admission",
+       lambda: ("recommended_wave: %s" % WAVE_CEILING in mbody, WAVE_DEAD_BOOK in mbody), (True, False))
+    ck("the body counts what it did NOT page", lambda: "DEAD_BOOKS_THIN_LIVE=1 " in mbody, True)
+    ubody = _safe("STATUS_UNKNOWN body", lambda: build_dead_body(fp, ft, fc, "enforce", "T", "2026-09-13", "2026-10-10"), "")
+    ck("a STATUS_UNKNOWN body says which venue needs a status source",
+       lambda: "declare a status source for ASTER" in ubody, True)
+    ck("the static two-branch paragraph is gone — the class IS that runbook step",
+       lambda: any("lists it as live, the book is genuinely thin" in b or "A NEW dead book on a venue" in b
+                   for b in (dbody, mbody, ubody)), False)
+    pre_wave = _safe("pre-wave record", lambda: build_result_metrics(
+        "FAIL", 0, "enforce", "2026-09-13", "2026-10-10", two, [], [], True, 47), {})
+    classed = _safe("classed record", lambda: build_result_metrics(
+        "PASS", 0, "enforce", "2026-09-13", "2026-10-10", two, [], [], True, 47,
+        dead_class={k: v["class"] for k, v in mc.items()}), {})
+    ck("dead_keys is IDENTICAL to the pre-wave derivation on the same fixture",
+       lambda: (classed["dead_keys"], classed["dead_keys"] == pre_wave["dead_keys"]), (keys2, True))
+    ck("the record carries every key's class and the paged subset",
+       lambda: (classed["dead_key_class"], classed["paged_keys"]),
+       ({keys2[0]: "THIN_LIVE", keys2[1]: "ADAPTER_CONTRADICTION"}, [keys2[1]]))
 
     # -- the PROMOTED floor -------------------------------------------------------------------
     ck("the floor is promoted", lambda: FLOOR_REPORT_ONLY, False)

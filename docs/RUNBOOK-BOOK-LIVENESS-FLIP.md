@@ -214,11 +214,31 @@ ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
 
       **Dead books page on ENTRY, not on the standing set** (`OPS-ALARM-SINGLE-DERIVATION-W1` CH4).
       They have their own alert id, `book_liveness_dead_book`, declared `page_on: "change"` in
-      `ops/monitoring/alert-registry.json`. Every canary run sends the whole set as keys
-      `dead:<VENUE>|<COIN>`, or `--clear` when it is empty. `send_telegram.sh` pages only a key it
-      has not delivered before and prunes a key that recovers, so a book that recovers and dies
-      again pages again. `book_liveness_ceiling` keeps the LEVEL checks (frozen-row rate + the
-      promoted suppression floor) and clears itself on a clean run.
+      `ops/monitoring/alert-registry.json`. Every canary run classes each dead book through the
+      app's own admission step (below) and sends the ACTIONABLE keys `dead:<VENUE>|<COIN>`, or
+      `--clear` when there are none. `send_telegram.sh` pages only a key it has not delivered
+      before and prunes a key that leaves the set, so a book that recovers and dies again pages
+      again. `book_liveness_ceiling` keeps the LEVEL checks (frozen-row rate + the promoted
+      suppression floor) and clears itself on a clean run.
+
+      **Which dead books page** (`OPS-ALARM-OWNER-DERIVATION-W1` CH2). "Dead" is a fact about the
+      emit gate, not the venue, so the canary runs
+      `docker exec crypto-quant-signal-mcp-mcp-server-1 node dist/scripts/admission-verdict.js --keys …`
+      — the production `fetchVenueUniverse` and its recorded admission decision, plus the adapter's
+      last 24 × 1 h bars — and `classifyDeadBook` (`src/lib/universe-admission.ts`) classes each key,
+      first match wins:
+
+      | Class | Meaning | Pages? | Remedy |
+      |---|---|---|---|
+      | `STATUS_UNKNOWN` | admission cannot vouch for the venue: the fetch failed or came back empty, no status declared (`none`) or `retired`, status `unavailable`, circuit open, mode `legacy`, or the status field absent — and EVERY key when the verdict script itself fails | yes | `OPS-UNIVERSE-ADMISSION-W{NEXT}` — declare a status source for the venue |
+      | `VENUE_OFF` | the venue's own status switches the contract off, or it is absent from a non-empty universe payload | yes | `OPS-UNIVERSE-ADMISSION-W{NEXT}` — fix the venue's admission declaration |
+      | `ADAPTER_CONTRADICTION` | the venue's ticker says it traded inside the 24-bar window and the adapter shows no traded bar within ±1 bar of that trade (keyed on the ticker's TIMESTAMP, never its volume) | yes | `OPS-BOOK-LIVENESS-W{NEXT}` — the adapter is blind to a live market |
+      | `THIN_LIVE` | venue-live and not a contradiction (including a venue whose ticker carries no last-trade time: `contradiction_check=not_evaluable`) | no — one line `DEAD_BOOKS_THIN_LIVE=<n>` | none: the gate is suppressing correctly |
+
+      The result record keeps `dead_keys` as the FULL dead set and adds `dead_key_class` and
+      `paged_keys`. The contradiction check runs only where the venue's universe payload carries its
+      own last-trade time (XT, Aster, Binance today); the promoted per-venue suppression FLOOR remains
+      the runaway parse-defect detector everywhere.
       - **Bootstrap (once, at install), no POST:**
         `ALERT_KEYS="<the dead set>" /opt/algovault-monitoring/send_telegram.sh --acknowledge book_liveness_dead_book`.
         The set measured at the thin R0 (2026-09-30T06:15Z, after universe admission went live):
@@ -227,10 +247,9 @@ ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
         `BAY`, `EBAY`. The set actually acknowledged is recorded in the wave audit.
       - **Review date:** page-on-change holds through **2026-12-29**; from 2026-12-30 the id pages
         on the LEVEL again until its registry row is re-decided.
-      - **A NEW key paging ⇒ read the venue's own contract status first.** Switched off ⇒ a universe
-        admission declaration missed it (`OPS-UNIVERSE-ADMISSION-W{NEXT}`). Live ⇒ the book is thin
-        and the suppression is correct — or an adapter reads live volume as zero, which is the
-        parse-defect signal the old box was reaching for; investigate the adapter.
+      - **A NEW key paging ⇒ act on its class** — the page names it, with the venue's status, last
+        trade and traded bars; the class table above IS the venue-status check this step used to ask
+        a human to do by hand.
 - [ ] **The closed-market population still recovers.** _(Replaces **"ASTER within ~5pp of the
       measured 27%"**. ASTER measures **5.08%**, 21.9 pp below the old box, because the frozen
       population MIGRATED onto XT and HTX — so the old box FAILS on correct behaviour.)_ Confirm

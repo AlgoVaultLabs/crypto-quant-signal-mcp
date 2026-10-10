@@ -58,11 +58,32 @@ const STUBS = [
   'm.clear_dead_book = lambda: calls.append(["clear_dead_book"])',
   'results = []',
   'm._append_result = lambda *a, **k: (results.append(list(a)) or (True, "line=0"))',
+  // OPS-ALARM-OWNER-DERIVATION-W1 CH2: the admission-verdict seam (a `docker exec` into the app
+  // container). Recorded, and by DEFAULT failing — no app container exists here — which is exactly the
+  // "script failure ⇒ every key STATUS_UNKNOWN, paged" path. A test that needs classes overrides it.
+  'adm = []',
+  'def _adm(keys):',
+  '    adm.append(list(keys))',
+  '    raise m.AdmissionError("stubbed: no app container in the test")',
+  'm.admission_verdicts = _adm',
 ];
 const REPORT = [
   'print("CALLS=" + json.dumps(calls))',
   'print("RESULT=" + json.dumps(results[-1] if results else None))',
+  'print("ADM=" + json.dumps(adm))',
 ];
+
+/** Override the admission seam: every requested key gets the class named here. */
+function admissionClasses(classes: Record<string, string>): string {
+  return [
+    `_cls = ${JSON.stringify(classes)}`,
+    'def _adm_ok(keys):',
+    '    adm.append(list(keys))',
+    '    return {k: {"key": k, "class": _cls[k], "symbol": None, "status_state": "ok", "venue_last_trade": None,',
+    '                "traded_bars_24h": 0, "contradiction_check": "outside_window", "reason": "stub"} for k in keys}',
+    'm.admission_verdicts = _adm_ok',
+  ].join('\n');
+}
 
 /** The harness's own report lines — never part of the canary's output contract. */
 function calls(stdout: string): unknown[] {
@@ -71,14 +92,18 @@ function calls(stdout: string): unknown[] {
 function result(stdout: string): [string, string, number, Record<string, unknown>] {
   return JSON.parse(stdout.match(/^RESULT=(.*)$/m)?.[1] ?? 'null');
 }
+function admCalls(stdout: string): string[][] {
+  return JSON.parse(stdout.match(/^ADM=(.*)$/m)?.[1] ?? 'null');
+}
 
-function runMain(mode: string, psqlPy: string) {
+function runMain(mode: string, psqlPy: string, admissionPy = '') {
   const code = [
     'import importlib.util, sys',
     `spec = importlib.util.spec_from_file_location("c", ${JSON.stringify(PY)})`,
     'm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)',
     `m.probe_mode = lambda: ${JSON.stringify(mode)}`,
     ...STUBS,
+    admissionPy,
     psqlPy,
     'rc = m.main()',
     ...REPORT,
@@ -403,5 +428,70 @@ describe('book-liveness-canary — ONE window, ONE remedy per alert id (OPS-ALAR
     expect(r.stdout).toMatch(/BREACH floor ASTER: 5000 suppressions on 2026-09-30 > pin 3180 \(3 x the 1060 measured 2026-09-30\)/);
     expect(r.stdout).toMatch(/recommended_wave: OPS-BOOK-LIVENESS-W\{NEXT\}/);
     expect(calls(r.stdout)).toEqual([['fire_ceiling'], ['clear_dead_book']]);
+  });
+});
+
+describe('book-liveness-canary — a dead book pages only when the venue does not explain it (OPS-ALARM-OWNER-DERIVATION-W1 CH2)', () => {
+  // cols: exchange|coin|days|tfs|n|window_days_seen — R0.6's live shape: five thin, venue-live Aster books.
+  const DEAD = ['ASTER|EWT|25|3|90|28', 'ASTER|KSTR|25|3|80|28', 'ASTER|SPY|9|2|9|28'].join('\n');
+  const run = (admission: string) => runMain('enforce', psqlStub('BINANCE|500|0', DEAD, 'ASTER|10', '47|2026-08-25'), admission);
+
+  it('an all-THIN_LIVE dead set is PASS: nothing fires, the id is CLEARED, and the run says why',
+    { timeout: 30_000 }, () => {
+      const r = run(admissionClasses({ 'dead:ASTER|EWT': 'THIN_LIVE', 'dead:ASTER|KSTR': 'THIN_LIVE' }));
+      expect(r.status, r.stderr).toBe(0);
+      expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
+      expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['clear_dead_book']]);
+      expect(r.stdout).toContain('DEAD_BOOKS_THIN_LIVE=2 (not paged: the venue lists them tradeable; the emit gate is suppressing correctly)');
+      expect(r.stdout).not.toContain('BREACH dead book');
+      const metrics = result(r.stdout)[3];
+      expect(metrics.dead_keys).toEqual(['dead:ASTER|EWT', 'dead:ASTER|KSTR']);   // the FULL set, meaning unchanged
+      expect(metrics.paged_keys).toEqual([]);
+      expect(metrics.dead_key_class).toEqual({ 'dead:ASTER|EWT': 'THIN_LIVE', 'dead:ASTER|KSTR': 'THIN_LIVE' });
+    });
+
+  it('the seam is asked about exactly the dead keys — never a closed market', { timeout: 30_000 }, () => {
+    const r = run(admissionClasses({ 'dead:ASTER|EWT': 'THIN_LIVE', 'dead:ASTER|KSTR': 'THIN_LIVE' }));
+    expect(admCalls(r.stdout)).toEqual([['dead:ASTER|EWT', 'dead:ASTER|KSTR']]);
+  });
+
+  it('VENUE_OFF beside THIN_LIVE pages ONLY the VENUE_OFF key, with the admission remedy', { timeout: 30_000 }, () => {
+    const r = run(admissionClasses({ 'dead:ASTER|EWT': 'VENUE_OFF', 'dead:ASTER|KSTR': 'THIN_LIVE' }));
+    expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
+    expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['fire_dead_book', ['dead:ASTER|EWT']]]);
+    expect(r.stdout).toContain('dead:ASTER|EWT — suppressed on 25 of 28 days across 3 timeframe');
+    expect(r.stdout).toContain('— VENUE_OFF: status ok · last trade n/a · traded bars 24h 0 · stub');
+    expect(r.stdout).toContain('recommended_wave: OPS-UNIVERSE-ADMISSION-W{NEXT}');
+    expect(r.stdout).not.toContain('recommended_wave: OPS-BOOK-LIVENESS-W{NEXT}');
+    expect(result(r.stdout)[3].paged_keys).toEqual(['dead:ASTER|EWT']);
+  });
+
+  it('ADAPTER_CONTRADICTION pages with the gate/adapter remedy', { timeout: 30_000 }, () => {
+    const r = run(admissionClasses({ 'dead:ASTER|EWT': 'THIN_LIVE', 'dead:ASTER|KSTR': 'ADAPTER_CONTRADICTION' }));
+    expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['fire_dead_book', ['dead:ASTER|KSTR']]]);
+    expect(r.stdout).toContain('recommended_wave: OPS-BOOK-LIVENESS-W{NEXT}');
+    expect(r.stdout).not.toContain('recommended_wave: OPS-UNIVERSE-ADMISSION-W{NEXT}');
+  });
+
+  it('a FAILED verdict script pages every dead key as STATUS_UNKNOWN — noise, never silence', { timeout: 30_000 }, () => {
+    const r = run('');   // the default stub: the docker exec failed
+    expect(r.status, r.stderr).toBe(0);
+    expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
+    expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['fire_dead_book', ['dead:ASTER|EWT', 'dead:ASTER|KSTR']]]);
+    expect(r.stderr).toContain('admission verdict UNAVAILABLE - stubbed: no app container in the test');
+    expect(r.stdout).toContain('declare a status source for ASTER');
+    expect(result(r.stdout)[3].dead_key_class).toEqual({ 'dead:ASTER|EWT': 'STATUS_UNKNOWN', 'dead:ASTER|KSTR': 'STATUS_UNKNOWN' });
+  });
+
+  it('no dead set: the seam is never called and the id is cleared', { timeout: 30_000 }, () => {
+    const r = runMain('enforce', psqlStub('BINANCE|500|0', 'ASTER|SPY|9|2|9|28', 'ASTER|10', '47|2026-08-25'));
+    expect(admCalls(r.stdout)).toEqual([]);
+    expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['clear_dead_book']]);
+    expect(r.stdout).toContain('DEAD_BOOKS_THIN_LIVE=0 ');
+  });
+
+  it('the seam stays the app container\'s own admission step, read-only, with a timeout', () => {
+    expect(SRC).toContain('ADMISSION_CMD = ["docker", "exec", APP_CONTAINER, "node", "dist/scripts/admission-verdict.js", "--keys"]');
+    expect(SRC).toMatch(/timeout=ADMISSION_TIMEOUT_S/);
   });
 });

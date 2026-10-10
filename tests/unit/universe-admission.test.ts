@@ -171,6 +171,27 @@ describe('admitRows — evidence is counted, never used; circuit; kill switch', 
     expect(circuitShare('XT')).toBeCloseTo(0.5, 5); // 1.5 × 339/1108 = 0.459 < the 50% floor
   });
 
+  it('OPS-ALARM-OWNER-DERIVATION-W1: every row carries its decision in EVERY mode; rows and tally are untouched', () => {
+    // The decision is the venue's answer; the mode only decides whether it FILTERS. So a dead-book
+    // canary can read the venue's verdict even while the kill switch keeps the legacy universe.
+    for (const [mode, side, state] of [['enforce', 'sot', 'ok'], ['legacy', 'seed', 'not_applicable'], ['legacy', 'sot', 'not_applicable']] as const) {
+      const r = admitRows('XT', rows, st, NOW, mode, side, state);
+      expect(r.decisions.map((d) => d.row), `${mode}/${side}`).toEqual(rows);
+      r.decisions.forEach((d, i) => expect(d.row).toBe(rows[i]));
+      expect(r.decisions.map((d) => d.decision)).toEqual(rows.map((row) => admitRow('XT', row, st, NOW)));
+    }
+    // and nothing else about the result moved: the tallies and kept rows the tests above pin
+    const enforce = admitRows('XT', rows, st, NOW, 'enforce', 'sot', 'ok');
+    expect(enforce.rows.map((r) => r.symbol)).toEqual(['a_usdt', 'b_usdt', 'c_usdt', 'd_usdt']);
+    expect(enforce.tally).toMatchObject({ admitted: 4, excluded: 1, venueDisabled: 1, circuitOpen: false });
+    expect(admitRows('XT', rows, st, NOW, 'legacy', 'sot', 'not_applicable').rows).toEqual(rows);
+    // the circuit is reported with the decisions, and the decisions still say who the venue switched off
+    const allOff = statusOf(Object.fromEntries(rows.map((r) => [r.symbol, { openSwitch: false }])));
+    const open = admitRows('XT', rows, allOff, NOW, 'enforce', 'sot', 'ok');
+    expect(open.tally.circuitOpen).toBe(true);
+    expect(open.decisions.every((d) => d.decision.reason === 'venue_disabled')).toBe(true);
+  });
+
   it('legacy mode is byte-identical per side: the seed keeps everything, the SoT keeps only HL\'s filter', () => {
     expect(admitRows('XT', rows, st, NOW, 'legacy', 'seed', 'not_applicable').rows).toEqual(rows);
     expect(admitRows('XT', rows, st, NOW, 'legacy', 'sot', 'not_applicable').rows).toEqual(rows);
@@ -316,6 +337,38 @@ describe('PARITY — both derivations admit the identical set from ONE fixture',
     const { fetchAsterCoins } = await import('../../src/scripts/seed-signals.js');
     expect((await fetchVenueUniverse('ASTER')).map((a) => a.coin).sort()).toEqual(['BTC', 'NVO']);
     expect((await fetchAsterCoins(0)).slice().sort()).toEqual(['BTC', 'NVO']);
+  });
+
+  it('OPS-ALARM-OWNER-DERIVATION-W1: admitVenueRows records its LAST decision list per (venue, side), read-only', async () => {
+    const aster = {
+      'fapi/v1/ticker/24hr': [
+        { symbol: 'BTCUSDT', quoteVolume: '1000', closeTime: FRESH },
+        { symbol: 'TONUSDT', quoteVolume: '447548', closeTime: OLD },
+        { symbol: 'NVOUSDT', quoteVolume: '1159', closeTime: FRESH },
+      ],
+      'fapi/v1/exchangeInfo': { symbols: [
+        { symbol: 'BTCUSDT', status: 'TRADING' }, { symbol: 'TONUSDT', status: 'SETTLING' }, { symbol: 'NVOUSDT', status: 'TRADING' },
+      ] },
+    };
+    routeFetch(aster);
+    const eu = await import('../../src/lib/exchange-universe.js');
+    const before = Date.now();
+    const kept = await eu.fetchVenueUniverse('ASTER');
+    expect(kept.map((a) => a.coin).sort()).toEqual(['BTC', 'NVO']); // the caller's view is unchanged
+    const rec = eu.getLastAdmission('ASTER', 'sot');
+    expect(rec).toMatchObject({ venue: 'ASTER', side: 'sot', mode: 'enforce', kind: 'status_field', statusState: 'ok', circuitOpen: false, rows: 3 });
+    expect(rec!.atMs).toBeGreaterThanOrEqual(before);
+    // EVERY fetched row, including the one admission removed — that one is the VENUE_OFF evidence
+    expect(rec!.decisions.map((d) => [d.symbol, d.coin, d.decision.reason])).toEqual([
+      ['BTCUSDT', 'BTC', 'admitted'], ['TONUSDT', 'TON', 'venue_disabled'], ['NVOUSDT', 'NVO', 'admitted'],
+    ]);
+    expect(rec!.decisions[1]).toMatchObject({ volume24h_usd: 447548, tickerTsMs: OLD });
+    expect(Object.isFrozen(rec)).toBe(true);
+    expect(eu.getLastAdmission('ASTER', 'seed')).toBeUndefined(); // sides are kept apart
+    // replaced, never appended: a second fetch's list is the whole record
+    routeFetch({ ...aster, 'fapi/v1/ticker/24hr': [{ symbol: 'BTCUSDT', quoteVolume: '1000', closeTime: FRESH }] });
+    await eu.fetchVenueUniverse('ASTER');
+    expect(eu.getLastAdmission('ASTER', 'sot')!.decisions.map((d) => d.symbol)).toEqual(['BTCUSDT']);
   });
 
   it('HTX: a contract absent from its own contract_info (LRDS) leaves', async () => {

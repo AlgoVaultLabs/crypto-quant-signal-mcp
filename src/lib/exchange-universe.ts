@@ -24,7 +24,7 @@ import type { PromotedVenueId } from './capabilities.js';
 import { normalizeBinanceCoin } from './coin-overrides.js';
 import {
   ADMISSION_SOURCES, admitRows, formatAdmissionLine, isStatusKind, resolveAdmissionMode,
-  type AdmissionMode, type AdmissionRow, type AdmissionSide, type AdmissionTally, type StatusMap,
+  type AdmissionDecision, type AdmissionMode, type AdmissionRow, type AdmissionSide, type AdmissionTally, type StatusMap,
 } from './universe-admission.js';
 
 export interface ExchangeAsset {
@@ -126,9 +126,38 @@ interface CachedStatus { map: StatusMap | null; state: 'ok' | 'unavailable'; exp
 const admissionStatusCache = new Map<ExchangeId, CachedStatus>();
 let admissionModeWarned = false;
 
-/** Test seam — clears the status cache and the one-time mode warning. */
+/**
+ * The LAST admission of each (venue, side), exactly as decided — every fetched row, including the ones
+ * admission removed (those are the VENUE_OFF evidence). OPS-ALARM-OWNER-DERIVATION-W1 CH2: the
+ * dead-book verdict reads THIS instead of re-deriving a venue's status. Replaced, never appended, on
+ * every `admitVenueRows` call; frozen, so a reader cannot edit what the next reader sees. Bounded by
+ * venues × 2 sides.
+ */
+export interface AdmissionRecord {
+  readonly venue: ExchangeId;
+  readonly side: AdmissionSide;
+  readonly mode: AdmissionMode;
+  readonly kind: AdmissionTally['kind'];
+  readonly statusState: AdmissionTally['status'];
+  readonly circuitOpen: boolean;
+  readonly rows: number;
+  /** When the decision was made (epoch ms) — a reader trusts only a record from its own run. */
+  readonly atMs: number;
+  readonly decisions: ReadonlyArray<Readonly<{
+    symbol: string; coin: string | null; volume24h_usd: number | null; tickerTsMs: number | null; decision: AdmissionDecision;
+  }>>;
+}
+const lastAdmission = new Map<string, AdmissionRecord>();
+
+/** The last admission of (venue, side) in this process, or undefined if none ran. Read-only. */
+export function getLastAdmission(venue: ExchangeId, side: AdmissionSide): AdmissionRecord | undefined {
+  return lastAdmission.get(`${venue}|${side}`);
+}
+
+/** Test seam — clears the status cache, the admission records and the one-time mode warning. */
 export function _resetAdmissionStatusCacheForTest(): void {
   admissionStatusCache.clear();
+  lastAdmission.clear();
   admissionModeWarned = false;
 }
 
@@ -196,8 +225,19 @@ export async function admitVenueRows<T extends AdmissionRow>(
   const { map, state } = wantsStatus
     ? await venueStatus(venue, opts.inlineStatusPayload)
     : { map: null, state: 'not_applicable' as const };
-  const { rows: kept, tally } = admitRows(venue, rows, map, Date.now(), mode, side, state);
+  const atMs = Date.now();
+  const { rows: kept, tally, decisions } = admitRows(venue, rows, map, atMs, mode, side, state);
   console.log(formatAdmissionLine(tally));
+  lastAdmission.set(`${venue}|${side}`, Object.freeze({
+    venue, side, mode, kind: tally.kind, statusState: tally.status, circuitOpen: tally.circuitOpen, rows: tally.rows, atMs,
+    decisions: Object.freeze(decisions.map(({ row, decision }) => Object.freeze({
+      symbol: row.symbol,
+      coin: typeof row.coin === 'string' ? row.coin : null,
+      volume24h_usd: typeof row.volume24h_usd === 'number' ? row.volume24h_usd : null,
+      tickerTsMs: typeof row.tickerTsMs === 'number' ? row.tickerTsMs : null,
+      decision: Object.freeze({ ...decision }),
+    }))),
+  }));
   return kept;
 }
 
@@ -214,6 +254,7 @@ async function finalizeUniverse(
 ): Promise<ExchangeAsset[]> {
   const rows = assets.map((a, i) => ({
     symbol: meta[i]?.symbol ?? a.coin,
+    coin: a.coin,
     notionalOI_usd: a.notionalOI_usd,
     volume24h_usd: a.volume24h_usd,
     hasBook: BOOK_INLINE.has(venue) ? a.bidPx !== undefined && a.askPx !== undefined : undefined,

@@ -80,9 +80,14 @@ export interface AdmissionRow {
   hasBook?: boolean;
   /** Only set where the ticker payload carries its own timestamp (XT `t`, Aster/Binance `closeTime`). */
   tickerTsMs?: number;
+  /** The canonical coin, where the caller knows it. IDENTITY ONLY — never an input to a decision; it
+   *  rides into the admission record so a reader can join a decision to a `<venue>|<coin>` key. */
+  coin?: string;
 }
 
 export interface AdmissionDecision { admit: boolean; reason: AdmissionReason }
+/** One row beside the decision `admitRow` made for it — input order, in EVERY mode. */
+export interface RowDecision<T extends AdmissionRow> { row: T; decision: AdmissionDecision }
 
 export interface AdmissionTally {
   venue: ExchangeId;
@@ -343,17 +348,28 @@ export function circuitShare(venue: ExchangeId): number {
   return Math.max(CIRCUIT_MULTIPLE * measured, CIRCUIT_FLOOR_SHARE);
 }
 
+/** Whether a decision FILTERS: always under `enforce`; under `legacy` only HL's historical OI filter on
+ *  the scan SoT. The one statement of it — `admitRows` filters by it, `classifyDeadBook` trusts by it. */
+function admissionApplies(kind: AdmissionSource['kind'], mode: AdmissionMode, side: AdmissionSide): boolean {
+  return mode === 'enforce' || (side === 'sot' && kind === 'legacy_oi_positive');
+}
+
 /**
- * Admit a venue's rows. PURE. Returns the rows to keep and the tally to log.
+ * Admit a venue's rows. PURE. Returns the rows to keep, the tally to log, and every row's decision.
  *
  * `legacy` is byte-identical to the pre-wave code per SIDE: the scan SoT keeps only
  * `legacy_oi_positive` (HL's historical filter), the seed keeps nothing.
+ *
+ * `decisions` (OPS-ALARM-OWNER-DERIVATION-W1 CH2) is computed in EVERY mode and never changes `rows`
+ * or `tally`: the decision is the venue's answer, the mode only decides whether it filters. It is
+ * what the dead-book canary reads instead of re-deriving the venue's status.
  */
 export function admitRows<T extends AdmissionRow>(
   venue: ExchangeId, rows: readonly T[], status: StatusMap | null, nowMs: number,
   mode: AdmissionMode, side: AdmissionSide, statusState: AdmissionTally['status'],
-): { rows: T[]; tally: AdmissionTally } {
+): { rows: T[]; tally: AdmissionTally; decisions: RowDecision<T>[] } {
   const decl = ADMISSION_SOURCES[venue];
+  const decisions = rows.map((row) => ({ row, decision: admitRow(venue, row, status, nowMs) }));
   const tally: AdmissionTally = {
     venue, side, mode, kind: decl.kind, status: statusState, rows: rows.length, admitted: 0, excluded: 0,
     venueDisabled: 0, fieldAbsent: 0, circuitOpen: false, tickerStale: 0, noBook: 0, zeroLiquidity: 0,
@@ -363,14 +379,12 @@ export function admitRows<T extends AdmissionRow>(
     if (r.hasBook === false) tally.noBook++;
     if (typeof r.tickerTsMs === 'number' && nowMs - r.tickerTsMs > TICKER_STALE_MS) tally.tickerStale++;
   }
-  const applies = mode === 'enforce' || (side === 'sot' && decl.kind === 'legacy_oi_positive');
-  if (!applies) {
+  if (!admissionApplies(decl.kind, mode, side)) {
     tally.admitted = rows.length;
-    return { rows: [...rows], tally };
+    return { rows: [...rows], tally, decisions };
   }
   const kept: T[] = [];
-  for (const r of rows) {
-    const d = admitRow(venue, r, status, nowMs);
+  for (const { row: r, decision: d } of decisions) {
     if (d.reason === 'admission_field_absent') tally.fieldAbsent++;
     if (d.admit) kept.push(r);
     else tally.venueDisabled++;
@@ -381,11 +395,11 @@ export function admitRows<T extends AdmissionRow>(
     tally.circuitOpen = true;
     tally.admitted = rows.length;
     tally.excluded = 0;
-    return { rows: [...rows], tally };
+    return { rows: [...rows], tally, decisions };
   }
   tally.admitted = kept.length;
   tally.excluded = rows.length - kept.length;
-  return { rows: kept, tally };
+  return { rows: kept, tally, decisions };
 }
 
 export function formatAdmissionLine(t: AdmissionTally): string {
@@ -406,4 +420,113 @@ export function resolveAdmissionMode(raw: string | undefined): { mode: Admission
     mode: 'legacy',
     warning: `[universe-admission] UNIVERSE_ADMISSION_MODE=${JSON.stringify(raw)} is not enforce|legacy — resolving to LEGACY (fail toward today's universe)`,
   };
+}
+
+// ── the dead-book verdict (OPS-ALARM-OWNER-DERIVATION-W1 CH2) ────────────────────────────────────
+//
+// A dead book (suppressed by the emit gate on ≥ DEAD_BOOK_MIN_DAYS of the window) used to page with a
+// paragraph asking a human to go and read the venue's contract status — a status this module
+// ALREADY reads on every universe fetch. 9 of 9 Aster keys that ever entered the dead set were
+// venue-LIVE: the gate was suppressing thin books correctly and each one paged anyway. The verdict
+// below projects from admission's own decision; it never re-derives a venue's status.
+//
+// Precedence — first match wins:
+//   1. STATUS_UNKNOWN        this run's admission cannot speak for the venue (fetch failed, no
+//                            declaration, retired, no record, empty payload, not enforced, circuit
+//                            open, status unavailable, field absent). Never resolves to VENUE_OFF.
+//   2. VENUE_OFF             the venue's own status says off, or the coin is absent from a
+//                            non-empty payload.
+//   3. ADAPTER_CONTRADICTION the venue's ticker says it traded inside the window and the adapter's
+//                            bars show no trade within ±1 bar of it.
+//   4. THIN_LIVE             live and thin: the gate is right to suppress it. Report, never page.
+//
+// The trade test keys on the ticker's TIMESTAMP, never its volume (K3, measured 2026-10-10: Aster's
+// 24 h ticker for EWT opened 10-05T05:20Z and closed 10-08T18:11:48Z with count 1 — the window is
+// anchored at the LAST trade, so its "24 h volume" is days old and evidence of nothing).
+
+export type DeadBookClass = 'STATUS_UNKNOWN' | 'VENUE_OFF' | 'ADAPTER_CONTRADICTION' | 'THIN_LIVE';
+export type ContradictionCheck = 'consistent' | 'outside_window' | 'contradiction' | 'not_evaluable';
+
+/** The evaluable window: the last 24 h of CLOSED bars (the still-open bar may not be served yet). */
+export const DEAD_BOOK_TRADE_WINDOW_MS = DAY_MS;
+
+export interface DeadBookInput {
+  venue: ExchangeId;
+  /** `admitRow`'s decision for the key's coin in THIS run's fetch; null = the coin is not in the payload. */
+  decision: AdmissionDecision | null;
+  /** The admission record's status state; null = no record of an admission in this run at all. */
+  statusState: AdmissionTally['status'] | null;
+  circuitOpen: boolean;
+  mode: AdmissionMode;
+  /** Rows the venue's universe payload carried in this run. */
+  universeRows: number;
+  /** The universe fetch threw (its message), else null. */
+  fetchError: string | null;
+  /** The venue ticker's own timestamp for the coin (anchored at the last trade where measured — K3). */
+  venueLastTradeMs: number | null;
+  /** Carried for the record and DELIBERATELY never read (K3). A test pins that it changes nothing. */
+  volume24hUsd: number | null;
+  /** The adapter's recent bars (open time ms, volume); null = the adapter could not be asked. */
+  bars: ReadonlyArray<{ time: number; volume: number }> | null;
+  barMs: number;
+  nowMs: number;
+}
+
+export interface DeadBookVerdict {
+  cls: DeadBookClass;
+  reason: string;
+  contradictionCheck: ContradictionCheck;
+  /** Bars with volume > 0 inside the evaluable window; null when no bars were evaluated. */
+  tradedBars24h: number | null;
+}
+
+const isoOf = (ms: number): string => new Date(ms).toISOString();
+
+/** The ONE dead-book classifier. PURE. */
+export function classifyDeadBook(i: DeadBookInput): DeadBookVerdict {
+  const verdict = (cls: DeadBookClass, reason: string, contradictionCheck: ContradictionCheck = 'not_evaluable',
+    tradedBars24h: number | null = null): DeadBookVerdict => ({ cls, reason, contradictionCheck, tradedBars24h });
+  const unknown = (reason: string) => verdict('STATUS_UNKNOWN', reason);
+  const decl = ADMISSION_SOURCES[i.venue];
+
+  // 1. STATUS_UNKNOWN — an untrustworthy source never yields VENUE_OFF.
+  if (i.fetchError !== null) return unknown(`the ${i.venue} universe fetch failed: ${i.fetchError}`);
+  if (decl.kind === 'none') return unknown(`no venue status is declared for ${i.venue}: ${decl.reason}`);
+  if (decl.kind === 'retired') return unknown(`${i.venue} is retired: ${decl.reason}`);
+  if (i.statusState === null) return unknown(`no ${i.venue} admission record from this run`);
+  if (i.universeRows === 0) return unknown(`the ${i.venue} universe payload was empty`);
+  if (!admissionApplies(decl.kind, i.mode, 'sot')) return unknown(`UNIVERSE_ADMISSION_MODE=${i.mode}: the ${i.venue} status is not enforced`);
+  if (i.circuitOpen) return unknown(`ADMISSION_CIRCUIT_OPEN on ${i.venue}: this fetch would exclude more than the circuit allows, so its status is not trusted`);
+  if (i.statusState === 'unavailable') return unknown(`the ${i.venue} status source was unavailable`);
+  if (i.decision !== null && i.decision.reason === 'admission_field_absent') {
+    return unknown(`the ${i.venue} status field was absent or unparseable for this contract`);
+  }
+
+  // 2. VENUE_OFF — the venue's own answer.
+  if (i.decision === null) return verdict('VENUE_OFF', `absent from ${i.venue}'s own universe payload (${i.universeRows} rows)`);
+  if (!i.decision.admit) return verdict('VENUE_OFF', `${i.venue}'s own status switches it off (admitted only when ${decl.describe})`);
+
+  // 3/4. Admitted: does the adapter see the market the venue says traded?
+  if (i.bars === null) return verdict('THIN_LIVE', 'the adapter could not be asked for bars');
+  const barMs = i.barMs;
+  if (!(barMs > 0)) return verdict('THIN_LIVE', `no usable bar width (${barMs})`);
+  const windowEnd = Math.floor(i.nowMs / barMs) * barMs;
+  const windowStart = windowEnd - DEAD_BOOK_TRADE_WINDOW_MS;
+  const traded = i.bars.filter((b) => b.volume > 0);
+  const tradedBars24h = traded.filter((b) => b.time >= windowStart && b.time < windowEnd).length;
+  const t = i.venueLastTradeMs;
+  if (t === null || !Number.isFinite(t)) {
+    return verdict('THIN_LIVE', `${i.venue}'s ticker carries no last-trade timestamp`, 'not_evaluable', tradedBars24h);
+  }
+  if (t < windowStart || t >= windowEnd) {
+    return verdict('THIN_LIVE', `the venue's last trade ${isoOf(t)} is outside the evaluable window [${isoOf(windowStart)}, ${isoOf(windowEnd)})`,
+      'outside_window', tradedBars24h);
+  }
+  const tradeBar = Math.floor(t / barMs) * barMs;
+  if (traded.some((b) => Math.abs(b.time - tradeBar) <= barMs)) {
+    return verdict('THIN_LIVE', `the venue's last trade ${isoOf(t)} falls within ±1 bar of a traded adapter bar`, 'consistent', tradedBars24h);
+  }
+  return verdict('ADAPTER_CONTRADICTION',
+    `the venue traded at ${isoOf(t)}, inside the window, and the adapter's bars show no trade within ±1 bar (${i.bars.length} bars, ${tradedBars24h} traded)`,
+    'contradiction', tradedBars24h);
 }
