@@ -40,6 +40,48 @@ classes:
   expected_max_duration_s: 30
   tg_fires_on_failure: true
   recommended_wave_template: OPS-POSTGRES-AUTOPILOT-MANIFEST-EXPAND-W{NEXT}
+# ── WINDOW-DOMINANT STATEMENTS (OPS-ALARM-OWNER-DERIVATION-W1 CH3 Req 7) ─────────────────────────
+# classify() is now fed the WINDOW top-1 by Σ Δtotal_exec_time (never the cumulative-since-June rank).
+# Measured with pg_stat_statements snapshots on signal-1, 2026-10-11, three windows — quiet hour
+# 05:16→06:12Z and the relabel day-slot start 06:12→06:40Z, 06:40→07:10Z: the same three statements
+# lead all three (shares of window Δexec): the published-stats aggregate 21.4 / 21.5 / 18.2 %, the
+# venues ALTER guard 24.5 / 19.6 / 19.5 %, the PFE backfill queue 19.1 / 14.8 / 11.3 %. The relabel's
+# statements are NOT window-dominant at its slot start, so no row names its owner. All diagnose-only.
+# READ WITH THIS: pg_stat_statements sees a MINORITY of Postgres CPU. Window Δexec was 3.5–4.4 % of
+# one core while the cgroup integral read ~50 %; a 5 Hz process census (90 s, 52 % of a core) put 46 %
+# on short-lived app connections (56 backends — cold caches, planning is not in total_exec_time with
+# track_planning off), 30 % on parallel workers (82 spawned — their CPU is not in the leader's exec
+# time) and 22 % on processes too short to sample. A class below names what dominates STATEMENT time
+# in the window, not what dominates CPU.
+- name: perfstats-aggregate
+  classifier_type: pg_query_regex
+  classifier_regex: count\(\*\) AS cnt, count\(\*\) FILTER \(WHERE pfe_return_pct IS NOT NULL
+  owner: OPS-PERFSTATS-SQL-PUSHDOWN-W1
+  recovery_action: escalate
+  recovery_action_args: {}
+  expected_max_duration_s: 0
+  tg_fires_on_failure: true
+  recommended_wave_template: OPS-PERFSTATS-SQL-PUSHDOWN-W{NEXT}
+- name: backfill-queue-scan
+  classifier_type: pg_query_regex
+  classifier_regex: SELECT \* FROM signals WHERE outcome_price IS NULL AND \(outcome_attempts IS NULL
+  owner: OPS-OUTCOME-BACKFILL-STALL-W1
+  recovery_action: escalate
+  recovery_action_args: {}
+  expected_max_duration_s: 0
+  tg_fires_on_failure: true
+  recommended_wave_template: OPS-OUTCOME-BACKFILL-STALL-W{NEXT}
+# Its Δexec is mostly LOCK WAIT: ALTER TABLE … ADD COLUMN IF NOT EXISTS takes an ACCESS EXCLUSIVE lock
+# on `venues` on every process start that runs initVenuesTable() (124 calls/h, ~245 ms each, measured).
+- name: venues-schema-guard
+  classifier_type: pg_query_regex
+  classifier_regex: ALTER TABLE venues ADD COLUMN IF NOT EXISTS review_deadline_at
+  owner: OPS-VENUE-DAY30-DECISION-W1
+  recovery_action: escalate
+  recovery_action_args: {}
+  expected_max_duration_s: 0
+  tg_fires_on_failure: true
+  recommended_wave_template: OPS-VENUE-SCHEMA-GUARD-W{NEXT}
 - name: UNKNOWN
   classifier_type: catchall
   recovery_action: escalate

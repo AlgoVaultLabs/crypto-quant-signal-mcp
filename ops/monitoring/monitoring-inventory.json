@@ -457,9 +457,10 @@
       "schedule": null,
       "invoked_by": "called-by:postgres-cpu-autopilot",
       "install_state": "installed",
-      "sha256": "6d083811544c625bf24447afa5f8e7d36db90316ca9fc0a6a39a1bfca864996a",
+      "sha256": "9b34ca6005355e6eaf9c96b6e5882290cff2e06965b73f6d7e52baac6a41a956",
       "alert_ids": [],
-      "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1"
+      "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1",
+      "notes": "OPS-ALARM-OWNER-DERIVATION-W1 CH3 Req 7: +3 diagnose-only classes for the WINDOW-dominant statements measured 2026-10-11 (pg_stat_statements snapshots, 3 windows incl. the relabel day-slot start): perfstats-aggregate (owner OPS-PERFSTATS-SQL-PUSHDOWN-W1), backfill-queue-scan (owner OPS-OUTCOME-BACKFILL-STALL-W1), venues-schema-guard (owner OPS-VENUE-DAY30-DECISION-W1, Δexec mostly lock wait). No row for the cumulative funding query (Must NOT). The relabel is not window-dominant, so no row names its owner. Synced by declaration-sync (>= 3 classes)."
     },
     {
       "id": "recommendation-drift-canary",
