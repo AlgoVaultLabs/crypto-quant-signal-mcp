@@ -408,7 +408,7 @@
       "schedule": "47 */6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "c67d11fe14dba958eb2c53064443f64bdb50ad3be9dcc57008b3250e69cbdf36",
+      "sha256": "c6a94ed0a4a6ab1b62a3c38dcaa37663a503f37b54859e4f6013e707a818dce5",
       "alert_ids": [
         "POSTGRES_CPU_DRIFT_UNIFIED",
         "POSTGRES_CPU_DRIFT_CRITICAL_BYPASS"
@@ -417,7 +417,8 @@
       "first_install": {
         "at": "20260929T061514Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
-      }
+      },
+      "notes": "OPS-ALARM-OWNER-DERIVATION-W1 CH3: the persistent leg decides on the INTEGRAL — every run appends ts·usage_usec·started_at (cgroup v2 cpu.stat, the container's start instant) to /var/lib/algovault-monitoring/postgres-cpu-integral.tsv (only writer, atomic, trimmed by wall time to 8 d); restart-aware segments (a recreate keeps [started_at, ts], loses only the gap); persistent = 7-day covered mean > INTEGRAL_PERSISTENT_PCT=100 (% of one core; provisional = 2 × R0.7's 46.05–52.51 % normal; revisit 2026-10-25, owner OPS-POSTGRES-CPU-INTEGRAL-RECALIBRATE-W1), only at >= 70 % coverage, else INDETERMINATE. BASELINE_PCT=10 unchanged — the point instrument's level, its 28-mean compared and REPORTED, deciding nothing (R0.7: it under-reads the 7-day mean ~5×). Trajectory, peak, CRITICAL_BYPASS, the WARNING and the routing case stay on the point window, byte-identical. Every run also calls the autopilot's --record-pgss (fail-open). Self-test 71 assertions."
     },
     {
       "id": "postgres-cpu-autopilot",
@@ -437,13 +438,14 @@
       "schedule": null,
       "invoked_by": "called-by:postgres-cpu-snapshot",
       "install_state": "installed",
-      "sha256": "894f83cbe38536131fd88e63c4643e39c4184ae87ce308ea2a992cfd081b903f",
+      "sha256": "a88d877f637c403aa98d35882eaf026aa4f296ff74cd044dc272d5fc33a6a2d1",
       "alert_ids": [],
       "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1",
       "first_install": {
         "at": "20260929T061523Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
-      }
+      },
+      "notes": "OPS-ALARM-OWNER-DERIVATION-W1 CH3: classify() is fed the statement with the largest Σ Δtotal_exec_time over the SAME wall-time window the firing leg used (persistent: trailing 7 d; trajectory: the last 3 point samples), from the store --record-pgss fills each snapshot run (/var/lib/algovault-monitoring/pgss-window/<ts>.tsv: full queryid·calls·total_exec_time set, top-50 cumulative ∪ top-50-by-delta texts, stats_reset, non-idle pg_stat_activity with literals stripped; atomic; trimmed by wall time to 8 d; PGSS_RECORD=ok|failed). A delta whose calls fell is dropped; a stats_reset change in the window ⇒ attribution INDETERMINATE + class UNKNOWN, said in the body. Body: both CPU instruments (PG_CPU_FACTS) · window top-3 · last-interval top-3 · active at the sample instant · cumulative top-1 labelled. The live cumulative probe stays the reachability check (FRAMEWORK_ERROR path unchanged). Self-test 49 assertions."
     },
     {
       "id": "postgres-cpu-autopilot-registry",

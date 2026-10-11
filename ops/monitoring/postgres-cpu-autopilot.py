@@ -43,11 +43,23 @@ The 2026-09-28T18:48Z page was false in five fields, each fixed at the line that
 Plus a latent one: an argparse error exited 2, which snapshot.sh routes as CRITICAL_BYPASS with the
 usage text as the page. Bad argv is FRAMEWORK_ERROR (3).
 
+── WINDOW ATTRIBUTION (OPS-ALARM-OWNER-DERIVATION-W1 CH3, 2026-10-11) ───────────────────────────
+pg_stat_statements ranks CUMULATIVELY since stats_reset (2026-06-05), so classify() used to be fed
+whatever had dominated since June — not what was burning CPU in the window that fired. Now every
+snapshot run records one pg_stat_statements set into a wall-time window store (--record-pgss), and
+classify() is fed the statement with the largest Σ Δtotal_exec_time over the SAME window the firing
+leg used (persistent: the trailing 7 days; trajectory: the last 3 point samples). A per-queryid delta
+whose `calls` fell (evicted / reset) is dropped; a stats_reset change inside the window drops the
+window — attribution INDETERMINATE, class UNKNOWN, and the body says why. The cumulative top-1 stays,
+labelled. The body renders both CPU instruments the snapshot reports (PG_CPU_FACTS): the 7-day
+integral that decides persistence and the point 28-instant mean that no longer decides anything.
+
   postgres-cpu-autopilot.py --self-test    # hermetic: no DB, no host path, no yaml needed
+  postgres-cpu-autopilot.py --record-pgss  # one pg_stat_statements snapshot into PG_CPU_PGSS_DIR
 """
 from __future__ import annotations
 
-import argparse, contextlib, io, json, logging, os, re, shutil, subprocess, sys, tempfile, time, types
+import argparse, calendar, contextlib, io, json, logging, os, re, shutil, subprocess, sys, tempfile, time, types
 from pathlib import Path
 
 try:
@@ -78,6 +90,14 @@ PG_USER = "algovault_autopilot"
 DEFAULT_RECOMMENDED_WAVE = "OPS-POSTGRES-AUTOPILOT-MANIFEST-EXPAND-W{NEXT}"  # fallback only: no registry loaded
 AUDIT_DOC = "audits/POSTGRES_CPU_DRIFT_UNIFIED-2026-09-29.md"
 DIAGNOSE_ONLY = "escalate"  # a class whose recovery_action is this is diagnose-only BY DECLARATION
+
+# Window attribution store (CH3 Req 4). One file per snapshot run, named by its UTC instant.
+PGSS_DIR_DEFAULT = "/var/lib/algovault-monitoring/pgss-window"
+PGSS_KEEP_S = 8 * 86400          # the same 8 days as the integral record, trimmed by WALL time
+PGSS_TEXT_TOP_N = 50             # texts kept per snapshot: the top-N cumulative ∪ the top-N by delta
+PGSS_TEXT_MAX = 400
+PGSS_ACTIVE_MAX = 20
+PGSS_NAME_RE = re.compile(r"^(\d{8}T\d{6}Z)\.tsv$")
 
 # Exit codes
 EXIT_SILENT = 0
@@ -217,7 +237,7 @@ def classify(dominant_query, registry):
         if ctype == "pg_query_regex":
             regex = cls.get("classifier_regex", "")
             if regex and re.search(regex, dominant_query, re.IGNORECASE):
-                return name, "pg_query_regex matched the top-1 query"
+                return name, "pg_query_regex matched the window top-1 statement"
         elif ctype == "process_count":
             n, cap = _process_count(a.get("pattern", "")), a.get("max_concurrent", 1)
             if n is not None and n > cap:
@@ -251,6 +271,271 @@ def window_text(env=None):
     if not n:
         return "an unreported window (snapshot predates window reporting)"
     return f"{n} samples ({span})" if span else f"{n} samples"
+
+
+# ── WINDOW ATTRIBUTION (CH3 Req 4–6) ─────────────────────────────────────────────────────────────
+
+def pgss_dir(env=None):
+    env = os.environ if env is None else env
+    return Path(env.get("PG_CPU_PGSS_DIR") or PGSS_DIR_DEFAULT)
+
+
+def _stamp(epoch):
+    return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(epoch))
+
+
+def _from_stamp(stamp):
+    return calendar.timegm(time.strptime(stamp, "%Y%m%dT%H%M%SZ"))
+
+
+def _clean(value, limit):
+    """One store field: no tab, newline or pipe can survive into it, and it is bounded."""
+    return re.sub(r"[\t\r\n|]+", " ", str(value)).strip()[:limit]
+
+
+_LITERAL_RE = re.compile(r"'(?:[^']|'')*'")
+_NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
+
+
+def strip_literals(query):
+    """pg_stat_activity carries the RAW statement; no literal may reach the store or a page."""
+    return _NUMBER_RE.sub("?", _LITERAL_RE.sub("'?'", query))
+
+
+def serialize_pgss(snap):
+    """PURE. One snapshot → the store's TSV text."""
+    lines = [f"meta\tts\t{snap['ts']}", f"meta\tstats_reset\t{snap['stats_reset']}"]
+    lines += [f"q\t{qid}\t{calls}\t{total}" for qid, (calls, total) in sorted(snap["q"].items())]
+    lines += [f"t\t{qid}\t{_clean(text, PGSS_TEXT_MAX)}" for qid, text in sorted(snap["texts"].items())]
+    lines += ["a\t" + "\t".join(_clean(a[k], PGSS_TEXT_MAX) for k in ("pid", "state", "wait", "dur_s", "query_id", "text"))
+              for a in snap["active"]]
+    return "\n".join(lines) + "\n"
+
+
+def parse_pgss(text):
+    """PURE. The store's TSV text → a snapshot. ValueError on a file with no ts or no stats_reset."""
+    snap = {"ts": None, "stats_reset": None, "q": {}, "texts": {}, "active": []}
+    for line in text.splitlines():
+        f = line.split("\t")
+        if f[0] == "meta" and len(f) == 3:
+            if f[1] == "ts":
+                snap["ts"] = int(f[2])
+            elif f[1] == "stats_reset":
+                snap["stats_reset"] = f[2]
+        elif f[0] == "q" and len(f) == 4:
+            snap["q"][f[1]] = (int(f[2]), float(f[3]))
+        elif f[0] == "t" and len(f) == 3:
+            snap["texts"][f[1]] = f[2]
+        elif f[0] == "a" and len(f) == 7:
+            snap["active"].append(dict(zip(("pid", "state", "wait", "dur_s", "query_id", "text"), f[1:])))
+    if snap["ts"] is None or not snap["stats_reset"]:
+        raise ValueError("snapshot without ts or stats_reset")
+    return snap
+
+
+def pair_deltas(prev, cur):
+    """PURE. Per-queryid Δtotal_exec_time across one consecutive pair. A statement absent from `prev`
+    entered inside the interval (its whole total is the delta); a statement whose `calls` FELL was
+    evicted and re-entered, or reset — its delta is dropped, never invented."""
+    out = {}
+    for qid, (calls, total) in cur["q"].items():
+        p = prev["q"].get(qid)
+        if p is None:
+            out[qid] = total
+        elif calls >= p[0]:
+            out[qid] = max(total - p[1], 0.0)
+    return out
+
+
+def attribute(snaps):
+    """PURE. Σ Δtotal_exec_time over the consecutive pairs of `snaps` (oldest first), CH3 Req 5."""
+    if len(snaps) < 2:
+        return {"status": "indeterminate",
+                "reason": f"{len(snaps)} pg_stat_statements snapshot(s) in the window, a delta needs 2"}
+    resets = sorted({s["stats_reset"] for s in snaps})
+    if len(resets) > 1:
+        return {"status": "indeterminate",
+                "reason": f"stats_reset changed inside the window ({' -> '.join(resets)}), so the window is dropped"}
+    window = {}
+    for prev, cur in zip(snaps, snaps[1:]):
+        for qid, ms in pair_deltas(prev, cur).items():
+            window[qid] = window.get(qid, 0.0) + ms
+    texts = {}
+    for s in snaps:
+        texts.update(s["texts"])
+
+    def top(deltas, n=3):
+        total = sum(deltas.values())
+        ranked = [k for k in sorted(deltas, key=deltas.get, reverse=True) if deltas[k] > 0][:n]
+        return [{"qid": k, "ms": deltas[k], "share": 100.0 * deltas[k] / total, "text": texts.get(k)} for k in ranked]
+
+    ranked = top(window)
+    if not ranked:
+        return {"status": "indeterminate", "reason": "no statement executed inside the window"}
+    return {"status": "ok", "top": ranked, "last": top(pair_deltas(snaps[-2], snaps[-1])),
+            "from_ts": snaps[0]["ts"], "to_ts": snaps[-1]["ts"], "last_from_ts": snaps[-2]["ts"],
+            "n": len(snaps), "stats_reset": resets[0]}
+
+
+def window_class(att, registry, label):
+    """(dominant_statement, class, evidence) — classify() is fed the WINDOW top-1, never a guess."""
+    if att["status"] != "ok":
+        return "", "UNKNOWN", f"window attribution INDETERMINATE: {att['reason']}"
+    statement = att["top"][0]["text"] or ""
+    name, evidence = classify(statement, registry)
+    return statement, name, f"{evidence}; window: {label}"
+
+
+def attribution_lines(att, latest, label):
+    """PURE. CH3 Req 6's attribution lines (the cumulative top-1 is rendered by the body, labelled)."""
+    hm = lambda t: time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(t))
+
+    def items(rows):
+        if not rows:
+            return "none"
+        return " · ".join(f"{i}) {r['ms']:,.0f} ms ({r['share']:.1f}%) "
+                          f"{(r['text'] or '<text not recorded> queryid=' + r['qid'])[:100]}"
+                          for i, r in enumerate(rows, 1))
+
+    if att["status"] == "ok":
+        lines = [f"Window top-3 by Δexec ({label}, {hm(att['from_ts'])}..{hm(att['to_ts'])}, {att['n']} snapshots): "
+                 f"{items(att['top'])}",
+                 f"Last-interval top-3 by Δexec ({hm(att['last_from_ts'])}..{hm(att['to_ts'])}): {items(att['last'])}"]
+    else:
+        lines = [f"Window attribution ({label}): INDETERMINATE, {att['reason']}; class UNKNOWN, never invented"]
+    if latest is None:
+        lines.append("Active at the sample instant: no pg_stat_statements snapshot recorded")
+    else:
+        acts = latest["active"]
+        shown = " · ".join(f"{a['state']} {a['dur_s']}s {(latest['texts'].get(a['query_id']) or a['text'])[:80]}"
+                           for a in acts[:3])
+        lines.append(f"Active at the sample instant ({hm(latest['ts'])}): "
+                     + (f"{len(acts)} non-idle backend(s): {shown}" if acts else "no non-idle backend"))
+    return lines
+
+
+def load_pgss_window(d, from_s, to_s):
+    """(snapshots inside [from_s, to_s] oldest first, count of unparseable files skipped)."""
+    snaps, bad = [], 0
+    if not d.is_dir():
+        return snaps, bad
+    for p in sorted(d.iterdir()):
+        m = PGSS_NAME_RE.match(p.name)
+        if not m or not (from_s <= _from_stamp(m.group(1)) <= to_s):
+            continue
+        try:
+            snaps.append(parse_pgss(p.read_text()))
+        except (OSError, ValueError):
+            bad += 1
+    snaps.sort(key=lambda s: s["ts"])
+    return snaps, bad
+
+
+def latest_pgss(d):
+    """The newest parseable snapshot in the store, or None."""
+    if not d.is_dir():
+        return None
+    for p in sorted((q for q in d.iterdir() if PGSS_NAME_RE.match(q.name)), reverse=True):
+        try:
+            return parse_pgss(p.read_text())
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def fetch_pgss(run, prev, now):
+    """The live read for one snapshot, as algovault_autopilot (pg_read_all_stats). RuntimeError on any
+    unreadable part a snapshot cannot do without."""
+    out, rc = run("SELECT to_char(stats_reset AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
+                  "FROM pg_stat_statements_info;")
+    if rc != 0 or not out:
+        raise RuntimeError("pg_stat_statements_info unreadable")
+    stats_reset = out.strip()
+    out, rc = run("SELECT queryid, calls, total_exec_time FROM pg_stat_statements WHERE queryid IS NOT NULL;", timeout=30)
+    if rc != 0 or out is None:
+        raise RuntimeError("pg_stat_statements unreadable")
+    q = {}
+    for line in out.splitlines():
+        f = line.split("|")
+        if len(f) == 3 and re.fullmatch(r"-?\d+", f[0].strip()):
+            q[f[0].strip()] = (int(f[1]), float(f[2]))
+    if not q:
+        raise RuntimeError("pg_stat_statements returned no statements")
+    want = set(sorted(q, key=lambda k: q[k][1], reverse=True)[:PGSS_TEXT_TOP_N])
+    if prev is not None and prev["stats_reset"] == stats_reset:
+        d = pair_deltas(prev, {"q": q})
+        want |= set(sorted(d, key=d.get, reverse=True)[:PGSS_TEXT_TOP_N])
+    texts = {}
+    out, rc = run(f"SELECT queryid, regexp_replace(left(query, {PGSS_TEXT_MAX}), '[[:space:]|]+', ' ', 'g') "
+                  f"FROM pg_stat_statements WHERE queryid IN ({','.join(sorted(want))});", timeout=30)
+    if rc == 0 and out:
+        for line in out.splitlines():
+            k, _, v = line.partition("|")
+            if k.strip():
+                texts[k.strip()] = v.strip()
+    active = []
+    out, rc = run("SELECT pid, state, coalesce(wait_event_type, ''), "
+                  "coalesce(round(extract(epoch FROM now() - query_start))::int, 0), coalesce(query_id::text, ''), "
+                  "regexp_replace(left(query, 300), '[[:space:]|]+', ' ', 'g') FROM pg_stat_activity "
+                  "WHERE backend_type = 'client backend' AND state IS NOT NULL AND state <> 'idle' "
+                  "AND pid <> pg_backend_pid();")
+    if rc == 0 and out:
+        for line in out.splitlines()[:PGSS_ACTIVE_MAX]:
+            f = line.split("|", 5)
+            if len(f) == 6:
+                active.append(dict(pid=f[0], state=f[1], wait=f[2], dur_s=f[3], query_id=f[4],
+                                   text=strip_literals(f[5])))
+    return {"ts": now, "stats_reset": stats_reset, "q": q, "texts": texts, "active": active}
+
+
+def record_pgss(env=None, now=None, run=None):
+    """--record-pgss: one snapshot into the window store, atomically; the store trimmed by WALL time.
+    Prints exactly one PGSS_RECORD=ok|failed line. Returns 0 (ok) or 3 (failed) — the snapshot calls it
+    fail-open, so a failure is logged there and never changes a verdict."""
+    d = pgss_dir(env)
+    now = int(time.time()) if now is None else now
+    try:
+        snap = fetch_pgss(run or psql_run, latest_pgss(d), now)
+        d.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(d), prefix=".pgss.", suffix=".tmp")
+        with os.fdopen(fd, "w") as f:
+            f.write(serialize_pgss(snap))
+        path = d / (_stamp(now) + ".tsv")
+        os.replace(tmp, path)
+        trimmed = 0
+        for p in d.iterdir():
+            m = PGSS_NAME_RE.match(p.name)
+            if m and _from_stamp(m.group(1)) < now - PGSS_KEEP_S:
+                p.unlink()
+                trimmed += 1
+    except Exception as e:  # noqa: BLE001 — a recorder failure is a token, never a crash
+        print(f"PGSS_RECORD=failed reason={type(e).__name__}: {str(e)[:200]}")
+        return EXIT_FRAMEWORK_ERROR
+    print(f"PGSS_RECORD=ok file={path} statements={len(snap['q'])} texts={len(snap['texts'])} "
+          f"active={len(snap['active'])} stats_reset={snap['stats_reset']} trimmed={trimmed}")
+    return EXIT_SILENT
+
+
+def parse_facts(raw):
+    """The snapshot's instrument facts (PG_CPU_FACTS, JSON). Anything unreadable is {} — said, not guessed."""
+    try:
+        f = json.loads(raw or "")
+    except ValueError:
+        return {}
+    return f if isinstance(f, dict) else {}
+
+
+def instruments_line(facts, point_avg):
+    """PURE. Both CPU instruments side by side, so a collision between them announces itself."""
+    base = facts.get("point_baseline_pct")
+    point = (f"28-instant mean (point, docker stats median-of-30 @ :47): {facts.get('point_mean', point_avg)}%"
+             + (f" vs {base}% (reported, decides nothing)" if base is not None else " (reported)"))
+    if facts.get("persistent_instrument") != "integral":
+        return f"7-day mean (integral): not reported by the caller · {point}"
+    mean = facts.get("integral_mean")
+    return (f"7-day mean (integral, cgroup usage_usec, coverage {facts.get('integral_coverage_pct', 'n/a')}%): "
+            f"{'n/a' if mean is None else str(mean) + '%'} vs {facts.get('integral_persistent_pct', 'n/a')}% "
+            f"(provisional until {facts.get('provisional_until', 'n/a')}) · {point}")
 
 
 def get_class_state(class_name):
@@ -366,19 +651,23 @@ def verify_drift_dropped():
 
 def build_escalation_body(reason, class_name, avg, peak, dominant_query, recent_samples, *,
                           evidence="", recommended="", window="", stats_window=None,
-                          action="", duration=None, trigger="persistent"):
-    """PURE — asserted field by field in --self-test."""
+                          action="", duration=None, trigger="persistent", facts=None, attribution=None,
+                          owner=""):
+    """PURE — asserted field by field in --self-test. `dominant_query` is the CUMULATIVE top-1, rendered
+    labelled as such; the window attribution arrives as `attribution` lines (CH3 Req 6)."""
     lines = [
         f"🛑 POSTGRES_CPU_DRIFT_UNIFIED [trigger={trigger}, autopilot: {reason}]", "",
-        f"Rolling avg: {avg}% over {window or window_text()} "
-        f"(CRITICAL bypass threshold: > {CRITICAL_BYPASS_AVG_PCT}%, peak: {peak}%)",
-        f"Recent samples: {recent_samples}",
+        instruments_line(facts or {}, avg),
+        f"Point window: {window or window_text()} · peak {peak}% · recent {recent_samples} · "
+        f"CRITICAL bypass: avg > {CRITICAL_BYPASS_AVG_PCT}% or peak > {CRITICAL_BYPASS_PEAK_PCT}%",
         f"Classified class: {class_name}" + (f" ({evidence})" if evidence else "")]
+    if owner:
+        lines.append(f"Owner: {owner}")
     if action:
         d = f"{duration:.2f}s" if duration is not None else "n-a"
         lines.append(f"Recovery attempted: {action} (duration={d})")
-    lines += ["",
-              f"Dominant query (pg_stat_statements top-1, cumulative {stats_window or 'since an unknown stats_reset'}): "
+    lines += [""] + list(attribution or ["Window attribution: not computed for this invocation"]) + [
+              f"Cumulative top-1 (pg_stat_statements, cumulative {stats_window or 'since an unknown stats_reset'}): "
               f"{(dominant_query or '<not_probed>')[:200]}",
               "",
               f"Action: dispatch {recommended or DEFAULT_RECOMMENDED_WAVE} via Cowork → Claude Code",
@@ -387,13 +676,19 @@ def build_escalation_body(reason, class_name, avg, peak, dominant_query, recent_
     return "\n".join(lines)
 
 
-def handle(args, registry, class_name, evidence, dominant_query, stats_window, dry_run):
-    """Everything after classification. Prints the body when escalating; returns the exit code."""
+def handle(args, registry, class_name, evidence, dominant_query, stats_window, dry_run, *,
+           cumulative_query=None, attribution=None, facts=None):
+    """Everything after classification. Prints the body when escalating; returns the exit code.
+    `dominant_query` is what classify() was fed (the window top-1); the body's labelled cumulative line
+    renders `cumulative_query` (defaulting to the same text for a caller that has only one)."""
     def escalate(reason, **kw):
-        print(build_escalation_body(reason, class_name, args.avg, args.peak, dominant_query,
+        print(build_escalation_body(reason, class_name, args.avg, args.peak,
+                                    dominant_query if cumulative_query is None else cumulative_query,
                                     args.recent_samples, evidence=evidence,
                                     recommended=recommended_wave(registry, class_name),
-                                    stats_window=stats_window, trigger=args.trigger, **kw))
+                                    stats_window=stats_window, trigger=args.trigger, facts=facts,
+                                    attribution=attribution,
+                                    owner=(find_class(registry, class_name) or {}).get("owner", ""), **kw))
 
     # Step 3: UNKNOWN → escalate
     if class_name == "UNKNOWN":
@@ -493,7 +788,9 @@ def main():
 
     # Step 2: class determination
     registry = load_registry()
+    facts = parse_facts(os.environ.get("PG_CPU_FACTS"))
     dominant_query, evidence, stats_window = "", "", None
+    cumulative_query, attribution = None, None
     if class_override:
         class_name, evidence = class_override, "CLASS_OVERRIDE"
         # synthetic class — ensure registry has it OR use noop
@@ -510,7 +807,7 @@ def main():
             log_event(action="escalate_no_registry", avg=args.avg, peak=args.peak,
                       exit_code=EXIT_ESCALATE, dry_run=dry_run)
             sys.exit(EXIT_ESCALATE)
-        # registry loaded — probe DB to find dominant query
+        # registry loaded — the live probe stays the reachability check and the CUMULATIVE line
         top = probe_pg_stat_statements(top_n=3)
         if top is None:
             msg = "FRAMEWORK_ERROR: postgres_unreachable (pg_stat_statements probe failed)"
@@ -518,18 +815,31 @@ def main():
                       avg=args.avg, exit_code=EXIT_FRAMEWORK_ERROR, dry_run=dry_run)
             print(msg)
             sys.exit(EXIT_FRAMEWORK_ERROR)
-        dominant_query = top[0][0] if top else ""
+        cumulative_query = top[0][0] if top else ""
         stats_window = probe_stats_window()
-        class_name, evidence = classify(dominant_query, registry)
+        # classify() is fed the WINDOW top-1 over the window the firing leg used (CH3 Req 5)
+        now = int(time.time())
+        frm = facts.get("attribution_from_s")
+        frm = int(frm) if isinstance(frm, (int, float)) and not isinstance(frm, bool) else now - 7 * 86400
+        label = str(facts.get("attribution_label") or "the trailing 7 days")
+        snaps, bad = load_pgss_window(pgss_dir(), frm, now)
+        att = attribute(snaps)
+        if bad and att["status"] != "ok":
+            att["reason"] += f" ({bad} unparseable store file(s) skipped)"
+        dominant_query, class_name, evidence = window_class(att, registry, label)
+        attribution = attribution_lines(att, snaps[-1] if snaps else latest_pgss(pgss_dir()), label)
+        log_event(action="window_attribution", status=att["status"], label=label, snapshots=len(snaps),
+                  bad_files=bad, class_name=class_name)
 
-    sys.exit(handle(args, registry, class_name, evidence, dominant_query, stats_window, dry_run))
+    sys.exit(handle(args, registry, class_name, evidence, dominant_query, stats_window, dry_run,
+                    cumulative_query=cumulative_query, attribution=attribution, facts=facts))
 
 
 # ── SELF-TEST ────────────────────────────────────────────────────────────────────────────────────
 # Hermetic: STATE_DIR is repointed into a temp dir BEFORE any scenario, no DB is reached (every
 # scenario hands `handle()` its classification), and no logging is configured, so log_event()
 # writes nowhere. The fixture query is the real 2026-09-28 dominant query, verbatim.
-SELFTEST_EXPECTED = 26
+SELFTEST_EXPECTED = 49
 REAL_DOMINANT_QUERY = ("SELECT funding_rate FROM funding_history WHERE coin = $1 AND recorded_at >= $2 "
                        "ORDER BY recorded_at")
 
@@ -571,7 +881,7 @@ def self_test():
         # C1 — classification, registry order, and the evidence it carries
         name, ev = classify(REAL_DOMINANT_QUERY, reg)
         check("C1 the real dominant query → the first matching row", name == "fixture-diag")
-        check("C1 evidence names what matched", ev == "pg_query_regex matched the top-1 query")
+        check("C1 evidence names what matched", ev == "pg_query_regex matched the window top-1 statement")
         check("C1 no match (the absent-process row cannot fire) → UNKNOWN",
               classify("SELECT 1", reg) == ("UNKNOWN", "no registry class matched"))
         # A CHILD with a unique argv, never this process: BSD pgrep excludes the caller's ancestors.
@@ -590,19 +900,19 @@ def self_test():
         check("C1 empty registry → UNKNOWN, said so", classify("x", {}) == ("UNKNOWN", "no registry classes loaded"))
 
         # C2 — a DECLARED diagnose-only class: the exact shape of the 2026-09-28 page
-        code, out = run_handle("fixture-diag", "pg_query_regex matched the top-1 query", REAL_DOMINANT_QUERY,
+        code, out = run_handle("fixture-diag", "pg_query_regex matched the window top-1 statement", REAL_DOMINANT_QUERY,
                                "since 2026-06-05, 116d")
         check("C2 escalates (exit 1)", code == EXIT_ESCALATE)
         check("C2 header says diagnose_only, never recovery_failed",
               "autopilot: diagnose_only]" in out and "recovery_failed" not in out)
         check("C2 no 'Recovery attempted' line for a non-recovery", "Recovery attempted" not in out)
         check("C2 Action is read from the classified row", "Action: dispatch OPS-FIXTURE-DIAG-W{NEXT} via" in out)
-        check("C2 the window is rendered",
-              "Rolling avg: 10.46% over 28 samples (2026-09-22T06:48:03Z..2026-09-29T00:48:02Z)" in out)
+        check("C2 the point window is rendered",
+              "Point window: 28 samples (2026-09-22T06:48:03Z..2026-09-29T00:48:02Z) · peak 37.68%" in out)
         check("C2 the classifier evidence is rendered",
-              "Classified class: fixture-diag (pg_query_regex matched the top-1 query)" in out)
-        check("C2 the pg_stat_statements window is disclosed",
-              "(pg_stat_statements top-1, cumulative since 2026-06-05, 116d)" in out)
+              "Classified class: fixture-diag (pg_query_regex matched the window top-1 statement)" in out)
+        check("C2 the cumulative top-1 is LABELLED cumulative, with its stats window",
+              "Cumulative top-1 (pg_stat_statements, cumulative since 2026-06-05, 116d): SELECT funding_rate" in out)
         check("C2 the audit line cites the doc that exists",
               f"Audit shape: {AUDIT_DOC}\n" in out and "OPS-POSTGRES-CPU-AUTOPILOT-W1-endpoint-truth" not in out)
         check("C2 diagnose-only spends NO recovery ceiling", not (STATE_DIR / "fixture-diag").exists())
@@ -615,7 +925,7 @@ def self_test():
         check("C3 no ceiling state", not (STATE_DIR / "UNKNOWN").exists())
 
         # C4 — a class with a REAL recovery action still takes the recovery path (dry-run: nothing runs)
-        code, out = run_handle("fixture-regex", "pg_query_regex matched the top-1 query", "funding_stats_14d", None,
+        code, out = run_handle("fixture-regex", "pg_query_regex matched the window top-1 statement", "funding_stats_14d", None,
                                dry_run=True)
         check("C4 recovery class → DRY_RUN body, exit 1",
               code == EXIT_ESCALATE and "autopilot: DRY_RUN: would have recovered class=fixture-regex]" in out)
@@ -625,10 +935,102 @@ def self_test():
         for k in ("PG_CPU_WINDOW_N", "PG_CPU_WINDOW_SPAN"):
             os.environ.pop(k, None)
         body = build_escalation_body("x", "UNKNOWN", 1.0, 2.0, "q", "1,2,3")
-        check("C5 an unreported window is stated", "over an unreported window" in body)
+        check("C5 an unreported window is stated", "Point window: an unreported window" in body)
         check("C5 no registry → the fallback Action constant", recommended_wave(None, "anything") == DEFAULT_RECOMMENDED_WAVE)
         check("C5 every Action is a template, never a hardcoded wave number",
               re.search(r"-W\d", body) is None and "-W{NEXT}" in body)
+
+        # ── WINDOW ATTRIBUTION (OPS-ALARM-OWNER-DERIVATION-W1 CH3) ──────────────────────────────
+        def snap(ts, q, reset="2026-06-05T00:23:51Z", texts=None, active=None):
+            return {"ts": ts, "stats_reset": reset, "q": q, "texts": texts or {}, "active": active or []}
+        T0 = 1791000000
+        TX = {"1": "SELECT funding_rate FROM funding_history WHERE coin = $1", "2": "UPDATE directional_labels SET x = $1",
+              "3": "SELECT 1"}
+        # The DISAGREEMENT fixture: statement 1 owns the cumulative rank (8e9 ms since June) but barely ran
+        # in the window; statement 2 burned 9e6 ms inside it.
+        s0 = snap(T0, {"1": (100, 8.0e9), "2": (10, 1.0e5), "3": (5, 1.0)}, texts=TX)
+        s1 = snap(T0 + 21600, {"1": (101, 8.0e9 + 2.0e4), "2": (900, 1.0e5 + 4.0e6), "3": (6, 2.0)}, texts=TX)
+        s2 = snap(T0 + 43200, {"1": (102, 8.0e9 + 4.0e4), "2": (1800, 1.0e5 + 9.0e6), "3": (7, 3.0)}, texts=TX,
+                  active=[dict(pid="7", state="active", wait="", dur_s="12", query_id="2", text="UPDATE directional_labels SET x = ?")])
+        att = attribute([s0, s1, s2])
+        cumulative_top = max(s2["q"], key=lambda k: s2["q"][k][1])
+        check("A1 Δ ranking beats the cumulative rank on a fixture where they disagree",
+              att["status"] == "ok" and att["top"][0]["qid"] == "2" and cumulative_top == "1")
+        check("A1 Σ Δ over consecutive pairs, with shares",
+              att["top"][0]["ms"] == 9.0e6 and round(att["top"][0]["share"], 1) == 99.6)
+        check("A1 the last interval is ranked on its own pair", att["last"][0]["qid"] == "2" and att["last"][0]["ms"] == 5.0e6)
+        # eviction: statement 2's calls FELL between s1 and s2 — that pair's delta is dropped, not invented
+        s2e = snap(T0 + 43200, {"1": (102, 8.0e9 + 4.0e4), "2": (3, 7.0e3), "3": (7, 3.0)}, texts=TX)
+        att_e = attribute([s0, s1, s2e])
+        check("A2 eviction (calls fell) drops that pair's delta", att_e["top"][0]["qid"] == "2" and att_e["top"][0]["ms"] == 4.0e6)
+        check("A2 a statement absent from the previous snapshot counts its whole total",
+              pair_deltas(snap(0, {}), snap(1, {"9": (4, 50.0)})) == {"9": 50.0})
+        # a stats_reset inside the window drops the window: INDETERMINATE, class UNKNOWN, and the body says why
+        att_r = attribute([s0, snap(T0 + 21600, {"1": (1, 5.0)}, reset="2026-10-10T00:00:00Z")])
+        _, cls_r, ev_r = window_class(att_r, reg, "the trailing 7 days")
+        check("A3 stats_reset change in window → INDETERMINATE + UNKNOWN, said why",
+              att_r["status"] == "indeterminate" and cls_r == "UNKNOWN" and "stats_reset changed inside the window" in ev_r)
+        check("A3 one snapshot is no window", attribute([s0])["status"] == "indeterminate")
+        stmt, cls_w, ev_w = window_class(att, reg, "the trailing 7 days")
+        check("A4 classify() is fed the WINDOW top-1, not the cumulative one",
+              stmt == TX["2"] and cls_w == "UNKNOWN" and ev_w.endswith("; window: the trailing 7 days"))
+        lines = attribution_lines(att, s2, "the trailing 7 days")
+        facts = {"persistent_instrument": "integral", "integral_mean": 112.4, "integral_coverage_pct": 84.2,
+                 "integral_persistent_pct": 100, "provisional_until": "2026-10-25", "point_mean": 10.46,
+                 "point_baseline_pct": 10}
+        body = build_escalation_body("UNKNOWN_CLASS", "UNKNOWN", 10.46, 37.68, REAL_DOMINANT_QUERY, "7.24,1.90,16.11",
+                                     stats_window="since 2026-06-05, 128d", facts=facts, attribution=lines)
+        check("A5 body: the window top-3 by Δexec, with ms and share",
+              "Window top-3 by Δexec (the trailing 7 days, " in body and "1) 9,000,000 ms (99.6%) UPDATE directional_labels" in body)
+        check("A5 body: the last-interval top-3", "Last-interval top-3 by Δexec (" in body and "5,000,000 ms" in body)
+        check("A5 body: active at the sample instant, through the normalised text",
+              "Active at the sample instant (" in body and "1 non-idle backend(s): active 12s UPDATE directional_labels SET x = $1" in body)
+        check("A5 body: the cumulative top-1, labelled", "Cumulative top-1 (pg_stat_statements, cumulative since 2026-06-05, 128d): SELECT funding_rate" in body)
+        check("A5 body: both instruments side by side",
+              "7-day mean (integral, cgroup usage_usec, coverage 84.2%): 112.4% vs 100% (provisional until 2026-10-25) · "
+              "28-instant mean (point, docker stats median-of-30 @ :47): 10.46% vs 10% (reported, decides nothing)" in body)
+        check("A5 body: no instrument facts → said, never assumed",
+              "7-day mean (integral): not reported by the caller" in build_escalation_body("x", "UNKNOWN", 1.0, 2.0, "q", "1"))
+        # the store: atomic one-file write, round trip, texts ∪ top-by-delta, literals stripped, wall-time trim
+        store = Path(tmp) / "pgss"
+        store.mkdir()
+        old_file = store / (_stamp(T0 - 9 * 86400) + ".tsv")
+        old_file.write_text(serialize_pgss(snap(T0 - 9 * 86400, {"2": (1, 1.0)})))
+        (store / "README.keep").write_text("not a snapshot")
+        (store / (_stamp(T0 - 3600) + ".tsv")).write_text(serialize_pgss(snap(T0 - 3600, {"2": (10, 1.0e5)})))
+        answers = {
+            "pg_stat_statements_info": ("2026-06-05T00:23:51Z", 0),
+            "total_exec_time FROM": ("1|100|8000000000.0\n2|900|4100000.0\n3|6|2.0\n", 0),
+            "WHERE queryid IN": ("1|SELECT funding_rate FROM funding_history\n2|UPDATE directional_labels SET x = $1\n", 0),
+            "pg_stat_activity": ("7|active||12|2|UPDATE directional_labels SET note = 'secret-ish' WHERE id = 42\n", 0)}
+        def fake_run(sql, timeout=10):
+            return next(v for k, v in answers.items() if k in sql)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = record_pgss(env={"PG_CPU_PGSS_DIR": str(store)}, now=T0, run=fake_run)
+        files = sorted(p.name for p in store.iterdir() if PGSS_NAME_RE.match(p.name))
+        check("A6 --record-pgss prints PGSS_RECORD=ok and exits 0", rc == 0 and out.getvalue().startswith("PGSS_RECORD=ok "))
+        check("A6 exactly one new file, named by its instant; the 9-day-old one trimmed by WALL time, nothing else touched",
+              files == [_stamp(T0 - 3600) + ".tsv", _stamp(T0) + ".tsv"] and (store / "README.keep").exists())
+        got = parse_pgss((store / (_stamp(T0) + ".tsv")).read_text())
+        check("A6 the file round-trips: full set, stats_reset, texts", got["q"]["2"] == (900, 4100000.0)
+              and got["stats_reset"] == "2026-06-05T00:23:51Z" and got["texts"]["2"].startswith("UPDATE directional_labels"))
+        check("A6 no literal survives from pg_stat_activity",
+              got["active"][0]["text"] == "UPDATE directional_labels SET note = '?' WHERE id = ?")
+        check("A6 no temp file left behind", not any(p.name.endswith(".tmp") for p in store.iterdir()))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = record_pgss(env={"PG_CPU_PGSS_DIR": str(store)}, now=T0 + 60, run=lambda sql, timeout=10: (None, 1))
+        check("A6 an unreadable database → PGSS_RECORD=failed, exit 3, no file",
+              rc == EXIT_FRAMEWORK_ERROR and out.getvalue().startswith("PGSS_RECORD=failed ")
+              and not (store / (_stamp(T0 + 60) + ".tsv")).exists())
+        (store / (_stamp(T0 + 120) + ".tsv")).write_text("garbage")
+        snaps_w, bad_w = load_pgss_window(store, T0 - 7200, T0 + 3600)
+        check("A7 the window loader keeps [from, to], oldest first, and COUNTS what it could not parse",
+              [x["ts"] for x in snaps_w] == [T0 - 3600, T0] and bad_w == 1)
+        check("A7 a tab or newline in a statement cannot break a store line",
+              parse_pgss(serialize_pgss(snap(1, {"5": (1, 1.0)}, texts={"5": "SELECT\t1\nFROM x"})))["texts"]["5"] == "SELECT 1 FROM x")
+        check("A8 facts: unreadable JSON is {}, never a guess", parse_facts("not json") == {} and parse_facts("[1]") == {})
 
         # C6 — bad argv is FRAMEWORK_ERROR, never argparse's 2 (= CRITICAL_BYPASS downstream)
         for argv, desc in ((["--bogus"], "unknown flag"), ([], "missing --avg")):
@@ -679,4 +1081,6 @@ def _help_exit_code():
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]:
         sys.exit(self_test())
+    if sys.argv[1:] == ["--record-pgss"]:   # before argparse: this mode takes no --avg
+        sys.exit(record_pgss())
     main()

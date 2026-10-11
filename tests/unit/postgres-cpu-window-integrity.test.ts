@@ -49,6 +49,30 @@ describe('postgres-cpu window integrity', () => {
     expect(code).toMatch(/PG_CPU_WINDOW_FILE/);
   });
 
+  it('OPS-ALARM-OWNER-DERIVATION-W1 CH3: the persistent leg decides on the INTEGRAL; the point levels keep their values', () => {
+    const src = readFileSync(SNAPSHOT, 'utf8');
+    // the point instrument's levels are NOT edited (Must NOT) — they are levels on THAT instrument
+    for (const pin of ['BASELINE_PCT=10', 'THRESHOLD_PCT=$((BASELINE_PCT * 2))', 'WINDOW_N=28 ', 'TRAJECTORY_N=3', 'TRAJECTORY_PCT=50']) {
+      expect(src.split('\n').some((l) => l.startsWith(pin)), pin).toBe(true);
+    }
+    // ONE new level, on the integral, carrying its basis, its owner and a revisit date
+    expect(src).toMatch(/^INTEGRAL_PERSISTENT_PCT=100$/m);
+    expect(src).toContain('2 × the');
+    expect(src).toContain('integral normal R0.7 measured (46.05–52.51 % ⇒ 92–105, rounded)');
+    expect(src).toContain('OPS-POSTGRES-CPU-INTEGRAL-RECALIBRATE-W1');
+    expect(src).toMatch(/TODO: revisit by 2026-10-25/);
+    // the run decides through decide(), and decide() takes persistence ONLY from the integral
+    expect(src).toMatch(/ev=\$\x28decide "\$WINDOW_FILE" "\$INTEGRAL_FILE" "\$now"\x29/);
+    expect(src).toContain('if [ "$(kv int_verdict "$iv")" = FAIL ]; then ipers=1; fi');
+  });
+
+  it('the routing case stays byte-identical (Must NOT): the same three arms, the same alert ids', () => {
+    const src = readFileSync(SNAPSHOT, 'utf8');
+    expect(src).toContain('      1) echo "$AUTOPILOT_OUT" | "$MON_DIR/send_telegram.sh" "POSTGRES_CPU_DRIFT_UNIFIED" CRITICAL_PERSISTENT - ;;');
+    expect(src).toContain('      2) echo "CRITICAL_BYPASS: $AUTOPILOT_OUT" | "$MON_DIR/send_telegram.sh" "POSTGRES_CPU_DRIFT_CRITICAL_BYPASS" CRITICAL_PERSISTENT - ;;');
+    expect(src).toContain('      0) : ;;');
+  });
+
   it('every registry class names a TEMPLATE recommended wave, because the body now reads it', () => {
     const reg = yaml.load(readFileSync(REGISTRY, 'utf8')) as { classes: Array<Record<string, unknown>> };
     // declaration-sync refuses to propagate a registry truncated below 3 classes
