@@ -301,6 +301,26 @@ decide() {  # $1 window file  $2 integral file  $3 now (epoch s)
   printf 'trigger=%s\nverdict=%s\nreason=%s\n' "$trig" "$verdict" "$reason"
 }
 
+# PURE. The integral's mean (% of one core) over the trailing $3 seconds ending at $2, or empty when no
+# segment covers any of it — the container CPU over an ATTRIBUTION window (CH3 post-GREEN ruling Q7).
+integral_window_mean() {  # $1 integral file  $2 now (epoch s)  $3 window seconds
+  local f="$1"
+  [ -f "$f" ] || f=/dev/null
+  awk -F'\t' "$AWK_INT_ROW_VALID"' int_row_valid() { print }' "$f" \
+    | python3 -c "$PY_INTEGRAL_EVAL" "$2" "$3" 0 "$INTEGRAL_PERSISTENT_PCT" | sed -n 's/^int_mean_pct=//p'
+}
+
+# PURE. The routing case's framework-error page (its `*)` arm). It names the level that DECIDES
+# persistence — the 7-day integral vs INTEGRAL_PERSISTENT_PCT, with its coverage — and labels the point
+# 28-mean as reported only. (CH3 post-GREEN ruling Q6: it said "persistent fires at > BASELINE_PCT", a
+# level that decides nothing since the integral took the persistent leg.)
+framework_error_body() {  # $1 integral mean (empty = n/a)  $2 coverage %  $3 point mean  $4 point window n  $5 trigger
+  local mean=n/a
+  if [ -n "$1" ]; then mean="$1%"; fi
+  printf '🛑 POSTGRES_CPU_DRIFT_UNIFIED [autopilot framework_error]\n\n7-day mean (integral, cgroup usage_usec, coverage %s%%): %s vs %s%% (provisional until %s) — persistent fires above it, only at >= %s%% coverage\n28-instant mean (point, docker stats median-of-30 @ :47): %s%% over %s samples vs %s%% (reported, decides nothing) · trigger=%s\n\nAction: dispatch OPS-POSTGRES-AUTOPILOT-UNIFIED-W{NEXT} via Cowork → Claude Code\nAudit shape: audits/OPS-POSTGRES-AUTOPILOT-UNIFIED-W1-endpoint-truth.md\n\nSnapshot log: %s\n' \
+    "${2:-0}" "$mean" "$INTEGRAL_PERSISTENT_PCT" "$INTEGRAL_PROVISIONAL_UNTIL" "$INTEGRAL_COVERAGE_MIN_PCT" "$3" "$4" "$BASELINE_PCT" "$5" "$LOG"
+}
+
 # An RFC 3339 UTC instant (as the window stores it) → epoch seconds.
 iso_epoch() {
   python3 -c 'import sys; from datetime import datetime, timezone; print(int(datetime.strptime(sys.argv[1], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()))' "$1"
@@ -347,7 +367,7 @@ finish() {  # $1 verdict  $2 human detail  $3 metrics json
 
 main() {
   local ts now ir obs median ev win avg peak recent first last trig verdict reason metrics
-  local ptrig imean icov icovs irows irst isince iver irsn attr_from attr_label facts
+  local ptrig imean icov icovs irows irst isince iver irsn attr_from attr_label attr_cpu facts
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   now=$(date +%s)
   # The integral row FIRST and unconditionally: a failed point read must not cost the record a row.
@@ -401,7 +421,8 @@ main() {
         attr_from=$((now - INTEGRAL_WINDOW_S))
         attr_label="the trailing 7 days" ;;
     esac
-    facts="{\"persistent_instrument\":\"integral\",\"integral_mean\":${imean:-null},\"integral_coverage_pct\":${icov:-0},\"integral_persistent_pct\":${INTEGRAL_PERSISTENT_PCT},\"provisional_until\":\"${INTEGRAL_PROVISIONAL_UNTIL}\",\"point_mean\":${avg:-0},\"point_baseline_pct\":${BASELINE_PCT},\"attribution_from_s\":${attr_from},\"attribution_label\":\"${attr_label}\"}"
+    attr_cpu=$(integral_window_mean "$INTEGRAL_FILE" "$now" "$((now - attr_from))")
+    facts="{\"persistent_instrument\":\"integral\",\"attribution_cpu_pct\":${attr_cpu:-null},\"integral_mean\":${imean:-null},\"integral_coverage_pct\":${icov:-0},\"integral_persistent_pct\":${INTEGRAL_PERSISTENT_PCT},\"provisional_until\":\"${INTEGRAL_PROVISIONAL_UNTIL}\",\"point_mean\":${avg:-0},\"point_baseline_pct\":${BASELINE_PCT},\"attribution_from_s\":${attr_from},\"attribution_label\":\"${attr_label}\"}"
     if [ ! -x "$MON_DIR/postgres-cpu-autopilot.py" ]; then
       AUTOPILOT_OUT="autopilot.py missing or not executable"; AUTOPILOT_EXIT=3
     else
@@ -417,7 +438,7 @@ main() {
       0) : ;;
       1) echo "$AUTOPILOT_OUT" | "$MON_DIR/send_telegram.sh" "POSTGRES_CPU_DRIFT_UNIFIED" CRITICAL_PERSISTENT - ;;
       2) echo "CRITICAL_BYPASS: $AUTOPILOT_OUT" | "$MON_DIR/send_telegram.sh" "POSTGRES_CPU_DRIFT_CRITICAL_BYPASS" CRITICAL_PERSISTENT - ;;
-      *) printf '🛑 POSTGRES_CPU_DRIFT_UNIFIED [autopilot framework_error]\n\nRolling avg: %s%% over a full %s-sample window, trigger=%s (persistent fires at > %s%%)\n\nAction: dispatch OPS-POSTGRES-AUTOPILOT-UNIFIED-W{NEXT} via Cowork → Claude Code\nAudit shape: audits/OPS-POSTGRES-AUTOPILOT-UNIFIED-W1-endpoint-truth.md\n\nSnapshot log: %s\n' "$avg" "$win" "$trig" "$BASELINE_PCT" "$LOG" | "$MON_DIR/send_telegram.sh" "POSTGRES_CPU_DRIFT_UNIFIED" CRITICAL_PERSISTENT - ;;
+      *) framework_error_body "$imean" "$icov" "$avg" "$win" "$trig" | "$MON_DIR/send_telegram.sh" "POSTGRES_CPU_DRIFT_UNIFIED" CRITICAL_PERSISTENT - ;;
     esac
   fi
 
@@ -486,7 +507,7 @@ REAL_POST_ROTATION='2026-09-27T00:48:02Z 4.29
 2026-09-28T12:48:03Z 1.90
 2026-09-28T18:48:02Z 16.11
 2026-09-29T00:48:02Z 6.43'
-SELFTEST_EXPECTED=71
+SELFTEST_EXPECTED=73
 
 self_test() {
   local self tmp pass=0 fail=0 ev line got i s
@@ -760,6 +781,17 @@ STUB
   echo steady > "$tmp/mode"; mv "$CGROUP_ROOT/docker-$STUB_CID.scope/cpu.stat" "$tmp/cpu.stat.away"
   check "I11 missing cpu.stat → no read" "1" "$(PATH="$tmp/bin:$PATH" integral_read >/dev/null 2>&1; echo $?)"
   mv "$tmp/cpu.stat.away" "$CGROUP_ROOT/docker-$STUB_CID.scope/cpu.stat"
+
+  # I12 — the framework-error page names the DECIDING level (ruling Q6); the point level is reported only.
+  got=$(framework_error_body 112.40 84.2 10.46 28 persistent | sed -n '3,4p')
+  check "I12 framework-error page: integral decides, point reported" \
+    "7-day mean (integral, cgroup usage_usec, coverage 84.2%): 112.40% vs 100% (provisional until 2026-10-25) — persistent fires above it, only at >= 70% coverage|28-instant mean (point, docker stats median-of-30 @ :47): 10.46% over 28 samples vs 10% (reported, decides nothing) · trigger=persistent" \
+    "$(printf '%s' "$got" | paste -sd '|' -)"
+  # I13 — the container CPU over an attribution window (ruling Q7): the 6 h tail of the 50 % fixture,
+  #       and empty — never a guess — where no segment covers the window.
+  int_fixture "$INTEGRAL_FILE" "$I0" 168 50 steady; printf '%s\t%s\t%s\n' "$I0" "$(( 50 * 10000 * (168 * 3600 + 3600) ))" "$(tail -1 "$INTEGRAL_FILE" | cut -f3)" >> "$INTEGRAL_FILE"
+  check "I13 attribution-window CPU from the integral; none covered → empty" "50.00|" \
+    "$(integral_window_mean "$INTEGRAL_FILE" "$I0" 21600)|$(integral_window_mean "$tmp/absent.tsv" "$I0" 21600)"
 
   # S9 — END TO END, as cron invokes it: this file as a child process, stub docker + autopilot +
   # wrapper + cgroup counter, every path in the sandbox. Asserts the ROUTING, the forensic line

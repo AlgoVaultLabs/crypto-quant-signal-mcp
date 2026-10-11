@@ -374,7 +374,7 @@ def attribute(snaps):
         return {"status": "indeterminate", "reason": "no statement executed inside the window"}
     return {"status": "ok", "top": ranked, "last": top(pair_deltas(snaps[-2], snaps[-1])),
             "from_ts": snaps[0]["ts"], "to_ts": snaps[-1]["ts"], "last_from_ts": snaps[-2]["ts"],
-            "n": len(snaps), "stats_reset": resets[0]}
+            "n": len(snaps), "stats_reset": resets[0], "total_ms": sum(window.values())}
 
 
 def window_class(att, registry, label):
@@ -386,7 +386,23 @@ def window_class(att, registry, label):
     return statement, name, f"{evidence}; window: {label}"
 
 
-def attribution_lines(att, latest, label):
+def statement_share_line(att, label, cpu_pct):
+    """PURE. CH3 post-GREEN ruling Q7: what share of the window's CONTAINER CPU the ranked statement time
+    is. pg_stat_statements counts statement wall time only — no parallel-worker CPU (pgss_enabled()
+    requires !IsParallelWorker()) and no planning (track_planning off) — so the class below names the
+    top STATEMENT-time consumer. `cpu_pct` is the integral over the same window; None renders n/a."""
+    span = att["to_ts"] - att["from_ts"]
+    stmt = (att["total_ms"] / 1000.0) / span * 100.0 if span > 0 else 0.0
+    if isinstance(cpu_pct, (int, float)) and not isinstance(cpu_pct, bool) and cpu_pct > 0:
+        cpu, ratio = f"{cpu_pct:.1f} % of one core", f"{100.0 * stmt / cpu_pct:.1f} %"
+    else:
+        cpu, ratio = "n/a (no covered integral segment)", "n/a"
+    return (f"Statement time vs CPU ({label}): Σ Δexec = {stmt:.1f} % of one core vs container CPU {cpu} "
+            f"(integral, same window) → {ratio} of it; the class names the top STATEMENT-time consumer, "
+            f"not the top CPU consumer")
+
+
+def attribution_lines(att, latest, label, cpu_pct=None):
     """PURE. CH3 Req 6's attribution lines (the cumulative top-1 is rendered by the body, labelled)."""
     hm = lambda t: time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(t))
 
@@ -400,6 +416,7 @@ def attribution_lines(att, latest, label):
     if att["status"] == "ok":
         lines = [f"Window top-3 by Δexec ({label}, {hm(att['from_ts'])}..{hm(att['to_ts'])}, {att['n']} snapshots): "
                  f"{items(att['top'])}",
+                 statement_share_line(att, label, cpu_pct),
                  f"Last-interval top-3 by Δexec ({hm(att['last_from_ts'])}..{hm(att['to_ts'])}): {items(att['last'])}"]
     else:
         lines = [f"Window attribution ({label}): INDETERMINATE, {att['reason']}; class UNKNOWN, never invented"]
@@ -827,7 +844,8 @@ def main():
         if bad and att["status"] != "ok":
             att["reason"] += f" ({bad} unparseable store file(s) skipped)"
         dominant_query, class_name, evidence = window_class(att, registry, label)
-        attribution = attribution_lines(att, snaps[-1] if snaps else latest_pgss(pgss_dir()), label)
+        attribution = attribution_lines(att, snaps[-1] if snaps else latest_pgss(pgss_dir()), label,
+                                        facts.get("attribution_cpu_pct"))
         log_event(action="window_attribution", status=att["status"], label=label, snapshots=len(snaps),
                   bad_files=bad, class_name=class_name)
 
@@ -839,7 +857,7 @@ def main():
 # Hermetic: STATE_DIR is repointed into a temp dir BEFORE any scenario, no DB is reached (every
 # scenario hands `handle()` its classification), and no logging is configured, so log_event()
 # writes nowhere. The fixture query is the real 2026-09-28 dominant query, verbatim.
-SELFTEST_EXPECTED = 49
+SELFTEST_EXPECTED = 51
 REAL_DOMINANT_QUERY = ("SELECT funding_rate FROM funding_history WHERE coin = $1 AND recorded_at >= $2 "
                        "ORDER BY recorded_at")
 
@@ -989,6 +1007,13 @@ def self_test():
         check("A5 body: both instruments side by side",
               "7-day mean (integral, cgroup usage_usec, coverage 84.2%): 112.4% vs 100% (provisional until 2026-10-25) · "
               "28-instant mean (point, docker stats median-of-30 @ :47): 10.46% vs 10% (reported, decides nothing)" in body)
+        q7 = attribute([snap(T0, {"1": (1, 0.0)}), snap(T0 + 3600, {"1": (2, 144000.0)})])
+        check("A9 statement time vs container CPU: 4 % vs 50 % renders 8.0 %, statement-time named",
+              "Σ Δexec = 4.0 % of one core vs container CPU 50.0 % of one core (integral, same window) → 8.0 % of it; "
+              "the class names the top STATEMENT-time consumer, not the top CPU consumer" in statement_share_line(q7, "w", 50.0)
+              and statement_share_line(q7, "w", 50.0) in attribution_lines(q7, None, "w", 50.0))
+        check("A9 no integral over the window renders n/a, never a guess",
+              "container CPU n/a (no covered integral segment) (integral, same window) → n/a of it" in statement_share_line(q7, "w", None))
         check("A5 body: no instrument facts → said, never assumed",
               "7-day mean (integral): not reported by the caller" in build_escalation_body("x", "UNKNOWN", 1.0, 2.0, "q", "1"))
         # the store: atomic one-file write, round trip, texts ∪ top-by-delta, literals stripped, wall-time trim
