@@ -110,6 +110,15 @@ describe('AC1 — classifyDeadBook: precedence, first match wins', () => {
     expect(classifyDeadBook(input({ bars: [], venueLastTradeMs: NOW - 30 * H })).cls).toBe('THIN_LIVE');
   });
 
+  it('traded bars are COUNTED for every class, so a paged key carries them too (Req 6)', () => {
+    const vols = Array(24).fill(0); vols[3] = 1; vols[20] = 4;
+    const off = classifyDeadBook(input({ decision: { admit: false, reason: 'venue_disabled' }, bars: bars(vols) }));
+    expect([off.cls, off.tradedBars24h]).toEqual(['VENUE_OFF', 2]);
+    const unknown = classifyDeadBook(input({ circuitOpen: true, bars: bars(vols) }));
+    expect([unknown.cls, unknown.tradedBars24h]).toEqual(['STATUS_UNKNOWN', 2]);
+    expect(classifyDeadBook(input({ decision: null, bars: null })).tradedBars24h).toBeNull();   // not asked ⇒ not counted
+  });
+
   it('an adapter that could not be asked is not evaluable — reported, not paged', () => {
     const v = classifyDeadBook(input({ bars: null, venueLastTradeMs: NOW - 2 * H }));
     expect(v.cls).toBe('THIN_LIVE');

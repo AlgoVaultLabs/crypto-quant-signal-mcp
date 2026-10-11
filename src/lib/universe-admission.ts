@@ -476,7 +476,8 @@ export interface DeadBookVerdict {
   cls: DeadBookClass;
   reason: string;
   contradictionCheck: ContradictionCheck;
-  /** Bars with volume > 0 inside the evaluable window; null when no bars were evaluated. */
+  /** Bars with volume > 0 inside the evaluable window, for EVERY class; null only when the adapter
+   *  could not be asked (or no bar width was given). */
   tradedBars24h: number | null;
 }
 
@@ -484,8 +485,16 @@ const isoOf = (ms: number): string => new Date(ms).toISOString();
 
 /** The ONE dead-book classifier. PURE. */
 export function classifyDeadBook(i: DeadBookInput): DeadBookVerdict {
-  const verdict = (cls: DeadBookClass, reason: string, contradictionCheck: ContradictionCheck = 'not_evaluable',
-    tradedBars24h: number | null = null): DeadBookVerdict => ({ cls, reason, contradictionCheck, tradedBars24h });
+  // The evaluable window and the traded-bar count are computed ONCE, for every class: a paged key
+  // carries its bars too (the operator acting on a VENUE_OFF wants to know whether it still trades).
+  const barMs = i.barMs;
+  const windowEnd = barMs > 0 ? Math.floor(i.nowMs / barMs) * barMs : NaN;
+  const windowStart = windowEnd - DEAD_BOOK_TRADE_WINDOW_MS;
+  const traded = i.bars === null ? [] : i.bars.filter((b) => b.volume > 0);
+  const tradedBars24h = i.bars === null || !(barMs > 0)
+    ? null : traded.filter((b) => b.time >= windowStart && b.time < windowEnd).length;
+  const verdict = (cls: DeadBookClass, reason: string, contradictionCheck: ContradictionCheck = 'not_evaluable'): DeadBookVerdict =>
+    ({ cls, reason, contradictionCheck, tradedBars24h });
   const unknown = (reason: string) => verdict('STATUS_UNKNOWN', reason);
   const decl = ADMISSION_SOURCES[i.venue];
 
@@ -508,25 +517,18 @@ export function classifyDeadBook(i: DeadBookInput): DeadBookVerdict {
 
   // 3/4. Admitted: does the adapter see the market the venue says traded?
   if (i.bars === null) return verdict('THIN_LIVE', 'the adapter could not be asked for bars');
-  const barMs = i.barMs;
   if (!(barMs > 0)) return verdict('THIN_LIVE', `no usable bar width (${barMs})`);
-  const windowEnd = Math.floor(i.nowMs / barMs) * barMs;
-  const windowStart = windowEnd - DEAD_BOOK_TRADE_WINDOW_MS;
-  const traded = i.bars.filter((b) => b.volume > 0);
-  const tradedBars24h = traded.filter((b) => b.time >= windowStart && b.time < windowEnd).length;
   const t = i.venueLastTradeMs;
-  if (t === null || !Number.isFinite(t)) {
-    return verdict('THIN_LIVE', `${i.venue}'s ticker carries no last-trade timestamp`, 'not_evaluable', tradedBars24h);
-  }
+  if (t === null || !Number.isFinite(t)) return verdict('THIN_LIVE', `${i.venue}'s ticker carries no last-trade timestamp`);
   if (t < windowStart || t >= windowEnd) {
     return verdict('THIN_LIVE', `the venue's last trade ${isoOf(t)} is outside the evaluable window [${isoOf(windowStart)}, ${isoOf(windowEnd)})`,
-      'outside_window', tradedBars24h);
+      'outside_window');
   }
   const tradeBar = Math.floor(t / barMs) * barMs;
   if (traded.some((b) => Math.abs(b.time - tradeBar) <= barMs)) {
-    return verdict('THIN_LIVE', `the venue's last trade ${isoOf(t)} falls within ±1 bar of a traded adapter bar`, 'consistent', tradedBars24h);
+    return verdict('THIN_LIVE', `the venue's last trade ${isoOf(t)} falls within ±1 bar of a traded adapter bar`, 'consistent');
   }
   return verdict('ADAPTER_CONTRADICTION',
     `the venue traded at ${isoOf(t)}, inside the window, and the adapter's bars show no trade within ±1 bar (${i.bars.length} bars, ${tradedBars24h} traded)`,
-    'contradiction', tradedBars24h);
+    'contradiction');
 }
