@@ -665,6 +665,17 @@ function selfTest() {
     'Pro gives 100,000 calls a month.',
     'See https://api.algovault.com/signup for the ladder.',
     'You get 200 free alerts a month, up to 100 a day.',
+    // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4 — the approved copy the nine CH4 rows steer toward
+    // (§Copy F + the ruling's templates). Each line pairs a keyless cue with the free allowance
+    // in a TRUE form, so it is exactly what `keyless-path-carries-free-allowance` must not fire on.
+    'No code. No install. No API key to start — sign in free when you need more.',
+    'No signup to start. Free tier: all assets, all 11 timeframes, 200 calls/month (up to 100/day) with a free sign-in.',
+    'Free tier, every coin and timeframe: 20 calls/month with no sign-in, then 200 calls/month (up to 100 per UTC day) with a free sign-in.',
+    'No key to start. Point your MCP client at https://api.algovault.com/mcp and call tools. After 20 calls, sign in free for 200 a month.',
+    'Free tier: put a free key in the Authorization header for 200 calls a month. Or drop it and the env block to try 20 calls. Keep the X-AlgoVault-Track-Token header either way.',
+    'Without a key you get 20 calls a month; a free key gives 200.',
+    'Check the key at https://api.algovault.com/account, or drop the Authorization header to try 20 free calls.',
+    'Connect via npx, Smithery, or remote HTTPS. Try 20 calls with no sign-in; sign in free for 200 calls/month.',
   ];
 
   console.log('SELF-TEST — forbidden-phrase gate');

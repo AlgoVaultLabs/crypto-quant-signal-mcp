@@ -54,5 +54,77 @@
     "source_sha": "0ff5f26c8789e4253d30771227923a3f2b893185",
     "captured_on": "2026-10-12",
     "note": "Sampled from the live DXT manifest (user_config.CQS_API_KEY.description) at the CH0 landing SHA, not authored from the regex. Removed from the tree by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH2 (§Copy E2); the gate reads these bytes from git history at source_sha."
+  },
+  "copyf-no-api-key-needed-free-tier": {
+    "sample": "No API key needed for free tier — just remove the `env` block.",
+    "source_path": "README.md",
+    "source_line": 48,
+    "source_sha": "44a6907feb60af6f19e031c2880ab572c30f7cf9",
+    "captured_on": "2026-10-12",
+    "note": "Sampled from git history (the v1.0.0 README) — the phrase is gone from the tree and survives only in vault brand-facts.md, which this gate does not scan. Rewritten by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4; the gate reads these bytes from git history at source_sha."
+  },
+  "copyf-free-tier-is-keyless": {
+    "sample": "No — the free tier is keyless.",
+    "source_path": "src/lib/channel-registry.ts",
+    "source_line": 88,
+    "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+    "captured_on": "2026-10-12",
+    "note": "Sampled from the MCP channel FAQ answer at the pre-CH4 tip. Rewritten by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4; the gate reads these bytes from git history at source_sha."
+  },
+  "copyf-free-tier-no-key-paren": {
+    "sample": "Free tier (no key) also works for",
+    "source_path": "src/lib/integrations-data/mcp-clients.ts",
+    "source_line": 50,
+    "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+    "captured_on": "2026-10-12",
+    "note": "Sampled from the mcp-clients intro (the §Copy F docs line replaces it) at the pre-CH4 tip. Rewritten by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4; the gate reads these bytes from git history at source_sha."
+  },
+  "copyf-no-signup-required-free-tier": {
+    "sample": "No signup required. Free tier: all assets, all 11 timeframes, ",
+    "source_path": "src/lib/landing-content.ts",
+    "source_line": 83,
+    "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+    "captured_on": "2026-10-12",
+    "note": "Sampled from hero.free_tier_note (also the conversion band on every banded page) at the pre-CH4 tip. Rewritten by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4; the gate reads these bytes from git history at source_sha."
+  },
+  "copyf-no-code-no-api-key-no-install": {
+    "sample": "No code. No API key. No install.",
+    "source_path": "README.md",
+    "source_line": 45,
+    "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+    "captured_on": "2026-10-12",
+    "note": "Sampled from the README quick start at the pre-CH4 tip. Rewritten by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4; the gate reads these bytes from git history at source_sha."
+  },
+  "copyf-free-tier-drop-the": {
+    "sample": "Free tier: drop the `Authorization` header and the env block, but keep the `X-AlgoVault-Track-Token` header.",
+    "source_path": "docs/integrations/mcp-clients/claude-desktop.md",
+    "source_line": 27,
+    "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+    "captured_on": "2026-10-12",
+    "note": "Sampled from the Claude Desktop walkthrough at the pre-CH4 tip. Rewritten by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4; the gate reads these bytes from git history at source_sha."
+  },
+  "copyf-free-tier-needs-no-key": {
+    "sample": "Free tier needs no key: remove `bearerTokenEnvVar`.",
+    "source_path": "docs/integrations/mcp-clients/kimi.md",
+    "source_line": 41,
+    "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+    "captured_on": "2026-10-12",
+    "note": "Sampled from the Kimi troubleshooting line at the pre-CH4 tip. Rewritten by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4; the gate reads these bytes from git history at source_sha."
+  },
+  "copyf-drop-auth-header-to-use-free-tier": {
+    "sample": "drop the Authorization header to use the free tier.",
+    "source_path": "src/lib/credential-refusal.ts",
+    "source_line": 62,
+    "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+    "captured_on": "2026-10-12",
+    "note": "Sampled from AUTH_REFUSAL_COPY.UNKNOWN.suggested_action at the pre-CH4 tip. Rewritten by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4; the gate reads these bytes from git history at source_sha."
+  },
+  "keyless-path-carries-free-allowance": {
+    "sample": "**Free tier OK?** Yes. Drop `bearer_token_env_var`. 200 calls/month (100/day), every coin and timeframe.",
+    "source_path": "docs/integrations/mcp-clients/codex.md",
+    "source_line": 43,
+    "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+    "captured_on": "2026-10-12",
+    "note": "Sampled from the Codex FAQ at the pre-CH4 tip; one of the ~20 sentences this row enumerated. Rewritten by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4; the gate reads these bytes from git history at source_sha."
   }
 }

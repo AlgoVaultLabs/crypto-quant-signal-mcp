@@ -197,6 +197,132 @@
         "captured_on": "2026-10-12"
       },
       "severity": "error"
+    },
+    {
+      "id": "copyf-no-api-key-needed-free-tier",
+      "pattern": "No\\s+API\\s+key\\s+needed\\s+for\\s+(?:the\\s+)?free\\s+tier",
+      "retired_on": "2026-10-12",
+      "superseded_by": "{N} calls a month without a key; a free key gives {FREE} (§Copy F / the CH4 templates; {N} = freeKeylessCallsLabel(), {FREE} = freeCallsLabel())",
+      "reason": "At STEPUP_MODE=live (Mr.1's CH4 ruling, 2026-10-12) the keyless path carries FREE_KEYLESS_MONTHLY_CALLS_RULED (20) calls a month; the free tier's 200 needs a free key. §Copy F: listed FORBIDDEN at the flip. GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4.",
+      "bare_token_na_reason": "SEMANTIC, not numeric. The retired thing is the claim that the no-key path carries the free allowance; its words are live vocabulary on their own, so only the phrase form is banned.",
+      "fixture_provenance": {
+        "source_path": "README.md",
+        "source_sha": "44a6907feb60af6f19e031c2880ab572c30f7cf9",
+        "captured_on": "2026-10-12"
+      },
+      "severity": "error"
+    },
+    {
+      "id": "copyf-free-tier-is-keyless",
+      "pattern": "the\\s+free\\s+tier\\s+is\\s+keyless",
+      "retired_on": "2026-10-12",
+      "superseded_by": "{N} calls a month without a key; a free key gives {FREE} (§Copy F / the CH4 templates; {N} = freeKeylessCallsLabel(), {FREE} = freeCallsLabel())",
+      "reason": "At STEPUP_MODE=live (Mr.1's CH4 ruling, 2026-10-12) the keyless path carries FREE_KEYLESS_MONTHLY_CALLS_RULED (20) calls a month; the free tier's 200 needs a free key. §Copy F: listed FORBIDDEN at the flip; the MCP FAQ answer is replaced by §Copy F. GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4.",
+      "bare_token_na_reason": "SEMANTIC, not numeric. The retired thing is the claim that the no-key path carries the free allowance; its words are live vocabulary on their own, so only the phrase form is banned.",
+      "fixture_provenance": {
+        "source_path": "src/lib/channel-registry.ts",
+        "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+        "captured_on": "2026-10-12"
+      },
+      "severity": "error"
+    },
+    {
+      "id": "copyf-free-tier-no-key-paren",
+      "pattern": "Free\\s+tier\\s*\\(\\s*no\\s+key\\s*\\)",
+      "retired_on": "2026-10-12",
+      "superseded_by": "{N} calls a month without a key; a free key gives {FREE} (§Copy F / the CH4 templates; {N} = freeKeylessCallsLabel(), {FREE} = freeCallsLabel())",
+      "reason": "At STEPUP_MODE=live (Mr.1's CH4 ruling, 2026-10-12) the keyless path carries FREE_KEYLESS_MONTHLY_CALLS_RULED (20) calls a month; the free tier's 200 needs a free key. §Copy F: listed FORBIDDEN at the flip. GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4.",
+      "bare_token_na_reason": "SEMANTIC, not numeric. The retired thing is the claim that the no-key path carries the free allowance; its words are live vocabulary on their own, so only the phrase form is banned.",
+      "fixture_provenance": {
+        "source_path": "src/lib/integrations-data/mcp-clients.ts",
+        "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+        "captured_on": "2026-10-12"
+      },
+      "severity": "error"
+    },
+    {
+      "id": "copyf-no-signup-required-free-tier",
+      "pattern": "No\\s+signup\\s+required\\.\\s*Free\\s+tier",
+      "retired_on": "2026-10-12",
+      "superseded_by": "{N} calls a month without a key; a free key gives {FREE} (§Copy F / the CH4 templates; {N} = freeKeylessCallsLabel(), {FREE} = freeCallsLabel())",
+      "reason": "At STEPUP_MODE=live (Mr.1's CH4 ruling, 2026-10-12) the keyless path carries FREE_KEYLESS_MONTHLY_CALLS_RULED (20) calls a month; the free tier's 200 needs a free key. §Copy F: listed FORBIDDEN at the flip; the hero line + conversion band carry §Copy F. GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4.",
+      "bare_token_na_reason": "SEMANTIC, not numeric. The retired thing is the claim that the no-key path carries the free allowance; its words are live vocabulary on their own, so only the phrase form is banned.",
+      "fixture_provenance": {
+        "source_path": "src/lib/landing-content.ts",
+        "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+        "captured_on": "2026-10-12"
+      },
+      "severity": "error"
+    },
+    {
+      "id": "copyf-no-code-no-api-key-no-install",
+      "pattern": "No\\s+code\\.\\s*No\\s+API\\s+key\\.\\s*No\\s+install\\.",
+      "retired_on": "2026-10-12",
+      "superseded_by": "{N} calls a month without a key; a free key gives {FREE} (§Copy F / the CH4 templates; {N} = freeKeylessCallsLabel(), {FREE} = freeCallsLabel())",
+      "reason": "At STEPUP_MODE=live (Mr.1's CH4 ruling, 2026-10-12) the keyless path carries FREE_KEYLESS_MONTHLY_CALLS_RULED (20) calls a month; the free tier's 200 needs a free key. SCOPE DELTA (CH4 ruling): forbidden beside §Copy F; README.md:45 carries the §Copy F README line. GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4.",
+      "bare_token_na_reason": "SEMANTIC, not numeric. The retired thing is the claim that the no-key path carries the free allowance; its words are live vocabulary on their own, so only the phrase form is banned.",
+      "fixture_provenance": {
+        "source_path": "README.md",
+        "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+        "captured_on": "2026-10-12"
+      },
+      "severity": "error"
+    },
+    {
+      "id": "copyf-free-tier-drop-the",
+      "pattern": "Free\\s+tier:\\s*drop\\s+the\\b",
+      "retired_on": "2026-10-12",
+      "superseded_by": "{N} calls a month without a key; a free key gives {FREE} (§Copy F / the CH4 templates; {N} = freeKeylessCallsLabel(), {FREE} = freeCallsLabel())",
+      "reason": "At STEPUP_MODE=live (Mr.1's CH4 ruling, 2026-10-12) the keyless path carries FREE_KEYLESS_MONTHLY_CALLS_RULED (20) calls a month; the free tier's 200 needs a free key. SCOPE DELTA (CH4 ruling): forbidden beside §Copy F. GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4.",
+      "bare_token_na_reason": "SEMANTIC, not numeric. The retired thing is the claim that the no-key path carries the free allowance; its words are live vocabulary on their own, so only the phrase form is banned.",
+      "fixture_provenance": {
+        "source_path": "docs/integrations/mcp-clients/claude-desktop.md",
+        "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+        "captured_on": "2026-10-12"
+      },
+      "severity": "error"
+    },
+    {
+      "id": "copyf-free-tier-needs-no-key",
+      "pattern": "free\\s+tier\\s+needs\\s+no\\s+key",
+      "retired_on": "2026-10-12",
+      "superseded_by": "{N} calls a month without a key; a free key gives {FREE} (§Copy F / the CH4 templates; {N} = freeKeylessCallsLabel(), {FREE} = freeCallsLabel())",
+      "reason": "At STEPUP_MODE=live (Mr.1's CH4 ruling, 2026-10-12) the keyless path carries FREE_KEYLESS_MONTHLY_CALLS_RULED (20) calls a month; the free tier's 200 needs a free key. SCOPE DELTA (CH4 ruling): forbidden beside §Copy F (case-insensitive). GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4.",
+      "bare_token_na_reason": "SEMANTIC, not numeric. The retired thing is the claim that the no-key path carries the free allowance; its words are live vocabulary on their own, so only the phrase form is banned.",
+      "fixture_provenance": {
+        "source_path": "docs/integrations/mcp-clients/kimi.md",
+        "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+        "captured_on": "2026-10-12"
+      },
+      "severity": "error"
+    },
+    {
+      "id": "copyf-drop-auth-header-to-use-free-tier",
+      "pattern": "drop\\s+the\\s+Authorization\\s+header\\s+to\\s+use\\s+the\\s+free\\s+tier",
+      "retired_on": "2026-10-12",
+      "superseded_by": "{N} calls a month without a key; a free key gives {FREE} (§Copy F / the CH4 templates; {N} = freeKeylessCallsLabel(), {FREE} = freeCallsLabel())",
+      "reason": "At STEPUP_MODE=live (Mr.1's CH4 ruling, 2026-10-12) the keyless path carries FREE_KEYLESS_MONTHLY_CALLS_RULED (20) calls a month; the free tier's 200 needs a free key. SCOPE DELTA (CH4 ruling): forbidden beside §Copy F; the refusal now names the keyless allowance the meter applies. GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4.",
+      "bare_token_na_reason": "SEMANTIC, not numeric. The retired thing is the claim that the no-key path carries the free allowance; its words are live vocabulary on their own, so only the phrase form is banned.",
+      "fixture_provenance": {
+        "source_path": "src/lib/credential-refusal.ts",
+        "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+        "captured_on": "2026-10-12"
+      },
+      "severity": "error"
+    },
+    {
+      "id": "keyless-path-carries-free-allowance",
+      "pattern": "(?:\\(no\\s+key\\)|no\\s+key\\b|without\\s+(?:any\\s+|a\\s+)?(?:api\\s+)?(?:key|header)|no[\\s-]*sign-?up(?!\\s+to\\s+start)|(?:drop|remove|delete)\\s+(?:the\\s+)?[^.\\n]{0,60}?(?:header|headers|env\\b|bearer_token_env_var|bearerTokenEnvVar)).{0,140}?(?:(?<!\\bfor\\s)\\b200\\s+(?:free\\s+)?calls|(?<!\\bfor\\s)\\$\\{freeCallsLabel\\(\\)\\}\\s+(?:free\\s+)?calls)|(?:(?<!\\bfor\\s)\\b200\\s+(?:free\\s+)?calls|(?<!\\bfor\\s)\\$\\{freeCallsLabel\\(\\)\\}\\s+(?:free\\s+)?calls).{0,160}?(?:\\(no\\s+key\\)|no\\s+key\\b|without\\s+(?:any\\s+|a\\s+)?(?:api\\s+)?(?:key|header)|no[\\s-]*sign-?up(?!\\s+to\\s+start)|(?:drop|remove|delete)\\s+(?:the\\s+)?[^.\\n]{0,60}?(?:header|headers|env\\b|bearer_token_env_var|bearerTokenEnvVar))",
+      "retired_on": "2026-10-12",
+      "superseded_by": "{N} calls a month without a key; a free key gives {FREE} (§Copy F / the CH4 templates; {N} = freeKeylessCallsLabel(), {FREE} = freeCallsLabel())",
+      "reason": "At STEPUP_MODE=live (Mr.1's CH4 ruling, 2026-10-12) the keyless path carries FREE_KEYLESS_MONTHLY_CALLS_RULED (20) calls a month; the free tier's 200 needs a free key. Code-added under the CH4 ruling's pre-approval ('any other free-tier-allowance sentence the gate finds'): the eight phrase rows did not reach ~20 sentences that pair a keyless cue (no key / without a key or header / no signup / drop or remove the header, env or bearer line) with the 200-call allowance, all false at live. This row makes the gate find them; each was rewritten to the pre-approved pattern '{N} calls a month without a key; a free key gives {FREE}'. Anchored so the approved copy cannot match: 'No signup to start' is excluded by lookahead and '… for 200 calls' (a free key's allowance) by lookbehind. GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4.",
+      "bare_token_na_reason": "SEMANTIC, not numeric. The retired thing is the claim that the no-key path carries the free allowance; its words are live vocabulary on their own, so only the phrase form is banned.",
+      "fixture_provenance": {
+        "source_path": "docs/integrations/mcp-clients/codex.md",
+        "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
+        "captured_on": "2026-10-12"
+      },
+      "severity": "error"
     }
   ],
   "_negative_context_contract": "negative_context: a regex tested against the SAME LINE. On a match the hit is SUPPRESSED and COUNTED, and the run prints the suppression total — 'detect the thing, then JUDGE it separately, and print what the predicate excludes'. This exists because a live surface may legitimately NAME a retired phrase in order to retire it: a README release recap saying '$79/yr … Superseded: annual was retired 2026-08-09', or an authoring runbook teaching 'never write 20 calls/day'. Deleting those sentences would destroy the record that the retirement happened, which is the opposite of what this gate exists for.",
