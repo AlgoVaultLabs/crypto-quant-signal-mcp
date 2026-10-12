@@ -29,7 +29,7 @@
  * type-only `SuggestedX402`. It must NEVER import `license.ts` — `license.ts` imports
  * `nudge-copy.ts` and consumes this module, so an import here would close a cycle.
  */
-import { PLANS, DEFAULT_UPGRADE_PLAN, planCallsLabel, subscriptionBreakEvenCalls } from './plans.js';
+import { PLANS, DEFAULT_UPGRADE_PLAN, planCallsLabel, subscriptionBreakEvenCalls, freeCallsLabel, resolveStepupMode } from './plans.js';
 // LEAF, not `license.ts` — see the module note above on why that import would cycle. This is the
 // SAME derivation the daily meter enforces against, which is the point of extracting it.
 import { hoursUntilUtcDayReset } from './utc-day.js';
@@ -275,6 +275,13 @@ function x402Line(x402: SuggestedX402, lead: boolean): string {
 const CLAIM_URL = 'https://api.algovault.com/api/start-free';
 
 /**
+ * GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.4 (§Copy E) — where the anonymous free arm sends a caller once
+ * the move to N is live: the existing `/welcome` sign-up (Google · GitHub · email), whose new email
+ * key meters on itself — "your own" allowance is literal (R-3). Tagged `quota_wall` for attribution.
+ */
+const SIGN_IN_WALL_URL = 'https://api.algovault.com/welcome?src=quota_wall';
+
+/**
  * The free arm — the claim offer, and the referral offer stated for the wall that actually fired.
  *
  * OPS-QUOTA-CLAIM-ALIAS-W1-R2 CH2, two fixes that share one root:
@@ -303,6 +310,12 @@ function referralLine(referralCode: string | null | undefined, wall: QuotaWall):
     : `Keep going free: refer a friend — you both get ${bonus} bonus calls.`;
   if (referralCode) {
     return `${offer} Your link: ${shareLink(referralCode, 'algovault.com')}`;
+  }
+  // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.4 — §Copy E, ONLY when the resolved mode is `live`. In `off`
+  // and `shadow` the claim CTA below renders byte-identically (ruling Q-C), so CH2 lands dark and the
+  // copy moves with the allowance it describes, never ahead of it.
+  if (resolveStepupMode() === 'live') {
+    return `${offer} Sign in free for your own ${freeCallsLabel()} calls a month — one tap, no card → ${SIGN_IN_WALL_URL}`;
   }
   return `${offer} Claim a free key — one call, no email. Your usage carries over, so nothing resets. → ${CLAIM_URL}`;
 }

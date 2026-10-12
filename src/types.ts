@@ -796,6 +796,20 @@ export interface LicenseInfo {
    * across every outcome so the two cannot drift into contradiction.
    */
   retryable?: boolean;
+  /**
+   * GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.3 (ADDITIVE, optional — every existing construction stays
+   * valid). The caller has NO email-bound identity: no credential (ABSENT), a credential that cannot
+   * be one we issued (MALFORMED), or an `av_free_` key whose row has `email IS NULL` (ephemeral).
+   * Such a caller meters against the ANONYMOUS allowance (`plans.ts` `effectiveKeylessMonthlyCalls`);
+   * everyone else keeps their tier's allowance. The counter does not move — only the allowance
+   * follows the caller (R-2).
+   *
+   * Stamped ONLY on the async resolution path, from the free-key row it already read (no second
+   * lookup). The sync/stdio path never stamps it: a local `npx` operator keeps the tier allowance.
+   * Spread-on-presence: absent means "not anonymous", and every non-anonymous license is
+   * byte-identical to before.
+   */
+  anonymous?: true;
 }
 
 // ── x402 Types ──

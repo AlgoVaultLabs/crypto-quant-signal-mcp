@@ -133,7 +133,9 @@ describe('free.telegram — the per-surface Telegram allowance (GROWTH-TG-FREE-A
   it('is additive — the API figures beside it are untouched', async () => {
     const { body } = await getBody(await boot());
     const free = body.free as Record<string, unknown>;
-    expect(Object.keys(free).sort()).toEqual(['daily_calls', 'monthly_calls', 'telegram']);
+    // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.1 added a fourth key, `keyless` (pinned in
+    // tests/unit/stepup-allowance.test.ts) — reviewed, so the set widens by exactly one name.
+    expect(Object.keys(free).sort()).toEqual(['daily_calls', 'keyless', 'monthly_calls', 'telegram']);
     expect(free.monthly_calls).toBe(200);
     expect(free.daily_calls).toBe(100);
   });

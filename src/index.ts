@@ -136,6 +136,8 @@ import { registerEntitlementRoutes } from './lib/entitlement-api.js';
 import { registerOpsBuildRoute } from './lib/ops-build-api.js';
 // GROWTH-TG-QUOTA-PARITY-W1 CH1: GET /api/plans/public — the plan-ladder read surface.
 import { registerPlansPublicRoutes } from './lib/plans-public-api.js';
+// GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.2: the step-up mode resolver, for the one boot line.
+import { resolveStepupMode, freeKeylessCallsLabel } from './lib/plans.js';
 import { getWelcomePageHtml } from './lib/welcome-page.js';
 import {
   TRADE_CALL_DESCRIPTION,
@@ -4546,6 +4548,10 @@ async function startHttp() {
   const httpServer = app.listen(port, () => {
     console.log(`crypto-quant-signal-mcp running on http://0.0.0.0:${port}/mcp`);
     console.log(`Health check: http://0.0.0.0:${port}/health`);
+    // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.2 — the resolved step-up mode, printed ONCE by the long-lived
+    // server: the read-back every STEPUP_MODE flip is verified against (Build Rule 6), with the N this
+    // image was built with beside it.
+    console.log(`[stepup] mode=${resolveStepupMode()} n=${freeKeylessCallsLabel()}`);
     // Warm tier caches in background (xyz symbols, OI rankings, liquid memes)
     warmTierCaches().catch(() => {});
 

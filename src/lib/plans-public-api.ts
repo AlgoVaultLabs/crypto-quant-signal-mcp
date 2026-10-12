@@ -45,6 +45,8 @@ import {
   FREE_DAILY_CALLS,
   FREE_TELEGRAM_MONTHLY_ALERTS,
   FREE_TELEGRAM_DAILY_ALERTS,
+  effectiveKeylessMonthlyCalls,
+  resolveStepupMode,
   PREPAY_6MONTH_MONTHS,
   planPrepayTotalUsd,
   type PaidPlanId,
@@ -199,6 +201,17 @@ export interface PublicFreeTier {
   readonly monthly_calls: number;
   readonly daily_calls: number;
   readonly telegram: PublicTelegramFreeTier;
+  readonly keyless: PublicKeylessFreeTier;
+}
+
+/**
+ * GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.1 — the allowance IN FORCE for a caller with no email-bound
+ * identity (no key, a malformed one, or an email-less key). `plans.ts` `effectiveKeylessMonthlyCalls`
+ * under the resolved STEPUP_MODE: equal to `monthly_calls` until the CH4 ruling switches the mode to
+ * `live`, then N. ADDITIVE — a consumer that predates it (the bot's tolerant ladder parser) ignores it.
+ */
+export interface PublicKeylessFreeTier {
+  readonly monthly_calls: number;
 }
 
 /** The complete public plan-ladder response. Every field is public by construction. */
@@ -224,6 +237,9 @@ export function buildPublicPlansBody(now: Date = new Date()): PublicPlansBody {
       telegram: {
         monthly_alerts: FREE_TELEGRAM_MONTHLY_ALERTS,
         daily_alerts: FREE_TELEGRAM_DAILY_ALERTS,
+      },
+      keyless: {
+        monthly_calls: effectiveKeylessMonthlyCalls(resolveStepupMode()),
       },
     },
     tiers: PUBLIC_PLAN_ORDER.map((id) => {

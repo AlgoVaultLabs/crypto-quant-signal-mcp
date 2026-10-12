@@ -187,6 +187,63 @@ export function freeDailyCallsLabel(): string {
   return FREE_DAILY_CALLS.toLocaleString('en-US');
 }
 
+// ── GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 — the ANONYMOUS allowance (R-1 · R-2 · R-4 · R-5) ──────────
+//
+// ONE value for every caller with no email-bound identity — no credential, a MALFORMED one, or an
+// email-less (ephemeral) key — read by the meter (`license.ts`), `GET /api/plans/public`
+// (`free.keyless`) and the wall copy (`quota-notice.ts`). Email-bound and paid keys never read it.
+// It is a second VALUE for the same counter, never a second counter: the tracker key does not move.
+//
+// THREE MODES, ONE RESOLVER (R2.2). `off` and `shadow` keep the anonymous allowance at
+// FREE_MONTHLY_CALLS — byte-identical to the pre-wave meter. `shadow` only RECORDS who the move to N
+// would ask to sign in (`stepup_would_gate`). `live` makes the allowance N; it is set only on Mr.1's
+// CH4 ruling. Any other value — including `wall`, which belongs to the deferred
+// GROWTH-AGENT-SIGNIN-OAUTH-W1 — resolves to `off`, so a typo can never tighten the wall.
+
+/** The resolved step-up mode. */
+export type StepupMode = 'off' | 'shadow' | 'live';
+
+/**
+ * `STEPUP_MODE` → the mode every reader projects from. Unknown, empty or absent → `off`.
+ * Read at call time, so the container's env is the only source; the boot line in `index.ts`
+ * prints what the running server resolved (the read-back an env flip is verified against).
+ */
+export function resolveStepupMode(env: NodeJS.ProcessEnv = process.env): StepupMode {
+  const v = (env.STEPUP_MODE ?? '').trim().toLowerCase();
+  return v === 'shadow' || v === 'live' ? v : 'off';
+}
+
+/**
+ * N — the anonymous monthly allowance once the move is ruled. PRE-REGISTERED, not tuned:
+ * computed by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH1 on 2026-10-12 (T0 07:42:12Z, vault
+ * `audits/GROWTH-AGENT-SIGNIN-STEPUP-W1-step0.md`) by rule R1.4 — n ≥ 30 →
+ * N = min(100, max(20, 10·⌈P80/10⌉)) over x = metered calls in the first 24 h of each direct
+ * bucket first seen in the 30 d window. Inputs: n = 129, P80 = 11.6 (percentile_cont; the
+ * discrete P80 of 14 gives the same N) → N = 20. Four in five direct first sessions finish under
+ * it; the ask lands on returning use.
+ *
+ * APPLIES ONLY WHEN STEPUP_MODE=live (`effectiveKeylessMonthlyCalls`). Mr.1 may replace it at the
+ * CH4 ruling (N′), with that ruling and its date recorded here.
+ */
+export const FREE_KEYLESS_MONTHLY_CALLS_RULED = 20;
+
+/**
+ * The anonymous monthly allowance IN FORCE: N when `live`, otherwise FREE_MONTHLY_CALLS.
+ * The daily cap for an anonymous caller is min(this, FREE_DAILY_CALLS) — derived in the meter.
+ */
+export function effectiveKeylessMonthlyCalls(mode: StepupMode = resolveStepupMode()): number {
+  return mode === 'live' ? FREE_KEYLESS_MONTHLY_CALLS_RULED : FREE_MONTHLY_CALLS;
+}
+
+/**
+ * Locale-grouped N for copy (`20`) — the RULED value, mode-independent on purpose: §Copy F's
+ * statements ("Try {N} calls with no sign-in") are published for the `live` world, and a build
+ * that runs with no STEPUP_MODE must not bake 200 into them.
+ */
+export function freeKeylessCallsLabel(): string {
+  return FREE_KEYLESS_MONTHLY_CALLS_RULED.toLocaleString('en-US');
+}
+
 /**
  * Price as it renders in copy (`$9.99`, `$49`), or `null` for a plan sold by CONTACT.
  *

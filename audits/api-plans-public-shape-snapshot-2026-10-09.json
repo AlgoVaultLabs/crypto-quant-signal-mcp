@@ -170,5 +170,7 @@
     },
     "registry": "ops/served-surface-values.json",
     "note": "The OFFLINE mode is the gate. The projection is a pure function, so this class is catchable deterministically at build time and does not need the network. The live mode catches host/deploy drift the build cannot see. Neither substitutes for the other, and the live one must never be the only enforcement."
-  }
+  },
+  "superseded_by": "api-plans-public-shape-snapshot-2026-10-12.json",
+  "superseded_reason": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH2 added free.keyless {monthly_calls} — the anonymous allowance in force — so this file no longer describes the live contract: its free-key-set assertion pins three keys where the endpoint now serves four. Superseded, not edited: everything above this key is byte-identical, because a dated ledger states what was true when written."
 }

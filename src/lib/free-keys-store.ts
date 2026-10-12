@@ -133,12 +133,16 @@ function generateFreeKey(): string {
  */
 export async function mintFreeKey(email: string, refCode?: string | null): Promise<string> {
   ensureFreeKeysSchema();
-  const existing = await dbQuery<{ api_key: string }>(
-    'SELECT api_key FROM free_keys WHERE email = ?',
+  // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.3: the cache row carries `bucket_key`. Before this, every
+  // write here dropped it, so a key PROMOTED by the claim path metered on itself — a fresh
+  // allowance — for up to the 5-min TTL after any sign-in re-minted it. Semantics are unchanged;
+  // only what the cache remembers is now the whole row.
+  const existing = await dbQuery<{ api_key: string; bucket_key?: string | null }>(
+    'SELECT api_key, bucket_key FROM free_keys WHERE email = ?',
     [email],
   );
   if (existing.length > 0) {
-    cacheSet(existing[0].api_key, { api_key: existing[0].api_key, email, ref_code: refCode ?? null });
+    cacheSet(existing[0].api_key, { api_key: existing[0].api_key, email, ref_code: refCode ?? null, bucket_key: existing[0].bucket_key ?? null });
     return existing[0].api_key;
   }
   const apiKey = generateFreeKey();
@@ -146,14 +150,14 @@ export async function mintFreeKey(email: string, refCode?: string | null): Promi
     dbRun('INSERT INTO free_keys (api_key, email, ref_code) VALUES (?, ?, ?)', apiKey, email, refCode ?? null);
   } catch {
     // race on email UNIQUE — return whoever won
-    const re = await dbQuery<{ api_key: string }>('SELECT api_key FROM free_keys WHERE email = ?', [email]);
+    const re = await dbQuery<{ api_key: string; bucket_key?: string | null }>('SELECT api_key, bucket_key FROM free_keys WHERE email = ?', [email]);
     if (re.length > 0) {
-      cacheSet(re[0].api_key, { api_key: re[0].api_key, email, ref_code: refCode ?? null });
+      cacheSet(re[0].api_key, { api_key: re[0].api_key, email, ref_code: refCode ?? null, bucket_key: re[0].bucket_key ?? null });
       return re[0].api_key;
     }
     throw new Error('mintFreeKey insert failed');
   }
-  cacheSet(apiKey, { api_key: apiKey, email, ref_code: refCode ?? null });
+  cacheSet(apiKey, { api_key: apiKey, email, ref_code: refCode ?? null, bucket_key: null });
   return apiKey;
 }
 
@@ -318,22 +322,22 @@ async function carryQuotaUsage(fromKey: string, toKey: string): Promise<void> {
  */
 export async function mergeEphemeralIntoEmail(ephemeralKey: string, email: string, refCode?: string | null): Promise<string> {
   ensureFreeKeysSchema();
-  const ephRows = await dbQuery<{ email: string | null }>('SELECT email FROM free_keys WHERE api_key = ?', [ephemeralKey]);
+  const ephRows = await dbQuery<{ email: string | null; bucket_key?: string | null }>('SELECT email, bucket_key FROM free_keys WHERE api_key = ?', [ephemeralKey]);
   const eph = ephRows[0];
   if (!eph || eph.email !== null) {
     return mintFreeKey(email, refCode); // idempotent: existing key for the email, or a fresh one
   }
-  const existingRows = await dbQuery<{ api_key: string }>('SELECT api_key FROM free_keys WHERE email = ?', [email]);
+  const existingRows = await dbQuery<{ api_key: string; bucket_key?: string | null }>('SELECT api_key, bucket_key FROM free_keys WHERE email = ?', [email]);
   if (existingRows.length > 0) {
     const existing = existingRows[0].api_key;
     try { await carryQuotaUsage(ephemeralKey, existing); } catch { /* fail-open — never orphan the claim */ }
     dbRun('DELETE FROM free_keys WHERE api_key = ?', ephemeralKey);
     cache.delete(ephemeralKey);
-    cacheSet(existing, { api_key: existing, email, ref_code: refCode ?? null });
+    cacheSet(existing, { api_key: existing, email, ref_code: refCode ?? null, bucket_key: existingRows[0].bucket_key ?? null });
     return existing;
   }
   dbRun('UPDATE free_keys SET email = ?, ref_code = COALESCE(ref_code, ?) WHERE api_key = ?', email, refCode ?? null, ephemeralKey);
-  cacheSet(ephemeralKey, { api_key: ephemeralKey, email, ref_code: refCode ?? null });
+  cacheSet(ephemeralKey, { api_key: ephemeralKey, email, ref_code: refCode ?? null, bucket_key: eph.bucket_key ?? null });
   return ephemeralKey;
 }
 

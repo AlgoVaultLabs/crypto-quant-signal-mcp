@@ -27,7 +27,8 @@ import { getTrackRecord } from './track-record-snapshot.js';
 import { buildSoftNudge } from './nudge-copy.js';
 // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the 100% wall message moved to the one notice contract.
 import { buildQuotaNoticeMessage } from './quota-notice.js';
-import { PLANS, FREE_MONTHLY_CALLS, FREE_DAILY_CALLS, DEFAULT_UPGRADE_PLAN, planPriceLabel } from './plans.js';
+import { PLANS, FREE_MONTHLY_CALLS, FREE_DAILY_CALLS, DEFAULT_UPGRADE_PLAN, planPriceLabel, effectiveKeylessMonthlyCalls, resolveStepupMode, FREE_KEYLESS_MONTHLY_CALLS_RULED } from './plans.js';
+import { classifyClient } from './client-registry.js';
 // REFERRAL-LIGHT-W1 (C2): free-tier keys + the referee bonus-calls meter.
 import { lookupFreeKey, lookupFreeKeyCached, FREE_KEY_PREFIX } from './free-keys-store.js';
 import { loadAllBonuses, persistBonusRemaining, grantBonus } from './referral-store.js';
@@ -535,7 +536,8 @@ let devKeyPrefixWarned = false;
  */
 async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo> {
   const key = extractApiKey(authHeader);
-  if (!key) return { tier: 'free', key: null, outcome: 'ABSENT' };
+  // V2 R2.3: no credential is ANONYMOUS — it meters the anonymous allowance (the sync path does not stamp).
+  if (!key) return { tier: 'free', key: null, outcome: 'ABSENT', anonymous: true };
 
   // REFERRAL-LIGHT-W1 (C2): av_free_ keys resolve via the free-keys store, NEVER
   // Stripe. A KNOWN free key tracks BY KEY (durable identity for the +500 bonus);
@@ -559,7 +561,7 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
       fk = await lookupFreeKey(key);
     } catch (err) {
       if (classifyCredential(key) !== 'WELL_FORMED') {
-        return { tier: 'free', key, outcome: 'MALFORMED' };
+        return { tier: 'free', key, outcome: 'MALFORMED', anonymous: true };
       }
       recordIndeterminate('free_key_lookup', 'free-key store unreachable');
       console.error('[license] free-key lookup failed:', err instanceof Error ? err.message : err);
@@ -567,14 +569,17 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
     }
     // A store MISS is labelled by shape: a revoked or mistyped free key is UNKNOWN (refusable),
     // while a string that could never have been minted is MALFORMED (always served).
-    if (!fk) return { tier: 'free', key: null, outcome: unresolvedOutcome(key) };
+    if (!fk) return anonymousIfMalformed({ tier: 'free', key: null, outcome: unresolvedOutcome(key) });
     // OPS-QUOTA-CLAIM-ALIAS-W1 CH1: the adopted bucket is resolved HERE, on the async path that
     // can afford a DB read, and carried on the license so `deriveTrackerKey` stays lookup-free.
     // Spread-on-presence: a key with no `bucket_key` yields a license object with no `bucketKey`,
     // byte-identical to pre-wave for every key issued before this column existed.
+    // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.3: an email-less (ephemeral) key is ANONYMOUS — it meters the
+    // anonymous allowance. Read from the row already in hand (`fk.email`), never a second lookup.
+    const anon = fk.email == null ? { anonymous: true as const } : {};
     return fk.bucket_key
-      ? { tier: 'free', key, bucketKey: fk.bucket_key, outcome: 'RESOLVED' }
-      : { tier: 'free', key, outcome: 'RESOLVED' };
+      ? { tier: 'free', key, bucketKey: fk.bucket_key, outcome: 'RESOLVED', ...anon }
+      : { tier: 'free', key, outcome: 'RESOLVED', ...anon };
   }
 
   // Try Stripe validation (cached, 5-min TTL)
@@ -632,7 +637,7 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
     // change wearing a labelling change, and it would break the key-preservation guard at
     // `tests/unit/indeterminate-auth.test.ts:92-96` that OPS-ZERO-VS-UNKNOWN-W1 left behind.
     if (classifyCredential(key) !== 'WELL_FORMED') {
-      return { tier: 'free', key, outcome: 'MALFORMED' };
+      return { tier: 'free', key, outcome: 'MALFORMED', anonymous: true };
     }
     recordIndeterminate('stripe_validate_api_key', 'license resolution could not determine tier');
     // KEY IDENTITY IS PRESERVED. That is the load-bearing half: with `key` retained the caller
@@ -650,7 +655,7 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
   // AUTH-THREE-STATE-W1 CH1 — THE CORE DEFECT. This return was byte-identical to the three above
   // it, so "Stripe says this key does not exist" and "no key was sent" were one value. A paying
   // customer with a typo'd or revoked key landed here and was served the anonymous free tier.
-  return { tier: 'free', key: null, outcome: unresolvedOutcome(key) };
+  return anonymousIfMalformed({ tier: 'free', key: null, outcome: unresolvedOutcome(key) });
 }
 
 /**
@@ -669,6 +674,15 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
  */
 function unresolvedOutcome(key: string): CredentialOutcome {
   return classifyCredential(key) === 'WELL_FORMED' ? 'UNKNOWN' : 'MALFORMED';
+}
+
+/**
+ * GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.3 — a MALFORMED credential is ANONYMOUS (R-2: it cannot be a
+ * key we issued, so there is no email behind it). UNKNOWN is a well-formed key that does not
+ * resolve — refused, never metered — so it is NOT stamped.
+ */
+function anonymousIfMalformed(license: LicenseInfo): LicenseInfo {
+  return license.outcome === 'MALFORMED' ? { ...license, anonymous: true } : license;
 }
 
 /**
@@ -757,6 +771,7 @@ export function _resetCallTrackersForTest(): void {
   callTrackers.clear();
   dailyTrackers.clear();
   bonusRemaining.clear();
+  stepupSeen.clear();
 }
 
 // PRICING-FOLLOWUPS-GENERATOR-W1 CH1: `dailyUsedFor()` is DELETED.
@@ -1336,6 +1351,59 @@ function tierIsWalled(tier: LicenseTier): boolean {
 }
 
 /**
+ * GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.3 — the allowance a license meters against: ONE decision, read
+ * by `checkQuota` and `trackCall` (so every tool inherits it with no tool-file edit).
+ *
+ * An ANONYMOUS free caller (no email-bound identity — `LicenseInfo.anonymous`) gets the anonymous
+ * allowance from the plans SoT; its daily cap is min(that, FREE_DAILY_CALLS). Everyone else keeps
+ * the tier allowance. In `off` and `shadow` the anonymous allowance IS FREE_MONTHLY_CALLS and the
+ * daily min is FREE_DAILY_CALLS, so both meters are byte-identical to the pre-wave tier lookup.
+ * The tracker key is untouched (R-2): only the allowance follows the caller.
+ */
+function allowanceFor(license: LicenseInfo): { monthly: number; daily: number } {
+  if (license.tier === 'free' && license.anonymous === true) {
+    const monthly = effectiveKeylessMonthlyCalls(resolveStepupMode());
+    return { monthly, daily: Math.min(monthly, FREE_DAILY_CALLS) };
+  }
+  return { monthly: getMonthlyQuota(license.tier), daily: getDailyCap(license.tier) };
+}
+
+// GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.5 — who the move to N would ask to sign in, measured before
+// anyone is asked. In `shadow` an anonymous meter already at or past N records `stepup_would_gate`
+// (the call is still served on the 200 allowance); in `live` the same moment is `stepup_gated`.
+// Once per bucket per UTC day: a bounded in-process set, so a script hammering its wall writes one
+// row a day, not one per call. `bucket` is the `free:` tracker — a pseudonymous ip-hash bucket the
+// readout joins to the Anthropic-egress set; a tracker that would be a raw key is never written.
+// Fire-and-forget through `recordFunnelEvent`, which never throws: telemetry cannot fail a call.
+const STEPUP_SEEN_MAX = 10_000;
+const stepupSeen = new Set<string>();
+
+function noteStepup(license: LicenseInfo, trackerKey: string, used: number): void {
+  if (license.tier !== 'free' || license.anonymous !== true) return;
+  if (used < FREE_KEYLESS_MONTHLY_CALLS_RULED) return;
+  const mode = resolveStepupMode();
+  if (mode === 'off') return;
+  const dedupe = `${trackerKey}|${utcDayKey()}`;
+  if (stepupSeen.has(dedupe)) return;
+  if (stepupSeen.size >= STEPUP_SEEN_MAX) {
+    const oldest = stepupSeen.values().next().value;
+    if (oldest !== undefined) stepupSeen.delete(oldest);
+  }
+  stepupSeen.add(dedupe);
+  recordFunnelEvent({
+    eventType: mode === 'live' ? 'stepup_gated' : 'stepup_would_gate',
+    sessionId: getRequestSessionId() ?? null,
+    licenseTier: license.tier,
+    meta: {
+      client_family: classifyClient(getRequestUserAgent()).name,
+      bucket: trackerKey.startsWith('free:') ? trackerKey : null,
+      used,
+      n: FREE_KEYLESS_MONTHLY_CALLS_RULED,
+    },
+  });
+}
+
+/**
  * Check quota WITHOUT incrementing the counter.
  * Use this when you need to gate a request but will increment later
  * (e.g., get_trade_signal only charges for non-HOLD results).
@@ -1347,7 +1415,9 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
 
   const key = deriveTrackerKey(license);
   const tracker = getCallTracker(key);
-  const quota = getMonthlyQuota(license.tier);
+  const allowance = allowanceFor(license);
+  const quota = allowance.monthly;
+  noteStepup(license, key, tracker.count);
 
   const remaining = Math.max(0, quota - tracker.count);
   const overage = Math.max(0, tracker.count - quota);
@@ -1384,7 +1454,7 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
   // monthly wall is the binding one (its retry is days, not hours), so naming the daily wall
   // there would understate the wait. Bonus calls are a MONTHLY grant and deliberately do not
   // lift a daily wall — pacing is not budget.
-  const dailyCap = getDailyCap(license.tier);
+  const dailyCap = allowance.daily;
   if (Number.isFinite(dailyCap)) {
     const daily = getDailyTracker(key);
     // REPORTING is unconditional on a finite cap; REFUSING still requires the tier to be walled.
@@ -1434,7 +1504,8 @@ export function trackCall(license: LicenseInfo, units = 1): TrackCallResult {
 
   const key = deriveTrackerKey(license);
   const tracker = getCallTracker(key);
-  const quota = getMonthlyQuota(license.tier);
+  const allowance = allowanceFor(license);
+  const quota = allowance.monthly;
 
   // CH4: ONE charging rule, BOTH meters. The daily meter advances on every charged unit
   // regardless of tier or posture — a meter that only counts when it also refuses cannot report
@@ -1455,7 +1526,7 @@ export function trackCall(license: LicenseInfo, units = 1): TrackCallResult {
   // meter — the second derivation this wave exists to delete. Mirrors `checkQuota`'s rule exactly:
   // REPORTING is unconditional on a finite cap; only REFUSING requires a walled tier. Read AFTER
   // `chargeDaily` so the reported count matches the post-increment `used` beside it.
-  const dailyCap = getDailyCap(license.tier);
+  const dailyCap = allowance.daily;
   const dailyPair = Number.isFinite(dailyCap)
     ? { daily_used: getDailyTracker(key).count, daily_total: dailyCap }
     : {};
