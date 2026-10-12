@@ -1426,6 +1426,30 @@
       "source": "host-only",
       "verified_at": "2026-10-02",
       "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"
+    },
+    {
+      "id": "stepup-readout",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/stepup-readout.py",
+      "container": "crypto-quant-signal-mcp-mcp-server-1 + crypto-quant-signal-mcp-postgres-1",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "class": "safe-to-kill",
+      "reason": "A read-only daily readout: one short `docker exec … node -e` probe into the app container (resolves set A, the metered predicate, the mode and N from the deployed dist/) and one aoe_readonly psql read in a read-only transaction. It mutates no application state; a deploy- or reboot-induced kill costs at most one day's record, which the next fire rewrites from live data. The record is a ruling INPUT read over >= 7 days, so one missing day never holds a deploy.",
+      "max_runtime_s": 2,
+      "runtime_instrument": "direct timed dry run on signal-1, 2026-10-12 07:51:27Z, under TG_WRAPPER=/bin/echo + ALGOVAULT_TG_TEST_INERT=1 with a temp CANARY_RESULT_LOG_PATH: 1,349 ms end to end (probe + query + record). Recorded value rounds up.",
+      "cron_lines": 1,
+      "cron": "29 5 * * *",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-10-12",
+      "notes": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.6; registered with its inventory row before the unit exists (install in CH3).",
+      "cron_match": [
+        "/opt/algovault-monitoring/stepup-readout.py"
+      ]
     }
   ],
   "exclusions": [
