@@ -38,13 +38,13 @@ Ask Kimi: *"Use AlgoVault to check BTC at 4h."* It invokes `get_trade_call` and 
 
 - **AlgoVault not listed** — restart Kimi Code, or run `/mcp-config` and confirm the entry is enabled.
 - **Treated as a stdio server** — remove any `command` or `transport` key. A bare `url` is what marks it HTTP.
-- **`401 unauthorized`** — check the key shape (`av_live_…`). Free tier needs no key: remove `bearerTokenEnvVar`.
+- **`401 unauthorized`** — check the key shape (`av_live_…`). To try 20 calls without a key, remove `bearerTokenEnvVar`.
 - **Project config ignored** — the project file must sit at the repo root as `.kimi-code/mcp.json`.
 - **Network timeout** — AlgoVault is hosted at `api.algovault.com`. Check VPN or firewall rules.
 
 ## FAQ
 
-**Free tier OK?** Yes. Drop `bearerTokenEnvVar`. 200 calls/month (100/day), every coin and timeframe.
+**Free tier OK?** Yes. Drop `bearerTokenEnvVar`: 20 calls a month without a key; a free key gives 200 (100/day), every coin and timeframe.
 
 **User vs project config?** Project config is commit-friendly, so teammates inherit it. User config stays private.
 

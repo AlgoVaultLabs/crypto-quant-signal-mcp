@@ -8,7 +8,7 @@
 //
 // DATA + TYPES ONLY: imports feature-registry (for tool coverage) — writes no HTML, imports no DOM.
 import { FEATURE_REGISTRY, publicToolNames, type FeatureSpec } from './feature-registry.js';
-import { FREE_MONTHLY_CALLS, planCallsLabel, planPriceLabel } from './plans.js';
+import { FREE_MONTHLY_CALLS, freeCallsLabel, freeKeylessCallsLabel, planCallsLabel, planPriceLabel } from './plans.js';
 
 const APEX = 'https://algovault.com';
 const TG_BOT = 'https://t.me/algovaultofficialbot'; // the real, grepped handle — never invented.
@@ -85,7 +85,7 @@ export const CHANNELS: ChannelSpec[] = [
     faq: [
       {
         q: 'Do I need an API key to use the MCP server?',
-        a: 'No — the free tier is keyless. Point your MCP client at https://api.algovault.com/mcp and start calling tools. An API key raises your limits but is not required to connect.',
+        a: `No key to start. Point your MCP client at https://api.algovault.com/mcp and call tools. After ${freeKeylessCallsLabel()} calls, sign in free for ${freeCallsLabel()} a month.`,
       },
       {
         q: 'What transports does the MCP server support?',

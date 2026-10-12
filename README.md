@@ -42,7 +42,7 @@
 
 ## Quick start (30 seconds)
 
-No code. No API key. No install. The server speaks Streamable HTTP at `https://api.algovault.com/mcp` — any [Model Context Protocol](https://github.com/modelcontextprotocol) client connects directly.
+No code. No install. No API key to start — sign in free when you need more. The server speaks Streamable HTTP at `https://api.algovault.com/mcp` — any [Model Context Protocol](https://github.com/modelcontextprotocol) client connects directly.
 
 **1. Add the connector.** In Claude → Customize → Connectors → + → Add custom connector:
 

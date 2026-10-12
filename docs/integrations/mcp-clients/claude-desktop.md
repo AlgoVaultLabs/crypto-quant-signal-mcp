@@ -1,6 +1,6 @@
 # Connect AlgoVault to Claude Desktop
 
-Add AlgoVault's MCP tools to Claude Desktop as a custom connector. ≤5 minutes; works on the free tier (200 calls/month, 100/day, no signup).
+Add AlgoVault's MCP tools to Claude Desktop as a custom connector. ≤5 minutes; works on the free tier (20 calls a month without a key; a free key gives 200, up to 100/day).
 
 ## Setup
 
@@ -24,7 +24,7 @@ Two paths. The UI path is easiest if you already use Claude Desktop daily.
 }
 ```
 
-Set your key in the env block. Free tier: drop the `Authorization` header and the env block, but keep the `X-AlgoVault-Track-Token` header.
+Set your key in the env block. Free tier: put a free key in the `Authorization` header for 200 calls a month. Or drop it and the env block to try 20 calls. Keep the `X-AlgoVault-Track-Token` header either way.
 
 ## Example: get a BTC trade call
 
@@ -39,7 +39,7 @@ Ask Claude: *"Get me a trade call for BTC on the 1h timeframe."* The tool indica
 
 ## FAQ
 
-**Do I need an API key for the free tier?** No. Free tier (200 calls/month, 100/day) works without any header. The UI path also accepts no-key setup.
+**Do I need an API key for the free tier?** No. 20 calls a month without a key; a free key gives 200 (100/day). The UI path also accepts no-key setup.
 
 **Which tier ships with Claude Desktop?** AlgoVault's free tier covers every coin and every timeframe. Paid tiers start at $9.99/mo (10,000 calls/mo, 1,000/day).
 

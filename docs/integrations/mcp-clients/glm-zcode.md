@@ -21,7 +21,7 @@ https://api.algovault.com/mcp?src=docs
 X-AlgoVault-Track-Token: int-glm-zcode
 ```
 
-4. On paid tier, add one more header: `Authorization: Bearer av_live_…`. Free tier needs no key.
+4. On paid tier, add one more header: `Authorization: Bearer av_live_…`. Without a key you get 20 calls a month; a free key gives 200.
 
 ### Paste a config block instead
 

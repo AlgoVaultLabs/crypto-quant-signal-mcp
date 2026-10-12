@@ -34,13 +34,13 @@ Chain it into edits: *"If BTC 4h is BUY, add a long entry at the current bar in 
 ## Troubleshooting
 
 - **AlgoVault tools not listed** — restart Codex. `config.toml` is read at startup.
-- **`401 unauthorized`** — check the key shape (`av_live_…`). Free tier needs no key at all: remove `bearer_token_env_var`.
+- **`401 unauthorized`** — check the key shape (`av_live_…`). To try 20 calls without a key, remove `bearer_token_env_var`.
 - **TOML parse error** — header names contain a hyphen, so they must stay quoted inside `[mcp_servers.algovault.http_headers]`.
 - **Network timeout** — AlgoVault is hosted at `api.algovault.com`. Check VPN or firewall rules.
 
 ## FAQ
 
-**Free tier OK?** Yes. Drop `bearer_token_env_var`. 200 calls/month (100/day), every coin and timeframe.
+**Free tier OK?** Yes. Drop `bearer_token_env_var`: 20 calls a month without a key; a free key gives 200 (100/day), every coin and timeframe.
 
 **CLI and IDE together?** Yes. They keep separate config, so add the block in both if you use both.
 

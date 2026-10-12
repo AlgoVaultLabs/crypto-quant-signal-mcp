@@ -38,7 +38,7 @@ Cursor's coding agent can also chain AlgoVault calls into strategy-code edits â€
 
 ## FAQ
 
-**Free tier OK?** Yes. Remove the `headers` block from `mcp.json`. 200 calls/month (100/day), every coin + timeframe.
+**Free tier OK?** Yes. Remove the `headers` block from `mcp.json`: 20 calls a month without a key; a free key gives 200 (100/day), every coin + timeframe.
 
 **Per-project vs global?** Per-project (`.cursor/mcp.json`) is commit-friendly â€” teammates inherit. Global is private.
 

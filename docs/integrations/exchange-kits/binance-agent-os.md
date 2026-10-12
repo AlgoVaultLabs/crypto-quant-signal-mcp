@@ -41,7 +41,7 @@ claude mcp add --transport http --scope project algovault \
   --header "X-AlgoVault-Track-Token:int-binance-agent-os"
 ```
 
-The free tier is **200 calls/month, capped at 100 per UTC day**. Drop the `Authorization` header to use it without signing up.
+Without a key you get **20 calls a month**; a free key gives **200, capped at 100 per UTC day**. Drop the `Authorization` header to try it without signing up.
 
 This writes `.mcp.json` in your repo root. Commit it, and teammates get both servers on clone.
 

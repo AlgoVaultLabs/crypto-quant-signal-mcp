@@ -80,8 +80,8 @@ export const LANDING_COPY: Readonly<Record<string, CopyEntry>> = {
   // is a declared leaf (it imports nothing), so this stays a data module with one dependency
   // and cannot drift from what the meter actually enforces.
   'hero.free_tier_note': {
-    desktop: `No signup required. Free tier: all assets, all 11 timeframes, ${freeCallsLabel()} calls/month (up to ${freeDailyCallsLabel()}/day).`,
-    mobile: `No signup required. Free tier: all assets, all 11 timeframes, ${freeCallsLabel()} calls/month (up to ${freeDailyCallsLabel()}/day).`,
+    desktop: `No signup to start. Free tier: all assets, all 11 timeframes, ${freeCallsLabel()} calls/month (up to ${freeDailyCallsLabel()}/day) with a free sign-in.`,
+    mobile: `No signup to start. Free tier: all assets, all 11 timeframes, ${freeCallsLabel()} calls/month (up to ${freeDailyCallsLabel()}/day) with a free sign-in.`,
   },
 };
 

@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MCP_USAGE_HTML } from '../../src/lib/mcp-usage-docs.js';
-import { freeCallsLabel, freeDailyCallsLabel } from '../../src/lib/plans.js';
+import { freeCallsLabel, freeDailyCallsLabel, freeKeylessCallsLabel } from '../../src/lib/plans.js';
 
 describe('MCP_USAGE_HTML — structural invariants', () => {
   it('contains the #connect-mcp anchor (deep-link target from welcome email + signup page)', () => {
@@ -93,11 +93,14 @@ describe('MCP_USAGE_HTML — structural invariants', () => {
   });
 
   it('mentions free-tier unlock copy (all coins + all timeframes, the two allowance caps)', () => {
-    expect(MCP_USAGE_HTML).toMatch(/every coin.*every timeframe|all 11 timeframes|every supported/i);
+    expect(MCP_USAGE_HTML).toMatch(/every coin.*every timeframe|every coin and timeframe|all 11 timeframes|every supported/i);
     // Derived from the plan SoT, not a literal: R-B moved the free cap 100 -> 200 and added a
     // second daily meter, and a hardcoded expectation here is what makes the next move a chore.
-    expect(MCP_USAGE_HTML).toContain(`capped at ${freeCallsLabel()} calls/month`);
-    expect(MCP_USAGE_HTML).toContain(`${freeDailyCallsLabel()} calls per UTC day`);
+    // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4 (§Copy F docs line): the no-key path and the free key
+    // are now two allowances, so the copy names both — the keyless one first.
+    expect(MCP_USAGE_HTML).toContain(
+      `${freeKeylessCallsLabel()} calls/month with no sign-in, then ${freeCallsLabel()} calls/month (up to ${freeDailyCallsLabel()} per UTC day) with a free sign-in`,
+    );
   });
 });
 
@@ -120,7 +123,9 @@ describe('MCP_USAGE_HTML — channel-attribution track token (OPS-TRACK-TOKEN-ST
 
   it('rewrites the free-tier prose to keep the tracking header (auth dropped, tracking kept)', () => {
     expect(MCP_USAGE_HTML).not.toContain('drop the <code class="text-xs">--header</code> args entirely');
-    expect(MCP_USAGE_HTML).toContain('keep the <code class="text-xs">X-AlgoVault-Track-Token</code> header');
+    // CH4 template: the auth header is now optional in BOTH directions (a free key, or drop it to
+    // try the keyless allowance); the tracking header is kept either way.
+    expect(MCP_USAGE_HTML).toContain('Keep the <code class="text-xs">X-AlgoVault-Track-Token</code> header either way');
   });
 });
 

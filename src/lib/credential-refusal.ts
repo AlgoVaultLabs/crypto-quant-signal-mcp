@@ -16,6 +16,7 @@
 import type { Response } from 'express';
 import type { CredentialOutcome, CredentialResolution } from './credential-outcome.js';
 import { isRetryable } from './credential-outcome.js';
+import { effectiveKeylessMonthlyCalls, resolveStepupMode } from './plans.js';
 
 /**
  * JSON-RPC error codes for the two refusing outcomes.
@@ -58,8 +59,12 @@ export const AUTH_REFUSAL_COPY: Readonly<Record<'UNKNOWN' | 'INDETERMINATE', { e
   Object.freeze({
     UNKNOWN: {
       error: 'That API key was not recognised.',
-      suggested_action:
-        'Check the key at https://api.algovault.com/account, or drop the Authorization header to use the free tier.',
+      // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4: a RUNTIME string, so it names the allowance the meter
+      // will actually apply to the keyless retry — the resolved STEPUP_MODE's, read per access (a
+      // getter, not a load-time constant), never a baked figure.
+      get suggested_action(): string {
+        return `Check the key at https://api.algovault.com/account, or drop the Authorization header to try ${effectiveKeylessMonthlyCalls(resolveStepupMode()).toLocaleString('en-US')} free calls.`;
+      },
     },
     INDETERMINATE: {
       error: 'Could not verify your API key right now.',

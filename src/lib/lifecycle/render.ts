@@ -86,9 +86,10 @@ export function renderLifecycleEmail(
 // ── OUTBOUND CREDENTIAL GUARD (architect ruling Q7, 2026-09-09) ────────────────────────────
 //
 // Build Rule 9 as AMENDED: "Never a PAID secret in any email. A free-tier key may appear in the
-// activation snippet only." A free `av_free_` key is safe to mail because the free tier is
-// KEYLESS at the same ladder — 200/mo, 100/day — so a leaked one grants nothing an anonymous
-// caller lacks except that bucket's referral bonus, and the welcome/creation senders already put
+// activation snippet only." A free `av_free_` key is safe to mail because it grants only the free
+// ladder — 200/mo, 100/day — which any email sign-in mints; since STEPUP_MODE=live
+// (GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4) that is more than a keyless caller's
+// FREE_KEYLESS_MONTHLY_CALLS_RULED, but nothing a free sign-in does not hand out, and the welcome/creation senders already put
 // the identical key in the identical mailbox. A PAID key is a different object entirely.
 //
 // ENFORCED IN CODE, NOT PROSE, because that is this estate's standing rule for anything that has

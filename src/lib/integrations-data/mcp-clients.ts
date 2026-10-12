@@ -33,6 +33,7 @@
 
 import type { EvidencedEntry, SurfaceModule } from './types.js';
 import { README_CELLS } from './readme-mcp-clients.js';
+import { freeCallsLabel, freeDailyCallsLabel, freeKeylessCallsLabel } from '../plans.js';
 
 /** R13: the surface footer, derived from the rows. Our own host is evidence, not vendor documentation. */
 function footerLinksFrom(entries: readonly EvidencedEntry[]): Array<{ label: string; href: string }> {
@@ -47,7 +48,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
     title: 'Connect Your MCP Client',
     marginTopClass: 'mt-8',
     introHtml:
-      'Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier (no key) also works for <strong>every coin + every timeframe</strong>, capped at 200 calls/month, and at 100 calls per UTC day.',
+      `Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier, every coin and timeframe: ${freeKeylessCallsLabel()} calls/month with no sign-in, then ${freeCallsLabel()} calls/month (up to ${freeDailyCallsLabel()} per UTC day) with a free sign-in.`,
     firstColumnHeader: 'Surface',
     // NOTE: footerVerifiedDate is not rendered — the date used to live inside
     // footerPreamble. Since each row now carries its own `verifiedAt`, a single
@@ -90,7 +91,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
   }
 }</code></pre>
       </div>
-      <p>Set your key in the env block. Free tier: drop the <code class="text-xs">Authorization</code> header and the env block, but keep the <code class="text-xs">X-AlgoVault-Track-Token</code> header.</p>
+      <p>Set your key in the env block. Free tier: put a free key in the <code class="text-xs">Authorization</code> header for ${freeCallsLabel()} calls a month. Or drop it and the env block to try ${freeKeylessCallsLabel()} calls. Keep the <code class="text-xs">X-AlgoVault-Track-Token</code> header either way.</p>
       <p><strong>Verify:</strong> ask Claude <em>"Get me a trade call for BTC on the 1h timeframe"</em>. Tool indicator appears bottom-right of the input box.</p>`,
       fullTutorialUrl: '/integrations/claude-desktop',
       hasDedicatedPage: true,
@@ -485,7 +486,7 @@ bearer_token_env_var = "AV_API_KEY"
       setupSummary:
         'Insert one entry in <code class="text-xs">cordis.patch.yml</code> \u2014 the <code class="text-xs bg-navy-800 px-1 rounded">dsh</code> CLI already ships the MCP bridge',
       whatYouGet:
-        'DeepSeek’s own agent runtime. AlgoVault tools arrive as <code class="text-xs">mcp__algovault__*</code>; the free tier needs no key.',
+        `DeepSeek’s own agent runtime. AlgoVault tools arrive as <code class="text-xs">mcp__algovault__*</code>; your first ${freeKeylessCallsLabel()} calls each month need no key.`,
       walkthroughHtml: `      <p>One step: patch the profile. There is no plugin to install &mdash; the <code class="text-xs bg-navy-800 px-1 rounded">dsh</code> CLI ships <code class="text-xs">@deepseek-ai/dsh-mcp-client</code> in its own dependency closure, and the bridge’s README says one entry per server is the entire setup.</p>
       <p>The bundles are a red herring: <code class="text-xs">base</code>, <code class="text-xs">headless</code> and <code class="text-xs">web-app</code> declare zero MCP dependencies, but a bare plugin <code class="text-xs">name</code> resolves through the profile’s Node parent walk to <code class="text-xs">$DSH_HOME/profiles/node_modules</code>, which the CLI closure feeds. Nothing is enabled by default because DSH treats each server as trusted code outside the sandbox &mdash; the entry below is the opt-in.</p>
       <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.dsh/profiles/&lt;name&gt;/cordis.patch.yml</code>, or <code class="text-xs">~/.dsh/cordis.patch.yml</code> for every profile:</p>
@@ -501,7 +502,7 @@ bearer_token_env_var = "AV_API_KEY"
           X-AlgoVault-Track-Token: int-deepseek-harness</code></pre>
       </div>
       <p>The <code class="text-xs">- insert:</code> wrapper is required. Without it the entry is an id-targeted override, and it is skipped with a warning. The bridge’s own README shows the unwrapped form because it documents the plugin config shape, not a <code class="text-xs">cordis.patch.yml</code> edit.</p>
-      <p>Paid tier adds one more line to that <code class="text-xs">headers</code> block: <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code>. The free tier needs no key.</p>
+      <p>Paid tier adds one more line to that <code class="text-xs">headers</code> block: <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code>. Without a key you get ${freeKeylessCallsLabel()} calls a month; a free key gives ${freeCallsLabel()}.</p>
       <p>The tools arrive server-qualified &mdash; <code class="text-xs">mcp__algovault__get_trade_call</code>, <code class="text-xs">mcp__algovault__scan_trade_calls</code>, and the rest.</p>
       <p>DSH bridges tools only. MCP resources and prompts are deferred upstream, so read the track record at <a class="text-mint-400 hover:underline" href="https://algovault.com/track-record">algovault.com/track-record</a> instead.</p>
       <p><strong>Verify:</strong> ask <code class="text-xs">dsh</code> <em>"Get me a trade call for BTC on the 1h timeframe"</em>.</p>

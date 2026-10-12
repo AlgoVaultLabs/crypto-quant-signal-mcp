@@ -128,6 +128,17 @@
  * wrappers + 2 tables + 21 code blocks) and `bg-navy-800` → `bg-well` on the 21 code blocks
  * (Q-DST-1: a code block is a WELL, darker than its card, not a raised slab). No prose, no href,
  * no structure moved.
+ *
+ * FIXTURE MAINTENANCE — GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 (CH4, 2026-10-12): regenerated to absorb
+ * the move of the KEYLESS allowance to FREE_KEYLESS_MONTHLY_CALLS_RULED (20) at STEPUP_MODE=live,
+ * under Mr.1's CH4 ruling (§Copy F + the SCOPE DELTA templates). Four sentences told a caller the
+ * no-key path carries the free tier's 200 calls, which is false at live: the `intro` (§Copy F docs
+ * line), the claude-desktop walkthrough's "Free tier: drop the Authorization header…", and the two
+ * deepseek-harness "needs no key" lines. The figures now interpolate the plan SoT labels
+ * (freeKeylessCallsLabel / freeCallsLabel / freeDailyCallsLabel) instead of a typed 200 — the
+ * intro's figure had been hand-typed since PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1. Verified BEFORE
+ * regenerating: of the 442 non-empty lines, EXACTLY those 4 are absent from the new render and
+ * exactly their 4 replacements are new; every other line is present verbatim.
  */
 
 import { describe, it, expect } from 'vitest';

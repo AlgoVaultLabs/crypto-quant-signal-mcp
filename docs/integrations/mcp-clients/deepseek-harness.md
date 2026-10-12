@@ -64,7 +64,7 @@ Add one line to the same `headers` block:
           Authorization: Bearer av_live_...
 ```
 
-`headers` is a plain string-to-string dict. The free tier needs no key at all: 200 calls a month, 100 a day, every coin and every timeframe.
+`headers` is a plain string-to-string dict. Without a key you get 20 calls a month. A free key gives 200 a month and 100 a day, on every coin and timeframe.
 
 ## What DSH does not bridge
 
@@ -85,7 +85,7 @@ AlgoVault publishes its track record as an MCP resource. Inside DSH that resourc
 
 **Do I need to install a plugin first?** No. `dsh` ships `@deepseek-ai/dsh-mcp-client` as its own dependency, and the patch entry above resolves it from the profile's Node parent walk. The config entry is the whole job.
 
-**Free tier OK?** Yes. Drop the `Authorization` header. 200 calls a month, 100 a day.
+**Free tier OK?** Yes. Drop the `Authorization` header: 20 calls a month without a key; a free key gives 200 a month and 100 a day.
 
 **One profile or all?** `~/.dsh/profiles/<name>/cordis.patch.yml` patches one. `~/.dsh/cordis.patch.yml` patches every profile.
 
