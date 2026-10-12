@@ -115,14 +115,38 @@ process.stdout.write(JSON.stringify({ mode: plans.resolveStepupMode(process.env)
 """
 
 
+def _fd_is_file(fd: int, path: str) -> bool:
+    """True when file descriptor `fd` IS `path` (same device + inode)."""
+    try:
+        a, b = os.fstat(fd), os.stat(path)
+        return (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
+    except (OSError, ValueError):
+        return False
+
+
 def log(msg: str) -> None:
+    """Print, and append to LOG — unless stdout already IS the log, or this is the self-test.
+
+    The cron line appends stdout to LOG, so appending here as well wrote every line TWICE (measured
+    on the first cron-faithful run, 2026-10-12T08:28:56Z). Same class, same fix as the sibling
+    client-claim-freshness.py: detected by inode, not an env flag, so a manual run still logs. The
+    self-test prints only — its fixture rows read as live activation data in the production log
+    (same day, 08:28:46Z)."""
     line = "%s %s" % (datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), msg)
     print(line, flush=True)
+    if _selftest_mode():
+        return
+    try:
+        stdout_fd = sys.stdout.fileno()
+    except (AttributeError, OSError, ValueError):
+        stdout_fd = -1
+    if stdout_fd >= 0 and _fd_is_file(stdout_fd, LOG):
+        return
     try:
         with open(LOG, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
     except OSError:
-        pass
+        pass  # the log is evidence, not the contract; the token is the contract
 
 
 # ── pure logic (fixture-drivable — what --self-test exercises) ──────────────────────────────────
@@ -328,6 +352,39 @@ def main() -> int:
 # ── self-test ─────────────────────────────────────────────────────────────────────────────────────
 
 
+def _selftest_log(check) -> None:
+    """log() against a temp LOG: the self-test never appends, a manual run appends once, and a run
+    whose stdout IS the log (the cron redirect) leaves one copy, not two."""
+    import shutil
+    import tempfile
+    global LOG
+    saved_log, saved_env = LOG, os.environ.get("STEPUP_READOUT_SELFTEST")
+    tmpd = tempfile.mkdtemp(prefix="stepup-log-")
+    try:
+        LOG = os.path.join(tmpd, "a.log")
+        log("selftest-line")
+        check("log: the self-test never appends to the production log",
+              not os.path.exists(LOG) or os.path.getsize(LOG) == 0)
+        os.environ["STEPUP_READOUT_SELFTEST"] = "0"
+        log("manual-line")
+        check("log: a run whose stdout is NOT the log appends exactly once",
+              open(LOG, encoding="utf-8").read().count("manual-line") == 1)
+        LOG = os.path.join(tmpd, "b.log")
+        with open(LOG, "a", encoding="utf-8") as fh:
+            real = sys.stdout
+            sys.stdout = fh
+            try:
+                log("cron-line")
+            finally:
+                sys.stdout = real
+        check("log: stdout already IS the log (the cron redirect) → one copy, not two",
+              open(LOG, encoding="utf-8").read().count("cron-line") == 1)
+    finally:
+        LOG = saved_log
+        os.environ["STEPUP_READOUT_SELFTEST"] = saved_env if saved_env is not None else "1"
+        shutil.rmtree(tmpd, ignore_errors=True)
+
+
 def self_test() -> int:
     os.environ["STEPUP_READOUT_SELFTEST"] = "1"
     fails = []
@@ -426,6 +483,7 @@ def self_test() -> int:
               rc == 3 and LAST_RECORD[:1] == ["INDETERMINATE"] and not LAST_FIRE)
     finally:
         g["run_probe"], g["run_sql"] = real_probe, real_sql
+    _selftest_log(check)
     if ran == 0:
         print("SELF-TEST: FAIL (vacuous — no scenario ran)")
         return 1

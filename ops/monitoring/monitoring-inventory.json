@@ -1309,7 +1309,7 @@
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. SYNCED, NOT INSTALLED (OPS-DRIFT-ALERT-GENERATORS-W1, 2026-09-14): declaration-sync.sh fetches it on aoe-1 every hour (27 * * * *) through a DECLARATIONS row whose 5th field names ops/scripts/cron-interlock-registry.json, so a registry edit reaches the host within the hour with no re-install step. It used to be installed once behind a sync_exempt_reason (the sync could only reach ops/monitoring), with the refresh left to a sentence in these notes; IDENTITY-LIFECYCLE-W3 edited the registry three times on 2026-09-08, re-stamped this sha256, never re-installed, and aoe-1 paged HASH_DRIFT + REGISTRY_PARITY daily from 2026-09-09. Re-stamp this sha256 in the same commit as any registry edit; HASH_DRIFT on this row now means the hourly sync stopped landing, not that someone forgot a step. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot.",
       "first_install": {
-        "at": "20261002T130306Z",
+        "at": "20261012T081707Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
     },
@@ -2098,7 +2098,7 @@
       "divergent_copies": null,
       "notes": "CONSUMER REGISTRY for send_telegram.sh alert ids. Read by the wrapper's --clear path to decide announce-vs-silent; every failure mode of that read resolves to SILENT. CLASSIFICATION: inert JSON DATA, i.e. a DECLARATION by the project's own artifact/declaration line. DECLARED as `alert-registry.json|alerts|30|*` in declaration-sync.sh since OPS-ALERT-REGISTRY-DECLARE-W1 (2026-08-21), so it self-syncs hourly on both hosts and a hand-edited host copy is reverted within the hour. `host_path` was ABSENT on this row from its creation until that same wave, and that absence was not cosmetic: it made tests/unit/declaration-sync.test.ts's `exemption()` classify the row as 'no host copy exists' (the sixth silent omission the completeness assertion was built to end), AND it crashed monitoring-inventory-reconcile.py outright with KeyError: 'host_path' at check_hash_drift/check_orphan, measured live on both hosts. NEVER remove host_path from a row that carries installed_at.",
       "first_install": {
-        "at": "20260930T072931Z",
+        "at": "20261012T081648Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
     },
@@ -3000,13 +3000,17 @@
       "criticality": "load-bearing",
       "schedule": "29 5 * * *",
       "invoked_by": "crontab:root",
-      "install_state": "pending",
-      "sha256": "cafb465301bb5847f6ccbdf340b1994c6d9a0d9306e1eb9403dd30ac512552f0",
+      "install_state": "installed",
+      "sha256": "60363e0e1042cb80e04cf6977494f3ea8892c13013f055dc1dd833045d5ce6fe",
       "alert_ids": [
         "STEPUP_ACTIVATION_DROP"
       ],
       "owner_wave": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2",
-      "notes": "R2.6 — the daily record the move to N is ruled on: free-tier metered calls for the last complete UTC day by pool (Anthropic egress vs other) and client family, distinct ip BUCKETS beside them (request_log has no identity column), stepup_would_gate / stepup_gated and quota_hit_block events, Anthropic-egress calls over the trailing 30 d with OAUTH_TRIGGER at >= 1,000, and the activation guard (per family, >= 30 % week-over-week drop from >= 200 calls). Pool membership, the metered predicate, the mode and N are resolved by a node -e probe INSIDE the app container from its deployed dist/ (one derivation; the ip-hash key never leaves the container); reads are aoe_readonly in a read-only transaction; aggregates only. The guard PAGES (STEPUP_ACTIVATION_DROP) only in STEPUP_MODE=live: a pre-install dry run on signal-1 (2026-10-12 07:51Z, mode off, nothing changed) found node -53 % and python-httpx -98.5 % week over week, so an always-armed guard would page on organic churn. In off/shadow a breach is reported in the record and the log. One STEPUP_READOUT_VERDICT= token per run, 0/0/3; one canary_result_log line per run (1,552 B measured). Registered before its unit exists (install in CH3)."
+      "notes": "R2.6 — the daily record the move to N is ruled on: free-tier metered calls for the last complete UTC day by pool (Anthropic egress vs other) and client family, distinct ip BUCKETS beside them (request_log has no identity column), stepup_would_gate / stepup_gated and quota_hit_block events, Anthropic-egress calls over the trailing 30 d with OAUTH_TRIGGER at >= 1,000, and the activation guard (per family, >= 30 % week-over-week drop from >= 200 calls). Pool membership, the metered predicate, the mode and N are resolved by a node -e probe INSIDE the app container from its deployed dist/ (one derivation; the ip-hash key never leaves the container); reads are aoe_readonly in a read-only transaction; aggregates only. The guard PAGES (STEPUP_ACTIVATION_DROP) only in STEPUP_MODE=live: a pre-install dry run on signal-1 (2026-10-12 07:51Z, mode off, nothing changed) found node -53 % and python-httpx -98.5 % week over week, so an always-armed guard would page on organic churn. In off/shadow a breach is reported in the record and the log. One STEPUP_READOUT_VERDICT= token per run, 0/0/3; one canary_result_log line per run (1,552 B measured). Registered before its unit exists (install in CH3).",
+      "first_install": {
+        "at": "20261012T083042Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
