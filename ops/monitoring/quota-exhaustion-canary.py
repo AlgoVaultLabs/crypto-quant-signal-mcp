@@ -290,8 +290,17 @@ def log(msg):
 
 _CAP_PROBE_JS = (
     "const p=require('" + DEPLOYED_PLANS_MODULE + "');"
-    "process.stdout.write(JSON.stringify([p.FREE_MONTHLY_CALLS,p.FREE_DAILY_CALLS]));"
+    "const k=p.effectiveKeylessMonthlyCalls(p.resolveStepupMode());"
+    "process.stdout.write(JSON.stringify([p.FREE_MONTHLY_CALLS,p.FREE_DAILY_CALLS,"
+    "k,Math.min(k,p.FREE_DAILY_CALLS),p.resolveStepupMode()]));"
 )
+STEPUP_MODES = ("off", "shadow", "live")
+# GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4 — the free_keys read runs as aoe_readonly: the canary's own
+# role (algovault_autopilot) holds NO grant on free_keys (measured 2026-10-12:
+# has_table_privilege(...,'free_keys','SELECT') = f), and widening an autopilot role onto a table
+# that stores API keys and emails is exactly the grant this estate refuses. aoe_readonly already
+# reads it, and the statement below selects neither column.
+KEY_CLASS_ROLE = "aoe_readonly"
 
 
 def _validated_caps(monthly, daily, source):
@@ -321,7 +330,28 @@ def _validated_caps(monthly, daily, source):
 
 
 def resolve_free_caps():
-    """`(monthly_cap, daily_cap)` as PRODUCTION is enforcing them, or None on ANY failure.
+    """The KEYED pair `(monthly_cap, daily_cap)`, or None. See resolve_cap_pairs()."""
+    pairs = resolve_cap_pairs()
+    return pairs["keyed"] if pairs else None
+
+
+def resolve_cap_pairs():
+    """{'keyed': (m, d), 'keyless': (m, d), 'mode': str} as PRODUCTION enforces them, or None.
+
+    GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4: the free tier now meters TWO populations. A row the
+    meter treats as ANONYMOUS (a `free:` bucket no email-bound key adopted, or an ephemeral
+    `av_free_` key) is walled at `effectiveKeylessMonthlyCalls(resolveStepupMode())` and
+    `min(that, FREE_DAILY_CALLS)`; every other free row at FREE_MONTHLY_CALLS/FREE_DAILY_CALLS.
+    Both pairs and the mode come from ONE probe of the deployed module, so the canary can never
+    judge a wall at a figure the running meter is not enforcing. In off/shadow the two pairs are
+    EQUAL and nothing downstream changes.
+
+    The keyless seam `QUOTA_CANARY_KEYLESS_LIMIT` / `QUOTA_CANARY_KEYLESS_DAILY` is
+    both-or-neither like the keyed one; with the keyed seam set and the keyless one absent the
+    seam models off/shadow (keyless == keyed). Neither seam carries a numeric default.
+
+    ── the original contract, unchanged ──
+    `(monthly_cap, daily_cap)` as PRODUCTION is enforcing them, or None on ANY failure.
 
     RESOLVE, NEVER MIRROR — the single-derivation rule applied to a host artifact. The caps are
     read from the module the running container actually loaded, which is strictly stronger than
@@ -353,7 +383,19 @@ def resolve_free_caps():
                 "QUOTA_CANARY_FREE_DAILY=%r) — both or neither, never a mixed pair"
                 % (seam_monthly, seam_daily))
             return None
-        return _validated_caps(seam_monthly, seam_daily, "test seam (QUOTA_CANARY_FREE_*)")
+        keyed = _validated_caps(seam_monthly, seam_daily, "test seam (QUOTA_CANARY_FREE_*)")
+        if keyed is None:
+            return None
+        kl_m = os.environ.get("QUOTA_CANARY_KEYLESS_LIMIT")
+        kl_d = os.environ.get("QUOTA_CANARY_KEYLESS_DAILY")
+        if kl_m is None and kl_d is None:
+            return {"keyed": keyed, "keyless": keyed, "mode": "seam"}
+        if kl_m is None or kl_d is None:
+            log("CAPS_UNRESOLVED: the KEYLESS cap seam is HALF-SET (QUOTA_CANARY_KEYLESS_LIMIT=%r "
+                "QUOTA_CANARY_KEYLESS_DAILY=%r) — both or neither" % (kl_m, kl_d))
+            return None
+        keyless = _validated_caps(kl_m, kl_d, "test seam (QUOTA_CANARY_KEYLESS_*)")
+        return {"keyed": keyed, "keyless": keyless, "mode": "seam"} if keyless else None
 
     try:
         proc = subprocess.run(["docker", "exec", APP_CONTAINER, "node", "-e", _CAP_PROBE_JS],
@@ -372,11 +414,88 @@ def resolve_free_caps():
     except ValueError as e:
         log("CAPS_UNRESOLVED: cap probe stdout is not JSON (%s): %r" % (e, raw[:120]))
         return None
-    if not isinstance(parsed, list) or len(parsed) != 2:
-        log("CAPS_UNRESOLVED: cap probe did not return a 2-element pair: %r" % (parsed,))
+    if not isinstance(parsed, list) or len(parsed) != 5:
+        log("CAPS_UNRESOLVED: cap probe did not return [monthly, daily, keyless_monthly, "
+            "keyless_daily, mode]: %r" % (parsed,))
         return None
-    return _validated_caps(parsed[0], parsed[1],
-                           "deployed %s in %s" % (DEPLOYED_PLANS_MODULE, APP_CONTAINER))
+    src = "deployed %s in %s" % (DEPLOYED_PLANS_MODULE, APP_CONTAINER)
+    keyed = _validated_caps(parsed[0], parsed[1], src)
+    keyless = _validated_caps(parsed[2], parsed[3], src + " (keyless, STEPUP_MODE=%s)" % (parsed[4],))
+    if keyed is None or keyless is None:
+        return None
+    if parsed[4] not in STEPUP_MODES:
+        log("CAPS_UNRESOLVED: the deployed module resolved an unknown STEPUP_MODE: %r" % (parsed[4],))
+        return None
+    return {"keyed": keyed, "keyless": keyless, "mode": parsed[4]}
+
+
+# ── Who the meter treats as anonymous (GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4) ──────────────────
+
+def build_key_class_query():
+    """ONE read-only statement: the email-bound ADOPTED buckets, and the sha256 of every key with
+    no email. Never an api_key value, never an email — email appears only in WHERE.
+
+    Mr.1's Q2 ruling: a `free:` tracker adopted by an email-bound key (free_keys.bucket_key on a
+    row with email set) counts as KEYED. The ephemeral half is the meter's own predicate
+    (LicenseInfo.anonymous = a free key whose row has `email IS NULL`): an `av_free_` tracker is
+    anonymous iff its key is ephemeral, and it is matched here by HASH, so the credential never
+    leaves the database. Concatenated, never %-formatted (the LIKE wildcard; see build_query).
+    """
+    return ("SELECT 'adopted', bucket_key FROM free_keys "
+            "WHERE email IS NOT NULL AND bucket_key LIKE 'free:%' "
+            "UNION ALL SELECT 'ephemeral', encode(sha256(convert_to(api_key, 'UTF8')), 'hex') "
+            "FROM free_keys WHERE email IS NULL")
+
+
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def parse_key_classes(text):
+    """(adopted:set, ephemeral_sha256:set) from `-tA -F|` output. Anything else RAISES."""
+    adopted, eph = set(), set()
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        kind, _, val = line.partition("|")
+        if kind == "adopted" and val.startswith("free:"):
+            adopted.add(val)
+        elif kind == "ephemeral" and _HEX64.match(val):
+            eph.add(val)
+        else:
+            raise RuntimeError("unexpected free_keys class row: %r" % line[:80])
+    return adopted, eph
+
+
+def query_key_classes():
+    """The two sets, read as KEY_CLASS_ROLE in a read-only transaction. Seam:
+    QUOTA_CANARY_FORCE_KEY_CLASSES = JSON {"adopted": [...], "ephemeral_sha256": [...]}."""
+    forced = os.environ.get("QUOTA_CANARY_FORCE_KEY_CLASSES")
+    if forced is not None:
+        d = json.loads(forced)
+        return set(d.get("adopted", [])), set(d.get("ephemeral_sha256", []))
+    out = subprocess.run(
+        ["docker", "exec", "-e", "PGOPTIONS=-c default_transaction_read_only=on -c statement_timeout=30000",
+         PG_CONTAINER, "psql", "-U", KEY_CLASS_ROLE, "-d", PG_DB, "-tA", "-F", "|",
+         "-v", "ON_ERROR_STOP=1", "-c", build_key_class_query()],
+        capture_output=True, text=True, timeout=60)
+    if out.returncode != 0:
+        raise RuntimeError("free_keys class query failed: %s" % out.stderr.strip()[:200])
+    return parse_key_classes(out.stdout)
+
+
+def is_anonymous_tracker(key, adopted, ephemeral_sha256):
+    """The meter's anonymous predicate, projected onto a quota_usage tracker key."""
+    if key.startswith("free:"):
+        return key not in adopted
+    if key.startswith("av_free_"):
+        return hashlib.sha256(key.encode("utf-8")).hexdigest() in ephemeral_sha256
+    return False
+
+
+def make_caps_for(keyed, keyless, classes):
+    """key -> the (monthly, daily) pair the meter applies to THAT row."""
+    adopted, eph = classes
+    return lambda key: keyless if is_anonymous_tracker(key, adopted, eph) else keyed
 
 
 def cap_literal_defaults(source_path=None):
@@ -901,7 +1020,7 @@ def dedup_id(entry):
     return "%s@%d" % (entry["key"], entry["start"])
 
 
-def classify(rows, now_s, facts, monthly_cap, daily_cap):
+def classify(rows, now_s, facts, monthly_cap, daily_cap, caps_for=None):
     """Split the selected rows into internal (skip), high-volume (page), low-volume, stale.
 
     NAMES THE WALL (OPS-QUOTA-CANARY-METER-TRUTH-W1). `license.ts` refuses on the rolling
@@ -932,8 +1051,12 @@ def classify(rows, now_s, facts, monthly_cap, daily_cap):
     high, low, stale, internal = [], [], [], []
     window_days = max(RATE_WINDOW_H / 24.0, 1.0 / 24.0)
     today = utc_day_key(now_s)
+    row_m, row_d = monthly_cap, daily_cap
     for key, count, start, daily_count, daily_day in rows:
         f = facts.get(key) or {}
+        # GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4: the wall THIS row hits is the pair the meter
+        # applies to it (keyless vs keyed); without caps_for every row is keyed (off/shadow).
+        monthly_cap, daily_cap = caps_for(key) if caps_for else (row_m, row_d)
         monthly_live = count >= monthly_cap and (now_s - start) <= WINDOW_S
         daily_live = daily_count >= daily_cap and daily_day == today
 
@@ -977,7 +1100,7 @@ def classify(rows, now_s, facts, monthly_cap, daily_cap):
     return high, low, stale, internal
 
 
-def build_body(new_entries, total_high, monthly_cap, daily_cap):
+def build_body(new_entries, total_high, monthly_cap, daily_cap, keyless_caps=None):
     """The operator-facing body.
 
     Per the alert-body law (OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 D3): an entity ID carries its
@@ -1057,8 +1180,8 @@ def build_body(new_entries, total_high, monthly_cap, daily_cap):
         "Newly exhausted: %s %s" % (noun, ", ".join(ids)),
         detail,
         "Newly exhausted count: %d | high-volume exhausted now: %d | threshold >= %d calls/day "
-        "| free limits %d/mo + %d/day"
-        % (len(ids), total_high, MIN_CALLS_PER_DAY, monthly_cap, daily_cap),
+        "| free limits %s"
+        % (len(ids), total_high, MIN_CALLS_PER_DAY, render_limits(monthly_cap, daily_cap, keyless_caps)),
         "This is a CONVERSION moment, not a fault. Outcome measured over the %dh since detection:"
         % OUTCOME_GRACE_H,
     ] + outcome_lines + [
@@ -1116,7 +1239,15 @@ def fire(body):
             "COOLDOWN MARKER WRITTEN — prefer ALGOVAULT_TG_TEST_INERT=1)" % ALERT_ID)
 
 
-def run_cycle(rows, now_s, facts, monthly_cap, daily_cap):
+def render_limits(monthly_cap, daily_cap, keyless=None):
+    """The free limits as the operator reads them: one pair, or both when the step-up split them."""
+    if keyless is None or tuple(keyless) == (monthly_cap, daily_cap):
+        return "%d/mo + %d/day" % (monthly_cap, daily_cap)
+    return "%d/mo + %d/day with a key · %d/mo + %d/day without one" % (
+        monthly_cap, daily_cap, keyless[0], keyless[1])
+
+
+def run_cycle(rows, now_s, facts, monthly_cap, daily_cap, caps_for=None, keyless_caps=None):
     """One evaluation. Auto-resolve, detect-to-PENDING, resolve-on-outcome, fire.
 
     DETECT AT THE MOMENT, PAGE ON THE OUTCOME (OPS-QUOTA-EXHAUSTION-OUTCOME-GATE-W1). A newly
@@ -1133,7 +1264,7 @@ def run_cycle(rows, now_s, facts, monthly_cap, daily_cap):
     recovery in hours that is not coming. Same monthly-first precedence `classify` already
     applies to the same-cycle case.
     """
-    high, low, stale, internal = classify(rows, now_s, facts or {}, monthly_cap, daily_cap)
+    high, low, stale, internal = classify(rows, now_s, facts or {}, monthly_cap, daily_cap, caps_for)
     state = load_state()
     live_ids = set(dedup_id(e) for e in high)
 
@@ -1295,7 +1426,7 @@ def run_cycle(rows, now_s, facts, monthly_cap, daily_cap):
         return {"action": "silent", "high": len(high), "low": len(low), "internal": len(internal),
                 "pending": len(newly_pending), "resolved": len(due)}
 
-    fire(build_body(page_entries, len(high), monthly_cap, daily_cap))
+    fire(build_body(page_entries, len(high), monthly_cap, daily_cap, keyless_caps))
     return {"action": "fire", "new": len(page_entries), "high": len(high), "low": len(low),
             "internal": len(internal), "pending": len(newly_pending), "resolved": len(due),
             "walls": sorted(set(e["wall"] for e in page_entries))}
@@ -1307,7 +1438,8 @@ def main():
         # downstream decision is expressed in — which rows are selected, which are exhausted,
         # what denominator the operator reads — so a run that cannot resolve them has not
         # "mostly worked", it has verified nothing.
-        caps = resolve_free_caps()
+        pairs = resolve_cap_pairs()
+        caps = pairs["keyed"] if pairs else None
         if caps is None:
             log("INDETERMINATE: free caps unresolved — this cycle evaluated NOTHING. No query "
                 "was run and no bucket was classified. A literal fallback here is exactly what "
@@ -1315,15 +1447,24 @@ def main():
             print("QUOTA_EXHAUSTION_CANARY_VERDICT=INDETERMINATE")
             return 0
         monthly_cap, daily_cap = caps
+        keyless = pairs["keyless"]
+        # Two populations only when the step-up split them (STEPUP_MODE=live). Equal pairs ⇒ the
+        # pre-CH4 run, byte for byte: no free_keys read, every row keyed.
+        caps_for = None
+        if tuple(keyless) != tuple(caps):
+            caps_for = make_caps_for(caps, keyless, query_key_classes())
+        log("CAPS_SPLIT: keyed=%d/%d keyless=%d/%d mode=%s per-row=%s"
+            % (caps[0], caps[1], keyless[0], keyless[1], pairs["mode"], caps_for is not None))
+        sel_m, sel_d = min(caps[0], keyless[0]), min(caps[1], keyless[1])
 
         # `QUOTA_CANARY_AS_OF` (epoch seconds) replays the evaluation at a past instant so a
         # historical exhaustion can be proven to FIRE. Read-only: it moves the rate window, the
         # staleness horizon and the UTC day together, and nothing else.
         as_of = os.environ.get("QUOTA_CANARY_AS_OF")
         now_s = int(as_of or time.time())
-        rows = query_rows(monthly_cap, daily_cap, utc_day_key(now_s))
+        rows = query_rows(sel_m, sel_d, utc_day_key(now_s))
         facts = query_bucket_facts([r[0] for r in rows], int(as_of) if as_of else None)
-        run_cycle(rows, now_s, facts, monthly_cap, daily_cap)
+        run_cycle(rows, now_s, facts, monthly_cap, daily_cap, caps_for, keyless)
         print("QUOTA_EXHAUSTION_CANARY_VERDICT=PASS")
         return 0
     except Exception as e:  # noqa: BLE001 — fail-open is the alert contract
@@ -1986,12 +2127,99 @@ def self_test():
     check("R6/Q4-RULE-2: the grace default is 24h (not widened for the 27.2h outlier)",
           OUTCOME_GRACE_H == 24)
 
+    # S) GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4 — two populations, two walls (Mr.1's Q2 ruling).
+    #    Anonymous rows are judged at the keyless pair, keyed rows at the free pair; a `free:`
+    #    bucket adopted by an email-bound key is KEYED; an ephemeral `av_free_` key is ANONYMOUS.
+    KL = (20, 20)
+    adopted_bucket = "free:v2:aaaa1111bbbb2222"
+    anon_bucket = "free:v2:cccc1111dddd2222"
+    eph_key = "av_free_" + "a1" * 16
+    email_key = "av_free_" + "b2" * 16
+    cf = make_caps_for((CAP_M, CAP_D), KL,
+                       ({adopted_bucket}, {hashlib.sha256(eph_key.encode("utf-8")).hexdigest()}))
+    check("S1: a free: bucket no email-bound key adopted is ANONYMOUS → the keyless pair",
+          cf(anon_bucket) == KL)
+    check("S2: a free: bucket adopted by an email-bound key counts as KEYED (Q2)",
+          cf(adopted_bucket) == (CAP_M, CAP_D))
+    check("S3: an ephemeral av_free_ key (no email) is ANONYMOUS — matched by hash", cf(eph_key) == KL)
+    check("S4: an email-bound av_free_ key is KEYED", cf(email_key) == (CAP_M, CAP_D))
+    rows_s = [row(anon_bucket, 20, NOW - HOUR), row(adopted_bucket, 20, NOW - HOUR),
+              row(eph_key, 20, NOW - HOUR)]
+    hi, lo, _, _ = classify(rows_s, NOW, facts(rows_s, 2400), CAP_M, CAP_D, cf)
+    walled = {e["key"]: e for e in hi + lo}
+    check("S5: an anonymous bucket at 20 calls IS walled, at the keyless cap",
+          anon_bucket in walled and walled[anon_bucket]["cap"] == 20)
+    check("S6: an adopted (keyed) bucket at 20 calls is NOT walled — its wall is 200",
+          adopted_bucket not in walled)
+    check("S7: an ephemeral key at 20 calls IS walled at the keyless cap",
+          eph_key in walled and walled[eph_key]["cap"] == 20)
+    adopted_200 = [row(adopted_bucket, 200, NOW - HOUR)]
+    hi2, lo2, _, _ = classify(adopted_200, NOW, facts(adopted_200, 2400), CAP_M, CAP_D, cf)
+    check("S8: the adopted bucket at 200 IS walled, at the keyed cap", [e["cap"] for e in hi2 + lo2] == [200])
+    hi3, lo3, _, _ = classify(rows_s, NOW, facts(rows_s, 2400), CAP_M, CAP_D)
+    check("S9: without caps_for (off/shadow) nothing at 20 is walled — the pre-CH4 behaviour",
+          not (hi3 + lo3))
+    q_lower = build_query(min(CAP_M, KL[0]), min(CAP_D, KL[1]), TODAY)
+    check("S10: the candidate query selects at the LOWER pair",
+          "call_count >= 20" in q_lower and "daily_count >= 20" in q_lower)
+    kq = build_key_class_query()
+    sel_lists = [seg.split(" FROM ")[0].strip() for seg in kq.split("SELECT ")[1:]]
+    check("S11: the key-class query SELECTs a bucket id and a HASH — never an api_key or an email",
+          sel_lists == ["'adopted', bucket_key",
+                        "'ephemeral', encode(sha256(convert_to(api_key, 'UTF8')), 'hex')"])
+    ka, ke = parse_key_classes("adopted|" + adopted_bucket + "\nephemeral|" + "ab" * 32 + "\n")
+    check("S12: the class parser reads both sets", ka == {adopted_bucket} and len(ke) == 1)
+
+    def refused(text):
+        try:
+            parse_key_classes(text)
+            return False
+        except RuntimeError:
+            return True
+    check("S13: a raw key, or an adopted id that is not a free: bucket, is REFUSED, never classified",
+          refused("ephemeral|" + email_key + "\n") and refused("adopted|av_live_x\n"))
+    check("S14: the body names BOTH limits when the step-up split them",
+          render_limits(200, 100, (20, 20)) == "200/mo + 100/day with a key · 20/mo + 20/day without one")
+    check("S15: ...and the single pre-CH4 pair when it did not",
+          render_limits(200, 100, (200, 100)) == "200/mo + 100/day" and render_limits(200, 100) == "200/mo + 100/day")
+    os.environ["QUOTA_CANARY_FREE_LIMIT"] = "200"
+    os.environ["QUOTA_CANARY_FREE_DAILY"] = "100"
+    pr = resolve_cap_pairs()
+    check("S16: with only the keyed seam, keyless == keyed (the seam models off/shadow)",
+          bool(pr) and pr["keyless"] == (200, 100))
+    os.environ["QUOTA_CANARY_KEYLESS_LIMIT"] = "20"
+    os.environ["QUOTA_CANARY_KEYLESS_DAILY"] = "20"
+    pr = resolve_cap_pairs()
+    check("S17: the keyless seam splits the pairs",
+          bool(pr) and pr["keyed"] == (200, 100) and pr["keyless"] == (20, 20))
+    os.environ.pop("QUOTA_CANARY_KEYLESS_DAILY", None)
+    check("S18: a half-set KEYLESS seam resolves to None", resolve_cap_pairs() is None)
+    for k in ("QUOTA_CANARY_FREE_LIMIT", "QUOTA_CANARY_FREE_DAILY", "QUOTA_CANARY_KEYLESS_LIMIT"):
+        os.environ.pop(k, None)
+    check("S19: the probe asks the DEPLOYED module for both pairs and the mode",
+          "effectiveKeylessMonthlyCalls(p.resolveStepupMode())" in _CAP_PROBE_JS
+          and "Math.min(k,p.FREE_DAILY_CALLS)" in _CAP_PROBE_JS and "p.resolveStepupMode()]" in _CAP_PROBE_JS)
+    anon_rows = [row("free:v2:eeee5555ffff6666", 20, NOW + 2 * DAY_S - HOUR)]
+    outcome_seam(anon_rows)
+    cf2 = make_caps_for((CAP_M, CAP_D), KL, (set(), set()))
+    run_cycle(anon_rows, NOW + 2 * DAY_S, facts(anon_rows, 2400), CAP_M, CAP_D, cf2, KL)
+    globals()["LAST_FIRE_BODY"] = None
+    rr = run_cycle(anon_rows, NOW + 2 * DAY_S + GRACE_S + 60, facts(anon_rows, 2400),
+                   CAP_M, CAP_D, cf2, KL)
+    s_body = LAST_FIRE_BODY or ""
+    outcome_seam(None)
+    check("S20: an anonymous bucket walled at the keyless cap PAGES through run_cycle",
+          rr["action"] == "fire")
+    check("S21: ...and its page renders the keyless denominator and BOTH limits",
+          "used 20/20" in s_body and "20/mo + 20/day without one" in s_body)
+
     # J) VACUITY GUARD — refuse to report a pass over an empty corpus. Without this, a future
     #    change that made every scenario a no-op would still print PASS.
     check("self-test corpus is non-empty (vacuity guard)",
           len(body1) > 0 and len(body2) > 0 and len(fixture_body) > 0
           and len(daily_body) > 0 and len(both_body) > 0 and len(alt_body) > 0
-          and len(keyed_body) > 0 and len(coal_body) > 0 and len(unavail_body) > 0)
+          and len(keyed_body) > 0 and len(coal_body) > 0 and len(unavail_body) > 0
+          and len(s_body) > 0)
 
     ok = not failures
     print("SELF-TEST: %s (%d failed)" % ("PASS" if ok else "FAIL", len(failures)))

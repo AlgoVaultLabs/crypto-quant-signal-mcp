@@ -1477,11 +1477,18 @@
       "kind": "executable",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/quota-exhaustion-canary.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/quota-exhaustion-canary.py",
+          "schedule": "31 * * * *"
+        }
+      ],
       "criticality": "load-bearing",
       "schedule": "31 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "7299d4c418d7a6eef9cadbdd2438a88cbe4c9badf7418b9071bb1961d6b55fbe",
+      "sha256": "32424870ab15351c91105c503cd7f68816f00d3c0439673aed098fd334344e0c",
       "alert_ids": [
         "QUOTA_EXHAUSTION_HIGH_VOLUME"
       ],
@@ -3001,7 +3008,7 @@
       "schedule": "29 5 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "60363e0e1042cb80e04cf6977494f3ea8892c13013f055dc1dd833045d5ce6fe",
+      "sha256": "d973867b87a6b2401a6888866ff2170d8cc3e42ffad3493b62dbef88702af100",
       "alert_ids": [
         "STEPUP_ACTIVATION_DROP"
       ],

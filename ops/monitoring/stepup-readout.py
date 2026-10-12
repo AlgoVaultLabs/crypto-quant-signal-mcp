@@ -12,19 +12,24 @@ CH4 ruling packet asks, from production data, and writes ONE structured line to 
   * `quota_hit_block` events for that day, by session pool;
   * Anthropic-egress metered calls over the trailing 30 d — the number `CLAUDE_POOL=EMPTY` is ruled
     on — and `OAUTH_TRIGGER=MET|NOT_MET` at >= 1,000 (the deferred OAuth wave's measured trigger);
-  * the ACTIVATION GUARD: per client family, successful metered calls in the last 7 complete UTC days
-    against the 7 before. A family that had >= 200 calls in the prior week and dropped >= 30 % is a
-    BREACH. The guard measures CALLS, never sessions or buckets: the Claude pool collapses to <= 8
-    buckets whatever happens.
+  * the ACTIVATION GUARD (Mr.1's CH4 ruling, Q1 = C amended): per client family, weekly
+    ACTIVATIONS — buckets whose FIRST-EVER successful free metered call (v2-tagged ip_hash) fell in
+    that 7-day window — for the last complete week against the one before. It PAGES only at
+    STEPUP_MODE=live, and only when ALL hold: the prior week had >= ACT_MIN_PRIOR_WEEK (5)
+    activating buckets, the drop is >= GUARD_DROP (30 %), and the drop is LARGER than that family's
+    largest weekly drop over the 6 pre-flip weeks — the ENVELOPE, computed from request_log once, at
+    flip time (`--freeze-envelope`), and frozen in ENVELOPE_PATH. Why activations and not calls: at
+    N = 20 call volume falls BY DESIGN (Aug/Sep had 4,754–8,348 calls a month above N), while a
+    caller's first success is exactly what the step-up must not break.
+  * call VOLUME per family (last 7 complete days vs the 7 before) stays in every record — REPORTED,
+    NEVER PAGED. Measured before install (2026-10-12, mode off, nothing changed for anyone): `node`
+    1,190 → 555 (−53 %) and `python-httpx` 459 → 7 (−98.5 %) week over week, which is why volume
+    was never a sound alarm.
 
-ARMED ONLY IN `live`, REPORTED IN EVERY MODE. A breach is recorded in every run's record, but it
-PAGES (`STEPUP_ACTIVATION_DROP`, CRITICAL_PERSISTENT, the wrapper's 24 h cooldown) only when the
-resolved STEPUP_MODE is `live` — the only mode in which the step-up changes what a caller receives.
-Measured before install (dry run on signal-1, 2026-10-12, mode off, nothing changed for anyone):
-`node` 1,190 → 555 (−53 %) and `python-httpx` 459 → 7 (−98.5 %) week over week. Script traffic is
-lumpy — a handful of heavy callers come and go — so an always-armed guard would page on organic
-churn from its first night and be muted within a week. In `shadow` the records ARE the calibration
-the CH4 ruling reads: seven days of week-over-week family volume with zero user impact.
+ARMED ONLY IN `live`, REPORTED IN EVERY MODE. The activation states are computed and recorded in
+every run, but the page fires only when the resolved STEPUP_MODE is `live` — the only mode in which
+the step-up changes what a caller receives. In `live` with no readable frozen envelope the guard
+cannot decide, so the run is INDETERMINATE (exit 3), never a quiet PASS.
 
 ONE DERIVATION, RESOLVED IN THE RUNNING IMAGE. Pool membership (set A = `hashIp` of the eight masked
 /24 network addresses of 160.79.104.0/21), the metered predicate (`call-class.ts` `billablePredicate()`)
@@ -65,8 +70,10 @@ PG_DB = "signal_performance"
 WRAPPER = os.environ.get("TG_WRAPPER", "/opt/algovault-monitoring/send_telegram.sh")
 LOG = os.environ.get("STEPUP_READOUT_LOG", "/var/log/algovault-stepup-readout.log")
 
-GUARD_MIN_PRIOR_WEEK = 200      # a family below this prior-week volume is reported, never paged
-GUARD_DROP = 0.30               # >= 30 % week-over-week drop pages
+GUARD_DROP = 0.30               # >= 30 % week-over-week drop in ACTIVATIONS (and beyond the envelope) pages
+ACT_MIN_PRIOR_WEEK = 5          # a family needs >= 5 activating buckets in the prior week to page
+ENVELOPE_WEEKS = 6              # the envelope = the largest of the 6 pre-flip weekly drops (7 weeks of counts)
+ENVELOPE_PATH = os.environ.get("STEPUP_ENVELOPE_PATH", "/var/lib/algovault-monitoring/stepup-activation-envelope.json")
 OAUTH_TRIGGER_CALLS = 1000      # Anthropic-egress metered calls, trailing 30 d (V2 R-6)
 TOP_FAMILIES = 12               # bounds the record under canary_result_log's 8 KiB line cap
 
@@ -74,7 +81,12 @@ LAST_FIRE: dict = {}
 LAST_CLEAR: dict = {}
 LAST_RECORD: list = []
 
-# The probe runs INSIDE the app container. It prints ONE JSON object {mode, n, d0, d1, sql}.
+# The probe runs INSIDE the app container. It prints ONE JSON object {mode, n, d0, d1, ref, weeks, sql}.
+# The activation windows end at REF: today 00:00Z for the daily run, or the flip's UTC day for
+# `--freeze-envelope` (STEPUP_REF_ISO); WEEKS windows back, j = 0 the most recent. The `actw` SELECT
+# takes each v2 bucket's FIRST successful free metered call (DISTINCT ON keeps the earliest row), its
+# family, and the 7-day window before REF it fell in; only aggregates leave psql. (No `//` comments
+# inside PROBE_JS: the ops-surface guards strip them as comments, and they are string CONTENT here.)
 # `sql` is a set of labelled SELECTs whose rows are `label|a|b|c|d`; nothing in it is printed.
 PROBE_JS = r"""
 const { hashIp } = require('/app/dist/lib/analytics.js');
@@ -89,6 +101,9 @@ const D0 = new Date(d1.getTime() - DAY).toISOString();    // yesterday 00:00Z
 const W7 = new Date(d1.getTime() - 7 * DAY).toISOString();
 const W14 = new Date(d1.getTime() - 14 * DAY).toISOString();
 const W30 = new Date(now - 30 * DAY).toISOString();
+const REF = process.env.STEPUP_REF_ISO ? new Date(Math.floor(Date.parse(process.env.STEPUP_REF_ISO) / DAY) * DAY) : d1;
+const RISO = REF.toISOString();
+const WEEKS = Math.max(2, Math.min(12, parseInt(process.env.STEPUP_WEEKS || '2', 10) || 2));
 const A = [];
 for (let i = 104; i <= 111; i++) A.push(hashIp('160.79.' + i + '.0'));
 const p = billablePredicate();
@@ -110,8 +125,11 @@ const sql = [
   "SELECT 'act', coalesce(client_name, '<null>'), count(*) FILTER (WHERE \"timestamp\" >= " + q(W7) + '), count(*) FILTER (WHERE "timestamp" < ' + q(W7) +
     '), count(DISTINCT ip_hash) FILTER (WHERE "timestamp" >= ' + q(W7) + ') FROM request_log WHERE ' + FREE +
     ' AND "timestamp" >= ' + q(W14) + ' AND "timestamp" < ' + q(D1) + ' GROUP BY 2;',
+  "SELECT 'actw', family, wk, count(*), '' FROM (SELECT DISTINCT ON (ip_hash) ip_hash, coalesce(client_name, '<null>') AS family, " +
+    'floor(extract(epoch FROM (' + q(RISO) + '::timestamptz - "timestamp"::timestamptz)) / 604800)::int AS wk FROM request_log WHERE ' + FREE +
+    " AND ip_hash LIKE 'v2:%' AND \"timestamp\" < " + q(RISO) + ' ORDER BY ip_hash, "timestamp") f WHERE wk < ' + WEEKS + ' GROUP BY 2, 3;',
 ].join('\n');
-process.stdout.write(JSON.stringify({ mode: plans.resolveStepupMode(process.env), n: plans.FREE_KEYLESS_MONTHLY_CALLS_RULED, d0: D0, d1: D1, sql }));
+process.stdout.write(JSON.stringify({ mode: plans.resolveStepupMode(process.env), n: plans.FREE_KEYLESS_MONTHLY_CALLS_RULED, d0: D0, d1: D1, ref: RISO, weeks: WEEKS, sql }));
 """
 
 
@@ -161,7 +179,7 @@ def _int(s: str) -> int:
 
 def parse_rows(text: str) -> dict:
     """psql `-tA -F|` output → structured aggregates. Unknown labels are ignored, never fatal."""
-    out = {"calls_1d": [], "anthropic_30d": {"calls": 0, "buckets": 0}, "stepup_1d": [], "qhb_1d": [], "act": []}
+    out = {"calls_1d": [], "anthropic_30d": {"calls": 0, "buckets": 0}, "stepup_1d": [], "qhb_1d": [], "act": [], "actw": []}
     for line in text.splitlines():
         parts = line.split("|")
         if len(parts) < 2:
@@ -177,28 +195,96 @@ def parse_rows(text: str) -> dict:
             out["qhb_1d"].append({"pool": parts[1], "events": _int(parts[2]), "sessions": _int(parts[3])})
         elif label == "act" and len(parts) >= 5:
             out["act"].append({"family": parts[1], "cur7": _int(parts[2]), "prev7": _int(parts[3]), "buckets7": _int(parts[4])})
+        elif label == "actw" and len(parts) >= 4:
+            out["actw"].append({"family": parts[1], "wk": _int(parts[2]), "n": _int(parts[3])})
     return out
 
 
-def evaluate_guard(act: list[dict]) -> list[dict]:
-    """Every family, judged. A breach needs >= GUARD_MIN_PRIOR_WEEK prior-week calls AND a drop of
-    >= GUARD_DROP. Below the floor a family is REPORTED (`below_floor`), never paged — a small base
-    makes a 30 % swing noise, not signal."""
-    judged = []
+def evaluate_volume(act: list[dict]) -> list[dict]:
+    """Call volume per family, last 7 complete days vs the 7 before. REPORTED, NEVER PAGED (Q1)."""
+    out = []
     for row in sorted(act, key=lambda r: -r["prev7"]):
         prev, cur = row["prev7"], row["cur7"]
         drop = (prev - cur) / prev if prev > 0 else 0.0  # ratio-exempt: week-over-week change of ONE measure (one statement, one FROM/WHERE, two adjacent 7-day FILTER windows) — a signed delta, not an event rate over a population
-        if prev < GUARD_MIN_PRIOR_WEEK:
+        out.append({**row, "drop_pct": round(drop * 100, 1)})
+    return out
+
+
+def week_drop(prev: int, cur: int):
+    """(prev - cur) / prev, or None when there was no prior week to fall from."""
+    return (prev - cur) / prev if prev > 0 else None  # ratio-exempt: week-over-week change of ONE measure (one family's activating buckets in two adjacent 7-day windows of one statement) — a signed delta, not an event rate over a population
+
+
+def weekly_by_family(actw: list[dict], weeks: int) -> dict:
+    """{family: [A_0, …, A_(weeks-1)]}: A_j = buckets whose FIRST successful free metered call fell in
+    the j-th 7-day window before the reference instant (j = 0 the most recent)."""
+    out: dict = {}
+    for r in actw:
+        if 0 <= r["wk"] < weeks:
+            out.setdefault(r["family"], [0] * weeks)[r["wk"]] += r["n"]
+    return out
+
+
+def compute_envelope(weekly: dict) -> dict:
+    """Per family: the 7 pre-flip weekly counts, the 6 weekly drops (week j against week j+1; None
+    where week j+1 had no activations) and their MAXIMUM — the envelope a live drop must exceed."""
+    fams = {}
+    for fam, a in weekly.items():
+        a = (list(a) + [0] * (ENVELOPE_WEEKS + 1))[:ENVELOPE_WEEKS + 1]
+        drops = [week_drop(a[j + 1], a[j]) for j in range(ENVELOPE_WEEKS)]
+        defined = [d for d in drops if d is not None]
+        fams[fam] = {
+            "weekly": a,
+            "drops_pct": [None if d is None else round(d * 100, 1) for d in drops],
+            "envelope_pct": round(max(defined) * 100, 1) if defined else None,
+        }
+    return fams
+
+
+def evaluate_activation(weekly2: dict, envelope_fams) -> list[dict]:
+    """Every family judged, in the order of its prior-week activations. States, in order:
+    below_floor (prior < ACT_MIN_PRIOR_WEEK) · ok (drop < GUARD_DROP, or growth) · no_envelope (the
+    family has no defined pre-flip drop — UNDEFINED, never a page) · within_envelope (drop <= the
+    envelope) · breach. A breach pages only in live (should_page)."""
+    env = envelope_fams or {}
+    judged = []
+    for fam in set(weekly2) | set(env):
+        a = weekly2.get(fam, [0, 0])
+        cur, prev = a[0], a[1]
+        d = week_drop(prev, cur)
+        drop_pct = None if d is None else round(d * 100, 1)
+        env_pct = (env.get(fam) or {}).get("envelope_pct")
+        if prev < ACT_MIN_PRIOR_WEEK:
             state = "below_floor"
-        elif drop >= GUARD_DROP:
-            state = "breach"
-        else:
+        elif d is None or d < GUARD_DROP:
             state = "ok"
-        judged.append({**row, "drop_pct": round(drop * 100, 1), "state": state})
+        elif env_pct is None:
+            state = "no_envelope"
+        elif drop_pct <= env_pct:
+            state = "within_envelope"
+        else:
+            state = "breach"
+        judged.append({"family": fam, "prev_w": prev, "cur_w": cur, "drop_pct": drop_pct,
+                       "envelope_pct": env_pct, "state": state})
+    judged.sort(key=lambda j: (-j["prev_w"], j["family"]))
     return judged
 
 
-def build_metrics(probe: dict, rows: dict, judged: list[dict]) -> dict:
+def load_envelope(path=None):
+    """(document, None) for a readable frozen envelope, else (None, reason)."""
+    target = path or ENVELOPE_PATH
+    try:
+        doc = json.loads(Path(target).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None, "absent at %s" % target
+    except (OSError, ValueError) as e:
+        return None, "unreadable: %s" % str(e)[:120]
+    if not isinstance(doc, dict) or not isinstance(doc.get("families"), dict) or not doc.get("reference_day"):
+        return None, "malformed (no families / reference_day)"
+    return doc, None
+
+
+def build_metrics(probe: dict, rows: dict, judged: list[dict], volume=None, envelope=None, envelope_reason=None) -> dict:
     """The record body. Compact on purpose: canary_result_log refuses a line over 8 KiB."""
     by_pool: dict = {}
     for r in rows["calls_1d"]:
@@ -221,12 +307,18 @@ def build_metrics(probe: dict, rows: dict, judged: list[dict]) -> dict:
         "anthropic_buckets_30d": a30["buckets"],
         "oauth_trigger": "MET" if a30["calls"] >= OAUTH_TRIGGER_CALLS else "NOT_MET",
         "activation": [
-            {k: j[k] for k in ("family", "prev7", "cur7", "drop_pct", "state", "buckets7")}
+            {k: j[k] for k in ("family", "prev_w", "cur_w", "drop_pct", "envelope_pct", "state")}
             for j in judged[:TOP_FAMILIES]
         ],
         "activation_breaches": sum(1 for j in judged if j["state"] == "breach"),
+        "envelope": ({"reference_day": envelope.get("reference_day"), "frozen_at": envelope.get("computed_at")}
+                     if envelope else {"state": envelope_reason or "absent"}),
+        "volume": [
+            {k: v[k] for k in ("family", "prev7", "cur7", "drop_pct", "buckets7")}
+            for v in (volume or [])[:TOP_FAMILIES]
+        ],
         "guard_armed": probe.get("mode") == "live",
-        "units": "calls; buckets are distinct ip buckets, not people (request_log has no identity column)",
+        "units": "activation = buckets whose FIRST successful free metered call fell in the week; volume = calls (reported, never paged); buckets are distinct ip buckets, not people",
     }
 
 
@@ -241,10 +333,11 @@ def build_body(judged: list[dict]) -> str:
     breaches = [j for j in judged if j["state"] == "breach"]
     lines = ["\U0001F6D1 %s" % ALERT_ID, ""]
     noun = "client family" if len(breaches) == 1 else "client families"
-    lines.append("Free-tier metered calls fell %d%%+ week over week for %d %s:" % (int(GUARD_DROP * 100), len(breaches), noun))
+    lines.append("Weekly ACTIVATIONS (buckets making their first successful free call) fell %d%%+ week over"
+                 " week, beyond the pre-flip envelope, for %d %s:" % (int(GUARD_DROP * 100), len(breaches), noun))
     for j in breaches:
-        lines.append("• client family %s: %d → %d calls/week (−%s %%), %d bucket(s) this week"
-                     % (j["family"], j["prev7"], j["cur7"], j["drop_pct"], j["buckets7"]))
+        lines.append("• client family %s: %d → %d activating buckets/week (−%s %%; its largest pre-flip weekly drop was %s %%)"
+                     % (j["family"], j["prev_w"], j["cur_w"], j["drop_pct"], j["envelope_pct"]))
     lines += ["", "Read the daily stepup-readout records (vault Claude files/canary-results.jsonl) beside the",
               "STEPUP_MODE in force. Rollback lever: STEPUP_MODE=shadow|off through an interlocked recreate.",
               "Action: dispatch OPS-STEPUP-ACTIVATION-W{NEXT}"]
@@ -279,13 +372,18 @@ def clear(reason: str) -> None:
     log("wrapper --clear exit=%d out=%s" % (proc.returncode, (proc.stdout or proc.stderr).strip()[:160]))
 
 
-def run_probe() -> dict:
-    proc = subprocess.run(["docker", "exec", APP_CONTAINER, "node", "-e", PROBE_JS],
+def run_probe(ref_iso=None, weeks=None) -> dict:
+    env_args = []
+    if ref_iso:
+        env_args += ["-e", "STEPUP_REF_ISO=%s" % ref_iso]
+    if weeks:
+        env_args += ["-e", "STEPUP_WEEKS=%d" % int(weeks)]
+    proc = subprocess.run(["docker", "exec"] + env_args + [APP_CONTAINER, "node", "-e", PROBE_JS],
                           capture_output=True, text=True, timeout=90)
     if proc.returncode != 0:
         raise RuntimeError("probe exit %d: %s" % (proc.returncode, (proc.stderr or "").strip()[:200]))
     probe = json.loads(proc.stdout)
-    for key in ("mode", "n", "d0", "d1", "sql"):
+    for key in ("mode", "n", "d0", "d1", "ref", "weeks", "sql"):
         if key not in probe:
             raise RuntimeError("probe output lacks %r" % key)
     if probe["mode"] not in ("off", "shadow", "live"):
@@ -330,13 +428,24 @@ def main() -> int:
         log("INDETERMINATE: %s" % str(e)[:240])
         record("INDETERMINATE", 3, {"reason": str(e)[:200]})
         return finish("INDETERMINATE", 3)
-    judged = evaluate_guard(rows["act"])
-    metrics = build_metrics(probe, rows, judged)
+    volume = evaluate_volume(rows["act"])
+    env_doc, env_reason = load_envelope()
+    judged = evaluate_activation(weekly_by_family(rows["actw"], 2), env_doc["families"] if env_doc else None)
+    metrics = build_metrics(probe, rows, judged, volume, env_doc, env_reason)
     for j in judged:
-        log("ACTIVATION family=%s prev7=%d cur7=%d drop_pct=%s state=%s"
-            % (j["family"], j["prev7"], j["cur7"], j["drop_pct"], j["state"]))
+        log("ACTIVATION family=%s prev_w=%d cur_w=%d drop_pct=%s envelope_pct=%s state=%s"
+            % (j["family"], j["prev_w"], j["cur_w"], j["drop_pct"], j["envelope_pct"], j["state"]))
+    for v in volume:
+        log("VOLUME family=%s prev7=%d cur7=%d drop_pct=%s (reported, never paged)"
+            % (v["family"], v["prev7"], v["cur7"], v["drop_pct"]))
     log("POOLS %s" % json.dumps(metrics["free_metered_1d"], separators=(",", ":"))[:600])
     log("OAUTH_TRIGGER=%s anthropic_calls_30d=%d" % (metrics["oauth_trigger"], metrics["anthropic_calls_30d"]))
+    log("ENVELOPE %s" % ("frozen, reference_day=%s" % env_doc.get("reference_day") if env_doc else env_reason))
+    if should_page(probe["mode"]) and env_doc is None:
+        log("INDETERMINATE: STEPUP_MODE=live but no frozen activation envelope (%s) — the guard cannot "
+            "decide; run --freeze-envelope --flip-at <flip instant>" % env_reason)
+        record("INDETERMINATE", 3, metrics)
+        return finish("INDETERMINATE", 3)
     breaches = [j for j in judged if j["state"] == "breach"]
     if breaches and should_page(probe["mode"]):
         fire(build_body(judged))
@@ -347,6 +456,50 @@ def main() -> int:
     clear("no paged activation breach (mode=%s)" % probe["mode"])
     record("PASS", 0, metrics)
     return finish("PASS", 0)
+
+
+def freeze_envelope(flip_at_iso: str, force: bool = False) -> int:
+    """Compute the activation envelope from request_log for the 7 weeks before the flip's UTC day
+    and freeze it at ENVELOPE_PATH. Refuses to overwrite a frozen envelope without --force: the
+    envelope is the PRE-flip baseline, and recomputing it later would fold post-flip weeks in.
+    Token: STEPUP_ENVELOPE_VERDICT=WRITTEN|EXISTS|INDETERMINATE (exit 0/0/3)."""
+    if os.path.exists(ENVELOPE_PATH) and not force:
+        log("ENVELOPE_EXISTS at %s — refusing to overwrite the frozen pre-flip baseline" % ENVELOPE_PATH)
+        print("STEPUP_ENVELOPE_VERDICT=EXISTS", flush=True)
+        return 0
+    try:
+        probe = run_probe(ref_iso=flip_at_iso, weeks=ENVELOPE_WEEKS + 1)
+        rows = parse_rows(run_sql(probe["sql"]))
+    except Exception as e:  # noqa: BLE001
+        log("ENVELOPE_INDETERMINATE: %s" % str(e)[:240])
+        print("STEPUP_ENVELOPE_VERDICT=INDETERMINATE", flush=True)
+        return 3
+    fams = compute_envelope(weekly_by_family(rows["actw"], ENVELOPE_WEEKS + 1))
+    if not fams:
+        log("ENVELOPE_INDETERMINATE: zero activating families before %s — nothing to freeze" % probe.get("ref"))
+        print("STEPUP_ENVELOPE_VERDICT=INDETERMINATE", flush=True)
+        return 3
+    doc = {
+        "flipped_at": flip_at_iso,
+        "reference_day": probe["ref"],
+        "weeks": ENVELOPE_WEEKS + 1,
+        "mode_at_freeze": probe["mode"],
+        "computed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "rule": ("weekly activations = buckets whose first successful free metered call fell in each 7-day "
+                 "window before reference_day (weekly[0] most recent); drops_pct[j] = week j against week j+1; "
+                 "envelope_pct = the largest defined drop. A live drop pages only if prior >= %d, drop >= %d %% "
+                 "and drop > envelope_pct." % (ACT_MIN_PRIOR_WEEK, int(GUARD_DROP * 100))),
+        "families": fams,
+    }
+    tmp = ENVELOPE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=1, sort_keys=True)
+        fh.write("\n")
+    os.replace(tmp, ENVELOPE_PATH)
+    for fam, f in sorted(fams.items(), key=lambda kv: -sum(kv[1]["weekly"])):
+        log("ENVELOPE family=%s weekly=%s envelope_pct=%s" % (fam, f["weekly"], f["envelope_pct"]))
+    print("STEPUP_ENVELOPE_VERDICT=WRITTEN", flush=True)
+    return 0
 
 
 # ── self-test ─────────────────────────────────────────────────────────────────────────────────────
@@ -409,43 +562,89 @@ def self_test() -> int:
         "anthropic_30d|64|1||",
         "stepup_1d|stepup_would_gate|node|other|3",
         "qhb_1d|other|1200|3|",
-        "act|python-requests|900|1500|5",   # −40 % from 1,500 → breach
-        "act|node|700|800|90",              # −12.5 % → ok
-        "act|claude|10|60|1",               # −83 % but prior week 60 < 200 → below_floor
-        "act|mcp-sdk|140|200|4",            # exactly −30 % from exactly 200 → breach (inclusive)
+        "act|python-requests|900|1500|5",   # volume: −40 % — REPORTED, never paged
+        "act|node|700|800|90",
+        # activations: wk 0 = the last complete week, wk 1 = the one before
+        "actw|node|0|4|", "actw|node|1|20|",                          # −80 %, envelope 57.1 → breach
+        "actw|python-requests|0|3|", "actw|python-requests|1|6|",     # −50 %, envelope 75 → within_envelope
+        "actw|claude|0|0|", "actw|claude|1|3|",                       # prior 3 < 5 → below_floor
+        "actw|mcp-sdk|0|7|", "actw|mcp-sdk|1|10|",                    # −30 % exactly, envelope 25 → breach
+        "actw|undici|0|1|", "actw|undici|1|9|",                       # −88.9 %, no envelope row → no_envelope
+        "actw|growth|0|12|", "actw|growth|1|6|",                      # growth → ok
+        "actw|node|9|99|",                                            # outside the 2-week window → ignored
         "garbage line",
         "unknown_label|1|2|3|4",
     ])
     rows = parse_rows(fixture)
     check("parse: every labelled row lands in its bucket",
           len(rows["calls_1d"]) == 3 and rows["anthropic_30d"] == {"calls": 64, "buckets": 1}
-          and len(rows["stepup_1d"]) == 1 and len(rows["qhb_1d"]) == 1 and len(rows["act"]) == 4)
-    judged = evaluate_guard(rows["act"])
+          and len(rows["stepup_1d"]) == 1 and len(rows["qhb_1d"]) == 1 and len(rows["act"]) == 2
+          and len(rows["actw"]) == 13)
+    weekly2 = weekly_by_family(rows["actw"], 2)
+    check("activations: a window outside the requested weeks is ignored", weekly2["node"] == [4, 20])
+    env_fams = compute_envelope({
+        "node": [15, 35, 26, 10, 23, 33, 61],               # measured pre-flip shape, 2026-10-12
+        "python-requests": [1, 2, 8, 4, 0, 0, 0],
+        "mcp-sdk": [3, 4, 4, 4, 4, 4, 4],
+        "claude": [0, 3, 3, 3, 3, 3, 3],
+        "growth": [6, 6, 6, 6, 6, 6, 6],
+        "silent": [0, 0, 0, 0, 0, 0, 0],
+    })
+    check("envelope: node's largest pre-flip weekly drop is 57.1 %", env_fams["node"]["envelope_pct"] == 57.1)
+    check("envelope: weeks with no prior activations are UNDEFINED drops, never zeros",
+          env_fams["python-requests"]["drops_pct"][3:] == [None, None, None]
+          and env_fams["python-requests"]["envelope_pct"] == 75.0)
+    check("envelope: a family that never activated has NO envelope (undefined, not 0 %)",
+          env_fams["silent"]["envelope_pct"] is None)
+    judged = evaluate_activation(weekly2, env_fams)
     state = {j["family"]: j["state"] for j in judged}
-    check("guard: −40 % on 1,500 is a breach", state["python-requests"] == "breach")
-    check("guard: −12.5 % is ok", state["node"] == "ok")
-    check("guard: a big drop below the 200 floor is reported, never paged", state["claude"] == "below_floor")
-    check("guard: the boundary (200 prior, −30 %) is inclusive", state["mcp-sdk"] == "breach")
-    check("guard: a growing family is ok", evaluate_guard([{"family": "x", "cur7": 500, "prev7": 300, "buckets7": 1}])[0]["state"] == "ok")
-    check("guard: zero prior week never divides by zero", evaluate_guard([{"family": "x", "cur7": 5, "prev7": 0, "buckets7": 1}])[0]["state"] == "below_floor")
-    probe = {"mode": "shadow", "n": 50, "d0": "2026-10-12T00:00:00.000Z", "d1": "2026-10-13T00:00:00.000Z", "sql": ""}
-    metrics = build_metrics(probe, rows, judged)
+    check("guard: −80 % on 20, beyond node's 57.1 % envelope, is a breach", state["node"] == "breach")
+    check("guard: −50 % inside python-requests' 75 % envelope is NOT a breach",
+          state["python-requests"] == "within_envelope")
+    check("guard: a prior week under 5 activating buckets is reported, never paged", state["claude"] == "below_floor")
+    check("guard: the 30 % boundary is inclusive (and 30 > a 25 % envelope)", state["mcp-sdk"] == "breach")
+    check("guard: a family with no envelope row is no_envelope — UNDEFINED, never a page", state["undici"] == "no_envelope")
+    check("guard: growth is ok", state["growth"] == "ok")
+    edge = {"x": {"envelope_pct": 50.0}}
+    check("guard: prior exactly 5 is enough (5 → 1, −80 % > 50 %)",
+          evaluate_activation({"x": [1, 5]}, edge)[0]["state"] == "breach")
+    check("guard: prior 4 is not (4 → 0)", evaluate_activation({"x": [0, 4]}, edge)[0]["state"] == "below_floor")
+    check("guard: a drop EQUAL to the envelope is within it — the ruling says LARGER",
+          evaluate_activation({"x": [5, 10]}, edge)[0]["state"] == "within_envelope")
+    check("guard: with no envelope at all, every would-be breach is no_envelope",
+          all(j["state"] != "breach" for j in evaluate_activation(weekly2, None)))
+    volume = evaluate_volume(rows["act"])
+    check("volume: reported with its drop, and carries no paging state",
+          [v["drop_pct"] for v in volume] == [40.0, 12.5] and all("state" not in v for v in volume))
+    probe = {"mode": "shadow", "n": 20, "d0": "2026-10-12T00:00:00.000Z", "d1": "2026-10-13T00:00:00.000Z",
+             "ref": "2026-10-13T00:00:00.000Z", "weeks": 2, "sql": ""}
+    env_doc = {"reference_day": "2026-10-12T00:00:00.000Z", "computed_at": "2026-10-12T12:00:00Z", "families": env_fams}
+    metrics = build_metrics(probe, rows, judged, volume, env_doc, None)
     check("metrics: pools aggregate calls and buckets", metrics["free_metered_1d"]["other"]["calls"] == 420
           and metrics["free_metered_1d"]["anthropic"]["buckets"] == 1)
     check("metrics: OAUTH_TRIGGER is NOT_MET below 1,000", metrics["oauth_trigger"] == "NOT_MET")
     rows_met = parse_rows("anthropic_30d|1000|3||")
     check("metrics: OAUTH_TRIGGER is MET at exactly 1,000",
           build_metrics(probe, rows_met, [])["oauth_trigger"] == "MET")
-    check("metrics: breaches counted", metrics["activation_breaches"] == 2)
+    check("metrics: activation breaches counted", metrics["activation_breaches"] == 2)
+    check("metrics: the record says which envelope judged it, or why none did",
+          metrics["envelope"]["reference_day"] == "2026-10-12T00:00:00.000Z"
+          and build_metrics(probe, rows, judged, volume, None, "absent at /x")["envelope"] == {"state": "absent at /x"})
+    check("metrics: volume rides along, reported", [v["family"] for v in metrics["volume"]] == ["python-requests", "node"])
     check("metrics: fits canary_result_log's 8 KiB line cap",
           len(json.dumps(metrics, separators=(",", ":"))) < 7000)
-    big = parse_rows("\n".join("calls_1d|other|fam%d|%d|1" % (i, i) for i in range(500)))
+    big = parse_rows("\n".join(["calls_1d|other|fam%d|%d|1" % (i, i) for i in range(500)]
+                               + ["actw|fam%d|%d|%d|" % (i, i % 2, i) for i in range(500)]))
+    big_j = evaluate_activation(weekly_by_family(big["actw"], 2), None)
     check("metrics: 500 families still fit (top-N bound)",
-          len(json.dumps(build_metrics(probe, big, []), separators=(",", ":"))) < 7000)
+          len(json.dumps(build_metrics(probe, big, big_j), separators=(",", ":"))) < 7000)
     body = build_body(judged)
-    check("body: names the alert id and the entity noun", ALERT_ID in body and "client family python-requests" in body)
-    check("body: renders prior and current week numbers", "1500 → 900 calls/week" in body)
-    check("body: a below-floor family is not paged", "client family claude" not in body)
+    check("body: names the alert id and the entity noun", ALERT_ID in body and "client family node" in body)
+    check("body: renders the activation numbers and the envelope",
+          "20 → 4 activating buckets/week" in body and "57.1 %" in body)
+    check("body: a below-floor / within-envelope / no-envelope family is not paged",
+          "client family claude" not in body and "client family python-requests" not in body
+          and "client family undici" not in body)
     check("body: carries a templated Action line, never a literal wave number", "OPS-STEPUP-ACTIVATION-W{NEXT}" in body)
     # The bypassed artifacts: the probe and the psql invocation are the only code no scenario runs,
     # so their SHAPE is asserted here (a hermetic self-test is blind to exactly what its seam replaces).
@@ -453,6 +652,11 @@ def self_test() -> int:
     check("probe: the metered predicate is the app's billablePredicate()", "billablePredicate()" in PROBE_JS)
     check("probe: mode and N come from the deployed plans module", "plans.resolveStepupMode(process.env)" in PROBE_JS and "FREE_KEYLESS_MONTHLY_CALLS_RULED" in PROBE_JS)
     check("probe: covers addresses .104 through .111 (the /21)", "i <= 111" in PROBE_JS and "i = 104" in PROBE_JS)
+    check("probe: activations are each v2 bucket's FIRST call (DISTINCT ON, earliest first)",
+          "DISTINCT ON (ip_hash)" in PROBE_JS and "ORDER BY ip_hash, \"timestamp\")" in PROBE_JS
+          and "ip_hash LIKE 'v2:%'" in PROBE_JS)
+    check("probe: the activation windows end at REF (today, or the flip's UTC day via STEPUP_REF_ISO)",
+          "process.env.STEPUP_REF_ISO" in PROBE_JS and "604800" in PROBE_JS and "ref: RISO" in PROBE_JS)
     check("probe: never prints a hash — only mode, n, bounds and the SQL go to stdout",
           PROBE_JS.count("process.stdout.write") == 1 and "JSON.stringify({ mode:" in PROBE_JS)
     check("alert id is a module-level literal (visible to check-alert-registry)", ALERT_ID == "STEPUP_ACTIVATION_DROP")
@@ -463,26 +667,65 @@ def self_test() -> int:
     check("fire in self-test skips the wrapper and records the body", LAST_FIRE.get(ALERT_ID) == body)
     clear("ok")
     check("clear in self-test skips the wrapper", LAST_CLEAR.get(ALERT_ID) == "ok")
-    # The decision path end to end, through main(), with the two effects that reach production
-    # (the in-container probe and psql) replaced by fixtures. Without this leg the scenario suite
-    # never executes main() — the one function that turns a breach into a page.
+    import shutil
+    import tempfile
     g = globals()
-    real_probe, real_sql = g["run_probe"], g["run_sql"]
+    real_probe, real_sql, real_env_path = g["run_probe"], g["run_sql"], g["ENVELOPE_PATH"]
+    tmpd = tempfile.mkdtemp(prefix="stepup-env-")
     try:
+        # The ENVELOPE: frozen once from request_log at the flip, refused on overwrite.
+        g["ENVELOPE_PATH"] = os.path.join(tmpd, "envelope.json")
+        check("envelope file: absent → (None, reason)", load_envelope()[0] is None and "absent" in load_envelope()[1])
+        Path(g["ENVELOPE_PATH"]).write_text("{not json", encoding="utf-8")
+        check("envelope file: unreadable → (None, reason), never a crash", load_envelope()[0] is None)
+        os.remove(g["ENVELOPE_PATH"])
+        seen = {}
+        env_fixture = "\n".join("actw|node|%d|%d|" % (wk, n) for wk, n in enumerate([15, 35, 26, 10, 23, 33, 61]))
+
+        def fake_probe(ref_iso=None, weeks=None, **_):
+            seen["ref"], seen["weeks"] = ref_iso, weeks
+            return {"mode": "shadow", "n": 20, "d0": "x", "d1": "y", "ref": "2026-10-12T00:00:00.000Z",
+                    "weeks": weeks or 2, "sql": "-"}
+        g["run_probe"] = fake_probe
+        g["run_sql"] = lambda _sql: env_fixture
+        rc_f = freeze_envelope("2026-10-12T13:00:00Z")
+        doc, why = load_envelope()
+        check("freeze: asks the probe for 7 weeks before the FLIP instant",
+              seen.get("ref") == "2026-10-12T13:00:00Z" and seen.get("weeks") == 7)
+        check("freeze: writes a readable envelope with node at 57.1 %",
+              rc_f == 0 and doc is not None and doc["families"]["node"]["envelope_pct"] == 57.1)
+        check("freeze: a second freeze REFUSES to overwrite the pre-flip baseline",
+              freeze_envelope("2026-10-20T00:00:00Z") == 0 and load_envelope()[0]["flipped_at"] == "2026-10-12T13:00:00Z")
+        check("freeze: --force overwrites", freeze_envelope("2026-10-20T00:00:00Z", force=True) == 0
+              and load_envelope()[0]["flipped_at"] == "2026-10-20T00:00:00Z")
+        g["run_sql"] = lambda _sql: ""
+        os.remove(g["ENVELOPE_PATH"])
+        check("freeze: zero activating families is INDETERMINATE (exit 3), never an empty envelope",
+              freeze_envelope("2026-10-12T13:00:00Z") == 3 and not os.path.exists(g["ENVELOPE_PATH"]))
+        # main(), end to end, with the two effects that reach production replaced by fixtures.
+        Path(g["ENVELOPE_PATH"]).write_text(json.dumps(env_doc), encoding="utf-8")
+        g["run_sql"] = lambda _sql: fixture
         for mode, want in (("shadow", "PASS"), ("off", "PASS"), ("live", "FAIL")):
             LAST_FIRE.clear(); LAST_RECORD.clear()
-            g["run_probe"] = lambda m=mode: {"mode": m, "n": 20, "d0": "2026-10-12T00:00:00.000Z", "d1": "2026-10-13T00:00:00.000Z", "sql": "-"}
-            g["run_sql"] = lambda _sql: fixture
+            g["run_probe"] = lambda m=mode, **_: {"mode": m, "n": 20, "d0": "2026-10-12T00:00:00.000Z",
+                                                  "d1": "2026-10-13T00:00:00.000Z", "ref": "2026-10-13T00:00:00.000Z",
+                                                  "weeks": 2, "sql": "-"}
             main()
-            check("main(): a breach in %s → %s%s" % (mode, want, " (paged)" if want == "FAIL" else " (reported, not paged)"),
+            check("main(): an activation breach in %s → %s%s" % (mode, want, " (paged)" if want == "FAIL" else " (reported, not paged)"),
                   LAST_RECORD[:1] == [want] and (ALERT_ID in LAST_FIRE) == (want == "FAIL"))
+        os.remove(g["ENVELOPE_PATH"])
         LAST_FIRE.clear(); LAST_RECORD.clear()
-        g["run_probe"] = lambda: (_ for _ in ()).throw(RuntimeError("docker exec failed"))
+        rc_live_noenv = main()
+        check("main(): live with NO frozen envelope is INDETERMINATE, exit 3, and pages nothing",
+              rc_live_noenv == 3 and LAST_RECORD[:1] == ["INDETERMINATE"] and not LAST_FIRE)
+        LAST_FIRE.clear(); LAST_RECORD.clear()
+        g["run_probe"] = lambda **_: (_ for _ in ()).throw(RuntimeError("docker exec failed"))
         rc = main()
         check("main(): an unreadable probe is INDETERMINATE, exit 3, and pages nothing",
               rc == 3 and LAST_RECORD[:1] == ["INDETERMINATE"] and not LAST_FIRE)
     finally:
-        g["run_probe"], g["run_sql"] = real_probe, real_sql
+        g["run_probe"], g["run_sql"], g["ENVELOPE_PATH"] = real_probe, real_sql, real_env_path
+        shutil.rmtree(tmpd, ignore_errors=True)
     _selftest_log(check)
     if ran == 0:
         print("SELF-TEST: FAIL (vacuous — no scenario ran)")
@@ -497,4 +740,8 @@ def self_test() -> int:
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
         sys.exit(self_test())
+    if len(sys.argv) > 1 and sys.argv[1] == "--freeze-envelope":
+        flip_at = sys.argv[sys.argv.index("--flip-at") + 1] if "--flip-at" in sys.argv else \
+            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        sys.exit(freeze_envelope(flip_at, force="--force" in sys.argv))
     sys.exit(main())
