@@ -658,9 +658,13 @@ export const TIER_CLAIMS: readonly TierClaim[] = [
     evidence: { kind: 'code', ref: 'src/lib/feature-registry.ts' },
   },
   {
+    // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4: an x402 caller presents no key, so the free calls it
+    // gets before paying are the KEYLESS allowance (live: 20), not the free tier's 200. The bullet
+    // and its evidence moved together; the retired "200 free calls/mo first" form is banned by the
+    // keyless-path-carries-free-allowance phrase row.
     id: 'x402-free-then-paid',
-    match: /^200 free calls\/mo first, then pay-per-call$/,
-    evidence: { kind: 'sot', ref: 'src/lib/plans.ts#FREE_MONTHLY_CALLS' },
+    match: /^[\d,]+ free calls a month without a key, then pay-per-call$/,
+    evidence: { kind: 'sot', ref: 'src/lib/plans.ts#FREE_KEYLESS_MONTHLY_CALLS_RULED' },
   },
   {
     // R-B's SECOND meter gets its OWN row rather than a widened `monthly-call-allowance`
