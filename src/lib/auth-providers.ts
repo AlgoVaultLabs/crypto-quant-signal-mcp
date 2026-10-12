@@ -41,7 +41,7 @@ export class GoogleEmailUnverifiedError extends Error {
 }
 
 /** True only for a claim that says "verified": boolean `true` or the string "true" (any case). */
-export function isVerifiedEmailClaim(claim: unknown): boolean {
+function isVerifiedEmailClaim(claim: unknown): boolean {
   return claim === true || (typeof claim === 'string' && claim.trim().toLowerCase() === 'true');
 }
 

@@ -23,7 +23,6 @@ import {
   getAuthProvider,
   GoogleEmailUnverifiedError,
   GOOGLE_UNVERIFIED_COPY,
-  isVerifiedEmailClaim,
   signinRefusal,
 } from '../../src/lib/auth-providers.js';
 
@@ -102,9 +101,14 @@ describe('R0.1 — GoogleProvider.exchange refuses an address Google does not vo
     expect((err as Error).message).toBe('google: no email on profile');
   });
 
-  it('isVerifiedEmailClaim accepts only "verified" — strict on value, tolerant on type', () => {
-    for (const yes of [true, 'true', 'TRUE', ' True ']) expect(isVerifiedEmailClaim(yes)).toBe(true);
-    for (const no of [false, 'false', undefined, null, 0, 1, '', 'yes', {}, []]) expect(isVerifiedEmailClaim(no)).toBe(false);
+  it.each([['TRUE'], [' True ']])('the claim %j (case / whitespace variants of "true") → resolves', async (claim) => {
+    stubGoogle({ sub: 'sub-5', email: 'b@example.com', email_verified: claim });
+    await expect(exchange(GOOGLE_ENV)).resolves.toMatchObject({ email: 'b@example.com' });
+  });
+
+  it.each([[0], [''], [{}], [[]]])('the claim %j → refused', async (claim) => {
+    stubGoogle({ sub: 'sub-6', email: 'c@example.com', email_verified: claim });
+    await expect(exchange(GOOGLE_ENV)).rejects.toBeInstanceOf(GoogleEmailUnverifiedError);
   });
 });
 
