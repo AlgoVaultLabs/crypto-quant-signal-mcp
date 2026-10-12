@@ -24,7 +24,8 @@
         "landing/**/*.json",
         "docs/**/*.md",
         "README.md",
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "manifest.json"
       ]
     }
   ],

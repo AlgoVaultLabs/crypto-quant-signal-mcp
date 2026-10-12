@@ -46,5 +46,13 @@
       "captured_on": "2026-09-08",
       "note": "FALSE since OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1. The lifecycle self-heals: consecutive failures move a subscription to `quarantined` (src/lib/webhooks-store.ts), a health probe resumes it on any 2xx (src/lib/webhook-delivery.ts, '[webhook-probe] sub N probe 2xx -> resumed active'), and the recovery window is tier-differentiated 30d paid / 7d free (src/lib/webhook-quarantine-policy.ts). A subscriber who followed this sentence would destroy and recreate a subscription that was about to recover on its own."
     }
+  },
+  "legacy-asset-gate-slash-form": {
+    "sample": "Leave blank for free tier (BTC/ETH, 1h only).",
+    "source_path": "manifest.json",
+    "source_line": 38,
+    "source_sha": "0ff5f26c8789e4253d30771227923a3f2b893185",
+    "captured_on": "2026-10-12",
+    "note": "Sampled from the live DXT manifest (user_config.CQS_API_KEY.description) at the CH0 landing SHA, not authored from the regex. Removed from the tree by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH2 (§Copy E2); the gate reads these bytes from git history at source_sha."
   }
 }

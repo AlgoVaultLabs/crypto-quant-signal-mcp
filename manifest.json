@@ -35,7 +35,7 @@
     "CQS_API_KEY": {
       "title": "API Key",
       "type": "string",
-      "description": "Optional Pro/Enterprise API key for full access. Leave blank for free tier (BTC/ETH, 1h only).",
+      "description": "Optional. Paste your AlgoVault API key for your plan's limits. Leave blank to use the free tier.",
       "default": ""
     }
   }

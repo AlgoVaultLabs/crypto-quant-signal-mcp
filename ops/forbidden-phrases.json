@@ -183,6 +183,20 @@
         "synthetic_reason": "Its fixture in scripts/check-forbidden-phrases.mjs was HAND-AUTHORED, not lifted from a named surface at a named SHA. That is permitted and it is declared here rather than implied: the file's former comment asserted every fixture was 'the ACTUAL retired phrases from the estate census', which was FALSE for retired-tier-quotas and is what let a pattern and the proof of that pattern share one author and one blind spot. Nobody re-verified the other nine at the time, so claiming estate provenance for them now would repeat the original error in the opposite direction. Upgrade a row to the estate form by sampling live bytes into tests/fixtures/forbidden-phrases/estate-samples.json and recording source_path + source_sha + captured_on."
       },
       "severity": "error"
+    },
+    {
+      "id": "legacy-asset-gate-slash-form",
+      "pattern": "free\\s+tier\\s*\\(\\s*BTC\\s*/\\s*ETH|BTC\\s*/\\s*ETH\\s*,\\s*1h\\s+only",
+      "retired_on": "2026-04-01",
+      "superseded_by": "Optional. Paste your AlgoVault API key for your plan's limits. Leave blank to use the free tier.",
+      "reason": "The same retired coin/timeframe gate as legacy-asset-gate (removed in v1.10.3 FREE-UNLOCK-W1), in the SLASH form that pattern never matched. Found live in the DXT manifest's CQS_API_KEY description by GROWTH-AGENT-SIGNIN-STEPUP-W1 Plan Mode (2026-10-12), on a catalog surface the phrase gate did not scan. Anchored on the claim ('free tier (BTC/ETH', 'BTC/ETH, 1h only') so ordinary code comments such as 'BTC/ETH spot' are not hits.",
+      "bare_token_na_reason": "SEMANTIC, not numeric. 'BTC/ETH' alone is live vocabulary across src/ comments and docs; the retired thing is the free-tier COVERAGE claim, and the two alternations are its narrowest unambiguous forms.",
+      "fixture_provenance": {
+        "source_path": "manifest.json",
+        "source_sha": "0ff5f26c8789e4253d30771227923a3f2b893185",
+        "captured_on": "2026-10-12"
+      },
+      "severity": "error"
     }
   ],
   "_negative_context_contract": "negative_context: a regex tested against the SAME LINE. On a match the hit is SUPPRESSED and COUNTED, and the run prints the suppression total — 'detect the thing, then JUDGE it separately, and print what the predicate excludes'. This exists because a live surface may legitimately NAME a retired phrase in order to retire it: a README release recap saying '$79/yr … Superseded: annual was retired 2026-08-09', or an authoring runbook teaching 'never write 20 calls/day'. Deleting those sentences would destroy the record that the retirement happened, which is the opposite of what this gate exists for.",
