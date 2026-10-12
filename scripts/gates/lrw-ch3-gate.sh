@@ -203,7 +203,7 @@ mutation_table() {
  ["R57", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "g.atRiskOldest === null ? -Infinity :", "g.atRiskOldest === null ? Infinity :"],
  ["R58", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "a.k > b.k ? 1 : a.i - b.i))", "a.k > b.k ? 1 : b.i - a.i))"],
  ["R59", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "if (order !== undefined && val('--venue') !== 'HL') throw", "if (false) throw"],
- ["R60", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "export const HL_CANDLE_DEPTH = 5_000;", "export const HL_CANDLE_DEPTH = 4_000;"],
+ ["R60", "src/lib/venue-candle-reach.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "export const HL_CANDLE_DEPTH = 5_000;", "export const HL_CANDLE_DEPTH = 4_000;"],
  ["R61", "src/scripts/backfill-directional-labels.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "const groups = cli.order === 'depth-deadline' ? depthDeadlineOrder(listed, orderNowS, stepS) : listed;", "const groups = listed;"],
  ["R62", "src/scripts/lrw/relabel-sql.ts", "vitest:tests/unit/lrw-relabel-v2.test.ts", "MIN(s.created_at) FILTER (WHERE s.created_at > CASE s.timeframe", "MIN(s.created_at) FILTER (WHERE s.created_at < CASE s.timeframe"],
  ["R63", "ops/label-backfill/lrw-relabel-runner.sh", "sh:LRW_RUNNER_SELFTEST=1 bash ops/label-backfill/lrw-relabel-runner.sh", "  elif [ \"$now\" -ge \"$start\" ] && [ \"$now\" -lt \"$end\" ]; then echo $((end - now))", "  elif [ \"$now\" -gt \"$start\" ] && [ \"$now\" -lt \"$end\" ]; then echo $((end - now))"],
