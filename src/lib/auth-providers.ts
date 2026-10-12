@@ -12,8 +12,73 @@
  * sent to the IdP is our own fixed callback.
  */
 import { randomBytes } from 'node:crypto';
+import { renderThemeBlock } from './site-theme.js';
 
 export type ProviderId = 'google' | 'github';
+
+// ── GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH0 — a Google email counts only when Google says it is VERIFIED ──
+//
+// `GoogleProvider.exchange` read `email_verified` into its type and never checked it, so a Google
+// profile carrying an UNVERIFIED address resolved as that address — and the callback then rendered
+// the PAID key of any Stripe customer who owns it (`resolveSigninIdentity` maps a paying email to
+// its live key). GitHub already required a verified address; this closes the same door on Google
+// for every surface that signs in through the provider, the deferred OAuth wave included.
+//
+// The claim is read TOLERANTLY on its type and STRICTLY on its value. OpenID Connect Core §5.1 types
+// `email_verified` as a JSON boolean, but Google's own OIDC page shows the ID-token example as the
+// STRING "true" (fetched 2026-10-12). Accepting only the boolean would refuse every Google sign-in
+// the day the userinfo endpoint answered with the string — an outage nothing would page on. So the
+// boolean `true` and the string "true" (any case) are verified; `false`, "false", a missing field
+// and anything else are not. A missing field is UNVERIFIED, never assumed verified.
+
+/** Thrown by `GoogleProvider.exchange` when Google does not vouch for the address. A refusal, not a fault. */
+export class GoogleEmailUnverifiedError extends Error {
+  readonly code = 'GOOGLE_EMAIL_UNVERIFIED';
+  constructor() {
+    super('google: email not verified');
+    this.name = 'GoogleEmailUnverifiedError';
+  }
+}
+
+/** True only for a claim that says "verified": boolean `true` or the string "true" (any case). */
+export function isVerifiedEmailClaim(claim: unknown): boolean {
+  return claim === true || (typeof claim === 'string' && claim.trim().toLowerCase() === 'true');
+}
+
+/** §Copy H0 (GROWTH-AGENT-SIGNIN-STEPUP-W1-V2), verbatim. The page links its last clause; the words stay this. */
+export const GOOGLE_UNVERIFIED_COPY =
+  "Your Google email isn't verified yet. Verify it in your Google account, or continue with GitHub or email.";
+
+const H0_LINKED_CLAUSE = 'GitHub or email';
+
+function escapeText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * The callback's answer to a sign-in REFUSAL, or `null` when `err` is not one (the caller then keeps
+ * its existing 500). Pure — the route calls it from its catch, which is what makes the branch
+ * testable without booting the HTTP server.
+ *
+ * The page carries §Copy H0 and nothing else: no key, no referral link, no account detail. Its
+ * palette is the generated THEME region (Design.md §13) — no colour literal, and the token
+ * fallbacks render it dark even if the design stylesheet never loads.
+ */
+export function signinRefusal(err: unknown): { status: 403; html: string } | null {
+  if (!(err instanceof GoogleEmailUnverifiedError)) return null;
+  const [head, tail] = GOOGLE_UNVERIFIED_COPY.split(H0_LINKED_CLAUSE);
+  const body =
+    `${escapeText(head)}<a class="text-mint-400 underline" href="/welcome">${escapeText(H0_LINKED_CLAUSE)}</a>${escapeText(tail)}`;
+  return {
+    status: 403,
+    html:
+      '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>AlgoVault</title>\n' +
+      `${renderThemeBlock()}\n</head>\n<body class="bg-navy-900 text-gray-200">\n` +
+      '<main style="max-width:560px;margin:60px auto;padding:0 20px;font-family:system-ui,sans-serif;line-height:1.5">\n' +
+      `<p>${body}</p>\n</main>\n</body>\n</html>\n`,
+  };
+}
 
 export interface AuthProfile {
   provider: ProviderId;
@@ -98,8 +163,10 @@ class GoogleProvider implements AuthProvider {
       headers: { Authorization: `Bearer ${tok.access_token}` },
     });
     if (!infoRes.ok) throw new Error(`google userinfo failed: ${infoRes.status}`);
-    const info = (await infoRes.json()) as { sub?: string; email?: string; email_verified?: boolean };
+    const info = (await infoRes.json()) as { sub?: string; email?: string; email_verified?: boolean | string };
     if (!info.email) throw new Error('google: no email on profile');
+    // CH0: an address Google does not vouch for is not an identity — see the block at the top.
+    if (!isVerifiedEmailClaim(info.email_verified)) throw new GoogleEmailUnverifiedError();
     return { provider: 'google', providerId: `google:${info.sub ?? info.email}`, email: info.email.toLowerCase() };
   }
 }

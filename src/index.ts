@@ -3910,6 +3910,15 @@ async function startHttp() {
         `<p style="color:#8b949e;font-size:13px">${footLine}</p></body>`,
       );
     } catch (err) {
+      // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH0: an unverified Google email is a REFUSAL (403 + §Copy H0),
+      // answered before the generic 500. The provider throws before `resolveSigninIdentity` runs, so
+      // nothing was minted and nothing about any account is rendered.
+      const refusal = (await import('./lib/auth-providers.js')).signinRefusal(err);
+      if (refusal) {
+        console.warn(`[/auth/${id}/callback] refused: provider email not verified`);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.status(refusal.status).send(refusal.html);
+      }
       console.error(`[/auth/${id}/callback] internal error: ${err instanceof Error ? err.message : err}`);
       return res.status(500).send('Sign-in error. Please try again.');
     }

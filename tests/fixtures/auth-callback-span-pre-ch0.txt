@@ -1,0 +1,93 @@
+app.get('/auth/:provider/callback', async (req, res) => {
+    const { isNewSignupEnabled, getAuthProvider, safeRedirectPath } = await import('./lib/auth-providers.js');
+    if (!isNewSignupEnabled()) return res.status(404).send('Not found');
+    const id = req.params.provider;
+    if (id !== 'google' && id !== 'github') return res.status(404).send('Unknown provider');
+    try {
+      const cookie = req.headers.cookie ?? '';
+      const readCookie = (n: string): string | null => {
+        const m = cookie.match(new RegExp(`${n}=([^;]+)`));
+        return m ? decodeURIComponent(m[1]) : null;
+      };
+      const expectState = readCookie('av_oauth_state');
+      const gotState = typeof req.query.state === 'string' ? req.query.state : '';
+      if (!expectState || !gotState || !safeCompare(expectState, gotState)) {
+        return res.status(400).send('Invalid or expired sign-in state. Please try again.');
+      }
+      const code = typeof req.query.code === 'string' ? req.query.code : '';
+      if (!code) return res.status(400).send('Missing authorization code.');
+      const provider = getAuthProvider(id);
+      const redirectUri = `https://${req.get('host')}/auth/${id}/callback`;
+      const profile = await provider.exchange({ code, redirectUri });
+
+      // FUNNEL-FIX-SIGNIN-PAID-IDENTITY-W1: resolve WHICH credential belongs to this verified
+      // human before issuing anything. This used to be a bare `mintFreeKey` call on the raw
+      // verified email, which handed a paying customer an `av_free_` key that cannot resolve
+      // at `/account` — measured on cus_UepUXyDjxzx99c, 2026-07-17 (issue #39). The provider verified
+      // this email, so this is one of the two surfaces allowed to RENDER a paid key.
+      const { resolveSigninIdentity } = await import('./lib/signin-identity.js');
+      const { ensureUserCode } = await import('./lib/referral-store.js');
+      const { shareLink } = await import('./lib/referral-constants.js');
+      const identity = await resolveSigninIdentity(profile.email);
+
+      // Stripe is configured and did not answer. Minting here is exactly how a paying human
+      // acquires a shadow free identity, so mint nothing and send them to the page that can
+      // resolve them once Stripe is back. REFUSE, never throw — this is a live serving path.
+      if (identity.outcome === 'INDETERMINATE' || !identity.key) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.status(503).send(
+          `<!doctype html><meta charset="utf-8"><title>Signed in — AlgoVault</title>` +
+          `<body style="font-family:system-ui;background:#0d1117;color:#c9d1d9;max-width:560px;margin:60px auto;padding:0 20px">` +
+          `<h1 style="color:#d29922">Signed in, but we couldn't load your account</h1>` +
+          `<p>Your ${id} sign-in worked. Our billing provider didn't respond just now, so we haven't shown a key — issuing one blindly could hand a paying customer the wrong credential.</p>` +
+          `<p>Please retry in a minute, or go to <a style="color:#58a6ff" href="/account">/account</a> and use <strong>Recover lost key</strong>.</p>` +
+          `<p style="color:#8b949e;font-size:13px">Still stuck? <a style="color:#58a6ff" href="mailto:admin@algovault.com">admin@algovault.com</a>.</p></body>`,
+        );
+      }
+
+      const key = identity.key;
+      const referralCode = await ensureUserCode(key, profile.email);
+      const referralLink = shareLink(referralCode);
+      // Attribution first-touch survives the redirect: stamp ?src (cookie) against the key.
+      // FREE only — a PAID identity already converted, and stamping `tierRequested: 'free'`
+      // against their live key would invent a second, fictional signup for one human.
+      if (identity.outcome === 'FREE') {
+        try {
+          const src = readCookie('av_oauth_src');
+          const { recordSignupAttribution } = await import('./lib/subscriber-attribution.js');
+          recordSignupAttribution({ clientReferenceId: key, utmSource: src, tierRequested: 'free' });
+        } catch { /* best-effort */ }
+      }
+      // Clear the CSRF cookies.
+      res.setHeader('Set-Cookie', [
+        'av_oauth_state=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0',
+        'av_oauth_next=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0',
+        'av_oauth_src=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0',
+      ]);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      const stubNote = provider.live ? '' : ' <em>(stub — set the provider OAuth creds to go live)</em>';
+      const paid = identity.outcome === 'PAID';
+      // A paid human gets THEIR key, their real tier, and the billing portal stated as the
+      // cancel path — the thing issue #39 could not find. The free copy is unchanged.
+      const keyCaption = paid
+        ? `Your <strong>${identity.tier}</strong> API key${identity.subscriptionStatus && identity.subscriptionStatus !== 'active' ? ` (subscription: ${identity.subscriptionStatus})` : ''}:`
+        : 'Your free API key (200 calls/mo, 100/day, no card):';
+      const footLine = paid
+        ? `Use it as <code>Authorization: Bearer &lt;key&gt;</code>. To change plan, update your card or <strong>cancel</strong>, open <a style="color:#58a6ff" href="/account">/account</a> → <em>I have my API key</em> → <em>Open Billing Portal</em>.`
+        : `Use it as <code>Authorization: Bearer &lt;key&gt;</code>. <a style="color:#58a6ff" href="/account">Manage your account →</a>`;
+      return res.send(
+        `<!doctype html><meta charset="utf-8"><title>You're in — AlgoVault</title>` +
+        `<body style="font-family:system-ui;background:#0d1117;color:#c9d1d9;max-width:560px;margin:60px auto;padding:0 20px">` +
+        `<h1 style="color:#56d364">You're in via ${id}${stubNote}</h1>` +
+        `<p>${keyCaption}</p>` +
+        `<pre style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;user-select:all">${key}</pre>` +
+        `<p>Referral link: <a style="color:#58a6ff" href="${referralLink}">${referralLink}</a></p>` +
+        `<p style="color:#8b949e;font-size:13px">${footLine}</p></body>`,
+      );
+    } catch (err) {
+      console.error(`[/auth/${id}/callback] internal error: ${err instanceof Error ? err.message : err}`);
+      return res.status(500).send('Sign-in error. Please try again.');
+    }
+  });
+
+  
