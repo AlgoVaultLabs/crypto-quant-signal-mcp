@@ -2102,7 +2102,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "8ab613d9ca91f04a75b7f5be68903126aafec6a993ef9dcc65e075f5b94c9d85",
+      "sha256": "f6dce924fa1b2118eb23c31138871b264637271235bcdb5300801f1b31910c52",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -3022,6 +3022,30 @@
         "at": "20261012T111359Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
+    },
+    {
+      "id": "okx-ai-listing-canary",
+      "artifact": "ops/monitoring/okx-ai-listing-canary.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/okx-ai-listing-canary.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/okx-ai-listing-canary.py",
+          "schedule": "43 7 * * 2"
+        }
+      ],
+      "criticality": "advisory",
+      "schedule": "43 7 * * 2",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "129f13bdb9947e54ddbbdd9693065f93af1cc9d9b8f2e0f4fc6a8c43358f792c",
+      "alert_ids": [
+        "OKX_AI_DELISTED"
+      ],
+      "owner_wave": "OPS-A2MCP-SERVED-TRUTH-W1",
+      "notes": "CH2-A (A4). Weekly: GET https://www.okx.ai/agents/3417 (200 listed / 404 absent / else unknown, fail-open) + USDT0 balanceOf(payTo) on X Layer (rpc.xlayer.tech) — the week-over-week delta is the paid-demand signal (a lower bound; request_log cannot separate a2mcp rows from Base x402 rows). Pages OKX_AI_DELISTED only after 2 consecutive ABSENT runs; unknown neither advances nor resets the counter; listed --clears. State /var/lib/algovault-monitoring/okx-ai-listing-canary-state.json; one canary_result_log line per run (pulled to the vault by monitoring-results-sync.sh). Token OKX_AI_LISTING_VERDICT=PASS|FAIL|INDETERMINATE (0/0/3). Self-test 27 checks, hermetic. Route serving (/a2mcp/*) is watched by the drift canary's leg C, not here."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

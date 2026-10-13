@@ -1275,6 +1275,17 @@
       "announce_resolution": false,
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-STEPUP_ACTIVATION_DROP-W{NEXT}"
+    },
+    {
+      "alert_id": "OKX_AI_DELISTED",
+      "owner": "ops/monitoring/okx-ai-listing-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OKX_AI_DELISTED-W{NEXT}"
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",
