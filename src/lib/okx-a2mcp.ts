@@ -43,6 +43,7 @@ import type { OkxA2mcpEnv, OkxA2mcpMode, ResolvedOkxA2mcp } from './okx-a2mcp-co
 import { HTTP_TOOLS, callCoreHandler, validateToolInput, tolerantJson, type HttpTool } from './x402-http-routes.js';
 import type { LicenseInfo } from '../types.js';
 import { markServed, markDark } from './rail-served-state.js';
+import { createRailDispatcher, type RailMountTimers } from './rail-mount.js';
 // OKX managed facilitator (HMAC-signed verify/settle → web3.okx.com). Live path only —
 // constructed lazily inside mountLive(), so importing this module is side-effect-free.
 import { OKXFacilitatorClient } from '@okxweb3/x402-core';
@@ -172,7 +173,11 @@ function toHttpTool(tool: string): HttpTool | undefined {
  * failure used to be visible only as one boot-log line; consumers (the x402 nudge) read the env
  * predicate instead and kept advertising routes that 404.
  */
-export async function mountOkxA2mcpRoutes(app: Express, env: OkxA2mcpEnv = process.env): Promise<string[]> {
+export async function mountOkxA2mcpRoutes(
+  app: Express,
+  env: OkxA2mcpEnv = process.env,
+  deps: { timers?: RailMountTimers } = {},
+): Promise<string[]> {
   const resolved = selectOkxA2mcp(resolveOkxA2mcpConfig(env));
   if (!resolved.active) {
     markDark('a2mcp', 'off (OKX_AI_ENABLED not true)');
@@ -180,16 +185,19 @@ export async function mountOkxA2mcpRoutes(app: Express, env: OkxA2mcpEnv = proce
   }
   const tools = okxA2mcpTools();
   if (resolved.mode === 'live') {
+    // CH2-A (A2): the LIVE served-state is owned by rail-mount — dark (503 + X-Rail-State) until
+    // the facilitator initialises, served once it does, retried with backoff in between. This
+    // catch is only for a SYNCHRONOUS mount fault (it never sees an init failure any more).
     let mounted: string[];
     try {
-      mounted = await mountLive(app, tools, resolved);
+      mounted = await mountLive(app, tools, resolved, deps.timers);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[okx-a2mcp] LIVE mount failed — leaving a2mcp DARK (app boot unaffected):', msg);
       markDark('a2mcp', `live-mount failed: ${msg}`);
       return [];
     }
-    reportMounted('live', mounted);
+    if (mounted.length === 0) markDark('a2mcp', 'live-empty (no a2mcp tool resolved to an HTTP route)');
     return mounted;
   }
   console.warn(
@@ -306,29 +314,101 @@ export function buildOkxHttpResourceServer(
   return new x402HTTPResourceServer(server, routes);
 }
 
+/** The three facilitator calls the x402 resource server makes. */
+type OkxFacilitatorLike = Pick<OKXFacilitatorClient, 'verify' | 'settle' | 'getSupported'>;
+
+/**
+ * CH2-A (A3) — SAMPLING-AWARE SETTLE (okx.ai User Agreement §7.7). OKX sends "Sampling Calls"
+ * through its facilitator: the settle response carries `sampling: true` and reports the payment as
+ * NOT settled, and the provider must answer for free. In `@okxweb3/x402-core@0.1.0` a 200 with
+ * `success: false` goes to `processSettlement`'s failure branch, which DISCARDS the buffered tool
+ * output and answers 402 — and `onSettleFailure` hooks run only on a thrown error and never see the
+ * settle body. So the recognition has to sit in the facilitator itself (F8).
+ *
+ * `verify` and `getSupported` pass through. `settle` calls the inner client; when the response
+ * carries `sampling === true` at the top level or under `extensions.sampling`, it is returned with
+ * `success: true` so the buffered output is served, and counted. Every other failure stays a
+ * failure. The first sampling settle is logged once, with the response's KEY NAMES only.
+ * LIVE-UNVERIFIED until OKX sends a real sampling call: the flag's location is taken from the UA.
+ */
+export class SamplingAwareFacilitator implements OkxFacilitatorLike {
+  private samplingSettles = 0;
+
+  constructor(private readonly inner: OkxFacilitatorLike) {}
+
+  getSupported(): ReturnType<OkxFacilitatorLike['getSupported']> {
+    return this.inner.getSupported();
+  }
+
+  verify(...args: Parameters<OkxFacilitatorLike['verify']>): ReturnType<OkxFacilitatorLike['verify']> {
+    return this.inner.verify(...args);
+  }
+
+  async settle(...args: Parameters<OkxFacilitatorLike['settle']>): Promise<Awaited<ReturnType<OkxFacilitatorLike['settle']>>> {
+    const res = await this.inner.settle(...args);
+    const r = res as unknown as Record<string, unknown> | null;
+    const ext = r?.extensions as Record<string, unknown> | undefined;
+    if (r && (r.sampling === true || ext?.sampling === true)) {
+      this.samplingSettles++;
+      if (this.samplingSettles === 1) {
+        console.log(`[okx-a2mcp] sampling settle (okx.ai UA §7.7) — served free; response keys: ${Object.keys(r).join(',')}`);
+      }
+      return { ...res, success: true };
+    }
+    return res;
+  }
+
+  /** Sampling settles answered free by this instance (observability). */
+  samplingCount(): number {
+    return this.samplingSettles;
+  }
+}
+
 /**
  * LIVE routes: the OKX managed facilitator gates each route (verify+settle on X Layer), then the
- * SAME core handler runs (output parity). Pre-`initialize()`s (validates the scheme/route config +
- * syncs the facilitator's supported kinds) so a misconfig or unreachable facilitator throws HERE
- * and is caught by `mountOkxA2mcpRoutes` (→ DARK, no crash). Still LIVE-UNVERIFIED end-to-end
- * until a real buyer settles USDT0 on X Layer (R5/R6).
+ * SAME core handler runs (output parity). Still LIVE-UNVERIFIED end-to-end until a real buyer
+ * settles USDT0 on X Layer.
+ *
+ * CH2-A (A2): the facilitator is initialised by `rail-mount`'s background loop, not once at boot.
+ * The app-level dispatcher is registered FIRST, so it sits in front of the route handlers below:
+ * while the facilitator is not ready every /a2mcp/* request gets 503 + Retry-After + X-Rail-State
+ * and the handlers never run; once it is, the dispatcher delegates to the payment middleware
+ * (unpaid → 402; paid → the handler). Boot awaits only the FIRST attempt (bounded by rail-mount's
+ * per-attempt timeout), so a healthy facilitator is served from the first request exactly as before.
  */
-async function mountLive(app: Express, tools: string[], resolved: ResolvedOkxA2mcp): Promise<string[]> {
-  const facilitator = new OKXFacilitatorClient({
-    apiKey: resolved.apiKey!,
-    secretKey: resolved.secretKey!,
-    passphrase: resolved.passphrase!,
-    ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
-    // syncSettle=true → the facilitator waits for on-chain confirmation and returns status="success".
-    syncSettle: true,
+async function mountLive(
+  app: Express,
+  tools: string[],
+  resolved: ResolvedOkxA2mcp,
+  timers?: RailMountTimers,
+): Promise<string[]> {
+  const routable = tools.filter((t) => toHttpTool(t));
+  const handle = createRailDispatcher({
+    rail: 'a2mcp',
+    prefix: A2MCP_PREFIX,
+    mode: 'live',
+    routes: routable.length,
+    ...(timers ? { timers } : {}),
+    init: async () => {
+      const facilitator = new SamplingAwareFacilitator(new OKXFacilitatorClient({
+        apiKey: resolved.apiKey!,
+        secretKey: resolved.secretKey!,
+        passphrase: resolved.passphrase!,
+        ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
+        // syncSettle=true → the facilitator waits for on-chain confirmation and returns status="success".
+        syncSettle: true,
+      }));
+      // A FRESH resource server per attempt: a failed initialize() leaves no half-synced state behind.
+      const httpServer = buildOkxHttpResourceServer(facilitator, tools, resolved.payTo!);
+      await httpServer.initialize();
+      // Already initialized → syncFacilitatorOnStart=false. With `true` the middleware would start
+      // initialize() at construction and hold the promise unawaited until the first paid request (F9).
+      return paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, false);
+    },
   });
-  const httpServer = buildOkxHttpResourceServer(facilitator, tools, resolved.payTo!);
-  // Validate scheme/route config + sync supported kinds NOW (throws on misconfig → caller keeps DARK).
-  await httpServer.initialize();
-  // Already initialized → mount with syncFacilitatorOnStart=false (no duplicate boot sync). The
-  // middleware gates the configured routes (unpaid → 402; paid → next()); non-matching requests
-  // pass straight through, so app-level use() leaves the Base rail unaffected.
-  app.use(paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, false));
+  // App-level ROUTE, registered before the handlers below, path written from the rail's constant
+  // (F9: never a router/use() at the prefix — that strips req.path and serves paid routes free).
+  app.all(`${A2MCP_PREFIX}/*`, handle.dispatch);
 
   const mounted: string[] = [];
   for (const tool of tools) {
@@ -386,5 +466,6 @@ async function mountLive(app: Express, tools: string[], resolved: ResolvedOkxA2m
     });
     mounted.push(route);
   }
+  await handle.firstAttempt;
   return mounted;
 }

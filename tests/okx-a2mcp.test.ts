@@ -36,6 +36,7 @@ function fakeApp(): Express & { _paths: string[] } {
     _paths: paths,
     get: (p: string) => { paths.push(`GET ${p}`); return app; },
     post: (p: string) => { paths.push(`POST ${p}`); return app; },
+    all: (p: string) => { paths.push(`ALL ${p}`); return app; },
     use: () => app,
   };
   return app as unknown as Express & { _paths: string[] };
@@ -190,17 +191,22 @@ describe('mountOkxA2mcpRoutes — the outcome lands in rail-served-state', () =>
     expect(s.reason).toContain(`routes=${mounted.length}`);
   });
 
-  it('live + facilitator 401 at boot (THE INCIDENT) → [] mounted, a2mcp DARK, nudge stops offering it', async () => {
+  it('live + facilitator 401 at boot (THE INCIDENT) → routes behind the dispatcher, a2mcp DARK (initializing), nudge stops offering it', async () => {
+    // CH2-A (A2) changed this contract by design: the routes are registered at boot behind
+    // rail-mount's dispatcher (503 until ready) and init is retried, instead of `[]` + dark forever.
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.stubGlobal('fetch', vi.fn(async () => new Response(
       JSON.stringify({ code: '50125', msg: 'Your API key or regions have no access to current services' }),
       { status: 401, headers: { 'content-type': 'application/json' } },
     )));
-    const mounted = await mountOkxA2mcpRoutes(fakeApp(), CREDS);
-    expect(mounted).toEqual([]);
+    const retries: Array<() => void> = [];
+    const timers = { setTimeout: (fn: () => void) => { retries.push(fn); return 0; }, now: () => Date.now(), random: () => 0.5 };
+    const mounted = await mountOkxA2mcpRoutes(fakeApp(), CREDS, { timers });
+    expect(mounted.length).toBeGreaterThan(0);
     const s = servedState().a2mcp;
     expect(s.status).toBe('dark');
-    expect(s.reason).toMatch(/^live-mount failed: /);
+    expect(s.reason).toMatch(/^initializing since .* \(attempt 1 failed: /);
+    expect(retries.length).toBeGreaterThan(0); // a retry is scheduled, not abandoned
     // The env still resolves `live` — and the nudge must not believe it.
     expect(selectOkxA2mcp(resolveOkxA2mcpConfig(CREDS)).mode).toBe('live');
     const env = { ...CREDS, X402_FACILITATOR: 'cdp', CDP_API_KEY_ID: 'i', CDP_API_KEY_SECRET: 's', BAZAAR_DISCOVERABLE: 'true' };
