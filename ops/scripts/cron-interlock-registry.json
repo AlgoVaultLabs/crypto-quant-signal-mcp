@@ -758,6 +758,7 @@
         "/opt/algovault-monitoring/served-surface-values-canary.sh",
         "/opt/algovault-monitoring/funding-accrual-freshness.py",
         "/opt/algovault-monitoring/kernel-auto-reboot.sh",
+        "/opt/algovault-monitoring/okx-ai-listing-canary.py",
         "ops/cron/bot-deploy-parity.sh",
         "ops/cron/checkout-parity.sh",
         "ops/cron/lockfile-resolvability-canary.sh",
