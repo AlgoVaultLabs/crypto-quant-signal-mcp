@@ -1,3 +1,5 @@
+> **Superseded by OPS-A2MCP-SERVED-TRUTH-W1 CH1** (2026-10-13) — leg B now reads every `accepts[]` entry through one x402 v1/v2 decoder (`amount ?? maxAmountRequired`, header fallback), a 402 with no readable price is a drift, and each run prints `LEG_B price=… compared=<n>`. Landed SHA: the CH1 entry in the vault `status.md`.
+
 # OPS-X402-CANARY-PRICE-FIELD-W1 (FILED — awaiting architect ratification)
 
 **Filed by:** TRANSPORT-CHANNEL-COVERAGE-AUDIT-W1 (2026-06-26) · finding F1

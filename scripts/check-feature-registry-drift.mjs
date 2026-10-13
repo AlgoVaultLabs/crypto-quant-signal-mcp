@@ -26,9 +26,29 @@
  *                           prod). Uses GET /capabilities as the registry's LIVE projection and
  *                           asserts the OTHER channels match it:
  *                             A. live tools/list (3-step MCP handshake) name-set == /capabilities names (MCP channel)
- *                             B. each live /x402/<tool> that 402s prices == /capabilities x402.basePriceUsd
- *                                (404 = a priced-but-not-gated canonical name, e.g. get_trade_call — skipped;
- *                                 route-SET parity is the STATIC check's job via HTTP_TOOLS)
+ *                             B. each live /x402/<tool> that 402s prices == /capabilities x402.basePriceUsd,
+ *                                on EVERY accepts[] entry (404 = skipped; route-SET parity is the STATIC
+ *                                check's job via HTTP_TOOLS). The challenge is read by the ONE decoder
+ *                                `decodeX402Challenge` (body accepts[] for x402Version 1|2, else the base64
+ *                                `payment-required` header); price = `amount` (v2) ?? `maxAmountRequired` (v1).
+ *                                A 402 with no readable price is a drift (price_field_unreadable) — before
+ *                                OPS-A2MCP-SERVED-TRUTH-W1 this leg read only the v1 field, so on the v2
+ *                                bodies prod serves it compared nothing and could not fail.
+ *                                Prints ONE line: `LEG_B price=AGREE|DISAGREE|INDETERMINATE compared=<routes>`
+ *                                (compared=0 ⇒ INDETERMINATE: a pass over zero routes is not a pass).
+ *                             C. DECLARED vs SERVED (OPS-A2MCP-SERVED-TRUTH-W1): for each paid HTTP rail
+ *                                (httpX402 → /x402, a2mcp → /a2mcp) declared true on ≥1 /capabilities entry,
+ *                                GET <prefix>/<first declared canonical tool> and classify (`classifyLegC`):
+ *                                402 + decodable v2 challenge, no _stub → AGREE · 402 with _stub → DISAGREE
+ *                                stub · 404 → DISAGREE not_mounted · 503 + `X-Rail-State: initializing;
+ *                                since=<ISO>` older than 30 min → DISAGREE stuck_initializing, younger →
+ *                                INDETERMINATE initializing · anything else / timeout → INDETERMINATE.
+ *                                acp declared → INDETERMINATE no_external_liveness_surface (ruling R-6);
+ *                                a rail declared nowhere → NOT_DECLARED. Prints exactly ONE line per rail:
+ *                                `LEG_C <rail>=AGREE|DISAGREE|INDETERMINATE|NOT_DECLARED reason=<r>`; each
+ *                                DISAGREE joins the drifts (exit 1; the --alert body names rail, route, reason).
+ *                                Why: /a2mcp/* answered 404 for weeks while /capabilities declared a2mcp:true
+ *                                and nothing compared the two.
  *                           fail-open: a network/unreachable error logs + exits 0 (never pages on a blip).
  *
  *   --alert                 (with --live) on CONFIRMED drift, feed the contract alert body to
@@ -39,12 +59,15 @@
  *   --simulate-drift        (with --live) inject a synthetic ghost tool into the registry-expected
  *                           set so the MCP channel necessarily mismatches → proves the canary catches
  *                           drift (rc=1 + alert body). Non-destructive (no file/endpoint mutation).
+ *                           Also adds leg-C rail `simulated`, probing <base>/a2mcp/__leg_c_simulated__
+ *                           (404 by construction) → `LEG_C simulated=DISAGREE` — proves leg C can go red.
  *
  * Exit codes: 0 = in-sync OR fail-open (unreachable); 1 = drift detected; 2 = fatal (bad usage / dist missing in --check).
  */
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,6 +87,133 @@ const SOURCE_LOG = '/var/log/algovault-monitoring-feature-registry-drift.log';
 
 function log(...m) { console.log('[feature-registry-drift]', ...m); }
 function fail(...m) { console.error('[feature-registry-drift]', ...m); }
+
+// ──────────────── x402 challenge decoding — ONE parser for legs B and C ────────────────
+// Pure + exported so tests/unit/feature-registry-drift-legs.test.ts drives every branch.
+
+function tryJson(text) {
+  if (typeof text !== 'string' || text.trim() === '') return null;
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+function tryBase64Json(value) {
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  try { return JSON.parse(Buffer.from(value.trim(), 'base64').toString('utf8')); } catch { return null; }
+}
+
+/** A parsed object is an x402 challenge when it names version 1|2 and carries an accepts[] array. */
+function asChallenge(o) {
+  return o && typeof o === 'object' && (o.x402Version === 1 || o.x402Version === 2) && Array.isArray(o.accepts)
+    ? o
+    : null;
+}
+
+/**
+ * Decode an HTTP 402 x402 challenge from its body text and/or its `payment-required` header.
+ * Returns null when neither decodes; otherwise
+ *   { body, header, accepts, x402Version, stub }
+ * where `body`/`header` are each the decoded challenge or null, `accepts`/`x402Version` come from
+ * the body when it decodes (else the header), and `stub` is true when either raw object carries
+ * `_stub: true` (the okx-a2mcp [STUB] marker).
+ */
+export function decodeX402Challenge(bodyText, paymentRequiredHeader) {
+  const rawBody = tryJson(bodyText);
+  const rawHeader = tryBase64Json(paymentRequiredHeader);
+  const body = asChallenge(rawBody);
+  const header = asChallenge(rawHeader);
+  const primary = body ?? header;
+  if (!primary) return null;
+  return {
+    body,
+    header,
+    accepts: primary.accepts,
+    x402Version: primary.x402Version,
+    stub: rawBody?._stub === true || rawHeader?._stub === true,
+  };
+}
+
+/** The atomic price of one accepts[] entry: `amount` (v2) ?? `maxAmountRequired` (v1), digits only; else null. */
+export function acceptsEntryAtomic(entry) {
+  const v = entry?.amount ?? entry?.maxAmountRequired;
+  if (typeof v === 'string' && /^[0-9]+$/.test(v)) return v;
+  if (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) return String(v);
+  return null;
+}
+
+/**
+ * Leg B, one route. `status`/`bodyText`/`paymentRequiredHeader` come from GET /x402/<tool>.
+ *   404                → { kind: 'skip' }                         (untouched pre-wave behaviour)
+ *   non-402            → { kind: 'drift', drifts: [...] }         (untouched pre-wave behaviour)
+ *   402, no price read → { kind: 'drift', drifts: [price_field_unreadable] }
+ *   402, prices read   → { kind: 'compared', drifts: [one per mismatching entry] }
+ * Prices are atomic 6-dp units (every served asset — USDC on Base and OP — is 6-dp), so /1e6.
+ */
+export function evaluateLegBRoute({ name, status, bodyText, paymentRequiredHeader, expectedUsd }) {
+  if (status === 404) return { kind: 'skip', drifts: [] };
+  if (status !== 402) return { kind: 'drift', drifts: [`/x402/${name} expected 402, got ${status}`] };
+  const ch = decodeX402Challenge(bodyText, paymentRequiredHeader);
+  const entries = ch?.accepts ?? [];
+  const atomics = entries.map(acceptsEntryAtomic);
+  if (entries.length === 0 || atomics.some((a) => a === null)) {
+    return { kind: 'drift', drifts: [`/x402/${name} 402 has no readable price (reason=price_field_unreadable)`] };
+  }
+  const drifts = [];
+  atomics.forEach((a, i) => {
+    const usd = Number(a) / 1e6;
+    if (Math.abs(usd - expectedUsd) > 1e-9) {
+      const net = entries[i]?.network ?? `accepts[${i}]`;
+      drifts.push(`/x402/${name} price $${usd} on ${net} != registry $${expectedUsd}`);
+    }
+  });
+  return { kind: 'compared', drifts };
+}
+
+/** Leg B's one token: any disagreement ⇒ DISAGREE; zero routes compared ⇒ INDETERMINATE; else AGREE. */
+export function legBVerdict({ compared, disagreements }) {
+  if (disagreements > 0) return 'DISAGREE';
+  if (compared === 0) return 'INDETERMINATE';
+  return 'AGREE';
+}
+
+export const LEG_C_STUCK_MS = 30 * 60 * 1000;
+
+/** The leg-C rails: paid HTTP rails are probed at their route prefix; ACP has no external surface (R-6). */
+export const LEG_C_RAILS = [
+  { rail: 'httpX402', prefix: '/x402' },
+  { rail: 'a2mcp', prefix: '/a2mcp' },
+  { rail: 'acp', prefix: null },
+];
+
+/** Canonical name of the first /capabilities entry declaring `rail` true, or null when none does. */
+export function firstDeclaredCanonical(capsTools, rail) {
+  const t = (capsTools ?? []).find((x) => x?.channels?.[rail] === true);
+  return t ? (t.canonical ?? t.name) : null;
+}
+
+/**
+ * Classify one leg-C probe. `status` null = no response (timeout / network error).
+ * Returns { token: 'AGREE'|'DISAGREE'|'INDETERMINATE', reason }.
+ */
+export function classifyLegC({ status, bodyText, paymentRequiredHeader, railStateHeader, nowMs }) {
+  if (status === null || status === undefined) return { token: 'INDETERMINATE', reason: 'no_response' };
+  if (status === 402) {
+    if (tryJson(bodyText)?._stub === true) return { token: 'DISAGREE', reason: 'stub' };
+    const ch = decodeX402Challenge(bodyText, paymentRequiredHeader);
+    if (ch?.stub) return { token: 'DISAGREE', reason: 'stub' };
+    if (ch && (ch.body?.x402Version === 2 || ch.header)) return { token: 'AGREE', reason: 'served_402' };
+    return { token: 'INDETERMINATE', reason: 'undecodable_402' };
+  }
+  if (status === 404) return { token: 'DISAGREE', reason: 'not_mounted' };
+  if (status === 503) {
+    const m = /^\s*initializing;\s*since=(\S+)\s*$/.exec(railStateHeader ?? '');
+    const since = m ? Date.parse(m[1]) : NaN;
+    if (!Number.isFinite(since)) return { token: 'INDETERMINATE', reason: 'http_503' };
+    return nowMs - since > LEG_C_STUCK_MS
+      ? { token: 'DISAGREE', reason: 'stuck_initializing' }
+      : { token: 'INDETERMINATE', reason: 'initializing' };
+  }
+  return { token: 'INDETERMINATE', reason: `http_${status}` };
+}
 
 /** Build the contract-shaped TG alert body (resolver substitutes the W{NEXT} template). */
 function alertBody(drifts) {
@@ -239,6 +389,28 @@ async function fetchToolsList(base) {
   return tools.map((t) => t.name).sort();
 }
 
+/** GET one leg-C route and classify it; a timeout or network error is INDETERMINATE (never a page). */
+async function probeLegC(base, route) {
+  try {
+    const r = await fetch(`${base}${route}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(20_000),
+    });
+    const bodyText = await r.text().catch(() => '');
+    return classifyLegC({
+      status: r.status,
+      bodyText,
+      paymentRequiredHeader: r.headers.get('payment-required'),
+      railStateHeader: r.headers.get('x-rail-state'),
+      nowMs: Date.now(),
+    });
+  } catch (e) {
+    log(`leg C ${route} probe failed (INDETERMINATE): ${e.message}`);
+    return classifyLegC({ status: null });
+  }
+}
+
 async function runLive(base) {
   const drifts = [];
   let capsTools;
@@ -273,23 +445,48 @@ async function runLive(base) {
     process.exit(0);
   }
 
-  // B. x402 price parity: each priced+httpX402 capability whose /x402 route 402s must match the price.
+  // B. x402 price parity: each priced+httpX402 capability whose /x402 route 402s must match the
+  //    price on EVERY accepts[] entry, read through the one decoder (v2 `amount`, v1 fallback).
+  let legBCompared = 0;
+  let legBDisagreements = 0;
   for (const t of capsTools) {
     if (!t.channels?.httpX402 || !t.x402) continue;
     try {
       const r = await fetch(`${base}/x402/${t.name}`, { method: 'GET', headers: { Accept: 'application/json' } });
-      if (r.status === 404) continue; // priced-but-not-gated canonical (e.g. get_trade_call) — route-set is STATIC check's job
-      if (r.status !== 402) { drifts.push(`/x402/${t.name} expected 402, got ${r.status}`); continue; }
-      const body = await r.json().catch(() => null);
-      const atomic = body?.accepts?.[0]?.maxAmountRequired;
-      if (atomic !== undefined) {
-        const usd = Number(atomic) / 1e6;
-        if (Math.abs(usd - t.x402.basePriceUsd) > 1e-9) {
-          drifts.push(`/x402/${t.name} price $${usd} != registry $${t.x402.basePriceUsd}`);
-        }
-      }
+      const bodyText = r.status === 402 ? await r.text() : '';
+      const out = evaluateLegBRoute({
+        name: t.name,
+        status: r.status,
+        bodyText,
+        paymentRequiredHeader: r.headers.get('payment-required'),
+        expectedUsd: t.x402.basePriceUsd,
+      });
+      if (out.kind === 'skip') continue; // 404: priced-but-not-gated — route-set is STATIC check's job
+      if (out.kind === 'compared') legBCompared++;
+      if (out.drifts.length > 0) { legBDisagreements++; drifts.push(...out.drifts); }
     } catch (e) {
       log(`/x402/${t.name} probe skipped (fail-open): ${e.message}`);
+    }
+  }
+  console.log(`LEG_B price=${legBVerdict({ compared: legBCompared, disagreements: legBDisagreements })} compared=${legBCompared}`);
+
+  // C. DECLARED vs SERVED — one line per rail; every DISAGREE joins the drifts.
+  const legC = [];
+  for (const { rail, prefix } of LEG_C_RAILS) {
+    const tool = firstDeclaredCanonical(capsTools, rail);
+    if (!tool) { legC.push({ rail, token: 'NOT_DECLARED', reason: 'declared_on_no_capability' }); continue; }
+    if (!prefix) { legC.push({ rail, token: 'INDETERMINATE', reason: 'no_external_liveness_surface' }); continue; }
+    legC.push({ rail, route: `${prefix}/${tool}`, ...(await probeLegC(base, `${prefix}/${tool}`)) });
+  }
+  if (simulateDrift) {
+    const route = '/a2mcp/__leg_c_simulated__';
+    legC.push({ rail: 'simulated', route, ...(await probeLegC(base, route)) });
+    log('SIMULATE: leg C probes a route that cannot exist (expect LEG_C simulated=DISAGREE)');
+  }
+  for (const c of legC) {
+    console.log(`LEG_C ${c.rail}=${c.token} reason=${c.reason}`);
+    if (c.token === 'DISAGREE') {
+      drifts.push(`LEG_C ${c.rail} declared on /capabilities but not served: GET ${c.route} → ${c.reason}`);
     }
   }
 
@@ -304,12 +501,22 @@ async function runLive(base) {
 }
 
 // ──────────────────────────── dispatch ────────────────────────────
-if (!checkMode && !liveMode) {
-  fail('usage: check-feature-registry-drift.mjs (--check | --live <baseUrl> [--alert] [--simulate-drift])');
-  process.exit(2);
+// Only when run as a program: the leg-B/leg-C classifiers above are imported by unit tests, and an
+// import must never parse argv, hit the network or exit the test runner.
+// Compared by REALPATH: Node resolves the main module through symlinks while argv[1] is as typed,
+// so a plain string compare would turn a run from a symlinked checkout into a silent exit-0 no-op.
+function sameFile(a, b) {
+  try { return realpathSync(a) === realpathSync(b); } catch { return false; }
 }
-if (liveMode) {
-  await runLive(baseUrl);
-} else {
-  await runStatic();
+const isMain = Boolean(process.argv[1]) && sameFile(process.argv[1], __filename);
+if (isMain) {
+  if (!checkMode && !liveMode) {
+    fail('usage: check-feature-registry-drift.mjs (--check | --live <baseUrl> [--alert] [--simulate-drift])');
+    process.exit(2);
+  }
+  if (liveMode) {
+    await runLive(baseUrl);
+  } else {
+    await runStatic();
+  }
 }
