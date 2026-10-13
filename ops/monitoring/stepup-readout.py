@@ -42,6 +42,15 @@ CH4 ruling packet asks, from production data, and writes ONE structured line to 
     1,190 → 555 (−53 %) and `python-httpx` 459 → 7 (−98.5 %) week over week, which is why volume
     was never a sound alarm.
 
+EVERY PAGE PASSES THROUGH THE DETECTOR_ENVELOPE CONTRACT (OPS-STEPUP-ACTIVATION-W1 CH2). Each
+pageable finding — a weekly breach per family, an early collapse — is built as a DETECTOR_ENVELOPE
+(detector `stepup-activation`, observation_window = the judged window, change_point = {the frozen
+flipped_at, the envelope file}, evidence = measured scalars incl. the per-day series) and pages only
+when `detector_envelope.decide()` FORWARDs it as FAIL. The contract refuses a change-attributed
+window that starts before the change, so even a regression in the window logic above cannot page on
+pre-flip time: a self-built envelope the contract refuses is INDETERMINATE (exit 3), never a FAIL.
+The body is `render_body(envelope)` — measured fields only — plus the rollback and action lines.
+
 THE INSTRUMENT IS A CHANGE POINT TOO. Activations are filtered on the ip-hash version tag the
 RUNNING image derives (`IP_HASH_VERSION`, read in-container beside `hashIp`), never a literal. A
 version that differs from the one the envelope froze under (absent ⇒ `v2`, the version at the
@@ -119,6 +128,9 @@ EARLY_MIN_PRE = 4
 # The ip-hash version an envelope that predates the field was frozen under. Measured, not assumed:
 # request_log carried ONLY `v2` ids for the 14 days before 2026-10-13 and the image exported 'v2'.
 ENVELOPE_DEFAULT_IP_HASH_VERSION = "v2"
+
+DETECTOR = "stepup-activation"                       # the DETECTOR_ENVELOPE `detector` of every page
+CHANGE_POINT_SOURCE = "stepup-activation-envelope.json"  # where change_point.at comes from (the frozen flip)
 
 DAY = timedelta(days=1)
 LAST_FIRE: dict = {}
@@ -562,36 +574,69 @@ def _day_span(frm: str, to: str) -> str:
     return "[%s, %s)" % (frm[:10], to[:10])
 
 
-def build_body(weekly_leg: dict, weekly_rows: list, early_leg: dict) -> str:
-    """Operator-facing body. Entity nouns on every id ('client family node'), never a bare number.
-    It names the judged window, its post-flip day count and the per-day series beside every count —
-    every window that can reach this body is post-flip by construction."""
-    breaches = [j for j in weekly_rows if j["state"] == "breach"]
-    collapsed = (early_leg or {}).get("state") == "early_collapse"
+def finding_envelopes(weekly_leg, weekly_rows: list, early_leg, run_id: str, started_at: str, produced_at: str,
+                      schema_version: int) -> list:
+    """One DETECTOR_ENVELOPE per pageable finding: each weekly breach (one per client family) and an
+    early collapse. change_point = the frozen flip, so the contract itself refuses any of them whose
+    observation window starts before it. Evidence is measured scalars only (the D2 rule)."""
+    def envelope(leg: dict, evidence: dict) -> dict:
+        return {
+            "schema_version": schema_version, "detector": DETECTOR, "verdict": "FAIL", "run_id": run_id,
+            "run_started_at": started_at, "run_outcome": "complete", "produced_at": produced_at,
+            "observation_window": {"from": leg["window_from"], "to": leg["window_to"]},
+            "change_point": {"at": leg["flipped_at"], "source": CHANGE_POINT_SOURCE},
+            "evidence": evidence,
+        }
+    out = []
+    for j in weekly_rows:
+        if j["state"] == "breach":
+            out.append(envelope(weekly_leg, {
+                "client_family": j["family"], "cur": j["cur_w"], "prior": j["prev_w"],
+                "prior_source": weekly_leg["prior_source"], "drop_pct": j["drop_pct"],
+                "envelope_pct": j["envelope_pct"], "post_days": weekly_leg["post_days"], "daily": j["daily"]}))
+    if (early_leg or {}).get("state") == "early_collapse":
+        out.append(envelope(early_leg, {
+            "pooled": "all client families", "cur": early_leg["post"], "pre_min": early_leg["pre_min"],
+            "post_days": early_leg["post_days"], "daily": early_leg["daily"]}))
+    return out
+
+
+def build_body(envelopes: list, render) -> str:
+    """Operator-facing body: `render_body(envelope)` for every finding — measured fields only, so it
+    names the judged window, its post-flip day count and the per-day series and cannot assert a
+    mechanism — then the rollback and action lines. Every envelope that reaches here was FORWARDed
+    as FAIL by the contract, which refuses a window that starts before the change."""
     lines = ["\U0001F6D1 %s" % ALERT_ID, ""]
-    if breaches:
-        noun = "client family" if len(breaches) == 1 else "client families"
-        prior = ("the previous post-flip week" if weekly_leg["prior_source"] == "measured"
-                 else "the last whole pre-flip week, frozen in the envelope")
-        lines.append("Weekly ACTIVATIONS (buckets making their first successful free call) fell %d%%+ week over"
-                     " week, beyond the pre-flip envelope, for %d %s:" % (int(GUARD_DROP * 100), len(breaches), noun))
-        lines.append("Judged week %s — %d whole post-flip days since the flip at %s; prior = %s."
-                     % (_day_span(weekly_leg["window_from"], weekly_leg["window_to"]), weekly_leg["post_days"],
-                        weekly_leg["flipped_at"], prior))
-        for j in breaches:
-            lines.append("• client family %s: %d → %d activating buckets/week (−%s %%; its largest pre-flip weekly drop was %s %%) · daily %s"
-                         % (j["family"], j["prev_w"], j["cur_w"], j["drop_pct"], j["envelope_pct"], j["daily"]))
-    if collapsed:
-        if breaches:
-            lines.append("")
-        lines.append("Pooled ACTIVATIONS (all client families) collapsed in the first %d post-flip days %s: %d, below half"
-                     " of the worst pre-flip %d-day run (%d) · daily %s"
-                     % (early_leg["post_days"], _day_span(early_leg["window_from"], early_leg["window_to"]),
-                        early_leg["post"], early_leg["post_days"], early_leg["pre_min"], early_leg["daily"]))
-    lines += ["", "Read the daily stepup-readout records (vault Claude files/canary-results.jsonl) beside the",
+    for env in envelopes:
+        lines += [render(env), ""]
+    lines += ["Read the daily stepup-readout records (vault Claude files/canary-results.jsonl) beside the",
               "STEPUP_MODE in force. Rollback lever: STEPUP_MODE=shadow|off through an interlocked recreate.",
               "Action: dispatch OPS-STEPUP-ACTIVATION-W{NEXT}"]
     return "\n".join(lines)
+
+
+def envelope_module():
+    """`detector_envelope.py` is an ARTIFACT installed BESIDE this file on the host (a sibling in the
+    repo), never vendored — the same import every other adopter makes."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import detector_envelope as de  # noqa: E402,PLC0415
+    return de
+
+
+def gate_findings(envelopes: list, run_id: str):
+    """(forwarded envelopes, None) when the contract FORWARDs every finding as FAIL, else
+    (None, reason). An unavailable module, an unreadable schema or ANY refusal is the reason —
+    the caller turns it into INDETERMINATE, never into a page and never into a silent pass."""
+    try:
+        de = envelope_module()
+        schema = de.load_schema()
+    except Exception as e:  # noqa: BLE001 — a contract we cannot load decides nothing
+        return None, "detector_envelope unavailable: %s" % str(e)[:160]
+    for env in envelopes:
+        d = de.decide(env, run_id, schema=schema)
+        if not (d.action == de.FORWARD and d.verdict == "FAIL"):
+            return None, "DETECTOR_ENVELOPE refused a self-built envelope (%s %s): %s" % (d.action, d.verdict, d.reason[:200])
+    return (envelopes, lambda env: de.render_body(env, schema)), None
 
 
 # ── effects ───────────────────────────────────────────────────────────────────────────────────────
@@ -675,7 +720,12 @@ def finish(verdict: str, code: int) -> int:
     return code
 
 
+SCHEMA_VERSION = 1  # the DETECTOR_ENVELOPE schema_version this producer emits; the consumer's own check rejects a drift
+
+
 def main() -> int:
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    run_id = "stepup-readout-%s" % started_at
     env_doc, env_reason = load_envelope()
     try:
         probe = run_probe(series_from=series_from_for(env_doc))
@@ -731,8 +781,20 @@ def main() -> int:
         record("INDETERMINATE", 3, metrics)
         return finish("INDETERMINATE", 3)
     pageable = metrics["activation_breaches"] > 0
+    if pageable:
+        produced_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        envelopes = finding_envelopes(weekly_leg, weekly_rows, early_leg, run_id, started_at, produced_at,
+                                      SCHEMA_VERSION)
+        gated, refusal = gate_findings(envelopes, run_id)
+        metrics["envelopes"] = {"built": len(envelopes), "forwarded": 0 if gated is None else len(gated[0]),
+                                "refusal": refusal[:240] if refusal else None}
+        if refusal is not None:
+            log("INDETERMINATE: %s" % refusal)
+            record("INDETERMINATE", 3, metrics)
+            return finish("INDETERMINATE", 3)
+        log("ENVELOPES forwarded=%d (DETECTOR_ENVELOPE FORWARD/FAIL, change_point %s)" % (len(gated[0]), weekly_leg["flipped_at"]))
     if pageable and should_page(probe["mode"]):
-        fire(build_body(weekly_leg, weekly_rows, early_leg))
+        fire(build_body(gated[0], gated[1]))
         record("FAIL", 0, metrics)
         return finish("FAIL", 0)
     if pageable:
@@ -1046,17 +1108,43 @@ def self_test() -> int:
     check("metrics: 500 families still fit (top-N bound)",
           len(json.dumps(build_metrics(probe, big, big_rows, None, env_doc, None, big_leg, e9), separators=(",", ":"))) < 7000)
 
-    body2 = build_body(leg2, rows2, None)
-    check("body: names the alert id and the entity noun", ALERT_ID in body2 and "client family node" in body2)
-    check("body: renders the counts, the envelope, the judged window, its post-flip days and the daily series",
-          "15 → 4 activating buckets/week" in body2 and "57.1 %" in body2 and "[2026-10-13, 2026-10-20)" in body2
-          and "7 whole post-flip days" in body2 and "daily 1,0,0,1,0,2,0" in body2
-          and "the last whole pre-flip week" in body2)
-    check("body: a family that is not in breach is not paged", "client family python-requests" not in body2)
-    body5 = build_body(leg1, rows1, e5)
-    check("body: an early collapse names the pooled window, post vs pre_min and the daily series",
-          "all client families" in body5 and "first 2 post-flip days [2026-10-13, 2026-10-15): 2" in body5
-          and "worst pre-flip 2-day run (6)" in body5 and "daily 1,1" in body5 and "client family" not in body5)
+    # ── DETECTOR_ENVELOPE (CH2): every page is a contract-checked envelope, rendered from evidence ──
+    de = envelope_module()
+    de_schema = de.load_schema()
+    now_s = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    envs2 = finding_envelopes(leg2, rows2, None, "rid", now_s, now_s, SCHEMA_VERSION)
+    check("envelope: one per pageable finding — T2 builds exactly node's breach",
+          len(envs2) == 1 and envs2[0]["evidence"]["client_family"] == "node" and envs2[0]["detector"] == DETECTOR)
+    check("envelope: the judged window, the frozen flip as change_point, measured scalars + the daily series",
+          envs2[0]["observation_window"] == {"from": "2026-10-13T00:00:00Z", "to": "2026-10-20T00:00:00Z"}
+          and envs2[0]["change_point"] == {"at": _FLIP, "source": CHANGE_POINT_SOURCE}
+          and envs2[0]["evidence"] == {"client_family": "node", "cur": 4, "prior": 15, "prior_source": "envelope_week0",
+                                       "drop_pct": 73.3, "envelope_pct": 57.1, "post_days": 7, "daily": "1,0,0,1,0,2,0"})
+    check("envelope: T2 conforms and the contract FORWARDs it as FAIL",
+          de.validate(envs2[0], de_schema) == [] and gate_findings(envs2, "rid")[1] is None)
+    envs5 = finding_envelopes(leg1, rows1, e5, "rid", now_s, now_s, SCHEMA_VERSION)
+    check("envelope: an early collapse is ONE pooled envelope over [P0, REF)",
+          len(envs5) == 1 and envs5[0]["evidence"]["pooled"] == "all client families"
+          and envs5[0]["evidence"]["pre_min"] == 6 and envs5[0]["evidence"]["cur"] == 2
+          and envs5[0]["observation_window"]["from"] == "2026-10-13T00:00:00Z" and gate_findings(envs5, "rid")[1] is None)
+    straddling = {**leg1, "state": "judged"}
+    breach_row = {**rows1[0], "state": "breach"}
+    refused, why = gate_findings(finding_envelopes(straddling, [breach_row], None, "rid", now_s, now_s, SCHEMA_VERSION), "rid")
+    check("envelope: the 2026-10-13 straddling week, forced through as a breach, is REFUSED by the contract",
+          refused is None and "before change_point.at 2026-10-12T11:24:01Z" in (why or ""))
+    gated2, _r = gate_findings(envs2, "rid")
+    body2 = build_body(gated2[0], gated2[1])
+    check("body: names the alert id and the entity noun", ALERT_ID in body2 and "client_family=node" in body2)
+    check("body: render_body carries the counts, the envelope, the judged window, its post-flip days and the daily series",
+          "cur=4" in body2 and "prior=15" in body2 and "envelope_pct=57.1" in body2 and "drop_pct=73.3" in body2
+          and "window=2026-10-13T00:00:00Z..2026-10-20T00:00:00Z" in body2 and "post_days=7" in body2
+          and "daily=1,0,0,1,0,2,0" in body2 and "prior_source=envelope_week0" in body2 and "FAIL stepup-activation" in body2)
+    check("body: a family that is not in breach is not paged", "python-requests" not in body2)
+    gated5, _r = gate_findings(envs5, "rid")
+    body5 = build_body(gated5[0], gated5[1])
+    check("body: an early collapse renders the pooled window, post vs pre_min and the daily series",
+          "pooled=all client families" in body5 and "window=2026-10-13T00:00:00Z..2026-10-15T00:00:00Z" in body5
+          and "pre_min=6" in body5 and "cur=2" in body5 and "daily=1,1" in body5 and "client_family" not in body5)
     check("body: carries the rollback line and a templated Action line, never a literal wave number",
           "Rollback lever: STEPUP_MODE=shadow|off" in body2 and "OPS-STEPUP-ACTIVATION-W{NEXT}" in body2)
     # The bypassed artifacts: the probe and the psql invocation are the only code no scenario runs,
@@ -1154,8 +1242,33 @@ def self_test() -> int:
             rc, _a = run_main(mode, "2026-10-20T00:00:00.000Z", t2)
             check("main() T2: a post-flip breach in %s → %s%s" % (mode, want, " (paged)" if want == "FAIL" else " (reported, not paged)"),
                   LAST_RECORD[:1] == [want] and (ALERT_ID in LAST_FIRE) == (want == "FAIL") and rc == 0)
-        check("main() T2: the page carries the judged window and its daily series",
-              "[2026-10-13, 2026-10-20)" in LAST_FIRE.get(ALERT_ID, "") and "daily 1,0,0,1,0,2,0" in LAST_FIRE.get(ALERT_ID, ""))
+        check("main() T2: the page is the rendered envelope — the judged window and its daily series",
+              "window=2026-10-13T00:00:00Z..2026-10-20T00:00:00Z" in LAST_FIRE.get(ALERT_ID, "")
+              and "daily=1,0,0,1,0,2,0" in LAST_FIRE.get(ALERT_ID, "")
+              and LAST_RECORD[2].get("envelopes", {}).get("forwarded") == 1)
+        # The contract is the backstop: even with the window logic regressed to judge the straddling
+        # week, the self-built envelope is refused and the run is INDETERMINATE — never a page.
+        real_weekly = g["evaluate_weekly_leg"]
+
+        def regressed(daily, envelope, ref, flip_at):
+            leg, rows_ = real_weekly(daily, envelope, ref, flip_at)
+            return {**leg, "state": "judged"}, [{**r, "state": "breach" if r["family"] == "node" else r["state"]} for r in rows_]
+        g["evaluate_weekly_leg"] = regressed
+        try:
+            rc, _a = run_main("live", "2026-10-13T00:00:00.000Z", t1)
+        finally:
+            g["evaluate_weekly_leg"] = real_weekly
+        check("main(): a straddling breach that slips past the window logic is REFUSED by DETECTOR_ENVELOPE — INDETERMINATE, exit 3, no page",
+              rc == 3 and LAST_RECORD[:1] == ["INDETERMINATE"] and not LAST_FIRE
+              and "before change_point.at" in (LAST_RECORD[2].get("envelopes", {}).get("refusal") or ""))
+        real_mod = g["envelope_module"]
+        g["envelope_module"] = lambda: (_ for _ in ()).throw(ImportError("no detector_envelope here"))
+        try:
+            rc, _a = run_main("live", "2026-10-20T00:00:00.000Z", t2)
+        finally:
+            g["envelope_module"] = real_mod
+        check("main(): a breach with no readable DETECTOR_ENVELOPE contract is INDETERMINATE, exit 3, no page",
+              rc == 3 and LAST_RECORD[:1] == ["INDETERMINATE"] and not LAST_FIRE)
         t5 = {"node": _days("2026-08-31", flat3), "other": _days("2026-10-13", [1, 1])}
         rc, _a = run_main("live", "2026-10-15T00:00:00.000Z", t5)
         check("main() T5: an early collapse in live pages (FAIL)",

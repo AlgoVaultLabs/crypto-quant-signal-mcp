@@ -21,6 +21,7 @@ import {
   loadSchema,
   validateEnvelope,
   schemaPath,
+  isoMs,
   EMBEDDED_SCHEMA,
   _resetSchemaCacheForTest,
   type DetectorEnvelope,
@@ -45,6 +46,28 @@ const INCIDENT = {
     budget_min: 210,
   },
 };
+
+/**
+ * OPS-STEPUP-ACTIVATION-W1 — the measured change-attributed case, as data. STEPUP_ACTIVATION_DROP
+ * paged 2026-10-13 05:29Z on the week [2026-10-06, 2026-10-13), 92.5 % of which predated the
+ * 2026-10-12T11:24:01Z flip. `CHANGED` is the shape the guard emits once it judges post-flip time.
+ */
+const FLIP = '2026-10-12T11:24:01Z';
+const CHANGED: Record<string, unknown> = {
+  ...buildEnvelope({
+    detector: 'stepup-activation',
+    verdict: 'FAIL',
+    runId: 'stepup-readout-2026-10-20T05:29:03Z',
+    runStartedAt: '2026-10-20T05:29:03Z',
+    runOutcome: 'complete',
+    producedAt: '2026-10-20T05:29:04Z',
+    observationWindow: { from: '2026-10-13T00:00:00Z', to: '2026-10-20T00:00:00Z' },
+    evidence: { client_family: 'node', cur: 4, prior: 15, prior_source: 'envelope_week0', drop_pct: 73.3, daily: '1,0,0,1,0,2,0' },
+  }, EMBEDDED_SCHEMA),
+  change_point: { at: FLIP, source: 'stepup-activation-envelope.json' },
+};
+const STRADDLE = { ...CHANGED, observation_window: { from: '2026-10-06T00:00:00Z', to: '2026-10-13T00:00:00Z' } };
+const NO_DAILY = { ...CHANGED, evidence: { client_family: 'node', cur: 4, prior: 15 } };
 
 beforeEach(() => { _resetSchemaCacheForTest(); });
 
@@ -159,6 +182,17 @@ describe('DETECTOR_ENVELOPE — the TS and Python validators agree, byte for byt
     ['bad verdict value', { ...buildEnvelope({ ...INCIDENT }), verdict: 'MAYBE' }],
     ['not an object', 'nope'],
     ['missing a required field', (() => { const e = buildEnvelope({ ...INCIDENT }) as unknown as Record<string, unknown>; delete e.run_id; return e; })()],
+    // OPS-STEPUP-ACTIVATION-W1 — change_point. (iv) is every case ABOVE this line, unchanged.
+    ['(i) change-attributed FAIL observing only post-change time', CHANGED],
+    ['(ii) change-attributed window straddling the change', STRADDLE],
+    ['(iii) change-attributed verdict without evidence.daily', NO_DAILY],
+    ['change_point one millisecond after the window start', { ...CHANGED, change_point: { at: '2026-10-13T00:00:00.001Z', source: 'x' } }],
+    ['change_point at an offset equal to the window start', { ...CHANGED, change_point: { at: '2026-10-13T02:00:00+02:00', source: 'x' } }],
+    ['change_point with a rolled-over date (Feb 30)', { ...CHANGED, change_point: { at: '2026-02-30T00:00:00Z', source: 'x' } }],
+    ['change_point instant with a trailing newline', { ...CHANGED, change_point: { at: `${FLIP}\n`, source: 'x' } }],
+    ['change_point missing its source', { ...CHANGED, change_point: { at: FLIP } }],
+    ['change_point that is not an object', { ...CHANGED, change_point: FLIP }],
+    ['evidence.daily that is not a per-day series', { ...CHANGED, evidence: { cur: 4, daily: '1, 2' } }],
   ];
 
   it.each(CASES)('both sides return the same conformance for: %s', (_label, env) => {
@@ -168,6 +202,23 @@ describe('DETECTOR_ENVELOPE — the TS and Python validators agree, byte for byt
     // Every spawning block in this file needs its own budget; the 5,000ms default is calibrated
     // for pure-function assertions and a cold python3 start blows it on a loaded CI runner.
   }, 20_000);
+
+  /**
+   * AC2.1 — the change_point fixtures: conformance AND the FIRST REASON must be identical on both
+   * sides. A boolean match alone would let the two validators refuse the same bytes for different
+   * reasons, and the operator would read whichever side happened to page.
+   */
+  it('(i)-(iii) agree on conformance AND on the first reason, byte for byte', { timeout: 20_000 }, () => {
+    expect(validateEnvelope(CHANGED)).toEqual([]);
+    expect(pyValidate(CHANGED).errs).toEqual([]);
+    const straddle = 'observation_window.from 2026-10-06T00:00:00Z is before change_point.at 2026-10-12T11:24:01Z '
+      + '— a verdict about a change may observe only post-change time';
+    expect(validateEnvelope(STRADDLE)[0]).toBe(straddle);
+    expect(pyValidate(STRADDLE).errs[0]).toBe(straddle);
+    const daily = 'evidence.daily missing — a verdict about a change carries its per-day series';
+    expect(validateEnvelope(NO_DAILY)[0]).toBe(daily);
+    expect(pyValidate(NO_DAILY).errs[0]).toBe(daily);
+  });
 
   // The budget must sit in the OPTIONS ARG, not as a trailing number: check-test-budget.mjs
   // reads `timeout:` out of the text BEFORE the callback, so `it(name, fn, 20_000)` declares
@@ -188,6 +239,35 @@ describe('DETECTOR_ENVELOPE — the TS and Python validators agree, byte for byt
     const r = spawnSync('python3', [PY, '--self-test'], { encoding: 'utf8' });
     expect(r.stdout).toContain('DETECTOR_ENVELOPE_VERDICT=PASS');
     expect(r.status).toBe(0);
+  });
+});
+
+describe('DETECTOR_ENVELOPE — change_point: a verdict about a change observes only post-change time', () => {
+  it('a straddling window is non-conforming even when every other rule is satisfied', () => {
+    expect(isConforming(STRADDLE)).toBe(false);
+    expect(validateEnvelope(STRADDLE)).toHaveLength(1);
+  });
+
+  it('an envelope WITHOUT a change_point is untouched by the rule — no daily series is required', () => {
+    expect(validateEnvelope(buildEnvelope({ ...INCIDENT, runOutcome: 'complete', verdict: 'FAIL' }))).toEqual([]);
+  });
+
+  it('a schema copy without the contract refuses ONLY change_point envelopes', () => {
+    const legacy = { ...EMBEDDED_SCHEMA } as Record<string, unknown>;
+    delete legacy.change_point_fields;
+    delete legacy.change_point_rules;
+    const s = legacy as unknown as typeof EMBEDDED_SCHEMA;
+    expect(validateEnvelope(buildEnvelope({ ...INCIDENT }), s)).toEqual([]);
+    expect(validateEnvelope(CHANGED, s).join(' ')).toContain('no change_point contract');
+  });
+
+  it('parses ISO-8601 strictly and at millisecond precision', () => {
+    expect(isoMs('2026-10-12T11:24:01Z')).toBe(Date.UTC(2026, 9, 12, 11, 24, 1));
+    expect(isoMs('2026-10-12T13:24:01+02:00')).toBe(isoMs('2026-10-12T11:24:01Z'));
+    expect(isoMs('2026-10-12T11:24:01.5Z')).toBe(Date.UTC(2026, 9, 12, 11, 24, 1, 500));
+    for (const bad of ['2026-10-12', 'Oct 12 2026', '2026-10-12T11:24:01', '2026-13-01T00:00:00Z', '2026-02-30T00:00:00Z', `${FLIP}\n`]) {
+      expect(isoMs(bad)).toBeNull();
+    }
   });
 });
 

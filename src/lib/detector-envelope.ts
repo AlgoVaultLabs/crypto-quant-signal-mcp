@@ -62,6 +62,14 @@ export interface DetectorEnvelope {
   produced_at: string;
   observation_window: { from: string; to: string };
   evidence: Record<string, unknown>;
+  /** OPTIONAL (OPS-STEPUP-ACTIVATION-W1): the change a verdict is ABOUT. When present the contract
+   *  refuses an observation_window that starts before `at` and requires `evidence.daily`. */
+  change_point?: { at: string; source: string };
+}
+
+export interface ChangePointRules {
+  window_from_not_before_at: boolean;
+  evidence_daily_key: string;
 }
 
 export interface EnvelopeSchema {
@@ -74,6 +82,10 @@ export interface EnvelopeSchema {
   max_age_seconds: number;
   evidence_rules: { must_be_object: boolean; min_keys: number; max_prose_words: number };
   observation_window_fields: string[];
+  /** Optional in the TYPE because a schema copy that predates the rule must still load; a
+   *  consumer reading such a copy refuses ONLY envelopes that declare a change_point. */
+  change_point_fields?: string[];
+  change_point_rules?: ChangePointRules;
 }
 
 /**
@@ -120,6 +132,8 @@ export const EMBEDDED_SCHEMA: EnvelopeSchema = Object.freeze({
   max_age_seconds: 21600,
   evidence_rules: Object.freeze({ must_be_object: true, min_keys: 1, max_prose_words: 7 }),
   observation_window_fields: Object.freeze(['from', 'to']) as unknown as string[],
+  change_point_fields: Object.freeze(['at', 'source']) as unknown as string[],
+  change_point_rules: Object.freeze({ window_from_not_before_at: true, evidence_daily_key: 'daily' }),
 }) as EnvelopeSchema;
 
 let cached: EnvelopeSchema | null = null;
@@ -248,6 +262,77 @@ export function validateEnvelope(env: unknown, schema: EnvelopeSchema = loadSche
           errs.push(`evidence.${k} is ${words} words — prose about mechanism, not a measured value (max ${schema.evidence_rules.max_prose_words})`);
         }
       }
+    }
+  }
+  // OPTIONAL, ADDITIVE: only an envelope that declares a change point is held to the rule.
+  if ('change_point' in e) errs.push(...changePointErrors(e, schema));
+  return errs;
+}
+
+// ── change_point (OPS-STEPUP-ACTIVATION-W1 CH2) ─────────────────────────────────────────────
+// ONE strict grammar, shared character for character with detector_envelope.py. Never Date.parse:
+// it accepts strings that are not ISO-8601 at all ("Oct 12 2026"), and Python's fromisoformat
+// accepts different strings on 3.9 than on 3.12 — either would let the two validators disagree
+// about the same bytes. Both sides compare at MILLISECONDS.
+const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;
+const DAILY_RE = /^\d+(,\d+)*$/;
+
+/** Epoch milliseconds of a strict ISO-8601 instant with an explicit offset, else null. */
+export function isoMs(ts: unknown): number | null {
+  const m = typeof ts === 'string' ? ISO_RE.exec(ts) : null;
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s, frac, , sign, oh, om] = m;
+  if (Number(oh ?? 0) > 23 || Number(om ?? 0) > 59) return null;
+  const at = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)));
+  // Date.UTC ROLLS OVER (month 13, Feb 30, second 60); Python's datetime() refuses. Refuse here too.
+  if (at.getUTCFullYear() !== Number(y) || at.getUTCMonth() !== Number(mo) - 1 || at.getUTCDate() !== Number(d)
+      || at.getUTCHours() !== Number(h) || at.getUTCMinutes() !== Number(mi) || at.getUTCSeconds() !== Number(s)) {
+    return null;
+  }
+  const ms = at.getTime() + Number((frac ?? '0').slice(0, 3).padEnd(3, '0'));
+  const off = sign ? (Number(oh) * 60 + Number(om)) * 60000 : 0;
+  return sign === '+' ? ms - off : ms + off;
+}
+
+/** Render a value the way Python's json.dumps(ensure_ascii=False) does, so both sides print identical reasons. */
+function jsonish(v: unknown): string {
+  const out = JSON.stringify(v);
+  return out === undefined ? JSON.stringify(String(v)) : out;
+}
+
+/**
+ * The `change_point` rule. Called only when the envelope DECLARES one — every other envelope is
+ * validated exactly as before this rule existed. Mirrors `_change_point_errors` rule for rule.
+ */
+function changePointErrors(e: Record<string, unknown>, schema: EnvelopeSchema): string[] {
+  const fields = schema.change_point_fields;
+  const rules = schema.change_point_rules;
+  if (!Array.isArray(fields) || rules === null || typeof rules !== 'object' || Array.isArray(rules)) {
+    return ['change_point is declared but this schema has no change_point contract — '
+      + 'a verdict about a change cannot be validated against it'];
+  }
+  const cp = e.change_point as Record<string, unknown> | null;
+  if (cp === null || typeof cp !== 'object' || Array.isArray(cp)) return ['change_point is not an object'];
+  const missing = fields.filter((f) => !(f in cp)).map((f) => `change_point missing '${f}'`);
+  if (missing.length) return missing;
+  const errs: string[] = [];
+  const atMs = isoMs(cp.at);
+  if (atMs === null) errs.push(`change_point.at ${jsonish(cp.at)} is not an ISO-8601 instant`);
+  const w = e.observation_window as Record<string, unknown> | null | undefined;
+  if (rules.window_from_not_before_at && w !== null && typeof w === 'object' && !Array.isArray(w) && 'from' in w) {
+    const fromMs = isoMs(w.from);
+    if (fromMs === null) errs.push(`observation_window.from ${jsonish(w.from)} is not an ISO-8601 instant`);
+    else if (atMs !== null && fromMs < atMs) {
+      errs.push(`observation_window.from ${String(w.from)} is before change_point.at ${String(cp.at)} — a verdict about a `
+        + 'change may observe only post-change time');
+    }
+  }
+  const key = rules.evidence_daily_key;
+  const ev = e.evidence as Record<string, unknown> | null | undefined;
+  if (key && ev !== null && typeof ev === 'object' && !Array.isArray(ev)) {
+    if (!(key in ev)) errs.push(`evidence.${key} missing — a verdict about a change carries its per-day series`);
+    else if (typeof ev[key] !== 'string' || !DAILY_RE.test(ev[key] as string)) {
+      errs.push(`evidence.${key} ${jsonish(ev[key])} is not a per-day series (comma-joined non-negative integers)`);
     }
   }
   return errs;

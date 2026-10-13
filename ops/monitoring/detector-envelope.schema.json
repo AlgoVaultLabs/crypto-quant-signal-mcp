@@ -45,5 +45,12 @@
   },
 
   "_observation_window_doc": "The interval the signal describes, as {from, to} ISO-8601 UTC. Without it a consumer cannot tell a signal about the last hour from one about the last month.",
-  "observation_window_fields": ["from", "to"]
+  "observation_window_fields": ["from", "to"],
+
+  "_change_point_doc": "OPS-STEPUP-ACTIVATION-W1 CH2 — A VERDICT ABOUT A CHANGE OBSERVES ONLY POST-CHANGE TIME. The bug class: any detector that attributes a move to a change, but builds its windows from the run date instead of the frozen change instant, will — for one window-length after the change — judge mostly pre-change data, blame the change for drift that predates it, and dilute a real post-change break. Measured case: STEPUP_ACTIVATION_DROP paged 2026-10-13 05:29Z on node 36 -> 13 for the week [2026-10-06, 2026-10-13), which was 92.5 % pre-flip; all 13 activations predated the 2026-10-12T11:24:01Z flip. A detector whose verdict is ABOUT a change declares `change_point` {at, source}; the contract then refuses an observation_window.from earlier than change_point.at and requires evidence.daily, the per-day series of the judged window (comma-joined non-negative integers, oldest first). OPTIONAL and ADDITIVE: an envelope without `change_point` is validated exactly as before, and a consumer reading a schema without these keys refuses ONLY change_point envelopes. Mirrored rule for rule by detector_envelope.py::validate and detector-envelope.ts::validateEnvelope; both parse ISO-8601 with one strict grammar and compare at millisecond precision so they cannot disagree about the same bytes.",
+  "change_point_fields": ["at", "source"],
+  "change_point_rules": {
+    "window_from_not_before_at": true,
+    "evidence_daily_key": "daily"
+  }
 }

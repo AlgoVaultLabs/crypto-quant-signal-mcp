@@ -25,8 +25,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCHEMA_PATH = Path(os.environ.get(
@@ -62,6 +63,81 @@ def _parse_iso(ts: str):
         return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+# ── change_point (OPS-STEPUP-ACTIVATION-W1 CH2) ─────────────────────────────────────────────
+# ONE strict grammar, shared character for character with detector-envelope.ts. Not
+# `datetime.fromisoformat`: it accepts different strings on the hosts' 3.12 than on an operator's
+# 3.9, and JavaScript's Date.parse accepts strings that are not ISO-8601 at all, so either would
+# let the two validators disagree about the same bytes. Both sides compare at MILLISECONDS.
+# re.ASCII + \Z, not $: Python's \d matches non-ASCII digits and its $ matches before a trailing
+# newline; JavaScript's do neither. Without both flags the twins would disagree on those bytes.
+_ISO_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))\Z", re.ASCII)
+_DAILY_RE = re.compile(r"^\d+(,\d+)*\Z", re.ASCII)
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _iso_ms(ts):
+    """Epoch milliseconds of a strict ISO-8601 instant with an explicit offset, else None."""
+    m = _ISO_RE.match(ts) if isinstance(ts, str) else None
+    if not m:
+        return None
+    y, mo, d, h, mi, s, frac, _tz, sign, oh, om = m.groups()
+    if int(oh or 0) > 23 or int(om or 0) > 59:
+        return None
+    try:
+        dt = datetime(int(y), int(mo), int(d), int(h), int(mi), int(s), tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    ms = (dt - _EPOCH) // timedelta(milliseconds=1) + int((frac or "0")[:3].ljust(3, "0"))
+    off = (int(oh) * 60 + int(om)) * 60000 if sign else 0
+    return ms - off if sign == "+" else ms + off
+
+
+def _jsonish(v) -> str:
+    """Render a value the way JSON.stringify does, so both validators print identical reasons."""
+    try:
+        return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return json.dumps(str(v), ensure_ascii=False)
+
+
+def _change_point_errors(env: dict, schema: dict) -> list:
+    """The `change_point` rule. Called only when the envelope DECLARES one — every other envelope
+    is validated exactly as before this rule existed. A schema that does not declare the rule
+    refuses only the envelopes that need it (read with .get(), so an older schema copy on a host
+    leaves every other adopter byte-identical)."""
+    fields = schema.get("change_point_fields")
+    rules = schema.get("change_point_rules")
+    if not isinstance(fields, list) or not isinstance(rules, dict):
+        return ["change_point is declared but this schema has no change_point contract — "
+                "a verdict about a change cannot be validated against it"]
+    cp = env["change_point"]
+    if not isinstance(cp, dict):
+        return ["change_point is not an object"]
+    errs = ["change_point missing '%s'" % f for f in fields if f not in cp]
+    if errs:
+        return errs
+    at_ms = _iso_ms(cp.get("at"))
+    if at_ms is None:
+        errs.append("change_point.at %s is not an ISO-8601 instant" % _jsonish(cp.get("at")))
+    w = env.get("observation_window")
+    if rules.get("window_from_not_before_at") and isinstance(w, dict) and "from" in w:
+        from_ms = _iso_ms(w["from"])
+        if from_ms is None:
+            errs.append("observation_window.from %s is not an ISO-8601 instant" % _jsonish(w["from"]))
+        elif at_ms is not None and from_ms < at_ms:
+            errs.append("observation_window.from %s is before change_point.at %s — a verdict about a "
+                        "change may observe only post-change time" % (w["from"], cp["at"]))
+    key = rules.get("evidence_daily_key")
+    ev = env.get("evidence")
+    if key and isinstance(ev, dict):
+        if key not in ev:
+            errs.append("evidence.%s missing — a verdict about a change carries its per-day series" % key)
+        elif not isinstance(ev[key], str) or not _DAILY_RE.match(ev[key]):
+            errs.append("evidence.%s %s is not a per-day series (comma-joined non-negative integers)"
+                        % (key, _jsonish(ev[key])))
+    return errs
 
 
 def validate(env, schema: dict) -> list:
@@ -113,6 +189,9 @@ def validate(env, schema: dict) -> list:
                 if words > rules["max_prose_words"]:
                     errs.append("evidence.%s is %d words — prose about mechanism, not a measured "
                                 "value (max %d)" % (k, words, rules["max_prose_words"]))
+    # OPTIONAL, ADDITIVE: only an envelope that declares a change point is held to the rule.
+    if "change_point" in env:
+        errs.extend(_change_point_errors(env, schema))
     return errs
 
 
@@ -243,6 +322,49 @@ def _self_test() -> int:
     ck("the rendered body carries the measured values",
        "unreached_in_danger=BINANCE,BITGET,BYBIT" in render_body(env(), schema), True)
     ck("missing required field is caught", len(validate({"verdict": "PASS"}, schema)) > 0, True)
+    # change_point (OPS-STEPUP-ACTIVATION-W1 CH2) — the measured case, as data.
+    flip = "2026-10-12T11:24:01Z"
+
+    def changed(**over):
+        base = env(detector="stepup-activation", run_id="r1", produced_at="2026-08-22T03:20:01Z",
+                   observation_window={"from": "2026-10-13T00:00:00Z", "to": "2026-10-20T00:00:00Z"},
+                   change_point={"at": flip, "source": "stepup-activation-envelope.json"},
+                   evidence={"client_family": "node", "cur": 4, "prior": 15, "drop_pct": 73.3,
+                             "daily": "1,0,0,1,0,2,0"})
+        base.update(over)
+        return base
+
+    ck("(i) a change-attributed FAIL observing only post-change time conforms", validate(changed(), schema), [])
+    ck("(i) and forwards as FAIL", decide(changed(), "r1", now, schema).verdict, "FAIL")
+    straddle = changed(observation_window={"from": "2026-10-06T00:00:00Z", "to": "2026-10-13T00:00:00Z"})
+    ck("(ii) the 2026-10-13 page's week [10-06, 10-13) straddles the flip — refused, with the reason",
+       validate(straddle, schema),
+       ["observation_window.from 2026-10-06T00:00:00Z is before change_point.at 2026-10-12T11:24:01Z — "
+        "a verdict about a change may observe only post-change time"])
+    ck("(ii) a refused straddle never pages FAIL — it is INDETERMINATE",
+       decide(straddle, "r1", now, schema).verdict, "INDETERMINATE")
+    ck("(ii) one millisecond before the change is still before it",
+       len(validate(changed(observation_window={"from": "2026-10-12T11:24:00.999Z", "to": "x"}), schema)), 1)
+    ck("(ii) an offset is honoured: 13:24:01+02:00 IS the change instant", validate(
+        changed(observation_window={"from": "2026-10-12T13:24:01+02:00", "to": "x"}), schema), [])
+    no_daily = changed(evidence={"client_family": "node", "cur": 4})
+    ck("(iii) a change-attributed verdict without its per-day series is refused",
+       validate(no_daily, schema),
+       ["evidence.daily missing — a verdict about a change carries its per-day series"])
+    ck("(iii) a malformed per-day series is refused",
+       len(validate(changed(evidence={"cur": 4, "daily": "1, 2"}), schema)), 1)
+    ck("change_point: a missing field is named", validate(changed(change_point={"at": flip}), schema),
+       ["change_point missing 'source'"])
+    ck("change_point: an unparseable instant is refused, not guessed",
+       validate(changed(change_point={"at": "2026-10-12", "source": "x"}), schema),
+       ['change_point.at "2026-10-12" is not an ISO-8601 instant'])
+    ck("change_point: a trailing newline and a non-ASCII digit are not ISO-8601 (JS agrees)",
+       (_iso_ms("2026-10-12T11:24:01Z\n"), _iso_ms("2026-10-12T11:24:0\u0661Z")), (None, None))
+    ck("change_point: an envelope WITHOUT one is untouched by the rule (no daily needed)",
+       validate(env(evidence={"x": 1}), schema), [])
+    legacy = {k: v for k, v in schema.items() if not k.startswith("change_point")}
+    ck("change_point: a schema without the contract refuses ONLY change_point envelopes",
+       (validate(env(), legacy), len(validate(changed(), legacy))), ([], 1))
     # PINNED LITERALLY. Reading the expectation out of the schema would mean a schema that drops a
     # field silently stops being checked — measured: a mutation removing `run_id` left both this
     # self-test and the TS suite fully green.
