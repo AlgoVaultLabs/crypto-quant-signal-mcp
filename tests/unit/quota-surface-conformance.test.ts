@@ -101,7 +101,13 @@ const RENDERERS: Record<string, () => Promise<Record<string, unknown>>> = {
     // the case instance 11 got wrong. Passing 'monthly' here would make the fixture agree with the
     // bug and the assertion vacuous, which is the trap `daily-refusal-contract.test.ts`'s own
     // hand-built `refusalFor()` fell into: it mirrored the throw site including its defect.
-    const sx = buildSuggestedX402('get_trade_call', 'daily', BAZAAR_ENV);
+    // OPS-A2MCP-SERVED-TRUTH-W1 (R-1): inject the served-state BAZAAR_ENV produces at boot — the
+    // nudge offers a rail only when its mount reported it served.
+    const sx = buildSuggestedX402('get_trade_call', 'daily', BAZAAR_ENV, {
+      httpX402: { status: 'served', mode: 'cdp', reason: 'mounted mode=cdp', since: null },
+      a2mcp: { status: 'dark', reason: 'off', since: null },
+      acp: { status: 'unreported', reason: 'no mount has reported', since: null },
+    });
     expect(sx, 'the nudge fixture must produce a live rail').toBeTruthy();
     return { suggested_x402: sx } as Record<string, unknown>;
   },

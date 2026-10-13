@@ -20,6 +20,12 @@
  *   - HELD tools (equities while `EQUITY_PUBLIC_COPY_HOLD`) are never surfaced (Q5) — the nudge
  *     is another public discovery surface; equities AUTO-JOIN when the HOLD flag flips.
  *
+ * SERVED, NOT CONFIGURED (OPS-A2MCP-SERVED-TRUTH-W1 R-1): the env predicate above is necessary,
+ * never sufficient. A rail is offered only when its MOUNT also reported it served
+ * (`rail-served-state.ts`). The env predicate alone offered `/a2mcp/<tool>` for weeks while the
+ * live mount had failed and every one of those routes answered 404. `served` is injectable
+ * (default: the live module) so tests state the mount outcome instead of inheriting it.
+ *
  * LEAF MODULE (breaks the consumer init cycle): imports ONLY pure-data / SDK-transport modules
  * (feature-registry, x402-facilitator, the pure okx-a2mcp-config, equity-hold, x402-bazaar's
  * base-URL const, types) — NEVER a tool handler / x402-http-routes / errors / tier-warning. So
@@ -39,6 +45,7 @@ import {
   A2MCP_PREFIX,
 } from './okx-a2mcp-config.js';
 import { isHeldFromPublicSurfaces } from './equities/equity-hold.js';
+import { servedState, isRailServed, type RailServedState } from './rail-served-state.js';
 import type { QuotaWall, SuggestedX402, X402Rail } from '../types.js';
 
 type NudgeEnv = Record<string, string | undefined>;
@@ -93,7 +100,12 @@ function buildInstructions(priceUsd: number, wall: QuotaWall): string {
  * every call site that omits it, and `x402-nudge-wall.test.ts` asserts that a dropped argument is a
  * COMPILE error rather than a runtime surprise.
  */
-export function buildSuggestedX402(toolNameOrAlias: string, wall: QuotaWall, env: NudgeEnv = process.env): SuggestedX402 | undefined {
+export function buildSuggestedX402(
+  toolNameOrAlias: string,
+  wall: QuotaWall,
+  env: NudgeEnv = process.env,
+  served: RailServedState = servedState(),
+): SuggestedX402 | undefined {
   const feat = getFeature(toolNameOrAlias);
   if (!feat || !feat.x402) return undefined; // unknown or unpriced (knowledge tools) ⇒ no rail
   // HELD tools (equities while EQUITY_PUBLIC_COPY_HOLD) are never surfaced on this public
@@ -103,8 +115,9 @@ export function buildSuggestedX402(toolNameOrAlias: string, wall: QuotaWall, env
 
   const rails: X402Rail[] = [];
 
-  // Bazaar (Base/USDC) — primary. Gated on the SAME predicate the route-mount uses.
-  if (feat.channels.httpX402 && resolveFacilitatorFromEnv(env).discoveryEnabled) {
+  // Bazaar (Base/USDC) — primary. Gated on the SAME predicate the route-mount uses, AND on the
+  // mount having reported the routes served (R-1).
+  if (feat.channels.httpX402 && resolveFacilitatorFromEnv(env).discoveryEnabled && isRailServed(served, 'httpX402')) {
     rails.push({
       rail: 'x402_bazaar',
       label: 'CDP x402 Bazaar (Base/USDC)',
@@ -120,7 +133,13 @@ export function buildSuggestedX402(toolNameOrAlias: string, wall: QuotaWall, env
   // okx.ai A2MCP (X Layer/USDT0) — alternative. Only when the rail is LIVE (real OKX-facilitator
   // settlement), never stub (OKX_AI_ENABLED=true but uncredentialed): a stub route can't take the
   // agent's money. Toggling OKX_AI_ENABLED in the SoT+env flips this with zero code change (AC2/R4).
-  if (feat.channels.a2mcp && selectOkxA2mcp(resolveOkxA2mcpConfig(env)).mode === 'live') {
+  // R-1: and only when the LIVE mount actually reported served — a caught live-mount failure
+  // (facilitator 401 at boot) leaves the env saying `live` while every /a2mcp route 404s.
+  if (
+    feat.channels.a2mcp
+    && selectOkxA2mcp(resolveOkxA2mcpConfig(env)).mode === 'live'
+    && isRailServed(served, 'a2mcp', 'live')
+  ) {
     rails.push({
       rail: 'okx_a2mcp',
       label: 'okx.ai A2MCP (X Layer/USDT0)',

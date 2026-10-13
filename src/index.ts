@@ -127,6 +127,7 @@ import { UpstreamRateLimitError, EXCHANGE_FALLBACKS, TradFiSymbolUnsupportedOnVe
 // pay-per-call rail. The helper is a LEAF (imports only pure/SDK modules) so this root import
 // adds no cycle. Dark behind X402_NUDGE_ENABLED (default OFF ⇒ envelope byte-identical).
 import { buildSuggestedX402, isX402NudgeEnabled } from './lib/x402-nudge.js';
+import { markServed as markRailServed, markDark as markRailDark } from './lib/rail-served-state.js';
 import { runAsBatch, runAsCaller } from './lib/upstream-weight-budget.js';
 import { listVenues } from './lib/venue-store.js';
 import { checkBotInternalAuth } from './lib/bot-auth.js';
@@ -4483,6 +4484,10 @@ async function startHttp() {
   if (x402HttpRoutes.length > 0) {
     console.log(`x402 HTTP resource routes mounted (CDP Bazaar discovery): ${x402HttpRoutes.join(', ')}`);
   }
+  // OPS-A2MCP-SERVED-TRUTH-W1 R1: report the mount OUTCOME, not the config — the x402 nudge offers
+  // the Bazaar rail only when this says served (rail-served-state.ts, ruling R-1).
+  if (x402HttpRoutes.length > 0) markRailServed('httpX402', { mode: 'cdp', routes: x402HttpRoutes.length });
+  else markRailDark('httpX402', 'off (X402_FACILITATOR=cdp + BAZAAR_DISCOVERABLE not both set)');
 
   // OKX-AI-FIRST-MOVER-W1: mount the okx.ai A2MCP X-Layer (eip155:196 / USDT0) settlement
   // routes — ONLY when OKX_AI_ENABLED=true. Default (unset) → nothing mounted → /a2mcp/* 404

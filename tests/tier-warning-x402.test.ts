@@ -4,8 +4,9 @@
  * The hard warning (approaching the wall, 90–99%) also offers the additive in-protocol x402
  * branch, dark behind X402_NUDGE_ENABLED. Soft warnings never carry it; a HELD tool never does.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { computeTierWarning } from '../src/lib/tier-warning.js';
+import { markServed, _resetRailServedStateForTest } from '../src/lib/rail-served-state.js';
 
 /** Bazaar live so a rail exists; nudge flag ON. */
 const NUDGE_ON_ENV: Record<string, string | undefined> = {
@@ -18,6 +19,14 @@ const NUDGE_ON_ENV: Record<string, string | undefined> = {
 };
 
 describe('computeTierWarning — suggested_x402 on the hard warning', () => {
+  // OPS-A2MCP-SERVED-TRUTH-W1 (R-1): the nudge offers a rail only when its mount reported it served.
+  // This env has the Bazaar rail live, so report the /x402 mount outcome that env produces at boot.
+  beforeEach(() => {
+    _resetRailServedStateForTest();
+    markServed('httpX402', { mode: 'cdp', routes: 7 });
+  });
+  afterEach(() => _resetRailServedStateForTest());
+
   it('attaches suggested_x402 on a HARD warning when the nudge flag is on', () => {
     const w = computeTierWarning({ tier: 'free', currentUsage: 95, monthlyLimit: 100, tool: 'get_trade_call', env: NUDGE_ON_ENV });
     expect(w?.level).toBe('hard');

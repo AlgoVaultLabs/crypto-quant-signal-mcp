@@ -42,6 +42,7 @@ import {
 import type { OkxA2mcpEnv, OkxA2mcpMode, ResolvedOkxA2mcp } from './okx-a2mcp-config.js';
 import { HTTP_TOOLS, callCoreHandler, validateToolInput, tolerantJson, type HttpTool } from './x402-http-routes.js';
 import type { LicenseInfo } from '../types.js';
+import { markServed, markDark } from './rail-served-state.js';
 // OKX managed facilitator (HMAC-signed verify/settle → web3.okx.com). Live path only —
 // constructed lazily inside mountLive(), so importing this module is side-effect-free.
 import { OKXFacilitatorClient } from '@okxweb3/x402-core';
@@ -165,27 +166,45 @@ function toHttpTool(tool: string): HttpTool | undefined {
  * caught → a2mcp stays DARK, the app never crash-loops (the two-flag firewall's intent; an
  * uncaught async init throw crash-looped prod once — OKX-AI-FIRST-MOVER incident 2026-07-01).
  * Returns the mounted paths ([] when off / stub-empty / live-failed → prod byte-identical).
+ *
+ * OPS-A2MCP-SERVED-TRUTH-W1 R1: every outcome is REPORTED to `rail-served-state` — served (with
+ * its mode) when routes were returned, dark with the reason otherwise. The caught live-mount
+ * failure used to be visible only as one boot-log line; consumers (the x402 nudge) read the env
+ * predicate instead and kept advertising routes that 404.
  */
 export async function mountOkxA2mcpRoutes(app: Express, env: OkxA2mcpEnv = process.env): Promise<string[]> {
   const resolved = selectOkxA2mcp(resolveOkxA2mcpConfig(env));
-  if (!resolved.active) return [];
+  if (!resolved.active) {
+    markDark('a2mcp', 'off (OKX_AI_ENABLED not true)');
+    return [];
+  }
   const tools = okxA2mcpTools();
   if (resolved.mode === 'live') {
+    let mounted: string[];
     try {
-      return await mountLive(app, tools, resolved);
+      mounted = await mountLive(app, tools, resolved);
     } catch (err: unknown) {
-      console.error(
-        '[okx-a2mcp] LIVE mount failed — leaving a2mcp DARK (app boot unaffected):',
-        err instanceof Error ? err.message : err,
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[okx-a2mcp] LIVE mount failed — leaving a2mcp DARK (app boot unaffected):', msg);
+      markDark('a2mcp', `live-mount failed: ${msg}`);
       return [];
     }
+    reportMounted('live', mounted);
+    return mounted;
   }
   console.warn(
     '[STUB] OKX_AI_ENABLED=true but OKX_API_KEY/OKX_SECRET_KEY/OKX_PASSPHRASE/OKX_A2MCP_PAYTO missing — ' +
       'mounting [STUB] a2mcp routes (no real settlement). Provision creds + payTo to go live.',
   );
-  return mountStub(app, tools, new StubOkxA2mcpProvider());
+  const mounted = mountStub(app, tools, new StubOkxA2mcpProvider());
+  reportMounted('stub', mounted);
+  return mounted;
+}
+
+/** Report a completed mount: served with its mode when it produced routes, dark when empty. */
+function reportMounted(mode: OkxA2mcpMode, mounted: string[]): void {
+  if (mounted.length > 0) markServed('a2mcp', { mode, routes: mounted.length });
+  else markDark('a2mcp', `${mode}-empty (no a2mcp tool resolved to an HTTP route)`);
 }
 
 /** Dark [STUB] routes: GET → [STUB] 402; POST with any payment header → run the core handler. */

@@ -23,6 +23,7 @@
 import Ajv, { type ValidateFunction } from 'ajv';
 import { callCoreHandler, type HttpTool } from '../../lib/x402-http-routes.js';
 import { getFeature } from '../../lib/feature-registry.js';
+import { markServed, markDark } from '../../lib/rail-served-state.js';
 import type { LicenseInfo } from '../../types.js';
 import { offeringByName, requirementToParams, type AcpOffering } from './offerings.js';
 import {
@@ -175,7 +176,10 @@ export async function handleAcpEntry(session: SellerSession, entry: SellerEntry,
  */
 export async function startAcpSellerWorker(env: AcpEnv = process.env): Promise<{ mode: string; started: boolean }> {
   const resolved = selectAcp(resolveAcpConfig(env));
-  if (!resolved.active) return { mode: 'off', started: false };
+  if (!resolved.active) {
+    markDark('acp', 'off (ACP_ENABLED not true)');
+    return { mode: 'off', started: false };
+  }
 
   const log = (m: string): void => console.log(m);
   let bundle: AcpAgentBundle;
@@ -183,6 +187,7 @@ export async function startAcpSellerWorker(env: AcpEnv = process.env): Promise<{
     bundle = resolved.mode === 'live' ? await createLiveAcpAgent(resolved) : createStubAcpAgent(log);
   } catch (err) {
     console.error('[ACP] agent construction failed — ACP stays dark:', err instanceof Error ? err.message : err);
+    markDark('acp', `agent construction failed: ${err instanceof Error ? err.message : String(err)}`);
     return { mode: resolved.mode, started: false };
   }
   if (resolved.stubFellBack) {
@@ -215,8 +220,10 @@ export async function startAcpSellerWorker(env: AcpEnv = process.env): Promise<{
     await bundle.agent.start(() => log(`[ACP] seller worker listening (mode=${resolved.mode}, network=${resolved.network})`));
   } catch (err) {
     console.error('[ACP] agent.start failed — ACP dark:', err instanceof Error ? err.message : err);
+    markDark('acp', `agent.start failed: ${err instanceof Error ? err.message : String(err)}`);
     return { mode: resolved.mode, started: false };
   }
+  markServed('acp', { mode: resolved.mode });
   return { mode: resolved.mode, started: true };
 }
 

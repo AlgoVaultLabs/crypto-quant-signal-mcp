@@ -9,8 +9,10 @@
  *   - mountOkxA2mcpRoutes off → [] (byte-identical prod); stub → mounts the derived route set
  * (The LIVE facilitator path needs OKX creds + registration and is exercised at enablement, not here.)
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Express } from 'express';
+import { servedState, _resetRailServedStateForTest } from '../src/lib/rail-served-state.js';
+import { buildSuggestedX402 } from '../src/lib/x402-nudge.js';
 import {
   selectOkxA2mcp,
   resolveOkxA2mcpConfig,
@@ -162,5 +164,63 @@ describe('live mount boot-safety — exact scheme registered for eip155:196', ()
       'POST /a2mcp/get_trade_call': { accepts: [{ scheme: 'exact', network: 'eip155:196', payTo: '0x0', price: '0.02' }] },
     } as never);
     await expect(hs.initialize()).rejects.toThrow();
+  });
+});
+
+// ── OPS-A2MCP-SERVED-TRUTH-W1 R1 — every mount outcome is REPORTED to rail-served-state ────────
+// The 2026-10 incident: OKX_AI_ENABLED=true + all creds set, the facilitator answered 401 to
+// getSupported() at boot, initialize() threw, the mount caught it and left a2mcp DARK — and the
+// only trace was one log line, so the x402 nudge kept offering /a2mcp/<tool> (404) from the env.
+// The live-failure case below reproduces that exact boot hermetically by stubbing global fetch.
+describe('mountOkxA2mcpRoutes — the outcome lands in rail-served-state', () => {
+  beforeEach(() => _resetRailServedStateForTest());
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); _resetRailServedStateForTest(); });
+
+  it('off → a2mcp DARK (reason off)', async () => {
+    await mountOkxA2mcpRoutes(fakeApp(), {});
+    expect(servedState().a2mcp.status).toBe('dark');
+    expect(servedState().a2mcp.reason).toMatch(/^off/);
+  });
+
+  it('stub → a2mcp SERVED in mode stub, with the route count', async () => {
+    const mounted = await mountOkxA2mcpRoutes(fakeApp(), { OKX_AI_ENABLED: 'true' });
+    const s = servedState().a2mcp;
+    expect(s.status).toBe('served');
+    expect(s.mode).toBe('stub');
+    expect(s.reason).toContain(`routes=${mounted.length}`);
+  });
+
+  it('live + facilitator 401 at boot (THE INCIDENT) → [] mounted, a2mcp DARK, nudge stops offering it', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ code: '50125', msg: 'Your API key or regions have no access to current services' }),
+      { status: 401, headers: { 'content-type': 'application/json' } },
+    )));
+    const mounted = await mountOkxA2mcpRoutes(fakeApp(), CREDS);
+    expect(mounted).toEqual([]);
+    const s = servedState().a2mcp;
+    expect(s.status).toBe('dark');
+    expect(s.reason).toMatch(/^live-mount failed: /);
+    // The env still resolves `live` — and the nudge must not believe it.
+    expect(selectOkxA2mcp(resolveOkxA2mcpConfig(CREDS)).mode).toBe('live');
+    const env = { ...CREDS, X402_FACILITATOR: 'cdp', CDP_API_KEY_ID: 'i', CDP_API_KEY_SECRET: 's', BAZAAR_DISCOVERABLE: 'true' };
+    const sx = buildSuggestedX402('get_trade_call', 'monthly', env, { ...servedState(), httpX402: { status: 'served', mode: 'cdp', reason: 'mounted', since: null } });
+    expect(sx!.alternatives).toEqual([]);
+  });
+
+  it('live + healthy facilitator (kind eip155:196/exact present) → a2mcp SERVED in mode live', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ data: {
+        kinds: [{ scheme: 'exact', network: 'eip155:196', x402Version: 2, extra: null }],
+        signers: { 'eip155:196': ['0x0000000000000000000000000000000000000001'] },
+        extensions: [],
+      } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )));
+    const mounted = await mountOkxA2mcpRoutes(fakeApp(), CREDS);
+    expect(mounted.length).toBeGreaterThan(0);
+    const s = servedState().a2mcp;
+    expect(s.status).toBe('served');
+    expect(s.mode).toBe('live');
   });
 });
