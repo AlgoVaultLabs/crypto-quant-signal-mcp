@@ -12,24 +12,47 @@ CH4 ruling packet asks, from production data, and writes ONE structured line to 
   * `quota_hit_block` events for that day, by session pool;
   * Anthropic-egress metered calls over the trailing 30 d — the number `CLAUDE_POOL=EMPTY` is ruled
     on — and `OAUTH_TRIGGER=MET|NOT_MET` at >= 1,000 (the deferred OAuth wave's measured trigger);
-  * the ACTIVATION GUARD (Mr.1's CH4 ruling, Q1 = C amended): per client family, weekly
-    ACTIVATIONS — buckets whose FIRST-EVER successful free metered call (v2-tagged ip_hash) fell in
-    that 7-day window — for the last complete week against the one before. It PAGES only at
-    STEPUP_MODE=live, and only when ALL hold: the prior week had >= ACT_MIN_PRIOR_WEEK (5)
-    activating buckets, the drop is >= GUARD_DROP (30 %), and the drop is LARGER than that family's
-    largest weekly drop over the 6 pre-flip weeks — the ENVELOPE, computed from request_log once, at
-    flip time (`--freeze-envelope`), and frozen in ENVELOPE_PATH. Why activations and not calls: at
-    N = 20 call volume falls BY DESIGN (Aug/Sep had 4,754–8,348 calls a month above N), while a
-    caller's first success is exactly what the step-up must not break.
+  * the ACTIVATION GUARD (Mr.1's CH4 ruling, Q1 = C amended; windows re-derived by
+    OPS-STEPUP-ACTIVATION-W1): an ACTIVATION is a bucket whose FIRST-EVER successful free metered
+    call fell in a window. A VERDICT ABOUT THE STEP-UP OBSERVES ONLY POST-FLIP TIME. Every window is
+    classified against the frozen change instant `flipped_at` by window_phase() — nothing else
+    decides — with P0 = the first UTC midnight at or after the flip and the flip day [R0, P0)
+    belonging to neither side (R0 = the envelope's reference_day). Two legs:
+      - WEEKLY, per client family. Due once L = whole UTC days in [P0, REF) >= 7, i.e. once the
+        judged week cur = [REF - 7 d, REF) is `post`. prior = [REF - 14 d, REF - 7 d) when that is
+        `post` too, else the envelope's weekly[0] — the last whole PRE-flip week, frozen. Pages at
+        `live` only when ALL hold: prior >= ACT_MIN_PRIOR_WEEK (5), drop >= GUARD_DROP (30 %), and
+        drop LARGER than that family's largest weekly drop over the 6 pre-flip weeks (the
+        ENVELOPE, computed once at the flip by `--freeze-envelope` and frozen in ENVELOPE_PATH).
+        Before it is due: `not_due`, with the UTC day of its first due run — recorded, never paged.
+      - EARLY, pooled over every family, post-flip days 2..6: post_L = activations in [P0, REF)
+        against pre_min_L = the smallest pooled total of any L-day run inside [R0 - 42 d, R0).
+        Pages `early_collapse` iff pre_min_L >= EARLY_MIN_PRE and post_L is below half of it.
+        L < 2 → `not_due`; L >= 7 → `retired` (the weekly leg owns it). post and pre_min are in
+        every record whatever the state.
+    WHY: the first run after the flip (2026-10-13 05:29Z) anchored its weeks at the run date, judged
+    a week that was 92.5 % PRE-flip, and paged node 36 → 13 — every one of the 13 activations
+    predated the flip (OPS-STEPUP-ACTIVATION-W1 audit). Anchored that way the guard would have kept
+    paging on pre-flip drift for a week AND been blind to a real post-flip break for the same week.
+    Why activations and not calls: at N = 20 call volume falls BY DESIGN (Aug/Sep had 4,754–8,348
+    calls a month above N), while a caller's first success is exactly what the step-up must not
+    break — and `checkQuota` cannot refuse a bucket whose count is 0.
   * call VOLUME per family (last 7 complete days vs the 7 before) stays in every record — REPORTED,
     NEVER PAGED. Measured before install (2026-10-12, mode off, nothing changed for anyone): `node`
     1,190 → 555 (−53 %) and `python-httpx` 459 → 7 (−98.5 %) week over week, which is why volume
     was never a sound alarm.
 
+THE INSTRUMENT IS A CHANGE POINT TOO. Activations are filtered on the ip-hash version tag the
+RUNNING image derives (`IP_HASH_VERSION`, read in-container beside `hashIp`), never a literal. A
+version that differs from the one the envelope froze under (absent ⇒ `v2`, the version at the
+2026-10-12 freeze, measured) would end every pre-rotation bucket's history at once and read as a
+total collapse, so in `live` the guard is INDETERMINATE ("re-freeze at the rotation"), never a page.
+
 ARMED ONLY IN `live`, REPORTED IN EVERY MODE. The activation states are computed and recorded in
 every run, but the page fires only when the resolved STEPUP_MODE is `live` — the only mode in which
-the step-up changes what a caller receives. In `live` with no readable frozen envelope the guard
-cannot decide, so the run is INDETERMINATE (exit 3), never a quiet PASS.
+the step-up changes what a caller receives. In `live`, a guard that cannot decide — no readable
+frozen envelope, no `flipped_at`, an ip-hash version change — makes the run INDETERMINATE (exit 3),
+never a quiet PASS.
 
 ONE DERIVATION, RESOLVED IN THE RUNNING IMAGE. Pool membership (set A = `hashIp` of the eight masked
 /24 network addresses of 160.79.104.0/21), the metered predicate (`call-class.ts` `billablePredicate()`)
@@ -37,13 +60,17 @@ and the step-up mode + N (`plans.ts` `resolveStepupMode()` / `FREE_KEYLESS_MONTH
 all computed by a `node -e` probe INSIDE the app container from its deployed `dist/` — never mirrored
 here. The ip-hash key never leaves the container; the probe returns SQL, and psql (`aoe_readonly`,
 read-only transaction) returns aggregates only — no ip hash, key or session id is printed or stored.
+ONE FIRST-ACTIVATION DERIVATION: a single CTE yields each bucket's first free metered row; the
+weekly counts, the per-day series, the early leg and `--freeze-envelope` all project from its
+(family, UTC day) counts — never a second scan of `request_log`.
 
 Verdict token: exactly one terminal `STEPUP_READOUT_VERDICT=PASS|FAIL|INDETERMINATE`.
   PASS          record written, every family evaluated, nothing paged (in off/shadow a breach is
                 REPORTED in the record and the log, never paged)                    → exit 0
   FAIL          `live`, and an activation breach was handed to the wrapper          → exit 0
                 (a paging canary must not also mail cron; the TOKEN carries the verdict)
-  INDETERMINATE the probe or the query could not be evaluated — nothing was judged → exit 3
+  INDETERMINATE the probe or the query could not be evaluated, or (live) the guard
+                cannot decide — nothing was judged                                  → exit 3
 A failed record append never changes the verdict; it prints `CANARY_RESULT_LOG_FAILED=` instead of
 `CANARY_RESULT_LOG=`, so a run that wrote nothing never looks like one that did.
 
@@ -56,9 +83,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ALERT_ID = "STEPUP_ACTIVATION_DROP"
@@ -77,19 +105,38 @@ ENVELOPE_PATH = os.environ.get("STEPUP_ENVELOPE_PATH", "/var/lib/algovault-monit
 OAUTH_TRIGGER_CALLS = 1000      # Anthropic-egress metered calls, trailing 30 d (V2 R-6)
 TOP_FAMILIES = 12               # bounds the record under canary_result_log's 8 KiB line cap
 
+WEEK_DAYS = 7                   # the weekly leg is due once a whole post-flip week exists
+EARLY_FIRST_DAY = 2             # the early leg judges post-flip days 2..6; day 1 is one day of noise
+EARLY_LOOKBACK_DAYS = 42        # pre_min_L is taken over the 6 whole weeks before the flip day
+# A COLLAPSE is post_L below HALF of the worst pre-flip run of the same length — "worst", so an
+# ordinary slow stretch can never page, and "half", so the page means a break, not a dip.
+EARLY_COLLAPSE_FACTOR = 2
+# The FLOOR keeps a zero meaningful: when the worst pre-flip L-day run is under 4 activations, a
+# post-flip zero is something the pre-flip tape already did, so it is evidence of nothing. Measured
+# at the 2026-10-12 freeze: pre_min_L = 0, 3, 8, 13, 16 for L = 2..6, so this leg can first page at
+# L = 4 and records `below_floor` before that (OPS-STEPUP-ACTIVATION-W1 ruling Q4 = ship as specced).
+EARLY_MIN_PRE = 4
+# The ip-hash version an envelope that predates the field was frozen under. Measured, not assumed:
+# request_log carried ONLY `v2` ids for the 14 days before 2026-10-13 and the image exported 'v2'.
+ENVELOPE_DEFAULT_IP_HASH_VERSION = "v2"
+
+DAY = timedelta(days=1)
 LAST_FIRE: dict = {}
 LAST_CLEAR: dict = {}
 LAST_RECORD: list = []
 
-# The probe runs INSIDE the app container. It prints ONE JSON object {mode, n, d0, d1, ref, weeks, sql}.
-# The activation windows end at REF: today 00:00Z for the daily run, or the flip's UTC day for
-# `--freeze-envelope` (STEPUP_REF_ISO); WEEKS windows back, j = 0 the most recent. The `actw` SELECT
-# takes each v2 bucket's FIRST successful free metered call (DISTINCT ON keeps the earliest row), its
-# family, and the 7-day window before REF it fell in; only aggregates leave psql. (No `//` comments
-# inside PROBE_JS: the ops-surface guards strip them as comments, and they are string CONTENT here.)
-# `sql` is a set of labelled SELECTs whose rows are `label|a|b|c|d`; nothing in it is printed.
+# The probe runs INSIDE the app container. It prints ONE JSON object
+# {mode, n, d0, d1, ref, weeks, ip_hash_version, series_from, sql}. The activation windows end at
+# REF: today 00:00Z for the daily run, or the flip's UTC day for `--freeze-envelope` (STEPUP_REF_ISO).
+# The `actd` SELECT is the ONE first-activation derivation: the inner DISTINCT ON keeps each
+# bucket's earliest free metered row tagged with the DEPLOYED ip-hash version (never a literal),
+# and the outer SELECT counts those first rows per (family, UTC day) from SERIES_FROM to REF —
+# the earlier of STEPUP_SERIES_FROM (the guard's pre-flip lookback) and REF - WEEKS weeks. Only
+# aggregates leave psql. (No `//` comments inside PROBE_JS: the ops-surface guards strip them as
+# comments, and they are string CONTENT here.) `sql` is a set of labelled SELECTs whose rows are
+# `label|a|b|c|d`; nothing in it is printed.
 PROBE_JS = r"""
-const { hashIp } = require('/app/dist/lib/analytics.js');
+const { hashIp, IP_HASH_VERSION } = require('/app/dist/lib/analytics.js');
 const { billablePredicate } = require('/app/dist/lib/call-class.js');
 const plans = require('/app/dist/lib/plans.js');
 const q = (v) => "'" + String(v).replace(/'/g, "''") + "'";
@@ -104,6 +151,11 @@ const W30 = new Date(now - 30 * DAY).toISOString();
 const REF = process.env.STEPUP_REF_ISO ? new Date(Math.floor(Date.parse(process.env.STEPUP_REF_ISO) / DAY) * DAY) : d1;
 const RISO = REF.toISOString();
 const WEEKS = Math.max(2, Math.min(12, parseInt(process.env.STEPUP_WEEKS || '2', 10) || 2));
+const VER = String(IP_HASH_VERSION);
+if (!/^[A-Za-z0-9]+$/.test(VER)) throw new Error('IP_HASH_VERSION is not a plain tag: ' + VER);
+const SF = process.env.STEPUP_SERIES_FROM ? Math.floor(Date.parse(process.env.STEPUP_SERIES_FROM) / DAY) * DAY : NaN;
+const FROM = new Date(Math.min(Number.isFinite(SF) ? SF : Infinity, REF.getTime() - WEEKS * 7 * DAY));
+const FISO = FROM.toISOString();
 const A = [];
 for (let i = 104; i <= 111; i++) A.push(hashIp('160.79.' + i + '.0'));
 const p = billablePredicate();
@@ -125,11 +177,11 @@ const sql = [
   "SELECT 'act', coalesce(client_name, '<null>'), count(*) FILTER (WHERE \"timestamp\" >= " + q(W7) + '), count(*) FILTER (WHERE "timestamp" < ' + q(W7) +
     '), count(DISTINCT ip_hash) FILTER (WHERE "timestamp" >= ' + q(W7) + ') FROM request_log WHERE ' + FREE +
     ' AND "timestamp" >= ' + q(W14) + ' AND "timestamp" < ' + q(D1) + ' GROUP BY 2;',
-  "SELECT 'actw', family, wk, count(*), '' FROM (SELECT DISTINCT ON (ip_hash) ip_hash, coalesce(client_name, '<null>') AS family, " +
-    'floor(extract(epoch FROM (' + q(RISO) + '::timestamptz - "timestamp"::timestamptz)) / 604800)::int AS wk FROM request_log WHERE ' + FREE +
-    " AND ip_hash LIKE 'v2:%' AND \"timestamp\" < " + q(RISO) + ' ORDER BY ip_hash, "timestamp") f WHERE wk < ' + WEEKS + ' GROUP BY 2, 3;',
+  "SELECT 'actd', family, to_char(first_ts::timestamptz AT TIME ZONE 'UTC', 'YYYY-MM-DD'), count(*), '' FROM (SELECT DISTINCT ON (ip_hash) ip_hash, " +
+    "coalesce(client_name, '<null>') AS family, \"timestamp\" AS first_ts FROM request_log WHERE " + FREE +
+    ' AND ip_hash LIKE ' + q(VER + ':%') + ' AND "timestamp" < ' + q(RISO) + ' ORDER BY ip_hash, "timestamp") f WHERE first_ts >= ' + q(FISO) + ' GROUP BY 2, 3;',
 ].join('\n');
-process.stdout.write(JSON.stringify({ mode: plans.resolveStepupMode(process.env), n: plans.FREE_KEYLESS_MONTHLY_CALLS_RULED, d0: D0, d1: D1, ref: RISO, weeks: WEEKS, sql }));
+process.stdout.write(JSON.stringify({ mode: plans.resolveStepupMode(process.env), n: plans.FREE_KEYLESS_MONTHLY_CALLS_RULED, d0: D0, d1: D1, ref: RISO, weeks: WEEKS, ip_hash_version: VER, series_from: FISO, sql }));
 """
 
 
@@ -177,9 +229,56 @@ def _int(s: str) -> int:
         return 0
 
 
+_TS_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$")
+
+
+def parse_ts(value):
+    """A strict ISO-8601 instant → aware UTC datetime, or None. Strict on purpose: the windows this
+    guard judges are decided by these values, so an unparseable one must be a refusal, never a guess
+    (and `datetime.fromisoformat` differs between the hosts' 3.12 and an operator's 3.9)."""
+    m = _TS_RE.match(str(value or ""))
+    if not m:
+        return None
+    y, mo, d, h, mi, s, frac, tz = m.groups()
+    try:
+        dt = datetime(int(y), int(mo), int(d), int(h), int(mi), int(s), int((frac or "0").ljust(6, "0")))
+    except ValueError:
+        return None
+    if tz == "Z":
+        off = timedelta(0)
+    else:
+        sign = 1 if tz[0] == "+" else -1
+        off = sign * timedelta(hours=int(tz[1:3]), minutes=int(tz[4:6]))
+    return (dt - off).replace(tzinfo=timezone.utc)
+
+
+def midnight(d: date) -> datetime:
+    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+
+
+def first_midnight_at_or_after(ts: datetime) -> datetime:
+    """P0: the first UTC midnight at or after the change instant."""
+    m = midnight(ts.date())
+    return m if m == ts else m + DAY
+
+
+def window_phase(start: datetime, end: datetime, change_at: datetime) -> str:
+    """'post' iff the window starts at or after the change; 'pre' iff it ends at or before it;
+    else 'straddles'. THE ONE classifier: every window this guard judges is classified here."""
+    if start >= change_at:
+        return "post"
+    if end <= change_at:
+        return "pre"
+    return "straddles"
+
+
+def iso(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def parse_rows(text: str) -> dict:
     """psql `-tA -F|` output → structured aggregates. Unknown labels are ignored, never fatal."""
-    out = {"calls_1d": [], "anthropic_30d": {"calls": 0, "buckets": 0}, "stepup_1d": [], "qhb_1d": [], "act": [], "actw": []}
+    out = {"calls_1d": [], "anthropic_30d": {"calls": 0, "buckets": 0}, "stepup_1d": [], "qhb_1d": [], "act": [], "actd": []}
     for line in text.splitlines():
         parts = line.split("|")
         if len(parts) < 2:
@@ -195,8 +294,57 @@ def parse_rows(text: str) -> dict:
             out["qhb_1d"].append({"pool": parts[1], "events": _int(parts[2]), "sessions": _int(parts[3])})
         elif label == "act" and len(parts) >= 5:
             out["act"].append({"family": parts[1], "cur7": _int(parts[2]), "prev7": _int(parts[3]), "buckets7": _int(parts[4])})
-        elif label == "actw" and len(parts) >= 4:
-            out["actw"].append({"family": parts[1], "wk": _int(parts[2]), "n": _int(parts[3])})
+        elif label == "actd" and len(parts) >= 4:
+            try:
+                day = date.fromisoformat(parts[2])
+            except ValueError:
+                continue
+            out["actd"].append({"family": parts[1], "day": day, "n": _int(parts[3])})
+    return out
+
+
+def daily_by_family(actd: list[dict]) -> dict:
+    """{family: {UTC day: first activations that day}} — the ONE first-activation series."""
+    out: dict = {}
+    for r in actd:
+        fam = out.setdefault(r["family"], {})
+        fam[r["day"]] = fam.get(r["day"], 0) + r["n"]
+    return out
+
+
+def pooled_daily(daily: dict) -> dict:
+    out: dict = {}
+    for series in daily.values():
+        for d, n in series.items():
+            out[d] = out.get(d, 0) + n
+    return out
+
+
+def window_total(series: dict, start: datetime, end: datetime) -> int:
+    """Activations on the UTC days in [start, end) — both bounds are midnights."""
+    total, d = 0, start.date()
+    while d < end.date():
+        total += series.get(d, 0)
+        d += DAY
+    return total
+
+
+def window_daily(series: dict, start: datetime, end: datetime) -> str:
+    """The per-day counts of [start, end), comma-joined, oldest first ('' for an empty window)."""
+    out, d = [], start.date()
+    while d < end.date():
+        out.append(str(series.get(d, 0)))
+        d += DAY
+    return ",".join(out)
+
+
+def weekly_from_daily(daily: dict, ref: datetime, weeks: int) -> dict:
+    """{family: [A_0, …, A_(weeks-1)]}: A_j = activations in the j-th 7-day window before REF
+    (j = 0 the most recent) — a projection of the daily series, never a second query."""
+    out = {}
+    for fam, series in daily.items():
+        out[fam] = [window_total(series, ref - (j + 1) * WEEK_DAYS * DAY, ref - j * WEEK_DAYS * DAY)
+                    for j in range(weeks)]
     return out
 
 
@@ -215,16 +363,6 @@ def week_drop(prev: int, cur: int):
     return (prev - cur) / prev if prev > 0 else None  # ratio-exempt: week-over-week change of ONE measure (one family's activating buckets in two adjacent 7-day windows of one statement) — a signed delta, not an event rate over a population
 
 
-def weekly_by_family(actw: list[dict], weeks: int) -> dict:
-    """{family: [A_0, …, A_(weeks-1)]}: A_j = buckets whose FIRST successful free metered call fell in
-    the j-th 7-day window before the reference instant (j = 0 the most recent)."""
-    out: dict = {}
-    for r in actw:
-        if 0 <= r["wk"] < weeks:
-            out.setdefault(r["family"], [0] * weeks)[r["wk"]] += r["n"]
-    return out
-
-
 def compute_envelope(weekly: dict) -> dict:
     """Per family: the 7 pre-flip weekly counts, the 6 weekly drops (week j against week j+1; None
     where week j+1 had no activations) and their MAXIMUM — the envelope a live drop must exceed."""
@@ -241,33 +379,110 @@ def compute_envelope(weekly: dict) -> dict:
     return fams
 
 
-def evaluate_activation(weekly2: dict, envelope_fams) -> list[dict]:
-    """Every family judged, in the order of its prior-week activations. States, in order:
-    below_floor (prior < ACT_MIN_PRIOR_WEEK) · ok (drop < GUARD_DROP, or growth) · no_envelope (the
-    family has no defined pre-flip drop — UNDEFINED, never a page) · within_envelope (drop <= the
-    envelope) · breach. A breach pages only in live (should_page)."""
-    env = envelope_fams or {}
-    judged = []
-    for fam in set(weekly2) | set(env):
-        a = weekly2.get(fam, [0, 0])
-        cur, prev = a[0], a[1]
-        d = week_drop(prev, cur)
-        drop_pct = None if d is None else round(d * 100, 1)
-        env_pct = (env.get(fam) or {}).get("envelope_pct")
-        if prev < ACT_MIN_PRIOR_WEEK:
-            state = "below_floor"
-        elif d is None or d < GUARD_DROP:
-            state = "ok"
-        elif env_pct is None:
-            state = "no_envelope"
-        elif drop_pct <= env_pct:
-            state = "within_envelope"
+def judge_week(prior: int, cur: int, env_pct):
+    """(state, drop_pct) for one family's judged week — the CH4 ruling's rule, unchanged. States, in
+    order: below_floor (prior < ACT_MIN_PRIOR_WEEK) · ok (drop < GUARD_DROP, or growth) ·
+    no_envelope (no defined pre-flip drop — UNDEFINED, never a page) · within_envelope (drop <= the
+    envelope) · breach. WHICH weeks reach it is decided by evaluate_weekly_leg, never here."""
+    d = week_drop(prior, cur)
+    drop_pct = None if d is None else round(d * 100, 1)
+    if prior < ACT_MIN_PRIOR_WEEK:
+        return "below_floor", drop_pct
+    if d is None or d < GUARD_DROP:
+        return "ok", drop_pct
+    if env_pct is None:
+        return "no_envelope", drop_pct
+    if drop_pct <= env_pct:
+        return "within_envelope", drop_pct
+    return "breach", drop_pct
+
+
+def change_point(env_doc, probe_version: str):
+    """The guard's change instant and instrument, from the frozen envelope: ((flip, r0, version), None)
+    when the guard can decide, else (None, reason). The reason is what an INDETERMINATE says."""
+    if env_doc is None:
+        return None, "no frozen activation envelope"
+    flip = parse_ts(env_doc.get("flipped_at"))
+    if flip is None:
+        return None, ("the frozen envelope carries no readable flipped_at (%r) — the guard cannot tell "
+                      "post-flip time from pre-flip time" % env_doc.get("flipped_at"))
+    r0 = parse_ts(env_doc.get("reference_day"))
+    if r0 is None or r0 != midnight(r0.date()) or r0 > flip:
+        return None, "the frozen envelope's reference_day %r is not the flip's UTC midnight" % env_doc.get("reference_day")
+    version = env_doc.get("ip_hash_version") or ENVELOPE_DEFAULT_IP_HASH_VERSION
+    if probe_version != version:
+        return None, ("ip-hash instrument changed since the envelope froze (envelope %s, deployed %s) — "
+                      "re-freeze at the rotation" % (version, probe_version))
+    return (flip, r0, version), None
+
+
+def evaluate_weekly_leg(daily: dict, env_doc: dict, ref: datetime, flip: datetime):
+    """(leg, rows). The judged week is cur = [REF - 7 d, REF); it is judged only when window_phase
+    calls it `post` — before that every family is `not_due`, reported with the REF-anchored counts
+    so the record still shows what moved. prior = [REF - 14 d, REF - 7 d) when `post`, else the
+    envelope's weekly[0] (the last whole pre-flip week, frozen)."""
+    p0 = first_midnight_at_or_after(flip)
+    post_days = max(0, (ref - p0).days)
+    cur_from, cur_to = ref - WEEK_DAYS * DAY, ref
+    prior_from, prior_to = ref - 2 * WEEK_DAYS * DAY, ref - WEEK_DAYS * DAY
+    phase = window_phase(cur_from, cur_to, flip)
+    prior_phase = window_phase(prior_from, prior_to, flip)
+    due = phase == "post"
+    prior_source = "measured" if (not due or prior_phase == "post") else "envelope_week0"
+    env_fams = env_doc.get("families") or {}
+    rows = []
+    for fam in set(daily) | set(env_fams):
+        series = daily.get(fam, {})
+        env_row = env_fams.get(fam) or {}
+        cur = window_total(series, cur_from, cur_to)
+        if prior_source == "measured":
+            prior = window_total(series, prior_from, prior_to)
         else:
-            state = "breach"
-        judged.append({"family": fam, "prev_w": prev, "cur_w": cur, "drop_pct": drop_pct,
-                       "envelope_pct": env_pct, "state": state})
-    judged.sort(key=lambda j: (-j["prev_w"], j["family"]))
-    return judged
+            prior = _int((env_row.get("weekly") or [0])[0])
+        env_pct = env_row.get("envelope_pct")
+        state, drop_pct = judge_week(prior, cur, env_pct)
+        rows.append({"family": fam, "prev_w": prior, "cur_w": cur, "drop_pct": drop_pct,
+                     "envelope_pct": env_pct, "state": state if due else "not_due",
+                     "daily": window_daily(series, cur_from, cur_to)})
+    rows.sort(key=lambda j: (-j["prev_w"], -j["cur_w"], j["family"]))
+    leg = {"state": "judged" if due else "not_due", "window_from": iso(cur_from), "window_to": iso(cur_to),
+           "phase": phase, "prior_from": iso(prior_from), "prior_to": iso(prior_to), "prior_phase": prior_phase,
+           "prior_source": prior_source, "post_days": post_days, "flipped_at": iso(flip)}
+    if not due:
+        leg["due_run"] = (p0 + WEEK_DAYS * DAY).date().isoformat()
+    return leg, rows
+
+
+def evaluate_early_leg(daily: dict, ref: datetime, flip: datetime, r0: datetime) -> dict:
+    """Pooled activations over the first post-flip days [P0, REF), against the smallest pooled total
+    of any run of the same length inside [R0 - 42 d, R0). post and pre_min are recorded in every
+    state; only 2 <= L <= 6 can page."""
+    p0 = first_midnight_at_or_after(flip)
+    post_days = max(0, (ref - p0).days)
+    pooled = pooled_daily(daily)
+    start = p0 if ref > p0 else ref
+    post = window_total(pooled, start, ref)
+    pre_min = None
+    if 1 <= post_days <= EARLY_LOOKBACK_DAYS:
+        lo = r0 - EARLY_LOOKBACK_DAYS * DAY
+        pre_min = min(window_total(pooled, lo + i * DAY, lo + (i + post_days) * DAY)
+                      for i in range(EARLY_LOOKBACK_DAYS - post_days + 1))
+    if post_days < EARLY_FIRST_DAY:
+        state = "not_due"
+    elif post_days >= WEEK_DAYS:
+        state = "retired"
+    elif pre_min is None or pre_min < EARLY_MIN_PRE:
+        state = "below_floor"
+    elif EARLY_COLLAPSE_FACTOR * post < pre_min:
+        state = "early_collapse"
+    else:
+        state = "ok"
+    leg = {"state": state, "window_from": iso(start), "window_to": iso(ref), "phase": window_phase(start, ref, flip),
+           "post_days": post_days, "post": post, "pre_min": pre_min, "daily": window_daily(pooled, start, ref),
+           "flipped_at": iso(flip)}
+    if state == "not_due":
+        leg["due_run"] = (p0 + EARLY_FIRST_DAY * DAY).date().isoformat()
+    return leg
 
 
 def load_envelope(path=None):
@@ -284,7 +499,15 @@ def load_envelope(path=None):
     return doc, None
 
 
-def build_metrics(probe: dict, rows: dict, judged: list[dict], volume=None, envelope=None, envelope_reason=None) -> dict:
+def series_from_for(env_doc) -> str | None:
+    """The lookback the probe must cover for the early leg: [R0 - 42 d, …). None ⇒ the probe's own
+    default (REF - 2 weeks), which is all the weekly leg needs."""
+    r0 = parse_ts((env_doc or {}).get("reference_day"))
+    return iso(r0 - EARLY_LOOKBACK_DAYS * DAY) if r0 else None
+
+
+def build_metrics(probe: dict, rows: dict, weekly_rows: list, volume=None, envelope=None, envelope_reason=None,
+                  weekly_leg=None, early_leg=None, guard_reason=None) -> dict:
     """The record body. Compact on purpose: canary_result_log refuses a line over 8 KiB."""
     by_pool: dict = {}
     for r in rows["calls_1d"]:
@@ -296,6 +519,7 @@ def build_metrics(probe: dict, rows: dict, judged: list[dict], volume=None, enve
         top = sorted(p["families"].items(), key=lambda kv: -kv[1])[:TOP_FAMILIES]
         p["families"] = dict(top)
     a30 = rows["anthropic_30d"]
+    breaches = sum(1 for j in weekly_rows if j["state"] == "breach") + (1 if (early_leg or {}).get("state") == "early_collapse" else 0)
     return {
         "mode": probe.get("mode"),
         "n_ruled": probe.get("n"),
@@ -307,18 +531,23 @@ def build_metrics(probe: dict, rows: dict, judged: list[dict], volume=None, enve
         "anthropic_buckets_30d": a30["buckets"],
         "oauth_trigger": "MET" if a30["calls"] >= OAUTH_TRIGGER_CALLS else "NOT_MET",
         "activation": [
-            {k: j[k] for k in ("family", "prev_w", "cur_w", "drop_pct", "envelope_pct", "state")}
-            for j in judged[:TOP_FAMILIES]
+            {k: j[k] for k in ("family", "prev_w", "cur_w", "drop_pct", "envelope_pct", "state", "daily")}
+            for j in weekly_rows[:TOP_FAMILIES]
         ],
-        "activation_breaches": sum(1 for j in judged if j["state"] == "breach"),
-        "envelope": ({"reference_day": envelope.get("reference_day"), "frozen_at": envelope.get("computed_at")}
+        "activation_breaches": breaches,
+        "activation_legs": ({"weekly": weekly_leg, "early": early_leg} if guard_reason is None
+                            else {"state": "undecidable", "reason": guard_reason[:200]}),
+        "ip_hash_version": probe.get("ip_hash_version"),
+        "envelope": ({"reference_day": envelope.get("reference_day"), "frozen_at": envelope.get("computed_at"),
+                      "flipped_at": envelope.get("flipped_at"),
+                      "ip_hash_version": envelope.get("ip_hash_version") or ENVELOPE_DEFAULT_IP_HASH_VERSION}
                      if envelope else {"state": envelope_reason or "absent"}),
         "volume": [
             {k: v[k] for k in ("family", "prev7", "cur7", "drop_pct", "buckets7")}
             for v in (volume or [])[:TOP_FAMILIES]
         ],
         "guard_armed": probe.get("mode") == "live",
-        "units": "activation = buckets whose FIRST successful free metered call fell in the week; volume = calls (reported, never paged); buckets are distinct ip buckets, not people",
+        "units": "activation = buckets whose FIRST successful free metered call fell in the window; volume = calls (reported, never paged); buckets are distinct ip buckets, not people",
     }
 
 
@@ -328,16 +557,37 @@ def should_page(mode: str) -> bool:
     return mode == "live"
 
 
-def build_body(judged: list[dict]) -> str:
-    """Operator-facing body. Entity nouns on every id ('client family node'), never a bare number."""
-    breaches = [j for j in judged if j["state"] == "breach"]
+def _day_span(frm: str, to: str) -> str:
+    """'[2026-10-13, 2026-10-20)' — the judged UTC days, end exclusive."""
+    return "[%s, %s)" % (frm[:10], to[:10])
+
+
+def build_body(weekly_leg: dict, weekly_rows: list, early_leg: dict) -> str:
+    """Operator-facing body. Entity nouns on every id ('client family node'), never a bare number.
+    It names the judged window, its post-flip day count and the per-day series beside every count —
+    every window that can reach this body is post-flip by construction."""
+    breaches = [j for j in weekly_rows if j["state"] == "breach"]
+    collapsed = (early_leg or {}).get("state") == "early_collapse"
     lines = ["\U0001F6D1 %s" % ALERT_ID, ""]
-    noun = "client family" if len(breaches) == 1 else "client families"
-    lines.append("Weekly ACTIVATIONS (buckets making their first successful free call) fell %d%%+ week over"
-                 " week, beyond the pre-flip envelope, for %d %s:" % (int(GUARD_DROP * 100), len(breaches), noun))
-    for j in breaches:
-        lines.append("• client family %s: %d → %d activating buckets/week (−%s %%; its largest pre-flip weekly drop was %s %%)"
-                     % (j["family"], j["prev_w"], j["cur_w"], j["drop_pct"], j["envelope_pct"]))
+    if breaches:
+        noun = "client family" if len(breaches) == 1 else "client families"
+        prior = ("the previous post-flip week" if weekly_leg["prior_source"] == "measured"
+                 else "the last whole pre-flip week, frozen in the envelope")
+        lines.append("Weekly ACTIVATIONS (buckets making their first successful free call) fell %d%%+ week over"
+                     " week, beyond the pre-flip envelope, for %d %s:" % (int(GUARD_DROP * 100), len(breaches), noun))
+        lines.append("Judged week %s — %d whole post-flip days since the flip at %s; prior = %s."
+                     % (_day_span(weekly_leg["window_from"], weekly_leg["window_to"]), weekly_leg["post_days"],
+                        weekly_leg["flipped_at"], prior))
+        for j in breaches:
+            lines.append("• client family %s: %d → %d activating buckets/week (−%s %%; its largest pre-flip weekly drop was %s %%) · daily %s"
+                         % (j["family"], j["prev_w"], j["cur_w"], j["drop_pct"], j["envelope_pct"], j["daily"]))
+    if collapsed:
+        if breaches:
+            lines.append("")
+        lines.append("Pooled ACTIVATIONS (all client families) collapsed in the first %d post-flip days %s: %d, below half"
+                     " of the worst pre-flip %d-day run (%d) · daily %s"
+                     % (early_leg["post_days"], _day_span(early_leg["window_from"], early_leg["window_to"]),
+                        early_leg["post"], early_leg["post_days"], early_leg["pre_min"], early_leg["daily"]))
     lines += ["", "Read the daily stepup-readout records (vault Claude files/canary-results.jsonl) beside the",
               "STEPUP_MODE in force. Rollback lever: STEPUP_MODE=shadow|off through an interlocked recreate.",
               "Action: dispatch OPS-STEPUP-ACTIVATION-W{NEXT}"]
@@ -372,18 +622,23 @@ def clear(reason: str) -> None:
     log("wrapper --clear exit=%d out=%s" % (proc.returncode, (proc.stdout or proc.stderr).strip()[:160]))
 
 
-def run_probe(ref_iso=None, weeks=None) -> dict:
+PROBE_KEYS = ("mode", "n", "d0", "d1", "ref", "weeks", "ip_hash_version", "series_from", "sql")
+
+
+def run_probe(ref_iso=None, weeks=None, series_from=None) -> dict:
     env_args = []
     if ref_iso:
         env_args += ["-e", "STEPUP_REF_ISO=%s" % ref_iso]
     if weeks:
         env_args += ["-e", "STEPUP_WEEKS=%d" % int(weeks)]
+    if series_from:
+        env_args += ["-e", "STEPUP_SERIES_FROM=%s" % series_from]
     proc = subprocess.run(["docker", "exec"] + env_args + [APP_CONTAINER, "node", "-e", PROBE_JS],
                           capture_output=True, text=True, timeout=90)
     if proc.returncode != 0:
         raise RuntimeError("probe exit %d: %s" % (proc.returncode, (proc.stderr or "").strip()[:200]))
     probe = json.loads(proc.stdout)
-    for key in ("mode", "n", "d0", "d1", "ref", "weeks", "sql"):
+    for key in PROBE_KEYS:
         if key not in probe:
             raise RuntimeError("probe output lacks %r" % key)
     if probe["mode"] not in ("off", "shadow", "live"):
@@ -421,38 +676,67 @@ def finish(verdict: str, code: int) -> int:
 
 
 def main() -> int:
+    env_doc, env_reason = load_envelope()
     try:
-        probe = run_probe()
+        probe = run_probe(series_from=series_from_for(env_doc))
         rows = parse_rows(run_sql(probe["sql"]))
+        ref = parse_ts(probe["ref"])
+        if ref is None:
+            raise RuntimeError("probe ref %r is not an ISO-8601 instant" % probe["ref"])
     except Exception as e:  # noqa: BLE001 — could not evaluate: INDETERMINATE, never a default
         log("INDETERMINATE: %s" % str(e)[:240])
         record("INDETERMINATE", 3, {"reason": str(e)[:200]})
         return finish("INDETERMINATE", 3)
     volume = evaluate_volume(rows["act"])
-    env_doc, env_reason = load_envelope()
-    judged = evaluate_activation(weekly_by_family(rows["actw"], 2), env_doc["families"] if env_doc else None)
-    metrics = build_metrics(probe, rows, judged, volume, env_doc, env_reason)
-    for j in judged:
-        log("ACTIVATION family=%s prev_w=%d cur_w=%d drop_pct=%s envelope_pct=%s state=%s"
-            % (j["family"], j["prev_w"], j["cur_w"], j["drop_pct"], j["envelope_pct"], j["state"]))
+    daily = daily_by_family(rows["actd"])
+    cp, guard_reason = change_point(env_doc, probe["ip_hash_version"])
+    if env_doc is None:
+        guard_reason = "no frozen activation envelope (%s) — run --freeze-envelope --flip-at <flip instant>" % env_reason
+    weekly_leg = early_leg = None
+    weekly_rows: list = []
+    if cp is not None:
+        flip, r0, _ver = cp
+        need_from = parse_ts(series_from_for(env_doc))
+        got_from = parse_ts(probe["series_from"])
+        if got_from is None or need_from is None or got_from > need_from:
+            guard_reason = ("the probe's series starts at %s, after the %s the early leg needs"
+                            % (probe["series_from"], series_from_for(env_doc)))
+        else:
+            weekly_leg, weekly_rows = evaluate_weekly_leg(daily, env_doc, ref, flip)
+            early_leg = evaluate_early_leg(daily, ref, flip, r0)
+    metrics = build_metrics(probe, rows, weekly_rows, volume, env_doc, env_reason, weekly_leg, early_leg, guard_reason)
+    if weekly_leg is not None:
+        log("ACTIVATION_LEG leg=weekly state=%s window=%s phase=%s post_days=%d prior=%s(%s)%s"
+            % (weekly_leg["state"], _day_span(weekly_leg["window_from"], weekly_leg["window_to"]), weekly_leg["phase"],
+               weekly_leg["post_days"], weekly_leg["prior_source"], weekly_leg["prior_phase"],
+               (" due_run=%s" % weekly_leg["due_run"]) if "due_run" in weekly_leg else ""))
+        for j in weekly_rows:
+            log("ACTIVATION family=%s prev_w=%d cur_w=%d drop_pct=%s envelope_pct=%s state=%s daily=%s"
+                % (j["family"], j["prev_w"], j["cur_w"], j["drop_pct"], j["envelope_pct"], j["state"], j["daily"]))
+        log("ACTIVATION_LEG leg=early state=%s window=%s phase=%s post_days=%d post=%d pre_min=%s daily=%s%s"
+            % (early_leg["state"], _day_span(early_leg["window_from"], early_leg["window_to"]), early_leg["phase"],
+               early_leg["post_days"], early_leg["post"], early_leg["pre_min"], early_leg["daily"],
+               (" due_run=%s" % early_leg["due_run"]) if "due_run" in early_leg else ""))
+    else:
+        log("ACTIVATION_LEGS undecidable: %s" % guard_reason)
     for v in volume:
         log("VOLUME family=%s prev7=%d cur7=%d drop_pct=%s (reported, never paged)"
             % (v["family"], v["prev7"], v["cur7"], v["drop_pct"]))
     log("POOLS %s" % json.dumps(metrics["free_metered_1d"], separators=(",", ":"))[:600])
     log("OAUTH_TRIGGER=%s anthropic_calls_30d=%d" % (metrics["oauth_trigger"], metrics["anthropic_calls_30d"]))
-    log("ENVELOPE %s" % ("frozen, reference_day=%s" % env_doc.get("reference_day") if env_doc else env_reason))
-    if should_page(probe["mode"]) and env_doc is None:
-        log("INDETERMINATE: STEPUP_MODE=live but no frozen activation envelope (%s) — the guard cannot "
-            "decide; run --freeze-envelope --flip-at <flip instant>" % env_reason)
+    log("ENVELOPE %s · IP_HASH_VERSION=%s" % (("frozen, reference_day=%s flipped_at=%s" % (env_doc.get("reference_day"), env_doc.get("flipped_at")))
+                                             if env_doc else env_reason, probe["ip_hash_version"]))
+    if should_page(probe["mode"]) and guard_reason is not None:
+        log("INDETERMINATE: STEPUP_MODE=live but the activation guard cannot decide — %s" % guard_reason)
         record("INDETERMINATE", 3, metrics)
         return finish("INDETERMINATE", 3)
-    breaches = [j for j in judged if j["state"] == "breach"]
-    if breaches and should_page(probe["mode"]):
-        fire(build_body(judged))
+    pageable = metrics["activation_breaches"] > 0
+    if pageable and should_page(probe["mode"]):
+        fire(build_body(weekly_leg, weekly_rows, early_leg))
         record("FAIL", 0, metrics)
         return finish("FAIL", 0)
-    if breaches:
-        log("ACTIVATION_BREACH_REPORTED=%d (mode=%s — the guard pages only in live)" % (len(breaches), probe["mode"]))
+    if pageable:
+        log("ACTIVATION_BREACH_REPORTED=%d (mode=%s — the guard pages only in live)" % (metrics["activation_breaches"], probe["mode"]))
     clear("no paged activation breach (mode=%s)" % probe["mode"])
     record("PASS", 0, metrics)
     return finish("PASS", 0)
@@ -462,6 +746,9 @@ def freeze_envelope(flip_at_iso: str, force: bool = False) -> int:
     """Compute the activation envelope from request_log for the 7 weeks before the flip's UTC day
     and freeze it at ENVELOPE_PATH. Refuses to overwrite a frozen envelope without --force: the
     envelope is the PRE-flip baseline, and recomputing it later would fold post-flip weeks in.
+    It records the ip-hash version it was frozen under, so a later rotation is a visible change
+    point rather than a silent collapse. The weekly counts are projected from the same daily
+    first-activation series the daily run judges — one derivation for both.
     Token: STEPUP_ENVELOPE_VERDICT=WRITTEN|EXISTS|INDETERMINATE (exit 0/0/3)."""
     if os.path.exists(ENVELOPE_PATH) and not force:
         log("ENVELOPE_EXISTS at %s — refusing to overwrite the frozen pre-flip baseline" % ENVELOPE_PATH)
@@ -470,11 +757,14 @@ def freeze_envelope(flip_at_iso: str, force: bool = False) -> int:
     try:
         probe = run_probe(ref_iso=flip_at_iso, weeks=ENVELOPE_WEEKS + 1)
         rows = parse_rows(run_sql(probe["sql"]))
+        ref = parse_ts(probe["ref"])
+        if ref is None:
+            raise RuntimeError("probe ref %r is not an ISO-8601 instant" % probe["ref"])
     except Exception as e:  # noqa: BLE001
         log("ENVELOPE_INDETERMINATE: %s" % str(e)[:240])
         print("STEPUP_ENVELOPE_VERDICT=INDETERMINATE", flush=True)
         return 3
-    fams = compute_envelope(weekly_by_family(rows["actw"], ENVELOPE_WEEKS + 1))
+    fams = compute_envelope(weekly_from_daily(daily_by_family(rows["actd"]), ref, ENVELOPE_WEEKS + 1))
     if not fams:
         log("ENVELOPE_INDETERMINATE: zero activating families before %s — nothing to freeze" % probe.get("ref"))
         print("STEPUP_ENVELOPE_VERDICT=INDETERMINATE", flush=True)
@@ -484,6 +774,7 @@ def freeze_envelope(flip_at_iso: str, force: bool = False) -> int:
         "reference_day": probe["ref"],
         "weeks": ENVELOPE_WEEKS + 1,
         "mode_at_freeze": probe["mode"],
+        "ip_hash_version": probe["ip_hash_version"],
         "computed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "rule": ("weekly activations = buckets whose first successful free metered call fell in each 7-day "
                  "window before reference_day (weekly[0] most recent); drops_pct[j] = week j against week j+1; "
@@ -538,6 +829,29 @@ def _selftest_log(check) -> None:
         shutil.rmtree(tmpd, ignore_errors=True)
 
 
+# The measured world these fixtures stand in for (OPS-STEPUP-ACTIVATION-W1 R1.0, signal-1, aoe_readonly).
+_FLIP = "2026-10-12T11:24:01Z"
+_R0 = "2026-10-12T00:00:00.000Z"
+_NODE_PREV = [1, 6, 7, 7, 3, 9, 3]       # node first activations 2026-09-29 … 10-05 (Σ 36)
+_NODE_ALERT = [1, 0, 2, 2, 3, 4, 1]      # node first activations 2026-10-06 … 10-12 (Σ 13, all pre-flip)
+
+
+def _actd(spec: dict) -> str:
+    """{family: {'YYYY-MM-DD': n}} → psql `actd` rows."""
+    return "\n".join("actd|%s|%s|%d|" % (fam, day, n) for fam, days in spec.items() for day, n in sorted(days.items()))
+
+
+def _days(first: str, counts: list) -> dict:
+    d0 = date.fromisoformat(first)
+    return {(d0 + i * DAY).isoformat(): n for i, n in enumerate(counts) if n}
+
+
+def _probe(mode: str, ref: str, version: str = "v2") -> dict:
+    r = parse_ts(ref)
+    return {"mode": mode, "n": 20, "d0": iso(r - DAY), "d1": iso(r), "ref": ref, "weeks": 2,
+            "ip_hash_version": version, "series_from": "2026-08-31T00:00:00.000Z", "sql": "-"}
+
+
 def self_test() -> int:
     os.environ["STEPUP_READOUT_SELFTEST"] = "1"
     fails = []
@@ -564,14 +878,8 @@ def self_test() -> int:
         "qhb_1d|other|1200|3|",
         "act|python-requests|900|1500|5",   # volume: −40 % — REPORTED, never paged
         "act|node|700|800|90",
-        # activations: wk 0 = the last complete week, wk 1 = the one before
-        "actw|node|0|4|", "actw|node|1|20|",                          # −80 %, envelope 57.1 → breach
-        "actw|python-requests|0|3|", "actw|python-requests|1|6|",     # −50 %, envelope 75 → within_envelope
-        "actw|claude|0|0|", "actw|claude|1|3|",                       # prior 3 < 5 → below_floor
-        "actw|mcp-sdk|0|7|", "actw|mcp-sdk|1|10|",                    # −30 % exactly, envelope 25 → breach
-        "actw|undici|0|1|", "actw|undici|1|9|",                       # −88.9 %, no envelope row → no_envelope
-        "actw|growth|0|12|", "actw|growth|1|6|",                      # growth → ok
-        "actw|node|9|99|",                                            # outside the 2-week window → ignored
+        "actd|node|2026-10-06|1|", "actd|node|2026-10-06|2|",          # same family + day sums
+        "actd|node|not-a-day|9|",                                       # unparseable day → ignored
         "garbage line",
         "unknown_label|1|2|3|4",
     ])
@@ -579,15 +887,33 @@ def self_test() -> int:
     check("parse: every labelled row lands in its bucket",
           len(rows["calls_1d"]) == 3 and rows["anthropic_30d"] == {"calls": 64, "buckets": 1}
           and len(rows["stepup_1d"]) == 1 and len(rows["qhb_1d"]) == 1 and len(rows["act"]) == 2
-          and len(rows["actw"]) == 13)
-    weekly2 = weekly_by_family(rows["actw"], 2)
-    check("activations: a window outside the requested weeks is ignored", weekly2["node"] == [4, 20])
+          and len(rows["actd"]) == 2)
+    check("parse: the daily series sums one family's rows per UTC day",
+          daily_by_family(rows["actd"]) == {"node": {date(2026, 10, 6): 3}})
+
+    # ── the window primitives ──
+    flip = parse_ts(_FLIP)
+    p0 = first_midnight_at_or_after(flip)
+    check("time: P0 is the first UTC midnight AFTER an intra-day flip", iso(p0) == "2026-10-13T00:00:00Z")
+    check("time: a flip exactly at midnight is its own P0",
+          first_midnight_at_or_after(parse_ts("2026-10-12T00:00:00Z")) == parse_ts("2026-10-12T00:00:00Z"))
+    check("time: parse_ts is strict — a bare date and a naive instant are refused",
+          parse_ts("2026-10-12") is None and parse_ts("2026-10-12T11:24:01") is None
+          and parse_ts("2026-10-12T13:24:01+02:00") == flip)
+    d = lambda s: parse_ts(s + "T00:00:00Z")  # noqa: E731
+    check("phase: a window starting at the flip day's next midnight is post",
+          window_phase(d("2026-10-13"), d("2026-10-20"), flip) == "post")
+    check("phase: a window ending at or before the flip instant is pre",
+          window_phase(d("2026-10-05"), d("2026-10-12"), flip) == "pre"
+          and window_phase(d("2026-10-05"), flip, flip) == "pre")
+    check("phase: the alert's week [10-06, 10-13) straddles the flip",
+          window_phase(d("2026-10-06"), d("2026-10-13"), flip) == "straddles")
+    check("phase: a window starting exactly at the change instant is post", window_phase(flip, d("2026-10-20"), flip) == "post")
+
+    # ── the envelope, as frozen on 2026-10-12, and its re-derivation from the daily series ──
     env_fams = compute_envelope({
         "node": [15, 35, 26, 10, 23, 33, 61],               # measured pre-flip shape, 2026-10-12
         "python-requests": [1, 2, 8, 4, 0, 0, 0],
-        "mcp-sdk": [3, 4, 4, 4, 4, 4, 4],
-        "claude": [0, 3, 3, 3, 3, 3, 3],
-        "growth": [6, 6, 6, 6, 6, 6, 6],
         "silent": [0, 0, 0, 0, 0, 0, 0],
     })
     check("envelope: node's largest pre-flip weekly drop is 57.1 %", env_fams["node"]["envelope_pct"] == 57.1)
@@ -596,77 +922,171 @@ def self_test() -> int:
           and env_fams["python-requests"]["envelope_pct"] == 75.0)
     check("envelope: a family that never activated has NO envelope (undefined, not 0 %)",
           env_fams["silent"]["envelope_pct"] is None)
-    judged = evaluate_activation(weekly2, env_fams)
-    state = {j["family"]: j["state"] for j in judged}
-    check("guard: −80 % on 20, beyond node's 57.1 % envelope, is a breach", state["node"] == "breach")
-    check("guard: −50 % inside python-requests' 75 % envelope is NOT a breach",
-          state["python-requests"] == "within_envelope")
-    check("guard: a prior week under 5 activating buckets is reported, never paged", state["claude"] == "below_floor")
-    check("guard: the 30 % boundary is inclusive (and 30 > a 25 % envelope)", state["mcp-sdk"] == "breach")
-    check("guard: a family with no envelope row is no_envelope — UNDEFINED, never a page", state["undici"] == "no_envelope")
-    check("guard: growth is ok", state["growth"] == "ok")
-    edge = {"x": {"envelope_pct": 50.0}}
-    check("guard: prior exactly 5 is enough (5 → 1, −80 % > 50 %)",
-          evaluate_activation({"x": [1, 5]}, edge)[0]["state"] == "breach")
-    check("guard: prior 4 is not (4 → 0)", evaluate_activation({"x": [0, 4]}, edge)[0]["state"] == "below_floor")
-    check("guard: a drop EQUAL to the envelope is within it — the ruling says LARGER",
-          evaluate_activation({"x": [5, 10]}, edge)[0]["state"] == "within_envelope")
-    check("guard: with no envelope at all, every would-be breach is no_envelope",
-          all(j["state"] != "breach" for j in evaluate_activation(weekly2, None)))
+    r0 = parse_ts(_R0)
+    one_day_per_week = {"node": {(r0.date() - (7 * j + 1) * DAY): n for j, n in enumerate([15, 35, 26, 10, 23, 33, 61])}}
+    check("envelope: weekly counts are a projection of the ONE daily series (A_j = days in [R0-7(j+1), R0-7j))",
+          weekly_from_daily(one_day_per_week, r0, 7) == {"node": [15, 35, 26, 10, 23, 33, 61]})
+    env_doc = {"flipped_at": _FLIP, "reference_day": _R0, "computed_at": "2026-10-12T11:24:44Z", "families": env_fams}
+
+    # ── the ladder (unchanged) ──
+    check("judge: prior exactly 5 is enough (5 → 1, −80 % > 50 %)", judge_week(5, 1, 50.0)[0] == "breach")
+    check("judge: prior 4 is not (4 → 0)", judge_week(4, 0, 50.0)[0] == "below_floor")
+    check("judge: a drop EQUAL to the envelope is within it — the ruling says LARGER", judge_week(10, 5, 50.0)[0] == "within_envelope")
+    check("judge: the 30 % boundary is inclusive (and 30 > a 25 % envelope)", judge_week(10, 7, 25.0)[0] == "breach")
+    check("judge: no envelope row is no_envelope — UNDEFINED, never a page", judge_week(9, 1, None)[0] == "no_envelope")
+    check("judge: growth is ok", judge_week(6, 12, 10.0)[0] == "ok")
+
+    def world(node_from: str, node_counts: list, extra=None) -> dict:
+        spec = {"node": _days("2026-09-29", _NODE_PREV + _NODE_ALERT)}
+        spec["node"].update(_days(node_from, node_counts))
+        for fam, days in (extra or {}).items():
+            spec.setdefault(fam, {}).update(days)
+        return daily_by_family(parse_rows(_actd(spec))["actd"])
+
+    # T1 — today's page, reproduced in both directions.
+    ref1 = parse_ts("2026-10-13T00:00:00.000Z")
+    leg1, rows1 = evaluate_weekly_leg(world("2026-10-13", []), env_doc, ref1, flip)
+    node1 = next(j for j in rows1 if j["family"] == "node")
+    check("T1: the 2026-10-13 run is not_due — 0 whole post-flip days, the judged week straddles",
+          leg1["state"] == "not_due" and leg1["post_days"] == 0 and leg1["phase"] == "straddles" and node1["state"] == "not_due")
+    check("T1: the record still shows what moved — node 36 → 13 on the REF-anchored weeks",
+          node1["prev_w"] == 36 and node1["cur_w"] == 13 and node1["daily"] == "1,0,2,2,3,4,1")
+    check("T1: the SAME inputs through the pre-fix rule page (36 → 13 = −63.9 % > 57.1 %) — the reproduction is proven",
+          judge_week(36, 13, 57.1) == ("breach", 63.9))
+    check("T1: due_run is the UTC day of the first post-flip week's run", leg1.get("due_run") == "2026-10-20")
+
+    # T2 — REF 2026-10-20: the first judged week; its prior straddles, so the envelope's week 0 stands in.
+    ref2 = parse_ts("2026-10-20T00:00:00.000Z")
+    leg2, rows2 = evaluate_weekly_leg(world("2026-10-13", [1, 0, 0, 1, 0, 2, 0]), env_doc, ref2, flip)
+    node2 = next(j for j in rows2 if j["family"] == "node")
+    check("T2: the week [10-13, 10-20) is judged — post by construction, 7 post-flip days",
+          leg2["state"] == "judged" and leg2["phase"] == "post" and leg2["post_days"] == 7 and "due_run" not in leg2)
+    check("T2: a straddling prior is never judged — envelope_week0 (15) stands in",
+          leg2["prior_phase"] == "straddles" and leg2["prior_source"] == "envelope_week0" and node2["prev_w"] == 15)
+    check("T2: 15 → 4 = −73.3 % > 57.1 % is a breach", node2["cur_w"] == 4 and node2["drop_pct"] == 73.3 and node2["state"] == "breach")
+
+    # T3 — same week, a fall inside the guard.
+    _l3, rows3 = evaluate_weekly_leg(world("2026-10-13", [2, 2, 2, 2, 2, 1, 1]), env_doc, ref2, flip)
+    node3 = next(j for j in rows3 if j["family"] == "node")
+    check("T3: 15 → 12 = −20 % is ok", node3["cur_w"] == 12 and node3["drop_pct"] == 20.0 and node3["state"] == "ok")
+
+    # T4 — REF 2026-10-27: the prior week is post-flip, so it is MEASURED.
+    ref4 = parse_ts("2026-10-27T00:00:00.000Z")
+    leg4, rows4 = evaluate_weekly_leg(world("2026-10-13", [2, 1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1]), env_doc, ref4, flip)
+    node4 = next(j for j in rows4 if j["family"] == "node")
+    check("T4: a post-flip prior week is measured, not substituted",
+          leg4["prior_phase"] == "post" and leg4["prior_source"] == "measured" and node4["prev_w"] == 10 and node4["cur_w"] == 7)
+
+    # The early leg — pooled, post-flip days 2..6, against the worst pre-flip run of the same length.
+    def early_world(pre_daily: list, post_daily: list) -> dict:
+        pre = _days("2026-08-31", pre_daily)           # [R0 - 42 d, R0) = 2026-08-31 … 10-11
+        post = _days("2026-10-13", post_daily)
+        return daily_by_family(parse_rows(_actd({"node": {**pre}, "other": post}))["actd"])
+
+    flat3 = [3] * 42
+    e5 = evaluate_early_leg(early_world(flat3, [1, 1]), parse_ts("2026-10-15T00:00:00.000Z"), flip, r0)
+    check("T5: L = 2, pooled post 2 against pre_min 6 → early_collapse",
+          e5["state"] == "early_collapse" and e5["post"] == 2 and e5["pre_min"] == 6 and e5["post_days"] == 2
+          and e5["daily"] == "1,1" and e5["phase"] == "post")
+    e6 = evaluate_early_leg(early_world(flat3, [2, 1]), parse_ts("2026-10-15T00:00:00.000Z"), flip, r0)
+    check("T6: post 3 against pre_min 6 is not a collapse (exactly half is not below half)",
+          e6["state"] == "ok" and e6["post"] == 3 and e6["pre_min"] == 6)
+    dip = [3] * 42
+    dip[20] = 0
+    e7 = evaluate_early_leg(early_world(dip, [0, 0]), parse_ts("2026-10-15T00:00:00.000Z"), flip, r0)
+    check("T7: a worst pre-flip run of 3 is under the floor — below_floor, never a page, even at post 0",
+          e7["state"] == "below_floor" and e7["pre_min"] == 3 and e7["post"] == 0)
+    e8 = evaluate_early_leg(early_world(flat3, [0]), parse_ts("2026-10-14T00:00:00.000Z"), flip, r0)
+    check("T8: L = 1 is not_due, and still carries post and pre_min",
+          e8["state"] == "not_due" and e8["post_days"] == 1 and e8["post"] == 0 and e8["pre_min"] == 3
+          and e8.get("due_run") == "2026-10-15")
+    e0 = evaluate_early_leg(early_world(flat3, []), ref1, flip, r0)
+    check("early: L = 0 (the first run after the flip) is not_due with an empty window",
+          e0["state"] == "not_due" and e0["post_days"] == 0 and e0["post"] == 0 and e0["pre_min"] is None and e0["daily"] == "")
+    e9 = evaluate_early_leg(early_world(flat3, [0] * 7), ref2, flip, r0)
+    check("early: L = 7 is retired — the weekly leg owns it", e9["state"] == "retired")
+    check("early: the measured 2026-10-12 population gives pre_min 0 / 3 / 8 at L = 2 / 3 / 4",
+          [evaluate_early_leg(early_world([5, 7, 4, 7, 7, 0, 6, 8, 5, 2, 10, 3, 0, 0, 8, 2, 4, 2, 0, 6, 2, 5, 9, 7, 2, 4, 8,
+                                           6, 6, 1, 7, 12, 7, 3, 10, 3, 2, 1, 4, 3, 5, 4], [9] * L),
+                              parse_ts(iso(p0 + L * DAY)), flip, r0)["pre_min"] for L in (2, 3, 4)] == [0, 3, 8])
+
+    # T9 / T10 — the guard refuses to decide on a changed instrument or a missing change instant.
+    check("T9: an ip-hash version that differs from the envelope's (absent ⇒ v2) is undecidable",
+          change_point(env_doc, "v3")[0] is None and "re-freeze at the rotation" in change_point(env_doc, "v3")[1]
+          and change_point(env_doc, "v2")[0] is not None
+          and change_point({**env_doc, "ip_hash_version": "v3"}, "v3")[0] is not None)
+    check("T9: the probe filters on the DEPLOYED version tag, never a literal",
+          "LIKE ' + q(VER + ':%')" in PROBE_JS and "LIKE 'v2:%'" not in PROBE_JS and "IP_HASH_VERSION } = require" in PROBE_JS)
+    no_flip = {k: v for k, v in env_doc.items() if k != "flipped_at"}
+    check("T10: an envelope without flipped_at is undecidable", change_point(no_flip, "v2")[0] is None)
+
+    # ── metrics + body ──
     volume = evaluate_volume(rows["act"])
-    check("volume: reported with its drop, and carries no paging state",
-          [v["drop_pct"] for v in volume] == [40.0, 12.5] and all("state" not in v for v in volume))
-    probe = {"mode": "shadow", "n": 20, "d0": "2026-10-12T00:00:00.000Z", "d1": "2026-10-13T00:00:00.000Z",
-             "ref": "2026-10-13T00:00:00.000Z", "weeks": 2, "sql": ""}
-    env_doc = {"reference_day": "2026-10-12T00:00:00.000Z", "computed_at": "2026-10-12T12:00:00Z", "families": env_fams}
-    metrics = build_metrics(probe, rows, judged, volume, env_doc, None)
+    probe = _probe("shadow", "2026-10-13T00:00:00.000Z")
+    early1 = evaluate_early_leg(world("2026-10-13", []), ref1, flip, r0)
+    metrics = build_metrics(probe, rows, rows1, volume, env_doc, None, leg1, early1)
     check("metrics: pools aggregate calls and buckets", metrics["free_metered_1d"]["other"]["calls"] == 420
           and metrics["free_metered_1d"]["anthropic"]["buckets"] == 1)
     check("metrics: OAUTH_TRIGGER is NOT_MET below 1,000", metrics["oauth_trigger"] == "NOT_MET")
-    rows_met = parse_rows("anthropic_30d|1000|3||")
     check("metrics: OAUTH_TRIGGER is MET at exactly 1,000",
-          build_metrics(probe, rows_met, [])["oauth_trigger"] == "MET")
-    check("metrics: activation breaches counted", metrics["activation_breaches"] == 2)
+          build_metrics(probe, parse_rows("anthropic_30d|1000|3||"), [])["oauth_trigger"] == "MET")
+    check("metrics: each leg carries window, phase, post_days, daily, flipped_at (+ due_run when not_due)",
+          all(k in metrics["activation_legs"]["weekly"] for k in ("window_from", "window_to", "phase", "prior_source", "post_days", "flipped_at", "due_run"))
+          and all(k in metrics["activation_legs"]["early"] for k in ("window_from", "window_to", "phase", "post_days", "post", "pre_min", "daily", "flipped_at", "due_run")))
+    check("metrics: per-family rows carry their daily series", metrics["activation"][0]["daily"] == "1,0,2,2,3,4,1")
+    check("metrics: a not_due run counts no breach", metrics["activation_breaches"] == 0)
     check("metrics: the record says which envelope judged it, or why none did",
-          metrics["envelope"]["reference_day"] == "2026-10-12T00:00:00.000Z"
-          and build_metrics(probe, rows, judged, volume, None, "absent at /x")["envelope"] == {"state": "absent at /x"})
+          metrics["envelope"]["flipped_at"] == _FLIP and metrics["envelope"]["ip_hash_version"] == "v2"
+          and build_metrics(probe, rows, [], volume, None, "absent at /x", guard_reason="x")["envelope"] == {"state": "absent at /x"})
     check("metrics: volume rides along, reported", [v["family"] for v in metrics["volume"]] == ["python-requests", "node"])
-    check("metrics: fits canary_result_log's 8 KiB line cap",
-          len(json.dumps(metrics, separators=(",", ":"))) < 7000)
-    big = parse_rows("\n".join(["calls_1d|other|fam%d|%d|1" % (i, i) for i in range(500)]
-                               + ["actw|fam%d|%d|%d|" % (i, i % 2, i) for i in range(500)]))
-    big_j = evaluate_activation(weekly_by_family(big["actw"], 2), None)
+    check("metrics: fits canary_result_log's 8 KiB line cap", len(json.dumps(metrics, separators=(",", ":"))) < 7000)
+    big_daily = {"fam%d" % i: {date(2026, 10, 6 + (i % 7)): i} for i in range(500)}
+    big_leg, big_rows = evaluate_weekly_leg(big_daily, env_doc, ref2, flip)
+    big = parse_rows("\n".join(["calls_1d|other|fam%d|%d|1" % (i, i) for i in range(500)]))
     check("metrics: 500 families still fit (top-N bound)",
-          len(json.dumps(build_metrics(probe, big, big_j), separators=(",", ":"))) < 7000)
-    body = build_body(judged)
-    check("body: names the alert id and the entity noun", ALERT_ID in body and "client family node" in body)
-    check("body: renders the activation numbers and the envelope",
-          "20 → 4 activating buckets/week" in body and "57.1 %" in body)
-    check("body: a below-floor / within-envelope / no-envelope family is not paged",
-          "client family claude" not in body and "client family python-requests" not in body
-          and "client family undici" not in body)
-    check("body: carries a templated Action line, never a literal wave number", "OPS-STEPUP-ACTIVATION-W{NEXT}" in body)
+          len(json.dumps(build_metrics(probe, big, big_rows, None, env_doc, None, big_leg, e9), separators=(",", ":"))) < 7000)
+
+    body2 = build_body(leg2, rows2, None)
+    check("body: names the alert id and the entity noun", ALERT_ID in body2 and "client family node" in body2)
+    check("body: renders the counts, the envelope, the judged window, its post-flip days and the daily series",
+          "15 → 4 activating buckets/week" in body2 and "57.1 %" in body2 and "[2026-10-13, 2026-10-20)" in body2
+          and "7 whole post-flip days" in body2 and "daily 1,0,0,1,0,2,0" in body2
+          and "the last whole pre-flip week" in body2)
+    check("body: a family that is not in breach is not paged", "client family python-requests" not in body2)
+    body5 = build_body(leg1, rows1, e5)
+    check("body: an early collapse names the pooled window, post vs pre_min and the daily series",
+          "all client families" in body5 and "first 2 post-flip days [2026-10-13, 2026-10-15): 2" in body5
+          and "worst pre-flip 2-day run (6)" in body5 and "daily 1,1" in body5 and "client family" not in body5)
+    check("body: carries the rollback line and a templated Action line, never a literal wave number",
+          "Rollback lever: STEPUP_MODE=shadow|off" in body2 and "OPS-STEPUP-ACTIVATION-W{NEXT}" in body2)
     # The bypassed artifacts: the probe and the psql invocation are the only code no scenario runs,
     # so their SHAPE is asserted here (a hermetic self-test is blind to exactly what its seam replaces).
     check("probe: derives set A with the app's own hashIp", "require('/app/dist/lib/analytics.js')" in PROBE_JS and "hashIp('160.79.' + i + '.0')" in PROBE_JS)
     check("probe: the metered predicate is the app's billablePredicate()", "billablePredicate()" in PROBE_JS)
     check("probe: mode and N come from the deployed plans module", "plans.resolveStepupMode(process.env)" in PROBE_JS and "FREE_KEYLESS_MONTHLY_CALLS_RULED" in PROBE_JS)
     check("probe: covers addresses .104 through .111 (the /21)", "i <= 111" in PROBE_JS and "i = 104" in PROBE_JS)
-    check("probe: activations are each v2 bucket's FIRST call (DISTINCT ON, earliest first)",
-          "DISTINCT ON (ip_hash)" in PROBE_JS and "ORDER BY ip_hash, \"timestamp\")" in PROBE_JS
-          and "ip_hash LIKE 'v2:%'" in PROBE_JS)
-    check("probe: the activation windows end at REF (today, or the flip's UTC day via STEPUP_REF_ISO)",
-          "process.env.STEPUP_REF_ISO" in PROBE_JS and "604800" in PROBE_JS and "ref: RISO" in PROBE_JS)
-    check("probe: never prints a hash — only mode, n, bounds and the SQL go to stdout",
+    check("probe: ONE first-activation CTE — each bucket's earliest row (DISTINCT ON), counted per family + UTC day",
+          PROBE_JS.count("DISTINCT ON (ip_hash)") == 1 and "ORDER BY ip_hash, \"timestamp\")" in PROBE_JS
+          and "to_char(first_ts::timestamptz AT TIME ZONE 'UTC', 'YYYY-MM-DD')" in PROBE_JS and "'actw'" not in PROBE_JS)
+    check("probe: the series ends at REF and starts at the guard's lookback (STEPUP_SERIES_FROM) or REF - WEEKS weeks",
+          "process.env.STEPUP_REF_ISO" in PROBE_JS and "process.env.STEPUP_SERIES_FROM" in PROBE_JS
+          and "REF.getTime() - WEEKS * 7 * DAY" in PROBE_JS and "ref: RISO" in PROBE_JS and "series_from: FISO" in PROBE_JS)
+    check("probe: a version tag that could carry a LIKE wildcard is refused in-container",
+          "/^[A-Za-z0-9]+$/.test(VER)" in PROBE_JS)
+    check("probe: never prints a hash — only mode, n, bounds, the version tag and the SQL go to stdout",
           PROBE_JS.count("process.stdout.write") == 1 and "JSON.stringify({ mode:" in PROBE_JS)
+    check("probe: run_probe demands every key the guard reads", set(PROBE_KEYS) >= {"ip_hash_version", "series_from", "ref"})
+    check("series_from: the early leg's lookback is R0 - 42 d", series_from_for(env_doc) == "2026-08-31T00:00:00Z"
+          and series_from_for(None) is None)
     check("alert id is a module-level literal (visible to check-alert-registry)", ALERT_ID == "STEPUP_ACTIVATION_DROP")
     check("guard: armed only in live", should_page("live") and not should_page("shadow") and not should_page("off"))
     check("metrics: records whether the guard was armed", metrics["guard_armed"] is False
-          and build_metrics({**probe, "mode": "live"}, rows, judged)["guard_armed"] is True)
-    fire(body)
-    check("fire in self-test skips the wrapper and records the body", LAST_FIRE.get(ALERT_ID) == body)
+          and build_metrics({**probe, "mode": "live"}, rows, rows1)["guard_armed"] is True)
+    fire(body2)
+    check("fire in self-test skips the wrapper and records the body", LAST_FIRE.get(ALERT_ID) == body2)
     clear("ok")
     check("clear in self-test skips the wrapper", LAST_CLEAR.get(ALERT_ID) == "ok")
+
     import shutil
     import tempfile
     g = globals()
@@ -680,20 +1100,21 @@ def self_test() -> int:
         check("envelope file: unreadable → (None, reason), never a crash", load_envelope()[0] is None)
         os.remove(g["ENVELOPE_PATH"])
         seen = {}
-        env_fixture = "\n".join("actw|node|%d|%d|" % (wk, n) for wk, n in enumerate([15, 35, 26, 10, 23, 33, 61]))
+        env_fixture = _actd(one_day_per_week)
 
-        def fake_probe(ref_iso=None, weeks=None, **_):
+        def fake_probe(ref_iso=None, weeks=None, series_from=None, **_):
             seen["ref"], seen["weeks"] = ref_iso, weeks
-            return {"mode": "shadow", "n": 20, "d0": "x", "d1": "y", "ref": "2026-10-12T00:00:00.000Z",
-                    "weeks": weeks or 2, "sql": "-"}
+            return {**_probe("live", "2026-10-12T00:00:00.000Z"), "weeks": weeks or 2}
         g["run_probe"] = fake_probe
         g["run_sql"] = lambda _sql: env_fixture
         rc_f = freeze_envelope("2026-10-12T13:00:00Z")
         doc, why = load_envelope()
         check("freeze: asks the probe for 7 weeks before the FLIP instant",
               seen.get("ref") == "2026-10-12T13:00:00Z" and seen.get("weeks") == 7)
-        check("freeze: writes a readable envelope with node at 57.1 %",
-              rc_f == 0 and doc is not None and doc["families"]["node"]["envelope_pct"] == 57.1)
+        check("freeze: writes a readable envelope with node at 57.1 %, from the daily series",
+              rc_f == 0 and doc is not None and doc["families"]["node"]["weekly"] == [15, 35, 26, 10, 23, 33, 61]
+              and doc["families"]["node"]["envelope_pct"] == 57.1)
+        check("freeze: records the ip-hash version it froze under", doc is not None and doc.get("ip_hash_version") == "v2")
         check("freeze: a second freeze REFUSES to overwrite the pre-flip baseline",
               freeze_envelope("2026-10-20T00:00:00Z") == 0 and load_envelope()[0]["flipped_at"] == "2026-10-12T13:00:00Z")
         check("freeze: --force overwrites", freeze_envelope("2026-10-20T00:00:00Z", force=True) == 0
@@ -702,22 +1123,56 @@ def self_test() -> int:
         os.remove(g["ENVELOPE_PATH"])
         check("freeze: zero activating families is INDETERMINATE (exit 3), never an empty envelope",
               freeze_envelope("2026-10-12T13:00:00Z") == 3 and not os.path.exists(g["ENVELOPE_PATH"]))
+
         # main(), end to end, with the two effects that reach production replaced by fixtures.
-        Path(g["ENVELOPE_PATH"]).write_text(json.dumps(env_doc), encoding="utf-8")
-        g["run_sql"] = lambda _sql: fixture
-        for mode, want in (("shadow", "PASS"), ("off", "PASS"), ("live", "FAIL")):
+        def run_main(mode, ref, actd_spec, envelope=env_doc, version="v2"):
             LAST_FIRE.clear(); LAST_RECORD.clear()
-            g["run_probe"] = lambda m=mode, **_: {"mode": m, "n": 20, "d0": "2026-10-12T00:00:00.000Z",
-                                                  "d1": "2026-10-13T00:00:00.000Z", "ref": "2026-10-13T00:00:00.000Z",
-                                                  "weeks": 2, "sql": "-"}
-            main()
-            check("main(): an activation breach in %s → %s%s" % (mode, want, " (paged)" if want == "FAIL" else " (reported, not paged)"),
-                  LAST_RECORD[:1] == [want] and (ALERT_ID in LAST_FIRE) == (want == "FAIL"))
-        os.remove(g["ENVELOPE_PATH"])
-        LAST_FIRE.clear(); LAST_RECORD.clear()
-        rc_live_noenv = main()
+            if envelope is None:
+                if os.path.exists(g["ENVELOPE_PATH"]):
+                    os.remove(g["ENVELOPE_PATH"])
+            else:
+                Path(g["ENVELOPE_PATH"]).write_text(json.dumps(envelope), encoding="utf-8")
+            asked = {}
+
+            def probe_fn(series_from=None, **_):
+                asked["series_from"] = series_from
+                return _probe(mode, ref, version)
+            g["run_probe"] = probe_fn
+            g["run_sql"] = lambda _sql: fixture + "\n" + _actd(actd_spec)
+            rc = main()
+            return rc, asked
+
+        t1 = {"node": _days("2026-09-29", _NODE_PREV + _NODE_ALERT)}
+        rc, asked = run_main("live", "2026-10-13T00:00:00.000Z", t1)
+        check("main() T1: the 2026-10-13 run in LIVE is PASS, pages nothing, records node not_due",
+              rc == 0 and LAST_RECORD[:1] == ["PASS"] and not LAST_FIRE
+              and LAST_RECORD[2]["activation_legs"]["weekly"]["state"] == "not_due"
+              and LAST_RECORD[2]["activation"][0]["family"] == "node" and LAST_RECORD[2]["activation"][0]["state"] == "not_due")
+        check("main(): asks the probe for the early leg's lookback", asked.get("series_from") == "2026-08-31T00:00:00Z")
+        t2 = {"node": {**_days("2026-09-29", _NODE_PREV + _NODE_ALERT), **_days("2026-10-13", [1, 0, 0, 1, 0, 2, 0])}}
+        for mode, want in (("shadow", "PASS"), ("off", "PASS"), ("live", "FAIL")):
+            rc, _a = run_main(mode, "2026-10-20T00:00:00.000Z", t2)
+            check("main() T2: a post-flip breach in %s → %s%s" % (mode, want, " (paged)" if want == "FAIL" else " (reported, not paged)"),
+                  LAST_RECORD[:1] == [want] and (ALERT_ID in LAST_FIRE) == (want == "FAIL") and rc == 0)
+        check("main() T2: the page carries the judged window and its daily series",
+              "[2026-10-13, 2026-10-20)" in LAST_FIRE.get(ALERT_ID, "") and "daily 1,0,0,1,0,2,0" in LAST_FIRE.get(ALERT_ID, ""))
+        t5 = {"node": _days("2026-08-31", flat3), "other": _days("2026-10-13", [1, 1])}
+        rc, _a = run_main("live", "2026-10-15T00:00:00.000Z", t5)
+        check("main() T5: an early collapse in live pages (FAIL)",
+              LAST_RECORD[:1] == ["FAIL"] and ALERT_ID in LAST_FIRE and LAST_RECORD[2]["activation_legs"]["early"]["state"] == "early_collapse")
+        rc, _a = run_main("live", "2026-10-13T00:00:00.000Z", t1, version="v3")
+        check("main() T9: live with a changed ip-hash version is INDETERMINATE, exit 3, and pages nothing",
+              rc == 3 and LAST_RECORD[:1] == ["INDETERMINATE"] and not LAST_FIRE
+              and "re-freeze at the rotation" in LAST_RECORD[2]["activation_legs"]["reason"])
+        rc, _a = run_main("live", "2026-10-13T00:00:00.000Z", t1, envelope=no_flip)
+        check("main() T10: live with an envelope lacking flipped_at is INDETERMINATE, exit 3 — never PASS",
+              rc == 3 and LAST_RECORD[:1] == ["INDETERMINATE"] and not LAST_FIRE)
+        rc, _a = run_main("shadow", "2026-10-13T00:00:00.000Z", t1, envelope=no_flip)
+        check("main(): in shadow the same undecidable guard is reported and the run is PASS",
+              rc == 0 and LAST_RECORD[:1] == ["PASS"] and LAST_RECORD[2]["activation_legs"]["state"] == "undecidable")
+        rc, _a = run_main("live", "2026-10-13T00:00:00.000Z", t1, envelope=None)
         check("main(): live with NO frozen envelope is INDETERMINATE, exit 3, and pages nothing",
-              rc_live_noenv == 3 and LAST_RECORD[:1] == ["INDETERMINATE"] and not LAST_FIRE)
+              rc == 3 and LAST_RECORD[:1] == ["INDETERMINATE"] and not LAST_FIRE)
         LAST_FIRE.clear(); LAST_RECORD.clear()
         g["run_probe"] = lambda **_: (_ for _ in ()).throw(RuntimeError("docker exec failed"))
         rc = main()
