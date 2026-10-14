@@ -51,6 +51,7 @@ import {
   raceGapCandles,
   prepareRaceV2,
   windowClosed,
+  FRESHNESS_BARRIER_SPEC_V2,
 } from './directional-labeler.js';
 import { T_DIAG_END, withinTCap } from './ads1/spec.js';
 import { servedCandleStepMs, SERVED_VENUES, CRON_TIMEFRAMES } from '../lib/tf-support.js';
@@ -120,6 +121,9 @@ export interface Cli {
   annotateGaps?: string;
   /** `--annotate-gaps` batch size, in rows (ruling LRW-Q13: 2–5k, ctid order). */
   annotateBatch: number;
+  /** `--recount-gaps <id,…>` (EDGE-LABELER-RACE-WINDOW-V2-W1 CH4, ruling LRW-Q3): recount `race_gap_candles` live for
+   *  these signals by the labeler's own derivation and print one `LRW_GAP_RECOUNT` line each. Read-only. */
+  recountGaps?: string;
 }
 
 interface SignalRow {
@@ -156,6 +160,11 @@ interface Coverage {
   // the previous run's `pending` (catch-up runs, visit-time drift, groups a run never reached, the first night).
   v2HeldBackReleased: number;
   v2NoV1Twin: number; // V2_NO_V1_TWIN written — -v2 rows with no same-τ -v1 row, written or already present (rows)
+  // EDGE-LABELER-RACE-WINDOW-V2-W1 CH4 (ruling Q-B = B): of the not-raced signals counted above (deferred /
+  // refused / unreachable), those whose -v1 attempt wrote NO row — the LRW-Q16 cut-unwritable timeout. They are in
+  // R but can never be in M (signals with a -v1 row and no -v2 row), so the race-integrity canary's twin identity
+  // M − (R − v1CutUnwritable) = 0 closes only because the producer names them (signal).
+  v1CutUnwritable: number;
   sanityWarn: number; // kline-derived vs stored mfe/mae gross mismatch
   budgetSkips: number; // groups deferred on WeightBudgetSkipError (retry on re-run)
   errors: number;
@@ -165,7 +174,7 @@ const cov: Coverage = {
   groups: 0, groupsSkipped: 0, signalsSeen: 0, labeled: 0, written: 0,
   noKlines: 0, lowVolHistory: 0,
   v2Labeled: 0, v2Deferred: 0, v2Refused: 0, v2UnreachableDepth: 0, v2UnreachableHistory: 0,
-  v2HeldBack: 0, v2HeldBackReleased: 0, v2NoV1Twin: 0,
+  v2HeldBack: 0, v2HeldBackReleased: 0, v2NoV1Twin: 0, v1CutUnwritable: 0,
   sanityWarn: 0, budgetSkips: 0, errors: 0,
 };
 
@@ -286,6 +295,7 @@ export function parseCli(argv: string[]): Cli {
     maxReqPerMin: posInt('--max-req-per-min'),
     annotateGaps: val('--annotate-gaps'),
     annotateBatch: Math.min(5000, Math.max(2000, posInt('--annotate-batch') ?? 5000)),
+    recountGaps: val('--recount-gaps'),
   };
 }
 
@@ -1068,6 +1078,7 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
     // mfe/mae reuse the stored path values as -v1 does.
     if (!(wroteV1 || v1CutUnwritable) || !v2Missing) continue;
     const prep = prepareRaceV2(cache, fullForward, entryMs, W, stepMs, groupStartMs);
+    if (prep.kind !== 'ready' && !wroteV1) cov.v1CutUnwritable++; // not raced below, and its -v1 attempt wrote no row
     if (prep.kind === 'deferred') { cov.v2Deferred++; continue; }
     if (prep.kind === 'refused') { cov.v2Refused++; continue; }
     if (prep.kind === 'unreachable') {
@@ -1814,6 +1825,62 @@ async function mainAnnotate(cli: Cli): Promise<void> {
   console.log(`[${ts()}] ANNOTATE DONE ${JSON.stringify({ ...a, worklistRows: gaps.size, check: cli.check })}`);
 }
 
+/** The recount's ONE read: a signal's identity columns, never a label (the race-integrity canary's seal test pins
+ *  it). EDGE-LABELER-RACE-WINDOW-V2-W1 CH4. */
+export const RECOUNT_SIGNALS_SQL = 'SELECT id, exchange, coin, timeframe, created_at FROM signals WHERE id = ANY($1::int[])';
+/** How many signals one `--recount-gaps` call may ask for — a sample, never a backfill. */
+export const RECOUNT_MAX_IDS = 50;
+
+/**
+ * EDGE-LABELER-RACE-WINDOW-V2-W1 CH4 (ruling LRW-Q3; Q-A check 2) — the LIVE RECOUNT of a `-v1` row's
+ * `race_gap_candles`: the derivation processGroup applies when it writes the row — the served grid, the row's own
+ * `-v1` extent (within a group the extent union reaches no further into a row's window than the row's own extent,
+ * because rows arrive in `created_at` order), the first forward candle as the grid anchor, raceGapCandles — on
+ * candles fetched NOW. The race-integrity canary asserts it EQUALS the stored value on a sample of the night's new
+ * `-v1` rows: equality, never a constant. `null` = no candle in hand to anchor the grid on. No DB read here.
+ */
+export async function recountRaceGap(sig: { exchange: string; coin: string; timeframe: string; created_at: number }): Promise<number | null> {
+  const W = EVAL_CANDLES[sig.timeframe];
+  const tfMs = TF_MS[sig.timeframe];
+  if (!W || !tfMs) return null;
+  const stepMs = servedStepMs(sig.exchange, sig.timeframe);
+  const spanMs = Math.max(tfMs, stepMs);
+  const entryMs = sig.created_at * 1000;
+  const extent: [number, number] = [
+    entryMs - (SIGMA_TARGET_WINDOWS * W + FETCH_BUFFER_CANDLES) * tfMs,
+    entryMs + (W + FETCH_BUFFER_CANDLES) * tfMs,
+  ];
+  const cache = new Map<number, Candle>();
+  await fetchRangeInto(cache, sig.exchange as ExchangeId, sig.coin, sig.timeframe,
+    entryMs - FETCH_BUFFER_CANDLES * stepMs, entryMs + (W + FETCH_BUFFER_CANDLES) * spanMs, stepMs);
+  const v1View = withinExtents([...cache.values()].sort((a, b) => a.time - b.time), [extent]);
+  const anchor = v1View.find((c) => c.time >= entryMs)?.time ?? v1View[v1View.length - 1]?.time;
+  return anchor === undefined ? null : raceGapCandles(new Set(v1View.map((c) => c.time)), entryMs, W, stepMs, anchor);
+}
+
+/** `--recount-gaps <id,…>`: first the `-v2` series the canary's freshness check reads (one derivation, never
+ *  retyped on the host), then one `LRW_GAP_RECOUNT {"id","gap"}` line per signal found (gap null + error on a
+ *  failed fetch). Read-only: no DDL, no write, no label read. */
+async function mainRecount(cli: Cli): Promise<void> {
+  console.log(`LRW_V2_FRESHNESS_SPEC ${FRESHNESS_BARRIER_SPEC_V2}`);
+  const ids = [...new Set(cli.recountGaps!.split(',').map((x) => Number(x.trim())))];
+  if (ids.length === 0 || ids.length > RECOUNT_MAX_IDS || !ids.every((n) => Number.isInteger(n) && n > 0)) {
+    throw new Error(`--recount-gaps needs 1..${RECOUNT_MAX_IDS} positive integer signal ids`);
+  }
+  const sigs = await dbQuery<{ id: number | string; exchange: string; coin: string; timeframe: string; created_at: number | string }>(RECOUNT_SIGNALS_SQL, [ids]);
+  await runAsBatch(async () => {
+    for (const s of sigs) {
+      const id = Number(s.id);
+      try {
+        const gap = await recountRaceGap({ exchange: s.exchange, coin: s.coin, timeframe: s.timeframe, created_at: Number(s.created_at) });
+        console.log(`LRW_GAP_RECOUNT ${JSON.stringify({ id, gap })}`);
+      } catch (err) {
+        console.log(`LRW_GAP_RECOUNT ${JSON.stringify({ id, gap: null, error: err instanceof Error ? err.name : 'error' })}`);
+      }
+    }
+  }, 'lrw-gap-recount');
+}
+
 /** Per-venue label frontier (MAX labeled created_at) — the F1 rotation key. */
 async function loadVenueFrontier(): Promise<Map<string, number>> {
   const rows = await dbQuery<{ exchange: string; frontier: string | number | null }>(
@@ -1833,6 +1900,7 @@ async function main(): Promise<void> {
   if (cli.relabelV2 && cli.annotateGaps) throw new Error('--relabel-v2 and --annotate-gaps are separate runs');
   if (cli.relabelV2) return mainRelabel(cli);
   if (cli.annotateGaps) return mainAnnotate(cli);
+  if (cli.recountGaps !== undefined) return mainRecount(cli); // read-only: before ensureTable, no DDL
   ensureTable();
   const groups = await loadGroups(cli);
   const frontier = await loadVenueFrontier();
@@ -1997,13 +2065,18 @@ function emitCapacityEnvelope(
       budget_expired: budgetExpired,
     },
   });
+  // EDGE-LABELER-RACE-WINDOW-V2-W1 CH4 (ruling Q-B, rider 3): the run's counted class the race-integrity canary's twin
+  // identity needs, as a top-level `counts` BESIDE `evidence` — never inside it, because `render_body` forwards every
+  // evidence key into DIRECTIONAL_LABEL_CAPACITY_SHORTFALL's body, and that consumer stays byte-unchanged. Both
+  // validators accept an additional top-level key (no required field, no rule names it); a test pins it.
+  const out: typeof env & { counts: { v1CutUnwritable: number } } = { ...env, counts: { v1CutUnwritable: cov.v1CutUnwritable } };
   // Refuse to emit a signal we would ourselves reject. A producer that can publish a
   // non-conforming envelope makes the consumer's validation the only guard, and one guard is
   // how the class returns.
-  if (!isConforming(env)) {
-    console.error(`[detector-envelope] REFUSING to emit a non-conforming envelope for ${env.detector}`);
+  if (!isConforming(out)) {
+    console.error(`[detector-envelope] REFUSING to emit a non-conforming envelope for ${out.detector}`);
   } else {
-    console.log(`[detector-envelope] ${JSON.stringify(env)}`);
+    console.log(`[detector-envelope] ${JSON.stringify(out)}`);
   }
 }
 

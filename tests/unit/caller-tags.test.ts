@@ -146,8 +146,11 @@ describe('class preservation — tags moved, classes did not', () => {
   // OPS-ALARM-OWNER-DERIVATION-W1 CH2 added the dead-book admission verdict: the book-liveness canary's read
   // of each dead key's venue universe (and, for a live key, its hourly bars) THROUGH the production fetchers
   // and adapters — BATCH class for the same reason, its own entrypoint, literal name `admission-verdict`.
+  // EDGE-LABELER-RACE-WINDOW-V2-W1 CH4 added the labeler's fourth: `--recount-gaps` (ruling LRW-Q3), the race-integrity
+  // canary's live recount of race_gap_candles on a sample of the night's -v1 rows — venue reads, so BATCH class
+  // for the same reason, same entrypoint, its own literal name `lrw-gap-recount`.
   const LATER_CLASS_SETTING: Record<string, Record<string, number>> = {
-    'src/scripts/backfill-directional-labels.ts': { runAsBatch: 3, runAsCaller: 1 },
+    'src/scripts/backfill-directional-labels.ts': { runAsBatch: 4, runAsCaller: 1 },
     'src/scripts/adapter-history-contiguity.ts': { runAsBatch: 1 },
     'src/scripts/admission-verdict.ts': { runAsBatch: 1 },
   };
@@ -161,6 +164,14 @@ describe('class preservation — tags moved, classes did not', () => {
 
   it('the expiry backfill site is BATCH class under its own name, in the labeler entrypoint only', () => {
     const site = realSites().find((s) => s.names?.includes('dwr-expiry-backfill'));
+    expect(site?.file).toBe('src/scripts/backfill-directional-labels.ts');
+    expect(site?.helper).toBe('runAsBatch');
+    expect(site?.class).toBe('batch');
+    expect(site?.eps).toHaveLength(1);
+  });
+
+  it('the live gap-recount site is BATCH class under its own name, in the labeler entrypoint only', () => {
+    const site = realSites().find((s) => s.names?.includes('lrw-gap-recount'));
     expect(site?.file).toBe('src/scripts/backfill-directional-labels.ts');
     expect(site?.helper).toBe('runAsBatch');
     expect(site?.class).toBe('batch');

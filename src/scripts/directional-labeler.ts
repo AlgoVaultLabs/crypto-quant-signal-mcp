@@ -88,6 +88,13 @@ export const BARRIER_SPECS_V2 = [
 ] as const;
 
 /**
+ * EDGE-LABELER-RACE-WINDOW-V2-W1 CH4 (ruling Q-A, check 3): the `-v2` series whose freshness the race-integrity
+ * canary measures — its OWN constant, derived from `BARRIER_SPECS_V2` (primary first), never retyped. The `-v1`
+ * `FRESHNESS_BARRIER_SPEC` (`src/lib/venue-slo-tiers.ts`) is untouched: every consumer it feeds stays on `-v1`.
+ */
+export const FRESHNESS_BARRIER_SPEC_V2: (typeof BARRIER_SPECS_V2)[0]['spec'] = BARRIER_SPECS_V2[0].spec;
+
+/**
  * The Postgres DDL of `directional_labels`, the copy the labeler applies idempotently before it writes
  * (`ensureTable`). `migrations/019_directional_labels.sql` + `migrations/043_directional_labels_expiry.sql`
  * are the schema-as-code SoT; `tests/unit/directional-labels-ddl-parity.test.ts` and

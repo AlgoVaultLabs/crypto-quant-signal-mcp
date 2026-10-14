@@ -80,14 +80,16 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
 import {
   processGroup, parseCli, INSERT_COLUMNS, servedStepMs, addV1Extent, withinExtents, sealEdgeRow,
   _coverageForTest, formatV2Tokens, coarserV1LagMs, coarserV1LagTable, renderCoarserV1LagTable, NIGHTLY_CADENCE_MS,
+  recountRaceGap, RECOUNT_SIGNALS_SQL,
 } from '../../src/scripts/backfill-directional-labels.js';
 import { readFileSync } from 'node:fs';
 import { T_DIAG_END, withinTCap } from '../../src/scripts/ads1/spec.js';
 import {
   EVAL_CANDLES, TF_MS, BARRIER_SPECS, BARRIER_SPECS_V2, SIGMA_TARGET_WINDOWS, computeSigmaW, barrierPct, runTripleBarrier,
   servedWindow, windowClosed, nextFetchStartMs, advanceCoverage, firstSlotAtOrAfter, raceGapCandles,
-  contiguousTrailingCloses, prepareRaceV2, expiryReturnPct,
+  contiguousTrailingCloses, prepareRaceV2, expiryReturnPct, FRESHNESS_BARRIER_SPEC_V2,
 } from '../../src/scripts/directional-labeler.js';
+import { FRESHNESS_BARRIER_SPEC } from '../../src/lib/venue-slo-tiers.js';
 import { servedCandleStepMs } from '../../src/lib/tf-support.js';
 import { servedIntervalMs as S_HL } from '../../src/lib/adapters/hyperliquid.js';
 import { servedIntervalMs as S_BINANCE } from '../../src/lib/adapters/binance.js';
@@ -643,6 +645,96 @@ describe('the same hole beyond the race window, fixed', () => {
 // ══════════════════════════════════════════════════════════════════════════════════════════════════════
 // The extracted, shared derivations — pure.
 // ══════════════════════════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════════════════════════════
+// CH4 — what the race-integrity canary reconciles against (rulings Q-B = B, LRW-Q3).
+describe('CH4: the producer names every class the twin identity needs, and the gap recounts live', () => {
+  /** The canary's identity on one run's rows and counter deltas: M − (R − v1CutUnwritable). */
+  const residual = (run: Run, ids: number[], c0: ReturnType<typeof _coverageForTest>, c1: ReturnType<typeof _coverageForTest>) => {
+    const m = ids.filter((id) => rowsOf(run, id, V1).length > 0 && rowsOf(run, id, V2).length === 0).length;
+    const r = (c1.v2Refused - c0.v2Refused) + (c1.v2Deferred - c0.v2Deferred)
+      + (c1.v2UnreachableDepth - c0.v2UnreachableDepth) + (c1.v2UnreachableHistory - c0.v2UnreachableHistory);
+    return { m, r, cut: c1.v1CutUnwritable - c0.v1CutUnwritable, residual: m - (r - (c1.v1CutUnwritable - c0.v1CutUnwritable)) };
+  };
+
+  it('a not-raced signal whose -v1 attempt wrote NO row (the LRW-Q16 cut timeout) is v1CutUnwritable, so M − (R − cut) = 0', { timeout: 30_000 }, async () => {
+    const tf = '3m';
+    const served = servedStepMs('GATE', tf); // GATE 3m is served as 5m: a coarser pair
+    const e = T + 2 * M + 17_000;
+    const win = trueWindow(e, served, EVAL_CANDLES[tf]);
+    // flat: -v1 is a cut timeout (no row); the hole on the 11th served candle (past the cut) refuses -v2
+    const flatHoled = series(T - 130 * H, T + 10 * H, served).filter((c) => c.time !== win[10]);
+    const c0 = _coverageForTest();
+    const a = await runGroup('GATE', 'LRWC1', tf, [sig(61, e)], flatHoled, 200, e + D, { serveOnlyOpened: true });
+    const c1 = _coverageForTest();
+    expect([rowsOf(a, 61, V1).length, rowsOf(a, 61, V2).length]).toEqual([0, 0]);
+    expect(residual(a, [61], c0, c1)).toEqual({ m: 0, r: 1, cut: 1, residual: 0 });
+  });
+
+  it('a not-raced signal whose -v1 DID write rows is in M and is not v1CutUnwritable — the identity still closes', { timeout: 30_000 }, async () => {
+    const tf = '3m';
+    const served = servedStepMs('GATE', tf);
+    const e = T + 2 * M + 17_000;
+    const win = trueWindow(e, served, EVAL_CANDLES[tf]);
+    // a touch on the 1st served candle decides -v1 inside the cut; the same hole refuses -v2
+    const touched = series(T - 130 * H, T + 10 * H, served, (t) => (t === win[0] ? upTouch(t) : flat(t))).filter((c) => c.time !== win[10]);
+    const c0 = _coverageForTest();
+    const b = await runGroup('GATE', 'LRWC2', tf, [sig(62, e)], touched, 200, e + D, { serveOnlyOpened: true });
+    const c1 = _coverageForTest();
+    expect([rowsOf(b, 62, V1).length, rowsOf(b, 62, V2).length]).toEqual([3, 0]);
+    expect(residual(b, [62], c0, c1)).toEqual({ m: 1, r: 1, cut: 0, residual: 0 });
+  });
+
+  it('a raced signal (rows in both families) adds nothing to either side', { timeout: 30_000 }, async () => {
+    const tf = '1h';
+    const e = T + 17 * M;
+    const candles = series(T - 130 * D, T + 10 * D, H);
+    const c0 = _coverageForTest();
+    const run = await runGroup('BINANCE', 'LRWC3', tf, [sig(63, e)], candles, 1000);
+    const c1 = _coverageForTest();
+    expect([rowsOf(run, 63, V1).length, rowsOf(run, 63, V2).length]).toEqual([3, 3]);
+    expect(residual(run, [63], c0, c1)).toEqual({ m: 0, r: 0, cut: 0, residual: 0 });
+  });
+
+  it('LRW-Q3 live recount: recountRaceGap re-derives the stored -v1 race_gap_candles from the same candles — equality, not a constant', { timeout: 60_000 }, async () => {
+    // (a) same-grid BINANCE 1h, a hole INSIDE the window: -v1 races across it (the unchanged rule) and records it
+    const e1 = T + 17 * M;
+    const w1 = trueWindow(e1, H, EVAL_CANDLES['1h']);
+    const holed = series(T - 130 * D, T + 10 * D, H).filter((c) => c.time !== w1[3]);
+    const r1 = await runGroup('BINANCE', 'LRWR1', '1h', [sig(64, e1)], holed, 1000);
+    const stored1 = rowsOf(r1, 64, V1)[0][col('race_gap_candles')];
+    // (b) coarser GATE 3m (served 5m), decided inside the -v1 cut: the window slots past the cut are absent
+    const e2 = T + 2 * M + 17_000;
+    const w2 = trueWindow(e2, servedStepMs('GATE', '3m'), EVAL_CANDLES['3m']);
+    const cut = series(T - 130 * H, T + 10 * H, servedStepMs('GATE', '3m'), (t) => (t === w2[0] ? upTouch(t) : flat(t)));
+    const r2 = await runGroup('GATE', 'LRWR2', '3m', [sig(65, e2)], cut, 200);
+    const stored2 = rowsOf(r2, 65, V1)[0][col('race_gap_candles')];
+    expect([stored1, stored2].every((g) => typeof g === 'number' && g > 0)).toBe(true); // non-vacuous: both carry a gap
+    const recount = async (exchange: string, coin: string, timeframe: string, s: Sig) =>
+      recountRaceGap({ exchange, coin, timeframe, created_at: s.created_at });
+    expect(await recount('BINANCE', 'LRWR1', '1h', sig(64, e1))).toBe(stored1);
+    expect(await recount('GATE', 'LRWR2', '3m', sig(65, e2))).toBe(stored2);
+    // and a candle that heals the hole is SEEN: the recount is a measurement, not an echo of the stored value
+    env.candles.set('BINANCE|LRWR1|1h', series(T - 130 * D, T + 10 * D, H));
+    expect(await recount('BINANCE', 'LRWR1', '1h', sig(64, e1))).toBe((stored1 as number) - 1);
+  });
+
+  it('the recount reads signal identity only — the seal: no label column, no directional_labels read', () => {
+    const cols = (RECOUNT_SIGNALS_SQL.match(/^SELECT (.+?) FROM /) ?? ['', ''])[1].split(',').map((c) => c.trim());
+    expect(cols).toEqual(['id', 'exchange', 'coin', 'timeframe', 'created_at']);
+    expect(RECOUNT_SIGNALS_SQL).toMatch(/ FROM signals WHERE id = ANY\(\$1::int\[\]\)$/);
+    expect(RECOUNT_SIGNALS_SQL).not.toMatch(/directional_labels|label|barrier|expiry|mfe|mae|pfe/i);
+  });
+
+  it('FRESHNESS_BARRIER_SPEC_V2 is derived from BARRIER_SPECS_V2 (primary first) and the -v1 constant is untouched', () => {
+    expect(FRESHNESS_BARRIER_SPEC_V2).toBe(BARRIER_SPECS_V2[0].spec);
+    expect(FRESHNESS_BARRIER_SPEC_V2).toBe('tau1.0-floor0.30-v2');
+    expect(FRESHNESS_BARRIER_SPEC).toBe('tau1.0-floor0.30-v1');
+    // the recount mode prints it FIRST, so the host canary reads the series name from the deployed derivation
+    const src = readFileSync('src/scripts/backfill-directional-labels.ts', 'utf8');
+    expect(src).toMatch(/async function mainRecount\(cli: Cli\): Promise<void> \{\n\s+console\.log\(`LRW_V2_FRESHNESS_SPEC \$\{FRESHNESS_BARRIER_SPEC_V2\}`\);/);
+  });
+});
+
 describe('pure derivations shared by the race, expiry and hold paths', () => {
   it('nextFetchStartMs is bit-identical to the expiry path\'s inline arithmetic it replaced', () => {
     const inline = (cU: number, tf: number, entry: number) => {
