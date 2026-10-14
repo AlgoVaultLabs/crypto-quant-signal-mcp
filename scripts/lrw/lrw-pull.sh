@@ -69,6 +69,21 @@ summary_state() {
   echo ok
 }
 
+# hash_manifests <path>[,<path>…] → the sha256 of each, comma-joined in order. Prints nothing and returns 1 when a
+# path cannot be hashed. Splits on commas ONLY: a manifest path may hold spaces (the private vault's does). The
+# word-split loop this replaces hashed nothing there and wrote an empty manifest_sha256 under a PASS.
+hash_manifests() {
+  local m h out='' parts=()
+  IFS=',' read -r -a parts <<< "$1"
+  [ "${#parts[@]}" -gt 0 ] || return 1
+  for m in "${parts[@]}"; do
+    h="$(shasum -a 256 "$m" 2>/dev/null | awk '{print $1}')"
+    [ -n "$h" ] || return 1
+    out="${out:+$out,}$h"
+  done
+  printf '%s\n' "$out"
+}
+
 # ro_part <out-file> <sql…> — one READ ONLY transaction as aoe_readonly; the token line first.
 ro_part() {
   local out="$1"; shift
@@ -147,10 +162,11 @@ run_pull() {
       fi
     else pre='ind:completeness-read'; fi
   fi
-  local manifest_shas="" m
-  for m in $(printf '%s' "$manifest" | tr ',' ' '); do
-    manifest_shas="${manifest_shas:+$manifest_shas,}$(shasum -a 256 "$m" 2>/dev/null | awk '{print $1}')"
-  done
+  # the manifest's provenance is part of the read: a manifest that cannot be hashed leaves the pull unverified
+  local manifest_shas=""
+  if ! manifest_shas="$(hash_manifests "$manifest")"; then
+    manifest_shas=""; [ "$pre" = ok ] && pre='ind:manifest-unhashable'
+  fi
 
   local tokens=ind counters=ind files=ind before="" after=""
   if [ "$pre" = ok ]; then
@@ -230,6 +246,16 @@ self_test() {
     if [ "$got" = "$want" ]; then pass=$((pass + 1)); echo "SELF-TEST: ok summary-${k%%:*}"
     else fail=$((fail + 1)); echo "SELF-TEST: FAIL summary-${k%%:*} (got '$got')"; fi
   done
+  # the manifest list: a path with spaces is hashed whole, several paths keep their order, an unreadable one refuses
+  mkdir "$st/a dir with spaces"; printf 'LRW_MANIFEST 1 unreachable:depth\n' > "$st/a dir with spaces/m.txt"; printf 'LRW_MANIFEST 2 refused:gap\n' > "$st/n.txt"
+  local hs hn
+  hs="$(shasum -a 256 "$st/a dir with spaces/m.txt" | awk '{print $1}')"; hn="$(shasum -a 256 "$st/n.txt" | awk '{print $1}')"
+  if [ "$(hash_manifests "$st/a dir with spaces/m.txt")" = "$hs" ]; then pass=$((pass + 1)); echo 'SELF-TEST: ok manifest-spaced-path'
+  else fail=$((fail + 1)); echo 'SELF-TEST: FAIL manifest-spaced-path'; fi
+  if [ "$(hash_manifests "$st/n.txt,$st/a dir with spaces/m.txt")" = "$hn,$hs" ]; then pass=$((pass + 1)); echo 'SELF-TEST: ok manifest-list-order'
+  else fail=$((fail + 1)); echo 'SELF-TEST: FAIL manifest-list-order'; fi
+  if ! got="$(hash_manifests "$st/n.txt,$st/absent.txt")" && [ -z "$got" ]; then pass=$((pass + 1)); echo 'SELF-TEST: ok manifest-unhashable-refuses'
+  else fail=$((fail + 1)); echo "SELF-TEST: FAIL manifest-unhashable-refuses (got '$got')"; fi
   rm -rf "$st"
   # the missing-tool precondition through the real entry point, with a PATH that holds only bash
   local tmp; tmp="$(mktemp -d)"; ln -s "$(command -v bash)" "$tmp/bash"
@@ -238,7 +264,7 @@ self_test() {
   # the guard itself must fire (it names the tool), not some later failure
   if [ "$(printf '%s\n' "$out" | tail -n 1)" = 'LRW_PULL_VERDICT=INDETERMINATE' ] && [ "$rc" -eq 3 ] && printf '%s' "$out" | grep -q "required tool 'ssh' not on PATH"; then pass=$((pass + 1)); echo 'SELF-TEST: ok missing-tool'
   else fail=$((fail + 1)); echo "SELF-TEST: FAIL missing-tool (got '$out' rc=$rc)"; fi
-  if [ "$fail" -eq 0 ] && [ "$pass" -ge 24 ]; then echo "LRW_PULL_SELFTEST: PASS ($pass checks)"; exit 0; fi
+  if [ "$fail" -eq 0 ] && [ "$pass" -ge 27 ]; then echo "LRW_PULL_SELFTEST: PASS ($pass checks)"; exit 0; fi
   echo "LRW_PULL_SELFTEST: FAIL ($fail of $((pass + fail)))"; exit 1
 }
 

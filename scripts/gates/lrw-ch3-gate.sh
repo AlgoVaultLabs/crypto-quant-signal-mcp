@@ -213,7 +213,9 @@ mutation_table() {
  ["R67", "scripts/lrw/hl-seeder-displacement.sh", "sh:bash scripts/lrw/hl-seeder-displacement.sh --self-test", "    if [ \"$runs\" -eq 0 ] || [ \"$seeded\" -eq 0 ]; then", "    if false; then"],
  ["R68", "scripts/lrw/hl-seeder-displacement.sh", "sh:bash scripts/lrw/hl-seeder-displacement.sh --self-test", "if [ \"$first\" = \"-\" ] || [[ \"$first\" > \"$s\" ]] || [[ \"$last\" < \"$e\" ]]; then", "if [ \"$first\" = \"-\" ]; then"],
  ["R69", "scripts/lrw/hl-seeder-displacement.sh", "sh:bash scripts/lrw/hl-seeder-displacement.sh --self-test", "if (ts >= s && ts < e && $0 ~", "if (ts >= s && ts <= e && $0 ~"],
- ["R70", "scripts/lrw/hl-seeder-displacement.sh", "sh:bash scripts/lrw/hl-seeder-displacement.sh --self-test", "  if [ \"$runs\" -eq 0 ]; then echo \"HL_SEEDER_DISPLACEMENT=INDETERMINATE reason=no-seed-run-in-subject:$date\"; return 3; fi\n", ""]
+ ["R70", "scripts/lrw/hl-seeder-displacement.sh", "sh:bash scripts/lrw/hl-seeder-displacement.sh --self-test", "  if [ \"$runs\" -eq 0 ]; then echo \"HL_SEEDER_DISPLACEMENT=INDETERMINATE reason=no-seed-run-in-subject:$date\"; return 3; fi\n", ""],
+ ["R71", "scripts/lrw/lrw-pull.sh", "sh:bash scripts/lrw/lrw-pull.sh --self-test", "IFS=',' read -r -a parts <<< \"$1\"", "read -r -a parts <<< \"$(printf '%s' \"$1\" | tr ',' ' ')\""],
+ ["R72", "scripts/lrw/lrw-pull.sh", "sh:bash scripts/lrw/lrw-pull.sh --self-test", "    [ -n \"$h\" ] || return 1\n", ""]
 ]
 JSON
 }
