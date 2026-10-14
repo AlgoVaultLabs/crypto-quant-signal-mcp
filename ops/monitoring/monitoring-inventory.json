@@ -2102,7 +2102,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "f11fcbf0242baa63070eab991f5216a4d704757a38db3e490801bc689037f881",
+      "sha256": "e09b9a27cca64f601c6532c569b8547eee8f5cabdd8bb57f88d642dae4e3b26f",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -3054,6 +3054,30 @@
         "at": "20261013T091146Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
+    },
+    {
+      "id": "directional-labels-race-integrity",
+      "artifact": "ops/monitoring/directional-labels-race-integrity.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/directional-labels-race-integrity.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/directional-labels-race-integrity.py",
+          "schedule": "23 7 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "23 7 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "pending",
+      "sha256": "8459961887df1daacf0db157c4992f037f56f4b8fec7c7b94be0391ab86808ad",
+      "alert_ids": [
+        "DIRECTIONAL_LABELS_RACE_INTEGRITY"
+      ],
+      "owner_wave": "EDGE-LABELER-RACE-WINDOW-V2-W1",
+      "notes": "CH4 (rulings Q-A = A, Q-B = B). After each nightly labeler run (step 3 of nightly-carry-labeler, 02:23 UTC; latest measured end 06:16Z): the twin identity M - (R - v1CutUnwritable) = 0 in signals, equal per-tau -v2 rows, race_gap_candles = 0 on new -v2 rows, a live recount of a -v1 sample's stored gap (the app container's --recount-gaps), -v2 freshness, all printed as cardinalities. SEALED: its SQL names signal_id, barrier_spec, computed_at and race_gap_candles of directional_labels and nothing else (tests/unit/directional-labels-race-integrity.test.ts). Reads the labeler's own log (/var/log/carry-labeler.log); state /var/lib/algovault-monitoring/directional-labels-race-integrity.state.json; result line via canary_result_log.py. pending until install-monitoring-artifact.sh --apply stamps first_install."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

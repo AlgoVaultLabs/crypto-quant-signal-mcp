@@ -1,0 +1,577 @@
+{
+ "_comment": "EDGE-LABELER-RACE-WINDOW-V2-W1 CH4 — the `-v1` consumer registry. The ENUMERATION a migration reads: detection is weaker than enumeration. `consumers` = every reader of the `-v1` label family in both repos (R0.3's probe of 2026-09-28, re-verified 2026-10-14 at each repo's origin/main), with the spec it pins, its owner, the migration wave that would move it (named, not scheduled) and its status. `literal_sites` = every tracked file of THIS repo carrying a `-v1` literal; tests/unit/directional-labels-consumers.test.ts fails on a literal with no row and on a row whose literal is gone. `-v1` is DEPRECATED (docs/Directional-Accuracy-SoT.md): retained for its registered consumers, retired after the last migration. No figure lives here.",
+ "schema_version": 1,
+ "statuses": [
+  "pinned-v1",
+  "migrated-v2"
+ ],
+ "literal_pattern": "tau[^\\s'\\\"`]{0,16}-floor0\\.30-v1",
+ "consumers": [
+  {
+   "id": "labeler-worklist",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "src/scripts/backfill-directional-labels.ts",
+   "symbol": "buildGroupsSql / loadVenueFrontier",
+   "kind": "backfill",
+   "spec_pinned": "FRESHNESS_BARRIER_SPEC (-v1)",
+   "owner": "OPS-BDIR-V3-PANEL-READINESS-W1",
+   "migration_wave": "none — keyed on -v1 by ruling LRW-Q6; the writer races -v2 beside every -v1 attempt",
+   "status": "pinned-v1",
+   "liveness": "nightly (nightly-carry-labeler step 3)",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": "the writer of both families; its -v1-keyed worklist is the registered retry contract"
+  },
+  {
+   "id": "labeler-expiry",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "src/scripts/backfill-directional-labels.ts",
+   "symbol": "buildExpiryGroupsSql / EXPIRY_UPDATE_SQL",
+   "kind": "backfill",
+   "spec_pinned": "none (spec-agnostic: every row of a signal)",
+   "owner": "EDGE-ADS1-SCORECARD-W1-V2",
+   "migration_wave": "none — the expiry value is spec-independent by design (golden test)",
+   "status": "migrated-v2",
+   "liveness": "manual --expiry-only",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": "reads and fills both families"
+  },
+  {
+   "id": "dwr-baseline-report",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "src/scripts/dwr-baseline-report.ts",
+   "symbol": "SPECS / PRIMARY",
+   "kind": "report",
+   "spec_pinned": "the three -v1 specs (own SPECS)",
+   "owner": "OPS-AOE-MONITORING-DWR-REFOCUS-W1",
+   "migration_wave": "DWR-SOT-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE)",
+   "status": "pinned-v1",
+   "liveness": "monthly via dwr-baseline-snapshot",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "dwr-baseline-snapshot",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "src/scripts/dwr-baseline-snapshot.ts",
+   "symbol": "monthly snapshot of dwr-baseline-report",
+   "kind": "report",
+   "spec_pinned": "inherits dwr-baseline-report",
+   "owner": "OPS-AOE-MONITORING-DWR-REFOCUS-W1",
+   "migration_wave": "DWR-SOT-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE)",
+   "status": "pinned-v1",
+   "liveness": "cron 29 9 1 * * (dwr_baseline_runs)",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": "its literal is a self-test fixture"
+  },
+  {
+   "id": "dwr-cluster-edge",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "src/scripts/dwr-cluster-edge.ts",
+   "symbol": "per-cluster mix-matched edge",
+   "kind": "report",
+   "spec_pinned": "inherits dwr-baseline-report",
+   "owner": "OPS-AOE-MONITORING-DWR-REFOCUS-W1",
+   "migration_wave": "DWR-SOT-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE)",
+   "status": "pinned-v1",
+   "liveness": "with dwr-baseline-report",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": "its literal is a provenance comment"
+  },
+  {
+   "id": "frozen-window-attribution",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "src/scripts/frozen-window-attribution.ts",
+   "symbol": "DEFAULT_SPEC / --spec",
+   "kind": "report",
+   "spec_pinned": "DEFAULT_SPEC (-v1), --spec opt-in",
+   "owner": "OPS-UPSTREAM-ACQUISITION-ACCOUNTING",
+   "migration_wave": "none — manual research CLI; --spec selects the family",
+   "status": "pinned-v1",
+   "liveness": "manual, no cron",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "label-freshness-canary",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "ops/monitoring/directional-label-freshness.py",
+   "symbol": "coverage_sql / CENSUS_SQL",
+   "kind": "canary",
+   "spec_pinned": "venue-slo-tiers.json barrier_spec (-v1)",
+   "owner": "OPS-BDIR-V3-PANEL-READINESS-W1",
+   "migration_wave": "LABEL-FRESHNESS-V2-MIGRATION (named, not scheduled)",
+   "status": "pinned-v1",
+   "liveness": "signal-1 cron 41 6 * * *",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "label-freshness-tiers",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "ops/monitoring/venue-slo-tiers.json",
+   "symbol": "barrier_spec",
+   "kind": "canary",
+   "spec_pinned": "-v1 primary (config of label-freshness-canary)",
+   "owner": "OPS-BDIR-V3-PANEL-READINESS-W1",
+   "migration_wave": "LABEL-FRESHNESS-V2-MIGRATION (named, not scheduled)",
+   "status": "pinned-v1",
+   "liveness": "read by label-freshness-canary",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "freshness-constant",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "src/lib/venue-slo-tiers.ts",
+   "symbol": "FRESHNESS_BARRIER_SPEC",
+   "kind": "gate",
+   "spec_pinned": "-v1 primary",
+   "owner": "OPS-BDIR-V3-PANEL-READINESS-W1",
+   "migration_wave": "LABEL-FRESHNESS-V2-MIGRATION (named, not scheduled); FRESHNESS_BARRIER_SPEC stays -v1 until it lands",
+   "status": "pinned-v1",
+   "liveness": "imported by the labeler worklist and the SLO tiers",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "scorer-input-identity-canary",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "ops/monitoring/scorer-input-identity-canary.py",
+   "symbol": "labeled_emitted_* (SI_BARRIER_SPEC)",
+   "kind": "canary",
+   "spec_pinned": "SI_BARRIER_SPEC default -v1; one count is spec-agnostic",
+   "owner": "EDGE-ATTRIBUTION-CORPUS-DRAIN",
+   "migration_wave": "SCORER-INPUT-CANARY-V2-SCOPE (named, not scheduled)",
+   "status": "pinned-v1",
+   "liveness": "signal-1 cron 37 20 * * *",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": "the spec-agnostic count rises only for a -v2 row whose parent has no -v1 row"
+  },
+  {
+   "id": "deploy-cron-interlock",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "ops/scripts/deploy-cron-interlock.sh",
+   "symbol": "worst_projected_lag_ratio",
+   "kind": "gate",
+   "spec_pinned": "-v1 primary (literal bind)",
+   "owner": "OPS-HOST-AUTO-REBOOT family",
+   "migration_wave": "none — measures the freshness of -v1 production, which continues",
+   "status": "pinned-v1",
+   "liveness": "per deploy",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "lrw-registered-read",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "src/scripts/lrw/extract-sql.ts",
+   "symbol": "EXTRACT / COUNTERS (registered pull)",
+   "kind": "registration",
+   "spec_pinned": "-v1 vs -v2 under T_CAP (the registered pair)",
+   "owner": "EDGE-LABELER-RACE-WINDOW-V2-W1",
+   "migration_wave": "none — the registered comparison reads both families by design",
+   "status": "migrated-v2",
+   "liveness": "the CH3 read session (done 2026-10-14)",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "lrw-disagreement",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "src/scripts/lrw/disagreement.ts",
+   "symbol": "the registered disagreement table",
+   "kind": "registration",
+   "spec_pinned": "-v1 vs -v2 under T_CAP",
+   "owner": "EDGE-LABELER-RACE-WINDOW-V2-W1",
+   "migration_wave": "none — the registered comparison reads both families by design",
+   "status": "migrated-v2",
+   "liveness": "the CH3 table (done 2026-10-14)",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "lrw-race-integrity-canary",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "ops/monitoring/directional-labels-race-integrity.py",
+   "symbol": "the twin identity and gap checks",
+   "kind": "canary",
+   "spec_pinned": "both families, existence and race_gap_candles only (seal)",
+   "owner": "EDGE-LABELER-RACE-WINDOW-V2-W1",
+   "migration_wave": "none — the integrity check reads both families by design",
+   "status": "migrated-v2",
+   "liveness": "signal-1, nightly after the labeler",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": "four columns, no label value (ruling Q-A)"
+  },
+  {
+   "id": "ads1-scorecard",
+   "repo": "crypto-quant-signal-mcp",
+   "path": "src/scripts/ads1/spec.ts",
+   "symbol": "PRIMARY_BARRIER_SPEC / extract",
+   "kind": "registration",
+   "spec_pinned": "-v2 family (amendment 9f97efe7)",
+   "owner": "EDGE-ADS1-SCORECARD-W1-V2",
+   "migration_wave": "migrated by the ADS-1 -v2 amendment 9f97efe7",
+   "status": "migrated-v2",
+   "liveness": "parked until Dispatch B",
+   "verified": "origin/main 2057833d (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "aoe-edge-gate",
+   "repo": "autonomous-optimizer",
+   "path": "src/feedback/edge_gate.py",
+   "symbol": "TAU_SPEC (_DAY_SQL / _FIRSTS_SQL)",
+   "kind": "gate",
+   "spec_pinned": "-v1 primary",
+   "owner": "EDGE-DWR-VALIDATED-PREDICATE-W1",
+   "migration_wave": "AOE-EDGE-GATE-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE)",
+   "status": "pinned-v1",
+   "liveness": "EDGE_GATE_ENFORCE on the AOE containers",
+   "verified": "origin/main c9c7280 (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "aoe-label-freshness",
+   "repo": "autonomous-optimizer",
+   "path": "src/monitoring/label_freshness.py",
+   "symbol": "BARRIER_SPEC (FETCH_SQL)",
+   "kind": "digest",
+   "spec_pinned": "-v1 primary",
+   "owner": "Cowork Main-AOE",
+   "migration_wave": "AOE-DIGEST-V2-MIGRATION (named, not scheduled)",
+   "status": "pinned-v1",
+   "liveness": "AOE daily digest",
+   "verified": "origin/main c9c7280 (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "aoe-dwr-baseline",
+   "repo": "autonomous-optimizer",
+   "path": "src/monitoring/dwr_baseline.py",
+   "symbol": "PRIMARY_SPEC",
+   "kind": "digest",
+   "spec_pinned": "-v1 primary",
+   "owner": "Cowork Main-AOE",
+   "migration_wave": "DWR-SOT-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE)",
+   "status": "pinned-v1",
+   "liveness": "AOE monitoring",
+   "verified": "origin/main c9c7280 (2026-10-14)",
+   "note": "not in R0.3 (2026-09-28); found by today's re-verification"
+  },
+  {
+   "id": "aoe-bdir3-diagnostic",
+   "repo": "autonomous-optimizer",
+   "path": "src/research/bdir3diag/conventions.py",
+   "symbol": "BARRIER_SPEC (export_sql, bdir3ready/sql)",
+   "kind": "registration",
+   "spec_pinned": "-v1 primary",
+   "owner": "EDGE-BDIR-V3-DIAGNOSTIC-W1",
+   "migration_wave": "B-DIR-V3-FULL owner ruling: pre-result re-registration on -v2 is clean while the holdout is unread",
+   "status": "pinned-v1",
+   "liveness": "diagnostic done; FULL test 2027-01-17; readiness canary weekly on aoe-1",
+   "verified": "origin/main c9c7280 (2026-10-14)",
+   "note": ""
+  },
+  {
+   "id": "aoe-bdir2-assemble",
+   "repo": "autonomous-optimizer",
+   "path": "src/research/bdir2/assemble_v2.py",
+   "symbol": "gate holdout (docstring + query text)",
+   "kind": "research",
+   "spec_pinned": "-v1 primary",
+   "owner": "B-DIR v2 (completed)",
+   "migration_wave": "none — a completed registered test; a re-run is a new registration",
+   "status": "pinned-v1",
+   "liveness": "historical, not scheduled",
+   "verified": "origin/main c9c7280 (2026-10-14)",
+   "note": "not in R0.3; found by today's re-verification"
+  },
+  {
+   "id": "aoe-bdir25-assemble",
+   "repo": "autonomous-optimizer",
+   "path": "src/research/bdir25/assemble_v25.py",
+   "symbol": "gate holdout (docstring + query text)",
+   "kind": "research",
+   "spec_pinned": "-v1 primary",
+   "owner": "B-DIR v2.5 (completed)",
+   "migration_wave": "none — a completed registered test; a re-run is a new registration",
+   "status": "pinned-v1",
+   "liveness": "historical, not scheduled",
+   "verified": "origin/main c9c7280 (2026-10-14)",
+   "note": "not in R0.3; found by today's re-verification"
+  }
+ ],
+ "literal_sites": [
+  {
+   "path": "audits/EDGE-ADS1-SCORECARD-W1-endpoint-truth.md",
+   "role": "audit-doc",
+   "consumer_id": null,
+   "note": "a historical record; not read by any job"
+  },
+  {
+   "path": "audits/OPS-LABEL-FRESHNESS-W1-endpoint-truth.md",
+   "role": "audit-doc",
+   "consumer_id": null,
+   "note": "a historical record; not read by any job"
+  },
+  {
+   "path": "audits/ads1-scorecard-preregistration-2026-09-27.md",
+   "role": "registration",
+   "consumer_id": "ads1-scorecard",
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/attribution-gate-preregistration-2026-09-04.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/dwr-baseline-2026-07-03.json",
+   "role": "audit-artifact",
+   "consumer_id": null,
+   "note": "a historical snapshot; not read by any job"
+  },
+  {
+   "path": "audits/hold-decision-preregistration-2026-08-26.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/hurst-discrimination-preregistration-2026-09-22.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/labeler-race-window-v2-preregistration-2026-09-28.md",
+   "role": "registration",
+   "consumer_id": "lrw-registered-read",
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/scorer-predictive-ceiling-coin-map-2026-09-21.json",
+   "role": "audit-artifact",
+   "consumer_id": null,
+   "note": "a historical snapshot; not read by any job"
+  },
+  {
+   "path": "audits/scorer-predictive-ceiling-preregistration-2026-09-21.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/sell-attribution-centered-check-preregistration-2026-09-05.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/sell-attribution-collider-control-preregistration-2026-09-05.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/sell-attribution-long-timeframe-check-preregistration-2026-09-09.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/sell-feature-attribution-preregistration-2026-09-04.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/withheld-dwr-preregistration-2026-08-30.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "audits/withheld-dwr-w2-preregistration-2026-09-10.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
+  },
+  {
+   "path": "docs/Directional-Accuracy-SoT.md",
+   "role": "doc",
+   "consumer_id": null,
+   "note": "the SoT definition (this wave adds the -v1 deprecation)"
+  },
+  {
+   "path": "migrations/030_dwr_baseline_runs.sql",
+   "role": "migration",
+   "consumer_id": null,
+   "note": "schema text (a comment or default); not a reader"
+  },
+  {
+   "path": "migrations/045_directional_labels_race_gap.sql",
+   "role": "migration",
+   "consumer_id": null,
+   "note": "schema text (a comment or default); not a reader"
+  },
+  {
+   "path": "ops/monitoring/directional-label-freshness.py",
+   "role": "consumer",
+   "consumer_id": "label-freshness-canary",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "ops/monitoring/directional-labels-race-integrity.py",
+   "role": "consumer",
+   "consumer_id": "lrw-race-integrity-canary",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "ops/monitoring/scorer-input-identity-canary.py",
+   "role": "consumer",
+   "consumer_id": "scorer-input-identity-canary",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "ops/monitoring/test-directional-label-freshness.py",
+   "role": "test",
+   "consumer_id": "label-freshness-canary",
+   "note": "pins a reader's or writer's behaviour"
+  },
+  {
+   "path": "ops/monitoring/venue-slo-tiers.json",
+   "role": "consumer",
+   "consumer_id": "label-freshness-tiers",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "ops/scripts/deploy-cron-interlock.sh",
+   "role": "consumer",
+   "consumer_id": "deploy-cron-interlock",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "scripts/gates/ads1-amend-gate.sh",
+   "role": "gate",
+   "consumer_id": "ads1-scorecard",
+   "note": "asserts the family a reader uses"
+  },
+  {
+   "path": "src/lib/venue-slo-tiers.ts",
+   "role": "consumer",
+   "consumer_id": "freshness-constant",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "src/scripts/backfill-directional-labels.ts",
+   "role": "producer",
+   "consumer_id": "labeler-worklist",
+   "note": "writes the family; the -v1 spec set is its own"
+  },
+  {
+   "path": "src/scripts/backfill-hold-decision-labels.ts",
+   "role": "producer",
+   "consumer_id": null,
+   "note": "writes the family; the -v1 spec set is its own"
+  },
+  {
+   "path": "src/scripts/directional-labeler.ts",
+   "role": "spec-source",
+   "consumer_id": null,
+   "note": "BARRIER_SPECS — the ONE -v1 literal set (and BARRIER_SPECS_V2 beside it)"
+  },
+  {
+   "path": "src/scripts/dwr-baseline-report.ts",
+   "role": "consumer",
+   "consumer_id": "dwr-baseline-report",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "src/scripts/dwr-baseline-snapshot.ts",
+   "role": "consumer",
+   "consumer_id": "dwr-baseline-snapshot",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "src/scripts/dwr-cluster-edge.ts",
+   "role": "consumer",
+   "consumer_id": "dwr-cluster-edge",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "src/scripts/frozen-window-attribution.ts",
+   "role": "consumer",
+   "consumer_id": "frozen-window-attribution",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "src/scripts/lrw/disagreement.ts",
+   "role": "consumer",
+   "consumer_id": "lrw-disagreement",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "src/scripts/lrw/extract-sql.ts",
+   "role": "consumer",
+   "consumer_id": "lrw-registered-read",
+   "note": "a reader — see its consumers row"
+  },
+  {
+   "path": "tests/fixtures/directional-label-golden.json",
+   "role": "fixture",
+   "consumer_id": null,
+   "note": "test data"
+  },
+  {
+   "path": "tests/unit/directional-label-worklist-order.test.ts",
+   "role": "test",
+   "consumer_id": "labeler-worklist",
+   "note": "pins a reader's or writer's behaviour"
+  },
+  {
+   "path": "tests/unit/dwr-baseline-refresh.test.ts",
+   "role": "test",
+   "consumer_id": "dwr-baseline-report",
+   "note": "pins a reader's or writer's behaviour"
+  },
+  {
+   "path": "tests/unit/hold-decision-label-filters.test.ts",
+   "role": "test",
+   "consumer_id": null,
+   "note": "pins a reader's or writer's behaviour"
+  },
+  {
+   "path": "tests/unit/lrw-completeness.test.ts",
+   "role": "test",
+   "consumer_id": "lrw-registered-read",
+   "note": "pins a reader's or writer's behaviour"
+  },
+  {
+   "path": "tests/unit/lrw-disagreement.test.ts",
+   "role": "test",
+   "consumer_id": "lrw-disagreement",
+   "note": "pins a reader's or writer's behaviour"
+  },
+  {
+   "path": "tests/unit/lrw-hold-v2.test.ts",
+   "role": "test",
+   "consumer_id": null,
+   "note": "pins a reader's or writer's behaviour"
+  },
+  {
+   "path": "tests/unit/lrw-race-window-v2.test.ts",
+   "role": "test",
+   "consumer_id": null,
+   "note": "pins a reader's or writer's behaviour"
+  },
+  {
+   "path": "tests/unit/lrw-relabel-v2.test.ts",
+   "role": "test",
+   "consumer_id": null,
+   "note": "pins a reader's or writer's behaviour"
+  }
+ ]
+}

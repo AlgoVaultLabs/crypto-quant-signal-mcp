@@ -1285,6 +1285,18 @@
       "announce_resolution": false,
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OKX_AI_DELISTED-W{NEXT}"
+    },
+    {
+      "alert_id": "DIRECTIONAL_LABELS_RACE_INTEGRITY",
+      "owner": "ops/monitoring/directional-labels-race-integrity.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-DIRECTIONAL_LABELS_RACE_INTEGRITY-W{NEXT}",
+      "envelope_adopted": true,
+      "notes": "EDGE-LABELER-RACE-WINDOW-V2-W1 CH4 (rulings Q-A = A, Q-B = B). Pages on FAIL only, as CRITICAL_PERSISTENT: never in the first 3 labeler runs that carry the v1CutUnwritable counter (report-only), then on 2 consecutive FAIL runs, with the wrapper's 24 h cooldown. INDETERMINATE never pages. The verdict is its own validated DETECTOR_ENVELOPE's."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",

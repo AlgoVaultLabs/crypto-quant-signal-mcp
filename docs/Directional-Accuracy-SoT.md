@@ -197,3 +197,54 @@ migration table are added with the consumer registry.
 - whether the adapter returned the recent page because the history window held nothing (`substitutedNewest`).
 
 A consumer that counts gaps can read these facts instead of re-deriving them. A copy of the page carries no facts: that means unknown, never zero.
+
+## 7. `-v1` DEPRECATED — consumers and migration (EDGE-LABELER-RACE-WINDOW-V2-W1 CH4)
+
+**Status: `-v1` is DEPRECATED** (defective race window; retained for registered consumers; retired after the last
+migration). The nightly keeps writing `-v1` beside `-v2` for as long as a consumer pins it. No `-v1` label is ever
+edited, overwritten or deleted.
+
+**The defect, by class** (§5). The `-v1` cache extended from an off-grid instant and dropped the candle opening inside
+that step. The index race then ran past its vertical barrier; the same holes sat in later rows' σ history; and
+finer-served pairs lost a candle per page boundary. Every class and its measured prevalence is in the private vault
+record of this wave, together with the registered `-v1` vs `-v2` disagreement read under `T_CAP`. This public doc
+carries no figure. That registered read is the one measurement of disagreement; another is a new registered read,
+never a nightly number.
+
+**What watches `-v2`.** `ops/monitoring/directional-labels-race-integrity.py` runs on signal-1 after each nightly
+labeler run. It reads cardinalities only (the sealed holdout above `T_CAP` admits nothing else):
+- every `-v1` row the run wrote has its `-v2` twin, or a class the run counted: M − (R − v1CutUnwritable) = 0;
+- each τ's `-v2` rows are written together;
+- `race_gap_candles` is 0 on every new `-v2` row;
+- the stored `-v1` gap equals a live recount;
+- `-v2` is fresh (`FRESHNESS_BARRIER_SPEC_V2`).
+
+**The migration table** is the registry `ops/monitoring/directional-labels-consumers.json`. The block below is its
+projection, pinned by `tests/unit/directional-labels-consumers.test.ts`, so the two cannot drift. A consumer migrates
+by its own named wave. A registered analysis migrates by a pre-result amendment, or by a new registration.
+
+<!-- LRW-MIGRATION-TABLE:BEGIN (generated from the registry; edit the registry, not this block) -->
+| Consumer | Pins | Owner | Migration wave | Status |
+|---|---|---|---|---|
+| `autonomous-optimizer` · `src/research/bdir2/assemble_v2.py` | -v1 primary | B-DIR v2 (completed) | none — a completed registered test; a re-run is a new registration | `pinned-v1` |
+| `autonomous-optimizer` · `src/research/bdir25/assemble_v25.py` | -v1 primary | B-DIR v2.5 (completed) | none — a completed registered test; a re-run is a new registration | `pinned-v1` |
+| `autonomous-optimizer` · `src/research/bdir3diag/conventions.py` | -v1 primary | EDGE-BDIR-V3-DIAGNOSTIC-W1 | B-DIR-V3-FULL owner ruling: pre-result re-registration on -v2 is clean while the holdout is unread | `pinned-v1` |
+| `autonomous-optimizer` · `src/monitoring/dwr_baseline.py` | -v1 primary | Cowork Main-AOE | DWR-SOT-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE) | `pinned-v1` |
+| `autonomous-optimizer` · `src/feedback/edge_gate.py` | -v1 primary | EDGE-DWR-VALIDATED-PREDICATE-W1 | AOE-EDGE-GATE-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE) | `pinned-v1` |
+| `autonomous-optimizer` · `src/monitoring/label_freshness.py` | -v1 primary | Cowork Main-AOE | AOE-DIGEST-V2-MIGRATION (named, not scheduled) | `pinned-v1` |
+| `crypto-quant-signal-mcp` · `src/scripts/ads1/spec.ts` | -v2 family (amendment 9f97efe7) | EDGE-ADS1-SCORECARD-W1-V2 | migrated by the ADS-1 -v2 amendment 9f97efe7 | `migrated-v2` |
+| `crypto-quant-signal-mcp` · `ops/scripts/deploy-cron-interlock.sh` | -v1 primary (literal bind) | OPS-HOST-AUTO-REBOOT family | none — measures the freshness of -v1 production, which continues | `pinned-v1` |
+| `crypto-quant-signal-mcp` · `src/scripts/dwr-baseline-report.ts` | the three -v1 specs (own SPECS) | OPS-AOE-MONITORING-DWR-REFOCUS-W1 | DWR-SOT-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE) | `pinned-v1` |
+| `crypto-quant-signal-mcp` · `src/scripts/dwr-baseline-snapshot.ts` | inherits dwr-baseline-report | OPS-AOE-MONITORING-DWR-REFOCUS-W1 | DWR-SOT-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE) | `pinned-v1` |
+| `crypto-quant-signal-mcp` · `src/scripts/dwr-cluster-edge.ts` | inherits dwr-baseline-report | OPS-AOE-MONITORING-DWR-REFOCUS-W1 | DWR-SOT-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE) | `pinned-v1` |
+| `crypto-quant-signal-mcp` · `src/lib/venue-slo-tiers.ts` | -v1 primary | OPS-BDIR-V3-PANEL-READINESS-W1 | LABEL-FRESHNESS-V2-MIGRATION (named, not scheduled); FRESHNESS_BARRIER_SPEC stays -v1 until it lands | `pinned-v1` |
+| `crypto-quant-signal-mcp` · `src/scripts/frozen-window-attribution.ts` | DEFAULT_SPEC (-v1), --spec opt-in | OPS-UPSTREAM-ACQUISITION-ACCOUNTING | none — manual research CLI; --spec selects the family | `pinned-v1` |
+| `crypto-quant-signal-mcp` · `ops/monitoring/directional-label-freshness.py` | venue-slo-tiers.json barrier_spec (-v1) | OPS-BDIR-V3-PANEL-READINESS-W1 | LABEL-FRESHNESS-V2-MIGRATION (named, not scheduled) | `pinned-v1` |
+| `crypto-quant-signal-mcp` · `ops/monitoring/venue-slo-tiers.json` | -v1 primary (config of label-freshness-canary) | OPS-BDIR-V3-PANEL-READINESS-W1 | LABEL-FRESHNESS-V2-MIGRATION (named, not scheduled) | `pinned-v1` |
+| `crypto-quant-signal-mcp` · `src/scripts/backfill-directional-labels.ts` | none (spec-agnostic: every row of a signal) | EDGE-ADS1-SCORECARD-W1-V2 | none — the expiry value is spec-independent by design (golden test) | `migrated-v2` |
+| `crypto-quant-signal-mcp` · `src/scripts/backfill-directional-labels.ts` | FRESHNESS_BARRIER_SPEC (-v1) | OPS-BDIR-V3-PANEL-READINESS-W1 | none — keyed on -v1 by ruling LRW-Q6; the writer races -v2 beside every -v1 attempt | `pinned-v1` |
+| `crypto-quant-signal-mcp` · `src/scripts/lrw/disagreement.ts` | -v1 vs -v2 under T_CAP | EDGE-LABELER-RACE-WINDOW-V2-W1 | none — the registered comparison reads both families by design | `migrated-v2` |
+| `crypto-quant-signal-mcp` · `ops/monitoring/directional-labels-race-integrity.py` | both families, existence and race_gap_candles only (seal) | EDGE-LABELER-RACE-WINDOW-V2-W1 | none — the integrity check reads both families by design | `migrated-v2` |
+| `crypto-quant-signal-mcp` · `src/scripts/lrw/extract-sql.ts` | -v1 vs -v2 under T_CAP (the registered pair) | EDGE-LABELER-RACE-WINDOW-V2-W1 | none — the registered comparison reads both families by design | `migrated-v2` |
+| `crypto-quant-signal-mcp` · `ops/monitoring/scorer-input-identity-canary.py` | SI_BARRIER_SPEC default -v1; one count is spec-agnostic | EDGE-ATTRIBUTION-CORPUS-DRAIN | SCORER-INPUT-CANARY-V2-SCOPE (named, not scheduled) | `pinned-v1` |
+<!-- LRW-MIGRATION-TABLE:END -->
