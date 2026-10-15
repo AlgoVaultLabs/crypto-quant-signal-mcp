@@ -98,8 +98,10 @@ function parseArgs(): 'critical' | 'digest' {
   const idx = process.argv.indexOf('--mode');
   const mode = idx >= 0 ? process.argv[idx + 1] : undefined;
   if (mode !== 'critical' && mode !== 'digest') {
-    console.error('Usage: monitor.ts --mode <critical|digest>');
-    process.exit(1);
+    // Thrown, never process.exit(): this script now prints verdict tokens (`[ledger]
+    // DRAIN_VERDICT=`), and runScript exits 1 only after draining stdout, so a token queued on
+    // a pipe is never dropped (tests/unit/verdict-exit-path.test.ts).
+    throw new Error('Usage: monitor.ts --mode <critical|digest>');
   }
   return mode;
 }
@@ -871,7 +873,9 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error(`[monitor] fatal error:`, err);
     await sendAlert(`Monitor script crashed (${mode}): ${(err as Error).message}`, 'critical');
-    process.exit(1);
+    // Re-thrown into runScript, which drains stdout and exits 1 — the same exit code the
+    // pre-wave `process.exit(1)` gave, without dropping a queued verdict line.
+    throw err;
   }
 }
 
