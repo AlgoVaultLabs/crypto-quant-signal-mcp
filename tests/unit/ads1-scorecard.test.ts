@@ -31,6 +31,8 @@ import {
   censusSql,
   countersSql,
   extractSql,
+  extractSqlTemplate,
+  instantiateTemplate,
   integritySql,
   presenceSql,
   sessionScript,
@@ -207,6 +209,18 @@ describe('the allow-list SQL', () => {
     // the two provenance columns are the primary's only, right after its five
     expect(EXTRACT_HEADER.slice(11, 18)).toEqual(['label_t10', 'amb_t10', 'lowvol_t10', 'barrier_t10', 'expiry_t10', 'computed_t10', 'gap_t10']);
     expect(EXTRACT_HEADER.filter((h) => /^(computed|gap)_/.test(h))).toEqual(['computed_t10', 'gap_t10']);
+  });
+
+  it('the horizon template is the registered extract with $1 where it carries T_DIAG_END, and nothing else (AOE-ADS1-OBJECTIVE-W1 CH1)', () => {
+    const tpl = extractSqlTemplate();
+    expect(instantiateTemplate(tpl, T_DIAG_END)).toBe(extractSql());
+    expect(tpl).toContain(`s.created_at <= $1\n    AND s.created_at + (tf.w + 1) * GREATEST(tf.sec, COALESCE(coarser.sec, tf.sec)) <= $1`);
+    expect(tpl.split('$1')).toHaveLength(3);
+    expect(tpl).not.toContain(String(T_DIAG_END));
+    // what the autonomous-optimizer repo vendors and runs under its horizon is this text, byte for byte
+    const spec = JSON.parse(readFileSync(path.join(__dirname, '../../ops/ads1-spec.json'), 'utf8'));
+    expect(spec.extract_sql_template).toBe(tpl);
+    expect(spec.seal_lift_epoch).toBe(1800180000);
   });
 
   it('the label-free statements read no label and no outcome column; presence reads -v1 by EXISTS only', () => {

@@ -24,6 +24,7 @@ import {
   N_EFF_FLOOR,
   PRIMARY_BARRIER_SPEC,
   PRIMARY_V1_TWIN_SPEC,
+  SEAL_LIFT,
   T_DIAG_END,
   T_FLIP,
   Z_ONE_SIDED,
@@ -31,6 +32,7 @@ import {
   withinTCap,
   withinTCapMax,
 } from '../../src/scripts/ads1/spec.js';
+import { extractSql, extractSqlTemplate, instantiateTemplate } from '../../src/scripts/ads1/extract-sql.js';
 import { tCapCases } from '../../src/scripts/ads1/parity-fixture.js';
 import { ADAPTER_PENDING_CELLS } from '../../src/scripts/lrw/registered.js';
 import { FRESHNESS_BARRIER_SPEC } from '../../src/lib/venue-slo-tiers.js';
@@ -74,12 +76,38 @@ describe('ADS-1 spec lock', () => {
     expect(COARSER_SERVED.map((c) => `${c.exchange}|${c.timeframe}|${c.servedSeconds}`).sort()).toEqual(registered);
   });
 
-  it('the JSON sha256 is the one the registration amendment records (§10.1)', () => {
-    const reg = readFileSync(path.join(ROOT, 'audits/ads1-scorecard-preregistration-2026-09-27.md'), 'utf8');
-    const m = /`ops\/ads1-spec\.json` \x28sha256 at this amendment `([0-9a-f]{64})`/.exec(reg);
-    expect(m, 'the amendment records the spec sha256').not.toBeNull();
+  it('the JSON sha256 is the one the LATEST registration records (ADS-1 §10.1 at its amendment; AOE-ADS1-OBJECTIVE-W1 §10 at its registration)', () => {
+    // Every registration that adopts a revision of the contract records its sha256; the NEWEST record (by the
+    // registration date in its filename) is the lock, and older records stay as history. The ADS-1 registration
+    // admits exactly ONE amendment (its pin test), so a later revision is recorded by the registration that made it.
+    const RE = /`ops\/ads1-spec\.json` \x28sha256 at this (?:amendment|registration) `([0-9a-f]{64})`/g;
+    const records = readdirSync(path.join(ROOT, 'audits'))
+      .filter((f) => /preregistration-\d{4}-\d{2}-\d{2}\.md$/.test(f))
+      .flatMap((f) => [...readFileSync(path.join(ROOT, 'audits', f), 'utf8').matchAll(RE)].map((m) => ({ file: f, sha: m[1], date: /(\d{4}-\d{2}-\d{2})\.md$/.exec(f)![1] })))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.file.localeCompare(b.file));
+    expect(records.length, 'at least the ADS-1 amendment record and this wave\'s').toBeGreaterThanOrEqual(2);
+    // history, kept verbatim: the sha the registered ADS-1 pull ran under
+    expect(records.find((r) => r.file === 'ads1-scorecard-preregistration-2026-09-27.md')?.sha).toBe('31e1c67f436888a00f7cdbbbf9f7001938de6a4cba2a6ecdbe84fe2df5eb69b8');
+    const latest = records[records.length - 1];
+    expect(latest.file).toBe('aoe-ads1-objective-preregistration-2026-10-15.md');
     const actual = createHash('sha256').update(readFileSync(path.join(ROOT, 'ops', 'ads1-spec.json'))).digest('hex');
-    expect(actual).toBe(m![1]);
+    expect(actual).toBe(latest.sha);
+  });
+
+  it('the seal lift and the horizon template are in the contract (AOE-ADS1-OBJECTIVE-W1 CH1, D1 / D7)', () => {
+    expect(SEAL_LIFT).toBe(1800180000);
+    expect(new Date(SEAL_LIFT * 1000).toISOString()).toBe('2027-01-17T10:00:00.000Z');
+    expect(T_DIAG_END).toBeLessThan(SEAL_LIFT);
+    const spec = JSON.parse(serializeAds1Spec());
+    expect(spec.seal_lift_epoch).toBe(SEAL_LIFT);
+    expect(spec.extract_sql_template).toBe(extractSqlTemplate());
+    // the template is the REGISTERED statement with `$1` where it carries T_DIAG_END — there and nowhere else
+    expect(instantiateTemplate(extractSqlTemplate(), T_DIAG_END)).toBe(extractSql());
+    expect(extractSqlTemplate().split('$1')).toHaveLength(3); // the two sides of the max-form predicate
+    expect(extractSqlTemplate()).not.toContain(String(T_DIAG_END));
+    expect(() => instantiateTemplate(extractSql(), T_DIAG_END)).toThrow(/no \$1/);
+    expect(() => instantiateTemplate(extractSqlTemplate(), 1.5)).toThrow(/integer/);
+    expect(() => instantiateTemplate(extractSqlTemplate(), -1)).toThrow(/integer/);
   });
 
   it('the T_ADAPTER split cells are the registration §10.5 pair, held apart from LRW\'s shrinking pending set', () => {

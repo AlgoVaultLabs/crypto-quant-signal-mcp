@@ -3,6 +3,10 @@
 // scorecard's read session runs (ruling Q5 = A). The pre-registration quotes these texts; a test pins the
 // registration to the generator, so what was registered is what was run.
 //
+// AOE-ADS1-OBJECTIVE-W1 CH1: the label-bearing extract is built by the leaf `extract-template.ts` (`buildExtractSql`),
+// which this module instantiates at T_DIAG_END (the registered statement, byte-identical — pinned) and `spec.ts`
+// serialises at `$1` into `ops/ads1-spec.json` as `extract_sql_template` (`extractSqlTemplate()` below is that text).
+//
 // The session: `ssh → docker exec -i <postgres> psql -U aoe_readonly`, each statement inside its own
 // `BEGIN READ ONLY`, the token line first. `aoe_readonly` holds no write privilege, so the channel is
 // read-only by construction, not by a session setting it could lift.
@@ -14,9 +18,7 @@
 // race-end embargo, ruling Q1 = A). Label-FREE counts (census, side mix) are marked as such and may run to
 // now; they never read a label or an outcome column.
 
-import { EVAL_CANDLES, TF_MS } from '../directional-labeler.js';
 import {
-  ADS1_BARRIER_SPECS,
   COARSER_SERVED,
   PRIMARY_BARRIER_SPEC,
   PRIMARY_SPEC,
@@ -25,93 +27,46 @@ import {
   T_ADAPTER,
   T_DIAG_END,
   T_FLIP,
+  extractContext,
 } from './spec.js';
+import {
+  HORIZON_PARAM,
+  buildExtractSql,
+  extractHeader,
+  specSuffix,
+  tCapPredicateAt,
+  windowJoins as windowJoinsOf,
+} from './extract-template.js';
 
-/** Column suffix per barrier spec: tau 1.0 → t10, 0.5 → t05, 2.0 → t20. */
-export function specSuffix(tau: number): string {
-  return `t${String(Math.round(tau * 10)).padStart(2, '0')}`;
-}
-
-const PER_SPEC_COLUMNS = [
-  ['label', 'label'],
-  ['ambiguous_candle', 'amb'],
-  ['low_vol_history', 'lowvol'],
-  ['barrier_pct', 'barrier'],
-  ['ret_at_expiry_pct', 'expiry'],
-] as const;
-
-/** PROVENANCE columns, primary spec only (registration §10.3): the first-write stamp (the relabel / nightly split,
- *  the T_ADAPTER split) and the generator's own contiguity count (0 on every `-v2` row by construction). Neither is a
- *  label. `computed_at` is selected raw and parsed under the session's `SET TIME ZONE 'UTC'` (see `sessionScript`). */
-const PRIMARY_PROVENANCE_COLUMNS = [
-  ['computed_at', 'computed'],
-  ['race_gap_candles', 'gap'],
-] as const;
-
-/** One spec's selected columns, as `[column, alias]` — the primary carries the provenance pair after its five. */
-function specColumns(spec: string): ReadonlyArray<readonly [string, string]> {
-  return spec === PRIMARY_BARRIER_SPEC ? [...PER_SPEC_COLUMNS, ...PRIMARY_PROVENANCE_COLUMNS] : PER_SPEC_COLUMNS;
-}
+export { HORIZON_PARAM, instantiateTemplate, specSuffix } from './extract-template.js';
 
 /** The extract's CSV header, in order. The scorecard's parser refuses any other header. */
-export const EXTRACT_HEADER: readonly string[] = [
-  'id', 'created_at', 'exchange', 'coin', 'timeframe', 'side', 'confidence',
-  'regime_rule_version', 'regime', 'verdict_rule_version', 'anchored',
-  ...ADS1_BARRIER_SPECS.flatMap((b) => specColumns(b.spec).map(([, alias]) => `${alias}_${specSuffix(b.tau)}`)),
-];
+export const EXTRACT_HEADER: readonly string[] = extractHeader(extractContext());
 
-/** `(VALUES ('3m', 180, 20), …)` — the label window per timeframe, from the labeler's own tables. */
-function tfValues(): string {
-  return Object.keys(EVAL_CANDLES)
-    .map((t) => `('${t}', ${TF_MS[t] / 1000}, ${EVAL_CANDLES[t]})`)
-    .join(', ');
-}
-
-/** `(VALUES ('GATE', '3m', 300), …)` — the coarser-served pairs, generated from `COARSER_SERVED` (spec.ts, derived
- *  from `servedCandleStepMs`), never typed. */
-function coarserValues(): string {
-  return COARSER_SERVED.map((c) => `('${c.exchange}', '${c.timeframe}', ${c.servedSeconds})`).join(', ');
-}
-
-/** The two joins every T_CAP-bounded statement carries: the label window per timeframe and the served step. */
+/** The two joins every T_CAP-bounded statement carries: the label window per timeframe and the served step
+ *  (`COARSER_SERVED`, spec.ts, derived from `servedCandleStepMs` — never typed). */
 function windowJoins(): string {
-  return `JOIN (VALUES ${tfValues()}) AS tf(t, sec, w) ON tf.t = s.timeframe
-  LEFT JOIN (VALUES ${coarserValues()}) AS coarser(exchange, t, sec) ON coarser.exchange = s.exchange AND coarser.t = s.timeframe`;
+  return windowJoinsOf(COARSER_SERVED);
 }
 
 /** The T_CAP predicate in the ruled MAX form (registration §10.2; Q11 / LRW-Q8), on `s` joined to `tf` and
- *  `coarser` — `max(requested, served)` is `GREATEST(tf.sec, COALESCE(coarser.sec, tf.sec))`. */
+ *  `coarser` — `max(requested, served)` is `GREATEST(tf.sec, COALESCE(coarser.sec, tf.sec))`. The registered
+ *  instance: bound at T_DIAG_END. */
 export function tCapPredicate(): string {
-  return `s.created_at <= ${T_DIAG_END}
-    AND s.created_at + (tf.w + 1) * GREATEST(tf.sec, COALESCE(coarser.sec, tf.sec)) <= ${T_DIAG_END}`;
+  return tCapPredicateAt(String(T_DIAG_END));
 }
 
-/** THE label-bearing extract: one row per emitted call that carries a primary-spec label under T_CAP. The
- *  primary spec is an inner join (it defines the population); the two sensitivity specs are left joins on
- *  the same rows, so every spec is scored on one population. */
+/** THE label-bearing extract: one row per emitted call that carries a primary-spec label under T_CAP — the
+ *  REGISTERED statement (ADS-1 registration §10.3), i.e. the template instantiated at T_DIAG_END. */
 export function extractSql(): string {
-  const alias = (tau: number) => `d${specSuffix(tau).slice(1)}`;
-  const specCols = ADS1_BARRIER_SPECS.flatMap((b) =>
-    specColumns(b.spec).map(([col, a]) => `${alias(b.tau)}.${col} AS ${a}_${specSuffix(b.tau)}`),
-  ).join(',\n         ');
-  const joins = [
-    `JOIN directional_labels ${alias(PRIMARY_SPEC.tau)} ON ${alias(PRIMARY_SPEC.tau)}.signal_id = s.id AND ${alias(PRIMARY_SPEC.tau)}.barrier_spec = '${PRIMARY_SPEC.spec}'`,
-    ...SENSITIVITY_SPECS.map(
-      (b) => `LEFT JOIN directional_labels ${alias(b.tau)} ON ${alias(b.tau)}.signal_id = s.id AND ${alias(b.tau)}.barrier_spec = '${b.spec}'`,
-    ),
-  ].join('\n  ');
-  return `COPY (
-  SELECT s.id, s.created_at, s.exchange, s.coin, s.timeframe, s.signal AS side, s.confidence,
-         s.regime_rule_version, s.regime, s.verdict_rule_version,
-         (s.merkle_batch_id IS NOT NULL) AS anchored,
-         ${specCols}
-  FROM signals s
-  ${windowJoins()}
-  ${joins}
-  WHERE ${tCapPredicate()}
-    AND s.signal IN ('BUY', 'SELL')
-  ORDER BY s.id
-) TO STDOUT WITH (FORMAT csv, HEADER)`;
+  return buildExtractSql(String(T_DIAG_END), extractContext());
+}
+
+/** The same statement with `$1` where the registered instance carries T_DIAG_END — what `ops/ads1-spec.json`
+ *  carries as `extract_sql_template`, and what the autonomous-optimizer repo instantiates at `label_read_horizon(now)`.
+ *  `instantiateTemplate(extractSqlTemplate(), T_DIAG_END) === extractSql()` is pinned by test. */
+export function extractSqlTemplate(): string {
+  return buildExtractSql(HORIZON_PARAM, extractContext());
 }
 
 /** The presence statement's CSV header, in order. */

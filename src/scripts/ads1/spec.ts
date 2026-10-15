@@ -19,6 +19,7 @@ import { SERVED_VENUES, servedCandleStepMs } from '../../lib/tf-support.js';
 import { BARRIER_SPECS, BARRIER_SPECS_V2, EVAL_CANDLES, FLOOR_PCT, ROUND_TRIP_COST_PCT, TF_MS } from '../directional-labeler.js';
 import { CLUSTER_EDGE_CONTRACT, MIN_ROWS_PER_CLUSTER as ESTATE_MIN_ROWS_PER_CLUSTER } from '../dwr-cluster-edge.js';
 import { T_CUT_EPOCH } from '../lrw/registered.js';
+import { HORIZON_PARAM, buildExtractSql, type ExtractContext } from './extract-template.js';
 
 export const ADS1_SPEC_VERSION = '1.0.0-draft';
 
@@ -76,6 +77,10 @@ export const CALIB_FLOOR_TS = 1776219824;
 export const T_FLIP = 1788169595;
 /** The B-DIR v3 sealed-holdout floor (ratified 2026-09-26). */
 export const T_DIAG_END = 1790402400;
+/** The seal LIFTS here — the B-DIR v3 FULL test's census floor, 2027-01-17T10:00:00Z (AOE-ADS1-OBJECTIVE-W1 CH1, D1).
+ *  Carried to the AOE repo as `seal_lift_epoch`: its `label_read_horizon(now)` is `T_DIAG_END` while `now < SEAL_LIFT`
+ *  and `now` after it, so the loop starts learning from fresh outcomes on this clock, by construction. */
+export const SEAL_LIFT = Date.UTC(2027, 0, 17, 10, 0, 0) / 1000; // 1800180000
 
 /** Cluster floors — the estate's, imported (dwr-cluster-edge.ts). */
 export const MIN_CLUSTERS = CLUSTER_EDGE_CONTRACT.minClusters;
@@ -178,6 +183,13 @@ export function withinTCapMax(createdAtS: number, exchange: string, timeframe: s
   return createdAtS <= T_DIAG_END && createdAtS + (W + 1) * step <= T_DIAG_END;
 }
 
+/** Everything the extract builder (`extract-template.ts`, a leaf) needs from this module — the one place the family,
+ *  its primary and the coarser-served pairs are handed to it, so `extract-sql.ts` (the registered instance) and
+ *  `serializeAds1Spec()` (the `$1` template) build from the same inputs. */
+export function extractContext(): ExtractContext {
+  return { specs: ADS1_BARRIER_SPECS, primaryBarrierSpec: PRIMARY_BARRIER_SPEC, coarser: COARSER_SERVED };
+}
+
 function sortKeys(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(sortKeys);
   if (v && typeof v === 'object') {
@@ -224,6 +236,9 @@ export function serializeAds1Spec(): string {
     barrier_specs: ADS1_BARRIER_SPECS.map((b) => ({ spec: b.spec, tau: b.tau })),
     coarser_served: COARSER_SERVED.map((c) => ({ exchange: c.exchange, timeframe: c.timeframe, served_seconds: c.servedSeconds })),
     t_adapter: T_ADAPTER,
+    // AOE-ADS1-OBJECTIVE-W1 CH1: the seal lift and the ONE SQL the AOE repo runs under its label horizon (`$1`).
+    seal_lift_epoch: SEAL_LIFT,
+    extract_sql_template: buildExtractSql(HORIZON_PARAM, extractContext()),
     eval_candles: { ...EVAL_CANDLES },
     tf_seconds: Object.fromEntries(Object.entries(TF_MS).map(([k, ms]) => [k, ms / 1000])),
   };
