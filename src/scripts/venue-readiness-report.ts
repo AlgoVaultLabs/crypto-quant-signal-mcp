@@ -20,6 +20,7 @@ import { listVenues } from '../lib/venue-store.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { computeVenueStats } from './evaluate-venues.js';
 import { sendDigest } from '../lib/telegram.js';
+import { recordDigestAttempt, recordDigestSkipped } from '../lib/telegram-digest-ledger.js';
 import { dbQuery } from '../lib/performance-db.js';
 import { loadEquityReadinessInput, renderToolReadiness } from './tool-readiness-report.js';
 import { isEquityToolsEnabled } from '../lib/equities/equity-tools-flag.js';
@@ -128,6 +129,9 @@ export function buildReport(rows: VenueRecord[], statsByVenue: Map<string, Stats
 }
 
 async function main(): Promise<void> {
+  // OPS-DIGEST-DELIVERY-DURABLE-W1 CH3 — the ATTEMPT stamp at job START (fail-soft; a dry run is not an attempt).
+  const dryRun = !!process.env.DRY_RUN;
+  await recordDigestAttempt('venue-readiness-report', { dryRun });
   const rows = await listVenues();
   const statsByVenue = new Map<string, Stats>();
   for (const v of rows) {
@@ -183,6 +187,7 @@ async function main(): Promise<void> {
   if (!verdict.actionable) {
     // Silence in Telegram must never mean silence everywhere: this line is the job's liveness.
     console.log(`[venue-readiness] SUPPRESSED — nothing actionable (${verdict.reason}, equity card inactive)`);
+    await recordDigestSkipped('venue-readiness-report', `nothing actionable: ${verdict.reason}`, { dryRun });
     return;
   }
   const ok = await sendDigest(sections, { label: 'venue-readiness-report' });

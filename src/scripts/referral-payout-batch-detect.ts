@@ -16,15 +16,19 @@
 import { detectPayoutBatch, formatBatchDigest } from '../lib/referral-payout.js';
 import { usdcMinPayoutLabel } from '../lib/referral-constants.js';
 import { sendDigest } from '../lib/telegram.js';
+import { recordDigestAttempt, recordDigestSkipped } from '../lib/telegram-digest-ledger.js';
 
 export async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry-run');
+  // OPS-DIGEST-DELIVERY-DURABLE-W1 CH3 — the ATTEMPT stamp at job START (fail-soft; a dry run is not an attempt).
+  await recordDigestAttempt('referral-payout-batch-detect', { dryRun });
   const batch = await detectPayoutBatch();
   const sections = formatBatchDigest(batch);
   const stamp = new Date().toISOString();
 
   if (sections.length === 0) {
     console.log(`[referral-payout-batch] ${stamp}: no referrers >= ${usdcMinPayoutLabel()} pending — suppress-on-empty.`);
+    await recordDigestSkipped('referral-payout-batch-detect', 'suppress-on-empty: no referrer at the minimum payout', { dryRun });
     return;
   }
   if (dryRun) {

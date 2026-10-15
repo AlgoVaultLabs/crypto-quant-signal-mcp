@@ -7,7 +7,15 @@
 import os from 'node:os';
 import fs from 'node:fs';
 import { sendAlert, sendDigest, deliverText, redactBotToken } from '../lib/telegram.js';
-import { drainDigestLedger } from '../lib/telegram-digest-ledger.js';
+import { drainDigestLedger, recordDigestAttempt } from '../lib/telegram-digest-ledger.js';
+import { DIGEST_REGISTRY } from '../lib/digest-registry.js';
+import { chunkSections } from '../lib/markdown-safe.js';
+import {
+  runDigestFreshnessStep,
+  runDigestCatchupStep,
+  digestPeriodGuard,
+  withCatchupFooter,
+} from './monitor-digest-steps.js';
 import { firePage, shouldAlert, type AlertState } from './monitor-page.js';
 import { formatAgentActivity } from '../lib/agent-activity-format.js';
 import { getPerformanceStatsAsync, getMerkleBatchSummary, dbQuery } from '../lib/performance-db.js';
@@ -696,8 +704,31 @@ async function runCritical(): Promise<void> {
   );
 
   // OPS-DIGEST-DELIVERY-DURABLE-W1 — the late steps run AFTER every check has saved its
-  // state, each fail-open and deadline-capped, so no critical check is ever delayed or lost.
+  // state, each fail-open and deadline-capped, so no critical check is ever delayed or lost:
+  // drain (CH2) → freshness (CH3) → the monitor digest's self catch-up (CH3).
   await drainDigestStep();
+  await digestFreshnessStep(state);
+  await digestCatchupStep();
+  // The freshness step pages through firePage, which marks state.lastAlerted.
+  saveState(state);
+}
+
+/** CH3 — one page per missed period, per label; `[monitor] DIGEST_FRESHNESS …` every tick. */
+async function digestFreshnessStep(state: AlertState): Promise<void> {
+  try {
+    await withDeadline(runDigestFreshnessStep({ state, nowMs: Date.now() }), 30_000, 'digest freshness');
+  } catch (err) {
+    console.log(`[monitor] DIGEST_FRESHNESS_VERDICT=INDETERMINATE ${redactBotToken((err as Error)?.message ?? String(err))}`);
+  }
+}
+
+/** CH3 — re-run a killed or never-started 08:00 digest in-process (capped at 120 s, fail-open). */
+async function digestCatchupStep(): Promise<void> {
+  try {
+    await runDigestCatchupStep({ nowMs: Date.now(), run: () => runDigest({ catchup: true }) });
+  } catch (err) {
+    console.log(`[monitor] CATCHUP_FAILED ${redactBotToken((err as Error)?.message ?? String(err))}`);
+  }
 }
 
 /** Bound a late step: a hung DB or socket must not hold the 2-minute tick (and its flock). */
@@ -736,9 +767,31 @@ async function drainDigestStep(): Promise<void> {
 
 // ── Digest ──
 
-async function runDigest(): Promise<void> {
-  console.log(`[monitor] digest at ${new Date().toISOString()}`);
-  const date = new Date().toISOString().split('T')[0];
+type DigestOutcome = 'sent' | 'failed' | 'already_delivered';
+
+/**
+ * The daily digest. RETURNS its outcome — only the `--mode digest` entry turns it into an exit
+ * code, because the critical tick's catch-up runs it in-process and must not inherit one.
+ *
+ * Idempotent per period (OPS-DIGEST-DELIVERY-DURABLE-W1 CH3): a scheduled run whose period is
+ * already `delivered` or `queued` sends NOTHING; `--force` is the operator's explicit re-send.
+ * A catch-up run was CLAIMED by the critical tick (the claim is its attempt stamp), so it skips
+ * both the guard and the stamp, and its last part says it is a catch-up.
+ */
+async function runDigest(opts: { catchup?: boolean; force?: boolean } = {}): Promise<DigestOutcome> {
+  const startedMs = Date.now();
+  console.log(`[monitor] digest at ${new Date(startedMs).toISOString()}${opts.catchup ? ' (catch-up)' : ''}`);
+  const date = new Date(startedMs).toISOString().split('T')[0];
+  const row = DIGEST_REGISTRY['monitor-daily-digest'];
+  if (!opts.catchup) {
+    const guard = await digestPeriodGuard('monitor-daily-digest', row, startedMs, !!opts.force);
+    if (guard === 'ALREADY_DELIVERED') {
+      console.log(`[monitor] ALREADY_DELIVERED_THIS_PERIOD ${date} — zero POSTs (re-send with --force)`);
+      return 'already_delivered';
+    }
+    if (guard === 'FORCED') console.log(`[monitor] FORCED digest re-send for ${date}`);
+    await recordDigestAttempt('monitor-daily-digest');
+  }
 
   // Gather data in parallel
   const [perfStats, merkleSummary, gasResult, backfillResult, analyticsResult, npmResult, uptimeInfo] = await Promise.all([
@@ -820,14 +873,16 @@ async function runDigest(): Promise<void> {
     sections.push(`📦 *npm Downloads:* ${d.downloads ?? '—'} (last day)`);
   }
 
+  const toSend = opts.catchup ? withCatchupFooter(sections, row, Date.now(), (s) => chunkSections(s)) : sections;
+
   // SEC-17: sendDigest returns a boolean and never throws — an unchecked await logs
   // success for a message Telegram rejected. Assert delivery, not attempt.
-  if (await sendDigest(sections, { label: 'monitor-daily-digest' })) {
+  if (await sendDigest(toSend, { label: 'monitor-daily-digest' })) {
     console.log('[monitor] digest sent');
-  } else {
-    console.error('[monitor] DIGEST SEND FAILED — see the [telegram] DELIVERY_FAILED line above');
-    process.exitCode = 1;
+    return 'sent';
   }
+  console.error('[monitor] DIGEST SEND FAILED — see the [telegram] DELIVERY_FAILED line above');
+  return 'failed';
 }
 
 function getSystemInfo(): {
@@ -869,7 +924,7 @@ async function main(): Promise<void> {
   const mode = parseArgs();
   try {
     if (mode === 'critical') await runCritical();
-    else await runDigest();
+    else if ((await runDigest({ force: process.argv.includes('--force') })) === 'failed') process.exitCode = 1;
   } catch (err) {
     console.error(`[monitor] fatal error:`, err);
     await sendAlert(`Monitor script crashed (${mode}): ${(err as Error).message}`, 'critical');

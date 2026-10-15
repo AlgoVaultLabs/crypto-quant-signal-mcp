@@ -40,6 +40,7 @@ import { scoreWeek, renderDecisionBrief, loadObjective, type GapLike, type Ranke
 import { buildEligibilityReport, type CitationRow } from '../lib/geo-eligibility.js';
 import { isOwnHost } from '../lib/geo-extractor.js';
 import { recordGeoDecision } from '../lib/geo-storage.js';
+import { recordDigestAttempt } from '../lib/telegram-digest-ledger.js';
 
 const TIER_DISPLAY: Record<string, string> = {
   eligibility: 'ELIGIBILITY',
@@ -562,6 +563,8 @@ async function main(): Promise<void> {
     return;
   }
 
+  // OPS-DIGEST-DELIVERY-DURABLE-W1 CH3 — the ATTEMPT stamp at job START (fail-soft; a dry run is not an attempt).
+  await recordDigestAttempt('geo-weekly-cron', { dryRun: dryRun || previewSend });
   console.log('[geo-cron] starting weekly multi-engine probe');
   // OPS-GEO-PROBE-MULTI-RUN-W1 — K (per-engine), engine concurrency, and per-engine pacing
   // come from the objective SoT `probe:` block (resolved in the orchestrator). Tuning = edit yaml.

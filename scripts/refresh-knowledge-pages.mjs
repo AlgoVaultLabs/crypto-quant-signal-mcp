@@ -60,6 +60,19 @@ const FETCHERS = [devto, medium, youtube, githubDiscussions];
  * (OPS-SCRIPT-EXIT-LIFECYCLE-W1). Resolved from the SAME dist module instance the transport's
  * lazy ledger import uses, so the pool it closes is the one that was opened.
  */
+/**
+ * OPS-DIGEST-DELIVERY-DURABLE-W1 CH3 — the ATTEMPT stamp, from the same compiled ledger the
+ * transport uses. Fail-soft: a stamp that cannot be written must never cost the refresh.
+ */
+async function recordDigestAttempt(label, opts) {
+  try {
+    const mod = require(path.resolve(__dirname, '..', 'dist', 'lib', 'telegram-digest-ledger.js'));
+    await mod.recordDigestAttempt(label, opts);
+  } catch (err) {
+    console.warn(`[refresh-pages] [ledger] ATTEMPT_STAMP_FAILED ${err.message}`);
+  }
+}
+
 async function closeDbPool() {
   try {
     const mod = require(path.resolve(__dirname, '..', 'dist', 'lib', 'performance-db.js'));
@@ -71,6 +84,7 @@ async function closeDbPool() {
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
+  await recordDigestAttempt('refresh-knowledge-pages', { dryRun }); // a dry run is not an attempt
   // Container path: /app/dist/knowledge/latest.json (canonical bundle file).
   // Local dev: resolve relative to repo root.
   const defaultBundlePath = path.resolve(__dirname, '..', 'dist', 'knowledge', 'latest.json');

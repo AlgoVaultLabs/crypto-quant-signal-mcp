@@ -27,9 +27,12 @@ import { runScript } from '../lib/script-lifecycle.js';
 import { closeDb } from '../lib/performance-db.js';
 import { sendDigest } from '../lib/telegram.js';
 import { buildDigest } from '../lib/rate-limit-digest.js';
+import { recordDigestAttempt } from '../lib/telegram-digest-ledger.js';
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
+  // OPS-DIGEST-DELIVERY-DURABLE-W1 CH3 — the ATTEMPT stamp at job START (fail-soft; a dry run is not an attempt).
+  await recordDigestAttempt('rate-limit-digest-weekly', { dryRun });
   const { text, sections } = await buildDigest();
   if (dryRun) {
     console.log('--- rate-limit-digest dry-run output ---');

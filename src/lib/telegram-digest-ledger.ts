@@ -593,3 +593,216 @@ export async function drainDigestLedger(opts: {
       : `[ledger] DRAIN_VERDICT=${verdict}${verdict === 'IDLE' ? '' : ` ${n}`} (delivered=${delivered} queued=${queued} dead=${dead} paged=${paged})`;
   return { verdict, delivered, queued, dead, paged, line };
 }
+
+// ── CH3 — the attempt stamp, freshness inputs, and the monitor's self catch-up ─────────
+
+/**
+ * The ONE writer of attempt / skip stamps (part 0). `attempted` bumps `run_attempts` and
+ * re-stamps `attempted_at`; `skipped` is terminal for the period and keeps the attempt time.
+ */
+export async function writeRunStamp(args: {
+  label: string;
+  periodKey: string;
+  nowMs: number;
+  status: 'attempted' | 'skipped';
+  reason?: string;
+}): Promise<void> {
+  await ensureDigestLedgerSchema();
+  if (args.status === 'attempted') {
+    await dbQuery(
+      `INSERT INTO telegram_digest_ledger (label, period_key, part, status, attempted_at, run_attempts, created_at, updated_at)
+       VALUES (?, ?, 0, 'attempted', ?, 1, ?, ?)
+       ON CONFLICT (label, period_key, part) DO UPDATE SET
+         status = 'attempted',
+         attempted_at = excluded.attempted_at,
+         run_attempts = telegram_digest_ledger.run_attempts + 1,
+         updated_at = excluded.updated_at
+       RETURNING id`,
+      [args.label, args.periodKey, args.nowMs, args.nowMs, args.nowMs],
+    );
+    return;
+  }
+  await dbQuery(
+    `INSERT INTO telegram_digest_ledger (label, period_key, part, status, attempted_at, run_attempts, reason, created_at, updated_at)
+     VALUES (?, ?, 0, 'skipped', ?, 1, ?, ?, ?)
+     ON CONFLICT (label, period_key, part) DO UPDATE SET
+       status = 'skipped',
+       reason = excluded.reason,
+       attempted_at = COALESCE(telegram_digest_ledger.attempted_at, excluded.attempted_at),
+       updated_at = excluded.updated_at
+     RETURNING id`,
+    [args.label, args.periodKey, args.nowMs, (args.reason ?? '').slice(0, 200), args.nowMs, args.nowMs],
+  );
+}
+
+/**
+ * Stamp a producer's ATTEMPT at job START (build-and-runtime.md: "Producer liveness pages on
+ * ATTEMPT recency (heartbeat stamped at job START, fail-soft, before conditional work)").
+ * FAIL-SOFT: a ledger outage logs `[ledger] ATTEMPT_STAMP_FAILED` and the digest proceeds —
+ * a missing stamp must never cost the digest it describes. A dry run is not an attempt, and
+ * says so in DATA (`{ dryRun }`), so every producer stamps on its first line.
+ * Gate R5 (`check-delivery-assertion.mjs`) requires this call, with the producer's own
+ * label, in every registry producer.
+ */
+export async function recordDigestAttempt(
+  label: DigestLabel,
+  opts: { dryRun?: boolean; nowMs?: number } = {},
+): Promise<void> {
+  if (opts.dryRun) return;
+  const nowMs = opts.nowMs ?? Date.now();
+  try {
+    await writeRunStamp({ label, periodKey: periodKeyOf(label, nowMs), nowMs, status: 'attempted' });
+  } catch (err) {
+    console.error(`[ledger] ATTEMPT_STAMP_FAILED ${label} ${(err as Error)?.message ?? String(err)}`);
+  }
+}
+
+/**
+ * A CONDITIONAL producer's suppress path: the run happened and deliberately sent nothing.
+ * Terminal for the period (so the stuck detector never mistakes it for a killed run) and
+ * fresh by construction. Fail-soft, dry-run aware.
+ */
+export async function recordDigestSkipped(
+  label: DigestLabel,
+  reason: string,
+  opts: { dryRun?: boolean; nowMs?: number } = {},
+): Promise<void> {
+  if (opts.dryRun) return;
+  const nowMs = opts.nowMs ?? Date.now();
+  try {
+    await writeRunStamp({ label, periodKey: periodKeyOf(label, nowMs), nowMs, status: 'skipped', reason });
+  } catch (err) {
+    console.error(`[ledger] SKIP_STAMP_FAILED ${label} ${(err as Error)?.message ?? String(err)}`);
+  }
+}
+
+export interface LatestRun {
+  id: number;
+  label: string;
+  periodKey: string;
+  status: string;
+  attemptedAt: number | null;
+  runAttempts: number;
+}
+
+/**
+ * The newest ATTEMPTED run row per label (a `missed` row carries no `attempted_at` and is
+ * never the newest attempt). THROWS on a ledger error — the freshness step turns that into
+ * INDETERMINATE and pages nothing.
+ */
+export async function latestDigestRuns(labels: readonly string[]): Promise<Map<string, LatestRun>> {
+  await ensureDigestLedgerSchema();
+  const out = new Map<string, LatestRun>();
+  if (labels.length === 0) return out;
+  const rows = await dbQuery<{ id: unknown; label: string; period_key: string; status: string; attempted_at: unknown; run_attempts: unknown }>(
+    `SELECT r.id, r.label, r.period_key, r.status, r.attempted_at, r.run_attempts
+     FROM telegram_digest_ledger r
+     WHERE r.part = 0 AND r.attempted_at IS NOT NULL AND r.label IN (${placeholders(labels.length)})
+       AND r.attempted_at = (SELECT MAX(x.attempted_at) FROM telegram_digest_ledger x
+                             WHERE x.part = 0 AND x.label = r.label AND x.attempted_at IS NOT NULL)`,
+    [...labels],
+  );
+  for (const r of rows) {
+    out.set(r.label, {
+      id: num(r.id)!,
+      label: r.label,
+      periodKey: r.period_key,
+      status: r.status,
+      attemptedAt: num(r.attempted_at),
+      runAttempts: num(r.run_attempts) ?? 0,
+    });
+  }
+  return out;
+}
+
+/** The run row of one (label, period), or null. Throws on a ledger error. */
+export async function digestRunFor(label: string, periodKey: string): Promise<LatestRun | null> {
+  await ensureDigestLedgerSchema();
+  const rows = await dbQuery<{ id: unknown; label: string; period_key: string; status: string; attempted_at: unknown; run_attempts: unknown }>(
+    `SELECT id, label, period_key, status, attempted_at, run_attempts FROM telegram_digest_ledger
+     WHERE label = ? AND period_key = ? AND part = 0`,
+    [label, periodKey],
+  );
+  const r = rows[0];
+  return r
+    ? { id: num(r.id)!, label: r.label, periodKey: r.period_key, status: r.status, attemptedAt: num(r.attempted_at), runAttempts: num(r.run_attempts) ?? 0 }
+    : null;
+}
+
+/** Does any EARLIER period hold an attempted run row? (the catch-up's bootstrap guard) */
+export async function hasEarlierAttempt(label: string, periodKey: string): Promise<boolean> {
+  await ensureDigestLedgerSchema();
+  const rows = await dbQuery<{ n: unknown }>(
+    `SELECT COUNT(*) AS n FROM telegram_digest_ledger WHERE label = ? AND part = 0 AND attempted_at IS NOT NULL AND period_key <> ?`,
+    [label, periodKey],
+  );
+  return (num(rows[0]?.n) ?? 0) > 0;
+}
+
+/**
+ * Record that a period was MISSED (never attempted) — written ONLY after its page was
+ * delivered, so an undelivered page is retried next tick, and a delivered one is never sent
+ * twice for the same period.
+ */
+export async function recordMissedPeriod(label: string, periodKey: string, nowMs: number, reason: string): Promise<void> {
+  await ensureDigestLedgerSchema();
+  await dbQuery(
+    `INSERT INTO telegram_digest_ledger (label, period_key, part, status, reason, paged_at, created_at, updated_at)
+     VALUES (?, ?, 0, 'missed', ?, ?, ?, ?)
+     ON CONFLICT (label, period_key, part) DO UPDATE SET
+       paged_at = COALESCE(telegram_digest_ledger.paged_at, excluded.paged_at),
+       reason = COALESCE(telegram_digest_ledger.reason, excluded.reason),
+       updated_at = excluded.updated_at
+     RETURNING id`,
+    [label, periodKey, reason.slice(0, 200), nowMs, nowMs, nowMs],
+  );
+}
+
+/** Has this (label, period) already been paged as missed? */
+export async function missedPeriodPaged(label: string, periodKey: string): Promise<boolean> {
+  const r = await digestRunFor(label, periodKey);
+  return r != null && r.status === 'missed';
+}
+
+/** A run that never reached a terminal status, paged: it is DEAD now (and never paged again). */
+export async function markRunStuck(runId: number, nowMs: number, reason: string): Promise<void> {
+  await dbQuery(
+    `UPDATE telegram_digest_ledger SET status = 'dead', reason = ?, paged_at = ?, updated_at = ?
+     WHERE id = ? AND part = 0 AND status = 'attempted' RETURNING id`,
+    [reason.slice(0, 200), nowMs, nowMs, runId],
+  );
+}
+
+/**
+ * The monitor's self catch-up CLAIM — ONE atomic upsert, which is the mutual exclusion against
+ * the cron's own run and against a second tick. It succeeds only when the period has no run
+ * row, holds a `missed` row, or holds an `attempted` row older than `staleBeforeMs` with fewer
+ * than `maxRunAttempts` run attempts. Returns the new `run_attempts`, or null when the claim
+ * was lost (another writer got there first, or the period is not eligible).
+ */
+export async function claimCatchup(args: {
+  label: string;
+  periodKey: string;
+  nowMs: number;
+  staleBeforeMs: number;
+  maxRunAttempts: number;
+}): Promise<number | null> {
+  await ensureDigestLedgerSchema();
+  const rows = await dbQuery<{ run_attempts: unknown }>(
+    `INSERT INTO telegram_digest_ledger (label, period_key, part, status, attempted_at, run_attempts, reason, created_at, updated_at)
+     VALUES (?, ?, 0, 'attempted', ?, 1, 'catch-up', ?, ?)
+     ON CONFLICT (label, period_key, part) DO UPDATE SET
+       status = 'attempted',
+       attempted_at = excluded.attempted_at,
+       run_attempts = telegram_digest_ledger.run_attempts + 1,
+       reason = 'catch-up',
+       updated_at = excluded.updated_at
+     WHERE telegram_digest_ledger.status = 'missed'
+        OR (telegram_digest_ledger.status = 'attempted'
+            AND telegram_digest_ledger.attempted_at <= ?
+            AND telegram_digest_ledger.run_attempts < ?)
+     RETURNING run_attempts`,
+    [args.label, args.periodKey, args.nowMs, args.nowMs, args.nowMs, args.staleBeforeMs, args.maxRunAttempts],
+  );
+  return rows.length ? num(rows[0].run_attempts) : null;
+}

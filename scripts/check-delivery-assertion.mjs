@@ -28,6 +28,10 @@
  *       and every key is used by EXACTLY ONE scanned producer, which is the row's `producer`.
  *       `tsc` already refuses an unregistered label in a TypeScript producer; R4 is what holds
  *       the `.mjs` producer and the reverse direction (an orphan row is a digest nobody sends).
+ *   R5  Every registry producer stamps its ATTEMPT at job start — `recordDigestAttempt('<its
+ *       label>'` (OPS-DIGEST-DELIVERY-DURABLE-W1 CH3). A static presence check only; the real
+ *       proof is the runtime freshness detector in `monitor --mode critical`, which PAGES when a
+ *       label's attempts stop.
  *   R3  Every `sendDigest(...)` in a SCHEDULED producer declares a `label:` so a failed
  *       delivery escalates to the operator. The producer set is every tracked `.ts` under `src/scripts/` UNION
  *       every repo-relative `scripts/*.mjs` that `ops/scripts/cron-interlock-registry.json`
@@ -259,6 +263,12 @@ export function checkRegistryParity(registry, uses) {
   return hits;
 }
 
+/** R5 — does `src` stamp `label`'s attempt? Comments stripped: a mention is not a call. */
+export function stampsAttempt(src, label) {
+  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\brecordDigestAttempt\\s*\\(\\s*['"]${esc}['"]`).test(stripComments(src));
+}
+
 export function scanJs(src) { return findDiscardedDeliveryResults(src); }
 export function scanOps(src) { return findDryRunPrescriptions(src); }
 export function scanProducers(src) { return findUnescalatedDigestSends(src); }
@@ -319,6 +329,14 @@ const R4_CASES = [
   // CLEAN: one row per producer, each sent once.
   [[['a', 'p1.ts'], ['b', 'p2.mjs']], [{ file: 'p1.ts', label: 'a' }, { file: 'p2.mjs', label: 'b' }], false],
 ];
+// R5 — [source, label, expected-to-stamp?]
+const R5_CASES = [
+  ["  await recordDigestAttempt('geo-weekly-cron', { dryRun: dryRun || previewSend });", 'geo-weekly-cron', true],
+  ['  await recordDigestAttempt("refresh-knowledge-pages", { dryRun });', 'refresh-knowledge-pages', true],
+  ["  // await recordDigestAttempt('geo-weekly-cron');  <- prose, not a call", 'geo-weekly-cron', false],
+  ["  await recordDigestAttempt('monitor-daily-digest');", 'geo-weekly-cron', false],
+  ["  await recordDigestSkipped('chat-analytics-digest', 'below threshold');", 'chat-analytics-digest', false],
+];
 const R4_REGISTRY_SRC = "export const DIGEST_REGISTRY = {\n  'a-digest': {\n    producer: 'src/scripts/a.ts',\n  },\n  'b-digest': {\n    producer: 'scripts/b.mjs',\n  },\n} as const;";
 
 function selfTest() {
@@ -338,6 +356,9 @@ function selfTest() {
     if (dirty && n === 0) fails.push(`MISSED R4: ${JSON.stringify(uses)}`);
     if (!dirty && n !== 0) fails.push(`FALSE POSITIVE R4: ${JSON.stringify(uses)}`);
   }
+  for (const [src, label, stamps] of R5_CASES) {
+    if (stampsAttempt(src, label) !== stamps) fails.push(`${stamps ? 'MISSED' : 'FALSE POSITIVE'} R5: ${src.trim().slice(0, 60)}`);
+  }
   const parsed = parseDigestRegistry(R4_REGISTRY_SRC);
   if (parsed.size !== 2 || parsed.get('b-digest') !== 'scripts/b.mjs') fails.push(`R4 registry parser read ${parsed.size} row(s) from its fixture`);
   if (findDigestLabels("  const ok = await sendDigest(s, { label: 'a-digest' });\n  await sendDigest(p, { label: null });").join() !== 'a-digest') {
@@ -349,7 +370,8 @@ function selfTest() {
     return 'FAIL';
   }
   const r4Dirty = R4_CASES.filter((c) => c[2]).length;
-  console.log(`✓ self-test: ${DIRTY_R1.length + DIRTY_R2.length + DIRTY_R3.length + r4Dirty} known-bad fixtures flagged, ${CLEAN_R1.length + CLEAN_R2.length + CLEAN_R3.length + R4_CASES.length - r4Dirty} clean fixtures passed.`);
+  const r5Dirty = R5_CASES.filter((c) => !c[2]).length;
+  console.log(`✓ self-test: ${DIRTY_R1.length + DIRTY_R2.length + DIRTY_R3.length + r4Dirty + r5Dirty} known-bad fixtures flagged, ${CLEAN_R1.length + CLEAN_R2.length + CLEAN_R3.length + R4_CASES.length - r4Dirty + R5_CASES.length - r5Dirty} clean fixtures passed.`);
   return 'PASS';
 }
 
@@ -454,6 +476,14 @@ if (IS_MAIN) {
     try { for (const label of findDigestLabels(readFileSync(join(ROOT, f), 'utf8'))) uses.push({ file: f, label }); } catch { /* unreadable */ }
   }
   for (const h of checkRegistryParity(registry, uses)) findings.push(h);
+  // R5 — every registry producer stamps its own label's attempt.
+  for (const [label, producer] of registry) {
+    let src = '';
+    try { src = readFileSync(join(ROOT, producer), 'utf8'); } catch { /* reported below */ }
+    if (!stampsAttempt(src, label)) {
+      findings.push({ rule: 'R5', file: producer, detail: `no recordDigestAttempt('${label}') — the freshness detector would see this producer as never attempted`, snippet: label });
+    }
+  }
   console.log(`ℹ R4: ${registry.size} registry row(s) ⇄ ${uses.length} labelled send(s) across ${new Set(uses.map((u) => u.file)).size} producer(s)`);
 
   if (findings.length) {

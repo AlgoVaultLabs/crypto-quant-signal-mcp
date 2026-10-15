@@ -21,6 +21,7 @@
  */
 import { dbQuery, closeDb } from '../lib/performance-db.js';
 import { sendDigest, sendAlert } from '../lib/telegram.js';
+import { recordDigestAttempt, recordDigestSkipped } from '../lib/telegram-digest-ledger.js';
 
 const SILENT_THRESHOLD_QUERIES_7D = 5;
 const TRIGGER_QUERY_THRESHOLD = 100; // queries/day threshold for high-volume day
@@ -176,6 +177,8 @@ export async function buildChatAnalyticsDigest(): Promise<ChatAnalyticsDigest> {
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
+  // OPS-DIGEST-DELIVERY-DURABLE-W1 CH3 — the ATTEMPT stamp at job START (fail-soft; a dry run is not an attempt).
+  await recordDigestAttempt('chat-analytics-digest', { dryRun });
   const digest = await buildChatAnalyticsDigest();
 
   if (dryRun) {
@@ -190,6 +193,7 @@ async function main() {
   // Below silent threshold → skip Telegram send entirely (avoid noise during ramp-up)
   if (digest.total7dQueries < SILENT_THRESHOLD_QUERIES_7D) {
     console.log(`[chat-analytics-digest] ${new Date().toISOString()}: skipped (only ${digest.total7dQueries} queries in last 7d, threshold ${SILENT_THRESHOLD_QUERIES_7D})`);
+    await recordDigestSkipped('chat-analytics-digest', `below the ${SILENT_THRESHOLD_QUERIES_7D}-queries/7d threshold`, { dryRun });
     closeDb();
     return;
   }

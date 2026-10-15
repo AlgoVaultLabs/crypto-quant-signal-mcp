@@ -249,7 +249,7 @@
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/monitor",
       "class": "safe-to-kill",
-      "reason": "A read-mostly alert evaluation loop, idempotent on next fire: critical mode fires every 2 minutes and digest mode daily. A killed evaluation re-evaluates the same live state on the next tick; the only state it mutates is its own cooldown markers, which are re-derived.",
+      "reason": "A read-mostly alert evaluation loop. Critical mode re-evaluates the same live state every 2 minutes. A killed DIGEST run (daily, 08:00) is re-run by the critical tick's self catch-up from telegram_digest_ledger: about due + 12 min when it never started, or about 15-17 min after a mid-run kill, with at most 3 run attempts per period; the freshness step pages a period that is still missed or stuck after that (OPS-DIGEST-DELIVERY-DURABLE-W1 CH3). The only other state it mutates is its own cooldown markers, which are re-derived.",
       "max_runtime_s": 3,
       "runtime_instrument": "host `ps -eo etimes,args`, n=130 samples @1s spanning a full */2 fire cycle, 2026-08-29 03:37Z; max observed instance lifetime",
       "cron_lines": 2,

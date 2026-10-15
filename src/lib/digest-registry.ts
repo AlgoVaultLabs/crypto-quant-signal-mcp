@@ -146,7 +146,11 @@ const DAY_S = 86_400;
  * `7 8 1 * *` run on Jan 1 and the next on Feb 1 are 31 days apart.
  */
 export function maxIntervalS(label: DigestLabel): number {
-  const c = DIGEST_REGISTRY[label].cadence;
+  return cadenceMaxIntervalS(DIGEST_REGISTRY[label].cadence);
+}
+
+/** The cadence-level derivation `maxIntervalS` projects from (the freshness step reads rows). */
+export function cadenceMaxIntervalS(c: DigestCadence): number {
   return c === 'daily' ? DAY_S : c === 'weekly' ? 7 * DAY_S : 31 * DAY_S;
 }
 
@@ -172,9 +176,30 @@ function isoWeekKey(d: Date): string {
 
 /** The period a run at `nowMs` belongs to: UTC date · ISO week · `YYYY-MM`. */
 export function periodKey(label: DigestLabel, nowMs: number): string {
+  return cadencePeriodKey(DIGEST_REGISTRY[label].cadence, nowMs);
+}
+
+/** The cadence-level derivation `periodKey` projects from. */
+export function cadencePeriodKey(c: DigestCadence, nowMs: number): string {
   const d = new Date(nowMs);
-  const c = DIGEST_REGISTRY[label].cadence;
   if (c === 'daily') return d.toISOString().slice(0, 10);
   if (c === 'monthly') return d.toISOString().slice(0, 7);
   return isoWeekKey(d);
+}
+
+/**
+ * The due instant of the period containing `nowMs` (UTC ms). Read ONLY by the monitor's self
+ * catch-up (`now ≥ due + 10 min`) — the freshness detector never reads it, so a mis-declared
+ * `due` can move the catch-up but can never silence the detector.
+ */
+export function rowDueAtMs(row: DigestRegistryRow, nowMs: number): number {
+  const [h, m] = row.due.hhmm.split(':').map(Number);
+  const d = new Date(nowMs);
+  if (row.cadence === 'monthly') return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), row.due.dom ?? 1, h, m);
+  const base = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m);
+  if (row.cadence === 'daily') return base;
+  // weekly: the due weekday inside the ISO week (Mon..Sun) that contains nowMs
+  const isoDow = d.getUTCDay() || 7;
+  const targetIso = row.due.dow === 0 ? 7 : (row.due.dow ?? 1);
+  return base + (targetIso - isoDow) * 86_400_000;
 }
