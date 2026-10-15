@@ -230,7 +230,7 @@ by its own named wave. A registered analysis migrates by a pre-result amendment,
 | `autonomous-optimizer` · `src/research/bdir25/assemble_v25.py` | -v1 primary | B-DIR v2.5 (completed) | none — a completed registered test; a re-run is a new registration | `pinned-v1` |
 | `autonomous-optimizer` · `src/research/bdir3diag/conventions.py` | -v1 primary | EDGE-BDIR-V3-DIAGNOSTIC-W1 | B-DIR-V3-FULL owner ruling: pre-result re-registration on -v2 is clean while the holdout is unread | `pinned-v1` |
 | `autonomous-optimizer` · `src/monitoring/dwr_baseline.py` | -v1 primary | Cowork Main-AOE | DWR-SOT-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE) | `pinned-v1` |
-| `autonomous-optimizer` · `src/feedback/edge_gate.py` | -v1 primary | EDGE-DWR-VALIDATED-PREDICATE-W1 | AOE-EDGE-GATE-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE) | `pinned-v1` |
+| `autonomous-optimizer` · `src/feedback/edge_gate.py` | -v2 primary (vendored ops/ads1-spec.json, sha-pinned) | AOE-ADS1-OBJECTIVE-W1 | AOE-ADS1-OBJECTIVE-W1 CH2 — AOE-EDGE-GATE-V2-MIGRATION DISCHARGED: the -v1 literal retired for the vendored family constant; both aggregate statements bound to label_read_horizon(now) | `migrated-v2` |
 | `autonomous-optimizer` · `src/monitoring/label_freshness.py` | -v1 primary | Cowork Main-AOE | AOE-DIGEST-V2-MIGRATION (named, not scheduled) | `pinned-v1` |
 | `crypto-quant-signal-mcp` · `src/scripts/ads1/spec.ts` | -v2 family (amendment 9f97efe7) | EDGE-ADS1-SCORECARD-W1-V2 | migrated by the ADS-1 -v2 amendment 9f97efe7 | `migrated-v2` |
 | `crypto-quant-signal-mcp` · `ops/scripts/deploy-cron-interlock.sh` | -v1 primary (literal bind) | OPS-HOST-AUTO-REBOOT family | none — measures the freshness of -v1 production, which continues | `pinned-v1` |

@@ -221,15 +221,15 @@
    "id": "aoe-edge-gate",
    "repo": "autonomous-optimizer",
    "path": "src/feedback/edge_gate.py",
-   "symbol": "TAU_SPEC (_DAY_SQL / _FIRSTS_SQL)",
+   "symbol": "BARRIER_SPEC (_DAY_SQL / _FIRSTS_SQL) = src/feedback/ads1_objective.PRIMARY_BARRIER_SPEC (the vendored contract's primary)",
    "kind": "gate",
-   "spec_pinned": "-v1 primary",
-   "owner": "EDGE-DWR-VALIDATED-PREDICATE-W1",
-   "migration_wave": "AOE-EDGE-GATE-V2-MIGRATION (named, not scheduled; owner Cowork Main-AOE)",
-   "status": "pinned-v1",
+   "spec_pinned": "-v2 primary (vendored ops/ads1-spec.json, sha-pinned)",
+   "owner": "AOE-ADS1-OBJECTIVE-W1",
+   "migration_wave": "AOE-ADS1-OBJECTIVE-W1 CH2 — AOE-EDGE-GATE-V2-MIGRATION DISCHARGED: the -v1 literal retired for the vendored family constant; both aggregate statements bound to label_read_horizon(now)",
+   "status": "migrated-v2",
    "liveness": "EDGE_GATE_ENFORCE on the AOE containers",
-   "verified": "origin/main c9c7280 (2026-10-14)",
-   "note": ""
+   "verified": "autonomous-optimizer origin/main 733235e (-v1 literals under src/feedback/ = 0)",
+   "note": "The two digest readers (label_freshness.py, dwr_baseline.py) stay -v1 under their own named waves."
   },
   {
    "id": "aoe-label-freshness",
