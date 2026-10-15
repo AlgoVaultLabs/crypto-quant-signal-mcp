@@ -23,6 +23,11 @@
  *       BRANCHED ON — never discarded next to an unconditional success log.
  *   R2  No committed smoke/runbook line PRESCRIBES DRY_RUN_TG for a repeatable synthetic
  *       fire. Mentioning it to warn against it is fine; telling a reader to use it is not.
+ *   R4  Registry parity, both ways (OPS-DIGEST-DELIVERY-DURABLE-W1 CH2): every label read from a
+ *       scanned `sendDigest(…)` call is a `DIGEST_REGISTRY` key (`src/lib/digest-registry.ts`),
+ *       and every key is used by EXACTLY ONE scanned producer, which is the row's `producer`.
+ *       `tsc` already refuses an unregistered label in a TypeScript producer; R4 is what holds
+ *       the `.mjs` producer and the reverse direction (an orphan row is a digest nobody sends).
  *   R3  Every `sendDigest(...)` in a SCHEDULED producer declares a `label:` so a failed
  *       delivery escalates to the operator. The producer set is every tracked `.ts` under `src/scripts/` UNION
  *       every repo-relative `scripts/*.mjs` that `ops/scripts/cron-interlock-registry.json`
@@ -55,7 +60,7 @@
 
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -206,6 +211,54 @@ export function findUnescalatedDigestSends(src) {
   return hits;
 }
 
+/**
+ * R4 input — the label → producer map, parsed from the registry SOURCE. The registry is a
+ * fixed-format literal (`'label': {` then `producer: '…'` on the next line), and
+ * `tests/unit/digest-registry.test.ts` pins this parser against the real import of
+ * `DIGEST_REGISTRY`, so a format change that this regex stops reading fails a test rather than
+ * silently shrinking the corpus. Returns an EMPTY map when nothing parses — the caller treats
+ * that as INDETERMINATE (input we were handed and could not parse).
+ */
+export function parseDigestRegistry(src) {
+  const out = new Map();
+  const re = /^\s{2}'([a-z0-9_-]+)':\s*\{\s*\n\s*producer:\s*'([^']+)'/gm;
+  for (const m of stripComments(src).matchAll(re)) out.set(m[1], m[2]);
+  return out;
+}
+
+/** R4 input — every string label passed to `sendDigest(…)` in one file (`label: null` is skipped). */
+export function findDigestLabels(src) {
+  const labels = [];
+  const lines = stripComments(src).split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (!/\bsendDigest\s*\(/.test(lines[i])) continue;
+    const window = lines.slice(i, i + 14).join('\n');
+    const call = extractCallArgs(window.slice(window.indexOf('sendDigest')));
+    const m = /\blabel\s*:\s*['"]([^'"]+)['"]/.exec(call);
+    if (m) labels.push(m[1]);
+  }
+  return labels;
+}
+
+/** R4 — two-way parity between the registry and the labels the producers actually send. */
+export function checkRegistryParity(registry, uses) {
+  const hits = [];
+  for (const u of uses) {
+    if (!registry.has(u.label)) {
+      hits.push({ rule: 'R4', file: u.file, detail: `label '${u.label}' is not a DIGEST_REGISTRY key — register it (pinned to its interlock row)`, snippet: u.label });
+    }
+  }
+  for (const [label, producer] of registry) {
+    const users = [...new Set(uses.filter((u) => u.label === label).map((u) => u.file))];
+    if (users.length === 0) {
+      hits.push({ rule: 'R4', file: 'src/lib/digest-registry.ts', detail: `orphan registry row '${label}' — no scanned producer sends it`, snippet: label });
+    } else if (users.length > 1 || users[0] !== producer) {
+      hits.push({ rule: 'R4', file: users.join(', '), detail: `registry row '${label}' names producer ${producer}, but it is sent by ${users.join(', ')}`, snippet: label });
+    }
+  }
+  return hits;
+}
+
 export function scanJs(src) { return findDiscardedDeliveryResults(src); }
 export function scanOps(src) { return findDryRunPrescriptions(src); }
 export function scanProducers(src) { return findUnescalatedDigestSends(src); }
@@ -253,6 +306,21 @@ const CLEAN_R2 = [
   '  keep DRY_RUN_TG only for a test whose assertion IS the cooldown',
 ];
 
+// R4 — [registry entries, uses, expected-dirty?]
+const R4_CASES = [
+  // DIRTY: an unregistered label (the refresh producer before its row existed).
+  [[['a', 'p1.ts']], [{ file: 'p1.ts', label: 'a' }, { file: 'p2.mjs', label: 'refresh-knowledge-pages' }], true],
+  // DIRTY: an orphan row nobody sends.
+  [[['a', 'p1.ts'], ['b', 'p2.ts']], [{ file: 'p1.ts', label: 'a' }], true],
+  // DIRTY: the right label from the wrong producer.
+  [[['a', 'p1.ts']], [{ file: 'p2.ts', label: 'a' }], true],
+  // DIRTY: one label sent by two producers.
+  [[['a', 'p1.ts']], [{ file: 'p1.ts', label: 'a' }, { file: 'p2.ts', label: 'a' }], true],
+  // CLEAN: one row per producer, each sent once.
+  [[['a', 'p1.ts'], ['b', 'p2.mjs']], [{ file: 'p1.ts', label: 'a' }, { file: 'p2.mjs', label: 'b' }], false],
+];
+const R4_REGISTRY_SRC = "export const DIGEST_REGISTRY = {\n  'a-digest': {\n    producer: 'src/scripts/a.ts',\n  },\n  'b-digest': {\n    producer: 'scripts/b.mjs',\n  },\n} as const;";
+
 function selfTest() {
   const fails = [];
   if (!DIRTY_R1.length || !CLEAN_R1.length || !DIRTY_R2.length || !CLEAN_R2.length || !DIRTY_R3.length || !CLEAN_R3.length) {
@@ -265,12 +333,23 @@ function selfTest() {
   for (const f of CLEAN_R2) if (scanOps(f).length) fails.push(`FALSE POSITIVE R2: ${f.slice(0, 70)}`);
   for (const f of DIRTY_R3) if (!scanProducers(f).length) fails.push(`MISSED R3: ${f.slice(0, 70).replace(/\n/g, ' ')}`);
   for (const f of CLEAN_R3) if (scanProducers(f).length) fails.push(`FALSE POSITIVE R3: ${f.slice(0, 70).replace(/\n/g, ' ')}`);
+  for (const [entries, uses, dirty] of R4_CASES) {
+    const n = checkRegistryParity(new Map(entries), uses).length;
+    if (dirty && n === 0) fails.push(`MISSED R4: ${JSON.stringify(uses)}`);
+    if (!dirty && n !== 0) fails.push(`FALSE POSITIVE R4: ${JSON.stringify(uses)}`);
+  }
+  const parsed = parseDigestRegistry(R4_REGISTRY_SRC);
+  if (parsed.size !== 2 || parsed.get('b-digest') !== 'scripts/b.mjs') fails.push(`R4 registry parser read ${parsed.size} row(s) from its fixture`);
+  if (findDigestLabels("  const ok = await sendDigest(s, { label: 'a-digest' });\n  await sendDigest(p, { label: null });").join() !== 'a-digest') {
+    fails.push('R4 label reader');
+  }
   if (fails.length) {
     console.error('✖ self-test FAILED:');
     fails.forEach((f) => console.error('   - ' + f));
     return 'FAIL';
   }
-  console.log(`✓ self-test: ${DIRTY_R1.length + DIRTY_R2.length + DIRTY_R3.length} known-bad fixtures flagged, ${CLEAN_R1.length + CLEAN_R2.length + CLEAN_R3.length} clean fixtures passed.`);
+  const r4Dirty = R4_CASES.filter((c) => c[2]).length;
+  console.log(`✓ self-test: ${DIRTY_R1.length + DIRTY_R2.length + DIRTY_R3.length + r4Dirty} known-bad fixtures flagged, ${CLEAN_R1.length + CLEAN_R2.length + CLEAN_R3.length + R4_CASES.length - r4Dirty} clean fixtures passed.`);
   return 'PASS';
 }
 
@@ -305,64 +384,89 @@ function verdictAndExit(v) {
   process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 3);
 }
 
-if (argv.includes('--self-test')) verdictAndExit(selfTest());
+// Importable without running (tests/unit/digest-registry.test.ts pins parseDigestRegistry);
+// the gate runs only as the entry point.
+const IS_MAIN = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
 
-const st = selfTest();
-if (st !== 'PASS') verdictAndExit(st);
+if (IS_MAIN) {
+  if (argv.includes('--self-test')) verdictAndExit(selfTest());
 
-let all;
-try {
-  all = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
-} catch (err) {
-  console.error(`✖ could not enumerate tracked files: ${err instanceof Error ? err.message : err}`);
-  verdictAndExit('INDETERMINATE');
-}
+  const st = selfTest();
+  if (st !== 'PASS') verdictAndExit(st);
 
-const jsFiles = all.filter((f) => /^(src|scripts)\/.*\.(ts|mjs|js)$/.test(f) && !f.endsWith('.d.ts'));
-// R3 is scoped to SCHEDULED producers: an unattended cron is the only caller whose
-// silent failure nobody is present to see. src/lib holds the definition, not a send.
-// The scripts/ half is ENUMERATED from the interlock registry (see the header).
-const registryScripts = registryProducerScripts(all);
-if (registryScripts === null) verdictAndExit('INDETERMINATE');
-const producerFiles = [...all.filter((f) => /^src\/scripts\/.*\.ts$/.test(f)), ...registryScripts];
-const opsFiles = all.filter((f) => /^(ops|docs)\/.*\.(py|sh|md)$/.test(f));
-if (jsFiles.length === 0 || opsFiles.length === 0 || producerFiles.length === 0) {
-  console.error(
-    `✖ corpus empty (js=${jsFiles.length} ops=${opsFiles.length} producers=${producerFiles.length}) — refusing to report a pass`,
-  );
-  verdictAndExit('INDETERMINATE');
-}
-
-const findings = [];
-const softTotal = [];
-for (const f of jsFiles) {
+  let all;
   try {
-    const r = scanJs(readFileSync(join(ROOT, f), 'utf8'));
-    for (const h of r) findings.push({ file: f, ...h });
-    for (const s of r.soft ?? []) softTotal.push({ file: f, ...s });
-  } catch { /* unreadable */ }
-}
-// No silent caps: name what this gate observes but does NOT enforce.
-if (softTotal.length) {
-  console.log(`\u2139 ${softTotal.length} send call(s) discard their result WITHOUT claiming success — reported, not enforced (tracked as OPS-ALERT-DELIVERY-ASSERT-W{NEXT}): ${[...new Set(softTotal.map((s) => s.file))].join(', ')}`);
-}
-for (const f of producerFiles) {
-  try { for (const h of scanProducers(readFileSync(join(ROOT, f), 'utf8'))) findings.push({ file: f, ...h }); } catch { /* unreadable */ }
-}
-for (const f of opsFiles) {
-  try { for (const h of scanOps(readFileSync(join(ROOT, f), 'utf8'))) findings.push({ file: f, ...h }); } catch { /* unreadable */ }
-}
-
-if (findings.length) {
-  console.error(`✖ ${findings.length} finding(s) across ${jsFiles.length} js + ${opsFiles.length} ops file(s):`);
-  for (const h of findings) {
-    console.error(`   - ${h.file}  [${h.rule}] ${h.detail}`);
-    console.error(`     ${h.snippet}`);
+    all = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
+  } catch (err) {
+    console.error(`✖ could not enumerate tracked files: ${err instanceof Error ? err.message : err}`);
+    verdictAndExit('INDETERMINATE');
   }
-  verdictAndExit('FAIL');
-}
 
-console.log(
-  `✓ delivery assertion: ${jsFiles.length} js file(s) bind every send result; ${producerFiles.length} scheduled producer(s) declare a digest label; ${opsFiles.length} ops file(s) prescribe no cooldown-burning smoke.`,
-);
-verdictAndExit('PASS');
+  const jsFiles = all.filter((f) => /^(src|scripts)\/.*\.(ts|mjs|js)$/.test(f) && !f.endsWith('.d.ts'));
+  // R3 is scoped to SCHEDULED producers: an unattended cron is the only caller whose
+  // silent failure nobody is present to see. src/lib holds the definition, not a send.
+  // The scripts/ half is ENUMERATED from the interlock registry (see the header).
+  const registryScripts = registryProducerScripts(all);
+  if (registryScripts === null) verdictAndExit('INDETERMINATE');
+  const producerFiles = [...all.filter((f) => /^src\/scripts\/.*\.ts$/.test(f)), ...registryScripts];
+  const opsFiles = all.filter((f) => /^(ops|docs)\/.*\.(py|sh|md)$/.test(f));
+  if (jsFiles.length === 0 || opsFiles.length === 0 || producerFiles.length === 0) {
+    console.error(
+      `✖ corpus empty (js=${jsFiles.length} ops=${opsFiles.length} producers=${producerFiles.length}) — refusing to report a pass`,
+    );
+    verdictAndExit('INDETERMINATE');
+  }
+
+  const findings = [];
+  const softTotal = [];
+  for (const f of jsFiles) {
+    try {
+      const r = scanJs(readFileSync(join(ROOT, f), 'utf8'));
+      for (const h of r) findings.push({ file: f, ...h });
+      for (const s of r.soft ?? []) softTotal.push({ file: f, ...s });
+    } catch { /* unreadable */ }
+  }
+  // No silent caps: name what this gate observes but does NOT enforce.
+  if (softTotal.length) {
+    console.log(`\u2139 ${softTotal.length} send call(s) discard their result WITHOUT claiming success — reported, not enforced (tracked as OPS-ALERT-DELIVERY-ASSERT-W{NEXT}): ${[...new Set(softTotal.map((s) => s.file))].join(', ')}`);
+  }
+  for (const f of producerFiles) {
+    try { for (const h of scanProducers(readFileSync(join(ROOT, f), 'utf8'))) findings.push({ file: f, ...h }); } catch { /* unreadable */ }
+  }
+  for (const f of opsFiles) {
+    try { for (const h of scanOps(readFileSync(join(ROOT, f), 'utf8'))) findings.push({ file: f, ...h }); } catch { /* unreadable */ }
+  }
+
+  // R4 — registry parity, on R3's scan set.
+  let registry;
+  try {
+    registry = parseDigestRegistry(readFileSync(join(ROOT, 'src', 'lib', 'digest-registry.ts'), 'utf8'));
+  } catch (err) {
+    console.error(`✖ could not read src/lib/digest-registry.ts: ${err instanceof Error ? err.message : err}`);
+    verdictAndExit('INDETERMINATE');
+  }
+  if (registry.size === 0) {
+    console.error('✖ R4: parsed ZERO rows from src/lib/digest-registry.ts — refusing to report a pass');
+    verdictAndExit('INDETERMINATE');
+  }
+  const uses = [];
+  for (const f of producerFiles) {
+    try { for (const label of findDigestLabels(readFileSync(join(ROOT, f), 'utf8'))) uses.push({ file: f, label }); } catch { /* unreadable */ }
+  }
+  for (const h of checkRegistryParity(registry, uses)) findings.push(h);
+  console.log(`ℹ R4: ${registry.size} registry row(s) ⇄ ${uses.length} labelled send(s) across ${new Set(uses.map((u) => u.file)).size} producer(s)`);
+
+  if (findings.length) {
+    console.error(`✖ ${findings.length} finding(s) across ${jsFiles.length} js + ${opsFiles.length} ops file(s):`);
+    for (const h of findings) {
+      console.error(`   - ${h.file}  [${h.rule}] ${h.detail}`);
+      console.error(`     ${h.snippet}`);
+    }
+    verdictAndExit('FAIL');
+  }
+
+  console.log(
+    `✓ delivery assertion: ${jsFiles.length} js file(s) bind every send result; ${producerFiles.length} scheduled producer(s) declare a digest label; ${registry.size} registry row(s) match their producers both ways; ${opsFiles.length} ops file(s) prescribe no cooldown-burning smoke.`,
+  );
+  verdictAndExit('PASS');
+}

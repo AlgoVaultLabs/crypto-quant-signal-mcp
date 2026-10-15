@@ -34,6 +34,8 @@ import {
   TELEGRAM_MAX_MESSAGE,
 } from './markdown-safe.js';
 import { classifyDeliveryFailure, extractErrorCode } from './webhook-failure-class.js';
+import type { DigestLabel } from './digest-registry.js';
+import type { DigestLedgerPort, DigestPartOutcome } from './telegram-digest-ledger.js';
 export { mdValue, hasUnbalancedMarkdown, chunkSections, TELEGRAM_MAX_MESSAGE };
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? '';
@@ -188,7 +190,7 @@ export function classifyTelegramFailure(input: TelegramFailureInput): TelegramFa
 
 // ── Retry profiles — ONE table ──
 
-export type TelegramRetryPolicyName = 'serving' | 'scheduled';
+export type TelegramRetryPolicyName = 'serving' | 'scheduled' | 'ledger';
 
 export interface TelegramRetryPolicy {
   /** Total attempts, including the first. */
@@ -199,6 +201,8 @@ export interface TelegramRetryPolicy {
   honourRetryAfter: boolean;
   /** Wall-clock budget for one message; a wait that would cross it stops the loop. */
   budgetMs: number;
+  /** A CONTENT rejection gets one degraded (scrubbed, plain, re-chunked) resend. */
+  degradeOnContent: boolean;
 }
 
 /**
@@ -213,10 +217,15 @@ export interface TelegramRetryPolicy {
  * instead of spinning. A daily job's LAW budget (≥5% of its interval with backoff,
  * build-and-runtime.md) is far larger than any in-process wait should be — the remainder
  * is the durable ledger's job, not this loop's.
+ *
+ * `ledger` — the CH2 drain's redelivery of a STORED part: ONE attempt, no sleep (the ledger's
+ * `next_attempt_at` is the backoff), and no degraded resend — a stored part is never re-chunked,
+ * so a content rejection there is terminal and the run is DEAD.
  */
 export const TELEGRAM_RETRY_POLICY: Readonly<Record<TelegramRetryPolicyName, TelegramRetryPolicy>> = {
-  serving: { maxAttempts: 2, delaysMs: [0, 0], honourRetryAfter: false, budgetMs: Number.POSITIVE_INFINITY },
-  scheduled: { maxAttempts: 3, delaysMs: [0, 2_000, 8_000], honourRetryAfter: true, budgetMs: 45_000 },
+  serving: { maxAttempts: 2, delaysMs: [0, 0], honourRetryAfter: false, budgetMs: Number.POSITIVE_INFINITY, degradeOnContent: true },
+  scheduled: { maxAttempts: 3, delaysMs: [0, 2_000, 8_000], honourRetryAfter: true, budgetMs: 45_000, degradeOnContent: true },
+  ledger: { maxAttempts: 1, delaysMs: [0], honourRetryAfter: false, budgetMs: Number.POSITIVE_INFINITY, degradeOnContent: false },
 };
 
 /** A CONTENT rejection is re-chunked this far under the limit for its one degraded resend. */
@@ -255,25 +264,45 @@ export interface DeliveryResult {
   elapsedMs: number;
   /** A `retry_after` the in-run budget could not honour — the caller schedules from it. */
   retryAfterS: number | null;
+  /** Telegram's `message_id` of the last delivered message (the ledger stamps it). */
+  messageId: number | null;
 }
 
+/**
+ * Where a message goes. Production never passes one — the default reads the bot token and chat
+ * at module load. The CH2 proof script passes a STUB origin on 127.0.0.1 through this
+ * parameter, so proving the redelivery path in the production container can never reach the
+ * operator's chat and never depends on an env var the production path reads.
+ */
+export interface TelegramTransport {
+  apiBase: string;
+  chatId: string;
+}
+const DEFAULT_TRANSPORT = (): TelegramTransport => ({ apiBase: API_BASE, chatId: CHAT_ID });
+
 type Attempt =
-  | { ok: true }
+  | { ok: true; messageId: number | null }
   | { ok: false; failure: TelegramFailure; status?: number; body?: string };
 
-async function attemptOnce(text: string, parseMode: 'Markdown' | null): Promise<Attempt> {
+async function attemptOnce(text: string, parseMode: 'Markdown' | null, transport: TelegramTransport): Promise<Attempt> {
   try {
-    const res = await fetch(`${API_BASE}/sendMessage`, {
+    const res = await fetch(`${transport.apiBase}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: CHAT_ID,
+        chat_id: transport.chatId,
         text,
         ...(parseMode ? { parse_mode: parseMode } : {}),
       }),
       signal: AbortSignal.timeout(10_000),
     });
-    if (res.ok) return { ok: true };
+    if (res.ok) {
+      // The message_id is what the ledger stamps on a redelivered part; a body we cannot read
+      // after a 200 is still a DELIVERY — never turn it into a failure.
+      const j = (await res.json().catch(() => null)) as { result?: { message_id?: unknown } } | null;
+      const id = j?.result?.message_id;
+      return { ok: true, messageId: typeof id === 'number' && Number.isFinite(id) ? id : null };
+    }
     const body = await res.text();
     return { ok: false, status: res.status, body, failure: classifyTelegramFailure({ httpStatus: res.status, body }) };
   } catch (err) {
@@ -297,23 +326,26 @@ function logAttempt(i: number, n: number, f: TelegramFailure, t0: number): void 
 async function degradedResend(
   text: string,
   cause: TelegramFailure,
-): Promise<{ ok: boolean; posts: number; failure: TelegramFailure | null }> {
+  transport: TelegramTransport,
+): Promise<{ ok: boolean; posts: number; failure: TelegramFailure | null; messageId: number | null }> {
   const pieces = chunkSections([scrubForPlainText(text)], DEGRADED_CHUNK_LIMIT).map(scrubForPlainText);
   let posts = 0;
+  let messageId: number | null = null;
   for (const piece of pieces) {
-    const r = await attemptOnce(piece, null);
+    const r = await attemptOnce(piece, null, transport);
     posts++;
     if (!r.ok) {
       if (r.status !== undefined) console.error(`[telegram] HTTP ${r.status}: ${redactBotToken(r.body ?? '')}`);
       console.error(`[telegram] degraded resend also failed: disposition=${r.failure.disposition} code=${r.failure.code} desc="${r.failure.desc}"`);
-      return { ok: false, posts, failure: r.failure };
+      return { ok: false, posts, failure: r.failure, messageId: null };
     }
+    messageId = r.messageId;
   }
   console.error(`[telegram] DELIVERED DEGRADED (${cause.desc})`);
-  return { ok: true, posts, failure: null };
+  return { ok: true, posts, failure: null, messageId };
 }
 
-async function postOne(text: string, policyName: TelegramRetryPolicyName): Promise<DeliveryResult> {
+async function postOne(text: string, policyName: TelegramRetryPolicyName, transport: TelegramTransport): Promise<DeliveryResult> {
   const policy = TELEGRAM_RETRY_POLICY[policyName];
   const t0 = time.now();
   // PROACTIVE downgrade: an odd `*`/`_`/backtick cannot be escaped in legacy
@@ -330,7 +362,7 @@ async function postOne(text: string, policyName: TelegramRetryPolicyName): Promi
   let attempts = 0;
   let posts = 0;
   let deferredRetryAfterS: number | null = null;
-  const result = (ok: boolean, degraded = false): DeliveryResult => ({
+  const result = (ok: boolean, degraded = false, messageId: number | null = null): DeliveryResult => ({
     ok,
     degraded,
     failure: ok ? null : last,
@@ -338,6 +370,7 @@ async function postOne(text: string, policyName: TelegramRetryPolicyName): Promi
     posts,
     elapsedMs: time.now() - t0,
     retryAfterS: ok ? null : deferredRetryAfterS,
+    messageId: ok ? messageId : null,
   });
 
   for (let i = 0; i < policy.maxAttempts; i++) {
@@ -354,9 +387,9 @@ async function postOne(text: string, policyName: TelegramRetryPolicyName): Promi
       if (wait > 0) await time.sleep(wait);
     }
     attempts++;
-    const r = await attemptOnce(text, mode);
+    const r = await attemptOnce(text, mode, transport);
     posts++;
-    if (r.ok) return result(true);
+    if (r.ok) return result(true, false, r.messageId);
     if (r.status !== undefined) console.error(`[telegram] HTTP ${r.status}: ${redactBotToken(r.body ?? '')}`);
     let f = r.failure;
     logAttempt(attempts, policy.maxAttempts, f, t0);
@@ -365,11 +398,11 @@ async function postOne(text: string, policyName: TelegramRetryPolicyName): Promi
     // value can never again cost the operator the message entirely. Loud on purpose:
     // the fallback firing means that producer still needs mdValue() applied.
     if (f.disposition === 'entity' && mode !== null) {
-      const plain = await attemptOnce(text, null);
+      const plain = await attemptOnce(text, null, transport);
       posts++;
       if (plain.ok) {
         console.error('[telegram] DELIVERED AS PLAIN TEXT after a Markdown parse error — wrap interpolated values in mdValue()');
-        return result(true);
+        return result(true, false, plain.messageId);
       }
       console.error(
         `[telegram] plain-text fallback also failed: ${
@@ -380,10 +413,10 @@ async function postOne(text: string, policyName: TelegramRetryPolicyName): Promi
       mode = null; // the Markdown form is known-bad; any retry goes out plain
     }
     last = f;
-    if (f.disposition === 'content') {
-      const d = await degradedResend(text, f);
+    if (f.disposition === 'content' && policy.degradeOnContent) {
+      const d = await degradedResend(text, f, transport);
       posts += d.posts;
-      if (d.ok) return result(true, true);
+      if (d.ok) return result(true, true, d.messageId);
       last = d.failure ?? f;
       break;
     }
@@ -399,7 +432,7 @@ async function postOne(text: string, policyName: TelegramRetryPolicyName): Promi
 }
 
 const NOTHING_SENT: DeliveryResult = {
-  ok: false, degraded: false, failure: null, attempts: 0, posts: 0, elapsedMs: 0, retryAfterS: null,
+  ok: false, degraded: false, failure: null, attempts: 0, posts: 0, elapsedMs: 0, retryAfterS: null, messageId: null,
 };
 
 /**
@@ -413,13 +446,17 @@ const NOTHING_SENT: DeliveryResult = {
  *
  * Returns the LAST failing chunk's result (or the last chunk's, when all delivered).
  */
-async function post(text: string, policy: TelegramRetryPolicyName): Promise<DeliveryResult> {
+async function post(
+  text: string,
+  policy: TelegramRetryPolicyName,
+  transport: TelegramTransport = DEFAULT_TRANSPORT(),
+): Promise<DeliveryResult> {
   const chunks = chunkSections([text]);
   if (chunks.length === 0) return NOTHING_SENT;
   let lastOk: DeliveryResult | null = null;
   let lastFailed: DeliveryResult | null = null;
   for (const chunk of chunks) {
-    const r = await postOne(chunk, policy);
+    const r = await postOne(chunk, policy, transport);
     if (r.ok) lastOk = r;
     else lastFailed = r;
   }
@@ -433,10 +470,10 @@ async function post(text: string, policy: TelegramRetryPolicyName): Promise<Deli
  */
 export async function deliverText(
   text: string,
-  opts: { policy?: TelegramRetryPolicyName } = {},
+  opts: { policy?: TelegramRetryPolicyName; transport?: TelegramTransport } = {},
 ): Promise<DeliveryResult> {
-  if (!isConfigured()) return NOTHING_SENT;
-  return post(text, opts.policy ?? 'serving');
+  if (!opts.transport && !isConfigured()) return NOTHING_SENT;
+  return post(text, opts.policy ?? 'serving', opts.transport ?? DEFAULT_TRANSPORT());
 }
 
 /** Options for `sendAlert`. Optional — every existing call site is unchanged. */
@@ -471,8 +508,12 @@ export interface DigestOptions {
    * a comment, so `check-delivery-assertion.mjs` R3 can tell a considered decision
    * from an omission — the same reason `announce_resolution` lives on a registry
    * row rather than in prose.
+   *
+   * OPS-DIGEST-DELIVERY-DURABLE-W1 CH2: typed off `DIGEST_REGISTRY`, so an unregistered
+   * label FAILS `tsc` — a new digest producer cannot ship without a registry row pinned to its
+   * interlock row, and so gets redelivery and freshness on day one.
    */
-  label?: string | null;
+  label?: DigestLabel | null;
   /** Defaults to `scheduled` — a digest is never on a serving path. */
   policy?: TelegramRetryPolicyName;
 }
@@ -499,34 +540,82 @@ export function renderDigestFailurePage(args: {
   return `Digest ${mdValue(args.label)} FAILED to deliver — ${args.parts} part(s), ${args.sections} section(s) · ${cause} · ${attempts} attempt(s) over ${secs} s`;
 }
 
+// ── the digest ledger seam (OPS-DIGEST-DELIVERY-DURABLE-W1 CH2) ──
+
+let ledgerOverride: DigestLedgerPort | null = null;
+
+/**
+ * Test seam: route labelled runs into an in-memory (or re-labelled) ledger. `null` restores
+ * the default — a LAZY `import()` of `telegram-digest-ledger.ts`, so importing this transport
+ * does no database work at module load and the ledger never imports the transport back.
+ */
+export function _setDigestLedgerForTest(impl: DigestLedgerPort | null): void {
+  ledgerOverride = impl;
+}
+
+async function ledger(): Promise<DigestLedgerPort> {
+  return ledgerOverride ?? (await import('./telegram-digest-ledger.js'));
+}
+
+/**
+ * Settle a LABELLED run against the ledger — Recover before Alert:
+ *   delivered → the run row records it (freshness + the period guard read it);
+ *   queued    → SILENT: the critical tick's drain redelivers it within the LAW's budget;
+ *   dead      → ONE page now (and the drain retries the page if this one is not delivered);
+ *   ledger unavailable → CH1's immediate page, suffixed NOT QUEUED — toward noise, never silence.
+ * Every ledger write is AWAITED before `sendDigest` returns: a short-lived producer must not
+ * exit with its only record of an undelivered digest still in flight.
+ */
+async function settleLabelledRun(
+  label: DigestLabel,
+  chunks: string[],
+  sectionCount: number,
+  results: DeliveryResult[],
+): Promise<void> {
+  const ok = results.every((r) => r.ok);
+  const nowMs = Date.now();
+  const parts: DigestPartOutcome[] = chunks.map((text, i) => ({ part: i + 1, text, result: results[i] }));
+  let port: DigestLedgerPort;
+  let rec: Awaited<ReturnType<DigestLedgerPort['recordDigestRun']>>;
+  try {
+    port = await ledger();
+    rec = await port.recordDigestRun({ label, nowMs, parts });
+  } catch (err) {
+    const why = clip(describeError(err));
+    if (ok) {
+      console.error(`[ledger] RUN_NOT_RECORDED ${label} — delivered, but the ledger write failed: ${why}`);
+      return;
+    }
+    const lastFailed = [...results].reverse().find((r) => !r.ok) ?? null;
+    const escalated = await sendAlert(
+      `${renderDigestFailurePage({ label, parts: chunks.length, sections: sectionCount, result: lastFailed })} · NOT QUEUED (ledger: ${mdValue(why)})`,
+      'warning',
+    );
+    if (!escalated) console.error(`[telegram] ESCALATION ALSO FAILED for digest '${label}' — operator is unaware`);
+    return;
+  }
+  if (rec.runStatus === 'queued') {
+    console.error(`[ledger] QUEUED ${label} ${rec.periodKey} run=${rec.runId} — redelivered by the critical tick; no page unless it dies`);
+  } else if (rec.runStatus === 'dead' && rec.deadPage) {
+    const paged = await port.pageDeadRun({ runId: rec.runId, page: rec.deadPage, nowMs, send: (m) => sendAlert(m, 'warning') });
+    if (paged !== 'paged') {
+      console.error(`[telegram] ESCALATION ALSO FAILED for digest '${label}' (${paged}) — the critical tick retries the page`);
+    }
+  }
+}
+
 export async function sendDigest(sections: string[], opts: DigestOptions = {}): Promise<boolean> {
   if (!isConfigured()) return false;
   const chunks = chunkSections(sections);
   if (chunks.length === 0) return false;
   const policy = opts.policy ?? 'scheduled';
   // Attempt EVERY chunk even after one fails — a partial digest beats none, and
-  // the return value still reports the truth.
-  let ok = true;
-  let lastFailed: DeliveryResult | null = null;
-  for (const chunk of chunks) {
-    const r = await post(chunk, policy);
-    if (!r.ok) {
-      ok = false;
-      lastFailed = r;
-    }
-  }
-  if (!ok && opts.label) {
-    // Short by design: whatever broke the digest (length, entities) must not
-    // also break the message that reports it.
-    const escalated = await sendAlert(
-      renderDigestFailurePage({ label: opts.label, parts: chunks.length, sections: sections.length, result: lastFailed }),
-      'warning',
-    );
-    // Best-effort by nature (the transport that lost the digest may also lose this), but
-    // never SILENT about its own failure — that is the defect one layer up.
-    if (!escalated) console.error(`[telegram] ESCALATION ALSO FAILED for digest '${opts.label}' — operator is unaware`);
-  }
-  return ok;
+  // the return value still reports the truth: `true` means DELIVERED NOW, so every
+  // producer's success/failure branch stays truthful while a queued part is redelivered.
+  const results: DeliveryResult[] = [];
+  for (const chunk of chunks) results.push(await post(chunk, policy));
+  if (opts.label) await settleLabelledRun(opts.label, chunks, sections.length, results);
+  return results.every((r) => r.ok);
 }
 
 // ── Venue lifecycle alerts (EXCHANGE-SHADOW-PROMOTE-W1 / C3) ──

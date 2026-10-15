@@ -52,6 +52,23 @@ function loadTelegram() {
 
 const FETCHERS = [devto, medium, youtube, githubDiscussions];
 
+/**
+ * OPS-DIGEST-DELIVERY-DURABLE-W1 CH2 — the labelled digest now writes its run to the durable
+ * ledger (`telegram_digest_ledger`), which opens a Postgres pool inside THIS short-lived
+ * process. The pool keeps the event loop alive (allowExitOnIdle is deliberately unset), so
+ * every exit path must close it — a process must not outlive its work
+ * (OPS-SCRIPT-EXIT-LIFECYCLE-W1). Resolved from the SAME dist module instance the transport's
+ * lazy ledger import uses, so the pool it closes is the one that was opened.
+ */
+async function closeDbPool() {
+  try {
+    const mod = require(path.resolve(__dirname, '..', 'dist', 'lib', 'performance-db.js'));
+    if (typeof mod.closeDbAsync === 'function') await mod.closeDbAsync();
+  } catch (err) {
+    console.warn(`[refresh-pages] DB pool close failed (continuing to exit): ${err.message}`);
+  }
+}
+
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
   // Container path: /app/dist/knowledge/latest.json (canonical bundle file).
@@ -202,13 +219,16 @@ export { buildDigestLines };
 
 const isEntrypoint = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 if (isEntrypoint) {
-  main().catch((err) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[refresh-pages] FATAL:', msg);
-    const { sendAlert } = loadTelegram();
-    if (typeof sendAlert === 'function') {
-      sendAlert(`refresh-knowledge-pages FATAL: ${msg}`, 'critical').catch(() => {});
-    }
-    process.exit(1);
-  });
+  main()
+    .then(() => closeDbPool())
+    .catch(async (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[refresh-pages] FATAL:', msg);
+      const { sendAlert } = loadTelegram();
+      if (typeof sendAlert === 'function') {
+        await sendAlert(`refresh-knowledge-pages FATAL: ${msg}`, 'critical').catch(() => {});
+      }
+      await closeDbPool();
+      process.exit(1);
+    });
 }

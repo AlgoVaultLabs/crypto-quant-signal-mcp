@@ -37,7 +37,9 @@ import {
   renderDigestFailurePage,
   TELEGRAM_RETRY_POLICY,
   _setTelegramTimeForTest,
+  _setDigestLedgerForTest,
 } from '../../src/lib/telegram.js';
+import { memoryDigestLedger, unavailableDigestLedger } from '../harness/memory-digest-ledger.js';
 
 // ── fixtures ────────────────────────────────────────────────────────────────────────
 const ENTITY_400 = JSON.stringify({
@@ -75,6 +77,7 @@ let sleeps: number[] = [];
 let posts: Array<{ at: number; body: Record<string, unknown> }> = [];
 let originalFetch: typeof fetch;
 let errLines: string[] = [];
+let ledger: ReturnType<typeof memoryDigestLedger>;
 
 function script(steps: Step[], fallback: Step = { status: 200, body: OK }) {
   globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
@@ -103,6 +106,9 @@ beforeEach(() => {
   sleeps = [];
   posts = [];
   errLines = [];
+  // CH2: a labelled run settles against the durable ledger — in memory here, never the laptop DB.
+  ledger = memoryDigestLedger();
+  _setDigestLedgerForTest(ledger);
   _setTelegramTimeForTest({
     now: () => clock,
     sleep: async (ms: number) => {
@@ -118,6 +124,7 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = originalFetch;
   _setTelegramTimeForTest(null);
+  _setDigestLedgerForTest(null);
   vi.restoreAllMocks();
 });
 
@@ -271,11 +278,23 @@ describe('terminal dispositions', () => {
 
 // ── redaction + the page ────────────────────────────────────────────────────────────
 describe('the cause is never discarded, and never leaks the credential', () => {
-  it('an error embedding bot<id>:<secret> is logged AND paged as bot<redacted>', async () => {
+  // Premise moved in CH2: a TRANSIENT labelled failure is QUEUED silently (no page), so the
+  // credential must be absent from the log AND from what the ledger persists; the PAGE path
+  // is exercised through the ledger-unavailable fallback, which pages CH1's cause at once.
+  it('an error embedding bot<id>:<secret> is logged, persisted and paged as bot<redacted>', async () => {
     const leak = () =>
       new TypeError('fetch failed', {
         cause: Object.assign(new Error(`connect ECONNRESET https://api.telegram.org/bot${FAKE_TOKEN}/sendMessage`), { code: 'ECONNRESET' }),
       });
+    scriptDigestOnly([{ throws: leak() }, { throws: leak() }, { throws: leak() }]);
+    expect(await sendDigest(['x'], { label: 'monitor-daily-digest' })).toBe(false);
+    expect(ledger.runs).toHaveLength(1);
+    expect(ledger.runs[0].status).toBe('queued');
+    const persisted = ledger.runs[0].causes.join('\n');
+    expect(persisted).toContain('bot<redacted>');
+    expect(persisted).not.toContain(FAKE_SECRET);
+
+    _setDigestLedgerForTest(unavailableDigestLedger());
     scriptDigestOnly([{ throws: leak() }, { throws: leak() }, { throws: leak() }]);
     expect(await sendDigest(['x'], { label: 'monitor-daily-digest' })).toBe(false);
     const all = errLines.join('\n') + posts.map((p) => String(p.body.text)).join('\n');
@@ -283,6 +302,7 @@ describe('the cause is never discarded, and never leaks the credential', () => {
     expect(all).not.toContain(FAKE_SECRET);
     const page = posts.find((p) => String(p.body.text).includes('AlgoVault Alert'));
     expect(String(page?.body.text)).toContain('bot<redacted>');
+    expect(String(page?.body.text)).toContain('NOT QUEUED');
   });
 
   it('redactBotToken is structural: the bare <id>:<secret> shape is removed too', () => {
@@ -290,7 +310,10 @@ describe('the cause is never discarded, and never leaks the credential', () => {
     expect(redactBotToken('nothing secret 12:34')).toBe('nothing secret 12:34');
   });
 
+  // Premise moved in CH2: the page for a TRANSIENT failure is CH1's text only when the ledger
+  // cannot queue it (NOT QUEUED); a queued digest does not page at all.
   it('AC2 — the page names label, disposition and code, and no longer points at a non-existent log line', async () => {
+    _setDigestLedgerForTest(unavailableDigestLedger());
     scriptDigestOnly([{ throws: eaiAgain() }, { throws: eaiAgain() }, { throws: eaiAgain() }]);
     expect(await sendDigest(['x'], { label: 'monitor-daily-digest' })).toBe(false);
     const pages = posts.filter((p) => String(p.body.text).includes('AlgoVault Alert'));
@@ -302,6 +325,25 @@ describe('the cause is never discarded, and never leaks the credential', () => {
     expect(text).toContain('EAI_AGAIN');
     expect(text).toContain('3 attempt(s)');
     expect(text).not.toContain('See the [telegram] HTTP line');
+  });
+
+  it('AC2 (CH2) — a transient labelled failure QUEUES silently: no page', async () => {
+    scriptDigestOnly([{ throws: eaiAgain() }, { throws: eaiAgain() }, { throws: eaiAgain() }]);
+    expect(await sendDigest(['x'], { label: 'monitor-daily-digest' })).toBe(false);
+    expect(ledger.runs.map((r) => r.status)).toEqual(['queued']);
+    expect(posts.some((p) => String(p.body.text).includes('AlgoVault Alert'))).toBe(false);
+  });
+
+  it('AC2 (CH2) — a config failure is DEAD at once and its page carries label + code', async () => {
+    scriptDigestOnly([{ status: 400, body: CHAT_NOT_FOUND_400 }]);
+    expect(await sendDigest(['x'], { label: 'venue-readiness-report' })).toBe(false);
+    const pages = posts.filter((p) => String(p.body.text).includes('AlgoVault Alert'));
+    expect(pages).toHaveLength(1);
+    const text = String(pages[0].body.text);
+    expect(text).toContain('venue-readiness-report');
+    expect(text).toContain('FAILED to deliver');
+    expect(text).toContain('HTTP 400');
+    expect(text).toContain('chat not found');
   });
 
   it('AC2 — the three producer lines point at DELIVERY_FAILED, never at the non-existent HTTP line', async () => {

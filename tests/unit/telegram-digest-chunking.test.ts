@@ -22,7 +22,8 @@ vi.hoisted(() => {
 });
 
 import { chunkSections, hasUnbalancedMarkdown, TELEGRAM_MAX_MESSAGE } from '../../src/lib/markdown-safe.js';
-import { sendDigest, sendAlert } from '../../src/lib/telegram.js';
+import { sendDigest, sendAlert, _setDigestLedgerForTest } from '../../src/lib/telegram.js';
+import { memoryDigestLedger } from '../harness/memory-digest-ledger.js';
 
 /** Section list whose joined length reproduces the measured 2026-08-17 overflow. */
 function oversizedSections(totalUnits = 5583): string[] {
@@ -155,12 +156,17 @@ describe('sendDigest — an oversized digest now DELIVERS', () => {
     }) as unknown as typeof fetch;
   }
 
+  let ledger: ReturnType<typeof memoryDigestLedger>;
+
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     sent = [];
+    ledger = memoryDigestLedger();
+    _setDigestLedgerForTest(ledger);
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    _setDigestLedgerForTest(null);
     vi.restoreAllMocks();
   });
 
@@ -191,7 +197,10 @@ describe('sendDigest — an oversized digest now DELIVERS', () => {
     }
   });
 
-  it('a labelled producer ESCALATES once when delivery fails', async () => {
+  // Premise moved in CH2 (OPS-DIGEST-DELIVERY-DURABLE-W1): a `chat not found` 400 is a CONFIG
+  // disposition — DEAD at once — so the ledger pages it immediately; a transient failure would
+  // queue silently instead. The page still names the producer and still says FAILED to deliver.
+  it('a labelled producer ESCALATES once when delivery fails (config ⇒ dead ⇒ one ledger page)', async () => {
     mockFetch(400, CHAT_NOT_FOUND);
     vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(await sendDigest(['x'], { label: 'geo-weekly-cron' })).toBe(false);
@@ -199,6 +208,7 @@ describe('sendDigest — an oversized digest now DELIVERS', () => {
     expect(alerts).toHaveLength(1);
     expect(String(alerts[0].text)).toContain('geo-weekly-cron');
     expect(String(alerts[0].text)).toContain('FAILED to deliver');
+    expect(ledger.runs.map((r) => [r.label, r.status])).toEqual([['geo-weekly-cron', 'dead']]);
   });
 
   it('an UNLABELLED producer stays silent — escalation is opt-in', async () => {

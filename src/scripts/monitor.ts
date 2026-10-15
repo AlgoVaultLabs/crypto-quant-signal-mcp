@@ -6,7 +6,8 @@
  */
 import os from 'node:os';
 import fs from 'node:fs';
-import { sendAlert, sendDigest } from '../lib/telegram.js';
+import { sendAlert, sendDigest, deliverText, redactBotToken } from '../lib/telegram.js';
+import { drainDigestLedger } from '../lib/telegram-digest-ledger.js';
 import { firePage, shouldAlert, type AlertState } from './monitor-page.js';
 import { formatAgentActivity } from '../lib/agent-activity-format.js';
 import { getPerformanceStatsAsync, getMerkleBatchSummary, dbQuery } from '../lib/performance-db.js';
@@ -691,6 +692,44 @@ async function runCritical(): Promise<void> {
   console.log(
     `[monitor] critical done — ${alertCount} alert(s), ${suppressedCount} suppressed, ${recoveredCount} auto-recovered`,
   );
+
+  // OPS-DIGEST-DELIVERY-DURABLE-W1 — the late steps run AFTER every check has saved its
+  // state, each fail-open and deadline-capped, so no critical check is ever delayed or lost.
+  await drainDigestStep();
+}
+
+/** Bound a late step: a hung DB or socket must not hold the 2-minute tick (and its flock). */
+function withDeadline<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} exceeded ${ms} ms`)), ms);
+    timer.unref?.();
+  });
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * CH2 — redeliver queued digest parts (≤ 3 parts, ≤ 30 s inside the drain; 45 s hard
+ * deadline here). Prints exactly ONE `[ledger] DRAIN_VERDICT=` line per tick, including on
+ * failure, so a dark drain is visible in the log the CH2 gate reads.
+ */
+async function drainDigestStep(): Promise<void> {
+  try {
+    const r = await withDeadline(
+      drainDigestLedger({
+        nowMs: Date.now(),
+        deps: {
+          send: (text) => deliverText(text, { policy: 'ledger' }),
+          page: (msg) => sendAlert(msg, 'warning'),
+        },
+      }),
+      45_000,
+      'digest drain',
+    );
+    console.log(r.line);
+  } catch (err) {
+    console.log(`[ledger] DRAIN_VERDICT=INDETERMINATE ${redactBotToken((err as Error)?.message ?? String(err))}`);
+  }
 }
 
 // ── Digest ──
