@@ -293,6 +293,16 @@ export const DIVERGENCES: DivergenceRow[] = [
     note: 'the equity engine throws (no Postgres pool here, as on every SQLite-backed test and any outage): MCP → toolErrorContent {error} isError:true · x402 → 500 X402_HTTP_HANDLER_ERROR. Same thrown error, two envelopes.' },
   { tool: 'get_equity_regime', channel: 'x402', input: 'defaults', field: '$outcome', mcp: 'isError:json[error]', channel_value: 'http500:json[code,error,message]',
     note: 'as get_equity_call.' },
+  // ── the equity-universe ticker (new-rows rule): on SQLite the universe read fails open to perp on every channel; the venue has no AAPL so the engine throws — same thrown error, three envelopes ──
+  { tool: 'get_trade_call', channel: 'x402', input: 'bare-equity-ticker', field: '$outcome', mcp: 'isError:json[error]', channel_value: 'http500:json[code,error,message]',
+    note: 'engine throws (AAPL unknown to the synthetic venue; the equity universe read fails open → perp): MCP toolErrorContent {error} · x402 500. Equity branch needs the Postgres lane.' },
+  { tool: 'get_trade_call', channel: 'a2mcp', input: 'bare-equity-ticker', field: '$outcome', mcp: 'isError:json[error]', channel_value: 'http500:json[code,error,message]', note: 'as x402.' },
+  { tool: 'get_trade_call', channel: 'acp', input: 'bare-equity-ticker', field: '$outcome', mcp: 'isError:json[error]', channel_value: 'acp:error(log only, no deliverable)', note: 'as x402; ACP logs and returns error, no deliverable.' },
+  // ── scan_trade_calls invalid timeframe (new-rows rule) ──
+  { tool: 'scan_trade_calls', channel: 'x402', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: HTTP400, note: NOTE_INVALID_ENVELOPE },
+  { tool: 'scan_trade_calls', channel: 'a2mcp', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: HTTP400, note: NOTE_INVALID_ENVELOPE },
+  { tool: 'scan_trade_calls', channel: 'acp', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: 'ok',
+    note: 'ACP Market Scan declares `timeframe` as a free string, so 7m is ACCEPTED and SERVED (cells scored on the engine fallback window) — second instance of the row-12 class; MCP refuses at the zod enum.' },
   // ── the alias is DECLARED on a2mcp/acp but only canonical names are routed (open register row DECLARED-NOT-SERVED get_trade_signal alias) ──
   { tool: 'get_trade_signal', channel: 'a2mcp', input: 'bare-coin', field: '$route', mcp: 'served', channel_value: 'not_served (registry a2mcp:true)',
     note: '/capabilities projects get_trade_call\'s channels onto the alias; okxA2mcpTools() routes canonical names only (/a2mcp/get_trade_signal → 404). Register row owner: OPS-A2MCP-SERVED-TRUTH-W1 finding, rides with the next feature-registry alias-projection wave.' },
@@ -328,6 +338,10 @@ export const CASES: Case[] = [
   { tool: 'get_trade_call', name: 'all-optional', args: { coin: 'XRP', timeframe: '4h', exchange: 'BINANCE', includeReasoning: false } },
   { tool: 'get_trade_call', name: 'assetClass-perp', args: { coin: 'DOGE', assetClass: 'perp' } },
   { tool: 'get_trade_call', name: 'invalid-timeframe', args: { coin: 'ADA', timeframe: '7m' } },
+  // Q-PIPE ruling (new-rows rule): a bare EQUITY-universe ticker. On the SQLite backend the universe
+  // read fails open to perp (no Postgres pool), so every channel routes to perp BINANCE 15m; the
+  // equity branch itself needs the Postgres lane. The venue carries no AAPL, so the engine refuses.
+  { tool: 'get_trade_call', name: 'bare-equity-ticker', args: { coin: 'AAPL' } },
   { tool: 'get_trade_signal', name: 'bare-coin', args: { coin: 'LINK' } },
   { tool: 'get_market_regime', name: 'defaults', args: { coin: 'BTC' } },
   { tool: 'get_market_regime', name: 'all-optional', args: { coin: 'ETH', timeframe: '1h', exchange: 'BINANCE' } },
@@ -339,6 +353,7 @@ export const CASES: Case[] = [
   { tool: 'scan_trade_calls', name: 'all-optional-shared', args: { topN: 5, timeframe: '1h', exchange: 'BINANCE', minConfidence: 10, includeHolds: true, limit: 5 } },
   { tool: 'scan_trade_calls', name: 'mcp-only-params', args: { topN: 5, rankBy: 'oi', includeReasoning: true } },
   { tool: 'scan_trade_calls', name: 'invalid-topN', args: { topN: 0 } },
+  { tool: 'scan_trade_calls', name: 'invalid-timeframe', args: { timeframe: '7m' } },
   { tool: 'get_equity_call', name: 'defaults', args: { symbol: 'AAPL' } },
   { tool: 'get_equity_regime', name: 'defaults', args: {} },
 ];
@@ -384,6 +399,56 @@ let channelsOf: (tool: string) => Record<string, boolean>;
 let requestLogCount: () => number;
 let requestLogProbeError = '';
 const requestLogRowsByChannel: Record<Channel, number> = { mcp: 0, x402: 0, a2mcp: 0, acp: 0 };
+
+/**
+ * Q-PIPE-1 condition 3 — R-6 is ROW- and COLUMN-exact. Every call's writes are read back off the
+ * SQLite file and compared to `tests/fixtures/tool-call-parity/recorded-rows.json`, captured on the
+ * CH1 tree (origin/main 221d3a0a, before the pipeline existed). Time-varying columns are dropped;
+ * venue-dependent columns (the verdict and its HOLD-capture siblings) are projected to presence,
+ * because the synthetic venue's prices move with the frozen clock while the COLUMN pattern — which
+ * channel fills which column — is what the ruling freezes. `PARITY_WRITE_FIXTURE=1` rewrites it.
+ */
+const FIXTURE_PATH = path.resolve(__dirname, '..', 'fixtures', 'tool-call-parity', 'recorded-rows.json');
+const WRITE_FIXTURE = process.env.PARITY_WRITE_FIXTURE === '1';
+const TIME_VARYING_COLUMNS = new Set(['id', 'timestamp', 'response_time_ms']);
+const VENUE_DEPENDENT_COLUMNS = new Set(['verdict', 'confidence', 'regime', 'exchange', 'would_be_side', 'price_at_decision']);
+interface RecordedWrites { request_log: Array<Record<string, unknown>>; agent_session_call_count_delta: number; funnel_events_delta: number }
+let readDb: () => { requestLog: Array<Record<string, unknown>>; agentCallCount: number; funnelCount: number };
+const recorded: Record<string, RecordedWrites> = {};
+let fixture: Record<string, RecordedWrites> | null = null;
+/**
+ * The HOLD-capture quartet is stamped by the engine ONLY on a HOLD verdict (hold-decision-capture.ts),
+ * so on the MCP channel — which records inside the request scope — its presence follows the synthetic
+ * verdict and is not stable run to run. MCP's own quartet is pinned by regime-request-observability;
+ * what THIS fixture freezes is that every other channel never fills it (Q-PIPE-1 condition 3).
+ */
+const HOLD_CAPTURE_COLUMNS = new Set(['would_be_side', 'exchange', 'regime', 'price_at_decision']);
+function projectRow(r: Record<string, unknown>, inScopeChannel: boolean): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (TIME_VARYING_COLUMNS.has(k)) continue;
+    if (inScopeChannel && HOLD_CAPTURE_COLUMNS.has(k)) { out[k] = '<verdict-dependent>'; continue; }
+    out[k] = VENUE_DEPENDENT_COLUMNS.has(k) ? (v === null || v === undefined ? null : '<set>') : v;
+  }
+  return out;
+}
+/** Run `fn`, return what it wrote (projected), and record/compare it under `key`. */
+async function recordWrites<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const before = readDb();
+  const out = await fn();
+  const after = readDb();
+  const writes: RecordedWrites = {
+    request_log: after.requestLog.slice(before.requestLog.length).map((r) => projectRow(r, key.endsWith('/mcp'))),
+    agent_session_call_count_delta: after.agentCallCount - before.agentCallCount,
+    funnel_events_delta: after.funnelCount - before.funnelCount,
+  };
+  recorded[key] = writes;
+  if (!WRITE_FIXTURE) {
+    expect(fixture, 'recorded-rows fixture missing — run once with PARITY_WRITE_FIXTURE=1 on the reference tree').not.toBeNull();
+    expect(writes, `recorded writes drifted from the CH1 fixture for ${key}`).toEqual(fixture![key]);
+  }
+  return out;
+}
 let nonceSeq = 0;
 const freshNonce = () => `0x${(++nonceSeq).toString(16).padStart(64, '0')}`;
 
@@ -582,6 +647,18 @@ beforeAll(async () => {
       return n;
     } catch (e) { requestLogProbeError = e instanceof Error ? e.message : String(e); return 0; }
   };
+  readDb = () => {
+    const out = { requestLog: [] as Array<Record<string, unknown>>, agentCallCount: 0, funnelCount: 0 };
+    try {
+      const db = new Database(process.env.PERFORMANCE_DB_PATH!, { readonly: true, fileMustExist: true });
+      try { out.requestLog = db.prepare('SELECT * FROM request_log ORDER BY id').all() as Array<Record<string, unknown>>; } catch { /* table not yet created */ }
+      try { out.agentCallCount = ((db.prepare('SELECT call_count FROM agent_sessions WHERE session_id = ?').get(SESSION) as { call_count?: number } | undefined)?.call_count) ?? 0; } catch { /* not yet created */ }
+      try { out.funnelCount = (db.prepare('SELECT COUNT(*) AS n FROM funnel_events').get() as { n: number }).n; } catch { /* not yet created */ }
+      db.close();
+    } catch (e) { requestLogProbeError = e instanceof Error ? e.message : String(e); }
+    return out;
+  };
+  if (!WRITE_FIXTURE && fs.existsSync(FIXTURE_PATH)) fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8')) as Record<string, RecordedWrites>;
 
   // The analytics schema (request_log) is created by the boot step both transports run
   // (index.ts startHttp/startStdio → initAnalytics); without it every logRequest INSERT fails
@@ -673,7 +750,7 @@ describe('tool-call parity — every channel against MCP', () => {
         it(`[${c.name}] MCP is deterministic (two calls, same normalised output)`, async () => {
           grid._setSnapshotForTest([]);
           const before = requestLogCount();
-          const a = await driveMcp(c);
+          const a = await recordWrites(`${tool}/${c.name}/mcp`, () => driveMcp(c));
           const b = await driveMcp(c);
           requestLogRowsByChannel.mcp += requestLogCount() - before;
           expect(a.status).toBe(b.status);
@@ -697,9 +774,15 @@ describe('tool-call parity — every channel against MCP', () => {
             grid._setSnapshotForTest([]);
             const mcp = await driveMcp(c);
             const before = requestLogCount();
-            const other = await d.drive(c);
+            const other = await recordWrites(`${tool}/${c.name}/${channel}`, () => d.drive(c));
             requestLogRowsByChannel[channel] += requestLogCount() - before;
             const diffs = compare(mcp, other);
+            // Q-PIPE-2 rows 10–20 (ruled (b) for the ENVELOPE): decision parity — an invalid input is
+            // refused on every channel; none serves it. The envelope may differ; the decision may not.
+            if (c.name.startsWith('invalid')) {
+              expect(mcp.status, `MCP served an invalid input (${tool}/${c.name})`).not.toBe('ok');
+              expect(other.status, `${channel} served an invalid input MCP refuses (${tool}/${c.name})`).not.toBe('ok');
+            }
             observed.push({ tool, input: c.name, channel, status: other.status, httpStatus: other.httpStatus, diffs });
             assertDeclared(tool, channel, c.name, diffs);
           });
@@ -718,6 +801,12 @@ describe('tool-call parity — every channel against MCP', () => {
     console.log(`PARITY_DIVERGENCES=${DIVERGENCES.length}`);
     console.log(`PARITY_REQUEST_LOG_ROWS mcp=${requestLogRowsByChannel.mcp} x402=${requestLogRowsByChannel.x402} a2mcp=${requestLogRowsByChannel.a2mcp} acp=${requestLogRowsByChannel.acp}${requestLogProbeError ? ` probe_error=${JSON.stringify(requestLogProbeError)}` : ''}`);
     console.log(`PARITY_UNMODELLED ${JSON.stringify([...new Set(syntheticVenue.unmodelled)])}`);
+    console.log(`PARITY_RECORDED_KEYS=${Object.keys(recorded).length} fixture=${WRITE_FIXTURE ? 'WRITTEN' : fixture ? 'COMPARED' : 'ABSENT'}`);
+    if (WRITE_FIXTURE) {
+      fs.mkdirSync(path.dirname(FIXTURE_PATH), { recursive: true });
+      fs.writeFileSync(FIXTURE_PATH, JSON.stringify(recorded, null, 2) + '\n');
+      console.log(`PARITY_FIXTURE_WRITTEN ${FIXTURE_PATH}`);
+    }
     console.log(`PARITY_VENUE_CALLS=${syntheticVenue.calls.length} hosts=${JSON.stringify([...new Set(syntheticVenue.calls.map((c) => c.split(' ')[1].split('/')[0]))])}`);
     expect(observed.length).toBeGreaterThan(0);
   });

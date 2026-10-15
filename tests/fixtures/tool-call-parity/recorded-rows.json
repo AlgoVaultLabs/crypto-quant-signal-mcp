@@ -1,0 +1,833 @@
+{
+  "get_trade_call/bare-coin/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_call",
+        "asset": "BTC",
+        "timeframe": "15m",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": "<set>",
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/bare-coin/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_signal",
+        "asset": "BTC",
+        "timeframe": "15m",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": null,
+        "regime": null,
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/bare-coin/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/bare-coin/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/coin+timeframe/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_call",
+        "asset": "ETH",
+        "timeframe": "1h",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": "<set>",
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/coin+timeframe/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_signal",
+        "asset": "ETH",
+        "timeframe": "1h",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": null,
+        "regime": null,
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/coin+timeframe/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/coin+timeframe/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/coin+exchange/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_call",
+        "asset": "SOL",
+        "timeframe": "15m",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": "<set>",
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/coin+exchange/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_signal",
+        "asset": "SOL",
+        "timeframe": "15m",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": null,
+        "regime": null,
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/coin+exchange/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/coin+exchange/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/all-optional/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_call",
+        "asset": "XRP",
+        "timeframe": "4h",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": "<set>",
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/all-optional/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_signal",
+        "asset": "XRP",
+        "timeframe": "4h",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": null,
+        "regime": null,
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/all-optional/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/all-optional/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/assetClass-perp/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_call",
+        "asset": "DOGE",
+        "timeframe": "15m",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": "<set>",
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/assetClass-perp/x402": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/assetClass-perp/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/assetClass-perp/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/invalid-timeframe/mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/invalid-timeframe/x402": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/invalid-timeframe/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/invalid-timeframe/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/bare-equity-ticker/mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/bare-equity-ticker/x402": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/bare-equity-ticker/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_call/bare-equity-ticker/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_trade_signal/bare-coin/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_signal",
+        "asset": "LINK",
+        "timeframe": "15m",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": "<set>",
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "get_trade_signal/bare-coin/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_trade_signal",
+        "asset": "LINK",
+        "timeframe": "15m",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": null,
+        "regime": null,
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_market_regime/defaults/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_market_regime",
+        "asset": "BTC",
+        "timeframe": "4h",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": null,
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "get_market_regime/defaults/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_market_regime",
+        "asset": "BTC",
+        "timeframe": "4h",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": "<set>",
+        "regime": "<set>",
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_market_regime/defaults/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_market_regime/all-optional/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_market_regime",
+        "asset": "ETH",
+        "timeframe": "1h",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": null,
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "get_market_regime/all-optional/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "get_market_regime",
+        "asset": "ETH",
+        "timeframe": "1h",
+        "license_tier": "x402",
+        "verdict": "<set>",
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": "<set>",
+        "regime": "<set>",
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_market_regime/all-optional/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_market_regime/invalid-timeframe/mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_market_regime/invalid-timeframe/x402": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_market_regime/invalid-timeframe/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/defaults/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "scan_funding_arb",
+        "asset": null,
+        "timeframe": null,
+        "license_tier": "x402",
+        "verdict": null,
+        "confidence": null,
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/defaults/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "scan_funding_arb",
+        "asset": null,
+        "timeframe": null,
+        "license_tier": "x402",
+        "verdict": null,
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": null,
+        "regime": null,
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/defaults/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/defaults/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/all-optional/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "scan_funding_arb",
+        "asset": null,
+        "timeframe": null,
+        "license_tier": "x402",
+        "verdict": null,
+        "confidence": null,
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/all-optional/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "scan_funding_arb",
+        "asset": null,
+        "timeframe": null,
+        "license_tier": "x402",
+        "verdict": null,
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": null,
+        "regime": null,
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/all-optional/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/all-optional/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/invalid-limit/mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/invalid-limit/x402": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/invalid-limit/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_funding_arb/invalid-limit/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/defaults/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "scan_trade_calls",
+        "asset": null,
+        "timeframe": "15m",
+        "license_tier": "x402",
+        "verdict": null,
+        "confidence": null,
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/defaults/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "scan_trade_calls",
+        "asset": null,
+        "timeframe": "15m",
+        "license_tier": "x402",
+        "verdict": null,
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": null,
+        "regime": null,
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/defaults/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/defaults/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/all-optional-shared/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "scan_trade_calls",
+        "asset": null,
+        "timeframe": "1h",
+        "license_tier": "x402",
+        "verdict": null,
+        "confidence": null,
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/all-optional-shared/x402": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "scan_trade_calls",
+        "asset": null,
+        "timeframe": "1h",
+        "license_tier": "x402",
+        "verdict": null,
+        "confidence": null,
+        "ip_hash": "v2:2ecf4c7dd0902573",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": null,
+        "client_name": "unknown",
+        "would_be_side": null,
+        "exchange": null,
+        "regime": null,
+        "price_at_decision": null
+      }
+    ],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/all-optional-shared/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/all-optional-shared/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/mcp-only-params/mcp": {
+    "request_log": [
+      {
+        "session_id": "parity-harness-session",
+        "tool_name": "scan_trade_calls",
+        "asset": null,
+        "timeframe": "15m",
+        "license_tier": "x402",
+        "verdict": null,
+        "confidence": null,
+        "ip_hash": "v2:parityharness0000",
+        "is_bot_internal": 0,
+        "is_automated": 0,
+        "user_agent": "parity-harness",
+        "client_name": "other",
+        "would_be_side": "<verdict-dependent>",
+        "exchange": "<verdict-dependent>",
+        "regime": "<verdict-dependent>",
+        "price_at_decision": "<verdict-dependent>"
+      }
+    ],
+    "agent_session_call_count_delta": 1,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/mcp-only-params/x402": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/mcp-only-params/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/mcp-only-params/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/invalid-topN/mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/invalid-topN/x402": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/invalid-topN/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/invalid-topN/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/invalid-timeframe/mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/invalid-timeframe/x402": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/invalid-timeframe/a2mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "scan_trade_calls/invalid-timeframe/acp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_equity_call/defaults/mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_equity_call/defaults/x402": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_equity_regime/defaults/mcp": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  },
+  "get_equity_regime/defaults/x402": {
+    "request_log": [],
+    "agent_session_call_count_delta": 0,
+    "funnel_events_delta": 0
+  }
+}
