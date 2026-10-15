@@ -33,7 +33,7 @@ import {
   HORIZON_PARAM,
   buildExtractSql,
   extractHeader,
-  specSuffix,
+  instantiateTemplate,
   tCapPredicateAt,
   windowJoins as windowJoinsOf,
 } from './extract-template.js';
@@ -56,17 +56,18 @@ export function tCapPredicate(): string {
   return tCapPredicateAt(String(T_DIAG_END));
 }
 
-/** THE label-bearing extract: one row per emitted call that carries a primary-spec label under T_CAP — the
- *  REGISTERED statement (ADS-1 registration §10.3), i.e. the template instantiated at T_DIAG_END. */
-export function extractSql(): string {
-  return buildExtractSql(String(T_DIAG_END), extractContext());
-}
-
-/** The same statement with `$1` where the registered instance carries T_DIAG_END — what `ops/ads1-spec.json`
+/** The label-bearing extract with `$1` where the registered instance carries T_DIAG_END — what `ops/ads1-spec.json`
  *  carries as `extract_sql_template`, and what the autonomous-optimizer repo instantiates at `label_read_horizon(now)`.
- *  `instantiateTemplate(extractSqlTemplate(), T_DIAG_END) === extractSql()` is pinned by test. */
+ *  ONE derivation: the registered statement below IS this template instantiated at T_DIAG_END. */
 export function extractSqlTemplate(): string {
   return buildExtractSql(HORIZON_PARAM, extractContext());
+}
+
+/** THE label-bearing extract: one row per emitted call that carries a primary-spec label under T_CAP — the
+ *  REGISTERED statement (ADS-1 registration §10.3): the template instantiated at T_DIAG_END (byte-identical to
+ *  what the registered pull ran; pinned verbatim inside the registration's §10 by tests/unit/ads1-scorecard.test.ts). */
+export function extractSql(): string {
+  return instantiateTemplate(extractSqlTemplate(), T_DIAG_END);
 }
 
 /** The presence statement's CSV header, in order. */
