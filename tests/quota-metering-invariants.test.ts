@@ -170,10 +170,10 @@ describe('crypto singles — trackCall once per billable result', () => {
     expect(usedFor(lic)).toBe(1);
   });
 
-  it('get_trade_signal alias routes through the SAME makeTradeCallHandler as get_trade_call', () => {
+  it('get_trade_signal alias routes through the SAME mcpHandler (the pipeline) as get_trade_call', () => {
     const src = readFileSync('src/index.ts', 'utf8');
-    expect(src).toMatch(/makeTradeCallHandler\('get_trade_call'\)/);
-    expect(src).toMatch(/makeTradeCallHandler\('get_trade_signal'\)/);
+    expect(src).toMatch(/mcpHandler\('get_trade_call'\)/);
+    expect(src).toMatch(/mcpHandler\('get_trade_signal'\)/);
   });
 });
 

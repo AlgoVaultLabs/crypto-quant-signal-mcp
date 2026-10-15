@@ -45,9 +45,13 @@ describe('chat quota wiring (SEC-03)', () => {
   it('the chat_knowledge MCP tool keeps its ALS reads (it DOES run inside requestContext.run)', () => {
     // Guards against an over-eager "fix" that strips the ALS reads from the path where they are
     // correct — /mcp enters the store, so there the readers are the right source.
-    const tool = idx.slice(idx.indexOf("'chat_knowledge'"));
-    const body = tool.slice(0, 2000);
-    expect(body).toContain('getRequestLicense()');
+    // ARCH-MCP-CALL-PIPELINE-W1 CH2: the chat body lives in the pipeline's chat_knowledge row; the
+    // licence arrives through callTool (the MCP handler reads getRequestLicense() once for every
+    // tool) and the ip hash is still read from the ALS inside the row.
+    const pipeline = read('src/lib/tool-call-pipeline.ts');
+    const body = pipeline.slice(pipeline.indexOf('  chat_knowledge: {'), pipeline.indexOf('  search_knowledge: {'));
+    expect(body).toContain('chatQuotaApiKey(license.key, getRequestIpHash() ?? null)');
+    expect(idx).toContain("license: getRequestLicense() }));");
   });
 });
 

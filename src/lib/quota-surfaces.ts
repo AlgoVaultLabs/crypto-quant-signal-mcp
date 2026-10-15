@@ -272,7 +272,10 @@ export const QUOTA_SURFACES: readonly QuotaSurface[] = [
   },
   {
     id: 'serializer:tier-limit',
-    module: 'src/index.ts',
+    // ARCH-MCP-CALL-PIPELINE-W1 CH2: `toolErrorContent` — the MCP typed-error envelope that renders the
+    // TIER_LIMIT payload — moved verbatim from src/index.ts into the one tool-call pipeline. Same
+    // surface, same primitives, same status; only the module changed.
+    module: 'src/lib/tool-call-pipeline.ts',
     primitives: ['buildTierLimitPayload', 'buildSuggestedX402'],
     emits: ['suggested_x402'],
     status: 'conforming',

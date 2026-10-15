@@ -40,7 +40,8 @@ import {
   selectOkxA2mcp,
 } from './okx-a2mcp-config.js';
 import type { OkxA2mcpEnv, OkxA2mcpMode, ResolvedOkxA2mcp } from './okx-a2mcp-config.js';
-import { HTTP_TOOLS, callCoreHandler, validateToolInput, tolerantJson, type HttpTool } from './x402-http-routes.js';
+import { HTTP_TOOLS, validateToolInput, tolerantJson, type HttpTool } from './x402-http-routes.js';
+import { callTool } from './tool-call-pipeline.js';
 import type { LicenseInfo } from '../types.js';
 import { markServed, markDark } from './rail-served-state.js';
 import { createRailDispatcher, type RailMountTimers } from './rail-mount.js';
@@ -261,12 +262,18 @@ function mountStub(app: Express, tools: string[], provider: StubOkxA2mcpProvider
             });
           return;
         }
-        const result = await callCoreHandler(ht, gate.input, X402_LICENSE);
+        // ARCH-MCP-CALL-PIPELINE-W1 CH2: the ONE tool-call path; no request context on this rail
+        // today (Q-PIPE-3 deferred — the channel row records nothing).
+        const outcome = await callTool({ tool: ht, input: gate.input, channel: 'a2mcp', license: X402_LICENSE });
+        if (!outcome.ok) {
+          if (outcome.kind === 'refused') { res.status(outcome.http.status).json(outcome.payload); return; }
+          throw outcome.error;
+        }
         res.setHeader(
           'PAYMENT-RESPONSE',
           Buffer.from(JSON.stringify({ status: 'settled', _stub: true, transaction: receipt.tx })).toString('base64'),
         );
-        res.json(result);
+        res.json(outcome.result);
       } catch (err: unknown) {
         if (!res.headersSent) {
           res.status(500).json({ error: 'internal_error', code: 'OKX_A2MCP_STUB_ERROR', message: err instanceof Error ? err.message : 'handler failed' });
@@ -456,8 +463,13 @@ async function mountLive(
             });
           return;
         }
-        const result = await callCoreHandler(ht, gate.input, X402_LICENSE);
-        res.json(result);
+        // ARCH-MCP-CALL-PIPELINE-W1 CH2: the ONE tool-call path (see the stub mount above).
+        const outcome = await callTool({ tool: ht, input: gate.input, channel: 'a2mcp', license: X402_LICENSE });
+        if (!outcome.ok) {
+          if (outcome.kind === 'refused') { res.status(outcome.http.status).json(outcome.payload); return; }
+          throw outcome.error;
+        }
+        res.json(outcome.result);
       } catch (err: unknown) {
         if (!res.headersSent) {
           res.status(500).json({ error: 'internal_error', code: 'OKX_A2MCP_HANDLER_ERROR', message: err instanceof Error ? err.message : 'handler failed' });

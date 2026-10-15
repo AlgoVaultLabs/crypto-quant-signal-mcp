@@ -15,8 +15,8 @@
  *           ephemeral port with a Payment-Signature built from the route's OWN 402 challenge.
  *   A2MCP   the LIVE route handler `mountOkxA2mcpRoutes` mounts (`@okxweb3/x402-express` payment
  *           middleware over the OKX facilitator), driven the same way.
- *   ACP     `requirementToParams` + the seller-worker `callTool` path (`handleAcpEntry`), wired
- *           exactly as `startAcpSellerWorker` wires `deps.callTool`.
+ *   ACP     `requirementToParams` + the seller-worker `callTool` path (`handleAcpEntry`), with the
+ *           exported production wiring `acpCallTool` (what `startAcpSellerWorker` installs).
  *
  * SEAMS — system boundaries only, never an in-repo logic module (upstream tdd/mocking.md):
  *   • `src/lib/adapters/_upstream-fetch.js#upstreamFetch` — the ONE transport every venue REST call
@@ -254,11 +254,7 @@ const HTTP400 = 'http400:json[code,details,error,suggested_fix]';
 const ACP_SKIP = 'acp:skipped:invalid_requirement';
 const NOTE_INVALID_ENVELOPE = 'invalid input is refused by a different layer per channel: MCP = the SDK zod reject (prose text, isError:true) · x402/A2MCP = validateToolInput → 400 JSON {error,code,details,suggested_fix} · ACP = requirement schema → job skipped, no deliverable';
 export const DIVERGENCES: DivergenceRow[] = [
-  // ── F3: the ACP channel applies NO default, so a bare call hits the engine's `timeframe || '1h'` while MCP (resolveMarketRoute) and x402/A2MCP (Ajv useDefaults) serve 15m ──
-  { tool: 'get_trade_call', channel: 'acp', input: 'bare-coin', field: 'timeframe', mcp: '15m', channel_value: '1h', consequents: VERDICT_CONSEQUENTS,
-    note: 'requirementToParams applies no default → getTradeSignal falls back to 1h (get-trade-call.ts:874); MCP resolves 15m via resolveMarketRoute (market-route.ts:49), x402/A2MCP via the Bazaar schema default. Every verdict field downstream differs.' },
-  { tool: 'get_trade_call', channel: 'acp', input: 'coin+exchange', field: 'timeframe', mcp: '15m', channel_value: '1h', consequents: VERDICT_CONSEQUENTS,
-    note: 'same cause as bare-coin: a named venue without a timeframe still takes the engine default on ACP.' },
+  // ── F3 CLOSED by CH2 (Q-PIPE-2 rows 1–2 = (a)): every channel's get_trade_call now goes through routeTradeCall, so the ACP bare-coin and coin+exchange rows that read 15m vs 1h on the CH1 tree are EQUAL and have no row here ──
   // ── ACP requirement schema is narrower than the MCP schema (additionalProperties:false) ──
   { tool: 'get_trade_call', channel: 'acp', input: 'all-optional', field: '$outcome', mcp: 'ok', channel_value: ACP_SKIP,
     note: 'ACP Trade Call requirementSchema declares coin/timeframe/exchange only; `includeReasoning` is rejected as an unknown property, so the job is skipped.' },
@@ -278,8 +274,8 @@ export const DIVERGENCES: DivergenceRow[] = [
   // ── invalid input: each channel refuses from a different layer, with a different envelope ──
   { tool: 'get_trade_call', channel: 'x402', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: HTTP400, note: NOTE_INVALID_ENVELOPE },
   { tool: 'get_trade_call', channel: 'a2mcp', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: HTTP400, note: NOTE_INVALID_ENVELOPE },
-  { tool: 'get_trade_call', channel: 'acp', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: 'ok',
-    note: 'ACP declares `timeframe` as a free string (no enum), so an unknown token like 7m is ACCEPTED and SERVED: the engine labels the result 7m while intervalMsFor() returns null → the 1h fetch window and the Binance adapter map 7m → 1h candles. MCP refuses it at the zod enum.' },
+  { tool: 'get_trade_call', channel: 'acp', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: 'acp:error(log only, no deliverable)',
+    note: 'Q-PIPE-2 row 12 = (a) through the pipeline: ACP declares `timeframe` as a free string, so 7m reached the engine on the CH1 tree and was SERVED as 1h candles labelled 7m; the pipeline\'s timeframe admission now REFUSES it before dispatch (400 INVALID_TIMEFRAME) and the ACP job delivers nothing — decision parity with MCP\'s zod refusal, envelope differs by design.' },
   { tool: 'get_market_regime', channel: 'x402', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: HTTP400, note: NOTE_INVALID_ENVELOPE },
   { tool: 'get_market_regime', channel: 'a2mcp', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: HTTP400, note: NOTE_INVALID_ENVELOPE },
   { tool: 'scan_funding_arb', channel: 'x402', input: 'invalid-limit', field: '$outcome', mcp: SDK_VALIDATION, channel_value: HTTP400, note: NOTE_INVALID_ENVELOPE },
@@ -301,8 +297,8 @@ export const DIVERGENCES: DivergenceRow[] = [
   // ── scan_trade_calls invalid timeframe (new-rows rule) ──
   { tool: 'scan_trade_calls', channel: 'x402', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: HTTP400, note: NOTE_INVALID_ENVELOPE },
   { tool: 'scan_trade_calls', channel: 'a2mcp', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: HTTP400, note: NOTE_INVALID_ENVELOPE },
-  { tool: 'scan_trade_calls', channel: 'acp', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: 'ok',
-    note: 'ACP Market Scan declares `timeframe` as a free string, so 7m is ACCEPTED and SERVED (cells scored on the engine fallback window) — second instance of the row-12 class; MCP refuses at the zod enum.' },
+  { tool: 'scan_trade_calls', channel: 'acp', input: 'invalid-timeframe', field: '$outcome', mcp: SDK_VALIDATION, channel_value: 'acp:error(log only, no deliverable)',
+    note: 'second instance of the row-12 class: ACP Market Scan declares `timeframe` as a free string; the pipeline\'s timeframe admission refuses 7m before dispatch (CH1 tree: served on the engine fallback window).' },
   // ── the alias is DECLARED on a2mcp/acp but only canonical names are routed (open register row DECLARED-NOT-SERVED get_trade_signal alias) ──
   { tool: 'get_trade_signal', channel: 'a2mcp', input: 'bare-coin', field: '$route', mcp: 'served', channel_value: 'not_served (registry a2mcp:true)',
     note: '/capabilities projects get_trade_call\'s channels onto the alias; okxA2mcpTools() routes canonical names only (/a2mcp/get_trade_signal → 404). Register row owner: OPS-A2MCP-SERVED-TRUTH-W1 finding, rides with the next feature-registry alias-projection wave.' },
@@ -393,8 +389,7 @@ let mcpClient: import('@modelcontextprotocol/sdk/client/index.js').Client;
 let mcpServer: import('@modelcontextprotocol/sdk/server/mcp.js').McpServer;
 let x402Server: Server | undefined; let x402Base = '';
 let a2mcpServer: Server | undefined; let a2mcpBase = '';
-let acp: { handleAcpEntry: typeof import('../../src/channels/acp/seller-worker.js').handleAcpEntry; acpPriceUsd: typeof import('../../src/channels/acp/seller-worker.js').acpPriceUsd; ACP_X402_LICENSE: typeof import('../../src/channels/acp/seller-worker.js').ACP_X402_LICENSE };
-let callCoreHandler: typeof import('../../src/lib/x402-http-routes.js').callCoreHandler;
+let acp: { handleAcpEntry: typeof import('../../src/channels/acp/seller-worker.js').handleAcpEntry; acpPriceUsd: typeof import('../../src/channels/acp/seller-worker.js').acpPriceUsd; acpCallTool: typeof import('../../src/channels/acp/seller-worker.js').acpCallTool };
 let channelsOf: (tool: string) => Record<string, boolean>;
 let requestLogCount: () => number;
 let requestLogProbeError = '';
@@ -539,10 +534,10 @@ const driveAcp: Driver = async (c) => {
     async setBudget(a: { amount: number; symbol: string }) { budgets.push(a); },
     async submit(d: string) { submits.push(d); },
   });
-  // Exactly how startAcpSellerWorker wires the worker: the x402 core handler with the ACP license.
+  // Exactly how startAcpSellerWorker wires the worker: the exported production callTool (the pipeline with the ACP license).
   const deps = {
     usdc: (amount: number) => ({ amount, symbol: 'USDC' }),
-    callTool: (ht: never, params: Record<string, unknown>) => callCoreHandler(ht, params, acp.ACP_X402_LICENSE),
+    callTool: acp.acpCallTool,
     priceFor: acp.acpPriceUsd,
     submitted: new Set<string>(),
     log: (m: string) => log.push(m),
@@ -633,9 +628,8 @@ beforeAll(async () => {
   const registry = await import('../../src/lib/feature-registry.js');
   channelsOf = (tool) => registry.getFeature(tool)!.channels as unknown as Record<string, boolean>;
   const routes = await import('../../src/lib/x402-http-routes.js');
-  callCoreHandler = routes.callCoreHandler;
   const seller = await import('../../src/channels/acp/seller-worker.js');
-  acp = { handleAcpEntry: seller.handleAcpEntry, acpPriceUsd: seller.acpPriceUsd, ACP_X402_LICENSE: seller.ACP_X402_LICENSE };
+  acp = { handleAcpEntry: seller.handleAcpEntry, acpPriceUsd: seller.acpPriceUsd, acpCallTool: seller.acpCallTool };
 
   // request_log row counter straight off the SQLite file — the R-6 fact (which channels record).
   const Database = (await import('better-sqlite3')).default;

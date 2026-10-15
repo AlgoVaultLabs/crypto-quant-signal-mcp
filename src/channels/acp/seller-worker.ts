@@ -21,7 +21,8 @@
  * real/stub worker only under `if (require.main === module)` — so importing it in tests is inert.
  */
 import Ajv, { type ValidateFunction } from 'ajv';
-import { callCoreHandler, type HttpTool } from '../../lib/x402-http-routes.js';
+import type { HttpTool } from '../../lib/x402-http-routes.js';
+import { callTool, type ValidatedToolInput } from '../../lib/tool-call-pipeline.js';
 import { getFeature } from '../../lib/feature-registry.js';
 import { markServed, markDark } from '../../lib/rail-served-state.js';
 import type { LicenseInfo } from '../../types.js';
@@ -52,7 +53,7 @@ export interface AcpWorkerDeps {
   /** Denominate a USD budget in USDC on the session chain (provider.usdc → SDK AssetToken.usdc). */
   usdc: (amountUsd: number, chainId: number) => Parameters<SellerSession['setBudget']>[0];
   /** Run the mapped tool through the shared x402 core handler (byte-parity with MCP/x402). */
-  callTool: (httpTool: HttpTool, params: Record<string, unknown>) => Promise<unknown>;
+  callTool: (httpTool: HttpTool, params: ValidatedToolInput) => Promise<unknown>;
   /** Canonical-tool → USD price (registry SoT). */
   priceFor: (canonicalTool: string) => number;
   /** In-process idempotency store — jobIds already delivered this run. */
@@ -144,7 +145,9 @@ export async function handleAcpEntry(session: SellerSession, entry: SellerEntry,
       log(`[ACP] job ${session.jobId}: requirement failed the offering schema — skip`);
       return 'skipped:invalid_requirement';
     }
-    const params = requirementToParams(offering, requirement);
+    // ARCH-MCP-CALL-PIPELINE-W1 CH2: this is the ACP validator's mint of the validated-input brand —
+    // AFTER validateRequirement (Ajv over the offering schema) and the declared-key projection.
+    const params = requirementToParams(offering, requirement) as ValidatedToolInput;
     // Mark BEFORE the await to single-flight concurrent re-entry; unmark on failure to allow retry.
     deps.submitted.add(session.jobId);
     try {
@@ -167,6 +170,20 @@ export async function handleAcpEntry(session: SellerSession, entry: SellerEntry,
   }
 
   return 'ignored';
+}
+
+/**
+ * ARCH-MCP-CALL-PIPELINE-W1 CH2 — the ACP channel's ONE tool call: the shared pipeline with the ACP
+ * licence, no request context (Q-PIPE-3 deferred — the channel row records nothing). A refused or
+ * thrown call THROWS here so `handleAcpEntry` returns 'error' and no deliverable is submitted — the
+ * same outcome class as any refused ACP job (Q-PIPE-2 row 12). Exported so the parity harness drives
+ * the exact production wiring rather than a hand-built mirror of it.
+ */
+export async function acpCallTool(httpTool: HttpTool, input: ValidatedToolInput): Promise<unknown> {
+  const outcome = await callTool({ tool: httpTool, input, channel: 'acp', license: ACP_X402_LICENSE });
+  if (outcome.ok) return outcome.result;
+  if (outcome.kind === 'refused') throw new Error(`refused: ${String(outcome.payload.code ?? outcome.http.status)}`);
+  throw outcome.error;
 }
 
 /**
@@ -199,7 +216,7 @@ export async function startAcpSellerWorker(env: AcpEnv = process.env): Promise<{
 
   const deps: AcpWorkerDeps = {
     usdc: bundle.usdc,
-    callTool: (ht, params) => callCoreHandler(ht, params, ACP_X402_LICENSE),
+    callTool: acpCallTool,
     priceFor: acpPriceUsd,
     submitted: new Set<string>(),
     log,

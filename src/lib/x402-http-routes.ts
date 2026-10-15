@@ -34,8 +34,8 @@
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
 import Ajv, { type ValidateFunction } from 'ajv';
 import { encodePaymentRequiredHeader } from '@x402/core/http';
-import { resolveLicense, requestContext, getRequestRegimeFundingDegraded } from './license.js';
-import { hashIp, logRequest } from './analytics.js';
+import { resolveLicense } from './license.js';
+import { hashIp } from './analytics.js';
 import { clientIp } from './client-ip.js';
 import { resolveSessionIdentity } from './track-token.js';
 // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1 (Q2=A): classify EVERY external path,
@@ -45,17 +45,7 @@ import { generate402Response, settleX402Async, paymentMatchesToolRoute } from '.
 import { tryClaimPayment, extractPaymentNonce, extractPayerWallet, railForRequirement } from './x402-idempotency-store.js';
 import { BAZAAR_ROUTES, bazaarResourceUrl, bazaarRouteDescription } from './x402-bazaar.js';
 import { resolveFacilitatorFromEnv } from './x402-facilitator.js';
-import { getTradeSignal } from '../tools/get-trade-call.js';
-import { scanFundingArb } from '../tools/scan-funding-arb.js';
-import { getMarketRegime } from '../tools/get-market-regime.js';
-import { runScanTradeCall } from '../tools/scan-trade-calls.js';
-import { getEquityCall, getEquityRegime } from './equities/equity-tool-formatters.js';
-import { runAsCaller } from './upstream-weight-budget.js';
-import { x402CallerTag } from './caller-tags.js';
-import { regimeSuccessVerdict, regimeErrorVerdict } from './regime-request-verdict.js';
-import { REGIME_EXCHANGE_DEFAULT } from './tool-param-schema.js';
-import type { ScanExchangeId } from './trade-call-scanner.js';
-import type { ExchangeId, LicenseInfo, TradeCallResult } from '../types.js';
+import { callTool, type ValidatedToolInput } from './tool-call-pipeline.js';
 
 const ajv = new Ajv({ useDefaults: true, coerceTypes: true, allErrors: true });
 
@@ -142,7 +132,7 @@ export type ToolInputRejection =
   | { kind: 'invalid_input'; errors: unknown[]; rawBodyKeys: number };
 
 export type ToolInputResult =
-  | { ok: true; input: Record<string, unknown> }
+  | { ok: true; input: ValidatedToolInput }
   | { ok: false; rejection: ToolInputRejection };
 
 /** ajv.compile is expensive; one compiled validator per tool, built on first use. */
@@ -176,11 +166,13 @@ export function validateToolInput(
   const validate = validatorFor(tool);
   // No declared schema for this tool → nothing to enforce; pass the body through
   // unchanged (same behaviour as before this gate existed).
-  if (!validate) return { ok: true, input };
+  // ARCH-MCP-CALL-PIPELINE-W1 CH2: this ok-arm is one of the three places that MINT the
+  // validated-input brand (Q-PIPE-1 condition 2) — the pipeline's only accepted input type.
+  if (!validate) return { ok: true, input: input as ValidatedToolInput };
   if (!validate(input)) {
     return { ok: false, rejection: { kind: 'invalid_input', errors: (validate.errors ?? []) as unknown[], rawBodyKeys } };
   }
-  return { ok: true, input };
+  return { ok: true, input: input as ValidatedToolInput };
 }
 
 /** Log every /x402 request's method + final status + UA (so the Bazaar crawler's probe is observable). */
@@ -233,87 +225,13 @@ function send402(res: Response, tool: string, opts?: { resourceUrl?: string; dis
 export const HTTP_TOOLS = ['get_trade_signal', 'scan_funding_arb', 'get_market_regime', 'scan_trade_calls', 'get_equity_call', 'get_equity_regime'] as const;
 export type HttpTool = (typeof HTTP_TOOLS)[number];
 
-/**
- * OPS-ALARM-SINGLE-DERIVATION-W1 CH1 — the exchange a `get_market_regime` row records: the caller's,
- * else the SAME default the MCP tool's zod schema applies (`REGIME_EXCHANGE_DEFAULT`), so a paid
- * x402 row and an MCP row for the same call carry the same `exchange`.
+/*
+ * `callCoreHandler` — the x402/A2MCP/ACP dispatch twin of the MCP handlers — was RETIRED by
+ * ARCH-MCP-CALL-PIPELINE-W1 CH2 (Q-PIPE-1 = design A). Every channel now dispatches through the ONE
+ * registry-keyed table in `src/lib/tool-call-pipeline.ts` (`callTool`), which also owns the
+ * request_log projection this route used to write by hand. `HTTP_TOOLS` above is unchanged: it is the
+ * x402 served-route set, read by 11 files incl. scripts/check-feature-registry-drift.mjs.
  */
-function regimeLogExchange(input: Record<string, unknown>): string {
-  return typeof input.exchange === 'string' && input.exchange.length > 0 ? input.exchange : REGIME_EXCHANGE_DEFAULT;
-}
-
-/**
- * Dispatch a validated body to the SAME core handler the MCP tool uses — called
- * identically to the MCP `server.tool` handlers (parity is the contract). Returns
- * the tool's existing public output object.
- */
-export async function callCoreHandler(
-  tool: HttpTool,
-  input: Record<string, unknown>,
-  license: LicenseInfo,
-): Promise<unknown> {
-  // OPS-RATELIMIT-CALLER-ATTRIBUTION-W1: tag x402 HTTP traffic (the HTTP-twin of the MCP
-  // tools — same lib fns, separate handlers) so paid-HTTP demand is attributed distinctly
-  // from MCP demand. Weight class unchanged (interactive) — zero behavior change.
-  return runAsCaller(x402CallerTag(tool), () => {
-  switch (tool) {
-    case 'get_trade_signal':
-      return getTradeSignal({
-        coin: input.coin as string,
-        timeframe: input.timeframe as string,
-        includeReasoning: input.includeReasoning as boolean,
-        exchange: input.exchange as ExchangeId,
-        license,
-      });
-    case 'scan_funding_arb':
-      return scanFundingArb({
-        minSpreadBps: input.minSpreadBps as number,
-        limit: input.limit as number,
-        license,
-      });
-    case 'get_market_regime':
-      // OPS-QUOTA-EXHAUSTION-NOTICE-W1: forwards the license, like every sibling. The old
-      // comment claimed parity with the MCP handler — true, but both were wrong: without it a
-      // PAID x402 caller ran as keyless free and was metered against (and eventually refused
-      // by) the free 100/mo cap on a shared IP bucket. Parity is preserved; both are fixed.
-      return getMarketRegime({
-        coin: input.coin as string,
-        timeframe: input.timeframe as string,
-        exchange: input.exchange as ExchangeId,
-        license,
-      });
-    // OPS-X402-PRICING-EXPANSION-W1: the 3 newly-priced tools — SAME core fns the MCP
-    // handlers call (index.ts), so the x402-HTTP twin is byte-parity. The x402 CHARGE is
-    // the flat declared 402 price (effectivePrice=$0.02); tier:'x402' bypasses the free
-    // counter, so runScanTradeCall's max(1,N) is a no-op here (flat, never per-result).
-    case 'scan_trade_calls':
-      return runScanTradeCall(
-        {
-          topN: input.topN as number,
-          timeframe: input.timeframe as string,
-          exchange: input.exchange as ScanExchangeId,
-          minConfidence: input.minConfidence as number | undefined,
-          includeHolds: input.includeHolds as boolean,
-          limit: input.limit as number,
-          // SCAN-RANKBY-W1: forward the lens on the x402 channel too (parity). Default
-          // 'oi' when absent → byte-identical paid scan; resolveRankBy owns validation.
-          rankBy: input.rankBy as string | undefined,
-        },
-        license,
-      );
-    case 'get_equity_call':
-      return getEquityCall({ symbol: input.symbol as string, license });
-    case 'get_equity_regime':
-      return getEquityRegime({ symbol: input.symbol as string | undefined, license });
-    default: {
-      // tsc-exhaustiveness: a tool added to HTTP_TOOLS without a dispatch case here is a
-      // COMPILE error (forgot-to-wire is structurally impossible).
-      const _exhaustive: never = tool;
-      throw new Error(`callCoreHandler: unhandled x402 tool ${String(_exhaustive)}`);
-    }
-  }
-  });
-}
 
 function clientIpHash(req: Request): string {
   // OPS-MCP-DEFENSE-IN-DEPTH-W1 R2: third in-class raw-XFF site (audit-cited) —
@@ -424,7 +342,7 @@ export function mountX402HttpRoutes(app: Express): string[] {
           suggested_fix: `Body must satisfy the published JSON Schema for ${tool}.`,
         });
       }
-      const input: Record<string, unknown> = gate.input;
+      const input = gate.input;
 
       // X402-01 / X402-03 — per-route price binding (the chokepoint the audit
       // flagged). `verifyX402Payment` (called inside resolveLicense) matched the
@@ -534,98 +452,54 @@ export function mountX402HttpRoutes(app: Express): string[] {
         hadRealToolCall: true,
         isInternalTier: false,
       });
-      try {
-        // OPS-ALARM-SINGLE-DERIVATION-W1 CH1: the funding-leg flag is read INSIDE the request scope,
-        // through the SAME accessor the MCP handler reads (`src/index.ts`, get_market_regime). The
-        // logRequest below runs after run() resolves — outside the scope, where the flag is gone.
-        let regimeFundingDegraded = false;
-        const result = await requestContext.run(
-          { license, sessionId, ipHash, isAutomated: authenticity.is_automated },
-          async () => {
-            const out = await callCoreHandler(tool, input, license);
-            if (tool === 'get_market_regime') regimeFundingDegraded = getRequestRegimeFundingDegraded();
-            return out;
-          },
-        );
-
+      // ARCH-MCP-CALL-PIPELINE-W1 CH2: the ONE tool-call path (src/lib/tool-call-pipeline.ts). The
+      // pipeline enters the request scope with this rail's explicit ctx, dispatches through the
+      // registry-keyed table and records this twin's request_log row — the SAME field set it wrote
+      // by hand here, written OUTSIDE the scope exactly as before (R-6 / Q-PIPE-1 condition 3: no
+      // confidence, no HOLD-capture quartet, no user agent on an x402 row). Payment semantics stay
+      // in this file (R-2): the claim above, the settle below.
+      const call = await callTool({
+        tool,
+        input,
+        channel: 'httpX402',
+        license,
+        ctx: { sessionId, ipHash, isAutomated: authenticity.is_automated },
+      });
+      if (call.ok) {
         // Public output == MCP tool output (single source of truth).
-        res.json(result);
+        res.json(call.result);
 
         // Async settle (R6): fire-and-forget after the response.
         //
         // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): every verdict settles, HOLD included —
-        // byte-for-byte the same rule as the MCP path in index.ts, which is the point. The two
-        // rails previously each carried their own copy of the HOLD skip, so "which verdicts are
-        // free" was answerable differently depending on how you called the same tool.
+        // byte-for-byte the same rule as the MCP path, which is the point.
         //
         // Reached only after `res.json(result)`, so an error path still never settles.
         if (pendingSettlement) {
           settleX402Async(pendingSettlement);
         }
-
-        // Analytics parity (data flywheel) — fire-and-forget.
-        try {
-          logRequest({
-            // Explicit, like `isAutomated` below: this runs after run() resolves, outside the ALS.
-            sessionId,
-            toolName: tool,
-            asset: typeof input.coin === 'string' ? (input.coin as string) : undefined,
-            timeframe: typeof input.timeframe === 'string' ? (input.timeframe as string) : undefined,
-            licenseTier: license.tier,
-            responseTimeMs: Date.now() - startMs,
-            // OPS-ALARM-SINGLE-DERIVATION-W1 CH1: get_market_regime writes the MCP handler's fields
-            // through the SAME `regime-request-verdict.ts` functions (it logged `verdict: undefined`
-            // and no `exchange`, so the paid rail was invisible to the paid-refusal canary). Every
-            // other tool's row is byte-identical — the spread adds no key for them.
-            verdict: tool === 'get_trade_signal'
-              ? (result as TradeCallResult).call
-              : tool === 'get_market_regime' ? regimeSuccessVerdict(regimeFundingDegraded) : undefined,
-            ...(tool === 'get_market_regime'
-              ? { regime: (result as { regime?: string }).regime ?? null, exchange: regimeLogExchange(input) }
-              : {}),
-            ipHash,
-            isBotInternal: false,
-            // Explicit — this logRequest runs after run() resolves (outside the ALS).
-            isAutomated: authenticity.is_automated,
-          });
-        } catch { /* best-effort; never blocks the request */ }
-      } catch (err: unknown) {
-        // OPS-ALARM-SINGLE-DERIVATION-W1 CH1 — THE ERROR ARM, which this twin never had for
-        // get_market_regime: a refused paid call wrote NO row, so its failure rate was 0.0% by
-        // construction on the one explicitly paid rail. Same fields, same verdict function as the
-        // MCP handler's catch. Scoped to this tool only; best-effort, never changes the response.
-        if (tool === 'get_market_regime') {
-          try {
-            logRequest({
-              sessionId,
-              toolName: tool,
-              asset: typeof input.coin === 'string' ? (input.coin as string) : undefined,
-              timeframe: typeof input.timeframe === 'string' ? (input.timeframe as string) : undefined,
-              licenseTier: license.tier,
-              responseTimeMs: Date.now() - startMs,
-              verdict: regimeErrorVerdict(err),
-              regime: null,
-              exchange: regimeLogExchange(input),
-              ipHash,
-              isBotInternal: false,
-              isAutomated: authenticity.is_automated,
-            });
-          } catch { /* best-effort; never blocks the error response */ }
-        }
-        if (!res.headersSent) {
-          // SEC-50 (OPS-AUDIT-REMEDIATION-LOW-W1): the raw upstream message went to the client,
-          // which leaks internal paths, hostnames and driver text on a PAID public route. Log it
-          // server-side; the wire keeps the machine-readable `code` it already had.
-          console.error(
-            '[x402-http] handler error:',
-            err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ''}` : String(err),
-          );
-          res.status(500).json({
-            error: 'internal_error',
-            code: 'X402_HTTP_HANDLER_ERROR',
-            message: 'An internal error occurred while handling the x402 request.',
-          });
-        }
+        return;
+      }
+      if (call.kind === 'refused') {
+        // An in-band refusal from the pipeline (Q-PIPE-2 row 12: an undeclared timeframe). Unreachable
+        // on this rail today — the Bazaar schema enum runs in validateToolInput first — rendered as a
+        // 400 and never settled.
+        res.status(call.http.status).json(call.payload);
+        return;
+      }
+      // SEC-50 (OPS-AUDIT-REMEDIATION-LOW-W1): the raw upstream message went to the client,
+      // which leaks internal paths, hostnames and driver text on a PAID public route. Log it
+      // server-side; the wire keeps the machine-readable `code` it already had.
+      console.error(
+        '[x402-http] handler error:',
+        call.error instanceof Error ? `${call.error.name}: ${call.error.message}\n${call.error.stack ?? ''}` : String(call.error),
+      );
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: 'internal_error',
+          code: 'X402_HTTP_HANDLER_ERROR',
+          message: 'An internal error occurred while handling the x402 request.',
+        });
       }
     });
 

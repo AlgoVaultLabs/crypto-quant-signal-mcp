@@ -240,7 +240,7 @@ describe('x402 HTTP routes — paywall + listing channel (R2, R3, item K)', () =
 });
 
 describe('x402 HTTP routes — handler parity (R1: same core fn + args as MCP)', () => {
-  it('callCoreHandler dispatches to the same core fns with the mapped args', async () => {
+  it('the x402 channel dispatches through the ONE pipeline to the same core fns with the mapped args', async () => {
     vi.resetModules();
     const calls: Record<string, unknown> = {};
     vi.doMock('../src/tools/get-trade-call.js', () => ({
@@ -252,21 +252,21 @@ describe('x402 HTTP routes — handler parity (R1: same core fn + args as MCP)',
     vi.doMock('../src/tools/get-market-regime.js', () => ({
       getMarketRegime: (i: unknown) => { calls.getMarketRegime = i; return { regime: 'RANGING' }; },
     }));
-    const { callCoreHandler } = await import('../src/lib/x402-http-routes.js');
-    const license = { tier: 'x402' as const, key: null };
+    // ARCH-MCP-CALL-PIPELINE-W1 CH2: the rail dispatches through the ONE pipeline (callTool); the
+    // trade-call row reaches getTradeSignal through routeTradeCall with the same mapped args.
+    const { callTool } = await import('../src/lib/tool-call-pipeline.js');
+    type VI = import('../src/lib/tool-call-pipeline.js').ValidatedToolInput;
+    const license = { tier: 'x402' as const, key: null, outcome: 'RESOLVED' as const };
+    const x402 = (tool: string, input: Record<string, unknown>) =>
+      callTool({ tool, input: input as VI, channel: 'httpX402', license, ctx: { sessionId: 's', ipHash: 'h', isAutomated: false } });
 
-    await callCoreHandler('get_trade_signal', { coin: 'BTC', timeframe: '4h', includeReasoning: true, exchange: 'BINANCE' }, license);
+    await x402('get_trade_signal', { coin: 'BTC', timeframe: '4h', includeReasoning: true, exchange: 'BINANCE' });
     expect(calls.getTradeSignal).toEqual({ coin: 'BTC', timeframe: '4h', includeReasoning: true, exchange: 'BINANCE', license });
 
-    await callCoreHandler('scan_funding_arb', { minSpreadBps: 5, limit: 10 }, license);
+    await x402('scan_funding_arb', { minSpreadBps: 5, limit: 10 });
     expect(calls.scanFundingArb).toEqual({ minSpreadBps: 5, limit: 10, license });
 
-    // OPS-QUOTA-EXHAUSTION-NOTICE-W1: this line previously asserted the ABSENCE of `license`
-    // ("no license — matches MCP handler"), i.e. it certified the defect. Parity was real and
-    // both sides were wrong: without the license a PAID x402 caller ran as keyless free and was
-    // metered against — and eventually refused by — the free 100/mo cap on a shared IP bucket.
-    // Both call sites now forward it, so parity holds and the meter is correct.
-    await callCoreHandler('get_market_regime', { coin: 'ETH', timeframe: '4h', exchange: 'HL' }, license);
+    await x402('get_market_regime', { coin: 'ETH', timeframe: '4h', exchange: 'HL' });
     expect(calls.getMarketRegime).toEqual({ coin: 'ETH', timeframe: '4h', exchange: 'HL', license });
 
     vi.doUnmock('../src/tools/get-trade-call.js');

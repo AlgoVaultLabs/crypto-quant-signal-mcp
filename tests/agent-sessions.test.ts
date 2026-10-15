@@ -158,12 +158,14 @@ describe('upsertAgentSession', () => {
     // `if (sessionIdForCohort !== null) { upsertAgentSession({...}) }`.
     // Verify the guard exists in source (not a runtime DB check, but a
     // structural check that the call sites enforce it).
-    const indexSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'src', 'index.ts'),
+    // ARCH-MCP-CALL-PIPELINE-W1 CH2: the per-handler stdio guards (`sessionIdForCohort !== null`)
+    // collapsed into the ONE guard in the pipeline's record stage — a cohort row needs a session id
+    // AND a channel whose policy records sessions (mcp) AND a tool row flagged `cohort` (4 tools).
+    const pipelineSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'lib', 'tool-call-pipeline.ts'),
       'utf8'
     );
-    // Three handlers, three guards. Substring count must be at least 3.
-    const guardCount = (indexSrc.match(/sessionIdForCohort !== null/g) ?? []).length;
-    expect(guardCount).toBeGreaterThanOrEqual(3);
+    expect(pipelineSrc).toContain('if (policy.agentSession && row.cohort && ran.outcome.ok && ran.sessionId) {');
+    expect((pipelineSrc.match(/cohort: true,/g) ?? []).length).toBe(4);
   });
 });

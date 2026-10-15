@@ -111,10 +111,14 @@ describe('regimeFundingDegraded ALS seam', () => {
 });
 
 describe('the seam has a LIVE READER — the condition license.ts states for its existence', () => {
-  const indexSrc = src('src/index.ts');
+  // ARCH-MCP-CALL-PIPELINE-W1 CH2: the reader moved from the index.ts handler into the ONE pipeline,
+  // which snapshots the flag INSIDE the request scope right after dispatch and projects it into the
+  // success verdict for every channel.
+  const pipelineSrc = src('src/lib/tool-call-pipeline.ts');
 
-  it('src/index.ts reads the flag and writes it into the success verdict', () => {
-    expect(indexSrc).toContain('regimeSuccessVerdict(getRequestRegimeFundingDegraded())');
+  it('the pipeline reads the flag inside the request scope and writes it into the success verdict', () => {
+    expect(pipelineSrc).toContain('regimeFundingDegraded: getRequestRegimeFundingDegraded()');
+    expect(pipelineSrc).toContain('verdict: regimeSuccessVerdict(scope.regimeFundingDegraded)');
   });
 
   it('only get_market_regime stamps the flag — a second writer would need its own reader', () => {
@@ -127,33 +131,35 @@ describe('the seam has a LIVE READER — the condition license.ts states for its
 });
 
 describe('THE ERROR ARM — the assertion the whole wave rests on', () => {
-  const indexSrc = src('src/index.ts');
-  // Isolate the get_market_regime registration so a sibling tool's logging cannot satisfy this.
+  // ARCH-MCP-CALL-PIPELINE-W1 CH2: the regime row of the pipeline's TOOLS table carries both arms;
+  // the pipeline's record stage emits `logError`'s fields on the catch path for every channel.
+  const pipelineSrc = src('src/lib/tool-call-pipeline.ts');
   const block = (() => {
-    const start = indexSrc.indexOf("// ── Tool 3: get_market_regime ──");
+    const start = pipelineSrc.indexOf('  get_market_regime: {');
     expect(start).toBeGreaterThan(-1);
-    const next = indexSrc.indexOf('// ── Tool 4', start);
+    const next = pipelineSrc.indexOf('  scan_funding_arb: {', start);
     expect(next).toBeGreaterThan(start);
-    return indexSrc.slice(start, next);
+    return pipelineSrc.slice(start, next);
   })();
 
-  it('logs a request_log row on the catch path, not only on success', () => {
-    const catchIdx = block.indexOf('} catch (err: unknown) {');
-    expect(catchIdx).toBeGreaterThan(-1);
-    const catchBody = block.slice(catchIdx);
-    expect(catchBody).toContain('logRequest({');
-    expect(catchBody).toContain('regimeErrorVerdict(err)');
+  it('declares an error-arm log projection (a request_log row on the catch path, not only on success)', () => {
+    const errIdx = block.indexOf('logError: (input, err) => ({');
+    expect(errIdx).toBeGreaterThan(-1);
+    expect(block.slice(errIdx)).toContain('regimeErrorVerdict(err)');
+    // …and the pipeline actually emits it on the catch path
+    expect(pipelineSrc).toContain('log: row.logError ? row.logError(input, err) : null');
   });
 
   it('still returns the structured error to the caller — logging must not change the contract', () => {
-    expect(block.slice(block.indexOf('} catch (err: unknown) {'))).toContain('return toolErrorContent(err);');
+    expect(pipelineSrc).toContain("return { outcome: { ok: false, kind: 'threw', tool: req.tool, input, error: err }");
+    expect(pipelineSrc).toContain('return toolErrorContent(o.error);');
   });
 
   it('populates verdict AND regime on the success arm', () => {
-    const successSlice = block.slice(0, block.indexOf('} catch (err: unknown) {'));
+    const successSlice = block.slice(0, block.indexOf('logError: (input, err) => ({'));
     expect(successSlice).toContain('verdict: regimeSuccessVerdict(');
     expect(successSlice).toContain('regime:');
-    expect(successSlice).toContain('exchange,');
+    expect(successSlice).toContain('exchange: input.exchange as string');
   });
 });
 
@@ -166,13 +172,13 @@ describe('logRequest precedence — get_trade_call rows must stay byte-identical
   });
 
   it('get_trade_call passes neither field, so it still falls through to its HOLD stamp', () => {
-    const indexSrc = src('src/index.ts');
-    const start = indexSrc.indexOf('// ── Tool 1');
-    const end = indexSrc.indexOf('// ── Tool 3: get_market_regime ──');
-    const before = indexSrc.slice(start > -1 ? start : 0, end);
-    // The trade-call handler sets `verdict` (its BUY/SELL/HOLD) but must not set `regime:`/`exchange:`
-    // as logRequest entry fields, or it would bypass the holdCapture single-stamp guarantee.
-    expect(before).toContain('verdict,');
+    // ARCH-MCP-CALL-PIPELINE-W1 CH2: the trade-call row's canonical log projection.
+    const pipelineSrc = src('src/lib/tool-call-pipeline.ts');
+    const start = pipelineSrc.indexOf('const TRADE_CALL_ROW: ToolRow = {');
+    const end = pipelineSrc.indexOf('const TOOLS: {');
+    expect(start).toBeGreaterThan(-1);
+    const before = pipelineSrc.slice(start, end);
+    expect(before).toContain('verdict: (result as { call?: ');
     expect(before).not.toContain('regime: (result as { regime?: string }).regime');
   });
 });

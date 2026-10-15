@@ -45,8 +45,13 @@ export interface MarketRoute {
   timeframe: string;
 }
 
-/** Default perp timeframe when none is named. */
-const DEFAULT_PERP_TIMEFRAME = '15m';
+/**
+ * Default perp timeframe when none is named — THE ONE runtime perp default (ARCH-MCP-CALL-PIPELINE-W1
+ * Q-PIPE-2 rows 1–2): every channel's get_trade_call reaches the engine through `resolveMarketRoute`,
+ * so the engine's own `|| '1h'` fallback is unreachable, and the Bazaar schema's `default: '15m'` is
+ * test-pinned equal to this constant (tests/unit/capabilities.test.ts) rather than being a second source.
+ */
+export const DEFAULT_PERP_TIMEFRAME = '15m';
 /** Equity verdicts are always daily-bar. */
 const EQUITY_TIMEFRAME = '1d';
 

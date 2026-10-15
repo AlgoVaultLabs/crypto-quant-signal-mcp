@@ -117,10 +117,13 @@ describe('class preservation — tags moved, classes did not', () => {
 
   // Helper kinds per file, measured on origin/main 2dcafc2a (pre-wave) with the same gate's --manifest.
   const PRE_WAVE: Record<string, Record<string, number>> = {
-    'src/index.ts': { runAsCaller: 9, runAsBatch: 3 },
+    // ARCH-MCP-CALL-PIPELINE-W1 CH2: the 9 MCP handler tags (+ the scan runAsBatch) and the x402 twin's
+    // runAsCaller MOVED, class-unchanged, into the ONE pipeline table (processScopedTag literals; the
+    // paid rails add the innermost x402CallerTag frame). index.ts keeps its two resource-side runAsBatch.
+    'src/index.ts': { runAsBatch: 2 },
+    'src/lib/tool-call-pipeline.ts': { runAsCaller: 11, runAsBatch: 1 },
     'src/lib/band-outcome-lane.ts': { runAsBatch: 1 },
     'src/lib/cross-asset-grid.ts': { runAsBatch: 1 },
-    'src/lib/x402-http-routes.ts': { runAsCaller: 1 },
     'src/resources/signal-performance.ts': { runAsBatch: 1 },
     'src/scripts/backfill-directional-labels.ts': { runAsBatch: 1, runAsCaller: 1 },
     'src/scripts/backfill-hold-decision-labels.ts': { runAsBatch: 1 },

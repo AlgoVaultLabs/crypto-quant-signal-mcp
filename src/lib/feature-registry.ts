@@ -59,7 +59,7 @@ export interface FeatureSpec {
   /** Canonical MCP tool name. */
   name: string;
   /** Back-compat alias names that resolve to this feature (e.g. get_trade_signal). */
-  aliases: string[];
+  aliases: readonly string[];
   /**
    * Which channels expose this feature TODAY. (W2 flips bot/webhook for the scanner, etc.)
    * `a2mcp` = the okx.ai A2MCP paid listing (OKX-AI-FIRST-MOVER-W1). It settles USDT0 on
@@ -122,7 +122,7 @@ const DESCRIPTIONS: Record<string, string> = {
  * (verified live @ FEATURE-REGISTRY-SOT-W1 Step-0, 2026-06-08). Channel flags reflect
  * TODAY; scanner/equity x402 are `null` (pricing deferred to a follow-up, pending $/unit).
  */
-export const FEATURE_REGISTRY: FeatureSpec[] = [
+const FEATURE_REGISTRY_LITERAL = [
   {
     name: 'get_trade_call',
     aliases: ['get_trade_signal'],
@@ -252,7 +252,17 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
     enabled: true,
     publicListing: false,
   },
-];
+  // ARCH-MCP-CALL-PIPELINE-W1 CH2 (type-only, no data change): `as const satisfies` keeps every row a
+  // FeatureSpec while exposing the literal names, so the tool-call pipeline's dispatch table is
+  // exhaustive over THIS array at compile time (a registry row with no pipeline row is a tsc error).
+] as const satisfies readonly FeatureSpec[];
+
+/** The registry as every consumer has always typed it. Same rows, same order; a copy so the literal stays frozen. */
+export const FEATURE_REGISTRY: FeatureSpec[] = [...FEATURE_REGISTRY_LITERAL];
+/** The canonical tool names, as literals — the tool-call pipeline's dispatch table is exhaustive over these. */
+export type RegistryToolName = (typeof FEATURE_REGISTRY_LITERAL)[number]['name'];
+/** The alias names, as literals (`get_trade_signal`). */
+export type RegistryAliasName = (typeof FEATURE_REGISTRY_LITERAL)[number]['aliases'][number];
 
 /**
  * The description the server SERVES for a callable tool name — canonical or alias.

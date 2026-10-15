@@ -57,6 +57,8 @@ import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded } from './lib/license.js';
 import { regimeSuccessVerdict, regimeErrorVerdict } from './lib/regime-request-verdict.js';
+import { callTool, toMcpToolResult, type ValidatedToolInput } from './lib/tool-call-pipeline.js';
+import { getKnowledgeSearch, getChatStack, chatTierFor, ALLOWED_CHAT_MODELS } from './tools/knowledge-tools.js';
 import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
 import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
 import { mountOkxA2mcpRoutes } from './lib/okx-a2mcp.js';
@@ -201,62 +203,6 @@ import { ensureGeoSchema } from './lib/geo-storage.js';
 // GEO-MEASUREMENT-W1 (C2, 2026-05-19): admin GEO dashboard at /admin/geo-dashboard.
 import { getGeoDashboardData, renderGeoDashboardHtml } from './lib/geo-dashboard.js';
 
-/**
- * Format a thrown error into the MCP tool-content payload. v1.10.2: when the
- * cause is `UpstreamRateLimitError`, emit a structured `{error_code, exchange,
- * retry_after_seconds, suggestion}` shape instead of a flat `{error: <string>}`
- * so MCP clients can pattern-match on `error_code === "UPSTREAM_RATE_LIMIT"`
- * and auto-fallback to a different exchange.
- */
-function toolErrorContent(err: unknown): { content: { type: 'text'; text: string }[]; isError: true } {
-  if (err instanceof UpstreamRateLimitError) {
-    const fallbacks = EXCHANGE_FALLBACKS[err.exchange] ?? [];
-    const fallbackList = fallbacks.length > 0 ? fallbacks.join(', ') : 'a different exchange';
-    const retryHint = err.retryAfterSeconds !== null
-      ? ` (or wait ${err.retryAfterSeconds}s and retry)`
-      : ' (or retry in a few minutes)';
-    const payload = {
-      error: err.message,
-      error_code: err.code,
-      exchange: err.exchange,
-      retry_after_seconds: err.retryAfterSeconds,
-      suggestion: `Try ${fallbackList} instead${retryHint}.`,
-    };
-    return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
-  }
-  if (err instanceof TradFiSymbolUnsupportedOnVenueError) {
-    const payload = {
-      error: err.code,
-      error_code: err.code,
-      message: err.message,
-      coin: err.coin,
-      requested_exchange: err.requestedExchange,
-      suggested_venues: err.suggestedVenues,
-      probed_at: err.probedAt,
-    };
-    return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
-  }
-  if (err instanceof TierLimitReachedError) {
-    // FUNNEL-FIX-AGENT-X402-NUDGE-W1: additive `suggested_x402` in-protocol pay-per-call branch
-    // (the agent can settle with its own wallet, no human signup) alongside the intact Stripe/
-    // referral fields — closes the quota-crossing→paid leak (a machine can't fill a Stripe
-    // checkout). Derived from the feature-registry channels{} SoT + live rail predicates; omitted
-    // (envelope byte-identical) when X402_NUDGE_ENABLED is off, no public rail is live, or the
-    // tool is HELD. The allow-list formatter (buildTierLimitPayload) is the single wire shape.
-    // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 11): `err.limit` IS the wall that
-    // refused — the error already carries it, so the nudge's noun projects from the very value
-    // the payload's `limit` field renders. No second meter test, nothing new to keep in sync.
-    const suggestedX402 = isX402NudgeEnabled() && err.tool ? buildSuggestedX402(err.tool, err.limit) : undefined;
-    const payload = buildTierLimitPayload(err, { suggestedX402 });
-    return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
-  }
-  if (err instanceof InsufficientCandlesError) {
-    const payload = buildInsufficientCandlesPayload(err);
-    return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  return { content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }], isError: true };
-}
 import { renderSignupFlowDark, renderPlanCards, PLAN_CARDS_CSS } from './lib/signup-flow.js';
 import { renderContactPage, renderContactConfirmation, HONEYPOT_FIELD } from './lib/contact-page.js';
 // EDGE-CARRY-SCOREBOARD-W1 — DARK public surface (noindex, zero inbound links, absent from
@@ -291,87 +237,6 @@ function safeCompare(a: string, b: string): boolean {
   if (bufA.length !== bufB.length) return false;
   return crypto.timingSafeEqual(bufA, bufB);
 }
-
-// ── Knowledge search singletons ──
-// AV-CHAT-MCP-W1 (C2, 2026-05-18). One KnowledgeIndex + ResultCache + SearchEngine
-// per process; lazy-initialized on first use; subsequent calls reuse the same
-// instance. The watcher inside KnowledgeIndex rebuilds the BM25 docs whenever
-// /app/dist/knowledge/latest.json changes (30s poll). C3 ChatEngine constructor
-// receives the SAME SearchEngine instance so chat-engine context is fresh.
-let _searchEnginePromise: Promise<{
-  index: KnowledgeIndex;
-  engine: SearchEngine;
-}> | null = null;
-
-function getKnowledgeBundlePath(): string {
-  if (process.env.KNOWLEDGE_BUNDLE_PATH) return process.env.KNOWLEDGE_BUNDLE_PATH;
-  // Compiled location: dist/index.js → dist/knowledge/latest.json
-  return path.resolve(__dirname, 'knowledge', 'latest.json');
-}
-
-async function getKnowledgeSearch(): Promise<{ index: KnowledgeIndex; engine: SearchEngine }> {
-  if (!_searchEnginePromise) {
-    _searchEnginePromise = (async () => {
-      const bundlePath = getKnowledgeBundlePath();
-      const index = new KnowledgeIndex(bundlePath);
-      await index.build();
-      const cache = new ResultCache<SearchResult[]>({ ttlMs: 3_600_000, max: 500 });
-      const engine = new SearchEngine(index, cache);
-      return { index, engine };
-    })();
-  }
-  return _searchEnginePromise;
-}
-
-// ── Chat singletons (AV-CHAT-MCP-W1 C3) ──
-// One ChatEngine + LLMProvider + ChatRateLimit + ResultCache<ChatResult> per
-// process. ChatEngine reuses the SAME SearchEngine instance from
-// getKnowledgeSearch() — single SoT for the index + retrieval.
-const ALLOWED_CHAT_MODELS = new Set([
-  'claude-haiku-4-5-20251001',
-  'claude-sonnet-4-6',
-]);
-
-let _chatEnginePromise: Promise<{
-  index: KnowledgeIndex;
-  chatEngine: ChatEngine;
-  rateLimit: ChatRateLimit;
-  llm: LLMProvider;
-}> | null = null;
-
-async function getChatStack(): Promise<{
-  index: KnowledgeIndex;
-  chatEngine: ChatEngine;
-  rateLimit: ChatRateLimit;
-  llm: LLMProvider;
-}> {
-  if (!_chatEnginePromise) {
-    _chatEnginePromise = (async () => {
-      const { index, engine } = await getKnowledgeSearch();
-      const llm = getLLMProvider();
-      const cache = new ResultCache<ChatResult>({ ttlMs: 86_400_000, max: 200 });
-      const chatEngine = new ChatEngine(engine, llm, cache);
-      const rateLimit = new ChatRateLimit();
-      return { index, chatEngine, rateLimit, llm };
-    })();
-  }
-  return _chatEnginePromise;
-}
-
-/**
- * Map LicenseTier → ChatTier. License tiers `internal` and `x402` map to
- * `enterprise` (effectively unmetered for the chat surface).
- */
-function chatTierFor(licenseTier: string): ChatTier {
-  if (licenseTier === 'free') return 'free';
-  if (licenseTier === 'starter') return 'starter';
-  if (licenseTier === 'pro') return 'pro';
-  // 'enterprise' | 'internal' | 'x402' | any other paid tier
-  return 'enterprise';
-}
-
-// chatQuotaApiKey moved to src/lib/chat-rate-limit.ts by OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-03):
-// index.ts boots the server at import, so a resolver defined here cannot be unit-tested.
 
 /**
  * OPS-MCP-SESSION-RESILIENCE-W1: single shared session-correlation resolver
@@ -490,6 +355,16 @@ function createServer(): McpServer {
     toolDefs[name] = { description, schema, annotations, handler: handler as unknown };
   };
 
+  // ARCH-MCP-CALL-PIPELINE-W1 CH2 (Q-PIPE-1 = design A): every handler body below is the ONE pipeline
+  // call. The zod schemas, descriptions and annotations are the MCP wire contract and stay here (R-7);
+  // the per-call shell — license, lane, dispatch, request_log, agent_sessions, receipt text, the
+  // typed-error envelope — lives in src/lib/tool-call-pipeline.ts, where the x402, A2MCP and ACP
+  // rails share it, so a property added to one channel's path cannot miss the others. The SDK has
+  // already zod-parsed `args` by the time a handler runs; that parse is what mints the
+  // validated-input brand here (Q-PIPE-1 condition 2).
+  const mcpHandler = (tool: string) => async (args: unknown) =>
+    toMcpToolResult(await callTool({ tool, input: args as ValidatedToolInput, channel: 'mcp', license: getRequestLicense() }));
+
   // ── Tool 1: get_trade_call (canonical, v1.10.0) + get_trade_signal (alias for back-compat) ──
   // The handler is identical; we register the same factory under two names so
   // existing agents calling `get_trade_signal` continue to work without changes.
@@ -509,112 +384,12 @@ function createServer(): McpServer {
     exchange: z.enum(PUBLIC_VENUE_ENUM).optional().describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
     assetClass: z.enum(ASSET_CLASSES).optional().describe(PARAM_DESC_TRADE_CALL_ASSET_CLASS),
   };
-  function makeTradeCallHandler(toolNameForAnalytics: 'get_trade_call' | 'get_trade_signal') {
-    return async ({ coin, timeframe, includeReasoning, exchange, assetClass }: { coin: string; timeframe?: '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d'; includeReasoning: boolean; exchange?: ExchangeId; assetClass?: 'perp' | 'equity' }) => {
-      const startMs = Date.now();
-      try {
-        const license = getRequestLicense();
-        // Single-derivation: resolve the route once + dispatch to the perp or equity
-        // engine. The model picking get_trade_call or get_equity_call yields the same
-        // contract-correct engine. Quota is handled inside whichever engine runs.
-        const { route, result } = await runAsCaller(toolNameForAnalytics === 'get_trade_signal' ? 'get_trade_signal' : 'get_trade_call', () => routeTradeCall({ coin, timeframe, includeReasoning, exchange, assetClass, license }));
-        const verdict = (result as { call?: 'BUY' | 'SELL' | 'HOLD' }).call;
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: toolNameForAnalytics,
-          asset: coin,
-          timeframe: route.timeframe,
-          licenseTier: license.tier,
-          responseTimeMs: Date.now() - startMs,
-          verdict,
-          confidence: (result as { confidence?: number }).confidence,
-          ipHash: getRequestIpHash(),
-          isBotInternal: license.tier === 'internal',
-        });
-        // CONVERSION-MEASUREMENT-W1 C1: aha event — the first BUY/SELL a FREE
-        // session receives (the activation leading indicator). Emits a NEW
-        // `first_non_hold_verdict` event_type ONLY; the deployed quota/CTA
-        // captures and the /api/admin/funnel-snapshot endpoint are untouched.
-        // Deduped per session (bounded LRU) + read-side DISTINCT; fail-open.
-        const isAha = recordFirstNonHoldVerdict({
-          verdict,
-          tier: license.tier,
-          sessionId: getRequestSessionId(),
-          tool: toolNameForAnalytics,
-          asset: coin,
-        });
-        // ACTIVATION-NUDGE-W1: celebrate-the-aha render. Reuse C1's SINGLE
-        // first-non-HOLD-per-session decision (the return value) — never
-        // re-derive it — to attach the one-time aha upgrade_hint. Free-only +
-        // idempotent are already enforced inside recordFirstNonHoldVerdict.
-        // Precedence aha > soft: overwrite any soft quota nudge the tool set
-        // (the 100% limit is a separate error envelope, not reached here).
-        // REFERRAL-INPRODUCT-NUDGE-W1: the aha value moment now offers a referral
-        // hint to KEYED users — high-conviction first non-HOLD (reuse isAha + the
-        // confidence gate) or a usage milestone — capped to ≤1 per session across
-        // all aha triggers (single-source `shouldShowAhaReferral`, first wins).
-        // Keyless aha keeps the existing upgrade hint (no link to show). aha > soft.
-        const ahaMeta = (result as { _algovault?: { upgrade_hint?: string; referral_hint?: ReferralHint } })._algovault;
-        if (ahaMeta) {
-          const refCode = referralCodeForKey(license.key);
-          const sid = getRequestSessionId() ?? null;
-          // Evaluate triggers only when a keyed user still has a free session slot —
-          // so a milestone crossing isn't committed when the slot is already spent.
-          let aha: { from: AhaReferralFrom; verdict?: string; callCountUser?: number } | null = null;
-          if (refCode && sid && !ahaReferralAlreadyShown(sid)) {
-            const conf = (result as { confidence?: number }).confidence ?? 0;
-            if (isAha && conf >= AHA_HIGH_CONVICTION_CONFIDENCE && (verdict === 'BUY' || verdict === 'SELL')) {
-              aha = { from: 'aha_call', verdict };                          // (a) high-conviction call
-            } else {
-              const milestone = await recordAhaMilestoneCrossing(license);  // (c) usage milestone
-              if (milestone !== null) aha = { from: 'aha_milestone', callCountUser: milestone };
-            }
-          }
-          if (aha && refCode && sid && shouldShowAhaReferral(sid)) {
-            ahaMeta.upgrade_hint = buildAhaReferral({
-              from: aha.from, code: refCode, stats: getTrackRecord(),
-              verdict: aha.verdict, callCountUser: aha.callCountUser,
-            });
-            ahaMeta.referral_hint = buildReferralHint({ from: aha.from, code: refCode });
-          } else if (isAha) {
-            // Keyless aha (or no referral fired) → the existing upgrade hint, unchanged.
-            ahaMeta.upgrade_hint = buildAhaHint(getTrackRecord());
-          }
-        }
-        const sessionIdForCohort = getRequestSessionId() ?? null;
-        if (sessionIdForCohort !== null) {
-          upsertAgentSession({
-            sessionId: sessionIdForCohort,
-            tool: toolNameForAnalytics,
-            tier: license.tier,
-            ipHash: getRequestIpHash() ?? null,
-            source: getRequestSource() ?? null,
-          }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));
-        }
-        // P0 VERDICT-WITH-RECEIPTS-W1: content[0] stays the JSON envelope (now with
-        // the additive `_receipts` sibling) so any consumer parsing content[0] is
-        // unaffected; content[1] carries the human-readable receipt, projected from
-        // the SAME `_receipts` (single-derivation). Equity-engine results have no
-        // `_receipts` → no human receipt (perp-only scope).
-        const content: { type: 'text'; text: string }[] = [
-          { type: 'text' as const, text: JSON.stringify(result, null, 2) },
-        ];
-        const rcpt = result as { _receipts?: Parameters<typeof renderReceiptText>[0]; reasoning?: string };
-        if (rcpt._receipts) {
-          content.push({ type: 'text' as const, text: renderReceiptText(rcpt._receipts, rcpt.reasoning ?? '') });
-        }
-        return { content };
-      } catch (err: unknown) {
-        return toolErrorContent(err);
-      }
-    };
-  }
   register(
     'get_trade_call',
     TRADE_CALL_DESCRIPTION,
     TRADE_CALL_SCHEMA,
     { title: 'Composite Trade Call', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    makeTradeCallHandler('get_trade_call')
+    mcpHandler('get_trade_call'),
   );
   register(
     'get_trade_signal',
@@ -627,7 +402,7 @@ function createServer(): McpServer {
     servedDescription('get_trade_signal') ?? TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX,
     TRADE_CALL_SCHEMA,
     { title: 'Trade Signal', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    makeTradeCallHandler('get_trade_signal')
+    mcpHandler('get_trade_signal'),
   );
 
   // ── Tool 2: scan_funding_arb ──
@@ -643,35 +418,7 @@ function createServer(): McpServer {
       limit: z.number().int().min(1).max(200).default(10).describe(PARAM_DESC_FUNDING_LIMIT),
     },
     { title: 'Funding Arbitrage Scanner', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ minSpreadBps, limit }) => {
-      const startMs = Date.now();
-      try {
-        const license = getRequestLicense();
-        // Quota tracking is handled inside scanFundingArb
-        const result = await runAsCaller('scan_funding_arb', () => scanFundingArb({ minSpreadBps, limit, license }));
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: 'scan_funding_arb',
-          licenseTier: license.tier,
-          responseTimeMs: Date.now() - startMs,
-          ipHash: getRequestIpHash(),
-          isBotInternal: license.tier === 'internal',
-        });
-        const sessionIdForCohort = getRequestSessionId() ?? null;
-        if (sessionIdForCohort !== null) {
-          upsertAgentSession({
-            sessionId: sessionIdForCohort,
-            tool: 'scan_funding_arb',
-            tier: license.tier,
-            ipHash: getRequestIpHash() ?? null,
-            source: getRequestSource() ?? null,
-          }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));
-        }
-        return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
-      } catch (err: unknown) {
-        return toolErrorContent(err);
-      }
-    }
+    mcpHandler('scan_funding_arb'),
   );
 
   // ── Tool 3: get_market_regime ──
@@ -684,78 +431,7 @@ function createServer(): McpServer {
       exchange: z.enum(PUBLIC_VENUE_ENUM).default(REGIME_EXCHANGE_DEFAULT).describe(PARAM_DESC_REGIME_EXCHANGE),
     },
     { title: 'Market Regime Classifier', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ coin, timeframe, exchange }) => {
-      const startMs = Date.now();
-      try {
-        const license = getRequestLicense();
-        // Quota tracking is handled inside getMarketRegime
-        // OPS-QUOTA-EXHAUSTION-NOTICE-W1: forward the RESOLVED license. It was read on the line
-        // above and then used only for logRequest, so `getMarketRegime` fell back to its
-        // `{tier:'free', key:null}` default and metered every caller against the IP-derived free
-        // bucket instead of their own. Found live post-deploy: a keyed free caller whose key
-        // bucket read 100/100 was still SERVED by this tool (its IP bucket read 8/100), so the
-        // operator-frozen cutoff did not actually hold here — and a PAID caller's regime calls
-        // were metered, and would eventually be refused, against the free 100 cap.
-        const result = await runAsCaller('get_market_regime', () => getMarketRegime({ coin, timeframe, exchange, license }));
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: 'get_market_regime',
-          asset: coin,
-          timeframe,
-          licenseTier: license.tier,
-          responseTimeMs: Date.now() - startMs,
-          ipHash: getRequestIpHash(),
-          isBotInternal: license.tier === 'internal',
-          // OPS-HL-INTERACTIVE-STARVATION-W1. Until this wave, `verdict` and `regime` were NULL on
-          // every one of this tool's rows, so it had no measurable failure rate and its ten-day
-          // outage was invisible by construction.
-          //
-          // THIS IS THE READER the `license.ts` regimeFundingDegraded seam is required to have;
-          // `tests/unit/regime-request-observability.test.ts` fails if it stops happening.
-          verdict: regimeSuccessVerdict(getRequestRegimeFundingDegraded()),
-          regime: (result as { regime?: string }).regime ?? null,
-          exchange,
-        });
-        const sessionIdForCohort = getRequestSessionId() ?? null;
-        if (sessionIdForCohort !== null) {
-          upsertAgentSession({
-            sessionId: sessionIdForCohort,
-            tool: 'get_market_regime',
-            tier: license.tier,
-            ipHash: getRequestIpHash() ?? null,
-            source: getRequestSource() ?? null,
-          }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));
-        }
-        return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
-      } catch (err: unknown) {
-        // OPS-HL-INTERACTIVE-STARVATION-W1 — THE ERROR ARM, which did not exist.
-        //
-        // `logRequest` sat inside the `try` AFTER the awaited call, and this `catch` returned
-        // without logging. A refused call therefore wrote NO `request_log` row at all, so the
-        // 36,836 rows for this tool were successes ONLY and any failure rate computed from that
-        // table was 0.0% BY CONSTRUCTION — a confident wrong number rather than a missing one.
-        // Populating `verdict` without adding this block would have reported exactly that 0.0%.
-        //
-        // `license` is re-read rather than hoisted: `getRequestLicense()` returns a default when no
-        // request context exists, so it cannot throw, and a second throw on the error path would
-        // lose the row and restore the blind spot. `logRequest` is best-effort internally already.
-        const errLicenseTier = getRequestLicense().tier;
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: 'get_market_regime',
-          asset: coin,
-          timeframe,
-          licenseTier: errLicenseTier,
-          responseTimeMs: Date.now() - startMs,
-          ipHash: getRequestIpHash(),
-          isBotInternal: errLicenseTier === 'internal',
-          verdict: regimeErrorVerdict(err),
-          regime: null,
-          exchange,
-        });
-        return toolErrorContent(err);
-      }
-    }
+    mcpHandler('get_market_regime'),
   );
 
   // ── Tools: get_equity_call + get_equity_regime (EQUITIES-ENGINE-W1) ──
@@ -776,53 +452,14 @@ function createServer(): McpServer {
       timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).optional().describe('Optional candle timeframe — supplying one routes to the perp call.'),
     },
     { title: 'Equity Trade Call', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ symbol, exchange, timeframe }) => {
-      const startMs = Date.now();
-      try {
-        const license = getRequestLicense();
-        // Default to the equity read ONLY when bare (no venue, no timeframe). A supplied
-        // crypto venue/TF routes to perp — resolveMarketRoute is authoritative.
-        const assetClass = !exchange && !timeframe ? ('equity' as const) : undefined;
-        const { result } = await runAsCaller('get_equity_call', () => routeTradeCall({ coin: symbol, exchange, timeframe, assetClass, license }));
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: 'get_equity_call',
-          asset: symbol,
-          licenseTier: license.tier,
-          responseTimeMs: Date.now() - startMs,
-          ipHash: getRequestIpHash(),
-          isBotInternal: license.tier === 'internal',
-        });
-        return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
-      } catch (err: unknown) {
-        return toolErrorContent(err);
-      }
-    }
+    mcpHandler('get_equity_call'),
   );
   register(
     'get_equity_regime',
     GET_EQUITY_REGIME_DESCRIPTION,
     { symbol: z.string().max(12).optional().describe('US equity/ETF ticker; defaults to SPY.') },
     { title: 'Equity Market Regime', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ symbol }) => {
-      const startMs = Date.now();
-      try {
-        const license = getRequestLicense();
-        const result = await runAsCaller('get_equity_regime', () => getEquityRegime({ symbol, license }));
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: 'get_equity_regime',
-          asset: symbol ?? 'SPY',
-          licenseTier: license.tier,
-          responseTimeMs: Date.now() - startMs,
-          ipHash: getRequestIpHash(),
-          isBotInternal: license.tier === 'internal',
-        });
-        return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
-      } catch (err: unknown) {
-        return toolErrorContent(err);
-      }
-    }
+    mcpHandler('get_equity_regime'),
   );
 
   // ── Tool: scan_trade_calls (SCAN-TRADE-CALLS-W1) — cross-asset market scanner ──
@@ -833,71 +470,7 @@ function createServer(): McpServer {
     SCAN_TRADE_CALLS_DESCRIPTION,
     SCAN_TRADE_CALLS_SCHEMA,
     { title: 'Market Scanner', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning, oiChangeWindow, oiBasis, minLiquidityUsd }) => {
-      const startMs = Date.now();
-      try {
-        const license = getRequestLicense();
-        const scan = () => runScanTradeCall(
-          { topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning, oiChangeWindow, oiBasis, minLiquidityUsd },
-          license,
-        );
-        // OPS-HL-INTERACTIVE-PRIORITY-W1: a background-priority caller (today: the bot's
-        // weekly scan-showcase cron) runs its venue fan-out in the BATCH lane, so it waits
-        // for capacity instead of consuming HL's interactive reserve. That reserve exists
-        // for LIVE callers; a weekly cron is definitionally background. Measured driver:
-        // 161 of 171 HL interactive throws in a week came from one showcase minute.
-        // Caller tag is unchanged — the digest's i:/b: split already shows the lane.
-        const result = getRequestIsBackground()
-          ? await runAsBatch(scan, 'scan_trade_calls')
-          : await runAsCaller('scan_trade_calls', scan);
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: 'scan_trade_calls',
-          timeframe,
-          licenseTier: license.tier,
-          responseTimeMs: Date.now() - startMs,
-          ipHash: getRequestIpHash(),
-          isBotInternal: license.tier === 'internal',
-        });
-        const sessionIdForCohort = getRequestSessionId() ?? null;
-        if (sessionIdForCohort !== null) {
-          upsertAgentSession({
-            sessionId: sessionIdForCohort,
-            tool: 'scan_trade_calls',
-            tier: license.tier,
-            ipHash: getRequestIpHash() ?? null,
-            source: getRequestSource() ?? null,
-          }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));
-        }
-        // content[0] = the JSON envelope (with the shared `_receipts` block).
-        const content: { type: 'text'; text: string }[] = [
-          { type: 'text' as const, text: JSON.stringify(result, null, 2) },
-        ];
-        const scanRes = result as {
-          calls?: unknown[];
-          _receipts?: Parameters<typeof renderScanReceiptText>[0];
-        };
-        if (includeReasoning && Array.isArray(scanRes.calls)) {
-          // SCAN-DIGEST-MCP-PARITY-W1 CH1 — digest mode: content[1] = the enriched
-          // digest (header + renderScanDigestLine per actionable call), NO Proof
-          // footer (parity with OPS-SCANWATCH-ROCKET-NO-PROOF). The structured
-          // `_receipts` envelope still rides in content[0].
-          const digest = renderScanDigest(
-            scanRes.calls as Parameters<typeof renderScanDigest>[0],
-            { topN, timeframe, exchange, rankBy },
-          );
-          if (digest) content.push({ type: 'text' as const, text: digest });
-        } else {
-          // P0 VERDICT-WITH-RECEIPTS-W1: bare mode keeps the proof footer so a scan
-          // screenshot carries the proof beside the per-row verdicts (byte-identical).
-          const footer = scanRes._receipts ? renderScanReceiptText(scanRes._receipts) : '';
-          if (footer) content.push({ type: 'text' as const, text: footer });
-        }
-        return { content };
-      } catch (err: unknown) {
-        return toolErrorContent(err);
-      }
-    }
+    mcpHandler('scan_trade_calls'),
   );
 
   // ── Tool 4: search_knowledge ──
@@ -914,27 +487,7 @@ function createServer(): McpServer {
       limit: z.number().int().min(1).max(50).optional().describe('Max ranked results (1-50, default 10).'),
     },
     { title: 'Knowledge Search', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ query, limit }) => {
-      const startMs = Date.now();
-      try {
-        const license = getRequestLicense();
-        const { index, engine } = await getKnowledgeSearch();
-        const results = await runAsCaller('search_knowledge', () => engine.query(query, limit ?? 10));
-        const bundle = index.getBundle();
-        const response = formatSearchKnowledgeResponse(query, results, bundle, license);
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: 'search_knowledge',
-          licenseTier: license.tier,
-          responseTimeMs: Date.now() - startMs,
-          ipHash: getRequestIpHash(),
-          isBotInternal: license.tier === 'internal',
-        });
-        return { content: [{ type: 'text' as const, text: JSON.stringify(response, null, 2) }] };
-      } catch (err: unknown) {
-        return toolErrorContent(err);
-      }
-    }
+    mcpHandler('search_knowledge'),
   );
 
   // ── Tool 5: chat_knowledge ──
@@ -951,63 +504,7 @@ function createServer(): McpServer {
       model: z.enum(['claude-haiku-4-5-20251001', 'claude-sonnet-4-6']).optional().describe('Optional model override (default claude-haiku-4-5-20251001).'),
     },
     { title: 'Knowledge Q&A', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ question, model }) => {
-      const startMs = Date.now();
-      try {
-        const license = getRequestLicense();
-        const { index, chatEngine, rateLimit, llm } = await getChatStack();
-        const tier = chatTierFor(license.tier);
-        const quotaKey = chatQuotaApiKey(license.key, getRequestIpHash() ?? null);
-        const check = await rateLimit.check(quotaKey, tier);
-        if (!check.allowed) {
-          // CHAT-USAGE-ANALYTICS-W1: quota-exhausted recorded as event (errorCode, cost=0)
-          recordChatEvent({
-            apiKeyId: license.key,
-            apiKeyTier: tier,
-            surface: 'mcp_tool',
-            question,
-            answer: '',
-            citationsCount: 0,
-            model: model ?? 'claude-haiku-4-5-20251001',
-            provider: llm.name,
-            usage: { promptTokens: 0, completionTokens: 0 },
-            latencyMs: Date.now() - startMs,
-            errorCode: 'CHAT_QUOTA_EXHAUSTED',
-          });
-          const payload = buildChatQuotaNotice(tier, check);
-          return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
-        }
-        const result = await runAsCaller('chat_knowledge', () => chatEngine.chat(question, { model }));
-        // Record AFTER successful LLM call (rate-limit reflects actual usage)
-        await rateLimit.record(quotaKey, result.usage);
-        const bundle = index.getBundle();
-        const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1), license);
-        // CHAT-USAGE-ANALYTICS-W1: record success event AFTER response built (fire-and-forget)
-        recordChatEvent({
-          apiKeyId: license.key,
-          apiKeyTier: tier,
-          surface: 'mcp_tool',
-          question,
-          answer: result.answer,
-          citationsCount: result.citations.length,
-          model: result.model,
-          provider: llm.name,
-          usage: result.usage,
-          latencyMs: Date.now() - startMs,
-        });
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: 'chat_knowledge',
-          licenseTier: license.tier,
-          responseTimeMs: Date.now() - startMs,
-          ipHash: getRequestIpHash(),
-          isBotInternal: license.tier === 'internal',
-        });
-        return { content: [{ type: 'text' as const, text: JSON.stringify(response, null, 2) }] };
-      } catch (err: unknown) {
-        return toolErrorContent(err);
-      }
-    }
+    mcpHandler('chat_knowledge'),
   );
 
   // ── Tool 6: get_track_record (DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2) ──
@@ -1023,26 +520,7 @@ function createServer(): McpServer {
       include: z.array(z.enum(TRACK_RECORD_SECTIONS)).optional().describe(PARAM_DESC_TRACK_RECORD_INCLUDE),
     },
     { title: 'Track Record', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ include }) => {
-      const startMs = Date.now();
-      try {
-        const license = getRequestLicense();
-        const { payload, isError } = await runAsCaller('get_track_record', () => runGetTrackRecord({ include }));
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: 'get_track_record',
-          licenseTier: license.tier,
-          responseTimeMs: Date.now() - startMs,
-          ipHash: getRequestIpHash(),
-          isBotInternal: license.tier === 'internal',
-        });
-        return isError
-          ? { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }], isError: true as const }
-          : { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
-      } catch (err: unknown) {
-        return toolErrorContent(err);
-      }
-    }
+    mcpHandler('get_track_record'),
   );
 
   // FEATURE-REGISTRY-SOT-W1 CH2: registry-driven registration — register exactly the

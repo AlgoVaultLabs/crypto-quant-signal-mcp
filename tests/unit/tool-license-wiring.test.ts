@@ -62,7 +62,10 @@ function objectArgInvocations(src: string, fn: string): string[] {
 const GATED_CORE_FNS = ['getTradeSignal', 'getMarketRegime', 'scanFundingArb'] as const;
 
 // The files that dispatch a caller's request into those functions.
-const DISPATCH_FILES = ['src/index.ts', 'src/lib/x402-http-routes.ts'] as const;
+// ARCH-MCP-CALL-PIPELINE-W1 CH2: every channel dispatches through the ONE pipeline table; the
+// trade-call row reaches getTradeSignal through trade-call-router. (CH3 retires this scan against the
+// parity harness's license cases.)
+const DISPATCH_FILES = ['src/lib/tool-call-pipeline.ts', 'src/tools/trade-call-router.ts'] as const;
 
 describe('every tool dispatch forwards the caller license', () => {
   const sources = new Map<string, string>(

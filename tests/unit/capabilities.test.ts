@@ -61,6 +61,34 @@ describe('capabilities SoT — timeframe list', () => {
   });
 });
 
+describe('ONE perp default + ONE timeframe set across the public schemas (ARCH-MCP-CALL-PIPELINE-W1 CH2 R3)', () => {
+  // Q-PIPE-2 rows 1–2 (a): `DEFAULT_PERP_TIMEFRAME` (market-route.ts) is the only RUNTIME perp default —
+  // every channel's get_trade_call resolves through it. The Bazaar input schemas are PUBLIC bytes frozen
+  // by R-1, so they are not derived from it; they are pinned EQUAL to it here, and their enum to TIMEFRAMES.
+  it('the Bazaar get_trade_signal timeframe enum IS TIMEFRAMES and its default IS DEFAULT_PERP_TIMEFRAME', async () => {
+    const { BAZAAR_ROUTES } = await import('../../src/lib/x402-bazaar.js');
+    const { DEFAULT_PERP_TIMEFRAME } = await import('../../src/lib/market-route.js');
+    const tf = (BAZAAR_ROUTES.get_trade_signal.inputSchema as { properties: { timeframe: { enum: string[]; default: string } } }).properties.timeframe;
+    expect(tf.enum).toEqual([...TIMEFRAMES]);
+    expect(tf.default).toBe(DEFAULT_PERP_TIMEFRAME);
+    expect(DEFAULT_PERP_TIMEFRAME).toBe('15m');
+  });
+  it('the Bazaar scan_trade_calls timeframe enum IS TIMEFRAMES and its default IS SCAN_TIMEFRAME_DEFAULT (= the MCP zod default)', async () => {
+    const { BAZAAR_ROUTES } = await import('../../src/lib/x402-bazaar.js');
+    const { SCAN_TIMEFRAME_DEFAULT } = await import('../../src/lib/tool-param-schema.js');
+    const tf = (BAZAAR_ROUTES.scan_trade_calls.inputSchema as { properties: { timeframe: { enum: string[]; default: string } } }).properties.timeframe;
+    expect(tf.enum).toEqual([...TIMEFRAMES]);
+    expect(tf.default).toBe(SCAN_TIMEFRAME_DEFAULT);
+  });
+  it('the Bazaar get_market_regime timeframe enum IS REGIME_TIMEFRAMES and its default IS REGIME_TIMEFRAME_DEFAULT', async () => {
+    const { BAZAAR_ROUTES } = await import('../../src/lib/x402-bazaar.js');
+    const { REGIME_TIMEFRAMES, REGIME_TIMEFRAME_DEFAULT } = await import('../../src/lib/tool-param-schema.js');
+    const tf = (BAZAAR_ROUTES.get_market_regime.inputSchema as { properties: { timeframe: { enum: string[]; default: string } } }).properties.timeframe;
+    expect(tf.enum).toEqual([...REGIME_TIMEFRAMES]);
+    expect(tf.default).toBe(REGIME_TIMEFRAME_DEFAULT);
+  });
+});
+
 describe('capabilities SoT — floorRoundTo10', () => {
   it('rounds floor to nearest 10', () => {
     expect(floorRoundTo10(718)).toBe(710);

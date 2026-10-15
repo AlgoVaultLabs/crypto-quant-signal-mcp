@@ -167,7 +167,11 @@ beforeEach(async () => {
 
   // Mock the license module: resolveLicense returns the crafted settlement;
   // requestContext.run just invokes the fn (AsyncLocalStorage no-op for the test).
-  vi.doMock('../src/lib/license.js', () => ({
+  // ARCH-MCP-CALL-PIPELINE-W1 CH2: the route now dispatches through the pipeline, which reads the
+  // other request-context accessors too (session id, ip hash, background lane) — keep them REAL and
+  // override only the three seams this suite drives.
+  vi.doMock('../src/lib/license.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../src/lib/license.js')>()),
     resolveLicense: async () =>
       nextSettlement
         ? { license: { tier: 'x402', key: null }, pendingSettlement: nextSettlement }
@@ -611,15 +615,16 @@ describe('paid rail stamps a session id — the calls/sessions dimensions must a
  * side is driven through the REAL route.
  */
 describe('get_market_regime — the x402 twin logs the MCP handler\'s fields (single derivation)', () => {
-  const INDEX = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.ts'), 'utf8');
-  const mcpArm = INDEX.slice(INDEX.indexOf("toolName: 'get_market_regime'"), INDEX.indexOf('// ── Tools: get_equity_call'));
+  // ARCH-MCP-CALL-PIPELINE-W1 CH2: ONE formula for every channel — the pipeline's regime row.
+  const PIPELINE = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'tool-call-pipeline.ts'), 'utf8');
+  const mcpArm = PIPELINE.slice(PIPELINE.indexOf('  get_market_regime: {'), PIPELINE.indexOf('  scan_funding_arb: {'));
 
-  it('the MCP formula this parity is measured against is still the one in src/index.ts', () => {
-    expect(mcpArm).toContain('verdict: regimeSuccessVerdict(getRequestRegimeFundingDegraded()),');
+  it('the formula this parity is measured against is the pipeline regime row (one derivation, every channel)', () => {
+    expect(mcpArm).toContain('verdict: regimeSuccessVerdict(scope.regimeFundingDegraded),');
     expect(mcpArm).toContain("regime: (result as { regime?: string }).regime ?? null,");
     expect(mcpArm).toContain('verdict: regimeErrorVerdict(err),');
     expect(mcpArm).toContain('regime: null,');
-    expect(mcpArm.match(/^\s+exchange,$/gm)?.length).toBe(2);
+    expect(mcpArm.match(/^\s+exchange: input\.exchange as string,$/gm)?.length).toBe(2);
   });
 
   async function regimeRow(body: Record<string, unknown>) {

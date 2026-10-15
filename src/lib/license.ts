@@ -52,7 +52,7 @@ const FREE_FUNDING_LIMIT = 5;
 
 // ── Per-request context ──
 
-interface RequestContext {
+export interface RequestContext {
   license: LicenseInfo;
   sessionId?: string;
   ipHash?: string;
