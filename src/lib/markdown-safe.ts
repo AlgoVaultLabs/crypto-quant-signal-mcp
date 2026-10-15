@@ -114,6 +114,27 @@ export function chunkSections(sections: string[], limit = TELEGRAM_MAX_MESSAGE):
 }
 
 /**
+ * Make `text` safe to send as PLAIN text when Telegram rejected it for its CONTENT
+ * (OPS-DIGEST-DELIVERY-DURABLE-W1 CH1 — the one degraded resend in `telegram.ts`).
+ *
+ * The Bot API requires UTF-8 ("All queries must be made using UTF-8"), and a JS string
+ * can hold a LONE surrogate that has no UTF-8 encoding — a truncated emoji from a
+ * `.slice()`, or a client-supplied symbol rendered verbatim. Those become U+FFFD. C0
+ * control characters other than newline and tab carry nothing an operator can read and
+ * are removed. Everything else is left byte-identical, so a message that was already
+ * clean comes back unchanged.
+ *
+ * A regex rather than `String.prototype.toWellFormed`: tsconfig targets ES2022, which
+ * does not type it. The control-character class is written with `\u` escapes, never raw
+ * bytes — a raw NUL in a tracked file hides it from grep (check-source-greppable).
+ */
+export function scrubForPlainText(text: string): string {
+  return text
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '�')
+    .replace(/[\u0000-\u0008\u000B-\u001F]/g, '');
+}
+
+/**
  * Does `text` carry an UNCLOSED legacy-Markdown entity, i.e. will Telegram
  * reject it with `can't parse entities`?
  *

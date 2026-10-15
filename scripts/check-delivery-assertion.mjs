@@ -23,8 +23,12 @@
  *       BRANCHED ON — never discarded next to an unconditional success log.
  *   R2  No committed smoke/runbook line PRESCRIBES DRY_RUN_TG for a repeatable synthetic
  *       fire. Mentioning it to warn against it is fine; telling a reader to use it is not.
- *   R3  Every `sendDigest(...)` in a SCHEDULED producer (`src/scripts/*.ts`) declares a
- *       `label:` so a failed delivery escalates to the operator.
+ *   R3  Every `sendDigest(...)` in a SCHEDULED producer declares a `label:` so a failed
+ *       delivery escalates to the operator. The producer set is every tracked `.ts` under `src/scripts/` UNION
+ *       every repo-relative `scripts/*.mjs` that `ops/scripts/cron-interlock-registry.json`
+ *       lists as a `script` — ENUMERATED from the registry the live crontab is already
+ *       asserted against, never a glob over `scripts/` (a glob would scan this gate's own
+ *       fixture strings: 8 self-hits, measured).
  *
  * WHY R3 EXISTS (OPS-GEO-DIGEST-DELIVERY-W1, 2026-08-26): R1 proves the caller BRANCHES
  * on the result. It does not prove anyone is TOLD. The GEO weekly digest satisfied R1 in
@@ -33,6 +37,13 @@
  * branch was a log file nobody tails. Branching without escalating is a gap this gate
  * had, measured, not theorised. Opting out is `{ label: null }` — DATA, so a considered
  * decision is distinguishable from a forgotten field.
+ *
+ * WHY R3 READS THE INTERLOCK REGISTRY (OPS-DIGEST-DELIVERY-DURABLE-W1 CH1, 2026-10-15): R3
+ * was scoped to `src/scripts/*.ts`, so the one scheduled producer living in `scripts/` —
+ * `refresh-knowledge-pages.mjs`, which loads the transport from `dist/` — called
+ * `sendDigest(sections)` with no label and hand-rolled its own cause-less escalation, and
+ * this gate could not see it. The registry already enumerates every scheduled job with its
+ * `script`, so the scan set is DERIVED from it rather than maintained beside it.
  *
  * Usage:
  *   node scripts/check-delivery-assertion.mjs --self-test
@@ -214,12 +225,16 @@ const CLEAN_R1 = [
   '  await sendAlert("escalation", "warning");',
 ];
 const DIRTY_R3 = [
+  // The pre-OPS-DIGEST-DELIVERY-DURABLE-W1 refresh-knowledge-pages.mjs:140 call, verbatim.
+  '      const delivered = await sendDigest(sections);\n      if (delivered) {',
   // The live shape that went silent for six Mondays.
   '  if (await sendDigest(lines)) {\n    console.log("sent");\n  } else {\n    console.error("DIGEST SEND FAILED");\n  }',
   '  const ok = await sendDigest(digest.sections);',
   '  const ok = await sendDigest([\n    "a",\n    ...lines,\n  ]);',
 ];
 const CLEAN_R3 = [
+  // ...and its labelled twin.
+  "      const delivered = await sendDigest(sections, { label: 'refresh-knowledge-pages' });\n      if (delivered) {",
   "  if (await sendDigest(lines, { label: 'geo-weekly-cron' })) { console.log('sent'); }",
   "  const ok = await sendDigest(sections, { label: 'venue-readiness-report' });",
   '  const ok = await sendDigest([\n    "a",\n    ...lines,\n  ], { label: null });',
@@ -259,6 +274,32 @@ function selfTest() {
   return 'PASS';
 }
 
+/**
+ * Every repo-relative `scripts/*.mjs` the interlock registry lists as a `script`, filtered to
+ * tracked files. `null` = the registry could not be read or parsed — INDETERMINATE, never an
+ * empty set (input we were handed and could not parse is never a clean pass). An empty set
+ * from a READABLE registry is a fact and is reported with its size.
+ */
+export function registryProducerScripts(tracked) {
+  const reg = join(ROOT, 'ops', 'scripts', 'cron-interlock-registry.json');
+  let rows;
+  try {
+    rows = JSON.parse(readFileSync(reg, 'utf8')).rows;
+  } catch (err) {
+    console.error(`✖ could not read ${reg}: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+  if (!Array.isArray(rows)) {
+    console.error(`✖ ${reg} has no rows[] — refusing to guess the producer set`);
+    return null;
+  }
+  const trackedSet = new Set(tracked);
+  const out = [...new Set(rows.map((r) => r?.script).filter((s) => typeof s === 'string' && /^scripts\/[^/]+\.mjs$/.test(s)))]
+    .filter((s) => trackedSet.has(s));
+  console.log(`ℹ R3 scans ${out.length} registry-enumerated scripts/*.mjs producer(s): ${out.join(', ') || '(none)'}`);
+  return out;
+}
+
 function verdictAndExit(v) {
   console.log(`DELIVERY_ASSERTION_VERDICT=${v}`);
   process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 3);
@@ -280,7 +321,10 @@ try {
 const jsFiles = all.filter((f) => /^(src|scripts)\/.*\.(ts|mjs|js)$/.test(f) && !f.endsWith('.d.ts'));
 // R3 is scoped to SCHEDULED producers: an unattended cron is the only caller whose
 // silent failure nobody is present to see. src/lib holds the definition, not a send.
-const producerFiles = all.filter((f) => /^src\/scripts\/.*\.ts$/.test(f));
+// The scripts/ half is ENUMERATED from the interlock registry (see the header).
+const registryScripts = registryProducerScripts(all);
+if (registryScripts === null) verdictAndExit('INDETERMINATE');
+const producerFiles = [...all.filter((f) => /^src\/scripts\/.*\.ts$/.test(f)), ...registryScripts];
 const opsFiles = all.filter((f) => /^(ops|docs)\/.*\.(py|sh|md)$/.test(f));
 if (jsFiles.length === 0 || opsFiles.length === 0 || producerFiles.length === 0) {
   console.error(

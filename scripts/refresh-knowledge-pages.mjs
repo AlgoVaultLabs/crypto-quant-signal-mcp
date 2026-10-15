@@ -137,17 +137,17 @@ async function main() {
       // discard the result and log "digest sent" unconditionally — so the catch below was
       // unreachable and three consecutive weeks of HTTP 400 rendered as success. Assert
       // DELIVERY, not attempt.
-      const delivered = await sendDigest(sections);
+      //
+      // OPS-DIGEST-DELIVERY-DURABLE-W1 CH1: labelled like every other scheduled producer, so a
+      // failed delivery escalates through sendDigest's ONE escalation (cause included). The
+      // hand-rolled sendAlert that used to follow is deleted — two escalations for one
+      // failure was a second derivation of the same event, and it named no cause.
+      const delivered = await sendDigest(sections, { label: 'refresh-knowledge-pages' });
       if (delivered) {
         console.log(`[refresh-pages] digest sent · sections=${sections.length}`);
       } else {
-        console.error(`[refresh-pages] DIGEST SEND FAILED · sections=${sections.length} — see the [telegram] HTTP line above`);
+        console.error(`[refresh-pages] DIGEST SEND FAILED · sections=${sections.length} — see the [telegram] DELIVERY_FAILED line above`);
         process.exitCode = 1; // a load-bearing side-effect that did not happen must be visible to cron
-        if (typeof sendAlert === 'function') {
-          // Escalate through the plain-text-capable alert path; if THAT also fails there
-          // is nothing further we can do from in-container, and the non-zero exit stands.
-          await sendAlert('Knowledge-bundle weekly digest FAILED to deliver (Telegram rejected the message).', 'warning');
-        }
       }
     } catch (err) {
       console.error(`[refresh-pages] DIGEST SEND THREW: ${err.message}`);

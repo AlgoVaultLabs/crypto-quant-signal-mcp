@@ -102,11 +102,18 @@ export function classifyDeliveryFailure(input: DeliveryFailureInput): WebhookFai
  * the classifier can see it (the retry loop otherwise discards it). undici wraps
  * the underlying system error in `.cause`; our AbortController timeout surfaces
  * as `AbortError`. Pure — safe to call on anything.
+ *
+ * OPS-DIGEST-DELIVERY-DURABLE-W1 CH1 — `AbortSignal.timeout()` rejects with a DOMException
+ * named `TimeoutError`, not `AbortError`, and a DOMException carries the LEGACY numeric
+ * `.code` (23). Measured on the container's Node 24.18: without this branch the `.code`
+ * fallback below returned `'23'`, which classifies as `other` instead of `timeout`. It is
+ * checked BEFORE that fallback for exactly that reason. Webhook delivery aborts through an
+ * `AbortController` (`AbortError`), so every webhook input classifies identically.
  */
 export function extractErrorCode(err: unknown): string | undefined {
   if (err == null || typeof err !== 'object') return undefined;
   const e = err as { name?: string; code?: string; cause?: unknown };
-  if (e.name === 'AbortError') return 'ETIMEDOUT'; // our timeout abort
+  if (e.name === 'AbortError' || e.name === 'TimeoutError') return 'ETIMEDOUT'; // a timeout abort
   if (e.cause && typeof e.cause === 'object') {
     const c = e.cause as { code?: string; name?: string };
     if (c.code) return String(c.code);

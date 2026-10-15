@@ -578,7 +578,7 @@ async function main(): Promise<void> {
   if (await sendDigest(lines, { label: 'geo-weekly-cron' })) {
     console.log(`[geo-cron] digest sent · sections=${lines.length}`);
   } else {
-    console.error(`[geo-cron] DIGEST SEND FAILED · sections=${lines.length} — see the [telegram] HTTP line above`);
+    console.error(`[geo-cron] DIGEST SEND FAILED · sections=${lines.length} — see the [telegram] DELIVERY_FAILED line above`);
     process.exitCode = 1;
   }
 

@@ -90,6 +90,27 @@ describe('extractErrorCode', () => {
   it('reads a top-level err.code', () => {
     expect(extractErrorCode(Object.assign(new Error('x'), { code: 'EPIPE' }))).toBe('EPIPE');
   });
+  it('maps an AbortSignal.timeout() TimeoutError → ETIMEDOUT, NOT its legacy DOMException code 23 (OPS-DIGEST-DELIVERY-DURABLE-W1)', async () => {
+    const sig = AbortSignal.timeout(1);
+    await new Promise((r) => setTimeout(r, 25));
+    const reason = sig.reason as { name: string; code: number };
+    expect(reason.name).toBe('TimeoutError');
+    expect(reason.code).toBe(23); // the trap: without the name branch the `.code` fallback returned '23'
+    expect(extractErrorCode(reason)).toBe('ETIMEDOUT');
+    expect(classifyDeliveryFailure({ errorCode: extractErrorCode(reason) })).toBe('timeout');
+  });
+  it('every webhook-delivery input classifies IDENTICALLY (webhooks abort via AbortController → AbortError)', () => {
+    const abort = new Error('aborted'); abort.name = 'AbortError';
+    const cases: unknown[] = [
+      abort,
+      Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNRESET' } }),
+      Object.assign(new Error('fetch failed'), { cause: { name: 'AbortError' } }),
+      Object.assign(new Error('x'), { code: 'EPIPE' }),
+      new Error('plain'),
+    ];
+    expect(cases.map((c) => classifyDeliveryFailure({ errorCode: extractErrorCode(c) })))
+      .toEqual(['timeout', 'conn', 'timeout', 'conn', 'timeout']);
+  });
   it('returns undefined for a bare error / non-object', () => {
     expect(extractErrorCode(new Error('plain'))).toBeUndefined();
     expect(extractErrorCode('nope')).toBeUndefined();

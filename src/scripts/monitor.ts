@@ -7,6 +7,7 @@
 import os from 'node:os';
 import fs from 'node:fs';
 import { sendAlert, sendDigest } from '../lib/telegram.js';
+import { firePage, shouldAlert, type AlertState } from './monitor-page.js';
 import { formatAgentActivity } from '../lib/agent-activity-format.js';
 import { getPerformanceStatsAsync, getMerkleBatchSummary, dbQuery } from '../lib/performance-db.js';
 import { formatMerkleAnchoring } from '../lib/merkle-anchor-format.js';
@@ -67,7 +68,7 @@ const BASE_RPCS = [
   'https://1rpc.io/base',        // Automata
 ];
 const STATE_FILE = '/tmp/algovault-monitor-state.json';
-const DEDUP_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+// DEDUP_WINDOW_MS (30 min) lives in monitor-page.ts with shouldAlert/markAlerted — value unchanged.
 const FETCH_TIMEOUT = 5_000;
 /**
  * Per-attempt budget for the PFE probe. **DO NOT RAISE THIS TO FIX A PAGE.**
@@ -168,15 +169,7 @@ async function fetchJson(
 //             no "exchange recovered" follow-up alert (per operator
 //             explicit request: don't spam recovery notices).
 
-interface AlertState {
-  lastAlerted: Record<string, number>;
-  // Number of consecutive cron cycles each check has failed. Resets to
-  // 0 the moment the check passes again. Persists across cron runs in
-  // STATE_FILE; resets to {} on container restart (deploy) — that's
-  // intentional, prevents stale pre-deploy counters from firing
-  // spurious post-deploy alerts.
-  consecutiveFails: Record<string, number>;
-}
+// AlertState is declared in monitor-page.ts (OPS-DIGEST-DELIVERY-DURABLE-W1 CH1).
 
 // Per-check threshold: how many consecutive cron-cycle failures before
 // an alert is allowed to fire. Cron runs every 2 min, so threshold N
@@ -250,15 +243,6 @@ function saveState(state: AlertState): void {
     if (v === 0) delete state.consecutiveFails[k];
   }
   fs.writeFileSync(STATE_FILE, JSON.stringify(state));
-}
-
-function shouldAlert(state: AlertState, key: string): boolean {
-  const last = state.lastAlerted[key] ?? 0;
-  return Date.now() - last > DEDUP_WINDOW_MS;
-}
-
-function markAlerted(state: AlertState, key: string): void {
-  state.lastAlerted[key] = Date.now();
 }
 
 // ── Critical Checks ──
@@ -664,12 +648,15 @@ async function runCritical(): Promise<void> {
         const msg = consecutive === threshold
           ? error
           : `${error} (sustained ≥${sustainedMin}min, ${consecutive} consecutive cycles)`;
-        await sendAlert(msg, level);
-        markAlerted(state, key);
-        alertCount++;
-        console.log(
-          `[monitor] ALERT (${level}, consecutive=${consecutive}): ${error}`,
-        );
+        // OPS-DIGEST-DELIVERY-DURABLE-W1 CH1: marked ONLY when delivered. An undelivered
+        // page logs PAGE_UNDELIVERED, leaves the counter as set above, and re-fires on the
+        // next 2-minute tick instead of sleeping out a 30-minute dedup window.
+        if (await firePage({ state, key, msg, level })) {
+          alertCount++;
+          console.log(
+            `[monitor] ALERT (${level}, consecutive=${consecutive}): ${error}`,
+          );
+        }
       } else {
         // Threshold met but inside the 30-min dedup window — log only.
         suppressedCount++;
@@ -797,7 +784,7 @@ async function runDigest(): Promise<void> {
   if (await sendDigest(sections, { label: 'monitor-daily-digest' })) {
     console.log('[monitor] digest sent');
   } else {
-    console.error('[monitor] DIGEST SEND FAILED — see the [telegram] HTTP line above');
+    console.error('[monitor] DIGEST SEND FAILED — see the [telegram] DELIVERY_FAILED line above');
     process.exitCode = 1;
   }
 }
