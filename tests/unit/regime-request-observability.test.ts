@@ -155,12 +155,10 @@ describe('THE ERROR ARM — the assertion the whole wave rests on', () => {
     expect(pipelineSrc).toContain('return toolErrorContent(o.error);');
   });
 
-  it('populates verdict AND regime on the success arm', () => {
-    const successSlice = block.slice(0, block.indexOf('logError: (input, err) => ({'));
-    expect(successSlice).toContain('verdict: regimeSuccessVerdict(');
-    expect(successSlice).toContain('regime:');
-    expect(successSlice).toContain('exchange: input.exchange as string');
-  });
+  // ARCH-MCP-CALL-PIPELINE-W1 CH3 (R-5): the success-arm source scan (`verdict:` / `regime:` / `exchange:` present in
+  // the row's logSuccess) is retired — tests/unit/tool-call-parity.test.ts pins all three columns of the recorded
+  // get_market_regime request_log row on the x402 channel; dropping `regime:` or `exchange:` from the projection
+  // reddens it (measured). The error arm and the degraded-flag reader above have no behavioural replacement and stay.
 });
 
 describe('logRequest precedence — get_trade_call rows must stay byte-identical', () => {

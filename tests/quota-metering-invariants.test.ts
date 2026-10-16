@@ -55,7 +55,6 @@ import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { getUniverseEntry, getLatestVerdict, type PublicVerdictRow } from '../src/lib/equities/equity-store.js';
 import { scanTradeCalls, type ScanTradeCallsResult, type ScanCallItem } from '../src/lib/trade-call-scanner.js';
 import { checkQuota, resetLicenseCache } from '../src/lib/license.js';
-import { readFileSync } from 'node:fs';
 import type { ExchangeAdapter, Candle, AssetContext, LicenseInfo } from '../src/types.js';
 
 // ── fixtures (mirror tests/get-trade-signal.test.ts) ──
@@ -170,11 +169,10 @@ describe('crypto singles — trackCall once per billable result', () => {
     expect(usedFor(lic)).toBe(1);
   });
 
-  it('get_trade_signal alias routes through the SAME mcpHandler (the pipeline) as get_trade_call', () => {
-    const src = readFileSync('src/index.ts', 'utf8');
-    expect(src).toMatch(/mcpHandler\('get_trade_call'\)/);
-    expect(src).toMatch(/mcpHandler\('get_trade_signal'\)/);
-  });
+  // ARCH-MCP-CALL-PIPELINE-W1 CH3 (R-5): the source scan that stood here — `mcpHandler('get_trade_signal')` present in
+  // src/index.ts — is retired. The property (the alias dispatches through the ONE pipeline, never a bespoke engine
+  // call) is held by scripts/check-tool-dispatch-boundary.mjs (a direct engine call in index.ts → FAIL, measured) and
+  // by tests/unit/tool-call-parity.test.ts (get_trade_signal/bare-coin recorded on every channel).
 });
 
 // ── equity tools — get_equity_call HOLD-free (Q2=B); get_equity_regime per-call ──

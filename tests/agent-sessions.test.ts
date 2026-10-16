@@ -154,18 +154,11 @@ describe('upsertAgentSession', () => {
     );
     expect(Number(after[0].c)).toBe(2);
 
-    // The stdio-skip guard lives at the call sites in src/index.ts:
-    // `if (sessionIdForCohort !== null) { upsertAgentSession({...}) }`.
-    // Verify the guard exists in source (not a runtime DB check, but a
-    // structural check that the call sites enforce it).
-    // ARCH-MCP-CALL-PIPELINE-W1 CH2: the per-handler stdio guards (`sessionIdForCohort !== null`)
-    // collapsed into the ONE guard in the pipeline's record stage — a cohort row needs a session id
-    // AND a channel whose policy records sessions (mcp) AND a tool row flagged `cohort` (4 tools).
-    const pipelineSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'src', 'lib', 'tool-call-pipeline.ts'),
-      'utf8'
-    );
-    expect(pipelineSrc).toContain('if (policy.agentSession && row.cohort && ran.outcome.ok && ran.sessionId) {');
-    expect((pipelineSrc.match(/cohort: true,/g) ?? []).length).toBe(4);
+    // ARCH-MCP-CALL-PIPELINE-W1 CH3 (R-5): the pipeline source scan that stood here (the record-stage guard string +
+    // a count of `cohort: true,` rows) is retired. The property — a cohort row needs a session id AND a channel whose
+    // policy records sessions AND a tool row flagged `cohort` — is pinned behaviourally by
+    // tests/unit/tool-call-parity.test.ts: the fixture records agent_session_call_count_delta per tool × channel
+    // (1 for the four cohort tools on MCP, 0 on every paid rail and for the equity tools); `cohort: false` on the
+    // regime row reddens it (measured).
   });
 });

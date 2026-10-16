@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "_comment": [
+    "ARCH-MCP-CALL-PIPELINE-W1 CH3 — the tool-dispatch boundary, read by scripts/check-tool-dispatch-boundary.mjs.",
+    "Every tool call on every channel (MCP, x402 HTTP, okx.ai A2MCP, ACP) dispatches through `pipeline`. No other src/ file may",
+    "call an engine entry point (`engines`) or write a tool-call request_log row (`request_log` with a registered tool name,",
+    "names read from `registry`) unless it has a row in `allow` with a reason of at least 25 characters.",
+    "An unregistered call site FAILS the gate. An `allow` row that matches no call site ALSO fails it (stale exemption).",
+    "An engine module may call itself; the pipeline may call anything. Rows are keyed on file + symbol, never on a line number.",
+    "Seeded from the CH1 endpoint-truth audit §P3 (every engine call site outside its own module). Adding a row is a",
+    "decision that this call is NOT a caller-facing dispatch — write the reason as the evidence, not the intent."
+  ],
+  "verdict_token": "TOOL_DISPATCH_BOUNDARY",
+  "exit_codes": { "PASS": 0, "FAIL": 1, "INDETERMINATE": 3 },
+  "pipeline": "src/lib/tool-call-pipeline.ts",
+  "registry": "src/lib/feature-registry.ts",
+  "engines": [
+    { "symbol": "routeTradeCall", "module": "src/tools/trade-call-router.ts" },
+    { "symbol": "getTradeSignal", "module": "src/tools/get-trade-call.ts" },
+    { "symbol": "getMarketRegime", "module": "src/tools/get-market-regime.ts" },
+    { "symbol": "scanFundingArb", "module": "src/tools/scan-funding-arb.ts" },
+    { "symbol": "runScanTradeCall", "module": "src/tools/scan-trade-calls.ts" },
+    { "symbol": "getEquityCall", "module": "src/lib/equities/equity-tool-formatters.ts" },
+    { "symbol": "getEquityRegime", "module": "src/lib/equities/equity-tool-formatters.ts" },
+    { "symbol": "runGetTrackRecord", "module": "src/tools/get-track-record.ts" },
+    { "symbol": "getKnowledgeSearch", "module": "src/tools/knowledge-tools.ts" },
+    { "symbol": "getChatStack", "module": "src/tools/knowledge-tools.ts" }
+  ],
+  "request_log": { "symbol": "logRequest", "module": "src/lib/analytics.ts" },
+  "allow": [
+    {
+      "file": "src/tools/trade-call-router.ts",
+      "symbol": "getTradeSignal",
+      "reason": "The router IS the trade-call dispatch: the pipeline's get_trade_call / get_trade_signal / get_equity_call rows call routeTradeCall, which resolves assetClass and DEFAULT_PERP_TIMEFRAME once and then dispatches to the perp engine (P3)."
+    },
+    {
+      "file": "src/tools/trade-call-router.ts",
+      "symbol": "getEquityCall",
+      "reason": "The equity leg of the same router: a bare equity ticker or assetClass 'equity' reaches getEquityCall only through routeTradeCall, which the pipeline alone calls (P3)."
+    },
+    {
+      "file": "src/lib/cross-asset-grid.ts",
+      "symbol": "getTradeSignal",
+      "reason": "Grid refresh scorer: internal:true, no caller, no license, no request_log row; feeds the HOLD-capture grid and the dashboard, never a channel response (P3 internal reuse)."
+    },
+    {
+      "file": "src/lib/trade-call-scanner.ts",
+      "symbol": "getTradeSignal",
+      "reason": "scan_trade_calls cell scorer: internal:true per cell inside the ONE scan dispatch; the scan itself reaches the engine through the pipeline's scan_trade_calls row (P3 internal reuse)."
+    },
+    {
+      "file": "src/scripts/seed-signals.ts",
+      "symbol": "getTradeSignal",
+      "reason": "Seeder CLI (shadow-signal cron), not a channel: runs as its own process with its own caller tag and writes the signals table, not request_log (P3 internal reuse)."
+    },
+    {
+      "file": "src/index.ts",
+      "symbol": "getKnowledgeSearch",
+      "reason": "Public website /api/search route — a web-UI endpoint, not a tool channel. The search_knowledge MCP tool dispatches through the pipeline's row; the site shares the engine so both search the same bundle."
+    },
+    {
+      "file": "src/index.ts",
+      "symbol": "getChatStack",
+      "reason": "Public website /api/chat route — web UI with the license resolved from the REQUEST (tests/unit/chat-rate-limit.test.ts), not a tool channel. The chat_knowledge MCP tool dispatches through the pipeline's row."
+    }
+  ]
+}

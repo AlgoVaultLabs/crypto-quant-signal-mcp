@@ -60,13 +60,14 @@ these disagree, and a gate that reports line numbers cannot use an offset-losing
 `scripts/check-secret-log-redaction.mjs:57` and `scripts/check-webhook-idempotency.mjs:58` already
 name `OPS-SHARED-STRIPCOMMENTS-EXTRACTION` in comments — proposed, never shipped, until now.
 
-## `tests/` — 9 test-local copies
+## `tests/` — 8 test-local copies
 
 `tests/plans.test.ts` · `tests/unit/capped-collection-guard.test.ts` ·
 `tests/unit/design_w11_consistency.test.mjs` · `tests/unit/geo-rates.test.ts` ·
 `tests/unit/no-free-hold-promise.test.ts` · `tests/unit/payment-rail-topology.test.ts` ·
-`tests/unit/referral-existence-guard.test.ts` · `tests/unit/served-region-check.test.ts` ·
-`tests/unit/tool-license-wiring.test.ts`
+`tests/unit/referral-existence-guard.test.ts` · `tests/unit/served-region-check.test.ts`
+
+_(Was 9: `tests/unit/tool-license-wiring.test.ts` retired 2026-10-16 by ARCH-MCP-CALL-PIPELINE-W1 CH3 — its property, every dispatch forwards the caller license, is now proven behaviourally by `tests/unit/tool-call-parity.test.ts`; see that wave's audit §CH3 R4.)_
 
 ## Shell-side — a correction worth keeping
 
