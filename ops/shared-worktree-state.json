@@ -18,7 +18,8 @@
         "scripts/install_session_drift_hook.sh",
         "scripts/install_shared_state_hook.sh",
         "scripts/install_source_greppable_hook.sh",
-        "scripts/install_test_gate_hook.sh"
+        "scripts/install_test_gate_hook.sh",
+        "scripts/install_tool_dispatch_hook.sh"
       ],
       "consumers_derived_from": "git worktree list --porcelain | awk '/^worktree /{print $2}'",
       "invariant": "Exactly one pre-push hook governs EVERY checkout. It is composable (append/replace by block name, never truncate a sibling) and block order is canonical, so the file is a function of which blocks are installed and not of installer sequence.",
@@ -322,6 +323,36 @@
       "sha256": null,
       "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
       "notes": "Flags exports the branch ADDS whose src/ reference count is 1 (declaration only) \u2014 the 'built, tested, never wired' class that shipped hoursUntilUtcDayReset dark for 1.5 days. Deliberately a DELTA, not a census: whole-repo was measured and rejected (1,812 exports / 971 dark, largest bucket is CLAUDE.md's own mandated test-importable-seam pattern). Numbers: audits/PRICING-FOLLOWUPS-GENERATOR-W1-dark-export-census.md.",
+      "serialization": {
+        "mechanism": "none-single-writer",
+        "key": null,
+        "scope": "the one installer named in writers[], run by hand from a checkout",
+        "_scope_reason": "A hook-block row is written only by its own installer. The FILE those installers share is hook-pre-push, and the contention lives on that row, not on this one."
+      }
+    },
+    {
+      "id": "block-tool-dispatch-boundary",
+      "path": "$GIT_COMMON_DIR/hooks/pre-push",
+      "kind": "hook-block",
+      "hook": "pre-push",
+      "block_name": "tool-dispatch-boundary",
+      "script": "scripts/check-tool-dispatch-boundary.mjs",
+      "writers": [
+        "scripts/install_tool_dispatch_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-push"
+      ],
+      "invariant": "The script must be reachable from the resolved remote default ref before the block may be installed (UNPUBLISHED_DEP). A worktree lacking it skips loudly with a ledger row rather than blocking the push.",
+      "severity": "block",
+      "_severity_reason": "Blocks from day one: the property it holds (every channel dispatches through src/lib/tool-call-pipeline.ts) was a prose rule at build-and-runtime.md:75 that failed three times; the allowlist in ops/tool-dispatch-boundary.json is the escape hatch, with a reason per row, and the gate FAILS on a stale row so the hatch cannot silently widen.",
+      "backstopped_by": [
+        "package.json:prepublishOnly",
+        "tests/unit/tool-dispatch-boundary.test.ts"
+      ],
+      "sha256": null,
+      "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
+      "notes": "ARCH-MCP-CALL-PIPELINE-W1 CH3. Judges the whole src/ working tree with the TypeScript AST: a call of a tool-engine entry point, or a logRequest with a registered tool name, in any file other than the pipeline is a violation unless ops/tool-dispatch-boundary.json carries a reasoned row for that file+symbol. Verdict TOOL_DISPATCH_BOUNDARY=PASS|FAIL|INDETERMINATE, exit 0/1/3; INDETERMINATE on an empty or unparseable corpus, a missing engine module, a registry yielding no tool names, or a pipeline that dispatches to nothing.",
       "serialization": {
         "mechanism": "none-single-writer",
         "key": null,

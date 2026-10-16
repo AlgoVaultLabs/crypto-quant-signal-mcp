@@ -56,9 +56,20 @@ describe('tool-dispatch boundary gate — wired, registered, and able to fail', 
     expect(inst).toContain('tool-dispatch:check || exit 1');
   });
 
-  // The shared-state registry row (block-tool-dispatch-boundary) and its assertion land in the SECOND commit of CH3:
-  // the reconciler refuses a hook-block row whose script is on no remote ref yet (UNPUBLISHED_DEP), so the script
-  // must reach origin/main first. Measured 2026-10-16 03:05Z: LAND_VERDICT=GATE_BLOCKED on SHARED_STATE_VERDICT=FAIL.
+  it('the shared-state registry carries the block row and names the installer as a pre-push writer', () => {
+    const reg = JSON.parse(read('ops/shared-worktree-state.json')) as { resources: Array<Record<string, unknown>> };
+    const row = reg.resources.find((r) => r.id === 'block-tool-dispatch-boundary');
+    expect(row).toMatchObject({
+      kind: 'hook-block',
+      hook: 'pre-push',
+      block_name: 'tool-dispatch-boundary',
+      script: GATE,
+      writers: ['scripts/install_tool_dispatch_hook.sh'],
+      severity: 'block',
+    });
+    const hook = reg.resources.find((r) => r.id === 'hook-pre-push') as { writers: string[] };
+    expect(hook.writers).toContain('scripts/install_tool_dispatch_hook.sh');
+  });
 
   it('the config is evidence, not intent — real files, real reasons, the real pipeline and registry', () => {
     expect(existsSync(resolve(ROOT, cfg.pipeline)), cfg.pipeline).toBe(true);
