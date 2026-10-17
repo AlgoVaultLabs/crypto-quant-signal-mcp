@@ -434,6 +434,7 @@ describe('scripts/worktree-reclaim.sh — the one entry point', () => {
       expect(typeof j.free_gib).toBe('number');
       expect(j.installed_sha).toBe('uninstalled');
       expect(j.installed_matches_origin_main).toBeNull();
+      expect(j.origin_main_compared).toBe(git(prim, ['rev-parse', 'origin/main'], s.env).trim());
       expect(j.worktreecreate_handlers).toBe(0);
       expect(j.double_registration).toBe(false);
       expect(existsSync(join(s.artifacts, 'reclaim.last-completed'))).toBe(true);
@@ -808,6 +809,7 @@ describe('scripts/install-worktree-hook.sh — pinned install and registrations'
     expect(j.installed_sha).toBe(sha1);
     expect(j.installed_matches_origin_main).toBe(false);
     expect(j.installed_drift_files).toEqual(['scripts/cc-session.sh']);
+    expect(j.origin_main_compared).toBe(sha1);
   }, 120_000);
 });
 

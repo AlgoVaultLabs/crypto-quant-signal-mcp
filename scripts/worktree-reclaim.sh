@@ -110,13 +110,19 @@ installed_sha() {
 }
 # Per-file BLOB compare against the sweep cwd's origin/main. Prints "true", "false:<files>",
 # or "null:<why>". Never fetches: this runs unattended, and a background fetch would contend
-# with whatever the operator is doing in that checkout. The ref it compared is recorded.
+# with whatever the operator is doing in that checkout. The ref it compared is recorded:
+# resolve_origin_main sets ORIGIN_MAIN_SHA in THIS shell, because installed_matches is read
+# through $(...) and an assignment made in there never reaches the record.
 ORIGIN_MAIN_SHA=""
+resolve_origin_main() {
+  ORIGIN_MAIN_SHA=""
+  [ -n "$SWEEP_CWD" ] && ORIGIN_MAIN_SHA="$(git -C "$SWEEP_CWD" rev-parse --verify --quiet origin/main 2>/dev/null)"
+  return 0
+}
 installed_matches() {
   local rel blob local_blob drift="" n=0
   [ -r "$INSTALL_ROOT/.manifest" ] || { printf 'null:no-manifest'; return; }
   [ -n "$SWEEP_CWD" ] || { printf 'null:no-sweep-cwd'; return; }
-  ORIGIN_MAIN_SHA="$(git -C "$SWEEP_CWD" rev-parse --verify --quiet origin/main 2>/dev/null)"
   [ -n "$ORIGIN_MAIN_SHA" ] || { printf 'null:no-origin-main'; return; }
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
@@ -177,6 +183,7 @@ record() {
     [ -n "$SWEEP_CWD" ] && log "double-registration detector could not parse: ${WTC_SOURCES:-none}"
   fi
   [ -n "$FREE_GIB" ] || FREE_GIB="$(free_gib)"
+  resolve_origin_main
   im="$(installed_matches)"
   case "$im" in
     true)     im_json=true;  drift_json='[]' ;;
