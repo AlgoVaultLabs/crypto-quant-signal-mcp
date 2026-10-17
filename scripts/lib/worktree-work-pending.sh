@@ -160,7 +160,7 @@ expiry_active() {
 
 # ── config ──────────────────────────────────────────────────────────────────
 
-CFG_PATTERNS=""   # one "match<TAB>pattern<TAB>reason" line per row
+CFG_PATTERNS=""   # one "match<TAB>pattern<TAB>content_lines_match<TAB>reason" line per row
 
 validate_config() {
   local f="$1" bad
@@ -189,30 +189,83 @@ validate_config() {
     echo "invalid classification row(s): $bad (each row needs a non-empty pattern + reason, match in basename|relpath|glob, class B)"
     return 1
   fi
+  # OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2 R4 — a DECLARED content condition. A row may carry
+  # `content_lines_match`, an ERE that EVERY line of the file must match before the path is
+  # Class B. It exists for `.env.local`: the WorktreeCreate hook writes `PORT=<n>` into every
+  # new worktree, which is regenerable, but a human may put a real secret in the same file,
+  # which is not. So the NAME alone can never make it noise; the content decides, and the
+  # condition lives here as data rather than as a hard-coded name in a consumer.
+  # Validated, because a regex that does not compile would silently classify nothing — and
+  # "matches nothing" is the fail-safe direction only by accident, not by contract.
+  bad=$(jq -r '
+    [ (.rows // []) | to_entries[]
+      | select(.value | has("content_lines_match"))
+      | select(
+          ((.value.content_lines_match) | type != "string" or length == 0)
+          or ((.value.match // "") | IN("basename","relpath") | not)
+        )
+      | "row[\(.key)]" ] | join(",")' "$f" 2>/dev/null)
+  if [ -n "${bad:-}" ]; then
+    echo "invalid content condition(s): $bad (content_lines_match must be a non-empty ERE on a basename|relpath row — a content test names ONE file, never a glob)"
+    return 1
+  fi
+  local re rc
+  while IFS= read -r re; do
+    [ -n "$re" ] || continue
+    # grep exits 2 on a malformed expression, 1 on no match. Empty input, so 0 is impossible.
+    printf '' | grep -E -- "$re" >/dev/null 2>&1; rc=$?
+    if [ "$rc" -eq 2 ]; then
+      echo "invalid content condition: '$re' is not a valid extended regular expression"
+      return 1
+    fi
+  done <<EOF
+$(jq -r '(.rows // [])[] | select(has("content_lines_match")) | .content_lines_match' "$f" 2>/dev/null)
+EOF
   return 0
 }
 
 load_config() {
-  CFG_PATTERNS="$(jq -r '(.rows // [])[] | "\(.match)\t\(.pattern)\t\(.reason)"' "$CONFIG" 2>/dev/null)"
+  CFG_PATTERNS="$(jq -r '(.rows // [])[] | "\(.match)\t\(.pattern)\t\(.content_lines_match // "")\t\(.reason)"' "$CONFIG" 2>/dev/null)"
   [ -n "$CFG_PATTERNS" ] || return 1
   return 0
 }
 
-# classify_path <relpath> -> prints "B<TAB>reason" or "A"
+# content_lines_hold <file> <ERE> -> 0 iff <file> is a REGULAR file (never a symlink, which
+# would make the test read somewhere else) and every line of it matches <ERE>. An empty file
+# holds vacuously: it carries nothing to lose.
+content_lines_hold() {
+  local f="$1" re="$2"
+  [ -f "$f" ] && [ ! -L "$f" ] || return 1
+  if grep -Ev -- "$re" "$f" >/dev/null 2>&1; then return 1; fi
+  return 0
+}
+
+# classify_path <relpath> [<worktree>] -> prints "B<TAB>reason" or "A"
+#
+# <worktree> is needed only by rows carrying a content condition. Without it such a row can
+# never match, so the path falls through to Class A — the fail-safe direction.
 classify_path() {
-  local p="$1" bn line m pat reason
+  local p="$1" wt="${2:-}" bn line rest m pat cre reason
   bn="${p##*/}"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    m="${line%%	*}"
-    reason="${line##*	}"
-    pat="${line#*	}"; pat="${pat%%	*}"
+    # Parameter expansion, not `IFS=$'\t' read`: tab is IFS WHITESPACE, so read would
+    # collapse the empty content field and shift the reason into it.
+    m="${line%%	*}";   rest="${line#*	}"
+    pat="${rest%%	*}"; rest="${rest#*	}"
+    cre="${rest%%	*}"; reason="${rest#*	}"
     case "$m" in
-      basename) [ "$bn" = "$pat" ] && { printf 'B\t%s\n' "$reason"; return 0; } ;;
-      relpath)  [ "$p"  = "$pat" ] && { printf 'B\t%s\n' "$reason"; return 0; } ;;
+      basename) [ "$bn" = "$pat" ] || continue ;;
+      relpath)  [ "$p"  = "$pat" ] || continue ;;
       # shellcheck disable=SC2254 — the pattern IS the glob; quoting it would defeat the row.
-      glob)     case "$p" in $pat) printf 'B\t%s\n' "$reason"; return 0 ;; esac ;;
+      glob)     case "$p" in $pat) : ;; *) continue ;; esac ;;
+      *)        continue ;;
     esac
+    if [ -n "$cre" ]; then
+      [ -n "$wt" ] && content_lines_hold "$wt/$p" "$cre" || continue
+    fi
+    printf 'B\t%s\n' "$reason"
+    return 0
   done <<EOF
 $CFG_PATTERNS
 EOF
@@ -306,7 +359,7 @@ scan_ignored_class_a() {
     case "$line" in '!! '*) p="${line#!! }" ;; *) continue ;; esac
     p="${p%/}"
     [ -n "$p" ] || continue
-    cls="$(classify_path "$p")"
+    cls="$(classify_path "$p" "$wt")"
     [ "${cls%%	*}" = "B" ] && continue
     GITIGNORED_A="$GITIGNORED_A$repo	$wt	$p	ignored_only
 "
@@ -383,7 +436,7 @@ census_worktree() {
     p="${entry:3}"
     case "$xy" in R*|C*|*R|*C) expect_orig=1 ;; esac
     [ -n "$p" ] || continue
-    cls="$(classify_path "$p")"
+    cls="$(classify_path "$p" "$wt")"
     if [ "${cls%%	*}" = "B" ]; then
       reason="${cls#*	}"
       PATHS_B="$PATHS_B$repo	$wt	$p	$reason
@@ -461,6 +514,75 @@ $repos
 EOF
 }
 
+# ── --worktree <path> — ONE worktree, the same classifier (OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2 R3)
+#
+# `cc-session.sh clean` asks "is there work here?" about ONE candidate at a time, in whichever
+# primary it is sweeping — 33 are discovered on this machine. The census above answers for the
+# 3 DECLARED repos only, and that population is deliberately fixed: it is the SessionEnd
+# promotion instrument's denominator. So this mode does NOT widen `repos`; it asks the same
+# question through the same census_worktree + classify_path + scan_ignored_class_a, for exactly
+# the path it is given, wherever its primary lives.
+#
+# Output, then exactly ONE verdict line:
+#   <the --all TSV row: path repo branch work_pending protected_by class_a_count oldest_age>
+#   class_a<TAB><relpath>                      one per Class-A path (tracked or untracked)
+#   class_b<TAB><relpath><TAB><reason>         one per Class-B path in the status corpus
+#   ignored_a<TAB><relpath>                    one per GITIGNORED path that classifies A
+#   WORK_PENDING_VERDICT=CLEAN|PENDING|INDETERMINATE
+#
+# The ignored scan runs EAGERLY here, unlike --all: it is the leg that keeps `git worktree
+# remove` from deleting local-only payload (AOE's `data/` — measured 1.3 GiB in a worktree held
+# by nothing but Finder recency), and one worktree costs well under a second.
+# ignored_a is reported, never folded into work_pending — same reason as scan_ignored_class_a's
+# header: an ignored path is a declared artifact, not somebody's unsaved work. The CONSUMER
+# decides what it protects; this mode only classifies.
+run_worktree() {
+  local wt="$1" gcd repo branch row ln
+  command -v jq  >/dev/null 2>&1 || indeterminate "jq is not on PATH"
+  command -v git >/dev/null 2>&1 || indeterminate "git is not on PATH"
+  local problem
+  problem="$(validate_config "$CONFIG")" || indeterminate "config schema: ${problem:-unspecified}"
+  load_config || indeterminate "config declares no usable classification rows"
+  load_exemptions
+  [ -d "$wt" ] || indeterminate "not a directory: $wt"
+  git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || indeterminate "not a git worktree: $wt"
+  gcd="$(git -C "$wt" rev-parse --git-common-dir 2>/dev/null)"
+  case "$gcd" in /*) ;; *) gcd="$wt/$gcd" ;; esac
+  repo="$(cd "$gcd/.." 2>/dev/null && pwd)" || indeterminate "cannot resolve the primary of: $wt"
+  branch="$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached)')"
+  collect_locked "$repo"
+  census_worktree "$repo" "$wt" "$branch"
+  scan_ignored_class_a "$repo" "$wt"
+
+  row="$(printf '%s' "$ROWS" | awk -F'\t' 'NF>=7' | head -1)"
+  [ -n "$row" ] || indeterminate "census produced no row for: $wt"
+  printf '%s\n' "$row"
+  while IFS= read -r ln; do
+    [ -n "$ln" ] || continue
+    printf 'class_a\t%s\n' "$(printf '%s' "$ln" | cut -f3)"
+  done <<EOF
+$PATHS_A
+EOF
+  while IFS= read -r ln; do
+    [ -n "$ln" ] || continue
+    printf 'class_b\t%s\n' "$(printf '%s' "$ln" | cut -f3-4)"
+  done <<EOF
+$PATHS_B
+EOF
+  while IFS= read -r ln; do
+    [ -n "$ln" ] || continue
+    case "$ln" in *"	ignored_only") printf 'ignored_a\t%s\n' "$(printf '%s' "$ln" | cut -f3)" ;; esac
+  done <<EOF
+$GITIGNORED_A
+EOF
+  local verdict code
+  verdict="$(fold_verdict "$(printf '%s\n' "$row" | cut -f4)")"
+  code="$(verdict_to_code "$verdict")"
+  emit_verdict "$verdict"
+  exit "$code"
+}
+
 field_index() {
   case "$1" in
     path) echo 1 ;; repo) echo 2 ;; branch) echo 3 ;; work_pending) echo 4 ;;
@@ -472,6 +594,7 @@ field_index() {
 usage() {
   cat <<'USAGE'
 usage: worktree-work-pending.sh --all [--field <name>] [--paths class_a|class_b]
+       worktree-work-pending.sh --worktree <path>
        worktree-work-pending.sh --validate-config
        worktree-work-pending.sh --self-test
 
@@ -481,16 +604,20 @@ usage: worktree-work-pending.sh --all [--field <name>] [--paths class_a|class_b]
   --paths class_a     repo<TAB>worktree<TAB>path   (the ops/worktree-class-a-baseline.tsv shape)
   --paths class_b     ... plus the matched reason
   --gitignored-class-a  R1.6 projection: Class-A paths that are ALSO gitignored
+  --worktree <path>   ONE worktree, any primary: its TSV row, then class_a / class_b /
+                      ignored_a lines, then exactly one WORK_PENDING_VERDICT= line
 
 exit: 0 CLEAN · 1 PENDING · 3 INDETERMINATE.  Callers gate on the TOKEN, never the code.
 USAGE
 }
 
 main() {
-  local mode="" field="" paths="" verdict code
+  local mode="" field="" paths="" wt_arg="" verdict code
   while [ $# -gt 0 ]; do
     case "$1" in
       --all)                 mode=all ;;
+      --worktree)            shift; wt_arg="${1:-}"; mode=worktree
+                             [ -n "$wt_arg" ] || { usage >&2; exit 3; } ;;
       --field)               shift; field="${1:-}"; [ -n "$field" ] || { usage >&2; exit 3; } ;;
       --field=*)             field="${1#--field=}" ;;
       --paths)               shift; paths="${1:-}"; [ -n "$paths" ] || { usage >&2; exit 3; } ;;
@@ -515,6 +642,8 @@ main() {
   fi
 
   if [ "$mode" = "selftest" ]; then run_self_test; fi
+
+  if [ "$mode" = "worktree" ]; then run_worktree "$wt_arg"; fi
 
   [ "$mode" = "all" ] || { usage >&2; exit 3; }
 

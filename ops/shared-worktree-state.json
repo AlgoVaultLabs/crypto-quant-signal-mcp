@@ -908,6 +908,31 @@
         "expires": "2026-11-09",
         "owner_wave": "OPS-STALE-CLONE-RETIRE-W{NEXT}"
       }
-    ]
+    ],
+    "reclaim": {
+      "_doc": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2 R5. Read by scripts/worktree-reclaim.sh (the ONE automatic entry point, spawned detached by the WorktreeCreate hook and by one user-level SessionStart(startup) registration) and, for foreign_sweepers, by scripts/cc-session.sh clean. Nothing owned WHEN a worktree leaves until this block: 214 landed worktrees (~143 GiB) had piled up when the disk filled on 2026-10-17. Every key carries its reason.",
+      "cooldown_hours": 4,
+      "cooldown_reason": "a sweep costs ~6 s and births peak at 5 in 1 h, so one sweep per burst is enough; the stamp is written only when a sweep COMPLETES, so a crashed sweep never suppresses the next one",
+      "floor_gib": 20,
+      "floor_reason": "2x the measured peak 24 h create growth (12 births x 0.79 GiB = 9.5 GiB, 2026-10-17). Breaching it only ALERTS (one tty + log line naming the 5 largest held worktrees); it never blocks. May only be RAISED, and only from a measured pre-push peak",
+      "auto_max_age_hours": 72,
+      "auto_max_age_reason": "automatic sweeps use a 72 h recency window, manual runs keep the 24 h default: leg A (lsof cwd) cannot see Claude.app sessions, whose cwd stays at their launch folder, so recency is the only thing between an idle-but-open session and the loss of its cwd. A false 'in use' costs one deferred reclaim; a false 'free' costs a session",
+      "lock_ttl_s": 3600,
+      "lock_ttl_reason": "scripts/lib/with-lock.sh's 900 s default would let a waiter RECLAIM a live sweep that is still removing worktrees; 3600 s sits far above any measured sweep, and a crashed holder still frees at once through dead-pid reclaim",
+      "sweep_cwd": "/Users/tank/code/crypto-quant-signal-mcp",
+      "sweep_cwd_reason": "cc-session.sh clean refuses to run outside a git repository, and the installed copy lives outside every repository; this primary is the one that carries the tooling. It is a cwd only: clean sweeps every discovered primary regardless",
+      "foreign_sweepers": [
+        {
+          "primary": "/Users/tank/code/MCPVERIFY",
+          "owner": "MCPVERIFY-WORKTREE-LIFECYCLE-W1",
+          "reason": "that wave owns this primary's worktree lifecycle and its AC2/AC5 count these worktrees; a second sweeper would change the population it measures"
+        },
+        {
+          "primary": "/Users/tank/code/mcpverify-site",
+          "owner": "MCPVERIFY-WORKTREE-LIFECYCLE-W1",
+          "reason": "same owner and reason as /Users/tank/code/MCPVERIFY"
+        }
+      ]
+    }
   }
 }

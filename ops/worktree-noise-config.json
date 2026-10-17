@@ -53,6 +53,103 @@
       "reason": "local-only operator runbook mandated at this exact path by the `napkin` skill; deliberately gitignored in crypto-quant-signal-mcp and MUST NEVER be committed — it names filesystem layout and the production container. Measured 2026-08-20: it is untracked and NOT ignored in autonomous-optimizer, so without this row it classifies A and a preserve step would sweep it into a WIP tree",
       "owner_wave": "OPS-WORKTREE-WORK-PENDING-W1",
       "added": "2026-08-20"
+    },
+    {
+      "pattern": ".DS_Store",
+      "match": "basename",
+      "class": "B",
+      "reason": "Finder view metadata, written whenever a folder is browsed — never work. Untracked in autonomous-optimizer and algovault-bot (their .gitignore lacks it) and ignored elsewhere; measured 2026-10-17 as the sole status line of AOE worktrees that held nothing else",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": "__pycache__",
+      "match": "basename",
+      "class": "B",
+      "reason": "Python bytecode, regenerated on import. This row covers the COLLAPSED form: `git status --ignored` reports an ignored directory as `<dir>/__pycache__/`, whose final component is the directory itself, and no glob over its contents can match that",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": "*__pycache__/*",
+      "match": "glob",
+      "class": "B",
+      "reason": "Python bytecode, regenerated on import. This row covers the EXPANDED form: the untracked census runs `-uall`, which reports `<dir>/__pycache__/x.pyc`, whose basename is the .pyc and not the directory",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": "dist",
+      "match": "basename",
+      "class": "B",
+      "reason": "build output, rebuilt by `npm run build`; reported collapsed (`dist/`) by `git status --ignored`",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": ".pytest_cache",
+      "match": "basename",
+      "class": "B",
+      "reason": "pytest run cache, recreated by the next test run",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": ".ruff_cache",
+      "match": "basename",
+      "class": "B",
+      "reason": "ruff lint cache, recreated by the next lint run",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": ".coverage",
+      "match": "basename",
+      "class": "B",
+      "reason": "coverage.py data file, recreated by the next coverage run",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": "*.egg-info",
+      "match": "glob",
+      "class": "B",
+      "reason": "pip/uv editable-install metadata, rewritten by the next install; reported collapsed as `<dir>/<pkg>.egg-info/`",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": ".vitest-*.json",
+      "match": "glob",
+      "class": "B",
+      "reason": "vitest JSON-reporter output written at the worktree root by the pre-push gate and the deploy lane; rewritten on every run",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": ".mcpregistry_*_token",
+      "match": "glob",
+      "class": "B",
+      "reason": "`mcp-publisher login` JWTs with a ~5-minute TTL, re-minted at every publish; an expired one carries nothing to lose",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": ".cache",
+      "match": "relpath",
+      "class": "B",
+      "reason": "root tool cache. Measured content across the 2026-10-17 reclaim: partner-install-coords.json only, a 24 h-TTL cache that scripts/check-partner-install-coords.mjs rewrites",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
+    },
+    {
+      "pattern": ".env.local",
+      "match": "relpath",
+      "class": "B",
+      "content_lines_match": "^PORT=[0-9]+$",
+      "reason": "the WorktreeCreate hook's PORT step writes `PORT=<n>` here in every new worktree, re-derivable by scripts/lib/alloc-port.sh. Class B ONLY while every line is PORT=<n>: any other line may be a real secret, so the file is then Class A and its worktree is kept",
+      "owner_wave": "OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2",
+      "added": "2026-10-17"
     }
   ],
   "_promotion_note": "CH1 deliberately shipped NO `promotion` key; CH4 adds it here, which is the only key CH4 may write in this file. Field names reconcile the spec with the estate's canonical shape: the spec calls the time bound `not_before`, `assertPromotionBound` calls it `escalate_after`. ONE field is carried, not both — a date duplicated at two names is a fact that goes stale at one of them.",

@@ -23,8 +23,15 @@
 #                   and GUARDS — how many registered pre-push/pre-commit gate scripts are
 #                   actually present in that checkout (read-only projection of
 #                   ops/shared-worktree-state.json; see OPS-SHARED-WORKTREE-STATE-REGISTRY-W1)
-#   clean [--force] safely reclaim merged+clean+pushed worktrees (DRY-RUN unless --force)
-#   port <task>     print the deterministic port a task would use (used by the SessionStart hook)
+#   clean [--force] [--max-age-hours N] [--this-repo-only]
+#                   safely reclaim merged+clean+pushed worktrees (DRY-RUN unless --force).
+#                   Also run AUTOMATICALLY, `--force --max-age-hours 72`, by
+#                   scripts/worktree-reclaim.sh before every new session and worktree
+#                   (OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2). It never removes a worktree
+#                   holding unlanded commits, Class-A work, or Class-A gitignored payload
+#                   (scripts/lib/worktree-work-pending.sh --worktree), and never enters a
+#                   primary declared in worktree_roots.reclaim.foreign_sweepers.
+#   port <task>    print the deterministic port a task would use (used by the SessionStart hook)
 #
 # Each worktree has its OWN index + working tree, so cross-session `git add` capture and
 # `reset --hard` wipes are structurally impossible. Deps + port are provisioned by the
@@ -87,6 +94,51 @@ collect_exemptions() {
       }
     } catch {}
   ' "$f" 2>/dev/null || true)"
+}
+
+# --- OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2 R5: one owner per worktree ----------------------
+#
+# `discover_primaries` walks $HOME, so it finds primaries whose worktrees another wave owns
+# and counts (MCPVERIFY-WORKTREE-LIFECYCLE-W1 owns ~/code/MCPVERIFY and ~/code/mcpverify-site).
+# Two sweepers on one population is two definitions of "safe to remove" racing each other, so
+# ownership is DECLARED as rows in worktree_roots.reclaim.foreign_sweepers and a declared
+# primary is skipped before ANY git command runs in it — not even `worktree list`.
+#
+# FAIL-CLOSED under --force: if the declaration cannot be read we cannot know which primaries
+# belong to someone else, and the teardown direction must never guess. A dry-run degrades to a
+# warning, because it changes nothing.
+CC_FOREIGN=""        # "primary<TAB>owner" per declared row
+CC_FOREIGN_OK=0      # 1 iff the declaration was actually read
+collect_foreign_sweepers() {
+  local f; f="$(shared_state_file)"
+  CC_FOREIGN=""; CC_FOREIGN_OK=0
+  [ -r "$f" ] || return 0
+  command -v node >/dev/null 2>&1 || return 0
+  CC_FOREIGN="$(node -e '
+    const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+    const r=((j.worktree_roots||{}).reclaim)||{};
+    if (!Array.isArray(r.foreign_sweepers)) process.exit(2);
+    for (const e of r.foreign_sweepers) {
+      if (typeof e.primary === "string" && e.primary.startsWith("/"))
+        console.log(e.primary + "\t" + (e.owner||"undeclared owner"));
+    }
+  ' "$f" 2>/dev/null)" && CC_FOREIGN_OK=1
+  return 0
+}
+
+# Echo the owner of primary $1 and return 0 iff another sweeper owns it.
+foreign_owner() {
+  local p="$1" pp line
+  pp=$(cd "$p" 2>/dev/null && pwd -P) || pp="$p"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      "$p"$'\t'*|"$pp"$'\t'*) echo "${line#*$'\t'}"; return 0 ;;
+    esac
+  done <<EOF
+$CC_FOREIGN
+EOF
+  return 1
 }
 
 # Locked worktree paths for ONE primary. `locked` follows `branch` in --porcelain, so the
@@ -254,10 +306,26 @@ worktree_in_use_reason() {
       if (c == d || index(c, d "/") == 1) { print $2; exit } }')
   if [ -n "$hit" ]; then echo "in-use(process: $hit)"; return 0; fi
 
-  # (B) recency. -print -quit short-circuits on the first hit; .git and node_modules
-  # excluded (a symlinked node_modules is not matched by find without -L anyway).
-  if [ -n "$(find "$pp" -maxdepth 3 -not -path '*/.git/*' -not -path '*/node_modules*' \
-              -newermt "-${hours} hours" -print -quit 2>/dev/null)" ]; then
+  # (B) recency — REGULAR FILES ONLY, at ANY depth. [OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2 R2]
+  #
+  # This used to match any path, directories included, to -maxdepth 3. Two defects, both
+  # measured 2026-10-17:
+  #   1. Finder writes .DS_Store when a folder is merely BROWSED, which bumps the directory's
+  #      mtime too. 16 of 17 recency holds that day were the worktree ROOT DIRECTORY plus a
+  #      fresh .DS_Store, and a regular-files search found nothing in any of them. One Finder
+  #      browse held the whole fleet for a full window.
+  #   2. An edit to src/lib/deep/a.ts (depth 4) was invisible to -maxdepth 3 (scratch drill).
+  #      That was masked only because creating a file bumps its parent directory — which is
+  #      exactly the directory signal (1) has to drop.
+  # So: -type f, no depth cap, .DS_Store excluded, and node_modules / .venv / the worktree's
+  # .git FILE pruned (installs and git's own pointer are not a session working here). 28
+  # worktrees scan in ~1 s. -print -quit still short-circuits on the first hit.
+  #
+  # Leg (B) is LOAD-BEARING for more than idle sessions: every Claude.app `claude` process
+  # keeps its cwd at its LAUNCH folder (lsof, 2026-10-17), so leg (A) never sees a Desktop
+  # session working in a worktree at all. Recency is the only liveness signal it leaves.
+  if [ -n "$(find "$pp" \( -name node_modules -o -name .venv -o -name .git \) -prune \
+              -o -type f ! -name .DS_Store -newermt "-${hours} hours" -print -quit 2>/dev/null)" ]; then
     echo "in-use(touched <${hours}h ago)"; return 0
   fi
   return 1
@@ -458,6 +526,48 @@ cmd_list() {
   done < <(git -C "$root" worktree list --porcelain)
 }
 
+# ── D2: the ONLY things `clean` itself deletes [OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2] ──────
+#
+# `git worktree remove` without --force refuses a worktree with ANY untracked entry, noise
+# included (drilled 2026-10-17: `?? .DS_Store`, a node_modules symlink, `?? pkg/` holding
+# __pycache__ — all refused). So an eligible Class-B-only worktree must have that noise deleted
+# first, and the set deleted is a fixed, ratified allow-list rather than "whatever the manifest
+# calls Class B": a manifest row CLASSIFIES, and widening what a sweep DESTROYS must never be a
+# one-line data edit. Everything else Class B (uv.lock, .mypy_cache, .claude/napkin.md, any
+# future row) holds the worktree as noise-not-deletable(<path>).
+#
+#   untracked .DS_Store            regular file           rm -f
+#   untracked <...>/__pycache__/*  regular file           rm -f
+#   untracked node_modules / .venv SYMLINK only           rm -f (unlinks; never followed, never -r)
+#
+# Tracked paths are never deleted (that would be a change, and git would refuse it anyway).
+noise_deletable() {
+  local wt="$1" p="$2" f bn
+  case "$p" in /*|../*|*/../*|*/..|..) return 1 ;; esac
+  git -C "$wt" ls-files --error-unmatch -- "$p" >/dev/null 2>&1 && return 1
+  f="$wt/$p"; bn="${p##*/}"
+  case "$bn" in
+    .DS_Store)          [ -f "$f" ] && [ ! -L "$f" ] && return 0 ;;
+    node_modules|.venv) [ -L "$f" ] && return 0 ;;
+  esac
+  case "$p" in
+    *__pycache__/*)     [ -f "$f" ] && [ ! -L "$f" ] && return 0 ;;
+  esac
+  return 1
+}
+
+# Delete exactly CC_NOISE_DELETE under $1, re-checking each entry at the moment of deletion.
+noise_delete() {
+  local wt="$1" p
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    noise_deletable "$wt" "$p" || continue
+    rm -f -- "$wt/$p" 2>/dev/null || true
+  done <<EOF
+$CC_NOISE_DELETE
+EOF
+}
+
 clean_consider() {
   local root="$1" path="$2" branch="$3" force="$4" reasons="" landed inuse exempt
   is_main_worktree "$path" && return 1     # never the main checkout — and never a counted row
@@ -484,7 +594,48 @@ clean_consider() {
     echo "KEEP          $path ($branch) — $exempt"
     return 1
   fi
-  if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then reasons="$reasons dirty"; fi
+  # WORK, not dirt — consumed from the ONE work predicate, never re-derived here.
+  # [OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2 R3]
+  #
+  # This leg used to read ANY `git status --porcelain` line as dirty. Measured 2026-10-17: AOE
+  # worktrees whose only line was `?? .DS_Store`, and a worktree whose only line was a
+  # node_modules symlink, read as work forever. And it was blind the other way: a worktree with
+  # a CLEAN status but 1.3 GiB of gitignored research `data/` (bdir3diag) passed it, and
+  # `git worktree remove` without --force deletes ignored content (drilled: rc=0). Both errors
+  # come from asking git "is anything here?" instead of "is anything here worth keeping?".
+  #
+  #   work_pending YES     -> KEEP work(<first Class-A path>)
+  #   work_pending UNKNOWN -> KEEP work(unverifiable)          — fail-safe, never reclaimed
+  #   any ignored Class-A  -> KEEP ignored-payload(<first path>)
+  #   Class-B only         -> eligible; the D2 deletions below run just before the remove,
+  #                           and anything Class-B that D2 does not delete holds the worktree.
+  local wp wp_verdict wp_a wp_ia
+  CC_NOISE_DELETE=""
+  wp="$(bash "$CC_SELF_DIR/lib/worktree-work-pending.sh" --worktree "$path" 2>/dev/null || true)"
+  wp_verdict="$(printf '%s\n' "$wp" | sed -n 's/^WORK_PENDING_VERDICT=//p' | tail -1)"
+  case "$wp_verdict" in
+    CLEAN)   : ;;
+    PENDING) wp_a="$(printf '%s\n' "$wp" | awk -F'\t' '$1=="class_a"{print $2; exit}')"
+             reasons="$reasons work(${wp_a:-unnamed})" ;;
+    *)       reasons="$reasons work(unverifiable)" ;;
+  esac
+  wp_ia="$(printf '%s\n' "$wp" | awk -F'\t' '$1=="ignored_a"{print $2; exit}')"
+  [ -z "$wp_ia" ] || reasons="$reasons ignored-payload(${wp_ia})"
+  if [ -z "$reasons" ]; then
+    local b nd
+    while IFS= read -r b; do
+      [ -n "$b" ] || continue
+      if noise_deletable "$path" "$b"; then
+        CC_NOISE_DELETE="$CC_NOISE_DELETE$b
+"
+      else
+        nd="${nd:-$b}"
+      fi
+    done <<EOF
+$(printf '%s\n' "$wp" | awk -F'\t' '$1=="class_b"{print $2}')
+EOF
+    [ -z "${nd:-}" ] || reasons="$reasons noise-not-deletable(${nd})"
+  fi
   # ONE derivation of "has this worktree's work landed?", consumed here AND by the
   # unpushed-work detector. It replaces TWO separate wrong answers to that same question:
   #
@@ -517,18 +668,27 @@ clean_consider() {
   esac
   if [ -z "$reasons" ]; then
     CC_REMOVABLE=$(( CC_REMOVABLE + 1 ))
+    local n_noise noise_note="" kib
+    n_noise="$(printf '%s' "$CC_NOISE_DELETE" | grep -c . || true)"
+    [ "${n_noise:-0}" -eq 0 ] || noise_note=" [noise deleted first: $n_noise]"
     if [ "$force" -eq 1 ]; then
+      # Measured BEFORE anything is touched: this is the number the sweep reports as freed.
+      # A df delta would be confounded by the npm ci the same WorktreeCreate hook spawns.
+      kib="$(du -sk "$path" 2>/dev/null | awk '{print $1}')"
+      noise_delete "$path"
       # EXACTLY ONE terminal disposition per row. The old form was `remove && echo REMOVED`,
       # so a refused remove printed NEITHER `REMOVED` NOR `KEEP` — a silent row, which is the
       # absence-of-alert anti-pattern: indistinguishable from a row that was never considered.
+      # NO --force, ever: git's own refusal of anything untracked stays the last guard, even
+      # after the noise above is gone (a session may have written a file since).
       if git -C "$root" worktree remove "$path" 2>/dev/null; then
-        echo "REMOVED       $path ($branch)"
+        echo "REMOVED       $path ($branch) kib=${kib:-0}$noise_note"
       else
-        echo "KEEP          $path ($branch) — REFUSED by git (locked or dirty); nothing was removed"
+        echo "KEEP          $path ($branch) — REFUSED by git (locked or dirty); the worktree was not removed$noise_note"
         return 1
       fi
     else
-      echo "WOULD-REMOVE  $path ($branch)"
+      echo "WOULD-REMOVE  $path ($branch)${noise_note:+ [noise to delete first: $n_noise]}"
     fi
     return 0
   fi
@@ -559,9 +719,17 @@ cmd_clean() {
   root=$(repo_root) || die "not in a git repository"
   collect_live_cwds
   collect_exemptions
+  collect_foreign_sweepers
   echo "cc-session clean: $([ $force -eq 1 ] && echo APPLY || echo 'DRY-RUN (use --force to apply)')"
   echo "  liveness: process-cwd $([ "$CC_LIVE_CWDS_OK" -eq 1 ] && echo "OK ($(printf '%s\n' "$CC_LIVE_CWDS" | grep -c . ) cwds)" || echo 'UNAVAILABLE — refusing all') · recency window ${CC_MAX_AGE_HOURS}h"
   echo "  exemptions: $(printf '%s\n' "$CC_EXEMPT_JSON" | grep -c . ) declared row(s) from $(shared_state_file)"
+  if [ "$CC_FOREIGN_OK" -eq 1 ]; then
+    echo "  foreign sweepers: $(printf '%s\n' "$CC_FOREIGN" | grep -c . ) declared primary(ies) — skipped untouched"
+  elif [ "$force" -eq 1 ]; then
+    die "clean: cannot read worktree_roots.reclaim.foreign_sweepers from $(shared_state_file) — refusing to apply, because a primary another sweeper owns cannot be told apart"
+  else
+    echo "  foreign sweepers: UNREADABLE from $(shared_state_file) — dry-run continues; --force would refuse"
+  fi
 
   # PER PRIMARY, not per repo. `cmd_clean` used to iterate only $(git rev-parse --show-toplevel),
   # so a run from THIS repo could never reach another primary's garbage — it would reclaim one
@@ -571,8 +739,14 @@ cmd_clean() {
   if [ "$this_only" -eq 1 ]; then primaries="$root"; else primaries="$(discover_primaries)"; fi
   [ -n "$primaries" ] || die "clean: discovered no primaries — refusing to report an empty sweep as success"
 
+  local owner
   while IFS= read -r P; do
     [ -n "$P" ] || continue
+    # Before ANY git command — not even `rev-parse` runs in a primary another sweeper owns.
+    if owner="$(foreign_owner "$P")"; then
+      echo "SKIP primary $P — owned by $owner"
+      continue
+    fi
     git -C "$P" rev-parse --git-dir >/dev/null 2>&1 || { echo "=== primary $P === UNREACHABLE — FAIL, not skipped"; continue; }
     echo "=== primary $P ==="
     collect_locked_paths "$P"
@@ -600,6 +774,7 @@ EOF
   if [ "$force" -eq 1 ]; then
     while IFS= read -r P; do
       [ -n "$P" ] || continue
+      foreign_owner "$P" >/dev/null && continue    # never prune a primary another sweeper owns
       git -C "$P" worktree prune 2>/dev/null || true
     done <<EOF
 $primaries

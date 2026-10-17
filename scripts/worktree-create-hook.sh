@@ -366,6 +366,26 @@ if [ -f "$DEST/package.json" ] && [ ! -d "$DEST/node_modules" ]; then
   fi
 fi
 
+# Reclaim — a hook that CREATES worktrees also triggers their END (OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2).
+#
+# Nothing removed a worktree until a human typed `cc-session.sh clean --force`, and the disk
+# filled on 2026-10-17. This spawns THE ONE entry point, which runs that same tool under one
+# cooldown and one lock (shared with the SessionStart trigger), and records a verdict line in
+# $ARTIFACTS/reclaim.jsonl. FULLY detached and fail-open:
+#   - stdout keeps carrying the path and nothing else (the child holds no inherited fd);
+#   - the exit code is unchanged whatever the sweep does — a failed reclaim is logged there,
+#     and never costs this session its worktree.
+# The worktree created above is safe while it runs: `git worktree add` just wrote every file
+# in it, and clean's recency leg holds anything with a regular file newer than its window.
+RECLAIM="$SELF_DIR/worktree-reclaim.sh"
+if [ -r "$RECLAIM" ]; then
+  bash "$RECLAIM" --trigger worktree-create >/dev/null 2>&1 </dev/null &
+  disown 2>/dev/null || true
+  say "reclaim triggered in background (verdict -> $ARTIFACTS/reclaim.jsonl)"
+else
+  say "reclaim skipped — '$RECLAIM' unreadable"
+fi
+
 # ── 10. THE path, and nothing else ─────────────────────────────────────────────────────────
 say "OK -> $DEST"
 emit_path "$DEST"

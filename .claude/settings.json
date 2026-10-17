@@ -11,16 +11,6 @@
           }
         ]
       }
-    ],
-    "WorktreeCreate": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/tank/code/crypto-quant-signal-mcp/scripts/worktree-create-hook.sh"
-          }
-        ]
-      }
     ]
   }
 }
