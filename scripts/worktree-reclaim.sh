@@ -33,6 +33,8 @@
 #
 #   INDETERMINATE means the sweep could not decide, and refused everything: lsof unavailable,
 #   no primary discovered, an unreadable reclaim block, or `clean` exiting non-zero.
+#   Every line also carries worktreecreate_handlers / double_registration (>1 distinct handler
+#   = every create double-fires; one log + tty line names them all). Alert only, never a gate.
 #
 # ── FAIL CLOSED FOR TEARDOWN ───────────────────────────────────────────────────────────────
 #   This script only ever DESTROYS (through `clean --force`). Any configuration it cannot read
@@ -127,9 +129,53 @@ installed_matches() {
   if [ -z "$drift" ]; then printf 'true'; else printf 'false:%s' "$drift"; fi
 }
 
+# ── double-registration detector ───────────────────────────────────────────────────────────
+# Claude Code runs EVERY distinct WorktreeCreate command it finds, in parallel (measured on
+# 2.1.278: two different handlers both ran and both created a worktree; the session used one,
+# the other was orphaned with its own npm ci). The tracked entry was removed from the repo,
+# but a checkout on a pre-landing commit still carries it — so a session launched there fires
+# the old handler beside the user one, silently. This counts the DISTINCT command strings in
+# every file Claude would read for a session started in the sweep cwd. wtc_sources sets
+# WTC_FILES / WTC_SOURCES in THIS shell (never inside $(...), which would drop them);
+# wtc_commands prints a JSON array of the distinct commands, or nothing when a present file
+# cannot be parsed (= not enumerable).
+USER_SETTINGS="${ALGOVAULT_USER_SETTINGS:-$HOME/.claude/settings.json}"
+WTC_SOURCES=""; WTC_FILES=()
+wtc_sources() {
+  local f
+  WTC_SOURCES=""; WTC_FILES=()
+  for f in "$USER_SETTINGS" "$SWEEP_CWD/.claude/settings.json" "$SWEEP_CWD/.claude/settings.local.json"; do
+    [ -f "$f" ] || continue
+    WTC_FILES+=("$f"); WTC_SOURCES="$WTC_SOURCES${WTC_SOURCES:+,}$f"
+  done
+}
+wtc_commands() {
+  [ "${#WTC_FILES[@]}" -gt 0 ] || { printf '[]'; return 0; }
+  jq -cs '[.[] | (.hooks.WorktreeCreate // [])[]? | ((.hooks // [])[]?.command), .command
+           | select(type == "string")] | unique' "${WTC_FILES[@]}" 2>/dev/null
+}
+
 record() {
-  local dur im im_json drift_json
+  local dur im im_json drift_json wtc wtc_n wtc_double msg
   dur=$(( $(now_epoch) - STARTED ))
+  # The primary's own files are only knowable once sweep_cwd is read; before that the count
+  # is null, never a guessed 1.
+  wtc=""; [ -n "$SWEEP_CWD" ] && { wtc_sources; wtc="$(wtc_commands)"; }
+  if [ -n "$wtc" ] && wtc_n="$(printf '%s' "$wtc" | jq 'length' 2>/dev/null)" && is_uint "$wtc_n"; then
+    if [ "$wtc_n" -gt 1 ]; then
+      wtc_double=true
+      msg="WORKTREE_RECLAIM_DOUBLE_REGISTRATION: $wtc_n distinct WorktreeCreate handlers all run on every create: $(printf '%s' "$wtc" | jq -r 'join(" | ")')"
+      log "$msg"
+      # The log carries it every run; the terminal only on runs that reached the sweep stage,
+      # so a session start inside the cooldown does not repeat it.
+      if [ "$VERDICT" != "SKIPPED_COOLDOWN" ]; then { printf '%s\n' "$msg" >/dev/tty; } 2>/dev/null || true; fi
+    else
+      wtc_double=false
+    fi
+  else
+    wtc='null'; wtc_n='null'; wtc_double='null'
+    [ -n "$SWEEP_CWD" ] && log "double-registration detector could not parse: ${WTC_SOURCES:-none}"
+  fi
   [ -n "$FREE_GIB" ] || FREE_GIB="$(free_gib)"
   im="$(installed_matches)"
   case "$im" in
@@ -147,6 +193,8 @@ record() {
       --arg lock "$LOCK_TOKEN" --arg sha "$(installed_sha)" --argjson im "$im_json" \
       --argjson drift "$drift_json" --arg om "$ORIGIN_MAIN_SHA" --arg runlog "$RUNLOG" \
       --argjson dur "$dur" --arg age "${AGE_H:-}" \
+      --argjson wtc "$wtc" --argjson wtc_n "$wtc_n" --argjson wtc_double "$wtc_double" \
+      --arg wtc_src "$WTC_SOURCES" \
       '{ts:$ts, trigger:$trigger, WORKTREE_RECLAIM_VERDICT:$verdict, detail:$detail,
         considered:$considered, removed:$removed, held:$held, kib_freed:$kib,
         free_gib:(if $free=="" then null else ($free|tonumber) end),
@@ -154,8 +202,11 @@ record() {
         max_age_hours:(if $age=="" then null else ($age|tonumber) end),
         skipped_foreign_primaries:$foreign, unreachable_primaries:$unreachable,
         lock:$lock, installed_sha:$sha, installed_matches_origin_main:$im,
-        installed_drift_files:$drift, origin_main_compared:$om, run_log:$runlog,
-        duration_s:$dur}' >>"$JSONL" 2>/dev/null
+        installed_drift_files:$drift, origin_main_compared:$om,
+        worktreecreate_handlers:$wtc_n, double_registration:$wtc_double,
+        worktreecreate_commands:$wtc,
+        worktreecreate_sources:(if $wtc_src=="" then [] else ($wtc_src|split(",")) end),
+        run_log:$runlog, duration_s:$dur}' >>"$JSONL" 2>/dev/null
   else
     # No jq means no structured record; say so in a line that still carries the token.
     printf '{"ts":"%s","trigger":"%s","WORKTREE_RECLAIM_VERDICT":"%s","detail":"jq unavailable"}\n' \

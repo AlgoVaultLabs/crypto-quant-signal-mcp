@@ -434,6 +434,8 @@ describe('scripts/worktree-reclaim.sh — the one entry point', () => {
       expect(typeof j.free_gib).toBe('number');
       expect(j.installed_sha).toBe('uninstalled');
       expect(j.installed_matches_origin_main).toBeNull();
+      expect(j.worktreecreate_handlers).toBe(0);
+      expect(j.double_registration).toBe(false);
       expect(existsSync(join(s.artifacts, 'reclaim.last-completed'))).toBe(true);
     } finally { rmSync(s.T, { recursive: true, force: true }); }
   }, 120_000);
@@ -521,6 +523,66 @@ describe('scripts/worktree-reclaim.sh — the one entry point', () => {
       expect(waitFor(() => existsSync(marker), 20_000), 'the detached sweep ran to completion').toBe(true);
       expect(waitFor(() => existsSync(join(s.artifacts, 'reclaim.jsonl')), 10_000)).toBe(true);
       expect(lines(s).pop().trigger).toBe('session-start');
+    } finally { rmSync(s.T, { recursive: true, force: true }); }
+  }, 120_000);
+
+  it('double registration: two DISTINCT WorktreeCreate handlers -> flagged and named; one -> not; unparseable -> null', () => {
+    const { s, prim } = fleet('double');
+    try {
+      const wtc = (cmd: string) => JSON.stringify({ hooks: { WorktreeCreate: [{ hooks: [{ type: 'command', command: cmd }] }] } });
+      const userFile = join(s.home, '.claude', 'settings.json');
+      mkdirSync(dirname(userFile), { recursive: true });
+      mkdirSync(join(prim, '.claude'), { recursive: true });
+      const stubEnv = { ...s.env, WORKTREE_RECLAIM_CC_SESSION: stub(s, 'exit 0') };
+      const sweep = () => {
+        rmSync(join(s.artifacts, 'reclaim.last-completed'), { force: true });
+        expect(run('bash', [entry(s), '--trigger', 'manual', '--foreground'], { env: stubEnv }).status).toBe(0);
+        return lines(s).pop();
+      };
+      // One handler, declared in BOTH files with the identical string -> Claude dedupes it.
+      writeFileSync(userFile, wtc('/inst/current/scripts/worktree-create-hook.sh'));
+      writeFileSync(join(prim, '.claude', 'settings.json'), wtc('/inst/current/scripts/worktree-create-hook.sh'));
+      let j = sweep();
+      expect(j.worktreecreate_handlers).toBe(1);
+      expect(j.double_registration).toBe(false);
+      expect(j.worktreecreate_sources).toHaveLength(2);
+      // The stale primary's old path beside the user one -> two distinct handlers.
+      writeFileSync(join(prim, '.claude', 'settings.json'), wtc(`${prim}/scripts/worktree-create-hook.sh`));
+      j = sweep();
+      expect(j.worktreecreate_handlers).toBe(2);
+      expect(j.double_registration).toBe(true);
+      expect(j.worktreecreate_commands).toEqual([`${prim}/scripts/worktree-create-hook.sh`, '/inst/current/scripts/worktree-create-hook.sh'].sort());
+      const log = readFileSync(join(s.artifacts, 'reclaim.log'), 'utf8');
+      expect(log).toContain('WORKTREE_RECLAIM_DOUBLE_REGISTRATION: 2 distinct WorktreeCreate handlers');
+      expect(log).toContain(`${prim}/scripts/worktree-create-hook.sh`);
+      // settings.local.json counts too.
+      writeFileSync(join(prim, '.claude', 'settings.json'), '{}');
+      writeFileSync(join(prim, '.claude', 'settings.local.json'), wtc('/elsewhere/hook.sh'));
+      expect(sweep().double_registration).toBe(true);
+      // A present file that does not parse -> not enumerable -> null, never a guessed count.
+      writeFileSync(join(prim, '.claude', 'settings.local.json'), '{not json');
+      j = sweep();
+      expect(j.worktreecreate_handlers).toBeNull();
+      expect(j.double_registration).toBeNull();
+      expect(j.WORKTREE_RECLAIM_VERDICT).toBe('PASS');
+    } finally { rmSync(s.T, { recursive: true, force: true }); }
+  }, 120_000);
+
+  it('the double-registration drill can fail: counting one file only misses the stale primary', () => {
+    const { s, prim } = fleet('double-mut');
+    try {
+      const src = readFileSync(entry(s), 'utf8');
+      const broken = src.replace('"$SWEEP_CWD/.claude/settings.json" "$SWEEP_CWD/.claude/settings.local.json"', '');
+      expect(broken).not.toBe(src);
+      writeFileSync(entry(s), broken);
+      const wtc = (cmd: string) => JSON.stringify({ hooks: { WorktreeCreate: [{ hooks: [{ type: 'command', command: cmd }] }] } });
+      mkdirSync(join(s.home, '.claude'), { recursive: true });
+      writeFileSync(join(s.home, '.claude', 'settings.json'), wtc('/inst/current/scripts/worktree-create-hook.sh'));
+      mkdirSync(join(prim, '.claude'), { recursive: true });
+      writeFileSync(join(prim, '.claude', 'settings.json'), wtc(`${prim}/scripts/worktree-create-hook.sh`));
+      const env = { ...s.env, WORKTREE_RECLAIM_CC_SESSION: stub(s, 'exit 0') };
+      run('bash', [entry(s), '--trigger', 'manual', '--foreground'], { env });
+      expect(lines(s).pop().double_registration).toBe(false);
     } finally { rmSync(s.T, { recursive: true, force: true }); }
   }, 120_000);
 
