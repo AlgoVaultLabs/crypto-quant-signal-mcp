@@ -13,14 +13,17 @@
 // a saturated lane, never jumps it):
 //   1. Is the table's own depth still served? One window just inside it, less the queue's margin hour.
 //   2. How deep does service really go? Bracketed between 0 and the table value (not served) or between the
-//      table value and twice it (served), refined to 0.25 d. A lower bound, like the table itself.
+//      table value and twice it (served), refined to 0.25 d.
+// A window counts as SERVED only when one of its FIRST TWO bars comes back (see `served`), so the bracket is
+// biased at most one bar deep (2 h at 2h) — never the six bars a window-wide test allowed.
 // A typed rate-limit / budget-skip error stops that venue at once — never retried. A saturated lane (WEEX
 // measured ~53 s per call on 2026-09-26) makes a full sweep take hours: narrow the plan.
 //
 // Output: one JSON line per pair — {venue, tf, table_days, table_depth_served, deepest_available_days,
-// shallowest_missing_days, calls}. `table_depth_served: false` means the table claims history the venue no
-// longer returns: re-measure and correct the table (a value change, recorded with this instrument), never pin it.
-// `shallowest_missing_days: null` means service reached twice the table value — the table is conservative there.
+// shallowest_missing_days, oldest_bar_days, calls}. `oldest_bar_days` is the age of the oldest bar any probe
+// got back — on a count-limited venue, its served depth exactly. `table_depth_served: false` means the table
+// claims history the venue no longer returns: re-measure and correct the table (a value change, recorded with
+// this instrument), never pin it. `shallowest_missing_days: null` means service reached twice the table value.
 const { getAdapter } = require('/app/dist/lib/exchange-adapter.js');
 const { runAsBatch } = require('/app/dist/lib/upstream-weight-budget.js');
 const { VENUE_CANDLE_REACH_DAYS, REACH_MARGIN_S } = require('/app/dist/lib/venue-candle-reach.js');
@@ -42,27 +45,41 @@ function tablePlan() {
 
 const plan = process.argv[2] ? JSON.parse(process.argv[2]) : tablePlan();
 
-async function available(adapter, tf, daysBack) {
+/**
+ * Is the window starting `daysBack` days ago served? Only when one of its first two bars comes back. Counting
+ * ANY bar of the six-bar window let a window that merely overlapped the venue's edge pass, which biased the
+ * bracket up to six bars deep — 0.5 d at 2h, enough to call the 42 d rows this table had to correct "served"
+ * (measured 2026-10-18: every count-limited 2h pair read 42–42.25 d against 1,000 one-hour bars = 41.67 d).
+ * The one-bar tolerance keeps a single missing bar from reading as the edge. `track.oldest` keeps the oldest
+ * bar any probe returned.
+ */
+async function served(adapter, tf, daysBack, track) {
   const tfMs = TF_MS[tf];
   const start = Math.floor((Date.now() - daysBack * DAY) / tfMs) * tfMs;
   const end = start + 5 * tfMs;
   const candles = await adapter.getCandles('BTC', tf, start, undefined, end);
-  return Array.isArray(candles) && candles.some((c) => c.time >= start && c.time <= end + tfMs);
+  const times = Array.isArray(candles) ? candles.map((c) => c.time).filter((t) => t >= start && t <= end + tfMs) : [];
+  if (times.length === 0) return false;
+  const oldest = Math.min(...times);
+  track.oldest = Math.min(track.oldest, oldest);
+  return oldest <= start + tfMs;
 }
 
 async function probePair(adapter, venue, tf) {
   const table = VENUE_CANDLE_REACH_DAYS[venue] && VENUE_CANDLE_REACH_DAYS[venue][tf];
   if (!Number.isFinite(table) || !TF_MS[tf]) return { venue, tf, table_days: table ?? null, error: 'not a finite pair of the reach table' };
   const inside = table - REACH_MARGIN_S / 86400;
+  const track = { oldest: Infinity };
+  const oldestBarDays = () => (Number.isFinite(track.oldest) ? Math.round(((Date.now() - track.oldest) / DAY) * 100) / 100 : null);
   let calls = 1;
-  const served = await available(adapter, tf, inside);
-  let lo = served ? inside : 0; // deepest days-back known AVAILABLE
-  let hi = served ? table * 2 : inside; // shallowest days-back known NOT available (a bound to test when served)
-  if (served) {
+  const atTable = await served(adapter, tf, inside, track);
+  let lo = atTable ? inside : 0; // deepest days-back known SERVED
+  let hi = atTable ? table * 2 : inside; // shallowest days-back known NOT served (a bound to test when served)
+  if (atTable) {
     await sleep(300);
     calls++;
-    if (await available(adapter, tf, hi)) {
-      return { venue, tf, table_days: table, table_depth_served: true, deepest_available_days: hi, shallowest_missing_days: null, calls };
+    if (await served(adapter, tf, hi, track)) {
+      return { venue, tf, table_days: table, table_depth_served: true, deepest_available_days: hi, shallowest_missing_days: null, oldest_bar_days: oldestBarDays(), calls };
     }
   }
   while (hi - lo > RESOLUTION_D) {
@@ -70,9 +87,9 @@ async function probePair(adapter, venue, tf) {
     if (mid <= lo || mid >= hi) break;
     await sleep(300);
     calls++;
-    if (await available(adapter, tf, mid)) lo = mid; else hi = mid;
+    if (await served(adapter, tf, mid, track)) lo = mid; else hi = mid;
   }
-  return { venue, tf, table_days: table, table_depth_served: served, deepest_available_days: lo, shallowest_missing_days: hi, calls };
+  return { venue, tf, table_days: table, table_depth_served: atTable, deepest_available_days: lo, shallowest_missing_days: hi, oldest_bar_days: oldestBarDays(), calls };
 }
 
 (async () => {
