@@ -24,7 +24,13 @@ describe('hyperliquid getCandles — bounded endTime (OPS-HL-SEED-LOAD-W1)', () 
     bodies = [];
     _resetHyperliquidMetaCache();
     vi.spyOn(global, 'fetch').mockImplementation((async (_url: string, init?: RequestInit) => {
-      bodies.push(JSON.parse(String(init?.body ?? '{}')));
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      bodies.push(body);
+      // OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1: the adapter reads HL's market listing (standard + xyz) first.
+      if (body.type === 'metaAndAssetCtxs') {
+        const name = body.dex === 'xyz' ? 'xyz:GOLD' : 'BTC';
+        return new Response(JSON.stringify([{ universe: [{ name }] }, [{}]]), { status: 200 });
+      }
       return new Response(JSON.stringify([{ t: 0, o: '1', h: '1', l: '1', c: '1', v: '1' }]), {
         status: 200,
       });
@@ -40,7 +46,7 @@ describe('hyperliquid getCandles — bounded endTime (OPS-HL-SEED-LOAD-W1)', () 
     const adapter = new HyperliquidAdapter();
     const startTime = 1_000_000_000;
     const endTime = startTime + 10 * 900_000; // 10 × 15m candles
-    await adapter.getCandles('BTC', '15m', startTime, 'standard', endTime);
+    await adapter.getCandles('BTC', '15m', startTime, undefined, endTime);
     const body = bodies.find((b) => b.type === 'candleSnapshot') as
       | { req: { startTime: number; endTime?: number } }
       | undefined;

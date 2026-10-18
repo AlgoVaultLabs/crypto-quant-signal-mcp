@@ -14,7 +14,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { UpstreamRateLimitError } from '../errors.js';
-import { type WeightClass } from '../upstream-weight-budget.js';
+import { type WeightClass, WeightBudgetSkipError } from '../upstream-weight-budget.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { coalescedCache } from '../coalesced-cache.js';
 import { makeServedIntervalMs } from '../served-interval.js';
@@ -160,11 +160,165 @@ function getMetaAndAssetCtxsCoalesced<T>(dex: DexType): Promise<T> {
 }
 
 /**
- * Test-only reset of the adapter's metaAndAssetCtxs coalescing cache.
+ * Test-only reset of the adapter's metaAndAssetCtxs coalescing cache — and of the market listing DERIVED from
+ * it, so a case never resolves against the previous case's universe.
  * Production code MUST NOT call this — used by unit tests to isolate cases.
  */
 export function _resetHyperliquidMetaCache(): void {
   metaCacheImpl._clear();
+  marketListingCache._clear();
+  lastMarketListingLoadError = null;
+}
+
+// ── OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH1: the adapter names the Hyperliquid market ──
+//
+// Every per-coin HL request names a MARKET, and the market is Hyperliquid's to own: a HIP-3 perp on dex `xyz` is
+// `xyz:<coin>`, a standard perp is `<coin>`, and HL answers the wrong one with HTTP 500 (measured 2026-10-18:
+// `xyz:SPCX` 200 / `SPCX` 500). Until this wave twelve call sites chose the market themselves — four from the static
+// seed behind `getDexForCoin` (`TRADFI_FALLBACK`, missing 75 of HL's 136 xyz markets), five not at all — so every
+// process that had not happened to load HL's live list asked for the standard market, and ~2.7k published signals
+// on 8 xyz coins went unfilled for five months. The resolver below is the ONE derivation: callers name the coin, the
+// adapter names the market from HL's own `meta`, and a coin HL lists nowhere gets no request.
+//
+// Properties, each pinned in tests/unit/hl-market-resolution.test.ts:
+//   - SOURCE: HL's own universes (`metaAndAssetCtxs`, standard + dex xyz), read through the coalesced meta cache
+//     above, so a server that is already reading meta every 60 s pays nothing extra. A future HIP-3 dex is one entry
+//     in HL_MARKET_DEXES. The market is the name HL lists, verbatim: exact match, case-sensitive (`kPEPE` is served,
+//     `KPEPE` is HTTP 500). Delisted markets stay listed — HL still serves their candles (MATIC 1d, 200).
+//   - FRESHNESS: single-flight, re-read every 10 min; on a failed re-read the last listing is served for ≤ 24 h.
+//   - FAIL-CLOSED: no listing ever loaded (or the last one > 24 h old) and a failed load → a typed error and NO
+//     request — never a default market. Our own rate limiting keeps its type (WeightBudgetSkipError /
+//     UpstreamRateLimitError), because every consumer already treats it as "not the row's fault, retry"; anything
+//     else becomes HlMarketUnavailableError. A failed load is memoised for ~30 s so a script iterating thousands of
+//     rows cannot stampede HL with listing reads. A payload with no universe is a FAILED load, never "nothing listed".
+//   - NO GUESSING: a name listed in two universes is refused (HlMarketAmbiguousError); which wins is an architect
+//     call, not a resolver's. Measured overlap on 2026-10-18: none.
+const HL_MARKET_DEXES: readonly DexType[] = ['standard', 'xyz'];
+const HL_MARKET_TTL_MS = 10 * 60_000;
+const HL_MARKET_MAX_STALE_MS = 24 * 3_600_000;
+const HL_MARKET_NEGATIVE_TTL_MS = 30_000;
+const HL_MARKET_LISTING_KEY = 'all';
+
+/** HL lists the coin in none of its perp universes, so no request is sent. */
+export class HlMarketNotListedError extends Error {
+  readonly code = 'HL_MARKET_NOT_LISTED' as const;
+  readonly coin: string;
+  constructor(coin: string) {
+    super(`${coin} not found on Hyperliquid`);
+    this.coin = coin;
+    Object.setPrototypeOf(this, HlMarketNotListedError.prototype);
+  }
+}
+
+/** HL's market listing could not be loaded and none ≤ 24 h old exists: the market is unknown, so nothing is requested. */
+export class HlMarketUnavailableError extends Error {
+  readonly code = 'HL_MARKET_UNAVAILABLE' as const;
+  constructor(cause: unknown, staleSinceMs: number | null = null) {
+    const why = cause instanceof Error ? cause.message : cause == null ? 'no listing loaded' : String(cause);
+    const age = staleSinceMs === null ? '' : `; last listing loaded ${new Date(staleSinceMs).toISOString()}`;
+    super(`Hyperliquid market listing unavailable (${why})${age}`, { cause });
+    Object.setPrototypeOf(this, HlMarketUnavailableError.prototype);
+  }
+}
+
+/** The coin is listed in more than one HL universe; the resolver refuses to pick. */
+export class HlMarketAmbiguousError extends Error {
+  readonly code = 'HL_MARKET_AMBIGUOUS' as const;
+  readonly coin: string;
+  constructor(coin: string) {
+    super(`${coin} is listed in more than one Hyperliquid universe; refusing to choose a market`);
+    this.coin = coin;
+    Object.setPrototypeOf(this, HlMarketAmbiguousError.prototype);
+  }
+}
+
+/** A coin resolved to the market HL lists it under: `market` is the wire name a request carries. */
+export interface HlMarket {
+  coin: string;
+  market: string;
+  dex: DexType;
+}
+
+/** HL's listing, as the resolver holds it: coin → the market HL lists it under. */
+export interface HlMarketListing {
+  kind: 'listing';
+  loadedAt: number;
+  markets: Map<string, { market: string; dex: DexType }>;
+  ambiguous: Set<string>;
+}
+/** The negative-memo cell a failed load leaves behind; the failure itself is read from lastMarketListingLoadError. */
+interface HlMarketListingUnavailable {
+  kind: 'unavailable';
+}
+
+let lastMarketListingLoadError: unknown = null;
+
+/** Pure: HL's per-dex universes → coin → market. A name HL lists twice is ambiguous, never last-write-wins. */
+export function buildHlMarketListing(
+  universes: ReadonlyArray<{ dex: DexType; names: readonly string[] }>,
+  loadedAt: number,
+): HlMarketListing {
+  const markets = new Map<string, { market: string; dex: DexType }>();
+  const ambiguous = new Set<string>();
+  for (const { dex, names } of universes) {
+    const prefix = dex === 'standard' ? '' : `${dex}:`;
+    for (const name of names) {
+      const coin = prefix !== '' && name.startsWith(prefix) ? name.slice(prefix.length) : name;
+      if (markets.has(coin)) ambiguous.add(coin);
+      else markets.set(coin, { market: name, dex });
+    }
+  }
+  for (const coin of ambiguous) markets.delete(coin);
+  return { kind: 'listing', loadedAt, markets, ambiguous };
+}
+
+async function loadHlMarketListing(): Promise<HlMarketListing> {
+  try {
+    const universes = await Promise.all(
+      HL_MARKET_DEXES.map(async (dex) => {
+        const raw = await getMetaAndAssetCtxsCoalesced<[HLMetaAndAssetCtxs['meta'], unknown] | null>(dex);
+        const universe = Array.isArray(raw) ? raw[0]?.universe : undefined;
+        const names = Array.isArray(universe)
+          ? universe.map((a) => a?.name).filter((n): n is string => typeof n === 'string' && n !== '')
+          : [];
+        if (names.length === 0) throw new Error(`Hyperliquid metaAndAssetCtxs(${dex}) returned no universe`);
+        return { dex, names };
+      }),
+    );
+    lastMarketListingLoadError = null;
+    return buildHlMarketListing(universes, Date.now());
+  } catch (err) {
+    lastMarketListingLoadError = err;
+    throw err;
+  }
+}
+
+const marketListingCache = coalescedCache<HlMarketListing | HlMarketListingUnavailable>({
+  load: () => loadHlMarketListing(),
+  ttlMs: HL_MARKET_TTL_MS,
+  staleOk: true,
+  fallback: () => ({ kind: 'unavailable' }),
+  negativeTtlMs: HL_MARKET_NEGATIVE_TTL_MS,
+});
+
+function marketUnavailable(staleSinceMs: number | null): Error {
+  const cause = lastMarketListingLoadError;
+  if (cause instanceof WeightBudgetSkipError || cause instanceof UpstreamRateLimitError) return cause;
+  return new HlMarketUnavailableError(cause, staleSinceMs);
+}
+
+/**
+ * The market HL lists `coin` under, or null when HL lists it in none of its universes. Throws
+ * HlMarketUnavailableError (or our own rate-limit error) when no listing ≤ 24 h old can be had, and
+ * HlMarketAmbiguousError for a name HL lists twice. Every per-coin request in this adapter goes through here.
+ */
+export async function resolveHlMarket(coin: string): Promise<HlMarket | null> {
+  const listing = await marketListingCache.get(HL_MARKET_LISTING_KEY);
+  if (listing.kind === 'unavailable') throw marketUnavailable(null);
+  if (Date.now() - listing.loadedAt > HL_MARKET_MAX_STALE_MS) throw marketUnavailable(listing.loadedAt);
+  if (listing.ambiguous.has(coin)) throw new HlMarketAmbiguousError(coin);
+  const m = listing.markets.get(coin);
+  return m ? { coin, market: m.market, dex: m.dex } : null;
 }
 
 // ── OPS-HL-INTERACTIVE-STARVATION-W1 CH2: the same treatment for `predictedFundings` ──
@@ -230,14 +384,16 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return 'Hyperliquid';
   }
 
-  async getCandles(coin: string, interval: string, startTime: number, dex: DexType = 'standard', endTime?: number): Promise<Candle[]> {
-    // xyz perps require the xyz: prefix for candle fetches
-    const apiCoin = dex === 'xyz' ? `xyz:${coin}` : coin;
+  // `_dex` (here and below) is part of the shared ExchangeAdapter signature and is IGNORED: the market is HL's to
+  // name, resolved per request by resolveHlMarket (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1). No caller chooses it.
+  async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
+    const market = await resolveHlMarket(coin);
+    if (market === null) return []; // HL lists the coin nowhere: no request, an empty series
     // OPS-HL-SEED-LOAD-W1: bound the fetch with endTime when given. Outcome
     // backfill needs only [signalTime, signalTime+(evalCount+buffer)·candleMs];
     // without endTime HL returns [startTime, now] (~5000 candles → weight ~104).
     // HL candleSnapshot honors req.endTime (live-verified: 11 candles bounded vs 101 to-now).
-    const req: Record<string, unknown> = { coin: apiCoin, interval, startTime };
+    const req: Record<string, unknown> = { coin: market.market, interval, startTime };
     if (endTime !== undefined) req.endTime = endTime;
     const raw = await hlInfoPost<HLCandle[]>(
       { type: 'candleSnapshot', req },
@@ -259,20 +415,19 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     });
   }
 
-  async getAssetContext(coin: string, dex: DexType = 'standard'): Promise<AssetContext> {
+  async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {
+    const market = await resolveHlMarket(coin);
+    if (market === null) throw new HlMarketNotListedError(coin);
     // OPS-HL-RATELIMIT-W1: route through the in-process coalescing cache so
     // N per-coin callers within a seed fire share one backend fetch (60s TTL).
     const raw = await getMetaAndAssetCtxsCoalesced<
       [HLMetaAndAssetCtxs['meta'], HLMetaAndAssetCtxs['assetCtxs']]
-    >(dex);
+    >(market.dex);
     const meta = raw[0];
     const ctxs = raw[1];
-    // xyz universe names include 'xyz:' prefix (e.g. 'xyz:GOLD'), so match both formats
-    const lookupName = dex === 'xyz' ? `xyz:${coin}` : coin;
-    const idx = meta.universe.findIndex(a => a.name === lookupName);
-    if (idx === -1) {
-      throw new Error(`${coin} not found on Hyperliquid${dex === 'xyz' ? ' (xyz dex)' : ''}`);
-    }
+    // The resolved market is HL's own universe name (an xyz name carries its 'xyz:' prefix).
+    const idx = meta.universe.findIndex(a => a.name === market.market);
+    if (idx === -1) throw new HlMarketNotListedError(coin); // delisted from the payload since the listing was read
     const ctx = ctxs[idx];
     // R2: HL funding is per-1h period → annualized = raw × 8760 (1h periods/year)
     // SV-04: default-deny — an invalid markPx throws (the 3-tier fallback fires)
@@ -321,8 +476,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    */
   async getFundingHistory(coin: string, startTime: number): Promise<{ time: number; fundingRate: number }[]> {
     try {
+      const market = await resolveHlMarket(coin);
+      if (market === null) return []; // HL lists the coin nowhere: no request
       const raw = await hlInfoPost<{ time: number; coin: string; fundingRate: string; premium: string }[]>(
-        { type: 'fundingHistory', coin, startTime },
+        { type: 'fundingHistory', coin: market.market, startTime },
         { weightHint: Math.max(1, Math.ceil((Date.now() - startTime) / 3_600_000)) },
       );
       return (raw || [])
@@ -333,9 +490,9 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     }
   }
 
-  async getCurrentPrice(coin: string, dex: DexType = 'standard'): Promise<number | null> {
+  async getCurrentPrice(coin: string, _dex?: DexType): Promise<number | null> {
     try {
-      const ctx = await this.getAssetContext(coin, dex);
+      const ctx = await this.getAssetContext(coin);
       return ctx.oraclePx || ctx.markPx;
     } catch {
       return null;

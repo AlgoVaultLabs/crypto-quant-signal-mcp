@@ -15,10 +15,9 @@
 import type { AssetClass } from './market-sessions-constants.js';
 import { FUNDING_NOTE_PREIPO, FUNDING_NOTE_TRADFI } from './market-sessions-constants.js';
 import type { FundingState } from './indicator-buckets.js';
-import type { ExchangeId, DexType, CrossVenueFundingSentiment } from '../types.js';
+import type { ExchangeId, CrossVenueFundingSentiment } from '../types.js';
 import { getAdapter } from './exchange-adapter.js';
 import { getVenuesSupporting } from './venue-coverage.js';
-import { getDexForCoin } from './asset-tiers.js';
 import { toBinanceSymbol } from './adapters/binance.js';
 import { toBybitSymbol } from './adapters/bybit.js';
 import { toBitgetSymbol } from './adapters/bitget.js';
@@ -138,7 +137,7 @@ const fundingByVenueCache = new Map<string, FundingCacheEntry>();
 /**
  * Fetch the per-venue funding rates for a TradFi coin across the 5 promoted
  * venues it is listed on. Reuses each adapter's existing `getAssetContext`
- * integration (HL via `dex:"xyz"`) — the generator-level reuse, so new venues /
+ * integration (HL resolves its own market) — the generator-level reuse, so new venues /
  * listings inherit for free. Per-venue FAIL-SOFT (a venue error → that venue is
  * omitted, debug-logged); NEVER throws. 10-min TTL cached per coin; fan-out is
  * parallel so wall-clock ≈ the slowest venue, not the sum.
@@ -154,8 +153,7 @@ export async function fetchTradFiFundingByVenue(coin: string): Promise<VenueFund
   const settled = await Promise.all(
     venues.map(async (venue): Promise<(VenueFunding & { price: number }) | null> => {
       try {
-        const dex: DexType | undefined = venue === 'HL' ? getDexForCoin(symbol) : undefined;
-        const ctx = await getAdapter(venue).getAssetContext(symbol, dex);
+        const ctx = await getAdapter(venue).getAssetContext(symbol);
         const rate = Number.isFinite(ctx.funding) ? ctx.funding : 0;
         const intervalMinutes = VENUE_INTERVAL_MINUTES[venue] ?? 480;
         return {

@@ -44,7 +44,6 @@
 import { dbQuery } from '../lib/performance-db.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
-import { getDexForCoin } from '../lib/asset-tiers.js';
 import { runAsCaller, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
 import { assessBookLiveness, BOOK_LIVENESS_WINDOW, BOOK_LIVENESS_MIN_GENUINE_BARS } from '../lib/book-liveness.js';
 import { EVAL_CANDLES, TF_MS } from './directional-labeler.js';
@@ -117,12 +116,11 @@ async function fetchRangeInto(
 ): Promise<void> {
   const tfMs = TF_MS[timeframe];
   const adapter = getAdapter(exchangeId);
-  const dex = exchangeId === 'HL' ? getDexForCoin(coin) : undefined;
   let cursor = startMs;
   let pages = 0;
   while (cursor <= endMs && pages < MAX_PAGES_PER_RANGE) {
     pages++;
-    const page = await adapter.getCandles(coin, timeframe, cursor, dex, endMs);
+    const page = await adapter.getCandles(coin, timeframe, cursor, undefined, endMs);
     if (!page || page.length === 0) break;
     let maxTime = cursor;
     for (const c of page) {

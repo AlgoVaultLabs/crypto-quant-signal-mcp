@@ -55,6 +55,11 @@ globalThis.fetch = async (url, init) => {
   }
 };
 
+// OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1: the HL adapter reads HL's market listing (metaAndAssetCtxs, standard + dex
+// xyz) before a candle request. It is its own request class — pinned by tests/unit/hl-market-resolution.test.ts and
+// answered synthetically by the contract test — so it is never part of a captured candle scenario.
+const isHlMarketListing = (r) => /hyperliquid/i.test(r.url) && /"type":"metaAndAssetCtxs"/.test(r.reqBody || '');
+
 async function scenario(tag, v, tf, coin, from, to) {
   log = [];
   const calledAt = Date.now();
@@ -64,7 +69,7 @@ async function scenario(tag, v, tf, coin, from, to) {
     tag, venue: v, tf, coin, from, to: to ?? null, calledAt, requestedMs: TF_MS[tf], servedMs: served(v, tf),
     W: EVAL_CANDLES[tf] ?? null, error: err,
     output: (out || []).map((c) => ({ ts: c.time, open: c.open })),
-    requests: log.map((r) => ({ ...r, sha256: r.body == null ? null : crypto.createHash('sha256').update(r.body).digest('hex') })),
+    requests: log.filter((r) => !isHlMarketListing(r)).map((r) => ({ ...r, sha256: r.body == null ? null : crypto.createHash('sha256').update(r.body).digest('hex') })),
   };
 }
 

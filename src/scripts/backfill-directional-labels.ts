@@ -8,7 +8,7 @@
  *
  * Machinery reused from backfill-outcomes.ts (OPS-ADAPTER-RATELIMIT-UNIFY-W1): the shared
  * rate-limited transport (getAdapter + runAsBatch/runAsCaller/WeightBudgetSkipError, 418/429
- * never retried) and the getDexForCoin HL routing. The pure label math lives in
+ * never retried); the HL market is named by the adapter (resolveHlMarket). The pure label math lives in
  * ./directional-labeler.ts (unit-tested). NEVER raw fetch.
  *
  * Batches by (exchange, coin, timeframe): a group-level candle cache is filled incrementally
@@ -32,7 +32,7 @@
 import { dbQuery, dbExec } from '../lib/performance-db.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
-import { getDexForCoin } from '../lib/asset-tiers.js';
+import { HlMarketUnavailableError } from '../lib/adapters/hyperliquid.js';
 import { runAsBatch, runAsCaller, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
 import type { Candle, ExchangeId } from '../types.js';
 import {
@@ -166,7 +166,7 @@ interface Coverage {
   // M − (R − v1CutUnwritable) = 0 closes only because the producer names them (signal).
   v1CutUnwritable: number;
   sanityWarn: number; // kline-derived vs stored mfe/mae gross mismatch
-  budgetSkips: number; // groups deferred on WeightBudgetSkipError (retry on re-run)
+  budgetSkips: number; // groups deferred on WeightBudgetSkipError / HlMarketUnavailableError (retry on re-run)
   errors: number;
 }
 
@@ -790,14 +790,13 @@ async function fetchRangeInto(
 ): Promise<boolean> {
   const tfMs = pageStepMs;
   const adapter = getAdapter(exchangeId);
-  const dex = exchangeId === 'HL' ? getDexForCoin(coin) : undefined;
   let cursor = startMs;
   let pages = 0;
   let answered = false; // the venue returned at least one candle — in range or not
   while (cursor <= endMs && pages < MAX_PAGES_PER_RANGE) {
     pages++;
     await ownRateGate();
-    const page = await adapter.getCandles(coin, timeframe, cursor, dex, endMs);
+    const page = await adapter.getCandles(coin, timeframe, cursor, undefined, endMs);
     if (!page || page.length === 0) break;
     answered = true;
     let maxTime = cursor;
@@ -978,7 +977,7 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
         }
       }
     } catch (err) {
-      if (err instanceof WeightBudgetSkipError) {
+      if (err instanceof WeightBudgetSkipError || err instanceof HlMarketUnavailableError) {
         cov.budgetSkips++;
         return; // defer whole group; re-run picks it up (labels absent)
       }
@@ -1374,7 +1373,7 @@ export async function processExpiryGroup(cli: Cli, g: { exchange: string; coin: 
         coveredUntil = advanceCoverage(coveredUntil, cache.keys(), start, neededEnd);
       }
     } catch (err) {
-      if (err instanceof WeightBudgetSkipError) { ecov.budgetSkips++; break; } // the rest stay NULL → next run
+      if (err instanceof WeightBudgetSkipError || err instanceof HlMarketUnavailableError) { ecov.budgetSkips++; break; } // the rest stay NULL → next run
       ecov.errors++;
       unreachable++;
       continue;
@@ -1509,7 +1508,7 @@ const CONTROL_COIN = 'BTC';
 const CONTROL_TIMEFRAME = '1h';
 type PageProbe = { kind: 'served' } | { kind: 'transient' } | { kind: 'refused'; key: string };
 function isTransient(err: unknown): boolean {
-  if (err instanceof WeightBudgetSkipError || err instanceof OwnStopError) return true;
+  if (err instanceof WeightBudgetSkipError || err instanceof HlMarketUnavailableError || err instanceof OwnStopError) return true;
   const code = (err as { code?: unknown } | null)?.code;
   return code === 'UPSTREAM_RATE_LIMIT' || code === 'WEIGHT_BUDGET_SKIP';
 }
@@ -1523,7 +1522,7 @@ async function recentPage(exchange: string, coin: string, timeframe: string): Pr
   const stepMs = servedStepMs(exchange, timeframe);
   try {
     await ownRateGate();
-    await getAdapter(exchange as ExchangeId).getCandles(coin, timeframe, Date.now() - 5 * stepMs, exchange === 'HL' ? getDexForCoin(coin) : undefined);
+    await getAdapter(exchange as ExchangeId).getCandles(coin, timeframe, Date.now() - 5 * stepMs);
     return { kind: 'served' };
   } catch (err) {
     if (err instanceof OwnStopError) throw err;
@@ -1640,7 +1639,7 @@ export async function processRelabelGroup(
       }
     } catch (err) {
       if (err instanceof OwnStopError) { rcov.cutShort++; break; }
-      if (err instanceof WeightBudgetSkipError) { rcov.budgetSkips++; break; } // the rest stay absent → next run
+      if (err instanceof WeightBudgetSkipError || err instanceof HlMarketUnavailableError) { rcov.budgetSkips++; break; } // the rest stay absent → next run
       if (!isTransient(err)) {
         let unserved = false;
         try {

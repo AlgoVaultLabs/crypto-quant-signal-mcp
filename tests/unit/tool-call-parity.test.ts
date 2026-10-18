@@ -143,7 +143,7 @@ const syntheticVenue = vi.hoisted(() => {
   }
 
   function hyperliquid(bodyRaw: string | undefined): unknown {
-    const body = (bodyRaw ? JSON.parse(bodyRaw) : {}) as { type?: string; req?: { coin?: string; interval?: string }; coin?: string };
+    const body = (bodyRaw ? JSON.parse(bodyRaw) : {}) as { type?: string; dex?: string; req?: { coin?: string; interval?: string }; coin?: string };
     const type = body.type ?? '';
     const universe = COINS.map((name) => ({ name, szDecimals: 3, maxLeverage: 50, onlyIsolated: false }));
     const ctx = (coin: string) => ({ funding: s(funding(coin)), openInterest: s(oi(coin)), prevDayPx: s(prevDayPx(coin)), dayNtlVlm: s(vol24(coin)), premium: '0.0001', oraclePx: s(lastPx(coin)), markPx: s(lastPx(coin)), midPx: s(lastPx(coin)), impactPxs: [s(lastPx(coin) * 0.9995), s(lastPx(coin) * 1.0005)] });
@@ -152,6 +152,11 @@ const syntheticVenue = vi.hoisted(() => {
       if (!COINS.includes(coin)) return [];
       const interval = body.req?.interval ?? '1h';
       return candles(coin, interval).map((c) => ({ t: c.t, T: c.t + (IV[interval] ?? 3_600e3) - 1, s: coin, i: interval, o: s(c.o), h: s(c.h), l: s(c.l), c: s(c.c), v: s(c.v), n: 100 }));
+    }
+    // OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1: HL lists HIP-3 perps per dex, and the adapter reads both universes to
+    // name a coin's market — so dex `xyz` is modelled as its own disjoint, `xyz:`-prefixed universe, as HL's is.
+    if (type === 'metaAndAssetCtxs' && body.dex === 'xyz') {
+      return [{ universe: [{ name: 'xyz:XYZ100', szDecimals: 4, maxLeverage: 20, onlyIsolated: true }] }, [ctx(COINS[0])]];
     }
     if (type === 'metaAndAssetCtxs') return [{ universe }, COINS.map(ctx)];
     if (type === 'meta') return { universe };

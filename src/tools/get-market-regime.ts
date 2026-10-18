@@ -1,7 +1,7 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { assertVenueNotRetired } from '../lib/venue-store.js';
 import { adx, atr, detectPriceStructure } from '../lib/indicators.js';
-import { getDexForCoin, isKnownTradFi } from '../lib/asset-tiers.js';
+import { isKnownTradFi } from '../lib/asset-tiers.js';
 import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.js';
 import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError, UpstreamRateLimitError } from '../lib/errors.js';
 import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
@@ -305,12 +305,11 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   }
 
   const adapter = getAdapter(exchange);
-  const dex = exchange === 'HL' ? getDexForCoin(coin) : undefined;
 
   // Fetch candles from selected exchange + cross-venue fundings from HL (best-effort)
   const hlAdapter = getAdapter('HL');
   const [candles, allFundings] = await Promise.all([
-    adapter.getCandles(coin, timeframe, startTime, dex),
+    adapter.getCandles(coin, timeframe, startTime),
     // OPS-HL-INTERACTIVE-STARVATION-W1: this `.catch` is BEST-EFFORT BY DESIGN and stays that way —
     // a cross-venue funding outage must not fail a regime call. What changes is that the swallow is
     // no longer SILENT. An `UpstreamRateLimitError` here is HL refusing us (weight-budget

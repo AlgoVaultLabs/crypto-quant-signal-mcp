@@ -15,7 +15,7 @@ import { buildFactorLedger, renderVerdictReasoning } from '../lib/verdict-factor
 import { hashSignal } from '../lib/merkle.js';
 import { FUNDING_ADJUST, HURST_ADJUST, SQUEEZE_ADJUST, toScorerParts } from '../lib/scorer-input-codes.js';
 import { recordScorerInputCapture } from '../lib/scorer-input-capture.js';
-import { getDexForCoin, classifyAsset, isMemeCoinLiquid, isKnownTradFi, getTop20ByOI } from '../lib/asset-tiers.js';
+import { classifyAsset, isMemeCoinLiquid, isKnownTradFi, getTop20ByOI } from '../lib/asset-tiers.js';
 import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.js';
 import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError } from '../lib/errors.js';
 import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
@@ -956,10 +956,6 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     }
   }
 
-  // Determine which HL dex this coin trades on (standard vs xyz/TradFi)
-  // Only applicable for Hyperliquid — Binance doesn't have dex types
-  const dex = exchange === 'HL' ? getDexForCoin(coin) : undefined;
-
   // Meme coin liquidity gate — reject illiquid micro-caps before wasting API calls.
   // OPS-3M-EXPAND-W1 (2026-05-22): outer `if (exchange === 'HL')` guard REMOVED;
   // gate now runs for ALL 17 ExchangeId values uniformly via per-exchange-AND
@@ -996,8 +992,8 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   const intervalMs = intervalMsFor(timeframe) ?? 3_600_000;
   const startTime = Date.now() - 100 * intervalMs;
   const [candles, assetCtx] = await Promise.all([
-    adapter.getCandles(coin, timeframe, startTime, dex),
-    adapter.getAssetContext(coin, dex),
+    adapter.getCandles(coin, timeframe, startTime),
+    adapter.getAssetContext(coin),
   ]);
   // Everything below assumes oldest-first candles (closes[length-1] = current
   // price, indicators walk forward); a newest-first venue payload would price

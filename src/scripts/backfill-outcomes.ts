@@ -28,7 +28,7 @@
 import { getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes, recordBackfillAttempt, closeDb } from '../lib/performance-db.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
-import { getDexForCoin } from '../lib/asset-tiers.js';
+import { HlMarketUnavailableError } from '../lib/adapters/hyperliquid.js';
 import { runAsBatch, runAsCaller, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
 import type { ExchangeId, SignalRecord } from '../types.js';
 import { computePFEMAE, toSignalOutcomeUpdate, EVAL_CANDLES, TF_MS, maturityHorizonMs } from '../lib/pfe-mae.js';
@@ -139,13 +139,12 @@ async function main() {
           // Fetch candles from signal's own exchange
           const exchangeId = (sig.exchange as ExchangeId) || 'HL';
           const adapter = getAdapter(exchangeId);
-          const dex = exchangeId === 'HL' ? getDexForCoin(coin) : undefined;
           // OPS-HL-SEED-LOAD-W1: bound the fetch to the eval window (+2 buffer).
           // We only consume evalCount candles after signalTime (computePFEMAE
           // filters time>=signalTime then slices evalCount) — fetching to-now
           // pulled ~5000 candles (HL weight ~104) for ~8 needed. Outcome unchanged.
           const fetchEndTime = signalTimeMs + (evalCount + 2) * candleMs;
-          const candles = await adapter.getCandles(coin, timeframe, signalTimeMs, dex, fetchEndTime);
+          const candles = await adapter.getCandles(coin, timeframe, signalTimeMs, undefined, fetchEndTime);
 
           // Filter candles: only those AFTER signal creation
           const relevantCandles = candles.filter(c => c.time >= signalTimeMs);
@@ -193,10 +192,12 @@ async function main() {
           filled++;
           await sleep(DELAY_BETWEEN_FETCHES_MS);
         } catch (err: unknown) {
-          if (err instanceof WeightBudgetSkipError) {
+          if (err instanceof WeightBudgetSkipError || err instanceof HlMarketUnavailableError) {
             // OPS-HL-RATELIMITER-W2: transient budget saturation — count as a
             // skip, NOT a symbol failure (do not touch failCounts or errors).
             // The next loop / 3-min cron fire retries this signal.
+            // OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1: likewise when HL's market listing cannot be
+            // loaded — no request was sent, so the row has not failed and records no attempt.
             skipped++;
             await sleep(DELAY_BETWEEN_FETCHES_MS);
             continue;

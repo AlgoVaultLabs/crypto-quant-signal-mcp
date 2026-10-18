@@ -76,7 +76,7 @@
 import { dbQuery } from '../lib/performance-db.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
-import { getDexForCoin } from '../lib/asset-tiers.js';
+import { HlMarketUnavailableError } from '../lib/adapters/hyperliquid.js';
 import { runAsBatch, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
 import type { Candle, ExchangeId } from '../types.js';
 import {
@@ -390,13 +390,12 @@ async function fetchRangeInto(
 ): Promise<boolean> {
   const tfMs = pageStepMs;
   const adapter = getAdapter(exchangeId);
-  const dex = exchangeId === 'HL' ? getDexForCoin(coin) : undefined;
   let cursor = startMs;
   let pages = 0;
   let answered = false; // the venue returned at least one candle — in range or not (read by hold -v2 only)
   while (cursor <= endMs && pages < MAX_PAGES_PER_RANGE) {
     pages++;
-    const page = await adapter.getCandles(coin, timeframe, cursor, dex, endMs);
+    const page = await adapter.getCandles(coin, timeframe, cursor, undefined, endMs);
     if (!page || page.length === 0) break;
     answered = true;
     let maxTime = cursor;
@@ -483,7 +482,7 @@ export async function labelHoldV2(
           }
         }
       } catch (err) {
-        if (err instanceof WeightBudgetSkipError) { v2.budgetSkips++; break; }
+        if (err instanceof WeightBudgetSkipError || err instanceof HlMarketUnavailableError) { v2.budgetSkips++; break; }
         v2.errors++;
         v2.outcome.set(d.decision_id, 'error');
         continue;
@@ -821,7 +820,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
           coveredUntil = Math.max(coveredUntil, neededEnd);
         }
       } catch (err) {
-        if (err instanceof WeightBudgetSkipError) { cov.budgetSkips++; break; }
+        if (err instanceof WeightBudgetSkipError || err instanceof HlMarketUnavailableError) { cov.budgetSkips++; break; }
         cov.errors++;
         continue;
       }

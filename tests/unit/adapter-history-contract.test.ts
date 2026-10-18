@@ -23,11 +23,28 @@ import {
 import { SyntheticVenue, listingFromProbes } from '../harness/adapter-history-synthetic.js';
 import { historyMetaOf } from '../../src/lib/adapters/_history-plan.js';
 
-const { replay } = vi.hoisted(() => ({ replay: { venue: null as null | { answer(url: string, body?: string | null): unknown } } }));
+const { replay, hlMarketListing } = vi.hoisted(() => ({
+  replay: { venue: null as null | { answer(url: string, body?: string | null): unknown }, coin: null as null | string },
+  /** OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1: HL's market listing is its own request class (pinned by
+   *  tests/unit/hl-market-resolution.test.ts) and is never part of a captured scenario — the capture tool drops it.
+   *  It is answered here with the scenario's coin as a STANDARD market, so the captured candle requests replay
+   *  unchanged and a mis-routed request (`xyz:BTC`) is a REPLAY_MISS. undefined = not a listing read. */
+  hlMarketListing(req: { url: string; body?: string }, coin: string | null): unknown {
+    if (!req.url.includes('api.hyperliquid.xyz')) return undefined;
+    let body: { type?: unknown; dex?: unknown };
+    try { body = JSON.parse(req.body ?? '{}') as { type?: unknown; dex?: unknown }; } catch { return undefined; }
+    if (body.type !== 'metaAndAssetCtxs') return undefined;
+    if (!coin) throw new Error('adapter-history-contract: HL market listing read outside a scenario');
+    const names = body.dex === 'xyz' ? ['xyz:CONTRACT-TEST-ONLY'] : [coin];
+    return [{ universe: names.map((name) => ({ name })) }, names.map(() => ({}))];
+  },
+}));
 
 vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (orig) => ({
   ...(await orig<typeof import('../../src/lib/adapters/_upstream-fetch.js')>()),
   upstreamFetch: vi.fn(async (_cfg: unknown, req: { url: string; body?: string }) => {
+    const listing = hlMarketListing(req, replay.coin);
+    if (listing !== undefined) return listing;
     if (!replay.venue) throw new Error('adapter-history-contract: no venue loaded');
     return replay.venue.answer(req.url, req.body ?? null);
   }),
@@ -95,6 +112,8 @@ async function runScenario(s: Scenario): Promise<RunResult> {
   const venue = synthetic ? null : new ReplayVenue();
   if (venue) { venue.load(s); replay.venue = venue; }
   else replay.venue = new SyntheticVenue(s.venue as 'BITGET' | 'OKX', () => Date.now(), listingOf);
+  replay.coin = s.coin;
+  hyperliquid._resetHyperliquidMetaCache(); // every scenario resolves its market at its own capture time
   vi.setSystemTime(s.calledAt);
   let out: Bar[] = [];
   let err: string | null = null;
@@ -107,6 +126,7 @@ async function runScenario(s: Scenario): Promise<RunResult> {
     err = e instanceof Error ? e.message : String(e);
   } finally {
     replay.venue = null;
+    replay.coin = null;
   }
   return { out, err, drained: venue ? venue.drained() : true, meta, synthetic };
 }

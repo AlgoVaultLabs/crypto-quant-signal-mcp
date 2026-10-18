@@ -9,7 +9,7 @@
  * Tier 4: Meme & Micro (liquidity-filtered — top 50 OI or >$10M vol)
  */
 
-import type { DexType, ExchangeId } from '../types.js';
+import type { ExchangeId } from '../types.js';
 import { getExchangeTopAssetsWithVolume } from './exchange-universe.js';
 import { coalescedCache } from './coalesced-cache.js';
 import { isShortLivedScript } from './runtime.js';
@@ -108,16 +108,8 @@ export function getTierDef(tier: AssetTier): TierDefinition {
   return TIER_DEFINITIONS.find(t => t.tier === tier)!;
 }
 
-/**
- * Determine which HL dex to query for a given coin.
- * SPX exists on standard perps — all other TradFi symbols are xyz only.
- */
-export function getDexForCoin(coin: string): DexType {
-  const symbol = coin.toUpperCase();
-  if (symbol === 'SPX') return 'standard'; // SPX is on standard perps
-  if (isKnownTradFi(symbol)) return 'xyz';
-  return 'standard';
-}
+// OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1: `getDexForCoin` (HL request routing from this display seed) was retired.
+// The HL adapter names the market from HL's own listings (`resolveHlMarket`); tiers here are display only.
 
 // ── Top 20 OI (for Tier 2 classification) ──
 
