@@ -9,9 +9,21 @@
  * recorded decisions (`getLastAdmission`), asks the adapter for each key's last 24 × 1 h bars, and
  * classifies every key with `classifyDeadBook`. Prints ONE JSON line —
  * `{generated_at, keys: [{key, class, symbol, status_state, venue_last_trade, traded_bars_24h,
- * contradiction_check, reason}]}` — then `ADMISSION_VERDICT_EMIT=PASS` (exit 0). A malformed or missing
- * `--keys`, or any unexpected throw, prints `ADMISSION_VERDICT_EMIT=INDETERMINATE` and NO JSON (exit 3,
- * the token-law default for a new gate); the canary then treats every key as STATUS_UNKNOWN.
+ * contradiction_check, reason, admission_kind}]}` — then `ADMISSION_VERDICT_EMIT=PASS` (exit 0). A malformed
+ * or missing `--keys`, or any unexpected throw, prints `ADMISSION_VERDICT_EMIT=INDETERMINATE` and NO JSON
+ * (exit 3, the token-law default for a new gate); the canary then treats every key as STATUS_UNKNOWN.
+ *
+ * Callers: the dead-book canary (book-liveness-canary.py) and, since OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1
+ * CH2, arm 3e of the outcome-backfill canary, which classifies a coin whose fills went silent. That wave
+ * added three things, each additive:
+ *  * HL dex coins (ruling Q-A=B). HL's admission payload is its STANDARD universe, so a coin HL lists only
+ *    in dex xyz read VENUE_OFF "absent" although HL lists it live — which would have hidden the 8 coins
+ *    arm 3e exists to catch. Such a key is now decided from the adapter's own listing (CH1's resolver)
+ *    under the SAME HL declaration (`admitRow('HL', …)`, notionalOI_usd > 0). The scan, its universe and
+ *    every admission declaration are untouched.
+ *  * `admission_kind` — the venue's declared admission source kind (`ADMISSION_SOURCES[venue].kind`), so
+ *    a caller can tell a RETIRED venue's STATUS_UNKNOWN from an unreadable one without parsing prose.
+ *  * Coins in any script (`\p{L}`), so a non-ASCII coin is classified instead of refusing the whole call.
  *
  * WHY. The canary paged every dead book with a paragraph asking a human to read the venue's contract
  * status — a status the admission step already reads on every fetch. Asking it instead of re-deriving
@@ -22,8 +34,9 @@
  */
 import { fetchVenueUniverse, getLastAdmission, type AdmissionRecord } from '../lib/exchange-universe.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
+import { HlMarketNotListedError, resolveHlMarket } from '../lib/adapters/hyperliquid.js';
 import {
-  ADMISSION_SOURCES, classifyDeadBook, DEAD_BOOK_TRADE_WINDOW_MS, type DeadBookVerdict,
+  ADMISSION_SOURCES, admitRow, classifyDeadBook, DEAD_BOOK_TRADE_WINDOW_MS, type DeadBookVerdict,
 } from '../lib/universe-admission.js';
 import { runAsBatch } from '../lib/upstream-weight-budget.js';
 import { runScript } from '../lib/script-lifecycle.js';
@@ -38,15 +51,24 @@ export interface DeadKey { key: string; venue: string; coin: string }
 export type AdmissionView = Pick<AdmissionRecord, 'statusState' | 'circuitOpen' | 'mode' | 'rows' | 'atMs' | 'decisions'>
   & { venue?: string; side?: string; kind?: string };
 
+/** An HL coin as the adapter lists it in ANY of its universes (standard or dex) — what ruling Q-A=B decides
+ *  an HL key from when the standard admission payload does not carry it. `symbol` is HL's own market name. */
+export interface HlListedRow { symbol: string; notionalOI_usd: number; volume24h_usd: number }
+
 /** The seams, injectable so the CLI is a pure function of argv + deps. */
 export interface AdmissionVerdictDeps {
   nowMs: () => number;
   fetchVenueUniverse: (venue: string) => Promise<ReadonlyArray<{ coin: string }>>;
   lastAdmission: (venue: string) => AdmissionView | undefined;
   hourlyBars: (venue: string, coin: string) => Promise<ReadonlyArray<{ time: number; volume: number }>>;
+  /** The adapter's HL listing for one coin: null when HL lists it in no universe; throws when the listing
+   *  cannot be read (the key is then STATUS_UNKNOWN — never VENUE_OFF on a listing nobody read). */
+  hlListedRow: (coin: string) => Promise<HlListedRow | null>;
 }
 
-const TOKEN_RE = /^(?:dead:)?([A-Z][A-Z0-9]*)\|([A-Za-z0-9._:@-]+)$/;
+// The coin admits every script (\p{L}, with combining marks and digits): a non-ASCII coin is a coin, and one
+// refused token used to make the WHOLE call INDETERMINATE. Whitespace, `|` and quotes stay refused.
+const TOKEN_RE = /^(?:dead:)?([A-Z][A-Z0-9]*)\|([\p{L}\p{M}\p{N}._:@-]+)$/u;
 
 /** `dead:V|C` or `V|C`, whitespace-separated → keys in their canonical `dead:` spelling. null = malformed or empty. */
 export function parseDeadKeys(raw: string): DeadKey[] | null {
@@ -70,6 +92,8 @@ interface KeyLine {
   traded_bars_24h: number | null;
   contradiction_check: DeadBookVerdict['contradictionCheck'];
   reason: string;
+  /** `ADMISSION_SOURCES[venue].kind`; null for a venue with no declaration at all. */
+  admission_kind: string | null;
 }
 
 function isVenue(v: string): v is ExchangeId {
@@ -102,23 +126,44 @@ export async function runAdmissionVerdict(argv: readonly string[], deps: Admissi
     for (const { key, venue, coin } of keys) {
       if (!isVenue(venue)) {
         out.push({ key, class: 'STATUS_UNKNOWN', symbol: null, status_state: null, venue_last_trade: null, traded_bars_24h: null,
-          contradiction_check: 'not_evaluable', reason: `${venue} is not a known venue` });
+          contradiction_check: 'not_evaluable', reason: `${venue} is not a known venue`, admission_kind: null });
         continue;
       }
       const { fetchError, empty, rec } = venues.get(venue)!;
-      const d = rec?.decisions.find((x) => x.coin === coin);
+      let d: AdmissionView['decisions'][number] | undefined = rec?.decisions.find((x) => x.coin === coin);
+      let keyFetchError = fetchError;
+      let notListed = '';
+      // Ruling Q-A=B: an HL coin the STANDARD payload lacks is decided from the adapter's own listing (CH1),
+      // under HL's one declaration. Asked only when that record is trustworthy and silent on the coin — any
+      // other state is STATUS_UNKNOWN below whatever the listing says.
+      if (venue === 'HL' && d === undefined && rec !== undefined && fetchError === null && !empty) {
+        try {
+          const row = await deps.hlListedRow(coin);
+          if (row === null) {
+            notListed = '; the adapter lists it in no HL universe either (standard or dex)';
+          } else {
+            const admissionRow = { symbol: row.symbol, coin, notionalOI_usd: row.notionalOI_usd, volume24h_usd: row.volume24h_usd };
+            d = { symbol: row.symbol, coin, volume24h_usd: row.volume24h_usd, tickerTsMs: null,
+              decision: admitRow('HL', admissionRow, null, deps.nowMs()) };
+          }
+        } catch (e) {
+          keyFetchError = `the adapter's HL listing could not be read for ${coin}: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      }
       let bars: ReadonlyArray<{ time: number; volume: number }> | null = null;
       try { bars = await deps.hourlyBars(venue, coin); } catch { bars = null; } // could not ask ⇒ not evaluable
       const v = classifyDeadBook({
         venue, decision: d?.decision ?? null, statusState: rec?.statusState ?? null,
         circuitOpen: rec?.circuitOpen ?? false, mode: rec?.mode ?? 'enforce',
-        universeRows: empty ? 0 : rec?.rows ?? 0, fetchError, venueLastTradeMs: d?.tickerTsMs ?? null,
+        universeRows: empty ? 0 : rec?.rows ?? 0, fetchError: keyFetchError, venueLastTradeMs: d?.tickerTsMs ?? null,
         volume24hUsd: d?.volume24h_usd ?? null, bars, barMs: BAR_MS, nowMs: deps.nowMs(),
       });
       out.push({
         key, class: v.cls, symbol: d?.symbol ?? null, status_state: rec?.statusState ?? null,
         venue_last_trade: d?.tickerTsMs != null ? new Date(d.tickerTsMs).toISOString() : null,
-        traded_bars_24h: v.tradedBars24h, contradiction_check: v.contradictionCheck, reason: v.reason,
+        traded_bars_24h: v.tradedBars24h, contradiction_check: v.contradictionCheck,
+        reason: v.cls === 'VENUE_OFF' && d === undefined ? v.reason + notListed : v.reason,
+        admission_kind: ADMISSION_SOURCES[venue].kind,
       });
     }
     return { lines: [JSON.stringify({ generated_at: new Date(deps.nowMs()).toISOString(), keys: out }), `${VERDICT_TOKEN}=PASS`], exitCode: 0 };
@@ -137,6 +182,19 @@ const productionDeps: AdmissionVerdictDeps = {
     const from = Math.floor(now / BAR_MS) * BAR_MS - DEAD_BOOK_TRADE_WINDOW_MS - BAR_MS; // one bar of ±1 margin
     const candles = await getAdapter(venue as ExchangeId).getCandles(coin, '1h', from, undefined, now);
     return candles.map((c) => ({ time: c.time, volume: c.volume }));
+  },
+  // The SAME derivation as the scan's fetchHL row (notionalOI_usd = openInterest × markPx, volume = dayNtlVlm),
+  // read through the adapter that owns the market (CH1) — never a second copy of HL's universe.
+  hlListedRow: async (coin) => {
+    const market = await resolveHlMarket(coin);
+    if (market === null) return null;
+    try {
+      const ctx = await getAdapter('HL').getAssetContext(coin);
+      return { symbol: market.market, notionalOI_usd: ctx.openInterest * ctx.markPx, volume24h_usd: ctx.volume24h };
+    } catch (e) {
+      if (e instanceof HlMarketNotListedError) return null; // delisted between the listing and the read
+      throw e;
+    }
   },
 };
 

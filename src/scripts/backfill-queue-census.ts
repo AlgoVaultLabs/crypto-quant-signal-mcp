@@ -4,8 +4,8 @@
  *
  *   node dist/scripts/backfill-queue-census.js --emit-sql --now <epoch-seconds>
  *
- * Prints ONE JSON line — `{census_sql, venue_sql, past_reach_clause, horizons_s, constants, reach_measured_at,
- * source_sha}`
+ * Prints ONE JSON line — `{census_sql, venue_sql, coin_sql, past_reach_clause, horizons_s, constants,
+ * reach_measured_at, source_sha}`
  * — then `BACKFILL_CENSUS_EMIT_VERDICT=PASS` (exit 0). A malformed argument or any builder throw prints
  * `BACKFILL_CENSUS_EMIT_VERDICT=INDETERMINATE` and NO JSON (exit 3, the token-law default for a new
  * gate). It opens no database and makes no network call: the canary runs the SQL itself, through its
@@ -19,7 +19,7 @@
  * the same deploy, with nothing to keep in sync.
  */
 import {
-  buildBackfillCensusSql, buildBackfillVenueCensusSql,
+  buildBackfillCensusSql, buildBackfillVenueCensusSql, buildBackfillCoinCensusSql,
   BACKFILL_QUEUE_LIMIT, BACKFILL_MAX_ATTEMPTS, BACKFILL_ATTEMPT_COOLDOWN_S,
 } from '../lib/performance-db.js';
 import { EVAL_CANDLES, maturityHorizonS } from '../lib/pfe-mae.js';
@@ -30,13 +30,16 @@ export const VERDICT_TOKEN = 'BACKFILL_CENSUS_EMIT_VERDICT';
 
 /** The emitted keys, in order. The canary declares the same tuple and a test pins the two equal. */
 export const EMITTER_KEYS = [
-  'census_sql', 'venue_sql', 'past_reach_clause', 'horizons_s', 'constants', 'reach_measured_at', 'source_sha',
+  'census_sql', 'venue_sql', 'coin_sql', 'past_reach_clause', 'horizons_s', 'constants', 'reach_measured_at', 'source_sha',
 ] as const;
 export const EMITTER_CONSTANT_KEYS = ['limit', 'max_attempts', 'cooldown_s', 'reach_margin_s'] as const;
 
 export interface CensusEmission {
   census_sql: string;
   venue_sql: string;
+  /** Per (venue, coin) over 7 days — arm 3e's census (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2). The canary
+   *  reads it on its own: a missing or refused `coin_sql` blinds arm 3e alone, never arms 2-3d. */
+  coin_sql: string;
   /** The past-reach subtrahend, emitted on its own so the canary can audit it on every live run: it must
    *  name no attempt column (RIDER 4) and must be the clause `census_sql` executes. */
   past_reach_clause: string;
@@ -65,6 +68,7 @@ export function buildCensusEmission(nowS: number, env: NodeJS.ProcessEnv = proce
   const emission: CensusEmission = {
     census_sql: buildBackfillCensusSql(nowS),
     venue_sql: buildBackfillVenueCensusSql(nowS),
+    coin_sql: buildBackfillCoinCensusSql(nowS),
     past_reach_clause: buildPastReachClause(nowS),
     horizons_s: horizons,
     constants: {

@@ -66,6 +66,9 @@ ONE token.
                            sediment means the breaker is not holding.
   ARM 3d VENUE SILENCE (CH1) a venue whose rows matured, were attempted, and filled NONE in 24 h —
                        its own alert, OUTCOME_BACKFILL_VENUE_SILENT.
+  ARM 3e COIN SILENCE  (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2) a (venue, coin) whose rows matured,
+                       were attempted, and filled NONE in 7 d, on a venue that lists the coin live — its
+                       own alert, OUTCOME_BACKFILL_COIN_SILENT, page-on-change keyed VENUE|COIN.
 
 ARM 3's backlog is an UNCAPPED `count(*)`. Never aggregate over the LIMIT-capped read: both
 sides would come from the same capped array and the check would only confirm the tree matches
@@ -103,6 +106,26 @@ rows age past reach and leave the queue.
 The alert BODY now projects from the checks that failed (one map, check-id -> sentence). The static
 paragraph it replaces asserted "CANNOT SEE the newest signals" on every page — including the
 2026-10-10 one, whose frontier was 0.70 h.
+
+────────────────────────────────────────────────────────────────────────────────────────────
+── OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2 (2026-10-18): ARM 3e — ONE COIN ON A LIVE VENUE ──
+────────────────────────────────────────────────────────────────────────────────────────────
+Arm 3d judges whole venues, so it cannot see one dead coin on a healthy venue — and 8 HL coins listed
+only in HL's dex xyz sat unfilled that way from 2026-05-15 to 2026-10-18: every candle request named the
+standard market, HL answered 500, and HL as a whole kept filling ~400 rows a day. Arm 3e reads the
+emitter's per-(venue, coin) census (`coin_sql` — the SAME three counters as the venue census, over 7 d,
+keyed by the fill path's own venue expression) and classifies each candidate through the ONE admission
+step (`docker exec <app> node dist/scripts/admission-verdict.js --keys 'V|C …'`):
+  FAIL           the venue lists the coin live (THIN_LIVE / ADAPTER_CONTRADICTION): a request defect of ours;
+  reported       VENUE_OFF (paused, delisted, off) or a RETIRED venue: a venue fact, never paged;
+  INDETERMINATE  admission could not decide (fetch failed, no declaration, no verdict): never PASS.
+Candidate iff matured_7d >= N_COIN AND attempted_7d > 0 AND filled_7d = 0 (N_COIN = 5, calibrated below).
+Its census or its classification failing blinds arm 3e ALONE: a missing or refused `coin_sql` is arm
+3e's INDETERMINATE, never the emission's, so an emitter one deploy older than this file cannot take arms
+2-3d down with it. Page-on-change keyed VENUE|COIN, and the canary's 2-run sustain applies PER KEY in
+both directions — a key pages after 2 consecutive failing runs and leaves after 2 consecutive clean
+ones — so the wrapper's acknowledgement decides what is NEW, and a cell that dips under N_COIN for one
+run is neither pruned nor re-paged.
 
 ── Denominator and window, stated before the threshold (they are what make it fire) ─────────
 DENOMINATOR : rows in `signals`. Not a rate — an age, so there is no zero-traffic denominator
@@ -153,7 +176,8 @@ inherited verbatim from the retiring `ops/closedbar-recalibrate-config.json`, wh
 block records why it must differ from the readiness wave: "one recommended_wave shared by two
 alerts with opposite remedies is the generator bug that sent an operator to run the wave that
 would have ratified a broken state." Arm 3d pages its OWN id `OUTCOME_BACKFILL_VENUE_SILENT` with
-its own remedy `OPS-ADAPTER-FILL-SILENT-W{NEXT}` for the same reason.
+its own remedy `OPS-ADAPTER-FILL-SILENT-W{NEXT}` for the same reason, and arm 3e pages
+`OUTCOME_BACKFILL_COIN_SILENT` with `OPS-CANDLE-REQUEST-OWNER-DERIVATION-W{NEXT}`.
 
 FAIL-CLOSED. psql failure, an unparseable row, or a NULL where a number was promised is
 INDETERMINATE — input we were HANDED and could not parse is never a pass. Reads as
@@ -170,6 +194,9 @@ Env / test seams:
   OBF_PSQL_CMD    override the psql command (default: docker exec … psql -U aoe_readonly …)
   OBF_EMITTER_CMD override the census emitter (default: docker exec <app> node
                   dist/scripts/backfill-queue-census.js --emit-sql --now {now}); `{now}` is filled
+  OBF_ADMISSION_CMD override arm 3e's classifier (default: docker exec <app> node
+                  dist/scripts/admission-verdict.js --keys); the key list is appended as ONE argument
+  OBF_BACKFILL_LOG the producer's log, read (tail, outcome lines dropped) for arm 3e's body
   OBF_STATE_FILE  streak state       OBF_LOG            log path
   OBF_WRAPPER     send_telegram.sh   OBF_NOW_EPOCH      freeze "now"
   OBF_ALERT_STATE_DIR the wrapper's marker dir — the resolution gates READ <ALERT_ID>-last-fired-at
@@ -185,12 +212,15 @@ Env / test seams:
 Cron: 13 * * * * (canonical off-:00 minute per ops/monitoring/schedule-boundary-rule.json).
 """
 import argparse
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 
 ALERT_ID = "OUTCOME_BACKFILL_STALLED"
 RECOMMENDED_WAVE = "OPS-OUTCOME-BACKFILL-STALL-W{NEXT}"
@@ -198,6 +228,10 @@ RECOMMENDED_WAVE = "OPS-OUTCOME-BACKFILL-STALL-W{NEXT}"
 # scripts/check-alert-registry.mjs finds alert ids by POSITION, and a parameterised id is invisible.
 VENUE_SILENT_ALERT = "OUTCOME_BACKFILL_VENUE_SILENT"
 VENUE_SILENT_WAVE = "OPS-ADAPTER-FILL-SILENT-W{NEXT}"
+# Arm 3e's own alert (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2). LITERAL in fire_coin_silent() and
+# clear_coin_silent() for the same reason; page-on-change keyed VENUE|COIN by its registry row.
+COIN_SILENT_ALERT = "OUTCOME_BACKFILL_COIN_SILENT"
+COIN_SILENT_WAVE = "OPS-CANDLE-REQUEST-OWNER-DERIVATION-W{NEXT}"
 PRODUCER = "backfill-outcomes (crontab 2-59/3)"
 CANARY_NAME = "outcome_backfill_freshness"
 
@@ -218,6 +252,14 @@ EMITTER_DEFAULT = (
     "docker exec crypto-quant-signal-mcp-mcp-server-1 "
     "node dist/scripts/backfill-queue-census.js --emit-sql --now {now}"
 )
+# Arm 3e's classifier: the app's ONE admission step, the same script the dead-book canary asks.
+ADMISSION_DEFAULT = (
+    "docker exec crypto-quant-signal-mcp-mcp-server-1 node dist/scripts/admission-verdict.js --keys"
+)
+ADMISSION_TOKEN = "ADMISSION_VERDICT_EMIT"
+ADMISSION_TIMEOUT_S = 240      # one universe fetch per venue + one 24-bar read per key, batch class
+BACKFILL_LOG = os.environ.get("OBF_BACKFILL_LOG", "/var/log/backfill.log")
+BACKFILL_LOG_TAIL_BYTES = 4 * 1024 * 1024   # per file (the live log and its .1 rotation)
 
 
 def _int_env(name, default, floor=1):
@@ -242,17 +284,48 @@ CONSECUTIVE_TO_PAGE = _int_env("OBF_CONSECUTIVE_TO_PAGE", 2)
 # margin is wide. Revisit row: `Claude files/defensive-reductions-to-revisit.md`.
 VENUE_SILENT_N_MIN = 1
 
+# ── Arm 3e's N_COIN — CALIBRATED, not chosen (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 R0.7, 2026-10-18) ──
+# Instrument: `signals` per (venue, coin, ISO week), 2026-09-20..10-18 — the 68 cells with matured >= 1,
+# attempted > 0 (outcome_last_attempt_at — the LAST attempt, a lower bound) and filled = 0, each labelled
+# from the backfill log and classified by admission-verdict.js. The request-defect cells (HL xyz SPCX
+# SKHY DRAM CBRS CXMT — every request HL API 500) matured 8..151; the venue-fact cells (BINGX paused or
+# offline, MEXC no candles) matured 1..7, and the only one on a coin its venue lists live (BINGX
+# NCSKTWST2USD, paused that week, live at read time) matured 4. N_COIN is the smallest integer above
+# it: 5. Re-calibrate with the same instrument (R0.7 in the wave's vault audit) before moving it.
+COIN_SILENT_N_MIN = 5
+
 # ── The emitter's contract: exactly the keys and columns this canary READS ─────────────────────
 # `tests/unit/backfill-census-single-derivation.test.ts` pins every tuple below against the emitter
 # and the builders, and feeds the REAL census SQL's output through the parsers below — the artifacts
 # the hermetic self-test necessarily replaces with fixtures.
-EMITTER_KEYS = ("census_sql", "venue_sql", "past_reach_clause", "horizons_s", "constants",
+EMITTER_KEYS = ("census_sql", "venue_sql", "coin_sql", "past_reach_clause", "horizons_s", "constants",
                 "reach_measured_at", "source_sha")
+# Arm 3e's own keys. Emitted and pinned with the rest, but their absence blinds arm 3e ALONE — gather()
+# isolates every input's failure, and an emitter older than this file must not take arms 2-3d with it.
+ARM_3E_EMITTER_KEYS = ("coin_sql",)
 EMITTER_CONSTANT_KEYS = ("limit", "max_attempts", "cooldown_s", "reach_margin_s")
 CENSUS_COLUMNS = ("backlog_uncapped", "immature", "parked", "past_reach", "servable_uncapped",
                   "frontier")
 VENUE_COLUMNS = ("venue", "matured_24h", "filled_24h", "attempted_24h", "past_reach_entered_24h",
                  "servable")
+COIN_COLUMNS = ("venue", "coin", "matured_7d", "filled_7d", "attempted_7d")
+# admission-verdict.js's vocabulary, and the two classes in which the venue lists the coin LIVE.
+ADMISSION_CLASSES = ("STATUS_UNKNOWN", "VENUE_OFF", "ADAPTER_CONTRADICTION", "THIN_LIVE")
+LIVE_CLASSES = frozenset(("THIN_LIVE", "ADAPTER_CONTRADICTION"))
+# send_telegram.sh's page-on-change KEY_RE, so this file never builds a key the wrapper refuses — ONE
+# refused key resolves the WHOLE call to LEVEL. Pinned equal to the wrapper's own by
+# tests/unit/backfill-census-single-derivation.test.ts.
+WRAPPER_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:|/@+-]{0,127}$")
+# Arm 3e's page stays one Telegram message (4,096 characters, the wrapper's header included).
+COIN_BODY_MAX_CELLS = 8
+COIN_BODY_MAX_CHARS = 3400
+COIN_DETAIL_MAX_CELLS = 10
+REASON_MAX_CHARS = 140
+# Per-list key cap in the R6 record. canary_result_log refuses a line over MAX_LINE_BYTES (8,192) WHOLE,
+# so an unbounded list would lose the entire record in exactly the broad outage it should describe.
+# 3 lists x 15 keys x (the 128-character wrapper-key ceiling + 4 bytes of JSON) = 5,940 bytes worst
+# case; each list's full count rides beside it as `<list>_n`.
+R6_COIN_KEYS_MAX = 15
 EMIT_TOKEN = "BACKFILL_CENSUS_EMIT_VERDICT"
 # Outcome VALUE columns. The census needs none of them, so emitted SQL naming one is refused —
 # Data Integrity: this canary reads cardinalities, timestamps and IS NULL predicates only.
@@ -385,7 +458,7 @@ def parse_emission(stdout):
         raise Indeterminate("the emitter's JSON is unparseable: %s" % e)
     if not isinstance(em, dict):
         raise Indeterminate("the emitter's JSON is not an object")
-    missing = [k for k in EMITTER_KEYS if k not in em]
+    missing = [k for k in EMITTER_KEYS if k not in em and k not in ARM_3E_EMITTER_KEYS]
     if missing:
         raise Indeterminate("the emitter's JSON lacks %s" % ",".join(missing))
     c = em["constants"]
@@ -468,12 +541,82 @@ def parse_venue_rows(stdout):
     return out
 
 
+def _count(s):
+    return s.isascii() and s.isdigit()
+
+
+def parse_coin_rows(stdout):
+    """Per-(venue, coin) rows in COIN_COLUMNS order. Parsed from BOTH ends — the venue is the first field
+    and the three counts are the last three — so a coin that happens to carry the separator is still one
+    coin. Zero rows is a FACT ("no coin had a row mature in 7 d") and parses to []; a malformed or
+    duplicated cell is INDETERMINATE."""
+    out, seen = [], set()
+    for line in (stdout or "").splitlines():
+        if "|" not in line:
+            continue                                   # the SET command tag, notices
+        parts = line.split("|")
+        if len(parts) < len(COIN_COLUMNS):
+            raise Indeterminate("coin census: %d fields, expected %d (%r)"
+                                % (len(parts), len(COIN_COLUMNS), line[:120]))
+        venue, coin, counts = parts[0].strip(), "|".join(parts[1:-3]), [c.strip() for c in parts[-3:]]
+        if not venue or not coin or not all(_count(c) for c in counts):
+            raise Indeterminate("coin census: unparseable row %r" % line[:120])
+        if (venue, coin) in seen:
+            raise Indeterminate("coin census: the cell %s|%s appears twice" % (venue, coin))
+        seen.add((venue, coin))
+        out.append(dict(zip(COIN_COLUMNS, [venue, coin] + [int(c) for c in counts])))
+    return out
+
+
+def admission_token(cell):
+    return "%s|%s" % (cell["venue"], cell["coin"])
+
+
+def parse_admission(stdout, cells):
+    """{(venue, coin): verdict row} from admission-verdict.js stdout. PURE. INDETERMINATE unless the run
+    ended `ADMISSION_VERDICT_EMIT=PASS` with ONE JSON object classing EXACTLY the requested cells in the
+    four-class vocabulary — the contract the dead-book canary holds the same script to. The log lines the
+    app prints first (`[universe-admission] …`) are skipped."""
+    lines = (stdout or "").splitlines()
+    tok = [i for i, ln in enumerate(lines) if ln.startswith(ADMISSION_TOKEN + "=")]
+    if not tok:
+        raise Indeterminate("admission: no %s token in the script output" % ADMISSION_TOKEN)
+    last = tok[-1]
+    if lines[last].strip() != ADMISSION_TOKEN + "=PASS":
+        raise Indeterminate("admission: the script said %s" % lines[last].strip()[:80])
+    blob = next((ln for ln in reversed(lines[:last]) if ln.startswith("{")), None)
+    if blob is None:
+        raise Indeterminate("admission: no JSON line before %s=PASS" % ADMISSION_TOKEN)
+    try:
+        doc = json.loads(blob)
+    except ValueError as e:
+        raise Indeterminate("admission: unparseable JSON line: %s" % e)
+    rows = doc.get("keys") if isinstance(doc, dict) else None
+    if not isinstance(rows, list):
+        raise Indeterminate("admission: the JSON line carries no keys list")
+    want = {"dead:" + admission_token(c): (c["venue"], c["coin"]) for c in cells}
+    out = {}
+    for r in rows:
+        if not isinstance(r, dict) or r.get("class") not in ADMISSION_CLASSES or r.get("key") not in want:
+            raise Indeterminate("admission: a row outside the contract: %r" % (r,))
+        cell = want[r["key"]]
+        if cell in out:
+            raise Indeterminate("admission: %s classed twice" % r["key"])
+        out[cell] = r
+    if len(out) != len(want):
+        raise Indeterminate("admission: classed %d of the %d requested cells" % (len(out), len(want)))
+    return out
+
+
 # ── seams ─────────────────────────────────────────────────────────────────────────────────────
 
-def _run_psql(sql):
+def _run_psql(sql, encoding=None):
+    """`encoding` (arm 3e passes utf-8: its rows carry coin names in any script) decodes explicitly
+    instead of by locale; the other reads keep the default."""
     cmd = os.environ.get("OBF_PSQL_CMD", PSQL_DEFAULT)
     try:
-        out = subprocess.run(cmd.split() + ["-c", sql], capture_output=True, text=True, timeout=120)
+        out = subprocess.run(cmd.split() + ["-c", sql], capture_output=True, text=True, timeout=120,
+                             **({"encoding": encoding, "errors": "replace"} if encoding else {}))
     except (OSError, subprocess.SubprocessError) as e:
         raise Indeterminate("psql could not run: %s: %s" % (type(e).__name__, e))
     if out.returncode != 0:
@@ -498,11 +641,51 @@ def run_emitter(now):
     return em
 
 
+def coin_sql_of(em):
+    """Arm 3e's census SQL out of the emission, refused on the grounds emitted_sql_problems() refuses the
+    rest of it — but on its OWN, so a missing or refused `coin_sql` blinds arm 3e alone."""
+    sql = em.get("coin_sql")
+    if not isinstance(sql, str) or not sql.strip():
+        raise Indeterminate("the emitter sent no coin_sql (an emitter older than this canary?)")
+    if not sql.lstrip().upper().startswith("SELECT "):
+        raise Indeterminate("the emitter's coin_sql is not a SELECT")
+    hit = [t for t in OUTCOME_VALUE_TOKENS if t in sql.lower()]
+    if hit:
+        raise Indeterminate("coin_sql names outcome value column(s) %s — this canary is label-blind"
+                            % ",".join(hit))
+    if ";" in sql:
+        raise Indeterminate("coin_sql carries a statement separator — one statement per call")
+    return sql
+
+
+def admission_token_ok(cell):
+    """Whether admission-verdict.js's key grammar takes the cell — venue [A-Z][A-Z0-9]*, coin letters,
+    marks and digits of any script plus . _ : @ -. A cell it would refuse is undecided ON ITS OWN, never a
+    token that makes the script refuse every other cell with it."""
+    coin = cell["coin"]
+    return (re.match(r"^[A-Z][A-Z0-9]*$", cell["venue"]) is not None and bool(coin)
+            and all(ch.isalnum() or ch in "._:@-" or unicodedata.category(ch).startswith("M")
+                    for ch in coin))
+
+
+def run_admission(cells):
+    """The ONE admission step's verdict for each candidate cell. Read-only (the script opens no database
+    and writes nothing). Any failure is Indeterminate — the cells are then undecided, never PASS."""
+    cmd = os.environ.get("OBF_ADMISSION_CMD", ADMISSION_DEFAULT).split()
+    try:
+        r = subprocess.run(cmd + [" ".join(admission_token(c) for c in cells)], capture_output=True,
+                           encoding="utf-8", errors="replace", timeout=ADMISSION_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise Indeterminate("admission could not run: %s: %s" % (type(e).__name__, e))
+    return parse_admission(r.stdout, cells)
+
+
 def gather(now):
     """Every input, each failure isolated: an emitter or census failure blinds arms 2-3 and 3d,
     never arm 1, and a producer-read failure never blinds the census."""
     inp = {"producer": None, "producer_error": None, "emission": None, "census": None,
-           "venues": None, "census_error": None, "population": None, "population_error": None}
+           "venues": None, "census_error": None, "population": None, "population_error": None,
+           "coins": None, "coin_error": None, "coin_admission": None, "coin_admission_error": None}
     try:
         inp["producer"] = parse_producer(_run_psql(build_producer_sql(now)))
     except Indeterminate as e:
@@ -521,7 +704,34 @@ def gather(now):
             inp["population"] = parse_population(_run_psql(build_population_sql(now)))
         except Indeterminate as e:
             inp["population_error"] = str(e)
+    gather_coins(inp)
     return inp
+
+
+def gather_coins(inp):
+    """Arm 3e's inputs, isolated like every other: its census or its classification failing blinds arm
+    3e ALONE (any exception here becomes its error, never the run's). Admission is asked only about the
+    candidates, and only when there is one."""
+    if inp["emission"] is None:
+        inp["coin_error"] = "no coin census — the census emitter did not answer (%s)" % inp["census_error"]
+        return
+    try:
+        inp["coins"] = parse_coin_rows(_run_psql(ro(coin_sql_of(inp["emission"])), encoding="utf-8"))
+    except Indeterminate as e:
+        inp["coin_error"] = str(e)
+        return
+    except Exception as e:  # noqa: BLE001 — arm 3e may never take the other arms' run down with it
+        inp["coin_error"] = "%s: %s" % (type(e).__name__, e)
+        return
+    asked = [c for c in coin_candidates(inp["coins"]) if admission_token_ok(c)]
+    if not asked:
+        return
+    try:
+        inp["coin_admission"] = run_admission(asked)
+    except Indeterminate as e:
+        inp["coin_admission_error"] = str(e)
+    except Exception as e:  # noqa: BLE001
+        inp["coin_admission_error"] = "%s: %s" % (type(e).__name__, e)
 
 
 # ── POPULATION DECLARATIONS — every arm names what it counts and what it excludes ────────────
@@ -562,6 +772,18 @@ VENUE_POPULATION = {
     "counts": "per-venue rows matured, filled and attempted in the trailing 24 h",
     "excludes": [("venues with matured_24h below N_MIN", "EXOGENOUS")],
     "reported_not_subtracted": [],
+    "verdict_subtrahends": [],
+}
+# Arm 3e names its ENDOGENOUS leg out loud: a cell the producer never attempted is not a candidate. That
+# is starvation (arms 1 and 3 own it — a producer that stops attempting pages there), and it is a
+# condition on candidacy, never a subtrahend in a count compared to a threshold.
+COIN_POPULATION = {
+    "counts": "per-(venue, coin) rows matured, filled and attempted in the trailing 7 d; each candidate "
+              "classified by the ONE admission step",
+    "excludes": [("cells with matured_7d below N_COIN", "EXOGENOUS"),
+                 ("cells the venue reports off, paused, unlisted or retired", "EXOGENOUS"),
+                 ("cells never attempted in 7 d (starvation: arms 1 and 3)", "ENDOGENOUS")],
+    "reported_not_subtracted": [("cells admission could not decide", "EXOGENOUS")],
     "verdict_subtrahends": [],
 }
 
@@ -735,12 +957,99 @@ def arm_venue_silence(venues, n_min=None):
             "evaluated": len(venues), "population": VENUE_POPULATION, "detail": detail}
 
 
+def coin_key(venue, coin):
+    """The page-on-change key of a cell: `VENUE|COIN` verbatim when the wrapper's key grammar takes it,
+    else `VENUE|x-<16 hex of sha256(coin)>` — deterministic, so a coin is the same key on every run, and
+    never a key the wrapper refuses. The body always names the coin itself."""
+    k = "%s|%s" % (venue, coin)
+    if WRAPPER_KEY_RE.match(k):
+        return k
+    hashed = "%s|x-%s" % (venue, hashlib.sha256(coin.encode("utf-8")).hexdigest()[:16])
+    return hashed if WRAPPER_KEY_RE.match(hashed) else "x-" + hashlib.sha256(k.encode("utf-8")).hexdigest()[:16]
+
+
+def is_coin_candidate(cell, n_min=None):
+    """THE candidacy rule, stated once (gather() asks admission about exactly these cells, and the arm
+    judges exactly these): rows became due, the producer TRIED them, and none filled."""
+    n = COIN_SILENT_N_MIN if n_min is None else n_min
+    return cell["matured_7d"] >= n and cell["attempted_7d"] > 0 and cell["filled_7d"] == 0
+
+
+def coin_candidates(cells, n_min=None):
+    return [c for c in cells if is_coin_candidate(c, n_min)]
+
+
+def _cell_name(c):
+    return "%s|%s" % (c["venue"], c["coin"])
+
+
+def _cells_brief(cells, fmt):
+    shown = " · ".join(fmt(c) for c in cells[:COIN_DETAIL_MAX_CELLS])
+    more = len(cells) - COIN_DETAIL_MAX_CELLS
+    return shown + (" · +%d more" % more if more > 0 else "")
+
+
+def arm_coin_silence(cells, admission, admission_error=None, n_min=None):
+    """ARM 3e — is ONE coin's fill path failing on a venue that lists it live? (CH2, its own alert.)
+
+    `cells` is the emitter's coin census; `admission` maps (venue, coin) to admission-verdict.js's row for
+    each candidate it was asked about (None when the script could not answer — `admission_error` says
+    why). Every candidate lands in exactly one list:
+      paged      the venue lists the coin live (THIN_LIVE / ADAPTER_CONTRADICTION)      -> FAIL;
+      reported   VENUE_OFF, or STATUS_UNKNOWN on a venue whose declaration is retired  -> named, never paged;
+      undecided  any other STATUS_UNKNOWN, no verdict, or a coin admission cannot take -> INDETERMINATE.
+    FAIL > INDETERMINATE > PASS. Zero cells is a FACT, reported positively.
+    """
+    n = COIN_SILENT_N_MIN if n_min is None else n_min
+    cands = coin_candidates(cells, n)
+    paged, reported, undecided = [], [], []
+    for c in cands:
+        cell = dict(c, key=coin_key(c["venue"], c["coin"]), cls=None, reason="", symbol=None,
+                    admission_kind=None)
+        if not admission_token_ok(c):
+            cell["reason"] = "the coin is outside admission-verdict's key grammar, so it was not asked"
+            undecided.append(cell)
+            continue
+        v = (admission or {}).get((c["venue"], c["coin"]))
+        if v is None:
+            cell["reason"] = "admission verdict unavailable: %s" % (admission_error or "no verdict for this cell")
+            undecided.append(cell)
+            continue
+        cell.update(cls=v.get("class"), reason=str(v.get("reason") or ""), symbol=v.get("symbol"),
+                    admission_kind=v.get("admission_kind"))
+        if cell["cls"] in LIVE_CLASSES:
+            paged.append(cell)
+        elif cell["cls"] == "VENUE_OFF" or (cell["cls"] == "STATUS_UNKNOWN"
+                                            and cell["admission_kind"] == "retired"):
+            reported.append(cell)
+        else:
+            undecided.append(cell)
+    below = sum(1 for c in cells if c["attempted_7d"] > 0 and c["filled_7d"] == 0 and c["matured_7d"] < n)
+    verdict = "FAIL" if paged else ("INDETERMINATE" if undecided else "PASS")
+    detail = ("cells=%d candidates=%d (rule: matured_7d >= %d AND filled_7d = 0 AND attempted_7d > 0) "
+              "live=%d reported=%d undecided=%d below_n_coin=%d"
+              % (len(cells), len(cands), n, len(paged), len(reported), len(undecided), below))
+    counts = lambda c: "matured=%d filled=0 attempted=%d" % (c["matured_7d"], c["attempted_7d"])  # noqa: E731
+    if paged:
+        detail += "  SILENT: " + _cells_brief(paged, lambda c: "%s(%s %s)" % (_cell_name(c), counts(c), c["cls"]))
+    if reported:
+        detail += "  REPORTED: " + _cells_brief(reported, lambda c: "%s(%s)" % (_cell_name(c), c["cls"]))
+    if undecided:
+        detail += "  UNDECIDED: " + _cells_brief(undecided, lambda c: "%s(%s)" % (_cell_name(c), c["cls"] or "no verdict"))
+    if not cells:
+        detail += " — no coin had a row mature in 7 d (a FACT; arm 1 owns a dead producer)"
+    return {"name": "coin_silence", "verdict": verdict, "evaluated": len(cells), "candidates": len(cands),
+            "paged": paged, "reported": reported, "undecided": undecided, "below_n_coin": below,
+            "population": COIN_POPULATION, "detail": detail}
+
+
 def classify(inputs, now, stale_hours=None):
     """Compose the arms into ONE verdict. Single derivation: every consumer — the log lines, both
     alert bodies, the R6 record and the exit code — projects from this one value.
 
     `parent_verdict` (arms 1-3) drives OUTCOME_BACKFILL_STALLED; `venue_verdict` (arm 3d) drives
-    OUTCOME_BACKFILL_VENUE_SILENT; `verdict` (all four) is the token.
+    OUTCOME_BACKFILL_VENUE_SILENT; `coin_verdict` (arm 3e) drives OUTCOME_BACKFILL_COIN_SILENT; `verdict`
+    (all five) is the token.
     """
     em = inputs.get("emission")
     p = inputs.get("producer")
@@ -762,14 +1071,21 @@ def classify(inputs, now, stale_hours=None):
     else:
         venue = indeterminate_arm("venue_silence", VENUE_POPULATION,
                                   inputs.get("census_error") or "no venue census")
-    arms = [producer, population, reach, venue]
+    if inputs.get("coins") is not None:
+        coin = arm_coin_silence(inputs["coins"], inputs.get("coin_admission"),
+                                inputs.get("coin_admission_error"))
+    else:
+        coin = indeterminate_arm("coin_silence", COIN_POPULATION,
+                                 inputs.get("coin_error") or "no coin census")
+    arms = [producer, population, reach, venue, coin]
     parent = aggregate([producer["verdict"], population["verdict"], reach["verdict"]])
     c = inputs.get("census") or {}
     return {"verdict": aggregate([a["verdict"] for a in arms]),
-            "parent_verdict": parent, "venue_verdict": venue["verdict"],
+            "parent_verdict": parent, "venue_verdict": venue["verdict"], "coin_verdict": coin["verdict"],
             "arms": arms,
             "breach": parent == "FAIL",
             "venue_breach": venue["verdict"] == "FAIL",
+            "coin_breach": coin["verdict"] == "FAIL",
             "census_source": "emitter" if em is not None else "unavailable",
             "census_error": inputs.get("census_error"),
             "source_sha": em["source_sha"] if em is not None else None,
@@ -902,6 +1218,111 @@ def build_venue_body(v, vs_streak):
     ])
 
 
+def read_backfill_tail(path=None, limit=None):
+    """The producer's log tail as lines — its .1 rotation first, then the live file, the last `limit`
+    bytes of each — with every line naming an outcome DROPPED before anything else reads them
+    (label-blind). A missing file is simply absent; this never raises."""
+    path = path or BACKFILL_LOG
+    limit = limit or BACKFILL_LOG_TAIL_BYTES
+    out = []
+    for p in (path + ".1", path):
+        try:
+            with open(p, "rb") as fh:
+                fh.seek(0, os.SEEK_END)
+                size = fh.tell()
+                fh.seek(max(0, size - limit))
+                lines = fh.read().decode("utf-8", "replace").splitlines()
+        except OSError:
+            continue
+        if size > limit and lines:
+            lines = lines[1:]                  # the first line was cut mid-way by the seek
+        out.extend(ln for ln in lines if "outcome:" not in ln)
+    return out
+
+
+_ROW_LINE = re.compile(r"^\[[^\]]+\] (\S+) \S+ \[[^\]]+\] (?:backfill error|— no candles)")
+
+
+def last_failure_line(lines, venue, coin):
+    """(line, names_venue). The newest log line about the cell: a `Blocking <VENUE>:<COIN>` line names
+    the venue and wins; a per-row line names only the coin (the producer does not print the venue there),
+    so it may belong to another venue listing the same coin — the body says which kind it is."""
+    block = "Blocking %s:%s " % (venue, coin)
+    for ln in reversed(lines):
+        if block in ln:
+            return ln, True
+    for ln in reversed(lines):
+        m = _ROW_LINE.match(ln)
+        if m and m.group(1) == coin:
+            return ln, False
+    return None, False
+
+
+def coin_body_sections(v, state, active):
+    """The cells of the coin arm, split by what this run's page says about each. PURE."""
+    arm = _arm(v, "coin_silence")
+    by_key = {}
+    for group in ("paged", "undecided", "reported"):
+        for c in arm.get(group, []):
+            by_key[c["key"]] = (group, c)
+    act = set(active)
+    return {
+        "failing": [c for c in arm.get("paged", []) if c["key"] in act],
+        "pending": [c for c in arm.get("paged", []) if c["key"] not in act],
+        "held": [by_key[k][1] for k in active if k in by_key and by_key[k][0] == "undecided"],
+        "recovering": [k for k in active if k not in by_key or by_key[k][0] == "reported"],
+        "reported": arm.get("reported", []),
+    }
+
+
+def build_coin_body(v, state, active, log_lines=None):
+    sec = coin_body_sections(v, state, active)
+    lines = ["\U0001F6D1 %s" % COIN_SILENT_ALERT, ""]
+    for c in sec["failing"][:COIN_BODY_MAX_CELLS]:
+        lines.append("%s: %d matured, 0 filled, %d attempted in 7 d — %s lists it live (%s%s)"
+                     % (_cell_name(c), c["matured_7d"], c["attempted_7d"], c["venue"], c["cls"],
+                        ", %s" % c["symbol"] if c.get("symbol") else ""))
+        if log_lines is not None:
+            ln, named = last_failure_line(log_lines, c["venue"], c["coin"])
+            lines.append("  last failure%s: %s" % ("" if named or ln is None else " (coin match; the log names no venue)",
+                                                  (ln or "none in the log tail")[:180]))
+    if len(sec["failing"]) > COIN_BODY_MAX_CELLS:
+        lines.append("… and %d more silent cells (all in %s)" % (len(sec["failing"]) - COIN_BODY_MAX_CELLS, LOG))
+    if sec["held"]:
+        lines.append("Held (admission undecided this run, paging before): " + ", ".join(_cell_name(c) for c in sec["held"]))
+    if sec["recovering"]:
+        lines.append("Recovering (clean %s, leaves at %d): %s" % (
+            "/".join(str((state.get(k) or {}).get("clear", 0)) for k in sec["recovering"]),
+            CONSECUTIVE_TO_PAGE, ", ".join(sec["recovering"])))
+    if sec["pending"]:
+        lines.append("Pending sustain (1/%d, not paged yet): %s" % (CONSECUTIVE_TO_PAGE,
+                                                                 ", ".join(_cell_name(c) for c in sec["pending"])))
+    if sec["reported"]:
+        lines.append("Reported, not paged — venue facts: " + "; ".join(
+            "%s %s (%s)" % (_cell_name(c), c["cls"], c["reason"][:REASON_MAX_CHARS])
+            for c in sec["reported"][:COIN_BODY_MAX_CELLS]))
+    lines += [
+        "",
+        "Rule: per (venue, coin), rows matured in 7 d >= %d, filled = 0, attempted >= 1 (N_COIN "
+        "calibrated 2026-10-18 over 68 cells); each candidate classified by admission-verdict.js — a "
+        "coin the venue lists live (THIN_LIVE / ADAPTER_CONTRADICTION) pages, a venue fact (VENUE_OFF, "
+        "retired venue) is reported." % COIN_SILENT_N_MIN,
+        "Sustain: a key pages after %d consecutive failing runs and leaves after %d clean ones; "
+        "page-on-change keyed VENUE|COIN." % (CONSECUTIVE_TO_PAGE, CONSECUTIVE_TO_PAGE),
+        "Why it pages: arm 3d judges whole venues — 8 HL coins whose candle requests named the wrong "
+        "market stayed unfilled for five months beside a venue that kept filling everything else.",
+        census_source_line(v),
+        "",
+        "Action: dispatch %s via Cowork → Claude Code" % COIN_SILENT_WAVE,
+        "Source log: %s" % LOG,
+    ]
+    body = "\n".join(lines)
+    if len(body) > COIN_BODY_MAX_CHARS:
+        tail = "\n… (truncated to one message; the full cell list is in %s)" % LOG
+        body = body[:COIN_BODY_MAX_CHARS - len(tail)] + tail
+    return body
+
+
 # ── state + effects ──────────────────────────────────────────────────────────────────────────
 
 def _read_state():
@@ -953,14 +1374,76 @@ def episode_open(alert_id=ALERT_ID):
     return os.path.exists(os.path.join(ALERT_STATE_DIR, "%s-last-fired-at" % alert_id))
 
 
-def write_state(streak, v, now, recovery_streak=0, vs_streak=0, vs_recovery=0):
+def read_coin_state():
+    """Arm 3e's per-key sustain state, sanitised: anything malformed is dropped (a key with no state
+    starts its sustain again — noise, never silence)."""
+    raw = _read_state().get("coin_silent")
+    out = {}
+    if isinstance(raw, dict):
+        for k, st in raw.items():
+            if isinstance(k, str) and WRAPPER_KEY_RE.match(k) and isinstance(st, dict):
+                try:
+                    out[k] = {"fail": max(0, int(st.get("fail", 0))), "clear": max(0, int(st.get("clear", 0))),
+                              "active": st.get("active") is True}
+                except (TypeError, ValueError):
+                    continue
+    return out
+
+
+def coin_state_step(arm, prior):
+    """(state, active keys). PURE. The canary's 2-run sustain, both ways, PER KEY — the symmetric
+    hysteresis its other alerts apply, at the grain this page is keyed on:
+      * a FAILING cell counts toward its sustain and is ACTIVE from CONSECUTIVE_TO_PAGE runs on;
+      * an UNDECIDED cell holds its state exactly — an INDETERMINATE is evidence of nothing;
+      * any other key counts toward recovery: an ACTIVE key leaves after CONSECUTIVE_TO_PAGE clean runs,
+        so a cell that dips under N_COIN for one run is neither pruned from the ack nor re-paged.
+    A census-blind run never reaches here: run() keeps the prior state whole."""
+    state = {}
+    for c in arm.get("paged", []):
+        p = prior.get(c["key"]) or {}
+        fail = p.get("fail", 0) + 1
+        state[c["key"]] = {"fail": fail, "clear": 0,
+                           "active": p.get("active") is True or fail >= CONSECUTIVE_TO_PAGE}
+    for c in arm.get("undecided", []):
+        if c["key"] in prior and c["key"] not in state:
+            state[c["key"]] = dict(prior[c["key"]])
+    for k, p in prior.items():
+        if k in state or not p.get("active"):
+            continue
+        clear = p.get("clear", 0) + 1
+        if clear < CONSECUTIVE_TO_PAGE:
+            state[k] = {"fail": 0, "clear": clear, "active": True}
+    return state, sorted(k for k, st in state.items() if st["active"])
+
+
+def coin_dispatch(arm, active):
+    """What OUTCOME_BACKFILL_COIN_SILENT hears this run. PURE.
+      ("fire", keys)  an active key is failing or held — every ACTIVE key travels as ALERT_KEYS (the
+                      recovering ones too, so the wrapper does not prune what it already acknowledged);
+      ("clear", None) nothing is active — the page-on-change caller reports its empty set every run;
+      (None, None)    the census could not be read, or only recovering keys remain: HOLD — the wrapper
+                      keeps its acknowledgement and nothing pages."""
+    if arm.get("evaluated") is None:
+        return None, None
+    if not active:
+        return "clear", None
+    live = {c["key"] for c in arm.get("paged", []) + arm.get("undecided", [])}
+    if any(k in live for k in active):
+        return "fire", list(active)
+    return None, None
+
+
+def write_state(streak, v, now, recovery_streak=0, vs_streak=0, vs_recovery=0, coin_state=None):
     # No page memory is written here, by design — see episode_open(). A field that recorded
     # "paged" would be a second copy of the wrapper's marker, and it is the copy that went stale.
+    # `coin_silent` is arm 3e's per-key SUSTAIN state, not page memory: whether a page was delivered is
+    # still the wrapper's to say (its ack + marker).
     try:
         os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
         with open(STATE_FILE, "w") as fh:
             json.dump({"consecutive_breaches": streak, "consecutive_pass": recovery_streak,
                        "venue_silent_breaches": vs_streak, "venue_silent_pass": vs_recovery,
+                       "coin_silent": coin_state if coin_state is not None else read_coin_state(),
                        "last_run_epoch": now,
                        "last_verdict": v["verdict"],
                        "census_source": v["census_source"],
@@ -1042,6 +1525,38 @@ def clear_venue_silent(reason):
                                                 (proc.stdout or proc.stderr).strip()[:160]))
 
 
+LAST_CS_FIRE = {}
+LAST_CS_CLEAR = {}
+
+
+def fire_coin_silent(body, keys):
+    """Arm 3e's page. LITERAL argv (see COIN_SILENT_ALERT); `keys` travel as ALERT_KEYS — the wrapper's
+    page-on-change input — so only a key outside its acknowledgement pages."""
+    argv = [TG, "OUTCOME_BACKFILL_COIN_SILENT", "CRITICAL_PERSISTENT", "-"]
+    LAST_CS_FIRE.update(body=body, argv=argv, keys=list(keys))
+    if os.environ.get("OBF_SELFTEST") == "1":
+        log("WOULD_FIRE: %s keys=%s (self-test — wrapper skipped)" % (COIN_SILENT_ALERT, " ".join(keys)))
+        return
+    env = dict(os.environ, ALERT_KEYS=" ".join(keys))
+    proc = subprocess.run(argv, input=body, capture_output=True, encoding="utf-8", errors="replace",
+                          timeout=30, env=env)
+    log("wrapper[%s] exit=%d keys=%d out=%s" % (COIN_SILENT_ALERT, proc.returncode, len(keys),
+                                                (proc.stdout or proc.stderr).strip()[:160]))
+
+
+def clear_coin_silent(reason):
+    """Arm 3e's empty key set: mode flag FIRST, reason positional. The wrapper drops the ack and, after a
+    delivered page, its marker — silently, by the registry default."""
+    argv = [TG, "--clear", "OUTCOME_BACKFILL_COIN_SILENT", reason]
+    LAST_CS_CLEAR.update(reason=reason, argv=argv)
+    if os.environ.get("OBF_SELFTEST") == "1":
+        log("WOULD_CLEAR: %s (%s) (self-test — wrapper skipped)" % (COIN_SILENT_ALERT, reason))
+        return
+    proc = subprocess.run(argv, capture_output=True, encoding="utf-8", errors="replace", timeout=30)
+    log("wrapper[%s] --clear exit=%d out=%s" % (COIN_SILENT_ALERT, proc.returncode,
+                                                (proc.stdout or proc.stderr).strip()[:160]))
+
+
 def publish_result(v, exit_code, path=None):
     """R6 — one structured record per run, so the NEXT occurrence is a file read and not an SSH
     session. A RECORDER, never a gate: it cannot change the verdict, the exit code or the alert
@@ -1054,6 +1569,10 @@ def publish_result(v, exit_code, path=None):
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import canary_result_log  # noqa: PLC0415 — deliberately local; see docstring
         reach = _arm(v, "reachability")
+        coin = _arm(v, "coin_silence")
+        coin_keys = {name: [c["key"] for c in coin.get(src, [])]
+                     for name, src in (("coin_silent", "paged"), ("coin_reported", "reported"),
+                                       ("coin_undecided", "undecided"))}
         metrics = {
             "arms": {a["name"]: a["verdict"] for a in v["arms"]},
             "census_source": v["census_source"],
@@ -1070,6 +1589,10 @@ def publish_result(v, exit_code, path=None):
             "workable_reachable": reach.get("workable_reachable"),
             "venue_silent": [s["venue"] for s in _arm(v, "venue_silence").get("silent", [])],
             "venues_evaluated": _arm(v, "venue_silence").get("evaluated"),
+            **{name: keys[:R6_COIN_KEYS_MAX] for name, keys in coin_keys.items()},
+            **{name + "_n": len(keys) for name, keys in coin_keys.items()},
+            "coin_cells_evaluated": coin.get("evaluated"),
+            "coin_candidates": coin.get("candidates"),
             "matured_total": v["matured_total"],
             "stamped_total": v["stamped_total"],
             "emitted_recent": v["emitted_recent"],
@@ -1099,6 +1622,15 @@ def run(inputs, now):
         vs_recovery += 1
     elif venue == "FAIL":
         vs_recovery = 0
+    # Arm 3e: per-key sustain, then the page-on-change dispatch. A census-blind run holds it all.
+    coin_arm = _arm(v, "coin_silence")
+    coin_prior = read_coin_state()
+    if coin_arm.get("evaluated") is None:
+        coin_state = coin_prior
+        coin_active = sorted(k for k, st in coin_prior.items() if st["active"])
+    else:
+        coin_state, coin_active = coin_state_step(coin_arm, coin_prior)
+    coin_action, coin_keys = coin_dispatch(coin_arm, coin_active)
 
     log(census_source_line(v))
     for line in render_eval_lines(v, streak, vs_streak):
@@ -1114,7 +1646,7 @@ def run(inputs, now):
     vs_clear = (venue == "PASS" and episode_open(VENUE_SILENT_ALERT)
                 and vs_recovery >= CONSECUTIVE_TO_PAGE)
 
-    write_state(streak, v, now, recovery, vs_streak, vs_recovery)
+    write_state(streak, v, now, recovery, vs_streak, vs_recovery, coin_state)
 
     if will_page:
         fire(build_body(v, streak))
@@ -1137,6 +1669,16 @@ def run(inputs, now):
                            % vs_recovery)
     elif venue == "PASS" and episode_open(VENUE_SILENT_ALERT):
         log("VENUE_SILENT_RECOVERY_HOLD: %d/%d consecutive PASS" % (vs_recovery, CONSECUTIVE_TO_PAGE))
+
+    sec = coin_body_sections(v, coin_state, coin_active)
+    log("COIN_SILENT action=%s active=%d failing=%d pending=%d held=%d recovering=%d reported=%d"
+        % (coin_action or "hold", len(coin_active), len(sec["failing"]), len(sec["pending"]),
+           len(sec["held"]), len(sec["recovering"]), len(sec["reported"])))
+    if coin_action == "fire":
+        fire_coin_silent(build_coin_body(v, coin_state, coin_active, read_backfill_tail()), coin_keys)
+    elif coin_action == "clear":
+        clear_coin_silent("no coin is silent on a venue that lists it live (%d cells, %d candidates)"
+                          % (coin_arm["evaluated"], coin_arm["candidates"]))
     return v, streak
 
 
@@ -1206,12 +1748,15 @@ def self_test():
     VEXPR = "COALESCE(NULLIF(exchange,''),'HL')"
     CLAUSE = "((%s = 'HL' AND timeframe = '5m' AND created_at < %d))" % (VEXPR, NOW - 1496304)
 
-    def emission(limit=LIMIT, clause=CLAUSE, census_sql=None, venue_sql=None, sha="0" * 40):
+    def emission(limit=LIMIT, clause=CLAUSE, census_sql=None, venue_sql=None, sha="0" * 40, coin_sql=None):
         return {"census_sql": census_sql if census_sql is not None else
                 "SELECT COUNT(*) AS backlog_uncapped FROM signals WHERE outcome_price IS NULL "
                 "AND NOT " + clause,
                 "venue_sql": venue_sql if venue_sql is not None else
                 "SELECT %s AS venue FROM signals GROUP BY 1" % VEXPR,
+                "coin_sql": coin_sql if coin_sql is not None else
+                "SELECT venue, coin, matured_7d, filled_7d, attempted_7d FROM (SELECT %s AS venue, coin AS "
+                "coin, COUNT(*) AS matured_7d FROM signals GROUP BY 1, 2) cells WHERE matured_7d >= 1" % VEXPR,
                 "past_reach_clause": clause, "horizons_s": dict(HORIZONS),
                 "constants": {"limit": limit, "max_attempts": 3, "cooldown_s": 86400,
                               "reach_margin_s": 3600},
@@ -1239,8 +1784,20 @@ def self_test():
 
     HEALTHY_VENUES = [venue("BINANCE"), venue("HL", crossed=4)]
 
+    def cell(v, c, matured=40, filled=40, attempted=0):
+        return {"venue": v, "coin": c, "matured_7d": matured, "filled_7d": filled, "attempted_7d": attempted}
+
+    def vrow(v, c, cls, kind="status_field", reason="", symbol=None):
+        return {"key": "dead:%s|%s" % (v, c), "class": cls, "admission_kind": kind, "reason": reason,
+                "symbol": symbol}
+
+    def adm(*rows):
+        return {tuple(r["key"][len("dead:"):].split("|", 1)): r for r in rows}
+
+    HEALTHY_COINS = [cell("BINANCE", "BTC"), cell("HL", "ETH", matured=30, filled=29, attempted=3)]
+
     def inp(p="d", c="d", vs="d", pp="d", em="d", census_error=None, producer_error=None,
-            population_error=None):
+            population_error=None, cs="d", ca=None, coin_error=None, coin_admission_error=None):
         return {"producer": producer() if p == "d" else p,
                 "producer_error": producer_error,
                 "emission": emission() if em == "d" else em,
@@ -1248,7 +1805,26 @@ def self_test():
                 "venues": list(HEALTHY_VENUES) if vs == "d" else vs,
                 "census_error": census_error,
                 "population": pop() if pp == "d" else pp,
-                "population_error": population_error}
+                "population_error": population_error,
+                "coins": list(HEALTHY_COINS) if cs == "d" else cs,
+                "coin_error": coin_error,
+                "coin_admission": ca,
+                "coin_admission_error": coin_admission_error}
+
+    # THE REPLAY (AC1) — each xyz coin's FIRST 7-day window at N_COIN, measured 2026-10-18 from `signals`
+    # (created_at + horizon is immutable, and no HL row of these coins filled before CH1): CBRS crossed
+    # 2026-05-15T10:56Z, SPCX 05-20, DRAM 05-27, BB 06-03, MRVL 06-04, NBIS 06-21, SKHY 07-10, CXMT
+    # 07-24 — matured 5, filled 0 each. `attempted`: the per-row last-attempt stamp only exists since
+    # OPS-OUTCOME-BACKFILL-STALL-W1 (2026-09) and later attempts overwrite it, so the replay carries the
+    # window's rows that were EVER attempted (outcome_attempts > 0) — 5 of 5 each. The admission rows are
+    # what admission-verdict.js answers for these keys after ruling Q-A=B: HL lists each live in dex xyz,
+    # and HL's ticker carries no last-trade time, so THIN_LIVE (the host proof, AC3, asks the real one).
+    XYZ = ("CBRS", "SPCX", "DRAM", "BB", "MRVL", "NBIS", "SKHY", "CXMT")
+    REPLAY_CELLS = [cell("HL", x, matured=5, filled=0, attempted=5) for x in XYZ]
+    REPLAY_ADM = adm(*[vrow("HL", x, "THIN_LIVE", "legacy_oi_positive",
+                            "HL's ticker carries no last-trade timestamp", "xyz:" + x) for x in XYZ])
+    PRE_RULING_ADM = adm(*[vrow("HL", x, "VENUE_OFF", "legacy_oi_positive",
+                                "absent from HL's own universe payload (234 rows)") for x in XYZ])
 
     # ── ARM 1: the PRODUCER arm (its own direct read) ────────────────────────────────────────
     check("arm1 PASS: fresh producer stamp + input flowing",
@@ -1388,6 +1964,88 @@ def self_test():
     check("arm3d reports the flow through the exit (rows crossing their venue's depth in 24 h)",
           lambda: "past_reach_entered_24h=4" in arm_venue_silence(HEALTHY_VENUES)["detail"])
 
+    # ── ARM 3e: COIN SILENCE — the replay, the venue facts, and a twin for every leg ─────────
+    def a3e(cells, ca=None, err=None):
+        return arm_coin_silence(cells, ca, err)
+
+    def paged_keys(arm):
+        return [c["key"] for c in arm["paged"]]
+
+    check("arm3e THE REPLAY (AC1): the 8 xyz coins' pre-CH1 cells FAIL, every one of them named",
+          lambda: a3e(REPLAY_CELLS, REPLAY_ADM)["verdict"] == "FAIL"
+          and paged_keys(a3e(REPLAY_CELLS, REPLAY_ADM)) == ["HL|" + x for x in XYZ])
+    check("arm3e REPLAY TWIN: read through the pre-ruling admission (VENUE_OFF, standard payload only) the "
+          "same cells are reported and NOTHING pages — why ruling Q-A=B was needed",
+          lambda: a3e(REPLAY_CELLS, PRE_RULING_ADM)["verdict"] == "PASS"
+          and len(a3e(REPLAY_CELLS, PRE_RULING_ADM)["reported"]) == 8)
+    bingx = [cell("BINGX", "NCSKPG2USD", matured=7, filled=0, attempted=11),
+             cell("BINGX", "NCSKCME2USD", matured=7, filled=0, attempted=9)]
+    bingx_adm = adm(*[vrow("BINGX", c["coin"], "VENUE_OFF", reason="BINGX's own status switches it off "
+                           "(admitted only when quote/contracts status === 1 …)") for c in bingx])
+    check("arm3e BINGX paused cells (AC1) are REPORTED with their class, never paged",
+          lambda: a3e(bingx, bingx_adm)["verdict"] == "PASS" and not a3e(bingx, bingx_adm)["paged"]
+          and [c["cls"] for c in a3e(bingx, bingx_adm)["reported"]] == ["VENUE_OFF", "VENUE_OFF"]
+          and "REPORTED: BINGX|NCSKPG2USD(VENUE_OFF)" in a3e(bingx, bingx_adm)["detail"])
+    retired = [cell("BITMART", "PEPE", matured=6, filled=0, attempted=3)]
+    check("arm3e a RETIRED venue (AC1) is reported, never paged and never INDETERMINATE",
+          lambda: a3e(retired, adm(vrow("BITMART", "PEPE", "STATUS_UNKNOWN", "retired",
+                                        "BITMART is retired: …")))["verdict"] == "PASS"
+          and a3e(retired, adm(vrow("BITMART", "PEPE", "STATUS_UNKNOWN", "retired")))["reported"][0]["cls"]
+          == "STATUS_UNKNOWN")
+    check("arm3e AC2 target — a venue that CANNOT speak (kind none, or an unreadable fetch) is INDETERMINATE, "
+          "never PASS",
+          lambda: a3e([cell("WEEX", "SKHY", matured=6, filled=0, attempted=2)],
+                      adm(vrow("WEEX", "SKHY", "STATUS_UNKNOWN", "none")))["verdict"] == "INDETERMINATE"
+          and a3e([cell("XT", "EPT", matured=6, filled=0, attempted=2)],
+                  adm(vrow("XT", "EPT", "STATUS_UNKNOWN", "flags", "the XT universe fetch failed")))["verdict"]
+          == "INDETERMINATE")
+    check("arm3e AC2 target — admission UNAVAILABLE makes every candidate undecided: INDETERMINATE, never PASS",
+          lambda: a3e(REPLAY_CELLS, None, "admission: no ADMISSION_VERDICT_EMIT token")["verdict"]
+          == "INDETERMINATE"
+          and len(a3e(REPLAY_CELLS, None, "x")["undecided"]) == 8
+          and "admission verdict unavailable: x" in a3e(REPLAY_CELLS, None, "x")["undecided"][0]["reason"])
+    check("arm3e AC2 target — another venue's FILLS never stand in for this cell: HL|SKHY dead beside a "
+          "filling BINANCE|SKHY still FAILS",
+          lambda: paged_keys(a3e([cell("HL", "SKHY", matured=5, filled=0, attempted=5),
+                                  cell("BINANCE", "SKHY", matured=40, filled=40, attempted=0)],
+                                 adm(vrow("HL", "SKHY", "THIN_LIVE", "legacy_oi_positive")))) == ["HL|SKHY"])
+    check("arm3e AC2 target — TWIN with zero attempts: a cell the producer never tried is not a candidate",
+          lambda: a3e([cell("HL", "SKHY", matured=40, filled=0, attempted=0)],
+                      adm(vrow("HL", "SKHY", "THIN_LIVE")))["verdict"] == "PASS"
+          and a3e([cell("HL", "SKHY", matured=40, filled=0, attempted=0)], None)["candidates"] == 0)
+    check("arm3e TWIN at N_COIN − 1: BINGX NCSKTWST2USD (matured 4, live at read time) is not a candidate",
+          lambda: a3e([cell("BINGX", "NCSKTWST2USD", matured=COIN_SILENT_N_MIN - 1, filled=0, attempted=1)],
+                      adm(vrow("BINGX", "NCSKTWST2USD", "THIN_LIVE")))["verdict"] == "PASS"
+          and a3e([cell("BINGX", "NCSKTWST2USD", matured=COIN_SILENT_N_MIN, filled=0, attempted=1)],
+                  adm(vrow("BINGX", "NCSKTWST2USD", "THIN_LIVE")))["verdict"] == "FAIL")
+    check("arm3e TWIN: one fill clears a cell — a coin that fills something is not silent",
+          lambda: a3e([cell("HL", "SKHY", matured=40, filled=1, attempted=9)],
+                      adm(vrow("HL", "SKHY", "THIN_LIVE")))["verdict"] == "PASS")
+    check("arm3e ADAPTER_CONTRADICTION is the venue listing it live too ⇒ FAIL",
+          lambda: a3e([cell("ASTER", "EWT", matured=9, filled=0, attempted=4)],
+                      adm(vrow("ASTER", "EWT", "ADAPTER_CONTRADICTION")))["verdict"] == "FAIL")
+    check("arm3e FAIL is never masked by a sibling cell's INDETERMINATE",
+          lambda: a3e(REPLAY_CELLS[:1] + [cell("WEEX", "X", matured=6, filled=0, attempted=1)],
+                      adm(vrow("HL", XYZ[0], "THIN_LIVE"), vrow("WEEX", "X", "STATUS_UNKNOWN", "none")))
+          ["verdict"] == "FAIL")
+    odd = [cell("HL", "SKHY", matured=5, filled=0, attempted=5), cell("ASTER", "a b", matured=6, filled=0, attempted=1)]
+    check("arm3e a coin admission's grammar refuses is undecided ON ITS OWN — the other cells still classify",
+          lambda: paged_keys(a3e(odd, adm(vrow("HL", "SKHY", "THIN_LIVE"))))
+          == ["HL|SKHY"] and a3e(odd, adm(vrow("HL", "SKHY", "THIN_LIVE")))["undecided"][0]["coin"] == "a b"
+          and admission_token_ok(cell("ASTER", "龙虾")) and not admission_token_ok(cell("ASTER", "a|b")))
+    check("arm3e zero cells is a reported FACT, never a silent pass",
+          lambda: a3e([])["verdict"] == "PASS" and "a FACT" in a3e([])["detail"])
+    check("arm3e names every silent cell with its counts and class, and counts the cells below N_COIN",
+          lambda: "HL|SKHY(matured=5 filled=0 attempted=5 THIN_LIVE)" in
+          a3e(REPLAY_CELLS, REPLAY_ADM)["detail"]
+          and "below_n_coin=1" in a3e([cell("BINGX", "Q", matured=2, filled=0, attempted=1)])["detail"])
+    check("coin_key: VENUE|COIN verbatim; a coin outside the wrapper's grammar becomes a STABLE hashed key",
+          lambda: coin_key("HL", "SKHY") == "HL|SKHY"
+          and coin_key("ASTER", "龙虾") == coin_key("ASTER", "龙虾")
+          and coin_key("ASTER", "龙虾").startswith("ASTER|x-") and coin_key("ASTER", "龙虾") != coin_key("ASTER", "牛来")
+          and all(WRAPPER_KEY_RE.match(coin_key(v, c)) for v, c in
+                  (("HL", "SKHY"), ("ASTER", "龙虾"), ("GATE", "草根文化"), ("X", "a b"), ("X", "y" * 300))))
+
     # ── the composition rule ─────────────────────────────────────────────────────────────────
     check("aggregate precedence is FAIL > INDETERMINATE > PASS",
           lambda: aggregate(["PASS", "INDETERMINATE", "FAIL"]) == "FAIL"
@@ -1402,11 +2060,16 @@ def self_test():
     check("...and the arms name WHICH half broke (producer PASS, reachability FAIL)",
           lambda: [a["verdict"] for a in classify(
               inp(c=census(backlog=LIMIT + 6800, frontier_lag_h=11.3)), NOW)["arms"]]
-          == ["PASS", "PASS", "FAIL", "PASS"])
-    check("a fully healthy estate is PASS on all four arms",
+          == ["PASS", "PASS", "FAIL", "PASS", "PASS"])
+    check("a fully healthy estate is PASS on all five arms",
           lambda: classify(inp(), NOW)["verdict"] == "PASS"
           and [a["name"] for a in classify(inp(), NOW)["arms"]]
-          == ["producer", "population", "reachability", "venue_silence"])
+          == ["producer", "population", "reachability", "venue_silence", "coin_silence"])
+    check("a silent coin FAILS the token but neither the parent nor the venue alert",
+          lambda: classify(inp(cs=REPLAY_CELLS, ca=REPLAY_ADM), NOW)["verdict"] == "FAIL"
+          and classify(inp(cs=REPLAY_CELLS, ca=REPLAY_ADM), NOW)["parent_verdict"] == "PASS"
+          and classify(inp(cs=REPLAY_CELLS, ca=REPLAY_ADM), NOW)["venue_verdict"] == "PASS"
+          and classify(inp(cs=REPLAY_CELLS, ca=REPLAY_ADM), NOW)["coin_breach"] is True)
     check("a silent venue FAILS the token but NOT the parent alert — one alert id, one remedy",
           lambda: classify(inp(vs=[venue("XT", matured=5, filled=0, attempted=3)]), NOW)["verdict"]
           == "FAIL"
@@ -1415,10 +2078,11 @@ def self_test():
 
     # ── EMITTER FAILURE: arms 2-3 INDETERMINATE while arm 1 evaluates ────────────────────────
     blind = inp(c=None, vs=None, pp=None, em=None, census_error="the census emitter failed rc=1",
-                population_error="no horizons — the census emitter did not answer")
-    check("emitter failure ⇒ population, reachability and venue arms INDETERMINATE",
+                population_error="no horizons — the census emitter did not answer", cs=None,
+                coin_error="no coin census — the census emitter did not answer")
+    check("emitter failure ⇒ population, reachability, venue and coin arms INDETERMINATE",
           lambda: [a["verdict"] for a in classify(blind, NOW)["arms"][1:]]
-          == ["INDETERMINATE", "INDETERMINATE", "INDETERMINATE"])
+          == ["INDETERMINATE", "INDETERMINATE", "INDETERMINATE", "INDETERMINATE"])
     check("emitter failure ⇒ arm 1 STILL evaluates (PASS on a healthy producer)",
           lambda: classify(blind, NOW)["arms"][0]["verdict"] == "PASS")
     check("emitter failure ⇒ a stale producer still FAILS — the emitter can never blind arm 1",
@@ -1434,7 +2098,11 @@ def self_test():
               "CENSUS_SOURCE=emitter source_sha=" + "0" * 40))
     check("a producer-read failure blinds ONLY arm 1",
           lambda: [a["verdict"] for a in classify(inp(p=None, producer_error="psql failed rc=2"), NOW)["arms"]]
-          == ["INDETERMINATE", "PASS", "PASS", "PASS"])
+          == ["INDETERMINATE", "PASS", "PASS", "PASS", "PASS"])
+    check("a coin-census failure blinds ONLY arm 3e (and the token, never as PASS)",
+          lambda: [a["verdict"] for a in classify(inp(cs=None, coin_error="psql failed rc=2"), NOW)["arms"]]
+          == ["PASS", "PASS", "PASS", "PASS", "INDETERMINATE"]
+          and classify(inp(cs=None, coin_error="psql failed rc=2"), NOW)["verdict"] == "INDETERMINATE")
 
     # ── the SQL strings this file still builds ───────────────────────────────────────────────
     psql_sql = build_producer_sql(NOW)
@@ -1511,6 +2179,40 @@ def self_test():
           lambda: raises_indeterminate(lambda: parse_venue_rows("HL|40|x|9|4|12"))
           and raises_indeterminate(lambda: parse_venue_rows("HL|40|38")))
 
+    crows = "SET\nBINGX|NCSKPG2USD|7|0|11\nASTER|龙虾|3|1|0\nHL|A|B|9|0|2"
+    check("coin parser reads COIN_COLUMNS rows, skipping the SET tag, coins in any script intact",
+          lambda: parse_coin_rows(crows)[:2] == [cell("BINGX", "NCSKPG2USD", 7, 0, 11), cell("ASTER", "龙虾", 3, 1, 0)])
+    check("coin parser reads from BOTH ends: a coin carrying the separator is still ONE coin",
+          lambda: parse_coin_rows(crows)[2] == cell("HL", "A|B", 9, 0, 2))
+    check("coin parser: zero rows is a FACT, []",
+          lambda: parse_coin_rows("SET\n") == [])
+    check("coin parser: a short, non-numeric, venue-less or duplicated row -> INDETERMINATE",
+          lambda: raises_indeterminate(lambda: parse_coin_rows("HL|SKHY|5|0"))
+          and raises_indeterminate(lambda: parse_coin_rows("HL|SKHY|5|x|5"))
+          and raises_indeterminate(lambda: parse_coin_rows("HL|SKHY|5|²|5"))
+          and raises_indeterminate(lambda: parse_coin_rows("|SKHY|5|0|5"))
+          and raises_indeterminate(lambda: parse_coin_rows("HL|SKHY|5|0|5\nHL|SKHY|6|0|5")))
+    two = [cell("HL", "SKHY", 5, 0, 5), cell("ASTER", "龙虾", 6, 0, 1)]
+
+    def adm_out(rows, token="PASS", pre="[universe-admission] HL admitted 178 excluded 56"):
+        return "%s\n%s\n%s=%s\n" % (pre, json.dumps({"generated_at": "x", "keys": rows}, ensure_ascii=False),
+                                     ADMISSION_TOKEN, token)
+    good_rows = [vrow("HL", "SKHY", "THIN_LIVE"), vrow("ASTER", "龙虾", "VENUE_OFF")]
+    check("admission parser maps each requested cell to its row, skipping the app's log lines",
+          lambda: parse_admission(adm_out(good_rows), two)[("ASTER", "龙虾")]["class"] == "VENUE_OFF"
+          and len(parse_admission(adm_out(good_rows), two)) == 2)
+    check("admission parser: no token, a non-PASS token, or no JSON line -> INDETERMINATE",
+          lambda: raises_indeterminate(lambda: parse_admission(json.dumps({"keys": good_rows}), two))
+          and raises_indeterminate(lambda: parse_admission(adm_out(good_rows, token="INDETERMINATE"), two))
+          and raises_indeterminate(lambda: parse_admission("%s=PASS" % ADMISSION_TOKEN, two))
+          and raises_indeterminate(lambda: parse_admission("{nope\n%s=PASS" % ADMISSION_TOKEN, two)))
+    check("admission parser: a class outside the vocabulary, an unrequested key, a missing key or a key "
+          "classed twice -> INDETERMINATE",
+          lambda: raises_indeterminate(lambda: parse_admission(adm_out([vrow("HL", "SKHY", "ALIVE"), good_rows[1]]), two))
+          and raises_indeterminate(lambda: parse_admission(adm_out(good_rows + [vrow("XT", "EPT", "THIN_LIVE")]), two))
+          and raises_indeterminate(lambda: parse_admission(adm_out(good_rows[:1]), two))
+          and raises_indeterminate(lambda: parse_admission(adm_out(good_rows + good_rows[:1]), two)))
+
     def emitted(em_dict=None, token="PASS", extra=""):
         return "%s\n%s=%s\n%s" % (json.dumps(em_dict if em_dict is not None else emission()),
                                   EMIT_TOKEN, token, extra)
@@ -1523,9 +2225,21 @@ def self_test():
           lambda: raises_indeterminate(lambda: parse_emission(json.dumps(emission()))))
     check("emission parser: two JSON lines -> INDETERMINATE",
           lambda: raises_indeterminate(lambda: parse_emission(json.dumps(emission()) + "\n" + emitted())))
-    check("emission parser: a missing key -> INDETERMINATE (every key the canary reads must arrive)",
+    check("emission parser: a missing key -> INDETERMINATE (every key arms 2-3d read must arrive)",
           lambda: all(raises_indeterminate(lambda k=k: parse_emission(emitted(
-              {kk: vv for kk, vv in emission().items() if kk != k}))) for k in EMITTER_KEYS))
+              {kk: vv for kk, vv in emission().items() if kk != k})))
+              for k in EMITTER_KEYS if k not in ARM_3E_EMITTER_KEYS))
+    check("emission parser: a missing coin_sql is NOT the emission's failure — arm 3e's alone",
+          lambda: parse_emission(emitted({kk: vv for kk, vv in emission().items() if kk != "coin_sql"}))
+          ["constants"]["limit"] == LIMIT
+          and raises_indeterminate(lambda: coin_sql_of(
+              {kk: vv for kk, vv in emission().items() if kk != "coin_sql"})))
+    check("coin_sql refusals: not a SELECT, an outcome VALUE column, a statement separator",
+          lambda: raises_indeterminate(lambda: coin_sql_of(emission(coin_sql="DELETE FROM signals")))
+          and raises_indeterminate(lambda: coin_sql_of(emission(
+              coin_sql="SELECT coin, AVG(pfe_return_pct) FROM signals GROUP BY 1")))
+          and raises_indeterminate(lambda: coin_sql_of(emission(coin_sql="SELECT 1; SELECT 2")))
+          and coin_sql_of(emission()).startswith("SELECT venue, coin"))
     check("emission parser: a boolean or zero constant -> INDETERMINATE",
           lambda: raises_indeterminate(lambda: parse_emission(emitted(dict(emission(), constants={
               "limit": True, "max_attempts": 3, "cooldown_s": 86400, "reach_margin_s": 3600}))))
@@ -1551,8 +2265,9 @@ def self_test():
     # ── gather() through fake psql + emitter commands — the seams themselves ─────────────────
     fake_psql = os.path.join(tmp, "fake-psql.py")
     with open(fake_psql, "w") as fh:
-        fh.write("import sys\nsql = sys.argv[-1]\n"
+        fh.write("import os, sys\nsql = sys.argv[-1]\n"
                  "if 'backlog_uncapped' in sql: print('SET'); print('%s')\n"
+                 "elif 'matured_7d' in sql: print('SET'); print(os.environ.get('FAKE_COIN_ROWS', 'BINANCE|BTC|40|40|0'))\n"
                  "elif ' AS venue' in sql: print('SET'); print('BINANCE|50|50|2|0|3')\n"
                  "elif 'GROUP BY timeframe' in sql: print('SET'); print('3m|500|%d')\n"
                  "else: print('SET'); print('%s')\n" % (crow, NOW - 2000, prow))
@@ -1583,6 +2298,61 @@ def self_test():
     check("gather() → classify(): the dead-emitter run is INDETERMINATE with arm 1 still PASS",
           lambda: classify(g_dead, NOW)["verdict"] == "INDETERMINATE"
           and classify(g_dead, NOW)["arms"][0]["verdict"] == "PASS")
+    check("gather(): a working emitter reads the coin census too — no candidate, so admission is never asked",
+          lambda: g_ok["coins"] == [cell("BINANCE", "BTC")] and g_ok["coin_admission"] is None
+          and g_ok["coin_error"] is None and g_ok["coin_admission_error"] is None)
+    check("gather(): a dead emitter blinds arm 3e with a reason, like arms 2-3d",
+          lambda: g_dead["coins"] is None and "did not answer" in (g_dead["coin_error"] or ""))
+
+    # arm 3e's own seams, end to end: the coin census through fake psql, admission through a fake script
+    fake_adm = os.path.join(tmp, "fake-admission.py")
+    asked_log = os.path.join(tmp, "admission-asked.txt")
+    with open(fake_adm, "w") as fh:
+        fh.write("import json, sys\nkeys = sys.argv[-1].split()\nopen(%r, 'w').write(sys.argv[-1])\n"
+                 "print('[universe-admission] HL admitted 178 excluded 56')\n"
+                 "print(json.dumps({'generated_at': 'x', 'keys': [{'key': 'dead:' + k, 'class': 'THIN_LIVE', "
+                 "'admission_kind': 'legacy_oi_positive', 'reason': 'live', 'symbol': None} for k in keys]}))\n"
+                 "print('ADMISSION_VERDICT_EMIT=PASS')\n" % asked_log)
+    def safe_gather():
+        # A seam that RAISES must report through the checks below, never abort the suite.
+        try:
+            return gather(NOW)
+        except Exception as e:  # noqa: BLE001
+            return {"_raised": "%s: %s" % (type(e).__name__, e)}
+
+    saved_env = {k: os.environ.get(k) for k in ("OBF_PSQL_CMD", "OBF_EMITTER_CMD", "OBF_ADMISSION_CMD",
+                                                 "FAKE_COIN_ROWS")}
+    try:
+        os.environ["OBF_PSQL_CMD"] = "%s %s" % (sys.executable, fake_psql)
+        os.environ["OBF_EMITTER_CMD"] = "%s %s {now}" % (sys.executable, fake_emitter)
+        os.environ["FAKE_COIN_ROWS"] = "HL|SKHY|5|0|5\nBINANCE|SKHY|40|40|0\nBINGX|NCSKTWST2USD|4|0|1"
+        os.environ["OBF_ADMISSION_CMD"] = "%s %s" % (sys.executable, fake_adm)
+        g_coin = safe_gather()
+        os.environ["OBF_ADMISSION_CMD"] = "false"
+        g_adm_dead = safe_gather()
+        os.environ["FAKE_COIN_ROWS"] = "HL|SKHY|5|x|5"
+        g_coin_bad = safe_gather()
+    finally:
+        for k, val in saved_env.items():
+            if val is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = val
+    check("gather(): admission is asked about the CANDIDATES only, in V|C spelling",
+          lambda: open(asked_log).read() == "HL|SKHY"
+          and g_coin["coin_admission"][("HL", "SKHY")]["class"] == "THIN_LIVE")
+    check("gather() → classify(): the candidate the venue lists live FAILS arm 3e; the parent alert is untouched",
+          lambda: classify(g_coin, NOW)["coin_verdict"] == "FAIL"
+          and classify(g_coin, NOW)["parent_verdict"] == "PASS"
+          and [c["key"] for c in _arm(classify(g_coin, NOW), "coin_silence")["paged"]] == ["HL|SKHY"])
+    check("gather(): a dead admission script leaves the census read and makes the candidate UNDECIDED",
+          lambda: g_adm_dead["coins"] is not None and g_adm_dead["coin_admission"] is None
+          and "ADMISSION_VERDICT_EMIT" in (g_adm_dead["coin_admission_error"] or "")
+          and classify(g_adm_dead, NOW)["coin_verdict"] == "INDETERMINATE")
+    check("gather(): an unparseable coin row blinds arm 3e alone — arms 2-3d still evaluate",
+          lambda: g_coin_bad["coins"] is None and "coin census" in (g_coin_bad["coin_error"] or "")
+          and g_coin_bad["census"] is not None
+          and [a["verdict"] for a in classify(g_coin_bad, NOW)["arms"]][1:4] == ["PASS", "PASS", "PASS"])
 
     # ── sustained-drift gate: day 1 holds, day 2 pages, a heal RESETS ────────────────────────
     LAST_FIRE.clear()
@@ -1623,7 +2393,7 @@ def self_test():
             os.remove(marker)
 
     def fresh():
-        for d in (LAST_FIRE, LAST_CLEAR, LAST_VS_FIRE, LAST_VS_CLEAR):
+        for d in (LAST_FIRE, LAST_CLEAR, LAST_VS_FIRE, LAST_VS_CLEAR, LAST_CS_FIRE, LAST_CS_CLEAR):
             d.clear()
         for p in (STATE_FILE, marker, vs_marker):
             if os.path.exists(p):
@@ -1728,6 +2498,71 @@ def self_test():
     check("venue-silent: no delivered page, no clear — recovery chatter stays off",
           lambda: not LAST_VS_CLEAR)
 
+    # ── arm 3e's OWN alert: per-key sustain both ways, literal argv, ALERT_KEYS, holds ─────────
+    replay_in = inp(cs=REPLAY_CELLS, ca=REPLAY_ADM)
+    xyz_keys = sorted("HL|" + x for x in XYZ)
+    fresh()
+    run(replay_in, NOW)
+    check("coin-silent day 1 -> NO page; the empty ACTIVE set is reported with --clear (page-on-change "
+          "callers report every run)",
+          lambda: not LAST_CS_FIRE and LAST_CS_CLEAR.get("argv", [None] * 3)[:3]
+          == [TG, "--clear", COIN_SILENT_ALERT]
+          and all(read_coin_state()[k] == {"fail": 1, "clear": 0, "active": False} for k in xyz_keys))
+    LAST_CS_CLEAR.clear()
+    run(replay_in, NOW)
+    check("coin-silent day 2 -> PAGES through the LITERAL argv, the 8 keys as ALERT_KEYS",
+          lambda: LAST_CS_FIRE.get("argv") == [TG, COIN_SILENT_ALERT, "CRITICAL_PERSISTENT", "-"]
+          and LAST_CS_FIRE.get("keys") == xyz_keys and not LAST_CS_CLEAR)
+    check("...and the parent and venue alerts stay quiet — their arms all passed",
+          lambda: not LAST_FIRE and not LAST_VS_FIRE and read_streak() == 0 and read_vs_streak() == 0)
+    cs_body = LAST_CS_FIRE.get("body", "")
+    LAST_CS_FIRE.clear()
+    run(inp(cs=REPLAY_CELLS, coin_admission_error="rc=3"), NOW)
+    check("an UNDECIDED run HOLDS every active key and re-sends them (the wrapper keeps its ack, nothing new)",
+          lambda: LAST_CS_FIRE.get("keys") == xyz_keys
+          and all(read_coin_state()[k]["active"] and read_coin_state()[k]["fail"] == 2 for k in xyz_keys))
+    LAST_CS_FIRE.clear()
+    run(inp(cs=None, coin_error="psql failed"), NOW)
+    check("a census-blind run tells the wrapper NOTHING and keeps the state whole",
+          lambda: not LAST_CS_FIRE and not LAST_CS_CLEAR
+          and all(read_coin_state()[k]["active"] for k in xyz_keys))
+    run(inp(), NOW)
+    check("ONE clean run after a page HOLDS (no call): a cell dipping under N_COIN is not pruned",
+          lambda: not LAST_CS_FIRE and not LAST_CS_CLEAR
+          and all(read_coin_state()[k] == {"fail": 0, "clear": 1, "active": True} for k in xyz_keys))
+    run(replay_in, NOW)
+    check("...and if it comes straight back it is re-sent as ACTIVE — acknowledged, so it does not re-page",
+          lambda: LAST_CS_FIRE.get("keys") == xyz_keys
+          and all(read_coin_state()[k]["clear"] == 0 for k in xyz_keys))
+    LAST_CS_FIRE.clear()
+    run(inp(), NOW)
+    run(inp(), NOW)
+    check("TWO consecutive clean runs retire the keys: --clear (mode flag first), state emptied",
+          lambda: not LAST_CS_FIRE and LAST_CS_CLEAR.get("argv", [None] * 3)[:3]
+          == [TG, "--clear", COIN_SILENT_ALERT] and read_coin_state() == {})
+    fresh()
+    run(inp(cs=REPLAY_CELLS, ca=REPLAY_ADM), NOW)
+    run(inp(), NOW)
+    run(inp(cs=REPLAY_CELLS, ca=REPLAY_ADM), NOW)
+    check("a key that FLAPS (fail, clean, fail) never reaches the sustain and never pages",
+          lambda: not LAST_CS_FIRE and all(read_coin_state()[k]["fail"] == 1 for k in xyz_keys))
+    fresh()
+    for _ in range(3):
+        run(inp(cs=bingx, ca=bingx_adm), NOW)
+    check("venue-fact cells never page, however long they persist",
+          lambda: not LAST_CS_FIRE and read_coin_state() == {})
+    check("coin_dispatch: census-blind → hold; nothing active → clear; active failing → fire; only "
+          "recovering → hold",
+          lambda: coin_dispatch(indeterminate_arm("coin_silence", COIN_POPULATION, "x"), ["HL|A"]) == (None, None)
+          and coin_dispatch(a3e([]), []) == ("clear", None)
+          and coin_dispatch(a3e(REPLAY_CELLS, REPLAY_ADM), ["HL|SKHY"]) == ("fire", ["HL|SKHY"])
+          and coin_dispatch(a3e([]), ["HL|SKHY"]) == (None, None))
+    with open(STATE_FILE, "w") as fh:
+        json.dump({"coin_silent": {"HL|A": {"fail": "x"}, "bad key!": {"fail": 1}, "HL|B": 7,
+                                   "HL|C": {"fail": 2, "clear": 0, "active": True}}}, fh)
+    check("a malformed coin state is SANITISED, never trusted: bad rows drop, good ones survive",
+          lambda: read_coin_state() == {"HL|C": {"fail": 2, "clear": 0, "active": True}})
+
     # ── the rendered BODIES + per-arm lines the seams bypass ─────────────────────────────────
     check("BODY names the alert id", lambda: ALERT_ID in body)
     check("BODY names the PRODUCER, so the remedy points at the right thing",
@@ -1765,11 +2600,65 @@ def self_test():
     check("VENUE BODY carries its own template wave and the N_MIN rule",
           lambda: VENUE_SILENT_WAVE in vs_body and "W{NEXT}" in vs_body
           and ">= %d" % VENUE_SILENT_N_MIN in vs_body)
+    blog = os.path.join(tmp, "backfill.log")
+    with open(blog + ".1", "w", encoding="utf-8") as fh:
+        fh.write("[2026-10-17T23:50:00.000Z] CBRS BUY [1h] backfill error (1/3): HL API 500 — CBRS\n")
+    with open(blog, "w", encoding="utf-8") as fh:
+        fh.write("[2026-10-18T04:59:00.000Z] SKHY BUY [1h] backfill error (2/3): HL API 500 — SKHY\n"
+                 "[2026-10-18T04:59:30.000Z] Blocking HL:SKHY — failed 3 times, skipping remaining signals\n"
+                 "[2026-10-18T05:00:00.000Z] SKHY SELL [15m] from 04:00 → outcome: +1.23% | PFE: +2.00% "
+                 "(candle 3) | MAE: -0.50%\n"
+                 "[2026-10-18T05:01:00.000Z] SKHY BUY [1h] backfill error (1/3): BINANCE 400 — the other venue\n")
+    tail = read_backfill_tail(blog)
+    check("the backfill-log tail drops EVERY outcome line before anything reads it (label-blind)",
+          lambda: tail and not any("outcome:" in ln or "PFE:" in ln for ln in tail))
+    check("...reads the .1 rotation before the live file, so a fresh rotation still finds the last failure",
+          lambda: tail[0].endswith("HL API 500 — CBRS") and last_failure_line(tail, "HL", "CBRS")
+          == (tail[0], False))
+    check("a `Blocking V:C` line names the venue and WINS over a newer per-row line that might be another venue's",
+          lambda: last_failure_line(tail, "HL", "SKHY")[0].endswith("Blocking HL:SKHY — failed 3 times, "
+                                                                     "skipping remaining signals")
+          and last_failure_line(tail, "HL", "SKHY")[1] is True)
+    check("a missing log is simply absent — never a raise",
+          lambda: read_backfill_tail(os.path.join(tmp, "no-such.log")) == [])
+    with open(blog, "a", encoding="utf-8") as fh:
+        fh.write("x" * 64 + "\n[2026-10-18T05:02:00.000Z] SKHY BUY [1h] backfill error (3/3): tail\n")
+    check("a bounded tail drops the line its seek cut in half",
+          lambda: read_backfill_tail(blog, 100)[-1].endswith("(3/3): tail")
+          and not any(ln.startswith("x") for ln in read_backfill_tail(blog, 100)))
+    cs_v = classify(replay_in, NOW)
+    cs_state = {k: {"fail": 2, "clear": 0, "active": True} for k in xyz_keys}
+    cs_full = build_coin_body(cs_v, cs_state, xyz_keys, read_backfill_tail(blog))
+    check("COIN BODY names each cell with matured/attempted/filled, its admission class and market",
+          lambda: "HL|SKHY: 5 matured, 0 filled, 5 attempted in 7 d — HL lists it live (THIN_LIVE, xyz:SKHY)"
+          in cs_full and all(("HL|%s: 5 matured" % x) in cs_full for x in XYZ))
+    check("COIN BODY carries the last failure line, the Blocking line preferred, outcome text never",
+          lambda: "last failure: [2026-10-18T04:59:30.000Z] Blocking HL:SKHY" in cs_full
+          and "outcome:" not in cs_full and "PFE:" not in cs_full)
+    check("COIN BODY says when its last-failure line matched the coin only (the log names no venue there)",
+          lambda: "last failure (coin match; the log names no venue): [2026-10-17T23:50:00.000Z] CBRS" in cs_full)
+    check("COIN BODY carries its own template wave, the N_COIN rule and the per-key sustain",
+          lambda: COIN_SILENT_WAVE in cs_full and "W{NEXT}" in cs_full
+          and ">= %d" % COIN_SILENT_N_MIN in cs_full and "page-on-change keyed VENUE|COIN" in cs_full)
+    many = [cell("HL", "C%03d" % i, matured=9, filled=0, attempted=9) for i in range(60)]
+    many_v = classify(inp(cs=many, ca=adm(*[vrow("HL", c["coin"], "THIN_LIVE") for c in many])), NOW)
+    many_body = build_coin_body(many_v, {}, sorted("HL|" + c["coin"] for c in many), [])
+    check("COIN BODY lists at most COIN_BODY_MAX_CELLS cells, then COUNTS the rest",
+          lambda: many_body.count(" matured, 0 filled, ") == COIN_BODY_MAX_CELLS
+          and ("… and %d more silent cells" % (60 - COIN_BODY_MAX_CELLS)) in many_body)
+    huge = [cell("HL", "P%04d" % i, matured=9, filled=0, attempted=9) for i in range(600)]
+    huge_v = classify(inp(cs=huge, ca=adm(*[vrow("HL", c["coin"], "THIN_LIVE") for c in huge])), NOW)
+    huge_body = build_coin_body(huge_v, {}, [], [])      # all 600 still pending: an unbounded list
+    check("COIN BODY is BOUNDED however many cells fail — one Telegram message with the wrapper's header",
+          lambda: len(huge_body) <= COIN_BODY_MAX_CHARS and huge_body.endswith("the full cell list is in %s)" % LOG))
+    check("the day-2 page's body is the one built here (failing cells, the rule, the census source)",
+          lambda: COIN_SILENT_ALERT in cs_body and "CENSUS_SOURCE=emitter" in cs_body
+          and cs_body.count(" lists it live ") == min(8, COIN_BODY_MAX_CELLS))
     lines = render_eval_lines(classify(inp(), NOW), 0)
     check("per-check output is POSITIVE and per-ARM — a verdict line and a POPULATION line each",
-          lambda: len(lines) == 9 and all(
+          lambda: len(lines) == 11 and all(
               any(("ARM %-13s" % n) in ln for ln in lines)
-              for n in ("producer", "population", "reachability", "venue_silence")))
+              for n in ("producer", "population", "reachability", "venue_silence", "coin_silence")))
 
     # ── RIDER 4: the generator gate for the population-conflation class ──────────────────────
     #
@@ -1783,6 +2672,8 @@ def self_test():
         inp(pp=[]),                                                     # population empty
         inp(c=census(backlog=LIMIT)),                                   # reachability FAIL
         inp(vs=[venue("XT", matured=3, filled=0, attempted=1)]),        # venue FAIL
+        inp(cs=REPLAY_CELLS, ca=REPLAY_ADM),                            # coin FAIL
+        inp(cs=REPLAY_CELLS, coin_admission_error="rc=3"),              # coin INDETERMINATE (undecided)
         blind,                                                          # emitter dead
     ) for a in classify(fixture, NOW)["arms"]]
     check("RIDER 4: EVERY arm declares its population — an undeclared one fails on sight",
@@ -1871,6 +2762,36 @@ def self_test():
     check("R6 record carries census_source, past_reach, servable_uncapped, the producer's cap and "
           "both workable figures by name", record_fields)
 
+    def coin_record_fields():
+        v = classify(inp(cs=REPLAY_CELLS + bingx, ca={**REPLAY_ADM, **bingx_adm}), NOW)
+        publish_result(v, _token_exit_map()[v["verdict"]], path=results)
+        with open(results) as fh:
+            m = json.loads(fh.read().splitlines()[-1])["metrics"]
+        return (m.get("coin_silent") == ["HL|" + x for x in XYZ]
+                and m.get("coin_reported") == ["BINGX|NCSKPG2USD", "BINGX|NCSKCME2USD"]
+                and m.get("coin_undecided") == [] and m.get("coin_cells_evaluated") == 10
+                and (m.get("coin_silent_n"), m.get("coin_reported_n"), m.get("coin_undecided_n")) == (8, 2, 0)
+                and m.get("coin_candidates") == 10 and m.get("arms", {}).get("coin_silence") == "FAIL")
+    check("R6 record carries arm 3e by name: silent, reported and undecided keys, cells and candidates",
+          coin_record_fields)
+
+    def coin_record_bounded():
+        # The worst case the wrapper's KEY_RE admits: 500 keys of 128 characters in EACH list. Uncapped,
+        # that line is ~198 KB and canary_result_log refuses it WHOLE, so the last line would still be
+        # the previous record (whose _n is 8) — the `_n == 500` leg is what proves this one landed.
+        v = classify(inp(), NOW)
+        arm = _arm(v, "coin_silence")
+        for src, tag in (("paged", "P"), ("reported", "R"), ("undecided", "U")):
+            arm[src] = [{"key": ("HL|%s%04d" % (tag, i)).ljust(128, "Z")} for i in range(500)]
+        publish_result(v, _token_exit_map()[v["verdict"]], path=results)
+        with open(results) as fh:
+            m = json.loads(fh.read().splitlines()[-1])["metrics"]
+        return all(m.get(k + "_n") == 500 and len(m.get(k, [])) == R6_COIN_KEYS_MAX
+                   and all(len(x) == 128 for x in m[k])
+                   for k in ("coin_silent", "coin_reported", "coin_undecided"))
+    check("R6 record stays under canary_result_log's line cap at the worst-case key load — each list "
+          "capped, its full count beside it", coin_record_bounded)
+
     n = len(ran)
     ok = not failures and n >= _SELF_TEST_MIN_CHECKS
     if n < _SELF_TEST_MIN_CHECKS:
@@ -1886,8 +2807,11 @@ def self_test():
 # Raised 98 -> 103 by OPS-DRIFT-ALERT-GENERATORS-W1. OPS-ALARM-OWNER-DERIVATION-W1 CH1 deleted the
 # two mirror-parity checks with the mirrors they guarded (the vitest pins the emitter instead) and
 # added the emitter, census, venue-silence, gather() and runtime-refusal scenarios. Measured: the
-# suite ran exactly 157 — raised in the SAME edit that added them.
-_SELF_TEST_MIN_CHECKS = 157
+# suite ran exactly 157 — raised in the SAME edit that added them. OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1
+# CH2 added arm 3e (the xyz replay, the venue facts, a twin per leg, the per-key sustain both ways, its
+# body, parsers, gather() seams, R6 fields and the R6 line bound) and two composition checks: measured
+# exactly 216.
+_SELF_TEST_MIN_CHECKS = 216
 
 
 def _token_exit_map():

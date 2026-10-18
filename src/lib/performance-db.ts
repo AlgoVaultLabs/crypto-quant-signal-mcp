@@ -3057,6 +3057,46 @@ export const BACKFILL_VENUE_CENSUS_COLUMNS = [
   'venue', 'matured_24h', 'filled_24h', 'attempted_24h', 'past_reach_entered_24h', 'servable',
 ] as const;
 
+/** Column contract of `buildBackfillCoinCensusSql`, in order. The `_7d` suffix IS the window
+ *  (`BACKFILL_COIN_CENSUS_WINDOW_S`); a test pins the two together, so the canary's body can say "7 d"
+ *  without holding a copy of the number. */
+export const BACKFILL_COIN_CENSUS_COLUMNS = ['venue', 'coin', 'matured_7d', 'filled_7d', 'attempted_7d'] as const;
+
+/** The coin census window (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2): 7 days. */
+export const BACKFILL_COIN_CENSUS_WINDOW_S = 7 * 86_400;
+
+/** The longest maturity horizon any known timeframe has — how far back a row can be created and still
+ *  mature inside a window ending now. */
+function maxMaturityHorizonS(): number {
+  return Math.max(...Object.keys(EVAL_CANDLES).map((tf) => maturityHorizonS(tf) ?? 0));
+}
+
+/**
+ * The three windowed counters BOTH per-group censuses read (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2) —
+ * ONE derivation, so the coin census can never count a row the venue census would not:
+ *  * matured   — rows that became due in the window: matured now ∧ NOT matured `windowS` ago;
+ *  * filled    — `outcome_filled_at` in the window (the producer's own write stamp);
+ *  * attempted — `outcome_last_attempt_at` in the window (the LAST attempt — a lower bound).
+ * Exported for the single-derivation test only.
+ */
+export function buildWindowedCensusCounters(nowEpoch: number, windowS: number): { matured: string; filled: string; attempted: string } {
+  const now = Math.trunc(nowEpoch);
+  const from = now - Math.trunc(windowS);
+  return {
+    matured: `COUNT(*) FILTER (WHERE ${buildMaturityClause(now)} AND NOT ${buildMaturityClause(from)})`,
+    filled: `COUNT(*) FILTER (WHERE outcome_filled_at > ${from} AND outcome_filled_at <= ${now})`,
+    attempted: `COUNT(*) FILTER (WHERE outcome_last_attempt_at > ${from} AND outcome_last_attempt_at <= ${now})`,
+  };
+}
+
+/** The scan bound for those counters: every row that can contribute to one of them matured, filled or
+ *  was attempted inside the window. Bounds the scan only — each column is still decided by its FILTER. */
+function windowedCensusScanBound(nowEpoch: number, windowS: number): string {
+  const now = Math.trunc(nowEpoch);
+  const from = now - Math.trunc(windowS);
+  return `created_at > ${from - maxMaturityHorizonS()} OR outcome_filled_at > ${from} OR outcome_last_attempt_at > ${from}`;
+}
+
 /**
  * ONE scalar row over the pending rows:
  *  * backlog_uncapped  — every pending row (UNCAPPED — never aggregate over the LIMITed read);
@@ -3095,12 +3135,12 @@ export function buildBackfillCensusSql(nowEpoch: number, limit = BACKFILL_QUEUE_
 export function buildBackfillVenueCensusSql(nowEpoch: number): string {
   const now = Math.trunc(nowEpoch);
   const day = 86_400;
-  const maxHorizon = Math.max(...Object.keys(EVAL_CANDLES).map((tf) => maturityHorizonS(tf) ?? 0));
+  const w = buildWindowedCensusCounters(now, day);
   const exprs: Record<(typeof BACKFILL_VENUE_CENSUS_COLUMNS)[number], string> = {
     venue: SQL_VENUE_EXPR,
-    matured_24h: `COUNT(*) FILTER (WHERE ${buildMaturityClause(now)} AND NOT ${buildMaturityClause(now - day)})`,
-    filled_24h: `COUNT(*) FILTER (WHERE outcome_filled_at > ${now - day} AND outcome_filled_at <= ${now})`,
-    attempted_24h: `COUNT(*) FILTER (WHERE outcome_last_attempt_at > ${now - day} AND outcome_last_attempt_at <= ${now})`,
+    matured_24h: w.matured,
+    filled_24h: w.filled,
+    attempted_24h: w.attempted,
     past_reach_entered_24h:
       `COUNT(*) FILTER (WHERE outcome_price IS NULL AND ${buildMaturityClause(now)} AND ${buildPastReachClause(now)}` +
       ` AND NOT ${buildPastReachClause(now - day)})`,
@@ -3108,9 +3148,36 @@ export function buildBackfillVenueCensusSql(nowEpoch: number): string {
   };
   return (
     `SELECT ${BACKFILL_VENUE_CENSUS_COLUMNS.map((c) => `${exprs[c]} AS ${c}`).join(', ')}` +
-    ` FROM signals WHERE (outcome_price IS NULL OR created_at > ${now - day - maxHorizon}` +
-    ` OR outcome_filled_at > ${now - day} OR outcome_last_attempt_at > ${now - day})` +
+    ` FROM signals WHERE (outcome_price IS NULL OR ${windowedCensusScanBound(now, day)})` +
     ` GROUP BY 1 ORDER BY 1`
+  );
+}
+
+/**
+ * OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2 — per (venue, coin), over the trailing 7 days: the same
+ * three counters as the venue census (`buildWindowedCensusCounters`), keyed by the same venue expression.
+ * Only cells with `matured_7d >= 1` are emitted — a cell with nothing due has nothing to fill.
+ *
+ * WHY. Arm 3d judges whole venues, so 8 HL coins whose every candle request named the wrong market sat
+ * unfilled for five months beside a venue that was filling everything else. The canary's arm 3e reads
+ * these cells; the venue key is the fill path's own (`SQL_VENUE_EXPR`), so one coin listed on two venues
+ * is two cells and one venue's fills can never stand in for another's.
+ */
+export function buildBackfillCoinCensusSql(nowEpoch: number): string {
+  const now = Math.trunc(nowEpoch);
+  const w = buildWindowedCensusCounters(now, BACKFILL_COIN_CENSUS_WINDOW_S);
+  const exprs: Record<(typeof BACKFILL_COIN_CENSUS_COLUMNS)[number], string> = {
+    venue: SQL_VENUE_EXPR,
+    coin: 'coin',
+    matured_7d: w.matured,
+    filled_7d: w.filled,
+    attempted_7d: w.attempted,
+  };
+  return (
+    `SELECT ${BACKFILL_COIN_CENSUS_COLUMNS.join(', ')} FROM (` +
+    `SELECT ${BACKFILL_COIN_CENSUS_COLUMNS.map((c) => `${exprs[c]} AS ${c}`).join(', ')}` +
+    ` FROM signals WHERE (${windowedCensusScanBound(now, BACKFILL_COIN_CENSUS_WINDOW_S)})` +
+    ` GROUP BY 1, 2) cells WHERE matured_7d >= 1 ORDER BY 1, 2`
   );
 }
 

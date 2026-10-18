@@ -12,7 +12,10 @@
  *   * `frontier` IS `MAX(created_at)` of the queue's own LIMITed result;
  *   * `horizons_s[tf]` IS `maturityHorizonS(tf)`;
  *   * the emitter's JSON carries every key the canary reads, and the canary's REAL parser reads the
- *     REAL census SQL's output (the artifacts its hermetic self-test replaces with fixtures).
+ *     REAL census SQL's output (the artifacts its hermetic self-test replaces with fixtures);
+ *   * (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2) the per-(venue, coin) census arm 3e reads: the SAME
+ *     windowed counters as the venue census, one venue's fills never counted into another's cell, and the
+ *     wrapper's page-on-change key grammar pinned to the canary's copy.
  *
  * SPAWN BUDGET DECLARED on every spawning block (`scripts/check-test-budget.mjs`).
  */
@@ -21,8 +24,9 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  buildBackfillQueueSql, buildBackfillCensusSql, buildBackfillVenueCensusSql,
-  BACKFILL_CENSUS_COLUMNS, BACKFILL_VENUE_CENSUS_COLUMNS,
+  buildBackfillQueueSql, buildBackfillCensusSql, buildBackfillVenueCensusSql, buildBackfillCoinCensusSql,
+  buildWindowedCensusCounters,
+  BACKFILL_CENSUS_COLUMNS, BACKFILL_VENUE_CENSUS_COLUMNS, BACKFILL_COIN_CENSUS_COLUMNS, BACKFILL_COIN_CENSUS_WINDOW_S,
   BACKFILL_QUEUE_LIMIT, BACKFILL_MAX_ATTEMPTS, BACKFILL_ATTEMPT_COOLDOWN_S,
 } from '../../src/lib/performance-db.js';
 import { EVAL_CANDLES, maturityHorizonS } from '../../src/lib/pfe-mae.js';
@@ -31,6 +35,7 @@ import { buildCensusEmission, runCensusEmitter, EMITTER_KEYS, EMITTER_CONSTANT_K
 
 const REPO = path.resolve(__dirname, '../..');
 const CANARY = path.join(REPO, 'ops/monitoring/outcome-backfill-freshness.py');
+const WRAPPER = path.join(REPO, 'ops/monitoring/send_telegram.sh');
 const NOW = 1_791_630_186;
 const DAY = 86_400;
 const HL5M = reachCutoffS(17.36, NOW);
@@ -61,6 +66,41 @@ add({ timeframe: '15m', exchange: 'XT', created_at: NOW - 8 * 3600, outcome_pric
 // HL 5m row that crossed into past-reach within the last 24 h (and one that crossed earlier: id 1..3).
 add({ timeframe: '5m', exchange: 'HL', created_at: HL5M - 3600, outcome_price: null, outcome_attempts: 2, outcome_last_attempt_at: NOW - 7200, outcome_filled_at: null });
 add({ timeframe: '5m', exchange: 'HL', created_at: HL5M - 2 * DAY, outcome_price: null, outcome_attempts: 3, outcome_last_attempt_at: NOW - 2 * DAY, outcome_filled_at: null });
+
+// ── the coin census fixture (CH2) — its own table, so the queue scenarios above keep their counts ──
+interface CoinRow {
+  id: number; coin: string; timeframe: string; exchange: string; created_at: number; outcome_price: number | null;
+  outcome_attempts: number | null; outcome_last_attempt_at: number | null; outcome_filled_at: number | null;
+}
+const COIN_ROWS: CoinRow[] = [];
+const H1 = 32_400; // the 1h maturity horizon (EVAL_CANDLES + 1 bars)
+const coinAdd = (r: Omit<CoinRow, 'id'>) => COIN_ROWS.push({ id: COIN_ROWS.length + 1, ...r });
+const pending = { outcome_price: null, outcome_attempts: 1, outcome_last_attempt_at: NOW - 3600, outcome_filled_at: null };
+// HL|SKHY — the xyz shape: 6 rows due inside the window, every one attempted, none filled. One carries an
+// EMPTY exchange, which the fill path reads as HL.
+for (let k = 0; k < 6; k++) coinAdd({ coin: 'SKHY', timeframe: '1h', exchange: k === 5 ? '' : 'HL', created_at: NOW - H1 - k * DAY / 2, ...pending });
+// BINANCE|SKHY — the SAME coin on another venue, filling: it must never stand in for HL|SKHY.
+for (let k = 0; k < 3; k++) coinAdd({ coin: 'SKHY', timeframe: '1h', exchange: 'BINANCE', created_at: NOW - H1 - k * DAY, outcome_price: 2, outcome_attempts: null, outcome_last_attempt_at: null, outcome_filled_at: NOW - 7200 });
+coinAdd({ coin: 'SKHY', timeframe: '1h', exchange: 'BINANCE', created_at: NOW - 9 * DAY, outcome_price: 2, outcome_attempts: null, outcome_last_attempt_at: null, outcome_filled_at: NOW - 8 * DAY });
+// HL|BTC — filled inside the window, but it became due weeks ago: nothing due ⇒ no cell.
+coinAdd({ coin: 'BTC', timeframe: '1h', exchange: 'HL', created_at: NOW - 20 * DAY, outcome_price: 2, outcome_attempts: null, outcome_last_attempt_at: null, outcome_filled_at: NOW - DAY });
+// XT|EDGE — the window is (now − 7 d, now]: due exactly 7 d ago is out, one second later is in.
+coinAdd({ coin: 'EDGE', timeframe: '1h', exchange: 'XT', created_at: NOW - 7 * DAY - H1, outcome_price: null, outcome_attempts: null, outcome_last_attempt_at: null, outcome_filled_at: null });
+coinAdd({ coin: 'EDGE', timeframe: '1h', exchange: 'XT', created_at: NOW - 7 * DAY - H1 + 1, outcome_price: null, outcome_attempts: null, outcome_last_attempt_at: null, outcome_filled_at: null });
+// ASTER|龙虾 — a coin in another script survives the census and the canary's parser.
+coinAdd({ coin: '龙虾', timeframe: '1h', exchange: 'ASTER', created_at: NOW - H1 - 3600, ...pending });
+// GATE|NEW — immature (created 10 min ago): no cell.
+coinAdd({ coin: 'NEW', timeframe: '1h', exchange: 'GATE', created_at: NOW - 600, ...pending });
+const COIN_EXPECTED = [
+  { venue: 'ASTER', coin: '龙虾', matured_7d: 1, filled_7d: 0, attempted_7d: 1 },
+  { venue: 'BINANCE', coin: 'SKHY', matured_7d: 3, filled_7d: 3, attempted_7d: 0 },
+  { venue: 'HL', coin: 'SKHY', matured_7d: 6, filled_7d: 0, attempted_7d: 6 },
+  { venue: 'XT', coin: 'EDGE', matured_7d: 1, filled_7d: 0, attempted_7d: 0 },
+];
+const coinInsert = (r: CoinRow) =>
+  `INSERT INTO signals (id, coin, timeframe, exchange, created_at, outcome_price, outcome_attempts, outcome_last_attempt_at, outcome_filled_at) VALUES (${[
+    r.id, r.coin, r.timeframe, r.exchange, r.created_at, r.outcome_price, r.outcome_attempts, r.outcome_last_attempt_at, r.outcome_filled_at,
+  ].map((x) => (x === null ? 'NULL' : typeof x === 'number' ? String(x) : `'${x}'`)).join(', ')})`;
 
 type Exec = (sql: string) => Promise<Array<Record<string, unknown>>>;
 const SCHEMA = `CREATE TEMP TABLE signals (
@@ -134,6 +174,59 @@ function scenarios(label: string, exec: () => Exec) {
   });
 }
 
+function coinScenarios(label: string, exec: () => Exec) {
+  describe(`CH2 [${label}] — the coin census is the venue census's counters, per (venue, coin)`, () => {
+    const rows = async () => (await exec()(buildBackfillCoinCensusSql(NOW))).map((r) => ({
+      venue: String(r.venue), coin: String(r.coin), matured_7d: num(r.matured_7d), filled_7d: num(r.filled_7d), attempted_7d: num(r.attempted_7d),
+    }));
+
+    it('one row per (venue, coin) with matured_7d >= 1, columns exactly BACKFILL_COIN_CENSUS_COLUMNS', async () => {
+      const raw = await exec()(buildBackfillCoinCensusSql(NOW));
+      for (const r of raw) expect(Object.keys(r)).toEqual([...BACKFILL_COIN_CENSUS_COLUMNS]);
+      expect(await rows()).toEqual(COIN_EXPECTED);
+    });
+
+    it('ONE venue’s fills never count into ANOTHER venue’s cell — HL|SKHY stays at 0 beside a filling BINANCE|SKHY', async () => {
+      const by = Object.fromEntries((await rows()).map((r) => [`${r.venue}|${r.coin}`, r]));
+      expect(by['HL|SKHY'].filled_7d).toBe(0);
+      expect(by['BINANCE|SKHY'].filled_7d).toBe(3);
+    });
+
+    it('an empty exchange is HL (the fill path’s own venue key), and the window is (now − 7 d, now]', async () => {
+      const by = Object.fromEntries((await rows()).map((r) => [`${r.venue}|${r.coin}`, r]));
+      expect(by['HL|SKHY'].matured_7d).toBe(6);  // five 'HL' rows + one '' row
+      expect(by['XT|EDGE'].matured_7d).toBe(1);  // due exactly 7 d ago is out; one second later is in
+      expect(Object.keys(by)).not.toContain('|SKHY');
+      expect(Object.keys(by)).not.toContain('HL|BTC');   // filled in the window, due weeks ago
+      expect(Object.keys(by)).not.toContain('GATE|NEW'); // immature
+    });
+  });
+}
+
+describe('CH2 — one derivation for both per-group censuses', () => {
+  it('the venue census and the coin census carry the SAME windowed counters, each at its own window', () => {
+    const day = buildWindowedCensusCounters(NOW, DAY);
+    const week = buildWindowedCensusCounters(NOW, BACKFILL_COIN_CENSUS_WINDOW_S);
+    for (const expr of Object.values(day)) expect(buildBackfillVenueCensusSql(NOW)).toContain(expr);
+    for (const expr of Object.values(week)) expect(buildBackfillCoinCensusSql(NOW)).toContain(expr);
+    // the same expressions, differing ONLY in where the window starts
+    expect(week.filled).toBe(day.filled.replaceAll(String(NOW - DAY), String(NOW - 7 * DAY)));
+    expect(week.attempted).toBe(day.attempted.replaceAll(String(NOW - DAY), String(NOW - 7 * DAY)));
+    expect(week.matured.split(' AND NOT ')[0]).toBe(day.matured.split(' AND NOT ')[0]);
+  });
+
+  it('the `_7d` column suffix IS the window — the canary’s "7 d" can never drift from the SQL', () => {
+    expect(BACKFILL_COIN_CENSUS_WINDOW_S).toBe(7 * DAY);
+    expect(BACKFILL_COIN_CENSUS_COLUMNS.filter((c) => c.endsWith('_7d'))).toHaveLength(3);
+  });
+
+  it('the coin census names no outcome value and no statement separator (the canary refuses both)', () => {
+    const sql = buildBackfillCoinCensusSql(NOW).toLowerCase();
+    for (const t of ['outcome_return_pct', 'mae_return_pct', 'pfe_return_pct', 'pfe_price', 'mae_price', 'return_1candle']) expect(sql).not.toContain(t);
+    expect(sql).not.toContain(';');
+  });
+});
+
 describe('AC3 — the emitter', () => {
   it('horizons_s[tf] = maturityHorizonS(tf) for every EVAL_CANDLES key', () => {
     const e = buildCensusEmission(NOW, {});
@@ -148,6 +241,7 @@ describe('AC3 — the emitter', () => {
       cooldown_s: BACKFILL_ATTEMPT_COOLDOWN_S, reach_margin_s: REACH_MARGIN_S });
     expect(e.census_sql).toBe(buildBackfillCensusSql(NOW));
     expect(e.venue_sql).toBe(buildBackfillVenueCensusSql(NOW));
+    expect(e.coin_sql).toBe(buildBackfillCoinCensusSql(NOW));
     expect(e.past_reach_clause).toBe(buildPastReachClause(NOW));
     expect(e.census_sql).toContain(e.past_reach_clause); // the audited clause IS the executed one
     expect(e.past_reach_clause).not.toMatch(/outcome_attempts|outcome_last_attempt_at|outcome_filled_at/);
@@ -204,6 +298,21 @@ describe('AC3 — the canary reads what the emitter writes (the artifacts its se
   it('the canary’s column contracts are the builders’ columns', () => {
     expect(tuple('CENSUS_COLUMNS')).toEqual([...BACKFILL_CENSUS_COLUMNS]);
     expect(tuple('VENUE_COLUMNS')).toEqual([...BACKFILL_VENUE_CENSUS_COLUMNS]);
+    expect(tuple('COIN_COLUMNS')).toEqual([...BACKFILL_COIN_CENSUS_COLUMNS]);
+  });
+
+  it('arm 3e’s own emitter keys are emitter keys (their absence blinds arm 3e alone, never arms 2-3d)', () => {
+    expect(tuple('ARM_3E_EMITTER_KEYS')).toEqual(['coin_sql']);
+    for (const k of tuple('ARM_3E_EMITTER_KEYS')) expect(EMITTER_KEYS as readonly string[]).toContain(k);
+  });
+
+  it('the canary’s page-on-change key grammar IS the wrapper’s — a key the wrapper refuses would LEVEL-page', () => {
+    const grab = (src: string, name: string): string => {
+      const m = new RegExp(`${name} = re\\.compile\\(r"([^"]+)"\\)`).exec(src);
+      if (!m) throw new Error(`${name} not found`);
+      return m[1];
+    };
+    expect(grab(py, 'WRAPPER_KEY_RE')).toBe(grab(readFileSync(WRAPPER, 'utf8'), 'KEY_RE'));
   });
 
   it('the canary’s REAL parsers read the REAL census SQL’s output from this fixture', { timeout: 120_000 }, async () => {
@@ -212,15 +321,18 @@ describe('AC3 — the canary reads what the emitter writes (the artifacts its se
       rows.map((r) => Object.values(r).map((v) => (v === null || v === undefined ? '' : String(v))).join('|')).join('\n');
     const census = 'SET\n' + render(sqliteRows(buildBackfillCensusSql(NOW)));
     const venues = 'SET\n' + render(sqliteRows(buildBackfillVenueCensusSql(NOW)));
+    const coins = 'SET\n' + render(coinRows(buildBackfillCoinCensusSql(NOW)));
     const prog = [
       'import importlib.util, json, sys',
       `s = importlib.util.spec_from_file_location("obf", ${JSON.stringify(CANARY)})`,
       'm = importlib.util.module_from_spec(s); s.loader.exec_module(m)',
       'd = json.load(sys.stdin)',
-      'print(json.dumps({"census": m.parse_emitter_census(d["census"]), "venues": m.parse_venue_rows(d["venues"])}))',
+      'print(json.dumps({"census": m.parse_emitter_census(d["census"]), "venues": m.parse_venue_rows(d["venues"]),',
+      '                  "coins": m.parse_coin_rows(d["coins"])}, ensure_ascii=False))',
     ].join('\n');
     const r = spawnSync('python3', ['-B', '-c', prog], {
-      input: JSON.stringify({ census, venues }), encoding: 'utf8', env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      input: JSON.stringify({ census, venues, coins }), encoding: 'utf8',
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONIOENCODING: 'utf-8' },
     });
     expect(r.stderr).toBe('');
     expect(r.status).toBe(0);
@@ -228,6 +340,7 @@ describe('AC3 — the canary reads what the emitter writes (the artifacts its se
     const [c] = sqliteRows(buildBackfillCensusSql(NOW));
     for (const k of BACKFILL_CENSUS_COLUMNS) expect(out.census[k], k).toBe(num(c[k]));
     expect(out.venues.map((v: Record<string, unknown>) => v.venue).sort()).toEqual(['BINANCE', 'HL', 'XT']);
+    expect(out.coins).toEqual(COIN_EXPECTED);   // the CJK coin and the HL fold arrive intact
   });
 });
 
@@ -235,16 +348,23 @@ describe('AC3 — the canary reads what the emitter writes (the artifacts its se
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let sqlite: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let sqliteCoin: any = null;
 const sqliteRows = (sql: string) => sqlite.prepare(sql).all() as Array<Record<string, unknown>>;
+const coinRows = (sql: string) => sqliteCoin.prepare(sql).all() as Array<Record<string, unknown>>;
 beforeAll(() => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const Database = require('better-sqlite3');
   sqlite = new Database(':memory:');
   sqlite.exec(SCHEMA.replace('CREATE TEMP TABLE', 'CREATE TABLE'));
   for (const r of ROWS) sqlite.exec(insert(r));
+  sqliteCoin = new Database(':memory:');
+  sqliteCoin.exec(SCHEMA.replace('CREATE TEMP TABLE', 'CREATE TABLE'));
+  for (const r of COIN_ROWS) sqliteCoin.exec(coinInsert(r));
 });
-afterAll(() => sqlite?.close());
+afterAll(() => { sqlite?.close(); sqliteCoin?.close(); });
 scenarios('sqlite', () => async (sql) => sqliteRows(sql));
+coinScenarios('sqlite', () => async (sql) => coinRows(sql));
 
 const PG_URL = process.env.DATABASE_URL;
 describe.skipIf(!PG_URL)('AC3 — Postgres lane', () => {
@@ -260,4 +380,19 @@ describe.skipIf(!PG_URL)('AC3 — Postgres lane', () => {
   });
   afterAll(async () => { if (client) await client.end(); });
   scenarios('postgres', () => async (sql) => (await client.query(sql)).rows);
+});
+
+describe.skipIf(!PG_URL)('CH2 — Postgres lane (coin census)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let client: any = null;
+  beforeAll(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { Client } = require('pg');
+    client = new Client({ connectionString: PG_URL });
+    await client.connect();
+    await client.query(SCHEMA);
+    for (const r of COIN_ROWS) await client.query(coinInsert(r));
+  });
+  afterAll(async () => { if (client) await client.end(); });
+  coinScenarios('postgres', () => async (sql) => (await client.query(sql)).rows);
 });

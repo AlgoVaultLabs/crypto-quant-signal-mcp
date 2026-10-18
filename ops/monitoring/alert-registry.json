@@ -643,6 +643,25 @@
       "notes": "OPS-ALARM-OWNER-DERIVATION-W1 CH1: arm 3d of the outcome-backfill canary — FAIL iff a venue had >= N_MIN rows matured in the trailing 24 h, the producer attempted >= 1, and filled 0 (N_MIN = 1, calibrated 2026-10-10 over 512 venue-days: the only zero-fill-with-attempts venue-day was the retired BITMART at matured 0). Its own id and remedy (OPS-ADAPTER-FILL-SILENT-W{NEXT}) because it is a different question from OUTCOME_BACKFILL_STALLED: CH1 lets rows the venue can no longer serve leave the queue at the venue's measured candle depth, and this page is what keeps a broken adapter from hiding behind that exit. Same 2-run sustain as the parent; `adopted` because the canary calls --clear (mode flag first) after the same sustain on a delivered episode; resolution is SILENT by the registry default. Fire site is a literal `[TG, \"OUTCOME_BACKFILL_VENUE_SILENT\", \"CRITICAL_PERSISTENT\", \"-\"]` so scripts/check-alert-registry.mjs detects it by position."
     },
     {
+      "alert_id": "OUTCOME_BACKFILL_COIN_SILENT",
+      "owner": "ops/monitoring/outcome-backfill-freshness.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "page_on": "change",
+      "page_on_change": {
+        "review_by": "2027-01-18",
+        "decided_by": "architect — OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 spec, CH2 Requirement 3 (page-on-change keyed VENUE|COIN)",
+        "decided_at": "2026-10-18",
+        "reason": "A silent coin is a STATE that persists until its request is fixed or its venue delists it; paging the LEVEL would re-page the same known cells every cooldown. A (venue, coin) entering the silent set on a venue that lists it live is the actionable event."
+      },
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OUTCOME_BACKFILL_COIN_SILENT-W{NEXT}",
+      "notes": "OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2: arm 3e of the outcome-backfill canary — a (venue, coin) cell is a candidate iff it had >= N_COIN rows matured in the trailing 7 d, the producer attempted >= 1, and filled 0 (N_COIN = 5, calibrated 2026-10-18 over 68 zero-fill cells: request defects matured 8..151, venue facts 1..7, the one venue-fact cell on a coin listed live matured 4). Each candidate is classified by the app's ONE admission step (docker exec … node dist/scripts/admission-verdict.js --keys 'V|C …' → classifyDeadBook; HL dex coins decided from the adapter's own listing under HL's declaration, ruling Q-A=B): THIN_LIVE / ADAPTER_CONTRADICTION (the venue lists it live) pages; VENUE_OFF or a retired venue is reported, never paged; any other STATUS_UNKNOWN is INDETERMINATE. Its own id and remedy (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W{NEXT}) because arm 3d judges whole venues: 8 HL xyz coins sat unfilled 2026-05-15 → 2026-10-18 beside a venue filling ~400 rows a day. Page-on-change: the canary sends ALERT_KEYS=<VENUE>|<COIN> (a coin outside the key grammar as <VENUE>|x-<16 hex of sha256>) for the ACTIVE set every evaluated run, or --clear for an empty one; the canary's 2-run sustain applies PER KEY both ways (active after 2 consecutive failing runs, retired after 2 consecutive clean ones; an undecided cell holds; a census-blind run sends nothing). No --acknowledge bootstrap: the wave forbids acknowledging a key, so every key that becomes active pages once (the install-time census is recorded in status.md). `adopted` because the canary calls --clear (mode flag first); resolution SILENT by the registry default. Fire site is a literal `[TG, \"OUTCOME_BACKFILL_COIN_SILENT\", \"CRITICAL_PERSISTENT\", \"-\"]` so scripts/check-alert-registry.mjs detects it by position. From 2027-01-19 it pages on the LEVEL until re-decided."
+    },
+    {
       "alert_id": "PAYMENT_DECLINE_DRIFT",
       "owner": "ops/monitoring/payment-decline-canary.py",
       "hosts": [

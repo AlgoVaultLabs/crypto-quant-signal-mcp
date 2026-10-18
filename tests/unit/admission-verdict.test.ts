@@ -143,6 +143,7 @@ describe('AC1 — the CLI: one universe fetch per venue, one JSON line, one toke
       fetchVenueUniverse: async (v: string) => { fetched.push(v); return v === 'ASTER' ? [{ coin: 'EWT' }, { coin: 'KSTR' }] : []; },
       lastAdmission: (v: string) => (v === 'ASTER' ? rec : undefined),
       hourlyBars: async (_v: string, coin: string) => (coin === 'KSTR' ? bars(Array(24).fill(0).map((_, i) => (i === 14 ? 1 : 0))) : bars()),
+      hlListedRow: async () => null,
       ...over,
     } as AdmissionVerdictDeps & { fetched: string[] };
   }
@@ -153,6 +154,13 @@ describe('AC1 — the CLI: one universe fetch per venue, one JSON line, one toke
     ]);
     expect(parseDeadKeys('ASTER-EWT')).toBeNull();
     expect(parseDeadKeys('')).toBeNull();
+  });
+
+  it('a coin in any script is a coin (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2) — `|`, quotes and spaces stay refused', () => {
+    expect(parseDeadKeys('ASTER|龙虾 GATE|草根文化')).toEqual([
+      { key: 'dead:ASTER|龙虾', venue: 'ASTER', coin: '龙虾' }, { key: 'dead:GATE|草根文化', venue: 'GATE', coin: '草根文化' },
+    ]);
+    for (const bad of ['ASTER|x|y', 'ASTER|x"y', "ASTER|x'y", 'aster|EWT', 'ASTER|']) expect(parseDeadKeys(bad), bad).toBeNull();
   });
 
   it('classifies every key, fetching each venue ONCE', async () => {
@@ -220,5 +228,87 @@ describe('AC1 — the CLI: one universe fetch per venue, one JSON line, one toke
       expect(r.lines[r.lines.length - 1]).toBe('ADMISSION_VERDICT_EMIT=INDETERMINATE');
       expect(r.lines.some((l) => l.startsWith('{'))).toBe(false);
     }
+  });
+});
+
+describe('CH2 (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1, ruling Q-A=B) — an HL coin the standard payload lacks', () => {
+  // HL's admission payload is its STANDARD universe (234 rows on 2026-10-18). Measured that day: all six HL
+  // keys of the 8 xyz coins read VENUE_OFF "absent from HL's own universe payload (234 rows)" although HL
+  // lists every one of them live in dex xyz — arm 3e would have reported its own target and never paged.
+  const XYZ = ['SPCX', 'SKHY', 'DRAM', 'CBRS', 'CXMT', 'NBIS', 'MRVL', 'BB'];
+  const HL_REC = {
+    venue: 'HL', side: 'sot', mode: 'enforce', kind: 'legacy_oi_positive', statusState: 'not_applicable', circuitOpen: false,
+    rows: 234, atMs: NOW, decisions: [{ symbol: 'BTC', coin: 'BTC', volume24h_usd: 1e9, tickerTsMs: null, decision: LIVE }],
+  } as const;
+  function hlDeps(over: Partial<AdmissionVerdictDeps> = {}): AdmissionVerdictDeps & { listed: string[] } {
+    const listed: string[] = [];
+    return {
+      listed,
+      nowMs: () => NOW,
+      fetchVenueUniverse: async (v: string) => (v === 'HL' ? [{ coin: 'BTC' }] : []),
+      lastAdmission: (v: string) => (v === 'HL' ? HL_REC : undefined),
+      hourlyBars: async () => bars(Array(24).fill(1)),
+      hlListedRow: async (coin: string) => { listed.push(coin); return { symbol: `xyz:${coin}`, notionalOI_usd: 4.2e6, volume24h_usd: 9e5 }; },
+      ...over,
+    } as AdmissionVerdictDeps & { listed: string[] };
+  }
+  const run = async (keys: string, d: AdmissionVerdictDeps) => {
+    const r = await runAdmissionVerdict(['--keys', keys], d);
+    expect(r.lines[r.lines.length - 1]).toBe('ADMISSION_VERDICT_EMIT=PASS');
+    return JSON.parse(r.lines[r.lines.length - 2]).keys as Array<Record<string, unknown>>;
+  };
+
+  it('THE REPLAY: the 8 xyz coins are decided under HL’s one declaration — admitted, THIN_LIVE, never VENUE_OFF', async () => {
+    const out = await run(XYZ.map((c) => `HL|${c}`).join(' '), hlDeps());
+    expect(out.map((k) => k.class)).toEqual(XYZ.map(() => 'THIN_LIVE'));
+    expect(out.map((k) => k.symbol)).toEqual(XYZ.map((c) => `xyz:${c}`));       // HL's own market name
+    expect(out.every((k) => k.admission_kind === 'legacy_oi_positive')).toBe(true);
+  });
+
+  it('…TWIN: with the listing silent (the pre-ruling read) the same keys are VENUE_OFF, and the reason says both were read', async () => {
+    const out = await run(XYZ.map((c) => `HL|${c}`).join(' '), hlDeps({ hlListedRow: async () => null }));
+    expect(out.map((k) => k.class)).toEqual(XYZ.map(() => 'VENUE_OFF'));
+    expect(String(out[0].reason)).toMatch(/absent from HL's own universe payload \(234 rows\); the adapter lists it in no HL universe/);
+  });
+
+  it('the SAME declaration decides: OI 0 in the dex is VENUE_OFF (HL’s own status switches it off)', async () => {
+    const out = await run('HL|SKHY', hlDeps({ hlListedRow: async (c) => ({ symbol: `xyz:${c}`, notionalOI_usd: 0, volume24h_usd: 0 }) }));
+    expect(out[0].class).toBe('VENUE_OFF');
+    expect(String(out[0].reason)).toMatch(/notionalOI_usd > 0/);
+  });
+
+  it('a listing that cannot be read is STATUS_UNKNOWN — never VENUE_OFF on a listing nobody read', async () => {
+    const out = await run('HL|SKHY', hlDeps({ hlListedRow: async () => { throw new Error('Hyperliquid market listing unavailable'); } }));
+    expect(out[0].class).toBe('STATUS_UNKNOWN');
+    expect(String(out[0].reason)).toMatch(/HL listing could not be read for SKHY/);
+  });
+
+  it('the listing is asked ONLY for an HL key the trustworthy standard payload lacks', async () => {
+    const d = hlDeps();
+    await run('HL|BTC HL|SKHY', d);
+    expect(d.listed).toEqual(['SKHY']);                                   // BTC came from the standard payload
+    const stale = hlDeps({ lastAdmission: () => ({ ...HL_REC, atMs: NOW - 60_000 }) });
+    expect((await run('HL|SKHY', stale))[0].class).toBe('STATUS_UNKNOWN'); // a stale record is never trusted…
+    expect(stale.listed).toEqual([]);                                     // …and nothing is asked on its behalf
+    const thrown = hlDeps({ fetchVenueUniverse: async () => { throw new Error('HL 429'); } });
+    expect((await run('HL|SKHY', thrown))[0].class).toBe('STATUS_UNKNOWN');
+    expect(thrown.listed).toEqual([]);
+  });
+
+  it('no other venue consults it: an absent ASTER coin stays VENUE_OFF without a listing read', async () => {
+    const aster = { ...HL_REC, venue: 'ASTER', kind: 'status_field', statusState: 'ok', rows: 1,
+      decisions: [{ symbol: 'EWTUSDT', coin: 'EWT', volume24h_usd: 4.1, tickerTsMs: null, decision: LIVE }] };
+    const d = hlDeps({ fetchVenueUniverse: async () => [{ coin: 'EWT' }], lastAdmission: (v: string) => (v === 'ASTER' ? aster : undefined) });
+    const out = await run('ASTER|GONE', d);
+    expect(out[0].class).toBe('VENUE_OFF');
+    expect(String(out[0].reason)).not.toMatch(/HL universe/);
+    expect(d.listed).toEqual([]);
+  });
+
+  it('admission_kind names each venue’s declaration — retired, none, or null for an unknown venue', async () => {
+    const out = await run('BITMART|X WEEX|Y NOPE|Z', hlDeps());
+    expect(out.map((k) => [k.class, k.admission_kind])).toEqual([
+      ['STATUS_UNKNOWN', 'retired'], ['STATUS_UNKNOWN', 'none'], ['STATUS_UNKNOWN', null],
+    ]);
   });
 });
