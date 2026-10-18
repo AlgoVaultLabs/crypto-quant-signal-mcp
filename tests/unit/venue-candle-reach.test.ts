@@ -5,20 +5,21 @@
  * PFE outcome backfill's queue, the canary's census and the directional labeler all read
  * `src/lib/venue-candle-reach.ts`. Three properties are pinned here:
  *
- *   1. VALUE IDENTITY. The move out of `backfill-directional-labels.ts` changes no number. The
- *      literals below are the table as it stood on `8087db29`; the relabel (EDGE-LABELER-RACE-
- *      WINDOW-V2-W1) and ADS-1 sit inside open registrations and must read byte-identical values.
+ *   1. VALUE IDENTITY. The move out of `backfill-directional-labels.ts` changed no number: the literals
+ *      below are the table as it stood on `8087db29`. Exactly ONE correction since, named here:
+ *      OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH3 set the five count-limited `2h` rows to their venue's
+ *      `1h` row (2h is served as 1h bars), after the relabel (EDGE-LABELER-RACE-WINDOW-V2-W1) and ADS-1
+ *      registrations that read these values had CLOSED. Any other change fails.
  *   2. EXHAUSTIVE OVER ExchangeId. A venue without an entry does not compile — "served every row
  *      probed" is spelled `{}`, never by omission.
- *   3. THE SECOND TABLE'S DISAGREEMENTS ARE SHRINK-ONLY. `venue-candle-horizons.ts` is a second
- *      measurement of the same fact. Merging the two waits for LRW + ADS-1 to close; until then the
- *      7 in-scope conflicts are pinned exactly, so a NEW conflict fails and a RESOLVED one must be
- *      removed from the pin.
+ *   3. ONE TABLE. `venue-candle-horizons.ts`, a second measurement of the same fact, is deleted (CH3):
+ *      nothing imports it, and the labeler's horizon-first worklist reads this table — pinned through
+ *      the worklist's behaviour on a pair only this table lists, not only by a grep.
  *
  * SPAWN BUDGET DECLARED on the one spawning block (`scripts/check-test-budget.mjs`).
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -27,7 +28,6 @@ import {
   expiryReachDays,
 } from '../../src/lib/venue-candle-reach.js';
 import * as labeler from '../../src/scripts/backfill-directional-labels.js';
-import { CANDLE_HORIZON_DAYS } from '../../src/lib/venue-candle-horizons.js';
 
 const REPO = path.resolve(__dirname, '../..');
 const tmpDirs: string[] = [];
@@ -49,6 +49,17 @@ const PRE_WAVE_EXPIRY_REACH_DAYS: Record<string, Record<string, number>> = {
   XT: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
 };
 
+/** OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH3 — the ONLY values changed since 8087db29: each count-limited `2h`
+ *  row set to its venue's `1h` row, because those adapters serve 2h as 1h bars × 1,000 (41.67 d). */
+const CH3_2H_CORRECTIONS: Record<string, number> = { HTX: 41, PHEMEX: 41, WEEX: 41.66, WHITEBIT: 41, XT: 41 };
+
+/** The table as it must stand now: the 2026-09-27 measurement with the five CH3 corrections and nothing else. */
+function expectedTable(): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = JSON.parse(JSON.stringify(PRE_WAVE_EXPIRY_REACH_DAYS));
+  for (const [v, d] of Object.entries(CH3_2H_CORRECTIONS)) out[v]['2h'] = d;
+  return out;
+}
+
 function exchangeIds(): string[] {
   const src = readFileSync(path.join(REPO, 'src/types.ts'), 'utf8');
   const m = /export type ExchangeId = ([^;]+);/.exec(src);
@@ -56,9 +67,9 @@ function exchangeIds(): string[] {
   return [...m[1].matchAll(/'([A-Z0-9]+)'/g)].map((x) => x[1]).sort();
 }
 
-describe('AC1 — value identity with the pre-wave labeler table', () => {
-  it('EXPIRY_REACH_DAYS holds exactly the 2026-09-27 measurements, all 10 venues and every pair', () => {
-    expect(EXPIRY_REACH_DAYS).toEqual(PRE_WAVE_EXPIRY_REACH_DAYS);
+describe('AC1 — value identity: the 2026-09-27 measurements, the five CH3 2h corrections, nothing else', () => {
+  it('EXPIRY_REACH_DAYS holds exactly the measured table with the five 2h rows corrected, all 10 venues and every pair', () => {
+    expect(EXPIRY_REACH_DAYS).toEqual(expectedTable());
     expect(Object.keys(EXPIRY_REACH_DAYS)).toHaveLength(10);
     expect(Object.values(EXPIRY_REACH_DAYS).reduce((n, m) => n + Object.keys(m).length, 0)).toBe(52);
   });
@@ -67,6 +78,12 @@ describe('AC1 — value identity with the pre-wave labeler table', () => {
     expect(REACH_MARGIN_S).toBe(3600);
     expect(HL_CANDLE_DEPTH).toBe(5000);
     expect(EXPIRY_REACH_DAYS_MEASURED_AT).toBe('2026-09-27');
+  });
+
+  it('each corrected 2h row IS its venue’s 1h measurement — and every other venue’s 2h row is untouched', () => {
+    expect(Object.keys(CH3_2H_CORRECTIONS).sort()).toEqual(['HTX', 'PHEMEX', 'WEEX', 'WHITEBIT', 'XT']);
+    for (const v of Object.keys(CH3_2H_CORRECTIONS)) expect(EXPIRY_REACH_DAYS[v]['2h'], v).toBe(EXPIRY_REACH_DAYS[v]['1h']);
+    for (const v of ['BINGX', 'BITGET', 'MEXC']) expect(EXPIRY_REACH_DAYS[v]['2h'], v).toBe(PRE_WAVE_EXPIRY_REACH_DAYS[v]['2h']);
   });
 
   it('the labeler re-exports the SAME objects — one table, not a copy', () => {
@@ -95,7 +112,7 @@ describe('AC1 — exhaustive over ExchangeId', () => {
     expect(Object.keys(VENUE_CANDLE_REACH_DAYS).sort()).toEqual(exchangeIds());
     for (const v of exchangeIds()) {
       expect(VENUE_CANDLE_REACH_DAYS[v as keyof typeof VENUE_CANDLE_REACH_DAYS], v)
-        .toEqual(PRE_WAVE_EXPIRY_REACH_DAYS[v] ?? {});
+        .toEqual(expectedTable()[v] ?? {});
     }
   });
 
@@ -121,48 +138,46 @@ describe('AC1 — exhaustive over ExchangeId', () => {
   });
 });
 
-describe('AC1 — the second table (venue-candle-horizons.ts) disagrees in exactly 7 pinned places', () => {
-  /** In scope = the horizons table's own declared scope: pairs shallower than the labeler's 21-day reach. */
-  const IN_SCOPE_DAYS = 21;
-  // Remove an entry from this set when the two tables are reconciled for that pair; never add one.
-  const PINNED_CONFLICTS = [
-    'HL 5m value 17.36 vs 17.48',
-    'WEEX 3m value 2.08 vs 3.25',
-    'WEEX 5m value 3.47 vs 3.25',
-    'WEEX 15m value 10.41 vs 10.25',
-    'HL 3m missing from horizons (10.41)',
-    'WEEX 30m missing from horizons (20.83)',
-    'WHITEBIT 5m missing from horizons (10.25)',
-  ];
+describe('CH3 — ONE reach table: the second measurement is gone and the worklist reads this one', () => {
+  const RETIRED = path.join(REPO, 'src/lib/venue-candle-horizons.ts');
+  const IMPORT_OF_RETIRED = /(?:from\s+|require\x28\s*|import\x28\s*)['"][^'"]*venue-candle-horizons(?:\.js|\.ts)?['"]/;
 
-  function conflicts(): string[] {
-    const out: string[] = [];
-    for (const [v, m] of Object.entries(EXPIRY_REACH_DAYS)) {
-      for (const [tf, d] of Object.entries(m)) {
-        const h = CANDLE_HORIZON_DAYS[v]?.[tf];
-        if (h === undefined) {
-          if (d < IN_SCOPE_DAYS) out.push(`${v} ${tf} missing from horizons (${d})`);
-        } else if (h !== d) {
-          out.push(`${v} ${tf} value ${d} vs ${h}`);
-        }
-      }
+  function sourceFiles(dir: string, out: string[] = []): string[] {
+    for (const name of readdirSync(dir)) {
+      if (name === 'node_modules' || name.startsWith('.')) continue;
+      const p = path.join(dir, name);
+      if (statSync(p).isDirectory()) sourceFiles(p, out);
+      else if (/\.(?:ts|mts|cts|js|mjs|cjs)$/.test(name)) out.push(p);
     }
-    for (const [v, m] of Object.entries(CANDLE_HORIZON_DAYS)) {
-      for (const tf of Object.keys(m)) {
-        if (EXPIRY_REACH_DAYS[v]?.[tf] === undefined) out.push(`${v} ${tf} missing from reach`);
-      }
-    }
-    return out.sort();
+    return out;
   }
 
-  it('no NEW conflict (the set may only shrink)', () => {
-    const extra = conflicts().filter((c) => !PINNED_CONFLICTS.includes(c));
-    expect(extra, 'a new disagreement between the two reach tables').toEqual([]);
+  it('src/lib/venue-candle-horizons.ts is deleted — there is no second table to drift from', () => {
+    expect(existsSync(RETIRED)).toBe(false);
   });
 
-  it('every pinned conflict still exists — a resolved one must be REMOVED from the pin', () => {
-    const resolved = PINNED_CONFLICTS.filter((c) => !conflicts().includes(c));
-    expect(resolved, 'reconciled pairs still listed in PINNED_CONFLICTS').toEqual([]);
-    expect(PINNED_CONFLICTS).toHaveLength(7);
+  it('nothing in src, scripts, ops or tests imports it (counted, not sampled)', () => {
+    const files = ['src', 'scripts', 'ops', 'tests'].flatMap((d) => sourceFiles(path.join(REPO, d)));
+    expect(files.length, 'the corpus is the repo, not an empty glob').toBeGreaterThan(500);
+    const importers = files.filter((f) => IMPORT_OF_RETIRED.test(readFileSync(f, 'utf8')));
+    expect(importers.map((f) => path.relative(REPO, f))).toEqual([]);
+  });
+
+  it('the labeler reads its worklist horizons from this table: a pair ONLY this table listed is now critical', () => {
+    // WEEX 30m (20.83 d) was absent from the retired table, so its rows were "deep" and never promoted.
+    const now = 1_790_420_000;
+    const near = { exchange: 'WEEX', coin: 'ZZZ', timeframe: '30m', todoOldest: now - Math.round(20.5 * 86_400), todoLabelable: 1, todoPastHorizon: 0 };
+    const breadth = { exchange: 'WEEX', coin: 'AAA', timeframe: '1h', todoOldest: now - 20.9 * 86_400, todoLabelable: 9, todoPastHorizon: 0 };
+    expect(expiryReachDays('WEEX', '30m')).toBe(20.83);
+    expect(labeler.orderGroupsForVenue([breadth, near], now).map((g) => g.coin)).toEqual(['ZZZ', 'AAA']);
+    expect(labeler.worklistStats([near], now).critical).toBe(1);
+  });
+
+  it('the worklist SQL carries every finite pair of this table as its horizon cut-off', () => {
+    const now = 1_790_420_000;
+    const { text } = labeler.buildGroupsSql({ lookbackCutoff: now - 21 * 86_400, nowSec: now });
+    for (const [v, m] of Object.entries(EXPIRY_REACH_DAYS)) {
+      for (const [tf, d] of Object.entries(m)) expect(text).toContain(`('${v}', '${tf}', ${Math.floor(now - d * 86_400)})`);
+    }
   });
 });

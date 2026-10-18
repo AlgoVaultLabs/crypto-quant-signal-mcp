@@ -13,11 +13,11 @@
  * timeframe. Lowering a kline limit, or switching a timeframe to a finer served interval, now fails
  * CI instead of silently reopening misfills.
  *
- * KNOWN EXCEEDANCES — measured 2026-10-10 (R0.2d), pinned SHRINK-ONLY, values untouched (a reach
- * value change is outside this wave): every `2h` row below is served as 1h bars, so its served depth
- * is 1,000 × 1 h = 41.67 d. HTX / PHEMEX / WHITEBIT / XT list 42 d (0.33 d too deep); WEEX lists
- * 83.33 d = 1,000 × 2 h (41.66 d too deep). None held a pending row in its exceedance band at
- * measurement. Remove an entry when the table is corrected; never add one.
+ * NO PIN (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH3, 2026-10-18). Five `2h` rows used to exceed their
+ * served depth (measured 2026-10-10): HTX / PHEMEX / WHITEBIT / XT listed 42 d and WEEX 83.33 d, but those
+ * adapters serve 2h as 1h bars, so 1,000 × 1 h = 41.67 d is all they can return. The table now lists each
+ * venue's own `1h` value (41 / 41.66) and `PINNED_EXCEEDANCES` is empty — every listed pair must fit.
+ * A future exceedance is a table correction (re-measure with ops/scripts/probe-candle-horizons.cjs), never a pin.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,7 +57,7 @@ const PARAMS: Record<string, { count: string; interval: string }> = {
   WHITEBIT: { count: 'limit', interval: 'interval' },
   XT: { count: 'limit', interval: 'interval' },
 };
-const PINNED_EXCEEDANCES = ['HTX 2h', 'PHEMEX 2h', 'WEEX 2h', 'WHITEBIT 2h', 'XT 2h'];
+const PINNED_EXCEEDANCES: string[] = [];
 const DAY_MS = 86_400_000;
 
 /** '5m' · '5min' · '1h' · '60min' · '4hour' · '1d' · '1day' · '300' (seconds) → ms. */
@@ -115,14 +115,22 @@ describe('Req 10 — count-limited adapters serve at least the table’s reach',
     return out.sort();
   }
 
-  it('reach ≤ requested count × served step for every listed pair, except the pinned five', async () => {
+  it('reach ≤ requested count × served step for EVERY listed pair — no pin', async () => {
     const extra = (await exceedances()).filter((e) => !PINNED_EXCEEDANCES.includes(e));
     expect(extra, 'a table reach deeper than the adapter can serve reopens misfills').toEqual([]);
+    expect(PINNED_EXCEEDANCES, 'an exceedance is corrected in the table, never pinned').toEqual([]);
   });
 
-  it('every pinned exceedance still exists — a corrected one must be REMOVED from the pin', async () => {
-    const now = await exceedances();
-    expect(PINNED_EXCEEDANCES.filter((e) => !now.includes(e))).toEqual([]);
-    expect(PINNED_EXCEEDANCES).toHaveLength(5);
+  it('the five count-limited 2h rows sit at their served depth: 1,000 one-hour bars, the venue’s own 1h row', async () => {
+    for (const venue of ['HTX', 'PHEMEX', 'WEEX', 'WHITEBIT', 'XT'] as ExchangeId[]) {
+      const url = await requestFor(venue, '2h');
+      const servedDays = (Number(url.searchParams.get(PARAMS[venue].count))
+        * stepMsFromParam(url.searchParams.get(PARAMS[venue].interval) ?? '')) / DAY_MS;
+      const reach = VENUE_CANDLE_REACH_DAYS[venue]['2h'] as number;
+      expect(servedCandleStepMs(venue, '2h'), `${venue} serves 2h as 1h bars`).toBe(3_600_000);
+      expect(reach, `${venue} 2h`).toBe(VENUE_CANDLE_REACH_DAYS[venue]['1h']);
+      expect(reach, `${venue} 2h`).toBeLessThanOrEqual(servedDays);
+      expect(servedDays - reach, `${venue} 2h stays within a day of its served depth`).toBeLessThan(1);
+    }
   });
 });

@@ -12,22 +12,23 @@
  * after the signal. One cause, two symptoms. The queue, the census and the labeler now read this file.
  *
  * ── THE CONTRACT ────────────────────────────────────────────────────────────────────────────────
- *  * VALUES ARE MEASURED, NEVER EDITED HERE. Byte-identical to the 2026-09-27 measurement the labeler
- *    shipped (instrument: the SHIPPED adapter `getCandles` for BTC in the app container on the prod
- *    IP, batch class, lower bounds at ≤ 1 d resolution; HL = 5,000 candles; WEEX = 1,000 candles).
- *    The relabel and ADS-1 sit inside open registrations and read these numbers.
+ *  * VALUES ARE MEASURED, NEVER EDITED HERE. The 2026-09-27 measurement the labeler shipped
+ *    (instrument: the SHIPPED adapter `getCandles` for BTC in the app container on the prod IP, batch
+ *    class, lower bounds at ≤ 1 d resolution; HL = 5,000 candles; WEEX = 1,000 candles), re-measured
+ *    with `ops/scripts/probe-candle-horizons.cjs`, which probes this table's own pairs. ONE correction
+ *    since: the five `2h` rows below (see ONE TABLE). The relabel and ADS-1 read these numbers; both
+ *    registrations were CLOSED when the correction landed.
  *  * EXHAUSTIVE OVER ExchangeId. `{}` means "served every row probed" (unbounded); omitting a venue is
  *    a compile error, pinned by `tests/unit/venue-candle-reach.test.ts`.
  *  * A lower bound errs early: a row within the bracket of its depth leaves the queue a little before
  *    the venue truly stops serving it. Such a row has already failed for days.
- *  * `venue-candle-horizons.ts` is a second measurement of the same fact (2026-09-26, < 21 d pairs).
- *    It is deliberately NOT merged yet — its 7 in-scope disagreements are pinned shrink-only in the
- *    test above, and merging waits for LRW + ADS-1 to close.
- *  * KNOWN EXCEEDANCE (measured 2026-10-10, R0.2d of this wave): five entries claim a deeper reach than
- *    the adapter's served depth (1,000 × served step) — HTX / PHEMEX / WHITEBIT / XT `2h` = 42 d vs
- *    41.67 d (2h is served as 1h bars) and WEEX `2h` = 83.33 d vs 41.67 d. Correcting them is a value
- *    change this wave may not make; they are pinned shrink-only by `tests/unit/venue-reach-served-
- *    depth.test.ts`, and they held ZERO pending rows in their exceedance band at measurement.
+ *  * ONE TABLE (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH3, 2026-10-18). The second measurement of the
+ *    same fact, `venue-candle-horizons.ts` (2026-09-26), is retired: the nightly labeler's horizon-first
+ *    worklist reads this table, as the queue and the census do. HTX / PHEMEX / WHITEBIT / XT `2h` = 41
+ *    and WEEX `2h` = 41.66 — each venue's own `1h` row, because those adapters serve 2h as 1h bars ×
+ *    1,000 (41.67 d). The previous 42 / 83.33 claimed history the adapter cannot return (measured
+ *    2026-10-10); `tests/unit/venue-reach-served-depth.test.ts` now holds EVERY listed pair at or below
+ *    its served depth, with no pin. None of the five bands held a pending row when the values went down.
  */
 import type { ExchangeId } from '../types.js';
 
@@ -49,13 +50,13 @@ export const VENUE_CANDLE_REACH_DAYS: Readonly<Record<ExchangeId, Readonly<Parti
   GATE: { '3m': 34.5, '5m': 34.5, '15m': 104 },
   MEXC: { '3m': 6.75, '5m': 6.75, '15m': 20.75, '30m': 41, '1h': 83, '2h': 83 },
   KUCOIN: {},
-  PHEMEX: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
+  PHEMEX: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 41 },
   BINGX: { '3m': 2, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 83 },
-  HTX: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
-  WEEX: { '3m': 2.08, '5m': 3.47, '15m': 10.41, '30m': 20.83, '1h': 41.66, '2h': 83.33, '4h': 166.66 },
+  HTX: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 41 },
+  WEEX: { '3m': 2.08, '5m': 3.47, '15m': 10.41, '30m': 20.83, '1h': 41.66, '2h': 41.66, '4h': 166.66 },
   BITMART: {},
-  XT: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
-  WHITEBIT: { '5m': 10.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 42 },
+  XT: { '3m': 3.25, '5m': 3.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 41 },
+  WHITEBIT: { '5m': 10.25, '15m': 10.25, '30m': 20.75, '1h': 41, '2h': 41 },
 };
 
 /**

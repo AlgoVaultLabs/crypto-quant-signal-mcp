@@ -1,25 +1,46 @@
-// ops/scripts/probe-candle-horizons.cjs — OPS-BDIR-V3-PANEL-READINESS-W1 CH2 R0.2.
+// ops/scripts/probe-candle-horizons.cjs — the instrument behind src/lib/venue-candle-reach.ts, the ONE reach
+// table (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH3). Born in OPS-BDIR-V3-PANEL-READINESS-W1 CH2 R0.2 as the
+// instrument of a second table, venue-candle-horizons.ts, which CH3 retired; it now measures the table the
+// outcome queue, the census and the nightly labeler all read, against that table's own values.
 //
-// The instrument behind src/lib/venue-candle-horizons.ts: how far back each venue's candle endpoint
-// serves history, per timeframe, through the SHIPPED adapter (the labeler's own fetch path).
-// READ-ONLY. Run it INSIDE the app container, on the prod IP, where the labeler runs:
+// READ-ONLY. Run it INSIDE the app container, on the prod IP, where the backfill and the labeler fetch:
 //
 //   docker cp ops/scripts/probe-candle-horizons.cjs crypto-quant-signal-mcp-mcp-server-1:/tmp/
-//   docker exec crypto-quant-signal-mcp-mcp-server-1 node /tmp/probe-candle-horizons.cjs '{"GATE":["3m","5m"]}'
+//   docker exec crypto-quant-signal-mcp-mcp-server-1 node /tmp/probe-candle-horizons.cjs                # every finite pair
+//   docker exec crypto-quant-signal-mcp-mcp-server-1 node /tmp/probe-candle-horizons.cjs '{"HTX":["2h"]}' # a narrowed plan
 //
-// Batch class (waits on a saturated lane, never jumps it); one coin (BTC); a handful of calls per
-// pair. A typed rate-limit / budget-skip error stops that venue at once — never retried. A lane that
-// is saturated (WEEX measured ~53 s per call on 2026-09-26) makes a full sweep take hours: probe only
-// the pairs you need. Output: one JSON line per (venue, timeframe) — deepest_available_days is a
-// lower bound at 0.25 d resolution (>= 25 means "deeper than the nightly's 21 d reach").
+// Per pair, through the SHIPPED adapter `getCandles` for BTC (the fill path's own fetch), batch class (waits on
+// a saturated lane, never jumps it):
+//   1. Is the table's own depth still served? One window just inside it, less the queue's margin hour.
+//   2. How deep does service really go? Bracketed between 0 and the table value (not served) or between the
+//      table value and twice it (served), refined to 0.25 d. A lower bound, like the table itself.
+// A typed rate-limit / budget-skip error stops that venue at once — never retried. A saturated lane (WEEX
+// measured ~53 s per call on 2026-09-26) makes a full sweep take hours: narrow the plan.
+//
+// Output: one JSON line per pair — {venue, tf, table_days, table_depth_served, deepest_available_days,
+// shallowest_missing_days, calls}. `table_depth_served: false` means the table claims history the venue no
+// longer returns: re-measure and correct the table (a value change, recorded with this instrument), never pin it.
+// `shallowest_missing_days: null` means service reached twice the table value — the table is conservative there.
 const { getAdapter } = require('/app/dist/lib/exchange-adapter.js');
 const { runAsBatch } = require('/app/dist/lib/upstream-weight-budget.js');
+const { VENUE_CANDLE_REACH_DAYS, REACH_MARGIN_S } = require('/app/dist/lib/venue-candle-reach.js');
 
 const TF_MS = { '3m': 180e3, '5m': 300e3, '15m': 900e3, '30m': 1800e3, '1h': 3600e3, '2h': 7200e3, '4h': 14400e3, '8h': 28800e3, '12h': 43200e3, '1d': 86400e3 };
 const DAY = 86400e3;
-const BRACKETS = [25, 17, 10, 5, 2, 1, 0.5]; // days back; >= 25 d covers the nightly 21 d lookback
-const plan = JSON.parse(process.argv[2]);
+const RESOLUTION_D = 0.25;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Every finite (venue, timeframe) pair the deployed table lists — an absent pair is unbounded and has no depth to probe. */
+function tablePlan() {
+  const plan = {};
+  for (const [venue, pairs] of Object.entries(VENUE_CANDLE_REACH_DAYS)) {
+    const tfs = Object.keys(pairs).filter((tf) => Number.isFinite(pairs[tf]));
+    if (tfs.length > 0) plan[venue] = tfs;
+  }
+  return plan;
+}
+
+const plan = process.argv[2] ? JSON.parse(process.argv[2]) : tablePlan();
 
 async function available(adapter, tf, daysBack) {
   const tfMs = TF_MS[tf];
@@ -30,26 +51,28 @@ async function available(adapter, tf, daysBack) {
 }
 
 async function probePair(adapter, venue, tf) {
-  let calls = 0;
-  let lo = null; // deepest days-back that IS available
-  let hi = null; // shallowest days-back that is NOT available
-  for (const d of BRACKETS) {
-    calls++;
-    if (await available(adapter, tf, d)) { lo = d; break; }
-    hi = d;
+  const table = VENUE_CANDLE_REACH_DAYS[venue] && VENUE_CANDLE_REACH_DAYS[venue][tf];
+  if (!Number.isFinite(table) || !TF_MS[tf]) return { venue, tf, table_days: table ?? null, error: 'not a finite pair of the reach table' };
+  const inside = table - REACH_MARGIN_S / 86400;
+  let calls = 1;
+  const served = await available(adapter, tf, inside);
+  let lo = served ? inside : 0; // deepest days-back known AVAILABLE
+  let hi = served ? table * 2 : inside; // shallowest days-back known NOT available (a bound to test when served)
+  if (served) {
     await sleep(300);
-  }
-  if (lo !== null && hi !== null) {
-    // refine inside (lo, hi) to 0.25 d resolution — a count of rows past the horizon must not be an estimate
-    while (hi - lo > 0.25) {
-      const mid = Math.round(((lo + hi) / 2) * 4) / 4;
-      if (mid <= lo || mid >= hi) break;
-      calls++;
-      if (await available(adapter, tf, mid)) lo = mid; else hi = mid;
-      await sleep(300);
+    calls++;
+    if (await available(adapter, tf, hi)) {
+      return { venue, tf, table_days: table, table_depth_served: true, deepest_available_days: hi, shallowest_missing_days: null, calls };
     }
   }
-  return { venue, tf, deepest_available_days: lo, shallowest_missing_days: hi, calls };
+  while (hi - lo > RESOLUTION_D) {
+    const mid = Math.round(((lo + hi) / 2) / RESOLUTION_D) * RESOLUTION_D;
+    if (mid <= lo || mid >= hi) break;
+    await sleep(300);
+    calls++;
+    if (await available(adapter, tf, mid)) lo = mid; else hi = mid;
+  }
+  return { venue, tf, table_days: table, table_depth_served: served, deepest_available_days: lo, shallowest_missing_days: hi, calls };
 }
 
 (async () => {

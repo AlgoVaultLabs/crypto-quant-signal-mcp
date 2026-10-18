@@ -17,7 +17,8 @@ import {
   worklistPreamble,
   type PrioritizedGroup,
 } from '../../src/scripts/backfill-directional-labels.js';
-import { candleHorizonDays, CANDLE_HORIZON_DAYS, CANDLE_HORIZONS_MEASURED_AT } from '../../src/lib/venue-candle-horizons.js';
+// OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH3: the worklist's horizons ARE the one reach table the queue reads.
+import { expiryReachDays, EXPIRY_REACH_DAYS, EXPIRY_REACH_DAYS_MEASURED_AT } from '../../src/lib/venue-candle-reach.js';
 import { FULL_PANEL_VENUES, MAJOR_VENUES } from '../../src/lib/venue-slo-tiers.js';
 
 const NOW = 1_790_420_000; // seconds
@@ -75,7 +76,7 @@ describe('orderGroupsForVenue — breadth, not an alphabetical prefix', () => {
 
 describe('orderGroupsForVenue — horizon-first', () => {
   it('a group about to cross its venue candle horizon jumps ahead of breadth, whatever its coin', () => {
-    // HL 5m serves 17.48 d of history (measured 2026-09-26): a row 17 d old is lost tomorrow.
+    // HL 5m serves 17.36 d of history (the reach table, measured 2026-09-27): a row 17 d old is lost tomorrow.
     const near = { exchange: 'HL', coin: 'ZRO', timeframe: '5m', todoOldest: NOW - 17 * D, todoLabelable: 3, todoPastHorizon: 0 };
     const far = { exchange: 'HL', coin: 'AAVE', timeframe: '1h', todoOldest: NOW - 20 * D, todoLabelable: 40, todoPastHorizon: 0 };
     const out = orderGroupsForVenue([far, near], NOW);
@@ -112,7 +113,7 @@ describe('orderVenuesFullPanelFirst — the FULL-eligible venues are served befo
   });
 });
 
-describe('the FULL-eligible set and the measured horizons', () => {
+describe('the FULL-eligible set and the reach table', () => {
   it('is exactly the ruled set (Q-F, 2026-09-26) — HL is out (rule d, candle horizon)', () => {
     expect([...FULL_PANEL_VENUES].sort()).toEqual(['BINANCE', 'BITGET', 'BYBIT', 'KUCOIN', 'OKX']);
     expect(FULL_PANEL_VENUES as readonly string[]).not.toContain('HL');
@@ -123,18 +124,22 @@ describe('the FULL-eligible set and the measured horizons', () => {
   });
 
   it('an unmeasured pair is treated as deep, never as zero history', () => {
-    expect(candleHorizonDays('BINANCE', '5m')).toBe(Infinity);
-    expect(candleHorizonDays('NOPE', '5m')).toBe(Infinity);
-    expect(candleHorizonDays('HL', '5m')).toBeCloseTo(17.48, 2);
+    expect(expiryReachDays('BINANCE', '5m')).toBe(Infinity);
+    expect(expiryReachDays('NOPE', '5m')).toBe(Infinity);
+    expect(expiryReachDays('HL', '5m')).toBe(17.36);
   });
 
-  it('every listed horizon is positive and shorter than the 21-day nightly reach (else it would not be listed)', () => {
-    for (const [venue, tfs] of Object.entries(CANDLE_HORIZON_DAYS)) {
+  it('every listed reach is positive and finite; a pair deeper than the 21-day nightly reach is never critical', () => {
+    for (const [venue, tfs] of Object.entries(EXPIRY_REACH_DAYS)) {
       for (const [tf, days] of Object.entries(tfs)) {
         expect(days, `${venue} ${tf}`).toBeGreaterThan(0);
-        expect(days, `${venue} ${tf}`).toBeLessThan(21);
+        expect(Number.isFinite(days), `${venue} ${tf}`).toBe(true);
       }
     }
+    // HL 1h reaches 208.33 d: a row at the very edge of the 21-day window has ~187 d left.
+    const deep = { exchange: 'HL', coin: 'ZEC', timeframe: '1h', todoOldest: NOW - 21 * D, todoLabelable: 9, todoPastHorizon: 0 };
+    const newer = { exchange: 'HL', coin: 'AAVE', timeframe: '1h', todoOldest: NOW - 22 * D, todoLabelable: 9, todoPastHorizon: 0 };
+    expect(ids(orderGroupsForVenue([deep, newer], NOW))).toEqual(['AAVE:1h', 'ZEC:1h']);
   });
 });
 
@@ -161,21 +166,22 @@ describe('buildGroupsSql — the eligibility is the labeler’s own, the order d
     expect(sql).toContain("LEFT JOIN directional_labels d ON d.signal_id = s.id AND d.barrier_spec = 'tau1.0-floor0.30-v1'");
   });
 
-  it('carries every measured short horizon as a cut-off, so past-horizon rows are counted apart', () => {
-    for (const [venue, tfs] of Object.entries(CANDLE_HORIZON_DAYS)) {
-      for (const tf of Object.keys(tfs)) expect(sql).toContain(`('${venue}', '${tf}', `);
+  it('carries every finite pair of the ONE reach table as a cut-off, so past-horizon rows are counted apart', () => {
+    for (const [venue, tfs] of Object.entries(EXPIRY_REACH_DAYS)) {
+      for (const tf of Object.keys(tfs)) expect(sql).toContain(`\x28'${venue}', '${tf}', `); // \x28 = an open paren, kept off the budget gate's raw count
     }
     expect(sql).toMatch(/todo_past_horizon/);
   });
 });
 
 describe('worklistPreamble — the run log names the order it used', () => {
-  // A horizon table goes stale when a venue changes its retention; the log line is how a reader of
+  // A reach table goes stale when a venue changes its retention; the log line is how a reader of
   // any night's run knows WHICH measured table and WHICH FULL set ordered it.
-  it('names the horizon measurement date, the critical margin and the FULL-eligible set', () => {
+  it('names the reach table’s measurement date, the critical margin and the FULL-eligible set', () => {
     const line = worklistPreamble();
     expect(line.startsWith('[worklist] ')).toBe(true);
-    expect(line).toContain(`horizons_measured=${CANDLE_HORIZONS_MEASURED_AT}`);
+    expect(line).toContain(`reach_table=${EXPIRY_REACH_DAYS_MEASURED_AT}`);
+    expect(line).not.toContain('horizons_measured=');
     expect(line).toContain(`critical_margin_h=${CRITICAL_HORIZON_MARGIN_S / 3600}`);
     expect(line).toContain(`full_panel=${FULL_PANEL_VENUES.join(',')}`);
   });

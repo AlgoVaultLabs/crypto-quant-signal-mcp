@@ -56,7 +56,12 @@ import {
 import { T_DIAG_END, withinTCap } from './ads1/spec.js';
 import { servedCandleStepMs, SERVED_VENUES, CRON_TIMEFRAMES } from '../lib/tf-support.js';
 import { sloHoursFor as defaultSloHoursFor, isFullPanelVenue, FRESHNESS_BARRIER_SPEC, FULL_PANEL_VENUES } from '../lib/venue-slo-tiers.js';
-import { candleHorizonDays, CANDLE_HORIZON_DAYS, CANDLE_HORIZONS_MEASURED_AT } from '../lib/venue-candle-horizons.js';
+// The ONE reach table: the outcome queue, the census and this labeler — its expiry relabel AND its horizon-first
+// worklist — read src/lib/venue-candle-reach.ts (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH3 retired the second
+// table, venue-candle-horizons.ts, that the worklist used to read).
+import {
+  EXPIRY_REACH_DAYS, EXPIRY_REACH_DAYS_MEASURED_AT, HL_CANDLE_DEPTH, REACH_MARGIN_S, expiryReachDays,
+} from '../lib/venue-candle-reach.js';
 import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
 import { ADAPTER_CELL, ADAPTER_PENDING_CELLS, type ManifestClass } from './lrw/registered.js';
 import { relabelUntil, buildRelabelGroupsSql } from './lrw/relabel-sql.js';
@@ -329,10 +334,11 @@ export interface PrioritizedGroup {
 /**
  * The group work-list with its order data in ONE aggregate. The eligibility filters are
  * processGroup's own (BUY/SELL, pfe present, the recency window) plus the rotation's (no 1m, not
- * retired) — verbatim, so the list can never admit a row the labeler would not label. Every measured
- * short horizon rides in as a created_at cut-off so rows already past it are counted apart: they can
- * never be labelled from the venue's API, and ranking a group by one of them would spend the slice on
- * a fetch that returns nothing. Integers are inlined (computed here); CLI strings stay parameters.
+ * retired) — verbatim, so the list can never admit a row the labeler would not label. Every finite pair
+ * of the ONE reach table rides in as a created_at cut-off so rows already past it are counted apart: they
+ * can never be labelled from the venue's API, and ranking a group by one of them would spend the slice on
+ * a fetch that returns nothing (a pair deeper than the recency window can hold no such row). Integers are
+ * inlined (computed here); CLI strings stay parameters.
  */
 export function buildGroupsSql(opts: {
   lookbackCutoff: number;
@@ -342,7 +348,7 @@ export function buildGroupsSql(opts: {
   timeframe?: string;
 }): { text: string; params: unknown[] } {
   const hz: string[] = [];
-  for (const [venue, tfs] of Object.entries(CANDLE_HORIZON_DAYS)) {
+  for (const [venue, tfs] of Object.entries(EXPIRY_REACH_DAYS)) {
     for (const [tf, days] of Object.entries(tfs)) {
       hz.push(`('${venue}', '${tf}', ${Math.floor(opts.nowSec - days * 86_400)})`);
     }
@@ -437,7 +443,7 @@ export function orderGroupsForVenue<G extends PrioritizedGroup>(groups: G[], now
   const idle: G[] = [];
   for (const g of groups) {
     if (g.todoOldest == null || g.todoLabelable <= 0) { idle.push(g); continue; }
-    const depthS = candleHorizonDays(g.exchange, g.timeframe) * 86_400;
+    const depthS = expiryReachDays(g.exchange, g.timeframe) * 86_400;
     const leftS = Number.isFinite(depthS) ? g.todoOldest + depthS - nowSec : Infinity;
     if (leftS <= CRITICAL_HORIZON_MARGIN_S) critical.push({ g, leftS }); else breadth.push(g);
   }
@@ -460,12 +466,12 @@ export function orderGroupsForVenue<G extends PrioritizedGroup>(groups: G[], now
   return [...critical.map((c) => c.g), ...interleaved, ...idle];
 }
 
-/** The run's `[worklist]` preamble: WHICH measured horizon table and WHICH FULL-eligible set ordered this
- *  run — a horizon table goes stale when a venue changes its retention, and the log must say which one a
+/** The run's `[worklist]` preamble: WHICH measured reach table and WHICH FULL-eligible set ordered this
+ *  run — a reach table goes stale when a venue changes its retention, and the log must say which one a
  *  given night used. Pure. */
 export function worklistPreamble(): string {
   return (
-    `[worklist] order=full-panel-first,horizon-first,breadth horizons_measured=${CANDLE_HORIZONS_MEASURED_AT} ` +
+    `[worklist] order=full-panel-first,horizon-first,breadth reach_table=${EXPIRY_REACH_DAYS_MEASURED_AT} ` +
     `critical_margin_h=${CRITICAL_HORIZON_MARGIN_S / 3600} full_panel=${FULL_PANEL_VENUES.join(',')}`
   );
 }
@@ -482,7 +488,7 @@ export function worklistStats(
     labelable += g.todoLabelable;
     pastHorizon += g.todoPastHorizon;
     if (g.todoOldest == null || g.todoLabelable <= 0) continue;
-    const depthS = candleHorizonDays(g.exchange, g.timeframe) * 86_400;
+    const depthS = expiryReachDays(g.exchange, g.timeframe) * 86_400;
     if (Number.isFinite(depthS) && g.todoOldest + depthS - nowSec <= CRITICAL_HORIZON_MARGIN_S) critical++;
   }
   return { groups: groups.length, critical, labelable, pastHorizon };
@@ -1148,17 +1154,15 @@ export async function processGroup(cli: Cli, g: { exchange: string; coin: string
  * EDGE-ADS1-SCORECARD-W1-V2 CH1 probe 4, 2026-09-27 (vault endpoint-truth addendum). Instrument: the
  * SHIPPED adapter `getCandles` for BTC in the app container on the prod IP, batch class (a variant of
  * `ops/scripts/probe-candle-horizons.cjs`), lower bounds at ≤ 1 d resolution; HL = 5,000 candles
- * (`candleSnapshot`); WEEX = 1,000 candles (its kline endpoint takes no start time); the sub-21 d pairs
- * are `venue-candle-horizons.ts` (2026-09-26). An absent pair served every row probed. The table only
+ * (`candleSnapshot`); WEEX = 1,000 candles (its kline endpoint takes no start time). The second
+ * measurement, `venue-candle-horizons.ts` (2026-09-26), is retired — the worklist reads this table too
+ * (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH3). An absent pair served every row probed. The table only
  * saves fetches that cannot succeed; a stale entry costs a skipped-but-reachable row (reported as
  * `past_reach`), never a wrong value.
  */
 // OPS-ALARM-OWNER-DERIVATION-W1 CH1: the table, its date, its lookup, HL's depth and the margin now
 // live in src/lib/venue-candle-reach.ts — the ONE reach table the outcome backfill's queue and census
-// read too. Re-exported here so every existing importer compiles unchanged; values are byte-identical.
-import {
-  EXPIRY_REACH_DAYS, EXPIRY_REACH_DAYS_MEASURED_AT, HL_CANDLE_DEPTH, REACH_MARGIN_S, expiryReachDays,
-} from '../lib/venue-candle-reach.js';
+// read too (imported at the top of this file). Re-exported here so every existing importer compiles unchanged.
 export { EXPIRY_REACH_DAYS, EXPIRY_REACH_DAYS_MEASURED_AT, HL_CANDLE_DEPTH, expiryReachDays };
 
 /**
