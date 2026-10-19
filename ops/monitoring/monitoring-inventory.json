@@ -1304,7 +1304,7 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 — is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "be5ad02d14957b1e5359c93c2781a453de8b90b03ca31094651f36db0310c111",
+      "sha256": "d86ec77e96a49b6176c46ef6e9677545185f5c947999ac5a5022e67de85bd86b",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. SYNCED, NOT INSTALLED (OPS-DRIFT-ALERT-GENERATORS-W1, 2026-09-14): declaration-sync.sh fetches it on aoe-1 every hour (27 * * * *) through a DECLARATIONS row whose 5th field names ops/scripts/cron-interlock-registry.json, so a registry edit reaches the host within the hour with no re-install step. It used to be installed once behind a sync_exempt_reason (the sync could only reach ops/monitoring), with the refresh left to a sentence in these notes; IDENTITY-LIFECYCLE-W3 edited the registry three times on 2026-09-08, re-stamped this sha256, never re-installed, and aoe-1 paged HASH_DRIFT + REGISTRY_PARITY daily from 2026-09-09. Re-stamp this sha256 in the same commit as any registry edit; HASH_DRIFT on this row now means the hourly sync stopped landing, not that someone forgot a step. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot.",
@@ -3017,13 +3017,17 @@
       "criticality": "load-bearing",
       "schedule": "44 * * * *",
       "invoked_by": "crontab:root",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "20033bbbe999eb3795dcef98c833eb00b53a60ae9b920044936e056479de98bf",
       "alert_ids": [
         "regime_snapshot_stale"
       ],
       "owner_wave": "SCAN-MARKET-REGIMES-W1",
-      "notes": "The freshness canary for the bar-close regime snapshot scan_market_regimes serves (SCAN-MARKET-REGIMES-W1-V2 CH3). Runs dist/scripts/regime-snapshot-sampler.js --freshness inside the app container in a session the server holds READ-ONLY (PGOPTIONS default_transaction_read_only=on, statement_timeout 60 s); the judge adopts the existing tables with to_regclass and never issues DDL. It judges ONLY the producer's run record through the same readers the tool serves from, with no schedule arithmetic. Token REGIME_SNAPSHOT_FRESHNESS_VERDICT=PASS|FAIL|INDETERMINATE (exit 0/1/3); one positive line per venue and per (venue, tf). State: /var/lib/algovault-monitoring/regime-snapshot-freshness/known-unserved (absent = SEED). Log /var/log/regime-snapshot-freshness.log: ONE summary line per run; the full judge output of the newest run in .last and of the newest FAIL in .last-fail (no logrotate covers the path, so the log is bounded by construction). Publishes one canary_result_log record per run (canary regime-snapshot-freshness), pulled into the vault by monitoring-results-sync.sh. PENDING until installed by ops/scripts/install-monitoring-artifact.sh after the landing."
+      "notes": "The freshness canary for the bar-close regime snapshot scan_market_regimes serves (SCAN-MARKET-REGIMES-W1-V2 CH3). Runs dist/scripts/regime-snapshot-sampler.js --freshness inside the app container in a session the server holds READ-ONLY (PGOPTIONS default_transaction_read_only=on, statement_timeout 60 s); the judge adopts the existing tables with to_regclass and never issues DDL. It judges ONLY the producer's run record through the same readers the tool serves from, with no schedule arithmetic. Token REGIME_SNAPSHOT_FRESHNESS_VERDICT=PASS|FAIL|INDETERMINATE (exit 0/1/3); one positive line per venue and per (venue, tf). State: /var/lib/algovault-monitoring/regime-snapshot-freshness/known-unserved (absent = SEED). Log /var/log/regime-snapshot-freshness.log: ONE summary line per run; the full judge output of the newest run in .last and of the newest FAIL in .last-fail (no logrotate covers the path, so the log is bounded by construction). Publishes one canary_result_log record per run (canary regime-snapshot-freshness), pulled into the vault by monitoring-results-sync.sh. Installed 2026-10-19 by ops/scripts/install-monitoring-artifact.sh (first install = the 6b69ab45 bytes, backup .bak.SCAN-MARKET-REGIMES-W1-20261019T120339Z); first cron-identical run 12:04:24Z PASS, SEED, 10 FRESH + 2 UNSERVED (OKX|1h, BITGET|1d).",
+      "first_install": {
+        "at": "20261019T120339Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "stepup-readout",
