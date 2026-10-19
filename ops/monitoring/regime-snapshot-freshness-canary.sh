@@ -33,6 +33,11 @@
 # alert-registry.json; announce_resolution false, so a clear is silent). INDETERMINATE pages nothing and
 # clears nothing: a run that read nothing knows nothing.
 #
+# ── LOGS ──────────────────────────────────────────────────────────────────────────────────────
+# $LOG gets ONE summary line per run (verdict, mode, keys). The judge's full output — one line per
+# venue and per pair — is overwritten into $LOG.last every run and copied to $LOG.last-fail on a FAIL,
+# so the forensics of the newest run and of the newest failure survive without an unbounded log.
+#
 # ── PUBLISHED ─────────────────────────────────────────────────────────────────────────────────
 # Every run appends ONE canary_result_log record (canary `regime-snapshot-freshness`): verdict, mode, pair
 # counts by state, the unserved / resolved / failing keys. Identifiers and counts only.
@@ -100,7 +105,7 @@ page_body() { # fail_keys_csv
   printf 'scan_market_regimes serves the newest servable generation; a pair past its bound is refused as\n'
   printf 'snapshot_stale, a dead producer stops every pair. PRODUCER_DEAD: check the :11 cron + /var/log/regime-sampler.log;\n'
   printf 'NEWLY_WINDOW_STALE: the venue serves a stale window for that timeframe (compare get_market_regime).\n'
-  printf 'Log: %s · result: canary-results.jsonl (%s)\n' "$LOG" "$CANARY"
+  printf 'Log: %s (full judge output: %s.last-fail) · result: canary-results.jsonl (%s)\n' "$LOG" "$LOG" "$CANARY"
   printf 'Recommended wave: SCAN-MARKET-REGIMES-W{NEXT}\n'
 }
 
@@ -163,7 +168,9 @@ run_canary() {
   "$DOCKER" exec -e "PGOPTIONS=$PGOPTS" ${known_env[@]+"${known_env[@]}"} "$CTR" \
     node dist/scripts/regime-snapshot-sampler.js --freshness > "$tmp/out" 2>&1
   rc=$?
-  cat "$tmp/out" >> "$LOG" 2>/dev/null || true
+  # The FULL judge output is kept for the LAST run (and the last FAIL run) only. Appended hourly it
+  # would grow the log ~80 lines an hour with no rotation; $LOG itself gets ONE line per run (finish).
+  cp "$tmp/out" "$LOG.last" 2>/dev/null || true
   out="$tmp/out"
 
   verdict="$(field REGIME_SNAPSHOT_FRESHNESS_VERDICT "$out")"
@@ -186,6 +193,7 @@ run_canary() {
 
   fails="$(field REGIME_FRESHNESS_FAIL_KEYS "$out")"
   if [ "$verdict" = FAIL ]; then
+    cp "$tmp/out" "$LOG.last-fail" 2>/dev/null || true
     if [ -x "$SEND" ]; then
       page_body "$fails" | "$SEND" "$ALERT_ID" CRITICAL_PERSISTENT - 2>>"$LOG" || log "ESCALATE_UNSENT: send_telegram invocation failed"
     else
@@ -278,6 +286,9 @@ EOF
   has 'the body carries the template wave id, never a hardcoded one' "$(cat "$st/sent")" 'SCAN-MARKET-REGIMES-W{NEXT}'
   ck 'regression run: a FAIL never clears' "$(clears)" 3
   ck 'regression run: the set is NOT widened by a regression' "$(state)" 'BITGET|1d'
+  has 'a FAIL keeps its full judge output in .last-fail' "$(cat "$st/log.last-fail" 2>/dev/null)" '[regime-freshness] PAIR {"venue":"OKX","tf":"1h","state":"NEWLY_WINDOW_STALE"}'
+  has 'the newest run is always in .last' "$(cat "$st/log.last" 2>/dev/null)" 'REGIME_SNAPSHOT_FRESHNESS_VERDICT=FAIL'
+  ck 'the log itself never takes the judge output (one summary line per run)' "$(grep -c '\[regime-freshness\] PAIR' "$st/log" | tr -d ' ')" 0
   # (5) A FAIL with two findings counts both.
   judge FAIL JUDGE '' '' 'BINANCE|*:PRODUCER_DEAD,BYBIT|4h:STALE_GENERATION' '' 'BYBIT|4h|STALE_GENERATION'
   has 'two findings are counted as two' "$(cat "$st/sent")" '2 findings FAILed'
@@ -291,6 +302,7 @@ EOF
   ck 'judge INDETERMINATE: state untouched' "$(state)" 'KEEP|1h'
   ck 'judge INDETERMINATE: no page' "$(sends)" 2
   ck 'judge INDETERMINATE: no clear' "$(clears)" 3
+  hasnt 'a non-FAIL run never overwrites .last-fail' "$(cat "$st/log.last-fail" 2>/dev/null)" 'REGIME_SNAPSHOT_FRESHNESS_VERDICT=INDETERMINATE'
   # (7) Whole-run INDETERMINATE: no token / stopped container — state untouched.
   judge '' JUDGE 'X|1h' '' '' 'X|1h'
   ck 'no token: INDETERMINATE' "$(tok)" INDETERMINATE
