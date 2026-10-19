@@ -18,6 +18,7 @@ import {
   GET_EQUITY_CALL_DESCRIPTION,
   GET_EQUITY_REGIME_DESCRIPTION,
   GET_TRACK_RECORD_DESCRIPTION,
+  SCAN_MARKET_REGIMES_DESCRIPTION,
   TRADE_CALL_ALIAS_SUFFIX,
 } from '../tool-descriptions.js';
 // SCAN-RANKBY-W1: the rankBy lens set is advertised on /capabilities from the SINGLE
@@ -115,6 +116,7 @@ const DESCRIPTIONS: Record<string, string> = {
   GET_EQUITY_CALL_DESCRIPTION,
   GET_EQUITY_REGIME_DESCRIPTION,
   GET_TRACK_RECORD_DESCRIPTION,
+  SCAN_MARKET_REGIMES_DESCRIPTION,
 };
 
 /**
@@ -249,6 +251,28 @@ const FEATURE_REGISTRY_LITERAL = [
     quota: { unit: 'rate-limited', holdFree: false },
     x402: null,
     descriptionRef: 'GET_TRACK_RECORD_DESCRIPTION',
+    enabled: true,
+    publicListing: false,
+  },
+  {
+    // SCAN-MARKET-REGIMES-W1-V2 CH2 — the venue regime screener over CH1's bar-close snapshot.
+    // Every flag is a decision (scripts/check-feature-registry-drift.mjs pins them):
+    //   • mcp only. `httpX402: false` + `x402: null` — no HTTP route and no price yet; checks 2/3/6 hold.
+    //   • `quota.unit: 'per-verdict'` — one unit per RETURNED row (max(1, returned)), the same rail
+    //     `scan_trade_calls` bills on; non-matching coins are free.
+    //   • NO `lenses` (V2 §0 Q5): `CapabilityLenses.default` is a required string and this tool's
+    //     `rankBy` has no default; the closed set is declared by reference in tool-param-schema.ts
+    //     (`SCAN_MARKET_REGIMES_PARAM_DECL.closedSets.rankBy`).
+    //   • `publicListing: false` — a SCOPE boundary, exactly as for get_track_record: the docs partial,
+    //     TOOL_LABELS, lobehub api[] and the count tests land together in the next release wave
+    //     (V2 §0 Q4, the OWED close-register row). It does NOT hide the tool: tools/list and
+    //     /capabilities carry it.
+    name: 'scan_market_regimes',
+    aliases: [],
+    channels: { mcp: true, httpX402: false, bot: false, webhook: false, a2mcp: false, acp: false },
+    quota: { unit: 'per-verdict', holdFree: false },
+    x402: null,
+    descriptionRef: 'SCAN_MARKET_REGIMES_DESCRIPTION',
     enabled: true,
     publicListing: false,
   },

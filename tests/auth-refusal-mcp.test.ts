@@ -351,6 +351,8 @@ const TOOL_ENVELOPE_SITES: Array<[tool: string, file: string, sites: number]> = 
   ['get_market_regime', 'src/tools/get-market-regime.ts', 1],
   ['scan_funding_arb', 'src/tools/scan-funding-arb.ts', 2],
   ['scan_trade_calls', 'src/tools/scan-trade-calls.ts', 3],
+  // SCAN-MARKET-REGIMES-W1-V2 CH2: six in-band refusals + the served envelope.
+  ['scan_market_regimes', 'src/tools/scan-market-regimes.ts', 7],
   ['chat_knowledge', 'src/lib/chat-knowledge-formatter.ts', 1],
   ['search_knowledge', 'src/lib/search-knowledge-formatter.ts', 1],
 ];
@@ -426,12 +428,13 @@ describe('(12) every live tool states its own auth state', () => {
     }
   });
 
-  it('the live tool list is exactly the seven this suite covers', () => {
-    // Guards the count from BELOW: if an eighth tool ships, this goes red and its envelope has to
+  it('the live tool list is exactly the eight this suite covers', () => {
+    // Guards the count from BELOW: if a ninth tool ships, this goes red and its envelope has to
     // be brought into TOOL_ENVELOPE_SITES rather than quietly becoming the next straggler.
+    // (scan_market_regimes joined in SCAN-MARKET-REGIMES-W1-V2 CH2 — a seventh name, eight in all.)
     const registered = readFileSync(resolve(ROOT, 'src/index.ts'), 'utf8')
-      .match(/^\s*'(get_trade_call|get_trade_signal|get_market_regime|scan_funding_arb|scan_trade_calls|chat_knowledge|search_knowledge)',$/gm) ?? [];
-    expect(new Set(registered.map((s) => s.trim())).size).toBe(7);
+      .match(/^\s*'(get_trade_call|get_trade_signal|get_market_regime|scan_funding_arb|scan_trade_calls|scan_market_regimes|chat_knowledge|search_knowledge)',$/gm) ?? [];
+    expect(new Set(registered.map((s) => s.trim())).size).toBe(8);
   });
 });
 

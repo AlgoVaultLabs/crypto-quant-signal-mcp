@@ -55,7 +55,7 @@
  * and is declared here.
  */
 
-import type { ExchangeId } from '../types.js';
+import type { ExchangeId, RegimeType } from '../types.js';
 import { TIMEFRAMES, PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
 import { RANK_BY_VALUES, RANK_BY_ALIASES } from './rank-constants.js';
 
@@ -361,3 +361,53 @@ export function assertClosedSetCoverage(
   }
   return gaps;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// scan_market_regimes — SCAN-MARKET-REGIMES-W1-V2 CH2
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The four regime labels — every value `RegimeType` admits, set equality compile-checked both ways. */
+export const REGIME_LABELS = ['TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'VOLATILE'] as const;
+type _LabelsAreRegimeTypes = (typeof REGIME_LABELS)[number] extends RegimeType ? true : never;
+type _RegimeTypesAreLabels = RegimeType extends (typeof REGIME_LABELS)[number] ? true : never;
+const _labelsCoverRegimeType: _LabelsAreRegimeTypes = true;
+const _regimeTypeCoversLabels: _RegimeTypesAreLabels = true;
+void _labelsCoverRegimeType;
+void _regimeTypeCoversLabels;
+
+/** `assetClass` filter values: `tradfi` = every non-crypto class; `equity` includes KR_EQUITY. */
+export const REGIME_SCAN_ASSET_CLASSES = ['all', 'crypto', 'tradfi', 'equity', 'commodity', 'index', 'fx', 'premarket'] as const;
+/** `sortBy`: `regime_age` = most recent regime change first (unknown starts last); `rank` needs `rankBy`. */
+export const REGIME_SCAN_SORT_BY = ['confidence', 'regime_age', 'rank'] as const;
+
+/**
+ * Every enum-valued parameter of `scan_market_regimes`, with its default, and its `rankBy` closed set
+ * DECLARED BY REFERENCE (V2 §0 Q5: `valueSource` IS `RANK_BY_VALUES`, `aliasSource` IS
+ * `RANK_BY_ALIASES`, no default — this tool's `rankBy` is "no lens" when omitted). The Zod schema in
+ * `src/tools/scan-market-regimes.ts` projects from this object, so the served schema cannot drift from
+ * it.
+ *
+ * DELIBERATELY NOT IN `PUBLIC_TOOL_ENUM_PARAMS` / `PUBLIC_TOOL_CLOSED_SET_PARAMS` YET. Those two feed
+ * `/docs` (`scripts/build_docs.mjs`) and the live P7 gate, and an entry there requires a
+ * `TOOL_DOCS_PARTIAL` row and a `docs-src/partials/` file — the release wave's listing work (V2 §0 Q4,
+ * the OWED close-register row). Moving `enums` and `closedSets` into those maps is that wave's entire
+ * schema edit; nothing here has to be re-typed.
+ */
+export const SCAN_MARKET_REGIMES_PARAM_DECL = Object.freeze({
+  enums: Object.freeze({
+    exchange: Object.freeze({ values: PUBLIC_VENUE_IDS, default: 'BINANCE' as const }),
+    timeframe: Object.freeze({ values: REGIME_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
+    regime: Object.freeze({ values: REGIME_LABELS }),
+    assetClass: Object.freeze({ values: REGIME_SCAN_ASSET_CLASSES, default: 'all' as const }),
+    sortBy: Object.freeze({ values: REGIME_SCAN_SORT_BY, default: 'confidence' as const }),
+    oiChangeWindow: Object.freeze({ values: OI_CHANGE_WINDOWS, default: SCAN_OI_CHANGE_WINDOW_DEFAULT }),
+    oiBasis: Object.freeze({ values: OI_BASES, default: SCAN_OI_BASIS_DEFAULT }),
+  }),
+  closedSets: Object.freeze({
+    rankBy: Object.freeze({
+      valueSource: RANK_BY_VALUES,
+      aliasSource: RANK_BY_ALIASES,
+      selects: RANK_BY_SELECTS,
+    }) satisfies ClosedSetParamSpec,
+  }),
+});

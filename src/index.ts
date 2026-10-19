@@ -22,6 +22,7 @@ import { routeTradeCall } from './tools/trade-call-router.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { runScanTradeCall, SCAN_TRADE_CALLS_SCHEMA, SCAN_TRADE_CALLS_DESCRIPTION } from './tools/scan-trade-calls.js';
+import { SCAN_MARKET_REGIMES_SCHEMA, SCAN_MARKET_REGIMES_DESCRIPTION } from './tools/scan-market-regimes.js';
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
 // DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2: the ONE public allow-list projection of the track
 // record. Consumed here by BOTH `performance://signal-performance` and
@@ -471,6 +472,18 @@ function createServer(): McpServer {
     SCAN_TRADE_CALLS_SCHEMA,
     { title: 'Market Scanner', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
     mcpHandler('scan_trade_calls'),
+  );
+
+  // ── Tool: scan_market_regimes (SCAN-MARKET-REGIMES-W1-V2) — venue regime screener ──
+  // Thin handler: refusals + quota + envelope live in src/tools/scan-market-regimes.ts
+  // (runScanMarketRegimes, dispatched by the tool-call pipeline); the read engine is
+  // src/lib/market-regime-scanner.ts over CH1's bar-close snapshot.
+  register(
+    'scan_market_regimes',
+    SCAN_MARKET_REGIMES_DESCRIPTION,
+    SCAN_MARKET_REGIMES_SCHEMA,
+    { title: 'Market Regime Screener', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
+    mcpHandler('scan_market_regimes'),
   );
 
   // ── Tool 4: search_knowledge ──

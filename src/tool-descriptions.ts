@@ -177,6 +177,44 @@ export const PARAM_DESC_SCAN_OI_CHANGE_WINDOW =
 export const PARAM_DESC_SCAN_OI_BASIS =
   'OI-delta basis for rankBy=oi_change: notional (default, USD) or contracts (base-coin, price-independent). Ignored by other lenses.';
 
+
+// SCAN-MARKET-REGIMES-W1-V2 CH2: the venue regime screener. States what a row IS (the classifier's
+// output for the last closed bar — not a live read), where it is sampled, that a pair can be refused,
+// and how it bills. Qualitative only (forward-stability): no venue or asset count, no performance or
+// edge claim, and no "zero cost" — a lens or liquidity floor reuses scan_trade_calls' upstream reads.
+// The four venue names are the sampler's DEFAULT set; tests/scan-market-regimes.test.ts pins that
+// this sentence names exactly `DEFAULT_REGIME_SNAPSHOT_VENUES`, so the two cannot drift apart.
+export const SCAN_MARKET_REGIMES_DESCRIPTION =
+  'Screens a whole crypto perpetual futures venue by market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — and returns each matching coin with confidence, trend strength, ADX, volatility ratio and how long the regime has held. Rows are the market regime classifier output for the last closed bar, sampled on Binance, Bybit, OKX and Bitget; another venue, or a timeframe a venue cannot serve, is refused with the alternatives. Billing: one call per returned row; non-matching coins are free. For a live single-coin read with cross-venue funding, call get_market_regime. Read-only.';
+// scan_market_regimes param describe() strings. minLiquidityUsd / oiChangeWindow / oiBasis reuse the
+// scan_trade_calls strings above — same semantics, one sentence each.
+export const PARAM_DESC_REGIME_SCAN_EXCHANGE =
+  'Venue to screen (default Binance). A venue outside the sampled set is refused with the sampled list.';
+export const PARAM_DESC_REGIME_SCAN_TIMEFRAME =
+  'Regime timeframe: 1h, 4h or 1d (default 4h).';
+export const PARAM_DESC_REGIME_SCAN_REGIME =
+  'Keep only these regimes (any of): TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE.';
+export const PARAM_DESC_REGIME_SCAN_MIN_CONFIDENCE =
+  'Optional confidence floor, 0 to 100.';
+export const PARAM_DESC_REGIME_SCAN_MAX_REGIME_AGE_BARS =
+  'Keep only coins whose regime began within this many bars (1 = changed on the last closed bar). ' +
+  'Coins whose regime start is not yet known are excluded.';
+export const PARAM_DESC_REGIME_SCAN_ASSET_CLASS =
+  'all (default), crypto, tradfi (every non-crypto class), equity, commodity, index, fx or premarket.';
+export const PARAM_DESC_REGIME_SCAN_COINS =
+  'Restrict to these symbols, e.g. ["BTC","ETH"]. Symbols not on the venue are listed in not_found and not billed.';
+export const PARAM_DESC_REGIME_SCAN_RANK_BY =
+  'Optional universe lens — the same lenses and aliases as scan_trade_calls rankBy; rows then echo the lens metric. ' +
+  'Omit to screen every coin.';
+export const PARAM_DESC_REGIME_SCAN_TOP_N =
+  'Lens universe size, 1 to 1000 (default 100 with rankBy). Without rankBy it selects the top coins by open interest.';
+export const PARAM_DESC_REGIME_SCAN_SORT_BY =
+  'confidence (default), regime_age (most recent regime change first, unknown starts last), or rank (lens order; needs rankBy).';
+export const PARAM_DESC_REGIME_SCAN_LIMIT =
+  'Page size, 1 to 100 (default 20).';
+export const PARAM_DESC_REGIME_SCAN_OFFSET =
+  'Rows to skip, for paging within one snapshot. A changed as_of means the snapshot advanced between pages.';
+
 // Top-20 keyword phrases the canary asserts each of the 3 BM25-audited tools'
 // combined-text contains ≥15 of (case-insensitive substring match). Sourced
 // from observed AI-agent-builder search vocabulary + the Anthropic Tool Search

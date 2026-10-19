@@ -96,5 +96,7 @@
       "back_compat": "symbol-only callers behave exactly as before (daily-bar equity 1d); a supplied venue/timeframe routes to the perp engine via the resolver"
     }
   },
-  "supersedes": "trade-call-routing-shape-snapshot-2026-08-21.json"
+  "supersedes": "trade-call-routing-shape-snapshot-2026-08-21.json",
+  "superseded_by": "trade-call-routing-shape-snapshot-2026-10-19.json",
+  "superseded_reason": "SCAN-MARKET-REGIMES-W1-V2 CH2 added scan_market_regimes to the live tool set (8 -> 9); the routing contract is carried forward verbatim into the 2026-10-19 successor."
 }

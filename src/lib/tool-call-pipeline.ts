@@ -81,12 +81,14 @@ import { scanFundingArb } from '../tools/scan-funding-arb.js';
 import { runScanTradeCall } from '../tools/scan-trade-calls.js';
 import { getEquityRegime } from './equities/equity-tool-formatters.js';
 import { runGetTrackRecord } from '../tools/get-track-record.js';
+import { runScanMarketRegimes } from '../tools/scan-market-regimes.js';
 import { getKnowledgeSearch, getChatStack, chatTierFor } from '../tools/knowledge-tools.js';
 import { formatSearchKnowledgeResponse } from './search-knowledge-formatter.js';
 import { chatQuotaApiKey, buildChatQuotaNotice } from './chat-rate-limit.js';
 import { formatChatKnowledgeResponse } from './chat-knowledge-formatter.js';
 import { recordChatEvent } from './chat-analytics.js';
 import type { ScanExchangeId } from './trade-call-scanner.js';
+import type { PromotedVenueId } from './capabilities.js';
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Interface
@@ -514,6 +516,44 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     enrich: null,
     mcpText: null,
     refusalJson: 'pretty',
+  },
+  scan_market_regimes: {
+    // SCAN-MARKET-REGIMES-W1-V2 CH2: refuses in-band (structured payload + isError) — unbilled — and
+    // never throws for an unserved or stale pair. Interactive lane, like scan_trade_calls; a lens or a
+    // liquidity floor is the only upstream read, and it reuses that tool's cached lens fetch.
+    run: async (input, license, attribute, served) => {
+      const out = await runAsCaller(processScopedTag('scan_market_regimes'), () => attribute(served, () => runScanMarketRegimes(
+        {
+          exchange: input.exchange as PromotedVenueId,
+          timeframe: input.timeframe as Parameters<typeof runScanMarketRegimes>[0]['timeframe'],
+          regime: input.regime as Parameters<typeof runScanMarketRegimes>[0]['regime'],
+          minConfidence: input.minConfidence as number | undefined,
+          maxRegimeAgeBars: input.maxRegimeAgeBars as number | undefined,
+          assetClass: input.assetClass as Parameters<typeof runScanMarketRegimes>[0]['assetClass'],
+          minLiquidityUsd: input.minLiquidityUsd as number | undefined,
+          coins: input.coins as string[] | undefined,
+          rankBy: input.rankBy as string | undefined,
+          topN: input.topN as number | undefined,
+          oiChangeWindow: input.oiChangeWindow as Parameters<typeof runScanMarketRegimes>[0]['oiChangeWindow'],
+          oiBasis: input.oiBasis as Parameters<typeof runScanMarketRegimes>[0]['oiBasis'],
+          sortBy: input.sortBy as Parameters<typeof runScanMarketRegimes>[0]['sortBy'],
+          limit: input.limit as number | undefined,
+          offset: input.offset as number | undefined,
+        },
+        license,
+      )));
+      return out.kind === 'ok'
+        ? { kind: 'ok', result: out.response }
+        : { kind: 'refused', payload: out.payload as unknown as Record<string, unknown>, http: { status: out.status } };
+    },
+    logSuccess: (input) => ({ timeframe: input.timeframe as string, exchange: input.exchange as string }),
+    logError: null,
+    logOnRefusal: false,
+    cohort: false,
+    timeframes: REGIME_TIMEFRAMES,
+    enrich: null,
+    mcpText: null,
+    refusalJson: 'compact',
   },
 };
 

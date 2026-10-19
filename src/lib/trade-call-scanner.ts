@@ -33,7 +33,11 @@
 
 import pLimit from 'p-limit';
 import { getTradeSignal } from '../tools/get-trade-call.js';
-import { getExchangeTopAssetsWithVolume, fetchVenueUniverse, effectiveLiquidityUsd } from './exchange-universe.js';
+import { getExchangeTopAssetsWithVolume } from './exchange-universe.js';
+// SCAN-MARKET-REGIMES-W1-V2 CH2: the liquidity floor + the rank-lens echo live in scan-shared.ts,
+// shared with scan_market_regimes. `_setLiquidityMapForTest` is re-exported below so every existing
+// test seam keeps its import path.
+import { applyLiquidityFloor, applyRankEcho, _setLiquidityMapForTest } from './scan-shared.js';
 import { PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
 import { getRankedUniverse, type RankedAsset } from './rank-metrics.js';
 import { resolveRankBy, type RankBy } from './rank-constants.js';
@@ -183,18 +187,8 @@ export function attachRank(item: ScanCallItem, ranked: RankedAsset | undefined):
   // so a shallow copy is leak-safe — no raw engine field ever reached it. The copy
   // PRESERVES any enrichment fields (enriched mode) while adding the lens-VARYING
   // rank echo at OUTPUT only (never the cached cell — W1 law).
-  const out: ScanCallItem = { ...item };
-  if (!ranked || ranked.rankBy === 'oi') return out;
-  out.rank_value = ranked.rank_value;
-  if (ranked.change_24h_pct !== undefined) out.change_24h_pct = ranked.change_24h_pct;
-  if (ranked.volume_24h !== undefined) out.volume_24h = ranked.volume_24h;
-  if (ranked.funding_rate !== undefined) out.funding_rate = ranked.funding_rate;
-  if (ranked.funding_apr !== undefined) out.funding_apr = ranked.funding_apr;
-  if (ranked.atrp !== undefined) out.atrp = ranked.atrp;
-  if (ranked.oi_change_pct !== undefined) out.oi_change_pct = ranked.oi_change_pct;
-  if (ranked.oi_change_window !== undefined) out.oi_change_window = ranked.oi_change_window;
-  if (ranked.oi_change_basis !== undefined) out.oi_change_basis = ranked.oi_change_basis;
-  return out;
+  // The field copy itself is `applyRankEcho` (scan-shared.ts) — the ONE lens-field list.
+  return applyRankEcho<ScanCallItem>({ ...item }, ranked);
 }
 
 /** Real scorer — the internal trade-call compute path (skips quota + track record). */
@@ -251,48 +245,16 @@ function getUniverseCache(): ResultCache<string[]> {
   return universeCache;
 }
 
+// FIX-CONVICTION-CALL-POSTS-W1's venue liquidity map moved to scan-shared.ts (SCAN-MARKET-REGIMES-
+// W1-V2 CH2); the test seam keeps this module's import path.
+export { _setLiquidityMapForTest };
+
 /**
  * Resolve the top-`n` coin set on a promoted venue, OI-desc-sorted. Fresh
  * results are cached in a `ResultCache` keyed `${exchange}:${n}`. Stale-on-
  * error: if a fetch throws but we have a last-known-good set, serve it; with no
  * prior good set, the error propagates.
  */
-// ── FIX-CONVICTION-CALL-POSTS-W1: venue liquidity map for the optional universe floor ──
-// 60s TTL, matching `scan_funding_arb`'s per-leg gate cache. Only consulted when a caller
-// actually passes `minLiquidityUsd`, so the default scan path performs no extra fetch.
-const LIQUIDITY_TTL_MS = 60_000;
-const liquidityCache = new Map<string, { at: number; byCoin: Map<string, number> }>();
-
-/** Test seam, matching `_setScorerForTest` et al.: when set, the floor reads this instead
- *  of the live universe, so unit tests never touch the network. */
-let _liquidityMapOverride: ((exchange: ScanExchangeId) => Map<string, number>) | null = null;
-export function _setLiquidityMapForTest(fn: ((exchange: ScanExchangeId) => Map<string, number>) | null): void {
-  _liquidityMapOverride = fn;
-  liquidityCache.clear();
-}
-
-/** coin → USD liquidity on `exchange`. Fail-soft to an EMPTY map, which makes the floor
- *  default-DENY rather than silently admitting an ungated universe. */
-async function getVenueLiquidityUsd(exchange: ScanExchangeId): Promise<Map<string, number>> {
-  if (_liquidityMapOverride) return _liquidityMapOverride(exchange);
-  const now = Date.now();
-  const hit = liquidityCache.get(exchange);
-  if (hit && now - hit.at <= LIQUIDITY_TTL_MS) return hit.byCoin;
-  const byCoin = new Map<string, number>();
-  try {
-    // Full universe, not the top-N slice: the floor must be able to judge any coin the
-    // lens selected, including one outside the OI head.
-    for (const a of await fetchVenueUniverse(exchange)) byCoin.set(a.coin, effectiveLiquidityUsd(a));
-  } catch (err) {
-    console.debug(
-      `[trade-call-scanner] liquidity universe fetch failed for ${exchange} — floor will deny all:`,
-      err instanceof Error ? err.message : err,
-    );
-  }
-  liquidityCache.set(exchange, { at: now, byCoin });
-  return byCoin;
-}
-
 export async function getTopCoinSet(exchange: ScanExchangeId, n: number): Promise<string[]> {
   const cache = getUniverseCache();
   const key = `${exchange}:${n}`;
@@ -427,9 +389,8 @@ export async function scanTradeCalls(params: ScanTradeCallsParams): Promise<Scan
   // which is the failure mode that would actually reach print.
   const minLiquidityUsd = params.minLiquidityUsd;
   if (minLiquidityUsd != null && minLiquidityUsd > 0 && coins.length > 0) {
-    const liquidity = await getVenueLiquidityUsd(exchange);
     const before = coins.length;
-    coins = coins.filter((c) => (liquidity.get(c) ?? 0) >= minLiquidityUsd);
+    coins = await applyLiquidityFloor(exchange, coins, minLiquidityUsd);
     if (rankMap) {
       const rm = rankMap;
       rankMap = new Map(coins.flatMap((c) => (rm.get(c) ? [[c, rm.get(c)!] as [string, RankedAsset]] : [])));

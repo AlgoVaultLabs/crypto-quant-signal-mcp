@@ -67,13 +67,16 @@ describe('CH1 AC-a — public tool count = allToolNames() minus aliases minus th
     expect(publicToolNames()).toEqual(canonicalListed);
   });
 
-  it('the HELD set is exactly the two equities plus get_track_record', () => {
+  it('the HELD set is exactly the two equities plus get_track_record and scan_market_regimes', () => {
     // Equities: the standing public-copy HOLD (NAV-PLATFORM-GENERATOR-W1 A4).
     // get_track_record: LIVE on tools/list and /capabilities, kept off nav + /tools this
     // wave only because listing it would regenerate landing/** and docs/**, outside
     // DEV-TRACK-RECORD-TOOL-PARITY-W1's declared firewall. Flip in the follow-up wave.
+    // scan_market_regimes: the same scope boundary (SCAN-MARKET-REGIMES-W1-V2 §0 Q4) — LIVE on
+    // tools/list; its docs partial, TOOL_LABELS, lobehub api[] and count tests are the release
+    // wave's OWED listing work.
     expect(FEATURE_REGISTRY.filter((f) => f.publicListing === false).map((f) => f.name).sort())
-      .toEqual(['get_equity_call', 'get_equity_regime', 'get_track_record']);
+      .toEqual(['get_equity_call', 'get_equity_regime', 'get_track_record', 'scan_market_regimes']);
   });
 });
 

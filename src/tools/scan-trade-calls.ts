@@ -25,9 +25,8 @@ import {
   type ScanTradeCallsResult,
   type ScanCallItem,
 } from '../lib/trade-call-scanner.js';
-import { checkQuota, trackCall, getRequestSessionId, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../lib/license.js';
+import { checkQuota, trackCall, getRequestSessionId } from '../lib/license.js';
 import { assertVenueNotRetired } from '../lib/venue-store.js';
-import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts } from '../lib/quota-notice.js';
 import { formatScanReceipts, type ScanReceipts } from '../lib/receipts.js';
 import { getReceiptTrackRecord } from '../lib/receipts-track-record.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
@@ -45,11 +44,10 @@ import {
   OI_CHANGE_WINDOWS, OI_BASES, SCAN_TIMEFRAME_DEFAULT, SCAN_EXCHANGE_DEFAULT,
   SCAN_OI_CHANGE_WINDOW_DEFAULT, SCAN_OI_BASIS_DEFAULT,
 } from '../lib/tool-param-schema.js';
-// FUNNEL-FIX-AGENT-X402-NUDGE-W1 (Q4): the scanner's own quota wall also offers the x402 branch.
-// x402-nudge is a LEAF (no okx-a2mcp/x402-http-routes import) so this tool handler → x402-nudge
-// creates no cycle. Dark behind X402_NUDGE_ENABLED.
-import { buildSuggestedX402, isX402NudgeEnabled } from '../lib/x402-nudge.js';
-import { bindingMeter } from '../lib/binding-meter.js';
+// SCAN-MARKET-REGIMES-W1-V2 CH2: the quota wall (incl. its x402 branch, FUNNEL-FIX-AGENT-X402-
+// NUDGE-W1 Q4) and the served quota block are built in scan-shared.ts, shared with
+// scan_market_regimes.
+import { buildScanQuotaWall, buildScanQuotaState } from '../lib/scan-shared.js';
 // AUTH-THREE-STATE-W1 CH2: this tool builds its `_algovault` BY HAND at three sites, which is
 // exactly why the last envelope wave left it behind (see the note at the quota block below). All
 // three are stamped here so the straggler does not recur.
@@ -261,92 +259,12 @@ export async function runScanTradeCall(
   const refCode = referralCodeForKey(license.key);
   const entry = checkQuota(license);
   if (!entry.allowed) {
-    // Limit moment (the scan wall): referral-prominent message + structured hint.
-    // FUNNEL-FIX-AGENT-X402-NUDGE-W1 (Q4): + the additive in-protocol x402 branch, dark behind
-    // X402_NUDGE_ENABLED, omitted when no public rail is live (default-deny ⇒ envelope unchanged).
-    // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 11): the wall discriminator is hoisted
-    // ABOVE the nudge, because the nudge's noun now projects from it. It was already computed ~20
-    // lines below for `noticeCtx`; moving the single `const` up is what lets both read one value
-    // rather than two. The predicate itself is unchanged.
-    const isDailyWall = entry.limit === 'daily'
-      && typeof entry.daily_used === 'number'
-      && typeof entry.daily_total === 'number';
-    const suggestedX402 = isX402NudgeEnabled()
-      ? buildSuggestedX402('scan_trade_calls', isDailyWall ? 'daily' : 'monthly')
-      : undefined;
-    // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the scanner wall now renders the SAME notice contract as
-    // every other surface. Three things changed and each was a real defect:
-    //   • `code` was lowercase `tier_limit_reached` while every other surface emitted
-    //     `TIER_LIMIT_REACHED` — an agent branching on the code needed two branches for one
-    //     event. `error` KEEPS the old lowercase value so existing consumers do not break.
-    //   • `suggested_action` was a hardcoded literal promising "or pay per call via x402"
-    //     UNCONDITIONALLY — it advertised the rail even when no rail was live. It is now
-    //     derived from the same context that decides whether `suggested_x402` is attached.
-    //   • the message stated no usage figure and no reset date.
-    // OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1-R2 CH3 (Fix 2): this surface passed NO `wall`, so
-    // it rendered the MONTHLY noun, the MONTHLY pair and the MONTHLY horizon to a caller refused by
-    // the DAILY meter — the exact three-wrong-facts class the `headline()` docblock in
-    // quota-notice.ts records costing a day and a half in production. It was still live here.
-    //
-    // The discriminator and its pair travel TOGETHER. A `wall` on its own would render the daily
-    // noun over the monthly numbers, which is a fourth way to be wrong rather than a fix — the same
-    // coupling `errors.ts` already enforces through its `isDaily` triple.
-    const noticeCtx = {
-      meter: 'calls' as const,
-      used: isDailyWall ? (entry.daily_used as number) : entry.used,
-      limit: isDailyWall ? (entry.daily_total as number) : entry.total,
-      wall: isDailyWall ? ('daily' as const) : ('monthly' as const),
-      // The reset instant belongs to the wall that refused. `utcDayResetAtMs()` is the same
-      // derivation the daily meter enforces against, so `resets_at` cannot disagree with the
-      // `retry_after_hours` rendered beside it.
-      resetAtMs: isDailyWall ? utcDayResetAtMs() : monthResetAtMs(license),
-      periodStartMs: periodStartMs(license),
-      referralCode: refCode,
-      x402: suggestedX402,
-    };
-    const facts = quotaNoticeFacts(noticeCtx);
+    // SCAN-MARKET-REGIMES-W1-V2 CH2: the wall body is built by the ONE shared builder
+    // (`src/lib/scan-shared.ts` → `buildScanQuotaWall`), moved there verbatim — every defect
+    // fixed on this wall (instances 11/13/14, the daily-meter horizon, the x402 branch) now has a
+    // single home that `scan_market_regimes` reuses. Byte-identity is pinned by the AC2.2 goldens.
     return {
-      error: 'quota_exhausted',
-      code: 'TIER_LIMIT_REACHED',
-      message: buildQuotaNoticeMessage(noticeCtx),
-      // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 13, Q6). This block used to be
-      // `{ used, total, remaining: 0, resets_at }` — ONE FLAT object holding two meters' facts plus
-      // a false one. `used`/`total` are the MONTHLY pair, `resets_at` is the wall-derived instant
-      // (DAILY when the daily meter refused), and `remaining: 0` was false of the pair beside it:
-      // a daily-walled caller still has monthly headroom. Nothing named which meter governed.
-      //
-      // It now matches `_algovault.quota` exactly — a COMPOSITE, one meter per sub-object, with
-      // `binding` naming the governing wall. That is the difference the conformance criterion
-      // turns on: `remaining` means "remaining on THIS pair" everywhere else in the family, and
-      // one name with two meanings is the single-derivation violation this arc exists to retire.
-      quota: {
-        used: entry.used,
-        total: entry.total,
-        remaining: Math.max(0, entry.total - entry.used),
-        resets_at: new Date(monthResetAtMs(license)).toISOString(),
-        ...(isDailyWall
-          ? {
-              daily: {
-                used: entry.daily_used as number,
-                total: entry.daily_total as number,
-                remaining: Math.max(0, (entry.daily_total as number) - (entry.daily_used as number)),
-                resets_at: new Date(utcDayResetAtMs()).toISOString(),
-              },
-            }
-          : {}),
-        binding: isDailyWall ? ('daily' as const) : ('monthly' as const),
-      },
-      usage_display: facts.usage_display,
-      resets_at: facts.resets_at,
-      retry_after_days: facts.retry_after_days,
-      // Instance 14: both from the SAME `facts` already computed above — never a second derivation.
-      // Spread-on-presence for the hours field keeps the MONTHLY envelope's key set unchanged.
-      limit: facts.limit,
-      ...(typeof facts.retry_after_hours === 'number' ? { retry_after_hours: facts.retry_after_hours } : {}),
-      recommended_path: facts.recommended_path,
-      suggested_action: buildQuotaSuggestedAction(noticeCtx),
-      referral_hint: buildReferralHint({ from: 'limit', code: refCode }),
-      ...(suggestedX402 ? { suggested_x402: suggestedX402 } : {}),
+      ...buildScanQuotaWall('scan_trade_calls', entry, license, refCode),
       _algovault: withAuthState({ tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null }, license),
     };
   }
@@ -360,45 +278,13 @@ export async function runScanTradeCall(
   const tracked = trackCall(license, units);
 
   const sid = getRequestSessionId() ?? null;
-  // The ONE derivation of "which meter binds" — never a hand-rolled ratio comparison here. Writing
-  // `daily_used / daily_total > used / total` inline would be a SECOND meter test, which is the
-  // precise thing this wave exists to make unwritable; `bindingMeter()` also returns `null` for an
-  // unmetered tier rather than a misleading 0, which an inline ratio would get wrong.
-  const trackedBinding = bindingMeter(
-    { used: tracked.used, limit: tracked.total, resetAtMs: monthResetAtMs(license) },
-    typeof tracked.daily_used === 'number' && typeof tracked.daily_total === 'number'
-      ? { used: tracked.daily_used, limit: tracked.daily_total, resetAtMs: utcDayResetAtMs() }
-      : null,
-  );
   const meta: ScanAlgovaultMeta = {
     tool: 'scan_trade_calls',
     version: PKG_VERSION,
-    // OPS-QUOTA-EXHAUSTION-NOTICE-W1 (R3): `resets_at` joins the long-shipped used/total/remaining
-    // so the scanner envelope carries the same quota state as every other tool's `_algovault`.
-    //
-    // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 10): ...and now the DAILY pair with it.
-    // This was the last success envelope emitting a 4-key block, so a scanner caller pacing at the
-    // daily cap read `remaining: <monthly headroom>` on the very response before the wall — the
-    // same defect `withQuotaState` fixed for the other three tools in the parent wave's CH2, left
-    // behind here because this tool builds its `_algovault` by hand rather than through that helper.
-    // Spread-on-presence keeps the no-daily-meter shape byte-identical.
-    quota: {
-      used: tracked.used,
-      total: tracked.total,
-      remaining: tracked.remaining,
-      resets_at: new Date(monthResetAtMs(license)).toISOString(),
-      ...(trackedBinding?.daily && Number.isFinite(trackedBinding.daily.resetAtMs)
-        ? {
-            daily: {
-              used: trackedBinding.daily.used,
-              total: trackedBinding.daily.limit,
-              remaining: Math.max(0, trackedBinding.daily.limit - trackedBinding.daily.used),
-              resets_at: new Date(trackedBinding.daily.resetAtMs).toISOString(),
-            },
-            binding: trackedBinding.binding,
-          }
-        : {}),
-    },
+    // The post-charge quota block — monthly pair + `resets_at`, plus the daily pair and `binding`
+    // when a daily meter exists (OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2, instance 10). Built by
+    // `buildScanQuotaState` (scan-shared.ts), the ONE copy both screeners project from.
+    quota: buildScanQuotaState(tracked, license),
     compatible_with: compatibleWith(),
     signal_performance: TRACK_RECORD_POINTER,
     session_id: sid,

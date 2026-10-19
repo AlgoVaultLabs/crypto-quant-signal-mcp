@@ -45,6 +45,9 @@ const PROD_TOOLS = [
   // DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2. It is DECLARED here like every other tool; its
   // `publicListing: false` governs nav/docs listing only and does not touch tools/list.
   'get_track_record',
+  // SCAN-MARKET-REGIMES-W1-V2 CH2 — declared like every other tool; `publicListing: false` governs
+  // nav/docs listing only.
+  'scan_market_regimes',
 ] as const;
 
 describe('GEO-REGISTRY-RANK-TDQS-W1 — MCP annotation-hint SoT', () => {

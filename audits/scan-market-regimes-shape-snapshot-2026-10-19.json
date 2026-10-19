@@ -1,0 +1,86 @@
+{
+  "wave": "SCAN-MARKET-REGIMES-W1-V2",
+  "endpoint": "scan_market_regimes (MCP tool)",
+  "snapshot_date": "2026-10-19",
+  "captured_at_utc": "2026-10-19",
+  "change_class": "NEW PUBLIC SURFACE — a venue regime screener over the bar-close regime snapshot; every row field is a field get_market_regime already serves, plus the regime's start and age",
+  "change_note": "One row per coin is the market regime classifier's output for the last CLOSED bar, written hourly by the regime-snapshot sampler through the same core get_market_regime projects from (src/lib/market-regime-core.ts). The response is built by naming permitted keys (toRegimeScanRow / applyRankEcho), never by spreading a stored row, so a column added to regime_snapshots cannot reach the wire. `underlying_session` is recomputed at scan time from asset_class; the stored compute-time value never leaves the DB. Lens echo fields appear ONLY when the caller names rankBy, and only the fields of that lens — funding_rate / funding_apr only under a funding lens. Every refusal (invalid_parameter, venue_not_sampled, timeframe_unserved, quota_exhausted, snapshot_stale) is unbilled and carries no internal identifier.",
+  "source": "src/tools/scan-market-regimes.ts (runScanMarketRegimes) + src/lib/market-regime-scanner.ts (scanMarketRegimes, toRegimeScanRow) + src/lib/scan-shared.ts (applyRankEcho, buildScanQuotaState); pre-deploy capture",
+  "allowed_keys": [
+    "_algovault",
+    "as_of",
+    "computed_at",
+    "exchange",
+    "generation",
+    "matched",
+    "not_found",
+    "offset",
+    "regimes",
+    "returned",
+    "timeframe"
+  ],
+  "optional_keys": [
+    "not_found"
+  ],
+  "generation_value_keys": [
+    "universe",
+    "written",
+    "too_new",
+    "window_stale",
+    "coverage_pct"
+  ],
+  "regimes_row_keys": [
+    "coin",
+    "regime",
+    "confidence",
+    "trend_strength",
+    "adx",
+    "volatility_ratio",
+    "price_structure",
+    "asset_class",
+    "underlying_session",
+    "regime_since",
+    "regime_age_bars"
+  ],
+  "regimes_row_lens_keys": [
+    "rank_value",
+    "change_24h_pct",
+    "volume_24h",
+    "funding_rate",
+    "funding_apr",
+    "atrp",
+    "oi_change_pct",
+    "oi_change_window",
+    "oi_change_basis"
+  ],
+  "regimes_row_lens_keys_note": "Emitted only when rankBy names a lens other than the default oi, and only the typed fields that lens carries (src/lib/scan-shared.ts applyRankEcho — the ONE lens-field list scan_trade_calls also projects through).",
+  "algovault_keys": [
+    "tool",
+    "version",
+    "quota",
+    "session_id",
+    "auth"
+  ],
+  "refusal_errors": [
+    "invalid_parameter",
+    "venue_not_sampled",
+    "timeframe_unserved",
+    "quota_exhausted",
+    "snapshot_stale"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "price_at_signal",
+    "reasoning",
+    "underlying_session_at_compute",
+    "rule_version",
+    "run_id",
+    "disposition",
+    "ref_close",
+    "descriptionRef",
+    "call",
+    "signal_hash"
+  ],
+  "forbidden_keys_note": "`underlying_session_at_compute`, `rule_version`, `disposition` and `ref_close` are regime_snapshots / regime_snapshot_runs columns: the store keeps them for the producer and the freshness canary, and none is a caller fact. `call` is forbidden because this tool classifies regime; it never emits a trade call."
+}

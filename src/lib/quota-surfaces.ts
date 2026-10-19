@@ -298,7 +298,9 @@ export const QUOTA_SURFACES: readonly QuotaSurface[] = [
   // eleven were called a floor.
   {
     id: 'refusal:scan_trade_calls',
-    module: 'src/tools/scan-trade-calls.ts',
+    // SCAN-MARKET-REGIMES-W1-V2 CH2: the code moved verbatim into the shared builder that both
+    // screeners (scan_trade_calls, scan_market_regimes) call — the row follows the code.
+    module: 'src/lib/scan-shared.ts',
     primitives: ['quotaNoticeFacts', 'buildQuotaNoticeMessage', 'monthResetAtMs', 'utcDayResetAtMs', 'buildSuggestedX402', 'key:resets_at', 'key:retry_after_days', 'key:quota', 'key:retry_after_hours'],
     emits: ['limit', 'retry_after_hours', 'resets_at', 'retry_after_days', 'usage_display', 'recommended_path', 'quota.used', 'quota.total', 'quota.remaining', 'quota.resets_at'],
     status: 'conforming',
@@ -357,7 +359,9 @@ export const QUOTA_SURFACES: readonly QuotaSurface[] = [
   // ── INSTANCE 10 — the scanner success envelope ──────────────────────────────────────────────
   {
     id: 'envelope:scan_trade_calls',
-    module: 'src/tools/scan-trade-calls.ts',
+    // SCAN-MARKET-REGIMES-W1-V2 CH2: the code moved verbatim into the shared builder that both
+    // screeners (scan_trade_calls, scan_market_regimes) call — the row follows the code.
+    module: 'src/lib/scan-shared.ts',
     primitives: ['monthResetAtMs', 'key:quota', 'key:resets_at', 'bindingMeter'],
     emits: ['quota.used', 'quota.total', 'quota.remaining', 'quota.resets_at'],
     status: 'conforming',
