@@ -97,4 +97,6 @@ export const KNOWN_CALLER_LITERALS: ReadonlySet<string> = new Set(Object.freeze(
   'backfill_outcomes_server', 'backfill_outcomes_cron', 'signal_perf_backfill', 'grid_warmer', 'band_outcome_backfill',
   'adapter-history-canary', 'dwr-expiry-backfill', 'lrw-relabel-v2', 'dwr-backfill', 'funding_episodes_backfill',
   'hold_decision_labeler', 'frozen_window_attribution', 'monitor',
+  // SCAN-MARKET-REGIMES-W1-V2 CH1 — the bar-close regime snapshot producer (src/scripts/regime-snapshot-sampler.ts)
+  'regime_snapshot_sampler',
 ]));

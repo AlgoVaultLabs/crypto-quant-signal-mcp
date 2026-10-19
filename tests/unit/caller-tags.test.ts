@@ -156,6 +156,11 @@ describe('class preservation — tags moved, classes did not', () => {
     'src/scripts/backfill-directional-labels.ts': { runAsBatch: 4, runAsCaller: 1 },
     'src/scripts/adapter-history-contiguity.ts': { runAsBatch: 1 },
     'src/scripts/admission-verdict.ts': { runAsBatch: 1 },
+    // SCAN-MARKET-REGIMES-W1-V2 CH1 added the bar-close regime snapshot sampler (ruling V2 §0 Q3): the whole
+    // tick — the one asset-class warm, every venue's universe, candles and asset classes — under ONE batch
+    // scope so it can never spend a venue's interactive reserve; its own entrypoint, literal name
+    // `regime_snapshot_sampler`.
+    'src/scripts/regime-snapshot-sampler.ts': { runAsBatch: 1 },
   };
 
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {

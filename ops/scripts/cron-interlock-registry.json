@@ -239,6 +239,29 @@
       ]
     },
     {
+      "id": "regime-snapshot-sampler",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "src/scripts/regime-snapshot-sampler.ts",
+      "container": "crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "dist/scripts/regime-snapshot-sampler",
+      "class": "safe-to-kill",
+      "reason": "Writes each closed bar's regime rows first-write-wins (ON CONFLICT DO NOTHING) and records the pair's run row only when the pair finishes. A tick killed mid-sweep leaves no run row for that bar, so the next :11 fire sees the bar as due and writes only the coins still missing (SCAN-MARKET-REGIMES-W1-V2 CH1). Nothing is lost that the next fire does not repair.",
+      "max_runtime_s": 900,
+      "runtime_instrument": "PROJECTED, not yet measured — the CH1 --check projection (one candle request per admitted coin, OKX at concurrency 1) on 2026-10-19; replaced by the measured max span from /var/log/regime-sampler.log after the first live ticks (SCAN-MARKET-REGIMES-W1-V2 AC1.3)",
+      "cron_lines": 1,
+      "cron": "11 * * * *",
+      "catchup_cmd": null,
+      "source": "repo",
+      "verified_at": "2026-10-19",
+      "cron_match": [
+        "dist/scripts/regime-snapshot-sampler"
+      ]
+    },
+    {
       "id": "monitor",
       "host": "signal-1",
       "events": [

@@ -1,0 +1,2144 @@
+{
+ "closed|BTC|1h": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 50,
+   "metrics": {
+    "adx": 29.2,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 1.26,
+    "adx_slope_interpretation": "Trend strengthening",
+    "volatility_ratio": 0.0043,
+    "volatility_interpretation": "Low",
+    "price_structure": "HIGHER_HIGHS",
+    "pivot_quality": 0.607,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "BULLISH_BIAS",
+    "funding_divergence_note": "HL funding 2.4 bps/hr above Binance/Bybit avg — longs concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00025,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.002
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00012,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00012
+     }
+    }
+   },
+   "suggestion": "Market is in a weak uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries. Trend momentum is building — favorable for entries.",
+   "timestamp": 1792400836,
+   "coin": "BTC",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|BTC|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 78,
+   "metrics": {
+    "adx": 50.7,
+    "adx_interpretation": "Very strong trend",
+    "adx_slope": -2.47,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.01,
+    "volatility_interpretation": "Low",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.553,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "BULLISH_BIAS",
+    "funding_divergence_note": "HL funding 2.4 bps/hr above Binance/Bybit avg — longs concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00025,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.002
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00012,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00012
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "BTC",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|BTC|1d": {
+  "ok": {
+   "regime": "RANGING",
+   "confidence": 30,
+   "metrics": {
+    "adx": 22.9,
+    "adx_interpretation": "Weak trend",
+    "adx_slope": -1.28,
+    "adx_slope_interpretation": "Momentum fading",
+    "volatility_ratio": 0.0259,
+    "volatility_interpretation": "Normal",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.57,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "BULLISH_BIAS",
+    "funding_divergence_note": "HL funding 2.4 bps/hr above Binance/Bybit avg — longs concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00025,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.002
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00012,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00012
+     }
+    }
+   },
+   "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+   "timestamp": 1792400836,
+   "coin": "BTC",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|ETH|1h": {
+  "ok": {
+   "regime": "RANGING",
+   "confidence": 30,
+   "metrics": {
+    "adx": 23.6,
+    "adx_interpretation": "Weak trend",
+    "adx_slope": -0.23,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0067,
+    "volatility_interpretation": "Low",
+    "price_structure": "HIGHER_HIGHS",
+    "pivot_quality": 0.627,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "BEARISH_BIAS",
+    "funding_divergence_note": "HL funding 2.0 bps/hr below Binance/Bybit avg — shorts concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": -0.0002,
+      "interval_min": 60,
+      "rate_8h_equiv": -0.0016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": -0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.00005
+     }
+    }
+   },
+   "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+   "timestamp": 1792400836,
+   "coin": "ETH",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|ETH|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 80,
+   "metrics": {
+    "adx": 40.5,
+    "adx_interpretation": "Very strong trend",
+    "adx_slope": -0.28,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0167,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.628,
+    "trend_strength": "STRONG",
+    "cross_venue_funding_sentiment": "BEARISH_BIAS",
+    "funding_divergence_note": "HL funding 2.0 bps/hr below Binance/Bybit avg — shorts concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": -0.0002,
+      "interval_min": 60,
+      "rate_8h_equiv": -0.0016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": -0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.00005
+     }
+    }
+   },
+   "suggestion": "Market is in a strong downtrend. Favor short-side trend-following or stay flat. Position sizing: normal to aggressive (short). Avoid catching falling knives.",
+   "timestamp": 1792400836,
+   "coin": "ETH",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|ETH|1d": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 60,
+   "metrics": {
+    "adx": 30.3,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -0.13,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0403,
+    "volatility_interpretation": "High",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.548,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "BEARISH_BIAS",
+    "funding_divergence_note": "HL funding 2.0 bps/hr below Binance/Bybit avg — shorts concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": -0.0002,
+      "interval_min": 60,
+      "rate_8h_equiv": -0.0016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": -0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.00005
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives.",
+   "timestamp": 1792400836,
+   "coin": "ETH",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|SOL|1h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 43,
+   "metrics": {
+    "adx": 26.9,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 0.64,
+    "adx_slope_interpretation": "Trend strengthening",
+    "volatility_ratio": 0.0076,
+    "volatility_interpretation": "Low",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.577,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Funding aligned across venues (divergence: 0.0 bps/hr)",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.0000125,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.0001
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is building — favorable for entries.",
+   "timestamp": 1792400836,
+   "coin": "SOL",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|SOL|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 86,
+   "metrics": {
+    "adx": 46,
+    "adx_interpretation": "Very strong trend",
+    "adx_slope": -0.83,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0191,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.581,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Funding aligned across venues (divergence: 0.0 bps/hr)",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.0000125,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.0001
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "SOL",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|SOL|1d": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 43,
+   "metrics": {
+    "adx": 29.4,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -0.27,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0482,
+    "volatility_interpretation": "High",
+    "price_structure": "HIGHER_HIGHS",
+    "pivot_quality": 0.566,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Funding aligned across venues (divergence: 0.0 bps/hr)",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.0000125,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.0001
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a weak uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries.",
+   "timestamp": 1792400836,
+   "coin": "SOL",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|TSLA|1h": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 83,
+   "metrics": {
+    "adx": 39.8,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 0.54,
+    "adx_slope_interpretation": "Trend strengthening",
+    "volatility_ratio": 0.0054,
+    "volatility_interpretation": "Low",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.564,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "TSLA 8h-funding: HL +0.0160% / BINANCE +0.0100% / BYBIT +0.0050% — divergence within normal band",
+    "underlying_session": "OPEN_EXTENDED",
+    "session_note": "US underlying in extended/off-hours — thinner liquidity; perp index may diverge from cash.",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00002,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.00016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00005
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries. Trend momentum is building — favorable for entries.",
+   "timestamp": 1792400836,
+   "coin": "TSLA",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|TSLA|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 65,
+   "metrics": {
+    "adx": 37,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -1.71,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0133,
+    "volatility_interpretation": "Normal",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.686,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "TSLA 8h-funding: HL +0.0160% / BINANCE +0.0100% / BYBIT +0.0050% — divergence within normal band",
+    "underlying_session": "OPEN_EXTENDED",
+    "session_note": "US underlying in extended/off-hours — thinner liquidity; perp index may diverge from cash.",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00002,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.00016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00005
+     }
+    }
+   },
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "TSLA",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|TSLA|1d": {
+  "ok": {
+   "regime": "RANGING",
+   "confidence": 32,
+   "metrics": {
+    "adx": 17.1,
+    "adx_interpretation": "No trend",
+    "adx_slope": -0.71,
+    "adx_slope_interpretation": "Momentum fading",
+    "volatility_ratio": 0.0299,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.607,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "TSLA 8h-funding: HL +0.0160% / BINANCE +0.0100% / BYBIT +0.0050% — divergence within normal band",
+    "underlying_session": "OPEN_EXTENDED",
+    "session_note": "US underlying in extended/off-hours — thinner liquidity; perp index may diverge from cash.",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00002,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.00016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00005
+     }
+    }
+   },
+   "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+   "timestamp": 1792400836,
+   "coin": "TSLA",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|XAU|1h": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 63,
+   "metrics": {
+    "adx": 31.2,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 0.18,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0022,
+    "volatility_interpretation": "Low",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.556,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "XAU 8h-funding: BINANCE -0.0300% / OKX -0.0100% — divergence within normal band",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": -0.0003,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0003
+     },
+     "OKX": {
+      "rate": -0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries.",
+   "timestamp": 1792400836,
+   "coin": "XAU",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|XAU|4h": {
+  "ok": {
+   "regime": "RANGING",
+   "confidence": 30,
+   "metrics": {
+    "adx": 28.1,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -1.1,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.004,
+    "volatility_interpretation": "Low",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.721,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "XAU 8h-funding: BINANCE -0.0300% / OKX -0.0100% — divergence within normal band",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": -0.0003,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0003
+     },
+     "OKX": {
+      "rate": -0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0001
+     }
+    }
+   },
+   "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+   "timestamp": 1792400836,
+   "coin": "XAU",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|XAU|1d": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 41,
+   "metrics": {
+    "adx": 28,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -0.16,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0132,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.598,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "XAU 8h-funding: BINANCE -0.0300% / OKX -0.0100% — divergence within normal band",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": -0.0003,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0003
+     },
+     "OKX": {
+      "rate": -0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives.",
+   "timestamp": 1792400836,
+   "coin": "XAU",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|SAMSUNG|1h": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 61,
+   "metrics": {
+    "adx": 30.6,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -0.02,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0124,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.643,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Insufficient cross-venue data",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries.",
+   "timestamp": 1792400836,
+   "coin": "SAMSUNG",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|SAMSUNG|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 83,
+   "metrics": {
+    "adx": 49.5,
+    "adx_interpretation": "Very strong trend",
+    "adx_slope": -1.41,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0237,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.657,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Insufficient cross-venue data",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "SAMSUNG",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|SAMSUNG|1d": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 79,
+   "metrics": {
+    "adx": 34.5,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 2.85,
+    "adx_slope_interpretation": "Trend strengthening",
+    "volatility_ratio": 0.0555,
+    "volatility_interpretation": "Very high",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.587,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Insufficient cross-venue data",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is building — favorable for entries.",
+   "timestamp": 1792400836,
+   "coin": "SAMSUNG",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|OPENAI|1h": {
+  "ok": {
+   "regime": "RANGING",
+   "confidence": 34,
+   "metrics": {
+    "adx": 16.4,
+    "adx_interpretation": "No trend",
+    "adx_slope": 0.08,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0057,
+    "volatility_interpretation": "Low",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.58,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Pre-IPO funding is fixed — cross-venue sentiment not applicable.",
+    "underlying_session": "PREIPO_INTERNAL",
+    "session_note": "Pre-IPO synthetic mark (internal trade-price, no external cash market); funding is administratively fixed."
+   },
+   "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+   "timestamp": 1792400836,
+   "coin": "OPENAI",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|OPENAI|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 79,
+   "metrics": {
+    "adx": 65.3,
+    "adx_interpretation": "Very strong trend",
+    "adx_slope": -2.13,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0151,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.528,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Pre-IPO funding is fixed — cross-venue sentiment not applicable.",
+    "underlying_session": "PREIPO_INTERNAL",
+    "session_note": "Pre-IPO synthetic mark (internal trade-price, no external cash market); funding is administratively fixed."
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "OPENAI",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "closed|OPENAI|1d": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 66,
+   "metrics": {
+    "adx": 35.4,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -0.98,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0405,
+    "volatility_interpretation": "High",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.587,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Pre-IPO funding is fixed — cross-venue sentiment not applicable.",
+    "underlying_session": "PREIPO_INTERNAL",
+    "session_note": "Pre-IPO synthetic mark (internal trade-price, no external cash market); funding is administratively fixed."
+   },
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "OPENAI",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|BTC|1h": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 66,
+   "metrics": {
+    "adx": 30.1,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 1.23,
+    "adx_slope_interpretation": "Trend strengthening",
+    "volatility_ratio": 0.0041,
+    "volatility_interpretation": "Low",
+    "price_structure": "HIGHER_HIGHS",
+    "pivot_quality": 0.61,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "BULLISH_BIAS",
+    "funding_divergence_note": "HL funding 2.4 bps/hr above Binance/Bybit avg — longs concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00025,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.002
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00012,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00012
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries. Trend momentum is building — favorable for entries.",
+   "timestamp": 1792400836,
+   "coin": "BTC",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|BTC|4h": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 75,
+   "metrics": {
+    "adx": 47.2,
+    "adx_interpretation": "Very strong trend",
+    "adx_slope": -3.09,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0096,
+    "volatility_interpretation": "Low",
+    "price_structure": "HIGHER_HIGHS",
+    "pivot_quality": 0.545,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "BULLISH_BIAS",
+    "funding_divergence_note": "HL funding 2.4 bps/hr above Binance/Bybit avg — longs concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00025,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.002
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00012,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00012
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "BTC",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|BTC|1d": {
+  "ok": {
+   "regime": "RANGING",
+   "confidence": 30,
+   "metrics": {
+    "adx": 21.5,
+    "adx_interpretation": "Weak trend",
+    "adx_slope": -1.2,
+    "adx_slope_interpretation": "Momentum fading",
+    "volatility_ratio": 0.0251,
+    "volatility_interpretation": "Normal",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.567,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "BULLISH_BIAS",
+    "funding_divergence_note": "HL funding 2.4 bps/hr above Binance/Bybit avg — longs concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00025,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.002
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00012,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00012
+     }
+    }
+   },
+   "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+   "timestamp": 1792400836,
+   "coin": "BTC",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|ETH|1h": {
+  "ok": {
+   "regime": "RANGING",
+   "confidence": 30,
+   "metrics": {
+    "adx": 23.7,
+    "adx_interpretation": "Weak trend",
+    "adx_slope": -0.07,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0064,
+    "volatility_interpretation": "Low",
+    "price_structure": "HIGHER_HIGHS",
+    "pivot_quality": 0.641,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "BEARISH_BIAS",
+    "funding_divergence_note": "HL funding 2.0 bps/hr below Binance/Bybit avg — shorts concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": -0.0002,
+      "interval_min": 60,
+      "rate_8h_equiv": -0.0016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": -0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.00005
+     }
+    }
+   },
+   "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+   "timestamp": 1792400836,
+   "coin": "ETH",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|ETH|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 74,
+   "metrics": {
+    "adx": 39.2,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -0.77,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0159,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.629,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "BEARISH_BIAS",
+    "funding_divergence_note": "HL funding 2.0 bps/hr below Binance/Bybit avg — shorts concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": -0.0002,
+      "interval_min": 60,
+      "rate_8h_equiv": -0.0016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": -0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.00005
+     }
+    }
+   },
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "ETH",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|ETH|1d": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 61,
+   "metrics": {
+    "adx": 30.3,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 0.01,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0387,
+    "volatility_interpretation": "High",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.549,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "BEARISH_BIAS",
+    "funding_divergence_note": "HL funding 2.0 bps/hr below Binance/Bybit avg — shorts concentrated on HL",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": -0.0002,
+      "interval_min": 60,
+      "rate_8h_equiv": -0.0016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": -0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.00005
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives.",
+   "timestamp": 1792400836,
+   "coin": "ETH",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|SOL|1h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 44,
+   "metrics": {
+    "adx": 27.4,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 0.63,
+    "adx_slope_interpretation": "Trend strengthening",
+    "volatility_ratio": 0.0072,
+    "volatility_interpretation": "Low",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.582,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Funding aligned across venues (divergence: 0.0 bps/hr)",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.0000125,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.0001
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is building — favorable for entries.",
+   "timestamp": 1792400836,
+   "coin": "SOL",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|SOL|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 81,
+   "metrics": {
+    "adx": 44,
+    "adx_interpretation": "Very strong trend",
+    "adx_slope": -1.45,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0181,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.57,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Funding aligned across venues (divergence: 0.0 bps/hr)",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.0000125,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.0001
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "SOL",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|SOL|1d": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 42,
+   "metrics": {
+    "adx": 28.9,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -0.22,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0464,
+    "volatility_interpretation": "High",
+    "price_structure": "HIGHER_HIGHS",
+    "pivot_quality": 0.567,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Funding aligned across venues (divergence: 0.0 bps/hr)",
+    "underlying_session": "ALWAYS_OPEN",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.0000125,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.0001
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a weak uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries.",
+   "timestamp": 1792400836,
+   "coin": "SOL",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|TSLA|1h": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 78,
+   "metrics": {
+    "adx": 38.8,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 0.08,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0052,
+    "volatility_interpretation": "Low",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.569,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "TSLA 8h-funding: HL +0.0160% / BINANCE +0.0100% / BYBIT +0.0050% — divergence within normal band",
+    "underlying_session": "OPEN_EXTENDED",
+    "session_note": "US underlying in extended/off-hours — thinner liquidity; perp index may diverge from cash.",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00002,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.00016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00005
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries.",
+   "timestamp": 1792400836,
+   "coin": "TSLA",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|TSLA|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 58,
+   "metrics": {
+    "adx": 34.4,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -2.27,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0128,
+    "volatility_interpretation": "Normal",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.687,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "TSLA 8h-funding: HL +0.0160% / BINANCE +0.0100% / BYBIT +0.0050% — divergence within normal band",
+    "underlying_session": "OPEN_EXTENDED",
+    "session_note": "US underlying in extended/off-hours — thinner liquidity; perp index may diverge from cash.",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00002,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.00016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00005
+     }
+    }
+   },
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "TSLA",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|TSLA|1d": {
+  "ok": {
+   "regime": "RANGING",
+   "confidence": 32,
+   "metrics": {
+    "adx": 17,
+    "adx_interpretation": "No trend",
+    "adx_slope": -0.59,
+    "adx_slope_interpretation": "Momentum fading",
+    "volatility_ratio": 0.0294,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.612,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "TSLA 8h-funding: HL +0.0160% / BINANCE +0.0100% / BYBIT +0.0050% — divergence within normal band",
+    "underlying_session": "OPEN_EXTENDED",
+    "session_note": "US underlying in extended/off-hours — thinner liquidity; perp index may diverge from cash.",
+    "funding_by_venue": {
+     "HL": {
+      "rate": 0.00002,
+      "interval_min": 60,
+      "rate_8h_equiv": 0.00016
+     },
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     },
+     "BYBIT": {
+      "rate": 0.00005,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.00005
+     }
+    }
+   },
+   "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+   "timestamp": 1792400836,
+   "coin": "TSLA",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|XAU|1h": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 61,
+   "metrics": {
+    "adx": 30.7,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 0,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.002,
+    "volatility_interpretation": "Low",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.558,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "XAU 8h-funding: BINANCE -0.0300% / OKX -0.0100% — divergence within normal band",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": -0.0003,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0003
+     },
+     "OKX": {
+      "rate": -0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries.",
+   "timestamp": 1792400836,
+   "coin": "XAU",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|XAU|4h": {
+  "ok": {
+   "regime": "RANGING",
+   "confidence": 30,
+   "metrics": {
+    "adx": 26.1,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -1.72,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0039,
+    "volatility_interpretation": "Low",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.701,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "XAU 8h-funding: BINANCE -0.0300% / OKX -0.0100% — divergence within normal band",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": -0.0003,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0003
+     },
+     "OKX": {
+      "rate": -0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0001
+     }
+    }
+   },
+   "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+   "timestamp": 1792400836,
+   "coin": "XAU",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|XAU|1d": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 39,
+   "metrics": {
+    "adx": 27.1,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -0.46,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0127,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.596,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "XAU 8h-funding: BINANCE -0.0300% / OKX -0.0100% — divergence within normal band",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": -0.0003,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0003
+     },
+     "OKX": {
+      "rate": -0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": -0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives.",
+   "timestamp": 1792400836,
+   "coin": "XAU",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|SAMSUNG|1h": {
+  "ok": {
+   "regime": "TRENDING_UP",
+   "confidence": 63,
+   "metrics": {
+    "adx": 31.1,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 0.16,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0119,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.637,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Insufficient cross-venue data",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries.",
+   "timestamp": 1792400836,
+   "coin": "SAMSUNG",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|SAMSUNG|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 79,
+   "metrics": {
+    "adx": 46.3,
+    "adx_interpretation": "Very strong trend",
+    "adx_slope": -2.23,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.023,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.653,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Insufficient cross-venue data",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "SAMSUNG",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|SAMSUNG|1d": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 81,
+   "metrics": {
+    "adx": 35.4,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": 2.55,
+    "adx_slope_interpretation": "Trend strengthening",
+    "volatility_ratio": 0.0563,
+    "volatility_interpretation": "Very high",
+    "price_structure": "LOWER_LOWS",
+    "pivot_quality": 0.586,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Insufficient cross-venue data",
+    "underlying_session": "OPEN_REGULAR",
+    "funding_by_venue": {
+     "BINANCE": {
+      "rate": 0.0001,
+      "interval_min": 480,
+      "rate_8h_equiv": 0.0001
+     }
+    }
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is building — favorable for entries.",
+   "timestamp": 1792400836,
+   "coin": "SAMSUNG",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|OPENAI|1h": {
+  "ok": {
+   "regime": "RANGING",
+   "confidence": 32,
+   "metrics": {
+    "adx": 17.1,
+    "adx_interpretation": "No trend",
+    "adx_slope": 0.42,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.0055,
+    "volatility_interpretation": "Low",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.595,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Pre-IPO funding is fixed — cross-venue sentiment not applicable.",
+    "underlying_session": "PREIPO_INTERNAL",
+    "session_note": "Pre-IPO synthetic mark (internal trade-price, no external cash market); funding is administratively fixed."
+   },
+   "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+   "timestamp": 1792400836,
+   "coin": "OPENAI",
+   "timeframe": "1h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|OPENAI|4h": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 80,
+   "metrics": {
+    "adx": 63.5,
+    "adx_interpretation": "Very strong trend",
+    "adx_slope": -2.03,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0146,
+    "volatility_interpretation": "Normal",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.517,
+    "trend_strength": "MODERATE",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Pre-IPO funding is fixed — cross-venue sentiment not applicable.",
+    "underlying_session": "PREIPO_INTERNAL",
+    "session_note": "Pre-IPO synthetic mark (internal trade-price, no external cash market); funding is administratively fixed."
+   },
+   "suggestion": "Market is in a moderate downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "OPENAI",
+   "timeframe": "4h",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ },
+ "live|OPENAI|1d": {
+  "ok": {
+   "regime": "TRENDING_DOWN",
+   "confidence": 67,
+   "metrics": {
+    "adx": 34.9,
+    "adx_interpretation": "Strong trend",
+    "adx_slope": -0.63,
+    "adx_slope_interpretation": "Trend exhausting — possible regime change",
+    "volatility_ratio": 0.0383,
+    "volatility_interpretation": "High",
+    "price_structure": "MIXED",
+    "pivot_quality": 0.581,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Pre-IPO funding is fixed — cross-venue sentiment not applicable.",
+    "underlying_session": "PREIPO_INTERNAL",
+    "session_note": "Pre-IPO synthetic mark (internal trade-price, no external cash market); funding is administratively fixed."
+   },
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives. Trend momentum is fading — consider tightening stops.",
+   "timestamp": 1792400836,
+   "coin": "OPENAI",
+   "timeframe": "1d",
+   "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted",
+    "auth": {
+     "outcome": "ABSENT",
+     "presented": false,
+     "tier": "internal"
+    },
+    "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+    "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+   }
+  }
+ }
+}
