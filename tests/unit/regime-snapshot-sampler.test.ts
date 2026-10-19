@@ -7,6 +7,9 @@
  * self-heal), the per-coin backstop, regime_since carry / reset / NULL, every disposition, --check
  * zero writes, the exit codes, per-venue pacing, and the §0 Q3 spy: at most ONE HL call per run,
  * made by the asset-class warm, in the batch class — and the sweep never waits for it.
+ *
+ * CH3 (AC3.1): the --freshness verdict over a fake producer RECORD — every FAIL rule from both sides,
+ * the seed / hand-over / resolve / regression arms of the known-unserved set, INDETERMINATE.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -19,7 +22,12 @@ import {
   lastClosedBarClose,
   DEFAULT_REGIME_SAMPLER_DEPS,
   REGIME_REFERENCE_SHORT_BARS,
+  judgeRegimeFreshness,
+  parseKnownUnserved,
+  DEFAULT_REGIME_FRESHNESS_DEPS,
+  FAILING_FRESHNESS_STATES,
   type RegimeSamplerDeps,
+  type RegimeFreshnessDeps,
 } from '../../src/scripts/regime-snapshot-sampler.js';
 import { computeMarketRegimeCore, regimeFetchWindow, MARKET_REGIME_RULE_VERSION } from '../../src/lib/market-regime-core.js';
 import { isServableRun, type RegimeSnapshotRow, type RegimeSnapshotRunRecord } from '../../src/lib/regime-snapshots.js';
@@ -559,5 +567,198 @@ describe('lastClosedBarClose', () => {
     expect(lastClosedBarClose(cs, H, 2 * H + 30 * 60_000)).toBe(2 * H);
     expect(JSON.stringify(cs)).toBe(copy);
     expect(lastClosedBarClose([bar('BTC', 2 * H, H)], H, 2 * H + 60_000)).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// CH3 — the freshness verdict (AC3.1). A fake producer RECORD per pair: the newest due dispositions,
+// the newest servable generation and the last tick. Every rule is driven from both sides.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('CH3 --freshness — the verdict judges only the producer\'s record', () => {
+  const NOW = Date.UTC(2026, 9, 19, 10, 44, 0);          // a :44 canary fire
+  const TICK = Date.UTC(2026, 9, 19, 10, 11, 0);          // the producer's :11 tick
+  const VENUES = ['BINANCE', 'OKX'] as ExchangeId[];
+  /** Fresh generation per tf as of TICK: the bar that closed at the top of the tick's hour / 4h / day. */
+  const FRESH_BAR: Record<string, number> = {
+    '1h': Date.UTC(2026, 9, 19, 10), '4h': Date.UTC(2026, 9, 19, 8), '1d': Date.UTC(2026, 9, 19, 0),
+  };
+  interface PairRec { due: RegimeSnapshotRunRecord['disposition'][]; gen: number | null; tick: number | null }
+  const run = (venue: string, tf: string, d: RegimeSnapshotRunRecord['disposition'], i: number): RegimeSnapshotRunRecord => ({
+    exchange: venue, timeframe: tf, bar_close_ms: FRESH_BAR[tf] - i * IV[tf], tick_at: TICK - i * H, disposition: d,
+    universe_n: 10, written_n: 10, too_new_n: 0, window_stale_n: 0, skipped_n: 0, errors_n: 0, finished_at: TICK - i * H + 60_000,
+  });
+  function world(over: Record<string, Partial<PairRec>> = {}, opts: { venueTick?: Record<string, number | null>; throwOn?: string; tables?: boolean; venues?: ExchangeId[] } = {}) {
+    const rec = (venue: string, tf: string): PairRec => ({
+      due: ['COMPLETE', 'COMPLETE'], gen: FRESH_BAR[tf], tick: TICK, ...(over[`${venue}|${tf}`] ?? {}),
+    });
+    // OKX|1h is WINDOW_STALE in the baseline world — the live state the canary seeds from.
+    if (!over['OKX|1h']) over['OKX|1h'] = { due: ['WINDOW_STALE', 'WINDOW_STALE'], gen: null };
+    const maybeThrow = (what: string) => { if (opts.throwOn === what) throw new Error(`${what} unreachable`); };
+    const deps: RegimeFreshnessDeps = {
+      now: () => NOW,
+      adoptTables: async () => { maybeThrow('adopt'); return opts.tables ?? true; },
+      sampledRegimeVenues: async () => opts.venues ?? VENUES,
+      latestRunDisposition: async (v, tf) => { maybeThrow('latest'); const d = rec(v, tf).due; return d.length ? run(v, tf, d[0], 0) : null; },
+      recentDueRuns: async (v, tf, n) => rec(v, tf).due.slice(0, n).map((d, i) => run(v, tf, d, i)),
+      latestServableGeneration: async (v, tf) => {
+        const g = rec(v, tf).gen;
+        return g === null ? null : { exchange: v, timeframe: tf, bar_close_ms: g, disposition: 'COMPLETE', universe_n: 10, written_n: 10, too_new_n: 0, window_stale_n: 0, coverage: 1, tick_at: TICK, finished_at: TICK + 60_000 };
+      },
+      lastTickAt: async (v, tf) => {
+        if (tf === undefined) return opts.venueTick && v in opts.venueTick ? opts.venueTick[v] : TICK;
+        return rec(v, tf).tick;
+      },
+    };
+    return deps;
+  }
+  const state = (r: Awaited<ReturnType<typeof judgeRegimeFreshness>>, key: string) =>
+    r.pairs.find((p) => `${p.venue}|${p.tf}` === key)?.state;
+
+  it('SEED (state unset): today\'s WINDOW_STALE pair is seeded UNSERVED and never fails; the rest FRESH → PASS', async () => {
+    const r = await judgeRegimeFreshness(undefined, world(), ENV);
+    expect(r.mode).toBe('SEED');
+    expect(r.verdict).toBe('PASS');
+    expect(state(r, 'OKX|1h')).toBe('UNSERVED');
+    expect(r.unserved).toEqual(['OKX|1h']);
+    expect(r.known_unserved_next).toEqual(['OKX|1h']);
+    expect(r.pairs).toHaveLength(6);                                       // one positive line per (venue, tf)
+    expect(r.pairs.filter((p) => p.state === 'FRESH')).toHaveLength(5);
+    expect(r.venues.map((v) => v.state)).toEqual(['LIVE', 'LIVE']);
+  });
+
+  it('JUDGE: a seeded pair stays UNSERVED every run; PASS', async () => {
+    const r = await judgeRegimeFreshness('OKX|1h', world(), ENV);
+    expect(r.mode).toBe('JUDGE');
+    expect(r.verdict).toBe('PASS');
+    expect(state(r, 'OKX|1h')).toBe('UNSERVED');
+    expect(r.known_unserved_next).toEqual(['OKX|1h']);
+  });
+
+  it('a seeded pair turning servable is RESOLVED — reported, never failed — and leaves the set', async () => {
+    const r = await judgeRegimeFreshness('OKX|1h', world({ 'OKX|1h': { due: ['COMPLETE', 'WINDOW_STALE'], gen: FRESH_BAR['1h'] } }), ENV);
+    expect(r.verdict).toBe('PASS');
+    expect(state(r, 'OKX|1h')).toBe('RESOLVED');
+    expect(r.resolved).toEqual(['OKX|1h']);
+    expect(r.known_unserved_next).toEqual([]);
+  });
+
+  it('the REGRESSION arm: a pair outside the set WINDOW_STALE for 2 due ticks → FAIL NEWLY_WINDOW_STALE', async () => {
+    const r = await judgeRegimeFreshness('OKX|1h', world({ 'BINANCE|4h': { due: ['WINDOW_STALE', 'WINDOW_STALE'], gen: FRESH_BAR['4h'] - IV['4h'] } }), ENV);
+    expect(r.verdict).toBe('FAIL');
+    expect(state(r, 'BINANCE|4h')).toBe('NEWLY_WINDOW_STALE');
+    expect(r.fail_keys).toEqual(['BINANCE|4h:NEWLY_WINDOW_STALE']);
+    expect(r.known_unserved_next).toEqual(['OKX|1h']);                     // a regression is never adopted silently
+  });
+
+  it('…and after RESOLVED, a relapse of the once-seeded pair is a regression too', async () => {
+    const r = await judgeRegimeFreshness('', world({ 'OKX|1h': { due: ['WINDOW_STALE', 'WINDOW_STALE'], gen: null } }), ENV);
+    expect(r.verdict).toBe('FAIL');
+    expect(state(r, 'OKX|1h')).toBe('NEWLY_WINDOW_STALE');
+  });
+
+  it('the 2-run sustain: ONE WINDOW_STALE due tick is WINDOW_STALE_PENDING — PASS, not a page', async () => {
+    const r = await judgeRegimeFreshness('OKX|1h', world({ 'BINANCE|4h': { due: ['WINDOW_STALE', 'COMPLETE'], gen: FRESH_BAR['4h'] - IV['4h'] } }), ENV);
+    expect(r.verdict).toBe('PASS');
+    expect(state(r, 'BINANCE|4h')).toBe('WINDOW_STALE_PENDING');
+  });
+
+  it('(a) a venue with no tick in 2 h → FAIL PRODUCER_DEAD; a tick inside 2 h is LIVE', async () => {
+    const dead = await judgeRegimeFreshness('OKX|1h', world({}, { venueTick: { BINANCE: NOW - 2 * H - 60_000 } }), ENV);
+    expect(dead.verdict).toBe('FAIL');
+    expect(dead.fail_keys).toContain('BINANCE|*:PRODUCER_DEAD');
+    expect(dead.venues.find((v) => v.venue === 'BINANCE')?.state).toBe('PRODUCER_DEAD');
+    const never = await judgeRegimeFreshness('OKX|1h', world({}, { venueTick: { OKX: null } }), ENV);
+    expect(never.fail_keys).toContain('OKX|*:PRODUCER_DEAD');
+    const live = await judgeRegimeFreshness('OKX|1h', world({}, { venueTick: { BINANCE: NOW - 2 * H + 60_000 } }), ENV);
+    expect(live.verdict).toBe('PASS');
+  });
+
+  it('(b) a served pair older than factor × interval as of ITS last tick → FAIL STALE_GENERATION; at the bound it is FRESH', async () => {
+    const over = await judgeRegimeFreshness('OKX|1h', world({ 'BINANCE|1h': { gen: TICK - 2 * H - 60_000 } }), ENV);
+    expect(over.verdict).toBe('FAIL');
+    expect(state(over, 'BINANCE|1h')).toBe('STALE_GENERATION');
+    const at = await judgeRegimeFreshness('OKX|1h', world({ 'BINANCE|1h': { gen: TICK - 2 * H } }), ENV);
+    expect(state(at, 'BINANCE|1h')).toBe('FRESH');
+    // The bound is REGIME_SNAPSHOT_STALE_FACTOR × interval — the same knob the tool refuses on.
+    const wide = await judgeRegimeFreshness('OKX|1h', world({ 'BINANCE|1h': { gen: TICK - 2 * H - 60_000 } }), { REGIME_SNAPSHOT_STALE_FACTOR: '3' });
+    expect(state(wide, 'BINANCE|1h')).toBe('FRESH');
+    // Measured against the producer's own tick, not the canary's clock: a fresh-as-of-tick pair is FRESH at any canary minute.
+    expect(at.pairs.find((p) => p.venue === 'BINANCE' && p.tf === '1h')).toMatchObject({ age_min: 120, bound_min: 120 });
+  });
+
+  it('(b) a served pair with no servable generation at all → FAIL NO_SERVABLE_GENERATION', async () => {
+    const r = await judgeRegimeFreshness('OKX|1h', world({ 'BINANCE|1d': { due: ['PARTIAL', 'PARTIAL'], gen: null } }), ENV);
+    expect(r.verdict).toBe('FAIL');
+    expect(state(r, 'BINANCE|1d')).toBe('NO_SERVABLE_GENERATION');
+  });
+
+  it('(c) 2 consecutive FAILED / SKIPPED_BUDGET due ticks → FAIL; one is not enough', async () => {
+    const two = await judgeRegimeFreshness('OKX|1h', world({ 'BINANCE|1h': { due: ['FAILED', 'SKIPPED_BUDGET'] } }), ENV);
+    expect(two.verdict).toBe('FAIL');
+    expect(state(two, 'BINANCE|1h')).toBe('CONSECUTIVE_FAILED_TICKS');
+    const one = await judgeRegimeFreshness('OKX|1h', world({ 'BINANCE|1h': { due: ['FAILED', 'COMPLETE'] } }), ENV);
+    expect(state(one, 'BINANCE|1h')).toBe('FRESH');
+  });
+
+  it('a sampled pair the producer never recorded → FAIL NO_RUNS; absent tables → FAIL; no sampled venue → FAIL', async () => {
+    const noRuns = await judgeRegimeFreshness('OKX|1h', world({ 'BINANCE|4h': { due: [] } }), ENV);
+    expect(state(noRuns, 'BINANCE|4h')).toBe('NO_RUNS');
+    expect(noRuns.verdict).toBe('FAIL');
+    const absent = await judgeRegimeFreshness('OKX|1h', world({}, { tables: false }), ENV);
+    expect(absent.verdict).toBe('FAIL');
+    expect(absent.fail_keys).toEqual(['*|*:TABLES_ABSENT']);
+    const empty = await judgeRegimeFreshness('OKX|1h', world({}, { venues: [] }), ENV);
+    expect(empty.verdict).toBe('FAIL');
+  });
+
+  it('INDETERMINATE: an unreachable store, or a known set it was handed and cannot parse — and the set never shrinks on a blind run', async () => {
+    const down = await judgeRegimeFreshness('OKX|1h,BITGET|1d', world({}, { throwOn: 'latest' }), ENV);
+    expect(down.verdict).toBe('INDETERMINATE');
+    expect(down.known_unserved_next).toEqual(['BITGET|1d', 'OKX|1h']);
+    const adopt = await judgeRegimeFreshness('OKX|1h', world({}, { throwOn: 'adopt' }), ENV);
+    expect(adopt.verdict).toBe('INDETERMINATE');
+    const garbage = await judgeRegimeFreshness('OKX|1h,not a key', world(), ENV);
+    expect(garbage.verdict).toBe('INDETERMINATE');
+    expect(garbage.pairs).toHaveLength(0);
+  });
+
+  it('parseKnownUnserved: unset is SEED (null), empty is the EMPTY set — never the same thing', () => {
+    expect(parseKnownUnserved(undefined)).toBeNull();
+    expect(parseKnownUnserved('')).toEqual(new Set());
+    expect(parseKnownUnserved(' OKX|1h , BITGET|1d ')).toEqual(new Set(['OKX|1h', 'BITGET|1d']));
+    expect(() => parseKnownUnserved('OKX|15m')).toThrow();
+    expect(() => parseKnownUnserved('okx|1h')).toThrow();
+  });
+
+  it('main --freshness: one positive line per venue and pair, the set, the token; RETURNS 0 / 1 / 3', async () => {
+    const env = { ...ENV, REGIME_FRESHNESS_KNOWN_UNSERVED: 'OKX|1h' };
+    expect(await main(['node', 'x', '--freshness'], DEFAULT_REGIME_SAMPLER_DEPS, world(), env)).toBe(0);
+    const lines = logSpy.mock.calls.map((c) => String(c[0]));
+    expect(lines.filter((l) => l.startsWith('[regime-freshness] PAIR '))).toHaveLength(6);
+    expect(lines.filter((l) => l.startsWith('[regime-freshness] VENUE '))).toHaveLength(2);
+    expect(lines).toContain('[regime-freshness] MODE=JUDGE');
+    expect(lines).toContain('REGIME_FRESHNESS_KNOWN_UNSERVED_NEXT=OKX|1h');
+    expect(lines).toContain('REGIME_FRESHNESS_UNSERVED=OKX|1h');
+    expect(lines[lines.length - 1]).toBe('REGIME_SNAPSHOT_FRESHNESS_VERDICT=PASS');
+    logSpy.mockClear();
+    expect(await main(['node', 'x', '--freshness'], DEFAULT_REGIME_SAMPLER_DEPS, world({ 'BINANCE|1h': { due: ['FAILED', 'FAILED'] } }), env)).toBe(1);
+    expect(logSpy.mock.calls.map((c) => String(c[0]))).toContain('REGIME_FRESHNESS_FAIL_KEYS=BINANCE|1h:CONSECUTIVE_FAILED_TICKS');
+    logSpy.mockClear();
+    expect(await main(['node', 'x', '--freshness'], DEFAULT_REGIME_SAMPLER_DEPS, world({}, { throwOn: 'latest' }), env)).toBe(3);
+    expect(logSpy.mock.calls.map((c) => String(c[0]))).toContain('REGIME_SNAPSHOT_FRESHNESS_VERDICT=INDETERMINATE');
+    // SEED is "variable unset", so main reads it from the env it is given, never a default.
+    logSpy.mockClear();
+    expect(await main(['node', 'x', '--freshness'], DEFAULT_REGIME_SAMPLER_DEPS, world(), { ...ENV })).toBe(0);
+    expect(logSpy.mock.calls.map((c) => String(c[0]))).toContain('[regime-freshness] MODE=SEED');
+  });
+
+  it('the default deps are the store\'s own readers — the SAME ones scan_market_regimes serves from', () => {
+    expect(DEFAULT_REGIME_FRESHNESS_DEPS.latestRunDisposition).toBe(DEFAULT_REGIME_SAMPLER_DEPS.latestRunDisposition);
+    expect(DEFAULT_REGIME_FRESHNESS_DEPS.recentDueRuns).toBe(DEFAULT_REGIME_SAMPLER_DEPS.recentDueRuns);
+    expect(DEFAULT_REGIME_FRESHNESS_DEPS.lastTickAt).toBe(DEFAULT_REGIME_SAMPLER_DEPS.lastTickAt);
+    expect(FAILING_FRESHNESS_STATES.has('UNSERVED')).toBe(false);
+    expect(FAILING_FRESHNESS_STATES.has('RESOLVED')).toBe(false);
+    expect(FAILING_FRESHNESS_STATES.has('WINDOW_STALE_PENDING')).toBe(false);
   });
 });

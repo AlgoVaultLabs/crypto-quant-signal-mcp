@@ -33,9 +33,14 @@
  *   docker exec <ctr> node dist/scripts/regime-snapshot-sampler.js
  *   docker exec <ctr> node dist/scripts/regime-snapshot-sampler.js --check   # read-only, ZERO writes
  *
+ * And from ops/monitoring/regime-snapshot-freshness-canary.sh (44 * * * *), in a session the server
+ * holds read-only (PGOPTIONS default_transaction_read_only=on):
+ *   docker exec <ctr> node dist/scripts/regime-snapshot-sampler.js --freshness  # CH3: judges the record
+ *
  * Exit codes come from main()'s RETURN value (runScript ignores process.exitCode):
- *   run:     REGIME_SAMPLER_RUN_VERDICT=PASS|FAIL|INDETERMINATE   → 0 / 1 / 3
- *   --check: REGIME_SAMPLER_CHECK_VERDICT=PASS|FAIL|INDETERMINATE → 0 / 1 / 3
+ *   run:         REGIME_SAMPLER_RUN_VERDICT=PASS|FAIL|INDETERMINATE         → 0 / 1 / 3
+ *   --check:     REGIME_SAMPLER_CHECK_VERDICT=PASS|FAIL|INDETERMINATE       → 0 / 1 / 3
+ *   --freshness: REGIME_SNAPSHOT_FRESHNESS_VERDICT=PASS|FAIL|INDETERMINATE  → 0 / 1 / 3
  */
 
 import type { ExchangeId } from '../types.js';
@@ -69,11 +74,14 @@ import {
   lastTickAt,
   isServableRun,
   regimeSnapshotMinCoverage,
+  adoptExistingRegimeSnapshotTables,
   type RegimeRunDisposition,
   type RegimeSnapshotRow,
   type RegimeSnapshotRunRecord,
   type ServableGeneration,
 } from '../lib/regime-snapshots.js';
+// The staleness bound is the SAME knob scan_market_regimes refuses on — imported, never re-derived.
+import { regimeSnapshotStaleFactor, regimeIntervalMs } from '../lib/market-regime-scanner.js';
 import type { Candle } from '../types.js';
 
 /** The reference symbol whose recent window is each venue's own bar-close record. Listed on all 4. */
@@ -511,11 +519,258 @@ export async function runRegimeSnapshotSampler(
 
 const EXIT: Record<SamplerRunResult['verdict'], number> = { PASS: 0, FAIL: 1, INDETERMINATE: 3 };
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// --freshness — SCAN-MARKET-REGIMES-W1-V2 CH3
+//
+// ONE freshness verdict over the producer's OWN record, for every regime consumer. It reads only the
+// run record and the servable generation — the same readers `scan_market_regimes` serves from — and
+// holds no schedule arithmetic: "due" is whatever the producer recorded, ages are measured against
+// the producer's own last tick, and the only clock read is the dead-producer bound.
+//
+//   FAIL  (a) PRODUCER_DEAD             a sampled venue has no tick row in the last 2 h
+//         (b) STALE_GENERATION          a pair NOT WINDOW_STALE whose newest servable generation is older
+//                                       than REGIME_SNAPSHOT_STALE_FACTOR × interval as of its last tick
+//             NO_SERVABLE_GENERATION    …or that has no servable generation at all
+//         (c) CONSECUTIVE_FAILED_TICKS  the newest 2 due ticks of a pair are FAILED / SKIPPED_BUDGET
+//             NEWLY_WINDOW_STALE        a pair outside the known-unserved set, WINDOW_STALE for 2 due ticks
+//             NO_RUNS                   a sampled pair the producer has never recorded
+//   INDETERMINATE                       the store is unreachable, or the known-unserved set is unparseable
+//
+// THE KNOWN-UNSERVED SET (V2 CH3 R1, page-on-change keyed VENUE|TF). The canary hands it in as
+// REGIME_FRESHNESS_KNOWN_UNSERVED and persists what this prints as REGIME_FRESHNESS_KNOWN_UNSERVED_NEXT:
+//   • unset           → SEED mode: every pair WINDOW_STALE right now is seeded, printed UNSERVED, and
+//                       never pages — it was unserved before anyone watched.
+//   • a seeded pair   → UNSERVED every run while it stays unserved; RESOLVED (one line, no page) the run it
+//                       turns servable, and it leaves the set — so a later relapse is a regression.
+//   • any other pair  → WINDOW_STALE for 1 due tick is WINDOW_STALE_PENDING (no FAIL); for 2 it FAILs.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A sampled venue whose newest tick is older than this is a dead producer (R1a). */
+export const REGIME_FRESHNESS_PRODUCER_DEAD_MS = 2 * 3_600_000;
+/** Consecutive due ticks for both the WINDOW_STALE sustain and the failed-tick rule (R1c). */
+export const REGIME_FRESHNESS_SUSTAIN_TICKS = 2;
+
+export type FreshnessPairState =
+  | 'FRESH'
+  | 'UNSERVED'
+  | 'RESOLVED'
+  | 'WINDOW_STALE_PENDING'
+  | 'NEWLY_WINDOW_STALE'
+  | 'STALE_GENERATION'
+  | 'NO_SERVABLE_GENERATION'
+  | 'CONSECUTIVE_FAILED_TICKS'
+  | 'NO_RUNS';
+
+/** The pair states that FAIL the verdict — every other state is reported, never paged. */
+export const FAILING_FRESHNESS_STATES: ReadonlySet<FreshnessPairState> = new Set<FreshnessPairState>([
+  'NEWLY_WINDOW_STALE', 'STALE_GENERATION', 'NO_SERVABLE_GENERATION', 'CONSECUTIVE_FAILED_TICKS', 'NO_RUNS',
+]);
+
+export interface FreshnessPairLine {
+  venue: string;
+  tf: string;
+  state: FreshnessPairState;
+  /** The producer's newest due disposition for the pair. */
+  latest: RegimeRunDisposition | null;
+  /** Bar close of the newest servable generation. */
+  as_of: string | null;
+  last_tick: string | null;
+  /** last_tick − as_of, minutes (null without both). */
+  age_min: number | null;
+  bound_min: number;
+  /** The newest due dispositions, newest first (≤ REGIME_FRESHNESS_SUSTAIN_TICKS). */
+  recent_due: RegimeRunDisposition[];
+}
+
+export interface FreshnessVenueLine {
+  venue: string;
+  state: 'LIVE' | 'PRODUCER_DEAD';
+  last_tick: string | null;
+  age_min: number | null;
+}
+
+export interface RegimeFreshnessResult {
+  verdict: 'PASS' | 'FAIL' | 'INDETERMINATE';
+  mode: 'SEED' | 'JUDGE';
+  venues: FreshnessVenueLine[];
+  pairs: FreshnessPairLine[];
+  /** `VENUE|TF:STATE` (or `VENUE|*:PRODUCER_DEAD`) — entity keys, never figures. */
+  fail_keys: string[];
+  unserved: string[];
+  resolved: string[];
+  /** What the canary persists for the next run. Sorted. */
+  known_unserved_next: string[];
+  reasons: string[];
+}
+
+export type RegimeFreshnessDeps = Pick<
+  RegimeSamplerDeps,
+  'sampledRegimeVenues' | 'latestServableGeneration' | 'latestRunDisposition' | 'recentDueRuns' | 'lastTickAt' | 'now'
+> & {
+  /** Read-only ensure: true when the store's tables exist (no DDL is ever issued). */
+  adoptTables(): Promise<boolean>;
+};
+
+export const DEFAULT_REGIME_FRESHNESS_DEPS: RegimeFreshnessDeps = {
+  sampledRegimeVenues: DEFAULT_REGIME_SAMPLER_DEPS.sampledRegimeVenues,
+  latestServableGeneration: DEFAULT_REGIME_SAMPLER_DEPS.latestServableGeneration,
+  latestRunDisposition: DEFAULT_REGIME_SAMPLER_DEPS.latestRunDisposition,
+  recentDueRuns: DEFAULT_REGIME_SAMPLER_DEPS.recentDueRuns,
+  lastTickAt: DEFAULT_REGIME_SAMPLER_DEPS.lastTickAt,
+  now: DEFAULT_REGIME_SAMPLER_DEPS.now,
+  adoptTables: () => adoptExistingRegimeSnapshotTables(),
+};
+
+const KNOWN_KEY_RE = /^[A-Z0-9_]{2,32}\|(1h|4h|1d)$/;
+
+/**
+ * REGIME_FRESHNESS_KNOWN_UNSERVED → the set. `undefined` (unset) is SEED mode → null; `''` is the
+ * EMPTY set (everything resolved) — the two are different on purpose. A malformed key throws: input
+ * we were handed and could not parse is INDETERMINATE, never an empty set.
+ */
+export function parseKnownUnserved(raw: string | undefined): Set<string> | null {
+  if (raw === undefined) return null;
+  const out = new Set<string>();
+  for (const token of raw.split(',').map((t) => t.trim()).filter(Boolean)) {
+    if (!KNOWN_KEY_RE.test(token)) throw new Error(`malformed known-unserved key '${token.slice(0, 40)}'`);
+    out.add(token);
+  }
+  return out;
+}
+
+const sustained = (recent: RegimeSnapshotRunRecord[], ok: (d: RegimeRunDisposition) => boolean): boolean =>
+  recent.length >= REGIME_FRESHNESS_SUSTAIN_TICKS && recent.slice(0, REGIME_FRESHNESS_SUSTAIN_TICKS).every((r) => ok(r.disposition));
+
+/** A served pair's state: (c) before (b), so a pair whose ticks keep failing names that cause. */
+function servingState(gen: ServableGeneration | null, pairTick: number | null, recent: RegimeSnapshotRunRecord[], boundMs: number): FreshnessPairState {
+  if (sustained(recent, (d) => d === 'FAILED' || d === 'SKIPPED_BUDGET')) return 'CONSECUTIVE_FAILED_TICKS';
+  if (gen === null) return 'NO_SERVABLE_GENERATION';
+  if (pairTick === null || pairTick - gen.bar_close_ms > boundMs) return 'STALE_GENERATION';
+  return 'FRESH';
+}
+
+const minutes = (ms: number | null): number | null => (ms === null ? null : Math.round(ms / 60_000));
+
+/** Judge the producer's record. Never throws: an unreachable store is INDETERMINATE. */
+export async function judgeRegimeFreshness(
+  knownRaw: string | undefined,
+  deps: RegimeFreshnessDeps = DEFAULT_REGIME_FRESHNESS_DEPS,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<RegimeFreshnessResult> {
+  const result: RegimeFreshnessResult = {
+    verdict: 'PASS', mode: knownRaw === undefined ? 'SEED' : 'JUDGE',
+    venues: [], pairs: [], fail_keys: [], unserved: [], resolved: [], known_unserved_next: [], reasons: [],
+  };
+  let known: Set<string> | null;
+  try {
+    known = parseKnownUnserved(knownRaw);
+  } catch (e) {
+    result.verdict = 'INDETERMINATE';
+    result.reasons.push(`REGIME_FRESHNESS_KNOWN_UNSERVED unparseable: ${e instanceof Error ? e.message : String(e)}`);
+    return result;
+  }
+  const next = new Set<string>();
+  try {
+    const now = deps.now();
+    if (!(await deps.adoptTables())) {
+      result.verdict = 'FAIL';
+      result.fail_keys.push('*|*:TABLES_ABSENT');
+      result.reasons.push('regime_snapshots / regime_snapshot_runs are absent — the producer has never run');
+      return result;
+    }
+    const venues = await deps.sampledRegimeVenues(now);
+    if (venues.length === 0) {
+      result.verdict = 'FAIL';
+      result.fail_keys.push('*|*:NO_SAMPLED_VENUE');
+      result.reasons.push('no sampled venue: REGIME_SNAPSHOT_VENUES ∩ active promoted venues is empty');
+      return result;
+    }
+    const factor = regimeSnapshotStaleFactor(env);
+    for (const venue of venues) {
+      const venueTick = await deps.lastTickAt(venue);
+      const venueAge = venueTick === null ? null : now - venueTick;
+      const dead = venueAge === null || venueAge > REGIME_FRESHNESS_PRODUCER_DEAD_MS;
+      result.venues.push({ venue, state: dead ? 'PRODUCER_DEAD' : 'LIVE', last_tick: iso(venueTick), age_min: minutes(venueAge) });
+      if (dead) result.fail_keys.push(`${venue}|*:PRODUCER_DEAD`);
+      for (const tf of REGIME_SNAPSHOT_TIMEFRAMES) {
+        const key = `${venue}|${tf}`;
+        const boundMs = factor * regimeIntervalMs(tf);
+        const [latest, gen, pairTick, recent] = await Promise.all([
+          deps.latestRunDisposition(venue, tf),
+          deps.latestServableGeneration(venue, tf),
+          deps.lastTickAt(venue, tf),
+          deps.recentDueRuns(venue, tf, REGIME_FRESHNESS_SUSTAIN_TICKS),
+        ]);
+        const stale = latest?.disposition === 'WINDOW_STALE';
+        let state: FreshnessPairState;
+        if (latest === null) {
+          state = 'NO_RUNS';
+        } else if (known === null && stale) {
+          state = 'UNSERVED';             // SEED: unserved before anyone watched
+          next.add(key);
+        } else if (known !== null && known.has(key)) {
+          if (stale || gen === null) {
+            state = 'UNSERVED';
+            next.add(key);
+          } else {
+            state = 'RESOLVED';           // leaves the set — a later relapse is a regression
+            result.resolved.push(key);
+          }
+        } else if (stale) {
+          state = sustained(recent, (d) => d === 'WINDOW_STALE') ? 'NEWLY_WINDOW_STALE' : 'WINDOW_STALE_PENDING';
+        } else {
+          state = servingState(gen, pairTick, recent, boundMs);
+        }
+        if (state === 'UNSERVED') result.unserved.push(key);
+        if (FAILING_FRESHNESS_STATES.has(state)) result.fail_keys.push(`${key}:${state}`);
+        result.pairs.push({
+          venue, tf, state,
+          latest: latest?.disposition ?? null,
+          as_of: gen ? iso(gen.bar_close_ms) : null,
+          last_tick: iso(pairTick),
+          age_min: gen && pairTick !== null ? minutes(pairTick - gen.bar_close_ms) : null,
+          bound_min: minutes(boundMs) as number,
+          recent_due: recent.slice(0, REGIME_FRESHNESS_SUSTAIN_TICKS).map((r) => r.disposition),
+        });
+      }
+    }
+  } catch (e) {
+    result.verdict = 'INDETERMINATE';
+    result.reasons.push(`regime snapshot store unreachable: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}`);
+    result.known_unserved_next = known === null ? [] : [...known].sort();  // never shrink the set on a blind run
+    return result;
+  }
+  result.known_unserved_next = [...next].sort();
+  if (result.fail_keys.length) {
+    result.verdict = 'FAIL';
+    result.reasons.push(...result.fail_keys);
+  }
+  return result;
+}
+
+/** The --freshness CLI body: one positive line per venue and per pair, then the set, then the token. */
+async function freshnessMain(deps: RegimeFreshnessDeps, env: NodeJS.ProcessEnv): Promise<number> {
+  const r = await judgeRegimeFreshness(env.REGIME_FRESHNESS_KNOWN_UNSERVED, deps, env);
+  console.log(`[regime-freshness] MODE=${r.mode}`);
+  for (const v of r.venues) console.log(`[regime-freshness] VENUE ${JSON.stringify(v)}`);
+  for (const p of r.pairs) console.log(`[regime-freshness] PAIR ${JSON.stringify(p)}`);
+  for (const reason of r.reasons) console.error(`[regime-freshness] ${reason}`);
+  console.log(`REGIME_FRESHNESS_UNSERVED=${r.unserved.join(',')}`);
+  console.log(`REGIME_FRESHNESS_RESOLVED=${r.resolved.join(',')}`);
+  console.log(`REGIME_FRESHNESS_FAIL_KEYS=${r.fail_keys.join(',')}`);
+  console.log(`REGIME_FRESHNESS_KNOWN_UNSERVED_NEXT=${r.known_unserved_next.join(',')}`);
+  console.log(`REGIME_SNAPSHOT_FRESHNESS_VERDICT=${r.verdict}`);
+  return EXIT[r.verdict];
+}
+
 /** The CLI body. RETURNS the exit code — runScript takes it only from here. */
 export async function main(
   argv: string[] = process.argv,
   deps: RegimeSamplerDeps = DEFAULT_REGIME_SAMPLER_DEPS,
+  freshnessDeps: RegimeFreshnessDeps = DEFAULT_REGIME_FRESHNESS_DEPS,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<number> {
+  if (argv.includes('--freshness')) return freshnessMain(freshnessDeps, env);
   const check = argv.includes('--check');
   const r = await runRegimeSnapshotSampler({ check }, deps);
   for (const reason of r.reasons) console.error(`[regime-sampler] ${reason}`);
@@ -526,5 +781,7 @@ export async function main(
 // require.main guard (CJS, target ES2022) — cron invokes this directly.
 if (require.main === module) {
   // 50 min: a hung tick is killed before the next :11 fire (the host flock is the second guard).
-  void runScript('regime-snapshot-sampler', () => main(), { watchdogMs: 50 * 60_000 });
+  // --freshness reads ~4 rows per pair, so 5 min is a hung store, never a slow one.
+  const watchdogMs = process.argv.includes('--freshness') ? 5 * 60_000 : 50 * 60_000;
+  void runScript('regime-snapshot-sampler', () => main(), { watchdogMs });
 }

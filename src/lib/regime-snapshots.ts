@@ -14,6 +14,8 @@
  * after CH1, consumers project from them and never re-derive:
  *   latestServableGeneration · readGenerationRows · latestRunDisposition · sampledRegimeVenues
  *   recentDueRuns · lastTickAt · MARKET_REGIME_RULE_VERSION (re-exported) · the row and run types.
+ * CH3 adds `adoptExistingRegimeSnapshotTables` — the read-only stand-in for the lazy ensure, so the
+ * freshness canary's `default_transaction_read_only` session never issues DDL.
  *
  * "Unserved" is DERIVED, never declared (V2 §0 Q1): a pair is unserved while its newest non-NOT_DUE
  * run is WINDOW_STALE. There is no hand-kept list, so a pair starts serving by itself the first
@@ -165,6 +167,23 @@ export async function ensureRegimeSnapshotTables(): Promise<void> {
 /** Test-only reset of the once-per-process ensure flag. */
 export function _resetRegimeSnapshotsEnsure(): void {
   _ensured = false;
+}
+
+/**
+ * READ-ONLY adoption of the existing schema (CH3 freshness canary). `CREATE … IF NOT EXISTS` is
+ * refused inside a read-only transaction even when the table exists (SQLSTATE 25006), so a session
+ * opened with `default_transaction_read_only=on` must never reach the lazy ensure. This probes
+ * existence with `to_regclass` and, only when all three relations exist, marks the ensure done —
+ * every reader below then skips its DDL. Issues no DDL and no write. False = the store is absent.
+ */
+export async function adoptExistingRegimeSnapshotTables(): Promise<boolean> {
+  if (_ensured) return true;
+  const rows = await dbQuery<{ s: boolean | null; r: boolean | null; i: boolean | null }>(
+    `SELECT to_regclass('regime_snapshots') IS NOT NULL AS s, to_regclass('regime_snapshot_runs') IS NOT NULL AS r, to_regclass('idx_regime_snapshot_runs_pair_bar') IS NOT NULL AS i`,
+  );
+  const ok = rows[0]?.s === true && rows[0]?.r === true && rows[0]?.i === true;
+  if (ok) _ensured = true;
+  return ok;
 }
 
 /**

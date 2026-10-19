@@ -1304,7 +1304,7 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 — is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "5383e762bfca543294edfe71f8724a21ae0351d261c75b125ac3d0c16d85895d",
+      "sha256": "be5ad02d14957b1e5359c93c2781a453de8b90b03ca31094651f36db0310c111",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. SYNCED, NOT INSTALLED (OPS-DRIFT-ALERT-GENERATORS-W1, 2026-09-14): declaration-sync.sh fetches it on aoe-1 every hour (27 * * * *) through a DECLARATIONS row whose 5th field names ops/scripts/cron-interlock-registry.json, so a registry edit reaches the host within the hour with no re-install step. It used to be installed once behind a sync_exempt_reason (the sync could only reach ops/monitoring), with the refresh left to a sentence in these notes; IDENTITY-LIFECYCLE-W3 edited the registry three times on 2026-09-08, re-stamped this sha256, never re-installed, and aoe-1 paged HASH_DRIFT + REGISTRY_PARITY daily from 2026-09-09. Re-stamp this sha256 in the same commit as any registry edit; HASH_DRIFT on this row now means the hourly sync stopped landing, not that someone forgot a step. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot.",
@@ -2103,7 +2103,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "f401f6a8350c143aefadf6e6e997453c063f905f4d5a743291ed2e9e7b0e6c1c",
+      "sha256": "e944820e4b83e2cd512e04f7e7e53c47c91e650ac09e3dabb87d82ad3ce3ca50",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -2554,7 +2554,7 @@
       "criticality": "advisory",
       "repo_resident": true,
       "schedule": null,
-      "invoked_by": "imported-by:ops/cron/lifecycle-health.sh,ops/cron/lifecycle-readout.sh,ops/cron/xrepo-ci-conclusion-canary.sh,ops/monitoring/adapter-history-contiguity-canary.sh,ops/monitoring/book-liveness-canary.py,ops/monitoring/funding-accrual-freshness.py,ops/monitoring/kernel-auto-reboot.sh,ops/monitoring/outcome-backfill-freshness.py,ops/monitoring/payment-decline-canary.py,ops/monitoring/postgres-cpu-snapshot.sh,ops/monitoring/regime-budget-starvation-canary.py,ops/monitoring/scorer-input-identity-canary.py,ops/monitoring/verdict-rule-gate.py,scripts/check-cancel-path-live.mjs (signal-1); editorial-canary-record.py (signal-1, root copy /usr/local/bin/editorial-canary-record.py, python3 -I); bdir-panel-readiness.py (aoe-1, AOE vendored copy monitoring/aoe-host/canary_result_log.py + .sha256)",
+      "invoked_by": "imported-by:ops/cron/lifecycle-health.sh,ops/cron/lifecycle-readout.sh,ops/cron/xrepo-ci-conclusion-canary.sh,ops/monitoring/adapter-history-contiguity-canary.sh,ops/monitoring/book-liveness-canary.py,ops/monitoring/funding-accrual-freshness.py,ops/monitoring/kernel-auto-reboot.sh,ops/monitoring/outcome-backfill-freshness.py,ops/monitoring/payment-decline-canary.py,ops/monitoring/postgres-cpu-snapshot.sh,ops/monitoring/regime-budget-starvation-canary.py,ops/monitoring/regime-snapshot-freshness-canary.sh,ops/monitoring/scorer-input-identity-canary.py,ops/monitoring/verdict-rule-gate.py,scripts/check-cancel-path-live.mjs (signal-1); editorial-canary-record.py (signal-1, root copy /usr/local/bin/editorial-canary-record.py, python3 -I); bdir-panel-readiness.py (aoe-1, AOE vendored copy monitoring/aoe-host/canary_result_log.py + .sha256)",
       "install_state": "installed",
       "sha256": "604591ce41e78474438272cf3bfb0342ebfa218a5e8c8a6a3a340484dba975de",
       "alert_ids": [],
@@ -2570,6 +2570,7 @@
         "ops/monitoring/payment-decline-canary.py",
         "ops/monitoring/postgres-cpu-snapshot.sh",
         "ops/monitoring/regime-budget-starvation-canary.py",
+        "ops/monitoring/regime-snapshot-freshness-canary.sh",
         "ops/monitoring/scorer-input-identity-canary.py",
         "ops/monitoring/verdict-rule-gate.py",
         "scripts/check-cancel-path-live.mjs",
@@ -2999,6 +3000,30 @@
         "at": "20261001T151038Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
+    },
+    {
+      "id": "regime-snapshot-freshness-canary",
+      "artifact": "ops/monitoring/regime-snapshot-freshness-canary.sh",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/regime-snapshot-freshness-canary.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/regime-snapshot-freshness-canary.sh",
+          "schedule": "44 * * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "44 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "pending",
+      "sha256": "301765911edf8aee4b69df05cfdfbc4b72fef804f03e95314bec04b502d72d6c",
+      "alert_ids": [
+        "regime_snapshot_stale"
+      ],
+      "owner_wave": "SCAN-MARKET-REGIMES-W1",
+      "notes": "The freshness canary for the bar-close regime snapshot scan_market_regimes serves (SCAN-MARKET-REGIMES-W1-V2 CH3). Runs dist/scripts/regime-snapshot-sampler.js --freshness inside the app container in a session the server holds READ-ONLY (PGOPTIONS default_transaction_read_only=on, statement_timeout 60 s); the judge adopts the existing tables with to_regclass and never issues DDL. It judges ONLY the producer's run record through the same readers the tool serves from, with no schedule arithmetic. Token REGIME_SNAPSHOT_FRESHNESS_VERDICT=PASS|FAIL|INDETERMINATE (exit 0/1/3); one positive line per venue and per (venue, tf). State: /var/lib/algovault-monitoring/regime-snapshot-freshness/known-unserved (absent = SEED). Log /var/log/regime-snapshot-freshness.log. Publishes one canary_result_log record per run (canary regime-snapshot-freshness), pulled into the vault by monitoring-results-sync.sh. PENDING until installed by ops/scripts/install-monitoring-artifact.sh after the landing."
     },
     {
       "id": "stepup-readout",

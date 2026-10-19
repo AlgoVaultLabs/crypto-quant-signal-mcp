@@ -16,6 +16,7 @@ import { dbQuery } from '../../src/lib/performance-db.js';
 import { getActivePromotedVenueIds } from '../../src/lib/venue-store.js';
 import {
   ensureRegimeSnapshotTables,
+  adoptExistingRegimeSnapshotTables,
   _resetRegimeSnapshotsEnsure,
   recordRegimeSnapshots,
   recordRegimeSnapshotRun,
@@ -156,6 +157,48 @@ describe('writes', () => {
     expect(String(c[0])).toMatch(/ON CONFLICT \(exchange, timeframe, tick_at\) DO NOTHING$/);
     expect(c[1]).toEqual(['BINANCE', '1h', 1_792_400_400_000, 1_792_400_460_000, 'COMPLETE', 745, 740, 5, 0, 0, 0, 1_792_400_520_000]);
     await expect(recordRegimeSnapshotRun(run({ disposition: 'DONE' as never }))).rejects.toThrow(/unknown disposition/);
+  });
+});
+
+describe('adoptExistingRegimeSnapshotTables — the READ-ONLY ensure (CH3 freshness canary)', () => {
+  const exists = (s: boolean, r: boolean, i: boolean) => q.mockResolvedValueOnce([{ s, r, i }] as never);
+
+  it('probes with to_regclass only — no DDL, no write — and on success every reader skips its ensure', async () => {
+    exists(true, true, true);
+    expect(await adoptExistingRegimeSnapshotTables()).toBe(true);
+    expect(sqls()).toHaveLength(1);
+    expect(sqls()[0]).toMatch(/^SELECT to_regclass\('regime_snapshots'\)/);
+    expect(sqls()[0]).toContain("to_regclass('regime_snapshot_runs')");
+    expect(sqls()[0]).toContain("to_regclass('idx_regime_snapshot_runs_pair_bar')");
+    await latestRunDisposition('BINANCE', '1h');
+    await recentDueRuns('BINANCE', '1h', 2);
+    await lastTickAt('BINANCE');
+    expect(sqls().filter((s) => /\b(CREATE|INSERT|UPDATE|DELETE|ALTER|DROP)\b/i.test(s))).toEqual([]);
+    expect(await adoptExistingRegimeSnapshotTables()).toBe(true);    // once per process
+    expect(sqls().filter((s) => /to_regclass/.test(s))).toHaveLength(1);
+  });
+
+  for (const [label, s, r, i] of [
+    ['regime_snapshots', false, true, true], ['regime_snapshot_runs', true, false, true], ['the bar-order index', true, true, false],
+  ] as const) {
+    it(`any relation absent (${label}) → false, and the lazy ensure is NOT marked done`, async () => {
+      exists(s, r, i);
+      expect(await adoptExistingRegimeSnapshotTables()).toBe(false);
+      await ensureRegimeSnapshotTables();
+      expect(sqls().filter((x) => /^CREATE/.test(x))).toHaveLength(3);
+    });
+  }
+
+  it('an empty / null probe result is absent, never assumed present', async () => {
+    q.mockResolvedValueOnce([] as never);
+    expect(await adoptExistingRegimeSnapshotTables()).toBe(false);
+    q.mockResolvedValueOnce([{ s: null, r: true, i: true }] as never);
+    expect(await adoptExistingRegimeSnapshotTables()).toBe(false);
+  });
+
+  it('a probe error propagates (the judge turns it into INDETERMINATE)', async () => {
+    q.mockRejectedValueOnce(new Error('connection refused'));
+    await expect(adoptExistingRegimeSnapshotTables()).rejects.toThrow('connection refused');
   });
 });
 
