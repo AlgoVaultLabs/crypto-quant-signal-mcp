@@ -149,8 +149,9 @@ needs a record-templating layer over ~100 heredoc alert bodies; only one alert r
 
 - `tests/unit/kernel-staleness-canary.test.ts` runs the REAL harness and canary through the REAL
   `canary_result_log.py`, stubbing only the OS, the wrapper and the destructive primitives.
-  - **Pre-fix bytes** (`git show e3d722c6:`): a page is sent from inside `due` saying "a GATE
-    REFUSED", and the run still reboots.
+  - **Pre-fix bytes** (`e3d722c6`, pinned as `tests/fixtures/*.pre-w6.sh.txt` by their live sha256,
+    because CI checks out shallow): a page is sent from inside `due` saying "a GATE REFUSED", and
+    the run still reboots.
   - **Post-fix**: 0 pages, and `REBOOTED` is still issued.
   - A second consecutive deferral by the same gate yields one page quoting the harness.
 - Deliberate breaks, each red in its self-test AND that vitest, each restored byte-identical:

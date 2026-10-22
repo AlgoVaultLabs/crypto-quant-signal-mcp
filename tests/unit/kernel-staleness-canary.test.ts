@@ -9,11 +9,12 @@
  * Each script's own `--self-test` drives its functions with fixtures. THIS file covers what neither
  * can see alone: the two REAL scripts wired together, through the REAL canary_result_log.py, with
  * only the OS (uname / dpkg-query / hostname), the wrapper and the destructive primitives stubbed —
- * and the PRE-FIX bytes from git, so the regression is proven on the code that shipped it.
+ * and the PRE-FIX bytes as sha-pinned fixtures, so the regression is proven on the code that shipped it.
  *
  * SPAWN BUDGET: ~14 bash spawns (each harness run spawns the canary and python once more).
  */
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -25,8 +26,15 @@ const HARNESS = path.join(REPO, 'ops/monitoring/kernel-auto-reboot.sh');
 const MONITORING = path.join(REPO, 'ops/monitoring');
 const REGISTRY = path.join(REPO, 'ops/scripts/cron-interlock-registry.json');
 const ALERT_REGISTRY = path.join(REPO, 'ops/monitoring/alert-registry.json');
-/** The last commit carrying the pre-W6 canary + harness bytes (origin/main at R0). */
-const PRE_FIX_SHA = 'e3d722c6';
+/**
+ * The PRE-W6 bytes, pinned as fixtures — never `git show <sha>:`, because CI checks out shallow and
+ * has no history (measured: deploy run 39763287192, `fatal: invalid object name`). Each is pinned
+ * to the sha256 R0 measured LIVE on both hosts, which equals its inventory row at `e3d722c6`.
+ */
+const PRE_FIX = {
+  'kernel-auto-reboot.sh': { fixture: 'kernel-auto-reboot.pre-w6.sh.txt', sha256: '4a4b0439384c4d06d05f4a310911446298d867b98bb5c666eed183e9d3851c28' },
+  'kernel-staleness-canary.sh': { fixture: 'kernel-staleness-canary.pre-w6.sh.txt', sha256: '0ff59c5260687a4fa7e6da21698f5d51ada21b212773b1ef49cba8098858f7d6' },
+} as const;
 
 /**
  * A long `--self-test` run ASYNC. A 15 s+ `spawnSync` blocks the worker's event loop, so vitest's own
@@ -123,8 +131,12 @@ function runCanary(w: World, args: string[] = []) {
 }
 
 function preFix(w: World, file: string) {
+  const pin = PRE_FIX[path.basename(file) as keyof typeof PRE_FIX];
+  const bytes = readFileSync(path.join(REPO, 'tests/fixtures', pin.fixture));
+  // A fixture that drifted from the shipped bytes would prove nothing about the regression.
+  expect(createHash('sha256').update(bytes).digest('hex')).toBe(pin.sha256);
   const p = path.join(w.dir, `prefix-${path.basename(file)}`);
-  writeFileSync(p, execFileSync('git', ['-C', REPO, 'show', `${PRE_FIX_SHA}:ops/monitoring/${path.basename(file)}`]), { mode: 0o755 });
+  writeFileSync(p, bytes, { mode: 0o755 });
   return p;
 }
 
