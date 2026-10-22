@@ -14,6 +14,9 @@
  *     BUILD:INTEGRATIONS_INDEX_AI_AGENTS:start    / :end   — renderIndexGrid(AI_AGENTS)
  *     BUILD:INTEGRATIONS_INDEX_EXCHANGE_KITS:start / :end  — renderIndexGrid(EXCHANGE_KITS)
  *
+ *   landing/llms.txt + landing/llms-full.txt (DOCS-MARKET-REGIME-SCREENER-W1 CH2, via build_llms_tools.mjs):
+ *     BUILD:LLMS_TOOLS_LIST / BUILD:LLMS_FULL_TOOLS — the public MCP tool list (publicToolEntries())
+ *
  * Single source of truth lives in src/lib/{signup-flow,mcp-usage-docs,
  * integrations-data/*}.ts; imported here from compiled dist/lib/*.js so
  * `npm run build` (tsc) MUST run before this script. The npm
@@ -178,6 +181,20 @@ async function main() {
   const toolsRes = buildToolsPage({ check: checkMode }); // writes landing/tools.html itself (unless --check)
   if (toolsRes.drift) {
     driftLines.push(`${toolsRes.file} (registry-driven /tools index)`);
+    writes += 1;
+  }
+
+  // DOCS-MARKET-REGIME-SCREENER-W1 CH2: the LLM-facing tool lists — landing/llms.txt's
+  // "MCP tools include …" key fact + llms-full.txt's "## The MCP Tools" — projected from the same
+  // publicToolEntries() as /tools, so a newly listed tool reaches them with zero hand edits.
+  const { buildLlmsTools } = await import('./build_llms_tools.mjs');
+  const llmsRes = buildLlmsTools({ check: checkMode });
+  if (llmsRes.missing.length) {
+    console.error(`build_landing: llms region markers missing: ${llmsRes.missing.join(', ')}`);
+    process.exit(2);
+  }
+  for (const f of llmsRes.drifted) {
+    driftLines.push(`${f} (projected MCP tool list)`);
     writes += 1;
   }
 

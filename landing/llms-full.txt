@@ -83,25 +83,25 @@ Answer-shaped guides for the most-asked AI-agent crypto-trading questions (GEO-C
 
 ## The MCP Tools
 
-### 1. `get_trade_call`
+<!-- BUILD:LLMS_FULL_TOOLS -->
+### 1. `get_trade_call` — Trade Call
+
+Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; whole-market scan: scan_trade_calls. Read-only: live exchange APIs, no orders. Verified track record: get_track_record or performance://signal-performance; on-chain verified merkle anchor.
+
+**How to use:** https://algovault.com/docs#get-trade-call
 
 **Input:**
 - `coin` (string, required): Asset symbol (e.g. `"BTC"`, `"ETH"`, `"SOL"`)
-- `timeframe` (enum): `"1m"`, `"3m"`, `"5m"`, `"15m"`, `"30m"`, `"1h"`, `"2h"`, `"4h"`, `"8h"`, `"12h"`, `"1d"`. Default `"15m"`.
-- `exchange` (enum): `"BINANCE"` (Binance USDT-M Futures, default), `"HL"` (Hyperliquid), `"BYBIT"`, `"OKX"`, `"BITGET"`.
+- `timeframe` (enum): `"1m"`, `"3m"`, `"5m"`, `"15m"`, `"30m"`, `"1h"`, `"2h"`, `"4h"`, `"8h"`, `"12h"`, `"1d"`.
 - `includeReasoning` (bool, default true): Include human-readable reasoning.
 
 **Output:** Composite verdict per JSON shape above.
 
-### 2. `scan_funding_arb`
+### 2. `get_market_regime` — Market Regime
 
-**Input:**
-- `minSpreadBps` (number, default 10): Minimum annualised funding spread in basis points.
-- `limit` (number, default 5): Top-N opportunities by spread.
+Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict: trend ranging + cross-venue funding rate. Read-only, live exchange APIs. Verified track record: get_track_record or performance://signal-performance; on-chain verified merkle anchor.
 
-**Output:** Ranked list of `{coin, longVenue, shortVenue, spreadBps, annualisedReturn}` rows.
-
-### 3. `get_market_regime`
+**How to use:** https://algovault.com/docs#get-market-regime
 
 **Input:**
 - `coin` (string, required)
@@ -109,6 +109,37 @@ Answer-shaped guides for the most-asked AI-agent crypto-trading questions (GEO-C
 - `exchange` (enum, default `"HL"`)
 
 **Output:** Regime classification (TRENDING_UP / TRENDING_DOWN / RANGING / VOLATILE) + confidence + underlying metrics + cross-venue funding sentiment + plain-English strategy suggestion.
+
+### 3. `scan_funding_arb` — Funding Arbitrage
+
+Ranked cross-venue funding arbitrage across major crypto perpetual futures venues — funding rate spreads, long one venue short another, as a BUY SELL HOLD composite verdict per pair. AI trading signal for crypto quant and Claude trading agents. Trade call via get_trade_call, market regime via get_market_regime. On-chain verified merkle anchor.
+
+**How to use:** https://algovault.com/docs#scan-funding-arb
+
+### 4. `scan_trade_calls` — Trade Call Scanner
+
+Returns ranked BUY SELL HOLD trade calls across the top crypto perpetual futures by open interest — one scan for whole-market coverage, each with confidence and market regime. Use this for breadth; use get_trade_call for per-coin depth and reasoning. Read-only: reads live exchange APIs, places no orders.
+
+**How to use:** https://algovault.com/docs#scan-trade-calls
+
+### 5. `scan_market_regimes` — Market Regime Screener
+
+Screens a whole crypto perpetual futures venue by market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — and returns each matching coin with confidence, trend strength, ADX, volatility ratio and how long the regime has held. Rows are the market regime classifier output for the last closed bar, sampled on Binance, Bybit, OKX and Bitget; another venue, or a timeframe a venue cannot serve, is refused with the alternatives. Billing: one call per returned row; non-matching coins are free. For a live single-coin read with cross-venue funding, call get_market_regime. Read-only.
+
+**How to use:** https://algovault.com/docs#scan-market-regimes
+
+### 6. `chat_knowledge` — Knowledge Chat
+
+Returns a synthesized natural-language answer with citations, grounded in the AlgoVault knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use when you need an explanation, code pattern, or how-to; for raw ranked snippets without LLM synthesis use search_knowledge (faster, no quota cost). Read-only: calls an LLM, no other side effects. Quota: Free 10/month, Starter 50, Pro 200, Enterprise 2000.
+
+**How to use:** https://algovault.com/docs#chat-knowledge
+
+### 7. `search_knowledge` — Knowledge Search
+
+Returns ranked snippets from the AlgoVault knowledge bundle answering a question about its MCP tools, response shapes, integration patterns (LangChain, LlamaIndex, MAF, CrewAI), or code examples. Call this BEFORE other tool calls to confirm parameter usage and avoid hallucinating tool shapes. Fast: BM25 lexical search, no LLM call, no quota cost. For a synthesized natural-language answer use chat_knowledge. Read-only, no side effects.
+
+**How to use:** https://algovault.com/docs#search-knowledge
+<!-- /BUILD:LLMS_FULL_TOOLS -->
 
 ---
 
