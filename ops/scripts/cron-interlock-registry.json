@@ -21,13 +21,13 @@
       },
       "reboot": {
         "host": "signal-1 (204.168.185.24)",
-        "verified_at": "2026-10-22T09:32Z",
+        "verified_at": "2026-10-22T16:07Z",
         "disruption_event": "kernel reboot",
         "command": "crontab -l   # every active line   &&   systemctl list-units --type=service --state=running --no-legend --plain | awk '{print $1}'   &&   systemctl list-unit-files --type=timer --state=enabled --no-legend | awk '{print $1}'   — the UNION is the population, because a reboot stops all of it. This is exactly what kernel-auto-reboot.sh feeds check-cron-interlock-coverage.mjs --event reboot on every run, so the enumeration is re-derived live each hour rather than inherited from this block.",
-        "active_cron_lines": 128,
-        "running_services": 23,
+        "active_cron_lines": 129,
+        "running_services": 22,
         "enabled_timers": 30,
-        "note": "A REBOOT kills every container AND every host process, so every live line/unit maps to a row or exclusion by explicit cron_match / units — none by inference. Measured 2026-10-02 (crontab sha256 93f9e3ef…): 126 active lines (125 before this wave's own `16 * * * *` harness line), 22 running services, 28 enabled timers. Transient run-*.service units are deliberately left unmapped: an operator one-shot in flight DEFERS the reboot until it ends. || Re-derived 2026-10-22T09:32Z by OPS-HOST-KERNEL-REBOOT-W6 CH1 (crontab sha256 bf5e1d98…): 128 active lines, 23 running services, 30 enabled timers. The two lines that had no REBOOT row (verdict-rule-gate, directional-labels-race-integrity) are now classified; the inventory cross-check makes the next such install a build-time FAIL. || OPS-HOST-KERNEL-REBOOT-W6 CH2: the kernel-staleness-canary line moved 23 7 * * * -> 23 * * * * (cadence only, R2.7 — the harness's --decide call no longer pages, so the canary's own cron carries the latency). Same path, same row; the line count and every mapping are unchanged."
+        "note": "A REBOOT kills every container AND every host process, so every live line/unit maps to a row or exclusion by explicit cron_match / units — none by inference. Measured 2026-10-02 (crontab sha256 93f9e3ef…): 126 active lines (125 before this wave's own `16 * * * *` harness line), 22 running services, 28 enabled timers. Transient run-*.service units are deliberately left unmapped: an operator one-shot in flight DEFERS the reboot until it ends. || Re-derived 2026-10-22T09:32Z by OPS-HOST-KERNEL-REBOOT-W6 CH1 (crontab sha256 bf5e1d98…): 128 active lines, 23 running services, 30 enabled timers. The two lines that had no REBOOT row (verdict-rule-gate, directional-labels-race-integrity) are now classified; the inventory cross-check makes the next such install a build-time FAIL. || OPS-HOST-KERNEL-REBOOT-W6 CH2: the kernel-staleness-canary line moved 23 7 * * * -> 23 * * * * (cadence only, R2.7 — the harness's --decide call no longer pages, so the canary's own cron carries the latency). Same path, same row; the line count and every mapping are unchanged. || OPS-SERVED-CANDLE-TRUTH-W1 CH2 (re-derived 2026-10-22T16:07Z with the command above): 128 -> 129 active lines — the one line added is this wave's `29 8 * * *` track-record-price-deviation-canary.py (crontab backup root-crontab.bak.OPS-SERVED-CANDLE-TRUTH-W1-20261022T160708Z; the diff of active lines is exactly that line), mapped by host-monitoring-reboot-scope's cron_match (cron_lines 41 -> 42). Running services read 22, not 23; enabled timers 30, unchanged. The services are re-read, not inherited, and no row's classification moves."
       }
     },
     "aoe-1": {
@@ -892,7 +892,7 @@
       "reason": "Every one is a read-only canary that pages the OPERATOR through send_telegram.sh, or writes only its own state atomically; the next scheduled fire re-evaluates. Three write elsewhere and stay safe by mechanism: x402-claim-liveness-prober inserts then deletes a sentinel row (a crash between them is swept at the next run, no reader counts it); declaration-sync copies to .tmp then mv -f; x402-settlement-reconciler --apply is forward-only autocommit UPDATEs pinned on the from-state (no on-chain write). kernel-auto-reboot.sh is the actor itself. checkout-parity runs `git fetch` in live checkouts: SIGTERM cleans git locks (a reboot signals before it kills).",
       "max_runtime_s": 361,
       "runtime_instrument": "OPS-XREPO-CI-RED-W1 CH4 (ruling Q12), 2026-10-04T13:12:10Z→13:18:11Z on signal-1: the INSTALLED /opt/algovault-monitoring/xrepo-ci-conclusion-canary.sh (b64d9ff4…, module e55bb07e…) run as cron does (env -i, PATH=/usr/bin:/bin) with a fixture dir forcing DISAGREE on all 3 WATCHED rows (badge failing over a newest terminal success run), GHRC_READS=3 + real GHRC_SPACING_S=60 sleeps, ALGOVAULT_TG_TEST_INERT=1, a mock sender, LEDGER/LOG/STATE/result log in a mktemp dir: wall 360.5 s (date +%s.%N around the run), XREPO_CI_VERDICT=INDETERMINATE, 0 sends. Worst case for the row: every DISAGREE row Recovers (3 reads, 2×60 s). deploy-drift-canary.mjs (one lane read, 120 s Recover + fetches) stays under it. Prior value 74 s (declaration-sync, 2026-10-02 forensic) predates Recover.",
-      "cron_lines": 41,
+      "cron_lines": 42,
       "source": "host-only",
       "verified_at": "2026-10-04",
       "owner_wave": "OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1"

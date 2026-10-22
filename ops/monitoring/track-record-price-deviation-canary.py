@@ -81,7 +81,11 @@ RECOMMENDED_WAVE = "OPS-SERVED-CANDLE-TRUTH-W{NEXT}"
 PG_CONTAINER = "crypto-quant-signal-mcp-postgres-1"
 PG_DB = "signal_performance"
 # Read-only at the session level: a write this canary never issues would be refused by the server, not by review.
-PG_OPTIONS = "-c default_transaction_read_only=on -c statement_timeout=120000"
+# No nested loop: `signals.created_at` only grows, so a trailing 24 h window lies past the column's last ANALYZE
+# histogram, the planner estimates ONE row for `s`, and it joins by nested loop. Measured on signal-1 2026-10-22: the
+# first installed run took 107 s (the 120 s statement_timeout nearly killed it) and EXPLAIN ANALYZE hit the timeout;
+# with enable_nestloop=off the same query ran in 0.3 s. The 31-day replay window planned a hash join (6 s).
+PG_OPTIONS = "-c default_transaction_read_only=on -c statement_timeout=120000 -c enable_nestloop=off"
 WRAPPER = os.environ.get("TG_WRAPPER", "/opt/algovault-monitoring/send_telegram.sh")
 STATE_PATH = os.environ.get(
     "TRACK_RECORD_PRICE_DEVIATION_STATE",
@@ -503,7 +507,7 @@ def _fleet(n_pairs: int, dev: float, n_rows: int = 5, t: int = 1_800_000_000) ->
     return rows
 
 
-SELF_TEST_CHECKS = 66   # exact: a deleted check fails the suite as loudly as a broken one
+SELF_TEST_CHECKS = 68   # exact: a deleted check fails the suite as loudly as a broken one
 
 
 def self_test() -> int:
@@ -547,6 +551,9 @@ def self_test() -> int:
     ck("sql: refuses a bool bound", lambda: _raises(lambda: build_sql(True, 2_000), ValueError), True)
     ck("sql: refuses lo >= hi", lambda: _raises(lambda: build_sql(2_000, 2_000), ValueError), True)
     ck("sql: refuses a zero bucket", lambda: _raises(lambda: build_sql(1_000, 2_000, 0), ValueError), True)
+    ck("pg options: the session is read-only", lambda: "-c default_transaction_read_only=on" in PG_OPTIONS, True)
+    ck("pg options: no nested loop on the stale-histogram estimate", lambda: "-c enable_nestloop=off" in PG_OPTIONS,
+       True)
     ck("excluded sql: same window, the predicate negated",
        lambda: "NOT (price_at_signal > 0)" in build_excluded_sql(1_000, 2_000)
        and "created_at >= 1000 AND created_at < 2000" in build_excluded_sql(1_000, 2_000), True)
