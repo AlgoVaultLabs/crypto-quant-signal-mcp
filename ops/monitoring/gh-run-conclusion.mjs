@@ -127,6 +127,29 @@
  *   `<span class="text-bold" >NAME</span> #N:` with NAME equal to the badge's name segment (the text
  *   before the LAST " - " of its <title>). Anything less reads UNCORROBORATED, by design.
  *
+ * ── PAGE SHAPES (OPS-XREPO-CI-CANARY-DARK-W2, 2026-10-22) ────────────────────────────────────
+ * Between 2026-10-14T16:13:06Z and 16:45:08Z (deploy-drift's last bound read → its first `vacuity`)
+ * GitHub rebuilt the Actions workflow page: the run list left the `id="check_suite_…"` rows for JSON in
+ * `<script type="application/json" data-target="react-app.embeddedData">`, at
+ * payload.workflowRunsRoute.workflowRuns[]. parsePage split on a marker that no longer existed, read 0
+ * rows, and all three consumers went unbound for 8 days while the dark page blamed the icon vocabulary.
+ * Every page is now routed through EXACTLY ONE declared, measured shape (PAGE_SHAPES):
+ *   no shape → page_shape_unknown · both → page_shape_ambiguous · React script whose JSON is unparseable,
+ *   carries no workflowRunsRoute, or a workflowRuns that is not an array → page_shape_unparseable · a known
+ *   shape with 0 rows → vacuity, which now MEANS "GitHub lists no runs" (an empty React list OMITS
+ *   workflowRuns — measured on 5 empty queries) — unless the page contradicts itself (totalCount says runs
+ *   exist → page_shape_unparseable) or the SAME read's badge names a conclusion (→ vacuity_badge_has_run:
+ *   the badge is the independent witness that tells empty from renamed). Ruling Q1, 2026-10-22.
+ * A React run maps to the SAME row object parsePage returns, so the walk, the bind, Recover and BIND_TABLE
+ * do not change. Its state comes from STATE_VOCAB (status × conclusion, each with provenance; an unmatched
+ * pair stops the walk as state_unmeasured:<status>/<conclusion>), and its identity fails CLOSED unless id,
+ * runNumber, workflowName, workflowFilePath and runUrl all name THIS repo's run of THIS workflow. A legacy
+ * page reads byte-identically to 963d15ac — pinned against a frozen copy in tests/fixtures.
+ * Every string that can reach a record's `reason` maps to exactly ONE class (GUARD_CLASS, ruling Q2):
+ *   --guard-class <reason>     → its class, exit 0; `unclassified`, exit 3
+ * It is the canary's ONLY source of classes, so the dark page names the remedy this reader measured
+ * instead of one guessed from a counter.
+ *
  * No REST API host, no network write, no alert dispatch: it is a reader, not an alerter.
  * process.exitCode, NEVER process.exit() — a queued stdout write to a pipe would lose the token.
  */
@@ -188,6 +211,55 @@ export const ICON_VOCAB = [
     provenance: measured('pytorch/pytorch', '36763852463', '2026-10-03', 'third-party') },
 ];
 
+/**
+ * The React run-state vocabulary — DATA, each (status, conclusion) pair with its measurement provenance
+ * (OPS-XREPO-CI-CANARY-DARK-W2 R1.0 §2, vault audits/OPS-XREPO-CI-CANARY-DARK-W2-endpoint-truth.md).
+ * Same `state` names and the same four classes as ICON_VOCAB, so one run reads the same class on either
+ * shape (the self-test pins it). `conclusion: null` = the key is ABSENT — measured on every non-COMPLETED
+ * run (R1.0 P8); a non-COMPLETED run that carries one, or a COMPLETED run that lacks one, is unmeasured.
+ * Only the MEASURED non-COMPLETED statuses are non-terminal (ruling): PENDING, REQUESTED or an unseen
+ * status is unmeasured and STOPS the walk — it may be the newest failure. TIMED_OUT / NEUTRAL / STALE were
+ * searched for and not found (cpython ×3, pytorch), so they stay unmeasured until a real run is.
+ */
+const RS = (s) => `WORKFLOW_RUN_STATUS_${s}`;
+const RC = (c) => `WORKFLOW_RUN_CONCLUSION_${c}`;
+export const STATE_VOCAB = [
+  { status: RS('COMPLETED'), conclusion: RC('SUCCESS'), state: 'success', cls: 'success',
+    provenance: measured('AlgoVaultLabs/algovault-skills', '39605376420', '2026-10-22', 'estate') },
+  { status: RS('COMPLETED'), conclusion: RC('FAILURE'), state: 'failure', cls: 'failure',
+    provenance: measured('AlgoVaultLabs/crypto-quant-signal-mcp', '39775273085', '2026-10-22', 'estate') },
+  { status: RS('COMPLETED'), conclusion: RC('CANCELLED'), state: 'cancelled', cls: 'failure',
+    provenance: measured('AlgoVaultLabs/crypto-quant-signal-mcp', '32396625268', '2026-10-22', 'estate'),
+    note: 'the run ICON_VOCAB measured cancelled on; badge mapping measured 2026-10-03: a branch whose runs are all cancelled reads `failing`' },
+  { status: RS('COMPLETED'), conclusion: RC('STARTUP_FAILURE'), state: 'startup_failure', cls: 'failure',
+    provenance: measured('python/cpython', '32985274559', '2026-10-22', 'third-party'),
+    note: 'the run ICON_VOCAB measured on 2026-10-03, where it renders the failure icon — failure-class on either shape' },
+  { status: RS('COMPLETED'), conclusion: RC('SKIPPED'), state: 'skipped', cls: 'unbound',
+    provenance: measured('cli/cli', '39651327538', '2026-10-22', 'third-party') },
+  { status: RS('COMPLETED'), conclusion: RC('ACTION_REQUIRED'), state: 'action_required', cls: 'unbound',
+    provenance: measured('python/cpython', '39701847845', '2026-10-22', 'third-party') },
+  { status: RS('IN_PROGRESS'), conclusion: null, state: 'in_progress', cls: 'nonterminal',
+    provenance: measured('python/cpython', '39779295471', '2026-10-22', 'third-party') },
+  { status: RS('QUEUED'), conclusion: null, state: 'queued', cls: 'nonterminal',
+    provenance: measured('home-assistant/core', '31125004263', '2026-10-22', 'third-party') },
+  { status: RS('WAITING'), conclusion: null, state: 'waiting', cls: 'nonterminal',
+    provenance: measured('pytorch/pytorch', '38288077815', '2026-10-22', 'third-party') },
+];
+
+/**
+ * The page shapes this reader can read — DATA (OPS-XREPO-CI-CANARY-DARK-W2 R1.1). A page is routed
+ * through EXACTLY ONE: it matches a shape when it carries that shape's marker (in comment-stripped markup
+ * where `comments_stripped`). Each id has exactly one reader in SHAPE_READERS (the self-test pins the
+ * pairing). The next redesign is one measured entry here, captured from signal-1.
+ */
+export const PAGE_SHAPES = [
+  { id: 'legacy_check_suite_v1', marker: 'id="check_suite_', comments_stripped: true,
+    provenance: { date: '2026-10-03', source: 'vault audits/OPS-XREPO-CI-RED-W1-endpoint-truth.md R0.4/R0.7 (112/112 rows, signal-1 + Mac); last served to signal-1 2026-10-14T16:13:06Z (deploy-drift-canary.log, last bound read)' } },
+  { id: 'react_embedded_v1', marker: '<script type="application/json" data-target="react-app.embeddedData">', comments_stripped: false,
+    route: 'payload.workflowRunsRoute.workflowRuns',
+    provenance: { date: '2026-10-22', source: 'vault audits/OPS-XREPO-CI-CANARY-DARK-W2-endpoint-truth.md P5–P13: signal-1 (module curl argv) 6/6 pages, Mac 12:08Z 3/3; first seen by deploy-drift 2026-10-14T16:45:08Z' } },
+];
+
 /** The bound-conclusion table — DATA. `bound`: the row may carry a bound_run. */
 export const BIND_TABLE = [
   { row: 1, badge: 'passing', record: 'success', agreement: 'AGREE', alerting: 'PASS', blocking: 'PASS', attribution: 'passing', bound: true },
@@ -200,6 +272,50 @@ export const BIND_TABLE = [
   { row: 8, badge: 'unreadable', record: 'any', agreement: 'UNREADABLE', alerting: 'INDETERMINATE', blocking: 'INDETERMINATE', attribution: 'unknown', bound: false },
   { row: 'R', badge: 'not-read', record: 'refused', agreement: 'UNCORROBORATED', alerting: 'INDETERMINATE', blocking: 'INDETERMINATE', attribution: 'unknown', bound: false },
 ];
+
+/**
+ * The guard → class table — DATA (OPS-XREPO-CI-CANARY-DARK-W2 R1.6, ruling Q2). TOTAL over every string
+ * that can reach a record's `reason`: tests/unit/gh-run-conclusion.test.ts enumerates those strings from
+ * this file's own syntax tree (templated families expanded by rule) and fails on any it cannot classify.
+ * `bound` is never rendered. `ref_page_<g>` takes the class of <g> unless listed exactly.
+ * `badge_unreadable` and `record_unavailable` are bind()'s defensive fallbacks — unreachable today
+ * (parseBadge and evaluatePage always name a reason), classified so the table stays total.
+ */
+export const GUARD_CLASSES = ['badge', 'disagree', 'shape', 'identity', 'vocabulary', 'transport', 'monotonic', 'ref', 'input', 'empty', 'pending', 'bound'];
+export const GUARD_CLASS = {
+  exact: {
+    page_shape_unknown: 'shape', page_shape_ambiguous: 'shape', page_shape_unparseable: 'shape', vacuity_badge_has_run: 'shape',
+    record_unavailable: 'shape',
+    content_type: 'transport',
+    icon_unmeasured: 'vocabulary',
+    row_identity_unreadable: 'identity',
+    monotonic: 'monotonic',
+    ref_missing: 'ref', ref_unparseable: 'ref', ref_out_of_vocabulary: 'ref', ref_page_behind: 'ref', ref_page_unavailable: 'ref',
+    atom_trap: 'input', non_canonical_repo: 'input', non_canonical_workflow: 'input', non_canonical_branch: 'input', non_canonical_url: 'input', branch_undeclared: 'input',
+    vacuity: 'empty',
+    no_terminal_row: 'pending',
+    badge_unparseable: 'badge', badge_no_status: 'badge', badge_unknown_state: 'badge', badge_unreadable: 'badge',
+    badge_failing_record_success: 'disagree', identity_mismatch: 'disagree',
+    agree_success: 'bound', agree_failure: 'bound', badge_passing_record_failure: 'bound',
+  },
+  // A templated family: `${prefix}${tail}`, the tail checked by `tail` (never a bare prefix match).
+  families: [
+    { prefix: 'http_', tail: /^[A-Za-z0-9]+$/, cls: 'transport' },
+    { prefix: 'badge_http_', tail: /^[A-Za-z0-9]+$/, cls: 'badge' },
+    { prefix: 'state_unmeasured:', tail: /^[A-Za-z0-9_]+\/[A-Za-z0-9_]+$/, cls: 'vocabulary' },
+    { prefix: 'terminal_unbound:', tail: /^[a-z_]+$/, cls: 'vocabulary' },
+  ],
+  composite: 'ref_page_',
+};
+
+/** A reason → its class, or 'unclassified'. Pure; the ONE derivation the canary reads (via --guard-class). */
+export function guardClass(reason) {
+  if (typeof reason !== 'string' || reason === '') return 'unclassified';
+  if (Object.prototype.hasOwnProperty.call(GUARD_CLASS.exact, reason)) return GUARD_CLASS.exact[reason];
+  for (const f of GUARD_CLASS.families) if (reason.startsWith(f.prefix) && f.tail.test(reason.slice(f.prefix.length))) return f.cls;
+  if (reason.startsWith(GUARD_CLASS.composite)) return guardClass(reason.slice(GUARD_CLASS.composite.length));
+  return 'unclassified';
+}
 
 /** Recover precedence among non-AGREE samples: the most informative wins, the latest among equals. */
 const INFORMATIVENESS = { DISAGREE: 3, UNCORROBORATED: 2, UNREADABLE: 1 };
@@ -287,8 +403,22 @@ export function legacyClassifyStatus(token) {
 }
 
 const POSIX_SPACE = '[ \\t\\n\\v\\f\\r]';
-/** parse_runs_page: the NEWEST row's "<run_number>|<run_id>|<iso-start>", else null. */
+/**
+ * parse_runs_page: the NEWEST row's "<run_number>|<run_id>|<iso-start>", else null.
+ * OPS-XREPO-CI-CANARY-DARK-W2 R1.5: a React-only page yields the same string from its newest run; a page
+ * carrying BOTH shapes refuses; every other page takes the pre-React code below, unchanged byte for byte.
+ */
 export function legacyParseRunsPage(html) {
+  const shapes = pageShapes(html);
+  if (shapes.length > 1) return null;
+  if (shapes[0] === 'react_embedded_v1') {
+    const { route, guard } = reactRoute(html);
+    const run = guard ? null : (route.workflowRuns ?? [])[0];
+    if (!run || typeof run !== 'object') return null;
+    const iso = run.createdAt !== null && typeof run.createdAt === 'object' ? run.createdAt.timestamp : null;
+    if (typeof run.id !== 'string' || !/^\d+$/.test(run.id) || !Number.isInteger(run.runNumber) || typeof iso !== 'string' || iso === '') return null;
+    return `${run.runNumber}|${run.id}|${iso}`;
+  }
   const flat = String(html ?? '').replace(/\n/g, ' ');
   const parts = flat.split('id="check_suite_');
   if (parts.length < 2) return null;
@@ -359,6 +489,120 @@ export function parsePage(html) {
 
 const publicRow = (r) => (r ? { run_id: r.run_id, run_number: r.run_number, name: r.name, started_at: r.started_at, state: r.state } : null);
 
+// ── page shapes (OPS-XREPO-CI-CANARY-DARK-W2) ──
+
+const stripComments = (html) => String(html ?? '').replace(/<!--[\s\S]*?-->/g, '');
+
+/** The ids of every PAGE_SHAPES entry this markup carries the marker of (0, 1 or more). */
+export function pageShapes(html) {
+  const raw = String(html ?? '');
+  const stripped = stripComments(raw);
+  return PAGE_SHAPES.filter((s) => (s.comments_stripped ? stripped : raw).includes(s.marker)).map((s) => s.id);
+}
+
+/** One (status, conclusion) → its STATE_VOCAB entry, or null (UNMEASURED; also when ambiguous). */
+export function classifyState(state) {
+  const st = state !== null && typeof state === 'object' ? state : {};
+  const absent = st.conclusion === undefined || st.conclusion === null;
+  const hits = STATE_VOCAB.filter((e) => e.status === st.status && (e.conclusion === null ? absent : e.conclusion === st.conclusion));
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/** A vendor token rendered inside a guard: [A-Za-z0-9_] only, bounded, `none` when absent. */
+const stateToken = (v) => (v === undefined || v === null ? 'none' : String(v).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64) || 'none');
+
+/**
+ * The React page's ONE workflowRunsRoute, or the shape guard that refuses it. Every embeddedData script is
+ * read; exactly one may carry the route (two → ambiguous, none → unparseable).
+ */
+function reactRoute(html) {
+  const re = new RegExp(`${PAGE_SHAPES.find((s) => s.id === 'react_embedded_v1').marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)</script>`, 'g');
+  const routes = [];
+  for (const m of String(html ?? '').matchAll(re)) {
+    let data;
+    try { data = JSON.parse(m[1]); } catch { continue; }
+    const route = data !== null && typeof data === 'object' && data.payload !== null && typeof data.payload === 'object' ? data.payload.workflowRunsRoute : undefined;
+    if (route !== null && typeof route === 'object' && !Array.isArray(route)) routes.push(route);
+  }
+  if (routes.length > 1) return { route: null, guard: 'page_shape_ambiguous' };
+  if (routes.length === 0) return { route: null, guard: 'page_shape_unparseable' };
+  const route = routes[0];
+  if (route.workflowRuns !== undefined && !Array.isArray(route.workflowRuns)) return { route: null, guard: 'page_shape_unparseable' };
+  // Ruling Q1 (i): an empty list OMITS workflowRuns (measured) — but a page that ALSO says runs exist is
+  // contradicting itself (a renamed key, a lazy-loaded list) and is never read as "GitHub lists no runs".
+  // Measured empty pages carry no totalCount at all; any present value other than 0 is that contradiction.
+  const runs = route.workflowRuns ?? [];
+  if (runs.length === 0 && 'totalCount' in route && route.totalCount !== 0) return { route: null, guard: 'page_shape_unparseable' };
+  return { route, guard: null };
+}
+
+/**
+ * One React run → the SAME row object parsePage returns. Identity fails CLOSED (R1.2): unless the run's
+ * own fields name THIS repo's run of THIS workflow, it carries no run id, number, name or start, so it can
+ * never bind (row_identity_unreadable) and never feeds the monotonic floor or Leg B's recency.
+ */
+function reactRow(run, { repo = null, workflow = null } = {}) {
+  const r = run !== null && typeof run === 'object' ? run : {};
+  const entry = classifyState(r.state);
+  const id = r.id;
+  const identity = typeof id === 'string' && /^\d+$/.test(id)
+    && Number.isInteger(r.runNumber)
+    && typeof r.workflowName === 'string' && r.workflowName.trim() !== ''
+    && typeof workflow === 'string' && r.workflowFilePath === `.github/workflows/${workflow}`
+    && typeof repo === 'string' && typeof r.runUrl === 'string' && r.runUrl.endsWith(`/${repo}/actions/runs/${id}`);
+  const started = r.createdAt !== null && typeof r.createdAt === 'object' && typeof r.createdAt.timestamp === 'string' && r.createdAt.timestamp !== '' ? r.createdAt.timestamp : null;
+  const st = r.state !== null && typeof r.state === 'object' ? r.state : {};
+  return {
+    run_id: identity ? id : null,
+    run_number: identity ? r.runNumber : null,
+    name: identity ? r.workflowName.trim() : null,
+    aria_run_number: null,
+    started_at: identity ? started : null,
+    icon_class: null,
+    state: entry ? entry.state : 'unmeasured',
+    cls: entry ? entry.cls : 'unmeasured',
+    ...(entry ? {} : { unmeasured_reason: `state_unmeasured:${stateToken(st.status)}/${stateToken(st.conclusion)}` }),
+  };
+}
+
+/** React page → { guard, rows } (newest first, as served). */
+export function parseReactPage(html, ctx = {}) {
+  const { route, guard } = reactRoute(html);
+  if (guard) return { guard, rows: [] };
+  return { guard: null, rows: (route.workflowRuns ?? []).map((run) => reactRow(run, ctx)) };
+}
+
+/** Exactly one reader per PAGE_SHAPES id (the self-test pins the pairing). */
+const SHAPE_READERS = {
+  legacy_check_suite_v1: (html) => ({ guard: null, rows: parsePage(html) }),
+  react_embedded_v1: (html, ctx) => parseReactPage(html, ctx),
+};
+export const SHAPE_READER_IDS = Object.keys(SHAPE_READERS);
+
+/**
+ * Any page → { shape, guard, rows }, routed through EXACTLY ONE shape. ctx = { repo, workflow }: the
+ * React identity check needs them; the legacy reader never reads them, so a legacy read is unchanged.
+ */
+export function readPage(html, ctx = {}) {
+  const hits = pageShapes(html);
+  if (hits.length === 0) return { shape: null, guard: 'page_shape_unknown', rows: [] };
+  if (hits.length > 1) return { shape: null, guard: 'page_shape_ambiguous', rows: [] };
+  return { shape: hits[0], ...SHAPE_READERS[hits[0]](html, ctx) };
+}
+
+/** R1.4: the React run's ref is `branch.title`, and its two renders (name, title) must agree. */
+function reactRefOfRun(html, runId) {
+  const { route, guard } = reactRoute(html);
+  if (guard) return { ref: null, reason: 'ref_missing' };
+  const run = (route.workflowRuns ?? []).find((r) => r !== null && typeof r === 'object' && r.id === String(runId));
+  if (!run || run.branch === null || run.branch === undefined) return { ref: null, reason: 'ref_missing' };
+  const b = typeof run.branch === 'object' ? run.branch : {};
+  const t = typeof b.title === 'string' ? b.title.trim() : '';
+  if (!t || (b.name !== `refs/heads/${t}` && b.name !== `refs/tags/${t}`)) return { ref: null, reason: 'ref_unparseable' };
+  if (!REF_RE.test(t) || t.includes('..')) return { ref: null, reason: 'ref_out_of_vocabulary' };
+  return { ref: t, reason: null };
+}
+
 /**
  * The ref a run row was run on — ruling Q9. Read from the row's own `branch-name` element(s): the
  * `title` attribute is the SHORT ref name (`main`, `v1.31.1`), a structured field, never prose. A row
@@ -368,6 +612,8 @@ const publicRow = (r) => (r ? { run_id: r.run_id, run_number: r.run_number, name
  * Kept OUT of parsePage on purpose: a named-branch read never calls it, so its output is unchanged.
  */
 export function refOfRun(html, runId) {
+  const shapes = pageShapes(html);
+  if (shapes.length === 1 && shapes[0] === 'react_embedded_v1') return reactRefOfRun(html, runId);
   const parts = String(html ?? '').replace(/<!--[\s\S]*?-->/g, '').split('id="check_suite_').slice(1);
   const chunk = parts.find((c) => {
     const a = /<a\b[^>]*\bhref="\/[^"/]+\/[^"/]+\/actions\/runs\/(\d+)"/.exec(c);
@@ -393,18 +639,25 @@ export function newestTerminal(rows) {
     if (r.cls === 'nonterminal') continue;
     if (r.cls === 'success' || r.cls === 'failure') return { row: r, reason: null };
     if (r.cls === 'unbound') return { row: null, reason: `terminal_unbound:${r.state}` };
-    return { row: null, reason: 'icon_unmeasured' };
+    // A React row names WHICH (status, conclusion) went unmeasured; a legacy row carries no such field.
+    return { row: null, reason: r.unmeasured_reason ?? 'icon_unmeasured' };
   }
   return { row: null, reason: 'no_terminal_row' };
 }
 
-/** One page read → { http, content_type, bytes, rows_parsed, guard, newest, newest_terminal, terminal }. */
-export function evaluatePage({ http, body, contentType }, { minRunId = null } = {}) {
+/**
+ * One page read → { http, content_type, bytes, rows_parsed, guard, newest, newest_terminal, terminal }.
+ * ctx { repo, workflow } feeds the React identity check (OPS-XREPO-CI-CANARY-DARK-W2); a legacy page never reads it.
+ */
+export function evaluatePage({ http, body, contentType }, { minRunId = null, repo = null, workflow = null } = {}) {
   const page = { http, content_type: contentType ?? null, bytes: body ? Buffer.byteLength(body) : 0, rows_parsed: 0, guard: null, newest: null, newest_terminal: null, terminal: null };
   if (http !== 200) { page.guard = `http_${http ?? 'none'}`; return page; }
   if (!/html/i.test(contentType ?? '')) { page.guard = 'content_type'; return page; }
-  const rows = parsePage(body);
+  const read = readPage(body, { repo, workflow });
+  const rows = read.rows;
   page.rows_parsed = rows.length;
+  if (read.guard) { page.guard = read.guard; return page; }
+  // A known shape listing zero runs: since ruling Q1 this MEANS "GitHub lists no runs" (class `empty`).
   if (rows.length === 0) { page.guard = 'vacuity'; return page; }
   page.newest = publicRow(rows[0]);
   if (minRunId !== null && rows[0].run_id !== null && BigInt(rows[0].run_id) < BigInt(minRunId)) { page.guard = 'monotonic'; return page; }
@@ -602,7 +855,7 @@ export function readConclusion(input, opts = {}) {
       // page's newest TERMINAL row, (2) its ref from the row's own branch-name element, (3) both
       // instruments re-read ON that ref and bound exactly as a named branch. Never a cross-run bind.
       const rr = fetchDoc(pUrl, 'html', readNo, cb ? bust(pUrl, epoch, readNo) : pUrl);
-      const anyPage = evaluatePage({ http: rr.http, body: rr.body, contentType: rr.contentType }, { minRunId: floorOf(pUrl) });
+      const anyPage = evaluatePage({ http: rr.http, body: rr.body, contentType: rr.contentType }, { minRunId: floorOf(pUrl), repo: input.repo, workflow: input.workflow });
       raise(pUrl, anyPage);
       const src = anyPage.newest_terminal;
       const got = anyPage.terminal ? refOfRun(rr.body, anyPage.terminal.run_id) : { ref: null, reason: `ref_page_${anyPage.guard ?? 'unavailable'}` };
@@ -627,8 +880,11 @@ export function readConclusion(input, opts = {}) {
     const b = fetchDoc(readB, 'svg', readNo, cb ? bust(readB, epoch, readNo) : readB);
     const badge = b.http === 200 ? parseBadge(b.body) : { title: null, name: null, status: null, state: null, reason: `badge_http_${b.http}` };
     const pr = fetchDoc(readP, 'html', readNo, cb ? bust(readP, epoch, readNo) : readP);
-    let page = evaluatePage({ http: pr.http, body: pr.body, contentType: pr.contentType }, { minRunId: floorOf(readP) });
+    let page = evaluatePage({ http: pr.http, body: pr.body, contentType: pr.contentType }, { minRunId: floorOf(readP), repo: input.repo, workflow: input.workflow });
     raise(readP, page);
+    // Ruling Q1 (ii): "GitHub lists no runs" while THIS read's badge names a conclusion is a contradiction —
+    // the badge is the independent witness that a run exists, so the empty page is a shape defect.
+    if (page.guard === 'vacuity' && (badge.state === 'passing' || badge.state === 'failing')) page = { ...page, guard: 'vacuity_badge_has_run' };
     // Any-ref: the ref page must show (at least) the run the ref was RESOLVED from. A ref page that lags behind
     // it (measured: a page keeps a finished run's in-progress icon ≥ 26 s after completion) would otherwise
     // bind an OLDER run on that ref and could AGREE past a failure this same read just saw → record unavailable.
@@ -776,6 +1032,8 @@ export function runCli(argv, { stdout = (s) => process.stdout.write(s), stdin = 
   if (argv[0] === '--parse-badge') { const v = legacyParseBadgeStatus(stdin()); if (v === null) return 1; stdout(v); return 0; }
   if (argv[0] === '--classify-status') { say(legacyClassifyStatus(argv[1] ?? '')); return 0; }
   if (argv[0] === '--parse-page') { const v = legacyParseRunsPage(stdin()); if (v === null) return 1; stdout(v); return 0; }
+  // OPS-XREPO-CI-CANARY-DARK-W2 R1.6: the canary's ONLY source of guard classes.
+  if (argv[0] === '--guard-class') { const c = guardClass(argv[1] ?? ''); say(c); return c === 'unclassified' ? EXIT.INDETERMINATE : 0; }
   const a = parseArgs(argv);
   if (!CLASSES.includes(a.cls) || a.unknown || (a.minRunId !== undefined && !/^\d+$/.test(a.minRunId))) {
     say(`  usage: --repo R --workflow W (--branch B | --any-ref) [--min-run-id N] --class ${CLASSES.join('|')}`);
@@ -838,6 +1096,33 @@ export function fixturePage(rows) {
   return `<html><body><select-panel>${PRE_ROW_CHROME}</select-panel><div class="Box">\n${rows.join('\n')}\n</div></body></html>`;
 }
 export const fixtureBadge = (name, status) => `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="20"><title>${name} - ${status}</title><g></g></svg>`;
+
+/**
+ * One React run, field for field the shape captured 2026-10-22 (tests/fixtures/gh-run-conclusion/
+ * page-*-react-20261022.html). `conclusion: null` omits the key, as GitHub does for a non-COMPLETED run.
+ */
+export function fixtureReactRun({ repo = 'AlgoVaultLabs/algovault-skills', workflow = 'marketplace-check.yml', runId, runNumber, name = 'Marketplace Health Check', started = '2026-10-21T13:08:27Z', status = 'COMPLETED', conclusion = status === 'COMPLETED' ? 'SUCCESS' : null, ref = 'main' } = {}) {
+  return {
+    name, runNumber, id: runId, workflowFilePath: `.github/workflows/${workflow}`, runUrl: `https://github.com/${repo}/actions/runs/${runId}`,
+    title: name, titleHtml: { value: name }, workflowName: name,
+    actions: { workflowFileUrl: `/${repo}/actions/runs/${runId}/workflow` },
+    description: { primaryText: 'Scheduled', actorName: 'actor', actorUrl: '/actor', actorType: 'WORKFLOW_RUN_ACTOR_TYPE_USER' },
+    state: { status: RS(status), ...(conclusion === null ? {} : { conclusion: RC(conclusion) }) },
+    createdAt: { timestamp: started, isCurrentYear: true },
+    branch: ref === null ? null : { name: `refs/${/^v\d/.test(ref) ? 'tags' : 'heads'}/${ref}`, url: `/${repo}/tree/refs/${/^v\d/.test(ref) ? 'tags' : 'heads'}/${ref}`, title: ref },
+    timing: { kind: 'WORKFLOW_RUN_TIMING_KIND_DURATION', text: '1m 9s' }, aliveChannel: 'SCRUBBED',
+  };
+}
+
+/**
+ * A React page around `runs` (undefined = the key ABSENT, as an empty list is served). `route` overrides
+ * route fields (e.g. { totalCount: 3 }); `raw` replaces the whole JSON text (e.g. truncated).
+ */
+export function fixtureReactPage(runs, { route = {}, raw } = {}) {
+  const r = { ...(runs === undefined ? {} : { workflowRuns: runs }), aliveChannel: 'SCRUBBED', header: {}, title: 'Workflow runs', totalPages: 1, workflowExists: true, ...(runs === undefined ? {} : { totalCount: runs.length }), ...route };
+  const json = raw ?? JSON.stringify({ payload: { workflowRunsRoute: r, workflowsLayoutRoute: {}, repoLayoutRoute: {} }, title: 'Workflow runs', appPayload: {}, meta: {} });
+  return `<html><head><meta name="react-app-name" content="actions-workflows"></head><body><react-app app-name="actions-ui"><script type="application/json" data-target="react-app.embeddedData">${json}</script></react-app></body></html>`;
+}
 
 /** An in-memory fetch keyed by (url, read). `seq[url]` = [read1, read2, …]; the last repeats. */
 export function memoryFetch(seq) {
@@ -945,7 +1230,9 @@ export function selfTest({ log = (s) => console.log(s) } = {}) {
   check('entities decode symmetrically (badge "A &amp; B" == row "A &amp; B")', read({ [B]: [badge('passing', 'A &amp; B')], [P]: [page(fixtureRow({ runId: '1', runNumber: 1, name: 'A &amp; B' }))] }).row === 1);
 
   log('── guards: each UNCORROBORATED with a named reason ──');
-  check('vacuity: a 200 with bytes and zero rows', read({ [B]: [badge('passing')], [P]: [{ body: '<html><body><div class="blankslate">There are no workflow runs yet.</div></body></html>' }] }).page.guard === 'vacuity');
+  // OPS-XREPO-CI-CANARY-DARK-W2: a 200 carrying NEITHER shape's marker is no longer "zero rows" — it is
+  // a page this reader has no declared shape for (the 2026-10-14 redesign read as `vacuity` for 8 days).
+  check('a 200 with bytes and NO known shape → page_shape_unknown (never vacuity)', read({ [B]: [badge('passing')], [P]: [{ body: '<html><body><div class="blankslate">There are no workflow runs yet.</div></body></html>' }] }).page.guard === 'page_shape_unknown');
   check('content-type: a 200 that is not HTML', read({ [B]: [badge('passing')], [P]: [{ body: fixturePage([r144()]), contentType: 'application/atom+xml' }] }).page.guard === 'content_type');
   check('monotonic: a run id older than --min-run-id', read({ [B]: [badge('passing')], [P]: [page(r144())] }, { minRunId: '37117281597' }).page.guard === 'monotonic');
   check('monotonic: an equal-or-newer run id passes', read({ [B]: [badge('passing')], [P]: [page(r144())] }, { minRunId: '37017230705' }).row === 1);
@@ -1041,6 +1328,99 @@ export function selfTest({ log = (s) => console.log(s) } = {}) {
     check('an any-ref record prints GHRC_RESOLVED_REF + GHRC_REF_REASON', renderLines(ok.r, 'blocking').includes('GHRC_RESOLVED_REF=v1.31.1') && renderLines(miss.r, 'blocking').includes('GHRC_REF_REASON=ref_missing'));
   }
 
+  log('── page shapes (OPS-XREPO-CI-CANARY-DARK-W2): every page through EXACTLY ONE declared shape ──');
+  {
+    const rr = (o = {}) => fixtureReactRun({ runId: '39605376420', runNumber: 163, ...o });
+    const rp = (runs, opts) => ({ body: fixtureReactPage(runs, opts) });
+    const g = (seq, extra) => read(seq, extra).page.guard;
+    check('PAGE_SHAPES: two measured entries, each with a date + source, each with exactly one reader', PAGE_SHAPES.length === 2 && PAGE_SHAPES.every((s) => /^\d{4}-\d{2}-\d{2}$/.test(s.provenance?.date) && s.provenance?.source && typeof s.marker === 'string') && PAGE_SHAPES.map((s) => s.id).join() === SHAPE_READER_IDS.join());
+    check('a React page routes to react_embedded_v1, a check_suite page to legacy_check_suite_v1', pageShapes(fixtureReactPage([rr()])).join() === 'react_embedded_v1' && pageShapes(fixturePage([r144()])).join() === 'legacy_check_suite_v1');
+    const ok = read({ [B]: [badge('passing')], [P]: [rp([rr()])] });
+    check('row 1 from a React page: AGREE, bound #163 39605376420, started_at = createdAt', ok.row === 1 && ok.bound_run?.run_id === '39605376420' && ok.bound_run?.run_number === 163 && ok.bound_run?.started_at === '2026-10-21T13:08:27Z', `${ok.row}/${ok.page?.guard}`);
+    check('row 2 from a React page: FAILURE → AGREE FAIL, bound', read({ [B]: [badge('failing')], [P]: [rp([rr({ conclusion: 'FAILURE' })])] }).row === 2);
+    check('row 4 from a React page: badge passing + FAILURE → FAIL, record-confirmed', read({ [B]: [badge('passing')], [P]: [rp([rr({ conclusion: 'FAILURE' })])] }).row === 4);
+    check('CANCELLED and STARTUP_FAILURE are failure-class (as on the legacy icons)', read({ [B]: [badge('failing')], [P]: [rp([rr({ conclusion: 'CANCELLED' })])] }).row === 2 && read({ [B]: [badge('failing')], [P]: [rp([rr({ conclusion: 'STARTUP_FAILURE' })])] }).row === 2);
+    check('the same state reads the same class on either shape (STATE_VOCAB ∩ ICON_VOCAB)', STATE_VOCAB.every((s) => { const i = ICON_VOCAB.find((e) => e.state === s.state); return !i || i.cls === s.cls; }));
+    check('every STATE_VOCAB entry carries repo + run id + date + estate|third-party; non-COMPLETED entries carry NO conclusion', STATE_VOCAB.every((e) => e.provenance?.repo && /^\d+$/.test(e.provenance.run_id) && /^\d{4}-\d{2}-\d{2}$/.test(e.provenance.date) && ['estate', 'third-party'].includes(e.provenance.source) && ((e.status === RS('COMPLETED')) === (e.conclusion !== null))));
+    check('ambiguous: a React page that ALSO carries a check_suite row → page_shape_ambiguous', g({ [B]: [badge('passing')], [P]: [{ body: fixtureReactPage([rr()]).replace('</body>', `${r144()}</body>`) }] }) === 'page_shape_ambiguous');
+    check('two embeddedData scripts that BOTH carry the run route → page_shape_ambiguous', g({ [B]: [badge('passing')], [P]: [{ body: fixtureReactPage([rr()]).replace('</body>', `${/<script[\s\S]*<\/script>/.exec(fixtureReactPage([rr()]))[0]}</body>`) }] }) === 'page_shape_ambiguous');
+    check('truncated JSON → page_shape_unparseable', g({ [B]: [badge('passing')], [P]: [rp(undefined, { raw: JSON.stringify({ payload: { workflowRunsRoute: { workflowRuns: [rr()] } } }).slice(0, 120) })] }) === 'page_shape_unparseable');
+    check('a React payload with no workflowRunsRoute → page_shape_unparseable', g({ [B]: [badge('passing')], [P]: [rp(undefined, { raw: JSON.stringify({ payload: { allWorkflowRunsRoute: { workflowRuns: [rr()] } } }) })] }) === 'page_shape_unparseable');
+    check('a workflowRuns that is not an array → page_shape_unparseable', g({ [B]: [badge('passing')], [P]: [rp(undefined, { route: { workflowRuns: { 0: rr() } } })] }) === 'page_shape_unparseable');
+    check('Q1: workflowRuns ABSENT (how GitHub encodes an empty list) + a badge with no conclusion → vacuity (GitHub lists no runs)', g({ [B]: [badge('no status')], [P]: [rp(undefined)] }) === 'vacuity');
+    check('Q1 (i): workflowRuns absent while totalCount says 3 → page_shape_unparseable', g({ [B]: [badge('no status')], [P]: [rp(undefined, { route: { totalCount: 3 } })] }) === 'page_shape_unparseable');
+    check('Q1 (i): an EMPTY array while totalCount says 3 → page_shape_unparseable', g({ [B]: [badge('no status')], [P]: [rp([], { route: { totalCount: 3 } })] }) === 'page_shape_unparseable');
+    check('Q1 (i): workflowRuns absent with totalCount 0 → vacuity', g({ [B]: [badge('no status')], [P]: [rp(undefined, { route: { totalCount: 0 } })] }) === 'vacuity');
+    const vb = read({ [B]: [badge('passing')], [P]: [rp(undefined)] });
+    check('Q1 (ii): an empty page while the SAME read\'s badge says passing → vacuity_badge_has_run (row 6, never a bind)', vb.page.guard === 'vacuity_badge_has_run' && vb.row === 6 && vb.reason === 'vacuity_badge_has_run' && !('bound_run' in vb), `${vb.row}/${vb.page.guard}`);
+    check('Q1 (ii): …and when it says failing → vacuity_badge_has_run, row 5', (() => { const x = read({ [B]: [badge('failing')], [P]: [rp(undefined)] }); return x.page.guard === 'vacuity_badge_has_run' && x.row === 5; })());
+    log('  · the walk');
+    check('IN_PROGRESS / QUEUED / WAITING newest runs are SKIPPED (no conclusion key); the finished run binds', read({ [B]: [badge('passing')], [P]: [rp([rr({ runId: '39605376423', runNumber: 166, status: 'IN_PROGRESS' }), rr({ runId: '39605376422', runNumber: 165, status: 'QUEUED' }), rr({ runId: '39605376421', runNumber: 164, status: 'WAITING' }), rr()])] }).bound_run?.run_id === '39605376420');
+    const pend = read({ [B]: [badge('passing')], [P]: [rp([rr({ runId: '39605376421', runNumber: 164, status: 'PENDING' }), rr()])] });
+    check('ruling: an UNMEASURED status (PENDING) STOPS the walk → state_unmeasured:<status>/none, never guessed past', pend.page.guard === `state_unmeasured:${RS('PENDING')}/none` && pend.row === 6, pend.page.guard);
+    const tmo = read({ [B]: [badge('failing')], [P]: [rp([rr({ conclusion: 'TIMED_OUT' }), rr({ runId: '39605376419', runNumber: 162 })])] });
+    check('an unknown conclusion (TIMED_OUT, unmeasured) → state_unmeasured, row 5 — the walk stops at it', tmo.page.guard === `state_unmeasured:${RS('COMPLETED')}/${RC('TIMED_OUT')}` && tmo.row === 5, tmo.page.guard);
+    check('a non-COMPLETED run that CARRIES a conclusion is unmeasured', read({ [B]: [badge('passing')], [P]: [rp([rr({ status: 'IN_PROGRESS', conclusion: 'SUCCESS' })])] }).page.guard === `state_unmeasured:${RS('IN_PROGRESS')}/${RC('SUCCESS')}`);
+    check('a COMPLETED run with NO conclusion is unmeasured', read({ [B]: [badge('passing')], [P]: [rp([rr({ conclusion: null })])] }).page.guard === `state_unmeasured:${RS('COMPLETED')}/none`);
+    check('a vendor string with odd characters is rendered inside [A-Za-z0-9_] only', (() => { const x = read({ [B]: [badge('passing')], [P]: [rp([{ ...rr(), state: { status: 'X Y"<z>', conclusion: 'a/b' } }])] }); return x.page.guard === 'state_unmeasured:X_Y__z_/a_b'; })());
+    check('SKIPPED newest run → terminal_unbound:skipped (the walk stops)', read({ [B]: [badge('failing')], [P]: [rp([rr({ conclusion: 'SKIPPED' }), rr({ runId: '39605376419', runNumber: 162, conclusion: 'FAILURE' })])] }).page.guard === 'terminal_unbound:skipped');
+    check('ACTION_REQUIRED → terminal_unbound:action_required', read({ [B]: [badge('failing')], [P]: [rp([rr({ conclusion: 'ACTION_REQUIRED' })])] }).page.guard === 'terminal_unbound:action_required');
+    check('only in-flight runs → no_terminal_row', read({ [B]: [badge('passing')], [P]: [rp([rr({ status: 'IN_PROGRESS' })])] }).page.guard === 'no_terminal_row');
+    log('  · identity fails CLOSED');
+    const idg = (run) => read({ [B]: [badge('passing')], [P]: [rp([run])] }).page.guard;
+    const { workflowFilePath: _wfp, ...noPath } = rr();
+    check('drop workflowFilePath → row_identity_unreadable', idg(noPath) === 'row_identity_unreadable');
+    check('another workflow\'s file path → row_identity_unreadable', idg({ ...rr(), workflowFilePath: '.github/workflows/deploy.yml' }) === 'row_identity_unreadable');
+    check('a runUrl for another repo → row_identity_unreadable', idg({ ...rr(), runUrl: 'https://github.com/o/other/actions/runs/39605376420' }) === 'row_identity_unreadable');
+    check('a runUrl naming another run id → row_identity_unreadable', idg({ ...rr(), runUrl: 'https://github.com/AlgoVaultLabs/algovault-skills/actions/runs/1' }) === 'row_identity_unreadable');
+    check('a NUMERIC id (unmeasured form) → row_identity_unreadable', idg({ ...rr(), id: 39605376420 }) === 'row_identity_unreadable');
+    check('a runNumber that is not an integer → row_identity_unreadable', idg({ ...rr(), runNumber: '163' }) === 'row_identity_unreadable');
+    check('an empty workflowName → row_identity_unreadable', idg({ ...rr(), workflowName: '  ' }) === 'row_identity_unreadable');
+    check('the badge names another workflow than workflowName → row 7 (DISAGREE)', read({ [B]: [badge('passing', 'Deploy to Hetzner')], [P]: [rp([rr()])] }).row === 7);
+    check('an identity-failed newest row never feeds the monotonic floor or Leg B (no newest run id)', read({ [B]: [badge('passing')], [P]: [rp([noPath])] }, { minRunId: '99999999999' }).page.newest?.run_id === null);
+    check('monotonic on a React page: a newest run older than --min-run-id', read({ [B]: [badge('passing')], [P]: [rp([rr()])] }, { minRunId: '39605376421' }).page.guard === 'monotonic');
+    log('  · any ref on the React shape (ruling Q9, R1.4)');
+    const NPM = { repo: 'AlgoVaultLabs/crypto-quant-signal-mcp', workflow: 'publish-npm.yml', branch: null };
+    const nr = (o) => fixtureReactRun({ repo: NPM.repo, workflow: NPM.workflow, name: 'Publish to npm', ...o });
+    const t29 = nr({ runId: '37201506699', runNumber: 29, ref: 'v1.31.1', started: '2026-10-04T12:15:56Z' });
+    const m28 = nr({ runId: '37182060859', runNumber: 28, ref: 'main' });
+    const anyPg = fixtureReactPage([t29, m28]);
+    check('refOfRun reads branch.title of THAT run (#29 → v1.31.1, #28 → main)', refOfRun(anyPg, '37201506699').ref === 'v1.31.1' && refOfRun(anyPg, '37182060859').ref === 'main');
+    check('branch: null → ref_missing', refOfRun(fixtureReactPage([{ ...t29, branch: null }]), '37201506699').reason === 'ref_missing');
+    check('name and title disagree (two renders) → ref_unparseable', refOfRun(fixtureReactPage([{ ...t29, branch: { ...t29.branch, name: 'refs/tags/v1.31.0' } }]), '37201506699').reason === 'ref_unparseable');
+    check('a slash ref → ref_out_of_vocabulary', refOfRun(fixtureReactPage([{ ...t29, branch: { name: 'refs/heads/feature/x', title: 'feature/x' } }]), '37201506699').reason === 'ref_out_of_vocabulary');
+    const anyRec = safe(() => readConclusion({ ...NPM, cls: 'blocking' }, { fetchDoc: memoryFetch({ [actionsUrl(NPM)]: [{ body: anyPg }], [badgeUrl({ ...NPM, branch: 'v1.31.1' })]: [badge('passing', 'Publish to npm')], [actionsUrl({ ...NPM, branch: 'v1.31.1' })]: [{ body: fixtureReactPage([t29]) }] }), sleep: noSleep, reads: 3, spacingS: 60, host: DEFAULT_HOST }));
+    check('an any-ref read on React pages resolves v1.31.1 and binds #29, row 1', anyRec.row === 1 && anyRec.resolved_ref === 'v1.31.1' && anyRec.bound_run?.run_id === '37201506699', `${anyRec.row}/${anyRec.reason}`);
+    log('  · --parse-page on the React shape (R1.5)');
+    check('--parse-page: the React newest run → "<n>|<id>|<iso>"', legacyParseRunsPage(fixtureReactPage([rr()])) === '163|39605376420|2026-10-21T13:08:27Z');
+    check('--parse-page refuses an empty React list, a page with both shapes, and a numeric id', legacyParseRunsPage(fixtureReactPage(undefined)) === null && legacyParseRunsPage(fixtureReactPage([rr()]).replace('</body>', `${r144()}</body>`)) === null && legacyParseRunsPage(fixtureReactPage([{ ...rr(), id: 1 }])) === null);
+  }
+
+  log('── GUARD_CLASS (ruling Q2): every reason → exactly one class; --guard-class is the canary\'s only source ──');
+  {
+    const want = {
+      shape: ['page_shape_unknown', 'page_shape_ambiguous', 'page_shape_unparseable', 'vacuity_badge_has_run'],
+      transport: ['http_503', 'http_0', 'http_none', 'content_type'],
+      vocabulary: ['icon_unmeasured', `state_unmeasured:${RS('PENDING')}/none`, 'terminal_unbound:skipped'],
+      identity: ['row_identity_unreadable'], monotonic: ['monotonic'],
+      ref: ['ref_missing', 'ref_unparseable', 'ref_out_of_vocabulary', 'ref_page_behind', 'ref_page_unavailable'],
+      input: ['atom_trap', 'non_canonical_repo', 'non_canonical_workflow', 'non_canonical_branch', 'non_canonical_url', 'branch_undeclared'],
+      empty: ['vacuity', 'ref_page_vacuity'], pending: ['no_terminal_row'],
+      badge: ['badge_unparseable', 'badge_no_status', 'badge_unknown_state', 'badge_http_404'],
+      disagree: ['badge_failing_record_success', 'identity_mismatch'],
+      bound: ['agree_success', 'agree_failure', 'badge_passing_record_failure'],
+    };
+    const miss = Object.entries(want).flatMap(([c, xs]) => xs.filter((x) => guardClass(x) !== c).map((x) => `${x}→${guardClass(x)}≠${c}`));
+    check('every ruling string maps to its ruled class (composites included)', miss.length === 0, miss.join(' '));
+    check('GUARD_CLASSES is exactly the ruled set, and every table class is in it', GUARD_CLASSES.join() === 'badge,disagree,shape,identity,vocabulary,transport,monotonic,ref,input,empty,pending,bound' && [...Object.values(GUARD_CLASS.exact), ...GUARD_CLASS.families.map((f) => f.cls)].every((c) => GUARD_CLASSES.includes(c)));
+    check('a composite takes its INNER class: ref_page_icon_unmeasured → vocabulary, ref_page_http_503 → transport', guardClass('ref_page_icon_unmeasured') === 'vocabulary' && guardClass('ref_page_http_503') === 'transport');
+    check('unknown, empty, non-string and malformed-family reasons are `unclassified`', guardClass('brand_new_guard') === 'unclassified' && guardClass('') === 'unclassified' && guardClass(null) === 'unclassified' && guardClass('http_') === 'unclassified' && guardClass('state_unmeasured:x') === 'unclassified' && guardClass('ref_page_brand_new') === 'unclassified');
+    let o1 = ''; const c1 = runCli(['--guard-class', 'vacuity'], { stdout: (s) => { o1 += s; } });
+    let o2 = ''; const c2 = runCli(['--guard-class', 'brand_new_guard'], { stdout: (s) => { o2 += s; } });
+    let o3 = ''; const c3 = runCli(['--guard-class'], { stdout: (s) => { o3 += s; } });
+    check('--guard-class vacuity → "empty", exit 0; an unknown reason → "unclassified", exit 3; no argument → unclassified, exit 3', o1 === 'empty\n' && c1 === 0 && o2 === 'unclassified\n' && c2 === EXIT.INDETERMINATE && o3 === 'unclassified\n' && c3 === EXIT.INDETERMINATE);
+  }
+
   log('── the fetch seam: canary-identical fixture mangling ──');
   check('mangle = tr -c A-Za-z0-9 _', mangle('https://github.com/o/a/actions/workflows/w.yml?query=branch%3Amain') === 'https___github_com_o_a_actions_workflows_w_yml_query_branch_3Amain');
   check('mangle works per BYTE (a multi-byte char → one _ per byte)', mangle('é') === '__');
@@ -1094,7 +1474,7 @@ export function selfTest({ log = (s) => console.log(s) } = {}) {
   const total = passed + failed;
   log(`self-test: ${passed} passed, ${failed} failed`);
   // WE build this corpus, so a near-empty run means the suite built nothing. REFUSE.
-  if (total < 60) { log(`  ✗ only ${total} checks ran — vacuity guard`); return 'INDETERMINATE'; }
+  if (total < 160) { log(`  ✗ only ${total} checks ran — vacuity guard (measured 162 at OPS-XREPO-CI-CANARY-DARK-W2)`); return 'INDETERMINATE'; }
   return failed > 0 ? 'FAIL' : 'PASS';
 }
 

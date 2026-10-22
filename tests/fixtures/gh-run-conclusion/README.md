@@ -20,3 +20,24 @@ Consumed by `tests/unit/gh-run-conclusion.test.ts` (OPS-XREPO-CI-RED-W1 CH2). Th
 `csrf`, `visitor-payload` / `visitor-hmac`, `request-id`, the HMAC tail of every `data-channel`, every
 `data-hydro-*-hmac`, and response cookies — each replaced with `SCRUBBED`. The test file re-asserts it.
 Provenance and the measurement record: vault `audits/OPS-XREPO-CI-RED-W1-endpoint-truth.md`.
+
+## React captures — 2026-10-22 (OPS-XREPO-CI-CANARY-DARK-W2 R1.0 / R1.7)
+
+GitHub moved the workflow Actions page to a React app between 2026-10-14T16:13:06Z and 16:45:08Z: the runs
+now ship as JSON in `<script type="application/json" data-target="react-app.embeddedData">` at
+`payload.workflowRunsRoute.workflowRuns[]`, and the page carries no `id="check_suite_` row at all. These
+are the `react_embedded_v1` entry of `PAGE_SHAPES`. Each file's first line is its full provenance comment.
+
+| File | What it is | Source |
+|---|---|---|
+| `page-marketplace-check-main-react-20261022.html` | FULL live page; 25 runs, newest #163 `39605376420` COMPLETED/SUCCESS | `AlgoVaultLabs/algovault-skills` `marketplace-check.yml?query=branch%3Amain`, fetched 2026-10-22T12:40Z **from signal-1** with the module's own curl argv, unauthenticated |
+| `page-publish-lane-preverify-main-react-20261022.html` | FULL live page; 25 runs, newest #97 `39770507067` COMPLETED/SUCCESS | `AlgoVaultLabs/crypto-quant-signal-mcp` `publish-lane-preverify.yml?query=branch%3Amain`, same vantage + time |
+| `page-regenerate-landing-main-react-20261022.html` | FULL live page; 12 runs, newest #12 `29813826072` COMPLETED/SUCCESS carrying `branch: null` (a named-branch read never needs it; an any-ref read of it would be `ref_missing`) | `regenerate-landing.yml?query=branch%3Amain`, same vantage + time |
+| `page-deploy-main-react-20261022.html` | FULL live page; 25 runs, newest #1128 `39775273116` COMPLETED/SUCCESS — deploy-drift's attribution read | `deploy.yml?query=branch%3Amain`, same vantage + time |
+| `page-publish-npm-anyref-react-20261022.html` | FULL live ANY-REF page (no query); newest #29 `37201506699` with `branch {name: refs/tags/v1.31.1, title: v1.31.1}` — the ref ruling Q9 resolves from | `publish-npm.yml`, same vantage + time |
+| `page-publish-npm-v1.31.1-react-20261022.html` | the RESOLVED ref page: exactly 1 run, #29 `37201506699` | `publish-npm.yml?query=branch%3Av1.31.1`, fetched 2026-10-22 ~12:45Z from the Mac, plain unauthenticated curl |
+| `page-marketplace-check-nosuchbranch-react-20261022.html` | an EMPTY run list: `workflowRunsRoute` with NO `workflowRuns` and NO `totalCount` (`workflowExists` kept) — how GitHub encodes "no runs" (R1.0 P17; ruling Q1 → `vacuity`) | `marketplace-check.yml?query=branch%3Ano-such-branch-ghrc-probe`, Mac, ~12:45Z |
+
+Scrubbed like the 2026-10-03 set, plus the React-only carriers: every JSON `*hmac` value and the HMAC tail
+of every `aliveChannel` (`<base64>--<hex>` → `<base64>--SCRUBBED`). The test file re-asserts both.
+Provenance and the measurement record: vault `audits/OPS-XREPO-CI-CANARY-DARK-W2-endpoint-truth.md`.

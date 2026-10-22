@@ -25,6 +25,8 @@ import {
   BIND_TABLE, CLASSES, EXIT, ICON_VOCAB, TOKEN, RECOVER_DEFAULTS, EPISODE_ENVELOPE, CACHE_BUSTER,
   readConclusion, verdictFor, parsePage, parseBadge, classifyIcon, mangle, badgeUrl, actionsUrl,
   memoryFetch, fixturePage, fixtureBadge, fixtureRow, spanCoversEnvelope, refOfRun, renderLines,
+  PAGE_SHAPES, STATE_VOCAB, SHAPE_READER_IDS, GUARD_CLASS, GUARD_CLASSES, guardClass, pageShapes, classifyState,
+  tokenFor, runCli, fixtureReactRun, fixtureReactPage,
 } from '../../ops/monitoring/gh-run-conclusion.mjs';
 import ts from 'typescript';
 
@@ -52,7 +54,7 @@ describe('gh-run-conclusion — self-test', () => {
     expect(r.stdout.trimEnd().split('\n').pop()).toBe(`${TOKEN}=PASS`);
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/self-test: (\d+) passed, 0 failed/);
-    expect(Number(/self-test: (\d+) passed/.exec(r.stdout)![1])).toBeGreaterThanOrEqual(60);
+    expect(Number(/self-test: (\d+) passed/.exec(r.stdout)![1])).toBeGreaterThanOrEqual(160); // measured 162 (OPS-XREPO-CI-CANARY-DARK-W2)
   });
 
   it('the derived-span law refuses a 30 s spacing (M6b direction): (3 − 1) × 30 ≤ 97', { timeout: 60_000 }, () => {
@@ -223,7 +225,8 @@ describe('the incidents, replayed on REAL captured markup', () => {
 
   it('AC10 — guards: each UNCORROBORATED with a named reason; an unreadable badge is UNREADABLE', () => {
     const okBadge = { [B]: [titleBadge('Marketplace Health Check', 'passing')] };
-    expect(read(MC, { ...okBadge, [P]: [{ body: '<html><body><div class="blankslate">There are no workflow runs yet.</div></body></html>' }] }).page.guard).toBe('vacuity');
+    // A body with NEITHER shape's marker is a shape this reader never measured — not "zero runs" (DARK-W2 R1.1).
+    expect(read(MC, { ...okBadge, [P]: [{ body: '<html><body><div class="blankslate">There are no workflow runs yet.</div></body></html>' }] }).page.guard).toBe('page_shape_unknown');
     expect(read(MC, { ...okBadge, [P]: [{ body: FULL, contentType: 'image/svg+xml' }] }).page.guard).toBe('content_type');
     expect(read(MC, { ...okBadge, [P]: [{ body: FULL }] }, { minRunId: '37117281597' }).page.guard).toBe('monotonic');
     const atom = read({ ...MC, workflow: 'marketplace-check.yml.atom' }, { ...okBadge, [P]: [{ body: FULL }] });
@@ -421,6 +424,8 @@ describe('the vocabulary is measured DATA — every entry is backed by a committ
       expect(s, f).not.toMatch(/data-hydro-(click|view)-hmac="(?!SCRUBBED)[0-9a-f]{16,}"/);
       expect(s, f).not.toMatch(/[A-Za-z0-9._%+-]+@(gmail|yahoo|outlook|hotmail|proton)\.[a-z]+/);
       expect(s, f).not.toMatch(/data-nonce="(?!SCRUBBED")[^"]+"/);
+      // DARK-W2: the React payload's per-run live channel is `<base64>--<hex HMAC>`; the tail is scrubbed.
+      expect(s, f).not.toMatch(/aliveChannel(&quot;|")\s*:\s*(&quot;|")[^"&]*--(?!SCRUBBED)[0-9a-f]{16,}/);
       expect(s, f).not.toMatch(/auth_hydro_click_hmac(&quot;|")\s*:\s*(&quot;|")(?!SCRUBBED)[^&"]+/);
       expect(s, f).not.toMatch(/(nonce|hmac|token)(&quot;|["'])?\s*[:=]\s*(&quot;|["'])(?!SCRUBBED)[A-Za-z0-9+/_:=-]{16,}/i);
     }
@@ -438,7 +443,8 @@ describe('byte parity with the canary (the CH3 shims delegate here)', () => {
     return all;
   };
   const corpusPages = [
-    ...readdirSync(FX).filter((f) => f.endsWith('.html')).map((f) => fx(f)),
+    // LEGACY captures only: the bash reference never read the React shape (R1.5 — pinned in the DARK-W2 block below).
+    ...readdirSync(FX).filter((f) => f.endsWith('.html') && !f.includes('-react-')).map((f) => fx(f)),
     '<div id="check_suite_1"><a href="/o/a/actions/runs/35616111211" aria-label="failed:  Run 131 of Marketplace Health Check."></a><relative-time     datetime="2026-09-21T15:01:35Z"></relative-time></div>',
     '<div id="check_suite_1"><a href="/o/a/actions/runs/9" aria-label="failed:  Run 1 of X."></a></div>',
     '<div id="check_suite_1"><a aria-label="failed:  Run 1 of X."></a><relative-time datetime="2026-01-01T00:00:00Z"></relative-time></div>',
@@ -688,3 +694,416 @@ describe('the inventory row — same commit as the module', () => {
   });
 });
 
+
+// ═══════════════════ OPS-XREPO-CI-CANARY-DARK-W2 (2026-10-22) — the React Actions page ═══════════════════
+// GitHub moved the workflow Actions page to a React app on 2026-10-14 (16:13:06Z → 16:45:08Z). Every page
+// read `vacuity` for eight days: the module looked only for `id="check_suite_` rows, and a page with none
+// is "zero runs". These blocks pin the fix on REAL captures (signal-1, 2026-10-22T12:40Z), the frozen
+// legacy behaviour, and the guard → class table the canary now derives its dark cause from.
+
+const NPM_ANY = { repo: 'AlgoVaultLabs/crypto-quant-signal-mcp', workflow: 'publish-npm.yml', branch: null };
+const RL = { repo: 'AlgoVaultLabs/crypto-quant-signal-mcp', workflow: 'regenerate-landing.yml', branch: 'main' };
+const DEP = { repo: 'AlgoVaultLabs/crypto-quant-signal-mcp', workflow: 'deploy.yml', branch: 'main' };
+
+describe('DARK-W2 — the React Actions page, on REAL captures (R1.0 / R1.2 / R1.7)', () => {
+  const REACT = readdirSync(FX).filter((f) => f.includes('-react-'));
+  // [capture, input, real badge body or null, workflowName, newest run id, run number]
+  const CAPTURES: Array<[string, typeof MC, string | null, string, string, number]> = [
+    ['page-marketplace-check-main-react-20261022.html', MC, 'badge-passing-marketplace-check-main.svg', 'Marketplace Health Check', '39605376420', 163],
+    ['page-publish-lane-preverify-main-react-20261022.html', PV, 'badge-passing-publish-lane-preverify-main.svg', 'Publish lane pre-verify', '39770507067', 97],
+    ['page-regenerate-landing-main-react-20261022.html', RL, null, 'Regenerate Landing from Manifests', '29813826072', 12],
+    ['page-deploy-main-react-20261022.html', DEP, 'badge-passing-deploy-main.svg', 'Deploy to Hetzner', '39775273116', 1128],
+  ];
+
+  it('seven captures, each routed through EXACTLY the React shape, none carrying a legacy row', () => {
+    expect(REACT.length).toBe(7);
+    for (const f of REACT) {
+      expect(pageShapes(fx(f)), f).toEqual(['react_embedded_v1']);
+      expect(fx(f), f).not.toMatch(/id="check_suite_/);
+    }
+  });
+
+  for (const [f, input, badgeFile, name, id, n] of CAPTURES) {
+    it(`${f}: a passing badge binds row 1 to #${n} ${id}, PASS in every class`, () => {
+      const badge = badgeFile ? { body: fx(badgeFile) } : titleBadge(name, 'passing');
+      const rec = read(input, { [badgeUrl(input)]: [badge], [actionsUrl(input)]: [{ body: fx(f) }] });
+      expect([rec.row, rec.agreement, rec.reads]).toEqual([1, 'AGREE', 1]);
+      expect(rec.bound_run).toMatchObject({ run_id: id, run_number: n });
+      expect(CLASSES.map((c: string) => verdictFor(rec, c))).toEqual(['PASS', 'PASS', 'passing']);
+    });
+    it(`${f}: the SAME page under another workflow's identity never binds (identity fails closed)`, () => {
+      const other = { ...input, workflow: 'other.yml' };
+      const rec = read(other, { [badgeUrl(other)]: [titleBadge(name, 'passing')], [actionsUrl(other)]: [{ body: fx(f) }] });
+      expect(rec.page.guard).toBe('row_identity_unreadable');
+      expect('bound_run' in rec).toBe(false);
+    });
+  }
+
+  it('R1.0 identity probe: each real badge <title> name equals its page\'s workflowName', () => {
+    for (const [f, , badgeFile, name] of CAPTURES) {
+      if (!badgeFile) continue;
+      expect(parseBadge(fx(badgeFile)).name, badgeFile).toBe(name);
+      expect(fx(f)).toContain(`"workflowName":"${name}"`);
+    }
+  });
+
+  it('the 2026-10-03 incident shape on the NEW page: a failing badge over a SUCCESS newest run is row 3 — never a RED', () => {
+    const rec = read(MC, { [badgeUrl(MC)]: [titleBadge('Marketplace Health Check', 'failing')], [actionsUrl(MC)]: [{ body: fx(CAPTURES[0][0]) }] });
+    expect([rec.row, rec.agreement, verdictFor(rec, 'alerting'), 'bound_run' in rec]).toEqual([3, 'DISAGREE', 'INDETERMINATE', false]);
+    expect(rec.page.newest_terminal).toMatchObject({ run_id: '39605376420', state: 'success' });
+  });
+
+  it('any ref (ruling Q9) on the React pages: resolved v1.31.1 from branch.title, read ON it, bound #29 — the no-param badge never requested', () => {
+    const v = { ...NPM_ANY, branch: 'v1.31.1' };
+    const seen: string[] = [];
+    const inner = memoryFetch({
+      [actionsUrl(NPM_ANY)]: [{ body: fx('page-publish-npm-anyref-react-20261022.html') }],
+      [badgeUrl(v)]: [{ body: fx('badge-passing-publish-npm-v1.31.1.svg') }],
+      [actionsUrl(v)]: [{ body: fx('page-publish-npm-v1.31.1-react-20261022.html') }],
+    });
+    const rec = readConclusion({ ...NPM_ANY, cls: 'blocking' }, { fetchDoc: (u: string, e: string, n: number, f: string) => { seen.push(u); return inner(u, e, n, f); }, sleep: noSleep, reads: 3, spacingS: 60, env: {}, host: 'https://github.com' });
+    expect([rec.row, rec.resolved_ref, rec.bound_run?.run_id, verdictFor(rec, 'blocking')]).toEqual([1, 'v1.31.1', '37201506699', 'PASS']);
+    expect(seen).not.toContain(badgeUrl(NPM_ANY));
+    expect(refOfRun(fx('page-publish-npm-anyref-react-20261022.html'), '37201506699')).toEqual({ ref: 'v1.31.1', reason: null });
+  });
+
+  it('a run with branch: null (regenerate-landing #12) resolves NO ref — ref_missing, never a guess', () => {
+    expect(refOfRun(fx('page-regenerate-landing-main-react-20261022.html'), '29813826072')).toEqual({ ref: null, reason: 'ref_missing' });
+  });
+
+  it('Q1 on the REAL empty list (workflowRuns + totalCount absent): vacuity under a badge naming no run; vacuity_badge_has_run under a passing one', () => {
+    const nb = { ...MC, branch: 'no-such-branch-ghrc-probe' };
+    const E = { body: fx('page-marketplace-check-nosuchbranch-react-20261022.html') };
+    const v = read(nb, { [badgeUrl(nb)]: [{ body: fx('badge-nostatus-marketplace-check.svg') }], [actionsUrl(nb)]: [E] });
+    expect([v.page.guard, v.row, v.reason]).toEqual(['vacuity', 8, 'badge_no_status']);
+    const vb = read(nb, { [badgeUrl(nb)]: [titleBadge('Marketplace Health Check', 'passing')], [actionsUrl(nb)]: [E] });
+    expect([vb.page.guard, vb.row, vb.reason, 'bound_run' in vb]).toEqual(['vacuity_badge_has_run', 6, 'vacuity_badge_has_run', false]);
+    expect(guardClass(v.page.guard)).toBe('empty');
+    expect(guardClass(vb.page.guard)).toBe('shape');
+  });
+
+  it('--parse-page (R1.5): the React newest run → "<n>|<id>|<iso>"; the empty list → rc 1, no output (Leg B inherits)', { timeout: 60_000 }, () => {
+    const want: Record<string, string> = {
+      'page-marketplace-check-main-react-20261022.html': '163|39605376420|2026-10-21T13:08:27Z',
+      'page-publish-lane-preverify-main-react-20261022.html': '97|39770507067|2026-10-22T11:25:46Z',
+      'page-regenerate-landing-main-react-20261022.html': '12|29813826072|2026-07-21T08:19:17Z',
+      'page-deploy-main-react-20261022.html': '1128|39775273116|2026-10-22T12:03:24Z',
+      'page-publish-npm-anyref-react-20261022.html': '29|37201506699|2026-10-04T12:15:56Z',
+      'page-publish-npm-v1.31.1-react-20261022.html': '29|37201506699|2026-10-04T12:15:56Z',
+      'page-marketplace-check-nosuchbranch-react-20261022.html': '',
+    };
+    expect(Object.keys(want).sort()).toEqual([...REACT].sort());
+    for (const [f, w] of Object.entries(want)) {
+      // stdin from the FILE, never spawnSync's `input` pipe: under a loaded parallel suite that pipe was
+      // measured left open (child blocked in read(0) for 11 min) — a redirect cannot hang.
+      const r = spawnSync('bash', ['-c', 'node "$1" --parse-page < "$2"', '_', MODULE, join(FX, f)], { encoding: 'utf8', timeout: 30_000 });
+      expect([r.stdout, r.status], f).toEqual([w, w ? 0 : 1]);
+    }
+  });
+
+  it('every run on every capture classifies through STATE_VOCAB (no capture carries an unmeasured state)', () => {
+    let runs = 0;
+    for (const f of REACT) {
+      const m = /<script type="application\/json" data-target="react-app\.embeddedData">([\s\S]*?)<\/script>/.exec(fx(f));
+      for (const r of JSON.parse(m![1]).payload.workflowRunsRoute.workflowRuns ?? []) { runs++; expect(classifyState(r.state), `${f} ${r.id}`).not.toBeNull(); }
+    }
+    expect(runs).toBe(25 + 25 + 12 + 25 + 25 + 1);
+  });
+
+  it('STATE_VOCAB is measured DATA: 9 pairs, each with repo + run id + date + source; conclusion iff COMPLETED; same state ⇒ same class as ICON_VOCAB', () => {
+    type SV = { status: string; conclusion: string | null; state: string; cls: string; provenance: { repo: string; run_id: string; date: string; source: string } };
+    const sv = STATE_VOCAB as SV[];
+    expect(sv.map((e) => `${e.status.replace('WORKFLOW_RUN_STATUS_', '')}/${(e.conclusion ?? '-').replace('WORKFLOW_RUN_CONCLUSION_', '')}→${e.cls}`)).toEqual([
+      'COMPLETED/SUCCESS→success', 'COMPLETED/FAILURE→failure', 'COMPLETED/CANCELLED→failure', 'COMPLETED/STARTUP_FAILURE→failure',
+      'COMPLETED/SKIPPED→unbound', 'COMPLETED/ACTION_REQUIRED→unbound', 'IN_PROGRESS/-→nonterminal', 'QUEUED/-→nonterminal', 'WAITING/-→nonterminal',
+    ]);
+    for (const e of sv) {
+      expect(e.provenance.repo).toMatch(/^[\w.-]+\/[\w.-]+$/);
+      expect(e.provenance.run_id).toMatch(/^\d+$/);
+      expect(e.provenance.date).toBe('2026-10-22');
+      expect(['estate', 'third-party']).toContain(e.provenance.source);
+      const icon = (ICON_VOCAB as Array<{ state: string; cls: string }>).find((i) => i.state === e.state);
+      if (icon) expect(icon.cls, e.state).toBe(e.cls);
+    }
+    // ruling correction: TIMED_OUT / NEUTRAL / STALE / PENDING stay UNMEASURED (the walk stops at them)
+    for (const st of [{ status: 'WORKFLOW_RUN_STATUS_COMPLETED', conclusion: 'WORKFLOW_RUN_CONCLUSION_TIMED_OUT' }, { status: 'WORKFLOW_RUN_STATUS_COMPLETED', conclusion: 'WORKFLOW_RUN_CONCLUSION_NEUTRAL' },
+      { status: 'WORKFLOW_RUN_STATUS_COMPLETED', conclusion: 'WORKFLOW_RUN_CONCLUSION_STALE' }, { status: 'WORKFLOW_RUN_STATUS_PENDING' }]) expect(classifyState(st)).toBeNull();
+  });
+
+  it('PAGE_SHAPES: two measured entries, each with provenance and exactly one reader', () => {
+    const ps = PAGE_SHAPES as Array<{ id: string; marker: string; provenance: { date: string; source: string } }>;
+    expect(ps.map((s) => `${s.id}@${s.provenance.date}`)).toEqual(['legacy_check_suite_v1@2026-10-03', 'react_embedded_v1@2026-10-22']);
+    expect(SHAPE_READER_IDS).toEqual(ps.map((s) => s.id));
+    expect(ps.find((s) => s.id === 'react_embedded_v1')!.marker).toBe('<script type="application/json" data-target="react-app.embeddedData">');
+  });
+
+  it('the builders mirror the captures: fixtureReactRun carries exactly the real run\'s keys', () => {
+    const m = /<script type="application\/json" data-target="react-app\.embeddedData">([\s\S]*?)<\/script>/.exec(fx('page-marketplace-check-main-react-20261022.html'));
+    const real = JSON.parse(m![1]).payload.workflowRunsRoute.workflowRuns[0];
+    const built = fixtureReactRun({ runId: '1', runNumber: 1 });
+    expect(Object.keys(built).sort()).toEqual(Object.keys(real).sort());
+    expect(Object.keys(built.branch).sort()).toEqual(Object.keys(real.branch).sort());
+    expect(pageShapes(fixtureReactPage([built]))).toEqual(['react_embedded_v1']);
+  });
+});
+
+describe('DARK-W2 breaks 9 / 10 — every LEGACY read is byte-identical to the frozen pre-React module (963d15ac)', async () => {
+  const FROZEN = join(ROOT, 'tests', 'fixtures', 'gh-run-conclusion-frozen', 'gh-run-conclusion-963d15ac.mjs');
+  const FROZEN_SHA = '87cc57480f67790a810d3cf65349d48236f6e81183167029edfeeec81d9a1303';
+  const frozen = await import(FROZEN);
+  const now = { nowIso: () => '2026-10-22T00:00:00Z', nowEpoch: () => 1792627200 };
+
+  /** One read of `mod`: the record, every class's GHRC_* lines + token, every sleep and every fetch call. */
+  const trace = (mod: typeof frozen, input: object, seq: Record<string, object[]>) => {
+    const calls: string[] = [];
+    const sleeps: number[] = [];
+    const inner = memoryFetch(seq);
+    const rec = mod.readConclusion(input, {
+      fetchDoc: (u: string, e: string, n: number, f: string) => { calls.push(`${u} ${e} ${n} ${f}`); return inner(u, e, n, f); },
+      sleep: (s: number) => sleeps.push(s), reads: 3, spacingS: 60, env: {}, host: 'https://github.com', ...now,
+    });
+    return { rec: JSON.stringify(rec), lines: CLASSES.map((c: string) => mod.renderLines(rec, c).join('\n')), tokens: CLASSES.map((c: string) => mod.tokenFor(rec, c)), sleeps, calls };
+  };
+
+  // The scenario matrix: every legacy page form × badge state × floor × class.
+  const B = badgeUrl(MC);
+  const P = actionsUrl(MC);
+  const MCN = 'Marketplace Health Check';
+  const LEGACY_PAGES: Array<[string, object[]]> = [
+    ['FULL 2026-10-03 capture', [{ body: fx('page-marketplace-check-main-20261003.html') }]],
+    ...readdirSync(FX).filter((f) => f.startsWith('row-') && !f.includes('anyref')).map((f) => [f, [{ body: realPage(fx(f)) }]] as [string, object[]]),
+    ['in_progress over success', [{ body: realPage(fx('row-in_progress-37118831402.html'), fx('row-success-37017230705.html')) }]],
+    ['queued + waiting over failure', [{ body: realPage(fx('row-queued-synth.html'), fx('row-waiting-synth.html'), fx('row-failure-35616111211.html')) }]],
+    ['prose-only row', [{ body: fixturePage([fixtureRow({ runId: '37123657814', runNumber: 145, icon: null })]) }]],
+    ['no #N: subtitle', [{ body: realPage(fx('row-success-37017230705.html').replace(/ #144:/, '')) }]],
+    ['failure then success (stale page)', [{ body: realPage(fx('row-failure-35616111211.html')) }, { body: realPage(fx('row-success-37017230705.html')) }]],
+    ['page 502 then back', [{ http: 502 }, { body: fx('page-marketplace-check-main-20261003.html') }]],
+    ['page 404', [{ http: 404 }]],
+    ['page served as svg', [{ body: fx('page-marketplace-check-main-20261003.html'), contentType: 'image/svg+xml' }]],
+  ];
+  const BADGES: Array<[string, object[]]> = [
+    ['passing', [titleBadge(MCN, 'passing')]], ['failing', [titleBadge(MCN, 'failing')]],
+    ['no status (real)', [{ body: fx('badge-nostatus-marketplace-check.svg') }]], ['wrong workflow', [titleBadge('Deploy to Hetzner', 'passing')]],
+    ['http 500', [{ http: 500 }]], ['failing then passing', [titleBadge(MCN, 'failing'), { body: fx('badge-passing-marketplace-check-main.svg') }]],
+  ];
+  const FLOORS = [null, '37017230705', '37117281597'];
+
+  it('the frozen reference is the untouched pre-React module', () => {
+    expect(createHash('sha256').update(readFileSync(FROZEN)).digest('hex')).toBe(FROZEN_SHA);
+  });
+
+  it(`break 9: record + GHRC_* lines + tokens + sleeps + every fetch call identical across ${LEGACY_PAGES.length} pages × ${BADGES.length} badges × ${FLOORS.length} floors × 3 classes`, { timeout: 120_000 }, () => {
+    let n = 0;
+    for (const [pl, pseq] of LEGACY_PAGES) for (const [bl, bseq] of BADGES) for (const minRunId of FLOORS) for (const cls of CLASSES) {
+      const input = { ...MC, cls, minRunId };
+      const seq = { [B]: bseq, [P]: pseq };
+      expect(trace(readConclusionModule, input, seq), `${pl} | ${bl} | floor ${minRunId} | ${cls}`).toEqual(trace(frozen, input, seq));
+      n++;
+    }
+    expect(n).toBe(LEGACY_PAGES.length * BADGES.length * FLOORS.length * 3);
+  });
+
+  it('break 9: the any-ref legacy reads (ruling Q9 matrix) are identical too', () => {
+    const v = { ...NPM_ANY, branch: 'v1.31.1' };
+    const t29 = fx('row-success-37201506699-anyref.html');
+    const t28 = fx('row-success-37182060859-anyref.html');
+    const seqs: Array<Record<string, object[]>> = [
+      { [actionsUrl(NPM_ANY)]: [{ body: realPage(t29, t28) }], [badgeUrl(v)]: [{ body: fx('badge-passing-publish-npm-v1.31.1.svg') }], [actionsUrl(v)]: [{ body: realPage(t29) }] },
+      { [actionsUrl(NPM_ANY)]: [{ body: realPage(t29.replace(/title="v1\.31\.1"/g, 'title="release/v1.31.1"')) }] },
+      { [actionsUrl(NPM_ANY)]: [{ http: 503 }] },
+      { [actionsUrl(NPM_ANY)]: [{ body: realPage(t29, t28) }], [badgeUrl(v)]: [{ body: fx('badge-failing-publish-npm-anyref.svg') }], [actionsUrl(v)]: [{ http: 502 }] },
+    ];
+    for (const seq of seqs) for (const cls of CLASSES) expect(trace(readConclusionModule, { ...NPM_ANY, cls }, seq)).toEqual(trace(frozen, { ...NPM_ANY, cls }, seq));
+  });
+
+  it('break 9: input defects (refused before any fetch) are identical', () => {
+    for (const bad of [{ ...MC, workflow: 'marketplace-check.yml.atom' }, { ...MC, repo: 'o/a b' }, { repo: MC.repo, workflow: MC.workflow }, { ...MC, branch: 'feature/ü' }]) {
+      expect(trace(readConclusionModule, { ...bad, cls: 'alerting' }, {})).toEqual(trace(frozen, { ...bad, cls: 'alerting' }, {}));
+    }
+  });
+
+  it('the ONE intended legacy delta: a body with NO known shape reads page_shape_unknown where 963d15ac read vacuity — nothing else moves', () => {
+    const seq = { [B]: [titleBadge(MCN, 'passing')], [P]: [{ body: '<html><body><div class="blankslate">There are no workflow runs yet.</div></body></html>' }] };
+    const now2 = trace(readConclusionModule, { ...MC, cls: 'alerting' }, seq);
+    const was = trace(frozen, { ...MC, cls: 'alerting' }, seq);
+    expect(was.rec).toContain('"guard":"vacuity"');
+    const swap = (x: typeof was) => JSON.parse(JSON.stringify(x).replace(/vacuity/g, 'page_shape_unknown'));
+    expect(now2).toEqual(swap(was));
+  });
+
+  it('break 9 through the CLI fixture seam (as the canary invokes it): stdout and exit code identical', { timeout: 120_000 }, () => {
+    const norm = (s: string) => s.replace(/"at":"[^"]*"/g, '"at":"T"').replace(/\b\d{10}-\d\b/g, 'CB');
+    for (const [pl, pseq] of LEGACY_PAGES.slice(0, 4)) for (const [bl, bseq] of BADGES.slice(0, 4)) {
+      const dir = mkdtempSync(join(tmpdir(), 'ghrc-frz-'));
+      try {
+        (bseq as Array<{ body?: string; http?: number }>).forEach((b, i) => writeFileSync(join(dir, `${mangle(B)}.svg${i ? `.${i + 1}` : ''}`), b.body ?? ''));
+        (pseq as Array<{ body?: string }>).forEach((p, i) => writeFileSync(join(dir, `${mangle(P)}.html${i ? `.${i + 1}` : ''}`), p.body ?? ''));
+        const args = ['--repo', MC.repo, '--workflow', MC.workflow, '--branch', 'main', '--class', 'alerting'];
+        const env = { ...process.env, XREPO_CI_FIXTURE_DIR: dir, GHRC_SPACING_S: '0' };
+        const a = spawnSync('node', [MODULE, ...args], { encoding: 'utf8', env });
+        const b = spawnSync('node', [FROZEN, ...args], { encoding: 'utf8', env });
+        expect(b.stdout, `${pl} | ${bl}`).toMatch(/GH_RUN_CONCLUSION_VERDICT=/);
+        expect([norm(a.stdout), a.status], `${pl} | ${bl}`).toEqual([norm(b.stdout), b.status]);
+      } finally { rmSync(dir, { recursive: true, force: true }); }
+    }
+  });
+
+  it('break 10: --parse-page / --parse-badge / --classify-status output and return code identical on the legacy corpus', () => {
+    const pages = [
+      ...readdirSync(FX).filter((f) => f.endsWith('.html') && !f.includes('-react-')).map((f) => fx(f)),
+      '<div id="check_suite_1"><a href="/o/a/actions/runs/9" aria-label="failed:  Run 1 of X."></a></div>',
+      '<html><body>no rows</body></html>', '',
+    ];
+    const badges = [...readdirSync(FX).filter((f) => f.endsWith('.svg')).map((f) => fx(f)), '<svg></svg>', '<svg><title>a - b</title><title>c - d</title></svg>'];
+    const cli = (mod: typeof frozen, argv: string[], input: string) => { let out = ''; const rc = mod.runCli(argv, { stdout: (s: string) => { out += s; }, stdin: () => input }); return [out, rc]; };
+    let n = 0;
+    for (const p of pages) { expect(cli(runCliModule, ['--parse-page'], p)).toEqual(cli(frozen, ['--parse-page'], p)); n++; }
+    for (const s of badges) { expect(cli(runCliModule, ['--parse-badge'], s)).toEqual(cli(frozen, ['--parse-badge'], s)); n++; }
+    for (const t of ['passing', 'failing', 'no status', 'brand new github word', '']) { expect(cli(runCliModule, ['--classify-status', t], '')).toEqual(cli(frozen, ['--classify-status', t], '')); n++; }
+    expect(n).toBeGreaterThan(30);
+  });
+});
+
+/** The live module's surface, as the differential above calls it (same shape as the frozen import). */
+const readConclusionModule = { readConclusion, renderLines, tokenFor, runCli };
+const runCliModule = readConclusionModule;
+
+describe('DARK-W2 R1.6 — GUARD_CLASS covers every reason the CODE can produce (enumerated from the AST, never a hand list)', () => {
+  const SRC = readFileSync(MODULE, 'utf8');
+  type Tpl = { sig: string; spans: string[][] };
+  /** A value written to one of these names can reach the record's `reason` / `page.guard`. */
+  const SINKS = new Set(['reason', 'guard', 'unmeasured_reason', 'defect']);
+  /** Fixture builders and the self-test WRITE sink-named fields as test input; they produce nothing live. */
+  const SKIP_FNS = new Set(['selfTest', 'fixtureRow', 'fixturePage', 'fixtureReactRun', 'fixtureReactPage', 'memoryFetch']);
+
+  const enumerate = (src: string) => {
+    const sf = ts.createSourceFile('m.mjs', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    const lits = new Set<string>();
+    const tpls: Tpl[] = [];
+    const strLeaves = (e: ts.Node): string[] => { const out: string[] = []; const w = (n: ts.Node) => { if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) out.push(n.text); n.forEachChild(w); }; w(e); return out; };
+    const leaves = (e: ts.Expression | undefined): void => {
+      if (!e) return;
+      if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) lits.add(e.text);
+      else if (ts.isTemplateExpression(e)) tpls.push({ sig: e.head.text + e.templateSpans.map((s) => `\${}${s.literal.text}`).join(''), spans: e.templateSpans.map((s) => strLeaves(s.expression)) });
+      else if (ts.isParenthesizedExpression(e)) leaves(e.expression);
+      else if (ts.isConditionalExpression(e)) { leaves(e.whenTrue); leaves(e.whenFalse); }
+      else if (ts.isBinaryExpression(e) && (e.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || e.operatorToken.kind === ts.SyntaxKind.BarBarToken)) { leaves(e.left); leaves(e.right); }
+      // identifiers / property reads / calls carry a value produced at ANOTHER sink, collected there
+    };
+    const nameOf = (n: ts.Node) => (ts.isIdentifier(n) || ts.isStringLiteral(n) ? n.text : ts.isPropertyAccessExpression(n) ? n.name.text : '');
+    const visit = (n: ts.Node, fn: string): void => {
+      if (ts.isFunctionDeclaration(n) && n.name && SKIP_FNS.has(n.name.text)) return;
+      if ((ts.isPropertyAssignment(n) || ts.isVariableDeclaration(n)) && SINKS.has(nameOf(n.name))) leaves(n.initializer);
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && SINKS.has(nameOf(n.left))) leaves(n.right);
+      if (ts.isReturnStatement(n) && fn === 'inputDefect') leaves(n.expression);
+      const next = ts.isFunctionDeclaration(n) && n.name ? n.name.text : fn;
+      n.forEachChild((c) => visit(c, next));
+    };
+    visit(sf, '');
+    return { lits, tpls };
+  };
+
+  /** Templated families, expanded BY RULE (keyed by the template's exact shape). An unknown shape is unruled. */
+  const expand = ({ lits, tpls }: ReturnType<typeof enumerate>, unbound: string[]) => {
+    const base = [...lits];
+    const RULES: Record<string, (spans: string[][]) => string[]> = {
+      'http_${}': (sp) => [...sp[0], '503', '0'].map((x) => `http_${x}`),
+      'badge_http_${}': () => ['404', '500', '0'].map((x) => `badge_http_${x}`),
+      'state_unmeasured:${}/${}': () => ['WORKFLOW_RUN_STATUS_PENDING/none', 'WORKFLOW_RUN_STATUS_COMPLETED/WORKFLOW_RUN_CONCLUSION_TIMED_OUT'].map((x) => `state_unmeasured:${x}`),
+      'terminal_unbound:${}': () => unbound.map((x) => `terminal_unbound:${x}`),
+      'ref_page_${}': () => [],
+    };
+    const out = new Set(base);
+    const unruled: string[] = [];
+    for (const t of tpls) { if (RULES[t.sig]) RULES[t.sig](t.spans).forEach((x) => out.add(x)); else unruled.push(t.sig); }
+    // a composite wraps ANY page guard (and its own literal fallbacks) — expand it over the whole set
+    for (const t of tpls.filter((x) => x.sig === 'ref_page_${}')) for (const g of [...out, ...t.spans[0]]) if (!g.startsWith('ref_page_')) out.add(`ref_page_${g}`);
+    return { all: [...out], unruled };
+  };
+  const UNBOUND = [...new Set([...(ICON_VOCAB as Array<{ state: string; cls: string }>), ...(STATE_VOCAB as Array<{ state: string; cls: string }>)].filter((e) => e.cls === 'unbound').map((e) => e.state))];
+  const audit = (src: string, classify: (r: string) => string = guardClass) => {
+    const en = enumerate(src);
+    const { all, unruled } = expand(en, UNBOUND);
+    return { en, all, unruled, unclassified: all.filter((r) => classify(r) === 'unclassified') };
+  };
+
+  const live = audit(SRC);
+
+  it('the walk is not vacuous: it finds the producers it must, and exactly the five ruled template shapes', () => {
+    for (const r of ['vacuity', 'page_shape_unknown', 'page_shape_ambiguous', 'page_shape_unparseable', 'vacuity_badge_has_run', 'atom_trap', 'branch_undeclared', 'non_canonical_url',
+      'agree_success', 'badge_no_status', 'badge_unreadable', 'record_unavailable', 'ref_page_behind', 'icon_unmeasured', 'no_terminal_row', 'monotonic', 'content_type', 'identity_mismatch']) expect([...live.en.lits], r).toContain(r);
+    expect([...new Set(live.en.tpls.map((t) => t.sig))].sort()).toEqual(['badge_http_${}', 'http_${}', 'ref_page_${}', 'state_unmeasured:${}/${}', 'terminal_unbound:${}']);
+    expect(live.all.length).toBeGreaterThan(60);
+  });
+
+  it('every enumerated reason maps to exactly one ruled class — none unclassified, no unruled template', () => {
+    expect(live.unruled).toEqual([]);
+    expect(live.unclassified).toEqual([]);
+    for (const r of live.all) expect(GUARD_CLASSES, r).toContain(guardClass(r));
+  });
+
+  it('no dead table row: every exact key is a reason the code can produce', () => {
+    const dead = Object.keys(GUARD_CLASS.exact).filter((k) => !live.all.includes(k));
+    expect(dead).toEqual([]);
+  });
+
+  it('the table is the architect ruling (Q2), class by class', () => {
+    const by: Record<string, string[]> = {};
+    for (const [k, c] of Object.entries(GUARD_CLASS.exact as Record<string, string>)) (by[c] ??= []).push(k);
+    expect(Object.fromEntries(Object.entries(by).map(([c, ks]) => [c, ks.sort()]))).toEqual({
+      shape: ['page_shape_ambiguous', 'page_shape_unknown', 'page_shape_unparseable', 'record_unavailable', 'vacuity_badge_has_run'],
+      transport: ['content_type'], vocabulary: ['icon_unmeasured'], identity: ['row_identity_unreadable'], monotonic: ['monotonic'],
+      ref: ['ref_missing', 'ref_out_of_vocabulary', 'ref_page_behind', 'ref_page_unavailable', 'ref_unparseable'],
+      input: ['atom_trap', 'branch_undeclared', 'non_canonical_branch', 'non_canonical_repo', 'non_canonical_url', 'non_canonical_workflow'],
+      empty: ['vacuity'], pending: ['no_terminal_row'],
+      badge: ['badge_no_status', 'badge_unknown_state', 'badge_unparseable', 'badge_unreadable'],
+      disagree: ['badge_failing_record_success', 'identity_mismatch'],
+      bound: ['agree_failure', 'agree_success', 'badge_passing_record_failure'],
+    });
+    expect((GUARD_CLASS.families as Array<{ prefix: string; cls: string }>).map((f) => `${f.prefix}→${f.cls}`)).toEqual(['http_→transport', 'badge_http_→badge', 'state_unmeasured:→vocabulary', 'terminal_unbound:→vocabulary']);
+    expect(GUARD_CLASS.composite).toBe('ref_page_');
+  });
+
+  describe('the enumeration is PROVEN able to fail (in-memory mutants of the real source)', () => {
+    const mutate = (from: string, to: string) => { expect(SRC.split(from).length - 1, from).toBe(1); return SRC.replace(from, to); };
+    it('a new literal guard (content_type → content_typo) is caught', () => {
+      expect(audit(mutate("page.guard = 'content_type'", "page.guard = 'content_typo'")).unclassified).toEqual(['content_typo', 'ref_page_content_typo']); // the composite wraps every page guard
+    });
+    it('a new reason hidden in a ternary branch is caught', () => {
+      expect(audit(mutate("'badge_no_status' : 'badge_unknown_state'", "'badge_no_status' : 'badge_weird'")).unclassified).toEqual(['badge_weird', 'ref_page_badge_weird']);
+    });
+    it('a new templated family is UNRULED, never silently expanded', () => {
+      expect(audit(mutate('`badge_http_${b.http}`', '`badge_code_${b.http}`')).unruled).toEqual(['badge_code_${}']);
+    });
+    it('a new inputDefect return is caught', () => {
+      expect(audit(mutate("return 'atom_trap';", "return 'atom_snare';")).unclassified).toContain('atom_snare');
+    });
+    it('a table row deleted from a COPY of the module reds the enumeration through that copy\'s own guardClass', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'ghrc-gc-'));
+      try {
+        const mutant = mutate("    monotonic: 'monotonic',\n", '');
+        writeFileSync(join(dir, 'm.mjs'), mutant);
+        const m = await import(join(dir, 'm.mjs'));
+        expect(m.guardClass('monotonic')).toBe('unclassified');
+        expect(audit(mutant, m.guardClass).unclassified).toContain('monotonic');
+      } finally { rmSync(dir, { recursive: true, force: true }); }
+    });
+  });
+
+  it('--guard-class is the canary\'s CLI: one class per line, exit 0; unclassified → exit 3; never a token line', { timeout: 60_000 }, () => {
+    const samples: Record<string, string> = {
+      page_shape_unknown: 'shape', http_503: 'transport', 'state_unmeasured:WORKFLOW_RUN_STATUS_PENDING/none': 'vocabulary', row_identity_unreadable: 'identity',
+      monotonic: 'monotonic', ref_page_behind: 'ref', atom_trap: 'input', vacuity: 'empty', ref_page_vacuity: 'empty', no_terminal_row: 'pending',
+      badge_http_404: 'badge', identity_mismatch: 'disagree', agree_success: 'bound',
+    };
+    expect([...new Set(Object.values(samples))].sort()).toEqual([...GUARD_CLASSES].sort());
+    for (const [r, c] of Object.entries(samples)) {
+      const x = spawnSync('node', [MODULE, '--guard-class', r], { encoding: 'utf8' });
+      expect([x.stdout, x.status], r).toEqual([`${c}\n`, 0]);
+    }
+    for (const r of ['brand_new_guard', 'http_', 'ref_page_brand_new']) {
+      const x = spawnSync('node', [MODULE, '--guard-class', r], { encoding: 'utf8' });
+      expect([x.stdout, x.status], r).toEqual(['unclassified\n', EXIT.INDETERMINATE]);
+    }
+  });
+});
