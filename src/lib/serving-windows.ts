@@ -107,6 +107,25 @@ export function servingWindowBars(consumer: ServingConsumer, tf: string): number
   return servingWindowsFor(tf).find((w) => w.consumer === consumer)?.bars;
 }
 
+export interface ServingSpan { label: string; spanMs: number }
+
+/**
+ * The distinct serving windows on `tf`, in ms back from now. A `requested` window spans bars × `requestedStepMs`; a
+ * `served` window spans bars × the venue's own `servedStepMs` (the requested step when null). Consumers whose windows
+ * span the same time share one read, so they share one entry, labelled `consumer@bars+consumer@bars` in registry
+ * order. The ONE derivation that contract-suite S, the Bitget/OKX differential (tests/harness/serving-spans.ts) and
+ * the live canary's S probes (src/scripts/adapter-history-contiguity.ts) all read — moved here from the test harness
+ * by OPS-SERVED-CANDLE-TRUTH-W1 CH2 so the canary cannot probe a different window set than the suite tests.
+ */
+export function servingSpans(tf: string, servedStepMs: number | null, requestedStepMs: number): ServingSpan[] {
+  const seen = new Map<number, string>();
+  for (const w of servingWindowsFor(tf)) {
+    const spanMs = w.bars * (w.unit === 'served' ? (servedStepMs ?? requestedStepMs) : requestedStepMs);
+    seen.set(spanMs, seen.has(spanMs) ? `${seen.get(spanMs)}+${w.consumer}@${w.bars}` : `${w.consumer}@${w.bars}`);
+  }
+  return [...seen].map(([spanMs, label]) => ({ label, spanMs }));
+}
+
 /**
  * The most requests ONE assembled serving read may make, the page already fetched included. Derived at R0 (vault
  * audits/OPS-SERVED-CANDLE-TRUTH-W1-endpoint-truth.md §3) as the max over the split venues of

@@ -13,13 +13,17 @@
 # never the code. The script's own token is the source; a run with no token, an unreadable expectation set or
 # a stopped container is INDETERMINATE — and still publishes a record, never silence.
 #
-# ── STREAKS AND THE PAGE (architect ruling OAH-Q10) ───────────────────────────────────────────
-# One streak file per pair in $STREAK_DIR (`<VENUE>-<tf>`, holding the consecutive FAIL count).
+# ── STREAKS AND THE PAGES (architect ruling OAH-Q10; S since OPS-SERVED-CANDLE-TRUTH-W1 CH2) ─────────────────
+# One streak file per pair in $STREAK_DIR, holding the consecutive FAIL count: `<VENUE>-<tf>` for the R/D probes,
+# `S-<VENUE>-<tf>` for the S probes (a pair's S verdict: FAIL if any of its windows FAILed, else INDETERMINATE if
+# any could not be read, else PASS).
 #   FAIL          → +1            PASS / SKIPPED → reset (file removed)
 #   INDETERMINATE → unchanged     (a venue we could not read never advances AND never resets a streak)
-# A pair that FAILs this run with a streak ≥ PAGE_AFTER (3) pages ADAPTER_HISTORY_GAP through send_telegram.sh,
-# CRITICAL_PERSISTENT. Repetition is governed by the wrapper's 24h cooldown, not here: night 4 calls it again
-# and the wrapper suppresses. announce_resolution is FALSE (alert-registry.json): a cleared streak is silent.
+# An R/D pair that FAILs this run with a streak ≥ PAGE_AFTER (3) pages ADAPTER_HISTORY_GAP; an S pair with a streak
+# ≥ PAGE_AFTER_S (2) pages SERVED_WINDOW_STALE (customer-facing, so the shorter streak). Both go through
+# send_telegram.sh, CRITICAL_PERSISTENT. Repetition is governed by the wrapper's 24h cooldown, not here: the next
+# night calls it again and the wrapper suppresses. announce_resolution is FALSE for both (alert-registry.json): a
+# cleared streak is silent.
 #
 # ── PUBLISHED, SO THE VAULT CAN READ IT ──────────────────────────────────────────────────────
 # Every run appends ONE canary_result_log record (canary `adapter-history-contiguity`): the verdict, pair
@@ -43,7 +47,9 @@ STREAK_DIR="${ADAPTER_HISTORY_STREAK_DIR:-/var/lib/algovault-monitoring/adapter-
 RESULT_LOG_DIR="${ADAPTER_HISTORY_RESULT_LOG_DIR:-/opt/algovault-monitoring}"
 DOCKER="${ADAPTER_HISTORY_DOCKER:-docker}"   # the self-test's seam; unset in production
 PAGE_AFTER=3
+PAGE_AFTER_S=2
 ALERT_ID="ADAPTER_HISTORY_GAP"
+S_ALERT_ID="SERVED_WINDOW_STALE"
 CANARY="adapter-history-contiguity"
 TAG="[adapter-history-canary]"
 
@@ -63,49 +69,72 @@ PYEXP
 }
 
 # Streak update + page decision + result metrics, from the script's output. Pure over (output, streak dir).
-# Prints: `PAGE <pair> <streak> <reasons>` lines for pairs to page, then one `METRICS <json>` line.
-judge_streaks() { # output_file streak_dir page_after
-  python3 - "$1" "$2" "$3" <<'PYSTREAK'
+# Prints: `PAGE <pair> <streak> <reasons>` (R/D) and `SPAGE <pair> <streak> <reasons>` (S) lines for pairs to page,
+# then one `METRICS <json>` line.
+judge_streaks() { # output_file streak_dir page_after page_after_s
+  python3 - "$1" "$2" "$3" "$4" <<'PYSTREAK'
 import json, os, sys
-out_file, sdir, page_after = sys.argv[1], sys.argv[2], int(sys.argv[3])
-pairs = []
+out_file, sdir, page_after, page_after_s = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+pairs, serves = [], []
 for line in open(out_file, encoding="utf-8", errors="replace"):
-    i = line.find("[adapter-history] PAIR ")
-    if i < 0:
-        continue
-    try:
-        pairs.append(json.loads(line[i + len("[adapter-history] PAIR "):]))
-    except Exception:
-        pass
+    for tag, sink in (("[adapter-history] PAIR ", pairs), ("[adapter-history] SERVE ", serves)):
+        i = line.find(tag)
+        if i < 0:
+            continue
+        try:
+            sink.append(json.loads(line[i + len(tag):]))
+        except Exception:
+            pass
 os.makedirs(sdir, exist_ok=True)
-def path(p): return os.path.join(sdir, f"{p['venue']}-{p['tf']}")
-def read(p):
-    try: return int(open(path(p)).read().strip() or 0)
+def path(name): return os.path.join(sdir, name)
+def read(name):
+    try: return int(open(path(name)).read().strip() or 0)
     except Exception: return 0
-pages, open_streaks = [], {}
-for p in pairs:
-    v, name = p.get("verdict"), f"{p.get('venue')}/{p.get('tf')}"
-    if v == "FAIL":
-        n = read(p) + 1
-        open(path(p), "w").write(f"{n}\n")
-        if n >= page_after:
-            pages.append((name, n, "; ".join(p.get("reasons") or [])[:300]))
-    elif v in ("PASS", "SKIPPED"):
-        try: os.remove(path(p))
+def step(name, verdict, threshold, why, pages):
+    if verdict == "FAIL":
+        n = read(name) + 1
+        open(path(name), "w").write(f"{n}\n")
+        if n >= threshold:
+            pages.append((name, n, why[:300]))
+    elif verdict in ("PASS", "SKIPPED"):
+        try: os.remove(path(name))
         except FileNotFoundError: pass
     # INDETERMINATE: never advances, never resets.
+pages, spages, open_streaks = [], [], {}
+for p in pairs:
+    step(f"{p.get('venue')}-{p.get('tf')}", p.get("verdict"), page_after, "; ".join(p.get("reasons") or []), pages)
+# S: one verdict per (venue, tf) over its windows
+spairs = {}
+for w in serves:
+    spairs.setdefault((w.get("venue"), w.get("tf")), []).append(w)
+s_verdict = {}
+for (venue, tf), ws in sorted(spairs.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))):
+    vs = [w.get("verdict") for w in ws]
+    v = "FAIL" if "FAIL" in vs else "INDETERMINATE" if "INDETERMINATE" in vs else "PASS"
+    s_verdict[f"{venue}/{tf}"] = v
+    why = "; ".join(f"window {w.get('window')}: {'; '.join(w.get('reasons') or [])}" for w in ws if w.get("verdict") == "FAIL")
+    step(f"S-{venue}-{tf}", v, page_after_s, why, spages)
 for f in sorted(os.listdir(sdir)):
     try: open_streaks[f] = int(open(os.path.join(sdir, f)).read().strip() or 0)
     except Exception: pass
+label = lambda name: name.replace("S-", "", 1).replace("-", "/", 1) if name.startswith("S-") else name.replace("-", "/", 1)
 for name, n, why in pages:
-    print(f"PAGE {name} {n} {why}")
+    print(f"PAGE {label(name)} {n} {why}")
+for name, n, why in spages:
+    print(f"SPAGE {label(name)} {n} {why}")
 by = lambda v: sorted(f"{p.get('venue')}/{p.get('tf')}" for p in pairs if p.get("verdict") == v)
+sby = lambda v: sorted(k for k, x in s_verdict.items() if x == v)
 metrics = {
     "pairs": len(pairs), "pass": len(by("PASS")), "fail": len(by("FAIL")),
     "indeterminate": len(by("INDETERMINATE")), "skipped": len(by("SKIPPED")),
     "failing": by("FAIL"), "indeterminate_pairs": by("INDETERMINATE"), "skipped_pairs": by("SKIPPED"),
-    "open_streaks": open_streaks, "paged": [n for n, _, _ in pages],
+    "open_streaks": open_streaks, "paged": [label(n) for n, _, _ in pages],
     "substituted_newest": sum(int(p.get("substitutedNewest") or 0) for p in pairs),
+    "serving_windows": len(serves), "serving_pairs": len(s_verdict), "serving_pass": len(sby("PASS")),
+    "serving_fail": len(sby("FAIL")), "serving_indeterminate": len(sby("INDETERMINATE")),
+    "serving_failing": sby("FAIL"),
+    "serving_failing_windows": sorted(f"{w.get('venue')}/{w.get('tf')}/{w.get('window')}" for w in serves if w.get("verdict") == "FAIL"),
+    "serving_paged": [label(n) for n, _, _ in spages],
 }
 print("METRICS " + json.dumps(metrics, sort_keys=True))
 PYSTREAK
@@ -126,6 +155,23 @@ page_body() { # pages_file
   printf 'completeness or its meta. Re-capture and compare before changing the pin; never absorb it.\n'
   printf 'Log: %s · result: canary-results.jsonl (%s)\n' "$LOG" "$CANARY"
   printf 'Recommended wave: OPS-ADAPTER-HISTORY-ANCHOR-W{NEXT}\n'
+}
+
+# The S page body: a serving window the product asks for did not reach the venue's newest bar, on 2+ runs.
+s_page_body() { # spages_file
+  local n
+  n="$(wc -l < "$1" | tr -d ' ')"
+  printf '🛑 %s\n' "$S_ALERT_ID"
+  printf 'Served window stale: %s %s FAILed %s or more consecutive runs of the live canary'"'"'s S probes.\n' \
+    "$n" "$( [ "$n" = 1 ] && echo pair || echo pairs )" "$PAGE_AFTER_S"
+  while read -r _ pair streak why; do
+    printf -- '- pair %s — %s consecutive FAIL runs — %s\n' "$pair" "$streak" "$why"
+  done < "$1"
+  printf 'A serving window the product asks for (src/lib/serving-windows.ts) did not reach the venue'"'"'s newest bar,\n'
+  printf 'or the getAdapter seam refused it as stale (STALE_UPSTREAM_WINDOW): callers of that venue and timeframe are\n'
+  printf 'being refused, or served a window that ends before now. Read the SERVE lines in the log before any change.\n'
+  printf 'Log: %s · result: canary-results.jsonl (%s)\n' "$LOG" "$CANARY"
+  printf 'Recommended wave: OPS-SERVED-CANDLE-TRUTH-W{NEXT}\n'
 }
 
 publish() { # verdict exit_code metrics_json
@@ -178,24 +224,33 @@ run_canary() {
     *) finish INDETERMINATE "no verdict token in the script output (rc=$rc); streaks untouched" 3 ;;
   esac
 
-  judge_streaks "$out" "$STREAK_DIR" "$PAGE_AFTER" > "$tmp/judged" 2>"$tmp/judged.err" \
+  judge_streaks "$out" "$STREAK_DIR" "$PAGE_AFTER" "$PAGE_AFTER_S" > "$tmp/judged" 2>"$tmp/judged.err" \
     || finish INDETERMINATE "streak update failed: $(head -c 200 "$tmp/judged.err" | tr '\n' ' ') (script verdict $verdict)" 3
   grep '^PAGE ' "$tmp/judged" > "$tmp/pages" || true
+  grep '^SPAGE ' "$tmp/judged" > "$tmp/spages" || true
   metrics="$(sed -n 's/^METRICS //p' "$tmp/judged" | tail -1)"
   pages="$(wc -l < "$tmp/pages" | tr -d ' ')"
+  spages="$(wc -l < "$tmp/spages" | tr -d ' ')"
 
   if [ "${pages:-0}" -gt 0 ]; then
     if [ -x "$SEND" ]; then
-      page_body "$tmp/pages" | "$SEND" "$ALERT_ID" CRITICAL_PERSISTENT - 2>>"$LOG" || log "ESCALATE_UNSENT: send_telegram invocation failed"
+      page_body "$tmp/pages" | "$SEND" "$ALERT_ID" CRITICAL_PERSISTENT - 2>>"$LOG" || log "ESCALATE_UNSENT: send_telegram invocation failed ($ALERT_ID)"
     else
-      log "ESCALATE_UNSENT: $SEND not executable"
+      log "ESCALATE_UNSENT: $SEND not executable ($ALERT_ID)"
+    fi
+  fi
+  if [ "${spages:-0}" -gt 0 ]; then
+    if [ -x "$SEND" ]; then
+      s_page_body "$tmp/spages" | "$SEND" "$S_ALERT_ID" CRITICAL_PERSISTENT - 2>>"$LOG" || log "ESCALATE_UNSENT: send_telegram invocation failed ($S_ALERT_ID)"
+    else
+      log "ESCALATE_UNSENT: $SEND not executable ($S_ALERT_ID)"
     fi
   fi
 
   case "$verdict" in
-    PASS) finish PASS "script rc=$rc pages=$pages" 0 "$metrics" ;;
-    FAIL) finish FAIL "script rc=$rc pages=$pages" 1 "$metrics" ;;
-    *)    finish INDETERMINATE "script rc=$rc pages=$pages (fail-open: streaks of unread pairs untouched)" 3 "$metrics" ;;
+    PASS) finish PASS "script rc=$rc pages=$pages serving_pages=$spages" 0 "$metrics" ;;
+    FAIL) finish FAIL "script rc=$rc pages=$pages serving_pages=$spages" 1 "$metrics" ;;
+    *)    finish INDETERMINATE "script rc=$rc pages=$pages serving_pages=$spages (fail-open: streaks of unread pairs untouched)" 3 "$metrics" ;;
   esac
 }
 
@@ -279,6 +334,32 @@ EOF
   ck 'PASS after FAIL: no new page' "$(sends)" 1
   night FAIL "$(pair BITGET 2h SKIPPED)" "$(pair OKX 1h FAIL "$F")"
   ck 'a SKIPPED pair resets nothing it never had, and a fresh FAIL starts at 1' "$(streak BITGET-2h)$(streak OKX-1h)" 1
+  # (6b) S (OPS-SERVED-CANDLE-TRUTH-W1 CH2): one S streak per (venue, tf) over its windows, separate from the R/D
+  # streak of the same pair; SERVED_WINDOW_STALE pages on the 2nd consecutive FAIL.
+  serve() { printf '[adapter-history] SERVE {"venue":"%s","tf":"%s","window":"%s","verdict":"%s","reasons":["%s"]}\n' "$1" "$2" "$3" "$4" "${5:-}"; }
+  SF='head gap 9 bars > 1: the window does not reach the newest bar'
+  local before; before="$(sends)"
+  night PASS "$(pair GATE 1h PASS)" "$(serve GATE 1h trade_call@100 PASS)" "$(serve GATE 1h labeler_probe@5 PASS)"
+  ck 'S PASS night: no S streak' "$(streak S-GATE-1h)" ''
+  night FAIL "$(pair GATE 1h PASS)" "$(serve GATE 1h trade_call@100 FAIL "$SF")" "$(serve GATE 1h labeler_probe@5 PASS)"
+  ck 'S FAIL night 1: one failing window fails its pair, streak 1' "$(streak S-GATE-1h)" 1
+  ck 'S FAIL night 1: the R/D streak of the same pair is untouched' "$(streak GATE-1h)" ''
+  ck 'S FAIL night 1: no page' "$(sends)" "$before"
+  night INDETERMINATE "$(serve GATE 1h trade_call@100 INDETERMINATE 'UpstreamRateLimitError: 429')" "$(serve GATE 1h labeler_probe@5 PASS)"
+  ck 'S IND night: an unread window neither advances nor resets the S streak' "$(streak S-GATE-1h)" 1
+  night FAIL "$(pair GATE 1h FAIL "$F")" "$(serve GATE 1h trade_call@100 FAIL "$SF")"
+  ck 'S FAIL night 2: streak 2' "$(streak S-GATE-1h)" 2
+  ck 'S FAIL night 2: the R/D FAIL starts its own streak at 1' "$(streak GATE-1h)" 1
+  ck 'S FAIL night 2: exactly one new page' "$(sends)" "$((before + 1))"
+  ck 'S FAIL night 2: token FAIL, exit 1' "$(tok)/$(cat "$st/run.rc")" FAIL/1
+  has 'the S page goes to SERVED_WINDOW_STALE, CRITICAL_PERSISTENT, body on stdin' "$(cat "$st/sent")" 'ARGV SERVED_WINDOW_STALE CRITICAL_PERSISTENT -'
+  has 'the S body names the pair, its streak and the failing window' "$(cat "$st/sent")" '- pair GATE/1h — 2 consecutive FAIL runs — window trade_call@100: head gap 9 bars'
+  has 'the S body counts pairs as pairs, against the 2-run streak' "$(cat "$st/sent")" 'Served window stale: 1 pair FAILed 2 or more consecutive runs'
+  has 'the S body carries the template wave id' "$(cat "$st/sent")" 'Recommended wave: OPS-SERVED-CANDLE-TRUTH-W{NEXT}'
+  has 'the run summary counts the S page' "$(cat "$st/run.out")" 'serving_pages=1'
+  night PASS "$(pair GATE 1h PASS)" "$(serve GATE 1h trade_call@100 PASS)"
+  ck 'S PASS after FAIL: the S streak resets' "$(streak S-GATE-1h)" ''
+  ck 'S PASS after FAIL: and the R/D one' "$(streak GATE-1h)" ''
   # (7) Whole-run INDETERMINATE: no token / stopped container / unreadable expectations — streaks untouched.
   night FAIL "$(pair XT 1h FAIL "$F")"
   night '' "$(pair XT 1h FAIL "$F")"
@@ -295,7 +376,7 @@ EOF
   # (8) Every exit path publishes a record — through the REAL canary_result_log when it is beside this file.
   if [ -r "$here/canary_result_log.py" ]; then
     mkdir -p "$st/lib"; cp "$here/canary_result_log.py" "$st/lib/"
-    printf '[adapter-history] PAIR {"venue":"OKX","tf":"1h","verdict":"PASS","reasons":[],"substitutedNewest":1}\n[adapter-history] ADAPTER_HISTORY_VERDICT=PASS\n' > "$st/script.out"
+    printf '[adapter-history] PAIR {"venue":"OKX","tf":"1h","verdict":"PASS","reasons":[],"substitutedNewest":1}\n[adapter-history] SERVE {"venue":"OKX","tf":"1h","window":"market_regime@168","verdict":"PASS","reasons":[]}\n[adapter-history] ADAPTER_HISTORY_VERDICT=PASS\n' > "$st/script.out"
     ADAPTER_HISTORY_REPO="$st/repo" ADAPTER_HISTORY_DOCKER="$st/docker" ADAPTER_HISTORY_SEND="$st/send" \
       ADAPTER_HISTORY_LOG="$st/log" ADAPTER_HISTORY_STREAK_DIR="$st/streak" ADAPTER_HISTORY_RESULT_LOG_DIR="$st/lib" \
       CANARY_RESULT_LOG_PATH="$st/results.jsonl" bash "$me" > "$st/run.out" 2>&1
@@ -303,6 +384,7 @@ EOF
     local rec; rec="$(tail -1 "$st/results.jsonl" 2>/dev/null || true)"
     has 'the record names this canary' "$rec" '"adapter-history-contiguity"'
     has 'the record counts substitutedNewest' "$rec" '"substituted_newest":1'
+    has 'the record counts the S windows and pairs' "$rec" '"serving_pairs":1'
   else
     has 'canary_result_log.py sits beside this script' "missing" "present"
   fi
@@ -330,13 +412,13 @@ EOF
   fi
 
   # Vacuity guard: a self-test that asserted nothing must never report a pass.
-  if [ "$checked" -lt 40 ]; then
-    echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= 40)"; return 3
+  if [ "$checked" -lt 58 ]; then
+    echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= 58)"; return 3
   fi
   if [ -n "$fails" ]; then
     echo "SELF_TEST_VERDICT=FAIL — ${fails#|}"; return 1
   fi
-  echo "SELF_TEST_VERDICT=PASS — $checked assertions (PASS · FAIL streak 1-2-3 · INDETERMINATE per pair and per run · reset · page argv + body · result record · wrapper cooldown)"
+  echo "SELF_TEST_VERDICT=PASS — $checked assertions (PASS · FAIL streak 1-2-3 · INDETERMINATE per pair and per run · reset · page argv + body · S streak 1-2 + SERVED_WINDOW_STALE · result record · wrapper cooldown)"
   return 0
 }
 

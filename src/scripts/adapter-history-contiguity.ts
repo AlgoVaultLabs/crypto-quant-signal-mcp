@@ -14,21 +14,34 @@
  *      from = now − (RECENT_PAGE_CAP + 2W + 6)·s, to = from + 2W·s. It must be COMPLETE (C1) and the page must
  *      carry its meta (C3 reported, OAH-Q5). A missing meta or an incomplete window is FAIL.
  *
+ *   S  (OPS-SERVED-CANDLE-TRUTH-W1 CH2) every serving window the product asks for (src/lib/serving-windows.ts
+ *      `servingSpans`, the derivation contract-suite S reads) on every faithful timeframe of every active venue,
+ *      read through the `getAdapter` seam with no endTime: from = now − span. The window must reach the venue's
+ *      newest bar (head gap ≤ HEAD_ALLOWANCE_BARS). A window the seam REFUSES (StaleUpstreamWindowError) is the defect
+ *      S exists for: FAIL, never INDETERMINATE. The S probes run after R/D in venue-INTERLEAVED order (one window per
+ *      venue in turn), so a venue sees one request per ~venues × PACE_MS while the run keeps ≥ PACE_MS between calls.
+ *
  * UNSERVABLE pairs (UNSERVABLE.json) and retired venues are SKIPPED and listed. A venue that is unreachable,
- * rate-limits (418/429) or throws is INDETERMINATE for that pair — fail-open, counted, never a page.
+ * rate-limits (418/429) or throws is INDETERMINATE for that pair — fail-open, counted, never a page. An R probe the
+ * seam refuses reads INDETERMINATE the same way (judgePair is unchanged); S judges that staleness, as FAIL.
  * The expectations arrive on --expect <file|-> as {"reach": REACH.json.pairs, "unservable": UNSERVABLE.json.pairs},
  * read by the host wrapper from the deployed checkout's fixtures: ONE copy of the expectations, never a
  * second table in src.
  *
- * Output: one `[adapter-history] PAIR {json}` line per pair, one `RESULT_JSON=` summary, and exactly one
- * terminal `ADAPTER_HISTORY_VERDICT=PASS|FAIL|INDETERMINATE` (exit 0 / 1 / 3). Callers gate on the TOKEN.
+ * Output: one `[adapter-history] PAIR {json}` line per R/D pair, one `[adapter-history] SERVE {json}` line per S
+ * window, one `RESULT_JSON=` summary, and exactly one terminal `ADAPTER_HISTORY_VERDICT=PASS|FAIL|INDETERMINATE`
+ * (exit 0 / 1 / 3) over both. Callers gate on the TOKEN.
  * No labels, no postgres writes, no alerts (the host wrapper streaks and pages).
  */
 import fs from 'node:fs';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { getActivePromotedVenueIds } from '../lib/venue-store.js';
 import { PROMOTED_VENUE_IDS } from '../lib/capabilities.js';
-import { CRON_TIMEFRAMES, faithfulTimeframes, servedCandleStepMs } from '../lib/tf-support.js';
+import { CRON_TIMEFRAMES, faithfulTimeframes, isTimeframeFaithful, servedCandleStepMs } from '../lib/tf-support.js';
+import { TIMEFRAMES } from '../lib/capabilities.js';
+import { servingSpans } from '../lib/serving-windows.js';
+import { StaleUpstreamWindowError } from '../lib/errors.js';
+import { TF_MS } from '../lib/pfe-mae.js';
 import { EVAL_CANDLES } from './directional-labeler.js';
 import { accountPage, historyMetaOf, incompleteWindow, HEAD_ALLOWANCE_BARS, type PageFacts } from '../lib/adapters/_history-plan.js';
 import { RECENT_PAGE_CAP as BITGET_RECENT_CAP } from '../lib/adapters/bitget.js';
@@ -152,8 +165,9 @@ export function judgePair(p: {
   return out;
 }
 
-/** The aggregate token: any FAIL → FAIL; else any INDETERMINATE → INDETERMINATE; else PASS (SKIPPED neutral). */
-export function aggregate(results: readonly PairResult[]): 'PASS' | 'FAIL' | 'INDETERMINATE' {
+/** The aggregate token: any FAIL → FAIL; else any INDETERMINATE → INDETERMINATE; else PASS (SKIPPED neutral). R/D
+ *  pairs and S windows alike. */
+export function aggregate(results: readonly { verdict: PairVerdict }[]): 'PASS' | 'FAIL' | 'INDETERMINATE' {
   if (results.some((r) => r.verdict === 'FAIL')) return 'FAIL';
   if (results.some((r) => r.verdict === 'INDETERMINATE')) return 'INDETERMINATE';
   return 'PASS';
@@ -219,6 +233,91 @@ export async function probeAll(o: {
   return results;
 }
 
+// ── S: every serving window the product asks for (OPS-SERVED-CANDLE-TRUTH-W1 CH2) ─────────────────────────────────
+
+export interface ServeWindow { venue: string; tf: string; window: string; spanMs: number; servedStepMs: number }
+
+export interface ServeResult extends ServeWindow {
+  bars: number | null;
+  headGapBars: number | null;
+  branch: string | null;
+  verdict: Exclude<PairVerdict, 'SKIPPED'>;
+  reasons: string[];
+}
+
+export type ServeRead =
+  | { facts: PageFacts; branch: string | null }
+  | { refused: { headGapBars: number; newestBarAt: string } }
+  | { error: string };
+
+/** Judge one S window (pure). PASS when the served page reaches the venue's newest bar (head gap ≤
+ *  HEAD_ALLOWANCE_BARS, the bound contract-suite S holds every venue to). FAIL when it does not, when the window holds
+ *  no bar, or when the `getAdapter` seam refused it as stale. INDETERMINATE only when the read could not be made. */
+export function judgeServe(w: ServeWindow, read: ServeRead): ServeResult {
+  const base: ServeResult = { ...w, bars: null, headGapBars: null, branch: null, verdict: 'PASS', reasons: [] };
+  if ('error' in read) return { ...base, verdict: 'INDETERMINATE', reasons: [read.error] };
+  if ('refused' in read) {
+    return {
+      ...base, headGapBars: read.refused.headGapBars, verdict: 'FAIL',
+      reasons: [`STALE_UPSTREAM_WINDOW: the getAdapter seam refused the window (head gap ${read.refused.headGapBars} bars, newest bar ${read.refused.newestBarAt})`],
+    };
+  }
+  const f = read.facts;
+  const out: ServeResult = { ...base, bars: f.inWindow, headGapBars: f.headGapBars, branch: read.branch };
+  if (f.emptyWindow || f.headGapBars === null) { out.verdict = 'FAIL'; out.reasons.push('no bar in the window'); }
+  else if (f.headGapBars > HEAD_ALLOWANCE_BARS) {
+    out.verdict = 'FAIL';
+    out.reasons.push(`head gap ${f.headGapBars} bars > ${HEAD_ALLOWANCE_BARS}: the window does not reach the venue's newest bar`);
+  }
+  return out;
+}
+
+/** The S windows, venue-INTERLEAVED: the first window of every venue, then the second of every venue, and so on. */
+export function servingProbePlan(
+  venues: readonly string[],
+  timeframes: (venue: string) => readonly string[],
+  served: (venue: string, tf: string) => number | null,
+): ServeWindow[] {
+  const perVenue = venues.map((venue) => timeframes(venue).flatMap((tf) => {
+    const s = served(venue, tf);
+    if (s == null) return [];
+    return servingSpans(tf, s, TF_MS[tf]).map((w) => ({ venue, tf, window: w.label, spanMs: w.spanMs, servedStepMs: s }));
+  }));
+  const out: ServeWindow[] = [];
+  for (let i = 0; perVenue.some((l) => i < l.length); i++) for (const l of perVenue) if (i < l.length) out.push(l[i]);
+  return out;
+}
+
+/** Probe every S window (I/O; injectable for tests). Paces BEFORE every call, so the first S read also keeps
+ *  PACE_MS from the last R/D read. */
+export async function probeServing(o: {
+  venues: readonly string[];
+  nowMs: () => number;
+  getCandles: (venue: string, tf: string, from: number) => Promise<{ time: number }[]>;
+  served: (venue: string, tf: string) => number | null;
+  timeframes: (venue: string) => readonly string[];
+  pace?: (ms: number) => Promise<void>;
+}): Promise<ServeResult[]> {
+  const pace = o.pace ?? sleep;
+  const results: ServeResult[] = [];
+  for (const w of servingProbePlan(o.venues, o.timeframes, o.served)) {
+    await pace(PACE_MS);
+    let read: ServeRead;
+    try {
+      const from = o.nowMs() - w.spanMs;
+      const page = await o.getCandles(w.venue, w.tf, from);
+      const facts = accountPage({ bars: page.map((c) => ({ ts: c.time })), servedStepMs: w.servedStepMs, from, to: null, nowMs: o.nowMs() });
+      read = { facts, branch: historyMetaOf(page as unknown[])?.branch ?? null };
+    } catch (e) {
+      read = e instanceof StaleUpstreamWindowError
+        ? { refused: { headGapBars: e.headGapBars, newestBarAt: new Date(e.newestBarAt).toISOString() } }
+        : { error: errText(e) };
+    }
+    results.push(judgeServe(w, read));
+  }
+  return results;
+}
+
 function readExpectations(arg: string | undefined): Expectations {
   if (!arg) throw new Error('missing --expect <file|-> ({"reach": REACH.json.pairs, "unservable": UNSERVABLE.json.pairs})');
   const raw = fs.readFileSync(arg === '-' ? 0 : arg, 'utf8');
@@ -236,29 +335,51 @@ async function main(): Promise<number> {
   catch (e) { console.log(`${TAG} ADAPTER_HISTORY_VERDICT=INDETERMINATE expectations unreadable: ${errText(e)}`); return 3; }
   const active = await getActivePromotedVenueIds();
   const retired = PROMOTED_VENUE_IDS.filter((v: string) => !active.includes(v as never));
-  const results = await runAsBatch(() => probeAll({
-    venues: active,
-    expected,
-    nowMs: () => Date.now(),
-    getCandles: (venue, tf, from, to) => getAdapter(venue as ExchangeId).getCandles(COIN, tf, from, undefined, to),
-    served: (venue, tf) => servedCandleStepMs(venue, tf),
-    timeframes: (venue) => CRON_TIMEFRAMES.filter((tf) => faithfulTimeframes(venue as ExchangeId).has(tf)),
-  }), 'adapter-history-canary');
-  for (const r of results) console.log(`${TAG} PAIR ${JSON.stringify(r)}`);
-  const verdict = aggregate(results);
+  // ONE batch scope for both legs, under the canary's own name: the entrypoint keeps the single class-setting
+  // site tests/unit/caller-tags.test.ts pins for it, and neither leg can spend a venue's interactive reserve.
+  const { results, serving } = await runAsBatch(async () => {
+    const results = await probeAll({
+      venues: active,
+      expected,
+      nowMs: () => Date.now(),
+      getCandles: (venue, tf, from, to) => getAdapter(venue as ExchangeId).getCandles(COIN, tf, from, undefined, to),
+      served: (venue, tf) => servedCandleStepMs(venue, tf),
+      timeframes: (venue) => CRON_TIMEFRAMES.filter((tf) => faithfulTimeframes(venue as ExchangeId).has(tf)),
+    });
+    for (const r of results) console.log(`${TAG} PAIR ${JSON.stringify(r)}`);
+    const serving = await probeServing({
+      venues: active,
+      nowMs: () => Date.now(),
+      getCandles: (venue, tf, from) => getAdapter(venue as ExchangeId).getCandles(COIN, tf, from),
+      served: (venue, tf) => servedCandleStepMs(venue, tf),
+      timeframes: (venue) => TIMEFRAMES.filter((tf) => isTimeframeFaithful(venue as ExchangeId, tf)),
+    });
+    return { results, serving };
+  }, 'adapter-history-canary');
+  for (const r of serving) console.log(`${TAG} SERVE ${JSON.stringify(r)}`);
+  const verdict = aggregate([...results, ...serving]);
   const count = (v: PairVerdict) => results.filter((r) => r.verdict === v).length;
+  const sCount = (v: PairVerdict) => serving.filter((r) => r.verdict === v).length;
+  const sId = (r: ServeResult) => `${r.venue}/${r.tf}/${r.window}`;
   const summary = {
     verdict, pairs: results.length, pass: count('PASS'), fail: count('FAIL'), indeterminate: count('INDETERMINATE'),
     skipped: count('SKIPPED'), retired_skipped: retired,
     failing: results.filter((r) => r.verdict === 'FAIL').map((r) => `${r.venue}/${r.tf}`),
     indeterminate_pairs: results.filter((r) => r.verdict === 'INDETERMINATE').map((r) => `${r.venue}/${r.tf}`),
     substituted_newest: results.reduce((n, r) => n + r.substitutedNewest, 0),
+    serving: {
+      windows: serving.length, pairs: new Set(serving.map((r) => `${r.venue}/${r.tf}`)).size,
+      pass: sCount('PASS'), fail: sCount('FAIL'), indeterminate: sCount('INDETERMINATE'),
+      failing: serving.filter((r) => r.verdict === 'FAIL').map(sId),
+      indeterminate_windows: serving.filter((r) => r.verdict === 'INDETERMINATE').map(sId),
+    },
   };
   console.log(`${TAG} RESULT_JSON=${JSON.stringify(summary)}`);
-  console.log(`${TAG} ADAPTER_HISTORY_VERDICT=${verdict} pairs=${summary.pairs} pass=${summary.pass} fail=${summary.fail} indeterminate=${summary.indeterminate} skipped=${summary.skipped}`);
+  console.log(`${TAG} ADAPTER_HISTORY_VERDICT=${verdict} pairs=${summary.pairs} pass=${summary.pass} fail=${summary.fail} indeterminate=${summary.indeterminate} skipped=${summary.skipped} serving_windows=${summary.serving.windows} serving_fail=${summary.serving.fail} serving_indeterminate=${summary.serving.indeterminate}`);
   return verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 3;
 }
 
 if (require.main === module) {
-  void runScript('adapter-history-contiguity', main, { watchdogMs: 30 * 60_000 });
+  // 50 min: the R/D probes took 407 s (cron-interlock-registry.json), and S adds ~555 windows at ≥ PACE_MS each.
+  void runScript('adapter-history-contiguity', main, { watchdogMs: 50 * 60_000 });
 }

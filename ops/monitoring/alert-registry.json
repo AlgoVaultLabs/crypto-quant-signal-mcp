@@ -1308,6 +1308,19 @@
       "notes": "Fires only when a (venue, tf) pair FAILs 3 consecutive nightly runs of the live adapter-history canary (architect ruling OAH-Q10); an INDETERMINATE night (venue unreachable, 418/429, container down) neither advances nor resets a streak. CRITICAL_PERSISTENT because a pair that drifted from its pinned reach class feeds wrong-shaped candle windows to the labelers and serving until someone re-captures. announce_resolution FALSE: a cleared streak is silent; the canary_result_log record carries the open streaks."
     },
     {
+      "alert_id": "SERVED_WINDOW_STALE",
+      "owner": "ops/monitoring/adapter-history-contiguity-canary.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-SERVED_WINDOW_STALE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SERVED_WINDOW_STALE-W{NEXT}",
+      "notes": "OPS-SERVED-CANDLE-TRUTH-W1 CH2. Fires when one (venue, tf) pair's S probes FAIL 2 consecutive runs of the live adapter-history canary: a serving window the product asks for (src/lib/serving-windows.ts) did not reach the venue's newest bar, or the getAdapter seam refused it as STALE_UPSTREAM_WINDOW. Two runs, not ADAPTER_HISTORY_GAP's three, because it is customer-facing: callers of that pair are being refused, or served a window that ends before now. A pair's S verdict is FAIL if any of its windows FAILed; an INDETERMINATE window (venue unreadable, 418/429, container down) neither advances nor resets the streak (S-<VENUE>-<tf> in the canary's streak dir). CRITICAL_PERSISTENT; repetition is the wrapper's 24 h cooldown. announce_resolution FALSE: a cleared streak is silent; the canary_result_log record carries serving_failing, serving_failing_windows and the open S- streaks."
+    },
+    {
       "alert_id": "STEPUP_ACTIVATION_DROP",
       "owner": "ops/monitoring/stepup-readout.py",
       "hosts": [

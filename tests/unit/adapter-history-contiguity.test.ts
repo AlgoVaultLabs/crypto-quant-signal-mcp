@@ -8,6 +8,10 @@
  *     code is PASS on every pair, and the RETIRED bodies (tests/fixtures/adapter-history/retired/) go FAIL on
  *     exactly BITGET 2h/8h C1 plus C3 (no meta) everywhere. The canary is therefore proven able to see the class
  *     it exists for, with no network.
+ *   - S (OPS-SERVED-CANDLE-TRUTH-W1 CH2): judgeServe two-way (a deliberately broken window FAILs; a seam refusal is a
+ *     FAIL, never INDETERMINATE), the probe plan read from the registry and interleaved by venue, the pacing, and the
+ *     same synthetic end-to-end: the shipped adapters PASS every window, the retired bodies FAIL on exactly the two
+ *     windows R0 measured stale in production.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
@@ -25,8 +29,13 @@ vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (orig) => ({
 
 import {
   judgePair, aggregate, probeAll, reachClass, PACE_MS, HEAD_ALLOWANCE_BARS, DEEP_PROBE_RECENT_CAP,
-  type Expectations, type PairResult,
+  judgeServe, servingProbePlan, probeServing,
+  type Expectations, type PairResult, type ServeResult,
 } from '../../src/scripts/adapter-history-contiguity.js';
+import { servingSpans } from '../../src/lib/serving-windows.js';
+import { StaleUpstreamWindowError } from '../../src/lib/errors.js';
+import { TIMEFRAMES } from '../../src/lib/capabilities.js';
+import { TF_MS } from '../../src/lib/pfe-mae.js';
 import { accountPage, type PageFacts } from '../../src/lib/adapters/_history-plan.js';
 import * as bitget from '../../src/lib/adapters/bitget.js';
 import * as okx from '../../src/lib/adapters/okx.js';
@@ -162,6 +171,85 @@ describe('probeAll — request shape and pacing', () => {
   });
 });
 
+describe('judgeServe — one serving window, two-way', () => {
+  const w = { venue: 'X', tf: '1h', window: 'trade_call@100', spanMs: 100 * H, servedStepMs: H };
+  it('PASS when the served page reaches the newest bar, the one-bar allowance included', () => {
+    expect(judgeServe(w, { facts: clean, branch: 'R' }).verdict).toBe('PASS');
+    expect(judgeServe(w, { facts: { ...clean, headGapBars: HEAD_ALLOWANCE_BARS }, branch: 'A' }).verdict).toBe('PASS');
+  });
+  it('FAIL on a deliberately broken window: one bar past the allowance', () => {
+    const r = judgeServe(w, { facts: { ...clean, headGapBars: HEAD_ALLOWANCE_BARS + 1 }, branch: 'F' });
+    expect(r.verdict).toBe('FAIL');
+    expect(r.reasons.join(' ')).toContain("does not reach the venue's newest bar");
+    expect([r.headGapBars, r.branch]).toEqual([HEAD_ALLOWANCE_BARS + 1, 'F']);
+  });
+  it('FAIL on a window that holds no bar', () => {
+    const r = judgeServe(w, { facts: { ...clean, inWindow: 0, emptyWindow: true, headGapBars: null }, branch: null });
+    expect(r.verdict).toBe('FAIL');
+    expect(r.reasons).toEqual(['no bar in the window']);
+  });
+  it('FAIL — never INDETERMINATE — when the getAdapter seam refused the window as stale', () => {
+    const r = judgeServe(w, { refused: { headGapBars: 67, newestBarAt: '2026-09-28T13:00:00.000Z' } });
+    expect(r.verdict).toBe('FAIL');
+    expect(r.reasons[0]).toMatch(/^STALE_UPSTREAM_WINDOW: the getAdapter seam refused the window \(head gap 67 bars/);
+  });
+  it('INDETERMINATE only when the read could not be made', () => {
+    expect(judgeServe(w, { error: 'UpstreamRateLimitError: 429' }).verdict).toBe('INDETERMINATE');
+  });
+  it('one token over R/D pairs and S windows: an S FAIL fails the run', () => {
+    expect(aggregate([{ verdict: 'PASS' }, judgeServe(w, { facts: { ...clean, headGapBars: 9 }, branch: 'R' })])).toBe('FAIL');
+    expect(aggregate([{ verdict: 'PASS' }, judgeServe(w, { error: 'timeout' })])).toBe('INDETERMINATE');
+  });
+});
+
+describe('servingProbePlan / probeServing — the registry, interleaved by venue, paced', () => {
+  const served = (_v: string, tf: string) => TF_MS[tf];
+  const tfs = () => ['1h', '1d'];
+
+  it('derives every window from the registry (the derivation suite S reads) and never asks one venue twice in a row', () => {
+    const plan = servingProbePlan(['A', 'B', 'C'], tfs, served);
+    const want = ['1h', '1d'].flatMap((tf) => servingSpans(tf, TF_MS[tf], TF_MS[tf]).map((x) => `${tf}/${x.label}`));
+    expect(want.length).toBeGreaterThanOrEqual(8);
+    for (const v of ['A', 'B', 'C']) expect(plan.filter((p) => p.venue === v).map((p) => `${p.tf}/${p.window}`)).toEqual(want);
+    expect(plan.every((p, i) => i === 0 || p.venue !== plan[i - 1].venue)).toBe(true);
+    expect(plan.slice(0, 3).map((p) => p.venue)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('skips a timeframe the venue does not serve (no served step)', () => {
+    expect(servingProbePlan(['A'], tfs, (_v, tf) => (tf === '1d' ? null : TF_MS[tf])).every((p) => p.tf === '1h')).toBe(true);
+  });
+
+  it('asks every window as serving does (no endTime, from now − span), paces before EVERY call, and judges each', async () => {
+    const calls: { venue: string; tf: string; from: number }[] = [];
+    const waits: number[] = [];
+    const res = await probeServing({
+      venues: ['A', 'B'],
+      nowMs: () => NOW,
+      getCandles: async (venue, tf, from) => {
+        calls.push({ venue, tf, from });
+        if (venue === 'B' && tf === '1d') throw new StaleUpstreamWindowError({ coin: 'BTC', exchange: 'B', timeframe: '1d', newestBarAt: NOW - 11 * 86_400_000, headGapBars: 10, headStaleBars: 1 });
+        if (venue === 'A' && tf === '1d') throw new Error('UpstreamRateLimitError: 429');
+        const s = TF_MS[tf];
+        const out: { time: number }[] = [];
+        for (let t = Math.ceil(from / s) * s; t <= Math.floor(NOW / s) * s; t += s) out.push({ time: t });
+        return out;
+      },
+      served,
+      timeframes: tfs,
+      pace: async (ms) => { waits.push(ms); },
+    });
+    const plan = servingProbePlan(['A', 'B'], tfs, served);
+    expect(calls.map((c) => `${c.venue}/${c.tf}`)).toEqual(plan.map((p) => `${p.venue}/${p.tf}`));
+    expect(calls.map((c) => NOW - c.from)).toEqual(plan.map((p) => p.spanMs));
+    expect(waits).toEqual(plan.map(() => PACE_MS));
+    const by = (v: ServeResult['verdict']) => res.filter((r) => r.verdict === v).map((r) => `${r.venue}/${r.tf}`);
+    expect(new Set(by('PASS'))).toEqual(new Set(['A/1h', 'B/1h']));
+    expect(new Set(by('FAIL'))).toEqual(new Set(['B/1d']));
+    expect(new Set(by('INDETERMINATE'))).toEqual(new Set(['A/1d']));
+    expect(res.find((r) => r.venue === 'B' && r.tf === '1d')!.reasons[0]).toContain('STALE_UPSTREAM_WINDOW');
+  });
+});
+
 describe('probeAll end-to-end through the adapters on the synthetic venue, against the pinned REACH', () => {
   type V = 'BITGET' | 'OKX';
   const shipped = {
@@ -205,6 +293,35 @@ describe('probeAll end-to-end through the adapters on the synthetic venue, again
     expect(c1).toEqual(['BITGET/2h', 'BITGET/8h']);
     const judged = res.filter((r) => r.verdict !== 'SKIPPED');
     expect(judged.every((r) => r.reasons.some((x) => x.startsWith('C3')))).toBe(true);
+  });
+
+  const runServing = (impl: typeof shipped | typeof retired) => probeServing({
+    venues: ['BITGET', 'OKX'],
+    nowMs: () => NOW,
+    getCandles: async (v, tf, from) => {
+      venue.current = new SyntheticVenue(v as V, () => NOW, () => ({ listingMs: Date.UTC(2020, 0, 1) }));
+      try { return await impl[v as V]('BTC', tf, from); } finally { venue.current = null; }
+    },
+    served: (v, tf) => served[v as V](tf),
+    timeframes: (v) => TIMEFRAMES.filter((tf) => isTimeframeFaithful(v as ExchangeId, tf)),
+    pace: async () => {},
+  });
+
+  it('S: the shipped adapters serve every registry window head-complete (vacuity: ≥ 60 windows, 21 pairs)', async () => {
+    const res = await runServing(shipped);
+    expect(res.filter((r) => r.verdict !== 'PASS').map((r) => `${r.venue}/${r.tf}/${r.window} ${r.reasons.join('; ')}`)).toEqual([]);
+    expect(res.length).toBeGreaterThanOrEqual(60);
+    expect(new Set(res.map((r) => `${r.venue}/${r.tf}`)).size).toBe(21); // BITGET 11 + OKX 10 (8h unserved)
+    expect(aggregate(res)).toBe('PASS');
+  });
+
+  it('S: the RETIRED bodies FAIL on exactly the two windows R0 measured stale in production', async () => {
+    const res = await runServing(retired);
+    expect(res.filter((r) => r.verdict === 'FAIL').map((r) => `${r.venue}/${r.tf}/${r.window}`).sort()).toEqual([
+      'BITGET/1d/trade_call@100+market_regime@100',
+      'OKX/1h/market_regime@168',
+    ]);
+    expect(aggregate(res)).toBe('FAIL');
   });
 
   it('the accounting the canary uses is the ONE accounting (no second derivation)', () => {
