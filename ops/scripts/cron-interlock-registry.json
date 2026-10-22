@@ -866,6 +866,7 @@
         "/opt/algovault-monitoring/boot-contract-canary.sh",
         "/opt/algovault-monitoring/client-claim-freshness.py",
         "/opt/algovault-monitoring/book-liveness-canary.py",
+        "/opt/algovault-monitoring/track-record-price-deviation-canary.py",
         "/opt/algovault-monitoring/aoe-peer-watchdog.sh",
         "/opt/algovault-monitoring/robots-ai-allowlist-canary.sh",
         "/opt/algovault-monitoring/edge-crawler-report-canary.sh",

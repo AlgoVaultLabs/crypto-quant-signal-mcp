@@ -1364,6 +1364,18 @@
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-REGIME_SNAPSHOT_STALE-W{NEXT}",
       "notes": "SCAN-MARKET-REGIMES-W1-V2 CH3. Pages CRITICAL_PERSISTENT on a FAIL of `regime-snapshot-sampler.js --freshness` (the producer's own run record: PRODUCER_DEAD, STALE_GENERATION, NO_SERVABLE_GENERATION, CONSECUTIVE_FAILED_TICKS, NEWLY_WINDOW_STALE, NO_RUNS); repetition is the wrapper's 24 h cooldown. A PASS calls --clear (silent). INDETERMINATE pages nothing and clears nothing. Pairs unserved when the canary started watching are seeded into its known-unserved state file and print UNSERVED, never paging; a seeded pair that turns servable prints RESOLVED and leaves the set."
+    },
+    {
+      "alert_id": "track_record_price_deviation",
+      "owner": "ops/monitoring/track-record-price-deviation-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-track_record_price_deviation-W{NEXT}",
+      "notes": "OPS-SERVED-CANDLE-TRUTH-W1 CH2. The output-side guard for the serving-window defect class: daily 08:29Z, read-only on `signals`, per (venue, timeframe) the median |price_at_signal - same-coin cross-venue reference| / reference over the trailing 24 h, judged at n >= 3, FAIL above max(4 %, 10 x the fleet median). Fires when one pair FAILs 2 consecutive runs; a run that does not judge the pair neither advances nor resets its streak. Adopted: the canary calls --clear on every run that leaves no pair at the streak. announce_resolution FALSE. Calibrated 2026-10-22 on 30 days with its own instrument (--replay 30): every FAIL was BITGET 1d, the defect this wave fixed; no other pair FAILed once."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",
