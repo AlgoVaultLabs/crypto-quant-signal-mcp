@@ -234,13 +234,41 @@ export const PROBES = [
       return f;
     },
   },
+  {
+    // DOCS-MARKET-REGIME-SCREENER-W1. The SECOND `POST /mcp` sample in docs-src/ — which is why
+    // resolution keys on `source` (below): by METHOD + PATH alone the first match wins, so this sample
+    // would bind to channel-mcp.html's and never run. Keyless, like every probe here.
+    id: 'P6', method: 'POST', path: '/mcp', source: 'scan-market-regimes.html',
+    what: 'the regime screener sample returns its documented envelope',
+    accept: ACCEPT_BOTH,
+    assert(res) {
+      const f = [];
+      if (res.status !== 200) f.push(`status ${res.status} != 200`);
+      const text = res.json?.result?.content?.[0]?.text;
+      if (typeof text !== 'string') { f.push('no result.content[0].text — the sample did not return a tool result'); return f; }
+      let body;
+      try { body = JSON.parse(text); } catch { f.push('result.content[0].text is not JSON — the documented double-parse is wrong'); return f; }
+      if (res.json?.result?.isError) { f.push(`the documented sample was refused: ${body?.code ?? body?.error ?? 'unknown'} — ${body?.message ?? ''}`); return f; }
+      for (const k of ['as_of', 'generation', 'matched', 'returned', 'regimes']) {
+        if (!(k in body)) f.push(`response is missing documented key \`${k}\``);
+      }
+      return f;
+    },
+  },
 ];
 
-/** A probe resolves when the corpus contains a call with its METHOD + PATH. */
+/**
+ * A probe resolves when ITS OWN partial (`source`) contains a call with its METHOD + PATH.
+ *
+ * `source` is part of the key because two partials can document the same endpoint: with METHOD +
+ * PATH alone the first partial in walk order wins, so a second `POST /mcp` sample would be extracted
+ * and silently never executed (DOCS-MARKET-REGIME-SCREENER-W1). The self-test proves the binding by
+ * dropping `source` and watching P6 bind to the wrong partial.
+ */
 export function resolveProbes(calls, probes = PROBES) {
   return probes.map((p) => ({
     probe: p,
-    match: calls.find((c) => c.method === p.method && c.path === p.path) || null,
+    match: calls.find((c) => c.method === p.method && c.path === p.path && (!p.source || c.source === p.source)) || null,
   }));
 }
 
@@ -250,7 +278,12 @@ const DOCS_HTML = join(ROOT, 'landing', 'docs.html');
 const TOOL_PARAM_SCHEMA_DIST = join(ROOT, 'dist', 'lib', 'tool-param-schema.js');
 
 /**
- * The `<section id="…">` slice for one tool, then its FIRST table — the Parameters table.
+ * The `<section id="…">` slice for one tool, then the first table after its "Parameters" heading.
+ *
+ * Heading-scoped (DOCS-MARKET-REGIME-SCREENER-W1), like `responseFieldsFor`: a section may open with
+ * another table — `scan-market-regimes` leads with "When to use which" — and the first table in the
+ * section would then be read as the parameters. A section with no such heading falls back to its
+ * first table, which is where every earlier section keeps it.
  *
  * Scoping to the first table matters: `get-trade-call` also ships Response-Fields and `_receipts`
  * tables built from the same `.param-row` class, and a whole-section scan would read `timeframe`
@@ -262,7 +295,8 @@ export function paramsTableFor(html, anchor) {
   if (si === -1) return null;
   const nextSection = html.indexOf('<section id="', si + 1);
   const section = html.slice(si, nextSection === -1 ? undefined : nextSection);
-  const ti = section.indexOf('<table ');
+  const hi = section.indexOf('>Parameters<');
+  const ti = section.indexOf('<table ', hi === -1 ? 0 : hi);
   if (ti === -1) return null;
   const te = section.indexOf('</table>', ti);
   return te === -1 ? null : section.slice(ti, te);
@@ -284,9 +318,19 @@ export function renderedParamsFor(html, anchor) {
     const projected = /data-schema-param="/.test(attrs);
     const values = projected ? [...cells.matchAll(/data-enum-value="([^"]+)"/g)].map((x) => x[1]) : null;
     const dflt = (attrs.match(/data-schema-default="([^"]*)"/) || [])[1] ?? null;
-    rows.push({ name, values, default: dflt });
+    const type = (cells.match(/<td>[A-Za-z][A-Za-z0-9_]*<\/td><td[^>]*>([^<]*)<\/td>/) || [])[1] ?? null;
+    rows.push({ name, values, default: dflt, type });
   }
   return rows;
+}
+
+/**
+ * The Type label a served JSON-schema property implies: `string`, `number`, … — or `<items>[]` for an
+ * array, the shape `scan_market_regimes.regime` takes (`{type: array, items: {type: string, enum}}`).
+ */
+export function schemaTypeLabel(prop) {
+  if (prop?.type === 'array') return `${typeof prop.items?.type === 'string' ? prop.items.type : '?'}[]`;
+  return typeof prop?.type === 'string' ? prop.type : null;
 }
 
 /** Read the published page + the compiled tool→partial map. Both are artifacts we generate. */
@@ -320,7 +364,10 @@ export function compareSchemaProjection(rendered, live) {
       if (!prop) { failures.push(`${tool}.${row.name}: documented on /docs but the live schema has no such parameter`); continue; }
       if (row.values === null) continue;  // hand-authored non-enum row: completeness only
 
-      const liveEnum = Array.isArray(prop.enum) ? prop.enum : null;
+      // An array-of-enum parameter publishes its values on `items`, not on the property itself.
+      const liveEnum = Array.isArray(prop.enum)
+        ? prop.enum
+        : prop.type === 'array' && Array.isArray(prop.items?.enum) ? prop.items.enum : null;
       if (!liveEnum) { failures.push(`${tool}.${row.name}: /docs renders a fixed value list but the live schema declares no enum`); continue; }
       const missing = setDiff(liveEnum, row.values);
       const extra = setDiff(row.values, liveEnum);
@@ -330,6 +377,13 @@ export function compareSchemaProjection(rendered, live) {
       const liveDefault = prop.default === undefined ? null : String(prop.default);
       if ((row.default ?? null) !== liveDefault) {
         failures.push(`${tool}.${row.name}: /docs shows default ${row.default === null ? '(none)' : `\`${row.default}\``} but the server defaults to ${liveDefault === null ? '(none)' : `\`${liveDefault}\``}`);
+      }
+
+      // The Type cell is projected too, so it is asserted too: an array of enums rendered as `string`
+      // would tell a caller to send one value where the server takes a list.
+      const liveType = schemaTypeLabel(prop);
+      if ((row.type ?? null) !== liveType) {
+        failures.push(`${tool}.${row.name}: /docs shows type ${row.type ? `\`${row.type}\`` : '(unreadable)'} but the server's schema is ${liveType ? `\`${liveType}\`` : '(no type)'}`);
       }
     }
 
@@ -786,13 +840,21 @@ export function selfTest() {
     const hostKeyed = corpus.calls.filter((c) => c.source !== 'verify.html');
     const dropped = resolveProbes(hostKeyed).filter((r) => !r.match).map((r) => r.probe.id);
     check('a host-keyed extractor FAILS the identity guard (naming P5)', dropped.join(','), 'P5');
+    // Two partials document POST /mcp. Bound by source, P6 runs the screener's own sample; drop the
+    // source key and the first partial in walk order wins — the sample would never execute.
+    const p6 = resolved.find((r) => r.probe.id === 'P6');
+    check('bypassed artifact: P6 binds to its OWN partial', p6?.match?.source, 'scan-market-regimes.html');
+    check('bypassed artifact: P6 executes the screener sample', /"name":"scan_market_regimes"/.test(p6?.match?.body ?? ''), true);
+    const unkeyed = resolveProbes(corpus.calls, PROBES.map((p) => ({ ...p, source: undefined })));
+    check('without the source key P6 binds to ANOTHER partial (the bug it prevents)',
+      unkeyed.find((r) => r.probe.id === 'P6')?.match?.source !== 'scan-market-regimes.html', true);
   }
 
   // ── P7 — proven fallible on every direction it claims to check ─────────────
   // Identity, never count: each negative case below keeps the CARDINALITY unchanged where it can,
   // so a length assertion would pass every one of them.
   const LIVE3 = { get_trade_call: { exchange: { type: 'string', enum: ['HL', 'BINANCE', 'WHITEBIT'] } } };
-  const row = (over) => [{ name: 'exchange', values: ['HL', 'BINANCE', 'WHITEBIT'], default: null, ...over }];
+  const row = (over) => [{ name: 'exchange', values: ['HL', 'BINANCE', 'WHITEBIT'], default: null, type: 'string', ...over }];
 
   check('P7 accepts an exactly-matching set', compareSchemaProjection({ get_trade_call: row({}) }, LIVE3).length, 0);
   check('P7 is ORDER-INDEPENDENT — a set, not a sequence',
@@ -809,7 +871,7 @@ export function selfTest() {
   check('P7 names the rejected side', swapped.some((f) => f.includes('REJECTS') && f.includes('BOGUSVENUE')), true);
 
   const dflt = compareSchemaProjection(
-    { scan_trade_calls: [{ name: 'timeframe', values: ['1h', '15m'], default: '1h' }] },
+    { scan_trade_calls: [{ name: 'timeframe', values: ['1h', '15m'], default: '1h', type: 'string' }] },
     { scan_trade_calls: { timeframe: { type: 'string', enum: ['1h', '15m'], default: '15m' } } },
   );
   check('P7 FAILS a stale DEFAULT even when the value set matches', dflt.length, 1);
@@ -821,6 +883,25 @@ export function selfTest() {
   ).length, 1);
   check('P7 FAILS a documented parameter the server does not serve',
     compareSchemaProjection({ get_trade_call: [...row({}), { name: 'ghost', values: null, default: null }] }, LIVE3).length, 1);
+
+  // ── P7 over an ARRAY-of-enum parameter, and over the Type cell — both directions ──
+  const LIVE_ARR = { scan_market_regimes: { regime: { type: 'array', items: { type: 'string', enum: ['TRENDING_UP', 'RANGING'] }, minItems: 1 } } };
+  const arr = (over) => ({ scan_market_regimes: [{ name: 'regime', values: ['TRENDING_UP', 'RANGING'], default: null, type: 'string[]', ...over }] });
+  check('P7 accepts an array param whose values sit on items.enum', compareSchemaProjection(arr({}), LIVE_ARR).length, 0);
+  const arrMiss = compareSchemaProjection(arr({ values: ['TRENDING_UP'] }), LIVE_ARR);
+  check('P7 FAILS an array param missing an items.enum value', arrMiss.length, 1);
+  check('P7 NAMES the missing array value', /MISSING 1 accepted value\(s\): RANGING$/.test(arrMiss[0] || ''), true);
+  const arrAsScalar = compareSchemaProjection(arr({ type: 'string' }), LIVE_ARR);
+  check('P7 FAILS an array param rendered with a scalar type', arrAsScalar.length, 1);
+  check('P7 names both types', /shows type `string` but the server's schema is `string\[\]`/.test(arrAsScalar[0] || ''), true);
+  check('P7 FAILS a scalar param rendered as an array', compareSchemaProjection({ get_trade_call: row({ type: 'string[]' }) }, LIVE3).length, 1);
+  check('P7 FAILS an unreadable Type cell — never agreement', compareSchemaProjection({ get_trade_call: row({ type: null }) }, LIVE3).length, 1);
+
+  // A section that LEADS with another table still yields its Parameters table, not the first one.
+  const LEAD = '<section id="t"><table class="x"><tr class="param-row"><td>get_market_regime</td><td class="text-gray-400">A live read.</td></tr></table>'
+    + '<h3>Parameters</h3><table class="x"><tr class="param-row" data-schema-param="regime"><td>regime</td><td class="text-gray-400">string[]</td><td>x</td></tr></table></section>';
+  check('P7 reads the table under "Parameters", not the section\'s first table',
+    (renderedParamsFor(LEAD, 't') || []).map((r) => r.name).join(','), 'regime');
 
   // ── the BYPASSED SEAM, again ───────────────────────────────────────────────
   // Every case above hands `compareSchemaProjection` a hand-built object, so nothing has yet run
@@ -834,6 +915,9 @@ export function selfTest() {
     check('bypassed artifact: get_trade_call parameter table is readable', Array.isArray(gtc) && gtc.length > 0, true);
     const ex = (gtc || []).find((r) => r.name === 'exchange');
     check('bypassed artifact: the exchange row is PROJECTED, not hand-typed', Array.isArray(ex && ex.values), true);
+    check('bypassed artifact: a scalar enum row reads its Type cell', ex && ex.type, 'string');
+    const smr = renderedParamsFor(rend.html, 'scan-market-regimes') || [];
+    check('bypassed artifact: the screener regime row renders an ARRAY type', (smr.find((r) => r.name === 'regime') || {}).type, 'string[]');
     // Scoped to the FIRST table: `timeframe` is also a RESPONSE field on this page, so a
     // whole-section scan would read response rows as parameters and then fail P7's completeness
     // leg against a schema that never had them. The sentinel is `price` — a response field that is
@@ -1196,6 +1280,7 @@ async function main() {
   const ENVELOPE = [
     { tool: 'get_trade_call', anchor: 'get-trade-call', body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_trade_call', arguments: { coin: 'BTC', timeframe: '1h' } } } },
     { tool: 'scan_trade_calls', anchor: 'scan-trade-calls', body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'scan_trade_calls', arguments: { topN: 5, timeframe: '1h', limit: 3 } } } },
+    { tool: 'scan_market_regimes', anchor: 'scan-market-regimes', body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'scan_market_regimes', arguments: { exchange: 'BINANCE', timeframe: '1h', limit: 2 } } } },
   ];
   const documented = {};
   for (const e of ENVELOPE) {

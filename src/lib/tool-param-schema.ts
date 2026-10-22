@@ -171,44 +171,13 @@ export const SCAN_RANK_BY_DEFAULT = 'oi' as const;
 export interface EnumParamSpec {
   values: readonly string[];
   default?: string;
+  /**
+   * The docs Type cell. Omitted = `string`, which is every scalar enum. An array-of-enum parameter
+   * declares `string[]`; the live P7 gate asserts this cell against the served schema's `type`
+   * (`array` of `items.type`), so it cannot claim a shape the server does not take.
+   */
+  type?: string;
 }
-
-/**
- * Every enum-valued parameter of every PUBLICLY DOCUMENTED tool, keyed by the tool name
- * `tools/list` publishes.
- *
- * `scripts/build_docs.mjs` renders one table row per entry, generically — it branches on nothing.
- * A new enum parameter joins `/docs` by appearing here, with no docs edit at all. Non-enum
- * parameters (`coin`, `topN`, `rankBy`, `minLiquidityUsd`, …) stay hand-authored in
- * `docs-src/partials/`, because their prose is written for humans rather than for a model; the
- * live gate asserts separately that none of them can go MISSING.
- *
- * NOTE — `rankBy` is absent from THIS declaration and present in `PUBLIC_TOOL_CLOSED_SET_PARAMS`
- * below. It is a bounded `z.string().max(32)`, not an enum, so it has no `enum` on the wire and
- * must never be projected as one: P7 compares a projected row against the served schema and would
- * (correctly) red on "renders a fixed value list but the live schema declares no enum".
- * DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH1 separates the two questions instead of conflating them.
- */
-export const PUBLIC_TOOL_ENUM_PARAMS: Readonly<Record<string, Readonly<Record<string, EnumParamSpec>>>> =
-  Object.freeze({
-    get_trade_call: Object.freeze({
-      timeframe: Object.freeze({ values: TIMEFRAMES }),
-      exchange: Object.freeze({ values: PUBLIC_VENUE_IDS }),
-      assetClass: Object.freeze({ values: ASSET_CLASSES }),
-    }),
-    get_market_regime: Object.freeze({
-      timeframe: Object.freeze({ values: REGIME_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
-      exchange: Object.freeze({ values: PUBLIC_VENUE_IDS, default: REGIME_EXCHANGE_DEFAULT }),
-    }),
-    scan_trade_calls: Object.freeze({
-      timeframe: Object.freeze({ values: TIMEFRAMES, default: SCAN_TIMEFRAME_DEFAULT }),
-      // All three tools now resolve to the SAME 15: scan was always the promoted universe, and
-      // the other two narrowed to it. The sets are equal by DERIVATION, not by coincidence.
-      exchange: Object.freeze({ values: PROMOTED_VENUE_IDS, default: SCAN_EXCHANGE_DEFAULT }),
-      oiChangeWindow: Object.freeze({ values: OI_CHANGE_WINDOWS, default: SCAN_OI_CHANGE_WINDOW_DEFAULT }),
-      oiBasis: Object.freeze({ values: OI_BASES, default: SCAN_OI_BASIS_DEFAULT }),
-    }),
-  });
 
 /**
  * The docs `partial id` each tool's projected rows are rendered into — the ONE mapping between a
@@ -222,6 +191,7 @@ export const TOOL_DOCS_PARTIAL: Readonly<Record<string, string>> = Object.freeze
   get_trade_call: 'get-trade-call',
   get_market_regime: 'get-market-regime',
   scan_trade_calls: 'scan-trade-calls',
+  scan_market_regimes: 'scan-market-regimes',
 });
 
 /**
@@ -238,6 +208,22 @@ export const PARAM_DOC_BLURB: Readonly<Record<string, string>> = Object.freeze({
   assetClass: 'Force the engine instead of letting the router infer it from the symbol.',
   oiChangeWindow: 'Open-interest delta window for the oi_change lens. Ignored by other lenses.',
   oiBasis: 'Whether the open-interest delta is measured in notional value or in contract count.',
+});
+
+/**
+ * Per-tool row sentences, looked up BEFORE `PARAM_DOC_BLURB`. A parameter name is not a meaning:
+ * `assetClass` forces the engine on `get_trade_call` and is a FILTER on `scan_market_regimes`, so a
+ * sentence keyed by name alone would print one tool's meaning on the other's row. Only a tool whose
+ * meaning differs needs an entry; everything else falls through to the shared sentence above.
+ */
+export const PARAM_DOC_BLURB_BY_TOOL: Readonly<Record<string, Readonly<Record<string, string>>>> = Object.freeze({
+  scan_market_regimes: Object.freeze({
+    exchange: 'Venue to screen. Only the sampled venues return rows; any other venue is refused with the sampled list.',
+    timeframe: 'Bar the regime is classified on.',
+    regime: 'Keep only these regimes (any of).',
+    assetClass: 'Keep only this asset class. <code class="text-xs bg-navy-800 px-1 rounded">tradfi</code> is every non-crypto class; rows of unknown class appear only under <code class="text-xs bg-navy-800 px-1 rounded">all</code>.',
+    sortBy: 'Row order. <code class="text-xs bg-navy-800 px-1 rounded">regime_age</code> puts the newest regime change first and unknown starts last; <code class="text-xs bg-navy-800 px-1 rounded">rank</code> needs <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code>.',
+  }),
 });
 
 /**
@@ -300,6 +286,104 @@ const RANK_BY_SELECTS: Readonly<Record<string, string>> = Object.freeze({
   oi_change: 'The fastest real open-interest change, measured from the stored OI snapshots.',
 });
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// scan_market_regimes — SCAN-MARKET-REGIMES-W1-V2 CH2
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The four regime labels — every value `RegimeType` admits, set equality compile-checked both ways. */
+export const REGIME_LABELS = ['TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'VOLATILE'] as const;
+type _LabelsAreRegimeTypes = (typeof REGIME_LABELS)[number] extends RegimeType ? true : never;
+type _RegimeTypesAreLabels = RegimeType extends (typeof REGIME_LABELS)[number] ? true : never;
+const _labelsCoverRegimeType: _LabelsAreRegimeTypes = true;
+const _regimeTypeCoversLabels: _RegimeTypesAreLabels = true;
+void _labelsCoverRegimeType;
+void _regimeTypeCoversLabels;
+
+/** `assetClass` filter values: `tradfi` = every non-crypto class; `equity` includes KR_EQUITY. */
+export const REGIME_SCAN_ASSET_CLASSES = ['all', 'crypto', 'tradfi', 'equity', 'commodity', 'index', 'fx', 'premarket'] as const;
+/** `sortBy`: `regime_age` = most recent regime change first (unknown starts last); `rank` needs `rankBy`. */
+export const REGIME_SCAN_SORT_BY = ['confidence', 'regime_age', 'rank'] as const;
+
+/**
+ * The screener's lens copy: `RANK_BY_SELECTS` with ONE clause changed. `oi` is `scan_trade_calls`'s
+ * default lens, and its shared clause says so; this tool's `rankBy` has no default (omitted = no lens),
+ * so the claim would be false here. The value and alias lists stay the shared arrays by reference.
+ */
+const REGIME_SCAN_RANK_BY_SELECTS: Readonly<Record<string, string>> = Object.freeze({
+  ...RANK_BY_SELECTS,
+  oi: 'The largest positions on the venue, by open interest — the deepest book. Also the universe topN selects when no lens is given.',
+});
+
+/**
+ * Every enum-valued parameter of `scan_market_regimes`, with its default, and its `rankBy` closed set
+ * DECLARED BY REFERENCE (V2 §0 Q5: `valueSource` IS `RANK_BY_VALUES`, `aliasSource` IS
+ * `RANK_BY_ALIASES`, no default — this tool's `rankBy` is "no lens" when omitted). The Zod schema in
+ * `src/tools/scan-market-regimes.ts` projects from this object, so the served schema cannot drift from
+ * it.
+ *
+ * `PUBLIC_TOOL_ENUM_PARAMS` and `PUBLIC_TOOL_CLOSED_SET_PARAMS` hold `enums` and `closedSets` BY
+ * REFERENCE (DOCS-MARKET-REGIME-SCREENER-W1), which is why this block sits above both maps: they feed
+ * `/docs` (`scripts/build_docs.mjs`) and the live P7 gate, so the docs tables, the served schema and the
+ * gate all read one object.
+ */
+export const SCAN_MARKET_REGIMES_PARAM_DECL = Object.freeze({
+  enums: Object.freeze({
+    exchange: Object.freeze({ values: PUBLIC_VENUE_IDS, default: 'BINANCE' as const }),
+    timeframe: Object.freeze({ values: REGIME_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
+    regime: Object.freeze({ values: REGIME_LABELS, type: 'string[]' }),
+    assetClass: Object.freeze({ values: REGIME_SCAN_ASSET_CLASSES, default: 'all' as const }),
+    sortBy: Object.freeze({ values: REGIME_SCAN_SORT_BY, default: 'confidence' as const }),
+    oiChangeWindow: Object.freeze({ values: OI_CHANGE_WINDOWS, default: SCAN_OI_CHANGE_WINDOW_DEFAULT }),
+    oiBasis: Object.freeze({ values: OI_BASES, default: SCAN_OI_BASIS_DEFAULT }),
+  }),
+  closedSets: Object.freeze({
+    rankBy: Object.freeze({
+      valueSource: RANK_BY_VALUES,
+      aliasSource: RANK_BY_ALIASES,
+      selects: REGIME_SCAN_RANK_BY_SELECTS,
+    }) satisfies ClosedSetParamSpec,
+  }),
+});
+
+/**
+ * Every enum-valued parameter of every PUBLICLY DOCUMENTED tool, keyed by the tool name
+ * `tools/list` publishes.
+ *
+ * `scripts/build_docs.mjs` renders one table row per entry, generically — it branches on nothing.
+ * A new enum parameter joins `/docs` by appearing here, with no docs edit at all. Non-enum
+ * parameters (`coin`, `topN`, `rankBy`, `minLiquidityUsd`, …) stay hand-authored in
+ * `docs-src/partials/`, because their prose is written for humans rather than for a model; the
+ * live gate asserts separately that none of them can go MISSING.
+ *
+ * NOTE — `rankBy` is absent from THIS declaration and present in `PUBLIC_TOOL_CLOSED_SET_PARAMS`
+ * below. It is a bounded `z.string().max(32)`, not an enum, so it has no `enum` on the wire and
+ * must never be projected as one: P7 compares a projected row against the served schema and would
+ * (correctly) red on "renders a fixed value list but the live schema declares no enum".
+ * DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH1 separates the two questions instead of conflating them.
+ */
+export const PUBLIC_TOOL_ENUM_PARAMS: Readonly<Record<string, Readonly<Record<string, EnumParamSpec>>>> =
+  Object.freeze({
+    get_trade_call: Object.freeze({
+      timeframe: Object.freeze({ values: TIMEFRAMES }),
+      exchange: Object.freeze({ values: PUBLIC_VENUE_IDS }),
+      assetClass: Object.freeze({ values: ASSET_CLASSES }),
+    }),
+    get_market_regime: Object.freeze({
+      timeframe: Object.freeze({ values: REGIME_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
+      exchange: Object.freeze({ values: PUBLIC_VENUE_IDS, default: REGIME_EXCHANGE_DEFAULT }),
+    }),
+    scan_trade_calls: Object.freeze({
+      timeframe: Object.freeze({ values: TIMEFRAMES, default: SCAN_TIMEFRAME_DEFAULT }),
+      // All three tools now resolve to the SAME 15: scan was always the promoted universe, and
+      // the other two narrowed to it. The sets are equal by DERIVATION, not by coincidence.
+      exchange: Object.freeze({ values: PROMOTED_VENUE_IDS, default: SCAN_EXCHANGE_DEFAULT }),
+      oiChangeWindow: Object.freeze({ values: OI_CHANGE_WINDOWS, default: SCAN_OI_CHANGE_WINDOW_DEFAULT }),
+      oiBasis: Object.freeze({ values: OI_BASES, default: SCAN_OI_BASIS_DEFAULT }),
+    }),
+    // By REFERENCE: the Zod schema in src/tools/scan-market-regimes.ts projects from the same object.
+    scan_market_regimes: SCAN_MARKET_REGIMES_PARAM_DECL.enums,
+  });
+
 /**
  * Every parameter whose valid values are a CLOSED SET at build time although Zod types it
  * permissively, keyed by the `tools/list` tool name.
@@ -319,6 +403,7 @@ export const PUBLIC_TOOL_CLOSED_SET_PARAMS: Readonly<Record<string, Readonly<Rec
         selects: RANK_BY_SELECTS,
       }),
     }),
+    scan_market_regimes: SCAN_MARKET_REGIMES_PARAM_DECL.closedSets,
   });
 
 /**
@@ -362,52 +447,3 @@ export function assertClosedSetCoverage(
   return gaps;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────────────────────
-// scan_market_regimes — SCAN-MARKET-REGIMES-W1-V2 CH2
-// ─────────────────────────────────────────────────────────────────────────────────────────────
-
-/** The four regime labels — every value `RegimeType` admits, set equality compile-checked both ways. */
-export const REGIME_LABELS = ['TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'VOLATILE'] as const;
-type _LabelsAreRegimeTypes = (typeof REGIME_LABELS)[number] extends RegimeType ? true : never;
-type _RegimeTypesAreLabels = RegimeType extends (typeof REGIME_LABELS)[number] ? true : never;
-const _labelsCoverRegimeType: _LabelsAreRegimeTypes = true;
-const _regimeTypeCoversLabels: _RegimeTypesAreLabels = true;
-void _labelsCoverRegimeType;
-void _regimeTypeCoversLabels;
-
-/** `assetClass` filter values: `tradfi` = every non-crypto class; `equity` includes KR_EQUITY. */
-export const REGIME_SCAN_ASSET_CLASSES = ['all', 'crypto', 'tradfi', 'equity', 'commodity', 'index', 'fx', 'premarket'] as const;
-/** `sortBy`: `regime_age` = most recent regime change first (unknown starts last); `rank` needs `rankBy`. */
-export const REGIME_SCAN_SORT_BY = ['confidence', 'regime_age', 'rank'] as const;
-
-/**
- * Every enum-valued parameter of `scan_market_regimes`, with its default, and its `rankBy` closed set
- * DECLARED BY REFERENCE (V2 §0 Q5: `valueSource` IS `RANK_BY_VALUES`, `aliasSource` IS
- * `RANK_BY_ALIASES`, no default — this tool's `rankBy` is "no lens" when omitted). The Zod schema in
- * `src/tools/scan-market-regimes.ts` projects from this object, so the served schema cannot drift from
- * it.
- *
- * DELIBERATELY NOT IN `PUBLIC_TOOL_ENUM_PARAMS` / `PUBLIC_TOOL_CLOSED_SET_PARAMS` YET. Those two feed
- * `/docs` (`scripts/build_docs.mjs`) and the live P7 gate, and an entry there requires a
- * `TOOL_DOCS_PARTIAL` row and a `docs-src/partials/` file — the release wave's listing work (V2 §0 Q4,
- * the OWED close-register row). Moving `enums` and `closedSets` into those maps is that wave's entire
- * schema edit; nothing here has to be re-typed.
- */
-export const SCAN_MARKET_REGIMES_PARAM_DECL = Object.freeze({
-  enums: Object.freeze({
-    exchange: Object.freeze({ values: PUBLIC_VENUE_IDS, default: 'BINANCE' as const }),
-    timeframe: Object.freeze({ values: REGIME_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
-    regime: Object.freeze({ values: REGIME_LABELS }),
-    assetClass: Object.freeze({ values: REGIME_SCAN_ASSET_CLASSES, default: 'all' as const }),
-    sortBy: Object.freeze({ values: REGIME_SCAN_SORT_BY, default: 'confidence' as const }),
-    oiChangeWindow: Object.freeze({ values: OI_CHANGE_WINDOWS, default: SCAN_OI_CHANGE_WINDOW_DEFAULT }),
-    oiBasis: Object.freeze({ values: OI_BASES, default: SCAN_OI_BASIS_DEFAULT }),
-  }),
-  closedSets: Object.freeze({
-    rankBy: Object.freeze({
-      valueSource: RANK_BY_VALUES,
-      aliasSource: RANK_BY_ALIASES,
-      selects: RANK_BY_SELECTS,
-    }) satisfies ClosedSetParamSpec,
-  }),
-});

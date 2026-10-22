@@ -282,6 +282,159 @@
           }
         }
       }
+    },
+    {
+      "name": "scan_market_regimes",
+      "description": "Screens a whole crypto perpetual futures venue by market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — and returns each matching coin with confidence, trend strength, ADX, volatility ratio and how long the regime has held. Rows are the market regime classifier output for the last closed bar, sampled on Binance, Bybit, OKX and Bitget; another venue, or a timeframe a venue cannot serve, is refused with the alternatives. Billing: one call per returned row; non-matching coins are free. For a live single-coin read with cross-venue funding, call get_market_regime. Read-only.",
+      "url": "https://api.algovault.com/mcp",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "enum": [
+              "HL",
+              "BINANCE",
+              "BYBIT",
+              "OKX",
+              "BITGET",
+              "ASTER",
+              "BINGX",
+              "GATE",
+              "HTX",
+              "KUCOIN",
+              "MEXC",
+              "PHEMEX",
+              "WHITEBIT",
+              "XT",
+              "WEEX"
+            ],
+            "default": "BINANCE",
+            "description": "Venue to screen (default Binance). A venue outside the sampled set is refused with the sampled list."
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "4h",
+              "1d"
+            ],
+            "default": "4h",
+            "description": "Regime timeframe: 1h, 4h or 1d (default 4h)."
+          },
+          "regime": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "TRENDING_UP",
+                "TRENDING_DOWN",
+                "RANGING",
+                "VOLATILE"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 4,
+            "description": "Keep only these regimes (any of): TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE."
+          },
+          "minConfidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Optional confidence floor, 0 to 100."
+          },
+          "maxRegimeAgeBars": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Keep only coins whose regime began within this many bars (1 = changed on the last closed bar). Coins whose regime start is not yet known are excluded."
+          },
+          "assetClass": {
+            "type": "string",
+            "enum": [
+              "all",
+              "crypto",
+              "tradfi",
+              "equity",
+              "commodity",
+              "index",
+              "fx",
+              "premarket"
+            ],
+            "default": "all",
+            "description": "all (default), crypto, tradfi (every non-crypto class), equity, commodity, index, fx or premarket."
+          },
+          "minLiquidityUsd": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Optional USD liquidity floor applied to the scan universe: notional open interest, or 24h volume on venues that expose no bulk OI. Omitted means no floor."
+          },
+          "coins": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Restrict to these symbols, e.g. [\"BTC\",\"ETH\"]. Symbols not on the venue are listed in not_found and not billed."
+          },
+          "rankBy": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Optional universe lens — the same lenses and aliases as scan_trade_calls rankBy; rows then echo the lens metric. Omit to screen every coin."
+          },
+          "topN": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Lens universe size, 1 to 1000 (default 100 with rankBy). Without rankBy it selects the top coins by open interest."
+          },
+          "oiChangeWindow": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "4h",
+              "24h"
+            ],
+            "default": "24h",
+            "description": "OI-delta window for rankBy=oi_change: 1h, 4h, or 24h (default 24h). Ignored by other lenses."
+          },
+          "oiBasis": {
+            "type": "string",
+            "enum": [
+              "notional",
+              "contracts"
+            ],
+            "default": "notional",
+            "description": "OI-delta basis for rankBy=oi_change: notional (default, USD) or contracts (base-coin, price-independent). Ignored by other lenses."
+          },
+          "sortBy": {
+            "type": "string",
+            "enum": [
+              "confidence",
+              "regime_age",
+              "rank"
+            ],
+            "default": "confidence",
+            "description": "confidence (default), regime_age (most recent regime change first, unknown starts last), or rank (lens order; needs rankBy)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Page size, 1 to 100 (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip, for paging within one snapshot. A changed as_of means the snapshot advanced between pages."
+          }
+        }
+      }
     }
   ],
   "author": "AlgoVault Labs",

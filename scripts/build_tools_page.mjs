@@ -26,6 +26,10 @@ const NAV_END = '<!-- NAV:END -->';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+// Each card links its how-to: the docs H3 id is `slug(name)`, the SAME `PublicToolEntry.anchor` the card
+// id uses, so the link cannot point at a section that does not exist (DOCS-MARKET-REGIME-SCREENER-W1).
+const DOCS_URL = 'https://algovault.com/docs';
+
 // Registry channel key → the human "how you connect" label (public channels only).
 const CHANNEL_LABEL = { mcp: 'MCP', httpX402: 'REST / x402', bot: 'Telegram', webhook: 'Webhooks' };
 
@@ -41,6 +45,7 @@ function toolCard(entry, cap) {
         </div>
         <p class="tools-card-desc">${esc(cap.description)}</p>
         <div class="tools-card-channels">${channels}</div>
+        <a class="tools-card-link" href="${DOCS_URL}#${entry.anchor}">How to use &rarr;</a>
       </article>`;
 }
 
@@ -81,7 +86,7 @@ export function renderToolsPage(existingHtml = '') {
 
   const title = 'Tools — AlgoVault Labs';
   const description =
-    'Every AlgoVault MCP tool: composite trade-call verdicts, market-regime, cross-venue funding arbitrage, market scanning, and knowledge — the Brain Layer for AI trading agents.';
+    'Every AlgoVault MCP tool: composite trade-call verdicts, market-regime, cross-venue funding arbitrage, market scanning, market-regime screening, and knowledge — the Brain Layer for AI trading agents.';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -119,6 +124,8 @@ ${renderThemeBlock()}
   .tools-card-name { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12px; color: var(--mint, oklch(0.86 0.16 165)); background: oklch(0.86 0.16 165 / 0.08); padding: 3px 8px; border-radius: 6px; }
   .tools-card-desc { font-size: 14.5px; line-height: 1.6; color: var(--fg-2, #d1d5db); margin: 0 0 16px; }
   .tools-card-channels { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tools-card-link { display: inline-block; margin-top: 14px; font-size: 13.5px; font-weight: 500; color: var(--mint); text-decoration: none; }
+  .tools-card-link:hover { text-decoration: underline; }
   .tools-badge { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 10.5px; letter-spacing: 0.04em; color: var(--fg-3, #9ca3af); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 999px; padding: 2px 9px; }
 </style>
 ${preservedJsonLd(existingHtml)}<!-- ANALYTICS:START -->

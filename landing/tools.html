@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tools — AlgoVault Labs</title>
-<meta name="description" content="Every AlgoVault MCP tool: composite trade-call verdicts, market-regime, cross-venue funding arbitrage, market scanning, and knowledge — the Brain Layer for AI trading agents.">
+<meta name="description" content="Every AlgoVault MCP tool: composite trade-call verdicts, market-regime, cross-venue funding arbitrage, market scanning, market-regime screening, and knowledge — the Brain Layer for AI trading agents.">
 <link rel="canonical" href="https://algovault.com/tools">
 <link rel="icon" type="image/png" href="/logo.png">
 <meta property="og:title" content="Tools — AlgoVault Labs">
-<meta property="og:description" content="Every AlgoVault MCP tool: composite trade-call verdicts, market-regime, cross-venue funding arbitrage, market scanning, and knowledge — the Brain Layer for AI trading agents.">
+<meta property="og:description" content="Every AlgoVault MCP tool: composite trade-call verdicts, market-regime, cross-venue funding arbitrage, market scanning, market-regime screening, and knowledge — the Brain Layer for AI trading agents.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://algovault.com/tools">
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
@@ -52,6 +52,8 @@ tailwind.config = {
   .tools-card-name { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12px; color: var(--mint, oklch(0.86 0.16 165)); background: oklch(0.86 0.16 165 / 0.08); padding: 3px 8px; border-radius: 6px; }
   .tools-card-desc { font-size: 14.5px; line-height: 1.6; color: var(--fg-2, #d1d5db); margin: 0 0 16px; }
   .tools-card-channels { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tools-card-link { display: inline-block; margin-top: 14px; font-size: 13.5px; font-weight: 500; color: var(--mint); text-decoration: none; }
+  .tools-card-link:hover { text-decoration: underline; }
   .tools-badge { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 10.5px; letter-spacing: 0.04em; color: var(--fg-3, #9ca3af); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 999px; padding: 2px 9px; }
 </style>
 <script type="application/ld+json" data-algovault-jsonld="Product">
@@ -165,6 +167,7 @@ tailwind.config = {
           <a href="https://algovault.com/tools#get-market-regime" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Market Regime</span></a>
           <a href="https://algovault.com/tools#scan-funding-arb" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Funding Arbitrage</span></a>
           <a href="https://algovault.com/tools#scan-trade-calls" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Trade Call Scanner</span></a>
+          <a href="https://algovault.com/tools#scan-market-regimes" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Market Regime Screener</span></a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Knowledge Chat</span></a>
           <a href="https://algovault.com/tools" class="inline-block mt-2 text-xs font-medium text-mint-400 hover:text-mint-300 transition">See all tools →</a>
         </div>
@@ -215,6 +218,7 @@ tailwind.config = {
           <a href="https://algovault.com/tools#get-market-regime" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Market Regime</a>
           <a href="https://algovault.com/tools#scan-funding-arb" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Funding Arbitrage</a>
           <a href="https://algovault.com/tools#scan-trade-calls" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call Scanner</a>
+          <a href="https://algovault.com/tools#scan-market-regimes" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Market Regime Screener</a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Knowledge Chat</a>
           <a href="https://algovault.com/tools" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">See all tools</a>
           <a href="https://algovault.com/mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
@@ -313,6 +317,7 @@ tailwind.config = {
         </div>
         <p class="tools-card-desc">Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; whole-market scan: scan_trade_calls. Read-only: live exchange APIs, no orders. Verified track record: get_track_record or performance://signal-performance; on-chain verified merkle anchor.</p>
         <div class="tools-card-channels"><span class="tools-badge">MCP</span><span class="tools-badge">REST / x402</span><span class="tools-badge">Telegram</span><span class="tools-badge">Webhooks</span></div>
+        <a class="tools-card-link" href="https://algovault.com/docs#get-trade-call">How to use &rarr;</a>
       </article>
       <article id="get-market-regime" class="tools-card">
         <div class="tools-card-head">
@@ -321,6 +326,7 @@ tailwind.config = {
         </div>
         <p class="tools-card-desc">Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict: trend ranging + cross-venue funding rate. Read-only, live exchange APIs. Verified track record: get_track_record or performance://signal-performance; on-chain verified merkle anchor.</p>
         <div class="tools-card-channels"><span class="tools-badge">MCP</span><span class="tools-badge">REST / x402</span><span class="tools-badge">Telegram</span><span class="tools-badge">Webhooks</span></div>
+        <a class="tools-card-link" href="https://algovault.com/docs#get-market-regime">How to use &rarr;</a>
       </article>
       <article id="scan-funding-arb" class="tools-card">
         <div class="tools-card-head">
@@ -329,6 +335,7 @@ tailwind.config = {
         </div>
         <p class="tools-card-desc">Ranked cross-venue funding arbitrage across major crypto perpetual futures venues — funding rate spreads, long one venue short another, as a BUY SELL HOLD composite verdict per pair. AI trading signal for crypto quant and Claude trading agents. Trade call via get_trade_call, market regime via get_market_regime. On-chain verified merkle anchor.</p>
         <div class="tools-card-channels"><span class="tools-badge">MCP</span><span class="tools-badge">REST / x402</span><span class="tools-badge">Telegram</span></div>
+        <a class="tools-card-link" href="https://algovault.com/docs#scan-funding-arb">How to use &rarr;</a>
       </article>
       <article id="scan-trade-calls" class="tools-card">
         <div class="tools-card-head">
@@ -337,6 +344,16 @@ tailwind.config = {
         </div>
         <p class="tools-card-desc">Returns ranked BUY SELL HOLD trade calls across the top crypto perpetual futures by open interest — one scan for whole-market coverage, each with confidence and market regime. Use this for breadth; use get_trade_call for per-coin depth and reasoning. Read-only: reads live exchange APIs, places no orders.</p>
         <div class="tools-card-channels"><span class="tools-badge">MCP</span><span class="tools-badge">REST / x402</span><span class="tools-badge">Telegram</span><span class="tools-badge">Webhooks</span></div>
+        <a class="tools-card-link" href="https://algovault.com/docs#scan-trade-calls">How to use &rarr;</a>
+      </article>
+      <article id="scan-market-regimes" class="tools-card">
+        <div class="tools-card-head">
+          <h3 class="tools-card-title">Market Regime Screener</h3>
+          <code class="tools-card-name">scan_market_regimes</code>
+        </div>
+        <p class="tools-card-desc">Screens a whole crypto perpetual futures venue by market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — and returns each matching coin with confidence, trend strength, ADX, volatility ratio and how long the regime has held. Rows are the market regime classifier output for the last closed bar, sampled on Binance, Bybit, OKX and Bitget; another venue, or a timeframe a venue cannot serve, is refused with the alternatives. Billing: one call per returned row; non-matching coins are free. For a live single-coin read with cross-venue funding, call get_market_regime. Read-only.</p>
+        <div class="tools-card-channels"><span class="tools-badge">MCP</span></div>
+        <a class="tools-card-link" href="https://algovault.com/docs#scan-market-regimes">How to use &rarr;</a>
       </article>
       <article id="chat-knowledge" class="tools-card">
         <div class="tools-card-head">
@@ -345,6 +362,7 @@ tailwind.config = {
         </div>
         <p class="tools-card-desc">Returns a synthesized natural-language answer with citations, grounded in the AlgoVault knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use when you need an explanation, code pattern, or how-to; for raw ranked snippets without LLM synthesis use search_knowledge (faster, no quota cost). Read-only: calls an LLM, no other side effects. Quota: Free 10/month, Starter 50, Pro 200, Enterprise 2000.</p>
         <div class="tools-card-channels"><span class="tools-badge">MCP</span></div>
+        <a class="tools-card-link" href="https://algovault.com/docs#chat-knowledge">How to use &rarr;</a>
       </article>
       <article id="search-knowledge" class="tools-card">
         <div class="tools-card-head">
@@ -353,6 +371,7 @@ tailwind.config = {
         </div>
         <p class="tools-card-desc">Returns ranked snippets from the AlgoVault knowledge bundle answering a question about its MCP tools, response shapes, integration patterns (LangChain, LlamaIndex, MAF, CrewAI), or code examples. Call this BEFORE other tool calls to confirm parameter usage and avoid hallucinating tool shapes. Fast: BM25 lexical search, no LLM call, no quota cost. For a synthesized natural-language answer use chat_knowledge. Read-only, no side effects.</p>
         <div class="tools-card-channels"><span class="tools-badge">MCP</span></div>
+        <a class="tools-card-link" href="https://algovault.com/docs#search-knowledge">How to use &rarr;</a>
       </article>
   </div>
 </main>

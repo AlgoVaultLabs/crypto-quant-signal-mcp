@@ -40,12 +40,13 @@ const feat = (over: Partial<FeatureSpec> & { name: string }): FeatureSpec => ({
 });
 
 describe('CH1 AC-a — public tool count = allToolNames() minus aliases minus the HELD tools', () => {
-  it('publicToolNames() = 6 canonical (equities excluded, no aliases)', () => {
+  it('publicToolNames() = 7 canonical (equities excluded, no aliases)', () => {
     expect(publicToolNames()).toEqual([
       'get_trade_call',
       'get_market_regime',
       'scan_funding_arb',
       'scan_trade_calls',
+      'scan_market_regimes',
       'chat_knowledge',
       'search_knowledge',
     ]);
@@ -67,16 +68,14 @@ describe('CH1 AC-a — public tool count = allToolNames() minus aliases minus th
     expect(publicToolNames()).toEqual(canonicalListed);
   });
 
-  it('the HELD set is exactly the two equities plus get_track_record and scan_market_regimes', () => {
+  it('the HELD set is exactly the two equities plus get_track_record', () => {
     // Equities: the standing public-copy HOLD (NAV-PLATFORM-GENERATOR-W1 A4).
     // get_track_record: LIVE on tools/list and /capabilities, kept off nav + /tools this
     // wave only because listing it would regenerate landing/** and docs/**, outside
     // DEV-TRACK-RECORD-TOOL-PARITY-W1's declared firewall. Flip in the follow-up wave.
-    // scan_market_regimes: the same scope boundary (SCAN-MARKET-REGIMES-W1-V2 §0 Q4) — LIVE on
-    // tools/list; its docs partial, TOOL_LABELS, lobehub api[] and count tests are the release
-    // wave's OWED listing work.
+    // scan_market_regimes was held the same way until DOCS-MARKET-REGIME-SCREENER-W1 listed it.
     expect(FEATURE_REGISTRY.filter((f) => f.publicListing === false).map((f) => f.name).sort())
-      .toEqual(['get_equity_call', 'get_equity_regime', 'get_track_record', 'scan_market_regimes']);
+      .toEqual(['get_equity_call', 'get_equity_regime', 'get_track_record']);
   });
 });
 
@@ -95,6 +94,18 @@ describe('CH1 AC-c — no equities-internal / outcome_* leakage', () => {
       expect(s).not.toContain(forbidden);
     }
   });
+  it('the Tools dropdown lists the screener right after Trade Call Scanner, and keeps Knowledge Chat', () => {
+    expect(FEATURED_TOOLS).toBe(6);
+    expect(col('Tools').items.map((i) => i.label)).toEqual([
+      'Trade Call',
+      'Market Regime',
+      'Funding Arbitrage',
+      'Trade Call Scanner',
+      'Market Regime Screener',
+      'Knowledge Chat',
+    ]);
+  });
+
   it('the Tools column features exactly the first FEATURED_TOOLS public tools', () => {
     const items = col('Tools').items;
     expect(items).toHaveLength(FEATURED_TOOLS);

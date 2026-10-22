@@ -28,7 +28,12 @@ import {
   PARAM_DOC_BLURB,
   REGIME_TIMEFRAMES,
   SCAN_TIMEFRAME_DEFAULT,
+  SCAN_MARKET_REGIMES_PARAM_DECL,
+  PUBLIC_TOOL_CLOSED_SET_PARAMS,
+  PARAM_DOC_BLURB_BY_TOOL,
 } from '../../src/lib/tool-param-schema.js';
+import { RANK_BY_VALUES, RANK_BY_ALIASES } from '../../src/lib/rank-constants.js';
+import { SCAN_MARKET_REGIMES_DESCRIPTION } from '../../src/tool-descriptions.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p: string) => readFileSync(join(REPO_ROOT, p), 'utf8');
@@ -93,8 +98,11 @@ describe('the per-tool difference is preserved, not flattened', () => {
   });
 
   it('every projected parameter has an authored blurb — a bare chip list reads as a schema dump', () => {
-    for (const params of Object.values(PUBLIC_TOOL_ENUM_PARAMS)) {
-      for (const name of Object.keys(params)) expect(PARAM_DOC_BLURB[name], `no blurb for ${name}`).toBeTruthy();
+    // The renderer's lookup order: the tool's own sentence, then the shared per-parameter one.
+    for (const [tool, params] of Object.entries(PUBLIC_TOOL_ENUM_PARAMS)) {
+      for (const name of Object.keys(params)) {
+        expect(PARAM_DOC_BLURB_BY_TOOL[tool]?.[name] ?? PARAM_DOC_BLURB[name], `no blurb for ${tool}.${name}`).toBeTruthy();
+      }
     }
   });
 });
@@ -125,6 +133,24 @@ describe('build_docs OWNS these regions — and must never register them as fore
     // The default chip must NOT be tagged: the default is also an accepted value, and tagging it
     // would double-count that venue and quietly turn P7's set comparison into a multiset one.
     expect(html.match(/Default: <code[^>]*>/)?.[0]).not.toContain('data-enum-value');
+  });
+
+  it('the Type cell is the DECLARED type (default string), and a tool sentence beats the shared one', async () => {
+    const { renderToolParamRows } = await import('../../scripts/build_docs.mjs');
+    const html = renderToolParamRows(
+      'demo_tool',
+      { regime: { values: ['A', 'B'], type: 'string[]' }, assetClass: { values: ['x'] } },
+      { assetClass: 'SHARED sentence.' },
+      { assetClass: 'TOOL sentence.' },
+    );
+    const rows = html.split('\n');
+    expect(rows[0]).toContain('<td>regime</td><td class="text-gray-400">string[]</td>');
+    expect(rows[1]).toContain('<td>assetClass</td><td class="text-gray-400">string</td>');
+    expect(rows[1]).toContain('TOOL sentence.');
+    expect(rows[1]).not.toContain('SHARED sentence.');
+    // No tool entry → the shared sentence, unchanged: the three earlier tools render byte-identically.
+    expect(renderToolParamRows('demo_tool', { assetClass: { values: ['x'] } }, { assetClass: 'SHARED sentence.' }))
+      .toContain('SHARED sentence.');
   });
 
   it('REFUSES to generate when a declared tool has no marker — a projection landing nowhere is the original bug', async () => {
@@ -192,16 +218,49 @@ describe('no hand-typed venue list survives on the docs source', () => {
     // that its name count equals FUNDING_VENUE_COUNT. So this test defers to that owner by matching
     // the canonical string, never by listing a filename — an exemption keyed on a path goes stale
     // the moment the copy moves, and stops guarding without saying so.
+    // The regime screener's sampled-venue sentence is the second canonical string, deferred to the
+    // same way: its owner is the D8 pin in tests/scan-market-regimes.test.ts, which ties this exact
+    // text to DEFAULT_REGIME_SNAPSHOT_VENUES in both the tool description and the partial. Asserting
+    // the description still carries it keeps this deferral from outliving a venue change.
+    const REGIME_SAMPLED_TEXT = 'Binance, Bybit, OKX and Bitget';
+    expect(SCAN_MARKET_REGIMES_DESCRIPTION).toContain(REGIME_SAMPLED_TEXT);
     const LABELS = ['Hyperliquid', 'Binance', 'Bybit', 'OKX', 'Bitget', 'Aster', 'BingX', 'Gate',
       'HTX', 'KuCoin', 'MEXC', 'Phemex', 'WhiteBIT', 'BitMart', 'XT', 'EdgeX', 'WEEX'];
     const offenders: string[] = [];
     for (const f of files) {
       for (const raw of read(`docs-src/partials/${f}`).split('\n')) {
-        const line = raw.replace(FUNDING_VENUE_LIST_TEXT, '');
+        const line = raw.replace(FUNDING_VENUE_LIST_TEXT, '').replace(REGIME_SAMPLED_TEXT, '');
         const named = LABELS.filter((l) => new RegExp(`\\b${l}\\b`).test(line));
         if (named.length >= 4) offenders.push(`${f}: names ${named.length} venues by hand — ${named.join(', ')}`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('scan_market_regimes is projected BY REFERENCE (DOCS-MARKET-REGIME-SCREENER-W1 D4)', () => {
+  it('the docs maps hold the SAME objects the Zod schema projects from', () => {
+    expect(PUBLIC_TOOL_ENUM_PARAMS.scan_market_regimes).toBe(SCAN_MARKET_REGIMES_PARAM_DECL.enums);
+    expect(PUBLIC_TOOL_CLOSED_SET_PARAMS.scan_market_regimes).toBe(SCAN_MARKET_REGIMES_PARAM_DECL.closedSets);
+    expect(TOOL_DOCS_PARTIAL.scan_market_regimes).toBe('scan-market-regimes');
+    expect(SCAN_MARKET_REGIMES_PARAM_DECL.enums.regime.type).toBe('string[]');
+  });
+
+  it('the lens lists are the shared arrays; only the oi clause differs, and it claims no default', () => {
+    const mine = SCAN_MARKET_REGIMES_PARAM_DECL.closedSets.rankBy;
+    const scan = PUBLIC_TOOL_CLOSED_SET_PARAMS.scan_trade_calls.rankBy;
+    expect(mine.valueSource).toBe(RANK_BY_VALUES);
+    expect(mine.aliasSource).toBe(RANK_BY_ALIASES);
+    expect('default' in mine).toBe(false);
+    expect(mine.selects.oi).not.toMatch(/default/i);
+    expect(scan.selects.oi).toMatch(/default/i);
+    for (const v of RANK_BY_VALUES.filter((x) => x !== 'oi')) expect(mine.selects[v]).toBe(scan.selects[v]);
+  });
+
+  it('every screener row sentence is authored for a parameter the screener actually declares', () => {
+    for (const p of Object.keys(PARAM_DOC_BLURB_BY_TOOL.scan_market_regimes)) {
+      expect(Object.keys(SCAN_MARKET_REGIMES_PARAM_DECL.enums)).toContain(p);
+    }
+    expect(PARAM_DOC_BLURB_BY_TOOL.scan_market_regimes.assetClass).not.toBe(PARAM_DOC_BLURB.assetClass);
   });
 });

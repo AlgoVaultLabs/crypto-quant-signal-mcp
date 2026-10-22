@@ -1,0 +1,214 @@
+      <p class="text-gray-400 text-sm mb-5">Returns every coin on a venue whose market regime matches your filter. Each row is the market-regime classifier&rsquo;s output for the last closed bar &mdash; the same classifier <a href="#get-market-regime" class="text-mint-400 hover:underline">get_market_regime</a> uses. One call replaces polling the whole venue coin by coin, and you pay per returned row: coins that don&rsquo;t match are free.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">When to use which</h3>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-3">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Tool</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Use it for</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td><code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code></td><td class="text-gray-400">A live single-coin read, including cross-venue funding.</td></tr>
+          <tr class="param-row"><td><code class="text-xs bg-navy-800 px-1 rounded">scan_market_regimes</code></td><td class="text-gray-400">Find every coin in a regime, as of the last closed bar.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td><code class="text-xs bg-navy-800 px-1 rounded">scan_trade_calls</code></td><td class="text-gray-400">Ranked BUY/SELL verdicts.</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-400 text-sm mb-5"><a href="#scan-trade-calls" class="text-mint-400 hover:underline">scan_trade_calls</a> rows also carry a <code class="text-xs bg-navy-800 px-1 rounded">regime</code> field, but it is the trade-call engine&rsquo;s three-label regime, with no confidence. If your logic is built on <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code>, use this tool.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">How it works</h3>
+      <ul class="space-y-1.5 list-disc list-inside mb-5">
+        <li class="text-gray-400 text-sm leading-relaxed">After each bar closes, the venue&rsquo;s whole universe is classified once.</li>
+        <li class="text-gray-400 text-sm leading-relaxed">Every call reads that one snapshot, so pages never mix two bars. <code class="text-xs bg-navy-800 px-1 rounded">as_of</code> is the bar close; <code class="text-xs bg-navy-800 px-1 rounded">computed_at</code> is when the snapshot was computed.</li>
+        <li class="text-gray-400 text-sm leading-relaxed">Rows are sampled on Binance, Bybit, OKX and Bitget.</li>
+        <li class="text-gray-400 text-sm leading-relaxed">A venue or timeframe that can&rsquo;t currently be served is refused with alternatives &mdash; never answered with stale rows.</li>
+      </ul>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <!-- SCHEMA:tool-params:scan_market_regimes:start -->
+          <!-- SCHEMA:tool-params:scan_market_regimes:end -->
+          <tr class="param-row"><td>minConfidence</td><td class="text-gray-400">number</td><td class="text-gray-400">Keep only rows at or above this confidence (0&ndash;100). Optional.</td></tr>
+          <tr class="param-row"><td>maxRegimeAgeBars</td><td class="text-gray-400">number</td><td class="text-gray-400">Keep only coins whose regime began within this many bars (1&ndash;500). <code class="text-xs bg-navy-800 px-1 rounded">1</code> means the regime changed on the last closed bar. Optional.</td></tr>
+          <tr class="param-row"><td>coins</td><td class="text-gray-400">string[]</td><td class="text-gray-400">Your watchlist, up to 200 symbols. Symbols the venue doesn&rsquo;t list come back in <code class="text-xs bg-navy-800 px-1 rounded">not_found</code> and are not billed. Optional.</td></tr>
+          <tr class="param-row"><td>rankBy</td><td class="text-gray-400">string</td><td class="text-gray-400">Screen only a lens universe instead of every coin. Every lens is listed below, with the short alias it answers to. Optional &mdash; omit it to screen every coin.</td></tr>
+          <tr class="param-row"><td>topN</td><td class="text-gray-400">number</td><td class="text-gray-400">Lens universe size (1&ndash;1000). Defaults to <code class="text-xs bg-navy-800 px-1 rounded">100</code> when <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> is set; without <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> it selects the top coins by open interest. Optional.</td></tr>
+          <tr class="param-row"><td>minLiquidityUsd</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop coins below this USD liquidity floor &mdash; notional open interest, or 24h volume on venues that expose no bulk open interest. Optional.</td></tr>
+          <tr class="param-row"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Page size (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">20</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>offset</td><td class="text-gray-400">number</td><td class="text-gray-400">Rows to skip, for paging within one snapshot. Default: <code class="text-xs bg-navy-800 px-1 rounded">0</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Ranking lenses</h3>
+      <p class="text-gray-400 text-sm mb-3">Every value <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> accepts. Pass the lens or its alias &mdash; both resolve to the same universe. Omit <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> to screen every coin. With any lens except <code class="text-xs bg-navy-800 px-1 rounded">oi</code>, rows also carry the lens metric.</p>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Lens</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Alias</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Selects</th>
+        </tr></thead>
+        <tbody>
+          <!-- SCHEMA:tool-closed-set:scan_market_regimes:start -->
+          <!-- SCHEMA:tool-closed-set:scan_market_regimes:end -->
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Filters, explained</h3>
+      <ul class="space-y-1.5 list-disc list-inside mb-5">
+        <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1 rounded">regime</code> &mdash; any of the listed regimes.</li>
+        <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1 rounded">minConfidence</code> &mdash; a floor on confidence.</li>
+        <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1 rounded">maxRegimeAgeBars</code> &mdash; &ldquo;just entered&rdquo;: <code class="text-xs bg-navy-800 px-1 rounded">1</code> means the regime changed on the last closed bar. A regime&rsquo;s start is known only from the first change observed after the screener began recording, so coins whose start isn&rsquo;t known yet are excluded by this filter.</li>
+        <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1 rounded">assetClass</code> &mdash; <code class="text-xs bg-navy-800 px-1 rounded">all</code>, <code class="text-xs bg-navy-800 px-1 rounded">crypto</code>, <code class="text-xs bg-navy-800 px-1 rounded">tradfi</code>, <code class="text-xs bg-navy-800 px-1 rounded">equity</code>, <code class="text-xs bg-navy-800 px-1 rounded">commodity</code>, <code class="text-xs bg-navy-800 px-1 rounded">index</code>, <code class="text-xs bg-navy-800 px-1 rounded">fx</code> or <code class="text-xs bg-navy-800 px-1 rounded">premarket</code>. <code class="text-xs bg-navy-800 px-1 rounded">tradfi</code> is every non-crypto class; rows whose class is <code class="text-xs bg-navy-800 px-1 rounded">UNKNOWN</code> appear only under <code class="text-xs bg-navy-800 px-1 rounded">all</code>.</li>
+        <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1 rounded">coins</code> &mdash; your watchlist in one call. <code class="text-xs bg-navy-800 px-1 rounded">not_found</code> lists the symbols the venue doesn&rsquo;t list; they are not billed.</li>
+        <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> + <code class="text-xs bg-navy-800 px-1 rounded">topN</code> &mdash; screen only a lens universe. <code class="text-xs bg-navy-800 px-1 rounded">topN</code> alone takes the top coins by open interest.</li>
+        <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1 rounded">minLiquidityUsd</code> &mdash; a floor on the universe.</li>
+        <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1 rounded">sortBy</code> &mdash; <code class="text-xs bg-navy-800 px-1 rounded">confidence</code>, <code class="text-xs bg-navy-800 px-1 rounded">regime_age</code> (newest change first, unknown starts last) or <code class="text-xs bg-navy-800 px-1 rounded">rank</code> (needs <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code>).</li>
+        <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1 rounded">limit</code> + <code class="text-xs bg-navy-800 px-1 rounded">offset</code> &mdash; paging.</li>
+      </ul>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Recipes</h3>
+      <p class="text-gray-400 text-sm mb-2">Every coin trending up, confidence 60 or higher</p>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-4">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">scan_market_regimes({ exchange: "BINANCE", timeframe: "1h", regime: ["TRENDING_UP"], minConfidence: 60, limit: 100 })</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2">Just turned &mdash; the regime changed within the last three bars</p>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-4">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">scan_market_regimes({ exchange: "BINANCE", timeframe: "1h", regime: ["TRENDING_UP","TRENDING_DOWN"], maxRegimeAgeBars: 3, sortBy: "regime_age" })</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2">TradFi perps in a trend</p>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-4">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">scan_market_regimes({ exchange: "BINANCE", timeframe: "4h", assetClass: "tradfi", regime: ["TRENDING_UP","TRENDING_DOWN"] })</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2">Ranging among the most-traded coins</p>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-4">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">scan_market_regimes({ exchange: "BYBIT", timeframe: "4h", rankBy: "volume", topN: 50, regime: ["RANGING"], sortBy: "rank" })</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2">Your watchlist in one call</p>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-4">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">scan_market_regimes({ exchange: "BINANCE", timeframe: "1h", coins: ["BTC","ETH","SOL","XAU","TSLA"] })</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2">The next page of the first recipe</p>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">scan_market_regimes({ exchange: "BINANCE", timeframe: "1h", regime: ["TRENDING_UP"], minConfidence: 60, limit: 100, offset: 100 })</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs mb-5">If <code class="text-xs bg-navy-800 px-1 rounded">as_of</code> changed between pages, a new bar closed &mdash; restart from <code class="text-xs bg-navy-800 px-1 rounded">offset: 0</code>.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">The screen &rarr; deep-dive loop</h3>
+      <ol class="list-decimal pl-5 space-y-2.5 mb-3">
+        <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Screen once per bar close</span><span class="text-gray-400"> &mdash; one call returns every coin in the regimes you care about.</span></li>
+        <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Deep-dive the matches</span><span class="text-gray-400"> &mdash; call <a href="#get-market-regime" class="text-mint-400 hover:underline">get_market_regime</a> only on the matched coins, for the live read with cross-venue funding.</span></li>
+        <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Apply your own logic</span><span class="text-gray-400"> &mdash; size, filter or act on what is left.</span></li>
+      </ol>
+      <p class="text-gray-400 text-sm mb-5">You pay for the rows you get back, not for the coins you didn&rsquo;t need.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Call it over HTTP</h3>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -s -X POST https://api.algovault.com/mcp \
+  -H "Authorization: Bearer $ALGOVAULT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"scan_market_regimes","arguments":{"exchange":"BINANCE","timeframe":"1h","regime":["TRENDING_UP"],"minConfidence":60,"limit":3}}}'</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs mb-5">The response is an event stream: the tool result is JSON on the <code class="text-xs bg-navy-800 px-1 rounded">data:</code> line, in <code class="text-xs bg-navy-800 px-1 rounded">result.content[0].text</code>. No key? Drop the <code class="text-xs bg-navy-800 px-1 rounded">Authorization</code> header and the same call runs on the keyless free tier.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">The envelope tells you which snapshot answered and how much of the universe it covers, so &ldquo;nothing matched&rdquo; is never confused with &ldquo;nothing was screened&rdquo;.</p>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">The venue screened.</td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">The bar the regimes were classified on.</td></tr>
+          <tr class="param-row"><td>as_of</td><td class="text-gray-400">string</td><td class="text-gray-400">The bar close the snapshot describes (ISO 8601).</td></tr>
+          <tr class="param-row"><td>computed_at</td><td class="text-gray-400">string</td><td class="text-gray-400">When the snapshot was computed (ISO 8601).</td></tr>
+          <tr class="param-row"><td>generation</td><td class="text-gray-400">object</td><td class="text-gray-400">Snapshot coverage: <code class="text-xs bg-navy-800 px-1 rounded">universe</code> (coins on the venue), <code class="text-xs bg-navy-800 px-1 rounded">written</code> (coins classified), <code class="text-xs bg-navy-800 px-1 rounded">too_new</code> (listed too recently to classify), <code class="text-xs bg-navy-800 px-1 rounded">window_stale</code> and <code class="text-xs bg-navy-800 px-1 rounded">coverage_pct</code>.</td></tr>
+          <tr class="param-row"><td>matched</td><td class="text-gray-400">number</td><td class="text-gray-400">Every row that matched your filters, before paging.</td></tr>
+          <tr class="param-row"><td>returned</td><td class="text-gray-400">number</td><td class="text-gray-400">Rows in this page. This is what you are billed for.</td></tr>
+          <tr class="param-row"><td>offset</td><td class="text-gray-400">number</td><td class="text-gray-400">The offset this page starts at.</td></tr>
+          <tr class="param-row" data-field-optional="1"><td>not_found</td><td class="text-gray-400">array</td><td class="text-gray-400">Only with <code class="text-xs bg-navy-800 px-1 rounded">coins</code>: the symbols the venue doesn&rsquo;t list. Not billed.</td></tr>
+          <tr class="param-row"><td>regimes</td><td class="text-gray-400">array</td><td class="text-gray-400">The matching rows, described below.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Call metadata, including the tool name and your remaining quota.</td></tr>
+        </tbody>
+      </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Each row in <code class="text-xs bg-navy-800 px-1 rounded">regimes</code></h4>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">The symbol.</td></tr>
+          <tr class="param-row"><td>regime</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">TRENDING_UP</code>, <code class="text-xs bg-navy-800 px-1 rounded">TRENDING_DOWN</code>, <code class="text-xs bg-navy-800 px-1 rounded">RANGING</code> or <code class="text-xs bg-navy-800 px-1 rounded">VOLATILE</code>.</td></tr>
+          <tr class="param-row"><td>confidence</td><td class="text-gray-400">number</td><td class="text-gray-400">Classifier confidence, 0&ndash;100.</td></tr>
+          <tr class="param-row"><td>trend_strength</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">STRONG</code>, <code class="text-xs bg-navy-800 px-1 rounded">MODERATE</code> or <code class="text-xs bg-navy-800 px-1 rounded">WEAK</code>.</td></tr>
+          <tr class="param-row"><td>adx</td><td class="text-gray-400">number</td><td class="text-gray-400">Average directional index. <code class="text-xs bg-navy-800 px-1 rounded">null</code> when the price window is too short.</td></tr>
+          <tr class="param-row"><td>volatility_ratio</td><td class="text-gray-400">number</td><td class="text-gray-400">ATR &divide; price.</td></tr>
+          <tr class="param-row"><td>price_structure</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">HIGHER_HIGHS</code>, <code class="text-xs bg-navy-800 px-1 rounded">LOWER_LOWS</code> or <code class="text-xs bg-navy-800 px-1 rounded">MIXED</code>.</td></tr>
+          <tr class="param-row"><td>asset_class</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">CRYPTO</code>, <code class="text-xs bg-navy-800 px-1 rounded">EQUITY</code>, <code class="text-xs bg-navy-800 px-1 rounded">KR_EQUITY</code>, <code class="text-xs bg-navy-800 px-1 rounded">COMMODITY</code>, <code class="text-xs bg-navy-800 px-1 rounded">INDEX</code>, <code class="text-xs bg-navy-800 px-1 rounded">FX</code>, <code class="text-xs bg-navy-800 px-1 rounded">PREMARKET</code> or <code class="text-xs bg-navy-800 px-1 rounded">UNKNOWN</code>.</td></tr>
+          <tr class="param-row"><td>underlying_session</td><td class="text-gray-400">string</td><td class="text-gray-400">Whether the underlying market is open, read at call time: <code class="text-xs bg-navy-800 px-1 rounded">OPEN_REGULAR</code>, <code class="text-xs bg-navy-800 px-1 rounded">OPEN_EXTENDED</code>, <code class="text-xs bg-navy-800 px-1 rounded">CLOSED_WEEKEND</code>, <code class="text-xs bg-navy-800 px-1 rounded">CLOSED_HOLIDAY</code>, <code class="text-xs bg-navy-800 px-1 rounded">ALWAYS_OPEN</code>, <code class="text-xs bg-navy-800 px-1 rounded">PREIPO_INTERNAL</code> or <code class="text-xs bg-navy-800 px-1 rounded">UNKNOWN</code>.</td></tr>
+          <tr class="param-row"><td>regime_since</td><td class="text-gray-400">string</td><td class="text-gray-400">When the current regime began (ISO 8601), or <code class="text-xs bg-navy-800 px-1 rounded">null</code> while that is not yet known.</td></tr>
+          <tr class="param-row"><td>regime_age_bars</td><td class="text-gray-400">number</td><td class="text-gray-400">Bars since the regime began, or <code class="text-xs bg-navy-800 px-1 rounded">null</code> while that is not yet known.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>rank_value</td><td class="text-gray-400">number</td><td class="text-gray-400">Only with a lens other than <code class="text-xs bg-navy-800 px-1 rounded">oi</code>: the value the universe was ranked by, plus the lens field &mdash; <code class="text-xs bg-navy-800 px-1 rounded">volume_24h</code>, <code class="text-xs bg-navy-800 px-1 rounded">change_24h_pct</code>, <code class="text-xs bg-navy-800 px-1 rounded">funding_rate</code> and <code class="text-xs bg-navy-800 px-1 rounded">funding_apr</code>, <code class="text-xs bg-navy-800 px-1 rounded">atrp</code>, or <code class="text-xs bg-navy-800 px-1 rounded">oi_change_pct</code> and <code class="text-xs bg-navy-800 px-1 rounded">oi_change_window</code>.</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-2">Sample &mdash; values change every bar.</p>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "exchange": "BINANCE",
+  "timeframe": "1h",
+  "as_of": "2026-10-22T09:00:00.000Z",
+  "computed_at": "2026-10-22T09:12:12.964Z",
+  "generation": { "universe": 748, "written": 744, "too_new": 4, "window_stale": 0, "coverage_pct": 100 },
+  "matched": 152,
+  "returned": 2,
+  "offset": 0,
+  "regimes": [
+    { "coin": "BYD", "regime": "TRENDING_UP", "confidence": 95, "trend_strength": "STRONG",
+      "adx": 47.2, "volatility_ratio": 0.0085, "price_structure": "HIGHER_HIGHS",
+      "asset_class": "UNKNOWN", "underlying_session": "UNKNOWN",
+      "regime_since": "2026-10-22T03:00:00.000Z", "regime_age_bars": 7 },
+    { "coin": "MRK", "regime": "TRENDING_UP", "confidence": 95, "trend_strength": "STRONG",
+      "adx": 60, "volatility_ratio": 0.0036, "price_structure": "HIGHER_HIGHS",
+      "asset_class": "EQUITY", "underlying_session": "OPEN_EXTENDED",
+      "regime_since": "2026-10-21T11:00:00.000Z", "regime_age_bars": 23 }
+  ],
+  "_algovault": {
+    "tool": "scan_market_regimes",
+    "quota": { "used": 5, "remaining": 15, "binding": "monthly" }
+  }
+}</code></pre>
+      </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Refusals</h3>
+      <p class="text-gray-400 text-sm mb-3">A refusal comes back as a tool error whose text is a JSON object carrying <code class="text-xs bg-navy-800 px-1 rounded">code</code>, <code class="text-xs bg-navy-800 px-1 rounded">message</code> and <code class="text-xs bg-navy-800 px-1 rounded">suggested_action</code>. Every refusal is unbilled.</p>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Code</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">When, what it carries, and what to do</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td><code class="text-xs bg-navy-800 px-1 rounded">invalid_parameter</code></td><td class="text-gray-400">An unknown <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> lens, or <code class="text-xs bg-navy-800 px-1 rounded">sortBy: "rank"</code> without <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code>. Carries <code class="text-xs bg-navy-800 px-1 rounded">param</code> and, for <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code>, <code class="text-xs bg-navy-800 px-1 rounded">valid_values</code>. Pass a listed lens, or sort another way.</td></tr>
+          <tr class="param-row"><td><code class="text-xs bg-navy-800 px-1 rounded">venue_not_sampled</code></td><td class="text-gray-400">The venue is outside the sampled set. Carries <code class="text-xs bg-navy-800 px-1 rounded">sampled_venues</code>. Pass one of them, or call <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code> for a single coin on that venue.</td></tr>
+          <tr class="param-row"><td><code class="text-xs bg-navy-800 px-1 rounded">timeframe_unserved</code></td><td class="text-gray-400">The venue can&rsquo;t currently serve that timeframe. Carries <code class="text-xs bg-navy-800 px-1 rounded">served_timeframes_on_venue</code> and <code class="text-xs bg-navy-800 px-1 rounded">venues_serving_timeframe</code>. Switch to one of them.</td></tr>
+          <tr class="param-row"><td><code class="text-xs bg-navy-800 px-1 rounded">snapshot_stale</code></td><td class="text-gray-400">The newest snapshot is older than its freshness bound, or none exists yet. Carries <code class="text-xs bg-navy-800 px-1 rounded">as_of</code>. Retry after the next bar close, or call <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code> for a live single-coin read.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td><code class="text-xs bg-navy-800 px-1 rounded">TIER_LIMIT_REACHED</code></td><td class="text-gray-400">Your call allowance is used up. See <a href="#tools-errors" class="text-mint-400 hover:underline">Errors &amp; troubleshooting</a>.</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mt-3">A screen charges one call per returned row, minimum one per successful call. Coins that don&rsquo;t match, and refusals, are free. Available on every plan, over MCP or the HTTP endpoint above.</p>

@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { renderToolsPage } from '../scripts/build_tools_page.mjs';
 import { publicToolEntries, navModelHrefs, buildNavModel } from '../src/lib/nav-manifest.js';
+import { allAnchorIds } from '../src/lib/docs-outline.js';
 
 const html = (): string => renderToolsPage();
 const ids = (h: string): Set<string> => new Set([...h.matchAll(/id="([a-z0-9-]+)"/g)].map((m) => m[1]));
@@ -24,11 +25,11 @@ describe('CH3 AC — model anchors ⊆ page ids (the mega-menu Tools links all r
     expect(navAnchors.length).toBeGreaterThan(0);
     for (const a of navAnchors) expect(pageIds.has(a)).toBe(true);
   });
-  it('renders exactly one card per public tool (6; equities held out)', () => {
+  it('renders exactly one card per public tool (7; equities held out)', () => {
     const doc = new JSDOM(html()).window.document;
     const cards = doc.querySelectorAll('.tools-card');
     expect(cards.length).toBe(publicToolEntries().length);
-    expect(cards.length).toBe(6);
+    expect(cards.length).toBe(7);
     // each card carries its canonical tool name in <code>
     const names = [...cards].map((c) => c.querySelector('code')?.textContent);
     expect(names).toEqual(publicToolEntries().map((e) => e.name));
@@ -78,5 +79,30 @@ describe('CH3 — valid standalone page with nav region + footer', () => {
     expect(h).toContain('https://cdn.tailwindcss.com/3.4.17');
     expect(h).toContain("400: 'oklch(0.86 0.16 165 / <alpha-value>)'"); // canonical mint-400 anchor
     expect(h).toContain('/_design/algovault-design.css');
+  });
+});
+
+describe('DOCS-MARKET-REGIME-SCREENER-W1 D5 — every card links its how-to', () => {
+  it('each card carries ONE "How to use" link to /docs#<its own id>, and that id is a docs anchor', () => {
+    const doc = new JSDOM(html()).window.document;
+    const docsIds = new Set(allAnchorIds());
+    const cards = [...doc.querySelectorAll('.tools-card')];
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) {
+      const links = card.querySelectorAll('a.tools-card-link');
+      expect(links.length).toBe(1);
+      expect(links[0].textContent).toContain('How to use');
+      expect(links[0].getAttribute('href')).toBe(`https://algovault.com/docs#${card.id}`);
+      expect(docsIds.has(card.id)).toBe(true);
+    }
+  });
+
+  it('the screener card sits between Trade Call Scanner and Knowledge Chat, MCP badge only', () => {
+    const doc = new JSDOM(html()).window.document;
+    const ids = [...doc.querySelectorAll('.tools-card')].map((c) => c.id);
+    expect(ids.slice(ids.indexOf('scan-trade-calls'), ids.indexOf('scan-trade-calls') + 3))
+      .toEqual(['scan-trade-calls', 'scan-market-regimes', 'chat-knowledge']);
+    const badges = [...doc.querySelectorAll('#scan-market-regimes .tools-badge')].map((b) => b.textContent);
+    expect(badges).toEqual(['MCP']);
   });
 });

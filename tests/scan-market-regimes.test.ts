@@ -334,6 +334,17 @@ describe('description + source contracts', () => {
     expect(SCAN_MARKET_REGIMES_DESCRIPTION).toMatch(/refused/);
   });
 
+  it('the /docs partial names the SAME sampled venues in one sentence (D8 pin)', () => {
+    // The docs and the tool description must never disagree about where rows come from. The display
+    // names map 1:1 onto DEFAULT_REGIME_SNAPSHOT_VENUES, pinned by the test above.
+    const display: Record<string, string> = { BINANCE: 'Binance', BYBIT: 'Bybit', OKX: 'OKX', BITGET: 'Bitget' };
+    const names = DEFAULT_REGIME_SNAPSHOT_VENUES.split(',').map((v) => display[v] ?? v);
+    const sentence = `Rows are sampled on ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}.`;
+    const partial = readFileSync(join(ROOT, 'docs-src/partials/scan-market-regimes.html'), 'utf8');
+    expect(partial).toContain(sentence);
+    expect(partial.split('Rows are sampled on').length - 1).toBe(1);
+  });
+
   it('claims no zero cost, no real-time data, no performance or edge', () => {
     expect(SCAN_MARKET_REGIMES_DESCRIPTION).not.toMatch(/zero cost|no cost|free of charge|real[- ]time|live data|win rate|accura|edge|outperform|\d+%/i);
     expect(SCAN_MARKET_REGIMES_DESCRIPTION).not.toMatch(/intelligence layer|powerful|seamless|robust|cutting-edge|industry-leading/i);

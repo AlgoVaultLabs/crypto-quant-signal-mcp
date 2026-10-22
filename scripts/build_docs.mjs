@@ -267,21 +267,27 @@ const CODE_CLS = 'text-xs bg-navy-800 px-1 rounded';
  * machine-comparable against live `tools/list` (`check-docs-samples-live.mjs` P7). The `Default:`
  * chip deliberately does NOT carry it: the default is also one of the accepted values, and tagging
  * it would double-count that venue and turn a set comparison into a multiset one.
+ *
+ * Two lookups stay generic (DOCS-MARKET-REGIME-SCREENER-W1): the Type cell is the spec's declared
+ * `type` (omitted = `string`, every scalar enum), and the row sentence is the tool's own
+ * (`toolBlurbs`) before the shared per-parameter one (`blurbs`). A parameter NAME is not a meaning —
+ * `assetClass` forces the engine on one tool and filters rows on another.
  */
-export function renderToolParamRows(tool, params, blurbs = {}) {
+export function renderToolParamRows(tool, params, blurbs = {}, toolBlurbs = {}) {
   const rows = [];
   for (const [name, spec] of Object.entries(params)) {
     const chips = spec.values
       .map((v) => `<code class="${CODE_CLS}" data-enum-value="${v}">${v}</code>`)
       .join(' ');
-    const blurb = blurbs[name] ? `${blurbs[name]} ` : '';
+    const sentence = toolBlurbs[name] ?? blurbs[name];
+    const blurb = sentence ? `${sentence} ` : '';
     const dflt = spec.default ? ` Default: <code class="${CODE_CLS}">${spec.default}</code>` : '';
     // The default is machine-readable on the ROW, not on its chip: the gate compares it against the
     // served `default`, which is how `1h` on the page survived beside `15m` on the wire for months.
     const dfltAttr = spec.default ? ` data-schema-default="${spec.default}"` : '';
     rows.push(
       `          <tr class="param-row" data-schema-tool="${tool}" data-schema-param="${name}"${dfltAttr}>` +
-        `<td>${name}</td><td class="text-gray-400">string</td>` +
+        `<td>${name}</td><td class="text-gray-400">${spec.type ?? 'string'}</td>` +
         `<td class="text-gray-400">${blurb}${chips}.${dflt}</td></tr>`,
     );
   }
@@ -303,7 +309,7 @@ export function fillToolParamRegions(html, schemaMod) {
     const si = out.indexOf(start);
     const ei = out.indexOf(end);
     if (si === -1 || ei === -1 || ei < si) { missing.push(tool); continue; }
-    const rows = renderToolParamRows(tool, params, schemaMod.PARAM_DOC_BLURB);
+    const rows = renderToolParamRows(tool, params, schemaMod.PARAM_DOC_BLURB, schemaMod.PARAM_DOC_BLURB_BY_TOOL?.[tool]);
     out = `${out.slice(0, si + start.length)}\n${rows}\n          ${out.slice(ei)}`;
     filled.push(tool);
   }
@@ -546,7 +552,7 @@ async function main() {
   if (checkMode) {
     const errors = [];
     // 1. counts
-    if (toolNodeCount() !== 6) errors.push(`Tools count ${toolNodeCount()} !== 6 (registry publicListing)`);
+    if (toolNodeCount() !== 7) errors.push(`Tools count ${toolNodeCount()} !== 7 (registry publicListing)`);
     if (channelNodeCount() !== 4) errors.push(`Channels count ${channelNodeCount()} !== 4 (channel-registry)`);
     // 2. on-disk structure: sidebar (aside-scoped) + body ids cover the outline
     const onDisk = fs.readFileSync(DOCS_HTML_PATH, 'utf8');
@@ -593,7 +599,7 @@ async function main() {
       console.error(`build_docs --check: ${errors.length} problem(s):\n  ${errors.join('\n  ')}`);
       process.exit(1);
     }
-    console.log('build_docs --check: OK — sidebar === body === outline; Tools=6, Channels=4; all anchors present; no drift');
+    console.log(`build_docs --check: OK — sidebar === body === outline; Tools=${toolNodeCount()}, Channels=${channelNodeCount()}; all anchors present; no drift`);
     process.exit(0);
   }
 
