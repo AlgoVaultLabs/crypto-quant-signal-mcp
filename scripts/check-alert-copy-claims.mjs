@@ -74,6 +74,15 @@
  * is a DRIFT with key `<owner>::<artifact>::UNCITED`, so the existing baseline ratchet applies
  * unchanged. The reverse leg reports a declaration whose artifact is scheduled NOWHERE.
  *
+ * OPS-HOST-KERNEL-REBOOT-W6: citing the automation is not enough when the body then CLAIMS what it
+ * did. KERNEL_STALENESS cited kernel-auto-reboot.sh on every branch and still told the operator "a
+ * GATE REFUSED" from crontab text — sent by the harness itself, two seconds before it rebooted the
+ * host. So EVERY related_automation entry MUST declare `decision_record {canary, max_age_s}` — the
+ * record the owner projects — and its canary must equal the artifact's own `RESULT_CANARY=`. An
+ * automation that writes no record cannot be declared at all: the owner would have nothing to
+ * project but the schedule, which is the class. Missing, malformed or mismatched is INDETERMINATE,
+ * the same refusal as a missing `reason`: a declaration is a corpus WE author.
+ *
  * HONEST SCOPE, stated because it bounds the guarantee: direction 2 is an ALLOW-LIST. It polices
  * DECLARED relationships only — automation nobody declares is invisible to it. That gap fails
  * toward NOISE rather than silence: every run prints how many alert rows carry a declaration and
@@ -249,10 +258,20 @@ export function declaredAutomation(root) {
       if (!e || typeof e.artifact !== 'string' || !e.artifact) { malformed.push(`${a.alert_id}: an entry has no artifact`); continue; }
       if (!Array.isArray(e.hosts) || e.hosts.length === 0) { malformed.push(`${a.alert_id}/${e.artifact}: hosts[] is missing or empty`); continue; }
       if (typeof e.reason !== 'string' || !e.reason.trim()) { malformed.push(`${a.alert_id}/${e.artifact}: reason is MANDATORY and must be non-empty`); continue; }
+      // W6: the artifact's own RESULT_CANARY is the ONE name its records carry; decision_record
+      // must point at exactly that, never a second spelling of it.
+      const artPath = path.join(root, e.artifact);
+      const rc = existsSync(artPath) ? /^\s*RESULT_CANARY=["']?([A-Za-z0-9_.-]+)["']?\s*$/m.exec(readFileSync(artPath, 'utf8')) : null;
+      const resultCanary = rc ? rc[1] : null;
+      const dr = e.decision_record;
+      if (dr === undefined) { malformed.push(`${a.alert_id}/${e.artifact}: decision_record is MANDATORY — the owner must project this automation's record, never re-derive what it did`); continue; }
+      if (!dr || typeof dr.canary !== 'string' || !dr.canary.trim() || !Number.isInteger(dr.max_age_s) || dr.max_age_s <= 0) { malformed.push(`${a.alert_id}/${e.artifact}: decision_record must be {canary: non-empty string, max_age_s: positive integer}`); continue; }
+      if (resultCanary === null) { malformed.push(`${a.alert_id}/${e.artifact}: declares decision_record but no RESULT_CANARY= assignment was found in ${e.artifact} — there is no record to project`); continue; }
+      if (dr.canary !== resultCanary) { malformed.push(`${a.alert_id}/${e.artifact}: decision_record.canary="${dr.canary}" but the artifact records as RESULT_CANARY=${resultCanary}`); continue; }
       // `reason` is carried, not merely validated: a consumer that cannot read the justification
       // cannot tell a deliberate declaration from a copy-paste, and the mandatory field becomes
       // ceremony. It is also what a reviewer reads when the gate fires.
-      entries.push({ alertId: a.alert_id, owner: a.owner, artifact: e.artifact, hosts: e.hosts, reason: e.reason, alertHosts: Array.isArray(a.hosts) ? a.hosts : [] });
+      entries.push({ alertId: a.alert_id, owner: a.owner, artifact: e.artifact, hosts: e.hosts, reason: e.reason, decisionRecord: dr, alertHosts: Array.isArray(a.hosts) ? a.hosts : [] });
     }
   }
   return { entries, malformed, declaredRows, totalRows: alerts.length };
@@ -580,18 +599,22 @@ function selfTest() {
       }));
       writeFileSync(path.join(t, 'ops/monitoring/owner-canary.sh'),
         `#!/usr/bin/env bash\nsend_telegram\ncat <<EOF\nsomething is wrong.\n${opts.body}\nEOF\n`);
+      writeFileSync(path.join(t, 'ops/monitoring/robot.sh'), opts.robotBody !== undefined ? opts.robotBody : ROBOT_RECORDS);
       return t;
     };
-    const OK_DECL = { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'], reason: 'it does the thing' };
+    const ROBOT_RECORDS = '#!/usr/bin/env bash\nRESULT_CANARY="robot"\n';
+    const OK_DECL = { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'], reason: 'it does the thing', decision_record: { canary: 'robot', max_age_s: 7200 } };
+    const { decision_record: _omit, ...NO_DR } = OK_DECL;
+    const CITED = 'Action: ops/monitoring/robot.sh already does this on aoe-1.';
     const cases = [
       ['a declared+scheduled automation the body never names -> DRIFT',
         { robotOn: ['aoe-1'], alertHosts: ['aoe-1', 'signal-1'], declare: OK_DECL, body: 'Action: do it by hand.' }, 'DRIFT'],
       ['  the same tree with the citation added -> OK',
         { robotOn: ['aoe-1'], alertHosts: ['aoe-1', 'signal-1'], declare: OK_DECL, body: 'Action: ops/monitoring/robot.sh already does this on aoe-1.' }, 'OK'],
       ['a declaration with NO reason -> INDETERMINATE (mandatory, never a silent pass)',
-        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'] }, body: 'Action: by hand.' }, 'INDETERMINATE'],
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'], decision_record: OK_DECL.decision_record }, body: 'Action: by hand.' }, 'INDETERMINATE'],
       ['a declaration with an EMPTY hosts[] -> INDETERMINATE',
-        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: { artifact: 'ops/monitoring/robot.sh', hosts: [], reason: 'r' }, body: 'Action: by hand.' }, 'INDETERMINATE'],
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: { artifact: 'ops/monitoring/robot.sh', hosts: [], reason: 'r', decision_record: OK_DECL.decision_record }, body: 'Action: by hand.' }, 'INDETERMINATE'],
       ['a declared artifact scheduled on NO host -> stale REPORT, not a violation',
         { robotOn: [], alertHosts: ['aoe-1'], declare: OK_DECL, body: 'Action: by hand.' }, 'OK'],
       ['scheduled, but on a host this alert does not cover -> stale REPORT, not a violation',
@@ -600,6 +623,17 @@ function selfTest() {
         { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: null, body: 'Action: by hand.' }, 'OK'],
       ['an unparseable registry -> INDETERMINATE',
         { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: null, body: 'x', rawRegistry: '{ not json' }, 'INDETERMINATE'],
+      // W6 — decision_record, both ways.
+      ['W6: a declaration WITHOUT decision_record -> INDETERMINATE (mandatory on every entry)',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: NO_DR, body: CITED }, 'INDETERMINATE'],
+      ['  the same tree WITH a matching decision_record -> OK',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: OK_DECL, body: CITED }, 'OK'],
+      ['W6: decision_record naming ANOTHER canary than the artifact records as -> INDETERMINATE',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: { ...OK_DECL, decision_record: { canary: 'robot-v0', max_age_s: 7200 } }, robotBody: ROBOT_RECORDS, body: CITED }, 'INDETERMINATE'],
+      ['W6: decision_record with a non-positive max_age_s -> INDETERMINATE',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: { ...OK_DECL, decision_record: { canary: 'robot', max_age_s: 0 } }, robotBody: ROBOT_RECORDS, body: CITED }, 'INDETERMINATE'],
+      ['W6: decision_record on an artifact that writes NO record -> INDETERMINATE',
+        { robotOn: ['aoe-1'], alertHosts: ['aoe-1'], declare: { ...OK_DECL, decision_record: { canary: 'robot', max_age_s: 7200 } }, robotBody: '#!/usr/bin/env bash\necho hi\n', body: CITED }, 'INDETERMINATE'],
     ];
     for (const [label, opts, want] of cases) {
       const t = mk(opts);
@@ -644,7 +678,7 @@ function selfTest() {
     ck(label, got, code);
   }
 
-  const MIN_ASSERTIONS = 44;
+  const MIN_ASSERTIONS = 50;
   if (checked < MIN_ASSERTIONS) {
     console.log(`SELF_TEST_VERDICT=INDETERMINATE — only ${checked} assertions ran (expected >= ${MIN_ASSERTIONS})`);
     console.log('ALERT_COPY_VERDICT=INDETERMINATE');
@@ -655,7 +689,7 @@ function selfTest() {
     console.log('ALERT_COPY_VERDICT=DRIFT');
     return 1;
   }
-  console.log(`SELF_TEST_VERDICT=PASS — ${checked} assertions (7 extraction, 3 classification, 4 sentence-scope, 4 regression fixture, 2 post-fix, 3 live, 4 vacuity, 13 direction-2, 5 token-map)`);
+  console.log(`SELF_TEST_VERDICT=PASS — ${checked} assertions (7 extraction, 3 classification, 4 sentence-scope, 4 regression fixture, 2 post-fix, 3 live, 4 vacuity, 18 direction-2 incl. 5 decision_record, 5 token-map)`);
   console.log('ALERT_COPY_VERDICT=OK');
   return 0;
 }

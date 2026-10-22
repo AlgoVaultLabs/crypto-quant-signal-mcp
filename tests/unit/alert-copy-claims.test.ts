@@ -258,9 +258,11 @@ describe('W4: direction 2 fires on the defect and stays silent on the fix', () =
       alerts: [{ alert_id: 'A', owner: 'ops/monitoring/owner.sh', hosts: ['aoe-1', 'signal-1'], related_automation: [declare] }],
     }));
     writeFileSync(path.join(t, 'ops/monitoring/owner.sh'), `#!/usr/bin/env bash\nsend_telegram\ncat <<EOF\n${body}\nEOF\n`);
+    // The automation writes canary_result_log records under this name (W6: decision_record must match it).
+    writeFileSync(path.join(t, 'ops/monitoring/robot.sh'), '#!/usr/bin/env bash\nRESULT_CANARY="robot"\n');
     return t;
   };
-  const DECL = { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'], reason: 'it already does this' };
+  const DECL = { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'], reason: 'it already does this', decision_record: { canary: 'robot', max_age_s: 7200 } };
 
   it('an uncited declared+scheduled automation is a DRIFT with a ratchet key', () => {
     const t = mk('Action: do it by hand.', DECL);
@@ -277,9 +279,32 @@ describe('W4: direction 2 fires on the defect and stays silent on the fix', () =
   });
 
   it('a missing reason is INDETERMINATE — mandatory, never a silent pass', () => {
-    const t = mk('Action: by hand.', { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'] });
+    const t = mk('Action: by hand.', { artifact: 'ops/monitoring/robot.sh', hosts: ['aoe-1'], decision_record: DECL.decision_record });
     expect(evaluate(t).verdict).toBe('INDETERMINATE');
     rmSync(t, { recursive: true, force: true });
+  });
+
+  // OPS-HOST-KERNEL-REBOOT-W6 R2.8 / AC2.3: the owner must project the automation's RECORD.
+  it('W6: a declaration without decision_record is INDETERMINATE, even when cited', () => {
+    const { decision_record: _omit, ...noRecord } = DECL;
+    const t = mk('Action: ops/monitoring/robot.sh already handles aoe-1.', noRecord);
+    const r = evaluate(t);
+    expect(r.verdict).toBe('INDETERMINATE');
+    expect(r.reason).toContain('decision_record is MANDATORY');
+    rmSync(t, { recursive: true, force: true });
+  });
+
+  it('W6: a decision_record naming another canary than the artifact records as is INDETERMINATE', () => {
+    const t = mk('Action: ops/monitoring/robot.sh already handles aoe-1.', { ...DECL, decision_record: { canary: 'robot-v0', max_age_s: 7200 } });
+    expect(evaluate(t).reason).toContain('records as RESULT_CANARY=robot');
+    rmSync(t, { recursive: true, force: true });
+  });
+
+  it('W6: the live KERNEL_STALENESS declaration names the harness\'s own RESULT_CANARY', () => {
+    const row = JSON.parse(readFileSync(path.join(ROOT, 'ops/monitoring/alert-registry.json'), 'utf8')).alerts
+      .find((a: { alert_id: string }) => a.alert_id === 'KERNEL_STALENESS');
+    expect(row.related_automation[0].decision_record).toEqual({ canary: 'kernel-auto-reboot', max_age_s: 7200 });
+    expect(evaluate(ROOT).verdict).toBe('OK');
   });
 });
 

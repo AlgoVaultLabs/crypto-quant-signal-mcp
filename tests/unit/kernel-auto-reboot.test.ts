@@ -17,7 +17,7 @@
  *
  * SPAWN BUDGET DECLARED on every block — each shells out to bash.
  */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -28,6 +28,20 @@ const HARNESS = path.join(REPO, 'ops/monitoring/kernel-auto-reboot.sh');
 const WATCHDOG = path.join(REPO, 'ops/monitoring/aoe-peer-watchdog.sh');
 const ARM = path.join(REPO, 'ops/monitoring/arm-peer-watchdog.sh');
 const REGISTRY = path.join(REPO, 'ops/scripts/cron-interlock-registry.json');
+
+/**
+ * A long `--self-test` run ASYNC. A 15 s+ `spawnSync` blocks the worker's event loop, so vitest's own
+ * `onTaskUpdate` RPC times out and the run exits 1 with every test passing ("Unhandled Errors").
+ */
+function spawnAsync(cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv } = {}): Promise<{ stdout: string; status: number | null }> {
+  return new Promise((resolve) => {
+    const c = spawn(cmd, args, { env: opts.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    c.stdout.setEncoding('utf8').on('data', (d: string) => { stdout += d; });
+    c.stderr.resume();
+    c.on('close', (status) => resolve({ stdout, status }));
+  });
+}
 
 /** Drive the harness with every destructive primitive replaced by a recording stub. */
 function harness(args: string[], env: Record<string, string> = {}) {
@@ -52,7 +66,9 @@ function harness(args: string[], env: Record<string, string> = {}) {
     AUTO_REBOOT_STATE: path.join(dir, 'state'),
     AUTO_REBOOT_REQUIRED_FILE: path.join(dir, 'reboot-required'),
     AUTO_REBOOT_IDENTITY_FILE: mk('id', 'aoe-1\n'),
-    AUTO_REBOOT_STALENESS: mk('stale.sh', '#!/bin/sh\necho "VERDICT=BREACH host=x"\n'),
+    // The canary's `--decide` line (OPS-HOST-KERNEL-REBOOT-W6). The pre-W6 `VERDICT=BREACH host=x`
+    // log line is now REFUSED by the harness's anchored match — see the self-test's oldfmt case.
+    AUTO_REBOOT_STALENESS: mk('stale.sh', '#!/bin/sh\necho "KERNEL_STALENESS_DECISION=BREACH running=a installed=b age_days=8 breach_at=1"\n'),
     AUTO_REBOOT_BOOT_CONTRACT: mk('bc.sh', '#!/bin/sh\necho "BOOT_CONTRACT_VERDICT=OK"\n'),
     AUTO_REBOOT_REGISTRY: REGISTRY,
     AUTO_REBOOT_WRAPPER: mk('send.sh', `#!/bin/sh\ncat >> ${paged}\necho "ALERT=$1 SEV=$2" >> ${paged}\n`),
@@ -306,11 +322,11 @@ describe('every run appends ONE canary_result_log record', () => {
  */
 describe('every artifact self-tests, with a vacuity floor', () => {
   it.each([
-    { name: 'kernel-auto-reboot.sh', script: HARNESS, floor: 112 },
+    { name: 'kernel-auto-reboot.sh', script: HARNESS, floor: 125 },
     { name: 'aoe-peer-watchdog.sh', script: WATCHDOG, floor: 120 },
     { name: 'arm-peer-watchdog.sh', script: ARM, floor: 21 },
-  ])('$name --self-test PASSes with at least $floor assertions', { timeout: 180_000 }, ({ script, floor }) => {
-    const r = spawnSync('bash', [script, '--self-test'], { encoding: 'utf8' });
+  ])('$name --self-test PASSes with at least $floor assertions', { timeout: 180_000 }, async ({ script, floor }) => {
+    const r = await spawnAsync('bash', [script, '--self-test']);
     expect(r.stdout).toContain('SELF_TEST_VERDICT=PASS');
     expect(r.status).toBe(0);
     const n = Number((r.stdout.match(/SELF-TEST: PASS — (\d+) checks/) || [])[1]);

@@ -58,8 +58,13 @@
 #   recheck           re-probe the same rows AFTER the arm; anything now in flight -> disarm, ABORTED
 #   action            --apply -> REBOOT; otherwise DRY_RUN
 #
-# A persistent DEFERRED needs no alarm of its own: KERNEL_STALENESS's COVERED branch pages daily on
-# a stale covered host with "a GATE REFUSED — read the harness log", and this log names the gate.
+# A persistent DEFERRED needs no alarm of its own — but NOT for the reason this comment used to give
+# ("KERNEL_STALENESS's COVERED branch pages … a GATE REFUSED"). That page was derived from crontab
+# text, and it was sent BY THIS HARNESS: the `due` gate ran the canary's paging path bare, so on
+# 2026-10-21 aoe-1's page left two seconds before this same run rebooted it (OPS-HOST-KERNEL-
+# REBOOT-W6, audits/KERNEL_STALENESS-2026-10-22.md). Now: `due` calls `--decide`, which never pages,
+# and every run's record carries the deciding gate's own line, the kernel pair and a streak. The
+# canary's hourly cron reads THAT record and pages COVERED_REFUSING / COVERED_SILENT from it.
 #
 # ── MUTUAL EXCLUSION, FROM DATA EACH HOST ALREADY HOLDS ─────────────────────────────────────
 # Both hosts get their kernels from the same unattended-upgrades slot and so become due on the same
@@ -164,14 +169,24 @@ GATE_ORDER="identity post_boot due contract window peer_busy deploy_in_flight in
 REACHED=""
 gate() { # gate <name> <state> <detail>
   REACHED="$REACHED $1"
+  # Kept per gate so finish() can put the DECIDING gate's own line in the record — the page that
+  # projects it then quotes the harness, never a paraphrase of it.
+  printf -v "GATE_LINE_$1" 'AUTO_REBOOT_GATE=%s state=%s %s' "$1" "$2" "${3:-}"
   _emit "$(printf 'AUTO_REBOOT_GATE=%s state=%s %s' "$1" "$2" "${3:-}")"
 }
 
-HOST="" PEER="" DECIDED_BY="" KERNEL_BEFORE="" KERNEL_AFTER=""
+HOST="" PEER="" DECIDED_BY="" DECIDED_DETAIL="" KERNEL_BEFORE="" KERNEL_AFTER=""
+STALE_VERDICT="" STALE_INSTALLED="" STALE_AGE=""
 # Every path ends here: unreached gates are printed, ONE record is appended, ONE token is printed.
 finish() { # finish <VERDICT> <deciding gate>
   local v="$1"; DECIDED_BY="$2"
-  local g
+  local g ref
+  # A gate name is a shell identifier by construction; anything else is never dereferenced
+  # (`${!ref}` on an invalid name is a fatal "bad substitution", and finish() must always finish).
+  case "$DECIDED_BY" in
+    ''|*[!A-Za-z0-9_]*) DECIDED_DETAIL="" ;;
+    *) ref="GATE_LINE_$DECIDED_BY"; DECIDED_DETAIL="${!ref:-}"; DECIDED_DETAIL="${DECIDED_DETAIL:0:400}" ;;
+  esac
   for g in $GATE_ORDER; do
     case " $REACHED " in *" $g "*) ;; *) _emit "AUTO_REBOOT_GATE=$g state=NOT_REACHED decided earlier by gate=$DECIDED_BY" ;; esac
   done
@@ -183,23 +198,53 @@ finish() { # finish <VERDICT> <deciding gate>
 # canary_result_log.py defaults its host to signal-1, so the RESOLVED identity is passed in
 # explicitly; a record from aoe-1 claiming to be signal-1 would corrupt the cycle count it exists
 # for. A logging failure must never change the verdict, so it is a POSITIVE line either way.
+#
+# W6: the record is what KERNEL_STALENESS pages FROM, so it carries everything that page states —
+# the deciding gate's own line (`detail`), the running/installed pair, the staleness decision, and a
+# STREAK: how many consecutive runs this verdict has come from this gate, and since when. The streak
+# reads the previous record for this canary + host; a NOT_DUE-by-window record is the harness
+# waiting, not deciding, so it neither breaks nor extends a streak. Every field goes in as argv, so
+# no value is ever spliced into JSON text (the former printf-built JSON broke on a quote).
 record() { # record <VERDICT>
-  local metrics
-  metrics="$(printf '{"decided_by":"%s","peer":"%s","kernel_running":"%s","kernel_before":"%s","kernel_after":"%s"}' \
-    "${DECIDED_BY:-none}" "${PEER:-none}" "$(uname -r)" "${KERNEL_BEFORE:-}" "${KERNEL_AFTER:-}")"
   local out
-  out="$(MONITORING_HOST_LABEL="${HOST:-unresolved}" "$PY_BIN" - "$RESULT_LOG_DIR" "$RESULT_CANARY" "$1" "$metrics" <<'PYREC' 2>/dev/null
-import json, sys
+  out="$(MONITORING_HOST_LABEL="${HOST:-unresolved}" "$PY_BIN" - "$RESULT_LOG_DIR" "$RESULT_CANARY" "$1" \
+      "${DECIDED_BY:-none}" "${PEER:-none}" "$(uname -r)" "${KERNEL_BEFORE:-}" "${KERNEL_AFTER:-}" \
+      "${STALE_INSTALLED:-}" "${STALE_VERDICT:-}:${STALE_AGE:-}" "${DECIDED_DETAIL:-}" "${HOST:-unresolved}" <<'PYREC' 2>/dev/null
+import datetime, json, os, sys
 sys.path.insert(0, sys.argv[1])
 try:
-    from canary_result_log import append_result
+    import canary_result_log as crl
 except Exception as e:
     print("CANARY_RESULT_LOG_FAILED=import:%s" % type(e).__name__); raise SystemExit(0)
+canary, verdict, host = sys.argv[2], sys.argv[3], sys.argv[12]
+keys = ("decided_by", "peer", "kernel_running", "kernel_before", "kernel_after",
+        "kernel_installed", "staleness", "detail")
+metrics = dict(zip(keys, sys.argv[4:12]))
+at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+streak, since = 1, at
 try:
-    metrics = json.loads(sys.argv[4])
+    prev = None
+    with open(getattr(crl, "RESULTS_PATH", None) or os.environ.get("CANARY_RESULT_LOG_PATH", ""), encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue  # a line torn by a concurrent trim is skipped, never fatal
+            if r.get("canary") != canary or r.get("host") != host:
+                continue
+            m = r.get("metrics") if isinstance(r.get("metrics"), dict) else {}
+            if r.get("verdict") == "NOT_DUE" and m.get("decided_by") == "window":
+                continue
+            prev = (r, m)
+    if prev is not None and not (verdict == "NOT_DUE" and metrics["decided_by"] == "window"):
+        r, m = prev
+        if r.get("verdict") == verdict and m.get("decided_by") == metrics["decided_by"]:
+            streak = int(m.get("streak_count") or 1) + 1
+            since = m.get("streak_since") or r.get("at") or at
 except Exception:
-    metrics = {"metrics_unparseable": True}
-ok, detail = append_result(sys.argv[2], sys.argv[3], 0, metrics)
+    pass  # no previous record (or none readable) starts a streak; it never blocks the record
+metrics["streak_count"], metrics["streak_since"] = streak, since
+ok, detail = crl.append_result(canary, verdict, 0, metrics, at=at)
 print(("CANARY_RESULT_LOG=%s" if ok else "CANARY_RESULT_LOG_FAILED=%s") % detail)
 PYREC
 )" || true
@@ -229,12 +274,22 @@ page() { # page <verdict> <one-line condition> <context>
 }
 
 # ── consumed verdicts ───────────────────────────────────────────────────────────────────────
-staleness_verdict() {
-  [ -x "$STALENESS" ] || { printf 'INDETERMINATE'; return 0; }
-  local out v
-  out="$("$STALENESS" 2>/dev/null)" || true
-  v="$(printf '%s\n' "$out" | grep -oE 'VERDICT=(OK|REPORT|BREACH|INDETERMINATE)' | tail -1 | cut -d= -f2)"
-  printf '%s' "${v:-INDETERMINATE}"
+# W6: `--decide` is the canary's harness interface — ONE line, no log, no page, no crontab read.
+# The bare invocation this replaced ran the canary's LIVE path, which PAGED before any gate below
+# had decided. The match is ANCHORED to the whole token: the old unanchored `VERDICT=(…)` grep
+# would read `FOO_VERDICT=OK` — or a stale canary's own `VERDICT=BREACH` log line — as the answer.
+# Called in THIS shell (never `$(…)`), so the kernel pair it sets reaches the record.
+staleness_decision() {
+  STALE_VERDICT=INDETERMINATE STALE_INSTALLED="" STALE_AGE=""
+  [ -x "$STALENESS" ] || return 0
+  local out line
+  out="$("$STALENESS" --decide 2>/dev/null)" || true
+  line="$(grep -E '^KERNEL_STALENESS_DECISION=(OK|REPORT|BREACH|INDETERMINATE)( |$)' <<<"$out" | tail -1)" || true
+  [ -n "$line" ] || return 0
+  STALE_VERDICT="${line#KERNEL_STALENESS_DECISION=}"; STALE_VERDICT="${STALE_VERDICT%% *}"
+  [[ "$line" =~ \ installed=([^ ]+) ]] && STALE_INSTALLED="${BASH_REMATCH[1]}"
+  [[ "$line" =~ \ age_days=(-?[0-9]+) ]] && STALE_AGE="${BASH_REMATCH[1]}"
+  return 0
 }
 boot_contract_verdict() {
   [ -x "$BOOT_CONTRACT" ] || { printf 'INDETERMINATE'; return 0; }
@@ -382,7 +437,7 @@ cmd_run() { # cmd_run <apply|dry-run>
   fi
 
   # ── GATE due ─────────────────────────────────────────────────────────────────────────────
-  local sv; sv="$(staleness_verdict)"
+  staleness_decision; local sv="$STALE_VERDICT"
   case "$sv" in
     BREACH) gate due PASS "kernel-staleness-canary verdict=BREACH — a newer kernel has been installed past the threshold" ;;
     OK|REPORT)
@@ -551,17 +606,23 @@ cmd_self_test() {
   # without the host module (the --self-test runs on the operator's Mac).
   cat > "$RESULT_LOG_DIR/canary_result_log.py" <<'PYSTUB'
 import json, os
-def append_result(canary, verdict, exit_code, metrics=None, **kw):
-    rec = {"host": os.environ.get("MONITORING_HOST_LABEL", "signal-1"), "canary": canary, "verdict": verdict, "metrics": metrics or {}}
+def append_result(canary, verdict, exit_code, metrics=None, *, at=None, **kw):
+    rec = {"at": at, "host": os.environ.get("MONITORING_HOST_LABEL", "signal-1"), "canary": canary, "verdict": verdict, "metrics": metrics or {}}
     with open(os.environ["CANARY_RESULT_LOG_PATH"], "a") as fh:
         fh.write(json.dumps(rec) + "\n")
     return True, "line=1"
 PYSTUB
 
   mk() { printf '#!/bin/sh\n%s\n' "$2" > "$1"; chmod +x "$1"; }
-  mk "$tmp/stale-ok.sh"     'echo "VERDICT=OK host=x"'
-  mk "$tmp/stale-breach.sh" 'echo "VERDICT=BREACH host=x"'
+  # The canary's --decide line, verbatim in shape. Each stub records its argv, so the REAL
+  # invocation's `--decide` is asserted (a bare call runs the canary's PAGING path).
+  mk "$tmp/stale-ok.sh"     "echo \"\$*\" > $tmp/stale-argv; echo 'KERNEL_STALENESS_DECISION=OK running=6.8.0-147-generic installed=6.8.0-147-generic age_days=9 breach_at=none'"
+  mk "$tmp/stale-breach.sh" "echo \"\$*\" > $tmp/stale-argv; echo 'KERNEL_STALENESS_DECISION=BREACH running=6.8.0-142-generic installed=6.8.0-147-generic age_days=8 breach_at=1761000000'"
   mk "$tmp/stale-junk.sh"   'echo "nothing useful"'
+  # Two shapes the anchored match must REFUSE: a foreign token whose suffix is VERDICT=, and the
+  # pre-W6 canary's live-path log line (a canary installed AFTER this harness would print it).
+  mk "$tmp/stale-foreign.sh" 'echo "FOO_VERDICT=BREACH"; echo "KERNEL_STALENESS_DECISION_X=BREACH"'
+  mk "$tmp/stale-oldfmt.sh"  'echo "2026-10-21T06:16:01Z [KERNEL_STALENESS] VERDICT=BREACH host=x running=a installed=b"'
   mk "$tmp/bc-ok.sh"        'echo "BOOT_CONTRACT_VERDICT=OK"'
   mk "$tmp/bc-drift.sh"     'echo "BOOT_CONTRACT_VERDICT=DRIFT"'
   mk "$tmp/reboot-log.sh"   "echo rebooted >> $tmp/rebooted"
@@ -843,6 +904,31 @@ PYSTUB
   ck "…carries a TEMPLATED wave" "$(grep -c 'Action: dispatch OPS-HOST-AUTO-REBOOT-W{NEXT}' "$tmp/paged")" "1"
   ck "…is invoked as <alert_id> CRITICAL_PERSISTENT -" "$(grep -c 'ALERT=KERNEL_AUTO_REBOOT SEV=CRITICAL_PERSISTENT' "$tmp/paged")" "1"
 
+  # ── W6: --decide, and the record KERNEL_STALENESS pages from ───────────────────────────
+  reset; rm -f "$tmp/stale-argv"
+  sig apply AUTO_REBOOT_NOW_HOUR=20 >/dev/null
+  ck "the due gate invokes the canary with --decide (never its paging path)" "$(cat "$tmp/stale-argv" 2>/dev/null)" "--decide"
+  ck "a foreign *_VERDICT= token is never read as the decision" "$(sig apply AUTO_REBOOT_STALENESS="$tmp/stale-foreign.sh" | tok)" "AUTO_REBOOT_VERDICT=INDETERMINATE"
+  ck "…nor the pre-W6 canary's VERDICT= log line" "$(sig apply AUTO_REBOOT_STALENESS="$tmp/stale-oldfmt.sh" | tok)" "AUTO_REBOOT_VERDICT=INDETERMINATE"
+  reset
+  sig apply AUTO_REBOOT_PS="$tmp/ps-deploy.sh" >/dev/null
+  rec_field() { "$PY_BIN" -c 'import json,sys; r=[json.loads(l) for l in open(sys.argv[1]) if l.startswith("{\"at\": ")][int(sys.argv[2])]; v=r["metrics"].get(sys.argv[3], r.get(sys.argv[3])); print(v if v is not None else "<absent>")' "$CANARY_RESULT_LOG_PATH" "$1" "$2"; }
+  ck "the record carries the installed kernel from --decide" "$(rec_field -1 kernel_installed)" "6.8.0-147-generic"
+  ck "…the staleness decision and its age" "$(rec_field -1 staleness)" "BREACH:8"
+  ck "…the DECIDING gate's own line, verbatim" "$(rec_field -1 detail | cut -c1-50)" "AUTO_REBOOT_GATE=deploy_in_flight state=DEFERRED d"
+  ck "…an explicit at" "$(rec_field -1 at | grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$')" "1"
+  ck "…and a first streak of 1, since its own at" "$(rec_field -1 streak_count)|$([ "$(rec_field -1 streak_since)" = "$(rec_field -1 at)" ] && echo same || echo differs)" "1|same"
+  sig apply AUTO_REBOOT_NOW_HOUR=20 >/dev/null
+  sig apply AUTO_REBOOT_PS="$tmp/ps-deploy.sh" >/dev/null
+  ck "a NOT_DUE-by-window wait neither breaks nor extends the streak" "$(rec_field -1 streak_count)" "2"
+  ck "…and the streak keeps its first since" "$([ "$(rec_field -1 streak_since)" = "$(rec_field 0 at)" ] && echo kept || echo moved)" "kept"
+  sig apply AUTO_REBOOT_BOOT_CONTRACT="$tmp/bc-drift.sh" >/dev/null
+  ck "a different deciding gate restarts the streak" "$(rec_field -1 streak_count)" "1"
+  printf '{"at":"torn\n' >> "$CANARY_RESULT_LOG_PATH"
+  sig apply AUTO_REBOOT_BOOT_CONTRACT="$tmp/bc-drift.sh" >/dev/null
+  ck "a torn line is skipped, never fatal to the streak" "$(rec_field -1 streak_count)" "2"
+  ck "an undereferenceable deciding gate never kills finish()" "$( (record() { :; }; _emit() { :; }; finish DEFERRED 'a-b' >/dev/null; echo "survived:${DECIDED_DETAIL:-empty}") 2>&1 | tail -1)" "survived:empty"
+
   # ── THE HERMETIC SEAM'S OWN BLIND SPOT ─────────────────────────────────────────────────
   ck "SEAM — the REAL reboot command" "$REAL_REBOOT" "/sbin/reboot"
   ck "SEAM — the REAL process-table probe" "$REAL_PS" "ps"
@@ -864,8 +950,8 @@ PYSTUB
 
   unset CANARY_RESULT_LOG_PATH
   rm -rf "$tmp"
-  if [ "$n" -lt 112 ]; then
-    echo "SELF-TEST: only $n assertions ran (expected >= 112) — a shrinking suite is a defect"
+  if [ "$n" -lt 125 ]; then
+    echo "SELF-TEST: only $n assertions ran (expected >= 125) — a shrinking suite is a defect"
     echo "SELF_TEST_VERDICT=INDETERMINATE"; return 3
   fi
   if [ "$fails" -gt 0 ]; then

@@ -27,7 +27,7 @@
         "active_cron_lines": 128,
         "running_services": 23,
         "enabled_timers": 30,
-        "note": "A REBOOT kills every container AND every host process, so every live line/unit maps to a row or exclusion by explicit cron_match / units — none by inference. Measured 2026-10-02 (crontab sha256 93f9e3ef…): 126 active lines (125 before this wave's own `16 * * * *` harness line), 22 running services, 28 enabled timers. Transient run-*.service units are deliberately left unmapped: an operator one-shot in flight DEFERS the reboot until it ends. || Re-derived 2026-10-22T09:32Z by OPS-HOST-KERNEL-REBOOT-W6 CH1 (crontab sha256 bf5e1d98…): 128 active lines, 23 running services, 30 enabled timers. The two lines that had no REBOOT row (verdict-rule-gate, directional-labels-race-integrity) are now classified; the inventory cross-check makes the next such install a build-time FAIL."
+        "note": "A REBOOT kills every container AND every host process, so every live line/unit maps to a row or exclusion by explicit cron_match / units — none by inference. Measured 2026-10-02 (crontab sha256 93f9e3ef…): 126 active lines (125 before this wave's own `16 * * * *` harness line), 22 running services, 28 enabled timers. Transient run-*.service units are deliberately left unmapped: an operator one-shot in flight DEFERS the reboot until it ends. || Re-derived 2026-10-22T09:32Z by OPS-HOST-KERNEL-REBOOT-W6 CH1 (crontab sha256 bf5e1d98…): 128 active lines, 23 running services, 30 enabled timers. The two lines that had no REBOOT row (verdict-rule-gate, directional-labels-race-integrity) are now classified; the inventory cross-check makes the next such install a build-time FAIL. || OPS-HOST-KERNEL-REBOOT-W6 CH2: the kernel-staleness-canary line moved 23 7 * * * -> 23 * * * * (cadence only, R2.7 — the harness's --decide call no longer pages, so the canary's own cron carries the latency). Same path, same row; the line count and every mapping are unchanged."
       }
     },
     "aoe-1": {
@@ -693,7 +693,7 @@
       "max_runtime_s": 2,
       "runtime_instrument": "direct timed runs on aoe-1 under ALGOVAULT_TG_TEST_INERT=1 and MONITORING_HOST_LABELS=aoe-1, 2026-08-29: shadow-writer-stall 0s · output-liveness 1s · promotion-health 1s · kernel-staleness 0s · boot-contract 0s · declaration-sync 2s. Recorded value is the max. The two lines added 2026-10-02 are bounded by construction, not measured here: the watchdog exits immediately with no arm, and with one its probe is `timeout 10` TCP + `curl -m 10`, so <=20s; the harness is the reboot itself.",
       "cron_lines": 8,
-      "cron": "13,18,23,28,33,38,43,48,53,57 * * * * · 47 * * * * · 41 * * * * · 37 7 * * * · 37 8 * * * · 27 * * * * · 7 * * * * (kernel-auto-reboot.sh) · 3-53/5 * * * * (aoe-peer-watchdog.sh, from this wave's CH3)",
+      "cron": "13,18,23,28,33,38,43,48,53,57 * * * * · 47 * * * * · 41 * * * * · 37 * * * * (kernel-staleness-canary.sh, hourly since OPS-HOST-KERNEL-REBOOT-W6) · 37 8 * * * · 27 * * * * · 7 * * * * (kernel-auto-reboot.sh) · 3-53/5 * * * * (aoe-peer-watchdog.sh, from this wave's CH3)",
       "catchup_cmd": null,
       "source": "host-only",
       "verified_at": "2026-10-02"
