@@ -27,6 +27,7 @@ import { coalescedCache } from './coalesced-cache.js';
 import { isShortLivedScript } from './runtime.js';
 import { annualizeFunding, isFundingRank, type RankBy } from './rank-constants.js';
 import { computeATRP } from './rank-atr.js';
+import { ATRP_CANDLE_COUNT } from './serving-windows.js';
 import { getAdapter } from './exchange-adapter.js';
 import { intervalMsFor } from './candle-guard.js';
 import {
@@ -205,7 +206,6 @@ const ATRP_POOL_SIZE = (() => {
 })();
 const ATRP_TTL_MS = 2 * 60 * 1000; // candle-derived; ATRP barely moves intra-candle
 const ATRP_CONCURRENCY = 6;
-const ATRP_CANDLE_COUNT = 50; // ATR(14) needs 15; 50 → a well-converged Wilder ATR + venue-count buffer
 
 /**
  * `coin → ATRP` for the top-by-OI pool on `${exchange}:${timeframe}`. Per pool coin:
@@ -231,7 +231,7 @@ const atrpCache = coalescedCache<Map<string, number>>({
             const atrp = computeATRP(oldestFirst);
             if (atrp !== null && Number.isFinite(atrp)) out.set(a.coin, atrp);
           } catch {
-            /* skip — coin omitted from this round's ATRP rank */
+            /* skip — coin omitted from this round's ATRP rank (a stale window refused at the getAdapter seam included) */
           }
         }),
       ),

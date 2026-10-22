@@ -64,7 +64,11 @@ const { hl } = vi.hoisted(() => {
         ];
       }
       if (body.type === 'candleSnapshot') {
-        const t0 = 1_780_000_000_000;
+        // Three hourly bars ending at the slot of the request's end, as HL answers [startTime, endTime ?? now]. A
+        // fixed past instant would read as a stale venue window to a SERVING read (no endTime), which the getAdapter
+        // seam refuses (OPS-SERVED-CANDLE-TRUTH-W1 CH1); the labeler's probe below is one.
+        const end = (body.req as { endTime?: number } | undefined)?.endTime ?? Date.now();
+        const t0 = Math.floor(end / 3_600_000) * 3_600_000 - 2 * 3_600_000;
         return Array.from({ length: 3 }, (_, i) => ({ t: t0 + i * 3_600_000, o: '1', h: '1', l: '1', c: '1', v: '1' }));
       }
       if (body.type === 'fundingHistory') return [{ time: 1, coin: body.coin, fundingRate: '0.0001', premium: '0' }];

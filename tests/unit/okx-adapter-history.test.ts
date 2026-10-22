@@ -43,7 +43,10 @@ describe('OKXAdapter.getCandles historical fallback', () => {
 
   it('historical startTime → falls back to /market/history-candles and returns bars at startTime', async () => {
     const startTime = 1_776_200_000_000; // ~April 2026, far in the past
-    const out = await new OKXAdapter().getCandles('BTC', '1h', startTime);
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH1: a HISTORY read names its end (every history consumer has since
+    // OPS-ADAPTER-HISTORY-ANCHOR-W1). A read with no endTime is a SERVING read, which never takes this fallback:
+    // a page anchored on startTime is exactly how OKX 1h@168 was served stale (serving-window-assembler.test.ts).
+    const out = await new OKXAdapter().getCandles('BTC', '1h', startTime, undefined, startTime + 100 * 3_600_000);
     expect(calls.some((u) => u.includes('/market/candles'))).toBe(true); // recent tried first
     expect(calls.some((u) => u.includes('/market/history-candles'))).toBe(true); // then fell back
     expect(out.length).toBeGreaterThan(0);

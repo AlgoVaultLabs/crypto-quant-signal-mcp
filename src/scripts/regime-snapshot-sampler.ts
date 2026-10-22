@@ -52,7 +52,8 @@ import { warmAssetClasses } from '../lib/asset-class-detection.js';
 import { classifyUnderlyingSession } from '../lib/market-sessions.js';
 import { intervalMsFor } from '../lib/candle-guard.js';
 import { splitCandleWindow } from '../lib/candle-window.js';
-import { InsufficientCandlesError } from '../lib/errors.js';
+import { InsufficientCandlesError, StaleUpstreamWindowError } from '../lib/errors.js';
+import { REGIME_REFERENCE_SHORT_BARS } from '../lib/serving-windows.js';
 import { runAsBatch, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
 import { weightForBinance } from '../lib/adapters/binance.js';
 import {
@@ -86,8 +87,9 @@ import type { Candle } from '../types.js';
 
 /** The reference symbol whose recent window is each venue's own bar-close record. Listed on all 4. */
 export const REGIME_REFERENCE_SYMBOL = 'BTC';
-/** Bars in the short reference read. Binance returned only 2 bars at 3 intervals (R0), so 4. */
-export const REGIME_REFERENCE_SHORT_BARS = 4;
+/** Bars in the short reference read: the serving-window registry's `regime_reference` row (src/lib/serving-windows.ts),
+ *  re-exported because tests/unit/regime-snapshot-sampler.test.ts imports it from here (OPS-SERVED-CANDLE-TRUTH-W1 Q3c). */
+export { REGIME_REFERENCE_SHORT_BARS };
 export const DEFAULT_REGIME_SNAPSHOT_CONCURRENCY = 4;
 /** The OKX batch lane sits at its 350/min cap with waits in ~40 of 60 minutes (R0) → 1 by default. */
 export const DEFAULT_REGIME_SNAPSHOT_CONCURRENCY_OKX = 1;
@@ -166,7 +168,8 @@ export interface PairResult {
   window_stale_n: number;
   skipped_n: number;
   errors_n: number;
-  /** --check only: one candle request per coin is the floor (OKX 1h needs a second page). */
+  /** --check only: one candle request per coin is the floor (an assembled serving read takes up to SERVING_MAX_PAGES,
+   *  src/lib/serving-windows.ts). */
   projected_requests?: number;
   /** --check only: what a consumer would serve for this pair right now, read from the run record. */
   served?: { bar_close: string; disposition: string; coverage: number } | null;
@@ -179,6 +182,9 @@ export interface PairResult {
   record_error?: string;
   /** Upstream refused or failed the reference read. */
   ref_error?: string;
+  /** The getAdapter seam refused a reference read as stale (StaleUpstreamWindowError's message). A fact about the
+   *  venue's window, never an unreachable venue (OPS-SERVED-CANDLE-TRUTH-W1 Q3b). */
+  stale_window?: string;
   ms: number;
 }
 
@@ -277,6 +283,14 @@ async function samplePair(ctx: PairCtx): Promise<{ result: Promise<PairResult> }
     const short = await adapter.getCandles(REGIME_REFERENCE_SYMBOL, timeframe, now - REGIME_REFERENCE_SHORT_BARS * intervalMs);
     refClose = lastClosedBarClose(short, intervalMs, deps.now());
   } catch (e) {
+    // OPS-SERVED-CANDLE-TRUTH-W1 Q3b: the getAdapter seam refused the venue's own reference window as stale. That is
+    // the WINDOW_STALE fact this sampler records (and the freshness canary pages on), not a failure. It is not a
+    // ref_error either: the venue answered, and --check reads ref_error as "unreachable" (INDETERMINATE).
+    if (e instanceof StaleUpstreamWindowError) {
+      out.precheck = 'WINDOW_STALE';
+      out.stale_window = e.message.slice(0, 200);
+      return done(finish('WINDOW_STALE', null));
+    }
     out.ref_error = e instanceof Error ? e.message.slice(0, 200) : String(e);
     return done(finish(e instanceof WeightBudgetSkipError ? 'SKIPPED_BUDGET' : 'FAILED', null));
   }
@@ -294,14 +308,21 @@ async function samplePair(ctx: PairCtx): Promise<{ result: Promise<PairResult> }
   if (!due && !check) return done(finish('NOT_DUE', refClose));
 
   // ── 3. pair pre-check — the reference symbol's FULL core window ──
-  let refCandles: Candle[];
-  let refStartTime: number;
+  let refCandles: Candle[] = [];
+  let refStartTime = 0;
   try {
     refStartTime = regimeFetchWindow(timeframe, deps.now()).startTime;
     refCandles = await adapter.getCandles(REGIME_REFERENCE_SYMBOL, timeframe, refStartTime);
   } catch (e) {
-    out.ref_error = e instanceof Error ? e.message.slice(0, 200) : String(e);
-    return done(finish(e instanceof WeightBudgetSkipError ? 'SKIPPED_BUDGET' : 'FAILED', refClose));
+    // Q3b: a refused core window IS the pre-check's WINDOW_STALE, raised one layer earlier, so it takes the pre-check's
+    // own path below: refCandles stays empty, so coreLastClose is null and never refClose. Run mode records
+    // WINDOW_STALE at ref_close; --check reports it like any stale pair. The sweep never reads refCandles then.
+    if (e instanceof StaleUpstreamWindowError) {
+      out.stale_window = e.message.slice(0, 200);
+    } else {
+      out.ref_error = e instanceof Error ? e.message.slice(0, 200) : String(e);
+      return done(finish(e instanceof WeightBudgetSkipError ? 'SKIPPED_BUDGET' : 'FAILED', refClose));
+    }
   }
   const coreLastClose = lastClosedBarClose(refCandles, intervalMs, deps.now());
   out.precheck = coreLastClose === refClose ? 'OK' : 'WINDOW_STALE';
@@ -366,6 +387,8 @@ async function samplePair(ctx: PairCtx): Promise<{ result: Promise<PairResult> }
     } catch (e) {
       if (e instanceof InsufficientCandlesError) out.too_new_n++;
       else if (e instanceof WeightBudgetSkipError) out.skipped_n++;
+      // Q3b: the coin's window was refused as stale at the getAdapter seam — the per-coin backstop's own count.
+      else if (e instanceof StaleUpstreamWindowError) out.window_stale_n++;
       else {
         out.errors_n++;
         if (env.REGIME_SAMPLER_DEBUG === '1') {

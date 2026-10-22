@@ -77,9 +77,11 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   }
   const quota = trackCall(license);
 
-  // The fetch window (lookback bars × interval, with the 1h fallback for an unmapped timeframe) is
+  // The fetch window (lookback bars × interval, the serving-window registry's market_regime row) is
   // the core's: the sampler asks for exactly the same window, so a snapshot row and this response
-  // are computed from the same bars.
+  // are computed from the same bars. A window the venue serves stale is refused inside getCandles
+  // below (StaleUpstreamWindowError, the getAdapter seam) and reaches the caller as its structured
+  // payload through the pipeline's toolErrorContent.
   const { intervalMs, startTime } = regimeFetchWindow(timeframe, Date.now());
 
   const exchange = input.exchange || 'HL';

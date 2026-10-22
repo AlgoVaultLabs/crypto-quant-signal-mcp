@@ -23,6 +23,7 @@ import type { ExchangeId } from '../types.js';
 import { fetchVenueUniverse, OI_PROXY_VENUES, type ExchangeAsset } from './exchange-universe.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './adapters/_upstream-fetch.js';
 import { getAdapter } from './exchange-adapter.js';
+import { StaleUpstreamWindowError } from './errors.js';
 import { bucketHour } from './oi-snapshots.js';
 
 export interface CurrentOi {
@@ -150,7 +151,14 @@ export async function fetchOiHistoryUsd(
     if (!list.length) return null;
     // OI is in contracts → multiply by the real hourly close (price) to get USD.
     const startTime = Date.now() - (hours + 2) * 60 * 60 * 1000;
-    const candles = await getAdapter('BYBIT').getCandles(coin, '1h', startTime);
+    let candles;
+    try {
+      candles = await getAdapter('BYBIT').getCandles(coin, '1h', startTime);
+    } catch (e) {
+      // OPS-SERVED-CANDLE-TRUTH-W1 CH1: a stale price window cannot convert contracts to USD, so skip the coin (warm forward).
+      if (e instanceof StaleUpstreamWindowError) return null;
+      throw e;
+    }
     const closeByBucket = new Map<number, number>();
     for (const c of candles) closeByBucket.set(bucketHour(c.time), c.close);
     const out = list

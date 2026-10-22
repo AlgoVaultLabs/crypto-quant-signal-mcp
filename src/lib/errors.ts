@@ -412,6 +412,66 @@ export function buildInsufficientCandlesPayload(err: InsufficientCandlesError): 
 }
 
 /**
+ * OPS-SERVED-CANDLE-TRUTH-W1 CH1. Thrown at the `getAdapter` seam (src/lib/exchange-adapter.ts) when a SERVING read
+ * (`getCandles` with no `endTime`) comes back with its newest bar more than HEAD_STALE_BARS[timeframe] closed bars
+ * behind now (src/lib/serving-windows.ts). A consumer handed that window would price a call, classify a regime or rank
+ * a coin from a market that ended hours or days ago. BITGET 1d was served a window ending ~10 days before every call
+ * for six months, so the read is now refused instead. A young listing is not stale (its gap is at the FRONT), and too
+ * few bars stays INSUFFICIENT_CANDLES's.
+ */
+export class StaleUpstreamWindowError extends Error {
+  readonly code = 'STALE_UPSTREAM_WINDOW' as const;
+  readonly coin: string;
+  readonly exchange: string;
+  readonly timeframe: string;
+  /** Open time of the newest bar the venue served, epoch ms. */
+  readonly newestBarAt: number;
+  /** Closed served bars between that bar and now. */
+  readonly headGapBars: number;
+  /** The ceiling it exceeded: HEAD_STALE_BARS[timeframe]. */
+  readonly headStaleBars: number;
+
+  constructor(args: { coin: string; exchange: string; timeframe: string; newestBarAt: number; headGapBars: number; headStaleBars: number }) {
+    super(
+      `${args.coin} on ${args.exchange} ${args.timeframe}: the venue's candle window ends ${args.headGapBars} closed bars before now ` +
+      `(newest bar opened ${new Date(args.newestBarAt).toISOString()}; at most ${args.headStaleBars} allowed), so it is refused as stale.`,
+    );
+    this.coin = args.coin;
+    this.exchange = args.exchange;
+    this.timeframe = args.timeframe;
+    this.newestBarAt = args.newestBarAt;
+    this.headGapBars = args.headGapBars;
+    this.headStaleBars = args.headStaleBars;
+    Object.setPrototypeOf(this, StaleUpstreamWindowError.prototype);
+  }
+}
+
+/** Serialize a `StaleUpstreamWindowError` to its MCP tool-content payload (the sibling of buildInsufficientCandlesPayload). */
+export function buildStaleUpstreamWindowPayload(err: StaleUpstreamWindowError): {
+  error: 'STALE_UPSTREAM_WINDOW';
+  error_code: 'STALE_UPSTREAM_WINDOW';
+  message: string;
+  coin: string;
+  exchange: string;
+  timeframe: string;
+  newest_bar_at: string;
+  head_gap_bars: number;
+  suggested_action: string;
+} {
+  return {
+    error: err.code,
+    error_code: err.code,
+    message: err.message,
+    coin: err.coin,
+    exchange: err.exchange,
+    timeframe: err.timeframe,
+    newest_bar_at: new Date(err.newestBarAt).toISOString(),
+    head_gap_bars: err.headGapBars,
+    suggested_action: `Retry later, or ask another exchange for ${err.coin} ${err.timeframe}: ${err.exchange} is not serving a current window.`,
+  };
+}
+
+/**
  * Map of which exchanges to suggest as fallbacks when one is rate-limited.
  * Used by the MCP tool handler to populate the `suggestion` field of the
  * structured error response.

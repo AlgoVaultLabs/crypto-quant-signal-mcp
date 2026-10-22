@@ -35,6 +35,8 @@ import { WeightBudgetSkipError, currentWeightClass, currentCaller } from '../../
 import { _clearAssetClassCache, _setDetectorsForTest } from '../../src/lib/asset-class-detection.js';
 import { _clearUnderlyingTypeCache, _setUnderlyingTypeFetcherForTest } from '../../src/lib/underlying-type.js';
 import { classifyUnderlyingSession } from '../../src/lib/market-sessions.js';
+import { StaleUpstreamWindowError } from '../../src/lib/errors.js';
+import { HEAD_STALE_BARS } from '../../src/lib/serving-windows.js';
 import type { Candle, ExchangeId } from '../../src/types.js';
 
 const H = 3_600_000;
@@ -65,6 +67,10 @@ interface VenueWorld {
   error?: string[];
   /** The reference SHORT read throws this. */
   refError?: Error;
+  /** The reference CORE read (the pair pre-check) throws this. */
+  coreError?: Error;
+  /** These coins' windows are refused as stale at the getAdapter seam (StaleUpstreamWindowError). */
+  refused?: string[];
   universeError?: Error;
 }
 
@@ -159,6 +165,8 @@ function harness(world: Record<string, VenueWorld>, opts: { realAssetClass?: boo
             await new Promise((r) => setImmediate(r));
             const short = startTime >= clock.now - REGIME_REFERENCE_SHORT_BARS * IV[tf] - 1;
             if (short && coin === 'BTC' && v.refError) throw v.refError;
+            if (!short && coin === 'BTC' && v.coreError) throw v.coreError;
+            if (v.refused?.includes(coin)) throw staleRefusal(coin, id, tf);
             if (v.skip?.includes(coin)) throw new WeightBudgetSkipError(id, 2);
             if (v.error?.includes(coin)) throw new Error(`upstream 500 for ${coin}`);
             return synthWindow(v, coin, tf, startTime, clock.now);
@@ -189,6 +197,11 @@ function harness(world: Record<string, VenueWorld>, opts: { realAssetClass?: boo
     now: () => clock.now,
   };
   return { store, clock, reqs, adapterIds, lanes, maxInflight, deps, warmCalls: () => warmCalls, resetInflight: () => { inflight = {}; } };
+}
+
+/** What the getAdapter seam throws for a window ending 30 bars before T0 (src/lib/exchange-adapter.ts guardServingReads). */
+function staleRefusal(coin: string, venue: string, tf: string): StaleUpstreamWindowError {
+  return new StaleUpstreamWindowError({ coin, exchange: venue, timeframe: tf, newestBarAt: T0 - 30 * IV[tf], headGapBars: 29, headStaleBars: HEAD_STALE_BARS[tf] });
 }
 
 /** ref_close the venue's own record yields at `now` (the synthetic venue is fresh on the short path). */
@@ -287,7 +300,9 @@ describe('due detection + the first generation', () => {
 
 describe('window truth — the pair pre-check and the per-coin backstop', () => {
   it('a venue serving a stale FULL window is WINDOW_STALE with zero sweep requests', async () => {
-    // OKX: recent page cap 100 — the 168-bar 1h window is served from its OLDEST end (okx.ts:250-262).
+    // A venue whose recent page caps at 100 serves the 168-bar 1h window from its OLDEST end — OKX until
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH1. The sampler's own pre-check catches it here; the getAdapter seam now also refuses it
+    // (the Q3b cases below).
     const h = harness({ OKX: { coins: ['BTC', 'ETH', 'SOL'], pageCap: 100 } });
     await runRegimeSnapshotSampler({ env: ENV }, h.deps);
     const run = h.store.run(T0, 'OKX', '1h')!;
@@ -323,6 +338,57 @@ describe('window truth — the pair pre-check and the per-coin backstop', () => 
     expect(h.store.run(T0, 'BINANCE', '1h')).toMatchObject({ disposition: 'PARTIAL', written_n: 3, window_stale_n: 1, universe_n: 4 });
     expect(h.store.gen('BINANCE', '1h', refClose('1h', T0)).map((x) => x.coin).sort()).toEqual(['BTC', 'SOL', 'XRP']);
     expect(h.store.run(T0, 'BINANCE', '4h')!.disposition).toBe('COMPLETE');
+  });
+
+  // OPS-SERVED-CANDLE-TRUTH-W1 Q3b: the getAdapter seam now refuses a stale serving window (StaleUpstreamWindowError) before
+  // the sampler sees it. Each of the three reads maps the refusal onto the fact the sampler already records, never FAILED.
+  it('Q3b: a refused SHORT reference read is WINDOW_STALE with no bar, never FAILED or SKIPPED_BUDGET', async () => {
+    const h = harness({ BINANCE: { coins: ['BTC', 'ETH'], refError: staleRefusal('BTC', 'BINANCE', '1h') } });
+    const r = await runRegimeSnapshotSampler({ env: ENV }, h.deps);
+    expect(h.store.run(T0, 'BINANCE', '1h')).toMatchObject({ disposition: 'WINDOW_STALE', bar_close_ms: null, written_n: 0, errors_n: 0 });
+    expect(h.reqs.filter((q) => q.tf === '1h').map((q) => q.coin)).toEqual(['BTC']); // the refused read, nothing after it
+    const pair = r.pairs.find((p) => p.timeframe === '1h')!;
+    expect(pair).toMatchObject({ precheck: 'WINDOW_STALE' });
+    expect(pair.ref_error).toBeUndefined();
+    expect(pair.stale_window).toContain('refused as stale');
+    expect(r.verdict).toBe('PASS');
+    // Two-way: any other error on the same read is still FAILED.
+    const h2 = harness({ BINANCE: { coins: ['BTC'], refError: new Error('ETIMEDOUT') } });
+    expect((await runRegimeSnapshotSampler({ env: ENV }, h2.deps)).verdict).toBe('FAIL');
+    expect(h2.store.run(T0, 'BINANCE', '1h')!.disposition).toBe('FAILED');
+  });
+
+  it('Q3b: a refused pre-check (core) read is the pre-check\'s own WINDOW_STALE at ref_close, with zero sweep requests', async () => {
+    const h = harness({ BINANCE: { coins: ['BTC', 'ETH', 'SOL'], coreError: staleRefusal('BTC', 'BINANCE', '1h') } });
+    const r = await runRegimeSnapshotSampler({ env: ENV }, h.deps);
+    expect(h.store.run(T0, 'BINANCE', '1h')).toMatchObject({ disposition: 'WINDOW_STALE', bar_close_ms: refClose('1h', T0), universe_n: 0, written_n: 0 });
+    expect(h.reqs.filter((q) => q.tf === '1h').map((q) => q.coin)).toEqual(['BTC', 'BTC']); // the short read + the refused pre-check
+    expect(h.store.gen('BINANCE', '1h', refClose('1h', T0))).toHaveLength(0);
+    expect(r.pairs.find((p) => p.timeframe === '1h')).toMatchObject({ precheck: 'WINDOW_STALE' });
+    expect(r.verdict).toBe('PASS');
+    // --check: a reachable venue serving a stale window is reported, never INDETERMINATE (exit 3 means "could not reach").
+    const c = harness({ BINANCE: { coins: ['BTC', 'ETH'], coreError: staleRefusal('BTC', 'BINANCE', '1h') } });
+    const before = logSpy.mock.calls.length;
+    expect(await main(['node', 'x', '--check'], c.deps)).toBe(0);
+    const lines = logSpy.mock.calls.slice(before).map((x) => String(x[0]));
+    const pairs = lines.filter((l) => l.startsWith('[regime-sampler] {')).map((l) => JSON.parse(l.slice('[regime-sampler] '.length)));
+    expect(pairs.find((p) => p.timeframe === '1h')).toMatchObject({ disposition: 'CHECK', precheck: 'WINDOW_STALE', projected_requests: 0 });
+    // Two-way: any other error on the same read is still FAILED at ref_close.
+    const h2 = harness({ BINANCE: { coins: ['BTC'], coreError: new Error('ETIMEDOUT') } });
+    await runRegimeSnapshotSampler({ env: ENV }, h2.deps);
+    expect(h2.store.run(T0, 'BINANCE', '1h')).toMatchObject({ disposition: 'FAILED', bar_close_ms: refClose('1h', T0) });
+  });
+
+  it('Q3b: a coin refused at the seam is counted window_stale_n, never written and never an error', async () => {
+    const h = harness({ BINANCE: { coins: ['BTC', 'ETH', 'SOL', 'XRP'], refused: ['ETH'] } });
+    const r = await runRegimeSnapshotSampler({ env: ENV }, h.deps);
+    expect(h.store.run(T0, 'BINANCE', '1h')).toMatchObject({ disposition: 'PARTIAL', written_n: 3, window_stale_n: 1, errors_n: 0, universe_n: 4 });
+    expect(h.store.gen('BINANCE', '1h', refClose('1h', T0)).map((x) => x.coin).sort()).toEqual(['BTC', 'SOL', 'XRP']);
+    expect(r.verdict).toBe('PASS');
+    // Two-way: an ordinary upstream error on the same coin is errors_n, not window_stale_n.
+    const h2 = harness({ BINANCE: { coins: ['BTC', 'ETH', 'SOL', 'XRP'], error: ['ETH'] } });
+    await runRegimeSnapshotSampler({ env: ENV }, h2.deps);
+    expect(h2.store.run(T0, 'BINANCE', '1h')).toMatchObject({ written_n: 3, window_stale_n: 0, errors_n: 1 });
   });
 
   it('16:00Z-aligned 1D bars are sampled at their OWN close — no wall-clock bar arithmetic', async () => {

@@ -24,6 +24,7 @@ import type { PriceStructureResult } from './indicators.js';
 import { InsufficientCandlesError } from './errors.js';
 import { computeSuggestedTimeframes, suggestedActionFor, intervalMsFor } from './candle-guard.js';
 import { splitCandleWindow } from './candle-window.js';
+import { CANDLE_COUNTS, servingWindowBars } from './serving-windows.js';
 import type { CandleBasis } from './candle-basis-flag.js';
 import type { RegimeType, TrendStrength, AdxSlopeCategory, ExchangeId, Candle } from '../types.js';
 
@@ -35,30 +36,11 @@ import type { RegimeType, TrendStrength, AdxSlopeCategory, ExchangeId, Candle } 
  */
 export const MARKET_REGIME_RULE_VERSION = 1;
 
-// How many candles to fetch per timeframe. This is a LOOKBACK WINDOW in bars, never a row
-// limit — it is used only to compute `startTime` below, and `getCandles` has no limit parameter.
-export const CANDLE_COUNTS: Record<string, number> = {
-  '1h': 168,  // 7 * 24
-  '4h': 42,   // 7 * 6
-  // SIGNAL-TREND-BLINDNESS-FIX-W1 CH1: 30 -> 100.
-  //
-  // At 30 this tool was DEAD at 1d on every startTime-honouring venue, and had been since the
-  // CANDLE_BASIS=closed flip. The cause is the venue BOUNDARY BAR, not a limit: Hyperliquid's
-  // candleSnapshot INCLUDES the bar containing `startTime` (window+1 rows) while Binance's
-  // `openTime >= startTime` EXCLUDES it (window rows). Measured with the exact windows this code
-  // computes: 1d -> HL raw 31 / closed 30 (passed with ZERO margin), Binance raw 30 / closed 29
-  // (threw `INSUFFICIENT_CANDLES: 29 / 30`). One bar of venue disagreement against zero headroom.
-  //
-  // 100 matches get_trade_call's flat window, clears REQUIRED_CANDLES by 69 bars under either
-  // venue semantic, and is inside every adapter's own kline cap (the tightest is OKX at 100).
-  //
-  // '1h' and '4h' are deliberately UNTOUCHED. 4h is the default timeframe and 42 -> 100 would move
-  // adx / trend_strength / confidence on the most-used path: Wilder's ADX is a recursive smoother
-  // whose seed residual after k = N-28 steps is (13/14)^k, i.e. 35.4% contamination at 42 bars
-  // against 0.48% at 100. That is a real improvement and a deliberate decision with its own
-  // before/after, not a side effect of a 1d bugfix -> SIGNAL-REGIME-WILDER-SEED-4H-W{NEXT}.
-  '1d': 100,
-};
+// How many candles to fetch per timeframe (a LOOKBACK WINDOW in bars, never a row limit). OPS-SERVED-CANDLE-TRUTH-W1
+// CH1 moved it, values unchanged, into the serving-window registry (src/lib/serving-windows.ts), whose suite S tests it
+// on every venue. Its history — the 1d 30 -> 100 move, and the 4h Wilder-seed decision left open — moved with it.
+// Re-exported so every existing importer of this module is unchanged.
+export { CANDLE_COUNTS };
 
 /**
  * Bars needed for a FULL ADX-slope regression, and the reason it is not `REQUIRED_CANDLES`.
@@ -262,15 +244,21 @@ export interface RegimeFetchWindow {
 
 /**
  * SIGNAL-TREND-BLINDNESS-FIX-W1 CH1: the private 3-entry tf->ms table is retired; `intervalMsFor`
- * (11 entries, src/lib/candle-guard.ts) is the ONE owner. The primitive returns `null` for an
- * unmapped timeframe and never substitutes a default, so the fallback is CALLER policy — chosen
- * here as 1h to match get_trade_call:574, because `x402-http-routes.ts:269` forwards `timeframe`
- * with no zod validation, so an unmapped value reaches BOTH tools in production and they must not
- * disagree about what it means. The retired table's own fallback was 4h.
+ * (11 entries, src/lib/candle-guard.ts) is the ONE owner of the step.
+ *
+ * OPS-SERVED-CANDLE-TRUTH-W1 CH1: the window is the registry's `market_regime` row, and an UNDECLARED
+ * timeframe is refused rather than defaulted. The retired `CANDLE_COUNTS[tf] || 168` / `?? 3_600_000`
+ * fallback existed because `x402-http-routes.ts` once forwarded `timeframe` unvalidated. Every channel
+ * now dispatches through `callTool`, which refuses a timeframe outside the tool's REGIME_TIMEFRAMES
+ * before dispatch (Q-PIPE-2 row 12), and the sampler asks only REGIME_SNAPSHOT_TIMEFRAMES. So no caller
+ * reaches the default, and it was the one window the product could serve that no test covered.
  */
 export function regimeFetchWindow(timeframe: string, nowMs: number): RegimeFetchWindow {
-  const candleCount = CANDLE_COUNTS[timeframe] || 168;
-  const intervalMs = intervalMsFor(timeframe) ?? 3_600_000;
+  const candleCount = servingWindowBars('market_regime', timeframe);
+  const intervalMs = intervalMsFor(timeframe);
+  if (candleCount === undefined || intervalMs === null) {
+    throw new Error(`regimeFetchWindow: timeframe '${timeframe}' has no declared market_regime serving window (src/lib/serving-windows.ts)`);
+  }
   return { candleCount, intervalMs, startTime: nowMs - candleCount * intervalMs };
 }
 

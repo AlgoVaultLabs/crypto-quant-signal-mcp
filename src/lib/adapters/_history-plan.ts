@@ -23,7 +23,18 @@
  * Carrier (OAH-Q2): a NON-enumerable `meta` property on the array the adapter returns — JSON bytes and deep
  * equality are unchanged, `src/types.ts` is untouched. A COPY of the page (`slice()`, spread, `map`) carries no
  * meta: read it from the page the adapter returned; `historyMetaOf(copy)` is `undefined` = unknown, never zero.
+ *
+ * Serving assembly (OPS-SERVED-CANDLE-TRUTH-W1 CH1): `assembleServingWindow` completes a SERVING read (no `endTime`)
+ * that one recent page cannot hold, using the same accounting. It drives fetchers the adapter injects and still
+ * performs no I/O of its own.
  */
+
+export type HistoryBranch = 'R' | 'F' | 'A';
+
+/** A venue may publish a just-closed candle a moment late: one missing closed slot at the head is allowed. The serving
+ *  assembler pages forward only beyond it, and the live canary's reach class reads it
+ *  (src/scripts/adapter-history-contiguity.ts re-exports it: one constant, OPS-SERVED-CANDLE-TRUTH-W1 Q3c). */
+export const HEAD_ALLOWANCE_BARS = 1;
 
 export interface PageFacts {
   returned: number;
@@ -43,8 +54,10 @@ export interface HistoryMeta extends PageFacts {
   servedStepMs: number;
   from: number;
   to: number | null;
-  /** 'R' = the recent-endpoint page the routing guard accepted; 'F' = the history-endpoint fallback. */
-  branch: 'R' | 'F';
+  /** 'R' = the recent-endpoint page the routing guard accepted; 'F' = the history-endpoint fallback; 'A' = a SERVING
+   *  read answered by the serving assembler instead (assembleServingWindow, OPS-SERVED-CANDLE-TRUTH-W1): completed by
+   *  extra pages, or judged complete because the venue holds nothing older. */
+  branch: HistoryBranch;
   /** OAH-Q5: the history page held nothing at or after `from`, so the adapter returned the recent page instead.
    *  The bars are unchanged this wave; this flag is how a consumer can tell. */
   substitutedNewest: boolean;
@@ -134,8 +147,71 @@ export function historyMetaOf(page: readonly unknown[] | null | undefined): Hist
 /** The adapter-side helper: account the page it is about to return and attach the result. */
 export function withHistoryMeta<T extends { time: number }[]>(
   page: T,
-  p: { servedStepMs: number; from: number; to: number | undefined; nowMs: number; branch: 'R' | 'F'; substitutedNewest: boolean },
+  p: { servedStepMs: number; from: number; to: number | undefined; nowMs: number; branch: HistoryBranch; substitutedNewest: boolean },
 ): T & { readonly meta?: HistoryMeta } {
   const facts = accountPage({ bars: page.map((c) => ({ ts: c.time })), servedStepMs: p.servedStepMs, from: p.from, to: p.to ?? null, nowMs: p.nowMs });
   return attachMeta(page, { ...facts, complete: !incompleteWindow(facts), servedStepMs: p.servedStepMs, from: p.from, to: p.to ?? null, branch: p.branch, substitutedNewest: p.substitutedNewest });
+}
+
+/** One page an assembler fetcher returned: its bars (any order) and whether the venue holds nothing further that way. */
+export interface ServingPage<C extends { time: number }> {
+  bars: C[];
+  exhausted: boolean;
+}
+
+/** Merge pages by open time: ascending, one bar per open time, the bar already held wins. */
+function mergeByTime<C extends { time: number }>(held: C[], page: C[]): C[] {
+  const byTime = new Map<number, C>();
+  for (const c of held) byTime.set(c.time, c);
+  for (const c of page) if (!byTime.has(c.time)) byTime.set(c.time, c);
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
+}
+
+/**
+ * OPS-SERVED-CANDLE-TRUTH-W1 CH1. The ONE serving-window assembler for the venues whose recent endpoint cannot hold
+ * every serving window (OKX, Bitget). A serving read (no `endTime`) whose first page does not cover [from, now] is
+ * completed here:
+ *   - a head gap beyond HEAD_ALLOWANCE_BARS pages FORWARD from the newest held bar (Bitget: the recent endpoint returns
+ *     at most 90 days, so a 100-bar 1D window ended ~10 days before now);
+ *   - otherwise a front gap pages BACKWARD from the oldest held bar on the history endpoint (OKX: a window longer
+ *     than one recent page).
+ * Pages are merged (one bar per open time, ascending) and re-accounted after each one. The walk is bounded twice. It
+ * makes at most `maxPages` requests in all, counting the first page. A direction is dropped once the venue says it is
+ * exhausted or a page adds no bar, so a read can neither loop nor run past its budget.
+ *
+ * Venue knowledge stays in the adapter: it passes only the directions its endpoints can serve, and only when its
+ * first page leaves something to fetch (a page that was not full already holds every bar the venue has that way, so
+ * a young listing's front gap costs no request). Pure apart from the injected fetchers: no I/O, no clock, no venue.
+ * The caller attaches `meta` (`branch: 'A'`) to the returned bars; the `endTime` (history) path never comes here.
+ */
+export async function assembleServingWindow<C extends { time: number }>(p: {
+  first: C[];
+  servedStepMs: number;
+  from: number;
+  nowMs: number;
+  maxPages: number;
+  forward?: (newestOpenMs: number) => Promise<ServingPage<C>>;
+  backward?: (oldestOpenMs: number) => Promise<ServingPage<C>>;
+}): Promise<{ bars: C[]; pages: number }> {
+  let bars = mergeByTime([], p.first);
+  let pages = 1;
+  let forward = p.forward;
+  let backward = p.backward;
+  while (pages < p.maxPages && bars.length > 0) {
+    const f = accountPage({ bars: bars.map((c) => ({ ts: c.time })), servedStepMs: p.servedStepMs, from: p.from, to: null, nowMs: p.nowMs });
+    if (f.emptyWindow) break;
+    const next = forward && (f.headGapBars ?? 0) > HEAD_ALLOWANCE_BARS ? { dir: 'forward' as const, fetch: forward, at: bars[bars.length - 1].time }
+      : backward && (f.frontGapBars ?? 0) > 0 ? { dir: 'backward' as const, fetch: backward, at: bars[0].time }
+        : null;
+    if (next === null) break;
+    const page = await next.fetch(next.at);
+    pages++;
+    const held = bars.length;
+    bars = mergeByTime(bars, page.bars);
+    if (page.exhausted || bars.length === held) {
+      if (next.dir === 'forward') forward = undefined;
+      else backward = undefined;
+    }
+  }
+  return { bars, pages };
 }

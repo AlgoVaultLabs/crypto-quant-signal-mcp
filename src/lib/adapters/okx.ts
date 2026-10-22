@@ -13,7 +13,8 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
-import { historyPageEnd, withHistoryMeta } from './_history-plan.js';
+import { assembleServingWindow, historyPageEnd, withHistoryMeta, type HistoryBranch } from './_history-plan.js';
+import { SERVING_MAX_PAGES } from '../serving-windows.js';
 
 const BASE_URL = 'https://www.okx.com';
 const MAX_RETRIES = 1;
@@ -60,6 +61,21 @@ export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 /** Page caps, named once: the request AND the contract/canary read these (never a third literal). */
 export const RECENT_PAGE_CAP = 100;
 export const HISTORY_PAGE_CAP = 100;
+
+/**
+ * OPS-SERVED-CANDLE-TRUTH-W1 CH1 (Q2): the `limit` a SERVING read (no `endTime`) asks of `/market/candles`, the
+ * endpoint's maximum. OKX answers with the newest ≤ limit bars newer than `before` (measured R0 I4: 168 1H bars in one
+ * request), so every serving window up to 300 bars is ONE head-complete request. A history read keeps
+ * RECENT_PAGE_CAP: 272 of the R0 P9 differential's `endTime` reads route R, so that request is part of the frozen
+ * history path.
+ */
+export const SERVING_PAGE_LIMIT = 300;
+
+/** The most served bars ONE serving request can hold on `tf` (null: OKX does not map it). Suite S, the differential
+ *  and the SERVING_MAX_PAGES derivation read this, never a literal. */
+export function servingReachBars(tf: string): number | null {
+  return servedIntervalMs(tf) == null ? null : SERVING_PAGE_LIMIT;
+}
 
 // REQUESTED bar duration in ms — the recent-branch ROUTING guard's unit only (byte-identical to the pre-wave
 // guard). History page spans use the SERVED step (servedIntervalMs), never this table.
@@ -218,6 +234,10 @@ export class OKXAdapter implements ExchangeAdapter {
    * Every return carries a non-enumerable `meta` (`historyMetaOf(page)`, src/lib/adapters/_history-plan.ts),
    * including `substitutedNewest` when the history page held nothing and the recent page is returned instead
    * (OAH-Q5: reported, bars unchanged). `endTime` bounds the accounting window only.
+   *
+   * OPS-SERVED-CANDLE-TRUTH-W1 CH1, SERVING reads only (no `endTime`): the recent request asks SERVING_PAGE_LIMIT,
+   * and a page the routing guard rejects goes to the serving assembler (`branch: 'A'`), never to the history
+   * fallback. The `endTime` path is byte-identical (R0 P9 differential).
    */
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
     const instId = toOKXInstId(coin);
@@ -226,18 +246,20 @@ export class OKXAdapter implements ExchangeAdapter {
     const barMs = BAR_MS[interval] || 3_600_000;
     // SERVED step: the module-local leaf (never tf-support — see _history-plan.ts). Every page span uses it.
     const servedStepMs = servedIntervalMs(interval) ?? barMs;
-    const meta = (branch: 'R' | 'F', substitutedNewest: boolean) =>
+    const meta = (branch: HistoryBranch, substitutedNewest: boolean) =>
       ({ servedStepMs, from: startTime, to: endTime, nowMs: Date.now(), branch, substitutedNewest });
+    const serving = endTime === undefined;
 
-    // Recent path (live/indicator use — UNCHANGED): `/market/candles` `before` = records NEWER
-    // than startTime. OKX returns DESCENDING (newest first) → reverse to ascending.
+    // Recent path (live/indicator use): `/market/candles` `before` = records NEWER than startTime. OKX returns
+    // DESCENDING (newest first) → reverse to ascending.
     const resp = await okxGet<string[][]>('/api/v5/market/candles', {
       instId,
       bar,
       before: startTime,
-      limit: RECENT_PAGE_CAP,
+      limit: serving ? SERVING_PAGE_LIMIT : RECENT_PAGE_CAP,
     });
-    const candles = (resp.data || []).reverse().flatMap(c => mapOkxCandle(c) ?? []);
+    const recentRows = resp.data || [];
+    const candles = recentRows.reverse().flatMap(c => mapOkxCandle(c) ?? []);
 
     // `/market/candles` answers with the venue's NEWEST page (measured 2026-09-29, two vantages), so a
     // startTime older than that page yields bars far newer than startTime. Detect the gap — the oldest
@@ -245,6 +267,35 @@ export class OKXAdapter implements ExchangeAdapter {
     // Recent requests satisfy the guard here and return the live path verbatim.
     if (candles.length > 0 && candles[0].time <= startTime + 5 * barMs) {
       return withHistoryMeta(candles, meta('R', false));
+    }
+
+    // A SERVING page the guard rejected holds the newest bars, so its gap is at the FRONT, for one of two reasons.
+    //   - The window is longer than one page (the page is full): page backward on `/market/history-candles` from the
+    //     oldest held bar (`after` = strictly older) through the serving assembler.
+    //   - The coin is younger than the window (the page is not full, so OKX has already returned every bar newer than
+    //     startTime). Whenever the history fallback's single page reaches the newest bar that page holds, it is head-
+    //     complete and is kept below: byte-identical, pre-wave cost. Where it would end earlier (a window longer than
+    //     HISTORY_PAGE_CAP bars: OKX 1h@168 served a window ending ~68 h back), the recent page itself is the answer.
+    //     Judged against the venue's own newest bar, never the local clock, so it cannot flip on a millisecond.
+    if (serving && candles.length > 0) {
+      const full = recentRows.length >= SERVING_PAGE_LIMIT;
+      if (full || historyPageEnd({ servedStepMs, from: startTime, pageCap: HISTORY_PAGE_CAP }) < candles[candles.length - 1].time) {
+        const { bars } = await assembleServingWindow({
+          first: candles,
+          servedStepMs,
+          from: startTime,
+          nowMs: Date.now(),
+          maxPages: SERVING_MAX_PAGES,
+          backward: full
+            ? async (oldestOpenMs) => {
+              const page = await okxGet<string[][]>('/api/v5/market/history-candles', { instId, bar, after: oldestOpenMs, limit: HISTORY_PAGE_CAP });
+              const rows = page.data || [];
+              return { bars: rows.flatMap(c => mapOkxCandle(c) ?? []).filter(c => c.time >= startTime), exhausted: rows.length < HISTORY_PAGE_CAP };
+            }
+            : undefined,
+        });
+        return withHistoryMeta(bars, meta('A', false));
+      }
     }
 
     // Historical fallback: `/market/history-candles` `after` = records EARLIER than the ts (desc).

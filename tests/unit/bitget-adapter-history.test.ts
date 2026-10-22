@@ -42,7 +42,10 @@ describe('BitgetAdapter.getCandles historical fallback', () => {
 
   it('historical startTime → falls back to /market/history-candles and returns bars at startTime', async () => {
     const startTime = 1_776_200_000_000; // ~April 2026
-    const out = await new BitgetAdapter().getCandles('BTC', '1h', startTime);
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH1: a HISTORY read names its end (every history consumer has since
+    // OPS-ADAPTER-HISTORY-ANCHOR-W1). A read with no endTime is a SERVING read, completed by the serving assembler
+    // instead (serving-window-assembler.test.ts).
+    const out = await new BitgetAdapter().getCandles('BTC', '1h', startTime, undefined, startTime + 100 * 3_600_000);
     expect(calls.some((u) => u.includes('/market/history-candles'))).toBe(true);
     expect(out.length).toBeGreaterThan(0);
     expect(out.every((c) => c.time >= startTime)).toBe(true);

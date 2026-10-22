@@ -30,7 +30,7 @@ import { getActivePromotedVenueIds } from '../lib/venue-store.js';
 import { PROMOTED_VENUE_IDS } from '../lib/capabilities.js';
 import { CRON_TIMEFRAMES, faithfulTimeframes, servedCandleStepMs } from '../lib/tf-support.js';
 import { EVAL_CANDLES } from './directional-labeler.js';
-import { accountPage, historyMetaOf, incompleteWindow, type PageFacts } from '../lib/adapters/_history-plan.js';
+import { accountPage, historyMetaOf, incompleteWindow, HEAD_ALLOWANCE_BARS, type PageFacts } from '../lib/adapters/_history-plan.js';
 import { RECENT_PAGE_CAP as BITGET_RECENT_CAP } from '../lib/adapters/bitget.js';
 import { RECENT_PAGE_CAP as OKX_RECENT_CAP } from '../lib/adapters/okx.js';
 import { runAsBatch } from '../lib/upstream-weight-budget.js';
@@ -39,8 +39,10 @@ import type { ExchangeId } from '../types.js';
 
 const TAG = '[adapter-history]';
 const COIN = 'BTC';
-/** A venue may publish a just-closed candle a moment late: one missing closed slot at the head is allowed. */
-export const HEAD_ALLOWANCE_BARS = 1;
+/** A venue may publish a just-closed candle a moment late: one missing closed slot at the head is allowed. Owned by
+ *  src/lib/adapters/_history-plan.ts (the serving assembler reads it too); re-exported for this script's tests
+ *  (OPS-SERVED-CANDLE-TRUTH-W1 Q3c). */
+export { HEAD_ALLOWANCE_BARS };
 /** ≥ 1.2 s between calls (spec), so the whole probe stays a trickle against every venue budget. */
 export const PACE_MS = 1_200;
 /** The two venues whose getCandles has a history fallback (the deep probe exercises it). */

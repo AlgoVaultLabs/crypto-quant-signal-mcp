@@ -33,6 +33,7 @@ import { recordHoldDecision, wouldBeSideFromRawScore } from '../lib/hold-decisio
 // import of the same module. candle-guard owns TF_INTERVAL_MS outright: this file's private
 // getIntervalMs was a THIRD copy of that table and is deleted below.
 import { computeSuggestedTimeframes, suggestedActionFor, intervalMsFor } from '../lib/candle-guard.js';
+import { TRADE_CALL_CANDLE_COUNT } from '../lib/serving-windows.js';
 import { withTierWarning, withQuotaState, withAuthState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { computeOiDelta, DEFAULT_OI_WINDOW_MS } from '../lib/oi-snapshots.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
@@ -984,13 +985,15 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
 
   const adapter = getAdapter(exchange);
 
-  // Fetch candles (100 candles back)
+  // Fetch candles (TRADE_CALL_CANDLE_COUNT = 100 candles back, the serving-window registry's trade_call row). A window
+  // the venue serves stale is refused inside getCandles (StaleUpstreamWindowError, the getAdapter seam), so it throws
+  // here, before trackCall and recordSignal: a refused window is never billed and never recorded.
   // `?? 3_600_000` reproduces the deleted private getIntervalMs EXACTLY: for every mapped
   // timeframe the table value is a positive number so `||` and `??` agree, and for an
   // unknown timeframe both yield the 1h fallback. Verified value-identical across all 11
   // keys against candle-guard's TF_INTERVAL_MS before the swap.
   const intervalMs = intervalMsFor(timeframe) ?? 3_600_000;
-  const startTime = Date.now() - 100 * intervalMs;
+  const startTime = Date.now() - TRADE_CALL_CANDLE_COUNT * intervalMs;
   const [candles, assetCtx] = await Promise.all([
     adapter.getCandles(coin, timeframe, startTime),
     adapter.getAssetContext(coin),

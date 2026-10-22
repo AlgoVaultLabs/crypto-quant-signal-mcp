@@ -44,7 +44,7 @@
  */
 
 import { getTradeSignal } from '../tools/get-trade-call.js';
-import { InsufficientCandlesError } from '../lib/errors.js';
+import { InsufficientCandlesError, StaleUpstreamWindowError } from '../lib/errors.js';
 import { hasRecentSignalAsync, closeDb, bulkWarmFundingCache } from '../lib/performance-db.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers.js';
@@ -870,6 +870,11 @@ async function seedExchange(
         // OPS-HL-RATELIMITER-W2: budget saturation is the arbiter working as
         // designed — count as a skip (NOT a fire error, per AC3); the budget's
         // own batch_skip telemetry records it. The next idempotent fire retries.
+        skipped++;
+      } else if (err instanceof StaleUpstreamWindowError) {
+        // OPS-SERVED-CANDLE-TRUTH-W1 CH1: the getAdapter seam refused a window the venue serves stale. Nothing is
+        // recorded (it throws before recordSignal), so it is a skip, and one line says which coin and how stale.
+        console.log(`[${ts()}] [${exchangeId}] ${coin} -> SKIP ${err.code}: head gap ${err.headGapBars} bars, newest bar ${new Date(err.newestBarAt).toISOString()}`);
         skipped++;
       } else if (err instanceof InsufficientCandlesError || msg.includes('Insufficient candle') || msg.includes('insufficient liquidity') || msg.includes('not found')) {
         skipped++;

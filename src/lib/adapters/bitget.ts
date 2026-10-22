@@ -13,7 +13,8 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
-import { historyPageEnd, withHistoryMeta } from './_history-plan.js';
+import { assembleServingWindow, historyPageEnd, withHistoryMeta, type HistoryBranch } from './_history-plan.js';
+import { SERVING_MAX_PAGES } from '../serving-windows.js';
 
 const BASE_URL = 'https://api.bitget.com';
 const MAX_RETRIES = 1;
@@ -57,6 +58,20 @@ export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
  *  endpoint refuses limit > 200 (code 40053, measured from two vantages 2026-09-29). */
 export const RECENT_PAGE_CAP = 200;
 export const HISTORY_PAGE_CAP = 200;
+
+/**
+ * OPS-SERVED-CANDLE-TRUTH-W1 CH1: `/market/candles` returns bars that open in [slot(startTime), startTime + 90 d) and
+ * no later, measured from two vantages (fixtures MODEL-PROBES.json; R0 I4: `startTime = now − 100 d` 1D → 90 bars,
+ * the newest 10.76 d old). A serving window longer than this ends early, so its head is completed by forward pages.
+ */
+export const RECENT_WINDOW_MS = 90 * 86_400_000;
+
+/** The most served bars ONE serving request can hold on `tf` (null: Bitget does not map it). Suite S, the differential
+ *  and the SERVING_MAX_PAGES derivation read this, never a literal. */
+export function servingReachBars(tf: string): number | null {
+  const s = servedIntervalMs(tf);
+  return s == null ? null : Math.min(RECENT_PAGE_CAP, Math.floor(RECENT_WINDOW_MS / s));
+}
 
 // REQUESTED bar duration in ms — the recent-branch ROUTING guard's unit only (byte-identical to the pre-wave
 // guard). History page spans use the SERVED step (servedIntervalMs), never this table.
@@ -156,6 +171,11 @@ export class BitgetAdapter implements ExchangeAdapter {
    * front gap, holes, head gap, out-of-range bars against [startTime, endTime ?? now], and `substitutedNewest`
    * when the history page held nothing and the recent page is returned instead (OAH-Q5: reported, bars unchanged).
    * `endTime` only bounds the accounting window; it never changes the request or the bars.
+   *
+   * OPS-SERVED-CANDLE-TRUTH-W1 CH1, SERVING reads only (no `endTime`): a window the recent page cannot hold goes to the
+   * serving assembler (`branch: 'A'`). Past the endpoint's 90-day reach (RECENT_WINDOW_MS) it gets forward pages on the
+   * same endpoint; past one full page it gets backward pages on the history endpoint. A window inside the reach makes
+   * no extra request and returns the R page unchanged. The `endTime` path is byte-identical (R0 P9 differential).
    */
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
     const symbol = toBitgetSymbol(coin);
@@ -164,10 +184,10 @@ export class BitgetAdapter implements ExchangeAdapter {
     const barMs = BAR_MS[interval] || 3_600_000;
     // SERVED step: the module-local leaf (never tf-support — see _history-plan.ts). Every page span uses it.
     const servedStepMs = servedIntervalMs(interval) ?? barMs;
-    const meta = (branch: 'R' | 'F', substitutedNewest: boolean) =>
+    const meta = (branch: HistoryBranch, substitutedNewest: boolean) =>
       ({ servedStepMs, from: startTime, to: endTime, nowMs: Date.now(), branch, substitutedNewest });
 
-    // Recent path (live/indicator use — UNCHANGED): `/market/candles` returns ASCENDING
+    // Recent path (live/indicator use): `/market/candles` returns ASCENDING
     // [ts, open, high, low, close, baseVol, quoteVol]; no reverse needed.
     const data = await bitgetGet<string[][]>('/api/v2/mix/market/candles', {
       productType: 'USDT-FUTURES',
@@ -176,13 +196,64 @@ export class BitgetAdapter implements ExchangeAdapter {
       startTime,
       limit: RECENT_PAGE_CAP,
     });
-    const candles = (data || []).flatMap(c => mapBitgetCandle(c) ?? []);
+    const recentRows = data || [];
+    const candles = recentRows.flatMap(c => mapBitgetCandle(c) ?? []);
+    const routedRecent = candles.length > 0 && candles[0].time <= startTime + 5 * barMs;
+
+    // A SERVING read the recent page does not cover goes to the serving assembler:
+    //   - head: a window running past the endpoint's 90-day reach got bars up to startTime + 90 d only (BITGET 1d@100
+    //     ended ~10 days before now), so page FORWARD from the newest held bar (`startTime = newest + step`; measured
+    //     R0 I4: the remaining 10 bars, the forming one included);
+    //   - front: a FULL page the routing guard rejected means a window longer than one page, so page BACKWARD on
+    //     `/market/history-candles` from the oldest held bar (`endTime` = its open: strictly older closed bars).
+    // A young listing's page is not full. Whenever the history fallback's single page reaches the newest bar that page
+    // holds (judged against the venue's own bar, never the local clock), it is head-complete and answers that read
+    // below, byte-identical; a window inside the reach makes no extra request and keeps its R page unchanged.
+    if (endTime === undefined && candles.length > 0) {
+      const clipped = startTime + RECENT_WINDOW_MS <= Date.now();
+      const full = recentRows.length >= (servingReachBars(interval) ?? RECENT_PAGE_CAP);
+      const fallbackHoldsHead = historyPageEnd({ servedStepMs, from: startTime, pageCap: HISTORY_PAGE_CAP }) >= candles[candles.length - 1].time;
+      if (routedRecent ? clipped : full || !fallbackHoldsHead) {
+        const { bars, pages } = await assembleServingWindow({
+          first: candles,
+          servedStepMs,
+          from: startTime,
+          nowMs: Date.now(),
+          maxPages: SERVING_MAX_PAGES,
+          forward: clipped
+            ? async (newestOpenMs) => {
+              const rows = (await bitgetGet<string[][]>('/api/v2/mix/market/candles', {
+                productType: 'USDT-FUTURES',
+                symbol,
+                granularity,
+                startTime: newestOpenMs + servedStepMs,
+                limit: RECENT_PAGE_CAP,
+              })) || [];
+              return { bars: rows.flatMap(c => mapBitgetCandle(c) ?? []), exhausted: rows.length === 0 };
+            }
+            : undefined,
+          backward: !routedRecent && full
+            ? async (oldestOpenMs) => {
+              const rows = (await bitgetGet<string[][]>('/api/v2/mix/market/history-candles', {
+                productType: 'USDT-FUTURES',
+                symbol,
+                granularity,
+                endTime: oldestOpenMs,
+                limit: HISTORY_PAGE_CAP,
+              })) || [];
+              return { bars: rows.flatMap(c => mapBitgetCandle(c) ?? []).filter(c => c.time >= startTime), exhausted: rows.length < HISTORY_PAGE_CAP };
+            }
+            : undefined,
+        });
+        if (pages > 1 || !routedRecent) return withHistoryMeta(bars, meta('A', false));
+      }
+    }
 
     // `/market/candles` only holds the recent window, so a HISTORICAL startTime yields the newest
     // bars instead of bars AT startTime (the labeler then filters them all → noKlines). Detect the
     // gap — the oldest returned bar should sit at ~startTime — and fall back to history-candles.
     // Recent requests satisfy the guard here and return the live path verbatim.
-    if (candles.length > 0 && candles[0].time <= startTime + 5 * barMs) {
+    if (routedRecent) {
       return withHistoryMeta(candles, meta('R', false));
     }
 
