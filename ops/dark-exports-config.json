@@ -191,6 +191,10 @@
     {
       "symbol": "renderReadmeMcpClientsTable",
       "reason": "LANDING-MCP-CLIENTS-CLAIMS-W1 CH2. The README 'MCP clients' table renderer is CI-FACING BY DESIGN, the same class as the claim-evidence exports exempted by OPS-CLIENT-CLAIM-EVIDENCE-W1: its consumers are scripts/build_readme_mcp_clients.mjs (through dist/) and tests/unit/readme-mcp-clients.test.ts. Zero src/ consumers is the INTENDED end state — the README table is generated at build time, never at runtime. This is an explanation, not a suppression: the row is still printed and counted as `exempt` on every run."
+    },
+    {
+      "symbol": "PARAM_DOC_BLURB_BY_TOOL",
+      "reason": "DOCS-MARKET-REGIME-SCREENER-W1 CH1. The per-tool /docs parameter sentences, read before the shared per-parameter PARAM_DOC_BLURB (Cowork ruling Q1=A: authored beside PARAM_DOC_BLURB in tool-param-schema.ts). BUILD-TIME BY DESIGN, the same class as PARAM_DOC_BLURB itself, which predates this gate and has no src/ consumer either: the ONLY reader is scripts/build_docs.mjs (fillToolParamRegions, through dist/lib/tool-param-schema.js), which bakes the sentences into landing/docs.html. A parameter NAME is not a meaning (assetClass forces the engine on get_trade_call and filters rows on scan_market_regimes), so the runtime never needs these strings; importing them into src/ would make a docs sentence a runtime dependency for no reader. Asserted by tests/unit/tool-param-projection.test.ts (every projected row has a sentence, tool-first) and by build_docs --check, which deploy.yml runs on every push."
     }
   ]
 }
