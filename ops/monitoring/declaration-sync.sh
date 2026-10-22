@@ -326,6 +326,15 @@ DECLARATIONS=(
   # REGISTRY_PARITY daily from 2026-09-09. Scope `aoe-1` ONLY: signal-1 is fed by its checkout, and a
   # synced copy there would be an ORPHAN. `rows` is live 27; 10 is a truncation refusal, not a target.
   "cron-interlock-registry.json|rows|10|aoe-1|ops/scripts/cron-interlock-registry.json"
+  # ── added by OPS-OWED-READ-RUNNER-W1 (architect ruling Q1 = A) ──
+  # The owed-read registry: the pre-registered time-gated reads owed-read-runner.py (signal-1,
+  # 27 * * * *) executes. Inert data — a row can only SELECT a reviewed, separately installed
+  # `owed-read-<slug>.py` beside the runner, never name a path — so syncing it is a declaration and
+  # not an install. Scope signal-1: the runner is installed there only. Floor 0 = presence only, ON
+  # PURPOSE: `reads: []` is a legitimate state (every read retired), and the runner itself reports
+  # it positively (`OWED_READ_REGISTRY … reads=0`, then OWED_READ_RUNNER_VERDICT=PASS), so a zero
+  # is never silent. It lands WITH its consumer (Vacuity Guard 3 above).
+  "owed-reads.json|reads|0|signal-1"
 )
 
 # Exactly one terminal token on stdout, plus — outside the hermetic suite — a durable record in

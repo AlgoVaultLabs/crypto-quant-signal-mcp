@@ -569,6 +569,29 @@
       ]
     },
     {
+      "id": "owed-read-runner",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "ops/monitoring/owed-read-runner.py",
+      "container": "crypto-quant-signal-mcp-mcp-server-1 + crypto-quant-signal-mcp-postgres-1",
+      "process_pattern": "owed-read-runner.py",
+      "class": "safe-to-kill",
+      "reason": "Read-only: each due read runs the census emitter (docker exec mcp-server) and ONE READ ONLY transaction as aoe_readonly (docker exec -i postgres); it mutates no application state. A kill before the record lands leaves no marker, so the next hourly tick re-executes the read (INDETERMINATE retries until expires_at) — a deploy or reboot costs at most one tick. A kill between the record and the marker re-runs a terminal read once more (two records, one verdict); nothing is lost.",
+      "max_runtime_s": 11,
+      "runtime_instrument": "direct timed runs on signal-1 under --sandbox, 2026-10-22 09:16Z-09:23Z (R0.7, one due read, live data): runner wall 10.28 s, 10.29 s, 9.84 s, 9.97 s; the read's own DB leg 9.6-9.7 s. Recorded value is the max, rounded up. Hard bound per due read: the registry row's timeout_s (600 s, the process group killed past it).",
+      "cron_lines": 1,
+      "cron": "27 * * * *",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-10-22",
+      "cron_match": [
+        "/opt/algovault-monitoring/owed-read-runner.py"
+      ]
+    },
+    {
       "id": "aoe-containers",
       "host": "aoe-1",
       "events": [

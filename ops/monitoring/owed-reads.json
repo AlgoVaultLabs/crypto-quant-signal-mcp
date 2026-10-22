@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "_doc": [
+    "Pre-registered time-gated reads, executed by owed-read-runner.py (hourly, signal-1, 27 * * * *). OPS-OWED-READ-RUNNER-W1.",
+    "A wave declares a read with ONE row here plus ONE reviewed script ops/monitoring/owed-read-<slug>.py installed beside the runner; no new cron line, inventory row for the runner, or alert id.",
+    "Row keys (strict; _-prefixed keys are comments): id [a-z0-9-] = marker filename and OWED_READ_FAIL page-on-change key; wave; not_before / expires_at (YYYY-MM-DDTHH:MM:SSZ); script; timeout_s (1..1800); anchors (handed to the script on stdin; the script refuses anchors that differ from its own pre-registration); criteria (one line, shown on the page).",
+    "Verdicts: PASS / FAIL are terminal (marker in /var/lib/algovault-monitoring/owed-reads, written only after the canary_result_log 'owed_read' record landed); INDETERMINATE retries every tick until expires_at, then ONE expired INDETERMINATE record. Only FAIL pages (OWED_READ_FAIL, once per read id).",
+    "Rollback: delete the row (its marker stays as evidence; a FAIL key leaves the page set and the alert clears). This file reaches the host by declaration-sync.sh, which refuses a >50% size shrink - a deletion it refuses is installed with ops/scripts/install-monitoring-artifact.sh instead."
+  ],
+  "reads": [
+    {
+      "id": "candle-request-24h",
+      "wave": "OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1",
+      "not_before": "2026-10-19T06:00:00Z",
+      "expires_at": "2026-10-25T11:00:00Z",
+      "script": "owed-read-candle-request-24h.py",
+      "timeout_s": 600,
+      "anchors": {
+        "deploy_at": 1792299776,
+        "cohort": [
+          "HL|SKHY",
+          "HL|SPCX",
+          "HL|DRAM",
+          "HL|CXMT",
+          "HL|CBRS",
+          "HL|NBIS",
+          "HL|MRVL",
+          "HL|BB"
+        ],
+        "fillable": {
+          "SKHY": 674,
+          "SPCX": 635,
+          "DRAM": 561,
+          "CXMT": 410,
+          "CBRS": 214,
+          "NBIS": 157,
+          "MRVL": 5,
+          "BB": 2
+        },
+        "past_reach_baseline": 2637,
+        "l3_ceiling": 26
+      },
+      "criteria": "Did CH1's HL candle-request fix catch up its 8-coin cohort? L1: 0 post-deploy cohort HL API 500 / Blocking HL lines; L2: no coin retried-and-unfilled with 0 fills; L3: cohort workable_reachable <= 26. One read-only snapshot; lens parity + plan guard, else INDETERMINATE.",
+      "_expires_at_rule": "R2 install time + 72 h, rounded up to the hour (OPS-OWED-READ-RUNNER-W1 §Rulings); the original 2026-10-21T06:00:00Z lapsed while the R0 rulings waited."
+    }
+  ]
+}
