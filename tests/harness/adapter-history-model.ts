@@ -43,7 +43,8 @@ export interface CapturedRequest {
   json: unknown;
 }
 
-export type ScenarioTag = 'R' | 'D' | 'E' | 'D2';
+/** S (OPS-SERVED-CANDLE-TRUTH-W1): one serving window SERVING_WINDOWS declares, read with no endTime (SERVING.json). */
+export type ScenarioTag = 'R' | 'D' | 'E' | 'D2' | 'S';
 
 export interface Scenario {
   tag: ScenarioTag;

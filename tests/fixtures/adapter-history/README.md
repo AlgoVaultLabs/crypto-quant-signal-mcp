@@ -16,6 +16,7 @@ Bitget and OKX work differently since CH2. CH2 re-anchors their history request,
 | `CONTROLS.json` | The venue's own history page anchored on the served step, for every window the adapter returned incomplete. It is what separates an adapter defect (C1) from a venue reach limit. |
 | `VANTAGES.json` | For each scenario, the vantages whose replay of the same adapter requests agrees on served grid, phase and error class. |
 | `MODEL-PROBES.json` | Raw boundary probes (off-grid `endTime`/`startTime`/`after`/`before`, Bitget's 90-day `/candles` window) plus the young coins' listing instants, used by the synthetic venue and its fidelity test. |
+| `SERVING.json` | Contract-suite scenario **S** (OPS-SERVED-CANDLE-TRUTH-W1 CH1): every serving window `SERVING_WINDOWS` declares (`src/lib/serving-windows.ts`), on every faithful (venue, tf) of the 13 replay venues, read through the adapter with no `endTime`: `from = now − window`, one scenario per distinct window span. BITGET and OKX run S on the synthetic venue. The suite re-derives the window set from the registry, so a window change reddens S until every venue is recaptured for it. |
 | `retired/*.ts` | The pre-CH2 Bitget/OKX `getCandles`, pasted verbatim. Never edit these. |
 | `SHA256SUMS` | Pins every file in this directory. The chapter gate checks it with `sha256sum -c` or `shasum -a 256 -c`. |
 
@@ -40,6 +41,15 @@ node tests/fixtures/adapter-history/tools/sanitize.js "$PWD" /tmp/ah/raw tests/f
 node tests/fixtures/adapter-history/tools/assemble.js "$PWD" /tmp/ah/raw tests/fixtures/adapter-history <venues-read-at>
 npm run build && npx tsx tests/fixtures/adapter-history/tools/measure.mts                            # print the measurement
 ```
+
+Scenario S has its own capture, sanitized by the same rule (`sanitize.js`) once every scenario is captured:
+
+```sh
+node tests/fixtures/adapter-history/tools/capture-serving.js "$PWD" tests/fixtures/adapter-history "$(git rev-parse HEAD)"              # SERVING.json, ~23 min
+node tests/fixtures/adapter-history/tools/capture-serving.js "$PWD" tests/fixtures/adapter-history "$(git rev-parse HEAD)" WEEX --merge # recapture one venue into it
+```
+
+`--merge` replaces only the named venues' scenarios and records the recapture in the file's `recaptures` header; every other venue stays byte-for-byte. A scenario that errored at capture (a timeout, a rate limit) reddens S, so recapture that venue rather than editing the file.
 
 `capture-remote.js` covers a venue that the capture vantage cannot reach: the adapter builds the request dry, another host fetches the body, and the adapter parses it.
 

@@ -12,6 +12,11 @@
  *     updated consciously, never absorbed.
  *   UNSERVABLE (OAH-Q9): pairs the served lookup calls native but the venue will not serve. They are declared
  *     with a reason in UNSERVABLE.json and SKIPPED here. Any other dead pair fails the test.
+ *   S (OPS-SERVED-CANDLE-TRUTH-W1 CH1): every serving window the product asks for (src/lib/serving-windows.ts
+ *     SERVING_WINDOWS) on every faithful (venue, tf), read with no endTime. The 13 replay venues replay SERVING.json;
+ *     BITGET and OKX run on the synthetic venue. Each window must reach the venue's newest bar (head gap within
+ *     HEAD_ALLOWANCE_BARS) and pass the getAdapter seam's guard. The window set is re-derived from the registry, so a
+ *     window change reddens S until every venue is recaptured for it.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
@@ -21,7 +26,11 @@ import {
   type Bar, type Control, type Measurement, type RunResult, type Scenario, type Unservable, type VenueFixture,
 } from '../harness/adapter-history-model.js';
 import { SyntheticVenue, listingFromProbes } from '../harness/adapter-history-synthetic.js';
-import { historyMetaOf } from '../../src/lib/adapters/_history-plan.js';
+import { historyMetaOf, accountPage, HEAD_ALLOWANCE_BARS } from '../../src/lib/adapters/_history-plan.js';
+import { SERVING_MAX_PAGES } from '../../src/lib/serving-windows.js';
+import { servingWindowVerdict } from '../../src/lib/exchange-adapter.js';
+import { TIMEFRAMES } from '../../src/lib/capabilities.js';
+import { servingSpans } from '../harness/serving-spans.js';
 
 const { replay, hlMarketListing } = vi.hoisted(() => ({
   replay: { venue: null as null | { answer(url: string, body?: string | null): unknown }, coin: null as null | string },
@@ -102,6 +111,8 @@ const controls = readJson<{ controls: Control[] }>('CONTROLS.json').controls;
 const vantages = readJson<{ scenarios: { id: string; agreeing: string[]; singleVantageReason?: string }[] }>('VANTAGES.json').scenarios;
 const fixtures: VenueFixture[] = Object.keys(VENUES).map((v) => readJson<VenueFixture>(`${v}.json`));
 const modelProbes = readJson<{ bitgetListingMs: number; okxListingMs: number }>('MODEL-PROBES.json');
+interface ServingScenario extends Scenario { window: string; spanMs: number }
+const serving = readJson<{ venues: string[]; scenarios: ServingScenario[] }>('SERVING.json');
 const listingOf = listingFromProbes(modelProbes);
 
 const netSpy = vi.fn(() => { throw new Error('adapter-history-contract: a real network call was attempted'); });
@@ -206,5 +217,100 @@ describe('adapter history contract — structure', () => {
     const offenders = fs.readdirSync(dir).filter((f) => f.endsWith('.ts'))
       .filter((f) => /from\s+['"][./]*(lib\/)?tf-support(\.js)?['"]|require\(\s*['"][./]*(lib\/)?tf-support/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
     expect(offenders).toEqual([]);
+  });
+});
+
+// ── S: every serving window the product asks for ─────────────────────────────────────────────────────
+const sId = (v: string, tf: string, window: string) => `${v}/${tf}/S@${window}`;
+const unservablePairs = new Set(unservable.map((u) => u.pair));
+/** The S windows the registry declares for `venues`, on every faithful timeframe the product serves. */
+function sExpected(venues: string[]): { id: string; venue: string; tf: string; window: string; spanMs: number }[] {
+  return venues.flatMap((v) => TIMEFRAMES.filter((tf) => isTimeframeFaithful(v as ExchangeId, tf))
+    .flatMap((tf) => servingSpans(tf, VENUES[v].mod.servedIntervalMs(tf)).map((w) => ({ id: sId(v, tf, w.label), venue: v, tf, window: w.label, spanMs: w.spanMs }))));
+}
+/** A serving page's head gap and the seam guard's verdict, judged at `nowMs`. */
+function judge(out: Bar[], servedMs: number, tf: string, from: number, nowMs: number) {
+  return {
+    headGapBars: accountPage({ bars: out, servedStepMs: servedMs, from, to: null, nowMs }).headGapBars,
+    stale: servingWindowVerdict({ bars: out.map((b) => ({ time: b.ts })), servedStepMs: servedMs, timeframe: tf, startTime: from, nowMs }).stale,
+  };
+}
+
+describe('adapter history contract — S: every serving window the product asks for', () => {
+  const replayVenues = universe.promoted.filter((v) => !SYNTHETIC_VENUES.has(v));
+  const replayed = new Map<string, RunResult>();
+  const synthetic: { id: string; out: Bar[]; err: string | null; requests: number; servedMs: number; tf: string; from: number }[] = [];
+  // Mid-slot on every grid (1D opens 16:00Z on both synthetic venues), and later than any capture: the OKX throttle
+  // sleeps for any backward clock gap, and the R/D scenarios above ran these adapters at their capture instants.
+  const NOW_S = Date.UTC(2030, 0, 2, 9, 30);
+
+  beforeAll(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    for (const s of serving.scenarios) replayed.set(sId(s.venue, s.tf, s.window), await runScenario(s));
+    for (const w of sExpected([...SYNTHETIC_VENUES])) {
+      const venue = new SyntheticVenue(w.venue as 'BITGET' | 'OKX', () => NOW_S, () => ({ listingMs: Date.UTC(2019, 0, 1) }));
+      let requests = 0;
+      replay.venue = { answer: (url: string) => { requests++; return venue.answer(url); } };
+      vi.setSystemTime(NOW_S);
+      const from = NOW_S - w.spanMs;
+      let out: Bar[] = [];
+      let err: string | null = null;
+      try { out = (await VENUES[w.venue].make().getCandles('BTC', w.tf, from)).map((c) => ({ ts: c.time, open: c.open })); }
+      catch (e) { err = e instanceof Error ? e.message : String(e); }
+      replay.venue = null;
+      synthetic.push({ id: w.id, out, err, requests, servedMs: VENUES[w.venue].mod.servedIntervalMs(w.tf)!, tf: w.tf, from });
+    }
+    vi.useRealTimers();
+  }, 120_000);
+
+  it('SERVING.json covers EXACTLY the registry × faithful universe of the replay venues (a missing or undeclared window reddens this)', () => {
+    expect(serving.venues).toEqual(replayVenues);
+    const want = sExpected(replayVenues);
+    const got = serving.scenarios.map((s) => sId(s.venue, s.tf, s.window));
+    expect(got.length).toBeGreaterThan(400); // the capture iterated the registry, not a hand list
+    expect(new Set(got).size).toBe(got.length);
+    expect([...got].sort()).toEqual(want.map((w) => w.id).sort());
+    const span = new Map(want.map((w) => [w.id, w.spanMs]));
+    for (const s of serving.scenarios) {
+      const id = sId(s.venue, s.tf, s.window);
+      expect(s.spanMs, id).toBe(span.get(id));
+      expect(s.calledAt - s.from, id).toBe(s.spanMs);
+      expect(s.to, id).toBeNull();
+    }
+  });
+
+  it('replays every S scenario exactly as captured (no REPLAY_MISS, no drift in the adapter output)', () => {
+    const drift = serving.scenarios.flatMap((s) => {
+      const id = sId(s.venue, s.tf, s.window);
+      const r = replayed.get(id)!;
+      return r.err === s.error && r.drained && JSON.stringify(r.out) === JSON.stringify(s.output) ? [] : [`${id}: ${r.err ?? 'output drift'}${r.drained ? '' : ' (not drained)'}`];
+    });
+    expect(drift).toEqual([]);
+  });
+
+  it('every replay-venue window reached the venue\'s newest bar when captured, and the seam guard serves it', () => {
+    const bad = serving.scenarios.flatMap((s) => {
+      const id = sId(s.venue, s.tf, s.window);
+      if (unservablePairs.has(`${s.venue}/${s.tf}`)) return s.output.length === 0 || s.error ? [] : [`${id}: declared UNSERVABLE but served`];
+      if (s.error) return [`${id}: ${s.error}`];
+      const j = judge(s.output, s.servedMs, s.tf, s.from, s.calledAt);
+      return j.headGapBars !== null && j.headGapBars <= HEAD_ALLOWANCE_BARS && !j.stale ? [] : [`${id}: head gap ${j.headGapBars}${j.stale ? ' (refused)' : ''}`];
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('the synthetic venues serve every registry window head-complete, inside SERVING_MAX_PAGES', () => {
+    expect(synthetic.length).toBeGreaterThan(60);
+    const bad = synthetic.flatMap((r) => {
+      if (unservablePairs.has(r.id.split('/S@')[0])) return r.err || r.out.length === 0 ? [] : [`${r.id}: declared UNSERVABLE but served`];
+      if (r.err) return [`${r.id}: ${r.err}`];
+      const j = judge(r.out, r.servedMs, r.tf, r.from, NOW_S);
+      return j.headGapBars !== null && j.headGapBars <= HEAD_ALLOWANCE_BARS && !j.stale && r.requests <= SERVING_MAX_PAGES ? [] : [`${r.id}: head gap ${j.headGapBars}, ${r.requests} requests`];
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('no real host was reached by S', () => {
+    expect(netSpy).not.toHaveBeenCalled();
   });
 });
