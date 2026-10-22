@@ -86,6 +86,7 @@ tailwind.config = {
           <a href="https://algovault.com/tools#get-market-regime" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Market Regime</span></a>
           <a href="https://algovault.com/tools#scan-funding-arb" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Funding Arbitrage</span></a>
           <a href="https://algovault.com/tools#scan-trade-calls" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Trade Call Scanner</span></a>
+          <a href="https://algovault.com/tools#scan-market-regimes" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Market Regime Screener</span></a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Knowledge Chat</span></a>
           <a href="https://algovault.com/tools" class="inline-block mt-2 text-xs font-medium text-mint-400 hover:text-mint-300 transition">See all tools →</a>
         </div>
@@ -136,6 +137,7 @@ tailwind.config = {
           <a href="https://algovault.com/tools#get-market-regime" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Market Regime</a>
           <a href="https://algovault.com/tools#scan-funding-arb" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Funding Arbitrage</a>
           <a href="https://algovault.com/tools#scan-trade-calls" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call Scanner</a>
+          <a href="https://algovault.com/tools#scan-market-regimes" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Market Regime Screener</a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Knowledge Chat</a>
           <a href="https://algovault.com/tools" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">See all tools</a>
           <a href="https://algovault.com/mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
