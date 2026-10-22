@@ -380,6 +380,7 @@ async function main(): Promise<number> {
 }
 
 if (require.main === module) {
-  // 50 min: the R/D probes took 407 s (cron-interlock-registry.json), and S adds ~555 windows at ≥ PACE_MS each.
-  void runScript('adapter-history-contiguity', main, { watchdogMs: 50 * 60_000 });
+  // 90 min: one cron-shaped run took 2742 s, 1589 s of it batch_wait on saturated lanes (cron-interlock-registry.json);
+  // the 50 min this replaced was a projection that left that run 9 % headroom. A backstop, not a scheduler.
+  void runScript('adapter-history-contiguity', main, { watchdogMs: 90 * 60_000 });
 }

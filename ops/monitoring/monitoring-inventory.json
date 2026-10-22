@@ -1304,7 +1304,7 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 — is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "893b40d900a7b4c6d33187ffb4d1e35894dc4269a4188dbd15198d3c905d8c65",
+      "sha256": "7fbf46836b31da95386a8d508c120abbe1f3f5f6ebcf9b9753e3cc73f7bec1a5",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. SYNCED, NOT INSTALLED (OPS-DRIFT-ALERT-GENERATORS-W1, 2026-09-14): declaration-sync.sh fetches it on aoe-1 every hour (27 * * * *) through a DECLARATIONS row whose 5th field names ops/scripts/cron-interlock-registry.json, so a registry edit reaches the host within the hour with no re-install step. It used to be installed once behind a sync_exempt_reason (the sync could only reach ops/monitoring), with the refresh left to a sentence in these notes; IDENTITY-LIFECYCLE-W3 edited the registry three times on 2026-09-08, re-stamped this sha256, never re-installed, and aoe-1 paged HASH_DRIFT + REGISTRY_PARITY daily from 2026-09-09. Re-stamp this sha256 in the same commit as any registry edit; HASH_DRIFT on this row now means the hourly sync stopped landing, not that someone forgot a step. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot.",
@@ -3106,7 +3106,7 @@
       "criticality": "load-bearing",
       "schedule": "29 8 * * *",
       "invoked_by": "crontab:root",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "f87cc1d0aced57ce21bd6cb142ec295b14711257fe4d53392c0eaedfedba7548",
       "alert_ids": [
         "track_record_price_deviation"
@@ -3114,7 +3114,7 @@
       "owner_wave": "OPS-SERVED-CANDLE-TRUTH-W1",
       "notes": "OPS-SERVED-CANDLE-TRUTH-W1 CH2. The output-side guard for the serving-window defect class. Daily, read-only: `docker exec crypto-quant-signal-mcp-postgres-1 psql` with PGOPTIONS default_transaction_read_only=on, one query over `signals` for the trailing 24 h: per (venue, timeframe) the median |price_at_signal - ref| / ref, where ref = the median, over every OTHER venue with the same coin in the same UTC hour, of that venue's median price (the row's own venue never vouches for itself); judged at n >= 3; FAIL above max(4 %, 10 x the fleet median); fewer than 20 judged pairs is INDETERMINATE. Pages track_record_price_deviation after 2 consecutive FAIL runs of one pair; an unjudged run neither advances nor resets; --clear when no pair is at the streak. State /var/lib/algovault-monitoring/track-record-price-deviation-state.json; one canary_result_log line per run (imports canary_result_log.py from its own dir). Token TRACK_RECORD_PRICE_DEVIATION_VERDICT=PASS|FAIL|INDETERMINATE (0/0/3). Calibrated 2026-10-22 with its own instrument (`--replay 30 --at 08:29`: 30 runs, 336,253 rows, every FAIL BITGET 1d — the pre-fix defect — first page 2026-10-02; 0 FAIL on any other pair; 116-132 judged pairs per run). Self-test 68 checks, hermetic; 9 single-point mutations proven red, and the 2 PG-option pins (read-only session, enable_nestloop=off) proven red. The session runs with enable_nestloop=off: a trailing 24 h window lies past the last ANALYZE histogram of signals.created_at, the planner estimates one row and nested-loops the join (first installed run 107 s against a 120 s statement_timeout; 0.3 s without nested loops, measured 2026-10-22). Its first scheduled window (2026-10-23 08:29Z) is the first that holds no pre-fix BITGET 1d row (that batch seeds 00:13-00:18Z).",
       "first_install": {
-        "at": "20261022T155845Z",
+        "at": "20261022T164722Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
     },
