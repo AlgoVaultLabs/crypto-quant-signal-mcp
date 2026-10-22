@@ -50,7 +50,7 @@ describe('xrepo-ci-conclusion-canary — self-test', () => {
   it('is not vacuous — it reports the number of assertions it actually ran', () => {
     const m = r.out.match(/SELF-TEST: PASS — (\d+) assertions/);
     expect(m, `no assertion count in output:\n${r.out}`).not.toBeNull();
-    expect(Number(m![1])).toBeGreaterThanOrEqual(30);
+    expect(Number(m![1])).toBeGreaterThanOrEqual(200); // measured 203 (OPS-XREPO-CI-CANARY-DARK-W2)
   });
 });
 
@@ -242,9 +242,15 @@ describe('xrepo-ci-conclusion-canary — the freshness legs', () => {
     expect(executableBody).toMatch(/classify_status\(\)/);
   });
 
-  /** The three guards, each degrading to UNKNOWN rather than to a value. */
-  it('guards the fragile leg three ways: vacuity, monotonic, content-type', () => {
-    expect(executableBody).toMatch(/parsed ZERO run rows/);
+  /**
+   * The guards, each degrading to UNKNOWN rather than to a value. OPS-XREPO-CI-CANARY-DARK-W2 split
+   * the old `vacuity` ("parsed ZERO run rows" — what the 2026-10-14 React redesign hid behind for 8
+   * days) into a SHAPE guard (no declared page shape) and a true empty list (GitHub lists no runs).
+   */
+  it('guards the fragile leg: page shape, empty list, monotonic, content-type', () => {
+    expect(executableBody).toMatch(/matched no single declared shape \(\$G_GUARD\)/);
+    expect(executableBody).toMatch(/GitHub lists no runs of \$wf on \$branch/);
+    expect(executableBody).not.toMatch(/parsed ZERO run rows/);
     expect(executableBody).toMatch(/is older than the recorded/);
     expect(executableBody).toMatch(/a 200 is not a contract/);
     expect(executableBody).toMatch(/there is no Actions runs feed/);
@@ -317,12 +323,13 @@ describe('xrepo-ci-conclusion-canary — the conclusion is BOUND to the run it n
     expect(executableBody).toMatch(/RED_DETAIL="\$RED_DETAIL\$\(red_detail_for_row /);
   });
 
-  it('every row prints its agreement, and the dark streak names four causes', () => {
+  it('every row prints its agreement, and the dark cause is DERIVED (OPS-XREPO-CI-CANARY-DARK-W2 retired the fixed four)', () => {
     expect(executableBody.match(/agreement=\$\{?G_AGR/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
-    const dark = fn('dark_body');
-    for (const cause of ['disagree)', 'corroboration)', 'legb)']) expect(dark).toContain(cause);
-    expect(executableBody).toMatch(/CAUSE=disagree/);
-    expect(executableBody).toMatch(/CAUSE=corroboration/);
+    // the cause comes from dark_cause() over the rows' classes — no hand-picked CAUSE= assignment survives
+    expect(fn('main')).toMatch(/CAUSE=\$\(dark_cause\)/);
+    expect(executableBody).not.toMatch(/CAUSE=(disagree|corroboration|legb|badge)\b/);
+    expect(executableBody).not.toMatch(/corroboration\)/);
+    for (const cause of ['disagree)', 'legb)', 'badge)']) expect(fn('remedy_for')).toContain(cause);
   });
 
   it('records one structured result per run through canary_result_log (a recorder, never a gate)', () => {
@@ -331,3 +338,47 @@ describe('xrepo-ci-conclusion-canary — the conclusion is BOUND to the run it n
   });
 });
 
+describe('xrepo-ci-conclusion-canary — the dark alert names what the reader measured (OPS-XREPO-CI-CANARY-DARK-W2)', () => {
+  const fn = (name: string) => {
+    const m = new RegExp(`^${name}\\(\\) \\{[\\s\\S]*?^\\}`, 'm').exec(executableBody);
+    expect(m, name).toBeTruthy();
+    return m![0];
+  };
+  /** The module's class set, read from the module itself — never re-typed here. */
+  const moduleClasses = async () => (await import('../../ops/monitoring/gh-run-conclusion.mjs')).GUARD_CLASSES as string[];
+  /** The canary's remedy keys: the case labels of remedy_for, minus its refusal arm. */
+  const remedyKeys = () => [...fn('remedy_for').matchAll(/^    ([a-z]+)\) printf/gm)].map((m) => m[1]);
+  const order = () => /^DARK_CAUSE_ORDER="([a-z ]+)"$/m.exec(executableBody)![1].split(' ');
+
+  it('the remedy keys are EXACTLY the module\'s classes minus `bound`, plus the canary\'s own `legb` — a class without a remedy fails the build', async () => {
+    const classes = await moduleClasses();
+    expect(classes).toContain('bound');
+    expect([...remedyKeys()].sort()).toEqual([...classes.filter((c) => c !== 'bound'), 'legb'].sort());
+  });
+
+  it('the cause order is ruling Q3, declared ONCE, and covers the same set', async () => {
+    expect(order()).toEqual(['badge', 'disagree', 'shape', 'identity', 'vocabulary', 'transport', 'monotonic', 'ref', 'input', 'empty', 'pending', 'legb']);
+    expect([...order()].sort()).toEqual([...remedyKeys()].sort());
+    expect(executableBody.match(/^DARK_CAUSE_ORDER=/gm)?.length).toBe(1);
+  });
+
+  it('classes come from the module\'s --guard-class, never a bash copy', () => {
+    const gc = fn('guard_class');
+    expect(gc).toMatch(/"\$NODE_BIN" "\$GHRC_JS" --guard-class "\$1"/);
+    expect(gc).not.toMatch(/case "\$1"/);
+    // no module reason string is ever the subject of a class decision in this file
+    expect(fn('dark_classify')).toMatch(/c=\$\(guard_class "\$1"\)/);
+  });
+
+  it('the retired `:651` special case is gone: every row-6 counts, its cause is its class', () => {
+    expect(executableBody).not.toMatch(/G_PAGE_UNREADABLE" = 1 \] && \[ "\$CADENCE" != "event-driven" \]/);
+    expect(fn('run_checks')).toMatch(/dark_row "\$REPO" "\$WF" "\$BRANCH" "\$\{G_REASON:-unknown\}" "\$\{G_GUARD:-\}"/);
+  });
+
+  it('the module answers --guard-class for every class the canary renders (live, not a table copy)', { timeout: 60_000 }, async () => {
+    const MOD = resolve(ROOT, 'ops/monitoring/gh-run-conclusion.mjs');
+    const sample: Record<string, string> = { badge: 'badge_no_status', disagree: 'identity_mismatch', shape: 'page_shape_unknown', identity: 'row_identity_unreadable',
+      vocabulary: 'icon_unmeasured', transport: 'http_503', monotonic: 'monotonic', ref: 'ref_missing', input: 'atom_trap', empty: 'vacuity', pending: 'no_terminal_row' };
+    for (const c of order().filter((x) => x !== 'legb')) expect(execFileSync('node', [MOD, '--guard-class', sample[c]], { encoding: 'utf8' }), c).toBe(`${c}\n`);
+  });
+});

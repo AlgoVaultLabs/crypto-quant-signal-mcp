@@ -140,13 +140,23 @@
 #   row 1 passing+success → PASS · row 2 failing+failure → RED, "CONFIRMED" · row 3 failing+success →
 #   INDETERMINATE (cause `disagree`), NEVER a RED · row 4 passing+failure → RED from the run's own
 #   record · row 5 failing+record-unavailable → RED labelled "badge only" · row 6 passing+unavailable
-#   → PASS, cause `corroboration` (or `legb` when the page itself was unreadable) · row 7 identity
-#   mismatch → INDETERMINATE (`disagree`) · row 8 badge unreadable → INDETERMINATE (`badge`).
+#   → PASS, the dark cause taken from its guard's CLASS · row 7 identity mismatch → INDETERMINATE
+#   (`disagree`) · row 8 badge unreadable → INDETERMINATE (`badge`).
 # The amended rule (architect ruling, 2026-10-03): prose never decides; the run row's structured
 # status icon may VETO a badge RED and may RAISE one the badge missed; it may never produce a PASS.
 # A run line that claims a failure is written ONLY from the record's `bound_run` (bound_run_line).
 # The three historical parsers below keep their names and byte-identical outputs as SHIMS over the
 # module's sub-modes, so this file holds no private classifier.
+#
+# THE DARK ALERT NAMES WHAT THE READER MEASURED (OPS-XREPO-CI-CANARY-DARK-W2, 2026-10-22).
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# GitHub moved the Actions page to a React app on 2026-10-14. For 8 days every row read `vacuity` and
+# the dark body said the page "parsed" and asked for "one measured vocabulary row" — following it
+# would have changed nothing. The cause is now DERIVED: every row that did not bind is classified by
+# the module's own GUARD_CLASS table (`gh-run-conclusion.mjs --guard-class`, never a bash copy), the
+# worst class present names the cause (DARK_CAUSE_ORDER, ruling Q3), and the body lists each such row
+# with its reason verbatim plus ONE remedy per class present (remedy_for). The `corroboration`
+# special case is gone: an event-driven row with an unreadable page counts under its guard's class.
 #
 # Self-test: `bash ops/cron/xrepo-ci-conclusion-canary.sh --self-test`
 set -uo pipefail
@@ -365,6 +375,16 @@ classify_status() {
   if ghrc_ready; then "$NODE_BIN" "$GHRC_JS" --classify-status "$1"; else echo INDETERMINATE; fi
 }
 
+# A reason's CLASS (OPS-XREPO-CI-CANARY-DARK-W2 R2.1). The module's GUARD_CLASS table is the ONE
+# derivation and `--guard-class` its only interface here — this file never holds a reason→class row.
+# A reason the table does not cover (or a reader that cannot run) prints `unclassified`, rc 1.
+guard_class() { # <reason> -> class
+  local c=""
+  if ghrc_ready; then c=$("$NODE_BIN" "$GHRC_JS" --guard-class "$1" 2>/dev/null) || c=""; fi
+  case "$c" in ''|unclassified|*[!a-z]*) echo unclassified; return 1 ;; esac
+  printf '%s\n' "$c"
+}
+
 # ONE module read per row. The flat GHRC_* lines are read with sed — never eval.
 GHRC_OUT=""
 # Here-strings, never `printf | grep -q`: under pipefail an early-exiting reader SIGPIPEs the writer
@@ -439,7 +459,8 @@ default_ct() {
 # atom contract, and everything here only buys the nuisance fix, a red that is hours stale.
 #
 # Three guards, each a named law, and every one of them degrades to UNKNOWN rather than to a value:
-#   vacuity       a 200 with bytes that yields ZERO rows is a PARSER failure, never "no runs"
+#   page shape    a 200 matching no single declared page shape is a SHAPE failure, never "no runs"
+#                 (OPS-XREPO-CI-CANARY-DARK-W2; `vacuity` now means only a declared-empty list)
 #   monotonic     a run id older than the one we last recorded means the parser latched wrong
 #   content-type  a 200 is not a contract — `<wf>.atom` answers 200 with text/html
 #
@@ -478,9 +499,17 @@ leg_b_check() { # <repo> <wf> <branch> <cadence>
         G_PAGE_UNREADABLE=1; LEGB_STATE=UNKNOWN; LEGB_REASON="served '$ct', not HTML — a 200 is not a contract" ;;
       vacuity)
         bytes=$(ghrc_get PAGE_BYTES)
-        # WE pointed the parser at this page, so "nothing parsed" is a defect in the parser or in the
-        # markup, never a fact about how many runs exist.
-        G_PAGE_UNREADABLE=1; LEGB_STATE=UNKNOWN; LEGB_REASON="200 with ${bytes:-?} bytes parsed ZERO run rows" ;;
+        # Since OPS-XREPO-CI-CANARY-DARK-W2 the module says `vacuity` only when the page's OWN declared
+        # shape encodes an empty list — a fact about the workflow (new, renamed branch, never fired).
+        # A page the reader cannot interpret is `page_shape_*`, below, never this.
+        G_PAGE_UNREADABLE=1; LEGB_STATE=UNKNOWN; LEGB_REASON="GitHub lists no runs of $wf on $branch (200, ${bytes:-?} bytes)" ;;
+      page_shape_unknown|page_shape_ambiguous|page_shape_unparseable)
+        # 2026-10-14 → 10-22: a page carrying no declared shape read as "zero rows" for 8 days.
+        G_PAGE_UNREADABLE=1; LEGB_STATE=UNKNOWN
+        LEGB_REASON="the Actions page matched no single declared shape ($G_GUARD) — GitHub changed it; re-fit PAGE_SHAPES, never guess" ;;
+      vacuity_badge_has_run)
+        G_PAGE_UNREADABLE=1; LEGB_STATE=UNKNOWN
+        LEGB_REASON="the page lists no runs while the badge reports one (vacuity_badge_has_run) — a page-shape defect, never \"no runs\"" ;;
       monotonic)
         # Run ids only grow; a smaller one is a latch, not a quiet job.
         G_PAGE_UNREADABLE=1; LEGB_STATE=UNKNOWN
@@ -587,6 +616,7 @@ EOF
 run_checks() {
   CHECKED=0; RED=0; INDET=0; RED_DETAIL=""; DISAGREE=0; CORROB=0; ROWS_JSON=""
   SCHED_REPOS=""; ROW_FRESHNESS=""; LEGB_UNKNOWN=0; STALE_ROWS=0; STALE_DETAIL=""
+  DARK_CLASSES=""; DARK_ROWS=""; DARK_UNCLASSIFIED=""; DK_TRANSPORT=""; DK_REF=""; DK_EMPTY=""
   local REPO WF LABEL BRANCH CADENCE
   while IFS='|' read -r REPO WF LABEL BRANCH CADENCE; do
     [ -n "${REPO:-}" ] || continue
@@ -597,14 +627,14 @@ run_checks() {
     if [ -z "${BRANCH:-}" ]; then
       echo "  x ${LABEL:-$WF} ($REPO): watch row has NO BRANCH field — config defect, refusing · agreement=UNCORROBORATED"
       log "INDETERMINATE $REPO/$WF — watch row missing required branch field"
-      INDET=$((INDET + 1)); continue
+      INDET=$((INDET + 1)); dark_row "$REPO" "$WF" "?" branch_undeclared; continue
     fi
     # Same reasoning, one field along: the cadence is what every freshness bound is DERIVED from,
     # so inferring it would mean bounding a run's age against a number nobody declared.
     if ! valid_cadence "${CADENCE:-}"; then
       echo "  x ${LABEL:-$WF} ($REPO@$BRANCH): watch row has NO CADENCE field (got '${CADENCE:-}') — config defect, refusing · agreement=UNCORROBORATED"
       log "INDETERMINATE $REPO/$WF@$BRANCH — watch row cadence field invalid: '${CADENCE:-}'"
-      INDET=$((INDET + 1)); continue
+      INDET=$((INDET + 1)); dark_row "$REPO" "$WF" "$BRANCH" cadence_undeclared; continue
     fi
     # Leg A's population, derived from the declaration rather than hardcoded. One probe per repo:
     # the 60-day rule is a property of the REPO, not of each workflow in it.
@@ -646,9 +676,9 @@ $REPO|$BRANCH|$WF" ;;
         else
           echo "  + $LABEL ($REPO@$BRANCH): latest run = passing · agreement=$G_AGR · badge only, the run record could not be read ($G_REASON)"
           log "OK $REPO/$WF@$BRANCH passing row=6 agreement=$G_AGR reason=$G_REASON title='$G_TITLE' newest=${LEGB_ID:-none}"
-          # A page that could not be read at all is already counted (Leg B UNKNOWN, cause `legb`) on a
-          # scheduled row; everything else is the RECORD going unread: cause `corroboration`.
-          if [ "$G_PAGE_UNREADABLE" = 1 ] && [ "$CADENCE" != "event-driven" ]; then :; else CORROB=$((CORROB + 1)); fi
+          # The RECORD went unread. A count only — the dark cause is the guard's class (dark_row,
+          # below), so an event-driven row is no longer a special case (DARK-W2 R2.3).
+          CORROB=$((CORROB + 1))
         fi
         # Green AND stale is the case nothing could see before: the badge is reporting a run old
         # enough that the schedule behind it may have stopped. A DISTINCT alert id, because the
@@ -682,6 +712,12 @@ $REPO|$BRANCH|$WF" ;;
         log "INDETERMINATE $REPO/$WF@$BRANCH row=${G_ROW:-?} reason=$G_REASON title='$G_TITLE' run=${LEGB_ID:-none}"
         INDET=$((INDET + 1)) ;;
     esac
+    # ── THE DARK CAUSE, per row (DARK-W2 R2.1) — a bound row (1, 2, 4) names its own run ──────────
+    case "$G_ROW" in
+      1|2|4) ;;
+      *) dark_row "$REPO" "$WF" "$BRANCH" "${G_REASON:-unknown}" "${G_GUARD:-}" ;;
+    esac
+    if [ "$LEGB_STATE" = UNKNOWN ]; then dark_register legb; fi
   done <<EOF
 $(printf '%s\n' "$WATCHED")
 EOF
@@ -753,34 +789,112 @@ red_body() {
     "🟡 AlgoVault Alert" "$n" "$noun" "$detail"
 }
 
-dark_body() {
-  # $2 names WHICH reader went dark. It defaults to the badge wording this alert has always
-  # carried, so the pre-existing assertions read the same body they always did — but a Leg B
-  # parser rot must never page with a sentence about the badge's <title>, which is the class of
-  # false diagnosis that costs the next operator an hour.
-  local cause="${2:-badge}" detail
-  case "$cause" in
-    disagree) detail="badge and run record disagreed on the same run for $1 consecutive runs — conclusion unverified.
-The reader is ops/monitoring/gh-run-conclusion.mjs: the badge said one thing and the
-newest terminal run's OWN status icon on the Actions page said another (or the badge
-named another workflow). That is never paged as a RED. Compare the per-row
-'agreement=' lines in /var/log/xrepo-ci-conclusion-canary.log with the run's page." ;;
-    corroboration) detail="the run record's status icon could not be read — REDs are badge-only again until it is.
-The reader is ops/monitoring/gh-run-conclusion.mjs; the Actions page parsed, but its
-newest terminal row could not be bound (an icon outside the measured vocabulary, a
-skipped / action_required run, or a row without its structured identity). The fix
-is one measured vocabulary row in that module, never a guess." ;;
-    legb) detail="The conclusion reader (the badge) is fine; the RUN RECENCY leg is not. That leg
-parses the Actions HTML page, which is product UI with no machine contract, so
-GitHub changing its markup degrades it to UNKNOWN by design. Check the page shape
-against parse_runs_page(), or accept the loss of recency until it is re-fitted —
-Leg A (commits/<branch>.atom) still covers the schedule-expiry case meanwhile." ;;
-    *)    detail="It is dark, not green — no workflow conclusion has been read.
+# ── THE DARK CAUSE (OPS-XREPO-CI-CANARY-DARK-W2) ─────────────────────────────────────────────
+# Worst first — DATA, declared once (ruling Q3), pinned by the self-test and by
+# tests/unit/xrepo-ci-canary.test.ts: the module's GUARD_CLASSES minus `bound` (never rendered), then
+# `legb`, this file's own run-recency leg.
+DARK_CAUSE_ORDER="badge disagree shape identity vocabulary transport monotonic ref input empty pending legb"
+
+# ONE remedy per class (R2.2). badge / disagree / legb keep the wording this alert has always carried.
+# `$2` fills the class's placeholder: the HTTP code(s), the ref reason(s), the `<wf>` on `<branch>` pair(s).
+remedy_for() { # <class> [<detail>] -> the remedy text; rc 1 for anything that is not a rendered class
+  local d="${2:-?}"
+  case "$1" in
+    badge) printf '%s' "It is dark, not green — no workflow conclusion has been read.
 The reader is the GitHub Actions badge endpoint, which is NOT metered by the
 REST API budget, so a rate limit is no longer a plausible cause: check
 that github.com is reachable from this host and that the badge markup still
 carries its <title>." ;;
+    disagree) printf '%s' "badge and run record disagreed on the same run for ${DARK_STREAK:-several} consecutive runs — conclusion unverified.
+The reader is ops/monitoring/gh-run-conclusion.mjs: the badge said one thing and the
+newest terminal run's OWN status icon on the Actions page said another (or the badge
+named another workflow). That is never paged as a RED. Compare the per-row
+'agreement=' lines in /var/log/xrepo-ci-conclusion-canary.log with the run's page." ;;
+    shape) printf '%s' "GitHub changed the Actions page shape — re-fit: one measured \`PAGE_SHAPES\` entry in gh-run-conclusion.mjs, captured from signal-1." ;;
+    identity) printf '%s' "the newest row could not say which run it is — never bind around it." ;;
+    vocabulary) printf '%s' "one measured \`STATE_VOCAB\` / \`ICON_VOCAB\` row with its provenance — never a guess." ;;
+    transport) printf '%s' "github.com answered \`$d\` to this host — reachability, not markup." ;;
+    monotonic) printf '%s' "the page's newest run is OLDER than the one already recorded — a stale render or a latched element; Recover re-reads it, and one that persists is a reader defect" ;;
+    ref) printf '%s' "the newest finished run's ref could not be resolved (\`$d\`) — any-ref reads only; never bound across refs" ;;
+    input) printf '%s' "the watch row / gate entry is malformed — fix the declaration, never the reader" ;;
+    empty) printf '%s' "GitHub lists no runs of $d — a new workflow, a renamed branch or a schedule that never fired; check the watch row / gate entry, never re-fit the reader" ;;
+    pending) printf '%s' "no finished run on the page yet — binds when one finishes" ;;
+    legb) printf '%s' "The conclusion reader (the badge) is fine; the RUN RECENCY leg is not. That leg
+parses the Actions HTML page, which is product UI with no machine contract, so
+GitHub changing its markup degrades it to UNKNOWN by design. Check the page shape
+against parse_runs_page(), or accept the loss of recency until it is re-fitted —
+Leg A (commits/<branch>.atom) still covers the schedule-expiry case meanwhile." ;;
+    *) return 1 ;;
   esac
+}
+
+dark_join() { # <list> <value> -> the list with value appended once, ", "-separated
+  case ", $1, " in *", $2, "*) printf '%s' "$1" ;; *) printf '%s' "${1:+$1, }$2" ;; esac
+}
+dark_register() { # <class> [<placeholder value>]
+  case " $DARK_CLASSES " in *" $1 "*) ;; *) DARK_CLASSES="${DARK_CLASSES:+$DARK_CLASSES }$1" ;; esac
+  [ -n "${2:-}" ] || return 0
+  case "$1" in
+    transport) DK_TRANSPORT=$(dark_join "$DK_TRANSPORT" "$2") ;;
+    ref)       DK_REF=$(dark_join "$DK_REF" "$2") ;;
+    empty)     DK_EMPTY=$(dark_join "$DK_EMPTY" "$2") ;;
+  esac
+}
+dark_classify() { # <reason> <wf> <branch> -> registers the reason's class; rc 1 when unclassified
+  local c g="${1#ref_page_}"
+  if ! c=$(guard_class "$1"); then DARK_UNCLASSIFIED=$(dark_join "$DARK_UNCLASSIFIED" "$1"); return 1; fi
+  case "$c" in
+    transport) case "$g" in http_*) dark_register "$c" "${g#http_}" ;; content_type) dark_register "$c" "200 (not HTML)" ;; *) dark_register "$c" "$g" ;; esac ;;
+    ref)       dark_register "$c" "$1" ;;
+    empty)     dark_register "$c" "\`$2\` on \`$3\`" ;;
+    *)         dark_register "$c" ;;
+  esac
+}
+# A row that did not bind: listed with the reader's reason VERBATIM (and the page guard when it differs),
+# and every reason it carries classified — `badge_no_status (page: vacuity)` is a badge AND an empty fact.
+dark_row() { # <repo> <wf> <branch> <reason> [<page guard>]
+  local line="- $1/$2@$3: $4"
+  dark_classify "$4" "$2" "$3" || line="$line [unclassified]"
+  if [ -n "${5:-}" ] && [ "$5" != "$4" ]; then
+    line="$line (page: $5)"
+    dark_classify "$5" "$2" "$3" || line="$line [unclassified]"
+  fi
+  DARK_ROWS="$DARK_ROWS
+$line"
+}
+dark_cause() { # worst-wins over DARK_CAUSE_ORDER; a reason no class covers outranks every class
+  local c
+  if [ -n "${DARK_UNCLASSIFIED:-}" ]; then echo unclassified; return 0; fi
+  for c in $DARK_CAUSE_ORDER; do case " ${DARK_CLASSES:-} " in *" $c "*) echo "$c"; return 0 ;; esac; done
+  echo badge
+}
+dark_detail_for() { # <class> -> its placeholder values
+  case "$1" in transport) printf '%s' "${DK_TRANSPORT:-}" ;; ref) printf '%s' "${DK_REF:-}" ;; empty) printf '%s' "${DK_EMPTY:-}" ;; esac
+}
+
+dark_body() { # <streak> [<cause>] [<classes>] [<rows>]
+  # With no classes it is the single-cause body every pre-W2 assertion reads (`dark_body 6` → badge).
+  # With classes it lists every row that did not bind, then one remedy per class present, worst first.
+  local cause="${2:-badge}" classes="${3:-}" detail c DARK_STREAK="$1"
+  if [ -z "$classes" ] && [ -z "${DARK_UNCLASSIFIED:-}" ]; then
+    detail=$(remedy_for "$cause") || detail=$(remedy_for badge)
+  else
+    detail="Rows that did not bind — the reader's own reason, verbatim:${4:-
+- none: every row bound; only its run recency is unknown}"
+    if [ -n "${DARK_UNCLASSIFIED:-}" ]; then
+      detail="$detail
+
+UNCLASSIFIED: ${DARK_UNCLASSIFIED} — no gh-run-conclusion.mjs class covers it (its --guard-class answered
+\`unclassified\`, or the reader could not run). Read that row's line in the canary log."
+    fi
+    [ -n "$classes" ] && detail="$detail
+
+Remedy — one per class, worst first:"
+    for c in $DARK_CAUSE_ORDER; do
+      case " $classes " in *" $c "*) detail="$detail
+[$c] $(remedy_for "$c" "$(dark_detail_for "$c")")" ;; esac
+    done
+  fi
   printf '%s\n\n%s\n' "🟡 AlgoVault Alert" \
 "cross-repo CI canary has been UNABLE TO VERIFY for $1 consecutive runs.
 $detail
@@ -899,22 +1013,18 @@ main() {
   # still reports only what the CONCLUSION reader saw, so a Leg B failure can never turn a
   # verified-green run into INDETERMINATE.
   if [ "$INDET" -gt 0 ] || [ "${DISAGREE:-0}" -gt 0 ] || [ "${CORROB:-0}" -gt 0 ] || [ "${LEGB_UNKNOWN:-0}" -gt 0 ]; then
-    # ONE streak, four causes (OPS-XREPO-CI-RED-W1): a conclusion that could not be read (badge),
-    # a badge the run's own record contradicts (disagree), a run record that could not be bound
-    # (corroboration), or a run page that could not be read at all (legb). The body names the reader.
-    local STREAK CAUSE=badge
-    if [ "$INDET" -eq 0 ]; then
-      if [ "${DISAGREE:-0}" -gt 0 ]; then CAUSE=disagree
-      elif [ "${CORROB:-0}" -gt 0 ]; then CAUSE=corroboration
-      else CAUSE=legb; fi
-    fi
+    # ONE streak; its cause is DERIVED (OPS-XREPO-CI-CANARY-DARK-W2): every row that did not bind
+    # carries the module's guard CLASS, the run-recency leg adds `legb`, and the worst class present
+    # (DARK_CAUSE_ORDER) names the cause. The body lists each such row and one remedy per class.
+    local STREAK CAUSE
+    CAUSE=$(dark_cause)
     STREAK=$(cat "$STATE" 2>/dev/null || echo 0)
     case "$STREAK" in ''|*[!0-9]*) STREAK=0 ;; esac
     STREAK=$((STREAK + 1))
     echo "$STREAK" > "$STATE" 2>/dev/null || true
     echo "  checked $CHECKED workflow(s): $INDET indeterminate, ${DISAGREE:-0} disagree, ${CORROB:-0} uncorroborated, $RED red, ${LEGB_UNKNOWN:-0} recency-unknown (consecutive unverified runs: $STREAK, cause=$CAUSE)"
     if [ "$STREAK" -ge 3 ]; then
-      fire "xrepo_ci_dark" "$(dark_body "$STREAK" "$CAUSE")"
+      fire "xrepo_ci_dark" "$(dark_body "$STREAK" "$CAUSE" "$DARK_CLASSES" "$DARK_ROWS")"
       log "DARK streak=$STREAK cause=$CAUSE — escalated"
     fi
     if [ "$INDET" -gt 0 ] || [ "${DISAGREE:-0}" -gt 0 ]; then
@@ -1043,6 +1153,22 @@ MOCK
     local f; f="$tmp/fx/$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_')"
     mkdir -p "$tmp/fx"
     printf '<html><body><div class="blankslate"><h3>There are no workflow runs yet.</h3></div></body></html>' > "$f.html"
+    printf '200' > "$f.code"
+  }
+  # The React page GitHub has served since 2026-10-14 (OPS-XREPO-CI-CANARY-DARK-W2), field for field the
+  # shape captured on signal-1 2026-10-22. With no run arguments the list is EMPTY the way GitHub encodes
+  # it: `workflowRuns` (and `totalCount`) ABSENT. [conclusion] `-` = no conclusion key (a running run).
+  mkpage_react() { # <url> [<run_number> <run_id> <iso> [status] [conclusion|-]]
+    local f repo wf runs="" cj=""
+    f="$tmp/fx/$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_')"
+    repo=$(printf '%s' "$1" | sed -E 's#^https://github\.com/([^/]+/[^/]+)/actions/.*#\1#')
+    wf=$(printf '%s' "$1" | sed -E 's#.*/actions/workflows/([^?]+).*#\1#')
+    mkdir -p "$tmp/fx"
+    if [ -n "${2:-}" ]; then
+      [ "${6:-SUCCESS}" = "-" ] || cj=",\"conclusion\":\"WORKFLOW_RUN_CONCLUSION_${6:-SUCCESS}\""
+      runs="\"workflowRuns\":[{\"id\":\"$3\",\"runNumber\":$2,\"name\":\"Some Workflow\",\"title\":\"Some Workflow\",\"workflowName\":\"Some Workflow\",\"workflowFilePath\":\".github/workflows/$wf\",\"runUrl\":\"https://github.com/$repo/actions/runs/$3\",\"state\":{\"status\":\"WORKFLOW_RUN_STATUS_${5:-COMPLETED}\"$cj},\"createdAt\":{\"timestamp\":\"$4\",\"isCurrentYear\":true},\"branch\":{\"name\":\"refs/heads/main\",\"url\":\"/$repo/tree/refs/heads/main\",\"title\":\"main\"}}],\"totalCount\":1,"
+    fi
+    printf '<html><body><react-app app-name="actions-ui"><script type="application/json" data-target="react-app.embeddedData">{"payload":{"workflowRunsRoute":{%s"workflowExists":true}}}</script></react-app></body></html>' "$runs" > "$f.html"
     printf '200' > "$f.code"
   }
 
@@ -1269,12 +1395,14 @@ o/b|w.yml|Beta|main|86400")
   ckc "the conclusion comes from the badge, never from the page's prose" "$out" "XREPO_CI_VERDICT=FAIL"
   ckc "and the alert fired is the RED one"        "$(cat "$tmp/sink")" "xrepo_ci_red|CRITICAL_PERSISTENT|"
 
-  # AC15 — vacuity end to end: a 200 with bytes and zero rows is a PARSER failure.
+  # AC15 — a 200 with bytes the reader has NO declared shape for is UNKNOWN, never "no runs".
+  # (DARK-W2: before 2026-10-22 this page read `vacuity`; GitHub's 10-14 redesign hid behind that word.)
   : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 0 > "$tmp/streak"
   mkfx "$A" passing; mkfx "$B" passing
   mkpage_norows "$PAGE_A"
   out=$(run_case "$ROWS")
-  ckc "a 200 that parses ZERO rows is UNKNOWN"        "$out" "parsed ZERO run rows"
+  ckc "a 200 with no declared page shape is UNKNOWN, by its shape guard" "$out" "matched no single declared shape (page_shape_unknown)"
+  ckn "…and never the pre-React 'parsed ZERO' wording"  "$out" "parsed ZERO"
   ckn "a 200 that parses zero rows never says FRESH"  "$out" "XREPO_CI_FRESHNESS=FRESH"
   ckc "and it never launders into a verified green"   "$out" "XREPO_CI_FRESHNESS=MIXED"
   ck  "a vacuous parse fires nothing on its own"      "$(wc -l < "$tmp/sink" | tr -d ' ')" "0"
@@ -1296,7 +1424,7 @@ o/b|w.yml|Beta|main|86400")
   mkpage "$PAGE_A" 132 35732680339 2026-09-22T08:00:00Z
   mkpage_norows "$PAGE_B"
   out=$(run_case "$ROWS")
-  ckc "the .atom trap shape (200 text/html, no rows) is UNKNOWN, never an empty success" "$out" "parsed ZERO run rows"
+  ckc "the .atom trap shape (200 text/html, no rows) is UNKNOWN, never an empty success" "$out" "matched no single declared shape (page_shape_unknown)"
   ck  "and it refuses a .atom URL outright" "$(XREPO_CI_FIXTURE_DIR= LEGB_STATE=; leg_b_check o/a w.yml.atom main 86400 >/dev/null 2>&1; printf '%s' "$LEGB_STATE")" "UNKNOWN"
   ck  "the refusal ran OFFLINE, in the module: the \$tmp ledger line carries its reason code" "$(grep -c '"wf":"w.yml.atom".*"ghrc_reason":"atom_trap"' "$tmp/ledger.jsonl" | tr -d ' ')" "1"
 
@@ -1312,6 +1440,7 @@ o/b|w.yml|Beta|main|86400")
   ckc "the 3rd consecutive recency-unknown ESCALATES"     "$(cat "$tmp/sink")" "xrepo_ci_dark|CRITICAL_PERSISTENT|"
   ckc "and the dark body names the RECENCY leg, not the badge" "$(cat "$tmp/sink")" "the RUN RECENCY leg is not"
   ckn "and it does not blame the badge markup"            "$(cat "$tmp/sink")" "badge markup still"
+  ckc "and its transport remedy names the code github.com answered (DARK-W2)" "$(cat "$tmp/sink")" 'github.com answered `404` to this host'
   ckc "a recency-only failure keeps the conclusion verdict PASS" "$out" "XREPO_CI_VERDICT=PASS"
   CASE_NOW=""
 
@@ -1368,6 +1497,113 @@ o/b|w.yml|Beta|main|86400")
   ckc "(f) …and the row says why" "$out" "conclusion not read (reader_unavailable)"
   ck  "(f) …and it feeds the streak" "$(cat "$tmp/streak")" "1"
   CASE_NOW=""
+
+  echo "SELF-TEST: the dark cause names what the reader measured (OPS-XREPO-CI-CANARY-DARK-W2)"
+  ck "the cause order is ruling Q3, worst first" "$DARK_CAUSE_ORDER" \
+     "badge disagree shape identity vocabulary transport monotonic ref input empty pending legb"
+  # Every class renders its OWN remedy: one marker per class, and no two classes share a remedy.
+  local c r want seen="" DARK_CLASSES DARK_ROWS DARK_UNCLASSIFIED DK_TRANSPORT DK_REF DK_EMPTY
+  for c in $DARK_CAUSE_ORDER; do
+    case "$c" in
+      badge) want="carries its <title>" ;; disagree) want="badge and run record disagreed" ;;
+      shape) want='one measured `PAGE_SHAPES` entry' ;; identity) want="could not say which run it is" ;;
+      vocabulary) want='one measured `STATE_VOCAB` / `ICON_VOCAB` row' ;; transport) want='github.com answered `503`' ;;
+      monotonic) want="OLDER than the one already recorded" ;; ref) want='could not be resolved (`ref_missing`)' ;;
+      input) want="the watch row / gate entry is malformed" ;; empty) want='GitHub lists no runs of `w.yml` on `main`' ;;
+      pending) want="no finished run on the page yet" ;; legb) want="the RUN RECENCY leg is not" ;;
+      *) want="NO-MARKER-FOR-$c" ;;
+    esac
+    DARK_CLASSES="$c"; DARK_ROWS="
+- o/a/w.yml@main: some_reason"; DARK_UNCLASSIFIED=""; DK_TRANSPORT=503; DK_REF=ref_missing; DK_EMPTY='`w.yml` on `main`'
+    ckc "class $c renders its own remedy" "$(dark_body 3 "$c" "$DARK_CLASSES" "$DARK_ROWS")" "$want"
+    r=$(remedy_for "$c" x | head -1)
+    case "$seen" in *"|$r|"*) ck "class $c has a remedy no other class shares" "dup" "unique" ;; *) seen="$seen|$r|" ;; esac
+  done
+  ck "bound is never rendered (no remedy)"            "$(remedy_for bound >/dev/null && echo RENDERED || echo REFUSED)" "REFUSED"
+  ck "corroboration is retired (no remedy)"           "$(remedy_for corroboration >/dev/null && echo RENDERED || echo REFUSED)" "REFUSED"
+  DARK_UNCLASSIFIED=""
+  DARK_CLASSES="legb pending shape disagree"; ck "worst wins: disagree over shape, pending and legb" "$(dark_cause)" "disagree"
+  DARK_CLASSES="legb empty transport";        ck "worst wins: transport over empty and legb"        "$(dark_cause)" "transport"
+  DARK_CLASSES="";                            ck "no class at all falls back to the badge cause"    "$(dark_cause)" "badge"
+  DARK_UNCLASSIFIED="brand_new_guard"; DARK_CLASSES="badge"
+  ck "a reason no class covers outranks every class"  "$(dark_cause)" "unclassified"
+  DARK_UNCLASSIFIED=""
+  ck "the module classifies through --guard-class"    "$(guard_class page_shape_unknown)" "shape"
+  ck "…and refuses what its table does not cover"     "$(guard_class brand_new_guard || echo REFUSED)" "unclassified
+REFUSED"
+
+  # 2026-10-15 → 10-22, replayed: every WATCHED row's page has a shape the reader never declared.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 2 > "$tmp/streak"
+  local W_REPO W_WF W_LABEL W_BRANCH W_CAD n3=0 body
+  while IFS='|' read -r W_REPO W_WF W_LABEL W_BRANCH W_CAD; do
+    [ -n "${W_REPO:-}" ] || continue
+    n3=$((n3 + 1))
+    mkfx "$(BADGE_HOST=https://github.com badge_url "$W_REPO" "$W_WF" "$W_BRANCH")" passing
+    mkpage_norows "$(BADGE_HOST=https://github.com actions_url "$W_REPO" "$W_WF" "$W_BRANCH")"
+    mkatom "https://github.com/$W_REPO/commits/$W_BRANCH.atom" "$ACTIVE"
+  done <<WROWS
+$WATCHED
+WROWS
+  out=$(run_case "$WATCHED")
+  body=$(cat "$tmp/sink")
+  ck  "the 10-15 replay covers all three WATCHED rows" "$n3" "3"
+  ckc "the 10-15 replay escalates at streak 3"          "$body" "xrepo_ci_dark|CRITICAL_PERSISTENT|"
+  ck  "…listing page_shape_unknown once per row"        "$(grep -c '@main: page_shape_unknown$' <<<"$body" | tr -d ' ')" "3"
+  ckc "…with the shape remedy"                          "$body" 'GitHub changed the Actions page shape — re-fit: one measured `PAGE_SHAPES` entry'
+  ckn "…and never says 'parsed'"                        "$body" "parsed"
+  ckn "…nor 'vocabulary'"                               "$body" "vocabulary"
+  ckc "…naming the cause shape"                         "$out" "cause=shape"
+  ckc "…while the conclusion verdict stays PASS (badge-only green)" "$out" "XREPO_CI_VERDICT=PASS"
+
+  # R2.3 — an event-driven row whose page is unreadable counts under its guard's class (`:651` retired).
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 2 > "$tmp/streak"
+  mkfx "$A" passing; mkpage_norows "$PAGE_A"
+  out=$(run_case "o/a|w.yml|Alpha|main|event-driven")
+  ckc "an event-driven row with a shapeless page counts as shape" "$out" "cause=shape"
+  ckc "…and its body lists it verbatim"                           "$(cat "$tmp/sink")" "- o/a/w.yml@main: page_shape_unknown"
+  ckn "…never the retired corroboration wording"                  "$(cat "$tmp/sink")" "the Actions page parsed"
+
+  # The React shape, end to end: a real-shaped page binds row 1, FRESH, PASS.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 0 > "$tmp/streak"
+  mkfx "$A" passing; mkatom "$ATOM_A" "$ACTIVE"
+  mkpage_react "$PAGE_A" 163 39605376420 "$RECENT"
+  out=$(run_case "o/a|w.yml|Alpha|main|86400")
+  ckc "a React page binds row 1, confirmed by the run's own record" "$out" "run #163 (39605376420) confirmed by its own record"
+  ckc "…FRESH"                                                     "$out" "XREPO_CI_FRESHNESS=FRESH"
+  ckc "…PASS"                                                      "$out" "XREPO_CI_VERDICT=PASS"
+  ck  "…and resets the streak"                                     "$(cat "$tmp/streak")" "0"
+
+  # A vocabulary-class row still renders today's remedy: an unmeasured conclusion (TIMED_OUT).
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 2 > "$tmp/streak"
+  mkpage_react "$PAGE_A" 163 39605376420 "$RECENT" COMPLETED TIMED_OUT
+  out=$(run_case "o/a|w.yml|Alpha|main|86400")
+  ckc "an unmeasured state is listed verbatim"           "$(cat "$tmp/sink")" "- o/a/w.yml@main: state_unmeasured:WORKFLOW_RUN_STATUS_COMPLETED/WORKFLOW_RUN_CONCLUSION_TIMED_OUT"
+  ckc "…with the measured-vocabulary remedy"            "$(cat "$tmp/sink")" 'one measured `STATE_VOCAB` / `ICON_VOCAB` row with its provenance — never a guess.'
+  ckc "…naming the cause vocabulary"                     "$out" "cause=vocabulary"
+
+  # `empty`: GitHub lists no runs (a renamed branch, a new workflow) — the badge then says `no status`.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 2 > "$tmp/streak"
+  mkfx "$A" 'no status'; mkpage_react "$PAGE_A"
+  out=$(run_case "o/a|w.yml|Alpha|main|86400")
+  ckc "an empty list is listed with BOTH reasons"        "$(cat "$tmp/sink")" "- o/a/w.yml@main: badge_no_status (page: vacuity)"
+  ckc "…and carries the empty remedy, naming wf + branch" "$(cat "$tmp/sink")" 'GitHub lists no runs of `w.yml` on `main`'
+  ckc "…beside the badge remedy (badge is worse)"         "$out" "cause=badge"
+  ckc "Leg B says GitHub lists no runs, not a parser failure" "$out" "GitHub lists no runs of w.yml on main"
+
+  # worst-wins across rows: one disagreeing row outranks one shapeless row.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 0 > "$tmp/streak"
+  mkfx "$A" failing; mkpage "$PAGE_A" 144 37017230705 "$RECENT"
+  mkfx "$B" passing; mkpage_norows "$PAGE_B"
+  out=$(run_case "$ROWS")
+  ckc "a disagree row outranks a shape row" "$out" "cause=disagree"
+
+  # A reader that cannot run is UNCLASSIFIED and named, never folded into a class it is not.
+  : > "$tmp/sink"; : > "$tmp/ledger.jsonl"; echo 2 > "$tmp/streak"
+  mkfx "$A" passing; mkpage "$PAGE_A" 144 37017230705 "$RECENT"
+  out=$(XREPO_CI_GHRC="$tmp/no-such-reader.mjs" run_case "o/a|w.yml|Alpha|main|86400")
+  ckc "a missing reader names the cause unclassified" "$out" "cause=unclassified"
+  ckc "…and its body names the reason it could not classify" "$(cat "$tmp/sink")" "UNCLASSIFIED: reader_unavailable"
+  mkpage "$PAGE_A" 132 35732680339 "$RECENT"; mkpage "$PAGE_B" 132 35732680339 "$RECENT"   # SETUP: back to the shared pages
 
   echo "SELF-TEST: the release-blocking row is WATCHED, and its red reaches the alerter"
   # OPS-PREVERIFY-RED-UNREAD-W1. The pre-verify red ran 49 consecutive times with no reader. The row
@@ -1436,7 +1672,7 @@ PY
 
   rm -rf "$tmp" 2>/dev/null || true
   # Vacuity guard: this suite must never report a pass having asserted nothing.
-  if [ "$checks" -lt 30 ]; then
+  if [ "$checks" -lt 200 ]; then   # measured 203 at OPS-XREPO-CI-CANARY-DARK-W2
     echo "  ✗ only $checks checks ran — vacuity guard"; fails=$((fails + 1))
   fi
   # The self-test emits BOTH token lines, exactly as a live run does — a caller that gates on the
