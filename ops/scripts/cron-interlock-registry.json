@@ -21,13 +21,13 @@
       },
       "reboot": {
         "host": "signal-1 (204.168.185.24)",
-        "verified_at": "2026-10-02T12:2xZ",
+        "verified_at": "2026-10-22T09:32Z",
         "disruption_event": "kernel reboot",
         "command": "crontab -l   # every active line   &&   systemctl list-units --type=service --state=running --no-legend --plain | awk '{print $1}'   &&   systemctl list-unit-files --type=timer --state=enabled --no-legend | awk '{print $1}'   — the UNION is the population, because a reboot stops all of it. This is exactly what kernel-auto-reboot.sh feeds check-cron-interlock-coverage.mjs --event reboot on every run, so the enumeration is re-derived live each hour rather than inherited from this block.",
-        "active_cron_lines": 126,
-        "running_services": 22,
-        "enabled_timers": 28,
-        "note": "A REBOOT kills every container AND every host process, so every live line/unit maps to a row or exclusion by explicit cron_match / units — none by inference. Measured 2026-10-02 (crontab sha256 93f9e3ef…): 126 active lines (125 before this wave's own `16 * * * *` harness line), 22 running services, 28 enabled timers. Transient run-*.service units are deliberately left unmapped: an operator one-shot in flight DEFERS the reboot until it ends."
+        "active_cron_lines": 128,
+        "running_services": 23,
+        "enabled_timers": 30,
+        "note": "A REBOOT kills every container AND every host process, so every live line/unit maps to a row or exclusion by explicit cron_match / units — none by inference. Measured 2026-10-02 (crontab sha256 93f9e3ef…): 126 active lines (125 before this wave's own `16 * * * *` harness line), 22 running services, 28 enabled timers. Transient run-*.service units are deliberately left unmapped: an operator one-shot in flight DEFERS the reboot until it ends. || Re-derived 2026-10-22T09:32Z by OPS-HOST-KERNEL-REBOOT-W6 CH1 (crontab sha256 bf5e1d98…): 128 active lines, 23 running services, 30 enabled timers. The two lines that had no REBOOT row (verdict-rule-gate, directional-labels-race-integrity) are now classified; the inventory cross-check makes the next such install a build-time FAIL."
       }
     },
     "aoe-1": {
@@ -566,6 +566,56 @@
         "/opt/algovault-monitoring/tier-misclassification-canary.sh",
         "/opt/algovault-monitoring/venue-slo-tiers-drift-canary.sh",
         "/opt/algovault-monitoring/webhook-delivery-canary.py"
+      ]
+    },
+    {
+      "id": "verdict-rule-gate",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/verdict-rule-gate.py",
+      "container": "crypto-quant-signal-mcp-postgres-1",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "class": "safe-to-kill",
+      "reason": "Read-only: every query runs as `docker exec <pg> psql -U aoe_readonly` with default_transaction_read_only and a statement_timeout (verdict-rule-gate.py:55-60), and the script writes no state file — its only outputs are its log, one canary_result_log record per run and an optional page. A window's LOOK is reproducible from the registration and the cron alone (\"a late or repeated run evaluates the same\", :32-35), so a run killed by a deploy or a reboot loses nothing a re-run cannot re-derive, and the next scheduled Monday fire re-judges every window. Its 12:43 Monday fire sits 27 min after signal-1's :16 reboot harness run, against a 9 s measured runtime.",
+      "max_runtime_s": 12,
+      "runtime_instrument": "MEASURED on signal-1: cron CMD start (journalctl -u cron, 12:43:01Z) to the run's canary_result_log record `at` (written at the end of the run), n=3 scheduled runs — 2026-10-05 0 s, 2026-10-12 1 s, 2026-10-19 9 s (log mtime 12:43:10Z agrees). Max 9 s +25% margin, rounded up = 12.",
+      "cron_lines": 1,
+      "cron": "43 12 * * 1 (weekly, Monday, signal-1) under flock -n /var/lock/verdict-rule-gate.lock",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-10-22",
+      "owner_wave": "OPS-HOST-KERNEL-REBOOT-W6",
+      "notes": "First classification, read from the job's own code (OPS-HOST-KERNEL-REBOOT-W6 B7). Installed 2026-10-04 by SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 with an inventory row and no REBOOT row; that gap deferred signal-1's first unattended kernel cycle for 14 in-window runs. Inventory row: verdict-rule-gate.",
+      "cron_match": [
+        "/opt/algovault-monitoring/verdict-rule-gate.py"
+      ]
+    },
+    {
+      "id": "directional-labels-race-integrity",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/directional-labels-race-integrity.py",
+      "container": "crypto-quant-signal-mcp-postgres-1 + crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "class": "safe-to-kill",
+      "reason": "Read-only: psql runs as `docker exec -i crypto-quant-signal-mcp-postgres-1 psql -U aoe_readonly` (directional-labels-race-integrity.py:94), and the live recount is `docker exec <app> node dist/scripts/backfill-directional-labels.js --recount-gaps` (:400-401), which returns before ensureTable with no DDL and no write (backfill-directional-labels.ts:1906, \"read-only: before ensureTable, no DDL\"). Its one state file is written atomically (.tmp + os.replace, :435-439), so a SIGKILL leaves the previous state intact. The next daily fire re-judges the latest labeler run; a lost run costs one day of race-integrity watching. Its 07:23 fire sits 7 min after signal-1's :16 reboot harness run.",
+      "max_runtime_s": 82,
+      "runtime_instrument": "MEASURED on signal-1: cron CMD start (journalctl -u cron, 07:23:01Z) to the run's canary_result_log record `at` (written at the end of the run), n=8 scheduled runs 2026-10-15..22 — 65 s, 62 s, 10 s, 10 s, 10 s, 10 s, 11 s, 11 s. Max 65 s +25% margin, rounded up = 82.",
+      "cron_lines": 1,
+      "cron": "23 7 * * * (daily, signal-1) under flock -n /var/lock/algovault-race-integrity.lock",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-10-22",
+      "owner_wave": "OPS-HOST-KERNEL-REBOOT-W6",
+      "notes": "First classification, read from the job's own code (OPS-HOST-KERNEL-REBOOT-W6 B7). Installed 2026-10-14 by EDGE-LABELER-RACE-WINDOW-V2-W1 CH4 with an inventory row and no REBOOT row; that gap deferred signal-1's first unattended kernel cycle for 14 in-window runs. Inventory row: directional-labels-race-integrity.",
+      "cron_match": [
+        "/opt/algovault-monitoring/directional-labels-race-integrity.py"
       ]
     },
     {
@@ -1632,6 +1682,30 @@
         "ruling": "ZERO — and that is the measured reason aoe-1 is the right host to automate FIRST, not a gap in the enumeration. Every candidate is atomic-on-restart (8 containers, unless-stopped), idempotent on next fire (11 Prefect schedules, max 60.3s), or a read-only probe (7 crons, max 43s). Nothing on aoe-1 writes on-chain, publishes externally, or holds an unrepairable critical section — unlike signal-1, whose two no-safe-kill rows are exactly what keeps the 18:00-02:59 UTC deploy-free window alive.",
         "gate_is_not_vacuous": "kernel-auto-reboot.sh's third gate can therefore never ABORT today. That is a REPORTED pass, never a silent one: the gate prints the aoe-1 row count it evaluated, so a zero that means 'nothing is unsafe' stays distinguishable from a zero that means 'the filter is broken'. Its value is forward-looking — the day a no-safe-kill job lands on aoe-1, the reboot starts deferring without anyone remembering to wire it."
       }
+    }
+  },
+  "_inventory_reboot_debt": {
+    "_semantics": "OPS-HOST-KERNEL-REBOOT-W6 B7 (Q2 = C, as a ratchet). Per REBOOT host: the scheduled inventory installs (monitoring-inventory.json installed_at[], install_state installed) that scripts/check-cron-interlock-coverage.mjs's inventory cross-check finds UNMAPPED by every REBOOT-scope row and exclusion, and that are knowingly left so. The list ONLY SHRINKS: an unmapped install not listed here FAILS, and so does a listed id that is now classified or no longer installed. count must equal ids.length; a non-empty list needs a reason. Every REBOOT host carries a block — an explicit empty list, never an implied one.",
+    "signal-1": {
+      "count": 0,
+      "ids": [],
+      "reason": "signal-1 runs the live population check at every BREACH (kernel-auto-reboot.sh), so an unclassified install there DEFERS the reboot — it is classified, never carried as debt."
+    },
+    "aoe-1": {
+      "count": 10,
+      "ids": [
+        "aoe-output-liveness-canary",
+        "aoe-peer-watchdog",
+        "aoe-promotion-health-canary",
+        "aoe-shadow-writer-stall-canary",
+        "bdir-panel-readiness",
+        "boot-contract-canary",
+        "declaration-sync",
+        "kernel-auto-reboot",
+        "kernel-staleness-canary",
+        "monitoring-inventory-reconcile"
+      ],
+      "reason": "aoe-1's REBOOT rows carry no cron_match — its harness reads no live population (kernel-auto-reboot.sh host_policy aoe-1:population_check is empty) and classifies its 4 declared rows by prose scope (aoe-monitoring-crons, aoe-bdir-panel-readiness, aoe-monitoring-inventory-reconcile, …). These installs are covered by those rows in intent but by no explicit cron_match, so the cross-check cannot map them. Carried as declared debt so the NEXT unclassified aoe-1 install is a build-time FAIL; giving the aoe-1 rows cron_match shrinks this list."
     }
   },
   "_hosts": {

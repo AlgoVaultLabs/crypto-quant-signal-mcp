@@ -84,8 +84,18 @@ describe('the gate decides the REAL tree, and says so with one token', () => {
 
   it('the DECLARED limitation is printed, not buried in a header nobody reads', { timeout: 60_000 }, () => {
     const r = runGate();
-    expect(r.stdout).toContain('a build-time gate cannot see host-only crons');
-    expect(r.stdout).toContain('OPS-CRON-INTERLOCK-HOST-CANARY-W1');
+    expect(r.stdout).toContain('a build-time gate cannot see host-only crons directly');
+    // OPS-HOST-KERNEL-REBOOT-W6 B7: the never-built host canary is no longer promised — the
+    // inventory cross-check replaces it, and the residual it cannot see is stated instead.
+    expect(r.stdout).toContain('inventory cross-check');
+    expect(r.stdout).toContain('a crontab line with NO inventory row stays invisible here');
+    expect(r.stdout).not.toContain('OPS-CRON-INTERLOCK-HOST-CANARY-W1');
+  });
+
+  it('every REBOOT scope runs the inventory cross-check, with a POSITIVE per-host line', { timeout: 60_000 }, () => {
+    const r = runGate();
+    expect(r.stdout).toMatch(/inventory cross-check: \d+ scheduled install\(s\) on signal-1 .*, 0 unmapped — 0 declared .*, 0 unclassified/);
+    expect(r.stdout).toMatch(/inventory cross-check: \d+ scheduled install\(s\) on aoe-1 .*, 0 unclassified/);
   });
 
   it('--self-test PASSES and prints the same token', { timeout: 60_000 }, () => {
@@ -236,6 +246,31 @@ describe('the registry is complete, classified, and carries its instruments', ()
     // aoe-1 having ZERO is the measured reason it was the host automated first — assert it, so a
     // future no-safe-kill row on aoe-1 cannot land without this test going red and forcing a ruling.
     expect(doc._residual_no_safe_kill['aoe-1'].reboot.count).toBe(0);
+  });
+
+  it('W6 B7 — the two installs that deferred signal-1\'s kernel cycle are classified, from code, by installed path', () => {
+    for (const id of ['verdict-rule-gate', 'directional-labels-race-integrity']) {
+      const r = rows.find((x) => x.id === id) as Record<string, unknown> | undefined;
+      expect(r, id).toBeDefined();
+      expect(r!.host).toBe('signal-1');
+      expect(r!.events).toEqual(['deploy', 'reboot']);
+      expect(r!.class).toBe('safe-to-kill');
+      expect(r!.source).toBe('host-only');
+      expect(r!.cron_match).toEqual([`/opt/algovault-monitoring/${id}.py`]);
+      expect(String(r!.runtime_instrument)).toMatch(/^MEASURED/);
+      expect(r!.owner_wave).toBe('OPS-HOST-KERNEL-REBOOT-W6');
+    }
+  });
+
+  it('_inventory_reboot_debt: every REBOOT host carries an explicit block, signal-1 carries none, count = ids', () => {
+    const debt = doc._inventory_reboot_debt;
+    const rebootHosts = Object.entries(doc._disruption_events).filter(([k, v]) => !k.startsWith('_') && (v as string[]).includes('reboot')).map(([k]) => k);
+    expect(rebootHosts.sort()).toEqual(['aoe-1', 'signal-1']);
+    for (const h of rebootHosts) {
+      expect(debt[h].count, h).toBe(debt[h].ids.length);
+      if (debt[h].ids.length) expect(String(debt[h].reason).trim().length, h).toBeGreaterThan(20);
+    }
+    expect(debt['signal-1'].ids).toEqual([]);
   });
 
   it('every probed REBOOT row (no-safe-kill / preempt-and-catchup) carries a process pattern', () => {

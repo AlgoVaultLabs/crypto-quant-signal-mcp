@@ -53,14 +53,34 @@
  * later wave reclassifies the last no-safe-kill row without updating it, a control would keep
  * being justified by a row that no longer says so.
  *
- * ── DECLARED LIMITATION, STATED RATHER THAN HIDDEN ──────────────────────────────────────────
- * A BUILD-TIME GATE CANNOT SEE HOST-ONLY CRONS. Anything installed straight to
- * /opt/algovault-monitoring or written inline in a crontab is invisible here, however long it
- * runs. Those are covered by registry rows carrying `source: "host-only"` plus the
- * `re_derivation_command` that regenerates them, so the gap is DECLARED rather than rediscovered
- * by the next incident. Closing it needs a host-side reconciler that walks the live crontab:
- * OPS-CRON-INTERLOCK-HOST-CANARY-W1. It is deliberately NOT built here — a canary shipped in the
- * same wave as the registry it polices has no independent corpus to police.
+ * ── HOST-ONLY CRONS: THE INVENTORY CROSS-CHECK, AND WHAT IT STILL CANNOT SEE ───────────────
+ * A build-time gate cannot read a live crontab, but it CAN read the monitoring inventory, which
+ * declares every host install with its per-host schedule (`installed_at[]`). On every REBOOT-scope
+ * evaluation each scheduled, installed `installed_at[]` entry is synthesized into the crontab line
+ * it implies — `<schedule> <path>` — and run through the SAME `liveCoverage()` the live population
+ * uses. One matcher, two corpora: an unmapped synthesized line FAILs exactly as an unmapped live
+ * line does, so "a scheduled install with no reboot classification" is unbuildable rather than
+ * discovered when a kernel is already 7 days stale. (OPS-HOST-KERNEL-REBOOT-W6 B7: two signal-1
+ * installs — verdict-rule-gate, 10-04, and directional-labels-race-integrity, 10-14 — landed with
+ * inventory rows and no REBOOT row, and deferred signal-1's first unattended kernel cycle for 14
+ * consecutive in-window runs. This cross-check replaces the never-built host canary this header
+ * used to promise for every inventory-tracked install.)
+ *
+ * The join is keyed on `installed_at[].host` LABELS, never the legacy top-level `host`, which mixes
+ * IPs and labels. An entry's `schedule` / `install_state` override the row's (the inventory's own
+ * `_installed_at_semantics`). A null schedule is "not scheduled" — a library or a data file, a
+ * declared fact. A schedule that is present but not a 5-field cron line is INDETERMINATE: input we
+ * were handed and could not parse is never skipped.
+ *
+ * Known unclassified installs are DATA, never an exemption in prose: `_inventory_reboot_debt[host]`
+ * lists them (ids + reason + count), and the list ONLY SHRINKS — a listed id that is now classified,
+ * or no longer installed, FAILs until it is removed. aoe-1's harness reads no live population
+ * (`aoe-1:population_check` is empty), so an unclassified aoe-1 job fails toward silence; the
+ * ratchet makes the NEXT one a build-time FAIL without reclassifying today's.
+ *
+ * RESIDUAL, STATED RATHER THAN HIDDEN: a crontab line with NO inventory row (itself a breach of the
+ * inventory LAW) is still invisible at build time. Only the live check catches it — on signal-1,
+ * when kernel-auto-reboot.sh runs this gate at BREACH.
  *
  * ── EVENT SCOPE (OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1) ───────────────────────────────────
  * A row is classified per (host, DISRUPTION EVENT), because the events differ in size and the
@@ -231,6 +251,100 @@ export function liveCoverage(doc, host, event, live) {
   };
 }
 
+/** The monitoring inventory: every host install, with its per-host schedule. */
+export const INVENTORY_REL = 'ops/monitoring/monitoring-inventory.json';
+/** The registry block of knowingly-unclassified scheduled installs, per host. Shrink-only. */
+export const INVENTORY_DEBT_KEY = '_inventory_reboot_debt';
+/** A 5-field cron schedule: five whitespace-separated fields of digits, names, `*`, `,`, `/`, `-`. */
+export const CRON_SCHEDULE_RE = /^\s*[0-9A-Za-z*,/-]+(\s+[0-9A-Za-z*,/-]+){4}\s*$/;
+
+/** The inventory, or null when it cannot be read or parsed (INDETERMINATE at the caller). */
+export function loadInventory(root) {
+  const p = path.join(root, INVENTORY_REL);
+  if (!existsSync(p)) return null;
+  try {
+    const doc = JSON.parse(readFileSync(p, 'utf8'));
+    return doc && Array.isArray(doc.artifacts) ? doc : null;
+  } catch { return null; }
+}
+
+/**
+ * Every scheduled install the inventory declares on `host`, as the crontab line it implies. Keyed on
+ * `installed_at[].host` — never the top-level `host`, which mixes IPs and labels. An entry's own
+ * `schedule` / `install_state` override the row's. A null schedule is "not scheduled"; a schedule (or
+ * path) that cannot be read as a cron install is returned in `unparseable`, never dropped.
+ */
+export function inventoryInstalls(inv, host) {
+  const installs = [];
+  const unparseable = [];
+  for (const a of inv.artifacts) {
+    if (!a || !Array.isArray(a.installed_at)) continue;
+    for (const e of a.installed_at) {
+      if (!e || e.host !== host) continue;
+      const state = e.install_state ?? a.install_state;
+      if (state !== 'installed') continue;
+      const sched = Object.prototype.hasOwnProperty.call(e, 'schedule') ? e.schedule : a.schedule;
+      if (sched == null) continue;
+      const p = typeof e.path === 'string' ? e.path.trim() : '';
+      if (typeof sched !== 'string' || !CRON_SCHEDULE_RE.test(sched) || !p) {
+        unparseable.push(`${a.id}: schedule=${JSON.stringify(sched)} path=${JSON.stringify(e.path ?? null)}`);
+        continue;
+      }
+      installs.push({ id: a.id, line: `${sched.trim()} ${p}` });
+    }
+  }
+  return { installs, unparseable };
+}
+
+/**
+ * The inventory cross-check for one REBOOT-scope host. The synthesized lines go through the SAME
+ * `liveCoverage()` as the live crontab — never a second matcher — and only its unmapped lines count.
+ * Returns `{ indeterminate }` for a corpus that cannot be judged, else the per-id findings.
+ */
+export function inventoryCoverage(doc, inv, host) {
+  const { installs, unparseable } = inventoryInstalls(inv, host);
+  if (unparseable.length) {
+    return { indeterminate: `${INVENTORY_REL} declares install(s) on ${host} whose schedule or path is not a cron install: ${unparseable.join('; ')}` };
+  }
+  // We build this join; zero installs on a reboot host means the join broke (an IP where a label
+  // belongs, a renamed field), not that the host runs nothing.
+  if (installs.length === 0) {
+    return { indeterminate: `${INVENTORY_REL} declares ZERO scheduled installs on reboot host "${host}" — the installed_at[].host join is broken, not empty` };
+  }
+  const debt = doc[INVENTORY_DEBT_KEY] && doc[INVENTORY_DEBT_KEY][host];
+  if (!debt || typeof debt !== 'object' || !Array.isArray(debt.ids) || typeof debt.count !== 'number') {
+    return { indeterminate: `${INVENTORY_DEBT_KEY} declares no { count, ids } block for reboot host "${host}" — an explicit empty list is required, never implied` };
+  }
+  const lineOf = new Map();
+  for (const i of installs) lineOf.set(i.line, [...(lineOf.get(i.line) || []), i.id]);
+  const cov = liveCoverage(doc, host, REBOOT_EVENT, { crontab: installs.map((i) => i.line).join('\n'), units: null });
+  const unmapped = new Map();
+  for (const l of cov.unmappedLines) for (const id of lineOf.get(l) || [`<unattributed: ${l}>`]) unmapped.set(id, l);
+  const installedIds = new Set(installs.map((i) => i.id));
+  const listed = debt.ids.filter((s) => typeof s === 'string');
+  const unclassified = [...unmapped.keys()].filter((id) => !listed.includes(id)).sort()
+    .map((id) => ({ id, line: unmapped.get(id) }));
+  const nowClassified = listed.filter((id) => installedIds.has(id) && !unmapped.has(id)).sort();
+  const notInstalled = listed.filter((id) => !installedIds.has(id)).sort();
+  const debtDrift = [];
+  if (debt.count !== listed.length || listed.length !== debt.ids.length) {
+    debtDrift.push(`${INVENTORY_DEBT_KEY}["${host}"].count = ${debt.count} but ids lists ${debt.ids.length}`);
+  }
+  if (listed.length && !(typeof debt.reason === 'string' && debt.reason.trim())) {
+    debtDrift.push(`${INVENTORY_DEBT_KEY}["${host}"] lists ${listed.length} id(s) with no reason — debt is declared, never silent`);
+  }
+  return {
+    installs: installs.length,
+    unmapped: unmapped.size,
+    debt: listed.length,
+    unclassified,
+    nowClassified,
+    notInstalled,
+    debtDrift,
+    fail: unclassified.length + nowClassified.length + notInstalled.length + debtDrift.length,
+  };
+}
+
 /**
  * The whole decision, as data. Separated from I/O so the self-test can drive it against a fixture
  * tree — and so a caller can see WHY, not only WHAT.
@@ -343,6 +457,17 @@ export function evaluate(root, host = REPO_CRON_HOST, event = null, live = null)
     rulingDrift.push(`_residual_no_safe_kill["${host}"]["${ev}"].ids = [${declaredIds ? declaredIds.join(', ') : '<not an array>'}] but the rows say [${actualNsk.join(', ')}]`);
   }
 
+  // ── the INVENTORY cross-check (REBOOT scope) — a declared corpus, through the same matcher ──
+  let inventory = null;
+  if (ev === REBOOT_EVENT) {
+    const inv = loadInventory(root);
+    if (inv === null) {
+      return out({ verdict: 'INDETERMINATE', reason: `${INVENTORY_REL} is missing or unparseable — the REBOOT scope cannot be checked against the declared installs` });
+    }
+    inventory = inventoryCoverage(doc, inv, host);
+    if (inventory.indeterminate) return out({ verdict: 'INDETERMINATE', reason: inventory.indeterminate });
+  }
+
   // ── the LIVE population (REBOOT scope only) ───────────────────────────────────────────────
   let liveResult = null;
   if (live && (live.crontab != null || live.units != null)) {
@@ -360,7 +485,7 @@ export function evaluate(root, host = REPO_CRON_HOST, event = null, live = null)
   const liveFail = liveResult ? liveResult.unmappedLines.length + liveResult.unmappedUnits.length : 0;
 
   return out({
-    verdict: unregistered.length || unusable.length || rulingDrift.length || liveFail ? 'FAIL' : 'PASS',
+    verdict: unregistered.length || unusable.length || rulingDrift.length || liveFail || (inventory && inventory.fail) ? 'FAIL' : 'PASS',
     ownsRepoCron,
     files: files.map((f) => f.rel),
     candidates: candidates.map((c) => c.rel),
@@ -369,6 +494,7 @@ export function evaluate(root, host = REPO_CRON_HOST, event = null, live = null)
     unregistered,
     unusable,
     rulingDrift,
+    inventory,
     live: liveResult,
   });
 }
@@ -396,6 +522,11 @@ function emit(r) {
     console.log(`  repo cron corpus: none — ${CRON_DIR}/*.sh belongs to ${REPO_CRON_HOST}; every ${r.host} row is source: host-only.`);
     console.log('    That is a FACT about this host, not an unchecked gap: see the declared limitation below.');
   }
+  if (r.inventory) {
+    const I = r.inventory;
+    console.log(`  inventory cross-check: ${I.installs} scheduled install(s) on ${r.host} in ${INVENTORY_REL}, ${I.unmapped} unmapped`
+      + ` — ${I.debt} declared in ${INVENTORY_DEBT_KEY}["${r.host}"], ${I.unclassified.length} unclassified`);
+  }
   if (r.event === REBOOT_EVENT) {
     if (!r.live) {
       console.log('  live population: NOT SUPPLIED — run with --crontab <file|-> [--units <file>] on or from the host (kernel-auto-reboot.sh does so on every signal-1 run; aoe-1\'s harness declares no population check — its rows carry no cron_match/units)');
@@ -416,6 +547,15 @@ function emit(r) {
     }
     for (const u of r.unusable) console.log(`  ✗ registry row "${u.id}" is unusable: ${u.why}`);
     for (const d of r.rulingDrift) console.log(`  ✗ ${d}`);
+    if (r.inventory) {
+      for (const u of r.inventory.unclassified) {
+        console.log(`  ✗ inventory install has no ${r.event} classification: ${u.id} (${u.line.slice(0, 140)}) —`);
+        console.log('      add a REBOOT-scope row whose cron_match names its installed path, with a MEASURED max_runtime_s.');
+      }
+      for (const id of r.inventory.nowClassified) console.log(`  ✗ ${INVENTORY_DEBT_KEY}["${r.host}"] still lists ${id}, which is now classified — remove it (the list only shrinks)`);
+      for (const id of r.inventory.notInstalled) console.log(`  ✗ ${INVENTORY_DEBT_KEY}["${r.host}"] lists ${id}, which is no longer a scheduled install on ${r.host} — remove it`);
+      for (const d of r.inventory.debtDrift) console.log(`  ✗ ${d}`);
+    }
     if (r.live) {
       for (const l of r.live.unmappedLines) console.log(`  ✗ live crontab line has no ${r.event} classification: ${l.slice(0, 160)}`);
       for (const u of r.live.unmappedUnits) console.log(`  ✗ live unit has no ${r.event} classification: ${u}`);
@@ -437,9 +577,9 @@ export function run(root, only = null, onlyEvent = null, live = null) {
   // Worst wins, and INDETERMINATE outranks FAIL: "we could not tell" must never be reported as
   // the weaker, more specific "we told, and it was wrong".
   const code = codes.includes(3) ? 3 : (codes.includes(1) ? 1 : 0);
-  console.log('  (declared limitation: a build-time gate cannot see host-only crons — those carry source: "host-only"'
-    + ' plus their re_derivation_command; the REBOOT scope is checked live on the host by kernel-auto-reboot.sh;'
-    + ' the standing reconciler is OPS-CRON-INTERLOCK-HOST-CANARY-W1)');
+  console.log('  (declared limitation: a build-time gate cannot see host-only crons directly — every scheduled'
+    + ` install declared in ${INVENTORY_REL} is checked through the inventory cross-check above; a crontab line with`
+    + ' NO inventory row stays invisible here and is caught only by the live check kernel-auto-reboot.sh runs on the host)');
   console.log(`CRON_INTERLOCK_COVERAGE_VERDICT=${code === 3 ? 'INDETERMINATE' : code === 1 ? 'FAIL' : 'PASS'}`);
   return code;
 }
@@ -478,11 +618,12 @@ const row = (over = {}) => ({
  */
 const registry = (rows, over = {}) => {
   const hosts = [...new Set(rows.map((r) => r.host).filter(Boolean))];
-  const doc = { schema_version: 2, rows, exclusions: [], _disruption_events: {}, _enumeration: {}, _residual_no_safe_kill: {} };
+  const doc = { schema_version: 2, rows, exclusions: [], _disruption_events: {}, _enumeration: {}, _residual_no_safe_kill: {}, [INVENTORY_DEBT_KEY]: {} };
   for (const h of hosts) {
     doc._disruption_events[h] = fixtureEvents(h);
     doc._enumeration[h] = {};
     doc._residual_no_safe_kill[h] = {};
+    if (fixtureEvents(h).includes(REBOOT_EVENT)) doc[INVENTORY_DEBT_KEY][h] = { count: 0, ids: [], reason: '' };
     for (const e of fixtureEvents(h)) {
       const nsk = rows.filter((r) => r.host === h && Array.isArray(r.events) && r.events.includes(e) && r.class === 'no-safe-kill').map((r) => r.id);
       doc._enumeration[h][e] = { host: h, command: 'fixture' };
@@ -500,7 +641,15 @@ function selfTest() {
     if (actual !== expected) { fails += 1; console.log(`  ✗ ${label}: got ${actual}, want ${expected}`); }
     else console.log(`  ✓ ${label}`);
   };
-  const v = (spec, host, event, live) => { const root = fixture(spec); roots.push(root); return evaluate(root, host, event, live).verdict; };
+  // Every fixture tree gets an inventory unless the case supplies its own: one scheduled install per
+  // fixture host, at a path the default row's cron_match ('dist/scripts/a') maps.
+  const inventory = (artifacts) => JSON.stringify({ schema_version: 1, artifacts });
+  const install = (over = {}) => ({ id: 'a-job', install_state: 'installed', schedule: '5 * * * *',
+    installed_at: [{ host: REPO_CRON_HOST, path: '/opt/fx/dist/scripts/a.js' }, { host: 'aoe-1', path: '/opt/fx/dist/scripts/a.js' }], ...over });
+  const DEFAULT_INV = inventory([install()]);
+  const v = (spec, host, event, live) => {
+    const root = fixture({ [INVENTORY_REL]: DEFAULT_INV, ...spec }); roots.push(root); return evaluate(root, host, event, live).verdict;
+  };
   const EXEC = { [`${CRON_DIR}/a.sh`]: '#!/usr/bin/env bash\ndocker exec ctr node x.js\n' };
 
   // ── the happy path, and the failure it exists to produce ────────────────────────────────
@@ -665,6 +814,85 @@ function selfTest() {
   ck('activeCronLines drops comments, blanks and ENV lines', activeCronLines('# c\n\nA=1\n* * * * * x\n').length, 1);
   ck('globToRe matches a whole unit name only', `${globToRe('getty@*.service').test('getty@tty1.service')}/${globToRe('cron.service').test('anacron.service')}`, 'true/false');
 
+  // ── THE INVENTORY CROSS-CHECK (OPS-HOST-KERNEL-REBOOT-W6 B7) ─────────────────────────────
+  const NEW_JOB = install({ id: 'new-job', schedule: '43 12 * * 1', installed_at: [{ host: REPO_CRON_HOST, path: '/opt/algovault-monitoring/new-job.py' }] });
+  const INV_NEW = inventory([install(), NEW_JOB]);
+  const debtFor = (ids, reason = 'declared fixture debt') => ({ [INVENTORY_DEBT_KEY]: { [REPO_CRON_HOST]: { count: ids.length, ids, reason } } });
+  ck('B7 — a scheduled inventory install with NO reboot row -> FAIL (the W6 defect, at build time)', v({
+    ...EXEC, [INVENTORY_REL]: INV_NEW, [REGISTRY_REL]: registry([row()]),
+  }, REPO_CRON_HOST, 'reboot'), 'FAIL');
+  ck('…and a row whose cron_match names its installed path -> PASS', v({
+    ...EXEC, [INVENTORY_REL]: INV_NEW,
+    [REGISTRY_REL]: registry([row(), row({ id: 'new-job', script: '/opt/algovault-monitoring/new-job.py', source: 'host-only', cron_match: ['/opt/algovault-monitoring/new-job.py'] })]),
+  }, REPO_CRON_HOST, 'reboot'), 'PASS');
+  ck('…the SAME install is FAIL even when the live crontab supplied alongside it maps fully', v({
+    ...EXEC, [INVENTORY_REL]: INV_NEW, [REGISTRY_REL]: registry([row()]),
+  }, REPO_CRON_HOST, 'reboot', { crontab: '1 1 * * * docker exec ctr node dist/scripts/a.js\n' }), 'FAIL');
+  ck('…a DEPLOY-only exclusion cannot classify it — the cross-check uses liveCoverage\'s own scoping', v({
+    ...EXEC, [INVENTORY_REL]: INV_NEW, [REGISTRY_REL]: registry([row()], {
+      exclusions: [{ id: 'deploy-ex', host: REPO_CRON_HOST, events: ['deploy'], cron_match: ['/opt/algovault-monitoring/new-job.py'], reason: 'r', re_derivation_command: 'grep' }],
+    }),
+  }, REPO_CRON_HOST, 'reboot'), 'FAIL');
+  ck('…the DEPLOY scope never runs the cross-check (a deploy is the repo-corpus question)', v({
+    ...EXEC, [INVENTORY_REL]: INV_NEW, [REGISTRY_REL]: registry([row()]),
+  }, REPO_CRON_HOST, 'deploy'), 'PASS');
+  ck('RATCHET — the unclassified install LISTED as declared debt -> PASS', v({
+    ...EXEC, [INVENTORY_REL]: INV_NEW, [REGISTRY_REL]: registry([row()], debtFor(['new-job'])),
+  }, REPO_CRON_HOST, 'reboot'), 'PASS');
+  ck('RATCHET — a listed id that is NOW classified -> FAIL (the list only shrinks)', v({
+    ...EXEC, [INVENTORY_REL]: INV_NEW, [REGISTRY_REL]: registry([row(), row({ id: 'new-job', script: 'x', source: 'host-only', cron_match: ['/opt/algovault-monitoring/new-job.py'] })], debtFor(['new-job'])),
+  }, REPO_CRON_HOST, 'reboot'), 'FAIL');
+  ck('RATCHET — a listed id that is no longer installed -> FAIL', v({
+    ...EXEC, [REGISTRY_REL]: registry([row()], debtFor(['gone-job'])),
+  }, REPO_CRON_HOST, 'reboot'), 'FAIL');
+  ck('RATCHET — a debt count that disagrees with its ids -> FAIL', v({
+    ...EXEC, [INVENTORY_REL]: INV_NEW, [REGISTRY_REL]: registry([row()], { [INVENTORY_DEBT_KEY]: { [REPO_CRON_HOST]: { count: 2, ids: ['new-job'], reason: 'r' } } }),
+  }, REPO_CRON_HOST, 'reboot'), 'FAIL');
+  ck('RATCHET — a non-empty debt list with NO reason -> FAIL', v({
+    ...EXEC, [INVENTORY_REL]: INV_NEW, [REGISTRY_REL]: registry([row()], debtFor(['new-job'], '  ')),
+  }, REPO_CRON_HOST, 'reboot'), 'FAIL');
+  ck('RATCHET — a REBOOT host with NO debt block -> INDETERMINATE (an empty list is explicit, never implied)', v({
+    ...EXEC, [REGISTRY_REL]: registry([row()], { [INVENTORY_DEBT_KEY]: {} }),
+  }, REPO_CRON_HOST, 'reboot'), 'INDETERMINATE');
+  ck('an UNPARSEABLE inventory -> INDETERMINATE for the REBOOT scope', v({
+    ...EXEC, [INVENTORY_REL]: 'not json', [REGISTRY_REL]: registry([row()]),
+  }, REPO_CRON_HOST, 'reboot'), 'INDETERMINATE');
+  ck('a schedule that is not a 5-field cron line -> INDETERMINATE, never skipped', v({
+    ...EXEC, [INVENTORY_REL]: inventory([install(), install({ id: 'odd', schedule: 'hourly-ish', installed_at: [{ host: REPO_CRON_HOST, path: '/opt/x/odd.py' }] })]),
+    [REGISTRY_REL]: registry([row()]),
+  }, REPO_CRON_HOST, 'reboot'), 'INDETERMINATE');
+  ck('a NULL schedule is "not scheduled" (a library) — no row is owed', v({
+    ...EXEC, [INVENTORY_REL]: inventory([install(), install({ id: 'lib', schedule: null, installed_at: [{ host: REPO_CRON_HOST, path: '/opt/x/lib.py' }] })]),
+    [REGISTRY_REL]: registry([row()]),
+  }, REPO_CRON_HOST, 'reboot'), 'PASS');
+  ck('an ENTRY schedule overrides the row\'s — an entry null un-schedules that host only', v({
+    ...EXEC, [INVENTORY_REL]: inventory([install(), install({ id: 'lib2', installed_at: [{ host: REPO_CRON_HOST, path: '/opt/x/lib2.py', schedule: null }] })]),
+    [REGISTRY_REL]: registry([row()]),
+  }, REPO_CRON_HOST, 'reboot'), 'PASS');
+  ck('an ENTRY install_state overrides the row\'s — a retired entry owes no row', v({
+    ...EXEC, [INVENTORY_REL]: inventory([install(), install({ id: 'ret', installed_at: [{ host: REPO_CRON_HOST, path: '/opt/x/ret.py', install_state: 'retired' }] })]),
+    [REGISTRY_REL]: registry([row()]),
+  }, REPO_CRON_HOST, 'reboot'), 'PASS');
+  ck('the join reads installed_at[].host LABELS — a top-level IP host still owes signal-1 a row', v({
+    ...EXEC, [INVENTORY_REL]: inventory([install(), install({ id: 'ip-row', host: '204.168.185.24', installed_at: [{ host: REPO_CRON_HOST, path: '/opt/x/ip-row.sh' }] })]),
+    [REGISTRY_REL]: registry([row()]),
+  }, REPO_CRON_HOST, 'reboot'), 'FAIL');
+  ck('ZERO scheduled installs on a REBOOT host -> INDETERMINATE (the join broke, not empty)', v({
+    ...EXEC, [INVENTORY_REL]: inventory([install({ installed_at: [{ host: '204.168.185.24', path: '/opt/fx/dist/scripts/a.js' }] })]),
+    [REGISTRY_REL]: registry([row()]),
+  }, REPO_CRON_HOST, 'reboot'), 'INDETERMINATE');
+  {
+    const doc = JSON.parse(registry([row()]));
+    const inv = JSON.parse(INV_NEW);
+    const r = inventoryCoverage(doc, inv, REPO_CRON_HOST);
+    ck('inventoryCoverage names the unclassified id AND its synthesized line',
+      `${r.unclassified.map((u) => u.id).join(',')}|${r.unclassified[0] && r.unclassified[0].line}`,
+      'new-job|43 12 * * 1 /opt/algovault-monitoring/new-job.py');
+    ck('inventoryInstalls synthesizes "<schedule> <path>" per installed_at entry on the host',
+      inventoryInstalls(inv, REPO_CRON_HOST).installs.map((i) => i.line).join(' ; '),
+      '5 * * * * /opt/fx/dist/scripts/a.js ; 43 12 * * 1 /opt/algovault-monitoring/new-job.py');
+  }
+
   // ── THE HERMETIC SEAM'S OWN BLIND SPOT ────────────────────────────────────────────────
   const realFiles = cronFiles(REPO);
   const realCandidates = cronCandidates(REPO);
@@ -684,12 +912,28 @@ function selfTest() {
       const evs = hostEvents(realDoc, h);
       return Array.isArray(evs) && evs.length > 0 && evs.every((e) => evaluate(REPO, h, e).verdict === 'PASS');
     }), true);
+  // The cross-check's real corpus — the fixture inventory above bypasses the real file entirely.
+  const realInv = loadInventory(REPO);
+  const realS1 = realInv ? inventoryInstalls(realInv, REPO_CRON_HOST) : { installs: [], unparseable: ['<no inventory>'] };
+  ck('SEAM — the real inventory loads and declares ≥20 scheduled signal-1 installs, none unparseable',
+    `${realS1.installs.length >= 20}|${realS1.unparseable.length}`, 'true|0');
+  ck('SEAM — the real registry classifies both W6 installs for REBOOT, by their installed path',
+    ['verdict-rule-gate', 'directional-labels-race-integrity'].every((id) => scopedRows(realDoc, REPO_CRON_HOST, REBOOT_EVENT)
+      .some((r) => r.id === id && r.class === 'safe-to-kill' && (r.cron_match || []).includes(`/opt/algovault-monitoring/${id}.py`))), true);
+  {
+    const s1 = realInv ? inventoryCoverage(realDoc, realInv, REPO_CRON_HOST) : { indeterminate: 'no inventory' };
+    ck('SEAM — the real signal-1 cross-check maps EVERY install and carries no debt',
+      s1.indeterminate || `${s1.unmapped}|${s1.debt}|${s1.fail}`, '0|0|0');
+    const a1 = realInv ? inventoryCoverage(realDoc, realInv, 'aoe-1') : { indeterminate: 'no inventory' };
+    ck('SEAM — the real aoe-1 debt is EXACTLY its unmapped installs (the ratchet holds)',
+      a1.indeterminate || `${a1.unclassified.length}|${a1.nowClassified.length}|${a1.notInstalled.length}|${a1.debt === a1.unmapped}`, '0|0|0|true');
+  }
 
   for (const r of roots) { try { rmSync(r, { recursive: true, force: true }); } catch { /* best effort */ } }
 
   // Vacuity on the suite itself: the corpus of checks is CONSTRUCTED here.
-  if (checks < 55) {
-    console.log(`SELF-TEST: INDETERMINATE — only ${checks} checks ran (floor 55)`);
+  if (checks < 81) {
+    console.log(`SELF-TEST: INDETERMINATE — only ${checks} checks ran (floor 81)`);
     console.log('CRON_INTERLOCK_COVERAGE_VERDICT=INDETERMINATE');
     return 3;
   }
@@ -698,7 +942,7 @@ function selfTest() {
     console.log('CRON_INTERLOCK_COVERAGE_VERDICT=FAIL');
     return 1;
   }
-  console.log(`SELF-TEST: PASS — ${checks} checks (happy path, both mention-vs-invocation shapes, six command positions, the unusable-row rules, every vacuity guard, the token→exit-code mapping, host scoping, per-(host, event) scope incl. the ruling-must-match-its-evidence check, the live REBOOT population, and the assertions against the REAL tree the fixture seam bypasses)`);
+  console.log(`SELF-TEST: PASS — ${checks} checks (happy path, both mention-vs-invocation shapes, six command positions, the unusable-row rules, every vacuity guard, the token→exit-code mapping, host scoping, per-(host, event) scope incl. the ruling-must-match-its-evidence check, the live REBOOT population, the inventory cross-check and its shrink-only debt ratchet, and the assertions against the REAL tree the fixture seam bypasses)`);
   console.log('CRON_INTERLOCK_COVERAGE_VERDICT=PASS');
   return 0;
 }
