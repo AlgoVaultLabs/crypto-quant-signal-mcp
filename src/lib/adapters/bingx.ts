@@ -38,6 +38,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://open-api.bingx.com';
 const MAX_RETRIES = 1;
@@ -168,7 +169,7 @@ export class BingxAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toBingxSymbol(coin);
-    const bingxInterval = INTERVAL_MAP[interval] || '1h';
+    const bingxInterval = resolveVenueInterval(INTERVAL_MAP, interval, 'BINGX');
 
     const env = await bingxGet<BingxKlineEnvelope>('/openApi/swap/v2/quote/klines', {
       symbol,

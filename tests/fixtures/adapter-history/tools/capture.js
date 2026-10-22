@@ -81,6 +81,7 @@ async function scenario(tag, v, tf, coin, from, to) {
   for (const [v, tf, faithful] of pairs) {
     if (ONLY && !ONLY.split(',').includes(v)) continue;
     const s = served(v, tf);
+    if (s == null) continue; // not in the adapter's map: refused before any request (OPS-SERVED-CANDLE-TRUTH-W1 CH2)
     const W = EVAL_CANDLES[tf];
     const now = Date.now();
     (byVenue[v] ||= []).push({ pair: `${v}/${tf}`, faithful, R: await scenario('R', v, tf, 'BTC', now - (2 * W + 1) * s) });

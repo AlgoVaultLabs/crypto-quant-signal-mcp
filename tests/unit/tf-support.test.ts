@@ -9,12 +9,15 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   isTimeframeFaithful,
+  isTimeframeServed,
   faithfulTimeframes,
+  servedTimeframes,
   servedTimeframeLabel,
   FAITHFUL_MAX_RATIO,
 } from '../../src/lib/tf-support.js';
 import { parseIntervalToken, makeServedIntervalMs } from '../../src/lib/served-interval.js';
-import { PROMOTED_VENUE_IDS } from '../../src/lib/capabilities.js';
+import { PROMOTED_VENUE_IDS, TIMEFRAMES } from '../../src/lib/capabilities.js';
+import type { ExchangeId } from '../../src/types.js';
 import { TF_MS } from '../../src/lib/pfe-mae.js';
 
 describe('parseIntervalToken — every venue notation → ms (never silently null)', () => {
@@ -228,5 +231,59 @@ describe('R4 — the no-stranded invariant self-validates (FAILS on a synthetic 
     const ok = makeServedIntervalMs({ '3m': '1h', '5m': '1h', '15m': '15m', '30m': '1h' }); // 15m native
     expect(faithfulFast(ok)).toContain('15m');
     expect(faithfulFast(ok).length).toBeGreaterThan(0);
+  });
+});
+
+// ── OPS-SERVED-CANDLE-TRUTH-W1 CH2 ─────────────────────────────────────────────────────────────────────
+
+describe('CH2 — a KNOWN timeframe the adapter does not map is unfaithful; an unknown one keeps its fail-open', () => {
+  const KEY = 'ALGOVAULT_TF_SKIP_ENABLED';
+  const orig = process.env[KEY];
+  afterEach(() => { if (orig === undefined) delete process.env[KEY]; else process.env[KEY] = orig; });
+  const without8h = TIMEFRAMES.filter((tf) => tf !== '8h');
+
+  it('OKX 8h and BYBIT 8h left their maps: unfaithful, unserved, and labelled unmapped', () => {
+    for (const v of ['OKX', 'BYBIT'] as const) {
+      expect(isTimeframeFaithful(v, '8h'), `${v} 8h`).toBe(false);
+      expect(isTimeframeServed(v, '8h'), `${v} 8h`).toBe(false);
+      expect(faithfulTimeframes(v).has('8h'), `${v} 8h`).toBe(false);
+      expect(servedTimeframeLabel(v, '8h')).toBe('unmapped');
+      expect(servedTimeframes(v)).toEqual(without8h);
+    }
+  });
+
+  it('control: their neighbouring timeframes are served and faithful', () => {
+    for (const v of ['OKX', 'BYBIT'] as const) for (const tf of ['4h', '12h']) {
+      expect(isTimeframeFaithful(v, tf), `${v} ${tf}`).toBe(true);
+      expect(isTimeframeServed(v, tf), `${v} ${tf}`).toBe(true);
+    }
+  });
+
+  it('an unknown timeframe or an unknown venue stays fail-open (no TF_MS entry / no served table)', () => {
+    expect(isTimeframeFaithful('OKX', '7h')).toBe(true);
+    expect(isTimeframeFaithful('NOT_A_VENUE' as ExchangeId, '8h')).toBe(true);
+    expect(isTimeframeServed('NOT_A_VENUE' as ExchangeId, '8h')).toBe(true);
+    expect(servedTimeframes('NOT_A_VENUE' as ExchangeId)).toEqual([...TIMEFRAMES]);
+  });
+
+  it('a coarsened timeframe is still SERVED (the seeder skips it as unfaithful, the tools answer it)', () => {
+    expect(isTimeframeFaithful('WHITEBIT', '5m')).toBe(false);
+    expect(isTimeframeServed('WHITEBIT', '5m')).toBe(true);
+  });
+
+  it('servedTimeframes lists the product order (TIMEFRAMES), never a venue-only token (BingX 6h)', () => {
+    expect(servedTimeframes('BINGX')).toEqual([...TIMEFRAMES]);
+    expect(servedTimeframes('BINANCE')).toEqual([...TIMEFRAMES]);
+    for (const v of PROMOTED_VENUE_IDS) {
+      const s = servedTimeframes(v);
+      expect(s, v).toEqual(TIMEFRAMES.filter((tf) => s.includes(tf)));
+      expect(s.length, v).toBeGreaterThan(0);
+    }
+  });
+
+  it('the kill switch OFF restores the pre-wave all-true (the adapter refusal is then the defence in depth)', () => {
+    process.env[KEY] = 'false';
+    expect(isTimeframeFaithful('OKX', '8h')).toBe(true);
+    expect(isTimeframeServed('OKX', '8h')).toBe(false); // the tools' refusal does not read the seeder's switch
   });
 });

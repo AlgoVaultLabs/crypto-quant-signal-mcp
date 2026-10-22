@@ -17,7 +17,8 @@ import { FUNDING_ADJUST, HURST_ADJUST, SQUEEZE_ADJUST, toScorerParts } from '../
 import { recordScorerInputCapture } from '../lib/scorer-input-capture.js';
 import { classifyAsset, isMemeCoinLiquid, isKnownTradFi, getTop20ByOI } from '../lib/asset-tiers.js';
 import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.js';
-import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError } from '../lib/errors.js';
+import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError, TimeframeUnservedError } from '../lib/errors.js';
+import { isTimeframeServed, servedTimeframes } from '../lib/tf-support.js';
 import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
 import { resolveAssetClass } from '../lib/underlying-type.js';
 import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
@@ -942,6 +943,13 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // is declined BY NAME here, before we touch its adapter — otherwise the call hangs on the dead
   // upstream API and returns a raw timeout. No-op for live venues and for internal grid-refresh.
   await assertVenueNotRetired(exchange, input.internal);
+
+  // OPS-SERVED-CANDLE-TRUTH-W1 CH2: a timeframe the venue does not serve (OKX / BYBIT 8h) is refused here, up front —
+  // before any upstream request and before anything is charged — with the `timeframe_unserved` payload. The adapter
+  // refuses it too (resolveVenueInterval), so a caller that skips this still makes no request.
+  if (!isTimeframeServed(exchange, timeframe)) {
+    throw new TimeframeUnservedError({ exchange, timeframe, servedTimeframes: servedTimeframes(exchange) });
+  }
 
   // Venue-coverage gate (TRADFI-SYMBOL-ALIAS-W1 / v1.11.1): if the coin is a
   // known TradFi symbol AND the requested venue does NOT carry it (per the

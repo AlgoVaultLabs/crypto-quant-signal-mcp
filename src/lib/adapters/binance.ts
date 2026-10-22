@@ -13,6 +13,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://fapi.binance.com';
 const MAX_RETRIES = 1;
@@ -258,7 +259,7 @@ export class BinanceAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toBinanceSymbol(coin);
-    const binanceInterval = INTERVAL_MAP[interval] || '1h';
+    const binanceInterval = resolveVenueInterval(INTERVAL_MAP, interval, 'BINANCE');
 
     // Use regular klines for real trading volume
     const raw = await binGet<(string | number)[][]>('/fapi/v1/klines', {

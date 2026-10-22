@@ -39,6 +39,7 @@ import type {
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://whitebit.com';
 const MAX_RETRIES = 1;
@@ -133,7 +134,7 @@ export class WhitebitAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const market = toWhitebitSymbol(coin);
-    const wbInterval = INTERVAL_MAP[interval] || '1h';
+    const wbInterval = resolveVenueInterval(INTERVAL_MAP, interval, 'WHITEBIT');
 
     const env = await whitebitGet<WhitebitKlineEnvelope>('/api/v1/public/kline', {
       market,

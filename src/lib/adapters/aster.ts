@@ -26,6 +26,7 @@ import type {
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://fapi.asterdex.com';
 const MAX_RETRIES = 1;
@@ -110,7 +111,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toAsterSymbol(coin);
-    const asterInterval = INTERVAL_MAP[interval] || '1h';
+    const asterInterval = resolveVenueInterval(INTERVAL_MAP, interval, 'ASTER');
 
     const raw = await asterGet<(string | number)[][]>('/fapi/v1/klines', {
       symbol,

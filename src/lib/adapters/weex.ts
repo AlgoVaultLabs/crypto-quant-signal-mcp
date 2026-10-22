@@ -37,6 +37,7 @@ import type {
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://api-contract.weex.com';
 const MAX_RETRIES = 1;
@@ -183,7 +184,7 @@ export class WeexAdapter implements ExchangeAdapter {
    */
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toWeexSymbol(coin);
-    const mapped = INTERVAL_MAP[interval] || '1h';
+    const mapped = resolveVenueInterval(INTERVAL_MAP, interval, 'WEEX');
     const rows = await weexGet<WeexKlineRow[]>('/capi/v3/market/klines', { symbol, interval: mapped, limit: KLINE_LIMIT });
     if (!Array.isArray(rows)) {
       throw new Error(`WEEX: kline returned non-array shape for ${coin} (symbol=${symbol})`);

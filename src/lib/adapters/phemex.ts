@@ -49,6 +49,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://api.phemex.com';
 const MAX_RETRIES = 1;
@@ -171,7 +172,7 @@ export class PhemexAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toPhemexSymbol(coin);
-    const resolution = INTERVAL_MAP[interval] ?? 3600;
+    const resolution = resolveVenueInterval(INTERVAL_MAP, interval, 'PHEMEX');
 
     const env = await phemexGet<PhemexKlineEnvelope>('/exchange/public/md/v2/kline/last', {
       symbol,

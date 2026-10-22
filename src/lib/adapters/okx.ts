@@ -15,6 +15,7 @@ import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream
 import { makeServedIntervalMs } from '../served-interval.js';
 import { assembleServingWindow, historyPageEnd, withHistoryMeta, type HistoryBranch } from './_history-plan.js';
 import { SERVING_MAX_PAGES } from '../serving-windows.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://www.okx.com';
 const MAX_RETRIES = 1;
@@ -49,10 +50,13 @@ export function fromOKXInstId(instId: string): string {
 
 // ── Interval mapping ──
 
+// No 8h: OKX offers no 8H bar and answers code 51000 'Parameter bar error' on /market/candles and
+// /market/history-candles (tests/fixtures/adapter-history R/D captures; declared UNSERVABLE until
+// OPS-SERVED-CANDLE-TRUTH-W1 CH2), so getCandles refuses it (resolveVenueInterval) before any request.
 const INTERVAL_MAP: Record<string, string> = {
   '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m',
   '30m': '30m', '1h': '1H', '2h': '2H', '4h': '4H',
-  '8h': '8H', '12h': '12H', '1d': '1D',
+  '12h': '12H', '1d': '1D',
 };
 
 /** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms OKX fetches for `tf` (1H/1D notation; fully native). */
@@ -241,9 +245,9 @@ export class OKXAdapter implements ExchangeAdapter {
    */
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
     const instId = toOKXInstId(coin);
-    const bar = INTERVAL_MAP[interval] || '1H';
+    const bar = resolveVenueInterval(INTERVAL_MAP, interval, 'OKX');
     // REQUESTED step: the routing guard's unit only (kept byte-identical — it decides which branch serving reads).
-    const barMs = BAR_MS[interval] || 3_600_000;
+    const barMs = BAR_MS[interval]; // every mapped timeframe is a key (an unmapped one was refused above)
     // SERVED step: the module-local leaf (never tf-support — see _history-plan.ts). Every page span uses it.
     const servedStepMs = servedIntervalMs(interval) ?? barMs;
     const meta = (branch: HistoryBranch, substitutedNewest: boolean) =>

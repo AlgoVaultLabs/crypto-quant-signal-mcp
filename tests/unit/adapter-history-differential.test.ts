@@ -108,11 +108,19 @@ describe('(a) serving windows: head-complete where the retired page was stale, b
       for (const listingMs of [Date.UTC(2019, 0, 1), now - 0.3 * lookback, now - 0.7 * lookback, now - 0.95 * lookback, now - 1.05 * lookback]) {
         const r = await both(v, now, listingMs, 'BTC', tf, start);
         compared++;
-        const oldHead = r.old.err || served == null ? null : headGap(r.old.bars, served, start + r.shift, now + r.shift);
+        if (served == null) {
+          // OPS-SERVED-CANDLE-TRUTH-W1 CH2: the rewired adapter refuses a timeframe its map does not hold (OKX 8h)
+          // before any request. The retired body asked the venue, which rejected the bar.
+          expect(r.now.err, `${v} ${tf} ${label}`).toMatch(/^OKX does not serve the 8h timeframe/);
+          expect(r.now.requests, `${v} ${tf} ${label}: a refused read makes no request`).toBe(0);
+          expect(r.old.err, `${v} ${tf} ${label}: the retired body reached the venue`).not.toBeNull();
+          continue;
+        }
+        const oldHead = r.old.err ? null : headGap(r.old.bars, served, start + r.shift, now + r.shift);
         if (oldHead !== null && oldHead > HEAD_ALLOWANCE_BARS) {
           defects.add(`${v} ${tf} ${label}`);
           expect(r.now.err, `${v} ${tf} ${label}: the rewired read errs`).toBeNull();
-          const newHead = headGap(r.now.bars, served!, start + r.shift, now + r.shift);
+          const newHead = headGap(r.now.bars, served, start + r.shift, now + r.shift);
           expect(newHead, `${v} ${tf} ${label} listed ${listingMs}: the rewired page is head-complete`).not.toBeNull();
           expect(newHead!).toBeLessThanOrEqual(HEAD_ALLOWANCE_BARS);
           expect(r.now.requests).toBeLessThanOrEqual(SERVING_MAX_PAGES);
@@ -150,7 +158,7 @@ describe('(a′) routing: history keeps the retired boundary; serving routes by 
 
   it.each(cases)('history %s %s: retired == rewired at the RECENT_PAGE_CAP boundary', async (v, tf) => {
     const served = ADAPTERS[v].served(tf);
-    if (served == null || (v === 'OKX' && tf === '8h')) return;
+    if (served == null) return; // OKX 8h: refused before any request ((a) pins it)
     let compared = 0;
     for (const { k, now, start } of walk(v, tf, ADAPTERS[v].recentCap)) {
       const r = await both(v, now, Date.UTC(2019, 0, 1), 'BTC', tf, start, now);
@@ -168,7 +176,7 @@ describe('(a′) routing: history keeps the retired boundary; serving routes by 
   it.each(cases)('serving %s %s: never the history fallback, always head-complete, at the declared serving reach', async (v, tf) => {
     const served = ADAPTERS[v].served(tf);
     const reach = ADAPTERS[v].reach(tf);
-    if (served == null || reach == null || (v === 'OKX' && tf === '8h')) return;
+    if (served == null || reach == null) return; // OKX 8h: refused before any request ((a) pins it)
     const branches = new Set<string>();
     for (const { k, now, start } of walk(v, tf, reach)) {
       const r = await both(v, now, Date.UTC(2019, 0, 1), 'BTC', tf, start);
@@ -210,7 +218,7 @@ describe('(b)+(c) history windows: identical on non-violators, exactly the missi
     const from = now - depth * ADAPTERS[v].cap * served - 17_000; // off-grid
     const to = from + 2 * W * served;
     const r = await both(v, now, Date.UTC(2019, 0, 1), 'BTC', tf, from, to);
-    if (r.old.err || r.now.err) { expect(r.now.err).toBe(r.old.err); return; } // OKX/8h: the venue rejects the bar
+    if (r.old.err || r.now.err) { expect(r.now.err).toBe(r.old.err); return; } // a venue error is the retired body's error
     const inW = (bars: Candle[]) => bars.map((c) => c.time).filter((t) => t >= from + r.shift && t < to + r.shift);
     const oldIn = inW(r.old.bars), newIn = inW(r.now.bars);
     const facts = accountPage({ bars: r.now.bars.map((c) => ({ ts: c.time })), servedStepMs: served, from: from + r.shift, to: to + r.shift, nowMs: now + r.shift });

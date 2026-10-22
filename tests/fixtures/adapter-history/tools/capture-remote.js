@@ -12,10 +12,12 @@ const { EVAL_CANDLES } = D('scripts/directional-labeler.js');
 const TF_MS = D('lib/pfe-mae.js').TF_MS;
 const mod = D(`lib/adapters/${FILES[VENUE][0]}.js`);
 const served = (tf) => mod.servedIntervalMs(tf);
+// A timeframe the adapter does not map is refused before any request (OPS-SERVED-CANDLE-TRUTH-W1 CH2): never captured.
+const SERVED_TFS = tfs.CRON_TIMEFRAMES.filter((tf) => served(tf) != null);
 (async () => {
   if (MODE === '--urls') {
     const rows = [];
-    for (const tf of tfs.CRON_TIMEFRAMES) {
+    for (const tf of SERVED_TFS) {
       let url = null;
       globalThis.fetch = async (u) => { url = String(u); return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } }); };
       try { await new mod[FILES[VENUE][1]]().getCandles('BTC', tf, Date.now() - 1000); } catch { /* dry */ }
@@ -30,7 +32,7 @@ const served = (tf) => mod.servedIntervalMs(tf);
   const urls = Object.fromEntries(fs.readFileSync(path.join(DIR, 'urls.tsv'), 'utf8').trim().split('\n').map((l) => l.split('\t')));
   const pairs = [];
   const realNow = Date.now;
-  for (const tf of tfs.CRON_TIMEFRAMES) {
+  for (const tf of SERVED_TFS) {
     const m = man[tf]; const body = fs.readFileSync(path.join(DIR, 'b', tf), 'utf8');
     const s = served(tf), W = EVAL_CANDLES[tf];
     const mk = async (tag, from, to) => {

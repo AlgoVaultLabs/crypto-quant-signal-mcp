@@ -350,7 +350,8 @@ const TOOL_ENVELOPE_SITES: Array<[tool: string, file: string, sites: number]> = 
   ['get_trade_call (+ get_trade_signal alias)', 'src/tools/get-trade-call.ts', 1],
   ['get_market_regime', 'src/tools/get-market-regime.ts', 1],
   ['scan_funding_arb', 'src/tools/scan-funding-arb.ts', 2],
-  ['scan_trade_calls', 'src/tools/scan-trade-calls.ts', 3],
+  // OPS-SERVED-CANDLE-TRUTH-W1 CH2: + the up-front timeframe_unserved refusal.
+  ['scan_trade_calls', 'src/tools/scan-trade-calls.ts', 4],
   // SCAN-MARKET-REGIMES-W1-V2 CH2: six in-band refusals + the served envelope.
   ['scan_market_regimes', 'src/tools/scan-market-regimes.ts', 7],
   ['chat_knowledge', 'src/lib/chat-knowledge-formatter.ts', 1],
@@ -406,6 +407,14 @@ describe('(12) every live tool states its own auth state', () => {
     const r = await runScanTradeCall({ rankBy: 'not_a_lens' } as Parameters<typeof runScanTradeCall>[0], {
       tier: 'free', key: null, outcome: 'UNKNOWN',
     });
+    expect((r as { _algovault: { auth?: { outcome: string } } })._algovault.auth?.outcome).toBe('UNKNOWN');
+  });
+
+  it('scan_trade_calls renders auth on its hand-built timeframe_unserved envelope (OPS-SERVED-CANDLE-TRUTH-W1 CH2)', async () => {
+    const r = await runScanTradeCall({ exchange: 'OKX', timeframe: '8h' } as Parameters<typeof runScanTradeCall>[0], {
+      tier: 'free', key: null, outcome: 'UNKNOWN',
+    });
+    expect((r as { error?: string }).error).toBe('timeframe_unserved');
     expect((r as { _algovault: { auth?: { outcome: string } } })._algovault.auth?.outcome).toBe('UNKNOWN');
   });
 

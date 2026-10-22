@@ -996,7 +996,11 @@ export async function runVenueSeed(
   // ALGOVAULT_TF_SKIP_ENABLED=false disables the skip (isTimeframeFaithful → all true). seedExchange's own
   // InsufficientCandles/not-found catch stays as defence in depth.
   if (!isTimeframeFaithful(venueId, timeframe)) {
-    console.log(`[${ts()}] [${venueId}] tf=${timeframe} SKIP — unfaithful (adapter would coarsen ${timeframe}→${servedTimeframeLabel(venueId, timeframe)}); not seeded.`);
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH2: a timeframe the adapter does not map at all (OKX / BYBIT 8h) is skipped here too.
+    const served = servedTimeframeLabel(venueId, timeframe);
+    console.log(served === 'unmapped'
+      ? `[${ts()}] [${venueId}] tf=${timeframe} SKIP — unserved (${venueId} does not serve ${timeframe}); not seeded.`
+      : `[${ts()}] [${venueId}] tf=${timeframe} SKIP — unfaithful (adapter would coarsen ${timeframe}→${served}); not seeded.`);
     return { venueId, seeded: 0, skipped: 0, errors: 0, durationMs: Date.now() - startedAt, failed: false };
   }
   try {

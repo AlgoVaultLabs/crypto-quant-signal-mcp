@@ -811,22 +811,6 @@
    ]
   },
   {
-   "id": "BYBIT/8h/D",
-   "primary": "mac",
-   "agreeing": [
-    "mac",
-    "aoe-1"
-   ]
-  },
-  {
-   "id": "BYBIT/8h/R",
-   "primary": "mac",
-   "agreeing": [
-    "mac",
-    "aoe-1"
-   ]
-  },
-  {
    "id": "GATE/12h/D",
    "primary": "mac",
    "agreeing": [
@@ -1772,22 +1756,6 @@
   },
   {
    "id": "OKX/5m/R",
-   "primary": "mac",
-   "agreeing": [
-    "mac",
-    "aoe-1"
-   ]
-  },
-  {
-   "id": "OKX/8h/D",
-   "primary": "mac",
-   "agreeing": [
-    "mac",
-    "aoe-1"
-   ]
-  },
-  {
-   "id": "OKX/8h/R",
    "primary": "mac",
    "agreeing": [
     "mac",

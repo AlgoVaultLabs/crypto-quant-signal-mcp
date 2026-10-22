@@ -44,6 +44,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://api.hbdm.com';
 const MAX_RETRIES = 1;
@@ -206,7 +207,7 @@ export class HTXAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const contractCode = toHtxSymbol(coin);
-    const period = INTERVAL_MAP[interval] || '60min';
+    const period = resolveVenueInterval(INTERVAL_MAP, interval, 'HTX');
 
     const env = await htxGet<HtxKlineEnvelope>('/linear-swap-ex/market/history/kline', {
       contract_code: contractCode,

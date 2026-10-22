@@ -15,6 +15,7 @@ import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream
 import { makeServedIntervalMs } from '../served-interval.js';
 import { assembleServingWindow, historyPageEnd, withHistoryMeta, type HistoryBranch } from './_history-plan.js';
 import { SERVING_MAX_PAGES } from '../serving-windows.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://api.bitget.com';
 const MAX_RETRIES = 1;
@@ -179,9 +180,9 @@ export class BitgetAdapter implements ExchangeAdapter {
    */
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
     const symbol = toBitgetSymbol(coin);
-    const granularity = INTERVAL_MAP[interval] || '1h';
+    const granularity = resolveVenueInterval(INTERVAL_MAP, interval, 'BITGET');
     // REQUESTED step: the routing guard's unit only (kept byte-identical — it decides which branch serving reads).
-    const barMs = BAR_MS[interval] || 3_600_000;
+    const barMs = BAR_MS[interval]; // every mapped timeframe is a key (an unmapped one was refused above)
     // SERVED step: the module-local leaf (never tf-support — see _history-plan.ts). Every page span uses it.
     const servedStepMs = servedIntervalMs(interval) ?? barMs;
     const meta = (branch: HistoryBranch, substitutedNewest: boolean) =>

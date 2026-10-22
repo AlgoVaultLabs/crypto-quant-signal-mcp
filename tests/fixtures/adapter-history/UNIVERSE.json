@@ -319,12 +319,6 @@
    "requestedMs": 14400000
   },
   {
-   "pair": "BYBIT/8h",
-   "faithful": true,
-   "servedMs": 28800000,
-   "requestedMs": 28800000
-  },
-  {
    "pair": "BYBIT/12h",
    "faithful": true,
    "servedMs": 43200000,
@@ -677,12 +671,6 @@
    "faithful": true,
    "servedMs": 14400000,
    "requestedMs": 14400000
-  },
-  {
-   "pair": "OKX/8h",
-   "faithful": true,
-   "servedMs": 28800000,
-   "requestedMs": 28800000
   },
   {
    "pair": "OKX/12h",

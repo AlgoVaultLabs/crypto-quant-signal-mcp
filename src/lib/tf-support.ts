@@ -23,6 +23,7 @@
  */
 import type { ExchangeId } from '../types.js';
 import { TF_MS } from './pfe-mae.js';
+import { TIMEFRAMES } from './capabilities.js';
 import { servedIntervalMs as HL } from './adapters/hyperliquid.js';
 import { servedIntervalMs as BINANCE } from './adapters/binance.js';
 import { servedIntervalMs as BYBIT } from './adapters/bybit.js';
@@ -79,17 +80,36 @@ function tfSkipEnabled(): boolean {
 
 /**
  * Does `venue` serve `tf` faithfully (no coarser-than-2× substitution)? Pure; the seeder's proactive skip.
- * Fails OPEN (returns true) on an unknown `tf` or an unmapped pair — the seeder's existing
- * InsufficientCandles/not-found error-path skip is the defence-in-depth complement for genuinely-absent data.
+ * Fails OPEN (returns true) on an unknown `tf` or an unknown venue. A KNOWN `tf` the venue's adapter does not map is
+ * NOT faithful (OPS-SERVED-CANDLE-TRUTH-W1 CH2): the adapter refuses it before any request (`resolveVenueInterval`,
+ * TimeframeUnservedError), so the seeder skips it here rather than through the error path.
  * With the kill switch OFF (`ALGOVAULT_TF_SKIP_ENABLED=false`) returns true unconditionally (pre-wave).
  */
 export function isTimeframeFaithful(venue: ExchangeId, tf: string): boolean {
   if (!tfSkipEnabled()) return true;
   const requestedMs = TF_MS[tf];
   if (requestedMs == null) return true;
-  const servedMs = SERVED_INTERVAL_MS[venue]?.(tf);
-  if (servedMs == null) return true;
+  const lookup = SERVED_INTERVAL_MS[venue];
+  if (!lookup) return true;
+  const servedMs = lookup(tf);
+  if (servedMs == null) return false;
   return servedMs < FAITHFUL_MAX_RATIO * requestedMs;
+}
+
+/** Does `venue`'s adapter map `tf` at all? The tools' up-front `timeframe_unserved` refusal (get_trade_call,
+ *  scan_trade_calls) asks this, so a refused call makes no request and is never charged. An unknown venue is not
+ *  judged here: its own gate (assertVenueNotRetired, the param schema) answers it. */
+export function isTimeframeServed(venue: ExchangeId, tf: string): boolean {
+  const lookup = SERVED_INTERVAL_MS[venue];
+  return !lookup || lookup(tf) != null;
+}
+
+/** The product timeframes `venue` serves, in the product's order (capabilities.ts TIMEFRAMES): the
+ *  `served_timeframes_on_venue` list of a `timeframe_unserved` refusal. Derived from the adapter's own map, as
+ *  `resolveVenueInterval`'s list is. */
+export function servedTimeframes(venue: ExchangeId): string[] {
+  const lookup = SERVED_INTERVAL_MS[venue];
+  return lookup ? TIMEFRAMES.filter((tf) => lookup(tf) != null) : [...TIMEFRAMES];
 }
 
 /** The timeframes the cron seeder requests (1m is never cron-seeded). */

@@ -10,8 +10,14 @@
  *   REPORT class: front gap, C2 head gap, C4 holes, out-of-range bars, reach limits. They are measured for
  *     every pair and must EQUAL REACH.json. A venue that changes its reach reddens this test, and the JSON is
  *     updated consciously, never absorbed.
- *   UNSERVABLE (OAH-Q9): pairs the served lookup calls native but the venue will not serve. They are declared
- *     with a reason in UNSERVABLE.json and SKIPPED here. Any other dead pair fails the test.
+ *   UNSERVABLE (OAH-Q9): pairs the served lookup calls native but the venue will not serve, declared with a reason in
+ *     UNSERVABLE.json and SKIPPED here. Emptied in OPS-SERVED-CANDLE-TRUTH-W1 CH2: its two pairs (OKX/8h, BYBIT/8h)
+ *     left their adapters' maps. Any dead pair fails the test.
+ *   SERVED-MAP TRUTH (OPS-SERVED-CANDLE-TRUTH-W1 CH2): every timeframe an adapter's map holds has captured evidence
+ *     that the venue serves it — REACH.json for the cron timeframes, an S scenario for 1m — and the map the source
+ *     declares is the map the runtime lookup reads. A pair a venue will not serve leaves the map.
+ *   NO SILENT FALLBACK (OPS-SERVED-CANDLE-TRUTH-W1 CH2): no adapter falls back from an interval lookup
+ *     (tests/harness/interval-fallback-scan.ts). The gate is proven on a planted `|| '1h'`.
  *   S (OPS-SERVED-CANDLE-TRUTH-W1 CH1): every serving window the product asks for (src/lib/serving-windows.ts
  *     SERVING_WINDOWS) on every faithful (venue, tf), read with no endTime. The 13 replay venues replay SERVING.json;
  *     BITGET and OKX run on the synthetic venue. Each window must reach the venue's newest bar (head gap within
@@ -31,6 +37,7 @@ import { SERVING_MAX_PAGES } from '../../src/lib/serving-windows.js';
 import { servingWindowVerdict } from '../../src/lib/exchange-adapter.js';
 import { TIMEFRAMES } from '../../src/lib/capabilities.js';
 import { servingSpans } from '../harness/serving-spans.js';
+import { scanIntervalSource } from '../harness/interval-fallback-scan.js';
 
 const { replay, hlMarketListing } = vi.hoisted(() => ({
   replay: { venue: null as null | { answer(url: string, body?: string | null): unknown }, coin: null as null | string },
@@ -74,7 +81,7 @@ import * as phemex from '../../src/lib/adapters/phemex.js';
 import * as weex from '../../src/lib/adapters/weex.js';
 import * as whitebit from '../../src/lib/adapters/whitebit.js';
 import * as xt from '../../src/lib/adapters/xt.js';
-import { CRON_TIMEFRAMES, isTimeframeFaithful } from '../../src/lib/tf-support.js';
+import { CRON_TIMEFRAMES, isTimeframeFaithful, servedTimeframes } from '../../src/lib/tf-support.js';
 import { TF_MS } from '../../src/lib/pfe-mae.js';
 import type { ExchangeAdapter, ExchangeId } from '../../src/types.js';
 
@@ -211,12 +218,107 @@ describe('adapter history contract — measured against the pinned baseline', ()
   });
 });
 
+const ADAPTER_DIR = path.join(ROOT, 'src/lib/adapters');
+const scans = fs.readdirSync(ADAPTER_DIR).filter((f) => f.endsWith('.ts')).sort()
+  .map((f) => scanIntervalSource(fs.readFileSync(path.join(ADAPTER_DIR, f), 'utf8'), f));
+
 describe('adapter history contract — structure', () => {
   it('no adapter (and no history planner) imports tf-support: the adapter IS the leaf (OAH-Q3; a cycle returns the requested step)', () => {
     const dir = path.join(ROOT, 'src/lib/adapters');
     const offenders = fs.readdirSync(dir).filter((f) => f.endsWith('.ts'))
       .filter((f) => /from\s+['"][./]*(lib\/)?tf-support(\.js)?['"]|require\(\s*['"][./]*(lib\/)?tf-support/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
     expect(offenders).toEqual([]);
+  });
+
+  it('every venue adapter resolves its timeframe once, through resolveVenueInterval, on its own timeframe map (CH2)', () => {
+    const venueFiles = scans.filter((s) => !s.file.startsWith('_'));
+    expect(venueFiles.length).toBe(17); // the 15 promoted venues and the two retired ones (BITMART, EDGEX)
+    for (const s of venueFiles) {
+      expect(s.resolvedMaps.map((m) => m.name), s.file).toHaveLength(1);
+      expect(s.timeframeMaps, s.file).toContain(s.resolvedMaps[0].name);
+      expect(s.resolvedMaps[0].keys.length, s.file).toBeGreaterThan(0);
+    }
+  });
+
+  it('a requested-step table read without a fallback (BAR_MS) holds every timeframe its interval map serves (CH2)', () => {
+    const withSteps = scans.filter((s) => s.mapKeys.BAR_MS);
+    expect(withSteps.map((s) => s.file)).toEqual(['bitget.ts', 'edgex.ts', 'okx.ts']);
+    for (const s of withSteps) {
+      const resolved = s.resolvedMaps[0].keys;
+      expect(resolved.filter((k) => !s.mapKeys.BAR_MS.includes(k)), s.file).toEqual([]);
+    }
+  });
+
+  it('no adapter falls back from an interval lookup: an unmapped timeframe is refused, never fetched as a default bar (CH2)', () => {
+    expect(scans.flatMap((s) => s.fallbacks)).toEqual([]);
+  });
+
+  it('the no-fallback gate can fail: one planted `|| \'1h\'` reddens it, and so does each pre-CH2 form', () => {
+    const okxSrc = fs.readFileSync(path.join(ADAPTER_DIR, 'okx.ts'), 'utf8');
+    const call = "resolveVenueInterval(INTERVAL_MAP, interval, 'OKX')";
+    expect(okxSrc.split(call)).toHaveLength(2);
+    expect(scanIntervalSource(okxSrc.replace(call, `${call} || '1h'`), 'okx.ts').fallbacks).toHaveLength(1);
+    expect(scanIntervalSource(okxSrc.replace(call, "INTERVAL_MAP[interval] || '1h'"), 'okx.ts').fallbacks).toHaveLength(1);
+    expect(scanIntervalSource("const STEP_MAP = { '1h': 60, '4h': 240 };\nconst step = STEP_MAP[interval] ?? 60;", 'x.ts').fallbacks).toHaveLength(1);
+    expect(scanIntervalSource("const BAR_MS = { '1h': 3600000 };\nconst ms = BAR_MS[interval] ? BAR_MS[interval] : 3600000;", 'x.ts').fallbacks).toHaveLength(1);
+  });
+});
+
+describe('adapter history contract — served-map truth (CH2): every mapped timeframe has captured evidence', () => {
+  const FILE: Record<string, string> = {
+    ASTER: 'aster.ts', BINANCE: 'binance.ts', BINGX: 'bingx.ts', BITGET: 'bitget.ts', BYBIT: 'bybit.ts', GATE: 'gateio.ts',
+    HL: 'hyperliquid.ts', HTX: 'htx.ts', KUCOIN: 'kucoin.ts', MEXC: 'mexc.ts', OKX: 'okx.ts', PHEMEX: 'phemex.ts',
+    WEEX: 'weex.ts', WHITEBIT: 'whitebit.ts', XT: 'xt.ts',
+  };
+  /** Venue tokens for timeframes no product surface can request (capabilities.TIMEFRAMES is every tool's enum). */
+  const NON_PRODUCT_KEYS: Record<string, string[]> = { BINGX: ['6h'], HL: ['3d', '1w', '1M'] };
+  /** Mapped product timeframes with no captured body: 1m is outside the R/D universe (cron timeframes, OAH-Q9), and
+   *  BITGET/OKX run S on the synthetic venue. Measured live in the wave's CH2 probe instead (status.md). */
+  const UNEVIDENCED: Record<string, string> = {
+    'BITGET/1m': '1m is not a cron timeframe (no R/D capture); BITGET runs S on the synthetic venue',
+    'OKX/1m': '1m is not a cron timeframe (no R/D capture); OKX runs S on the synthetic venue',
+  };
+  const keysOf = (v: string) => scans.find((s) => s.file === FILE[v])!.resolvedMaps[0].keys;
+
+  it('names every promoted venue\'s adapter file', () => {
+    expect(Object.keys(FILE).sort()).toEqual([...universe.promoted].sort());
+  });
+
+  it('the map each adapter declares IS the map the runtime lookup reads (servedTimeframes)', () => {
+    for (const v of universe.promoted) {
+      const keys = keysOf(v);
+      expect(TIMEFRAMES.filter((tf) => keys.includes(tf)), v).toEqual(servedTimeframes(v as ExchangeId));
+      expect(keys.filter((k) => !TIMEFRAMES.includes(k)).sort(), `${v}: a venue-only timeframe token`).toEqual([...(NON_PRODUCT_KEYS[v] ?? [])].sort());
+    }
+  });
+
+  it('every mapped cron timeframe has REACH evidence that the venue served it, and REACH holds no unmapped pair', () => {
+    let judged = 0;
+    for (const v of universe.promoted) {
+      const mapped = CRON_TIMEFRAMES.filter((tf) => keysOf(v).includes(tf)).map((tf) => `${v}/${tf}`);
+      judged += mapped.length;
+      const reached = Object.keys(reachPinned).filter((p) => p.startsWith(`${v}/`));
+      expect([...reached].sort(), v).toEqual([...mapped].sort());
+      for (const p of mapped) {
+        const r = (reachPinned as Record<string, { R: { returned: number; emptyWindow: boolean } }>)[p];
+        expect(r.R.returned > 0 && !r.R.emptyWindow, `${p}: the recent page served no bar`).toBe(true);
+      }
+    }
+    expect(judged).toBe(Object.keys(reachPinned).length); // every REACH pair was judged (vacuity guard)
+    expect(judged).toBeGreaterThan(100);
+  });
+
+  it('every other mapped product timeframe has a served S scenario, except EXACTLY the declared unevidenced pairs', () => {
+    const unevidenced: string[] = [];
+    let evidenced = 0;
+    for (const v of universe.promoted) {
+      for (const tf of TIMEFRAMES.filter((t) => keysOf(v).includes(t) && !(CRON_TIMEFRAMES as readonly string[]).includes(t))) {
+        const served = serving.scenarios.some((s) => s.venue === v && s.tf === tf && !s.error && s.output.length > 0);
+        if (served) evidenced++; else unevidenced.push(`${v}/${tf}`);
+      }
+    }
+    expect(unevidenced.sort()).toEqual(Object.keys(UNEVIDENCED).sort());
+    expect(evidenced).toBe(universe.promoted.length - Object.keys(UNEVIDENCED).length); // 1m on every replay venue
   });
 });
 

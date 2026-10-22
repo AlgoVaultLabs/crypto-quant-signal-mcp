@@ -30,3 +30,22 @@ describe('runVenueSeed — attempt heartbeat stamped BEFORE the faithful-skip gu
     expect(res.failed).toBe(false); // a by-design skip is not a failure
   });
 });
+
+describe('runVenueSeed — a timeframe the adapter does not map is skipped by the guard, not the error path (OPS-SERVED-CANDLE-TRUTH-W1 CH2)', () => {
+  it.each(['OKX', 'BYBIT'] as const)('%s 8h: one counted "unserved" skip line, no seed work, no error', async (venue) => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await runVenueSeed(venue, { timeframe: '8h', top: 10, idempotencyWindow: 0, restrictedCoins: null });
+      expect(res).toMatchObject({ venueId: venue, seeded: 0, skipped: 0, errors: 0, failed: false });
+      const lines = log.mock.calls.map((c) => String(c[0]));
+      expect(lines.filter((l) => l.includes(`[${venue}] tf=8h SKIP — unserved (${venue} does not serve 8h); not seeded.`))).toHaveLength(1);
+      expect(lines.some((l) => l.includes('unfaithful'))).toBe(false);
+      expect(err).not.toHaveBeenCalled();
+      expect(recordSeedHeartbeat).toHaveBeenCalledWith(venue, '8h');
+    } finally {
+      log.mockRestore();
+      err.mockRestore();
+    }
+  });
+});

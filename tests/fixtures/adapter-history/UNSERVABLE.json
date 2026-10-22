@@ -1,16 +1,5 @@
 {
- "wave": "OPS-ADAPTER-HISTORY-ANCHOR-W1",
- "note": "OAH-Q9: pairs the served lookup reports as native but the venue does not serve. SKIPPED_UNSERVABLE in the contract and the canary. No served-map edit in this wave; the served-map truth moves in OPS-SERVED-CANDLE-TRUTH-W1. Evidence: the R and D scenarios of each pair in its venue fixture, agreeing across vantages in VANTAGES.json.",
- "pairs": [
-  {
-   "pair": "OKX/8h",
-   "signature": "venue-rejects-interval",
-   "reason": "okx.ts maps 8h to '8H'; OKX offers no 8H bar and answers code 51000 'Parameter bar error' on /market/candles and /market/history-candles, so getCandles throws"
-  },
-  {
-   "pair": "BYBIT/8h",
-   "signature": "venue-returns-empty",
-   "reason": "bybit.ts maps 8h to '480'; Bybit answers retCode 0 with an empty list for interval 480, so getCandles returns []"
-  }
- ]
+ "wave": "OPS-SERVED-CANDLE-TRUTH-W1",
+ "note": "Emptied in OPS-SERVED-CANDLE-TRUTH-W1 CH2. Its two pairs (OKX/8h: code 51000; BYBIT/8h: an empty list) left their adapters' interval maps, so getCandles refuses them with TimeframeUnservedError before any request and isTimeframeFaithful reports them unfaithful; their R/D captures left the fixtures with them (the last tree holding them: 809301a8). A pair the venue will not serve is removed from the adapter map, never declared here: the contract suite's served-map truth test fails on a mapped timeframe with no captured evidence. The file stays because the live canary reads it (adapter-history-contiguity --expect {reach, unservable}).",
+ "pairs": []
 }

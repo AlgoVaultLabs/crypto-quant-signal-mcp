@@ -39,6 +39,7 @@ import { getExchangeTopAssetsWithVolume } from './exchange-universe.js';
 // test seam keeps its import path.
 import { applyLiquidityFloor, applyRankEcho, _setLiquidityMapForTest } from './scan-shared.js';
 import { PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
+import { SCAN_TIMEFRAME_DEFAULT, SCAN_EXCHANGE_DEFAULT } from './tool-param-schema.js';
 import { getRankedUniverse, type RankedAsset } from './rank-metrics.js';
 import { resolveRankBy, type RankBy } from './rank-constants.js';
 import type { OiWindow, OiBasis } from './oi-snapshots.js';
@@ -340,8 +341,10 @@ function clampInt(n: number, lo: number, hi: number, def: number): number {
  */
 export async function scanTradeCalls(params: ScanTradeCallsParams): Promise<ScanTradeCallsResult> {
   const topN = clampInt(params.topN ?? 20, 1, 100, 20);
-  const timeframe = params.timeframe ?? '15m';
-  const exchange = params.exchange ?? 'BINANCE';
+  // The schema's defaults (tool-param-schema.ts), so the tool's up-front `timeframe_unserved` refusal judges the same
+  // (exchange, timeframe) the scan runs (OPS-SERVED-CANDLE-TRUTH-W1 CH2).
+  const timeframe = params.timeframe ?? SCAN_TIMEFRAME_DEFAULT;
+  const exchange = params.exchange ?? SCAN_EXCHANGE_DEFAULT;
   const minConfidence = params.minConfidence;
   const includeHolds = params.includeHolds ?? false;
   const limit = clampInt(params.limit ?? 10, 1, 100, 10);

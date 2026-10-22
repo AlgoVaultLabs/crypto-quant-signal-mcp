@@ -28,6 +28,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://pro.edgex.exchange';
 const MAX_RETRIES = 1;
@@ -167,10 +168,11 @@ export class EdgeXAdapter implements ExchangeAdapter {
   }
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
+    // Resolved before the contract lookup: an unserved timeframe is refused before any request.
+    const klineType = resolveVenueInterval(INTERVAL_MAP, interval, 'EDGEX');
+    const barMs = BAR_MS[interval]; // keyed exactly as INTERVAL_MAP
     const contractId = await toEdgeXContractId(coin);
     if (!contractId) return [];
-    const klineType = INTERVAL_MAP[interval] || 'HOUR_1';
-    const barMs = BAR_MS[interval] || 3_600_000;
 
     // edgeX getKline requires explicit from + to (ms). startTime is the
     // floor of the window; cap `to` at now (or the caller's endTime bound,

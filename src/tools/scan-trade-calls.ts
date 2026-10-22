@@ -27,6 +27,8 @@ import {
 } from '../lib/trade-call-scanner.js';
 import { checkQuota, trackCall, getRequestSessionId } from '../lib/license.js';
 import { assertVenueNotRetired } from '../lib/venue-store.js';
+import { TimeframeUnservedError, buildTimeframeUnservedPayload } from '../lib/errors.js';
+import { isTimeframeServed, servedTimeframes } from '../lib/tf-support.js';
 import { formatScanReceipts, type ScanReceipts } from '../lib/receipts.js';
 import { getReceiptTrackRecord } from '../lib/receipts-track-record.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
@@ -213,6 +215,13 @@ export interface ScanInvalidRankResponse {
   _algovault: { tool: 'scan_trade_calls'; version: string; session_id: string | null };
 }
 
+/** OPS-SERVED-CANDLE-TRUTH-W1 CH2: the venue does not serve the timeframe (OKX / BYBIT 8h). Returned UP FRONT —
+ *  before quota, scan or charge — so N cells never each error on it. The same `timeframe_unserved` code and field
+ *  names as get_trade_call (buildTimeframeUnservedPayload) and scan_market_regimes. */
+export interface ScanTimeframeUnservedResponse extends ReturnType<typeof buildTimeframeUnservedPayload> {
+  _algovault: { tool: 'scan_trade_calls'; version: string; session_id: string | null };
+}
+
 /** REFERRAL-INPRODUCT-NUDGE-W1 trigger (b): min # live (non-HOLD) calls in one scan
  *  to count as a "multi-hit" referral moment (Step-0; scan default limit is 10). */
 const SCAN_REFERRAL_MIN_HITS = 3;
@@ -233,7 +242,7 @@ const TRACK_RECORD_POINTER =
 export async function runScanTradeCall(
   params: ScanTradeCallsParams,
   license: LicenseInfo,
-): Promise<ScanTradeCallsResponse | ScanQuotaExhaustedResponse | ScanInvalidRankResponse> {
+): Promise<ScanTradeCallsResponse | ScanQuotaExhaustedResponse | ScanInvalidRankResponse | ScanTimeframeUnservedResponse> {
   // SCAN-RANKBY-W1: reject an unrecognized lens BEFORE quota/scan/charge. Only a
   // NON-EMPTY unknown token is invalid — omitted/empty (direct + x402 callers that
   // don't apply the Zod default) means the default 'oi', NOT an error.
@@ -255,6 +264,18 @@ export async function runScanTradeCall(
   // Zod cannot catch this. Thrown deliberately (named, not an adapter timeout) — same as the other
   // two venue tools.
   await assertVenueNotRetired(params.exchange);
+
+  // OPS-SERVED-CANDLE-TRUTH-W1 CH2: a timeframe the venue does not serve is refused here, before quota, scan or
+  // charge, for the same (exchange, timeframe) the scanner would run (the schema's defaults).
+  const scanExchange = params.exchange ?? SCAN_EXCHANGE_DEFAULT;
+  const scanTimeframe = params.timeframe ?? SCAN_TIMEFRAME_DEFAULT;
+  if (!isTimeframeServed(scanExchange, scanTimeframe)) {
+    const unserved = new TimeframeUnservedError({ exchange: scanExchange, timeframe: scanTimeframe, servedTimeframes: servedTimeframes(scanExchange) });
+    return {
+      ...buildTimeframeUnservedPayload(unserved),
+      _algovault: withAuthState({ tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null }, license),
+    };
+  }
 
   const refCode = referralCodeForKey(license.key);
   const entry = checkQuota(license);

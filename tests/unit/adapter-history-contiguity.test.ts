@@ -152,9 +152,10 @@ describe('probeAll — request shape and pacing', () => {
     expect(res.map((r) => r.venue)).toEqual(['BINANCE', 'BITGET']);
   });
   it('never calls the venue on an UNSERVABLE pair', async () => {
+    // UNSERVABLE.json is empty since OPS-SERVED-CANDLE-TRUTH-W1 CH2; the --expect contract still carries the list.
     const get = vi.fn();
     const res = await probeAll({
-      venues: ['OKX'], expected, nowMs: () => NOW, getCandles: get, served: () => 8 * H, timeframes: () => ['8h'], pace: async () => {},
+      venues: ['X'], expected: exp1, nowMs: () => NOW, getCandles: get, served: () => 8 * H, timeframes: () => ['8h'], pace: async () => {},
     });
     expect(get).not.toHaveBeenCalled();
     expect(res[0].verdict).toBe('SKIPPED');
@@ -186,11 +187,12 @@ describe('probeAll end-to-end through the adapters on the synthetic venue, again
     pace: async () => {},
   });
 
-  it('the shipped adapters are PASS on every pair; OKX/8h is SKIPPED (vacuity: ≥ 19 pairs judged)', async () => {
+  it('the shipped adapters are PASS on every pair; OKX/8h is never probed (unserved since CH2) (vacuity: ≥ 19 pairs judged)', async () => {
     const res = await runWith(shipped);
     const bad = res.filter((r) => r.verdict !== 'PASS' && r.verdict !== 'SKIPPED').map((r) => `${r.venue}/${r.tf} ${r.verdict} ${r.reasons.join('; ')}`);
     expect(bad).toEqual([]);
-    expect(res.filter((r) => r.verdict === 'SKIPPED').map((r) => `${r.venue}/${r.tf}`)).toEqual(['OKX/8h']);
+    expect(res.filter((r) => r.verdict === 'SKIPPED').map((r) => `${r.venue}/${r.tf}`)).toEqual([]);
+    expect(res.some((r) => r.venue === 'OKX' && r.tf === '8h')).toBe(false);
     expect(res.filter((r) => r.verdict === 'PASS').length).toBeGreaterThanOrEqual(19);
     expect(res.every((r) => r.verdict === 'SKIPPED' || r.deep?.meta === true)).toBe(true);
     expect(aggregate(res)).toBe('PASS');

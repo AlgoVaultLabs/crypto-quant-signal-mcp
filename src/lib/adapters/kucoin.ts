@@ -32,6 +32,7 @@ import type {
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://api-futures.kucoin.com';
 const MAX_RETRIES = 1;
@@ -158,7 +159,7 @@ export class KuCoinAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toKucoinSymbol(coin);
-    const granularity = INTERVAL_MAP[interval] || 60;
+    const granularity = resolveVenueInterval(INTERVAL_MAP, interval, 'KUCOIN');
     // KuCoin from/to in milliseconds.
     const from = startTime;
     const to = Date.now();

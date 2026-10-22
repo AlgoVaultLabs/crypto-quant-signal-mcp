@@ -38,6 +38,7 @@ import type {
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://contract.mexc.com';
 const MAX_RETRIES = 1;
@@ -164,7 +165,7 @@ export class MEXCAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toMexcSymbol(coin);
-    const mexcInterval = INTERVAL_MAP[interval] || 'Min60';
+    const mexcInterval = resolveVenueInterval(INTERVAL_MAP, interval, 'MEXC');
     // MEXC uses seconds-since-epoch for start/end query params (not ms).
     const startSec = Math.floor(startTime / 1000);
     const endSec = Math.floor(Date.now() / 1000);

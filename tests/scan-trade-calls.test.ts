@@ -28,6 +28,7 @@ import {
   type ScanQuotaExhaustedResponse,
 } from '../src/tools/scan-trade-calls.js';
 import { PROMOTED_VENUE_IDS } from '../src/lib/capabilities.js';
+import { servedTimeframes } from '../src/lib/tf-support.js';
 import { FREE_MONTHLY_CALLS } from '../src/lib/plans.js';
 
 const mockUniverse = vi.mocked(getExchangeTopAssetsWithVolume);
@@ -246,5 +247,39 @@ describe('runScanTradeCall — response shape / forbidden keys', () => {
     expect(json).not.toMatch(/"(outcome_return_pct|outcome_price|price_at_signal)"\s*:/);
     expect(json).not.toMatch(/"(reasoning|indicators|price)"\s*:/);
     expect(json).toContain('"tool":"scan_trade_calls"'); // compact JSON.stringify (no spaces)
+  });
+});
+
+describe('runScanTradeCall — timeframe_unserved up front (OPS-SERVED-CANDLE-TRUTH-W1 CH2)', () => {
+  type Unserved = { error: string; code: string; exchange: string; timeframe: string; message: string; served_timeframes_on_venue: string[]; suggested_action: string; _algovault: { tool: string } };
+
+  it.each(['OKX', 'BYBIT'])('%s 8h: refused before the universe read, the scan and the charge (no N cells erroring)', async (exchange) => {
+    const calls = { n: 0 };
+    _setScanScorerForTest(specScorer({}, calls));
+    const key = `scan-unserved-${exchange}`;
+    const r = (await runScanTradeCall({ timeframe: '8h', exchange, limit: 10 }, starter(key))) as unknown as Unserved;
+    expect(r.error).toBe('timeframe_unserved');
+    expect(r.code).toBe('timeframe_unserved');
+    expect(r.exchange).toBe(exchange);
+    expect(r.timeframe).toBe('8h');
+    expect(r.served_timeframes_on_venue).toEqual(servedTimeframes(exchange as never));
+    expect(r.served_timeframes_on_venue).not.toContain('8h');
+    expect(r.served_timeframes_on_venue).toContain('4h');
+    expect(r.message).toBe(`${exchange} does not serve the 8h timeframe. It serves: ${r.served_timeframes_on_venue.join(', ')}.`);
+    expect(r.suggested_action).toContain('ask another exchange for 8h');
+    expect(r._algovault.tool).toBe('scan_trade_calls');
+    expect(calls.n).toBe(0);
+    expect(mockUniverse).not.toHaveBeenCalled();
+    // control on the same key: an all-HOLD scan charges exactly 1, so the refusal charged nothing
+    const ok = await runScanTradeCall({ timeframe: '4h', exchange, limit: 10 }, starter(key));
+    if (isExhausted(ok) || 'error' in ok) throw new Error(`control scan refused: ${JSON.stringify(ok)}`);
+    expect(ok._algovault.quota.used).toBe(1);
+    expect(calls.n).toBeGreaterThan(0);
+  });
+
+  it('the refusal judges the scanner\'s own default exchange when none is given (BINANCE serves 8h: no refusal)', async () => {
+    _setScanScorerForTest(specScorer({}));
+    const r = await runScanTradeCall({ timeframe: '8h', limit: 10 }, starter('scan-unserved-default'));
+    expect('error' in r).toBe(false);
   });
 });

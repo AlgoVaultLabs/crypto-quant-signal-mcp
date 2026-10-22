@@ -18,6 +18,7 @@ import { type WeightClass, WeightBudgetSkipError } from '../upstream-weight-budg
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { coalescedCache } from '../coalesced-cache.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://api.hyperliquid.xyz/info';
 const MAX_RETRIES = 1;
@@ -387,6 +388,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   // `_dex` (here and below) is part of the shared ExchangeAdapter signature and is IGNORED: the market is HL's to
   // name, resolved per request by resolveHlMarket (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1). No caller chooses it.
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
+    // HL's token IS the timeframe, so the lookup only refuses one HL does not serve — before the market listing read.
+    resolveVenueInterval(INTERVAL_MS, interval, 'HL');
     const market = await resolveHlMarket(coin);
     if (market === null) return []; // HL lists the coin nowhere: no request, an empty series
     // OPS-HL-SEED-LOAD-W1: bound the fetch with endTime when given. Outcome

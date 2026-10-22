@@ -34,6 +34,7 @@ import type {
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://api-cloud-v2.bitmart.com';
 const MAX_RETRIES = 1; // TIMEOUT_MS now lives in VENUE_FETCH_CONFIGS.BITMART (timeoutMs: 4000)
@@ -143,7 +144,7 @@ export class BitmartAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toBitmartSymbol(coin);
-    const step = STEP_MAP[interval] ?? 60;
+    const step = resolveVenueInterval(STEP_MAP, interval, 'BITMART');
     // Bitmart kline uses start_time + end_time WINDOW (limit not honored).
     // Compute a generous window from startTime → now.
     const startSec = Math.floor(startTime / 1000);

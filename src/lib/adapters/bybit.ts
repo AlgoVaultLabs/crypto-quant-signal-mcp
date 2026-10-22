@@ -13,6 +13,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://api.bybit.com';
 const MAX_RETRIES = 1;
@@ -39,11 +40,13 @@ export function fromBybitSymbol(symbol: string): string {
   return base;
 }
 
-// Map our intervals to Bybit kline intervals
+// Map our intervals to Bybit kline intervals. No 8h: Bybit answers retCode 0 with an EMPTY list for interval 480
+// (tests/fixtures/adapter-history R/D captures; declared UNSERVABLE until OPS-SERVED-CANDLE-TRUTH-W1 CH2), so the
+// venue does not serve it and getCandles refuses it (resolveVenueInterval) instead of returning [].
 const INTERVAL_MAP: Record<string, string> = {
   '1m': '1', '3m': '3', '5m': '5', '15m': '15',
   '30m': '30', '1h': '60', '2h': '120', '4h': '240',
-  '8h': '480', '12h': '720', '1d': 'D',
+  '12h': '720', '1d': 'D',
 };
 
 /** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms Bybit fetches for `tf` (bare number = minutes, D = 1d; native). */
@@ -105,7 +108,7 @@ export class BybitAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toBybitSymbol(coin);
-    const bybitInterval = INTERVAL_MAP[interval] || '60';
+    const bybitInterval = resolveVenueInterval(INTERVAL_MAP, interval, 'BYBIT');
 
     const data = await bybitGet<{ list: string[][] }>('/v5/market/kline', {
       category: 'linear',

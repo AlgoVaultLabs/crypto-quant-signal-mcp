@@ -35,6 +35,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://fapi.xt.com';
 const MAX_RETRIES = 1;
@@ -132,7 +133,7 @@ export class XtAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toXtSymbol(coin);
-    const xtInterval = INTERVAL_MAP[interval] || '1h';
+    const xtInterval = resolveVenueInterval(INTERVAL_MAP, interval, 'XT');
 
     const env = await xtGet<XtEnvelope<XtKlineRow[]>>('/future/market/v1/public/q/kline', {
       symbol,

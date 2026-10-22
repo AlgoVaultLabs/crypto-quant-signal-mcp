@@ -472,6 +472,53 @@ export function buildStaleUpstreamWindowPayload(err: StaleUpstreamWindowError): 
 }
 
 /**
+ * OPS-SERVED-CANDLE-TRUTH-W1 CH2. The venue does not serve `timeframe` at all: its adapter's interval map has no entry
+ * for it (src/lib/adapters/_interval.ts `resolveVenueInterval`). Thrown BEFORE any request. Until this wave sixteen
+ * adapter sites turned an unmapped timeframe into a request for their default bar (`|| '1h'`), and OKX / BYBIT mapped 8h to a
+ * bar the venue refuses (OKX code 51000) or answers empty (Bybit). get_trade_call and scan_trade_calls refuse it up
+ * front with the `timeframe_unserved` code scan_market_regimes already uses.
+ */
+export class TimeframeUnservedError extends Error {
+  readonly code = 'timeframe_unserved' as const;
+  readonly exchange: string;
+  readonly timeframe: string;
+  /** The timeframes the venue does serve, in the product's order. */
+  readonly servedTimeframes: string[];
+
+  constructor(args: { exchange: string; timeframe: string; servedTimeframes: string[] }) {
+    super(`${args.exchange} does not serve the ${args.timeframe} timeframe. It serves: ${args.servedTimeframes.join(', ')}.`);
+    this.exchange = args.exchange;
+    this.timeframe = args.timeframe;
+    this.servedTimeframes = args.servedTimeframes;
+    Object.setPrototypeOf(this, TimeframeUnservedError.prototype);
+  }
+}
+
+/** Serialize a `TimeframeUnservedError` to its MCP tool-content payload: the same `code` and field names as
+ *  scan_market_regimes' refusal (src/tools/scan-market-regimes.ts). */
+export function buildTimeframeUnservedPayload(err: TimeframeUnservedError): {
+  error: 'timeframe_unserved';
+  code: 'timeframe_unserved';
+  message: string;
+  exchange: string;
+  timeframe: string;
+  served_timeframes_on_venue: string[];
+  suggested_action: string;
+} {
+  return {
+    error: err.code,
+    code: err.code,
+    message: err.message,
+    exchange: err.exchange,
+    timeframe: err.timeframe,
+    served_timeframes_on_venue: err.servedTimeframes,
+    suggested_action: err.servedTimeframes.length
+      ? `Ask ${err.exchange} for one of ${err.servedTimeframes.join(', ')}, or ask another exchange for ${err.timeframe}.`
+      : `Ask another exchange for ${err.timeframe}.`,
+  };
+}
+
+/**
  * Map of which exchanges to suggest as fallbacks when one is rate-limited.
  * Used by the MCP tool handler to populate the `suggestion` field of the
  * structured error response.

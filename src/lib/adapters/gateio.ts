@@ -29,6 +29,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { resolveVenueInterval } from './_interval.js';
 
 const BASE_URL = 'https://api.gateio.ws';
 const MAX_RETRIES = 1;
@@ -124,7 +125,7 @@ export class GateAdapter implements ExchangeAdapter {
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const contract = toGateSymbol(coin);
-    const gateInterval = INTERVAL_MAP[interval] || '1h';
+    const gateInterval = resolveVenueInterval(INTERVAL_MAP, interval, 'GATE');
 
     const raw = await gateGet<GateKline[]>('/api/v4/futures/usdt/candlesticks', {
       contract,
