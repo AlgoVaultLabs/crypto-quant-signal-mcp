@@ -184,7 +184,11 @@ describe('single-derivation: every surface projects from ONE rule', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(resolve(here, '../../src/lib/performance-db.ts'), 'utf8');
     const proj = src.slice(src.indexOf('const STATS_COL_PROJECTION'));
-    expect(proj.slice(0, proj.indexOf('\n'))).toContain('mae_return_pct');
+    const line = proj.slice(0, proj.indexOf('\n'));
+    expect(line).toContain('mae_return_pct');
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH3: the scoring-exclusion predicate reads these; `id` is what an `ids` row matches.
+    const cols = line.slice(line.indexOf("'") + 1, line.lastIndexOf("'")).split(',').map((c) => c.trim());
+    for (const c of ['id', 'coin', 'exchange', 'timeframe', 'created_at']) expect(cols, c).toContain(c);
 
     // Prove WHY: a row missing mae_return_pct is NOT detected as frozen.
     const projectionless = { signal: 'BUY', pfe_return_pct: 0 } as PfeScorable;
