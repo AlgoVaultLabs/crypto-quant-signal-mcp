@@ -144,6 +144,7 @@ describe('budget (ruling Q1)', () => {
   it('the repo manifest declares the ruled caps', () => {
     const caps = loadBudget();
     expect(caps['status.md']).toBe(40000);
+    expect(caps['AOE-status.md']).toBe(40000);
     expect(caps['CLAUDE.md']).toBe(31041);
     const keys = Object.keys(caps);
     const rules = keys.filter((k) => k.startsWith('Claude files/rules/'));

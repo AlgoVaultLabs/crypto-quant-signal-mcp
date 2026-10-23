@@ -132,7 +132,7 @@ export function cutCell(s, max) {
 
 // ── vault + layout ────────────────────────────────────────────────────────────
 
-/** The vault root, projected from the one declared vault path (as scripts/session-budget.mjs does). */
+/** The vault root, projected from the one declared vault path. */
 export function vaultRoot(env = process.env) {
   const lib = join(REPO, 'scripts', 'lib', 'system-map-path.sh');
   if (!existsSync(lib)) indeterminate(`the vault path SoT is missing: ${lib}`);

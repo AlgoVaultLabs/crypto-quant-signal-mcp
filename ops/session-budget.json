@@ -1,29 +1,9 @@
 {
-  "_doc": "OPS-SESSION-BUDGET-W1 (cut down by -R2) — every value scripts/session-budget.mjs (the one-wave gate + the compact line) and the installer's session keys read. R2 removed the cold-cache hold and the meter, and with them every key only they read (cold_cache.*, prices, the readout, backfill and skill-census keys); Claude Code's /usage is the scoreboard.",
-
-  "window_tokens": 250000,
-  "window_reason": "autoCompactWindow the installer writes into ~/.claude/settings.json. Auto-compaction fires near window - 33k (measured 466,299-469,623 on a 500k window, 11 events, W1 R0).",
-
-  "dispatch": {
-    "regex": "^\\s*Read Prompt/([^\\s]+?)\\.md",
-    "regex_reason": "The spec's [^ ]+ also matches a newline, so a prompt ending one line in .md and the next in Prompt/x.md named a wave spanning both; [^\\s]+? stops at the first .md.",
-    "base_strip": "-(?:V|R)\\d+$",
-    "base_strip_reason": "A -V2 or -R2 spec is a later dispatch of the same wave (ruling Q6; Prompt/ held 11 -V2, 1 -V3, 1 -R2 on 2026-10-23).",
-    "override_token": "[same-session]"
-  },
-
-  "exempt_prompt_prefixes": ["<task-notification", "<agent-message", "<scheduled-task", "<cross-session-message", "<teammate-message", "<system-reminder", "<<autonomous-loop"],
-  "exempt_prompt_prefixes_reason": "UserPromptSubmit fires on these machine turns (measured in ~/.claude/session-log.md: 3,680 / 110 / 59 / 10 / 4 for the five of ruling Q2; then 30 <system-reminder — side-session wake-ups and started-task notices the Desktop app sends — and 2 <<autonomous-loop — /loop wake-ups — found at W1 CH3, 2026-10-23). A machine turn is never classified as a dispatch, whatever dispatch.regex matches, so no edit to the regex can make one refusable. Human-typed shapes that also start with < (<bash-input, <pasted_content, <!-- reply) stay judged.",
-
-  "compact_message_max_bytes": 400,
-  "compact_message_reason": "The SessionStart(compact) line is added to context after every compaction; this caps it.",
-
-  "hook_timeout_seconds": 10,
-  "hook_timeout_reason": "The installer writes this as the timeout of the UserPromptSubmit and SessionStart(compact) registrations, so a hung hook delays a prompt by at most this long instead of the hook default.",
+  "_doc": "the caps manifest `ops/scripts/status-append.mjs` reads; the session hooks it once fed were retired by OPS-SESSION-BUDGET-W1-R3",
 
   "files": {
     "status.md": 40000,
-    "AOE-status.md": 21586,
+    "AOE-status.md": 40000,
     "CLAUDE.md": 31041,
     "Claude files/rules/plan-mode-probes.md": 14275,
     "Claude files/rules/deploy-and-infra.md": 12559,
@@ -53,7 +33,7 @@
     "system-map/plausible-ce.md": 3055,
     "system-map/trade-engine.md": 2726
   },
-  "files_reason": "OPS-STATUS-INDEX-LEDGER-W1: byte caps on the vault files every session reads. ops/scripts/status-append.mjs refuses (OVER) a status.md write over its cap. status.md = trim-status-config max_bytes; AOE-status.md is pinned at its measured size on 2026-10-23. OPS-CONTEXT-CORPUS-DIET-W1 (ruling Q3) adds CLAUDE.md, the seven trigger-read rules files, system-map.md and every card at their measured post-move size on 2026-10-23 + max(5% rounded up to 100 B, 2,048 B), so real regrowth shows within a few waves and one new edge line on a small card does not. Every append and sweep judges every cap and prints CONTEXT_FILES_VERDICT (report-only); --report prints them all. Evidence and system-map/_ref/ files are request-read and stay uncapped. scripts/session-budget.mjs does not read this key.",
+  "files_reason": "OPS-STATUS-INDEX-LEDGER-W1: byte caps on the vault files every session reads. ops/scripts/status-append.mjs refuses (OVER) a status.md write over its cap. status.md = trim-status-config max_bytes; AOE-status.md = trim-status-config max_bytes too (OPS-SESSION-BUDGET-W1-R3): status-append refuses to write it, so it grows by hand with each AOE entry, and pinned at its 2026-10-23 size (21,586 / 21,586) it had 0 B headroom — the first AOE entry would have made every later append print OVER for a reason that is not regrowth; at 40000, OVER means a trim is due. OPS-CONTEXT-CORPUS-DIET-W1 (ruling Q3) adds CLAUDE.md, the seven trigger-read rules files, system-map.md and every card at their measured post-move size on 2026-10-23 + max(5% rounded up to 100 B, 2,048 B), so real regrowth shows within a few waves and one new edge line on a small card does not. Every append and sweep judges every cap and prints CONTEXT_FILES_VERDICT (report-only); --report prints them all. Evidence and system-map/_ref/ files are request-read and stay uncapped.",
   "files_retired": ["Claude files/WIS-PENDING.md"],
   "files_retired_reason": "OPS-CONTEXT-CORPUS-DIET-W1 (ruling Q4): paths retired from the start-read set. One that exists again makes CONTEXT_FILES_VERDICT=OVER on the next append. WIS-PENDING.md was archived verbatim to Claude files/WIS-ARCHIVE-2026-10-23.md and its append step removed."
 }
