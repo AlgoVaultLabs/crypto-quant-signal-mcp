@@ -224,6 +224,11 @@ export class PhemexAdapter implements ExchangeAdapter {
     const fundingRaw = safeUpstreamNum(r.fundingRateRr) ?? 0;
     const markPx = safeUpstreamNum(r.markPriceRp);
     if (markPx === null) throw new Error('Phemex getAssetContext: invalid markPriceRp');
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH3a: PHEMEX is a declared closed-only kline venue (src/lib/live-price.ts), so its
+    // live price is this ticker's last price. `timestamp` is the ticker snapshot in NANOSECONDS (measured 2026-10-23:
+    // ~3 s before receipt). Absent when either value does not parse: livePriceOf then refuses, never a stale close.
+    const lastPx = safeUpstreamNum(r.closeRp);
+    const atMs = Number(r.timestamp) / 1e6;
     return {
       coin,
       funding: fundingRaw,
@@ -233,6 +238,7 @@ export class PhemexAdapter implements ExchangeAdapter {
       volume24h: parseFloat(r.turnoverRv || '0'),    // turnover is in USDT; canonical volume24h is quote-asset volume
       oraclePx: safeUpstreamNum(r.indexPriceRp) ?? markPx,
       markPx,
+      ...(lastPx !== null && lastPx > 0 && Number.isFinite(atMs) && atMs > 0 ? { lastTrade: { price: lastPx, atMs } } : {}),
     };
   }
 

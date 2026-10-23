@@ -61,6 +61,11 @@ export interface HistoryMeta extends PageFacts {
   /** OAH-Q5: the history page held nothing at or after `from`, so the adapter returned the recent page instead.
    *  The bars are unchanged this wave; this flag is how a consumer can tell. */
   substitutedNewest: boolean;
+  /** OPS-SERVED-CANDLE-TRUTH-W1 CH3a: the page's HEAD (its newest bar) came from an endpoint that serves CLOSED bars
+   *  only, so it can never hold the venue's forming bar. A property of the ENDPOINT, stamped by the adapter that knows
+   *  it (Bitget `/market/history-candles`: closed only; OKX `/market/history-candles`: carries the forming bar, census
+   *  2026-10-23), never inferred from the branch. The getAdapter seam refuses a serving read that carries it. */
+  headClosedOnly: boolean;
 }
 
 const mod = (a: number, m: number) => ((a % m) + m) % m;
@@ -147,10 +152,10 @@ export function historyMetaOf(page: readonly unknown[] | null | undefined): Hist
 /** The adapter-side helper: account the page it is about to return and attach the result. */
 export function withHistoryMeta<T extends { time: number }[]>(
   page: T,
-  p: { servedStepMs: number; from: number; to: number | undefined; nowMs: number; branch: HistoryBranch; substitutedNewest: boolean },
+  p: { servedStepMs: number; from: number; to: number | undefined; nowMs: number; branch: HistoryBranch; substitutedNewest: boolean; headClosedOnly: boolean },
 ): T & { readonly meta?: HistoryMeta } {
   const facts = accountPage({ bars: page.map((c) => ({ ts: c.time })), servedStepMs: p.servedStepMs, from: p.from, to: p.to ?? null, nowMs: p.nowMs });
-  return attachMeta(page, { ...facts, complete: !incompleteWindow(facts), servedStepMs: p.servedStepMs, from: p.from, to: p.to ?? null, branch: p.branch, substitutedNewest: p.substitutedNewest });
+  return attachMeta(page, { ...facts, complete: !incompleteWindow(facts), servedStepMs: p.servedStepMs, from: p.from, to: p.to ?? null, branch: p.branch, substitutedNewest: p.substitutedNewest, headClosedOnly: p.headClosedOnly });
 }
 
 /** One page an assembler fetcher returned: its bars (any order) and whether the venue holds nothing further that way. */

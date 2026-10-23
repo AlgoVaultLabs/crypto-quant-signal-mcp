@@ -248,11 +248,17 @@ describe('young listings', () => {
     expect(r.facts.headGapBars).toBe(0);
   });
 
-  it('BITGET 1d@100 listed 30 d ago: not full, the fallback reaches the head — branch F, unchanged', async () => {
+  it('BITGET 1d@100 listed 30 d ago (OPS-SERVED-CANDLE-TRUTH-W1 CH3a): never the closed-only history endpoint — the 90-day page plus a FORWARD page, branch A, through the forming bar', async () => {
+    // Was "branch F, unchanged": /market/history-candles holds closed bars only, so that head was forming - 1, and
+    // headGapBars (closed slots) read 0 all the same. The newest bar is asserted directly now.
     const r = await serve('BITGET', '1d', 100, { listedAgoMs: 30 * DAY });
-    expect(r.paths).toEqual(['/api/v2/mix/market/candles', '/api/v2/mix/market/history-candles']);
-    expect(r.branch).toBe('F');
+    expect(r.paths).toEqual(['/api/v2/mix/market/candles', '/api/v2/mix/market/candles']);
+    expect(r.branch).toBe('A');
+    expect(historyMetaOf(r.out)?.headClosedOnly).toBe(false);
+    const newest = r.out[r.out.length - 1].time;
+    expect(newest <= r.now && r.now < newest + DAY).toBe(true);
     expect(r.facts.headGapBars).toBe(0);
+    expect(r.requests.length).toBeLessThanOrEqual(SERVING_MAX_PAGES);
   });
 });
 

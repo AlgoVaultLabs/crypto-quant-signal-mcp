@@ -44,6 +44,8 @@ import { resolveVenueInterval } from './_interval.js';
 const BASE_URL = 'https://whitebit.com';
 const MAX_RETRIES = 1;
 const KLINE_LIMIT = 1000;
+/** OPS-SERVED-CANDLE-TRUTH-W1 CH3a: the most bars a `start`-only kline read may span (venue-enforced, measured 2026-10-23). */
+const KLINE_START_MAX_BARS = 1440;
 
 // WhiteBIT kline intervals: STRING family.
 const INTERVAL_MAP: Record<string, string> = {
@@ -132,15 +134,23 @@ interface WhitebitFuturesEnvelope {
 export class WhitebitAdapter implements ExchangeAdapter {
   getName(): string { return 'WhiteBIT'; }
 
-  async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
+  async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
     const market = toWhitebitSymbol(coin);
     const wbInterval = resolveVenueInterval(INTERVAL_MAP, interval, 'WHITEBIT');
 
-    const env = await whitebitGet<WhitebitKlineEnvelope>('/api/v1/public/kline', {
-      market,
-      interval: wbInterval,
-      limit: KLINE_LIMIT,
-    });
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH3a, SERVING reads only (no `endTime`): ask for the window by `start` and send no
+    // `limit`. With `limit`, the endpoint returns the OLDEST `limit` bars of a default window that holds limit + 1, so
+    // a market with >= KLINE_LIMIT base bars lost exactly its forming bar (census 2026-10-23: BTC_PERP on every
+    // timeframe); `start` alone returns [start, now] with the forming bar (measured 1m/15m/30m/1h/4h/1d). The history
+    // read (`endTime` given) keeps its pre-wave request byte for byte; `endTime` is not sent.
+    // A `start` more than KLINE_START_MAX_BARS bars back is refused by the venue ("Max number of candles should not
+    // exceed 1440", measured), so the start is clamped to the newest KLINE_START_MAX_BARS - 2 served bars: still more
+    // than the KLINE_LIMIT the old read returned, with a two-bar margin for clock skew.
+    const stepSec = (servedIntervalMs(interval) ?? 60_000) / 1000;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const env = await whitebitGet<WhitebitKlineEnvelope>('/api/v1/public/kline', endTime === undefined
+      ? { market, interval: wbInterval, start: Math.max(Math.floor(startTime / 1000), nowSec - (KLINE_START_MAX_BARS - 2) * stepSec) }
+      : { market, interval: wbInterval, limit: KLINE_LIMIT });
 
     if (!env || !env.success || !Array.isArray(env.result)) {
       throw new Error(`WhiteBIT: kline returned non-OK envelope for ${coin} (market=${market}) msg=${JSON.stringify(env?.message)}`);

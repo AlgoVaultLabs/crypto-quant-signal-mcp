@@ -2,7 +2,8 @@
  * tests/unit/venue-reach-served-depth.test.ts — OPS-ALARM-OWNER-DERIVATION-W1 CH1 (Req 10 / AC4).
  *
  * Six adapters are COUNT-LIMITED: BINGX, HTX, PHEMEX, WEEX, WHITEBIT and XT fetch the newest N bars
- * with no start parameter and filter `>= startTime`. For a row older than N × the served step EVERY
+ * with no start parameter and filter `>= startTime` (on the backfill's history read: WHITEBIT's serving read asks
+ * `start` since OPS-SERVED-CANDLE-TRUTH-W1 CH3a, see requestFor). For a row older than N × the served step EVERY
  * returned bar passes that filter, and `computePFEMAE` (src/lib/pfe-mae.ts) takes the first bars it
  * is handed — so the row is FILLED from bars days after the signal. The outcome backfill's queue now
  * stops serving a row once it is past its venue's measured reach, which closes that only while the
@@ -73,9 +74,12 @@ function stepMsFromParam(v: string): number {
   }
 }
 
+/** The outcome backfill's own request: a HISTORY read, `endTime` given (backfill-outcomes.ts, band-outcome-lane.ts,
+ *  resources/signal-performance.ts). Five of the six adapters ignore `endTime`; WHITEBIT's SERVING read asks `start`
+ *  since OPS-SERVED-CANDLE-TRUTH-W1 CH3a (to carry the forming bar), and the backfill never makes one. */
 async function requestFor(venue: ExchangeId, tf: string): Promise<URL> {
   captured.url = null;
-  await getAdapter(venue).getCandles('BTC', tf, Date.now() - 3_600_000);
+  await getAdapter(venue).getCandles('BTC', tf, Date.now() - 3_600_000, undefined, Date.now());
   if (!captured.url) throw new Error(`${venue} ${tf}: getCandles made no request`);
   return new URL(captured.url);
 }

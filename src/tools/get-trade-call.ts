@@ -18,7 +18,8 @@ import { recordScorerInputCapture } from '../lib/scorer-input-capture.js';
 import { classifyAsset, isMemeCoinLiquid, isKnownTradFi, getTop20ByOI } from '../lib/asset-tiers.js';
 import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.js';
 import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError, TimeframeUnservedError } from '../lib/errors.js';
-import { isTimeframeServed, servedTimeframes } from '../lib/tf-support.js';
+import { isTimeframeServed, servedTimeframes, servedCandleStepMs } from '../lib/tf-support.js';
+import { livePriceOf } from '../lib/live-price.js';
 import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
 import { resolveAssetClass } from '../lib/underlying-type.js';
 import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
@@ -1070,7 +1071,15 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   //    are untouched by this wave — ONLY indicator inputs move to the closed basis.
   //    A future wave will otherwise "helpfully" move this and silently re-price the
   //    entire track record. Do not. ──
-  const currentPrice = closes[closes.length - 1];
+  //    OPS-SERVED-CANDLE-TRUTH-W1 CH3a: the ONE live-price derivation. Every venue but a declared closed-only kline
+  //    venue gets `closes[closes.length - 1]`, byte-identical; a declared one (PHEMEX, whose klines never hold the
+  //    forming bar) is priced from its ticker's last price, or refused here, before trackCall: never the last closed bar.
+  const currentPrice = livePriceOf(
+    { coin, timeframe, candles, servedStepMs: servedCandleStepMs(exchange, timeframe) },
+    assetCtx,
+    exchange,
+    Date.now(),
+  );
 
   // Funding data
   // R2: raw rate is kept for display/API compat and for scale-invariant per-coin Z-score history.

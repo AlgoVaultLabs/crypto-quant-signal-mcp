@@ -250,8 +250,10 @@ export class OKXAdapter implements ExchangeAdapter {
     const barMs = BAR_MS[interval]; // every mapped timeframe is a key (an unmapped one was refused above)
     // SERVED step: the module-local leaf (never tf-support — see _history-plan.ts). Every page span uses it.
     const servedStepMs = servedIntervalMs(interval) ?? barMs;
+    // headClosedOnly: false on every branch. Both OKX endpoints carry the forming bar; `/market/history-candles` was
+    // measured holding it on young-listing serving reads (OPS-SERVED-CANDLE-TRUTH-W1 CH3a census, 2026-10-23).
     const meta = (branch: HistoryBranch, substitutedNewest: boolean) =>
-      ({ servedStepMs, from: startTime, to: endTime, nowMs: Date.now(), branch, substitutedNewest });
+      ({ servedStepMs, from: startTime, to: endTime, nowMs: Date.now(), branch, substitutedNewest, headClosedOnly: false });
     const serving = endTime === undefined;
 
     // Recent path (live/indicator use): `/market/candles` `before` = records NEWER than startTime. OKX returns

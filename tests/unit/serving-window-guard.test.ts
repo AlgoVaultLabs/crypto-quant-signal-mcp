@@ -11,7 +11,7 @@
  *      Bybit OI backfill (skips the coin).
  * Each refusal is paired with the fresh control that proves the same path accepts a current window.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { SyntheticVenue } from '../harness/adapter-history-synthetic.js';
 
 const H = 3_600_000;
@@ -79,7 +79,10 @@ vi.mock('../../src/lib/license.js', async (orig) => {
 import { getAdapter, servingWindowVerdict } from '../../src/lib/exchange-adapter.js';
 import { StaleUpstreamWindowError, buildStaleUpstreamWindowPayload } from '../../src/lib/errors.js';
 import { HEAD_STALE_BARS } from '../../src/lib/serving-windows.js';
-import { historyMetaOf } from '../../src/lib/adapters/_history-plan.js';
+import { historyMetaOf, withHistoryMeta } from '../../src/lib/adapters/_history-plan.js';
+import { BitgetAdapter } from '../../src/lib/adapters/bitget.js';
+import { PhemexAdapter } from '../../src/lib/adapters/phemex.js';
+import type { Candle } from '../../src/types.js';
 import { toMcpToolResult, type ToolCallOutcome } from '../../src/lib/tool-call-pipeline.js';
 import { getTradeSignal } from '../../src/tools/get-trade-call.js';
 import { fetchOiHistoryUsd } from '../../src/lib/oi-sources.js';
@@ -278,5 +281,94 @@ describe('the Bybit OI backfill skips a coin whose price window is refused', () 
     expect(out!.every((x) => x.oi === 1000 * 100.5)).toBe(true);
     world.failKlines = true;
     await expect(fetchOiHistoryUsd('BYBIT', 'BTC', 72)).rejects.toThrow('bybit 503');
+  });
+});
+
+// ── 4. OPS-SERVED-CANDLE-TRUTH-W1 CH3a: head PROVENANCE at the seam, and a declared venue's live price ─────────────
+// A page of closed bars through forming - 1 passes the closed-bar arithmetic (head gap 0) whatever endpoint produced
+// it; only the adapter's provenance stamp can tell an omitted forming bar from a thin book. The two venue classes are
+// stubbed on the PROTOTYPE before their first getAdapter, so the guard wraps the stub exactly as it wraps the adapter.
+describe('CH3a: the seam refuses a serving head from a closed-only endpoint, except on a declared venue', () => {
+  const page = { headClosedOnly: true };
+  const closedThroughFormingMinus1 = (tf: string, startTime: number, endTime?: number): Candle[] => {
+    const step = STEP[tf];
+    const now = Date.now();
+    const forming = Math.floor(now / step) * step;
+    const bars: Candle[] = [];
+    for (let t = Math.ceil(startTime / step) * step; t < forming; t += step) bars.push({ time: t, open: 100, high: 101, low: 99, close: 100.5, volume: 1000 });
+    return withHistoryMeta(bars, { servedStepMs: step, from: startTime, to: endTime, nowMs: now, branch: 'F', substitutedNewest: false, headClosedOnly: page.headClosedOnly });
+  };
+  beforeAll(() => {
+    vi.spyOn(BitgetAdapter.prototype, 'getCandles').mockImplementation(async (_c, tf, s, _d, e) => closedThroughFormingMinus1(tf, s, e));
+    vi.spyOn(PhemexAdapter.prototype, 'getCandles').mockImplementation(async (_c, tf, s, _d, e) => closedThroughFormingMinus1(tf, s, e));
+  });
+  beforeEach(() => { page.headClosedOnly = true; });
+  const startOf = (bars: number, tf: string) => Date.now() - bars * STEP[tf];
+
+  it('a non-declared venue (BITGET): refused as stale, typed, with headStaleBars 0', async () => {
+    const err = await getAdapter('BITGET').getCandles('PENG', '1d', startOf(100, '1d')).catch((e) => e);
+    expect(err).toBeInstanceOf(StaleUpstreamWindowError);
+    expect(err).toMatchObject({ code: 'STALE_UPSTREAM_WINDOW', coin: 'PENG', exchange: 'BITGET', timeframe: '1d', headStaleBars: 0 });
+    expect(err.message).toContain('closed bars only');
+  });
+
+  it('control: the SAME bars without the stamp are served, so the refusal is provenance, never arithmetic', async () => {
+    page.headClosedOnly = false;
+    const out = await getAdapter('BITGET').getCandles('PENG', '1d', startOf(100, '1d'));
+    expect(out.length).toBeGreaterThan(90);
+    expect(historyMetaOf(out)?.headClosedOnly).toBe(false);
+  });
+
+  it('a HISTORY read (endTime given) passes through: history consumers judge their own windows', async () => {
+    const out = await getAdapter('BITGET').getCandles('PENG', '1d', startOf(100, '1d'), undefined, Date.now());
+    expect(historyMetaOf(out)?.headClosedOnly).toBe(true);
+  });
+
+  it('a DECLARED closed-only kline venue (PHEMEX): forming - 1 from a closed-only endpoint is its expected head, admitted', async () => {
+    const out = await getAdapter('PHEMEX').getCandles('BTC', '1h', startOf(100, '1h'));
+    expect(out[out.length - 1].time).toBe(Math.floor(Date.now() / H) * H - H);
+  });
+});
+
+describe('CH3a: get_trade_call prices a declared venue from its ticker, and refuses unbilled without a fresh one', () => {
+  const ctx = (lastTrade?: { price: number; atMs: number }) =>
+    ({ coin: 'BTC', funding: 0.0001, openInterest: 5_000_000, prevDayPx: 99, volume24h: 125_000_000, oraclePx: 100, markPx: 100, ...(lastTrade ? { lastTrade } : {}) });
+  beforeEach(() => {
+    vi.mocked(recordSignal).mockClear();
+    vi.mocked(recordHoldCount).mockClear();
+    vi.mocked(trackCall).mockClear();
+    resetLicenseCache();
+    process.env.CQS_API_KEY = 'test-key';
+    _clearCache();
+    _setScorerOverride(null);
+    _setSnapshotForTest([]);
+    for (const v of ['PHEMEX', 'BINANCE'] as const) vi.spyOn(getAdapter(v), 'getPredictedFundings').mockResolvedValue([]);
+    vi.spyOn(getAdapter('BINANCE'), 'getAssetContext').mockResolvedValue(ctx({ price: 777, atMs: Date.now() }));
+  });
+
+  it('PHEMEX with a fresh ticker: price = the ticker last, never the last close (100.5), and the recorded entry is the same', async () => {
+    vi.spyOn(getAdapter('PHEMEX'), 'getAssetContext').mockResolvedValue(ctx({ price: 123.4, atMs: Date.now() - 2_000 }));
+    const r = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'PHEMEX' });
+    expect(r.price).toBe(123.4);
+    expect(trackCall).toHaveBeenCalledTimes(1);
+    for (const c of vi.mocked(recordSignal).mock.calls) expect(c[4]).toBe(123.4);
+  });
+
+  it.each([
+    ['a ticker 61 s old', () => ctx({ price: 123.4, atMs: Date.now() - 61_000 })],
+    ['no ticker last price', () => ctx()],
+  ])('PHEMEX with %s: StaleUpstreamWindowError before trackCall, recordSignal or recordHoldCount', async (_why, c) => {
+    vi.spyOn(getAdapter('PHEMEX'), 'getAssetContext').mockResolvedValue(c());
+    const err = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'PHEMEX' }).catch((e) => e);
+    expect(err).toBeInstanceOf(StaleUpstreamWindowError);
+    expect(err.message).toContain('no live price');
+    expect(trackCall).not.toHaveBeenCalled();
+    expect(recordSignal).not.toHaveBeenCalled();
+    expect(recordHoldCount).not.toHaveBeenCalled();
+  });
+
+  it('control, Q10 = C: a non-declared venue keeps its newest close (100.5) even when its ticker says otherwise (777)', async () => {
+    const r = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
+    expect(r.price).toBe(100.5);
   });
 });

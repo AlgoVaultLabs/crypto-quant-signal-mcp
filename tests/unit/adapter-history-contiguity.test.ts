@@ -12,6 +12,10 @@
  *     FAIL, never INDETERMINATE), the probe plan read from the registry and interleaved by venue, the pacing, and the
  *     same synthetic end-to-end: the shipped adapters PASS every window, the retired bodies FAIL on exactly the two
  *     windows R0 measured stale in production.
+ *   - CH3a (OPS-SERVED-CANDLE-TRUTH-W1): judgeServe's forming-bar head two-way (one bar short FAILs on a non-declared
+ *     venue; forming - 1 PASSes on the declared PHEMEX and its forming bar FAILs), the young-listing leg (screen,
+ *     interleave, pacing, adoption on a refusal, FAIL on a young window one bar short; the shipped Bitget/OKX PASS a
+ *     young synthetic listing), and the ticker leg two-way.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
@@ -29,8 +33,8 @@ vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (orig) => ({
 
 import {
   judgePair, aggregate, probeAll, reachClass, PACE_MS, HEAD_ALLOWANCE_BARS, DEEP_PROBE_RECENT_CAP,
-  judgeServe, servingProbePlan, probeServing,
-  type Expectations, type PairResult, type ServeResult,
+  judgeServe, servingProbePlan, probeServing, probeYoung, judgeTicker, youngCandidatesByVenue, YOUNG_FRONT_BARS,
+  YOUNG_CANDIDATES_PER_VENUE, type Expectations, type PairResult, type ServeResult, type ServeWindow,
 } from '../../src/scripts/adapter-history-contiguity.js';
 import { servingSpans } from '../../src/lib/serving-windows.js';
 import { StaleUpstreamWindowError } from '../../src/lib/errors.js';
@@ -44,6 +48,7 @@ import { retiredGetCandles as retiredOkx } from '../fixtures/adapter-history/ret
 import { CRON_TIMEFRAMES, isTimeframeFaithful } from '../../src/lib/tf-support.js';
 import { EVAL_CANDLES } from '../../src/scripts/directional-labeler.js';
 import type { ExchangeId } from '../../src/types.js';
+import { BOUNDARY_LAG_MS, LIVE_TICKER_MAX_AGE_MS } from '../../src/lib/live-price.js';
 
 const FIX = path.resolve(__dirname, '../fixtures/adapter-history');
 const readJson = <T>(f: string): T => JSON.parse(fs.readFileSync(path.join(FIX, f), 'utf8')) as T;
@@ -172,19 +177,22 @@ describe('probeAll — request shape and pacing', () => {
 });
 
 describe('judgeServe — one serving window, two-way', () => {
-  const w = { venue: 'X', tf: '1h', window: 'trade_call@100', spanMs: 100 * H, servedStepMs: H };
+  const w: ServeWindow = { venue: 'X', tf: '1h', window: 'trade_call@100', spanMs: 100 * H, servedStepMs: H, coin: 'BTC' };
+  const FORMING = Math.floor(NOW / H) * H;
+  /** read at NOW, answered at once, newest bar the forming bar */
+  const at = { newestMs: FORMING, calledAtMs: NOW, answeredAtMs: NOW };
   it('PASS when the served page reaches the newest bar, the one-bar allowance included', () => {
-    expect(judgeServe(w, { facts: clean, branch: 'R' }).verdict).toBe('PASS');
-    expect(judgeServe(w, { facts: { ...clean, headGapBars: HEAD_ALLOWANCE_BARS }, branch: 'A' }).verdict).toBe('PASS');
+    expect(judgeServe(w, { facts: clean, branch: 'R', ...at }).verdict).toBe('PASS');
+    expect(judgeServe(w, { facts: { ...clean, headGapBars: HEAD_ALLOWANCE_BARS }, branch: 'A', ...at }).verdict).toBe('PASS');
   });
   it('FAIL on a deliberately broken window: one bar past the allowance', () => {
-    const r = judgeServe(w, { facts: { ...clean, headGapBars: HEAD_ALLOWANCE_BARS + 1 }, branch: 'F' });
+    const r = judgeServe(w, { facts: { ...clean, headGapBars: HEAD_ALLOWANCE_BARS + 1 }, branch: 'F', ...at });
     expect(r.verdict).toBe('FAIL');
     expect(r.reasons.join(' ')).toContain("does not reach the venue's newest bar");
     expect([r.headGapBars, r.branch]).toEqual([HEAD_ALLOWANCE_BARS + 1, 'F']);
   });
   it('FAIL on a window that holds no bar', () => {
-    const r = judgeServe(w, { facts: { ...clean, inWindow: 0, emptyWindow: true, headGapBars: null }, branch: null });
+    const r = judgeServe(w, { facts: { ...clean, inWindow: 0, emptyWindow: true, headGapBars: null }, branch: null, ...at, newestMs: null });
     expect(r.verdict).toBe('FAIL');
     expect(r.reasons).toEqual(['no bar in the window']);
   });
@@ -197,8 +205,129 @@ describe('judgeServe — one serving window, two-way', () => {
     expect(judgeServe(w, { error: 'UpstreamRateLimitError: 429' }).verdict).toBe('INDETERMINATE');
   });
   it('one token over R/D pairs and S windows: an S FAIL fails the run', () => {
-    expect(aggregate([{ verdict: 'PASS' }, judgeServe(w, { facts: { ...clean, headGapBars: 9 }, branch: 'R' })])).toBe('FAIL');
+    expect(aggregate([{ verdict: 'PASS' }, judgeServe(w, { facts: { ...clean, headGapBars: 9 }, branch: 'R', ...at })])).toBe('FAIL');
     expect(aggregate([{ verdict: 'PASS' }, judgeServe(w, { error: 'timeout' })])).toBe('INDETERMINATE');
+  });
+  it('CH3a: FAIL on a window one bar short at the head — closed-bar arithmetic passes it (head gap 0), the forming check does not', () => {
+    const r = judgeServe(w, { facts: clean, branch: 'F', ...at, newestMs: FORMING - H });
+    expect(r.verdict).toBe('FAIL');
+    expect(r.reasons).toEqual(['head: newest bar 1 slot(s) before the forming bar']);
+  });
+  it('CH3a: inside BOUNDARY_LAG_MS after a boundary, one bar short is the venue not having opened the bar yet: PASS', () => {
+    const justAfter = FORMING + BOUNDARY_LAG_MS;
+    expect(judgeServe(w, { facts: clean, branch: 'R', newestMs: FORMING - H, calledAtMs: justAfter, answeredAtMs: justAfter }).verdict).toBe('PASS');
+    expect(judgeServe(w, { facts: clean, branch: 'R', newestMs: FORMING - H, calledAtMs: justAfter + 1, answeredAtMs: justAfter + 1 }).verdict).toBe('FAIL');
+  });
+  it('CH3a: a read that crossed a boundary is judged over [calledAt, answeredAt]', () => {
+    expect(judgeServe(w, { facts: clean, branch: 'R', newestMs: FORMING + H, calledAtMs: FORMING + H - 500, answeredAtMs: FORMING + H + 300 }).verdict).toBe('PASS');
+  });
+  it('CH3a: the declared PHEMEX owes forming - 1 (PASS), and serving its forming bar is a FINDING (FAIL)', () => {
+    const px = { ...w, venue: 'PHEMEX' };
+    expect(judgeServe(px, { facts: clean, branch: null, ...at, newestMs: FORMING - H }).verdict).toBe('PASS');
+    const r = judgeServe(px, { facts: clean, branch: null, ...at });
+    expect(r.verdict).toBe('FAIL');
+    expect(r.reasons).toEqual(['head: a declared closed-only kline venue served its forming bar']);
+    expect(judgeServe(px, { facts: clean, branch: null, ...at, newestMs: FORMING - 2 * H }).reasons).toEqual(['head: newest bar 2 slot(s) before the forming bar (declared: 1 expected)']);
+  });
+});
+
+describe('CH3a — the ticker leg (a declared closed-only kline venue must be able to price a call)', () => {
+  it('PASS on a fresh last trade; FAIL when it is stale or missing; INDETERMINATE when unreadable', () => {
+    expect(judgeTicker('PHEMEX', { lastTrade: { price: 81_782.9, atMs: NOW - 2_000 }, nowMs: NOW }).verdict).toBe('PASS');
+    const stale = judgeTicker('PHEMEX', { lastTrade: { price: 81_782.9, atMs: NOW - LIVE_TICKER_MAX_AGE_MS - 1 }, nowMs: NOW });
+    expect(stale.verdict).toBe('FAIL');
+    expect(stale.reasons[0]).toMatch(/^PHEMEX cannot price a call: its ticker is from/);
+    expect(judgeTicker('PHEMEX', { lastTrade: undefined, nowMs: NOW }).verdict).toBe('FAIL');
+    expect(judgeTicker('PHEMEX', { error: 'UpstreamRateLimitError: 429' }).verdict).toBe('INDETERMINATE');
+    expect(judgeTicker('PHEMEX', { lastTrade: undefined, nowMs: NOW })).toMatchObject({ venue: 'PHEMEX', tf: 'ticker', window: 'ticker:BTC' });
+  });
+});
+
+describe('CH3a — the young-listing leg: screen, interleave, pace, judge', () => {
+  const served = (_v: string, tf: string) => TF_MS[tf];
+  const tfs = () => ['1h', '1d'];
+  const longest = (tf: string) => Math.max(...servingSpans(tf, TF_MS[tf], TF_MS[tf]).map((x) => x.spanMs));
+  /** bars from max(from, listing) through the forming bar (or one short) */
+  const page = (from: number, tf: string, listingMs: number, short = false) => {
+    const st = TF_MS[tf];
+    const out: { time: number }[] = [];
+    const end = Math.floor(NOW / st) * st - (short ? st : 0);
+    for (let t = Math.ceil(Math.max(from, listingMs) / st) * st; t <= end; t += st) out.push({ time: t });
+    return out;
+  };
+
+  it('the corpus groups per venue and keeps the most-recently-first-seen order', () => {
+    expect(youngCandidatesByVenue([{ exchange: 'A', coin: 'N1' }, { exchange: 'B', coin: 'M1' }, { exchange: 'A', coin: 'N2' }])).toEqual({ A: ['N1', 'N2'], B: ['M1'] });
+  });
+
+  it('passes over an old, an empty and an erroring candidate, adopts the first young one, reads its every timeframe, interleaved and paced', async () => {
+    const calls: string[] = [];
+    const waits: number[] = [];
+    const listing: Record<string, number> = { OLD: Date.UTC(2019, 0, 1), YNG: NOW - 10 * 86_400_000, B1: NOW - 20 * 86_400_000 };
+    const out = await probeYoung({
+      venues: ['A', 'B', 'C'],
+      candidates: { A: ['OLD', 'GONE', 'ERR', 'YNG', 'NEVER'], B: ['B1'], C: [] },
+      nowMs: () => NOW,
+      getCandles: async (venue, tf, from, coin) => {
+        calls.push(`${venue}/${coin}/${tf}`);
+        if (coin === 'GONE') return [];
+        if (coin === 'ERR') throw new Error('symbol not found');
+        return page(from, tf, listing[coin]);
+      },
+      served, timeframes: tfs, pace: async (ms) => { waits.push(ms); },
+    });
+    expect(out.refs).toEqual({ A: 'YNG', B: 'B1' });
+    expect(out.none).toEqual(['C']);
+    // the longest window (1d) screens; the first two rounds interleave A and B
+    expect(calls.slice(0, 4)).toEqual(['A/OLD/1d', 'B/B1/1d', 'A/GONE/1d', 'B/B1/1h']);
+    expect(calls).toContain('A/YNG/1h');
+    expect(calls).not.toContain('A/NEVER/1d');
+    expect(waits).toEqual(calls.map(() => PACE_MS));
+    expect(out.results.map((r) => `${r.venue}/${r.tf}/${r.window}/${r.verdict}`).sort()).toEqual([
+      `A/1d/young:YNG@${servingSpans('1d', TF_MS['1d'], TF_MS['1d']).find((x) => x.spanMs === longest('1d'))!.label}/PASS`,
+      `A/1h/young:YNG@${servingSpans('1h', TF_MS['1h'], TF_MS['1h']).find((x) => x.spanMs === longest('1h'))!.label}/PASS`,
+      `B/1d/young:B1@${servingSpans('1d', TF_MS['1d'], TF_MS['1d']).find((x) => x.spanMs === longest('1d'))!.label}/PASS`,
+      `B/1h/young:B1@${servingSpans('1h', TF_MS['1h'], TF_MS['1h']).find((x) => x.spanMs === longest('1h'))!.label}/PASS`,
+    ].sort());
+  });
+
+  it('a venue whose candidates are all old is listed in `none`, never failed; at most YOUNG_CANDIDATES_PER_VENUE are screened', async () => {
+    const calls: string[] = [];
+    const out = await probeYoung({
+      venues: ['A'], candidates: { A: Array.from({ length: YOUNG_CANDIDATES_PER_VENUE + 3 }, (_, k) => `O${k}`) }, nowMs: () => NOW,
+      getCandles: async (venue, tf, from, coin) => { calls.push(coin); return page(from, tf, Date.UTC(2019, 0, 1)); },
+      served, timeframes: tfs, pace: async () => {},
+    });
+    expect(out).toEqual({ results: [], refs: {}, none: ['A'] });
+    expect(calls.length).toBe(YOUNG_CANDIDATES_PER_VENUE);
+  });
+
+  it('two-way: a young window one bar short FAILs (the Bitget class), and a refused screen adopts the candidate as a FAIL', async () => {
+    const out = await probeYoung({
+      venues: ['A', 'B'], candidates: { A: ['Y'], B: ['R'] }, nowMs: () => NOW,
+      getCandles: async (venue, tf, from) => {
+        if (venue === 'B') throw new StaleUpstreamWindowError({ coin: 'R', exchange: 'B', timeframe: tf, newestBarAt: NOW - 2 * TF_MS[tf], headGapBars: 1, headStaleBars: 0 });
+        return page(from, tf, NOW - 10 * 86_400_000, tf === '1h');
+      },
+      served, timeframes: tfs, pace: async () => {},
+    });
+    expect(out.refs).toEqual({ A: 'Y', B: 'R' });
+    const a = out.results.filter((r) => r.venue === 'A');
+    expect(a.map((r) => `${r.tf}/${r.verdict}`).sort()).toEqual(['1d/PASS', '1h/FAIL']);
+    expect(a.find((r) => r.tf === '1h')!.reasons).toEqual(['head: newest bar 1 slot(s) before the forming bar']);
+    expect(out.results.filter((r) => r.venue === 'B').every((r) => r.verdict === 'FAIL' && r.reasons[0].startsWith('STALE_UPSTREAM_WINDOW'))).toBe(true);
+  });
+
+  it('YOUNG_FRONT_BARS is the screen: a listing exactly that many bars inside the window is not young', async () => {
+    const st = TF_MS['1d'];
+    const from = (NOW - longest('1d'));
+    const edge = Math.ceil(from / st) * st + YOUNG_FRONT_BARS * st;
+    const out = await probeYoung({
+      venues: ['A'], candidates: { A: ['E'] }, nowMs: () => NOW,
+      getCandles: async (_v, tf, f) => page(f, tf, tf === '1d' ? edge : NOW - 3 * 86_400_000),
+      served, timeframes: tfs, pace: async () => {},
+    });
+    expect(out.none).toEqual(['A']);
   });
 });
 
@@ -322,6 +451,26 @@ describe('probeAll end-to-end through the adapters on the synthetic venue, again
       'OKX/1h/market_regime@168',
     ]);
     expect(aggregate(res)).toBe('FAIL');
+  });
+
+  it('CH3a Y: the shipped Bitget/OKX serve a YOUNG synthetic listing (4.5 d, and 30 d) on every faithful timeframe, forming bar included', async () => {
+    for (const ageDays of [4.5, 30]) {
+      const out = await probeYoung({
+        venues: ['BITGET', 'OKX'],
+        candidates: { BITGET: ['YNG'], OKX: ['YNG'] },
+        nowMs: () => NOW,
+        getCandles: async (v, tf, from) => {
+          venue.current = new SyntheticVenue(v as V, () => NOW, () => ({ listingMs: NOW - ageDays * 86_400_000 }));
+          try { return await shipped[v as V]('BTC', tf, from); } finally { venue.current = null; }
+        },
+        served: (v, tf) => served[v as V](tf),
+        timeframes: (v) => TIMEFRAMES.filter((tf) => isTimeframeFaithful(v as ExchangeId, tf)),
+        pace: async () => {},
+      });
+      expect(out.refs, `${ageDays} d`).toEqual({ BITGET: 'YNG', OKX: 'YNG' });
+      expect(out.results.filter((r) => r.verdict !== 'PASS').map((r) => `${ageDays} d ${r.venue}/${r.tf}/${r.window} ${r.reasons.join('; ')}`)).toEqual([]);
+      expect(new Set(out.results.map((r) => `${r.venue}/${r.tf}`)).size).toBe(21);
+    }
   });
 
   it('the accounting the canary uses is the ONE accounting (no second derivation)', () => {

@@ -135,13 +135,34 @@ describe('WhitebitAdapter.getCandles (v1 kline, NOT v4)', () => {
     expect(call?.url).not.toContain('/api/v4/');
   });
 
-  it('passes market=BTC_PERP, interval=1h (string), limit=1000', async () => {
+  it('a HISTORY read (endTime given) passes market=BTC_PERP, interval=1h (string), limit=1000 — byte for byte as before CH3a', async () => {
     setMock('/api/v1/public/kline', { status: 200, body: { success: true, result: [] } });
-    await new WhitebitAdapter().getCandles('BTC', '1h', 0);
+    await new WhitebitAdapter().getCandles('BTC', '1h', 0, undefined, Date.now());
     const call = fetchCalls.find(c => c.url.includes('kline'));
     expect(call?.url).toContain('market=BTC_PERP');
     expect(call?.url).toContain('interval=1h');
     expect(call?.url).toContain('limit=1000');
+    expect(new URL(call!.url).searchParams.has('start')).toBe(false);
+  });
+
+  it('a SERVING read (no endTime, OPS-SERVED-CANDLE-TRUTH-W1 CH3a) asks `start` and no `limit`: ?limit returns the OLDEST bars of a window one longer, dropping the forming bar', async () => {
+    setMock('/api/v1/public/kline', { status: 200, body: { success: true, result: [] } });
+    const before = Math.floor(Date.now() / 1000);
+    await new WhitebitAdapter().getCandles('BTC', '1h', (before - 100 * 3600) * 1000);
+    const q = new URL(fetchCalls.find(c => c.url.includes('kline'))!.url).searchParams;
+    expect(q.get('market')).toBe('BTC_PERP');
+    expect(q.get('interval')).toBe('1h');
+    expect(q.has('limit')).toBe(false);
+    expect(Number(q.get('start'))).toBe(before - 100 * 3600);
+  });
+
+  it('a SERVING read older than the endpoint\'s 1440-bar span is clamped inside it (1441+ bars is an error there)', async () => {
+    setMock('/api/v1/public/kline', { status: 200, body: { success: true, result: [] } });
+    const nowS = Math.floor(Date.now() / 1000);
+    await new WhitebitAdapter().getCandles('BTC', '1h', 0);
+    const start = Number(new URL(fetchCalls.find(c => c.url.includes('kline'))!.url).searchParams.get('start'));
+    expect(start).toBeGreaterThanOrEqual(nowS - 1438 * 3600);
+    expect(start).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) - 1438 * 3600);
   });
 
   it('throws on non-success envelope', async () => {

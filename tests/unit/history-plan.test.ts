@@ -80,12 +80,12 @@ describe('accountPage — phase from the data, facts on the served grid (OAH-Q4)
 
 describe('the meta carrier (OAH-Q2) — non-enumerable, and a copy is unknown, never zero', () => {
   const page = [{ time: 0, open: 1, high: 1, low: 1, close: 1, volume: 1 }, { time: H, open: 1, high: 1, low: 1, close: 1, volume: 1 }];
-  const withMeta = withHistoryMeta([...page], { servedStepMs: H, from: 0, to: 2 * H, nowMs: 10 * H, branch: 'F', substitutedNewest: false });
+  const withMeta = withHistoryMeta([...page], { servedStepMs: H, from: 0, to: 2 * H, nowMs: 10 * H, branch: 'F', substitutedNewest: false, headClosedOnly: false });
 
   it('the page the adapter returned carries its meta', () => {
     const m = historyMetaOf(withMeta) as HistoryMeta;
     expect(m).toMatchObject({ branch: 'F', substitutedNewest: false, servedStepMs: H, inWindow: 2, frontGapBars: 0, complete: true });
-    const gappy = historyMetaOf(withHistoryMeta([page[1]], { servedStepMs: H, from: 0, to: 2 * H, nowMs: 10 * H, branch: 'F', substitutedNewest: false }));
+    const gappy = historyMetaOf(withHistoryMeta([page[1]], { servedStepMs: H, from: 0, to: 2 * H, nowMs: 10 * H, branch: 'F', substitutedNewest: false, headClosedOnly: false }));
     expect(gappy).toMatchObject({ frontGapBars: 1, complete: false });
   });
   it('JSON bytes and deep equality are unchanged by the meta', () => {

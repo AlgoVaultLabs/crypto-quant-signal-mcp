@@ -85,6 +85,13 @@ export interface AssetContext {
   volume24h: number;
   oraclePx: number;
   markPx: number;
+  /**
+   * OPS-SERVED-CANDLE-TRUTH-W1 CH3a: the ticker's last price and the ticker's own timestamp (epoch ms), from the
+   * response getAssetContext already fetched. Set by the adapter of a declared closed-only kline venue
+   * (CLOSED_ONLY_KLINE_VENUES, src/lib/live-price.ts), whose candles never hold the forming bar; livePriceOf prices
+   * its calls from it. Absent for every other venue.
+   */
+  lastTrade?: { price: number; atMs: number };
 }
 
 export interface FundingData {

@@ -7,7 +7,8 @@
  * getAdapter('BINANCE')  → BinanceAdapter
  */
 import type { Candle, ExchangeAdapter, ExchangeId } from '../types.js';
-import { accountPage } from './adapters/_history-plan.js';
+import { accountPage, historyMetaOf } from './adapters/_history-plan.js';
+import { isClosedOnlyKlineVenue } from './live-price.js';
 import { servedCandleStepMs } from './tf-support.js';
 import { HEAD_STALE_BARS } from './serving-windows.js';
 import { StaleUpstreamWindowError } from './errors.js';
@@ -77,6 +78,20 @@ function guardServingReads(adapter: ExchangeAdapter, venue: ExchangeId): Exchang
     const v = servingWindowVerdict({ bars, servedStepMs: servedCandleStepMs(venue, interval), timeframe: interval, startTime, nowMs: Date.now() });
     if (v.stale) {
       throw new StaleUpstreamWindowError({ coin, exchange: venue, timeframe: interval, newestBarAt: v.newestBarAt, headGapBars: v.headGapBars, headStaleBars: v.headStaleBars });
+    }
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH3a: head PROVENANCE. Closed-bar arithmetic cannot tell "the endpoint omitted the
+    // forming bar" from a thin book's legitimate gap, but the adapter knows which endpoint produced the head. A serving
+    // window whose head came from a closed-only endpoint is refused, unless the venue is a DECLARED closed-only kline
+    // venue: there forming - 1 is the expected head (the closed-bar judgement above) and livePriceOf prices the call
+    // from the ticker.
+    const meta = historyMetaOf(bars);
+    if (meta?.headClosedOnly && bars.length > 0 && !isClosedOnlyKlineVenue(venue)) {
+      const err = new StaleUpstreamWindowError({
+        coin, exchange: venue, timeframe: interval, newestBarAt: Math.max(...bars.map((c) => c.time)), headGapBars: meta.headGapBars ?? 0, headStaleBars: 0,
+      });
+      err.message = `${coin} on ${venue} ${interval}: the venue served this window from an endpoint that holds closed bars only, ` +
+        'so its newest bar is not the forming bar; it is refused as stale.';
+      throw err;
     }
     return bars;
   };

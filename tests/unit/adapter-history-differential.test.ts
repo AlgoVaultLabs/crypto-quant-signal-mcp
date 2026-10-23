@@ -92,6 +92,7 @@ describe('(a) serving windows: head-complete where the retired page was stale, b
   const cases: [V, string, string, number][] = [];
   for (const v of ['BITGET', 'OKX'] as V[]) for (const tf of TFS) for (const { label, spanMs } of spansOf(v, tf)) cases.push([v, tf, label, spanMs]);
   const defects = new Set<string>();
+  const formingDefects = new Set<string>();
 
   it('covers every venue × timeframe × registry window (vacuity guard)', () => {
     expect(cases.length).toBeGreaterThanOrEqual(2 * TFS.length * 3);
@@ -126,6 +127,35 @@ describe('(a) serving windows: head-complete where the retired page was stale, b
           expect(r.now.requests).toBeLessThanOrEqual(SERVING_MAX_PAGES);
           continue;
         }
+        // OPS-SERVED-CANDLE-TRUTH-W1 CH3a (Cowork Q5): the second defect class, invisible to closed-bar arithmetic. A
+        // retired page whose newest bar is not the venue's forming bar (a young listing routed to Bitget's closed-only
+        // history endpoint) must now end ON the forming bar, through the serving assembler, with every bar it held
+        // unchanged: the fix adds exactly the forming bar.
+        const vNow = now + r.shift;
+        const formingOn = (t: number) => vNow - (((vNow - t) % served) + served) % served; // the slot holding now, on t's grid
+        const oldNewest = r.old.bars.length > 0 ? r.old.bars[r.old.bars.length - 1].time : null;
+        if (!r.old.err && oldNewest !== null && oldNewest !== formingOn(oldNewest)) {
+          const id = `${v} ${tf} ${label} listed ${listingMs}`;
+          if (vNow === formingOn(oldNewest)) {
+            // NOWS[2] sits exactly on the grid: the forming slot opens at this very instant, and no venue can be required
+            // to hold a bar opened 0 ms ago (OKX's history page, anchored on an aligned start, ends there by `after`).
+            // The rewired page keeps every retired bar and adds at most that one.
+            expect(r.now.err, `${id}: the rewired read errs`).toBeNull();
+            expect(JSON.stringify(r.now.bars.slice(0, r.old.bars.length)), `${id}: every retired bar unchanged`).toBe(JSON.stringify(r.old.bars));
+            expect(r.now.bars.length - r.old.bars.length, id).toBeLessThanOrEqual(1);
+            continue;
+          }
+          formingDefects.add(`${v} ${tf} ${label}`);
+          expect(r.now.err, `${id}: the rewired read errs`).toBeNull();
+          const newest = r.now.bars[r.now.bars.length - 1].time;
+          expect(newest, `${id}: the rewired page ends on the forming bar`).toBe(formingOn(newest));
+          expect(JSON.stringify(r.now.bars.slice(0, -1)), `${id}: every retired bar unchanged`).toBe(JSON.stringify(r.old.bars));
+          const meta = historyMetaOf(r.now.bars);
+          expect(meta?.branch, `${id}: a serving read never takes the history fallback`).toBe('A');
+          expect(meta?.headClosedOnly, id).toBe(false);
+          expect(r.now.requests).toBeLessThanOrEqual(SERVING_MAX_PAGES);
+          continue;
+        }
         expect(r.now.err).toBe(r.old.err);
         expect(JSON.stringify(r.now.bars), `${v} ${tf} ${label} listed ${listingMs}`).toBe(JSON.stringify(r.old.bars));
       }
@@ -138,6 +168,15 @@ describe('(a) serving windows: head-complete where the retired page was stale, b
       'BITGET 1d trade_call@100+market_regime@100',
       'OKX 1h market_regime@168',
     ]);
+  });
+
+  it('the forming-bar defect set is derived: Bitget young listings on every timeframe class, never OKX (its history endpoint carries the forming bar)', () => {
+    const set = [...formingDefects];
+    expect(set.length).toBeGreaterThan(10);
+    expect(set.filter((d) => !d.startsWith('BITGET ')), 'an OKX young listing never lost its forming bar').toEqual([]);
+    expect(set).toContain('BITGET 1d trade_call@100+market_regime@100');
+    expect(set).toContain('BITGET 1h market_regime@168');
+    expect(set).toContain('BITGET 5m trade_call@100');
   });
 });
 

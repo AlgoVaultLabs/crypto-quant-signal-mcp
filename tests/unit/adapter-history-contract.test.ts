@@ -35,6 +35,7 @@ import { SyntheticVenue, listingFromProbes } from '../harness/adapter-history-sy
 import { historyMetaOf, accountPage, HEAD_ALLOWANCE_BARS } from '../../src/lib/adapters/_history-plan.js';
 import { SERVING_MAX_PAGES } from '../../src/lib/serving-windows.js';
 import { servingWindowVerdict } from '../../src/lib/exchange-adapter.js';
+import { BOUNDARY_LAG_MS, CLOSED_ONLY_KLINE_VENUES, formingHeadVerdict, livePriceOf, LIVE_TICKER_MAX_AGE_MS } from '../../src/lib/live-price.js';
 import { TIMEFRAMES } from '../../src/lib/capabilities.js';
 import { servingSpans } from '../harness/serving-spans.js';
 import { scanIntervalSource } from '../harness/interval-fallback-scan.js';
@@ -338,10 +339,19 @@ function judge(out: Bar[], servedMs: number, tf: string, from: number, nowMs: nu
   };
 }
 
+/** A venue publishes a new bar within seconds of its boundary: measured on recorded coins, every liquid venue's miss sat
+ *  within 15 s of one (vault audits/OPS-SERVED-CANDLE-TRUTH-W1/ch3a-thin.jsonl, 2026-10-23). Inside that lag a page may
+ *  still end on the previous head. */
+/** The ONE head judgement (src/lib/live-price.ts), over a page as S records it. */
+function headVerdict(out: Bar[], servedMs: number, calledAt: number, toleranceMs: number, venue: string): string | null {
+  if (out.length === 0) return 'no bar';
+  return formingHeadVerdict(out[out.length - 1].ts, servedMs, calledAt, venue, toleranceMs);
+}
+
 describe('adapter history contract — S: every serving window the product asks for', () => {
   const replayVenues = universe.promoted.filter((v) => !SYNTHETIC_VENUES.has(v));
   const replayed = new Map<string, RunResult>();
-  const synthetic: { id: string; out: Bar[]; err: string | null; requests: number; servedMs: number; tf: string; from: number }[] = [];
+  const synthetic: { id: string; out: Bar[]; err: string | null; requests: number; servedMs: number; tf: string; from: number; venue: string; listing: string; meta: ReturnType<typeof historyMetaOf> }[] = [];
   // Mid-slot on every grid (1D opens 16:00Z on both synthetic venues), and later than any capture: the OKX throttle
   // sleeps for any backward clock gap, and the R/D scenarios above ran these adapters at their capture instants.
   const NOW_S = Date.UTC(2030, 0, 2, 9, 30);
@@ -349,18 +359,29 @@ describe('adapter history contract — S: every serving window the product asks 
   beforeAll(async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     for (const s of serving.scenarios) replayed.set(sId(s.venue, s.tf, s.window), await runScenario(s));
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH3a: every window also for a YOUNG listing (inside the window), and for a listing
+    // younger than Bitget's clipped 90-day page end where the window runs past it: the class P6's long-listed coin
+    // could not show (a young Bitget listing was served from the closed-only history endpoint, one bar short).
     for (const w of sExpected([...SYNTHETIC_VENUES])) {
-      const venue = new SyntheticVenue(w.venue as 'BITGET' | 'OKX', () => NOW_S, () => ({ listingMs: Date.UTC(2019, 0, 1) }));
-      let requests = 0;
-      replay.venue = { answer: (url: string) => { requests++; return venue.answer(url); } };
-      vi.setSystemTime(NOW_S);
-      const from = NOW_S - w.spanMs;
-      let out: Bar[] = [];
-      let err: string | null = null;
-      try { out = (await VENUES[w.venue].make().getCandles('BTC', w.tf, from)).map((c) => ({ ts: c.time, open: c.open })); }
-      catch (e) { err = e instanceof Error ? e.message : String(e); }
-      replay.venue = null;
-      synthetic.push({ id: w.id, out, err, requests, servedMs: VENUES[w.venue].mod.servedIntervalMs(w.tf)!, tf: w.tf, from });
+      const listings: [string, number][] = [['long-listed', Date.UTC(2019, 0, 1)], ['young', NOW_S - 0.5 * w.spanMs]];
+      if (w.spanMs > 90 * 86_400_000) listings.push(['young-past-reach', NOW_S - 3 * 86_400_000]);
+      for (const [listing, listingMs] of listings) {
+        const venue = new SyntheticVenue(w.venue as 'BITGET' | 'OKX', () => NOW_S, () => ({ listingMs }));
+        let requests = 0;
+        replay.venue = { answer: (url: string) => { requests++; return venue.answer(url); } };
+        vi.setSystemTime(NOW_S);
+        const from = NOW_S - w.spanMs;
+        let out: Bar[] = [];
+        let err: string | null = null;
+        let meta: ReturnType<typeof historyMetaOf> = undefined;
+        try {
+          const page = await VENUES[w.venue].make().getCandles('BTC', w.tf, from);
+          meta = historyMetaOf(page);
+          out = page.map((c) => ({ ts: c.time, open: c.open }));
+        } catch (e) { err = e instanceof Error ? e.message : String(e); }
+        replay.venue = null;
+        synthetic.push({ id: `${w.id} ${listing}`, out, err, requests, servedMs: VENUES[w.venue].mod.servedIntervalMs(w.tf)!, tf: w.tf, from, venue: w.venue, listing, meta });
+      }
     }
     vi.useRealTimers();
   }, 120_000);
@@ -410,6 +431,72 @@ describe('adapter history contract — S: every serving window the product asks 
       return j.headGapBars !== null && j.headGapBars <= HEAD_ALLOWANCE_BARS && !j.stale && r.requests <= SERVING_MAX_PAGES ? [] : [`${r.id}: head gap ${j.headGapBars}, ${r.requests} requests`];
     });
     expect(bad).toEqual([]);
+  });
+
+  it('CH3a: every replay-venue window ends on the venue\'s FORMING bar; a declared closed-only kline venue\'s on forming - 1', () => {
+    expect([...CLOSED_ONLY_KLINE_VENUES]).toEqual(['PHEMEX']);
+    const bad = serving.scenarios.flatMap((s) => {
+      if (s.error || unservablePairs.has(`${s.venue}/${s.tf}`)) return [];
+      const why = headVerdict(s.output, s.servedMs, s.calledAt, s.replayToleranceMs, s.venue);
+      return why === null ? [] : [`${sId(s.venue, s.tf, s.window)}: ${why}`];
+    });
+    expect(bad).toEqual([]);
+    // the declaration is evidence, not a waiver: every declared venue's every window is closed-only, so a venue that
+    // starts serving its forming bar reddens this, and a venue that stops serving it reddens the line above
+    for (const v of CLOSED_ONLY_KLINE_VENUES) expect(serving.scenarios.filter((s) => s.venue === v && !s.error).length, v).toBeGreaterThan(30);
+  });
+
+  it('CH3a: the forming-bar verdict can fail — a non-declared page one bar short, and a declared page that holds its forming bar', () => {
+    const binance = serving.scenarios.find((s) => s.venue === 'BINANCE' && s.tf === '1h' && !s.error)!;
+    expect(headVerdict(binance.output, binance.servedMs, binance.calledAt, binance.replayToleranceMs, 'BINANCE')).toBeNull();
+    expect(headVerdict(binance.output.slice(0, -1), binance.servedMs, binance.calledAt + BOUNDARY_LAG_MS + 1, 0, 'BINANCE')).toMatch(/before the forming bar/);
+    const phemex = serving.scenarios.find((s) => s.venue === 'PHEMEX' && s.tf === '1h' && !s.error)!;
+    expect(headVerdict(phemex.output, phemex.servedMs, phemex.calledAt, phemex.replayToleranceMs, 'PHEMEX')).toBeNull();
+    const withForming = [...phemex.output, { ts: phemex.output[phemex.output.length - 1].ts + phemex.servedMs, open: 1 }];
+    expect(headVerdict(withForming, phemex.servedMs, phemex.calledAt, phemex.replayToleranceMs, 'PHEMEX')).toMatch(/served its forming bar/);
+  });
+
+  it('CH3a: the synthetic venues end every window on the forming bar, young listings included, never from the closed-only endpoint', () => {
+    const young = synthetic.filter((r) => r.listing !== 'long-listed');
+    expect(young.length).toBeGreaterThan(60);
+    expect(synthetic.some((r) => r.listing === 'young-past-reach' && r.venue === 'BITGET')).toBe(true);
+    const bad = synthetic.flatMap((r) => {
+      if (unservablePairs.has(r.id.split('/S@')[0]) || r.err) return [];
+      const why = headVerdict(r.out, r.servedMs, NOW_S, 0, r.venue);
+      const flags = [why, r.meta?.headClosedOnly ? 'head from a closed-only endpoint' : null, r.requests > SERVING_MAX_PAGES ? `${r.requests} requests` : null].filter(Boolean);
+      return flags.length ? [`${r.id}: ${flags.join(', ')}`] : [];
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('CH3a: a declared closed-only kline venue (PHEMEX) is served forming - 1 and priced from its fresh ticker, never its last close', async () => {
+    const fx = JSON.parse(fs.readFileSync(path.join(FIX, 'PHEMEX-LIVE-PRICE.json'), 'utf8')) as {
+      coin: string; tf: string; from: number; calledAt: number; kline: { url: string; body: unknown }; ticker: { url: string; body: { result: { closeRp: string; timestamp: number } } };
+    };
+    replay.venue = { answer: (url: string) => {
+      const p = new URL(url).pathname;
+      if (p === new URL(fx.kline.url).pathname) return fx.kline.body;
+      if (p === new URL(fx.ticker.url).pathname) return fx.ticker.body;
+      throw new Error(`PHEMEX-LIVE-PRICE: unexpected request ${url}`);
+    } };
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(fx.calledAt);
+    try {
+      const a = VENUES.PHEMEX.make();
+      const bars = await a.getCandles(fx.coin, fx.tf, fx.from);
+      const ctx = await a.getAssetContext(fx.coin);
+      const servedMs = VENUES.PHEMEX.mod.servedIntervalMs(fx.tf)!;
+      expect(headVerdict(bars.map((c) => ({ ts: c.time, open: c.open })), servedMs, fx.calledAt, 0, 'PHEMEX')).toBeNull();
+      expect(ctx.lastTrade?.price).toBe(Number(fx.ticker.body.result.closeRp));
+      expect(Math.abs(fx.calledAt - ctx.lastTrade!.atMs)).toBeLessThanOrEqual(LIVE_TICKER_MAX_AGE_MS);
+      const price = livePriceOf({ coin: fx.coin, timeframe: fx.tf, candles: bars, servedStepMs: servedMs }, ctx, 'PHEMEX', fx.calledAt);
+      expect(price).toBe(ctx.lastTrade!.price);
+      // the non-declared path on the SAME window is the last close, byte-identical to the pre-wave read
+      expect(livePriceOf({ coin: fx.coin, timeframe: fx.tf, candles: bars, servedStepMs: servedMs }, ctx, 'BINANCE', fx.calledAt)).toBe(bars[bars.length - 1].close);
+    } finally {
+      vi.useRealTimers();
+      replay.venue = null;
+    }
   });
 
   it('no real host was reached by S', () => {

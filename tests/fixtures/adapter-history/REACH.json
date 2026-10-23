@@ -3120,8 +3120,8 @@
   },
   "WHITEBIT/3m": {
    "R": {
-    "returned": 24,
-    "inWindow": 24,
+    "returned": 25,
+    "inWindow": 25,
     "outOfRangeBars": 0,
     "offGridBars": 0,
     "expectedSlots": 24,
@@ -3144,8 +3144,8 @@
   },
   "WHITEBIT/5m": {
    "R": {
-    "returned": 24,
-    "inWindow": 24,
+    "returned": 25,
+    "inWindow": 25,
     "outOfRangeBars": 0,
     "offGridBars": 0,
     "expectedSlots": 24,
@@ -3168,8 +3168,8 @@
   },
   "WHITEBIT/15m": {
    "R": {
-    "returned": 24,
-    "inWindow": 24,
+    "returned": 25,
+    "inWindow": 25,
     "outOfRangeBars": 0,
     "offGridBars": 0,
     "expectedSlots": 24,
@@ -3192,8 +3192,8 @@
   },
   "WHITEBIT/30m": {
    "R": {
-    "returned": 16,
-    "inWindow": 16,
+    "returned": 17,
+    "inWindow": 17,
     "outOfRangeBars": 0,
     "offGridBars": 0,
     "expectedSlots": 16,
@@ -3216,8 +3216,8 @@
   },
   "WHITEBIT/1h": {
    "R": {
-    "returned": 16,
-    "inWindow": 16,
+    "returned": 17,
+    "inWindow": 17,
     "outOfRangeBars": 0,
     "offGridBars": 0,
     "expectedSlots": 16,
@@ -3240,8 +3240,8 @@
   },
   "WHITEBIT/2h": {
    "R": {
-    "returned": 12,
-    "inWindow": 12,
+    "returned": 13,
+    "inWindow": 13,
     "outOfRangeBars": 0,
     "offGridBars": 0,
     "expectedSlots": 12,
@@ -3264,8 +3264,8 @@
   },
   "WHITEBIT/4h": {
    "R": {
-    "returned": 12,
-    "inWindow": 12,
+    "returned": 13,
+    "inWindow": 13,
     "outOfRangeBars": 0,
     "offGridBars": 0,
     "expectedSlots": 12,
@@ -3288,8 +3288,8 @@
   },
   "WHITEBIT/8h": {
    "R": {
-    "returned": 8,
-    "inWindow": 8,
+    "returned": 9,
+    "inWindow": 9,
     "outOfRangeBars": 0,
     "offGridBars": 0,
     "expectedSlots": 8,
@@ -3312,8 +3312,8 @@
   },
   "WHITEBIT/12h": {
    "R": {
-    "returned": 8,
-    "inWindow": 8,
+    "returned": 9,
+    "inWindow": 9,
     "outOfRangeBars": 0,
     "offGridBars": 0,
     "expectedSlots": 8,
@@ -3336,8 +3336,8 @@
   },
   "WHITEBIT/1d": {
    "R": {
-    "returned": 6,
-    "inWindow": 6,
+    "returned": 7,
+    "inWindow": 7,
     "outOfRangeBars": 0,
     "offGridBars": 0,
     "expectedSlots": 6,

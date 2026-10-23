@@ -20,6 +20,20 @@
  *      newest bar (head gap ≤ HEAD_ALLOWANCE_BARS). A window the seam REFUSES (StaleUpstreamWindowError) is the defect
  *      S exists for: FAIL, never INDETERMINATE. The S probes run after R/D in venue-INTERLEAVED order (one window per
  *      venue in turn), so a venue sees one request per ~venues × PACE_MS while the run keeps ≥ PACE_MS between calls.
+ *      CH3a: its newest bar must also be the venue's FORMING bar, or forming − 1 on a declared closed-only kline venue
+ *      (src/lib/live-price.ts `formingHeadVerdict`, the judgement contract-suite S reads). Closed-bar arithmetic cannot
+ *      see a window one bar short at the head; this can, and it goes red the day a venue turns closed-only or a
+ *      declared one starts serving its forming bar.
+ *
+ *   Y  (CH3a, Cowork Q5) a YOUNG-listing reference per venue: the class BTC cannot show (a young Bitget listing was
+ *      served from the closed-only history endpoint). Candidates are the venue's coins most recently first seen in our
+ *      own signals (read-only, one GROUP BY); the first whose longest serving window starts more than
+ *      YOUNG_FRONT_BARS before its first bar is the reference, and every faithful timeframe's longest window is read
+ *      for it and judged as S. A venue with no young candidate is listed, not failed; no candidate on ANY venue, or an
+ *      unreadable candidate query, is INDETERMINATE (the corpus this leg had to build is empty).
+ *
+ *   T  (CH3a, Cowork Q8) every active declared closed-only kline venue's ticker: its last trade must be fresh enough
+ *      to price a call (`tickerFreshness`). FAIL when it is not: livePriceOf would refuse every call on that venue.
  *
  * UNSERVABLE pairs (UNSERVABLE.json) and retired venues are SKIPPED and listed. A venue that is unreachable,
  * rate-limits (418/429) or throws is INDETERMINATE for that pair — fail-open, counted, never a page. An R probe the
@@ -28,8 +42,9 @@
  * read by the host wrapper from the deployed checkout's fixtures: ONE copy of the expectations, never a
  * second table in src.
  *
- * Output: one `[adapter-history] PAIR {json}` line per R/D pair, one `[adapter-history] SERVE {json}` line per S
- * window, one `RESULT_JSON=` summary, and exactly one terminal `ADAPTER_HISTORY_VERDICT=PASS|FAIL|INDETERMINATE`
+ * Output: one `[adapter-history] PAIR {json}` line per R/D pair, one `[adapter-history] SERVE {json}` line per S, Y
+ * and T result (Y windows labelled `young:<COIN>@<window>`, T as timeframe `ticker`; the host wrapper streaks them per
+ * venue × timeframe with S), one `RESULT_JSON=` summary, and exactly one terminal `ADAPTER_HISTORY_VERDICT=PASS|FAIL|INDETERMINATE`
  * (exit 0 / 1 / 3) over both. Callers gate on the TOKEN.
  * No labels, no postgres writes, no alerts (the host wrapper streaks and pages).
  */
@@ -48,6 +63,8 @@ import { RECENT_PAGE_CAP as BITGET_RECENT_CAP } from '../lib/adapters/bitget.js'
 import { RECENT_PAGE_CAP as OKX_RECENT_CAP } from '../lib/adapters/okx.js';
 import { runAsBatch } from '../lib/upstream-weight-budget.js';
 import { runScript } from '../lib/script-lifecycle.js';
+import { dbQuery } from '../lib/performance-db.js';
+import { CLOSED_ONLY_KLINE_VENUES, formingHeadVerdict, tickerFreshness } from '../lib/live-price.js';
 import type { ExchangeId } from '../types.js';
 
 const TAG = '[adapter-history]';
@@ -235,7 +252,7 @@ export async function probeAll(o: {
 
 // ── S: every serving window the product asks for (OPS-SERVED-CANDLE-TRUTH-W1 CH2) ─────────────────────────────────
 
-export interface ServeWindow { venue: string; tf: string; window: string; spanMs: number; servedStepMs: number }
+export interface ServeWindow { venue: string; tf: string; window: string; spanMs: number; servedStepMs: number; coin: string }
 
 export interface ServeResult extends ServeWindow {
   bars: number | null;
@@ -246,13 +263,15 @@ export interface ServeResult extends ServeWindow {
 }
 
 export type ServeRead =
-  | { facts: PageFacts; branch: string | null }
+  /** newestMs: the newest bar at or before answeredAtMs (null when none); the venue answered in [calledAtMs, answeredAtMs]. */
+  | { facts: PageFacts; branch: string | null; newestMs: number | null; calledAtMs: number; answeredAtMs: number }
   | { refused: { headGapBars: number; newestBarAt: string } }
   | { error: string };
 
 /** Judge one S window (pure). PASS when the served page reaches the venue's newest bar (head gap ≤
- *  HEAD_ALLOWANCE_BARS, the bound contract-suite S holds every venue to). FAIL when it does not, when the window holds
- *  no bar, or when the `getAdapter` seam refused it as stale. INDETERMINATE only when the read could not be made. */
+ *  HEAD_ALLOWANCE_BARS, the bound contract-suite S holds every venue to) AND that bar is the head the venue's class
+ *  owes (formingHeadVerdict, CH3a). FAIL when it does not, when the window holds no bar, or when the `getAdapter` seam
+ *  refused it as stale. INDETERMINATE only when the read could not be made. */
 export function judgeServe(w: ServeWindow, read: ServeRead): ServeResult {
   const base: ServeResult = { ...w, bars: null, headGapBars: null, branch: null, verdict: 'PASS', reasons: [] };
   if ('error' in read) return { ...base, verdict: 'INDETERMINATE', reasons: [read.error] };
@@ -269,7 +288,32 @@ export function judgeServe(w: ServeWindow, read: ServeRead): ServeResult {
     out.verdict = 'FAIL';
     out.reasons.push(`head gap ${f.headGapBars} bars > ${HEAD_ALLOWANCE_BARS}: the window does not reach the venue's newest bar`);
   }
+  if (read.newestMs !== null) {
+    const why = formingHeadVerdict(read.newestMs, w.servedStepMs, read.calledAtMs, w.venue, Math.max(0, read.answeredAtMs - read.calledAtMs));
+    if (why !== null) { out.verdict = 'FAIL'; out.reasons.push(`head: ${why}`); }
+  }
   return out;
+}
+
+/** One serving read as S, Y and T judge it: no endTime, from = now − span, timed on both sides. */
+async function readServe(
+  getCandles: (venue: string, tf: string, from: number, coin: string) => Promise<{ time: number }[]>,
+  nowMs: () => number,
+  w: ServeWindow,
+): Promise<ServeRead> {
+  try {
+    const calledAtMs = nowMs();
+    const from = calledAtMs - w.spanMs;
+    const page = await getCandles(w.venue, w.tf, from, w.coin);
+    const answeredAtMs = nowMs();
+    const facts = accountPage({ bars: page.map((c) => ({ ts: c.time })), servedStepMs: w.servedStepMs, from, to: null, nowMs: answeredAtMs });
+    const past = page.map((c) => c.time).filter((t) => t <= answeredAtMs);
+    return { facts, branch: historyMetaOf(page as unknown[])?.branch ?? null, newestMs: past.length ? Math.max(...past) : null, calledAtMs, answeredAtMs };
+  } catch (e) {
+    return e instanceof StaleUpstreamWindowError
+      ? { refused: { headGapBars: e.headGapBars, newestBarAt: new Date(e.newestBarAt).toISOString() } }
+      : { error: errText(e) };
+  }
 }
 
 /** The S windows, venue-INTERLEAVED: the first window of every venue, then the second of every venue, and so on. */
@@ -281,7 +325,7 @@ export function servingProbePlan(
   const perVenue = venues.map((venue) => timeframes(venue).flatMap((tf) => {
     const s = served(venue, tf);
     if (s == null) return [];
-    return servingSpans(tf, s, TF_MS[tf]).map((w) => ({ venue, tf, window: w.label, spanMs: w.spanMs, servedStepMs: s }));
+    return servingSpans(tf, s, TF_MS[tf]).map((w) => ({ venue, tf, window: w.label, spanMs: w.spanMs, servedStepMs: s, coin: COIN }));
   }));
   const out: ServeWindow[] = [];
   for (let i = 0; perVenue.some((l) => i < l.length); i++) for (const l of perVenue) if (i < l.length) out.push(l[i]);
@@ -293,7 +337,7 @@ export function servingProbePlan(
 export async function probeServing(o: {
   venues: readonly string[];
   nowMs: () => number;
-  getCandles: (venue: string, tf: string, from: number) => Promise<{ time: number }[]>;
+  getCandles: (venue: string, tf: string, from: number, coin: string) => Promise<{ time: number }[]>;
   served: (venue: string, tf: string) => number | null;
   timeframes: (venue: string) => readonly string[];
   pace?: (ms: number) => Promise<void>;
@@ -302,20 +346,107 @@ export async function probeServing(o: {
   const results: ServeResult[] = [];
   for (const w of servingProbePlan(o.venues, o.timeframes, o.served)) {
     await pace(PACE_MS);
-    let read: ServeRead;
-    try {
-      const from = o.nowMs() - w.spanMs;
-      const page = await o.getCandles(w.venue, w.tf, from);
-      const facts = accountPage({ bars: page.map((c) => ({ ts: c.time })), servedStepMs: w.servedStepMs, from, to: null, nowMs: o.nowMs() });
-      read = { facts, branch: historyMetaOf(page as unknown[])?.branch ?? null };
-    } catch (e) {
-      read = e instanceof StaleUpstreamWindowError
-        ? { refused: { headGapBars: e.headGapBars, newestBarAt: new Date(e.newestBarAt).toISOString() } }
-        : { error: errText(e) };
-    }
-    results.push(judgeServe(w, read));
+    results.push(judgeServe(w, await readServe(o.getCandles, o.nowMs, w)));
   }
   return results;
+}
+
+// ── Y: a young-listing reference per venue (OPS-SERVED-CANDLE-TRUTH-W1 CH3a, Cowork Q5) ─────────────────────────────
+
+/** A candidate is YOUNG when its longest serving window starts more than this many bars before its first bar. */
+export const YOUNG_FRONT_BARS = 5;
+/** Candidates screened per venue, most recently first seen first. */
+export const YOUNG_CANDIDATES_PER_VENUE = 6;
+/** Candidates are coins first seen in our signals within this many days. */
+export const YOUNG_CANDIDATE_DAYS = 90;
+/** Read-only; one pass over `signals` (measured 340 ms on 1.16 M rows, 2026-10-23). */
+export const YOUNG_CANDIDATES_SQL =
+  'SELECT exchange, coin, MIN(created_at) AS first_at FROM signals GROUP BY exchange, coin HAVING MIN(created_at) > $1 ORDER BY first_at DESC, coin';
+
+export interface YoungOutcome {
+  results: ServeResult[];
+  /** venue → its young reference coin */
+  refs: Record<string, string>;
+  /** venues with a timeframe to judge but no young candidate */
+  none: string[];
+}
+
+/** Each venue's longest serving window per faithful timeframe, longest first (the first one screens candidates). */
+function longestWindows(venue: string, timeframes: readonly string[], served: (venue: string, tf: string) => number | null): Omit<ServeWindow, 'coin'>[] {
+  return timeframes.flatMap((tf) => {
+    const s = served(venue, tf);
+    if (s == null) return [];
+    const spans = servingSpans(tf, s, TF_MS[tf]);
+    if (spans.length === 0) return [];
+    const w = spans.reduce((a, b) => (b.spanMs > a.spanMs ? b : a));
+    return [{ venue, tf, window: w.label, spanMs: w.spanMs, servedStepMs: s }];
+  }).sort((a, b) => b.spanMs - a.spanMs);
+}
+
+/** Probe the young references (I/O; injectable). Venue-INTERLEAVED like S: one read per venue in turn, paced before
+ *  every call. A screen read the seam REFUSES adopts that candidate (a refused young window is the defect itself); a
+ *  candidate that errors, holds no bar, or is not young is passed over. */
+export async function probeYoung(o: {
+  venues: readonly string[];
+  candidates: Readonly<Record<string, readonly string[]>>;
+  nowMs: () => number;
+  getCandles: (venue: string, tf: string, from: number, coin: string) => Promise<{ time: number }[]>;
+  served: (venue: string, tf: string) => number | null;
+  timeframes: (venue: string) => readonly string[];
+  pace?: (ms: number) => Promise<void>;
+}): Promise<YoungOutcome> {
+  const pace = o.pace ?? sleep;
+  const out: YoungOutcome = { results: [], refs: {}, none: [] };
+  const states = o.venues.map((venue) => ({
+    venue,
+    plan: longestWindows(venue, o.timeframes(venue), o.served),
+    cands: [...(o.candidates[venue] ?? [])].slice(0, YOUNG_CANDIDATES_PER_VENUE),
+    coin: null as string | null,
+    next: 0,
+  }));
+  const label = (w: Omit<ServeWindow, 'coin'>, coin: string): ServeWindow => ({ ...w, coin, window: `young:${coin}@${w.window}` });
+  const read = async (w: ServeWindow) => { await pace(PACE_MS); return readServe(o.getCandles, o.nowMs, w); };
+  const live = (st: (typeof states)[number]) => st.plan.length > 0 && (st.coin === null ? st.cands.length > 0 : st.next < st.plan.length);
+  for (const st of states) if (st.plan.length > 0 && st.cands.length === 0) out.none.push(st.venue);
+  while (states.some(live)) {
+    for (const st of states) {
+      if (!live(st)) continue;
+      if (st.coin === null) {
+        const coin = st.cands.shift()!;
+        const w = label(st.plan[0], coin);
+        const r = await read(w);
+        const young = 'refused' in r || ('facts' in r && !r.facts.emptyWindow && (r.facts.frontGapBars ?? 0) > YOUNG_FRONT_BARS);
+        if (young) {
+          st.coin = coin;
+          st.next = 1;
+          out.refs[st.venue] = coin;
+          out.results.push(judgeServe(w, r));
+        } else if (st.cands.length === 0) out.none.push(st.venue);
+        continue;
+      }
+      const w = label(st.plan[st.next++], st.coin);
+      out.results.push(judgeServe(w, await read(w)));
+    }
+  }
+  return out;
+}
+
+/** The candidate corpus, per venue, most recently first seen first. Throws on an unreadable query. */
+export function youngCandidatesByVenue(rows: readonly { exchange: string; coin: string }[]): Record<string, string[]> {
+  const by: Record<string, string[]> = {};
+  for (const r of rows) (by[r.exchange] ??= []).push(r.coin);
+  return by;
+}
+
+// ── T: a declared closed-only kline venue's ticker (OPS-SERVED-CANDLE-TRUTH-W1 CH3a, Cowork Q8) ─────────────────────
+
+/** Judge one ticker read (pure): PASS when its last trade can price a call now (tickerFreshness), FAIL when it cannot
+ *  (every call on that venue would be refused), INDETERMINATE when the ticker could not be read. */
+export function judgeTicker(venue: string, read: { lastTrade: { price: number; atMs: number } | undefined; nowMs: number } | { error: string }): ServeResult {
+  const base: ServeResult = { venue, tf: 'ticker', window: `ticker:${COIN}`, spanMs: 0, servedStepMs: 0, coin: COIN, bars: null, headGapBars: null, branch: null, verdict: 'PASS', reasons: [] };
+  if ('error' in read) return { ...base, verdict: 'INDETERMINATE', reasons: [read.error] };
+  const why = tickerFreshness(read.lastTrade, read.nowMs);
+  return why === null ? base : { ...base, verdict: 'FAIL', reasons: [`${venue} cannot price a call: ${why}`] };
 }
 
 function readExpectations(arg: string | undefined): Expectations {
@@ -334,10 +465,16 @@ async function main(): Promise<number> {
   try { expected = readExpectations(i >= 0 ? args[i + 1] : undefined); }
   catch (e) { console.log(`${TAG} ADAPTER_HISTORY_VERDICT=INDETERMINATE expectations unreadable: ${errText(e)}`); return 3; }
   const active = await getActivePromotedVenueIds();
+  // Y's corpus is BUILT here, so its vacuity guard is here: an unreadable query or no candidate anywhere is INDETERMINATE.
+  let candidates: Record<string, string[]> | { error: string };
+  try {
+    const rows = await dbQuery<{ exchange: string; coin: string }>(YOUNG_CANDIDATES_SQL, [Math.floor(Date.now() / 1000) - YOUNG_CANDIDATE_DAYS * 86_400]);
+    candidates = youngCandidatesByVenue(rows);
+  } catch (e) { candidates = { error: errText(e) }; }
   const retired = PROMOTED_VENUE_IDS.filter((v: string) => !active.includes(v as never));
   // ONE batch scope for both legs, under the canary's own name: the entrypoint keeps the single class-setting
   // site tests/unit/caller-tags.test.ts pins for it, and neither leg can spend a venue's interactive reserve.
-  const { results, serving } = await runAsBatch(async () => {
+  const { results, serving, young, tickers } = await runAsBatch(async () => {
     const results = await probeAll({
       venues: active,
       expected,
@@ -347,17 +484,41 @@ async function main(): Promise<number> {
       timeframes: (venue) => CRON_TIMEFRAMES.filter((tf) => faithfulTimeframes(venue as ExchangeId).has(tf)),
     });
     for (const r of results) console.log(`${TAG} PAIR ${JSON.stringify(r)}`);
+    const servingTfs = (venue: string) => TIMEFRAMES.filter((tf) => isTimeframeFaithful(venue as ExchangeId, tf));
+    const serveRead = (venue: string, tf: string, from: number, coin: string) => getAdapter(venue as ExchangeId).getCandles(coin, tf, from);
     const serving = await probeServing({
       venues: active,
       nowMs: () => Date.now(),
-      getCandles: (venue, tf, from) => getAdapter(venue as ExchangeId).getCandles(COIN, tf, from),
+      getCandles: serveRead,
       served: (venue, tf) => servedCandleStepMs(venue, tf),
-      timeframes: (venue) => TIMEFRAMES.filter((tf) => isTimeframeFaithful(venue as ExchangeId, tf)),
+      timeframes: servingTfs,
     });
-    return { results, serving };
+    const young = 'error' in candidates ? null : await probeYoung({
+      venues: active,
+      candidates,
+      nowMs: () => Date.now(),
+      getCandles: serveRead,
+      served: (venue, tf) => servedCandleStepMs(venue, tf),
+      timeframes: servingTfs,
+    });
+    const tickers: ServeResult[] = [];
+    for (const venue of active.filter((v) => (CLOSED_ONLY_KLINE_VENUES as readonly string[]).includes(v))) {
+      await sleep(PACE_MS);
+      try {
+        const ctx = await getAdapter(venue as ExchangeId).getAssetContext(COIN);
+        tickers.push(judgeTicker(venue, { lastTrade: ctx.lastTrade, nowMs: Date.now() }));
+      } catch (e) { tickers.push(judgeTicker(venue, { error: errText(e) })); }
+    }
+    return { results, serving, young, tickers };
   }, 'adapter-history-canary');
-  for (const r of serving) console.log(`${TAG} SERVE ${JSON.stringify(r)}`);
-  const verdict = aggregate([...results, ...serving]);
+  const youngResults = young?.results ?? [];
+  for (const r of [...serving, ...youngResults, ...tickers]) console.log(`${TAG} SERVE ${JSON.stringify(r)}`);
+  const youngLeg: { verdict: PairVerdict; reason: string | null } = 'error' in candidates
+    ? { verdict: 'INDETERMINATE', reason: `young-candidate query: ${candidates.error}` }
+    : Object.keys(young?.refs ?? {}).length === 0
+      ? { verdict: 'INDETERMINATE', reason: 'no young-listing reference on any venue (the corpus this leg builds is empty)' }
+      : { verdict: 'PASS', reason: null };
+  const verdict = aggregate([...results, ...serving, ...youngResults, ...tickers, youngLeg]);
   const count = (v: PairVerdict) => results.filter((r) => r.verdict === v).length;
   const sCount = (v: PairVerdict) => serving.filter((r) => r.verdict === v).length;
   const sId = (r: ServeResult) => `${r.venue}/${r.tf}/${r.window}`;
@@ -373,9 +534,15 @@ async function main(): Promise<number> {
       failing: serving.filter((r) => r.verdict === 'FAIL').map(sId),
       indeterminate_windows: serving.filter((r) => r.verdict === 'INDETERMINATE').map(sId),
     },
+    young: {
+      verdict: youngLeg.verdict, reason: youngLeg.reason, refs: young?.refs ?? {}, no_young_listing: young?.none ?? [],
+      windows: youngResults.length, fail: youngResults.filter((r) => r.verdict === 'FAIL').map(sId),
+      indeterminate: youngResults.filter((r) => r.verdict === 'INDETERMINATE').map(sId),
+    },
+    tickers: tickers.map((r) => ({ venue: r.venue, verdict: r.verdict, reasons: r.reasons })),
   };
   console.log(`${TAG} RESULT_JSON=${JSON.stringify(summary)}`);
-  console.log(`${TAG} ADAPTER_HISTORY_VERDICT=${verdict} pairs=${summary.pairs} pass=${summary.pass} fail=${summary.fail} indeterminate=${summary.indeterminate} skipped=${summary.skipped} serving_windows=${summary.serving.windows} serving_fail=${summary.serving.fail} serving_indeterminate=${summary.serving.indeterminate}`);
+  console.log(`${TAG} ADAPTER_HISTORY_VERDICT=${verdict} pairs=${summary.pairs} pass=${summary.pass} fail=${summary.fail} indeterminate=${summary.indeterminate} skipped=${summary.skipped} serving_windows=${summary.serving.windows} serving_fail=${summary.serving.fail} serving_indeterminate=${summary.serving.indeterminate} young_refs=${Object.keys(summary.young.refs).length} young_fail=${summary.young.fail.length} ticker_fail=${tickers.filter((r) => r.verdict === 'FAIL').length}`);
   return verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 3;
 }
 

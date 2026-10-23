@@ -177,6 +177,10 @@ export class BitgetAdapter implements ExchangeAdapter {
    * serving assembler (`branch: 'A'`). Past the endpoint's 90-day reach (RECENT_WINDOW_MS) it gets forward pages on the
    * same endpoint; past one full page it gets backward pages on the history endpoint. A window inside the reach makes
    * no extra request and returns the R page unchanged. The `endTime` path is byte-identical (R0 P9 differential).
+   *
+   * OPS-SERVED-CANDLE-TRUTH-W1 CH3a: a serving read never reaches F. A young listing's recent page (completed forward
+   * when clipped) is its window, `branch: 'A'`; F, the closed-only history endpoint, is a history-read branch and
+   * stamps `headClosedOnly`, which the getAdapter seam refuses on a serving read.
    */
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
     const symbol = toBitgetSymbol(coin);
@@ -185,8 +189,11 @@ export class BitgetAdapter implements ExchangeAdapter {
     const barMs = BAR_MS[interval]; // every mapped timeframe is a key (an unmapped one was refused above)
     // SERVED step: the module-local leaf (never tf-support — see _history-plan.ts). Every page span uses it.
     const servedStepMs = servedIntervalMs(interval) ?? barMs;
+    // headClosedOnly: the F page is `/market/history-candles`, which serves CLOSED bars only (CH3a census 2026-10-23:
+    // a young listing read through it ended one bar before the venue's forming bar on 1h…1d). Every other page's head
+    // comes from `/market/candles`, which carries the forming bar.
     const meta = (branch: HistoryBranch, substitutedNewest: boolean) =>
-      ({ servedStepMs, from: startTime, to: endTime, nowMs: Date.now(), branch, substitutedNewest });
+      ({ servedStepMs, from: startTime, to: endTime, nowMs: Date.now(), branch, substitutedNewest, headClosedOnly: branch === 'F' });
 
     // Recent path (live/indicator use): `/market/candles` returns ASCENDING
     // [ts, open, high, low, close, baseVol, quoteVol]; no reverse needed.
@@ -207,32 +214,37 @@ export class BitgetAdapter implements ExchangeAdapter {
     //     R0 I4: the remaining 10 bars, the forming one included);
     //   - front: a FULL page the routing guard rejected means a window longer than one page, so page BACKWARD on
     //     `/market/history-candles` from the oldest held bar (`endTime` = its open: strictly older closed bars).
-    // A young listing's page is not full. Whenever the history fallback's single page reaches the newest bar that page
-    // holds (judged against the venue's own bar, never the local clock), it is head-complete and answers that read
-    // below, byte-identical; a window inside the reach makes no extra request and keeps its R page unchanged.
-    if (endTime === undefined && candles.length > 0) {
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH3a: a serving read NEVER answers from `/market/history-candles`. That endpoint holds
+    // closed bars only, so a young listing (younger than the window: the routing guard rejects its page) routed there
+    // was served one bar short of the venue's forming bar and priced at the previous close. Its recent page already
+    // holds every bar the venue has from the listing on, so it is the answer, completed forward when it is clipped. A
+    // listing younger than the clipped page's end has no bar in it: one recent page anchored where that page ended (the
+    // request the forward walk makes) is its first page. History pages only ever fill the FRONT.
+    if (endTime === undefined) {
       const clipped = startTime + RECENT_WINDOW_MS <= Date.now();
       const full = recentRows.length >= (servingReachBars(interval) ?? RECENT_PAGE_CAP);
-      const fallbackHoldsHead = historyPageEnd({ servedStepMs, from: startTime, pageCap: HISTORY_PAGE_CAP }) >= candles[candles.length - 1].time;
-      if (routedRecent ? clipped : full || !fallbackHoldsHead) {
+      const recentFrom = async (fromOpenMs: number) => {
+        const rows = (await bitgetGet<string[][]>('/api/v2/mix/market/candles', {
+          productType: 'USDT-FUTURES',
+          symbol,
+          granularity,
+          startTime: fromOpenMs,
+          limit: RECENT_PAGE_CAP,
+        })) || [];
+        return { bars: rows.flatMap(c => mapBitgetCandle(c) ?? []), exhausted: rows.length === 0 };
+      };
+      const first = !routedRecent && candles.length === 0 && clipped
+        ? (await recentFrom(startTime + RECENT_WINDOW_MS)).bars
+        : candles;
+      if (!routedRecent && first.length === 0) return withHistoryMeta(first, meta('A', false));
+      if (!routedRecent || clipped) {
         const { bars, pages } = await assembleServingWindow({
-          first: candles,
+          first,
           servedStepMs,
           from: startTime,
           nowMs: Date.now(),
           maxPages: SERVING_MAX_PAGES,
-          forward: clipped
-            ? async (newestOpenMs) => {
-              const rows = (await bitgetGet<string[][]>('/api/v2/mix/market/candles', {
-                productType: 'USDT-FUTURES',
-                symbol,
-                granularity,
-                startTime: newestOpenMs + servedStepMs,
-                limit: RECENT_PAGE_CAP,
-              })) || [];
-              return { bars: rows.flatMap(c => mapBitgetCandle(c) ?? []), exhausted: rows.length === 0 };
-            }
-            : undefined,
+          forward: clipped ? async (newestOpenMs) => recentFrom(newestOpenMs + servedStepMs) : undefined,
           backward: !routedRecent && full
             ? async (oldestOpenMs) => {
               const rows = (await bitgetGet<string[][]>('/api/v2/mix/market/history-candles', {
