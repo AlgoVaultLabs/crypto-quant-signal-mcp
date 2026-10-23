@@ -232,7 +232,7 @@ describe('ARM B — PgBackend actually ROUTES through the barrier', () => {
       return next === -1 ? rest : rest.slice(0, next + 1);
     };
     for (const fn of ['exec', 'execAsync']) expect(body(fn), fn).toContain('enqueueDdl');
-    for (const fn of ['run', 'query', 'runAsync']) expect(body(fn), fn).toContain('afterDdl');
+    for (const fn of ['run', 'query', 'queryNoJit', 'runAsync']) expect(body(fn), fn).toContain('afterDdl');
   });
 
   it('drain() and awaitDbWrites() exist — read-after-write has a reachable barrier', () => {

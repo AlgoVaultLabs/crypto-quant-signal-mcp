@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildStatsAggregateSql, _parsePerfStatsPushdownFlag } from '../../src/lib/performance-db.js';
 import { SQL_PUBLISHED_POPULATION } from '../../src/lib/published-population.js';
+import { SQL_PFE_ELIGIBLE, sqlNotDefectWindow } from '../../src/lib/pfe-scoring.js';
 
 describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
   // OPS-RECENT-SIGNALS-VENUE-FILTER-W1: the builder now takes the public venue scope.
@@ -18,10 +19,14 @@ describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
     // `pfe_eval` (the DENOMINATOR) now also excludes S2 frozen-book rows: `pfe = 0 AND
     // mae = 0` means price did not move in EITHER direction, i.e. the market was shut, not
     // that the call was wrong. S1 (`pfe = 0`, `mae != 0`) is a GENUINE loss and stays in.
-    expect(groupsSql).toMatch(/count\(\*\)\s+FILTER\s*\(WHERE pfe_return_pct IS NOT NULL AND NOT \(pfe_return_pct = 0 AND mae_return_pct = 0\)\)\s+AS pfe_eval/i);
-    // Non-vacuity: the frozen exclusion must appear in BOTH the denominator and the
-    // numerator. Applying it to only one silently skews the rate instead of the cohort.
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH3 FLIPPED IT AGAIN: the eligibility fragment now also carries the generated
+    // scoring-exclusion fragment (PFE_DEFECT_WINDOWS), read from the one producer rather than restated here.
+    expect(groupsSql).toContain(`count(*) FILTER (WHERE ${SQL_PFE_ELIGIBLE}) AS pfe_eval`);
+    expect(SQL_PFE_ELIGIBLE).toBe(`pfe_return_pct IS NOT NULL AND NOT (pfe_return_pct = 0 AND mae_return_pct = 0) AND ${sqlNotDefectWindow()}`);
+    // Non-vacuity: the frozen exclusion and the window fragment must appear in BOTH the denominator and the
+    // numerator. Applying either to only one silently skews the rate instead of the cohort.
     expect(groupsSql.match(/NOT \(pfe_return_pct = 0 AND mae_return_pct = 0\)/g) ?? []).toHaveLength(2);
+    expect(groupsSql.split(sqlNotDefectWindow()).length - 1).toBe(2);
     expect(groupsSql).toMatch(/signal\s*=\s*'BUY'\s+AND\s+pfe_return_pct\s*>\s*0/i);             // BUY win
     expect(groupsSql).toMatch(/signal\s*=\s*'SELL'\s+AND\s+pfe_return_pct\s*<\s*0/i);            // SELL win
     expect(groupsSql).toMatch(/max\(created_at\)/i);                                              // Q1 ordering
@@ -40,7 +45,10 @@ describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
     // The no-time-window property the deleted `FROM signals WHERE` assertion was really guarding
     // — Merkle-parity means the full table, never a rolling window. Asserted directly now, so it
     // survives the arrival of a legitimate WHERE clause instead of being collateral damage.
-    expect(groupsSql).not.toMatch(/created_at\s*>=?/i);
+    // OPS-SERVED-CANDLE-TRUTH-W1 CH3: the scoring-exclusion fragment carries created_at bounds by design, inside the
+    // win-rate FILTERs only (eligibility, never the population); everything outside it still holds no time bound.
+    expect(groupsSql.split(sqlNotDefectWindow()).join('')).not.toMatch(/created_at\s*[<>]=?/i);
+    expect(groupsSql.slice(groupsSql.indexOf(' FROM signals'))).not.toMatch(/created_at\s*[<>]=?/i);
   });
 
   it('period SQL: min/max created_at + count; NO outcome / time-window', () => {

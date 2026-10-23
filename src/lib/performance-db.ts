@@ -8,7 +8,8 @@ import os from 'node:os';
 import type { SignalRecord, SignalVerdict, PerformanceStats } from '../types.js';
 import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js';
 import { isShortLivedScript } from './runtime.js';
-import { isPfeEligible, SQL_PFE_ELIGIBLE } from './pfe-scoring.js';
+import { isPfeEligible, sqlPfeEligible, SQL_PFE_ELIGIBLE, SCORING_EXCLUSIONS_RULE } from './pfe-scoring.js';
+import { EXCHANGE_COUNT } from './capabilities.js';
 // A1b: the ONE maturity derivation. `pfe-mae.ts` is a type-only-import leaf, so this cannot cycle.
 import { EVAL_CANDLES, maturityHorizonS, isMatureAtS } from './pfe-mae.js';
 import { buildPastReachClause, SQL_VENUE_EXPR } from './venue-candle-reach.js';
@@ -217,6 +218,30 @@ export async function retryAsync<T>(
   return { ok: false, error: lastError, attempts: tries };
 }
 
+/**
+ * One read on its own pooled client, inside `BEGIN READ ONLY` + `SET LOCAL jit = off`; ROLLBACK on any error, and the
+ * client is always released. `PgBackend.queryNoJit` is the only caller (exported for its behavioural test).
+ */
+export async function queryWithoutJit(
+  pool: { connect(): Promise<{ query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }>; release(): void }> },
+  sql: string,
+  params: unknown[],
+): Promise<unknown[]> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN READ ONLY');
+    await client.query('SET LOCAL jit = off');
+    const result = await client.query(sql, params);
+    await client.query('COMMIT');
+    return result.rows;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 class PgBackend implements DbBackend {
   private pool: import('pg').Pool;
   // In-flight (possibly retrying) fire-and-forget writes. close() drains these
@@ -401,6 +426,21 @@ class PgBackend implements DbBackend {
     // "relation does not exist" by a table that is one statement away from existing.
     const result = await this.afterDdl(() => this.pool.query(pgSql, params));
     return result.rows as SignalRecord[];
+  }
+
+  /**
+   * `query`, inside a READ ONLY transaction with `SET LOCAL jit = off`, for a read whose expression is large.
+   *
+   * OPS-SERVED-CANDLE-TRUTH-W1 CH3, measured on prod PG 16 (EXPLAIN ANALYZE, read-only, 2026-10-23): the
+   * scoring-exclusion fragment (hundreds of measured registry rows) makes the stats pushdown's expression big enough
+   * that JIT spent 6 345 ms compiling it (Optimization 3 281 ms + Emission 2 842 ms) at 309 rows, to save nothing. With
+   * JIT off the full-registry groups query runs in 1 137–1 158 ms against 936–976 ms for the pre-wave one. `SET LOCAL`
+   * scopes the setting to this transaction, so the pooled connection goes back to the pool unchanged.
+   */
+  async queryNoJit(sql: string, params: unknown[] = []): Promise<SignalRecord[]> {
+    let idx = 0;
+    const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
+    return this.afterDdl(() => queryWithoutJit(this.pool, pgSql, params)) as Promise<SignalRecord[]>;
   }
 
   async execAsync(sql: string): Promise<void> {
@@ -3449,7 +3489,10 @@ export const METHODOLOGY: Record<string, unknown> = {
     '1h': '8 candles (8 hours)', '2h': '6 candles (12 hours)', '4h': '6 candles (24 hours)',
     '8h': '4 candles (32 hours)', '12h': '4 candles (48 hours)', '1d': '3 candles (3 days)',
   },
-  dataSource: 'Hyperliquid public API. Every qualifying signal recorded and evaluated.',
+  // OPS-SERVED-CANDLE-TRUTH-W1 CH3 (ruling Q6, Mr.1): calls come from every promoted venue, not Hyperliquid alone, and
+  // "evaluated" is no longer true of every call (`scoringExclusions` below names the ones win rate leaves out). The venue
+  // count renders from EXCHANGE_COUNT (capabilities.ts), the one venue list, so it cannot go stale.
+  dataSource: `Public exchange APIs (${EXCHANGE_COUNT} venues). Every qualifying signal is recorded.`,
   // DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2 — CORRECTED. This read `'Confidence >= 60%. HOLD
   // signals excluded.'` and had been FALSE since 2026-04-15, when R6 lowered
   // MIN_TRACKABLE_CONFIDENCE from 60 to 52 (src/tools/get-trade-call.ts:193, gate site :1336).
@@ -3470,6 +3513,10 @@ export const METHODOLOGY: Record<string, unknown> = {
   //     pre-change row therefore satisfies ">= 52%" too, so no boundary clause is owed. That
   //     is a measurement, not an assumption — see the wave's audit for the query.
   signalFilter: 'Recording gate: non-HOLD calls with confidence >= 52% at signal time. Aggregation excludes HOLD and applies no further confidence filter.',
+  // OPS-SERVED-CANDLE-TRUTH-W1 CH3 (ruling Q6, Mr.1): the STANDING rule that names every class win rate cannot score —
+  // the S2 frozen book and the declared PFE_DEFECT_WINDOWS (pfe-scoring.ts, whose rows each must belong to a class this
+  // sentence names; test-pinned). It replaces any per-incident sentence: the registry's internal reasons never render.
+  scoringExclusions: SCORING_EXCLUSIONS_RULE,
 };
 
 function emptyStats(): PerformanceStats {
@@ -4016,7 +4063,8 @@ export async function aggregateSignalsSql(recentVenues: RecentVenueScope): Promi
   const { groupsSql, periodSql, recentSql, recentParams } = buildStatsAggregateSql(recentVenues);
   // Sequential on ONE pooled connection (~150ms total) — fewer concurrent conns
   // than 3 parallel queries; still ms vs the ~6s full-row-load it replaces.
-  const rawGroups = (await b.query(groupsSql)) as unknown as Array<Record<string, unknown>>;
+  // The groups query carries the scoring-exclusion fragment twice: JIT off (queryNoJit — measured, see there).
+  const rawGroups = (await b.queryNoJit(groupsSql)) as unknown as Array<Record<string, unknown>>;
   const rawPeriod = (await b.query(periodSql)) as unknown as Array<Record<string, unknown>>;
   const recentRows = (await b.query(recentSql, recentParams)) as unknown as SignalRecord[];
   const groups: StatGroupRow[] = rawGroups.map(r => ({
@@ -4242,6 +4290,11 @@ export async function getConfidenceBands(): Promise<ConfidenceBand[]> {
     return [];
   }
 
+  // OPS-SERVED-CANDLE-TRUTH-W1 CH3: every PFE expression here reads the ONE eligibility predicate. This table is public
+  // (/api/confidence-bands-public) and was the copy OPS-PFE-METRIC-INTEGRITY-W1 missed: its bare
+  // `pfe_return_pct IS NOT NULL` kept S2 frozen books in `evaluated`, and would keep a declared scoring exclusion too —
+  // both of which the published methodology rule (`scoringExclusions`) now states win rate leaves out.
+  const scorable = sqlPfeEligible();
   const sql = `
     SELECT
       CASE
@@ -4256,17 +4309,17 @@ export async function getConfidenceBands(): Promise<ConfidenceBand[]> {
         WHEN confidence >= 90 THEN '90+'
       END as band,
       COUNT(*) as total,
-      COUNT(CASE WHEN pfe_return_pct IS NOT NULL THEN 1 END) as evaluated,
+      COUNT(CASE WHEN ${scorable} THEN 1 END) as evaluated,
       COUNT(CASE
-        WHEN signal = 'BUY' AND pfe_return_pct > 0 THEN 1
-        WHEN signal = 'SELL' AND pfe_return_pct < 0 THEN 1
+        WHEN ${scorable} AND signal = 'BUY' AND pfe_return_pct > 0 THEN 1
+        WHEN ${scorable} AND signal = 'SELL' AND pfe_return_pct < 0 THEN 1
       END) as pfe_wins,
       COUNT(CASE WHEN signal = 'BUY' THEN 1 END) as buy_count,
       COUNT(CASE WHEN signal = 'SELL' THEN 1 END) as sell_count,
       ROUND(AVG(confidence)::numeric, 1) as avg_confidence,
       ROUND(AVG(CASE
-        WHEN signal = 'BUY' AND pfe_return_pct > 0 THEN pfe_return_pct
-        WHEN signal = 'SELL' AND pfe_return_pct < 0 THEN ABS(pfe_return_pct)
+        WHEN ${scorable} AND signal = 'BUY' AND pfe_return_pct > 0 THEN pfe_return_pct
+        WHEN ${scorable} AND signal = 'SELL' AND pfe_return_pct < 0 THEN ABS(pfe_return_pct)
       END)::numeric, 3) as avg_pfe_pct
     FROM signals
     WHERE signal IN ('BUY', 'SELL') AND ${SQL_PUBLISHED_POPULATION}
@@ -4274,7 +4327,7 @@ export async function getConfidenceBands(): Promise<ConfidenceBand[]> {
     ORDER BY band
   `;
 
-  const rows = await b.query(sql);
+  const rows = await b.queryNoJit(sql); // five copies of the scoring-exclusion fragment: JIT off (see queryNoJit)
   return rows
     .filter((r: any) => r.band !== null)
     .map((r: any) => ({

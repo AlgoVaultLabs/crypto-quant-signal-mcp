@@ -301,6 +301,7 @@ export function formatPublicPerformance(
     evaluationWindows: m.evaluationWindows,
     dataSource: m.dataSource,
     signalFilter: m.signalFilter,
+    scoringExclusions: m.scoringExclusions,
   };
 
   return out;

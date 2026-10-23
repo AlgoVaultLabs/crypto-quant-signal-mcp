@@ -18,8 +18,10 @@
  *     An enumeration, not a detector: a new reader means a new row here;
  *   - a cohort the exclusion empties renders null, never 100.00% and never 0;
  *
- * THIS COMMIT IS INERT: the registry, its predicates and its SQL fragment exist, and nothing
- * applies them yet. The blocks marked INERT assert that, and the switch commit flips each one.
+ * THE SWITCH (commit 2): the registry is applied — `pfeExclusionOf` returns 'defect_window' for a
+ * row inside a declared window (after HOLD, unevaluated and frozen, which keep precedence), and
+ * `sqlPfeEligible` / `SQL_PFE_ELIGIBLE` carry the generated window fragment, so the scan branch,
+ * the live pushdown and the public confidence bands all drop the same rows.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -39,10 +41,17 @@ import {
   sqlNotDefectWindow,
   sqlPfeEligible,
   SQL_PFE_ELIGIBLE,
+  CH3A_START,
+  CH3A_R1_START,
+  boundaryStepS,
   type PfeScorable,
+  type PfeDefectWindow,
 } from '../../src/lib/pfe-scoring.js';
-import { TIMEFRAMES } from '../../src/lib/capabilities.js';
-import { aggregateRowsInJs, rollupStats, _computeStatsOracle } from '../../src/lib/performance-db.js';
+import { BITGET_YOUNG, BITGET_YOUNG_1D, BITGET_YOUNG_IDS, WHITEBIT_CROSSED, WHITEBIT_PAST_THRESHOLD } from '../../src/lib/pfe-defect-window-rows.js';
+import { EXCHANGE_COUNT, TIMEFRAMES } from '../../src/lib/capabilities.js';
+import { SNAPSHOT_KLINE_MAX_LAG_MS } from '../../src/lib/live-price.js';
+import { aggregateRowsInJs, rollupStats, _computeStatsOracle, METHODOLOGY } from '../../src/lib/performance-db.js';
+import { formatPublicPerformance } from '../../src/lib/public-performance-formatter.js';
 import type { SignalRecord } from '../../src/types.js';
 
 const require = createRequire(import.meta.url);
@@ -99,18 +108,42 @@ const rec = (r: Row): SignalRecord => ({
 } as unknown as SignalRecord);
 
 describe('the registry', () => {
-  it('declares exactly the ruled rows, frozen, with `before` in epoch SECONDS (commit 1: row 1 only)', () => {
-    expect(PFE_DEFECT_WINDOWS.map(({ reason: _r, ...w }) => w)).toEqual([{
-      class: 'INCOMPLETE_VENUE_WINDOW',
-      exchange: 'BITGET',
-      timeframe: '1d',
-      before: 1792677791,
-      owner: 'OPS-SERVED-CANDLE-TRUTH-W1',
-    }]);
-    // The CH1 prod container start (deploy run 39791489391).
+  it('declares exactly the ruled rows, frozen, with every bound in epoch SECONDS', () => {
+    const strip = ({ reason: _r, ...w }: PfeDefectWindow) => w;
+    // Row 1 (Q7 = A): every BITGET 1d call before the CH1 prod container start (deploy run 39791489391).
+    expect(strip(PFE_DEFECT_WINDOWS[0])).toEqual({ class: 'INCOMPLETE_VENUE_WINDOW', exchange: 'BITGET', timeframe: '1d', before: 1792677791, owner: 'OPS-SERVED-CANDLE-TRUTH-W1' });
     expect(new Date(W.before * 1000).toISOString()).toBe('2026-10-22T14:03:11.000Z');
+    // Every measured class ends at the CH3a prod container start (deploy run 39928650001).
+    expect(new Date(CH3A_START * 1000).toISOString()).toBe('2026-10-23T09:08:12.000Z');
+    const at = (ex: string, f: (w: PfeDefectWindow) => boolean = () => true) => PFE_DEFECT_WINDOWS.filter((w) => w.exchange === ex && f(w));
+    // PHEMEX (Q8/Q9): one row, every coin and timeframe.
+    expect(at('PHEMEX').map(strip)).toEqual([{ class: 'INCOMPLETE_VENUE_WINDOW', exchange: 'PHEMEX', before: CH3A_START, owner: 'OPS-SERVED-CANDLE-TRUTH-W1' }]);
+    // Row 2 (Q7 = A): BITGET 1d young listings, CH1 start → CH3a start.
+    const row2 = at('BITGET', (w) => w.timeframe === '1d' && w.coin !== undefined);
+    expect(row2.length).toBe(BITGET_YOUNG_1D.length);
+    for (const w of row2) { expect(w.from).toBe(1792677791); expect(w.before).toBe(CH3A_START); }
+    // The measured per-coin rows map one for one from the generated module, and none outlives CH3a or predates 3d06e9be.
+    expect(at('BITGET', (w) => w.timeframe !== '1d').length).toBe(BITGET_YOUNG.length + BITGET_YOUNG_IDS.length);
+    expect(at('WHITEBIT').length).toBe(WHITEBIT_PAST_THRESHOLD.length + WHITEBIT_CROSSED.length);
+    // ASTER (Q12 = A): one row per timeframe, the calls created within the snapshot lag after their bar boundary,
+    // before the CH3a-R1 container start; on 1m (step <= the lag) every call.
+    expect(new Date(CH3A_R1_START * 1000).toISOString()).toBe('2026-10-24T09:18:00.000Z');
+    expect(at('ASTER').map(strip)).toEqual(TIMEFRAMES.map((timeframe) => ({
+      class: 'INCOMPLETE_VENUE_WINDOW', exchange: 'ASTER', timeframe, before: CH3A_R1_START, owner: 'OPS-SERVED-CANDLE-TRUTH-W1',
+      ...(timeframe === '1m' ? {} : { withinAfterBoundaryS: 90 }),
+    })));
+    expect(SNAPSHOT_KLINE_MAX_LAG_MS).toBe(90_000); // the window is the canary's snapshot bound, one constant
+    expect(PFE_DEFECT_WINDOWS.length).toBe(2 + BITGET_YOUNG_1D.length + BITGET_YOUNG.length + BITGET_YOUNG_IDS.length + WHITEBIT_PAST_THRESHOLD.length + WHITEBIT_CROSSED.length + TIMEFRAMES.length);
+    for (const w of PFE_DEFECT_WINDOWS.slice(1)) {
+      expect(w.before).toBeLessThanOrEqual(w.exchange === 'ASTER' ? CH3A_R1_START : CH3A_START);
+      if (w.exchange === 'BITGET' && w.from !== undefined) expect(w.from).toBeGreaterThanOrEqual(1783169960); // 3d06e9be's deploy step
+    }
     expect(Object.isFrozen(PFE_DEFECT_WINDOWS)).toBe(true);
-    for (const w of PFE_DEFECT_WINDOWS) expect(Object.isFrozen(w)).toBe(true);
+    for (const w of PFE_DEFECT_WINDOWS) {
+      expect(Object.isFrozen(w)).toBe(true);
+      if (w.coins) expect(Object.isFrozen(w.coins)).toBe(true);
+      if (w.ids) expect(Object.isFrozen(w.ids)).toBe(true);
+    }
   });
 
   it('every window is well-formed and safe to interpolate into SQL', () => {
@@ -118,6 +151,7 @@ describe('the registry', () => {
       expect(w.exchange).toMatch(/^[A-Z0-9]+$/);
       if (w.timeframe !== undefined) expect((TIMEFRAMES as readonly string[]).includes(w.timeframe), w.timeframe).toBe(true);
       if (w.coin !== undefined) expect(w.coin).toMatch(/^[A-Za-z0-9:._-]+$/);
+      if (w.coins !== undefined) { expect(w.coin).toBeUndefined(); expect(w.coins.length).toBeGreaterThan(0); for (const c of w.coins) expect(c).toMatch(/^[A-Za-z0-9:._-]+$/); }
       for (const t of [w.before, ...(w.from === undefined ? [] : [w.from])]) {
         expect(Number.isSafeInteger(t)).toBe(true);
         expect(t).toBeGreaterThan(1_600_000_000);   // seconds, not 1970
@@ -125,6 +159,13 @@ describe('the registry', () => {
       }
       if (w.from !== undefined) expect(w.from).toBeLessThan(w.before);
       if (w.ids !== undefined) expect(w.ids.length).toBeGreaterThan(0);
+      if (w.withinAfterBoundaryS !== undefined) {
+        const step = boundaryStepS(w.timeframe);
+        expect(step, w.timeframe).not.toBeNull();
+        expect(Number.isSafeInteger(w.withinAfterBoundaryS)).toBe(true);
+        expect(w.withinAfterBoundaryS).toBeGreaterThan(0);
+        expect(w.withinAfterBoundaryS).toBeLessThan(step!);
+      }
       expect(w.owner).toMatch(/^[A-Z0-9-]+-W\d+$/);
       expect(w.reason.length).toBeGreaterThan(20);  // INTERNAL: why the row is there, never rendered
       expect(w).not.toHaveProperty('publicReason');
@@ -135,6 +176,20 @@ describe('the registry', () => {
     expect(() => sqlNotDefectWindowOf([{ ...PFE_DEFECT_WINDOWS[0], coin: "X' OR '1'='1" }])).toThrow(/unsafe coin/);
     expect(() => sqlNotDefectWindowOf([{ ...PFE_DEFECT_WINDOWS[0], before: 1792677791000 }])).toThrow(/epoch seconds/);
     expect(() => sqlNotDefectWindowOf([{ ...PFE_DEFECT_WINDOWS[0], ids: [] }])).toThrow(/ids/);
+    expect(() => sqlNotDefectWindowOf([{ ...PFE_DEFECT_WINDOWS[0], coins: [] }])).toThrow(/coins must name/);
+    expect(() => sqlNotDefectWindowOf([{ ...PFE_DEFECT_WINDOWS[0], coin: 'BTC', coins: ['ETH'] }])).toThrow(/exclusive/);
+    expect(() => sqlNotDefectWindowOf([{ ...PFE_DEFECT_WINDOWS[0], coins: ['BTC', "X'--"] }])).toThrow(/unsafe coin/);
+    const phase = { ...PFE_DEFECT_WINDOWS[0], timeframe: '15m', withinAfterBoundaryS: 90 };
+    expect(() => sqlNotDefectWindowOf([{ ...phase, timeframe: undefined }])).toThrow(/minute, hour or day timeframe/);
+    expect(() => sqlNotDefectWindowOf([{ ...phase, timeframe: '1w' }])).toThrow(/minute, hour or day timeframe/);
+    expect(() => sqlNotDefectWindowOf([{ ...phase, withinAfterBoundaryS: 900 }])).toThrow(/not an integer in \(0, 900\)/);
+    expect(() => sqlNotDefectWindowOf([{ ...phase, withinAfterBoundaryS: 0 }])).toThrow(/not an integer/);
+    expect(() => sqlNotDefectWindowOf([{ ...phase, withinAfterBoundaryS: 1.5 }])).toThrow(/not an integer/);
+    expect(sqlNotDefectWindowOf([phase])).toContain('created_at % 900 < 90');
+  });
+  it('boundaryStepS reads minute, hour and day steps off the literal, and nothing else', () => {
+    expect(TIMEFRAMES.map(boundaryStepS)).toEqual([60, 180, 300, 900, 1800, 3600, 7200, 14400, 28800, 43200, 86400]);
+    for (const tf of ['1w', '0m', '01m', 'm', '', undefined, '15M']) expect(boundaryStepS(tf as string | undefined)).toBeNull();
   });
 });
 
@@ -150,12 +205,16 @@ describe('registry-class coverage: every row is a class the public rule names (r
   });
 });
 
-describe('tuple membership: coin, from and ids narrow a row, both sides', () => {
+describe('tuple membership: coin, from, phase and ids narrow a row, both sides', () => {
   const B = PFE_DEFECT_WINDOWS[0].before;
+  /** a 15m boundary well before B */
+  const Q = Math.floor(B / 900) * 900 - 900 * 40;
   const rows = [
+    { class: 'INCOMPLETE_VENUE_WINDOW' as const, exchange: 'ASTER', timeframe: '15m', withinAfterBoundaryS: 90, before: B, owner: 'OPS-SERVED-CANDLE-TRUTH-W1', reason: 'fixture: a phase row' },
     { class: 'INCOMPLETE_VENUE_WINDOW' as const, exchange: 'WHITEBIT', timeframe: '1h', coin: 'ETH', from: B - 1000, before: B, owner: 'OPS-SERVED-CANDLE-TRUTH-W1', reason: 'fixture: one coin, one tf, a from' },
     { class: 'INCOMPLETE_VENUE_WINDOW' as const, exchange: 'PHEMEX', before: B, owner: 'OPS-SERVED-CANDLE-TRUTH-W1', reason: 'fixture: every coin, every tf' },
     { class: 'INCOMPLETE_VENUE_WINDOW' as const, exchange: 'BITGET', timeframe: '4h', before: B, ids: [777001, 777002], owner: 'OPS-SERVED-CANDLE-TRUTH-W1', reason: 'fixture: raw ids' },
+    { class: 'INCOMPLETE_VENUE_WINDOW' as const, exchange: 'WHITEBIT', timeframe: '2h', coins: ['SOL', 'xyz:id'], from: B - 500, before: B, owner: 'OPS-SERVED-CANDLE-TRUTH-W1', reason: 'fixture: one tuple, several coins' },
   ];
   const T: [Row, boolean][] = [
     [mk('WHITEBIT', '1h', B - 1, 'BUY', 1, -1, 'ETH'), true],
@@ -170,6 +229,19 @@ describe('tuple membership: coin, from and ids narrow a row, both sides', () => 
     [{ ...mk('BITGET', '4h', B - 1), id: 777001 }, true],
     [{ ...mk('BITGET', '4h', B - 1), id: 777003 }, false],
     [{ ...mk('BITGET', '4h', B + 1), id: 777002 }, false],
+    [mk('WHITEBIT', '2h', B - 1, 'BUY', 1, -1, 'SOL'), true],
+    [mk('WHITEBIT', '2h', B - 1, 'BUY', 1, -1, 'xyz:id'), true],      // a literal holding a column name survives aliasing
+    [mk('WHITEBIT', '2h', B - 1, 'BUY', 1, -1, 'ETH'), false],        // not in coins
+    [mk('WHITEBIT', '2h', B - 501, 'BUY', 1, -1, 'SOL'), false],      // before the shared from
+    // the phase row: 15m calls within 90 s after a 15m boundary (Q is one)
+    [mk('ASTER', '15m', Q, 'BUY', 1, -1, 'ETH'), true],                // on the boundary
+    [mk('ASTER', '15m', Q + 89, 'BUY', 1, -1, 'ETH'), true],
+    [mk('ASTER', '15m', Q + 90, 'BUY', 1, -1, 'ETH'), false],          // the bound is exclusive
+    [mk('ASTER', '15m', Q + 899, 'BUY', 1, -1, 'ETH'), false],
+    [mk('ASTER', '15m', Q + 900, 'BUY', 1, -1, 'ETH'), true],          // the next boundary
+    [mk('ASTER', '15m', Q - 1, 'BUY', 1, -1, 'ETH'), false],           // just before a boundary
+    [mk('ASTER', '1h', Q + 10, 'BUY', 1, -1, 'ETH'), false],           // other timeframe
+    [mk('ASTER', '15m', B + 10 * 900 - (B % 900), 'BUY', 1, -1, 'ETH'), false], // a boundary at or after `before`
   ];
   it('TS and SQL agree row for row', () => {
     const notIn = sqlSelects(T.map(([r]) => r), sqlNotDefectWindowOf(rows));
@@ -177,6 +249,12 @@ describe('tuple membership: coin, from and ids narrow a row, both sides', () => 
       expect(isDefectWindowEvaluationOf(rows, r), JSON.stringify(r)).toBe(want);
       expect(!notIn.get(r.id), `SQL ${JSON.stringify(r)}`).toBe(want);
     }
+  });
+  it('the aliased fragment agrees too, and never rewrites inside a string literal', () => {
+    const aliased = sqlSelects(T.map(([r]) => r), sqlNotDefectWindowOf(rows, 's'), 's');
+    for (const [r, want] of T) expect(!aliased.get(r.id), `aliased SQL ${JSON.stringify(r)}`).toBe(want);
+    expect(sqlNotDefectWindowOf(rows, 's')).toContain("'xyz:id'");
+    expect(sqlNotDefectWindowOf(rows, 's')).not.toContain('xyz:s.id');
   });
 });
 
@@ -212,25 +290,51 @@ describe('TS <-> SQL parity, row for row, in a real SQL engine', () => {
     expect(() => sqlPfeEligible('s; DROP TABLE signals')).toThrow(/bad SQL alias/);
   });
 
-  it('INERT: SQL_PFE_ELIGIBLE is sqlPfeEligible(), byte-identical to the fragment before this wave', () => {
+  it('SQL_PFE_ELIGIBLE is sqlPfeEligible(): the pre-wave fragment AND the generated window fragment', () => {
     expect(SQL_PFE_ELIGIBLE).toBe(sqlPfeEligible());
-    expect(SQL_PFE_ELIGIBLE).toBe('pfe_return_pct IS NOT NULL AND NOT (pfe_return_pct = 0 AND mae_return_pct = 0)');
+    expect(SQL_PFE_ELIGIBLE).toBe(`pfe_return_pct IS NOT NULL AND NOT (pfe_return_pct = 0 AND mae_return_pct = 0) AND ${sqlNotDefectWindow()}`);
+    expect(sqlNotDefectWindow()).not.toBe('TRUE');
   });
 });
 
-describe('INERT: a window row still counts in this commit', () => {
-  it('stays eligible; the other exclusions are unchanged', () => {
-    expect(pfeExclusionOf(INSIDE_BUY_WIN)).toBeNull();
-    expect(isPfeEligible(INSIDE_BUY_WIN)).toBe(true);
+describe('the ASTER mechanism rows (Q12), row for row in a real SQL engine', () => {
+  it('every timeframe: inside the snapshot lag after a boundary and before CH3a-R1 is excluded, nothing else', () => {
+    const rows: [Row, boolean][] = [];
+    for (const tf of TIMEFRAMES) {
+      const step = boundaryStepS(tf)!;
+      const b = Math.floor((CH3A_R1_START - 30 * 86_400) / step) * step; // a boundary 30+ days before the start
+      const inside = (d: number) => step <= 90 || d < 90;
+      for (const d of [0, 1, 89, 90, 91, step - 1]) if (d < step) rows.push([mk('ASTER', tf, b + d, 'BUY', 1, -1, 'BTC'), inside(d)]);
+      rows.push([mk('ASTER', tf, CH3A_R1_START + step * 2 - (CH3A_R1_START % step), 'BUY', 1, -1, 'BTC'), false]); // a boundary after the start
+      rows.push([mk('BINANCE', tf, b, 'BUY', 1, -1, 'BTC'), false]);                                              // another venue, same instant
+    }
+    const notIn = sqlSelects(rows.map(([r]) => r), sqlNotDefectWindow());
+    for (const [r, want] of rows) {
+      expect(isDefectWindowEvaluation(r), JSON.stringify(r)).toBe(want);
+      expect(!notIn.get(r.id), `SQL ${JSON.stringify(r)}`).toBe(want);
+    }
+    expect(rows.filter(([, w]) => w).length).toBeGreaterThan(30); // both sides exercised
+    expect(rows.filter(([, w]) => !w).length).toBeGreaterThan(30);
+  });
+});
+
+describe('a window row leaves win-rate eligibility, and only that', () => {
+  it("is excluded as 'defect_window'; HOLD, unevaluated and frozen keep precedence", () => {
+    expect(pfeExclusionOf(INSIDE_BUY_WIN)).toBe('defect_window');
+    expect(isPfeEligible(INSIDE_BUY_WIN)).toBe(false);
     expect(pfeExclusionOf(mk('BITGET', '1d', W.before - 1, 'BUY', 0, 0))).toBe('frozen');
+    expect(pfeExclusionOf(mk('BITGET', '1d', W.before - 1, 'BUY', null, null))).toBe('unevaluated');
     expect(pfeExclusionOf(mk('BITGET', '1d', W.before - 1, 'HOLD', null, null))).toBe('hold');
+    expect(pfeExclusionOf(mk('BITGET', '1d', W.before))).toBeNull();          // the bound: outside, counts
   });
 
-  it('pfeWinRateOf reports the window exclusion beside the frozen one, and it is 0', () => {
+  it('pfeWinRateOf reports the window exclusion beside the frozen one', () => {
     const r = pfeWinRateOf(MATRIX);
-    expect(r.excludedDefectWindow).toBe(0);
+    // inside the window and otherwise eligible: the BUY winner, the 2026-04-19 row, the SELL winner, the S1 loss
+    expect(r.excludedDefectWindow).toBe(4);
     expect(r.excludedFrozen).toBe(2);
     expect(r.evaluated).toBe(MATRIX.filter(isPfeEligible).length);
+    expect(r.evaluated).toBe(MATRIX.filter((x) => x.signal !== 'HOLD' && x.pfe_return_pct != null).length - 2 - 4);
   });
 });
 
@@ -240,6 +344,8 @@ describe('an emptied cohort renders null, never 100.00% and never 0', () => {
   const COHORTS: [string, Row[]][] = [
     // BITGET 1d, 4 calls, every one a frozen book (S2): the exclusion that predates this wave.
     ['emptied by S2', [0, 1, 2, 3].map((i) => mk('BITGET', '1d', W.before + 300 + i, 'BUY', 0, 0))],
+    // BITGET 1d, 4 calls inside row 1, three winners and an S1 loss: every one leaves the win rate.
+    ['emptied by the window', [0, 1, 2, 3].map((i) => mk('BITGET', '1d', W.before - 10 - i, 'BUY', i === 3 ? 0 : 1.5, -0.5))],
   ];
 
   for (const [cohort, bitgetRows] of COHORTS) {
@@ -267,11 +373,30 @@ describe('an emptied cohort renders null, never 100.00% and never 0', () => {
   }
 });
 
+describe('the public methodology (ruling Q6, Mr.1)', () => {
+  it('dataSource renders the venue count from the one venue list; scoringExclusions is the rule', () => {
+    expect(METHODOLOGY.dataSource).toBe(`Public exchange APIs (${EXCHANGE_COUNT} venues). Every qualifying signal is recorded.`);
+    expect(METHODOLOGY.dataSource).toBe('Public exchange APIs (15 venues). Every qualifying signal is recorded.');
+    expect(METHODOLOGY.scoringExclusions).toBe(SCORING_EXCLUSIONS_RULE);
+  });
+
+  it('both strings reach the public formatter (the /api/performance-public, resource and get_track_record shape); no registry reason does', () => {
+    const out = formatPublicPerformance(_computeStatsOracle([], null, null), { venues: new Set(['BINANCE']), revealedShadowTimeframes: new Set(), degraded: false });
+    const m = out.methodology as Record<string, unknown>;
+    expect(m.dataSource).toBe(METHODOLOGY.dataSource);
+    expect(m.scoringExclusions).toBe(SCORING_EXCLUSIONS_RULE);
+    const json = JSON.stringify(out);
+    for (const w of PFE_DEFECT_WINDOWS) expect(json).not.toContain(w.reason);
+    expect(json).not.toContain('publicReason');
+  });
+});
+
 describe('READERS: every public PFE scorer names the shared predicate', () => {
   const READERS: { fn: string; names: RegExp; why: string }[] = [
     { fn: 'computeStats', names: /\bisPfeEligible\b/, why: 'scan branch of /api/performance-public, performance://signal-performance, get_track_record' },
     { fn: 'aggregateRowsInJs', names: /\bisPfeEligible\b/, why: 'the in-JS reference grouping the pushdown is pinned against' },
     { fn: 'buildStatsAggregateSql', names: /\bSQL_PFE_ELIGIBLE\b|\bsqlPfeEligible\(/, why: 'the LIVE prod branch (PERF_STATS_SQL_PUSHDOWN=1)' },
+    { fn: 'getConfidenceBands', names: /\bsqlPfeEligible\(/, why: '/api/confidence-bands-public (and the admin /api/confidence-bands)' },
   ];
   const src = stripComments(readFileSync(resolve(__dirname, '../../src/lib/performance-db.ts'), 'utf8'));
 
@@ -283,10 +408,6 @@ describe('READERS: every public PFE scorer names the shared predicate', () => {
       expect(body, `${fn} carries a bare eligibility copy`).not.toMatch(/pfe_return_pct IS NOT NULL/);
     });
   }
-
-  it('INERT: getConfidenceBands (/api/confidence-bands-public) still carries the bare copy the switch replaces', () => {
-    expect(extractFunctionBody(src, 'getConfidenceBands')).toMatch(/pfe_return_pct IS NOT NULL/);
-  });
 });
 
 // ── helpers (the band-population-invariance.test.ts forms) ──
