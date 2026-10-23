@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # install-worktree-hook.sh — deploy the WorktreeCreate hook, the reclaim entry point and the
-# session-budget meter from a LANDED commit (OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2 R8;
-# session budget: OPS-SESSION-BUDGET-W1 CH2).
+# two session hooks from a LANDED commit (OPS-WORKTREE-RECLAIM-ON-CREATE-W1-V2 R8; session
+# hooks: OPS-SESSION-BUDGET-W1 CH2, cut down to the one-wave gate + compact line by -R2).
 #
 #   install-worktree-hook.sh <sha>              materialize <sha> and swap `current` to it
 #   install-worktree-hook.sh <sha> --register   ... then point the user registrations at it
-#   install-worktree-hook.sh --skill-overrides  write the skillOverrides the INSTALLED meter computes
-#   install-worktree-hook.sh --verify           parity of `current` + registrations, no writes
+#   install-worktree-hook.sh --verify           parity of `current` + registrations + a drill, no writes
 #
 # ── WHY A PINNED INSTALL ───────────────────────────────────────────────────────────────────
 #   The hook was registered at an absolute path INSIDE the primary checkout, so the code that
@@ -21,26 +20,24 @@
 #     scripts/session-budget.mjs        scripts/lib/*                 ops/shared-worktree-state.json
 #     ops/worktree-noise-config.json    ops/session-budget.json
 #   (the hook reads ../ops/shared-worktree-state.json; the work predicate reads
-#   ../../ops/worktree-noise-config.json; the meter reads ../ops/session-budget.json and the
-#   vault path from lib/system-map-path.sh). The list is written to <dir>/.manifest, which the
-#   entry point re-checks on EVERY run, so a stale install shows in every verdict line.
+#   ../../ops/worktree-noise-config.json; the session hooks read ../ops/session-budget.json).
+#   The list is written to <dir>/.manifest, which the entry point re-checks on EVERY run, so a
+#   stale install shows in every verdict line.
 #
 # ── THE REGISTRATIONS ARE DECLARED, AND --register MAKES ONLY THESE EDITS ──────────────────
 #   WorktreeCreate            -> current/scripts/worktree-create-hook.sh  (the path, nested shape)
 #   SessionStart(startup)     -> current/scripts/worktree-reclaim.sh --trigger session-start
 #   UserPromptSubmit          -> <node> current/scripts/session-budget.mjs --on prompt
 #   SessionStart(compact)     -> <node> current/scripts/session-budget.mjs --on compact
-#   SessionEnd                -> <node> current/scripts/session-budget.mjs --on end   (BESIDE any
-#                                existing SessionEnd entry, never replacing it)
 #   autoCompactWindow         =  window_tokens of the installed ops/session-budget.json, and the
 #                                same value in any modelSettings entry that carries the key
 #   Hooks run under a bare PATH (measured: `env -i … command -v node` is empty), so <node> is the
 #   absolute path `command -v node` resolves at --register time, stamped at $ROOT/.node-bin.
-#   Any other session-budget command (an older install, a checkout) is removed: Claude Code runs
-#   every distinct registered command, so a stale one would judge each prompt twice.
-#   --skill-overrides adds one more declared edit, skillOverrides: the user skills the installed
-#   meter computes as name-only. Entries it did not write (any value) are kept; the set it owns
-#   is recorded at $ROOT/skill-overrides.json.
+#   Any other session-budget command (an older install, a checkout, the SessionEnd meter entry
+#   -R2 retired) is removed from every event, leaving each foreign entry byte-identical: Claude
+#   Code runs every distinct registered command, so a stale one would judge each prompt twice.
+#   skillOverrides is user-owned config and is never written here (-R2 froze the value the
+#   retired --skill-overrides mode last wrote).
 #
 # ── LAYOUT ─────────────────────────────────────────────────────────────────────────────────
 #   $ALGOVAULT_HOOK_INSTALL_ROOT (default ~/.local/share/algovault/worktree-hook)/
@@ -48,12 +45,11 @@
 #     current -> <full-sha>  swapped by rename(2), so a reader sees the old or the new, never neither
 #     registration-backup-<ts>.json   the user settings file as it was before --register
 #     .node-bin                       the node the session-budget registrations name
-#     skill-overrides.json            the name-only set --skill-overrides wrote, and when
 #
 # ── VERDICT ────────────────────────────────────────────────────────────────────────────────
 #   Exactly one terminal line:  WORKTREE_HOOK_INSTALL_VERDICT=PASS|FAIL|INDETERMINATE
-#   0 = PASS (every installed file sha256-equals origin/main; registrations as declared; the
-#            installed meter's self-test passes under the stamped node with a bare PATH)
+#   0 = PASS (every installed file sha256-equals origin/main; registrations as declared; both
+#            session hooks, run exactly as registered under a bare environment, answer a drill)
 #   1 = FAIL (a file or a registration differs) · 3 = INDETERMINATE (could not evaluate).
 #
 # Portable to macOS bash 3.2 and GNU coreutils.
@@ -110,10 +106,32 @@ parity() {   # <install-dir> -> prints rows; returns 0 iff every file is equal
   return "$bad"
 }
 
+# ── the two session hooks, run exactly as registered: /bin/sh -c "<command>", no environment
+#    but a scratch HOME, against a one-line transcript that dispatched one wave. Registered is
+#    not working; this asserts the positive answer of each hook, never the absence of an error.
+hook_drill() {   # prints one line; returns 0 iff all three answers are as declared
+  local node d t p a c ok=0
+  node="$(node_bin)"
+  if [ -z "$node" ] || [ ! -x "$node" ]; then printf 'session hook drill         not run: no stamped node\n'; return 1; fi
+  d="$(mktemp -d 2>/dev/null)" || { printf 'session hook drill         not run: no scratch dir\n'; return 1; }
+  t="$d/drill.jsonl"
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":"Read Prompt/OPS-VERIFY-DRILL-A-W1.md"},"timestamp":"2026-01-01T00:00:00.000Z"}' > "$t"
+  drill_in() { printf '{"session_id":"verify-drill","transcript_path":"%s","prompt":"%s","source":"compact","hook_event_name":"drill"}' "$t" "$1"; }
+  p="$(drill_in 'Read Prompt/OPS-VERIFY-DRILL-B-W1.md' | env -i HOME="$d" /bin/sh -c "$(budget_cmd prompt)" 2>/dev/null)"
+  a="$(drill_in 'Read Prompt/OPS-VERIFY-DRILL-A-W1-R2.md' | env -i HOME="$d" /bin/sh -c "$(budget_cmd prompt)" 2>/dev/null; printf 'exit=%s' "$?")"
+  c="$(drill_in '' | env -i HOME="$d" /bin/sh -c "$(budget_cmd compact)" 2>/dev/null)"
+  rm -rf "$d"
+  if printf '%s' "$p" | jq -e '.decision == "block" and (.reason | contains("one wave per session"))' >/dev/null 2>&1; then p="refused"; else p="NOT REFUSED (${p:0:120})"; ok=1; fi
+  if [ "$a" = "exit=0" ]; then a="allowed"; else a="NOT ALLOWED (${a:0:120})"; ok=1; fi
+  case "$c" in "Wave OPS-VERIFY-DRILL-A-W1 · spec Prompt/OPS-VERIFY-DRILL-A-W1.md"*) c="printed" ;; *) c="NOT PRINTED (${c:0:120})"; ok=1 ;; esac
+  printf 'session hook drill         second wave %s · same wave -R2 %s · compact line %s\n' "$p" "$a" "$c"
+  return "$ok"
+}
+
 # ── registrations: exactly one user WorktreeCreate (ours), one SessionStart(startup) entry,
-#    one of each session-budget hook and no stale one, the window, and a meter that runs ─────
+#    one of each session hook and no stale one, the window, and both hooks answering ─────────
 registrations_ok() {
-  local wc ss tracked node win aw ms ups cmp end stale st owned missing
+  local wc ss tracked win aw ms ups cmp stale node drill
   [ -r "$USER_SETTINGS" ] || { say "user settings unreadable: $USER_SETTINGS"; return 2; }
   wc="$(jq -r --arg c "$(hook_cmd)" '
     [ (.hooks.WorktreeCreate // [])[] | (.hooks // [])[] | .command ] as $all
@@ -126,7 +144,6 @@ registrations_ok() {
   printf 'user SessionStart(startup) %s entr(y|ies) -> %s\n' "${ss:-?}" "$(reclaim_cmd)"
   printf 'tracked WorktreeCreate     %s entr(y|ies) at %s:.claude/settings.json\n' "${tracked:-?}" "$BASE_REF"
 
-  node="$(node_bin)"
   win="$(budget_key "$ROOT/current" window_tokens)"
   aw="$(jq -r '.autoCompactWindow // "unset"' "$USER_SETTINGS" 2>/dev/null)"
   ms="$(jq -r --argjson w "${win:-0}" '[ (.modelSettings // {}) | objects | to_entries[] | .value | objects
@@ -137,31 +154,19 @@ registrations_ok() {
   }
   ups="$(cnt UserPromptSubmit "$(budget_cmd prompt)")"
   cmp="$(cnt SessionStart "$(budget_cmd compact)" compact)"
-  end="$(cnt SessionEnd "$(budget_cmd end)")"
-  stale="$(jq -r --arg p "$(budget_cmd prompt)" --arg c "$(budget_cmd compact)" --arg e "$(budget_cmd end)" '
+  # any other session-budget command in any event — an older install, a checkout, the retired
+  # SessionEnd entry — would run beside ours, so it is a FAIL until --register removes it
+  stale="$(jq -r --arg p "$(budget_cmd prompt)" --arg c "$(budget_cmd compact)" '
       [ (.hooks // {}) | to_entries[] | .value[]? | (.hooks? // [])[]? | (.command? // "") | strings
-        | select(test("/scripts/session-budget\\.mjs --on ")) | select(. != $p and . != $c and . != $e) ] | length' "$USER_SETTINGS" 2>/dev/null)"
-  st="no stamped node"
-  if [ -n "$node" ] && [ -x "$node" ]; then
-    # exactly as a hook runs it: the stamped node, the installed path, no PATH to lean on
-    st="$(env -i HOME="$HOME" "$node" "$ROOT/current/scripts/session-budget.mjs" --self-test 2>/dev/null | tail -1)"
-  fi
+        | select(test("/scripts/session-budget\\.mjs --on ")) | select(. != $p and . != $c) ] | length' "$USER_SETTINGS" 2>/dev/null)"
   printf 'autoCompactWindow          %s (installed window %s) · modelSettings disagreeing %s\n' "${aw:-?}" "${win:-?}" "${ms:-?}"
-  printf 'session-budget hooks       prompt %s · compact %s · end %s · stale %s · node %s\n' "${ups:-?}" "${cmp:-?}" "${end:-?}" "${stale:-?}" "${node:-<none>}"
-  printf 'installed meter self-test  %s\n' "${st:-<no output>}"
-
-  missing=0
-  if [ -r "$ROOT/skill-overrides.json" ]; then
-    owned="$(jq -r '.name_only | length' "$ROOT/skill-overrides.json" 2>/dev/null)"
-    missing="$(jq -r --slurpfile o "$ROOT/skill-overrides.json" '
-        (.skillOverrides // {}) as $s | [ $o[0].name_only[] | select($s[.] == null) ] | length' "$USER_SETTINGS" 2>/dev/null)"
-    printf 'skillOverrides             %s owned name-only · %s missing from the settings\n' "${owned:-?}" "${missing:-?}"
-  fi
+  node="$(node_bin)"
+  printf 'session hooks              prompt %s · compact %s · stale %s · node %s\n' "${ups:-?}" "${cmp:-?}" "${stale:-?}" "${node:-<none>}"
+  hook_drill; drill=$?
 
   [ "$wc" = "ok" ] && [ "$ss" = "1" ] && [ "$tracked" = "0" ] \
     && [ -n "$win" ] && [ "$aw" = "$win" ] && [ "$ms" = "0" ] \
-    && [ "$ups" = "1" ] && [ "$cmp" = "1" ] && [ "$end" = "1" ] && [ "$stale" = "0" ] \
-    && [ "$st" = "SESSION_BUDGET_VERDICT=PASS" ] && [ "$missing" = "0" ]
+    && [ "$ups" = "1" ] && [ "$cmp" = "1" ] && [ "$stale" = "0" ] && [ "$drill" -eq 0 ]
 }
 
 [ -n "$REPO" ] || indet "not run from inside a checkout of the repository"
@@ -172,9 +177,8 @@ MODE="install"; SHA=""; REGISTER=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --verify)          MODE="verify" ;;
-    --skill-overrides) MODE="skills" ;;
     --register)        REGISTER=1 ;;
-    -h|--help)  sed -n '2,62p' "$0" | sed -e 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '2,55p' "$0" | sed -e 's/^# \{0,1\}//'; exit 0 ;;
     -*)         indet "unknown flag: $1" ;;
     *)          SHA="$1" ;;
   esac
@@ -205,46 +209,8 @@ stage_settings() {
   cp -p "$USER_SETTINGS" "$TMP" || indet "cannot stage $TMP"
 }
 
-if [ "$MODE" = "skills" ]; then
-  [ -L "$ROOT/current" ] || indet "no install: $ROOT/current is not a symlink"
-  NODE="$(node_bin)"
-  [ -n "$NODE" ] && [ -x "$NODE" ] || indet "no stamped node at $ROOT/.node-bin — run <sha> --register first"
-  OUT="$("$NODE" "$ROOT/current/scripts/session-budget.mjs" --skill-overrides)"
-  [ "$(printf '%s\n' "$OUT" | tail -1)" = "SESSION_BUDGET_SKILLS_VERDICT=PASS" ] \
-    || indet "the installed meter could not compute skillOverrides: $(printf '%s\n' "$OUT" | tail -1)"
-  COMPUTED="$(printf '%s\n' "$OUT" | head -1)"
-  printf '%s' "$COMPUTED" | jq -e 'type == "object" and all(.[]; . == "name-only")' >/dev/null 2>&1 \
-    || indet "the meter's skillOverrides line is not a name-only object"
-  OWNED='[]'
-  [ -r "$ROOT/skill-overrides.json" ] && OWNED="$(jq -c '.name_only // []' "$ROOT/skill-overrides.json")"
-  KEEP='(.skillOverrides // {}) | with_entries(.key as $k | select(.value != "name-only" or ($owned | any(. == $k) | not)))'
-  # the keys this run adds: computed, and not named by an entry it did not write
-  WROTE="$(jq -c --argjson n "$COMPUTED" --argjson owned "$OWNED" "($KEEP) as \$kept | [ \$n | keys[] | select(\$kept[.] == null) ] | sort" "$USER_SETTINGS")" \
-    || indet "cannot read the current skillOverrides"
-  stage_settings
-  # skillOverrides only. Keep every entry this installer did not write; drop the name-only
-  # entries it wrote before (a skill used since is on again); add the computed set, except
-  # where an entry it did not write already names the skill.
-  if ! jq --argjson n "$COMPUTED" --argjson owned "$OWNED" --argjson w "$WROTE" "($KEEP) as \$kept
-        | (\$kept + (\$n | with_entries(select(.key as \$k | \$w | any(. == \$k))))) as \$new
-        | if has(\"skillOverrides\") or (\$new | length) > 0 then .skillOverrides = \$new else . end
-      " "$USER_SETTINGS" > "$TMP" 2>/dev/null || ! jq -e . "$TMP" >/dev/null 2>&1; then
-    rm -f "$TMP"; indet "could not rewrite $USER_SETTINGS (unchanged; backup at $BAK)"
-  fi
-  mv -f "$TMP" "$USER_SETTINGS" || { rm -f "$TMP"; indet "cannot replace $USER_SETTINGS (backup at $BAK)"; }
-  jq -n --argjson w "$WROTE" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg sha "$(cat "$ROOT/current/.installed-sha" 2>/dev/null)" \
-    --argjson days "$(budget_key "$ROOT/current" skill_name_only_window_days)" \
-    '{written_at: $at, installed_sha: $sha, window_days: $days, name_only: $w}' > "$ROOT/skill-overrides.json.tmp.$$" \
-    && mv -f "$ROOT/skill-overrides.json.tmp.$$" "$ROOT/skill-overrides.json" || indet "cannot record $ROOT/skill-overrides.json"
-  say "skillOverrides: $(printf '%s' "$WROTE" | jq -r 'length') name-only written: $(printf '%s' "$WROTE" | jq -r 'join(", ")')"
-  registrations_ok; r=$?
-  [ "$r" -eq 2 ] && indet "cannot read the user settings"
-  [ "$r" -eq 0 ] && emit PASS
-  emit FAIL
-fi
-
 # ── install ─────────────────────────────────────────────────────────────────────────────────
-[ -n "$SHA" ] || indet "usage: install-worktree-hook.sh <sha> [--register] | --skill-overrides | --verify"
+[ -n "$SHA" ] || indet "usage: install-worktree-hook.sh <sha> [--register] | --verify"
 git -C "$REPO" fetch origin --quiet >/dev/null 2>&1 || say "fetch failed — judging ancestry against the CACHED $BASE_REF"
 FULL="$(git -C "$REPO" rev-parse --verify --quiet "$SHA^{commit}")" || indet "not a commit: $SHA"
 git -C "$REPO" rev-parse --verify --quiet "$BASE_REF" >/dev/null || indet "cannot resolve $BASE_REF"
@@ -299,10 +265,12 @@ if [ "$REGISTER" -eq 1 ]; then
   # keeping the nested shape — the direct shape is measured not to fire; (2) one
   # SessionStart(startup) entry, appended only if that exact command is not already
   # registered; (3) the window, and the same value in any modelSettings entry carrying it;
-  # (4) the three session-budget hooks, each appended once after every session-budget
-  # command (current or stale) is removed from the event, so a re-run is a no-op.
+  # (4) the two session hooks, each appended once after every session-budget command (current
+  # or stale) is removed from the event, so a re-run is a no-op; (5) every session-budget
+  # command removed from SessionEnd, where -R2 retired ours — any other entry is untouched, and
+  # the key is dropped only when removing ours emptied it.
   if ! jq --arg h "$(hook_cmd)" --arg r "$(reclaim_cmd)" \
-        --arg bp "$(budget_cmd prompt)" --arg bc "$(budget_cmd compact)" --arg be "$(budget_cmd end)" \
+        --arg bp "$(budget_cmd prompt)" --arg bc "$(budget_cmd compact)" \
         --argjson w "$WIN" --argjson t "$HTO" '
         def ours: (.command // "") | test("/scripts/session-budget\\.mjs --on ");
         def strip_ours: map(if any((.hooks // [])[]; ours) then .hooks |= map(select(ours | not)) else . end)
@@ -325,8 +293,10 @@ if [ "$REGISTER" -eq 1 ]; then
             + [{hooks: [{type: "command", command: $bp, timeout: $t}]}])
         | .hooks.SessionStart = ((.hooks.SessionStart | strip_ours)
             + [{matcher: "compact", hooks: [{type: "command", command: $bc, timeout: $t}]}])
-        | .hooks.SessionEnd = (((.hooks.SessionEnd // []) | strip_ours)
-            + [{hooks: [{type: "command", command: $be}]}])
+        | if (.hooks.SessionEnd | type) == "array" and any(.hooks.SessionEnd[]; any((.hooks // [])[]; ours))
+          then .hooks.SessionEnd |= strip_ours
+               | if (.hooks.SessionEnd | length) == 0 then del(.hooks.SessionEnd) else . end
+          else . end
       ' "$USER_SETTINGS" > "$TMP" 2>/dev/null || ! jq -e . "$TMP" >/dev/null 2>&1; then
     rm -f "$TMP"; indet "could not rewrite $USER_SETTINGS (unchanged; backup at $BAK)"
   fi
@@ -335,7 +305,7 @@ if [ "$REGISTER" -eq 1 ]; then
   say "registered: SessionStart(startup) -> $(reclaim_cmd)"
   say "registered: UserPromptSubmit -> $(budget_cmd prompt)"
   say "registered: SessionStart(compact) -> $(budget_cmd compact)"
-  say "registered: SessionEnd (beside the existing entries) -> $(budget_cmd end)"
+  say "SessionEnd now:            $(jq -c '.hooks.SessionEnd // null' "$USER_SETTINGS")"
   say "registered: autoCompactWindow = $WIN"
 fi
 

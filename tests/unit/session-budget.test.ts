@@ -1,345 +1,271 @@
 /**
- * session-budget.test.ts — OPS-SESSION-BUDGET-W1.
+ * session-budget.test.ts — OPS-SESSION-BUDGET-W1, cut down by OPS-SESSION-BUDGET-W1-R2.
  *
- * The meter and its hooks, driven the way Claude Code drives them: the CLI, hook JSON on stdin,
- * a scratch HOME holding transcripts in the producer's vocabulary, and a scratch vault reached
- * through the vault-path SoT's own override (SYSTEM_MAP_PATH). Nothing here touches the real
- * ~/.claude, the real vault or the real state dir.
+ * The two hooks that remain — the one-wave gate (--on prompt) and the compact line
+ * (--on compact) — driven the way Claude Code drives them: the CLI, hook JSON on stdin, and a
+ * scratch HOME holding transcripts in the producer's vocabulary. Nothing here touches the real
+ * ~/.claude or the real state dir. R2 removed the cold-cache hold and the meter; the static
+ * block below keeps them removed.
  *
  * The one real-world read is the last block: the newest local transcript, when there is one, so
  * the fixture shape cannot drift from what the producer writes without a test going red.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
-  mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, statSync, copyFileSync, realpathSync,
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, statSync, realpathSync,
 } from 'node:fs';
-import { spawnSync, execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import {
-  loadConfig, makeFixtures, scenarios, summarizeFile, summarizeSession, parseJsonl, EXIT,
+  loadConfig, classifyPrompt, decidePrompt, compactMessage, promptText, lastMainRequest,
 } from '../../scripts/session-budget.mjs';
 
 const REPO = resolve(__dirname, '..', '..');
 const SCRIPT = join(REPO, 'scripts', 'session-budget.mjs');
+const CONFIG = join(REPO, 'ops', 'session-budget.json');
 const cfg = loadConfig();
 
-interface World { T: string; home: string; vault: string; proj: string; env: NodeJS.ProcessEnv }
+interface World { T: string; home: string; proj: string; env: NodeJS.ProcessEnv }
 
 function mkWorld(label: string): World {
   const T = realpathSync(mkdtempSync(join(tmpdir(), `session-budget-${label}-`)));
   const home = join(T, 'home');
-  const vault = join(T, 'vault');
   const proj = join(home, '.claude', 'projects', '-fixture-project');
   mkdirSync(proj, { recursive: true });
-  mkdirSync(join(vault, 'Claude files'), { recursive: true });
-  writeFileSync(join(vault, 'system-map.md'), '# fixture\n');
-  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, SYSTEM_MAP_PATH: join(vault, 'system-map.md') };
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
   delete env.CLAUDE_CONFIG_DIR;
-  return { T, home, vault, proj, env };
+  return { T, home, proj, env };
 }
 
 function run(w: World, args: string[], input = '', script = SCRIPT) {
-  const t0 = Date.now();
   const r = spawnSync(process.execPath, [script, ...args], { env: w.env, input, encoding: 'utf8', timeout: 60_000 });
-  return { stdout: r.stdout ?? '', stderr: r.stderr ?? '', status: r.status ?? -1, ms: Date.now() - t0 };
-}
-const token = (s: string) => s.trim().split('\n').pop();
-
-/** Write one session transcript at fresh timestamps; returns its path. */
-function writeSession(w: World, id: string, name: string, startMinAgo = 600): string {
-  const f = makeFixtures(Date.now() - startMinAgo * 60_000);
-  const file = join(w.proj, `${id}.jsonl`);
-  writeFileSync(file, f.jsonl((scenarios(f) as Record<string, unknown[]>)[name]));
-  return file;
+  return { stdout: r.stdout ?? '', stderr: r.stderr ?? '', status: r.status ?? -1 };
 }
 
-const ledger = (w: World) => {
-  const f = join(w.vault, 'Claude files', 'session-usage.jsonl');
+const errorsOf = (w: World) => {
+  const f = join(w.home, '.local', 'state', 'algovault', 'session-budget', 'errors.jsonl');
   return existsSync(f) ? readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 };
 
-function waitFor(pred: () => boolean, ms: number): boolean {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    if (pred()) return true;
-    execFileSync('sleep', ['0.2']);
-  }
-  return pred();
+// ── fixtures, in the producer's vocabulary ───────────────────────────────────────────────
+const makeFixtures = (t0: number) => ({
+  at: (min: number) => new Date(t0 + min * 60_000).toISOString(),
+  prompt(min: number, text: string) {
+    return { type: 'user', message: { role: 'user', content: text }, timestamp: this.at(min), cwd: '/fixture/project',
+      promptSource: 'sdk', uuid: `u-${min}-${text.length}`, sessionId: 'fixture' };
+  },
+  reply(min: number, id: string, ctx: number, write = 0) {
+    const usage = { input_tokens: 3, cache_read_input_tokens: Math.max(0, ctx - 3 - write), cache_creation_input_tokens: write,
+      cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: write }, output_tokens: 500 };
+    // one API response is split across records that share message.id (W1 R0)
+    return [0, 1].map((i) => ({ type: 'assistant', message: { id, model: 'claude-opus-5-5', role: 'assistant', type: 'message',
+      content: [{ type: 'thinking', thinking: '' }], usage }, requestId: `req-${id}`, timestamp: this.at(min), uuid: `a-${id}-${i}` }));
+  },
+  jsonl: (recs: unknown[]) => `${recs.flat().map((r) => JSON.stringify(r)).join('\n')}\n`,
+});
+type Fx = ReturnType<typeof makeFixtures>;
+const SCENARIOS: Record<string, (f: Fx) => unknown[]> = {
+  one_wave: (f) => [f.prompt(0, 'Read Prompt/OPS-A-W1.md. Plan-Mode required.'), f.reply(0.1, 'm1', 90000),
+    f.prompt(2, 'Read Prompt/OPS-A-W1-V2.md'), f.reply(2.1, 'm2', 100000)],
+  // the last reply is idle for hours over 162k of context: the shape the retired hold blocked
+  cold: (f) => [f.prompt(0, 'Read Prompt/OPS-A-W1.md'), f.reply(0.1, 'm1', 160000),
+    f.prompt(70, 'continue'), f.reply(70.1, 'm2', 162000, 160000)],
+  no_wave: (f) => [f.prompt(0, 'go'), f.reply(1, 'm1', 240000)],
+};
+
+/** One session transcript at fresh timestamps; returns its path. */
+function writeSession(w: World, id: string, name: string, startMinAgo = 600): string {
+  const f = makeFixtures(Date.now() - startMinAgo * 60_000);
+  const file = join(w.proj, `${id}.jsonl`);
+  writeFileSync(file, f.jsonl(SCENARIOS[name](f)));
+  return file;
 }
 
-// ── 1. the self-test, and proof that it can fail ──────────────────────────────────────────
-describe('--self-test', () => {
-  it('passes on the shipped logic, with a non-zero assertion count', () => {
-    const w = mkWorld('selftest');
-    const r = run(w, ['--self-test']);
-    expect(token(r.stdout)).toBe('SESSION_BUDGET_VERDICT=PASS');
-    expect(r.status).toBe(EXIT.PASS);
-    expect(r.stdout).toMatch(/self-test passed \([1-9]\d* assertions over [1-9]\d* scenarios\)/);
-    rmSync(w.T, { recursive: true, force: true });
-  });
+/** A copy of the hook script beside the shipped config, with one edit — how a mutant is judged. */
+function mutantScript(w: World, label: string, edit: (src: string) => string): string {
+  const t = join(w.T, `mutant-${label}`);
+  mkdirSync(join(t, 'scripts'), { recursive: true });
+  mkdirSync(join(t, 'ops'), { recursive: true });
+  writeFileSync(join(t, 'ops', 'session-budget.json'), readFileSync(CONFIG, 'utf8'));
+  const src = readFileSync(SCRIPT, 'utf8');
+  const out = edit(src);
+  expect(out, `${label}: the edit must change the source`).not.toBe(src);
+  writeFileSync(join(t, 'scripts', 'session-budget.mjs'), out);
+  return join(t, 'scripts', 'session-budget.mjs');
+}
+const BASE_COMPARISON = '!prior.includes(c.dispatch.base)';
 
-  it('mutation proof: break the two-wave rule and the self-test goes INDETERMINATE, naming it', () => {
-    const w = mkWorld('mutant');
-    const mut = join(w.T, 'mut');
-    mkdirSync(join(mut, 'scripts'), { recursive: true });
-    mkdirSync(join(mut, 'ops'), { recursive: true });
-    copyFileSync(join(REPO, 'ops', 'session-budget.json'), join(mut, 'ops', 'session-budget.json'));
-    const src = readFileSync(SCRIPT, 'utf8');
-    const broken = src.replace('if (waves.length > 1) reasons.push', 'if (waves.length > 2) reasons.push');
-    expect(broken).not.toBe(src);
-    writeFileSync(join(mut, 'scripts', 'session-budget.mjs'), broken);
-    const r = run(w, ['--self-test'], '', join(mut, 'scripts', 'session-budget.mjs'));
-    expect(token(r.stdout)).toBe('SESSION_BUDGET_VERDICT=INDETERMINATE');
-    expect(r.status).toBe(EXIT.INDETERMINATE);
-    expect(r.stderr).toContain('two waves');
-    // ...and the two-wave fixture, judged by the broken copy, PASSES — the defect this suite exists to catch
-    writeSession(w, 'aaaaaaaa-0000-0000-0000-000000000001', 'two_waves');
-    expect(token(run(w, ['--report', '--since', '1d'], '', join(mut, 'scripts', 'session-budget.mjs')).stdout))
-      .toBe('SESSION_BUDGET_VERDICT=PASS');
-    rmSync(w.T, { recursive: true, force: true });
-  });
-});
+// ── 1. the gate, pure ────────────────────────────────────────────────────────────────────
+describe('decidePrompt — one wave per session', () => {
+  const hist = [{ base: 'OPS-A-W1', file: 'OPS-A-W1' }];
+  const last = { ctx: 162000 };
+  const decide = (text: string, history = hist) => decidePrompt({ text, history, last }, cfg);
 
-// ── 2. --report verdicts over fixture worlds ─────────────────────────────────────────────
-describe('--report — one terminal token, exit 0 / 1 / 3', () => {
-  const cases: Array<[string, string, number, string | null]> = [
-    ['pass', 'PASS', EXIT.PASS, null],
-    ['two_waves', 'OVER', EXIT.OVER, 'MULTI_WAVE'],
-    ['cold_human', 'OVER', EXIT.OVER, 'COLD_REWRITES'],
-    ['not_applied', 'OVER', EXIT.OVER, 'WINDOW_NOT_APPLIED'],
-    ['overshoot', 'OVER', EXIT.OVER, 'OVERSHOOT'],
-    ['cold_machine', 'PASS', EXIT.PASS, null],
-    ['no_usage', 'INDETERMINATE', EXIT.INDETERMINATE, null],
-  ];
-  for (const [name, verdict, code, reason] of cases) {
-    it(`${name} ⇒ ${verdict}${reason ? ` (${reason})` : ''}`, () => {
-      const w = mkWorld(name);
-      writeSession(w, 'bbbbbbbb-0000-0000-0000-000000000001', name);
-      const r = run(w, ['--report', '--since', '1d']);
-      expect(token(r.stdout), r.stdout + r.stderr).toBe(`SESSION_BUDGET_VERDICT=${verdict}`);
-      expect(r.status).toBe(code);
-      const j = JSON.parse(run(w, ['--report', '--since', '1d', '--json']).stdout.replace(/\nSESSION_BUDGET_VERDICT=.*\n?$/, ''));
-      expect(j.sessions).toHaveLength(1);
-      if (reason) expect(j.sessions[0].over_reasons).toContain(reason);
-      rmSync(w.T, { recursive: true, force: true });
+  it('refuses a second base wave, naming the wave it ran, the context and the override', () => {
+    expect(decide('Read Prompt/OPS-B-W1.md')).toEqual({
+      action: 'block', kind: 'refuse_wave',
+      reason: `This session already ran OPS-A-W1 (context 162k). Start a new session for OPS-B-W1 — one wave per session. Add ${cfg.dispatch.override_token} to override.`,
     });
-  }
-
-  it('a machine-triggered cold re-write is tagged machine and counted as a skip, never judged', () => {
-    const w = mkWorld('machine');
-    writeSession(w, 'cccccccc-0000-0000-0000-000000000001', 'cold_machine');
-    const j = JSON.parse(run(w, ['--report', '--since', '1d', '--json']).stdout.replace(/\nSESSION_BUDGET_VERDICT=.*\n?$/, ''));
-    expect(j.sessions[0]).toMatchObject({ cold_rewrites_machine: 2, cold_rewrites_human: 0, machine_skips: 2, verdict: 'PASS' });
-    rmSync(w.T, { recursive: true, force: true });
   });
 
-  it('an EMPTY transcript is reported, not judged; zero sessions is a reported PASS', () => {
-    const w = mkWorld('empty');
-    let r = run(w, ['--report', '--since', '1d']);
-    expect(token(r.stdout)).toBe('SESSION_BUDGET_VERDICT=PASS');
-    expect(r.stdout).toContain('0 session(s) counted');
-    writeSession(w, 'dddddddd-0000-0000-0000-000000000001', 'empty');
-    r = run(w, ['--report', '--since', '1d']);
-    expect(token(r.stdout)).toBe('SESSION_BUDGET_VERDICT=PASS');
-    expect(r.stdout).toContain('1 EMPTY');
-    rmSync(w.T, { recursive: true, force: true });
+  it('allows -V2 and -R2 of the same wave', () => {
+    for (const p of ['Read Prompt/OPS-A-W1-V2.md', 'Read Prompt/OPS-A-W1-R2.md', 'Read Prompt/OPS-A-W1-V3.md. Plan-Mode required.']) {
+      expect(decide(p).action, p).toBe('allow');
+    }
   });
 
-  it('subagent files are read beside the main transcript', () => {
-    const w = mkWorld('subagent');
-    const main = writeSession(w, 'eeeeeeee-0000-0000-0000-000000000001', 'pass');
-    const sub = join(w.proj, 'eeeeeeee-0000-0000-0000-000000000001', 'subagents');
-    mkdirSync(sub, { recursive: true });
-    const f = makeFixtures(Date.now() - 300 * 60_000);
-    writeFileSync(join(sub, 'agent-a1.jsonl'), f.jsonl([f.reply(1, 's1', 30000, { sidechain: true, model: 'claude-sonnet-5-5' })]));
-    writeFileSync(join(sub, 'agent-a1.meta.json'), JSON.stringify({ agentType: 'general-purpose' }));
-    const s = summarizeFile(main, cfg);
-    expect(s.requests).toEqual({ main: 3, subagent: 1 });
-    rmSync(w.T, { recursive: true, force: true });
+  it('allows [same-session]', () => {
+    expect(decide(`Read Prompt/OPS-B-W1.md ${cfg.dispatch.override_token}`).action).toBe('allow');
+  });
+
+  it('non-dispatch prompts pass, including <task-notification and every machine turn', () => {
+    const prompts = ['carry on', 'please Read Prompt/OPS-B-W1.md first', '<bash-input>ls</bash-input>',
+      ...cfg.exempt_prompt_prefixes.map((p: string) => `${p}>Read Prompt/OPS-B-W1.md`)];
+    expect(prompts).toContain('<task-notification>Read Prompt/OPS-B-W1.md');
+    for (const p of prompts) expect(decide(p).action, p).toBe('allow');
+  });
+
+  it('the first dispatch of a session is allowed, and a machine turn is never a dispatch', () => {
+    expect(decide('Read Prompt/OPS-B-W1.md', []).action).toBe('allow');
+    for (const p of cfg.exempt_prompt_prefixes) expect(classifyPrompt(`${p}>x`, cfg)).toMatchObject({ machine: true, dispatch: null });
+  });
+
+  it('a dispatch names the first .md only: a second line in Prompt/ is not part of the wave', () => {
+    expect(classifyPrompt('Read Prompt/OPS-A-W1.md\nPrompt/notes.md', cfg).dispatch).toEqual({ file: 'OPS-A-W1', base: 'OPS-A-W1' });
   });
 });
 
-// ── 3. the hooks, as Claude Code invokes them ────────────────────────────────────────────
-describe('--on prompt — one wave per session, a cold cache held once', () => {
+// ── 2. the hooks, as Claude Code invokes them ────────────────────────────────────────────
+describe('--on prompt — refuses a second wave, holds nothing', () => {
   let w: World;
   let tp: string;
   const SID = 'ffffffff-0000-0000-0000-000000000001';
-  const hook = (prompt: string, transcript = tp, sid = SID) =>
-    run(w, ['--on', 'prompt'], JSON.stringify({ session_id: sid, transcript_path: transcript, prompt, cwd: '/fixture', hook_event_name: 'UserPromptSubmit' }));
+  const hook = (prompt: string, transcript = tp, script = SCRIPT) =>
+    run(w, ['--on', 'prompt'], JSON.stringify({ session_id: SID, transcript_path: transcript, prompt, cwd: '/fixture', hook_event_name: 'UserPromptSubmit' }), script);
 
   beforeAll(() => {
     w = mkWorld('prompt');
-    tp = writeSession(w, SID, 'pass', 5); // warm: the last reply is ~3 min old
+    tp = writeSession(w, SID, 'one_wave', 5);
   });
   afterAll(() => rmSync(w.T, { recursive: true, force: true }));
 
-  it('refuses a second, different wave and names the override', () => {
+  it('refuses a second, different wave with the block JSON Claude Code reads', () => {
     const r = hook('Read Prompt/OPS-B-W1.md');
     expect(r.status).toBe(0);
-    const out = JSON.parse(r.stdout);
-    expect(out.decision).toBe('block');
-    expect(out.reason).toContain('This session already ran OPS-A-W1');
-    expect(out.reason).toContain('Start a new session for OPS-B-W1');
-    expect(out.reason).toContain(cfg.dispatch.override_token);
+    expect(JSON.parse(r.stdout)).toEqual({
+      decision: 'block',
+      reason: `This session already ran OPS-A-W1 (context 100k). Start a new session for OPS-B-W1 — one wave per session. Add ${cfg.dispatch.override_token} to override.`,
+    });
   });
 
-  it('allows a -V2 and an -R2 of the same wave, and [same-session] — printing NOTHING', () => {
-    for (const p of ['Read Prompt/OPS-A-W1-V2.md', 'Read Prompt/OPS-A-W1-R3.md', 'Read Prompt/OPS-B-W1.md [same-session]', 'carry on']) {
+  it('allows -V2, -R2, [same-session] and plain prompts — printing NOTHING', () => {
+    for (const p of ['Read Prompt/OPS-A-W1-V2.md', 'Read Prompt/OPS-A-W1-R3.md', 'Read Prompt/OPS-B-W1.md [same-session]',
+      'carry on', '<task-notification>done</task-notification>']) {
       const r = hook(p);
       expect(r.status, p).toBe(0);
       expect(r.stdout, p).toBe('');
     }
   });
 
-  it('holds a cold-cache prompt over a large context once, then lets the resend through', () => {
-    const cold = writeSession(w, 'ffffffff-0000-0000-0000-000000000002', 'cold_human', 400); // last reply ~260 min ago, 162k
-    const sid = 'ffffffff-0000-0000-0000-000000000002';
-    const a = hook('continue', cold, sid);
-    const out = JSON.parse(a.stdout);
-    expect(out.decision).toBe('block');
-    expect(out.reason).toMatch(/^Cache expired \(idle \d+:\d\d\)\. Context 162k → this prompt re-writes it at 2× \(≈ \$\d+\.\d\d list\)\./);
-    const b = hook('continue', cold, sid);
-    expect(b.stdout).toBe('');
-    const st = JSON.parse(readFileSync(join(w.home, '.local', 'state', 'algovault', 'session-budget', `${sid}.json`), 'utf8'));
-    expect(st.holds).toBe(1);
-  });
-
-  it('never holds a machine turn: it is skipped and counted', () => {
-    const cold = writeSession(w, 'ffffffff-0000-0000-0000-000000000003', 'cold_human', 400);
-    const sid = 'ffffffff-0000-0000-0000-000000000003';
-    for (const p of cfg.exempt_prompt_prefixes) expect(hook(`${p}>x`, cold, sid).stdout, p).toBe('');
-    const st = JSON.parse(readFileSync(join(w.home, '.local', 'state', 'algovault', 'session-budget', `${sid}.json`), 'utf8'));
-    expect(st.machine_skips).toBe(cfg.exempt_prompt_prefixes.length);
-    expect(st.holds).toBeUndefined();
-  });
-
-  it('the side-session wake-up shape is a machine turn; a human turn that merely starts with < is still held', () => {
-    const a = writeSession(w, 'ffffffff-0000-0000-0000-000000000004', 'cold_human', 400);
-    expect(hook('<system-reminder>\nThe session "x" you started finished a turn.', a, 'ffffffff-0000-0000-0000-000000000004').stdout).toBe('');
-    const b = writeSession(w, 'ffffffff-0000-0000-0000-000000000005', 'cold_human', 400);
-    const out = JSON.parse(hook('<bash-input>ls</bash-input>', b, 'ffffffff-0000-0000-0000-000000000005').stdout);
-    expect(out.decision).toBe('block');
-    expect(out.reason).toMatch(/^Cache expired/);
-  });
-
-  it('fails OPEN on garbage input: exit 0, nothing printed, an error line in the ledger', () => {
-    const r = run(w, ['--on', 'prompt'], '{not json');
-    expect(r.status).toBe(0);
-    expect(r.stdout).toBe('');
-    expect(ledger(w).some((l) => l.type === 'error' && l.mode === 'prompt')).toBe(true);
+  it('nothing is held after a long idle over a large context', () => {
+    const cold = writeSession(w, 'ffffffff-0000-0000-0000-000000000002', 'cold', 400); // last reply ~330 min ago, 162k
+    const tail = lastMainRequest(cold);
+    expect(tail?.ctx).toBe(162000);
+    expect(Date.now() - (tail?.ts ?? Date.now())).toBeGreaterThan(3 * 3_600_000);
+    for (let i = 0; i < 2; i++) {
+      const r = hook('continue', cold);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toBe('');
+    }
+    expect(existsSync(join(w.home, '.local', 'state', 'algovault', 'session-budget', `${SID}.json`))).toBe(false);
   });
 
   it('a brand-new session with no transcript yet is allowed', () => {
-    expect(hook('Read Prompt/OPS-Z-W1.md', join(w.proj, 'missing.jsonl'), 'ffffffff-0000-0000-0000-000000000009').stdout).toBe('');
+    expect(hook('Read Prompt/OPS-Z-W1.md', join(w.proj, 'missing.jsonl')).stdout).toBe('');
+  });
+
+  it('fails OPEN on garbage input: exit 0, nothing printed, an error line in the state dir', () => {
+    const r = run(w, ['--on', 'prompt'], '{not json');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(errorsOf(w).some((l) => l.mode === 'prompt')).toBe(true);
+  });
+
+  it('a retired mode left registered by an older install fails open too', () => {
+    const r = run(w, ['--on', 'end'], JSON.stringify({ session_id: SID, transcript_path: tp, reason: 'other' }));
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(errorsOf(w).some((l) => l.mode === 'cli' && /unknown --on end/.test(l.message))).toBe(true);
+  });
+
+  it('fallibility: break the base comparison and the second-wave fixture passes', () => {
+    const broken = mutantScript(w, 'base', (src) => src.replace(BASE_COMPARISON, 'prior.includes(c.dispatch.base)'));
+    expect(hook('Read Prompt/OPS-B-W1.md', tp, broken).stdout).toBe('');
+    expect(JSON.parse(hook('Read Prompt/OPS-B-W1.md').stdout).decision).toBe('block');
   });
 });
 
 describe('--on compact — the re-orientation line', () => {
   it('names the wave and its spec within the byte cap, and prints nothing without a wave', () => {
     const w = mkWorld('compact');
-    const tp = writeSession(w, 'abababab-0000-0000-0000-000000000001', 'pass');
+    const tp = writeSession(w, 'abababab-0000-0000-0000-000000000001', 'one_wave');
     const r = run(w, ['--on', 'compact'], JSON.stringify({ session_id: 'abababab-0000-0000-0000-000000000001', transcript_path: tp, source: 'compact' }));
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe("Wave OPS-A-W1 · spec Prompt/OPS-A-W1-V2.md · re-read the current chapter and the wave's last status.md entry before continuing.");
     expect(Buffer.byteLength(r.stdout.trim())).toBeLessThanOrEqual(cfg.compact_message_max_bytes);
-    const none = writeSession(w, 'abababab-0000-0000-0000-000000000002', 'not_applied');
+    expect(Buffer.byteLength(compactMessage([{ base: 'X'.repeat(500), file: 'Y' }], cfg))).toBeLessThanOrEqual(cfg.compact_message_max_bytes);
+    const none = writeSession(w, 'abababab-0000-0000-0000-000000000002', 'no_wave');
     expect(run(w, ['--on', 'compact'], JSON.stringify({ session_id: 'abababab-0000-0000-0000-000000000002', transcript_path: none })).stdout).toBe('');
     rmSync(w.T, { recursive: true, force: true });
   });
-});
 
-describe('--on end — detached ledger write, rolling readout', () => {
-  it('returns in under a second printing nothing, then leaves ONE line with every field and a verdict file', { timeout: 30_000 }, () => {
-    const w = mkWorld('end');
-    const sid = 'cdcdcdcd-0000-0000-0000-000000000001';
-    const tp = writeSession(w, sid, 'pass');
-    const old = writeSession(w, 'cdcdcdcd-0000-0000-0000-000000000002', 'cold_human', 3000);
-    const past = new Date(Date.now() - 2 * 86_400_000);
-    execFileSync('touch', ['-t', `${past.getFullYear()}${String(past.getMonth() + 1).padStart(2, '0')}${String(past.getDate()).padStart(2, '0')}1200`, old]);
-    const r = run(w, ['--on', 'end'], JSON.stringify({ session_id: sid, transcript_path: tp, reason: 'other', hook_event_name: 'SessionEnd' }));
-    expect(r.status).toBe(0);
-    expect(r.stdout).toBe('');
-    expect(r.ms).toBeLessThan(1000);
-    const latest = join(w.vault, 'Claude files', 'session-budget-latest.md');
-    expect(waitFor(() => existsSync(latest), 15_000)).toBe(true);
-    const lines = ledger(w).filter((l) => l.type === 'session');
-    const mine = lines.filter((l) => l.session_id === sid);
-    expect(mine).toHaveLength(1);
-    for (const k of ['session_id', 'project', 'first_ts', 'last_ts', 'hours', 'requests', 'context', 'share_above_threshold',
-      'cache_write_tokens', 'cold_rewrites_human', 'cold_rewrites_machine', 'machine_skips', 'compactions', 'waves', 'skills', 'mcp',
-      'top_tool_results', 'output_tokens', 'list_usd', 'over_reason', 'over_reasons', 'verdict', 'instrument', 'source']) {
-      expect(mine[0], k).toHaveProperty(k);
-    }
-    expect(mine[0].source).toBe('session_end');
-    // the idle session that never fired SessionEnd is backfilled, once
-    expect(lines.filter((l) => l.session_id === 'cdcdcdcd-0000-0000-0000-000000000002' && l.source === 'backfill')).toHaveLength(1);
-    const md = readFileSync(latest, 'utf8');
-    expect(md).toMatch(/^SESSION_BUDGET_VERDICT=(PASS|OVER|INDETERMINATE)$/m);
-    expect(md).toContain('SESSION_BUDGET_VERDICT=OVER'); // the backfilled session is COLD_REWRITES
+  it('a bare invocation is a usage error, never a silent success', () => {
+    const w = mkWorld('usage');
+    const r = run(w, []);
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('usage');
     rmSync(w.T, { recursive: true, force: true });
   });
 });
 
-// ── 4. --skill-overrides ─────────────────────────────────────────────────────────────────
-describe('--skill-overrides — name-only only when nothing used it in the window', () => {
-  it('keeps a transcript-invoked skill and a recently used one, names the rest', () => {
-    const w = mkWorld('skills');
-    for (const s of ['used-in-transcript', 'used-recently', 'stale', 'never']) {
-      mkdirSync(join(w.home, '.claude', 'skills', s), { recursive: true });
-      writeFileSync(join(w.home, '.claude', 'skills', s, 'SKILL.md'), `---\nname: ${s}\ndescription: d\n---\nbody\n`);
-    }
-    const f = makeFixtures(Date.now() - 60 * 60_000);
-    writeFileSync(join(w.proj, 'aaaa0000-0000-0000-0000-000000000001.jsonl'),
-      f.jsonl([f.prompt(0, 'go'), f.reply(1, 'm1', 1000, { tool: { name: 'Skill', input: { skill: 'used-in-transcript' } } })]));
-    const day = 86_400_000;
-    writeFileSync(join(w.home, '.claude.json'), JSON.stringify({ skillUsage: {
-      'used-recently': { usageCount: 3, lastUsedAt: Date.now() - 10 * day },
-      stale: { usageCount: 9, lastUsedAt: Date.now() - (cfg.skill_name_only_window_days + 5) * day },
-    } }));
-    const r = run(w, ['--skill-overrides']);
-    expect(token(r.stdout)).toBe('SESSION_BUDGET_SKILLS_VERDICT=PASS');
-    expect(JSON.parse(r.stdout.split('\n')[0])).toEqual({ never: 'name-only', stale: 'name-only' });
-    rmSync(w.T, { recursive: true, force: true });
-  });
+// ── 3. static: the hold and the meter stay removed; every value comes from the config ────
+const REMOVED = ['coldHoldApplies', 'coldMessage', 'ledgerSession', 'SESSION_BUDGET_VERDICT', '--on end', 'backfill(',
+  'summarizeSession', 'summarizeFile', 'rollup(', 'renderSummary', 'renderLatest', 'writeLatest', 'report(', '--report',
+  'parseSince', 'requestCost', 'priceFor', 'writesOf', 'instrumentSha', 'instrumentMeta', 'skillOverrides(', '--skill-overrides',
+  'cold_cache', 'session-usage.jsonl', 'session-budget-latest.md', '--self-test'];
 
-  it('a census over zero transcripts is INDETERMINATE and writes no JSON', () => {
-    const w = mkWorld('skills-vacuous');
-    mkdirSync(join(w.home, '.claude', 'skills', 'x'), { recursive: true });
-    writeFileSync(join(w.home, '.claude', 'skills', 'x', 'SKILL.md'), '---\nname: x\n---\n');
-    const r = run(w, ['--skill-overrides']);
-    expect(r.stdout.trim()).toBe('SESSION_BUDGET_SKILLS_VERDICT=INDETERMINATE');
-    expect(r.status).toBe(3);
-    rmSync(w.T, { recursive: true, force: true });
-  });
-});
+const AC3 = /coldHoldApplies|ledgerSession|SESSION_BUDGET_VERDICT|--on end/g;
+const leftovers = (src: string) => [...(src.match(AC3) ?? []), ...REMOVED.filter((id) => src.includes(id))];
 
-// ── 5. static: every number comes from the threshold file ────────────────────────────────
 describe('static', () => {
-  it('the meter reads every threshold from the config and hardcodes none of their values (fixtures aside)', () => {
+  it('no hold or meter code is left in the script (AC3)', () => {
     const src = readFileSync(SCRIPT, 'utf8');
-    const logic = src.slice(0, src.indexOf('// ── self-test fixtures'));
-    expect(logic.length).toBeGreaterThan(1000);
-    const keys: Array<[string, number]> = [
-      ['cfg.window_tokens', cfg.window_tokens], ['cfg.cold_cache.idle_seconds', cfg.cold_cache.idle_seconds],
-      ['cfg.cold_cache.min_context_tokens', cfg.cold_cache.min_context_tokens], ['cfg.cold_cache.rewrite_min_tokens', cfg.cold_cache.rewrite_min_tokens],
-      ['cfg.share_threshold_tokens', cfg.share_threshold_tokens], ['cfg.skill_name_only_window_days', cfg.skill_name_only_window_days],
-      ['cfg.long_session_hours', cfg.long_session_hours], ['cfg.latest_max_rows', cfg.latest_max_rows],
-      ['cfg.overshoot_follow_requests', cfg.overshoot_follow_requests], ['cfg.cold_cache.max_human_rewrites_per_session', cfg.cold_cache.max_human_rewrites_per_session],
-    ];
-    for (const [key, v] of keys) {
-      expect(logic, key).toContain(key);
-      // a one-digit value is too short to scan for: it collides with byte sizes and slice lengths
-      if (v >= 10) expect(logic, `${key}=${v}`).not.toMatch(new RegExp(`\\b${v}\\b`));
-    }
+    expect(src.length).toBeGreaterThan(1000);
+    expect(leftovers(src)).toEqual([]);
   });
 
-  it('the static scan can fail: it sees a planted literal', () => {
-    expect(`const idle = ${cfg.cold_cache.idle_seconds};`).toMatch(new RegExp(`\\b${cfg.cold_cache.idle_seconds}\\b`));
+  it('the removed-code scan can fail: one planted identifier of each kind is seen', () => {
+    for (const id of REMOVED) expect(leftovers(`const x = 1; // ${id}`).length, id).toBeGreaterThan(0);
+  });
+
+  it('the config holds only what the two hooks and the installer read (plus files.* keys)', () => {
+    const raw = JSON.parse(readFileSync(CONFIG, 'utf8'));
+    const kept = ['_doc', 'window_tokens', 'window_reason', 'dispatch', 'exempt_prompt_prefixes', 'exempt_prompt_prefixes_reason',
+      'compact_message_max_bytes', 'compact_message_reason', 'hook_timeout_seconds', 'hook_timeout_reason'];
+    // files / files_reason belong to OPS-STATUS-INDEX-LEDGER-W1 (status-append reads them; this script does not)
+    expect(Object.keys(raw).filter((k) => !/^files/.test(k)).sort()).toEqual([...kept].sort());
+    expect(Object.keys(raw.dispatch).sort()).toEqual(['base_strip', 'base_strip_reason', 'override_token', 'regex', 'regex_reason']);
+  });
+
+  it('the script reads its numbers from the config and hardcodes none of them', () => {
+    const src = readFileSync(SCRIPT, 'utf8');
+    expect(src).toContain('cfg.compact_message_max_bytes');
+    expect(src).not.toMatch(new RegExp(`\\b${cfg.compact_message_max_bytes}\\b`));
   });
 });
 
-// ── 6. the producer itself: the fixture shape must match what Claude Code writes ─────────
+// ── 4. the producer itself: the fixture shape must match what Claude Code writes ─────────
 const REAL = join(homedir(), '.claude', 'projects');
 const newest = (() => {
   if (!existsSync(REAL)) return null;
@@ -358,14 +284,12 @@ const newest = (() => {
 })();
 
 describe.skipIf(!newest)('the real producer (local only)', () => {
-  it('the newest local transcript still carries per-record usage, split by message.id', () => {
-    const { recs } = parseJsonl(readFileSync(newest as string, 'utf8'));
-    const assistant = recs.filter((r: { type?: string; message?: { model?: string } }) => r.type === 'assistant' && r.message?.model !== '<synthetic>');
-    const ids = new Set(assistant.map((r: { message: { id: string } }) => r.message.id));
-    expect(assistant.length).toBeGreaterThan(0);
-    expect(assistant.some((r: { message: { usage?: { input_tokens?: number } } }) => typeof r.message.usage?.input_tokens === 'number')).toBe(true);
-    const s = summarizeSession({ main: recs }, cfg);
-    expect(s.verdict).not.toBe('INDETERMINATE');
-    expect(s.requests.main).toBeLessThanOrEqual(ids.size);
+  it('the newest local transcript still carries text prompts and per-record usage the gate reads', () => {
+    const recs = readFileSync(newest as string, 'utf8').split('\n').filter(Boolean)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    expect(recs.some((r) => typeof promptText(r) === 'string' && (promptText(r) as string).length > 0)).toBe(true);
+    const tail = lastMainRequest(newest as string);
+    expect(tail).not.toBeNull();
+    expect(tail?.ctx).toBeGreaterThan(0);
   });
 });

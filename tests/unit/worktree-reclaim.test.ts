@@ -13,7 +13,7 @@
  * (scripts/ + scripts/lib/ + ops/), so the SoT and the noise manifest they read are scratch
  * files — the real ops/shared-worktree-state.json and the real worktrees are never touched.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   mkdtempSync, rmSync, writeFileSync, mkdirSync, symlinkSync, readFileSync, existsSync,
@@ -23,6 +23,14 @@ import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const REPO = resolve(__dirname, '..', '..');
+
+// Every test here blocks on spawnSync, and back-to-back synchronous tests never give the worker a
+// macrotask turn, so it cannot read vitest's RPC replies: once a run of them passes vitest's 60 s
+// RPC timeout the file ends "Timeout calling onTaskUpdate" (exit 1) with every test green.
+// Measured 2026-10-23 at load ~20-35: this file at 78-85 s tripped it twice; at 50 s it did not.
+// One setImmediate per test lets the poll phase drain the replies, whatever the file's length:
+// 7 synthetic 9.5 s blocking tests exit 1 with that error without this hook, and 0 with it.
+afterEach(() => new Promise<void>((done) => { setImmediate(done); }));
 const TOUCHED = [
   'scripts/cc-session.sh',
   'scripts/worktree-reclaim.sh',
@@ -746,7 +754,9 @@ describe('scripts/install-worktree-hook.sh — pinned install and registrations'
       hooks: {
         UserPromptSubmit: [{ matcher: '*', hooks: [{ type: 'command', command: '/x/log.sh user' }] },
           { hooks: [{ type: 'command', command: 'node /old/checkout/scripts/session-budget.mjs --on prompt' }] }],
-        SessionEnd: [{ hooks: [{ type: 'command', command: '/x/session-end.sh' }] }],
+        // the pre-existing entry, then the meter entry OPS-SESSION-BUDGET-W1-R2 retired
+        SessionEnd: [{ hooks: [{ type: 'command', command: '/x/session-end.sh' }] },
+          { hooks: [{ type: 'command', command: '/usr/local/bin/node /old/install/current/scripts/session-budget.mjs --on end' }] }],
         WorktreeCreate: [{ hooks: [{ type: 'command', command: '/old/primary/scripts/worktree-create-hook.sh' }] }],
       },
     }, null, 2));
@@ -780,7 +790,7 @@ describe('scripts/install-worktree-hook.sh — pinned install and registrations'
     expect(realpathSync(join(inst(), 'current'))).toBe(realpathSync(join(inst(), sha1)));
   });
 
-  it('--register makes EXACTLY the declared edits, keeps everything else, backs up first, and is idempotent', () => {
+  it('--register makes EXACTLY the declared edits, keeps everything else, backs up first, and is idempotent', { timeout: 30_000 }, () => {
     const before = JSON.parse(readFileSync(settings(), 'utf8'));
     const cfg = JSON.parse(readFileSync(join(REPO, 'ops', 'session-budget.json'), 'utf8'));
     let first = '';
@@ -811,64 +821,53 @@ describe('scripts/install-worktree-hook.sh — pinned install and registrations'
     // the stale session-budget command is gone, the foreign entry is kept, ours is appended once
     expect(ha.UserPromptSubmit).toEqual([hb.UserPromptSubmit[0],
       { hooks: [{ type: 'command', command: budget('prompt'), timeout: cfg.hook_timeout_seconds }] }]);
-    // beside the existing SessionEnd, never replacing it
-    expect(ha.SessionEnd).toEqual([...hb.SessionEnd, { hooks: [{ type: 'command', command: budget('end') }] }]);
+    // the retired meter entry is removed; the pre-existing SessionEnd entry is byte-identical
+    expect(ha.SessionEnd).toEqual([hb.SessionEnd[0]]);
+    expect(JSON.stringify(ha.SessionEnd[0])).toBe(JSON.stringify(hb.SessionEnd[0]));
+    expect(first).not.toContain('--on end');
     const backups = readdirSync(inst()).filter((f) => f.startsWith('registration-backup-'));
     expect(backups.length).toBeGreaterThan(0);
     expect(JSON.parse(readFileSync(join(inst(), backups.sort()[0]), 'utf8'))).toEqual(before);
   });
 
-  it('every registered session-budget command runs as written, under a bare PATH', { timeout: 30_000 }, () => {
+  it('both registered session hooks answer as written, under a bare environment', { timeout: 30_000 }, () => {
     const after = JSON.parse(readFileSync(settings(), 'utf8'));
-    const cmd = after.hooks.UserPromptSubmit[1].hooks[0].command as string;
-    const r = spawnSync('/bin/sh', ['-c', `${cmd.replace(/--on prompt$/, '--self-test')}`],
-      { env: { HOME: s.home }, encoding: 'utf8' });
-    expect(r.stdout.trim().split('\n').pop()).toBe('SESSION_BUDGET_VERDICT=PASS');
+    const prompt = after.hooks.UserPromptSubmit[1].hooks[0].command as string;
+    const compact = after.hooks.SessionStart[1].hooks[0].command as string;
+    const t = join(s.T, 'drill.jsonl');
+    writeFileSync(t, `${JSON.stringify({ type: 'user', message: { role: 'user', content: 'Read Prompt/OPS-A-W1.md' }, timestamp: new Date().toISOString() })}\n`);
+    const hook = (cmd: string, prompt = '') => spawnSync('/bin/sh', ['-c', cmd],
+      { env: { HOME: s.home }, encoding: 'utf8', input: JSON.stringify({ session_id: 'drill', transcript_path: t, prompt }) });
+    let r = hook(prompt, 'Read Prompt/OPS-B-W1.md');
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).reason).toContain('one wave per session');
+    r = hook(prompt, 'Read Prompt/OPS-A-W1-R2.md');
+    expect([r.status, r.stdout]).toEqual([0, '']);
+    r = hook(compact);
+    expect(r.stdout).toMatch(/^Wave OPS-A-W1 · spec Prompt\/OPS-A-W1\.md/);
   });
 
-  it('--skill-overrides writes the computed name-only set and keeps every entry it did not write', { timeout: 60_000 }, () => {
-    const skills = join(s.home, '.claude', 'skills');
-    for (const k of ['used-skill', 'unused-skill', 'user-off', 'user-name-only']) {
-      mkdirSync(join(skills, k), { recursive: true });
-      writeFileSync(join(skills, k, 'SKILL.md'), `---\nname: ${k}\ndescription: d\n---\n`);
-    }
-    const proj = join(s.home, '.claude', 'projects', '-p');
-    mkdirSync(proj, { recursive: true });
-    const ts = new Date().toISOString();
-    writeFileSync(join(proj, 's1.jsonl'), `${JSON.stringify({ type: 'assistant', timestamp: ts, message: { id: 'm1', model: 'claude-opus-5-5',
-      content: [{ type: 'tool_use', name: 'Skill', input: { skill: 'used-skill' } }],
-      usage: { input_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 1 } } })}\n`);
-    let r = run('bash', [installer(), '--skill-overrides'], { env: env() });
-    expect(r.stdout.trim().split('\n').pop(), r.stdout + r.stderr).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
-    expect(JSON.parse(readFileSync(settings(), 'utf8')).skillOverrides)
-      .toEqual({ 'user-off': 'off', 'user-name-only': 'name-only', 'unused-skill': 'name-only' });
-    expect(JSON.parse(readFileSync(join(inst(), 'skill-overrides.json'), 'utf8')).name_only).toEqual(['unused-skill']);
-    // the skill is used later: the next run takes back only the entry it wrote
-    writeFileSync(join(proj, 's2.jsonl'), readFileSync(join(proj, 's1.jsonl'), 'utf8').replace('used-skill', 'unused-skill'));
-    r = run('bash', [installer(), '--skill-overrides'], { env: env() });
-    expect(r.stdout.trim().split('\n').pop(), r.stdout + r.stderr).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
-    expect(JSON.parse(readFileSync(settings(), 'utf8')).skillOverrides).toEqual({ 'user-off': 'off', 'user-name-only': 'name-only' });
-    // an owned entry deleted by hand is a FAIL at --verify, not a silent loss
-    writeFileSync(join(proj, 's2.jsonl'), '');
-    r = run('bash', [installer(), '--skill-overrides'], { env: env() });
-    expect(r.stdout.trim().split('\n').pop()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
-    const j = JSON.parse(readFileSync(settings(), 'utf8'));
-    const saved = readFileSync(settings(), 'utf8');
-    delete j.skillOverrides['unused-skill'];
-    writeFileSync(settings(), JSON.stringify(j, null, 2));
-    r = run('bash', [installer(), '--verify'], { env: env() });
-    expect(r.stdout.trim().split('\n').pop()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=FAIL');
-    expect(r.stdout).toContain('1 missing from the settings');
-    writeFileSync(settings(), saved);
+  it('--skill-overrides is retired: an unknown flag, and skillOverrides is left byte-identical', () => {
+    const before = JSON.stringify(JSON.parse(readFileSync(settings(), 'utf8')).skillOverrides);
+    const r = run('bash', [installer(), '--skill-overrides'], { env: env() });
+    expect(r.stdout.trim().split('\n').pop()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=INDETERMINATE');
+    expect(r.stderr).toContain('unknown flag: --skill-overrides');
+    expect(JSON.stringify(JSON.parse(readFileSync(settings(), 'utf8')).skillOverrides)).toBe(before);
+    expect(before).toBe(JSON.stringify({ 'user-off': 'off', 'user-name-only': 'name-only' }));
   });
 
-  it('--verify FAILs when a session-budget registration is missing, stale, or its node is gone', { timeout: 60_000 }, () => {
+  it('--verify FAILs when a session hook is missing, stale, retired-but-registered, or does not answer', { timeout: 60_000 }, () => {
     const saved = readFileSync(settings(), 'utf8');
     const verdict = () => run('bash', [installer(), '--verify'], { env: env() }).stdout.trim().split('\n').pop();
     expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
     const j = JSON.parse(saved);
-    j.hooks.SessionEnd.pop();
+    j.hooks.UserPromptSubmit.pop();
     writeFileSync(settings(), JSON.stringify(j, null, 2));
+    expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=FAIL');
+    const e = JSON.parse(saved);
+    const node = readFileSync(join(inst(), '.node-bin'), 'utf8').trim();
+    e.hooks.SessionEnd.push({ hooks: [{ type: 'command', command: `${node} ${inst()}/current/scripts/session-budget.mjs --on end` }] });
+    writeFileSync(settings(), JSON.stringify(e, null, 2));
     expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=FAIL');
     const k = JSON.parse(saved);
     k.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: 'node /a/checkout/scripts/session-budget.mjs --on prompt' }] });
@@ -882,8 +881,19 @@ describe('scripts/install-worktree-hook.sh — pinned install and registrations'
     const stamp = readFileSync(join(inst(), '.node-bin'), 'utf8');
     writeFileSync(join(inst(), '.node-bin'), '/nonexistent/node\n');
     expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=FAIL');
+    // registered exactly as declared, but the command answers nothing: only the drill sees it
+    writeFileSync(join(inst(), '.node-bin'), '/usr/bin/true\n');
+    writeFileSync(settings(), saved.split(stamp.trim()).join('/usr/bin/true'));
+    const r = run('bash', [installer(), '--verify'], { env: env() });
+    expect(r.stdout.trim().split('\n').pop()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=FAIL');
+    expect(r.stdout).toMatch(/session hooks +prompt 1 · compact 1 · stale 0/);
+    expect(r.stdout).toContain('second wave NOT REFUSED');
+    expect(r.stdout).toContain('compact line NOT PRINTED');
+    writeFileSync(settings(), saved);
     writeFileSync(join(inst(), '.node-bin'), stamp);
-    expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
+    const ok = run('bash', [installer(), '--verify'], { env: env() });
+    expect(ok.stdout.trim().split('\n').pop()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
+    expect(ok.stdout).toContain('second wave refused · same wave -R2 allowed · compact line printed');
   });
 
   it('--verify is PASS on a faithful install and FAIL once an installed file drifts', () => {

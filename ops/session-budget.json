@@ -1,24 +1,8 @@
 {
-  "_doc": "OPS-SESSION-BUDGET-W1 — every threshold and price scripts/session-budget.mjs reads. Nothing in the script hardcodes a number; a ratchet is a one-number edit here. The script, the hooks it serves, the installer and the tests all read this one file.",
+  "_doc": "OPS-SESSION-BUDGET-W1 (cut down by -R2) — every value scripts/session-budget.mjs (the one-wave gate + the compact line) and the installer's session keys read. R2 removed the cold-cache hold and the meter, and with them every key only they read (cold_cache.*, prices, the readout, backfill and skill-census keys); Claude Code's /usage is the scoreboard.",
 
   "window_tokens": 250000,
-  "window_reason": "autoCompactWindow the installer writes into ~/.claude/settings.json. Auto-compaction fires near window - 33k (measured 466,299-469,623 on a 500k window, 11 events, R0), so a request above the window means the window was not applied or one turn overshot it (ruling Q1).",
-  "overshoot_follow_requests": 3,
-  "overshoot_follow_requests_reason": "A request above the window followed by a compact_boundary within this many main requests is OVERSHOOT; none is WINDOW_NOT_APPLIED (ruling Q1).",
-
-  "share_threshold_tokens": 150000,
-  "share_threshold_reason": "The cost-weighted share of usage above this context is the figure /usage reports (E1: 94% on 2026-10-23); the readout trends it.",
-
-  "cold_cache": {
-    "idle_seconds": 3300,
-    "idle_reason": "55 min: inside the 1 h cache TTL every measured session writes with (5 m writes = 0 in R0), so a prompt after this gap meets a cold cache.",
-    "min_context_tokens": 150000,
-    "min_context_reason": "Below this a cold re-write costs too little to hold a prompt for.",
-    "rewrite_min_tokens": 50000,
-    "rewrite_min_reason": "A main request writing more than this after an idle gap is a cold re-write, not new content.",
-    "max_human_rewrites_per_session": 1,
-    "max_human_rewrites_reason": "A session with more human-triggered cold re-writes is OVER (ruling Q2 + AC7 CLOSE_WHEN); machine-triggered ones are reported, never judged."
-  },
+  "window_reason": "autoCompactWindow the installer writes into ~/.claude/settings.json. Auto-compaction fires near window - 33k (measured 466,299-469,623 on a 500k window, 11 events, W1 R0).",
 
   "dispatch": {
     "regex": "^\\s*Read Prompt/([^\\s]+?)\\.md",
@@ -29,48 +13,14 @@
   },
 
   "exempt_prompt_prefixes": ["<task-notification", "<agent-message", "<scheduled-task", "<cross-session-message", "<teammate-message", "<system-reminder", "<<autonomous-loop"],
-  "exempt_prompt_prefixes_reason": "UserPromptSubmit fires on these machine turns (measured in ~/.claude/session-log.md: 3,680 / 110 / 59 / 10 / 4 for the five of ruling Q2; then 30 <system-reminder — side-session wake-ups and started-task notices the Desktop app sends — and 2 <<autonomous-loop — /loop wake-ups — found at CH3, 2026-10-23). Nobody is there to re-send a held one, so the cold-cache hold skips them and counts the skip (ruling Q2). Human-typed shapes that also start with < (<bash-input, <pasted_content, <!-- reply) stay judged.",
-
-  "skill_name_only_window_days": 60,
-  "skill_name_only_reason": "A user skill goes name-only when no retained transcript invokes it AND Claude Code's own skillUsage counter has no use inside this window (ruling Q3).",
-
-  "report_window_days": 7,
-  "long_session_hours": 8,
-  "long_session_reason": "The readout trends the cost share of sessions active this long (E4: 89% of 7-day cost on 2026-10-23); AC7 drives it down by ending one-wave sessions.",
-  "latest_max_rows": 60,
-  "latest_max_rows_reason": "Rows of the per-session table in session-budget-latest.md, newest first. Display only: every aggregate in the readout is computed over all sessions in the window.",
-  "backfill_idle_hours": 24,
-  "backfill_idle_reason": "SessionEnd is not proven to fire for every Desktop session, so each ledger write also appends a line for any session idle this long that has none.",
-  "backfill_max_per_run": 40,
+  "exempt_prompt_prefixes_reason": "UserPromptSubmit fires on these machine turns (measured in ~/.claude/session-log.md: 3,680 / 110 / 59 / 10 / 4 for the five of ruling Q2; then 30 <system-reminder — side-session wake-ups and started-task notices the Desktop app sends — and 2 <<autonomous-loop — /loop wake-ups — found at W1 CH3, 2026-10-23). A machine turn is never classified as a dispatch, whatever dispatch.regex matches, so no edit to the regex can make one refusable. Human-typed shapes that also start with < (<bash-input, <pasted_content, <!-- reply) stay judged.",
 
   "compact_message_max_bytes": 400,
+  "compact_message_reason": "The SessionStart(compact) line is added to context after every compaction; this caps it.",
+
   "hook_timeout_seconds": 10,
-  "hook_timeout_reason": "The installer writes this as the timeout of the UserPromptSubmit and SessionStart(compact) registrations, so a hung meter delays a prompt by at most this long instead of the hook default. The measured p95 sits far below it (status.md entry).",
+  "hook_timeout_reason": "The installer writes this as the timeout of the UserPromptSubmit and SessionStart(compact) registrations, so a hung hook delays a prompt by at most this long instead of the hook default.",
 
   "files": { "status.md": 40000, "AOE-status.md": 21586, "CLAUDE.md": 32441 },
-  "files_reason": "OPS-STATUS-INDEX-LEDGER-W1: byte caps on the vault files every session reads. ops/scripts/status-append.mjs refuses (OVER) a status.md write over its cap and its --report prints all three. status.md = trim-status-config max_bytes. AOE-status.md and CLAUDE.md are pinned at their measured size on 2026-10-23, so growth shows in --report. scripts/session-budget.mjs does not read this key.",
-
-  "bytes_per_token": 2.49,
-  "bytes_per_token_source": "E5 calibration: vault CLAUDE.md 32,084 B = 12.9k tokens in /context (2026-10-23). Used only for the est_tokens of tool results, which carry no usage of their own.",
-
-  "prices": {
-    "source": "claude-api skill model table (cached 2026-10-06) + its prompt-caching economics; list prices, USD per million tokens",
-    "as_of": "2026-10-06",
-    "cache_write_multiplier": { "5m": 1.25, "1h": 2 },
-    "default_write_ttl": "1h",
-    "models": {
-      "claude-opus-5-5":   { "input": 4,   "output": 20,  "cache_read": 0.2 },
-      "claude-opus-5":     { "input": 5,   "output": 25,  "cache_read": 0.5,  "cache_read_derived": "0.1x input, the general rule" },
-      "claude-sonnet-5-5": { "input": 2,   "output": 10,  "cache_read": 0.2 },
-      "claude-haiku-5-5":  { "input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_read_derived": "0.1x input, the general rule", "long_context_over_tokens": 100000, "long_context": { "input": 0.5, "output": 2.5, "cache_read": 0.05 } },
-      "claude-fable-5-1":  { "input": 10,  "output": 50,  "cache_read": 0.25 }
-    }
-  },
-
-  "baseline": {
-    "e1_share_above_150k": 0.94,
-    "e1_instrument": "/usage, 7 d, this Mac, 2026-10-23",
-    "first_request_context_tokens": 100397,
-    "first_request_instrument": "transcript message.usage of vault session d094828e request 1, dedup by message.id, 2026-10-23"
-  }
+  "files_reason": "OPS-STATUS-INDEX-LEDGER-W1: byte caps on the vault files every session reads. ops/scripts/status-append.mjs refuses (OVER) a status.md write over its cap and its --report prints all three. status.md = trim-status-config max_bytes. AOE-status.md and CLAUDE.md are pinned at their measured size on 2026-10-23, so growth shows in --report. scripts/session-budget.mjs does not read this key."
 }
