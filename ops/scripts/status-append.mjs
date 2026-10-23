@@ -603,6 +603,9 @@ function logLine(vault, rec) {
 }
 
 export function report({ vault, budgetFile = DEFAULT_BUDGET, since = null }) {
+  // compared as instants, never as strings: `2026-10-23T08:46Z` sorts after `2026-10-23T08:46:58Z`
+  const from = since === null ? null : Date.parse(since);
+  if (Number.isNaN(from)) throw new Error(`--since is not a date: ${since}`);
   const layout = loadLayout(vault);
   const caps = loadBudget(budgetFile);
   const files = Object.entries(caps).map(([f, c]) => {
@@ -622,7 +625,7 @@ export function report({ vault, budgetFile = DEFAULT_BUDGET, since = null }) {
   let log = [];
   if (existsSync(logPath(vault))) {
     log = readFileSync(logPath(vault), 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return { verdict: 'UNPARSEABLE' }; } })
-      .filter((x) => !since || (x.ts && x.ts >= since));
+      .filter((x) => from === null || !(Date.parse(x.ts) < from)); // a line with no readable ts stays counted
   }
   const verdicts = log.reduce((a, x) => ({ ...a, [x.verdict]: (a[x.verdict] || 0) + 1 }), {});
   const verdict = missing.length ? 'INDETERMINATE' : over.length ? 'OVER' : 'PASS';

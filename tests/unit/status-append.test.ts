@@ -9,7 +9,7 @@
  * by must be the declared 40,000 B, not a fixture's.
  */
 import { describe, it, expect, afterAll } from 'vitest';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -279,6 +279,20 @@ describe('--report', () => {
     expect(r.out).toMatch(/trim-status-config\.md\s+\d+ \/ 10 B {2}OVER/);
     writeFileSync(v.budgetFile, JSON.stringify({ files: { 'status.md': 40000, 'nope.md': 10 } }));
     expect(token(cli(['--report', '--vault', v.vault, '--budget', v.budgetFile]).out)).toBe('STATUS_BUDGET_VERDICT=INDETERMINATE');
+  });
+
+  it('--since compares instants, not strings; an unreadable line stays counted; a non-date is INDETERMINATE', () => {
+    const v = vault();
+    mkdirSync(join(v.vault, 'Claude files'), { recursive: true });
+    writeFileSync(join(v.vault, 'Claude files', 'status-append.jsonl'), [
+      { ts: '2026-10-23T08:45:59.000Z', verdict: 'OVER' },
+      { ts: '2026-10-23T08:46:58.002Z', verdict: 'PASS', status_bytes: 39833 },
+    ].map((x) => JSON.stringify(x)).join('\n') + '\nnot json\n');
+    const since = (s: string) => cli(['--report', '--since', s, '--vault', v.vault, '--budget', v.budgetFile]).out;
+    expect(since('2026-10-23T08:46Z')).toMatch(/logged writes since 2026-10-23T08:46Z: 2 · PASS 1 · UNPARSEABLE 1 · max status bytes 39833/);
+    expect(since('2026-10-23T16:46:00+08:00')).toMatch(/: 2 · PASS 1 · UNPARSEABLE 1 /);
+    expect(since('2026-10-23')).toMatch(/: 3 · OVER 1 · PASS 1 · UNPARSEABLE 1 /);
+    expect(token(since('yesterday'))).toBe('STATUS_BUDGET_VERDICT=INDETERMINATE');
   });
 });
 
