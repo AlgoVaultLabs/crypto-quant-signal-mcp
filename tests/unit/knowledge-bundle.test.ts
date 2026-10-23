@@ -4,8 +4,11 @@
  * Locks the v1.14.0+ invariants for the auto-generated KnowledgeBundle JSON:
  *   - Generator emits a schema-valid bundle that survives formatKnowledgeBundle().
  *   - Generator is byte-idempotent (same input → same output, modulo timestamp).
- *   - bundle.tools[] mirrors the MCP runtime shape (4 entries) — NOT the
- *     source-file export count (which is 3 *_DESCRIPTION constants).
+ *   - bundle.tools[] IS the server's tools/list (OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1):
+ *     set-equal in BOTH directions with an independent in-process read of src/index.ts, and
+ *     byte-equal per tool (description, parameters = inputSchema). Replaces a 4-name pin that
+ *     enshrined the gap — five live tools were invisible to search_knowledge / chat_knowledge.
+ *     The comparator is proven able to fail; the generator is proven to exit 1 on an empty list.
  *   - bundle includes every audits/*-shape-snapshot-*.json on disk.
  *   - Two-sided PII guard (per Plan-Mode Q-3, Mr.1-approved 2026-05-18):
  *     (a) DENY: no value bindings of outcome_return_pct / outcome_price.
@@ -14,7 +17,7 @@
  *         in the right place, never as a leaked value).
  *   - formatKnowledgeBundle({}) throws (rejects empty input).
  */
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 
 /**
  * OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch2 — a budget that survives concurrency.
@@ -30,16 +33,19 @@ import { describe, it, expect, beforeAll, vi } from 'vitest';
  * when placed after the closing paren, and every test here pays the same cost anyway.
  */
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
-import { execSync } from 'node:child_process';
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { execSync, spawnSync } from 'node:child_process';
+import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, copyFileSync, symlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   formatKnowledgeBundle,
   type KnowledgeBundle,
+  type KnowledgeBundleTool,
 } from '../../src/lib/knowledge-formatter.js';
 
 import { liveMcpToolNames } from '../../src/lib/equities/equity-tools-flag.js';
+import { assertToolList } from '../../scripts/lib/mcp-tools-list.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = join(dirname(__filename), '..', '..');
@@ -55,16 +61,73 @@ function buildOnce(): KnowledgeBundle {
   return JSON.parse(readFileSync(BUNDLE_LATEST, 'utf8'));
 }
 
+type ServedTool = { name: string; description?: string; inputSchema: Record<string, unknown> };
+
+/**
+ * The served list, read INDEPENDENTLY of the generator: src/index.ts (not dist/), the SDK client
+ * built here (not scripts/lib/mcp-tools-list.mjs). If the generator's reader, its projection or a
+ * stale dist/ drifted from what the server registers, the two sides disagree.
+ */
+async function servedToolsFromSrc(): Promise<ServedTool[]> {
+  const { createSandboxServer } = await import('../../src/index.js');
+  const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const server = createSandboxServer();
+  const client = new Client({ name: 'knowledge-bundle-canary', version: '0.0.0' });
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  try {
+    await server.connect(serverT);
+    await client.connect(clientT);
+    const out: ServedTool[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await client.listTools(cursor ? { cursor } : {});
+      out.push(...(page.tools as ServedTool[]));
+      cursor = page.nextCursor;
+    } while (cursor);
+    return out;
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
+/** Every way the bundle can disagree with the served list. All four empty ⇔ projection exact. */
+function diffProjection(bundleTools: KnowledgeBundleTool[], served: ServedTool[]) {
+  const b = new Map(bundleTools.map((t) => [t.name, t]));
+  const s = new Map(served.map((t) => [t.name, t]));
+  const both = [...b.keys()].filter((n) => s.has(n));
+  return {
+    missingFromBundle: [...s.keys()].filter((n) => !b.has(n)).sort(),
+    notServed: [...b.keys()].filter((n) => !s.has(n)).sort(),
+    descriptionDrift: both.filter((n) => b.get(n)!.description !== s.get(n)!.description).sort(),
+    parametersDrift: both
+      .filter((n) => JSON.stringify(b.get(n)!.parameters) !== JSON.stringify(s.get(n)!.inputSchema))
+      .sort(),
+  };
+}
+const NO_DRIFT = { missingFromBundle: [], notServed: [], descriptionDrift: [], parametersDrift: [] };
+
 describe('KNOWLEDGE-ARTIFACT-W1 canaries (v1.14.0+ invariants)', () => {
   let bundle: KnowledgeBundle;
+  let served: ServedTool[];
 
-  beforeAll(() => {
-    // Assumes `npm run build` already ran (dist/lib/knowledge-formatter.js
-    // and dist/tool-descriptions.js exist). The generator depends on them.
+  beforeAll(async () => {
+    // Assumes `npm run build` already ran (dist/lib/knowledge-formatter.js and dist/index.js
+    // exist). The generator reads both: the formatter to validate, the server to project tools.
     if (!existsSync(join(REPO_ROOT, 'dist', 'lib', 'knowledge-formatter.js'))) {
       throw new Error('dist/lib/knowledge-formatter.js missing — run `npm run build` before vitest');
     }
+    // Pin BOTH sides to the public default tool set — the set the Docker builder's empty env
+    // projects. A developer shell carrying the equity dark-launch flag would otherwise widen both
+    // sides at once and still pass, while silently no longer testing what ships.
+    vi.stubEnv('EQUITY_TOOLS_ENABLED', '');
     bundle = buildOnce();
+    served = await servedToolsFromSrc();
+  });
+
+  afterAll(() => {
+    vi.unstubAllEnvs();
   });
 
   it('generator produces schema-valid output (formatKnowledgeBundle accepts it)', () => {
@@ -90,9 +153,38 @@ describe('KNOWLEDGE-ARTIFACT-W1 canaries (v1.14.0+ invariants)', () => {
     expect(firstSha).toBe(secondSha);
   });
 
-  it('bundle.tools[].name matches MCP runtime shape exactly (4 entries, alias included)', () => {
-    const names = bundle.tools.map((t) => t.name).sort();
-    expect(names).toEqual(['get_market_regime', 'get_trade_call', 'get_trade_signal', 'scan_funding_arb']);
+  // ── OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1 ──────────────────────────────────────────────
+  // This used to pin exactly 4 names, which enshrined the gap: tools/list served 9 while the
+  // knowledge base knew 4, and the pin would have held through every future tool too.
+
+  it('bundle.tools ⇔ the served tools/list: set-equal in BOTH directions, byte-equal per tool', () => {
+    expect(served.length, 'the served tool list resolved to nothing — every assertion below would be vacuous').toBeGreaterThan(0);
+    expect(diffProjection(bundle.tools, served)).toEqual(NO_DRIFT);
+    // Same order as registration — the order agents see, and what keeps the build idempotent.
+    expect(bundle.tools.map((t) => t.name)).toEqual(served.map((t) => t.name));
+  });
+
+  it('bundle.tools carries exactly the KnowledgeBundleTool fields — no field added by the projection', () => {
+    for (const t of bundle.tools) expect(Object.keys(t).sort()).toEqual(['description', 'name', 'parameters']);
+  });
+
+  it('bundle.tools is the PUBLIC DEFAULT set — a dark-launched tool stays out of public knowledge', () => {
+    // Cowork ruling Q1 = A: the bundle projects the build env. Under the Docker builder's empty env
+    // that is liveMcpToolNames({}); a runtime-only EQUITY_TOOLS_ENABLED flip is a dark launch and is
+    // deliberately NOT inherited. A real release changes the default in code, and this follows it.
+    expect(bundle.tools.map((t) => t.name).sort()).toEqual([...liveMcpToolNames({} as NodeJS.ProcessEnv)].sort());
+  });
+
+  it('the projection comparator can FAIL — drop one tool → red, restore → green', () => {
+    // Without this, a comparator that always returned "no drift" would pass every test above.
+    const dropped = bundle.tools.slice(1);
+    expect(diffProjection(dropped, served).missingFromBundle).toEqual([bundle.tools[0].name]);
+    expect(diffProjection(bundle.tools, served.slice(1)).notServed).toEqual([served[0].name]);
+    const edited = bundle.tools.map((t, i) => (i === 0 ? { ...t, description: `${t.description} ` } : t));
+    expect(diffProjection(edited, served).descriptionDrift).toEqual([bundle.tools[0].name]);
+    const reshaped = bundle.tools.map((t, i) => (i === 0 ? { ...t, parameters: { ...t.parameters, required: [] } } : t));
+    expect(diffProjection(reshaped, served).parametersDrift).toEqual([bundle.tools[0].name]);
+    expect(diffProjection([...dropped, bundle.tools[0]], served)).toEqual(NO_DRIFT); // restored
   });
 
   it('get_trade_signal description = get_trade_call description + TRADE_CALL_ALIAS_SUFFIX', () => {
@@ -248,5 +340,70 @@ describe('KNOWLEDGE-ARTIFACT-W1 canaries (v1.14.0+ invariants)', () => {
     expect(bundle).toHaveProperty('examples');
     expect(bundle).toHaveProperty('discussions');
     expect(bundle).not.toHaveProperty('outcome_return_pct');
+  });
+});
+
+// ── OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1 — the generator fails CLOSED (AC2) ─────────────
+// A projection that yields nothing must stop the Docker build, never ship a bundle that knows
+// nothing. Proven twice: the validator over every refused shape, and the WHOLE generator, run as
+// the Dockerfile runs it, against a real MCP server that serves an empty / undescribed list.
+describe('OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1 — the generator fails closed', () => {
+  it('assertToolList refuses every unpublishable list and passes a usable one through unchanged', () => {
+    const ok = [{ name: 'a', description: 'd', inputSchema: { type: 'object' } }];
+    expect(assertToolList(ok)).toBe(ok);
+    const refused: Array<[unknown, RegExp]> = [
+      [[], /0 tools/],
+      [[{ name: '', description: 'd', inputSchema: {} }], /no name/],
+      [[{ name: 'a', description: '  ', inputSchema: {} }], /a: no description/],
+      [[{ name: 'a', inputSchema: {} }], /a: no description/],
+      [[{ name: 'a', description: 'd', inputSchema: {} }, { name: 'a', description: 'e', inputSchema: {} }], /a: duplicate name/],
+      [[{ name: 'a', description: 'd', inputSchema: null }], /a: inputSchema is not an object/],
+      [[{ name: 'a', description: 'd', inputSchema: [] }], /a: inputSchema is not an object/],
+    ];
+    for (const [tools, why] of refused) expect(() => assertToolList(tools)).toThrowError(why);
+  });
+
+  function runGeneratorAgainstStub(stubTools: unknown[]) {
+    const root = mkdtempSync(join(tmpdir(), 'kb-failclosed-'));
+    try {
+      mkdirSync(join(root, 'scripts', 'lib'), { recursive: true });
+      mkdirSync(join(root, 'dist'), { recursive: true });
+      copyFileSync(join(REPO_ROOT, 'scripts', 'build-knowledge-json.mjs'), join(root, 'scripts', 'build-knowledge-json.mjs'));
+      copyFileSync(join(REPO_ROOT, 'scripts', 'lib', 'mcp-tools-list.mjs'), join(root, 'scripts', 'lib', 'mcp-tools-list.mjs'));
+      symlinkSync(join(REPO_ROOT, 'node_modules'), join(root, 'node_modules'), 'dir');
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'kb-failclosed-stub', version: '0.0.0' }));
+      writeFileSync(join(root, 'README.md'), "## What's new in v0.0.0\n\nstub\n");
+      // A REAL MCP server (the SDK's low-level Server) whose tools/list serves exactly stubTools.
+      writeFileSync(
+        join(root, 'dist', 'index.js'),
+        [
+          "const { Server } = require('@modelcontextprotocol/sdk/server/index.js');",
+          "const { ListToolsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');",
+          'exports.createSandboxServer = () => {',
+          "  const s = new Server({ name: 'kb-failclosed-stub', version: '0.0.0' }, { capabilities: { tools: {} } });",
+          `  s.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: ${JSON.stringify(stubTools)} }));`,
+          '  return s;',
+          '};',
+        ].join('\n'),
+      );
+      const r = spawnSync(process.execPath, [join(root, 'scripts', 'build-knowledge-json.mjs')], { cwd: root, encoding: 'utf8' });
+      return { status: r.status, stderr: r.stderr, wroteBundle: existsSync(join(root, 'dist', 'knowledge', 'latest.json')) };
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('the generator exits 1 and writes NO bundle when tools/list yields 0 tools', () => {
+    const r = runGeneratorAgainstStub([]);
+    expect(r.stderr).toMatch(/0 tools/);
+    expect(r.status).toBe(1);
+    expect(r.wroteBundle).toBe(false);
+  });
+
+  it('the generator exits 1 and writes NO bundle when a served tool has no description', () => {
+    const r = runGeneratorAgainstStub([{ name: 'undescribed_tool', inputSchema: { type: 'object', properties: {} } }]);
+    expect(r.stderr).toMatch(/undescribed_tool: no description/);
+    expect(r.status).toBe(1);
+    expect(r.wroteBundle).toBe(false);
   });
 });

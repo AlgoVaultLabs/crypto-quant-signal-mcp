@@ -19,9 +19,14 @@ COPY src/ ./src/
 RUN npm run build
 # KNOWLEDGE-ARTIFACT-W1 (2026-05-18, Q-2 Path B): generator runs INSIDE Stage 1
 # (NOT on the GHA runner — Hetzner re-builds the image post-`git pull`, so any
-# artifacts produced on the runner are thrown away). The generator globs the
-# 4 source paths below; each must be COPYed into the build context here.
+# artifacts produced on the runner are thrown away). The generator reads the
+# 5 source paths below; each must be COPYed into the build context here.
+# OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1: bundle.tools is projected from the
+# server's own tools/list, read in-process from the dist/ built just above by
+# scripts/lib/mcp-tools-list.mjs. Without that COPY the generator dies with
+# ERR_MODULE_NOT_FOUND and this build fails — loudly, by design.
 COPY scripts/build-knowledge-json.mjs ./scripts/build-knowledge-json.mjs
+COPY scripts/lib/mcp-tools-list.mjs ./scripts/lib/mcp-tools-list.mjs
 COPY audits/ ./audits/
 COPY landing/integrations/ ./landing/integrations/
 COPY README.md ./README.md

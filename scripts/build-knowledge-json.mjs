@@ -8,8 +8,22 @@
  *   dist/knowledge/index.json    ({ available_versions: [...], latest: "vX.Y.Z" })
  *
  * Generator-first: zero hand-listed knowledge items. Adding a new audit
- * snapshot / integration HTML / tool description constant flows automatically
- * into the next bundle.
+ * snapshot / integration HTML / tool flows automatically into the next bundle.
+ *
+ * bundle.tools IS THE SERVER'S OWN tools/list (OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1).
+ * It used to be a hand-written 4-entry list with hand-mirrored parameter shapes,
+ * so five live tools were invisible to search_knowledge / chat_knowledge and the
+ * four it did list carried a stale venue enum and defaults the live schema had
+ * dropped. Now `listServerTools()` (scripts/lib/mcp-tools-list.mjs) reads the
+ * list in-process from dist/index.js and each tool projects to the
+ * KnowledgeBundleTool shape { name, description, parameters: inputSchema }. A new
+ * tool, a description edit, a parameter edit or an alias needs no edit here.
+ * The list is the one the BUILD env serves — the public default set under the
+ * Docker builder's empty env; a tool dark behind a runtime-only flag stays out
+ * of public knowledge until its default changes in code. Fail-closed:
+ * `assertToolList()` refuses an empty, nameless, duplicated, undescribed or
+ * schemaless list, and any throw exits 1, so the image build fails rather than
+ * ship a bundle that knows nothing.
  *
  * Runs in two execution contexts with one script:
  *   1. Local dev + GHA runner: `node scripts/build-knowledge-json.mjs`
@@ -32,6 +46,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listServerTools, assertToolList } from './lib/mcp-tools-list.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,60 +55,10 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // ─── Paths ───────────────────────────────────────────────────────────────────
 const PACKAGE_JSON_PATH = path.join(REPO_ROOT, 'package.json');
 const README_PATH = path.join(REPO_ROOT, 'README.md');
-const TOOL_DESCRIPTIONS_PATH = path.join(REPO_ROOT, 'dist', 'tool-descriptions.js');
 const KNOWLEDGE_FORMATTER_PATH = path.join(REPO_ROOT, 'dist', 'lib', 'knowledge-formatter.js');
 const AUDITS_DIR = path.join(REPO_ROOT, 'audits');
 const INTEGRATIONS_DIR = path.join(REPO_ROOT, 'landing', 'integrations');
 const OUT_DIR = path.join(REPO_ROOT, 'dist', 'knowledge');
-
-// ─── Tool parameter shapes (mirrors src/index.ts:130–238 Zod schemas) ────────
-// R7 canary asserts these stay in sync with MCP runtime tools/list output.
-// Mirror Zod schemas verbatim from src/index.ts — any future drift here gets
-// caught by the runtime-shape canary in tests/unit/knowledge-bundle.test.ts.
-const TRADE_CALL_PARAM_SHAPE = (paramDescs) => ({
-  type: 'object',
-  properties: {
-    coin: { type: 'string', maxLength: 20, description: paramDescs.PARAM_DESC_TRADE_CALL_COIN },
-    timeframe: {
-      type: 'string',
-      enum: ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'],
-      default: '15m',
-      description: paramDescs.PARAM_DESC_TRADE_CALL_TIMEFRAME,
-    },
-    includeReasoning: { type: 'boolean', default: true, description: paramDescs.PARAM_DESC_TRADE_CALL_INCLUDE_REASONING },
-    exchange: {
-      type: 'string',
-      enum: ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX'],
-      default: 'BINANCE',
-      description: paramDescs.PARAM_DESC_TRADE_CALL_EXCHANGE,
-    },
-  },
-  required: ['coin'],
-});
-
-const SCAN_FUNDING_ARB_PARAM_SHAPE = (paramDescs) => ({
-  type: 'object',
-  properties: {
-    minSpreadBps: { type: 'number', minimum: 0, maximum: 10000, default: 5, description: paramDescs.PARAM_DESC_FUNDING_MIN_SPREAD_BPS },
-    limit: { type: 'integer', minimum: 1, maximum: 200, default: 10, description: paramDescs.PARAM_DESC_FUNDING_LIMIT },
-  },
-  required: [],
-});
-
-const GET_MARKET_REGIME_PARAM_SHAPE = (paramDescs) => ({
-  type: 'object',
-  properties: {
-    coin: { type: 'string', maxLength: 20, description: paramDescs.PARAM_DESC_REGIME_COIN },
-    timeframe: { type: 'string', enum: ['1h', '4h', '1d'], default: '4h', description: paramDescs.PARAM_DESC_REGIME_TIMEFRAME },
-    exchange: {
-      type: 'string',
-      enum: ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX'],
-      default: 'HL',
-      description: paramDescs.PARAM_DESC_REGIME_EXCHANGE,
-    },
-  },
-  required: ['coin'],
-});
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -242,43 +207,21 @@ async function build() {
   // 1. package.json — version + description + keywords
   const pkg = readJson(PACKAGE_JSON_PATH);
 
-  // 2. Compiled descriptions — every PARAM_DESC_* + the 3 TOOL DESCRIPTION
-  //    constants + TRADE_CALL_ALIAS_SUFFIX live in dist/tool-descriptions.js.
-  if (!fs.existsSync(TOOL_DESCRIPTIONS_PATH)) {
-    throw new Error(`tool-descriptions.js not found at ${TOOL_DESCRIPTIONS_PATH}. Run \`npm run build\` first.`);
-  }
-  // The compiled tool-descriptions.js is CJS; ESM `import()` of a CJS module
-  // in Node 20 exposes the named exports directly.
-  const td = await import(`file://${TOOL_DESCRIPTIONS_PATH}`);
+  // 2. (retired) dist/tool-descriptions.js was read here only to feed the hand
+  //    list below; the descriptions now arrive with the projection in step 4.
 
   // 3. README.md "What's new" section
   const readme = fs.readFileSync(README_PATH, 'utf8');
   const whatsNew = extractWhatsNew(readme);
 
-  // 4. Tools — mirror src/index.ts:172–270 server.tool() registrations.
-  //    4 entries: get_trade_call + get_trade_signal (alias) + scan_funding_arb + get_market_regime.
-  const tools = [
-    {
-      name: 'get_trade_call',
-      description: td.TRADE_CALL_DESCRIPTION,
-      parameters: TRADE_CALL_PARAM_SHAPE(td),
-    },
-    {
-      name: 'get_trade_signal',
-      description: td.TRADE_CALL_DESCRIPTION + td.TRADE_CALL_ALIAS_SUFFIX,
-      parameters: TRADE_CALL_PARAM_SHAPE(td),
-    },
-    {
-      name: 'scan_funding_arb',
-      description: td.SCAN_FUNDING_ARB_DESCRIPTION,
-      parameters: SCAN_FUNDING_ARB_PARAM_SHAPE(td),
-    },
-    {
-      name: 'get_market_regime',
-      description: td.GET_MARKET_REGIME_DESCRIPTION,
-      parameters: GET_MARKET_REGIME_PARAM_SHAPE(td),
-    },
-  ];
+  // 4. Tools — the server's own tools/list, read in-process and projected to
+  //    KnowledgeBundleTool. Registration order is preserved, so the output is
+  //    byte-idempotent. No field is added beyond the three the type declares.
+  const tools = assertToolList(await listServerTools(REPO_ROOT)).map((t) => ({
+    name: t.name,
+    description: t.description,
+    parameters: t.inputSchema,
+  }));
 
   // 5. Response shapes — read every audits/*-shape-snapshot-*.json and project
   //    into the typed KnowledgeBundleResponseShape interface.
