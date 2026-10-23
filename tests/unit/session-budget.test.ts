@@ -214,6 +214,15 @@ describe('--on prompt — one wave per session, a cold cache held once', () => {
     expect(st.holds).toBeUndefined();
   });
 
+  it('the side-session wake-up shape is a machine turn; a human turn that merely starts with < is still held', () => {
+    const a = writeSession(w, 'ffffffff-0000-0000-0000-000000000004', 'cold_human', 400);
+    expect(hook('<system-reminder>\nThe session "x" you started finished a turn.', a, 'ffffffff-0000-0000-0000-000000000004').stdout).toBe('');
+    const b = writeSession(w, 'ffffffff-0000-0000-0000-000000000005', 'cold_human', 400);
+    const out = JSON.parse(hook('<bash-input>ls</bash-input>', b, 'ffffffff-0000-0000-0000-000000000005').stdout);
+    expect(out.decision).toBe('block');
+    expect(out.reason).toMatch(/^Cache expired/);
+  });
+
   it('fails OPEN on garbage input: exit 0, nothing printed, an error line in the ledger', () => {
     const r = run(w, ['--on', 'prompt'], '{not json');
     expect(r.status).toBe(0);
