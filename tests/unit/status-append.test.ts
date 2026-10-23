@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  makeVault, entryFixture, run, loadBudget, pointerOf, indexRow, cutCell, capOwed, rowHeadBytes, norm, dedupe, ledgerMap, insertIntoLedger,
+  makeVault, entryFixture, run, loadBudget, loadRetired, pointerOf, indexRow, cutCell, capOwed, rowHeadBytes, norm, dedupe, ledgerMap, insertIntoLedger,
   splitBlocks, STATUS_FIXTURE, INDEX_START, INDEX_END, ROW_MAX_BYTES, EXIT, Refusal,
 } from '../../ops/scripts/status-append.mjs';
 
@@ -144,7 +144,16 @@ describe('budget (ruling Q1)', () => {
   it('the repo manifest declares the ruled caps', () => {
     const caps = loadBudget();
     expect(caps['status.md']).toBe(40000);
-    expect(Object.keys(caps).sort()).toEqual(['AOE-status.md', 'CLAUDE.md', 'status.md']);
+    expect(caps['CLAUDE.md']).toBe(31041);
+    const keys = Object.keys(caps);
+    const rules = keys.filter((k) => k.startsWith('Claude files/rules/'));
+    const cards = keys.filter((k) => k.startsWith('system-map/'));
+    expect(keys.filter((k) => !rules.includes(k) && !cards.includes(k)).sort()).toEqual(['AOE-status.md', 'CLAUDE.md', 'status.md', 'system-map.md']);
+    expect(rules.map((k) => k.slice(19)).sort()).toEqual(
+      ['build-and-runtime.md', 'deploy-and-infra.md', 'git-and-worktrees.md', 'monitoring-and-recovery.md', 'plan-mode-probes.md', 'release.md', 'verification-gates.md']);
+    expect(cards).toHaveLength(19);
+    expect(cards.every((k) => /^system-map\/[a-z0-9-]+\.md$/.test(k))).toBe(true);
+    expect(loadRetired()).toEqual(['Claude files/WIS-PENDING.md']);
   });
 });
 
@@ -293,6 +302,58 @@ describe('--report', () => {
     expect(since('2026-10-23T16:46:00+08:00')).toMatch(/: 2 · PASS 1 · UNPARSEABLE 1 /);
     expect(since('2026-10-23')).toMatch(/: 3 · OVER 1 · PASS 1 · UNPARSEABLE 1 /);
     expect(token(since('yesterday'))).toBe('STATUS_BUDGET_VERDICT=INDETERMINATE');
+  });
+});
+
+describe('CONTEXT_FILES (OPS-CONTEXT-CORPUS-DIET-W1)', () => {
+  const ctx = (out: string) => out.trim().split('\n').slice(-2)[0];
+  const budget = (v: { budgetFile: string }, b: object) => writeFileSync(v.budgetFile, JSON.stringify(b));
+
+  it('every append prints CONTEXT_FILES_VERDICT=PASS just before its own terminal line', () => {
+    const v = vault();
+    const r = append(v, entry(v, H));
+    expect([ctx(r.out), token(r.out)]).toEqual(['CONTEXT_FILES_VERDICT=PASS', 'STATUS_APPEND_VERDICT=PASS']);
+    expect(r.out).toMatch(/context files: 1 capped · over: none · missing: none · retired back: none/);
+  });
+
+  it('a file over its cap is OVER and named, and the append still lands (report-only)', () => {
+    const v = vault();
+    budget(v, { files: { 'status.md': 40000, 'trim-status-config.md': 10 } });
+    const r = append(v, entry(v, H));
+    expect([ctx(r.out), token(r.out), r.status]).toEqual(['CONTEXT_FILES_VERDICT=OVER', 'STATUS_APPEND_VERDICT=PASS', 0]);
+    expect(r.out).toMatch(/over: trim-status-config\.md \d+\/10 B/);
+    expect(lines(october(v), `### ${H}`)).toBe(1);
+  });
+
+  it('a capped file that is missing is INDETERMINATE, never PASS', () => {
+    const v = vault();
+    budget(v, { files: { 'status.md': 40000, 'Claude files/rules/gone.md': 10 } });
+    const r = append(v, entry(v, H));
+    expect(ctx(r.out)).toBe('CONTEXT_FILES_VERDICT=INDETERMINATE');
+    expect(r.out).toMatch(/missing: Claude files\/rules\/gone\.md/);
+  });
+
+  it('a retired file that reappears is OVER; removing it is PASS again (both directions)', () => {
+    const v = vault();
+    budget(v, { files: { 'status.md': 40000 }, files_retired: ['Claude files/WIS-PENDING.md'] });
+    const sweep = () => cli(['--sweep', '--vault', v.vault, '--budget', v.budgetFile, '--now', '2026-10-23T12:00:00Z']);
+    expect(ctx(sweep().out)).toBe('CONTEXT_FILES_VERDICT=PASS');
+    mkdirSync(join(v.vault, 'Claude files'), { recursive: true });
+    writeFileSync(join(v.vault, 'Claude files', 'WIS-PENDING.md'), '### From OPS-X-W1\n- a lesson\n');
+    const back = sweep();
+    expect([ctx(back.out), token(back.out)]).toEqual(['CONTEXT_FILES_VERDICT=OVER', 'STATUS_APPEND_VERDICT=PASS']);
+    expect(back.out).toMatch(/retired back: Claude files\/WIS-PENDING\.md/);
+    const rep = cli(['--report', '--vault', v.vault, '--budget', v.budgetFile]);
+    expect(token(rep.out)).toBe('STATUS_BUDGET_VERDICT=OVER');
+    rmSync(join(v.vault, 'Claude files', 'WIS-PENDING.md'));
+    expect(ctx(sweep().out)).toBe('CONTEXT_FILES_VERDICT=PASS');
+  });
+
+  it('an unreadable files_retired is INDETERMINATE, and the append is untouched', () => {
+    const v = vault();
+    budget(v, { files: { 'status.md': 40000 }, files_retired: 'Claude files/WIS-PENDING.md' });
+    const r = append(v, entry(v, H));
+    expect([ctx(r.out), token(r.out)]).toEqual(['CONTEXT_FILES_VERDICT=INDETERMINATE', 'STATUS_APPEND_VERDICT=PASS']);
   });
 });
 

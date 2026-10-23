@@ -50,6 +50,14 @@
  * touches a CLOSED/NOTED row and never touches another wave's row. A line
  * `<!-- status-append:register-count -->…` under the table is recounted from the table.
  *
+ * ── CONTEXT FILES (OPS-CONTEXT-CORPUS-DIET-W1, rulings Q3, Q4, D6) ────────────
+ * Every append and sweep also judges every `files.*` cap and prints
+ * CONTEXT_FILES_VERDICT=PASS|OVER|INDETERMINATE just before the terminal line. Report-only: it
+ * never refuses or changes the write, and the exit code stays the append's. A capped file that
+ * is missing is INDETERMINATE (nothing was measured); a path in `files_retired` that exists
+ * again is OVER, so a recreated retired file (the WIS log) shows on the next write. --report's
+ * STATUS_BUDGET_VERDICT projects from the same contextFiles() value.
+ *
  * ── VERDICT ───────────────────────────────────────────────────────────────────
  * One terminal line: STATUS_APPEND_VERDICT=PASS|OVER|INDETERMINATE — exit 0 / 1 / 3. OVER and
  * INDETERMINATE write NOTHING. Every write is compare-and-swap: each file's sha256 is taken when
@@ -189,6 +197,31 @@ export function loadBudget(file = DEFAULT_BUDGET) {
   }
   return files;
 }
+
+/** Retired paths: `files_retired` in the budget manifest. Absent = none; any other shape = refuse. */
+export function loadRetired(file = DEFAULT_BUDGET) {
+  const retired = JSON.parse(readFileSync(file, 'utf8')).files_retired ?? [];
+  if (!Array.isArray(retired) || retired.some((p) => typeof p !== 'string' || !p)) indeterminate(`${file} files_retired is not a list of paths`);
+  return retired;
+}
+
+/** Every `files.*` cap judged once; --report and the per-append line both project from this. */
+export function contextFiles({ vault, budgetFile = DEFAULT_BUDGET }) {
+  const files = Object.entries(loadBudget(budgetFile)).map(([f, c]) => {
+    const p = join(vault, f);
+    return { file: f, cap: c, bytes: existsSync(p) ? bytes(readFileSync(p, 'utf8')) : null };
+  });
+  const missing = files.filter((f) => f.bytes === null);
+  const over = files.filter((f) => f.bytes !== null && f.bytes > f.cap);
+  const retired = loadRetired(budgetFile).filter((f) => existsSync(join(vault, f)));
+  const verdict = missing.length ? 'INDETERMINATE' : over.length || retired.length ? 'OVER' : 'PASS';
+  return { verdict, files, missing, over, retired };
+}
+
+export const contextLine = (c) => `${TAG} context files: ${c.files.length} capped`
+  + ` · over: ${c.over.map((f) => `${f.file} ${f.bytes}/${f.cap} B`).join(', ') || 'none'}`
+  + ` · missing: ${c.missing.map((f) => f.file).join(', ') || 'none'}`
+  + ` · retired back: ${c.retired.join(', ') || 'none'}`;
 
 // ── parsing ───────────────────────────────────────────────────────────────────
 
@@ -607,13 +640,7 @@ export function report({ vault, budgetFile = DEFAULT_BUDGET, since = null }) {
   const from = since === null ? null : Date.parse(since);
   if (Number.isNaN(from)) throw new Error(`--since is not a date: ${since}`);
   const layout = loadLayout(vault);
-  const caps = loadBudget(budgetFile);
-  const files = Object.entries(caps).map(([f, c]) => {
-    const p = join(vault, f);
-    return { file: f, cap: c, bytes: existsSync(p) ? bytes(readFileSync(p, 'utf8')) : null };
-  });
-  const missing = files.filter((f) => f.bytes === null);
-  const over = files.filter((f) => f.bytes !== null && f.bytes > f.cap);
+  const { verdict, files, missing, over, retired } = contextFiles({ vault, budgetFile });
   const status = existsSync(layout.statusPath) ? readFileSync(layout.statusPath, 'utf8') : '';
   const lines = status.split('\n');
   const r = findRegister(lines);
@@ -628,8 +655,7 @@ export function report({ vault, budgetFile = DEFAULT_BUDGET, since = null }) {
       .filter((x) => from === null || !(Date.parse(x.ts) < from)); // a line with no readable ts stays counted
   }
   const verdicts = log.reduce((a, x) => ({ ...a, [x.verdict]: (a[x.verdict] || 0) + 1 }), {});
-  const verdict = missing.length ? 'INDETERMINATE' : over.length ? 'OVER' : 'PASS';
-  return { verdict, files, missing, over, wide, strays, rows, verdicts, writes: log.length,
+  return { verdict, files, missing, over, retired, wide, strays, rows, verdicts, writes: log.length,
     max_status_bytes: log.reduce((m, x) => Math.max(m, x.status_bytes || 0), 0) };
 }
 
@@ -800,6 +826,17 @@ function selfTest() {
     eq('row: cut to ≤ 200 B on a code point', bytes(indexRow(`2026-10-23 10:00 UTC — OPS-LONG-W1 CH1 — ✅ ${'é'.repeat(300)}`, '2026-10-23 10:00 UTC — OPS-LONG-W1 CH1')) <= ROW_MAX_BYTES, true);
     eq('register: owed cut to the 600 B cap, CLOSE_WHEN verbatim', (() => { const row = registerRow('OPS-W-W1', { state: 'OWED', owed: 'x'.repeat(900), closeWhen: 'y'.repeat(700) }, 'p'); return [rowHeadBytes(cells(row)) <= REGISTER_ROW_MAX_BYTES, cells(row)[3].length]; })(), [true, 700]);
     eq('register: a cut never leaves an open code span or bold run', (() => { const c = cells(registerRow('OPS-W-W1', { state: 'OWED', owed: `**${'a'.repeat(300)} \`${'b'.repeat(400)}\`** tail`, closeWhen: 'y' }, 'p'))[2]; return [(c.match(/`/g) || []).length % 2, (c.replace(/`[^`]*`/g, '').split('**').length - 1) % 2, c.length > 400]; })(), [0, 0, true]);
+    // context files: every files.* cap judged once; a retired path that is back is OVER
+    const cf = (budget) => { writeFileSync(a.budgetFile, JSON.stringify(budget)); return contextFiles(a); };
+    const caps2 = (cfg) => ({ 'status.md': 40000, 'trim-status-config.md': cfg });
+    eq('context: every cap held is PASS', cf({ files: caps2(40000) }).verdict, 'PASS');
+    eq('context: one over is OVER, named', (() => { const c = cf({ files: caps2(10) }); return [c.verdict, c.over.map((f) => f.file)]; })(), ['OVER', ['trim-status-config.md']]);
+    eq('context: a capped file missing is INDETERMINATE', cf({ files: { ...caps2(40000), 'nope.md': 10 } }).verdict, 'INDETERMINATE');
+    eq('context: a retired path absent is PASS', cf({ files: caps2(40000), files_retired: ['Claude files/RETIRED.md'] }).verdict, 'PASS');
+    mkdirSync(join(a.vault, 'Claude files'), { recursive: true });
+    writeFileSync(join(a.vault, 'Claude files', 'RETIRED.md'), 'back\n');
+    eq('context: a retired path back is OVER, named', (() => { const c = cf({ files: caps2(40000), files_retired: ['Claude files/RETIRED.md'] }); return [c.verdict, c.retired]; })(), ['OVER', ['Claude files/RETIRED.md']]);
+    eq('context: files_retired not a list is INDETERMINATE', (() => { try { return cf({ files: caps2(40000), files_retired: 'x' }).verdict; } catch (e) { return e instanceof Refusal ? e.verdict : 'ERROR'; } })(), 'INDETERMINATE');
     eq('exit map', [EXIT.PASS, EXIT.OVER, EXIT.INDETERMINATE], [0, 1, 3]);
   } catch (e) {
     fails.push(`self-test crashed: ${e.message}`);
@@ -843,7 +880,9 @@ function main() {
   if (process.argv.includes('--report')) {
     try {
       const r = report({ vault, budgetFile, since: arg('--since') });
-      for (const f of r.files) console.log(`${TAG} ${f.file.padEnd(16)} ${f.bytes === null ? 'MISSING' : String(f.bytes).padStart(7)} / ${f.cap} B${f.bytes > f.cap ? '  OVER' : ''}`);
+      const w = Math.max(16, ...r.files.map((f) => f.file.length), ...r.retired.map((f) => f.length));
+      for (const f of r.files) console.log(`${TAG} ${f.file.padEnd(w)} ${f.bytes === null ? 'MISSING' : String(f.bytes).padStart(7)} / ${f.cap} B${f.bytes > f.cap ? '  OVER' : ''}`);
+      for (const f of r.retired) console.log(`${TAG} ${f.padEnd(w)} exists again (files_retired)  OVER`);
       console.log(`${TAG} register rows over ${REGISTER_ROW_MAX_BYTES} B (wave + state + owed): ${r.wide.length}${r.wide.map((w) => ` ${w.wave}=${w.bytes}`).join('')}`);
       console.log(`${TAG} index rows ${r.rows} · stray \`### \` blocks ${r.strays}`);
       console.log(`${TAG} logged writes${arg('--since') ? ` since ${arg('--since')}` : ''}: ${r.writes} · ${Object.entries(r.verdicts).map(([k, v]) => `${k} ${v}`).join(' · ') || 'none'} · max status bytes ${r.max_status_bytes}`);
@@ -881,6 +920,16 @@ function main() {
     console.error(`${TAG} ${v}: ${e.message}`);
   }
   rec.verdict = v;
+  try {
+    const c = contextFiles({ vault, budgetFile });
+    rec.context_files = c.verdict;
+    console.log(contextLine(c));
+    console.log(`CONTEXT_FILES_VERDICT=${c.verdict}`);
+  } catch (e) {
+    rec.context_files = 'INDETERMINATE';
+    console.error(`${TAG} context files: ${e.message}`);
+    console.log('CONTEXT_FILES_VERDICT=INDETERMINATE');
+  }
   if (!dryRun) logLine(vault, rec);
   verdict(v);
 }
