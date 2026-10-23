@@ -241,7 +241,7 @@ describe('--on compact — the re-orientation line', () => {
 });
 
 describe('--on end — detached ledger write, rolling readout', () => {
-  it('returns in under a second printing nothing, then leaves ONE line with every field and a verdict file', () => {
+  it('returns in under a second printing nothing, then leaves ONE line with every field and a verdict file', { timeout: 30_000 }, () => {
     const w = mkWorld('end');
     const sid = 'cdcdcdcd-0000-0000-0000-000000000001';
     const tp = writeSession(w, sid, 'pass');
@@ -269,7 +269,7 @@ describe('--on end — detached ledger write, rolling readout', () => {
     expect(md).toMatch(/^SESSION_BUDGET_VERDICT=(PASS|OVER|INDETERMINATE)$/m);
     expect(md).toContain('SESSION_BUDGET_VERDICT=OVER'); // the backfilled session is COLD_REWRITES
     rmSync(w.T, { recursive: true, force: true });
-  }, 30_000);
+  });
 });
 
 // ── 4. --skill-overrides ─────────────────────────────────────────────────────────────────
