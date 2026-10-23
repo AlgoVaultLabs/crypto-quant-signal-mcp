@@ -20,20 +20,25 @@
  *      newest bar (head gap ≤ HEAD_ALLOWANCE_BARS). A window the seam REFUSES (StaleUpstreamWindowError) is the defect
  *      S exists for: FAIL, never INDETERMINATE. The S probes run after R/D in venue-INTERLEAVED order (one window per
  *      venue in turn), so a venue sees one request per ~venues × PACE_MS while the run keeps ≥ PACE_MS between calls.
- *      CH3a: its newest bar must also be the venue's FORMING bar, or forming − 1 on a declared closed-only kline venue
- *      (src/lib/live-price.ts `formingHeadVerdict`, the judgement contract-suite S reads). Closed-bar arithmetic cannot
- *      see a window one bar short at the head; this can, and it goes red the day a venue turns closed-only or a
- *      declared one starts serving its forming bar.
+ *      CH3a: its newest bar must also be the head the venue's class owes (src/lib/live-price.ts `formingHeadVerdict`,
+ *      the judgement contract-suite S reads): the FORMING bar on a non-declared venue; on a declared ticker-priced
+ *      venue (Cowork Q11 / Q13) forming − 1 exactly on a CLOSED_ONLY venue's liquid reference, and at most
+ *      SNAPSHOT_KLINE_MAX_LAG_MS behind the forming bar on a SNAPSHOT_KLINE venue's. Closed-bar
+ *      arithmetic cannot see a window one bar short at the head; this can, and it goes red the day a non-declared
+ *      venue turns closed-only, or a CLOSED_ONLY one starts serving its forming bar. Every window also carries its
+ *      head lag (`headLagSlots`, `headLagMs`: how far its head sits behind the owed one) as a metric.
  *
  *   Y  (CH3a, Cowork Q5) a YOUNG-listing reference per venue: the class BTC cannot show (a young Bitget listing was
  *      served from the closed-only history endpoint). Candidates are the venue's coins most recently first seen in our
  *      own signals (read-only, one GROUP BY); the first whose longest serving window starts more than
  *      YOUNG_FRONT_BARS before its first bar is the reference, and every faithful timeframe's longest window is read
- *      for it and judged as S. A venue with no young candidate is listed, not failed; no candidate on ANY venue, or an
- *      unreadable candidate query, is INDETERMINATE (the corpus this leg had to build is empty).
+ *      for it and judged as S, as a THIN reference: on a declared ticker-priced venue its head lag — the head gap and
+ *      the forming check alike — is a metric, never a FAIL (Q13: a thin book's late bars move no price there), while an
+ *      empty window or a CLOSED_ONLY venue serving its forming bar still FAILs. A venue with no young candidate is listed, not failed; no candidate on ANY venue, or an unreadable
+ *      candidate query, is INDETERMINATE (the corpus this leg had to build is empty).
  *
- *   T  (CH3a, Cowork Q8) every active declared closed-only kline venue's ticker: its last trade must be fresh enough
- *      to price a call (`tickerFreshness`). FAIL when it is not: livePriceOf would refuse every call on that venue.
+ *   T  (CH3a, Cowork Q8 / Q11) every active declared ticker-priced venue's ticker: it must price a call by its kind's
+ *      check (`tickerFreshness`). FAIL when it cannot: livePriceOf would refuse every call on that venue.
  *
  * UNSERVABLE pairs (UNSERVABLE.json) and retired venues are SKIPPED and listed. A venue that is unreachable,
  * rate-limits (418/429) or throws is INDETERMINATE for that pair — fail-open, counted, never a page. An R probe the
@@ -64,7 +69,7 @@ import { RECENT_PAGE_CAP as OKX_RECENT_CAP } from '../lib/adapters/okx.js';
 import { runAsBatch } from '../lib/upstream-weight-budget.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { dbQuery } from '../lib/performance-db.js';
-import { CLOSED_ONLY_KLINE_VENUES, formingHeadVerdict, tickerFreshness } from '../lib/live-price.js';
+import { formingHeadVerdict, headLag, isTickerPricedVenue, tickerFreshness, type HeadReference } from '../lib/live-price.js';
 import type { ExchangeId } from '../types.js';
 
 const TAG = '[adapter-history]';
@@ -252,11 +257,19 @@ export async function probeAll(o: {
 
 // ── S: every serving window the product asks for (OPS-SERVED-CANDLE-TRUTH-W1 CH2) ─────────────────────────────────
 
-export interface ServeWindow { venue: string; tf: string; window: string; spanMs: number; servedStepMs: number; coin: string }
+export interface ServeWindow {
+  venue: string; tf: string; window: string; spanMs: number; servedStepMs: number; coin: string;
+  /** Which reference the head is judged on (formingHeadVerdict): S reads the liquid one (BTC), Y a young/thin one. */
+  reference?: HeadReference;
+}
 
 export interface ServeResult extends ServeWindow {
   bars: number | null;
   headGapBars: number | null;
+  /** The head lag metric (live-price.ts `headLag`): slots behind the head the venue's class owes, and how long before
+   *  the call the newest served bar closed. Null when no bar was read. */
+  headLagSlots: number | null;
+  headLagMs: number | null;
   branch: string | null;
   verdict: Exclude<PairVerdict, 'SKIPPED'>;
   reasons: string[];
@@ -269,11 +282,12 @@ export type ServeRead =
   | { error: string };
 
 /** Judge one S window (pure). PASS when the served page reaches the venue's newest bar (head gap ≤
- *  HEAD_ALLOWANCE_BARS, the bound contract-suite S holds every venue to) AND that bar is the head the venue's class
- *  owes (formingHeadVerdict, CH3a). FAIL when it does not, when the window holds no bar, or when the `getAdapter` seam
- *  refused it as stale. INDETERMINATE only when the read could not be made. */
+ *  HEAD_ALLOWANCE_BARS, the bound contract-suite S holds every venue to) AND that bar is a head the venue's class may
+ *  serve on the window's reference (formingHeadVerdict, CH3a / Q11 / Q13). FAIL when it does not, when the window
+ *  holds no bar, or when the `getAdapter` seam refused it as stale. INDETERMINATE only when the read could not be
+ *  made. */
 export function judgeServe(w: ServeWindow, read: ServeRead): ServeResult {
-  const base: ServeResult = { ...w, bars: null, headGapBars: null, branch: null, verdict: 'PASS', reasons: [] };
+  const base: ServeResult = { ...w, bars: null, headGapBars: null, headLagSlots: null, headLagMs: null, branch: null, verdict: 'PASS', reasons: [] };
   if ('error' in read) return { ...base, verdict: 'INDETERMINATE', reasons: [read.error] };
   if ('refused' in read) {
     return {
@@ -283,13 +297,21 @@ export function judgeServe(w: ServeWindow, read: ServeRead): ServeResult {
   }
   const f = read.facts;
   const out: ServeResult = { ...base, bars: f.inWindow, headGapBars: f.headGapBars, branch: read.branch };
+  // Q13: on a declared ticker-priced venue a THIN reference's late bars move no price, so its head gap is the recorded
+  // headGapBars / headLag metric, never a FAIL (PHEMEX AGPU, 2026-10-23: head gap 2). An empty window still FAILs.
+  const lagIsMetric = w.reference === 'thin' && isTickerPricedVenue(w.venue);
   if (f.emptyWindow || f.headGapBars === null) { out.verdict = 'FAIL'; out.reasons.push('no bar in the window'); }
-  else if (f.headGapBars > HEAD_ALLOWANCE_BARS) {
+  else if (f.headGapBars > HEAD_ALLOWANCE_BARS && !lagIsMetric) {
     out.verdict = 'FAIL';
     out.reasons.push(`head gap ${f.headGapBars} bars > ${HEAD_ALLOWANCE_BARS}: the window does not reach the venue's newest bar`);
   }
   if (read.newestMs !== null) {
-    const why = formingHeadVerdict(read.newestMs, w.servedStepMs, read.calledAtMs, w.venue, Math.max(0, read.answeredAtMs - read.calledAtMs));
+    const lag = headLag(read.newestMs, w.servedStepMs, read.calledAtMs, w.venue);
+    out.headLagSlots = lag.slots;
+    out.headLagMs = lag.ageMs;
+    const why = formingHeadVerdict(
+      read.newestMs, w.servedStepMs, read.calledAtMs, w.venue, Math.max(0, read.answeredAtMs - read.calledAtMs), w.reference ?? 'liquid',
+    );
     if (why !== null) { out.verdict = 'FAIL'; out.reasons.push(`head: ${why}`); }
   }
   return out;
@@ -404,7 +426,7 @@ export async function probeYoung(o: {
     coin: null as string | null,
     next: 0,
   }));
-  const label = (w: Omit<ServeWindow, 'coin'>, coin: string): ServeWindow => ({ ...w, coin, window: `young:${coin}@${w.window}` });
+  const label = (w: Omit<ServeWindow, 'coin'>, coin: string): ServeWindow => ({ ...w, coin, window: `young:${coin}@${w.window}`, reference: 'thin' });
   const read = async (w: ServeWindow) => { await pace(PACE_MS); return readServe(o.getCandles, o.nowMs, w); };
   const live = (st: (typeof states)[number]) => st.plan.length > 0 && (st.coin === null ? st.cands.length > 0 : st.next < st.plan.length);
   for (const st of states) if (st.plan.length > 0 && st.cands.length === 0) out.none.push(st.venue);
@@ -438,14 +460,14 @@ export function youngCandidatesByVenue(rows: readonly { exchange: string; coin: 
   return by;
 }
 
-// ── T: a declared closed-only kline venue's ticker (OPS-SERVED-CANDLE-TRUTH-W1 CH3a, Cowork Q8) ─────────────────────
+// ── T: a declared ticker-priced venue's ticker (OPS-SERVED-CANDLE-TRUTH-W1 CH3a / Q11, Cowork Q8) ───────────────────
 
-/** Judge one ticker read (pure): PASS when its last trade can price a call now (tickerFreshness), FAIL when it cannot
- *  (every call on that venue would be refused), INDETERMINATE when the ticker could not be read. */
+/** Judge one ticker read (pure): PASS when its last trade can price a call now by the venue's kind (tickerFreshness),
+ *  FAIL when it cannot (every call on that venue would be refused), INDETERMINATE when the ticker could not be read. */
 export function judgeTicker(venue: string, read: { lastTrade: { price: number; atMs: number } | undefined; nowMs: number } | { error: string }): ServeResult {
-  const base: ServeResult = { venue, tf: 'ticker', window: `ticker:${COIN}`, spanMs: 0, servedStepMs: 0, coin: COIN, bars: null, headGapBars: null, branch: null, verdict: 'PASS', reasons: [] };
+  const base: ServeResult = { venue, tf: 'ticker', window: `ticker:${COIN}`, spanMs: 0, servedStepMs: 0, coin: COIN, bars: null, headGapBars: null, headLagSlots: null, headLagMs: null, branch: null, verdict: 'PASS', reasons: [] };
   if ('error' in read) return { ...base, verdict: 'INDETERMINATE', reasons: [read.error] };
-  const why = tickerFreshness(read.lastTrade, read.nowMs);
+  const why = tickerFreshness(read.lastTrade, read.nowMs, venue);
   return why === null ? base : { ...base, verdict: 'FAIL', reasons: [`${venue} cannot price a call: ${why}`] };
 }
 
@@ -502,7 +524,7 @@ async function main(): Promise<number> {
       timeframes: servingTfs,
     });
     const tickers: ServeResult[] = [];
-    for (const venue of active.filter((v) => (CLOSED_ONLY_KLINE_VENUES as readonly string[]).includes(v))) {
+    for (const venue of active.filter(isTickerPricedVenue)) {
       await sleep(PACE_MS);
       try {
         const ctx = await getAdapter(venue as ExchangeId).getAssetContext(COIN);

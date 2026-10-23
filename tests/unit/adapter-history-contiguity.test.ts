@@ -48,7 +48,7 @@ import { retiredGetCandles as retiredOkx } from '../fixtures/adapter-history/ret
 import { CRON_TIMEFRAMES, isTimeframeFaithful } from '../../src/lib/tf-support.js';
 import { EVAL_CANDLES } from '../../src/scripts/directional-labeler.js';
 import type { ExchangeId } from '../../src/types.js';
-import { BOUNDARY_LAG_MS, LIVE_TICKER_MAX_AGE_MS } from '../../src/lib/live-price.js';
+import { BOUNDARY_LAG_MS, LIVE_TICKER_MAX_AGE_MS, SNAPSHOT_KLINE_MAX_LAG_MS } from '../../src/lib/live-price.js';
 
 const FIX = path.resolve(__dirname, '../fixtures/adapter-history');
 const readJson = <T>(f: string): T => JSON.parse(fs.readFileSync(path.join(FIX, f), 'utf8')) as T;
@@ -229,6 +229,50 @@ describe('judgeServe — one serving window, two-way', () => {
     expect(r.reasons).toEqual(['head: a declared closed-only kline venue served its forming bar']);
     expect(judgeServe(px, { facts: clean, branch: null, ...at, newestMs: FORMING - 2 * H }).reasons).toEqual(['head: newest bar 2 slot(s) before the forming bar (declared: 1 expected)']);
   });
+  it('Q13: on a declared venue\'s THIN reference the head lag is a metric, never a FAIL; its forming bar still FAILs', () => {
+    const thin: ServeWindow = { ...w, venue: 'PHEMEX', coin: 'AGPU', window: 'young:AGPU@trade_call@100', reference: 'thin' };
+    // as measured live: the closed-bar head gap (2) AND the forming check both see the lag; on a thin declared reference
+    // both are metrics
+    const lagged = { ...clean, headGapBars: 2 };
+    const r = judgeServe(thin, { facts: lagged, branch: null, ...at, newestMs: FORMING - 3 * H });
+    expect(r).toMatchObject({ verdict: 'PASS', reasons: [], headGapBars: 2, headLagSlots: 2, headLagMs: 2 * H + (NOW - FORMING) });
+    // the same facts on the LIQUID reference FAIL on both legs
+    expect(judgeServe({ ...thin, reference: 'liquid' }, { facts: lagged, branch: null, ...at, newestMs: FORMING - 3 * H }).reasons).toEqual([
+      `head gap 2 bars > ${HEAD_ALLOWANCE_BARS}: the window does not reach the venue's newest bar`,
+      'head: newest bar 3 slot(s) before the forming bar (declared: 1 expected)',
+    ]);
+    // a thin declared window with no bar at all is still a FAIL
+    expect(judgeServe(thin, { facts: { ...clean, inWindow: 0, emptyWindow: true, headGapBars: null }, branch: null, ...at, newestMs: null }).verdict).toBe('FAIL');
+    // a non-declared venue's thin reference keeps the head-gap FAIL (the leg alone: its newest bar is the forming one)
+    expect(judgeServe({ ...thin, venue: 'BITGET' }, { facts: lagged, branch: null, ...at }).reasons).toEqual([
+      `head gap 2 bars > ${HEAD_ALLOWANCE_BARS}: the window does not reach the venue's newest bar`,
+    ]);
+    expect(judgeServe(thin, { facts: clean, branch: null, ...at }).reasons).toEqual(['head: a declared closed-only kline venue served its forming bar']);
+    // the same head on the LIQUID reference FAILs
+    expect(judgeServe({ ...thin, reference: 'liquid' }, { facts: clean, branch: null, ...at, newestMs: FORMING - 3 * H }).verdict).toBe('FAIL');
+    // a non-declared venue's thin reference is held to its forming bar like any other window
+    expect(judgeServe({ ...thin, venue: 'BITGET' }, { facts: clean, branch: null, ...at, newestMs: FORMING - H }).verdict).toBe('FAIL');
+  });
+  it('Q11: a SNAPSHOT_KLINE venue (ASTER) passes up to 2 slots and 90 s behind, FAILs beyond, and records the lag', () => {
+    const M = 60_000;
+    const a1: ServeWindow = { venue: 'ASTER', tf: '1m', window: 'trade_call@100', spanMs: 100 * M, servedStepMs: M, coin: 'BTC' };
+    const F = Math.floor(NOW / M) * M;
+    const read = (newestMs: number, calledAtMs = NOW) => ({ facts: clean, branch: null, newestMs, calledAtMs, answeredAtMs: calledAtMs });
+    expect(judgeServe(a1, read(F))).toMatchObject({ verdict: 'PASS', headLagSlots: 0, headLagMs: 0 });
+    expect(judgeServe(a1, read(F - 2 * M))).toMatchObject({ verdict: 'PASS', headLagSlots: 2, headLagMs: M + (NOW - F) });
+    const tooOld = judgeServe(a1, read(F - 2 * M, F + SNAPSHOT_KLINE_MAX_LAG_MS - M + 1_000));
+    expect(tooOld.verdict).toBe('FAIL');
+    expect(tooOld.reasons[0]).toMatch(/^head: newest bar 2 slot\(s\) before the forming bar, closed 91 s before the read/);
+    expect(judgeServe(a1, read(F - 2 * M, F + SNAPSHOT_KLINE_MAX_LAG_MS - M)).verdict).toBe('PASS'); // exactly 90 s
+    expect(judgeServe(a1, read(F - 2 * M, F + SNAPSHOT_KLINE_MAX_LAG_MS - M + 1)).verdict).toBe('FAIL'); // 1 ms past
+    expect(judgeServe(a1, read(F - 3 * M)).verdict).toBe('FAIL');
+    expect(judgeServe({ ...a1, reference: 'thin', coin: 'AXIS' }, read(F - 5 * M))).toMatchObject({ verdict: 'PASS', headLagSlots: 5 });
+  });
+  it('every judged window carries its head lag; an unread one carries null', () => {
+    expect(judgeServe(w, { facts: clean, branch: 'R', ...at })).toMatchObject({ headLagSlots: 0, headLagMs: 0 });
+    expect(judgeServe(w, { facts: clean, branch: 'F', ...at, newestMs: FORMING - H })).toMatchObject({ headLagSlots: 1, headLagMs: NOW - FORMING });
+    expect(judgeServe(w, { error: 'timeout' })).toMatchObject({ headLagSlots: null, headLagMs: null });
+  });
 });
 
 describe('CH3a — the ticker leg (a declared closed-only kline venue must be able to price a call)', () => {
@@ -240,6 +284,14 @@ describe('CH3a — the ticker leg (a declared closed-only kline venue must be ab
     expect(judgeTicker('PHEMEX', { lastTrade: undefined, nowMs: NOW }).verdict).toBe('FAIL');
     expect(judgeTicker('PHEMEX', { error: 'UpstreamRateLimitError: 429' }).verdict).toBe('INDETERMINATE');
     expect(judgeTicker('PHEMEX', { lastTrade: undefined, nowMs: NOW })).toMatchObject({ venue: 'PHEMEX', tf: 'ticker', window: 'ticker:BTC' });
+  });
+  it('Q11: ASTER (SNAPSHOT_KLINE) needs a positive last price and no age bound', () => {
+    expect(judgeTicker('ASTER', { lastTrade: { price: 81_699.9, atMs: NOW - 6 * H }, nowMs: NOW }).verdict).toBe('PASS');
+    for (const lastTrade of [undefined, { price: 0, atMs: NOW }, { price: Number.NaN, atMs: NOW }]) {
+      const r = judgeTicker('ASTER', { lastTrade, nowMs: NOW });
+      expect(r.verdict).toBe('FAIL');
+      expect(r.reasons).toEqual(['ASTER cannot price a call: its ticker carried no last price']);
+    }
   });
 });
 
@@ -316,6 +368,26 @@ describe('CH3a — the young-listing leg: screen, interleave, pace, judge', () =
     expect(a.map((r) => `${r.tf}/${r.verdict}`).sort()).toEqual(['1d/PASS', '1h/FAIL']);
     expect(a.find((r) => r.tf === '1h')!.reasons).toEqual(['head: newest bar 1 slot(s) before the forming bar']);
     expect(out.results.filter((r) => r.venue === 'B').every((r) => r.verdict === 'FAIL' && r.reasons[0].startsWith('STALE_UPSTREAM_WINDOW'))).toBe(true);
+  });
+
+  it('Q13: the young leg judges its reference as THIN — a declared venue\'s late thin bars PASS with their lag, its forming bar FAILs', async () => {
+    // PHEMEX young (AGPU-like): 1h ends 3 slots before the forming bar, 1d serves its forming bar
+    const lagging = (from: number, tf: string) => {
+      const st = TF_MS[tf];
+      const end = Math.floor(NOW / st) * st - (tf === '1h' ? 3 * st : 0);
+      const out: { time: number }[] = [];
+      for (let t = Math.ceil(Math.max(from, NOW - 10 * 86_400_000) / st) * st; t <= end; t += st) out.push({ time: t });
+      return out;
+    };
+    const out = await probeYoung({
+      venues: ['PHEMEX'], candidates: { PHEMEX: ['AGPU'] }, nowMs: () => NOW,
+      getCandles: async (_v, tf, from) => lagging(from, tf), served, timeframes: tfs, pace: async () => {},
+    });
+    expect(out.refs).toEqual({ PHEMEX: 'AGPU' });
+    expect(out.results.every((r) => r.reference === 'thin')).toBe(true);
+    const h1 = out.results.find((r) => r.tf === '1h')!;
+    expect(h1).toMatchObject({ verdict: 'PASS', reasons: [], headLagSlots: 2 });
+    expect(out.results.find((r) => r.tf === '1d')!.reasons).toEqual(['head: a declared closed-only kline venue served its forming bar']);
   });
 
   it('YOUNG_FRONT_BARS is the screen: a listing exactly that many bars inside the window is not young', async () => {

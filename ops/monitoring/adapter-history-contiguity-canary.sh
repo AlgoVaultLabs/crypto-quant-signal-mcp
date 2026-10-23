@@ -30,10 +30,13 @@
 # counts, the failing / indeterminate / skipped pair names, the open streaks and the substitutedNewest count.
 # Identifiers and counts only. ops/scripts/monitoring-results-sync.sh pulls it into the vault.
 #
-# ── SCHEDULE: 24 10 * * * (signal-1) ─────────────────────────────────────────────────────────
-# Daytime, outside 02:20–06:30Z (labeler + relabel) and 18:30–02:15Z; minute 24 of hour 10 checked clear
-# against the live crontab at install. Safe-to-kill (cron-interlock-registry.json): read-only, re-derives its
-# verdict on the next fire; a killed run is INDETERMINATE-equivalent (no token → streaks untouched).
+# ── SCHEDULE: 24 19 * * * (signal-1) ─────────────────────────────────────────────────────────
+# Inside the deploy-free hours (18:00–02:59Z) and outside 02:20–06:30Z (labeler + relabel). OPS-SERVED-CANDLE-TRUTH-W1
+# CH3a raised the run from ~6 min to ~48 min (S + Y + T), so a daytime deploy restart killed it (2026-10-23 10:24Z
+# run: rc 137 at 45 min → INDETERMINATE); it moved from 24 10 to 24 19. OAH-Q10's 18:30–02:15Z exclusion kept the
+# LRW relabel nights clear, and that window lapsed with EDGE-LABELER-RACE-WINDOW-V2-W1 (complete 2026-10-14).
+# Safe-to-kill (cron-interlock-registry.json): read-only, re-derives its verdict on the next fire; a killed run is
+# INDETERMINATE-equivalent (no token → streaks untouched).
 #
 # Usage: adapter-history-contiguity-canary.sh            # the canary (cron)
 #        adapter-history-contiguity-canary.sh --self-test # hermetic, two-way, vacuity-guarded
@@ -135,6 +138,10 @@ metrics = {
     "serving_failing": sby("FAIL"),
     "serving_failing_windows": sorted(f"{w.get('venue')}/{w.get('tf')}/{w.get('window')}" for w in serves if w.get("verdict") == "FAIL"),
     "serving_paged": [label(n) for n, _, _ in spages],
+    # OPS-SERVED-CANDLE-TRUTH-W1 Q11/Q13: every window whose head sits off the one its venue's class owes, as
+    # [slots behind, seconds since its newest bar closed] — a metric, judged by the script, never streaked here.
+    "serving_head_lag": {f"{w.get('venue')}/{w.get('tf')}/{w.get('window')}": [w.get("headLagSlots"), round((w.get("headLagMs") or 0) / 1000)]
+                         for w in serves if isinstance(w.get("headLagSlots"), int) and w.get("headLagSlots") != 0},
 }
 print("METRICS " + json.dumps(metrics, sort_keys=True))
 PYSTREAK
@@ -262,6 +269,7 @@ self_test() {
   trap 'rm -rf "$AHC_ST"' EXIT
   ck() { checked=$((checked + 1)); if [ "$2" = "$3" ]; then echo "SELF-TEST: ok   $1"; else echo "SELF-TEST: FAIL $1 (got '$2', want '$3')"; fails="$fails|$1"; fi; }
   has() { checked=$((checked + 1)); if grep -qF -- "$3" <<<"$2"; then echo "SELF-TEST: ok   $1"; else echo "SELF-TEST: FAIL $1 (missing '$3')"; fails="$fails|$1"; fi; }
+  lacks() { checked=$((checked + 1)); if grep -qF -- "$3" <<<"$2"; then echo "SELF-TEST: FAIL $1 (present '$3')"; fails="$fails|$1"; else echo "SELF-TEST: ok   $1"; fi; }
 
   # A fixture checkout carrying the two expectation files.
   mkdir -p "$st/repo/tests/fixtures/adapter-history"
@@ -376,7 +384,7 @@ EOF
   # (8) Every exit path publishes a record — through the REAL canary_result_log when it is beside this file.
   if [ -r "$here/canary_result_log.py" ]; then
     mkdir -p "$st/lib"; cp "$here/canary_result_log.py" "$st/lib/"
-    printf '[adapter-history] PAIR {"venue":"OKX","tf":"1h","verdict":"PASS","reasons":[],"substitutedNewest":1}\n[adapter-history] SERVE {"venue":"OKX","tf":"1h","window":"market_regime@168","verdict":"PASS","reasons":[]}\n[adapter-history] ADAPTER_HISTORY_VERDICT=PASS\n' > "$st/script.out"
+    printf '[adapter-history] PAIR {"venue":"OKX","tf":"1h","verdict":"PASS","reasons":[],"substitutedNewest":1}\n[adapter-history] SERVE {"venue":"OKX","tf":"1h","window":"market_regime@168","headLagSlots":0,"headLagMs":0,"verdict":"PASS","reasons":[]}\n[adapter-history] SERVE {"venue":"ASTER","tf":"1m","window":"trade_call@100","headLagSlots":2,"headLagMs":75400,"verdict":"PASS","reasons":[]}\n[adapter-history] ADAPTER_HISTORY_VERDICT=PASS\n' > "$st/script.out"
     ADAPTER_HISTORY_REPO="$st/repo" ADAPTER_HISTORY_DOCKER="$st/docker" ADAPTER_HISTORY_SEND="$st/send" \
       ADAPTER_HISTORY_LOG="$st/log" ADAPTER_HISTORY_STREAK_DIR="$st/streak" ADAPTER_HISTORY_RESULT_LOG_DIR="$st/lib" \
       CANARY_RESULT_LOG_PATH="$st/results.jsonl" bash "$me" > "$st/run.out" 2>&1
@@ -384,7 +392,9 @@ EOF
     local rec; rec="$(tail -1 "$st/results.jsonl" 2>/dev/null || true)"
     has 'the record names this canary' "$rec" '"adapter-history-contiguity"'
     has 'the record counts substitutedNewest' "$rec" '"substituted_newest":1'
-    has 'the record counts the S windows and pairs' "$rec" '"serving_pairs":1'
+    has 'the record counts the S windows and pairs' "$rec" '"serving_pairs":2'
+    has 'the record carries a lagged head as [slots, s]' "$rec" '"serving_head_lag":{"ASTER/1m/trade_call@100":[2,75]}'
+    lacks 'the record leaves an as-owed head out of the lag metric' "$rec" 'OKX/1h/market_regime@168'
   else
     has 'canary_result_log.py sits beside this script' "missing" "present"
   fi
@@ -412,13 +422,13 @@ EOF
   fi
 
   # Vacuity guard: a self-test that asserted nothing must never report a pass.
-  if [ "$checked" -lt 58 ]; then
-    echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= 58)"; return 3
+  if [ "$checked" -lt 60 ]; then
+    echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= 60)"; return 3
   fi
   if [ -n "$fails" ]; then
     echo "SELF_TEST_VERDICT=FAIL — ${fails#|}"; return 1
   fi
-  echo "SELF_TEST_VERDICT=PASS — $checked assertions (PASS · FAIL streak 1-2-3 · INDETERMINATE per pair and per run · reset · page argv + body · S streak 1-2 + SERVED_WINDOW_STALE · result record · wrapper cooldown)"
+  echo "SELF_TEST_VERDICT=PASS — $checked assertions (PASS · FAIL streak 1-2-3 · INDETERMINATE per pair and per run · reset · page argv + body · S streak 1-2 + SERVED_WINDOW_STALE · result record + head-lag metric · wrapper cooldown)"
   return 0
 }
 

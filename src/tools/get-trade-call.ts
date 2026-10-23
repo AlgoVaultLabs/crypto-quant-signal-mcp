@@ -1071,9 +1071,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   //    are untouched by this wave — ONLY indicator inputs move to the closed basis.
   //    A future wave will otherwise "helpfully" move this and silently re-price the
   //    entire track record. Do not. ──
-  //    OPS-SERVED-CANDLE-TRUTH-W1 CH3a: the ONE live-price derivation. Every venue but a declared closed-only kline
-  //    venue gets `closes[closes.length - 1]`, byte-identical; a declared one (PHEMEX, whose klines never hold the
-  //    forming bar) is priced from its ticker's last price, or refused here, before trackCall: never the last closed bar.
+  //    OPS-SERVED-CANDLE-TRUTH-W1 CH3a / Q11: the ONE live-price derivation. Every venue but a declared ticker-priced
+  //    venue gets `closes[closes.length - 1]`, byte-identical; a declared one (TICKER_PRICED_VENUES: PHEMEX, whose
+  //    klines never hold the forming bar; ASTER, whose klines are a lagging snapshot) is priced from its ticker's last
+  //    trade, always, or refused here, before trackCall: never a candle close.
   const currentPrice = livePriceOf(
     { coin, timeframe, candles, servedStepMs: servedCandleStepMs(exchange, timeframe) },
     assetCtx,

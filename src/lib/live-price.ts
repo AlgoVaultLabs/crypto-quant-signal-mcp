@@ -1,17 +1,26 @@
 /**
- * live-price.ts — OPS-SERVED-CANDLE-TRUTH-W1 CH3a (Cowork Q8; Mr.1 Q10 = C). The ONE derivation of a call's LIVE price:
- * `currentPrice` in src/tools/get-trade-call.ts, which is the reported price, the track-record entry price and the
- * value `recordSignal` stores. Scans and the seeder reach it through `getTradeSignal`; `recordSignal` has no other caller.
+ * live-price.ts — OPS-SERVED-CANDLE-TRUTH-W1 CH3a (Cowork Q8; Mr.1 Q10 = C; Cowork Q11 / Q13 = A). The ONE derivation
+ * of a call's LIVE price: `currentPrice` in src/tools/get-trade-call.ts, which is the reported price, the track-record
+ * entry price and the value `recordSignal` stores. Scans and the seeder reach it through `getTradeSignal`;
+ * `recordSignal` has no other caller.
  *
  * Why it exists: under CANDLE_BASIS=closed the verdict reads closed bars only (splitCandleWindow), so a candle window
- * that lacks the venue's forming bar costs exactly one thing, the entry price. A venue whose kline endpoints serve
- * closed bars only (PHEMEX: `/md/v2/kline/last` and `/kline/list` both end one bar before now on every listing and
- * every timeframe, census 2026-10-23; its forming bar is WebSocket-only) therefore priced every call at the previous
- * close. For such a DECLARED venue the live price is its ticker's last price, which `getAssetContext` already fetches.
+ * that lacks the venue's forming bar costs exactly one thing, the entry price. Two kinds of venue cannot be priced from
+ * their candles, and each is DECLARED below with its kind:
+ *   - CLOSED_ONLY (PHEMEX): `/md/v2/kline/last` and `/kline/list` both end one bar before now on every listing and
+ *     every timeframe (census 2026-10-23; its forming bar is WebSocket-only), so every call was priced at the previous
+ *     close.
+ *   - SNAPSHOT_KLINE (ASTER): `/fapi/v1/klines` answers a snapshot the origin refreshes every ~70–90 s (measured on
+ *     signal-1 2026-10-23 10:47–10:52Z and from a cloud vantage 16:28–16:30Z, `x-cache: Miss from cloudfront` on every
+ *     read): the BTC 1m close sat frozen for 78 s while the last trade moved, and the forming bar is absent on 57–60 %
+ *     of 1m reads (≤ 2 slots), 20–23 % of 3m reads. Even a forming close there can be ~90 s old.
+ * A declared venue is priced from its ticker's last trade ALWAYS (never a candle close, even with a forming bar
+ * present), from the response `getAssetContext` already fetches.
  *
  * Q10 = C: every NON-declared venue keeps `closes[closes.length - 1]`, byte-identical. A window there that lacks the
  * forming bar is a thin book with no trade yet in the interval, or the seconds after a bar boundary, and its newest
- * close IS the venue's own last trade (measured: Aster ZEN / FRAX / FORM / XCU close == ticker lastPrice). The
+ * close is the venue's own last trade. (The premise was first measured on four thin ASTER books, where a frozen close
+ * equals the last trade trivially; liquid ASTER books falsified it, which is why ASTER is declared.) The
  * endpoint-omission class is kept out of those venues structurally instead: the adapters serve the forming bar
  * (Bitget young listings, WhiteBIT, CH3a), and scenario S plus the contiguity canary assert it on every venue's
  * references and go red the day a non-declared venue turns closed-only, or a declared one starts serving its
@@ -20,44 +29,115 @@
 import type { AssetContext, Candle, ExchangeId } from '../types.js';
 import { StaleUpstreamWindowError } from './errors.js';
 
-/** Venues whose public REST kline endpoints never carry the forming bar. One declaration, test-pinned. */
-export const CLOSED_ONLY_KLINE_VENUES: readonly ExchangeId[] = Object.freeze(['PHEMEX'] as ExchangeId[]);
+/** Why a venue is priced from its ticker: its klines never hold the forming bar, or they are a lagging snapshot. */
+export type TickerPricedKind = 'CLOSED_ONLY' | 'SNAPSHOT_KLINE';
 
-/** The oldest ticker a declared venue may be priced from. It bounds the ticker SNAPSHOT (Phemex `timestamp`, ns). */
-export const LIVE_TICKER_MAX_AGE_MS = 60_000;
+/** The ONE declaration of ticker-priced venues, each with its kind (test-pinned). The kind drives the head rule and
+ *  the ticker check; a future venue joins here with its kind — there is no second list. */
+export const TICKER_PRICED_VENUES: Readonly<Partial<Record<ExchangeId, TickerPricedKind>>> = Object.freeze({
+  PHEMEX: 'CLOSED_ONLY',
+  ASTER: 'SNAPSHOT_KLINE',
+});
 
-export function isClosedOnlyKlineVenue(venue: string): boolean {
-  return (CLOSED_ONLY_KLINE_VENUES as readonly string[]).includes(venue);
+export function tickerPricedKind(venue: string): TickerPricedKind | null {
+  return Object.prototype.hasOwnProperty.call(TICKER_PRICED_VENUES, venue) ? TICKER_PRICED_VENUES[venue as ExchangeId] ?? null : null;
 }
 
-/** The seconds after a bar boundary in which a venue may not show the new forming bar yet (no trade in it so far):
- *  one slot short is accepted there. Measured, CH3a census 2026-10-23 (`ch3a-boundary.out`). */
+export function isTickerPricedVenue(venue: string): boolean {
+  return tickerPricedKind(venue) !== null;
+}
+
+/** Venues whose public REST kline endpoints never carry the forming bar — derived from TICKER_PRICED_VENUES (sorted, so
+ *  no consumer depends on the object's key order). */
+export const CLOSED_ONLY_KLINE_VENUES: readonly ExchangeId[] = Object.freeze(
+  (Object.keys(TICKER_PRICED_VENUES) as ExchangeId[]).filter((v) => TICKER_PRICED_VENUES[v] === 'CLOSED_ONLY').sort(),
+);
+
+export function isClosedOnlyKlineVenue(venue: string): boolean {
+  return tickerPricedKind(venue) === 'CLOSED_ONLY';
+}
+
+/** The oldest ticker a CLOSED_ONLY venue may be priced from. It bounds the ticker SNAPSHOT (Phemex `timestamp`, ns).
+ *  A SNAPSHOT_KLINE ticker carries the last TRADE's time instead, and is not age-bounded (see tickerFreshness). */
+export const LIVE_TICKER_MAX_AGE_MS = 60_000;
+
+/** A SNAPSHOT_KLINE venue's newest served bar may have closed at most this long before the read: the measured
+ *  snapshot refresh (ASTER, ~70–90 s, 2026-10-23). It is also the ruling's slot bound (newest open ≥ forming − 2):
+ *  a head 3 slots short closed ≥ 2 steps ≥ 120 s before the read on every served step, so one bound holds both.
+ *  Beyond it the snapshot is staler than the venue was ever measured to serve. */
+export const SNAPSHOT_KLINE_MAX_LAG_MS = 90_000;
+
+/** The seconds after a bar boundary in which a venue may not show the new bar yet: one slot short is accepted there.
+ *  A VENUE-lag bound, measured on live venue reads (CH3a census 2026-10-23, vault `ch3a-thin.jsonl`, 1 541 reads):
+ *  the non-forming reads one slot short sat at most 14.1 s after a boundary on HL, 3.6 on MEXC, 2.8 on BINANCE, 2.6 on
+ *  BINGX, 1.2 on OKX. (`ch3a-boundary.out` beside it counts the CALLS that land inside such a lag.) It is not a
+ *  SNAPSHOT_KLINE venue's bound (ASTER ran to 53.7 s there): that is SNAPSHOT_KLINE_MAX_LAG_MS. */
 export const BOUNDARY_LAG_MS = 15_000;
+
+/** The same allowance on a CLOSED_ONLY venue's liquid reference, where the owed head is forming − 1 and the
+ *  just-closed bar is what may be late. Measured: PHEMEX BTCUSDT `/md/v2/kline/last` on signal-1, 1 s polls,
+ *  2026-10-23 16:43–17:13Z — the just-closed 1m / 5m bar first appeared 4.5–25.9 s after its boundary (36
+ *  boundaries; 7 of 30 1m ones past 15 s; vault `ch3a-r1-phemex-btc-boundary*.jsonl`). */
+export const CLOSED_ONLY_BOUNDARY_LAG_MS = 30_000;
 
 const mod = (a: number, m: number) => ((a % m) + m) % m;
 
-/**
- * The ONE judgement of a serving window's head, for contract scenario S and the live contiguity canary alike: null
- * when the newest bar is the one the venue's class owes — the FORMING bar (the slot holding `calledAtMs`, on the
- * venue's own phase) on every venue, forming − 1 on a declared closed-only kline venue — else why not. `toleranceMs`
- * widens the call instant for a replayed capture (its read completed up to that much later). Within BOUNDARY_LAG_MS
- * after a boundary one slot short is accepted. A declared venue that serves its forming bar is a FINDING (the
- * declaration is wrong), never a pass.
- */
-export function formingHeadVerdict(newestOpenMs: number, servedMs: number, calledAtMs: number, venue: string, toleranceMs = 0): string | null {
-  const declared = isClosedOnlyKlineVenue(venue);
-  const owed = (at: number) => at - mod(at - newestOpenMs, servedMs) - (declared ? servedMs : 0);
-  if (newestOpenMs === owed(calledAtMs) || newestOpenMs === owed(calledAtMs + toleranceMs)) return null;
+/** Which reference a head is judged on: the LIQUID one (BTC, which trades every bar) or a young/thin listing. */
+export type HeadReference = 'liquid' | 'thin';
+
+/** How far a served head sits from the one the venue's class owes. `slots`: owed − newest in served steps (0 = as
+ *  owed; −1 = a CLOSED_ONLY venue served its forming bar). `ageMs`: how long before `calledAtMs` the newest served bar
+ *  closed (0 while it is still forming). The canary records both as metrics. */
+export function headLag(newestOpenMs: number, servedMs: number, calledAtMs: number, venue: string): { slots: number; ageMs: number } {
   const forming = calledAtMs - mod(calledAtMs - newestOpenMs, servedMs);
-  if (calledAtMs - forming <= BOUNDARY_LAG_MS && newestOpenMs === owed(calledAtMs) - servedMs) return null;
-  if (declared && newestOpenMs === forming) return 'a declared closed-only kline venue served its forming bar';
-  return `newest bar ${Math.round((forming - newestOpenMs) / servedMs)} slot(s) before the forming bar${declared ? ' (declared: 1 expected)' : ''}`;
+  const owedOpen = forming - (isClosedOnlyKlineVenue(venue) ? servedMs : 0);
+  return { slots: Math.round((owedOpen - newestOpenMs) / servedMs), ageMs: Math.max(0, calledAtMs - (newestOpenMs + servedMs)) };
 }
 
-/** null when a ticker last trade can price a call at `nowMs` (positive, finite, at most LIVE_TICKER_MAX_AGE_MS from
- *  now either way), else why not. livePriceOf and the canary's ticker probe both read it. */
-export function tickerFreshness(t: AssetContext['lastTrade'], nowMs: number): string | null {
-  if (!t || !Number.isFinite(t.price) || !(t.price > 0) || !Number.isFinite(t.atMs)) return 'its ticker carried no last price';
+/**
+ * The ONE judgement of a serving window's head, for contract scenario S and the live contiguity canary alike: null
+ * when the head is one the venue's class may serve, else why not. `toleranceMs` widens the call instant for a
+ * replayed capture (its read completed up to that much later).
+ *   - a non-declared venue owes its FORMING bar (the slot holding `calledAtMs`, on the venue's own phase); within
+ *     BOUNDARY_LAG_MS after a boundary one slot short is accepted;
+ *   - a SNAPSHOT_KLINE venue (Q11) may serve its forming bar, or on the LIQUID reference a head whose newest bar
+ *     closed at most SNAPSHOT_KLINE_MAX_LAG_MS before the read; on a young/thin reference any older head is a metric
+ *     (headLag), never a FAIL;
+ *   - a CLOSED_ONLY venue (Q13) FAILS when it serves its forming bar (the declaration is wrong); on the LIQUID
+ *     reference its head is exactly forming − 1 (one slot more within CLOSED_ONLY_BOUNDARY_LAG_MS after a boundary); on a
+ *     young/thin reference any older head is a metric (headLag), never a FAIL — the call is priced from the ticker.
+ */
+export function formingHeadVerdict(
+  newestOpenMs: number, servedMs: number, calledAtMs: number, venue: string, toleranceMs = 0, reference: HeadReference = 'liquid',
+): string | null {
+  const kind = tickerPricedKind(venue);
+  const forming = calledAtMs - mod(calledAtMs - newestOpenMs, servedMs);
+  const slotsShort = Math.round((forming - newestOpenMs) / servedMs);
+  if (kind === 'SNAPSHOT_KLINE') {
+    if (slotsShort <= 0 && newestOpenMs <= calledAtMs + toleranceMs) return null;
+    const ageMs = calledAtMs - (newestOpenMs + servedMs);
+    if (slotsShort > 0 && reference === 'thin') return null;
+    if (slotsShort > 0 && ageMs <= SNAPSHOT_KLINE_MAX_LAG_MS + toleranceMs) return null;
+    return `newest bar ${slotsShort} slot(s) before the forming bar, closed ${Math.round(ageMs / 1000)} s before the read (snapshot kline: ≤ ${SNAPSHOT_KLINE_MAX_LAG_MS / 1000} s accepted)`;
+  }
+  const declared = kind === 'CLOSED_ONLY';
+  const owed = (at: number) => at - mod(at - newestOpenMs, servedMs) - (declared ? servedMs : 0);
+  if (newestOpenMs === owed(calledAtMs) || newestOpenMs === owed(calledAtMs + toleranceMs)) return null;
+  if (declared && newestOpenMs >= forming) return 'a declared closed-only kline venue served its forming bar';
+  if (declared && reference === 'thin') return null;
+  const boundaryLagMs = declared ? CLOSED_ONLY_BOUNDARY_LAG_MS : BOUNDARY_LAG_MS;
+  if (calledAtMs - forming <= boundaryLagMs && newestOpenMs === owed(calledAtMs) - servedMs) return null;
+  return `newest bar ${slotsShort} slot(s) before the forming bar${declared ? ' (declared: 1 expected)' : ''}`;
+}
+
+/** null when a ticker can price a call on `venue` at `nowMs`, else why not. livePriceOf and the canary's ticker probe
+ *  both read it. Every kind needs a positive, finite last price. CLOSED_ONLY: the ticker SNAPSHOT is at most
+ *  LIVE_TICKER_MAX_AGE_MS from now either way. SNAPSHOT_KLINE: no age bound — its time is the last TRADE's, and a thin
+ *  book's last trade can be hours old and still be its live price. */
+export function tickerFreshness(t: AssetContext['lastTrade'], nowMs: number, venue: string): string | null {
+  if (!t || !Number.isFinite(t.price) || !(t.price > 0)) return 'its ticker carried no last price';
+  if (tickerPricedKind(venue) === 'SNAPSHOT_KLINE') return null;
+  if (!Number.isFinite(t.atMs)) return 'its ticker carried no last price';
   if (Math.abs(nowMs - t.atMs) > LIVE_TICKER_MAX_AGE_MS) {
     return `its ticker is from ${new Date(t.atMs).toISOString()}, more than ${LIVE_TICKER_MAX_AGE_MS / 1000} s from now`;
   }
@@ -88,13 +168,18 @@ function refuse(w: LivePriceWindow, venue: ExchangeId, nowMs: number, why: strin
   throw err;
 }
 
+const KIND_WHY: Record<TickerPricedKind, string> = {
+  CLOSED_ONLY: 'the venue serves closed candles only',
+  SNAPSHOT_KLINE: 'the venue serves a lagging candle snapshot',
+};
+
 /**
- * The live price of a call, in order:
+ * The live price of a call:
  *   1. a non-declared venue: the newest bar's close (byte-identical to the pre-wave `closes[length - 1]`);
- *   2. a declared closed-only venue whose newest bar's interval contains now: that forming bar's close;
- *   3. a declared closed-only venue: the ticker's last price, when the ticker is at most LIVE_TICKER_MAX_AGE_MS old;
- *   4. otherwise refused with StaleUpstreamWindowError (before trackCall: never billed, never recorded).
- * Never the last closed bar of a declared venue.
+ *   2. a declared venue (TICKER_PRICED_VENUES): the ticker's last trade, ALWAYS — never a candle close, even when a
+ *      forming bar is present — when tickerFreshness accepts it for the venue's kind;
+ *   3. otherwise refused with StaleUpstreamWindowError (before trackCall: never billed, never recorded).
+ * A window with no candle is refused on every venue.
  */
 export function livePriceOf(
   window: LivePriceWindow,
@@ -104,12 +189,10 @@ export function livePriceOf(
 ): number {
   const newest = window.candles[window.candles.length - 1];
   if (!newest) refuse(window, venue, nowMs, 'the venue served no candle');
-  if (!isClosedOnlyKlineVenue(venue)) return newest.close;
+  const kind = tickerPricedKind(venue);
+  if (kind === null) return newest.close;
 
-  const step = window.servedStepMs;
-  if (step != null && step > 0 && newest.time <= nowMs && nowMs < newest.time + step) return newest.close;
-
-  const stale = tickerFreshness(assetContext.lastTrade, nowMs);
-  if (stale !== null) refuse(window, venue, nowMs, `the venue serves closed candles only and ${stale}`);
+  const stale = tickerFreshness(assetContext.lastTrade, nowMs, venue);
+  if (stale !== null) refuse(window, venue, nowMs, `${KIND_WHY[kind]} and ${stale}`);
   return assetContext.lastTrade!.price;
 }

@@ -154,7 +154,7 @@ describe('AsterAdapter.getAssetContext', () => {
       body: {
         symbol: 'BTCUSDT', volume: '10231.981', quoteVolume: '813229059.16',
         lastPrice: '78732.5', openPrice: '80557.8', highPrice: '80900.0', lowPrice: '78100.0',
-        priceChangePercent: '-2.265',
+        priceChangePercent: '-2.265', closeTime: 1778913070600,
       },
     });
 
@@ -168,6 +168,8 @@ describe('AsterAdapter.getAssetContext', () => {
     expect(ctx.volume24h).toBeCloseTo(813229059.16);
     expect(ctx.markPx).toBeCloseTo(78732.5);
     expect(ctx.oraclePx).toBeCloseTo(78732.5);
+    // OPS-SERVED-CANDLE-TRUTH-W1 Q11: ASTER is ticker-priced — the last trade and its time, from the same response
+    expect(ctx.lastTrade).toEqual({ price: 78732.5, atMs: 1778913070600 });
   });
 
   it('handles missing/zero fields gracefully (returns 0 not NaN)', async () => {
@@ -186,6 +188,15 @@ describe('AsterAdapter.getAssetContext', () => {
     expect(ctx.volume24h).toBe(0);
     expect(ctx.prevDayPx).toBe(0);
     expect(Number.isFinite(ctx.markPx)).toBe(true);
+    // no last price → no lastTrade: livePriceOf then refuses the call rather than price it from a snapshot close
+    expect(ctx.lastTrade).toBeUndefined();
+  });
+
+  it.each([['0'], ['-1'], ['abc']])('Q11: a lastPrice of %s carries no lastTrade', async (lastPrice) => {
+    setMock('/fapi/v1/premiumIndex', { status: 200, body: { symbol: 'BTCUSDT', markPrice: '78732', lastFundingRate: '0' } });
+    setMock('/fapi/v1/openInterest', { status: 200, body: { symbol: 'BTCUSDT', openInterest: '1' } });
+    setMock('/fapi/v1/ticker/24hr', { status: 200, body: { symbol: 'BTCUSDT', lastPrice, openPrice: '1', quoteVolume: '1', closeTime: 1 } });
+    expect((await new AsterAdapter().getAssetContext('BTC')).lastTrade).toBeUndefined();
   });
 });
 

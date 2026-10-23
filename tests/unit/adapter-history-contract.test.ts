@@ -35,7 +35,10 @@ import { SyntheticVenue, listingFromProbes } from '../harness/adapter-history-sy
 import { historyMetaOf, accountPage, HEAD_ALLOWANCE_BARS } from '../../src/lib/adapters/_history-plan.js';
 import { SERVING_MAX_PAGES } from '../../src/lib/serving-windows.js';
 import { servingWindowVerdict } from '../../src/lib/exchange-adapter.js';
-import { BOUNDARY_LAG_MS, CLOSED_ONLY_KLINE_VENUES, formingHeadVerdict, livePriceOf, LIVE_TICKER_MAX_AGE_MS } from '../../src/lib/live-price.js';
+import {
+  BOUNDARY_LAG_MS, CLOSED_ONLY_BOUNDARY_LAG_MS, CLOSED_ONLY_KLINE_VENUES, SNAPSHOT_KLINE_MAX_LAG_MS, TICKER_PRICED_VENUES, formingHeadVerdict, headLag,
+  livePriceOf, LIVE_TICKER_MAX_AGE_MS, type HeadReference,
+} from '../../src/lib/live-price.js';
 import { TIMEFRAMES } from '../../src/lib/capabilities.js';
 import { servingSpans } from '../harness/serving-spans.js';
 import { scanIntervalSource } from '../harness/interval-fallback-scan.js';
@@ -342,10 +345,11 @@ function judge(out: Bar[], servedMs: number, tf: string, from: number, nowMs: nu
 /** A venue publishes a new bar within seconds of its boundary: measured on recorded coins, every liquid venue's miss sat
  *  within 15 s of one (vault audits/OPS-SERVED-CANDLE-TRUTH-W1/ch3a-thin.jsonl, 2026-10-23). Inside that lag a page may
  *  still end on the previous head. */
-/** The ONE head judgement (src/lib/live-price.ts), over a page as S records it. */
-function headVerdict(out: Bar[], servedMs: number, calledAt: number, toleranceMs: number, venue: string): string | null {
+/** The ONE head judgement (src/lib/live-price.ts), over a page as S records it. S captures read BTC: the liquid
+ *  reference. */
+function headVerdict(out: Bar[], servedMs: number, calledAt: number, toleranceMs: number, venue: string, reference: HeadReference = 'liquid'): string | null {
   if (out.length === 0) return 'no bar';
-  return formingHeadVerdict(out[out.length - 1].ts, servedMs, calledAt, venue, toleranceMs);
+  return formingHeadVerdict(out[out.length - 1].ts, servedMs, calledAt, venue, toleranceMs, reference);
 }
 
 describe('adapter history contract — S: every serving window the product asks for', () => {
@@ -433,7 +437,8 @@ describe('adapter history contract — S: every serving window the product asks 
     expect(bad).toEqual([]);
   });
 
-  it('CH3a: every replay-venue window ends on the venue\'s FORMING bar; a declared closed-only kline venue\'s on forming - 1', () => {
+  it('CH3a / Q11: every replay-venue window ends on the head its venue\'s class owes — forming; forming - 1 on CLOSED_ONLY; at most the snapshot lag behind on SNAPSHOT_KLINE', () => {
+    expect({ ...TICKER_PRICED_VENUES }).toEqual({ PHEMEX: 'CLOSED_ONLY', ASTER: 'SNAPSHOT_KLINE' });
     expect([...CLOSED_ONLY_KLINE_VENUES]).toEqual(['PHEMEX']);
     const bad = serving.scenarios.flatMap((s) => {
       if (s.error || unservablePairs.has(`${s.venue}/${s.tf}`)) return [];
@@ -444,6 +449,51 @@ describe('adapter history contract — S: every serving window the product asks 
     // the declaration is evidence, not a waiver: every declared venue's every window is closed-only, so a venue that
     // starts serving its forming bar reddens this, and a venue that stops serving it reddens the line above
     for (const v of CLOSED_ONLY_KLINE_VENUES) expect(serving.scenarios.filter((s) => s.venue === v && !s.error).length, v).toBeGreaterThan(30);
+    expect(serving.scenarios.filter((s) => s.venue === 'ASTER' && !s.error).length).toBeGreaterThan(30);
+  });
+
+  it('Q11: a SNAPSHOT_KLINE venue (ASTER) passes up to the measured snapshot lag and fails beyond it — slots and seconds both', () => {
+    const aster = serving.scenarios.find((s) => s.venue === 'ASTER' && s.tf === '1m' && s.window === 'trade_call@100' && !s.error)!;
+    const step = aster.servedMs;
+    const newest = aster.output[aster.output.length - 1].ts;
+    // the read instant `secs` into the bar after `newest + k·step`, with the page ending on `newest`
+    const at = (slotsShort: number, secs: number) => newest + slotsShort * step + secs * 1000;
+    expect(headVerdict(aster.output, step, aster.calledAt, aster.replayToleranceMs, 'ASTER')).toBeNull();
+    expect(headVerdict(aster.output, step, at(0, 30), 0, 'ASTER')).toBeNull(); // the forming bar
+    expect(headVerdict(aster.output, step, at(1, 58), 0, 'ASTER')).toBeNull(); // 1 slot, closed 58 s before (measured max 2026-10-23)
+    expect(headVerdict(aster.output, step, at(2, (SNAPSHOT_KLINE_MAX_LAG_MS - step) / 1000), 0, 'ASTER')).toBeNull(); // 2 slots, 90 s
+    expect(headVerdict(aster.output, step, at(2, (SNAPSHOT_KLINE_MAX_LAG_MS - step) / 1000 + 1), 0, 'ASTER')).toMatch(/snapshot kline/); // 91 s
+    expect(headVerdict(aster.output, step, at(3, 0), 0, 'ASTER')).toMatch(/3 slot\(s\) before the forming bar, closed 120 s before the read/); // the slot bound is the age bound
+    // the kind, not the venue name, decides: the same page judged as a non-declared venue fails one slot short
+    expect(headVerdict(aster.output, step, at(1, 30), 0, 'BINANCE')).toMatch(/before the forming bar/);
+    // a 1h ASTER page one slot short 2 min after the boundary is past the 90 s bound
+    const h1 = serving.scenarios.find((s) => s.venue === 'ASTER' && s.tf === '1h' && !s.error)!;
+    const n1 = h1.output[h1.output.length - 1].ts;
+    expect(headVerdict(h1.output, h1.servedMs, n1 + h1.servedMs + 60_000, 0, 'ASTER')).toBeNull();
+    expect(headVerdict(h1.output, h1.servedMs, n1 + h1.servedMs + 120_000, 0, 'ASTER')).toMatch(/closed 120 s before the read/);
+    // a young/thin reference's head lag is a metric, never a FAIL (Q13)
+    expect(headVerdict(aster.output, step, at(5, 0), 0, 'ASTER', 'thin')).toBeNull();
+    expect(headLag(newest, step, at(2, 15), 'ASTER')).toEqual({ slots: 2, ageMs: 75_000 });
+  });
+
+  it('Q13: a CLOSED_ONLY venue (PHEMEX) fails on its forming bar on every reference, and on any head but forming - 1 on the liquid one only', () => {
+    const phemex = serving.scenarios.find((s) => s.venue === 'PHEMEX' && s.tf === '1m' && !s.error)!;
+    const step = phemex.servedMs;
+    const newest = phemex.output[phemex.output.length - 1].ts;
+    const midSlot = (slotsShort: number) => newest + slotsShort * step + 30_000;
+    expect(headVerdict(phemex.output, step, midSlot(1), 0, 'PHEMEX')).toBeNull();
+    expect(headVerdict(phemex.output, step, midSlot(3), 0, 'PHEMEX')).toMatch(/declared: 1 expected/);
+    expect(headVerdict(phemex.output, step, midSlot(3), 0, 'PHEMEX', 'thin')).toBeNull(); // AGPU, 2026-10-23: 3 slots
+    expect(headLag(newest, step, midSlot(3), 'PHEMEX')).toEqual({ slots: 2, ageMs: 2 * step + 30_000 });
+    // inside CLOSED_ONLY_BOUNDARY_LAG_MS after a boundary the just-closed bar may not be out yet (measured to 25.9 s on
+    // PHEMEX BTC): one slot more is accepted; a non-declared venue keeps BOUNDARY_LAG_MS
+    expect(CLOSED_ONLY_BOUNDARY_LAG_MS).toBeGreaterThan(25_900);
+    expect(headVerdict(phemex.output, step, newest + 2 * step + CLOSED_ONLY_BOUNDARY_LAG_MS, 0, 'PHEMEX')).toBeNull();
+    expect(headVerdict(phemex.output, step, newest + 2 * step + CLOSED_ONLY_BOUNDARY_LAG_MS + 1, 0, 'PHEMEX')).toMatch(/declared: 1 expected/);
+    expect(headVerdict(phemex.output, step, newest + step + BOUNDARY_LAG_MS + 1, 0, 'BINANCE')).toMatch(/before the forming bar/);
+    for (const ref of ['liquid', 'thin'] as const) {
+      expect(headVerdict(phemex.output, step, midSlot(0), 0, 'PHEMEX', ref)).toMatch(/served its forming bar/);
+    }
   });
 
   it('CH3a: the forming-bar verdict can fail — a non-declared page one bar short, and a declared page that holds its forming bar', () => {
@@ -467,6 +517,41 @@ describe('adapter history contract — S: every serving window the product asks 
       return flags.length ? [`${r.id}: ${flags.join(', ')}`] : [];
     });
     expect(bad).toEqual([]);
+  });
+
+  it('Q11: a SNAPSHOT_KLINE venue (ASTER) is priced from its ticker\'s last trade, never its snapshot close', async () => {
+    const fx = JSON.parse(fs.readFileSync(path.join(FIX, 'ASTER-LIVE-PRICE.json'), 'utf8')) as {
+      coin: string; tf: string; from: number; calledAt: number;
+      kline: { url: string; body: unknown[][] }; premiumIndex: { url: string; body: unknown }; openInterest: { url: string; body: unknown };
+      ticker: { url: string; body: { lastPrice: string; closeTime: number } };
+    };
+    const bodies = new Map([fx.kline, fx.premiumIndex, fx.openInterest, fx.ticker].map((r) => [new URL(r.url).pathname, r.body]));
+    replay.venue = { answer: (url: string) => {
+      const p = new URL(url).pathname;
+      if (bodies.has(p)) return bodies.get(p);
+      throw new Error(`ASTER-LIVE-PRICE: unexpected request ${url}`);
+    } };
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(fx.calledAt);
+    try {
+      const a = VENUES.ASTER.make();
+      const bars = await a.getCandles(fx.coin, fx.tf, fx.from);
+      const ctx = await a.getAssetContext(fx.coin);
+      const servedMs = VENUES.ASTER.mod.servedIntervalMs(fx.tf)!;
+      expect(headVerdict(bars.map((c) => ({ ts: c.time, open: c.open })), servedMs, fx.calledAt, 0, 'ASTER')).toBeNull();
+      expect(ctx.lastTrade).toEqual({ price: Number(fx.ticker.body.lastPrice), atMs: fx.ticker.body.closeTime });
+      // the capture is the measured class: the snapshot's newest close is not the last trade
+      expect(bars[bars.length - 1].close).not.toBe(ctx.lastTrade!.price);
+      const price = livePriceOf({ coin: fx.coin, timeframe: fx.tf, candles: bars, servedStepMs: servedMs }, ctx, 'ASTER', fx.calledAt);
+      expect(price).toBe(ctx.lastTrade!.price);
+      // no age bound on a SNAPSHOT_KLINE last trade: a thin book's last trade hours old still prices the call
+      expect(livePriceOf({ coin: fx.coin, timeframe: fx.tf, candles: bars, servedStepMs: servedMs }, ctx, 'ASTER', fx.calledAt + 6 * 3_600_000)).toBe(price);
+      // the non-declared path on the SAME window is the last close, byte-identical to the pre-wave read
+      expect(livePriceOf({ coin: fx.coin, timeframe: fx.tf, candles: bars, servedStepMs: servedMs }, ctx, 'BINANCE', fx.calledAt)).toBe(bars[bars.length - 1].close);
+    } finally {
+      vi.useRealTimers();
+      replay.venue = null;
+    }
   });
 
   it('CH3a: a declared closed-only kline venue (PHEMEX) is served forming - 1 and priced from its fresh ticker, never its last close', async () => {

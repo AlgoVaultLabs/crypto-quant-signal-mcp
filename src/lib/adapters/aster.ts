@@ -102,6 +102,8 @@ interface AsterTicker24hr {
   lowPrice: string;
   /** Percent-NUMBER (e.g. "-0.498" = −0.498%), NOT a fraction. */
   priceChangePercent: string;
+  /** Epoch ms of the LAST TRADE (measured 2026-10-23: == the /fapi/v1/trades last trade's time). */
+  closeTime: number;
 }
 
 export class AsterAdapter implements ExchangeAdapter {
@@ -148,6 +150,12 @@ export class AsterAdapter implements ExchangeAdapter {
     const fundingRaw = safeUpstreamNum(premiumIndex.lastFundingRate) ?? 0;
     const markPx = safeUpstreamNum(premiumIndex.markPrice);
     if (markPx === null) throw new Error('Aster getAssetContext: invalid markPrice');
+    // OPS-SERVED-CANDLE-TRUTH-W1 Q11: ASTER is a declared SNAPSHOT_KLINE venue (src/lib/live-price.ts) — /fapi/v1/klines
+    // is a snapshot refreshed every ~70–90 s — so its live price is this ticker's last price (measured 2026-10-23 ==
+    // the /fapi/v1/trades last trade; closeTime == that trade's time). Absent when lastPrice does not parse to a
+    // positive number: livePriceOf then refuses, never a snapshot close.
+    const lastPx = safeUpstreamNum(ticker.lastPrice);
+    const lastAtMs = Number(ticker.closeTime);
     return {
       coin,
       funding: fundingRaw,
@@ -167,6 +175,7 @@ export class AsterAdapter implements ExchangeAdapter {
       volume24h: safeUpstreamNum(ticker.quoteVolume) ?? 0,
       oraclePx: markPx,
       markPx,
+      ...(lastPx !== null && lastPx > 0 ? { lastTrade: { price: lastPx, atMs: lastAtMs } } : {}),
     };
   }
 

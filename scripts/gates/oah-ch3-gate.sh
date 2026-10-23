@@ -6,7 +6,8 @@
 #   1. the canary wrapper's --self-test prints SELF_TEST_VERDICT=PASS on this machine
 #   2. the INSTALLED wrapper's --self-test prints SELF_TEST_VERDICT=PASS on signal-1, run the way cron runs it
 #      (env -i, cron's PATH, cwd /)
-#   3. signal-1's crontab carries the canary line `24 10 * * * /opt/algovault-monitoring/adapter-history-contiguity-canary.sh`
+#   3. signal-1's crontab carries the canary line `24 19 * * * /opt/algovault-monitoring/adapter-history-contiguity-canary.sh`
+#      (24 10 until OPS-SERVED-CANDLE-TRUTH-W1 CH3a-R1 moved it into the deploy-free hours)
 #   4. the commit that ADDED the wrapper also carries the inventory row and the interlock row
 #   5. ops/scripts/monitoring-results-sync.sh prints MONITORING_RESULTS_SYNC_VERDICT=PASS and the vault's
 #      canary-results.jsonl holds an `adapter-history-contiguity` record
@@ -29,7 +30,7 @@ set -uo pipefail
 
 WRAPPER='ops/monitoring/adapter-history-contiguity-canary.sh'
 HOST_WRAPPER='/opt/algovault-monitoring/adapter-history-contiguity-canary.sh'
-CRON_LINE="24 10 * * * $HOST_WRAPPER"
+CRON_LINE="24 19 * * * $HOST_WRAPPER"
 CANARY='adapter-history-contiguity'
 UNIT_TEST='tests/unit/adapter-history-contiguity.test.ts'
 VAULT="${OAH_VAULT:-$HOME/My Drive/Obsidian Vault/AlgoVault MCP}"
