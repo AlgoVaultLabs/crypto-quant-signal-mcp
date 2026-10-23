@@ -12,7 +12,8 @@
  * 38cbb7e, `git merge-base --is-ancestor <tag> HEAD` -> NO.
  *
  * The correct ordering — land, re-read the landed SHA, tag THAT, push the tag alone — is
- * documented in CLAUDE.md and release-wave-daily-template.md, and both rejected
+ * documented in the vault's release rules (the `## Release cadence` section, in CLAUDE.md or
+ * Claude files/rules/release.md) and release-wave-daily-template.md, and both rejected
  * alternatives are recorded there so neither is re-proposed.
  *
  * ── TWO HALVES, AND WHY THEY BEHAVE DIFFERENTLY ─────────────────────────────────────────────
@@ -239,7 +240,20 @@ describe('the LIVE vault release surfaces (present-only, and it says which)', ()
   // among them — which silently wedged every LOCAL push (CI has no vault, so it skipped and saw
   // nothing). The operator relocated it above the sweep line so it cannot be archived again.
   // Repointed by OPS-HOST-KERNEL-REBOOT-W4; surface COUNT and both content assertions unchanged.
-  const LIVE = ['CLAUDE.md', 'release-wave-daily-template.md'];
+  //
+  // The release rules are whichever candidate CARRIES the `## Release cadence` heading, not a
+  // fixed filename: OPS-CONTEXT-CORPUS-DIET-W1 moved that section verbatim from CLAUDE.md to
+  // `Claude files/rules/release.md`, and a fixed name would keep asserting on a file the section
+  // has left. Resolving by content is green on both sides of the move. If NO candidate carries the
+  // heading, the surface falls back to CLAUDE.md, whose content assertions then fail loud.
+  const RELEASE_RULES = ['CLAUDE.md', 'Claude files/rules/release.md'];
+  const carriers = vaultDir
+    ? RELEASE_RULES.filter((f) => {
+        const p = join(vaultDir!, f);
+        return existsSync(p) && /^## Release cadence/m.test(readFileSync(p, 'utf8'));
+      })
+    : [];
+  const LIVE = [...(carriers.length ? carriers : ['CLAUDE.md']), 'release-wave-daily-template.md'];
 
   it('reports whether the corpus resolved, and scans a POSITIVE number of surfaces when it did', () => {
     if (!vaultDir) {
