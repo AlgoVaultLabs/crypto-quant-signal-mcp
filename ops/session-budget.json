@@ -28,8 +28,8 @@
     "override_token": "[same-session]"
   },
 
-  "exempt_prompt_prefixes": ["<task-notification", "<agent-message", "<scheduled-task", "<cross-session-message", "<teammate-message"],
-  "exempt_prompt_prefixes_reason": "UserPromptSubmit fires on these machine turns (measured in ~/.claude/session-log.md: 3,680 / 110 / 59 / 10 / 4). Nobody is there to re-send a held one, so the cold-cache hold skips them and counts the skip (ruling Q2).",
+  "exempt_prompt_prefixes": ["<task-notification", "<agent-message", "<scheduled-task", "<cross-session-message", "<teammate-message", "<system-reminder", "<<autonomous-loop"],
+  "exempt_prompt_prefixes_reason": "UserPromptSubmit fires on these machine turns (measured in ~/.claude/session-log.md: 3,680 / 110 / 59 / 10 / 4 for the five of ruling Q2; then 30 <system-reminder — side-session wake-ups and started-task notices the Desktop app sends — and 2 <<autonomous-loop — /loop wake-ups — found at CH3, 2026-10-23). Nobody is there to re-send a held one, so the cold-cache hold skips them and counts the skip (ruling Q2). Human-typed shapes that also start with < (<bash-input, <pasted_content, <!-- reply) stay judged.",
 
   "skill_name_only_window_days": 60,
   "skill_name_only_reason": "A user skill goes name-only when no retained transcript invokes it AND Claude Code's own skillUsage counter has no use inside this window (ruling Q3).",
