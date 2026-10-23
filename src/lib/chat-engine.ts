@@ -65,6 +65,22 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * The ONE line format an LLM context snippet takes — used to BUILD the context and to BUDGET it,
+ * so the two can never disagree about what a snippet costs.
+ *
+ * OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1: a snippet used to be `[url] excerpt`. For a tool doc the
+ * url is the shared MCP endpoint and the excerpt is the start of the description, and no
+ * description names its own tool — so the model could retrieve the right tool and still be unable
+ * to name it without breaking rule 1. The title (a tool doc's title IS its name) now leads the
+ * excerpt. It is skipped when the excerpt already opens with it, which integration pages do.
+ */
+function contextSnippetLine(s: Pick<SearchResult, 'source_url' | 'title' | 'excerpt'>): string {
+  const title = s.title.replace(/\s+/g, ' ').trim();
+  const opensWithTitle = title !== '' && s.excerpt.toLowerCase().startsWith(title.toLowerCase());
+  return `[${s.source_url}] ${title === '' || opensWithTitle ? s.excerpt : `${title}: ${s.excerpt}`}`;
+}
+
 function hashKey(question: string, model: string): string {
   return `${model}|${question.trim().toLowerCase()}`;
 }
@@ -110,7 +126,7 @@ export class ChatEngine {
     const preamble = trackRecordBlock ? `${trackRecordBlock}\n\n` : '';
 
     const contextBlock = truncatedSnippets
-      .map((s) => `[${s.source_url}] ${s.excerpt}`)
+      .map(contextSnippetLine)
       .join('\n\n');
     const userMessage = contextBlock
       ? `${preamble}${question}\n\nContext snippets:\n${contextBlock}`
@@ -155,7 +171,7 @@ export class ChatEngine {
     const out: SearchResult[] = [];
     let runningTokens = 0;
     for (const s of sorted) {
-      const snippetTokens = estimateTokens(`[${s.source_url}] ${s.excerpt}`);
+      const snippetTokens = estimateTokens(contextSnippetLine(s));
       if (runningTokens + snippetTokens > this.opts.maxInputTokens) break;
       out.push(s);
       runningTokens += snippetTokens;

@@ -40,6 +40,27 @@ function prepTask(text: string | undefined | null): string[] {
   return text.toLowerCase().match(/[a-z0-9]{2,}/g) || [];
 }
 
+/**
+ * OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1 — a tool's parameters, as indexable text.
+ *
+ * `bundle.tools[i].parameters` is the tool's JSON Schema (projected from tools/list), so its OWN
+ * keys are `type, properties, required, …`. Indexing those (the previous `Object.keys(parameters)`)
+ * gave every tool doc the same three words and not one parameter name. The names live in
+ * `properties`, and each one carries the description an agent reads — so a query in usage words
+ * ("regime changed on the last closed bar", `maxRegimeAgeBars`) reaches the tool that takes it.
+ * A `parameters` without an object `properties` contributes nothing (never a guess at its shape).
+ */
+function toolParameterText(parameters: Record<string, unknown>): { names: string; lines: string } {
+  const props = parameters?.properties;
+  if (props === null || typeof props !== 'object' || Array.isArray(props)) return { names: '', lines: '' };
+  const entries = Object.entries(props as Record<string, unknown>);
+  const lines = entries.map(([name, schema]) => {
+    const desc = (schema as { description?: unknown } | null)?.description;
+    return typeof desc === 'string' && desc.trim() ? `- ${name}: ${desc.trim()}` : `- ${name}`;
+  });
+  return { names: entries.map(([name]) => name).join(', '), lines: lines.join('\n') };
+}
+
 export type KnowledgeDocSourceType =
   | 'tool'
   | 'response_shape'
@@ -112,12 +133,12 @@ export class KnowledgeIndex {
     // Tools — 1 doc per bundle.tools[i]
     for (const t of bundle.tools) {
       const id = `tool:${t.name}`;
-      const paramSummary = Object.keys(t.parameters || {}).join(', ');
+      const params = toolParameterText(t.parameters);
       const doc: KnowledgeDoc = {
         name: t.name,
         title: t.name,
         description: t.description,
-        content_markdown: `${t.description}\n\nParameters: ${paramSummary}`,
+        content_markdown: `${t.description}\n\nParameters: ${params.names}${params.lines ? `\n\n${params.lines}` : ''}`,
         _source_type: 'tool',
         _source_url: 'https://api.algovault.com/mcp',
         _excerpt_source: t.description,

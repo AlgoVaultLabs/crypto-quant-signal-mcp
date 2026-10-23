@@ -115,6 +115,45 @@ describe('KnowledgeIndex (AV-CHAT-MCP-W1 C1)', () => {
     }
   });
 
+  // OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1: bundle.tools[i].parameters is the tool's JSON Schema
+  // (projected from tools/list). The doc used to index Object.keys(parameters) — `type, properties,
+  // required` — so no parameter name or description was ever searchable.
+  it('a tool doc names its parameters and their descriptions — never the JSON-Schema keys', async () => {
+    const schemaTool = {
+      name: 'scan_market_regimes',
+      description: 'Screens a whole crypto perpetual futures venue by market regime.',
+      parameters: {
+        type: 'object',
+        properties: {
+          regime: { type: 'string', description: 'Only coins in this regime, e.g. TRENDING_UP.' },
+          maxRegimeAgeBars: { type: 'integer', description: 'Only coins whose regime changed within this many closed bars.' },
+          coins: { type: 'array' },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+    };
+    const file = makeFixtureFile({ ...FIXTURE_BUNDLE, tools: [...FIXTURE_BUNDLE.tools, schemaTool] });
+    const idx = new KnowledgeIndex(file);
+    created.push(idx);
+    await idx.build();
+
+    const doc = idx.getDoc('tool:scan_market_regimes')!;
+    expect(doc).toBeDefined();
+    expect(doc.content_markdown).toContain('Parameters: regime, maxRegimeAgeBars, coins\n');
+    expect(doc.content_markdown).toContain('- regime: Only coins in this regime, e.g. TRENDING_UP.');
+    expect(doc.content_markdown).toContain('- maxRegimeAgeBars: Only coins whose regime changed within this many closed bars.');
+    expect(doc.content_markdown).toMatch(/^- coins$/m); // an undescribed parameter is still named
+    expect(doc.content_markdown).not.toMatch(/Parameters: .*\b(type|properties|required|additionalProperties)\b/);
+    // The excerpt source stays the description: parameters are indexed, not quoted.
+    expect(doc._excerpt_source).toBe(schemaTool.description);
+
+    // The caller-visible consequence: a parameter name and a usage phrase each reach the tool.
+    const engine = idx.getBM25Index()!;
+    expect(engine.search('maxRegimeAgeBars')[0]?.[0]).toBe('tool:scan_market_regimes');
+    expect(engine.search('changed within closed bars')[0]?.[0]).toBe('tool:scan_market_regimes');
+  });
+
   it('flattens response_shapes + integrations into searchable docs', async () => {
     const file = makeFixtureFile();
     const idx = new KnowledgeIndex(file);

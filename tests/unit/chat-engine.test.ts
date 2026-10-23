@@ -174,6 +174,75 @@ describe('ChatEngine (AV-CHAT-MCP-W1 C3)', () => {
     expect(userMsg.length).toBeLessThan(1500);
   });
 
+  // ── OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1 — the model can NAME what it retrieved ──────────
+  // A snippet used to be `[url] excerpt`. A tool doc's url is the shared MCP endpoint and no tool
+  // description names its own tool, so chat could retrieve the right tool at rank 1 and still be
+  // unable to name it without breaking system-prompt rule 1.
+  function contextLines(userMsg: string): string[] {
+    const at = userMsg.indexOf('Context snippets:\n');
+    expect(at, 'no context block in the user message').toBeGreaterThan(-1);
+    return userMsg.slice(at + 'Context snippets:\n'.length).split('\n\n');
+  }
+
+  it('each context snippet leads with its title — a tool snippet carries the tool NAME', async () => {
+    const { chat, llm, cleanup } = await makeChatStack();
+    cleanups.push(cleanup);
+
+    await chat.chat('composite trade call verdict confidence');
+    const lines = contextLines(llm.calls[0].messages[0].content);
+    expect(lines).toContain(
+      '[https://api.algovault.com/mcp] get_trade_call: Composite trade call across exchanges; returns verdict, confidence, regime.',
+    );
+    expect(lines.some((l) => l.startsWith('[https://algovault.com/docs/integrations/framework_') && l.includes(' for trading agent: Integration '))).toBe(true);
+  });
+
+  it('a snippet whose excerpt already opens with its title is not prefixed twice', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'algovault-chat-title-'));
+    const file = join(dir, 'latest.json');
+    const integration = {
+      framework: 'crewai',
+      title: 'AlgoVault × CrewAI — Build Verifiable AI Trading Agents',
+      content_markdown: '# AlgoVault × CrewAI — Build Verifiable AI Trading Agents\n\nWire the crewai trading agent to AlgoVault.',
+      url: 'https://algovault.com/docs/integrations/crewai',
+    };
+    // BM25 needs ≥ 3 docs; the two fixture tools share no term with the question.
+    writeFileSync(file, JSON.stringify({ ...FIXTURE_BUNDLE, integrations: [integration] }));
+    const index = new KnowledgeIndex(file);
+    await index.build();
+    cleanups.push(() => index.stopWatching());
+    const llm = new CountingStub();
+    const chat = new ChatEngine(new SearchEngine(index, new ResultCache<SearchResult[]>({ ttlMs: 60_000, max: 100 })), llm, new ResultCache<ChatResult>({ ttlMs: 60_000, max: 100 }));
+
+    await chat.chat('crewai trading agent');
+    expect(contextLines(llm.calls[0].messages[0].content)).toEqual([
+      '[https://algovault.com/docs/integrations/crewai] AlgoVault × CrewAI — Build Verifiable AI Trading Agents Wire the crewai trading agent to AlgoVault.',
+    ]);
+  });
+
+  it('the context budget is charged for the line the model receives, title included', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'algovault-chat-budget-'));
+    const file = join(dir, 'latest.json');
+    writeFileSync(file, JSON.stringify(FIXTURE_BUNDLE));
+    const index = new KnowledgeIndex(file);
+    await index.build();
+    cleanups.push(() => index.stopWatching());
+    const llm = new CountingStub();
+    const BUDGET = 130; // fits ONE titled integration line (72 est. tokens) but two untitled ones (64 each)
+    const chat = new ChatEngine(new SearchEngine(index, new ResultCache<SearchResult[]>({ ttlMs: 60_000, max: 100 })), llm, new ResultCache<ChatResult>({ ttlMs: 60_000, max: 100 }), {
+      maxInputTokens: BUDGET,
+      maxContextSnippets: 50,
+      defaultModel: 'claude-haiku-4-5-20251001',
+      maxOutputTokens: 200,
+    });
+
+    const r = await chat.chat('trade signal');
+    const lines = contextLines(llm.calls[0].messages[0].content);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.length).toBe(r.citations.length);
+    const charged = lines.reduce((sum, l) => sum + Math.ceil(l.length / 4), 0);
+    expect(charged, `context lines cost ${charged} est. tokens against a ${BUDGET} budget`).toBeLessThanOrEqual(BUDGET);
+  });
+
   it('Fix-at-generator LAW canary — no hand-written question→answer shortcuts in chat-engine.ts source', () => {
     const src = readFileSync(join(REPO_ROOT, 'src', 'lib', 'chat-engine.ts'), 'utf8');
     expect(src).not.toMatch(/\b(if|switch)\b.*question.*(includes|match).*\breturn\b/);

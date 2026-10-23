@@ -24,11 +24,33 @@ export interface SearchResult {
 
 const MAX_EXCERPT_CHARS = 200;
 
+/**
+ * Strip markdown control characters — but never an underscore INSIDE an identifier.
+ *
+ * OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1: this used to strip every `_`, so the live
+ * search_knowledge excerpt for get_market_regime read "TRENDINGUP TRENDINGDOWN" and a tool
+ * description's cross-reference read "whole-market scan: scantradecalls" — invalid enum values and
+ * tool names handed to the agents this tool exists to steer, and fed to chat as its only context.
+ * A run of `_` is kept when a letter or digit sits on BOTH sides (scan_trade_calls, TRENDING_UP,
+ * x__y); at a word boundary it is emphasis (`_italic_`, `__bold__`) and is stripped as before.
+ */
+function stripMarkdownControls(text: string): string {
+  return text
+    .replace(/[`*~#>]/g, '')
+    .replace(/_+/g, (run, offset: number, whole: string) => {
+      const before = whole[offset - 1] ?? '';
+      const after = whole[offset + run.length] ?? '';
+      return /[\p{L}\p{N}]/u.test(before) && /[\p{L}\p{N}]/u.test(after) ? run : '';
+    });
+}
+
 function makeExcerpt(text: string): string {
   if (!text) return '';
-  // Collapse whitespace + strip basic markdown control chars
+  // Collapse whitespace + strip basic markdown control chars. Collapse AGAIN after stripping: a
+  // leading `# Heading` otherwise leaves the excerpt opening with a space (every integration page
+  // did), and `a ** b` would leave a double one.
   const collapsed = text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-  const stripped = collapsed.replace(/[`*_~#>]/g, '');
+  const stripped = stripMarkdownControls(collapsed).replace(/\s+/g, ' ').trim();
   if (stripped.length <= MAX_EXCERPT_CHARS) return stripped;
   return stripped.slice(0, MAX_EXCERPT_CHARS).trimEnd() + '…';
 }

@@ -6,7 +6,8 @@
  *   - query() caches per (q, limit) tuple.
  *   - query() enforces the limit argument.
  *   - query() returns empty array for nonexistent queries (no throw).
- *   - excerpt is markdown-stripped and ≤200 chars.
+ *   - excerpt is markdown-stripped and ≤200 chars — but an underscore INSIDE an identifier
+ *     (scan_trade_calls, TRENDING_UP) survives (OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1).
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -38,10 +39,10 @@ const FIXTURE_BUNDLE = {
   _algovault: { bundle_version: 2, generator: 'build-knowledge-json.mjs', repo: 'AlgoVaultLabs/crypto-quant-signal-mcp' },
 };
 
-async function makeEngine(): Promise<{ engine: SearchEngine; index: KnowledgeIndex; cleanup: () => void }> {
+async function makeEngine(bundle: unknown = FIXTURE_BUNDLE): Promise<{ engine: SearchEngine; index: KnowledgeIndex; cleanup: () => void }> {
   const dir = mkdtempSync(join(tmpdir(), 'algovault-search-test-'));
   const file = join(dir, 'latest.json');
-  writeFileSync(file, JSON.stringify(FIXTURE_BUNDLE));
+  writeFileSync(file, JSON.stringify(bundle));
   const index = new KnowledgeIndex(file);
   await index.build();
   const cache = new ResultCache<SearchResult[]>({ ttlMs: 60_000, max: 100 });
@@ -108,9 +109,40 @@ describe('SearchEngine (AV-CHAT-MCP-W1 C1)', () => {
     cleanups.push(cleanup);
 
     const r = await engine.query('trade', 3);
+    expect(r.length).toBeGreaterThan(0);
     for (const result of r) {
       expect(result.excerpt.length).toBeLessThanOrEqual(201); // 200 + trailing ellipsis
-      expect(result.excerpt).not.toMatch(/[`*_~#>]/); // markdown chars stripped
+      expect(result.excerpt).not.toMatch(/[`*~#>]/); // markdown control chars stripped
+      // An underscore survives ONLY between two letters/digits (an identifier), never at a word edge.
+      expect(result.excerpt).not.toMatch(/(?:^|[^\p{L}\p{N}_])_|_(?:$|[^\p{L}\p{N}_])/u);
     }
+  });
+
+  // OPS-KNOWLEDGE-BUNDLE-TOOL-PROJECTION-W1: every `_` used to be stripped, so the live excerpt for
+  // get_market_regime read "TRENDINGUP TRENDINGDOWN" and a cross-reference read
+  // "scantradecalls" — invalid enum values and tool names, handed to the agents this tool steers.
+  it('excerpt keeps identifiers intact (scan_trade_calls, TRENDING_UP) and still strips _emphasis_', async () => {
+    const { engine, cleanup } = await makeEngine({
+      ...FIXTURE_BUNDLE,
+      tools: [
+        ...FIXTURE_BUNDLE.tools.filter((t) => t.name !== 'get_market_regime'), // BM25 needs ≥ 3 docs
+        {
+          name: 'get_market_regime',
+          description:
+            'Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE. Whole-market scan: scan_trade_calls. ' +
+            'Read the _italic_ note and the __bold__ one; x__y stays.',
+          parameters: {},
+        },
+      ],
+    });
+    cleanups.push(cleanup);
+
+    const [hit] = await engine.query('market regime', 1);
+    expect(hit?.title).toBe('get_market_regime');
+    expect(hit.excerpt).toContain('TRENDING_UP TRENDING_DOWN');
+    expect(hit.excerpt).toContain('scan: scan_trade_calls.');
+    expect(hit.excerpt).toContain('Read the italic note and the bold one; x__y stays.');
+    expect(hit.excerpt).not.toContain('TRENDINGUP');
+    expect(hit.excerpt).not.toContain('scantradecalls');
   });
 });
