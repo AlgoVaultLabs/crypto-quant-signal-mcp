@@ -44,6 +44,8 @@
   "backfill_max_per_run": 40,
 
   "compact_message_max_bytes": 400,
+  "hook_timeout_seconds": 10,
+  "hook_timeout_reason": "The installer writes this as the timeout of the UserPromptSubmit and SessionStart(compact) registrations, so a hung meter delays a prompt by at most this long instead of the hook default. The measured p95 sits far below it (status.md entry).",
 
   "bytes_per_token": 2.49,
   "bytes_per_token_source": "E5 calibration: vault CLAUDE.md 32,084 B = 12.9k tokens in /context (2026-10-23). Used only for the est_tokens of tool results, which carry no usage of their own.",

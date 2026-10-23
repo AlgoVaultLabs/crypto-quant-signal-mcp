@@ -92,7 +92,7 @@ function mkScratch(label: string): Scratch {
   mkdirSync(join(home, 'code'), { recursive: true });
   mkdirSync(join(install, 'scripts'), { recursive: true });
   mkdirSync(join(install, 'ops'), { recursive: true });
-  for (const f of ['cc-session.sh', 'worktree-reclaim.sh', 'worktree-create-hook.sh', 'install-worktree-hook.sh']) {
+  for (const f of ['cc-session.sh', 'worktree-reclaim.sh', 'worktree-create-hook.sh', 'install-worktree-hook.sh', 'session-budget.mjs']) {
     copyFileSync(join(REPO, 'scripts', f), join(install, 'scripts', f));
   }
   cpSync(join(REPO, 'scripts', 'lib'), join(install, 'scripts', 'lib'), { recursive: true });
@@ -705,7 +705,7 @@ describe('worktree-work-pending.sh — --worktree and declared content condition
   }, 120_000);
 });
 
-// ── 6. the install: a landed SHA, an atomic current, exactly two registration edits ────────
+// ── 6. the install: a landed SHA, an atomic current, exactly the declared registration edits ─
 describe('scripts/install-worktree-hook.sh — pinned install and registrations', () => {
   let s: Scratch;
   let R: string;
@@ -723,6 +723,7 @@ describe('scripts/install-worktree-hook.sh — pinned install and registrations'
     cpSync(join(s.install, 'scripts'), join(R, 'scripts'), { recursive: true });
     mkdirSync(join(R, 'ops'));
     copyFileSync(join(REPO, 'ops', 'worktree-noise-config.json'), join(R, 'ops', 'worktree-noise-config.json'));
+    copyFileSync(join(REPO, 'ops', 'session-budget.json'), join(R, 'ops', 'session-budget.json'));
     writeFileSync(join(R, 'ops', 'shared-worktree-state.json'),
       JSON.stringify({ worktree_roots: { worktree_root: join(s.T, 'wtroot'), exempt_paths: [], reclaim: reclaimBlock(R) } }, null, 2));
     mkdirSync(join(R, '.claude'));
@@ -739,7 +740,12 @@ describe('scripts/install-worktree-hook.sh — pinned install and registrations'
     sha1 = git(R, ['rev-parse', 'HEAD'], s.env).trim();
     writeFileSync(settings(), JSON.stringify({
       model: 'keep-me',
+      autoCompactWindow: 500000,
+      modelSettings: { 'model-a': { autoCompactWindow: 500000, keep: 1 }, 'model-b': { keep: 2 } },
+      skillOverrides: { 'user-off': 'off', 'user-name-only': 'name-only' },
       hooks: {
+        UserPromptSubmit: [{ matcher: '*', hooks: [{ type: 'command', command: '/x/log.sh user' }] },
+          { hooks: [{ type: 'command', command: 'node /old/checkout/scripts/session-budget.mjs --on prompt' }] }],
         SessionEnd: [{ hooks: [{ type: 'command', command: '/x/session-end.sh' }] }],
         WorktreeCreate: [{ hooks: [{ type: 'command', command: '/old/primary/scripts/worktree-create-hook.sh' }] }],
       },
@@ -754,8 +760,9 @@ describe('scripts/install-worktree-hook.sh — pinned install and registrations'
     expect(realpathSync(join(inst(), 'current'))).toBe(realpathSync(join(inst(), sha1)));
     const manifest = readFileSync(join(inst(), sha1, '.manifest'), 'utf8').trim().split('\n');
     for (const f of ['scripts/worktree-create-hook.sh', 'scripts/worktree-reclaim.sh', 'scripts/cc-session.sh',
-      'scripts/lib/with-lock.sh', 'scripts/lib/worktree-work-pending.sh', 'ops/shared-worktree-state.json',
-      'ops/worktree-noise-config.json']) expect(manifest).toContain(f);
+      'scripts/lib/with-lock.sh', 'scripts/lib/worktree-work-pending.sh', 'scripts/lib/system-map-path.sh',
+      'scripts/session-budget.mjs', 'ops/shared-worktree-state.json', 'ops/worktree-noise-config.json',
+      'ops/session-budget.json']) expect(manifest).toContain(f);
     expect(readFileSync(join(inst(), sha1, '.installed-sha'), 'utf8').trim()).toBe(sha1);
     expect(r.stdout + r.stderr).not.toContain('DIFF');
   });
@@ -773,22 +780,110 @@ describe('scripts/install-worktree-hook.sh — pinned install and registrations'
     expect(realpathSync(join(inst(), 'current'))).toBe(realpathSync(join(inst(), sha1)));
   });
 
-  it('--register makes EXACTLY two edits, keeps everything else, backs up first, and is idempotent', () => {
+  it('--register makes EXACTLY the declared edits, keeps everything else, backs up first, and is idempotent', () => {
     const before = JSON.parse(readFileSync(settings(), 'utf8'));
+    const cfg = JSON.parse(readFileSync(join(REPO, 'ops', 'session-budget.json'), 'utf8'));
+    let first = '';
     for (let i = 0; i < 2; i++) {
       const r = run('bash', [installer(), sha1, '--register'], { env: env() });
-      expect(r.stdout.trim().split('\n').pop(), r.stderr).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
+      expect(r.stdout.trim().split('\n').pop(), r.stdout + r.stderr).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
+      if (i === 0) first = readFileSync(settings(), 'utf8');
     }
-    const after = JSON.parse(readFileSync(settings(), 'utf8'));
-    expect(after.model).toBe('keep-me');
-    expect(after.hooks.SessionEnd).toEqual(before.hooks.SessionEnd);
-    expect(after.hooks.WorktreeCreate).toEqual([{ hooks: [{ type: 'command',
+    expect(readFileSync(settings(), 'utf8')).toBe(first); // a re-run is a no-op
+    const after = JSON.parse(first);
+    const node = readFileSync(join(inst(), '.node-bin'), 'utf8').trim();
+    expect(node.startsWith('/')).toBe(true);
+    const budget = (m: string) => `${node} ${inst()}/current/scripts/session-budget.mjs --on ${m}`;
+    // every top-level key but the declared ones is untouched
+    const { hooks: hb, autoCompactWindow: wb, modelSettings: mb, ...restBefore } = before;
+    const { hooks: ha, autoCompactWindow: wa, modelSettings: ma, ...restAfter } = after;
+    expect(restAfter).toEqual(restBefore);
+    expect(wb).toBe(500000);
+    expect(wa).toBe(cfg.window_tokens);
+    expect(ma).toEqual({ 'model-a': { autoCompactWindow: cfg.window_tokens, keep: 1 }, 'model-b': { keep: 2 } });
+    expect(Object.keys(ha).sort()).toEqual(['SessionEnd', 'SessionStart', 'UserPromptSubmit', 'WorktreeCreate']);
+    expect(ha.WorktreeCreate).toEqual([{ hooks: [{ type: 'command',
       command: `${inst()}/current/scripts/worktree-create-hook.sh` }] }]);
-    expect(after.hooks.SessionStart).toEqual([{ matcher: 'startup', hooks: [{ type: 'command',
-      command: `${inst()}/current/scripts/worktree-reclaim.sh --trigger session-start` }] }]);
+    expect(ha.SessionStart).toEqual([
+      { matcher: 'startup', hooks: [{ type: 'command', command: `${inst()}/current/scripts/worktree-reclaim.sh --trigger session-start` }] },
+      { matcher: 'compact', hooks: [{ type: 'command', command: budget('compact'), timeout: cfg.hook_timeout_seconds }] },
+    ]);
+    // the stale session-budget command is gone, the foreign entry is kept, ours is appended once
+    expect(ha.UserPromptSubmit).toEqual([hb.UserPromptSubmit[0],
+      { hooks: [{ type: 'command', command: budget('prompt'), timeout: cfg.hook_timeout_seconds }] }]);
+    // beside the existing SessionEnd, never replacing it
+    expect(ha.SessionEnd).toEqual([...hb.SessionEnd, { hooks: [{ type: 'command', command: budget('end') }] }]);
     const backups = readdirSync(inst()).filter((f) => f.startsWith('registration-backup-'));
     expect(backups.length).toBeGreaterThan(0);
     expect(JSON.parse(readFileSync(join(inst(), backups.sort()[0]), 'utf8'))).toEqual(before);
+  });
+
+  it('every registered session-budget command runs as written, under a bare PATH', { timeout: 30_000 }, () => {
+    const after = JSON.parse(readFileSync(settings(), 'utf8'));
+    const cmd = after.hooks.UserPromptSubmit[1].hooks[0].command as string;
+    const r = spawnSync('/bin/sh', ['-c', `${cmd.replace(/--on prompt$/, '--self-test')}`],
+      { env: { HOME: s.home }, encoding: 'utf8' });
+    expect(r.stdout.trim().split('\n').pop()).toBe('SESSION_BUDGET_VERDICT=PASS');
+  });
+
+  it('--skill-overrides writes the computed name-only set and keeps every entry it did not write', { timeout: 60_000 }, () => {
+    const skills = join(s.home, '.claude', 'skills');
+    for (const k of ['used-skill', 'unused-skill', 'user-off', 'user-name-only']) {
+      mkdirSync(join(skills, k), { recursive: true });
+      writeFileSync(join(skills, k, 'SKILL.md'), `---\nname: ${k}\ndescription: d\n---\n`);
+    }
+    const proj = join(s.home, '.claude', 'projects', '-p');
+    mkdirSync(proj, { recursive: true });
+    const ts = new Date().toISOString();
+    writeFileSync(join(proj, 's1.jsonl'), `${JSON.stringify({ type: 'assistant', timestamp: ts, message: { id: 'm1', model: 'claude-opus-5-5',
+      content: [{ type: 'tool_use', name: 'Skill', input: { skill: 'used-skill' } }],
+      usage: { input_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 1 } } })}\n`);
+    let r = run('bash', [installer(), '--skill-overrides'], { env: env() });
+    expect(r.stdout.trim().split('\n').pop(), r.stdout + r.stderr).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
+    expect(JSON.parse(readFileSync(settings(), 'utf8')).skillOverrides)
+      .toEqual({ 'user-off': 'off', 'user-name-only': 'name-only', 'unused-skill': 'name-only' });
+    expect(JSON.parse(readFileSync(join(inst(), 'skill-overrides.json'), 'utf8')).name_only).toEqual(['unused-skill']);
+    // the skill is used later: the next run takes back only the entry it wrote
+    writeFileSync(join(proj, 's2.jsonl'), readFileSync(join(proj, 's1.jsonl'), 'utf8').replace('used-skill', 'unused-skill'));
+    r = run('bash', [installer(), '--skill-overrides'], { env: env() });
+    expect(r.stdout.trim().split('\n').pop(), r.stdout + r.stderr).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
+    expect(JSON.parse(readFileSync(settings(), 'utf8')).skillOverrides).toEqual({ 'user-off': 'off', 'user-name-only': 'name-only' });
+    // an owned entry deleted by hand is a FAIL at --verify, not a silent loss
+    writeFileSync(join(proj, 's2.jsonl'), '');
+    r = run('bash', [installer(), '--skill-overrides'], { env: env() });
+    expect(r.stdout.trim().split('\n').pop()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
+    const j = JSON.parse(readFileSync(settings(), 'utf8'));
+    const saved = readFileSync(settings(), 'utf8');
+    delete j.skillOverrides['unused-skill'];
+    writeFileSync(settings(), JSON.stringify(j, null, 2));
+    r = run('bash', [installer(), '--verify'], { env: env() });
+    expect(r.stdout.trim().split('\n').pop()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=FAIL');
+    expect(r.stdout).toContain('1 missing from the settings');
+    writeFileSync(settings(), saved);
+  });
+
+  it('--verify FAILs when a session-budget registration is missing, stale, or its node is gone', { timeout: 60_000 }, () => {
+    const saved = readFileSync(settings(), 'utf8');
+    const verdict = () => run('bash', [installer(), '--verify'], { env: env() }).stdout.trim().split('\n').pop();
+    expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
+    const j = JSON.parse(saved);
+    j.hooks.SessionEnd.pop();
+    writeFileSync(settings(), JSON.stringify(j, null, 2));
+    expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=FAIL');
+    const k = JSON.parse(saved);
+    k.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: 'node /a/checkout/scripts/session-budget.mjs --on prompt' }] });
+    writeFileSync(settings(), JSON.stringify(k, null, 2));
+    expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=FAIL');
+    const w = JSON.parse(saved);
+    w.autoCompactWindow = 500000;
+    writeFileSync(settings(), JSON.stringify(w, null, 2));
+    expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=FAIL');
+    writeFileSync(settings(), saved);
+    const stamp = readFileSync(join(inst(), '.node-bin'), 'utf8');
+    writeFileSync(join(inst(), '.node-bin'), '/nonexistent/node\n');
+    expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=FAIL');
+    writeFileSync(join(inst(), '.node-bin'), stamp);
+    expect(verdict()).toBe('WORKTREE_HOOK_INSTALL_VERDICT=PASS');
   });
 
   it('--verify is PASS on a faithful install and FAIL once an installed file drifts', () => {
