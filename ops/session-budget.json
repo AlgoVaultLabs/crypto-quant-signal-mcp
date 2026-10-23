@@ -47,6 +47,9 @@
   "hook_timeout_seconds": 10,
   "hook_timeout_reason": "The installer writes this as the timeout of the UserPromptSubmit and SessionStart(compact) registrations, so a hung meter delays a prompt by at most this long instead of the hook default. The measured p95 sits far below it (status.md entry).",
 
+  "files": { "status.md": 40000, "AOE-status.md": 21586, "CLAUDE.md": 32441 },
+  "files_reason": "OPS-STATUS-INDEX-LEDGER-W1: byte caps on the vault files every session reads. ops/scripts/status-append.mjs refuses (OVER) a status.md write over its cap and its --report prints all three. status.md = trim-status-config max_bytes. AOE-status.md and CLAUDE.md are pinned at their measured size on 2026-10-23, so growth shows in --report. scripts/session-budget.mjs does not read this key.",
+
   "bytes_per_token": 2.49,
   "bytes_per_token_source": "E5 calibration: vault CLAUDE.md 32,084 B = 12.9k tokens in /context (2026-10-23). Used only for the est_tokens of tool results, which carry no usage of their own.",
 
