@@ -2,7 +2,7 @@
 #
 # OPS-RUNTIME-NODE24-W1 (Ch2) — SEC-15. Node 20 reached EOL 2026-04-30, so this image could
 # never be rebuilt patched again. Node 24 is the Active LTS line (EOL 2028-04-30). Pinned to a
-# MINOR + an explicit Alpine version, never a floating `:24`, and IDENTICAL in both stages —
+# FULL PATCH + Alpine + index digest, never a floating or minor-only tag, IDENTICAL in both stages —
 # a Stage-1/Stage-2 base mismatch is the classic ABI trap (it does not bite here, because
 # Stage 2 runs its own `npm ci`, but keeping them in lockstep is what keeps it that way).
 #
@@ -11,7 +11,7 @@
 # npm's implicit gypfile default fires under `npm ci` and dies here (this image has no
 # python3/make/g++/cc). It is also the correct end-state for npm 12, which turns install
 # scripts off by default.
-FROM node:24.18-alpine3.24 AS builder
+FROM node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS builder
 WORKDIR /app
 COPY package*.json tsconfig.json ./
 RUN npm ci --ignore-scripts
@@ -33,7 +33,7 @@ COPY README.md ./README.md
 RUN npm run build:knowledge
 
 # Stage 2: Production
-FROM node:24.18-alpine3.24
+FROM node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --production --ignore-scripts

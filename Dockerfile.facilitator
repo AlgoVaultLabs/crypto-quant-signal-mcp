@@ -2,7 +2,7 @@
 #
 # RUNTIME: Node 20 reached EOL 2026-04-30 and receives no further security patches, ever —
 # so `docker compose up -d --build` could never produce a patched image again. Node 24 is the
-# Active LTS line (EOL 2028-04-30). Pinned to a MINOR + an explicit Alpine version, never a
+# Active LTS line (EOL 2028-04-30). Pinned to a FULL PATCH + Alpine + index digest, never a
 # floating `:24`, so a rebuild cannot silently change the runtime underneath us.
 #
 # THIS IMAGE IS NOT FREE OF THE NATIVE-ABI COUPLING. It COPYs the SAME root package*.json as
@@ -12,7 +12,7 @@
 # to `node-gyp` and fail with "Could not find any Python installation to use" (reproduced on
 # node:24-alpine before this change). That is why the better-sqlite3 -> ^13.0.2 bump lands in
 # THIS chapter rather than a later one.
-FROM node:24.18-alpine3.24 AS builder
+FROM node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS builder
 WORKDIR /app
 COPY package*.json tsconfig.json ./
 # `--ignore-scripts` IS LOAD-BEARING, not hygiene. better-sqlite3 v13 ships its prebuilt
@@ -44,7 +44,7 @@ RUN npm run build
 # NB: Stage 2 runs its OWN `npm ci --production` — the native module does NOT cross stages, so
 # there is no Stage-1/Stage-2 ABI mismatch to guard against here. Both stages must still pin the
 # SAME base, which is what keeps the built `dist/` and the runtime Node in step.
-FROM node:24.18-alpine3.24
+FROM node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
 WORKDIR /app
 COPY package*.json ./
 # See the Stage-1 note: --ignore-scripts is required for better-sqlite3 v13 under `npm ci`.
