@@ -103,6 +103,16 @@ export interface FeatureSpec {
    * `publicToolNames()` → nav-manifest.ts + the /tools generator.
    */
   publicListing?: boolean;
+  /**
+   * SCAN-MARKET-REGIMES-LOCAL-MODE-W1: where this tool can SERVE. `'any'` = both backends — the hosted
+   * server (Postgres) and a local install (no `DATABASE_URL`, SQLite). `'hosted'` = it depends on
+   * state only the hosted server has, so a local install REFUSES it at the pipeline's admission stage
+   * (`code:'hosted_only'`, 501, 0 DB statements, 0 quota) instead of leaking the backend error the tool
+   * would throw. Required, so a new row is a compile error until it decides. Orthogonal to `enabled`
+   * and `channels`: the tool is still LISTED locally — `tools/list` and /capabilities are unchanged by
+   * this field (deliberately NOT projected — see projectCapabilities).
+   */
+  residency: 'any' | 'hosted';
 }
 
 /** descriptionRef → canonical description string (descriptions stay in tool-descriptions.ts). */
@@ -135,6 +145,7 @@ const FEATURE_REGISTRY_LITERAL = [
     x402: { basePriceUsd: 0.02 },
     descriptionRef: 'TRADE_CALL_DESCRIPTION',
     enabled: true,
+    residency: 'any',
   },
   {
     name: 'get_market_regime',
@@ -145,6 +156,7 @@ const FEATURE_REGISTRY_LITERAL = [
     x402: { basePriceUsd: 0.02 },
     descriptionRef: 'GET_MARKET_REGIME_DESCRIPTION',
     enabled: true,
+    residency: 'any',
   },
   {
     name: 'scan_funding_arb',
@@ -157,6 +169,7 @@ const FEATURE_REGISTRY_LITERAL = [
     x402: { basePriceUsd: 0.01 },
     descriptionRef: 'SCAN_FUNDING_ARB_DESCRIPTION',
     enabled: true,
+    residency: 'any',
   },
   {
     name: 'scan_trade_calls',
@@ -177,6 +190,7 @@ const FEATURE_REGISTRY_LITERAL = [
     // SCAN-RANKBY-W1: advertise the universe-selection lens set (single source).
     lenses: { param: 'rankBy', values: [...RANK_BY_VALUES], aliases: { ...RANK_BY_ALIASES }, default: 'oi' },
     enabled: true,
+    residency: 'any',
   },
   {
     // SCAN-MARKET-REGIMES-W1-V2 CH2 — the venue regime screener over CH1's bar-close snapshot.
@@ -197,6 +211,9 @@ const FEATURE_REGISTRY_LITERAL = [
     x402: null,
     descriptionRef: 'SCAN_MARKET_REGIMES_DESCRIPTION',
     enabled: true,
+    // SCAN-MARKET-REGIMES-LOCAL-MODE-W1: rows come from the hosted bar-close snapshot (regime_snapshots), which
+    // only the hosted sampler writes. Locally the read leaked a raw SQLite error; now it is refused at admission.
+    residency: 'hosted',
     publicListing: true,
   },
   {
@@ -210,6 +227,8 @@ const FEATURE_REGISTRY_LITERAL = [
     descriptionRef: 'GET_EQUITY_CALL_DESCRIPTION',
     enabled: true,
     publicListing: false, // equities public-copy HOLD (NAV-PLATFORM-GENERATOR-W1 A4) — live tool, kept off public nav/tools; flip to surface
+    // SCAN-MARKET-REGIMES-LOCAL-MODE-W1 (Mr.1 ruling): 'any' is NOT a local-mode guarantee — needs Postgres (makeEquityPool, src/lib/equities/equity-store.ts:16); dark behind EQUITY_TOOLS_ENABLED.
+    residency: 'any',
   },
   {
     name: 'get_equity_regime',
@@ -220,6 +239,8 @@ const FEATURE_REGISTRY_LITERAL = [
     descriptionRef: 'GET_EQUITY_REGIME_DESCRIPTION',
     enabled: true,
     publicListing: false, // equities public-copy HOLD (NAV-PLATFORM-GENERATOR-W1 A4) — live tool, kept off public nav/tools; flip to surface
+    // SCAN-MARKET-REGIMES-LOCAL-MODE-W1 (Mr.1 ruling): 'any' is NOT a local-mode guarantee — needs Postgres (makeEquityPool, src/lib/equities/equity-store.ts:16); dark behind EQUITY_TOOLS_ENABLED.
+    residency: 'any',
   },
   {
     name: 'chat_knowledge',
@@ -229,6 +250,10 @@ const FEATURE_REGISTRY_LITERAL = [
     x402: null,
     descriptionRef: 'CHAT_KNOWLEDGE_DESCRIPTION',
     enabled: true,
+    // SCAN-MARKET-REGIMES-LOCAL-MODE-W1 (Cowork Q1): locally it can never return a grounded answer — no
+    // ANTHROPIC_API_KEY means StubLLMProvider, the npm tarball ships no dist/knowledge/, and chat_usage_monthly is
+    // created only in startHttp(). A wave that ships the bundle may flip this back to 'any'.
+    residency: 'hosted',
   },
   {
     name: 'search_knowledge',
@@ -238,6 +263,7 @@ const FEATURE_REGISTRY_LITERAL = [
     x402: null,
     descriptionRef: 'SEARCH_KNOWLEDGE_DESCRIPTION',
     enabled: true,
+    residency: 'any',
   },
   {
     // DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2 — the track record on the tools channel.
@@ -274,6 +300,7 @@ const FEATURE_REGISTRY_LITERAL = [
     descriptionRef: 'GET_TRACK_RECORD_DESCRIPTION',
     enabled: true,
     publicListing: false,
+    residency: 'any',
   },
   // ARCH-MCP-CALL-PIPELINE-W1 CH2 (type-only, no data change): `as const satisfies` keeps every row a
   // FeatureSpec while exposing the literal names, so the tool-call pipeline's dispatch table is

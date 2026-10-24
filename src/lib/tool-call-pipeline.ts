@@ -53,7 +53,7 @@ import {
   type RequestContext,
 } from './license.js';
 import { logRequest } from './analytics.js';
-import { upsertAgentSession } from './performance-db.js';
+import { upsertAgentSession, isPgBackend } from './performance-db.js';
 import { runAsBatch, runAsCaller } from './upstream-weight-budget.js';
 import { x402CallerTag, processScopedTag } from './caller-tags.js';
 import { regimeSuccessVerdict, regimeErrorVerdict } from './regime-request-verdict.js';
@@ -221,6 +221,9 @@ interface ToolRow {
 }
 
 const INVALID_TIMEFRAME = 'INVALID_TIMEFRAME';
+/** SCAN-MARKET-REGIMES-LOCAL-MODE-W1: the refusal a `residency:'hosted'` tool answers on a local install. */
+const HOSTED_ONLY = 'hosted_only';
+const HOSTED_MCP_ENDPOINT = 'https://api.algovault.com/mcp';
 
 /** A tool's wall-time clock, started once per call. */
 const nowMs = (): number => Date.now();
@@ -579,6 +582,27 @@ export async function callTool(req: ToolCallRequest): Promise<ToolCallOutcome> {
   // One run of the stages inside the request scope. The caller either hands us a ctx (the HTTP rails)
   // or has already installed one (the /mcp POST layer; stdio has none and the accessors default).
   const inScope = async (): Promise<{ outcome: ToolCallOutcome; log: LogFields | null; sessionId?: string; ipHash?: string; source?: string }> => {
+    // Admission (SCAN-MARKET-REGIMES-LOCAL-MODE-W1): a `residency:'hosted'` tool on a local install (no
+    // DATABASE_URL → SQLite) is refused before dispatch — 0 DB statements, 0 quota, no request_log row —
+    // instead of leaking the backend error the tool would throw. A no-op on the hosted (Postgres) server.
+    // First, because no input can make it serve locally. No `_algovault` (Cowork Q3): like the timeframe
+    // refusal below it is pre-dispatch, and a local refusal has no auth or quota state to report.
+    if (feature.residency === 'hosted' && !isPgBackend()) {
+      return {
+        outcome: {
+          ok: false, kind: 'refused', tool: req.tool, input, mcpIsError: true, http: { status: 501 },
+          payload: {
+            error: HOSTED_ONLY,
+            code: HOSTED_ONLY,
+            tool: req.tool,
+            message: `This tool is served from the hosted endpoint. Connect your client to ${HOSTED_MCP_ENDPOINT} to use it.`,
+            hosted_endpoint: HOSTED_MCP_ENDPOINT,
+            suggested_action: `Add ${HOSTED_MCP_ENDPOINT} as a remote MCP server in your client, then call ${req.tool} there.`,
+          },
+        },
+        log: null,
+      };
+    }
     // Admission (Q-PIPE-2 row 12): a DEFINED timeframe the tool's enum does not serve is refused here.
     const tf = input.timeframe;
     if (row.timeframes && typeof tf === 'string' && !row.timeframes.includes(tf)) {

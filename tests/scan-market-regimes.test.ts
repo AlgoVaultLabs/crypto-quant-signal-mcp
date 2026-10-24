@@ -310,16 +310,24 @@ describe('7. served scan — billing and envelope', () => {
 
 describe('MCP envelope — refusals are isError, through the one pipeline', () => {
   it('an invalid lens refuses before any DB read and renders isError', async () => {
-    const outcome = await callTool({
-      tool: 'scan_market_regimes',
-      input: { exchange: 'BINANCE', timeframe: '4h', rankBy: 'garbage', assetClass: 'all', sortBy: 'confidence', limit: 20, offset: 0 } as unknown as ValidatedToolInput,
-      channel: 'mcp',
-      license: { tier: 'free', key: null },
-    });
-    expect(outcome.ok).toBe(false);
-    const mcp = toMcpToolResult(outcome);
-    expect(mcp.isError).toBe(true);
-    expect(JSON.parse(mcp.content[0].text)).toMatchObject({ error: 'invalid_parameter', param: 'rankBy' });
+    // SCAN-MARKET-REGIMES-LOCAL-MODE-W1: the lens refusal is HOSTED behaviour — a local install (no
+    // DATABASE_URL) now refuses this tool at admission with `hosted_only` before the handler runs
+    // (tests/unit/local-mode-residency.test.ts). So this case runs in hosted mode; assertions unchanged.
+    vi.stubEnv('DATABASE_URL', 'postgres://hosted-mode.invalid/never-connected');
+    try {
+      const outcome = await callTool({
+        tool: 'scan_market_regimes',
+        input: { exchange: 'BINANCE', timeframe: '4h', rankBy: 'garbage', assetClass: 'all', sortBy: 'confidence', limit: 20, offset: 0 } as unknown as ValidatedToolInput,
+        channel: 'mcp',
+        license: { tier: 'free', key: null },
+      });
+      expect(outcome.ok).toBe(false);
+      const mcp = toMcpToolResult(outcome);
+      expect(mcp.isError).toBe(true);
+      expect(JSON.parse(mcp.content[0].text)).toMatchObject({ error: 'invalid_parameter', param: 'rankBy' });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

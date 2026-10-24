@@ -420,6 +420,13 @@ class PgBackend implements DbBackend {
 let backend: DbBackend | null = null;
 let isPg = false;
 
+/**
+ * SCAN-MARKET-REGIMES-LOCAL-MODE-W1: the ONE backend-kind derivation — `true` = Postgres (the hosted
+ * server), `false` = local SQLite. A pure read of the env, so it is right BEFORE the first DB call;
+ * `isPg` above latches lazily inside getBackend() and reads `false` until then, so never export it.
+ */
+export const isPgBackend = (): boolean => !!process.env.DATABASE_URL;
+
 const CREATE_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS signals (
     id ${process.env.DATABASE_URL ? 'SERIAL' : 'INTEGER'} PRIMARY KEY${process.env.DATABASE_URL ? '' : ' AUTOINCREMENT'},
@@ -1536,9 +1543,9 @@ const CREATE_SUBSCRIBER_NOTIFICATIONS_OUTCOME_INDEX_SQL = `
 function getBackend(): DbBackend {
   if (backend) return backend;
 
-  if (process.env.DATABASE_URL) {
+  if (isPgBackend()) {
     isPg = true;
-    backend = new PgBackend(process.env.DATABASE_URL);
+    backend = new PgBackend(process.env.DATABASE_URL as string);
   } else {
     isPg = false;
     backend = new SqliteBackend();
