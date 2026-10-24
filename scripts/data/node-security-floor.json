@@ -1,0 +1,46 @@
+{
+  "_comment": "FETCHED, then COMMITTED. Per Node major >= 18: the newest release https://nodejs.org/dist/index.json marks security:true (null = the line has none yet). check-runtime-node-security.mjs reads this file and never the network; the node_runtime_floor canary compares it with the live index.",
+  "_source": "https://nodejs.org/dist/index.json",
+  "_how_to_refresh": "node scripts/check-runtime-node-security.mjs --refresh  (rewrites this file, then runs the check; commit the result)",
+  "_revisit_rationale": "revisit_by = fetched_at + 45 d. Past it the gate is INDETERMINATE: a floor that never expires would keep passing after the next security release.",
+  "fetched_at": "2026-10-24T17:25:04Z",
+  "revisit_by": "2026-12-08",
+  "floor": {
+    "18": {
+      "version": "18.20.6",
+      "date": "2025-01-21"
+    },
+    "19": {
+      "version": "19.6.1",
+      "date": "2023-02-16"
+    },
+    "20": {
+      "version": "20.20.2",
+      "date": "2026-03-24"
+    },
+    "21": {
+      "version": "21.7.3",
+      "date": "2024-04-10"
+    },
+    "22": {
+      "version": "22.23.4",
+      "date": "2026-10-20"
+    },
+    "23": {
+      "version": "23.11.1",
+      "date": "2025-05-14"
+    },
+    "24": {
+      "version": "24.22.1",
+      "date": "2026-10-20"
+    },
+    "25": {
+      "version": "25.8.2",
+      "date": "2026-03-24"
+    },
+    "26": {
+      "version": "26.12.1",
+      "date": "2026-10-21"
+    }
+  }
+}

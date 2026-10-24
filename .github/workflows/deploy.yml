@@ -962,6 +962,18 @@ jobs:
           node scripts/check-runtime-node-eol.mjs --self-test
           node scripts/check-runtime-node-eol.mjs
 
+      # OPS-NODE-SECURITY-FLOOR-W1 R4 — the generator for CVE-2026-111497. The EOL gate above
+      # passed node:24.18-alpine3.24 because line 24 is supported; it never asked whether the
+      # image carried that line's newest security release. This one does, offline: every
+      # FROM node: pins a full x.y.z plus an @sha256 digest, and every pin (and any pinned
+      # workflow node-version) is at or above the committed floor in
+      # scripts/data/node-security-floor.json (rewritten by --refresh). Fail-CLOSED: a missing,
+      # malformed or past-revisit_by floor file is INDETERMINATE (exit 3), never a pass.
+      - name: Runtime Node security-floor gate (fail-closed)
+        run: |
+          node scripts/check-runtime-node-security.mjs --self-test
+          node scripts/check-runtime-node-security.mjs
+
       # OPS-HOST-KERNEL-REBOOT-W1 R3 — the generator for SEC-18. That finding was "the kernel is 12
       # revisions behind", but the real exposure was that nobody knew whether the box COMES BACK.
       # This asserts the boot-survival contract continuously, so the next UNPLANNED reboot (Hetzner

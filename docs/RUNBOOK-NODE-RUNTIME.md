@@ -2,7 +2,7 @@
 
 _Owner wave: `OPS-RUNTIME-NODE24-W1` (closes SECURITY-AUDIT-FULL-W1 SEC-15 + SEC-28)._
 
-Enforced automatically by `scripts/check-runtime-node-eol.mjs`, which fails the build when any
+Enforced automatically by `scripts/check-runtime-node-security.mjs` (every `FROM node:` pins a full `x.y.z` + `@sha256` digest at or above the security floor) and `scripts/check-runtime-node-eol.mjs`, which fails the build when any
 declared Node major is past end-of-life or inside the warning window. This document explains the
 floor; the canary is what keeps it true.
 
@@ -10,8 +10,8 @@ floor; the canary is what keeps it true.
 
 | Surface | Node | Notes |
 |---|---|---|
-| `Dockerfile` (main image, both stages) | `node:24.18-alpine3.24` | minor-pinned + explicit Alpine; never a floating `:24` |
-| `Dockerfile.facilitator` (both stages) | `node:24.18-alpine3.24` | runs as `USER node` (uid 1000) — it custodies the x402 gas-wallet key |
+| `Dockerfile` (main image, both stages) | `node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53` | full-patch pin + digest — never a floating `:24` or a minor-only `24.18`; at or above `scripts/data/node-security-floor.json` |
+| `Dockerfile.facilitator` (both stages) | `node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53` | same pin; runs as `USER node` (uid 1000) — it custodies the x402 gas-wallet key |
 | CI (`deploy`, `publish-npm`, `release-knowledge`) | `24` | CLAUDE.md: CI tracks the runtime |
 | `package.json` `engines.node` | `>=22` | the real floor — see below |
 
