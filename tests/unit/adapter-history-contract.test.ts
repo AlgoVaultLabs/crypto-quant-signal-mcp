@@ -23,6 +23,10 @@
  *     BITGET and OKX run on the synthetic venue. Each window must reach the venue's newest bar (head gap within
  *     HEAD_ALLOWANCE_BARS) and pass the getAdapter seam's guard. The window set is re-derived from the registry, so a
  *     window change reddens S until every venue is recaptured for it.
+ *   CH3a-R2 (Cowork Q14 A): on a TRADE_GATED_KLINE_VENUES venue (HL, KUCOIN) a short head is judged from the venue's
+ *     recent trades. The measured KuCoin and HL trade-head reads replay to 0 FAIL; a synthetic head with a 20 s old
+ *     trade in a later slot FAILs; trades that cannot be read are INDETERMINATE; every other venue's verdict does not
+ *     depend on trades at all.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
@@ -36,8 +40,9 @@ import { historyMetaOf, accountPage, HEAD_ALLOWANCE_BARS } from '../../src/lib/a
 import { SERVING_MAX_PAGES } from '../../src/lib/serving-windows.js';
 import { servingWindowVerdict } from '../../src/lib/exchange-adapter.js';
 import {
-  BOUNDARY_LAG_MS, CLOSED_ONLY_BOUNDARY_LAG_MS, CLOSED_ONLY_KLINE_VENUES, SNAPSHOT_KLINE_MAX_LAG_MS, TICKER_PRICED_VENUES, formingHeadVerdict, headLag,
-  livePriceOf, LIVE_TICKER_MAX_AGE_MS, type HeadReference,
+  BOUNDARY_LAG_MS, CLOSED_ONLY_BOUNDARY_LAG_MS, CLOSED_ONLY_KLINE_VENUES, SNAPSHOT_KLINE_MAX_LAG_MS, TICKER_PRICED_VENUES, TRADE_GATED_KLINE_VENUES,
+  formingHeadVerdict, headLag, isHeadIndeterminate, isTickerPricedVenue, livePriceOf, LIVE_TICKER_MAX_AGE_MS,
+  type HeadReference, type HeadTrades, type HeadVerdict,
 } from '../../src/lib/live-price.js';
 import { TIMEFRAMES } from '../../src/lib/capabilities.js';
 import { servingSpans } from '../harness/serving-spans.js';
@@ -342,15 +347,17 @@ function judge(out: Bar[], servedMs: number, tf: string, from: number, nowMs: nu
   };
 }
 
-/** A venue publishes a new bar within seconds of its boundary: measured on recorded coins, every liquid venue's miss sat
- *  within 15 s of one (vault audits/OPS-SERVED-CANDLE-TRUTH-W1/ch3a-thin.jsonl, 2026-10-23). Inside that lag a page may
- *  still end on the previous head. */
+/** Inside BOUNDARY_LAG_MS after a boundary a page may still end on the previous head (its basis: the R2 boundary census,
+ *  src/lib/live-price.ts). */
 /** The ONE head judgement (src/lib/live-price.ts), over a page as S records it. S captures read BTC: the liquid
- *  reference. */
-function headVerdict(out: Bar[], servedMs: number, calledAt: number, toleranceMs: number, venue: string, reference: HeadReference = 'liquid'): string | null {
+ *  reference. S captures carry no trade read, so a trade-gated short head is INDETERMINATE here, never accepted. */
+function headVerdict(
+  out: Bar[], servedMs: number, calledAt: number, toleranceMs: number, venue: string, reference: HeadReference = 'liquid', trades?: HeadTrades,
+): HeadVerdict {
   if (out.length === 0) return 'no bar';
-  return formingHeadVerdict(out[out.length - 1].ts, servedMs, calledAt, venue, toleranceMs, reference);
+  return formingHeadVerdict(out[out.length - 1].ts, servedMs, calledAt, venue, toleranceMs, reference, trades);
 }
+const verdictText = (v: HeadVerdict): string | null => (v !== null && isHeadIndeterminate(v) ? `INDETERMINATE: ${v.indeterminate}` : v);
 
 describe('adapter history contract — S: every serving window the product asks for', () => {
   const replayVenues = universe.promoted.filter((v) => !SYNTHETIC_VENUES.has(v));
@@ -442,7 +449,7 @@ describe('adapter history contract — S: every serving window the product asks 
     expect([...CLOSED_ONLY_KLINE_VENUES]).toEqual(['PHEMEX']);
     const bad = serving.scenarios.flatMap((s) => {
       if (s.error || unservablePairs.has(`${s.venue}/${s.tf}`)) return [];
-      const why = headVerdict(s.output, s.servedMs, s.calledAt, s.replayToleranceMs, s.venue);
+      const why = verdictText(headVerdict(s.output, s.servedMs, s.calledAt, s.replayToleranceMs, s.venue));
       return why === null ? [] : [`${sId(s.venue, s.tf, s.window)}: ${why}`];
     });
     expect(bad).toEqual([]);
@@ -506,13 +513,105 @@ describe('adapter history contract — S: every serving window the product asks 
     expect(headVerdict(withForming, phemex.servedMs, phemex.calledAt, phemex.replayToleranceMs, 'PHEMEX')).toMatch(/served its forming bar/);
   });
 
+  /** A paired kline + recent-trades read, measured 2026-10-24 (vault audits/OPS-SERVED-CANDLE-TRUTH-W1/ch3a-r2-*-trade-head.jsonl,
+   *  copied verbatim): the newest served 1m bar and the venue's newest trade, both on the request-start clock. */
+  interface TradeHeadRead { calledAt: string; newestOpen: string; headShort: boolean; lastTrade: string }
+  const tradeHeads = (f: string) => fs.readFileSync(path.join(FIX, f), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as TradeHeadRead);
+  const M = 60_000;
+
+  it('CH3a-R2 / Q14: the measured KuCoin and HL short heads replay to 0 FAIL — none had traded past its newest bar — and without trades the ones past BOUNDARY_LAG_MS are INDETERMINATE', () => {
+    // [venue, file, reads, short heads, short heads past BOUNDARY_LAG_MS]
+    for (const [venue, file, reads, shorts, pastLag] of [['KUCOIN', 'KUCOIN-TRADE-HEAD.jsonl', 240, 57, 18], ['HL', 'HL-TRADE-HEAD.jsonl', 48, 16, 7]] as const) {
+      const rows = tradeHeads(file);
+      expect(rows.length, file).toBe(reads);
+      const short = rows.filter((r) => headLag(Date.parse(r.newestOpen), M, Date.parse(r.calledAt), venue).slots > 0);
+      expect(short.length, file).toBe(shorts);
+      expect(short.every((r) => r.headShort) && rows.filter((r) => r.headShort).length === shorts, file).toBe(true);
+      for (const ref of ['liquid', 'thin'] as const) {
+        const judge = (r: TradeHeadRead, v: string, trades?: HeadTrades) => formingHeadVerdict(Date.parse(r.newestOpen), M, Date.parse(r.calledAt), v, 0, ref, trades);
+        const traded = rows.flatMap((r) => { const why = verdictText(judge(r, venue, [{ atMs: Date.parse(r.lastTrade) }])); return why === null ? [] : [`${r.calledAt}: ${why}`]; });
+        expect(traded, `${file} ${ref}`).toEqual([]);
+        const untraded = short.map((r) => judge(r, venue));
+        expect(untraded.filter((v) => v !== null && isHeadIndeterminate(v)).length, `${file} ${ref}`).toBe(pastLag);
+        expect(untraded.filter((v) => typeof v === 'string'), `${file} ${ref}`).toEqual([]);
+        // the R1 rule — still every non-trade-gated venue's — FAILs exactly those reads
+        expect(short.filter((r) => typeof judge(r, 'BINANCE') === 'string').length, `${file} ${ref}`).toBe(pastLag);
+      }
+    }
+  });
+
+  it('CH3a-R2 / Q14: a synthetic trade-gated head — a trade 20 s old in a later slot FAILs, one 5 s old is accepted, unreadable trades are INDETERMINATE', () => {
+    const newest = Date.UTC(2026, 9, 24, 10, 49);
+    const slotEnd = newest + M;
+    const call = slotEnd + 30_000; // 1 slot short, 30 s after the boundary: past BOUNDARY_LAG_MS
+    const inNewest = { atMs: slotEnd - 2_000 };
+    for (const venue of TRADE_GATED_KLINE_VENUES) {
+      for (const ref of ['liquid', 'thin'] as const) {
+        const v = (trades?: HeadTrades, at = call, n = newest) => formingHeadVerdict(n, M, at, venue, 0, ref, trades);
+        expect(v([inNewest, { atMs: call - 20_000 }])).toMatch(/1 slot\(s\) before the forming bar on a trade-gated venue, and it traded 20 s before the read in a later slot/);
+        expect(v([inNewest, { atMs: call - 5_000 }])).toBeNull();
+        expect(v([inNewest])).toBeNull();
+        expect(v([inNewest, { atMs: call - BOUNDARY_LAG_MS }])).toBeNull(); // the lag bound is inclusive
+        expect(v([inNewest, { atMs: call - BOUNDARY_LAG_MS - 1 }])).toMatch(/in a later slot/);
+        expect(v([{ atMs: slotEnd - 1 }])).toBeNull(); // the last instant of the newest bar is inside it
+        expect(v([{ atMs: slotEnd - 1 }, { atMs: slotEnd }])).toMatch(/in a later slot/); // its slot end is not
+        // trades unavailable: never accepted, never failed
+        for (const t of [undefined, { error: 'HTTP 429' }, [], [{ atMs: Number.NaN }]] as (HeadTrades | undefined)[]) {
+          expect(v(t), JSON.stringify(t)).toEqual({ indeterminate: expect.stringMatching(/trade-gated venue, and its trade/) });
+        }
+        expect(v({ error: 'HTTP 429' })).toEqual({ indeterminate: expect.stringContaining('HTTP 429') });
+        // a list that never reaches back past the slot end cannot tell "no trade yet" from a missing bar
+        expect(v([{ atMs: call - 3_000 }, { atMs: call - 1_000 }])).toEqual({ indeterminate: expect.stringMatching(/do not reach back to the newest served bar's slot end/) });
+        // two slots short: a trade in the middle slot is a missing traded bar; trades only in the newest bar are not
+        const call2 = newest + 2 * M + 30_000;
+        expect(v([inNewest, { atMs: slotEnd + 10_000 }], call2)).toMatch(/2 slot\(s\) before the forming bar on a trade-gated venue, and it traded 80 s before/);
+        expect(v([inNewest], call2)).toBeNull();
+        // unchanged: within BOUNDARY_LAG_MS one slot short is accepted with no trade read; the forming bar needs none
+        expect(v(undefined, slotEnd + BOUNDARY_LAG_MS)).toBeNull();
+        expect(isHeadIndeterminate(v(undefined, slotEnd + BOUNDARY_LAG_MS + 1) ?? 'accepted')).toBe(true);
+        expect(v(undefined, call, slotEnd)).toBeNull();
+      }
+    }
+  });
+
+  it('CH3a-R2: every other venue\'s verdict does not depend on trades — every SERVING.json window and a synthetic head grid, byte-identical; on HL / KUCOIN trades change only a verdict that was INDETERMINATE', () => {
+    const tradeSets = (newest: number, step: number): (HeadTrades | undefined)[] => [
+      undefined, { error: 'x' }, [], [{ atMs: newest }], [{ atMs: newest }, { atMs: newest + step }], [{ atMs: newest + 3 * step }],
+    ];
+    let judged = 0;
+    const check = (newest: number, step: number, at: number, venue: string, tol: number, id: string) => {
+      for (const ref of ['liquid', 'thin'] as const) {
+        const base = formingHeadVerdict(newest, step, at, venue, tol, ref);
+        const gated = (TRADE_GATED_KLINE_VENUES as readonly string[]).includes(venue);
+        if (!gated) expect(base === null || typeof base === 'string', id).toBe(true);
+        if (base !== null && isHeadIndeterminate(base)) { expect(gated, id).toBe(true); continue; }
+        for (const t of tradeSets(newest, step)) expect(formingHeadVerdict(newest, step, at, venue, tol, ref, t), `${id} ${ref} ${JSON.stringify(t)}`).toEqual(base);
+        judged++;
+      }
+    };
+    for (const s of serving.scenarios) {
+      if (s.error || s.output.length === 0) continue;
+      const newest = s.output[s.output.length - 1].ts;
+      const id = sId(s.venue, s.tf, s.window);
+      check(newest, s.servedMs, s.calledAt, s.venue, s.replayToleranceMs, id);
+      for (let k = 0; k <= 3; k++) for (const d of [0, BOUNDARY_LAG_MS, BOUNDARY_LAG_MS + 1, CLOSED_ONLY_BOUNDARY_LAG_MS + 1, s.servedMs / 2]) {
+        check(newest, s.servedMs, newest + k * s.servedMs + d, s.venue, 0, `${id} +${k}·${d}`);
+      }
+    }
+    const newest = Date.UTC(2026, 9, 24, 10, 0);
+    for (const venue of [...universe.promoted, 'X']) for (const step of [M, 3_600_000]) for (let k = 0; k <= 3; k++) {
+      for (const d of [0, 1_000, BOUNDARY_LAG_MS, BOUNDARY_LAG_MS + 1, 59_000]) check(newest, step, newest + k * step + d, venue, 0, `${venue} grid +${k}·${d}`);
+    }
+    expect(judged).toBeGreaterThan(5_000);
+  });
+
   it('CH3a: the synthetic venues end every window on the forming bar, young listings included, never from the closed-only endpoint', () => {
     const young = synthetic.filter((r) => r.listing !== 'long-listed');
     expect(young.length).toBeGreaterThan(60);
     expect(synthetic.some((r) => r.listing === 'young-past-reach' && r.venue === 'BITGET')).toBe(true);
     const bad = synthetic.flatMap((r) => {
       if (unservablePairs.has(r.id.split('/S@')[0]) || r.err) return [];
-      const why = headVerdict(r.out, r.servedMs, NOW_S, 0, r.venue);
+      const why = verdictText(headVerdict(r.out, r.servedMs, NOW_S, 0, r.venue));
       const flags = [why, r.meta?.headClosedOnly ? 'head from a closed-only endpoint' : null, r.requests > SERVING_MAX_PAGES ? `${r.requests} requests` : null].filter(Boolean);
       return flags.length ? [`${r.id}: ${flags.join(', ')}`] : [];
     });

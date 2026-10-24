@@ -16,6 +16,9 @@
  *     venue; forming - 1 PASSes on the declared PHEMEX and its forming bar FAILs), the young-listing leg (screen,
  *     interleave, pacing, adoption on a refusal, FAIL on a young window one bar short; the shipped Bitget/OKX PASS a
  *     young synthetic listing), and the ticker leg two-way.
+ *   - CH3a-R2 (Cowork Q14 A): a trade-gated venue's (HL, KUCOIN) short head past BOUNDARY_LAG_MS is judged from its
+ *     recent trades, two-way (a traded later slot FAILs, "no trade yet" PASSes, unread trades are INDETERMINATE), and
+ *     the S and Y legs read those trades only for that head, straight after its window, unpaced.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
@@ -34,7 +37,7 @@ vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (orig) => ({
 import {
   judgePair, aggregate, probeAll, reachClass, PACE_MS, HEAD_ALLOWANCE_BARS, DEEP_PROBE_RECENT_CAP,
   judgeServe, servingProbePlan, probeServing, probeYoung, judgeTicker, youngCandidatesByVenue, YOUNG_FRONT_BARS,
-  YOUNG_CANDIDATES_PER_VENUE, type Expectations, type PairResult, type ServeResult, type ServeWindow,
+  YOUNG_CANDIDATES_PER_VENUE, type Expectations, type GetTrades, type PairResult, type ServeResult, type ServeWindow,
 } from '../../src/scripts/adapter-history-contiguity.js';
 import { servingSpans } from '../../src/lib/serving-windows.js';
 import { StaleUpstreamWindowError } from '../../src/lib/errors.js';
@@ -63,6 +66,7 @@ const clean: PageFacts = { returned: 25, inWindow: 25, outOfRangeBars: 0, offGri
 const exp1: Expectations = { reach: { 'X/1h': { R: clean, D: clean } }, unservable: [{ pair: 'X/8h', reason: 'test' }] };
 const ok = { facts: clean, phaseMs: 0 };
 const deepOk = { facts: clean, meta: { complete: true, substitutedNewest: false } };
+type ServeReadTrades = readonly { atMs: number }[] | { error: string };
 
 describe('judgePair — the recent page against the pinned reach class', () => {
   it('PASS when the class equals the pin', () => {
@@ -268,6 +272,32 @@ describe('judgeServe — one serving window, two-way', () => {
     expect(judgeServe(a1, read(F - 3 * M)).verdict).toBe('FAIL');
     expect(judgeServe({ ...a1, reference: 'thin', coin: 'AXIS' }, read(F - 5 * M))).toMatchObject({ verdict: 'PASS', headLagSlots: 5 });
   });
+  it('CH3a-R2 / Q14: a trade-gated venue\'s short head past BOUNDARY_LAG_MS is judged from its trades — FAIL on a traded later slot, PASS on "no trade yet", INDETERMINATE unread', () => {
+    const M = 60_000;
+    const F = Math.floor(NOW / M) * M;
+    const call = F + 30_000;
+    const read = (trades?: ServeReadTrades) => ({ facts: clean, branch: null, newestMs: F - M, calledAtMs: call, answeredAtMs: call, ...(trades === undefined ? {} : { trades }) });
+    for (const venue of ['HL', 'KUCOIN']) {
+      for (const reference of [undefined, 'thin'] as const) {
+        const g: ServeWindow = { venue, tf: '1m', window: 'trade_call@100', spanMs: 100 * M, servedStepMs: M, coin: 'BTC', ...(reference ? { reference } : {}) };
+        expect(judgeServe(g, read([{ atMs: F - 1_000 }]))).toMatchObject({ verdict: 'PASS', reasons: [], headLagSlots: 1, headLagMs: 30_000 });
+        expect(judgeServe(g, read([{ atMs: F - 1_000 }, { atMs: F + 5_000 }]))).toMatchObject({
+          verdict: 'FAIL', reasons: ['head: newest bar 1 slot(s) before the forming bar on a trade-gated venue, and it traded 25 s before the read in a later slot (a traded bar is missing)'],
+        });
+        expect(judgeServe(g, read())).toMatchObject({ verdict: 'INDETERMINATE', reasons: ['head: newest bar 1 slot(s) before the forming bar on a trade-gated venue, and its trades were not read'] });
+        expect(judgeServe(g, read({ error: 'HTTP 429' }))).toMatchObject({ verdict: 'INDETERMINATE', reasons: [expect.stringMatching(/its trades could not be read: HTTP 429$/)] });
+        expect(judgeServe(g, read([]))).toMatchObject({ verdict: 'INDETERMINATE', reasons: [expect.stringMatching(/trade read came back empty$/)] });
+        // a window FAIL is never softened by the head's INDETERMINATE
+        expect(judgeServe(g, { ...read(), facts: { ...clean, headGapBars: HEAD_ALLOWANCE_BARS + 1 } })).toMatchObject({ verdict: 'FAIL' });
+        // inside BOUNDARY_LAG_MS no trade is needed
+        expect(judgeServe(g, { ...read(), calledAtMs: F + BOUNDARY_LAG_MS, answeredAtMs: F + BOUNDARY_LAG_MS })).toMatchObject({ verdict: 'PASS', reasons: [] });
+      }
+    }
+    // every other non-declared venue keeps the R1 rule, whatever trades the read carries
+    expect(judgeServe({ venue: 'BINANCE', tf: '1m', window: 'trade_call@100', spanMs: 100 * M, servedStepMs: M, coin: 'BTC' }, read([{ atMs: F - 1_000 }]))).toMatchObject({
+      verdict: 'FAIL', reasons: ['head: newest bar 1 slot(s) before the forming bar'],
+    });
+  });
   it('every judged window carries its head lag; an unread one carries null', () => {
     expect(judgeServe(w, { facts: clean, branch: 'R', ...at })).toMatchObject({ headLagSlots: 0, headLagMs: 0 });
     expect(judgeServe(w, { facts: clean, branch: 'F', ...at, newestMs: FORMING - H })).toMatchObject({ headLagSlots: 1, headLagMs: NOW - FORMING });
@@ -448,6 +478,81 @@ describe('servingProbePlan / probeServing — the registry, interleaved by venue
     expect(new Set(by('FAIL'))).toEqual(new Set(['B/1d']));
     expect(new Set(by('INDETERMINATE'))).toEqual(new Set(['A/1d']));
     expect(res.find((r) => r.venue === 'B' && r.tf === '1d')!.reasons[0]).toContain('STALE_UPSTREAM_WINDOW');
+  });
+});
+
+describe('CH3a-R2 — S and Y read a trade-gated venue\'s trades only when its head needs them, straight after the window', () => {
+  const served = (_v: string, tf: string) => TF_MS[tf];
+  const tfs = () => ['1h'];
+  /** bars from from through the forming bar, or one short (NOW is 24 min into its 1h bar: past BOUNDARY_LAG_MS) */
+  const page = (from: number, tf: string, short: boolean, listingMs = Date.UTC(2019, 0, 1)) => {
+    const st = TF_MS[tf];
+    const out: { time: number }[] = [];
+    for (let t = Math.ceil(Math.max(from, listingMs) / st) * st; t <= Math.floor(NOW / st) * st - (short ? st : 0); t += st) out.push({ time: t });
+    return out;
+  };
+  const FORMING = Math.floor(NOW / H) * H;
+
+  it('S: one unpaced trade read right after each short trade-gated window; "no trade yet" PASSes, an unreadable read is INDETERMINATE, other venues are never asked', async () => {
+    const log: string[] = [];
+    const waits: number[] = [];
+    const getTrades: GetTrades = async (venue, coin) => {
+      log.push(`trades:${venue}/${coin}`);
+      if (venue === 'KUCOIN') throw new Error('HTTP 429');
+      return [{ price: 1, atMs: FORMING - 1_000 }];
+    };
+    const res = await probeServing({
+      venues: ['HL', 'BINANCE', 'KUCOIN'], nowMs: () => NOW, served, timeframes: tfs, getTrades,
+      getCandles: async (venue, tf, from, coin) => { log.push(`candles:${venue}/${coin}`); return page(from, tf, true); },
+      pace: async (ms) => { waits.push(ms); log.push('pace'); },
+    });
+    const plan = servingProbePlan(['HL', 'BINANCE', 'KUCOIN'], tfs, served);
+    expect(waits).toEqual(plan.map(() => PACE_MS));
+    const want = plan.flatMap((p) => ['pace', `candles:${p.venue}/BTC`, ...(p.venue === 'BINANCE' ? [] : [`trades:${p.venue}/BTC`])]);
+    expect(log).toEqual(want);
+    const by = (v: string) => res.filter((r) => r.venue === v);
+    expect(by('HL').every((r) => r.verdict === 'PASS' && r.reasons.length === 0)).toBe(true);
+    expect(by('KUCOIN').every((r) => r.verdict === 'INDETERMINATE' && /its trades could not be read: .*HTTP 429/.test(r.reasons[0]))).toBe(true);
+    expect(by('BINANCE').every((r) => r.verdict === 'FAIL')).toBe(true);
+    expect(aggregate(res)).toBe('FAIL');
+    expect(aggregate(res.filter((r) => r.venue !== 'BINANCE'))).toBe('INDETERMINATE');
+  });
+
+  it('S: a head the klines already settle (forming bar served, or one short inside BOUNDARY_LAG_MS) reads no trades', async () => {
+    const asked: string[] = [];
+    const getTrades: GetTrades = async (venue) => { asked.push(venue); return []; };
+    for (const [short, at] of [[false, NOW], [true, FORMING + BOUNDARY_LAG_MS]] as const) {
+      const res = await probeServing({
+        venues: ['HL', 'KUCOIN'], nowMs: () => at, served, timeframes: tfs, getTrades,
+        getCandles: async (_v, tf, from) => page(from, tf, short), pace: async () => {},
+      });
+      expect(res.every((r) => r.verdict === 'PASS')).toBe(true);
+    }
+    expect(asked).toEqual([]);
+  });
+
+  it('S without getTrades: a short trade-gated head past BOUNDARY_LAG_MS is INDETERMINATE, never PASS', async () => {
+    const res = await probeServing({
+      venues: ['HL'], nowMs: () => NOW, served, timeframes: tfs, getCandles: async (_v, tf, from) => page(from, tf, true), pace: async () => {},
+    });
+    expect(res.length).toBeGreaterThan(0);
+    expect(res.every((r) => r.verdict === 'INDETERMINATE' && /its trades were not read$/.test(r.reasons[0]))).toBe(true);
+  });
+
+  it('Y: the young leg passes getTrades through — a young HL listing one bar short with no trade yet PASSes, one that traded in a later slot FAILs', async () => {
+    const young = NOW - 0.5 * Math.max(...servingSpans('1h', H, H).map((x) => x.spanMs)); // past YOUNG_FRONT_BARS inside the longest window
+    for (const [lastTrade, verdict] of [[FORMING - 1_000, 'PASS'], [FORMING + 60_000, 'FAIL']] as const) {
+      const asked: string[] = [];
+      const out = await probeYoung({
+        venues: ['HL'], candidates: { HL: ['SOXL'] }, nowMs: () => NOW, served, timeframes: tfs,
+        getCandles: async (_v, tf, from) => page(from, tf, true, young),
+        getTrades: async (venue, coin) => { asked.push(`${venue}/${coin}`); return [{ price: 1, atMs: FORMING - 3 * H }, { price: 1, atMs: lastTrade }]; },
+        pace: async () => {},
+      });
+      expect(out.refs).toEqual({ HL: 'SOXL' });
+      expect(out.results.map((r) => `${r.reference}/${r.verdict}`)).toEqual([`thin/${verdict}`]);
+      expect(asked).toEqual(['HL/SOXL']);
+    }
   });
 });
 

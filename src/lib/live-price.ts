@@ -68,9 +68,13 @@ export const LIVE_TICKER_MAX_AGE_MS = 60_000;
 export const SNAPSHOT_KLINE_MAX_LAG_MS = 90_000;
 
 /** The seconds after a bar boundary in which a venue may not show the new bar yet: one slot short is accepted there.
- *  A VENUE-lag bound, measured on live venue reads (CH3a census 2026-10-23, vault `ch3a-thin.jsonl`, 1 541 reads):
- *  the non-forming reads one slot short sat at most 14.1 s after a boundary on HL, 3.6 on MEXC, 2.8 on BINANCE, 2.6 on
- *  BINGX, 1.2 on OKX. (`ch3a-boundary.out` beside it counts the CALLS that land inside such a lag.) It is not a
+ *  A VENUE-lag bound. Basis: the CH3a-R2 boundary census (2026-10-24 10:22–10:37Z, 13 non-declared venues × 12
+ *  boundaries through the getAdapter seam, vault `ch3a-r2-venue-boundary-summary.out`): every venue but KuCoin served
+ *  its BTC forming bar ≤ 7.0 s after the boundary (HL 7.0, BINANCE 6.0, BITGET 4.0, OKX 3.0, BINGX 2.0, BYBIT and
+ *  MEXC 1.0). KuCoin's later bars (BTC up to 18.0 s) and HL's young-listing short heads are a bar that has not TRADED
+ *  yet, not lag: paired with each venue's trade feed, none of 73 short heads had a trade after the newest served bar
+ *  (`ch3a-r2-kucoin-trade-head.jsonl`, `ch3a-r2-hl-soxl-trade-head.jsonl`). Those venues are TRADE_GATED_KLINE_VENUES,
+ *  judged past this bound by their trades; it is also their trade → kline propagation bound. It is not a
  *  SNAPSHOT_KLINE venue's bound (ASTER ran to 53.7 s there): that is SNAPSHOT_KLINE_MAX_LAG_MS. */
 export const BOUNDARY_LAG_MS = 15_000;
 
@@ -85,6 +89,57 @@ const mod = (a: number, m: number) => ((a % m) + m) % m;
 /** Which reference a head is judged on: the LIQUID one (BTC, which trades every bar) or a young/thin listing. */
 export type HeadReference = 'liquid' | 'thin';
 
+/** Venues whose klines serve a bar only once it has TRADED (Cowork Q14 = A; measured 2026-10-24, see BOUNDARY_LAG_MS):
+ *  a head short of the forming bar there is "no trade yet" unless the venue's own trades say a later bar traded. Its OWN
+ *  declaration, not a TickerPricedKind: livePriceOf never reads it, so these venues stay priced from their newest close,
+ *  which on a short head is already the last trade. Only formingHeadVerdict reads it (test-pinned). */
+export const TRADE_GATED_KLINE_VENUES = Object.freeze(['HL', 'KUCOIN'] as const);
+export type TradeGatedKlineVenue = (typeof TRADE_GATED_KLINE_VENUES)[number];
+
+export function isTradeGatedKlineVenue(venue: string): venue is TradeGatedKlineVenue {
+  return (TRADE_GATED_KLINE_VENUES as readonly string[]).includes(venue);
+}
+
+/** One venue print, as a trade-gated venue's recent-trades read returns it (order is not used). */
+export interface TradePrint { price: number; atMs: number }
+
+/** What a trade-gated short head is judged with: the venue's recent trades, or why they could not be read. */
+export type HeadTrades = readonly Pick<TradePrint, 'atMs'>[] | { error: string };
+
+/** formingHeadVerdict's third outcome: the head could not be judged. Only a trade-gated venue's short head answers
+ *  it, when its trades were not read, could not be read, came back empty, or do not reach back to the newest served
+ *  bar's slot end. Never accepted, never a FAIL. */
+export interface HeadIndeterminate { indeterminate: string }
+
+/** null: a head the venue may serve; a string: why it may not (FAIL); HeadIndeterminate: it could not be judged. */
+export type HeadVerdict = string | null | HeadIndeterminate;
+
+export function isHeadIndeterminate(v: HeadVerdict): v is HeadIndeterminate {
+  return v !== null && typeof v === 'object';
+}
+
+/** A trade-gated venue's head `slotsShort` (> 0) slots short past every slot-based allowance: FAIL iff a returned
+ *  trade sits at or after the newest served bar's slot end (a later bar traded) and more than BOUNDARY_LAG_MS before
+ *  the call (trade → kline propagation); else accepted, but only when the trades reach back before that slot end —
+ *  a recent-trades list is capped (HL returns 10: 14.9 s of BTC, 2026-10-24), and one that starts after the slot end
+ *  cannot show that nothing traded there. */
+function tradeGatedHead(newestOpenMs: number, servedMs: number, calledAtMs: number, slotsShort: number, trades: HeadTrades | undefined): HeadVerdict {
+  const head = `newest bar ${slotsShort} slot(s) before the forming bar on a trade-gated venue`;
+  if (trades === undefined) return { indeterminate: `${head}, and its trades were not read` };
+  if ('error' in trades) return { indeterminate: `${head}, and its trades could not be read: ${trades.error}` };
+  const at = trades.map((t) => t.atMs).filter(Number.isFinite);
+  if (at.length === 0) return { indeterminate: `${head}, and its trade read came back empty` };
+  const slotEndMs = newestOpenMs + servedMs;
+  const late = at.filter((t) => t >= slotEndMs && calledAtMs - t > BOUNDARY_LAG_MS);
+  if (late.length > 0) {
+    return `${head}, and it traded ${Math.round((calledAtMs - Math.min(...late)) / 1000)} s before the read in a later slot (a traded bar is missing)`;
+  }
+  if (Math.min(...at) >= slotEndMs) {
+    return { indeterminate: `${head}, and its ${at.length} recent trades do not reach back to the newest served bar's slot end` };
+  }
+  return null;
+}
+
 /** How far a served head sits from the one the venue's class owes. `slots`: owed − newest in served steps (0 = as
  *  owed; −1 = a CLOSED_ONLY venue served its forming bar). `ageMs`: how long before `calledAtMs` the newest served bar
  *  closed (0 while it is still forming). The canary records both as metrics. */
@@ -96,10 +151,14 @@ export function headLag(newestOpenMs: number, servedMs: number, calledAtMs: numb
 
 /**
  * The ONE judgement of a serving window's head, for contract scenario S and the live contiguity canary alike: null
- * when the head is one the venue's class may serve, else why not. `toleranceMs` widens the call instant for a
- * replayed capture (its read completed up to that much later).
+ * when the head is one the venue's class may serve, else why not (FAIL), or HeadIndeterminate when it cannot be judged
+ * (a trade-gated short head only). `toleranceMs` widens the call instant for a replayed capture (its read completed up
+ * to that much later). `trades` is read only on a trade-gated venue's short head; the caller reads them when, and
+ * only when, a call without them answers HeadIndeterminate.
  *   - a non-declared venue owes its FORMING bar (the slot holding `calledAtMs`, on the venue's own phase); within
- *     BOUNDARY_LAG_MS after a boundary one slot short is accepted;
+ *     BOUNDARY_LAG_MS after a boundary one slot short is accepted; past that, a TRADE_GATED_KLINE_VENUES head (Q14,
+ *     liquid or thin reference) is judged by the venue's `trades` (tradeGatedHead), and is INDETERMINATE when they
+ *     cannot judge it;
  *   - a SNAPSHOT_KLINE venue (Q11) may serve its forming bar, or on the LIQUID reference a head whose newest bar
  *     closed at most SNAPSHOT_KLINE_MAX_LAG_MS before the read; on a young/thin reference any older head is a metric
  *     (headLag), never a FAIL;
@@ -109,7 +168,8 @@ export function headLag(newestOpenMs: number, servedMs: number, calledAtMs: numb
  */
 export function formingHeadVerdict(
   newestOpenMs: number, servedMs: number, calledAtMs: number, venue: string, toleranceMs = 0, reference: HeadReference = 'liquid',
-): string | null {
+  trades?: HeadTrades,
+): HeadVerdict {
   const kind = tickerPricedKind(venue);
   const forming = calledAtMs - mod(calledAtMs - newestOpenMs, servedMs);
   const slotsShort = Math.round((forming - newestOpenMs) / servedMs);
@@ -127,6 +187,7 @@ export function formingHeadVerdict(
   if (declared && reference === 'thin') return null;
   const boundaryLagMs = declared ? CLOSED_ONLY_BOUNDARY_LAG_MS : BOUNDARY_LAG_MS;
   if (calledAtMs - forming <= boundaryLagMs && newestOpenMs === owed(calledAtMs) - servedMs) return null;
+  if (!declared && slotsShort > 0 && isTradeGatedKlineVenue(venue)) return tradeGatedHead(newestOpenMs, servedMs, calledAtMs, slotsShort, trades);
   return `newest bar ${slotsShort} slot(s) before the forming bar${declared ? ' (declared: 1 expected)' : ''}`;
 }
 

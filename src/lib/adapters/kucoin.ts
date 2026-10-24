@@ -33,6 +33,7 @@ import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 import { resolveVenueInterval } from './_interval.js';
+import type { TradePrint } from '../live-price.js';
 
 const BASE_URL = 'https://api-futures.kucoin.com';
 const MAX_RETRIES = 1;
@@ -148,6 +149,29 @@ interface KucoinContractsListEnvelope {
 interface KucoinSingleContractEnvelope {
   code: string;
   data: KucoinContract;
+}
+
+/** `/api/v1/trade/history` (live-verified 2026-10-24: `ts` in NANOSECONDS, `price` a decimal string; 100 rows). */
+interface KucoinTradeHistoryEnvelope {
+  code: string;
+  data: Array<{ ts: number; price: string }>;
+}
+
+/**
+ * OPS-SERVED-CANDLE-TRUTH-W1 CH3a-R2 (Cowork Q14): the contract's most recent trades. Read ONLY by the contiguity
+ * canary, on a trade-gated short head, so live-price.ts formingHeadVerdict can tell a bar that has not traded yet from
+ * a missing one. Never on a served path. A non-success `code` throws (the canary reads that as INDETERMINATE). `ts`
+ * exceeds 2^53 and parses to within a few hundred ns, far inside the millisecond it is floored to.
+ */
+export async function getKucoinRecentTrades(coin: string): Promise<TradePrint[]> {
+  const symbol = toKucoinSymbol(coin);
+  const raw = await kucoinGet<KucoinTradeHistoryEnvelope>('/api/v1/trade/history', { symbol });
+  if (raw?.code !== '200000') throw new Error(`KuCoin: /api/v1/trade/history ${symbol} answered code ${String(raw?.code)}`);
+  return (raw.data ?? []).flatMap((t) => {
+    const price = safeUpstreamNum(t.price);
+    const atMs = Math.floor(Number(t.ts) / 1e6);
+    return price === null || !Number.isFinite(atMs) ? [] : [{ price, atMs }];
+  });
 }
 
 // ── Adapter ──────────────────────────────────────────────────────────────

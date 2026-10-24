@@ -17,6 +17,7 @@ import { UpstreamRateLimitError } from '../errors.js';
 import { type WeightClass, WeightBudgetSkipError } from '../upstream-weight-budget.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { coalescedCache } from '../coalesced-cache.js';
+import type { TradePrint } from '../live-price.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 import { resolveVenueInterval } from './_interval.js';
 
@@ -379,6 +380,25 @@ export function _resetHyperliquidPredictedFundingsCache(): void {
 
 // OPS-ADAPTER-RATELIMIT-UNIFY-W1: the raw `hlPost` POST/retry/429 loop was retired —
 // hlInfoPost now routes through the shared `upstreamFetch` (VENUE_FETCH_CONFIGS.HL).
+
+/** One `recentTrades` row (live-verified 2026-10-24: coin, side, px, sz, time ms, hash, tid, users). */
+interface HLRecentTrade { px: string; time: number }
+
+/**
+ * OPS-SERVED-CANDLE-TRUTH-W1 CH3a-R2 (Cowork Q14): the market's most recent trades, `{type:'recentTrades'}` (weight 20,
+ * weightFor's default; HL answers the newest 10). Read ONLY by the contiguity canary, on a trade-gated short head, so
+ * live-price.ts formingHeadVerdict can tell a bar that has not traded yet from a missing one. Never on a served path.
+ * The market is resolved like every per-coin request here; a coin HL lists nowhere answers [].
+ */
+export async function getHlRecentTrades(coin: string): Promise<TradePrint[]> {
+  const market = await resolveHlMarket(coin);
+  if (market === null) return [];
+  const raw = await hlInfoPost<HLRecentTrade[]>({ type: 'recentTrades', coin: market.market });
+  return (Array.isArray(raw) ? raw : []).flatMap((t) => {
+    const price = safeUpstreamNum(t.px);
+    return price === null || !Number.isFinite(t.time) ? [] : [{ price, atMs: t.time }];
+  });
+}
 
 export class HyperliquidAdapter implements ExchangeAdapter {
   getName(): string {

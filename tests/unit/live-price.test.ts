@@ -6,8 +6,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  CLOSED_ONLY_KLINE_VENUES, LIVE_TICKER_MAX_AGE_MS, TICKER_PRICED_VENUES, isClosedOnlyKlineVenue, isTickerPricedVenue, livePriceOf,
-  tickerPricedKind,
+  CLOSED_ONLY_KLINE_VENUES, LIVE_TICKER_MAX_AGE_MS, TICKER_PRICED_VENUES, TRADE_GATED_KLINE_VENUES, isClosedOnlyKlineVenue, isTickerPricedVenue,
+  isTradeGatedKlineVenue, livePriceOf, tickerPricedKind,
 } from '../../src/lib/live-price.js';
 import { StaleUpstreamWindowError } from '../../src/lib/errors.js';
 import { PROMOTED_VENUE_IDS } from '../../src/lib/capabilities.js';
@@ -59,6 +59,29 @@ describe('a non-declared venue: the newest close, byte-identical, on every windo
       }
     }
     expect(others.length).toBe(PROMOTED_VENUE_IDS.length - Object.keys(TICKER_PRICED_VENUES).length);
+  });
+});
+
+describe('CH3a-R2 (Q14): a trade-gated kline venue (HL, KUCOIN) is a canary declaration, never a pricing kind', () => {
+  it('is exactly HL and KUCOIN, frozen, promoted, and in no TICKER_PRICED_VENUES kind', () => {
+    expect([...TRADE_GATED_KLINE_VENUES]).toEqual(['HL', 'KUCOIN']);
+    expect(Object.isFrozen(TRADE_GATED_KLINE_VENUES)).toBe(true);
+    for (const v of TRADE_GATED_KLINE_VENUES) {
+      expect(PROMOTED_VENUE_IDS).toContain(v);
+      expect(isTradeGatedKlineVenue(v)).toBe(true);
+      expect(tickerPricedKind(v)).toBeNull();
+      expect(isTickerPricedVenue(v)).toBe(false);
+    }
+    for (const k of ['BINANCE', 'PHEMEX', 'ASTER', 'toString', 'hl']) expect(isTradeGatedKlineVenue(k)).toBe(false);
+  });
+  it('livePriceOf on HL and KUCOIN is the newest close, whatever the head or the last trade', () => {
+    for (const v of TRADE_GATED_KLINE_VENUES) {
+      for (const c of [bars(FORMING), bars(FORMING - H), bars(FORMING - 2 * H)]) {
+        for (const ctx of [fresh, {}, { lastTrade: { price: 1, atMs: NOW - 20_000 } }, { lastTrade: { price: 999, atMs: 0 } }]) {
+          expect(livePriceOf(w(c), ctx, v, NOW)).toBe(c[c.length - 1].close);
+        }
+      }
+    }
   });
 });
 

@@ -27,6 +27,11 @@
  *      arithmetic cannot see a window one bar short at the head; this can, and it goes red the day a non-declared
  *      venue turns closed-only, or a CLOSED_ONLY one starts serving its forming bar. Every window also carries its
  *      head lag (`headLagSlots`, `headLagMs`: how far its head sits behind the owed one) as a metric.
+ *      CH3a-R2 (Cowork Q14): HL and KuCoin serve a bar only once it has traded (live-price.ts
+ *      TRADE_GATED_KLINE_VENUES), so a head there that is short past BOUNDARY_LAG_MS is judged by the venue's recent
+ *      trades, read right after the window (the adapters' getHlRecentTrades / getKucoinRecentTrades, batch class, one
+ *      extra public read per such window, never on a served path): FAIL only when a later bar traded more than
+ *      BOUNDARY_LAG_MS before the read; INDETERMINATE when the trades cannot be read or cannot judge it.
  *
  *   Y  (CH3a, Cowork Q5) a YOUNG-listing reference per venue: the class BTC cannot show (a young Bitget listing was
  *      served from the closed-only history endpoint). Candidates are the venue's coins most recently first seen in our
@@ -69,7 +74,12 @@ import { RECENT_PAGE_CAP as OKX_RECENT_CAP } from '../lib/adapters/okx.js';
 import { runAsBatch } from '../lib/upstream-weight-budget.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { dbQuery } from '../lib/performance-db.js';
-import { formingHeadVerdict, headLag, isTickerPricedVenue, tickerFreshness, type HeadReference } from '../lib/live-price.js';
+import {
+  formingHeadVerdict, headLag, isHeadIndeterminate, isTickerPricedVenue, isTradeGatedKlineVenue, tickerFreshness,
+  type HeadReference, type HeadTrades, type TradeGatedKlineVenue, type TradePrint,
+} from '../lib/live-price.js';
+import { getHlRecentTrades } from '../lib/adapters/hyperliquid.js';
+import { getKucoinRecentTrades } from '../lib/adapters/kucoin.js';
 import type { ExchangeId } from '../types.js';
 
 const TAG = '[adapter-history]';
@@ -276,16 +286,17 @@ export interface ServeResult extends ServeWindow {
 }
 
 export type ServeRead =
-  /** newestMs: the newest bar at or before answeredAtMs (null when none); the venue answered in [calledAtMs, answeredAtMs]. */
-  | { facts: PageFacts; branch: string | null; newestMs: number | null; calledAtMs: number; answeredAtMs: number }
+  /** newestMs: the newest bar at or before answeredAtMs (null when none); the venue answered in [calledAtMs, answeredAtMs].
+   *  trades: a trade-gated venue's recent trades, read only when formingHeadVerdict needed them (R2). */
+  | { facts: PageFacts; branch: string | null; newestMs: number | null; calledAtMs: number; answeredAtMs: number; trades?: HeadTrades }
   | { refused: { headGapBars: number; newestBarAt: string } }
   | { error: string };
 
 /** Judge one S window (pure). PASS when the served page reaches the venue's newest bar (head gap ≤
  *  HEAD_ALLOWANCE_BARS, the bound contract-suite S holds every venue to) AND that bar is a head the venue's class may
  *  serve on the window's reference (formingHeadVerdict, CH3a / Q11 / Q13). FAIL when it does not, when the window
- *  holds no bar, or when the `getAdapter` seam refused it as stale. INDETERMINATE only when the read could not be
- *  made. */
+ *  holds no bar, or when the `getAdapter` seam refused it as stale. INDETERMINATE when the read could not be made, or
+ *  when a trade-gated venue's short head could not be judged from its trades (R2 / Q14). */
 export function judgeServe(w: ServeWindow, read: ServeRead): ServeResult {
   const base: ServeResult = { ...w, bars: null, headGapBars: null, headLagSlots: null, headLagMs: null, branch: null, verdict: 'PASS', reasons: [] };
   if ('error' in read) return { ...base, verdict: 'INDETERMINATE', reasons: [read.error] };
@@ -311,17 +322,37 @@ export function judgeServe(w: ServeWindow, read: ServeRead): ServeResult {
     out.headLagMs = lag.ageMs;
     const why = formingHeadVerdict(
       read.newestMs, w.servedStepMs, read.calledAtMs, w.venue, Math.max(0, read.answeredAtMs - read.calledAtMs), w.reference ?? 'liquid',
+      read.trades,
     );
-    if (why !== null) { out.verdict = 'FAIL'; out.reasons.push(`head: ${why}`); }
+    if (isHeadIndeterminate(why)) {
+      if (out.verdict === 'PASS') out.verdict = 'INDETERMINATE';
+      out.reasons.push(`head: ${why.indeterminate}`);
+    } else if (why !== null) { out.verdict = 'FAIL'; out.reasons.push(`head: ${why}`); }
   }
   return out;
 }
 
-/** One serving read as S, Y and T judge it: no endTime, from = now − span, timed on both sides. */
+/** A trade-gated venue's recent-trades read (R2): the canary's ONE reader per TRADE_GATED_KLINE_VENUES entry — typed
+ *  by that declaration, so a venue declared there without a reader does not compile. */
+export type GetTrades = (venue: string, coin: string) => Promise<readonly TradePrint[]>;
+const RECENT_TRADES: Readonly<Record<TradeGatedKlineVenue, (coin: string) => Promise<TradePrint[]>>> = Object.freeze({
+  HL: getHlRecentTrades,
+  KUCOIN: getKucoinRecentTrades,
+});
+const readRecentTrades: GetTrades = async (venue, coin) => {
+  if (!isTradeGatedKlineVenue(venue)) throw new Error(`${venue} is not a trade-gated kline venue`);
+  return RECENT_TRADES[venue](coin);
+};
+
+/** One serving read as S, Y and T judge it: no endTime, from = now − span, timed on both sides. When the head can only
+ *  be judged from the venue's trades (formingHeadVerdict answers HeadIndeterminate without them: a trade-gated venue's
+ *  short head, R2), they are read straight after the window, unpaced, so the list sits as close to the window as it
+ *  can; a failed read is carried as the head's INDETERMINATE reason. */
 async function readServe(
   getCandles: (venue: string, tf: string, from: number, coin: string) => Promise<{ time: number }[]>,
   nowMs: () => number,
   w: ServeWindow,
+  getTrades?: GetTrades,
 ): Promise<ServeRead> {
   try {
     const calledAtMs = nowMs();
@@ -330,7 +361,13 @@ async function readServe(
     const answeredAtMs = nowMs();
     const facts = accountPage({ bars: page.map((c) => ({ ts: c.time })), servedStepMs: w.servedStepMs, from, to: null, nowMs: answeredAtMs });
     const past = page.map((c) => c.time).filter((t) => t <= answeredAtMs);
-    return { facts, branch: historyMetaOf(page as unknown[])?.branch ?? null, newestMs: past.length ? Math.max(...past) : null, calledAtMs, answeredAtMs };
+    const read: ServeRead = { facts, branch: historyMetaOf(page as unknown[])?.branch ?? null, newestMs: past.length ? Math.max(...past) : null, calledAtMs, answeredAtMs };
+    if (getTrades && read.newestMs !== null && isHeadIndeterminate(formingHeadVerdict(
+      read.newestMs, w.servedStepMs, calledAtMs, w.venue, Math.max(0, answeredAtMs - calledAtMs), w.reference ?? 'liquid',
+    ))) {
+      try { read.trades = await getTrades(w.venue, w.coin); } catch (e) { read.trades = { error: errText(e) }; }
+    }
+    return read;
   } catch (e) {
     return e instanceof StaleUpstreamWindowError
       ? { refused: { headGapBars: e.headGapBars, newestBarAt: new Date(e.newestBarAt).toISOString() } }
@@ -362,13 +399,15 @@ export async function probeServing(o: {
   getCandles: (venue: string, tf: string, from: number, coin: string) => Promise<{ time: number }[]>;
   served: (venue: string, tf: string) => number | null;
   timeframes: (venue: string) => readonly string[];
+  /** A trade-gated venue's recent trades (R2); without it such a short head is INDETERMINATE. */
+  getTrades?: GetTrades;
   pace?: (ms: number) => Promise<void>;
 }): Promise<ServeResult[]> {
   const pace = o.pace ?? sleep;
   const results: ServeResult[] = [];
   for (const w of servingProbePlan(o.venues, o.timeframes, o.served)) {
     await pace(PACE_MS);
-    results.push(judgeServe(w, await readServe(o.getCandles, o.nowMs, w)));
+    results.push(judgeServe(w, await readServe(o.getCandles, o.nowMs, w, o.getTrades)));
   }
   return results;
 }
@@ -415,6 +454,8 @@ export async function probeYoung(o: {
   getCandles: (venue: string, tf: string, from: number, coin: string) => Promise<{ time: number }[]>;
   served: (venue: string, tf: string) => number | null;
   timeframes: (venue: string) => readonly string[];
+  /** A trade-gated venue's recent trades (R2); without it such a short head is INDETERMINATE. */
+  getTrades?: GetTrades;
   pace?: (ms: number) => Promise<void>;
 }): Promise<YoungOutcome> {
   const pace = o.pace ?? sleep;
@@ -427,7 +468,7 @@ export async function probeYoung(o: {
     next: 0,
   }));
   const label = (w: Omit<ServeWindow, 'coin'>, coin: string): ServeWindow => ({ ...w, coin, window: `young:${coin}@${w.window}`, reference: 'thin' });
-  const read = async (w: ServeWindow) => { await pace(PACE_MS); return readServe(o.getCandles, o.nowMs, w); };
+  const read = async (w: ServeWindow) => { await pace(PACE_MS); return readServe(o.getCandles, o.nowMs, w, o.getTrades); };
   const live = (st: (typeof states)[number]) => st.plan.length > 0 && (st.coin === null ? st.cands.length > 0 : st.next < st.plan.length);
   for (const st of states) if (st.plan.length > 0 && st.cands.length === 0) out.none.push(st.venue);
   while (states.some(live)) {
@@ -514,6 +555,7 @@ async function main(): Promise<number> {
       getCandles: serveRead,
       served: (venue, tf) => servedCandleStepMs(venue, tf),
       timeframes: servingTfs,
+      getTrades: readRecentTrades,
     });
     const young = 'error' in candidates ? null : await probeYoung({
       venues: active,
@@ -522,6 +564,7 @@ async function main(): Promise<number> {
       getCandles: serveRead,
       served: (venue, tf) => servedCandleStepMs(venue, tf),
       timeframes: servingTfs,
+      getTrades: readRecentTrades,
     });
     const tickers: ServeResult[] = [];
     for (const venue of active.filter(isTickerPricedVenue)) {
