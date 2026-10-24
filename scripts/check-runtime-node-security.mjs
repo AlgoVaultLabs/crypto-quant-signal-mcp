@@ -202,7 +202,7 @@ export function floorFromIndex(rows) {
     if (typeof r.security !== 'boolean') return { ok: false, reason: `index row ${r.version} has no boolean \`security\` field` };
     if (!lines.has(v[0])) lines.set(v[0], null);
     if (!r.security) continue;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(r.date))) return { ok: false, reason: `index row ${r.version} has no valid date` };
+    if (typeof r.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(r.date)) return { ok: false, reason: `index row ${r.version} has no valid date` };
     security++;
     const cur = lines.get(v[0]);
     if (!cur || cmp(v, cur.v) > 0) lines.set(v[0], { v, date: r.date });
