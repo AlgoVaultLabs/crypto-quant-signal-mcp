@@ -2096,11 +2096,15 @@
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "f8833d982ef7d19e7fdacc2c89c24a63d45b6af0c9b2c3ec29761992b9eebf9e",
       "alert_ids": [],
       "owner_wave": "OPS-NODE-SECURITY-FLOOR-W1",
-      "notes": "The second owed read (registry id inbound-encoding-14d, owner OPS-NODE-SECURITY-FLOOR-W1, install_at 1792860425 = 2026-10-24T16:47:05Z, the `systemctl reload caddy` that installed the api.algovault.com encoded-requests log; positive control UA algovault-nsf-w1-control/97e20b4c). Pre-registered constants live HERE; the registry row's anchors must equal them or the read is INDETERMINATE (a synced declaration can select this read, never retune it). Rule: a sender = a (route, client /24) pair with >= 3 gzip/deflate-labelled requests answered 2xx on >= 2 distinct UTC days; PASS = none (R-FLIP may land), FAIL = the senders with their UA families (REFUSE_ENCODED_BODIES_MODE stays brotli). Legs: senders; coverage = the rotation chain read newest-first, each file whole, back to the file holding the control line (a gap or a pre-install line -> INDETERMINATE); logger = the RUNNING Caddy config (one read-only GET of the 127.0.0.1:2019 admin API) still routes the api vhost log to this file through the regexp URI filter. min_requests / min_days / status_range sandbox overrides are honoured ONLY under --sandbox. Stdlib only."
+      "notes": "The second owed read (registry id inbound-encoding-14d, owner OPS-NODE-SECURITY-FLOOR-W1, install_at 1792860425 = 2026-10-24T16:47:05Z, the `systemctl reload caddy` that installed the api.algovault.com encoded-requests log; positive control UA algovault-nsf-w1-control/97e20b4c). Pre-registered constants live HERE; the registry row's anchors must equal them or the read is INDETERMINATE (a synced declaration can select this read, never retune it). Rule: a sender = a (route, client /24) pair with >= 3 gzip/deflate-labelled requests answered 2xx on >= 2 distinct UTC days; PASS = none (R-FLIP may land), FAIL = the senders with their UA families (REFUSE_ENCODED_BODIES_MODE stays brotli). Legs: senders; coverage = the rotation chain read newest-first, each file whole, back to the file holding the control line (a gap or a pre-install line -> INDETERMINATE); logger = the RUNNING Caddy config (one read-only GET of the 127.0.0.1:2019 admin API) still routes the api vhost log to this file through the regexp URI filter. min_requests / min_days / status_range sandbox overrides are honoured ONLY under --sandbox. Stdlib only.",
+      "first_install": {
+        "at": "20261024T170223Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "owed-reads-registry",
@@ -2118,7 +2122,7 @@
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "installed",
-      "sha256": "08173dd57296587a77fff62d2b8c6e7d292c2ea9136b079f7aa8555b2f38cc60",
+      "sha256": "5937a758197a549aeace3f85f5ec87eb987a8ffc6f6405486512e87594e8ce00",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
       "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence.",

@@ -42,6 +42,34 @@
       },
       "criteria": "Did CH1's HL candle-request fix catch up its 8-coin cohort? L1: 0 post-deploy cohort HL API 500 / Blocking HL lines; L2: no coin retried-and-unfilled with 0 fills; L3: cohort workable_reachable <= 26. One read-only snapshot; lens parity + plan guard, else INDETERMINATE.",
       "_expires_at_rule": "R2 install time + 72 h, rounded up to the hour (OPS-OWED-READ-RUNNER-W1 §Rulings); the original 2026-10-21T06:00:00Z lapsed while the R0 rulings waited; the first committed value 2026-10-25T11:00:00Z assumed a 2026-10-22T10:xx install, and the second (2026-10-27T09:00:00Z) a 2026-10-24T08:xx one; the install ran in the 2026-10-24T11:xx hour."
+    },
+    {
+      "id": "inbound-encoding-14d",
+      "wave": "OPS-NODE-SECURITY-FLOOR-W1",
+      "not_before": "2026-11-07T17:00:00Z",
+      "expires_at": "2026-11-10T17:00:00Z",
+      "script": "owed-read-inbound-encoding-14d.py",
+      "timeout_s": 300,
+      "anchors": {
+        "codings": [
+          "deflate",
+          "gzip"
+        ],
+        "control_ua": "algovault-nsf-w1-control/97e20b4c",
+        "host": "api.algovault.com",
+        "install_at": 1792860425,
+        "log": "/var/log/caddy/api-encoded-requests.log",
+        "min_days": 2,
+        "min_requests": 3,
+        "prefix_v4": 24,
+        "prefix_v6": 48,
+        "status_range": [
+          200,
+          299
+        ]
+      },
+      "criteria": "PASS = no (route, client /24) pair with >= 3 gzip/deflate-labelled requests answered 2xx on >= 2 distinct UTC days in api-encoded-requests.log since install, the chain covering back to the install's control line and the running Caddy config still logging there; FAIL = those pairs, with UA families (R-FLIP stays off); else INDETERMINATE.",
+      "_expires_at_rule": "not_before = install_at (2026-10-24T16:47:05Z, the Caddy reload) + 14 d, rounded up to the hour; expires_at = not_before + 72 h."
     }
   ]
 }
