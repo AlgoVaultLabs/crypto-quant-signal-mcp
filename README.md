@@ -191,6 +191,7 @@ The MCP tools live at `https://api.algovault.com/mcp`. Every asset works across 
 
 - **`get_trade_call`** <sub>(alias `get_trade_signal`)</sub> — composite BUY/SELL/HOLD verdict with confidence + regime, any asset, any timeframe.
 - **`scan_trade_calls`** — scans the top-N perps by open interest on a venue; returns every actionable call in one shot.
+- **`scan_market_regimes`** — screens a whole venue by market regime in one call: every coin whose regime matches your filter, with confidence and how long the regime has held. One call per returned row (at least one per request); coins that don't match are free.
 - **`scan_funding_arb`** — cross-venue funding-rate spreads across 7 venues (Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, OKX), ranked. The only MCP server doing multi-exchange derivatives arbitrage.
 - **`get_market_regime`** — classifies TRENDING_UP / TRENDING_DOWN / RANGING / VOLATILE for strategy selection.
 - **`search_knowledge`** + **`chat_knowledge`** — free BM25 search and grounded Q&A over the full knowledge bundle.
@@ -261,7 +262,13 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 
 ---
 
-## What's new in v1.31.0
+## What's new in v1.32.0
+
+- **🧭 Screen a whole venue by market regime in one call.** `scan_market_regimes` returns every coin whose regime matches your filter — TRENDING_UP, TRENDING_DOWN, RANGING or VOLATILE — with confidence, trend strength, ADX, volatility ratio and how long the regime has held. Filter by regime, confidence, asset class, liquidity, regime age or your own watchlist, then sort by confidence or by the newest regime change. You pay one call per returned row (at least one per request); coins that don't match are free. A venue or timeframe it can't serve right now is refused with the alternatives, and isn't billed. The screener is served from the hosted endpoint; a local install lists it and refuses the call with a pointer there.
+
+**Upgrading from v1.31.x** — additive. One tool was added, `scan_market_regimes`; no tool or parameter was renamed or removed. `GET /api/plans/public` gains two blocks under `free`: `keyless` (the allowance without a key) and `telegram` (the Telegram bot's own allowance, counted in alerts). One free-tier allowance changed: 20 calls a month without a key; a free key gives 200 (up to 100/day).
+
+### v1.31.x highlights (recap)
 
 - **🧩 Install from the package, not from a pasted config block.** `plugin.json`, `mcp.json` and `.cursor-plugin/plugin.json` now ship inside the npm tarball, so an Agent-Plugins-compatible host — Cursor included — reads the server definition straight out of the installed package. Until this release those files lived in the repository only, and no npm consumer could obtain them.
 
@@ -274,12 +281,6 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 - **🔑 Your key, one click away.** Every tool response that carries an auth block now returns `claim_url` and `claim_hint` in the `_algovault` envelope — a direct link to keep the key you are already using, and a heads-up before you reach the cap.
 - **💵 Six-month pricing is machine-readable.** `GET /api/plans/public` gains `price_usd_6month` on every tier, so a client can render prepay pricing instead of hardcoding it.
 - **🤝 Enterprise is quoted, not published.** The plans endpoint now returns `null` for Enterprise price and limits rather than a fixed figure. No key was removed — the values are null.
-
-### v1.29.x highlights (recap)
-
-- **📊 The track record is a tool, not only a resource.** `get_track_record` returns the same verified aggregate as `performance://signal-performance`, so a harness that bridges tools but not resources can read it.
-- **✋ HOLD means HOLD.** When a book is not currently trading, the call returns HOLD instead of a direction, and the reasoning says so and says when it resumes.
-- **🔓 Allowances are machine-readable.** `GET /api/plans/public` returns the current free and paid call limits, unauthenticated.
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
