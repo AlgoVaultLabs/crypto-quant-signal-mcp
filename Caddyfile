@@ -8,6 +8,64 @@ api.algovault.com {
     # asserting a content-use policy over it would be a claim about content that does not exist.
     header Content-Signal "search=yes, ai-input=yes, ai-train=yes"
 
+    # OPS-NODE-SECURITY-FLOOR-W1 CH2 R3 — an access log of ENCODED requests only: a request is
+    # written when it carries a Content-Encoding header, and never otherwise. The owed read
+    # `inbound-encoding-14d` (ops/monitoring/owed-reads.json) reads it 14 days after install to
+    # decide whether gzip/deflate request bodies can be refused too (br already is, by the app).
+    #
+    # The apex log's privacy filter (client IP masked at write time to /24 v4, /48 v6; raw-IP
+    # headers deleted), plus a delete for every credential the app accepts — the query
+    # parameters key, api_key, t, code, state and session_id; the headers Authorization, Cookie,
+    # X-Algovault-Internal-Key, X-Payment, Payment-Signature and Stripe-Signature — and for
+    # Referer, which can carry a URL holding one of them. No `log_credentials` anywhere.
+    #
+    # `skip_log` is the Caddy v2.6 name (v2.8 renames it `log_skip`). `@unencoded` feeds it alone.
+    @unencoded header !Content-Encoding
+    skip_log @unencoded
+    log {
+        output file /var/log/caddy/api-encoded-requests.log {
+            roll_size 10MiB
+            roll_keep 10
+            roll_keep_for 720h
+        }
+        format filter {
+            wrap json
+            fields {
+                request>remote_ip ip_mask {
+                    ipv4 24
+                    ipv6 48
+                }
+                request>client_ip ip_mask {
+                    ipv4 24
+                    ipv6 48
+                }
+                request>headers>Cf-Connecting-Ip ip_mask {
+                    ipv4 24
+                    ipv6 48
+                }
+                request>headers>X-Forwarded-For delete
+                request>headers>True-Client-Ip delete
+                request>headers>X-Real-Ip delete
+                request>headers>Cf-Pseudo-Ipv4 delete
+                request>headers>Cookie delete
+                request>headers>Authorization delete
+                request>headers>X-Algovault-Internal-Key delete
+                request>headers>X-Payment delete
+                request>headers>Payment-Signature delete
+                request>headers>Stripe-Signature delete
+                request>headers>Referer delete
+                request>uri query {
+                    delete key
+                    delete api_key
+                    delete t
+                    delete code
+                    delete state
+                    delete session_id
+                }
+            }
+        }
+    }
+
     # GEO-AGENT-DISCOVERY-W2 R4 — api. had NO robots.txt (404 measured 2026-08-29), so crawlers
     # had no policy telling them to stop and were generating 405s against /mcp with GET. Served
     # from the committed landing/api-robots.txt via the same static idiom as /privacy below, so
