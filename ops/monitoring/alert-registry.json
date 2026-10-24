@@ -1376,6 +1376,46 @@
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-track_record_price_deviation-W{NEXT}",
       "notes": "OPS-SERVED-CANDLE-TRUTH-W1 CH2. The output-side guard for the serving-window defect class: daily 08:29Z, read-only on `signals`, per (venue, timeframe) the median |price_at_signal - same-coin cross-venue reference| / reference over the trailing 24 h, judged at n >= 3, FAIL above max(4 %, 10 x the fleet median). Fires when one pair FAILs 2 consecutive runs; a run that does not judge the pair neither advances nor resets its streak. Adopted: the canary calls --clear on every run that leaves no pair at the streak. announce_resolution FALSE. Calibrated 2026-10-22 on 30 days with its own instrument (--replay 30): every FAIL was BITGET 1d, the defect this wave fixed; no other pair FAILed once."
+    },
+    {
+      "alert_id": "NODE_RUNTIME_BEHIND",
+      "owner": "ops/monitoring/node-runtime-floor-canary.py",
+      "hosts": [
+        "aoe-1",
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "page_on": "change",
+      "page_on_change": {
+        "review_by": "2027-01-22",
+        "decided_by": "architect — OPS-NODE-SECURITY-FLOOR-W1-V2 spec CH2 R5 (\"page-on-change, key = newest security version, ≤ 2 pages per release (day 0; again only if still behind 72 h after the index `date`)\")",
+        "decided_at": "2026-10-24",
+        "reason": "A runtime below the floor stays below it on every daily run until someone ships the fix, so paging the LEVEL would repeat one known finding each cooldown. The actionable events are a new security release (behind:<floor>), the same one still unfixed 72 h after its release date (overdue:<floor>), and a runtime the registry does not know."
+      },
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-NODE_RUNTIME_BEHIND-W{NEXT}",
+      "notes": "OPS-NODE-SECURITY-FLOOR-W1 CH2 R5 (CVE-2026-111497): the FAIL page of node-runtime-floor-canary.py (daily; signal-1 measures and enumerates, aoe-1 enumerates). ALERT_KEYS = the run's finding keys: behind:<floor> and overdue:<floor> (still below 72 h after the release date) for a measured runtime; unregistered:<host>:<ref> for a Node binary, process, image or cron/systemd invocation with no node-runtime-registry.json row; line-mismatch:<id>:<major>; exemption-expired:<id>; floor-file:<version> and floor-file-revisit:<date> for the committed scripts/data/node-security-floor.json (signal-1 only). A FAIL that could not re-check a leg keeps that leg's previous keys (cap 100), so a flaky leg never re-pages a known finding. INDETERMINATE neither pages nor clears it; PASS --clears it. Fire site is a literal `[TG, \"NODE_RUNTIME_BEHIND\", \"CRITICAL_PERSISTENT\", \"-\"]` so scripts/check-alert-registry.mjs detects it by position. Body: one line per finding, then `Action: dispatch OPS-NODE-SECURITY-FLOOR-W{NEXT} via Cowork → Claude Code`. Resolution SILENT by the registry default."
+    },
+    {
+      "alert_id": "NODE_RUNTIME_FLOOR_INDETERMINATE",
+      "owner": "ops/monitoring/node-runtime-floor-canary.py",
+      "hosts": [
+        "aoe-1",
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "page_on": "change",
+      "page_on_change": {
+        "review_by": "2027-01-22",
+        "decided_by": "architect — OPS-NODE-SECURITY-FLOOR-W1-V2 spec CH2 R5 (\"INDETERMINATE pages after 3 consecutive days\")",
+        "decided_at": "2026-10-24",
+        "reason": "One unverifiable run (an index fetch that failed, a docker exec that timed out) is weather; three consecutive UTC days is a broken instrument. The streak's start date is the key, so a streak pages once however long it lasts."
+      },
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-NODE_RUNTIME_FLOOR_INDETERMINATE-W{NEXT}",
+      "notes": "OPS-NODE-SECURITY-FLOOR-W1 CH2 R5: pages when node-runtime-floor-canary.py has read INDETERMINATE on 3 consecutive UTC days; ALERT_KEYS since:<first INDETERMINATE date>. A PASS or a FAIL ends the streak and --clears it (a FAIL reports its unverifiable legs itself); days 1-2 of a streak --clear it as state hygiene. Fire site is a literal `[TG, \"NODE_RUNTIME_FLOOR_INDETERMINATE\", \"CRITICAL_PERSISTENT\", \"-\"]`. Body: the INDETERMINATE reasons, then `Action: dispatch OPS-NODE-RUNTIME-FLOOR-CANARY-W{NEXT} via Cowork → Claude Code`. Resolution SILENT by the registry default."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",

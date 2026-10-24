@@ -335,6 +335,18 @@ DECLARATIONS=(
   # it positively (`OWED_READ_REGISTRY … reads=0`, then OWED_READ_RUNNER_VERDICT=PASS), so a zero
   # is never silent. It lands WITH its consumer (Vacuity Guard 3 above).
   "owed-reads.json|reads|0|signal-1"
+  # ── added by OPS-NODE-SECURITY-FLOOR-W1 CH2 R5 ──
+  # The Node runtime consumer registry. Its ONLY reader is node-runtime-floor-canary.py, installed
+  # beside it on BOTH hosts — signal-1 measures and enumerates, aoe-1 enumerates — and aoe-1 has no
+  # checkout of this repo, so this sync is its only source. Both hosts by name (the
+  # detector-envelope row's form) rather than `*`: the list names the hosts that read it, so a
+  # future host is not declared a consumer by default.
+  # `runtimes` is live 14; 10 is a truncation refusal, not a target — a registry gutted below it
+  # would turn every dropped runtime into an UNREGISTERED page on the next run.
+  # THE PAIRING: node-runtime-registry.json is a DECLARATION (inert JSON, synced here) and the
+  # canary is an ARTIFACT (executable, installed by reviewed SSH and never by this script).
+  # It lands WITH its consumer, in one commit (Vacuity Guard 3 above).
+  "node-runtime-registry.json|runtimes|10|signal-1,aoe-1"
 )
 
 # Exactly one terminal token on stdout, plus — outside the hermetic suite — a durable record in

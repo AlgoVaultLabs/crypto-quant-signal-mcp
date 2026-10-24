@@ -1,0 +1,157 @@
+{
+  "_comment": [
+    "Consumer registry of every Node runtime AlgoVault operates (OPS-NODE-SECURITY-FLOOR-W1 CH2 R5).",
+    "Read by ops/monitoring/node-runtime-floor-canary.py on signal-1 and aoe-1: a Node binary, process, image or cron/systemd invocation with no row here pages NODE_RUNTIME_BEHIND as UNREGISTERED.",
+    "kind -> measure: container -> docker-exec (node -v in every replica) | host-binary -> exec-version (<path> -v) | image, ci-floating, dev -> none (registered, never measured on a host).",
+    "line is the Node major the row must stay on; a measured runtime on another major is LINE_MISMATCH. exempt {reason, revisit_by} stops measurement until revisit_by, then pages EXEMPTION_EXPIRED.",
+    "floor_check_host is the one host that compares the committed scripts/data/node-security-floor.json with the live index.",
+    "The ci-floating rows mirror every node-version line in .github/workflows/*.yml, and the container rows mirror docker-compose.yml's Node-built services; tests/unit/node-runtime-floor-canary.test.ts pins both."
+  ],
+  "floor_check_host": "signal-1",
+  "runtimes": [
+    {
+      "id": "signal-1-mcp-server",
+      "host": "signal-1",
+      "kind": "container",
+      "measure": "docker-exec",
+      "line": 24,
+      "match": {
+        "compose_project": "crypto-quant-signal-mcp",
+        "compose_service": "mcp-server"
+      }
+    },
+    {
+      "id": "signal-1-facilitator",
+      "host": "signal-1",
+      "kind": "container",
+      "measure": "docker-exec",
+      "line": 24,
+      "match": {
+        "compose_project": "crypto-quant-signal-mcp",
+        "compose_service": "facilitator"
+      }
+    },
+    {
+      "id": "signal-1-host-node",
+      "host": "signal-1",
+      "kind": "host-binary",
+      "measure": "exec-version",
+      "line": 24,
+      "path": "/usr/bin/node",
+      "note": "NodeSource nodejs package; /usr/bin/nodejs reaches it through /etc/alternatives. Runs the host-side .mjs monitors."
+    },
+    {
+      "id": "signal-1-image-node-24-alpine",
+      "host": "signal-1",
+      "kind": "image",
+      "measure": "none",
+      "line": 24,
+      "match": {
+        "image": "node:24-alpine"
+      },
+      "exempt": {
+        "reason": "build residue: the local node:24-alpine tag is the pre-W1 base image (Node 24.18, the same image ID as node:24.18-alpine3.24); nothing runs it, and a process, cron job or unit that did would be reported on its own",
+        "revisit_by": "2027-01-31"
+      }
+    },
+    {
+      "id": "signal-1-image-node-24.18-alpine3.24",
+      "host": "signal-1",
+      "kind": "image",
+      "measure": "none",
+      "line": 24,
+      "match": {
+        "image": "node:24.18-alpine3.24"
+      },
+      "exempt": {
+        "reason": "build residue: the pre-W1 FROM base of both Dockerfiles (Node 24.18, below the floor); nothing runs it, and a process, cron job or unit that did would be reported on its own",
+        "revisit_by": "2027-01-31"
+      }
+    },
+    {
+      "id": "aoe-1-bdir-harness",
+      "host": "aoe-1",
+      "kind": "image",
+      "measure": "none",
+      "line": 20,
+      "match": {
+        "image": "node:20-bookworm-slim"
+      },
+      "exempt": {
+        "reason": "Q7: the bdir-panel-readiness harness image, aoe-1's only Node; aoe-1 has no host node",
+        "revisit_by": "2027-01-31"
+      }
+    },
+    {
+      "id": "ci-deploy",
+      "host": "ci",
+      "kind": "ci-floating",
+      "measure": "none",
+      "line": 24,
+      "workflow": ".github/workflows/deploy.yml",
+      "node_version": "24"
+    },
+    {
+      "id": "ci-monitoring-schedules",
+      "host": "ci",
+      "kind": "ci-floating",
+      "measure": "none",
+      "line": 22,
+      "workflow": ".github/workflows/monitoring-schedules.yml",
+      "node_version": "22"
+    },
+    {
+      "id": "ci-postgres-lane",
+      "host": "ci",
+      "kind": "ci-floating",
+      "measure": "none",
+      "line": 24,
+      "workflow": ".github/workflows/postgres-lane.yml",
+      "node_version": "24"
+    },
+    {
+      "id": "ci-publish-lane-preverify",
+      "host": "ci",
+      "kind": "ci-floating",
+      "measure": "none",
+      "line": 24,
+      "workflow": ".github/workflows/publish-lane-preverify.yml",
+      "node_version": "24"
+    },
+    {
+      "id": "ci-publish-npm",
+      "host": "ci",
+      "kind": "ci-floating",
+      "measure": "none",
+      "line": 24,
+      "workflow": ".github/workflows/publish-npm.yml",
+      "node_version": "24"
+    },
+    {
+      "id": "ci-readme-snapshot-writeback",
+      "host": "ci",
+      "kind": "ci-floating",
+      "measure": "none",
+      "line": 24,
+      "workflow": ".github/workflows/readme-snapshot-writeback.yml",
+      "node_version": "24"
+    },
+    {
+      "id": "ci-release-knowledge",
+      "host": "ci",
+      "kind": "ci-floating",
+      "measure": "none",
+      "line": 24,
+      "workflow": ".github/workflows/release-knowledge.yml",
+      "node_version": "24"
+    },
+    {
+      "id": "mac-dev",
+      "host": "mac",
+      "kind": "dev",
+      "measure": "none",
+      "line": 24,
+      "note": "Mr.1's Mac: brew node@24, linked over node (Q9). Not on a monitored host, so never measured."
+    }
+  ]
+}

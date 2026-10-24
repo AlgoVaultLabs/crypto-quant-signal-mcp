@@ -1572,6 +1572,53 @@
       "cron_match": [
         "/opt/algovault-monitoring/stepup-readout.py"
       ]
+    },
+    {
+      "id": "node-runtime-floor-canary",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/node-runtime-floor-canary.py",
+      "container": "crypto-quant-signal-mcp-mcp-server-1 + crypto-quant-signal-mcp-facilitator-1",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "class": "safe-to-kill",
+      "reason": "A read-only daily probe: a pruned disk walk, /proc, the crontabs and systemd units, the local image list, `node -v` in every mcp-server and facilitator replica through `docker exec`, and two HTTPS reads (the Node release index, the committed floor file). It writes only its own state file and one canary_result_log line. A deploy that restarts a replica mid-`docker exec` makes that run INDETERMINATE, which pages only on the third consecutive day; a reboot that kills the process costs that day's record, and the next fire re-derives everything from live state.",
+      "max_runtime_s": 11,
+      "runtime_instrument": "bash `time` real over three `--dry-run` passes of the scratch copy on signal-1, 2026-10-24 19:46:28Z, load 0.98: 8.168 s (cold page cache) / 1.475 s / 1.412 s. Recorded value = the max x 1.25, rounded up.",
+      "cron_lines": 0,
+      "cron": "31 10 * * *",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-10-24",
+      "notes": "OPS-NODE-SECURITY-FLOOR-W1 CH2 R5; registered with its inventory row before the cron line exists (installed after CH2 R6 moves /usr/bin/node to 24.22.1). cron_lines is 0 until that line exists, because the field is a live fan-out reading and the enumeration test caps the declared sum at the measured population; the install commit sets it to 1 and re-derives _enumeration[\"signal-1\"].reboot from the live crontab, as OPS-OWED-READ-RUNNER-W1 R2 did for its line.",
+      "cron_match": [
+        "/opt/algovault-monitoring/node-runtime-floor-canary.py"
+      ]
+    },
+    {
+      "id": "aoe-node-runtime-floor-canary",
+      "host": "aoe-1",
+      "events": [
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/node-runtime-floor-canary.py",
+      "container": "n/a — host process; it lists local images but execs into no container",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "class": "safe-to-kill",
+      "reason": "Enumeration only on aoe-1: a read-only walk of the disk, /proc, the crontabs, the systemd units and the local image list; nothing is measured and nothing is fetched. It writes only its own state file and one canary_result_log line, so a reboot-induced kill costs that day's record and the next fire re-derives it.",
+      "max_runtime_s": 1,
+      "runtime_instrument": "bash `time` real over three `--dry-run` passes of the scratch copy on aoe-1, 2026-10-24 19:46:14Z, load 0.19: 0.733 / 0.606 / 0.570 s. Recorded value = the max x 1.25, rounded up.",
+      "cron_lines": 0,
+      "cron": "46 7 * * *",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-10-24",
+      "notes": "OPS-NODE-SECURITY-FLOOR-W1 CH2 R5; registered with its inventory row before the cron line exists (installed right after this commit lands). cron_lines is 0 until that line exists, because the field is a live fan-out reading and the enumeration test caps the declared sum at the measured population; the install commit sets it to 1 and re-derives _enumeration[\"aoe-1\"].reboot from the live crontab, as OPS-OWED-READ-RUNNER-W1 R2 did for its line.",
+      "cron_match": [
+        "/opt/algovault-monitoring/node-runtime-floor-canary.py"
+      ]
     }
   ],
   "exclusions": [
