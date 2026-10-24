@@ -229,6 +229,7 @@ import { capabilityFromInitialize, recordHandshake } from './lib/lifecycle/censu
 import { renderSiteNav } from './lib/site-nav.js';
 import { renderThemeBlock } from './lib/site-theme.js';
 import { getTopAssetsByOI } from './lib/oi-ranking.js';
+import { refuseEncodedBodiesFromEnv } from './lib/refuse-encoded-bodies.js';
 
 /** Timing-safe string comparison to prevent side-channel attacks on admin key. */
 function safeCompare(a: string, b: string): boolean {
@@ -839,6 +840,7 @@ async function startHttp() {
 
   const app = express();
   app.set('trust proxy', 1); // Trust Caddy reverse proxy for req.secure, req.ip
+  app.use(refuseEncodedBodiesFromEnv()); // OPS-NODE-SECURITY-FLOOR-W1: first, before any body is read
   const port = parseInt(process.env.PORT || '3000', 10);
 
   // CORS — restrict to same-origin + algovault.com

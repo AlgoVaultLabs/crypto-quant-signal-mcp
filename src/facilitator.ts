@@ -25,6 +25,7 @@ import { x402Facilitator } from '@x402/core/facilitator';
 import { toFacilitatorEvmSigner } from '@x402/evm';
 // Facilitator-side ExactEvmScheme (different from the client-side one)
 import { ExactEvmScheme } from '@x402/evm/exact/facilitator';
+import { refuseEncodedBodiesFromEnv } from './lib/refuse-encoded-bodies.js';
 
 const PORT = parseInt(process.env.FACILITATOR_PORT || '4022', 10);
 const PRIVATE_KEY = process.env.FACILITATOR_PRIVATE_KEY;
@@ -69,6 +70,7 @@ facilitator.onSettleFailure(async (ctx) => {
 // ── HTTP Server ──
 
 const app = express();
+app.use(refuseEncodedBodiesFromEnv()); // OPS-NODE-SECURITY-FLOOR-W1: first, before any body is read
 app.use(express.json());
 
 app.post('/verify', async (req, res) => {
