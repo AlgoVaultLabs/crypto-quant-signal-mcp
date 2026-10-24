@@ -2025,7 +2025,11 @@
         "OWED_READ_FAIL"
       ],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
-      "notes": "THE ONE SCHEDULE for pre-registered time-gated reads (retires the 'read X at time T' leg that waited on a human re-dispatch — measured: OPS-ALARM-OWNER-DERIVATION-W1's 48 h read recorded 5.3 days late). Hourly, flock'd: for each owed-reads.json row NOT_DUE / DONE (terminal marker in /var/lib/algovault-monitoring/owed-reads) / EXPIRED (ONE INDETERMINATE record, expired=true, no page) / DUE (runs the row's owed-read-<slug>.py beside it under timeout_s in its own process group; exactly one OWED_READ_VERDICT and one OWED_READ_METRICS line, else INDETERMINATE). Records via canary_result_log ('owed_read'); PASS/FAIL write the marker ONLY after the record landed; INDETERMINATE retries until expiry. Pages only OWED_READ_FAIL (page-on-change, key = read id). Own token OWED_READ_RUNNER_VERDICT=PASS|FAIL|INDETERMINATE due= not_due= done= expired= (0/1/3): FAIL = a due row's script is not installed; INDETERMINATE = registry unreadable, an invalid row, or a record/marker that did not land. --validate, --sandbox DIR (recorder, markers and wrapper redirected; --now/--only/--registry/--override honoured only there), --self-test (hermetic + the real sibling send_telegram.sh KEY_RE, alert-registry row and registry). Imports canary_result_log.py beside it."
+      "notes": "THE ONE SCHEDULE for pre-registered time-gated reads (retires the 'read X at time T' leg that waited on a human re-dispatch — measured: OPS-ALARM-OWNER-DERIVATION-W1's 48 h read recorded 5.3 days late). Hourly, flock'd: for each owed-reads.json row NOT_DUE / DONE (terminal marker in /var/lib/algovault-monitoring/owed-reads) / EXPIRED (ONE INDETERMINATE record, expired=true, no page) / DUE (runs the row's owed-read-<slug>.py beside it under timeout_s in its own process group; exactly one OWED_READ_VERDICT and one OWED_READ_METRICS line, else INDETERMINATE). Records via canary_result_log ('owed_read'); PASS/FAIL write the marker ONLY after the record landed; INDETERMINATE retries until expiry. Pages only OWED_READ_FAIL (page-on-change, key = read id). Own token OWED_READ_RUNNER_VERDICT=PASS|FAIL|INDETERMINATE due= not_due= done= expired= (0/1/3): FAIL = a due row's script is not installed; INDETERMINATE = registry unreadable, an invalid row, or a record/marker that did not land. --validate, --sandbox DIR (recorder, markers and wrapper redirected; --now/--only/--registry/--override honoured only there), --self-test (hermetic + the real sibling send_telegram.sh KEY_RE, alert-registry row and registry). Imports canary_result_log.py beside it.",
+      "first_install": {
+        "at": "20261022T094417Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "census-lens",
@@ -2046,7 +2050,11 @@
       "sha256": "ef11e05b5a4fafee64ca7547bca1b976c6758a21f17246e3662ad3fd5b44432d",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
-      "notes": "Runs a producer's census SQL VERBATIM over a cohort by narrowing the RELATION, never editing the SQL: `WITH signals AS NOT MATERIALIZED (SELECT * FROM public.signals WHERE <venue>||'|'||coin IN (...)) <sql>`. NOT MATERIALIZED is load-bearing (PG 16 materializes a CTE referenced twice — the census is — into a work_mem-spilling tuplestore); plan_guard_sql() EXPLAINs every lensed statement inside the read's transaction and RAISEs OWED_READ_PLAN_GUARD on any CTE Scan, so under ON_ERROR_STOP a materializing plan aborts before it executes (proven live on signal-1 2026-10-22: 4 CTE Scan nodes -> rc 3). parity_problems(): lens(ALL) must equal unlensed and lens(NONE) must be zeros — the runtime proof that no reference escaped. Refuses SQL beginning with WITH, non-SELECT, ';', '$', an unqualified relation, and any key outside <VENUE>|<COIN>. VENUE_EXPR is a copy of src/lib/venue-candle-reach.ts SQL_VENUE_EXPR, asserted against the producer's emitted coin_sql on every read run. --self-test includes a SQLite fixture with a nested scalar sub-select."
+      "notes": "Runs a producer's census SQL VERBATIM over a cohort by narrowing the RELATION, never editing the SQL: `WITH signals AS NOT MATERIALIZED (SELECT * FROM public.signals WHERE <venue>||'|'||coin IN (...)) <sql>`. NOT MATERIALIZED is load-bearing (PG 16 materializes a CTE referenced twice — the census is — into a work_mem-spilling tuplestore); plan_guard_sql() EXPLAINs every lensed statement inside the read's transaction and RAISEs OWED_READ_PLAN_GUARD on any CTE Scan, so under ON_ERROR_STOP a materializing plan aborts before it executes (proven live on signal-1 2026-10-22: 4 CTE Scan nodes -> rc 3). parity_problems(): lens(ALL) must equal unlensed and lens(NONE) must be zeros — the runtime proof that no reference escaped. Refuses SQL beginning with WITH, non-SELECT, ';', '$', an unqualified relation, and any key outside <VENUE>|<COIN>. VENUE_EXPR is a copy of src/lib/venue-candle-reach.ts SQL_VENUE_EXPR, asserted against the producer's emitted coin_sql on every read run. --self-test includes a SQLite fixture with a nested scalar sub-select.",
+      "first_install": {
+        "at": "20261022T094358Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "owed-read-candle-request-24h",
@@ -2067,7 +2075,11 @@
       "sha256": "b3bd9ac0b6a87e17770a617608765faebc2d99d02bba7784c8f4132aab76ba7f",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
-      "notes": "The first owed read (registry id candle-request-24h, owner OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1, deploy_at 2026-10-18T05:02:56Z). Pre-registered constants live HERE; the registry row's anchors must equal them or the read is INDETERMINATE (a synced declaration can select this read, never retune it). ONE `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` transaction as aoe_readonly (psql identity asserted equal to the canary's PSQL_DEFAULT): plan guards on all four lensed statements first, then census unlensed / lens(ALL) / lens(NONE) / lens(cohort) and the L2 per-coin counts. Legs: L1 producer-log lines after deploy_at naming a cohort coin (HL API 500 backfill errors, Blocking HL:<coin>), rotation chain streamed newest-first, coverage CONTIGUOUS back to deploy_at + 10 min; L2 FAIL iff a coin has retried_unfilled >= 1 and fills = 0; L3 lensed workable_reachable via the canary's own arm_reachability() <= 26. Label-blind (cardinalities, timestamps, IS NULL; `outcome:` lines dropped first). The l3_ceiling sandbox override is honoured ONLY under --sandbox (R0.7 forced-FAIL proof). Imports outcome-backfill-freshness.py (by path) and census_lens.py beside it."
+      "notes": "The first owed read (registry id candle-request-24h, owner OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1, deploy_at 2026-10-18T05:02:56Z). Pre-registered constants live HERE; the registry row's anchors must equal them or the read is INDETERMINATE (a synced declaration can select this read, never retune it). ONE `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` transaction as aoe_readonly (psql identity asserted equal to the canary's PSQL_DEFAULT): plan guards on all four lensed statements first, then census unlensed / lens(ALL) / lens(NONE) / lens(cohort) and the L2 per-coin counts. Legs: L1 producer-log lines after deploy_at naming a cohort coin (HL API 500 backfill errors, Blocking HL:<coin>), rotation chain streamed newest-first, coverage CONTIGUOUS back to deploy_at + 10 min; L2 FAIL iff a coin has retried_unfilled >= 1 and fills = 0; L3 lensed workable_reachable via the canary's own arm_reachability() <= 26. Label-blind (cardinalities, timestamps, IS NULL; `outcome:` lines dropped first). The l3_ceiling sandbox override is honoured ONLY under --sandbox (R0.7 forced-FAIL proof). Imports outcome-backfill-freshness.py (by path) and census_lens.py beside it.",
+      "first_install": {
+        "at": "20261022T094408Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "owed-reads-registry",
@@ -2085,7 +2097,7 @@
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "pending",
-      "sha256": "a04c25e5358a33d48c81c16c4581b1f0483ae3bd36d01ee94fcae589d8122cbe",
+      "sha256": "37ba2dd3c4ff1b09a18d34c8352739a5e426a7fa817ee97580d8883581d90b5f",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
       "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence."
