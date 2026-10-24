@@ -2082,6 +2082,27 @@
       }
     },
     {
+      "id": "owed-read-inbound-encoding-14d",
+      "artifact": "ops/monitoring/owed-read-inbound-encoding-14d.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/owed-read-inbound-encoding-14d.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/owed-read-inbound-encoding-14d.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:owed-read-runner",
+      "install_state": "pending",
+      "sha256": "f8833d982ef7d19e7fdacc2c89c24a63d45b6af0c9b2c3ec29761992b9eebf9e",
+      "alert_ids": [],
+      "owner_wave": "OPS-NODE-SECURITY-FLOOR-W1",
+      "notes": "The second owed read (registry id inbound-encoding-14d, owner OPS-NODE-SECURITY-FLOOR-W1, install_at 1792860425 = 2026-10-24T16:47:05Z, the `systemctl reload caddy` that installed the api.algovault.com encoded-requests log; positive control UA algovault-nsf-w1-control/97e20b4c). Pre-registered constants live HERE; the registry row's anchors must equal them or the read is INDETERMINATE (a synced declaration can select this read, never retune it). Rule: a sender = a (route, client /24) pair with >= 3 gzip/deflate-labelled requests answered 2xx on >= 2 distinct UTC days; PASS = none (R-FLIP may land), FAIL = the senders with their UA families (REFUSE_ENCODED_BODIES_MODE stays brotli). Legs: senders; coverage = the rotation chain read newest-first, each file whole, back to the file holding the control line (a gap or a pre-install line -> INDETERMINATE); logger = the RUNNING Caddy config (one read-only GET of the 127.0.0.1:2019 admin API) still routes the api vhost log to this file through the regexp URI filter. min_requests / min_days / status_range sandbox overrides are honoured ONLY under --sandbox. Stdlib only."
+    },
+    {
       "id": "owed-reads-registry",
       "artifact": "ops/monitoring/owed-reads.json",
       "kind": "config",
