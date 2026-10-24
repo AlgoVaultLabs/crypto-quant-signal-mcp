@@ -2097,7 +2097,7 @@
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "pending",
-      "sha256": "37ba2dd3c4ff1b09a18d34c8352739a5e426a7fa817ee97580d8883581d90b5f",
+      "sha256": "08173dd57296587a77fff62d2b8c6e7d292c2ea9136b079f7aa8555b2f38cc60",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
       "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence."

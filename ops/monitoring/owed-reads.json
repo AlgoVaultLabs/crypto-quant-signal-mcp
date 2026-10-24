@@ -12,7 +12,7 @@
       "id": "candle-request-24h",
       "wave": "OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1",
       "not_before": "2026-10-19T06:00:00Z",
-      "expires_at": "2026-10-27T09:00:00Z",
+      "expires_at": "2026-10-27T12:00:00Z",
       "script": "owed-read-candle-request-24h.py",
       "timeout_s": 600,
       "anchors": {
@@ -41,7 +41,7 @@
         "l3_ceiling": 26
       },
       "criteria": "Did CH1's HL candle-request fix catch up its 8-coin cohort? L1: 0 post-deploy cohort HL API 500 / Blocking HL lines; L2: no coin retried-and-unfilled with 0 fills; L3: cohort workable_reachable <= 26. One read-only snapshot; lens parity + plan guard, else INDETERMINATE.",
-      "_expires_at_rule": "R2 install time + 72 h, rounded up to the hour (OPS-OWED-READ-RUNNER-W1 §Rulings); the original 2026-10-21T06:00:00Z lapsed while the R0 rulings waited; the first committed value 2026-10-25T11:00:00Z assumed a 2026-10-22T10:xx install that slipped to 2026-10-24T08:xx."
+      "_expires_at_rule": "R2 install time + 72 h, rounded up to the hour (OPS-OWED-READ-RUNNER-W1 §Rulings); the original 2026-10-21T06:00:00Z lapsed while the R0 rulings waited; the first committed value 2026-10-25T11:00:00Z assumed a 2026-10-22T10:xx install, and the second (2026-10-27T09:00:00Z) a 2026-10-24T08:xx one; the install ran in the 2026-10-24T11:xx hour."
     }
   ]
 }
