@@ -5,6 +5,21 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.0] - 2026-10-24
+
+### Added
+- `scan_market_regimes` — screens a whole venue by market regime in one call. It returns every coin whose regime matches your filter (TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE) with confidence, trend strength, ADX, volatility ratio and how long the regime has held. Filters: regime, minimum confidence, asset class, liquidity floor, regime age and a watchlist of up to 200 symbols, plus the same `rankBy` lenses as `scan_trade_calls`. Sort by confidence, by the newest regime change or by lens rank; page with `limit` and `offset`. Billing is one call per returned row, at least one per request; coins that don't match, and symbols the venue doesn't list, are free. A venue or timeframe it can't serve right now is refused with the alternatives and isn't billed. The screener is served from the hosted endpoint; a local install lists it and refuses the call, unbilled, with a pointer there. Documented on /docs and the tools page, and named in `llms.txt`.
+- `GET /api/plans/public` gains `free.keyless.monthly_calls` (the allowance without a key) and `free.telegram` (`monthly_alerts`, `daily_alerts` — the Telegram bot's own free allowance, counted in delivered alerts). Both are additive.
+
+### Changed
+- One free-tier allowance changed: 20 calls a month without a key; a free key gives 200 (up to 100/day).
+
+### Fixed
+- On the hosted endpoint, `search_knowledge` and `chat_knowledge` now answer from the server's own tool list, so they can name every current tool and its parameters, `scan_market_regimes` included.
+- A local install now refuses `chat_knowledge`, unbilled, with a pointer to the hosted endpoint, instead of returning a database error.
+- The desktop-extension API-key field no longer describes a retired free-tier restriction.
+- Each card on the integrations index is a single link again; none nests a link inside another.
+
 ## [1.31.1] - 2026-10-04
 
 ### Changed
