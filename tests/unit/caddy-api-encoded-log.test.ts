@@ -5,9 +5,10 @@
  *      `@unencoded header !Content-Encoding` feeds `skip_log`, and nothing else uses it.
  *   2. Its privacy filter is never weaker than the apex access log's: every field the apex
  *      filter masks or deletes, this one masks or deletes the same way.
- *   3. Every credential the app accepts is deleted before a line is written: the query
- *      parameters (each one read by src/ — so the list is grounded, not invented) and the
- *      credential headers. `log_credentials` appears nowhere in the file.
+ *   3. No credential reaches a line: the URI is written without its query string (where every
+ *      credential parameter src/ reads would sit) and without the capability token of every
+ *      route that carries one in its path; the credential headers are deleted.
+ *      `log_credentials` appears nowhere in the file.
  *   4. The roll settings the owed read `inbound-encoding-14d` was sized against.
  *
  * The parser is deliberately small: it reads the brace structure of this one file, and its own
@@ -133,17 +134,35 @@ describe('api.algovault.com encoded-requests log', () => {
     expect(children(children(apiLog!.body).find((c) => c.line === 'format filter {')!.body)[0].line).toBe('wrap json');
   });
 
-  it('deletes every credential query parameter, each one a parameter src/ reads', () => {
-    const QUERY_CREDENTIALS = ['key', 'api_key', 't', 'code', 'state', 'session_id'];
+  it('writes the URI without its query string and without any capability token in its path', () => {
     const uri = filterFields(apiLog!.body).get('request>uri') ?? '';
-    expect(uri.startsWith('query ')).toBe(true);
-    const deleted = [...uri.matchAll(/\bdelete (\S+)/g)].map((m) => m[1]);
-    expect(deleted).toEqual(QUERY_CREDENTIALS);
+    const filter = /^regexp (\S+) (\S+)$/.exec(uri);
+    expect(filter, uri).not.toBeNull();
+    // What Caddy's regexp filter does — Go's Regexp.ReplaceAllString: every leftmost match is
+    // replaced and `$1` expands to group 1, or to '' where that group took no part. JS's
+    // String.replace with a global RegExp does the same for this pattern.
+    const scrub = (u: string): string => u.replace(new RegExp(filter![1], 'g'), filter![2]);
     const src = fs.readdirSync(path.join(ROOT, 'src'), { recursive: true, encoding: 'utf8' })
       .filter((f) => f.endsWith('.ts'))
       .map((f) => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8'))
       .join('\n');
+
+    // Every credential query parameter src/ reads goes with the query string.
+    const QUERY_CREDENTIALS = ['key', 'api_key', 't', 'code', 'state', 'session_id'];
     for (const p of QUERY_CREDENTIALS) expect(src, `req.query.${p}`).toMatch(new RegExp(`req\\.query\\.${p}\\b`));
+    expect(scrub(`/api/search?${QUERY_CREDENTIALS.map((p) => `${p}=x`).join('&')}`)).toBe('/api/search');
+    expect(scrub('/auth/github/callback?code=x&state=y')).toBe('/auth/github/callback');
+    expect(scrub('/mcp')).toBe('/mcp');
+
+    // Every route with a capability parameter in its PATH has it scrubbed; a new one fails here.
+    const tokenRoutes = [...src.matchAll(/app\.(?:get|post|put|patch|delete|all)\('([^']*:(?:token|key|secret|sig|signature)\b[^']*)'/g)]
+      .map((m) => m[1]);
+    expect(tokenRoutes).toEqual(['/email/unsubscribe/:token', '/email/unsubscribe/:token']);
+    for (const route of tokenRoutes) {
+      const sent = route.replace(/:(?:token|key|secret|sig|signature)\b/g, 'dGVzdA.c2ln') + '?x=1';
+      expect(scrub(sent), route).not.toContain('dGVzdA.c2ln');
+    }
+    expect(scrub('/email/unsubscribe/dGVzdA.c2ln?x=1')).toBe('/email/unsubscribe/');
   });
 
   it('deletes every credential header and the Referer that can carry one', () => {

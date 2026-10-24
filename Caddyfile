@@ -14,10 +14,12 @@ api.algovault.com {
     # decide whether gzip/deflate request bodies can be refused too (br already is, by the app).
     #
     # The apex log's privacy filter (client IP masked at write time to /24 v4, /48 v6; raw-IP
-    # headers deleted), plus a delete for every credential the app accepts — the query
-    # parameters key, api_key, t, code, state and session_id; the headers Authorization, Cookie,
-    # X-Algovault-Internal-Key, X-Payment, Payment-Signature and Stripe-Signature — and for
-    # Referer, which can carry a URL holding one of them. No `log_credentials` anywhere.
+    # headers deleted), plus: the URI is written WITHOUT its query string (every credential
+    # parameter the app reads — key, api_key, t, code, state, session_id — and any added later)
+    # and without the unsubscribe capability token in /email/unsubscribe/<token>; the credential
+    # headers Authorization, Cookie, X-Algovault-Internal-Key, X-Payment, Payment-Signature and
+    # Stripe-Signature are deleted, and so is Referer, which can carry a URL holding one of them.
+    # No `log_credentials` anywhere.
     #
     # `skip_log` is the Caddy v2.6 name (v2.8 renames it `log_skip`). `@unencoded` feeds it alone.
     @unencoded header !Content-Encoding
@@ -54,14 +56,7 @@ api.algovault.com {
                 request>headers>Payment-Signature delete
                 request>headers>Stripe-Signature delete
                 request>headers>Referer delete
-                request>uri query {
-                    delete key
-                    delete api_key
-                    delete t
-                    delete code
-                    delete state
-                    delete session_id
-                }
+                request>uri regexp (/email/unsubscribe/)[^/?]+|[?].* $1
             }
         }
     }
