@@ -4,13 +4,15 @@
  * SQLite temp-HOME harness. scanTradeCalls is spied (the scanner is tested
  * elsewhere; here we assert the SCHEDULER's orchestration — due detection, scan
  * dedup, idempotent enqueue per cadence bucket) and deliverOne is driven with an
- * injected fetch + benign resolver so the quota charge (max(1, non-HOLD)) is
+ * injected egress + benign resolver so the quota charge (max(1, non-HOLD)) is
  * deterministic.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+type EgressImpl = typeof import('../src/lib/webhook-ssrf.js').egressPost;
 
 const ORIGINAL = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, DATABASE_URL: process.env.DATABASE_URL };
 
@@ -139,8 +141,8 @@ describe('CH2 — scan_digest delivery charges the scanner rule max(1, non-HOLD)
     };
 
     const before = license.checkQuotaByKey('av_starter_q', 'starter').used;
-    const fetchImpl = (async () => ({ ok: true, status: 200 })) as unknown as typeof fetch;
-    const result = await delivery.deliverOne(row, { fetchImpl, lookup: okLookup, sleep: noopSleep });
+    const egressImpl = (async () => ({ ok: true, status: 200 })) as unknown as EgressImpl;
+    const result = await delivery.deliverOne(row, { egressImpl, lookup: okLookup, sleep: noopSleep });
     expect(result.status).toBe('delivered');
     const after = license.checkQuotaByKey('av_starter_q', 'starter').used;
     expect(after - before).toBe(3);
@@ -156,8 +158,8 @@ describe('CH2 — scan_digest delivery charges the scanner rule max(1, non-HOLD)
       attempts: 0, last_attempt_at: null, response_code: null, created_at: 1_700_003_600,
     };
     const before = license.checkQuotaByKey('av_starter_sig1', 'starter').used;
-    const fetchImpl = (async () => ({ ok: true, status: 200 })) as unknown as typeof fetch;
-    await delivery.deliverOne(row, { fetchImpl, lookup: okLookup, sleep: noopSleep });
+    const egressImpl = (async () => ({ ok: true, status: 200 })) as unknown as EgressImpl;
+    await delivery.deliverOne(row, { egressImpl, lookup: okLookup, sleep: noopSleep });
     const after = license.checkQuotaByKey('av_starter_sig1', 'starter').used;
     expect(after - before).toBe(1);
   });

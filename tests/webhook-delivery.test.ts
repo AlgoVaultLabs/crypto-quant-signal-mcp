@@ -1,7 +1,7 @@
 /**
  * CALL-REGIME-WEBHOOK-LAYER-W1 C4 — delivery worker (HMAC + retry + auto-disable).
  *
- * SQLite temp-HOME harness. fetch is mocked (injected fetchImpl) so we assert
+ * SQLite temp-HOME harness. egress is mocked (injected egressImpl) so we assert
  * on the captured request (URL, headers, body, HMAC) deterministically; sleep
  * is a noop so backoff is instant.
  */
@@ -9,13 +9,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+type EgressImpl = typeof import('../src/lib/webhook-ssrf.js').egressPost;
 import crypto from 'node:crypto';
 import { FREE_MONTHLY_CALLS } from '../src/lib/plans.js';
 
 const ORIGINAL = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, DATABASE_URL: process.env.DATABASE_URL, SSRF: process.env.WEBHOOK_SSRF_ALLOW_LOOPBACK };
 
 // WEBHOOK-HARDENING-W1: inject a benign public-IP resolver so the SSRF egress
-// guard passes for the mock-fetch fake hostnames (no real DNS) — keeps these
+// guard passes for the mock-egress fake hostnames (no real DNS) — keeps these
 // tests hermetic. (The api suite uses a real loopback sink + the seam instead.)
 const okLookup = async (): Promise<{ address: string; family: number }[]> => [{ address: '93.184.216.34', family: 4 }];
 
@@ -61,16 +63,16 @@ afterEach(() => {
   if (ORIGINAL.DATABASE_URL !== undefined) process.env.DATABASE_URL = ORIGINAL.DATABASE_URL;
 });
 
-// Mock fetch that returns a programmed sequence of statuses and captures calls.
-function mockFetch(statuses: number[]) {
+// Mock egress that returns a programmed sequence of statuses and captures calls.
+function mockEgress(statuses: number[]) {
   const calls: { url: string; headers: Record<string, string>; body: string }[] = [];
   let i = 0;
-  const impl = (async (url: string, init: { headers: Record<string, string>; body: string }) => {
-    calls.push({ url: String(url), headers: init.headers, body: init.body });
+  const impl = (async (url: string, opts: { headers: Record<string, string>; body: string }) => {
+    calls.push({ url: String(url), headers: opts.headers, body: opts.body });
     const status = statuses[Math.min(i, statuses.length - 1)];
     i += 1;
-    return { ok: status >= 200 && status < 300, status } as Response;
-  }) as unknown as typeof fetch;
+    return { ok: status >= 200 && status < 300, status };
+  }) as unknown as EgressImpl;
   return { impl, calls };
 }
 
@@ -120,8 +122,8 @@ describe('deliverOne: delivery, retry, idempotency, auto-disable', () => {
 
   it('200 → delivered; sink receives POST with valid HMAC + headers; success resets failures', async () => {
     const { sub, d } = await seedDelivery();
-    const { impl, calls } = mockFetch([200]);
-    const res = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup });
+    const { impl, calls } = mockEgress([200]);
+    const res = await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup });
 
     expect(res.status).toBe('delivered');
     expect(res.attempts).toBe(1);
@@ -148,8 +150,8 @@ describe('deliverOne: delivery, retry, idempotency, auto-disable', () => {
 
   it('500-then-200 → retries and ends delivered (attempts=2)', async () => {
     const { d } = await seedDelivery();
-    const { impl, calls } = mockFetch([500, 200]);
-    const res = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup });
+    const { impl, calls } = mockEgress([500, 200]);
+    const res = await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup });
     expect(res.status).toBe('delivered');
     expect(res.attempts).toBe(2);
     expect(calls.length).toBe(2);
@@ -158,25 +160,25 @@ describe('deliverOne: delivery, retry, idempotency, auto-disable', () => {
   it('all 500 → failed after maxAttempts; not re-delivered on a second drain', async () => {
     const { d } = await seedDelivery();
     const cfg = { maxAttempts: 3, timeoutMs: 1000, disableAfter: 20, baseBackoffMs: 0 };
-    const { impl, calls } = mockFetch([500]);
-    const res = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup }, cfg);
+    const { impl, calls } = mockEgress([500]);
+    const res = await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup }, cfg);
     expect(res.status).toBe('failed');
     expect(res.attempts).toBe(3);
     expect(res.responseCode).toBe(500);
     expect(res.suggested_action).toBeTruthy();
     // Idempotency: a subsequent drain finds nothing pending (status='failed').
     const before = calls.length;
-    const drained = await delivery.deliverPending(10, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup }, cfg);
+    const drained = await delivery.deliverPending(10, { egressImpl: impl, sleep: noopSleep, lookup: okLookup }, cfg);
     expect(drained.length).toBe(0);
     expect(calls.length).toBe(before);
   });
 
-  it('network error / timeout (fetch throws) is treated as a failed attempt and retried', async () => {
+  it('network error / timeout (egress throws) is treated as a failed attempt and retried', async () => {
     const { d } = await seedDelivery();
     const cfg = { maxAttempts: 2, timeoutMs: 1000, disableAfter: 20, baseBackoffMs: 0 };
     let n = 0;
-    const impl = (async () => { n += 1; throw new Error('ECONNRESET'); }) as unknown as typeof fetch;
-    const res = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup }, cfg);
+    const impl = (async () => { n += 1; throw new Error('ECONNRESET'); }) as unknown as EgressImpl;
+    const res = await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup }, cfg);
     expect(res.status).toBe('failed');
     expect(res.attempts).toBe(2);
     expect(res.responseCode).toBeNull();
@@ -186,17 +188,17 @@ describe('deliverOne: delivery, retry, idempotency, auto-disable', () => {
   it('subscription auto-disables after the consecutive-failure threshold', async () => {
     const sub = await store.createSubscription({ url: 'https://sink/h', events: ['trade_call'], tier: 'free', ownerKey: 'free:y' });
     const cfg = { maxAttempts: 1, timeoutMs: 1000, disableAfter: 2, baseBackoffMs: 0 };
-    const { impl } = mockFetch([500]);
+    const { impl } = mockEgress([500]);
 
     // Two distinct failing deliveries → two consecutive failures → disabled on the 2nd.
     const e1 = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:a', eventType: 'trade_call', eventData: eventData() });
     const d1 = (await store.pendingDeliveries(10)).find(x => x.id === e1.deliveryId)!;
-    const r1 = await delivery.deliverOne(d1, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup }, cfg);
+    const r1 = await delivery.deliverOne(d1, { egressImpl: impl, sleep: noopSleep, lookup: okLookup }, cfg);
     expect(r1.subscriptionDisabled).toBe(false);
 
     const e2 = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:b', eventType: 'trade_call', eventData: eventData() });
     const d2 = (await store.pendingDeliveries(10)).find(x => x.id === e2.deliveryId)!;
-    const r2 = await delivery.deliverOne(d2, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup }, cfg);
+    const r2 = await delivery.deliverOne(d2, { egressImpl: impl, sleep: noopSleep, lookup: okLookup }, cfg);
     expect(r2.subscriptionDisabled).toBe(true);
     expect(r2.suggested_action).toMatch(/auto-disabled/);
 
@@ -208,8 +210,8 @@ describe('deliverOne: delivery, retry, idempotency, auto-disable', () => {
     await store.bumpFailureAndMaybeDisable(sub.id, 1); // force-disable
     const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:c', eventType: 'trade_call', eventData: eventData() });
     const d = (await store.pendingDeliveries(10)).find(x => x.id === deliveryId)!;
-    const { impl, calls } = mockFetch([200]);
-    const res = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup });
+    const { impl, calls } = mockEgress([200]);
+    const res = await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup });
     expect(res.status).toBe('dead');
     expect(calls.length).toBe(0); // no HTTP attempt for a disabled sub
   });
@@ -228,8 +230,8 @@ describe('quota gate', () => {
     const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:x', eventType: 'trade_call', eventData: eventData() });
     const d = (await store.pendingDeliveries(10)).find(x => x.id === deliveryId)!;
 
-    const { impl, calls } = mockFetch([200]);
-    const res = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup });
+    const { impl, calls } = mockEgress([200]);
+    const res = await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup });
     expect(res.status).toBe('pending');         // paused
     expect(calls.length).toBe(0);                // no HTTP attempt
     expect(res.suggested_action).toMatch(/quota exhausted/);
@@ -240,7 +242,7 @@ describe('quota gate', () => {
     const e2 = await store.enqueueDelivery({ subscriptionId: ok.id, eventId: 'call:y', eventType: 'trade_call', eventData: eventData() });
     const d2 = (await store.pendingDeliveries(10)).find(x => x.id === e2.deliveryId)!;
     const before = license.checkQuotaByKey('free:fresh', 'free').used;
-    const r2 = await delivery.deliverOne(d2, { fetchImpl: mockFetch([200]).impl, sleep: noopSleep, lookup: okLookup });
+    const r2 = await delivery.deliverOne(d2, { egressImpl: mockEgress([200]).impl, sleep: noopSleep, lookup: okLookup });
     expect(r2.status).toBe('delivered');
     expect(license.checkQuotaByKey('free:fresh', 'free').used).toBe(before + 1);
   });
@@ -280,8 +282,8 @@ describe('quota gate — the DAILY wall is reported as daily', () => {
     const sub = await store.createSubscription({ url: 'https://sink/h', events: ['trade_call'], tier: 'free', ownerKey });
     const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:daily', eventType: 'trade_call', eventData: eventData() });
     const d = (await store.pendingDeliveries(10)).find(x => x.id === deliveryId)!;
-    const { impl, calls } = mockFetch([200]);
-    const res = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup });
+    const { impl, calls } = mockEgress([200]);
+    const res = await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup });
 
     expect(res.status).toBe('pending');  // enforcement unchanged — still paused
     expect(calls.length).toBe(0);
@@ -302,7 +304,7 @@ describe('quota gate — the DAILY wall is reported as daily', () => {
     const sub = await store.createSubscription({ url: 'https://sink/h', events: ['trade_call'], tier: 'free', ownerKey });
     const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:monthly', eventType: 'trade_call', eventData: eventData() });
     const d = (await store.pendingDeliveries(10)).find(x => x.id === deliveryId)!;
-    const res = await delivery.deliverOne(d, { fetchImpl: mockFetch([200]).impl, sleep: noopSleep, lookup: okLookup });
+    const res = await delivery.deliverOne(d, { egressImpl: mockEgress([200]).impl, sleep: noopSleep, lookup: okLookup });
     expect(res.status).toBe('pending');
     expect(res.suggested_action).toBe(
       `owner monthly quota exhausted (${MONTHLY}/${MONTHLY}); deliveries paused until reset or upgrade`,

@@ -5,8 +5,9 @@
  * destination by RESOLVING the hostname then POSTed by HOSTNAME (undici re-resolves
  * at connect → rebind to internal). The fix:
  *   1. resolveAndAssertEgress RETURNS the validated pinned {address, family}.
- *   2. deliverOne builds an undici Agent whose connect.lookup returns ONLY that
- *      validated address, so the connect step cannot re-resolve to a rebound IP.
+ *   2. egressPost (webhook-ssrf.ts) builds an undici Agent whose connect.lookup
+ *      returns ONLY that validated address, so the connect step cannot re-resolve
+ *      to a rebound IP.
  *
  * Tests:
  *   A) UNIT: resolveAndAssertEgress returns the validated {address,family}
@@ -15,7 +16,7 @@
  *      PUBLIC on lookup #1 (the check) and INTERNAL on lookup #2 (the connect). The
  *      old path leaked to the internal sink; the pinned dispatcher built from the
  *      checked address must IGNORE the rebind and never touch the internal sink.
- *      We drive deliverOne's REAL outbound path (its real fetch + the pinned
+ *      We drive deliverOne's REAL outbound path (egressPost + its pinned
  *      dispatcher) — only DNS is injected, exactly as the PoC does.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -133,7 +134,7 @@ describe('DNS-rebind via deliverOne is BLOCKED by the pinned dispatcher (WH-01, 
     const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:0xfeed', eventType: 'trade_call', eventData: eventData() });
     const d = (await store.pendingDeliveries(10)).find((x) => x.id === deliveryId)!;
 
-    // Drive the REAL outbound path (real fetch + pinned dispatcher). Only DNS injected.
+    // Drive the REAL outbound path (egressPost + pinned dispatcher). Only DNS injected.
     const res = await delivery.deliverOne(d, { sleep: async () => {}, lookup: rebindingLookup });
 
     expect(internalHits, 'internal sink must NEVER be reached (rebind blocked)').toBe(0);

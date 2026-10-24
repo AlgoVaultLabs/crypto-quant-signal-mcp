@@ -3083,10 +3083,10 @@ async function startHttp() {
   // the request. Public-shape: see audits/signup-email-shape-snapshot-2026-06-21.json
   // CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): outbound webhook subscription API
   // (POST/GET/DELETE /api/webhooks + POST /api/webhooks/:id/test). Universal
-  // access gated only by the monthly call quota; ships dark — the delivery worker
-  // only runs when WEBHOOK_DELIVERY_ENABLED=true (registration routes are always
-  // mounted so subscribers can pre-register, but nothing is delivered until the
-  // flag is on).
+  // access gated only by the monthly call quota. The routes are always mounted.
+  // The background delivery worker runs only when WEBHOOK_DELIVERY_ENABLED=true
+  // (it is true in production). POST /api/webhooks/:id/test delivers immediately,
+  // whatever the flag says.
   registerWebhookRoutes(app);
 
   // REFERRAL-LIGHT-W1 (C3): per-IP limiter on the public opt-in (mirrors recoverKeyLimiter).

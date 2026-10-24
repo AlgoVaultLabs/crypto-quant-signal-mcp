@@ -14,12 +14,14 @@
  * would prove only that a helper exists — CLAUDE.md: *"a unit test calling a helper directly
  * cannot prove anything CALLS it."* The subject here is the wiring.
  *
- * Harness copied from tests/webhook-delivery.test.ts (SQLite temp-HOME, injected fetch, noop sleep).
+ * Harness copied from tests/webhook-delivery.test.ts (SQLite temp-HOME, injected egress, noop sleep).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+type EgressImpl = typeof import('../src/lib/webhook-ssrf.js').egressPost;
 
 const ORIGINAL = {
   HOME: process.env.HOME,
@@ -45,13 +47,13 @@ const eventData = (over = {}) => ({
   created_at: 1_700_000_000, ...over,
 });
 
-function mockFetch(statuses: number[]) {
+function mockEgress(statuses: number[]) {
   let i = 0;
   const impl = (async () => {
     const status = statuses[Math.min(i, statuses.length - 1)];
     i += 1;
-    return { ok: status >= 200 && status < 300, status } as Response;
-  }) as unknown as typeof fetch;
+    return { ok: status >= 200 && status < 300, status };
+  }) as unknown as EgressImpl;
   return impl;
 }
 
@@ -91,15 +93,15 @@ describe('webhook delivery is replay-safe (the ONE behaviour change)', () => {
   it('redelivering the SAME delivery.id charges the owner exactly once', async () => {
     const ownerKey = `av_replay_${Date.now()}`;
     const { d } = await seed(ownerKey);
-    const impl = mockFetch([200]);
+    const impl = mockEgress([200]);
 
-    const first = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup });
+    const first = await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup });
     expect(first.status).toBe('delivered');
     const afterFirst = license.checkQuotaByKey(ownerKey, 'starter').used;
     expect(afterFirst).toBeGreaterThan(0); // vacuity guard: it charged at all
 
     // Same delivery row, delivered again — the shape a worker retry or a double-drain produces.
-    const second = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup });
+    const second = await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup });
     expect(second.status).toBe('delivered');
     expect(
       license.checkQuotaByKey(ownerKey, 'starter').used,
@@ -110,9 +112,9 @@ describe('webhook delivery is replay-safe (the ONE behaviour change)', () => {
   it('the ledger records ONE row for that delivery, tagged to the webhook channel', async () => {
     const ownerKey = `av_ledger_${Date.now()}`;
     const { d } = await seed(ownerKey);
-    const impl = mockFetch([200]);
-    await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup });
-    await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep, lookup: okLookup });
+    const impl = mockEgress([200]);
+    await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup });
+    await delivery.deliverOne(d, { egressImpl: impl, sleep: noopSleep, lookup: okLookup });
 
     const rows = await perfDb.dbQuery<{ idem_key: string; channel: string }>(
       'SELECT idem_key, channel FROM entitlement_debits WHERE tracker_key = ?',
@@ -135,7 +137,7 @@ describe('webhook delivery is replay-safe (the ONE behaviour change)', () => {
         calls: [{ coin: 'BTC' }, { coin: 'ETH' }, { coin: 'SOL' }] } as never,
     });
     const d = (await store.pendingDeliveries(10)).find((x) => x.id === deliveryId)!;
-    await delivery.deliverOne(d, { fetchImpl: mockFetch([200]), sleep: noopSleep, lookup: okLookup });
+    await delivery.deliverOne(d, { egressImpl: mockEgress([200]), sleep: noopSleep, lookup: okLookup });
 
     expect(license.checkQuotaByKey(ownerKey, 'starter').used).toBe(3);
     const rows = await perfDb.dbQuery<{ units: number }>(
@@ -150,7 +152,7 @@ describe('webhook delivery is replay-safe (the ONE behaviour change)', () => {
     const { PLANS } = await import('../src/lib/plans.js');
     license.trackCallByKey(ownerKey, 'starter', PLANS.starter.monthlyCalls);
 
-    const res = await delivery.deliverOne(d, { fetchImpl: mockFetch([200]), sleep: noopSleep, lookup: okLookup });
+    const res = await delivery.deliverOne(d, { egressImpl: mockEgress([200]), sleep: noopSleep, lookup: okLookup });
     expect(res.status).toBe('pending'); // PAUSE semantics unchanged
     expect(res.suggested_action).toContain('quota exhausted');
 

@@ -21,10 +21,20 @@
  * (127/8, ::1, `localhost`) + `http` FOR LOOPBACK ONLY, so the W1 local-sink
  * tests run; nothing else is relaxed.
  *
- * MUST NOT: send HTTP, contain business logic. Pure validation.
+ * OPS-NODE-SECURITY-FLOOR-W1 CH2: this module also OWNS the outbound call to a
+ * caller-supplied URL — `egressPost`, on npm undici `request()` over a dispatcher
+ * pinned to the validated address. It never follows a redirect and never decodes
+ * a response body: it asks for `identity` and drains whatever comes back unread.
+ * A new caller-URL call adds a wrapper beside `egressPost`;
+ * tests/unit/webhook-egress-no-decode.test.ts fails any importer of this module
+ * that calls fetch().
+ *
+ * MUST NOT: contain business logic, decode a response body, or follow a redirect.
  */
 import net from 'node:net';
 import dns from 'node:dns';
+import { finished } from 'node:stream';
+import { Agent, request, type Dispatcher } from 'undici';
 
 export type EgressBlockCode =
   | 'invalid_url'
@@ -277,4 +287,84 @@ export async function resolveAndAssertEgress(rawUrl: string, opts: ResolveEgress
   // All resolved addresses passed the block-class check → pin the first.
   const pinned = addrs[0];
   return { address: pinned.address, family: pinned.family };
+}
+
+export interface EgressRequestOpts {
+  headers: Record<string, string>;
+  body?: string;
+  /** Aborts the whole exchange — connect, headers and the drain of the reply. */
+  timeoutMs: number;
+  /** The address resolveAndAssertEgress validated; every connection dials only this. */
+  pin: PinnedAddress;
+}
+
+/** The statuses fetch's redirect:'error' turned into a network error. */
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * Build an undici Agent that PINS every connection for this delivery to the
+ * already-validated egress address (WH-01). The dispatcher's connect.lookup
+ * ignores the hostname and returns ONLY the pinned address, so undici cannot
+ * re-resolve at connect time and rebind to an internal target. The request URL
+ * keeps the ORIGINAL hostname (so TLS SNI + certificate hostname verification stay
+ * correct) — only the IP the socket dials is frozen.
+ */
+function pinnedDispatcher(pin: PinnedAddress): Agent {
+  const pinnedLookup = (
+    _hostname: string,
+    opts: { all?: boolean } | undefined,
+    cb: (err: NodeJS.ErrnoException | null, address: string | { address: string; family: number }[], family?: number) => void,
+  ): void => {
+    if (opts?.all) {
+      cb(null, [{ address: pin.address, family: pin.family }]);
+    } else {
+      cb(null, pin.address, pin.family);
+    }
+  };
+  return new Agent({ connect: { lookup: pinnedLookup as never } });
+}
+
+/**
+ * The one outbound request to a caller-supplied URL. undici `request()` never
+ * decodes a body, `maxRedirections: 0` never follows one, and `accept-encoding:
+ * identity` replaces whatever the caller sent. The dispatcher is per call and is
+ * closed once the reply body has finished (drained, destroyed or aborted).
+ * Module-private: callers get a purpose-built wrapper such as `egressPost`.
+ */
+async function egressRequest(method: Dispatcher.HttpMethod, url: string, opts: EgressRequestOpts): Promise<Dispatcher.ResponseData> {
+  const dispatcher = pinnedDispatcher(opts.pin);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+  const release = (): void => {
+    clearTimeout(timer);
+    dispatcher.close().catch(() => {});
+  };
+  const headers: Record<string, string> = {};
+  for (const [k, v] of Object.entries(opts.headers)) {
+    if (k.toLowerCase() !== 'accept-encoding') headers[k] = v;
+  }
+  headers['accept-encoding'] = 'identity';
+  try {
+    const res = await request(url, { method, headers, body: opts.body, signal: controller.signal, dispatcher, maxRedirections: 0 });
+    finished(res.body, release);
+    return res;
+  } catch (err) {
+    release();
+    throw err;
+  }
+}
+
+/**
+ * POST to a validated caller-supplied URL and report only `{ ok, status }`. The
+ * reply is drained unread (undici's 128 KiB dump limit, then the socket is
+ * destroyed) and never decoded. A redirect status throws a plain Error, which
+ * webhook-failure-class reads as the no-status branch → 'timeout' — exactly what
+ * fetch's redirect:'error' produced, so subscriber lifecycles do not shift.
+ */
+export async function egressPost(url: string, opts: EgressRequestOpts): Promise<{ ok: boolean; status: number }> {
+  const res = await egressRequest('POST', url, opts);
+  await res.body.dump();
+  const status = res.statusCode;
+  if (REDIRECT_STATUSES.has(status)) throw new Error(`egress: unexpected redirect (${status})`);
+  return { ok: status >= 200 && status < 300, status };
 }

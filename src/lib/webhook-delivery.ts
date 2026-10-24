@@ -16,12 +16,11 @@
  * delivery.id / subscription_id only.
  */
 import crypto from 'crypto';
-import { Agent } from 'undici';
 import { PKG_VERSION } from './pkg-version.js';
 // OPS-WEBHOOK-QUOTA-METER-PARITY-W1: the shared daily-horizon primitive (frozen; consumed).
 import { utcDayResetAtMs } from './utc-day.js';
 import { consumeEntitlement, readEntitlement } from './entitlement.js';
-import { resolveAndAssertEgress, EgressBlockedError, type ResolveEgressOpts, type PinnedAddress } from './webhook-ssrf.js';
+import { resolveAndAssertEgress, egressPost, EgressBlockedError, type ResolveEgressOpts, type PinnedAddress } from './webhook-ssrf.js';
 import type { LicenseTier } from '../types.js';
 import type { ScanCallItem } from './trade-call-scanner.js';
 import {
@@ -315,7 +314,8 @@ export function loadDeliveryConfig(): DeliveryConfig {
 }
 
 export interface DeliveryDeps {
-  fetchImpl?: typeof fetch;
+  /** Outbound POST (default egressPost — pinned, never follows a redirect, never decodes the reply). */
+  egressImpl?: typeof egressPost;
   sleep?: (ms: number) => Promise<void>;
   /** Injectable DNS resolver for the SSRF egress guard (default dns.promises.lookup). */
   lookup?: ResolveEgressOpts['lookup'];
@@ -332,51 +332,20 @@ export interface DeliveryResult {
   suggested_action?: string;
 }
 
-/**
- * Build an undici Agent that PINS every connection for this delivery to the
- * already-validated egress address (WH-01). The dispatcher's connect.lookup
- * ignores the hostname and returns ONLY the pinned address, so undici cannot
- * re-resolve at connect time and rebind to an internal target. The request URL
- * keeps the ORIGINAL hostname (so TLS SNI + certificate hostname verification stay
- * correct) — only the IP the socket dials is frozen.
- */
-function pinnedDispatcher(pin: PinnedAddress): Agent {
-  const pinnedLookup = (
-    _hostname: string,
-    opts: { all?: boolean } | undefined,
-    cb: (err: NodeJS.ErrnoException | null, address: string | { address: string; family: number }[], family?: number) => void,
-  ): void => {
-    if (opts?.all) {
-      cb(null, [{ address: pin.address, family: pin.family }]);
-    } else {
-      cb(null, pin.address, pin.family);
-    }
-  };
-  return new Agent({ connect: { lookup: pinnedLookup as never } });
-}
-
 async function postWithTimeout(
-  fetchImpl: typeof fetch,
+  egressImpl: typeof egressPost,
   url: string,
   headers: Record<string, string>,
   body: string,
   timeoutMs: number,
-  dispatcher?: Agent,
+  pin: PinnedAddress,
 ): Promise<{ ok: boolean; status: number }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    // WH-01: `dispatcher` pins the validated egress IP so undici cannot re-resolve
-    // the hostname at connect and rebind to an internal target. The URL keeps the
-    // hostname (TLS SNI / cert verification correct); only the dialed IP is frozen.
-    // redirect:'error' — a 3xx to an internal target must NOT bypass the egress
-    // guard via fetch's default redirect-follow (WEBHOOK-HARDENING-W1 C2). No
-    // redirect-follow → no post-check rebind either.
-    const res = await fetchImpl(url, { method: 'POST', headers, body, signal: controller.signal, redirect: 'error', ...(dispatcher ? { dispatcher } : {}) } as RequestInit);
-    return { ok: res.ok, status: res.status };
-  } finally {
-    clearTimeout(timer);
-  }
+  // WH-01: `pin` is the validated egress IP; egressPost dials only it, so undici
+  // cannot re-resolve the hostname at connect and rebind to an internal target. The
+  // URL keeps the hostname (TLS SNI / cert verification correct). egressPost never
+  // follows a redirect — a 3xx to an internal target must NOT bypass the egress
+  // guard (WEBHOOK-HARDENING-W1 C2) — and never decodes the reply.
+  return egressImpl(url, { headers, body, timeoutMs, pin });
 }
 
 /**
@@ -389,7 +358,7 @@ export async function deliverOne(
   deps: DeliveryDeps = {},
   cfg: DeliveryConfig = loadDeliveryConfig(),
 ): Promise<DeliveryResult> {
-  const fetchImpl = deps.fetchImpl ?? (globalThis.fetch as typeof fetch);
+  const egressImpl = deps.egressImpl ?? egressPost;
   const sleep = deps.sleep ?? defaultSleep;
 
   const sub = await getSubscription(delivery.subscription_id);
@@ -526,11 +495,9 @@ export async function deliverOne(
   const payload = buildPayload(eventData, delivery.id);
   const body = JSON.stringify(payload);
 
-  // WH-01: a single dispatcher pins every attempt's connection to the validated
-  // egress IP captured above (defeats DNS-rebind at connect). Built once per
-  // delivery; reused across retries.
-  const dispatcher = pinnedDispatcher(pin);
-
+  // WH-01: every attempt dials the validated egress IP captured above (defeats
+  // DNS-rebind at connect). egressPost pins a fresh dispatcher per attempt and
+  // closes it once the reply is drained.
   let attempts = 0;
   let lastCode: number | null = null;
   let lastErrorCode: string | undefined; // captured from the caught network error (C3)
@@ -544,7 +511,7 @@ export async function deliverOne(
     const signature = signPayload(body, sub.secret, timestamp);
     const headers = buildHeaders(payload, signature, timestamp);
     try {
-      const { ok, status } = await postWithTimeout(fetchImpl, sub.url, headers, body, cfg.timeoutMs, dispatcher);
+      const { ok, status } = await postWithTimeout(egressImpl, sub.url, headers, body, cfg.timeoutMs, pin);
       lastCode = status;
       if (ok) {
         await markDelivery(delivery.id, 'delivered', { attempts, responseCode: status });
@@ -694,7 +661,7 @@ export interface ProbeSweepResult { probed: number; resumed: number; disabled: n
  * owner quota (a probe is synthetic, not a delivered event).
  */
 async function probeOne(sub: WebhookSubscription, deps: DeliveryDeps, cfg: DeliveryConfig): Promise<{ ok: boolean; failureClass?: WebhookFailureClass }> {
-  const fetchImpl = deps.fetchImpl ?? (globalThis.fetch as typeof fetch);
+  const egressImpl = deps.egressImpl ?? egressPost;
   let pin: PinnedAddress;
   try {
     pin = await resolveAndAssertEgress(sub.url, { lookup: deps.lookup });
@@ -707,9 +674,8 @@ async function probeOne(sub: WebhookSubscription, deps: DeliveryDeps, cfg: Deliv
   const timestamp = Math.floor(Date.now() / 1000);
   const signature = signPayload(body, sub.secret, timestamp);
   const headers = { ...buildHeaders(payload, signature, timestamp), 'X-AlgoVault-Event': 'health_probe' };
-  const dispatcher = pinnedDispatcher(pin);
   try {
-    const { ok, status } = await postWithTimeout(fetchImpl, sub.url, headers, body, cfg.timeoutMs, dispatcher);
+    const { ok, status } = await postWithTimeout(egressImpl, sub.url, headers, body, cfg.timeoutMs, pin);
     if (ok) return { ok: true };
     return { ok: false, failureClass: classifyDeliveryFailure({ httpStatus: status }) };
   } catch (err) {

@@ -1,7 +1,7 @@
 /**
  * OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1 C4 — health-probe sweep + auto-resume.
  *
- * Drives runHealthProbeSweep() directly (deterministic) with an injected fetch +
+ * Drives runHealthProbeSweep() directly (deterministic) with an injected egress +
  * SSRF resolver. Run with WEBHOOK_SSRF_ALLOW_LOOPBACK=1 per the gate; lookups are
  * injected so the assertions don't touch real DNS.
  */
@@ -9,6 +9,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+type EgressImpl = typeof import('../src/lib/webhook-ssrf.js').egressPost;
 
 const ENVKEYS = ['WEBHOOK_AUTO_RECOVERY_ENABLED', 'WEBHOOK_DELIVERY_ENABLED', 'WEBHOOK_QUARANTINE_MAX_SEC', 'WEBHOOK_PROBE_BACKOFF_BASE_SEC', 'WEBHOOK_PROBE_BACKOFF_MAX_SEC'] as const;
 const ORIGINAL: Record<string, string | undefined> = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, DATABASE_URL: process.env.DATABASE_URL };
@@ -23,12 +25,12 @@ let perfDb: typeof import('../src/lib/performance-db.js');
 let store: typeof import('../src/lib/webhooks-store.js');
 let delivery: typeof import('../src/lib/webhook-delivery.js');
 
-function mockFetch(status: number) {
+function mockEgress(status: number) {
   const calls: { headers: Record<string, string> }[] = [];
-  const impl = (async (_url: string, init: { headers: Record<string, string> }) => {
-    calls.push({ headers: init.headers });
-    return { ok: status >= 200 && status < 300, status } as Response;
-  }) as unknown as typeof fetch;
+  const impl = (async (_url: string, opts: { headers: Record<string, string> }) => {
+    calls.push({ headers: opts.headers });
+    return { ok: status >= 200 && status < 300, status };
+  }) as unknown as EgressImpl;
   return { impl, calls };
 }
 
@@ -71,8 +73,8 @@ describe('C4 auto-resume', () => {
   it('a quarantined sub whose endpoint now returns 2xx resumes to active in one sweep', async () => {
     const sub = await newSub();
     await quarantine(sub.id);
-    const { impl } = mockFetch(200);
-    const r = await delivery.runHealthProbeSweep({ fetchImpl: impl, lookup: okLookup }, cfg);
+    const { impl } = mockEgress(200);
+    const r = await delivery.runHealthProbeSweep({ egressImpl: impl, lookup: okLookup }, cfg);
     expect(r.resumed).toBe(1);
     const after = await store.getSubscription(sub.id);
     expect(after!.delivery_state).toBe('active');
@@ -85,8 +87,8 @@ describe('C4 auto-resume', () => {
   it('the probe carries the X-AlgoVault-Event: health_probe header', async () => {
     const sub = await newSub();
     await quarantine(sub.id);
-    const { impl, calls } = mockFetch(200);
-    await delivery.runHealthProbeSweep({ fetchImpl: impl, lookup: okLookup }, cfg);
+    const { impl, calls } = mockEgress(200);
+    await delivery.runHealthProbeSweep({ egressImpl: impl, lookup: okLookup }, cfg);
     expect(calls).toHaveLength(1);
     expect(calls[0].headers['X-AlgoVault-Event']).toBe('health_probe');
     expect(calls[0].headers['X-AlgoVault-Signature']).toBeTruthy(); // still HMAC-signed
@@ -98,8 +100,8 @@ describe('C4 still-dead → back-off then expiry', () => {
     const sub = await newSub();
     await quarantine(sub.id); // fresh: last_probe_at null → seed 300 → next 600
     const before = nowS();
-    const { impl } = mockFetch(503);
-    const r = await delivery.runHealthProbeSweep({ fetchImpl: impl, lookup: okLookup }, cfg);
+    const { impl } = mockEgress(503);
+    const r = await delivery.runHealthProbeSweep({ egressImpl: impl, lookup: okLookup }, cfg);
     expect(r.backedOff).toBe(1);
     const after = await store.getSubscription(sub.id);
     expect(after!.delivery_state).toBe('quarantined');
@@ -110,8 +112,8 @@ describe('C4 still-dead → back-off then expiry', () => {
   it('quarantined longer than WEBHOOK_QUARANTINE_MAX_SEC → disabled(quarantine_expired)', async () => {
     const sub = await newSub();
     await quarantine(sub.id, { quarantined_at: nowS() - 100 }); // > MAX(10)
-    const { impl } = mockFetch(503);
-    const r = await delivery.runHealthProbeSweep({ fetchImpl: impl, lookup: okLookup }, cfg);
+    const { impl } = mockEgress(503);
+    const r = await delivery.runHealthProbeSweep({ egressImpl: impl, lookup: okLookup }, cfg);
     expect(r.disabled).toBe(1);
     const after = await store.getSubscription(sub.id);
     expect(after!.delivery_state).toBe('disabled');
@@ -123,8 +125,8 @@ describe('C4 SSRF guard in the probe (Q1 — internal target is transient, not i
   it('a now-internal target → egress_block → back-off (stays quarantined this sweep)', async () => {
     const sub = await newSub();
     await quarantine(sub.id, { quarantined_at: nowS() }); // fresh (not expired)
-    const { impl } = mockFetch(200); // unused — guard throws before fetch
-    const r = await delivery.runHealthProbeSweep({ fetchImpl: impl, lookup: blockedLookup }, cfg);
+    const { impl } = mockEgress(200); // unused — guard throws before egress
+    const r = await delivery.runHealthProbeSweep({ egressImpl: impl, lookup: blockedLookup }, cfg);
     expect(r.disabled).toBe(0);
     expect(r.backedOff).toBe(1);
     expect((await store.getSubscription(sub.id))!.delivery_state).toBe('quarantined');
@@ -135,8 +137,8 @@ describe('C4 permanent 410 probe', () => {
   it('a 410 probe → disabled(permanent_http_410)', async () => {
     const sub = await newSub();
     await quarantine(sub.id);
-    const { impl } = mockFetch(410);
-    const r = await delivery.runHealthProbeSweep({ fetchImpl: impl, lookup: okLookup }, cfg);
+    const { impl } = mockEgress(410);
+    const r = await delivery.runHealthProbeSweep({ egressImpl: impl, lookup: okLookup }, cfg);
     expect(r.disabled).toBe(1);
     const after = await store.getSubscription(sub.id);
     expect(after!.delivery_state).toBe('disabled');
@@ -148,8 +150,8 @@ describe('C4 sweep only touches DUE quarantined subs', () => {
   it('a not-yet-due quarantined sub is skipped', async () => {
     const sub = await newSub();
     await quarantine(sub.id, { next_probe_at: nowS() + 9999 }); // future
-    const { impl } = mockFetch(200);
-    const r = await delivery.runHealthProbeSweep({ fetchImpl: impl, lookup: okLookup }, cfg);
+    const { impl } = mockEgress(200);
+    const r = await delivery.runHealthProbeSweep({ egressImpl: impl, lookup: okLookup }, cfg);
     expect(r.probed).toBe(0);
     expect((await store.getSubscription(sub.id))!.delivery_state).toBe('quarantined');
   });

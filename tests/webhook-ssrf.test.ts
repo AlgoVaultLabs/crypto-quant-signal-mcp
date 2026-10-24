@@ -4,12 +4,14 @@
  * Unit: IP-class classification, sync assertEgressAllowed (scheme/creds/literal-IP),
  * async resolveAndAssertEgress (DNS-rebind via injected lookup).
  * Integration: a blocked delivery is marked `dead` with 0 quota charged + 0
- * HTTP attempts; postWithTimeout sets redirect:'error'.
+ * HTTP attempts; an allowed one hands egressPost the validated pin.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+type EgressImpl = typeof import('../src/lib/webhook-ssrf.js').egressPost;
 
 import {
   assertEgressAllowed,
@@ -155,27 +157,31 @@ describe('delivery integration: blocked egress', () => {
     const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:0xfeed', eventType: 'trade_call', eventData: eventData() });
     const d = (await store.pendingDeliveries(10)).find(x => x.id === deliveryId)!;
 
-    let fetchCalls = 0;
-    const fetchImpl = (async () => { fetchCalls++; return { ok: true, status: 200 } as Response; }) as unknown as typeof fetch;
-    const res = await delivery.deliverOne(d, { fetchImpl, sleep: async () => {}, lookup: lookupTo('10.0.0.1') });
+    let egressCalls = 0;
+    const egressImpl = (async () => { egressCalls++; return { ok: true, status: 200 }; }) as unknown as EgressImpl;
+    const res = await delivery.deliverOne(d, { egressImpl, sleep: async () => {}, lookup: lookupTo('10.0.0.1') });
 
     expect(res.status).toBe('dead');
     expect(res.attempts).toBe(0);
-    expect(fetchCalls).toBe(0);                                   // no HTTP attempt
+    expect(egressCalls).toBe(0);                                  // no HTTP attempt
     expect(res.suggested_action).toMatch(/disallowed\/internal/);
     expect(license.checkQuotaByKey('free:ssrf', 'free').used).toBe(0); // 0 quota charged
   });
 
-  it('postWithTimeout sets redirect:"error" on the outbound fetch', async () => {
+  // The no-redirect / no-decode half of this contract lives in egressPost itself and is
+  // proven against real sockets in tests/unit/webhook-egress-no-decode.test.ts.
+  it('deliverOne hands the outbound call the validated pin, not the hostname', async () => {
     const sub = await store.createSubscription({ url: 'https://good.example.com/h', events: ['trade_call'], tier: 'free', ownerKey: 'free:ok' });
     const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:0xfeed', eventType: 'trade_call', eventData: eventData() });
     const d = (await store.pendingDeliveries(10)).find(x => x.id === deliveryId)!;
 
-    let capturedInit: any = null;
-    const fetchImpl = (async (_url: string, init: any) => { capturedInit = init; return { ok: true, status: 200 } as Response; }) as unknown as typeof fetch;
-    const res = await delivery.deliverOne(d, { fetchImpl, sleep: async () => {}, lookup: lookupTo('93.184.216.34') });
+    let captured: { url: string; opts: any } | null = null;
+    const egressImpl = (async (url: string, opts: any) => { captured = { url, opts }; return { ok: true, status: 200 }; }) as unknown as EgressImpl;
+    const res = await delivery.deliverOne(d, { egressImpl, sleep: async () => {}, lookup: lookupTo('93.184.216.34') });
 
     expect(res.status).toBe('delivered');
-    expect(capturedInit?.redirect).toBe('error');
+    expect(captured!.url).toBe('https://good.example.com/h');            // URL keeps the hostname (SNI / cert check)
+    expect(captured!.opts.pin).toEqual({ address: '93.184.216.34', family: 4 }); // the dial target is the checked IP
+    expect(captured!.opts.timeoutMs).toBeGreaterThan(0);
   });
 });

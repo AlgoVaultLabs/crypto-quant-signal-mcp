@@ -29,6 +29,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+type EgressImpl = typeof import('../src/lib/webhook-ssrf.js').egressPost;
+
 const ENVKEYS = [
   'WEBHOOK_AUTO_RECOVERY_ENABLED', 'WEBHOOK_DELIVERY_ENABLED', 'WEBHOOK_QUARANTINE_MAX_SEC',
   'WEBHOOK_PROBE_BACKOFF_BASE_SEC', 'WEBHOOK_PROBE_BACKOFF_MAX_SEC', 'WEBHOOK_SUBSCRIBER_NOTIFY_ENABLED',
@@ -46,8 +48,8 @@ let perfDb: typeof import('../src/lib/performance-db.js');
 let store: typeof import('../src/lib/webhooks-store.js');
 let delivery: typeof import('../src/lib/webhook-delivery.js');
 
-function mockFetch(status: number) {
-  const impl = (async () => ({ ok: status >= 200 && status < 300, status } as Response)) as unknown as typeof fetch;
+function mockEgress(status: number) {
+  const impl = (async () => ({ ok: status >= 200 && status < 300, status })) as unknown as EgressImpl;
   return { impl };
 }
 
@@ -110,10 +112,10 @@ describe('a notify throw never reaches the sweep', () => {
   it('runHealthProbeSweep completes and expires the sub even when notify THROWS', async () => {
     await boot('throws');
     const sub = await seedExpiredQuarantine();
-    const { impl } = mockFetch(500);
+    const { impl } = mockEgress(500);
 
     // Must not reject.
-    const out = await delivery.runHealthProbeSweep({ fetchImpl: impl, lookup: okLookup }, cfg);
+    const out = await delivery.runHealthProbeSweep({ egressImpl: impl, lookup: okLookup }, cfg);
 
     expect(out.disabled).toBe(1);
     const after = await store.getSubscription(sub.id);
@@ -125,7 +127,7 @@ describe('a notify throw never reaches the sweep', () => {
     // Run A — notify throws.
     await boot('throws');
     const subA = await seedExpiredQuarantine();
-    const a = await delivery.runHealthProbeSweep({ fetchImpl: mockFetch(500).impl, lookup: okLookup }, cfg);
+    const a = await delivery.runHealthProbeSweep({ egressImpl: mockEgress(500).impl, lookup: okLookup }, cfg);
     const rowA = await store.getSubscription(subA.id);
     const snapA = { ...a, state: rowA?.delivery_state, reason: rowA?.disabled_reason };
     try { perfDb.closeDb(); } catch { /* ignore */ }
@@ -137,7 +139,7 @@ describe('a notify throw never reaches the sweep', () => {
     vi.doUnmock('../src/lib/subscriber-notify.js');
     const calls = await boot('records');
     const subB = await seedExpiredQuarantine();
-    const b = await delivery.runHealthProbeSweep({ fetchImpl: mockFetch(500).impl, lookup: okLookup }, cfg);
+    const b = await delivery.runHealthProbeSweep({ egressImpl: mockEgress(500).impl, lookup: okLookup }, cfg);
     const rowB = await store.getSubscription(subB.id);
     const snapB = { ...b, state: rowB?.delivery_state, reason: rowB?.disabled_reason };
 
@@ -228,7 +230,7 @@ describe('terminal notification fires on the real transitions', () => {
   it('quarantine_expired fires webhook_disabled exactly once', async () => {
     const calls = await boot('records');
     await seedExpiredQuarantine();
-    await delivery.runHealthProbeSweep({ fetchImpl: mockFetch(500).impl, lookup: okLookup }, cfg);
+    await delivery.runHealthProbeSweep({ egressImpl: mockEgress(500).impl, lookup: okLookup }, cfg);
     expect(calls.filter((c) => c.event === 'webhook_disabled')).toHaveLength(1);
   });
 
@@ -241,7 +243,7 @@ describe('terminal notification fires on the real transitions', () => {
     await store.setDeliveryState(sub.id, 'quarantined', {
       quarantined_at: nowS() - 1, next_probe_at: nowS() - 1, failure_class: 'timeout',
     });
-    const out = await delivery.runHealthProbeSweep({ fetchImpl: mockFetch(200).impl, lookup: okLookup }, cfg);
+    const out = await delivery.runHealthProbeSweep({ egressImpl: mockEgress(200).impl, lookup: okLookup }, cfg);
     expect(out.resumed).toBe(1);
     expect(calls.map((c) => c.event)).toContain('webhook_resumed');
   });
