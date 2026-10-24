@@ -1304,7 +1304,7 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 — is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "37ce72bc5556a7e5515252908bb010ebe2d6af6305af54cb6b4f351e93690bc0",
+      "sha256": "c3e3e9141e581d1dd9fd7e91dd8fdcb77096926ff2836010eadaf45793d06f40",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. SYNCED, NOT INSTALLED (OPS-DRIFT-ALERT-GENERATORS-W1, 2026-09-14): declaration-sync.sh fetches it on aoe-1 every hour (27 * * * *) through a DECLARATIONS row whose 5th field names ops/scripts/cron-interlock-registry.json, so a registry edit reaches the host within the hour with no re-install step. It used to be installed once behind a sync_exempt_reason (the sync could only reach ops/monitoring), with the refresh left to a sentence in these notes; IDENTITY-LIFECYCLE-W3 edited the registry three times on 2026-09-08, re-stamped this sha256, never re-installed, and aoe-1 paged HASH_DRIFT + REGISTRY_PARITY daily from 2026-09-09. Re-stamp this sha256 in the same commit as any registry edit; HASH_DRIFT on this row now means the hourly sync stopped landing, not that someone forgot a step. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot.",
@@ -2019,7 +2019,7 @@
       "criticality": "load-bearing",
       "schedule": "27 * * * *",
       "invoked_by": "crontab:root",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "7fc2faa69a01a5c3900ae165da0b7111607bc94a1359cbdae0c070b37551b376",
       "alert_ids": [
         "OWED_READ_FAIL"
@@ -2046,7 +2046,7 @@
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "imported-by:owed-read-candle-request-24h.py",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "ef11e05b5a4fafee64ca7547bca1b976c6758a21f17246e3662ad3fd5b44432d",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
@@ -2071,7 +2071,7 @@
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "b3bd9ac0b6a87e17770a617608765faebc2d99d02bba7784c8f4132aab76ba7f",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
@@ -2096,11 +2096,15 @@
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "08173dd57296587a77fff62d2b8c6e7d292c2ea9136b079f7aa8555b2f38cc60",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
-      "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence."
+      "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence.",
+      "first_install": {
+        "at": "20261024T110728Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "publish-lane-preverify",
