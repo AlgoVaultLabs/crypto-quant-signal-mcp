@@ -974,6 +974,17 @@ jobs:
           node scripts/check-runtime-node-security.mjs --self-test
           node scripts/check-runtime-node-security.mjs
 
+      # OPS-NODE-SECURITY-FLOOR-W1 CH3 R0 — the server's Stripe key is a restricted key, and its
+      # grants are declared in ops/stripe-rak-permissions.json. This keeps the code inside them,
+      # offline: every Stripe SDK call (its request read from the installed SDK itself), expand
+      # path and raw REST call under src/, scripts/ and ops/ must map to a permission the key
+      # grants. A request the key lacks is FAIL, naming the permission; a request the manifest
+      # cannot map is INDETERMINATE (exit 3), never a pass.
+      - name: Stripe restricted-key permission gate (fail-closed)
+        run: |
+          node scripts/check-stripe-rak-permissions.mjs --self-test
+          node scripts/check-stripe-rak-permissions.mjs
+
       # OPS-HOST-KERNEL-REBOOT-W1 R3 — the generator for SEC-18. That finding was "the kernel is 12
       # revisions behind", but the real exposure was that nobody knew whether the box COMES BACK.
       # This asserts the boot-survival contract continuously, so the next UNPLANNED reboot (Hetzner

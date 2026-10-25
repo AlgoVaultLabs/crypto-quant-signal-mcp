@@ -1,0 +1,187 @@
+{
+  "_comment": "OPS-NODE-SECURITY-FLOOR-W1 CH3 R0. The permissions of the server's Stripe key, derived from code. scripts/check-stripe-rak-permissions.mjs finds every Stripe request in the tracked files under scan.roots (each SDK call's request is read from the installed SDK itself; expand paths; raw REST) and checks each against `endpoints` / `expand_fields` and `key.granted`. A request these tables cannot map is INDETERMINATE; one whose permission is not granted is FAIL. `derived` is written by --sync and only reported on drift. Hand-edit everything else.",
+  "key": {
+    "key_name": "signal-mcp-billing-prod",
+    "kind": "restricted key (rk_live_) with an access policy",
+    "access_policy": "signal-1 only = 204.168.185.24/32",
+    "_granted_comment": "Mirrors the live key. Change this list and the key's permissions in the Stripe Dashboard together: the gate cannot see the key, and the CH3 R4 smoke matrix (src/scripts/stripe-rak-smoke.ts) is the live check.",
+    "granted": [
+      "charge_read",
+      "checkout_session_write",
+      "customer_portal_write",
+      "customer_write",
+      "invoice_read",
+      "payment_intent_read",
+      "payment_method_read",
+      "subscription_read",
+      "webhook_write"
+    ]
+  },
+  "reference": {
+    "permissions": "https://docs.stripe.com/keys/permissions-reference.md",
+    "write_implies_read": "https://docs.stripe.com/keys/restricted-api-keys.md",
+    "fetched_at": "2026-10-25",
+    "rows_in_source": 806
+  },
+  "_endpoints_comment": "One row per request the code makes, as the reference names it ({id} and {customer_id} both match any path segment). source=family: the reference has no row for this request (measured 2026-10-25: neither POST /v1/customers/{id} nor GET /v1/payment_intents/{id} appears among its 806 rows), so the row takes the permission every sibling request on that resource uses; the R4 smoke matrix calls both live.",
+  "endpoints": [
+    { "request": "GET /v1/charges", "permission": "charge_read" },
+    { "request": "GET /v1/checkout/sessions", "permission": "checkout_session_read" },
+    { "request": "GET /v1/checkout/sessions/{id}", "permission": "checkout_session_read" },
+    { "request": "GET /v1/customers/search", "permission": "customer_read" },
+    { "request": "GET /v1/invoices", "permission": "invoice_read" },
+    { "request": "GET /v1/invoices/{id}", "permission": "invoice_read" },
+    { "request": "GET /v1/payment_intents/{id}", "permission": "payment_intent_read", "source": "family" },
+    { "request": "GET /v1/subscriptions", "permission": "subscription_read" },
+    { "request": "GET /v1/subscriptions/{id}", "permission": "subscription_read" },
+    { "request": "GET /v1/webhook_endpoints", "permission": "webhook_read" },
+    { "request": "POST /v1/billing_portal/sessions", "permission": "customer_portal_write" },
+    { "request": "POST /v1/checkout/sessions", "permission": "checkout_session_write" },
+    { "request": "POST /v1/customers/{id}", "permission": "customer_write", "source": "family" },
+    { "request": "POST /v1/customers/{id}/balance_transactions", "permission": "customer_write" },
+    { "request": "POST /v1/webhook_endpoints/{id}", "permission": "webhook_write" }
+  ],
+  "_expand_fields_comment": "An expanded object needs read on its own resource. The Stripe pages above do not state this rule, so the R4 smoke matrix asserts each of these expansions comes back as an object, not an id. `data` is the list cursor and needs nothing.",
+  "expand_fields": {
+    "customer": "customer_read",
+    "default_payment_method": "payment_method_read",
+    "latest_charge": "charge_read",
+    "payment_intent": "payment_intent_read",
+    "subscription": "subscription_read"
+  },
+  "_raw_calls_comment": "A raw REST call names its path in a string but not its verb, so each is declared here. The access policy binds the key to signal-1: a call made anywhere else is refused.",
+  "raw_calls": [
+    { "file": "ops/monitoring/check-stripe-webhook-events.mjs", "request": "GET /v1/webhook_endpoints", "runs_on": "signal-1 host, monthly (stripe-webhook-events-canary.sh, 19 8 1 * *), with the key read from the mcp-server container's env" },
+    { "file": "scripts/check-stripe-webhook-events.mjs", "request": "GET /v1/webhook_endpoints", "runs_on": "the repo copy of the canary above, byte-identical; run by hand" },
+    { "file": "scripts/measure-activation-soak.mjs", "request": "GET /v1/checkout/sessions", "runs_on": "by hand, key passed in the env; with this key, only from signal-1" }
+  ],
+  "_not_stripe_comment": "Code the scan matches that is not Stripe: { file, text, reason }, where text is the match exactly as the gate prints it (a call's callee, such as `drive.files.list`, or the literal or expression it flagged). An entry here is a decision with a reason, never a way to quiet a real call.",
+  "not_stripe": [
+    { "file": "scripts/audit-r4-inversion-counterfactual.mjs", "text": "(syntax error)", "reason": "node --check rejects it too: since b451ea82 a backtick inside the SQL comment of its query template closes the template literal, so the file cannot run and makes no request. Owner of the fix: SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2. Once it parses, this entry matches nothing and the file is scanned again." },
+    { "file": "scripts/audit-thresholds-pertf-from-signals.mjs", "text": "(syntax error)", "reason": "node --check rejects it too: since b451ea82 a backtick inside the SQL comment of its query template closes the template literal, so the file cannot run and makes no request. Owner of the fix: SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2. Once it parses, this entry matches nothing and the file is scanned again." }
+  ],
+  "_scan_comment": "client_getters: functions that return the server's Stripe client. A name bound to one of them, to `new <the stripe constructor>(…)`, or typed as the client is a client: its resources must be called in place (assertion (e)).",
+  "scan": {
+    "roots": ["src", "scripts", "ops"],
+    "exclude": ["scripts/check-stripe-rak-permissions.mjs"],
+    "anchor": "src/lib/stripe.ts",
+    "client_getters": ["getStripeClient"]
+  },
+  "derived": {
+    "required": [
+      "charge_read",
+      "checkout_session_write",
+      "customer_portal_write",
+      "customer_write",
+      "invoice_read",
+      "payment_intent_read",
+      "payment_method_read",
+      "subscription_read",
+      "webhook_write"
+    ],
+    "calls": {
+      "billingPortal.sessions.create": {
+        "request": "POST /v1/billing_portal/sessions",
+        "permission": "customer_portal_write",
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "charges.list": {
+        "request": "GET /v1/charges",
+        "permission": "charge_read",
+        "sites": { "src/lib/payment-method-backfill.ts": 2 }
+      },
+      "checkout.sessions.create": {
+        "request": "POST /v1/checkout/sessions",
+        "permission": "checkout_session_write",
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "checkout.sessions.retrieve": {
+        "request": "GET /v1/checkout/sessions/{}",
+        "permission": "checkout_session_read",
+        "sites": { "scripts/backfill-subscriber-profiles.ts": 1, "src/lib/stripe.ts": 1 }
+      },
+      "customers.createBalanceTransaction": {
+        "request": "POST /v1/customers/{}/balance_transactions",
+        "permission": "customer_write",
+        "sites": { "src/lib/referral-accrual.ts": 2 }
+      },
+      "customers.search": {
+        "request": "GET /v1/customers/search",
+        "permission": "customer_read",
+        "sites": { "src/lib/stripe.ts": 4 }
+      },
+      "customers.update": {
+        "request": "POST /v1/customers/{}",
+        "permission": "customer_write",
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "invoices.list": {
+        "request": "GET /v1/invoices",
+        "permission": "invoice_read",
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "invoices.retrieve": {
+        "request": "GET /v1/invoices/{}",
+        "permission": "invoice_read",
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "paymentIntents.retrieve": {
+        "request": "GET /v1/payment_intents/{}",
+        "permission": "payment_intent_read",
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "subscriptions.list": {
+        "request": "GET /v1/subscriptions",
+        "permission": "subscription_read",
+        "sites": { "src/lib/stripe.ts": 4, "src/lib/subscriber-attribution.ts": 1 }
+      },
+      "subscriptions.retrieve": {
+        "request": "GET /v1/subscriptions/{}",
+        "permission": "subscription_read",
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "webhookEndpoints.list": {
+        "request": "GET /v1/webhook_endpoints",
+        "permission": "webhook_read",
+        "sites": { "src/lib/referral-accrual.ts": 1 }
+      },
+      "webhookEndpoints.update": {
+        "request": "POST /v1/webhook_endpoints/{}",
+        "permission": "webhook_write",
+        "sites": { "src/lib/referral-accrual.ts": 2 }
+      }
+    },
+    "expands": {
+      "customer": {
+        "permissions": ["customer_read"],
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "default_payment_method": {
+        "permissions": ["payment_method_read"],
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "latest_charge": {
+        "permissions": ["charge_read"],
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "payment_intent.latest_charge": {
+        "permissions": ["charge_read", "payment_intent_read"],
+        "sites": { "src/lib/stripe.ts": 1 }
+      },
+      "subscription": {
+        "permissions": ["subscription_read"],
+        "sites": { "src/lib/stripe.ts": 1 }
+      }
+    },
+    "raw": {
+      "GET /v1/checkout/sessions": {
+        "permission": "checkout_session_read",
+        "sites": { "scripts/measure-activation-soak.mjs": 1 }
+      },
+      "GET /v1/webhook_endpoints": {
+        "permission": "webhook_read",
+        "sites": { "ops/monitoring/check-stripe-webhook-events.mjs": 1, "scripts/check-stripe-webhook-events.mjs": 1 }
+      }
+    }
+  }
+}
