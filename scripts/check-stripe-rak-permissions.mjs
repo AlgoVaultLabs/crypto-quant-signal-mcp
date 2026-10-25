@@ -38,6 +38,12 @@
  * NO NETWORK, NO KEY. `key.granted` mirrors the live key; the CH3 R4 smoke matrix
  * (src/scripts/stripe-rak-smoke.ts) is the live check of both.
  *
+ * DENIED: `denied` lists requests the key must refuse, which the smoke sends first as its
+ * controls. The gate checks their shape only and sends nothing: a request sent as written (no
+ * placeholder), params only on a POST, a permission no grant covers, expect 403, what the refusal
+ * proves, and never a request the code makes (one an `endpoints` row matches). A missing or
+ * malformed list is a malformed manifest: INDETERMINATE.
+ *
  * Usage:
  *   node scripts/check-stripe-rak-permissions.mjs --self-test
  *   node scripts/check-stripe-rak-permissions.mjs
@@ -91,6 +97,15 @@ export function normRequest(s) {
   const m = /^\s*([A-Z]+)\s+(\S+)\s*$/.exec(s);
   const r = m ? `${m[1]} ${normPath(m[2])}` : '';
   return REQUEST.test(r) ? r : null;
+}
+
+/** `GET /v1/payouts/{}` matches `GET /v1/payouts/po_1`: the same verb, and `{}` stands for any one segment. */
+function sameShape(template, request) {
+  const [tv, tp] = template.split(' ');
+  const [rv, rp] = request.split(' ');
+  const t = tp.split('/');
+  const r = rp.split('/');
+  return tv === rv && t.length === r.length && t.every((s, i) => s === '{}' || s === r[i]);
 }
 
 const readOf = (p) => p.slice(0, -'_write'.length) + '_read';
@@ -155,6 +170,26 @@ export function loadManifest(text) {
       return bad(`not_stripe[${i}] needs a file, the matched text and a reason`);
     }
   }
+  const grantedSet = new Set(granted);
+  if (!Array.isArray(m.denied) || !m.denied.length) return bad('denied must be a non-empty list (the smoke sends it first, as its controls)');
+  const denied = [];
+  for (const [i, d] of m.denied.entries()) {
+    const at = `denied[${i}]`;
+    const req = normRequest(d?.request);
+    if (!req || d.request.includes('{')) return bad(`${at} needs a request sent as written ("VERB /v1/…", no placeholder)`);
+    if (!PERMISSION.test(d.permission ?? '')) return bad(`${at} needs a permission id`);
+    if (covers(grantedSet, d.permission)) return bad(`${at} names ${d.permission}, which the key holds: its refusal would prove nothing`);
+    if (d.expect !== 403) return bad(`${at} must expect 403`);
+    if (typeof d.proves !== 'string' || !d.proves.trim()) return bad(`${at} must say what its refusal proves`);
+    const p = d.params;
+    if (p !== undefined && (!req.startsWith('POST ') || !p || typeof p !== 'object' || Array.isArray(p) || !Object.values(p).every((x) => ['string', 'number', 'boolean'].includes(typeof x)))) {
+      return bad(`${at}: params go only on a POST, as an object of plain values`);
+    }
+    if (denied.some((x) => x.request === req)) return bad(`${at} repeats ${req}`);
+    const made = [...endpoints.keys()].find((e) => sameShape(e, req));
+    if (made) return bad(`${at} is a request the code makes (the endpoints row ${made})`);
+    denied.push({ request: req, permission: d.permission, params: p ?? null, proves: d.proves });
+  }
   const s = m.scan;
   const roots = list(s?.roots);
   const exclude = list(s?.exclude);
@@ -165,11 +200,12 @@ export function loadManifest(text) {
   return {
     ok: true,
     doc: m,
-    granted: new Set(granted),
+    granted: grantedSet,
     endpoints,
     fields: new Map(Object.entries(f)),
     rawCalls,
     notStripe: notStripe.map((n) => ({ file: n.file, text: n.text, reason: n.reason })),
+    denied,
     roots,
     exclude: new Set(exclude),
     getters: new Set(getters),
@@ -730,7 +766,7 @@ export function check({ manifestText, sdk, ts, files, version = null, floor = MI
 
 // ── self-test ────────────────────────────────────────────────────────────────
 
-const SELF_TEST_MIN_CHECKS = 75;
+const SELF_TEST_MIN_CHECKS = 88;
 
 /** A client built like the SDK's: resources whose methods name their request in their own source, each pointing back at the client. */
 function fakeClient() {
@@ -779,6 +815,7 @@ function fakeClient() {
 }
 
 const ST_ANCHOR = 'src/lib/stripe.ts';
+const ST_DENIED = { request: 'GET /v1/payouts/po_st_missing', permission: 'payout_read', expect: 403, proves: 'checked before the lookup' };
 const ST_MANIFEST = {
   key: { granted: ['charge_read', 'checkout_session_write', 'customer_portal_write', 'customer_write', 'invoice_read', 'payment_intent_read', 'subscription_read', 'webhook_write'] },
   endpoints: [
@@ -800,6 +837,7 @@ const ST_MANIFEST = {
   expand_fields: { customer: 'customer_read', default_payment_method: 'payment_method_read', latest_charge: 'charge_read', payment_intent: 'payment_intent_read', subscription: 'subscription_read' },
   raw_calls: [{ file: 'ops/declared.mjs', request: 'GET /v1/webhook_endpoints' }],
   not_stripe: [],
+  denied: [ST_DENIED],
   scan: { roots: ['src', 'scripts', 'ops'], exclude: [], anchor: ST_ANCHOR, client_getters: ['getStripeClient'] },
 };
 const ST_HEAD = "import Stripe from 'stripe';\nconst stripe = new Stripe('placeholder');\n";
@@ -958,6 +996,25 @@ function selfTest() {
   check1('manifest: an empty grant list is refused', () => loadManifest(manifest({ key: { granted: [] } })).ok === false);
   check1('manifest: a manifest that is not JSON makes the check INDETERMINATE', () => undecided(check({ manifestText: '{', sdk, ts, files: [], floor: 1 }), /the manifest is not JSON/));
 
+  // the denied list (shape only: the gate never sends it)
+  const deny = (patch) => loadManifest(manifest({ denied: [{ ...ST_DENIED, ...patch }] }));
+  check1('denied: the fixture list loads, normalised', () => {
+    const x = loadManifest(manifest());
+    return x.ok === true && x.denied.length === 1 && x.denied[0].request === 'GET /v1/payouts/po_st_missing' && x.denied[0].params === null;
+  });
+  check1('denied: a manifest without the list is refused', () => loadManifest(manifest({ denied: undefined })).ok === false);
+  check1('denied: an empty list is refused', () => loadManifest(manifest({ denied: [] })).ok === false);
+  check1('denied: a permission the key holds is refused', () => deny({ permission: 'charge_read' }).ok === false);
+  check1('denied: a read that a held write covers is refused', () => deny({ permission: 'customer_read' }).ok === false);
+  check1('denied: an expect other than 403 is refused', () => deny({ expect: 404 }).ok === false);
+  check1('denied: an entry that does not say what it proves is refused', () => deny({ proves: ' ' }).ok === false);
+  check1('denied: a placeholder in the request is refused', () => deny({ request: 'GET /v1/payouts/{id}' }).ok === false);
+  check1('denied: params on a GET are refused', () => deny({ params: { limit: 1 } }).ok === false);
+  check1('denied: params that are not plain values are refused', () => deny({ request: 'POST /v1/payouts', params: { amount: { x: 1 } } }).ok === false);
+  check1('denied: a POST with plain params loads', () => deny({ request: 'POST /v1/payouts', permission: 'payout_write', params: { amount: -1, currency: 'usd' } }).ok === true);
+  check1('denied: two entries for one request are refused', () => loadManifest(manifest({ denied: [ST_DENIED, { ...ST_DENIED, proves: 'again' }] })).ok === false);
+  check1('denied: a request the code makes is refused', () => deny({ request: 'POST /v1/refunds', permission: 'refund_write' }).ok === false);
+
   // vacuity
   check1('vacuity: an anchor with no call is INDETERMINATE', () => undecided(check({ manifestText: manifest(), sdk, ts, files: [{ file: 'ops/declared.mjs', text: "await fetch('https://api.stripe.com/v1/webhook_endpoints');" }], floor: 1 }), /contributed no Stripe call/));
   check1('vacuity: an excluded anchor is not scanned', () => undecided(go([], { scan: { ...ST_MANIFEST.scan, exclude: [ST_ANCHOR] } }), /contributed no Stripe call/));
@@ -982,7 +1039,7 @@ function selfTest() {
     fails.forEach((x) => console.error('   - ' + x));
     return 'FAIL';
   }
-  console.log(`✓ self-test: ${ran} checks — SDK reader, request rows (a), expand (b), raw URLs (c), grants (d), resources as values (e), not_stripe, manifest refusals, vacuity, derived.`);
+  console.log(`✓ self-test: ${ran} checks — SDK reader, request rows (a), expand (b), raw URLs (c), grants (d), resources as values (e), not_stripe, manifest refusals, the denied list, vacuity, derived.`);
   return 'PASS';
 }
 

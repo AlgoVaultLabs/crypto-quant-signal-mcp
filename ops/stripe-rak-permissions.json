@@ -60,10 +60,21 @@
     { "file": "scripts/audit-r4-inversion-counterfactual.mjs", "text": "(syntax error)", "reason": "node --check rejects it too: since b451ea82 a backtick inside the SQL comment of its query template closes the template literal, so the file cannot run and makes no request. Owner of the fix: SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2. Once it parses, this entry matches nothing and the file is scanned again." },
     { "file": "scripts/audit-thresholds-pertf-from-signals.mjs", "text": "(syntax error)", "reason": "node --check rejects it too: since b451ea82 a backtick inside the SQL comment of its query template closes the template literal, so the file cannot run and makes no request. Owner of the fix: SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2. Once it parses, this entry matches nothing and the file is scanned again." }
   ],
-  "_scan_comment": "client_getters: functions that return the server's Stripe client. A name bound to one of them, to `new <the stripe constructor>(…)`, or typed as the client is a client: its resources must be called in place (assertion (e)).",
+  "_denied_comment": "Requests the key must refuse. The CH3 R4 smoke (src/scripts/stripe-rak-smoke.ts) sends these first, as its controls. Each names a permission no grant covers, so Stripe must answer 403 naming it: GET /v1/payouts/{id} needs payout_read and POST /v1/payouts needs payout_write (permissions reference, fetched 2026-10-25). The first proves the permission is checked before the object is looked up, the second before the request is validated; each refused write in the smoke relies on both. Neither can create anything: the payout does not exist, and a negative amount is invalid even with payout_write. The gate checks only their shape: a request sent as written (no placeholder), params only on a POST, a permission the key lacks, expect 403, and what the refusal proves.",
+  "denied": [
+    { "request": "GET /v1/payouts/po_rak_smoke_missing", "permission": "payout_read", "expect": 403, "proves": "the permission is checked before the object is looked up: payout_read is not granted, and the payout does not exist" },
+    {
+      "request": "POST /v1/payouts",
+      "params": { "amount": -1, "currency": "usd" },
+      "permission": "payout_write",
+      "expect": 403,
+      "proves": "the permission is checked before the request is validated: payout_write is not granted, and a negative amount is invalid even if it were"
+    }
+  ],
+  "_scan_comment": "client_getters: functions that return the server's Stripe client. A name bound to one of them, to `new <the stripe constructor>(…)`, or typed as the client is a client: its resources must be called in place (assertion (e)). exclude: this gate (its fixtures are not calls), and the smoke, which sends the `denied` requests on purpose through rawRequest from this file's data and judges every response it gets live. Its other calls mirror requests the server makes in the scanned files.",
   "scan": {
     "roots": ["src", "scripts", "ops"],
-    "exclude": ["scripts/check-stripe-rak-permissions.mjs"],
+    "exclude": ["scripts/check-stripe-rak-permissions.mjs", "src/scripts/stripe-rak-smoke.ts"],
     "anchor": "src/lib/stripe.ts",
     "client_getters": ["getStripeClient"]
   },
