@@ -33,13 +33,13 @@
     "aoe-1": {
       "reboot": {
         "host": "aoe-1 (178.104.200.44)",
-        "verified_at": "2026-10-02",
+        "verified_at": "2026-10-25T03:20Z",
         "disruption_event": "kernel reboot",
         "command": "crontab -l | grep -vE '^\\s*(#|$)'   # 7 lines   &&   docker exec aoe-prefect-server python -c '<read_deployments + schedules>'   # 11 deployments   &&   docker ps --format '{{.Names}}'   # 8 containers   — the UNION is the population, because a reboot stops all three. Deliberately NOT signal-1's `grep docker exec`: aoe-1 has ZERO direct docker-exec cron lines and exactly one indirect, so that command measures almost nothing here.",
-        "active_cron_lines": 10,
+        "active_cron_lines": 11,
         "prefect_deployments": 11,
         "running_containers": 8,
-        "note": "Prefect INTERVAL schedules are derived from their anchor, never assumed: retune_nightly 86400s @ 2026-05-29T07:04:40Z, w2_gate_watcher 3600s and w3_gate_watcher 900s @ 07:04:41Z. Cron+Prefect union leaves :05-:12 as the longest contiguous clear run (8 min) — re-derived 2026-08-29, matching the W2/W3 hand-measured window rather than inheriting it. || Re-derived 2026-10-02 by OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: 9 live active lines (kernel-auto-reboot.sh and bdir-panel-readiness.py had landed since the 08-29 count of 7, both unclassified until now — aoe-1 has no live population check, which is how they stayed invisible), plus the aoe-peer-watchdog line this wave installs = 10."
+        "note": "Prefect INTERVAL schedules are derived from their anchor, never assumed: retune_nightly 86400s @ 2026-05-29T07:04:40Z, w2_gate_watcher 3600s and w3_gate_watcher 900s @ 07:04:41Z. Cron+Prefect union leaves :05-:12 as the longest contiguous clear run (8 min) — re-derived 2026-08-29, matching the W2/W3 hand-measured window rather than inheriting it. || Re-derived 2026-10-02 by OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: 9 live active lines (kernel-auto-reboot.sh and bdir-panel-readiness.py had landed since the 08-29 count of 7, both unclassified until now — aoe-1 has no live population check, which is how they stayed invisible), plus the aoe-peer-watchdog line this wave installs = 10. || OPS-NODE-SECURITY-FLOOR-W1 CH2 R5 (re-derived 2026-10-25T03:20Z, crontab sha256 04ad74ab…): 10 -> 11 active lines — the one line added is this wave's `46 7 * * *` node-runtime-floor-canary.py (crontab backup crontab.bak.OPS-NODE-SECURITY-FLOOR-W1-20261025T031937Z; the diff of active lines is exactly that line), mapped by this registry's own aoe-node-runtime-floor-canary row (cron_match /opt/algovault-monitoring/node-runtime-floor-canary.py, cron_lines 1). 11 Prefect deployments (read through the server's REST count on 127.0.0.1:4200 rather than the docker exec form above) and 8 running containers, both unchanged. No row's classification moves."
       }
     }
   },
@@ -1610,12 +1610,12 @@
       "reason": "Enumeration only on aoe-1: a read-only walk of the disk, /proc, the crontabs, the systemd units and the local image list; nothing is measured and nothing is fetched. It writes only its own state file and one canary_result_log line, so a reboot-induced kill costs that day's record and the next fire re-derives it.",
       "max_runtime_s": 1,
       "runtime_instrument": "bash `time` real over three `--dry-run` passes of the scratch copy on aoe-1, 2026-10-24 19:46:14Z, load 0.19: 0.733 / 0.606 / 0.570 s. Recorded value = the max x 1.25, rounded up.",
-      "cron_lines": 0,
+      "cron_lines": 1,
       "cron": "46 7 * * *",
       "catchup_cmd": null,
       "source": "host-only",
-      "verified_at": "2026-10-24",
-      "notes": "OPS-NODE-SECURITY-FLOOR-W1 CH2 R5; registered with its inventory row before the cron line exists (installed right after this commit lands). cron_lines is 0 until that line exists, because the field is a live fan-out reading and the enumeration test caps the declared sum at the measured population; the install commit sets it to 1 and re-derives _enumeration[\"aoe-1\"].reboot from the live crontab, as OPS-OWED-READ-RUNNER-W1 R2 did for its line.",
+      "verified_at": "2026-10-25",
+      "notes": "OPS-NODE-SECURITY-FLOOR-W1 CH2 R5. Registered with its inventory row before the cron line existed, at cron_lines 0, because the field is a live fan-out reading and the enumeration test caps the declared sum at the measured population. The line went in 2026-10-25T03:19:37Z (crontab backup crontab.bak.OPS-NODE-SECURITY-FLOOR-W1-20261025T031937Z), so cron_lines is 1 and _enumeration[\"aoe-1\"].reboot is re-derived from the live crontab in the same commit, as OPS-OWED-READ-RUNNER-W1 R2 did for its line.",
       "cron_match": [
         "/opt/algovault-monitoring/node-runtime-floor-canary.py"
       ]
