@@ -58,6 +58,12 @@
  * again is OVER, so a recreated retired file (the WIS log) shows on the next write. --report's
  * STATUS_BUDGET_VERDICT projects from the same contextFiles() value.
  *
+ * ── THE ENTRY CAP (OPS-WAVE-THROUGHPUT-W1) ────────────────────────────────────
+ * `entry_max_bytes` in the budget manifest caps ONE entry file. An entry over it is OVER before
+ * anything is read or written; its evidence belongs in the vault's audits/<WAVE>-evidence.md.
+ * A manifest without the key has no entry cap (scratch fixtures); the real manifest's value is
+ * pinned by tests/unit/status-append.test.ts.
+ *
  * ── VERDICT ───────────────────────────────────────────────────────────────────
  * One terminal line: STATUS_APPEND_VERDICT=PASS|OVER|INDETERMINATE — exit 0 / 1 / 3. OVER and
  * INDETERMINATE write NOTHING. Every write is compare-and-swap: each file's sha256 is taken when
@@ -203,6 +209,13 @@ export function loadRetired(file = DEFAULT_BUDGET) {
   const retired = JSON.parse(readFileSync(file, 'utf8')).files_retired ?? [];
   if (!Array.isArray(retired) || retired.some((p) => typeof p !== 'string' || !p)) indeterminate(`${file} files_retired is not a list of paths`);
   return retired;
+}
+
+/** The per-entry cap: `entry_max_bytes` in the budget manifest. Absent = none; any other shape = refuse. */
+export function loadEntryCap(file = DEFAULT_BUDGET) {
+  const cap = JSON.parse(readFileSync(file, 'utf8')).entry_max_bytes ?? null;
+  if (cap !== null && (!Number.isInteger(cap) || cap <= 0)) indeterminate(`${file} entry_max_bytes is not a positive integer`);
+  return cap;
 }
 
 /** Every `files.*` cap judged once; --report and the per-append line both project from this. */
@@ -506,6 +519,10 @@ export function run({ vault, budgetFile = DEFAULT_BUDGET, entryText = null, now 
   const caps = loadBudget(budgetFile);
   const cap = caps[layout.statusFile];
   if (!cap) indeterminate(`${budgetFile} declares no files["${layout.statusFile}"] cap`);
+  const entryCap = loadEntryCap(budgetFile);
+  if (entryText !== null && entryCap !== null && bytes(entryText) > entryCap) {
+    throw new Refusal('OVER', `entry ${bytes(entryText)} B > ${entryCap} B — move evidence to \`audits/<WAVE>-evidence.md\``);
+  }
   const nowIso = now.toISOString();
   const today = nowIso.slice(0, 10);
 

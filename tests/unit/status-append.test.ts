@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  makeVault, entryFixture, run, loadBudget, loadRetired, pointerOf, indexRow, cutCell, capOwed, rowHeadBytes, norm, dedupe, ledgerMap, insertIntoLedger,
+  makeVault, entryFixture, run, loadBudget, loadRetired, loadEntryCap, pointerOf, indexRow, cutCell, capOwed, rowHeadBytes, norm, dedupe, ledgerMap, insertIntoLedger,
   splitBlocks, STATUS_FIXTURE, INDEX_START, INDEX_END, ROW_MAX_BYTES, EXIT, Refusal,
 } from '../../ops/scripts/status-append.mjs';
 
@@ -155,6 +155,43 @@ describe('budget (ruling Q1)', () => {
     expect(cards).toHaveLength(19);
     expect(cards.every((k) => /^system-map\/[a-z0-9-]+\.md$/.test(k))).toBe(true);
     expect(loadRetired()).toEqual(['Claude files/WIS-PENDING.md']);
+  });
+});
+
+describe('entry cap (OPS-WAVE-THROUGHPUT-W1)', () => {
+  const capped = () => {
+    const v = vault();
+    writeFileSync(v.budgetFile, JSON.stringify({ files: { 'status.md': 40000 }, entry_max_bytes: 3000 }));
+    return v;
+  };
+  /** An entry file of exactly n bytes. */
+  const sized = (v: { vault: string }, n: number) => {
+    const head = 'system-map.md updated: n-a\n\n';
+    const body = head + 'x'.repeat(n - Buffer.byteLength(entryFixture(H, head)));
+    const f = join(v.vault, `entry-${seq++}.md`);
+    writeFileSync(f, entryFixture(H, body));
+    expect(Buffer.byteLength(readFileSync(f, 'utf8'))).toBe(n);
+    return f;
+  };
+
+  it('accepts an entry of exactly 3,000 B', () => {
+    const v = capped();
+    const r = append(v, sized(v, 3000));
+    expect([token(r.out), r.status], r.out + r.err).toEqual(['STATUS_APPEND_VERDICT=PASS', EXIT.PASS]);
+    expect(october(v)).toContain(`### ${H}`);
+  });
+
+  it('refuses 3,001 B — OVER, exit 1, nothing written', () => {
+    const v = capped();
+    const snap = snapshot(v);
+    const r = append(v, sized(v, 3001));
+    expect([token(r.out), r.status]).toEqual(['STATUS_APPEND_VERDICT=OVER', EXIT.OVER]);
+    expect(r.err).toContain('entry 3001 B > 3000 B — move evidence to `audits/<WAVE>-evidence.md`');
+    expect(snapshot(v)).toEqual(snap);
+  });
+
+  it('the repo manifest declares entry_max_bytes 3000', () => {
+    expect(loadEntryCap()).toBe(3000);
   });
 });
 

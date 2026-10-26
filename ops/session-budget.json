@@ -34,6 +34,9 @@
     "system-map/trade-engine.md": 2726
   },
   "files_reason": "OPS-STATUS-INDEX-LEDGER-W1: byte caps on the vault files every session reads. ops/scripts/status-append.mjs refuses (OVER) a status.md write over its cap. status.md = trim-status-config max_bytes; AOE-status.md = trim-status-config max_bytes too (OPS-SESSION-BUDGET-W1-R3): status-append refuses to write it, so it grows by hand with each AOE entry, and pinned at its 2026-10-23 size (21,586 / 21,586) it had 0 B headroom — the first AOE entry would have made every later append print OVER for a reason that is not regrowth; at 40000, OVER means a trim is due. OPS-CONTEXT-CORPUS-DIET-W1 (ruling Q3) adds CLAUDE.md, the seven trigger-read rules files, system-map.md and every card at their measured post-move size on 2026-10-23 + max(5% rounded up to 100 B, 2,048 B), so real regrowth shows within a few waves and one new edge line on a small card does not. Every append and sweep judges every cap and prints CONTEXT_FILES_VERDICT (report-only); --report prints them all. Evidence and system-map/_ref/ files are request-read and stay uncapped.",
+  "entry_max_bytes": 3000,
+  "entry_max_bytes_reason": "OPS-WAVE-THROUGHPUT-W1: the byte cap on ONE status entry file. ops/scripts/status-append.mjs refuses (OVER, nothing written) an entry over it. October entries measured median 4.6 KB, p90 10.4 KB, max 19 KB, each written at Max and read whole by Cowork; evidence longer than the cap goes to the vault's audits/<WAVE>-evidence.md. tests/unit/status-append.test.ts pins this value, so deleting the key cannot silently lift the cap.",
+
   "files_retired": ["Claude files/WIS-PENDING.md"],
   "files_retired_reason": "OPS-CONTEXT-CORPUS-DIET-W1 (ruling Q4): paths retired from the start-read set. One that exists again makes CONTEXT_FILES_VERDICT=OVER on the next append. WIS-PENDING.md was archived verbatim to Claude files/WIS-ARCHIVE-2026-10-23.md and its append step removed."
 }
