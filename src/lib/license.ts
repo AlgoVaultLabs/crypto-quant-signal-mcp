@@ -1445,6 +1445,9 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
         // daily wall is a pacing one — so the funnel cannot attribute upgrade intent without
         // knowing which fired. CH4 emits `'daily'` from the daily meter.
         limit: 'monthly' as const,
+        // GROWTH-AGENT-SIGNIN-OAUTH-W1 CH1: the family the stepup_* events already carry, so the
+        // readout can count walled chat demand by client, not only by egress pool.
+        client_family: classifyClient(getRequestUserAgent()).name,
       },
     });
     return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota, limit: 'monthly' };
@@ -1467,7 +1470,7 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
         eventType: 'quota_hit_block',
         sessionId: getRequestSessionId() ?? null,
         licenseTier: license.tier,
-        meta: { used: daily.count, total: dailyCap, limit: 'daily' as const },
+        meta: { used: daily.count, total: dailyCap, limit: 'daily' as const, client_family: classifyClient(getRequestUserAgent()).name },
       });
       // The daily pair travels WITH the discriminator. Returning `limit: 'daily'` while carrying
       // only the monthly pair is what made the refusal say "100/200 … 30 days" for a wall that
