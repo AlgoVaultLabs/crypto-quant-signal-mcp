@@ -27,6 +27,13 @@
  * GENERIC by design: nothing here knows about Stripe, billing or /account. Any future hand-off from
  * a form POST to a third-party origin (OAuth, SSO, payment provider) uses this instead of
  * `res.redirect` — a cross-origin 3xx behind a form reproduces this outage exactly.
+ *
+ * OAUTH MODE (GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.10): an authorization response goes back to the
+ * client's redirect_uri, which for a native client is `http://127.0.0.1:<port>/…` or a private-use
+ * scheme (`com.example.app:/cb`) — both refused above. With `oauth.redirectUri` (a URI the caller
+ * ALREADY matched against that client's registration) the target is accepted when it is that URI
+ * plus a query: same scheme, host and path; the URI itself https, http on a loopback host, or a
+ * reverse-DNS private-use scheme. Whitespace and userinfo stay refused in both modes.
  */
 import type { Response } from 'express';
 
@@ -66,7 +73,23 @@ function escapeJsString(s: string): string {
  * was handed. Returns why a target is refused — never the target itself, which may be a
  * credential — or `null` to accept.
  */
-function offOriginRefusalReason(targetUrl: unknown): string | null {
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
+
+/** OAuth mode: `u` is `redirectUri` plus a query, and `redirectUri` is a kind we register. */
+function oauthTargetRefusal(u: URL, redirectUri: string): string | null {
+  let r: URL;
+  try {
+    r = new URL(redirectUri);
+  } catch {
+    return 'oauth-redirect-uri-unparseable';
+  }
+  if (u.protocol !== r.protocol || u.host !== r.host || u.pathname !== r.pathname) return 'oauth-target-not-redirect-uri';
+  if (r.protocol === 'https:') return null;
+  if (r.protocol === 'http:') return LOOPBACK_HOSTS.has(r.hostname) ? null : 'oauth-http-not-loopback';
+  return /^[a-z][a-z0-9+-]*(\.[a-z0-9+-]+)+:$/i.test(r.protocol) ? null : `oauth-scheme=${r.protocol}`;
+}
+
+function offOriginRefusalReason(targetUrl: unknown, oauth?: { redirectUri: string }): string | null {
   if (typeof targetUrl !== 'string') return 'not-a-string';
   if (targetUrl.length === 0) return 'empty';
   if (targetUrl.length > 4096) return 'too-long';
@@ -77,6 +100,7 @@ function offOriginRefusalReason(targetUrl: unknown): string | null {
   } catch {
     return 'not-an-absolute-url';
   }
+  if (oauth) return u.username || u.password ? 'userinfo-present' : oauthTargetRefusal(u, oauth.redirectUri);
   if (u.protocol !== 'https:') return `scheme=${u.protocol}`;
   if (u.username || u.password) return 'userinfo-present';
   return null;
@@ -147,8 +171,13 @@ let refusals = 0;
  * Never emits a `Location` header. A target that is not an absolute https URL is refused with a
  * generic 502 and one CRITICAL log line naming only the refusal reason — never the URL itself.
  */
-export function sendOffOriginRedirect(res: Response, targetUrl: string, opts: OffOriginRedirectCopy): void {
-  const reason = offOriginRefusalReason(targetUrl);
+export function sendOffOriginRedirect(
+  res: Response,
+  targetUrl: string,
+  opts: OffOriginRedirectCopy,
+  oauth?: { redirectUri: string },
+): void {
+  const reason = offOriginRefusalReason(targetUrl, oauth);
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Robots-Tag', 'noindex');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');

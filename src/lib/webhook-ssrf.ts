@@ -368,3 +368,39 @@ export async function egressPost(url: string, opts: EgressRequestOpts): Promise<
   if (REDIRECT_STATUSES.has(status)) throw new Error(`egress: unexpected redirect (${status})`);
   return { ok: status >= 200 && status < 300, status };
 }
+
+/**
+ * GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2 (R2.4) — GET a validated caller-supplied URL (an OAuth Client ID
+ * Metadata Document) and return its body, read but NEVER decoded: same pinned dial, same
+ * `accept-encoding: identity`, same no-redirect rule as `egressPost`. A reply carrying any
+ * `Content-Encoding` other than `identity` is refused unread, and a body over `maxBytes` is cut off
+ * and refused — the cap is enforced while reading, never after buffering the whole thing.
+ */
+export async function egressGet(
+  url: string,
+  opts: EgressRequestOpts & { maxBytes: number },
+): Promise<{ status: number; contentType: string; body: string }> {
+  const res = await egressRequest('GET', url, opts);
+  const status = res.statusCode;
+  if (REDIRECT_STATUSES.has(status)) {
+    res.body.destroy();
+    throw new Error(`egress: unexpected redirect (${status})`);
+  }
+  const encoding = String(res.headers['content-encoding'] ?? '').trim().toLowerCase();
+  if (encoding !== '' && encoding !== 'identity') {
+    res.body.destroy();
+    throw new Error('egress: encoded reply refused');
+  }
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of res.body) {
+    size += (chunk as Buffer).length;
+    if (size > opts.maxBytes) {
+      res.body.destroy();
+      throw new Error('egress: reply over the size cap');
+    }
+    chunks.push(chunk as Buffer);
+  }
+  const ct = res.headers['content-type'];
+  return { status, contentType: String(Array.isArray(ct) ? ct[0] : ct ?? ''), body: Buffer.concat(chunks).toString('utf8') };
+}

@@ -12,7 +12,9 @@
  *      wave replaced (platform fetch, redirect:'error', pinned dispatcher) and through
  *      egressPost, so no subscriber lifecycle shifts.
  *   3. Source rule (AST): no module importing webhook-ssrf.js references fetch.
- *   4. Surface: egressPost is the only egress export (no egressGet — Q20).
+ *   4. Surface: egressPost and egressGet are the only egress exports. Q20 kept egressGet out until a
+ *      reader needed one; GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.4 (CIMD) is that reader, and egressGet gets
+ *      the same no-decode proof below.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
@@ -28,7 +30,7 @@ import type { AddressInfo } from 'node:net';
 import ts from 'typescript';
 import { Agent } from 'undici';
 import * as ssrf from '../../src/lib/webhook-ssrf.js';
-import { egressPost, type PinnedAddress } from '../../src/lib/webhook-ssrf.js';
+import { egressGet, egressPost, type PinnedAddress } from '../../src/lib/webhook-ssrf.js';
 import { classifyDeliveryFailure, extractErrorCode, type WebhookFailureClass } from '../../src/lib/webhook-failure-class.js';
 
 const PIN: PinnedAddress = { address: '127.0.0.1', family: 4 };
@@ -102,6 +104,8 @@ function plainHandler(req: http.IncomingMessage, res: http.ServerResponse): void
       return;
     }
     if (url === '/valid-br') { res.writeHead(200, { 'content-encoding': 'br' }); res.end(VALID_BR); return; }
+    if (url === '/doc') { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"client_id":"x"}'); return; }
+    if (url === '/doc-identity') { res.writeHead(200, { 'content-encoding': 'identity', 'content-type': 'application/json' }); res.end('{}'); return; }
     if (url === '/large') { res.writeHead(200, { 'content-length': String(1 << 20) }); res.end(Buffer.alloc(1 << 20)); return; }
     m = url.match(/^\/status\/(\d{3})$/);
     if (m) {
@@ -365,10 +369,49 @@ describe('source rule: caller-URL egress goes through egressPost only', () => {
 // ── 4. surface ──────────────────────────────────────────────────────────────
 
 describe('egress surface', () => {
-  it('egressPost is the only egress export — no egressGet (Q20); egressRequest stays module-private', () => {
+  it('egressPost and egressGet are the only egress exports; egressRequest stays module-private', () => {
     expect(typeof ssrf.egressPost).toBe('function');
-    expect(Object.keys(ssrf).filter((k) => /^egress/.test(k))).toEqual(['egressPost']);
-    expect('egressGet' in ssrf).toBe(false);
+    expect(typeof ssrf.egressGet).toBe('function');
+    expect(Object.keys(ssrf).filter((k) => /^egress/.test(k)).sort()).toEqual(['egressGet', 'egressPost']);
     expect('egressRequest' in ssrf).toBe(false);
+  });
+});
+
+// ── 5. egressGet (GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.4 — the CIMD reader) ──────
+
+describe('egressGet never decodes, never follows, never over-reads', () => {
+  const get = (url: string, maxBytes = 5_120) => egressGet(url, { headers: { Accept: 'application/json' }, timeoutMs: 3_000, pin: PIN, maxBytes });
+
+  for (const coding of ['br', 'gzip', 'deflate'] as const) {
+    it(`a ${coding}-encoded reply is refused unread, with 0 decoder calls`, async () => {
+      let err: unknown;
+      const counts = await countDecodes(async () => { try { await get(`http://127.0.0.1:${plainPort}/encoded/${coding}`); } catch (e) { err = e; } });
+      expect(String(err)).toMatch(/encoded reply refused/);
+      expect(totalCalls(counts)).toBe(0);
+    });
+  }
+
+  it('a plain reply comes back as text with its content type', async () => {
+    expect(await get(`http://127.0.0.1:${plainPort}/doc`)).toEqual({ status: 200, contentType: 'application/json', body: '{"client_id":"x"}' });
+  });
+
+  it('an explicit identity encoding is accepted', async () => {
+    expect((await get(`http://127.0.0.1:${plainPort}/doc-identity`)).body).toBe('{}');
+  });
+
+  it('a reply over the cap is refused', async () => {
+    await expect(get(`http://127.0.0.1:${plainPort}/large`)).rejects.toThrow(/size cap/);
+  });
+
+  it('a redirect is refused and its target is never reached', async () => {
+    const before = sinkHits;
+    await expect(get(`http://127.0.0.1:${plainPort}/status/302`)).rejects.toThrow(/unexpected redirect/);
+    expect(sinkHits).toBe(before);
+  });
+
+  it('asks for identity, whatever the caller sent', async () => {
+    const at = received.length;
+    await egressGet(`http://127.0.0.1:${plainPort}/doc`, { headers: { 'Accept-Encoding': 'br' }, timeoutMs: 3_000, pin: PIN, maxBytes: 5_120 });
+    expect(received[at]?.headers['accept-encoding']).toBe('identity');
   });
 });

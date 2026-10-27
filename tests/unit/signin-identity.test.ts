@@ -19,7 +19,10 @@ const resolveCustomerByEmail = vi.fn();
 const mintFreeKey = vi.fn();
 
 vi.mock('../../src/lib/stripe.js', () => ({ resolveCustomerByEmail }));
-vi.mock('../../src/lib/free-keys-store.js', () => ({ mintFreeKey }));
+// GROWTH-AGENT-SIGNIN-OAUTH-W1 (Q5): the module calls `mintFreeKeyOutcome`; it delegates to the
+// `mintFreeKey` spy so every assertion below still pins WHAT was minted, and reports created:true.
+const mintFreeKeyOutcome = vi.fn(async (email: string, ref?: string | null) => ({ key: await mintFreeKey(email, ref), created: true }));
+vi.mock('../../src/lib/free-keys-store.js', () => ({ mintFreeKey, mintFreeKeyOutcome }));
 
 const { resolveSigninIdentity } = await import('../../src/lib/signin-identity.js');
 

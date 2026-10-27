@@ -51,12 +51,18 @@ const ALLOWED_DIRECT_CALLERS: ReadonlyArray<{ file: string; reason: string }> = 
     file: 'src/lib/referral-accrual.ts',
     reason: 'referred-signup mint, gated upstream by the PAID short-circuit in /api/signup-email',
   },
+  {
+    file: 'src/lib/oauth/resolve.ts',
+    reason: 'GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.12: an OAuth identity the resolver already called PAID whose key is no longer entitled falls back to that email\'s free key — the identity was decided by resolveSigninIdentity in the same call',
+  },
 ];
 
 describe('sign-in identity is derived in exactly one place', () => {
   it('no source file outside the store and the allow-list calls mintFreeKey directly', () => {
+    // `mintFreeKeyOutcome` (GROWTH-AGENT-SIGNIN-OAUTH-W1, Q5) is the same mint with a created flag,
+    // so it is held to the same rule.
     const offenders = tsFiles(join(ROOT, 'src'))
-      .filter((f) => /\bmintFreeKey\s*\(/.test(readFileSync(f, 'utf8')))
+      .filter((f) => /\bmintFreeKey(Outcome)?\s*\(/.test(readFileSync(f, 'utf8')))
       .map((f) => relative(ROOT, f))
       .filter((rel) => rel !== 'src/lib/free-keys-store.ts')
       .filter((rel) => rel !== 'src/lib/signin-identity.ts')

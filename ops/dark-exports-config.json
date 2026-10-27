@@ -203,6 +203,10 @@
     {
       "symbol": "isAnthropicEgressHash",
       "reason": "GROWTH-AGENT-SIGNIN-OAUTH-W1 CH1. platform-egress.ts is the ONE declaration of Anthropic's published egress (160.79.104.0/21); the wave spec ships it whole in CH1 so every consumer projects from one place. CH1's consumer is anthropicEgressNetworks() (the host stepup-readout, through dist/); this predicate's src/ consumer is the same wave's CH3 wall challenge (Part B), which MUST delete this row when it wires the call. Asserted meanwhile by tests/unit/platform-egress.test.ts (CIDR edges, set A unchanged, refuses without an ip-hash key). This is an explanation, not a suppression: the row is still printed and counted as `exempt` on every run."
+    },
+    {
+      "symbol": "oauthHealthy",
+      "reason": "GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2. The OAuth store's breaker (mode on · schema ensured · no store error in 5 min) ships with the store it reads, in CH2, dark behind MCP_OAUTH. Its src/ consumer is the same wave's CH3 challenge decision (Part B: never challenge while OAuth itself is unhealthy), which MUST delete this row when it wires the call. Meanwhile every store fault trips it through q() in store.ts. This is an explanation, not a suppression: the row is still printed and counted as `exempt` on every run."
     }
   ]
 }

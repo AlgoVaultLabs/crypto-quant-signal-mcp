@@ -132,6 +132,19 @@ function generateFreeKey(): string {
  * api key string.
  */
 export async function mintFreeKey(email: string, refCode?: string | null): Promise<string> {
+  return (await mintFreeKeyOutcome(email, refCode)).key;
+}
+
+/**
+ * GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2 (I-8, ruling Q5) — `mintFreeKey` plus a TRUTHFUL `created`.
+ *
+ * The OAuth callback sends the free-key email only to a person this flow just created, so it needs
+ * to know whether THIS call inserted the row. The insert is an awaited
+ * `INSERT … ON CONFLICT (email) DO NOTHING RETURNING api_key`: one row back = we created it; none =
+ * someone already held the email (a returning person, or a concurrent winner), and we return theirs.
+ * The old fire-and-forget `dbRun` could not say which on Postgres. Same idempotent semantics.
+ */
+export async function mintFreeKeyOutcome(email: string, refCode?: string | null): Promise<{ key: string; created: boolean }> {
   ensureFreeKeysSchema();
   // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.3: the cache row carries `bucket_key`. Before this, every
   // write here dropped it, so a key PROMOTED by the claim path metered on itself — a fresh
@@ -143,22 +156,24 @@ export async function mintFreeKey(email: string, refCode?: string | null): Promi
   );
   if (existing.length > 0) {
     cacheSet(existing[0].api_key, { api_key: existing[0].api_key, email, ref_code: refCode ?? null, bucket_key: existing[0].bucket_key ?? null });
-    return existing[0].api_key;
+    return { key: existing[0].api_key, created: false };
   }
   const apiKey = generateFreeKey();
-  try {
-    dbRun('INSERT INTO free_keys (api_key, email, ref_code) VALUES (?, ?, ?)', apiKey, email, refCode ?? null);
-  } catch {
+  const inserted = await dbQuery<{ api_key: string }>(
+    'INSERT INTO free_keys (api_key, email, ref_code) VALUES (?, ?, ?) ON CONFLICT (email) DO NOTHING RETURNING api_key',
+    [apiKey, email, refCode ?? null],
+  );
+  if (inserted.length === 0) {
     // race on email UNIQUE — return whoever won
     const re = await dbQuery<{ api_key: string; bucket_key?: string | null }>('SELECT api_key, bucket_key FROM free_keys WHERE email = ?', [email]);
     if (re.length > 0) {
       cacheSet(re[0].api_key, { api_key: re[0].api_key, email, ref_code: refCode ?? null, bucket_key: re[0].bucket_key ?? null });
-      return re[0].api_key;
+      return { key: re[0].api_key, created: false };
     }
     throw new Error('mintFreeKey insert failed');
   }
   cacheSet(apiKey, { api_key: apiKey, email, ref_code: refCode ?? null, bucket_key: null });
-  return apiKey;
+  return { key: apiKey, created: true };
 }
 
 /**

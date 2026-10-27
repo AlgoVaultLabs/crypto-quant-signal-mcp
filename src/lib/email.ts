@@ -992,3 +992,31 @@ export async function sendLifecycleMessage(args: LifecycleMessageArgs): Promise<
   if (err) throw new Error(`Resend rejected the lifecycle send: ${err.message ?? 'unknown error'}`);
   return (sent as { data?: { id?: string } | null }).data?.id ?? null;
 }
+
+/**
+ * GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2 (R2.8, §Copy D) — the one-time sign-in code for the OAuth
+ * connect page's email path. The code lives only in this message: it is never logged, and the
+ * store keeps its SHA-256. Fail-open like every sender here: null when Resend is unconfigured, and
+ * the caller answers the same generic page either way, so the send result never leaks whether an
+ * address exists.
+ */
+export async function sendSigninCodeEmail(to: string, code: string): Promise<{ id: string } | null> {
+  const client = getResendClient();
+  if (!client) return null;
+  const subject = 'Your AlgoVault sign-in code';
+  const line1 = `Your code is ${code}. It expires in 10 minutes.`;
+  const line2 = "Didn't ask for it? Ignore this email. Nothing changes.";
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f6f8fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1f2328">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f8fa;padding:32px 16px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border:1px solid #d0d7de;border-radius:12px;overflow:hidden">
+<tr><td style="padding:28px">
+  <p style="font-size:16px;line-height:1.5;margin:0 0 16px">Your code is <strong style="font-family:ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:2px">${code}</strong>. It expires in 10 minutes.</p>
+  <p style="font-size:13px;line-height:1.5;color:#656d76;margin:0">${line2}</p>
+</td></tr>
+</table></td></tr></table></body></html>`;
+  const text = `${line1}\n\n${line2}\n\n— AlgoVault Labs`;
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
+  const id = (sent as { data?: { id?: string } | null }).data?.id;
+  return id ? { id } : null;
+}

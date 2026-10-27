@@ -30,7 +30,7 @@
  * render it; unverified ones send it over email instead, which is what proves ownership.
  */
 import { resolveCustomerByEmail } from './stripe.js';
-import { mintFreeKey } from './free-keys-store.js';
+import { mintFreeKeyOutcome } from './free-keys-store.js';
 
 /**
  * PAID  — a Stripe customer owns this email; `key` is THEIR live key. Nothing was minted.
@@ -50,6 +50,11 @@ export interface SigninIdentity {
   readonly customerId: string | null;
   /** Stripe status of their most relevant subscription (`active`, `past_due`, …) — PAID only. */
   readonly subscriptionStatus: string | null;
+  /**
+   * True only when THIS call inserted the free key (GROWTH-AGENT-SIGNIN-OAUTH-W1, ruling Q5). The
+   * OAuth callback sends the free-key email on it, so a returning person is never re-mailed.
+   */
+  readonly created: boolean;
 }
 
 const INDETERMINATE: SigninIdentity = {
@@ -58,6 +63,7 @@ const INDETERMINATE: SigninIdentity = {
   tier: null,
   customerId: null,
   subscriptionStatus: null,
+  created: false,
 };
 
 /**
@@ -98,9 +104,10 @@ export async function resolveSigninIdentity(
       tier: lookup.customer.tier,
       customerId: lookup.customer.customerId,
       subscriptionStatus: lookup.customer.subscriptionStatus,
+      created: false,
     };
   }
 
-  const key = await mintFreeKey(normalised, refCode ?? null);
-  return { outcome: 'FREE', key, tier: 'free', customerId: null, subscriptionStatus: null };
+  const { key, created } = await mintFreeKeyOutcome(normalised, refCode ?? null);
+  return { outcome: 'FREE', key, tier: 'free', customerId: null, subscriptionStatus: null, created };
 }
