@@ -12,7 +12,8 @@
  *
  * NOTHING IN THE LIVE ACCOUNT CHANGES. Stripe answers 403 when "the API key doesn't have
  * permissions to perform the request" (docs.stripe.com/api/errors), and the message names the
- * missing permission as 'rak_<id>'. So:
+ * missing permission in quotes: 'rak_<id>' in the docs, ('<id>') from the live API (measured
+ * 2026-10-27, code more_permissions_required). So:
  *   controls  the manifest's `denied` requests go first. Each names a permission the key lacks and
  *             must come back 403 naming it: the permission is checked before the object is looked
  *             up (a payout that does not exist) and before the request is validated (a negative
@@ -120,15 +121,21 @@ export function mask(text: string): string {
     .replace(/\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9*]{4,}/g, (k) => `${k.slice(0, 8)}…${k.slice(-4)}`)
     .replace(/\bav_([a-z]+)_[A-Za-z0-9_]{4,}/g, (k, kind: string) => `av_${kind}_…${k.slice(-4)}`)
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '<email>')
-    .replace(/\b([a-z]{2,6}_(?:(?:live|test)_)?)([A-Za-z0-9]{8,})\b/g, (m, p: string, id: string) =>
-      p === 'req_' ? m : `${p}…${id.slice(-4)}`,
+    // An id inside a URL-encoded path (%2Fmk_…) has no word boundary before it, so %2F counts as one.
+    .replace(/(%2[Ff]|\b)([a-z]{2,6}_(?:(?:live|test)_)?)([A-Za-z0-9]{8,})\b/g, (m, at: string, p: string, id: string) =>
+      p === 'req_' ? m : `${at}${p}…${id.slice(-4)}`,
     );
 }
 
-/** The permissions a refusal names: Stripe writes them as 'rak_<id>'. */
+/**
+ * The permissions a refusal names, each in quotes: 'rak_<id>' in Stripe's docs, ('<id>') from the
+ * live API ("Enabling Payouts Read ('payout_read') permissions on this key would allow this request
+ * to continue", measured 2026-10-27). A quoted token counts only if it ends in _read or _write, the
+ * manifest's own grammar, so the key and the account quoted in the same message never do.
+ */
 export function rakNames(texts: string[]): string[] {
   const names = new Set<string>();
-  for (const t of texts) for (const m of t.matchAll(/\brak_([a-z][a-z0-9_]*[a-z0-9])/g)) names.add(m[1]);
+  for (const t of texts) for (const m of t.matchAll(/'(?:rak_)?([a-z][a-z0-9_]*_(?:read|write))'/g)) names.add(m[1]);
   return [...names].sort();
 }
 
@@ -321,7 +328,7 @@ export function classify(o: Observation): Outcome {
         : { verdict: 'INDETERMINATE', why: `403 naming ${named.join(', ') || 'no permission'}, not ${o.permission}: fix the denied entry` };
     }
     return named.length
-      ? { verdict: 'FAIL', why: `the key lacks ${named.map((n) => `rak_${n}`).join(', ')} (edit the key, then re-run)` }
+      ? { verdict: 'FAIL', why: `the key lacks ${named.join(', ')} (edit the key, then re-run)` }
       : { verdict: 'INDETERMINATE', why: '403 naming no permission (an access-policy refusal? measure the egress IP)' };
   }
   if (statuses.some((s) => s === 429 || s >= 500)) {
@@ -681,7 +688,7 @@ export function rowsFor(man: Pick<Manifest, 'denied'>): Row[] {
 
 // ── self-test ────────────────────────────────────────────────────────────────
 
-const SELF_TEST_MIN_CHECKS = 112;
+const SELF_TEST_MIN_CHECKS = 118;
 
 /** Shaped like ops/stripe-rak-permissions.json: its grants, and a row for every request and expansion the smoke sends. */
 const ST_MANIFEST = {
@@ -721,6 +728,10 @@ const ST_MANIFEST = {
 /** The 403 message as Stripe words it, the key and account already starred by Stripe. */
 const ST_RAK = (p: string): string =>
   `The provided key 'rk_live_*********************abcd' does not have the required permissions for this endpoint on account 'acct_1AbCdEfGhIjKlMnO'. Having the 'rak_${p}' permission would allow this request to continue.`;
+
+/** The 403 as the live API words it (measured 2026-10-27): the permission in ('<id>'), then a dashboard link. */
+const ST_LIVE403 = (p: string): string =>
+  `Permission denied. The provided key 'rk_live_...abcd' does not have the required permissions for this endpoint on account 'acct_1AbCdEfGhIjKlMnO'. Enabling Payouts Read ('${p}') permissions on this key would allow this request to continue. You can edit permissions at https://dashboard.stripe.com/b/acct_1AbCdEfGhIjKlMnO?destination=%2Fapikeys%2Fmk_1AbCdEfGhIjKlMnOpQrSt%2Fedit`;
 
 /** Every helper and every classification branch, offline. Never sends a request. */
 export function selfTest(): Verdict {
@@ -766,11 +777,18 @@ export function selfTest(): Verdict {
     const t = mask(ST_RAK('payout_read'));
     return t.includes("'rak_payout_read'") && t.includes('acct_…lMnO') && !t.includes('1AbCd');
   });
+  check1('mask: the live 403 keeps the permission and hides the account and the key id in its link', () => {
+    const t = mask(ST_LIVE403('payout_read'));
+    return t.includes("('payout_read')") && !t.includes('1AbCd') && t.includes('%2Fmk_…QrSt%2Fedit');
+  });
 
   // permission names
   check1('rakNames: reads the permission a 403 names', () => eq(rakNames([ST_RAK('customer_portal_write')]), ['customer_portal_write']));
   check1('rakNames: none named', () => eq(rakNames(['Forbidden', '']), []));
   check1('rakNames: sorted, each once', () => eq(rakNames(["'rak_b_read' and 'rak_a_write'", "'rak_b_read'"]), ['a_write', 'b_read']));
+  check1("rakNames: reads the live API's ('<id>')", () => eq(rakNames([ST_LIVE403('payout_read')]), ['payout_read']));
+  check1('rakNames: reads it after masking', () => eq(rakNames([mask(ST_LIVE403('customer_portal_write'))]), ['customer_portal_write']));
+  check1('rakNames: a quoted key or account is no permission', () => eq(rakNames(["'rk_live_...abcd' on 'acct_1AbCdEfGhIjKlMnO'"]), []));
 
   // request matching
   check1('sameRequest: a placeholder matches one segment', () => sameRequest('GET /v1/invoices/{id}', 'GET /v1/invoices/in_1'));
@@ -822,6 +840,7 @@ export function selfTest(): Verdict {
   check1('classify: a request the row does not expect', () => v({ kind: 'read', seen: seen('GET /v1/refunds', 200), check: 'ok' }) === 'INDETERMINATE');
   check1('classify: 401', () => v(wr(401, [err(401, null, 'Invalid API Key provided')])) === 'INDETERMINATE');
   check1('classify: a control refused, naming its permission', () => v(ctl(403, ST_RAK('payout_read'))) === 'PASS');
+  check1("classify: a control refused in the live API's words", () => v(ctl(403, ST_LIVE403('payout_read'))) === 'PASS');
   check1('classify: a control refused, naming another', () => v(ctl(403, ST_RAK('payout_write'))) === 'INDETERMINATE');
   check1('classify: a control refused, naming none', () => v(ctl(403, 'Forbidden')) === 'INDETERMINATE');
   check1('classify: a control not refused', () => v({ ...ctl(404), errors: [err(404, 'resource_missing')] }) === 'INDETERMINATE');
@@ -830,6 +849,10 @@ export function selfTest(): Verdict {
     return o.verdict === 'FAIL' && o.accepted === true;
   });
   check1('classify: a write refused, naming the permission', () => v(wr(403, [err(403, null, ST_RAK('customer_write'))])) === 'FAIL');
+  check1("classify: a write refused in the live API's words", () => {
+    const o = classify(obs(wr(403, [err(403, 'more_permissions_required', ST_LIVE403('customer_write'))])));
+    return o.verdict === 'FAIL' && o.why.startsWith('the key lacks customer_write');
+  });
   check1('classify: a write refused, naming none', () => v(wr(403, [err(403, null, 'Forbidden')])) === 'INDETERMINATE');
   check1('classify: a write refused, named only in the builder log', () => v({ ...wr(403), logs: [`Stripe createBillingPortalSession error: ${ST_RAK('customer_portal_write')}`] }) === 'FAIL');
   check1('classify: a write accepted', () => {
