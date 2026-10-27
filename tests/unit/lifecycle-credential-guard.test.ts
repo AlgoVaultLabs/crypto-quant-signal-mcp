@@ -28,7 +28,6 @@ const CTX = {
   used: 160,
   total: 200,
   resetDate: '14 September 2026',
-  mcpConfigSnippet: '',
   periodKey: 'p1',
 };
 
@@ -84,20 +83,18 @@ describe('the engine REFUSES a body carrying a paid key', () => {
 
   it('a free-key snippet renders and ledgers normally', async () => {
     const eng = await import('../../src/lib/lifecycle/engine.js');
-    const { mcpConfigSnippet } = await import('../../src/lib/lifecycle-copy.js');
     const r = await eng.sendLifecycle('activation_nudge', recipient,
-      { ...CTX, mcpConfigSnippet: mcpConfigSnippet(FREE) });
+      { ...CTX, apiKey: FREE });
     expect(r.status).toBe('would_send');
   });
 
   it('a PAID-key snippet is refused, and NOTHING is written to the ledger', async () => {
     const eng = await import('../../src/lib/lifecycle/engine.js');
-    const { mcpConfigSnippet } = await import('../../src/lib/lifecycle-copy.js');
     const { dbQuery } = await import('../../src/lib/performance-db.js');
     const { ensureLifecycleSchema } = await import('../../src/lib/lifecycle/schema.js');
 
     const r = await eng.sendLifecycle('activation_nudge', recipient,
-      { ...CTX, mcpConfigSnippet: mcpConfigSnippet(PAID) });
+      { ...CTX, apiKey: PAID });
     expect(r.status).toBe('skipped');
     expect(r.reason).toBe('non_free_credential_in_body');
 
@@ -111,12 +108,11 @@ describe('the engine REFUSES a body carrying a paid key', () => {
 
   it('the refusal does not consume the slot — a fixed body can still be sent', async () => {
     const eng = await import('../../src/lib/lifecycle/engine.js');
-    const { mcpConfigSnippet } = await import('../../src/lib/lifecycle-copy.js');
-    await eng.sendLifecycle('activation_nudge', recipient, { ...CTX, mcpConfigSnippet: mcpConfigSnippet(PAID) });
+    await eng.sendLifecycle('activation_nudge', recipient, { ...CTX, apiKey: PAID });
     // Not burning the slot is deliberate: the refusal is a bug in what we rendered, not a
     // decision about this recipient, and permanently blocking their message would turn a
     // fixable defect into silent data loss.
-    const after = await eng.sendLifecycle('activation_nudge', recipient, { ...CTX, mcpConfigSnippet: mcpConfigSnippet(FREE) });
+    const after = await eng.sendLifecycle('activation_nudge', recipient, { ...CTX, apiKey: FREE });
     expect(after.status).toBe('would_send');
   });
 });
@@ -126,10 +122,9 @@ describe('the LIVE E1 template carries only a free key', () => {
 
   it('renders clean through the real copy module', async () => {
     const { renderLifecycleEmail, scanOutboundCredentials } = await import('../../src/lib/lifecycle/render.js');
-    const { mcpConfigSnippet } = await import('../../src/lib/lifecycle-copy.js');
     const { unsubscribeToken } = await import('../../src/lib/lifecycle/identity.js');
     for (const step of ['activation_nudge', 'quota_80', 'quota_wall', 'reset_return'] as const) {
-      const m = renderLifecycleEmail(step, { ...CTX, mcpConfigSnippet: mcpConfigSnippet(FREE) },
+      const m = renderLifecycleEmail(step, { ...CTX, apiKey: FREE },
         `https://api.algovault.com/email/unsubscribe/${unsubscribeToken(FREE)}`);
       const scan = scanOutboundCredentials(m.subject, m.text, m.html);
       expect(scan.ok, `${step}: ${scan.offending.join()}`).toBe(true);

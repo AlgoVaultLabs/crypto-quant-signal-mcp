@@ -90,9 +90,10 @@ describe('C1 — the /welcome benefit line', () => {
   });
 
   it('the snippet builder is the ONE shape both channels render', async () => {
-    const { mcpConfigSnippet, EMAIL_TRACK_TOKEN, WELCOME_TRACK_TOKEN } = await import('../../src/lib/lifecycle-copy.js');
-    const a = mcpConfigSnippet('av_free_k', EMAIL_TRACK_TOKEN);
-    const b = mcpConfigSnippet('av_free_k', WELCOME_TRACK_TOKEN);
+    const { EMAIL_TRACK_TOKEN, WELCOME_TRACK_TOKEN } = await import('../../src/lib/lifecycle-copy.js');
+    const { setupSnippet } = await import('../../src/lib/client-setup.js');
+    const a = setupSnippet('claude-desktop', { apiKey: 'av_free_k', trackToken: EMAIL_TRACK_TOKEN, format: 'text' });
+    const b = setupSnippet('claude-desktop', { apiKey: 'av_free_k', trackToken: WELCOME_TRACK_TOKEN, format: 'text' });
     expect(a.replace(EMAIL_TRACK_TOKEN, 'X')).toBe(b.replace(WELCOME_TRACK_TOKEN, 'X'));
     expect(EMAIL_TRACK_TOKEN).not.toBe(WELCOME_TRACK_TOKEN);
   });

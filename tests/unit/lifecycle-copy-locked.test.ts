@@ -27,7 +27,6 @@ const CTX = {
   used: 160,
   total: FREE_MONTHLY_CALLS,
   resetDate: '14 September 2026',
-  mcpConfigSnippet: '{\n  "mcpServers": { "algovault": {} }\n}',
   digestHtml: '<h2>What\'s new in v1.29.0</h2>',
   digestText: "What's new in v1.29.0",
   digestPeriodLabel: 'September 2026',

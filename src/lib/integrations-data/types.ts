@@ -112,6 +112,12 @@ export interface IntegrationEntry {
    * ops/monitoring/client-claim-freshness.py.
    */
   verifiedAt?: string;
+  /**
+   * GROWTH-AGENT-SIGNIN-OAUTH-W1 CH1 — the row's config snippet as a function of (key, track
+   * token), HTML-ready. The docs walkthrough and `client-setup.ts` `setupSnippet()` both render
+   * from it, so `/welcome`, the emails and the docs cannot show three different setups.
+   */
+  configSnippet?: (o: { apiKey: string; trackToken: string }) => string;
 }
 
 /**

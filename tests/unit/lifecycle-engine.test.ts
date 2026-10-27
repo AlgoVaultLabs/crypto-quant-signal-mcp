@@ -27,7 +27,6 @@ const CTX = {
   used: 160,
   total: 200,
   resetDate: '14 September 2026',
-  mcpConfigSnippet: '{\n  "mcpServers": {}\n}',
   periodKey: '2026-08-15T12:57:42.368Z',
 };
 

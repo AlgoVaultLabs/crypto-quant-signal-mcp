@@ -42,6 +42,45 @@ function footerLinksFrom(entries: readonly EvidencedEntry[]): Array<{ label: str
     .map((e) => ({ label: e.sourceLabel, href: e.source }));
 }
 
+/**
+ * GROWTH-AGENT-SIGNIN-OAUTH-W1 CH1 — ONE setup derivation. These three rows' config snippets are
+ * functions of (key, track token): the docs walkthroughs below render them with the docs
+ * placeholders, and `/welcome` + every email render them through `client-setup.ts`
+ * `setupSnippet()`. Output is HTML-ready, so the caller passes an already-escaped key. The
+ * `?src=docs` URL stays a literal here (the src-coverage gate scans literals); `setupSnippet()`
+ * substitutes it, never rebuilds it.
+ */
+export type ConfigSnippet = (o: { apiKey: string; trackToken: string }) => string;
+export type SetupSlug = 'claude-desktop' | 'claude-code' | 'cursor';
+
+export const SETUP_CONFIG_SNIPPETS: Readonly<Record<SetupSlug, ConfigSnippet>> = {
+  'claude-desktop': ({ apiKey, trackToken }) => `{
+  "mcpServers": {
+    "algovault": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp?src=docs",
+               "--header", "Authorization:\${AUTH_HEADER}",
+               "--header", "X-AlgoVault-Track-Token:${trackToken}"],
+      "env": { "AUTH_HEADER": "Bearer ${apiKey}" }
+    }
+  }
+}`,
+  'claude-code': ({ apiKey, trackToken }) => `claude mcp add --transport http --scope project algovault "https://api.algovault.com/mcp?src=docs" \\
+  --header "Authorization: Bearer ${apiKey}" \\
+  --header "X-AlgoVault-Track-Token:${trackToken}"`,
+  cursor: ({ apiKey, trackToken }) => `{
+  "mcpServers": {
+    "algovault": {
+      "url": "https://api.algovault.com/mcp?src=docs",
+      "headers": {
+        "Authorization": "Bearer ${apiKey}",
+        "X-AlgoVault-Track-Token": "${trackToken}"
+      }
+    }
+  }
+}`,
+};
+
 const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
   meta: {
     anchorId: 'connect-mcp',
@@ -79,17 +118,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       walkthroughHtml: `      <p><strong>Easiest path (UI, free tier):</strong> Open Claude Desktop &rarr; <em>Customize</em> &rarr; <em>Connectors</em> &rarr; <em>+</em> &rarr; <em>Add custom connector</em>. Paste <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp?src=docs</code>, then click <em>Add</em>. Enable it per chat from <em>+</em> &rarr; <em>Connectors</em>. For a paid-tier key, use the JSON path below.</p>
       <p><strong>JSON path:</strong> Edit <code class="text-xs bg-navy-800 px-1 rounded">~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or <code class="text-xs bg-navy-800 px-1 rounded">%APPDATA%\\Claude\\claude_desktop_config.json</code> (Windows):</p>
       <div class="code-block bg-well border border-line rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">{
-  "mcpServers": {
-    "algovault": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp?src=docs",
-               "--header", "Authorization:\${AUTH_HEADER}",
-               "--header", "X-AlgoVault-Track-Token:chan-docs"],
-      "env": { "AUTH_HEADER": "Bearer av_live_&hellip;" }
-    }
-  }
-}</code></pre>
+        <pre><code class="text-xs text-gray-300">${SETUP_CONFIG_SNIPPETS['claude-desktop']({ apiKey: 'av_live_&hellip;', trackToken: 'chan-docs' })}</code></pre>
       </div>
       <p>Set your key in the env block. Free tier: put a free key in the <code class="text-xs">Authorization</code> header for ${freeCallsLabel()} calls a month. Or drop it and the env block to try ${freeKeylessCallsLabel()} calls. Keep the <code class="text-xs">X-AlgoVault-Track-Token</code> header either way.</p>
       <p><strong>Verify:</strong> ask Claude <em>"Get me a trade call for BTC on the 1h timeframe"</em>. Tool indicator appears bottom-right of the input box.</p>`,
@@ -99,6 +128,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
       verifiedAt: '2026-10-01',
       sourceLabel: 'Claude custom connectors',
+      configSnippet: SETUP_CONFIG_SNIPPETS['claude-desktop'],
       readme: README_CELLS['claude-desktop'],
       evidence: [
         {
@@ -135,17 +165,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
         "IDE-native MCP. Cursor's coding agent pulls live signals while editing strategy code.",
       walkthroughHtml: `      <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.cursor/mcp.json</code> (global, all projects) or <code class="text-xs bg-navy-800 px-1 rounded">.cursor/mcp.json</code> in the project root (per-project, commit-friendly):</p>
       <div class="code-block bg-well border border-line rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">{
-  "mcpServers": {
-    "algovault": {
-      "url": "https://api.algovault.com/mcp?src=docs",
-      "headers": {
-        "Authorization": "Bearer \${env:AV_API_KEY}",
-        "X-AlgoVault-Track-Token": "chan-docs"
-      }
-    }
-  }
-}</code></pre>
+        <pre><code class="text-xs text-gray-300">${SETUP_CONFIG_SNIPPETS.cursor({ apiKey: '${env:AV_API_KEY}', trackToken: 'chan-docs' })}</code></pre>
       </div>
       <p>Set <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> in your shell. Restart Cursor. The Cursor agent now has AlgoVault tools available while editing strategy code.</p>`,
       fullTutorialUrl: '/integrations/cursor',
@@ -154,6 +174,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       source: 'https://cursor.com/docs/mcp',
       verifiedAt: '2026-10-01',
       sourceLabel: 'Cursor MCP docs',
+      configSnippet: SETUP_CONFIG_SNIPPETS.cursor,
       readme: README_CELLS['cursor'],
       evidence: [
         {
@@ -235,9 +256,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
         'Per-project MCP. Useful for backtest / strategy-dev repos. Team-shared via <code class="text-xs">.mcp.json</code>.',
       walkthroughHtml: `      <p><strong>One-liner (recommended):</strong></p>
       <div class="code-block bg-well border border-line rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">claude mcp add --transport http --scope project algovault "https://api.algovault.com/mcp?src=docs" \\
-  --header "Authorization: Bearer \$AV_API_KEY" \\
-  --header "X-AlgoVault-Track-Token:chan-docs"</code></pre>
+        <pre><code class="text-xs text-gray-300">${SETUP_CONFIG_SNIPPETS['claude-code']({ apiKey: '$AV_API_KEY', trackToken: 'chan-docs' })}</code></pre>
       </div>
       <p>This writes a <code class="text-xs bg-navy-800 px-1 rounded">.mcp.json</code> in your repo root which you can commit so every teammate gets the same MCP config:</p>
       <div class="code-block bg-well border border-line rounded-lg p-4">
@@ -261,6 +280,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       source: 'https://code.claude.com/docs/en/mcp',
       verifiedAt: '2026-10-01',
       sourceLabel: 'Claude Code MCP docs',
+      configSnippet: SETUP_CONFIG_SNIPPETS['claude-code'],
       readme: README_CELLS['claude-code'],
       evidence: [
         {

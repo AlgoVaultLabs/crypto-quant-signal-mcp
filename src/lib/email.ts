@@ -21,6 +21,8 @@ import { canonicalInquiryType, FIELD_LIMITS } from './contact-submit.js';
 // arc projects from. Type-only import of a frozen module — consumed, never edited.
 import type { QuotaWall } from './quota-notice.js';
 import { commissionPct, commissionMonthsLabel, bonusCallsLabel, shareLink, formatUsdE2, usdcMinPayoutLabel } from './referral-constants.js';
+import { EMAIL_TRACK_TOKEN } from './lifecycle-copy.js';
+import { setupSnippet, SETUP_HEADING, SETUP_LABELS, SETUP_DESKTOP_NOTE, SETUP_OTHER_CLIENTS_URL, SETUP_OTHER_CLIENTS_LINE } from './client-setup.js';
 
 const FROM_DEFAULT = 'noreply@algovault.com';
 
@@ -544,17 +546,12 @@ function renderEmailHtml({ heading, intro, apiKey, tier, referral }: RenderArgs)
           <a href="${referral.link}" style="color:#0969da;text-decoration:none;font-size:13px;word-break:break-all">${referral.link}</a>
           <div style="font-size:11px;color:#656d76;margin-top:8px">Terms: <a href="${referral.termsUrl}" style="color:#0969da;text-decoration:none">${referral.termsUrl}</a></div>
         </div>` : ''}
-        <h2 style="font-size:14px;font-weight:600;margin:0 0 8px;color:#1f2328;text-transform:uppercase;letter-spacing:0.5px">Use it in Claude Desktop, Cursor, or Claude Code</h2>
-        <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 8px">Add this to your MCP-client config (e.g. <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px;font-size:12px">claude_desktop_config.json</code>):</p>
-        <pre style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:14px;font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;font-size:12px;color:#1f2328;overflow-x:auto;margin:0 0 12px">{
-  "mcpServers": {
-    "algovault": {
-      "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer ${apiKey}", "X-AlgoVault-Track-Token": "chan-email" }
-    }
-  }
-}</pre>
+        <h2 style="font-size:14px;font-weight:600;margin:0 0 8px;color:#1f2328;text-transform:uppercase;letter-spacing:0.5px">${SETUP_HEADING}</h2>
+        <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 8px">${SETUP_LABELS['claude-desktop']}</p>
+        <pre style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:14px;font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;font-size:12px;color:#1f2328;overflow-x:auto;margin:0 0 12px">${setupSnippet('claude-desktop', { apiKey, trackToken: EMAIL_TRACK_TOKEN, format: 'html' })}</pre>
+        <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">${SETUP_DESKTOP_NOTE}</p>
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Then ask Claude: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+        <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Other clients: <a href="${SETUP_OTHER_CLIENTS_URL}" style="color:#0969da;text-decoration:none">${SETUP_OTHER_CLIENTS_URL}</a></p>
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#0969da;text-decoration:none">curl guide</a> in our docs.</p>
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Need to find your key later, switch plans, update your card, or cancel? Visit <a href="https://api.algovault.com/account" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
         <p style="font-size:13px;line-height:1.5;color:#656d76;margin:0">Questions? Reply to this email or write to <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a>.</p>
@@ -585,18 +582,17 @@ Your code: ${referral.code}
 ${referral.link}
 Terms: ${referral.termsUrl}
 
-` : ''}Use it in Claude Desktop, Cursor, or Claude Code by adding this to your MCP-client config (e.g. claude_desktop_config.json):
+` : ''}${SETUP_HEADING}
 
-{
-  "mcpServers": {
-    "algovault": {
-      "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer ${apiKey}", "X-AlgoVault-Track-Token": "chan-email" }
-    }
-  }
-}
+${SETUP_LABELS['claude-desktop']}:
+
+${setupSnippet('claude-desktop', { apiKey, trackToken: EMAIL_TRACK_TOKEN, format: 'text' })}
+
+${SETUP_DESKTOP_NOTE}
 
 Then ask Claude: "Get me a trade call for SOL on the 5-minute timeframe."
+
+${SETUP_OTHER_CLIENTS_LINE}
 
 Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the curl guide:
 https://algovault.com/docs.html#testing-with-curl

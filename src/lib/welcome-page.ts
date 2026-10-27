@@ -24,7 +24,8 @@ import { WELCOME_SUBTITLE, welcomeUpgradeLine } from './conversion-copy.js';
 // page — the Plausible goal `Form: Submission` fires here and read 0 in 28d because this
 // api-origin surface carried no tag at all.
 import { renderAnalyticsRegion } from './analytics-snippet.js';
-import { WELCOME_BENEFIT_LINE, WELCOME_TRACK_TOKEN, mcpConfigSnippet } from './lifecycle-copy.js';
+import { WELCOME_BENEFIT_LINE, WELCOME_TRACK_TOKEN } from './lifecycle-copy.js';
+import { setupSnippet, SETUP_SLUGS, SETUP_HEADING, SETUP_LABELS, SETUP_DESKTOP_NOTE, SETUP_OTHER_CLIENTS_URL } from './client-setup.js';
 
 /**
  * Sanitize a UTM-ish param to safe URL-injection-free chars. Anything outside
@@ -79,15 +80,19 @@ export function getWelcomePageHtml(
     ? renderSigninComponent({ page: 'welcome', oauthProviders: opts.oauthProviders, newSignupEnabled: opts.newSignupEnabled, src: opts.src })
     : '';
 
-  // IDENTITY-LIFECYCLE-W3 CH3 — the MCP config snippet below is rendered by the ONE shared
-  // builder (`mcpConfigSnippet`). The JSON had been hand-copied in three places (here and twice
-  // in email.ts) and a fourth copy is how a config snippet starts telling different users
-  // different things.
+  // GROWTH-AGENT-SIGNIN-OAUTH-W1 CH1 — the setup block below projects from the ONE setup
+  // derivation (`client-setup.ts` `setupSnippet`, which reads the docs registry's rows). The
+  // Claude Desktop entry is the `command` + `args` (mcp-remote) form: the `url` + `headers` form
+  // this page used to show is ignored by Claude Desktop's config file.
   //
   // The TOKEN stays `chan-welcome` and is a PARAMETER precisely so this page and a lifecycle
   // email keep their own channels; collapsing them onto one value would merge two acquisition
-  // channels into one bucket and make both unmeasurable. The two copies in email.ts belong to
-  // the transactional templates and are a named follow-up rather than edited by this chapter.
+  // channels into one bucket and make both unmeasurable.
+  const setupBlock = SETUP_SLUGS.map((slug) =>
+    `    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">${SETUP_LABELS[slug]}</p>
+    <pre>${setupSnippet(slug, { apiKey: apiKey || 'YOUR_API_KEY', trackToken: WELCOME_TRACK_TOKEN, format: 'html' })}</pre>` +
+    (slug === 'claude-desktop' ? `
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">${SETUP_DESKTOP_NOTE}</p>` : '')).join('\n');
   //
   // C1 (IDENTITY-LIFECYCLE-W3 CH3) is the one line added to the organic CTA below. The free tier
   // is keyless BY DESIGN, so identity has to be worth volunteering, and until now nothing on this
@@ -225,9 +230,9 @@ ${renderAnalyticsRegion()}
   ${keyDisplay}
   ${tgConnect}
   <div class="usage">
-    <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
-    <pre>${mcpConfigSnippet(apiKey || 'YOUR_API_KEY', WELCOME_TRACK_TOKEN)}</pre>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+    <h2>${SETUP_HEADING}</h2>
+${setupBlock}
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Other clients: <a href="${SETUP_OTHER_CLIENTS_URL}" style="color:#58a6ff">${SETUP_OTHER_CLIENTS_URL}</a></p>
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">curl guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>

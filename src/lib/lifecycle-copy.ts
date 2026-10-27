@@ -25,6 +25,7 @@
 import { freeCallsLabel, freeDailyCallsLabel, planCallsLabel, planDailyCallsLabel, planPriceLabel } from './plans.js';
 import { bonusCallsLabel } from './referral-constants.js';
 import { TIMEFRAME_COUNT } from './capabilities.js';
+import { setupSnippet, SETUP_HEADING, SETUP_LABELS, SETUP_DESKTOP_NOTE, SETUP_OTHER_CLIENTS_LINE } from './client-setup.js';
 
 /** The five lifecycle steps. Order is the frequency-cap PRIORITY order — see `STEP_PRIORITY`. */
 export const LIFECYCLE_STEPS = [
@@ -99,35 +100,16 @@ export function accountDailyRow(used: number, total: number): string {
 }
 
 /**
- * The MCP-client config snippet E1 renders.
+ * The track token every email's setup snippet carries. It ALREADY SHIPPED in `email.ts`'s two
+ * transactional templates; those and E1 now render it through `client-setup.ts`
+ * `setupSnippet()` (GROWTH-AGENT-SIGNIN-OAUTH-W1 CH1), the one setup derivation.
  *
- * ONE builder. The same JSON currently appears by hand in three places — `email.ts` twice (the
- * welcome and key-recovery shells) and `welcome-page.ts` once — and a fourth hand-copy is how a
- * config snippet starts telling different users different things. CH3 owns `welcome-page.ts` and
- * converges it onto this function; the two in `email.ts` are named as a follow-up rather than
- * edited here, because CH2's Scope does not include the transactional templates.
- *
- * `chan-email` is the track token, and it ALREADY SHIPS at `email.ts:552`/`:593` — this reuses
- * the live value rather than declaring a new one.
+ * It is a channel token, not a constant shared by every surface, and that is the whole point:
+ * `/welcome` renders `chan-welcome` and an email renders `chan-email`. Collapsing them onto one
+ * value would merge two acquisition channels into one bucket and make both unmeasurable — a
+ * shared SHAPE is the goal, never a shared token.
  */
 export const EMAIL_TRACK_TOKEN = 'chan-email';
-
-/**
- * @param trackToken the CHANNEL's own token. It is a parameter, not a constant, and that is the
- * whole point: `/welcome` renders `chan-welcome` and a lifecycle email renders `chan-email`.
- * Collapsing them onto one value would merge two acquisition channels into one bucket and make
- * both unmeasurable — a shared SHAPE is the goal, never a shared token.
- */
-export function mcpConfigSnippet(apiKey: string, trackToken: string = EMAIL_TRACK_TOKEN): string {
-  return `{
-  "mcpServers": {
-    "algovault": {
-      "url": "${API_BASE}/mcp",
-      "headers": { "Authorization": "Bearer ${apiKey}", "X-AlgoVault-Track-Token": "${trackToken}" }
-    }
-  }
-}`;
-}
 
 /** The `/welcome` page's own channel token. Distinct from `chan-email` by design. */
 export const WELCOME_TRACK_TOKEN = 'chan-welcome';
@@ -142,8 +124,10 @@ export interface StepCopyContext {
   total: number;
   /** `resets_at` rendered as `14 September 2026`. */
   resetDate: string;
-  /** The `/welcome` MCP config snippet, carrying `X-AlgoVault-Track-Token: chan-email`. */
-  mcpConfigSnippet: string;
+  /** The FREE key E1's setup snippet carries (`setupSnippet`, `chan-email`); absent → the
+   *  `/welcome` placeholder. Never a paid key — the engine refuses one. The digest renders no
+   *  snippet and passes none (ruling Q3). */
+  apiKey?: string;
   /** README `## What's new` blocks, already converted to HTML. `product_updates` only. */
   digestHtml?: string;
   digestText?: string;
@@ -167,9 +151,12 @@ function activationNudge(ctx: StepCopyContext): RenderedCopy {
   return {
     subject: 'Your AlgoVault key is ready — first call in 30 seconds',
     paragraphs: [
-      `Your key ${ctx.keyMasked} hasn't made a call yet. Paste this into Claude Desktop, Cursor or any MCP client:`,
-      ctx.mcpConfigSnippet,
+      `Your key ${ctx.keyMasked} hasn't made a call yet. ${SETUP_HEADING}.`,
+      `${SETUP_LABELS['claude-desktop']}:`,
+      setupSnippet('claude-desktop', { apiKey: ctx.apiKey || 'YOUR_API_KEY', trackToken: EMAIL_TRACK_TOKEN, format: 'text' }),
+      SETUP_DESKTOP_NOTE,
       'Then ask: "Get me a trade call for SOL on the 5-minute timeframe."',
+      SETUP_OTHER_CLIENTS_LINE,
       // 🛑 `freeDailyCallsLabel()`, never `FREE_MONTHLY_CALLS / 2`. The daily cap is a SECOND
       // meter that refuses independently (plans.ts), not a slice of the monthly one — it equals
       // half today by coincidence, and deriving it would silently lie the moment either moves.

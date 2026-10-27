@@ -19,7 +19,7 @@
 import { dbQuery } from '../performance-db.js';
 import { readMeters, type BucketMeter } from './meter.js';
 import { maskKey } from './identity.js';
-import { mcpConfigSnippet, type LifecycleStep, type StepCopyContext } from '../lifecycle-copy.js';
+import { type LifecycleStep, type StepCopyContext } from '../lifecycle-copy.js';
 import type { LifecycleRecipient } from './engine.js';
 
 /** Hours a key must have existed before `activation_nudge` may fire. */
@@ -87,7 +87,7 @@ export async function loadBuckets(): Promise<Bucket[]> {
   });
 }
 
-function baseCtx(b: Bucket): Omit<StepCopyContext, 'mcpConfigSnippet'> & { mcpConfigSnippet: string } {
+function baseCtx(b: Bucket): StepCopyContext {
   return {
     keyMasked: maskKey(b.apiKey),
     used: b.meter.used,
@@ -95,7 +95,7 @@ function baseCtx(b: Bucket): Omit<StepCopyContext, 'mcpConfigSnippet'> & { mcpCo
     // A step that can only fire with a live period always has a date; `activation_nudge` has no
     // period by definition and never renders one, so the fallback is never read in copy.
     resetDate: b.meter.resetDate ?? '',
-    mcpConfigSnippet: mcpConfigSnippet(b.apiKey),
+    apiKey: b.apiKey,
   };
 }
 

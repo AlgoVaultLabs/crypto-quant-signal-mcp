@@ -21,7 +21,6 @@ import {
   readReadmeBlocks, optInRecipients, sentVersionsFor,
   markdownToEmailHtml, markdownToEmailText, digestPeriodLabel,
 } from '../lib/lifecycle/digest.js';
-import { mcpConfigSnippet } from '../lib/lifecycle-copy.js';
 
 const TAG = '[product-updates-digest]';
 
@@ -74,7 +73,6 @@ async function main(): Promise<number> {
       { recipientId: r.recipientId, email: r.email, identityBound: true },
       {
         keyMasked: '', used: 0, total: 0, resetDate: '',
-        mcpConfigSnippet: mcpConfigSnippet(''),
         digestHtml: html, digestText: text, digestPeriodLabel: digestPeriodLabel(now),
         periodKey,
       },

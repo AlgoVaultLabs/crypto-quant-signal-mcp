@@ -96,16 +96,37 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   
   
   <div class="usage">
-    <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
+    <h2>Use your key in your client</h2>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
+    <pre>{
+  "mcpServers": {
+    "algovault": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp",
+               "--header", "Authorization:\${AUTH_HEADER}",
+               "--header", "X-AlgoVault-Track-Token:chan-welcome"],
+      "env": { "AUTH_HEADER": "Bearer YOUR_API_KEY" }
+    }
+  }
+}</pre>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Save the file, then quit and reopen Claude Desktop. It needs Node.js installed.</p>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Code</p>
+    <pre>claude mcp add --transport http --scope project algovault "https://api.algovault.com/mcp" \\
+  --header "Authorization: Bearer YOUR_API_KEY" \\
+  --header "X-AlgoVault-Track-Token:chan-welcome"</pre>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Cursor</p>
     <pre>{
   "mcpServers": {
     "algovault": {
       "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer YOUR_API_KEY", "X-AlgoVault-Track-Token": "chan-welcome" }
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY",
+        "X-AlgoVault-Track-Token": "chan-welcome"
+      }
     }
   }
 }</pre>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Other clients: <a href="https://algovault.com/integrations" style="color:#58a6ff">https://algovault.com/integrations</a></p>
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">curl guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>
@@ -279,16 +300,37 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   
   
   <div class="usage">
-    <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
+    <h2>Use your key in your client</h2>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
+    <pre>{
+  "mcpServers": {
+    "algovault": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp",
+               "--header", "Authorization:\${AUTH_HEADER}",
+               "--header", "X-AlgoVault-Track-Token:chan-welcome"],
+      "env": { "AUTH_HEADER": "Bearer YOUR_API_KEY" }
+    }
+  }
+}</pre>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Save the file, then quit and reopen Claude Desktop. It needs Node.js installed.</p>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Code</p>
+    <pre>claude mcp add --transport http --scope project algovault "https://api.algovault.com/mcp" \\
+  --header "Authorization: Bearer YOUR_API_KEY" \\
+  --header "X-AlgoVault-Track-Token:chan-welcome"</pre>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Cursor</p>
     <pre>{
   "mcpServers": {
     "algovault": {
       "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer YOUR_API_KEY", "X-AlgoVault-Track-Token": "chan-welcome" }
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY",
+        "X-AlgoVault-Track-Token": "chan-welcome"
+      }
     }
   }
 }</pre>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Other clients: <a href="https://algovault.com/integrations" style="color:#58a6ff">https://algovault.com/integrations</a></p>
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">curl guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>
@@ -462,16 +504,37 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   
   
   <div class="usage">
-    <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
+    <h2>Use your key in your client</h2>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
+    <pre>{
+  "mcpServers": {
+    "algovault": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp",
+               "--header", "Authorization:\${AUTH_HEADER}",
+               "--header", "X-AlgoVault-Track-Token:chan-welcome"],
+      "env": { "AUTH_HEADER": "Bearer YOUR_API_KEY" }
+    }
+  }
+}</pre>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Save the file, then quit and reopen Claude Desktop. It needs Node.js installed.</p>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Code</p>
+    <pre>claude mcp add --transport http --scope project algovault "https://api.algovault.com/mcp" \\
+  --header "Authorization: Bearer YOUR_API_KEY" \\
+  --header "X-AlgoVault-Track-Token:chan-welcome"</pre>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Cursor</p>
     <pre>{
   "mcpServers": {
     "algovault": {
       "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer YOUR_API_KEY", "X-AlgoVault-Track-Token": "chan-welcome" }
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY",
+        "X-AlgoVault-Track-Token": "chan-welcome"
+      }
     }
   }
 }</pre>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Other clients: <a href="https://algovault.com/integrations" style="color:#58a6ff">https://algovault.com/integrations</a></p>
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">curl guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>
@@ -645,16 +708,37 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   
   
   <div class="usage">
-    <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
+    <h2>Use your key in your client</h2>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
+    <pre>{
+  "mcpServers": {
+    "algovault": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp",
+               "--header", "Authorization:\${AUTH_HEADER}",
+               "--header", "X-AlgoVault-Track-Token:chan-welcome"],
+      "env": { "AUTH_HEADER": "Bearer YOUR_API_KEY" }
+    }
+  }
+}</pre>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Save the file, then quit and reopen Claude Desktop. It needs Node.js installed.</p>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Code</p>
+    <pre>claude mcp add --transport http --scope project algovault "https://api.algovault.com/mcp" \\
+  --header "Authorization: Bearer YOUR_API_KEY" \\
+  --header "X-AlgoVault-Track-Token:chan-welcome"</pre>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Cursor</p>
     <pre>{
   "mcpServers": {
     "algovault": {
       "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer YOUR_API_KEY", "X-AlgoVault-Track-Token": "chan-welcome" }
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY",
+        "X-AlgoVault-Track-Token": "chan-welcome"
+      }
     }
   }
 }</pre>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Other clients: <a href="https://algovault.com/integrations" style="color:#58a6ff">https://algovault.com/integrations</a></p>
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">curl guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>
@@ -828,16 +912,37 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   
   
   <div class="usage">
-    <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
+    <h2>Use your key in your client</h2>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
+    <pre>{
+  "mcpServers": {
+    "algovault": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp",
+               "--header", "Authorization:\${AUTH_HEADER}",
+               "--header", "X-AlgoVault-Track-Token:chan-welcome"],
+      "env": { "AUTH_HEADER": "Bearer YOUR_API_KEY" }
+    }
+  }
+}</pre>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Save the file, then quit and reopen Claude Desktop. It needs Node.js installed.</p>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Code</p>
+    <pre>claude mcp add --transport http --scope project algovault "https://api.algovault.com/mcp" \\
+  --header "Authorization: Bearer YOUR_API_KEY" \\
+  --header "X-AlgoVault-Track-Token:chan-welcome"</pre>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Cursor</p>
     <pre>{
   "mcpServers": {
     "algovault": {
       "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer YOUR_API_KEY", "X-AlgoVault-Track-Token": "chan-welcome" }
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY",
+        "X-AlgoVault-Track-Token": "chan-welcome"
+      }
     }
   }
 }</pre>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Other clients: <a href="https://algovault.com/integrations" style="color:#58a6ff">https://algovault.com/integrations</a></p>
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">curl guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>
@@ -971,16 +1076,37 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   <div class="pending"><p>Your API key is being provisioned. This usually takes a few seconds.</p><p>Refresh this page in a moment, or check your email at <strong>buyer@example.com</strong>.</p></div>
   
   <div class="usage">
-    <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
+    <h2>Use your key in your client</h2>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
+    <pre>{
+  "mcpServers": {
+    "algovault": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp",
+               "--header", "Authorization:\${AUTH_HEADER}",
+               "--header", "X-AlgoVault-Track-Token:chan-welcome"],
+      "env": { "AUTH_HEADER": "Bearer YOUR_API_KEY" }
+    }
+  }
+}</pre>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Save the file, then quit and reopen Claude Desktop. It needs Node.js installed.</p>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Code</p>
+    <pre>claude mcp add --transport http --scope project algovault "https://api.algovault.com/mcp" \\
+  --header "Authorization: Bearer YOUR_API_KEY" \\
+  --header "X-AlgoVault-Track-Token:chan-welcome"</pre>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Cursor</p>
     <pre>{
   "mcpServers": {
     "algovault": {
       "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer YOUR_API_KEY", "X-AlgoVault-Track-Token": "chan-welcome" }
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY",
+        "X-AlgoVault-Track-Token": "chan-welcome"
+      }
     }
   }
 }</pre>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Other clients: <a href="https://algovault.com/integrations" style="color:#58a6ff">https://algovault.com/integrations</a></p>
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">curl guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>
@@ -1114,16 +1240,37 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   <div class="key-box"><div class="label">Your API Key</div><code id="api-key">av_live_070707070707070707070707</code><button onclick="navigator.clipboard.writeText(document.getElementById('api-key').textContent);this.textContent='Copied!'">Copy</button></div>
   <div class="tg-connect"><div class="label">Connect to Telegram bot</div><p>Get regime alerts + trade calls pushed to your Telegram, with your paid quota honored automatically.</p><a href="https://t.me/algovaultofficialbot?start=auth_av_live_070707070707070707070707" target="_blank" rel="noopener" class="tg-btn">📱 Connect @algovaultofficialbot</a></div>
   <div class="usage">
-    <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
+    <h2>Use your key in your client</h2>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
+    <pre>{
+  "mcpServers": {
+    "algovault": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp",
+               "--header", "Authorization:\${AUTH_HEADER}",
+               "--header", "X-AlgoVault-Track-Token:chan-welcome"],
+      "env": { "AUTH_HEADER": "Bearer av_live_070707070707070707070707" }
+    }
+  }
+}</pre>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Save the file, then quit and reopen Claude Desktop. It needs Node.js installed.</p>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Code</p>
+    <pre>claude mcp add --transport http --scope project algovault "https://api.algovault.com/mcp" \\
+  --header "Authorization: Bearer av_live_070707070707070707070707" \\
+  --header "X-AlgoVault-Track-Token:chan-welcome"</pre>
+    <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Cursor</p>
     <pre>{
   "mcpServers": {
     "algovault": {
       "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer av_live_070707070707070707070707", "X-AlgoVault-Track-Token": "chan-welcome" }
+      "headers": {
+        "Authorization": "Bearer av_live_070707070707070707070707",
+        "X-AlgoVault-Track-Token": "chan-welcome"
+      }
     }
   }
 }</pre>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Other clients: <a href="https://algovault.com/integrations" style="color:#58a6ff">https://algovault.com/integrations</a></p>
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">curl guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>

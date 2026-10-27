@@ -40,7 +40,7 @@ function stubResend() {
 
 const ctx = (periodKey = 'once') => ({
   keyMasked: 'av_free_…a1b2', used: 0, total: 200, resetDate: '',
-  mcpConfigSnippet: '{\n  "mcpServers": {}\n}', periodKey,
+  periodKey,
 });
 const cand = (id: string, periodKey = 'once') => ({
   recipient: { recipientId: id, email: `${id}@example.com`, identityBound: true },
