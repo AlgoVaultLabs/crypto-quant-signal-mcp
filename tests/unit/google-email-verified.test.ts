@@ -178,8 +178,26 @@ describe('R0.2 — the route: refusal first, nothing minted, every other byte un
   const fixture = readFileSync(resolve(root, 'tests/fixtures/auth-callback-span-pre-ch0.txt'), 'utf8');
   const start = src.indexOf("app.get('/auth/:provider/callback'");
   const end = src.indexOf('// ── AV-CHAT-MCP-W1', start);
-  const span = src.slice(start, end);
+  const raw = src.slice(start, end);
+  // GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.7 is the ONE other sanctioned insertion: the MCP-client branch
+  // right after `resolveSigninIdentity`. It is cut out by its own markers and asserted on its own,
+  // so every byte the two waves did not declare stays pinned to the pre-CH0 fixture.
+  const OAUTH_OPEN = '      // GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.7:';
+  const OAUTH_CLOSE = '        if (handled) return;\n      }\n\n';
+  const oauthStart = raw.indexOf(OAUTH_OPEN);
+  const oauthEnd = raw.indexOf(OAUTH_CLOSE, oauthStart) + OAUTH_CLOSE.length;
+  const oauthBlock = raw.slice(oauthStart, oauthEnd);
+  const span = raw.slice(0, oauthStart) + raw.slice(oauthEnd);
   const CATCH = '    } catch (err) {\n';
+
+  it('the R2.7 OAuth branch is present once, gated on MCP_OAUTH, and returns only when it answered', () => {
+    expect(oauthStart).toBeGreaterThan(0);
+    expect(raw.indexOf(OAUTH_OPEN, oauthStart + 1)).toBe(-1);
+    expect(oauthBlock).toContain("if (resolveOAuthMode() !== 'off') {");
+    expect(oauthBlock).toContain('await oauthCallbackBranch(req, res, {');
+    expect(oauthBlock).toContain('if (handled) return;');
+    expect(raw.indexOf('await resolveSigninIdentity(')).toBeLessThan(oauthStart);
+  });
 
   it('the span and the fixture are both found, and the catch is unique in each', () => {
     expect(start).toBeGreaterThan(0);

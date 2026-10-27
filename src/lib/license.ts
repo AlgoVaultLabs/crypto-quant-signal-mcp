@@ -35,7 +35,8 @@ import { loadAllBonuses, persistBonusRemaining, grantBonus } from './referral-st
 import { recordIndeterminate } from './indeterminate-counter.js';
 // AUTH-THREE-STATE-W1 CH1: the ONE credential vocabulary. LEAF (type-only imports of its own), so
 // this consumer edge closes no cycle — same reasoning as `binding-meter.ts` above.
-import { classifyCredential, isRetryable, type CredentialOutcome } from './credential-outcome.js';
+import { classifyCredential, isRetryable, OAUTH_ACCESS_SHAPE, type CredentialOutcome } from './credential-outcome.js';
+import { resolveOAuthMode } from './oauth/mode.js';
 
 // v1.10.3 FREE-UNLOCK-W1: free tier now grants ALL coins + ALL timeframes —
 // the 100-calls/month cap is the primary upsell trigger; funding-arb top-5
@@ -316,6 +317,13 @@ export interface X402Downgrade {
 export interface ResolveLicenseOpts {
   tool?: string;
   timeframe?: string;
+  /**
+   * GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.12 — set ONLY by the `/mcp` route. An OAuth access token
+   * (`OAUTH_ACCESS_SHAPE`) resolves to its person's current credential there; on any other route
+   * (no `oauth`) the same token is TOKEN_INVALID. With `MCP_OAUTH` off it is MALFORMED and served,
+   * exactly as before — the rollback lever.
+   */
+  oauth?: boolean;
 }
 
 /**
@@ -435,15 +443,31 @@ export async function resolveLicense(
       // Fall through to API-key/free with the reason; pendingSettlement cleared
       // (no settle/charge) by NOT returning it below.
       const authHeader = headers['authorization'] || headers['Authorization'];
-      const license = await resolveFromApiKeyAsync(authHeader);
+      const license = await resolveBearerAsync(authHeader, opts);
       return { license, x402Downgrade: downgrade };
     }
   }
 
   // Tier 2: API key (env var or Authorization header) — validated via Stripe
   const authHeader = headers['authorization'] || headers['Authorization'];
-  const license = await resolveFromApiKeyAsync(authHeader);
+  const license = await resolveBearerAsync(authHeader, opts);
   return { license };
+}
+
+/**
+ * GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.12 — an OAuth access token is intercepted BEFORE the Stripe tier,
+ * and only while `MCP_OAUTH` is on: off, the shape falls through to `resolveFromApiKeyAsync` and is
+ * MALFORMED + served, byte-identical to today. The resolver is loaded lazily so a dark deploy never
+ * evaluates the OAuth store.
+ */
+async function resolveBearerAsync(authHeader: string | undefined, opts?: ResolveLicenseOpts): Promise<LicenseInfo> {
+  const key = extractApiKey(authHeader);
+  if (key && OAUTH_ACCESS_SHAPE.test(key) && resolveOAuthMode() !== 'off') {
+    if (!opts?.oauth) return { tier: 'free', key: null, outcome: 'TOKEN_INVALID', anonymous: true };
+    const { resolveOAuthAccess } = await import('./oauth/resolve.js');
+    return resolveOAuthAccess(key, resolveFromApiKeyAsync);
+  }
+  return resolveFromApiKeyAsync(authHeader);
 }
 
 /**

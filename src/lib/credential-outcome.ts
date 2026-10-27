@@ -43,6 +43,14 @@ import type { LicenseTier, LicenseInfo } from '../types.js';
 export const AV_KEY_SHAPE = /^av_(live|free)_[a-f0-9]{24}$/;
 
 /**
+ * GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2 (R2.12) — the opaque OAuth access token we issue (`avat_` + 48
+ * hex). Beside the key shape on purpose: it is NOT a key, so `classifyCredential` keeps calling it
+ * MALFORMED, and with `MCP_OAUTH` off that is exactly how it is served (today — the rollback lever).
+ * Only `resolveLicense` consults this, and only while the OAuth mode is on.
+ */
+export const OAUTH_ACCESS_SHAPE = /^avat_[a-f0-9]{48}$/;
+
+/**
  * The five distinguishable realities. Every consumer projects from this one value rather than
  * re-deriving "is this caller authenticated" from `{tier, key}` truthiness.
  *
@@ -51,8 +59,11 @@ export const AV_KEY_SHAPE = /^av_(live|free)_[a-f0-9]{24}$/;
  * - `UNKNOWN`       — well-formed, and it exists in neither Stripe nor `free_keys`. Refuse.
  * - `INDETERMINATE` — well-formed, and we could not reach the store to ask. Refuse, retryable.
  * - `RESOLVED`      — the principal is established (API key, x402 payment, or internal bypass).
+ * - `TOKEN_INVALID` — an OAuth access token (mode on) that is unknown, expired, revoked, for another
+ *   resource, or presented where only a key works (REST). `/mcp` answers 401 + `WWW-Authenticate`;
+ *   REST answers 401 + the Q-E body. Never reaches the JSON-RPC refusal tables (C13).
  */
-export type CredentialOutcome = 'ABSENT' | 'MALFORMED' | 'UNKNOWN' | 'INDETERMINATE' | 'RESOLVED';
+export type CredentialOutcome = 'ABSENT' | 'MALFORMED' | 'UNKNOWN' | 'INDETERMINATE' | 'RESOLVED' | 'TOKEN_INVALID';
 
 /** The shape verdict. Pure, and deliberately NOT an outcome — shape alone never decides existence. */
 export type CredentialShape = 'ABSENT' | 'MALFORMED' | 'WELL_FORMED';

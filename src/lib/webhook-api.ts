@@ -178,9 +178,10 @@ export function authRequired(
  * absent-vs-invalid collapse this wave removes from the resolver, surfacing in the copy layer.
  *
  * 🛑 STAYS A 401, and that is not an oversight. These are ordinary REST routes, not MCP: the
- * `/mcp` surface answers 200 + a JSON-RPC error specifically because a 401 there would start OAuth
- * discovery in conformant MCP clients against a server we do not run. Here, 401 is simply correct.
- * Two surfaces, two right answers — do not unify them.
+ * `/mcp` surface answers an API key's refusal with 200 + a JSON-RPC error because a 401 there starts
+ * OAuth discovery in conformant MCP clients; it 401s only for an OAuth access token, and only while
+ * `MCP_OAUTH` is on (GROWTH-AGENT-SIGNIN-OAUTH-W1). Here, 401 is simply correct, and an access token
+ * gets the Q-E body (`TOKEN_INVALID`). Two surfaces, two right answers — do not unify them.
  *
  * Only the BODY changes, and only for the two refusing outcomes: `ABSENT` and `MALFORMED` keep
  * today's message byte-for-byte, so nothing a working caller sees moves. The kill switch is

@@ -56,7 +56,7 @@ const UNKNOWN_LIVE_KEY = `av_live_${HEX24}`;
 /** The literal string four documented MCP client configs emit when the env var is not expanded. */
 const UNEXPANDED_ENV = '${env:AV_API_KEY}';
 
-const ALL_OUTCOMES: CredentialOutcome[] = ['ABSENT', 'MALFORMED', 'UNKNOWN', 'INDETERMINATE', 'RESOLVED'];
+const ALL_OUTCOMES: CredentialOutcome[] = ['ABSENT', 'MALFORMED', 'UNKNOWN', 'INDETERMINATE', 'RESOLVED', 'TOKEN_INVALID'];
 
 beforeEach(() => {
   mockValidate.mockReset();
@@ -369,6 +369,14 @@ describe('types.ts LicenseInfo.outcome and CredentialOutcome name the same set',
     const decl = src.slice(src.indexOf('outcome?:'));
     const union = decl.slice(0, decl.indexOf(';'));
     for (const o of ALL_OUTCOMES) expect(union, `types.ts union is missing ${o}`).toContain(`'${o}'`);
+    expect(union.match(/'[A-Z_]+'/g)).toHaveLength(ALL_OUTCOMES.length);
+  });
+
+  it('AuthState.outcome (the third union) names the same set — GROWTH-AGENT-SIGNIN-OAUTH-W1 proposal (b)', () => {
+    const src = readFileSync(join(ROOT, 'src/types.ts'), 'utf8');
+    const decl = src.slice(src.indexOf("outcome: 'ABSENT'"));
+    const union = decl.slice(0, decl.indexOf(';'));
+    for (const o of ALL_OUTCOMES) expect(union, `AuthState union is missing ${o}`).toContain(`'${o}'`);
     expect(union.match(/'[A-Z_]+'/g)).toHaveLength(ALL_OUTCOMES.length);
   });
 });

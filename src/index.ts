@@ -18,6 +18,10 @@ import type { ExchangeId, LicenseInfo } from './types.js';
 // `credentialOutcomeOf` is the single projection every consumer reads.
 import { decideRefusal, isRefusingOutcome, isStrictUnknownEnabled, refuseCredentialHttp } from './lib/credential-refusal.js';
 import { credentialOutcomeOf } from './lib/credential-outcome.js';
+// GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2: the ONE OAuth mode resolver + the PRM URL the 401 names.
+import { resolveOAuthMode } from './lib/oauth/mode.js';
+import { protectedResourceMetadataUrl } from './lib/oauth/metadata.js';
+import { mountOAuth, oauthCallbackBranch } from './lib/oauth/routes.js';
 import { routeTradeCall } from './tools/trade-call-router.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
@@ -308,11 +312,12 @@ export async function handleMcpStateless(
  * calls it. That the route actually INVOKES it is pinned separately by a source-order assertion —
  * a pure function nobody calls is the same defect one layer up.
  *
- * HTTP 200 + a JSON-RPC error, never 401. A 401 with `WWW-Authenticate` starts MCP's OAuth
- * discovery in conformant clients, and we run no OAuth server — the client would chase a document
- * that does not exist and surface a worse error than the one being fixed. `index.ts:367` already
- * pairs a status with a JSON-RPC error body on this route. CH3's plain-REST routes keep their 401;
- * two surfaces, two right answers.
+ * HTTP 200 + a JSON-RPC error for an API key — UNKNOWN and INDETERMINATE keep their 200 shapes and
+ * codes. `401` ONLY for TOKEN_INVALID, and only with OAuth on (GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.12,
+ * C13 + C14): an invalid or expired access token MUST get 401 + `WWW-Authenticate` naming our
+ * protected-resource metadata, so the client re-runs OAuth. TOKEN_INVALID is routed here BEFORE
+ * `decideRefusal`, whose JSON-RPC tables cannot represent it. With `MCP_OAUTH` off an access-shaped
+ * bearer is MALFORMED and served, so this branch is unreachable — the rollback lever.
  *
  * POST only. `initialize`, `tools/list` and `tools/call` are all POST, so every JSON-RPC method is
  * covered; GET/DELETE are transport-level and keep their existing 405 rather than being answered
@@ -325,7 +330,18 @@ export function applyCredentialRefusal(
 ): boolean {
   if (req.method !== 'POST') return false;
   const body = req.body as { method?: string; id?: unknown } | undefined;
-  const decision = decideRefusal({ outcome: credentialOutcomeOf(license) }, body?.method);
+  const outcome = credentialOutcomeOf(license);
+  if (outcome === 'TOKEN_INVALID') {
+    const description = 'The access token is invalid or expired.';
+    res.setHeader(
+      'WWW-Authenticate',
+      `Bearer error="invalid_token", error_description="${description}", scope="mcp:tools", resource_metadata="${protectedResourceMetadataUrl(req.originalUrl)}"`,
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(401).json({ error: 'invalid_token', error_description: description });
+    return true;
+  }
+  const decision = decideRefusal({ outcome }, body?.method);
   if (!decision.refuse) return false;
   // Echo the request id per JSON-RPC 2.0; a notification (no id) gets null.
   res.status(200).json({ jsonrpc: '2.0', id: body?.id ?? null, error: decision.error });
@@ -3351,6 +3367,24 @@ async function startHttp() {
       const { shareLink } = await import('./lib/referral-constants.js');
       const identity = await resolveSigninIdentity(profile.email);
 
+      // GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.7: a live `av_mcp_authz` pending row means this sign-in
+      // started at an MCP client's /authorize — bind the identity and continue to consent (or hand
+      // the client `temporarily_unavailable` on INDETERMINATE). No cookie, an expired row, a store
+      // fault or MCP_OAUTH off → false, and everything below renders today's page unchanged.
+      if (resolveOAuthMode() !== 'off') {
+        const handled = await oauthCallbackBranch(req, res, {
+          identity,
+          email: profile.email,
+          via: id,
+          clearCookies: [
+            'av_oauth_state=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0',
+            'av_oauth_next=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0',
+            'av_oauth_src=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0',
+          ],
+        });
+        if (handled) return;
+      }
+
       // Stripe is configured and did not answer. Minting here is exactly how a paying human
       // acquires a shadow free identity, so mint nothing and send them to the page that can
       // resolve them once Stripe is back. REFUSE, never throw — this is a live serving path.
@@ -3603,6 +3637,12 @@ async function startHttp() {
   registerPlansPublicRoutes(app);
 
   // MCP endpoint
+  // GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.1: the authorization server mounts only when MCP_OAUTH is
+  // optin|wall. Off (unset) prints the boot line and mounts nothing — all nine paths keep the 404.
+  const oauthMode = resolveOAuthMode();
+  if (oauthMode === 'off') console.log('[oauth] mode=off');
+  else await mountOAuth(app, oauthMode);
+
   app.all('/mcp', express.json(), async (req, res) => {
     // OPS-X402-MCP-PRICE-BINDING-W1: for a priced `tools/call` POST, bind the x402
     // grant/settle to the CALLED tool's effective price. Parse the tool name (+ its
@@ -3624,13 +3664,15 @@ async function startHttp() {
 
     // Resolve license per-request using 3-tier gate: x402 → API key → free
     // Async because x402 verification hits the Facilitator
+    // `oauth: true` is passed ONLY here: an OAuth access token resolves on /mcp and nowhere else.
     const { license, pendingSettlement, x402Downgrade } = isPricedTool
       ? await resolveLicense(
           req.headers as Record<string, string | undefined>,
-          { tool: callTool, timeframe: callTimeframe },
+          { tool: callTool, timeframe: callTimeframe, oauth: true },
         )
       : await resolveLicense(
           req.headers as Record<string, string | undefined>,
+          { oauth: true },
         );
 
     // AUTH-THREE-STATE-W1 CH2 — THE CREDENTIAL GATE, AND ITS POSITION IS THE CONTRACT.

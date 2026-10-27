@@ -365,7 +365,7 @@ export interface AuthState {
    * say is `UNKNOWN`. Narrowing the type would force the field to be omitted in exactly the
    * configuration where a customer most needs it, which is the silence this field exists to end.
    */
-  outcome: 'ABSENT' | 'MALFORMED' | 'UNKNOWN' | 'INDETERMINATE' | 'RESOLVED';
+  outcome: 'ABSENT' | 'MALFORMED' | 'UNKNOWN' | 'INDETERMINATE' | 'RESOLVED' | 'TOKEN_INVALID';
   /**
    * Whether the caller presented a credential at all. This is the member that makes MALFORMED
    * actionable: `presented: true` with `tier: 'free'` says "you sent something, and it is not a key
@@ -792,7 +792,7 @@ export interface LicenseInfo {
    * on `lib/`; `credential-outcome.ts` owns the canonical `CredentialOutcome`, and
    * `tests/credential-outcome.test.ts` pins the two to the same member set so they cannot drift.
    */
-  outcome?: 'ABSENT' | 'MALFORMED' | 'UNKNOWN' | 'INDETERMINATE' | 'RESOLVED';
+  outcome?: 'ABSENT' | 'MALFORMED' | 'UNKNOWN' | 'INDETERMINATE' | 'RESOLVED' | 'TOKEN_INVALID';
   /**
    * AUTH-THREE-STATE-W1 CH1 (ADDITIVE, optional). True only on `INDETERMINATE` — a retry can
    * succeed because the answer was never determined, as opposed to `UNKNOWN`, which is settled and

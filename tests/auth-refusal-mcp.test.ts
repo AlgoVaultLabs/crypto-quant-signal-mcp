@@ -161,8 +161,8 @@ describe('served credentials are unaffected', () => {
 describe('refusal', () => {
   it('(3) a well-formed UNKNOWN key → 200 + JSON-RPC -32003, not retryable', async () => {
     const r = await post(bearer(UNKNOWN_KEY), call(3));
-    // 200, never 401: a 401 with WWW-Authenticate starts MCP OAuth discovery against a server
-    // that does not exist.
+    // 200, not 401: a 401 with WWW-Authenticate starts MCP OAuth discovery. Only an OAuth access
+    // token that no longer resolves (TOKEN_INVALID, OAuth on) gets the 401 — an API key never does.
     expect(r.status).toBe(200);
     expect(r.json?.error?.code).toBe(-32003);
     expect(r.json?.error?.data?.retryable).toBe(false);
@@ -209,6 +209,65 @@ describe('refusal', () => {
     const r = await post(bearer(UNEXPANDED_ENV), call(5));
     expect(r.json?.error).toBeUndefined();
     expect(r.json?.result?.content?.[0]?.text).toBe('pong');
+  });
+});
+
+// ── GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2: TOKEN_INVALID, the one 401 ───────────────
+
+describe('TOKEN_INVALID — the 401 that starts OAuth, governed by MCP_OAUTH alone', () => {
+  const ACCESS = `avat_${'a1'.repeat(24)}`;
+  afterEach(() => { delete process.env.MCP_OAUTH; });
+
+  it('OAuth off: an avat_ bearer is MALFORMED — served 200, exactly as before the wave', async () => {
+    const r = await post(bearer(ACCESS), call(60));
+    expect(r.status).toBe(200);
+    expect(r.json?.error).toBeUndefined();
+    expect(r.json?.result?.content?.[0]?.text).toBe('pong');
+  });
+
+  it('OAuth on: 401 + RFC 6750 challenge with scope and resource_metadata; nothing dispatched', async () => {
+    process.env.MCP_OAUTH = 'optin';
+    const r = await fetch(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...bearer(ACCESS) },
+      body: JSON.stringify(call(61)),
+    });
+    expect(r.status).toBe(401);
+    const www = r.headers.get('www-authenticate') ?? '';
+    expect(www).toMatch(/^Bearer error="invalid_token"/);
+    expect(www).toContain('scope="mcp:tools"');
+    expect(www).toContain('resource_metadata="https://api.algovault.com/.well-known/oauth-protected-resource/mcp"');
+    expect(r.headers.get('cache-control')).toBe('no-store');
+    expect(await r.json()).toEqual({ error: 'invalid_token', error_description: 'The access token is invalid or expired.' });
+    expect(toolInvocations).toBe(0);
+  });
+
+  it('OAuth on: AUTH_STRICT_UNKNOWN=0 does not turn the 401 off (one switch per lane)', async () => {
+    process.env.MCP_OAUTH = 'optin';
+    process.env.AUTH_STRICT_UNKNOWN = '0';
+    const r = await post(bearer(ACCESS), call(62));
+    expect(r.status).toBe(401);
+  });
+
+  it('OAuth on: an API key is still never a 401', async () => {
+    process.env.MCP_OAUTH = 'optin';
+    const r = await post(bearer(UNKNOWN_KEY), call(63));
+    expect(r.status).toBe(200);
+    expect(r.json?.error?.code).toBe(-32003);
+  });
+
+  it('OAuth on: a GET is not challenged (the 401 is POST-only, like every refusal)', async () => {
+    process.env.MCP_OAUTH = 'optin';
+    const r = await fetch(base, { method: 'GET', headers: { Accept: 'text/event-stream', ...bearer(ACCESS) } });
+    expect(r.status).not.toBe(401);
+  });
+
+  it('TOKEN_INVALID has no JSON-RPC code: it is routed to the 401 BEFORE decideRefusal (C13)', () => {
+    expect(Object.keys(AUTH_REFUSAL_JSONRPC_CODES)).toEqual(['UNKNOWN', 'INDETERMINATE']);
+    const src = readFileSync(resolve(ROOT, 'src/index.ts'), 'utf8');
+    const fn = src.slice(src.indexOf('export function applyCredentialRefusal'));
+    expect(fn.indexOf("'TOKEN_INVALID'")).toBeGreaterThan(-1);
+    expect(fn.indexOf("'TOKEN_INVALID'")).toBeLessThan(fn.indexOf('decideRefusal('));
   });
 });
 

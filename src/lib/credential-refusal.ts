@@ -12,6 +12,11 @@
  * it as a top failure mode). That literal fails `AV_KEY_SHAPE`, so it is MALFORMED, so it never
  * refuses — which is the entire reason refusal can ship default-ON rather than behind a flag
  * nobody flips.
+ *
+ * GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2 (proposal (b)): `TOKEN_INVALID` refuses too, but ONLY over HTTP.
+ * The JSON-RPC tables stay keyed by `JsonRpcRefusingOutcome`, and `decideRefusal` cannot accept a
+ * TOKEN_INVALID at compile time: `/mcp` routes it to its 401 first (`applyCredentialRefusal`, C13),
+ * and the REST sites emit the Q-E body through `refuseCredentialHttp` with no site edits.
  */
 import type { Response } from 'express';
 import type { CredentialOutcome, CredentialResolution } from './credential-outcome.js';
@@ -43,9 +48,10 @@ export const AUTH_REFUSAL_JSONRPC_CODES: Readonly<Record<'UNKNOWN' | 'INDETERMIN
 });
 
 /** HTTP `code` values for the plain-REST emitter. Extends `authRequired`'s vocabulary; never a second shape. */
-export const AUTH_REFUSAL_HTTP_CODES: Readonly<Record<'UNKNOWN' | 'INDETERMINATE', string>> = Object.freeze({
+export const AUTH_REFUSAL_HTTP_CODES: Readonly<Record<RefusingOutcome, string>> = Object.freeze({
   UNKNOWN: 'auth_key_unknown',
   INDETERMINATE: 'auth_upstream_indeterminate',
+  TOKEN_INVALID: 'auth_oauth_token_mcp_only',
 });
 
 /**
@@ -55,7 +61,7 @@ export const AUTH_REFUSAL_HTTP_CODES: Readonly<Record<'UNKNOWN' | 'INDETERMINATE
  * Saying "invalid" would repeat, in the copy layer, the same four-into-one collapse this wave is
  * removing from the resolver, and would tell a paying customer their key is bad when it is not.
  */
-export const AUTH_REFUSAL_COPY: Readonly<Record<'UNKNOWN' | 'INDETERMINATE', { error: string; suggested_action: string }>> =
+export const AUTH_REFUSAL_COPY: Readonly<Record<RefusingOutcome, { error: string; suggested_action: string }>> =
   Object.freeze({
     UNKNOWN: {
       error: 'That API key was not recognised.',
@@ -71,13 +77,21 @@ export const AUTH_REFUSAL_COPY: Readonly<Record<'UNKNOWN' | 'INDETERMINATE', { e
       suggested_action:
         'Retry in a few seconds. Your key was not rejected — we could not reach the billing service.',
     },
+    // §Copy Q-E, REST only: an OAuth access token presented where only a key works.
+    TOKEN_INVALID: {
+      error: 'This access token works on /mcp only.',
+      suggested_action: 'Use your AlgoVault API key on this endpoint, or call the tool through /mcp.',
+    },
   });
 
-/** The two outcomes that refuse. Everything else is served. */
-export type RefusingOutcome = 'UNKNOWN' | 'INDETERMINATE';
+/** The two outcomes the JSON-RPC tables cover. TOKEN_INVALID never reaches them (C13). */
+export type JsonRpcRefusingOutcome = 'UNKNOWN' | 'INDETERMINATE';
+
+/** The outcomes that refuse. Everything else is served. */
+export type RefusingOutcome = JsonRpcRefusingOutcome | 'TOKEN_INVALID';
 
 export function isRefusingOutcome(outcome: CredentialOutcome): outcome is RefusingOutcome {
-  return outcome === 'UNKNOWN' || outcome === 'INDETERMINATE';
+  return outcome === 'UNKNOWN' || outcome === 'INDETERMINATE' || outcome === 'TOKEN_INVALID';
 }
 
 /**
@@ -100,7 +114,7 @@ export interface RefusalDecision {
   error?: {
     code: number;
     message: string;
-    data: { auth_outcome: RefusingOutcome; retryable: boolean; suggested_action: string };
+    data: { auth_outcome: JsonRpcRefusingOutcome; retryable: boolean; suggested_action: string };
   };
   /** Why we did not refuse, for the tests and for anyone reading a trace. */
   reason?: 'served_outcome' | 'kill_switch_off';
@@ -119,7 +133,7 @@ export interface RefusalDecision {
  * every method rather than trusting this comment.
  */
 export function decideRefusal(
-  resolution: Pick<CredentialResolution, 'outcome'>,
+  resolution: { outcome: Exclude<CredentialResolution['outcome'], 'TOKEN_INVALID'> },
   method?: string,
   env: NodeJS.ProcessEnv = process.env,
 ): RefusalDecision {
@@ -137,7 +151,7 @@ export function decideRefusal(
  * `credential-outcome.ts`, never restated here — a second copy of "which state can be retried" is
  * exactly the kind of duplicated classification that produced the original defect.
  */
-export function refuseCredentialJsonRpc(outcome: RefusingOutcome): NonNullable<RefusalDecision['error']> {
+export function refuseCredentialJsonRpc(outcome: JsonRpcRefusingOutcome): NonNullable<RefusalDecision['error']> {
   const copy = AUTH_REFUSAL_COPY[outcome];
   return {
     code: AUTH_REFUSAL_JSONRPC_CODES[outcome],
@@ -155,10 +169,11 @@ export function refuseCredentialJsonRpc(outcome: RefusingOutcome): NonNullable<R
  * CH3.
  *
  * 🛑 THESE KEEP THEIR 401, and that asymmetry with `/mcp`'s 200 is deliberate. `/mcp` speaks
- * JSON-RPC, where the error travels in the body; a 401 there carrying `WWW-Authenticate` would send
- * conformant MCP clients chasing an OAuth discovery document we do not serve — a worse failure than
- * the one being fixed. These routes are ordinary REST, `authRequired` already 401s on them, and
- * that is correct. Two surfaces, two right answers; do not unify them.
+ * JSON-RPC, where an API key's error travels in the body; a 401 there carrying `WWW-Authenticate`
+ * starts OAuth discovery, so `/mcp` answers 401 ONLY for TOKEN_INVALID and only while `MCP_OAUTH` is
+ * on (GROWTH-AGENT-SIGNIN-OAUTH-W1 R2.12) — the one case where discovery is the right answer. These
+ * routes are ordinary REST, `authRequired` already 401s on them, and that is correct. Two surfaces,
+ * two right answers; do not unify them.
  *
  * The BODY is what changes: same four members as `authRequired` (`webhook-api.ts:80-90`), so this
  * extends one shape rather than inventing a second.
