@@ -11,7 +11,12 @@ CH4 ruling packet asks, from production data, and writes ONE structured line to 
   * `stepup_would_gate` (shadow) / `stepup_gated` (live) events for that day, by family and pool;
   * `quota_hit_block` events for that day, by session pool;
   * Anthropic-egress metered calls over the trailing 30 d — the number `CLAUDE_POOL=EMPTY` is ruled
-    on — and `OAUTH_TRIGGER=MET|NOT_MET` at >= 1,000 (the deferred OAuth wave's measured trigger);
+    on — and `chat_attempts_30d {anthropic, openai, total}`: distinct callers (ip buckets / anonymous
+    session pools) in [T0 − 30 d, T0), T0 = today 00:00Z, over free metered `request_log` rows ∪
+    `quota_hit_block` events whose caller is in set A or whose family is `claude` / `openai` — the
+    "before" of the OAuth sign-in (GROWTH-AGENT-SIGNIN-OAUTH-W1, which retired `OAUTH_TRIGGER`).
+    `total` is ONE distinct count over the union of both predicates, never `anthropic + openai`; an
+    event without `client_family` counts by pool only;
   * the ACTIVATION GUARD (Mr.1's CH4 ruling, Q1 = C amended; windows re-derived by
     OPS-STEPUP-ACTIVATION-W1): an ACTIVATION is a bucket whose FIRST-EVER successful free metered
     call fell in a window. A VERDICT ABOUT THE STEP-UP OBSERVES ONLY POST-FLIP TIME. Every window is
@@ -63,8 +68,8 @@ the step-up changes what a caller receives. In `live`, a guard that cannot decid
 frozen envelope, no `flipped_at`, an ip-hash version change — makes the run INDETERMINATE (exit 3),
 never a quiet PASS.
 
-ONE DERIVATION, RESOLVED IN THE RUNNING IMAGE. Pool membership (set A = `hashIp` of the eight masked
-/24 network addresses of 160.79.104.0/21), the metered predicate (`call-class.ts` `billablePredicate()`)
+ONE DERIVATION, RESOLVED IN THE RUNNING IMAGE. Pool membership (set A = `hashIp` of the masked /24
+network addresses `platform-egress.ts` `anthropicEgressNetworks()` declares), the metered predicate (`call-class.ts` `billablePredicate()`)
 and the step-up mode + N (`plans.ts` `resolveStepupMode()` / `FREE_KEYLESS_MONTHLY_CALLS_RULED`) are
 all computed by a `node -e` probe INSIDE the app container from its deployed `dist/` — never mirrored
 here. The ip-hash key never leaves the container; the probe returns SQL, and psql (`aoe_readonly`,
@@ -111,7 +116,6 @@ GUARD_DROP = 0.30               # >= 30 % week-over-week drop in ACTIVATIONS (an
 ACT_MIN_PRIOR_WEEK = 5          # a family needs >= 5 activating buckets in the prior week to page
 ENVELOPE_WEEKS = 6              # the envelope = the largest of the 6 pre-flip weekly drops (7 weeks of counts)
 ENVELOPE_PATH = os.environ.get("STEPUP_ENVELOPE_PATH", "/var/lib/algovault-monitoring/stepup-activation-envelope.json")
-OAUTH_TRIGGER_CALLS = 1000      # Anthropic-egress metered calls, trailing 30 d (V2 R-6)
 TOP_FAMILIES = 12               # bounds the record under canary_result_log's 8 KiB line cap
 
 WEEK_DAYS = 7                   # the weekly leg is due once a whole post-flip week exists
@@ -160,6 +164,7 @@ const D0 = new Date(d1.getTime() - DAY).toISOString();    // yesterday 00:00Z
 const W7 = new Date(d1.getTime() - 7 * DAY).toISOString();
 const W14 = new Date(d1.getTime() - 14 * DAY).toISOString();
 const W30 = new Date(now - 30 * DAY).toISOString();
+const T30 = new Date(d1.getTime() - 30 * DAY).toISOString();   // chat_attempts_30d: [T0 - 30 d, T0), T0 = today 00:00Z
 const REF = process.env.STEPUP_REF_ISO ? new Date(Math.floor(Date.parse(process.env.STEPUP_REF_ISO) / DAY) * DAY) : d1;
 const RISO = REF.toISOString();
 const WEEKS = Math.max(2, Math.min(12, parseInt(process.env.STEPUP_WEEKS || '2', 10) || 2));
@@ -168,19 +173,25 @@ if (!/^[A-Za-z0-9]+$/.test(VER)) throw new Error('IP_HASH_VERSION is not a plain
 const SF = process.env.STEPUP_SERIES_FROM ? Math.floor(Date.parse(process.env.STEPUP_SERIES_FROM) / DAY) * DAY : NaN;
 const FROM = new Date(Math.min(Number.isFinite(SF) ? SF : Infinity, REF.getTime() - WEEKS * 7 * DAY));
 const FISO = FROM.toISOString();
-const A = [];
-for (let i = 104; i <= 111; i++) A.push(hashIp('160.79.' + i + '.0'));
+const A = require('/app/dist/lib/platform-egress.js').anthropicEgressNetworks().map((n) => hashIp(n));
 const p = billablePredicate();
 let k = 0;
 const BILL = p.sql.replace(/\?/g, () => q(p.params[k++]));
 const IN_A = '(' + A.map(q).join(',') + ')';
 const FREE = "license_tier = 'free' AND coalesce(is_bot_internal, false) = false AND " + BILL;
 const pool = (col) => 'CASE WHEN ' + col + ' IN ' + IN_A + " THEN 'anthropic' ELSE 'other' END";
+const CHAT = "('claude', 'openai')";
 const sql = [
   "SELECT 'calls_1d', " + pool('ip_hash') + ", coalesce(client_name, '<null>'), count(*), count(DISTINCT ip_hash) FROM request_log WHERE " + FREE +
     ' AND "timestamp" >= ' + q(D0) + ' AND "timestamp" < ' + q(D1) + ' GROUP BY 2, 3;',
   "SELECT 'anthropic_30d', count(*), count(DISTINCT ip_hash), '', '' FROM request_log WHERE " + FREE +
     ' AND "timestamp" >= ' + q(W30) + ' AND ip_hash IN ' + IN_A + ';',
+  "SELECT 'chat_30d', count(DISTINCT c) FILTER (WHERE a OR f = 'claude'), count(DISTINCT c) FILTER (WHERE f = 'openai'), " +
+    'count(DISTINCT c) FILTER (WHERE a OR f IN ' + CHAT + "), '' FROM (" +
+    'SELECT ip_hash AS c, ip_hash IN ' + IN_A + ' AS a, client_name AS f FROM request_log WHERE ' + FREE +
+    ' AND "timestamp" >= ' + q(T30) + ' AND "timestamp" < ' + q(D1) + ' AND (ip_hash IN ' + IN_A + ' OR client_name IN ' + CHAT + ')' +
+    " UNION ALL SELECT session_id, session_id IN " + IN_A + ", meta_json::jsonb->>'client_family' FROM funnel_events WHERE event_type = 'quota_hit_block' AND ts >= " +
+    q(T30) + '::timestamptz AND ts < ' + q(D1) + "::timestamptz AND (session_id IN " + IN_A + " OR meta_json::jsonb->>'client_family' IN " + CHAT + ')) u;',
   "SELECT 'stepup_1d', event_type, coalesce(meta_json::jsonb->>'client_family', '<null>'), " +
     pool("substr(meta_json::jsonb->>'bucket', 6)") + ", count(*) FROM funnel_events WHERE event_type IN ('stepup_would_gate', 'stepup_gated') AND ts >= " +
     q(D0) + '::timestamptz AND ts < ' + q(D1) + '::timestamptz GROUP BY 2, 3, 4;',
@@ -290,7 +301,8 @@ def iso(dt: datetime) -> str:
 
 def parse_rows(text: str) -> dict:
     """psql `-tA -F|` output → structured aggregates. Unknown labels are ignored, never fatal."""
-    out = {"calls_1d": [], "anthropic_30d": {"calls": 0, "buckets": 0}, "stepup_1d": [], "qhb_1d": [], "act": [], "actd": []}
+    out = {"calls_1d": [], "anthropic_30d": {"calls": 0, "buckets": 0}, "chat_30d": None, "stepup_1d": [], "qhb_1d": [],
+           "act": [], "actd": []}
     for line in text.splitlines():
         parts = line.split("|")
         if len(parts) < 2:
@@ -300,6 +312,9 @@ def parse_rows(text: str) -> dict:
             out["calls_1d"].append({"pool": parts[1], "family": parts[2], "calls": _int(parts[3]), "buckets": _int(parts[4])})
         elif label == "anthropic_30d" and len(parts) >= 3:
             out["anthropic_30d"] = {"calls": _int(parts[1]), "buckets": _int(parts[2])}
+        elif label == "chat_30d" and len(parts) >= 4:
+            # Each value is the query's own distinct count — `total` is never re-derived here.
+            out["chat_30d"] = {"anthropic": _int(parts[1]), "openai": _int(parts[2]), "total": _int(parts[3])}
         elif label == "stepup_1d" and len(parts) >= 5:
             out["stepup_1d"].append({"event": parts[1], "family": parts[2], "pool": parts[3], "count": _int(parts[4])})
         elif label == "qhb_1d" and len(parts) >= 4:
@@ -541,7 +556,7 @@ def build_metrics(probe: dict, rows: dict, weekly_rows: list, volume=None, envel
         "quota_hit_block_1d": rows["qhb_1d"],
         "anthropic_calls_30d": a30["calls"],
         "anthropic_buckets_30d": a30["buckets"],
-        "oauth_trigger": "MET" if a30["calls"] >= OAUTH_TRIGGER_CALLS else "NOT_MET",
+        "chat_attempts_30d": rows["chat_30d"],
         "activation": [
             {k: j[k] for k in ("family", "prev_w", "cur_w", "drop_pct", "envelope_pct", "state", "daily")}
             for j in weekly_rows[:TOP_FAMILIES]
@@ -773,7 +788,10 @@ def main() -> int:
         log("VOLUME family=%s prev7=%d cur7=%d drop_pct=%s (reported, never paged)"
             % (v["family"], v["prev7"], v["cur7"], v["drop_pct"]))
     log("POOLS %s" % json.dumps(metrics["free_metered_1d"], separators=(",", ":"))[:600])
-    log("OAUTH_TRIGGER=%s anthropic_calls_30d=%d" % (metrics["oauth_trigger"], metrics["anthropic_calls_30d"]))
+    chat = metrics["chat_attempts_30d"]
+    log("CHAT_ATTEMPTS_30D %s anthropic_calls_30d=%d"
+        % (("anthropic=%d openai=%d total=%d" % (chat["anthropic"], chat["openai"], chat["total"])) if chat else "absent",
+           metrics["anthropic_calls_30d"]))
     log("ENVELOPE %s · IP_HASH_VERSION=%s" % (("frozen, reference_day=%s flipped_at=%s" % (env_doc.get("reference_day"), env_doc.get("flipped_at")))
                                              if env_doc else env_reason, probe["ip_hash_version"]))
     if should_page(probe["mode"]) and guard_reason is not None:
@@ -936,6 +954,7 @@ def self_test() -> int:
         "calls_1d|other|node|120|30",
         "calls_1d|anthropic|claude|5|1",
         "anthropic_30d|64|1||",
+        "chat_30d|2|1|2|",                  # one caller in both predicates: total 2, never 2 + 1
         "stepup_1d|stepup_would_gate|node|other|3",
         "qhb_1d|other|1200|3|",
         "act|python-requests|900|1500|5",   # volume: −40 % — REPORTED, never paged
@@ -948,6 +967,7 @@ def self_test() -> int:
     rows = parse_rows(fixture)
     check("parse: every labelled row lands in its bucket",
           len(rows["calls_1d"]) == 3 and rows["anthropic_30d"] == {"calls": 64, "buckets": 1}
+          and rows["chat_30d"] == {"anthropic": 2, "openai": 1, "total": 2}
           and len(rows["stepup_1d"]) == 1 and len(rows["qhb_1d"]) == 1 and len(rows["act"]) == 2
           and len(rows["actd"]) == 2)
     check("parse: the daily series sums one family's rows per UTC day",
@@ -1089,9 +1109,11 @@ def self_test() -> int:
     metrics = build_metrics(probe, rows, rows1, volume, env_doc, None, leg1, early1)
     check("metrics: pools aggregate calls and buckets", metrics["free_metered_1d"]["other"]["calls"] == 420
           and metrics["free_metered_1d"]["anthropic"]["buckets"] == 1)
-    check("metrics: OAUTH_TRIGGER is NOT_MET below 1,000", metrics["oauth_trigger"] == "NOT_MET")
-    check("metrics: OAUTH_TRIGGER is MET at exactly 1,000",
-          build_metrics(probe, parse_rows("anthropic_30d|1000|3||"), [])["oauth_trigger"] == "MET")
+    check("metrics: chat_attempts_30d carries the query's own total, never anthropic + openai",
+          metrics["chat_attempts_30d"] == {"anthropic": 2, "openai": 1, "total": 2})
+    check("metrics: no chat_30d row is recorded as absent (None), never as zeros",
+          build_metrics(probe, parse_rows("anthropic_30d|1|1||"), [])["chat_attempts_30d"] is None)
+    check("metrics: OAUTH_TRIGGER is retired", "oauth_trigger" not in metrics and "OAUTH_TRIGGER" not in PROBE_JS)
     check("metrics: each leg carries window, phase, post_days, daily, flipped_at (+ due_run when not_due)",
           all(k in metrics["activation_legs"]["weekly"] for k in ("window_from", "window_to", "phase", "prior_source", "post_days", "flipped_at", "due_run"))
           and all(k in metrics["activation_legs"]["early"] for k in ("window_from", "window_to", "phase", "post_days", "post", "pre_min", "daily", "flipped_at", "due_run")))
@@ -1149,10 +1171,19 @@ def self_test() -> int:
           "Rollback lever: STEPUP_MODE=shadow|off" in body2 and "OPS-STEPUP-ACTIVATION-W{NEXT}" in body2)
     # The bypassed artifacts: the probe and the psql invocation are the only code no scenario runs,
     # so their SHAPE is asserted here (a hermetic self-test is blind to exactly what its seam replaces).
-    check("probe: derives set A with the app's own hashIp", "require('/app/dist/lib/analytics.js')" in PROBE_JS and "hashIp('160.79.' + i + '.0')" in PROBE_JS)
+    check("probe: derives set A from the deployed platform-egress module with the app's own hashIp",
+          "require('/app/dist/lib/analytics.js')" in PROBE_JS
+          and "require('/app/dist/lib/platform-egress.js').anthropicEgressNetworks().map((n) => hashIp(n))" in PROBE_JS)
+    check("probe: no egress range is mirrored here", "160.79" not in PROBE_JS)
+    check("probe: chat_attempts_30d is ONE query — total is one distinct count over the union of both predicates",
+          PROBE_JS.count("'chat_30d'") == 1 and PROBE_JS.count("count(DISTINCT c) FILTER") == 3
+          and "'count(DISTINCT c) FILTER (WHERE a OR f IN ' + CHAT" in PROBE_JS
+          and "UNION ALL SELECT session_id, session_id IN " in PROBE_JS and "CHAT = \"('claude', 'openai')\"" in PROBE_JS)
+    check("probe: chat_attempts_30d spans [T0 - 30 d, T0), T0 = today 00:00Z",
+          "const T30 = new Date(d1.getTime() - 30 * DAY)" in PROBE_JS and PROBE_JS.count("q(T30)") == 2
+          and "q(T30) + ' AND \"timestamp\" < ' + q(D1)" in PROBE_JS and "q(T30) + '::timestamptz AND ts < ' + q(D1)" in PROBE_JS)
     check("probe: the metered predicate is the app's billablePredicate()", "billablePredicate()" in PROBE_JS)
     check("probe: mode and N come from the deployed plans module", "plans.resolveStepupMode(process.env)" in PROBE_JS and "FREE_KEYLESS_MONTHLY_CALLS_RULED" in PROBE_JS)
-    check("probe: covers addresses .104 through .111 (the /21)", "i <= 111" in PROBE_JS and "i = 104" in PROBE_JS)
     check("probe: ONE first-activation CTE — each bucket's earliest row (DISTINCT ON), counted per family + UTC day",
           PROBE_JS.count("DISTINCT ON (ip_hash)") == 1 and "ORDER BY ip_hash, \"timestamp\")" in PROBE_JS
           and "to_char(first_ts::timestamptz AT TIME ZONE 'UTC', 'YYYY-MM-DD')" in PROBE_JS and "'actw'" not in PROBE_JS)
