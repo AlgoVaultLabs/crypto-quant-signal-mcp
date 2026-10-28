@@ -1574,6 +1574,30 @@
       ]
     },
     {
+      "id": "oauth-discovery-canary",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/oauth-discovery-canary.py",
+      "container": "crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "n/a — safe-to-kill rows are never probed",
+      "class": "safe-to-kill",
+      "reason": "A read-only daily canary: one short `docker exec … node -e` probe into the app container (reads the OAuth mode from the deployed dist/) and a handful of HTTPS requests to the public origin. Its only writes are a canary-owned DCR client registered once and persisted in its own state directory, one canary_result_log line and a Telegram page on a definitive failure. It mutates no application state a deploy or reboot could corrupt; a kill costs at most one day's verdict, which the next fire recomputes from live data. A deploy briefly returns 502/503 on the origin, which the canary reads as INDETERMINATE and never pages.",
+      "max_runtime_s": 165,
+      "runtime_instrument": "DERIVED upper bound, not a host measurement: the enforced timeouts in the script (docker exec 30 s + 7 sequential HTTPS requests x 15 s + wrapper 30 s = WORST_CASE_RUNTIME_S, asserted == 165 by the script's --self-test). The canary had not run on signal-1 when this row was written (no host access in the authoring wave); replace with a timed dry run under TG_WRAPPER=/bin/echo + ALGOVAULT_TG_TEST_INERT=1 after the first install.",
+      "cron_lines": 0,
+      "cron": "43 11 * * *",
+      "catchup_cmd": null,
+      "source": "host-only",
+      "verified_at": "2026-10-28",
+      "notes": "GROWTH-AGENT-SIGNIN-OAUTH-W1 CH3. Registered with its inventory row before the cron line exists, at cron_lines 0, because the field is a live fan-out reading and the enumeration test caps the declared signal-1 reboot sum at the measured population (131 of 131 today). The installer places the script but never the cron line; when the line goes in, cron_lines becomes 1 and _enumeration[\"signal-1\"].reboot is re-derived from the live crontab in the same commit, as the node-runtime-floor-canary row did.",
+      "cron_match": [
+        "/opt/algovault-monitoring/oauth-discovery-canary.py"
+      ]
+    },
+    {
       "id": "node-runtime-floor-canary",
       "host": "signal-1",
       "events": [

@@ -78,6 +78,30 @@ ONE FIRST-ACTIVATION DERIVATION: a single CTE yields each bucket's first free me
 weekly counts, the per-day series, the early leg and `--freeze-envelope` all project from its
 (family, UTC day) counts — never a second scan of `request_log`.
 
+THE OAUTH BLOCK (GROWTH-AGENT-SIGNIN-OAUTH-W1 CH3) — a RECORD, never a page. Record field `oauth`:
+  * `{"state":"not_due"}` until `--freeze-oauth-wall [ISO]` has written OAUTH_WALL_PATH (default: the
+    envelope's directory). An absent or unreadable file is `not_due` and NOTHING is queried for it:
+    the psql batch is then byte-identical to what it was before this block existed.
+  * `{"state":"recorded","oauth_wall_at":…,"windows":{"1d","7d","30d"}}` once frozen. Every window ends
+    at T0 (this run's `ref`) and starts at max(T0 − k, oauth_wall_at): the step-up wall only exists
+    from the instant it was switched on, so a window never reaches back past it. A window the wall
+    has not yet reached is `empty` (all zeros, no query).
+  * per window, from `funnel_events`: `stepup_challenge` counts by meta.reason × meta.client_family
+    and by meta.pool (both projected from ONE grouped query), distinct challenged sessions;
+    `oauth_authorized` counts by meta.via × meta.outcome × meta.client_host, `paid_signins` (outcome
+    PAID), `oauth_active` (distinct identities = COUNT(DISTINCT session_id); the session_id of an
+    `oauth_authorized` row is an identity hash); `signin_rate` = oauth_active / challenged sessions,
+    null on a zero denominator, labelled an approximation (the two ids are different namespaces).
+  * the OAuth statements ride the SAME psql batch and connection, appended LAST, in one REPEATABLE READ
+    READ ONLY transaction with ON_ERROR_STOP lifted for them only, and end in an `oauth_end` sentinel
+    row. So a failure inside the block can never make the activation guard INDETERMINATE (it is a
+    record, the guard may be a page), and a missing sentinel is recorded as `{"state":"unavailable"}`
+    — never as a block of zeros, which would read as "nobody was challenged".
+  * Aggregates only: `session_id` appears solely inside COUNT(DISTINCT …); no hash, key or id is printed.
+  * A FUTURE pageable OAuth finding must declare `change_point = oauth_wall_at` (the frozen instant, in
+    the DETECTOR_ENVELOPE contract that already refuses a change-attributed window starting before
+    its change) before it may page; this block pages nothing and builds no DETECTOR_ENVELOPE.
+
 Verdict token: exactly one terminal `STEPUP_READOUT_VERDICT=PASS|FAIL|INDETERMINATE`.
   PASS          record written, every family evaluated, nothing paged (in off/shadow a breach is
                 REPORTED in the record and the log, never paged)                    → exit 0
@@ -91,7 +115,12 @@ A failed record append never changes the verdict; it prints `CANARY_RESULT_LOG_F
 Usage:
   stepup-readout.py                 # the scheduled run
   stepup-readout.py --self-test     # hermetic: no docker, no psql, no wrapper, no result file
-Env: TG_WRAPPER · STEPUP_READOUT_LOG · ALGOVAULT_TG_TEST_INERT=1 (wrapper: no POST, no marker).
+  stepup-readout.py --freeze-envelope [--flip-at ISO] [--force]   # the activation envelope (once, at the flip)
+  stepup-readout.py --freeze-oauth-wall [ISO] [--force]           # the OAuth wall instant (once; default now)
+      token STEPUP_OAUTH_WALL_VERDICT=WRITTEN|EXISTS|INDETERMINATE (exit 0/0/3); refuses to overwrite
+      a frozen instant without --force, because every OAuth window is clipped at it.
+Env: TG_WRAPPER · STEPUP_READOUT_LOG · STEPUP_ENVELOPE_PATH · STEPUP_OAUTH_WALL_PATH ·
+     ALGOVAULT_TG_TEST_INERT=1 (wrapper: no POST, no marker).
 """
 from __future__ import annotations
 
@@ -117,6 +146,19 @@ ACT_MIN_PRIOR_WEEK = 5          # a family needs >= 5 activating buckets in the 
 ENVELOPE_WEEKS = 6              # the envelope = the largest of the 6 pre-flip weekly drops (7 weeks of counts)
 ENVELOPE_PATH = os.environ.get("STEPUP_ENVELOPE_PATH", "/var/lib/algovault-monitoring/stepup-activation-envelope.json")
 TOP_FAMILIES = 12               # bounds the record under canary_result_log's 8 KiB line cap
+# The OAuth wall instant, frozen once by `--freeze-oauth-wall`, beside the envelope (same directory
+# convention, so a host that relocates STEPUP_ENVELOPE_PATH relocates both).
+OAUTH_WALL_PATH = os.environ.get("STEPUP_OAUTH_WALL_PATH",
+                                 os.path.join(os.path.dirname(ENVELOPE_PATH), "stepup-oauth-wall.json"))
+OAUTH_WINDOWS = (("1d", 1), ("7d", 7), ("30d", 30))
+OAUTH_TOP = 8                   # per breakdown; the remainder is one `_other` count, so totals still reconcile
+OAUTH_BLOCK_MAX_BYTES = 3200    # measured bound on the `oauth` field at its worst case (asserted in the self-test)
+OAUTH_SIGNIN_RATE_NOTE = "approximation: identities authorized / challenged sessions"
+# canary_result_log refuses a record line over 8192 B (MAX_LINE_BYTES). The `oauth` field is the OPTIONAL
+# part of the daily record, so it yields: past this budget its breakdown maps are dropped, never the
+# mandatory sections. 7700 leaves the record envelope (~130 B) and `envelopes` (~110 B) their room.
+RECORD_BUDGET_BYTES = 7700
+OAUTH_BREAKDOWN_KEYS = ("challenges_by_reason_family", "challenges_by_pool", "oauth_authorized_by_via_outcome_host")
 
 WEEK_DAYS = 7                   # the weekly leg is due once a whole post-flip week exists
 EARLY_FIRST_DAY = 2             # the early leg judges post-flip days 2..6; day 1 is one day of noise
@@ -533,8 +575,158 @@ def series_from_for(env_doc) -> str | None:
     return iso(r0 - EARLY_LOOKBACK_DAYS * DAY) if r0 else None
 
 
+# ── the OAuth block: a record of the step-up wall's sign-in funnel (never a page) ──────────────────
+
+
+def load_oauth_wall(path=None):
+    """(wall instant, None) for a readable frozen file, else (None, reason). Absent and unreadable are
+    BOTH `not_due` to the record; the reason only reaches the log."""
+    target = path or OAUTH_WALL_PATH
+    try:
+        doc = json.loads(Path(target).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None, "absent at %s" % target
+    except (OSError, ValueError) as e:
+        return None, "unreadable: %s" % str(e)[:120]
+    at = parse_ts(doc.get("oauth_wall_at")) if isinstance(doc, dict) else None
+    if at is None:
+        return None, "malformed (no ISO-8601 oauth_wall_at)"
+    return at, None
+
+
+def oauth_window_bounds(wall_at: datetime, ref: datetime) -> dict:
+    """{window: (start, end)}: every window ends at T0 and starts at max(T0 - k, oauth_wall_at). A
+    wall at or after T0 leaves the window empty (start == end); never inverted."""
+    out = {}
+    for name, days in OAUTH_WINDOWS:
+        start = max(ref - days * DAY, wall_at)
+        out[name] = (min(start, ref), ref)
+    return out
+
+
+def _sql_lit(v) -> str:
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+def _meta_col(key: str) -> str:
+    """A funnel_events meta field as a bounded, pipe-free label (psql's separator is `|`)."""
+    return "replace(coalesce(meta_json::jsonb->>%s, '<null>'), '|', '/')" % _sql_lit(key)
+
+
+def oauth_sql(bounds: dict) -> str:
+    """The OAuth statements, appended LAST to the readout's one psql batch. One REPEATABLE READ READ ONLY
+    transaction so every number in a run comes from one snapshot; ON_ERROR_STOP is lifted for these
+    statements ONLY (an error aborts the transaction, every later statement fails, and the `oauth_end`
+    sentinel never prints — recorded as `unavailable`, never as zeros). `session_id` appears only inside
+    COUNT(DISTINCT …): aggregates leave psql, never an id. Returns "" when no window has any span."""
+    live = [(name, s, e) for name, (s, e) in bounds.items() if s < e]
+    if not live:
+        return ""
+    out = ["", "\\unset ON_ERROR_STOP", "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;"]
+    for name, s, e in live:
+        rng = "ts >= %s::timestamptz AND ts < %s::timestamptz" % (_sql_lit(iso(s)), _sql_lit(iso(e)))
+        w = _sql_lit(name)
+        out.append("SELECT 'oauth_chal', %s, %s, %s, %s, count(*) FROM funnel_events WHERE event_type = 'stepup_challenge' AND %s GROUP BY 3, 4, 5;"
+                   % (w, _meta_col("reason"), _meta_col("client_family"), _meta_col("pool"), rng))
+        out.append("SELECT 'oauth_chal_tot', %s, count(*), count(DISTINCT session_id), '' FROM funnel_events WHERE event_type = 'stepup_challenge' AND %s;"
+                   % (w, rng))
+        out.append("SELECT 'oauth_auth', %s, %s, %s, %s, count(*) FROM funnel_events WHERE event_type = 'oauth_authorized' AND %s GROUP BY 3, 4, 5;"
+                   % (w, _meta_col("via"), _meta_col("outcome"), _meta_col("client_host"), rng))
+        out.append("SELECT 'oauth_auth_tot', %s, count(*), count(DISTINCT session_id), '' FROM funnel_events WHERE event_type = 'oauth_authorized' AND %s;"
+                   % (w, rng))
+    out += ["SELECT 'oauth_end', 1, '', '', '';", "COMMIT;"]
+    return "\n".join(out)
+
+
+def parse_oauth_rows(text: str) -> dict:
+    """psql output → {"end": bool, window: {chal, chal_tot, auth, auth_tot}}. Labels the readout does not
+    own are ignored, so this reads the SAME text parse_rows reads."""
+    out: dict = {"end": False}
+    for line in text.splitlines():
+        parts = line.split("|")
+        label = parts[0]
+        if label == "oauth_end":
+            out["end"] = True
+            continue
+        if not label.startswith("oauth_") or len(parts) < 4:
+            continue
+        w = out.setdefault(parts[1], {"chal": {}, "chal_tot": None, "auth": {}, "auth_tot": None})
+        if label == "oauth_chal" and len(parts) >= 6:
+            w["chal"][(parts[2], parts[3], parts[4])] = w["chal"].get((parts[2], parts[3], parts[4]), 0) + _int(parts[5])
+        elif label == "oauth_auth" and len(parts) >= 6:
+            w["auth"][(parts[2], parts[3], parts[4])] = w["auth"].get((parts[2], parts[3], parts[4]), 0) + _int(parts[5])
+        elif label == "oauth_chal_tot":
+            w["chal_tot"] = (_int(parts[2]), _int(parts[3]))
+        elif label == "oauth_auth_tot":
+            w["auth_tot"] = (_int(parts[2]), _int(parts[3]))
+    return out
+
+
+def _top(counts: dict, n: int = OAUTH_TOP) -> dict:
+    items = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    out = dict(items[:n])
+    rest = sum(v for _k, v in items[n:])
+    if rest:
+        out["_other"] = rest
+    return out
+
+
+def oauth_window(parsed: dict, name: str, start: datetime, end: datetime) -> dict:
+    w = parsed.get(name) or {"chal": {}, "chal_tot": None, "auth": {}, "auth_tot": None}
+    chal_events, chal_sessions = w["chal_tot"] or (0, 0)
+    auth_events, active = w["auth_tot"] or (0, 0)
+    by_rf: dict = {}
+    by_pool: dict = {}
+    for (reason, family, pool), n in w["chal"].items():
+        by_rf["%s|%s" % (reason, family)] = by_rf.get("%s|%s" % (reason, family), 0) + n
+        by_pool[pool] = by_pool.get(pool, 0) + n
+    by_via: dict = {}
+    paid = 0
+    for (via, outcome, host), n in w["auth"].items():
+        by_via["%s|%s|%s" % (via, outcome, host)] = n
+        if outcome == "PAID":
+            paid += n
+    return {
+        "from": iso(start), "to": iso(end), "empty": start >= end,
+        "challenges": chal_events, "challenged_sessions": chal_sessions,
+        "challenges_by_reason_family": _top(by_rf), "challenges_by_pool": _top(by_pool),
+        "oauth_authorized": auth_events, "oauth_authorized_by_via_outcome_host": _top(by_via),
+        "paid_signins": paid, "oauth_active": active,
+        "signin_rate": round(active / chal_sessions, 4) if chal_sessions > 0 else None,
+        "signin_rate_note": OAUTH_SIGNIN_RATE_NOTE,
+    }
+
+
+def fit_oauth(metrics: dict) -> bool:
+    """Keep the daily record under the line cap by shrinking the OPTIONAL `oauth` field: if the record
+    is over RECORD_BUDGET_BYTES, drop every window's breakdown maps (totals, session counts and the
+    rate stay) and say so. True iff it trimmed. Never touches any other field."""
+    oauth = metrics.get("oauth") or {}
+    if oauth.get("state") != "recorded":
+        return False
+    if len(json.dumps(metrics, separators=(",", ":")).encode("utf-8")) <= RECORD_BUDGET_BYTES:
+        return False
+    for w in oauth["windows"].values():
+        for k in OAUTH_BREAKDOWN_KEYS:
+            w.pop(k, None)
+    oauth["trimmed"] = "breakdowns dropped to keep the daily record under the line cap"
+    return True
+
+
+def build_oauth(wall_at, bounds, parsed: dict, queried: bool) -> dict:
+    """The `oauth` record field. `wall_at` None → not_due (nothing was queried). `queried` is whether
+    OAuth statements were sent at all: if so, the sentinel must have printed, else `unavailable`."""
+    if wall_at is None:
+        return {"state": "not_due"}
+    if queried and not parsed.get("end"):
+        return {"state": "unavailable", "oauth_wall_at": iso(wall_at),
+                "reason": "the OAuth statements did not complete (no oauth_end sentinel); no counts recorded"}
+    return {"state": "recorded", "oauth_wall_at": iso(wall_at),
+            "windows": {name: oauth_window(parsed, name, s, e) for name, (s, e) in bounds.items()}}
+
+
 def build_metrics(probe: dict, rows: dict, weekly_rows: list, volume=None, envelope=None, envelope_reason=None,
-                  weekly_leg=None, early_leg=None, guard_reason=None) -> dict:
+                  weekly_leg=None, early_leg=None, guard_reason=None, oauth=None) -> dict:
     """The record body. Compact on purpose: canary_result_log refuses a line over 8 KiB."""
     by_pool: dict = {}
     for r in rows["calls_1d"]:
@@ -575,6 +767,7 @@ def build_metrics(probe: dict, rows: dict, weekly_rows: list, volume=None, envel
         ],
         "guard_armed": probe.get("mode") == "live",
         "units": "activation = buckets whose FIRST successful free metered call fell in the window; volume = calls (reported, never paged); buckets are distinct ip buckets, not people",
+        "oauth": oauth if oauth is not None else {"state": "not_due"},
     }
 
 
@@ -742,10 +935,21 @@ def main() -> int:
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     run_id = "stepup-readout-%s" % started_at
     env_doc, env_reason = load_envelope()
+    oauth_wall, oauth_reason = load_oauth_wall()
+    oauth_bounds: dict = {}
+    oauth_queried = False
     try:
         probe = run_probe(series_from=series_from_for(env_doc))
-        rows = parse_rows(run_sql(probe["sql"]))
         ref = parse_ts(probe["ref"])
+        # The OAuth statements ride the same psql batch, but only once the wall instant is frozen and
+        # T0 is known; not_due sends the probe's SQL untouched.
+        oauth_suffix = ""
+        if oauth_wall is not None and ref is not None:
+            oauth_bounds = oauth_window_bounds(oauth_wall, ref)
+            oauth_suffix = oauth_sql(oauth_bounds)
+            oauth_queried = bool(oauth_suffix)
+        sql_text = run_sql(probe["sql"] + oauth_suffix)
+        rows = parse_rows(sql_text)
         if ref is None:
             raise RuntimeError("probe ref %r is not an ISO-8601 instant" % probe["ref"])
     except Exception as e:  # noqa: BLE001 — could not evaluate: INDETERMINATE, never a default
@@ -769,7 +973,10 @@ def main() -> int:
         else:
             weekly_leg, weekly_rows = evaluate_weekly_leg(daily, env_doc, ref, flip)
             early_leg = evaluate_early_leg(daily, ref, flip, r0)
-    metrics = build_metrics(probe, rows, weekly_rows, volume, env_doc, env_reason, weekly_leg, early_leg, guard_reason)
+    oauth = build_oauth(oauth_wall, oauth_bounds, parse_oauth_rows(sql_text), oauth_queried)
+    metrics = build_metrics(probe, rows, weekly_rows, volume, env_doc, env_reason, weekly_leg, early_leg, guard_reason, oauth)
+    if fit_oauth(metrics):
+        log("OAUTH breakdowns trimmed from the record (it was over %d B); totals kept" % RECORD_BUDGET_BYTES)
     if weekly_leg is not None:
         log("ACTIVATION_LEG leg=weekly state=%s window=%s phase=%s post_days=%d prior=%s(%s)%s"
             % (weekly_leg["state"], _day_span(weekly_leg["window_from"], weekly_leg["window_to"]), weekly_leg["phase"],
@@ -788,6 +995,15 @@ def main() -> int:
         log("VOLUME family=%s prev7=%d cur7=%d drop_pct=%s (reported, never paged)"
             % (v["family"], v["prev7"], v["cur7"], v["drop_pct"]))
     log("POOLS %s" % json.dumps(metrics["free_metered_1d"], separators=(",", ":"))[:600])
+    if oauth["state"] == "recorded":
+        for name, w in oauth["windows"].items():
+            log("OAUTH window=%s %s..%s challenges=%d sessions=%d authorized=%d active=%d paid=%d signin_rate=%s (record only, never paged)"
+                % (name, w["from"], w["to"], w["challenges"], w["challenged_sessions"], w["oauth_authorized"],
+                   w["oauth_active"], w["paid_signins"], w["signin_rate"]))
+    else:
+        log("OAUTH state=%s%s (record only, never paged)"
+            % (oauth["state"], (" — wall file %s" % oauth_reason) if oauth["state"] == "not_due" and oauth_reason else
+               (" — %s" % oauth.get("reason", ""))))
     chat = metrics["chat_attempts_30d"]
     log("CHAT_ATTEMPTS_30D %s anthropic_calls_30d=%d"
         % (("anthropic=%d openai=%d total=%d" % (chat["anthropic"], chat["openai"], chat["total"])) if chat else "absent",
@@ -873,6 +1089,42 @@ def freeze_envelope(flip_at_iso: str, force: bool = False) -> int:
     return 0
 
 
+def freeze_oauth_wall(at_iso=None, force: bool = False) -> int:
+    """Freeze the instant the OAuth step-up wall went live at OAUTH_WALL_PATH (default: now, UTC, second
+    precision). Every `oauth` window is clipped at it, so recomputing it later would silently move the
+    start of every window: an existing file is refused without --force, exactly as the envelope is.
+    Token: STEPUP_OAUTH_WALL_VERDICT=WRITTEN|EXISTS|INDETERMINATE (exit 0/0/3)."""
+    if os.path.exists(OAUTH_WALL_PATH) and not force:
+        log("OAUTH_WALL_EXISTS at %s — refusing to overwrite the frozen wall instant" % OAUTH_WALL_PATH)
+        print("STEPUP_OAUTH_WALL_VERDICT=EXISTS", flush=True)
+        return 0
+    now = datetime.now(timezone.utc)
+    at = parse_ts(at_iso) if at_iso is not None else now
+    if at is None:
+        log("OAUTH_WALL_INDETERMINATE: %r is not an ISO-8601 instant with a zone (e.g. 2026-10-28T12:00:00Z)" % at_iso)
+        print("STEPUP_OAUTH_WALL_VERDICT=INDETERMINATE", flush=True)
+        return 3
+    doc = {
+        "oauth_wall_at": iso(at),
+        "frozen_at": iso(now),
+        "rule": ("every `oauth` window in the stepup-readout record ends at T0 and starts at "
+                 "max(T0 - k, oauth_wall_at); a pageable OAuth finding must declare change_point = oauth_wall_at"),
+    }
+    try:
+        tmp = OAUTH_WALL_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, indent=1, sort_keys=True)
+            fh.write("\n")
+        os.replace(tmp, OAUTH_WALL_PATH)
+    except OSError as e:
+        log("OAUTH_WALL_INDETERMINATE: could not write %s: %s" % (OAUTH_WALL_PATH, str(e)[:160]))
+        print("STEPUP_OAUTH_WALL_VERDICT=INDETERMINATE", flush=True)
+        return 3
+    log("OAUTH_WALL frozen oauth_wall_at=%s at %s" % (doc["oauth_wall_at"], OAUTH_WALL_PATH))
+    print("STEPUP_OAUTH_WALL_VERDICT=WRITTEN", flush=True)
+    return 0
+
+
 # ── self-test ─────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -930,6 +1182,282 @@ def _probe(mode: str, ref: str, version: str = "v2") -> dict:
     r = parse_ts(ref)
     return {"mode": mode, "n": 20, "d0": iso(r - DAY), "d1": iso(r), "ref": ref, "weeks": 2,
             "ip_hash_version": version, "series_from": "2026-08-31T00:00:00.000Z", "sql": "-"}
+
+
+# The OAuth block's fixtures: a wall at 2026-10-23T09:15:00Z, T0 = 2026-10-28. The windows are then
+# 1d [10-27, 10-28) unclipped, 7d and 30d both [10-23T09:15, 10-28) CLIPPED at the wall. Events on both
+# sides of every boundary (one second before the wall, AT the wall, AT T0) make a window that fails to
+# clip, or to be half-open, change a number.
+_OAUTH_T0 = "2026-10-28T00:00:00.000Z"
+_OAUTH_WALL = "2026-10-23T09:15:00Z"
+
+
+def _chal(ts, sess, reason, fam, pool):
+    return ("stepup_challenge", ts, sess, {"reason": reason, "client_family": fam, "pool": pool})
+
+
+def _auth(ts, ident, via, outcome, host):
+    return ("oauth_authorized", ts, ident, {"via": via, "outcome": outcome, "client_host": host})
+
+
+_OAUTH_EVENTS = [
+    _chal("2026-10-22T10:00:00Z", "s1", "signin", "claude", "anthropic"),     # before the wall: never counted
+    _chal("2026-10-23T09:14:59Z", "s1", "signin", "claude", "anthropic"),     # one second before the wall
+    _chal("2026-10-23T09:15:00Z", "s2", "signin", "claude", "anthropic"),     # AT the wall: counted
+    _chal("2026-10-24T10:00:00Z", "s2", "signin", "claude", "anthropic"),     # the same session again
+    _chal("2026-10-27T12:00:00Z", "s3", "wall_month", "node", "other"),
+    _chal("2026-10-27T13:00:00Z", "s4", "signin", "other", "other"),
+    _chal("2026-10-28T00:00:00Z", "s5", "signin", "other", "other"),          # AT T0: excluded (half-open)
+    _auth("2026-10-22T00:00:00Z", "i0", "key", "FREE", "claude.ai"),          # before the wall
+    _auth("2026-10-25T12:00:00Z", "i1", "key", "FREE", "claude.ai"),
+    _auth("2026-10-27T14:00:00Z", "i2", "key", "PAID", "claude.ai"),
+    _auth("2026-10-27T15:00:00Z", "i2", "email", "PAID", "claude.ai"),        # the same identity, again
+]
+
+
+def _fake_funnel_db(events: list):
+    """A run_sql stand-in that READS THE GENERATED SQL — its labels, event types and ts bounds — and
+    answers from `events`, so a window the SQL gets wrong changes the numbers. It does not parse SQL in
+    general: only the shapes oauth_sql() emits."""
+    def run(sql: str) -> str:
+        out = []
+        for line in sql.splitlines():
+            m = re.match(r"SELECT '(oauth_\w+)', '(\w+)'", line)
+            if not m:
+                continue
+            label, w = m.groups()
+            b = re.search(r"ts >= '([^']+)'::timestamptz AND ts (<=?) '([^']+)'::timestamptz", line)
+            et = re.search(r"event_type = '(\w+)'", line).group(1)
+            lo, hi = parse_ts(b.group(1)), parse_ts(b.group(3))
+            ev = [e for e in events if e[0] == et and lo <= parse_ts(e[1]) and (parse_ts(e[1]) <= hi if b.group(2) == "<=" else parse_ts(e[1]) < hi)]
+            if label in ("oauth_chal", "oauth_auth"):
+                keys = ("reason", "client_family", "pool") if label == "oauth_chal" else ("via", "outcome", "client_host")
+                grouped: dict = {}
+                for e in ev:
+                    k = tuple(e[3].get(x, "<null>") for x in keys)
+                    grouped[k] = grouped.get(k, 0) + 1
+                out += ["%s|%s|%s|%s|%s|%d" % (label, w, k[0], k[1], k[2], n) for k, n in grouped.items()]
+            else:
+                out.append("%s|%s|%d|%d|" % (label, w, len(ev), len({e[2] for e in ev})))
+        if "oauth_end" in sql:
+            out.append("oauth_end|1|||")
+        return "\n".join(out)
+    return run
+
+
+def _selftest_oauth(check, g: dict, tmpd: str, env_doc: dict, fixture: str) -> None:
+    import contextlib
+    import io
+    import subprocess as sp
+    wall_file = g["OAUTH_WALL_PATH"]
+    ref = parse_ts(_OAUTH_T0)
+    wall = parse_ts(_OAUTH_WALL)
+
+    # ── the windows: end at T0, start at max(T0 - k, wall) ──
+    b = oauth_window_bounds(wall, ref)
+    check("oauth windows: 1d is unclipped — the wall is older than T0 - 1 d", b["1d"] == (parse_ts("2026-10-27T00:00:00Z"), ref))
+    check("oauth windows: 7d and 30d are CLIPPED at the wall, not at T0 - k",
+          b["7d"] == (wall, ref) and b["30d"] == (wall, ref))
+    bw = oauth_window_bounds(ref, ref)
+    check("oauth windows: a wall AT T0 leaves every window empty (start == end), never inverted",
+          all(s == e for s, e in bw.values()))
+    bf = oauth_window_bounds(parse_ts("2026-11-02T00:00:00Z"), ref)
+    check("oauth windows: a wall AFTER T0 is clamped to empty, never inverted", all(s == e for s, e in bf.values()))
+    check("oauth sql: no window with a span → no statements at all", oauth_sql(bw) == "" and oauth_sql(bf) == "")
+
+    sql = oauth_sql(b)
+    check("oauth sql: lifts ON_ERROR_STOP for itself only, in ONE read-only repeatable-read transaction, ends in the sentinel",
+          sql.index("\\unset ON_ERROR_STOP") < sql.index("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;")
+          < sql.index("oauth_end") < sql.index("COMMIT;"))
+    check("oauth sql: the clipped start is the wall instant itself, and no unclipped T0 - 7 d / T0 - 30 d bound is sent",
+          "'2026-10-23T09:15:00Z'::timestamptz" in sql and "2026-10-21T00:00:00Z" not in sql and "2026-09-28T00:00:00Z" not in sql)
+    check("oauth sql: aggregates only — session_id appears solely inside COUNT(DISTINCT …), no ip hash is touched",
+          sql.replace("count(DISTINCT session_id)", "").count("session_id") == 0 and "ip_hash" not in sql)
+    check("oauth sql: every grouped label is pipe-free (psql's separator is |)", sql.count("replace(coalesce(meta_json::jsonb->>") == 3 * 2 * 3)   # 3 windows x 2 grouped queries x 3 labels
+    check("oauth sql: reads exactly the two funnel event types, by the names the server writes",
+          sql.count("event_type = 'stepup_challenge'") == 6 and sql.count("event_type = 'oauth_authorized'") == 6)
+
+    # ── the wall file ──
+    check("wall file: absent → (None, reason)", load_oauth_wall()[0] is None and "absent" in load_oauth_wall()[1])
+    Path(wall_file).write_text("{not json", encoding="utf-8")
+    check("wall file: unreadable → (None, reason), never a crash", load_oauth_wall()[0] is None)
+    Path(wall_file).write_text(json.dumps({"oauth_wall_at": "yesterday"}), encoding="utf-8")
+    check("wall file: an unparseable instant → (None, reason) — the instant is never guessed", load_oauth_wall()[0] is None)
+    Path(wall_file).write_text(json.dumps({"oauth_wall_at": _OAUTH_WALL}), encoding="utf-8")
+    check("wall file: a valid instant round-trips", load_oauth_wall() == (wall, None))
+    os.remove(wall_file)
+
+    # ── main() end to end: the readout's own fixtures, plus the fake funnel_events ──
+    sent: list = []
+
+    def run_oauth(events, wall_iso, drop_sentinel=False):
+        LAST_FIRE.clear(); LAST_RECORD.clear(); sent.clear()
+        Path(g["ENVELOPE_PATH"]).write_text(json.dumps(env_doc), encoding="utf-8")
+        if wall_iso is None:
+            if os.path.exists(wall_file):
+                os.remove(wall_file)
+        else:
+            Path(wall_file).write_text(json.dumps({"oauth_wall_at": wall_iso}), encoding="utf-8")
+        g["run_probe"] = lambda **_: _probe("shadow", _OAUTH_T0)
+        db = _fake_funnel_db(events)
+
+        def run_sql_fn(q):
+            sent.append(q)
+            rows_txt = db(q)
+            if drop_sentinel:
+                rows_txt = "\n".join(ln for ln in rows_txt.splitlines() if not ln.startswith("oauth_"))
+            return fixture + "\n" + rows_txt
+        g["run_sql"] = run_sql_fn
+        return main()
+
+    rc = run_oauth(_OAUTH_EVENTS, None)
+    base_record = dict(LAST_RECORD[2]) if LAST_RECORD else {}
+    check("oauth not_due: no wall file → the record says exactly {\"state\":\"not_due\"}",
+          rc == 0 and base_record.get("oauth") == {"state": "not_due"})
+    check("oauth not_due: nothing is queried for it — the batch is byte-identical to the probe's SQL", sent == ["-"])
+
+    rc = run_oauth(_OAUTH_EVENTS, _OAUTH_WALL)
+    o = LAST_RECORD[2]["oauth"] if LAST_RECORD else {}
+    ws = o.get("windows", {})
+    check("oauth recorded: PASS, nothing paged, state recorded with the frozen instant",
+          rc == 0 and LAST_RECORD[:1] == ["PASS"] and not LAST_FIRE and o.get("state") == "recorded"
+          and o.get("oauth_wall_at") == _OAUTH_WALL)
+    check("oauth recorded: the OAuth statements rode the SAME batch, after the probe's SQL", len(sent) == 1 and sent[0].startswith("-\n") and "oauth_end" in sent[0])
+    check("oauth 1d: 2 challenges, 2 sessions, by reason×family and by pool; 2 authorizations, 1 identity, 2 PAID; rate 0.5",
+          ws.get("1d", {}).get("challenges") == 2 and ws["1d"]["challenged_sessions"] == 2
+          and ws["1d"]["challenges_by_reason_family"] == {"signin|other": 1, "wall_month|node": 1}
+          and ws["1d"]["challenges_by_pool"] == {"other": 2}
+          and ws["1d"]["oauth_authorized"] == 2 and ws["1d"]["oauth_active"] == 1 and ws["1d"]["paid_signins"] == 2
+          and ws["1d"]["oauth_authorized_by_via_outcome_host"] == {"email|PAID|claude.ai": 1, "key|PAID|claude.ai": 1}
+          and ws["1d"]["signin_rate"] == 0.5)
+    check("oauth 7d: clipped at the wall — 4 challenges, 3 DISTINCT sessions (not 4), pools 2/2, 3 authorizations, 2 identities, rate 0.6667",
+          ws.get("7d", {}).get("challenges") == 4 and ws["7d"]["challenged_sessions"] == 3
+          and ws["7d"]["challenges_by_reason_family"] == {"signin|claude": 2, "signin|other": 1, "wall_month|node": 1}
+          and ws["7d"]["challenges_by_pool"] == {"anthropic": 2, "other": 2}
+          and ws["7d"]["oauth_authorized"] == 3 and ws["7d"]["oauth_active"] == 2 and ws["7d"]["paid_signins"] == 2
+          and ws["7d"]["signin_rate"] == 0.6667)
+    check("oauth 30d: the same rows as 7d — nothing before the wall counts however long the window is",
+          {k: v for k, v in ws.get("30d", {}).items() if k not in ("from", "to")}
+          == {k: v for k, v in ws.get("7d", {}).items() if k not in ("from", "to")})
+    check("oauth windows: from/to are the clipped bounds, all end at T0 and none is empty",
+          ws.get("7d", {}).get("from") == _OAUTH_WALL and ws["30d"]["from"] == _OAUTH_WALL
+          and ws["1d"]["from"] == "2026-10-27T00:00:00Z" and all(w["to"] == "2026-10-28T00:00:00Z" and not w["empty"] for w in ws.values()))
+    check("oauth signin_rate: carries its approximation label in every window",
+          all(w.get("signin_rate_note") == OAUTH_SIGNIN_RATE_NOTE for w in ws.values()) and len(ws) == 3)
+    check("oauth: the record's other fields are unchanged by the block (same run, wall absent vs frozen)",
+          {k: v for k, v in LAST_RECORD[2].items() if k != "oauth"} == {k: v for k, v in base_record.items() if k != "oauth"})
+
+    only_auth = [e for e in _OAUTH_EVENTS if e[0] == "oauth_authorized"]
+    run_oauth(only_auth, _OAUTH_WALL)
+    w7 = LAST_RECORD[2]["oauth"]["windows"]["7d"]
+    check("oauth signin_rate: zero challenged sessions → null (never 0, never a division), with the identities still counted",
+          w7["challenged_sessions"] == 0 and w7["signin_rate"] is None and w7["oauth_active"] == 2)
+    run_oauth(_OAUTH_EVENTS, "2026-10-27T20:00:00Z")
+    w1 = LAST_RECORD[2]["oauth"]["windows"]
+    check("oauth windows: a wall inside the last day clips the 1d window too, and the day's earlier events drop out",
+          w1["1d"]["from"] == "2026-10-27T20:00:00Z" and w1["1d"]["challenges"] == 0 and w1["1d"]["signin_rate"] is None
+          and w1["1d"]["oauth_authorized"] == 0)
+    run_oauth(_OAUTH_EVENTS, "2026-10-29T00:00:00Z")
+    wf = LAST_RECORD[2]["oauth"]
+    check("oauth windows: a wall in the future → recorded, every window empty and zero, and NO OAuth statement is sent",
+          wf["state"] == "recorded" and all(w["empty"] and w["challenges"] == 0 and w["signin_rate"] is None and w["from"] == w["to"]
+                                            for w in wf["windows"].values()) and sent == ["-"])
+    rc = run_oauth(_OAUTH_EVENTS, _OAUTH_WALL, drop_sentinel=True)
+    check("oauth unavailable: a block that did not complete is recorded as unavailable — never as zeros — and the run is still PASS",
+          rc == 0 and LAST_RECORD[:1] == ["PASS"] and LAST_RECORD[2]["oauth"]["state"] == "unavailable"
+          and "windows" not in LAST_RECORD[2]["oauth"])
+
+    # ── size: the field cannot push the daily record over canary_result_log's 8 KiB cap on its own ──
+    big = {"end": True}
+    for name, _d in OAUTH_WINDOWS:
+        big[name] = {"chal": {("signin", "family-%02d" % i, "anthropic"): 100 + i for i in range(30)},
+                     "chal_tot": (9999, 999),
+                     "auth": {("key", "PAID", "client-host-%02d.example.com" % i): 50 + i for i in range(30)},
+                     "auth_tot": (999, 99)}
+    worst = build_oauth(wall, oauth_window_bounds(wall, ref), big, True)
+    size = len(json.dumps(worst, separators=(",", ":")).encode("utf-8"))
+    check("oauth size: the worst case (30 labels per breakdown) is capped at top %d + _other, %d B <= %d B" % (OAUTH_TOP, size, OAUTH_BLOCK_MAX_BYTES),
+          size <= OAUTH_BLOCK_MAX_BYTES and "_other" in worst["windows"]["7d"]["challenges_by_reason_family"])
+    # the whole record, every other section saturated, through the REAL recorder's line builder
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import canary_result_log
+    sat_rows = parse_rows("\n".join(["calls_1d|%s|fam-%03d-%s|%d|9999" % (["other", "anthropic"][i % 2], i, "x" * 20, 99999 - i) for i in range(500)]
+                                    + ["stepup_1d|stepup_gated|fam%d|other|99" % i for i in range(40)]
+                                    + ["qhb_1d|other|99999|9999|", "chat_30d|9999|9999|9999|", "anthropic_30d|99999|9999||"]))
+    sat_weekly = [{"family": "f%02d-%s" % (i, "y" * 20), "prev_w": 99999, "cur_w": 99999, "drop_pct": 100.0, "envelope_pct": 100.0,
+                   "state": "within_envelope", "daily": ",".join(["99999"] * 7)} for i in range(40)]
+    sat_vol = [{"family": "f%d" % i, "prev7": 99999, "cur7": 99999, "drop_pct": 100.0, "buckets7": 9999} for i in range(40)]
+    sat = build_metrics(_probe("live", _OAUTH_T0), sat_rows, sat_weekly, sat_vol, env_doc, None, None, None, "x" * 200, json.loads(json.dumps(worst)))   # a copy: fit_oauth edits in place
+    sat_untrimmed = len(canary_result_log.build_record(CANARY, "PASS", 0, sat).encode("utf-8"))
+    trimmed = fit_oauth(sat)
+    sat_line = canary_result_log.build_record(CANARY, "PASS", 0, sat).encode("utf-8")
+    check("oauth fit: with every OTHER section saturated, the worst oauth block would push the record over the line cap (%d B > %d B)"
+          % (sat_untrimmed, canary_result_log.MAX_LINE_BYTES), sat_untrimmed > canary_result_log.MAX_LINE_BYTES)
+    check("oauth fit: …so the optional block yields — breakdowns dropped, totals and rate kept, the record fits (%d B) and says it trimmed"
+          % len(sat_line), trimmed and len(sat_line) <= canary_result_log.MAX_LINE_BYTES
+          and "trimmed" in sat["oauth"] and sat["oauth"]["windows"]["7d"]["challenges"] == 9999
+          and sat["oauth"]["windows"]["7d"]["signin_rate"] is not None
+          and not any(k in sat["oauth"]["windows"]["7d"] for k in OAUTH_BREAKDOWN_KEYS))
+    modest = build_metrics(_probe("live", _OAUTH_T0), parse_rows(fixture), [], None, env_doc, None, None, None, "x", worst)
+    check("oauth fit: a record that fits is left alone — no trim, every breakdown present",
+          fit_oauth(modest) is False and "trimmed" not in modest["oauth"]
+          and all(k in modest["oauth"]["windows"]["7d"] for k in OAUTH_BREAKDOWN_KEYS))
+    top = _top({"k%d" % i: 10 - i for i in range(10)})
+    check("oauth size: the truncated remainder is kept as one _other count, so the total still reconciles",
+          len(top) == OAUTH_TOP + 1 and sum(top.values()) == sum(10 - i for i in range(10)))
+
+    # ── the freeze ──
+    if os.path.exists(wall_file):
+        os.remove(wall_file)
+
+    def freeze(*a, **k):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc_ = freeze_oauth_wall(*a, **k)
+        return rc_, buf.getvalue()
+
+    rc, out = freeze()
+    doc = json.loads(Path(wall_file).read_text(encoding="utf-8")) if os.path.exists(wall_file) else {}
+    check("freeze-oauth-wall: no argument freezes NOW, UTC, second precision, Z — token WRITTEN, exit 0",
+          rc == 0 and "STEPUP_OAUTH_WALL_VERDICT=WRITTEN" in out
+          and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", doc.get("oauth_wall_at", "")) is not None)
+    first = doc.get("oauth_wall_at")
+    rc, out = freeze("2026-10-30T00:00:00Z")
+    check("freeze-oauth-wall: a second freeze REFUSES to overwrite — token EXISTS, exit 0, file unchanged",
+          rc == 0 and "STEPUP_OAUTH_WALL_VERDICT=EXISTS" in out
+          and json.loads(Path(wall_file).read_text(encoding="utf-8"))["oauth_wall_at"] == first)
+    rc, out = freeze("2026-10-28T14:00:00.789+02:00", force=True)
+    check("freeze-oauth-wall: --force overwrites, normalising an offset and a fraction to second-precision Z",
+          rc == 0 and "STEPUP_OAUTH_WALL_VERDICT=WRITTEN" in out and load_oauth_wall()[0] == parse_ts("2026-10-28T12:00:00Z")
+          and json.loads(Path(wall_file).read_text(encoding="utf-8"))["oauth_wall_at"] == "2026-10-28T12:00:00Z")
+    os.remove(wall_file)
+    rc, out = freeze("2026-10-28")
+    check("freeze-oauth-wall: an unparseable instant is INDETERMINATE (exit 3) and writes nothing",
+          rc == 3 and "STEPUP_OAUTH_WALL_VERDICT=INDETERMINATE" in out and not os.path.exists(wall_file))
+    g["OAUTH_WALL_PATH"] = os.path.join(tmpd, "no-such-dir", "oauth-wall.json")
+    try:
+        rc, out = freeze("2026-10-28T12:00:00Z")
+    finally:
+        g["OAUTH_WALL_PATH"] = wall_file
+    check("freeze-oauth-wall: an unwritable path is INDETERMINATE (exit 3), not a traceback", rc == 3 and "STEPUP_OAUTH_WALL_VERDICT=INDETERMINATE" in out)
+
+    # ── the CLI dispatch itself (the seam the function calls above bypass) ──
+    cli_file = os.path.join(tmpd, "cli-wall.json")
+
+    def cli(*args):
+        p = sp.run([sys.executable, "-I", os.path.abspath(__file__)] + list(args), capture_output=True, text=True,
+                   env={**os.environ, "STEPUP_OAUTH_WALL_PATH": cli_file, "STEPUP_READOUT_SELFTEST": "1"}, timeout=60)
+        return p.returncode, p.stdout
+
+    rc, out = cli("--freeze-oauth-wall", "2026-10-26T08:00:00Z")
+    check("cli: --freeze-oauth-wall <ISO> writes that instant",
+          rc == 0 and "STEPUP_OAUTH_WALL_VERDICT=WRITTEN" in out and json.loads(Path(cli_file).read_text())["oauth_wall_at"] == "2026-10-26T08:00:00Z")
+    rc, out = cli("--freeze-oauth-wall")
+    check("cli: --freeze-oauth-wall again (no ISO) is refused as EXISTS and leaves the file alone",
+          rc == 0 and "STEPUP_OAUTH_WALL_VERDICT=EXISTS" in out and json.loads(Path(cli_file).read_text())["oauth_wall_at"] == "2026-10-26T08:00:00Z")
+    rc, out = cli("--freeze-oauth-wall", "--force")
+    check("cli: --force is the override flag and is never mistaken for the ISO argument — the default (now) is written",
+          rc == 0 and "STEPUP_OAUTH_WALL_VERDICT=WRITTEN" in out and json.loads(Path(cli_file).read_text())["oauth_wall_at"] != "2026-10-26T08:00:00Z")
 
 
 def self_test() -> int:
@@ -1210,10 +1738,12 @@ def self_test() -> int:
     import tempfile
     g = globals()
     real_probe, real_sql, real_env_path = g["run_probe"], g["run_sql"], g["ENVELOPE_PATH"]
+    real_wall_path = g["OAUTH_WALL_PATH"]
     tmpd = tempfile.mkdtemp(prefix="stepup-env-")
     try:
         # The ENVELOPE: frozen once from request_log at the flip, refused on overwrite.
         g["ENVELOPE_PATH"] = os.path.join(tmpd, "envelope.json")
+        g["OAUTH_WALL_PATH"] = os.path.join(tmpd, "oauth-wall.json")    # never the host's real wall file
         check("envelope file: absent → (None, reason)", load_envelope()[0] is None and "absent" in load_envelope()[1])
         Path(g["ENVELOPE_PATH"]).write_text("{not json", encoding="utf-8")
         check("envelope file: unreadable → (None, reason), never a crash", load_envelope()[0] is None)
@@ -1322,8 +1852,10 @@ def self_test() -> int:
         rc = main()
         check("main(): an unreadable probe is INDETERMINATE, exit 3, and pages nothing",
               rc == 3 and LAST_RECORD[:1] == ["INDETERMINATE"] and not LAST_FIRE)
+        _selftest_oauth(check, g, tmpd, env_doc, fixture)
     finally:
         g["run_probe"], g["run_sql"], g["ENVELOPE_PATH"] = real_probe, real_sql, real_env_path
+        g["OAUTH_WALL_PATH"] = real_wall_path
         shutil.rmtree(tmpd, ignore_errors=True)
     _selftest_log(check)
     if ran == 0:
@@ -1343,4 +1875,7 @@ if __name__ == "__main__":
         flip_at = sys.argv[sys.argv.index("--flip-at") + 1] if "--flip-at" in sys.argv else \
             datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         sys.exit(freeze_envelope(flip_at, force="--force" in sys.argv))
+    if len(sys.argv) > 1 and sys.argv[1] == "--freeze-oauth-wall":
+        wall_at = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
+        sys.exit(freeze_oauth_wall(wall_at, force="--force" in sys.argv))
     sys.exit(main())
