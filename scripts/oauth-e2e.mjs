@@ -784,14 +784,16 @@ function parseArgs(argv) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const o = parseArgs(process.argv.slice(2));
+  // `process.exitCode`, never `process.exit()`: an exit drops a queued pipe write, and the verdict
+  // token is the last line written (tests/unit/verdict-exit-path.test.ts).
   if (o.help || o.bad || !/^https?:\/\//.test(o.base)) {
     process.stderr.write('usage: node scripts/oauth-e2e.mjs [--base https://api.algovault.com] [--env-file <path>] | --self-test\n');
-    process.exit(o.help ? 0 : 2);
+    process.exitCode = o.help ? 0 : 2;
+  } else {
+    process.exitCode = await (o.selfTest ? selfTest() : runProduction(o)).catch((e) => {
+      errOut(`fatal: ${e?.name}: ${e?.message}`);
+      out(o.selfTest ? 'OAUTH_E2E_SELFTEST=FAIL' : 'OAUTH_E2E_VERDICT=INDETERMINATE');
+      return o.selfTest ? 1 : 3;
+    });
   }
-  const code = await (o.selfTest ? selfTest() : runProduction(o)).catch((e) => {
-    errOut(`fatal: ${e?.name}: ${e?.message}`);
-    out(o.selfTest ? 'OAUTH_E2E_SELFTEST=FAIL' : 'OAUTH_E2E_VERDICT=INDETERMINATE');
-    return o.selfTest ? 1 : 3;
-  });
-  process.exit(code);
 }
