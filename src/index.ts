@@ -18,9 +18,10 @@ import type { ExchangeId, LicenseInfo } from './types.js';
 // `credentialOutcomeOf` is the single projection every consumer reads.
 import { decideRefusal, isRefusingOutcome, isStrictUnknownEnabled, refuseCredentialHttp } from './lib/credential-refusal.js';
 import { credentialOutcomeOf } from './lib/credential-outcome.js';
-// GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2: the ONE OAuth mode resolver + the PRM URL the 401 names.
+// GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2/CH3: the ONE OAuth mode resolver, the Bearer-challenge builder both /mcp 401s send, and the sign-in challenge seam.
 import { resolveOAuthMode } from './lib/oauth/mode.js';
-import { protectedResourceMetadataUrl } from './lib/oauth/metadata.js';
+import { sendBearerChallenge } from './lib/oauth/metadata.js';
+import { applyChallenge } from './lib/oauth/challenge.js';
 import { mountOAuth, oauthCallbackBranch } from './lib/oauth/routes.js';
 import { routeTradeCall } from './tools/trade-call-router.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
@@ -332,13 +333,7 @@ export function applyCredentialRefusal(
   const body = req.body as { method?: string; id?: unknown } | undefined;
   const outcome = credentialOutcomeOf(license);
   if (outcome === 'TOKEN_INVALID') {
-    const description = 'The access token is invalid or expired.';
-    res.setHeader(
-      'WWW-Authenticate',
-      `Bearer error="invalid_token", error_description="${description}", scope="mcp:tools", resource_metadata="${protectedResourceMetadataUrl(req.originalUrl)}"`,
-    );
-    res.setHeader('Cache-Control', 'no-store');
-    res.status(401).json({ error: 'invalid_token', error_description: description });
+    sendBearerChallenge(res, req.originalUrl, 'The access token is invalid or expired.');
     return true;
   }
   const decision = decideRefusal({ outcome }, body?.method);
@@ -3689,22 +3684,6 @@ async function startHttp() {
     // a source-order test rather than left to review.
     if (applyCredentialRefusal(req, res, license)) return;
 
-    // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH1 — measure the narrow we just shipped.
-    //
-    // Narrowing the public `exchange` enum 17 -> 15 breaks any caller passing EDGEX/WEEX, and
-    // `request_log` has no `exchange` column, so we could not count them. This is the ONLY seam
-    // that sees the value: Zod validation runs inside the SDK's tool wrapper, so the tool handler
-    // never executes on a rejected call and cannot report it. The request body is already parsed
-    // here (`mcpBody`, for the x402 price binding above), so this reads it and adds no work.
-    //
-    // Position is deliberate: BELOW the credential gate, so a refused caller is not counted —
-    // consistent with 'a refusal claims nothing'. Observation only; it never blocks, and the SDK
-    // still owns the actual rejection.
-    if (callTool) {
-      const venueArg = mcpBody?.params?.arguments?.exchange;
-      if (typeof venueArg === 'string') recordNonPublicVenue(venueArg, callTool, license.tier);
-    }
-
     // Hash client IP for privacy-safe analytics + the free-tier quota key.
     // OPS-MCP-DEFENSE-IN-DEPTH-W1 R2: req.ip (trust proxy=1) via the shared clientIp
     // helper — the raw leftmost-XFF parse was spoofable the moment a proxy hop
@@ -3729,6 +3708,28 @@ async function startHttp() {
     // (MCP_STATELESS=0) the POST-layer funnel emits don't meaningfully join, so a
     // default 'anon' label is harmless (only read when sessionId is set + stateless).
     const identityTier: IdentityTier = sessionIdentity?.tier ?? 'anon';
+
+    // GROWTH-AGENT-SIGNIN-OAUTH-W1 CH3 — THE SIGN-IN CHALLENGE, directly below the credential gate
+    // and for the same reason: above every emit and every charge, so a challenged call consumes
+    // NOTHING. `ipHash` / `sessionId` are hoisted above it (pure derivations, no writes) because the
+    // wall's quota peek must key the caller's real free bucket. Off (`MCP_OAUTH` unset) never answers.
+    if (await applyChallenge(req, res, license, x402Downgrade, { ipHash, sessionId })) return;
+
+    // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH1 — measure the narrow we just shipped.
+    //
+    // Narrowing the public `exchange` enum 17 -> 15 breaks any caller passing EDGEX/WEEX, and
+    // `request_log` has no `exchange` column, so we could not count them. This is the ONLY seam
+    // that sees the value: Zod validation runs inside the SDK's tool wrapper, so the tool handler
+    // never executes on a rejected call and cannot report it. The request body is already parsed
+    // here (`mcpBody`, for the x402 price binding above), so this reads it and adds no work.
+    //
+    // Position is deliberate: BELOW the credential gate, so a refused caller is not counted —
+    // consistent with 'a refusal claims nothing'. Observation only; it never blocks, and the SDK
+    // still owns the actual rejection.
+    if (callTool) {
+      const venueArg = mcpBody?.params?.arguments?.exchange;
+      if (typeof venueArg === 'string') recordNonPublicVenue(venueArg, callTool, license.tier);
+    }
 
     // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: classify THIS request ONCE
     // (single-derivation — the ONE authoritative automated-vs-human verdict). Pure fn

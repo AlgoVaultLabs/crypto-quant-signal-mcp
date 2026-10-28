@@ -46,6 +46,37 @@ export function protectedResourceMetadataUrl(rawUrl: string): string {
   return `${OAUTH_ISSUER}/.well-known/oauth-protected-resource/mcp${echoedQuery(rawUrl)}`;
 }
 
+/**
+ * CH3 — the ONE Bearer challenge both `/mcp` 401s send: `applyCredentialRefusal`'s TOKEN_INVALID
+ * and the sign-in challenge. Status, header grammar, `no-store` and the body's first two keys are
+ * built here and nowhere else, so the two 401s cannot drift; only the description and the optional
+ * `algovault` object differ. `description` must stay inside RFC 6750 §3's `error_description`
+ * charset (printable ASCII without `"` or `\`) — both callers pass constants a test pins.
+ */
+export function bearerChallengeHeader(rawUrl: string, description: string): string {
+  return `Bearer error="invalid_token", error_description="${description}", scope="mcp:tools", resource_metadata="${protectedResourceMetadataUrl(rawUrl)}"`;
+}
+
+export interface BearerChallengeResponse {
+  setHeader(name: string, value: string): unknown;
+  status(code: number): { json(body: unknown): unknown };
+}
+
+export function sendBearerChallenge(
+  res: BearerChallengeResponse,
+  rawUrl: string,
+  description: string,
+  algovault?: Record<string, unknown>,
+): void {
+  res.setHeader('WWW-Authenticate', bearerChallengeHeader(rawUrl, description));
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(401).json(
+    algovault === undefined
+      ? { error: 'invalid_token', error_description: description }
+      : { error: 'invalid_token', error_description: description, algovault },
+  );
+}
+
 /** RFC 8414 document for `/.well-known/oauth-authorization-server`. */
 export function authorizationServerMetadata(): Record<string, unknown> {
   return {
