@@ -36,6 +36,10 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   .tg-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 12px; }
   .tg-connect .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 500; }
   .tg-connect .tg-btn:hover { background: #1c8ec0; }
+  .claude-connect { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; text-align: left; }
+  .claude-connect h2 { color: #8b949e; font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .claude-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 8px; }
+  .claude-connect code { color: #3fb950; word-break: break-all; }
   .usage { margin-top: 32px; text-align: left; }
   .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
   .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
@@ -95,6 +99,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
        </div>
   
   
+  <div class="claude-connect">
+    <h2>Use AlgoVault in Claude</h2>
+    <p>In Claude, add a custom connector: <code>https://api.algovault.com/mcp</code>.</p>
+    <p>If Claude asks how to sign in, choose Sign in when needed.</p>
+    <p>When Claude asks, click Connect and sign in with this email.</p>
+    <p>Added AlgoVault before? Remove it and add it again this way.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
@@ -221,6 +233,10 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   .tg-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 12px; }
   .tg-connect .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 500; }
   .tg-connect .tg-btn:hover { background: #1c8ec0; }
+  .claude-connect { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; text-align: left; }
+  .claude-connect h2 { color: #8b949e; font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .claude-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 8px; }
+  .claude-connect code { color: #3fb950; word-break: break-all; }
   .usage { margin-top: 32px; text-align: left; }
   .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
   .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
@@ -299,6 +315,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
        </div>
   
   
+  <div class="claude-connect">
+    <h2>Use AlgoVault in Claude</h2>
+    <p>In Claude, add a custom connector: <code>https://api.algovault.com/mcp</code>.</p>
+    <p>If Claude asks how to sign in, choose Sign in when needed.</p>
+    <p>When Claude asks, click Connect and sign in with this email.</p>
+    <p>Added AlgoVault before? Remove it and add it again this way.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
@@ -425,6 +449,10 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   .tg-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 12px; }
   .tg-connect .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 500; }
   .tg-connect .tg-btn:hover { background: #1c8ec0; }
+  .claude-connect { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; text-align: left; }
+  .claude-connect h2 { color: #8b949e; font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .claude-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 8px; }
+  .claude-connect code { color: #3fb950; word-break: break-all; }
   .usage { margin-top: 32px; text-align: left; }
   .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
   .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
@@ -503,6 +531,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
        </div>
   
   
+  <div class="claude-connect">
+    <h2>Use AlgoVault in Claude</h2>
+    <p>In Claude, add a custom connector: <code>https://api.algovault.com/mcp</code>.</p>
+    <p>If Claude asks how to sign in, choose Sign in when needed.</p>
+    <p>When Claude asks, click Connect and sign in with this email.</p>
+    <p>Added AlgoVault before? Remove it and add it again this way.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
@@ -629,6 +665,10 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   .tg-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 12px; }
   .tg-connect .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 500; }
   .tg-connect .tg-btn:hover { background: #1c8ec0; }
+  .claude-connect { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; text-align: left; }
+  .claude-connect h2 { color: #8b949e; font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .claude-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 8px; }
+  .claude-connect code { color: #3fb950; word-break: break-all; }
   .usage { margin-top: 32px; text-align: left; }
   .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
   .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
@@ -707,6 +747,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
        </div>
   
   
+  <div class="claude-connect">
+    <h2>Use AlgoVault in Claude</h2>
+    <p>In Claude, add a custom connector: <code>https://api.algovault.com/mcp</code>.</p>
+    <p>If Claude asks how to sign in, choose Sign in when needed.</p>
+    <p>When Claude asks, click Connect and sign in with this email.</p>
+    <p>Added AlgoVault before? Remove it and add it again this way.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
@@ -833,6 +881,10 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   .tg-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 12px; }
   .tg-connect .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 500; }
   .tg-connect .tg-btn:hover { background: #1c8ec0; }
+  .claude-connect { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; text-align: left; }
+  .claude-connect h2 { color: #8b949e; font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .claude-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 8px; }
+  .claude-connect code { color: #3fb950; word-break: break-all; }
   .usage { margin-top: 32px; text-align: left; }
   .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
   .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
@@ -911,6 +963,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
        </div>
   
   
+  <div class="claude-connect">
+    <h2>Use AlgoVault in Claude</h2>
+    <p>In Claude, add a custom connector: <code>https://api.algovault.com/mcp</code>.</p>
+    <p>If Claude asks how to sign in, choose Sign in when needed.</p>
+    <p>When Claude asks, click Connect and sign in with this email.</p>
+    <p>Added AlgoVault before? Remove it and add it again this way.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
@@ -1037,6 +1097,10 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   .tg-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 12px; }
   .tg-connect .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 500; }
   .tg-connect .tg-btn:hover { background: #1c8ec0; }
+  .claude-connect { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; text-align: left; }
+  .claude-connect h2 { color: #8b949e; font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .claude-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 8px; }
+  .claude-connect code { color: #3fb950; word-break: break-all; }
   .usage { margin-top: 32px; text-align: left; }
   .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
   .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
@@ -1075,6 +1139,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   
   <div class="pending"><p>Your API key is being provisioned. This usually takes a few seconds.</p><p>Refresh this page in a moment, or check your email at <strong>buyer@example.com</strong>.</p></div>
   
+  <div class="claude-connect">
+    <h2>Use AlgoVault in Claude</h2>
+    <p>In Claude, add a custom connector: <code>https://api.algovault.com/mcp</code>.</p>
+    <p>If Claude asks how to sign in, choose Sign in when needed.</p>
+    <p>When Claude asks, click Connect and sign in with this email.</p>
+    <p>Added AlgoVault before? Remove it and add it again this way.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
@@ -1201,6 +1273,10 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   .tg-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 12px; }
   .tg-connect .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 500; }
   .tg-connect .tg-btn:hover { background: #1c8ec0; }
+  .claude-connect { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; text-align: left; }
+  .claude-connect h2 { color: #8b949e; font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .claude-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 8px; }
+  .claude-connect code { color: #3fb950; word-break: break-all; }
   .usage { margin-top: 32px; text-align: left; }
   .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
   .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
@@ -1239,6 +1315,14 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   
   <div class="key-box"><div class="label">Your API Key</div><code id="api-key">av_live_070707070707070707070707</code><button onclick="navigator.clipboard.writeText(document.getElementById('api-key').textContent);this.textContent='Copied!'">Copy</button></div>
   <div class="tg-connect"><div class="label">Connect to Telegram bot</div><p>Get regime alerts + trade calls pushed to your Telegram, with your paid quota honored automatically.</p><a href="https://t.me/algovaultofficialbot?start=auth_av_live_070707070707070707070707" target="_blank" rel="noopener" class="tg-btn">📱 Connect @algovaultofficialbot</a></div>
+  <div class="claude-connect">
+    <h2>Use AlgoVault in Claude</h2>
+    <p>In Claude, add a custom connector: <code>https://api.algovault.com/mcp</code>.</p>
+    <p>If Claude asks how to sign in, choose Sign in when needed.</p>
+    <p>When Claude asks, click Connect and sign in with this email.</p>
+    <p>Added AlgoVault before? Remove it and add it again this way.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>

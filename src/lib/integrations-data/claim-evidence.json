@@ -37,6 +37,14 @@
           "expect": [
             "Authorization:${AUTH_HEADER}"
           ]
+        },
+        {
+          "claim": "choose Sign in when needed",
+          "source": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
+          "expect": [
+            "Sign in when needed",
+            "Sign in now"
+          ]
         }
       ]
     },

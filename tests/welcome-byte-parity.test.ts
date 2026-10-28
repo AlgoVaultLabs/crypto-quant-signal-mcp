@@ -35,6 +35,11 @@
  * `<!-- ANALYTICS:START -->` region in `<head>`: measured 0 lines removed and 0 added lines that
  * are not part of that region, across every snapshot in this file. Nothing in the body moved,
  * which is the property this guard actually protects — the OFF path's LAYOUT.
+ *
+ * SNAPSHOT MAINTENANCE — GROWTH-AGENT-SIGNIN-OAUTH-W1 (CH4, 2026-10-28): regenerated for §Copy G,
+ * the "Use AlgoVault in Claude" card placed directly above the setup block. The diff was verified
+ * BEFORE regenerating and is purely additive: 0 lines removed, and in each of the seven snapshots
+ * exactly 12 added lines, the card's 4 CSS rules and its 8 markup lines. No existing line moved.
  */
 import { describe, expect, it } from 'vitest';
 import { getWelcomePageHtml } from '../src/lib/welcome-page.js';

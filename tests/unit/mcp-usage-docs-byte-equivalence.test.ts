@@ -139,6 +139,12 @@
  * intro's figure had been hand-typed since PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1. Verified BEFORE
  * regenerating: of the 442 non-empty lines, EXACTLY those 4 are absent from the new render and
  * exactly their 4 replacements are new; every other line is present verbatim.
+ *
+ * FIXTURE MAINTENANCE — GROWTH-AGENT-SIGNIN-OAUTH-W1 CH4 (2026-10-28, Copy G): the Claude Desktop
+ * UI path now tells the reader how to sign in. One fixture line (87) moves, by the same two
+ * substitutions made in mcp-clients.ts: "Easiest path (UI, free tier):" -> "Easiest path (UI):",
+ * and "For a paid-tier key, use the JSON path below." -> the four sign-in sentences. Every other
+ * line is unchanged.
  */
 
 import { describe, it, expect } from 'vitest';

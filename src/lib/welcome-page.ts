@@ -32,6 +32,18 @@ import { setupSnippet, SETUP_SLUGS, SETUP_HEADING, SETUP_LABELS, SETUP_DESKTOP_N
  * [a-zA-Z0-9_:.-] is dropped; result is also length-capped. Empty when input
  * is null/undefined/empty.
  */
+// GROWTH-AGENT-SIGNIN-OAUTH-W1 CH4 — §Copy G, verbatim. Claude's connector signs in through our
+// OAuth server, so a visitor who signs in here can use the same email inside Claude. ChatGPT gets
+// its own block only once its OAuth leg passes (its client document is refused today).
+const CLAUDE_CONNECT_HEADING = 'Use AlgoVault in Claude';
+const CLAUDE_CONNECT_LINES: readonly string[] = [
+  'In Claude, add a custom connector: <code>https://api.algovault.com/mcp</code>.',
+  'If Claude asks how to sign in, choose Sign in when needed.',
+  'When Claude asks, click Connect and sign in with this email.',
+  'Added AlgoVault before? Remove it and add it again this way.',
+  'On a paid plan? Sign in with your subscription email and your plan applies.',
+];
+
 function sanitizeUtm(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   return raw.replace(/[^a-zA-Z0-9_:.\-]/g, '').slice(0, 64);
@@ -191,6 +203,10 @@ ${renderAnalyticsRegion()}
   .tg-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 12px; }
   .tg-connect .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 500; }
   .tg-connect .tg-btn:hover { background: #1c8ec0; }
+  .claude-connect { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; text-align: left; }
+  .claude-connect h2 { color: #8b949e; font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .claude-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 8px; }
+  .claude-connect code { color: #3fb950; word-break: break-all; }
   .usage { margin-top: 32px; text-align: left; }
   .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
   .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
@@ -229,6 +245,10 @@ ${renderAnalyticsRegion()}
   ${paywallCta}
   ${keyDisplay}
   ${tgConnect}
+  <div class="claude-connect">
+    <h2>${CLAUDE_CONNECT_HEADING}</h2>
+${CLAUDE_CONNECT_LINES.map((l) => `    <p>${l}</p>`).join('\n')}
+  </div>
   <div class="usage">
     <h2>${SETUP_HEADING}</h2>
 ${setupBlock}

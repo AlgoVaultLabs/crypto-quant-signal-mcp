@@ -115,7 +115,7 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
         'Customize &rarr; Connectors &rarr; + &rarr; <em>Add custom connector</em>, or edit <code class="text-xs bg-navy-800 px-1 rounded">claude_desktop_config.json</code>',
       whatYouGet:
         'Native Streamable-HTTP MCP. AlgoVault tools (<code class="text-xs">get_trade_call</code>, <code class="text-xs">scan_funding_arb</code>, <code class="text-xs">get_market_regime</code>) callable in any chat.',
-      walkthroughHtml: `      <p><strong>Easiest path (UI, free tier):</strong> Open Claude Desktop &rarr; <em>Customize</em> &rarr; <em>Connectors</em> &rarr; <em>+</em> &rarr; <em>Add custom connector</em>. Paste <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp?src=docs</code>, then click <em>Add</em>. Enable it per chat from <em>+</em> &rarr; <em>Connectors</em>. For a paid-tier key, use the JSON path below.</p>
+      walkthroughHtml: `      <p><strong>Easiest path (UI):</strong> Open Claude Desktop &rarr; <em>Customize</em> &rarr; <em>Connectors</em> &rarr; <em>+</em> &rarr; <em>Add custom connector</em>. Paste <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp?src=docs</code>, then click <em>Add</em>. Enable it per chat from <em>+</em> &rarr; <em>Connectors</em>. If Claude asks how to sign in, choose Sign in when needed. When Claude asks, click Connect and sign in free. A paid plan applies when you sign in with your subscription email. Added it before? Remove it and add it again this way.</p>
       <p><strong>JSON path:</strong> Edit <code class="text-xs bg-navy-800 px-1 rounded">~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or <code class="text-xs bg-navy-800 px-1 rounded">%APPDATA%\\Claude\\claude_desktop_config.json</code> (Windows):</p>
       <div class="code-block bg-well border border-line rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">${SETUP_CONFIG_SNIPPETS['claude-desktop']({ apiKey: 'av_live_&hellip;', trackToken: 'chan-docs' })}</code></pre>
@@ -152,6 +152,12 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
           claim: 'Authorization:${AUTH_HEADER}',
           source: 'https://registry.npmjs.org/mcp-remote',
           expect: ['Authorization:${AUTH_HEADER}'],
+        },
+        {
+          // GROWTH-AGENT-SIGNIN-OAUTH-W1 CH4 (Copy G): the connector form's Authentication choice.
+          claim: 'choose Sign in when needed',
+          source: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
+          expect: ['Sign in when needed', 'Sign in now'],
         },
       ],
     },
