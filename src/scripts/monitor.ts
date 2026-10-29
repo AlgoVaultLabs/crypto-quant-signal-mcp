@@ -20,6 +20,7 @@ import { firePage, shouldAlert, type AlertState } from './monitor-page.js';
 import { formatAgentActivity } from '../lib/agent-activity-format.js';
 import { getPerformanceStatsAsync, getMerkleBatchSummary, dbQuery } from '../lib/performance-db.js';
 import { formatMerkleAnchoring } from '../lib/merkle-anchor-format.js';
+import { formatSignalPerformance } from '../lib/digest-signal-performance.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import {
   internalPerfPublicUrl,
@@ -824,19 +825,12 @@ async function runDigest(opts: { catchup?: boolean; force?: boolean } = {}): Pro
   // failure has to be visible in the digest rather than absent from it.
   const merkleLines = formatMerkleAnchoring(merkleSummary, Date.now());
   if (perfStats) {
-    const total = perfStats.overall.totalCalls;
-    const evaluated = perfStats.overall.totalEvaluated;
-    const evalPct = total > 0 ? ((evaluated / total) * 100).toFixed(1) : '0';
-    const pfe = perfStats.overall.pfeWinRate !== null
-      ? `${(perfStats.overall.pfeWinRate * 100).toFixed(1)}%`
-      : 'N/A';
-    const pending = total - evaluated;
+    // OPS-DIGEST-EVAL-COVERAGE-W1: every count projects from the ONE `overall` aggregate, labelled by what it
+    // counts. This read `pending = total − totalEvaluated`, which became "evaluated-but-excluded + pending" the day
+    // `totalEvaluated` was narrowed to win-rate-eligible rows.
     sections.push([
       '📈 *Signal Performance*',
-      `• Total trade calls: ${total.toLocaleString()}`,
-      `• Evaluated: ${evaluated.toLocaleString()} (${evalPct}%)`,
-      `• PFE Win Rate: ${pfe}`,
-      `• Pending evaluation: ${pending.toLocaleString()}`,
+      ...formatSignalPerformance(perfStats.overall),
       ...merkleLines,
     ].join('\n'));
   } else {
@@ -864,7 +858,9 @@ async function runDigest(opts: { catchup?: boolean; force?: boolean } = {}): Pro
     `• CPU: ${cpuPct}% | RAM: ${memUsed}/${memTotal}`,
     `• Gas wallet: ${gasResult.balance.toFixed(6)} ETH`,
     `• Disk: ${diskUsed}/${diskTotal}`,
-    `• Backfill queue: ${backfillResult.count.toLocaleString()} pending`,
+    // Every row with `outcome_price IS NULL` (runCritical pages on it): no signal, population or maturity filter, so a
+    // different population from "Pending evaluation" above, and the label says so (OPS-DIGEST-EVAL-COVERAGE-W1).
+    `• Outcome backlog (all rows, incl. not yet due): ${backfillResult.count.toLocaleString()}`,
   ].join('\n'));
 
   // npm Downloads

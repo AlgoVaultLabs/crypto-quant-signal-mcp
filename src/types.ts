@@ -687,8 +687,14 @@ export interface PerformanceStats {
   overall: {
     /** v1.10.0 canonical key. Was `overall.totalSignals` pre-1.10. */
     totalCalls: number;
+    /** Win-rate-ELIGIBLE non-HOLD calls (`isPfeEligible`); the published denominator. */
     totalEvaluated: number;
     pfeWinRate: number | null;
+    /**
+     * Non-HOLD calls the evaluator has written a result for (`isEvaluatedRow`), eligible or not. INTERNAL: the public
+     * formatter's allow-list never names it. REQUIRED so every producer must fill it (OPS-DIGEST-EVAL-COVERAGE-W1).
+     */
+    totalWithResult: number;
   };
   /** v1.10.0 canonical breakdown by trade-call type (BUY/SELL/HOLD). Was `bySignalType` pre-1.10. */
   byCallType: Record<string, { count: number; evaluated: number; pfeWinRate: number | null }>;

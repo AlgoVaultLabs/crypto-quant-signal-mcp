@@ -18,6 +18,8 @@
  * invented shape — including the three venues that must not survive.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   PUBLIC_PERF_FORBIDDEN_KEYS,
   PUBLIC_PERF_SECTIONS,
@@ -48,7 +50,7 @@ const venueAgg = (exchange: string, count: number) => ({
 const STATS: PerformanceStats = {
   totalCalls: 520832,
   period: { from: '2026-04-10', to: '2026-08-28' },
-  overall: { totalCalls: 520832, totalEvaluated: 514500, pfeWinRate: 0.916862973760933 },
+  overall: { totalCalls: 520832, totalEvaluated: 514500, pfeWinRate: 0.916862973760933, totalWithResult: 517311 },
   byCallType: { BUY: tf(479552, 0.9194602462298145), SELL: tf(34948, 0.8812235321048415), HOLD: tf(0, null) },
   byTimeframe: { '1m': tf(7632, 0.92), '3m': tf(120212, 0.93), '5m': tf(143734, 0.92), '1d': tf(1297, 0.59) },
   byAsset: { BTC: asset(9000, 1, 0.93), BNB: asset(5517, 2, 0.9276495182694056) },
@@ -204,5 +206,36 @@ describe('public-performance-formatter — methodology is a GATE, not silent los
     expect(s.toLowerCase()).toContain('recording gate');
     expect(s.toLowerCase()).toContain('no further confidence filter');
     expect(s.toLowerCase()).toContain('hold');
+  });
+});
+
+// OPS-DIGEST-EVAL-COVERAGE-W1 — `overall.totalWithResult` is an INTERNAL count (the digest's "Evaluated"). The
+// formatter's `overall` is built from three NAMED fields, so it cannot pass through; this pins that, and pins that the
+// resource and the endpoint serialise the formatter's output (the tool's identity with it is get-track-record-parity's).
+describe('public-performance-formatter — totalWithResult reaches no public surface', () => {
+  const SENTINEL = STATS.overall.totalWithResult;
+
+  it('the full projection (resource + endpoint shape) carries neither the key nor its value', () => {
+    const out = formatPublicPerformance(STATS, PROMOTED);
+    const keys = new Set<string>();
+    (function walk(v: unknown): void {
+      if (Array.isArray(v)) return v.forEach(walk);
+      if (v && typeof v === 'object') for (const [k, child] of Object.entries(v)) { keys.add(k); walk(child); }
+    })(out);
+    expect(keys.has('totalEvaluated')).toBe(true); // positive control: the walk reached `overall`
+    expect(keys.has('totalWithResult')).toBe(false);
+    expect(Object.keys(out.overall).sort()).toEqual(['pfeWinRate', 'totalCalls', 'totalEvaluated']);
+    expect(JSON.stringify(out)).not.toContain(String(SENTINEL));
+  });
+
+  it('the resource and the endpoint both serialise formatPublicPerformance — never the raw producer value', () => {
+    const src = readFileSync(join(__dirname, '..', '..', 'src', 'index.ts'), 'utf8');
+    const at = src.indexOf("uri: 'performance://signal-performance'");
+    expect(at).toBeGreaterThan(0);
+    expect(src.slice(at, at + 200)).toContain('text: JSON.stringify(formatPublicPerformance(stats, allow)');
+    const endpoint = src.slice(src.indexOf("app.get('/api/performance-public'"), src.indexOf("app.get('/api/performance-shadow'"));
+    expect(endpoint).toContain('const publicStats = formatPublicPerformance(stats, allow);');
+    expect(endpoint).toContain('...publicStats,');
+    expect(endpoint).not.toMatch(/\.\.\.stats\b/);
   });
 });

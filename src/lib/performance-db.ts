@@ -9,7 +9,7 @@ import type { SignalRecord, SignalVerdict, PerformanceStats, ExchangeId } from '
 import { classifyAsset, majorityTier, TIER_DEFINITIONS, getTop20ByOI, type AssetTier } from './asset-tiers.js';
 import { assetClassProbedAt, warmAssetClasses } from './asset-class-detection.js';
 import { isShortLivedScript } from './runtime.js';
-import { isPfeEligible, sqlPfeEligible, SQL_PFE_ELIGIBLE, SCORING_EXCLUSIONS_RULE } from './pfe-scoring.js';
+import { isPfeEligible, isEvaluatedRow, sqlPfeEligible, SQL_EVALUATED, SQL_PFE_ELIGIBLE, SCORING_EXCLUSIONS_RULE } from './pfe-scoring.js';
 import { EXCHANGE_COUNT } from './capabilities.js';
 // A1b: the ONE maturity derivation. `pfe-mae.ts` is a type-only-import leaf, so this cannot cycle.
 import { EVAL_CANDLES, maturityHorizonS, isMatureAtS } from './pfe-mae.js';
@@ -3535,7 +3535,7 @@ function emptyStats(): PerformanceStats {
   return {
     totalCalls: 0,
     period: { from: '', to: '' },
-    overall: { totalCalls: 0, totalEvaluated: 0, pfeWinRate: null },
+    overall: { totalCalls: 0, totalEvaluated: 0, pfeWinRate: null, totalWithResult: 0 },
     byCallType: {},
     byTimeframe: {},
     byAsset: {},
@@ -3774,6 +3774,8 @@ function computeStats(rows: SignalRecord[], top20ByOI: Set<string> | null, recen
       totalCalls: nonHold.length,
       totalEvaluated: evaluatedPFE.length,
       pfeWinRate,
+      // OPS-DIGEST-EVAL-COVERAGE-W1: evaluated, eligible or not. Internal (the public allow-list never names it).
+      totalWithResult: nonHold.filter(isEvaluatedRow).length,
     },
     byCallType: bySignalType,
     byTimeframe,
@@ -3817,8 +3819,9 @@ export interface StatGroupRow {
   timeframe: string;
   signal: SignalVerdict;
   cnt: number;       // count(*)
-  pfe_eval: number;  // count(*) FILTER (WHERE pfe_return_pct IS NOT NULL)
+  pfe_eval: number;  // count(*) FILTER (WHERE signal <> 'HOLD' AND …) — win-rate-eligible (SQL_PFE_ELIGIBLE), NOT "evaluated"
   pfe_win: number;   // count(*) FILTER (... AND ((BUY∧pfe>0)∨(SELL∧pfe<0)))
+  evaluated_n: number; // count(*) FILTER (WHERE SQL_EVALUATED) — evaluated, eligible or not (OPS-DIGEST-EVAL-COVERAGE-W1)
   max_ca: number;    // max(created_at) — deterministic byAsset/byExchange order (Q1)
   max_id: number;    // max(id)
 }
@@ -3874,9 +3877,10 @@ export function aggregateRowsInJs(rows: SignalRecord[]): { groups: StatGroupRow[
     const ex = r.exchange || 'HL';
     const key = `${ex}${STAT_GROUP_KEY_SEP}${r.coin}${STAT_GROUP_KEY_SEP}${r.timeframe}${STAT_GROUP_KEY_SEP}${r.signal}`;
     let g = map.get(key);
-    if (!g) { g = { exchange: ex, coin: r.coin, timeframe: r.timeframe, signal: r.signal, cnt: 0, pfe_eval: 0, pfe_win: 0, max_ca: -Infinity, max_id: -Infinity }; map.set(key, g); }
+    if (!g) { g = { exchange: ex, coin: r.coin, timeframe: r.timeframe, signal: r.signal, cnt: 0, pfe_eval: 0, pfe_win: 0, evaluated_n: 0, max_ca: -Infinity, max_id: -Infinity }; map.set(key, g); }
     g.cnt++;
     if (isPfeEligible(r)) { g.pfe_eval++; if (isPfeWin(r.signal, r.pfe_return_pct!)) g.pfe_win++; }
+    if (isEvaluatedRow(r)) g.evaluated_n++;
     if (r.created_at > g.max_ca) g.max_ca = r.created_at;
     const rid = r.id ?? 0;
     if (rid > g.max_id) g.max_id = rid;
@@ -4000,7 +4004,7 @@ export function rollupStats(
       from: new Date(period.min_created_at * 1000).toISOString().split('T')[0],
       to: new Date(period.max_created_at * 1000).toISOString().split('T')[0],
     },
-    overall: { totalCalls: _sumCnt(nonHold), totalEvaluated: _sumEval(nonHold), pfeWinRate: _wr(nonHold) },
+    overall: { totalCalls: _sumCnt(nonHold), totalEvaluated: _sumEval(nonHold), pfeWinRate: _wr(nonHold), totalWithResult: nonHold.reduce((a, g) => a + g.evaluated_n, 0) },
     byCallType,
     byTimeframe,
     byAsset,
@@ -4071,8 +4075,14 @@ export function buildStatsAggregateSql(recentVenues: RecentVenueScope): { groups
     groupsSql:
       "SELECT coalesce(exchange, 'HL') AS exchange, coin, timeframe, signal, " +
       'count(*) AS cnt, ' +
-      `count(*) FILTER (WHERE ${SQL_PFE_ELIGIBLE}) AS pfe_eval, ` +
+      // The HOLD clause `sqlPfeEligible` leaves to its caller (isPfeEligible: a HOLD is never eligible). Without it a
+      // HOLD group carrying a result read pfe_eval 1 here and 0 in aggregateRowsInJs — measured by the real-engine test
+      // (OPS-DIGEST-EVAL-COVERAGE-W1 AC3). rollupStats never reads a HOLD group's pfe_eval, so no output moves.
+      `count(*) FILTER (WHERE signal <> 'HOLD' AND ${SQL_PFE_ELIGIBLE}) AS pfe_eval, ` +
       `count(*) FILTER (${winFilter}) AS pfe_win, ` +
+      // OPS-DIGEST-EVAL-COVERAGE-W1: "evaluated" beside "eligible", from ONE scan, so the digest never subtracts two
+      // differently-defined aggregates. Never an `outcome_` name (PII LAW, test-pinned).
+      `count(*) FILTER (WHERE ${SQL_EVALUATED}) AS evaluated_n, ` +
       'max(created_at) AS max_ca, max(id) AS max_id ' +
       `FROM signals WHERE ${SQL_PUBLISHED_POPULATION} GROUP BY coalesce(exchange, 'HL'), coin, timeframe, signal`,
     periodSql:
@@ -4092,6 +4102,18 @@ export function buildStatsAggregateSql(recentVenues: RecentVenueScope): { groups
 }
 
 /**
+ * One `groupsSql` result row as a `StatGroupRow` (Number-coerced — node-postgres returns count/bigint as strings).
+ * Exported so the real-engine test (perfstats-sql-aggregate.test.ts) runs this mapping, not a copy of it.
+ */
+export function statGroupRowOf(r: Record<string, unknown>): StatGroupRow {
+  return {
+    exchange: String(r.exchange), coin: String(r.coin), timeframe: String(r.timeframe), signal: r.signal as SignalVerdict,
+    cnt: Number(r.cnt), pfe_eval: Number(r.pfe_eval), pfe_win: Number(r.pfe_win), evaluated_n: Number(r.evaluated_n),
+    max_ca: Number(r.max_ca), max_id: Number(r.max_id),
+  };
+}
+
+/**
  * PG-only executor. Returns grouped rows (Number-coerced — node-postgres returns
  * count/bigint as strings) + period + the deterministic top-20 recent rows (left
  * in native b.query types so recentSignals byte-matches loadSignalsForStats rows).
@@ -4106,11 +4128,7 @@ export async function aggregateSignalsSql(recentVenues: RecentVenueScope): Promi
   const rawGroups = (await b.queryNoJit(groupsSql)) as unknown as Array<Record<string, unknown>>;
   const rawPeriod = (await b.query(periodSql)) as unknown as Array<Record<string, unknown>>;
   const recentRows = (await b.query(recentSql, recentParams)) as unknown as SignalRecord[];
-  const groups: StatGroupRow[] = rawGroups.map(r => ({
-    exchange: String(r.exchange), coin: String(r.coin), timeframe: String(r.timeframe), signal: r.signal as SignalVerdict,
-    cnt: Number(r.cnt), pfe_eval: Number(r.pfe_eval), pfe_win: Number(r.pfe_win),
-    max_ca: Number(r.max_ca), max_id: Number(r.max_id),
-  }));
+  const groups: StatGroupRow[] = rawGroups.map(statGroupRowOf);
   const p = rawPeriod[0] ?? {};
   const period: PeriodRow = { min_created_at: Number(p.min_created_at) || 0, max_created_at: Number(p.max_created_at) || 0, total: Number(p.total) || 0 };
   return { groups, period, recentRows };

@@ -52,7 +52,7 @@ const venueAgg = (exchange: string, count: number) => ({
 const STATS: PerformanceStats = {
   totalCalls: 520832,
   period: { from: '2026-04-10', to: '2026-08-28' },
-  overall: { totalCalls: 520832, totalEvaluated: 514500, pfeWinRate: 0.916862973760933 },
+  overall: { totalCalls: 520832, totalEvaluated: 514500, pfeWinRate: 0.916862973760933, totalWithResult: 517311 },
   byCallType: { BUY: tf(479552, 0.91), SELL: tf(34948, 0.88), HOLD: tf(0, null) },
   byTimeframe: { '1m': tf(7632, 0.92), '5m': tf(143734, 0.92) },
   byAsset: { BTC: asset(9000, 1, 0.93) },
@@ -140,6 +140,14 @@ describe('get_track_record — the row allow-list holds even when a section is a
     }
     expect(keys.size).toBeGreaterThan(10);      // vacuity guard
     expect(keys.has('pfeWinRate')).toBe(true);  // positive control
+  });
+
+  it('never carries the INTERNAL overall.totalWithResult (OPS-DIGEST-EVAL-COVERAGE-W1), at any include level', async () => {
+    for (const include of [[], [...PUBLIC_PERF_SECTIONS]] as string[][]) {
+      const { payload } = await runGetTrackRecord({ include });
+      expect(Object.keys((payload as { overall: object }).overall).sort()).toEqual(['pfeWinRate', 'totalCalls', 'totalEvaluated']);
+      expect(JSON.stringify(payload)).not.toMatch(new RegExp(`totalWithResult|${STATS.overall.totalWithResult}`));
+    }
   });
 });
 

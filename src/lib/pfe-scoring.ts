@@ -227,6 +227,16 @@ export function isDefectWindowEvaluation(row: PfeScorable): boolean {
   return isDefectWindowEvaluationOf(PFE_DEFECT_WINDOWS, row);
 }
 
+/**
+ * THE "evaluated" predicate: the evaluator ran and wrote a result. It is NOT win-rate eligibility
+ * (`isPfeEligible`), which further drops the frozen and declared-exclusion rows. A count of
+ * "evaluated" reads this; a count of "scored for win rate" reads `isPfeEligible`. The SQL twin is
+ * `SQL_EVALUATED` (OPS-DIGEST-EVAL-COVERAGE-W1).
+ */
+export function isEvaluatedRow(row: Pick<PfeScorable, 'pfe_return_pct'>): boolean {
+  return row.pfe_return_pct != null;
+}
+
 /** Why a row is outside the win-rate population; `null` when it counts. */
 export type PfeExclusion = 'hold' | 'unevaluated' | 'frozen' | 'defect_window';
 
@@ -237,7 +247,7 @@ export type PfeExclusion = 'hold' | 'unevaluated' | 'frozen' | 'defect_window';
  */
 export function pfeExclusionOf(row: PfeScorable): PfeExclusion | null {
   if (row.signal === 'HOLD') return 'hold';
-  if (row.pfe_return_pct == null) return 'unevaluated';   // never evaluated (fetch failed / not due)
+  if (!isEvaluatedRow(row)) return 'unevaluated';          // never evaluated (fetch failed / not due)
   if (isFrozenEvaluation(row)) return 'frozen';            // S2: the book was shut, not wrong
   if (isDefectWindowEvaluation(row)) return 'defect_window'; // its entry price is not the venue's at signal time
   return null;
@@ -279,8 +289,11 @@ export function isPfeWinRow(row: PfeScorable): boolean {
  */
 export const SQL_NOT_FROZEN = 'NOT (pfe_return_pct = 0 AND mae_return_pct = 0)';
 
-/** The evaluator ran. Also the explicit IS NULL arm `SQL_NOT_FROZEN` needs (sql-null-safe-predicate.test.ts). */
-const SQL_EVALUATED = 'pfe_return_pct IS NOT NULL';
+/**
+ * The evaluator ran: the SQL projection of `isEvaluatedRow`, THE "evaluated" predicate. Also the explicit IS NULL arm
+ * `SQL_NOT_FROZEN` needs (sql-null-safe-predicate.test.ts).
+ */
+export const SQL_EVALUATED = 'pfe_return_pct IS NOT NULL';
 
 /** The `signals` columns the fragments here name; `qualify` prefixes exactly these. */
 const FRAGMENT_COLUMNS = /(?<![\w.'])(pfe_return_pct|mae_return_pct|exchange|timeframe|created_at|coin|id)\b/g;
