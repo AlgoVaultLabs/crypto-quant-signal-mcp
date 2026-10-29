@@ -51,7 +51,9 @@ describe('chat quota wiring (SEC-03)', () => {
     const pipeline = read('src/lib/tool-call-pipeline.ts');
     const body = pipeline.slice(pipeline.indexOf('  chat_knowledge: {'), pipeline.indexOf('  search_knowledge: {'));
     expect(body).toContain('chatQuotaApiKey(license.key, getRequestIpHash() ?? null)');
-    expect(idx).toContain("license: getRequestLicense() }));");
+    // GROWTH-AGENT-SIGNIN-OAUTH-W3: the handler now passes a second argument to toMcpToolResult, so
+    // the call no longer closes on `}));` — pinned on the callTool argument that carries the read.
+    expect(idx).toContain("channel: 'mcp', license: getRequestLicense() })");
   });
 });
 

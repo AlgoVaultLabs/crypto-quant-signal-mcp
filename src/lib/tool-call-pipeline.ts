@@ -73,6 +73,7 @@ import {
   buildTierLimitPayload,
 } from './errors.js';
 import { buildSuggestedX402, isX402NudgeEnabled } from './x402-nudge.js';
+import { WWW_AUTHENTICATE_META_KEY } from './oauth/metadata.js';
 import { recordFirstNonHoldVerdict, shouldShowAhaReferral, ahaReferralAlreadyShown } from './aha-event.js';
 import { referralCodeForKey } from './referral-store.js';
 import { buildAhaHint, buildAhaReferral, buildReferralHint, AHA_HIGH_CONVICTION_CONFIDENCE, type ReferralHint, type AhaReferralFrom } from './nudge-copy.js';
@@ -679,9 +680,34 @@ export async function callTool(req: ToolCallRequest): Promise<ToolCallOutcome> {
 // toMcpToolResult — the MCP envelope, projected from the outcome
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-type McpToolResult = { content: { type: 'text'; text: string }[]; isError?: true };
+type McpToolResult = { content: { type: 'text'; text: string }[]; isError?: true; _meta?: Record<string, unknown> };
 
-export function toMcpToolResult(o: ToolCallOutcome): McpToolResult {
+/**
+ * GROWTH-AGENT-SIGNIN-OAUTH-W3 — is this outcome the metered quota wall? Three shapes, one code:
+ * get_trade_call / get_market_regime / scan_funding_arb THROW `TierLimitReachedError`;
+ * scan_market_regimes REFUSES with the `buildScanQuotaWall` body (`scan-shared.ts`); scan_trade_calls
+ * returns that same body as an OK result (its row maps every outcome to `ok`, so it is not
+ * `isError`). All three carry `TIER_LIMIT_REACHED`; nothing else does.
+ */
+export function isQuotaWall(o: ToolCallOutcome): boolean {
+  if (o.ok) return (o.result as { code?: unknown } | null)?.code === 'TIER_LIMIT_REACHED';
+  if (o.kind === 'threw') return o.error instanceof TierLimitReachedError;
+  return o.payload.code === 'TIER_LIMIT_REACHED';
+}
+
+/**
+ * `wallChallenge` (W3) is the route's `toolWallChallenge` answer for this call. On a quota wall it
+ * rides in `_meta["mcp/www_authenticate"]` — beside the content, never inside it, so the refusal's
+ * text is byte-identical either way.
+ */
+export function toMcpToolResult(o: ToolCallOutcome, opts?: { wallChallenge?: string }): McpToolResult {
+  const result = mcpToolResultOf(o);
+  return opts?.wallChallenge && isQuotaWall(o)
+    ? { ...result, _meta: { [WWW_AUTHENTICATE_META_KEY]: [opts.wallChallenge] } }
+    : result;
+}
+
+function mcpToolResultOf(o: ToolCallOutcome): McpToolResult {
   const row = TOOLS[(getFeature(o.tool)?.name ?? o.tool) as CanonicalTool];
   if (o.ok) {
     const content: { type: 'text'; text: string }[] = [{ type: 'text' as const, text: JSON.stringify(o.result, null, 2) }];

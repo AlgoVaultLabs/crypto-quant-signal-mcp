@@ -17,8 +17,17 @@
  * (C19), so the free-tier key resolves to the caller's real bucket, and a refused peek emits the
  * `quota_hit_block` the tool would have (C20). `noteStepup` dedupes per tracker per UTC day, so the
  * peek and a later tool `checkQuota` write one `stepup_*` row.
+ *
+ * GROWTH-AGENT-SIGNIN-OAUTH-W3 — the TOOL-LEVEL half, for clients that never see that 401. ChatGPT
+ * opens its account-linking UI on a tool result, not on an HTTP status, and only when BOTH halves
+ * are present (OpenAI Apps SDK, "Authentication"): the tool declares `securitySchemes` on
+ * tools/list, and the refused result carries `_meta["mcp/www_authenticate"]`. Both halves are gated
+ * by `isMeteredTool`, so a tool never carries one without the other, and the challenge is decided
+ * from the same preamble as the 401 (`canChallenge`), so the two can never disagree about WHO may
+ * be asked to sign in. The 401 itself is unchanged.
  */
 import type { Request, Response } from 'express';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { LicenseInfo } from '../../types.js';
 import { checkQuota, requestContext, type X402Downgrade } from '../license.js';
 import { getFeature } from '../feature-registry.js';
@@ -27,9 +36,9 @@ import { clientIp } from '../client-ip.js';
 import { isAnthropicEgressHash, isAnthropicEgressIp } from '../platform-egress.js';
 import { effectiveKeylessMonthlyCalls, freeCallsLabel, resolveStepupMode } from '../plans.js';
 import { recordFunnelEvent } from '../performance-db.js';
-import { resolveOAuthMode, type OAuthMode } from './mode.js';
+import { OAUTH_RESOURCE_SCOPES, resolveOAuthMode, type OAuthMode } from './mode.js';
 import { oauthHealthy } from './store.js';
-import { sendBearerChallenge } from './metadata.js';
+import { bearerChallengeHeader, sendBearerChallenge } from './metadata.js';
 
 export type ChallengeReason = 'signin' | 'wall_month' | 'wall_day';
 export type ChallengeDecision = { shape: 'serve' } | { shape: 'challenge'; reason: ChallengeReason };
@@ -67,12 +76,24 @@ export function isMeteredTool(name: string | undefined): boolean {
   return unit !== undefined && unit !== 'rate-limited';
 }
 
+/** The facts R3.1's preamble reads — everything except the branch-specific inputs. */
+export type ChallengeEligibility = Omit<ChallengeInput, 'signin' | 'anthropicEgress' | 'clientFamily' | 'peekQuota'>;
+
+/**
+ * R3.1's preamble: a metered `tools/call` from a caller who holds no credential and pays no x402, on
+ * a healthy OAuth server. It answers WHO may be asked to sign in; `decideChallenge` adds WHEN the
+ * 401 is sent, and the W3 tool-level challenge reads it as-is.
+ */
+export function canChallenge(input: ChallengeEligibility): boolean {
+  if (input.mode === 'off' || !input.healthy) return false;
+  if (input.httpMethod !== 'POST' || input.rpcMethod !== 'tools/call') return false;
+  if (!isMeteredTool(input.tool)) return false;
+  if (!input.anonymous || input.hasAuthorization) return false;
+  return !(input.hasPaymentHeader || input.x402Downgrade);
+}
+
 export function decideChallenge(input: ChallengeInput): ChallengeDecision {
-  if (input.mode === 'off' || !input.healthy) return SERVE;
-  if (input.httpMethod !== 'POST' || input.rpcMethod !== 'tools/call') return SERVE;
-  if (!isMeteredTool(input.tool)) return SERVE;
-  if (!input.anonymous || input.hasAuthorization) return SERVE;
-  if (input.hasPaymentHeader || input.x402Downgrade) return SERVE;
+  if (!canChallenge(input)) return SERVE;
   if (input.signin) return { shape: 'challenge', reason: 'signin' };
   if (input.mode !== 'wall' || !input.anthropicEgress || input.clientFamily !== 'claude') return SERVE;
   let peek: QuotaPeek | null;
@@ -134,19 +155,10 @@ export async function applyChallenge(
   x402Downgrade: X402Downgrade | undefined,
   ctx: { ipHash: string; sessionId: string | undefined },
 ): Promise<boolean> {
-  const body = (req.body && typeof req.body === 'object') ? req.body as { method?: unknown; params?: { name?: unknown } } : undefined;
   const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
   const clientFamily = classifyClient(userAgent).name;
   const decision = decideChallenge({
-    mode: resolveOAuthMode(),
-    healthy: oauthHealthy(),
-    httpMethod: req.method,
-    rpcMethod: typeof body?.method === 'string' ? body.method : undefined,
-    tool: typeof body?.params?.name === 'string' ? body.params.name : undefined,
-    anonymous: license.anonymous === true,
-    hasAuthorization: req.headers.authorization !== undefined,
-    hasPaymentHeader: req.headers['x-payment'] !== undefined || req.headers['payment-signature'] !== undefined,
-    x402Downgrade: x402Downgrade !== undefined,
+    ...eligibilityOf(req, license, x402Downgrade),
     signin: req.query?.signin === '1',
     anthropicEgress: isAnthropicEgressIp(clientIp(req)),
     clientFamily,
@@ -161,6 +173,76 @@ export async function applyChallenge(
     reason: decision.reason,
     message: challengeMessage(decision.reason),
     sign_in_url: SIGN_IN_URL,
+  });
+  return true;
+}
+
+/** The preamble's facts, read from the request by ONE function — shared by the 401 and the tool-level half. */
+function eligibilityOf(req: Request, license: LicenseInfo, x402Downgrade: X402Downgrade | undefined): ChallengeEligibility {
+  const body = (req.body && typeof req.body === 'object') ? req.body as { method?: unknown; params?: { name?: unknown } } : undefined;
+  return {
+    mode: resolveOAuthMode(),
+    healthy: oauthHealthy(),
+    httpMethod: req.method,
+    rpcMethod: typeof body?.method === 'string' ? body.method : undefined,
+    tool: typeof body?.params?.name === 'string' ? body.params.name : undefined,
+    anonymous: license.anonymous === true,
+    hasAuthorization: req.headers.authorization !== undefined,
+    hasPaymentHeader: req.headers['x-payment'] !== undefined || req.headers['payment-signature'] !== undefined,
+    x402Downgrade: x402Downgrade !== undefined,
+  };
+}
+
+// ── W3: the tool-level half ─────────────────────────────────────────────────────────────────────
+
+/**
+ * The challenge a served call's quota refusal carries in `_meta["mcp/www_authenticate"]`, or
+ * undefined when signing in would not lift it. Decided at the route (where the credential headers
+ * are) and threaded to the tool layer through `requestContext`. The string is the SAME
+ * `bearerChallengeHeader` the 401 sends, so a client reads one grammar whichever half it honours.
+ */
+export function toolWallChallenge(req: Request, license: LicenseInfo, x402Downgrade: X402Downgrade | undefined): string | undefined {
+  return canChallenge(eligibilityOf(req, license, x402Downgrade))
+    ? bearerChallengeHeader(req.originalUrl, CHALLENGE_DESCRIPTION)
+    : undefined;
+}
+
+/** Anonymous calls stay allowed; OAuth is offered. Order is the Apps SDK's "optional auth" form. */
+export const TOOL_SECURITY_SCHEMES: readonly Record<string, unknown>[] = [
+  { type: 'noauth' },
+  { type: 'oauth2', scopes: [...OAUTH_RESOURCE_SCOPES] },
+];
+
+/** A tool's `securitySchemes`: the metered tools — the ones a sign-in lifts a refusal on — only. */
+export function toolSecuritySchemes(name: unknown): readonly Record<string, unknown>[] | undefined {
+  return typeof name === 'string' && isMeteredTool(name) ? TOOL_SECURITY_SCHEMES : undefined;
+}
+
+type ListHandler = (request: unknown, extra: unknown) => Promise<unknown>;
+
+/**
+ * Declare `securitySchemes` on tools/list: top-level (the Apps SDK's primary key) and mirrored into
+ * `_meta.securitySchemes` (its back-compat key). SDK 1.29 builds each tool entry from a fixed field
+ * list, so the only seam is the registered handler itself, which this wraps. Call it AFTER the tools
+ * are registered. Mode-gated, not health-gated: ChatGPT snapshots the list on refresh, and a
+ * breaker trip must not strip the scheme until the next one. Returns false and changes nothing when
+ * the mode is off or the SDK keeps its handlers elsewhere — the list then serves exactly as before.
+ */
+export function advertiseToolSecuritySchemes(server: McpServer, mode: OAuthMode = resolveOAuthMode()): boolean {
+  if (mode === 'off') return false;
+  const handlers = (server.server as unknown as { _requestHandlers?: Map<string, ListHandler> })._requestHandlers;
+  const inner = handlers?.get('tools/list');
+  if (!handlers || typeof inner !== 'function') return false;
+  handlers.set('tools/list', async (request, extra) => {
+    const result = await inner(request, extra) as { tools?: unknown } | undefined;
+    if (!result || !Array.isArray(result.tools)) return result;
+    return {
+      ...result,
+      tools: result.tools.map((tool: { name?: unknown; _meta?: Record<string, unknown> }) => {
+        const schemes = toolSecuritySchemes(tool?.name);
+        return schemes ? { ...tool, securitySchemes: schemes, _meta: { ...tool._meta, securitySchemes: schemes } } : tool;
+      }),
+    };
   });
   return true;
 }
