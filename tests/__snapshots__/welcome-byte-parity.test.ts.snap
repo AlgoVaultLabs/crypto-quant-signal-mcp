@@ -107,6 +107,12 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
     <p>Added AlgoVault before? Remove it and add it again this way.</p>
     <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
   </div>
+  <div class="claude-connect">
+    <h2>Use AlgoVault in ChatGPT</h2>
+    <p>In developer mode, add a custom MCP server: <code>https://api.algovault.com/mcp</code>, with OAuth.</p>
+    <p>Sign in with this email when ChatGPT asks.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
@@ -321,6 +327,12 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
     <p>If Claude asks how to sign in, choose Sign in when needed.</p>
     <p>When Claude asks, click Connect and sign in with this email.</p>
     <p>Added AlgoVault before? Remove it and add it again this way.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
+  <div class="claude-connect">
+    <h2>Use AlgoVault in ChatGPT</h2>
+    <p>In developer mode, add a custom MCP server: <code>https://api.algovault.com/mcp</code>, with OAuth.</p>
+    <p>Sign in with this email when ChatGPT asks.</p>
     <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
   </div>
   <div class="usage">
@@ -539,6 +551,12 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
     <p>Added AlgoVault before? Remove it and add it again this way.</p>
     <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
   </div>
+  <div class="claude-connect">
+    <h2>Use AlgoVault in ChatGPT</h2>
+    <p>In developer mode, add a custom MCP server: <code>https://api.algovault.com/mcp</code>, with OAuth.</p>
+    <p>Sign in with this email when ChatGPT asks.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
@@ -753,6 +771,12 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
     <p>If Claude asks how to sign in, choose Sign in when needed.</p>
     <p>When Claude asks, click Connect and sign in with this email.</p>
     <p>Added AlgoVault before? Remove it and add it again this way.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
+  <div class="claude-connect">
+    <h2>Use AlgoVault in ChatGPT</h2>
+    <p>In developer mode, add a custom MCP server: <code>https://api.algovault.com/mcp</code>, with OAuth.</p>
+    <p>Sign in with this email when ChatGPT asks.</p>
     <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
   </div>
   <div class="usage">
@@ -971,6 +995,12 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
     <p>Added AlgoVault before? Remove it and add it again this way.</p>
     <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
   </div>
+  <div class="claude-connect">
+    <h2>Use AlgoVault in ChatGPT</h2>
+    <p>In developer mode, add a custom MCP server: <code>https://api.algovault.com/mcp</code>, with OAuth.</p>
+    <p>Sign in with this email when ChatGPT asks.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
@@ -1147,6 +1177,12 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
     <p>Added AlgoVault before? Remove it and add it again this way.</p>
     <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
   </div>
+  <div class="claude-connect">
+    <h2>Use AlgoVault in ChatGPT</h2>
+    <p>In developer mode, add a custom MCP server: <code>https://api.algovault.com/mcp</code>, with OAuth.</p>
+    <p>Sign in with this email when ChatGPT asks.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
   <div class="usage">
     <h2>Use your key in your client</h2>
     <p style="color:#c9d1d9;font-size:13px;margin:16px 0 6px">Claude Desktop (config file)</p>
@@ -1321,6 +1357,12 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
     <p>If Claude asks how to sign in, choose Sign in when needed.</p>
     <p>When Claude asks, click Connect and sign in with this email.</p>
     <p>Added AlgoVault before? Remove it and add it again this way.</p>
+    <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
+  </div>
+  <div class="claude-connect">
+    <h2>Use AlgoVault in ChatGPT</h2>
+    <p>In developer mode, add a custom MCP server: <code>https://api.algovault.com/mcp</code>, with OAuth.</p>
+    <p>Sign in with this email when ChatGPT asks.</p>
     <p>On a paid plan? Sign in with your subscription email and your plan applies.</p>
   </div>
   <div class="usage">

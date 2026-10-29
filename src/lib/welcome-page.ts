@@ -33,14 +33,23 @@ import { setupSnippet, SETUP_SLUGS, SETUP_HEADING, SETUP_LABELS, SETUP_DESKTOP_N
  * is null/undefined/empty.
  */
 // GROWTH-AGENT-SIGNIN-OAUTH-W1 CH4 — §Copy G, verbatim. Claude's connector signs in through our
-// OAuth server, so a visitor who signs in here can use the same email inside Claude. ChatGPT gets
-// its own block only once its OAuth leg passes (its client document is refused today).
+// OAuth server, so a visitor who signs in here can use the same email inside Claude.
 const CLAUDE_CONNECT_HEADING = 'Use AlgoVault in Claude';
 const CLAUDE_CONNECT_LINES: readonly string[] = [
   'In Claude, add a custom connector: <code>https://api.algovault.com/mcp</code>.',
   'If Claude asks how to sign in, choose Sign in when needed.',
   'When Claude asks, click Connect and sign in with this email.',
   'Added AlgoVault before? Remove it and add it again this way.',
+  'On a paid plan? Sign in with your subscription email and your plan applies.',
+];
+
+// GROWTH-AGENT-SIGNIN-OAUTH-W2 CH2 — §Copy G, verbatim except "connector" → "custom MCP server",
+// the label ChatGPT's own add dialog shows (measured in the leg-D sign-in, 2026-10-29). ChatGPT
+// signs in through the same OAuth server since W2 negotiates its client document.
+const CHATGPT_CONNECT_HEADING = 'Use AlgoVault in ChatGPT';
+const CHATGPT_CONNECT_LINES: readonly string[] = [
+  'In developer mode, add a custom MCP server: <code>https://api.algovault.com/mcp</code>, with OAuth.',
+  'Sign in with this email when ChatGPT asks.',
   'On a paid plan? Sign in with your subscription email and your plan applies.',
 ];
 
@@ -248,6 +257,10 @@ ${renderAnalyticsRegion()}
   <div class="claude-connect">
     <h2>${CLAUDE_CONNECT_HEADING}</h2>
 ${CLAUDE_CONNECT_LINES.map((l) => `    <p>${l}</p>`).join('\n')}
+  </div>
+  <div class="claude-connect">
+    <h2>${CHATGPT_CONNECT_HEADING}</h2>
+${CHATGPT_CONNECT_LINES.map((l) => `    <p>${l}</p>`).join('\n')}
   </div>
   <div class="usage">
     <h2>${SETUP_HEADING}</h2>

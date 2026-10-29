@@ -40,6 +40,11 @@
  * the "Use AlgoVault in Claude" card placed directly above the setup block. The diff was verified
  * BEFORE regenerating and is purely additive: 0 lines removed, and in each of the seven snapshots
  * exactly 12 added lines, the card's 4 CSS rules and its 8 markup lines. No existing line moved.
+ *
+ * SNAPSHOT MAINTENANCE — GROWTH-AGENT-SIGNIN-OAUTH-W2 (CH2, 2026-10-29): regenerated for §Copy G,
+ * the "Use AlgoVault in ChatGPT" card placed directly below the Claude card, reusing its CSS. The
+ * diff was verified BEFORE regenerating and is purely additive: 0 lines removed, and in each of the
+ * seven snapshots exactly 6 added lines, the card's markup. No CSS rule added, no existing line moved.
  */
 import { describe, expect, it } from 'vitest';
 import { getWelcomePageHtml } from '../src/lib/welcome-page.js';
