@@ -222,6 +222,40 @@
    "after": 3
   }
  ],
- "after": null,
- "after_note": "filled from the first cache-busted read after wait-deploy PASS"
+ "after": {
+  "captured_at": "2026-10-29T16:34:27Z",
+  "instrument": "GET https://algovault.com/api/performance-public?cb=<epoch> (cf-cache-status MISS), production at 06bb806a after wait-deploy SUCCESS (container started 16:32:04Z)",
+  "byTier": {
+   "tier1": {
+    "count": 50946,
+    "assets": 2
+   },
+   "tier2": {
+    "count": 187624,
+    "assets": 16
+   },
+   "tier3": {
+    "count": 334113,
+    "assets": 1612
+   },
+   "tier4": {
+    "count": 656247,
+    "assets": 1072
+   }
+  },
+  "tier3_delta_vs_before": {
+   "count": -17671,
+   "pct": -5.02,
+   "assets": -36
+  },
+  "total_calls_delta_vs_before": 1592,
+  "listed_rows_matching_projection": "26/26 (every top_tier3_out and tier3_in row reads its projected tier in byExchange[venue].byAsset[coin].tier)",
+  "ac_coins_byAsset_tier": {
+   "CVX": 4,
+   "STX": 4,
+   "QNT": 4,
+   "FORM": 4
+  }
+ },
+ "after_note": "Filled from the first cache-busted read after wait-deploy SUCCESS. The before/after byTier gap spans 93 min in which +1,592 new non-HOLD calls landed, so the Tier-3 count delta is re-tiering plus that inflow; the projection's per-row units differ (see instrument.units) and are not subtracted from it."
 }
