@@ -2133,11 +2133,15 @@
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "55db95da8a3963625a6ea36537243101ca09e725014bef370e6fda0f3fab52e1",
       "alert_ids": [],
       "owner_wave": "OPS-VENUE-MARKET-CLOSED-W1",
-      "notes": "The third owed read (registry id venue-closed-catchup, owner OPS-VENUE-MARKET-CLOSED-W1, deploy_at 1793292752 = 2026-10-29T16:52:32Z, CH1's app container start: the getAdapter seam refuses a venue-closed market, BingX 109415/109429 are typed, the backfill cooldown walks the clock at 64,800 s). Pre-registered constants live HERE (the 162 R0.2 cohort ids, the leg B window, the ban codes); the registry row's anchors must equal them or the read is INDETERMINATE. Legs: A catch-up = no cohort row still in reach (the census emitter's own past-reach clause) with outcome_filled_at NULL, pre-deploy fills reported apart; B = no BINGX|NC* key in the outcome-backfill canary's coin_silent set on two UTC dates inside [deploy+72 h, deploy+6 d], from canary-results.jsonl; C = no BingX 109429/418/429 row in rate_limit_events after deploy, INDETERMINATE if the instrument wrote no BingX row at all. One REPEATABLE READ READ ONLY bundle as aoe_readonly. Only leg_b_window is a sandbox override, honoured ONLY under --sandbox. Stdlib only."
+      "notes": "The third owed read (registry id venue-closed-catchup, owner OPS-VENUE-MARKET-CLOSED-W1, deploy_at 1793292752 = 2026-10-29T16:52:32Z, CH1's app container start: the getAdapter seam refuses a venue-closed market, BingX 109415/109429 are typed, the backfill cooldown walks the clock at 64,800 s). Pre-registered constants live HERE (the 162 R0.2 cohort ids, the leg B window, the ban codes); the registry row's anchors must equal them or the read is INDETERMINATE. Legs: A catch-up = no cohort row still in reach (the census emitter's own past-reach clause) with outcome_filled_at NULL, pre-deploy fills reported apart; B = no BINGX|NC* key in the outcome-backfill canary's coin_silent set on two UTC dates inside [deploy+72 h, deploy+6 d], from canary-results.jsonl; C = no BingX 109429/418/429 row in rate_limit_events after deploy, INDETERMINATE if the instrument wrote no BingX row at all. One REPEATABLE READ READ ONLY bundle as aoe_readonly. Only leg_b_window is a sandbox override, honoured ONLY under --sandbox. Stdlib only.",
+      "first_install": {
+        "at": "20261029T170522Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "owed-reads-registry",
@@ -2155,7 +2159,7 @@
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "installed",
-      "sha256": "5937a758197a549aeace3f85f5ec87eb987a8ffc6f6405486512e87594e8ce00",
+      "sha256": "91c8fcca706c68ad866fed219841f80e9d29dc19106c343f6d619f5c4172a5b6",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
       "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence.",
