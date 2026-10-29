@@ -40,7 +40,7 @@ import { computeMarketRegimeCore, regimeFetchWindow, MARKET_REGIME_RULE_VERSION 
 import { getAdapter } from '../../src/lib/exchange-adapter.js';
 import { fetchTradFiFundingByVenue } from '../../src/lib/tradfi-funding.js';
 import { resetLicenseCache } from '../../src/lib/license.js';
-import { _clearUnderlyingTypeCache, _setUnderlyingTypeFetcherForTest, type UnderlyingTypeEntry } from '../../src/lib/underlying-type.js';
+import { _clearAssetClassCache, _loadVenueRecordsForTest } from '../../src/lib/asset-class-detection.js';
 import type { Candle, ExchangeAdapter, FundingData, MarketRegimeResult } from '../../src/types.js';
 import type { VenueFunding } from '../../src/lib/tradfi-funding.js';
 
@@ -52,7 +52,7 @@ interface FixtureWindow { coin: string; timeframe: string; startTime: number; ba
 interface Fixture {
   nowMs: number;
   exchange: 'BINANCE';
-  exchangeInfo: Record<string, UnderlyingTypeEntry>;
+  exchangeInfo: Record<string, { contractType: string; underlyingType: string | null }>;
   windows: FixtureWindow[];
   predictedFundings: FundingData[];
   tradfiFunding: Record<string, VenueFunding[]>;
@@ -108,8 +108,8 @@ function normalize(envelope: MarketRegimeResult): Record<string, unknown> {
 /** Envelope or the refusal's class + message: both are the tool's observable output. */
 async function runCase(coin: string, timeframe: string): Promise<Record<string, unknown>> {
   resetLicenseCache();
-  _clearUnderlyingTypeCache();
-  _setUnderlyingTypeFetcherForTest(async () => new Map(Object.entries(FIXTURE.exchangeInfo)));
+  // The recorded Binance exchangeInfo, as the engine's Binance records (PERPETUAL = crypto; else underlyingType).
+  _loadVenueRecordsForTest({ BINANCE: Object.entries(FIXTURE.exchangeInfo).map(([s, e]) => [s, e.contractType === 'PERPETUAL' ? 'PERPETUAL' : (e.underlyingType ?? '')] as const) });
   vi.mocked(getAdapter).mockImplementation(((id: string) => (id === 'HL' ? hlAdapter() : venueAdapter())) as typeof getAdapter);
   vi.mocked(fetchTradFiFundingByVenue).mockImplementation(async (c: string) =>
     JSON.parse(JSON.stringify(FIXTURE.tradfiFunding[c.toUpperCase()] ?? [])),
@@ -134,8 +134,7 @@ describe('CH1 AC1.1 — get_market_regime is byte-identical across the core extr
   });
   afterEach(() => {
     vi.useRealTimers();
-    _setUnderlyingTypeFetcherForTest(null);
-    _clearUnderlyingTypeCache();
+    _clearAssetClassCache();
     delete process.env.CANDLE_BASIS;
   });
 

@@ -18,13 +18,16 @@
  *    RTH 09:30–16:00 ET, extended 04:00–20:00 ET, weekend + NYSE full-holiday
  *    closures. Weekday overnight (20:00–04:00 ET) folds into OPEN_EXTENDED.
  *    1pm early-close days are treated as open (underlying still trades).
- *  - KR_EQUITY + COMMODITY are modeled at WEEKEND-LEVEL only (Sat/Sun closed,
+ *  - KR/HK/CN_EQUITY + COMMODITY are modeled at WEEKEND-LEVEL only (Sat/Sun closed,
  *    weekday open); intraday local-exchange hours + local holidays are NOT
  *    modeled in v1. The returned `note` names this simplification.
- *  - CRYPTO → ALWAYS_OPEN; PREMARKET → PREIPO_INTERNAL (no external market).
+ *  - CRYPTO → ALWAYS_OPEN; PREMARKET → PREIPO_INTERNAL (no external market);
+ *    INDEX + FX are UNMODELED → UNKNOWN (no claim).
+ * Which model a class gets is the taxonomy's `session` trait
+ * (OPS-ASSET-CLASS-TOTALITY-W1) — a new class needs no edit here.
  */
 import type { AssetClass } from './market-sessions-constants.js';
-import { isUsMarketHoliday } from './market-sessions-constants.js';
+import { isUsMarketHoliday, ASSET_CLASS_TAXONOMY } from './market-sessions-constants.js';
 
 export type UnderlyingSessionState =
   | 'OPEN_REGULAR'
@@ -121,26 +124,27 @@ export function classifyUnderlyingSession(input: {
   at: Date;
 }): SessionClassification {
   const { assetClass, at } = input;
+  const model = ASSET_CLASS_TAXONOMY[assetClass]?.session;
 
-  if (assetClass === 'CRYPTO') {
+  if (model === 'ALWAYS_OPEN') {
     return { state: 'ALWAYS_OPEN', note: '' };
   }
-  if (assetClass === 'PREMARKET') {
+  if (model === 'PREIPO') {
     return { state: 'PREIPO_INTERNAL', note: NOTE_PREIPO };
   }
 
   const { weekday, isoDate, minutesOfDay } = nyParts(at);
 
-  // KR_EQUITY + COMMODITY: v1 weekend-level only (no intraday / holiday model).
-  if (assetClass === 'KR_EQUITY' || assetClass === 'COMMODITY') {
+  // Weekend-level (KR/HK/CN equities, commodities): v1 weekend-level only (no intraday / holiday model).
+  if (model === 'WEEKEND_LEVEL') {
     if (isWeekend(weekday)) {
       return { state: 'CLOSED_WEEKEND', note: NOTE_ASIA_WEEKEND_SIMPLIFIED };
     }
     return { state: 'OPEN_REGULAR', note: '' };
   }
 
-  // EQUITY: full US session model.
-  if (assetClass === 'EQUITY') {
+  // US equity: full US session model.
+  if (model === 'US_EQUITY') {
     if (isWeekend(weekday)) {
       return { state: 'CLOSED_WEEKEND', note: NOTE_US_WEEKEND };
     }

@@ -15,11 +15,7 @@ vi.mock('../../src/lib/performance-db.js', () => ({
 
 import { getMarketRegime } from '../../src/tools/get-market-regime.js';
 import { getAdapter } from '../../src/lib/exchange-adapter.js';
-import {
-  _clearUnderlyingTypeCache,
-  _setUnderlyingTypeFetcherForTest,
-  type UnderlyingTypeEntry,
-} from '../../src/lib/underlying-type.js';
+import { _clearAssetClassCache, _loadVenueRecordsForTest } from '../../src/lib/asset-class-detection.js';
 import { _clearTradFiFundingCache } from '../../src/lib/tradfi-funding.js';
 import type { Candle, AssetContext, ExchangeId } from '../../src/types.js';
 
@@ -54,19 +50,15 @@ function mockAdapter(funding: number, px: number) {
     getCurrentPrice: vi.fn(async () => px),
   };
 }
-function tradfi(u: string): UnderlyingTypeEntry { return { contractType: 'TRADIFI_PERPETUAL', underlyingType: u }; }
-const PERP: UnderlyingTypeEntry = { contractType: 'PERPETUAL', underlyingType: null };
 
 describe('get_market_regime — cross-venue TradFi funding', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    _clearUnderlyingTypeCache();
+    _clearAssetClassCache();
     _clearTradFiFundingCache();
-    _setUnderlyingTypeFetcherForTest(async () => new Map<string, UnderlyingTypeEntry>([
-      ['BTCUSDT', PERP], ['TSLAUSDT', tradfi('EQUITY')], ['ANTHROPICUSDT', tradfi('PREMARKET')],
-    ]));
+    _loadVenueRecordsForTest({ BINANCE: [['BTCUSDT', 'PERPETUAL'], ['TSLAUSDT', 'EQUITY'], ['ANTHROPICUSDT', 'PREMARKET']] });
   });
-  afterEach(() => { _clearUnderlyingTypeCache(); _clearTradFiFundingCache(); });
+  afterEach(() => { _clearAssetClassCache(); _clearTradFiFundingCache(); });
 
   it('TSLA → sentiment in enum (not "Insufficient"), note cites venues, funding_by_venue ≥2 keys', async () => {
     vi.mocked(getAdapter).mockReturnValue(mockAdapter(0, 421.8) as ReturnType<typeof getAdapter>);

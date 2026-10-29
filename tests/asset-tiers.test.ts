@@ -33,9 +33,7 @@ import {
   _setLiquidCoinsForTest,
 } from '../src/lib/asset-tiers.js';
 import { getExchangeTopAssetsWithVolume } from '../src/lib/exchange-universe.js';
-import { _setAssetClassSnapshotForTest, _clearAssetClassCache } from '../src/lib/asset-class-detection.js';
-import type { AssetClass } from '../src/lib/market-sessions-constants.js';
-import type { ExchangeId } from '../src/types.js';
+import { _loadVenueRecordsForTest, _clearAssetClassCache } from '../src/lib/asset-class-detection.js';
 
 // Type-cast the mock for ergonomic access
 const mockFetcher = getExchangeTopAssetsWithVolume as unknown as ReturnType<typeof vi.fn>;
@@ -228,23 +226,18 @@ describe('classifyAsset — Tier-2 transition (OPS-TIER4-CLASSIFY-W1)', () => {
  * crypto deny-list keeps colliding tickers ≠ 3.
  */
 describe('classifyAsset — venue-aware cross-venue TradFi (OPS-TIER-CLASSIFIER-XVENUE-W1 C2)', () => {
-  const v = (...p: Array<[string, AssetClass]>) => new Map<string, AssetClass>(p);
   beforeEach(() => {
     _clearAssetClassCache();
-    const perVenue = new Map<ExchangeId, Map<string, AssetClass>>([
-      ['MEXC', v(['SNDKSTOCK', 'EQUITY'], ['SNDK', 'EQUITY'])],
-      ['GATE', v(['MSTRX', 'EQUITY'], ['MSTR', 'EQUITY'])],
-      ['BITGET', v(['VRT', 'EQUITY'])],
-      ['BINANCE', v(['CRWD', 'EQUITY'], ['QNTX', 'EQUITY'])],
-      ['BINGX', v(['ASML', 'EQUITY'], ['NIKKEI225', 'INDEX'])],
-    ]);
-    const union = v(
-      ['SNDKSTOCK', 'EQUITY'], ['SNDK', 'EQUITY'], ['MSTRX', 'EQUITY'], ['MSTR', 'EQUITY'],
-      ['VRT', 'EQUITY'], ['CRWD', 'EQUITY'], ['QNTX', 'EQUITY'], ['ASML', 'EQUITY'],
-      ['NIKKEI225', 'INDEX'], ['AAPL', 'EQUITY'],
-      ['DYDX', 'EQUITY'], // deliberately seeded to prove the deny-list overrides a union hit
-    );
-    _setAssetClassSnapshotForTest(perVenue, union);
+    // OPS-ASSET-CLASS-TOTALITY-W1: the engine is seeded with each venue's own records.
+    _loadVenueRecordsForTest({
+      MEXC: [['SNDKSTOCK_USDT', 'usstocks']],
+      GATE: [['MSTRX_USDT', 'stocks'], ['ASML_USDT', 'stocks'],
+        ['DYDX_USDT', 'stocks']], // deliberately TradFi-tagged to prove the deny-list overrides it
+      BITGET: [['VRTUSDT', 'isRwa']],
+      BINANCE: [['CRWDUSDT', 'EQUITY'], ['QNTXUSDT', 'PREMARKET'], ['TNSRUSDT', 'PERPETUAL']],
+      BINGX: [['NCSKASML2USD-USDT', 'NCSK'], ['NCSINIKKEI2252USD-USDT', 'NCSI']],
+      BYBIT: [['AAPLUSDT', 'stock']],
+    });
   });
   afterEach(() => _clearAssetClassCache());
 
@@ -262,8 +255,8 @@ describe('classifyAsset — venue-aware cross-venue TradFi (OPS-TIER-CLASSIFIER-
     expect(classifyAsset('GLW', null)).toBe(3);                        // STATIC seed canonical, no venue
   });
 
-  it('OKX/Aster no-field venues resolve via the cross-venue union → Tier 3', () => {
-    expect(classifyAsset('ASML', null, 'OKX')).toBe(3);
+  it('no-field venues (KuCoin/Aster) resolve via the cross-venue union → Tier 3', () => {
+    expect(classifyAsset('ASML', null, 'KUCOIN')).toBe(3);
     expect(classifyAsset('AAPL', null, 'ASTER')).toBe(3);
   });
 

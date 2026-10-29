@@ -32,8 +32,7 @@ import {
 import { computeMarketRegimeCore, regimeFetchWindow, MARKET_REGIME_RULE_VERSION } from '../../src/lib/market-regime-core.js';
 import { isServableRun, type RegimeSnapshotRow, type RegimeSnapshotRunRecord } from '../../src/lib/regime-snapshots.js';
 import { WeightBudgetSkipError, currentWeightClass, currentCaller } from '../../src/lib/upstream-weight-budget.js';
-import { _clearAssetClassCache, _setDetectorsForTest } from '../../src/lib/asset-class-detection.js';
-import { _clearUnderlyingTypeCache, _setUnderlyingTypeFetcherForTest } from '../../src/lib/underlying-type.js';
+import { _clearAssetClassCache, _setDetectorsForTest, venueRecord } from '../../src/lib/asset-class-detection.js';
 import { classifyUnderlyingSession } from '../../src/lib/market-sessions.js';
 import { StaleUpstreamWindowError } from '../../src/lib/errors.js';
 import { HEAD_STALE_BARS } from '../../src/lib/serving-windows.js';
@@ -217,7 +216,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   _clearAssetClassCache();
-  _clearUnderlyingTypeCache();
 });
 
 describe('due detection + the first generation', () => {
@@ -556,23 +554,24 @@ describe('exit codes come from main()\'s return', () => {
 describe('V2 §0 Q3 spy — one HL call per run, made by the warm, batch class only; the sweep never waits for it', () => {
   it('≤1 HL call (the asset-class warm), zero HL adapter use, zero interactive acquisitions, warm concurrent with the sweep', async () => {
     _clearAssetClassCache();
-    _clearUnderlyingTypeCache();
     const h = harness({ BINANCE: { coins: ['BTC', 'ETH', 'SOL', 'TSLA'] }, BYBIT: { coins: ['BTC', 'ETH', 'XAU'] } }, { realAssetClass: true });
     const hl: Array<{ cls: string; caller: string }> = [];
     let releaseWarm!: () => void;
     const warmGate = new Promise<void>((r) => { releaseWarm = r; });
+    // OPS-ASSET-CLASS-TOTALITY-W1: Binance's exchangeInfo is read ONCE, by the engine's warm (the
+    // resolver's second read is retired) — so it too must be batch-class, under the sampler's caller.
+    const exchangeInfo: Array<{ cls: string; caller: string }> = [];
     _setDetectorsForTest({
       HL: async () => {
         hl.push({ cls: currentWeightClass(), caller: currentCaller() });
         await warmGate; // the warm is SLOW (R0: a 31 s HL batch wait) — the sweep must not be behind it
-        return new Map([['XAU', 'COMMODITY'], ['TSLA', 'EQUITY']]);
+        return [venueRecord('HL', 'xyz:XAU', 'xyz'), venueRecord('HL', 'xyz:TSLA', 'xyz')];
       },
-    });
-    const exchangeInfo: Array<{ cls: string; caller: string }> = [];
-    _setUnderlyingTypeFetcherForTest(async () => {
-      exchangeInfo.push({ cls: currentWeightClass(), caller: currentCaller() });
-      return new Map([['BTCUSDT', { contractType: 'PERPETUAL', underlyingType: 'COIN' }], ['ETHUSDT', { contractType: 'PERPETUAL', underlyingType: 'COIN' }],
-        ['SOLUSDT', { contractType: 'PERPETUAL', underlyingType: 'COIN' }], ['TSLAUSDT', { contractType: 'TRADIFI_PERPETUAL', underlyingType: 'EQUITY' }]]);
+      BINANCE: async () => {
+        exchangeInfo.push({ cls: currentWeightClass(), caller: currentCaller() });
+        return ([['BTCUSDT', 'PERPETUAL'], ['ETHUSDT', 'PERPETUAL'], ['SOLUSDT', 'PERPETUAL'], ['TSLAUSDT', 'EQUITY'], ['XAUUSDT', 'COMMODITY']] as const)
+          .map(([n, t]) => venueRecord('BINANCE', n, t));
+      },
     });
     // Release the warm only once EVERY sweep of EVERY timeframe has run without it: BINANCE 3 coins × 3 tf
     // + BYBIT 2 × 3 = 15 non-reference candle requests. Were any sweep queued behind the warm, this deadlocks.

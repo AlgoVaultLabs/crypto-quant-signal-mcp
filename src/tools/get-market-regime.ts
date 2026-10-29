@@ -6,6 +6,7 @@ import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, UpstreamRat
 import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
 import { resolveAssetClass } from '../lib/underlying-type.js';
 import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
+import { assetClassTraits } from '../lib/market-sessions-constants.js';
 import { fetchTradFiFundingByVenue, normalizeTo8h, computeTradFiFundingSentiment, buildFundingByVenue } from '../lib/tradfi-funding.js';
 import { computeMarketRegimeCore, regimeFetchWindow } from '../lib/market-regime-core.js';
 import { getCandleBasis } from '../lib/candle-basis-flag.js';
@@ -149,18 +150,19 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     : classifyUnderlyingSession({ assetClass, at: new Date() });
 
   // ── Cross-venue funding sentiment (OPS-TRADFI-XVENUE-FUNDING-W1) ──
-  // TradFi (EQUITY/KR_EQUITY/COMMODITY, or a known-TradFi symbol the resolver
-  // couldn't class) → 5-venue per-venue aggregation via tradfi-funding.ts.
-  // PREMARKET → excluded (fixed funding). Crypto → the existing HL-vs-CEX path.
+  // The taxonomy's funding trait picks the path (OPS-ASSET-CLASS-TOTALITY-W1): TRADFI_AGGREGATE
+  // (equities, commodities — or a known-TradFi symbol the resolver couldn't class) → 5-venue
+  // per-venue aggregation via tradfi-funding.ts; FIXED_PREIPO → excluded (fixed funding);
+  // CRYPTO_XVENUE → the existing HL-vs-CEX path.
+  const funding = assetClassTraits(assetClass)?.funding;
   const isTradFiAggregate =
-    assetClass === 'EQUITY' || assetClass === 'KR_EQUITY' || assetClass === 'COMMODITY' ||
-    (assetClass === 'UNKNOWN' && isKnownTradFi(coin));
+    funding === 'TRADFI_AGGREGATE' || (assetClass === 'UNKNOWN' && isKnownTradFi(coin));
 
   let sentiment: CrossVenueFundingSentiment;
   let divergenceNote: string;
   let fundingByVenue: Record<string, { rate: number; interval_min: number; rate_8h_equiv: number }> | undefined;
 
-  if (assetClass === 'PREMARKET') {
+  if (funding === 'FIXED_PREIPO') {
     sentiment = 'NEUTRAL';
     divergenceNote = 'Pre-IPO funding is fixed — cross-venue sentiment not applicable.';
     // no funding_by_venue for pre-IPO (R4)

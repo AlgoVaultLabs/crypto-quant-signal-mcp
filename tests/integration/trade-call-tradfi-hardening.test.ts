@@ -9,7 +9,7 @@
  *   - EQUITY weekend → CLOSED_WEEKEND + reasoning caveat (clock pinned to a Sat)
  *
  * Exchange data + the performance DB are mocked (as in the sibling reasoning
- * test); the underlying-type resolver is driven via its injectable fetcher so
+ * test); the asset-class engine is driven via its injected venue records so
  * the asset-class is deterministic and offline.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -38,18 +38,10 @@ import { InsufficientCandlesError } from '../../src/lib/errors.js';
 // enrichment reads an injected (empty) snapshot instead of driving the live ~7s
 // 42-cell refresh (v1.10.5 SHADOW-SEED-W1), which overruns the 5s test timeout.
 import { _setSnapshotForTest, _clearCache, _setScorerOverride } from '../../src/lib/cross-asset-grid.js';
-import {
-  _clearUnderlyingTypeCache,
-  _setUnderlyingTypeFetcherForTest,
-  type UnderlyingTypeEntry,
-} from '../../src/lib/underlying-type.js';
+import { _clearAssetClassCache, _loadVenueRecordsForTest } from '../../src/lib/asset-class-detection.js';
 import { FUNDING_NOTE_PREIPO, FUNDING_NOTE_TRADFI } from '../../src/lib/market-sessions-constants.js';
 import type { ExchangeAdapter, Candle, AssetContext } from '../../src/types.js';
 
-function tradfi(underlyingType: string): UnderlyingTypeEntry {
-  return { contractType: 'TRADIFI_PERPETUAL', underlyingType };
-}
-const PERP: UnderlyingTypeEntry = { contractType: 'PERPETUAL', underlyingType: null };
 
 /** Candles spaced by `intervalMs`, ending at "now". */
 function mockCandles(count: number, basePrice: number, intervalMs = 3_600_000): Candle[] {
@@ -79,7 +71,6 @@ function makeAdapter(overrides: Partial<ExchangeAdapter> = {}): ExchangeAdapter 
   };
 }
 
-const CRYPTO_MAP = () => new Map<string, UnderlyingTypeEntry>([['BTCUSDT', PERP]]);
 
 describe('get_trade_call — TradFi hardening wiring', () => {
   beforeEach(() => {
@@ -90,12 +81,12 @@ describe('get_trade_call — TradFi hardening wiring', () => {
     _clearCache();
     _setScorerOverride(null);
     _setSnapshotForTest([]);
-    _clearUnderlyingTypeCache();
-    _setUnderlyingTypeFetcherForTest(async () => CRYPTO_MAP());
+    _clearAssetClassCache();
+    _loadVenueRecordsForTest({ BINANCE: [['BTCUSDT', 'PERPETUAL']] });
   });
 
   afterEach(() => {
-    _clearUnderlyingTypeCache();
+    _clearAssetClassCache();
     vi.useRealTimers();
   });
 
@@ -182,7 +173,7 @@ describe('get_trade_call — TradFi hardening wiring', () => {
   it('PREMARKET: funding_state → FIXED_PREIPO + pre-IPO funding_note + PREIPO_INTERNAL session', async () => {
     // Inject the resolver to classify TSLAUSDT as PREMARKET (synthetic, to exercise
     // the FIXED_PREIPO branch end-to-end and time-independently).
-    _setUnderlyingTypeFetcherForTest(async () => new Map([['TSLAUSDT', tradfi('PREMARKET')]]));
+    _loadVenueRecordsForTest({ BINANCE: [['TSLAUSDT', 'PREMARKET']] });
     vi.mocked(getAdapter).mockReturnValue(makeAdapter({ getAssetContext: vi.fn().mockResolvedValue(mockCtx('TSLA', 0.00005, 420)) }));
 
     const result = await getTradeSignal({ coin: 'TSLA', exchange: 'BINANCE', timeframe: '1h' });
@@ -195,7 +186,7 @@ describe('get_trade_call — TradFi hardening wiring', () => {
   it('EQUITY weekend: CLOSED_WEEKEND + TradFi funding_note + provisional caveat in reasoning', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-06-06T12:00:00Z')); // Saturday
-    _setUnderlyingTypeFetcherForTest(async () => new Map([['TSLAUSDT', tradfi('EQUITY')]]));
+    _loadVenueRecordsForTest({ BINANCE: [['TSLAUSDT', 'EQUITY']] });
     vi.mocked(getAdapter).mockReturnValue(makeAdapter({ getAssetContext: vi.fn().mockResolvedValue(mockCtx('TSLA', 0.00002, 420)) }));
 
     const result = await getTradeSignal({ coin: 'TSLA', exchange: 'BINANCE', timeframe: '1h' });

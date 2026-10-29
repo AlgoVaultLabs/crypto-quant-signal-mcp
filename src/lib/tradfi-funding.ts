@@ -7,13 +7,14 @@
  *  - PREMARKET (pre-IPO) funding is administratively FIXED (+0.005%/8h on
  *    Binance) until the IPO transition — it is NOT a market-sentiment signal,
  *    so we override `funding_state` to a dedicated FIXED_PREIPO bucket.
- *  - EQUITY / KR_EQUITY / COMMODITY perp funding has a 0% interest component
+ *  - Every other TradFi family's perp funding has a 0% interest component
  *    (vs crypto's 0.01%/day) and is structurally near-zero; small absolute
  *    values are normal and should not be read as crowd pressure.
  *  - CRYPTO / UNKNOWN: no annotation (existing crypto thresholds untouched).
+ * Both are read from the taxonomy's family + funding traits (OPS-ASSET-CLASS-TOTALITY-W1).
  */
 import type { AssetClass } from './market-sessions-constants.js';
-import { FUNDING_NOTE_PREIPO, FUNDING_NOTE_TRADFI } from './market-sessions-constants.js';
+import { FUNDING_NOTE_PREIPO, FUNDING_NOTE_TRADFI, assetClassTraits } from './market-sessions-constants.js';
 import type { FundingState } from './indicator-buckets.js';
 import type { ExchangeId, CrossVenueFundingSentiment } from '../types.js';
 import { getAdapter } from './exchange-adapter.js';
@@ -34,20 +35,10 @@ export interface FundingAnnotation {
  * could not classify) is treated like CRYPTO: no annotation.
  */
 export function tradfiFundingAnnotation(assetClass: AssetClass | 'UNKNOWN'): FundingAnnotation {
-  switch (assetClass) {
-    case 'PREMARKET':
-      return { fundingStateOverride: 'FIXED_PREIPO', fundingNote: FUNDING_NOTE_PREIPO };
-    case 'EQUITY':
-    case 'KR_EQUITY':
-    case 'COMMODITY':
-    case 'INDEX':
-    case 'FX':
-      return { fundingStateOverride: null, fundingNote: FUNDING_NOTE_TRADFI };
-    case 'CRYPTO':
-    case 'UNKNOWN':
-    default:
-      return { fundingStateOverride: null, fundingNote: null };
-  }
+  const traits = assetClassTraits(assetClass);
+  if (!traits || traits.family === 'CRYPTO') return { fundingStateOverride: null, fundingNote: null };
+  if (traits.funding === 'FIXED_PREIPO') return { fundingStateOverride: 'FIXED_PREIPO', fundingNote: FUNDING_NOTE_PREIPO };
+  return { fundingStateOverride: null, fundingNote: FUNDING_NOTE_TRADFI };
 }
 
 // ════════════════════════════════════════════════════════════════════════════

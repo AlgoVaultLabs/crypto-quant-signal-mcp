@@ -33,7 +33,12 @@ import {
 } from './regime-snapshots.js';
 import { regimeFetchWindow } from './market-regime-core.js';
 import { classifyUnderlyingSession } from './market-sessions.js';
-import type { AssetClass } from './market-sessions-constants.js';
+import {
+  classesInFamilies,
+  TRADFI_FAMILIES,
+  type AssetClass,
+  type AssetFamily,
+} from './market-sessions-constants.js';
 import { getRankedUniverse, type RankedAsset } from './rank-metrics.js';
 import { resolveRankBy, type RankBy } from './rank-constants.js';
 import { applyLiquidityFloor, applyRankEcho, type RankEchoFields } from './scan-shared.js';
@@ -59,20 +64,24 @@ export const REGIME_SCAN_LIMIT_DEFAULT = 20;
 export const DEFAULT_REGIME_SNAPSHOT_STALE_FACTOR = 2;
 
 /**
- * Stored `asset_class` values each `assetClass` filter admits. `tradfi` is every non-crypto class;
- * `equity` includes `KR_EQUITY`; `UNKNOWN` is admitted only by `all` (null = no filter).
+ * The families each `assetClass` filter admits (null = no filter). `tradfi` is every non-crypto
+ * family; `equity` is the whole EQUITY family (US, KR, HK, CN). `UNKNOWN` is admitted only by `all`.
+ * The stored-class sets below derive from the taxonomy, so a new class joins its family's filter
+ * with no edit here (OPS-ASSET-CLASS-TOTALITY-W1).
  */
-const TRADFI_CLASSES: readonly AssetClass[] = ['EQUITY', 'KR_EQUITY', 'COMMODITY', 'INDEX', 'FX', 'PREMARKET'];
-const ASSET_CLASS_FILTER: Readonly<Record<RegimeScanAssetClass, ReadonlySet<string> | null>> = {
+const ASSET_CLASS_FILTER_FAMILIES: Readonly<Record<RegimeScanAssetClass, readonly AssetFamily[] | null>> = {
   all: null,
-  crypto: new Set<AssetClass>(['CRYPTO']),
-  tradfi: new Set<AssetClass>(TRADFI_CLASSES),
-  equity: new Set<AssetClass>(['EQUITY', 'KR_EQUITY']),
-  commodity: new Set<AssetClass>(['COMMODITY']),
-  index: new Set<AssetClass>(['INDEX']),
-  fx: new Set<AssetClass>(['FX']),
-  premarket: new Set<AssetClass>(['PREMARKET']),
+  crypto: ['CRYPTO'],
+  tradfi: TRADFI_FAMILIES,
+  equity: ['EQUITY'],
+  commodity: ['COMMODITY'],
+  index: ['INDEX'],
+  fx: ['FX'],
+  premarket: ['PREMARKET'],
 };
+const ASSET_CLASS_FILTER = Object.fromEntries(
+  Object.entries(ASSET_CLASS_FILTER_FAMILIES).map(([k, fams]) => [k, fams ? new Set<string>(classesInFamilies(fams)) : null]),
+) as Readonly<Record<RegimeScanAssetClass, ReadonlySet<string> | null>>;
 
 export interface ScanMarketRegimesParams {
   exchange: PromotedVenueId;
