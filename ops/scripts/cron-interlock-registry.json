@@ -545,15 +545,15 @@
         "deploy",
         "reboot"
       ],
-      "script": "/opt/algovault-monitoring/{db-superuser-canary.sh,directional-label-freshness.py,outcome-backfill-freshness.py,quota-exhaustion-canary.py,stripe-webhook-events-canary.sh,tier-misclassification-canary.sh,venue-slo-tiers-drift-canary.sh,webhook-delivery-canary.py}",
+      "script": "/opt/algovault-monitoring/{db-superuser-canary.sh,directional-label-freshness.py,outcome-backfill-freshness.py,quota-exhaustion-canary.py,stripe-webhook-events-canary.sh,venue-slo-tiers-drift-canary.sh,webhook-delivery-canary.py}",
       "container": "crypto-quant-signal-mcp-mcp-server-1 + crypto-quant-signal-mcp-postgres-1",
-      "process_pattern": "<eight distinct short read-only probes — see `script`>",
+      "process_pattern": "<seven distinct short read-only probes — see `script`>",
       "class": "safe-to-kill",
-      "reason": "All eight are read-only probes that mutate no application state, and every one of them completed in 5 seconds or less when timed directly. Each re-derives its verdict from live state on its next fire, so a deploy-induced kill costs at most one skipped evaluation cycle. Grouped into one row because the class, the evidence and the ruling are identical for all eight; the `script` field enumerates them so none is hidden behind the grouping.",
+      "reason": "All seven are read-only probes that mutate no application state, and every one of them completed in 5 seconds or less when timed directly. Each re-derives its verdict from live state on its next fire, so a deploy-induced kill costs at most one skipped evaluation cycle. Grouped into one row because the class, the evidence and the ruling are identical for all seven; the `script` field enumerates them so none is hidden behind the grouping.",
       "max_runtime_s": 5,
-      "runtime_instrument": "direct timed runs on signal-1 under ALGOVAULT_TG_TEST_INERT=1, 2026-08-29 03:36Z: db-superuser 0s, directional-label-freshness 2s, outcome-backfill-freshness 0s, quota-exhaustion 0s, stripe-webhook-events 1s, tier-misclassification 5s, venue-slo-tiers-drift 1s, webhook-delivery 0s. Recorded value is the max.",
-      "cron_lines": 8,
-      "cron": "39 7 * * * · 41 6 * * * · 13 * * * * · 31 * * * * · 19 8 1 * * · 23 13 * * 1 · 27 12 * * 1 · 13,28,43,57 * * * *",
+      "runtime_instrument": "direct timed runs on signal-1 under ALGOVAULT_TG_TEST_INERT=1, 2026-08-29 03:36Z: db-superuser 0s, directional-label-freshness 2s, outcome-backfill-freshness 0s, quota-exhaustion 0s, stripe-webhook-events 1s, venue-slo-tiers-drift 1s, webhook-delivery 0s. Recorded value is the max. The tier-misclassification-canary entry left this row for its own (OPS-ASSET-CLASS-TOTALITY-W1, ruling Q5); the max over the remaining seven is unchanged.",
+      "cron_lines": 7,
+      "cron": "39 7 * * * · 41 6 * * * · 13 * * * * · 31 * * * * · 19 8 1 * * · 27 12 * * 1 · 13,28,43,57 * * * *",
       "catchup_cmd": null,
       "source": "host-only",
       "verified_at": "2026-08-29",
@@ -563,9 +563,32 @@
         "/opt/algovault-monitoring/outcome-backfill-freshness.py",
         "/opt/algovault-monitoring/quota-exhaustion-canary.py",
         "/opt/algovault-monitoring/stripe-webhook-events-canary.sh",
-        "/opt/algovault-monitoring/tier-misclassification-canary.sh",
         "/opt/algovault-monitoring/venue-slo-tiers-drift-canary.sh",
         "/opt/algovault-monitoring/webhook-delivery-canary.py"
+      ]
+    },
+    {
+      "id": "tier-misclassification-canary",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/tier-misclassification-canary.sh",
+      "container": "crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "dist/scripts/asset-class-totality.js --check",
+      "class": "safe-to-kill",
+      "reason": "Read-only: the judge reads each active venue's public instrument list (batch weight class, ONE HL call) and one public GET of /api/performance-public; it writes nothing. A SIGKILLed run prints no verdict token, which the wrapper records as INDETERMINATE: no page. The next daily fire re-judges everything, so a lost run costs one day of watching.",
+      "max_runtime_s": 11,
+      "runtime_instrument": "PROJECTED: two local runs of `node dist/scripts/asset-class-totality.js --check` (macOS, 2026-10-29, 9 active venues + the public endpoint) 8.04 s cold / 1.93 s warm, n=2; +25% margin on the cold run, rounded up = 11. Replaced by the signal-1 cron-shaped measurement after the reinstall.",
+      "cron_lines": 1,
+      "cron": "23 13 * * * (daily, signal-1)",
+      "catchup_cmd": null,
+      "source": "repo",
+      "verified_at": "2026-10-29",
+      "notes": "OPS-ASSET-CLASS-TOTALITY-W1 CH3 (ruling Q5: its own row, out of host-only-monitoring-canaries). Alert OPS_TIER_MISCLASSIFICATION on FAIL.",
+      "cron_match": [
+        "/opt/algovault-monitoring/tier-misclassification-canary.sh"
       ]
     },
     {

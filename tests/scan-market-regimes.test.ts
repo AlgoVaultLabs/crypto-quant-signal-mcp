@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { ASSET_CLASSES } from '../src/lib/market-sessions-constants.js';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { ExchangeAsset } from '../src/lib/exchange-universe.js';
@@ -351,6 +352,18 @@ describe('description + source contracts', () => {
     const partial = readFileSync(join(ROOT, 'docs-src/partials/scan-market-regimes.html'), 'utf8');
     expect(partial).toContain(sentence);
     expect(partial.split('Rows are sampled on').length - 1).toBe(1);
+  });
+
+  it('the /docs asset_class cell lists every class in ASSET_CLASS_TAXONOMY order, then UNKNOWN (R-1 pin)', () => {
+    // OPS-ASSET-CLASS-TOTALITY-W1: the taxonomy's order drives this cell; a class added to the taxonomy
+    // without the docs (or the reverse) fails here, in both the partial and the built page.
+    const want = [...ASSET_CLASSES, 'UNKNOWN'];
+    for (const file of ['docs-src/partials/scan-market-regimes.html', 'landing/docs.html']) {
+      const html = readFileSync(join(ROOT, file), 'utf8');
+      const cell = html.match(/<td>asset_class<\/td>.*?<\/tr>/)?.[0] ?? '';
+      expect([...cell.matchAll(/<code[^>]*>([A-Z_]+)<\/code>/g)].map((m) => m[1]), file).toEqual(want);
+      expect(cell, file).toContain(`<code class="text-xs bg-navy-800 px-1 rounded">PREMARKET</code> or <code class="text-xs bg-navy-800 px-1 rounded">UNKNOWN</code>.`);
+    }
   });
 
   it('claims no zero cost, no real-time data, no performance or edge', () => {

@@ -618,7 +618,8 @@
       "announce_resolution": false,
       "follow_up_wave": "OPS-ALERT-ADOPT-OPS_TIER_MISCLASSIFICATION-W{NEXT}",
       "envelope_adopted": false,
-      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OPS_TIER_MISCLASSIFICATION-W{NEXT}"
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OPS_TIER_MISCLASSIFICATION-W{NEXT}",
+      "notes": "OPS-ASSET-CLASS-TOTALITY-W1 CH3: pages CRITICAL_PERSISTENT on a FAIL of `asset-class-totality.js --check` (daily) — lost / collision / unmapped / tier-not3-tradfi / tier3-crypto, one body line each naming venue + tag/coin + action; repetition is the wrapper's 24 h cooldown. PASS and INDETERMINATE page nothing; the owner never calls --clear (adopted false)."
     },
     {
       "alert_id": "OUTCOME_BACKFILL_STALLED",
