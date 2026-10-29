@@ -57,12 +57,6 @@ export function bearerChallengeHeader(rawUrl: string, description: string): stri
   return `Bearer error="invalid_token", error_description="${description}", scope="mcp:tools", resource_metadata="${protectedResourceMetadataUrl(rawUrl)}"`;
 }
 
-/**
- * GROWTH-AGENT-SIGNIN-OAUTH-W3 — the tool-result `_meta` key ChatGPT reads challenges from (OpenAI
- * Apps SDK): an array of `bearerChallengeHeader` strings on an `isError` result.
- */
-export const WWW_AUTHENTICATE_META_KEY = 'mcp/www_authenticate';
-
 export interface BearerChallengeResponse {
   setHeader(name: string, value: string): unknown;
   status(code: number): { json(body: unknown): unknown };

@@ -21,7 +21,7 @@ import { credentialOutcomeOf } from './lib/credential-outcome.js';
 // GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2/CH3: the ONE OAuth mode resolver, the Bearer-challenge builder both /mcp 401s send, and the sign-in challenge seam.
 import { resolveOAuthMode } from './lib/oauth/mode.js';
 import { sendBearerChallenge } from './lib/oauth/metadata.js';
-import { applyChallenge, toolWallChallenge, advertiseToolSecuritySchemes } from './lib/oauth/challenge.js';
+import { applyChallenge } from './lib/oauth/challenge.js';
 import { mountOAuth, oauthCallbackBranch } from './lib/oauth/routes.js';
 import { routeTradeCall } from './tools/trade-call-router.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
@@ -61,7 +61,7 @@ import {
 import { recordNonPublicVenue } from './lib/non-public-venue-counter.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded, getRequestWallChallenge } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded } from './lib/license.js';
 import { regimeSuccessVerdict, regimeErrorVerdict } from './lib/regime-request-verdict.js';
 import { callTool, toMcpToolResult, type ValidatedToolInput } from './lib/tool-call-pipeline.js';
 import { getKnowledgeSearch, getChatStack, chatTierFor, ALLOWED_CHAT_MODELS } from './tools/knowledge-tools.js';
@@ -375,13 +375,8 @@ function createServer(): McpServer {
   // rails share it, so a property added to one channel's path cannot miss the others. The SDK has
   // already zod-parsed `args` by the time a handler runs; that parse is what mints the
   // validated-input brand here (Q-PIPE-1 condition 2).
-  // GROWTH-AGENT-SIGNIN-OAUTH-W3: `wallChallenge` is the route's answer to "would signing in lift a
-  // quota refusal of this call?" — toMcpToolResult attaches it only when the outcome IS that wall.
   const mcpHandler = (tool: string) => async (args: unknown) =>
-    toMcpToolResult(
-      await callTool({ tool, input: args as ValidatedToolInput, channel: 'mcp', license: getRequestLicense() }),
-      { wallChallenge: getRequestWallChallenge() },
-    );
+    toMcpToolResult(await callTool({ tool, input: args as ValidatedToolInput, channel: 'mcp', license: getRequestLicense() }));
 
   // ── Tool 1: get_trade_call (canonical, v1.10.0) + get_trade_signal (alias for back-compat) ──
   // The handler is identical; we register the same factory under two names so
@@ -571,10 +566,6 @@ function createServer(): McpServer {
   for (const defName of Object.keys(toolDefs)) {
     if (!allToolNames().includes(defName)) throw new Error(`[feature-registry] handler def "${defName}" is not in FEATURE_REGISTRY (registration drift)`);
   }
-  // GROWTH-AGENT-SIGNIN-OAUTH-W3: the metered tools declare `securitySchemes` on tools/list — the
-  // other half of the `_meta` challenge mcpHandler attaches. After registration: it wraps the
-  // handler the first `server.tool` installed.
-  advertiseToolSecuritySchemes(server);
 
   // ── Signal performance: admin-only (via /dashboard and /analytics) ──
   // Removed from public MCP tools — track record will be re-exposed
@@ -3723,9 +3714,6 @@ async function startHttp() {
     // NOTHING. `ipHash` / `sessionId` are hoisted above it (pure derivations, no writes) because the
     // wall's quota peek must key the caller's real free bucket. Off (`MCP_OAUTH` unset) never answers.
     if (await applyChallenge(req, res, license, x402Downgrade, { ipHash, sessionId })) return;
-    // GROWTH-AGENT-SIGNIN-OAUTH-W3 — the served call's half: the challenge its quota refusal will
-    // carry for clients that never see the 401 (ChatGPT). Pure; threaded via requestContext below.
-    const wallChallenge = toolWallChallenge(req, license, x402Downgrade);
 
     // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH1 — measure the narrow we just shipped.
     //
@@ -3910,7 +3898,7 @@ async function startHttp() {
     // consumed for `requestAuthenticity` — so logRequest stamps user_agent + client_name from
     // one value. Previously the UA was read here and discarded, leaving a heavy caller
     // classifiable but unnameable (30 candidate hashes missed in OPS-TOP-IP-FORENSICS-W1).
-    await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, userAgent: req.headers['user-agent'] ?? null, source: attributionSource, background: backgroundPriority, wallChallenge }, async () => {
+    await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, userAgent: req.headers['user-agent'] ?? null, source: attributionSource, background: backgroundPriority }, async () => {
       try {
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
 

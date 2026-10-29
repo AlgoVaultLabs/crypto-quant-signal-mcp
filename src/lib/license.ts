@@ -125,14 +125,6 @@ export interface RequestContext {
    * "not observed"; only an explicit `true` is written as degraded.
    */
   regimeFundingDegraded?: boolean;
-  /**
-   * GROWTH-AGENT-SIGNIN-OAUTH-W3: the Bearer challenge a quota refusal of THIS call carries in its
-   * MCP `_meta["mcp/www_authenticate"]`, decided ONCE at the /mcp POST layer by
-   * `toolWallChallenge` (oauth/challenge.ts), where the credential headers are in scope, and read
-   * inward by the MCP tool handler. Absent → the caller could not lift the refusal by signing in
-   * (or the path is stdio / x402 / A2MCP), and the refusal ships exactly as before.
-   */
-  wallChallenge?: string;
 }
 
 /** @see RequestContext.holdCapture */
@@ -156,11 +148,6 @@ export function getRequestLicense(): LicenseInfo {
   if (ctx) return ctx.license;
   // Stdio fallback — resolve from env only
   return resolveFromApiKey();
-}
-
-/** @see RequestContext.wallChallenge — undefined outside a request context. */
-export function getRequestWallChallenge(): string | undefined {
-  return requestContext.getStore()?.wallChallenge;
 }
 
 export function getRequestSessionId(): string | undefined {
