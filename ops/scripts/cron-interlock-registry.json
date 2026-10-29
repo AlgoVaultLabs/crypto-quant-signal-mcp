@@ -1586,7 +1586,7 @@
       "class": "safe-to-kill",
       "reason": "A read-only daily canary: one short `docker exec … node -e` probe into the app container (reads the OAuth mode from the deployed dist/) and a handful of HTTPS requests to the public origin. Its only writes are a canary-owned DCR client registered once and persisted in its own state directory, one canary_result_log line and a Telegram page on a definitive failure. It mutates no application state a deploy or reboot could corrupt; a kill costs at most one day's verdict, which the next fire recomputes from live data. A deploy briefly returns 502/503 on the origin, which the canary reads as INDETERMINATE and never pages.",
       "max_runtime_s": 2,
-      "runtime_instrument": "bash date +%s.%N wall time over three runs on signal-1 exactly as cron runs it (flock + /usr/bin/python3, mode optin, all 5 checks live), under TG_WRAPPER=/bin/echo + ALGOVAULT_TG_TEST_INERT=1 and a temp CANARY_RESULT_LOG_PATH, 2026-10-28 13:24-13:25Z, load 0.64: 0.733 s / 0.772 s / 1.103 s. Recorded value = the max x 1.25, rounded up. Hard bound from the enforced timeouts: 165 s (WORST_CASE_RUNTIME_S, asserted by --self-test).",
+      "runtime_instrument": "bash date +%s.%N wall time over three runs on signal-1 exactly as cron runs it (flock + /usr/bin/python3, mode optin, all 5 checks live), under TG_WRAPPER=/bin/echo + ALGOVAULT_TG_TEST_INERT=1 and a temp CANARY_RESULT_LOG_PATH, 2026-10-28 13:24-13:25Z, load 0.64: 0.733 s / 0.772 s / 1.103 s. Recorded value = the max x 1.25, rounded up. Hard bound from the enforced timeouts: 180 s since GROWTH-AGENT-SIGNIN-OAUTH-W2 added the sixth leg (WORST_CASE_RUNTIME_S, asserted by --self-test).",
       "cron_lines": 1,
       "cron": "43 11 * * *",
       "catchup_cmd": null,

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-oauth-discovery-canary.py — GROWTH-AGENT-SIGNIN-OAUTH-W1 CH3.
+oauth-discovery-canary.py — GROWTH-AGENT-SIGNIN-OAUTH-W1 CH3 (+ W2: the ChatGPT leg).
 
 Daily host-side canary for the OAuth sign-in surface of api.algovault.com: are the discovery
-documents and the two error contracts Claude's connector flow starts from still being SERVED?
+documents and the error contracts Claude's and ChatGPT's connector flows start from still being
+SERVED?
 
 WHY. Claude begins its OAuth flow only on an HTTP 401 that carries `WWW-Authenticate:
 resource_metadata=…`, then walks protected-resource metadata -> authorization-server metadata ->
@@ -20,12 +21,12 @@ container through the deployed module (`resolveOAuthMode()` from dist/lib/oauth/
 resolver every consumer uses, never the env var directly):
     off          -> SKIPPED_FLAG_OFF (exit 0). No probe is made, nothing is paged. "Skipped" is NOT
                     "passed": the token says so, and the record carries the mode.
-    optin|wall   -> the five checks below (the mode does not change what is expected here; the
+    optin|wall   -> the six checks below (the mode does not change what is expected here; the
                     wall changes WHO is challenged, never the shape of the documents).
     unreadable   -> INDETERMINATE (exit 3): docker, the container, the module or its output could
                     not be read, so there is nothing to verify against.
 
-THE FIVE CHECKS (each judged PASS / FAIL / INDETERMINATE on its own):
+THE SIX CHECKS (each judged PASS / FAIL / INDETERMINATE on its own):
   prm               GET /.well-known/oauth-protected-resource/mcp -> 200 JSON; resource ==
                     https://api.algovault.com/mcp; authorization_servers == [issuer]; scopes_supported
                     contains mcp:tools
@@ -39,6 +40,11 @@ THE FIVE CHECKS (each judged PASS / FAIL / INDETERMINATE on its own):
                     401, the exact WWW-Authenticate, Cache-Control: no-store and the exact JSON body.
                     The server decides this before any emit or charge, so a correct run charges nothing.
   token_invalid_grant  POST /token (refresh_token grant, a bogus refresh token) -> 400 invalid_grant
+  chatgpt_cimd      GET /authorize as ChatGPT (its stable CIMD client_id + redirect_uri) with
+                    response_type=token -> exactly 302 to that redirect_uri carrying `error` and
+                    `iss`=[issuer] once. Phase 1 (client + redirect) must ACCEPT ChatGPT's document,
+                    Phase 2 then refuses the response type: no pending row, no cookie. A
+                    400 invalid_client means ChatGPT's document is refused again -> FAIL.
 
 THE client_id FOR THE LAST CHECK (the choice, stated). /token authenticates the client BEFORE it
 looks at the grant: an unknown client_id answers `invalid_client`, never `invalid_grant`. So the check
@@ -49,8 +55,9 @@ http://127.0.0.1/callback — registered once with POST /register and persisted 
 `invalid_client` for the STORED client (the server forgot it), at most once per run; a client that was
 registered seconds earlier and is still rejected is a FAIL, not a retry loop. The server's DCR has no
 delete, so the standing cost is one `oauth_clients` row for the life of the host (plus one per
-re-registration; the record counts them). A CIMD client_id was rejected: it would make our own server
-fetch a URL on every run. The refresh token is random per run and exists nowhere server-side; it and
+re-registration; the record counts them). A CIMD client_id was rejected for this leg: it would make
+our own server fetch a URL on every run. The chatgpt_cimd leg does exercise CIMD, because that fetch
+is what it verifies; the server's 24 h document cache bounds it to one fetch of chatgpt.com a day. The refresh token is random per run and exists nowhere server-side; it and
 the client id are never printed (the client id is public, but a log line has no use for it).
 
 NETWORK FAILURE IS INDETERMINATE, NOT FAIL. A check that could not reach our own origin (DNS,
@@ -62,7 +69,7 @@ are UNKNOWN, never ABSENT" -> INDETERMINATE, exit 3) and verification-gates' "ex
 both verified-clean and verified-nothing". A definite answer that is WRONG — including a 404 for a
 document the mode says is mounted, or a 500 — is a FAIL. Across checks: any FAIL -> FAIL (a decisive
 failure is real whatever else could not be read; the page names the legs it could not verify); else
-any INDETERMINATE -> INDETERMINATE; else PASS. A run that produced no results, or fewer than the five,
+any INDETERMINATE -> INDETERMINATE; else PASS. A run that produced no results, or fewer than the six,
 is INDETERMINATE (a vacuity guard where the corpus is constructed), never PASS.
 
 VERDICT TOKEN — callers gate on the TOKEN, never the bare exit code:
@@ -136,6 +143,12 @@ AS_PATH = "/.well-known/oauth-authorization-server"
 MCP_SIGNIN_PATH = "/mcp?signin=1"
 MCP_CALL = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
             "params": {"name": "get_trade_call", "arguments": {"coin": "BTC"}}}
+# W2: ChatGPT's stable Client ID Metadata Document and its registered redirect (OpenAI's published
+# contract). The Phase-2 probe: a response_type the server refuses AFTER accepting the client.
+CHATGPT_CLIENT_ID = "https://chatgpt.com/oauth/client.json"
+CHATGPT_REDIRECT = "https://chatgpt.com/connector_platform_oauth_redirect"
+CHATGPT_AUTHORIZE_PATH = "/authorize?" + urllib.parse.urlencode(
+    {"response_type": "token", "client_id": CHATGPT_CLIENT_ID, "redirect_uri": CHATGPT_REDIRECT, "state": "x"})
 REGISTER_BODY = {
     "redirect_uris": ["http://127.0.0.1/callback"],
     "token_endpoint_auth_method": "none",
@@ -145,13 +158,14 @@ REGISTER_BODY = {
 }
 CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 
-CHECKS = ("prm", "prm_echo", "as_metadata", "signin_challenge", "token_invalid_grant")
+CHECKS = ("prm", "prm_echo", "as_metadata", "signin_challenge", "token_invalid_grant", "chatgpt_cimd")
 LABEL = {
     "prm": "protected-resource metadata (/.well-known/oauth-protected-resource/mcp)",
     "prm_echo": "protected-resource metadata resource echo (…/mcp?src=docs)",
     "as_metadata": "authorization-server metadata (/.well-known/oauth-authorization-server)",
     "signin_challenge": "anonymous sign-in challenge (POST /mcp?signin=1)",
     "token_invalid_grant": "token endpoint refusal (POST /token, bogus refresh token)",
+    "chatgpt_cimd": "ChatGPT client document accepted (GET /authorize as chatgpt.com -> 302 + iss)",
 }
 # 429 (our own limiter) and the gateway trio: the origin answered, but not with an answer about the
 # documents. 500 is NOT here: a 500 on a discovery document is a defect.
@@ -173,9 +187,9 @@ HTTP_TIMEOUT_S = 15
 DOCKER_TIMEOUT_S = 30
 WRAPPER_TIMEOUT_S = 30
 BODY_CAP = 65536
-# Worst case by construction: every call below has an enforced timeout. 1 docker exec + 5 GETs/POSTs
+# Worst case by construction: every call below has an enforced timeout. 1 docker exec + 6 GETs/POSTs
 # + 1 register + 1 token retry, then one wrapper call. Not a host measurement (see the registry row).
-WORST_CASE_RUNTIME_S = DOCKER_TIMEOUT_S + 7 * HTTP_TIMEOUT_S + WRAPPER_TIMEOUT_S
+WORST_CASE_RUNTIME_S = DOCKER_TIMEOUT_S + 8 * HTTP_TIMEOUT_S + WRAPPER_TIMEOUT_S
 
 R = namedtuple("R", "name state detail")
 Resp = namedtuple("Resp", "status headers body")
@@ -309,6 +323,25 @@ def validate_token(resp) -> list:
     return p
 
 
+def validate_chatgpt(resp) -> list:
+    p = []
+    if resp.status != 302:
+        p.append("status %d (want 302)" % resp.status)
+        if oauth_error(resp) == "invalid_client":
+            p.append("ChatGPT's client document is refused (invalid_client)")
+        return p
+    loc = resp.headers.get("location", "")
+    if not loc.startswith(CHATGPT_REDIRECT + "?"):
+        p.append("Location %s (want ChatGPT's redirect_uri)" % short(loc or "<absent>"))
+        return p
+    q = urllib.parse.parse_qs(urllib.parse.urlsplit(loc).query, keep_blank_values=True)
+    if not q.get("error"):
+        p.append("no error parameter on the redirect")
+    if q.get("iss") != [ISSUER]:
+        p.append("iss %s (want exactly one, %s)" % (short(q.get("iss", "<absent>")), ISSUER))
+    return p
+
+
 def parse_registration(resp):
     """-> (client_id | None, why). A secret in the answer is refused, never kept: a public client
     holds none, and this file must never store or print one."""
@@ -335,7 +368,7 @@ def judge(name: str, resp, validate) -> R:
 def decide(results) -> tuple:
     """-> (verdict, exit_code, action) with action fire | clear | none."""
     if {r.name for r in results} != set(CHECKS):
-        return INDETERMINATE, EXIT_FOR[INDETERMINATE], "none"     # fewer than the five = verified nothing
+        return INDETERMINATE, EXIT_FOR[INDETERMINATE], "none"     # fewer than the six = verified nothing
     states = [r.state for r in results]
     if FAIL in states:
         return FAIL, EXIT_FOR[FAIL], "fire"
@@ -370,7 +403,7 @@ def alert_body(mode: str, results) -> str:
         lines.append("Not verified this run (origin unreachable or throttled): "
                      + ", ".join(r.name for r in open_legs))
     lines += [
-        "Claude's connector cannot complete sign-in while any of these is wrong; "
+        "Claude's and ChatGPT's connectors cannot complete sign-in while any of these is wrong; "
         "MCP_OAUTH unset (off) is the one-value rollback.",
         f"Action: dispatch {RECOMMENDED_WAVE} via Cowork → Claude Code",
     ]
@@ -547,6 +580,7 @@ def run_checks(d, state: dict, notes: dict) -> list:
                     json.dumps(MCP_CALL).encode()),
             validate_signin)),
         guarded("token_invalid_grant", lambda: token_leg(d, state, notes)),
+        guarded("chatgpt_cimd", lambda: judge("chatgpt_cimd", d.fetch("GET", CHATGPT_AUTHORIZE_PATH), validate_chatgpt)),
     ]
 
 
@@ -620,7 +654,7 @@ def main() -> int:
 
 # ── self-test ────────────────────────────────────────────────────────────────────────────────────
 
-ASSERTION_COUNT = 129
+ASSERTION_COUNT = 139
 
 
 def _resp(status, body=None, headers=None, raw=None):
@@ -663,6 +697,11 @@ def invalid_client():
     return _resp(400, {"error": "invalid_client", "error_description": "Invalid client_id"})
 
 
+def chatgpt_302(query="error=invalid_request&error_description=Invalid+response_type&iss=" + urllib.parse.quote(ISSUER, safe=""),
+                target=CHATGPT_REDIRECT):
+    return Resp(302, {"location": target + "?" + query}, b"")
+
+
 class Harness:
     """Fake dependencies: a routing table of (METHOD, path) -> Resp | NetError | [sequence]."""
 
@@ -670,7 +709,8 @@ class Harness:
         self.mode = mode
         base = {("GET", PRM_PATH): good_prm(), ("GET", PRM_PATH + "?src=docs"): good_prm(ECHO_RESOURCE),
                 ("GET", AS_PATH): good_as(), ("POST", MCP_SIGNIN_PATH): good_signin(),
-                ("POST", "/token"): good_token(), ("POST", "/register"): good_register()}
+                ("POST", "/token"): good_token(), ("POST", "/register"): good_register(),
+                ("GET", CHATGPT_AUTHORIZE_PATH): chatgpt_302()}
         base.update(routes or {})
         self.routes = {k: (list(v) if isinstance(v, list) else [v]) for k, v in base.items()}
         self.state = dict(state if state is not None else {"client_id": "stored-client-0001"})
@@ -814,6 +854,17 @@ def self_test() -> int:
     check("token: 400 invalid_request fails", validate_token(_resp(400, {"error": "invalid_request"})) != [])
     check("token: a 200 fails", validate_token(_resp(200, {"access_token": "x"})) != [])
     check("token: invalid_grant under a 500 fails", validate_token(_resp(500, {"error": "invalid_grant"})) != [])
+    iss_q = "iss=" + urllib.parse.quote(ISSUER, safe="")
+    check("chatgpt: 302 to its redirect with error + iss passes", validate_chatgpt(chatgpt_302()) == [])
+    check("chatgpt: 400 invalid_client fails and says the document is refused",
+          "ChatGPT's client document is refused (invalid_client)" in validate_chatgpt(invalid_client()))
+    check("chatgpt: a 302 with no iss fails", validate_chatgpt(chatgpt_302("error=invalid_request")) != [])
+    check("chatgpt: iss twice fails", validate_chatgpt(chatgpt_302("error=invalid_request&" + iss_q + "&" + iss_q)) != [])
+    check("chatgpt: another issuer fails", validate_chatgpt(chatgpt_302("error=invalid_request&iss=https%3A%2F%2Fevil.example")) != [])
+    check("chatgpt: a look-alike redirect path fails",
+          validate_chatgpt(chatgpt_302(target=CHATGPT_REDIRECT + ".evil.example")) != [])
+    check("chatgpt: a 302 with no error fails", validate_chatgpt(chatgpt_302("code=abc&" + iss_q)) != [])
+    check("chatgpt: a 200 fails", validate_chatgpt(_resp(200, raw=b"<html>")) != [])
     check("register: 201 with a client_id parses", parse_registration(good_register()) == ("11111111-2222-3333-4444-555555555555", ""))
     check("register: a 200 is refused", parse_registration(_resp(200, {"client_id": "11111111-2222"}))[0] is None)
     check("register: no client_id is refused", parse_registration(_resp(201, {"redirect_uris": []}))[0] is None)
@@ -828,7 +879,7 @@ def self_test() -> int:
     check("decide: one INDETERMINATE -> INDETERMINATE/3/none", decide(mk(prm=INDETERMINATE)) == (INDETERMINATE, 3, "none"))
     check("decide: FAIL beats INDETERMINATE (a decisive failure is real)", decide(mk(prm=FAIL, as_metadata=INDETERMINATE)) == (FAIL, 1, "fire"))
     check("decide: an empty result set is INDETERMINATE, never PASS", decide([]) == (INDETERMINATE, 3, "none"))
-    check("decide: four of five checks is INDETERMINATE, never PASS", decide(mk()[:4]) == (INDETERMINATE, 3, "none"))
+    check("decide: five of six checks is INDETERMINATE, never PASS", decide(mk()[:5]) == (INDETERMINATE, 3, "none"))
 
     # ── the mode ──
     for m in MODES:
@@ -840,14 +891,14 @@ def self_test() -> int:
     # ── orchestration: the whole run against fakes ──
     h, v, c = go()
     check("run: everything good -> PASS/0", (v, c) == (PASS, 0))
-    check("run: PASS probes all five and registers nothing for a stored client",
+    check("run: PASS probes all six and registers nothing for a stored client",
           sorted(h.calls) == sorted([("GET", PRM_PATH), ("GET", PRM_PATH + "?src=docs"), ("GET", AS_PATH),
-                                     ("POST", MCP_SIGNIN_PATH), ("POST", "/token")]))
+                                     ("POST", MCP_SIGNIN_PATH), ("POST", "/token"), ("GET", CHATGPT_AUTHORIZE_PATH)]))
     check("run: PASS --clears and never pages", len(h.cleared) == 1 and h.fired == [])
-    check("run: the record names all five checks, once", len(h.records) == 1 and
+    check("run: the record names all six checks, once", len(h.records) == 1 and
           set(h.records[0][2]["checks"]) == set(CHECKS))
     h, v, c = go(mode="wall")
-    check("run: wall mode runs the same five checks -> PASS", (v, c) == (PASS, 0) and len(h.calls) == 5)
+    check("run: wall mode runs the same six checks -> PASS", (v, c) == (PASS, 0) and len(h.calls) == 6)
 
     h, v, c = go(mode="off")
     check("run: off -> SKIPPED_FLAG_OFF/0", (v, c) == (SKIPPED, 0))
@@ -877,6 +928,8 @@ def self_test() -> int:
     check("run: ?signin=1 served a 200 -> FAIL naming signin_challenge",
           fails_alone(("POST", MCP_SIGNIN_PATH), _resp(200, {"jsonrpc": "2.0", "id": 1, "result": {}}), "signin_challenge"))
     check("run: /token 200 -> FAIL naming token_invalid_grant", fails_alone(("POST", "/token"), _resp(200, {"access_token": "x"}), "token_invalid_grant"))
+    check("run: ChatGPT's document refused (400 invalid_client) -> FAIL naming chatgpt_cimd",
+          fails_alone(("GET", CHATGPT_AUTHORIZE_PATH), invalid_client(), "chatgpt_cimd"))
 
     # network failure and gateway answers are INDETERMINATE
     h, v, c = go(routes={("GET", AS_PATH): NetError("URLError: timed out")})
@@ -932,12 +985,15 @@ def self_test() -> int:
     # the page
     body = alert_body("optin", [R("prm", FAIL, "status 404 (want 200)")] + [R(n, PASS, "ok") for n in CHECKS[1:]])
     check("alert: names the alert id, the mode, the failing leg and the count",
-          ALERT_ID in body and "MCP_OAUTH=optin" in body and "1 of 5" in body and LABEL["prm"] in body)
+          ALERT_ID in body and "MCP_OAUTH=optin" in body and "1 of 6" in body and LABEL["prm"] in body)
     check("alert: carries the W{NEXT} template and never a literal wave number",
           "OPS-OAUTH-DISCOVERY-W{NEXT}" in body and not re.search(r"-W\d", body))
     check("alert: states the rollback lever", "MCP_OAUTH unset (off)" in body)
 
     # ── structural: what the seams replaced ──
+    check("probe: the ChatGPT leg asks as the stable CIMD client, for a response_type the server refuses",
+          CHATGPT_AUTHORIZE_PATH == "/authorize?response_type=token&client_id=https%3A%2F%2Fchatgpt.com%2Foauth%2Fclient.json"
+                                    "&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector_platform_oauth_redirect&state=x")
     check("probe: the mode comes from the deployed module's own resolver, not the env var",
           "require(" in MODE_JS and MODE_MODULE == "/app/dist/lib/oauth/mode.js" and "resolveOAuthMode()" in MODE_JS
           and "process.env" not in MODE_JS)
@@ -1003,7 +1059,7 @@ def self_test() -> int:
     check("record: the worst-case metrics fit canary_result_log's line cap (built, not written)", fits)
     check("record: the line carries this canary's name and verdict", parsed.get("canary") == CANARY and parsed.get("verdict") == FAIL)
     check("schedule: the worst-case runtime is bounded by the enforced timeouts (%ds)" % WORST_CASE_RUNTIME_S,
-          WORST_CASE_RUNTIME_S == DOCKER_TIMEOUT_S + 7 * HTTP_TIMEOUT_S + WRAPPER_TIMEOUT_S == 165)
+          WORST_CASE_RUNTIME_S == DOCKER_TIMEOUT_S + 8 * HTTP_TIMEOUT_S + WRAPPER_TIMEOUT_S == 180)
 
     if ran == 0:
         print("SELF-TEST: FAIL (vacuous — no checks ran)")
