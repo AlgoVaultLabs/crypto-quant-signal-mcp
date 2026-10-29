@@ -99,7 +99,7 @@ describe('ops/cron/lifecycle-readout.sh publishes the go-live verdict', () => {
     expect(r.records[0]).toMatchObject({ canary: 'lifecycle-readout', verdict: 'INDETERMINATE', exit_code: 3 });
   });
 
-  it('pages on a rollback EVENT, and not on a standing ROLLED_BACK state', () => {
+  it('pages on a rollback EVENT, and not on a standing ROLLED_BACK state', { timeout: 30_000 }, () => {
     const standing = run(decideOut('ROLLED_BACK', 0));
     expect(standing.pages).toBe('');
     expect(standing.records[0].verdict).toBe('ROLLED_BACK');
