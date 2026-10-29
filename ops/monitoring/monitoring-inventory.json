@@ -2119,6 +2119,27 @@
       }
     },
     {
+      "id": "owed-read-venue-closed-catchup",
+      "artifact": "ops/monitoring/owed-read-venue-closed-catchup.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/owed-read-venue-closed-catchup.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/owed-read-venue-closed-catchup.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:owed-read-runner",
+      "install_state": "pending",
+      "sha256": "55db95da8a3963625a6ea36537243101ca09e725014bef370e6fda0f3fab52e1",
+      "alert_ids": [],
+      "owner_wave": "OPS-VENUE-MARKET-CLOSED-W1",
+      "notes": "The third owed read (registry id venue-closed-catchup, owner OPS-VENUE-MARKET-CLOSED-W1, deploy_at 1793292752 = 2026-10-29T16:52:32Z, CH1's app container start: the getAdapter seam refuses a venue-closed market, BingX 109415/109429 are typed, the backfill cooldown walks the clock at 64,800 s). Pre-registered constants live HERE (the 162 R0.2 cohort ids, the leg B window, the ban codes); the registry row's anchors must equal them or the read is INDETERMINATE. Legs: A catch-up = no cohort row still in reach (the census emitter's own past-reach clause) with outcome_filled_at NULL, pre-deploy fills reported apart; B = no BINGX|NC* key in the outcome-backfill canary's coin_silent set on two UTC dates inside [deploy+72 h, deploy+6 d], from canary-results.jsonl; C = no BingX 109429/418/429 row in rate_limit_events after deploy, INDETERMINATE if the instrument wrote no BingX row at all. One REPEATABLE READ READ ONLY bundle as aoe_readonly. Only leg_b_window is a sandbox override, honoured ONLY under --sandbox. Stdlib only."
+    },
+    {
       "id": "owed-reads-registry",
       "artifact": "ops/monitoring/owed-reads.json",
       "kind": "config",
