@@ -353,7 +353,7 @@ describe('refresh rotation', () => {
   });
 });
 
-describe('every hand-off carries iss; the one iss-less redirect is the SDK schema refusal', () => {
+describe('every authorization response carries iss — the SDK schema refusal included (W2)', () => {
   it('Cancel → access_denied + state + iss', async () => {
     const provider = new MemoryProvider();
     await auth(provider, { serverUrl: SERVER_URL, fetchFn });
@@ -376,7 +376,7 @@ describe('every hand-off carries iss; the one iss-less redirect is the SDK schem
     expect(target.searchParams.get('iss')).toBe(OAUTH_ISSUER);
   });
 
-  it('PKCE plain or omitted is refused by the SDK schema: a 302 with no iss and no pending row (C8/C9)', async () => {
+  it('PKCE plain or omitted is refused by the SDK schema: a 302 with iss exactly once and no pending row (C8/C9, W2)', async () => {
     const provider = new MemoryProvider();
     await auth(provider, { serverUrl: SERVER_URL, fetchFn });
     for (const mutate of [(u: URL) => u.searchParams.set('code_challenge_method', 'plain'), (u: URL) => u.searchParams.delete('code_challenge')]) {
@@ -387,7 +387,7 @@ describe('every hand-off carries iss; the one iss-less redirect is the SDK schem
       expect(res.headers.get('set-cookie')).toBeNull();
       const loc = new URL(res.headers.get('location')!);
       expect(loc.searchParams.get('error')).toBe('invalid_request');
-      expect(loc.searchParams.get('iss')).toBeNull();
+      expect(loc.searchParams.getAll('iss')).toEqual([OAUTH_ISSUER]);
     }
   });
 
@@ -399,6 +399,34 @@ describe('every hand-off carries iss; the one iss-less redirect is the SDK schem
     const res = await fetchFn(u.href, { redirect: 'manual' });
     expect(res.status).toBe(400);
     expect(res.headers.get('location')).toBeNull();
+  });
+});
+
+describe('a client assertion is a method outside the intersection (W2)', () => {
+  const ASSERTION = { client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: 'eyJhbGciOiJSUzI1NiJ9.e30.c2ln' };
+
+  it('/token answers 400 invalid_client before the SDK reads the grant, and logs the client host only', async () => {
+    const { provider, code } = await freshCode();
+    const clientId = provider.info!.client_id;
+    const before = logs.length;
+    const refused = await token({ grant_type: 'authorization_code', code, code_verifier: provider.verifier, redirect_uri: REDIRECT, client_id: clientId, ...ASSERTION });
+    expect(refused.status).toBe(400);
+    expect(refused.json.error).toBe('invalid_client');
+    const typeOnly = await token({ grant_type: 'authorization_code', code, client_id: clientId, client_assertion_type: ASSERTION.client_assertion_type });
+    expect(typeOnly.json.error).toBe('invalid_client');
+    const lines = logs.slice(before).filter((l) => l.includes('token_refused'));
+    expect(lines).toEqual(Array(2).fill('[oauth] token_refused reason=assertion_outside_intersection client_host=dcr'));
+    expect(logs.join('\n')).not.toContain(ASSERTION.client_assertion);
+    // The refusal consumed nothing: the code still exchanges once, the public-client way.
+    const ok = await token({ grant_type: 'authorization_code', code, code_verifier: provider.verifier, redirect_uri: REDIRECT, client_id: clientId });
+    expect(ok.status).toBe(200);
+  });
+
+  it('/revoke answers 400 invalid_client too', async () => {
+    const res = await form('/revoke', { token: 'avrt_' + '0'.repeat(48), client_id: 'https://chatgpt.com/oauth/client.json', ...ASSERTION });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as Record<string, string>).error).toBe('invalid_client');
+    expect(logs.at(-1)).toBe('[oauth] token_refused reason=assertion_outside_intersection client_host=chatgpt.com');
   });
 });
 

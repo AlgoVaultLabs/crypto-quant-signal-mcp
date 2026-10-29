@@ -2,8 +2,8 @@
  * GROWTH-AGENT-SIGNIN-OAUTH-W1 CH2 — our `OAuthServerProvider` behind the SDK 1.29.0 handlers.
  *
  * AUTHORIZE (R2.6): a pending row + the `av_mcp_authz` cookie + the connect page. EVERY error inside
- * it is caught and handed back to the client with `iss` + `state` (C9) — the SDK's own Phase-2
- * schema refusals (PKCE `plain`, a missing challenge) are the one iss-less redirect left.
+ * it is caught and handed back to the client with `iss` + `state` (C9). The SDK's own Phase-2
+ * schema refusals (PKCE `plain`, a missing challenge) get theirs from `routes.ts` (W2).
  *
  * TOKENS (R2.11): opaque `avat_` / `avrt_` + 48 hex, SHA-256 at rest, every claim an awaited
  * `UPDATE … RETURNING` in `store.ts`, so exactly one concurrent caller wins each. A code presented

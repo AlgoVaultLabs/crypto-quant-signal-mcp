@@ -45,6 +45,11 @@ const CLAUDE = fixture('claude-cimd.json');
 const CLAUDE_CODE = fixture('claude-code-cimd.json');
 const CLAUDE_ID = JSON.parse(CLAUDE).client_id as string;
 const CLAUDE_CODE_ID = JSON.parse(CLAUDE_CODE).client_id as string;
+// W2: byte-exact copies of ChatGPT's two live documents (fetched from inside the container, R0).
+const CHATGPT_STABLE = fixture('chatgpt-stable-cimd.json');
+const CHATGPT = fixture('chatgpt-cimd.json');
+const CHATGPT_STABLE_ID = JSON.parse(CHATGPT_STABLE).client_id as string;
+const CHATGPT_ID = JSON.parse(CHATGPT).client_id as string;
 
 const DB_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'oauth-as-'));
 let originalDbPath: string | undefined;
@@ -202,6 +207,42 @@ describe('CIMD — Client ID Metadata Documents', () => {
     expect(parseCimdDocument(CLAUDE_ID, JSON.stringify({ ...doc, redirect_uris: ['http://evil.example/cb'] }))).toBeNull();
     expect(parseCimdDocument(CLAUDE_ID, '[]')).toBeNull();
     expect(parseCimdDocument(CLAUDE_ID, 'not json')).toBeNull();
+  });
+
+  it('W2: both ChatGPT documents negotiate to a public client from the plural, not the singular', () => {
+    for (const [id, body] of [[CHATGPT_STABLE_ID, CHATGPT_STABLE], [CHATGPT_ID, CHATGPT]] as const) {
+      const raw = JSON.parse(body);
+      expect(raw.token_endpoint_auth_method).toBe('private_key_jwt');
+      expect(raw.token_endpoint_auth_methods_supported).toEqual(['none', 'private_key_jwt']);
+      const client = parseCimdDocument(id, body);
+      expect(client?.client_id).toBe(id);
+      expect(client?.token_endpoint_auth_method).toBe('none');
+      expect(clientLabel(client!)).toBe('chatgpt.com');
+    }
+    expect(parseCimdDocument(CHATGPT_STABLE_ID, CHATGPT_STABLE)?.redirect_uris).toEqual(['https://chatgpt.com/connector_platform_oauth_redirect']);
+  });
+
+  it('W2: a plural with no method we accept is refused; a non-array plural leaves the singular to decide', () => {
+    const doc = JSON.parse(CHATGPT_STABLE);
+    expect(parseCimdDocument(CHATGPT_STABLE_ID, JSON.stringify({ ...doc, token_endpoint_auth_methods_supported: ['private_key_jwt'] }))).toBeNull();
+    // Not an array → the singular decides: private_key_jwt is refused, none is accepted.
+    expect(parseCimdDocument(CHATGPT_STABLE_ID, JSON.stringify({ ...doc, token_endpoint_auth_methods_supported: 'none' }))).toBeNull();
+    expect(parseCimdDocument(CHATGPT_STABLE_ID, JSON.stringify({ ...doc, token_endpoint_auth_methods_supported: 'none', token_endpoint_auth_method: 'none' }))?.token_endpoint_auth_method).toBe('none');
+    // An empty plural is no plural.
+    expect(parseCimdDocument(CHATGPT_STABLE_ID, JSON.stringify({ ...doc, token_endpoint_auth_methods_supported: [] }))).toBeNull();
+    // Claude's documents carry no plural and are unchanged.
+    expect(parseCimdDocument(CLAUDE_ID, CLAUDE)?.token_endpoint_auth_method).toBe('none');
+    expect(parseCimdDocument(CLAUDE_CODE_ID, CLAUDE_CODE)?.token_endpoint_auth_method).toBe('none');
+  });
+
+  it('W2: the cached copy of a negotiated client round-trips — the schema strips the plural, the stored method survives', async () => {
+    const get = vi.fn(async () => ({ status: 200, contentType: 'application/json', body: CHATGPT_STABLE }));
+    _setCimdDepsForTest({ resolve: (async () => ({ address: '160.79.104.10', family: 4 })) as never, get: get as never });
+    const first = await oauthClientsStore.getClient(CHATGPT_STABLE_ID);
+    expect(first?.token_endpoint_auth_method).toBe('none');
+    const cachedRead = await oauthClientsStore.getClient(CHATGPT_STABLE_ID);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(cachedRead).toEqual(first);
   });
 
   it('fetches through the egress guard: the resolved address is PINNED, 3 s, 5 KB, JSON', async () => {

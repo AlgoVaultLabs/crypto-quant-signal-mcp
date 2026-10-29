@@ -12,6 +12,14 @@
  * refused; an omitted one becomes `none`, and the secret the SDK generated for it is stripped
  * before it is stored or returned. Grants we do not issue (Claude's document lists `jwt-bearer`)
  * are tolerated and never issued.
+ *
+ * GROWTH-AGENT-SIGNIN-OAUTH-W2 — auth-method NEGOTIATION, per OpenAI's CIMD contract: a client's
+ * plural `token_endpoint_auth_methods_supported` is what it CAN use, our
+ * `TOKEN_ENDPOINT_AUTH_METHODS` is what we accept, and the method is the first of ours in their
+ * list; the legacy singular decides only when the plural is absent. ChatGPT publishes singular
+ * `private_key_jwt` with plural `["none","private_key_jwt"]`, so it becomes a public PKCE client —
+ * Claude's footing. A document offering only methods we do not verify stays refused. The plural is
+ * read from the RAW document: the SDK schema is `.strip()` (1.29.0) and never passes it through.
  */
 import type { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
 import { InvalidClientMetadataError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
@@ -20,6 +28,7 @@ import {
   type OAuthClientInformationFull,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { egressGet, resolveAndAssertEgress } from '../webhook-ssrf.js';
+import { TOKEN_ENDPOINT_AUTH_METHODS } from './metadata.js';
 import { getCimd, getDcrClient, insertDcrClient, isoAt, putCimd } from './store.js';
 
 const CIMD_MAX_BYTES = 5 * 1024;
@@ -75,6 +84,26 @@ export function clientLabel(client: OAuthClientInformationFull): string {
   return `${name} (unverified app)`;
 }
 
+/**
+ * The token-endpoint auth method we would use with a client offering `offered`: the first of OUR
+ * methods it lists (our preference order, never theirs), or null when the two share none.
+ */
+export function negotiateAuthMethod(offered: readonly string[]): string | null {
+  return TOKEN_ENDPOINT_AUTH_METHODS.find((m) => offered.includes(m)) ?? null;
+}
+
+/**
+ * What a raw CIMD document offers: the plural when it is a non-empty array of strings, else the
+ * singular, else — a document naming no method — whatever we accept (W1 read an omitted method as
+ * a public client, and still does).
+ */
+function offeredAuthMethods(raw: Record<string, unknown>): readonly string[] {
+  const plural = raw.token_endpoint_auth_methods_supported;
+  if (Array.isArray(plural) && plural.length > 0 && plural.every((m) => typeof m === 'string')) return plural;
+  const singular = raw.token_endpoint_auth_method;
+  return typeof singular === 'string' ? [singular] : TOKEN_ENDPOINT_AUTH_METHODS;
+}
+
 /** The host a client is reached at, for `oauth_authorized` / `oauth_active` — never a path or id. */
 export function clientHost(clientId: string): string {
   if (!isCimdClientId(clientId)) return 'dcr';
@@ -111,12 +140,14 @@ export function parseCimdDocument(clientId: string, body: string): OAuthClientIn
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   // C15: raw string equality BEFORE the schema — a parse that normalised the URL must not decide it.
   if ((raw as Record<string, unknown>).client_id !== clientId) return null;
+  // W2: negotiated on the RAW document too — the schema below strips the plural.
+  const method = negotiateAuthMethod(offeredAuthMethods(raw as Record<string, unknown>));
+  if (method === null) return null;
   const parsed = OAuthClientMetadataSchema.safeParse(raw);
   if (!parsed.success) return null;
   const meta = parsed.data;
   if (meta.redirect_uris.length === 0 || meta.redirect_uris.some((u) => redirectUriRefusal(u) !== null)) return null;
-  if (meta.token_endpoint_auth_method !== undefined && meta.token_endpoint_auth_method !== 'none') return null;
-  return { ...meta, client_id: clientId, token_endpoint_auth_method: 'none' };
+  return { ...meta, client_id: clientId, token_endpoint_auth_method: method };
 }
 
 async function fetchCimd(clientId: string): Promise<string | null> {
@@ -167,9 +198,11 @@ async function getDcr(clientId: string, now: number): Promise<OAuthClientInforma
 async function registerDcr(
   client: Omit<OAuthClientInformationFull, 'client_id' | 'client_id_issued_at'> & Partial<Pick<OAuthClientInformationFull, 'client_id' | 'client_id_issued_at'>>,
 ): Promise<OAuthClientInformationFull> {
-  const method = client.token_endpoint_auth_method;
-  if (method !== undefined && method !== 'none') {
-    throw new InvalidClientMetadataError('Only public clients are supported: token_endpoint_auth_method must be none.');
+  // W2: the same negotiation as CIMD — an omitted method offers whatever we accept.
+  const requested = client.token_endpoint_auth_method;
+  const method = negotiateAuthMethod(requested === undefined ? TOKEN_ENDPOINT_AUTH_METHODS : [requested]);
+  if (method === null) {
+    throw new InvalidClientMetadataError(`Only public clients are supported: token_endpoint_auth_method must be ${TOKEN_ENDPOINT_AUTH_METHODS.join(' or ')}.`);
   }
   if (!Array.isArray(client.redirect_uris) || client.redirect_uris.length === 0) {
     throw new InvalidClientMetadataError('At least one redirect_uri is required.');
@@ -183,7 +216,7 @@ async function registerDcr(
   // I-5 / C15: whatever secret the SDK generated for an omitted method is dropped here, before it
   // is stored or returned — a public client never holds one.
   const { client_secret: _secret, client_secret_expires_at: _expires, ...rest } = client;
-  const stored: OAuthClientInformationFull = { ...rest, client_id: client.client_id, token_endpoint_auth_method: 'none' };
+  const stored: OAuthClientInformationFull = { ...rest, client_id: client.client_id, token_endpoint_auth_method: method };
   const now = Date.now();
   await insertDcrClient({
     client_id: stored.client_id,

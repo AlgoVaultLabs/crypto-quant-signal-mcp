@@ -77,6 +77,15 @@ export function sendBearerChallenge(
   );
 }
 
+/**
+ * GROWTH-AGENT-SIGNIN-OAUTH-W2 — the token-endpoint auth methods we accept, in our order of
+ * preference. ONE list: the AS metadata advertises it, CIMD negotiation intersects a client's
+ * methods with it, and the DCR refusal and the `/token` + `/revoke` assertion guard read it. A
+ * method outside it is refused, never quietly downgraded. Accepting `private_key_jwt` later = this
+ * list + one assertion verifier.
+ */
+export const TOKEN_ENDPOINT_AUTH_METHODS: readonly string[] = ['none'];
+
 /** RFC 8414 document for `/.well-known/oauth-authorization-server`. */
 export function authorizationServerMetadata(): Record<string, unknown> {
   return {
@@ -88,8 +97,8 @@ export function authorizationServerMetadata(): Record<string, unknown> {
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
-    token_endpoint_auth_methods_supported: ['none'],
-    revocation_endpoint_auth_methods_supported: ['none'],
+    token_endpoint_auth_methods_supported: [...TOKEN_ENDPOINT_AUTH_METHODS],
+    revocation_endpoint_auth_methods_supported: [...TOKEN_ENDPOINT_AUTH_METHODS],
     client_id_metadata_document_supported: true,
     authorization_response_iss_parameter_supported: true,
     scopes_supported: [...OAUTH_SCOPES],
