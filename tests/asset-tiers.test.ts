@@ -169,7 +169,7 @@ describe('isMemeCoinLiquid — per-exchange-AND gate (OPS-3M-EXPAND-W1)', () => 
  * major-alt coins (AVAX, LINK, etc.) to misclassify as Tier 4 + route through
  * the `isMemeCoinLiquid` gate. The function `classifyAsset` itself is correct;
  * the bug is in the caller. These tests pin the function contract and prove
- * that the call-site fix (`await getTop20ByOI(); classifyAsset(coin, top20)`)
+ * that the call-site fix (`await getTop20ByOI(); classifyAsset(coin, top20, venue)`)
  * causes the Tier-4 gate to be skipped for Tier-2 coins.
  *
  * Audit reference: audits/OPS-TIER4-CLASSIFY-W1-endpoint-truth.md.
@@ -179,8 +179,8 @@ describe('classifyAsset — Tier-2 transition (OPS-TIER4-CLASSIFY-W1)', () => {
     // The fix path: caller supplies the actual top-20-by-HL-OI set.
     // AVAX is in the set → Tier 2. The Tier-4 gate downstream does NOT fire.
     const top20 = new Set<string>(['AVAX', 'LINK', 'SOL']);
-    expect(classifyAsset('AVAX', top20)).toBe(2);
-    expect(classifyAsset('LINK', top20)).toBe(2);
+    expect(classifyAsset('AVAX', top20, 'HL')).toBe(2);
+    expect(classifyAsset('LINK', top20, 'HL')).toBe(2);
   });
 
   it('case 10 — null top20 → classifyAsset returns Tier 4 (documented null-fallback contract)', () => {
@@ -191,8 +191,8 @@ describe('classifyAsset — Tier-2 transition (OPS-TIER4-CLASSIFY-W1)', () => {
     // Pinning this prevents a future "drive-by fix" from making classifyAsset
     // async, which would couple every caller to async semantics + add hidden
     // network calls.
-    expect(classifyAsset('AVAX', null)).toBe(4); // bug-preserving when called with null
-    expect(classifyAsset('LINK', null)).toBe(4);
+    expect(classifyAsset('AVAX', null, 'HL')).toBe(4); // bug-preserving when called with null
+    expect(classifyAsset('LINK', null, 'HL')).toBe(4);
   });
 
   it('case 11 — end-to-end: Tier 2 coin skips isMemeCoinLiquid gate at call site', async () => {
@@ -206,7 +206,7 @@ describe('classifyAsset — Tier-2 transition (OPS-TIER4-CLASSIFY-W1)', () => {
     // Inline the call-site logic from get-trade-call.ts:135-144
     const coin = 'AVAX';
     const exchange: ExchangeId = 'HL';
-    const tier = assetTiers.classifyAsset(coin, top20);
+    const tier = assetTiers.classifyAsset(coin, top20, exchange);
     if (tier === 4) {
       // Should NOT execute for AVAX (Tier 2 via top20).
       await assetTiers.isMemeCoinLiquid(coin, exchange);
@@ -252,7 +252,7 @@ describe('classifyAsset — venue-aware cross-venue TradFi (OPS-TIER-CLASSIFIER-
   it('BingX NC* wrapper + venue-less STATIC seed → Tier 3', () => {
     expect(classifyAsset('NCSKASML2USD', null, 'BINGX')).toBe(3);     // wrapper → ASML
     expect(classifyAsset('NCSINIKKEI2252USD', null, 'BINGX')).toBe(3); // → NIKKEI225 (INDEX)
-    expect(classifyAsset('GLW', null)).toBe(3);                        // STATIC seed canonical, no venue
+    expect(classifyAsset('GLW', null, null)).toBe(3);                  // STATIC seed canonical, no venue
   });
 
   it('no-field venues (KuCoin/Aster) resolve via the cross-venue union → Tier 3', () => {
@@ -264,15 +264,15 @@ describe('classifyAsset — venue-aware cross-venue TradFi (OPS-TIER-CLASSIFIER-
     // The SP500-fake price-sanity case is canary-side (C3); here the sync guard is the
     // deny-list — DYDX is seeded in the union yet still excluded.
     expect(classifyAsset('TNSR', null, 'BINANCE')).not.toBe(3);
-    expect(classifyAsset('ASTEROID', null)).not.toBe(3);
-    for (const c of ['Q', 'FIO', 'IDOL']) expect(classifyAsset(c, null)).not.toBe(3);
+    expect(classifyAsset('ASTEROID', null, null)).not.toBe(3);
+    for (const c of ['Q', 'FIO', 'IDOL']) expect(classifyAsset(c, null, null)).not.toBe(3);
     expect(classifyAsset('DYDX', null, 'OKX')).not.toBe(3);
   });
 
   it('a cold engine snapshot never breaks tiering (top20 / meme / seed still resolve)', () => {
     _clearAssetClassCache(); // snapshot null → getTradFiClass uses the STATIC seed floor only
-    expect(classifyAsset('SOL', new Set(['SOL']))).toBe(2);
-    expect(classifyAsset('WIF', null)).toBe(4);
-    expect(classifyAsset('TSLA', null)).toBe(3); // STATIC seed (also isKnownTradFi)
+    expect(classifyAsset('SOL', new Set(['SOL']), 'HL')).toBe(2);
+    expect(classifyAsset('WIF', null, 'HL')).toBe(4);
+    expect(classifyAsset('TSLA', null, null)).toBe(3); // STATIC seed
   });
 });

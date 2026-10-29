@@ -87,21 +87,35 @@ export function isKnownTradFi(symbol: string): boolean {
 // ── Classification ──
 
 /**
- * Classify a coin into a display tier. Optional trailing `venue` (TS bivariance →
- * no caller cascade) lets the cross-venue asset-class engine resolve TradFi on the
- * venue that actually lists it (OPS-TIER-CLASSIFIER-XVENUE-W1). Stays SYNCHRONOUS:
- * `getTradFiClass` reads the PRE-WARMED snapshot (warmed in `warmTierCaches`), so the
- * 11 performance-db rollup call-sites + get-trade-call never go async (Q8 ratified).
+ * Classify a coin into a display tier ON THE VENUE IT WAS CALLED ON. The venue is required
+ * (OPS-ASSET-CLASS-TOTALITY-W1): one ticker is a stock on one venue and a token on another —
+ * BB is an OKX stock and a Binance token — so Tier 3 follows the venue's own record. `null` is
+ * the venue-less rule (a holds-only coin): exact crypto evidence on any venue wins. The
+ * venue-blind `isKnownTradFi` seed (incl. SPX) is no longer read here (Q2). Stays SYNCHRONOUS:
+ * `getTradFiClass` reads the PRE-WARMED snapshot, so the performance-db rollups + get-trade-call
+ * never go async (Q8 ratified).
  */
-export function classifyAsset(coin: string, top20ByOI: Set<string> | null, venue?: ExchangeId): AssetTier {
+export function classifyAsset(coin: string, top20ByOI: Set<string> | null, venue: ExchangeId | null): AssetTier {
   const symbol = coin.toUpperCase();
   if (TIER_1.has(symbol)) return 1;
-  if (isKnownTradFi(symbol)) return 3;                     // HL xyz + TRADFI_FALLBACK seed (incl. SPX)
-  if (getTradFiClass(symbol, venue) !== null) return 3;    // cross-venue field/union detection (any non-CRYPTO class)
+  if (getTradFiClass(symbol, venue ?? undefined) !== null) return 3; // the venue's own record (any non-CRYPTO class)
   if (top20ByOI && top20ByOI.has(symbol)) return 2;
   if (MEME_KNOWN.has(symbol)) return 4;
   // Default: anything not classified lands in Tier 4 (Meme & Micro)
   return 4;
+}
+
+/**
+ * A coin's headline tier across the venues it was called on: the tier carrying most of its calls,
+ * a tie going to the LOWER tier number. Null only for an empty weight map.
+ */
+export function majorityTier(callsByTier: ReadonlyMap<AssetTier, number>): AssetTier | null {
+  let best: AssetTier | null = null;
+  for (const [t, n] of callsByTier) {
+    const b = best === null ? -1 : callsByTier.get(best)!;
+    if (n > b || (n === b && t < best!)) best = t;
+  }
+  return best;
 }
 
 export function getTierDef(tier: AssetTier): TierDefinition {

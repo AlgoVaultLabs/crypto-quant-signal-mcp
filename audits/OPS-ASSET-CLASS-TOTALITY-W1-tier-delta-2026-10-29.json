@@ -1,0 +1,227 @@
+{
+ "wave": "OPS-ASSET-CLASS-TOTALITY-W1",
+ "chapter": "CH2",
+ "what": "Public tier counts before land and after deploy, and the (coin, venue) rows that move in or out of Tier 3 when classifyAsset takes the call's venue.",
+ "instrument": {
+  "before": "GET https://algovault.com/api/performance-public at 2026-10-29T15:00:59Z (pre-land, production at 76b21548)",
+  "projection": "the before payload's byExchange[].byAsset[] rows re-tiered offline with classifyAsset(coin, top20, venue) over tests/fixtures/asset-class-census.json; top20 = the before payload's Tier-2 set",
+  "units": "byTier counts are the endpoint's own (non-HOLD calls); per-row moves are byExchange[].byAsset[].count (all calls incl. HOLD) \u2014 the finest grain the public payload carries, so the two are never subtracted from each other"
+ },
+ "before": {
+  "captured_at": "2026-10-29T15:00:59Z",
+  "byTier": {
+   "tier1": {
+    "count": 50796,
+    "assets": 2
+   },
+   "tier2": {
+    "count": 187003,
+    "assets": 16
+   },
+   "tier3": {
+    "count": 351784,
+    "assets": 1648
+   },
+   "tier4": {
+    "count": 637755,
+    "assets": 1030
+   }
+  }
+ },
+ "projection": {
+  "tier3_rows_out": 18033,
+  "tier3_rows_in": 47,
+  "tier3_net": -17986,
+  "tier3_net_pct_of_byExchange_tier3": -5.11,
+  "rows_moved": 221,
+  "spec_projection": "-18,205 (-5.18%), R0"
+ },
+ "top_tier3_out": [
+  {
+   "venue": "HL",
+   "coin": "PURR",
+   "calls_incl_hold": 513,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "BINANCE",
+   "coin": "QNT",
+   "calls_incl_hold": 501,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "WHITEBIT",
+   "coin": "T",
+   "calls_incl_hold": 496,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "BINANCE",
+   "coin": "T",
+   "calls_incl_hold": 422,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "KUCOIN",
+   "coin": "DASH",
+   "calls_incl_hold": 404,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "BINANCE",
+   "coin": "DASH",
+   "calls_incl_hold": 379,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "BINGX",
+   "coin": "QNT",
+   "calls_incl_hold": 317,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "ASTER",
+   "coin": "QNT",
+   "calls_incl_hold": 313,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "BYBIT",
+   "coin": "SPX",
+   "calls_incl_hold": 302,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "KUCOIN",
+   "coin": "QNT",
+   "calls_incl_hold": 283,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "GATE",
+   "coin": "B",
+   "calls_incl_hold": 277,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "HTX",
+   "coin": "DASH",
+   "calls_incl_hold": 261,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "BITGET",
+   "coin": "QNT",
+   "calls_incl_hold": 260,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "ASTER",
+   "coin": "DASH",
+   "calls_incl_hold": 259,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "GATE",
+   "coin": "QNT",
+   "calls_incl_hold": 252,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "MEXC",
+   "coin": "DASH",
+   "calls_incl_hold": 237,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "BINANCE",
+   "coin": "S",
+   "calls_incl_hold": 226,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "GATE",
+   "coin": "DASH",
+   "calls_incl_hold": 226,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "KUCOIN",
+   "coin": "S",
+   "calls_incl_hold": 220,
+   "before": 3,
+   "after": 4
+  },
+  {
+   "venue": "BINANCE",
+   "coin": "DIA",
+   "calls_incl_hold": 216,
+   "before": 3,
+   "after": 4
+  }
+ ],
+ "tier3_in": [
+  {
+   "venue": "HTX",
+   "coin": "HK0625",
+   "calls_incl_hold": 22,
+   "before": 4,
+   "after": 3
+  },
+  {
+   "venue": "XT",
+   "coin": "USDEX",
+   "calls_incl_hold": 8,
+   "before": 4,
+   "after": 3
+  },
+  {
+   "venue": "GATE",
+   "coin": "USDEX",
+   "calls_incl_hold": 7,
+   "before": 4,
+   "after": 3
+  },
+  {
+   "venue": "HTX",
+   "coin": "USDEX",
+   "calls_incl_hold": 5,
+   "before": 4,
+   "after": 3
+  },
+  {
+   "venue": "MEXC",
+   "coin": "USDESTOCK",
+   "calls_incl_hold": 4,
+   "before": 4,
+   "after": 3
+  },
+  {
+   "venue": "BINGX",
+   "coin": "NCSKUSDE2USD",
+   "calls_incl_hold": 1,
+   "before": 4,
+   "after": 3
+  }
+ ],
+ "after": null,
+ "after_note": "filled from the first cache-busted read after wait-deploy PASS"
+}

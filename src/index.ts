@@ -2186,7 +2186,8 @@ async function startHttp() {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       try {
-        const [stats, holdStats] = await Promise.all([getSignalPerformance(), getHoldStats()]);
+        const stats = await getSignalPerformance();
+        const holdStats = await getHoldStats(stats.byAsset); // holds take the coin's headline tier
         res.json({ ...stats, ...holdStats });
       } catch (err) {
         res.status(500).json({ error: 'Failed to fetch performance stats' });
@@ -2647,9 +2648,11 @@ async function startHttp() {
       // timeframe_count) — read by landing/js/track-record-proxy.js to populate
       // every `data-tr-field="<name>"` span on track-record / signup / docs /
       // landing pages, so onboarding the 6th exchange auto-updates public copy.
+      // OPS-ASSET-CLASS-TOTALITY-W1 Q1: holds take each coin's headline tier from the SAME rollup.
+      const statsP = getSignalPerformance();
       const [stats, holdStats, asset_count] = await Promise.all([
-        getSignalPerformance(),
-        getHoldStats(),
+        statsP,
+        statsP.then((s) => getHoldStats(s.byAsset)),
         getAssetCount(),
       ]);
       const totalHolds = holdStats.totalHolds || 0;

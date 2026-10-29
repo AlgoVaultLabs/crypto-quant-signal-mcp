@@ -5,8 +5,9 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import type { SignalRecord, SignalVerdict, PerformanceStats } from '../types.js';
-import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js';
+import type { SignalRecord, SignalVerdict, PerformanceStats, ExchangeId } from '../types.js';
+import { classifyAsset, majorityTier, TIER_DEFINITIONS, getTop20ByOI, type AssetTier } from './asset-tiers.js';
+import { assetClassProbedAt, warmAssetClasses } from './asset-class-detection.js';
 import { isShortLivedScript } from './runtime.js';
 import { isPfeEligible, sqlPfeEligible, SQL_PFE_ELIGIBLE, SCORING_EXCLUSIONS_RULE } from './pfe-scoring.js';
 import { EXCHANGE_COUNT } from './capabilities.js';
@@ -2391,8 +2392,14 @@ export async function upsertAgentSession(params: {
   }
 }
 
-/** Get total HOLD count and per-tier breakdown. */
-export async function getHoldStats(): Promise<{ totalHolds: number; holdsByTier: Record<string, number> }> {
+/**
+ * Get total HOLD count and per-tier breakdown. `hold_counts` carries no venue, so a coin's holds take
+ * its HEADLINE tier — `assetTiers[coin].tier`, the majority rule of the same performance rollup
+ * (OPS-ASSET-CLASS-TOTALITY-W1 Q1); a holds-only coin takes the venue-less rule.
+ */
+export async function getHoldStats(
+  assetTiers: Readonly<Record<string, { tier: number }>>,
+): Promise<{ totalHolds: number; holdsByTier: Record<string, number> }> {
   const b = getBackend();
   const top20 = await getTop20ByOI().catch(() => null);
 
@@ -2411,7 +2418,7 @@ export async function getHoldStats(): Promise<{ totalHolds: number; holdsByTier:
   const holdsByTier: Record<string, number> = {};
   for (const r of rows) {
     totalHolds += r.holds;
-    const tier = String(classifyAsset(r.coin, top20));
+    const tier = String(assetTiers[r.coin]?.tier ?? classifyAsset(r.coin, top20, null));
     holdsByTier[tier] = (holdsByTier[tier] || 0) + r.holds;
   }
 
@@ -3421,6 +3428,11 @@ export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
     try {
       const t0 = Date.now();
       const top20 = await getTop20ByOI().catch(() => null);
+      // OPS-ASSET-CLASS-TOTALITY-W1: tiers read the asset-class snapshot. A cold process (the first
+      // read after a deploy) waits for the boot warm — never caches STATIC-floor tiers for a TTL;
+      // a held snapshot refreshes in the background.
+      if (assetClassProbedAt() === null) await warmAssetClasses().catch(() => {});
+      else void warmAssetClasses().catch(() => {});
       // OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2: SQL GROUP-BY pushdown (PG only, default-OFF
       // flag PERF_STATS_SQL_PUSHDOWN). Byte-equivalent to the loadSignalsForStats +
       // computeStats scan (CH1 oracle gate); returns in ms without holding a pool
@@ -3645,6 +3657,7 @@ function computeStats(rows: SignalRecord[], top20ByOI: Set<string> | null, recen
   }
 
   // By asset (tier + PFE WR only)
+  const tierOf = makeTierOf(top20ByOI);
   const coins = [...new Set(all.map(s => s.coin))];
   const byAsset: PerformanceStats['byAsset'] = {};
   for (const coin of coins) {
@@ -3658,7 +3671,7 @@ function computeStats(rows: SignalRecord[], top20ByOI: Set<string> | null, recen
 
     byAsset[coin] = {
       count: group.length,
-      tier: classifyAsset(coin, top20ByOI),
+      tier: headlineTier(tierOf, coin, group.map(s => ({ venue: s.exchange || 'HL', n: 1 }))),
       pfeWinRate: pfeGroup.length > 0 ? pfeWinsGroup.length / pfeGroup.length : null,
     };
   }
@@ -3666,7 +3679,7 @@ function computeStats(rows: SignalRecord[], top20ByOI: Set<string> | null, recen
   // By tier
   const byTier: PerformanceStats['byTier'] = {};
   for (const tierDef of TIER_DEFINITIONS) {
-    const tierSignals = nonHold.filter(s => classifyAsset(s.coin, top20ByOI) === tierDef.tier);
+    const tierSignals = nonHold.filter(s => tierOf(s.coin, s.exchange || 'HL') === tierDef.tier);
     const tierPFE = tierSignals.filter(isPfeEligible);
     const tierPFEWins = tierPFE.filter(s => {
       const pfe = s.pfe_return_pct ?? 0;
@@ -3710,7 +3723,7 @@ function computeStats(rows: SignalRecord[], top20ByOI: Set<string> | null, recen
     // Per-exchange byTier
     const exByTier: PerformanceStats['byExchange'][string]['byTier'] = {};
     for (const tierDef of TIER_DEFINITIONS) {
-      const tg = exNonHold.filter(s => classifyAsset(s.coin, top20ByOI) === tierDef.tier);
+      const tg = exNonHold.filter(s => tierOf(s.coin, ex) === tierDef.tier);
       const te = tg.filter(isPfeEligible);
       const tw = te.filter(s => { const p = s.pfe_return_pct ?? 0; return s.signal === 'BUY' ? p > 0 : p < 0; });
       exByTier[`tier${tierDef.tier}`] = { count: tg.length, evaluated: te.length, pfeWinRate: te.length > 0 ? tw.length / te.length : null };
@@ -3732,7 +3745,7 @@ function computeStats(rows: SignalRecord[], top20ByOI: Set<string> | null, recen
       const nh = g.filter(s => s.signal !== 'HOLD');
       const e = nh.filter(isPfeEligible);
       const w = e.filter(s => { const p = s.pfe_return_pct ?? 0; return s.signal === 'BUY' ? p > 0 : p < 0; });
-      exByAsset[coin] = { count: g.length, tier: classifyAsset(coin, top20ByOI), pfeWinRate: e.length > 0 ? w.length / e.length : null };
+      exByAsset[coin] = { count: g.length, tier: tierOf(coin, ex), pfeWinRate: e.length > 0 ? w.length / e.length : null };
     }
 
     byExchange[ex] = {
@@ -3782,7 +3795,7 @@ function computeStats(rows: SignalRecord[], top20ByOI: Set<string> | null, recen
       id: s.id!,
       coin: s.coin,
       timeframe: s.timeframe,
-      tier: classifyAsset(s.coin, top20ByOI),
+      tier: tierOf(s.coin, s.exchange || 'HL'),
       created_at: s.created_at,
       exchange: s.exchange || 'HL',
     })),
@@ -3895,6 +3908,31 @@ function _orderByRecency(keyOf: (g: StatGroupRow) => string, gs: StatGroupRow[])
 const _byTf = (gs: StatGroupRow[]) => ({ count: _sumEval(gs), evaluated: _sumEval(gs), pfeWinRate: _wr(gs) });
 
 /**
+ * OPS-ASSET-CLASS-TOTALITY-W1 CH2 — a call's tier follows the venue it was called on. ONE derivation
+ * per rollup: `tierOf(coin, venue)` (memoized `classifyAsset`) tiers every call, and a coin's headline
+ * `byAsset[coin].tier` is the majority of its calls' tiers (tie → lower). Every tier field projects
+ * from those two: byTier and byExchange[].byTier count each call at its own tier;
+ * byExchange[].byAsset[].tier and recentSignals[].tier read the row's own venue; holdsByTier
+ * (`getHoldStats`) reads the headline tier. Both rollups (computeStats, rollupStats) call these.
+ */
+type TierOf = (coin: string, venue: string) => AssetTier;
+function makeTierOf(top20ByOI: Set<string> | null): TierOf {
+  const memo = new Map<string, AssetTier>();
+  return (coin, venue) => {
+    const k = `${venue}${STAT_GROUP_KEY_SEP}${coin}`;
+    let t = memo.get(k);
+    if (t === undefined) memo.set(k, (t = classifyAsset(coin, top20ByOI, venue as ExchangeId)));
+    return t;
+  };
+}
+function headlineTier(tierOf: TierOf, coin: string, calls: Iterable<{ venue: string; n: number }>): AssetTier {
+  const w = new Map<AssetTier, number>();
+  let venue = 'HL';
+  for (const c of calls) { const t = tierOf(coin, c.venue); w.set(t, (w.get(t) ?? 0) + c.n); venue = c.venue; }
+  return majorityTier(w) ?? tierOf(coin, venue);
+}
+
+/**
  * Pure rollup: reconstruct the FULL PerformanceStats from grouped rows + period
  * + top20 + the pre-fetched top-20 recent rows. Byte-equivalent to computeStats
  * (proven by the CH1 oracle test). recentRows is the caller's
@@ -3926,16 +3964,17 @@ export function rollupStats(
   }
 
   // byAsset — distinct coins across ALL groups, recency-ordered (Q1); count incl HOLD, WR over nonHold
+  const tierOf = makeTierOf(top20ByOI);
   const byAsset: PerformanceStats['byAsset'] = {};
   for (const coin of _orderByRecency(g => g.coin, groups)) {
     const all = groups.filter(g => g.coin === coin);
-    byAsset[coin] = { count: _sumCnt(all), tier: classifyAsset(coin, top20ByOI), pfeWinRate: _wr(all.filter(g => g.signal !== 'HOLD')) };
+    byAsset[coin] = { count: _sumCnt(all), tier: headlineTier(tierOf, coin, all.map(g => ({ venue: g.exchange, n: g.cnt }))), pfeWinRate: _wr(all.filter(g => g.signal !== 'HOLD')) };
   }
 
   // byTier — FIXED TIER_DEFINITIONS order (Q3); nonHold; assets = sorted distinct nonHold coins∈tier
   const byTier: PerformanceStats['byTier'] = {};
   for (const td of TIER_DEFINITIONS) {
-    const gs = nonHold.filter(g => classifyAsset(g.coin, top20ByOI) === td.tier);
+    const gs = nonHold.filter(g => tierOf(g.coin, g.exchange) === td.tier);
     byTier[`tier${td.tier}`] = { tier: td.tier, name: td.name, label: td.label, color: td.color, count: _sumCnt(gs), evaluated: _sumEval(gs), pfeWinRate: _wr(gs), assets: [...new Set(gs.map(g => g.coin))].sort() };
   }
 
@@ -3947,11 +3986,11 @@ export function rollupStats(
     const exTf: PerformanceStats['byExchange'][string]['byTimeframe'] = {};
     for (const tf of [...new Set(exNon.map(g => g.timeframe))].sort((a, b) => PERF_TF_ORDER.indexOf(a) - PERF_TF_ORDER.indexOf(b))) exTf[tf] = _byTf(exNon.filter(g => g.timeframe === tf));
     const exTier: PerformanceStats['byExchange'][string]['byTier'] = {};
-    for (const td of TIER_DEFINITIONS) { const gs = exNon.filter(g => classifyAsset(g.coin, top20ByOI) === td.tier); exTier[`tier${td.tier}`] = { count: _sumCnt(gs), evaluated: _sumEval(gs), pfeWinRate: _wr(gs) }; }
+    for (const td of TIER_DEFINITIONS) { const gs = exNon.filter(g => tierOf(g.coin, ex) === td.tier); exTier[`tier${td.tier}`] = { count: _sumCnt(gs), evaluated: _sumEval(gs), pfeWinRate: _wr(gs) }; }
     const exCall: PerformanceStats['byExchange'][string]['byCallType'] = {};
     for (const type of ['BUY', 'SELL', 'HOLD'] as const) { const gs = exAll.filter(g => g.signal === type); exCall[type] = type === 'HOLD' ? { count: _sumCnt(gs), evaluated: 0, pfeWinRate: null } : { count: _sumEval(gs), evaluated: _sumEval(gs), pfeWinRate: _wr(gs) }; }
     const exAsset: PerformanceStats['byExchange'][string]['byAsset'] = {};
-    for (const coin of _orderByRecency(g => g.coin, exAll)) { const all = exAll.filter(g => g.coin === coin); exAsset[coin] = { count: _sumCnt(all), tier: classifyAsset(coin, top20ByOI), pfeWinRate: _wr(all.filter(g => g.signal !== 'HOLD')) }; }
+    for (const coin of _orderByRecency(g => g.coin, exAll)) { const all = exAll.filter(g => g.coin === coin); exAsset[coin] = { count: _sumCnt(all), tier: tierOf(coin, ex), pfeWinRate: _wr(all.filter(g => g.signal !== 'HOLD')) }; }
     byExchange[ex] = { exchange: ex, count: _sumCnt(exNon), evaluated: _sumEval(exNon), pfeWinRate: _wr(exNon), byTimeframe: exTf, byTier: exTier, byCallType: exCall, byAsset: exAsset };
   }
 
@@ -3973,7 +4012,7 @@ export function rollupStats(
     // byte-identical for a caller that hands this function an unfiltered `recentRows` (the
     // equivalence oracle does exactly that), and so the guarantee does not rest on the SQL alone.
     recentSignals: admitRecent(recentRows, recentVenues).slice(0, 20).map(s => formatPublicRecentSignal({
-      id: s.id!, coin: s.coin, timeframe: s.timeframe, tier: classifyAsset(s.coin, top20ByOI), created_at: s.created_at, exchange: s.exchange || 'HL',
+      id: s.id!, coin: s.coin, timeframe: s.timeframe, tier: tierOf(s.coin, s.exchange || 'HL'), created_at: s.created_at, exchange: s.exchange || 'HL',
     })),
     methodology: METHODOLOGY,
   };
