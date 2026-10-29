@@ -124,6 +124,8 @@ const ADMISSION_STATUS_NEGATIVE_TTL_MS = 60_000;
 
 interface CachedStatus { map: StatusMap | null; state: 'ok' | 'unavailable'; expiresAt: number }
 const admissionStatusCache = new Map<ExchangeId, CachedStatus>();
+/** OPS-VENUE-MARKET-CLOSED-W1: one in-flight status fetch per venue — concurrent misses share it. */
+const admissionStatusInFlight = new Map<ExchangeId, Promise<{ map: StatusMap | null; state: AdmissionTally['status'] }>>();
 let admissionModeWarned = false;
 
 /**
@@ -157,11 +159,13 @@ export function getLastAdmission(venue: ExchangeId, side: AdmissionSide): Admiss
 /** Test seam — clears the status cache, the admission records and the one-time mode warning. */
 export function _resetAdmissionStatusCacheForTest(): void {
   admissionStatusCache.clear();
+  admissionStatusInFlight.clear();
   lastAdmission.clear();
   admissionModeWarned = false;
 }
 
-function admissionMode(): AdmissionMode {
+/** The ONE resolved `UNIVERSE_ADMISSION_MODE` (an unrecognised value warns once and resolves to legacy). */
+export function admissionMode(): AdmissionMode {
   const { mode, warning } = resolveAdmissionMode(process.env.UNIVERSE_ADMISSION_MODE);
   if (warning && !admissionModeWarned) {
     admissionModeWarned = true;
@@ -175,8 +179,12 @@ function admissionMode(): AdmissionMode {
  * already holds (zero extra calls); URL sources are fetched once per declared TTL through the shared
  * `upstreamFetch` (budgeted, typed bans, no transient retry — the next TTL retries). NEVER throws:
  * an unreachable or unparseable status resolves to `null`, which ADMITS every row.
+ *
+ * OPS-VENUE-MARKET-CLOSED-W1: exported as THE status reader — the `getAdapter` seam reads the same map
+ * admission does, never a copy. Single-flight: concurrent cache misses share ONE fetch (the seam can be
+ * reached by several reads at once, e.g. get_trade_call's getCandles + getAssetContext).
  */
-async function venueStatus(
+export async function venueStatus(
   venue: ExchangeId, inlinePayload: unknown,
 ): Promise<{ map: StatusMap | null; state: AdmissionTally['status'] }> {
   const decl = ADMISSION_SOURCES[venue];
@@ -195,19 +203,28 @@ async function venueStatus(
   }
   const hit = admissionStatusCache.get(venue);
   if (hit && hit.expiresAt > Date.now()) return { map: hit.map, state: hit.state };
-  try {
-    const payload = await upstreamFetch<unknown>(
-      { ...VENUE_FETCH_CONFIGS[venue], transientRetries: 0 },
-      { url: decl.url, weightHint: 1 },
-    );
-    const map = decl.parse(payload);
-    admissionStatusCache.set(venue, { map, state: 'ok', expiresAt: Date.now() + decl.cacheTtlMs });
-    return { map, state: 'ok' };
-  } catch (e) {
-    console.warn(`[universe-admission] ${venue} status unavailable (${e instanceof Error ? e.message : e}) — admitting the legacy set`);
-    admissionStatusCache.set(venue, { map: null, state: 'unavailable', expiresAt: Date.now() + ADMISSION_STATUS_NEGATIVE_TTL_MS });
-    return { map: null, state: 'unavailable' };
-  }
+  const pending = admissionStatusInFlight.get(venue);
+  if (pending) return pending;
+  const url = decl.url;
+  const load = (async (): Promise<{ map: StatusMap | null; state: AdmissionTally['status'] }> => {
+    try {
+      const payload = await upstreamFetch<unknown>(
+        { ...VENUE_FETCH_CONFIGS[venue], transientRetries: 0 },
+        { url, weightHint: 1 },
+      );
+      const map = decl.parse(payload);
+      admissionStatusCache.set(venue, { map, state: 'ok', expiresAt: Date.now() + decl.cacheTtlMs });
+      return { map, state: 'ok' };
+    } catch (e) {
+      console.warn(`[universe-admission] ${venue} status unavailable (${e instanceof Error ? e.message : e}) — admitting the legacy set`);
+      admissionStatusCache.set(venue, { map: null, state: 'unavailable', expiresAt: Date.now() + ADMISSION_STATUS_NEGATIVE_TTL_MS });
+      return { map: null, state: 'unavailable' };
+    } finally {
+      admissionStatusInFlight.delete(venue);
+    }
+  })();
+  admissionStatusInFlight.set(venue, load);
+  return load;
 }
 
 /**

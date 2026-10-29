@@ -213,7 +213,10 @@ async function main() {
             console.error(`[${ts()}] ${coin} ${sig.signal} [${timeframe}] backfill error (${fc}/${MAX_FAIL_PER_SYMBOL}): ${msg}`);
           }
           if (fc === MAX_FAIL_PER_SYMBOL) {
-            console.log(`[${ts()}] Blocking ${failKey} — failed ${MAX_FAIL_PER_SYMBOL} times, skipping remaining signals`);
+            // OPS-VENUE-MARKET-CLOSED-W1: the line carries the last failure's own words (a closed market says so,
+            // VENUE_MARKET_CLOSED), so the canary that quotes it pages the venue's answer, not a bare count. The
+            // prefix is unchanged: outcome-backfill-freshness.py `last_failure_line` matches "Blocking <V>:<C> ".
+            console.log(`[${ts()}] Blocking ${failKey} — failed ${MAX_FAIL_PER_SYMBOL} times, skipping remaining signals (last: ${msg})`);
           }
           errors++;
           await sleep(DELAY_BETWEEN_FETCHES_MS);

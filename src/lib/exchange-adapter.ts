@@ -11,7 +11,9 @@ import { accountPage, historyMetaOf } from './adapters/_history-plan.js';
 import { isClosedOnlyKlineVenue } from './live-price.js';
 import { servedCandleStepMs } from './tf-support.js';
 import { HEAD_STALE_BARS } from './serving-windows.js';
-import { StaleUpstreamWindowError } from './errors.js';
+import { StaleUpstreamWindowError, VenueMarketClosedError } from './errors.js';
+import { admissionMode, venueStatus } from './exchange-universe.js';
+import { ADMISSION_SOURCES, closedMarketVerdict, isStatusKind, readRefusalOf } from './universe-admission.js';
 import { HyperliquidAdapter } from './adapters/hyperliquid.js';
 import { BinanceAdapter } from './adapters/binance.js';
 import { BybitAdapter } from './adapters/bybit.js';
@@ -98,6 +100,71 @@ function guardServingReads(adapter: ExchangeAdapter, venue: ExchangeId): Exchang
   return adapter;
 }
 
+/** An adapter that can name a coin's market in the venue's own symbols (the status key). Optional, structural. */
+interface VenueSymbolMapper { venueSymbol?: (coin: string) => string }
+
+/**
+ * OPS-VENUE-MARKET-CLOSED-W1. The closed-market guard: for a venue that declares `readsRefusedWhileOff`, refuse
+ * `getCandles` and `getAssetContext` of a market its own status declares closed, with `VenueMarketClosedError`
+ * ('status') and ZERO market-data requests — the status map is the one admission reads (`venueStatus`, one fetch per
+ * TTL, single-flight). An in-band closure the adapter typed ('in_band') is memoized for the declaration's
+ * `cacheTtlMs`, so the venue is not asked again while it has just said no. History AND serving reads are both
+ * guarded: the PFE backfill reads with an `endTime`. Everything else fails OPEN, byte-identical to before: an
+ * undeclared venue (no wrapper at all), `UNIVERSE_ADMISSION_MODE=legacy`, an open circuit, an unavailable or
+ * throwing status reader, a symbol the map does not hold, an adapter with no `venueSymbol`. A timeframe the venue
+ * does not serve goes straight through, so the adapter's own local refusal answers first.
+ */
+function guardClosedMarkets(adapter: ExchangeAdapter, venue: ExchangeId): ExchangeAdapter {
+  const refusal = readRefusalOf(venue);
+  const decl = ADMISSION_SOURCES[venue];
+  const symbolOf = (adapter as ExchangeAdapter & VenueSymbolMapper).venueSymbol?.bind(adapter);
+  if (refusal === null || !isStatusKind(decl) || symbolOf === undefined) return adapter;
+  const ttlMs = decl.cacheTtlMs;
+  const memo = new Map<string, { err: VenueMarketClosedError; until: number }>();
+
+  /** Resolves when the read may go ahead; throws VenueMarketClosedError when the venue says the market is closed. */
+  async function refuseIfClosed(coin: string): Promise<void> {
+    const symbol = symbolOf!(coin);
+    const hit = memo.get(symbol);
+    if (hit && hit.until > Date.now()) throw hit.err;
+    let verdict;
+    try {
+      const { map } = await venueStatus(venue, undefined);
+      verdict = closedMarketVerdict({ venue, symbol, status: map, mode: admissionMode(), nowMs: Date.now() });
+    } catch {
+      return; // the reader never throws by contract; if it ever does, the read goes ahead as today
+    }
+    if (verdict.closed) {
+      throw new VenueMarketClosedError({ venue, coin, symbol, source: 'status', venueCode: verdict.status, venueMessage: null });
+    }
+  }
+  /** Runs one read; an in-band closure it surfaces is remembered for the declared TTL. */
+  async function read<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (err) {
+      if (err instanceof VenueMarketClosedError && err.source === 'in_band') memo.set(err.symbol, { err, until: Date.now() + ttlMs });
+      throw err;
+    }
+  }
+
+  const readCandles = adapter.getCandles.bind(adapter);
+  adapter.getCandles = async (coin, interval, startTime, dex, endTime): Promise<Candle[]> => {
+    const run = () => readCandles(coin, interval, startTime, dex, endTime);
+    if (admissionMode() !== 'enforce' || servedCandleStepMs(venue, interval) === null) return run();
+    await refuseIfClosed(coin);
+    return read(run);
+  };
+  const readContext = adapter.getAssetContext.bind(adapter);
+  adapter.getAssetContext = async (coin, dex) => {
+    const run = () => readContext(coin, dex);
+    if (admissionMode() !== 'enforce') return run();
+    await refuseIfClosed(coin);
+    return read(run);
+  };
+  return adapter;
+}
+
 export function getAdapter(exchange?: ExchangeId): ExchangeAdapter {
   const id = exchange || 'HL';
   let adapter = adapters.get(id);
@@ -156,7 +223,7 @@ export function getAdapter(exchange?: ExchangeId): ExchangeAdapter {
         adapter = new HyperliquidAdapter();
         break;
     }
-    adapters.set(id, guardServingReads(adapter, id));
+    adapters.set(id, guardClosedMarkets(guardServingReads(adapter, id), id));
   }
   return adapter;
 }

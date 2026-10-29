@@ -22,7 +22,8 @@ import {
   fromBingxSymbol,
   TRADFI_ALIASES,
 } from '../../src/lib/adapters/bingx.js';
-import { UpstreamRateLimitError } from '../../src/lib/errors.js';
+import { UpstreamRateLimitError, VenueMarketClosedError } from '../../src/lib/errors.js';
+import { runAsCaller } from '../../src/lib/upstream-weight-budget.js';
 
 interface MockResponse {
   status?: number;
@@ -322,6 +323,74 @@ describe('BingxAdapter — 429 handling', () => {
       expect((err as UpstreamRateLimitError).exchange).toBe('BingX');
     }
   }, 10000);
+});
+
+// ── OPS-VENUE-MARKET-CLOSED-W1: the venue's in-band answers are typed ───────
+
+const PAUSED = (symbol: string): MockResponse => ({
+  body: { code: 109415, msg: `${symbol} is pause currently, all validted symbols in api:/openApi/swap/v2/quote/contracts`, data: {} },
+});
+
+describe('BingxAdapter — an in-band 109415 (market paused) is VenueMarketClosedError on every endpoint', () => {
+  it('klines: typed, carrying the venue code and its own words', async () => {
+    setMock('/openApi/swap/v2/quote/klines', PAUSED('NCSKCME2USD-USDT'));
+    const err = await new BingxAdapter().getCandles('NCSKCME2USD', '1h', 0).catch((e) => e);
+    expect(err).toBeInstanceOf(VenueMarketClosedError);
+    expect(err).toMatchObject({ venue: 'BINGX', coin: 'NCSKCME2USD', symbol: 'NCSKCME2USD-USDT', source: 'in_band', venueCode: 109415 });
+    expect(err.venueMessage).toBe('NCSKCME2USD-USDT is pause currently, all validted symbols in api:/openApi/swap/v2/quote/contracts');
+  });
+
+  it.each(['premiumIndex', 'ticker', 'openInterest'])('getAssetContext: a paused %s answer is typed', async (endpoint) => {
+    setMock('/openApi/swap/v2/quote/premiumIndex', { body: { code: 0, data: { symbol: 'X-USDT', markPrice: '1', indexPrice: '1', lastFundingRate: '0' } } });
+    setMock('/openApi/swap/v2/quote/openInterest', { body: { code: 0, data: { openInterest: '1', symbol: 'X-USDT', time: 0 } } });
+    setMock('/openApi/swap/v2/quote/ticker', { body: { code: 0, data: { symbol: 'X-USDT', openPrice: '1', quoteVolume: '1' } } });
+    setMock(`/openApi/swap/v2/quote/${endpoint}`, PAUSED('NCSKRACE2USD-USDT'));
+    await expect(new BingxAdapter().getAssetContext('NCSKRACE2USD')).rejects.toBeInstanceOf(VenueMarketClosedError);
+  });
+
+  it('control: any other non-OK envelope keeps its generic error', async () => {
+    setMock('/openApi/swap/v2/quote/klines', { body: { code: 100400, msg: 'bad symbol', data: [] } });
+    const err = await new BingxAdapter().getCandles('BTC', '1h', 0).catch((e) => e);
+    expect(err).not.toBeInstanceOf(VenueMarketClosedError);
+    expect(err.message).toBe('BingX: kline returned non-OK envelope (code=100400 msg=bad symbol)');
+  });
+
+  it('getCurrentPrice keeps swallowing (null), paused or not', async () => {
+    setMock('/openApi/swap/v2/quote/premiumIndex', PAUSED('NCSKPG2USD-USDT'));
+    expect(await new BingxAdapter().getCurrentPrice('NCSKPG2USD')).toBeNull();
+  });
+});
+
+describe('BingxAdapter — the 109429 IP ban is a typed, counted rate limit', () => {
+  const BAN: MockResponse = {
+    body: { code: 109429, msg: 'over 10 error code:109415 requests within 900000 ms for this api, please verify and fix it ,can retry after time: 1761733800000', data: {} },
+  };
+
+  it('throws UpstreamRateLimitError and writes ONE rate_limit_events row through the real writer (test DB)', async () => {
+    const prevPath = process.env.PERFORMANCE_DB_PATH;
+    process.env.PERFORMANCE_DB_PATH = ':memory:';
+    process.env.RATE_LIMIT_EVENTS_TEST = '1';
+    try {
+      const db = await import('../../src/lib/performance-db.js');
+      // The Postgres table (migrations 008 + 009); the SQLite backend does not create it.
+      db.dbExec(`CREATE TABLE IF NOT EXISTS rate_limit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        venue TEXT NOT NULL, kind TEXT NOT NULL, http_or_body_code TEXT, class TEXT NOT NULL, wait_ms INTEGER, caller TEXT NOT NULL DEFAULT 'unknown')`);
+      setMock('/openApi/swap/v2/quote/klines', BAN);
+      const err = await runAsCaller('backfill_outcomes_cron', () => new BingxAdapter().getCandles('NCSKCME2USD', '1h', 0)).catch((e) => e);
+      expect(err).toBeInstanceOf(UpstreamRateLimitError);
+      expect(err).not.toBeInstanceOf(VenueMarketClosedError);
+      expect(fetchCalls).toHaveLength(1); // never retried: retrying an IP ban extends it
+      let rows: Record<string, unknown>[] = [];
+      for (let i = 0; i < 50 && rows.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+        rows = await db.dbQuery(`SELECT venue, kind, http_or_body_code, caller FROM rate_limit_events`);
+      }
+      expect(rows).toEqual([{ venue: 'BingX', kind: 'throw', http_or_body_code: '109429', caller: 'backfill_outcomes_cron' }]);
+    } finally {
+      delete process.env.RATE_LIMIT_EVENTS_TEST;
+      if (prevPath === undefined) delete process.env.PERFORMANCE_DB_PATH; else process.env.PERFORMANCE_DB_PATH = prevPath;
+    }
+  });
 });
 
 // ── Adapter identity ─────────────────────────────────────────────────────

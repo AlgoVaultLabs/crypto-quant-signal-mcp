@@ -59,6 +59,18 @@ interface StatusDeclaration {
   cacheTtlMs: number;
   /** R0-measured exclusion share of this venue's universe, for the circuit. */
   measuredShare: number;
+  /** OPS-VENUE-MARKET-CLOSED-W1. Present only where MEASURED: the `status` values under which the venue refuses
+   *  every READ of the market (not only new positions), and the in-band body codes it refuses them with. The
+   *  `getAdapter` seam refuses such a market before any request (`closedMarketVerdict`); the adapter types the
+   *  in-band answer. Matched against the record's `status` field — a venue whose status lives under another key
+   *  extends this declaration first. */
+  readsRefusedWhileOff?: ReadRefusal;
+}
+
+/** The statuses under which a venue refuses reads, and its in-band refusal codes (`readsRefusedWhileOff`). */
+export interface ReadRefusal {
+  statuses: readonly (string | number)[];
+  inBandCodes: readonly (string | number)[];
 }
 
 export type AdmissionSource =
@@ -218,6 +230,10 @@ export const ADMISSION_SOURCES: Readonly<Record<ExchangeId, AdmissionSource>> = 
     describe: 'quote/contracts status === 1 (0 offline · 5 pre-online · 25 no new positions exclude)',
     cacheTtlMs: TEN_MIN,
     measuredShare: 0 / 983,
+    // OPS-VENUE-MARKET-CLOSED-W1 R0 (2026-10-29): status 25 = 236 of 1,309 contracts, all session-gated NC*
+    // markets; every read of one (klines v2/v3, ticker, premiumIndex, markPriceKlines) answers 109415 "<SYM> is
+    // pause currently" (3/3). Status-1 NC* serve klines (7/7). Status 0 / 5 were not observed, so they stay out.
+    readsRefusedWhileOff: { statuses: [25], inBandCodes: [109415] },
   },
   GATE: {
     kind: 'flags',
@@ -420,6 +436,62 @@ export function resolveAdmissionMode(raw: string | undefined): { mode: Admission
     mode: 'legacy',
     warning: `[universe-admission] UNIVERSE_ADMISSION_MODE=${JSON.stringify(raw)} is not enforce|legacy — resolving to LEGACY (fail toward today's universe)`,
   };
+}
+
+// ── the closed-market verdict (OPS-VENUE-MARKET-CLOSED-W1) ───────────────────────────────────────
+//
+// BingX pauses its session-gated NC* markets outside the underlying's hours (status 25) and answers every read of
+// one with 109415. Each consumer used to read that refusal as its own failure at its own read time: the backfill's
+// retries aliased onto the closed hours, arm 3e paged the closure as a request defect, and the refusals added up to
+// a 109429 IP ban. This is the ONE derivation of "the venue says this market is closed now", projected from the
+// same declaration, status map, mode and circuit as admission — never a second reading of the venue's status.
+
+/** The venue's declared read refusal, or null when it declares none (every venue but the measured ones). */
+export function readRefusalOf(venue: ExchangeId): ReadRefusal | null {
+  const decl = ADMISSION_SOURCES[venue];
+  return isStatusKind(decl) && decl.readsRefusedWhileOff ? decl.readsRefusedWhileOff : null;
+}
+
+export type ClosedMarketVerdict =
+  | { closed: true; status: string | number }
+  | { closed: false; reason: 'not_declared' | 'mode_legacy' | 'status_unavailable' | 'symbol_absent' | 'circuit_open' | 'open' };
+
+/** Off-share per fetched map: the map is replaced, never mutated, so its identity keys the share. */
+const offShareMemo = new WeakMap<StatusMap, number>();
+function offShare(decl: StatusKind, map: StatusMap, nowMs: number): number {
+  const hit = offShareMemo.get(map);
+  if (hit !== undefined) return hit;
+  let off = 0;
+  for (const fields of map.values()) {
+    try {
+      if (decl.isTradeable(fields, nowMs) === false) off++;
+    } catch { /* an unparseable record is not "off" — same as admitRow */ }
+  }
+  const share = map.size > 0 ? off / map.size : 0;
+  offShareMemo.set(map, share);
+  return share;
+}
+
+/**
+ * Is `symbol` a market its venue's own status declares closed to reads? PURE. Refuses only when every one holds:
+ * the venue declares `readsRefusedWhileOff`, the mode is `enforce`, the status map is in hand, the symbol is in it
+ * with a declared status, and the map's off-share is within `circuitShare(venue)`. Everything else is open, which
+ * the seam serves as today: an API change, a dead status endpoint or a rollback never refuses a read.
+ */
+export function closedMarketVerdict(p: {
+  venue: ExchangeId; symbol: string; status: StatusMap | null; mode: AdmissionMode; nowMs: number;
+}): ClosedMarketVerdict {
+  const decl = ADMISSION_SOURCES[p.venue];
+  const refusal = readRefusalOf(p.venue);
+  if (refusal === null || !isStatusKind(decl)) return { closed: false, reason: 'not_declared' };
+  if (p.mode !== 'enforce') return { closed: false, reason: 'mode_legacy' };
+  if (p.status === null) return { closed: false, reason: 'status_unavailable' };
+  const fields = p.status.get(p.symbol);
+  if (fields === undefined) return { closed: false, reason: 'symbol_absent' };
+  const s = fields.status;
+  if ((typeof s !== 'string' && typeof s !== 'number') || !refusal.statuses.includes(s)) return { closed: false, reason: 'open' };
+  if (offShare(decl, p.status, p.nowMs) > circuitShare(p.venue)) return { closed: false, reason: 'circuit_open' };
+  return { closed: true, status: s };
 }
 
 // ── the dead-book verdict (OPS-ALARM-OWNER-DERIVATION-W1 CH2) ────────────────────────────────────

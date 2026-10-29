@@ -519,6 +519,74 @@ export function buildTimeframeUnservedPayload(err: TimeframeUnservedError): {
 }
 
 /**
+ * OPS-VENUE-MARKET-CLOSED-W1. The venue has paused this market: its own status declares the market closed to reads
+ * (`source: 'status'`, refused at the `getAdapter` seam before any request), or the venue refused the read in band
+ * (`source: 'in_band'`, typed by the adapter). BingX pauses session-gated NC* markets outside the underlying's hours
+ * (status 25, code 109415). A closure is the venue's answer about the market, not a defect of the request: it is
+ * typed so every consumer can tell the two apart, and its message carries the venue's own words.
+ */
+export class VenueMarketClosedError extends Error {
+  readonly code = 'VENUE_MARKET_CLOSED' as const;
+  readonly venue: string;
+  readonly coin: string;
+  /** The venue's own symbol for the coin (the status key). */
+  readonly symbol: string;
+  readonly source: 'status' | 'in_band';
+  /** The venue's status value (`status`) or body code (`in_band`). */
+  readonly venueCode: string | number | null;
+  /** The venue's own message, verbatim; null when it sent none (a status read carries none). */
+  readonly venueMessage: string | null;
+
+  constructor(args: {
+    venue: string; coin: string; symbol: string; source: 'status' | 'in_band';
+    venueCode: string | number | null; venueMessage: string | null;
+  }) {
+    const said = args.source === 'status'
+      ? `venue status ${args.venueCode} for ${args.symbol}`
+      : `venue code ${args.venueCode}: ${args.venueMessage ?? '(no message)'}`;
+    super(`${venueMarketClosedSentence(args.coin, args.venue)} (${said})`);
+    this.venue = args.venue;
+    this.coin = args.coin;
+    this.symbol = args.symbol;
+    this.source = args.source;
+    this.venueCode = args.venueCode;
+    this.venueMessage = args.venueMessage;
+    Object.setPrototypeOf(this, VenueMarketClosedError.prototype);
+  }
+}
+
+function venueMarketClosedSentence(coin: string, venue: string): string {
+  return `${coin} on ${venue} is paused by the venue; no market data is served until it reopens`;
+}
+
+/** Serialize a `VenueMarketClosedError` to its MCP tool-content payload (an allow-list, like its siblings). */
+export function buildVenueMarketClosedPayload(err: VenueMarketClosedError): {
+  error: 'VENUE_MARKET_CLOSED';
+  error_code: 'VENUE_MARKET_CLOSED';
+  message: string;
+  coin: string;
+  exchange: string;
+  symbol: string;
+  source: 'status' | 'in_band';
+  venue_code: string | number | null;
+  venue_message: string | null;
+  suggested_action: string;
+} {
+  return {
+    error: err.code,
+    error_code: err.code,
+    message: venueMarketClosedSentence(err.coin, err.venue),
+    coin: err.coin,
+    exchange: err.venue,
+    symbol: err.symbol,
+    source: err.source,
+    venue_code: err.venueCode,
+    venue_message: err.venueMessage,
+    suggested_action: 'Retry when the market reopens, or use a venue that trades it now',
+  };
+}
+
+/**
  * Map of which exchanges to suggest as fallbacks when one is rate-limited.
  * Used by the MCP tool handler to populate the `suggestion` field of the
  * structured error response.

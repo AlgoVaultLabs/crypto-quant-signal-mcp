@@ -196,7 +196,8 @@ export async function upstreamFetch<T>(cfg: VenueFetchConfig, req: UpstreamReque
 
 // ── Per-venue configs (exported; reused by adapters + non-adapter callers) ──
 // banStatuses: default [418,429]; BYBIT adds 403 (public-IP "access too frequent"
-// ban, verified 2026-06-05). banBodyCodes: Bitget 45001/40725/40808 (verified).
+// ban, verified 2026-06-05). banBodyCodes: Bitget 45001/40725/40808 (verified); BingX 109429, its
+// 15-min IP ban for > 10 × 109415 in 900 s, answered in band (OPS-VENUE-MARKET-CLOSED-W1, 51 in 7 d at R0).
 // timeoutMs: 3000 for promoted+Aster, 4000 for the 11 later-pilot shadow venues
 // (matches each adapter's current TIMEOUT_MS — byte-equivalence).
 const T3 = 3000;
@@ -220,7 +221,7 @@ export const VENUE_FETCH_CONFIGS: Record<string, VenueFetchConfig> = {
   OKX: { venueName: 'OKX', exchangeId: 'OKX', banStatuses: [418, 429], timeoutMs: T3, transientRetries: 1 },
   BITGET: { venueName: 'Bitget', exchangeId: 'BITGET', banStatuses: [418, 429], banBodyCodes: [45001, 40725, 40808], timeoutMs: T3, transientRetries: 1 },
   ASTER: { venueName: 'Aster', exchangeId: 'ASTER', banStatuses: [418, 429], timeoutMs: T3, transientRetries: 1 },
-  BINGX: { venueName: 'BingX', exchangeId: 'BINGX', banStatuses: [418, 429], timeoutMs: T4, transientRetries: 1 },
+  BINGX: { venueName: 'BingX', exchangeId: 'BINGX', banStatuses: [418, 429], banBodyCodes: [109429], timeoutMs: T4, transientRetries: 1 },
   GATE: { venueName: 'Gate', exchangeId: 'GATE', banStatuses: [418, 429], timeoutMs: T4, transientRetries: 1 },
   HTX: { venueName: 'HTX', exchangeId: 'HTX', banStatuses: [418, 429], timeoutMs: T4, transientRetries: 1 },
   KUCOIN: { venueName: 'KuCoin', exchangeId: 'KUCOIN', banStatuses: [418, 429], timeoutMs: T4, transientRetries: 1 },

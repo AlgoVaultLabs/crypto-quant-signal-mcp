@@ -715,21 +715,28 @@ export const BACKFILL_MAX_ATTEMPTS = 3;
 /**
  * How long a maxed-out row stays OUT of the queue before it is retried. Never forever.
  *
- * 24h, derived from the measured sediment rather than picked round: at probe time 3,058 NULL rows
- * had barriers closed >24h and 2,574 >7d, so a 24h cooldown re-admits the whole 7d-plus body once
- * a day — soon enough to catch a reopened market on its next session, and cheap enough that a
- * full re-attempt sweep costs ~3,058 x 300ms ~ 15 min of one run per day instead of ~2,037 wasted
- * fetches in every batch of every run.
+ * 18 h, chosen to be INCOMMENSURATE with the day (OPS-VENUE-MARKET-CLOSED-W1). The 24 h it replaces
+ * (OPS-OUTCOME-BACKFILL-STALL-W1, 2026-09-05) claimed to "catch a reopened market on its next
+ * session". It could not: every retry landed at the same UTC hour as the failure (± the 3-min cron), so
+ * a market closed at that hour was retried closed forever. BingX pauses its session-gated NC* markets
+ * outside a 6.5 h US session, and a 1h / 2h / 8h / 12h row of that session ALWAYS matures off-session
+ * (maturity = (EVAL_CANDLES + 1) × tf), so it never filled. An 8h call from Mon 10-26 18:14Z matured at
+ * Wed 10-28 10:14Z, the paging Blocking time. A retry every 18 h walks the clock instead: phases
+ * φ, φ−6 h, φ+12 h, φ+6 h, so 4 retries reach every time-of-day window ≥ 6 h. Weekends push the worst
+ * case to ~8 retries (pinned by tests/unit/backfill-cooldown-phase.test.ts, which FAILs at 86,400).
+ * The sweep cost scales by 24 / 18: one re-attempt per maxed row every 18 h instead of every 24 h.
  *
- * Instrument, recorded beside the number: `SELECT count(*) FROM signals WHERE outcome_price IS
- * NULL AND created_at + horizon + 86400 <= now()` as `aoe_readonly` on
- * `crypto-quant-signal-mcp-postgres-1`, signal-1, 2026-09-05T18:20:56Z.
+ * Instrument, recorded beside the number: BINGX NC* rows `outcome_price IS NULL` ∧ matured ∧ in reach
+ * on coins seeded in the prior 7 d = 162 (45 coins). Their `outcome_last_attempt_at` UTC hours: 09:00 53,
+ * 22–23 30, 00–01 18, and only 4 of 162 inside the 14:13–19:13Z session. Taken as `aoe_readonly` on
+ * `crypto-quant-signal-mcp-postgres-1`, signal-1, REPEATABLE READ READ ONLY, 2026-10-29T16:01:26Z.
  *
- * TODO: revisit by 2026-10-05 — re-derive from the sediment series once the canary's reachability
- * arm has published a fortnight of `sediment_24h` counts. Register row in
+ * TODO: revisit by 2026-11-13 — read the owed read `venue-closed-catchup` (ops/monitoring/owed-reads.json)
+ * once it is terminal: PASS keeps 18 h; FAIL means the walk did not land the cohort's fills and the
+ * value is re-derived from that read's numbers. Register row in
  * `Claude files/defensive-reductions-to-revisit.md`.
  */
-export const BACKFILL_ATTEMPT_COOLDOWN_S = 86_400;
+export const BACKFILL_ATTEMPT_COOLDOWN_S = 64_800;
 
 /**
  * OPS-HOUSEKEEPING-W1 Phase B (2026-05-01): symmetric migration-idempotency

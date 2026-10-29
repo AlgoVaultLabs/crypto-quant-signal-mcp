@@ -39,6 +39,8 @@ import type {
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 import { resolveVenueInterval } from './_interval.js';
+import { VenueMarketClosedError } from '../errors.js';
+import { readRefusalOf } from '../universe-admission.js';
 
 const BASE_URL = 'https://open-api.bingx.com';
 const MAX_RETRIES = 1;
@@ -85,6 +87,9 @@ export function fromBingxSymbol(symbol: string): string {
   return base;
 }
 
+/** BingX's in-band "market paused" codes, from its admission declaration (OPS-VENUE-MARKET-CLOSED-W1). */
+const IN_BAND_CLOSED_CODES: readonly (string | number)[] = readRefusalOf('BINGX')?.inBandCodes ?? [];
+
 async function bingxGet<T>(path: string, params?: Record<string, string | number>, retries = MAX_RETRIES): Promise<T> {
   // OPS-ADAPTER-RATELIMIT-UNIFY-W1: URL-build unchanged; fetch/retry/ban via upstreamFetch.
   const url = new URL(path, BASE_URL);
@@ -93,7 +98,20 @@ async function bingxGet<T>(path: string, params?: Record<string, string | number
       url.searchParams.set(k, String(v));
     }
   }
-  return upstreamFetch<T>({ ...VENUE_FETCH_CONFIGS.BINGX, transientRetries: retries }, { url: url.toString() });
+  const body = await upstreamFetch<T>({ ...VENUE_FETCH_CONFIGS.BINGX, transientRetries: retries }, { url: url.toString() });
+  // OPS-VENUE-MARKET-CLOSED-W1: a paused market is answered IN BAND (HTTP 200, code 109415 "<SYM> is pause
+  // currently") on every quote endpoint. Typed here, once, so no caller reads it as its own failure. The codes are
+  // the BINGX admission declaration's (`readsRefusedWhileOff.inBandCodes`), never a second literal.
+  const env = body as { code?: unknown; msg?: unknown } | null;
+  const code = env?.code;
+  if ((typeof code === 'number' || typeof code === 'string') && IN_BAND_CLOSED_CODES.some((c) => String(c) === String(code))) {
+    const symbol = typeof params?.symbol === 'string' ? params.symbol : '';
+    throw new VenueMarketClosedError({
+      venue: 'BINGX', coin: fromBingxSymbol(symbol), symbol, source: 'in_band',
+      venueCode: code, venueMessage: typeof env?.msg === 'string' ? env.msg : null,
+    });
+  }
+  return body;
 }
 
 // ── Response shapes ──────────────────────────────────────────────────────
@@ -165,6 +183,11 @@ interface BingxTickerEnvelope {
 export class BingxAdapter implements ExchangeAdapter {
   getName(): string {
     return 'BingX';
+  }
+
+  /** The venue's own symbol for `coin` — the key of its `quote/contracts` status (OPS-VENUE-MARKET-CLOSED-W1 seam). */
+  venueSymbol(coin: string): string {
+    return toBingxSymbol(coin);
   }
 
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {

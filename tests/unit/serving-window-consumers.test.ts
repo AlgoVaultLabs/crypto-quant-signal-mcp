@@ -30,7 +30,7 @@ vi.mock('../../src/lib/exchange-universe.js', async (orig) => ({
   getExchangeTopAssetsWithVolume: vi.fn(),
 }));
 
-import { StaleUpstreamWindowError } from '../../src/lib/errors.js';
+import { StaleUpstreamWindowError, VenueMarketClosedError } from '../../src/lib/errors.js';
 import { getExchangeTopAssetsWithVolume } from '../../src/lib/exchange-universe.js';
 import { scanTradeCalls, _setScanScorerForTest, _clearScanCaches, type ScanScore } from '../../src/lib/trade-call-scanner.js';
 import { runVenueSeed } from '../../src/scripts/seed-signals.js';
@@ -92,6 +92,21 @@ describe('the seeder skips a refused coin with one line, and seeds the rest', ()
     expect(res).toMatchObject({ seeded: 1, skipped: 1, errors: 0, failed: false });
     expect(lines(log).filter((l) => l.includes('BTC -> SKIP STALE_UPSTREAM_WINDOW'))).toEqual([
       expect.stringMatching(/\[BYBIT\] BTC -> SKIP STALE_UPSTREAM_WINDOW: head gap 29 bars, newest bar 2026-10-21T04:00:00\.000Z$/),
+    ]);
+    expect(lines(error).filter((l) => l.includes('BTC'))).toEqual([]);
+  });
+
+  it('OPS-VENUE-MARKET-CLOSED-W1: a closed market is a SKIP VENUE_MARKET_CLOSED quoting the venue — never an ERROR', async () => {
+    getTradeSignal.mockImplementation(async ({ coin }: { coin: string }) => {
+      if (coin === 'BTC') {
+        throw new VenueMarketClosedError({ venue: 'BINGX', coin: 'BTC', symbol: 'BTC-USDT', source: 'in_band', venueCode: 109415, venueMessage: 'BTC-USDT is pause currently' });
+      }
+      return { call: 'BUY', confidence: 70, price: 100 };
+    });
+    const res = await seed();
+    expect(res).toMatchObject({ seeded: 1, skipped: 1, errors: 0, failed: false });
+    expect(lines(log).filter((l) => l.includes('BTC -> SKIP VENUE_MARKET_CLOSED'))).toEqual([
+      expect.stringMatching(/\] BTC -> SKIP VENUE_MARKET_CLOSED: in_band BTC-USDT code 109415 "BTC-USDT is pause currently"$/),
     ]);
     expect(lines(error).filter((l) => l.includes('BTC'))).toEqual([]);
   });

@@ -70,6 +70,8 @@ import {
   buildStaleUpstreamWindowPayload,
   TimeframeUnservedError,
   buildTimeframeUnservedPayload,
+  VenueMarketClosedError,
+  buildVenueMarketClosedPayload,
   buildTierLimitPayload,
 } from './errors.js';
 import { buildSuggestedX402, isX402NudgeEnabled } from './x402-nudge.js';
@@ -745,6 +747,11 @@ function toolErrorContent(err: unknown): McpToolResult & { isError: true } {
   if (err instanceof TimeframeUnservedError) {
     // OPS-SERVED-CANDLE-TRUTH-W1 CH2: the venue does not serve the timeframe (refused before any request).
     const payload = buildTimeframeUnservedPayload(err);
+    return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
+  }
+  if (err instanceof VenueMarketClosedError) {
+    // OPS-VENUE-MARKET-CLOSED-W1: the venue has paused the market (getAdapter seam, or the adapter's in-band type).
+    const payload = buildVenueMarketClosedPayload(err);
     return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
   }
   const message = err instanceof Error ? err.message : String(err);
