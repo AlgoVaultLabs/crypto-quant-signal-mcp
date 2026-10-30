@@ -201,14 +201,16 @@ vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (orig) => {
 const PAYER = '0x00000000000000000000000000000000000000aa';
 const facilitatorFake = vi.hoisted(() => {
   const payer = '0x00000000000000000000000000000000000000aa';
+  /** Settlements the fake has performed — the x402 "billed" fact the unknown-key cases read. */
+  const counts = { settle: 0 };
   const client = {
     async getSupported() {
       return { kinds: [{ x402Version: 2, scheme: 'exact', network: 'eip155:8453', extra: {} }], extensions: ['bazaar'], signers: {} };
     },
     async verify() { return { isValid: true, payer }; },
-    async settle() { return { success: true, transaction: `0x${'ab'.repeat(32)}`, network: 'eip155:8453', payer }; },
+    async settle() { counts.settle++; return { success: true, transaction: `0x${'ab'.repeat(32)}`, network: 'eip155:8453', payer }; },
   };
-  return { client };
+  return { client, counts };
 });
 vi.mock('../../src/lib/x402-facilitator.js', async (orig) => {
   const real = await orig<typeof import('../../src/lib/x402-facilitator.js')>();
@@ -380,6 +382,8 @@ const X402_LICENSE = { tier: 'x402' as const, key: null, outcome: 'RESOLVED' as 
 const OKX_ENV = { OKX_AI_ENABLED: 'true', OKX_API_KEY: 'k', OKX_SECRET_KEY: 's', OKX_PASSPHRASE: 'p', OKX_A2MCP_PAYTO: '0x62366c50e1bb14ed4ff2b6c8c143f6049df075b9' };
 const ORIG_ENV = { ...process.env };
 const realFetch = globalThis.fetch;
+/** Settlements the faked OKX facilitator has performed — the A2MCP "billed" fact. */
+let okxSettleCalls = 0;
 
 interface Observation { channel: Channel; status: ObsStatus; httpStatus?: number; payload: unknown; extra?: string[]; acpStep?: string }
 type Driver = (c: Case) => Promise<Observation>;
@@ -621,6 +625,7 @@ beforeAll(async () => {
     const json = (data: unknown) => new Response(JSON.stringify({ code: '0', msg: '', data }), { status: 200, headers: { 'content-type': 'application/json' } });
     if (u.includes('/x402/supported')) return json({ kinds: [{ scheme: 'exact', network: 'eip155:196', x402Version: 2, extra: null }], signers: { 'eip155:196': ['0x0000000000000000000000000000000000000001'] }, extensions: [] });
     if (u.includes('/x402/verify')) return json({ isValid: true, payer: PAYER });
+    if (u.includes('/x402/settle')) okxSettleCalls++;
     if (u.includes('/x402/settle')) return json({ success: true, status: 'success', transaction: `0x${'cd'.repeat(32)}`, network: 'eip155:196', payer: PAYER });
     return new Response('{"code":"1","msg":"unmodelled"}', { status: 404 });
   }));
@@ -816,5 +821,150 @@ describe('tool-call parity — every channel against MCP', () => {
     expect(requestLogRowsByChannel.x402).toBeGreaterThan(0);
     expect(requestLogRowsByChannel.a2mcp).toBe(0);
     expect(requestLogRowsByChannel.acp).toBe(0);
+  });
+});
+
+/**
+ * OPS-TOOL-PARAM-TRUTH-W1 CH1 — an unknown argument key is REFUSED on every channel, and no channel
+ * bills it. MCP used to strip the key and run (and charge) the unfiltered call while x402 / A2MCP /
+ * ACP refused it; `strictToolInput` (src/index.ts) closes that. The tool set is read off the live
+ * tools/list, so a new tool or alias is covered without touching this block, and each case sends the
+ * tool's REQUIRED keys too, so the unknown key is the only defect in the call.
+ *
+ * "Not billed" is measured, not assumed: request_log rows, the session's call count, funnel events,
+ * venue requests, x402 / OKX settlements and the free-tier quota meter are read before and after.
+ * Each meter is shown to MOVE on a valid call in the same block, so a dead counter cannot pass.
+ */
+describe('unknown argument keys — refused on every channel, never billed (OPS-TOOL-PARAM-TRUTH-W1)', () => {
+  const UNKNOWN = { venue: 'BINANCE' };
+  /** A valid value for every key some tool REQUIRES; a new required key fails loudly below. */
+  const REQUIRED_SAMPLE: Record<string, unknown> = { coin: 'BTC', symbol: 'AAPL', query: 'market regime', question: 'What does AlgoVault do?' };
+  const FREE_LICENSE = { tier: 'free' as const, key: null, outcome: 'RESOLVED' as const };
+  const freeCtx = () => ({ ...ctxFor(), license: FREE_LICENSE, ipHash: 'v2:unknownkeyfree000' });
+  type Listed = { name: string; inputSchema: { properties?: Record<string, unknown>; required?: string[] } };
+  let listed: Listed[] = [];
+
+  const requiredArgs = (t: Listed): Record<string, unknown> => Object.fromEntries((t.inputSchema.required ?? []).map((k) => {
+    if (!(k in REQUIRED_SAMPLE)) throw new Error(`no REQUIRED_SAMPLE for ${t.name}.${k} — add a valid value`);
+    return [k, REQUIRED_SAMPLE[k]];
+  }));
+  /** Every write a call could bill through, plus the venue requests a dispatch would make. */
+  const meters = () => {
+    const d = readDb();
+    return { request_log: d.requestLog.length, agent_calls: d.agentCallCount, funnel: d.funnelCount, venue: syntheticVenue.calls.length, x402_settle: facilitatorFake.counts.settle, okx_settle: okxSettleCalls };
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 300)); // async settlement is fire-and-forget
+  const issuesOf = (text: string): Array<{ code: string; keys?: string[]; message: string }> => JSON.parse(text.slice(text.indexOf('[')));
+
+  beforeAll(async () => {
+    listed = (await mcpClient.listTools()).tools as unknown as Listed[];
+  });
+
+  it('MCP: every listed tool and alias refuses an unknown key, names it and lists the valid keys; nothing bills', async () => {
+    expect(listed.length).toBeGreaterThanOrEqual(9);
+    const logSpy = vi.spyOn(console, 'log');
+    try {
+      for (const t of listed) {
+        const before = meters();
+        logSpy.mockClear();
+        const r = await license.requestContext.run(ctxFor() as never, () => mcpClient.callTool({ name: t.name, arguments: { ...requiredArgs(t), ...UNKNOWN } })) as { content: Array<{ text: string }>; isError?: boolean };
+        const text = r.content[0].text;
+        expect(r.isError, `${t.name} served an unknown key`).toBe(true);
+        expect(text).toContain(`Unknown parameter(s): venue. Valid parameters: ${Object.keys(t.inputSchema.properties ?? {}).join(', ')}.`);
+        expect(issuesOf(text).map((i) => i.code), `${t.name}: the unknown key must be the call's only defect`).toEqual(['unrecognized_keys']);
+        expect(logSpy.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[tool-args]'))).toEqual([`[tool-args] refused tool=${t.name} unknown=venue keyed=n`]);
+        expect(meters(), `${t.name}: a refused call wrote or dispatched something`).toEqual(before);
+      }
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('MCP (AC): scan_market_regimes {"venue":"BINANCE","limit":1} names venue and lists exchange, timeframe, regime, minConfidence', async () => {
+    const r = await license.requestContext.run(ctxFor() as never, () => mcpClient.callTool({ name: 'scan_market_regimes', arguments: { venue: 'BINANCE', limit: 1 } })) as { content: Array<{ text: string }>; isError?: boolean };
+    expect(r.isError).toBe(true);
+    const [issue] = issuesOf(r.content[0].text);
+    expect(issue.keys).toEqual(['venue']);
+    expect(issue.message).toMatch(/^Unknown parameter\(s\): venue\. Valid parameters: exchange, timeframe, regime, minConfidence, /);
+  });
+
+  it('MCP: the free-tier quota meter and request_log do not move on an unknown-key call, and do on a valid one', async () => {
+    const used = () => license.requestContext.run(freeCtx() as never, () => license.checkQuota(FREE_LICENSE as never).used);
+    const call = (args: Record<string, unknown>) => license.requestContext.run(freeCtx() as never, () => mcpClient.callTool({ name: 'get_market_regime', arguments: args })) as Promise<{ isError?: boolean }>;
+    const q0 = used(); const m0 = meters();
+    expect((await call({ coin: 'ATOM', ...UNKNOWN })).isError).toBe(true);
+    expect(used()).toBe(q0);
+    expect(meters()).toEqual(m0);
+    // Positive control — the same meters move on the same call without the unknown key.
+    expect((await call({ coin: 'ATOM' })).isError).toBeFalsy();
+    expect(used()).toBe(q0 + 1);
+    expect(meters().request_log).toBeGreaterThan(m0.request_log);
+  });
+
+  it('x402: every route refuses an unknown key with 400 and settles nothing', async () => {
+    for (const [tool, route] of Object.entries(X402_ROUTE_OF)) {
+      const t = listed.find((x) => x.name === tool);
+      if (!t) throw new Error(`${tool} has an x402 route but is not on tools/list`);
+      const before = meters();
+      const res = await realFetch(`${x402Base}${route}`, { method: 'POST', headers: await paidX402Headers(route), body: JSON.stringify({ ...requiredArgs(t), ...UNKNOWN }) });
+      expect(res.status, `${route} served an unknown key`).toBe(400);
+      await settle();
+      expect(meters(), `${route}: a refused call wrote or settled something`).toEqual(before);
+    }
+    // Positive control — a valid paid call settles.
+    const s0 = facilitatorFake.counts.settle;
+    const ok = await realFetch(`${x402Base}/x402/get_market_regime`, { method: 'POST', headers: await paidX402Headers('/x402/get_market_regime'), body: JSON.stringify({ coin: 'DOT' }) });
+    expect(ok.status).toBe(200);
+    await settle();
+    expect(facilitatorFake.counts.settle).toBeGreaterThan(s0);
+  });
+
+  it('A2MCP: every served route refuses an unknown key with 400 and settles nothing', async () => {
+    for (const tool of A2MCP_SERVED) {
+      const t = listed.find((x) => x.name === tool)!;
+      const route = `/a2mcp/${tool}`;
+      const before = meters();
+      const res = await realFetch(`${a2mcpBase}${route}`, { method: 'POST', headers: await paidA2mcpHeaders(route), body: JSON.stringify({ ...requiredArgs(t), ...UNKNOWN }) });
+      expect(res.status, `${route} served an unknown key`).toBe(400);
+      await settle();
+      expect(meters(), `${route}: a refused call wrote or settled something`).toEqual(before);
+    }
+    const s0 = okxSettleCalls;
+    const ok = await realFetch(`${a2mcpBase}/a2mcp/get_market_regime`, { method: 'POST', headers: await paidA2mcpHeaders('/a2mcp/get_market_regime'), body: JSON.stringify({ coin: 'LTC' }) });
+    expect(ok.status).toBe(200);
+    await settle();
+    expect(okxSettleCalls).toBeGreaterThan(s0);
+  });
+
+  it('ACP: every offering skips an unknown-key requirement before any budget is set', async () => {
+    for (const tool of Object.keys(ACP_OFFERING_OF)) {
+      const t = listed.find((x) => x.name === tool)!;
+      const before = meters();
+      const obs = await driveAcp({ tool, name: 'unknown-key', args: { ...requiredArgs(t), ...UNKNOWN } });
+      expect(obs.acpStep, `${tool}: ACP accepted an unknown key`).toBe('skipped:invalid_requirement');
+      expect(meters()).toEqual(before);
+    }
+    // Positive control — the same requirement without the unknown key is budgeted.
+    const ok = await driveAcp({ tool: 'scan_funding_arb', name: 'unknown-key-control', args: { limit: 3 } });
+    expect(ok.acpStep).not.toBe('skipped:invalid_requirement');
+  });
+
+  it('kill-switch: MCP_STRICT_TOOL_ARGS=0 strips again, and tools/list is byte-identical in both modes', async () => {
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    process.env.MCP_STRICT_TOOL_ARGS = '0';
+    const stripServer = srcIndex.createSandboxServer();
+    delete process.env.MCP_STRICT_TOOL_ARGS;
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await stripServer.connect(s);
+    const stripClient = new Client({ name: 'tool-call-parity-strip', version: '0.0.0' });
+    await stripClient.connect(c);
+    try {
+      expect(JSON.stringify((await stripClient.listTools()).tools)).toBe(JSON.stringify(listed));
+      const r = await license.requestContext.run(ctxFor() as never, () => stripClient.callTool({ name: 'get_market_regime', arguments: { coin: 'BNB', ...UNKNOWN } })) as { isError?: boolean };
+      expect(r.isError, 'with the kill-switch off the unknown key is stripped and the call is served').toBeFalsy();
+    } finally {
+      await stripClient.close(); await stripServer.close();
+    }
   });
 });

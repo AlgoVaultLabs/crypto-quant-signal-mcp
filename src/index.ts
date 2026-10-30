@@ -343,6 +343,32 @@ export function applyCredentialRefusal(
   return true;
 }
 
+/**
+ * OPS-TOOL-PARAM-TRUTH-W1 CH1 — the ONE input seam every MCP tool and alias is registered through.
+ *
+ * `.tool(name, desc, rawShape, …)` let the SDK wrap the shape in a STRIP-mode `z.object`, so an
+ * unknown argument key was silently dropped and the call ran — and billed — unfiltered, while
+ * tools/list already advertised `additionalProperties: false` and x402 / A2MCP / ACP refused the same
+ * key. `.strict()` refuses it inside the SDK's `validateToolInput`, before the handler runs: no quota,
+ * no request_log row, no settlement. Strict and strip render the same JSON Schema, so tools/list
+ * bytes do not move.
+ *
+ * The errorMap is also the refusal's only observation point in our code (the handler never runs),
+ * so it writes the detection line. zod calls a schema's errorMap exactly once per issue, and an
+ * object yields at most one `unrecognized_keys` issue per parse: one line per refused call.
+ */
+export function strictToolInput<S extends z.ZodRawShape>(tool: string, shape: S) {
+  const valid = Object.keys(shape).join(', ');
+  return z.object(shape, {
+    errorMap: (issue, ctx) => {
+      if (issue.code !== z.ZodIssueCode.unrecognized_keys) return { message: ctx.defaultError };
+      const keyed = getRequestLicense().key ? 'y' : 'n';
+      console.log(`[tool-args] refused tool=${tool} unknown=${issue.keys.join(',')} keyed=${keyed}`);
+      return { message: `Unknown parameter(s): ${issue.keys.join(', ')}. Valid parameters: ${valid}.` };
+    },
+  }).strict();
+}
+
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'crypto-quant-signal-mcp',
@@ -556,11 +582,16 @@ function createServer(): McpServer {
   // EQUITY-TOOLS-DARK-RETIRE-W1: iterate the ENV-GATED live set (liveMcpToolNames) — OFF
   // drops the 2 equity tools (9→7). The equity register() calls above stay (harmless,
   // just not iterated); guard B below still checks toolDefs ⊆ allToolNames (DECLARED set).
+  // OPS-TOOL-PARAM-TRUTH-W1 CH1: `registerTool` keeps the input schema exactly as given, so every
+  // name inherits `strictToolInput` here. MCP_STRICT_TOOL_ARGS is read once per server: default on;
+  // `0` is the rollback lever — the raw shape, which the SDK wraps in a strip-mode object exactly as
+  // `.tool()` did.
+  const strictArgs = process.env.MCP_STRICT_TOOL_ARGS !== '0';
   for (const name of liveMcpToolNames()) {
     const d = toolDefs[name];
     if (!d) throw new Error(`[feature-registry] "${name}" is in FEATURE_REGISTRY but has no handler def in createServer()`);
-    (server as { tool: (n: string, desc: string, s: z.ZodRawShape, a: Record<string, unknown>, h: unknown) => void }).tool(
-      name, d.description, d.schema, d.annotations, d.handler,
+    (server as { registerTool: (n: string, c: { description: string; inputSchema: unknown; annotations: Record<string, unknown> }, h: unknown) => void }).registerTool(
+      name, { description: d.description, inputSchema: strictArgs ? strictToolInput(name, d.schema) : d.schema, annotations: d.annotations }, d.handler,
     );
   }
   for (const defName of Object.keys(toolDefs)) {
