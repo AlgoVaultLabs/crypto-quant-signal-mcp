@@ -237,7 +237,7 @@ export const PARAM_DESC_PRE_TRADE_EXCHANGES = 'Only compare these venues (defaul
 // phrases appended to a parameter that are not about that parameter; and a claim the tool does not
 // do (scan_funding_arb returns spreads, not a BUY/SELL/HOLD verdict). What it keeps: what the tool
 // returns, read-only / no orders, sibling routing, and the true scope.
-// `tests/unit/chatgpt-client-profile.test.ts` judges all 9 served tools against those rules.
+// `tests/unit/chatgpt-client-profile.test.ts` judges every served tool against those rules.
 const PLAIN_OVERRIDES: ReadonlyMap<string, string> = new Map([
   [SCAN_FUNDING_ARB_DESCRIPTION,
     'Returns ranked funding arbitrage opportunities across crypto perpetual futures venues. ' +

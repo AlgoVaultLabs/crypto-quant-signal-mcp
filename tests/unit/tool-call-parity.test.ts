@@ -838,7 +838,7 @@ describe('tool-call parity — every channel against MCP', () => {
 describe('unknown argument keys — refused on every channel, never billed (OPS-TOOL-PARAM-TRUTH-W1)', () => {
   const UNKNOWN = { venue: 'BINANCE' };
   /** A valid value for every key some tool REQUIRES; a new required key fails loudly below. */
-  const REQUIRED_SAMPLE: Record<string, unknown> = { coin: 'BTC', symbol: 'AAPL', query: 'market regime', question: 'What does AlgoVault do?' };
+  const REQUIRED_SAMPLE: Record<string, unknown> = { coin: 'BTC', symbol: 'AAPL', query: 'market regime', question: 'What does AlgoVault do?', side: 'long', sizeUsd: 10_000 };
   const FREE_LICENSE = { tier: 'free' as const, key: null, outcome: 'RESOLVED' as const };
   const freeCtx = () => ({ ...ctxFor(), license: FREE_LICENSE, ipHash: 'v2:unknownkeyfree000' });
   type Listed = { name: string; inputSchema: { properties?: Record<string, unknown>; required?: string[] } };

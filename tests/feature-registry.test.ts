@@ -21,6 +21,8 @@ const LIVE_TOOLS = [
   'get_trade_call', 'get_trade_signal', 'get_market_regime', 'scan_funding_arb',
   'scan_trade_calls', 'get_equity_call', 'get_equity_regime', 'chat_knowledge', 'search_knowledge',
   'get_track_record', 'scan_market_regimes',
+  // DECISION-CALL-V1-W2 R8: pre_trade_check (11 → 12 declared, 9 → 10 live).
+  'pre_trade_check',
 ].sort();
 
 // Price-key tolerant of CH3's re-keying (alias-keyed today → canonical after CH3).
@@ -29,7 +31,7 @@ const price = (canonical: string, alias?: string): number | undefined =>
   (alias ? (TOOL_PRICING as Record<string, number>)[alias] : undefined);
 
 describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
-  it('(a) name ∪ aliases == the declared tool set (11 names, alias included)', () => {
+  it('(a) name ∪ aliases == the declared tool set (12 names, alias included)', () => {
     expect([...allToolNames()].sort()).toEqual(LIVE_TOOLS);
   });
 
@@ -58,7 +60,7 @@ describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
     expect(json).not.toMatch(/outcome_|eligible_non_hold|descriptionRef|trackCall|owner_key|ipHash/);
   });
 
-  it('(c2) projection lists all 11 callable names with public fields only', () => {
+  it('(c2) projection lists all 12 callable names with public fields only', () => {
     const proj = projectCapabilities().tools;
     expect(proj.map((t) => t.name).sort()).toEqual(LIVE_TOOLS);
     const BASE = ['canonical', 'channels', 'description', 'enabled', 'name', 'quota', 'x402'];
@@ -91,9 +93,11 @@ describe('FEATURE-REGISTRY-SOT-W1 CH1 — registry == current reality', () => {
     expect(getFeature('nonexistent_tool')).toBeUndefined();
   });
 
-  it('registry has 10 canonical specs; chat/search/track-record are rate-limited (not call-metered)', () => {
+  it('registry has 11 canonical specs; chat/search/track-record are rate-limited (not call-metered)', () => {
     // SCAN-MARKET-REGIMES-W1-V2 CH2: 9 → 10 (scan_market_regimes, billed per returned row).
-    expect(FEATURE_REGISTRY).toHaveLength(10);
+    // DECISION-CALL-V1-W2 R8: 10 → 11 (pre_trade_check, one unit per decision).
+    expect(FEATURE_REGISTRY).toHaveLength(11);
+    expect(getFeature('pre_trade_check')!.quota.unit).toBe('per-call');
     expect(getFeature('scan_market_regimes')!.quota.unit).toBe('per-verdict');
     expect(getFeature('chat_knowledge')!.quota.unit).toBe('rate-limited');
     expect(getFeature('search_knowledge')!.quota.unit).toBe('rate-limited');

@@ -166,9 +166,9 @@ describe('PLAIN_METADATA_CANARY — the tools/list ChatGPT is served', () => {
     dflt ??= await listToolsAs(null);
   });
 
-  it('serves all 9 live tools, the same set as every other client', () => {
+  it('serves all 10 live tools, the same set as every other client', () => {
     expect(plain.map((t) => t.name).sort()).toEqual(dflt.map((t) => t.name).sort());
-    expect(plain.length).toBe(9);
+    expect(plain.length).toBe(10); // DECISION-CALL-V1-W2: + pre_trade_check
   });
 
   it('names no other AI product — in descriptions, parameter descriptions, parameter names or allowed values', () => {

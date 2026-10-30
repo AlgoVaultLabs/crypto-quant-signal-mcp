@@ -27,6 +27,8 @@ const CRYPTO_LIVE = [
   'get_trade_call', 'get_trade_signal', 'get_market_regime',
   'scan_funding_arb', 'scan_trade_calls', 'chat_knowledge', 'search_knowledge',
   'get_track_record', 'scan_market_regimes',
+  // DECISION-CALL-V1-W2 R8: pre_trade_check (unlisted, but live on tools/list) — 9 → 10 live, 11 → 12 declared.
+  'pre_trade_check',
 ].sort();
 const ALL_DECLARED = [...CRYPTO_LIVE, 'get_equity_call', 'get_equity_regime'].sort();
 
@@ -62,14 +64,14 @@ describe('EQUITY-TOOLS-DARK-RETIRE-W1 — reversibility proven both ways (7 vs 9
   it('DECLARED registry == allToolNames() — no unintended add/remove/rename', () => {
     expect([...allToolNames()].sort()).toEqual(ALL_DECLARED);
   });
-  it('flag OFF → live tools/list = the crypto set (9), both equity tools ABSENT', () => {
+  it('flag OFF → live tools/list = the crypto set (10), both equity tools ABSENT', () => {
     const live = liveMcpToolNames({}).sort();
     expect(live).toEqual(CRYPTO_LIVE);
     expect(live).toHaveLength(CRYPTO_LIVE.length);
     expect(live).not.toContain('get_equity_call');
     expect(live).not.toContain('get_equity_regime');
   });
-  it('flag ON → live tools/list = the declared set (11), both equity tools RETURN', () => {
+  it('flag ON → live tools/list = the declared set (12), both equity tools RETURN', () => {
     const live = liveMcpToolNames({ EQUITY_TOOLS_ENABLED: '1' }).sort();
     expect(live).toEqual(ALL_DECLARED);
     expect(live).toHaveLength(ALL_DECLARED.length);

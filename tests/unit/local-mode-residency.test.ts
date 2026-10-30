@@ -51,6 +51,9 @@ const FREE: LicenseInfo = { tier: 'free', key: null };
 const SAMPLE_INPUT: Record<string, Record<string, unknown>> = {
   scan_market_regimes: { exchange: 'BINANCE', timeframe: '4h', assetClass: 'all', sortBy: 'confidence', limit: 20, offset: 0 },
   chat_knowledge: { question: 'What does scan_market_regimes return?' },
+  // DECISION-CALL-V1-W2: `exchanges: ['HL']` is refused (venue_not_supported) after admission and before any
+  // venue read, so the hosted-mode case below proves dispatch without touching the network.
+  pre_trade_check: { coin: 'BTC', side: 'long', sizeUsd: 10_000, holdHours: 8, timeframe: '4h', exchanges: ['HL'] },
 };
 
 const hostedRows = FEATURE_REGISTRY.filter((f) => f.enabled && f.residency === 'hosted');
@@ -76,9 +79,9 @@ afterAll(() => {
 beforeEach(() => { db.mode = 'delegate'; db.calls.length = 0; });
 
 describe('1. registry — residency is declared on every row; the hosted set is the ruling', () => {
-  it('every row declares any|hosted, and the hosted set is exactly scan_market_regimes + chat_knowledge', () => {
+  it('every row declares any|hosted, and the hosted set is exactly scan_market_regimes + pre_trade_check + chat_knowledge', () => {
     for (const f of FEATURE_REGISTRY) expect(['any', 'hosted'], f.name).toContain(f.residency);
-    expect(hostedRows.map((f) => f.name)).toEqual(['scan_market_regimes', 'chat_knowledge']);
+    expect(hostedRows.map((f) => f.name)).toEqual(['scan_market_regimes', 'pre_trade_check', 'chat_knowledge']);
   });
   it('every hosted row has a sample input (the loops below cannot silently skip one)', () => {
     expect(hostedRows.length, 'no hosted rows — every loop below would be vacuous').toBeGreaterThan(0);

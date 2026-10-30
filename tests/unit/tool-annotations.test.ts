@@ -48,6 +48,8 @@ const PROD_TOOLS = [
   // SCAN-MARKET-REGIMES-W1-V2 CH2 — declared like every other tool; `publicListing: false` governs
   // nav/docs listing only.
   'scan_market_regimes',
+  // DECISION-CALL-V1-W2 R8 — live on tools/list; `publicListing: false` keeps it off nav/docs only.
+  'pre_trade_check',
 ] as const;
 
 describe('GEO-REGISTRY-RANK-TDQS-W1 — MCP annotation-hint SoT', () => {

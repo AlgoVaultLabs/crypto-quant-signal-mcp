@@ -37,6 +37,13 @@ import {
   PARAM_DESC_REGIME_COIN,
   PARAM_DESC_REGIME_TIMEFRAME,
   PARAM_DESC_REGIME_EXCHANGE,
+  PRE_TRADE_CHECK_DESCRIPTION,
+  PARAM_DESC_PRE_TRADE_COIN,
+  PARAM_DESC_PRE_TRADE_SIDE,
+  PARAM_DESC_PRE_TRADE_SIZE_USD,
+  PARAM_DESC_PRE_TRADE_HOLD_HOURS,
+  PARAM_DESC_PRE_TRADE_TIMEFRAME,
+  PARAM_DESC_PRE_TRADE_EXCHANGES,
   TOP_20_KEYWORDS,
 } from '../../src/tool-descriptions.js';
 
@@ -62,8 +69,24 @@ const TOOL_COMBINED: Record<string, { desc: string; params: string[] }> = {
   },
 };
 
+// DECISION-CALL-V1-W2 R8: tools judged by the canaries (Cases 3-5) but outside the BM25 keyword
+// audit (Case 2) — their copy is approved per tool, not tuned to TOP_20_KEYWORDS.
+const CANARY_ONLY: Record<string, { desc: string; params: string[] }> = {
+  pre_trade_check: {
+    desc: PRE_TRADE_CHECK_DESCRIPTION,
+    params: [
+      PARAM_DESC_PRE_TRADE_COIN,
+      PARAM_DESC_PRE_TRADE_SIDE,
+      PARAM_DESC_PRE_TRADE_SIZE_USD,
+      PARAM_DESC_PRE_TRADE_HOLD_HOURS,
+      PARAM_DESC_PRE_TRADE_TIMEFRAME,
+      PARAM_DESC_PRE_TRADE_EXCHANGES,
+    ],
+  },
+};
+
 function combine(name: string): string {
-  const bundle = TOOL_COMBINED[name];
+  const bundle = TOOL_COMBINED[name] ?? CANARY_ONLY[name];
   return [bundle.desc, ...bundle.params].join(' ');
 }
 
@@ -83,6 +106,7 @@ const INTERNAL_FORBIDDEN_RE =
   /[A-Z]+-W\d+|Binance-clone|custom L2 envelope|archetype [ABC]|shadow signal production|4h funding cadence|8h funding period|outcome_return_pct|phase_e_/i;
 
 const TOOL_NAMES = Object.keys(TOOL_COMBINED);
+const CANARY_NAMES = [...TOOL_NAMES, ...Object.keys(CANARY_ONLY)];
 
 describe('TOOL-DESC-AUDIT-W1 keyword + canary suite (post-1.13.1 invariants)', () => {
   it('Case 1 — TOP_20_KEYWORDS lock: exactly 20 phrases, each unique, no empty strings', () => {
@@ -107,7 +131,7 @@ describe('TOOL-DESC-AUDIT-W1 keyword + canary suite (post-1.13.1 invariants)', (
     expect(hits.length).toBeGreaterThanOrEqual(15);
   });
 
-  it.each(TOOL_NAMES)('Case 3 — %s combined-text passes brand-voice forbidden-phrase canary', (name) => {
+  it.each(CANARY_NAMES)('Case 3 — %s combined-text passes brand-voice forbidden-phrase canary', (name) => {
     const combined = combine(name);
     const match = combined.match(BRAND_FORBIDDEN_RE);
     if (match) {
@@ -116,7 +140,7 @@ describe('TOOL-DESC-AUDIT-W1 keyword + canary suite (post-1.13.1 invariants)', (
     expect(match).toBeNull();
   });
 
-  it.each(TOOL_NAMES)('Case 4 — %s combined-text passes internal-detail forbidden-phrase canary', (name) => {
+  it.each(CANARY_NAMES)('Case 4 — %s combined-text passes internal-detail forbidden-phrase canary', (name) => {
     const combined = combine(name);
     const match = combined.match(INTERNAL_FORBIDDEN_RE);
     if (match) {
@@ -125,8 +149,8 @@ describe('TOOL-DESC-AUDIT-W1 keyword + canary suite (post-1.13.1 invariants)', (
     expect(match).toBeNull();
   });
 
-  it.each(TOOL_NAMES)('Case 5 — %s length budget: tool desc ≤350 chars; each param describe() ≤80 chars', (name) => {
-    const bundle = TOOL_COMBINED[name];
+  it.each(CANARY_NAMES)('Case 5 — %s length budget: tool desc ≤350 chars; each param describe() ≤80 chars', (name) => {
+    const bundle = TOOL_COMBINED[name] ?? CANARY_ONLY[name];
     expect(bundle.desc.length, `${name} tool description length`).toBeLessThanOrEqual(350);
     bundle.params.forEach((p, i) => {
       expect(p.length, `${name} param[${i}] describe() length`).toBeLessThanOrEqual(80);
