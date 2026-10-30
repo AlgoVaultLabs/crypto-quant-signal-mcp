@@ -58,6 +58,7 @@
 import type { ExchangeId, RegimeType } from '../types.js';
 import { TIMEFRAMES, PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
 import { RANK_BY_VALUES, RANK_BY_ALIASES } from './rank-constants.js';
+import type { PreTradeSide } from './pre-trade-costs.js';
 
 /**
  * Every venue that has an ADAPTER — the declared set. NOT the set the public API accepts.
@@ -343,6 +344,42 @@ export const SCAN_MARKET_REGIMES_PARAM_DECL = Object.freeze({
       selects: REGIME_SCAN_RANK_BY_SELECTS,
     }) satisfies ClosedSetParamSpec,
   }),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// pre_trade_check — DECISION-CALL-V1-W2 R4
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** `side`: the direction of the order the CALLER intends to place. The tool never proposes one. */
+export const PRE_TRADE_SIDES = ['long', 'short'] as const;
+type _SidesArePreTradeSides = (typeof PRE_TRADE_SIDES)[number] extends PreTradeSide ? true : never;
+type _PreTradeSidesAreSides = PreTradeSide extends (typeof PRE_TRADE_SIDES)[number] ? true : never;
+const _sidesCoverPreTradeSide: _SidesArePreTradeSides = true;
+const _preTradeSideCoversSides: _PreTradeSidesAreSides = true;
+void _sidesCoverPreTradeSide;
+void _preTradeSideCoversSides;
+
+/**
+ * Every parameter of `pre_trade_check` — its type, bounds and default — per
+ * `Prompt/pre-trade-check-contract.md` § Params. ONE declaration: the Zod schema in
+ * `src/tools/pre-trade-check.ts` projects from it, the handler's own `invalid_parameter` checks read
+ * the same bounds (so a non-MCP caller is held to the identical contract), and the release wave's
+ * Bazaar schema projects from it too.
+ *
+ * `exchanges` has NO default — anywhere. Absent means "every venue the tool prices" (the derived
+ * decision set: fee rows ∩ the funding venues − retired), which moves when a venue is retired; a
+ * default list baked into the schema would keep offering it.
+ *
+ * Deliberately NOT in `PUBLIC_TOOL_ENUM_PARAMS`: the tool ships unlisted (`publicListing: false`), and
+ * that map feeds `/docs`. Listing it there is the release wave's job, with the docs partial.
+ */
+export const PRE_TRADE_CHECK_PARAM_DECL = Object.freeze({
+  coin: Object.freeze({ type: 'string', required: true, minLength: 1, maxLength: 20, upperCased: true }),
+  side: Object.freeze({ type: 'string', required: true, values: PRE_TRADE_SIDES }),
+  sizeUsd: Object.freeze({ type: 'number', required: true, exclusiveMinimum: 0, maximum: 100_000_000 }),
+  holdHours: Object.freeze({ type: 'number', required: false, minimum: 0.25, maximum: 720, default: 8 }),
+  timeframe: Object.freeze({ type: 'string', required: false, values: REGIME_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
+  exchanges: Object.freeze({ type: 'string[]', required: false, values: PUBLIC_VENUE_IDS, minItems: 1, maxItems: 15, uniqueItems: true }),
 });
 
 /**
