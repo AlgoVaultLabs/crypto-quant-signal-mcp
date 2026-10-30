@@ -242,3 +242,27 @@ describe('BITGET — current-fund-rate', () => {
     expect(venue(rows, 'ZERO')).toEqual({ venue: 'BitgetPerp', fundingRate: 0, nextFundingTime: T0 + H, intervalHours: 1 });
   });
 });
+
+// ── HL (R4) ─────────────────────────────────────────────────────────────────────────────────────
+
+describe('HL — predictedFundings fundingIntervalHours pass-through (R4)', () => {
+  const HL = [
+    ['BTC', [['HlPerp', { fundingRate: '0.0000125', nextFundingTime: T0 + H, fundingIntervalHours: 1 }],
+             ['BinPerp', { fundingRate: '0.0001', nextFundingTime: NEXT, fundingIntervalHours: 8 }]]],
+    ['EIGEN', [['BinPerp', { fundingRate: '0.0003', nextFundingTime: T0 + H, fundingIntervalHours: 4 }],
+               ['BybitPerp', { fundingRate: '0.0001', nextFundingTime: NEXT }]]],
+    ['ODD', [['BinPerp', { fundingRate: '0.0001', nextFundingTime: NEXT, fundingIntervalHours: 'x' }]]],
+  ];
+
+  it('present → intervalHours; absent → no key; unreadable → NaN (the row self-skips)', async () => {
+    route(() => HL);
+    const rows = await new HyperliquidAdapter().getPredictedFundings();
+    const eigen = rows.find((r) => r.coin === 'EIGEN')!.venues;
+    expect(eigen[0]).toEqual({ venue: 'BinPerp', fundingRate: 0.0003, nextFundingTime: T0 + H, intervalHours: 4 });
+    expect(eigen[1]).toEqual({ venue: 'BybitPerp', fundingRate: 0.0001, nextFundingTime: NEXT });
+    expect('intervalHours' in eigen[1]).toBe(false);
+    const odd = rows.find((r) => r.coin === 'ODD')!.venues[0];
+    expect(odd.intervalHours).toBeNaN();
+    expect(normalizeVenueFunding(odd)).toBeNull();
+  });
+});

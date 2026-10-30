@@ -166,6 +166,35 @@ describe('getMarketRegime', () => {
     ).toBe(true);
   });
 
+  it('DECISION-CALL-V1-W1 R4: a 4 h BinPerp row → BINANCE interval_min 240, rate_8h_equiv 2×, sentiment on rate / 4', async () => {
+    const fundings: FundingData[] = [{ coin: 'BTC', venues: [
+      { venue: 'HlPerp', fundingRate: 0.0001, nextFundingTime: 1712345600000 },
+      { venue: 'BinPerp', fundingRate: 0.0008, nextFundingTime: 1712348400000, intervalHours: 4 },
+      { venue: 'BybitPerp', fundingRate: 0.0006, nextFundingTime: 1712348400000 },
+    ] }];
+    vi.mocked(getAdapter).mockReturnValue(createMockAdapter(mockTrendingUpCandles(168), fundings));
+    const result = await getMarketRegime({ coin: 'BTC' });
+    const fbv = result.metrics.funding_by_venue!;
+    expect(fbv.BINANCE).toEqual({ rate: 0.0008, interval_min: 240, rate_8h_equiv: 0.0016 });
+    expect(fbv.BYBIT).toEqual({ rate: 0.0006, interval_min: 480, rate_8h_equiv: 0.0006 }); // absent → declared 8 h
+    expect(fbv.HL).toEqual({ rate: 0.0001, interval_min: 60, rate_8h_equiv: 0.0008 });
+    const bps = (cexBin: number) => (Math.abs(0.0001 - (cexBin + 0.0006 / 8) / 2) * 10000).toFixed(1);
+    expect(bps(0.0008 / 4)).not.toBe(bps(0.0008 / 8));                   // the correction is visible
+    expect(result.metrics.funding_divergence_note).toContain(`${bps(0.0008 / 4)} bps/hr`);
+  });
+
+  it('DECISION-CALL-V1-W1 R4: a row with an unreadable interval is skipped, never priced at 8 h', async () => {
+    const fundings: FundingData[] = [{ coin: 'BTC', venues: [
+      { venue: 'HlPerp', fundingRate: 0.0001, nextFundingTime: 1712345600000 },
+      { venue: 'BinPerp', fundingRate: 0.0008, nextFundingTime: 1712348400000, intervalHours: NaN },
+      { venue: 'BybitPerp', fundingRate: 0.0006, nextFundingTime: 1712348400000 },
+    ] }];
+    vi.mocked(getAdapter).mockReturnValue(createMockAdapter(mockTrendingUpCandles(168), fundings));
+    const result = await getMarketRegime({ coin: 'BTC' });
+    expect(result.metrics.funding_by_venue).not.toHaveProperty('BINANCE');
+    expect(result.metrics.funding_divergence_note).not.toContain('Binance');
+  });
+
   it('detects NEUTRAL sentiment when no cross-venue data', async () => {
     const emptyFundings: FundingData[] = [];
     vi.mocked(getAdapter).mockReturnValue(createMockAdapter(mockTrendingUpCandles(168), emptyFundings));

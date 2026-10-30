@@ -50,7 +50,9 @@ export interface HLMetaAndAssetCtxs {
 
 export type HLPredictedFunding = [
   string, // coin name
-  [string, { fundingRate: string; nextFundingTime: number }][] // venue entries
+  // venue entries. `fundingIntervalHours` — the contract's funding period, published per venue entry
+  // (passed through as `intervalHours` since DECISION-CALL-V1-W1 R4).
+  [string, { fundingRate: string; nextFundingTime: number; fundingIntervalHours?: number }][]
 ];
 
 // ── Indicator Types ──

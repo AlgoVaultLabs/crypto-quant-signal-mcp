@@ -14,7 +14,8 @@ import { getVenueStatus } from '../lib/venue-shadow.js';
 import { checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs, setRequestRegimeFundingDegraded } from '../lib/license.js';
 import { withTierWarning, withQuotaState, withAuthState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
-import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId } from '../types.js';
+import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId, FundingData } from '../types.js';
+import { normalizeVenueFunding } from '../lib/venue-market-state.js';
 import { compatibleWith } from '../lib/primitive-projection.js';
 
 interface MarketRegimeInput {
@@ -276,7 +277,7 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
  */
 function computeCrossVenueFundingSentiment(
   coin: string,
-  allFundings: { coin: string; venues: { venue: string; fundingRate: number; nextFundingTime: number }[] }[],
+  allFundings: readonly FundingData[],
   volatilityRatio: number
 ): { sentiment: CrossVenueFundingSentiment; divergenceNote: string } {
   const coinFunding = allFundings.find(f => f.coin === coin);
@@ -284,24 +285,32 @@ function computeCrossVenueFundingSentiment(
     return { sentiment: 'NEUTRAL', divergenceNote: 'Insufficient cross-venue data' };
   }
 
-  const hlVenue = coinFunding.venues.find(v => v.venue === 'HlPerp');
-  const binVenue = coinFunding.venues.find(v => v.venue === 'BinPerp');
-  const bybitVenue = coinFunding.venues.find(v => v.venue === 'BybitPerp');
+  // DECISION-CALL-V1-W1 R4: every row passes the shared funding-row rule (`normalizeVenueFunding`):
+  // a NaN rate or a published-but-invalid interval → null (skipped); the contract's own interval
+  // when the feed publishes it, else the declared cadence (HL 1 h, Binance/Bybit 8 h).
+  const row = (venue: string) => {
+    const v = coinFunding.venues.find(r => r.venue === venue);
+    return v ? normalizeVenueFunding(v) : null;
+  };
+  const hlVenue = row('HlPerp');
+  const binVenue = row('BinPerp');
+  const bybitVenue = row('BybitPerp');
 
-  if (!hlVenue || isNaN(hlVenue.fundingRate)) {
+  if (!hlVenue) {
     return { sentiment: 'NEUTRAL', divergenceNote: 'HL funding data not available' };
   }
 
-  // Normalize to hourly rates for comparison
-  const hlHourly = hlVenue.fundingRate; // HL is already hourly
+  // Normalize to hourly rates for comparison: rate / the contract's interval. Bit-identical to the
+  // old `HL as-is` and `/ 8` on 1 h and 8 h rows; a 4 h Binance contract is now `/ 4`, not `/ 8`.
+  const hlHourly = hlVenue.rate / hlVenue.intervalHours;
   const cexRates: number[] = [];
   const cexNames: string[] = [];
-  if (binVenue && !isNaN(binVenue.fundingRate)) {
-    cexRates.push(binVenue.fundingRate / 8);
+  if (binVenue) {
+    cexRates.push(binVenue.rate / binVenue.intervalHours);
     cexNames.push('Binance');
   }
-  if (bybitVenue && !isNaN(bybitVenue.fundingRate)) {
-    cexRates.push(bybitVenue.fundingRate / 8);
+  if (bybitVenue) {
+    cexRates.push(bybitVenue.rate / bybitVenue.intervalHours);
     cexNames.push('Bybit');
   }
 
@@ -352,23 +361,30 @@ function computeCrossVenueFundingSentiment(
 /**
  * Build `funding_by_venue` for the CRYPTO path from HL's predicted-fundings
  * (HlPerp/BinPerp/BybitPerp), so the field is uniform across TradFi + crypto (R4).
+ *
+ * DECISION-CALL-V1-W1 R4: each row's interval is the contract's own (`normalizeVenueFunding`), so
+ * `interval_min` / `rate_8h_equiv` are per row — a 4 h Binance contract reports 240 and twice its
+ * rate, where the constants here used to say 480 for every Binance contract. The map below keeps
+ * only the venue-string → public venue naming (an allow-list: no other venue reaches the response).
  */
 function buildFundingByVenueFromAllFundings(
   coin: string,
-  allFundings: { coin: string; venues: { venue: string; fundingRate: number; nextFundingTime: number }[] }[],
+  allFundings: readonly FundingData[],
 ): Record<string, { rate: number; interval_min: number; rate_8h_equiv: number }> | undefined {
   const coinFunding = allFundings.find(f => f.coin === coin);
   if (!coinFunding || coinFunding.venues.length === 0) return undefined;
-  const VENUE_MAP: Record<string, { venue: string; interval: number }> = {
-    HlPerp: { venue: 'HL', interval: 60 },
-    BinPerp: { venue: 'BINANCE', interval: 480 },
-    BybitPerp: { venue: 'BYBIT', interval: 480 },
+  const VENUE_MAP: Record<string, string> = {
+    HlPerp: 'HL',
+    BinPerp: 'BINANCE',
+    BybitPerp: 'BYBIT',
   };
   const out: Record<string, { rate: number; interval_min: number; rate_8h_equiv: number }> = {};
   for (const v of coinFunding.venues) {
-    const m = VENUE_MAP[v.venue];
-    if (!m || isNaN(v.fundingRate)) continue;
-    out[m.venue] = { rate: v.fundingRate, interval_min: m.interval, rate_8h_equiv: normalizeTo8h(v.fundingRate, m.interval) };
+    const venue = VENUE_MAP[v.venue];
+    const n = venue ? normalizeVenueFunding(v) : null;
+    if (!venue || !n) continue;
+    const intervalMin = n.intervalHours * 60;
+    out[venue] = { rate: n.rate, interval_min: intervalMin, rate_8h_equiv: normalizeTo8h(n.rate, intervalMin) };
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }

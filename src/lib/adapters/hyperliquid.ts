@@ -483,12 +483,18 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       venues: (entry[1] || [])
         .filter(([, data]) => data != null && data.fundingRate != null)
         // Item 5: reject an unparseable rate instead of silently converting to 0.
+        // DECISION-CALL-V1-W1 R4: carry the contract's `fundingIntervalHours` as `intervalHours` when
+        // the entry publishes one (present but unreadable → NaN, so the row self-skips downstream);
+        // absent → no key, and the reader falls back to the venue's declared cadence.
         .map(([venue, data]) => ({
           venue,
           fundingRate: safeUpstreamNum(data.fundingRate),
           nextFundingTime: data.nextFundingTime ?? 0,
+          ...(data.fundingIntervalHours !== undefined
+            ? { intervalHours: safeUpstreamNum(data.fundingIntervalHours) ?? NaN }
+            : {}),
         }))
-        .filter((v): v is { venue: string; fundingRate: number; nextFundingTime: number } => v.fundingRate !== null),
+        .filter((v): v is FundingData['venues'][number] => v.fundingRate !== null),
     }));
   }
 
