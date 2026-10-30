@@ -21,7 +21,8 @@ describe('FUNDING_VENUE_META — the qualifying-venue SoT', () => {
     expect(Object.keys(FUNDING_VENUE_META).sort()).toEqual(
       ['AsterPerp', 'BinPerp', 'BybitPerp', 'GatePerp', 'HlPerp', 'KuCoinPerp', 'OKXPerp'].sort(),
     );
-    expect(FUNDING_VENUE_META.HlPerp).toEqual({ exchangeId: 'HL', intervalHours: 1 }); // HL hourly
+    // DECISION-CALL-V1-W1 R2: each row names the adapter whose feed carries it (`fetchedVia`).
+    expect(FUNDING_VENUE_META.HlPerp).toEqual({ exchangeId: 'HL', intervalHours: 1, fetchedVia: 'HL' }); // HL hourly
     expect(FUNDING_VENUE_META.BinPerp.intervalHours).toBe(8);
     // EXCLUDED: BITGET (no nextFundingTime → degraded urgency) + MEXC/HTX/BINGX/PHEMEX (empty feed)
     for (const excluded of ['BitgetPerp', 'MexcPerp', 'HtxPerp', 'BingxPerp', 'PhemexPerp']) {

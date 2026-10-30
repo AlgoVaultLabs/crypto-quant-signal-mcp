@@ -102,6 +102,8 @@ describe('adapters emit the interval they actually publish', () => {
     expect(okx).toContain('b <= a) return undefined');
   });
   it('the consumer prefers the row interval', () => {
-    expect(src('src/tools/scan-funding-arb.ts')).toContain('rowInterval ?? meta.intervalHours');
+    // DECISION-CALL-V1-W1 R2: the rule moved verbatim from scan-funding-arb.ts into the shared
+    // `normalizeVenueFunding`, which every funding consumer now reads.
+    expect(src('src/lib/venue-market-state.ts')).toContain('rowInterval ?? meta.intervalHours');
   });
 });

@@ -28,7 +28,8 @@
  * `module` moved here with the code). `scripts/check-quota-surface-conformance.mjs` refuses an
  * unregistered call site, so the move could not have left the gate behind.
  */
-import { fetchVenueUniverse, effectiveLiquidityUsd } from './exchange-universe.js';
+import { effectiveLiquidityUsd } from './exchange-universe.js';
+import { getVenueUniverseState, _resetVenueMarketStateCaches } from './venue-market-state.js';
 import { monthResetAtMs, periodStartMs, utcDayResetAtMs, requestClientProfile, type TrackCallResult } from './license.js';
 import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts } from './quota-notice.js';
 import { buildReferralHint, type ReferralHint } from './nudge-copy.js';
@@ -40,38 +41,27 @@ import type { PromotedVenueId } from './capabilities.js';
 import type { LicenseInfo, QuotaState, SuggestedX402 } from '../types.js';
 
 // ── Venue liquidity (FIX-CONVICTION-CALL-POSTS-W1, moved verbatim) ──────────────────────────────
-// 60s TTL, matching `scan_funding_arb`'s per-leg gate cache. Only consulted when a caller actually
+// DECISION-CALL-V1-W1 R2: the 60 s universe cache moved to src/lib/venue-market-state.ts, where the
+// same cached read also feeds `scan_funding_arb`'s per-leg gate — one fetch per venue per TTL across
+// both, single-flight. This is now a projection of that read. Only consulted when a caller actually
 // passes `minLiquidityUsd`, so the default scan path performs no extra fetch.
-const LIQUIDITY_TTL_MS = 60_000;
-const liquidityCache = new Map<string, { at: number; byCoin: Map<string, number> }>();
 
 /** Test seam, matching `_setScorerForTest` et al.: when set, the floor reads this instead of the
  *  live universe, so unit tests never touch the network. */
 let _liquidityMapOverride: ((exchange: PromotedVenueId) => Map<string, number>) | null = null;
 export function _setLiquidityMapForTest(fn: ((exchange: PromotedVenueId) => Map<string, number>) | null): void {
   _liquidityMapOverride = fn;
-  liquidityCache.clear();
+  _resetVenueMarketStateCaches();
 }
 
-/** coin → USD liquidity on `exchange`. Fail-soft to an EMPTY map, which makes the floor
- *  default-DENY rather than silently admitting an ungated universe. */
+/** coin → USD liquidity on `exchange`. Fail-soft to an EMPTY map (a failed universe read has no
+ *  rows), which makes the floor default-DENY rather than silently admitting an ungated universe. */
 export async function getVenueLiquidityUsd(exchange: PromotedVenueId): Promise<Map<string, number>> {
   if (_liquidityMapOverride) return _liquidityMapOverride(exchange);
-  const now = Date.now();
-  const hit = liquidityCache.get(exchange);
-  if (hit && now - hit.at <= LIQUIDITY_TTL_MS) return hit.byCoin;
   const byCoin = new Map<string, number>();
-  try {
-    // Full universe, not the top-N slice: the floor must be able to judge any coin the
-    // lens selected, including one outside the OI head.
-    for (const a of await fetchVenueUniverse(exchange)) byCoin.set(a.coin, effectiveLiquidityUsd(a));
-  } catch (err) {
-    console.debug(
-      `[scan-shared] liquidity universe fetch failed for ${exchange} — floor will deny all:`,
-      err instanceof Error ? err.message : err,
-    );
-  }
-  liquidityCache.set(exchange, { at: now, byCoin });
+  // Full universe, not the top-N slice: the floor must be able to judge any coin the
+  // lens selected, including one outside the OI head.
+  for (const a of (await getVenueUniverseState(exchange)).rows) byCoin.set(a.coin, effectiveLiquidityUsd(a));
   return byCoin;
 }
 
