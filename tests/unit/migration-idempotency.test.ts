@@ -84,6 +84,9 @@ const ALL_SIGNAL_COLS = [
   // TWICE, correctly, for the same entries-not-names reason as `quarantined_at` above.
   'rule_config_id',
   'rule_config_id', 'trend_decisive', 'v1_signal', 'v1_raw_final', 'verdict_m', 'verdict_f', 'verdict_h', 'rsi_value', 'rsi_score_pre', 'funding_z',  // signal_scorer_inputs
+  // OPS-VENUE-MARKET-CLOSED-W2: why the last failed backfill attempt failed, on `signals` (no new table).
+  // The census canary's `attempted` reads it, so a silent removal would fail its SQL — named in test 2d.
+  'backfill_fail_class',
 ];
 
 /** SIGNAL-VERDICT-RULE-REGISTRY-W1 — the ten capture columns, named for test 2c. */
@@ -188,6 +191,15 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     const registry = altered.filter((sql) => REGISTRY_SSI_COLS.some((c) => sql.includes(` ${c} `)));
     expect(registry.length).toBe(11);
     expect(registry.filter((sql) => /NOT NULL|DEFAULT/.test(sql))).toEqual([]);
+  });
+
+  // ── Test 2d: the attempt class is genuinely DECLARED on `signals`, nullable, no default ──
+  it('OPS-VENUE-MARKET-CLOSED-W2: backfill_fail_class on signals, nullable TEXT, no default', async () => {
+    const b = mockPg([]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await runPgMigrationsAsync(b as any);
+    const altered = b.execAsync.mock.calls.map((call) => call[0] as string);
+    expect(altered).toContain('ALTER TABLE signals ADD COLUMN IF NOT EXISTS backfill_fail_class TEXT');
   });
 
   // ── Test 3: Empty schema → all SIGNAL_MIGRATIONS run ──
