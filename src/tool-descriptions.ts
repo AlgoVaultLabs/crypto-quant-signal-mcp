@@ -237,7 +237,7 @@ export const PARAM_DESC_PRE_TRADE_EXCHANGES = 'Only compare these venues (defaul
 // phrases appended to a parameter that are not about that parameter; and a claim the tool does not
 // do (scan_funding_arb returns spreads, not a BUY/SELL/HOLD verdict). What it keeps: what the tool
 // returns, read-only / no orders, sibling routing, and the true scope.
-// `tests/unit/chatgpt-client-profile.test.ts` judges every served tool against those rules.
+// `tests/unit/chatgpt-client-profile.test.ts` judges all 10 served tools against those rules.
 const PLAIN_OVERRIDES: ReadonlyMap<string, string> = new Map([
   [SCAN_FUNDING_ARB_DESCRIPTION,
     'Returns ranked funding arbitrage opportunities across crypto perpetual futures venues. ' +
@@ -265,6 +265,12 @@ const PLAIN_OVERRIDES: ReadonlyMap<string, string> = new Map([
     'the evaluation methodology and window. The same verified aggregate the performance://signal-performance ' +
     'resource serves, callable from harnesses that bridge tools only. Defaults to the compact aggregate; use ' +
     'include for the per-asset, per-venue or recent-signal breakdowns. Read-only, no side effects.'],
+  // DECISION-CALL-V1-W2: Mr.1-approved reorder of the contract's own words (2026-10-31).
+  [PRE_TRADE_CHECK_DESCRIPTION,
+    'Returns a pre-trade check for a crypto perpetual futures order: GO, CAUTION or WAIT with reasons, the ' +
+    'cheapest venue by fees and funding rate over your hold (cross-venue), a size limit from 24h volume, funding ' +
+    'timing and the market regime. Send coin, side, size and hold time. Informational and read-only: places no ' +
+    'orders, holds no funds.'],
   [PARAM_DESC_TRADE_CALL_COIN, 'Base asset, e.g. BTC, ETH or SOL, or a US stock or ETF ticker (no USDT suffix).'],
   [PARAM_DESC_TRADE_CALL_TIMEFRAME, 'Candle timeframe, 1m to 1d. Default 15m.'],
   [PARAM_DESC_TRADE_CALL_INCLUDE_REASONING, 'Include the reasoning behind the call and its main drivers. Default true.'],
@@ -275,6 +281,7 @@ const PLAIN_OVERRIDES: ReadonlyMap<string, string> = new Map([
   [PARAM_DESC_REGIME_TIMEFRAME, 'Candle timeframe, e.g. 1h, 4h or 1d.'],
   [PARAM_DESC_REGIME_EXCHANGE, 'Crypto venue, e.g. Binance Bybit OKX Bitget Hyperliquid.'],
   [PARAM_DESC_REGIME_SCAN_COINS, 'Restrict to these symbols, e.g. ["BTC","ETH"]. Symbols not on the venue are listed in not_found.'],
+  [PARAM_DESC_PRE_TRADE_HOLD_HOURS, 'Expected holding time in hours (default 8); sets the funding window.'],
 ]);
 
 /** The `plain` projection of one default string — its override, or the string itself. */
