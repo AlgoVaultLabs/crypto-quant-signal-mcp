@@ -28,6 +28,7 @@ import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { runScanTradeCall, SCAN_TRADE_CALLS_SCHEMA, SCAN_TRADE_CALLS_DESCRIPTION } from './tools/scan-trade-calls.js';
 import { SCAN_MARKET_REGIMES_SCHEMA, SCAN_MARKET_REGIMES_DESCRIPTION } from './tools/scan-market-regimes.js';
+import { PRE_TRADE_CHECK_SCHEMA, PRE_TRADE_CHECK_DESCRIPTION } from './tools/pre-trade-check.js';
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
 // DEV-TRACK-RECORD-TOOL-PARITY-W1 CH2: the ONE public allow-list projection of the track
 // record. Consumed here by BOTH `performance://signal-performance` and
@@ -523,6 +524,18 @@ function createServer(): McpServer {
     SCAN_MARKET_REGIMES_SCHEMA,
     { title: 'Market Regime Screener', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
     mcpHandler('scan_market_regimes'),
+  );
+
+  // ── Tool: pre_trade_check (DECISION-CALL-V1-W2) — pre-trade check for one perp order ──
+  // Thin handler: refusals + quota + envelope live in src/tools/pre-trade-check.ts
+  // (runPreTradeCheck, dispatched by the tool-call pipeline); the engine is
+  // src/lib/pre-trade-decision.ts over the shared venue-market-state reads.
+  register(
+    'pre_trade_check',
+    PRE_TRADE_CHECK_DESCRIPTION,
+    PRE_TRADE_CHECK_SCHEMA,
+    { title: 'Pre-Trade Check', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
+    mcpHandler('pre_trade_check'),
   );
 
   // ── Tool 4: search_knowledge ──

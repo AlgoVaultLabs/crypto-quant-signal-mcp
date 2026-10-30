@@ -84,9 +84,20 @@ import {
   REGIME_TIMEFRAMES,
   PUBLIC_VENUE_ENUM,
 } from '../lib/tool-param-schema.js';
+import {
+  PRE_TRADE_CHECK_DESCRIPTION,
+  PARAM_DESC_PRE_TRADE_COIN,
+  PARAM_DESC_PRE_TRADE_SIDE,
+  PARAM_DESC_PRE_TRADE_SIZE_USD,
+  PARAM_DESC_PRE_TRADE_HOLD_HOURS,
+  PARAM_DESC_PRE_TRADE_TIMEFRAME,
+  PARAM_DESC_PRE_TRADE_EXCHANGES,
+} from '../tool-descriptions.js';
 import type { AlgoVaultMeta, ExchangeId, LicenseInfo, VenueStatus } from '../types.js';
 
 export const PRE_TRADE_CHECK_TOOL = 'pre_trade_check' as const;
+
+export { PRE_TRADE_CHECK_DESCRIPTION };
 
 /** `data_unavailable` tells the caller when to come back — the universe cache's own refresh scale. */
 export const PRE_TRADE_DATA_RETRY_AFTER_SECONDS = 30;
@@ -101,12 +112,14 @@ const D = PRE_TRADE_CHECK_PARAM_DECL;
  * expressible in Zod's JSON Schema; the handler refuses a repeat as `invalid_parameter`.
  */
 export const PRE_TRADE_CHECK_SCHEMA = {
-  coin: z.string().min(D.coin.minLength).max(D.coin.maxLength),
-  side: z.enum(PRE_TRADE_SIDES),
-  sizeUsd: z.number().gt(D.sizeUsd.exclusiveMinimum).max(D.sizeUsd.maximum),
-  holdHours: z.number().min(D.holdHours.minimum).max(D.holdHours.maximum).default(D.holdHours.default),
-  timeframe: z.enum(REGIME_TIMEFRAMES).default(D.timeframe.default),
-  exchanges: z.array(z.enum(PUBLIC_VENUE_ENUM)).min(D.exchanges.minItems).max(D.exchanges.maxItems).optional(),
+  coin: z.string().min(D.coin.minLength).max(D.coin.maxLength).describe(PARAM_DESC_PRE_TRADE_COIN),
+  side: z.enum(PRE_TRADE_SIDES).describe(PARAM_DESC_PRE_TRADE_SIDE),
+  sizeUsd: z.number().gt(D.sizeUsd.exclusiveMinimum).max(D.sizeUsd.maximum).describe(PARAM_DESC_PRE_TRADE_SIZE_USD),
+  holdHours: z.number().min(D.holdHours.minimum).max(D.holdHours.maximum).default(D.holdHours.default)
+    .describe(PARAM_DESC_PRE_TRADE_HOLD_HOURS),
+  timeframe: z.enum(REGIME_TIMEFRAMES).default(D.timeframe.default).describe(PARAM_DESC_PRE_TRADE_TIMEFRAME),
+  exchanges: z.array(z.enum(PUBLIC_VENUE_ENUM)).min(D.exchanges.minItems).max(D.exchanges.maxItems).optional()
+    .describe(PARAM_DESC_PRE_TRADE_EXCHANGES),
 };
 
 /** What the handler accepts. Loosely typed on purpose: it re-validates, so every channel gets one contract. */

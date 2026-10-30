@@ -19,6 +19,7 @@ import {
   GET_EQUITY_REGIME_DESCRIPTION,
   GET_TRACK_RECORD_DESCRIPTION,
   SCAN_MARKET_REGIMES_DESCRIPTION,
+  PRE_TRADE_CHECK_DESCRIPTION,
   TRADE_CALL_ALIAS_SUFFIX,
 } from '../tool-descriptions.js';
 // SCAN-RANKBY-W1: the rankBy lens set is advertised on /capabilities from the SINGLE
@@ -127,6 +128,7 @@ const DESCRIPTIONS: Record<string, string> = {
   GET_EQUITY_REGIME_DESCRIPTION,
   GET_TRACK_RECORD_DESCRIPTION,
   SCAN_MARKET_REGIMES_DESCRIPTION,
+  PRE_TRADE_CHECK_DESCRIPTION,
 };
 
 /**
@@ -215,6 +217,23 @@ const FEATURE_REGISTRY_LITERAL = [
     // only the hosted sampler writes. Locally the read leaked a raw SQLite error; now it is refused at admission.
     residency: 'hosted',
     publicListing: true,
+  },
+  {
+    // DECISION-CALL-V1-W2 R6 — the pre-trade check (Prompt/pre-trade-check-contract.md).
+    //   • mcp only, `x402: null` — no HTTP route and no price; DECISION-CALL-V1-W3 prices it.
+    //   • `quota.unit: 'per-call'` — one unit per decision (a WAIT included); every refusal is unbilled.
+    //   • `residency: 'hosted'` — the regime read is the hosted bar-close snapshot (regime_snapshots).
+    //   • `publicListing: false` — served on tools/list, kept off the nav, docs and /tools until the
+    //     release wave lists it (docs partial, TOOL_LABELS, lobehub api[] and the counts together).
+    name: 'pre_trade_check',
+    aliases: [],
+    channels: { mcp: true, httpX402: false, bot: false, webhook: false, a2mcp: false, acp: false },
+    quota: { unit: 'per-call', holdFree: false },
+    x402: null,
+    descriptionRef: 'PRE_TRADE_CHECK_DESCRIPTION',
+    enabled: true,
+    residency: 'hosted',
+    publicListing: false,
   },
   {
     name: 'get_equity_call',

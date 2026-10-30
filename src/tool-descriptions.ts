@@ -215,6 +215,17 @@ export const PARAM_DESC_REGIME_SCAN_LIMIT =
 export const PARAM_DESC_REGIME_SCAN_OFFSET =
   'Rows to skip, for paging within one snapshot. A changed as_of means the snapshot advanced between pages.';
 
+// DECISION-CALL-V1-W2 R6: the pre-trade check. Every string below is the approved contract copy
+// (Prompt/pre-trade-check-contract.md § Copy), verbatim — reword it only with a new approval.
+export const PRE_TRADE_CHECK_DESCRIPTION =
+  'Pre-trade check for a crypto perpetual futures order. Send coin, side, size and hold time; returns GO, CAUTION or WAIT with reasons, the cheapest venue by fees and funding rate over your hold (cross-venue), a size limit from 24h volume, funding timing and the market regime. Informational and read-only: places no orders, holds no funds.';
+export const PARAM_DESC_PRE_TRADE_COIN = 'Asset symbol, e.g. BTC, ETH, SOL.';
+export const PARAM_DESC_PRE_TRADE_SIDE = 'Direction of the order you intend to place: long or short.';
+export const PARAM_DESC_PRE_TRADE_SIZE_USD = 'Order notional in USD, e.g. 10000.';
+export const PARAM_DESC_PRE_TRADE_HOLD_HOURS = 'Expected holding time in hours (default 8); sets the funding cost window.';
+export const PARAM_DESC_PRE_TRADE_TIMEFRAME = 'Market-regime timeframe: 1h, 4h or 1d (default 4h).';
+export const PARAM_DESC_PRE_TRADE_EXCHANGES = 'Only compare these venues (default: every supported venue).';
+
 // ── GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the `plain` metadata projection ──────────────────────────
 //
 // A client whose registry profile says `metadata: 'plain'` (ChatGPT — OpenAI's plugin guidelines) is

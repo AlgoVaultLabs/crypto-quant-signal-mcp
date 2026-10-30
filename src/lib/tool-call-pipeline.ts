@@ -89,6 +89,7 @@ import { runScanTradeCall } from '../tools/scan-trade-calls.js';
 import { getEquityRegime } from './equities/equity-tool-formatters.js';
 import { runGetTrackRecord } from '../tools/get-track-record.js';
 import { runScanMarketRegimes } from '../tools/scan-market-regimes.js';
+import { runPreTradeCheck } from '../tools/pre-trade-check.js';
 import { getKnowledgeSearch, getChatStack, chatTierFor } from '../tools/knowledge-tools.js';
 import { formatSearchKnowledgeResponse } from './search-knowledge-formatter.js';
 import { chatQuotaApiKey, buildChatQuotaNotice } from './chat-rate-limit.js';
@@ -564,6 +565,39 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     logError: null,
     logOnRefusal: false,
     cohort: false,
+    timeframes: REGIME_TIMEFRAMES,
+    enrich: null,
+    mcpText: null,
+    refusalJson: 'compact',
+  },
+  pre_trade_check: {
+    // DECISION-CALL-V1-W2 R6: refuses in-band (structured payload + isError), unbilled; the quota wall
+    // throws TierLimitReachedError as get_market_regime's does. The log row names the asset, timeframe
+    // and best venue only — never the decision, a confidence or the regime.
+    run: async (input, license, attribute, served) => {
+      const out = await runAsCaller(processScopedTag('pre_trade_check'), () => attribute(served, () => runPreTradeCheck(
+        {
+          coin: input.coin as string,
+          side: input.side as string,
+          sizeUsd: input.sizeUsd as number,
+          holdHours: input.holdHours as number | undefined,
+          timeframe: input.timeframe as string | undefined,
+          exchanges: input.exchanges as string[] | undefined,
+        },
+        license,
+      )));
+      return out.kind === 'ok'
+        ? { kind: 'ok', result: out.response }
+        : { kind: 'refused', payload: out.payload as unknown as Record<string, unknown>, http: { status: out.status } };
+    },
+    logSuccess: (input, result) => ({
+      asset: (result as { coin: string }).coin,
+      timeframe: input.timeframe as string,
+      exchange: (result as { best_venue: { exchange: string } | null }).best_venue?.exchange,
+    }),
+    logError: null,
+    logOnRefusal: false,
+    cohort: true,
     timeframes: REGIME_TIMEFRAMES,
     enrich: null,
     mcpText: null,
