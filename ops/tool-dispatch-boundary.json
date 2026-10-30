@@ -23,6 +23,7 @@
     { "symbol": "getEquityCall", "module": "src/lib/equities/equity-tool-formatters.ts" },
     { "symbol": "getEquityRegime", "module": "src/lib/equities/equity-tool-formatters.ts" },
     { "symbol": "runGetTrackRecord", "module": "src/tools/get-track-record.ts" },
+    { "symbol": "runPreTradeCheck", "module": "src/tools/pre-trade-check.ts" },
     { "symbol": "getKnowledgeSearch", "module": "src/tools/knowledge-tools.ts" },
     { "symbol": "getChatStack", "module": "src/tools/knowledge-tools.ts" }
   ],

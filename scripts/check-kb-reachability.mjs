@@ -74,8 +74,12 @@ const argv = process.argv.slice(2);
 
 /* ────────────────────────────── pure core (unit-testable) ────────────────────────────── */
 
-/** A tool-shaped identifier. Anchored on the verb prefixes the registry actually uses. */
-export const TOOL_RE = /\b(?:get|scan|chat|search)_[a-z0-9_]+\b/g;
+/**
+ * A tool-shaped identifier. Anchored on the verb prefixes the registry actually uses
+ * (`pre_` since DECISION-CALL-V1-W2); tests/unit/kb-reachability.test.ts asserts every
+ * `allToolNames()` entry matches, so a new prefix cannot go unrecognised.
+ */
+export const TOOL_RE = /\b(?:get|scan|chat|search|pre)_[a-z0-9_]+\b/g;
 
 /**
  * Pull tool references out of free text.

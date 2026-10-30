@@ -76,6 +76,7 @@ const LIVE_TOOL_ENVELOPES = [
   'src/tools/scan-funding-arb.ts',
   'src/tools/scan-trade-calls.ts',
   'src/tools/scan-market-regimes.ts', // SCAN-MARKET-REGIMES-W1-V2 CH2
+  'src/tools/pre-trade-check.ts', // DECISION-CALL-V1-W2 R7
   'src/lib/chat-knowledge-formatter.ts',
   'src/lib/search-knowledge-formatter.ts',
 ];

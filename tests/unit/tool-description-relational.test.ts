@@ -52,7 +52,7 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { FEATURE_REGISTRY, getFeature } from '../../src/lib/feature-registry.js';
+import { FEATURE_REGISTRY, getFeature, allToolNames } from '../../src/lib/feature-registry.js';
 import { liveMcpToolNames } from '../../src/lib/equities/equity-tools-flag.js';
 import * as DESC from '../../src/tool-descriptions.js';
 
@@ -68,8 +68,8 @@ const check = (cond: boolean, msg: string): void => {
 
 /* ─────────────────────────── pure helpers (all self-tested below) ─────────────────────── */
 
-/** Tool-shaped identifiers as they appear inside prose. */
-export const TOOL_TOKEN_RE = /\b(?:get|scan|search|chat)_[a-z_]+\b/g;
+/** Tool-shaped identifiers as they appear inside prose (`pre_` since DECISION-CALL-V1-W2). */
+export const TOOL_TOKEN_RE = /\b(?:get|scan|search|chat|pre)_[a-z_]+\b/g;
 
 export function extractToolTokens(text: string): string[] {
   return [...new Set(text.match(TOOL_TOKEN_RE) ?? [])];
@@ -617,6 +617,12 @@ describe('self-test — REL-1/2/3 each proven to fail dirty and pass clean', () 
     // The extractor itself must not silently stop matching.
     expect(extractToolTokens('a get_trade_call and a chat_knowledge')).toEqual(['get_trade_call', 'chat_knowledge']);
     expect(extractToolTokens('no tool tokens here at all')).toEqual([]);
+  });
+
+  it('the extractor recognises every allToolNames() entry as one whole token', () => {
+    const names = allToolNames();
+    expect(names.length).toBeGreaterThan(0);
+    for (const n of names) expect(extractToolTokens(`call ${n} now`), n).toEqual([n]);
   });
 
   it('REL-2 clean fixture passes / dirty fixture fails, and the metric is the one declared', () => {

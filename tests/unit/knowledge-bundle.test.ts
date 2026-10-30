@@ -45,7 +45,11 @@ import {
 } from '../../src/lib/knowledge-formatter.js';
 
 import { liveMcpToolNames } from '../../src/lib/equities/equity-tools-flag.js';
+import { allToolNames } from '../../src/lib/feature-registry.js';
 import { assertToolList } from '../../scripts/lib/mcp-tools-list.mjs';
+
+/** D3's tool-name recogniser (`pre_` since DECISION-CALL-V1-W2) — pinned to the registry below. */
+const BUNDLE_TOOL_RE = /\b(?:get|scan|chat|search|pre)_[a-z0-9_]+\b/g;
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = join(dirname(__filename), '..', '..');
@@ -266,6 +270,12 @@ describe('KNOWLEDGE-ARTIFACT-W1 canaries (v1.14.0+ invariants)', () => {
     expect(offenders, 'a published response shape claims a HOLD is free').toEqual([]);
   });
 
+  it('D3 recogniser — every allToolNames() entry is one whole match', () => {
+    const names = allToolNames();
+    expect(names.length).toBeGreaterThan(0);
+    for (const n of names) expect(`MCP tool ${n}`.match(BUNDLE_TOOL_RE), n).toEqual([n]);
+  });
+
   it('D3 — no published shape documents an MCP tool absent from the live tool set', () => {
     // The bundle documented `MCP tool get_equity_call` / `get_equity_regime` long after
     // EQUITY-TOOLS-DARK-RETIRE-W1 took both off tools/list. Enumerated from the artifact and
@@ -277,7 +287,7 @@ describe('KNOWLEDGE-ARTIFACT-W1 canaries (v1.14.0+ invariants)', () => {
       const ep = String(r.endpoint ?? '');
       // Only endpoints that NAME an MCP tool — an HTTP route is a different reference class.
       if (!/\bMCP tools?\b/i.test(ep)) continue;
-      for (const m of ep.match(/\b(?:get|scan|chat|search)_[a-z0-9_]+\b/g) ?? []) {
+      for (const m of ep.match(BUNDLE_TOOL_RE) ?? []) {
         if (!live.has(m)) dangling.push(`${ep} -> ${m}`);
       }
     }

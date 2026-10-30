@@ -8,6 +8,8 @@
  * shared caches of `venue-market-state.ts` with only the network edge mocked.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 vi.mock('../../src/lib/exchange-adapter.js', () => ({ getAdapter: vi.fn() }));
 vi.mock('../../src/lib/exchange-universe.js', async (importOriginal) => {
@@ -320,6 +322,40 @@ describe('invalid_parameter — the declaration\'s bounds, held on every channel
       const out = await runPreTradeCheck(P(over), INTERNAL, harness().deps);
       expect(out.kind === 'ok' || (out.kind === 'refused' && out.payload.error === 'coin_not_listed'), JSON.stringify(over)).toBe(true);
     }
+  });
+});
+
+describe('the served shape is the one audits/pre-trade-check-shape-snapshot-2026-10-30.json declares', () => {
+  const snap = JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', 'pre-trade-check-shape-snapshot-2026-10-30.json'), 'utf8')) as Record<string, string[]> & { endpoint: string; snapshot_date: string };
+
+  it('carries the bundle builder\'s field names, and a unique endpoint', () => {
+    expect(snap.endpoint).toBe('pre_trade_check (MCP tool)');
+    expect(snap.snapshot_date).toBe('2026-10-30');
+    expect(snap.allowed_keys).toEqual(TOP_KEYS);
+    expect(snap.venues_row_keys).toEqual(VENUE_KEYS);
+    for (const f of [...FORBIDDEN, 'outcome_return_pct', 'outcome_price']) expect(snap.forbidden_keys, f).toContain(f);
+  });
+
+  it('a split, timed, regime-bearing response matches every declared key list — and no forbidden key', async () => {
+    const r = await ok(P({ sizeUsd: 30_000_000 }));
+    expect(r.split, 'vacuity guard: the split rows must be checked').not.toBeNull();
+    expect(Object.keys(r)).toEqual(snap.allowed_keys);
+    for (const v of r.venues) expect(Object.keys(v)).toEqual(snap.venues_row_keys);
+    expect(Object.keys(r.best_venue!)).toEqual(snap.best_venue_keys);
+    for (const l of r.split!) expect(Object.keys(l)).toEqual(snap.split_row_keys);
+    expect(Object.keys(r.timing!)).toEqual(snap.timing_keys);
+    expect(Object.keys(r.regime!)).toEqual(snap.regime_keys);
+    expect(Object.keys(r.assumptions)).toEqual(snap.assumptions_keys);
+    for (const x of r.reasons) expect(Object.keys(x)).toEqual(snap.reasons_row_keys);
+    expect(snap.decision_values).toContain(r.decision);
+    for (const k of Object.keys(r._algovault)) expect(snap.algovault_keys, `_algovault.${k}`).toContain(k);
+    for (const k of snap.algovault_required_keys) expect(r._algovault, `_algovault.${k}`).toHaveProperty(k);
+    const text = JSON.stringify(r);
+    for (const f of snap.forbidden_keys) expect(text, f).not.toContain(`"${f}":`);
+  });
+
+  it('every declared refusal is one the handler emits', () => {
+    expect(snap.refusal_errors).toEqual(['invalid_parameter', 'venue_not_supported', 'data_unavailable', 'coin_not_listed']);
   });
 });
 

@@ -102,5 +102,7 @@
     "required": true,
     "description": "A tool was ADDED. MCP clients cache tools/list at session start, so an open session does not see scan_market_regimes until it reconnects (or the client re-fetches tools/list). No existing tool's input or output changed, so nothing an existing session calls breaks."
   },
-  "no_add_remove_rename_note": "This snapshot ADDS one tool (scan_market_regimes). Nothing is removed or renamed, and no existing tool's input contract changes; the predecessors' `true` was about the routing contract, which this snapshot carries forward unchanged."
+  "no_add_remove_rename_note": "This snapshot ADDS one tool (scan_market_regimes). Nothing is removed or renamed, and no existing tool's input contract changes; the predecessors' `true` was about the routing contract, which this snapshot carries forward unchanged.",
+  "superseded_by": "trade-call-routing-shape-snapshot-2026-10-30.json",
+  "superseded_reason": "DECISION-CALL-V1-W2 R7 added pre_trade_check to the live tool set (9 -> 10); the routing contract is carried forward verbatim into the 2026-10-30 successor."
 }

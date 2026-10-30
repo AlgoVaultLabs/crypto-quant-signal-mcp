@@ -27,7 +27,8 @@ import { liveMcpToolNames } from '../src/lib/equities/equity-tools-flag.js';
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel: string): string => readFileSync(join(REPO_ROOT, rel), 'utf8');
 // SCAN-MARKET-REGIMES-W1-V2 CH2 repointed 2026-08-28 → 2026-10-19 (scan_market_regimes added; 8 → 9 live).
-const snapshot = JSON.parse(read('audits/trade-call-routing-shape-snapshot-2026-10-19.json'));
+// DECISION-CALL-V1-W2 R7 repointed 2026-10-19 → 2026-10-30 (pre_trade_check added; 9 → 10 live).
+const snapshot = JSON.parse(read('audits/trade-call-routing-shape-snapshot-2026-10-30.json'));
 const indexSrc = read('src/index.ts');
 const descSrc = read('src/tool-descriptions.ts');
 

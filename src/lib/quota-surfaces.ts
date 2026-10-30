@@ -334,6 +334,18 @@ export const QUOTA_SURFACES: readonly QuotaSurface[] = [
     reason: 'Instance 9 — FIXED. Same single-discriminator shape as get_trade_call.'
   },
   {
+    // DECISION-CALL-V1-W2 R7: composes its wall exactly as get_market_regime does.
+    id: 'refusal:pre_trade_check',
+    module: 'src/tools/pre-trade-check.ts',
+    primitives: ['new TierLimitReachedError', 'withQuotaState', 'monthResetAtMs', 'utcDayResetAtMs'],
+    emits: ['limit', 'resets_at', 'retry_after_days', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    status: 'conforming',
+    meterAware: true,
+    dailyRequiredFields: ['limit', 'resets_at', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    wallDerivedFields: ['resets_at'],
+    reason: 'Born conforming — the get_market_regime wall composition, one discriminator.'
+  },
+  {
     id: 'refusal:scan_funding_arb',
     module: 'src/tools/scan-funding-arb.ts',
     primitives: ['new TierLimitReachedError', 'withQuotaState', 'monthResetAtMs', 'utcDayResetAtMs'],

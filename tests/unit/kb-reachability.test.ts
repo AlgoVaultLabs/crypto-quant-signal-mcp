@@ -11,10 +11,20 @@ import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  classifyEndpoint, extractToolRefs, normalizePath, routeResolves, statusIsReachable, hostFor, selfTest,
+  classifyEndpoint, extractToolRefs, normalizePath, routeResolves, statusIsReachable, hostFor, selfTest, TOOL_RE,
 } from '../../scripts/check-kb-reachability.mjs';
+import { allToolNames } from '../../src/lib/feature-registry.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+describe('TOOL_RE — recognises every registered tool name (DECISION-CALL-V1-W2)', () => {
+  it('each allToolNames() entry is one whole TOOL_RE match', () => {
+    const names = allToolNames();
+    expect(names.length).toBeGreaterThan(0);
+    for (const n of names) expect(extractToolRefs(`call ${n} now`), n).toEqual([n]);
+    expect(TOOL_RE.flags).toContain('g');
+  });
+});
 const GATE = 'scripts/check-kb-reachability.mjs';
 
 describe('classification — the traps that produced phantom findings on the real corpus', () => {

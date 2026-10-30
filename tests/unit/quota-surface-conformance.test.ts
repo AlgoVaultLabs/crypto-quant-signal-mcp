@@ -35,6 +35,7 @@ import { getTradeSignal } from '../../src/tools/get-trade-call.js';
 import { getMarketRegime } from '../../src/tools/get-market-regime.js';
 import { scanFundingArb } from '../../src/tools/scan-funding-arb.js';
 import { runScanTradeCall } from '../../src/tools/scan-trade-calls.js';
+import { runPreTradeCheck } from '../../src/tools/pre-trade-check.js';
 import { buildSuggestedX402 } from '../../src/lib/x402-nudge.js';
 import type { LicenseInfo } from '../../src/types.js';
 
@@ -81,6 +82,14 @@ const RENDERERS: Record<string, () => Promise<Record<string, unknown>>> = {
   'refusal:get_market_regime': async () => {
     const lic = dailyWalled();
     try { await getMarketRegime({ coin: 'BTC', timeframe: '4h', license: lic }); }
+    catch (e) { if (e instanceof TierLimitReachedError) return buildTierLimitPayload(e) as unknown as Record<string, unknown>; throw e; }
+    throw new Error('expected a TierLimitReachedError');
+  },
+  'refusal:pre_trade_check': async () => {
+    const lic = dailyWalled();
+    // Valid params, no exchanges filter: the wall is the first refusal that can fire, and it fires
+    // before any venue read — the real path with no network.
+    try { await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000 }, lic); }
     catch (e) { if (e instanceof TierLimitReachedError) return buildTierLimitPayload(e) as unknown as Record<string, unknown>; throw e; }
     throw new Error('expected a TierLimitReachedError');
   },
