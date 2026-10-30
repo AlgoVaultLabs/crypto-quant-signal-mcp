@@ -70,7 +70,10 @@ export async function getChatStack(): Promise<{
       const { index, engine } = await getKnowledgeSearch();
       const llm = getLLMProvider();
       const cache = new ResultCache<ChatResult>({ ttlMs: 86_400_000, max: 200 });
-      const chatEngine = new ChatEngine(engine, llm, cache);
+      // OPS-TOOL-PARAM-TRUTH-W1 CH2: the tool parameter lines and the answer cache's bundle version
+      // come from the SAME hot-reloaded bundle the snippets are retrieved from, and that both chat
+      // paths report as `bundle_version`.
+      const chatEngine = new ChatEngine(engine, llm, cache, { bundle: () => index.getBundle() });
       const rateLimit = new ChatRateLimit();
       return { index, chatEngine, rateLimit, llm };
     })();

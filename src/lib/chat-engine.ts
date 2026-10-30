@@ -16,6 +16,7 @@
 import type { SearchEngine, SearchResult } from './search-engine.js';
 import type { LLMProvider } from './llm-provider.js';
 import type { ResultCache } from './result-cache.js';
+import type { KnowledgeBundle } from './knowledge-formatter.js';
 import { getLiveTrackRecordBlock } from './chat-track-record.js';
 
 export const CHAT_ENGINE_SYSTEM_PROMPT = `You are AlgoVault's documentation assistant. AlgoVault is the Brain Layer for AI Trading Agents — a composable MCP server providing crypto-quant trade signals, market regime detection, and funding arbitrage scans across major crypto exchanges.
@@ -27,7 +28,19 @@ RULES:
 4. Keep answers concise (≤200 words unless the question explicitly requires more detail).
 5. Use code blocks for any code examples. Prefer Python/TypeScript matching the user's question context.
 6. Never expose internal fields: outcome_return_pct, outcome_price, Phase E numbers, AOE internals, or any field listed in any response_shapes[*].forbidden_keys.
-7. A \`CURRENT TRACK RECORD\` block may appear before the context snippets. Its figures are authoritative and live — if any snippet states a different signal-call count, win rate, exchange count, or asset count, use ONLY the figures in that block and ignore the snippet's number. Never restate, quote, or contrast the superseded snippet figures (do not write "up from X" or "previously Y") — answer with the authoritative figures alone, as if they were the only ones present.`;
+7. A \`CURRENT TRACK RECORD\` block may appear before the context snippets. Its figures are authoritative and live — if any snippet states a different signal-call count, win rate, exchange count, or asset count, use ONLY the figures in that block and ignore the snippet's number. Never restate, quote, or contrast the superseded snippet figures (do not write "up from X" or "previously Y") — answer with the authoritative figures alone, as if they were the only ones present.
+8. Copy parameter names and allowed values exactly as listed in a tool's parameter lines; never rename or reformat them.`;
+
+/**
+ * The version of the context format a snippet renders to. It is part of every answer's cache key,
+ * so an answer built from an older context is never served after the format changes. Bump it with
+ * any change to `contextSnippetLine` or `toolParameterLines`.
+ *   2 — OPS-TOOL-PARAM-TRUTH-W1: a tool snippet carries that tool's parameter lines.
+ */
+export const CHAT_CONTEXT_FORMAT = 2;
+
+/** The slice of the knowledge bundle the context reads: its version and each tool's inputSchema. */
+export type ChatContextBundle = Pick<KnowledgeBundle, 'version' | 'tools'>;
 
 export interface ChatResult {
   question: string;
@@ -50,13 +63,22 @@ export interface ChatEngineOpts {
   maxContextSnippets: number;
   maxInputTokens: number;
   maxOutputTokens: number;
+  /**
+   * The bundle the snippets were retrieved from — wired to `KnowledgeIndex.getBundle()`, the same
+   * object the chat response reports as `bundle_version`. It supplies the tool parameter lines and
+   * the cache key's version. `null` renders no parameter lines.
+   */
+  bundle: () => ChatContextBundle | null;
 }
 
 const DEFAULT_OPTS: ChatEngineOpts = {
   defaultModel: 'claude-haiku-4-5-20251001',
   maxContextSnippets: 8,
+  // OPS-TOOL-PARAM-TRUTH-W1 R0: the largest tool snippet with its parameter block (scan_market_regimes)
+  // is ~639 est. tokens, and with the next three tool snippets ~1,616 — inside this budget, so unchanged.
   maxInputTokens: 2000,
   maxOutputTokens: 800,
+  bundle: () => null,
 };
 
 // Naive token estimator: 1 token ≈ 4 chars (English heuristic; Anthropic
@@ -75,14 +97,47 @@ function estimateTokens(text: string): number {
  * to name it without breaking rule 1. The title (a tool doc's title IS its name) now leads the
  * excerpt. It is skipped when the excerpt already opens with it, which integration pages do.
  */
-function contextSnippetLine(s: Pick<SearchResult, 'source_url' | 'title' | 'excerpt'>): string {
+function contextSnippetLine(
+  s: Pick<SearchResult, 'id' | 'source_type' | 'source_url' | 'title' | 'excerpt'>,
+  toolParameters: ReadonlyMap<string, Record<string, unknown>>,
+): string {
   const title = s.title.replace(/\s+/g, ' ').trim();
   const opensWithTitle = title !== '' && s.excerpt.toLowerCase().startsWith(title.toLowerCase());
-  return `[${s.source_url}] ${title === '' || opensWithTitle ? s.excerpt : `${title}: ${s.excerpt}`}`;
+  const line = `[${s.source_url}] ${title === '' || opensWithTitle ? s.excerpt : `${title}: ${s.excerpt}`}`;
+  // OPS-TOOL-PARAM-TRUTH-W1 CH2: a tool snippet carried only the first 200 characters of its
+  // description, so the model named the right tool and then invented every parameter. The tool's own
+  // lines ride with it, inside the one string the budget charges, so a block is never cut mid-way.
+  const params = s.source_type === 'tool' ? toolParameters.get(s.id.slice('tool:'.length)) : undefined;
+  const lines = params ? toolParameterLines(params) : [];
+  return lines.length > 0 ? `${line}\nParameters:\n${lines.join('\n')}` : line;
 }
 
-function hashKey(question: string, model: string): string {
-  return `${model}|${question.trim().toLowerCase()}`;
+/**
+ * OPS-TOOL-PARAM-TRUTH-W1 CH2 — a tool's parameters as the lines the model copies from, one per
+ * property of its inputSchema (the tools/list projection the bundle carries), in schema order:
+ * `- <name> (<type>[, one of A|B|C][, default X][, required]): <description>`. An array names its
+ * item type, and its items' enum is the "one of". A schema without object `properties` renders none.
+ */
+export function toolParameterLines(parameters: Record<string, unknown>): string[] {
+  const props = parameters?.properties;
+  if (props === null || typeof props !== 'object' || Array.isArray(props)) return [];
+  const required = new Set(Array.isArray(parameters.required) ? parameters.required.map(String) : []);
+  return Object.entries(props as Record<string, Record<string, unknown> | null>).map(([name, schema]) => {
+    const p = schema ?? {};
+    const items = (p.items ?? null) as Record<string, unknown> | null;
+    const type = p.type === 'array' ? `array of ${String(items?.type ?? 'any')}` : String(p.type ?? 'any');
+    const values = Array.isArray(p.enum) ? p.enum : Array.isArray(items?.enum) ? items.enum : null;
+    const facts = [type];
+    if (values) facts.push(`one of ${values.map(String).join('|')}`);
+    if ('default' in p) facts.push(`default ${typeof p.default === 'string' ? p.default : JSON.stringify(p.default)}`);
+    if (required.has(name)) facts.push('required');
+    const desc = typeof p.description === 'string' ? p.description.replace(/\s+/g, ' ').trim() : '';
+    return `- ${name} (${facts.join(', ')})${desc ? `: ${desc}` : ''}`;
+  });
+}
+
+function hashKey(question: string, model: string, bundleVersion: string): string {
+  return `${CHAT_CONTEXT_FORMAT}|${bundleVersion}|${model}|${question.trim().toLowerCase()}`;
 }
 
 export class ChatEngine {
@@ -99,7 +154,9 @@ export class ChatEngine {
 
   async chat(question: string, opts?: { model?: string }): Promise<ChatResult> {
     const model = opts?.model ?? this.opts.defaultModel;
-    const key = hashKey(question, model);
+    // ONE bundle read per answer: the cache key's version and the parameter lines project from it.
+    const bundle = this.opts.bundle();
+    const key = hashKey(question, model, bundle?.version ?? 'none');
 
     const cached = this.cache.get(key);
     if (cached) return cached;
@@ -107,8 +164,11 @@ export class ChatEngine {
     // 1. Retrieve top-N snippets via search engine
     const snippets = await this.searchEngine.query(question, this.opts.maxContextSnippets);
 
-    // 2. Truncate context if total tokens > maxInputTokens (drop lowest-ranked first)
-    const truncatedSnippets = this.truncateContext(snippets);
+    // 2. Truncate context if total tokens > maxInputTokens (drop lowest-ranked first). The same
+    // renderer builds the context below, so the budget charges exactly what the model receives.
+    const toolParameters = new Map((bundle?.tools ?? []).map((t) => [t.name, t.parameters] as const));
+    const render = (s: SearchResult): string => contextSnippetLine(s, toolParameters);
+    const truncatedSnippets = this.truncateContext(snippets, render);
 
     // 3. Build user message with context.
     //
@@ -126,7 +186,7 @@ export class ChatEngine {
     const preamble = trackRecordBlock ? `${trackRecordBlock}\n\n` : '';
 
     const contextBlock = truncatedSnippets
-      .map(contextSnippetLine)
+      .map(render)
       .join('\n\n');
     const userMessage = contextBlock
       ? `${preamble}${question}\n\nContext snippets:\n${contextBlock}`
@@ -165,13 +225,13 @@ export class ChatEngine {
     return result;
   }
 
-  private truncateContext(snippets: SearchResult[]): SearchResult[] {
+  private truncateContext(snippets: SearchResult[], render: (s: SearchResult) => string): SearchResult[] {
     // Sort by score desc (search engine already does this, but defensive)
     const sorted = [...snippets].sort((a, b) => b.score - a.score);
     const out: SearchResult[] = [];
     let runningTokens = 0;
     for (const s of sorted) {
-      const snippetTokens = estimateTokens(contextSnippetLine(s));
+      const snippetTokens = estimateTokens(render(s));
       if (runningTokens + snippetTokens > this.opts.maxInputTokens) break;
       out.push(s);
       runningTokens += snippetTokens;
