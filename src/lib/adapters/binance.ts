@@ -14,6 +14,7 @@ import type {
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 import { resolveVenueInterval } from './_interval.js';
+import { coalescedCache } from '../coalesced-cache.js';
 
 const BASE_URL = 'https://fapi.binance.com';
 const MAX_RETRIES = 1;
@@ -75,6 +76,38 @@ interface PremiumIndexCacheEntry {
   value: BinancePremiumIndex[];
   ts: number;
 }
+
+// DECISION-CALL-V1-W1 R3: the per-contract funding interval. `/fapi/v1/fundingInfo` lists the
+// symbols whose funding parameters were adjusted, each with its `fundingIntervalHours`; a symbol
+// ABSENT from it funds on Binance's default 8 h. Measured 2026-10-27: 820 rows, 465 at 4 h — so
+// the declared 8 h the arb used for every BinPerp leg was wrong on most of the book. The list
+// changes on listings, not by the minute → one call per hour, stale-ok. A COLD failure (nothing
+// stale to serve) throws: the feed is then a failed feed, never a guessed interval.
+const FUNDING_INFO_TTL_MS = 3_600_000;
+const FUNDING_INFO_NEGATIVE_TTL_MS = 300_000;
+const BINANCE_DEFAULT_FUNDING_INTERVAL_HOURS = 8;
+
+interface BinanceFundingInfo {
+  symbol: string;
+  fundingIntervalHours?: number | string;
+}
+
+const fundingInfoCache = coalescedCache<Map<string, number>>({
+  load: async () => {
+    const rows = await binGet<BinanceFundingInfo[]>('/fapi/v1/fundingInfo');
+    if (!Array.isArray(rows)) throw new Error('Binance /fapi/v1/fundingInfo: expected an array');
+    const bySymbol = new Map<string, number>();
+    for (const r of rows) {
+      if (typeof r?.symbol !== 'string' || r.fundingIntervalHours === undefined) continue;
+      // Present but unreadable → NaN: the row self-skips downstream rather than inheriting 8 h.
+      bySymbol.set(r.symbol, safeUpstreamNum(r.fundingIntervalHours) ?? NaN);
+    }
+    return bySymbol;
+  },
+  ttlMs: FUNDING_INFO_TTL_MS,
+  staleOk: true,
+  negativeTtlMs: FUNDING_INFO_NEGATIVE_TTL_MS,
+});
 
 let ticker24hrCache: Ticker24hrCacheEntry | null = null;
 let ticker24hrInflight: Promise<BinanceTicker24hr[]> | null = null;
@@ -207,6 +240,7 @@ export function _resetBinanceAdapterCaches(): void {
   ticker24hrInflight = null;
   premiumIndexCache = null;
   premiumIndexInflight = null;
+  fundingInfoCache._clear();
 }
 
 async function binGet<T>(path: string, params?: Record<string, string | number>, retries = MAX_RETRIES): Promise<T> {
@@ -342,18 +376,27 @@ export class BinanceAdapter implements ExchangeAdapter {
     // bulk premiumIndex cache (60s TTL). Saves weight 10 per `scan_funding_arb`
     // tool invocation when called within 60s of any other premiumIndex consumer
     // (esp. concurrent getAssetContext callers from the seed loop).
-    const raw = await getPremiumIndexBulkCoalesced();
+    // DECISION-CALL-V1-W1 R3: this is now the BinPerp source for the arb (no longer HL's aggregate
+    // copy, which covered 41% of Binance's top 100) — each row carries its contract's interval, and
+    // a rate `safeUpstreamNum` cannot read drops the row instead of becoming 0 (a real 0 stays).
+    const [raw, intervals] = await Promise.all([getPremiumIndexBulkCoalesced(), fundingInfoCache.get('all')]);
 
-    return raw
-      .filter(entry => entry.symbol.endsWith('USDT'))
-      .map(entry => ({
+    const out: FundingData[] = [];
+    for (const entry of raw) {
+      if (!entry.symbol.endsWith('USDT')) continue;
+      const fundingRate = safeUpstreamNum(entry.lastFundingRate);
+      if (fundingRate === null) continue;
+      out.push({
         coin: fromBinanceSymbol(entry.symbol),
         venues: [{
           venue: 'BinPerp',
-          fundingRate: safeUpstreamNum(entry.lastFundingRate) ?? 0,
+          fundingRate,
           nextFundingTime: entry.nextFundingTime || 0,
+          intervalHours: intervals.get(entry.symbol) ?? BINANCE_DEFAULT_FUNDING_INTERVAL_HOURS,
         }],
-      }));
+      });
+    }
+    return out;
   }
 
   /**

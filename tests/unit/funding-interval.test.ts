@@ -83,8 +83,10 @@ describe('per-contract funding interval (SEC-06)', () => {
 
   it('the public funding_venue_count is unchanged — no venue was dropped', () => {
     // The generator fix is a per-ROW skip, deliberately NOT a per-VENUE removal: dropping Aster
-    // would move funding_venue_count (a live public SoT field) from 7, which is out of scope.
-    expect(Object.keys(FUNDING_VENUE_META).length).toBe(7);
+    // would move funding_venue_count (a live public SoT field), which is out of scope.
+    // DECISION-CALL-V1-W1 R3: 7 → 8 — Bitget was ADDED (its own feed now publishes the next funding
+    // time); no venue was dropped.
+    expect(Object.keys(FUNDING_VENUE_META).length).toBe(8);
   });
 });
 

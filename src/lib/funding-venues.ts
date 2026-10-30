@@ -6,30 +6,34 @@ import type { ExchangeId } from '../types.js';
  * for interval-correct annualization (`annualizeFunding`) + the per-leg liquidity gate (via the scan
  * SoT `getVenueUniverse`).
  *
- * QUALIFYING SET (architect-ratified Q-A): the 7 promoted venues with a reliable `getPredictedFundings`
- * feed (funding rate + `nextFundingTime`), live-probed 2026-07-01. EXCLUDED — BITGET (feed but NO
- * `nextFundingTime` → a degraded urgency dimension on every opportunity; re-include when it exposes
- * one), MEXC/HTX/BINGX/PHEMEX (empty feed). Intervals: HL hourly; the rest 8h (live-probed cadence).
- * A venue-string NOT in this map is skipped by the engine (never guess its interval → no false spread).
- * `fetchedVia` (DECISION-CALL-V1-W1 R2) = the adapter whose predicted-funding feed carries the row.
+ * QUALIFYING SET (architect-ratified Q-A): the promoted venues with a reliable `getPredictedFundings`
+ * feed (funding rate + `nextFundingTime`), live-probed 2026-07-01. BITGET joined in DECISION-CALL-V1-W1
+ * R3, when its `current-fund-rate` feed (with `nextUpdate`) replaced the `tickers` source that had no
+ * next funding time. EXCLUDED — MEXC/HTX/BINGX/PHEMEX (empty feed). Declared intervals (HL hourly, the
+ * rest 8h) are the FALLBACK; per-contract intervals come from the feeds themselves. A venue-string NOT
+ * in this map is skipped by the engine (never guess its interval → no false spread).
+ * `fetchedVia` (DECISION-CALL-V1-W1 R2) = the adapter whose predicted-funding feed carries the row. R3
+ * points every venue at its OWN feed: HL's aggregate copy of Binance/Bybit covered 41% / 68% of their
+ * top 100 by liquidity, their own bulk feeds 96% / 98% (measured 2026-10-24).
  */
 export const FUNDING_VENUE_META: Record<string, { exchangeId: ExchangeId; intervalHours: number; fetchedVia: ExchangeId }> = {
   HlPerp:     { exchangeId: 'HL',      intervalHours: 1, fetchedVia: 'HL' },
-  BinPerp:    { exchangeId: 'BINANCE', intervalHours: 8, fetchedVia: 'HL' },
-  BybitPerp:  { exchangeId: 'BYBIT',   intervalHours: 8, fetchedVia: 'HL' },
+  BinPerp:    { exchangeId: 'BINANCE', intervalHours: 8, fetchedVia: 'BINANCE' },
+  BybitPerp:  { exchangeId: 'BYBIT',   intervalHours: 8, fetchedVia: 'BYBIT' },
   GatePerp:   { exchangeId: 'GATE',    intervalHours: 8, fetchedVia: 'GATE' },
   KuCoinPerp: { exchangeId: 'KUCOIN',  intervalHours: 8, fetchedVia: 'KUCOIN' },
   AsterPerp:  { exchangeId: 'ASTER',   intervalHours: 8, fetchedVia: 'ASTER' },
   OKXPerp:    { exchangeId: 'OKX',     intervalHours: 8, fetchedVia: 'OKX' },
+  BitgetPerp: { exchangeId: 'BITGET',  intervalHours: 8, fetchedVia: 'BITGET' },
 };
 
 /**
  * The adapters whose `getPredictedFundings()` the arb FETCHES + merges — DERIVED: the unique
  * `fetchedVia` values in META declaration order (DECISION-CALL-V1-W1 R2), so a venue row and the
  * adapter that supplies it can never be declared in two places. `fetchedVia` names the adapter
- * whose feed carries that venue-string: HL's feed is a cross-venue AGGREGATE (HlPerp/BinPerp/
- * BybitPerp), so the Binance/Bybit rows are fetched via HL, preserving the funding source of the
- * pre-expansion 3-venue arb. GATE/KUCOIN/ASTER/OKX each contribute their own single venue.
+ * whose feed carries that venue-string; since R3 every venue is fetched from its OWN feed. HL's feed
+ * still also carries BinPerp/BybitPerp rows (a cross-venue aggregate) — the merge takes a
+ * venue-string ONLY from its `fetchedVia` adapter, so those copies are dropped, never double-counted.
  */
 export const FUNDING_ARB_FETCH_ADAPTERS: readonly ExchangeId[] = [
   ...new Set(Object.values(FUNDING_VENUE_META).map((m) => m.fetchedVia)),
@@ -39,11 +43,11 @@ export const FUNDING_ARB_FETCH_ADAPTERS: readonly ExchangeId[] = [
  * The PUBLIC funding-arb venue count — the number of venues `scan_funding_arb` evaluates. SINGLE SoT
  * for every count surface (landing copy `data-tr-field="funding_venue_count"`, JSON-LD, and
  * `/api/performance-public.funding_venue_count`). Derived from `FUNDING_VENUE_META` (the QUALIFYING
- * set the engine actually iterates), NOT `FUNDING_ARB_FETCH_ADAPTERS.length` (=5 fetch adapters — HL's
- * feed aggregates Binance+Bybit, so 5 adapters fan out to 7 venue-strings). A venue enters this count
- * ONLY when promoted into `FUNDING_VENUE_META` (reliable `getPredictedFundings` incl. `nextFundingTime`)
- * — Bitget stays excluded until it exposes one, so the public claim never inflates ahead of the engine.
- * Live `scan_funding_arb` handshake 2026-07-15 confirmed exactly these 7 (Bitget absent).
+ * set the engine actually iterates), NOT `FUNDING_ARB_FETCH_ADAPTERS.length` — the two are equal
+ * only because every venue is fetched from its own feed since DECISION-CALL-V1-W1 R3; a future
+ * aggregate feed would fan one adapter out to several venue-strings again. A venue enters this count
+ * ONLY when promoted into `FUNDING_VENUE_META` (reliable `getPredictedFundings` incl. `nextFundingTime`),
+ * so the public claim never inflates ahead of the engine. 7 → 8 with Bitget (DECISION-CALL-V1-W1 R3).
  * OPS-LANDING-FUNDING-VENUE-RECONCILE-W1.
  */
 export const FUNDING_VENUE_COUNT: number = Object.keys(FUNDING_VENUE_META).length;
@@ -51,11 +55,11 @@ export const FUNDING_VENUE_COUNT: number = Object.keys(FUNDING_VENUE_META).lengt
 /**
  * Funding-copy short label per `ExchangeId` (e.g. "Gate", not the EXCHANGES "Gate.io" label) — the
  * form used in the docs.html-canonical "N venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster,
- * and OKX" line. Keyed by the qualifying exchangeIds only.
+ * OKX, and Bitget" line. Keyed by the qualifying exchangeIds only.
  */
 const FUNDING_VENUE_SHORT_LABEL: Partial<Record<ExchangeId, string>> = {
   HL: 'Hyperliquid', BINANCE: 'Binance', BYBIT: 'Bybit', GATE: 'Gate',
-  KUCOIN: 'KuCoin', ASTER: 'Aster', OKX: 'OKX',
+  KUCOIN: 'KuCoin', ASTER: 'Aster', OKX: 'OKX', BITGET: 'Bitget',
 };
 
 /**

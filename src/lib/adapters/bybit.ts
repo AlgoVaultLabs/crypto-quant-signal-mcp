@@ -68,6 +68,8 @@ interface BybitTicker {
   markPrice: string;
   fundingRate: string;
   nextFundingTime: string;
+  /** Hours, as a string ('8' / '4' / '1'); empty on dated futures (measured 2026-10-30). */
+  fundingIntervalHour?: string;
   volume24h: string;
   turnover24h: string;
   prevPrice24h: string;
@@ -188,16 +190,27 @@ export class BybitAdapter implements ExchangeAdapter {
       category: 'linear',
     });
 
-    return (data.list || [])
-      .filter(entry => entry.symbol.endsWith('USDT'))
-      .map(entry => ({
+    // DECISION-CALL-V1-W1 R3: the BybitPerp source for the arb (no longer HL's aggregate copy, 68%
+    // of Bybit's top 100). Each row carries its contract's `fundingIntervalHour` (present but
+    // unreadable → NaN, so the row self-skips downstream); an unreadable rate drops the row, a 0 stays.
+    const out: FundingData[] = [];
+    for (const entry of data.list || []) {
+      if (!entry.symbol.endsWith('USDT')) continue;
+      const fundingRate = safeUpstreamNum(entry.fundingRate);
+      if (fundingRate === null) continue;
+      out.push({
         coin: fromBybitSymbol(entry.symbol),
         venues: [{
           venue: 'BybitPerp',
-          fundingRate: safeUpstreamNum(entry.fundingRate) ?? 0,
+          fundingRate,
           nextFundingTime: parseInt(entry.nextFundingTime || '0'),
+          ...(entry.fundingIntervalHour !== undefined
+            ? { intervalHours: safeUpstreamNum(entry.fundingIntervalHour) ?? NaN }
+            : {}),
         }],
-      }));
+      });
+    }
+    return out;
   }
 
   async getFundingHistory(coin: string, startTime: number): Promise<{ time: number; fundingRate: number }[]> {

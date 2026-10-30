@@ -17,55 +17,71 @@ import {
 } from '../../src/lib/funding-venues.js';
 
 describe('FUNDING_VENUE_META — the qualifying-venue SoT', () => {
-  it('is exactly the 7 architect-ratified venues with correct intervals', () => {
+  it('is exactly the 8 qualifying venues with correct intervals', () => {
+    // DECISION-CALL-V1-W1 R3: Bitget joined (its current-fund-rate feed publishes the next funding time).
     expect(Object.keys(FUNDING_VENUE_META).sort()).toEqual(
-      ['AsterPerp', 'BinPerp', 'BybitPerp', 'GatePerp', 'HlPerp', 'KuCoinPerp', 'OKXPerp'].sort(),
+      ['AsterPerp', 'BinPerp', 'BitgetPerp', 'BybitPerp', 'GatePerp', 'HlPerp', 'KuCoinPerp', 'OKXPerp'].sort(),
     );
     // DECISION-CALL-V1-W1 R2: each row names the adapter whose feed carries it (`fetchedVia`).
     expect(FUNDING_VENUE_META.HlPerp).toEqual({ exchangeId: 'HL', intervalHours: 1, fetchedVia: 'HL' }); // HL hourly
     expect(FUNDING_VENUE_META.BinPerp.intervalHours).toBe(8);
-    // EXCLUDED: BITGET (no nextFundingTime → degraded urgency) + MEXC/HTX/BINGX/PHEMEX (empty feed)
-    for (const excluded of ['BitgetPerp', 'MexcPerp', 'HtxPerp', 'BingxPerp', 'PhemexPerp']) {
+    expect(FUNDING_VENUE_META.BitgetPerp).toEqual({ exchangeId: 'BITGET', intervalHours: 8, fetchedVia: 'BITGET' });
+    // EXCLUDED: MEXC/HTX/BINGX/PHEMEX (empty feed)
+    for (const excluded of ['MexcPerp', 'HtxPerp', 'BingxPerp', 'PhemexPerp']) {
       expect(FUNDING_VENUE_META).not.toHaveProperty(excluded);
     }
   });
 
-  it('fetch-adapter set uses the HL aggregate for Bin/Bybit (no double-count)', () => {
-    expect([...FUNDING_ARB_FETCH_ADAPTERS]).toEqual(['HL', 'GATE', 'KUCOIN', 'ASTER', 'OKX']);
+  it('every venue is fetched from its OWN feed — Binance and Bybit no longer via the HL aggregate', () => {
+    // DECISION-CALL-V1-W1 R3: HL's copy covered 41% / 68% of Binance's / Bybit's top 100; their own
+    // bulk feeds 96% / 98% (R0, 2026-10-24).
+    for (const [venue, m] of Object.entries(FUNDING_VENUE_META)) {
+      expect(m.fetchedVia, venue).toBe(m.exchangeId);
+    }
+    expect([...FUNDING_ARB_FETCH_ADAPTERS]).toEqual(['HL', 'BINANCE', 'BYBIT', 'GATE', 'KUCOIN', 'ASTER', 'OKX', 'BITGET']);
+  });
+
+  it('FUNDING_ARB_FETCH_ADAPTERS is DERIVED: the unique fetchedVia values in META order', () => {
+    expect([...FUNDING_ARB_FETCH_ADAPTERS]).toEqual([...new Set(Object.values(FUNDING_VENUE_META).map((m) => m.fetchedVia))]);
   });
 });
 
 describe('FUNDING_VENUE_COUNT — the public funding venue count SoT (OPS-LANDING-FUNDING-VENUE-RECONCILE-W1)', () => {
-  it('== |FUNDING_VENUE_META| == 7 (the qualifying set the engine actually reports)', () => {
+  it('== |FUNDING_VENUE_META| == 8 (the qualifying set the engine actually reports)', () => {
     expect(FUNDING_VENUE_COUNT).toBe(Object.keys(FUNDING_VENUE_META).length);
-    expect(FUNDING_VENUE_COUNT).toBe(7);
+    // DECISION-CALL-V1-W1 R3: 7 → 8 (Bitget).
+    expect(FUNDING_VENUE_COUNT).toBe(8);
   });
 
-  it('is NOT the fetch-adapter count (=5): the public claim must derive from META, not FETCH_ADAPTERS', () => {
-    // HL's aggregate feed fans out to HL+Binance+Bybit, so 5 fetch adapters → 7 venues.
-    // Guards the CH1 spec-correction: FUNDING_ARB_FETCH_ADAPTERS.length would understate the count.
-    expect(FUNDING_ARB_FETCH_ADAPTERS.length).toBe(5);
-    expect(FUNDING_VENUE_COUNT).not.toBe(FUNDING_ARB_FETCH_ADAPTERS.length);
+  it('derives from META, not from the fetch-adapter count — equal today only because no feed aggregates', () => {
+    // DECISION-CALL-V1-W1 R3: before R3, HL's aggregate fanned 5 adapters out to 7 venues, and this
+    // test pinned the inequality. With every venue on its own feed the counts coincide; what stays
+    // pinned is that the public count is the META row count, one per venue-string.
+    expect(FUNDING_VENUE_COUNT).toBe(new Set(Object.values(FUNDING_VENUE_META).map((m) => m.exchangeId)).size);
+    expect(FUNDING_ARB_FETCH_ADAPTERS.length).toBe(FUNDING_VENUE_COUNT);
   });
 
   it('name-list length == count (Q4b coupling): a future META add that bumps the count but not the names FAILS here', () => {
     expect(FUNDING_VENUE_LABELS.length).toBe(FUNDING_VENUE_COUNT);
   });
 
-  it('labels are exactly the 7 named venues in the canonical (docs.html) copy order', () => {
+  it('labels are exactly the 8 named venues in the canonical (docs.html) copy order', () => {
     // Exact match also proves no label fell back to a raw exchangeId (e.g. 'HL' → 'Hyperliquid').
     expect([...FUNDING_VENUE_LABELS]).toEqual([
-      'Hyperliquid', 'Binance', 'Bybit', 'Gate', 'KuCoin', 'Aster', 'OKX',
+      'Hyperliquid', 'Binance', 'Bybit', 'Gate', 'KuCoin', 'Aster', 'OKX', 'Bitget',
     ]);
   });
 
-  it('never inflates ahead of the engine: Bitget stays excluded from the public count + name list', () => {
-    expect(FUNDING_VENUE_LABELS).not.toContain('Bitget');
-    expect(FUNDING_VENUE_META).not.toHaveProperty('BitgetPerp');
+  it('never inflates ahead of the engine: Bitget is counted only because the engine reads its feed', () => {
+    // DECISION-CALL-V1-W1 R3 flipped this from "Bitget stays excluded": the label exists exactly when
+    // the META row (and so the fetch adapter) does.
+    expect(FUNDING_VENUE_LABELS).toContain('Bitget');
+    expect(FUNDING_ARB_FETCH_ADAPTERS).toContain('BITGET');
   });
 
   it('FUNDING_VENUE_LIST_TEXT is the Oxford-joined public-copy string (mirrored on the landing pages)', () => {
-    expect(FUNDING_VENUE_LIST_TEXT).toBe('Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX');
+    // DECISION-CALL-V1-W1 R5: the approved public line (Mr.1, 2026-10-27).
+    expect(FUNDING_VENUE_LIST_TEXT).toBe('Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, OKX, and Bitget');
     // the copy string names exactly FUNDING_VENUE_COUNT venues (comma + trailing "and")
     expect(FUNDING_VENUE_LIST_TEXT.split(/,\s*(?:and\s+)?/).filter(Boolean).length).toBe(FUNDING_VENUE_COUNT);
   });

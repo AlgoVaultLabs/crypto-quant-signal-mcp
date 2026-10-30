@@ -90,8 +90,10 @@ export interface MergedFundingSnapshot {
 
 /**
  * Fetch every non-retired `FUNDING_ARB_FETCH_ADAPTERS` feed (fail-soft PER adapter — a down feed is
- * a failed venue, never a crash) and merge by coin. A venue-string already merged for a coin keeps
- * its first row.
+ * a failed venue, never a crash) and merge by coin. Each venue-string is taken ONLY from the adapter
+ * META names as its `fetchedVia` (DECISION-CALL-V1-W1 R3): HL's feed also carries BinPerp/BybitPerp
+ * rows, and those aggregate copies drop — every venue is quoted from its own feed. A venue-string
+ * outside META drops here too (no reader could resolve it). A coin keeps its first row per venue.
  */
 export async function getMergedFundingSnapshot(retired: ReadonlySet<string>): Promise<MergedFundingSnapshot> {
   const fetchAdapters = FUNDING_ARB_FETCH_ADAPTERS.filter((v) => !retired.has(v));
@@ -108,6 +110,7 @@ export async function getMergedFundingSnapshot(retired: ReadonlySet<string>): Pr
     for (const entry of feed) {
       const merged = byCoin.get(entry.coin) ?? [];
       for (const ve of entry.venues) {
+        if (FUNDING_VENUE_META[ve.venue]?.fetchedVia !== fetchAdapters[i]) continue;
         if (!merged.some((m) => m.venue === ve.venue)) merged.push(ve);
       }
       byCoin.set(entry.coin, merged);

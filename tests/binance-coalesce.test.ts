@@ -103,6 +103,10 @@ function installFetchSpy(): FetchSpy {
       const sym = symbolMatch ? symbolMatch[1] : 'BTCUSDT';
       return new Response(JSON.stringify(makeOpenInterestResponse(sym)), { status: 200 });
     }
+    if (urlStr.includes('/fapi/v1/fundingInfo')) {
+      // DECISION-CALL-V1-W1 R3: getPredictedFundings also reads the per-contract interval list.
+      return new Response(JSON.stringify([{ symbol: 'ETHUSDT', fundingIntervalHours: 4 }]), { status: 200 });
+    }
     if (urlStr.includes('/fapi/v1/klines')) {
       klines++;
       return new Response(JSON.stringify(makeKlinesResponse()), { status: 200 });

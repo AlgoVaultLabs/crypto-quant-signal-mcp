@@ -128,6 +128,10 @@ interface BitgetOpenInterest {
 interface BitgetFundingRate {
   symbol: string;
   fundingRate: string;
+  /** Hours, as a string ('8' / '4' / '1'). */
+  fundingRateInterval?: string;
+  /** The next settlement, epoch ms as a string. */
+  nextUpdate?: string;
 }
 
 interface BitgetFundingHistoryEntry {
@@ -339,21 +343,32 @@ export class BitgetAdapter implements ExchangeAdapter {
   }
 
   async getPredictedFundings(): Promise<FundingData[]> {
-    // Fetch ALL tickers for USDT-FUTURES
-    const data = await bitgetGet<BitgetTicker[]>('/api/v2/mix/market/tickers', {
+    // DECISION-CALL-V1-W1 R3: Bitget joins the funding set. The `tickers` source carried no next
+    // funding time (why Bitget was excluded); `current-fund-rate` publishes the rate, the contract's
+    // `fundingRateInterval` and `nextUpdate` for the whole USDT book in one call (measured
+    // 2026-10-27). Present-but-unreadable interval → NaN (row self-skips); unreadable rate → dropped.
+    const data = await bitgetGet<BitgetFundingRate[]>('/api/v2/mix/market/current-fund-rate', {
       productType: 'USDT-FUTURES',
     });
 
-    return (data || [])
-      .filter(entry => entry.symbol.endsWith('USDT'))
-      .map(entry => ({
+    const out: FundingData[] = [];
+    for (const entry of data || []) {
+      if (!entry.symbol.endsWith('USDT')) continue;
+      const fundingRate = safeUpstreamNum(entry.fundingRate);
+      if (fundingRate === null) continue;
+      out.push({
         coin: fromBitgetSymbol(entry.symbol),
         venues: [{
           venue: 'BitgetPerp',
-          fundingRate: safeUpstreamNum(entry.fundingRate) ?? 0,
-          nextFundingTime: parseInt(entry.nextFundingTime || '0'),
+          fundingRate,
+          nextFundingTime: parseInt(entry.nextUpdate || '0'),
+          ...(entry.fundingRateInterval !== undefined
+            ? { intervalHours: safeUpstreamNum(entry.fundingRateInterval) ?? NaN }
+            : {}),
         }],
-      }));
+      });
+    }
+    return out;
   }
 
   async getFundingHistory(coin: string, _startTime: number): Promise<{ time: number; fundingRate: number }[]> {

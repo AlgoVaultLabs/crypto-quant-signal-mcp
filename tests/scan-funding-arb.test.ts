@@ -6,6 +6,7 @@ vi.mock('../src/lib/exchange-adapter.js', () => ({
 }));
 
 import { scanFundingArb, _resetScanFundingArbCaches, _resetPredictedFundingsCache, _getScanFundingArbCacheSizes, _setLiquidityOverrideForTest } from '../src/tools/scan-funding-arb.js';
+import { FUNDING_ARB_FETCH_ADAPTERS } from '../src/lib/funding-venues.js';
 import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { resetLicenseCache } from '../src/lib/license.js';
 import type { ExchangeAdapter, FundingData } from '../src/types.js';
@@ -215,7 +216,9 @@ describe('scanFundingArb', () => {
     await scanFundingArb({ minSpreadBps: 0 });
     await scanFundingArb({ minSpreadBps: 0 });
 
-    expect(predictedSpy.mock.calls.length).toBe(5); // scan 1 = 5 fetch-adapters (HL/GATE/KUCOIN/ASTER/OKX); scans 2-3 = cache hits
+    // DECISION-CALL-V1-W1 R3: every venue is fetched from its own feed — 8 fetch adapters, was 5.
+    expect(FUNDING_ARB_FETCH_ADAPTERS).toHaveLength(8);
+    expect(predictedSpy.mock.calls.length).toBe(FUNDING_ARB_FETCH_ADAPTERS.length); // scan 1 = one per fetch adapter; scans 2-3 = cache hits
   });
 
   it('AC5.1: fundingHistory cache — same coin within TTL hits cache', async () => {
@@ -282,13 +285,14 @@ describe('scanFundingArb', () => {
     vi.mocked(getAdapter).mockReturnValue(adapter);
 
     await scanFundingArb({ minSpreadBps: 0 });
-    expect(predictedSpy.mock.calls.length).toBe(5); // 5 fetch-adapters (HL/GATE/KUCOIN/ASTER/OKX)
+    // DECISION-CALL-V1-W1 R3: 8 fetch adapters (each venue its own feed), was 5.
+    expect(predictedSpy.mock.calls.length).toBe(FUNDING_ARB_FETCH_ADAPTERS.length);
 
     // Reset → next call must miss cache + re-fetch
     _resetScanFundingArbCaches();
 
     await scanFundingArb({ minSpreadBps: 0 });
-    expect(predictedSpy.mock.calls.length).toBe(10); // +5 after reset
+    expect(predictedSpy.mock.calls.length).toBe(2 * FUNDING_ARB_FETCH_ADAPTERS.length); // one more per adapter after reset
   });
 
   it('OPS-FUNDING-ARB-EXPAND-W1 (Q-B): per-leg liquidity gate excludes an illiquid leg (no false spread)', async () => {

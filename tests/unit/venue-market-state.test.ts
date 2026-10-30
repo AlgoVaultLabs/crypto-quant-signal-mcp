@@ -183,6 +183,38 @@ describe('getMergedFundingSnapshot — the shared funding snapshot', () => {
     expect(made.get('ASTER')!.getPredictedFundings).toHaveBeenCalledTimes(2);
   });
 
+  it('R3: each venue-string comes ONLY from its own feed — HL\'s aggregate BinPerp/BybitPerp copies drop', async () => {
+    installAdapters({
+      HL: async () => [{ coin: 'BTC', venues: [
+        { venue: 'HlPerp', fundingRate: 0.00001, nextFundingTime: T0 },
+        { venue: 'BinPerp', fundingRate: 0.009, nextFundingTime: T0 },   // aggregate copy — must drop
+        { venue: 'BybitPerp', fundingRate: 0.009, nextFundingTime: T0 }, // aggregate copy — must drop
+      ] }],
+      BINANCE: async () => [{ coin: 'BTC', venues: [{ venue: 'BinPerp', fundingRate: 0.0001, nextFundingTime: T0, intervalHours: 4 }] }],
+      GATE: async () => [{ coin: 'BTC', venues: [{ venue: 'MexcPerp', fundingRate: 0.5, nextFundingTime: T0 }] }], // outside META
+    });
+    const snap = await getMergedFundingSnapshot(new Set());
+    expect(snap.byCoin.get('BTC')).toEqual([
+      { venue: 'HlPerp', fundingRate: 0.00001, nextFundingTime: T0 },
+      { venue: 'BinPerp', fundingRate: 0.0001, nextFundingTime: T0, intervalHours: 4 },
+    ]);
+    // BYBIT's own feed returned nothing → BYBIT failed, and HL's copy did NOT stand in for it.
+    expect(snap.failedVenues.has('BYBIT')).toBe(true);
+  });
+
+  it('R3: a throwing HL feed fails HL alone; Binance and Bybit keep their own feeds', async () => {
+    installAdapters({
+      HL: async () => { throw new Error('hl down'); },
+      BINANCE: async () => [fundingOf('BinPerp')],
+      BYBIT: async () => [fundingOf('BybitPerp')],
+    });
+    const snap = await getMergedFundingSnapshot(new Set());
+    expect(snap.failedVenues.has('HL')).toBe(true);
+    expect(snap.failedVenues.has('BINANCE')).toBe(false);
+    expect(snap.failedVenues.has('BYBIT')).toBe(false);
+    expect(snap.byCoin.get('BTC')!.map((r) => r.venue)).toEqual(['BinPerp', 'BybitPerp']);
+  });
+
   it('a retired venue is never fetched', async () => {
     const made = installAdapters({});
     await getMergedFundingSnapshot(new Set(['OKX', 'KUCOIN']));

@@ -379,50 +379,30 @@ export class OKXAdapter implements ExchangeAdapter {
   }
 
   async getPredictedFundings(): Promise<FundingData[]> {
-    // Step 1: Fetch all swap tickers to find top coins by volume
-    const tickersResp = await okxGet<OKXTicker[]>('/api/v5/market/tickers', {
-      instType: 'SWAP',
-    });
+    // DECISION-CALL-V1-W1 R3: ONE whole-book call (`instId=ANY`, measured 2026-10-27) replaces the
+    // top-30-by-volume loop of per-instrument calls (9% of OKX's top 100, BTC/ETH/SOL absent).
+    // OKX's `fundingTime` IS the next settlement; its `nextFundingTime` is the one after — the old
+    // mapping read the latter and so quoted every OKX leg one period late. The contract's interval
+    // is the gap between the two stamps (`okxIntervalHours`). An unreadable rate drops the row.
+    const fundingResp = await okxGet<OKXFundingRate[]>('/api/v5/public/funding-rate', { instId: 'ANY' });
 
-    // Filter to USDT-SWAP pairs and sort by volume descending
-    const usdtTickers = (tickersResp.data || [])
-      .filter(t => t.instId.endsWith('-USDT-SWAP'))
-      .sort((a, b) => parseFloat(b.volCcy24h || '0') - parseFloat(a.volCcy24h || '0'))
-      .slice(0, 30); // Top 30 by volume to stay under rate limits
-
-    // Step 2: Fetch funding rate for each, throttled at 100ms apart
     const results: FundingData[] = [];
-
-    for (const ticker of usdtTickers) {
-      try {
-        const fundingResp = await okxGet<OKXFundingRate[]>('/api/v5/public/funding-rate', {
-          instId: ticker.instId,
-        });
-
-        const fr = fundingResp.data[0];
-        if (!fr) continue;
-
-        const rate = safeUpstreamNum(fr.fundingRate);
-        if (rate === null) continue;
-
-        results.push({
-          coin: fromOKXInstId(ticker.instId),
-          venues: [{
-            venue: 'OKXPerp',
-            fundingRate: rate,
-            nextFundingTime: parseInt(fr.nextFundingTime || '0', 10),
-            // SEC-06: OKX publishes no interval field, but the period is the gap between the
-            // current and next funding stamps — derived, not assumed. Live-probed 2026-07-29:
-            // BTC-USDT-SWAP yields exactly 8h this way.
-            intervalHours: okxIntervalHours(fr.fundingTime, fr.nextFundingTime),
-          }],
-        });
-      } catch {
-        // Skip coins whose funding rate fetch fails
-        continue;
-      }
+    for (const fr of fundingResp.data || []) {
+      if (!fr.instId.endsWith('-USDT-SWAP')) continue;
+      const rate = safeUpstreamNum(fr.fundingRate);
+      if (rate === null) continue;
+      results.push({
+        coin: fromOKXInstId(fr.instId),
+        venues: [{
+          venue: 'OKXPerp',
+          fundingRate: rate,
+          nextFundingTime: parseInt(fr.fundingTime || '0', 10),
+          // SEC-06: OKX publishes no interval field, but the period is the gap between the
+          // current and next funding stamps — derived, not assumed.
+          intervalHours: okxIntervalHours(fr.fundingTime, fr.nextFundingTime),
+        }],
+      });
     }
-
     return results;
   }
 
