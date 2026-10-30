@@ -29,6 +29,7 @@ import { getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes, recordBack
 import { runScript } from '../lib/script-lifecycle.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { HlMarketUnavailableError } from '../lib/adapters/hyperliquid.js';
+import { VenueMarketClosedError } from '../lib/errors.js';
 import { runAsBatch, runAsCaller, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
 import type { ExchangeId, SignalRecord } from '../types.js';
 import { computePFEMAE, toSignalOutcomeUpdate, EVAL_CANDLES, TF_MS, maturityHorizonMs } from '../lib/pfe-mae.js';
@@ -43,7 +44,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
-async function main() {
+/** Exported for tests/unit/backfill-fail-class.test.ts only; the main-guard below is the sole runner. */
+export async function main() {
   // OPS-HL-RATELIMITER-W2: backfill is bulk → run in `batch` weight class so its
   // HL candle fetches wait behind the shared budget and yield the interactive reserve.
   return runAsBatch(async () => {
@@ -157,7 +159,7 @@ async function main() {
             // pinning the LIMIT-5000 window's frontier 11.3h in the past. Recording the attempt
             // is what lets the row age out under a bounded cooldown and re-enter afterwards.
             console.log(`[${ts()}] ${coin} ${sig.signal} [${timeframe}] — no candles after signal time, skipping`);
-            await recordBackfillAttempt(sig.id!);
+            await recordBackfillAttempt(sig.id!, 'no_candles');
             skipped++;
             await sleep(DELAY_BETWEEN_FETCHES_MS);
             continue;
@@ -167,7 +169,7 @@ async function main() {
           if (!result) {
             // A1: candles arrived but the evaluator could not produce an outcome from them —
             // unfillable on this data, same queue-clogging shape as the no-candle case.
-            await recordBackfillAttempt(sig.id!);
+            await recordBackfillAttempt(sig.id!, 'unevaluable');
             skipped++;
             await sleep(DELAY_BETWEEN_FETCHES_MS);
             continue;
@@ -206,7 +208,10 @@ async function main() {
           // A1: the DURABLE half of the breaker. `failCounts` below is per-PROCESS and resets on
           // every 3-minute fire, so the same ~150 errors were re-incurred and their rows
           // re-blocked from scratch on every run. This one survives the process.
-          await recordBackfillAttempt(sig.id!);
+          await recordBackfillAttempt(sig.id!, err instanceof VenueMarketClosedError ? 'venue_closed' : 'error');
+          // OPS-VENUE-MARKET-CLOSED-W2: the class is decided ONCE, here. A venue's own closure (refused at the
+          // getAdapter seam with 0 requests, or answered in-band) is `venue_closed`, which the census does not count
+          // as attempted; every other throw is `error`, which it does. failCounts and the Blocking line are unchanged.
           const fc = (failCounts.get(failKey) || 0) + 1;
           failCounts.set(failKey, fc);
           if (fc <= MAX_FAIL_PER_SYMBOL) {

@@ -41,10 +41,11 @@ export async function runBackfill(): Promise<void> {
         // consumers of one queue would disagree about which rows are worth attempting.
         // `not ready yet` above records nothing, for the same reason it records nothing in the
         // cron: an immature row is not a failed row.
-        if (relevant.length < 1) { await recordBackfillAttempt(sig.id!); continue; }
+        // OPS-VENUE-MARKET-CLOSED-W2: each records its class; the catch below records nothing, as before.
+        if (relevant.length < 1) { await recordBackfillAttempt(sig.id!, 'no_candles'); continue; }
 
         const result = computePFEMAE(sig, relevant, evalCount);
-        if (!result) { await recordBackfillAttempt(sig.id!); continue; }
+        if (!result) { await recordBackfillAttempt(sig.id!, 'unevaluable'); continue; }
 
         await updateSignalOutcomes(sig.id!, toSignalOutcomeUpdate(result));
       } catch {

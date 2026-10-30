@@ -698,6 +698,16 @@ const SIGNAL_MIGRATIONS: MigrationDescriptor[] = [
   { table: 'signal_scorer_inputs', column: 'rsi_value', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
   { table: 'signal_scorer_inputs', column: 'rsi_score_pre', type: 'SMALLINT', sqliteType: 'INTEGER' },
   { table: 'signal_scorer_inputs', column: 'funding_z', type: 'DOUBLE PRECISION', sqliteType: 'REAL' },
+  // ── OPS-VENUE-MARKET-CLOSED-W2 — WHY the last failed backfill attempt failed (`BACKFILL_FAIL_CLASSES`).
+  //
+  // Mirrors migrations/050_signals_backfill_fail_class.sql, PRE-APPLIED to prod over SSH before the code
+  // landed: the census SQL the outcome-backfill canary executes names this column, so it must exist before
+  // the emitter that writes it deploys. On PG this row is an idempotent no-op; it owns the SQLite fixture.
+  //
+  // NULLABLE WITH NO DEFAULT: catalog-only on PG16, the deployed INSERT/UPDATEs name their columns, and NULL
+  // means "attempted before W2" — which still COUNTS as attempted. A DEFAULT would stamp those rows with a
+  // class they never had.
+  { table: 'signals', column: 'backfill_fail_class', type: 'TEXT' },
 ];
 
 /**
@@ -3133,11 +3143,38 @@ function maxMaturityHorizonS(): number {
 }
 
 /**
+ * OPS-VENUE-MARKET-CLOSED-W2 — WHY a backfill attempt failed, classified ONCE by the producer at attempt
+ * time and written with the attempt (`signals.backfill_fail_class`, migrations/050). Every census counter
+ * projects from that record; none re-derives it from the venue's state at canary time, which is how
+ * `BINGX|NCSKRIG2USD` paged on 2026-10-30: the producer had refused it (market paused, 0 requests) at 09:38Z,
+ * and arm 3e judged it at 14:13Z, after the US session had opened.
+ *  * venue_closed — the venue declared the market closed (`VenueMarketClosedError`);
+ *  * no_candles   — the read returned no candle after the signal time;
+ *  * unevaluable  — candles arrived but `computePFEMAE` produced no outcome;
+ *  * error        — any other throw.
+ */
+export const BACKFILL_FAIL_CLASSES = ['venue_closed', 'no_candles', 'unevaluable', 'error'] as const;
+export type BackfillFailClass = (typeof BACKFILL_FAIL_CLASSES)[number];
+
+/**
+ * The classes the VENUE caused, not our request. `attempted` does not count them: a venue's own pause is
+ * not evidence that our fill path is broken. The next exogenous class a venue answers in-band is one entry
+ * here (NCFX weekends, any session-gated listing).
+ */
+export const EXOGENOUS_BACKFILL_FAIL_CLASSES: readonly BackfillFailClass[] = ['venue_closed'];
+
+/** NULL-safe "this attempt's class is not exogenous". A NULL row (attempted before W2) still counts —
+ *  `NOT IN` alone is NULL on a NULL class, which FILTER would drop. Exported for the census tests. */
+export const SQL_ATTEMPT_NOT_EXOGENOUS =
+  `(backfill_fail_class IS NULL OR backfill_fail_class NOT IN (${EXOGENOUS_BACKFILL_FAIL_CLASSES.map((c) => `'${c}'`).join(', ')}))`;
+
+/**
  * The three windowed counters BOTH per-group censuses read (OPS-CANDLE-REQUEST-OWNER-DERIVATION-W1 CH2) —
  * ONE derivation, so the coin census can never count a row the venue census would not:
  *  * matured   — rows that became due in the window: matured now ∧ NOT matured `windowS` ago;
  *  * filled    — `outcome_filled_at` in the window (the producer's own write stamp);
- *  * attempted — `outcome_last_attempt_at` in the window (the LAST attempt — a lower bound).
+ *  * attempted — `outcome_last_attempt_at` in the window (the LAST attempt — a lower bound) whose class the
+ *                producer did not record as exogenous (OPS-VENUE-MARKET-CLOSED-W2, `SQL_ATTEMPT_NOT_EXOGENOUS`).
  * Exported for the single-derivation test only.
  */
 export function buildWindowedCensusCounters(nowEpoch: number, windowS: number): { matured: string; filled: string; attempted: string } {
@@ -3146,7 +3183,9 @@ export function buildWindowedCensusCounters(nowEpoch: number, windowS: number): 
   return {
     matured: `COUNT(*) FILTER (WHERE ${buildMaturityClause(now)} AND NOT ${buildMaturityClause(from)})`,
     filled: `COUNT(*) FILTER (WHERE outcome_filled_at > ${from} AND outcome_filled_at <= ${now})`,
-    attempted: `COUNT(*) FILTER (WHERE outcome_last_attempt_at > ${from} AND outcome_last_attempt_at <= ${now})`,
+    attempted:
+      `COUNT(*) FILTER (WHERE outcome_last_attempt_at > ${from} AND outcome_last_attempt_at <= ${now}` +
+      ` AND ${SQL_ATTEMPT_NOT_EXOGENOUS})`,
   };
 }
 
@@ -3187,7 +3226,7 @@ export function buildBackfillCensusSql(nowEpoch: number, limit = BACKFILL_QUEUE_
  * Per venue (the fill path's venue key: an empty `exchange` is HL), over the trailing 24 h:
  *  * matured_24h            — rows that became due in the window: matured now ∧ NOT matured 24 h ago;
  *  * filled_24h             — `outcome_filled_at` in the window (the producer's own write stamp);
- *  * attempted_24h          — `outcome_last_attempt_at` in the window (LAST attempt — a lower bound);
+ *  * attempted_24h          — `outcome_last_attempt_at` in the window (LAST attempt — a lower bound), not exogenous;
  *  * past_reach_entered_24h — pending rows that crossed their venue's served depth in the window;
  *  * servable               — the queue predicate, per venue (sums to `servable_uncapped`).
  * The outer WHERE only bounds the scan to rows that can contribute to some column; every column is
@@ -3279,17 +3318,21 @@ export async function getSignalsNeedingUnifiedBackfillAsync(): Promise<SignalRec
  * `COALESCE(outcome_attempts, 0) + 1` so a historical NULL row starts at 1 rather than staying
  * NULL forever. Fire-and-forget is deliberate here and ONLY here: this is bookkeeping, not the
  * outcome write, and a lost increment costs one extra re-attempt rather than a wrong number.
+ *
+ * OPS-VENUE-MARKET-CLOSED-W2: `failClass` is REQUIRED, so no attempt site can record a failure without
+ * saying why; the census reads it (`SQL_ATTEMPT_NOT_EXOGENOUS`). It is the LAST attempt's class, as
+ * `outcome_last_attempt_at` is the last attempt's time. The queue and the backoff ignore it.
  */
-export async function recordBackfillAttempt(id: number, nowEpoch?: number): Promise<void> {
+export async function recordBackfillAttempt(id: number, failClass: BackfillFailClass, nowEpoch?: number): Promise<void> {
   const b = getBackend();
   const now = Math.trunc(nowEpoch ?? Math.floor(Date.now() / 1000));
   const sql =
     `UPDATE signals SET outcome_attempts = COALESCE(outcome_attempts, 0) + 1,` +
-    ` outcome_last_attempt_at = ? WHERE id = ?`;
+    ` outcome_last_attempt_at = ?, backfill_fail_class = ? WHERE id = ?`;
   if (isPg && b instanceof PgBackend) {
-    await b.runAsync(sql, now, id);
+    await b.runAsync(sql, now, failClass, id);
   } else {
-    b.run(sql, now, id);
+    b.run(sql, now, failClass, id);
   }
 }
 

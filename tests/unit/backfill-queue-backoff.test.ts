@@ -219,7 +219,8 @@ describe('OPS-OUTCOME-BACKFILL-STALL-W1 A1 — the durable breaker sees BOTH fai
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(new URL('../../src/resources/signal-performance.ts', import.meta.url), 'utf8');
     expect(src).toContain('recordBackfillAttempt');
-    expect(src.match(/recordBackfillAttempt\(sig\.id!\)/g) ?? []).toHaveLength(2);
+    // OPS-VENUE-MARKET-CLOSED-W2: each site now names its class (no_candles, unevaluable).
+    expect(src.match(/recordBackfillAttempt\(sig\.id!, '(no_candles|unevaluable)'\)/g) ?? []).toHaveLength(2);
   });
 });
 

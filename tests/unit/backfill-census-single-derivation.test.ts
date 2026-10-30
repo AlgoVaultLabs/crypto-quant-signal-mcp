@@ -108,7 +108,7 @@ const SCHEMA = `CREATE TEMP TABLE signals (
   confidence INTEGER NOT NULL DEFAULT 70, timeframe TEXT NOT NULL, exchange TEXT NOT NULL DEFAULT 'HL',
   price_at_signal REAL NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, outcome_price REAL,
   outcome_attempts INTEGER, outcome_last_attempt_at INTEGER, outcome_filled_at INTEGER,
-  pfe_return_pct REAL, mae_return_pct REAL)`;
+  backfill_fail_class TEXT, pfe_return_pct REAL, mae_return_pct REAL)`;
 const sqlVal = (x: number | string | null) => (x === null ? 'NULL' : typeof x === 'number' ? String(x) : `'${x}'`);
 const insert = (r: Row) =>
   `INSERT INTO signals (id, timeframe, exchange, created_at, outcome_price, outcome_attempts, outcome_last_attempt_at, outcome_filled_at) VALUES (${[
