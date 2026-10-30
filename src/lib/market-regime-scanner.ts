@@ -182,6 +182,33 @@ export function regimeIntervalMs(timeframe: RegimeScanTimeframe): number {
   return regimeFetchWindow(timeframe, 0).intervalMs;
 }
 
+/** Whether a servable generation may still be served at `nowMs`. */
+export interface RegimeGenerationFreshness {
+  /** False when there is no generation, or it is older than `maxAgeMs`. */
+  fresh: boolean;
+  /** ISO close of the generation's bar; null when there is none. */
+  as_of: string | null;
+  /** The staleness bound: `REGIME_SNAPSHOT_STALE_FACTOR` × the timeframe's interval. */
+  maxAgeMs: number;
+}
+
+/**
+ * THE staleness rule for a regime-snapshot generation, shared by both regime readers
+ * (DECISION-CALL-V1-W2 R5): `scan_market_regimes` refuses a stale generation, `pre_trade_check` falls
+ * through to the next venue. Extracted verbatim from `scanMarketRegimes` — a generation is stale when
+ * `nowMs − bar_close_ms` exceeds the bound; exactly at the bound it is still served.
+ */
+export function regimeGenerationFreshness(
+  gen: Pick<ServableGeneration, 'bar_close_ms'> | null,
+  timeframe: RegimeScanTimeframe,
+  nowMs: number,
+  env: NodeJS.ProcessEnv = process.env,
+): RegimeGenerationFreshness {
+  const maxAgeMs = regimeSnapshotStaleFactor(env) * regimeIntervalMs(timeframe);
+  if (!gen) return { fresh: false, as_of: null, maxAgeMs };
+  return { fresh: !(nowMs - gen.bar_close_ms > maxAgeMs), as_of: new Date(gen.bar_close_ms).toISOString(), maxAgeMs };
+}
+
 /** The session state for a stored asset class at `at` — `UNKNOWN` passes through, as in the sampler
  *  and `get_market_regime`. */
 function sessionStateAt(assetClass: string, at: Date): string {
@@ -250,14 +277,11 @@ export async function scanMarketRegimes(
 ): Promise<ScanMarketRegimesOutcome> {
   const { exchange, timeframe } = params;
   const intervalMs = regimeIntervalMs(timeframe);
-  const maxAgeMs = regimeSnapshotStaleFactor(env) * intervalMs;
   const nowMs = deps.now();
 
   const gen = await deps.latestServableGeneration(exchange, timeframe);
-  if (!gen) return { status: 'stale', as_of: null, max_age_ms: maxAgeMs };
-  if (nowMs - gen.bar_close_ms > maxAgeMs) {
-    return { status: 'stale', as_of: new Date(gen.bar_close_ms).toISOString(), max_age_ms: maxAgeMs };
-  }
+  const freshness = regimeGenerationFreshness(gen, timeframe, nowMs, env);
+  if (!gen || !freshness.fresh) return { status: 'stale', as_of: freshness.as_of, max_age_ms: freshness.maxAgeMs };
 
   const rows = await deps.readGenerationRows(exchange, timeframe, gen.bar_close_ms);
   const byCoin = new Map(rows.map((r) => [r.coin, r]));

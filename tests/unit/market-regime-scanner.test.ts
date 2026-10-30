@@ -16,6 +16,7 @@ import {
   regimeAgeBars,
   regimeIntervalMs,
   regimeSnapshotStaleFactor,
+  regimeGenerationFreshness,
   DEFAULT_REGIME_SNAPSHOT_STALE_FACTOR,
   REGIME_SCAN_TOP_N_DEFAULT,
   type RegimeScannerDeps,
@@ -322,5 +323,23 @@ describe('the clock is the injected one', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+// DECISION-CALL-V1-W2 R5: the staleness rule, extracted so pre_trade_check reads the SAME bound. The
+// scan's own staleness tests above stay unchanged and green — that is the byte-identity of the move.
+describe('regimeGenerationFreshness — the one staleness rule both regime readers share', () => {
+  const now = Date.parse('2026-10-30T12:00:00Z');
+  it('no generation: not fresh, as_of null, the bound still reported', () => {
+    expect(regimeGenerationFreshness(null, '1h', now, {})).toEqual({ fresh: false, as_of: null, maxAgeMs: 2 * H });
+  });
+  it('exactly at factor × interval it is fresh; one ms past it is not', () => {
+    expect(regimeGenerationFreshness({ bar_close_ms: now - 8 * H }, '4h', now, {}))
+      .toEqual({ fresh: true, as_of: new Date(now - 8 * H).toISOString(), maxAgeMs: 8 * H });
+    expect(regimeGenerationFreshness({ bar_close_ms: now - 8 * H - 1 }, '4h', now, {}).fresh).toBe(false);
+  });
+  it('honours REGIME_SNAPSHOT_STALE_FACTOR exactly as the scan does', () => {
+    expect(regimeGenerationFreshness({ bar_close_ms: now - 3 * 24 * H }, '1d', now, { REGIME_SNAPSHOT_STALE_FACTOR: '3' }).fresh).toBe(true);
+    expect(regimeGenerationFreshness({ bar_close_ms: now - 3 * 24 * H - 1 }, '1d', now, { REGIME_SNAPSHOT_STALE_FACTOR: '3' }).fresh).toBe(false);
   });
 });

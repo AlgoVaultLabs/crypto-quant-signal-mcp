@@ -22,6 +22,7 @@ import {
   recordRegimeSnapshotRun,
   latestServableGeneration,
   readGenerationRows,
+  readGenerationRow,
   latestRunDisposition,
   latestRunForBar,
   recentDueRuns,
@@ -340,5 +341,23 @@ describe('sampledRegimeVenues — env ∩ ACTIVE promoted, unknown tokens droppe
 
   it('an empty env value is the default, not an empty venue set', async () => {
     expect(await sampledRegimeVenues(1, { REGIME_SNAPSHOT_VENUES: '  ' })).toEqual(['BINANCE', 'BYBIT', 'OKX', 'BITGET']);
+  });
+});
+
+// DECISION-CALL-V1-W2 R5 — the additive single-coin read pre_trade_check uses.
+describe('readGenerationRow', () => {
+  beforeEach(() => { q.mockReset(); _resetRegimeSnapshotsEnsure(); });
+  it('reads ONE coin of ONE generation by its primary key, numbers coerced', async () => {
+    q.mockImplementation(async (sql: string) => (/FROM regime_snapshots WHERE/.test(sql)
+      ? [{ ...row('BTC'), bar_close_ms: '1792400400000', confidence: '71', regime_since_ms: null, computed_at: '1792400500000' }]
+      : []));
+    expect(await readGenerationRow('BINANCE', '4h', 1_792_400_400_000, 'BTC')).toEqual({ ...row('BTC'), confidence: 71 });
+    const [sql, params] = callMatching(/FROM regime_snapshots WHERE/)! as [string, unknown[]];
+    expect(sql).toMatch(/WHERE exchange = \$1 AND timeframe = \$2 AND bar_close_ms = \$3 AND coin = \$4$/);
+    expect(params).toEqual(['BINANCE', '4h', 1_792_400_400_000, 'BTC']);
+  });
+  it('null when the generation has no row for the coin', async () => {
+    q.mockImplementation(async () => []);
+    expect(await readGenerationRow('BINANCE', '4h', 1_792_400_400_000, 'NOPE')).toBeNull();
   });
 });

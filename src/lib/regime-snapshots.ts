@@ -393,6 +393,26 @@ export async function readGenerationRows(
 }
 
 /**
+ * ONE coin's row of ONE generation, or null when the generation has no row for it
+ * (DECISION-CALL-V1-W2 R5 — `pre_trade_check` needs a single coin, not the venue's whole generation).
+ * Additive: the same columns and the same coercion as `readGenerationRows`, one primary-key lookup.
+ */
+export async function readGenerationRow(
+  exchange: string,
+  timeframe: string,
+  barCloseMs: number,
+  coin: string,
+): Promise<RegimeSnapshotRow | null> {
+  await ensureRegimeSnapshotTables();
+  const rows = await dbQuery<Record<string, unknown>>(
+    `SELECT ${SNAPSHOT_COLS.join(', ')} FROM regime_snapshots ` +
+      `WHERE exchange = $1 AND timeframe = $2 AND bar_close_ms = $3 AND coin = $4`,
+    [exchange, timeframe, barCloseMs, coin],
+  );
+  return rows[0] ? toSnapshotRow(rows[0]) : null;
+}
+
+/**
  * The newest non-NOT_DUE run for a pair — what the producer last DID with a due bar. A pair is
  * unserved exactly while this is WINDOW_STALE. NULL when the pair has never had a due tick.
  */
