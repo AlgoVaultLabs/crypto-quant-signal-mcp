@@ -53,11 +53,34 @@ export type ClientKind =
   | 'browser'
   | 'unknown';
 
+/**
+ * GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1 — a client's PLATFORM PROFILE: the rules its host imposes on
+ * what we show inside it. ONE policy, ONE place: a profile lives on its registry entry, and every
+ * projection (`tools/list`) and renderer (walls, warnings, hints) reads the profile — never a family
+ * name. So no second family-name comparison exists anywhere, and the next platform with a commerce rule
+ * (Codex plugins, a Claude directory listing, an agent store) is one entry, not a hunt through src.
+ *
+ * `metadata` — `default` serves the `tool-descriptions.ts` constants as written (BM25-tuned for
+ *              registries); `plain` serves their `plainText` projection (no other AI product names,
+ *              no pricing or quota words, each parameter description about that parameter only).
+ * `commerce` — `open` lets outputs offer plans, upgrades, x402 and referrals; `restricted` states
+ *              usage and when access returns, and offers nothing.
+ */
+export interface ClientProfile {
+  readonly metadata: 'default' | 'plain';
+  readonly commerce: 'open' | 'restricted';
+}
+
+/** Every client without a declared profile — today's behaviour, byte for byte. */
+export const DEFAULT_CLIENT_PROFILE: ClientProfile = Object.freeze({ metadata: 'default', commerce: 'open' });
+
 export interface ClientSpec {
   /** Stable normalized slug persisted to `request_log.client_name`. Never rename in place. */
   readonly name: string;
   readonly kind: ClientKind;
   readonly re: RegExp;
+  /** Absent ⇒ `DEFAULT_CLIENT_PROFILE`. */
+  readonly profile?: ClientProfile;
 }
 
 /** Persisted `user_agent` is truncated to this many chars — forensics, not a blob store. */
@@ -78,7 +101,14 @@ export const CLIENT_REGISTRY: readonly ClientSpec[] = Object.freeze([
   { name: 'librechat', kind: 'agent_client', re: /\blibrechat\b/i },
   { name: 'goose', kind: 'agent_client', re: /\bgoose\b/i },
   { name: 'zed', kind: 'agent_client', re: /\bzed\.dev\b/i },
-  { name: 'openai', kind: 'agent_client', re: /\b(chatgpt|openai)\b/i },
+  // OpenAI's plugin guidelines (read 2026-10-30): metadata must not advertise pricing or favour other
+  // services; outputs must not show plans, promote upgrades or link to checkout.
+  {
+    name: 'openai',
+    kind: 'agent_client',
+    re: /\b(chatgpt|openai)\b/i,
+    profile: Object.freeze({ metadata: 'plain', commerce: 'restricted' }),
+  },
   { name: 'langchain', kind: 'agent_client', re: /\blangchain\b/i },
   { name: 'llamaindex', kind: 'agent_client', re: /\bllama[-_]?index\b/i },
   { name: 'smithery', kind: 'agent_client', re: /\bsmithery\b/i },
@@ -156,6 +186,15 @@ export function classifyClient(ua: string | null | undefined): ClientIdentity {
     if (spec.re.test(s)) return { name: spec.name, kind: spec.kind };
   }
   return { name: 'other', kind: 'unknown' };
+}
+
+/**
+ * The platform profile for a classified family (`classifyClient(ua).name`). Keyed on the family the
+ * request was already attributed to, so the profile and `request_log.client_name` can never name two
+ * different clients for one request.
+ */
+export function clientProfile(family: string): ClientProfile {
+  return CLIENT_REGISTRY.find((s) => s.name === family)?.profile ?? DEFAULT_CLIENT_PROFILE;
 }
 
 /** Truncate a raw UA for storage. Returns null for an absent/empty UA (never the string ''). */

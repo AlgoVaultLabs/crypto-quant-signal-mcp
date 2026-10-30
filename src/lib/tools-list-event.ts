@@ -25,6 +25,7 @@
  */
 import { recordFunnelEvent } from './performance-db.js';
 import type { IdentityTier } from './track-token.js';
+import { classifyClient, normalizeUaForStorage } from './client-registry.js';
 
 // Module-level best-effort dedup. Bounded LRU (JS Set keeps insertion order) so a
 // long-running server process can't grow this unbounded. The snapshot's
@@ -58,6 +59,14 @@ export interface McpToolsListInput {
   licenseTier: string | null | undefined;
   /** Identity tier of `sessionId` (token|fallback|anon) — projected into meta for coverage. */
   identityTier: IdentityTier;
+  /**
+   * GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1 — the caller's raw User-Agent. tools/list never reaches
+   * `request_log`, so this event is the ONLY record of who listed the tools (a directory scanner
+   * lists and may never call). Present ⇒ meta gains `client_family` (the registry family the
+   * caller's tools/list projection was chosen by) and the truncated `user_agent`. Absent ⇒ the
+   * pre-wave meta, byte for byte.
+   */
+  userAgent?: string | null;
 }
 
 type FunnelEventRecorder = typeof recordFunnelEvent;
@@ -86,7 +95,12 @@ export function recordMcpToolsListEvent(
       licenseTier: input.licenseTier ?? null,
       // identity_tier projects from the SHARED resolveSessionIdentity tier so the
       // snapshot's identity_coverage never re-derives stitchability (single-derivation).
-      meta: { identity_tier: input.identityTier },
+      meta: {
+        identity_tier: input.identityTier,
+        ...(input.userAgent !== undefined
+          ? { client_family: classifyClient(input.userAgent).name, user_agent: normalizeUaForStorage(input.userAgent) }
+          : {}),
+      },
     });
     return true;
   } catch {

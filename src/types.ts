@@ -215,7 +215,8 @@ export interface TierWarning {
   current_usage: number;
   monthly_limit: number;
   tier: LicenseTier;
-  suggested_upgrade_url: string;
+  /** GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: absent for a commerce-restricted client profile. */
+  suggested_upgrade_url?: string;
   /**
    * OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2 — WHICH meter triggered this warning.
    *

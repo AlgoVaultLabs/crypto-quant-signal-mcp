@@ -21,6 +21,7 @@ import { dbExec, dbRun, dbQuery } from './performance-db.js';
 // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the one notice contract (pure leaf — no cycle).
 import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts } from './quota-notice.js';
 import { nudgeSignupUrl } from './nudge-copy.js';
+import type { ClientProfile } from './client-registry.js';
 
 export type ChatTier = 'free' | 'starter' | 'pro' | 'enterprise';
 
@@ -72,6 +73,12 @@ export function chatQuotaApiKey(licenseKey: string | null, ipHash: string | null
 export function buildChatQuotaNotice(
   tier: ChatTier,
   check: Pick<ChatRateLimitCheck, 'limit' | 'used' | 'resetAt'>,
+  /**
+   * GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the caller's platform profile `commerce` field. Defaults to
+   * `'open'` (the pre-wave notice, byte for byte); `'restricted'` withholds `upgrade_url` and renders
+   * the restricted notice. The MCP pipeline passes the request's profile; `POST /api/chat` keeps the default.
+   */
+  commerce: ClientProfile['commerce'] = 'open',
 ): {
   code: 'CHAT_QUOTA_EXHAUSTED';
   message: string;
@@ -80,7 +87,7 @@ export function buildChatQuotaNotice(
   usage_display: string;
   limit: number;
   tier: ChatTier;
-  upgrade_url: string;
+  upgrade_url?: string;
   suggested_action: string;
 } {
   const ctx = {
@@ -88,6 +95,7 @@ export function buildChatQuotaNotice(
     used: check.used,
     limit: check.limit,
     resetAtMs: check.resetAt.getTime(),
+    ...(commerce === 'restricted' ? { commerce } : {}),
   };
   const facts = quotaNoticeFacts(ctx);
   return {
@@ -98,7 +106,7 @@ export function buildChatQuotaNotice(
     usage_display: facts.usage_display,
     limit: check.limit,
     tier,
-    upgrade_url: nudgeSignupUrl('limit_chat'),
+    ...(commerce === 'open' ? { upgrade_url: nudgeSignupUrl('limit_chat') } : {}),
     suggested_action: buildQuotaSuggestedAction(ctx),
   };
 }

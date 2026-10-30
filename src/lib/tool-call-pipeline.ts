@@ -50,6 +50,7 @@ import {
   getRequestIsBackground,
   getRequestRegimeFundingDegraded,
   recordAhaMilestoneCrossing,
+  requestClientProfile,
   type RequestContext,
 } from './license.js';
 import { logRequest } from './analytics.js';
@@ -274,6 +275,10 @@ const TRADE_CALL_ROW: ToolRow = {
     });
     const ahaMeta = (result as { _algovault?: { upgrade_hint?: string; referral_hint?: ReferralHint } })._algovault;
     if (!ahaMeta) return;
+    // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: both hints below sell (a plan, a referral link). A
+    // commerce-restricted client is shown neither — but the aha and milestone RECORDING above and
+    // below still runs, so the funnel counts these callers exactly as before.
+    const open = requestClientProfile().commerce === 'open';
     const refCode = referralCodeForKey(license.key);
     const sid = getRequestSessionId() ?? null;
     let aha: { from: AhaReferralFrom; verdict?: string; callCountUser?: number } | null = null;
@@ -286,13 +291,13 @@ const TRADE_CALL_ROW: ToolRow = {
         if (milestone !== null) aha = { from: 'aha_milestone', callCountUser: milestone };
       }
     }
-    if (aha && refCode && sid && shouldShowAhaReferral(sid)) {
+    if (open && aha && refCode && sid && shouldShowAhaReferral(sid)) {
       ahaMeta.upgrade_hint = buildAhaReferral({
         from: aha.from, code: refCode, stats: getTrackRecord(),
         verdict: aha.verdict, callCountUser: aha.callCountUser,
       });
       ahaMeta.referral_hint = buildReferralHint({ from: aha.from, code: refCode });
-    } else if (isAha) {
+    } else if (open && isAha) {
       ahaMeta.upgrade_hint = buildAhaHint(getTrackRecord());
     }
   },
@@ -459,7 +464,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
           latencyMs: nowMs() - startMs,
           errorCode: 'CHAT_QUOTA_EXHAUSTED',
         });
-        return { kind: 'refused', payload: buildChatQuotaNotice(tier, check) as unknown as Record<string, unknown>, http: { status: 429 } };
+        return { kind: 'refused', payload: buildChatQuotaNotice(tier, check, requestClientProfile().commerce) as unknown as Record<string, unknown>, http: { status: 429 } };
       }
       const result = await runAsCaller(processScopedTag('chat_knowledge'), () => attribute(served, () => chatEngine.chat(question, { model } as Parameters<typeof chatEngine.chat>[1])));
       // Record AFTER successful LLM call (rate-limit reflects actual usage)
@@ -731,8 +736,11 @@ function toolErrorContent(err: unknown): McpToolResult & { isError: true } {
     // FUNNEL-FIX-AGENT-X402-NUDGE-W1: additive `suggested_x402` in-protocol pay-per-call branch,
     // derived from the feature-registry channels{} SoT + live rail predicates; omitted when
     // X402_NUDGE_ENABLED is off, no public rail is live, or the tool is HELD.
-    const suggestedX402 = isX402NudgeEnabled() && err.tool ? buildSuggestedX402(err.tool, err.limit) : undefined;
-    const payload = buildTierLimitPayload(err, { suggestedX402 });
+    // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the caller's profile decides the commerce fields; a
+    // restricted wall carries no rail, so none is derived for it.
+    const { commerce } = requestClientProfile();
+    const suggestedX402 = commerce === 'open' && isX402NudgeEnabled() && err.tool ? buildSuggestedX402(err.tool, err.limit) : undefined;
+    const payload = buildTierLimitPayload(err, { suggestedX402, commerce });
     return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
   }
   if (err instanceof InsufficientCandlesError) {

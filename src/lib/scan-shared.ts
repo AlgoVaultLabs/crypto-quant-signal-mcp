@@ -29,7 +29,7 @@
  * unregistered call site, so the move could not have left the gate behind.
  */
 import { fetchVenueUniverse, effectiveLiquidityUsd } from './exchange-universe.js';
-import { monthResetAtMs, periodStartMs, utcDayResetAtMs, type TrackCallResult } from './license.js';
+import { monthResetAtMs, periodStartMs, utcDayResetAtMs, requestClientProfile, type TrackCallResult } from './license.js';
 import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts } from './quota-notice.js';
 import { buildReferralHint, type ReferralHint } from './nudge-copy.js';
 import { buildSuggestedX402, isX402NudgeEnabled } from './x402-nudge.js';
@@ -146,10 +146,11 @@ export interface ScanQuotaWallBody {
   limit: 'daily' | 'monthly';
   /** Present ONLY on a daily wall — absence is the signal that days is the right horizon. */
   retry_after_hours?: number;
-  recommended_path: 'subscription' | 'x402';
+  /** W4-R2 CH1: commerce field — absent for a `restricted` client profile (as are the two below). */
+  recommended_path?: 'subscription' | 'x402';
   suggested_action: string;
   /** REFERRAL-INPRODUCT-NUDGE-W1: the limit moment carries the structured referral hint. */
-  referral_hint: ReferralHint;
+  referral_hint?: ReferralHint;
   /** FUNNEL-FIX-AGENT-X402-NUDGE-W1 (Q4): omitted when the nudge is off, no rail is live, or the tool
    *  has no x402 price (`buildSuggestedX402` returns undefined for `x402: null`). */
   suggested_x402?: SuggestedX402;
@@ -173,7 +174,11 @@ export function buildScanQuotaWall(
   const isDailyWall = entry.limit === 'daily'
     && typeof entry.daily_used === 'number'
     && typeof entry.daily_total === 'number';
-  const suggestedX402 = isX402NudgeEnabled()
+  // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the caller's platform profile decides the commerce fields —
+  // a `restricted` wall states usage and when access returns, with no rail, path or referral.
+  const { commerce } = requestClientProfile();
+  const open = commerce === 'open';
+  const suggestedX402 = open && isX402NudgeEnabled()
     ? buildSuggestedX402(tool, isDailyWall ? 'daily' : 'monthly')
     : undefined;
   // OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1-R2 CH3 (Fix 2): the discriminator and its pair travel
@@ -190,6 +195,7 @@ export function buildScanQuotaWall(
     periodStartMs: periodStartMs(license),
     referralCode: refCode,
     x402: suggestedX402,
+    ...(open ? {} : { commerce }),
   };
   const facts = quotaNoticeFacts(noticeCtx);
   return {
@@ -222,9 +228,9 @@ export function buildScanQuotaWall(
     // Spread-on-presence for the hours field keeps the MONTHLY envelope's key set unchanged.
     limit: facts.limit,
     ...(typeof facts.retry_after_hours === 'number' ? { retry_after_hours: facts.retry_after_hours } : {}),
-    recommended_path: facts.recommended_path,
+    ...(open ? { recommended_path: facts.recommended_path } : {}),
     suggested_action: buildQuotaSuggestedAction(noticeCtx),
-    referral_hint: buildReferralHint({ from: 'limit', code: refCode }),
+    ...(open ? { referral_hint: buildReferralHint({ from: 'limit', code: refCode }) } : {}),
     ...(suggestedX402 ? { suggested_x402: suggestedX402 } : {}),
   };
 }

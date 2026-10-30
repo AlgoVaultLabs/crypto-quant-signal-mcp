@@ -36,6 +36,8 @@ import { hoursUntilUtcDayReset } from './utc-day.js';
 import { nudgeSignupUrl } from './nudge-copy.js';
 import { shareLink, bonusCallsLabel } from './referral-constants.js';
 import type { SuggestedX402 } from '../types.js';
+// Type-only, from a dependency-free leaf — the module stays a LEAF.
+import type { ClientProfile } from './client-registry.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -88,6 +90,13 @@ export interface QuotaNoticeContext {
    * Absent ⇒ no projection ⇒ the subscription leads (acquisition North Star).
    */
   periodStartMs?: number;
+  /**
+   * GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1 — the caller's platform profile `commerce` field, passed in
+   * (never derived here: this module is a leaf). Absent ⇒ `'open'`, every pre-wave caller's meaning,
+   * so adding the field moves zero bytes for them. `'restricted'` renders usage and when access
+   * returns — no plan, upgrade, price, link, x402 or referral.
+   */
+  commerce?: ClientProfile['commerce'];
 }
 
 /** The machine-readable facts every surface embeds. Allow-listed; no internal metric. */
@@ -335,6 +344,14 @@ export function buildQuotaNoticeMessage(ctx: QuotaNoticeContext): string {
   const f = quotaNoticeFacts(ctx);
   const lines: string[] = [headline(ctx, f)];
 
+  // W4-R2 CH1: a commerce-restricted host allows "not available on the current plan" and nothing that
+  // sells. The headline above already carries the usage and the return horizon, from the same facts.
+  if (ctx.commerce === 'restricted') {
+    lines.push(`More ${ctx.meter === 'chat' ? 'chat answers' : 'calls'} are not available on the current plan until then.`);
+    if (ctx.meter === 'chat') lines.push('Trading tools draw on a separate quota and are unaffected.');
+    return lines.join('\n');
+  }
+
   if (ctx.meter === 'chat') {
     lines.push(subscriptionLine('chat', true));
     lines.push('Trading tools draw on a separate quota and are unaffected.');
@@ -366,6 +383,8 @@ export function buildQuotaSuggestedAction(ctx: QuotaNoticeContext): string {
   const wait = f.limit === 'daily'
     ? 'or wait until 00:00 UTC for the daily allowance to reset'
     : `or wait until ${f.resets_at_date} for the free quota to reset`;
+  // W4-R2 CH1: restricted ⇒ the do-nothing fallback is the whole action — the same clause, unprefixed.
+  if (ctx.commerce === 'restricted') return `${wait.replace(/^or wait/, 'Wait')}.`;
   if (ctx.meter === 'chat') {
     return `Upgrade to ${PLANS[DEFAULT_UPGRADE_PLAN].label} at ${nudgeSignupUrl('limit_chat' as Parameters<typeof nudgeSignupUrl>[0])} for a higher chat allowance, ${wait}.`;
   }

@@ -22,6 +22,9 @@ vi.mock('../../src/lib/performance-db.js', () => ({
 }));
 vi.mock('../../src/lib/license.js', () => ({
   getRequestSessionId: () => 'sess_ch2_test',
+  // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the warning reads the caller's platform profile; this file
+  // pins the OPEN (default) warning, so the seam returns the default profile.
+  requestClientProfile: () => ({ metadata: 'default', commerce: 'open' }),
 }));
 
 const { withTierWarning, computeTierWarning, withQuotaState } = await import('../../src/lib/tier-warning.js');

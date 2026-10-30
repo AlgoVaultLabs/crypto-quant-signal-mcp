@@ -215,6 +215,70 @@ export const PARAM_DESC_REGIME_SCAN_LIMIT =
 export const PARAM_DESC_REGIME_SCAN_OFFSET =
   'Rows to skip, for paging within one snapshot. A changed as_of means the snapshot advanced between pages.';
 
+// ── GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the `plain` metadata projection ──────────────────────────
+//
+// A client whose registry profile says `metadata: 'plain'` (ChatGPT — OpenAI's plugin guidelines) is
+// served THESE constants through `plainText`, never a second copy of the catalog: each override is
+// keyed on the default constant itself, and every constant without one is served unchanged. The
+// default strings above stay exactly as written — the BM25 keyword canary keeps judging them.
+//
+// What plain removes: other AI product names; pricing, plan, quota and billing words; discovery
+// phrases appended to a parameter that are not about that parameter; and a claim the tool does not
+// do (scan_funding_arb returns spreads, not a BUY/SELL/HOLD verdict). What it keeps: what the tool
+// returns, read-only / no orders, sibling routing, and the true scope.
+// `tests/unit/chatgpt-client-profile.test.ts` judges all 9 served tools against those rules.
+const PLAIN_OVERRIDES: ReadonlyMap<string, string> = new Map([
+  [SCAN_FUNDING_ARB_DESCRIPTION,
+    'Returns ranked funding arbitrage opportunities across crypto perpetual futures venues. ' +
+    'Each row gives the coin, the long and short venues, the funding spread in bps and its annualized rate. ' +
+    'For a trade call use get_trade_call; for the market regime use get_market_regime. ' +
+    'Read-only: live exchange APIs, places no orders.'],
+  [SEARCH_KNOWLEDGE_DESCRIPTION,
+    'Returns ranked snippets from the AlgoVault knowledge bundle answering a question about its MCP tools, ' +
+    'response shapes, integration patterns, or code examples. Call this BEFORE other tool calls to confirm ' +
+    'parameter usage and avoid hallucinating tool shapes. Fast: BM25 lexical search, no LLM call. ' +
+    'For a synthesized natural-language answer use chat_knowledge. Read-only, no side effects.'],
+  [CHAT_KNOWLEDGE_DESCRIPTION,
+    'Returns a synthesized natural-language answer with citations, grounded in the AlgoVault knowledge bundle ' +
+    '(every MCP tool description, response shape, integration tutorial, and code example). Use when you need an ' +
+    'explanation, code pattern, or how-to; for raw ranked snippets without LLM synthesis use search_knowledge ' +
+    '(faster). Read-only: calls an LLM, no other side effects.'],
+  [SCAN_MARKET_REGIMES_DESCRIPTION,
+    'Screens a whole crypto perpetual futures venue by market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — ' +
+    'and returns each matching coin with confidence, trend strength, ADX, volatility ratio and how long the regime ' +
+    'has held. Rows are the market regime classifier output for the last closed bar, sampled on Binance, Bybit, OKX ' +
+    'and Bitget; another venue, or a timeframe a venue cannot serve, is refused with the alternatives. For a live ' +
+    'single-coin read with cross-venue funding, call get_market_regime. Read-only.'],
+  [GET_TRACK_RECORD_DESCRIPTION,
+    'Returns the AlgoVault track record — aggregated PFE win rates by call type, timeframe and asset group, plus ' +
+    'the evaluation methodology and window. The same verified aggregate the performance://signal-performance ' +
+    'resource serves, callable from harnesses that bridge tools only. Defaults to the compact aggregate; use ' +
+    'include for the per-asset, per-venue or recent-signal breakdowns. Read-only, no side effects.'],
+  [PARAM_DESC_TRADE_CALL_COIN, 'Base asset, e.g. BTC, ETH or SOL, or a US stock or ETF ticker (no USDT suffix).'],
+  [PARAM_DESC_TRADE_CALL_TIMEFRAME, 'Candle timeframe, 1m to 1d. Default 15m.'],
+  [PARAM_DESC_TRADE_CALL_INCLUDE_REASONING, 'Include the reasoning behind the call and its main drivers. Default true.'],
+  [PARAM_DESC_TRADE_CALL_ASSET_CLASS, "Force the engine: 'perp' or 'equity'."],
+  [PARAM_DESC_FUNDING_MIN_SPREAD_BPS, 'Minimum funding rate spread between venues, in basis points (default 5).'],
+  [PARAM_DESC_FUNDING_LIMIT, 'Maximum ranked results to return, 1 to 200 (default 10).'],
+  [PARAM_DESC_REGIME_COIN, 'Base asset, e.g. BTC, ETH or SOL (no USDT suffix).'],
+  [PARAM_DESC_REGIME_TIMEFRAME, 'Candle timeframe, e.g. 1h, 4h or 1d.'],
+  [PARAM_DESC_REGIME_EXCHANGE, 'Crypto venue, e.g. Binance Bybit OKX Bitget Hyperliquid.'],
+  [PARAM_DESC_REGIME_SCAN_COINS, 'Restrict to these symbols, e.g. ["BTC","ETH"]. Symbols not on the venue are listed in not_found.'],
+]);
+
+/** The `plain` projection of one default string — its override, or the string itself. */
+export function plainText(text: string): string {
+  return PLAIN_OVERRIDES.get(text) ?? text;
+}
+
+/**
+ * Parameters a `plain` projection does not serve, per tool. `chat_knowledge.model` is an enum of
+ * another AI vendor's model ids; the tool answers with its default model when it is absent.
+ */
+export const PLAIN_OMITTED_PARAMS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  chat_knowledge: Object.freeze(['model']),
+});
+
 // Top-20 keyword phrases the canary asserts each of the 3 BM25-audited tools'
 // combined-text contains ≥15 of (case-insensitive substring match). Sourced
 // from observed AI-agent-builder search vocabulary + the Anthropic Tool Search

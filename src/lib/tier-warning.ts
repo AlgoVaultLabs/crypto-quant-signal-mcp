@@ -18,7 +18,8 @@ import type { AlgoVaultMeta, TierWarning, LicenseTier, MeterReading, QuotaWall, 
 // imports of its own), so this consumer edge closes no cycle.
 import { credentialOutcomeOf, isPresented } from './credential-outcome.js';
 import { recordFunnelEvent } from './performance-db.js';
-import { getRequestSessionId } from './license.js';
+import { getRequestSessionId, requestClientProfile } from './license.js';
+import type { ClientProfile } from './client-registry.js';
 import { SOFT_THRESHOLD, HARD_THRESHOLD } from './activation-thresholds.js';
 // OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2: the ONE derivation of "which meter is closest to
 // refusing". LEAF (type-only imports), so this consumer edge closes no cycle.
@@ -86,6 +87,12 @@ export interface TierWarningContext {
   tool?: string;
   /** Env override (tests inject the rail flags); defaults to `process.env`. */
   env?: Record<string, string | undefined>;
+  /**
+   * GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1 — the caller's platform profile `commerce` field. Absent ⇒
+   * `'open'` (pre-wave). `'restricted'` keeps the usage facts and withholds `suggested_upgrade_url`
+   * and `suggested_x402`. `withTierWarning` fills it from the request when the caller does not.
+   */
+  commerce?: ClientProfile['commerce'];
 }
 
 /**
@@ -154,12 +161,14 @@ export function computeTierWarning(ctx: TierWarningContext): TierWarning | undef
     return undefined;
   }
 
+  const open = ctx.commerce !== 'restricted';
   const warning: TierWarning = {
     level,
     current_usage: ctx.currentUsage,
     monthly_limit: ctx.monthlyLimit,
     tier: ctx.tier,
-    suggested_upgrade_url: ctx.upgradeUrl ?? DEFAULT_UPGRADE_URL,
+    // W4-R2 CH1: spread-on-presence at its original position — the open warning is byte-identical.
+    ...(open ? { suggested_upgrade_url: ctx.upgradeUrl ?? DEFAULT_UPGRADE_URL } : {}),
   };
   // CH2: name the wall and its own reset horizon — spread-on-presence, so a caller with no daily
   // meter gets the byte-identical pre-wave object. `current_usage` / `monthly_limit` above keep
@@ -174,7 +183,7 @@ export function computeTierWarning(ctx: TierWarningContext): TierWarning | undef
   // FUNNEL-FIX-AGENT-X402-NUDGE-W1: on the HARD warning only, attach the additive in-protocol
   // x402 branch (dark behind X402_NUDGE_ENABLED). buildSuggestedX402 returns undefined for a
   // HELD tool / no live public rail, so this stays default-deny + byte-identical when off.
-  if (level === 'hard' && ctx.tool && isX402NudgeEnabled(ctx.env)) {
+  if (open && level === 'hard' && ctx.tool && isX402NudgeEnabled(ctx.env)) {
     // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 11), the ONLY line this wave changes in
     // this file: pass the binding meter this function has ALREADY derived. A hard warning fires at
     // >=0.90 of whichever meter BINDS, so a caller at 92/100 DAILY was handed a nudge reading
@@ -195,7 +204,9 @@ export function computeTierWarning(ctx: TierWarningContext): TierWarning | undef
  * Below the soft threshold OR paid tier OR bot-internal: returns the input
  * meta unchanged (no shape mutation).
  */
-export function withTierWarning(meta: AlgoVaultMeta, ctx: TierWarningContext): AlgoVaultMeta {
+export function withTierWarning(meta: AlgoVaultMeta, callerCtx: TierWarningContext): AlgoVaultMeta {
+  // W4-R2 CH1: the request's profile, unless the caller already named one (tests do).
+  const ctx: TierWarningContext = callerCtx.commerce ? callerCtx : { ...callerCtx, commerce: requestClientProfile().commerce };
   const warning = computeTierWarning(ctx);
   if (!warning) return meta;
   // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): capture quota_hit_soft (stage 4)
@@ -358,6 +369,10 @@ export function withAuthState<T extends object>(
     // caller with a broken key, and inviting them to "keep this key" would be advice to preserve
     // the thing that is failing. Spread-on-presence keeps the RESOLVED envelope byte-identical
     // to pre-wave, which the shape snapshots pin.
-    ...(outcome === 'ABSENT' ? { claim_url: CLAIM_URL, claim_hint: CLAIM_HINT } : {}),
+    //
+    // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the claim is a signup link, so a commerce-restricted client
+    // (its profile, read from the request) is not offered it. Outside a request the profile is the
+    // default, so every non-HTTP envelope is unchanged.
+    ...(outcome === 'ABSENT' && requestClientProfile().commerce === 'open' ? { claim_url: CLAIM_URL, claim_hint: CLAIM_HINT } : {}),
   };
 }

@@ -5,6 +5,8 @@
  * the missing-session guard, and the fail-open contract.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   recordMcpToolsListEvent,
   shouldEmitToolsList,
@@ -17,6 +19,21 @@ afterEach(() => {
 });
 
 describe('tools-list-event — recordMcpToolsListEvent', () => {
+  // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: tools/list never reaches request_log, so this event is the only
+  // record of WHO listed the tools — a directory scanner may list and never call.
+  it('stamps the caller family and truncated UA when the POST layer passes the UA', () => {
+    const rec = vi.fn();
+    recordMcpToolsListEvent({ sessionId: 'ua-1', licenseTier: 'free', identityTier: 'anon', userAgent: 'openai-mcp/1.0.0' }, rec);
+    expect(rec.mock.calls[0][0].meta).toEqual({ identity_tier: 'anon', client_family: 'openai', user_agent: 'openai-mcp/1.0.0' });
+    recordMcpToolsListEvent({ sessionId: 'ua-2', licenseTier: 'free', identityTier: 'anon', userAgent: null }, rec);
+    expect(rec.mock.calls[1][0].meta).toEqual({ identity_tier: 'anon', client_family: 'unknown', user_agent: null });
+  });
+
+  it('the /mcp POST layer passes the request UA', () => {
+    const src = readFileSync(join(__dirname, '..', 'src', 'index.ts'), 'utf8');
+    expect(src).toContain("recordMcpToolsListEvent({ sessionId, licenseTier: license.tier, identityTier, userAgent: req.headers['user-agent'] ?? null });");
+  });
+
   it('emits once per session with the exact mcp_tools_list payload + identity_tier', () => {
     const rec = vi.fn();
     const fired = recordMcpToolsListEvent(

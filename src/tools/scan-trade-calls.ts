@@ -25,7 +25,7 @@ import {
   type ScanTradeCallsResult,
   type ScanCallItem,
 } from '../lib/trade-call-scanner.js';
-import { checkQuota, trackCall, getRequestSessionId } from '../lib/license.js';
+import { checkQuota, trackCall, getRequestSessionId, requestClientProfile } from '../lib/license.js';
 import { assertVenueNotRetired } from '../lib/venue-store.js';
 import { TimeframeUnservedError, buildTimeframeUnservedPayload } from '../lib/errors.js';
 import { isTimeframeServed, servedTimeframes } from '../lib/tf-support.js';
@@ -191,11 +191,12 @@ export interface ScanQuotaExhaustedResponse {
   limit: 'daily' | 'monthly';
   /** Present ONLY on a daily wall — absence is the signal that days is the right horizon. */
   retry_after_hours?: number;
-  recommended_path: 'subscription' | 'x402';
+  /** W4-R2 CH1: commerce fields (with `referral_hint`, `suggested_x402`) — absent for a restricted profile. */
+  recommended_path?: 'subscription' | 'x402';
   suggested_action: string;
   /** REFERRAL-INPRODUCT-NUDGE-W1: the limit moment also carries the structured,
    *  allow-listed referral hint (`from: 'limit'`); the `message` leads with it. */
-  referral_hint: ReferralHint;
+  referral_hint?: ReferralHint;
   /** FUNNEL-FIX-AGENT-X402-NUDGE-W1 (Q4): additive in-protocol x402 pay-per-call branch at the
    *  scan wall (/x402/scan_trade_calls is live). Omitted when X402_NUDGE_ENABLED is off / no rail. */
   suggested_x402?: SuggestedX402;
@@ -313,7 +314,9 @@ export async function runScanTradeCall(
   // Trigger (b): a multi-hit scan (≥ SCAN_REFERRAL_MIN_HITS live calls) → referral
   // hint for a KEYED user. ≤1 aha referral/session, shared with get_trade_call via
   // the single-source aha store (the first aha trigger that session wins).
-  if (refCode && sid && result.eligible_non_hold >= SCAN_REFERRAL_MIN_HITS && shouldShowAhaReferral(sid)) {
+  // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: a commerce-restricted client is never shown the referral offer.
+  if (requestClientProfile().commerce === 'open'
+    && refCode && sid && result.eligible_non_hold >= SCAN_REFERRAL_MIN_HITS && shouldShowAhaReferral(sid)) {
     meta.upgrade_hint = buildAhaReferral({ from: 'aha_scan', code: refCode, stats: getTrackRecord(), k: result.eligible_non_hold });
     meta.referral_hint = buildReferralHint({ from: 'aha_scan', code: refCode });
   }

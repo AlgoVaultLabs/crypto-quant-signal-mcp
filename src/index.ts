@@ -61,7 +61,8 @@ import {
 import { recordNonPublicVenue } from './lib/non-public-venue-counter.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded, requestClientProfile } from './lib/license.js';
+import { projectToolMetadata } from './lib/tool-metadata-projection.js';
 import { regimeSuccessVerdict, regimeErrorVerdict } from './lib/regime-request-verdict.js';
 import { callTool, toMcpToolResult, type ValidatedToolInput } from './lib/tool-call-pipeline.js';
 import { getKnowledgeSearch, getChatStack, chatTierFor, ALLOWED_CHAT_MODELS } from './tools/knowledge-tools.js';
@@ -587,11 +588,16 @@ function createServer(): McpServer {
   // `0` is the rollback lever — the raw shape, which the SDK wraps in a strip-mode object exactly as
   // `.tool()` did.
   const strictArgs = process.env.MCP_STRICT_TOOL_ARGS !== '0';
+  // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the metadata is projected through the CALLER's platform profile.
+  // This runs once per POST inside the request context (stateless transport), so each caller's tools/list
+  // is its own; the default profile is the identity, so every other client is served byte-identical text.
+  const profile = requestClientProfile();
   for (const name of liveMcpToolNames()) {
     const d = toolDefs[name];
     if (!d) throw new Error(`[feature-registry] "${name}" is in FEATURE_REGISTRY but has no handler def in createServer()`);
+    const m = projectToolMetadata(name, d.description, d.schema, profile);
     (server as { registerTool: (n: string, c: { description: string; inputSchema: unknown; annotations: Record<string, unknown> }, h: unknown) => void }).registerTool(
-      name, { description: d.description, inputSchema: strictArgs ? strictToolInput(name, d.schema) : d.schema, annotations: d.annotations }, d.handler,
+      name, { description: m.description, inputSchema: strictArgs ? strictToolInput(name, m.shape) : m.shape, annotations: d.annotations }, d.handler,
     );
   }
   for (const defName of Object.keys(toolDefs)) {
@@ -3904,7 +3910,8 @@ async function startHttp() {
       typeof req.body === 'object' &&
       (req.body as { method?: string }).method === 'tools/list'
     ) {
-      recordMcpToolsListEvent({ sessionId, licenseTier: license.tier, identityTier });
+      // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: + the UA, so a directory scanner's family is measurable.
+      recordMcpToolsListEvent({ sessionId, licenseTier: license.tier, identityTier, userAgent: req.headers['user-agent'] ?? null });
     }
 
     // FUNNEL-FIX-ATTRIBUTION-W1: resolve the classified acquisition source ONCE here (request

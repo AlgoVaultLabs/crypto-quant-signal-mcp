@@ -27,6 +27,7 @@ import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts, t
 // imports the x402-nudge leaf — the additive `suggested_x402` is COMPUTED by the caller (index.ts)
 // and passed in; this formatter only serializes it.
 import type { SuggestedX402 } from '../types.js';
+import type { ClientProfile } from './client-registry.js';
 
 /**
  * Thrown by an exchange adapter when the upstream API returns HTTP 429
@@ -246,7 +247,7 @@ export class TierLimitReachedError extends Error {
    * That mismatch is exactly what the pre-wave `scan_trade_calls` copy shipped: a hardcoded
    * "or pay per call via x402" that stayed in the text even when no rail was live.
    */
-  noticeContext(x402?: SuggestedX402): QuotaNoticeContext {
+  noticeContext(x402?: SuggestedX402, commerce?: ClientProfile['commerce']): QuotaNoticeContext {
     const isDaily = this.limit === 'daily' && typeof this.daily_used === 'number' && typeof this.daily_limit === 'number';
     return {
       meter: 'calls',
@@ -263,6 +264,7 @@ export class TierLimitReachedError extends Error {
       // resets_at from Date.now() instead of the clock the error was raised against.
       nowMs: this.nowMs,
       x402,
+      ...(commerce ? { commerce } : {}),
     };
   }
 }
@@ -275,14 +277,20 @@ export interface TierLimitPayload {
   current_usage: number;
   monthly_limit: number;
   tier: string;
-  suggested_upgrade_url: string;
+  /**
+   * GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: `suggested_upgrade_url`, `recommended_path`, `referral_hint`
+   * and `suggested_x402` are COMMERCE fields — present for every client whose profile is `open`, absent
+   * for a `restricted` one. Spread-on-presence at their original positions, so the open payload is
+   * byte-identical to pre-wave.
+   */
+  suggested_upgrade_url?: string;
   retry_after_days: number;
   /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: ISO-8601 instant access returns. Additive. */
   resets_at: string;
   /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: `usage/limit` display form, e.g. `"100/100"`. Additive. */
   usage_display: string;
-  /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: which path the notice leads with. Additive. */
-  recommended_path: 'subscription' | 'x402';
+  /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: which path the notice leads with. Additive. Commerce field. */
+  recommended_path?: 'subscription' | 'x402';
   /**
    * PRICING-FOLLOWUPS-GENERATOR-W1 CH1: WHICH meter refused. Additive, and the field the
    * published `get_trade_call` shape snapshot has promised since CH7 — this is where that
@@ -295,7 +303,7 @@ export interface TierLimitPayload {
   retry_after_hours?: number;
   /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: the structured-error law's `suggested_<action>`. Additive. */
   suggested_action: string;
-  referral_hint: ReferralHint;
+  referral_hint?: ReferralHint;
   /** FUNNEL-FIX-AGENT-X402-NUDGE-W1: additive in-protocol x402 pay-per-call branch. */
   suggested_x402?: SuggestedX402;
 }
@@ -311,13 +319,18 @@ export interface TierLimitPayload {
  */
 export function buildTierLimitPayload(
   err: TierLimitReachedError,
-  opts?: { suggestedX402?: SuggestedX402 },
+  opts?: { suggestedX402?: SuggestedX402; commerce?: ClientProfile['commerce'] },
 ): TierLimitPayload {
+  // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: a `restricted` caller's wall is the same facts with every
+  // commerce field withheld — the rail too, whatever the caller passed — and the restricted notice.
+  // The thrown `err.message` keeps the open rendering; this payload is what reaches the wire.
+  const open = opts?.commerce !== 'restricted';
+  const suggestedX402 = open ? opts?.suggestedX402 : undefined;
   // OPS-QUOTA-EXHAUSTION-NOTICE-W1: re-render the notice from the SAME builder with the live
   // rail attached, so the prose ranks the two paths using the price the `suggested_x402` field
   // actually advertises. With no rail the context is identical to the constructor's, so the
   // message is byte-identical to `err.message`.
-  const ctx = err.noticeContext(opts?.suggestedX402);
+  const ctx = err.noticeContext(suggestedX402, opts?.commerce);
   const facts = quotaNoticeFacts(ctx);
   return {
     code: err.code,
@@ -326,11 +339,11 @@ export function buildTierLimitPayload(
     current_usage: err.current_usage,
     monthly_limit: err.monthly_limit,
     tier: err.tier,
-    suggested_upgrade_url: err.suggested_upgrade_url,
+    ...(open ? { suggested_upgrade_url: err.suggested_upgrade_url } : {}),
     retry_after_days: facts.retry_after_days,
     resets_at: facts.resets_at,
     usage_display: facts.usage_display,
-    recommended_path: facts.recommended_path,
+    ...(open ? { recommended_path: facts.recommended_path } : {}),
     limit: facts.limit,
     // Spread-on-presence keeps the key SET byte-identical for a monthly refusal — the same
     // allow-list discipline `suggested_x402` already uses below.
@@ -338,8 +351,8 @@ export function buildTierLimitPayload(
     ...(err.daily_used !== undefined ? { daily_used: err.daily_used } : {}),
     ...(err.daily_limit !== undefined ? { daily_limit: err.daily_limit } : {}),
     suggested_action: buildQuotaSuggestedAction(ctx),
-    referral_hint: err.referral_hint,
-    ...(opts?.suggestedX402 ? { suggested_x402: opts.suggestedX402 } : {}),
+    ...(open ? { referral_hint: err.referral_hint } : {}),
+    ...(suggestedX402 ? { suggested_x402: suggestedX402 } : {}),
   };
 }
 

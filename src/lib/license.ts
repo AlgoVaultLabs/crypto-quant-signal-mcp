@@ -28,7 +28,7 @@ import { buildSoftNudge } from './nudge-copy.js';
 // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the 100% wall message moved to the one notice contract.
 import { buildQuotaNoticeMessage } from './quota-notice.js';
 import { PLANS, FREE_MONTHLY_CALLS, FREE_DAILY_CALLS, DEFAULT_UPGRADE_PLAN, planPriceLabel, effectiveKeylessMonthlyCalls, resolveStepupMode, FREE_KEYLESS_MONTHLY_CALLS_RULED } from './plans.js';
-import { classifyClient } from './client-registry.js';
+import { classifyClient, clientProfile, type ClientProfile } from './client-registry.js';
 // REFERRAL-LIGHT-W1 (C2): free-tier keys + the referee bonus-calls meter.
 import { lookupFreeKey, lookupFreeKeyCached, FREE_KEY_PREFIX } from './free-keys-store.js';
 import { loadAllBonuses, persistBonusRemaining, grantBonus } from './referral-store.js';
@@ -191,6 +191,24 @@ export function getRequestIsAutomated(): boolean {
  */
 export function getRequestUserAgent(): string | null {
   return requestContext.getStore()?.userAgent ?? null;
+}
+
+/**
+ * The request's client family — the ONE derivation behind every `client_family` stamp
+ * (`quota_hit_block`, `stepup_*`) and behind `requestClientProfile()`, so the family a wall was
+ * rendered for and the family it was recorded against cannot differ. `unknown` outside a request.
+ */
+export function requestClientFamily(): string {
+  return classifyClient(getRequestUserAgent()).name;
+}
+
+/**
+ * GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1 — the request's platform profile (`client-registry.ts`).
+ * Outside a request (stdio, cron, tests without a context) the UA is null → `unknown` → the default
+ * profile, so every non-HTTP path renders exactly as before.
+ */
+export function requestClientProfile(): ClientProfile {
+  return clientProfile(requestClientFamily());
 }
 
 // ── OPS-HOLD-DECISION-CAPTURE-W1 R1: the HOLD-capture seam ──
@@ -1419,7 +1437,7 @@ function noteStepup(license: LicenseInfo, trackerKey: string, used: number): voi
     sessionId: getRequestSessionId() ?? null,
     licenseTier: license.tier,
     meta: {
-      client_family: classifyClient(getRequestUserAgent()).name,
+      client_family: requestClientFamily(),
       bucket: trackerKey.startsWith('free:') ? trackerKey : null,
       used,
       n: FREE_KEYLESS_MONTHLY_CALLS_RULED,
@@ -1471,7 +1489,7 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
         limit: 'monthly' as const,
         // GROWTH-AGENT-SIGNIN-OAUTH-W1 CH1: the family the stepup_* events already carry, so the
         // readout can count walled chat demand by client, not only by egress pool.
-        client_family: classifyClient(getRequestUserAgent()).name,
+        client_family: requestClientFamily(),
       },
     });
     return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota, limit: 'monthly' };
@@ -1494,7 +1512,7 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
         eventType: 'quota_hit_block',
         sessionId: getRequestSessionId() ?? null,
         licenseTier: license.tier,
-        meta: { used: daily.count, total: dailyCap, limit: 'daily' as const, client_family: classifyClient(getRequestUserAgent()).name },
+        meta: { used: daily.count, total: dailyCap, limit: 'daily' as const, client_family: requestClientFamily() },
       });
       // The daily pair travels WITH the discriminator. Returning `limit: 'daily'` while carrying
       // only the monthly pair is what made the refusal say "100/200 … 30 days" for a wall that
@@ -1677,6 +1695,9 @@ export function getUpgradeHint(
   },
 ): string | undefined {
   if (license.tier !== 'free') return undefined;
+  // GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: every branch below is an upsell (a plan, a price, a signup
+  // link), so a commerce-restricted client gets none of them. The quota facts stay on `_algovault.quota`.
+  if (requestClientProfile().commerce === 'restricted') return undefined;
 
   // Capped results hint (funding arb)
   if (context?.cappedResults && context?.totalResults && context.totalResults > context.cappedResults) {
