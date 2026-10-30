@@ -7,8 +7,12 @@
  * but a hermetic self-test is blind to exactly what its seam replaces: that `main()` really returns
  * the mapped exit codes, prints exactly one token on every path, pages on FAIL and clears on PASS.
  *
- * It also pins the predicate's declared venue set to the TypeScript SoT `FUNDING_VENUE_META`, so a
- * funding venue promoted there cannot go unwatched here (and a retired one cannot keep paging).
+ * It also pins the predicate's declared venue set to the venues the research backfill ACCRUES
+ * (`src/scripts/backfill-funding-episodes.ts`'s own venue map) — the table the predicate watches —
+ * and requires every `FUNDING_VENUE_META` venue to be either accrued there or declared arb-only, so a
+ * funding venue promoted to the arb cannot go unwatched by accident (and a retired one cannot keep
+ * paging). DECISION-CALL-V1-W1 R7: the comparator was `FUNDING_VENUE_META` itself until Bitget joined
+ * the arb (R3) without joining the research accrual.
  *
  * SPAWN BUDGET DECLARED in each block's OPTIONS arg (`scripts/check-test-budget.mjs`).
  */
@@ -22,6 +26,7 @@ import { FUNDING_VENUE_META } from '../../src/lib/funding-venues.js';
 const REPO = path.resolve(__dirname, '../..');
 const PY = path.join(REPO, 'ops/monitoring/funding-accrual-freshness.py');
 const PRED = path.join(REPO, 'ops/monitoring/funding_accrual_predicate.py');
+const BACKFILL = path.join(REPO, 'src/scripts/backfill-funding-episodes.ts');
 const SRC = readFileSync(PY, 'utf8');
 const TOKEN = 'FUNDING_ACCRUAL_VERDICT';
 
@@ -122,12 +127,32 @@ describe('funding-accrual canary — the shipped main()', () => {
   });
 });
 
-describe('funding-accrual predicate — venue set parity with the TypeScript SoT', () => {
-  it('declares exactly the FUNDING_VENUE_META venues, each at its funding interval', () => {
+/** Arb venues the research backfill deliberately does not accrue — each with its reason. */
+const ARB_ONLY: Record<string, string> = {
+  // DECISION-CALL-V1-W1 R3: Bitget joined scan_funding_arb from its own current-fund-rate feed; the
+  // research funding-episode backfill (and so this predicate's table) does not collect it.
+  BITGET: 'arb-only since DECISION-CALL-V1-W1 R3 — not a research-accrual venue',
+};
+
+describe('funding-accrual predicate — venue set parity with the research backfill', () => {
+  it('declares exactly the backfill\'s venues, each at its funding interval', () => {
     const body = /FUNDING_VENUES: dict\[str, int\] = \{([\s\S]*?)\n\}/.exec(readFileSync(PRED, 'utf8'))?.[1] ?? '';
     const py = Object.fromEntries([...body.matchAll(/"(\w+)":\s*(\d+)/g)].map((m) => [m[1], Number(m[2])]));
-    const ts = Object.fromEntries(Object.values(FUNDING_VENUE_META).map((m) => [m.exchangeId, m.intervalHours]));
-    expect(Object.keys(py).length).toBeGreaterThan(0); // the regex must have matched something
-    expect(py).toEqual(ts);
+    const metaBlock = /const META: Record<string, VenueMeta> = \{([\s\S]*?)\n\};/.exec(readFileSync(BACKFILL, 'utf8'))?.[1] ?? '';
+    const backfill = Object.fromEntries([...metaBlock.matchAll(/^\s*(\w+): \{ intervalHours: (\d+)/gm)].map((m) => [m[1], Number(m[2])]));
+    expect(Object.keys(py).length).toBeGreaterThan(0);       // each regex must have matched something
+    expect(Object.keys(backfill).length).toBeGreaterThan(0);
+    expect(py).toEqual(backfill);
+  });
+
+  it('every FUNDING_VENUE_META venue is accrued by the backfill or declared arb-only (never both)', () => {
+    const metaBlock = /const META: Record<string, VenueMeta> = \{([\s\S]*?)\n\};/.exec(readFileSync(BACKFILL, 'utf8'))?.[1] ?? '';
+    const accrued = new Set([...metaBlock.matchAll(/^\s*(\w+): \{ intervalHours:/gm)].map((m) => m[1]));
+    const arb = new Set(Object.values(FUNDING_VENUE_META).map((m) => m.exchangeId));
+    expect([...arb].filter((v) => !accrued.has(v) && !(v in ARB_ONLY))).toEqual([]);
+    expect(Object.keys(ARB_ONLY).filter((v) => accrued.has(v) || !arb.has(v))).toEqual([]);
+    for (const [v, m] of Object.values(FUNDING_VENUE_META).map((x) => [x.exchangeId, x] as const)) {
+      if (accrued.has(v)) expect(m.intervalHours, v).toBe(Number(/intervalHours: (\d+)/.exec(metaBlock.split(`${v}: {`)[1])![1]));
+    }
   });
 });
