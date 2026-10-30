@@ -1,0 +1,521 @@
+{
+  "wideInternal": {
+    "opportunities": [
+      {
+        "coin": "DOGE",
+        "rates": {
+          "HlPerp": 0.0008,
+          "BinPerp": 0.0008,
+          "BybitPerp": 0.0006,
+          "AsterPerp": 0.0002,
+          "BitgetPerp": 0.0004
+        },
+        "bestArb": {
+          "longVenue": "AsterPerp",
+          "shortVenue": "HlPerp",
+          "spreadBps": 7.75,
+          "annualizedPct": 678.9,
+          "direction": "Long Aster / Short HL",
+          "urgency": {
+            "score": 85,
+            "label": "HIGH",
+            "nextCollectionMin": 20,
+            "effectiveVenue": "HlPerp"
+          },
+          "rankScore": 84.1
+        },
+        "conviction": {
+          "score": 97,
+          "label": "HIGH",
+          "direction_consistency": 100,
+          "magnitude_stability": 88.3,
+          "spread_persistence": 100,
+          "sample_hours": 24
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "BinPerp": 1793376000000,
+          "BybitPerp": 1793376000000,
+          "AsterPerp": 1793376000000,
+          "BitgetPerp": 1793376000000
+        }
+      },
+      {
+        "coin": "LINK",
+        "rates": {
+          "HlPerp": 0.00003,
+          "GatePerp": 0.004,
+          "BitgetPerp": 0.0001
+        },
+        "bestArb": {
+          "longVenue": "BitgetPerp",
+          "shortVenue": "GatePerp",
+          "spreadBps": 9.88,
+          "annualizedPct": 865.05,
+          "direction": "Long Bitget / Short Gate",
+          "urgency": {
+            "score": 37,
+            "label": "MEDIUM",
+            "nextCollectionMin": 120,
+            "effectiveVenue": "GatePerp"
+          },
+          "rankScore": 71.1
+        },
+        "conviction": {
+          "score": 50,
+          "label": "MEDIUM",
+          "direction_consistency": 50,
+          "magnitude_stability": 0,
+          "spread_persistence": 100,
+          "sample_hours": 24
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "GatePerp": 1793368800000,
+          "BitgetPerp": 1793376000000
+        }
+      },
+      {
+        "coin": "TIA",
+        "rates": {
+          "HlPerp": -0.0001,
+          "GatePerp": 0.0002
+        },
+        "bestArb": {
+          "longVenue": "HlPerp",
+          "shortVenue": "GatePerp",
+          "spreadBps": 1.5,
+          "annualizedPct": 131.4,
+          "direction": "Long HL / Short Gate",
+          "urgency": {
+            "score": 85,
+            "label": "HIGH",
+            "nextCollectionMin": 20,
+            "effectiveVenue": "HlPerp"
+          },
+          "rankScore": 43.1
+        },
+        "conviction": {
+          "score": 50,
+          "label": "MEDIUM",
+          "direction_consistency": 50,
+          "magnitude_stability": 50,
+          "spread_persistence": 50,
+          "sample_hours": 0
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "GatePerp": 1793368800000
+        }
+      },
+      {
+        "coin": "SOL",
+        "rates": {
+          "HlPerp": 0.00005,
+          "BinPerp": -0.0002,
+          "BybitPerp": 0.0001
+        },
+        "bestArb": {
+          "longVenue": "BinPerp",
+          "shortVenue": "HlPerp",
+          "spreadBps": 0.75,
+          "annualizedPct": 65.7,
+          "direction": "Long Binance / Short HL",
+          "urgency": {
+            "score": 85,
+            "label": "HIGH",
+            "nextCollectionMin": 20,
+            "effectiveVenue": "HlPerp"
+          },
+          "rankScore": 39.3
+        },
+        "conviction": {
+          "score": 50,
+          "label": "MEDIUM",
+          "direction_consistency": 50,
+          "magnitude_stability": 50,
+          "spread_persistence": 50,
+          "sample_hours": 0
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "BinPerp": 1793376000000,
+          "BybitPerp": 1793376000000
+        }
+      },
+      {
+        "coin": "ETH",
+        "rates": {
+          "HlPerp": -0.00002,
+          "BinPerp": 0.0001,
+          "BybitPerp": 0.00008,
+          "AsterPerp": 0.00015
+        },
+        "bestArb": {
+          "longVenue": "HlPerp",
+          "shortVenue": "AsterPerp",
+          "spreadBps": 0.39,
+          "annualizedPct": 33.95,
+          "direction": "Long HL / Short Aster",
+          "urgency": {
+            "score": 85,
+            "label": "HIGH",
+            "nextCollectionMin": 20,
+            "effectiveVenue": "HlPerp"
+          },
+          "rankScore": 37.5
+        },
+        "conviction": {
+          "score": 50,
+          "label": "MEDIUM",
+          "direction_consistency": 50,
+          "magnitude_stability": 50,
+          "spread_persistence": 50,
+          "sample_hours": 0
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "BinPerp": 1793376000000,
+          "BybitPerp": 1793376000000,
+          "AsterPerp": 1793376000000
+        }
+      },
+      {
+        "coin": "PEPE",
+        "rates": {
+          "HlPerp": 0.00001,
+          "BinPerp": 0.0002,
+          "BybitPerp": 0.00025
+        },
+        "bestArb": {
+          "longVenue": "HlPerp",
+          "shortVenue": "BybitPerp",
+          "spreadBps": 0.21,
+          "annualizedPct": 18.62,
+          "direction": "Long HL / Short Bybit",
+          "urgency": {
+            "score": 85,
+            "label": "HIGH",
+            "nextCollectionMin": 20,
+            "effectiveVenue": "HlPerp"
+          },
+          "rankScore": 36.6
+        },
+        "conviction": {
+          "score": 50,
+          "label": "MEDIUM",
+          "direction_consistency": 50,
+          "magnitude_stability": 50,
+          "spread_persistence": 50,
+          "sample_hours": 0
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "BinPerp": 1793376000000,
+          "BybitPerp": 1793376000000
+        }
+      },
+      {
+        "coin": "ARB",
+        "rates": {
+          "HlPerp": 0.00001,
+          "BinPerp": 0
+        },
+        "bestArb": {
+          "longVenue": "BinPerp",
+          "shortVenue": "HlPerp",
+          "spreadBps": 0.1,
+          "annualizedPct": 8.76,
+          "direction": "Long Binance / Short HL",
+          "urgency": {
+            "score": 85,
+            "label": "HIGH",
+            "nextCollectionMin": 20,
+            "effectiveVenue": "HlPerp"
+          },
+          "rankScore": 36
+        },
+        "conviction": {
+          "score": 50,
+          "label": "MEDIUM",
+          "direction_consistency": 50,
+          "magnitude_stability": 50,
+          "spread_persistence": 50,
+          "sample_hours": 0
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "BinPerp": 1793376000000
+        }
+      },
+      {
+        "coin": "WIF",
+        "rates": {
+          "HlPerp": 0.0002,
+          "BinPerp": 0.001,
+          "AsterPerp": 0.0003
+        },
+        "bestArb": {
+          "longVenue": "AsterPerp",
+          "shortVenue": "BinPerp",
+          "spreadBps": 2.13,
+          "annualizedPct": 186.15,
+          "direction": "Long Aster / Short Binance",
+          "urgency": {
+            "score": 37,
+            "label": "MEDIUM",
+            "nextCollectionMin": 120,
+            "effectiveVenue": "BinPerp"
+          },
+          "rankScore": 31.9
+        },
+        "conviction": {
+          "score": 50,
+          "label": "MEDIUM",
+          "direction_consistency": 50,
+          "magnitude_stability": 50,
+          "spread_persistence": 50,
+          "sample_hours": 0
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "BinPerp": 1793368800000,
+          "AsterPerp": 1793376000000
+        }
+      },
+      {
+        "coin": "SUI",
+        "rates": {
+          "HlPerp": 0.00004,
+          "BinPerp": 0.0005,
+          "BybitPerp": 0.0004,
+          "BitgetPerp": 0.0002
+        },
+        "bestArb": {
+          "longVenue": "BitgetPerp",
+          "shortVenue": "BinPerp",
+          "spreadBps": 1,
+          "annualizedPct": 87.6,
+          "direction": "Long Bitget / Short Binance",
+          "urgency": {
+            "score": 37,
+            "label": "MEDIUM",
+            "nextCollectionMin": 120,
+            "effectiveVenue": "BinPerp"
+          },
+          "rankScore": 26.2
+        },
+        "conviction": {
+          "score": 50,
+          "label": "MEDIUM",
+          "direction_consistency": 50,
+          "magnitude_stability": 50,
+          "spread_persistence": 50,
+          "sample_hours": 0
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "BinPerp": 1793368800000,
+          "BybitPerp": 1793376000000,
+          "BitgetPerp": 1793376000000
+        }
+      },
+      {
+        "coin": "AVAX",
+        "rates": {
+          "HlPerp": 0.00002,
+          "BybitPerp": 0.0003,
+          "GatePerp": 0.0001
+        },
+        "bestArb": {
+          "longVenue": "GatePerp",
+          "shortVenue": "BybitPerp",
+          "spreadBps": 0.63,
+          "annualizedPct": 54.75,
+          "direction": "Long Gate / Short Bybit",
+          "urgency": {
+            "score": 37,
+            "label": "MEDIUM",
+            "nextCollectionMin": 120,
+            "effectiveVenue": "BybitPerp"
+          },
+          "rankScore": 24.3
+        },
+        "conviction": {
+          "score": 50,
+          "label": "MEDIUM",
+          "direction_consistency": 50,
+          "magnitude_stability": 50,
+          "spread_persistence": 50,
+          "sample_hours": 0
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "BybitPerp": 1793368800000,
+          "GatePerp": 1793376000000
+        }
+      },
+      {
+        "coin": "EIGEN",
+        "rates": {
+          "BinPerp": 0.0003,
+          "BybitPerp": 0.0001
+        },
+        "bestArb": {
+          "longVenue": "BybitPerp",
+          "shortVenue": "BinPerp",
+          "spreadBps": 0.5,
+          "annualizedPct": 43.8,
+          "direction": "Long Bybit / Short Binance",
+          "urgency": {
+            "score": 37,
+            "label": "MEDIUM",
+            "nextCollectionMin": 120,
+            "effectiveVenue": "BybitPerp"
+          },
+          "rankScore": 23.6
+        },
+        "conviction": {
+          "score": 50,
+          "label": "MEDIUM",
+          "direction_consistency": 50,
+          "magnitude_stability": 50,
+          "spread_persistence": 50,
+          "sample_hours": 0
+        },
+        "nextFundingTimes": {
+          "BinPerp": 1793368800000,
+          "BybitPerp": 1793368800000
+        }
+      }
+    ],
+    "scannedPairs": 15,
+    "timestamp": 1793361600,
+    "_algovault": {
+      "version": "__PKG_VERSION__",
+      "tool": "scan_funding_arb",
+      "compatible_with": "__COMPATIBLE_WITH__",
+      "session_id": null,
+      "auth": {
+        "outcome": "RESOLVED",
+        "presented": true,
+        "tier": "internal"
+      }
+    }
+  },
+  "defaultKeyless": {
+    "opportunities": [
+      {
+        "coin": "DOGE",
+        "rates": {
+          "HlPerp": 0.0008,
+          "BinPerp": 0.0008,
+          "BybitPerp": 0.0006,
+          "AsterPerp": 0.0002,
+          "BitgetPerp": 0.0004
+        },
+        "bestArb": {
+          "longVenue": "AsterPerp",
+          "shortVenue": "HlPerp",
+          "spreadBps": 7.75,
+          "annualizedPct": 678.9,
+          "direction": "Long Aster / Short HL",
+          "urgency": {
+            "score": 85,
+            "label": "HIGH",
+            "nextCollectionMin": 20,
+            "effectiveVenue": "HlPerp"
+          },
+          "rankScore": 84.1
+        },
+        "conviction": {
+          "score": 97,
+          "label": "HIGH",
+          "direction_consistency": 100,
+          "magnitude_stability": 88.3,
+          "spread_persistence": 100,
+          "sample_hours": 24
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "BinPerp": 1793376000000,
+          "BybitPerp": 1793376000000,
+          "AsterPerp": 1793376000000,
+          "BitgetPerp": 1793376000000
+        }
+      },
+      {
+        "coin": "LINK",
+        "rates": {
+          "HlPerp": 0.00003,
+          "GatePerp": 0.004,
+          "BitgetPerp": 0.0001
+        },
+        "bestArb": {
+          "longVenue": "BitgetPerp",
+          "shortVenue": "GatePerp",
+          "spreadBps": 9.88,
+          "annualizedPct": 865.05,
+          "direction": "Long Bitget / Short Gate",
+          "urgency": {
+            "score": 37,
+            "label": "MEDIUM",
+            "nextCollectionMin": 120,
+            "effectiveVenue": "GatePerp"
+          },
+          "rankScore": 65.1
+        },
+        "conviction": {
+          "score": 20,
+          "label": "LOW",
+          "direction_consistency": 50,
+          "magnitude_stability": 0,
+          "spread_persistence": 0,
+          "sample_hours": 24
+        },
+        "nextFundingTimes": {
+          "HlPerp": 1793362800000,
+          "GatePerp": 1793368800000,
+          "BitgetPerp": 1793376000000
+        }
+      }
+    ],
+    "scannedPairs": 15,
+    "timestamp": 1793361600,
+    "_algovault": {
+      "version": "__PKG_VERSION__",
+      "tool": "scan_funding_arb",
+      "compatible_with": "__COMPATIBLE_WITH__",
+      "session_id": null,
+      "quota": {
+        "used": 1,
+        "total": 200,
+        "remaining": 199,
+        "resets_at": "2026-11-29T12:00:00.000Z",
+        "daily": {
+          "used": 1,
+          "total": 100,
+          "remaining": 99,
+          "resets_at": "2026-10-31T00:00:00.000Z"
+        },
+        "binding": "daily"
+      },
+      "auth": {
+        "outcome": "ABSENT",
+        "presented": false,
+        "tier": "free"
+      },
+      "claim_url": "https://api.algovault.com/welcome?utm_source=mcp&utm_medium=envelope&utm_campaign=claim",
+      "claim_hint": "Sign in to keep this key and get a heads-up before the cap."
+    }
+  },
+  "floorBinance": [
+    "BTC",
+    "ETH"
+  ],
+  "floorAster": [
+    "BTC"
+  ],
+  "floorOkxThrows": [],
+  "floorKucoinEmpty": []
+}

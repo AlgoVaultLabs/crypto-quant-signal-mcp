@@ -17,6 +17,10 @@
  * on one venue. The BINANCE / BYBIT / BITGET adapters are mocked too: the unchanged code never calls
  * them, and R3 (own feeds) does — R6 re-captures against these same inputs.
  *
+ * R6 (same wave) re-captured the golden ONCE after R3 pointed every venue at its own feed and added
+ * Bitget: the byte-identity pin now reads the own-feeds recording, and the R1 recording stays as the
+ * "before" record for a leg-level diff — only BINANCE / BYBIT / OKX / BITGET legs may differ.
+ *
  * The fixture records `__PKG_VERSION__` / `__COMPATIBLE_WITH__` (the `tests/scan-market-regimes.test.ts`
  * pattern) so a release cannot turn it red. A mismatch writes the actual output — placeholders
  * re-inserted — to a temp path for diagnosis; that write never makes the test pass.
@@ -49,7 +53,12 @@ import type { ExchangeAdapter, ExchangeId, FundingData, LicenseInfo } from '../.
 const GOLDEN_NOW = Date.parse('2026-10-30T12:00:00.000Z');
 const MIN = 60_000;
 const HR = 3_600_000;
-const FIXTURE = join(__dirname, '..', 'fixtures', 'scan-funding-arb-golden-2026-10-30.json');
+/** R6: the own-feeds recording (after R3). */
+const FIXTURE = join(__dirname, '..', 'fixtures', 'scan-funding-arb-golden-own-feeds-2026-10-30.json');
+/** R1: the recording from the unchanged code — the "before" side of the R6 diff. */
+const PRE_FIXTURE = join(__dirname, '..', 'fixtures', 'scan-funding-arb-golden-2026-10-30.json');
+/** The venue-strings whose funding source R3 changed (own feeds) or added (Bitget). */
+const OWN_FEED_LEGS = new Set(['BinPerp', 'BybitPerp', 'OKXPerp', 'BitgetPerp']);
 
 type Row = FundingData['venues'][number];
 const r = (venue: string, fundingRate: number, nextInMin: number, intervalHours?: number): Row =>
@@ -223,6 +232,27 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+interface Opp { coin: string; rates: Record<string, number>; nextFundingTimes: Record<string, number>; bestArb: Record<string, unknown> }
+interface Scan { opportunities: Opp[]; scannedPairs: number; _algovault: unknown }
+
+/** Every leg (venue-string) whose rate or next funding time differs between two scans, per coin. */
+function changedLegs(pre: Scan, post: Scan): { coin: string; venue: string }[] {
+  const by = (s: Scan) => new Map(s.opportunities.map((o) => [o.coin, o]));
+  const a = by(pre); const b = by(post);
+  const out: { coin: string; venue: string }[] = [];
+  for (const coin of new Set([...a.keys(), ...b.keys()])) {
+    const x = a.get(coin); const y = b.get(coin);
+    for (const venue of new Set([...Object.keys(x?.rates ?? {}), ...Object.keys(y?.rates ?? {})])) {
+      const leg = (o?: Opp) => JSON.stringify(o ? [o.rates[venue], o.nextFundingTimes[venue]] : null);
+      if (leg(x) !== leg(y)) out.push({ coin, venue });
+    }
+  }
+  return out;
+}
+
+/** An opportunity minus `rankScore`, which is normalized by the scan's MAX spread (a cross-row value). */
+const withoutRank = (o: Opp) => ({ ...o, bestArb: { ...o.bestArb, rankScore: undefined } });
+
 describe('DECISION-CALL-V1-W1 R1 — scan_funding_arb golden', () => {
   it('the scan, the per-leg liquidity map and the scan-shared floor are byte-identical to the recording', async () => {
     const actual = await captureGolden();
@@ -243,5 +273,33 @@ describe('DECISION-CALL-V1-W1 R1 — scan_funding_arb golden', () => {
     expect(g.wideInternal.scannedPairs).toBeGreaterThanOrEqual(12);
     expect(g.floorBinance.length).toBeGreaterThan(0);
     expect(g.floorOkxThrows).toEqual([]);
+  });
+
+  it('R6: against the R1 recording, only BINANCE / BYBIT / OKX / BITGET legs differ', () => {
+    const pre = readGolden(PRE_FIXTURE) as Record<string, Scan | string[]>;
+    const post = readGolden(FIXTURE) as Record<string, Scan | string[]>;
+    expect(Object.keys(post)).toEqual(Object.keys(pre));
+    let changed = 0;
+    let untouched = 0;
+    for (const capture of ['wideInternal', 'defaultKeyless'] as const) {
+      const a = pre[capture] as Scan; const b = post[capture] as Scan;
+      const legs = changedLegs(a, b);
+      for (const { coin, venue } of legs) expect(OWN_FEED_LEGS.has(venue), `${capture} ${coin} ${venue}`).toBe(true);
+      changed += legs.length;
+      // A coin none of whose legs changed is the same opportunity (only the cross-row rankScore may move).
+      const moved = new Set(legs.map((l) => l.coin));
+      const after = new Map(b.opportunities.map((o) => [o.coin, o]));
+      for (const o of a.opportunities) {
+        if (moved.has(o.coin)) continue;
+        expect(withoutRank(after.get(o.coin)!), `${capture} ${o.coin}`).toEqual(withoutRank(o));
+        untouched++;
+      }
+      expect(b._algovault).toEqual(a._algovault);
+    }
+    expect(changed).toBeGreaterThan(0);   // non-vacuous: the own feeds did change legs
+    expect(untouched).toBeGreaterThan(0); // and some coins carry none of the four
+    // scannedPairs counts merged coins: +1 is EIGEN, quoted only by the BINANCE / BYBIT own feeds.
+    expect((post.wideInternal as Scan).scannedPairs).toBe((pre.wideInternal as Scan).scannedPairs + 1);
+    for (const floor of ['floorBinance', 'floorAster', 'floorOkxThrows', 'floorKucoinEmpty']) expect(post[floor]).toEqual(pre[floor]);
   });
 });
