@@ -1429,6 +1429,30 @@
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OAUTH_DISCOVERY_FAIL-W{NEXT}",
       "notes": "GROWTH-AGENT-SIGNIN-OAUTH-W1 CH3: pages when oauth-discovery-canary.py (daily) reads a definitive failure in the OAuth discovery documents, the anonymous ?signin=1 401 challenge, the /token refusal or (GROWTH-AGENT-SIGNIN-OAUTH-W2) ChatGPT's client document at /authorize (302 + iss, never 400 invalid_client) while MCP_OAUTH is optin or wall. MCP_OAUTH=off is SKIPPED_FLAG_OFF and never pages; an origin the canary could not reach is INDETERMINATE and never pages. Fire site is the module-level ALERT_ID literal plus a wrapper argv list. Body: the failing legs with their measured reason, then `Action: dispatch OPS-OAUTH-DISCOVERY-W{NEXT} via Cowork → Claude Code`. A PASS --clears; resolution is SILENT by the registry default."
+    },
+    {
+      "alert_id": "pre_trade_check_degraded",
+      "owner": "ops/monitoring/pre-trade-health-canary.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-PRE_TRADE_CHECK_DEGRADED-W{NEXT}",
+      "notes": "DECISION-CALL-V1-W3 CH2. Pages CRITICAL_PERSISTENT after 2 CONSECUTIVE hourly FAILs of `pre-trade-health.js` — one engine call (BTC long $10,000, 8h hold, 4h) that refused, threw, returned no decision, or left fewer than PRE_TRADE_HEALTH_MIN_VENUES (default 3) venues free of feed_unavailable / funding_unavailable; one FAIL pages nothing. Repetition is the wrapper's 24 h cooldown. A PASS resets the count and calls --clear (silent). INDETERMINATE (no token, a stopped container, an unreachable database) pages nothing, clears nothing and leaves the count untouched."
+    },
+    {
+      "alert_id": "venue_fee_table_stale",
+      "owner": "ops/monitoring/pre-trade-health-canary.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-VENUE_FEE_TABLE_STALE-W{NEXT}",
+      "notes": "DECISION-CALL-V1-W3 CH2. Pages CRITICAL_PERSISTENT on the FIRST FAIL of VENUE_FEE_TABLE_VERDICT: a src/lib/venue-fees.ts row older than FEE_TABLE_MAX_AGE_DAYS, the body naming each row's venue, verified-at date and source URL. Judged with no database, so it still acts when the health probe cannot. A PASS calls --clear (silent); a missing token pages and clears nothing. The row keeps pricing meanwhile, with a FEE_TABLE_STALE note in every response."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",

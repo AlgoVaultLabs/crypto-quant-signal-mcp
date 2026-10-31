@@ -286,6 +286,30 @@
       ]
     },
     {
+      "id": "pre-trade-health",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "/opt/algovault-monitoring/pre-trade-health-canary.sh",
+      "container": "crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "dist/scripts/pre-trade-health.js",
+      "class": "safe-to-kill",
+      "reason": "Read-only: the probe runs in a session the server holds read-only (PGOPTIONS default_transaction_read_only=on), adopts the regime tables without DDL and makes ONE engine call that writes nothing (no request_log row; the internal license bills no unit). A SIGKILLed run prints no PRE_TRADE_HEALTH_VERDICT, which the wrapper records as INDETERMINATE: no page, no clear, the consecutive-FAIL count untouched. The next hourly fire re-probes. A lost run costs one hour of health watching.",
+      "max_runtime_s": 300,
+      "runtime_instrument": "PROJECTED: the runScript watchdog ceiling (5 min). Re-measured at install as the cold wall of the run exactly as cron invokes it (env -i, /bin/sh -c) x 1.25, rounded up (precedent 4ed9dca). Hard ceilings are the server statement_timeout (60 s per query) and the watchdog (300 s).",
+      "cron_lines": 1,
+      "cron": "47 * * * * (hourly, signal-1) — 3 min after the :44 regime-freshness canary",
+      "catchup_cmd": null,
+      "source": "repo",
+      "verified_at": "2026-10-31",
+      "notes": "DECISION-CALL-V1-W3 CH2. Alerts pre_trade_check_degraded (2 consecutive FAILs) and venue_fee_table_stale (first FAIL).",
+      "cron_match": [
+        "/opt/algovault-monitoring/pre-trade-health-canary.sh"
+      ]
+    },
+    {
       "id": "monitor",
       "host": "signal-1",
       "events": [

@@ -169,6 +169,10 @@ describe('class preservation — tags moved, classes did not', () => {
     // OPS-ASSET-CLASS-TOTALITY-W1: the daily census/check reads every active venue's instrument list
     // under ONE batch scope — a monitoring job must never spend a venue's interactive reserve.
     'src/scripts/asset-class-totality.ts': { runAsBatch: 1 },
+    // DECISION-CALL-V1-W3 CH2: the hourly pre_trade_check health probe — ONE engine call under ONE batch
+    // scope so the canary can never spend a venue's interactive reserve; its own entrypoint, literal name
+    // `pre_trade_health`.
+    'src/scripts/pre-trade-health.ts': { runAsBatch: 1 },
   };
 
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {

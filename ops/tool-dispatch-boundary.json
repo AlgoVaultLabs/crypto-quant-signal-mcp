@@ -63,6 +63,11 @@
       "file": "src/index.ts",
       "symbol": "getChatStack",
       "reason": "Public website /api/chat route — web UI with the license resolved from the REQUEST (tests/unit/chat-rate-limit.test.ts), not a tool channel. The chat_knowledge MCP tool dispatches through the pipeline's row."
+    },
+    {
+      "file": "src/scripts/pre-trade-health.ts",
+      "symbol": "runPreTradeCheck",
+      "reason": "Health-probe CLI (the hourly pre-trade-health canary), not a channel: ONE engine call per run with the internal license under its own batch caller tag, in a read-only session; it writes no request_log row and bills no unit (DECISION-CALL-V1-W3 CH2)."
     }
   ]
 }
