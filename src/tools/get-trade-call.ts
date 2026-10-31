@@ -1116,10 +1116,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     priceChange,
     openInterest: assetCtx.openInterest,
     // SIGNAL-VERDICT-RULE-REGISTRY-W1 CH2: the negation is part of rule M, which every cell serves
-    // by default, so it is always computed — no env var selects it any more. Rollback to the
-    // contrarian ladder (v1) is DENIED, and the registry's kill switch can only force M. Which rule
-    // is SERVED is decided once, below, by `resolveVerdictRule`; the would-be verdict comes from
-    // `rsiScorePre` on this same pass.
+    // unless assigned otherwise, and F and H are defined against it, so it is always computed — no
+    // env var selects it any more. Rollback to the contrarian ladder (v1) is DENIED, and the
+    // registry's kill switch can only force M. Which rule is SERVED is decided once, below, by
+    // `resolveVerdictRule`; the would-be verdict comes from `rsiScorePre` on this same pass.
     trendMode: true,
   };
   const liveBasisScores = computeIndicatorScores({ candles, ...indicatorInputs });
@@ -1251,7 +1251,8 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   //    engine's own locals at call time, never re-derived later. The registry then decides, per
   //    cell, which variant's verdict is SERVED, and returns the stamp and the capture with it.
   //    Every projection below — the response, the ledger, the three persist arms — reads `rule`.
-  //    With all 20 cells on M (this wave) `rule.served` IS `liveVerdict`, byte for byte.
+  //    In every cell assigned M (18 of 20 since SIGNAL-VERDICT-RULE-SWITCH-3m-W1; 3m serves F), and
+  //    on every non-decisive call in any cell, `rule.served` IS `liveVerdict`, byte for byte.
   const v1Verdict = deriveVerdict(
     { rsiScore: emittedScores.rsiScorePre, emaScore, fundingScore, oiScore: liveOiScore, volumeScore },
     verdictGates,
@@ -1476,7 +1477,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       // sentence and the telemetry note can never quote different pins.
       suppressionPin: { minGenuineBars: BOOK_LIVENESS_MIN_GENUINE_BARS, window: BOOK_LIVENESS_WINDOW },
       // SIGNAL-VERDICT-RULE-REGISTRY-W1: names a fade/hold when one served this call. Absent
-      // under M (every cell this wave), so the sentence set is byte-unchanged.
+      // under M (every M cell, and every non-decisive call), so that sentence set is byte-unchanged.
       ruleVariant: rule.variant === 'M' ? undefined : rule.variant,
     })
     : '';

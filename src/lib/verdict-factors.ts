@@ -1120,8 +1120,9 @@ export function renderVerdictReasoning(
      * fade (the call is the opposite side of the reading the ledger describes); `'H'` = a hold.
      * Absent ⇒ today's rule served it, and every sentence below is byte-unchanged.
      *
-     * ⚠ DRAFTED PUBLIC COPY, INACTIVE: no cell is assigned F or H. The two sentences below are
-     * flagged for Mr.1's review at the first switch dispatch. Number-free by construction.
+     * APPROVED by Mr.1 (first switch: 3m), 2026-10-31 — the F sentence and the cadence sentence
+     * below, the latter as edited at approval. The H sentence stays unreachable while H is refused.
+     * Number-free by construction.
      */
     ruleVariant?: 'F' | 'H';
   } = {},
@@ -1244,7 +1245,7 @@ export function renderVerdictReasoning(
     // The ordinary flip sentence reasons from the reading toward the call; under a variant the
     // call is not that reading's, so the sentence would be false. State the rule's cadence instead.
     : opts.ruleVariant
-      ? 'The rule is re-tested on each forward window'
+      ? 'Rules are set per timeframe and re-checked on new data'
       : flipSentence(ledger, call, driver);
 
   // Fit to the consumer's ceiling by DEGRADING slot 2, never by dropping a slot: the

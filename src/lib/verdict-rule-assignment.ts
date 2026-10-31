@@ -33,9 +33,17 @@ export type VerdictRuleAssignment = {
   readonly [T in RegistryTimeframe]: { readonly [R in TrendRegime]: RuleVariant };
 };
 
-/** All 20 cells = M. SIGNAL-VERDICT-RULE-REGISTRY-W1 ruling Q3 = A: nothing moves until evidence does. */
+/**
+ * 18 cells = M; 3m serves F in both trend directions. SIGNAL-VERDICT-RULE-REGISTRY-W1 ruling Q3 = A:
+ * nothing moves until evidence does, and each move below names the look that moved it.
+ *
+ *   3m (F,F) — SIGNAL-VERDICT-RULE-SWITCH-3m-W1. The gate's look of 2026-10-26T12:43Z on window 1
+ *   (2026-10-04 → 2026-10-25) recommended SWITCH_TO (F,F) over the incumbent (M,M): Holm-rejected,
+ *   not vetoed. Approved by Mr.1 2026-10-31. Window 2 opened under (M,M) and is straddled, so its
+ *   look cannot switch 3m back; window 3 is the first that can, on its own evidence (ruling Q2).
+ */
 export const VERDICT_RULE_ASSIGNMENT: VerdictRuleAssignment = {
-  '3m': { TRENDING_UP: 'M', TRENDING_DOWN: 'M' },
+  '3m': { TRENDING_UP: 'F', TRENDING_DOWN: 'F' },
   '5m': { TRENDING_UP: 'M', TRENDING_DOWN: 'M' },
   '15m': { TRENDING_UP: 'M', TRENDING_DOWN: 'M' },
   '30m': { TRENDING_UP: 'M', TRENDING_DOWN: 'M' },

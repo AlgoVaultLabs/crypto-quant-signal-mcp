@@ -7,10 +7,14 @@
  * one. The registry replaces it with a committed per-cell assignment — 10 timeframes ×
  * {TRENDING_UP, TRENDING_DOWN} → M (today's rule) | F (fade) | H (hold) — read once per call, with
  * every projection (the response, the ledger, the three persist arms, the capture) reading that ONE
- * resolution. This wave serves M in all 20 cells; F and H are built, tested and unreachable.
+ * resolution. The registry wave served M in all 20 cells. SIGNAL-VERDICT-RULE-SWITCH-3m-W1 is the
+ * first switch: 3m serves F in both trend directions, the other 18 cells M; H stays refused.
  *
  * Pinned here:
- *   - the committed assignment: exactly the registered cells, every one M, no H;
+ *   - the committed assignment: exactly the registered cells, 3m = (F,F), the other 18 M, no H;
+ *   - the committed switch end to end: a 3m decisive call is the opposite side at the same
+ *     confidence, stamped 3, named in `reasoning` and `_receipts.rule_variant`; a 3m non-decisive
+ *     call and a 5m decisive call are M, stamped 2;
  *   - the kill switch: exact '1' forces M everywhere and can never select v1 (rollback denied);
  *   - the H refusal: REFUSES (cell → M, one CRITICAL line, a counter), never throws;
  *   - `rule_config_id`: deterministic, order-independent, sensitive to the assignment and the switch;
@@ -97,10 +101,15 @@ describe('R1 — the committed assignment', () => {
     }
   });
 
-  it('serves M in all 20 cells — this wave switches nothing', () => {
+  it('is the committed assignment: 3m = (F,F) (SIGNAL-VERDICT-RULE-SWITCH-3m-W1), the other 18 cells M', () => {
     const cells = REGISTRY_TIMEFRAMES.flatMap((tf) => TREND_REGIMES.map((r) => VERDICT_RULE_ASSIGNMENT[tf][r]));
     expect(cells).toHaveLength(20);
-    expect(new Set(cells)).toEqual(new Set(['M']));
+    expect(VERDICT_RULE_ASSIGNMENT['3m']).toEqual({ TRENDING_UP: 'F', TRENDING_DOWN: 'F' });
+    const others = REGISTRY_TIMEFRAMES.filter((tf) => tf !== '3m').flatMap((tf) => TREND_REGIMES.map((r) => VERDICT_RULE_ASSIGNMENT[tf][r]));
+    expect(others).toHaveLength(18);
+    expect(new Set(others)).toEqual(new Set(['M']));
+    // and nothing between the commit and serving changes it (kill switch off, no H to refuse)
+    expect(effectiveAssignment({ env: {} as NodeJS.ProcessEnv })).toEqual(VERDICT_RULE_ASSIGNMENT);
   });
 
   it('commits no H, and H stays refused until a quarantined H-hold store ships (ruling Q3)', () => {
@@ -190,6 +199,16 @@ describe('R1 — rule_config_id', () => {
     expect(ruleConfigId({ env: {} as NodeJS.ProcessEnv }))
       .toBe(ruleConfigId({ assignment: VERDICT_RULE_ASSIGNMENT, env: {} as NodeJS.ProcessEnv }));
   });
+
+  it('the 3m switch mints a new id; prints EXPECTED_RULE_CONFIG_ID (kill switch off) for the post-deploy proof', () => {
+    const expected = ruleConfigId({ env: {} as NodeJS.ProcessEnv });
+    const prior = ruleConfigId({ assignment: uniform('M'), env: {} as NodeJS.ProcessEnv });
+    expect(expected).not.toBe(prior);
+    // the kill switch still has its own id, distinct from both
+    expect(ruleConfigId({ env: { [KILL_SWITCH_ENV]: '1' } as NodeJS.ProcessEnv })).not.toBe(expected);
+    console.log(`EXPECTED_RULE_CONFIG_ID=${expected}`);
+    console.log(`PRIOR_RULE_CONFIG_ID=${prior}`);
+  });
 });
 
 describe('R2 — the variants act only on trend-mode-decisive calls', () => {
@@ -276,6 +295,24 @@ describe('R2 — the variants act only on trend-mode-decisive calls', () => {
 
   it('the version map is M → 2, F → 3', () => {
     expect(VERDICT_RULE_VERSION).toEqual({ M: 2, F: 3 });
+  });
+
+  it('committed 3m: a NON-decisive call is M, stamped 2, identical to an all-M resolution but for the config id', () => {
+    for (const [regime, m, v1] of [
+      ['TRENDING_UP', BUY(55, 62), { signal: 'BUY' as SignalVerdict, rawScore: 49 }],
+      ['TRENDING_DOWN', SELL(-58, 64), { signal: 'SELL' as SignalVerdict, rawScore: -44 }],
+      ['TRENDING_UP', { signal: 'HOLD' as SignalVerdict, rawScore: 20, confidence: 40 }, HOLDV(5)],
+    ] as const) {
+      const committed = resolveVerdictRule({ timeframe: '3m', regime, m, v1 }, { env });
+      const allM = resolveVerdictRule({ timeframe: '3m', regime, m, v1 }, { assignment: uniform('M'), env });
+      expect(committed.cellVariant, `${regime} ${m.signal}`).toBe('F');
+      expect(committed.decisive).toBe(false);
+      expect(committed.variant).toBe('M');
+      expect(committed.stamp.verdictRuleVersion).toBe(2);
+      expect(committed.served).toEqual(m);
+      expect({ ...committed, cellVariant: null, stamp: { ...committed.stamp, ruleConfigId: '' } })
+        .toEqual({ ...allM, cellVariant: null, stamp: { ...allM.stamp, ruleConfigId: '' } });
+    }
   });
 });
 
@@ -374,7 +411,7 @@ describe('R2–R4 — the wiring in getTradeSignal', () => {
   });
   afterEach(() => _setRegistryOverrideForTest(null));
 
-  it('all-M: a decisive BUY is served as M and every writer gets stamp 2 + the committed rule_config_id + the capture', async () => {
+  it('committed M cell (4h): a decisive BUY is served as M and every writer gets stamp 2 + the committed rule_config_id + the capture', async () => {
     vi.mocked(getAdapter).mockReturnValue(DECISIVE_BUY());
     const r = await getTradeSignal({ coin: 'BTC', timeframe: '4h', license: LICENSE });
     expect(r.call).toBe('BUY');
@@ -442,6 +479,102 @@ describe('R2–R4 — the wiring in getTradeSignal', () => {
     const r = await getTradeSignal({ coin: 'ETH', timeframe: '4h', license: LICENSE });
     expect(r.call).toBe('HOLD');
     expect(vi.mocked(recordHoldDecision)).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── SIGNAL-VERDICT-RULE-SWITCH-3m-W1 — the COMMITTED switch, end to end (no override) ─────────
+//
+// Every case below runs against the committed assignment. The approved copy is asserted verbatim,
+// so a later edit to either sentence turns this red instead of shipping unreviewed public copy.
+//
+// SPAWN BUDGET: the one spawning block (the proof's bash --self-test) declares its own timeout.
+
+const FADE_SENTENCE = 'Fade rule active for this timeframe and trend, so the call is the opposite side of this reading.';
+const CADENCE_SENTENCE = 'Rules are set per timeframe and re-checked on new data.';
+
+describe('SWITCH-3m — the committed assignment serves F on 3m only', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetLicenseCache();
+    _clearCache();
+    _setScorerOverride(null);
+    _setSnapshotForTest([]);
+    _setRegistryOverrideForTest(null);
+    process.env.CQS_API_KEY = 'test-key';
+    delete process.env.TREND_MODE;
+    delete process.env[KILL_SWITCH_ENV];
+  });
+  afterEach(() => _setRegistryOverrideForTest(null));
+
+  for (const [label, adapter, mSide, fSide] of [
+    ['UP', DECISIVE_BUY, 'BUY', 'SELL'],
+    ['DOWN', DECISIVE_SELL, 'SELL', 'BUY'],
+  ] as const) {
+    it(`3m decisive ${label}: the opposite side at the same confidence, stamped 3, rule_variant fade, both approved sentences, ≤ 280 chars`, async () => {
+      // the M reading of the same inputs, under a scratch all-M assignment
+      vi.mocked(getAdapter).mockReturnValue(adapter());
+      _setRegistryOverrideForTest({ assignment: uniform('M') });
+      const m = await getTradeSignal({ coin: 'BTC', timeframe: '3m', license: LICENSE });
+      expect(m.call).toBe(mSide);
+
+      vi.clearAllMocks();
+      _setRegistryOverrideForTest(null);
+      vi.mocked(getAdapter).mockReturnValue(adapter());
+      const f = await getTradeSignal({ coin: 'BTC', timeframe: '3m', license: LICENSE });
+      expect(f.call).toBe(fSide);
+      expect(f.confidence).toBe(m.confidence);
+      expect((f._receipts as Record<string, unknown> | undefined)?.rule_variant).toBe('fade');
+      expect(f.reasoning).toContain(FADE_SENTENCE);
+      expect(f.reasoning.endsWith(CADENCE_SENTENCE)).toBe(true);
+      expect(f.reasoning).not.toContain('re-tested on each forward window');
+      expect(f.reasoning.length).toBeLessThanOrEqual(280);
+
+      const expected = { verdictRuleVersion: 3, ruleConfigId: ruleConfigId({}) };
+      const sig = vi.mocked(perfDb.recordSignal).mock.calls;
+      expect(sig).toHaveLength(1);
+      expect(sig[0][1]).toBe(fSide);
+      expect(sig[0][8]).toEqual(expected);
+      const cap = vi.mocked(recordScorerInputCapture).mock.calls;
+      expect(cap).toHaveLength(1);
+      expect(cap[0][0].stamp).toEqual(expected);
+      expect(cap[0][0].capture).toMatchObject({ trendDecisive: true, verdictM: mSide, verdictF: fSide });
+    });
+  }
+
+  it('3m non-decisive (a trending HOLD): stamp-free and byte-identical to the all-M response', async () => {
+    const quietDown = () => adapterFor(shaped(-0.002, 2_600), -0.02);
+    vi.mocked(getAdapter).mockReturnValue(quietDown());
+    _setRegistryOverrideForTest({ assignment: uniform('M') });
+    const m = await getTradeSignal({ coin: 'BTC', timeframe: '3m', license: LICENSE });
+
+    vi.clearAllMocks();
+    _setRegistryOverrideForTest(null);
+    vi.mocked(getAdapter).mockReturnValue(quietDown());
+    const c = await getTradeSignal({ coin: 'BTC', timeframe: '3m', license: LICENSE });
+    expect(c.regime).toBe('TRENDING_DOWN');
+    expect(c.call).toBe('HOLD');
+    const view = (r: typeof c) => ({ call: r.call, confidence: r.confidence, regime: r.regime, reasoning: r.reasoning, receipts: r._receipts });
+    expect(view(c)).toEqual(view(m));
+    expect((c._receipts as Record<string, unknown> | undefined)?.rule_variant).toBeUndefined();
+    expect(vi.mocked(perfDb.recordSignal)).not.toHaveBeenCalled();
+  });
+
+  it("the post-deploy proof's own --self-test passes (ops/scripts/verdict-rule-switch-proof.sh)", { timeout: 60_000 }, () => {
+    const out = execFileSync('bash', [join(REPO_ROOT, 'ops', 'scripts', 'verdict-rule-switch-proof.sh'), '--self-test'], { encoding: 'utf8' });
+    expect(out).toContain('SELF-TEST: PASS');
+    expect(out.trim().split('\n').pop()).toBe('SWITCH_PROOF_SELF_TEST=PASS');
+  });
+
+  it('5m decisive: still M — served as computed, stamped 2, no rule_variant', async () => {
+    vi.mocked(getAdapter).mockReturnValue(DECISIVE_BUY());
+    const r = await getTradeSignal({ coin: 'BTC', timeframe: '5m', license: LICENSE });
+    expect(r.call).toBe('BUY');
+    expect(r.reasoning).not.toMatch(/Fade rule|Hold rule/);
+    expect((r._receipts as Record<string, unknown> | undefined)?.rule_variant).toBeUndefined();
+    const sig = vi.mocked(perfDb.recordSignal).mock.calls;
+    expect(sig).toHaveLength(1);
+    expect(sig[0][8]).toEqual({ verdictRuleVersion: 2, ruleConfigId: ruleConfigId({}) });
+    expect(vi.mocked(recordScorerInputCapture).mock.calls[0][0].capture).toMatchObject({ trendDecisive: true, verdictM: 'BUY' });
   });
 });
 

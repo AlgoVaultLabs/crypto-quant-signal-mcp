@@ -151,8 +151,8 @@ export interface Receipts {
   /**
    * SIGNAL-VERDICT-RULE-REGISTRY-W1: a non-default verdict rule served this call — `fade` (the
    * call is the opposite side of the ledger's reading) or `hold`. OMITTED under today's rule.
-   * Inactive this wave (no cell is switched); a public-shape addition, so the first switch
-   * dispatch owns its shape snapshot.
+   * Live from SIGNAL-VERDICT-RULE-SWITCH-3m-W1 (3m serves F): `fade` on a 3m decisive call.
+   * Declared in `audits/get-trade-call-shape-snapshot-2026-10-31.json` `receipts_allowed_keys`.
    */
   rule_variant?: 'fade' | 'hold';
   verification_uri: string;
@@ -314,7 +314,8 @@ export function formatReceipts(verdict: VerdictContext, opts: FormatReceiptsOpti
       : {}),
     // SIGNAL-VERDICT-RULE-REGISTRY-W1: present only when a non-default rule served the call — the
     // ledger above is the engine's own reading, so a fade/hold must be named beside it. Absent
-    // under today's rule (every cell this wave), so the block is byte-identical.
+    // under today's rule (every non-decisive call, and every cell assigned M), so those blocks are
+    // byte-identical.
     ...(opts.ruleVariant ? { rule_variant: opts.ruleVariant === 'F' ? 'fade' as const : 'hold' as const } : {}),
     verification_uri: VERIFICATION_URI,
     disclaimer: RECEIPTS_DISCLAIMER,

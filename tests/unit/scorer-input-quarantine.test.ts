@@ -173,6 +173,18 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
     'ops/monitoring/verdict-rule-gate.py',
     'the CH3 forward gate: reads the emitted arm capture by the registered query; outputs a verdict token and per-timeframe statistics only',
   ],
+  [
+    // ADDED 2026-10-31, SIGNAL-VERDICT-RULE-SWITCH-3m-W1 R4 — in the SAME commit as the reader, so the
+    // stale-row assertion never fires between them. The post-deploy switch proof joins each signals row
+    // to its emitted-arm capture row to decide whether a v3 stamp sat on an F cell's DECISIVE row served
+    // `verdict_f`. It reads the capture's decision columns (timeframe, regime, trend_decisive, verdict_f)
+    // and never a parts value; it runs from the Mac in ONE READ ONLY transaction as aoe_readonly and
+    // prints six counts and a verdict token — never a row, never a public figure. Its --self-test
+    // asserts the SQL names no outcome or label column. IF IT EVER SELECTS A PARTS VALUE, remove this
+    // row rather than widen it.
+    'ops/scripts/verdict-rule-switch-proof.sh',
+    'the post-deploy switch proof: reads the emitted arm capture decision columns by join; outputs counts and a verdict token only',
+  ],
 ]);
 
 /** Strip comments by dialect so a MENTION is not judged as a REFERENCE.
