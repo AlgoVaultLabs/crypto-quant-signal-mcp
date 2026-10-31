@@ -75,12 +75,19 @@ const CLAIM_INITIAL_SETTLEMENT_STATE: SettlementClass = 'CLAIMED_PENDING';
  * afterwards, the callback carries the rail's own reference and must still be recorded;
  * refusing it would let a monitoring job's inference outrank the rail's own receipt.
  *
+ * `CLAIMED_UNSERVED` (DECISION-CALL-V1-W3) is in here for the same reason. It records OUR decision
+ * not to settle a call we did not serve; it says nothing about the chain. If the rail ever reports
+ * that the money moved anyway, the rail's receipt wins.
+ *
  * SETTLED and OPERATOR are deliberately ABSENT, which is the invariant that actually
  * matters: money that moved can never be un-recorded by a late or duplicated callback.
  */
 const PROMOTABLE_FROM: readonly SettlementClass[] = Object.freeze(
-  ['CLAIMED_PENDING', 'CLAIMED_EXPIRED'] as const,
+  ['CLAIMED_PENDING', 'CLAIMED_EXPIRED', 'CLAIMED_UNSERVED'] as const,
 ) as readonly SettlementClass[];
+
+/** The only state an unserved mark may move a claim OUT OF (DECISION-CALL-V1-W3). */
+const UNSERVED_FROM: SettlementClass = 'CLAIMED_PENDING';
 
 /** Rail written when a caller does not declare one — never guessed on their behalf. */
 export const RAIL_UNKNOWN = 'unknown';
@@ -455,6 +462,45 @@ export async function recordSettlementOutcome(
   } catch (err) {
     console.error(
       `[x402-idempotency] recordSettlementOutcome DB error for nonce=${nonce} — row stays ${CLAIM_INITIAL_SETTLEMENT_STATE}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return 'ERROR';
+  }
+}
+
+/**
+ * UNSERVED — a claimed payment whose call we did not serve. (DECISION-CALL-V1-W3)
+ *
+ * The rule on every rail: only a SERVED call settles (HOLD is served). A refusal or a throw after the
+ * claim never settles, so the row would sit at `CLAIMED_PENDING` forever. That is the state revenue
+ * meter (c) counts as money owed and the reconciler scans on chain, so an honest refusal would page as
+ * lost revenue. This moves the row to `CLAIMED_UNSERVED`, a state neither of them reads, and nobody is
+ * charged: the buyer's authorization is never submitted.
+ *
+ * FROM `CLAIMED_PENDING` ONLY. A row the rail already promoted (SETTLED / OPERATOR), or that the
+ * reconciler already judged (CLAIMED_EXPIRED), is never rewritten. The key is derived exactly as the
+ * claim derived it — see `recordSettlementOutcome` above.
+ *
+ * NEVER THROWS. It runs after the response is already sent; a DB fault degrades to a log line and the
+ * row stays `CLAIMED_PENDING`.
+ */
+export async function recordUnservedClaim(
+  nonce: string,
+  payerWallet: string,
+): Promise<'MARKED' | 'NOT_FOUND' | 'ERROR'> {
+  if (!nonce) return 'NOT_FOUND';
+  try {
+    ensureProcessedX402PaymentsSchema();
+    const rows = await dbQuery<{ nonce: string }>(
+      `UPDATE processed_x402_payments SET settlement_state = ?
+        WHERE nonce = ? AND payer_wallet = ? AND settlement_state = ?
+        RETURNING nonce`,
+      ['CLAIMED_UNSERVED', nonce, payerWallet, UNSERVED_FROM],
+    );
+    return rows.length > 0 ? 'MARKED' : 'NOT_FOUND';
+  } catch (err) {
+    console.error(
+      `[x402-idempotency] recordUnservedClaim DB error — row stays ${UNSERVED_FROM}:`,
       err instanceof Error ? err.message : err,
     );
     return 'ERROR';

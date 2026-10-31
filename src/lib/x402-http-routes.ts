@@ -19,8 +19,9 @@
  *
  * Paywall (R2): reuses `resolveLicense` (x402 → API key → free). Unpaid (`tier!=='x402'`)
  * → 402 carrying the HTTP resource URL + bazaar extension (the listing channel). Paid →
- * run the core fn, then settle fire-and-forget — EVERY verdict settles, HOLD included
- * (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A), matching MCP.
+ * run the core fn, then settle fire-and-forget — every SERVED verdict settles, HOLD included
+ * (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A); a refusal or a throw after the claim is marked
+ * unserved and never settles (DECISION-CALL-V1-W3). One decision, `x402SettlementAction`, matching MCP.
  *
  * This line read "R6; HOLD verdicts stay free, like MCP" until 2026-08-09 — false since CH5 of
  * that wave removed the settle-skip a few lines below, and false in the module HEADER, where a
@@ -41,7 +42,7 @@ import { resolveSessionIdentity } from './track-token.js';
 // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1 (Q2=A): classify EVERY external path,
 // including paid x402/a2mcp, via the ONE canonical classifier — no second isbot impl.
 import { classifyTraffic } from './traffic-classifier.js';
-import { generate402Response, settleX402Async, paymentMatchesToolRoute } from './x402.js';
+import { generate402Response, settleX402Async, markX402Unserved, x402SettlementAction, paymentMatchesToolRoute } from './x402.js';
 import { tryClaimPayment, extractPaymentNonce, extractPayerWallet, railForRequirement } from './x402-idempotency-store.js';
 import { BAZAAR_ROUTES, bazaarResourceUrl, bazaarRouteDescription } from './x402-bazaar.js';
 import { resolveFacilitatorFromEnv } from './x402-facilitator.js';
@@ -465,42 +466,40 @@ export function mountX402HttpRoutes(app: Express): string[] {
         license,
         ctx: { sessionId, ipHash, isAutomated: authenticity.is_automated },
       });
+      // DECISION-CALL-V1-W3 — the ONE settle decision `/mcp` also makes: only a SERVED call settles,
+      // HOLD included (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A — byte-for-byte the MCP rule, which
+      // is the point). A refusal or a throw after the claim above is UNSERVED: the claim moves to
+      // CLAIMED_UNSERVED and is never settled, so it can never read as money owed.
+      const settlement = x402SettlementAction(call.ok ? 'ok' : call.kind);
       if (call.ok) {
         // Public output == MCP tool output (single source of truth).
         res.json(call.result);
-
-        // Async settle (R6): fire-and-forget after the response.
-        //
-        // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): every verdict settles, HOLD included —
-        // byte-for-byte the same rule as the MCP path, which is the point.
-        //
-        // Reached only after `res.json(result)`, so an error path still never settles.
-        if (pendingSettlement) {
-          settleX402Async(pendingSettlement);
-        }
-        return;
-      }
-      if (call.kind === 'refused') {
-        // An in-band refusal from the pipeline (Q-PIPE-2 row 12: an undeclared timeframe). Unreachable
-        // on this rail today — the Bazaar schema enum runs in validateToolInput first — rendered as a
-        // 400 and never settled.
+      } else if (call.kind === 'refused') {
+        // An in-band refusal from the pipeline, rendered with its own status. Reachable on this rail since
+        // pre_trade_check was priced (DECISION-CALL-V1-W3): its venue_not_supported / coin_not_listed /
+        // data_unavailable refusals pass the Bazaar schema and refuse inside the tool. An undeclared
+        // timeframe (Q-PIPE-2 row 12) still cannot reach here — validateToolInput runs the schema enum first.
         res.status(call.http.status).json(call.payload);
-        return;
+      } else {
+        // SEC-50 (OPS-AUDIT-REMEDIATION-LOW-W1): the raw upstream message went to the client,
+        // which leaks internal paths, hostnames and driver text on a PAID public route. Log it
+        // server-side; the wire keeps the machine-readable `code` it already had.
+        console.error(
+          '[x402-http] handler error:',
+          call.error instanceof Error ? `${call.error.name}: ${call.error.message}\n${call.error.stack ?? ''}` : String(call.error),
+        );
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: 'internal_error',
+            code: 'X402_HTTP_HANDLER_ERROR',
+            message: 'An internal error occurred while handling the x402 request.',
+          });
+        }
       }
-      // SEC-50 (OPS-AUDIT-REMEDIATION-LOW-W1): the raw upstream message went to the client,
-      // which leaks internal paths, hostnames and driver text on a PAID public route. Log it
-      // server-side; the wire keeps the machine-readable `code` it already had.
-      console.error(
-        '[x402-http] handler error:',
-        call.error instanceof Error ? `${call.error.name}: ${call.error.message}\n${call.error.stack ?? ''}` : String(call.error),
-      );
-      if (!res.headersSent) {
-        res.status(500).json({
-          error: 'internal_error',
-          code: 'X402_HTTP_HANDLER_ERROR',
-          message: 'An internal error occurred while handling the x402 request.',
-        });
-      }
+
+      // Async (R6): fire-and-forget, strictly after the response on every branch.
+      if (settlement === 'settle') settleX402Async(pendingSettlement);
+      else markX402Unserved(pendingSettlement);
     });
 
     mounted.push(routePath);

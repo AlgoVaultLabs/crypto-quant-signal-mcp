@@ -29,7 +29,10 @@ import {
   extractPaymentNonce,
   railForRequirement,
   recordSettlementOutcome,
+  recordUnservedClaim,
 } from './x402-idempotency-store.js';
+// Type-only: license.ts imports this module at runtime, so a value import back would be a cycle.
+import type { ToolOutcome } from './license.js';
 import { isOperatorWallet } from './x402-operator-wallets.js';
 import {
   GATEWAY_EIP712_DOMAIN_NAME,
@@ -605,14 +608,49 @@ export function settleX402Async(settlement: { paymentPayload: unknown; requireme
         // Recorded so an established positive is auditable against the rail forever after.
         void recordSettlementOutcome(nonce, payer, outcome, result.transaction);
       } else {
-        // A failed settle leaves the row at CLAIMED_UNSETTLED, which is already the honest value:
-        // the nonce was claimed and the money did not move. Nothing to write.
+        // A failed settle leaves the row at its claim state, CLAIMED_PENDING, which is already the
+        // honest value: the nonce was claimed and the money did not move. Nothing to write.
+        // _(Corrected DECISION-CALL-V1-W3: this said CLAIMED_UNSETTLED, the insert default before
+        // OPS-X402-SETTLEMENT-BACKFILL-W1 split "nothing has looked yet" from "we looked, no money".)_
         console.error(`x402 settle failed: ${result.errorReason} — ${result.errorMessage}`);
       }
     })
     .catch((err) => {
       console.error('x402 settle error:', err instanceof Error ? err.message : err);
     });
+}
+
+/**
+ * THE settle decision, for every priced tool on every rail. (DECISION-CALL-V1-W3)
+ *
+ * Only a SERVED call settles, and HOLD is served (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A is
+ * unchanged: a verdict is the product). A refusal, a throw, and NO OUTCOME AT ALL — the SDK refused
+ * the call before any tool ran, or the transport threw — are all unserved. The default is the safe
+ * side on purpose: an outcome nobody recorded never charges anyone.
+ *
+ * `/mcp` reads the outcome `callTool` stamped on the request context; the HTTP rail passes the
+ * outcome `callTool` returned. Pure.
+ */
+export function x402SettlementAction(outcome: ToolOutcome | undefined): 'settle' | 'unserved' {
+  return outcome === 'ok' ? 'settle' : 'unserved';
+}
+
+/**
+ * Record that a claimed payment was NOT served, so it is never settled and never reads as money owed.
+ * Moves the claim row CLAIMED_PENDING → CLAIMED_UNSERVED (`recordUnservedClaim`). The key is derived
+ * exactly as `settleX402Async` derives it — same functions, same payload — or the UPDATE would match
+ * zero rows and fail silently.
+ *
+ * Fire-and-forget and never throws, like `settleX402Async`: it runs after the response is sent.
+ */
+export function markX402Unserved(settlement: { paymentPayload: unknown; requirements: unknown }): void {
+  try {
+    const payer = extractPayerWallet(settlement.paymentPayload) ?? '';
+    const nonce = extractPaymentNonce(settlement.paymentPayload) ?? '';
+    void recordUnservedClaim(nonce, payer).catch(() => { /* the store logs; never surfaces */ });
+  } catch (err) {
+    console.error('x402 unserved-mark error:', err instanceof Error ? err.message : err);
+  }
 }
 
 // ── 402 Response Generation ──

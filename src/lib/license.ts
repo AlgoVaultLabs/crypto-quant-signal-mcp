@@ -125,7 +125,24 @@ export interface RequestContext {
    * "not observed"; only an explicit `true` is written as degraded.
    */
   regimeFundingDegraded?: boolean;
+
+  /**
+   * DECISION-CALL-V1-W3 — how the tool call this request carried ENDED, stamped by `callTool` right after
+   * its stages ran: `'ok'` (served — HOLD included), `'refused'` (an in-band refusal) or `'threw'`.
+   *
+   * INWARD-OUT for the same reason as the two fields above: the outcome exists only inside the pipeline,
+   * several frames below the `/mcp` POST layer that holds the x402 `pendingSettlement`, and the SDK
+   * transport between them returns nothing the layer could read. The settle decision reads it once the
+   * transport has resolved (`x402SettlementAction` in x402.ts): only `'ok'` settles.
+   *
+   * Absent when no tool ran — the SDK refused the call before dispatch, the transport threw, or the
+   * request was not a tool call at all. Absence therefore means "nothing was served", never "served".
+   */
+  toolOutcome?: ToolOutcome;
 }
+
+/** @see RequestContext.toolOutcome */
+export type ToolOutcome = 'ok' | 'refused' | 'threw';
 
 /** @see RequestContext.holdCapture */
 export interface RequestHoldCapture {
@@ -263,6 +280,25 @@ export function setRequestRegimeFundingDegraded(): void {
  */
 export function getRequestRegimeFundingDegraded(): boolean {
   return requestContext.getStore()?.regimeFundingDegraded === true;
+}
+
+/**
+ * Stamp how the current request's tool call ended. Called once by `callTool`, right after its stages
+ * ran. No-op outside a request context (stdio, and the HTTP rails, which hand `callTool` their own ctx
+ * and read the returned outcome directly).
+ * @see RequestContext.toolOutcome
+ */
+export function setRequestToolOutcome(outcome: ToolOutcome): void {
+  const ctx = requestContext.getStore();
+  if (ctx) ctx.toolOutcome = outcome;
+}
+
+/**
+ * Read how the current request's tool call ended; `undefined` when no tool ran in this context.
+ * @see RequestContext.toolOutcome
+ */
+export function getRequestToolOutcome(): ToolOutcome | undefined {
+  return requestContext.getStore()?.toolOutcome;
 }
 
 /**

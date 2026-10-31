@@ -105,7 +105,11 @@ export type SettlementClass = 'SETTLED' | 'CLAIMED_PENDING' | 'CLAIMED_UNSETTLED
   // FAILURES instead of measuring unsettled REVENUE. `CLAIMED_EXPIRED` is written ONLY by
   // ops/monitoring/x402-settlement-reconciler.py, and only after reading on chain that the
   // EIP-3009 authorization was never consumed — i.e. no transfer ever happened.
-  | 'CLAIMED_EXPIRED';
+  | 'CLAIMED_EXPIRED'
+  // DECISION-CALL-V1-W3. Claimed, then deliberately NOT settled because the call was not served (a
+  // refusal or a throw after the claim). Written ONLY by `recordUnservedClaim` (x402-idempotency-store.ts),
+  // only out of CLAIMED_PENDING. Neither meter (c) nor the reconciler reads it: it is not money owed.
+  | 'CLAIMED_UNSERVED';
 
 /**
  * Classify one row from its on-chain `AuthorizationUsed` lookup. Pure — the viem call stays in
@@ -157,7 +161,8 @@ async function main(): Promise<void> {
   // only ever emits an ESTABLISHED verdict (it looked), never "nothing has looked yet". A non-zero
   // count here would mean the vocabulary leaked into the scanner. tsc caught its absence the
   // moment the union grew, which is the whole reason the tally is a `Record<SettlementClass, …>`.
-  const tally: Record<SettlementClass, number> = { SETTLED: 0, CLAIMED_PENDING: 0, CLAIMED_UNSETTLED: 0, OPERATOR: 0, UNRESOLVABLE: 0, CLAIMED_EXPIRED: 0 };
+  // `CLAIMED_UNSERVED` (DECISION-CALL-V1-W3) is the same: a serving decision, never an on-chain one.
+  const tally: Record<SettlementClass, number> = { SETTLED: 0, CLAIMED_PENDING: 0, CLAIMED_UNSETTLED: 0, OPERATOR: 0, UNRESOLVABLE: 0, CLAIMED_EXPIRED: 0, CLAIMED_UNSERVED: 0 };
   for (const row of rows) {
     const epoch = Math.floor(new Date(row.created_at as string).getTime() / 1000);
     let wallet: string | null = null;

@@ -49,6 +49,7 @@ import {
   getRequestSource,
   getRequestIsBackground,
   getRequestRegimeFundingDegraded,
+  setRequestToolOutcome,
   recordAhaMilestoneCrossing,
   requestClientProfile,
   type RequestContext,
@@ -678,6 +679,9 @@ export async function callTool(req: ToolCallRequest): Promise<ToolCallOutcome> {
   const ran = req.ctx
     ? await requestContext.run({ ...req.ctx, license } as RequestContext, inScope)
     : await inScope();
+  // DECISION-CALL-V1-W3: how the call ended, for the `/mcp` x402 settle decision (only 'ok' settles).
+  // Stamped on the AMBIENT context; a no-op on the HTTP rails, which read `ran.outcome` themselves.
+  setRequestToolOutcome(ran.outcome.ok ? 'ok' : ran.outcome.kind);
 
   // Record — row- and column-exact per channel (R-6 / Q-PIPE-1 condition 3).
   if (policy.requestLog && ran.log) {

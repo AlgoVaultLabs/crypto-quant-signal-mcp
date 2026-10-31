@@ -62,12 +62,12 @@ import {
 import { recordNonPublicVenue } from './lib/non-public-venue-counter.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded, requestClientProfile } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded, getRequestToolOutcome, requestClientProfile } from './lib/license.js';
 import { projectToolMetadata } from './lib/tool-metadata-projection.js';
 import { regimeSuccessVerdict, regimeErrorVerdict } from './lib/regime-request-verdict.js';
 import { callTool, toMcpToolResult, type ValidatedToolInput } from './lib/tool-call-pipeline.js';
 import { getKnowledgeSearch, getChatStack, chatTierFor, ALLOWED_CHAT_MODELS } from './tools/knowledge-tools.js';
-import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
+import { initX402, settleX402Async, markX402Unserved, x402SettlementAction, buildX402PaymentRequiredResult } from './lib/x402.js';
 import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
 import { mountOkxA2mcpRoutes } from './lib/okx-a2mcp.js';
 import { startAcpSellerWorker } from './channels/acp/seller-worker.js';
@@ -4051,18 +4051,30 @@ async function startHttp() {
         }
       }
 
-      // Fire-and-forget: settle the x402 payment after the response is sent.
+      // Fire-and-forget, after the response: the x402 settle DECISION. (DECISION-CALL-V1-W3)
       //
-      // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): the `getRequestVerdict() !== 'HOLD'`
-      // guard is GONE. It meant the per-call rail was paid only when the model said "trade",
-      // which is a structural incentive against the selectivity that IS the product — the
-      // published hold rate is ~99%, so the rail was collecting on roughly 1 call in 100 while
-      // serving all of them. A verdict is the product on every rail; HOLD is a verdict.
+      // THE RULE: only a SERVED call settles. `callTool` stamped how the call ended on this request's
+      // context; `x402SettlementAction` settles 'ok' and nothing else. A refusal, a throw, or no stamp
+      // at all (the SDK rejected the call before any tool ran, or the transport threw) is UNSERVED: the
+      // claim moves CLAIMED_PENDING → CLAIMED_UNSERVED and the buyer's authorization is never submitted.
       //
-      // An ERROR still never settles, and that is unchanged: this line only runs after a
-      // successful response, and every failure path above returns before reaching it.
+      // HOLD is served. PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A) removed the
+      // `getRequestVerdict() !== 'HOLD'` guard because a verdict is the product on every rail, and
+      // that stands: a HOLD stamps 'ok'.
+      //
+      // _(Corrected DECISION-CALL-V1-W3: this said "an ERROR never settles … every failure path above
+      // returns before reaching it". Two paths did not. The `catch` above falls through to here, so a
+      // transport throw settled; and an in-band tool refusal is an ordinary JSON-RPC result, so a
+      // refused paid call settled too. The decision now keys on what the tool did, not on the
+      // transport having returned.)_
       if (pendingSettlement) {
-        settleX402Async(pendingSettlement);
+        const outcome = getRequestToolOutcome();
+        if (x402SettlementAction(outcome) === 'settle') {
+          settleX402Async(pendingSettlement);
+        } else {
+          markX402Unserved(pendingSettlement);
+          console.log(`[x402-mcp] unserved ${callTool ?? 'request'} (outcome=${outcome ?? 'none'}) — payment not settled`);
+        }
       }
     });
   });
