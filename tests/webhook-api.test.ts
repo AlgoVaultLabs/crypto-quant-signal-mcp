@@ -51,7 +51,7 @@ beforeEach(async () => {
   const app = express();
   registerWebhookRoutes(app);
   apiServer = await new Promise<http.Server>((resolve) => {
-    const s = app.listen(0, () => resolve(s));
+    const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
   baseUrl = `http://127.0.0.1:${(apiServer.address() as AddressInfo).port}`;
 
@@ -67,7 +67,7 @@ beforeEach(async () => {
         res.end('ok');
       });
     });
-    s.listen(0, () => resolve(s));
+    s.listen(0, '127.0.0.1', () => resolve(s));
   });
   sinkUrl = `http://127.0.0.1:${(sink.address() as AddressInfo).port}/hook`;
 });

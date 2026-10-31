@@ -55,7 +55,7 @@ async function boot(perturb?: { monthly?: number; daily?: number; telegramMonthl
   const app = express();
   registerPlansPublicRoutes(app);
   server = await new Promise<http.Server>((resolve) => {
-    const s = app.listen(0, () => resolve(s));
+    const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
