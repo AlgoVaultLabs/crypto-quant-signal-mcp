@@ -35,14 +35,15 @@ describe('FEATURE-REGISTRY-SOT-W1 CH3 — TOOL_PRICING derives from the registry
     expect(TOOL_PRICING.get_market_regime).toBe(0.02);
   });
 
-  it('additive priced keys vs the legacy 3 = get_trade_call + the 3 newly-priced (OPS-X402-PRICING-EXPANSION-W1)', () => {
+  it('additive priced keys vs the legacy 3 = get_trade_call + the 3 newly-priced (OPS-X402-PRICING-EXPANSION-W1) + pre_trade_check (DECISION-CALL-V1-W3)', () => {
     const legacy = ['get_trade_signal', 'scan_funding_arb', 'get_market_regime'];
     const newKeys = Object.keys(TOOL_PRICING).filter((k) => !legacy.includes(k)).sort();
-    expect(newKeys).toEqual(['get_equity_call', 'get_equity_regime', 'get_trade_call', 'scan_trade_calls']);
+    expect(newKeys).toEqual(['get_equity_call', 'get_equity_regime', 'get_trade_call', 'pre_trade_check', 'scan_trade_calls']);
     expect(TOOL_PRICING.get_trade_call).toBe(0.02);
     expect(TOOL_PRICING.scan_trade_calls).toBe(0.02);
     expect(TOOL_PRICING.get_equity_call).toBe(0.02);
     expect(TOOL_PRICING.get_equity_regime).toBe(0.02);
+    expect(TOOL_PRICING.pre_trade_check).toBe(0.02);
   });
 
   it('does NOT price the still-unpriced features (chat / search stay registry x402:null)', () => {
@@ -81,17 +82,17 @@ describe('FEATURE-REGISTRY-SOT-W1 CH3 — effectivePrice alias-resolves (canonic
 });
 
 describe('FEATURE-REGISTRY-SOT-W1 CH3 — get_trade_call priced-for-resolution but NOT gated/discoverable (A2)', () => {
-  it('get_trade_call gets NO Bazaar discovery extension (not in BAZAAR_ROUTES; listing is the 6 gated tools)', () => {
+  it('get_trade_call gets NO Bazaar discovery extension (not in BAZAAR_ROUTES; listing is the 7 gated tools)', () => {
     expect(declareBazaarRoute('get_trade_call')).toEqual({});
     expect(Object.keys(BAZAAR_ROUTES).sort()).toEqual(
-      ['get_equity_call', 'get_equity_regime', 'get_market_regime', 'get_trade_signal', 'scan_funding_arb', 'scan_trade_calls'],
+      ['get_equity_call', 'get_equity_regime', 'get_market_regime', 'get_trade_signal', 'pre_trade_check', 'scan_funding_arb', 'scan_trade_calls'],
     );
   });
 
   it('get_trade_call is NOT in the gated HTTP_TOOLS allow-list (free caller stays free)', () => {
     expect([...HTTP_TOOLS]).not.toContain('get_trade_call');
     expect([...HTTP_TOOLS].sort()).toEqual(
-      ['get_equity_call', 'get_equity_regime', 'get_market_regime', 'get_trade_signal', 'scan_funding_arb', 'scan_trade_calls'],
+      ['get_equity_call', 'get_equity_regime', 'get_market_regime', 'get_trade_signal', 'pre_trade_check', 'scan_funding_arb', 'scan_trade_calls'],
     );
   });
 

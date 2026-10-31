@@ -249,8 +249,13 @@ describe('HTTP rail — served settles once; a paid call that throws or refuses 
   const MOCKED = [
     '../../src/lib/x402-facilitator.js', '@x402/core/server', '@x402/core/http', '@x402/extensions/bazaar',
     '../../src/lib/license.js', '../../src/tools/get-market-regime.js', '../../src/lib/analytics.js',
-    '../../src/lib/x402-idempotency-store.js',
+    '../../src/lib/x402-idempotency-store.js', '../../src/tools/pre-trade-check.js', '../../src/lib/performance-db.js',
   ];
+  const SERVED_PRE_TRADE = { kind: 'ok', response: { coin: 'BTC', decision: 'GO', best_venue: null } };
+  const REFUSED_PRE_TRADE = {
+    kind: 'refused', status: 404,
+    payload: { error: 'coin_not_listed', code: 'coin_not_listed', coin: 'NOTACOIN', supported_venues: ['BINANCE'], message: 'not listed', suggested_action: 'use a listed coin' },
+  };
 
   let server: http.Server | undefined;
   let baseUrl = '';
@@ -259,6 +264,7 @@ describe('HTTP rail — served settles once; a paid call that throws or refuses 
   let unservedMarks = 0;
   let nextSettlement: { requirements: unknown; paymentPayload: unknown } | null = null;
   let regime: () => unknown = () => ({ regime: 'RANGING', confidence: 50, coin: 'BTC' });
+  let preTrade: unknown = SERVED_PRE_TRADE;
   let seq = 0;
 
   function setProof(requirement: Record<string, unknown>): string {
@@ -285,6 +291,7 @@ describe('HTTP rail — served settles once; a paid call that throws or refuses 
     unservedMarks = 0;
     nextSettlement = null;
     regime = () => ({ regime: 'RANGING', confidence: 50, coin: 'BTC' });
+    preTrade = SERVED_PRE_TRADE;
 
     vi.doMock('../../src/lib/x402-facilitator.js', () => ({
       resolveFacilitatorFromEnv: () => ({ effectiveChoice: 'cdp', discoveryEnabled: true }),
@@ -332,6 +339,17 @@ describe('HTTP rail — served settles once; a paid call that throws or refuses 
         recordUnservedClaim: async (...a: Parameters<typeof m.recordUnservedClaim>) => { unservedMarks++; return m.recordUnservedClaim(...a); },
       };
     });
+    // pre_trade_check refuses IN-BAND (an outcome union, not a throw), which is the refusal that reaches
+    // the route's refused branch AFTER the claim. It is `residency:'hosted'`, so `isPgBackend` reads true
+    // for the pipeline's admission; `dbQuery` keeps the module's own (SQLite) backend.
+    vi.doMock('../../src/tools/pre-trade-check.js', async (orig) => ({
+      ...(await orig<typeof import('../../src/tools/pre-trade-check.js')>()),
+      runPreTradeCheck: async () => preTrade,
+    }));
+    vi.doMock('../../src/lib/performance-db.js', async (orig) => ({
+      ...(await orig<typeof import('../../src/lib/performance-db.js')>()),
+      isPgBackend: () => true,
+    }));
 
     const express = (await import('express')).default;
     const { initX402 } = await import('../../src/lib/x402.js');
@@ -375,6 +393,28 @@ describe('HTTP rail — served settles once; a paid call that throws or refuses 
     const n = setProof(req(0.02));
     const res = await post('get_market_regime', { coin: 'BTC', timeframe: '4h' });
     expect(res.status).toBe(500);
+    await tick();
+    expect(settleCalls).toBe(0);
+    expect(unservedMarks).toBe(1);
+    expect(await stateOf(n)).toBe('CLAIMED_UNSERVED');
+  });
+
+  it('a served paid pre_trade_check settles exactly once', async () => {
+    const n = setProof(req(0.02));
+    const res = await post('pre_trade_check', { coin: 'BTC', side: 'long', sizeUsd: 10000 });
+    expect(res.status).toBe(200);
+    await tick();
+    expect(settleCalls).toBe(1);
+    expect(unservedMarks).toBe(0);
+    expect(await stateOf(n)).toBe('SETTLED');
+  });
+
+  it('a paid pre_trade_check the tool REFUSED → its own 404, never settles, marked unserved exactly once', async () => {
+    preTrade = REFUSED_PRE_TRADE;
+    const n = setProof(req(0.02));
+    const res = await post('pre_trade_check', { coin: 'NOTACOIN', side: 'long', sizeUsd: 10000 });
+    expect(res.status).toBe(404);
+    expect((await res.json() as { code?: string }).code).toBe('coin_not_listed');
     await tick();
     expect(settleCalls).toBe(0);
     expect(unservedMarks).toBe(1);

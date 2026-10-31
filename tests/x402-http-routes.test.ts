@@ -105,7 +105,7 @@ describe('x402 HTTP routes — two-flag firewall mount (R5)', () => {
     expect(mounted).toEqual([]);
   });
 
-  it('cdp + true (but not cdp + false) → mounts the 6 paid routes + the get_trade_call alias', async () => {
+  it('cdp + true (but not cdp + false) → mounts the 7 paid routes + the get_trade_call alias', async () => {
     expect(await bootApp({ facilitator: 'cdp', bazaar: 'false' })).toEqual([]);
     if (server) { await new Promise<void>((r) => server!.close(() => r())); server = undefined; }
     const mounted = await bootApp({ facilitator: 'cdp', bazaar: 'true' });
@@ -118,6 +118,7 @@ describe('x402 HTTP routes — two-flag firewall mount (R5)', () => {
       '/x402/get_market_regime',
       '/x402/get_trade_call',
       '/x402/get_trade_signal',
+      '/x402/pre_trade_check', // DECISION-CALL-V1-W3
       '/x402/scan_funding_arb',
       '/x402/scan_trade_calls',
     ]);

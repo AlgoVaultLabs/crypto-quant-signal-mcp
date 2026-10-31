@@ -201,6 +201,19 @@ beforeEach(async () => {
       return { regime: 'RANGING', confidence: 50, coin: 'BTC' };
     },
   }));
+  // DECISION-CALL-V1-W3: pre_trade_check is a payable route. Its core fn returns an outcome union, so the
+  // mock returns the served arm (the real module spread, so its other exports stay real). The tool is
+  // `residency:'hosted'`, which the pipeline's admission refuses on this suite's SQLite with a 501, so
+  // `isPgBackend` reads true: only the pipeline and the OAuth store import it, and `dbQuery` keeps the
+  // module's OWN backend choice (SQLite), so every claim below still lands in the temp-HOME database.
+  vi.doMock('../src/tools/pre-trade-check.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../src/tools/pre-trade-check.js')>()),
+    runPreTradeCheck: async () => ({ kind: 'ok', response: { coin: 'BTC', decision: 'GO', best_venue: null } }),
+  }));
+  vi.doMock('../src/lib/performance-db.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../src/lib/performance-db.js')>()),
+    isPgBackend: () => true,
+  }));
   // Analytics stays out of the DB, but logRequest is RECORDED rather than discarded:
   // TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1 needs the emitted row to be assertable, and a
   // no-op mock is precisely what let this route write `session_id: NULL` for 20 consecutive
@@ -433,6 +446,7 @@ describe('R2 — every payable route × {clean, duplicated} content-type', () =>
     { path: 'scan_trade_calls', tool: 'scan_trade_calls', body: { topN: 5, timeframe: '4h' } },
     { path: 'get_equity_call', tool: 'get_equity_call', body: { symbol: 'AAPL' } },
     { path: 'get_equity_regime', tool: 'get_equity_regime', body: { symbol: 'SPY' } },
+    { path: 'pre_trade_check', tool: 'pre_trade_check', body: { coin: 'BTC', side: 'long', sizeUsd: 10000 } }, // DECISION-CALL-V1-W3
   ];
 
   /** Repeated header keys are combined by fetch — exactly what a client adding its own

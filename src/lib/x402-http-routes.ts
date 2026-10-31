@@ -223,7 +223,7 @@ function send402(res: Response, tool: string, opts?: { resourceUrl?: string; dis
  * break (architect A3: x402-shape byte-identical). Registry↔HTTP_TOOLS parity is instead enforced
  * by the CH4 drift canary (alias-resolved).
  */
-export const HTTP_TOOLS = ['get_trade_signal', 'scan_funding_arb', 'get_market_regime', 'scan_trade_calls', 'get_equity_call', 'get_equity_regime'] as const;
+export const HTTP_TOOLS = ['get_trade_signal', 'scan_funding_arb', 'get_market_regime', 'scan_trade_calls', 'get_equity_call', 'get_equity_regime', 'pre_trade_check'] as const;
 export type HttpTool = (typeof HTTP_TOOLS)[number];
 
 /*

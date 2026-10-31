@@ -15,7 +15,8 @@
  *
  * Scope: ONLY the 402-GATED tools are declared here — the `HTTP_TOOLS` allow-list
  * (`get_trade_signal` / `scan_funding_arb` / `get_market_regime` / `scan_trade_calls` /
- * `get_equity_call` / `get_equity_regime`; OPS-X402-PRICING-EXPANSION-W1 grew this 3→6).
+ * `get_equity_call` / `get_equity_regime` / `pre_trade_check`; OPS-X402-PRICING-EXPANSION-W1 grew
+ * this 3→6, DECISION-CALL-V1-W3 to 7).
  * `get_trade_call` is intentionally FREE (North Star: free-tier generosity) and is
  * therefore NOT discoverable — confirmed by Cowork (A2, 2026-05-29).
  * NOTE (FEATURE-REGISTRY-SOT-W1 CH3): `TOOL_PRICING` now ALSO carries a canonical
@@ -25,10 +26,20 @@
  *
  * Input schemas mirror the live zod schemas in src/index.ts; output examples
  * mirror the live public response shapes (probed 2026-05-29, leak-verified).
+ * `pre_trade_check` is the exception that cannot drift: its input schema PROJECTS from the
+ * param declaration its zod schema also projects from (DECISION-CALL-V1-W3).
  */
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { PROMOTED_VENUE_IDS } from './capabilities.js';
-import { PUBLIC_VENUE_IDS } from './tool-param-schema.js';
+import { PUBLIC_VENUE_IDS, PRE_TRADE_CHECK_PARAM_DECL } from './tool-param-schema.js';
+import {
+  PARAM_DESC_PRE_TRADE_COIN,
+  PARAM_DESC_PRE_TRADE_SIDE,
+  PARAM_DESC_PRE_TRADE_SIZE_USD,
+  PARAM_DESC_PRE_TRADE_HOLD_HOURS,
+  PARAM_DESC_PRE_TRADE_TIMEFRAME,
+  PARAM_DESC_PRE_TRADE_EXCHANGES,
+} from '../tool-descriptions.js';
 
 /**
  * Tokens that must never appear in any public Bazaar description/example.
@@ -63,6 +74,53 @@ export interface BazaarRouteSpec {
   example: Record<string, unknown>;
   output: { example: unknown };
 }
+
+/** JSON-Schema keywords a param declaration may carry, copied through unchanged. The declaration's own
+ *  keys (`type`, `required`, `values`, `upperCased`) are mapped below or dropped. */
+const DECL_SCHEMA_KEYWORDS = [
+  'minLength', 'maxLength', 'minimum', 'maximum', 'exclusiveMinimum', 'minItems', 'maxItems', 'uniqueItems', 'default',
+] as const;
+
+/**
+ * A Bazaar `inputSchema` PROJECTED from a tool's param declaration (DECISION-CALL-V1-W3) — the object
+ * its served zod schema also projects from, so the two cannot drift; `tests/unit/
+ * pre-trade-check-bazaar-parity.test.ts` holds this equal to the served `tools/list` schema.
+ *
+ * `values` becomes `enum` (on the items, for a `string[]`), `required: true` joins `required`, and
+ * every schema keyword is copied — `uniqueItems` included, which zod's JSON Schema cannot express (the
+ * handler refuses a repeat, and on this rail ajv refuses it before the payment is claimed). A param
+ * with no `default` gets none: `exchanges` absent means "every venue the tool prices".
+ */
+function projectParamDecl<K extends string>(
+  decl: Readonly<Record<K, Readonly<Record<string, unknown>>>>,
+  descriptions: Readonly<Record<K, string>>,
+): Record<string, unknown> {
+  const properties: Record<string, Record<string, unknown>> = {};
+  const required: string[] = [];
+  for (const key of Object.keys(decl) as K[]) {
+    const p = decl[key];
+    const values = Array.isArray(p.values) ? { enum: [...(p.values as readonly string[])] } : {};
+    const prop: Record<string, unknown> = p.type === 'string[]'
+      ? { type: 'array', items: { type: 'string', ...values } }
+      : { type: p.type, ...values };
+    for (const kw of DECL_SCHEMA_KEYWORDS) if (kw in p) prop[kw] = p[kw];
+    prop.description = descriptions[key];
+    properties[key] = prop;
+    if (p.required === true) required.push(key);
+  }
+  return { type: 'object', properties, required, additionalProperties: false };
+}
+
+/** The served parameter copy — the strings `PRE_TRADE_CHECK_SCHEMA` describes with. Keyed on the
+ *  declaration, so a parameter added without a description does not compile. */
+const PRE_TRADE_CHECK_PARAM_DESC: Readonly<Record<keyof typeof PRE_TRADE_CHECK_PARAM_DECL, string>> = {
+  coin: PARAM_DESC_PRE_TRADE_COIN,
+  side: PARAM_DESC_PRE_TRADE_SIDE,
+  sizeUsd: PARAM_DESC_PRE_TRADE_SIZE_USD,
+  holdHours: PARAM_DESC_PRE_TRADE_HOLD_HOURS,
+  timeframe: PARAM_DESC_PRE_TRADE_TIMEFRAME,
+  exchanges: PARAM_DESC_PRE_TRADE_EXCHANGES,
+};
 
 /**
  * The paid, discoverable tools. Keys MUST match TOOL_PRICING in x402.ts.
@@ -297,6 +355,32 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
         regime: 'TRENDING_UP',
         confidence: 61,
         as_of_session: '2026-06-06',
+      },
+    },
+  },
+
+  // DECISION-CALL-V1-W3: the pre-trade check, flat $0.02 per served call. The description is verbatim
+  // from `Prompt/pre-trade-check-contract.md` § Copy (Bazaar); the input schema PROJECTS from the param
+  // declaration. The output example is a subset of the W2 shape snapshot's allowed keys, filled with
+  // DECISION-CALL-V1-W2 AC5's measured live sample (BTC long $10,000, defaults) — no invented values.
+  pre_trade_check: {
+    toolName: 'pre_trade_check',
+    description:
+      'Pre-trade check for a perpetual-futures order an agent intends to place: returns GO / CAUTION / WAIT with machine-readable reasons, the cheapest venue across supported exchanges by taker fees and funding over the intended hold, a size limit from 24h volume, the next funding timing and the market regime. Informational only — places no orders and holds no funds.',
+    inputSchema: projectParamDecl(PRE_TRADE_CHECK_PARAM_DECL, PRE_TRADE_CHECK_PARAM_DESC),
+    example: { coin: 'BTC', side: 'long', sizeUsd: 10000, holdHours: 8 },
+    output: {
+      example: {
+        coin: 'BTC',
+        side: 'long',
+        size_usd: 10000,
+        hold_hours: 8,
+        timeframe: '4h',
+        decision: 'GO',
+        reasons: [],
+        best_venue: { exchange: 'BINANCE', est_cost_bps: 11, est_cost_usd: 11, capacity_usd: 11661490.66 },
+        regime: { label: 'TRENDING_UP', confidence: 46, timeframe: '4h', source_exchange: 'BINANCE' },
+        rule_version: 1,
       },
     },
   },

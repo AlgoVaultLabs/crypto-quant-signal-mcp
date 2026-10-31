@@ -220,16 +220,17 @@ const FEATURE_REGISTRY_LITERAL = [
   },
   {
     // DECISION-CALL-V1-W2 R6 — the pre-trade check (Prompt/pre-trade-check-contract.md).
-    //   • mcp only, `x402: null` — no HTTP route and no price; DECISION-CALL-V1-W3 prices it.
+    //   • DECISION-CALL-V1-W3: x402 $0.02 flat per SERVED call (a refusal never settles), on
+    //     `/x402/pre_trade_check` (Bazaar-declared) and MCP pay-per-call; bot, webhook, a2mcp, acp stay off.
     //   • `quota.unit: 'per-call'` — one unit per decision (a WAIT included); every refusal is unbilled.
     //   • `residency: 'hosted'` — the regime read is the hosted bar-close snapshot (regime_snapshots).
     //   • `publicListing: false` — served on tools/list, kept off the nav, docs and /tools until the
     //     release wave lists it (docs partial, TOOL_LABELS, lobehub api[] and the counts together).
     name: 'pre_trade_check',
     aliases: [],
-    channels: { mcp: true, httpX402: false, bot: false, webhook: false, a2mcp: false, acp: false },
+    channels: { mcp: true, httpX402: true, bot: false, webhook: false, a2mcp: false, acp: false },
     quota: { unit: 'per-call', holdFree: false },
-    x402: null,
+    x402: { basePriceUsd: 0.02 }, // DECISION-CALL-V1-W3: flat $0.02 per served call
     descriptionRef: 'PRE_TRADE_CHECK_DESCRIPTION',
     enabled: true,
     residency: 'hosted',
