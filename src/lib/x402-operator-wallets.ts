@@ -75,6 +75,22 @@ export function externalPayerSql(column = 'payer_wallet'): { clause: string; par
   return { clause: ` AND ${column} IS NOT NULL AND trim(${column}) <> ''${opClause}`, params };
 }
 
+/**
+ * The ONE "this row is a payment" predicate (DECISION-CALL-V1-W3). A CLAIM is not a payment: the
+ * ledger claims the ERC-3009 nonce BEFORE settlement to close the replay window, so a row in any
+ * CLAIMED_* state (pending, unsettled, expired, unserved) is money that never moved, and UNRESOLVABLE
+ * is a row the classifier could not judge. Only the settle callback's SETTLED is a payment; its
+ * OPERATOR is operator self-settlement (the `instrumentation_artifact`), not revenue.
+ *
+ * Every count of payments or payers composes this, beside `externalPayerSql` — never an inline
+ * `'SETTLED'` literal, and never no filter at all: until this wave the scoreboard's Paid stage and
+ * its payment counts read every claimed row, settled or not, while the snapshot's settled-payer
+ * count carried its own literal.
+ */
+export function settledPaymentSql(column = 'settlement_state'): { clause: string; params: string[] } {
+  return { clause: ` AND ${column} = ?`, params: ['SETTLED'] };
+}
+
 /** Truncate an address for operator-only display: `0x76de…c755`. NEVER publish the full address. */
 export function truncateWallet(w: string): string {
   return w.length >= 10 ? `${w.slice(0, 6)}…${w.slice(-4)}` : w;

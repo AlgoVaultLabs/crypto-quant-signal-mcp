@@ -31,7 +31,7 @@ import fs from 'node:fs';
 import { intentCountSql, type IntentSeries } from './signup-intent.js';
 import { execSync } from 'node:child_process';
 import { dbQuery } from './performance-db.js';
-import { externalPayerSql } from './x402-operator-wallets.js';
+import { externalPayerSql, settledPaymentSql } from './x402-operator-wallets.js';
 
 // ── Types ──
 
@@ -537,12 +537,15 @@ async function getCheckoutStartedCount(
  *
  * Three gates, each of which has already been the cause of a wrong number:
  *
- *  1. `settlement_state = 'SETTLED'` — a CLAIM is not a payment. The ledger claims the
+ *  1. `settledPaymentSql()` — a CLAIM is not a payment. The ledger claims the
  *     ERC-3009 nonce BEFORE settlement to close the replay window, so a claimed-but-
  *     never-settled row is money that provably never moved. 15 of 18 lifetime rows are
  *     exactly that. This gate is also what keeps the hourly liveness prober's sentinel
  *     row out of the count — the prober's INSERT omits `settlement_state`, so its rows
- *     default to CLAIMED_UNSETTLED and can never satisfy this predicate.
+ *     take the column's CLAIMED_* default and can never satisfy this predicate.
+ *     _(DECISION-CALL-V1-W3: this was an inline `'SETTLED'` literal while the scoreboard's
+ *     reads had no state filter at all; both now compose the one shared predicate. The
+ *     default was named here as CLAIMED_UNSETTLED; the code's default is CLAIMED_PENDING.)_
  *  2. `externalPayerSql()` — the ONE shared predicate that excludes operator
  *     self-settlement AND the unattributable empty-string wallets (SEC-49 made
  *     `payer_wallet` NOT NULL DEFAULT '', so `IS NOT NULL` does not exclude them).
@@ -557,13 +560,13 @@ async function getSettledX402PayerCount(
   windowFromIso: string,
   windowToIso: string,
 ): Promise<number | null> {
+  const { clause: settledClause, params: settledParams } = settledPaymentSql();
   const { clause: extClause, params: extParams } = externalPayerSql();
   const rows = await dbQuery<{ c: number | string }>(
     `SELECT COUNT(DISTINCT lower(trim(payer_wallet))) AS c
        FROM processed_x402_payments
-      WHERE settlement_state = 'SETTLED'
-        AND created_at >= ? AND created_at <= ?${extClause}`,
-    [windowFromIso, windowToIso, ...extParams],
+      WHERE created_at >= ? AND created_at <= ?${settledClause}${extClause}`,
+    [windowFromIso, windowToIso, ...settledParams, ...extParams],
   );
   return safeInt(rows[0]?.c) ?? 0;
 }
