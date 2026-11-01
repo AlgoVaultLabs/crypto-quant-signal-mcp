@@ -225,6 +225,12 @@ export const PARAM_DESC_PRE_TRADE_SIZE_USD = 'Order notional in USD, e.g. 10000.
 export const PARAM_DESC_PRE_TRADE_HOLD_HOURS = 'Expected holding time in hours (default 8); sets the funding cost window.';
 export const PARAM_DESC_PRE_TRADE_TIMEFRAME = 'Market-regime timeframe: 1h, 4h or 1d (default 4h).';
 export const PARAM_DESC_PRE_TRADE_EXCHANGES = 'Only compare these venues (default: every supported venue).';
+// DECISION-CALL-V2-W1: the v2 inputs, verbatim from Prompt/pre-trade-check-contract-v2.md § Copy.
+export const PARAM_DESC_PRE_TRADE_LEVERAGE = 'Isolated leverage you will use, e.g. 10. Enables the liquidation checks.';
+export const PARAM_DESC_PRE_TRADE_STOP_PCT = 'Stop-loss distance from entry in percent, e.g. 2.';
+export const PARAM_DESC_PRE_TRADE_TARGET_PCT = 'Target distance from entry in percent, e.g. 4.';
+export const PARAM_DESC_PRE_TRADE_EQUITY_USD = 'Account equity in USD. Enables the percent-of-equity rules.';
+export const PARAM_DESC_PRE_TRADE_ORDER_TYPE = 'market (taker entry) or limit (maker entry). Default market.';
 
 // ── GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the `plain` metadata projection ──────────────────────────
 //

@@ -27,6 +27,14 @@
 // side, an edge / return / win-rate claim. The response is built by naming every key
 // (`toPreTradeCheckResponse`) — never a spread — and `audits/pre-trade-check-shape-snapshot-*.json`
 // pins the allow-list.
+//
+// V2 (DECISION-CALL-V2-W1, `Prompt/pre-trade-check-contract-v2.md`). Optional inputs — `leverage`,
+// `stopPct`, `targetPct`, `equityUsd`, `orderType` — add survival and break-even figures per venue
+// (`pre-trade-calc.ts`): the round trip with spread, the accuracy the hold needs, isolated liquidation from
+// each venue's own tier table (`venue-margin-tiers.ts`, read ONLY when `leverage` is sent) and the
+// percent-of-equity figures. sigma comes from one 1h snapshot read beside the regime read, by the same
+// walk and freshness rule. A call without a v2 input decides exactly as v1 did. The tool computes and
+// checks; it never proposes a size, leverage, stop or target.
 
 import { z } from 'zod';
 import {
@@ -35,6 +43,7 @@ import {
   PRE_TRADE_RULE_VERSION,
   SIZE_MAX_PCT_OF_24H_VOLUME,
   type VenueMarketInput,
+  type VenueEvaluation,
   type VenueRanking,
   type DecideResult,
   type RegimeRead,
@@ -43,6 +52,19 @@ import {
 } from '../lib/pre-trade-decision.js';
 import { decisionVenueSet, staleFeeRows, takerFeeBps, VENUE_FEE_ROWS } from '../lib/venue-fees.js';
 import {
+  computePreTradeCalc,
+  feeBpsFromPct,
+  roundTripBps,
+  sigma1hFromVolatilityRatio,
+  type PreTradeCalc,
+} from '../lib/pre-trade-calc.js';
+import {
+  marginTierAt,
+  liquidationMaintenanceRate,
+  type LiqBasis,
+  type MarginTierRead,
+} from '../lib/venue-margin-tiers.js';
+import {
   getVenueUniverseState,
   getMergedFundingSnapshot,
   normalizeVenueFunding,
@@ -50,7 +72,7 @@ import {
   type MergedFundingSnapshot,
 } from '../lib/venue-market-state.js';
 import { FUNDING_VENUE_META, FUNDING_ARB_FETCH_ADAPTERS } from '../lib/funding-venues.js';
-import { effectiveLiquidityUsd } from '../lib/exchange-universe.js';
+import { effectiveLiquidityUsd, type ExchangeAsset } from '../lib/exchange-universe.js';
 import { getRetiredVenueSet } from '../lib/venue-store.js';
 import {
   sampledRegimeVenues,
@@ -81,6 +103,7 @@ import { PKG_VERSION } from '../lib/pkg-version.js';
 import {
   PRE_TRADE_CHECK_PARAM_DECL,
   PRE_TRADE_SIDES,
+  PRE_TRADE_ORDER_TYPES,
   REGIME_TIMEFRAMES,
   PUBLIC_VENUE_ENUM,
 } from '../lib/tool-param-schema.js';
@@ -92,6 +115,11 @@ import {
   PARAM_DESC_PRE_TRADE_HOLD_HOURS,
   PARAM_DESC_PRE_TRADE_TIMEFRAME,
   PARAM_DESC_PRE_TRADE_EXCHANGES,
+  PARAM_DESC_PRE_TRADE_LEVERAGE,
+  PARAM_DESC_PRE_TRADE_STOP_PCT,
+  PARAM_DESC_PRE_TRADE_TARGET_PCT,
+  PARAM_DESC_PRE_TRADE_EQUITY_USD,
+  PARAM_DESC_PRE_TRADE_ORDER_TYPE,
 } from '../tool-descriptions.js';
 import type { AlgoVaultMeta, ExchangeId, LicenseInfo, VenueStatus } from '../types.js';
 
@@ -120,6 +148,11 @@ export const PRE_TRADE_CHECK_SCHEMA = {
   timeframe: z.enum(REGIME_TIMEFRAMES).default(D.timeframe.default).describe(PARAM_DESC_PRE_TRADE_TIMEFRAME),
   exchanges: z.array(z.enum(PUBLIC_VENUE_ENUM)).min(D.exchanges.minItems).max(D.exchanges.maxItems).optional()
     .describe(PARAM_DESC_PRE_TRADE_EXCHANGES),
+  leverage: z.number().min(D.leverage.minimum).max(D.leverage.maximum).optional().describe(PARAM_DESC_PRE_TRADE_LEVERAGE),
+  stopPct: z.number().min(D.stopPct.minimum).max(D.stopPct.maximum).optional().describe(PARAM_DESC_PRE_TRADE_STOP_PCT),
+  targetPct: z.number().min(D.targetPct.minimum).max(D.targetPct.maximum).optional().describe(PARAM_DESC_PRE_TRADE_TARGET_PCT),
+  equityUsd: z.number().gt(D.equityUsd.exclusiveMinimum).max(D.equityUsd.maximum).optional().describe(PARAM_DESC_PRE_TRADE_EQUITY_USD),
+  orderType: z.enum(PRE_TRADE_ORDER_TYPES).default(D.orderType.default).describe(PARAM_DESC_PRE_TRADE_ORDER_TYPE),
 };
 
 /** What the handler accepts. Loosely typed on purpose: it re-validates, so every channel gets one contract. */
@@ -130,6 +163,12 @@ export interface PreTradeCheckParams {
   holdHours?: number;
   timeframe?: string;
   exchanges?: readonly string[];
+  /** V2 inputs — each optional; null is read as absent. */
+  leverage?: number | null;
+  stopPct?: number | null;
+  targetPct?: number | null;
+  equityUsd?: number | null;
+  orderType?: string;
 }
 
 // ── Wire types ──────────────────────────────────────────────────────────────────────────────────
@@ -161,6 +200,21 @@ export interface PreTradeVenueRow {
   est_cost_usd: number | null;
   spread_bps: number | null;
   spread_basis: 'top_of_book' | 'unavailable';
+  maker_fee_bps: number | null;
+  entry_fee_bps: number | null;
+  round_trip_bps: number | null;
+  maintenance_rate: number | null;
+  liq_distance_pct: number | null;
+  liq_basis: LiqBasis;
+}
+
+/** The v2 inputs as the handler read them (`null` = not sent). Echoed so a caller sees what was checked. */
+export interface PreTradeInputsEcho {
+  leverage: number | null;
+  stop_pct: number | null;
+  target_pct: number | null;
+  equity_usd: number | null;
+  order_type: 'market' | 'limit';
 }
 
 export interface PreTradeCheckResponse {
@@ -169,6 +223,7 @@ export interface PreTradeCheckResponse {
   size_usd: number;
   hold_hours: number;
   timeframe: string;
+  inputs: PreTradeInputsEcho;
   decision: PreTradeDecision;
   reasons: PreTradeReason[];
   best_venue: { exchange: string; est_cost_bps: number; est_cost_usd: number; capacity_usd: number } | null;
@@ -183,9 +238,18 @@ export interface PreTradeCheckResponse {
     saving_bps_if_entered_after_next_funding: number | null;
   } | null;
   regime: { label: string; confidence: number; timeframe: string; as_of: string; source_exchange: string } | null;
+  /** The decision venue's figures; each null when an input it needs is absent. */
+  calc: PreTradeCalc;
   underlying_session: string | null;
   venues: PreTradeVenueRow[];
-  assumptions: { funding: string; fees: string; size_guard_pct_of_24h_volume: number };
+  assumptions: {
+    funding: string;
+    fees: string;
+    size_guard_pct_of_24h_volume: number;
+    volatility: string;
+    liquidation: string;
+    break_even: string;
+  };
   fee_table_verified_at: string;
   rule_version: number;
   as_of: string;
@@ -217,6 +281,8 @@ export interface PreTradeCheckDeps {
   readGenerationRow: (exchange: string, timeframe: string, barCloseMs: number, coin: string) => Promise<RegimeSnapshotRow | null>;
   resolveAssetClass: (coin: string, exchange: ExchangeId) => Promise<ResolvedAssetClass>;
   venueStatus: (exchange: ExchangeId) => Promise<VenueStatus>;
+  /** The venue's published maintenance rate at the notional (`venue-margin-tiers.ts`). Called ONLY when `leverage` is sent. */
+  marginTierAt: (exchange: string, coin: string, notionalUsd: number, refPx: number | null) => Promise<MarginTierRead>;
 }
 
 export const DEFAULT_PRE_TRADE_CHECK_DEPS: PreTradeCheckDeps = {
@@ -229,6 +295,7 @@ export const DEFAULT_PRE_TRADE_CHECK_DEPS: PreTradeCheckDeps = {
   readGenerationRow,
   resolveAssetClass,
   venueStatus: getVenueStatus,
+  marginTierAt,
 };
 
 // ── Refusals ────────────────────────────────────────────────────────────────────────────────────
@@ -242,9 +309,25 @@ interface Normalized {
   holdHours: number;
   timeframe: RegimeScanTimeframe;
   exchanges: string[] | null;
+  leverage: number | null;
+  stopPct: number | null;
+  targetPct: number | null;
+  equityUsd: number | null;
+  orderType: 'market' | 'limit';
 }
 
 const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+
+/** An optional v2 number: null and undefined are both "not sent". */
+const sent = (x: unknown): unknown => (x === null ? undefined : x);
+
+/** A bounded optional number: `undefined` → null; out of the declaration's bounds → false. */
+function boundedOpt(x: unknown, lo: number, hi: number, loExclusive = false): number | null | false {
+  const val = sent(x);
+  if (val === undefined) return null;
+  if (!isNum(val) || (loExclusive ? !(val > lo) : val < lo) || val > hi) return false;
+  return val;
+}
 
 /** The declaration's bounds, re-checked: the first violation, or the normalized params. */
 function validate(p: PreTradeCheckParams): { ok: true; params: Normalized } | { ok: false; param: string; message: string; suggested_action: string } {
@@ -278,7 +361,33 @@ function validate(p: PreTradeCheckParams): { ok: true; params: Normalized } | { 
     }
     exchanges = list;
   }
-  return { ok: true, params: { coin, side: p.side as 'long' | 'short', sizeUsd: p.sizeUsd, holdHours, timeframe: timeframe as RegimeScanTimeframe, exchanges } };
+  const leverage = boundedOpt(p.leverage, D.leverage.minimum, D.leverage.maximum);
+  if (leverage === false) {
+    return { ok: false, param: 'leverage', message: `leverage must be between ${D.leverage.minimum} and ${D.leverage.maximum}.`, suggested_action: 'Pass the isolated leverage you will use, or omit leverage.' };
+  }
+  const stopPct = boundedOpt(p.stopPct, D.stopPct.minimum, D.stopPct.maximum);
+  if (stopPct === false) {
+    return { ok: false, param: 'stopPct', message: `stopPct must be between ${D.stopPct.minimum} and ${D.stopPct.maximum}.`, suggested_action: 'Pass your stop-loss distance from entry in percent, or omit stopPct.' };
+  }
+  const targetPct = boundedOpt(p.targetPct, D.targetPct.minimum, D.targetPct.maximum);
+  if (targetPct === false) {
+    return { ok: false, param: 'targetPct', message: `targetPct must be between ${D.targetPct.minimum} and ${D.targetPct.maximum}.`, suggested_action: 'Pass your target distance from entry in percent, or omit targetPct.' };
+  }
+  const equityUsd = boundedOpt(p.equityUsd, D.equityUsd.exclusiveMinimum, D.equityUsd.maximum, true);
+  if (equityUsd === false) {
+    return { ok: false, param: 'equityUsd', message: `equityUsd must be above ${D.equityUsd.exclusiveMinimum} and at most ${D.equityUsd.maximum.toLocaleString('en-US')}.`, suggested_action: 'Pass your account equity in USD, or omit equityUsd.' };
+  }
+  const orderType = sent(p.orderType) ?? D.orderType.default;
+  if (!(PRE_TRADE_ORDER_TYPES as readonly unknown[]).includes(orderType)) {
+    return { ok: false, param: 'orderType', message: `orderType must be one of: ${PRE_TRADE_ORDER_TYPES.join(', ')}.`, suggested_action: `Pass market or limit, or omit it for ${D.orderType.default}.` };
+  }
+  return {
+    ok: true,
+    params: {
+      coin, side: p.side as 'long' | 'short', sizeUsd: p.sizeUsd, holdHours, timeframe: timeframe as RegimeScanTimeframe, exchanges,
+      leverage, stopPct, targetPct, equityUsd, orderType: orderType as 'market' | 'limit',
+    },
+  };
 }
 
 // ── The response: every key named ───────────────────────────────────────────────────────────────
@@ -290,7 +399,21 @@ const ASSUMPTIONS = Object.freeze({
   funding: 'current rate held for the whole hold',
   fees: 'base-tier taker, no discounts; per-pair exceptions not modelled',
   size_guard_pct_of_24h_volume: SIZE_MAX_PCT_OF_24H_VOLUME * 100,
+  volatility: '1h sigma = ATR(14)/price of the newest fresh 1h snapshot / sqrt(8/pi), scaled by sqrt(hold hours)',
+  liquidation: "isolated, at the maintenance rate of each venue's public tier for the order notional (a band edge takes the higher rate; Bitget adds its taker fee), deduction ignored so the distance is never overstated",
+  break_even: 'accuracy needed = 50% + round trip / (2 x expected move over the hold); win rate needed = (1 + round trip / stop) / (1 + target / stop)',
 });
+
+/** One venue's v2 figures, parallel to `ranking.venues`. */
+export interface PreTradeVenueCosts {
+  makerFeeBps: number | null;
+  entryFeeBps: number | null;
+  roundTripBps: number | null;
+  /** The m the liquidation formula used (Bitget's includes its taker fee); null without a public tier rate. */
+  maintenanceRate: number | null;
+  liqDistancePct: number | null;
+  liqBasis: LiqBasis;
+}
 
 export interface PreTradeResponseInput {
   coin: string;
@@ -299,9 +422,12 @@ export interface PreTradeResponseInput {
   holdHours: number;
   timeframe: string;
   nowMs: number;
+  inputs: PreTradeInputsEcho;
   ranking: VenueRanking;
   decided: DecideResult;
   regime: RegimeRead | null;
+  calc: PreTradeCalc;
+  venueCosts: readonly PreTradeVenueCosts[];
   underlyingSession: string | null;
   feeTableVerifiedAt: string;
 }
@@ -312,7 +438,7 @@ export interface PreTradeResponseInput {
  * in the shape snapshot.
  */
 export function toPreTradeCheckResponse(a: PreTradeResponseInput, meta: AlgoVaultMeta, license: LicenseInfo): PreTradeCheckResponse {
-  const { ranking, decided } = a;
+  const { ranking, decided, calc: c } = a;
   const best = ranking.best;
   const t = decided.timing;
   return {
@@ -321,6 +447,13 @@ export function toPreTradeCheckResponse(a: PreTradeResponseInput, meta: AlgoVaul
     size_usd: a.sizeUsd,
     hold_hours: a.holdHours,
     timeframe: a.timeframe,
+    inputs: {
+      leverage: a.inputs.leverage,
+      stop_pct: a.inputs.stop_pct,
+      target_pct: a.inputs.target_pct,
+      equity_usd: a.inputs.equity_usd,
+      order_type: a.inputs.order_type,
+    },
     decision: decided.decision,
     reasons: decided.reasons.map((r) => ({ code: r.code, severity: r.severity, detail: r.detail })),
     best_venue: best
@@ -341,8 +474,22 @@ export function toPreTradeCheckResponse(a: PreTradeResponseInput, meta: AlgoVaul
     regime: a.regime
       ? { label: a.regime.label, confidence: a.regime.confidence, timeframe: a.regime.timeframe, as_of: iso(a.regime.asOfMs) as string, source_exchange: a.regime.sourceExchange }
       : null,
+    calc: {
+      sigma_1h_pct: c.sigma_1h_pct,
+      sigma_hold_pct: c.sigma_hold_pct,
+      expected_move_pct: c.expected_move_pct,
+      round_trip_bps: c.round_trip_bps,
+      accuracy_needed_pct: c.accuracy_needed_pct,
+      win_rate_needed_pct: c.win_rate_needed_pct,
+      random_entry_target_first_pct: c.random_entry_target_first_pct,
+      liq_distance_pct: c.liq_distance_pct,
+      liq_distance_sigma: c.liq_distance_sigma,
+      liq_before_stop: c.liq_before_stop,
+      loss_at_stop_pct_equity: c.loss_at_stop_pct_equity,
+      one_sigma_day_pct_equity: c.one_sigma_day_pct_equity,
+    },
     underlying_session: a.underlyingSession,
-    venues: ranking.venues.map((v) => ({
+    venues: ranking.venues.map((v, i) => ({
       exchange: v.exchange,
       listed: v.listed,
       excluded: v.excluded,
@@ -362,8 +509,21 @@ export function toPreTradeCheckResponse(a: PreTradeResponseInput, meta: AlgoVaul
       est_cost_usd: v.estCostUsd,
       spread_bps: v.spreadBps,
       spread_basis: v.spreadBasis,
+      maker_fee_bps: a.venueCosts[i].makerFeeBps,
+      entry_fee_bps: a.venueCosts[i].entryFeeBps,
+      round_trip_bps: a.venueCosts[i].roundTripBps,
+      maintenance_rate: a.venueCosts[i].maintenanceRate,
+      liq_distance_pct: a.venueCosts[i].liqDistancePct,
+      liq_basis: a.venueCosts[i].liqBasis,
     })),
-    assumptions: { funding: ASSUMPTIONS.funding, fees: ASSUMPTIONS.fees, size_guard_pct_of_24h_volume: ASSUMPTIONS.size_guard_pct_of_24h_volume },
+    assumptions: {
+      funding: ASSUMPTIONS.funding,
+      fees: ASSUMPTIONS.fees,
+      size_guard_pct_of_24h_volume: ASSUMPTIONS.size_guard_pct_of_24h_volume,
+      volatility: ASSUMPTIONS.volatility,
+      liquidation: ASSUMPTIONS.liquidation,
+      break_even: ASSUMPTIONS.break_even,
+    },
     fee_table_verified_at: a.feeTableVerifiedAt,
     rule_version: PRE_TRADE_RULE_VERSION,
     as_of: new Date(a.nowMs).toISOString(),
@@ -381,9 +541,22 @@ function fundingSkipSet(venues: readonly string[], retired: ReadonlySet<string>)
   return new Set<string>([...retired, ...FUNDING_ARB_FETCH_ADAPTERS.filter((a) => !needed.has(a))]);
 }
 
+/** The coin's row in a venue's universe; undefined when not listed or the universe is unreadable. */
+function coinRow(universe: VenueUniverseState, coin: string): ExchangeAsset | undefined {
+  return universe.failed ? undefined : universe.rows.find((r) => r.coin === coin);
+}
+
+/** The venue's reference price for the coin: the top-of-book mid when both quotes are usable, else the mark. */
+function refPrice(row: ExchangeAsset | undefined): number | null {
+  if (!row) return null;
+  const { bidPx, askPx, markPx } = row;
+  if (isNum(bidPx) && isNum(askPx) && bidPx > 0 && askPx >= bidPx) return (bidPx + askPx) / 2;
+  return isNum(markPx) && markPx > 0 ? markPx : null;
+}
+
 /** One venue's market input for the coin, from the shared universe + funding snapshot. */
 function venueInput(exchange: ExchangeId, coin: string, universe: VenueUniverseState, funding: MergedFundingSnapshot): VenueMarketInput {
-  const row = universe.failed ? undefined : universe.rows.find((r) => r.coin === coin);
+  const row = coinRow(universe, coin);
   const fRow = (funding.byCoin.get(coin) ?? []).find((r) => FUNDING_VENUE_META[r.venue]?.exchangeId === exchange);
   const n = fRow ? normalizeVenueFunding(fRow) : null;
   return {
@@ -400,17 +573,56 @@ function venueInput(exchange: ExchangeId, coin: string, universe: VenueUniverseS
   };
 }
 
-/** The regime: the best venue's newest servable FRESH snapshot row for the coin, else the next sampled venue's. */
-async function readRegime(deps: PreTradeCheckDeps, coin: string, timeframe: RegimeScanTimeframe, nowMs: number, best: string | null): Promise<RegimeRead | null> {
-  const sampled = await deps.sampledRegimeVenues();
-  const order = best && sampled.includes(best) ? [best, ...sampled.filter((v) => v !== best)] : [...sampled];
+/** The timeframe sigma is read at: ATR(14)/price of a 1h bar, whatever regime timeframe the caller asked. */
+const SIGMA_TIMEFRAME: RegimeScanTimeframe = '1h';
+
+interface FreshSnapshot {
+  row: RegimeSnapshotRow;
+  barCloseMs: number;
+  venue: string;
+}
+
+/**
+ * The newest servable FRESH snapshot row for the coin at `timeframe`: the `first` venue's (the cheapest), else
+ * the next sampled venue's. The regime and sigma reads both walk this way; one rule, `regimeGenerationFreshness`.
+ */
+async function freshSnapshotRow(
+  deps: PreTradeCheckDeps, sampled: readonly string[], coin: string, timeframe: RegimeScanTimeframe, nowMs: number, first: string | null,
+): Promise<FreshSnapshot | null> {
+  const order = first && sampled.includes(first) ? [first, ...sampled.filter((v) => v !== first)] : [...sampled];
   for (const venue of order) {
     const gen = await deps.latestServableGeneration(venue, timeframe);
     if (!gen || !regimeGenerationFreshness(gen, timeframe, nowMs).fresh) continue;
     const row = await deps.readGenerationRow(venue, timeframe, gen.bar_close_ms, coin);
-    if (row) return { label: row.regime, confidence: row.confidence, timeframe, asOfMs: gen.bar_close_ms, sourceExchange: venue };
+    if (row) return { row, barCloseMs: gen.bar_close_ms, venue };
   }
   return null;
+}
+
+/** One venue's v2 figures and the calculator output they come from — one derivation per venue. */
+function venueFigures(
+  ev: VenueEvaluation, tier: MarginTierRead | null, p: Normalized, sigma1h: number | null,
+): { costs: PreTradeVenueCosts; calc: PreTradeCalc } {
+  const feeRow = VENUE_FEE_ROWS.find((r) => r.exchange === ev.exchange);
+  const makerFeeBps = feeRow ? feeBpsFromPct(feeRow.makerPct) : null;
+  const entryFeeBps = p.orderType === 'limit' ? makerFeeBps : ev.takerFeeBps;
+  const rt = roundTripBps({ entryFeeBps, exitFeeBps: ev.takerFeeBps, spreadBps: ev.spreadBasis === 'top_of_book' ? ev.spreadBps : null });
+  const maintenanceRate = tier?.rate != null ? liquidationMaintenanceRate(ev.exchange, tier.rate) : null;
+  const calc = computePreTradeCalc({
+    side: p.side, sizeUsd: p.sizeUsd, holdHours: p.holdHours, sigma1h, roundTripBps: rt,
+    leverage: p.leverage, maintenanceRate, stopPct: p.stopPct, targetPct: p.targetPct, equityUsd: p.equityUsd,
+  });
+  return {
+    calc,
+    costs: {
+      makerFeeBps,
+      entryFeeBps,
+      roundTripBps: calc.round_trip_bps,
+      maintenanceRate,
+      liqDistancePct: calc.liq_distance_pct,
+      liqBasis: p.leverage === null ? 'leverage_not_given' : (tier?.basis ?? 'tier_unavailable'),
+    },
+  };
 }
 
 // ── The handler ─────────────────────────────────────────────────────────────────────────────────
@@ -522,10 +734,32 @@ export async function runPreTradeCheck(
     };
   }
 
-  // Rank → regime + session → decide.
+  // Rank → regime, sigma and (only when leverage is sent) tier tables, side by side → session → decide.
   const ranking = rankVenues({ venues: inputs, side, sizeUsd, holdHours, nowMs });
   const best = ranking.best;
-  const regime = await readRegime(deps, coin, timeframe, nowMs, best?.exchange ?? null);
+  const { leverage } = v.params;
+  const refPxs = venues.map((_, i) => refPrice(coinRow(universes[i], coin)));
+  const sampled = await deps.sampledRegimeVenues();
+  const regimeRead = freshSnapshotRow(deps, sampled, coin, timeframe, nowMs, best?.exchange ?? null);
+  const sigmaRead = timeframe === SIGMA_TIMEFRAME ? regimeRead : freshSnapshotRow(deps, sampled, coin, SIGMA_TIMEFRAME, nowMs, best?.exchange ?? null);
+  const tierReads = Promise.all(ranking.venues.map((ev, i): Promise<MarginTierRead | null> => (
+    leverage !== null && ev.listed === true
+      ? deps.marginTierAt(ev.exchange, coin, sizeUsd, refPxs[i]).catch((): MarginTierRead => ({ rate: null, basis: 'tier_unavailable' }))
+      : Promise.resolve(null)
+  )));
+  const [regimeSnap, sigmaSnap, tiers] = await Promise.all([regimeRead, sigmaRead, tierReads]);
+  const regime: RegimeRead | null = regimeSnap
+    ? { label: regimeSnap.row.regime, confidence: regimeSnap.row.confidence, timeframe, asOfMs: regimeSnap.barCloseMs, sourceExchange: regimeSnap.venue }
+    : null;
+  const sigma1h = sigma1hFromVolatilityRatio(sigmaSnap?.row.volatility_ratio ?? null);
+  const figures = ranking.venues.map((ev, i) => venueFigures(ev, tiers[i], v.params, sigma1h));
+  const decisionIdx = best ? ranking.venues.indexOf(best) : -1;
+  const calc = decisionIdx >= 0
+    ? figures[decisionIdx].calc
+    : computePreTradeCalc({
+        side, sizeUsd, holdHours, sigma1h, roundTripBps: null, leverage, maintenanceRate: null,
+        stopPct: v.params.stopPct, targetPct: v.params.targetPct, equityUsd: v.params.equityUsd,
+      });
   const refVenue = (best?.exchange ?? inputs.find((x) => x.asset !== null)?.exchange ?? venues[0]) as ExchangeId;
   const assetClass = await deps.resolveAssetClass(coin, refVenue);
   const session = assetClass === 'UNKNOWN' ? 'UNKNOWN' : classifyUnderlyingSession({ assetClass, at: new Date(nowMs) }).state;
@@ -584,7 +818,12 @@ export async function runPreTradeCheck(
   return {
     kind: 'ok',
     response: toPreTradeCheckResponse(
-      { coin, side, sizeUsd, holdHours, timeframe, nowMs, ranking, decided, regime, underlyingSession: session, feeTableVerifiedAt: oldestVerified },
+      {
+        coin, side, sizeUsd, holdHours, timeframe, nowMs,
+        inputs: { leverage, stop_pct: v.params.stopPct, target_pct: v.params.targetPct, equity_usd: v.params.equityUsd, order_type: v.params.orderType },
+        ranking, decided, regime, calc, venueCosts: figures.map((f) => f.costs),
+        underlyingSession: session, feeTableVerifiedAt: oldestVerified,
+      },
       meta,
       license,
     ),

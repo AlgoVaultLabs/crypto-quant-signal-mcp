@@ -6,14 +6,25 @@ import { describe, it, expect } from 'vitest';
 import {
   PRE_TRADE_CHECK_PARAM_DECL as D,
   PRE_TRADE_SIDES,
+  PRE_TRADE_ORDER_TYPES,
   PUBLIC_VENUE_IDS,
   REGIME_TIMEFRAMES,
   PUBLIC_TOOL_ENUM_PARAMS,
 } from '../../src/lib/tool-param-schema.js';
 
 describe('PRE_TRADE_CHECK_PARAM_DECL — the contract, once', () => {
-  it('declares exactly the six contract params', () => {
-    expect(Object.keys(D)).toEqual(['coin', 'side', 'sizeUsd', 'holdHours', 'timeframe', 'exchanges']);
+  it('declares exactly the six v1 params, then the five v2 scalars (DECISION-CALL-V2-W1)', () => {
+    expect(Object.keys(D)).toEqual(['coin', 'side', 'sizeUsd', 'holdHours', 'timeframe', 'exchanges',
+      'leverage', 'stopPct', 'targetPct', 'equityUsd', 'orderType']);
+  });
+  it('v2 scalars: optional, bounded as the v2 contract states; orderType defaults to market', () => {
+    expect(D.leverage).toEqual({ type: 'number', required: false, minimum: 1, maximum: 200 });
+    expect(D.stopPct).toEqual({ type: 'number', required: false, minimum: 0.01, maximum: 50 });
+    expect(D.targetPct).toEqual({ type: 'number', required: false, minimum: 0.01, maximum: 1000 });
+    expect(D.equityUsd).toEqual({ type: 'number', required: false, exclusiveMinimum: 0, maximum: 10_000_000_000 });
+    expect(D.orderType.values).toBe(PRE_TRADE_ORDER_TYPES);
+    expect([...PRE_TRADE_ORDER_TYPES]).toEqual(['market', 'limit']);
+    expect([D.orderType.required, D.orderType.default]).toEqual([false, 'market']);
   });
   it('coin: required string 1-20, upper-cased', () => {
     expect(D.coin).toEqual({ type: 'string', required: true, minLength: 1, maxLength: 20, upperCased: true });

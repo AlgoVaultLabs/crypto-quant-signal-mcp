@@ -584,6 +584,11 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
           holdHours: input.holdHours as number | undefined,
           timeframe: input.timeframe as string | undefined,
           exchanges: input.exchanges as string[] | undefined,
+          leverage: input.leverage as number | undefined,
+          stopPct: input.stopPct as number | undefined,
+          targetPct: input.targetPct as number | undefined,
+          equityUsd: input.equityUsd as number | undefined,
+          orderType: input.orderType as string | undefined,
         },
         license,
       )));

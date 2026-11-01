@@ -14,6 +14,7 @@ import type {
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 import { resolveVenueInterval } from './_interval.js';
+import type { MarginTierTable } from '../venue-margin-tiers.js';
 
 const BASE_URL = 'https://api.bybit.com';
 const MAX_RETRIES = 1;
@@ -84,6 +85,14 @@ interface BybitFundingHistoryEntry {
   symbol: string;
   fundingRate: string;
   fundingRateTimestamp: string;
+}
+
+/** One risk-limit tier: `riskLimitValue` (USDT) is the band's upper edge, `maintenanceMargin` a fraction. */
+interface BybitRiskLimit {
+  id: number;
+  symbol: string;
+  riskLimitValue: string;
+  maintenanceMargin: string;
 }
 
 async function bybitGet<T>(path: string, params?: Record<string, string | number>, retries = MAX_RETRIES): Promise<T> {
@@ -248,5 +257,24 @@ export class BybitAdapter implements ExchangeAdapter {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * DECISION-CALL-V2-W1: the coin's risk-limit tiers, for `venue-margin-tiers.ts`. One request: with a
+   * `symbol` the venue answers every tier on one page (35 for BTCUSDT, measured 2026-11-01). Every row is
+   * identity-checked: a symbol the venue did not echo is refused, never priced.
+   */
+  async getMarginTiers(coin: string): Promise<MarginTierTable> {
+    const symbol = toBybitSymbol(coin);
+    const data = await bybitGet<{ list: BybitRiskLimit[] }>('/v5/market/risk-limit', { category: 'linear', symbol });
+    const rows = data.list ?? [];
+    if (rows.some((r) => r.symbol !== symbol)) throw new Error(`BYBIT_TIER_SYMBOL_MISMATCH: requested ${symbol}`);
+    return {
+      unit: 'usd',
+      contractValue: null,
+      bands: rows
+        .map((r) => ({ upTo: safeUpstreamNum(r.riskLimitValue) ?? NaN, rate: safeUpstreamNum(r.maintenanceMargin) ?? NaN }))
+        .sort((a, b) => a.upTo - b.upTo),
+    };
   }
 }

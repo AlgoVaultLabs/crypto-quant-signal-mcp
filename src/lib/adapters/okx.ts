@@ -16,6 +16,7 @@ import { makeServedIntervalMs } from '../served-interval.js';
 import { assembleServingWindow, historyPageEnd, withHistoryMeta, type HistoryBranch } from './_history-plan.js';
 import { SERVING_MAX_PAGES } from '../serving-windows.js';
 import { resolveVenueInterval } from './_interval.js';
+import type { MarginTierTable } from '../venue-margin-tiers.js';
 
 const BASE_URL = 'https://www.okx.com';
 const MAX_RETRIES = 1;
@@ -220,6 +221,21 @@ interface OKXMarkPrice {
   instId: string;
   markPx: string;
   ts: string;
+}
+
+/** One isolated position tier: `minSz` / `maxSz` in CONTRACTS, `mmr` a fraction. */
+interface OKXPositionTier {
+  instFamily: string;
+  tier: string;
+  minSz: string;
+  maxSz: string;
+  mmr: string;
+}
+
+interface OKXInstrument {
+  instId: string;
+  /** Base-asset quantity per contract (0.01 BTC on BTC-USDT-SWAP). */
+  ctVal: string;
 }
 
 export class OKXAdapter implements ExchangeAdapter {
@@ -468,5 +484,29 @@ export class OKXAdapter implements ExchangeAdapter {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * DECISION-CALL-V2-W1: the coin's ISOLATED maintenance tiers, for `venue-margin-tiers.ts`. Bands are in
+   * CONTRACTS (`maxSz` is each band's upper edge, `mmr` its rate); the instrument's `ctVal` turns a contract
+   * into the base asset. Two requests, one after the other (the throttle above spaces them), and both rows
+   * identity-checked: a family or instrument the venue did not echo is refused, never priced.
+   */
+  async getMarginTiers(coin: string): Promise<MarginTierTable> {
+    const instId = toOKXInstId(coin);
+    const instFamily = instId.replace(/-SWAP$/, '');
+    const tiers = await okxGet<OKXPositionTier[]>('/api/v5/public/position-tiers', { instType: 'SWAP', tdMode: 'isolated', instFamily });
+    const instruments = await okxGet<OKXInstrument[]>('/api/v5/public/instruments', { instType: 'SWAP', instId });
+    const inst = instruments.data[0];
+    if (!inst || inst.instId !== instId) throw new Error(`OKX_INSTRUMENT_MISMATCH: requested ${instId}, got ${inst?.instId ?? 'none'}`);
+    const rows = tiers.data ?? [];
+    if (rows.some((t) => t.instFamily !== instFamily)) throw new Error(`OKX_TIER_FAMILY_MISMATCH: requested ${instFamily}`);
+    return {
+      unit: 'contracts',
+      contractValue: safeUpstreamNum(inst.ctVal),
+      bands: rows
+        .map((t) => ({ upTo: safeUpstreamNum(t.maxSz) ?? NaN, rate: safeUpstreamNum(t.mmr) ?? NaN }))
+        .sort((a, b) => a.upTo - b.upTo),
+    };
   }
 }

@@ -16,6 +16,7 @@ import { makeServedIntervalMs } from '../served-interval.js';
 import { assembleServingWindow, historyPageEnd, withHistoryMeta, type HistoryBranch } from './_history-plan.js';
 import { SERVING_MAX_PAGES } from '../serving-windows.js';
 import { resolveVenueInterval } from './_interval.js';
+import type { MarginTierTable } from '../venue-margin-tiers.js';
 
 const BASE_URL = 'https://api.bitget.com';
 const MAX_RETRIES = 1;
@@ -138,6 +139,15 @@ interface BitgetFundingHistoryEntry {
   symbol: string;
   fundingRate: string;
   fundingTime: string;
+}
+
+/** One position tier: `startUnit` / `endUnit` in USDT, `keepMarginRate` a fraction. */
+interface BitgetPositionTier {
+  symbol: string;
+  level: string;
+  startUnit: string;
+  endUnit: string;
+  keepMarginRate: string;
 }
 
 
@@ -405,5 +415,23 @@ export class BitgetAdapter implements ExchangeAdapter {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * DECISION-CALL-V2-W1: the coin's maintenance tiers, for `venue-margin-tiers.ts`. Bands are in USDT
+   * (`endUnit` is each band's upper edge, `keepMarginRate` its rate). Every row is identity-checked: a
+   * symbol the venue did not echo is refused, never priced.
+   */
+  async getMarginTiers(coin: string): Promise<MarginTierTable> {
+    const symbol = toBitgetSymbol(coin);
+    const rows = await bitgetGet<BitgetPositionTier[]>('/api/v2/mix/market/query-position-lever', { symbol, productType: 'USDT-FUTURES' });
+    if (!Array.isArray(rows) || rows.some((r) => r.symbol !== symbol)) throw new Error(`BITGET_TIER_SYMBOL_MISMATCH: requested ${symbol}`);
+    return {
+      unit: 'usd',
+      contractValue: null,
+      bands: rows
+        .map((r) => ({ upTo: safeUpstreamNum(r.endUnit) ?? NaN, rate: safeUpstreamNum(r.keepMarginRate) ?? NaN }))
+        .sort((a, b) => a.upTo - b.upTo),
+    };
   }
 }

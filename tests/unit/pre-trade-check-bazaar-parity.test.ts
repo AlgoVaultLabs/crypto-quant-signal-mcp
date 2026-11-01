@@ -99,7 +99,7 @@ describe('pre_trade_check — the Bazaar input schema matches the served tools/l
 
   it('the declared extension passes the leak guard; the output example holds only the shape snapshot’s allowed keys', () => {
     expect(() => assertNoBazaarLeak(declareBazaarRoute('pre_trade_check'), 'declared extension pre_trade_check')).not.toThrow();
-    const snapshot = JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', 'pre-trade-check-shape-snapshot-2026-10-30.json'), 'utf8')) as { allowed_keys: string[] };
+    const snapshot = JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', 'pre-trade-check-shape-snapshot-2026-11-01.json'), 'utf8')) as { allowed_keys: string[] };
     const out = BAZAAR_ROUTES.pre_trade_check.output.example as Record<string, unknown>;
     expect(Object.keys(out).length).toBeGreaterThan(0);
     for (const k of Object.keys(out)) expect(snapshot.allowed_keys, `output key "${k}"`).toContain(k);

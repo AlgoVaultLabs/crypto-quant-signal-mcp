@@ -1,4 +1,6 @@
 {
+  "superseded_by": "pre-trade-check-shape-snapshot-2026-11-01.json",
+  "superseded_reason": "DECISION-CALL-V2-W1 added the v2 keys (`inputs`, `calc`, per-venue fee / liquidation keys, three assumptions sentences), so this file no longer describes the live shape. ONE snapshot per shape: both files carry the same `endpoint`, and the knowledge-bundle builder would publish two contradictory descriptions under one doc id. Nothing inside this file was altered — the two supersession keys are the only addition.",
   "wave": "DECISION-CALL-V1-W2",
   "endpoint": "pre_trade_check (MCP tool)",
   "snapshot_date": "2026-10-30",
