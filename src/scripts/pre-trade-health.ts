@@ -11,7 +11,8 @@
  * Run from ops/monitoring/pre-trade-health-canary.sh (47 * * * *, signal-1), inside the app container,
  * in a session the server holds read-only (PGOPTIONS default_transaction_read_only=on):
  *   docker exec <ctr> node dist/scripts/pre-trade-health.js
- * The tables are ADOPTED (to_regclass), never lazily ensured, so the probe issues no DDL.
+ * The tables are ADOPTED (to_regclass), never lazily ensured, so the probe issues no DDL — the regime
+ * tables and, for the parity leg, the check log; neither is ever written from here.
  *
  * ── TWO TOKENS, EACH EXACTLY ONCE — the wrapper reads each TOKEN, never the exit code ────────────
  *   VENUE_FEE_TABLE_VERDICT=PASS|FAIL|INDETERMINATE
@@ -22,7 +23,15 @@
  *     INDETERMINATE — the table adoption threw: the database is unreachable and nothing was judged.
  *     FAIL          — the call refused, threw, or returned no decision; or fewer than
  *                     PRE_TRADE_HEALTH_MIN_VENUES (default 3) venues are free of feed_unavailable /
- *                     funding_unavailable.
+ *                     funding_unavailable; or LOG PARITY (DECISION-CALL-V2-W1 CH3): over 24 h the served
+ *                     non-internal pre_trade_check rows in request_log exceed the rows in the check log
+ *                     (pre_trade_checks) by more than 2% AND by at least 3 (`judgeLogParity`) — the writer is
+ *                     dark. The window never starts before the log's first row (a call served before
+ *                     the log existed was never the writer's to log); no row yet keeps the full 24 h,
+ *                     so served with nothing logged is still the dark writer. No check-log table with
+ *                     nothing served is PASS. The leg prints
+ *                     `pre_trade_check_log served=<n> logged=<m>`.
+ *     INDETERMINATE — also when the parity counts could not be read (the probe's own FAIL still wins).
  *     Wall time and REGIME_UNAVAILABLE are REPORTED, never judged: a slow call is still an answer,
  *     and the regime is optional context the decision is valid without.
  *   A watchdog kill (exit 75) prints no health token; the wrapper records the run INDETERMINATE.
@@ -42,6 +51,7 @@ import { adoptExistingRegimeSnapshotTables } from '../lib/regime-snapshots.js';
 import { FEE_TABLE_MAX_AGE_DAYS, VENUE_FEE_ROWS, feeRowVerifiedAtMs, staleFeeRows, type VenueFeeRow } from '../lib/venue-fees.js';
 import type { PreTradeDecision } from '../lib/pre-trade-decision.js';
 import { runPreTradeCheck, type PreTradeCheckOutcome, type PreTradeCheckParams } from '../tools/pre-trade-check.js';
+import { adoptPreTradeCheckTable, countLoggedChecks, countServedChecks, firstLoggedCheckAt } from '../lib/pre-trade-check-log.js';
 
 export type HealthVerdict = 'PASS' | 'FAIL' | 'INDETERMINATE';
 
@@ -150,6 +160,19 @@ export function judgePreTradeHealth(probe: ProbeResult, minVenues: number): Heal
   return j;
 }
 
+// ── The log-parity judge (pure) ─────────────────────────────────────────────────────────────────
+
+/** Parity FAILs when served exceeds logged by MORE than this percent of served… */
+export const LOG_PARITY_MAX_GAP_PCT = 2;
+/** …and by at least this many calls: a gap of one or two is a call straddling the window edge, not a dark writer. */
+export const LOG_PARITY_MIN_GAP = 3;
+
+/** Served non-internal calls (request_log) against check-log rows over one window. More logged than served passes. */
+export function judgeLogParity(served: number, logged: number): 'PASS' | 'FAIL' {
+  const gap = served - logged;
+  return gap >= LOG_PARITY_MIN_GAP && gap > (served * LOG_PARITY_MAX_GAP_PCT) / 100 ? 'FAIL' : 'PASS';
+}
+
 // ── Seams + the CLI body ────────────────────────────────────────────────────────────────────────
 
 export interface PreTradeHealthDeps {
@@ -158,6 +181,14 @@ export interface PreTradeHealthDeps {
   adoptTables: () => Promise<boolean>;
   runCheck: (params: PreTradeCheckParams, license: LicenseInfo) => Promise<PreTradeCheckOutcome>;
   feeRows: readonly VenueFeeRow[];
+  /** The check log, ADOPTED: true = it exists, false = absent (no call logged yet); throws = unreadable. */
+  adoptCheckLog: () => Promise<boolean>;
+  /** Served non-internal pre_trade_check calls in request_log since the instant. */
+  countServed: (sinceMs: number) => Promise<number>;
+  /** Check-log rows since the instant (only asked when the log exists). */
+  countLogged: (sinceMs: number) => Promise<number>;
+  /** The check log's first row (epoch ms), null while it holds none (only asked when the log exists). */
+  firstLogged: () => Promise<number | null>;
 }
 
 const DEFAULT_PRE_TRADE_HEALTH_DEPS: PreTradeHealthDeps = {
@@ -165,6 +196,10 @@ const DEFAULT_PRE_TRADE_HEALTH_DEPS: PreTradeHealthDeps = {
   adoptTables: () => adoptExistingRegimeSnapshotTables(),
   runCheck: (params, license) => runPreTradeCheck(params, license),
   feeRows: VENUE_FEE_ROWS,
+  adoptCheckLog: () => adoptPreTradeCheckTable(),
+  countServed: (sinceMs) => countServedChecks(sinceMs),
+  countLogged: (sinceMs) => countLoggedChecks(sinceMs),
+  firstLogged: () => firstLoggedCheckAt(),
 };
 
 const errText = (e: unknown): string => (e instanceof Error ? `${e.name}: ${e.message}` : String(e));
@@ -217,12 +252,36 @@ export async function main(
   for (const v of j.venues) console.log(`${TAG} VENUE ${JSON.stringify(v)}`);
   console.log(`${TAG} CHECK decision=${j.decision ?? 'NONE'} reasons=${j.reasonCodes.join(',') || 'none'}`);
   console.log(`${TAG} CHECK venues_up=${j.venuesUp} of ${j.venues.length} min=${min.value} (${min.source})`);
-  console.log(`PRE_TRADE_HEALTH_WALL_MS=${wallMs}`);
-  console.log(`PRE_TRADE_HEALTH_FAIL_KEYS=${j.failKeys.join(';')}`);
-  console.log(`PRE_TRADE_HEALTH_VERDICT=${j.verdict}`);
 
-  if (j.verdict === 'FAIL' || fees.verdict === 'FAIL') return EXIT.FAIL;
-  return fees.verdict === 'INDETERMINATE' ? EXIT.INDETERMINATE : EXIT.PASS;
+  // 5. Log parity — every served non-internal call has its check-log row (24 h, read-only).
+  let parity: HealthVerdict;
+  let parityKey: string | null = null;
+  try {
+    const dayAgo = deps.now() - DAY_MS;
+    const table = await deps.adoptCheckLog();
+    // Never before the log's first row: a v1 call served before the log existed is not the writer's gap.
+    const born = table ? await deps.firstLogged() : null;
+    const since = born !== null && born > dayAgo ? born : dayAgo;
+    const served = await deps.countServed(since);
+    const logged = table ? await deps.countLogged(since) : 0;
+    parity = judgeLogParity(served, logged);
+    console.log(`${TAG} CHECK log_parity table=${table ? 'ADOPTED' : 'ABSENT'} window=${since === dayAgo ? '24h' : `first_row:${new Date(since).toISOString()}`} max_gap_pct=${LOG_PARITY_MAX_GAP_PCT} min_gap=${LOG_PARITY_MIN_GAP} verdict=${parity}`);
+    console.log(`pre_trade_check_log served=${served} logged=${logged}`);
+    if (parity === 'FAIL') parityKey = `log_parity:served=${served} logged=${logged}`;
+  } catch (e) {
+    console.error(`${TAG} the log-parity counts could not be read: ${errText(e)}`);
+    console.log(`${TAG} CHECK log_parity=UNREADABLE — not judged`);
+    parity = 'INDETERMINATE';
+  }
+  const failKeys = parityKey === null ? j.failKeys : [...j.failKeys, parityKey];
+  const verdict: HealthVerdict = failKeys.length > 0 ? 'FAIL' : parity === 'INDETERMINATE' ? 'INDETERMINATE' : 'PASS';
+
+  console.log(`PRE_TRADE_HEALTH_WALL_MS=${wallMs}`);
+  console.log(`PRE_TRADE_HEALTH_FAIL_KEYS=${failKeys.join(';')}`);
+  console.log(`PRE_TRADE_HEALTH_VERDICT=${verdict}`);
+
+  if (verdict === 'FAIL' || fees.verdict === 'FAIL') return EXIT.FAIL;
+  return verdict === 'INDETERMINATE' || fees.verdict === 'INDETERMINATE' ? EXIT.INDETERMINATE : EXIT.PASS;
 }
 
 // require.main guard (CJS, target ES2022) — the canary invokes this directly.

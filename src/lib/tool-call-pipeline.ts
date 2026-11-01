@@ -91,6 +91,7 @@ import { getEquityRegime } from './equities/equity-tool-formatters.js';
 import { runGetTrackRecord } from '../tools/get-track-record.js';
 import { runScanMarketRegimes } from '../tools/scan-market-regimes.js';
 import { runPreTradeCheck } from '../tools/pre-trade-check.js';
+import { recordPreTradeCheck } from './pre-trade-check-log.js';
 import { getKnowledgeSearch, getChatStack, chatTierFor } from '../tools/knowledge-tools.js';
 import { formatSearchKnowledgeResponse } from './search-knowledge-formatter.js';
 import { chatQuotaApiKey, buildChatQuotaNotice } from './chat-rate-limit.js';
@@ -206,8 +207,10 @@ interface ToolRow {
    * The ONE engine call, wrapped in the tool's OWN literal `runAsCaller('<tool>', …)` (the
    * scripts/check-caller-tags.mjs contract: every caller name is a literal or a registered builder)
    * with the channel's attribution innermost. Defaults are derived exactly once in here (never in a channel).
+   * `channel` is the rail the call came in on — DATA for a row that records it (pre_trade_check's check log),
+   * never a branch.
    */
-  run: (input: ValidatedToolInput, license: LicenseInfo, attribute: Attribute, served: string) => Promise<RunResult & { route?: { timeframe: string } }>;
+  run: (input: ValidatedToolInput, license: LicenseInfo, attribute: Attribute, served: string, channel: ChannelId) => Promise<RunResult & { route?: { timeframe: string } }>;
   /** Both arms. Success is called with the result; the error arm with the thrown error. */
   logSuccess: (input: ValidatedToolInput, result: unknown, route: { timeframe: string } | undefined, scope: ScopeSnapshot) => LogFields;
   logError: ((input: ValidatedToolInput, err: unknown) => LogFields) | null;
@@ -575,7 +578,13 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     // DECISION-CALL-V1-W2 R6: refuses in-band (structured payload + isError), unbilled; the quota wall
     // throws TierLimitReachedError as get_market_regime's does. The log row names the asset, timeframe
     // and best venue only — never the decision, a confidence or the regime.
-    run: async (input, license, attribute, served) => {
+    // DECISION-CALL-V2-W1 CH3: a SERVED call (billed: the handler charged its unit before returning) by a
+    // non-internal caller writes ONE row to the internal check log (pre-trade-check-log.ts) once the response
+    // exists — fail-open and never awaited, so the response and its billing are exactly what they would have
+    // been. The outcome is handed over UNREAD — every read of it happens inside the logger's catch, so a log
+    // fault can never turn a served call into a 500. A refusal, the quota wall (a throw) and an internal
+    // caller write nothing; the health probe calls the engine directly and never reaches this row.
+    run: async (input, license, attribute, served, channel) => {
       const out = await runAsCaller(processScopedTag('pre_trade_check'), () => attribute(served, () => runPreTradeCheck(
         {
           coin: input.coin as string,
@@ -593,9 +602,13 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
         },
         license,
       )));
-      return out.kind === 'ok'
-        ? { kind: 'ok', result: out.response }
-        : { kind: 'refused', payload: out.payload as unknown as Record<string, unknown>, http: { status: out.status } };
+      if (out.kind !== 'ok') {
+        return { kind: 'refused', payload: out.payload as unknown as Record<string, unknown>, http: { status: out.status } };
+      }
+      if (license.tier !== 'internal') {
+        void recordPreTradeCheck({ response: out.response, facts: out.facts, channel, licenseKey: license.key });
+      }
+      return { kind: 'ok', result: out.response };
     },
     logSuccess: (input, result) => ({
       asset: (result as { coin: string }).coin,
@@ -669,7 +682,7 @@ export async function callTool(req: ToolCallRequest): Promise<ToolCallOutcome> {
       };
     }
     try {
-      const r = await row.run(input, license, policy.attribute, req.tool);
+      const r = await row.run(input, license, policy.attribute, req.tool, req.channel);
       const scope: ScopeSnapshot = { regimeFundingDegraded: getRequestRegimeFundingDegraded() };
       const ids = { sessionId: getRequestSessionId(), ipHash: getRequestIpHash(), source: getRequestSource() };
       if (r.kind === 'refused') {

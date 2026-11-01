@@ -147,3 +147,26 @@ export function verifyPreferenceToken(token: string): string | null {
   if (a.length !== b.length) return null;
   return timingSafeEqual(a, b) ? apiKey : null;
 }
+
+// ── The pre_trade_check caller pseudonym (DECISION-CALL-V2-W1 CH3) ─────────────────────────
+//
+// `pre_trade_checks.caller_ref`: which caller ran a check, without the key. The `hashEmail` pattern
+// under its OWN domain, so a caller_ref is meaningless as an email hash, an unsubscribe signature or a
+// preference handle — and none of those can be presented as a caller_ref.
+
+export const PRE_TRADE_CALLER_REF_VERSION = 'pc1';
+const CALLER_DOMAIN = 'pre-trade-caller-v1:';
+
+/**
+ * `pc1:<32 hex>` for a license key: stable per key, different across keys, irreversible without the
+ * estate's IP-hash key. The key is used exactly as presented — two keys that differ in case are two keys.
+ *
+ * Never returns an unkeyed value — `resolveIpHashKey` throws when the key is unusable. Do NOT
+ * catch-and-default here: a defaulted pseudonym is reversible. Its one caller, `recordPreTradeCheck`, runs
+ * it inside its own fail-open, so an unusable key costs the log row, never the response.
+ */
+export function callerRef(licenseKey: string): string {
+  if (!licenseKey) throw new Error('callerRef: empty license key');
+  const mac = createHmac('sha256', resolveIpHashKey()).update(CALLER_DOMAIN + licenseKey).digest('hex').slice(0, 32);
+  return `${PRE_TRADE_CALLER_REF_VERSION}:${mac}`;
+}

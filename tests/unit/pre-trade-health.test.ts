@@ -13,6 +13,9 @@ import { join } from 'node:path';
 import {
   judgeFeeTable,
   judgePreTradeHealth,
+  judgeLogParity,
+  LOG_PARITY_MAX_GAP_PCT,
+  LOG_PARITY_MIN_GAP,
   main,
   parseMinVenues,
   PRE_TRADE_HEALTH_PROBE,
@@ -158,6 +161,11 @@ function run(deps: Partial<PreTradeHealthDeps>, env: NodeJS.ProcessEnv = {}) {
       return okOutcome();
     },
     feeRows: VENUE_FEE_ROWS,
+    // The log-parity leg's PASS world: the check log exists, and every served call has its row.
+    adoptCheckLog: async () => true,
+    countServed: async () => 40,
+    countLogged: async () => 40,
+    firstLogged: async () => FRESH_NOW - 30 * DAY,
     ...deps,
   };
   return main(['node', 'pre-trade-health.js'], env, full).then((code) => {
@@ -272,6 +280,122 @@ describe('main — one probe, two tokens', () => {
   });
 });
 
+// ── DECISION-CALL-V2-W1 CH3 (AC3.2) — the log-parity leg ────────────────────────────────────────
+
+describe('judgeLogParity — served (request_log) against logged (pre_trade_checks), each threshold from both sides', () => {
+  it('the thresholds are the spec\'s: more than 2% AND at least 3', () => {
+    expect([LOG_PARITY_MAX_GAP_PCT, LOG_PARITY_MIN_GAP]).toEqual([2, 3]);
+  });
+  it('the 2% side: a gap of 3 on 150 served is exactly 2% (PASS); on 149 it is above (FAIL)', () => {
+    expect(judgeLogParity(150, 147)).toBe('PASS');
+    expect(judgeLogParity(149, 146)).toBe('FAIL');
+  });
+  it('the floor side: a gap of 2 never FAILs, however small the volume; a gap of 3 does', () => {
+    expect(judgeLogParity(2, 0)).toBe('PASS');
+    expect(judgeLogParity(3, 1)).toBe('PASS');
+    expect(judgeLogParity(3, 0)).toBe('FAIL');
+    expect(judgeLogParity(100, 97)).toBe('FAIL');
+  });
+  it('equal, or more logged than served, PASSes', () => {
+    expect(judgeLogParity(0, 0)).toBe('PASS');
+    expect(judgeLogParity(40, 40)).toBe('PASS');
+    expect(judgeLogParity(5, 9)).toBe('PASS');
+  });
+});
+
+describe('main — the log-parity leg (AC3.2)', () => {
+  it('PASS arm: the line is printed, the token stays PASS, exit 0', async () => {
+    const { code, out } = await run({ countServed: async () => 100, countLogged: async () => 99 });
+    expect(code).toBe(0);
+    expect(out).toContain('pre_trade_check_log served=100 logged=99');
+    expect(out).toContain('[pre-trade-health] CHECK log_parity table=ADOPTED window=24h max_gap_pct=2 min_gap=3 verdict=PASS');
+    expect(token(out, 'PRE_TRADE_HEALTH_VERDICT')).toEqual(['PRE_TRADE_HEALTH_VERDICT=PASS']);
+  });
+
+  it('FAIL arm: served outruns logged — FAIL keyed log_parity, exit 1, the fee token unaffected', async () => {
+    const { code, out } = await run({ countServed: async () => 100, countLogged: async () => 97 });
+    expect(code).toBe(1);
+    expect(out).toContain('pre_trade_check_log served=100 logged=97');
+    expect(token(out, 'PRE_TRADE_HEALTH_VERDICT')).toEqual(['PRE_TRADE_HEALTH_VERDICT=FAIL']);
+    expect(token(out, 'PRE_TRADE_HEALTH_FAIL_KEYS')).toEqual(['PRE_TRADE_HEALTH_FAIL_KEYS=log_parity:served=100 logged=97']);
+    expect(token(out, 'VENUE_FEE_TABLE_VERDICT')).toEqual(['VENUE_FEE_TABLE_VERDICT=PASS']);
+  });
+
+  it('no-table arm: no check log and nothing served is PASS — and the log is never counted', async () => {
+    const counted: number[] = [];
+    const { code, out } = await run({ adoptCheckLog: async () => false, countServed: async () => 0, countLogged: async (s) => { counted.push(s); return 0; } });
+    expect(code).toBe(0);
+    expect(counted).toEqual([]);
+    expect(out).toContain('[pre-trade-health] CHECK log_parity table=ABSENT window=24h max_gap_pct=2 min_gap=3 verdict=PASS');
+    expect(out).toContain('pre_trade_check_log served=0 logged=0');
+  });
+
+  it('no-table arm, calls served: the writer is dark — FAIL', async () => {
+    const { code, out } = await run({ adoptCheckLog: async () => false, countServed: async () => 5 });
+    expect(code).toBe(1);
+    expect(out).toContain('pre_trade_check_log served=5 logged=0');
+    expect(token(out, 'PRE_TRADE_HEALTH_FAIL_KEYS')).toEqual(['PRE_TRADE_HEALTH_FAIL_KEYS=log_parity:served=5 logged=0']);
+  });
+
+  it('the window is the last 24 h, the same instant on both sides', async () => {
+    const seen: number[] = [];
+    let t = FRESH_NOW;
+    await run({ now: () => (t += 1000), countServed: async (s) => { seen.push(s); return 1; }, countLogged: async (s) => { seen.push(s); return 1; } });
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBe(seen[1]);
+    expect(t - seen[0]).toBeGreaterThanOrEqual(DAY);
+    expect(t - seen[0]).toBeLessThan(DAY + 10_000);
+  });
+
+  it('a log younger than 24 h: the window starts at its first row, the same instant on both sides — v1 calls served before the log existed are not its gap', async () => {
+    const born = FRESH_NOW - 2 * 3_600_000;
+    const seen: number[] = [];
+    const { code, out } = await run({
+      firstLogged: async () => born,
+      countServed: async (s) => { seen.push(s); return 12; },
+      countLogged: async (s) => { seen.push(s); return 12; },
+    });
+    expect(code).toBe(0);
+    expect(seen).toEqual([born, born]);
+    expect(out).toContain(`[pre-trade-health] CHECK log_parity table=ADOPTED window=first_row:${new Date(born).toISOString()} max_gap_pct=2 min_gap=3 verdict=PASS`);
+  });
+
+  it('a log older than 24 h, or one with no row yet: the full 24 h — served with nothing logged is still the dark writer', async () => {
+    const seen: number[] = [];
+    const old = await run({ firstLogged: async () => FRESH_NOW - 3 * DAY, countServed: async (s) => { seen.push(s); return 1; } });
+    expect(old.code).toBe(0);
+    expect(Math.abs(seen[0] - (FRESH_NOW - DAY))).toBeLessThan(10_000); // the harness clock ticks 1 s per read
+    const empty = await run({ firstLogged: async () => null, countServed: async () => 5, countLogged: async () => 0 });
+    expect(empty.code).toBe(1);
+    expect(token(empty.out, 'PRE_TRADE_HEALTH_FAIL_KEYS')).toEqual(['PRE_TRADE_HEALTH_FAIL_KEYS=log_parity:served=5 logged=0']);
+    expect(empty.out).toContain('[pre-trade-health] CHECK log_parity table=ADOPTED window=24h max_gap_pct=2 min_gap=3 verdict=FAIL');
+  });
+
+  it('no table: the first row is never asked for; an unreadable first row is INDETERMINATE, never a defaulted window', async () => {
+    let asked = 0;
+    await run({ adoptCheckLog: async () => false, countServed: async () => 0, firstLogged: async () => { asked += 1; return null; } });
+    expect(asked).toBe(0);
+    const bad = await run({ firstLogged: async () => { throw new Error('pre_trade_checks MIN(checked_at) unreadable: x'); } });
+    expect(bad.code).toBe(3);
+    expect(bad.out).toContain('[pre-trade-health] CHECK log_parity=UNREADABLE — not judged');
+  });
+
+  it('unreadable counts: INDETERMINATE, exit 3 — no PASS for a parity that was never read, and no served= line', async () => {
+    const { code, out } = await run({ countServed: async () => { throw new Error('permission denied for table request_log'); } });
+    expect(code).toBe(3);
+    expect(token(out, 'PRE_TRADE_HEALTH_VERDICT')).toEqual(['PRE_TRADE_HEALTH_VERDICT=INDETERMINATE']);
+    expect(out).toContain('[pre-trade-health] CHECK log_parity=UNREADABLE — not judged');
+    expect(out.some((l) => l.startsWith('pre_trade_check_log '))).toBe(false);
+  });
+
+  it('a probe FAIL still wins over an unreadable parity, and both FAILs are keyed in check order', async () => {
+    const thrown = await run({ runCheck: async () => { throw new TypeError('boom'); }, countServed: async () => { throw new Error('x'); } });
+    expect([thrown.code, token(thrown.out, 'PRE_TRADE_HEALTH_VERDICT')]).toEqual([1, ['PRE_TRADE_HEALTH_VERDICT=FAIL']]);
+    const both = await run({ runCheck: async () => { throw new TypeError('boom'); }, countServed: async () => 10, countLogged: async () => 0 });
+    expect(token(both.out, 'PRE_TRADE_HEALTH_FAIL_KEYS')).toEqual(['PRE_TRADE_HEALTH_FAIL_KEYS=call:threw TypeError;log_parity:served=10 logged=0']);
+  });
+});
+
 describe('source pins — what the probe can never do', () => {
   const src = readFileSync(join(__dirname, '../../src/scripts/pre-trade-health.ts'), 'utf8');
   const imports = src.split('\n').filter((l) => /^import\b/.test(l));
@@ -286,6 +410,11 @@ describe('source pins — what the probe can never do', () => {
   it('it ADOPTS the regime tables and never ensures them, so a read-only session sees no DDL', () => {
     expect(src).toContain('adoptExistingRegimeSnapshotTables');
     expect(src).not.toContain('ensureRegimeSnapshotTables');
+  });
+
+  it('it ADOPTS the check log and never writes it: the parity leg reads, the probe (the engine, not the pipeline) logs nothing', () => {
+    expect(imports.some((l) => l.includes("from '../lib/pre-trade-check-log.js'") && l.includes('adoptPreTradeCheckTable'))).toBe(true);
+    expect(src).not.toMatch(/recordPreTradeCheck|INSERT|CREATE/);
   });
 
   it('the probe is batch class under ONE literal caller tag', () => {
