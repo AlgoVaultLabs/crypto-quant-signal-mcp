@@ -113,7 +113,7 @@ The `_algovault` block is the envelope every tool response carries: the server v
      scripts/snapshot-landing-data.mjs at npm-publish + Hetzner-deploy. Do NOT hand-edit the
      numbers; edit "What's new" by hand. Wired by OPS-NPM-README-SINGLE-SOT-W1 (2026-05-31). -->
 <p align="center">
-  <strong><span data-tr-field="pfe_wr">90.6%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">1,247,528</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">204</span> on-chain batches</strong> <!-- SNAPSHOT-LINE -->
+  <strong><span data-tr-field="pfe_wr">90.6%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">1,247,528</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">205</span> on-chain batches</strong> <!-- SNAPSHOT-LINE -->
 </p>
 
 <p align="center">
