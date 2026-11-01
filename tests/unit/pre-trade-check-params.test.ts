@@ -11,11 +11,17 @@ import {
   REGIME_TIMEFRAMES,
   PUBLIC_TOOL_ENUM_PARAMS,
 } from '../../src/lib/tool-param-schema.js';
+import { PRE_TRADE_RULES } from '../../src/lib/pre-trade-rules.js';
 
 describe('PRE_TRADE_CHECK_PARAM_DECL — the contract, once', () => {
-  it('declares exactly the six v1 params, then the five v2 scalars (DECISION-CALL-V2-W1)', () => {
+  it('declares exactly the six v1 params, then the five v2 scalars and the rules object (DECISION-CALL-V2-W1)', () => {
     expect(Object.keys(D)).toEqual(['coin', 'side', 'sizeUsd', 'holdHours', 'timeframe', 'exchanges',
-      'leverage', 'stopPct', 'targetPct', 'equityUsd', 'orderType']);
+      'leverage', 'stopPct', 'targetPct', 'equityUsd', 'orderType', 'rules']);
+  });
+  it('rules: an optional object closed to unknown keys, its properties the rule table\'s params, each optional', () => {
+    expect([D.rules.type, D.rules.required, D.rules.additionalProperties]).toEqual(['object', false, false]);
+    expect(Object.keys(D.rules.properties)).toEqual(PRE_TRADE_RULES.map((r) => r.id));
+    for (const r of PRE_TRADE_RULES) expect(D.rules.properties[r.id], r.id).toEqual({ ...r.param, required: false });
   });
   it('v2 scalars: optional, bounded as the v2 contract states; orderType defaults to market', () => {
     expect(D.leverage).toEqual({ type: 'number', required: false, minimum: 1, maximum: 200 });

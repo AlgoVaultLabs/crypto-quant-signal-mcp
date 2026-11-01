@@ -27,6 +27,8 @@
  * `feedback_public_copy_professional_concise.md` +
  * `feedback_no_internal_details_in_public_copy.md`.
  */
+// Type-only: erased at build, so this stays a pure-data module.
+import type { PreTradeRuleId } from './lib/pre-trade-rules.js';
 
 // get_trade_call (canonical, v1.10.0) + get_trade_signal (alias) share
 // TRADE_CALL_DESCRIPTION; the alias appends TRADE_CALL_ALIAS_SUFFIX.
@@ -217,8 +219,10 @@ export const PARAM_DESC_REGIME_SCAN_OFFSET =
 
 // DECISION-CALL-V1-W2 R6: the pre-trade check. Every string below is the approved contract copy
 // (Prompt/pre-trade-check-contract.md § Copy), verbatim — reword it only with a new approval.
+// DECISION-CALL-V2-W1: the description is v2's (Prompt/pre-trade-check-contract-v2.md § Copy), verbatim. It
+// passes ChatGPT's plain rules itself, so it has no PLAIN_OVERRIDES entry.
 export const PRE_TRADE_CHECK_DESCRIPTION =
-  'Pre-trade check for a crypto perpetual futures order. Send coin, side, size and hold time; returns GO, CAUTION or WAIT with reasons, the cheapest venue by fees and funding rate over your hold (cross-venue), a size limit from 24h volume, funding timing and the market regime. Informational and read-only: places no orders, holds no funds.';
+  'Returns a pre-trade check of a crypto perpetual futures order against your own rules: each passes or fails with its numbers, then GO, CAUTION or WAIT. Adds isolated liquidation distance, whether it hits before your stop, fees, accuracy needed to break even over your hold, funding by venue (cross-venue) and the regime. Read-only: places no orders.';
 export const PARAM_DESC_PRE_TRADE_COIN = 'Asset symbol, e.g. BTC, ETH, SOL.';
 export const PARAM_DESC_PRE_TRADE_SIDE = 'Direction of the order you intend to place: long or short.';
 export const PARAM_DESC_PRE_TRADE_SIZE_USD = 'Order notional in USD, e.g. 10000.';
@@ -231,6 +235,20 @@ export const PARAM_DESC_PRE_TRADE_STOP_PCT = 'Stop-loss distance from entry in p
 export const PARAM_DESC_PRE_TRADE_TARGET_PCT = 'Target distance from entry in percent, e.g. 4.';
 export const PARAM_DESC_PRE_TRADE_EQUITY_USD = 'Account equity in USD. Enables the percent-of-equity rules.';
 export const PARAM_DESC_PRE_TRADE_ORDER_TYPE = 'market (taker entry) or limit (maker entry). Default market.';
+export const PARAM_DESC_PRE_TRADE_RULES = 'Your rules, each key optional. A rule of yours that fails returns WAIT.';
+/** One string per `PRE_TRADE_RULES` key (keyed on the table, so a rule added without its copy does not compile). */
+export const PRE_TRADE_RULE_PARAM_DESC: Readonly<Record<PreTradeRuleId, string>> = Object.freeze({
+  maxLeverage: 'Highest leverage you allow.',
+  noLiqBeforeStop: 'Fail if liquidation would come before your stop. Default on.',
+  minLiqDistanceSigma: 'Liquidation at least this many hold-period volatilities away.',
+  maxLossAtStopPctEquity: 'Most equity, in percent, you accept losing at your stop.',
+  maxDailyMovePctEquity: 'Largest equity swing, in percent, from a one-sigma daily move.',
+  maxRoundTripBps: 'Highest round trip in fees plus spread, in bps.',
+  maxAccuracyNeededPct: 'Highest direction accuracy, in percent, needed to break even.',
+  maxFundingBps: 'Highest funding over the hold, in bps. Default 10.',
+  maxSizePctOf24hVolume: "Largest order as a percent of a venue's 24h volume. Default 0.1.",
+  regimeCheck: 'Flag a regime against your side or a volatile one. Default on.',
+});
 
 // ── GROWTH-AGENT-SIGNIN-OAUTH-W4-R2 CH1: the `plain` metadata projection ──────────────────────────
 //
@@ -271,12 +289,6 @@ const PLAIN_OVERRIDES: ReadonlyMap<string, string> = new Map([
     'the evaluation methodology and window. The same verified aggregate the performance://signal-performance ' +
     'resource serves, callable from harnesses that bridge tools only. Defaults to the compact aggregate; use ' +
     'include for the per-asset, per-venue or recent-signal breakdowns. Read-only, no side effects.'],
-  // DECISION-CALL-V1-W2: Mr.1-approved reorder of the contract's own words (2026-10-31).
-  [PRE_TRADE_CHECK_DESCRIPTION,
-    'Returns a pre-trade check for a crypto perpetual futures order: GO, CAUTION or WAIT with reasons, the ' +
-    'cheapest venue by fees and funding rate over your hold (cross-venue), a size limit from 24h volume, funding ' +
-    'timing and the market regime. Send coin, side, size and hold time. Informational and read-only: places no ' +
-    'orders, holds no funds.'],
   [PARAM_DESC_TRADE_CALL_COIN, 'Base asset, e.g. BTC, ETH or SOL, or a US stock or ETF ticker (no USDT suffix).'],
   [PARAM_DESC_TRADE_CALL_TIMEFRAME, 'Candle timeframe, 1m to 1d. Default 15m.'],
   [PARAM_DESC_TRADE_CALL_INCLUDE_REASONING, 'Include the reasoning behind the call and its main drivers. Default true.'],

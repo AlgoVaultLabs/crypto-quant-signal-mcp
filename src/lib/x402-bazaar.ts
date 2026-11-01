@@ -44,6 +44,8 @@ import {
   PARAM_DESC_PRE_TRADE_TARGET_PCT,
   PARAM_DESC_PRE_TRADE_EQUITY_USD,
   PARAM_DESC_PRE_TRADE_ORDER_TYPE,
+  PARAM_DESC_PRE_TRADE_RULES,
+  PRE_TRADE_RULE_PARAM_DESC,
 } from '../tool-descriptions.js';
 
 /**
@@ -99,16 +101,28 @@ const DECL_SCHEMA_KEYWORDS = [
 function projectParamDecl<K extends string>(
   decl: Readonly<Record<K, Readonly<Record<string, unknown>>>>,
   descriptions: Readonly<Record<K, string>>,
+  propertyDescriptions?: Readonly<Partial<Record<K, Readonly<Record<string, string>>>>>,
 ): Record<string, unknown> {
   const properties: Record<string, Record<string, unknown>> = {};
   const required: string[] = [];
   for (const key of Object.keys(decl) as K[]) {
     const p = decl[key];
-    const values = Array.isArray(p.values) ? { enum: [...(p.values as readonly string[])] } : {};
-    const prop: Record<string, unknown> = p.type === 'string[]'
-      ? { type: 'array', items: { type: 'string', ...values } }
-      : { type: p.type, ...values };
-    for (const kw of DECL_SCHEMA_KEYWORDS) if (kw in p) prop[kw] = p[kw];
+    let prop: Record<string, unknown>;
+    if (p.type === 'object') {
+      // An object param (`rules`, DECISION-CALL-V2-W1): its properties project the same way, closed to unknown keys.
+      const nested = projectParamDecl(
+        p.properties as Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+        (propertyDescriptions?.[key] ?? {}) as Readonly<Record<string, string>>,
+      );
+      prop = { type: 'object', properties: nested.properties, additionalProperties: false };
+      if ((nested.required as string[]).length) prop.required = nested.required;
+    } else {
+      const values = Array.isArray(p.values) ? { enum: [...(p.values as readonly string[])] } : {};
+      prop = p.type === 'string[]'
+        ? { type: 'array', items: { type: 'string', ...values } }
+        : { type: p.type, ...values };
+      for (const kw of DECL_SCHEMA_KEYWORDS) if (kw in p) prop[kw] = p[kw];
+    }
     prop.description = descriptions[key];
     properties[key] = prop;
     if (p.required === true) required.push(key);
@@ -130,6 +144,7 @@ const PRE_TRADE_CHECK_PARAM_DESC: Readonly<Record<keyof typeof PRE_TRADE_CHECK_P
   targetPct: PARAM_DESC_PRE_TRADE_TARGET_PCT,
   equityUsd: PARAM_DESC_PRE_TRADE_EQUITY_USD,
   orderType: PARAM_DESC_PRE_TRADE_ORDER_TYPE,
+  rules: PARAM_DESC_PRE_TRADE_RULES,
 };
 
 /**
@@ -373,11 +388,14 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
   // from `Prompt/pre-trade-check-contract.md` § Copy (Bazaar); the input schema PROJECTS from the param
   // declaration. The output example is a subset of the W2 shape snapshot's allowed keys, filled with
   // DECISION-CALL-V1-W2 AC5's measured live sample (BTC long $10,000, defaults) — no invented values.
+  // DECISION-CALL-V2-W1: the description is v2's (`Prompt/pre-trade-check-contract-v2.md` § Copy, verbatim),
+  // `rules` projects as a closed object, and the sample carries rule_version 2 — a call with no v2 input keeps
+  // every other v1 value.
   pre_trade_check: {
     toolName: 'pre_trade_check',
     description:
-      'Pre-trade check for a perpetual-futures order an agent intends to place: returns GO / CAUTION / WAIT with machine-readable reasons, the cheapest venue across supported exchanges by taker fees and funding over the intended hold, a size limit from 24h volume, the next funding timing and the market regime. Informational only — places no orders and holds no funds.',
-    inputSchema: projectParamDecl(PRE_TRADE_CHECK_PARAM_DECL, PRE_TRADE_CHECK_PARAM_DESC),
+      "Pre-trade check of a perpetual-futures order against the caller's own rules: each rule passes or fails with its numbers, then GO / CAUTION / WAIT with machine-readable reasons. Adds isolated liquidation distance per venue and whether it hits before the stop, fees, accuracy needed to break even over the hold, funding by venue and the market regime. Informational only: places no orders and holds no funds.",
+    inputSchema: projectParamDecl(PRE_TRADE_CHECK_PARAM_DECL, PRE_TRADE_CHECK_PARAM_DESC, { rules: PRE_TRADE_RULE_PARAM_DESC }),
     example: { coin: 'BTC', side: 'long', sizeUsd: 10000, holdHours: 8 },
     output: {
       example: {
@@ -390,7 +408,7 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
         reasons: [],
         best_venue: { exchange: 'BINANCE', est_cost_bps: 11, est_cost_usd: 11, capacity_usd: 11661490.66 },
         regime: { label: 'TRENDING_UP', confidence: 46, timeframe: '4h', source_exchange: 'BINANCE' },
-        rule_version: 1,
+        rule_version: 2,
       },
     },
   },

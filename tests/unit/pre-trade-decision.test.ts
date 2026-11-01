@@ -64,19 +64,20 @@ function judge(venues: VenueMarketInput[], over: Partial<DecideInput> & { rankOv
 const codes = (d: { reasons: { code: string }[] }) => d.reasons.map((r) => r.code);
 
 describe('constants — the versioned rule', () => {
-  it('rule version 1 with the contract thresholds', () => {
-    expect(PRE_TRADE_RULE_VERSION).toBe(1);
+  it('rule version 2 (DECISION-CALL-V2-W1: your rules) with v1\'s thresholds unchanged', () => {
+    expect(PRE_TRADE_RULE_VERSION).toBe(2);
     expect([MIN_VENUE_LIQUIDITY_USD, WIDE_SPREAD_BPS, HIGH_CARRY_BPS, FUNDING_SOON_MINUTES, MIN_TIMING_SAVING_BPS,
       REGIME_AGAINST_MIN_CONFIDENCE, VOLATILE_MIN_CONFIDENCE, SIZE_MAX_PCT_OF_24H_VOLUME])
       .toEqual([1e6, 50, 10, 30, 1, 60, 70, 0.001]);
   });
-  it('exclusion order and reason severities are the contract\'s', () => {
+  it('exclusion order and reason severities are the contract\'s (v2 adds five codes, each at its contract place)', () => {
     expect([...VENUE_EXCLUSIONS]).toEqual(['feed_unavailable', 'not_listed', 'thin_liquidity', 'wide_book', 'funding_unavailable', 'fee_unknown', 'volume_unavailable']);
-    expect(Object.entries(PRE_TRADE_REASONS).filter(([, s]) => s === 'block').map(([c]) => c)).toEqual(['NO_TRADABLE_VENUE']);
+    expect(Object.entries(PRE_TRADE_REASONS).filter(([, s]) => s === 'block').map(([c]) => c)).toEqual(['NO_TRADABLE_VENUE', 'YOUR_RULE_FAILED']);
     expect(Object.entries(PRE_TRADE_REASONS).filter(([, s]) => s === 'adjust').map(([c]) => c)).toEqual(
-      ['SIZE_ABOVE_VENUE_LIMIT', 'SIZE_ABOVE_TOTAL_CAPACITY', 'FUNDING_COST_HIGH', 'FUNDING_DUE_SOON', 'REGIME_AGAINST_SIDE', 'REGIME_VOLATILE', 'UNDERLYING_CLOSED']);
+      ['SIZE_ABOVE_VENUE_LIMIT', 'SIZE_ABOVE_TOTAL_CAPACITY', 'FUNDING_COST_HIGH', 'FUNDING_DUE_SOON', 'REGIME_AGAINST_SIDE', 'REGIME_VOLATILE',
+        'LIQUIDATION_BEFORE_STOP', 'YOUR_RULE_NOT_CHECKED', 'UNDERLYING_CLOSED']);
     expect(Object.entries(PRE_TRADE_REASONS).filter(([, s]) => s === 'info').map(([c]) => c)).toEqual(
-      ['REGIME_UNAVAILABLE', 'VENUES_UNAVAILABLE', 'NEXT_FUNDING_UNKNOWN', 'FUNDING_INCOME', 'FEE_TABLE_STALE']);
+      ['REGIME_UNAVAILABLE', 'VENUES_UNAVAILABLE', 'NEXT_FUNDING_UNKNOWN', 'FUNDING_INCOME', 'FEE_TABLE_STALE', 'VOLATILITY_UNAVAILABLE', 'LIQUIDATION_UNAVAILABLE']);
   });
 });
 

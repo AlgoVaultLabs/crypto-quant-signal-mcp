@@ -4,9 +4,9 @@
   "snapshot_date": "2026-11-01",
   "captured_at_utc": "2026-11-01",
   "supersedes": "pre-trade-check-shape-snapshot-2026-10-30.json",
-  "change_class": "ADDITIVE — v2 inputs and figures (Prompt/pre-trade-check-contract-v2.md). No v1 key is removed, renamed or re-typed; a call with no v2 input carries every v1 key with its v1 value.",
-  "change_note": "Optional inputs leverage / stopPct / targetPct / equityUsd / orderType add: `inputs` (the echo of what was checked), `calc` (the decision venue's figures from src/lib/pre-trade-calc.ts: volatility over the hold, round trip with spread, accuracy needed to break even, win rate needed for the stop and target, isolated liquidation distance, percent-of-equity figures), six per-venue keys (maker / entry fee, round trip, maintenance rate, liquidation distance, liq_basis) and three assumptions sentences. Liquidation comes ONLY from a venue's own published tier table (src/lib/venue-margin-tiers.ts), read only when leverage is sent; Binance's is signed USER_DATA, so its basis is tier_table_requires_key and it is never guessed. The tool computes and checks; it never proposes a size, leverage, stop or target.",
-  "source": "src/tools/pre-trade-check.ts (runPreTradeCheck, toPreTradeCheckResponse) + src/lib/pre-trade-decision.ts + src/lib/pre-trade-calc.ts + src/lib/venue-margin-tiers.ts + src/lib/pre-trade-costs.ts + src/lib/venue-fees.ts; pre-deploy capture",
+  "change_class": "ADDITIVE — v2 inputs, rules and figures (Prompt/pre-trade-check-contract-v2.md); rule_version 1 → 2. No v1 key is removed, renamed or re-typed; a call with no v2 input carries every v1 key with its v1 value.",
+  "change_note": "Optional inputs leverage / stopPct / targetPct / equityUsd / orderType add: `inputs` (the echo of what was checked), `calc` (the decision venue's figures from src/lib/pre-trade-calc.ts: volatility over the hold, round trip with spread, accuracy needed to break even, win rate needed for the stop and target, isolated liquidation distance, percent-of-equity figures), six per-venue keys (maker / entry fee, round trip, maintenance rate, liquidation distance, liq_basis) and three assumptions sentences. Liquidation comes ONLY from a venue's own published tier table (src/lib/venue-margin-tiers.ts), read only when leverage is sent; Binance's is signed USER_DATA, so its basis is tier_table_requires_key and it is never guessed. The `rules` object (src/lib/pre-trade-rules.ts, PRE_TRADE_RULES) adds `rules` (every active rule on the decision venue, in table order: the caller's own, source `yours`, and v1's funding / size / regime thresholds plus noLiqBeforeStop as defaults, source `default`), `rules_summary` and a per-venue `your_rules`; a failed rule of the caller's is YOUR_RULE_FAILED (block → WAIT). `assumptions.size_guard_pct_of_24h_volume` shows the ACTIVE size limit. The tool computes and checks; it never proposes a size, leverage, stop or target.",
+  "source": "src/tools/pre-trade-check.ts (runPreTradeCheck, toPreTradeCheckResponse) + src/lib/pre-trade-decision.ts + src/lib/pre-trade-rules.ts + src/lib/pre-trade-calc.ts + src/lib/venue-margin-tiers.ts + src/lib/pre-trade-costs.ts + src/lib/venue-fees.ts; pre-deploy capture",
   "allowed_keys": [
     "coin",
     "side",
@@ -16,6 +16,8 @@
     "inputs",
     "decision",
     "reasons",
+    "rules",
+    "rules_summary",
     "best_venue",
     "size_limit_usd",
     "size_limit_usd_total",
@@ -42,6 +44,23 @@
   ],
   "decision_values": ["GO", "CAUTION", "WAIT"],
   "reasons_row_keys": ["code", "severity", "detail"],
+  "rules_row_keys": ["id", "source", "limit", "value", "result", "detail"],
+  "rule_ids": [
+    "maxLeverage",
+    "noLiqBeforeStop",
+    "minLiqDistanceSigma",
+    "maxLossAtStopPctEquity",
+    "maxDailyMovePctEquity",
+    "maxRoundTripBps",
+    "maxAccuracyNeededPct",
+    "maxFundingBps",
+    "maxSizePctOf24hVolume",
+    "regimeCheck"
+  ],
+  "rule_source_values": ["yours", "default"],
+  "rule_result_values": ["pass", "fail", "not_evaluated"],
+  "rules_summary_keys": ["passed", "failed", "not_evaluated"],
+  "rules_note": "`rules` lists only ACTIVE rules (sent, or a default not switched off), in rule_ids order. `limit` is a number or true; `value` is the metric read (a number, the regime label, a boolean for noLiqBeforeStop) or null when not_evaluated, whose `detail` names what to send or what is missing.",
   "best_venue_keys": ["exchange", "est_cost_bps", "est_cost_usd", "capacity_usd"],
   "split_row_keys": ["exchange", "size_usd", "est_cost_bps"],
   "timing_keys": [
@@ -94,8 +113,10 @@
     "round_trip_bps",
     "maintenance_rate",
     "liq_distance_pct",
-    "liq_basis"
+    "liq_basis",
+    "your_rules"
   ],
+  "your_rules_values": ["pass", "fail", "not_evaluated", null],
   "liq_basis_values": ["public_tier_table", "tier_table_requires_key", "tier_unavailable", "leverage_not_given"],
   "assumptions_keys": ["funding", "fees", "size_guard_pct_of_24h_volume", "volatility", "liquidation", "break_even"],
   "algovault_keys": [
@@ -114,7 +135,7 @@
   "algovault_note": "`exchange` and `venue_status` name the best venue and appear only when there is one; `upgrade_hint`, `tier_warning` and `quota` follow the caller's tier exactly as get_market_regime's envelope does.",
   "error_contract": {
     "transport": "MCP: every refusal is a structured JSON text payload with isError:true. x402 HTTP (POST /x402/pre_trade_check): the same payload with `status` as the HTTP status, unsettled.",
-    "invalid_parameter": { "status": 400, "fields": ["param"], "billed": false, "note": "v2 adds the params leverage (1-200), stopPct (0.01-50), targetPct (0.01-1000), equityUsd (> 0, <= 1e10) and orderType (market | limit)" },
+    "invalid_parameter": { "status": 400, "fields": ["param"], "billed": false, "note": "v2 adds the params leverage (1-200), stopPct (0.01-50), targetPct (0.01-1000), equityUsd (> 0, <= 1e10), orderType (market | limit) and the object rules (closed: an unknown key refuses with param rules.<key>; a value outside its rule's type or bounds likewise). On MCP the SDK's schema check may refuse first, also unbilled; on x402 HTTP ajv refuses before the payment is claimed." },
     "venue_not_supported": { "status": 400, "fields": ["requested", "supported_venues"], "billed": false },
     "quota wall (TierLimitReachedError)": { "status": null, "fields": ["limit", "resets_at", "retry_after_hours", "daily_used", "daily_limit"], "billed": false, "note": "thrown and rendered by buildTierLimitPayload exactly as get_market_regime's wall — quota-surfaces row refusal:pre_trade_check" },
     "data_unavailable": { "status": 503, "fields": ["retry_after_seconds"], "billed": false },
@@ -138,18 +159,23 @@
     "proposed_side",
     "win_rate",
     "signal_hash",
-    "descriptionRef"
+    "descriptionRef",
+    "suggested_size",
+    "suggested_leverage",
+    "suggested_stop",
+    "win_probability"
   ],
-  "forbidden_keys_note": "The contract forbids a `call`, `verdict`, `reasoning`, `price_at_signal` or any `outcome_*` key, a proposed side, and an edge / return / win-rate claim: this tool checks an order the caller already chose; it never reads or serves AlgoVault's directional call and never proposes a side. `descriptionRef` and `signal_hash` are internal identifiers.",
+  "forbidden_keys_note": "The contract forbids a `call`, `verdict`, `reasoning`, `price_at_signal` or any `outcome_*` key, a proposed side, and an edge / return / win-rate claim: this tool checks an order the caller already chose; it never reads or serves AlgoVault's directional call and never proposes a side. `descriptionRef` and `signal_hash` are internal identifiers. v2 adds: never a suggested size, leverage, stop or target, and never a probability that the trade works.",
   "consumers": [
     "MCP tools/list + tools/call (served; publicListing:false keeps it off the nav, /docs and /tools)",
     "x402 HTTP POST /x402/pre_trade_check ($0.02, Bazaar-declared input schema)",
     "GET /capabilities projection (projectCapabilities)",
-    "the knowledge bundle (response_shapes) via scripts/build-knowledge-json.mjs"
+    "the knowledge bundle (response_shapes) via scripts/build-knowledge-json.mjs",
+    "the internal pre_trade_checks log (migrations/051, DECISION-CALL-V2-W1 CH3): decision, decision venue, rules and per-venue figures of each served billed non-internal call — never on a public surface"
   ],
   "cache_contract": {
     "description": "Nothing in the response is cached per caller. The inputs are the shared venue-market-state caches (venue universes 60 s single-flight, the merged funding snapshot 30 s per adapter), the newest fresh servable bar-close regime generation and the newest fresh 1h generation for sigma (regime_snapshots, read-only), and — only when leverage is sent — each venue's maintenance tier table, cached 24 h per (venue, coin) single-flight.",
     "client_cache_refresh": "an open MCP session sees the new optional params after it re-fetches tools/list; a client that never does keeps calling with the v1 params, which still decide exactly as v1 did"
   },
-  "drift_check_command": "curl -fsS -X POST https://api.algovault.com/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' | sed -n 's/^data: //p' | jq -e '.result.tools[] | select(.name == \"pre_trade_check\") | .inputSchema.properties | has(\"leverage\") and has(\"stopPct\") and has(\"orderType\")' >/dev/null && echo SHAPE_OK"
+  "drift_check_command": "curl -fsS -X POST https://api.algovault.com/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' | sed -n 's/^data: //p' | jq -e '.result.tools[] | select(.name == \"pre_trade_check\") | .inputSchema.properties | has(\"leverage\") and has(\"stopPct\") and has(\"orderType\") and has(\"rules\")' >/dev/null && echo SHAPE_OK"
 }

@@ -21,6 +21,11 @@
  *
  * NO DIRECTION. The engine never proposes a side and never reads AlgoVault's directional call; the
  * side is the caller's own intent, and every reason is about executing THAT order.
+ *
+ * V2 (DECISION-CALL-V2-W1). The checks are rules (`pre-trade-rules.ts`): v1's funding, size and regime
+ * thresholds are that table's defaults and are re-exported below under their v1 names. `rankVenues` takes
+ * the active size limit and, optionally, a decision-venue preference; `decide` takes the decision venue's
+ * evaluated rules and turns them into reasons. Called with neither, both behave exactly as v1.
  */
 import {
   fundingEventsInHold,
@@ -32,28 +37,35 @@ import {
   type PreTradeSide,
 } from './pre-trade-costs.js';
 import { FEE_TABLE_MAX_AGE_DAYS } from './venue-fees.js';
+import {
+  activeRules,
+  evaluateRules,
+  DEFAULT_MAX_FUNDING_BPS,
+  DEFAULT_MAX_SIZE_PCT_OF_24H_VOLUME,
+  type PreTradeRuleMetrics,
+  type PreTradeRuleResult,
+} from './pre-trade-rules.js';
 
 export type { PreTradeSide };
 
 // ── The rule (a change to any value here is a new PRE_TRADE_RULE_VERSION) ─────────────────────────
 
-export const PRE_TRADE_RULE_VERSION = 1;
+/** 2: the caller's own rules, liquidation and break-even figures (DECISION-CALL-V2-W1). */
+export const PRE_TRADE_RULE_VERSION = 2;
 /** A venue whose liquidity (OI, or 24h volume where the venue has no bulk OI) is below this is excluded. */
 export const MIN_VENUE_LIQUIDITY_USD = 1_000_000;
 /** A top-of-book spread above this many bps excludes the venue (only where a book is quoted). */
 export const WIDE_SPREAD_BPS = 50;
-/** Best-venue funding at or above this many bps over the hold is FUNDING_COST_HIGH. */
-export const HIGH_CARRY_BPS = 10;
+/** Best-venue funding at or above this many bps over the hold is FUNDING_COST_HIGH — the `maxFundingBps` default. */
+export const HIGH_CARRY_BPS = DEFAULT_MAX_FUNDING_BPS;
 /** A paid funding event at most this many minutes away can be worth waiting out. */
 export const FUNDING_SOON_MINUTES = 30;
 /** …when entering after it saves at least this many bps. */
 export const MIN_TIMING_SAVING_BPS = 1;
-/** A regime against the side counts from this confidence. */
-export const REGIME_AGAINST_MIN_CONFIDENCE = 60;
-/** VOLATILE counts from this confidence. */
-export const VOLATILE_MIN_CONFIDENCE = 70;
-/** A venue's size limit: this FRACTION of its 24h USD volume (0.001 = 0.1%). */
-export const SIZE_MAX_PCT_OF_24H_VOLUME = 0.001;
+/** A regime against the side counts from these confidences — the `regimeCheck` default, defined in the rules table. */
+export { REGIME_AGAINST_MIN_CONFIDENCE, VOLATILE_MIN_CONFIDENCE } from './pre-trade-rules.js';
+/** A venue's size limit: this FRACTION of its 24h USD volume (0.001 = 0.1%) — the `maxSizePctOf24hVolume` default. */
+export const SIZE_MAX_PCT_OF_24H_VOLUME = DEFAULT_MAX_SIZE_PCT_OF_24H_VOLUME / 100;
 
 /** Exclusions, in the order they are tested — a venue carries the FIRST that fails. */
 export const VENUE_EXCLUSIONS = [
@@ -73,18 +85,23 @@ export type PreTradeReasonSeverity = 'block' | 'adjust' | 'info';
 /** Every reason code with its severity — the emission order of `decide` follows this order. */
 export const PRE_TRADE_REASONS = {
   NO_TRADABLE_VENUE: 'block',
+  YOUR_RULE_FAILED: 'block',
   SIZE_ABOVE_VENUE_LIMIT: 'adjust',
   SIZE_ABOVE_TOTAL_CAPACITY: 'adjust',
   FUNDING_COST_HIGH: 'adjust',
   FUNDING_DUE_SOON: 'adjust',
   REGIME_AGAINST_SIDE: 'adjust',
   REGIME_VOLATILE: 'adjust',
+  LIQUIDATION_BEFORE_STOP: 'adjust',
+  YOUR_RULE_NOT_CHECKED: 'adjust',
   UNDERLYING_CLOSED: 'adjust',
   REGIME_UNAVAILABLE: 'info',
   VENUES_UNAVAILABLE: 'info',
   NEXT_FUNDING_UNKNOWN: 'info',
   FUNDING_INCOME: 'info',
   FEE_TABLE_STALE: 'info',
+  VOLATILITY_UNAVAILABLE: 'info',
+  LIQUIDATION_UNAVAILABLE: 'info',
 } as const satisfies Record<string, PreTradeReasonSeverity>;
 export type PreTradeReasonCode = keyof typeof PRE_TRADE_REASONS;
 
@@ -130,6 +147,13 @@ export interface RankVenuesInput {
   sizeUsd: number;
   holdHours: number;
   nowMs: number;
+  /** V2: the active size limit as a FRACTION of 24h volume (`maxSizePctOf24hVolume` / 100); v1's when absent. */
+  sizeMaxFraction?: number;
+  /**
+   * V2: the decision-venue preference, a key compared before v1's order (lower first, element by element;
+   * ties keep v1's order). Absent: the best venue is v1's.
+   */
+  preference?: (venue: VenueEvaluation) => readonly number[];
 }
 
 /** One venue, evaluated. Every figure null when its input is missing; never a guessed 0. */
@@ -198,7 +222,7 @@ function evaluateVenue(v: VenueMarketInput, input: RankVenuesInput): VenueEvalua
 
   const liquidityUsd = asset ? usd2(Number.isFinite(asset.liquidityUsd) && asset.liquidityUsd > 0 ? asset.liquidityUsd : 0) : null;
   const volume24hUsd = asset ? positiveOrNull(asset.volume24hUsd) : null;
-  const rawCapacity = venueCapacityUsd(volume24hUsd, SIZE_MAX_PCT_OF_24H_VOLUME);
+  const rawCapacity = venueCapacityUsd(volume24hUsd, input.sizeMaxFraction ?? SIZE_MAX_PCT_OF_24H_VOLUME);
   const capacityUsd = rawCapacity === null ? null : usd2(rawCapacity);
   const sizePctOf24hVolume = volume24hUsd === null ? null : bps4((sizeUsd / volume24hUsd) * 100);
   const book = asset ? topOfBookSpread(asset) : { spreadBps: null, basis: 'unavailable' as const };
@@ -248,6 +272,26 @@ function evaluateVenue(v: VenueMarketInput, input: RankVenuesInput): VenueEvalua
 }
 
 /**
+ * V2: the first venue by `preference`, element by element; ties keep v1's order — the venues that fit the
+ * order (cheapest first), then the rest (cheapest first). The sort is stable, so with an all-equal key this
+ * is exactly v1's best.
+ */
+function preferred(
+  fits: readonly VenueEvaluation[], candidates: readonly VenueEvaluation[], preference: (venue: VenueEvaluation) => readonly number[],
+): VenueEvaluation | null {
+  const v1Order = [...fits, ...candidates.filter((c) => !fits.includes(c))];
+  const keyed = v1Order.map((venue) => ({ venue, key: preference(venue) }));
+  keyed.sort((a, b) => {
+    for (let i = 0; i < Math.max(a.key.length, b.key.length); i++) {
+      const d = (a.key[i] ?? 0) - (b.key[i] ?? 0);
+      if (d !== 0) return d;
+    }
+    return 0;
+  });
+  return keyed[0]?.venue ?? null;
+}
+
+/**
  * Evaluate every venue and pick the best: the lowest `estCostBps` among candidates whose capacity
  * fits the order, else among all candidates. Ties: higher liquidity, then input (META) order. When
  * the order is above the best venue's capacity, `split` fills candidates cheapest-first, each to its
@@ -264,7 +308,7 @@ export function rankVenues(input: RankVenuesInput): VenueRanking {
     .map(({ e }) => e);
 
   const fits = candidates.filter((c) => (c.capacityUsd as number) >= input.sizeUsd);
-  const best = fits[0] ?? candidates[0] ?? null;
+  const best = input.preference ? preferred(fits, candidates, input.preference) : (fits[0] ?? candidates[0] ?? null);
   const sizeLimitUsdTotal = candidates.length ? usd2(candidates.reduce((s, c) => s + (c.capacityUsd as number), 0)) : null;
 
   let split: SplitLeg[] | null = null;
@@ -314,6 +358,17 @@ export interface DecideInput {
   underlyingClosed: boolean;
   /** Fee rows (of the priced venues) older than the fee-table bound. */
   staleFees: readonly { exchange: string; verifiedAt: string }[];
+  /**
+   * V2: the active rules evaluated on the decision venue (`ranking.best`), or on no venue when there is none.
+   * Absent: v1's defaults, evaluated here on the best venue — exactly v1's decision.
+   */
+  rules?: readonly PreTradeRuleResult[];
+  /** V2: the active size limit, a PERCENT of 24h volume, for the size sentences; v1's when absent. */
+  sizeMaxPct?: number;
+  /** V2, true only when the call sent a v2 input: no fresh 1h volatility could be read. */
+  volatilityUnavailable?: boolean;
+  /** V2, set only when leverage was sent: the decision venue has no liquidation figure, and its basis. */
+  liquidationUnavailable?: { exchange: string; basis: string } | null;
 }
 
 export interface PreTradeTiming {
@@ -343,7 +398,43 @@ const EXCLUSION_TEXT: Readonly<Record<VenueExclusion, string>> = {
 const fmtUsd = (x: number): string => `$${Math.round(x).toLocaleString('en-US')}`;
 const fmtBps = (x: number): string => `${Number(Math.abs(x).toFixed(2))} bps`;
 const fmtHold = (h: number): string => `${Number(h.toFixed(2))}-hour hold`;
-const fmtVolumePct = `${SIZE_MAX_PCT_OF_24H_VOLUME * 100}%`;
+
+const LIQ_BASIS_TEXT: Readonly<Record<string, string>> = {
+  tier_table_requires_key: 'its maintenance tier table is published only to account holders',
+  tier_unavailable: 'its maintenance tier table could not be read for this order',
+};
+
+/**
+ * What the rules read about one venue (or about none), from the engine's own figures: funding, size and
+ * regime. The handler starts from this and adds the v2 figures, so the v1 metrics have ONE derivation.
+ */
+export function venueRuleMetrics(venue: VenueEvaluation | null, input: Pick<DecideInput, 'side' | 'sizeUsd' | 'regime'>): PreTradeRuleMetrics {
+  const r = input.regime;
+  return {
+    exchange: venue ? venue.exchange : null,
+    side: input.side,
+    sizeUsd: input.sizeUsd,
+    leverage: null,
+    stop_pct: null,
+    equity_usd: null,
+    liq_distance_pct: null,
+    liq_before_stop: null,
+    liq_distance_sigma: null,
+    loss_at_stop_pct_equity: null,
+    one_sigma_day_pct_equity: null,
+    round_trip_bps: null,
+    accuracy_needed_pct: null,
+    funding_cost_bps: venue ? venue.fundingCostBps : null,
+    size_pct_of_24h_volume: venue ? venue.sizePctOf24hVolume : null,
+    capacity_usd: venue ? venue.capacityUsd : null,
+    regime: r ? { label: r.label, confidence: r.confidence, timeframe: r.timeframe } : null,
+    sigma_available: false,
+    liq_basis: null,
+  };
+}
+
+/** `id — detail` for each rule, one sentence each. */
+const ruleList = (rules: readonly PreTradeRuleResult[]): string => rules.map((r) => `${r.id} — ${r.detail}`).join(' ');
 
 function reason(code: PreTradeReasonCode, detail: string): PreTradeReason {
   return { code, severity: PRE_TRADE_REASONS[code], detail };
@@ -373,32 +464,40 @@ function timingFor(best: VenueEvaluation, input: DecideInput): PreTradeTiming {
 
 /**
  * The reasons, in contract order, and the decision: any block → WAIT; else any adjust → CAUTION;
- * else GO.
+ * else GO. Every comparison is a rule's (`evaluateRules`): a FAILED DEFAULT keeps v1's code and sentence,
+ * a failed rule of the caller's is YOUR_RULE_FAILED, one of theirs that could not be checked is
+ * YOUR_RULE_NOT_CHECKED, and a default that could not be checked says nothing.
  */
 export function decide(input: DecideInput): DecideResult {
   const { coin, side, sizeUsd, holdHours, timeframe, ranking, regime } = input;
   const best = ranking.best;
   const reasons: PreTradeReason[] = [];
   const timing = best ? timingFor(best, input) : null;
+  const rules = input.rules ?? evaluateRules(activeRules(), venueRuleMetrics(best, input));
+  const sizePct = `${input.sizeMaxPct ?? SIZE_MAX_PCT_OF_24H_VOLUME * 100}%`;
+  const where = best ? ` on ${best.exchange}` : '';
+  const defaultFailed = (code: PreTradeRuleResult['failCode']): PreTradeRuleResult | undefined =>
+    rules.find((r) => r.source === 'default' && r.result === 'fail' && r.failCode === code);
 
   // block
   if (!best) {
     const why = ranking.venues.map((v) => `${v.exchange} ${EXCLUSION_TEXT[v.excluded ?? 'feed_unavailable']}`).join('; ');
     reasons.push(reason('NO_TRADABLE_VENUE', `No venue can take this ${side} on ${coin}: ${why}.`));
   }
+  const yoursFailed = rules.filter((r) => r.source === 'yours' && r.result === 'fail');
+  if (yoursFailed.length) {
+    reasons.push(reason('YOUR_RULE_FAILED', `${yoursFailed.length === 1 ? 'Your rule' : 'Your rules'} failed${where}: ${ruleList(yoursFailed)}`));
+  }
 
   // adjust
-  if (best && (best.capacityUsd as number) < sizeUsd) {
-    const total = ranking.sizeLimitUsdTotal as number;
-    if (total < sizeUsd) {
-      reasons.push(reason('SIZE_ABOVE_TOTAL_CAPACITY',
-        `The order of ${fmtUsd(sizeUsd)} is above the ${fmtUsd(total)} combined size limit of the priced venues (${fmtVolumePct} of each venue's 24h volume); the split fills every venue to its limit.`));
-    } else {
-      reasons.push(reason('SIZE_ABOVE_VENUE_LIMIT',
-        `The order of ${fmtUsd(sizeUsd)} is above the ${fmtUsd(best.capacityUsd as number)} size limit on ${best.exchange} (${fmtVolumePct} of its 24h volume); the split spreads it across ${ranking.split?.length ?? 0} venues.`));
-    }
+  if (best && (ranking.sizeLimitUsdTotal as number) < sizeUsd) {
+    reasons.push(reason('SIZE_ABOVE_TOTAL_CAPACITY',
+      `The order of ${fmtUsd(sizeUsd)} is above the ${fmtUsd(ranking.sizeLimitUsdTotal as number)} combined size limit of the priced venues (${sizePct} of each venue's 24h volume); the split fills every venue to its limit.`));
+  } else if (best && defaultFailed('SIZE_ABOVE_VENUE_LIMIT')) {
+    reasons.push(reason('SIZE_ABOVE_VENUE_LIMIT',
+      `The order of ${fmtUsd(sizeUsd)} is above the ${fmtUsd(best.capacityUsd as number)} size limit on ${best.exchange} (${sizePct} of its 24h volume); the split spreads it across ${ranking.split?.length ?? 0} venues.`));
   }
-  if (best && (best.fundingCostBps as number) >= HIGH_CARRY_BPS) {
+  if (best && defaultFailed('FUNDING_COST_HIGH')) {
     reasons.push(reason('FUNDING_COST_HIGH',
       `Funding on ${best.exchange} costs this ${side} about ${fmtBps(best.fundingCostBps as number)} over the ${fmtHold(holdHours)} at the current rate.`));
   }
@@ -413,16 +512,22 @@ export function decide(input: DecideInput): DecideResult {
     reasons.push(reason('FUNDING_DUE_SOON',
       `This ${side} pays the next ${timing.exchange} funding in ${timing.minutesToNextFunding} minutes; entering after it saves about ${fmtBps(timing.savingBpsIfEnteredAfterNextFunding)}.`));
   }
-  if (regime) {
-    const against = (side === 'long' && regime.label === 'TRENDING_DOWN') || (side === 'short' && regime.label === 'TRENDING_UP');
-    if (against && regime.confidence >= REGIME_AGAINST_MIN_CONFIDENCE) {
-      reasons.push(reason('REGIME_AGAINST_SIDE',
-        `The ${regime.timeframe} market regime is ${regime.label} (confidence ${regime.confidence}), against a ${side}.`));
-    }
-    if (regime.label === 'VOLATILE' && regime.confidence >= VOLATILE_MIN_CONFIDENCE) {
-      reasons.push(reason('REGIME_VOLATILE',
-        `The ${regime.timeframe} market regime is VOLATILE (confidence ${regime.confidence}); expect wide swings.`));
-    }
+  if (regime && defaultFailed('REGIME_AGAINST_SIDE')) {
+    reasons.push(reason('REGIME_AGAINST_SIDE',
+      `The ${regime.timeframe} market regime is ${regime.label} (confidence ${regime.confidence}), against a ${side}.`));
+  }
+  if (regime && defaultFailed('REGIME_VOLATILE')) {
+    reasons.push(reason('REGIME_VOLATILE',
+      `The ${regime.timeframe} market regime is VOLATILE (confidence ${regime.confidence}); expect wide swings.`));
+  }
+  const liqFailed = defaultFailed('LIQUIDATION_BEFORE_STOP');
+  if (best && liqFailed) {
+    reasons.push(reason('LIQUIDATION_BEFORE_STOP', `On ${best.exchange}: ${liqFailed.detail}`));
+  }
+  const yoursUnchecked = rules.filter((r) => r.source === 'yours' && r.result === 'not_evaluated');
+  if (yoursUnchecked.length) {
+    reasons.push(reason('YOUR_RULE_NOT_CHECKED',
+      `${yoursUnchecked.length === 1 ? 'Your rule was' : 'Your rules were'} not checked${where}: ${ruleList(yoursUnchecked)}`));
   }
   if (input.underlyingClosed) {
     reasons.push(reason('UNDERLYING_CLOSED',
@@ -448,6 +553,15 @@ export function decide(input: DecideInput): DecideResult {
   if (input.staleFees.length) {
     const rows = input.staleFees.map((f) => `${f.exchange} (${f.verifiedAt})`).join(', ');
     reasons.push(reason('FEE_TABLE_STALE', `The base-tier fee schedule for ${rows} was last verified more than ${FEE_TABLE_MAX_AGE_DAYS} days ago.`));
+  }
+  if (input.volatilityUnavailable) {
+    reasons.push(reason('VOLATILITY_UNAVAILABLE',
+      `No fresh 1h volatility is available for ${coin}, so the volatility, break-even and liquidation-distance-in-sigma figures are not computed.`));
+  }
+  if (input.liquidationUnavailable) {
+    const u = input.liquidationUnavailable;
+    reasons.push(reason('LIQUIDATION_UNAVAILABLE',
+      `Liquidation is not computed on ${u.exchange}: ${LIQ_BASIS_TEXT[u.basis] ?? LIQ_BASIS_TEXT.tier_unavailable}.`));
   }
 
   const decision: PreTradeDecision = reasons.some((r) => r.severity === 'block')

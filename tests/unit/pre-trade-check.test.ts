@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { z } from 'zod';
 
 vi.mock('../../src/lib/exchange-adapter.js', () => ({ getAdapter: vi.fn() }));
 vi.mock('../../src/lib/exchange-universe.js', async (importOriginal) => {
@@ -24,6 +25,7 @@ import {
   toPreTradeCheckResponse,
   DEFAULT_PRE_TRADE_CHECK_DEPS,
   PRE_TRADE_DATA_RETRY_AFTER_SECONDS,
+  PRE_TRADE_CHECK_SCHEMA,
   type PreTradeCheckDeps,
   type PreTradeCheckParams,
   type PreTradeCheckResponse,
@@ -34,6 +36,7 @@ import { FREE_DAILY_CALLS } from '../../src/lib/plans.js';
 import { TierLimitReachedError } from '../../src/lib/errors.js';
 import { classifyUnderlyingSession, isClosedState } from '../../src/lib/market-sessions.js';
 import { rankVenues, decide } from '../../src/lib/pre-trade-decision.js';
+import { PRE_TRADE_RULES } from '../../src/lib/pre-trade-rules.js';
 import type { ExchangeAdapter, ExchangeId, FundingData, LicenseInfo } from '../../src/types.js';
 import type { RegimeSnapshotRow, ServableGeneration } from '../../src/lib/regime-snapshots.js';
 import type { MarginTierRead } from '../../src/lib/venue-margin-tiers.js';
@@ -131,17 +134,17 @@ function allKeys(x: unknown, out: string[] = []): string[] {
   return out;
 }
 
-const TOP_KEYS = ['coin', 'side', 'size_usd', 'hold_hours', 'timeframe', 'inputs', 'decision', 'reasons', 'best_venue', 'size_limit_usd',
+const TOP_KEYS = ['coin', 'side', 'size_usd', 'hold_hours', 'timeframe', 'inputs', 'decision', 'reasons', 'rules', 'rules_summary', 'best_venue', 'size_limit_usd',
   'size_limit_usd_total', 'split', 'timing', 'regime', 'calc', 'underlying_session', 'venues', 'assumptions', 'fee_table_verified_at',
   'rule_version', 'as_of', '_algovault'];
 const VENUE_KEYS = ['exchange', 'listed', 'excluded', 'liquidity_usd', 'volume_24h_usd', 'capacity_usd', 'size_pct_of_24h_volume',
   'funding_rate', 'funding_interval_hours', 'funding_interval_basis', 'next_funding_at', 'funding_events_in_hold', 'funding_cost_bps',
   'taker_fee_bps', 'round_trip_fee_bps', 'est_cost_bps', 'est_cost_usd', 'spread_bps', 'spread_basis',
-  'maker_fee_bps', 'entry_fee_bps', 'round_trip_bps', 'maintenance_rate', 'liq_distance_pct', 'liq_basis'];
+  'maker_fee_bps', 'entry_fee_bps', 'round_trip_bps', 'maintenance_rate', 'liq_distance_pct', 'liq_basis', 'your_rules'];
 const CALC_KEYS = ['sigma_1h_pct', 'sigma_hold_pct', 'expected_move_pct', 'round_trip_bps', 'accuracy_needed_pct', 'win_rate_needed_pct',
   'random_entry_target_first_pct', 'liq_distance_pct', 'liq_distance_sigma', 'liq_before_stop', 'loss_at_stop_pct_equity', 'one_sigma_day_pct_equity'];
 /** The v1 keys, as origin/main served them (DECISION-CALL-V1-W2). */
-const V1_TOP_KEYS = TOP_KEYS.filter((k) => !['inputs', 'calc'].includes(k));
+const V1_TOP_KEYS = TOP_KEYS.filter((k) => !['inputs', 'rules', 'rules_summary', 'calc'].includes(k));
 const V1_VENUE_KEYS = VENUE_KEYS.slice(0, VENUE_KEYS.indexOf('maker_fee_bps'));
 const FORBIDDEN = ['call', 'verdict', 'reasoning', 'price_at_signal'];
 
@@ -162,7 +165,7 @@ describe('success — one decision, one unit', () => {
     expect(r.regime).toEqual({ label: 'RANGING', confidence: 50, timeframe: '4h', as_of: new Date(NOW - H).toISOString(), source_exchange: 'BINANCE' });
     expect(r.timing).toEqual({ exchange: 'BINANCE', next_funding_at: new Date(NOW + 4 * H).toISOString(), minutes_to_next_funding: 240, side_pays_next_funding: true, saving_bps_if_entered_after_next_funding: 0 });
     expect(r.underlying_session).toBe('ALWAYS_OPEN');
-    expect([r.rule_version, r.as_of, r.fee_table_verified_at]).toEqual([1, new Date(NOW).toISOString(), '2026-10-24']);
+    expect([r.rule_version, r.as_of, r.fee_table_verified_at]).toEqual([2, new Date(NOW).toISOString(), '2026-10-24']);
     expect(r.assumptions).toMatchObject({ funding: 'current rate held for the whole hold', fees: 'base-tier taker, no discounts; per-pair exceptions not modelled', size_guard_pct_of_24h_volume: 0.1 });
     expect(r._algovault).toMatchObject({ tool: 'pre_trade_check', exchange: 'BINANCE', venue_status: 'promoted', auth: expect.any(Object) });
     expect(r._algovault.quota).toBeDefined();
@@ -351,6 +354,8 @@ describe('the served shape is the one audits/pre-trade-check-shape-snapshot-2026
     expect(snap.allowed_keys).toEqual(TOP_KEYS);
     expect(snap.venues_row_keys).toEqual(VENUE_KEYS);
     expect(snap.calc_keys).toEqual(CALC_KEYS);
+    expect(snap.rule_ids).toEqual(PRE_TRADE_RULES.map((x) => x.id));
+    for (const f of ['suggested_size', 'suggested_leverage', 'suggested_stop', 'win_probability']) expect(snap.forbidden_keys, f).toContain(f);
     // Additive: every v1 key is still declared, in v1's relative order.
     expect(snap.allowed_keys.filter((k) => V1_TOP_KEYS.includes(k))).toEqual(V1_TOP_KEYS);
     expect(snap.venues_row_keys.slice(0, V1_VENUE_KEYS.length)).toEqual(V1_VENUE_KEYS);
@@ -372,6 +377,15 @@ describe('the served shape is the one audits/pre-trade-check-shape-snapshot-2026
     expect(snap.order_type_values).toContain(r.inputs.order_type);
     expect(Object.keys(r.assumptions)).toEqual(snap.assumptions_keys);
     for (const x of r.reasons) expect(Object.keys(x)).toEqual(snap.reasons_row_keys);
+    expect(r.rules.length, 'vacuity guard: the default rules must be listed').toBeGreaterThan(0);
+    for (const x of r.rules) {
+      expect(Object.keys(x)).toEqual(snap.rules_row_keys);
+      expect(snap.rule_ids).toContain(x.id);
+      expect(snap.rule_source_values).toContain(x.source);
+      expect(snap.rule_result_values).toContain(x.result);
+    }
+    expect(Object.keys(r.rules_summary)).toEqual(snap.rules_summary_keys);
+    for (const v of r.venues) expect(snap.your_rules_values).toContain(v.your_rules);
     expect(snap.decision_values).toContain(r.decision);
     for (const k of Object.keys(r._algovault)) expect(snap.algovault_keys, `_algovault.${k}`).toContain(k);
     for (const k of snap.algovault_required_keys) expect(r._algovault, `_algovault.${k}`).toHaveProperty(k);
@@ -402,8 +416,10 @@ describe('toPreTradeCheckResponse — the allow-list formatter copies, never spr
     const calc = Object.assign(Object.fromEntries(CALC_KEYS.map((k) => [k, null])), poison) as never;
     const venueCosts = ranking.venues.map(() => Object.assign(
       { makerFeeBps: 2, entryFeeBps: 5, roundTripBps: 10, maintenanceRate: null, liqDistancePct: null, liqBasis: 'leverage_not_given' as const }, poison));
+    const rules = [Object.assign({ id: 'maxFundingBps' as const, source: 'default' as const, limit: 10, value: 1, result: 'pass' as const, detail: 'x', failCode: null }, poison)];
     const r = toPreTradeCheckResponse(
       { coin: 'BTC', side: 'long', sizeUsd: 10_000, holdHours: 8, timeframe: '4h', nowMs: NOW, ranking, decided,
+        rules, sizeGuardPct: 0.1, yourRules: ranking.venues.map(() => null),
         inputs: Object.assign({ leverage: null, stop_pct: null, target_pct: null, equity_usd: null, order_type: 'market' as const }, poison),
         regime: Object.assign({ label: 'RANGING', confidence: 50, timeframe: '4h', asOfMs: NOW, sourceExchange: 'BINANCE' }, poison),
         calc, venueCosts, underlyingSession: 'ALWAYS_OPEN', feeTableVerifiedAt: '2026-10-24' },
@@ -412,6 +428,7 @@ describe('toPreTradeCheckResponse — the allow-list formatter copies, never spr
     expect(Object.keys(r)).toEqual(TOP_KEYS);
     const keys = allKeys({ ...r, _algovault: undefined });
     for (const k of Object.keys(poison)) expect(keys, k).not.toContain(k);
+    expect(keys, 'a rule\'s internal failCode never reaches the wire').not.toContain('failCode');
   });
 });
 
@@ -431,7 +448,7 @@ describe('v2 CH1 — a v1-shape call is a v1 call, plus the figures it can compu
     expect(r.decision).toBe('GO');
     expect(r.reasons).toEqual([]);
     expect(r.best_venue).toEqual({ exchange: 'BINANCE', est_cost_bps: 11, est_cost_usd: 11, capacity_usd: 10_000_000 });
-    expect(r.rule_version).toBe(1);
+    expect(r.rule_version).toBe(2);
     expect(r.inputs).toEqual({ leverage: null, stop_pct: null, target_pct: null, equity_usd: null, order_type: 'market' });
     expect(r.calc).toEqual({
       sigma_1h_pct: 0.6267, sigma_hold_pct: 1.7725, expected_move_pct: 1.4142, round_trip_bps: 10, accuracy_needed_pct: 53.54,
@@ -578,6 +595,249 @@ describe('v2 CH1 — calc on the decision venue; sigma from one fresh 1h snapsho
     expect(r.regime).toMatchObject({ label: 'RANGING', source_exchange: 'BINANCE' });
     expect([r.calc.sigma_1h_pct, r.calc.expected_move_pct, r.calc.accuracy_needed_pct]).toEqual([null, null, null]);
     expect([r.decision, r.reasons]).toEqual(['GO', []]);
+  });
+});
+
+// ── DECISION-CALL-V2-W1 CH2 — your rules, checked ──────────────────────────────────────────────
+
+const codes = (r: PreTradeCheckResponse) => r.reasons.map((x) => x.code);
+const rule = (r: PreTradeCheckResponse, id: string) => r.rules.find((x) => x.id === id);
+/** 1h generations stale (sigma unreadable), the 4h regime still fresh. */
+const noSigma = () => harness({ generation: (v, tf) => ({ exchange: v, timeframe: tf, bar_close_ms: NOW - 3 * H } as ServableGeneration) });
+
+describe('v2 CH2 — the rules on the decision venue: v1\'s checks are the defaults', () => {
+  it('no rules sent: the four defaults in table order — v1\'s three judged, noLiqBeforeStop not evaluated and silent', async () => {
+    const r = await ok(P());
+    expect(r.rules).toEqual([
+      { id: 'noLiqBeforeStop', source: 'default', limit: true, value: null, result: 'not_evaluated', detail: 'Send leverage and stopPct to check this rule.' },
+      { id: 'maxFundingBps', source: 'default', limit: 10, value: 1, result: 'pass', detail: 'Funding over the hold 1 bps is below the limit of 10 bps.' },
+      { id: 'maxSizePctOf24hVolume', source: 'default', limit: 0.1, value: 0.0001, result: 'pass', detail: 'The order is 0.0001% of 24h volume, within the limit of 0.1% ($10,000,000 on BINANCE).' },
+      { id: 'regimeCheck', source: 'default', limit: true, value: 'RANGING', result: 'pass', detail: 'The 4h regime is RANGING at confidence 50.' },
+    ]);
+    expect(r.rules_summary).toEqual({ passed: 3, failed: 0, not_evaluated: 1 });
+    expect(r.venues.map((v) => v.your_rules)).toEqual([null, null, null, null]);
+    expect([r.decision, r.reasons]).toEqual(['GO', []]);
+  });
+
+  it('a failed DEFAULT keeps its v1 code: a regime against the side is REGIME_AGAINST_SIDE (CAUTION), never YOUR_RULE_FAILED', async () => {
+    const r = await ok(P(), harness({ regimeRow: () => ({ regime: 'TRENDING_DOWN', confidence: 65 }) }));
+    expect([r.decision, codes(r)]).toEqual(['CAUTION', ['REGIME_AGAINST_SIDE']]);
+    expect(rule(r, 'regimeCheck')).toMatchObject({ source: 'default', result: 'fail', value: 'TRENDING_DOWN' });
+  });
+});
+
+describe('v2 CH2 — AC2.3: the handler', () => {
+  it('rules.maxLeverage 5 at leverage 20 → WAIT, YOUR_RULE_FAILED, one unit', async () => {
+    const lic = freeLicense();
+    const r = await ok(P({ leverage: 20, rules: { maxLeverage: 5 } }), harness(), lic);
+    expect(checkQuota(lic).used, 'a WAIT is billed one unit').toBe(1);
+    expect(r.decision).toBe('WAIT');
+    expect(r.reasons).toEqual([{ code: 'YOUR_RULE_FAILED', severity: 'block', detail: 'Your rule failed on OKX: maxLeverage — Leverage 20x is above the limit of 5x.' }]);
+    expect(r.rules[0]).toEqual({ id: 'maxLeverage', source: 'yours', limit: 5, value: 20, result: 'fail', detail: 'Leverage 20x is above the limit of 5x.' });
+    expect(r.venues.map((v) => v.your_rules)).toEqual(['fail', 'fail', 'fail', 'fail']);
+  });
+
+  it('rules.foo → invalid_parameter rules.foo, zero units, nothing read', async () => {
+    const h = harness();
+    const lic = freeLicense();
+    const out = await runPreTradeCheck(P({ rules: { foo: 1 } }), lic, h.deps);
+    expect(out.kind).toBe('refused');
+    if (out.kind === 'refused') {
+      expect([out.status, out.payload]).toMatchObject([400, { error: 'invalid_parameter', code: 'invalid_parameter', param: 'rules.foo', message: 'rules.foo is not a rule.' }]);
+      expect((out.payload as { suggested_action: string }).suggested_action).toBe(`Use only these rule keys: ${PRE_TRADE_RULES.map((x) => x.id).join(', ')}.`);
+    }
+    expect(checkQuota(lic).used).toBe(0);
+    expect([h.universeReads, h.tierReads, h.regimeReads]).toEqual([[], [], []]);
+  });
+
+  it('leverage 25 with stopPct 5 on a 0.4% tier → CAUTION + LIQUIDATION_BEFORE_STOP', async () => {
+    const r = await ok(P({ leverage: 25, stopPct: 5 }));
+    expect([r.decision, codes(r)]).toEqual(['CAUTION', ['LIQUIDATION_BEFORE_STOP']]);
+    expect(r.best_venue?.exchange).toBe('OKX');
+    expect(r.reasons[0]).toEqual({ code: 'LIQUIDATION_BEFORE_STOP', severity: 'adjust', detail: 'On OKX: Isolated liquidation at 3.6145% from entry is at or inside the 5% stop.' });
+    expect(rule(r, 'noLiqBeforeStop')).toEqual({ id: 'noLiqBeforeStop', source: 'default', limit: true, value: true, result: 'fail', detail: 'Isolated liquidation at 3.6145% from entry is at or inside the 5% stop.' });
+    expect([r.calc.liq_distance_pct, r.calc.liq_before_stop]).toEqual([3.6145, true]);
+  });
+
+  it('leverage sent while BINANCE is cheapest → the cheapest venue with a public tier table decides', async () => {
+    expect((await ok(P())).best_venue?.exchange, 'fixture: BINANCE is v1\'s best').toBe('BINANCE');
+    const r = await ok(P({ leverage: 20 }));
+    expect(r.best_venue).toEqual({ exchange: 'OKX', est_cost_bps: 11, est_cost_usd: 11, capacity_usd: 10_000_000 });
+    expect(r.venues.find((v) => v.exchange === 'BINANCE')!.liq_basis).toBe('tier_table_requires_key');
+    expect([r.timing?.exchange, r._algovault.exchange, r.calc.liq_distance_pct]).toEqual(['OKX', 'OKX', 4.6185]);
+    expect([r.decision, r.reasons]).toEqual(['GO', []]);
+  });
+});
+
+describe('v2 CH2 — the decision venue: no failed rule of yours, then the fewest not evaluated', () => {
+  it('your rules all pass on a tier-publishing venue: GO there, not_evaluated on BINANCE', async () => {
+    const r = await ok(P({ leverage: 10, stopPct: 2, equityUsd: 50_000, rules: { maxLeverage: 10, maxLossAtStopPctEquity: 1, minLiqDistanceSigma: 1 } }));
+    expect(r.best_venue?.exchange).toBe('OKX');
+    expect([r.decision, r.reasons]).toEqual(['GO', []]);
+    expect(r.venues.map((v) => v.your_rules)).toEqual(['not_evaluated', 'pass', 'pass', 'pass']);
+    expect(r.rules.map((x) => [x.id, x.source, x.result])).toEqual([
+      ['maxLeverage', 'yours', 'pass'], ['noLiqBeforeStop', 'default', 'pass'], ['minLiqDistanceSigma', 'yours', 'pass'],
+      ['maxLossAtStopPctEquity', 'yours', 'pass'], ['maxFundingBps', 'default', 'pass'], ['maxSizePctOf24hVolume', 'default', 'pass'],
+      ['regimeCheck', 'default', 'pass'],
+    ]);
+    expect(r.rules_summary).toEqual({ passed: 7, failed: 0, not_evaluated: 0 });
+  });
+
+  it('a venue where your rule fails loses to one where it passes, even when cheaper', async () => {
+    // BINANCE is strictly cheapest (no funding) but quotes a 10 bps book, so its round trip is 20 bps.
+    const h = harness({
+      funding: { BINANCE: fundRow('BINANCE', 0) },
+      universes: { BINANCE: { rows: [asset('BTC', { bidPx: 99_950, askPx: 100_050 })], failed: false } },
+    });
+    expect((await ok(P(), h)).best_venue?.exchange, 'fixture: BINANCE is v1\'s best').toBe('BINANCE');
+    const r = await ok(P({ rules: { maxRoundTripBps: 15 } }), h);
+    expect(r.venues.map((v) => [v.exchange, v.est_cost_bps, v.round_trip_bps, v.your_rules])).toEqual([
+      ['BINANCE', 10, 20, 'fail'], ['BYBIT', 12, 11, 'pass'], ['OKX', 11, 10, 'pass'], ['BITGET', 13, 12, 'pass'],
+    ]);
+    expect(r.best_venue?.exchange).toBe('OKX');
+    expect([r.decision, r.reasons]).toEqual(['GO', []]);
+  });
+
+  it('failed everywhere: still judged on v1\'s best venue, and WAIT', async () => {
+    const r = await ok(P({ rules: { maxFundingBps: 1 } }));
+    expect(rule(r, 'maxFundingBps')).toEqual({ id: 'maxFundingBps', source: 'yours', limit: 1, value: 1, result: 'fail', detail: 'Funding over the hold 1 bps is at or above the limit of 1 bps.' });
+    expect(r.best_venue?.exchange).toBe('BINANCE');
+    expect([r.decision, codes(r)]).toEqual(['WAIT', ['YOUR_RULE_FAILED']]);
+  });
+});
+
+describe('v2 CH2 — sent rules: a number replaces a default, false switches one off', () => {
+  it('regimeCheck false drops the rule and its reason; the regime is still shown', async () => {
+    const against = () => harness({ regimeRow: () => ({ regime: 'TRENDING_DOWN', confidence: 65 }) });
+    const off = await ok(P({ rules: { regimeCheck: false } }), against());
+    expect(off.rules.map((x) => x.id)).toEqual(['noLiqBeforeStop', 'maxFundingBps', 'maxSizePctOf24hVolume']);
+    expect([off.decision, off.reasons]).toEqual(['GO', []]);
+    expect(off.regime).toMatchObject({ label: 'TRENDING_DOWN', confidence: 65 });
+  });
+
+  it('regimeCheck true is yours: the same regime is YOUR_RULE_FAILED → WAIT', async () => {
+    const r = await ok(P({ rules: { regimeCheck: true } }), harness({ regimeRow: () => ({ regime: 'TRENDING_DOWN', confidence: 65 }) }));
+    expect(rule(r, 'regimeCheck')).toMatchObject({ source: 'yours', limit: true, result: 'fail' });
+    expect([r.decision, codes(r)]).toEqual(['WAIT', ['YOUR_RULE_FAILED']]);
+  });
+
+  it('noLiqBeforeStop false: liquidation inside the stop is shown in calc, not judged', async () => {
+    const r = await ok(P({ leverage: 25, stopPct: 5, rules: { noLiqBeforeStop: false } }));
+    expect(rule(r, 'noLiqBeforeStop')).toBeUndefined();
+    expect(r.calc.liq_before_stop).toBe(true);
+    expect([r.decision, r.reasons]).toEqual(['GO', []]);
+  });
+
+  it('maxSizePctOf24hVolume moves capacity, the size limit, the split and the stated size guard', async () => {
+    const r = await ok(P({ rules: { maxSizePctOf24hVolume: 0.00005 } }));
+    expect(r.assumptions.size_guard_pct_of_24h_volume).toBe(0.00005);
+    expect(r.venues.map((v) => v.capacity_usd)).toEqual([5000, 5000, 5000, 5000]);
+    expect(r.size_limit_usd).toBe(5000);
+    expect(r.split).toEqual([{ exchange: 'BINANCE', size_usd: 5000, est_cost_bps: 11 }, { exchange: 'OKX', size_usd: 5000, est_cost_bps: 11 }]);
+    expect(rule(r, 'maxSizePctOf24hVolume')).toMatchObject({ source: 'yours', limit: 0.00005, result: 'fail',
+      detail: 'The order is 0.0001% of 24h volume, above the limit of 0.00005% ($5,000 on BINANCE).' });
+    expect([r.decision, codes(r)]).toEqual(['WAIT', ['YOUR_RULE_FAILED']]);
+  });
+
+  it('YOUR_RULE_NOT_CHECKED: a rule of yours whose inputs were not sent adjusts, and names what to send', async () => {
+    const r = await ok(P({ rules: { maxLossAtStopPctEquity: 1 } }));
+    expect(r.decision).toBe('CAUTION');
+    expect(r.reasons).toEqual([{ code: 'YOUR_RULE_NOT_CHECKED', severity: 'adjust',
+      detail: 'Your rule was not checked on BINANCE: maxLossAtStopPctEquity — Send stopPct and equityUsd to check this rule.' }]);
+    expect(r.venues.map((v) => v.your_rules)).toEqual(['not_evaluated', 'not_evaluated', 'not_evaluated', 'not_evaluated']);
+    expect(r.rules_summary).toEqual({ passed: 3, failed: 0, not_evaluated: 2 });
+  });
+
+  it('null reads as not sent, inside rules too', async () => {
+    const r = await ok(P({ rules: { maxLeverage: null } as never }));
+    expect(r.rules.map((x) => x.source)).toEqual(['default', 'default', 'default', 'default']);
+    expect((await ok(P({ rules: null }))).rules).toHaveLength(4);
+  });
+});
+
+describe('v2 CH2 — VOLATILITY_ and LIQUIDATION_UNAVAILABLE appear only for a v2 input', () => {
+  it('no fresh 1h volatility: silent for a v1 call, info for a call that sends a v2 input', async () => {
+    expect(codes(await ok(P(), noSigma()))).toEqual([]);
+    const r = await ok(P({ equityUsd: 50_000 }), noSigma());
+    expect(r.reasons).toEqual([{ code: 'VOLATILITY_UNAVAILABLE', severity: 'info',
+      detail: 'No fresh 1h volatility is available for BTC, so the volatility, break-even and liquidation-distance-in-sigma figures are not computed.' }]);
+    expect(r.decision).toBe('GO');
+  });
+
+  it('a rule of yours that needs sigma, without it: YOUR_RULE_NOT_CHECKED says so', async () => {
+    const r = await ok(P({ rules: { maxAccuracyNeededPct: 60 } }), noSigma());
+    expect(rule(r, 'maxAccuracyNeededPct')).toMatchObject({ result: 'not_evaluated', detail: 'No fresh 1h volatility is available.' });
+    expect(codes(r)).toEqual(['YOUR_RULE_NOT_CHECKED', 'VOLATILITY_UNAVAILABLE']);
+  });
+
+  it('leverage sent and only BINANCE can take it: checked there, LIQUIDATION_UNAVAILABLE names why', async () => {
+    const r = await ok(P({ leverage: 20, exchanges: ['BINANCE'] }));
+    expect(r.best_venue?.exchange).toBe('BINANCE');
+    expect(r.reasons).toEqual([{ code: 'LIQUIDATION_UNAVAILABLE', severity: 'info',
+      detail: 'Liquidation is not computed on BINANCE: its maintenance tier table is published only to account holders.' }]);
+    expect(r.decision).toBe('GO');
+  });
+
+  it('no venue can take it: your rules are judged on no venue — an input-only rule still fails', async () => {
+    const thin = { rows: [asset('BTC', { notionalOI_usd: 10 })], failed: false };
+    const r = await ok(P({ leverage: 20, rules: { maxLeverage: 5 } }), harness({ universes: { BINANCE: thin, BYBIT: thin, OKX: thin, BITGET: thin } }));
+    expect([r.decision, codes(r)]).toEqual(['WAIT', ['NO_TRADABLE_VENUE', 'YOUR_RULE_FAILED']]);
+    expect(r.reasons[1].detail).toBe('Your rule failed: maxLeverage — Leverage 20x is above the limit of 5x.');
+    expect(rule(r, 'maxFundingBps')).toMatchObject({ result: 'not_evaluated', detail: 'No venue can take this order, so it was not checked.' });
+    expect(r.venues.map((v) => v.your_rules)).toEqual([null, null, null, null]);
+  });
+});
+
+describe('v2 CH2 — the outcome\'s internal facts: the decision venue\'s reference price, never on the wire', () => {
+  it('the mid where the decision venue quotes both sides, else its mark; null with no decision venue', async () => {
+    const h = harness({
+      universes: {
+        BINANCE: { rows: [asset('BTC', { markPx: 99_000 })], failed: false },
+        OKX: { rows: [asset('BTC', { bidPx: 99_990, askPx: 100_010, markPx: 1 })], failed: false },
+      },
+    });
+    const plain = await runPreTradeCheck(P(), INTERNAL, h.deps);
+    const lev = await runPreTradeCheck(P({ leverage: 20 }), INTERNAL, h.deps);
+    if (plain.kind !== 'ok' || lev.kind !== 'ok') throw new Error('expected ok');
+    expect([plain.response.best_venue?.exchange, plain.facts]).toEqual(['BINANCE', { refMidPx: 99_000 }]);
+    expect([lev.response.best_venue?.exchange, lev.facts]).toEqual(['OKX', { refMidPx: 100_000 }]);
+    for (const k of ['refMidPx', 'ref_mid_px', 'facts']) expect(allKeys(lev.response), k).not.toContain(k);
+    const thin = { rows: [asset('BTC', { notionalOI_usd: 10, markPx: 5 })], failed: false };
+    const none = await runPreTradeCheck(P(), INTERNAL, harness({ universes: { BINANCE: thin, BYBIT: thin, OKX: thin, BITGET: thin } }).deps);
+    expect(none.kind === 'ok' && none.facts).toEqual({ refMidPx: null });
+  });
+});
+
+describe('v2 CH2 — rules: closed, bounded, unbilled on refusal', () => {
+  const bad: Array<[string, unknown]> = [
+    ['rules', 'x'], ['rules', []], ['rules', 7],
+    ['rules.foo', { foo: 1 }], ['rules.maxLeverage', { maxLeverage: 0 }], ['rules.maxLeverage', { maxLeverage: 200.5 }],
+    ['rules.maxSizePctOf24hVolume', { maxSizePctOf24hVolume: 0 }], ['rules.maxAccuracyNeededPct', { maxAccuracyNeededPct: 49.9 }],
+    ['rules.regimeCheck', { regimeCheck: 'yes' }], ['rules.maxFundingBps', { maxFundingBps: false }], ['rules.noLiqBeforeStop', { noLiqBeforeStop: 1 }],
+  ];
+  for (const [param, rules] of bad) {
+    it(`${JSON.stringify(rules)} → invalid_parameter ${param}, unbilled, nothing read`, async () => {
+      const h = harness();
+      const lic = freeLicense();
+      const out = await runPreTradeCheck(P({ rules }), lic, h.deps);
+      expect(out.kind).toBe('refused');
+      if (out.kind === 'refused') expect([out.status, out.payload]).toMatchObject([400, { error: 'invalid_parameter', param }]);
+      expect(checkQuota(lic).used).toBe(0);
+      expect(h.universeReads).toEqual([]);
+    });
+  }
+
+  it('the served zod schema is closed too: an unknown rules key fails before the handler runs; every table key at its bounds passes', () => {
+    const schema = z.object(PRE_TRADE_CHECK_SCHEMA);
+    const base = { coin: 'BTC', side: 'long', sizeUsd: 1 };
+    const unknown = schema.safeParse({ ...base, rules: { foo: 1 } });
+    expect(unknown.success).toBe(false);
+    expect(JSON.stringify(unknown.error?.issues)).toContain('unrecognized_keys');
+    expect(schema.safeParse({ ...base, rules: { maxSizePctOf24hVolume: 0 } }).success).toBe(false);
+    const edges = { maxLeverage: 200, noLiqBeforeStop: false, minLiqDistanceSigma: 0, maxLossAtStopPctEquity: 100, maxDailyMovePctEquity: 0,
+      maxRoundTripBps: 1000, maxAccuracyNeededPct: 50, maxFundingBps: 10_000, maxSizePctOf24hVolume: 100, regimeCheck: true };
+    expect(Object.keys(edges)).toEqual(PRE_TRADE_RULES.map((x) => x.id));
+    expect(schema.safeParse({ ...base, rules: edges }).success).toBe(true);
   });
 });
 

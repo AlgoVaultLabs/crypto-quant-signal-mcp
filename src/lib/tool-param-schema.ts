@@ -59,6 +59,7 @@ import type { ExchangeId, RegimeType } from '../types.js';
 import { TIMEFRAMES, PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
 import { RANK_BY_VALUES, RANK_BY_ALIASES } from './rank-constants.js';
 import type { PreTradeSide } from './pre-trade-costs.js';
+import { PRE_TRADE_RULES, type PreTradeRuleId, type PreTradeRuleParam } from './pre-trade-rules.js';
 
 /**
  * Every venue that has an ADAPTER — the declared set. NOT the set the public API accepts.
@@ -363,10 +364,19 @@ void _preTradeSideCoversSides;
 export const PRE_TRADE_ORDER_TYPES = ['market', 'limit'] as const;
 
 /**
+ * `rules` (DECISION-CALL-V2-W1): the first OBJECT parameter. Its properties project from `PRE_TRADE_RULES`
+ * (`pre-trade-rules.ts`), where each rule's type and bounds are declared once; every key is optional and the
+ * object is closed to unknown keys.
+ */
+const PRE_TRADE_RULE_PROPERTIES = Object.freeze(Object.fromEntries(
+  PRE_TRADE_RULES.map((r) => [r.id, Object.freeze({ ...r.param, required: false as const })]),
+)) as Readonly<Record<PreTradeRuleId, Readonly<PreTradeRuleParam & { required: false }>>>;
+
+/**
  * Every parameter of `pre_trade_check` — its type, bounds and default — per
  * `Prompt/pre-trade-check-contract.md` § Params, plus the v2 inputs of
  * `Prompt/pre-trade-check-contract-v2.md` § Params (DECISION-CALL-V2-W1: `leverage` · `stopPct` ·
- * `targetPct` · `equityUsd` · `orderType`, all optional — a call without them decides exactly as v1).
+ * `targetPct` · `equityUsd` · `orderType` · `rules`, all optional — a call without them decides exactly as v1).
  * ONE declaration: the Zod schema in `src/tools/pre-trade-check.ts` projects from it, the handler's own
  * `invalid_parameter` checks read the same bounds (so a non-MCP caller is held to the identical contract),
  * and the Bazaar schema projects from it too.
@@ -390,6 +400,7 @@ export const PRE_TRADE_CHECK_PARAM_DECL = Object.freeze({
   targetPct: Object.freeze({ type: 'number', required: false, minimum: 0.01, maximum: 1000 }),
   equityUsd: Object.freeze({ type: 'number', required: false, exclusiveMinimum: 0, maximum: 10_000_000_000 }),
   orderType: Object.freeze({ type: 'string', required: false, values: PRE_TRADE_ORDER_TYPES, default: 'market' as const }),
+  rules: Object.freeze({ type: 'object', required: false, properties: PRE_TRADE_RULE_PROPERTIES, additionalProperties: false as const }),
 });
 
 /**

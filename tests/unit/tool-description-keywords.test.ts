@@ -49,6 +49,8 @@ import {
   PARAM_DESC_PRE_TRADE_TARGET_PCT,
   PARAM_DESC_PRE_TRADE_EQUITY_USD,
   PARAM_DESC_PRE_TRADE_ORDER_TYPE,
+  PARAM_DESC_PRE_TRADE_RULES,
+  PRE_TRADE_RULE_PARAM_DESC,
   TOP_20_KEYWORDS,
 } from '../../src/tool-descriptions.js';
 
@@ -91,6 +93,8 @@ const CANARY_ONLY: Record<string, { desc: string; params: string[] }> = {
       PARAM_DESC_PRE_TRADE_TARGET_PCT,
       PARAM_DESC_PRE_TRADE_EQUITY_USD,
       PARAM_DESC_PRE_TRADE_ORDER_TYPE,
+      PARAM_DESC_PRE_TRADE_RULES,
+      ...Object.values(PRE_TRADE_RULE_PARAM_DESC),
     ],
   },
 };

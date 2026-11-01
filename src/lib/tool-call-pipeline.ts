@@ -589,6 +589,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
           targetPct: input.targetPct as number | undefined,
           equityUsd: input.equityUsd as number | undefined,
           orderType: input.orderType as string | undefined,
+          rules: input.rules,
         },
         license,
       )));

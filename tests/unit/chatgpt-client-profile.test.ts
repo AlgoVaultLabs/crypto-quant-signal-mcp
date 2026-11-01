@@ -27,7 +27,7 @@ import { buildChatQuotaNotice } from '../../src/lib/chat-rate-limit.js';
 import { withTierWarning, withAuthState } from '../../src/lib/tier-warning.js';
 import { runScanTradeCall } from '../../src/tools/scan-trade-calls.js';
 import { getTradeSignal } from '../../src/tools/get-trade-call.js';
-import { PLAIN_OMITTED_PARAMS } from '../../src/tool-descriptions.js';
+import { PLAIN_OMITTED_PARAMS, PRE_TRADE_CHECK_DESCRIPTION, plainText } from '../../src/tool-descriptions.js';
 import type { AlgoVaultMeta, LicenseInfo } from '../../src/types.js';
 
 const ROOT = join(__dirname, '..', '..');
@@ -214,6 +214,13 @@ describe('PLAIN_METADATA_CANARY — the tools/list ChatGPT is served', () => {
       }
       expect(stripDescriptions(t.inputSchema), t.name).toEqual(expected);
     }
+  });
+
+  it('pre_trade_check passes the plain rules itself: no override, so ChatGPT is served the default description (DECISION-CALL-V2-W1 AC2.4)', () => {
+    expect(plainText(PRE_TRADE_CHECK_DESCRIPTION)).toBe(PRE_TRADE_CHECK_DESCRIPTION);
+    const p = plain.find((t) => t.name === 'pre_trade_check')!;
+    const d = dflt.find((t) => t.name === 'pre_trade_check')!;
+    expect([p.description, d.description]).toEqual([PRE_TRADE_CHECK_DESCRIPTION, PRE_TRADE_CHECK_DESCRIPTION]);
   });
 
   it('is a real projection — ChatGPT is not served the default text', () => {

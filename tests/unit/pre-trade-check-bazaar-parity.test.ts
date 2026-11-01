@@ -77,6 +77,28 @@ describe('pre_trade_check — the Bazaar input schema matches the served tools/l
     });
   }
 
+  it('rules (DECISION-CALL-V2-W1): the same ten rule keys, each with identical type, bounds and description; both closed, none required', () => {
+    const b = bazaar.properties!.rules as ObjectSchema;
+    const s = served.properties!.rules as ObjectSchema;
+    const ids = Object.keys(PRE_TRADE_CHECK_PARAM_DECL.rules.properties);
+    expect(ids).toHaveLength(10);
+    expect(Object.keys(b.properties!)).toEqual(ids);
+    expect(Object.keys(s.properties!).sort()).toEqual([...ids].sort());
+    for (const id of ids) expect(view(b.properties![id]), `rules.${id}`).toEqual(view(s.properties![id]));
+    expect([b.additionalProperties, s.additionalProperties]).toEqual([false, false]);
+    expect([b.required ?? [], s.required ?? []]).toEqual([[], []]);
+  });
+
+  it('on the HTTP rail the Bazaar schema refuses an unknown rules key and an out-of-bounds rule value before any payment', () => {
+    const validate = new Ajv({ strict: false, allErrors: true }).compile(bazaar);
+    const base = { coin: 'BTC', side: 'long', sizeUsd: 10_000 };
+    expect(validate({ ...base, rules: { foo: 1 } })).toBe(false);
+    expect(validate({ ...base, rules: { maxLeverage: 0 } })).toBe(false);
+    expect(validate({ ...base, rules: { maxSizePctOf24hVolume: 0 } })).toBe(false);
+    expect(validate({ ...base, rules: { regimeCheck: 'on' } })).toBe(false);
+    expect(validate({ ...base, rules: { maxLeverage: 5, noLiqBeforeStop: false, maxSizePctOf24hVolume: 100 } }), JSON.stringify(validate.errors)).toBe(true);
+  });
+
   it('exchanges: no default on either side; uniqueItems declared on the Bazaar, inexpressible in zod (the pinned asymmetry)', () => {
     const b = bazaar.properties!.exchanges;
     const s = served.properties!.exchanges;
