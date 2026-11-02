@@ -38,6 +38,10 @@ exports[`CH1 AC-e — model shape is stable (snapshot) > buildNavModel() matches
               "label": "Market Regime Screener",
             },
             {
+              "href": "https://algovault.com/tools#pre-trade-check",
+              "label": "Pre-Trade Check",
+            },
+            {
               "href": "https://algovault.com/tools#chat-knowledge",
               "label": "Knowledge Chat",
             },
