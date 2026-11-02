@@ -422,3 +422,24 @@ describe('source pins — what the probe can never do', () => {
     expect(src).toContain("INTERNAL_LICENSE), 'pre_trade_health') };");
   });
 });
+
+describe('the inventory row — what the canary is declared to judge', () => {
+  // DECISION-CALL-V2-AUDIT-W1: V2-W1 CH3 gave PRE_TRADE_HEALTH_VERDICT a third leg (log parity) and left the
+  // row's notes at V1-W3's two. The inventory's own rule — a wave that edits a host monitoring artifact
+  // updates its row in the same commit — covers the probe the wrapper runs: the notes are where an
+  // operator reads what FAIL and INDETERMINATE mean, so they must name every leg and quote the live thresholds.
+  const inventory = JSON.parse(readFileSync(join(__dirname, '../../ops/monitoring/monitoring-inventory.json'), 'utf8')) as {
+    artifacts: Array<{ id: string; notes?: string }>;
+  };
+  const row = inventory.artifacts.find((a) => a.id === 'pre-trade-health-canary');
+
+  it('names the log-parity leg: the table it reads, the live gap rule, and that unreadable counts are INDETERMINATE', () => {
+    expect(row).toBeDefined();
+    const notes = String(row!.notes ?? '');
+    expect(notes).toMatch(/log[ _-]parity/i);
+    expect(notes).toContain('pre_trade_checks');
+    expect(notes).toContain(`${LOG_PARITY_MAX_GAP_PCT}%`);
+    expect(notes).toContain(`at least ${LOG_PARITY_MIN_GAP}`);
+    expect(notes).toMatch(/UNREADABLE|cannot be read|could not be read/);
+  });
+});
