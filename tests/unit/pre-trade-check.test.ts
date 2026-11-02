@@ -884,3 +884,37 @@ describe('AC2 — 50 calls in one TTL, 10 concurrent cold: ≤ 1 fetch per adapt
     expect(fundingCalls.has('HL') || fundingCalls.has('GATE') || fundingCalls.has('KUCOIN') || fundingCalls.has('ASTER')).toBe(false);
   });
 });
+
+describe('DECISION-CALL-V2-AUDIT-W1 R3 — the 1h sigma read is fail-open on the paid rails', () => {
+  const DB_FAULT = 'connection terminated unexpectedly';
+
+  /** v1's regime read (4h, the default) succeeds; v2's own separate 1h sigma read rejects, as a faulting DB would. */
+  function sigmaRejects(): Harness {
+    const h = harness();
+    const inner = h.deps.readGenerationRow;
+    h.deps.readGenerationRow = async (venue, tf, bar, coin) => {
+      if (tf === '1h') throw new Error(DB_FAULT);
+      return inner(venue, tf, bar, coin);
+    };
+    return h;
+  }
+
+  it('a rejected sigma read on a call that sends a v2 input is served: sigma null, VOLATILITY_UNAVAILABLE, never a throw', async () => {
+    const r = await ok(P({ equityUsd: 50_000 }), sigmaRejects());
+    expect(r.calc.sigma_1h_pct).toBeNull();
+    expect(codes(r)).toEqual(['VOLATILITY_UNAVAILABLE']);
+    expect(r.decision).toBe('GO');
+  });
+
+  it('a rejected sigma read on a v1-shape call is served silently, as a missing row is', async () => {
+    const r = await ok(P(), sigmaRejects());
+    expect(r.calc.sigma_1h_pct).toBeNull();
+    expect(codes(r)).toEqual([]);
+  });
+
+  it("the regime read is v1's and keeps v1's failure: when every snapshot read rejects, the call still rejects", async () => {
+    const h = harness();
+    h.deps.readGenerationRow = async () => { throw new Error(DB_FAULT); };
+    await expect(runPreTradeCheck(P({ equityUsd: 50_000 }), freeLicense(), h.deps)).rejects.toThrow(DB_FAULT);
+  });
+});

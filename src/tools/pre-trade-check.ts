@@ -880,7 +880,12 @@ export async function runPreTradeCheck(
   const sampled = await deps.sampledRegimeVenues();
   const first = cheapest.best?.exchange ?? null;
   const regimeRead = freshSnapshotRow(deps, sampled, coin, timeframe, nowMs, first);
-  const sigmaRead = timeframe === SIGMA_TIMEFRAME ? regimeRead : freshSnapshotRow(deps, sampled, coin, SIGMA_TIMEFRAME, nowMs, first);
+  // v2's own second read. A rejection costs the volatility figures (sigma null; VOLATILITY_UNAVAILABLE when a v2 input
+  // was sent), never the served call — like the tier reads below. The regime read is v1's and keeps v1's failure
+  // (DECISION-CALL-V2-AUDIT-W1 R3).
+  const sigmaRead: Promise<FreshSnapshot | null> = timeframe === SIGMA_TIMEFRAME
+    ? regimeRead
+    : freshSnapshotRow(deps, sampled, coin, SIGMA_TIMEFRAME, nowMs, first).catch((): null => null);
   const tierReads = Promise.all(cheapest.venues.map((ev, i): Promise<MarginTierRead | null> => (
     leverage !== null && ev.listed === true
       ? deps.marginTierAt(ev.exchange, coin, sizeUsd, refPxs[i]).catch((): MarginTierRead => ({ rate: null, basis: 'tier_unavailable' }))
