@@ -153,20 +153,35 @@ export function verifyPreferenceToken(token: string): string | null {
 // `pre_trade_checks.caller_ref`: which caller ran a check, without the key. The `hashEmail` pattern
 // under its OWN domain, so a caller_ref is meaningless as an email hash, an unsubscribe signature or a
 // preference handle — and none of those can be presented as a caller_ref.
+//
+// DECISION-CALL-V2-PAYER-REF-W1: an x402 call has no key, so its caller is the PAYER wallet, under a domain
+// of its own — not a sub-domain of the key's. A key is whatever string the caller sent (a bearer that is not
+// key-shaped is served with its raw string as the key while Stripe is indeterminate), so a payer pre-image
+// of `CALLER_DOMAIN + 'payer:' + address` is also the pre-image of the KEY `payer:<address>`: measured equal,
+// which would let a keyless caller write under a wallet it never signed for. Two prefixes, neither one
+// extending the other, as the lifecycle domains above are.
 
 export const PRE_TRADE_CALLER_REF_VERSION = 'pc1';
 const CALLER_DOMAIN = 'pre-trade-caller-v1:';
+const PAYER_DOMAIN = 'pre-trade-payer-v1:';
 
 /**
- * `pc1:<32 hex>` for a license key: stable per key, different across keys, irreversible without the
- * estate's IP-hash key. The key is used exactly as presented — two keys that differ in case are two keys.
+ * `pc1:<32 hex>` for the caller of a check: the license KEY when there is one — exactly the bytes this
+ * returned before the payer existed, the key used as presented, so two keys that differ in case are two
+ * keys — else the x402 PAYER, lower-cased (an EVM address ignores case, so one wallet is one caller), else
+ * null. Stable per caller, different across callers, irreversible without the estate's IP-hash key.
  *
  * Never returns an unkeyed value — `resolveIpHashKey` throws when the key is unusable. Do NOT
  * catch-and-default here: a defaulted pseudonym is reversible. Its one caller, `recordPreTradeCheck`, runs
- * it inside its own fail-open, so an unusable key costs the log row, never the response.
+ * it inside its own fail-open, so an unusable key costs the log row, never the response. Null reads no key.
  */
-export function callerRef(licenseKey: string): string {
-  if (!licenseKey) throw new Error('callerRef: empty license key');
-  const mac = createHmac('sha256', resolveIpHashKey()).update(CALLER_DOMAIN + licenseKey).digest('hex').slice(0, 32);
+export function callerRef(caller: { licenseKey?: string | null; payerWallet?: string | null }): string | null {
+  if (caller.licenseKey) return callerPseudonym(CALLER_DOMAIN + caller.licenseKey);
+  if (caller.payerWallet) return callerPseudonym(PAYER_DOMAIN + caller.payerWallet.toLowerCase());
+  return null;
+}
+
+function callerPseudonym(preimage: string): string {
+  const mac = createHmac('sha256', resolveIpHashKey()).update(preimage).digest('hex').slice(0, 32);
   return `${PRE_TRADE_CALLER_REF_VERSION}:${mac}`;
 }

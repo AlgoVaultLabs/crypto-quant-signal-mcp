@@ -5,10 +5,18 @@
  * (no network), `dbQuery` is a mock that records every statement, and request_log's writer is silenced. So
  * "one row per served billed call" is measured where the row is written, with billing counted by the real
  * meter — never asserted on a stub of the writer.
+ *
+ * DECISION-CALL-V2-PAYER-REF-W1 — an x402 check is logged under its PAYER's pseudonym. The HTTP rail is driven
+ * through the real route (`mountX402HttpRoutes` → the pipeline's `requestContext.run`); the MCP rail through
+ * the real `resolveLicense` and the route's own seam (`resolvePayerWallet`), with the `/mcp` store literal
+ * pinned by source because `startHttp` is not exported (the auth-refusal-mcp precedent). Only the payment
+ * proof, its price binding and the claim's answer are levers (`pay`); off, they are the real modules.
  */
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type { ExchangeAsset } from '../../src/lib/exchange-universe.js';
 import type { RegimeSnapshotRow, ServableGeneration } from '../../src/lib/regime-snapshots.js';
 import type { VenueFundingRow } from '../../src/lib/venue-market-state.js';
@@ -45,6 +53,49 @@ vi.mock('../../src/tools/pre-trade-check.js', async (orig) => {
   };
 });
 
+/**
+ * The x402 levers (DECISION-CALL-V2-PAYER-REF-W1). Off — the default — every override below delegates to the real
+ * module, so the suites that predate the payer run exactly as they did. On: a proof verifies with `from: pay.from`
+ * and a fresh nonce, its price binding passes, the claim answers `pay.claim` (the replay lever
+ * `tests/x402-mcp-replay.test.ts` uses) and settle / unserved are counted instead of sent.
+ */
+const pay = vi.hoisted(() => ({
+  on: false,
+  from: '',
+  claim: 'CLAIMED' as 'CLAIMED' | 'ALREADY_CLAIMED' | 'INDETERMINATE',
+  nonces: 0,
+  settles: 0,
+  unserved: 0,
+}));
+vi.mock('../../src/lib/x402.js', async (orig) => {
+  const m = await orig<typeof import('../../src/lib/x402.js')>();
+  const requirement = {
+    scheme: 'exact', network: 'eip155:8453', amount: '20000', asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    payTo: '0x778A05280Fd8dB980E920fE9f31d0A8eAbD17d59', maxTimeoutSeconds: 300, extra: { name: 'USD Coin', version: '2' },
+  };
+  return {
+    ...m,
+    isX402Configured: () => pay.on || m.isX402Configured(),
+    verifyX402Payment: async (...a: Parameters<typeof m.verifyX402Payment>) => {
+      if (!pay.on) return m.verifyX402Payment(...a);
+      const nonce = `0x${(++pay.nonces).toString(16).padStart(64, 'c')}`;
+      const authorization = { from: pay.from, to: requirement.payTo, value: requirement.amount, validAfter: '0', validBefore: '9999999999', nonce };
+      return {
+        valid: true,
+        payer: pay.from,
+        _settlement: { requirements: requirement, paymentPayload: { x402Version: 2, accepted: requirement, payload: { signature: '0xsig', authorization } } },
+      };
+    },
+    paymentMatchesToolRoute: (...a: Parameters<typeof m.paymentMatchesToolRoute>) => pay.on || m.paymentMatchesToolRoute(...a),
+    settleX402Async: (...a: Parameters<typeof m.settleX402Async>) => { if (pay.on) pay.settles += 1; else m.settleX402Async(...a); },
+    markX402Unserved: (...a: Parameters<typeof m.markX402Unserved>) => { if (pay.on) pay.unserved += 1; else m.markX402Unserved(...a); },
+  };
+});
+vi.mock('../../src/lib/x402-idempotency-store.js', async (orig) => {
+  const m = await orig<typeof import('../../src/lib/x402-idempotency-store.js')>();
+  return { ...m, tryClaimPayment: async (...a: Parameters<typeof m.tryClaimPayment>) => (pay.on ? pay.claim : m.tryClaimPayment(...a)) };
+});
+
 import { dbQuery } from '../../src/lib/performance-db.js';
 import { callTool, type ValidatedToolInput } from '../../src/lib/tool-call-pipeline.js';
 import { runPreTradeCheck } from '../../src/tools/pre-trade-check.js';
@@ -59,7 +110,15 @@ import {
   _preTradeCheckLogFailuresForTest,
 } from '../../src/lib/pre-trade-check-log.js';
 import { callerRef, hashEmail, PRE_TRADE_CALLER_REF_VERSION } from '../../src/lib/lifecycle/identity.js';
-import { checkQuota, trackCall, _resetCallTrackersForTest, resetLicenseCache } from '../../src/lib/license.js';
+import {
+  checkQuota,
+  trackCall,
+  _resetCallTrackersForTest,
+  resetLicenseCache,
+  requestContext,
+  resolveLicense,
+  resolvePayerWallet,
+} from '../../src/lib/license.js';
 import { FREE_DAILY_CALLS } from '../../src/lib/plans.js';
 import type { LicenseInfo } from '../../src/types.js';
 
@@ -84,6 +143,19 @@ const MIGRATION = readFileSync(join(ROOT, 'migrations/051_pre_trade_checks.sql')
 const STORE = readFileSync(join(ROOT, 'src/lib/pre-trade-check-log.ts'), 'utf8');
 const KEY_ENV = 'ALGOVAULT_IP_HASH_KEY';
 const TEST_KEY = 'pre-trade-check-log-test-key-0123456789abcdef';
+/** Two wallets in their EIP-55 checksum form (the spec's own vectors; `viem.getAddress` agrees). */
+const PAYER_A = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+const PAYER_B = '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359';
+/**
+ * R0 — `callerRef` of three keys under TEST_KEY, from the UNEDITED function at origin/main `793362cb`
+ * (identity.ts sha256 da10cf03…) — a well-formed live key, a free key and the unexpanded-env compat string.
+ * Both key bodies are ones the secret scan exempts (its documented fixture; ≤ 4 distinct hex digits).
+ */
+const R0_KEY_REFS: ReadonlyArray<readonly [string, string]> = [
+  ['av_live_0123456789abcdef01234567', 'pc1:2404616e61e42f5e97e93a98b3fe3afb'],
+  ['av_free_abcdabcdabcdabcdabcdabcd', 'pc1:2ed3dd48efc0a4b5dc8fe431097d7621'],
+  ['${env:AV_API_KEY}', 'pc1:b5eb88ae18b8174713cf9e83d9d4d9cd'],
+];
 
 const q = vi.mocked(dbQuery);
 const inserts = () => q.mock.calls.filter((c) => /INSERT INTO pre_trade_checks/.test(String(c[0])));
@@ -162,28 +234,67 @@ describe('AC3.1 — the schema: the lazy ensure IS migrations/051, and it has no
 });
 
 describe('AC3.1 — callerRef: the hashEmail pattern under its own domain', () => {
+  const keyRef = (licenseKey: string) => callerRef({ licenseKey });
+
   it('pc1:<32 hex>, stable per key, different across keys', () => {
-    const a = callerRef('av_free_alpha');
+    const a = keyRef('av_free_alpha');
     expect(a).toMatch(new RegExp(`^${PRE_TRADE_CALLER_REF_VERSION}:[0-9a-f]{32}$`));
-    expect(callerRef('av_free_alpha')).toBe(a);
-    expect(callerRef('av_free_beta')).not.toBe(a);
-    expect(callerRef('AV_FREE_ALPHA'), 'a key is used exactly as presented').not.toBe(a);
+    expect(keyRef('av_free_alpha')).toBe(a);
+    expect(keyRef('av_free_beta')).not.toBe(a);
+    expect(keyRef('AV_FREE_ALPHA'), 'a key is used exactly as presented').not.toBe(a);
   });
 
   it('domain-separated: never the email hash of the same string, and keyed — another secret, another pseudonym', () => {
-    expect(callerRef('av_free_alpha').slice(4)).not.toBe(hashEmail('av_free_alpha').slice(4));
-    const before = callerRef('av_free_alpha');
+    expect(keyRef('av_free_alpha')!.slice(4)).not.toBe(hashEmail('av_free_alpha').slice(4));
+    const before = keyRef('av_free_alpha');
     process.env[KEY_ENV] = `${TEST_KEY}-rotated`;
-    expect(callerRef('av_free_alpha')).not.toBe(before);
+    expect(keyRef('av_free_alpha')).not.toBe(before);
   });
 
-  it('never an unkeyed value: no usable IP-hash key throws, and an empty key throws', () => {
+  it('never an unkeyed value: no usable IP-hash key throws for a key and for a payer', () => {
+    for (const caller of [{ licenseKey: 'av_free_alpha' }, { payerWallet: PAYER_A }]) {
+      delete process.env[KEY_ENV];
+      expect(() => callerRef(caller)).toThrow();
+      process.env[KEY_ENV] = 'changeme';
+      expect(() => callerRef(caller)).toThrow();
+    }
+  });
+});
+
+describe('DECISION-CALL-V2-PAYER-REF-W1 — callerRef: the license key, else the x402 payer, else null', () => {
+  it('R0: a key returns exactly the bytes it did before the payer existed — and wins over a payer', () => {
+    for (const [licenseKey, ref] of R0_KEY_REFS) {
+      expect(callerRef({ licenseKey }), licenseKey).toBe(ref);
+      expect(callerRef({ licenseKey, payerWallet: PAYER_A }), `${licenseKey} + a payer`).toBe(ref);
+    }
+  });
+
+  it('a payer is pc1:<32 hex>; its checksum and lower-case forms are one wallet, one ref; two wallets, two refs', () => {
+    const a = callerRef({ payerWallet: PAYER_A });
+    expect(a).toMatch(new RegExp(`^${PRE_TRADE_CALLER_REF_VERSION}:[0-9a-f]{32}$`));
+    expect(callerRef({ payerWallet: PAYER_A.toLowerCase() })).toBe(a);
+    expect(callerRef({ licenseKey: null, payerWallet: PAYER_A.toUpperCase().replace('0X', '0x') })).toBe(a);
+    expect(callerRef({ payerWallet: PAYER_B })).not.toBe(a);
+  });
+
+  it('a key equal to a payer string is another caller — in either case', () => {
+    for (const s of [PAYER_A, PAYER_A.toLowerCase()]) {
+      expect(callerRef({ licenseKey: s }), s).not.toBe(callerRef({ payerWallet: s }));
+    }
+  });
+
+  it('a key spelled `payer:<address>` is not that payer — a non-key-shaped bearer is served with its raw string as the key while Stripe is indeterminate', () => {
+    const lower = PAYER_A.toLowerCase();
+    expect(callerRef({ licenseKey: `payer:${lower}` })).not.toBe(callerRef({ payerWallet: lower }));
+  });
+
+  it('neither → null, without reading the IP-hash key; an empty key is no key', () => {
     delete process.env[KEY_ENV];
-    expect(() => callerRef('av_free_alpha')).toThrow();
-    process.env[KEY_ENV] = 'changeme';
-    expect(() => callerRef('av_free_alpha')).toThrow();
+    expect(callerRef({})).toBeNull();
+    expect(callerRef({ licenseKey: null, payerWallet: null })).toBeNull();
     process.env[KEY_ENV] = TEST_KEY;
-    expect(() => callerRef('')).toThrow();
+    expect(callerRef({ licenseKey: '' })).toBeNull();
+    expect(callerRef({ licenseKey: '', payerWallet: PAYER_A })).toBe(callerRef({ payerWallet: PAYER_A }));
   });
 });
 
@@ -198,7 +309,7 @@ describe('AC3.1 — one row per served, billed call, through the real pipeline',
     expect(inserts()).toHaveLength(1);
     const params = inserts()[0][1] as unknown[];
     expect(params.slice(0, 18)).toEqual([
-      new Date(NOW).toISOString(), 2, 'mcp', callerRef(lic.key!), 'BTC', 'long', 10_000, 8, '4h', 'market',
+      new Date(NOW).toISOString(), 2, 'mcp', callerRef({ licenseKey: lic.key }), 'BTC', 'long', 10_000, 8, '4h', 'market',
       null, null, null, r.decision, 'BINANCE', 0.6267, null, 100_000,
     ]);
     expect(JSON.parse(params[18] as string)).toEqual(r.rules);
@@ -216,7 +327,7 @@ describe('AC3.1 — one row per served, billed call, through the real pipeline',
     expect(creates()).toHaveLength(1);
   });
 
-  it('the x402 rail: channel httpX402, and no caller_ref — the license has no key and the payer is not threaded to the pipeline', async () => {
+  it('the x402 rail with no payer in its ctx: channel httpX402, and no caller_ref — the license has no key', async () => {
     const out = await call(X402, IN(), 'httpX402');
     await settle();
     expect(out.ok).toBe(true);
@@ -332,6 +443,122 @@ describe('AC3.1 — fail-open: a throwing insert leaves the response and billing
   });
 });
 
+describe('DECISION-CALL-V2-PAYER-REF-W1 — an x402 check is logged under its payer, on both rails', () => {
+  const ENV: Record<string, string | undefined> = {
+    X402_FACILITATOR: 'cdp', BAZAAR_DISCOVERABLE: 'true', CDP_API_KEY_ID: 'test-id', CDP_API_KEY_SECRET: 'test-secret',
+    CQS_API_KEY: undefined, // a downgraded proof falls through to the bearer lane: no operator key may answer it
+  };
+  const saved: Record<string, string | undefined> = {};
+  let server: Server | undefined;
+
+  beforeEach(() => {
+    Object.assign(pay, { on: true, from: PAYER_A, claim: 'CLAIMED', settles: 0, unserved: 0 });
+    for (const [k, v] of Object.entries(ENV)) {
+      saved[k] = process.env[k];
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  });
+  afterEach(async () => {
+    pay.on = false;
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    if (server) await new Promise<void>((r) => server!.close(() => r()));
+    server = undefined;
+  });
+
+  /** One paid POST to the REAL `/x402/pre_trade_check` route: its ctx enters the pipeline's `requestContext.run`. */
+  async function httpCall(): Promise<Response> {
+    const express = (await import('express')).default;
+    const { mountX402HttpRoutes } = await import('../../src/lib/x402-http-routes.js');
+    const app = express();
+    expect(mountX402HttpRoutes(app), 'the route must actually be mounted').toContain('/x402/pre_trade_check');
+    server = await new Promise<Server>((r) => { const s = app.listen(0, '127.0.0.1', () => r(s)); });
+    const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/x402/pre_trade_check`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-payment': 'present' },
+      body: JSON.stringify({ coin: 'BTC', side: 'long', sizeUsd: 10_000 }),
+    });
+    await new Promise((r) => setTimeout(r, 20)); // the row and the settle are fire-and-forget after the response
+    return res;
+  }
+
+  /**
+   * The `/mcp` POST for a priced tools/call, as `startHttp` runs it: `resolveLicense` bound to the tool, the payer
+   * from the route's own seam, that store installed, then the SDK handler's `callTool` with NO ctx — it inherits
+   * the store. `startHttp` is not exported, so the route's store literal is pinned by source below.
+   */
+  async function mcpCall() {
+    const resolved = await resolveLicense({ 'x-payment': 'present' }, { tool: 'pre_trade_check', oauth: true });
+    const out = await requestContext.run(
+      { license: resolved.license, sessionId: 'mcp-s', ipHash: 'mcp-h', payerWallet: resolvePayerWallet(resolved.pendingSettlement) },
+      () => callTool({ tool: 'pre_trade_check', channel: 'mcp', license: resolved.license, input: IN() }),
+    );
+    await settle();
+    return { ...resolved, out };
+  }
+
+  const theRow = (): unknown[] => {
+    expect(inserts(), 'exactly one row — none would make every caller_ref assertion vacuous').toHaveLength(1);
+    return inserts()[0][1] as unknown[];
+  };
+
+  it('HTTP rail: the paid call writes its payer\'s pc1 ref, never the address — and still settles exactly once', async () => {
+    const res = await httpCall();
+    expect(res.status).toBe(200);
+    const params = theRow();
+    expect([params[2], params[3]]).toEqual(['httpX402', callerRef({ payerWallet: PAYER_A })]);
+    expect(JSON.stringify(params).toLowerCase()).not.toContain(PAYER_A.slice(2).toLowerCase());
+    expect([pay.settles, pay.unserved]).toEqual([1, 0]);
+  });
+
+  it('HTTP rail: a proof whose `from` is not an address writes NULL, and the paid path is unchanged', async () => {
+    pay.from = 'not-an-address';
+    const res = await httpCall();
+    expect(res.status).toBe(200);
+    expect(theRow()[3]).toBeNull();
+    expect([pay.settles, pay.unserved]).toEqual([1, 0]);
+  });
+
+  it('MCP rail: the paid call writes its payer\'s pc1 ref', async () => {
+    const { license, pendingSettlement, out } = await mcpCall();
+    expect([license.tier, pendingSettlement !== undefined, out.ok]).toEqual(['x402', true, true]);
+    const params = theRow();
+    expect([params[2], params[3]]).toEqual(['mcp', callerRef({ payerWallet: PAYER_A })]);
+  });
+
+  it('MCP rail: a downgraded proof (its nonce replayed) is served free and writes NULL — its wallet is never stamped', async () => {
+    pay.claim = 'ALREADY_CLAIMED';
+    const { x402Downgrade, license, pendingSettlement, out } = await mcpCall();
+    expect([x402Downgrade?.reason, license.tier, license.key, pendingSettlement, out.ok]).toEqual(['replayed', 'free', null, undefined, true]);
+    expect(theRow()[3]).toBeNull();
+  });
+
+  it('MCP rail: an unusable IP-hash key costs only the row — the paid call is still served', async () => {
+    delete process.env[KEY_ENV];
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { out } = await mcpCall();
+    expect(out.ok).toBe(true);
+    expect([inserts().length, _preTradeCheckLogFailuresForTest()]).toEqual([0, 1]);
+    err.mockRestore();
+  });
+
+  it('the /mcp route derives the payer from resolveLicense\'s settlement and stamps it into the store it runs the call in', () => {
+    const INDEX = readFileSync(join(ROOT, 'src/index.ts'), 'utf8');
+    const start = INDEX.indexOf("app.all('/mcp', express.json()");
+    const end = INDEX.indexOf('mountX402HttpRoutes(app)', start);
+    expect(start, 'the /mcp route registration moved — re-anchor this pin').toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const route = INDEX.slice(start, end);
+    const iResolved = route.indexOf('const { license, pendingSettlement, x402Downgrade } = isPricedTool');
+    const iPayer = route.indexOf('const payerWallet = resolvePayerWallet(pendingSettlement);');
+    const iRun = route.indexOf('await requestContext.run({ license,');
+    expect(iResolved).toBeGreaterThan(-1);
+    expect(iPayer, 'the payer comes from resolveLicense\'s settlement').toBeGreaterThan(iResolved);
+    expect(iRun, 'and is stamped into the store installed after it').toBeGreaterThan(iPayer);
+    const store = route.slice(iRun, route.indexOf('}, async () => {', iRun));
+    expect(store.split(/[{},]/).map((s) => s.trim())).toContain('payerWallet');
+  });
+});
+
 describe('the row projection and the parity reads', () => {
   it('toPreTradeCheckLogRow names every column and nothing else — no equity, no key, at any depth', async () => {
     const out = await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000, equityUsd: 50_000, leverage: 10 }, INTERNAL, testDeps.make!());
@@ -343,6 +570,10 @@ describe('the row projection and the parity reads', () => {
     walk(row);
     for (const k of keys) expect(k, k).not.toMatch(/equity|key|address|wallet|payer|(^|_)ip($|_)/);
     expect(JSON.stringify(row)).not.toContain('av_free_row');
+    // An x402 row: the payer's pseudonym, never the address in either case.
+    const paid = toPreTradeCheckLogRow({ response: out.response, facts: out.facts, channel: 'httpX402', licenseKey: null, payerWallet: PAYER_A });
+    expect(paid.caller_ref).toBe(callerRef({ payerWallet: PAYER_A }));
+    expect(JSON.stringify(paid).toLowerCase()).not.toContain(PAYER_A.slice(2).toLowerCase());
   });
 
   it('adoption probes both relations with to_regclass and issues no DDL; true marks the ensure done', async () => {

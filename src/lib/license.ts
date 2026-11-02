@@ -139,6 +139,17 @@ export interface RequestContext {
    * request was not a tool call at all. Absence therefore means "nothing was served", never "served".
    */
   toolOutcome?: ToolOutcome;
+
+  /**
+   * DECISION-CALL-V2-PAYER-REF-W1 — the wallet that paid for this request: `extractPayerWallet` of the
+   * VERIFIED x402 settlement, resolved where that settlement is in scope (the `/mcp` POST layer, through
+   * `resolvePayerWallet`; the HTTP rail's `callTool` ctx, the same value its claim recorded) and read by the
+   * pre_trade_check row, which pseudonymises it into `pre_trade_checks.caller_ref` and never stores it.
+   *
+   * Absent on keyed, free and downgraded calls — `resolveLicense` returns no settlement for a downgraded
+   * proof — and on a paid one whose payload names no well-formed `from` (the extractor's fail-open).
+   */
+  payerWallet?: string;
 }
 
 /** @see RequestContext.toolOutcome */
@@ -332,6 +343,21 @@ export function getRequestIsBackground(): boolean {
 export interface PendingSettlement {
   paymentPayload: unknown;
   requirements: unknown;
+}
+
+/**
+ * DECISION-CALL-V2-PAYER-REF-W1 — the payer the `/mcp` POST stamps into its request context: the wallet of the
+ * verified settlement `resolveLicense` returned, or nothing. PURE, and the route calls it exactly as its tests
+ * do, like `resolveBackgroundPriority` above. A downgraded proof arrives here with no settlement, so its wallet
+ * is never stamped.
+ */
+export function resolvePayerWallet(pendingSettlement: PendingSettlement | undefined): string | undefined {
+  return pendingSettlement ? extractPayerWallet(pendingSettlement.paymentPayload) : undefined;
+}
+
+/** The x402 payer of the current request; `undefined` off the paid rails. @see RequestContext.payerWallet */
+export function getRequestPayerWallet(): string | undefined {
+  return requestContext.getStore()?.payerWallet;
 }
 
 /**

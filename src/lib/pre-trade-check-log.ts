@@ -15,9 +15,10 @@
  *           table (`to_regclass`) and never reaches the lazy ensure.
  *
  * WHAT A ROW NEVER HOLDS: equity, a raw license key, a wallet address or an IP. The caller is `caller_ref`,
- * `callerRef(key)` (lifecycle/identity.ts — the hashEmail pattern under its own domain); a keyless or x402
- * call carries NULL. The row names every column from the served response — never a spread — so a field
- * added to the response cannot reach the log without being named here.
+ * `callerRef({ licenseKey, payerWallet })` (lifecycle/identity.ts — the hashEmail pattern under its own
+ * domains): the license key, else the x402 payer (DECISION-CALL-V2-PAYER-REF-W1), else NULL — a keyless free
+ * call. The row names every column from the served response — never a spread — so a field added to the
+ * response cannot reach the log without being named here.
  *
  * PG-targeted ($N placeholders, `::jsonb`): `pre_trade_check` is `residency: 'hosted'`, refused before
  * dispatch on a local install, so this table only ever lives in the hosted Postgres.
@@ -122,6 +123,9 @@ export interface PreTradeCheckLogSource {
   channel: string;
   /** The caller's license key: pseudonymised here, never stored. Null for a keyless or x402 call. */
   licenseKey: string | null;
+  /** The x402 payer wallet (`getRequestPayerWallet()`): the caller when there is no key — pseudonymised here,
+   *  never stored. Absent off the paid rails. */
+  payerWallet?: string | null;
   /** The handler's internal facts (`outcome.facts`; `refMidPx` is the decision venue's reference price) —
    *  handed over unread, so a missing or malformed one fails inside the catch, never at the call site. */
   facts: PreTradeCheckFacts;
@@ -134,7 +138,7 @@ export function toPreTradeCheckLogRow(src: PreTradeCheckLogSource): PreTradeChec
     checked_at: r.as_of,
     rule_version: r.rule_version,
     channel: src.channel,
-    caller_ref: src.licenseKey ? callerRef(src.licenseKey) : null,
+    caller_ref: callerRef({ licenseKey: src.licenseKey, payerWallet: src.payerWallet }),
     coin: r.coin,
     side: r.side,
     size_usd: r.size_usd,

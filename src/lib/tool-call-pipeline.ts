@@ -49,6 +49,7 @@ import {
   getRequestSource,
   getRequestIsBackground,
   getRequestRegimeFundingDegraded,
+  getRequestPayerWallet,
   setRequestToolOutcome,
   recordAhaMilestoneCrossing,
   requestClientProfile,
@@ -584,6 +585,8 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     // been. The outcome is handed over UNREAD — every read of it happens inside the logger's catch, so a log
     // fault can never turn a served call into a 500. A refusal, the quota wall (a throw) and an internal
     // caller write nothing; the health probe calls the engine directly and never reaches this row.
+    // DECISION-CALL-V2-PAYER-REF-W1: the row runs inside the request scope on both x402 rails (the `/mcp` POST
+    // store; the HTTP rail's ctx, entered below), so it reads the payer there and hands it over beside the key.
     run: async (input, license, attribute, served, channel) => {
       const out = await runAsCaller(processScopedTag('pre_trade_check'), () => attribute(served, () => runPreTradeCheck(
         {
@@ -606,7 +609,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
         return { kind: 'refused', payload: out.payload as unknown as Record<string, unknown>, http: { status: out.status } };
       }
       if (license.tier !== 'internal') {
-        void recordPreTradeCheck({ response: out.response, facts: out.facts, channel, licenseKey: license.key });
+        void recordPreTradeCheck({ response: out.response, facts: out.facts, channel, licenseKey: license.key, payerWallet: getRequestPayerWallet() });
       }
       return { kind: 'ok', result: out.response };
     },

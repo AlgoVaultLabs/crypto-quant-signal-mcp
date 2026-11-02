@@ -62,7 +62,7 @@ import {
 import { recordNonPublicVenue } from './lib/non-public-venue-counter.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground, getRequestRegimeFundingDegraded, getRequestToolOutcome, requestClientProfile } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, isInternalRateLimitExempt, recordAhaMilestoneCrossing, resolveBackgroundPriority, resolvePayerWallet, getRequestIsBackground, getRequestRegimeFundingDegraded, getRequestToolOutcome, requestClientProfile } from './lib/license.js';
 import { projectToolMetadata } from './lib/tool-metadata-projection.js';
 import { regimeSuccessVerdict, regimeErrorVerdict } from './lib/regime-request-verdict.js';
 import { callTool, toMcpToolResult, type ValidatedToolInput } from './lib/tool-call-pipeline.js';
@@ -3946,13 +3946,17 @@ async function startHttp() {
       license.tier,
     );
 
+    // DECISION-CALL-V2-PAYER-REF-W1: the x402 payer, resolved ONCE here from the settlement resolveLicense
+    // returned (none on a downgraded proof), for the pre_trade_check log's caller_ref.
+    const payerWallet = resolvePayerWallet(pendingSettlement);
+
     // Run the entire request handling inside AsyncLocalStorage context
     // so tool handlers read the correct per-request license
     // OPS-CLIENT-ATTRIBUTION-W1: thread the raw UA — the SAME string classifyTraffic just
     // consumed for `requestAuthenticity` — so logRequest stamps user_agent + client_name from
     // one value. Previously the UA was read here and discarded, leaving a heavy caller
     // classifiable but unnameable (30 candidate hashes missed in OPS-TOP-IP-FORENSICS-W1).
-    await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, userAgent: req.headers['user-agent'] ?? null, source: attributionSource, background: backgroundPriority }, async () => {
+    await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, userAgent: req.headers['user-agent'] ?? null, source: attributionSource, background: backgroundPriority, payerWallet }, async () => {
       try {
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
 

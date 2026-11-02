@@ -459,12 +459,14 @@ export function mountX402HttpRoutes(app: Express): string[] {
       // by hand here, written OUTSIDE the scope exactly as before (R-6 / Q-PIPE-1 condition 3: no
       // confidence, no HOLD-capture quartet, no user agent on an x402 row). Payment semantics stay
       // in this file (R-2): the claim above, the settle below.
+      // DECISION-CALL-V2-PAYER-REF-W1: the payer the claim above recorded rides the ctx into that scope, for
+      // the pre_trade_check log's caller_ref. Never a request_log field: the twin projection names its own.
       const call = await callTool({
         tool,
         input,
         channel: 'httpX402',
         license,
-        ctx: { sessionId, ipHash, isAutomated: authenticity.is_automated },
+        ctx: { sessionId, ipHash, isAutomated: authenticity.is_automated, payerWallet },
       });
       // DECISION-CALL-V1-W3 — the ONE settle decision `/mcp` also makes: only a SERVED call settles,
       // HOLD included (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A — byte-for-byte the MCP rule, which
