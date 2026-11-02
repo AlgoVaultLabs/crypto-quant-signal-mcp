@@ -30,7 +30,7 @@ const DOCS = `${APEX}/docs`;
 const TG_BOT = 'https://t.me/algovaultofficialbot'; // NAV Build-Rule 4: the real, grepped handle — never invented.
 
 /** How many Tools the Platform mega-menu features before the "See all tools →" link. */
-export const FEATURED_TOOLS = 6;
+export const FEATURED_TOOLS = 7;
 
 /**
  * Registry channel keys that are marketplace/settlement RAILS, not user-facing "how you
@@ -103,6 +103,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_market_regime: 'Market Regime',
   scan_trade_calls: 'Trade Call Scanner',
   scan_market_regimes: 'Market Regime Screener',
+  pre_trade_check: 'Pre-Trade Check',
   scan_funding_arb: 'Funding Arbitrage',
   chat_knowledge: 'Knowledge Chat',
   search_knowledge: 'Knowledge Search',

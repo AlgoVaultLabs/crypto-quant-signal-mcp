@@ -435,6 +435,180 @@
           }
         }
       }
+    },
+    {
+      "name": "pre_trade_check",
+      "description": "Returns a pre-trade check of a crypto perpetual futures order against your own rules: each passes or fails with its numbers, then GO, CAUTION or WAIT. Adds isolated liquidation distance, whether it hits before your stop, fees, accuracy needed to break even over your hold, funding by venue (cross-venue) and the regime. Read-only: places no orders.",
+      "url": "https://api.algovault.com/mcp",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "coin": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20,
+            "description": "Asset symbol, e.g. BTC, ETH, SOL."
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "long",
+              "short"
+            ],
+            "description": "Direction of the order you intend to place: long or short."
+          },
+          "sizeUsd": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 100000000,
+            "description": "Order notional in USD, e.g. 10000."
+          },
+          "holdHours": {
+            "type": "number",
+            "minimum": 0.25,
+            "maximum": 720,
+            "default": 8,
+            "description": "Expected holding time in hours (default 8); sets the funding cost window."
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "4h",
+              "1d"
+            ],
+            "default": "4h",
+            "description": "Market-regime timeframe: 1h, 4h or 1d (default 4h)."
+          },
+          "exchanges": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "HL",
+                "BINANCE",
+                "BYBIT",
+                "OKX",
+                "BITGET",
+                "ASTER",
+                "BINGX",
+                "GATE",
+                "HTX",
+                "KUCOIN",
+                "MEXC",
+                "PHEMEX",
+                "WHITEBIT",
+                "XT",
+                "WEEX"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 15,
+            "description": "Only compare these venues (default: every supported venue)."
+          },
+          "leverage": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Isolated leverage you will use, e.g. 10. Enables the liquidation checks."
+          },
+          "stopPct": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 50,
+            "description": "Stop-loss distance from entry in percent, e.g. 2."
+          },
+          "targetPct": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 1000,
+            "description": "Target distance from entry in percent, e.g. 4."
+          },
+          "equityUsd": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 10000000000,
+            "description": "Account equity in USD. Enables the percent-of-equity rules."
+          },
+          "orderType": {
+            "type": "string",
+            "enum": [
+              "market",
+              "limit"
+            ],
+            "default": "market",
+            "description": "market (taker entry) or limit (maker entry). Default market."
+          },
+          "rules": {
+            "type": "object",
+            "properties": {
+              "maxLeverage": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 200,
+                "description": "Highest leverage you allow."
+              },
+              "noLiqBeforeStop": {
+                "type": "boolean",
+                "description": "Fail if liquidation would come before your stop. Default on."
+              },
+              "minLiqDistanceSigma": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 50,
+                "description": "Liquidation at least this many hold-period volatilities away."
+              },
+              "maxLossAtStopPctEquity": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100,
+                "description": "Most equity, in percent, you accept losing at your stop."
+              },
+              "maxDailyMovePctEquity": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100,
+                "description": "Largest equity swing, in percent, from a one-sigma daily move."
+              },
+              "maxRoundTripBps": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000,
+                "description": "Highest round trip in fees plus spread, in bps."
+              },
+              "maxAccuracyNeededPct": {
+                "type": "number",
+                "minimum": 50,
+                "maximum": 100,
+                "description": "Highest direction accuracy, in percent, needed to break even."
+              },
+              "maxFundingBps": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000,
+                "description": "Highest funding over the hold, in bps. Default 10."
+              },
+              "maxSizePctOf24hVolume": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 100,
+                "description": "Largest order as a percent of a venue's 24h volume. Default 0.1."
+              },
+              "regimeCheck": {
+                "type": "boolean",
+                "description": "Flag a regime against your side or a volatile one. Default on."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Your rules, each key optional. A rule of yours that fails returns WAIT."
+          }
+        },
+        "required": [
+          "coin",
+          "side",
+          "sizeUsd"
+        ]
+      }
     }
   ],
   "author": "AlgoVault Labs",

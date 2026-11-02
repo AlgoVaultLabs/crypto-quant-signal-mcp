@@ -167,7 +167,7 @@
   ],
   "forbidden_keys_note": "The contract forbids a `call`, `verdict`, `reasoning`, `price_at_signal` or any `outcome_*` key, a proposed side, and an edge / return / win-rate claim: this tool checks an order the caller already chose; it never reads or serves AlgoVault's directional call and never proposes a side. `descriptionRef` and `signal_hash` are internal identifiers. v2 adds: never a suggested size, leverage, stop or target, and never a probability that the trade works.",
   "consumers": [
-    "MCP tools/list + tools/call (served; publicListing:false keeps it off the nav, /docs and /tools)",
+    "MCP tools/list + tools/call (served; publicly listed since DOCS-PRE-TRADE-CHECK-LISTING-W1: the nav, /docs#pre-trade-check, /tools, llms.txt and the LobeHub manifest)",
     "x402 HTTP POST /x402/pre_trade_check ($0.02, Bazaar-declared input schema)",
     "GET /capabilities projection (projectCapabilities)",
     "the knowledge bundle (response_shapes) via scripts/build-knowledge-json.mjs",

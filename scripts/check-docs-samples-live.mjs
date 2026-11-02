@@ -255,6 +255,30 @@ export const PROBES = [
       return f;
     },
   },
+  {
+    // DOCS-PRE-TRADE-CHECK-LISTING-W1. The THIRD `POST /mcp` sample, bound by `source` exactly as P6 is.
+    // The sample sends `rules: {maxLeverage: 10}`, so the rule must come back as the caller's own: a
+    // `rules` array that silently dropped the caller's key would still carry every documented field.
+    id: 'P9', method: 'POST', path: '/mcp', source: 'pre-trade-check.html',
+    what: 'the pre-trade check sample returns its decision and checks the rule it sent',
+    accept: ACCEPT_BOTH,
+    assert(res) {
+      const f = [];
+      if (res.status !== 200) f.push(`status ${res.status} != 200`);
+      const text = res.json?.result?.content?.[0]?.text;
+      if (typeof text !== 'string') { f.push('no result.content[0].text — the sample did not return a tool result'); return f; }
+      let body;
+      try { body = JSON.parse(text); } catch { f.push('result.content[0].text is not JSON — the documented double-parse is wrong'); return f; }
+      if (res.json?.result?.isError) { f.push(`the documented sample was refused: ${body?.code ?? body?.error ?? 'unknown'} — ${body?.message ?? ''}`); return f; }
+      for (const k of ['decision', 'reasons', 'rules', 'rules_summary', 'calc', 'venues', 'rule_version']) {
+        if (!(k in body)) f.push(`response is missing documented key \`${k}\``);
+      }
+      if (!['GO', 'CAUTION', 'WAIT'].includes(body.decision)) f.push(`decision ${JSON.stringify(body.decision)} is not GO, CAUTION or WAIT`);
+      const sent = Array.isArray(body.rules) ? body.rules.find((r) => r?.id === 'maxLeverage') : undefined;
+      if (sent?.source !== 'yours') f.push('the sample sends rules.maxLeverage, but `rules` carries no maxLeverage row with source `yours`');
+      return f;
+    },
+  },
 ];
 
 /**
@@ -824,6 +848,21 @@ export function selfTest() {
     status: 200,
     json: { batch_count: 131, batches: Array.from({ length: 100 }, () => ({ batch_id: 1, merkle_root: 'r', signal_count: 2, tx_hash: 't', block_number: 3, published_at: 'p', basescanUrl: 'u' })) },
   }).length, 0);
+  const ptc = (over) => ({
+    status: 200,
+    json: { result: { content: [{ text: JSON.stringify({
+      decision: 'GO', reasons: [], rules: [{ id: 'maxLeverage', source: 'yours', limit: 10, value: 5, result: 'pass', detail: 'x' }],
+      rules_summary: { passed: 1, failed: 0, not_evaluated: 0 }, calc: {}, venues: [], rule_version: 2, ...over,
+    }) }] } },
+  });
+  check('P9 accepts a decision that checked the sent rule', P.P9.assert(ptc({})).length, 0);
+  check('P9 flags a response missing `rules_summary`', P.P9.assert(ptc({ rules_summary: undefined })).length, 1);
+  check('P9 flags a decision outside GO/CAUTION/WAIT', P.P9.assert(ptc({ decision: 'BUY' })).length, 1);
+  check('P9 flags a `rules` array that lost the caller\'s key — every field still present',
+    P.P9.assert(ptc({ rules: [{ id: 'maxFundingBps', source: 'default', limit: 10, value: 1, result: 'pass', detail: 'x' }] })).length, 1);
+  check('P9 flags the sent rule served as a default', P.P9.assert(ptc({ rules: [{ id: 'maxLeverage', source: 'default' }] })).length, 1);
+  const refused = { status: 200, json: { result: { isError: true, content: [{ text: JSON.stringify({ code: 'TIER_LIMIT_REACHED', message: 'm' }) }] } } };
+  check('P9 flags a REFUSED sample, naming the code', /TIER_LIMIT_REACHED/.test(P.P9.assert(refused).join()), true);
 
   // ── the BYPASSED SEAM ──────────────────────────────────────────────────────
   // Every scenario above replaces the extractor, so nothing has exercised it. Assert IDENTITY, not
@@ -848,6 +887,12 @@ export function selfTest() {
     const unkeyed = resolveProbes(corpus.calls, PROBES.map((p) => ({ ...p, source: undefined })));
     check('without the source key P6 binds to ANOTHER partial (the bug it prevents)',
       unkeyed.find((r) => r.probe.id === 'P6')?.match?.source !== 'scan-market-regimes.html', true);
+    const p9 = resolved.find((r) => r.probe.id === 'P9');
+    check('bypassed artifact: P9 binds to its OWN partial', p9?.match?.source, 'pre-trade-check.html');
+    check('bypassed artifact: P9 executes the pre-trade check sample', /"name":"pre_trade_check"/.test(p9?.match?.body ?? ''), true);
+    check('bypassed artifact: P9 sample sends the rule P9 asserts', /"rules":\{"maxLeverage":/.test(p9?.match?.body ?? ''), true);
+    check('without the source key P9 binds to ANOTHER partial (the bug it prevents)',
+      unkeyed.find((r) => r.probe.id === 'P9')?.match?.source !== 'pre-trade-check.html', true);
   }
 
   // ── P7 — proven fallible on every direction it claims to check ─────────────
@@ -1281,6 +1326,7 @@ async function main() {
     { tool: 'get_trade_call', anchor: 'get-trade-call', body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_trade_call', arguments: { coin: 'BTC', timeframe: '1h' } } } },
     { tool: 'scan_trade_calls', anchor: 'scan-trade-calls', body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'scan_trade_calls', arguments: { topN: 5, timeframe: '1h', limit: 3 } } } },
     { tool: 'scan_market_regimes', anchor: 'scan-market-regimes', body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'scan_market_regimes', arguments: { exchange: 'BINANCE', timeframe: '1h', limit: 2 } } } },
+    { tool: 'pre_trade_check', anchor: 'pre-trade-check', body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'pre_trade_check', arguments: { coin: 'BTC', side: 'long', sizeUsd: 10000 } } } },
   ];
   const documented = {};
   for (const e of ENVELOPE) {

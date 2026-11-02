@@ -40,13 +40,14 @@ const feat = (over: Partial<FeatureSpec> & { name: string }): FeatureSpec => ({
 });
 
 describe('CH1 AC-a — public tool count = allToolNames() minus aliases minus the HELD tools', () => {
-  it('publicToolNames() = 7 canonical (equities excluded, no aliases)', () => {
+  it('publicToolNames() = 8 canonical (equities excluded, no aliases)', () => {
     expect(publicToolNames()).toEqual([
       'get_trade_call',
       'get_market_regime',
       'scan_funding_arb',
       'scan_trade_calls',
       'scan_market_regimes',
+      'pre_trade_check',
       'chat_knowledge',
       'search_knowledge',
     ]);
@@ -68,15 +69,15 @@ describe('CH1 AC-a — public tool count = allToolNames() minus aliases minus th
     expect(publicToolNames()).toEqual(canonicalListed);
   });
 
-  it('the HELD set is exactly the two equities plus get_track_record and pre_trade_check', () => {
+  it('the HELD set is exactly the two equities plus get_track_record', () => {
     // Equities: the standing public-copy HOLD (NAV-PLATFORM-GENERATOR-W1 A4).
     // get_track_record: LIVE on tools/list and /capabilities, kept off nav + /tools this
     // wave only because listing it would regenerate landing/** and docs/**, outside
     // DEV-TRACK-RECORD-TOOL-PARITY-W1's declared firewall. Flip in the follow-up wave.
-    // scan_market_regimes was held the same way until DOCS-MARKET-REGIME-SCREENER-W1 listed it.
-    // pre_trade_check: live on tools/list since DECISION-CALL-V1-W2, held until DECISION-CALL-V1-W3 lists it.
+    // scan_market_regimes was held the same way until DOCS-MARKET-REGIME-SCREENER-W1 listed it,
+    // and pre_trade_check until DOCS-PRE-TRADE-CHECK-LISTING-W1 did.
     expect(FEATURE_REGISTRY.filter((f) => f.publicListing === false).map((f) => f.name).sort())
-      .toEqual(['get_equity_call', 'get_equity_regime', 'get_track_record', 'pre_trade_check']);
+      .toEqual(['get_equity_call', 'get_equity_regime', 'get_track_record']);
   });
 });
 
@@ -95,14 +96,16 @@ describe('CH1 AC-c — no equities-internal / outcome_* leakage', () => {
       expect(s).not.toContain(forbidden);
     }
   });
-  it('the Tools dropdown lists the screener right after Trade Call Scanner, and keeps Knowledge Chat', () => {
-    expect(FEATURED_TOOLS).toBe(6);
+  it('the Tools dropdown lists the screener, then the pre-trade check, and keeps Knowledge Chat', () => {
+    // DOCS-PRE-TRADE-CHECK-LISTING-W1 D3: 6 → 7 ADDS the check rather than displacing Knowledge Chat.
+    expect(FEATURED_TOOLS).toBe(7);
     expect(col('Tools').items.map((i) => i.label)).toEqual([
       'Trade Call',
       'Market Regime',
       'Funding Arbitrage',
       'Trade Call Scanner',
       'Market Regime Screener',
+      'Pre-Trade Check',
       'Knowledge Chat',
     ]);
   });

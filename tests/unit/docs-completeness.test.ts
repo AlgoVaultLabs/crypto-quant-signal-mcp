@@ -142,8 +142,8 @@ describe('every public tool documents what it returns', () => {
     });
   }
 
-  it('covers all 7 published tools — the count the docs --check gate also pins', () => {
-    expect(publicToolEntries()).toHaveLength(7);
+  it('covers all 8 published tools — the count the docs --check gate also pins', () => {
+    expect(publicToolEntries()).toHaveLength(8);
   });
 });
 

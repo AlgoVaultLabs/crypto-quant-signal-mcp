@@ -13,7 +13,7 @@ Live source of truth: https://algovault.com/api/performance-public
 - PFE win rate published live across the full tracked-call history — current value at /track-record.
 - Every trade call Merkle-anchored on Base L2; daily batches published on-chain — verify any call at /verify.
 <!-- BUILD:LLMS_TOOLS_LIST -->
-- MCP tools include `get_trade_call`, `get_market_regime`, `scan_funding_arb`, `scan_trade_calls`, `scan_market_regimes`, `chat_knowledge`, and `search_knowledge` (full set via `tools/list`).
+- MCP tools include `get_trade_call`, `get_market_regime`, `scan_funding_arb`, `scan_trade_calls`, `scan_market_regimes`, `pre_trade_check`, `chat_knowledge`, and `search_knowledge` (full set via `tools/list`).
 <!-- /BUILD:LLMS_TOOLS_LIST -->
 - 15 exchanges analysed — leading CEX & perp-DEX venues.  # SNAPSHOT-LINE
 - 11 timeframes supported (1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d).  # SNAPSHOT-LINE

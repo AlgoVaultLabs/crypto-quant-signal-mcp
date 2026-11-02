@@ -128,13 +128,19 @@ Screens a whole crypto perpetual futures venue by market regime — TRENDING_UP 
 
 **How to use:** https://algovault.com/docs#scan-market-regimes
 
-### 6. `chat_knowledge` — Knowledge Chat
+### 6. `pre_trade_check` — Pre-Trade Check
+
+Returns a pre-trade check of a crypto perpetual futures order against your own rules: each passes or fails with its numbers, then GO, CAUTION or WAIT. Adds isolated liquidation distance, whether it hits before your stop, fees, accuracy needed to break even over your hold, funding by venue (cross-venue) and the regime. Read-only: places no orders.
+
+**How to use:** https://algovault.com/docs#pre-trade-check
+
+### 7. `chat_knowledge` — Knowledge Chat
 
 Returns a synthesized natural-language answer with citations, grounded in the AlgoVault knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use when you need an explanation, code pattern, or how-to; for raw ranked snippets without LLM synthesis use search_knowledge (faster, no quota cost). Read-only: calls an LLM, no other side effects. Quota: Free 10/month, Starter 50, Pro 200, Enterprise 2000.
 
 **How to use:** https://algovault.com/docs#chat-knowledge
 
-### 7. `search_knowledge` — Knowledge Search
+### 8. `search_knowledge` — Knowledge Search
 
 Returns ranked snippets from the AlgoVault knowledge bundle answering a question about its MCP tools, response shapes, integration patterns (LangChain, LlamaIndex, MAF, CrewAI), or code examples. Call this BEFORE other tool calls to confirm parameter usage and avoid hallucinating tool shapes. Fast: BM25 lexical search, no LLM call, no quota cost. For a synthesized natural-language answer use chat_knowledge. Read-only, no side effects.
 

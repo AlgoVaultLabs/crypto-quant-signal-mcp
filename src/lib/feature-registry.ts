@@ -224,8 +224,9 @@ const FEATURE_REGISTRY_LITERAL = [
     //     `/x402/pre_trade_check` (Bazaar-declared) and MCP pay-per-call; bot, webhook, a2mcp, acp stay off.
     //   • `quota.unit: 'per-call'` — one unit per decision (a WAIT included); every refusal is unbilled.
     //   • `residency: 'hosted'` — the regime read is the hosted bar-close snapshot (regime_snapshots).
-    //   • `publicListing: false` — served on tools/list, kept off the nav, docs and /tools until the
-    //     release wave lists it (docs partial, TOOL_LABELS, lobehub api[] and the counts together).
+    //   • publicly listed (DOCS-PRE-TRADE-CHECK-LISTING-W1): the docs partial, TOOL_LABELS, lobehub api[]
+    //     and the count tests landed together. This row sits right after scan_market_regimes ON PURPOSE —
+    //     registry order IS display order for the nav, the docs sidebar and /tools.
     name: 'pre_trade_check',
     aliases: [],
     channels: { mcp: true, httpX402: true, bot: false, webhook: false, a2mcp: false, acp: false },
@@ -234,7 +235,7 @@ const FEATURE_REGISTRY_LITERAL = [
     descriptionRef: 'PRE_TRADE_CHECK_DESCRIPTION',
     enabled: true,
     residency: 'hosted',
-    publicListing: false,
+    publicListing: true,
   },
   {
     name: 'get_equity_call',

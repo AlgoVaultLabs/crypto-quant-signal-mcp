@@ -272,6 +272,10 @@ const CODE_CLS = 'text-xs bg-navy-800 px-1 rounded';
  * `type` (omitted = `string`, every scalar enum), and the row sentence is the tool's own
  * (`toolBlurbs`) before the shared per-parameter one (`blurbs`). A parameter NAME is not a meaning —
  * `assetClass` forces the engine on one tool and filters rows on another.
+ *
+ * A spec with `required: true` ends its row with the same `Required` tag the hand-written rows carry
+ * (DOCS-PRE-TRADE-CHECK-LISTING-W1: `pre_trade_check.side` is the first required enum). No earlier
+ * spec declares it, so every earlier row renders byte-identically.
  */
 export function renderToolParamRows(tool, params, blurbs = {}, toolBlurbs = {}) {
   const rows = [];
@@ -282,13 +286,14 @@ export function renderToolParamRows(tool, params, blurbs = {}, toolBlurbs = {}) 
     const sentence = toolBlurbs[name] ?? blurbs[name];
     const blurb = sentence ? `${sentence} ` : '';
     const dflt = spec.default ? ` Default: <code class="${CODE_CLS}">${spec.default}</code>` : '';
+    const req = spec.required === true ? ' <span class="text-red-400 text-xs">Required</span>' : '';
     // The default is machine-readable on the ROW, not on its chip: the gate compares it against the
     // served `default`, which is how `1h` on the page survived beside `15m` on the wire for months.
     const dfltAttr = spec.default ? ` data-schema-default="${spec.default}"` : '';
     rows.push(
       `          <tr class="param-row" data-schema-tool="${tool}" data-schema-param="${name}"${dfltAttr}>` +
         `<td>${name}</td><td class="text-gray-400">${spec.type ?? 'string'}</td>` +
-        `<td class="text-gray-400">${blurb}${chips}.${dflt}</td></tr>`,
+        `<td class="text-gray-400">${blurb}${chips}.${dflt}${req}</td></tr>`,
     );
   }
   return rows.join('\n');
@@ -552,7 +557,7 @@ async function main() {
   if (checkMode) {
     const errors = [];
     // 1. counts
-    if (toolNodeCount() !== 7) errors.push(`Tools count ${toolNodeCount()} !== 7 (registry publicListing)`);
+    if (toolNodeCount() !== 8) errors.push(`Tools count ${toolNodeCount()} !== 8 (registry publicListing)`);
     if (channelNodeCount() !== 4) errors.push(`Channels count ${channelNodeCount()} !== 4 (channel-registry)`);
     // 2. on-disk structure: sidebar (aside-scoped) + body ids cover the outline
     const onDisk = fs.readFileSync(DOCS_HTML_PATH, 'utf8');

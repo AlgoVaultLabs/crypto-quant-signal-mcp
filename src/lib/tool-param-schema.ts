@@ -179,6 +179,12 @@ export interface EnumParamSpec {
    * (`array` of `items.type`), so it cannot claim a shape the server does not take.
    */
   type?: string;
+  /**
+   * The parameter is required by the served schema. The docs row then carries the same `Required` tag
+   * the hand-written rows beside it carry. Omitted = optional, which is every enum before
+   * `pre_trade_check.side`.
+   */
+  required?: boolean;
 }
 
 /**
@@ -194,6 +200,7 @@ export const TOOL_DOCS_PARTIAL: Readonly<Record<string, string>> = Object.freeze
   get_market_regime: 'get-market-regime',
   scan_trade_calls: 'scan-trade-calls',
   scan_market_regimes: 'scan-market-regimes',
+  pre_trade_check: 'pre-trade-check',
 });
 
 /**
@@ -225,6 +232,12 @@ export const PARAM_DOC_BLURB_BY_TOOL: Readonly<Record<string, Readonly<Record<st
     regime: 'Keep only these regimes (any of).',
     assetClass: 'Keep only this asset class. <code class="text-xs bg-navy-800 px-1 rounded">tradfi</code> is every non-crypto class; rows of unknown class appear only under <code class="text-xs bg-navy-800 px-1 rounded">all</code>.',
     sortBy: 'Row order. <code class="text-xs bg-navy-800 px-1 rounded">regime_age</code> puts the newest regime change first and unknown starts last; <code class="text-xs bg-navy-800 px-1 rounded">rank</code> needs <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code>.',
+  }),
+  pre_trade_check: Object.freeze({
+    side: 'Direction of the order you intend to place.',
+    timeframe: 'Timeframe of the market-regime read.',
+    exchanges: 'Only compare these venues. Omit it to compare every supported venue.',
+    orderType: 'A <code class="text-xs bg-navy-800 px-1 rounded">market</code> entry pays the taker fee, a <code class="text-xs bg-navy-800 px-1 rounded">limit</code> entry the maker fee; the exit is priced at the taker fee.',
   }),
 });
 
@@ -385,8 +398,8 @@ const PRE_TRADE_RULE_PROPERTIES = Object.freeze(Object.fromEntries(
  * decision set: fee rows ∩ the funding venues − retired), which moves when a venue is retired; a
  * default list baked into the schema would keep offering it.
  *
- * Deliberately NOT in `PUBLIC_TOOL_ENUM_PARAMS`: the tool ships unlisted (`publicListing: false`), and
- * that map feeds `/docs`. Listing it there is the release wave's job, with the docs partial.
+ * Its enum-valued rows reach `PUBLIC_TOOL_ENUM_PARAMS` BY REFERENCE (DOCS-PRE-TRADE-CHECK-LISTING-W1,
+ * via `enumRowsOf` below), so the `/docs` table, the served schema and the live P7 gate read one object.
  */
 export const PRE_TRADE_CHECK_PARAM_DECL = Object.freeze({
   coin: Object.freeze({ type: 'string', required: true, minLength: 1, maxLength: 20, upperCased: true }),
@@ -402,6 +415,18 @@ export const PRE_TRADE_CHECK_PARAM_DECL = Object.freeze({
   orderType: Object.freeze({ type: 'string', required: false, values: PRE_TRADE_ORDER_TYPES, default: 'market' as const }),
   rules: Object.freeze({ type: 'object', required: false, properties: PRE_TRADE_RULE_PROPERTIES, additionalProperties: false as const }),
 });
+
+/**
+ * The enum-valued rows of a full parameter declaration — every row carrying `values` — each one the
+ * declaration's OWN frozen object, in declaration order. Selected by shape, never by a name list, so an
+ * enum parameter added to the declaration reaches `/docs` with no edit here; `coin`, the numbers and
+ * the `rules` object carry no `values` and stay hand-authored in the partial.
+ */
+function enumRowsOf(decl: Readonly<Record<string, object>>): Readonly<Record<string, EnumParamSpec>> {
+  return Object.freeze(Object.fromEntries(Object.entries(decl).filter(([, row]) => 'values' in row))) as Readonly<
+    Record<string, EnumParamSpec>
+  >;
+}
 
 /**
  * Every enum-valued parameter of every PUBLICLY DOCUMENTED tool, keyed by the tool name
@@ -440,6 +465,9 @@ export const PUBLIC_TOOL_ENUM_PARAMS: Readonly<Record<string, Readonly<Record<st
     }),
     // By REFERENCE: the Zod schema in src/tools/scan-market-regimes.ts projects from the same object.
     scan_market_regimes: SCAN_MARKET_REGIMES_PARAM_DECL.enums,
+    // By REFERENCE, row by row: side · timeframe · exchanges · orderType, the objects the Zod schema in
+    // src/tools/pre-trade-check.ts is built from.
+    pre_trade_check: enumRowsOf(PRE_TRADE_CHECK_PARAM_DECL),
   });
 
 /**

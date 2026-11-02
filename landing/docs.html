@@ -71,7 +71,7 @@ tailwind.config = {
   "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com", "logo": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 } },
   "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
-  "description": "Complete API reference for the 7 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, scan_market_regimes, chat_knowledge, search_knowledge), worked examples, on-chain verification, pricing, and FAQ.",
+  "description": "Complete API reference for the 8 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, scan_market_regimes, pre_trade_check, chat_knowledge, search_knowledge), worked examples, on-chain verification, pricing, and FAQ.",
   "proficiencyLevel": "Beginner|Intermediate|Advanced",
   "about": { "@type": "Thing", "name": "Composite trading verdicts via Model Context Protocol" }
 }
@@ -182,6 +182,7 @@ tailwind.config = {
           <a href="https://algovault.com/tools#scan-funding-arb" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Funding Arbitrage</span></a>
           <a href="https://algovault.com/tools#scan-trade-calls" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Trade Call Scanner</span></a>
           <a href="https://algovault.com/tools#scan-market-regimes" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Market Regime Screener</span></a>
+          <a href="https://algovault.com/tools#pre-trade-check" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Pre-Trade Check</span></a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Knowledge Chat</span></a>
           <a href="https://algovault.com/tools" class="inline-block mt-2 text-xs font-medium text-mint-400 hover:text-mint-300 transition">See all tools →</a>
         </div>
@@ -233,6 +234,7 @@ tailwind.config = {
           <a href="https://algovault.com/tools#scan-funding-arb" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Funding Arbitrage</a>
           <a href="https://algovault.com/tools#scan-trade-calls" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call Scanner</a>
           <a href="https://algovault.com/tools#scan-market-regimes" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Market Regime Screener</a>
+          <a href="https://algovault.com/tools#pre-trade-check" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Pre-Trade Check</a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Knowledge Chat</a>
           <a href="https://algovault.com/tools" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">See all tools</a>
           <a href="https://algovault.com/mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
@@ -340,6 +342,7 @@ tailwind.config = {
     <a href="#scan-funding-arb" class="sidebar-link" style="padding-left:32px">Funding Arbitrage</a>
     <a href="#scan-trade-calls" class="sidebar-link" style="padding-left:32px">Trade Call Scanner</a>
     <a href="#scan-market-regimes" class="sidebar-link" style="padding-left:32px">Market Regime Screener</a>
+    <a href="#pre-trade-check" class="sidebar-link" style="padding-left:32px">Pre-Trade Check</a>
     <a href="#chat-knowledge" class="sidebar-link" style="padding-left:32px">Knowledge Chat</a>
     <a href="#search-knowledge" class="sidebar-link" style="padding-left:32px">Knowledge Search</a>
     <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2" style="padding-left:22px">Channels</div>
@@ -998,6 +1001,199 @@ tailwind.config = {
         </tbody>
       </table>
       <p class="text-gray-500 text-xs mt-3">A screen charges one call per returned row, minimum one per successful call. Coins that don&rsquo;t match, and refusals, are free. Available on every plan, over MCP or the HTTP endpoint above.</p>
+    </section>
+
+    <section id="pre-trade-check" class="mb-16">
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Pre-Trade Check <span class="text-gray-500 text-sm font-normal">pre_trade_check</span></h3>
+      <p class="text-gray-400 text-sm mb-5">Checks a crypto perpetual futures order against your own rules. Each rule passes or fails with its numbers, then the check returns <code class="text-xs bg-navy-800 px-1 rounded">GO</code>, <code class="text-xs bg-navy-800 px-1 rounded">CAUTION</code> or <code class="text-xs bg-navy-800 px-1 rounded">WAIT</code>. It adds the isolated liquidation distance and whether it hits before your stop, fees, the accuracy needed to break even over your hold, funding by venue (cross-venue) and the market regime. Read-only: it places no orders.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol, e.g. BTC, ETH, SOL. <span class="text-red-400 text-xs">Required</span></td></tr>
+          <!-- SCHEMA:tool-params:pre_trade_check:start -->
+          <tr class="param-row" data-schema-tool="pre_trade_check" data-schema-param="side"><td>side</td><td class="text-gray-400">string</td><td class="text-gray-400">Direction of the order you intend to place. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="long">long</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="short">short</code>. <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row" data-schema-tool="pre_trade_check" data-schema-param="timeframe" data-schema-default="4h"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Timeframe of the market-regime read. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1h">1h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="4h">4h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1d">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">4h</code></td></tr>
+          <tr class="param-row" data-schema-tool="pre_trade_check" data-schema-param="exchanges"><td>exchanges</td><td class="text-gray-400">string[]</td><td class="text-gray-400">Only compare these venues. Omit it to compare every supported venue. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="HL">HL</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BINANCE">BINANCE</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BYBIT">BYBIT</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="OKX">OKX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BITGET">BITGET</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="ASTER">ASTER</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BINGX">BINGX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="GATE">GATE</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="HTX">HTX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="KUCOIN">KUCOIN</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="MEXC">MEXC</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="PHEMEX">PHEMEX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="WHITEBIT">WHITEBIT</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="XT">XT</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="WEEX">WEEX</code>.</td></tr>
+          <tr class="param-row" data-schema-tool="pre_trade_check" data-schema-param="orderType" data-schema-default="market"><td>orderType</td><td class="text-gray-400">string</td><td class="text-gray-400">A <code class="text-xs bg-navy-800 px-1 rounded">market</code> entry pays the taker fee, a <code class="text-xs bg-navy-800 px-1 rounded">limit</code> entry the maker fee; the exit is priced at the taker fee. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="market">market</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="limit">limit</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">market</code></td></tr>
+          <!-- SCHEMA:tool-params:pre_trade_check:end -->
+          <tr class="param-row"><td>sizeUsd</td><td class="text-gray-400">number</td><td class="text-gray-400">Order notional in USD, e.g. 10000. Above 0, up to 100,000,000. <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row"><td>holdHours</td><td class="text-gray-400">number</td><td class="text-gray-400">Expected holding time in hours (0.25&ndash;720); sets the funding cost window. Default: <code class="text-xs bg-navy-800 px-1 rounded">8</code></td></tr>
+          <tr class="param-row"><td>leverage</td><td class="text-gray-400">number</td><td class="text-gray-400">Isolated leverage you will use, e.g. 10. Enables the liquidation checks (1&ndash;200). Optional.</td></tr>
+          <tr class="param-row"><td>stopPct</td><td class="text-gray-400">number</td><td class="text-gray-400">Stop-loss distance from entry in percent, e.g. 2 (0.01&ndash;50). Optional.</td></tr>
+          <tr class="param-row"><td>targetPct</td><td class="text-gray-400">number</td><td class="text-gray-400">Target distance from entry in percent, e.g. 4 (0.01&ndash;1000). Optional.</td></tr>
+          <tr class="param-row"><td>equityUsd</td><td class="text-gray-400">number</td><td class="text-gray-400">Account equity in USD. Enables the percent-of-equity rules. Above 0, up to 10,000,000,000. Optional.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>rules</td><td class="text-gray-400">object</td><td class="text-gray-400">Your rules, each key optional. A rule of yours that fails returns WAIT. Every key is listed below. Optional.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Your rules</h3>
+      <p class="text-gray-400 text-sm mb-3">Every key the <code class="text-xs bg-navy-800 px-1 rounded">rules</code> object accepts. An unknown key is refused, unbilled.</p>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-3 [overflow-wrap:anywhere]">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Key</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Range</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-16">Default</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">What it checks</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row" data-rule-key="maxLeverage"><td>maxLeverage</td><td class="text-gray-400">1&ndash;200</td><td class="text-gray-400">&mdash;</td><td class="text-gray-400">Highest leverage you allow.</td></tr>
+          <tr class="param-row" data-rule-key="noLiqBeforeStop"><td>noLiqBeforeStop</td><td class="text-gray-400">boolean</td><td class="text-gray-400">on</td><td class="text-gray-400">Fail if liquidation would come before your stop. Default on.</td></tr>
+          <tr class="param-row" data-rule-key="minLiqDistanceSigma"><td>minLiqDistanceSigma</td><td class="text-gray-400">0&ndash;50</td><td class="text-gray-400">&mdash;</td><td class="text-gray-400">Liquidation at least this many hold-period volatilities away.</td></tr>
+          <tr class="param-row" data-rule-key="maxLossAtStopPctEquity"><td>maxLossAtStopPctEquity</td><td class="text-gray-400">0&ndash;100</td><td class="text-gray-400">&mdash;</td><td class="text-gray-400">Most equity, in percent, you accept losing at your stop.</td></tr>
+          <tr class="param-row" data-rule-key="maxDailyMovePctEquity"><td>maxDailyMovePctEquity</td><td class="text-gray-400">0&ndash;100</td><td class="text-gray-400">&mdash;</td><td class="text-gray-400">Largest equity swing, in percent, from a one-sigma daily move.</td></tr>
+          <tr class="param-row" data-rule-key="maxRoundTripBps"><td>maxRoundTripBps</td><td class="text-gray-400">0&ndash;1000</td><td class="text-gray-400">&mdash;</td><td class="text-gray-400">Highest round trip in fees plus spread, in bps.</td></tr>
+          <tr class="param-row" data-rule-key="maxAccuracyNeededPct"><td>maxAccuracyNeededPct</td><td class="text-gray-400">50&ndash;100</td><td class="text-gray-400">&mdash;</td><td class="text-gray-400">Highest direction accuracy, in percent, needed to break even.</td></tr>
+          <tr class="param-row" data-rule-key="maxFundingBps"><td>maxFundingBps</td><td class="text-gray-400">0&ndash;10000</td><td class="text-gray-400">10</td><td class="text-gray-400">Highest funding over the hold, in bps. Default 10.</td></tr>
+          <tr class="param-row" data-rule-key="maxSizePctOf24hVolume"><td>maxSizePctOf24hVolume</td><td class="text-gray-400">&gt; 0, &le; 100</td><td class="text-gray-400">0.1</td><td class="text-gray-400">Largest order as a percent of a venue's 24h volume. Default 0.1.</td></tr>
+          <tr class="param-row" data-rule-key="regimeCheck" style="border-bottom:none"><td>regimeCheck</td><td class="text-gray-400">boolean</td><td class="text-gray-400">on</td><td class="text-gray-400">Flag a regime against your side or a volatile one. Default on.</td></tr>
+        </tbody>
+      </table>
+      <ul class="space-y-1.5 list-disc list-inside mb-5">
+        <li class="text-gray-400 text-sm leading-relaxed">Every key you send is active, with source <code class="text-xs bg-navy-800 px-1 rounded">yours</code>. The four rules with a default are active unless you switch them off, with source <code class="text-xs bg-navy-800 px-1 rounded">default</code>.</li>
+        <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1 rounded">false</code> switches a boolean default off. A number replaces a default and makes the rule yours.</li>
+        <li class="text-gray-400 text-sm leading-relaxed">A <code class="text-xs bg-navy-800 px-1 rounded">max</code> key fails strictly above its limit and a <code class="text-xs bg-navy-800 px-1 rounded">min</code> key strictly below. <code class="text-xs bg-navy-800 px-1 rounded">maxFundingBps</code> fails at or above its limit, <code class="text-xs bg-navy-800 px-1 rounded">maxSizePctOf24hVolume</code> when the order is above a venue&rsquo;s capacity at that limit, and <code class="text-xs bg-navy-800 px-1 rounded">noLiqBeforeStop</code> when liquidation is at or inside your stop.</li>
+        <li class="text-gray-400 text-sm leading-relaxed">A rule whose figure needs an input you did not send is <code class="text-xs bg-navy-800 px-1 rounded">not_evaluated</code>, and its <code class="text-xs bg-navy-800 px-1 rounded">detail</code> names what to send. Liquidation is computed on each venue that publishes its margin tiers.</li>
+        <li class="text-gray-400 text-sm leading-relaxed">A rule of yours that fails returns <code class="text-xs bg-navy-800 px-1 rounded">WAIT</code> (<code class="text-xs bg-navy-800 px-1 rounded">YOUR_RULE_FAILED</code>). A rule of yours that could not be checked, or a default that fails, returns <code class="text-xs bg-navy-800 px-1 rounded">CAUTION</code>.</li>
+      </ul>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">The decision, why, and every figure behind it. Keys that can be <code class="text-xs bg-navy-800 px-1 rounded">null</code> are always present, so you never need to test whether a key exists.</p>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5 [overflow-wrap:anywhere]">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">The symbol checked, upper-cased.</td></tr>
+          <tr class="param-row"><td>side</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">long</code> or <code class="text-xs bg-navy-800 px-1 rounded">short</code>, as you sent it.</td></tr>
+          <tr class="param-row"><td>size_usd</td><td class="text-gray-400">number</td><td class="text-gray-400">The order notional, as you sent it.</td></tr>
+          <tr class="param-row"><td>hold_hours</td><td class="text-gray-400">number</td><td class="text-gray-400">The hold the funding cost and volatility are measured over.</td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">The market-regime timeframe.</td></tr>
+          <tr class="param-row"><td>inputs</td><td class="text-gray-400">object</td><td class="text-gray-400">What was checked: <code class="text-xs bg-navy-800 px-1 rounded">leverage</code>, <code class="text-xs bg-navy-800 px-1 rounded">stop_pct</code>, <code class="text-xs bg-navy-800 px-1 rounded">target_pct</code> and <code class="text-xs bg-navy-800 px-1 rounded">equity_usd</code> (each <code class="text-xs bg-navy-800 px-1 rounded">null</code> when not sent) and <code class="text-xs bg-navy-800 px-1 rounded">order_type</code>.</td></tr>
+          <tr class="param-row"><td>decision</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">GO</code>, <code class="text-xs bg-navy-800 px-1 rounded">CAUTION</code> or <code class="text-xs bg-navy-800 px-1 rounded">WAIT</code>. Any <code class="text-xs bg-navy-800 px-1 rounded">block</code> reason is <code class="text-xs bg-navy-800 px-1 rounded">WAIT</code>; otherwise any <code class="text-xs bg-navy-800 px-1 rounded">adjust</code> reason is <code class="text-xs bg-navy-800 px-1 rounded">CAUTION</code>; otherwise <code class="text-xs bg-navy-800 px-1 rounded">GO</code>.</td></tr>
+          <tr class="param-row"><td>reasons</td><td class="text-gray-400">array</td><td class="text-gray-400">Why: each <code class="text-xs bg-navy-800 px-1 rounded">{code, severity, detail}</code>, with <code class="text-xs bg-navy-800 px-1 rounded">severity</code> <code class="text-xs bg-navy-800 px-1 rounded">block</code>, <code class="text-xs bg-navy-800 px-1 rounded">adjust</code> or <code class="text-xs bg-navy-800 px-1 rounded">info</code> and <code class="text-xs bg-navy-800 px-1 rounded">detail</code> one plain sentence with the numbers.</td></tr>
+          <tr class="param-row"><td>rules</td><td class="text-gray-400">array</td><td class="text-gray-400">Every active rule on the decision venue, in the order of the table above. Described below.</td></tr>
+          <tr class="param-row"><td>rules_summary</td><td class="text-gray-400">object</td><td class="text-gray-400">How many rules <code class="text-xs bg-navy-800 px-1 rounded">passed</code>, <code class="text-xs bg-navy-800 px-1 rounded">failed</code> and were <code class="text-xs bg-navy-800 px-1 rounded">not_evaluated</code>.</td></tr>
+          <tr class="param-row"><td>best_venue</td><td class="text-gray-400">object</td><td class="text-gray-400">The decision venue: <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">est_cost_bps</code>, <code class="text-xs bg-navy-800 px-1 rounded">est_cost_usd</code> and <code class="text-xs bg-navy-800 px-1 rounded">capacity_usd</code>. <code class="text-xs bg-navy-800 px-1 rounded">null</code> when no venue is tradable.</td></tr>
+          <tr class="param-row"><td>size_limit_usd</td><td class="text-gray-400">number</td><td class="text-gray-400">The decision venue&rsquo;s capacity under the size rule, or <code class="text-xs bg-navy-800 px-1 rounded">null</code>.</td></tr>
+          <tr class="param-row"><td>size_limit_usd_total</td><td class="text-gray-400">number</td><td class="text-gray-400">The combined capacity of every priced venue, or <code class="text-xs bg-navy-800 px-1 rounded">null</code>.</td></tr>
+          <tr class="param-row"><td>split</td><td class="text-gray-400">array</td><td class="text-gray-400">Only when the order is above the decision venue&rsquo;s capacity: the venues by ascending cost, each <code class="text-xs bg-navy-800 px-1 rounded">{exchange, size_usd, est_cost_bps}</code> filled to its capacity. Otherwise <code class="text-xs bg-navy-800 px-1 rounded">null</code>.</td></tr>
+          <tr class="param-row"><td>timing</td><td class="text-gray-400">object</td><td class="text-gray-400">The next funding on the decision venue: <code class="text-xs bg-navy-800 px-1 rounded">next_funding_at</code>, <code class="text-xs bg-navy-800 px-1 rounded">minutes_to_next_funding</code>, <code class="text-xs bg-navy-800 px-1 rounded">side_pays_next_funding</code> and <code class="text-xs bg-navy-800 px-1 rounded">saving_bps_if_entered_after_next_funding</code>, or <code class="text-xs bg-navy-800 px-1 rounded">null</code>.</td></tr>
+          <tr class="param-row"><td>regime</td><td class="text-gray-400">object</td><td class="text-gray-400">The market regime: <code class="text-xs bg-navy-800 px-1 rounded">label</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">as_of</code> and <code class="text-xs bg-navy-800 px-1 rounded">source_exchange</code>, or <code class="text-xs bg-navy-800 px-1 rounded">null</code> when it cannot be read.</td></tr>
+          <tr class="param-row"><td>calc</td><td class="text-gray-400">object</td><td class="text-gray-400">The decision venue&rsquo;s figures. Described below.</td></tr>
+          <tr class="param-row"><td>underlying_session</td><td class="text-gray-400">string</td><td class="text-gray-400">Whether the underlying market is open, read at call time &mdash; one of the states listed for <a href="#scan-market-regimes" class="text-mint-400 hover:underline">scan_market_regimes</a>. A closed underlying adds <code class="text-xs bg-navy-800 px-1 rounded">UNDERLYING_CLOSED</code>.</td></tr>
+          <tr class="param-row"><td>venues</td><td class="text-gray-400">array</td><td class="text-gray-400">One row per venue compared. Described below.</td></tr>
+          <tr class="param-row"><td>assumptions</td><td class="text-gray-400">object</td><td class="text-gray-400">One sentence each for <code class="text-xs bg-navy-800 px-1 rounded">funding</code>, <code class="text-xs bg-navy-800 px-1 rounded">fees</code>, <code class="text-xs bg-navy-800 px-1 rounded">volatility</code>, <code class="text-xs bg-navy-800 px-1 rounded">liquidation</code> and <code class="text-xs bg-navy-800 px-1 rounded">break_even</code>, plus <code class="text-xs bg-navy-800 px-1 rounded">size_guard_pct_of_24h_volume</code>, the size limit in force.</td></tr>
+          <tr class="param-row"><td>fee_table_verified_at</td><td class="text-gray-400">string</td><td class="text-gray-400">When the fee table was last verified.</td></tr>
+          <tr class="param-row"><td>rule_version</td><td class="text-gray-400">number</td><td class="text-gray-400">The version of the rule set the decision was made under. A threshold change bumps it.</td></tr>
+          <tr class="param-row"><td>as_of</td><td class="text-gray-400">string</td><td class="text-gray-400">When the check ran (ISO 8601).</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Call metadata, including the tool name and your remaining quota.</td></tr>
+        </tbody>
+      </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Each row in <code class="text-xs bg-navy-800 px-1 rounded">rules</code></h4>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>id</td><td class="text-gray-400">string</td><td class="text-gray-400">The rule key.</td></tr>
+          <tr class="param-row"><td>source</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">yours</code> (you sent it) or <code class="text-xs bg-navy-800 px-1 rounded">default</code>.</td></tr>
+          <tr class="param-row"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">The limit checked against, or <code class="text-xs bg-navy-800 px-1 rounded">true</code> for a rule that is on.</td></tr>
+          <tr class="param-row"><td>value</td><td class="text-gray-400">mixed</td><td class="text-gray-400">The figure the rule read &mdash; a number, the regime label, or a boolean for <code class="text-xs bg-navy-800 px-1 rounded">noLiqBeforeStop</code>. <code class="text-xs bg-navy-800 px-1 rounded">null</code> when not evaluated.</td></tr>
+          <tr class="param-row"><td>result</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">pass</code>, <code class="text-xs bg-navy-800 px-1 rounded">fail</code> or <code class="text-xs bg-navy-800 px-1 rounded">not_evaluated</code>.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>detail</td><td class="text-gray-400">string</td><td class="text-gray-400">One plain sentence with the numbers, or what to send.</td></tr>
+        </tbody>
+      </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Inside <code class="text-xs bg-navy-800 px-1 rounded">calc</code></h4>
+      <p class="text-gray-400 text-sm mb-3">Each figure is <code class="text-xs bg-navy-800 px-1 rounded">null</code> when an input it needs is absent &mdash; never a guessed 0.</p>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>sigma_1h_pct</td><td class="text-gray-400">One-hour volatility, in percent, from the newest fresh 1h bar-close snapshot.</td></tr>
+          <tr class="param-row"><td>sigma_hold_pct</td><td class="text-gray-400">That volatility scaled to your hold.</td></tr>
+          <tr class="param-row"><td>expected_move_pct</td><td class="text-gray-400">The expected size of the move over your hold, in percent.</td></tr>
+          <tr class="param-row"><td>round_trip_bps</td><td class="text-gray-400">Entry fee plus taker exit fee plus the quoted spread, in bps.</td></tr>
+          <tr class="param-row"><td>accuracy_needed_pct</td><td class="text-gray-400">The direction accuracy needed to break even over your hold, in percent. 100 or more: the expected move cannot cover the round trip.</td></tr>
+          <tr class="param-row"><td>win_rate_needed_pct</td><td class="text-gray-400">With <code class="text-xs bg-navy-800 px-1 rounded">stopPct</code> and <code class="text-xs bg-navy-800 px-1 rounded">targetPct</code>: the accuracy needed to break even when every trade ends at your stop or your target, costs included.</td></tr>
+          <tr class="param-row"><td>random_entry_target_first_pct</td><td class="text-gray-400">The same arithmetic for a random entry, costs left out. Both are arithmetic on your own stop and target, not a claim about any trade.</td></tr>
+          <tr class="param-row"><td>liq_distance_pct</td><td class="text-gray-400">With <code class="text-xs bg-navy-800 px-1 rounded">leverage</code>: the isolated liquidation distance from entry, in percent.</td></tr>
+          <tr class="param-row"><td>liq_distance_sigma</td><td class="text-gray-400">That distance in hold-period volatilities.</td></tr>
+          <tr class="param-row"><td>liq_before_stop</td><td class="text-gray-400">Whether liquidation would come at or before your stop.</td></tr>
+          <tr class="param-row"><td>loss_at_stop_pct_equity</td><td class="text-gray-400">With <code class="text-xs bg-navy-800 px-1 rounded">equityUsd</code>: the loss at your stop, costs included, as a percent of equity.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>one_sigma_day_pct_equity</td><td class="text-gray-400">With <code class="text-xs bg-navy-800 px-1 rounded">equityUsd</code>: a one-sigma daily move on this order, as a percent of equity.</td></tr>
+        </tbody>
+      </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Each row in <code class="text-xs bg-navy-800 px-1 rounded">venues</code></h4>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-3">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>exchange</td><td class="text-gray-400">The venue.</td></tr>
+          <tr class="param-row"><td>listed</td><td class="text-gray-400">Whether the venue lists the coin, or <code class="text-xs bg-navy-800 px-1 rounded">null</code> when unknown.</td></tr>
+          <tr class="param-row"><td>excluded</td><td class="text-gray-400">Why the venue was left out of the decision &mdash; for example <code class="text-xs bg-navy-800 px-1 rounded">not_listed</code> or <code class="text-xs bg-navy-800 px-1 rounded">thin_liquidity</code> &mdash; or <code class="text-xs bg-navy-800 px-1 rounded">null</code>.</td></tr>
+          <tr class="param-row"><td>capacity_usd</td><td class="text-gray-400">The largest order the size rule allows on this venue.</td></tr>
+          <tr class="param-row"><td>funding_cost_bps</td><td class="text-gray-400">Funding over your hold at the current rate, in bps.</td></tr>
+          <tr class="param-row"><td>est_cost_bps</td><td class="text-gray-400">Round-trip taker fees plus funding over the hold, in bps &mdash; the venue ranking.</td></tr>
+          <tr class="param-row"><td>entry_fee_bps</td><td class="text-gray-400">The entry fee for your <code class="text-xs bg-navy-800 px-1 rounded">orderType</code>: taker for <code class="text-xs bg-navy-800 px-1 rounded">market</code>, maker for <code class="text-xs bg-navy-800 px-1 rounded">limit</code>.</td></tr>
+          <tr class="param-row"><td>round_trip_bps</td><td class="text-gray-400">Entry fee plus taker exit fee plus the quoted spread, in bps.</td></tr>
+          <tr class="param-row"><td>maintenance_rate</td><td class="text-gray-400">The maintenance rate of the venue&rsquo;s margin tier for your order notional.</td></tr>
+          <tr class="param-row"><td>liq_distance_pct</td><td class="text-gray-400">The isolated liquidation distance from entry at your leverage, in percent.</td></tr>
+          <tr class="param-row"><td>liq_basis</td><td class="text-gray-400">Where the liquidation figure comes from: <code class="text-xs bg-navy-800 px-1 rounded">public_tier_table</code>, <code class="text-xs bg-navy-800 px-1 rounded">tier_table_requires_key</code> (the venue publishes its tiers only to a signed key, so no figure is given), <code class="text-xs bg-navy-800 px-1 rounded">tier_unavailable</code> or <code class="text-xs bg-navy-800 px-1 rounded">leverage_not_given</code>.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>your_rules</td><td class="text-gray-400">Your rules on this venue: <code class="text-xs bg-navy-800 px-1 rounded">pass</code>, <code class="text-xs bg-navy-800 px-1 rounded">fail</code>, <code class="text-xs bg-navy-800 px-1 rounded">not_evaluated</code>, or <code class="text-xs bg-navy-800 px-1 rounded">null</code> when you sent none.</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-5">Each row also carries the inputs behind those figures: <code class="text-xs bg-navy-800 px-1 rounded">liquidity_usd</code>, <code class="text-xs bg-navy-800 px-1 rounded">volume_24h_usd</code>, <code class="text-xs bg-navy-800 px-1 rounded">size_pct_of_24h_volume</code>, <code class="text-xs bg-navy-800 px-1 rounded">funding_rate</code>, <code class="text-xs bg-navy-800 px-1 rounded">funding_interval_hours</code>, <code class="text-xs bg-navy-800 px-1 rounded">funding_interval_basis</code>, <code class="text-xs bg-navy-800 px-1 rounded">next_funding_at</code>, <code class="text-xs bg-navy-800 px-1 rounded">funding_events_in_hold</code>, <code class="text-xs bg-navy-800 px-1 rounded">taker_fee_bps</code>, <code class="text-xs bg-navy-800 px-1 rounded">maker_fee_bps</code>, <code class="text-xs bg-navy-800 px-1 rounded">round_trip_fee_bps</code>, <code class="text-xs bg-navy-800 px-1 rounded">est_cost_usd</code>, <code class="text-xs bg-navy-800 px-1 rounded">spread_bps</code> and <code class="text-xs bg-navy-800 px-1 rounded">spread_basis</code>.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Recipe</h3>
+      <p class="text-gray-400 text-sm mb-2">A 5&times; long, a 2% stop, and your own leverage cap</p>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">pre_trade_check({ coin: "BTC", side: "long", sizeUsd: 10000, leverage: 5, stopPct: 2, rules: { maxLeverage: 10 } })</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-5"><code class="text-xs bg-navy-800 px-1 rounded">maxLeverage</code> passes at 5&times;. The leverage and stop also let the default <code class="text-xs bg-navy-800 px-1 rounded">noLiqBeforeStop</code> rule be checked, on each venue that publishes its margin tiers. Send <code class="text-xs bg-navy-800 px-1 rounded">leverage: 20</code> instead and your rule fails: the decision is <code class="text-xs bg-navy-800 px-1 rounded">WAIT</code>, with <code class="text-xs bg-navy-800 px-1 rounded">YOUR_RULE_FAILED</code> in <code class="text-xs bg-navy-800 px-1 rounded">reasons</code>.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Call it over HTTP</h3>
+      <div class="code-block bg-well border border-line rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -s -X POST https://api.algovault.com/mcp \
+  -H "Authorization: Bearer $ALGOVAULT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"pre_trade_check","arguments":{"coin":"BTC","side":"long","sizeUsd":10000,"leverage":5,"stopPct":2,"rules":{"maxLeverage":10}}}}'</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs mb-5">The response is an event stream: the tool result is JSON on the <code class="text-xs bg-navy-800 px-1 rounded">data:</code> line, in <code class="text-xs bg-navy-800 px-1 rounded">result.content[0].text</code>.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Refusals</h3>
+      <p class="text-gray-400 text-sm mb-3">A refusal comes back as a tool error with <code class="text-xs bg-navy-800 px-1 rounded">result.isError: true</code>. Every refusal is unbilled.</p>
+      <table class="w-full bg-navy-700 border border-line rounded-xl overflow-hidden mb-5 [overflow-wrap:anywhere]">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Code</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">When, what it carries, and what to do</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td><code class="text-xs bg-navy-800 px-1 rounded">hosted_only</code></td><td class="text-gray-400">You called it on a local install of the server. The check reads the hosted bar-close snapshot, so a local install refuses it before it runs. Carries <code class="text-xs bg-navy-800 px-1 rounded">hosted_endpoint</code>. Add <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp</code> as a remote MCP server in your client and call it there.</td></tr>
+          <tr class="param-row"><td><code class="text-xs bg-navy-800 px-1 rounded">-32602</code></td><td class="text-gray-400">An argument the schema does not declare, at the top level or inside <code class="text-xs bg-navy-800 px-1 rounded">rules</code>, or a value outside its range. The text in <code class="text-xs bg-navy-800 px-1 rounded">result.content[0].text</code> names the key and its path. See <a href="#tools-errors" class="text-mint-400 hover:underline">Errors &amp; troubleshooting</a>.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td><code class="text-xs bg-navy-800 px-1 rounded">TIER_LIMIT_REACHED</code></td><td class="text-gray-400">Your call allowance is used up. Carries <code class="text-xs bg-navy-800 px-1 rounded">resets_at</code>, <code class="text-xs bg-navy-800 px-1 rounded">suggested_action</code> and <code class="text-xs bg-navy-800 px-1 rounded">suggested_x402</code>, the pay-per-call route for this tool. See <a href="#tools-errors" class="text-mint-400 hover:underline">Errors &amp; troubleshooting</a>.</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mt-3">A check charges one call on your plan, whatever the decision, or $0.02 over x402. Refusals are free. It is informational and read-only: it places no orders.</p>
     </section>
 
     <section id="chat-knowledge" class="mb-16"><span id="knowledge-tools-chat" aria-hidden="true"></span>
@@ -2855,7 +3051,7 @@ cfg = gate_api.Configuration(
 <script>
 /* DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH3 — sidebar scrollspy, ids derived from the docs outline. */
 (function () {
-  var IDS = ["quick-start","get-trade-call","get-market-regime","scan-funding-arb","scan-trade-calls","scan-market-regimes","chat-knowledge","search-knowledge","mcp","rest-api","webhooks","telegram","connect-mcp","connect-ai-agent","connect-exchange-kit","connect-trading-platform","usage-examples","live-dashboard","verify","pricing","faq"];
+  var IDS = ["quick-start","get-trade-call","get-market-regime","scan-funding-arb","scan-trade-calls","scan-market-regimes","pre-trade-check","chat-knowledge","search-knowledge","mcp","rest-api","webhooks","telegram","connect-mcp","connect-ai-agent","connect-exchange-kit","connect-trading-platform","usage-examples","live-dashboard","verify","pricing","faq"];
   if (typeof IntersectionObserver !== 'function') return;   /* fail-open: no observer, no change */
   var aside = document.querySelector('aside');
   if (!aside) return;

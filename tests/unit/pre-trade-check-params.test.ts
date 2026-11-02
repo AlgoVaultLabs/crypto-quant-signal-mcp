@@ -55,9 +55,25 @@ describe('PRE_TRADE_CHECK_PARAM_DECL — the contract, once', () => {
     expect([D.exchanges.minItems, D.exchanges.maxItems, D.exchanges.uniqueItems]).toEqual([1, 15, true]);
     expect('default' in D.exchanges).toBe(false);
   });
-  it('frozen, and unlisted: not projected into the public /docs enum map', () => {
+  it('frozen', () => {
     expect(Object.isFrozen(D)).toBe(true);
     for (const p of Object.values(D)) expect(Object.isFrozen(p)).toBe(true);
-    expect(Object.keys(PUBLIC_TOOL_ENUM_PARAMS)).not.toContain('pre_trade_check');
+  });
+  // DOCS-PRE-TRADE-CHECK-LISTING-W1 — listed: the /docs enum map holds the declaration's OWN enum rows.
+  it('listed: every enum row reaches the public /docs enum map by REFERENCE, in declaration order', () => {
+    const projected = PUBLIC_TOOL_ENUM_PARAMS.pre_trade_check;
+    expect(Object.keys(projected)).toEqual(['side', 'timeframe', 'exchanges', 'orderType']);
+    expect(projected.side).toBe(D.side);
+    expect(projected.timeframe).toBe(D.timeframe);
+    expect(projected.exchanges).toBe(D.exchanges);
+    expect(projected.orderType).toBe(D.orderType);
+    expect(Object.isFrozen(projected)).toBe(true);
+  });
+  it('listed: the projection is selected by shape — every row with `values`, and only those', () => {
+    const withValues = Object.entries(D).filter(([, row]) => 'values' in row).map(([k]) => k);
+    expect(Object.keys(PUBLIC_TOOL_ENUM_PARAMS.pre_trade_check)).toEqual(withValues);
+    for (const k of ['coin', 'sizeUsd', 'holdHours', 'leverage', 'stopPct', 'targetPct', 'equityUsd', 'rules']) {
+      expect(PUBLIC_TOOL_ENUM_PARAMS.pre_trade_check, k).not.toHaveProperty(k);
+    }
   });
 });

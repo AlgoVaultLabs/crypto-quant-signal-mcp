@@ -168,6 +168,7 @@ tailwind.config = {
           <a href="https://algovault.com/tools#scan-funding-arb" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Funding Arbitrage</span></a>
           <a href="https://algovault.com/tools#scan-trade-calls" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Trade Call Scanner</span></a>
           <a href="https://algovault.com/tools#scan-market-regimes" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Market Regime Screener</span></a>
+          <a href="https://algovault.com/tools#pre-trade-check" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Pre-Trade Check</span></a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Knowledge Chat</span></a>
           <a href="https://algovault.com/tools" class="inline-block mt-2 text-xs font-medium text-mint-400 hover:text-mint-300 transition">See all tools →</a>
         </div>
@@ -219,6 +220,7 @@ tailwind.config = {
           <a href="https://algovault.com/tools#scan-funding-arb" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Funding Arbitrage</a>
           <a href="https://algovault.com/tools#scan-trade-calls" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call Scanner</a>
           <a href="https://algovault.com/tools#scan-market-regimes" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Market Regime Screener</a>
+          <a href="https://algovault.com/tools#pre-trade-check" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Pre-Trade Check</a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Knowledge Chat</a>
           <a href="https://algovault.com/tools" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">See all tools</a>
           <a href="https://algovault.com/mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
@@ -354,6 +356,15 @@ tailwind.config = {
         <p class="tools-card-desc">Screens a whole crypto perpetual futures venue by market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — and returns each matching coin with confidence, trend strength, ADX, volatility ratio and how long the regime has held. Rows are the market regime classifier output for the last closed bar, sampled on Binance, Bybit, OKX and Bitget; another venue, or a timeframe a venue cannot serve, is refused with the alternatives. Billing: one call per returned row; non-matching coins are free. For a live single-coin read with cross-venue funding, call get_market_regime. Read-only.</p>
         <div class="tools-card-channels"><span class="tools-badge">MCP</span></div>
         <a class="tools-card-link" href="https://algovault.com/docs#scan-market-regimes">How to use &rarr;</a>
+      </article>
+      <article id="pre-trade-check" class="tools-card">
+        <div class="tools-card-head">
+          <h3 class="tools-card-title">Pre-Trade Check</h3>
+          <code class="tools-card-name">pre_trade_check</code>
+        </div>
+        <p class="tools-card-desc">Returns a pre-trade check of a crypto perpetual futures order against your own rules: each passes or fails with its numbers, then GO, CAUTION or WAIT. Adds isolated liquidation distance, whether it hits before your stop, fees, accuracy needed to break even over your hold, funding by venue (cross-venue) and the regime. Read-only: places no orders.</p>
+        <div class="tools-card-channels"><span class="tools-badge">MCP</span><span class="tools-badge">REST / x402</span></div>
+        <a class="tools-card-link" href="https://algovault.com/docs#pre-trade-check">How to use &rarr;</a>
       </article>
       <article id="chat-knowledge" class="tools-card">
         <div class="tools-card-head">

@@ -22,9 +22,9 @@ const flat = () => flattenOutline();
 const byAnchor = (a: string) => flat().find((n) => n.anchor === a);
 
 describe('docs-outline — Tools derive from the public-tool set (nav publicToolEntries)', () => {
-  it('has exactly 7 Tools H3s, in registry order, incl scan_trade_calls (back-fill) and the screener right after it', () => {
+  it('has exactly 8 Tools H3s, in registry order, incl scan_trade_calls (back-fill), the screener and then the pre-trade check', () => {
     const toolAnchors = flat()
-      .filter((n) => n.level === 3 && ['get-trade-call', 'get-market-regime', 'scan-funding-arb', 'scan-trade-calls', 'scan-market-regimes', 'chat-knowledge', 'search-knowledge'].includes(n.anchor))
+      .filter((n) => n.level === 3 && ['get-trade-call', 'get-market-regime', 'scan-funding-arb', 'scan-trade-calls', 'scan-market-regimes', 'pre-trade-check', 'chat-knowledge', 'search-knowledge'].includes(n.anchor))
       .map((n) => n.anchor);
     expect(toolAnchors).toEqual([
       'get-trade-call',
@@ -32,11 +32,12 @@ describe('docs-outline — Tools derive from the public-tool set (nav publicTool
       'scan-funding-arb',
       'scan-trade-calls', // ← proves the previously-undocumented scanner is back-filled
       'scan-market-regimes', // ← DOCS-MARKET-REGIME-SCREENER-W1: registry order places it here
+      'pre-trade-check', // ← DOCS-PRE-TRADE-CHECK-LISTING-W1: right after the screener, by registry order
       'chat-knowledge',
       'search-knowledge',
     ]);
     expect(toolNodeCount()).toBe(publicToolNames().length);
-    expect(toolNodeCount()).toBe(7);
+    expect(toolNodeCount()).toBe(8);
   });
 
   it('carries the dictated friendly labels (single-derived from TOOL_LABELS)', () => {
@@ -171,16 +172,16 @@ describe('docs-outline — Single-Derivation invariants (sidebar === body === ou
 });
 
 describe('docs-outline — TechArticle JSON-LD tool clause derives from the SoT (OPS-DOCS-JSONLD-TOOLCOUNT-W1)', () => {
-  it('renders the current public tool set — count + names === publicToolNames() (7, incl scan_market_regimes)', () => {
+  it('renders the current public tool set — count + names === publicToolNames() (8, incl pre_trade_check)', () => {
     expect(techArticleToolClause()).toBe(`${publicToolNames().length} AlgoVault MCP tools (${publicToolNames().join(', ')})`);
     expect(techArticleToolClause()).toBe(
-      '7 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, scan_market_regimes, chat_knowledge, search_knowledge)',
+      '8 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, scan_market_regimes, pre_trade_check, chat_knowledge, search_knowledge)',
     );
   });
 
-  it('the count FOLLOWS the tool list, not a frozen literal (a mock 8th tool flips it to "8 …")', () => {
-    const clause = techArticleToolClause([...publicToolNames(), 'mock_eighth_tool']);
-    expect(clause.startsWith('8 AlgoVault MCP tools (')).toBe(true);
-    expect(clause).toContain('mock_eighth_tool');
+  it('the count FOLLOWS the tool list, not a frozen literal (a mock 9th tool flips it to "9 …")', () => {
+    const clause = techArticleToolClause([...publicToolNames(), 'mock_ninth_tool']);
+    expect(clause.startsWith('9 AlgoVault MCP tools (')).toBe(true);
+    expect(clause).toContain('mock_ninth_tool');
   });
 });
