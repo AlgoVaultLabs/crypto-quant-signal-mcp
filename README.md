@@ -51,6 +51,8 @@ No code. No install. No API key to start — sign in free when you need more. Th
 | Name | `Crypto Quant Signal` |
 | URL | `https://api.algovault.com/mcp` |
 
+If Claude asks how to sign in, choose **Sign in when needed**. When Claude asks, click **Connect** and sign in with your email.
+
 ![Add Connector](https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/docs/screenshots/Add-Connector.png)
 
 **2. Ask for a call.** In plain language:
@@ -192,6 +194,7 @@ The MCP tools live at `https://api.algovault.com/mcp`. Every asset works across 
 - **`get_trade_call`** <sub>(alias `get_trade_signal`)</sub> — composite BUY/SELL/HOLD verdict with confidence + regime, any asset, any timeframe.
 - **`scan_trade_calls`** — scans the top-N perps by open interest on a venue; returns every actionable call in one shot.
 - **`scan_market_regimes`** — screens a whole venue by market regime in one call: every coin whose regime matches your filter, with confidence and how long the regime has held. One call per returned row (at least one per request); coins that don't match are free.
+- **`pre_trade_check`** — checks an order against your own rules before you place it: each rule passes or fails with its numbers, then GO, CAUTION or WAIT, with isolated liquidation per venue against your stop. Read-only: it places no orders.
 - **`scan_funding_arb`** — cross-venue funding-rate spreads across 7 venues (Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, OKX), ranked. The only MCP server doing multi-exchange derivatives arbitrage.
 - **`get_market_regime`** — classifies TRENDING_UP / TRENDING_DOWN / RANGING / VOLATILE for strategy selection.
 - **`search_knowledge`** + **`chat_knowledge`** — free BM25 search and grounded Q&A over the full knowledge bundle.
@@ -262,7 +265,14 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 
 ---
 
-## What's new in v1.32.0
+## What's new in v1.33.0
+
+- **🛡️ Check an order against your own rules before you place it.** `pre_trade_check` takes the order you intend to place and your limits (maximum leverage, loss at your stop, accuracy needed to break even, funding) and returns each rule's pass or fail with its numbers, then GO, CAUTION or WAIT. It also shows where isolated liquidation sits on each venue that publishes its margin tiers, and whether it hits before your stop.
+- **🔐 Sign in from inside Claude.** Add AlgoVault as a custom connector and choose Sign in when needed. When Claude asks, click Connect and sign in with your email. On a paid plan, sign in with your subscription email and your plan applies.
+
+**Upgrading from v1.32.x** — one tool was added, `pre_trade_check`; no tool or parameter was renamed or removed. A call with an argument the tool doesn't take is now refused, unbilled, and the refusal names the valid parameters; the published schemas never allowed extra arguments. Added AlgoVault in Claude before? Remove it and add it again, choosing Sign in when needed.
+
+### v1.32.x highlights (recap)
 
 - **🧭 Screen a whole venue by market regime in one call.** `scan_market_regimes` returns every coin whose regime matches your filter — TRENDING_UP, TRENDING_DOWN, RANGING or VOLATILE — with confidence, trend strength, ADX, volatility ratio and how long the regime has held. Filter by regime, confidence, asset class, liquidity, regime age or your own watchlist, then sort by confidence or by the newest regime change. You pay one call per returned row (at least one per request); coins that don't match are free. A venue or timeframe it can't serve right now is refused with the alternatives, and isn't billed. The screener is served from the hosted endpoint; a local install lists it and refuses the call with a pointer there.
 
@@ -275,12 +285,6 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 - **v1.31.1** — Trade-call verdicts are now chosen by one declared rule per timeframe and trend direction, instead of a global mode setting. The calls you receive are unchanged by the switch.
 
 **Upgrading from v1.30.x** — one value in the response envelope changed: `_algovault.compatible_with` is now `[]` and names no companion package. If your client rendered those package names, stop rendering them; there is no companion package published today. Nothing else in the envelope changed, and no tool or parameter was added, renamed or removed.
-
-### v1.30.x highlights (recap)
-
-- **🔑 Your key, one click away.** Every tool response that carries an auth block now returns `claim_url` and `claim_hint` in the `_algovault` envelope — a direct link to keep the key you are already using, and a heads-up before you reach the cap.
-- **💵 Six-month pricing is machine-readable.** `GET /api/plans/public` gains `price_usd_6month` on every tier, so a client can render prepay pricing instead of hardcoding it.
-- **🤝 Enterprise is quoted, not published.** The plans endpoint now returns `null` for Enterprise price and limits rather than a fixed figure. No key was removed — the values are null.
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
