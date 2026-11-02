@@ -5,6 +5,23 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.0] - 2026-11-02
+
+### Added
+- `pre_trade_check` — checks a crypto perpetual futures order against your own rules before you place it. Send coin, side, size and hold time, and optionally leverage, stop, target, account equity, order type and a `rules` object (for example `{"maxLeverage": 10}`). Each rule passes or fails with its numbers, then GO, CAUTION or WAIT: a rule of yours that fails returns WAIT, and the built-in checks are listed as default rules you can change or switch off. The response adds the isolated liquidation distance on each venue that publishes its margin tiers and whether it hits before your stop, the round trip in fees for a market or limit entry, the accuracy needed to break even over your hold, funding by venue and the market regime. Pay per call over x402 at $0.02, or use plan calls. Informational and read-only: it places no orders. It is served from the hosted endpoint; a local install refuses it, unbilled, with a pointer there.
+- Sign in from inside Claude. Add AlgoVault as a custom connector and choose Sign in when needed; when Claude asks, click Connect and sign in with your email. On a paid plan, sign in with your subscription email and your plan applies.
+- The published track record now states which calls it leaves out of scoring, in `methodology.scoringExclusions` on `/api/performance-public`, `performance://signal-performance` and `get_track_record`.
+
+### Changed
+- Pay-per-call over x402 now settles only calls that are answered, on both the HTTP route and MCP: a refused or failed call is never charged.
+- `get_trade_call` receipts can carry `_receipts.rule_variant`. On the 3m timeframe, `"fade"` marks a call that takes the opposite side of the raw reading, and the call's reasons say so.
+- A call with an argument the tool doesn't take is refused, unbilled, and the refusal names the valid parameters. The published schemas never allowed extra arguments.
+- A market its venue reports as closed returns `VENUE_MARKET_CLOSED` before any request is sent to that venue.
+
+### Fixed
+- Funding for Binance, Bybit and OKX now comes from each venue's own feed at each contract's funding interval, Bitget is included, and a rate that can't be read is skipped.
+- Track-record tiers follow the venue a call was made on, so a symbol that names different instruments on different venues is tiered per venue.
+
 ## [1.32.0] - 2026-10-24
 
 ### Added
