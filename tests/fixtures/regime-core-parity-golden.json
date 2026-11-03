@@ -10,7 +10,7 @@
     "adx_slope_interpretation": "Trend strengthening",
     "volatility_ratio": 0.0043,
     "volatility_interpretation": "Low",
-    "price_structure": "HIGHER_HIGHS",
+    "price_structure": "MIXED",
     "pivot_quality": 0.607,
     "trend_strength": "WEAK",
     "cross_venue_funding_sentiment": "BULLISH_BIAS",
@@ -178,7 +178,7 @@
     "adx_slope_interpretation": "Steady — no momentum change",
     "volatility_ratio": 0.0067,
     "volatility_interpretation": "Low",
-    "price_structure": "HIGHER_HIGHS",
+    "price_structure": "MIXED",
     "pivot_quality": 0.627,
     "trend_strength": "WEAK",
     "cross_venue_funding_sentiment": "BEARISH_BIAS",
@@ -439,7 +439,7 @@
  },
  "closed|SOL|1d": {
   "ok": {
-   "regime": "TRENDING_UP",
+   "regime": "TRENDING_DOWN",
    "confidence": 43,
    "metrics": {
     "adx": 29.4,
@@ -448,7 +448,7 @@
     "adx_slope_interpretation": "Steady — no momentum change",
     "volatility_ratio": 0.0482,
     "volatility_interpretation": "High",
-    "price_structure": "HIGHER_HIGHS",
+    "price_structure": "MIXED",
     "pivot_quality": 0.566,
     "trend_strength": "WEAK",
     "cross_venue_funding_sentiment": "NEUTRAL",
@@ -467,7 +467,7 @@
      }
     }
    },
-   "suggestion": "Market is in a weak uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries.",
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives.",
    "timestamp": 1792400836,
    "coin": "SOL",
    "timeframe": "1d",
@@ -1137,7 +1137,7 @@
     "adx_slope_interpretation": "Trend exhausting — possible regime change",
     "volatility_ratio": 0.0096,
     "volatility_interpretation": "Low",
-    "price_structure": "HIGHER_HIGHS",
+    "price_structure": "MIXED",
     "pivot_quality": 0.545,
     "trend_strength": "MODERATE",
     "cross_venue_funding_sentiment": "BULLISH_BIAS",
@@ -1249,7 +1249,7 @@
     "adx_slope_interpretation": "Steady — no momentum change",
     "volatility_ratio": 0.0064,
     "volatility_interpretation": "Low",
-    "price_structure": "HIGHER_HIGHS",
+    "price_structure": "MIXED",
     "pivot_quality": 0.641,
     "trend_strength": "WEAK",
     "cross_venue_funding_sentiment": "BEARISH_BIAS",
@@ -1510,7 +1510,7 @@
  },
  "live|SOL|1d": {
   "ok": {
-   "regime": "TRENDING_UP",
+   "regime": "TRENDING_DOWN",
    "confidence": 42,
    "metrics": {
     "adx": 28.9,
@@ -1519,7 +1519,7 @@
     "adx_slope_interpretation": "Steady — no momentum change",
     "volatility_ratio": 0.0464,
     "volatility_interpretation": "High",
-    "price_structure": "HIGHER_HIGHS",
+    "price_structure": "MIXED",
     "pivot_quality": 0.567,
     "trend_strength": "WEAK",
     "cross_venue_funding_sentiment": "NEUTRAL",
@@ -1538,7 +1538,7 @@
      }
     }
    },
-   "suggestion": "Market is in a weak uptrend. Favor trend-following strategies. Position sizing: conservative to normal. Avoid mean-reversion entries.",
+   "suggestion": "Market is in a weak downtrend. Favor short-side trend-following or stay flat. Position sizing: conservative. Avoid catching falling knives.",
    "timestamp": 1792400836,
    "coin": "SOL",
    "timeframe": "1d",

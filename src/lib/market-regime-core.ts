@@ -33,8 +33,11 @@ import type { RegimeType, TrendStrength, AdxSlopeCategory, ExchangeId, Candle } 
  * `regime` / `confidence` for the same candles, so history from two rules is never read as one
  * series (`regime_since` only carries forward within one version). NEVER reuse
  * `REGIME_RULE_VERSION` — that versions the OTHER classifier.
+ *
+ * 2 — MARKET-REGIME-DIRECTION-SYMMETRY-W1: a higher-highs-AND-lower-lows swing set is MIXED, and every
+ * DI direction choice is strict, an exact tie taking the non-trending branch.
  */
-export const MARKET_REGIME_RULE_VERSION = 1;
+export const MARKET_REGIME_RULE_VERSION = 2;
 
 // How many candles to fetch per timeframe (a LOOKBACK WINDOW in bars, never a row limit). OPS-SERVED-CANDLE-TRUTH-W1
 // CH1 moved it, values unchanged, into the serving-window registry (src/lib/serving-windows.ts), whose suite S tests it
@@ -145,11 +148,9 @@ export function classifyRegime(i: RegimeClassifierInputs): RegimeClassification 
       } else if (priceStructure === 'LOWER_LOWS') {
         regime = 'TRENDING_DOWN';
       } else {
-        if (plusDI! > minusDI!) {
-          regime = 'TRENDING_UP';
-        } else {
-          regime = 'TRENDING_DOWN';
-        }
+        const diDirection = directionFromDI(plusDI!, minusDI!);
+        if (diDirection === null) return classifyNonTrending(adxVal, volatilityRatio);
+        regime = diDirection;
       }
 
       // Confidence from ADX value
@@ -178,26 +179,43 @@ export function classifyRegime(i: RegimeClassifierInputs): RegimeClassification 
     }
   } else if (adxVal !== null && adxVal > 18 && slopeCategory === 'RISING' && adxSlope !== null && adxSlope > 0.8) {
     // Early trend detection: ADX 18-25 but rising fast → emerging trend
-    if (plusDI! > minusDI!) {
-      regime = 'TRENDING_UP';
-    } else {
-      regime = 'TRENDING_DOWN';
-    }
+    const diDirection = directionFromDI(plusDI!, minusDI!);
+    if (diDirection === null) return classifyNonTrending(adxVal, volatilityRatio);
+    regime = diDirection;
     trendStrength = 'WEAK';
     confidence = Math.max(40, Math.min(60, Math.round(adxVal * 2)));
   } else {
-    // Non-trending: RANGING or VOLATILE
-    trendStrength = 'WEAK';
-    if (volatilityRatio > 0.03) {
-      regime = 'VOLATILE';
-      confidence = Math.min(85, Math.round(volatilityRatio * 2000));
-    } else {
-      regime = 'RANGING';
-      confidence = adxVal !== null ? Math.round((25 - adxVal) * 4) : 50;
-    }
-    confidence = Math.max(30, Math.min(confidence, 85));
+    return classifyNonTrending(adxVal, volatilityRatio);
   }
 
+  return { regime, confidence, trendStrength };
+}
+
+/**
+ * MARKET-REGIME-DIRECTION-SYMMETRY-W1: the side DI reports, strict on BOTH sides. An exact tie reports
+ * no side, so a regime whose direction comes from DI takes the non-trending branch. It used to fall to
+ * TRENDING_DOWN — a default side the mirror suite (tests/unit/regime-mirror-symmetry.test.ts) rejects.
+ */
+function directionFromDI(plusDI: number, minusDI: number): 'TRENDING_UP' | 'TRENDING_DOWN' | null {
+  if (plusDI > minusDI) return 'TRENDING_UP';
+  if (minusDI > plusDI) return 'TRENDING_DOWN';
+  return null;
+}
+
+/** The non-trending branch of `classifyRegime`, and where an exact DI tie lands. */
+function classifyNonTrending(adxVal: number | null, volatilityRatio: number): RegimeClassification {
+  // Non-trending: RANGING or VOLATILE
+  const trendStrength: TrendStrength = 'WEAK';
+  let regime: RegimeType;
+  let confidence: number;
+  if (volatilityRatio > 0.03) {
+    regime = 'VOLATILE';
+    confidence = Math.min(85, Math.round(volatilityRatio * 2000));
+  } else {
+    regime = 'RANGING';
+    confidence = adxVal !== null ? Math.round((25 - adxVal) * 4) : 50;
+  }
+  confidence = Math.max(30, Math.min(confidence, 85));
   return { regime, confidence, trendStrength };
 }
 

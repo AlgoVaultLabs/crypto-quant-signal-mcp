@@ -221,6 +221,6 @@ describe('CH1 — the sampler path IS the tool path (single derivation)', () => 
   });
 
   it('versions separately from the scan_trade_calls classifier', () => {
-    expect(MARKET_REGIME_RULE_VERSION).toBe(1);
+    expect(MARKET_REGIME_RULE_VERSION).toBe(2);
   });
 });

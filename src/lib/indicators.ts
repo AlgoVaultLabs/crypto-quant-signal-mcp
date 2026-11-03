@@ -475,11 +475,22 @@ export function detectPriceStructure(
   const allPivots = [...swingHighs, ...swingLows];
   const avgScore = allPivots.reduce((s, p) => s + p.score, 0) / allPivots.length;
 
-  let structure: 'HIGHER_HIGHS' | 'LOWER_LOWS' | 'MIXED' = 'MIXED';
-  if (hhRatio > 0.5) structure = 'HIGHER_HIGHS';
-  else if (llRatio > 0.5) structure = 'LOWER_LOWS';
+  const structure = structureFromSwingRatios(hhRatio, llRatio);
 
   return { structure, pivotCount: allPivots.length, avgPivotScore: parseFloat(avgScore.toFixed(3)) };
+}
+
+/**
+ * The swing ratios → a structure, for BOTH paths. MARKET-REGIME-DIRECTION-SYMMETRY-W1: a swing set
+ * making higher highs AND lower lows is MIXED. It used to read HIGHER_HIGHS by code order, so a
+ * falling market whose swings were broadening read TRENDING_UP (CRWV · BINANCE · 1h, 2026-11-03).
+ * Pinned by tests/unit/regime-mirror-symmetry.test.ts.
+ */
+function structureFromSwingRatios(hhRatio: number, llRatio: number): PriceStructureResult['structure'] {
+  if (hhRatio > 0.5 && llRatio > 0.5) return 'MIXED';
+  if (hhRatio > 0.5) return 'HIGHER_HIGHS';
+  if (llRatio > 0.5) return 'LOWER_LOWS';
+  return 'MIXED';
 }
 
 /** Original simple structure detection — fallback when no volume data */
@@ -517,9 +528,7 @@ function detectPriceStructureSimple(
   const llRatio = recentLows.length > 1 ? lowerLowCount / (recentLows.length - 1) : 0;
   const pivotCount = swingHighs.length + swingLows.length;
 
-  let structure: 'HIGHER_HIGHS' | 'LOWER_LOWS' | 'MIXED' = 'MIXED';
-  if (hhRatio > 0.5) structure = 'HIGHER_HIGHS';
-  else if (llRatio > 0.5) structure = 'LOWER_LOWS';
+  const structure = structureFromSwingRatios(hhRatio, llRatio);
 
   return { structure, pivotCount, avgPivotScore: 0 };
 }
