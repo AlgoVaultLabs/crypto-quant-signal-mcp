@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cadence_days": 30,
+  "cadence_days": 33,
   "warn_lead_days": 7,
   "rotation": [
     "algovault-bot",
@@ -37,6 +37,15 @@
       "scope": [
         "crypto-quant-signal-mcp",
         "autonomous-optimizer"
+      ]
+    },
+    {
+      "wave_id": "CODE-REVIEW-2026-11",
+      "completed_utc": "2026-11-02T13:42:00Z",
+      "baseline_sha": "c05ba6cb835f41e4ac242f3f12047ff520c4c2e2",
+      "head_sha": "6943e778e38d6bff66f6416a6ce8b2832e45e676",
+      "scope": [
+        "crypto-quant-signal-mcp"
       ]
     }
   ]
