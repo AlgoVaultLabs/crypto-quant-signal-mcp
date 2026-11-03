@@ -44,13 +44,13 @@ import { HTTP_TOOLS, validateToolInput, tolerantJson, type HttpTool } from './x4
 import { callTool } from './tool-call-pipeline.js';
 import type { LicenseInfo } from '../types.js';
 import { markServed, markDark } from './rail-served-state.js';
-import { createRailDispatcher, type RailMountTimers } from './rail-mount.js';
+import { createRailDispatcher, hasVerifiedPayment, type RailMountTimers } from './rail-mount.js';
 // OKX managed facilitator (HMAC-signed verify/settle → web3.okx.com). Live path only —
 // constructed lazily inside mountLive(), so importing this module is side-effect-free.
 import { OKXFacilitatorClient } from '@okxweb3/x402-core';
 import { x402ResourceServer, x402HTTPResourceServer } from '@okxweb3/x402-core/server';
 import { registerExactEvmScheme } from '@okxweb3/x402-evm/exact/server';
-import { paymentMiddlewareFromHTTPServer } from '@okxweb3/x402-express';
+import { ExpressAdapter, paymentMiddlewareFromHTTPServer } from '@okxweb3/x402-express';
 
 // ─────────────────────── extracted PURE config (FUNNEL-FIX-AGENT-X402-NUDGE-W1) ───────────────────────
 // The X-Layer constants + env→config→selection + the registry-derived listed set + the price now
@@ -382,6 +382,7 @@ export class SamplingAwareFacilitator implements OkxFacilitatorLike {
  * and the handlers never run; once it is, the dispatcher delegates to the payment middleware
  * (unpaid → 402; paid → the handler). Boot awaits only the FIRST attempt (bounded by rail-mount's
  * per-attempt timeout), so a healthy facilitator is served from the first request exactly as before.
+ * RT-01: the dispatcher's position is no longer what keeps the handlers paid — see `mountLiveRoutes`.
  */
 async function mountLive(
   app: Express,
@@ -408,15 +409,47 @@ async function mountLive(
       // A FRESH resource server per attempt: a failed initialize() leaves no half-synced state behind.
       const httpServer = buildOkxHttpResourceServer(facilitator, tools, resolved.payTo!);
       await httpServer.initialize();
-      // Already initialized → syncFacilitatorOnStart=false. With `true` the middleware would start
-      // initialize() at construction and hold the promise unawaited until the first paid request (F9).
-      return paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, false);
+      return {
+        // Already initialized → syncFacilitatorOnStart=false. With `true` the middleware would start
+        // initialize() at construction and hold the promise unawaited until the first paid request (F9).
+        middleware: paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, false),
+        // The SAME predicate, over the SAME context, the middleware builds for itself before it gates.
+        requiresPayment: (req: Request) => httpServer.requiresPayment({ adapter: new ExpressAdapter(req), path: req.path, method: req.method }),
+      };
     },
   });
   // App-level ROUTE, registered before the handlers below, path written from the rail's constant
   // (F9: never a router/use() at the prefix — that strips req.path and serves paid routes free).
   app.all(`${A2MCP_PREFIX}/*`, handle.dispatch);
 
+  const mounted = mountLiveRoutes(app, tools, resolved.payTo!);
+  await handle.firstAttempt;
+  return mounted;
+}
+
+/** The x402-v2 402 challenge for a LIVE route: the GET discovery answer and the POST refusal alike. */
+function sendLiveChallenge(res: Response, tool: string, payTo: string): void {
+  const body = buildXLayer402Body(tool, payTo, false);
+  try {
+    res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(body)).toString('base64'));
+  } catch {
+    /* body still carries the payload */
+  }
+  res.status(402).json(body);
+}
+
+/**
+ * The LIVE a2mcp routes: GET → the 402 discovery challenge; POST → the paid tool, FAIL-CLOSED.
+ *
+ * RT-01 (OPS-AUDIT-REMEDIATION-HIGH-W2-R2). The POST handler used to trust its POSITION behind the
+ * rail-mount dispatcher; a spelling Express matched but the dispatcher's case-sensitive prefix test
+ * missed (`/A2MCP/<tool>`) skipped the payment middleware and ran the tool unpaid. It now runs `callTool`
+ * only when THIS request carries the verified-payment marker, which the dispatcher writes only when the
+ * OKX middleware admits a path + method its own `requiresPayment()` prices. Anything else — a bypassed
+ * dispatcher, a mount-order change, no dispatcher at all — gets the 402 challenge and nothing runs.
+ * Exported so a test can mount these with NO dispatcher in front and prove exactly that.
+ */
+export function mountLiveRoutes(app: Express, tools: string[], payTo: string): string[] {
   const mounted: string[] = [];
   for (const tool of tools) {
     const ht = toHttpTool(tool);
@@ -428,15 +461,14 @@ async function mountLive(
     // x402-v2 challenge (eip155:196 / USDT0 / price / payTo) via the shared builder. Paid invocation
     // is still POST-only.
     app.get(route, (_req: Request, res: Response) => {
-      const body = buildXLayer402Body(tool, resolved.payTo!, false);
-      try {
-        res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(body)).toString('base64'));
-      } catch {
-        /* body still carries the payload */
-      }
-      res.status(402).json(body);
+      sendLiveChallenge(res, tool, payTo);
     });
     app.post(route, tolerantJson, async (req: Request, res: Response) => {
+      if (!hasVerifiedPayment(req, 'a2mcp')) {
+        console.warn(`[a2mcp] unpaid POST reached the paid handler for ${route} path=${JSON.stringify(req.path)} — refused 402 (RT-01 fail-closed)`);
+        sendLiveChallenge(res, tool, payTo);
+        return;
+      }
       try {
         const gate = validateToolInput(ht, req.body, req.headers as Record<string, string | string[] | undefined>);
         if (!gate.ok) {
@@ -478,6 +510,5 @@ async function mountLive(
     });
     mounted.push(route);
   }
-  await handle.firstAttempt;
   return mounted;
 }

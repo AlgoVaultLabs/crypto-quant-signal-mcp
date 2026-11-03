@@ -28,9 +28,50 @@
  * NO UNHANDLED REJECTION. The app installs no `unhandledRejection` handler (measured: 0 in
  * dist/index.js), so every promise this module creates carries a `.catch`. Retry timers are
  * `unref()`d so they never hold a process open.
+ *
+ * POSITION IS NOT THE CONTROL (RT-01, OPS-AUDIT-REMEDIATION-HIGH-W2-R2). The dispatcher used to own a
+ * path by a case-sensitive `startsWith`, while Express routes case-insensitively: `POST /A2MCP/<tool>`
+ * was not owned, `next()` ran, and the paid handler behind it served the tool unpaid. Two changes,
+ * either of which alone closes that spelling:
+ *   - the dispatcher owns a path by the OKX matcher's OWN normalization, case-insensitively
+ *     (`normalizeRailPath`), so it is never stricter than the matcher behind it, nor than Express;
+ *   - it writes a verified-payment MARKER (`hasVerifiedPayment`) only when the payment middleware
+ *     admits a request its own `requiresPayment()` prices, and the paid handler runs on that marker,
+ *     never on where it sits in the stack. Every other way into a paid handler gets the 402.
  */
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { markServed, markDark, type PaidRail } from './rail-served-state.js';
+
+/**
+ * The verified-payment marker — the only thing a paid handler behind a dispatcher may trust. Written in
+ * exactly one place: the dispatcher, when its payment middleware calls `next()` with no error for a
+ * request the middleware's own `requiresPayment()` accepts. Keyed by the request OBJECT, so nothing a
+ * client sends (a header, a path spelling, a query) can create an entry, and it dies with the request;
+ * valued by rail, so one rail's admission never satisfies another rail's handler.
+ */
+const verifiedPayments = new WeakMap<Request, PaidRail>();
+
+/** True only when THIS request was admitted by `rail`'s payment middleware for a path + method it prices. */
+export function hasVerifiedPayment(req: Request, rail: PaidRail): boolean {
+  return verifiedPayments.get(req) === rail;
+}
+
+/**
+ * The normalization `@okxweb3/x402-core@0.1.0`'s route matcher applies before its case-insensitive test
+ * (`x402HTTPResourceServer.normalizePath`, private in its .d.ts): drop `?`/`#` onward, percent-decode
+ * (the raw path on a malformed escape), `\` → `/`, collapse `//`, strip a trailing `/`. Parity with the
+ * vendor function is pinned in tests/unit/rail-mount.test.ts, so a vendor bump that changes it fails CI.
+ */
+export function normalizeRailPath(path: string): string {
+  const withoutQuery = path.split(/[?#]/)[0];
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(withoutQuery);
+  } catch {
+    decoded = withoutQuery;
+  }
+  return decoded.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/(.+?)\/+$/, '$1');
+}
 
 /** Backoff steps (ms) after each failed attempt; the last repeats forever (hourly). */
 export const RAIL_MOUNT_BACKOFF_MS: readonly number[] = [60_000, 300_000, 900_000, 3_600_000];
@@ -51,19 +92,34 @@ const REAL_TIMERS: RailMountTimers = {
   random: () => Math.random(),
 };
 
+/** What `init()` returns once the rail is ready: the payment middleware and its OWN admission predicate. */
+export interface RailPaymentGate {
+  /** The payment middleware: answers an unpaid request itself and calls `next()` to admit one. */
+  middleware: RequestHandler;
+  /**
+   * The middleware's own `requiresPayment()` for this request's path + method — never a second copy of
+   * its route table. A `next()` for a request this rejects (a free GET, an unpriced path) is no payment,
+   * so it carries no marker.
+   */
+  requiresPayment(req: Request): boolean;
+}
+
 export interface RailMountOptions {
   rail: PaidRail;
-  /** Path prefix the dispatcher owns, e.g. `/a2mcp`. Requests outside it pass straight through. */
+  /**
+   * Path prefix the dispatcher owns, e.g. `/a2mcp` — compared after `normalizeRailPath`, case-insensitively,
+   * on every method. Requests outside it pass straight through.
+   */
   prefix: string;
   /** Mode reported to rail-served-state once ready (e.g. `live`). */
   mode: string;
   /** Number of routes the rail serves once ready (reported only). */
   routes: number;
   /**
-   * Initialise the rail and return the request handler to delegate to once ready (the payment
-   * middleware). Throwing = not ready yet; the loop retries on the backoff schedule.
+   * Initialise the rail and return its payment gate to delegate to once ready. Throwing = not ready
+   * yet; the loop retries on the backoff schedule.
    */
-  init: () => Promise<RequestHandler>;
+  init: () => Promise<RailPaymentGate>;
   /** Bound on one attempt, so a hung facilitator cannot stall the loop (default 30 s). */
   attemptTimeoutMs?: number;
   /** Test seam: timers + clock + jitter source. */
@@ -111,9 +167,12 @@ export function createRailDispatcher(opts: RailMountOptions): RailMountHandle {
   const timers = opts.timers ?? REAL_TIMERS;
   const attemptTimeoutMs = opts.attemptTimeoutMs ?? 30_000;
   const since = new Date(timers.now()).toISOString();
-  const owns = (p: string): boolean => p === opts.prefix || p.startsWith(`${opts.prefix}/`);
+  // The matcher's own normalization, then its own case rule (a RegExp with flag `i`), on every method.
+  const prefixSource = normalizeRailPath(opts.prefix).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const ownedPath = new RegExp(`^${prefixSource}(?:/|$)`, 'i');
+  const owns = (p: string): boolean => ownedPath.test(normalizeRailPath(p));
 
-  let ready: RequestHandler | null = null;
+  let ready: RailPaymentGate | null = null;
   let attempts = 0;
   let failures = 0;
   let nextAttemptAt = timers.now();
@@ -122,7 +181,19 @@ export function createRailDispatcher(opts: RailMountOptions): RailMountHandle {
 
   const dispatch: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
     if (!owns(req.path)) return next();
-    if (ready) return ready(req, res, next);
+    if (ready) {
+      const gate = ready;
+      return gate.middleware(req, res, (err?: unknown) => {
+        if (err === undefined) {
+          // The marker's ONLY writer. A predicate that throws marks nothing: the handler then refuses
+          // (402), and the throw never escapes into the middleware's promise as an unhandled rejection.
+          let priced = false;
+          try { priced = gate.requiresPayment(req); } catch { priced = false; }
+          if (priced) verifiedPayments.set(req, opts.rail);
+        }
+        next(err);
+      });
+    }
     const retryAfterS = Math.max(1, Math.ceil((nextAttemptAt - timers.now()) / 1000));
     res.setHeader('Retry-After', String(retryAfterS));
     res.setHeader('X-Rail-State', `initializing; since=${since}`);
@@ -139,15 +210,15 @@ export function createRailDispatcher(opts: RailMountOptions): RailMountHandle {
 
   const attempt = (): Promise<void> => {
     attempts++;
-    let p: Promise<RequestHandler>;
+    let p: Promise<RailPaymentGate>;
     try {
       p = opts.init();
     } catch (e) {
       p = Promise.reject(e);
     }
     return withTimeout(p, attemptTimeoutMs, timers)
-      .then((handler) => {
-        ready = handler;
+      .then((gate) => {
+        ready = gate;
         markServed(opts.rail, { mode: opts.mode, routes: opts.routes });
         console.log(`[rail-mount] ${opts.rail} ready after ${attempts} attempt(s)`);
       })
