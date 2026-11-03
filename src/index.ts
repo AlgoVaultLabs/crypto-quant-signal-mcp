@@ -127,7 +127,6 @@ import {
   handleSubscriptionDeleted,
   handleSubscriptionUpdated,
   createCheckoutSession,
-  getCustomerApiKey,
   validateApiKey,
   summarizeCheckoutCompleted,
   // FUNNEL-TRUTH-AND-PAID-ATTRIBUTION-W1 CH1 R4 — the abandoned-checkout payload reducer.
@@ -150,7 +149,9 @@ import { registerOpsBuildRoute } from './lib/ops-build-api.js';
 import { registerPlansPublicRoutes } from './lib/plans-public-api.js';
 // GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 R2.2: the step-up mode resolver, for the one boot line.
 import { resolveStepupMode, freeKeylessCallsLabel } from './lib/plans.js';
-import { getWelcomePageHtml } from './lib/welcome-page.js';
+import { getWelcomePageHtml, getWelcomeRevealHtml } from './lib/welcome-page.js';
+// OPS-AUDIT-REMEDIATION-HIGH-W2-R2 CH2 (SECR-03): the one rule for showing a key from a Checkout Session.
+import { revealKeyOnce } from './lib/key-reveal.js';
 import {
   TRADE_CALL_DESCRIPTION,
   TRADE_CALL_ALIAS_SUFFIX,
@@ -1851,11 +1852,24 @@ async function startHttp() {
 
   // ── Welcome (shows API key after successful checkout OR paywall CTA on organic visit) ──
   // ACTIVATION-PAYWALL-W1: organic visits (no session_id) get the paywall CTA
-  // arm. Post-checkout visits (session_id present) get the API-key reveal.
+  // arm. Post-checkout visits (session_id present) get the API-key reveal —
+  // once, for a fresh paid session only (SECR-03, src/lib/key-reveal.ts).
   // UTM query params are surfaced to the template so the paywall button
   // preserves the attribution chain through to Stripe.
-  app.get('/welcome', async (req, res) => {
-    const sessionId = req.query.session_id as string | undefined;
+  //
+  // OPS-AUDIT-REMEDIATION-HIGH-W2-R2 CH2 (SECR-03): per-IP limiter on the session_id arm only, in
+  // recoverKeyLimiter's shape. Each such view is a Stripe call and may reveal a key; the organic arm
+  // stays unlimited.
+  const welcomeKeyLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => !req.query.session_id,
+    message: 'Too many requests. Try again in an hour.',
+  });
+  app.get('/welcome', welcomeKeyLimiter, async (req, res) => {
+    const sessionId = req.query.session_id;
     const utmSource = typeof req.query.utm_source === 'string' ? req.query.utm_source : null;
     const utmCampaign = typeof req.query.utm_campaign === 'string' ? req.query.utm_campaign : null;
 
@@ -1873,9 +1887,12 @@ async function startHttp() {
       return res.send(getWelcomePageHtml(null, null, null, { utmSource, utmCampaign, newSignupEnabled, oauthProviders, unifiedSignin, src }));
     }
 
+    // This arm can render a key: never cache it, and never hand its URL (it carries the session id) to
+    // another origin as a Referer. Set before the reveal, so every response of the arm carries both.
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
     try {
-      const { apiKey, tier, email } = await getCustomerApiKey(sessionId);
-      res.send(getWelcomePageHtml(apiKey, tier, email, { utmSource, utmCampaign, newSignupEnabled, oauthProviders, unifiedSignin, src }));
+      res.send(getWelcomeRevealHtml(await revealKeyOnce(sessionId), { utmSource, utmCampaign, newSignupEnabled, oauthProviders, unifiedSignin, src }));
     } catch (err) {
       console.error('Welcome page error:', err instanceof Error ? err.message : err);
       res.status(500).send('Failed to retrieve your API key. Please contact admin@algovault.com');

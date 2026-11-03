@@ -26,6 +26,7 @@ import { WELCOME_SUBTITLE, welcomeUpgradeLine } from './conversion-copy.js';
 import { renderAnalyticsRegion } from './analytics-snippet.js';
 import { WELCOME_BENEFIT_LINE, WELCOME_TRACK_TOKEN } from './lifecycle-copy.js';
 import { setupSnippet, SETUP_SLUGS, SETUP_HEADING, SETUP_LABELS, SETUP_DESKTOP_NOTE, SETUP_OTHER_CLIENTS_URL } from './client-setup.js';
+import type { KeyRevealOutcome } from './key-reveal.js';
 
 /**
  * Sanitize a UTM-ish param to safe URL-injection-free chars. Anything outside
@@ -53,6 +54,11 @@ const CHATGPT_CONNECT_LINES: readonly string[] = [
   'On a paid plan? Sign in with your subscription email and your plan applies.',
 ];
 
+// OPS-AUDIT-REMEDIATION-HIGH-W2-R2 CH2 (SECR-03) — frozen copy; the visible text is exactly the sentence.
+// Every refused key reveal renders it: a key already shown, or a session that may not reveal one at all.
+const KEY_ALREADY_SHOWN_HTML =
+  'This key was already shown. Get it again by email from your <a href="/account" style="color:#58a6ff">account page</a>.';
+
 function sanitizeUtm(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   return raw.replace(/[^a-zA-Z0-9_:.\-]/g, '').slice(0, 64);
@@ -69,6 +75,8 @@ export interface WelcomePageOptions {
   unifiedSignin?: boolean;
   /** First-touch ?src to preserve through the shared sign-in + OAuth redirect. */
   src?: string | null;
+  /** SECR-03: the already-shown arm — no key, no tier, no email, no paywall CTA. Set by `getWelcomeRevealHtml` only. */
+  keyAlreadyShown?: boolean;
 }
 
 export function getWelcomePageHtml(
@@ -85,7 +93,8 @@ export function getWelcomePageHtml(
   // NOT redirected back from Stripe Checkout), render an upgrade CTA above
   // the (empty) API-key area. The CTA preserves any incoming UTM tags so
   // post-Stripe-checkout attribution flows through.
-  const isOrganicVisit = !apiKey && !tier && !email;
+  // The already-shown arm carries no session data either, but it is a refused reveal, never an organic visit.
+  const isOrganicVisit = !apiKey && !tier && !email && !opts.keyAlreadyShown;
   const utmQuery = utmSource || utmCampaign
     ? `&${utmSource ? `utm_source=${encodeURIComponent(utmSource)}` : ''}${utmSource && utmCampaign ? '&' : ''}${utmCampaign ? `utm_campaign=${encodeURIComponent(utmCampaign)}` : ''}`
     : '';
@@ -172,7 +181,9 @@ export function getWelcomePageHtml(
     ? `<div class="key-box"><div class="label">Your API Key</div><code id="api-key">${apiKey}</code><button onclick="navigator.clipboard.writeText(document.getElementById('api-key').textContent);this.textContent='Copied!'">Copy</button></div>`
     : isOrganicVisit
       ? ''
-      : `<div class="pending"><p>Your API key is being provisioned. This usually takes a few seconds.</p><p>Refresh this page in a moment, or check your email at <strong>${email || 'your registered address'}</strong>.</p></div>`;
+      : opts.keyAlreadyShown
+        ? `<div class="key-box"><div class="label">Your API Key</div><p>${KEY_ALREADY_SHOWN_HTML}</p></div>`
+        : `<div class="pending"><p>Your API key is being provisioned. This usually takes a few seconds.</p><p>Refresh this page in a moment, or check your email at <strong>${email || 'your registered address'}</strong>.</p></div>`;
 
   // BOT-W2 / D1-C: post-checkout deep-link to @algovaultofficialbot.
   // The api_key is encoded defensively even though current av_live_* keys are
@@ -250,7 +261,7 @@ ${renderAnalyticsRegion()}
 <main class="page-main">
 <div class="container">
   <h1>Welcome to AlgoVault! &#x1f389;</h1>
-  <div class="subtitle">${tier ? tier.charAt(0).toUpperCase() + tier.slice(1) + ' plan activated' : isOrganicVisit ? WELCOME_SUBTITLE : 'Setting up your account...'}</div>
+  <div class="subtitle">${tier ? tier.charAt(0).toUpperCase() + tier.slice(1) + ' plan activated' : isOrganicVisit ? WELCOME_SUBTITLE : opts.keyAlreadyShown ? '' : 'Setting up your account...'}</div>
   ${paywallCta}
   ${keyDisplay}
   ${tgConnect}
@@ -322,4 +333,15 @@ ${setupBlock}
 ${renderBrandFooter('desktop')}
 </body>
 </html>`;
+}
+
+/**
+ * OPS-AUDIT-REMEDIATION-HIGH-W2-R2 CH2 (SECR-03): the page for one judged view (`revealKeyOnce`). A reveal and
+ * a pending key render the existing arms byte for byte; EVERY refusal renders the one already-shown arm, so
+ * the page is no oracle for which check failed.
+ */
+export function getWelcomeRevealHtml(reveal: KeyRevealOutcome, opts: WelcomePageOptions = {}): string {
+  if (reveal.kind === 'reveal') return getWelcomePageHtml(reveal.apiKey, reveal.tier, reveal.email, opts);
+  if (reveal.kind === 'pending') return getWelcomePageHtml(null, reveal.tier, reveal.email, opts);
+  return getWelcomePageHtml(null, null, null, { ...opts, keyAlreadyShown: true });
 }

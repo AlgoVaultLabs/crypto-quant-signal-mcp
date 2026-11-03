@@ -838,16 +838,31 @@ export async function createCheckoutSession(
 
 // ── Customer API Key Retrieval ──
 
-export async function getCustomerApiKey(sessionId: string): Promise<{ apiKey: string | null; tier: string | null; email: string | null }> {
-  if (!stripe) return { apiKey: null, tier: null, email: null };
+// OPS-AUDIT-REMEDIATION-HIGH-W2-R2 CH2 (SECR-03): the session's own status, payment_status and created
+// travel with the key, because the reveal rule (key-reveal.ts, this function's one caller) judges them
+// before any key reaches a page. All three are top-level session fields: no new expand, no new permission.
+export async function getCustomerApiKey(sessionId: string): Promise<{
+  apiKey: string | null;
+  tier: string | null;
+  email: string | null;
+  status: string | null;
+  paymentStatus: string | null;
+  created: number | null;
+}> {
+  if (!stripe) return { apiKey: null, tier: null, email: null, status: null, paymentStatus: null, created: null };
 
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ['customer', 'subscription'],
   });
+  const facts = {
+    status: session.status ?? null,
+    paymentStatus: session.payment_status ?? null,
+    created: typeof session.created === 'number' ? session.created : null,
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const customer = session.customer as any;
-  if (!customer || typeof customer === 'string') return { apiKey: null, tier: null, email: null };
+  if (!customer || typeof customer === 'string') return { apiKey: null, tier: null, email: null, ...facts };
 
   const apiKey = customer.metadata?.api_key || null;
   const email = customer.email || null;
@@ -857,7 +872,7 @@ export async function getCustomerApiKey(sessionId: string): Promise<{ apiKey: st
   const sub = session.subscription as any;
   const tier: string | null = sub?.items?.data ? highestTier(sub) : null;
 
-  return { apiKey, tier, email };
+  return { apiKey, tier, email, ...facts };
 }
 
 // ── Webhook Handling ──

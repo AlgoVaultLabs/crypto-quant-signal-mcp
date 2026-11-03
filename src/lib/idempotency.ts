@@ -44,6 +44,7 @@ import type { ClaimOutcome } from './x402-idempotency-store.js';
  */
 const CLAIMABLE_TABLES: Readonly<Record<string, readonly string[]>> = Object.freeze({
   entitlement_debits: Object.freeze(['idem_key']),
+  key_reveal_claims: Object.freeze(['claim_hash']),
 });
 
 /** Identifier shape SQL will accept from us: a bare snake_case name, nothing else. */
