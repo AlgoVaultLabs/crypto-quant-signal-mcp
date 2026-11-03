@@ -40,6 +40,7 @@ import { FEE_TABLE_MAX_AGE_DAYS } from './venue-fees.js';
 import {
   activeRules,
   evaluateRules,
+  isCallersRule,
   DEFAULT_MAX_FUNDING_BPS,
   DEFAULT_MAX_SIZE_PCT_OF_24H_VOLUME,
   type PreTradeRuleMetrics,
@@ -94,6 +95,7 @@ export const PRE_TRADE_REASONS = {
   REGIME_VOLATILE: 'adjust',
   LIQUIDATION_BEFORE_STOP: 'adjust',
   YOUR_RULE_NOT_CHECKED: 'adjust',
+  SAVED_RULES_UNAVAILABLE: 'adjust',
   UNDERLYING_CLOSED: 'adjust',
   REGIME_UNAVAILABLE: 'info',
   VENUES_UNAVAILABLE: 'info',
@@ -369,6 +371,8 @@ export interface DecideInput {
   volatilityUnavailable?: boolean;
   /** V2, set only when leverage was sent: the decision venue has no liquidation figure, and its basis. */
   liquidationUnavailable?: { exchange: string; basis: string } | null;
+  /** V2.1: a keyed call whose saved profile could not be read — judged without it, so never GO. */
+  savedRulesUnavailable?: boolean;
 }
 
 export interface PreTradeTiming {
@@ -465,8 +469,9 @@ function timingFor(best: VenueEvaluation, input: DecideInput): PreTradeTiming {
 /**
  * The reasons, in contract order, and the decision: any block → WAIT; else any adjust → CAUTION;
  * else GO. Every comparison is a rule's (`evaluateRules`): a FAILED DEFAULT keeps v1's code and sentence,
- * a failed rule of the caller's is YOUR_RULE_FAILED, one of theirs that could not be checked is
- * YOUR_RULE_NOT_CHECKED, and a default that could not be checked says nothing.
+ * a failed rule of the caller's — sent or saved (`isCallersRule`) — is YOUR_RULE_FAILED, one of theirs that could
+ * not be checked is YOUR_RULE_NOT_CHECKED, and a default that could not be checked says nothing. A saved profile
+ * that could not be read is SAVED_RULES_UNAVAILABLE.
  */
 export function decide(input: DecideInput): DecideResult {
   const { coin, side, sizeUsd, holdHours, timeframe, ranking, regime } = input;
@@ -484,7 +489,7 @@ export function decide(input: DecideInput): DecideResult {
     const why = ranking.venues.map((v) => `${v.exchange} ${EXCLUSION_TEXT[v.excluded ?? 'feed_unavailable']}`).join('; ');
     reasons.push(reason('NO_TRADABLE_VENUE', `No venue can take this ${side} on ${coin}: ${why}.`));
   }
-  const yoursFailed = rules.filter((r) => r.source === 'yours' && r.result === 'fail');
+  const yoursFailed = rules.filter((r) => isCallersRule(r.source) && r.result === 'fail');
   if (yoursFailed.length) {
     reasons.push(reason('YOUR_RULE_FAILED', `${yoursFailed.length === 1 ? 'Your rule' : 'Your rules'} failed${where}: ${ruleList(yoursFailed)}`));
   }
@@ -524,10 +529,13 @@ export function decide(input: DecideInput): DecideResult {
   if (best && liqFailed) {
     reasons.push(reason('LIQUIDATION_BEFORE_STOP', `On ${best.exchange}: ${liqFailed.detail}`));
   }
-  const yoursUnchecked = rules.filter((r) => r.source === 'yours' && r.result === 'not_evaluated');
+  const yoursUnchecked = rules.filter((r) => isCallersRule(r.source) && r.result === 'not_evaluated');
   if (yoursUnchecked.length) {
     reasons.push(reason('YOUR_RULE_NOT_CHECKED',
       `${yoursUnchecked.length === 1 ? 'Your rule was' : 'Your rules were'} not checked${where}: ${ruleList(yoursUnchecked)}`));
+  }
+  if (input.savedRulesUnavailable) {
+    reasons.push(reason('SAVED_RULES_UNAVAILABLE', 'Your saved rules could not be read, so this check did not apply them.'));
   }
   if (input.underlyingClosed) {
     reasons.push(reason('UNDERLYING_CLOSED',

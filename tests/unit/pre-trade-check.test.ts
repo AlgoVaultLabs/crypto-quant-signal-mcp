@@ -106,6 +106,8 @@ function harness(over: {
       if (over.tiers) return over.tiers(venue);
       return venue === 'BINANCE' ? { rate: null, basis: 'tier_table_requires_key' } : { rate: 0.004, basis: 'public_tier_table' };
     },
+    // DECISION-CALL-V2-W2: no key here has a saved profile, so every keyed call decides as it did before v2.1.
+    ruleProfile: async () => null,
   };
   return h;
 }
@@ -134,7 +136,7 @@ function allKeys(x: unknown, out: string[] = []): string[] {
   return out;
 }
 
-const TOP_KEYS = ['coin', 'side', 'size_usd', 'hold_hours', 'timeframe', 'inputs', 'decision', 'reasons', 'rules', 'rules_summary', 'best_venue', 'size_limit_usd',
+const TOP_KEYS = ['coin', 'side', 'size_usd', 'hold_hours', 'timeframe', 'inputs', 'decision', 'reasons', 'rules', 'rules_summary', 'saved_rules', 'best_venue', 'size_limit_usd',
   'size_limit_usd_total', 'split', 'timing', 'regime', 'calc', 'underlying_session', 'venues', 'assumptions', 'fee_table_verified_at',
   'rule_version', 'as_of', '_algovault'];
 const VENUE_KEYS = ['exchange', 'listed', 'excluded', 'liquidity_usd', 'volume_24h_usd', 'capacity_usd', 'size_pct_of_24h_volume',
@@ -345,12 +347,12 @@ describe('invalid_parameter — the declaration\'s bounds, held on every channel
   });
 });
 
-describe('the served shape is the one audits/pre-trade-check-shape-snapshot-2026-11-01.json declares', () => {
-  const snap = JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', 'pre-trade-check-shape-snapshot-2026-11-01.json'), 'utf8')) as Record<string, string[]> & { endpoint: string; snapshot_date: string };
+describe('the served shape is the one audits/pre-trade-check-shape-snapshot-2026-11-03.json declares', () => {
+  const snap = JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', 'pre-trade-check-shape-snapshot-2026-11-03.json'), 'utf8')) as Record<string, string[]> & { endpoint: string; snapshot_date: string };
 
   it('carries the bundle builder\'s field names, and a unique endpoint', () => {
     expect(snap.endpoint).toBe('pre_trade_check (MCP tool)');
-    expect(snap.snapshot_date).toBe('2026-11-01');
+    expect(snap.snapshot_date).toBe('2026-11-03');
     expect(snap.allowed_keys).toEqual(TOP_KEYS);
     expect(snap.venues_row_keys).toEqual(VENUE_KEYS);
     expect(snap.calc_keys).toEqual(CALC_KEYS);
@@ -373,6 +375,7 @@ describe('the served shape is the one audits/pre-trade-check-shape-snapshot-2026
     expect(Object.keys(r.regime!)).toEqual(snap.regime_keys);
     expect(Object.keys(r.inputs)).toEqual(snap.inputs_keys);
     expect(Object.keys(r.calc)).toEqual(snap.calc_keys);
+    expect(Object.keys(r.saved_rules)).toEqual(snap.saved_rules_keys);
     for (const v of r.venues) expect(snap.liq_basis_values).toContain(v.liq_basis);
     expect(snap.order_type_values).toContain(r.inputs.order_type);
     expect(Object.keys(r.assumptions)).toEqual(snap.assumptions_keys);
@@ -419,7 +422,7 @@ describe('toPreTradeCheckResponse — the allow-list formatter copies, never spr
     const rules = [Object.assign({ id: 'maxFundingBps' as const, source: 'default' as const, limit: 10, value: 1, result: 'pass' as const, detail: 'x', failCode: null }, poison)];
     const r = toPreTradeCheckResponse(
       { coin: 'BTC', side: 'long', sizeUsd: 10_000, holdHours: 8, timeframe: '4h', nowMs: NOW, ranking, decided,
-        rules, sizeGuardPct: 0.1, yourRules: ranking.venues.map(() => null),
+        rules, savedRules: Object.assign({ applied: false, updatedAt: null }, poison), sizeGuardPct: 0.1, yourRules: ranking.venues.map(() => null),
         inputs: Object.assign({ leverage: null, stop_pct: null, target_pct: null, equity_usd: null, order_type: 'market' as const }, poison),
         regime: Object.assign({ label: 'RANGING', confidence: 50, timeframe: '4h', asOfMs: NOW, sourceExchange: 'BINANCE' }, poison),
         calc, venueCosts, underlyingSession: 'ALWAYS_OPEN', feeTableVerifiedAt: '2026-10-24' },

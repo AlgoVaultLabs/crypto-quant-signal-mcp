@@ -38,6 +38,13 @@
 // v1's order behind the rules' key (`decisionKey`), and `decide` reads that venue's results. A call without a
 // v2 input decides exactly as v1 did. The tool computes and checks; it never proposes a size, leverage, stop
 // or target.
+//
+// V2.1 (DECISION-CALL-V2-W2, contract § v2.1). A keyed call reads its API key's saved rules profile ONCE, before
+// rule activation (`ruleProfile`, `pre-trade-rule-profiles.ts`); keyless, x402 and internal calls never read one
+// (`profileKeyOf`). The profile is the middle layer — defaults, then saved, then the call's own `rules`, key by key —
+// and a saved rule is the caller's like a sent one (`isCallersRule`). A read that fails applies no saved rule and
+// adds SAVED_RULES_UNAVAILABLE (adjust), so a keyed call is never GO without its saved rules. With no profile a
+// keyed call decides exactly as before; `saved_rules` says whether one was applied.
 
 import { z } from 'zod';
 import {
@@ -58,11 +65,14 @@ import {
   activeRules,
   activeLimit,
   evaluateRules,
+  isCallersRule,
   type PreTradeRuleParam,
   type PreTradeRuleMetrics,
   type PreTradeRuleResult,
+  type PreTradeRuleSource,
   type PreTradeRulesInput,
 } from '../lib/pre-trade-rules.js';
+import { getProfile, profileKeyOf, profileRefOf, type PreTradeRuleProfile } from '../lib/pre-trade-rule-profiles.js';
 import { decisionVenueSet, staleFeeRows, takerFeeBps, VENUE_FEE_ROWS } from '../lib/venue-fees.js';
 import {
   computePreTradeCalc,
@@ -248,7 +258,7 @@ type PreTradeRuleOutcome = PreTradeRuleResult['result'];
 /** One active rule on the decision venue. */
 export interface PreTradeRuleRow {
   id: string;
-  source: 'yours' | 'default';
+  source: PreTradeRuleSource;
   limit: number | boolean;
   value: number | boolean | string | null;
   result: PreTradeRuleOutcome;
@@ -276,6 +286,8 @@ export interface PreTradeCheckResponse {
   /** Every active rule on the decision venue, in table order. */
   rules: PreTradeRuleRow[];
   rules_summary: { passed: number; failed: number; not_evaluated: number };
+  /** V2.1: whether the API key's saved profile was applied, and when it was last saved (null when not applied). */
+  saved_rules: { applied: boolean; updated_at: string | null };
   best_venue: { exchange: string; est_cost_bps: number; est_cost_usd: number; capacity_usd: number } | null;
   size_limit_usd: number | null;
   size_limit_usd_total: number | null;
@@ -342,6 +354,11 @@ export interface PreTradeCheckDeps {
   venueStatus: (exchange: ExchangeId) => Promise<VenueStatus>;
   /** The venue's published maintenance rate at the notional (`venue-margin-tiers.ts`). Called ONLY when `leverage` is sent. */
   marginTierAt: (exchange: string, coin: string, notionalUsd: number, refPx: number | null) => Promise<MarginTierRead>;
+  /**
+   * The API key's saved rules profile, or null when it has none (`pre-trade-rule-profiles.ts`). Called ONLY for a
+   * keyed call, once, before rule activation. A throw or a rejection is SAVED_RULES_UNAVAILABLE, never a GO.
+   */
+  ruleProfile: (licenseKey: string) => Promise<PreTradeRuleProfile | null>;
 }
 
 export const DEFAULT_PRE_TRADE_CHECK_DEPS: PreTradeCheckDeps = {
@@ -355,6 +372,8 @@ export const DEFAULT_PRE_TRADE_CHECK_DEPS: PreTradeCheckDeps = {
   resolveAssetClass,
   venueStatus: getVenueStatus,
   marginTierAt,
+  // The store is keyed by the pseudonym, so the raw key stops here.
+  ruleProfile: (licenseKey) => getProfile(profileRefOf(licenseKey)),
 };
 
 // ── Refusals ────────────────────────────────────────────────────────────────────────────────────
@@ -497,6 +516,8 @@ export interface PreTradeResponseInput {
   decided: DecideResult;
   /** The active rules on the decision venue (or on no venue), in table order — what `decide` judged. */
   rules: readonly PreTradeRuleResult[];
+  /** Whether the key's saved profile was applied, and its last save. */
+  savedRules: { applied: boolean; updatedAt: string | null };
   /** The active `maxSizePctOf24hVolume`, a percent. */
   sizeGuardPct: number;
   regime: RegimeRead | null;
@@ -538,6 +559,7 @@ export function toPreTradeCheckResponse(a: PreTradeResponseInput, meta: AlgoVaul
       failed: a.rules.filter((r) => r.result === 'fail').length,
       not_evaluated: a.rules.filter((r) => r.result === 'not_evaluated').length,
     },
+    saved_rules: { applied: a.savedRules.applied, updated_at: a.savedRules.updatedAt },
     best_venue: best
       ? { exchange: best.exchange, est_cost_bps: best.estCostBps as number, est_cost_usd: best.estCostUsd as number, capacity_usd: best.capacityUsd as number }
       : null,
@@ -739,25 +761,54 @@ function ruleMetrics(
   };
 }
 
-/** Your rules on one venue: fail if any fails, else not_evaluated if any could not be checked, else pass; null with none. */
+/** Your rules — sent or saved — on one venue: fail if any fails, else not_evaluated if any could not be checked, else pass; null with none. */
 function yourRulesOutcome(rules: readonly PreTradeRuleResult[] | null): PreTradeRuleOutcome | null {
-  const yours = rules ? rules.filter((r) => r.source === 'yours') : [];
+  const yours = rules ? rules.filter((r) => isCallersRule(r.source)) : [];
   if (yours.length === 0) return null;
   if (yours.some((r) => r.result === 'fail')) return 'fail';
   return yours.some((r) => r.result === 'not_evaluated') ? 'not_evaluated' : 'pass';
 }
 
 /**
- * The decision-venue key, compared before v1's order (contract § Rules): no failed rule of yours, then the
- * fewest rules not evaluated, then — so a sent leverage picks a venue that publishes its tiers — a
- * liquidation figure. With no v2 input every candidate's key is equal, so the venue is v1's.
+ * The decision-venue key, compared before v1's order (contract § Rules): no failed rule of yours (a saved one
+ * counts as yours, § v2.1), then the fewest rules not evaluated, then — so a sent leverage picks a venue that
+ * publishes its tiers — a liquidation figure. With no v2 input every candidate's key is equal, so the venue is v1's.
  */
 function decisionKey(rules: readonly PreTradeRuleResult[], liqDistancePct: number | null, leverageSent: boolean): number[] {
   return [
-    rules.some((r) => r.source === 'yours' && r.result === 'fail') ? 1 : 0,
+    rules.some((r) => isCallersRule(r.source) && r.result === 'fail') ? 1 : 0,
     rules.filter((r) => r.result === 'not_evaluated').length,
     leverageSent && liqDistancePct === null ? 1 : 0,
   ];
+}
+
+/** What the key's saved profile gives a call: the middle layer's rules, and what `saved_rules` reports. */
+interface SavedRulesRead {
+  rules: PreTradeRulesInput;
+  applied: boolean;
+  updatedAt: string | null;
+  /** True when a keyed call's profile could not be read: SAVED_RULES_UNAVAILABLE. */
+  unavailable: boolean;
+}
+
+const noSavedRules = (unavailable = false): SavedRulesRead => ({ rules: {}, applied: false, updatedAt: null, unavailable });
+
+/**
+ * The call's saved rules: ONE read for a keyed call (`profileKeyOf`), none for any other. A read that throws or
+ * rejects — no hash key, a database fault, a stored value that no longer parses — applies nothing and is
+ * `unavailable`; it is logged without the key.
+ */
+async function readSavedRules(deps: PreTradeCheckDeps, license: LicenseInfo): Promise<SavedRulesRead> {
+  const key = profileKeyOf(license);
+  if (key === null) return noSavedRules();
+  try {
+    const profile = await deps.ruleProfile(key);
+    return profile ? { rules: profile.rules, applied: true, updatedAt: profile.updatedAt, unavailable: false } : noSavedRules();
+  } catch (e) {
+    const why = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    console.error(`[pre_trade_check] saved rules unreadable, not applied: ${why.slice(0, 200)}`);
+    return noSavedRules(true);
+  }
 }
 
 // ── The handler ─────────────────────────────────────────────────────────────────────────────────
@@ -869,10 +920,12 @@ export async function runPreTradeCheck(
     };
   }
 
-  // Rank at the active size limit → regime, sigma and (only when leverage is sent) tier tables, side by side
-  // → every active rule on every candidate → the decision venue → session → decide.
+  // The key's saved rules (one read, keyed calls only) → the three layers → rank at the active size limit →
+  // regime, sigma and (only when leverage is sent) tier tables, side by side → every active rule on every
+  // candidate → the decision venue → session → decide.
   const { leverage, stopPct, targetPct, equityUsd, orderType } = v.params;
-  const active = activeRules(v.params.rules);
+  const saved = await readSavedRules(deps, license);
+  const active = activeRules(v.params.rules, saved.rules);
   const sizeGuardPct = activeLimit(active, 'maxSizePctOf24hVolume');
   const rankInput = { venues: inputs, side, sizeUsd, holdHours, nowMs, sizeMaxFraction: sizeGuardPct / 100 };
   const cheapest = rankVenues(rankInput);
@@ -916,8 +969,9 @@ export async function runPreTradeCheck(
   const rules = decisionIdx >= 0
     ? (venueRules[decisionIdx] as PreTradeRuleResult[])
     : evaluateRules(active, ruleMetrics(null, calc, null, v.params, regime));
+  // Saved rules count as rules the call carries: they are applied as if sent, layer under layer.
   const v2Sent = leverage !== null || stopPct !== null || targetPct !== null || equityUsd !== null
-    || orderType === 'limit' || Object.keys(v.params.rules).length > 0;
+    || orderType === 'limit' || Object.keys(v.params.rules).length > 0 || Object.keys(saved.rules).length > 0;
   const decisionCosts = decisionIdx >= 0 ? figures[decisionIdx].costs : null;
 
   const refVenue = (best?.exchange ?? inputs.find((x) => x.asset !== null)?.exchange ?? venues[0]) as ExchangeId;
@@ -942,6 +996,7 @@ export async function runPreTradeCheck(
     liquidationUnavailable: best && decisionCosts && leverage !== null && decisionCosts.liqDistancePct === null
       ? { exchange: best.exchange, basis: decisionCosts.liqBasis }
       : null,
+    savedRulesUnavailable: saved.unavailable,
   });
 
   // Bill ONE unit — the first write of the call, after the decision exists.
@@ -988,7 +1043,7 @@ export async function runPreTradeCheck(
       {
         coin, side, sizeUsd, holdHours, timeframe, nowMs,
         inputs: { leverage, stop_pct: stopPct, target_pct: targetPct, equity_usd: equityUsd, order_type: orderType },
-        ranking, decided, rules, sizeGuardPct, regime, calc,
+        ranking, decided, rules, savedRules: { applied: saved.applied, updatedAt: saved.updatedAt }, sizeGuardPct, regime, calc,
         venueCosts: figures.map((f) => f.costs), yourRules: venueRules.map(yourRulesOutcome),
         underlyingSession: session, feeTableVerifiedAt: oldestVerified,
       },

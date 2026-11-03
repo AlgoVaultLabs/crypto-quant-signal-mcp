@@ -7,9 +7,12 @@
  * own thresholds, which live here and nowhere else (`pre-trade-decision.ts` re-exports them). So a call that
  * sends no rules is judged exactly as v1 judged it; the other rows are the caller's to switch on.
  *
- *   active   every key the caller sends (source `yours`) and every default not switched off (source
- *            `default`). `false` switches a boolean default off; a number replaces a default and makes it
- *            `yours`; `true` on a boolean rule makes it `yours`.
+ *   active   three layers, key by key (DECISION-CALL-V2-W2, contract § v2.1): the defaults, then the API key's
+ *            saved profile (source `saved`), then the call's own `rules` (source `yours`) — a later layer
+ *            replaces an earlier one, a number replaces a default, `true` on a boolean rule makes it the
+ *            layer's, and `false` switches a boolean off at any layer. A default no layer touched stays
+ *            `default`. `saved` and `yours` are both the caller's rules (`isCallersRule`): graded and preferred
+ *            alike, so the source only says where a rule came from.
  *   result   on one venue: pass · fail · not_evaluated (the metric is null — the detail names what to send,
  *            or what is missing).
  *
@@ -139,20 +142,37 @@ export function parseRules(raw: unknown):
   return { ok: true, rules };
 }
 
+/** Where an active rule came from: the call (`yours`), the key's saved profile (`saved`) or the table (`default`). */
+export type PreTradeRuleSource = 'yours' | 'saved' | 'default';
+
+/**
+ * A rule of the caller's — sent with the call or saved with their key. The ONE test the decision engine (YOUR_RULE_*)
+ * and the handler (the decision venue, `your_rules`) grade by, so a saved rule can never be judged unlike a sent one.
+ */
+export function isCallersRule(source: PreTradeRuleSource): boolean {
+  return source !== 'default';
+}
+
 export interface PreTradeActiveRule {
   id: PreTradeRuleId;
-  source: 'yours' | 'default';
+  source: PreTradeRuleSource;
   /** A number limit, or `true` for an on boolean rule. */
   limit: number | true;
 }
 
-/** Every key the caller sent (`yours`) and every default not switched off (`default`), in table order. */
-export function activeRules(sent: PreTradeRulesInput = {}): PreTradeActiveRule[] {
+/**
+ * The active rules, in table order, from three layers key by key: the call's `sent` rules over the key's `saved`
+ * profile over the defaults. The first layer that names a key decides it — `false` there switches the rule off — and
+ * a key no layer names keeps its default (or stays off when it has none).
+ */
+export function activeRules(sent: PreTradeRulesInput = {}, saved: PreTradeRulesInput = {}): PreTradeActiveRule[] {
   return PRE_TRADE_RULES.flatMap((row): PreTradeActiveRule[] => {
-    const v = sent[row.id];
-    if (v === undefined) return row.default === null ? [] : [{ id: row.id, source: 'default', limit: row.default }];
-    if (v === false) return [];
-    return [{ id: row.id, source: 'yours', limit: v }];
+    const layer = sent[row.id] !== undefined
+      ? { source: 'yours' as const, v: sent[row.id] }
+      : saved[row.id] !== undefined ? { source: 'saved' as const, v: saved[row.id] } : null;
+    if (layer === null) return row.default === null ? [] : [{ id: row.id, source: 'default', limit: row.default }];
+    if (layer.v === false) return [];
+    return [{ id: row.id, source: layer.source, limit: layer.v as number | true }];
   });
 }
 
@@ -194,7 +214,7 @@ export type PreTradeDefaultFailCode = 'SIZE_ABOVE_VENUE_LIMIT' | 'FUNDING_COST_H
 
 export interface PreTradeRuleResult {
   id: PreTradeRuleId;
-  source: 'yours' | 'default';
+  source: PreTradeRuleSource;
   limit: number | boolean;
   value: number | boolean | string | null;
   result: 'pass' | 'fail' | 'not_evaluated';

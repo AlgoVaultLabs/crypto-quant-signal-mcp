@@ -136,6 +136,8 @@ testDeps.make = (): PreTradeCheckDeps => ({
   resolveAssetClass: async () => 'CRYPTO' as never,
   venueStatus: async () => 'promoted',
   marginTierAt: async (venue) => (venue === 'BINANCE' ? { rate: null, basis: 'tier_table_requires_key' } : { rate: 0.004, basis: 'public_tier_table' }),
+  // DECISION-CALL-V2-W2: no key here has a saved profile.
+  ruleProfile: async () => null,
 });
 
 const ROOT = resolve(__dirname, '../..');
