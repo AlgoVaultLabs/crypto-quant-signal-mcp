@@ -10,12 +10,12 @@
  * before the live P7 leg ever runs.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PRE_TRADE_CHECK_PARAM_DECL, PUBLIC_TOOL_ENUM_PARAMS, TOOL_DOCS_PARTIAL } from '../../src/lib/tool-param-schema.js';
 import { PRE_TRADE_RULES, type PreTradeRuleRow } from '../../src/lib/pre-trade-rules.js';
-import { PRE_TRADE_RULE_PARAM_DESC } from '../../src/tool-descriptions.js';
+import { PARAM_DESC_PRE_TRADE_RULES, PRE_TRADE_RULE_PARAM_DESC } from '../../src/tool-descriptions.js';
 import { renderedParamsFor } from '../../scripts/check-docs-samples-live.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -127,11 +127,66 @@ describe('the section follows the wave\'s section order and copy law', () => {
     expect(SECTION).toContain('"rules":{"maxLeverage":10}');
   });
 
+  it('Your rules → Saved rules → Response Fields: the saved-rules section sits between the two', () => {
+    const at = (h: string) => SECTION.indexOf(h);
+    expect(at('>Saved rules<')).toBeGreaterThan(at('>Your rules<'));
+    expect(at('>Saved rules<')).toBeLessThan(at('>Response Fields<'));
+  });
+
   it('prose: no "win rate", no venue count, no wave id', () => {
     const prose = SECTION.replace(/<code[^>]*>[\s\S]*?<\/code>/g, ' ').replace(/<[^>]+>/g, ' ');
     expect(prose).not.toMatch(/win\s+rate/i);
     expect(prose).not.toMatch(/\b\d+\s+(?:venues|exchanges)\b/i);
     expect(prose).not.toMatch(/\b[A-Z]+(?:-[A-Z0-9]+)+-W\d+\b/);
     expect(prose).not.toMatch(/chatgpt/i);
+  });
+});
+
+/** An element's rendered text: tags dropped, the three entities the partial uses decoded. */
+const textOf = (html: string): string => html.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+/** The live pre_trade_check shape snapshot: the one no later snapshot supersedes. */
+function liveShapeSnapshot(): { allowed_keys: string[]; rule_source_values: string[] } {
+  const dir = join(REPO_ROOT, 'audits');
+  const live = readdirSync(dir)
+    .filter((f) => /^pre-trade-check-shape-snapshot-.+\.json$/.test(f))
+    .map((f) => JSON.parse(readFileSync(join(dir, f), 'utf8')))
+    .filter((s) => !s.superseded_by);
+  expect(live, 'exactly one live pre_trade_check shape snapshot').toHaveLength(1);
+  return live[0];
+}
+
+describe('saved rules (DECISION-CALL-V2-W2): the contract\'s copy verbatim, and the response it documents', () => {
+  // Copy-locked: Prompt/pre-trade-check-contract-v2.md § v2.1 "Copy (verbatim; approved with the dispatch)".
+  const RULES_PARAM_COPY = 'Your rules, each key optional. Saved rules apply too; a failed one returns WAIT.';
+  const SAVED_RULES_COPY = 'Save your rules once. Send them to PUT https://api.algovault.com/api/pre-trade-rules with your API key (Authorization: Bearer <key>). Every check made with that key then applies them, marked saved in rules[]; a rule sent with a call overrides the saved one for that call. GET shows what is saved and DELETE clears it. Saving needs an API key; a free key works.';
+
+  it('the served rules description is the contract string, and the docs row carries it in place of the old one', () => {
+    expect(PARAM_DESC_PRE_TRADE_RULES).toBe(RULES_PARAM_COPY);
+    const row = SECTION.match(/<tr class="param-row"[^>]*><td>rules<\/td>[\s\S]*?<\/tr>/);
+    expect(row, 'the rules parameter row').not.toBeNull();
+    expect(textOf(row![0])).toContain(RULES_PARAM_COPY);
+    expect(textOf(SECTION)).not.toContain('A rule of yours that fails returns WAIT. Every key');
+  });
+
+  it('the Saved rules paragraph is the contract paragraph, verbatim', () => {
+    const p = SECTION.match(/<p [^>]*data-copy-locked="saved-rules"[^>]*>([\s\S]*?)<\/p>/);
+    expect(p, 'the copy-locked paragraph').not.toBeNull();
+    expect(textOf(p![1])).toBe(SAVED_RULES_COPY);
+  });
+
+  it('the Response Fields table documents every key the shape snapshot allows, in its order', () => {
+    const start = SECTION.indexOf('>Response Fields<');
+    const table = SECTION.slice(start, SECTION.indexOf('</table>', start));
+    const rows = [...table.matchAll(/<tr class="param-row"[^>]*><td>([^<]+)<\/td>/g)].map((m) => m[1]);
+    expect(rows).toEqual(liveShapeSnapshot().allowed_keys);
+    expect(rows).toContain('saved_rules');
+  });
+
+  it('the rules[].source row names every source the snapshot allows', () => {
+    const src = SECTION.match(/<tr class="param-row"><td>source<\/td>[\s\S]*?<\/tr>/);
+    expect(src, 'the source row').not.toBeNull();
+    const named = [...src![0].matchAll(/rounded">([a-z]+)<\/code>/g)].map((m) => m[1]);
+    expect(named).toEqual(liveShapeSnapshot().rule_source_values);
   });
 });

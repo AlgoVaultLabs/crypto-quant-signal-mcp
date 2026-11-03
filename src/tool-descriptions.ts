@@ -235,7 +235,8 @@ export const PARAM_DESC_PRE_TRADE_STOP_PCT = 'Stop-loss distance from entry in p
 export const PARAM_DESC_PRE_TRADE_TARGET_PCT = 'Target distance from entry in percent, e.g. 4.';
 export const PARAM_DESC_PRE_TRADE_EQUITY_USD = 'Account equity in USD. Enables the percent-of-equity rules.';
 export const PARAM_DESC_PRE_TRADE_ORDER_TYPE = 'market (taker entry) or limit (maker entry). Default market.';
-export const PARAM_DESC_PRE_TRADE_RULES = 'Your rules, each key optional. A rule of yours that fails returns WAIT.';
+// DECISION-CALL-V2-W2: verbatim from the contract's § v2.1 Copy — a check also applies the key's saved rules.
+export const PARAM_DESC_PRE_TRADE_RULES = 'Your rules, each key optional. Saved rules apply too; a failed one returns WAIT.';
 /** One string per `PRE_TRADE_RULES` key (keyed on the table, so a rule added without its copy does not compile). */
 export const PRE_TRADE_RULE_PARAM_DESC: Readonly<Record<PreTradeRuleId, string>> = Object.freeze({
   maxLeverage: 'Highest leverage you allow.',

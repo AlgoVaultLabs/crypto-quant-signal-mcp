@@ -10,8 +10,8 @@
  * is SAVED_RULES_UNAVAILABLE (adjust), so a keyed call is never GO without its saved rules. Keyless, x402 and
  * internal calls never read one.
  *
- * The handler runs on its data seam with the profile read as a counted dep; the store runs on a `dbQuery` mock that
- * records every statement.
+ * The handler runs on its data seam with the profile read as a counted dep; the store runs on `dbQuery` / `dbExec`
+ * mocks that record every statement (and on a real SQLite backend in pre-trade-rules-api.test.ts).
  */
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -20,9 +20,10 @@ import { join } from 'node:path';
 vi.mock('../../src/lib/performance-db.js', async (orig) => ({
   ...(await orig<typeof import('../../src/lib/performance-db.js')>()),
   dbQuery: vi.fn(),
+  dbExec: vi.fn(),
 }));
 
-import { dbQuery } from '../../src/lib/performance-db.js';
+import { dbExec, dbQuery } from '../../src/lib/performance-db.js';
 import {
   getProfile,
   profileKeyOf,
@@ -55,6 +56,7 @@ const VENUES = ['BINANCE', 'BYBIT', 'OKX', 'BITGET'] as const;
 const VENUE_STRING: Record<string, string> = { BINANCE: 'BinPerp', BYBIT: 'BybitPerp', OKX: 'OKXPerp', BITGET: 'BitgetPerp' };
 const SAVED_AT = '2026-11-02T09:15:00.000Z';
 const q = vi.mocked(dbQuery);
+const x = vi.mocked(dbExec);
 
 // ── The handler's world: the healthy one the pre_trade_check suite builds ────────────────────────────
 
@@ -348,7 +350,7 @@ afterAll(() => { if (prevHashKey === undefined) delete process.env[HASH_ENV]; el
 const MIGRATION = readFileSync(join(ROOT, 'migrations/052_pre_trade_rule_profiles.sql'), 'utf8');
 const DOWN = readFileSync(join(ROOT, 'migrations/052_pre_trade_rule_profiles.down.sql'), 'utf8');
 const sqlOf = (i: number) => String(q.mock.calls[i][0]);
-const creates = () => q.mock.calls.filter((c) => /CREATE TABLE IF NOT EXISTS pre_trade_rule_profiles/.test(String(c[0])));
+const creates = () => x.mock.calls.filter((c) => /CREATE TABLE IF NOT EXISTS pre_trade_rule_profiles/.test(String(c[0])));
 /** The CREATE statement with its comments dropped and its whitespace collapsed (the migration's `;` cut off). */
 const normalized = (sql: string) => {
   const s = sql.replace(/--[^\n]*/g, '');
@@ -361,6 +363,7 @@ describe('the store: one table, keyed by the pseudonym, a read error throws', ()
   beforeEach(() => {
     _resetRuleProfilesForTest();
     q.mockReset();
+    x.mockReset();
   });
 
   it('the lazy ensure IS migrations/052, and the down file drops only that table', async () => {
@@ -378,37 +381,38 @@ describe('the store: one table, keyed by the pseudonym, a read error throws', ()
 
   it('getProfile: ensure once, then one select by the ref; the rules parsed, the times ISO', async () => {
     const ref = REF();
-    q.mockResolvedValueOnce([]).mockResolvedValueOnce([{ rules: { maxLeverage: 5, regimeCheck: false }, created_at: new Date(SAVED_AT), updated_at: new Date(SAVED_AT) }]);
+    q.mockResolvedValueOnce([{ rules: { maxLeverage: 5, regimeCheck: false }, created_at: new Date(SAVED_AT), updated_at: new Date(SAVED_AT) }]);
     expect(await getProfile(ref)).toEqual({ rules: { maxLeverage: 5, regimeCheck: false }, createdAt: SAVED_AT, updatedAt: SAVED_AT });
-    expect(sqlOf(1)).toMatch(/^SELECT rules, created_at, updated_at FROM pre_trade_rule_profiles WHERE caller_ref = \?$/);
-    expect(q.mock.calls[1][1]).toEqual([ref]);
+    expect(sqlOf(0)).toMatch(/^SELECT rules, created_at, updated_at FROM pre_trade_rule_profiles WHERE caller_ref = \?$/);
+    expect(q.mock.calls[0][1]).toEqual([ref]);
     q.mockResolvedValueOnce([]);
     expect(await getProfile(ref), 'no row: null').toBeNull();
     expect(creates(), 'the ensure ran once').toHaveLength(1);
+    expect(q.mock.calls.some((c) => /CREATE/.test(String(c[0]))), 'DDL never goes through dbQuery (.all() on SQLite)').toBe(false);
   });
 
   it('the SQLite shapes read the same: jsonb as text, timestamps as text', async () => {
-    q.mockResolvedValueOnce([]).mockResolvedValueOnce([{ rules: '{"maxFundingBps":3}', created_at: SAVED_AT, updated_at: SAVED_AT }]);
+    q.mockResolvedValueOnce([{ rules: '{"maxFundingBps":3}', created_at: SAVED_AT, updated_at: SAVED_AT }]);
     expect(await getProfile(REF())).toEqual({ rules: { maxFundingBps: 3 }, createdAt: SAVED_AT, updatedAt: SAVED_AT });
   });
 
-  it('two first reads at once share one ensure; a failed ensure is retried by the next read', async () => {
-    let release: () => void = () => {};
-    q.mockImplementationOnce(() => new Promise((res) => { release = () => res([]); })).mockResolvedValue([]);
-    const both = Promise.all([getProfile(REF()), getProfile(REF())]);
-    release();
-    await both;
+  it('two first reads at once issue one ensure; an ensure that throws fails that read, and the next read retries it', async () => {
+    q.mockResolvedValue([]);
+    await Promise.all([getProfile(REF()), getProfile(REF())]);
     expect(creates()).toHaveLength(1);
     _resetRuleProfilesForTest();
     q.mockReset();
-    q.mockRejectedValueOnce(new Error('permission denied for schema public')).mockResolvedValue([]);
+    x.mockReset();
+    q.mockResolvedValue([]);
+    x.mockImplementationOnce(() => { throw new Error('permission denied for schema public'); });
     await expect(getProfile(REF())).rejects.toThrow('permission denied');
+    expect(q, 'no read behind a failed ensure').not.toHaveBeenCalled();
     await getProfile(REF());
     expect(creates()).toHaveLength(2);
   });
 
   it('a read error throws — the caller decides', async () => {
-    q.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
+    q.mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
     await expect(getProfile(REF())).rejects.toThrow('connection terminated');
   });
 
@@ -416,7 +420,7 @@ describe('the store: one table, keyed by the pseudonym, a read error throws', ()
     for (const rules of [{ maxLeverage: 5, foo: 1 }, { maxLeverage: 500 }, '[1]', 'not json', null]) {
       _resetRuleProfilesForTest();
       q.mockReset();
-      q.mockResolvedValueOnce([]).mockResolvedValueOnce([{ rules, created_at: SAVED_AT, updated_at: SAVED_AT }]);
+      q.mockResolvedValueOnce([{ rules, created_at: SAVED_AT, updated_at: SAVED_AT }]);
       await expect(getProfile(REF()), JSON.stringify(rules)).rejects.toThrow();
     }
     q.mockReset();
@@ -429,6 +433,7 @@ describe('the store: one table, keyed by the pseudonym, a read error throws', ()
       await expect(getProfile(ref), ref).rejects.toThrow(/pseudonym/);
     }
     expect(q).not.toHaveBeenCalled();
+    expect(x).not.toHaveBeenCalled();
   });
 
   it('profileRefOf is the check log\'s callerRef of the key: a pc1 pseudonym, one per key, never the key', () => {
@@ -453,10 +458,10 @@ describe('the store: one table, keyed by the pseudonym, a read error throws', ()
 
   it('the handler\'s default reader is the store, by the pseudonym: the raw key reaches no statement', async () => {
     const lic = keyed();
-    q.mockResolvedValueOnce([]).mockResolvedValueOnce([{ rules: { maxLeverage: 5 }, created_at: SAVED_AT, updated_at: SAVED_AT }]);
+    q.mockResolvedValueOnce([{ rules: { maxLeverage: 5 }, created_at: SAVED_AT, updated_at: SAVED_AT }]);
     expect(await DEFAULT_PRE_TRADE_CHECK_DEPS.ruleProfile(lic.key as string)).toEqual({ rules: { maxLeverage: 5 }, createdAt: SAVED_AT, updatedAt: SAVED_AT });
-    expect(q.mock.calls[1][1]).toEqual([callerRef({ licenseKey: lic.key })]);
-    expect(JSON.stringify(q.mock.calls)).not.toContain(lic.key as string);
+    expect(q.mock.calls[0][1]).toEqual([callerRef({ licenseKey: lic.key })]);
+    expect(JSON.stringify([q.mock.calls, x.mock.calls])).not.toContain(lic.key as string);
   });
 
   it('without the hash key the default reader fails — so the handler reports the saved rules unavailable', async () => {
@@ -474,7 +479,7 @@ describe('the store: one table, keyed by the pseudonym, a read error throws', ()
   });
 
   it('a corrupt stored profile reaches the handler as unavailable, through the default reader', async () => {
-    q.mockResolvedValueOnce([]).mockResolvedValueOnce([{ rules: { maxLeverage: 5, retired_rule: 1 }, created_at: SAVED_AT, updated_at: SAVED_AT }]);
+    q.mockResolvedValueOnce([{ rules: { maxLeverage: 5, retired_rule: 1 }, created_at: SAVED_AT, updated_at: SAVED_AT }]);
     const w = world();
     w.deps.ruleProfile = DEFAULT_PRE_TRADE_CHECK_DEPS.ruleProfile;
     const r = await ok(P({ leverage: 20 }), w);

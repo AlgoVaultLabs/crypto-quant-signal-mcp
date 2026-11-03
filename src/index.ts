@@ -44,6 +44,7 @@ import {
 } from './lib/admin-auth.js';
 import { closeDb, getConfidenceBands, getBandSignalCounts, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { registerWebhookRoutes, resolveOwner, authRequired, refuseOwner } from './lib/webhook-api.js';
+import { registerPreTradeRulesRoutes } from './lib/pre-trade-rules-api.js';
 import { formatShadowVenuePublic, formatVenueForResource } from './lib/venue-public-formatter.js';
 import { startDeliveryWorker, startHealthProbeSweep } from './lib/webhook-delivery.js';
 import { startScanDigestScheduler, stopScanDigestScheduler } from './lib/scan-digest-scheduler.js';
@@ -3154,6 +3155,7 @@ async function startHttp() {
   // (it is true in production). POST /api/webhooks/:id/test delivers immediately,
   // whatever the flag says.
   registerWebhookRoutes(app);
+  registerPreTradeRulesRoutes(app); // DECISION-CALL-V2-W2: PUT/GET/DELETE /api/pre-trade-rules — saved pre_trade_check rules, API key, unbilled
 
   // REFERRAL-LIGHT-W1 (C3): per-IP limiter on the public opt-in (mirrors recoverKeyLimiter).
   const signupEmailLimiter = rateLimit({
