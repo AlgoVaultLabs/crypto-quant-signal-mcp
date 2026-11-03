@@ -9,11 +9,11 @@
  *   GET                               200 {ok, rules, updated_at} — {} and null when none is saved
  *   DELETE                            200 {ok, deleted}
  *
- * The /api/webhooks pattern (webhook-api.ts): `resolveOwner` then `refuseOwner`, a per-key limiter on the writes,
- * `express.json({ limit: '4kb' })`, a 500 that names nothing. The owner is `profileKeyOf` — the store's one answer,
- * which the reader uses too — so a credential manages exactly the profile its checks read: a keyless caller, an x402
- * payment and an OAuth access token get the existing refuseOwner body. No route names a profile; the key is the
- * only address, so no key reaches another's.
+ * The /api/webhooks pattern (webhook-api.ts): `resolveOwner` then `refuseOwner`, a per-address limiter on the path
+ * and a per-key one on the writes, `express.json({ limit: '4kb' })`, a 500 that names nothing. The owner is
+ * `profileKeyOf` — the store's one answer, which the reader uses too — so a credential manages exactly the profile
+ * its checks read: a keyless caller, an x402 payment and an OAuth access token get the existing refuseOwner body. No
+ * route names a profile; the key is the only address, so no key reaches another's.
  *
  * The body is judged by the `rules` param's own zod object (`PRE_TRADE_CHECK_SCHEMA.rules`, projected from
  * `PRE_TRADE_RULE_PROPERTIES`): what the param refuses, PUT refuses. A refusal is named in `parseRules`' words — the
@@ -76,7 +76,12 @@ function writerOf(req: Request): string {
 }
 
 export function registerPreTradeRulesRoutes(app: Express): void {
-  // 10 writes a minute per key; reads are not limited.
+  // 20 requests a minute per address on every route, reads included, as `/api/webhooks`: each request resolves its
+  // credential and touches the store, and a per-key limit alone is no bound on a caller who rotates keys.
+  const rulesLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
+  app.use(PATH, rulesLimiter);
+
+  // Within that, 10 writes a minute per key.
   const writeLimiter = rateLimit({
     windowMs: 60_000,
     max: 10,

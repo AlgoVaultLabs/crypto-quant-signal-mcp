@@ -57,6 +57,11 @@ beforeEach(async () => {
   vi.resetModules();
 
   perfDb = await import('../../src/lib/performance-db.js');
+  await startServer();
+});
+
+/** A fresh app — so fresh limiters — on a new port. The store under this test's HOME is kept. */
+async function startServer(): Promise<void> {
   const express = (await import('express')).default;
   const { registerPreTradeRulesRoutes } = await import('../../src/lib/pre-trade-rules-api.js');
   const app = express();
@@ -65,7 +70,15 @@ beforeEach(async () => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/pre-trade-rules`;
-});
+}
+
+async function restartServer(): Promise<void> {
+  await new Promise<void>((r) => server.close(() => r()));
+  await startServer();
+}
+
+/** Every route answers 20 requests a minute per address; a test sending more restarts the app between batches. */
+const PER_ADDRESS = 20;
 
 afterEach(async () => {
   await new Promise<void>((r) => server.close(() => r()));
@@ -293,7 +306,8 @@ describe('PUT accepts exactly what the rules param accepts, and names the key it
       const served = PRE_TRADE_CHECK_SCHEMA.rules.safeParse(c.body).success;
       expect(bazaar({ coin: 'BTC', side: 'long', sizeUsd: 10_000, rules: c.body }), `the two param schemas agree: ${label}`).toBe(served);
       expect(served, `the corpus expects: ${label}`).toBe(c.refusedAt === undefined);
-      // A key per body: the corpus is many writes, and the limiter is per key.
+      // A key per body and a fresh app per batch: the corpus is many writes, and both limiters would answer it.
+      if (n > 0 && n % PER_ADDRESS === 0) await restartServer();
       const r = await call('PUT', { key: `av_starter_rules_parity_${n++}`, body: c.body });
       if (served) {
         expect([r.status, r.json?.rules], label).toEqual([200, c.body]);
@@ -348,7 +362,20 @@ describe('10 writes a minute per key', () => {
     expect((await call('PUT', { key: KEY_A, body: { maxLeverage: 6 } })).status).toBe(429);
     expect((await call('DELETE', { key: KEY_A })).status).toBe(429);
     const read = await call('GET', { key: KEY_A });
-    expect([read.status, read.headers.get('ratelimit-limit')], 'reads are not limited').toEqual([200, null]);
+    expect([read.status, read.headers.get('ratelimit-limit')], 'a read is under the per-address limit only, not the write limit').toEqual([200, String(PER_ADDRESS)]);
     expect((await call('PUT', { key: KEY_B, body: { maxLeverage: 6 } })).status, 'per key, not per address').toBe(200);
+  });
+});
+
+describe('20 requests a minute per address, on every route (the /api/webhooks pattern)', () => {
+  it('the 21st request from one address is refused 429 whatever its key, method or credential — rotating keys does not dodge it', async () => {
+    for (let i = 0; i < PER_ADDRESS; i++) {
+      const key = `av_starter_rules_addr_${i}`;
+      const r = i % 2 === 0 ? await call('PUT', { key, body: { maxLeverage: 5 } }) : await call('GET', { key });
+      expect(r.status, `request ${i + 1}`).toBe(200);
+    }
+    expect((await call('GET', { key: 'av_starter_rules_addr_fresh' })).status, 'a key never seen before').toBe(429);
+    expect((await call('DELETE', { key: KEY_A })).status, 'a DELETE').toBe(429);
+    expect((await call('GET')).status, 'no key at all').toBe(429);
   });
 });
