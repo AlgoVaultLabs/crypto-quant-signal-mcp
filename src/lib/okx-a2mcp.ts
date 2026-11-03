@@ -371,62 +371,6 @@ export class SamplingAwareFacilitator implements OkxFacilitatorLike {
   }
 }
 
-/**
- * LIVE routes: the OKX managed facilitator gates each route (verify+settle on X Layer), then the
- * SAME core handler runs (output parity). Still LIVE-UNVERIFIED end-to-end until a real buyer
- * settles USDT0 on X Layer.
- *
- * CH2-A (A2): the facilitator is initialised by `rail-mount`'s background loop, not once at boot.
- * The app-level dispatcher is registered FIRST, so it sits in front of the route handlers below:
- * while the facilitator is not ready every /a2mcp/* request gets 503 + Retry-After + X-Rail-State
- * and the handlers never run; once it is, the dispatcher delegates to the payment middleware
- * (unpaid → 402; paid → the handler). Boot awaits only the FIRST attempt (bounded by rail-mount's
- * per-attempt timeout), so a healthy facilitator is served from the first request exactly as before.
- * RT-01: the dispatcher's position is no longer what keeps the handlers paid — see `mountLiveRoutes`.
- */
-async function mountLive(
-  app: Express,
-  tools: string[],
-  resolved: ResolvedOkxA2mcp,
-  timers?: RailMountTimers,
-): Promise<string[]> {
-  const routable = tools.filter((t) => toHttpTool(t));
-  const handle = createRailDispatcher({
-    rail: 'a2mcp',
-    prefix: A2MCP_PREFIX,
-    mode: 'live',
-    routes: routable.length,
-    ...(timers ? { timers } : {}),
-    init: async () => {
-      const facilitator = new SamplingAwareFacilitator(new OKXFacilitatorClient({
-        apiKey: resolved.apiKey!,
-        secretKey: resolved.secretKey!,
-        passphrase: resolved.passphrase!,
-        ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
-        // syncSettle=true → the facilitator waits for on-chain confirmation and returns status="success".
-        syncSettle: true,
-      }));
-      // A FRESH resource server per attempt: a failed initialize() leaves no half-synced state behind.
-      const httpServer = buildOkxHttpResourceServer(facilitator, tools, resolved.payTo!);
-      await httpServer.initialize();
-      return {
-        // Already initialized → syncFacilitatorOnStart=false. With `true` the middleware would start
-        // initialize() at construction and hold the promise unawaited until the first paid request (F9).
-        middleware: paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, false),
-        // The SAME predicate, over the SAME context, the middleware builds for itself before it gates.
-        requiresPayment: (req: Request) => httpServer.requiresPayment({ adapter: new ExpressAdapter(req), path: req.path, method: req.method }),
-      };
-    },
-  });
-  // App-level ROUTE, registered before the handlers below, path written from the rail's constant
-  // (F9: never a router/use() at the prefix — that strips req.path and serves paid routes free).
-  app.all(`${A2MCP_PREFIX}/*`, handle.dispatch);
-
-  const mounted = mountLiveRoutes(app, tools, resolved.payTo!);
-  await handle.firstAttempt;
-  return mounted;
-}
-
 /** The x402-v2 402 challenge for a LIVE route: the GET discovery answer and the POST refusal alike. */
 function sendLiveChallenge(res: Response, tool: string, payTo: string): void {
   const body = buildXLayer402Body(tool, payTo, false);
@@ -510,5 +454,61 @@ export function mountLiveRoutes(app: Express, tools: string[], payTo: string): s
     });
     mounted.push(route);
   }
+  return mounted;
+}
+
+/**
+ * LIVE routes: the OKX managed facilitator gates each route (verify+settle on X Layer), then the
+ * SAME core handler runs (output parity). Still LIVE-UNVERIFIED end-to-end until a real buyer
+ * settles USDT0 on X Layer.
+ *
+ * CH2-A (A2): the facilitator is initialised by `rail-mount`'s background loop, not once at boot.
+ * The app-level dispatcher is registered FIRST, so it sits in front of the route handlers below:
+ * while the facilitator is not ready every /a2mcp/* request gets 503 + Retry-After + X-Rail-State
+ * and the handlers never run; once it is, the dispatcher delegates to the payment middleware
+ * (unpaid → 402; paid → the handler). Boot awaits only the FIRST attempt (bounded by rail-mount's
+ * per-attempt timeout), so a healthy facilitator is served from the first request exactly as before.
+ * RT-01: the dispatcher's position is no longer what keeps the handlers paid — see `mountLiveRoutes`.
+ */
+async function mountLive(
+  app: Express,
+  tools: string[],
+  resolved: ResolvedOkxA2mcp,
+  timers?: RailMountTimers,
+): Promise<string[]> {
+  const routable = tools.filter((t) => toHttpTool(t));
+  const handle = createRailDispatcher({
+    rail: 'a2mcp',
+    prefix: A2MCP_PREFIX,
+    mode: 'live',
+    routes: routable.length,
+    ...(timers ? { timers } : {}),
+    init: async () => {
+      const facilitator = new SamplingAwareFacilitator(new OKXFacilitatorClient({
+        apiKey: resolved.apiKey!,
+        secretKey: resolved.secretKey!,
+        passphrase: resolved.passphrase!,
+        ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
+        // syncSettle=true → the facilitator waits for on-chain confirmation and returns status="success".
+        syncSettle: true,
+      }));
+      // A FRESH resource server per attempt: a failed initialize() leaves no half-synced state behind.
+      const httpServer = buildOkxHttpResourceServer(facilitator, tools, resolved.payTo!);
+      await httpServer.initialize();
+      return {
+        // Already initialized → syncFacilitatorOnStart=false. With `true` the middleware would start
+        // initialize() at construction and hold the promise unawaited until the first paid request (F9).
+        middleware: paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, false),
+        // The SAME predicate, over the SAME context, the middleware builds for itself before it gates.
+        requiresPayment: (req: Request) => httpServer.requiresPayment({ adapter: new ExpressAdapter(req), path: req.path, method: req.method }),
+      };
+    },
+  });
+  // App-level ROUTE, registered before the handlers below, path written from the rail's constant
+  // (F9: never a router/use() at the prefix — that strips req.path and serves paid routes free).
+  app.all(`${A2MCP_PREFIX}/*`, handle.dispatch);
+
+  const mounted = mountLiveRoutes(app, tools, resolved.payTo!);
+  await handle.firstAttempt;
   return mounted;
 }
