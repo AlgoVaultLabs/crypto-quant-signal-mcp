@@ -11,7 +11,7 @@
 <meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with Claude Code&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/claude-code">
-<meta name="last-updated" content="2026-10-12">
+<meta name="last-updated" content="2026-11-04">
 <!-- BEGIN: AlgoVault canonical design loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +26,7 @@
   "headline": "AlgoVault × Claude Code - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/claude-code",
   "datePublished": "2026-05-19T00:00:00+00:00",
-  "dateModified": "2026-10-01T15:00:00+00:00",
+  "dateModified": "2026-11-04T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -283,7 +283,7 @@ tailwind.config = {
     <div style="position:relative;z-index:1">
       <div class="placeholder-cap" style="margin-bottom:14px">· claude-code integration</div>
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">90.6%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">1,027,879</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.5%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">383,785</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Claude Code</h1>
@@ -313,6 +313,18 @@ tailwind.config = {
 <p>Set <code>AV_API_KEY</code> in your shell or <code>.envrc</code>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Example: get a BTC trade call</h2>
 <p>In a Claude Code session, type <code>/mcp</code> to list connected servers. AlgoVault should appear with its tools (<code>get_trade_call</code>, <code>get_trade_signal</code>, <code>scan_funding_arb</code>, <code>get_market_regime</code>, and others). Then ask: <em>“Use AlgoVault to get a trade call for BTC 4h.”</em> Claude Code shows the tool call inline; the returned JSON pretty-prints in the response.</p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Pre-trade gate</h2>
+<p>An opt-in plugin from the <a href="https://github.com/AlgoVaultLabs/algovault-skills">AlgoVault skills marketplace</a>. While it is enabled, Claude Code does not send an opening perpetual or futures order through an exchange’s MCP tools until <code>pre_trade_check</code> has recently checked that coin and side, and it blocks the order when the check returns <code>WAIT</code>.</p>
+<pre><code class="language-bash">claude plugin marketplace add AlgoVaultLabs/algovault-skills
+claude plugin install algovault-pre-trade-gate@algovault-skills
+</code></pre>
+<p>Requires Claude Code 2.1.295+ and Node.js 20+. The plugin holds no key and never calls AlgoVault itself: it reads the result of the <code>pre_trade_check</code> your agent runs through the server you connected above.</p>
+<ul>
+<li><strong>Passes:</strong> a check from this session for the same coin and side, at most 15 minutes old, that returned <code>GO</code> or <code>CAUTION</code>. Claude is shown the decision, its reason codes, the checked size and the cheapest venue.</li>
+<li><strong>Blocked:</strong> no recent check, a <code>WAIT</code>, an order the gate cannot read, or a gate that cannot run.</li>
+<li><strong>Never gated:</strong> closes (reduce-only, or a hedge-mode close), spot, options, cancels, amends, and every AlgoVault tool.</li>
+</ul>
+<p>The gated order tools and the options (check age, <code>WAIT</code> handling, your own order-tool list) are in the <a href="https://github.com/AlgoVaultLabs/algovault-skills#pre-trade-gate-claude-code">plugin’s README</a>. Switch it off with <code>claude plugin disable algovault-pre-trade-gate@algovault-skills</code>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
 <ul>
 <li><strong>“Server not initialized” on first call</strong> — Claude Code expects the 3-step MCP handshake; the <code>http</code> transport handles this automatically. If you see this error, your <code>.mcp.json</code> <code>type</code> might be set to <code>sse</code> instead of <code>http</code>.</li>

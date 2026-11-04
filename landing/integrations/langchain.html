@@ -11,7 +11,7 @@
 <meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with LangChain&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/langchain">
-<meta name="last-updated" content="2026-09-23">
+<meta name="last-updated" content="2026-11-04">
 <!-- BEGIN: AlgoVault canonical design loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +26,7 @@
   "headline": "AlgoVault × LangChain - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/langchain",
   "datePublished": "2026-05-18T00:00:00+00:00",
-  "dateModified": "2026-07-25T15:00:00+00:00",
+  "dateModified": "2026-11-04T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -283,7 +283,7 @@ tailwind.config = {
     <div style="position:relative;z-index:1">
       <div class="placeholder-cap" style="margin-bottom:14px">· langchain integration</div>
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.1%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">829,513</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.5%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">383,785</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>AlgoVault x LangChain — Composite Trade Calls for Your LangChain Agent</h1>
@@ -411,6 +411,30 @@ async def run():
     print(result[&quot;messages&quot;][-1].content)
 </code></pre>
 <p>Requires <code>pip install langchain langgraph langchain-anthropic</code> and an <code>ANTHROPIC_API_KEY</code>. Swap the model string for any LangChain chat-model identifier.</p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Gate your orders</h2>
+<p><code>pre_trade_check</code> reads one planned perp order (coin, side, size, hold time) and answers <code>GO</code>, <code>CAUTION</code> or <code>WAIT</code>, with reason codes and the cheapest venue. <a href="https://github.com/AlgoVaultLabs/algovault-skills/blob/main/examples/langchain/pre_trade_gate.py"><code>examples/langchain/pre_trade_gate.py</code></a> makes it a step your agent cannot skip: a middleware runs the check before your order tool, on the order’s own size.</p>
+<pre><code class="language-python">from langchain.agents import create_agent
+from pre_trade_gate import PreTradeGate
+
+def place_order_check(args):
+    if args.get(&quot;reduce_only&quot;):
+        return None  # a close opens nothing: not checked
+    return {&quot;coin&quot;: args[&quot;coin&quot;], &quot;side&quot;: args[&quot;side&quot;], &quot;sizeUsd&quot;: args[&quot;size_usd&quot;]}
+
+# model: any chat model with tool calling; place_order: your exchange's order tool
+agent = create_agent(
+    model,
+    [place_order, *tools],
+    middleware=[PreTradeGate({&quot;place_order&quot;: place_order_check})],
+)
+</code></pre>
+<ul>
+<li><code>WAIT</code> returns an error <code>ToolMessage</code> naming the reason codes, and <code>place_order</code> is never called.</li>
+<li>A check that cannot run (a transport error, a refusal, a reply with no decision) blocks the order the same way, as does an error in your mapping function.</li>
+<li><code>GO</code> and <code>CAUTION</code> run the order tool once; its reply gains a line naming the decision, the reason codes, the checked size and the cheapest venue.</li>
+<li>Tools outside the map run unchecked, AlgoVault’s own included.</li>
+</ul>
+<p>The middleware calls the check through <a href="https://github.com/AlgoVaultLabs/algovault-skills/blob/main/examples/_shared/algovault_pre_trade.py"><code>examples/_shared/algovault_pre_trade.py</code></a> (standard library only), which sends <code>ALGOVAULT_API_KEY</code> as a Bearer key when it is set. <code>pre_trade_gate.py</code> needs <code>langchain&gt;=1,&lt;2</code>, pinned in <code>examples/langchain/requirements.txt</code>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Why AlgoVault?</h2>
 <ul>
 <li><strong>Composite verdict, not raw indicators.</strong> One JSON response replaces 26-indicator vote-counting.</li>
@@ -420,7 +444,7 @@ async def run():
 <!-- snapshot: 2026-07-21 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </li>
 </ul>
-<p><strong><span data-tr-field="pfe_wr">91.1%</span> PFE Win Rate · <span data-tr-field="call_count">829,513</span>+ calls · <span data-tr-field="merkle_batch_count">166</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'langchain',campaign:'track-record'}})">view live track record</a></p></div>
+<p><strong><span data-tr-field="pfe_wr">91.5%</span> PFE Win Rate · <span data-tr-field="call_count">383,785</span>+ calls · <span data-tr-field="merkle_batch_count">208</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'langchain',campaign:'track-record'}})">view live track record</a></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>
 <p>Run the demo at <code>examples/langchain/demo.py</code> · Pair with your LangChain agent at <code>https://api.algovault.com/mcp</code> · Verify the track record on <code>https://algovault.com/track-record</code>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Install (helper plugin)</h2>

@@ -1198,6 +1198,14 @@ tailwind.config = {
         </tbody>
       </table>
       <p class="text-gray-500 text-xs mt-3">A check charges one call on your plan, whatever the decision, or $0.02 over x402. Refusals are free. It is informational and read-only: it places no orders.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-5">Gate your orders</h3>
+      <p class="text-gray-400 text-sm mb-3" data-copy-locked="gate-your-orders">Make the check a step your agent cannot skip. In Claude Code, the AlgoVault pre-trade gate plugin blocks an order tool call until <code class="text-xs bg-navy-800 px-1 rounded">pre_trade_check</code> has recently checked that coin and side, and blocks it when the check returns <code class="text-xs bg-navy-800 px-1 rounded">WAIT</code>. In LangChain, a middleware runs the check before your order tool; in Freqtrade, <code class="text-xs bg-navy-800 px-1 rounded">confirm_trade_entry</code> skips the entry on <code class="text-xs bg-navy-800 px-1 rounded">WAIT</code>. Each recipe blocks the order when the check cannot run, and lets <code class="text-xs bg-navy-800 px-1 rounded">CAUTION</code> through with its reasons.</p>
+      <ul class="space-y-1.5 list-disc list-inside" data-gate-links>
+        <li class="text-gray-400 text-sm leading-relaxed"><a href="https://algovault.com/integrations/claude-code" class="text-mint-400 hover:underline">Claude Code: the pre-trade gate plugin &rarr;</a></li>
+        <li class="text-gray-400 text-sm leading-relaxed"><a href="https://algovault.com/integrations/langchain" class="text-mint-400 hover:underline">LangChain: the order-tool middleware &rarr;</a></li>
+        <li class="text-gray-400 text-sm leading-relaxed"><a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/freqtrade" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">Freqtrade: the <code class="text-xs bg-navy-800 px-1 rounded">confirm_trade_entry</code> recipe on GitHub &rarr;</a></li>
+      </ul>
     </section>
 
     <section id="chat-knowledge" class="mb-16"><span id="knowledge-tools-chat" aria-hidden="true"></span>
