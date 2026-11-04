@@ -242,8 +242,9 @@ describe("land.sh — WHICH stage refused is read from git, never from the hook'
   const REPORT_ONLY = 'WORKTREE_ROOT_VERDICT=INDETERMINATE';
   const FAILED = "error: failed to push some refs to 'remote.git'";
   // Measured 2026-11-04. The GitHub status line is verbatim from the landing that came back
-  // GATE_BLOCKED; the rest are git 2.50.1 against a throwaway bare remote (paths shortened,
-  // sideband padding trimmed). The last three rows are CONSTRUCTED negatives.
+  // GATE_BLOCKED; the git 2.55.0 lines are from CI deploy run 41808757931, where this suite's
+  // race case first ran on the runner; the rest are git 2.50.1 against a throwaway bare remote
+  // (paths shortened, sideband padding trimmed). The last three rows are CONSTRUCTED negatives.
   const OUTPUTS: Array<[string, string[], string]> = [
     ['GitHub: the ref lock lost the race (verbatim)', [
       REPORT_ONLY,
@@ -251,11 +252,18 @@ describe("land.sh — WHICH stage refused is read from git, never from the hook'
       " ! [remote rejected]   HEAD -> main (cannot lock ref 'refs/heads/main': is at 628f18bd557154a3db51298bac7425c2b260947c but expected dcfc530dbd04699862626a53a9774d91933846d6)",
       "error: failed to push some refs to 'github.com:AlgoVaultLabs/crypto-quant-signal-mcp.git'",
     ], 'RACE'],
-    ['stock git: the same race, reported on two lines', [
+    ['stock git 2.50: the same race, reported on two lines', [
       REPORT_ONLY,
       "remote: error: cannot lock ref 'refs/heads/main': is at dd5cbfdeec41b3f217c00e97291a56deb745c810 but expected 374d366ceeb284ee2ee5b16b9282fceeeff9fc0d",
       'To remote.git',
       ' ! [remote rejected] HEAD -> main (failed to update ref)',
+      FAILED,
+    ], 'RACE'],
+    ['stock git 2.55 (the CI runner): the same race, named by the ref transaction', [
+      REPORT_ONLY,
+      "remote: error: cannot lock ref 'refs/heads/main': is at 7f6ec38ffcbb2eebe5d00769e7a28589b8dbfe14 but expected b7b97954cce5a65fecc4db2d43559204fc77b51c",
+      'To remote.git',
+      ' ! [remote rejected] HEAD -> main (incorrect old value provided)',
       FAILED,
     ], 'RACE'],
     ['moved before the push connected', [

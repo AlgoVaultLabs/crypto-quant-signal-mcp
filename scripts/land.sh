@@ -123,14 +123,16 @@ if (return 0 2>/dev/null); then LAND_SOURCED=1; else LAND_SOURCED=0; fi
 # tests/unit/land-sh.test.ts pins that git behaviour on real repositories, so a git that ever
 # printed a ref status after a hook refusal would turn the suite red, not a red gate into a retry.
 #
-# A MOVED TARGET IS REPORTED THREE WAYS, and only these are a RACE:
+# A MOVED TARGET IS REPORTED FOUR WAYS, and only these are a RACE:
 #   · by the client: `non-fast-forward`, `fetch first`, `stale info`;
 #   · by GitHub, the ref lock's old-value mismatch as the reason itself:
 #       (cannot lock ref 'refs/heads/main': is at 628f18bd… but expected dcfc530d…)
-#   · by stock git, `(failed to update ref)`, with the mismatch on its own
+#   · by stock git 2.55 (the CI runner, measured in deploy run 41808757931), the ref
+#     transaction's own name for that mismatch: `(incorrect old value provided)`;
+#   · by stock git 2.50 (this Mac), `(failed to update ref)`, with the mismatch on its own
 #     `remote: error: cannot lock ref … but expected …` line.
-# `but expected` is required. A ref lock that failed for any other reason (permissions, a full
-# disk) is not a race, and retrying it would only misname the cause.
+# Where the reason is generic, `but expected` is required. A ref lock that failed for any other
+# reason (permissions, a full disk) is not a race, and retrying it would only misname the cause.
 land_classify_refusal() {
   local refused
   refused="$(grep -E '^ ! \[(remote )?rejected\] ' "$1" 2>/dev/null || true)"
@@ -140,7 +142,7 @@ land_classify_refusal() {
   fi
   if printf '%s\n' "$refused" | grep -qE '\([^()]*declined[^()]*\)[[:space:]]*$'; then
     echo REMOTE_GATE
-  elif printf '%s\n' "$refused" | grep -vqE '\((non-fast-forward|fetch first|stale info|cannot lock ref .* but expected .*|failed to update ref)\)[[:space:]]*$'; then
+  elif printf '%s\n' "$refused" | grep -vqE '\((non-fast-forward|fetch first|stale info|cannot lock ref .* but expected .*|incorrect old value provided|failed to update ref)\)[[:space:]]*$'; then
     echo UNKNOWN
   elif printf '%s\n' "$refused" | grep -qF '(failed to update ref)' &&
        ! grep -qE '^remote: error: cannot lock ref .* but expected ' "$1" 2>/dev/null; then
