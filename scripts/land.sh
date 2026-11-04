@@ -33,9 +33,11 @@
 #      pre-push block, which is REPORT-only this wave;
 #   2. a writer OUTSIDE the one Mac sharing $GIT_COMMON_DIR — a cloud session, a second machine,
 #      or CI. This is not hypothetical: .github/workflows/regenerate-landing.yml commits
-#      regenerated landing surfaces and `git push`es to main with a PAT. Declared on the
-#      `ref-main` row in ops/shared-worktree-state.json; hardening is
-#      OPS-CI-MAIN-WRITER-HARDEN-W{NEXT};
+#      regenerated landing surfaces and `git push`es to main with a PAT, and
+#      .github/workflows/readme-snapshot-writeback.yml pushes to main every day — it moved main
+#      DURING a landing's pre-push gate on 2026-09-10 and again on 2026-11-04 (see
+#      land_classify_refusal). Declared on the `ref-main` row in ops/shared-worktree-state.json;
+#      hardening is OPS-CI-MAIN-WRITER-HARDEN-W{NEXT};
 #   3. a lock TIMEOUT, which fails open by design and announces itself with a token.
 #
 # THE BOUNDED REBASE-RETRY BELOW IS THE FAIL-SAFE FOR THOSE THREE CASES ONLY. It is not what
@@ -62,7 +64,8 @@
 #     conflicts are handed back to the operator with the exact conflicted paths.
 #   · never swallow, re-interpret or downgrade a hook block's verdict token. A push refused by
 #     a gate is GATE_BLOCKED and is NOT retried — retrying a red gate is routing around it,
-#     which this repo forbids outright. Only a non-fast-forward is retryable.
+#     which this repo forbids outright. Only a refusal git attributes to the target having
+#     MOVED is retryable, and land_classify_refusal reads that from git's own record.
 #
 # ─── USAGE ──────────────────────────────────────────────────────────────────────────────────
 #
@@ -89,6 +92,66 @@
 # a feature branch; use the default form to land.
 #
 # Portable to macOS bash 3.2.
+
+if (return 0 2>/dev/null); then LAND_SOURCED=1; else LAND_SOURCED=0; fi
+
+# ── WHICH STAGE REFUSED — OPS-LAND-VS-CI-WRITEBACK-RACE-W1 ──────────────────────────────────────
+#
+# land_classify_refusal <push-output-file> prints exactly one of
+#
+#   GATE         the pre-push hook refused                        -> GATE_BLOCKED, never retried
+#   REMOTE_GATE  the receiving end's own gate declined the ref    -> GATE_BLOCKED, never retried
+#   RACE         the target MOVED under this push                 -> re-fetch, rebase, retry
+#   UNKNOWN      anything else                                    -> INDETERMINATE
+#
+# THE DEFECT THIS RETIRES, MEASURED. The verdict used to come from the HOOK'S PROSE: any
+# `_VERDICT=FAIL|INDETERMINATE` anywhere in the push output meant "a gate refused". But the shared
+# pre-push hook prints report-only tokens when it PASSES too — check-worktree-root.mjs exits 0 on
+# INDETERMINATE by design. On 2026-11-04 every gate passed, readme-snapshot-writeback.yml moved
+# main during the gate, GitHub refused the transfer with `cannot lock ref`, and land.sh printed
+# GATE_BLOCKED: a refusal no gate made, so the retry kept for exactly that writer never ran. The
+# same race on 2026-09-10 came back INDETERMINATE. One race, two verdicts, decided by which
+# report-only tokens happened to be in the output.
+#
+# THE RECORD READ INSTEAD IS GIT'S. git prints a per-ref status line (` ! [rejected] …` when the
+# client refuses, ` ! [remote rejected] …` when the receiving end does) only once the pre-push
+# hook has exited 0; a hook refusal returns before any ref status is printed. Measured on git
+# 2.50.1: the hook refuses -> no status line; the hook refuses AND the ref moved meanwhile -> still
+# none; the hook passes and the ref moved -> ` ! [remote rejected] HEAD -> main (failed to update
+# ref)`. So a status line is git's own proof that every pre-push gate PASSED, and the tokens beside
+# it say nothing about the refusal. Tokens are read only when git never reached the transfer.
+# tests/unit/land-sh.test.ts pins that git behaviour on real repositories, so a git that ever
+# printed a ref status after a hook refusal would turn the suite red, not a red gate into a retry.
+#
+# A MOVED TARGET IS REPORTED THREE WAYS, and only these are a RACE:
+#   · by the client: `non-fast-forward`, `fetch first`, `stale info`;
+#   · by GitHub, the ref lock's old-value mismatch as the reason itself:
+#       (cannot lock ref 'refs/heads/main': is at 628f18bd… but expected dcfc530d…)
+#   · by stock git, `(failed to update ref)`, with the mismatch on its own
+#     `remote: error: cannot lock ref … but expected …` line.
+# `but expected` is required. A ref lock that failed for any other reason (permissions, a full
+# disk) is not a race, and retrying it would only misname the cause.
+land_classify_refusal() {
+  local refused
+  refused="$(grep -E '^ ! \[(remote )?rejected\] ' "$1" 2>/dev/null || true)"
+  if [ -z "$refused" ]; then
+    if grep -qE '_VERDICT=(FAIL|INDETERMINATE)' "$1" 2>/dev/null; then echo GATE; else echo UNKNOWN; fi
+    return 0
+  fi
+  if printf '%s\n' "$refused" | grep -qE '\([^()]*declined[^()]*\)[[:space:]]*$'; then
+    echo REMOTE_GATE
+  elif printf '%s\n' "$refused" | grep -vqE '\((non-fast-forward|fetch first|stale info|cannot lock ref .* but expected .*|failed to update ref)\)[[:space:]]*$'; then
+    echo UNKNOWN
+  elif printf '%s\n' "$refused" | grep -qF '(failed to update ref)' &&
+       ! grep -qE '^remote: error: cannot lock ref .* but expected ' "$1" 2>/dev/null; then
+    echo UNKNOWN
+  else
+    echo RACE
+  fi
+}
+
+# Sourced by a test that asks land_classify_refusal about a fixture: define, run nothing.
+[ "$LAND_SOURCED" = "1" ] && return 0 2>/dev/null
 
 set -u
 
@@ -286,33 +349,42 @@ while [ "$ATTEMPTS" -lt "$MAX_ATTEMPTS" ]; do
     finish LANDED 0
   fi
 
-  # A gate refused. That is NOT retryable: retrying a red gate is routing around it. Surface the
-  # block's own token verbatim and stop — land.sh never re-interprets or downgrades it.
-  if grep -qE 'hook declined|_VERDICT=(FAIL|INDETERMINATE)' "$PUSH_OUT" 2>/dev/null; then
-    printf '%s\n' "✖ land: a pre-push gate refused this push. Its own verdict, verbatim:"
-    grep -oE '[A-Z_]+_VERDICT=[A-Z]+' "$PUSH_OUT" | sed -e 's/^/      /' || true
-    printf '%s\n' "    land.sh does not retry, warn-mode, or route around a gate. Fix the cause and re-run."
-    finish GATE_BLOCKED 1
-  fi
-
-  if ! grep -qE 'non-fast-forward|fetch first|stale info|Updates were rejected' "$PUSH_OUT" 2>/dev/null; then
-    printf '%s\n' "✖ land: git push failed for a reason this lander does not recognise. Not retrying."
-    finish INDETERMINATE 3
-  fi
+  # WHICH stage refused, from git's own record (land_classify_refusal, above). A gate refusal is
+  # NOT retryable: retrying a red gate is routing around it. Surface the refusal verbatim and
+  # stop — land.sh never re-interprets or downgrades it. Only a RACE falls through to the retry.
+  case "$(land_classify_refusal "$PUSH_OUT")" in
+    GATE)
+      printf '%s\n' "✖ land: a pre-push gate refused this push. Its own verdict, verbatim:"
+      grep -oE '[A-Z_]+_VERDICT=[A-Z]+' "$PUSH_OUT" | sed -e 's/^/      /' || true
+      printf '%s\n' "    land.sh does not retry, warn-mode, or route around a gate. Fix the cause and re-run."
+      finish GATE_BLOCKED 1
+      ;;
+    REMOTE_GATE)
+      printf '%s\n' "✖ land: $REMOTE's own gate declined this push. Its reason, verbatim:"
+      grep -E '^ ! \[(remote )?rejected\] ' "$PUSH_OUT" | sed -e 's/^/    /' || true
+      printf '%s\n' "    land.sh does not retry, warn-mode, or route around a gate. Fix the cause and re-run."
+      finish GATE_BLOCKED 1
+      ;;
+    RACE) ;;
+    *)
+      printf '%s\n' "✖ land: git push failed for a reason this lander does not recognise. Not retrying."
+      finish INDETERMINATE 3
+      ;;
+  esac
 
   if [ "$ATTEMPTS" -ge "$MAX_ATTEMPTS" ]; then break; fi
 
   # Jittered backoff. Jitter matters because the case being retried is CONTENTION with a writer
   # outside the lock; identical backoffs would re-collide in lockstep.
   SLEEP=$(( BACKOFF_BASE * ATTEMPTS + (${RANDOM:-0} % 3) ))
-  printf '%s\n' "⚠️  land: non-fast-forward — a writer OUTSIDE this lock moved $DEFAULT_REF." >&2
+  printf '%s\n' "⚠️  land: refused because the target moved — a writer OUTSIDE this lock moved $DEFAULT_REF." >&2
   printf '%s\n' "⚠️    attempt $ATTEMPTS/$MAX_ATTEMPTS; re-fetching and rebasing in ${SLEEP}s." >&2
   sleep "$SLEEP"
 done
 
 printf '%s\n' "✖ land: $MAX_ATTEMPTS attempts exhausted landing HEAD onto $REMOTE/$TARGET."
-printf '%s\n' "    Every attempt was refused non-fast-forward, so a writer outside this lock's scope is"
-printf '%s\n' "    landing faster than this session can rebase. Escalate rather than loop: see the"
-printf '%s\n' "    residual-scope note in this file's header and the ref-main row in"
-printf '%s\n' "    ops/shared-worktree-state.json."
+printf '%s\n' "    Every attempt was refused because the target moved (non-fast-forward, or a ref lock that"
+printf '%s\n' "    lost the race), so a writer outside this lock's scope is landing faster than this session"
+printf '%s\n' "    can rebase. Escalate rather than loop: see the residual-scope note in this file's header"
+printf '%s\n' "    and the ref-main row in ops/shared-worktree-state.json."
 finish EXHAUSTED 1

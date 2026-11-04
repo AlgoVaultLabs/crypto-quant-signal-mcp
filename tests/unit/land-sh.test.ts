@@ -40,9 +40,9 @@ function git(cwd: string, ...args: string[]) {
   return r.stdout.trim();
 }
 
-function land(cwd: string, lockDir: string, args: string[] = []) {
+function land(cwd: string, lockDir: string, args: string[] = [], extraEnv: Record<string, string> = {}) {
   const r = spawnSync('bash', [join(cwd, 'scripts/land.sh'), ...args], {
-    cwd, encoding: 'utf8', env: cleanEnv({ ALGOVAULT_LOCK_DIR: lockDir }),
+    cwd, encoding: 'utf8', env: cleanEnv({ ALGOVAULT_LOCK_DIR: lockDir, ...extraEnv }),
   });
   const all = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   const grab = (k: string) => {
@@ -232,6 +232,135 @@ describe('land.sh — a red gate is surfaced, NEVER retried or routed around', (
     // The block's own token is surfaced verbatim, not swallowed or downgraded.
     expect(r.all).toContain('FAKE_GATE_VERDICT=FAIL');
     expect(r.all).toMatch(/does not retry, warn-mode, or route around a gate/);
+  });
+});
+
+describe("land.sh — WHICH stage refused is read from git, never from the hook's prose (OPS-LAND-VS-CI-WRITEBACK-RACE-W1)", () => {
+  // Every output carries the token the real hook prints on SUCCESS: check-worktree-root.mjs exits
+  // 0 on INDETERMINATE by design. That report-only token used to decide the verdict, so a push
+  // whose every gate had passed came back GATE_BLOCKED and the retry for an outside writer never ran.
+  const REPORT_ONLY = 'WORKTREE_ROOT_VERDICT=INDETERMINATE';
+  const FAILED = "error: failed to push some refs to 'remote.git'";
+  // Measured 2026-11-04. The GitHub status line is verbatim from the landing that came back
+  // GATE_BLOCKED; the rest are git 2.50.1 against a throwaway bare remote (paths shortened,
+  // sideband padding trimmed). The last three rows are CONSTRUCTED negatives.
+  const OUTPUTS: Array<[string, string[], string]> = [
+    ['GitHub: the ref lock lost the race (verbatim)', [
+      REPORT_ONLY,
+      'To github.com:AlgoVaultLabs/crypto-quant-signal-mcp.git',
+      " ! [remote rejected]   HEAD -> main (cannot lock ref 'refs/heads/main': is at 628f18bd557154a3db51298bac7425c2b260947c but expected dcfc530dbd04699862626a53a9774d91933846d6)",
+      "error: failed to push some refs to 'github.com:AlgoVaultLabs/crypto-quant-signal-mcp.git'",
+    ], 'RACE'],
+    ['stock git: the same race, reported on two lines', [
+      REPORT_ONLY,
+      "remote: error: cannot lock ref 'refs/heads/main': is at dd5cbfdeec41b3f217c00e97291a56deb745c810 but expected 374d366ceeb284ee2ee5b16b9282fceeeff9fc0d",
+      'To remote.git',
+      ' ! [remote rejected] HEAD -> main (failed to update ref)',
+      FAILED,
+    ], 'RACE'],
+    ['moved before the push connected', [
+      REPORT_ONLY, 'To remote.git', ' ! [rejected]        HEAD -> main (fetch first)', FAILED,
+      'hint: Updates were rejected because the remote contains work that you do not',
+    ], 'RACE'],
+    ['moved, fetched, and a non-descendant pushed', [
+      REPORT_ONLY, 'To remote.git', ' ! [rejected]        HEAD -> main (non-fast-forward)', FAILED,
+      'hint: Updates were rejected because the tip of your current branch is behind',
+    ], 'RACE'],
+    // Measured identical with and without the ref moving during the hook: once the hook refuses,
+    // git prints NO ref status at all, so a red gate can never be read as a race.
+    ['the pre-push hook refused', [REPORT_ONLY, 'FAKE_GATE_VERDICT=FAIL', FAILED], 'GATE'],
+    ["the receiving end's pre-receive declined", [
+      REPORT_ONLY, 'remote: declined-by-server', 'To remote.git',
+      ' ! [remote rejected] HEAD -> main (pre-receive hook declined)', FAILED,
+    ], 'REMOTE_GATE'],
+    ['constructed: failed to update ref with no lock mismatch reported', [
+      REPORT_ONLY, 'To remote.git', ' ! [remote rejected] HEAD -> main (failed to update ref)', FAILED,
+    ], 'UNKNOWN'],
+    ['constructed: a ref lock that failed for a reason other than the race', [
+      REPORT_ONLY, 'To remote.git',
+      " ! [remote rejected] HEAD -> main (cannot lock ref 'refs/heads/main': Unable to create 'refs/heads/main.lock': Permission denied)",
+      FAILED,
+    ], 'UNKNOWN'],
+    ['constructed: the remote was unreachable, so no hook ran', [
+      "fatal: unable to access 'https://github.com/o/r.git/': Could not resolve host: github.com",
+    ], 'UNKNOWN'],
+  ];
+
+  /** Source land.sh (it defines its functions and runs nothing) and ask the classifier. The shell
+   *  starts OUTSIDE any repository, so even a land.sh that lost its source guard could never land
+   *  anything from here: it would stop at "not inside a git repository". */
+  function classify(lines: string[]) {
+    const out = join(root, 'push.out');
+    writeFileSync(out, `${lines.join('\n')}\n`);
+    return spawnSync('bash', ['-c', '. "$0" && land_classify_refusal "$1"', join(REPO, 'scripts/land.sh'), out], {
+      cwd: root, encoding: 'utf8', env: cleanEnv(),
+    });
+  }
+
+  it('classifies every measured push output by its ref status, ignoring report-only tokens', { timeout: 60_000 }, () => {
+    for (const [label, lines, want] of OUTPUTS) {
+      const r = classify(lines);
+      expect(r.stdout.trim(), `${label}\n${r.stderr}`).toBe(want);
+      expect(r.status, label).toBe(0);
+      // Sourcing ran nothing: no lock was taken and no verdict was printed.
+      expect(r.stdout, label).not.toMatch(/LAND_VERDICT|LANDING_LOCK_VERDICT/);
+    }
+  });
+
+  it('lands on the RETRY when a writer outside the lock moves the target during a PASSING gate', { timeout: 60_000 }, () => {
+    const { bare, paths: [c, ci] } = makeEstate(root, 2);
+    // The outside writer: CI's README snapshot writeback, which pushes to main on its own.
+    commitOn(ci, 'SNAPSHOT.md', 'writeback\n');
+    // The incident, replayed: every gate passes, the hook prints its report-only token, and on
+    // its FIRST run only the writeback lands on main while the gate is still running.
+    const runs = join(root, 'hook-runs');
+    const hook = join(c, '.git/hooks/pre-push');
+    writeFileSync(hook, [
+      '#!/usr/bin/env bash',
+      `echo run >> '${runs}'`,
+      `echo '${REPORT_ONLY}'`,
+      `if [ "$(wc -l < '${runs}' | tr -d ' ')" = 1 ]; then`,
+      `  env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_QUARANTINE_PATH git -C '${ci}' push -q origin HEAD:main`,
+      'fi',
+      'exit 0',
+      '',
+    ].join('\n'));
+    chmodSync(hook, 0o755);
+    commitOn(c, 'a.txt', 'a\n');
+
+    const r = land(c, lockDir, [], { ALGOVAULT_LAND_BACKOFF_BASE: '0' });
+
+    expect(r.verdict, r.all).toBe('LANDED');
+    expect(r.status).toBe(0);
+    // Refused once by the race, landed on the retry — and never reported as a gate refusal.
+    expect(r.attempts).toBe('2');
+    expect(r.all).not.toMatch(/a pre-push gate refused/);
+    expect(r.all).toMatch(/a writer OUTSIDE this lock moved/);
+    // The landing sits on top of the writeback, which survived.
+    expect(git(bare, 'log', '--format=%s', '-2', 'main').split('\n')).toEqual(['add a.txt', 'add SNAPSHOT.md']);
+    // The retry re-ran the gate; it never skipped it.
+    expect(readFileSync(runs, 'utf8').trim().split('\n')).toHaveLength(2);
+  });
+
+  it('a receiving end that DECLINES is GATE_BLOCKED in one attempt, never retried', { timeout: 60_000 }, () => {
+    const { bare, paths: [c] } = makeEstate(root, 1);
+    const preReceive = join(bare, 'hooks/pre-receive');
+    writeFileSync(preReceive, '#!/bin/sh\necho declined-by-server >&2\nexit 1\n');
+    chmodSync(preReceive, 0o755);
+    const hook = join(c, '.git/hooks/pre-push');
+    writeFileSync(hook, `#!/usr/bin/env bash\necho '${REPORT_ONLY}'\nexit 0\n`);
+    chmodSync(hook, 0o755);
+    commitOn(c, 'a.txt', 'a\n');
+
+    const r = land(c, lockDir);
+
+    expect(r.verdict, r.all).toBe('GATE_BLOCKED');
+    expect(r.status).toBe(1);
+    expect(r.attempts).toBe('1');
+    // Named as the receiving end's refusal, its reason verbatim — not as a pre-push gate's.
+    expect(r.all).toMatch(/own gate declined this push/);
+    expect(r.all).toContain('(pre-receive hook declined)');
+    expect(git(bare, 'log', '--format=%s', 'main')).not.toMatch(/add a\.txt/);
   });
 });
 
