@@ -112,10 +112,12 @@ describe('the rules key table is the rule table, row for row', () => {
 });
 
 describe('the section follows the wave\'s section order and copy law', () => {
-  it('Parameters → Your rules → Response Fields → Recipe → curl → Refusals', () => {
-    const order = ['>Parameters<', '>Your rules<', '>Response Fields<', '>Recipe<', '>Call it over HTTP<', '>Refusals<'].map((h) => SECTION.indexOf(h));
+  it('Parameters → Your rules → Response Fields → Recipe → curl → Refusals → Gate your orders', () => {
+    const order = ['>Parameters<', '>Your rules<', '>Response Fields<', '>Recipe<', '>Call it over HTTP<', '>Refusals<', '>Gate your orders<'].map((h) => SECTION.indexOf(h));
     expect(order.every((i) => i !== -1), `missing heading: ${order}`).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const headings = [...SECTION.matchAll(/<h3[^>]*>([^<]+)<\/h3>/g)].map((m) => m[1]);
+    expect(headings.at(-1), 'Gate your orders is the last heading').toBe('Gate your orders');
   });
 
   it('documents the three refusals: hosted_only, an undeclared argument, the quota wall', () => {
@@ -189,4 +191,47 @@ describe('saved rules (DECISION-CALL-V2-W2): the contract\'s copy verbatim, and 
     const named = [...src![0].matchAll(/rounded">([a-z]+)<\/code>/g)].map((m) => m[1]);
     expect(named).toEqual(liveShapeSnapshot().rule_source_values);
   });
+});
+
+describe('Gate your orders (DECISION-CALL-V2-W3): the approved copy, then the three recipes', () => {
+  // Copy-locked: Prompt/pre-trade-gate-contract.md § Copy, item 3 (verbatim; approved with the dispatch).
+  const GATE_COPY = 'Make the check a step your agent cannot skip. In Claude Code, the AlgoVault pre-trade gate plugin blocks an order tool call until pre_trade_check has recently checked that coin and side, and blocks it when the check returns WAIT. In LangChain, a middleware runs the check before your order tool; in Freqtrade, confirm_trade_entry skips the entry on WAIT. Each recipe blocks the order when the check cannot run, and lets CAUTION through with its reasons.';
+  const GATE_LINKS = [
+    'https://algovault.com/integrations/claude-code',
+    'https://algovault.com/integrations/langchain',
+    'https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/freqtrade',
+  ];
+  const GATE = SECTION.slice(SECTION.indexOf('>Gate your orders<'));
+
+  it('the paragraph is the contract paragraph, verbatim', () => {
+    const p = GATE.match(/<p [^>]*data-copy-locked="gate-your-orders"[^>]*>([\s\S]*?)<\/p>/);
+    expect(p, 'the copy-locked paragraph').not.toBeNull();
+    expect(textOf(p![1])).toBe(GATE_COPY);
+  });
+
+  it('links the Claude Code page, the LangChain page and the Freqtrade recipe, in that order', () => {
+    const list = GATE.match(/<ul [^>]*data-gate-links[^>]*>([\s\S]*?)<\/ul>/);
+    expect(list, 'the gate links list').not.toBeNull();
+    expect([...list![1].matchAll(/<a href="([^"]+)"/g)].map((m) => m[1])).toEqual(GATE_LINKS);
+  });
+
+  /** 200 → ok; 404 or 410 → dead; a network error or any other status (403, 429, 5xx) → could not verify. */
+  async function probe(url: string): Promise<{ state: 'ok' | 'dead' | 'indeterminate'; detail: string }> {
+    try {
+      const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(10_000) });
+      if (r.status === 200) return { state: 'ok', detail: '200' };
+      return { state: r.status === 404 || r.status === 410 ? 'dead' : 'indeterminate', detail: `HTTP ${r.status}` };
+    } catch (err) {
+      return { state: 'indeterminate', detail: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  for (const url of GATE_LINKS) {
+    it(`${url} answers 200`, { timeout: 20_000 }, async (ctx) => {
+      const r = await probe(url);
+      // Could not verify is reported as SKIPPED, never as a pass; a dead link fails.
+      ctx.skip(r.state === 'indeterminate', `could not verify ${url}: ${r.detail}`);
+      expect(r.state, `${url}: ${r.detail}`).toBe('ok');
+    });
+  }
 });
