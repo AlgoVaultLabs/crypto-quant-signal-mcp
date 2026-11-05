@@ -1,0 +1,467 @@
+{
+  "_generated_by": "scripts/odds-calibration-study.py --stage fixtures (DECISION-CALL-V2-W4 CH1)",
+  "_contract": "liquidationDistance(side, leverage, maintenanceRate) from src/lib/pre-trade-calc.ts must equal d within 1e-9; liquidationMaintenanceRate('BYBIT', m) must equal m (Bybit adds no fee). Rates: vault pre-registration Section C.",
+  "exchange": "BYBIT",
+  "maintenanceRates": {
+    "BTC": 0.0033,
+    "ETH": 0.0033,
+    "SOL": 0.005,
+    "XRP": 0.005,
+    "DOGE": 0.0075,
+    "BNB": 0.0067,
+    "SUI": 0.009,
+    "1000PEPE": 0.01
+  },
+  "rows": [
+    {
+      "coin": "BTC",
+      "side": "long",
+      "leverage": 10,
+      "maintenanceRate": 0.0033,
+      "d": 0.09702016654961373,
+      "dLn": 0.1020550586490998,
+      "liquidationPriceFactor": 0.9029798334503862
+    },
+    {
+      "coin": "BTC",
+      "side": "short",
+      "leverage": 10,
+      "maintenanceRate": 0.0033,
+      "d": 0.09638193959932223,
+      "dLn": 0.09201561285489482,
+      "liquidationPriceFactor": 1.0963819395993222
+    },
+    {
+      "coin": "BTC",
+      "side": "long",
+      "leverage": 20,
+      "maintenanceRate": 0.0033,
+      "d": 0.04685462024681449,
+      "dLn": 0.047987837378824026,
+      "liquidationPriceFactor": 0.9531453797531855
+    },
+    {
+      "coin": "BTC",
+      "side": "short",
+      "leverage": 20,
+      "maintenanceRate": 0.0033,
+      "d": 0.04654639689026214,
+      "dLn": 0.045495597220001974,
+      "liquidationPriceFactor": 1.0465463968902622
+    },
+    {
+      "coin": "BTC",
+      "side": "long",
+      "leverage": 50,
+      "maintenanceRate": 0.0033,
+      "d": 0.016755292465134946,
+      "dLn": 0.016897250308792938,
+      "liquidationPriceFactor": 0.983244707534865
+    },
+    {
+      "coin": "BTC",
+      "side": "short",
+      "leverage": 50,
+      "maintenanceRate": 0.0033,
+      "d": 0.01664507126482607,
+      "dLn": 0.01650806034674968,
+      "liquidationPriceFactor": 1.016645071264826
+    },
+    {
+      "coin": "ETH",
+      "side": "long",
+      "leverage": 10,
+      "maintenanceRate": 0.0033,
+      "d": 0.09702016654961373,
+      "dLn": 0.1020550586490998,
+      "liquidationPriceFactor": 0.9029798334503862
+    },
+    {
+      "coin": "ETH",
+      "side": "short",
+      "leverage": 10,
+      "maintenanceRate": 0.0033,
+      "d": 0.09638193959932223,
+      "dLn": 0.09201561285489482,
+      "liquidationPriceFactor": 1.0963819395993222
+    },
+    {
+      "coin": "ETH",
+      "side": "long",
+      "leverage": 20,
+      "maintenanceRate": 0.0033,
+      "d": 0.04685462024681449,
+      "dLn": 0.047987837378824026,
+      "liquidationPriceFactor": 0.9531453797531855
+    },
+    {
+      "coin": "ETH",
+      "side": "short",
+      "leverage": 20,
+      "maintenanceRate": 0.0033,
+      "d": 0.04654639689026214,
+      "dLn": 0.045495597220001974,
+      "liquidationPriceFactor": 1.0465463968902622
+    },
+    {
+      "coin": "ETH",
+      "side": "long",
+      "leverage": 50,
+      "maintenanceRate": 0.0033,
+      "d": 0.016755292465134946,
+      "dLn": 0.016897250308792938,
+      "liquidationPriceFactor": 0.983244707534865
+    },
+    {
+      "coin": "ETH",
+      "side": "short",
+      "leverage": 50,
+      "maintenanceRate": 0.0033,
+      "d": 0.01664507126482607,
+      "dLn": 0.01650806034674968,
+      "liquidationPriceFactor": 1.016645071264826
+    },
+    {
+      "coin": "SOL",
+      "side": "long",
+      "leverage": 10,
+      "maintenanceRate": 0.005,
+      "d": 0.09547738693467336,
+      "dLn": 0.10034797383428201,
+      "liquidationPriceFactor": 0.9045226130653267
+    },
+    {
+      "coin": "SOL",
+      "side": "short",
+      "leverage": 10,
+      "maintenanceRate": 0.005,
+      "d": 0.09452736318407962,
+      "dLn": 0.0903226382932858,
+      "liquidationPriceFactor": 1.0945273631840795
+    },
+    {
+      "coin": "SOL",
+      "side": "long",
+      "leverage": 20,
+      "maintenanceRate": 0.005,
+      "d": 0.04522613065326634,
+      "dLn": 0.04628075256400626,
+      "liquidationPriceFactor": 0.9547738693467337
+    },
+    {
+      "coin": "SOL",
+      "side": "short",
+      "leverage": 20,
+      "maintenanceRate": 0.005,
+      "d": 0.044776119402985086,
+      "dLn": 0.043802622658392944,
+      "liquidationPriceFactor": 1.044776119402985
+    },
+    {
+      "coin": "SOL",
+      "side": "long",
+      "leverage": 50,
+      "maintenanceRate": 0.005,
+      "d": 0.01507537688442211,
+      "dLn": 0.015190165493975165,
+      "liquidationPriceFactor": 0.9849246231155779
+    },
+    {
+      "coin": "SOL",
+      "side": "short",
+      "leverage": 50,
+      "maintenanceRate": 0.005,
+      "d": 0.01492537313432836,
+      "dLn": 0.01481508578514064,
+      "liquidationPriceFactor": 1.0149253731343284
+    },
+    {
+      "coin": "XRP",
+      "side": "long",
+      "leverage": 10,
+      "maintenanceRate": 0.005,
+      "d": 0.09547738693467336,
+      "dLn": 0.10034797383428201,
+      "liquidationPriceFactor": 0.9045226130653267
+    },
+    {
+      "coin": "XRP",
+      "side": "short",
+      "leverage": 10,
+      "maintenanceRate": 0.005,
+      "d": 0.09452736318407962,
+      "dLn": 0.0903226382932858,
+      "liquidationPriceFactor": 1.0945273631840795
+    },
+    {
+      "coin": "XRP",
+      "side": "long",
+      "leverage": 20,
+      "maintenanceRate": 0.005,
+      "d": 0.04522613065326634,
+      "dLn": 0.04628075256400626,
+      "liquidationPriceFactor": 0.9547738693467337
+    },
+    {
+      "coin": "XRP",
+      "side": "short",
+      "leverage": 20,
+      "maintenanceRate": 0.005,
+      "d": 0.044776119402985086,
+      "dLn": 0.043802622658392944,
+      "liquidationPriceFactor": 1.044776119402985
+    },
+    {
+      "coin": "XRP",
+      "side": "long",
+      "leverage": 50,
+      "maintenanceRate": 0.005,
+      "d": 0.01507537688442211,
+      "dLn": 0.015190165493975165,
+      "liquidationPriceFactor": 0.9849246231155779
+    },
+    {
+      "coin": "XRP",
+      "side": "short",
+      "leverage": 50,
+      "maintenanceRate": 0.005,
+      "d": 0.01492537313432836,
+      "dLn": 0.01481508578514064,
+      "liquidationPriceFactor": 1.0149253731343284
+    },
+    {
+      "coin": "DOGE",
+      "side": "long",
+      "leverage": 10,
+      "maintenanceRate": 0.0075,
+      "d": 0.09319899244332493,
+      "dLn": 0.09783224923703472,
+      "liquidationPriceFactor": 0.906801007556675
+    },
+    {
+      "coin": "DOGE",
+      "side": "short",
+      "leverage": 10,
+      "maintenanceRate": 0.0075,
+      "d": 0.09181141439205955,
+      "dLn": 0.08783816496562386,
+      "liquidationPriceFactor": 1.0918114143920596
+    },
+    {
+      "coin": "DOGE",
+      "side": "long",
+      "leverage": 20,
+      "maintenanceRate": 0.0075,
+      "d": 0.042821158690176324,
+      "dLn": 0.04376502796675896,
+      "liquidationPriceFactor": 0.9571788413098237
+    },
+    {
+      "coin": "DOGE",
+      "side": "short",
+      "leverage": 20,
+      "maintenanceRate": 0.0075,
+      "d": 0.04218362282878412,
+      "dLn": 0.04131814933073101,
+      "liquidationPriceFactor": 1.0421836228287842
+    },
+    {
+      "coin": "DOGE",
+      "side": "long",
+      "leverage": 50,
+      "maintenanceRate": 0.0075,
+      "d": 0.012594458438287154,
+      "dLn": 0.012674440896727875,
+      "liquidationPriceFactor": 0.9874055415617129
+    },
+    {
+      "coin": "DOGE",
+      "side": "short",
+      "leverage": 50,
+      "maintenanceRate": 0.0075,
+      "d": 0.012406947890818858,
+      "dLn": 0.012330612457478718,
+      "liquidationPriceFactor": 1.0124069478908189
+    },
+    {
+      "coin": "BNB",
+      "side": "long",
+      "leverage": 10,
+      "maintenanceRate": 0.0067,
+      "d": 0.09392932648746603,
+      "dLn": 0.09863796989699954,
+      "liquidationPriceFactor": 0.906070673512534
+    },
+    {
+      "coin": "BNB",
+      "side": "short",
+      "leverage": 10,
+      "maintenanceRate": 0.0067,
+      "d": 0.09267905036257079,
+      "dLn": 0.08863252505108431,
+      "liquidationPriceFactor": 1.0926790503625707
+    },
+    {
+      "coin": "BNB",
+      "side": "long",
+      "leverage": 20,
+      "maintenanceRate": 0.0067,
+      "d": 0.043592066847880806,
+      "dLn": 0.044570748626723763,
+      "liquidationPriceFactor": 0.9564079331521191
+    },
+    {
+      "coin": "BNB",
+      "side": "short",
+      "leverage": 20,
+      "maintenanceRate": 0.0067,
+      "d": 0.04301182080063575,
+      "dLn": 0.04211250941619144,
+      "liquidationPriceFactor": 1.0430118208006358
+    },
+    {
+      "coin": "BNB",
+      "side": "long",
+      "leverage": 50,
+      "maintenanceRate": 0.0067,
+      "d": 0.013389711064129669,
+      "dLn": 0.013480161556692677,
+      "liquidationPriceFactor": 0.9866102889358703
+    },
+    {
+      "coin": "BNB",
+      "side": "short",
+      "leverage": 50,
+      "maintenanceRate": 0.0067,
+      "d": 0.01321148306347472,
+      "dLn": 0.013124972542939145,
+      "liquidationPriceFactor": 1.0132114830634746
+    },
+    {
+      "coin": "SUI",
+      "side": "long",
+      "leverage": 10,
+      "maintenanceRate": 0.009,
+      "d": 0.09182643794147327,
+      "dLn": 0.09631977100567725,
+      "liquidationPriceFactor": 0.9081735620585267
+    },
+    {
+      "coin": "SUI",
+      "side": "short",
+      "leverage": 10,
+      "maintenanceRate": 0.009,
+      "d": 0.09018830525272549,
+      "dLn": 0.08635043843285298,
+      "liquidationPriceFactor": 1.0901883052527255
+    },
+    {
+      "coin": "SUI",
+      "side": "long",
+      "leverage": 20,
+      "maintenanceRate": 0.009,
+      "d": 0.041372351160444,
+      "dLn": 0.042252549735401476,
+      "liquidationPriceFactor": 0.958627648839556
+    },
+    {
+      "coin": "SUI",
+      "side": "short",
+      "leverage": 20,
+      "maintenanceRate": 0.009,
+      "d": 0.04063429137760159,
+      "dLn": 0.039830422797960105,
+      "liquidationPriceFactor": 1.0406342913776017
+    },
+    {
+      "coin": "SUI",
+      "side": "long",
+      "leverage": 50,
+      "maintenanceRate": 0.009,
+      "d": 0.011099899091826439,
+      "dLn": 0.011161962665370386,
+      "liquidationPriceFactor": 0.9889001009081736
+    },
+    {
+      "coin": "SUI",
+      "side": "short",
+      "leverage": 50,
+      "maintenanceRate": 0.009,
+      "d": 0.010901883052527256,
+      "dLn": 0.01084288592470781,
+      "liquidationPriceFactor": 1.0109018830525272
+    },
+    {
+      "coin": "1000PEPE",
+      "side": "long",
+      "leverage": 10,
+      "maintenanceRate": 0.01,
+      "d": 0.09090909090909093,
+      "dLn": 0.09531017980432488,
+      "liquidationPriceFactor": 0.9090909090909091
+    },
+    {
+      "coin": "1000PEPE",
+      "side": "short",
+      "leverage": 10,
+      "maintenanceRate": 0.01,
+      "d": 0.08910891089108912,
+      "dLn": 0.08535984895115678,
+      "liquidationPriceFactor": 1.0891089108910892
+    },
+    {
+      "coin": "1000PEPE",
+      "side": "long",
+      "leverage": 20,
+      "maintenanceRate": 0.01,
+      "d": 0.04040404040404041,
+      "dLn": 0.04124295853404909,
+      "liquidationPriceFactor": 0.9595959595959596
+    },
+    {
+      "coin": "1000PEPE",
+      "side": "short",
+      "leverage": 20,
+      "maintenanceRate": 0.01,
+      "d": 0.039603960396039604,
+      "dLn": 0.03883983331626392,
+      "liquidationPriceFactor": 1.0396039603960396
+    },
+    {
+      "coin": "1000PEPE",
+      "side": "long",
+      "leverage": 50,
+      "maintenanceRate": 0.01,
+      "d": 0.010101010101010102,
+      "dLn": 0.010152371464018008,
+      "liquidationPriceFactor": 0.98989898989899
+    },
+    {
+      "coin": "1000PEPE",
+      "side": "short",
+      "leverage": 50,
+      "maintenanceRate": 0.01,
+      "d": 0.009900990099009901,
+      "dLn": 0.00985229644301163,
+      "liquidationPriceFactor": 1.00990099009901
+    },
+    {
+      "coin": "golden",
+      "side": "long",
+      "leverage": 20,
+      "maintenanceRate": 0.004,
+      "d": 0.04618473895582329,
+      "dLn": 0.047285272990011715,
+      "liquidationPriceFactor": 0.9538152610441767
+    },
+    {
+      "coin": "golden",
+      "side": "short",
+      "leverage": 20,
+      "maintenanceRate": 0.004,
+      "d": 0.045816733067729085,
+      "dLn": 0.044798142899894554,
+      "liquidationPriceFactor": 1.045816733067729
+    }
+  ]
+}
