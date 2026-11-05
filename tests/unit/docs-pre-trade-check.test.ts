@@ -9,10 +9,11 @@
  * copy. A rule added to the table without a docs row, or a bound changed on one side only, is red here
  * before the live P7 leg ever runs.
  */
-import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PRE_TRADE_CHECK_PARAM_DECL, PUBLIC_TOOL_ENUM_PARAMS, TOOL_DOCS_PARTIAL } from '../../src/lib/tool-param-schema.js';
 import { PRE_TRADE_RULES, type PreTradeRuleRow } from '../../src/lib/pre-trade-rules.js';
 import { PARAM_DESC_PRE_TRADE_RULES, PRE_TRADE_RULE_PARAM_DESC } from '../../src/tool-descriptions.js';
@@ -193,26 +194,73 @@ describe('saved rules (DECISION-CALL-V2-W2): the contract\'s copy verbatim, and 
   });
 });
 
-describe('Gate your orders (DECISION-CALL-V2-W3): the approved copy, then the three recipes', () => {
+describe('Gate your orders (DECISION-CALL-V2-W3, W3B): the approved copy, the harnesses it is proven in, the recipes', () => {
   // Copy-locked: Prompt/pre-trade-gate-contract.md § Copy, item 3 (verbatim; approved with the dispatch).
   const GATE_COPY = 'Make the check a step your agent cannot skip. In Claude Code, the AlgoVault pre-trade gate plugin blocks an order tool call until pre_trade_check has recently checked that coin and side, and blocks it when the check returns WAIT. In LangChain, a middleware runs the check before your order tool; in Freqtrade, confirm_trade_entry skips the entry on WAIT. Each recipe blocks the order when the check cannot run, and lets CAUTION through with its reasons.';
-  const GATE_LINKS = [
-    'https://algovault.com/integrations/claude-code',
+  // The gate's harness table at the algovault-skills commit that last set a `proven` (DECISION-CALL-V2-W3B
+  // CH2). Read at a pinned SHA: the file at a commit never changes, so no cached ref can serve a stale copy.
+  // A harness proven later moves this SHA, and this test then asks for its name and page.
+  const SKILLS_SHA = '10d2287ea887aaf57dce6572c9f9ddcb3428e3e1';
+  const TABLE_URL = `https://raw.githubusercontent.com/AlgoVaultLabs/algovault-skills/${SKILLS_SHA}/plugins/pre-trade-gate/scripts/lib/harnesses.mjs`;
+  // The algovault.com page of each harness the table can prove the gate in; a proven harness missing here is red.
+  const HARNESS_PAGE: Record<string, string> = {
+    codex: 'https://algovault.com/integrations/codex',
+    cursor: 'https://algovault.com/integrations/cursor',
+  };
+  const RECIPE_LINKS = [
     'https://algovault.com/integrations/langchain',
     'https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/freqtrade',
   ];
   const GATE = SECTION.slice(SECTION.indexOf('>Gate your orders<'));
+  const LIST = GATE.match(/<ul [^>]*data-gate-links[^>]*>([\s\S]*?)<\/ul>/);
+  const RENDERED_LINKS = LIST ? [...LIST[1].matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]) : [];
 
-  it('the paragraph is the contract paragraph, verbatim', () => {
-    const p = GATE.match(/<p [^>]*data-copy-locked="gate-your-orders"[^>]*>([\s\S]*?)<\/p>/);
-    expect(p, 'the copy-locked paragraph').not.toBeNull();
-    expect(textOf(p![1])).toBe(GATE_COPY);
+  /** Contract copy 5: the proven harnesses other than Claude Code, as A, "A and B" or "A, B and C"; none → no sentence. */
+  function alsoRunsIn(names: string[]): string {
+    if (names.length === 0) return '';
+    const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    return `The same gate also runs in ${list}.`;
+  }
+
+  /** The proven harnesses other than Claude Code, in table order, or why the table could not be read. */
+  let proven: { rows: Array<{ id: string; name: string }> } | { error: string } = { error: 'not read' };
+  beforeAll(async () => {
+    try {
+      const r = await fetch(TABLE_URL, { signal: AbortSignal.timeout(15_000) });
+      if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
+      // harnesses.mjs imports nothing, so a copy loads on its own.
+      const file = join(mkdtempSync(join(tmpdir(), 'ptg-table-')), 'harnesses.mjs');
+      writeFileSync(file, await r.text());
+      const { HARNESSES } = (await import(/* @vite-ignore */ pathToFileURL(file).href)) as { HARNESSES: Array<{ id: string; name: string; proven: unknown }> };
+      proven = { rows: HARNESSES.filter((h) => h.proven && h.id !== 'claude-code').map(({ id, name }) => ({ id, name })) };
+    } catch (err) {
+      proven = { error: err instanceof Error ? err.message : String(err) };
+    }
+  }, 30_000);
+
+  it('alsoRunsIn joins names the way contract copy 5 says', () => {
+    expect(alsoRunsIn([])).toBe('');
+    expect(alsoRunsIn(['Codex'])).toBe('The same gate also runs in Codex.');
+    expect(alsoRunsIn(['Codex', 'Cursor'])).toBe('The same gate also runs in Codex and Cursor.');
+    expect(alsoRunsIn(['Codex', 'Cursor', 'Devin'])).toBe('The same gate also runs in Codex, Cursor and Devin.');
   });
 
-  it('links the Claude Code page, the LangChain page and the Freqtrade recipe, in that order', () => {
-    const list = GATE.match(/<ul [^>]*data-gate-links[^>]*>([\s\S]*?)<\/ul>/);
-    expect(list, 'the gate links list').not.toBeNull();
-    expect([...list![1].matchAll(/<a href="([^"]+)"/g)].map((m) => m[1])).toEqual(GATE_LINKS);
+  it('the paragraph is copy 3, then copy 5 for the harnesses the table proves, verbatim', (ctx) => {
+    // Could not read the table is reported as SKIPPED, never as a pass.
+    ctx.skip('error' in proven, `could not read ${TABLE_URL}: ${'error' in proven ? proven.error : ''}`);
+    if ('error' in proven) return;
+    expect(proven.rows.length, 'the table at the pinned SHA proves no harness beyond Claude Code').toBeGreaterThan(0);
+    const p = GATE.match(/<p [^>]*data-copy-locked="gate-your-orders"[^>]*>([\s\S]*?)<\/p>/);
+    expect(p, 'the copy-locked paragraph').not.toBeNull();
+    expect(textOf(p![1])).toBe([GATE_COPY, alsoRunsIn(proven.rows.map((h) => h.name))].filter(Boolean).join(' '));
+  });
+
+  it('links the Claude Code page, each proven harness page, the LangChain page and the Freqtrade recipe, in that order', (ctx) => {
+    ctx.skip('error' in proven, `could not read ${TABLE_URL}: ${'error' in proven ? proven.error : ''}`);
+    if ('error' in proven) return;
+    expect(LIST, 'the gate links list').not.toBeNull();
+    for (const h of proven.rows) expect(HARNESS_PAGE[h.id], `no algovault.com page for proven harness ${h.id}`).toBeDefined();
+    expect(RENDERED_LINKS).toEqual(['https://algovault.com/integrations/claude-code', ...proven.rows.map((h) => HARNESS_PAGE[h.id]), ...RECIPE_LINKS]);
   });
 
   /** 200 → ok; 404 or 410 → dead; a network error or any other status (403, 429, 5xx) → could not verify. */
@@ -226,7 +274,7 @@ describe('Gate your orders (DECISION-CALL-V2-W3): the approved copy, then the th
     }
   }
 
-  for (const url of GATE_LINKS) {
+  for (const url of RENDERED_LINKS) {
     it(`${url} answers 200`, { timeout: 20_000 }, async (ctx) => {
       const r = await probe(url);
       // Could not verify is reported as SKIPPED, never as a pass; a dead link fails.

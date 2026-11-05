@@ -31,6 +31,21 @@ Run `codex` in a terminal and ask: *"Use AlgoVault to check BTC at 4h."* Codex i
 
 Chain it into edits: *"If BTC 4h is BUY, add a long entry at the current bar in `strategy.py`."*
 
+## Pre-trade gate
+
+The [AlgoVault pre-trade gate](https://github.com/AlgoVaultLabs/algovault-skills#pre-trade-gate-codex) runs in the Codex CLI through Codex's hooks. While it is installed, Codex does not send an opening perpetual or futures order through an exchange's MCP tools until `pre_trade_check` has recently checked that coin and side, and it blocks the order when the check returns `WAIT`.
+
+```bash
+git clone https://github.com/AlgoVaultLabs/algovault-skills.git
+node algovault-skills/plugins/pre-trade-gate/scripts/install.mjs codex
+```
+
+Requires Node.js 20+. The gate holds no key and never calls AlgoVault itself: it reads the result of the `pre_trade_check` your agent runs through the server you connected above. Codex runs a new hook only once you trust it, so trust the gate's two hooks when Codex next asks.
+
+If the gate itself crashes or times out, Codex lets the order through: no Codex setting makes a failed hook block. The gate blocks an order on every error it can catch, and it never blocks an AlgoVault tool.
+
+The gated order tools, a one-project install and how to remove it are in the [README](https://github.com/AlgoVaultLabs/algovault-skills#pre-trade-gate-codex).
+
 ## Troubleshooting
 
 - **AlgoVault tools not listed** — restart Codex. `config.toml` is read at startup.
