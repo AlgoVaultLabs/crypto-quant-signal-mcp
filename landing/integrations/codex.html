@@ -11,7 +11,7 @@
 <meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with Codex&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/codex">
-<meta name="last-updated" content="2026-10-12">
+<meta name="last-updated" content="2026-11-05">
 <!-- BEGIN: AlgoVault canonical design loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +26,7 @@
   "headline": "AlgoVault × Codex - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/codex",
   "datePublished": "2026-08-05T00:00:00+00:00",
-  "dateModified": "2026-10-01T15:00:00+00:00",
+  "dateModified": "2026-11-05T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -283,7 +283,7 @@ tailwind.config = {
     <div style="position:relative;z-index:1">
       <div class="placeholder-cap" style="margin-bottom:14px">· codex integration</div>
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">90.6%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">1,027,879</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">90.6%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">1,300,425</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Codex</h1>
@@ -307,6 +307,14 @@ bearer_token_env_var = &quot;AV_API_KEY&quot;
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Example: get a BTC trade call</h2>
 <p>Run <code>codex</code> in a terminal and ask: <em>“Use AlgoVault to check BTC at 4h.”</em> Codex invokes <code>get_trade_call</code> and returns call, confidence, regime and the drivers behind them.</p>
 <p>Chain it into edits: <em>“If BTC 4h is BUY, add a long entry at the current bar in <code>strategy.py</code>.”</em></p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Pre-trade gate</h2>
+<p>The <a href="https://github.com/AlgoVaultLabs/algovault-skills#pre-trade-gate-codex">AlgoVault pre-trade gate</a> runs in the Codex CLI through Codex’s hooks. While it is installed, Codex does not send an opening perpetual or futures order through an exchange’s MCP tools until <code>pre_trade_check</code> has recently checked that coin and side, and it blocks the order when the check returns <code>WAIT</code>.</p>
+<pre><code class="language-bash">git clone https://github.com/AlgoVaultLabs/algovault-skills.git
+node algovault-skills/plugins/pre-trade-gate/scripts/install.mjs codex
+</code></pre>
+<p>Requires Node.js 20+. The gate holds no key and never calls AlgoVault itself: it reads the result of the <code>pre_trade_check</code> your agent runs through the server you connected above. Codex runs a new hook only once you trust it, so trust the gate’s two hooks when Codex next asks.</p>
+<p>If the gate itself crashes or times out, Codex lets the order through: no Codex setting makes a failed hook block. The gate blocks an order on every error it can catch, and it never blocks an AlgoVault tool.</p>
+<p>The gated order tools, a one-project install and how to remove it are in the <a href="https://github.com/AlgoVaultLabs/algovault-skills#pre-trade-gate-codex">README</a>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
 <ul>
 <li><strong>AlgoVault tools not listed</strong> — restart Codex. <code>config.toml</code> is read at startup.</li>
