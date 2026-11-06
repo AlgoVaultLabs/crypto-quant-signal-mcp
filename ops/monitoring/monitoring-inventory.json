@@ -2160,7 +2160,7 @@
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "installed",
-      "sha256": "dcbd804be3142939fa8e3fce9baf66b50d0fe8add7e99320c6c6e47188e60ea9",
+      "sha256": "1fb9d3a04ee685ae91a66fc3b879d99f149f304bcb5c7efc05af414db5d4711e",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
       "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence.",
@@ -3691,6 +3691,27 @@
         "at": "20261106T134016Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
+    },
+    {
+      "id": "owed-read-autopub-fulltext-home-first-run",
+      "artifact": "ops/monitoring/owed-read-autopub-fulltext-home-first-run.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/owed-read-autopub-fulltext-home-first-run.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/owed-read-autopub-fulltext-home-first-run.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:owed-read-runner",
+      "install_state": "pending",
+      "sha256": "f1ef5602e381ce7027f672bdc2840139050c9d2aa40b7320940cfee602b816b2",
+      "alert_ids": [],
+      "owner_wave": "OPS-AUTOPUB-FULLTEXT-HOME-W1",
+      "notes": "This owed read has registry id autopub-fulltext-home-first-run and owner OPS-AUTOPUB-FULLTEXT-HOME-W1 R5. deploy_at is 1793980570 = 2026-11-06T15:56:10Z, when GHA run 42247575275 deployed algovault-editorial 55e102c (lib/: R1, the full-text Discussion body). R2 (Medium off unless EDITORIAL_MEDIUM_RUNBOOK=1), R3 (the Discussion URL in the calendar/history) and R4 (github_body in the run record) live in the hand-installed /usr/local/bin/editorial-publish.sh; a record judged before that copy was installed lacks github_body and FAILs, which is the truth. The pre-registered constants live HERE; the registry row's anchors must equal them or the read is INDETERMINATE. It reads /var/lib/algovault-editorial/run-verdicts.jsonl and medium-runbook-state.json (signal-1 is the editorial host). It judges the FIRST post-deploy record with verdict PUBLISHED whose devto is not PUBLISHED (a record with no devto field reads as dev.to-published, as lib/run_verdicts.mjs devtoLeg() does). PASS = a github.com/AlgoVaultLabs/crypto-quant-signal-mcp/discussions/<n> URL, github_body FULL, and no Medium runbook entry for its slug. FAIL = any part missing. INDETERMINATE = no such record, a malformed line that could be it, or an unreadable Medium state when the rest passes. Records that served nothing (NOT_A_RUN_DAY under the escalation window carries devto HELD) are counted, never judged. The two paths may be overridden ONLY under --sandbox. Read-only. Stdlib only, Python >= 3.9."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

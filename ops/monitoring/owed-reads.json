@@ -369,6 +369,21 @@
       },
       "criteria": "Did the first run under a dev.to-only hold publish the other channels? PASS = a post-install 2026-11-09 record: PUBLISHED, devto HELD, a crypto-quant-signal-mcp Discussion URL. FAIL = PUBLISHED under HELD with no such URL, or OPERATOR_HOLD while that day's log names only scope=devto holds. Else INDETERMINATE. One read-only ledger pass.",
       "_expires_at_rule": "Spec R5: not_before 2026-11-09T03:00:00Z, an hour after the Mon 02:00Z run fires; expires_at = not_before + 72 h."
+    },
+    {
+      "id": "autopub-fulltext-home-first-run",
+      "wave": "OPS-AUTOPUB-FULLTEXT-HOME-W1",
+      "not_before": "2026-11-09T03:00:00Z",
+      "expires_at": "2026-11-12T03:00:00Z",
+      "script": "owed-read-autopub-fulltext-home-first-run.py",
+      "timeout_s": 60,
+      "anchors": {
+        "deploy_at": 1793980570,
+        "verdicts_path": "/var/lib/algovault-editorial/run-verdicts.jsonl",
+        "medium_state_path": "/var/lib/algovault-editorial/medium-runbook-state.json"
+      },
+      "criteria": "Did the first post dev.to did not publish reach GitHub in full, with Medium off? PASS = the first post-deploy PUBLISHED record whose devto is not PUBLISHED has a crypto-quant-signal-mcp Discussion URL, github_body FULL, and no medium-runbook-state entry for its slug. FAIL = any part missing. INDETERMINATE = no such record yet. Read-only.",
+      "_expires_at_rule": "Spec R5: not_before = 03:00Z on the first run day after the deploy (run days Mon,Wed,Fri; deploy Fri 2026-11-06 → Mon 2026-11-09); expires_at = not_before + 72 h."
     }
   ]
 }
