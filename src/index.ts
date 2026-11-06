@@ -42,7 +42,7 @@ import {
   ADMIN_UNAUTHORIZED_PAGE,
   ADMIN_UNAUTHORIZED_API,
 } from './lib/admin-auth.js';
-import { closeDb, getConfidenceBands, getBandSignalCounts, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands, getBandSignalCounts, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, dbQuery, isPgBackend, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { registerWebhookRoutes, resolveOwner, authRequired, refuseOwner } from './lib/webhook-api.js';
 import { registerPreTradeRulesRoutes } from './lib/pre-trade-rules-api.js';
 import { formatShadowVenuePublic, formatVenueForResource } from './lib/venue-public-formatter.js';
@@ -52,6 +52,8 @@ import { PKG_VERSION } from './lib/pkg-version.js';
 import { buildErc8004ReputationBody } from './lib/erc8004-reputation.js';
 import { buildPublicCtaBlock } from './lib/public-cta.js';
 import { verifyProof } from './lib/merkle.js';
+import { CALL_LEDGER_ID_RE } from './lib/call-ledger.js';
+import { CALL_LEDGER_REGISTRY } from './lib/onchain-registries.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
 // DOCS-PARAM-SCHEMA-PROJECTION-W1: the accepted-venue set and the regime/assetClass enums are
@@ -371,6 +373,148 @@ export function strictToolInput<S extends z.ZodRawShape>(tool: string, shape: S)
       return { message: `Unknown parameter(s): ${issue.keys.join(', ')}. Valid parameters: ${valid}.` };
     },
   }).strict();
+}
+
+// ── The public verify lookups (DECISION-CALL-V2-W5 CH3) ──────────────────────────────────────────────
+// `verify://signal/{id}` (DESIGN-W9), `verify://check/{id}` and `GET /api/verify-check?id=` build every body
+// through ONE public-only allow-list. A key reaches a verify body only by being named in VERIFY_SURFACES, and the
+// shared envelope cannot drift between the two ledgers: the `_algovault` block, the verified | pending | notfound
+// vocabulary, and the notfound `requested_id`. The contract is the vault's Prompt/call-ledger-contract.md
+// § Lookup. Commit, never reveal: a check's lookup serves its verdict leaf and that leaf's proof. It never serves
+// the order, the decision, the odds, the salt or the caller.
+
+/**
+ * Per surface: the `_algovault` tool and source, and per status the ONLY keys a body may carry beside
+ * `_algovault` and `status`. The signal row is the shape DESIGN-W9 ratified (Q-W9-6): no outcome or PFE field.
+ * The check row is the call-ledger contract's list.
+ */
+export const VERIFY_SURFACES = {
+  signal: {
+    tool: 'verify-signal',
+    source: 'verify://signal/{id}',
+    keys: { verified: ['leaf', 'root', 'batch', 'tx'], pending: ['leaf', 'requested_id'], notfound: ['requested_id'] },
+  },
+  check: {
+    tool: 'verify-check',
+    source: 'verify://check/{id}',
+    keys: {
+      verified: ['id', 'leaf', 'proof', 'root', 'batch', 'tx', 'registry', 'chain', 'anchored_at'],
+      pending: ['id', 'leaf'],
+      notfound: ['requested_id'],
+    },
+  },
+} as const;
+export type VerifySurface = keyof typeof VERIFY_SURFACES;
+
+/** The `_algovault` block every verify body opens with. */
+export function verifyMeta(surface: VerifySurface): { tool: string; version: string; source: string; ts: string } {
+  const s = VERIFY_SURFACES[surface];
+  return { tool: s.tool, version: PKG_VERSION, source: s.source, ts: new Date().toISOString() };
+}
+
+/**
+ * The shared public-only body builder. It keeps `_algovault`, `status` and the keys this surface allows for that
+ * status, in the order the body set them, and drops everything else. It is an allow-list, never a deny-list: a
+ * field added to a lookup row cannot reach a public body without being named above.
+ */
+export function publicVerifyBody(surface: VerifySurface, body: Record<string, unknown>): Record<string, unknown> {
+  const keys = VERIFY_SURFACES[surface].keys as Record<string, readonly string[]>;
+  const allowed = keys[String(body.status)] ?? [];
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (k === '_algovault' || k === 'status' || allowed.includes(k)) out[k] = v;
+  }
+  return out;
+}
+
+/** Copy 2 (contract § Copy, verbatim; Mr.1's OK at dispatch): the `verify://check/{id}` resource description. */
+export const VERIFY_CHECK_DESCRIPTION =
+  'Verify a pre_trade_check receipt against its on-chain Merkle proof. Returns {status, leaf, proof, root, batch, tx}: proof only, never the order or its outcome.';
+/** Copy 3 (contract § Copy, verbatim): the HTTP 400 body for an id that is not `pcl_` + 32 lowercase hex. */
+export const VERIFY_CHECK_BAD_ID = 'invalid id (expected pcl_ + 32 hex)';
+
+interface CheckReceiptRow {
+  leaf: string;
+  proof?: unknown;
+  batch_id?: number | string | null;
+  root?: string | null;
+  state?: string | null;
+  tx_hash?: string | null;
+  anchored_at?: Date | string | null;
+}
+
+/**
+ * The receipt behind a ledger id: its VERDICT leaf, and once its batch is sealed, the leaf's proof and that batch.
+ * It reads `call_ledger` (never the salt column, never an odds row) and `call_ledger_batches`, both adopted
+ * read-only. Before the first logged check there is no `call_ledger`; before the first anchor there is no
+ * `call_ledger_batches`. The ledger lives only in Postgres: its tables are Postgres DDL, with the `~` CHECKs of
+ * 055 and 056, so no other backend holds a receipt.
+ */
+async function readCheckReceipt(id: string): Promise<CheckReceiptRow | null> {
+  if (!isPgBackend()) return null;
+  const t = await dbQuery<{ l: boolean | null; b: boolean | null }>(
+    `SELECT to_regclass('call_ledger') IS NOT NULL AS l, to_regclass('call_ledger_batches') IS NOT NULL AS b`,
+  );
+  if (t[0]?.l !== true) return null;
+  const rows = await dbQuery<CheckReceiptRow>(
+    t[0]?.b === true
+      ? `SELECT l.leaf, l.proof, l.batch_id, b.root, b.state, b.tx_hash, b.anchored_at
+           FROM call_ledger l LEFT JOIN call_ledger_batches b ON b.batch_id = l.batch_id
+          WHERE l.ledger_id = $1 AND l.kind = 'verdict'`
+      : `SELECT l.leaf FROM call_ledger l WHERE l.ledger_id = $1 AND l.kind = 'verdict'`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * THE one function behind `verify://check/{id}` and `GET /api/verify-check?id=`. Its statuses map to HTTP as:
+ * verified 200, pending 200 (logged, not yet in a verified batch), notfound 404, malformed id 400 (Copy 3).
+ * It never throws. A lookup that cannot complete answers 500 with the verify-signal route's own message, and so
+ * does a stored proof that does not reach its batch's root: "verified" is never served for a proof the caller
+ * would then fail to reproduce.
+ */
+export async function verifyCheckLookup(rawId: string): Promise<{ http: 200 | 400 | 404 | 500; body: Record<string, unknown> }> {
+  if (!CALL_LEDGER_ID_RE.test(rawId)) return { http: 400, body: { error: VERIFY_CHECK_BAD_ID } };
+  try {
+    const row = await readCheckReceipt(rawId);
+    const body: Record<string, unknown> = { _algovault: verifyMeta('check') };
+    if (!row) {
+      body.status = 'notfound';
+      body.requested_id = rawId;
+      return { http: 404, body: publicVerifyBody('check', body) };
+    }
+    if (row.state !== 'verified') {
+      body.status = 'pending';
+      body.id = rawId;
+      body.leaf = row.leaf;
+      return { http: 200, body: publicVerifyBody('check', body) };
+    }
+    const proof: unknown = typeof row.proof === 'string' ? JSON.parse(row.proof) : row.proof;
+    if (!Array.isArray(proof) || !verifyProof(row.leaf as `0x${string}`, proof as `0x${string}`[], row.root as `0x${string}`)) {
+      throw new Error(`the stored proof of ${rawId} does not reach batch ${String(row.batch_id)}'s root`);
+    }
+    body.status = 'verified';
+    body.id = rawId;
+    body.leaf = row.leaf;
+    body.proof = proof;
+    body.root = row.root;
+    body.batch = Number(row.batch_id);
+    body.tx = row.tx_hash;
+    body.registry = CALL_LEDGER_REGISTRY.address;
+    body.chain = 'base';
+    body.anchored_at = new Date(row.anchored_at as Date | string).toISOString();
+    return { http: 200, body: publicVerifyBody('check', body) };
+  } catch (e) {
+    console.error(`[verify-check] lookup failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);
+    return { http: 500, body: { error: 'Verification failed' } };
+  }
+}
+
+/** `GET /api/verify-check?id=` (public, no auth): the HTTP face of verifyCheckLookup. */
+export async function verifyCheckHttpHandler(req: import('express').Request, res: import('express').Response): Promise<void> {
+  const r = await verifyCheckLookup(typeof req.query.id === 'string' ? req.query.id : '');
+  res.status(r.http).json(r.body);
 }
 
 function createServer(): McpServer {
@@ -707,13 +851,10 @@ function createServer(): McpServer {
           row = await getSignalWithBatch(intId);
         }
       }
+      // DECISION-CALL-V2-W5 CH3: verify://check/{id} shares this `_algovault` block and the public-only allow-list
+      // (VERIFY_SURFACES, publicVerifyBody) — one envelope, so the two shapes cannot drift.
       const body: Record<string, unknown> = {
-        _algovault: {
-          tool: 'verify-signal',
-          version: PKG_VERSION,
-          source: 'verify://signal/{id}',
-          ts: new Date().toISOString(),
-        },
+        _algovault: verifyMeta('signal'),
       };
       if (!row) {
         body.status = 'notfound';
@@ -741,7 +882,26 @@ function createServer(): McpServer {
       return {
         contents: [{
           uri: uri.href,
-          text: JSON.stringify(body, null, 2),
+          text: JSON.stringify(publicVerifyBody('signal', body), null, 2),
+          mimeType: 'application/json',
+        }],
+      };
+    }
+  );
+
+  // ── DECISION-CALL-V2-W5 CH3: verify://check/{id} — a pre_trade_check receipt, against its on-chain proof ──
+  // The body is verifyCheckLookup's, the same one GET /api/verify-check serves. An MCP resource carries no HTTP
+  // status, so the body alone says verified | pending | notfound, or { error } for a malformed id.
+  server.resource(
+    'verify-check',
+    new ResourceTemplate('verify://check/{id}', { list: undefined }),
+    { description: VERIFY_CHECK_DESCRIPTION, mimeType: 'application/json' },
+    async (uri, variables) => {
+      const r = await verifyCheckLookup(String((variables as { id?: unknown }).id ?? ''));
+      return {
+        contents: [{
+          uri: uri.href,
+          text: JSON.stringify(r.body, null, 2),
           mimeType: 'application/json',
         }],
       };
@@ -2961,6 +3121,10 @@ async function startHttp() {
       res.status(500).json({ error: 'Verification failed' });
     }
   });
+
+  // DECISION-CALL-V2-W5 CH3 — a pre_trade_check receipt (public, no auth): verifyCheckLookup's body, the one
+  // verify://check/{id} serves. 200 verified | pending · 404 notfound · 400 a malformed id (Copy 3).
+  app.get('/api/verify-check', verifyCheckHttpHandler);
 
   app.get('/api/merkle-batches', async (_req, res) => {
     try {
