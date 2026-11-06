@@ -39,6 +39,7 @@ Read-only: the ledger file and that day's run logs. Stdlib only; Python >= 3.9.
 from __future__ import annotations
 
 import argparse
+import ast
 import calendar
 import json
 import os
@@ -65,6 +66,12 @@ ISO_AT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z$")
 
 VERDICTS = ("PASS", "FAIL", "INDETERMINATE")
 EXIT_FOR = {"PASS": 0, "FAIL": 1, "INDETERMINATE": 3}
+# owed-read-runner.py RESERVED_METRIC_KEYS. The runner turns any read whose metrics use one into INDETERMINATE,
+# whatever its token says. Measured on this read's first sandbox tick: a `wave` key turned a PASS into
+# INDETERMINATE. The self-test asserts that no metrics this read can emit use one, and that this mirror still
+# equals the runner beside it.
+RUNNER_RESERVED_METRIC_KEYS = ("read_id", "wave", "not_before", "expires_at", "attempt", "expired", "script",
+                               "duration_s", "runner_reason")
 METRICS_MAX_BYTES = 4096
 SAMPLE_MAX = 8
 LOG_MAX_BYTES = 4 * 1024 * 1024   # a run log is ~100 KiB; anything larger is read in part
@@ -199,7 +206,7 @@ def evaluate(anchors, now, ledger, ledger_err, hold_lines, log_err, sandbox=Fals
         return "INDETERMINATE", {"reason": ledger_err}
     recs, bad, pre, n = parse_ledger(ledger, a["slot_date"], a["install_at"])
     classes = [classify(r) for r in recs]
-    m = {"wave": WAVE, "slot_date": a["slot_date"], "now": utc_iso(now), "ledger_lines": n, "bad_lines": len(bad),
+    m = {"slot_date": a["slot_date"], "now": utc_iso(now), "ledger_lines": n, "bad_lines": len(bad),
          "bad_line_sample": bad[:SAMPLE_MAX], "pre_install_ignored": pre, "slot_records": len(recs),
          "records": [summarize(r, c) for r, c in zip(recs, classes)][:SAMPLE_MAX]}
     if "pass" in classes:
@@ -313,7 +320,19 @@ def main(argv=None):
 
 # ── Self-test ────────────────────────────────────────────────────────────────────────────────
 
-_SELF_TEST_MIN_CHECKS = 30
+_SELF_TEST_MIN_CHECKS = 41
+
+
+def runner_reserved_keys():
+    """RESERVED_METRIC_KEYS as written in the owed-read-runner.py installed beside this read; None when absent."""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "owed-read-runner.py")
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            src = f.read()
+    except OSError:
+        return None
+    m = re.search(r"^RESERVED_METRIC_KEYS = (\([^)]*\))", src, re.M)
+    return ast.literal_eval(m.group(1)) if m else None
 
 
 def self_test():
@@ -350,9 +369,18 @@ def self_test():
     OLD = rec(verdict="OPERATOR_HOLD", devto=None, url=None, slot="2026-11-06", at="2026-11-06T02:00:00.551Z",
               run_day=False)
 
+    emitted = []   # every metrics object a scenario produced — none may use a runner-owned key
+
     def ev(*lines, holds=(), log_err=None, ledger_err=None, anchors=None, sandbox=False):
-        return evaluate(A if anchors is None else anchors, NOW, "\n".join((OLD,) + lines) + "\n", ledger_err,
-                        list(holds), log_err, sandbox)
+        v_, m_ = evaluate(A if anchors is None else anchors, NOW, "\n".join((OLD,) + lines) + "\n", ledger_err,
+                          list(holds), log_err, sandbox)
+        emitted.append(m_)
+        return v_, m_
+
+    def run_kept(*args, **kw):
+        v_, m_ = run(*args, **kw)
+        emitted.append(m_)
+        return v_, m_
 
     DEVTO_HOLD = ("[2026-11-09T02:00:03Z] PUBLISH_HOLD_ACTIVE: reason=devto-escalation-window since=2026-11-06 "
                   "source=window scope=devto; held_run_days=2 — nothing pulled, drafted or published")
@@ -444,15 +472,20 @@ def self_test():
         with open(os.path.join(logs, "run-20261108T020000Z.log"), "w") as f:
             f.write(ENV_HOLD + "\n")   # another day's log must not be read
         sb = dict(A, _sandbox_overrides={"verdicts_path": ledger, "log_dir": logs})
-        vr, mr = run(NOW, sb, sandbox=True)
+        vr, mr = run_kept(NOW, sb, sandbox=True)
         check("end to end (--sandbox): only that day's log is read; OPERATOR_HOLD under the window alone is FAIL",
               lambda: vr == "FAIL" and mr.get("sandbox") is True and mr["holds"] == [{"source": "window", "scope": "devto"}])
         with open(ledger, "a") as f:
             f.write(rec(scheduled=False) + "\n")
-        check("end to end (--sandbox): a later published record turns it PASS", lambda: run(NOW, sb, sandbox=True)[0] == "PASS")
-        check("end to end: the same overrides without --sandbox are refused", lambda: run(NOW, sb)[0] == "INDETERMINATE")
+        check("end to end (--sandbox): a later published record turns it PASS", lambda: run_kept(NOW, sb, sandbox=True)[0] == "PASS")
+        check("end to end: the same overrides without --sandbox are refused", lambda: run_kept(NOW, sb)[0] == "INDETERMINATE")
         check("end to end: a missing ledger is INDETERMINATE",
-              lambda: run(NOW, dict(A, _sandbox_overrides={"verdicts_path": ledger + ".gone", "log_dir": logs}), sandbox=True)[0] == "INDETERMINATE")
+              lambda: run_kept(NOW, dict(A, _sandbox_overrides={"verdicts_path": ledger + ".gone", "log_dir": logs}), sandbox=True)[0] == "INDETERMINATE")
+
+    check("no metrics this read emitted use a runner-owned key (the runner would make any verdict INDETERMINATE)",
+          lambda: len(emitted) >= 30 and not [k for m_ in emitted for k in m_ if k in RUNNER_RESERVED_METRIC_KEYS])
+    check("the reserved-key mirror equals RESERVED_METRIC_KEYS in the owed-read-runner.py beside this read",
+          lambda: runner_reserved_keys() == RUNNER_RESERVED_METRIC_KEYS)
 
     print("self-test: %d checks, %d failed" % (len(ran), len(failures)))
     if len(ran) < _SELF_TEST_MIN_CHECKS:

@@ -353,6 +353,22 @@
       },
       "criteria": "PASS = per odds_version: n per field (bracket fields over bracket_first in target/stop/timeout, both_in_one_bar excluded and counted; liquidation over liq_touched), the date the bracketed n reaches 500, and 10-bin reliability + ECE for each field with n >= 500; FAIL = a label-table integrity break only; else INDETERMINATE. One read-only RR bundle.",
       "_expires_at_rule": "not_before = first_label_at (2026-11-06T04:11:08Z, the earliest `labeled` outcome, read from the first run's log line first_labeled_at=2026-11-06T04:11:08.381Z) + 180 d; expires_at = not_before + 72 h (architect ruling Q3 = A)."
+    },
+    {
+      "id": "autopub-devto-scoped-first-run",
+      "wave": "OPS-AUTOPUB-DEVTO-DECOUPLE-W1",
+      "not_before": "2026-11-09T03:00:00Z",
+      "expires_at": "2026-11-12T03:00:00Z",
+      "script": "owed-read-autopub-devto-scoped-first-run.py",
+      "timeout_s": 60,
+      "anchors": {
+        "slot_date": "2026-11-09",
+        "install_at": 1793970267,
+        "verdicts_path": "/var/lib/algovault-editorial/run-verdicts.jsonl",
+        "log_dir": "/var/log/algovault-editorial"
+      },
+      "criteria": "Did the first run under a dev.to-only hold publish the other channels? PASS = a post-install 2026-11-09 record: PUBLISHED, devto HELD, a crypto-quant-signal-mcp Discussion URL. FAIL = PUBLISHED under HELD with no such URL, or OPERATOR_HOLD while that day's log names only scope=devto holds. Else INDETERMINATE. One read-only ledger pass.",
+      "_expires_at_rule": "Spec R5: not_before 2026-11-09T03:00:00Z, an hour after the Mon 02:00Z run fires; expires_at = not_before + 72 h."
     }
   ]
 }

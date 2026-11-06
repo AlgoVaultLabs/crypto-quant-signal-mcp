@@ -2160,7 +2160,7 @@
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "installed",
-      "sha256": "adead3089edb28348cbfae696b836a315d31b1c0496a3f263f770dc05f589eba",
+      "sha256": "dcbd804be3142939fa8e3fce9baf66b50d0fe8add7e99320c6c6e47188e60ea9",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
       "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence.",
@@ -3634,10 +3634,14 @@
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "pending",
-      "sha256": "b66e96efa5e3aa1a845967eab9aeb4a3f1d1b8080ca25ce02d661274125a4bd9",
+      "sha256": "46322ee33d0d8491dad5c236523bce6333e014a4c5a6fe7a4d0db2dff5abbb91",
       "alert_ids": [],
       "owner_wave": "OPS-AUTOPUB-DEVTO-DECOUPLE-W1",
-      "notes": "This owed read has registry id autopub-devto-scoped-first-run and owner OPS-AUTOPUB-DEVTO-DECOUPLE-W1 CH1 R5. install_at is 1793970267 = 2026-11-06T13:04:27Z, when algovault-editorial b30baad's /usr/local/bin/editorial-publish.sh was installed; that copy scopes a dev.to-only hold to the dev.to leg. The pre-registered constants live HERE; the registry row's anchors must equal them or the read is INDETERMINATE (a synced declaration can select this read, never retune it). It reads the editorial run-verdict ledger /var/lib/algovault-editorial/run-verdicts.jsonl (signal-1 is the editorial host) for slot 2026-11-09. PASS = a post-install record with PUBLISHED, devto HELD and a github.com/AlgoVaultLabs/crypto-quant-signal-mcp/discussions/<n> URL. FAIL = PUBLISHED under HELD with no such URL, or OPERATOR_HOLD while that day's run log (/var/log/algovault-editorial/run-20261109T*.log, PUBLISH_HOLD_ACTIVE) names only scope=devto holds. Everything else is INDETERMINATE. The two paths may be overridden ONLY under --sandbox. Read-only. Stdlib only, Python >= 3.9."
+      "notes": "This owed read has registry id autopub-devto-scoped-first-run and owner OPS-AUTOPUB-DEVTO-DECOUPLE-W1 CH1 R5. install_at is 1793970267 = 2026-11-06T13:04:27Z, when algovault-editorial b30baad's /usr/local/bin/editorial-publish.sh was installed; that copy scopes a dev.to-only hold to the dev.to leg. The pre-registered constants live HERE; the registry row's anchors must equal them or the read is INDETERMINATE (a synced declaration can select this read, never retune it). It reads the editorial run-verdict ledger /var/lib/algovault-editorial/run-verdicts.jsonl (signal-1 is the editorial host) for slot 2026-11-09. PASS = a post-install record with PUBLISHED, devto HELD and a github.com/AlgoVaultLabs/crypto-quant-signal-mcp/discussions/<n> URL. FAIL = PUBLISHED under HELD with no such URL, or OPERATOR_HOLD while that day's run log (/var/log/algovault-editorial/run-20261109T*.log, PUBLISH_HOLD_ACTIVE) names only scope=devto holds. Everything else is INDETERMINATE. The two paths may be overridden ONLY under --sandbox. Read-only. Stdlib only, Python >= 3.9.",
+      "first_install": {
+        "at": "20261106T132611Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
