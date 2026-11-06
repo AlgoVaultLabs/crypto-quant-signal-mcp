@@ -110,6 +110,7 @@ import {
   _preTradeCheckLogFailuresForTest,
 } from '../../src/lib/pre-trade-check-log.js';
 import { callerRef, hashEmail, PRE_TRADE_CALLER_REF_VERSION } from '../../src/lib/lifecycle/identity.js';
+import { noEdgeOdds } from '../../src/lib/pre-trade-calc.js';
 import {
   checkQuota,
   trackCall,
@@ -142,7 +143,10 @@ testDeps.make = (): PreTradeCheckDeps => ({
 
 const ROOT = resolve(__dirname, '../..');
 const MIGRATION = readFileSync(join(ROOT, 'migrations/051_pre_trade_checks.sql'), 'utf8');
+const MIGRATION_053 = readFileSync(join(ROOT, 'migrations/053_pre_trade_checks_shadow_odds.sql'), 'utf8');
 const STORE = readFileSync(join(ROOT, 'src/lib/pre-trade-check-log.ts'), 'utf8');
+/** The five shadow-odds columns 053 adds, in order (DECISION-CALL-V2-W4 CH2). */
+const ODDS_COLUMNS = ['p_timeout', 'p_target_first', 'p_stop_first', 'p_liq_hold', 'odds_version'];
 const KEY_ENV = 'ALGOVAULT_IP_HASH_KEY';
 const TEST_KEY = 'pre-trade-check-log-test-key-0123456789abcdef';
 /** Two wallets in their EIP-55 checksum form (the spec's own vectors; `viem.getAddress` agrees). */
@@ -162,6 +166,7 @@ const R0_KEY_REFS: ReadonlyArray<readonly [string, string]> = [
 const q = vi.mocked(dbQuery);
 const inserts = () => q.mock.calls.filter((c) => /INSERT INTO pre_trade_checks/.test(String(c[0])));
 const creates = () => q.mock.calls.filter((c) => /CREATE TABLE IF NOT EXISTS pre_trade_checks/.test(String(c[0])));
+const alters = () => q.mock.calls.filter((c) => /ALTER TABLE pre_trade_checks/.test(String(c[0])));
 /** The write is fire-and-forget: let every pending microtask and the next macrotask run. */
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
@@ -202,6 +207,28 @@ function columnsOf(sql: string): string[] {
     .map((l) => { const [name, type] = l.split(/\s+/); return `${name} ${type.replace(/,$/, '')}`; });
 }
 
+/** The ALTER statement of 053 as one normalized string: comments out, whitespace collapsed, no trailing `;`.
+ *  It ends at the migration's `;` or at the module's closing backtick, whichever comes first. */
+function alterOf(sql: string): string {
+  const start = sql.indexOf('ALTER TABLE pre_trade_checks');
+  if (start === -1) return '';
+  const ends = [sql.indexOf(';', start), sql.indexOf('`', start)].filter((i) => i !== -1);
+  const text = ends.length === 0 ? sql.slice(start) : sql.slice(start, Math.min(...ends));
+  return text.split('\n').map((l) => l.replace(/--.*$/, '')).join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/** `name type` of every `ADD COLUMN IF NOT EXISTS name type` (the rest of the line, if any, kept: NOT NULL, DEFAULT). */
+function addedColumnsOf(sql: string): string[] {
+  return [...alterOf(sql).matchAll(/ADD COLUMN IF NOT EXISTS ([a-z_][a-z0-9_]*) ([^,]+)/g)].map((m) => `${m[1]} ${m[2].trim()}`);
+}
+
+/** Every key of a value, at any depth. */
+function deepKeys(x: unknown, out: string[] = []): string[] {
+  if (Array.isArray(x)) x.forEach((v) => deepKeys(v, out));
+  else if (x && typeof x === 'object') for (const [k, v] of Object.entries(x)) { out.push(k); deepKeys(v, out); }
+  return out;
+}
+
 describe('AC3.1 — the schema: the lazy ensure IS migrations/051, and it has nowhere to put a secret', () => {
   it('same columns, same types, in the same order; the checked_at index in both', () => {
     const a = columnsOf(MIGRATION);
@@ -230,7 +257,7 @@ describe('AC3.1 — the schema: the lazy ensure IS migrations/051, and it has no
     const walk = (d: string) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.ts')) files.push(p); } };
     walk(join(ROOT, 'src'));
     expect(files.length, 'the scan must have a corpus').toBeGreaterThan(100);
-    const hits = files.filter((f) => /(FROM|INTO|UPDATE|TABLE IF NOT EXISTS)\s+pre_trade_checks\b/.test(readFileSync(f, 'utf8')));
+    const hits = files.filter((f) => /(FROM|INTO|UPDATE|JOIN|TABLE(\s+IF\s+NOT\s+EXISTS)?)\s+pre_trade_checks\b/.test(readFileSync(f, 'utf8')));
     expect(hits.map((f) => f.slice(ROOT.length + 1))).toEqual(['src/lib/pre-trade-check-log.ts']);
   });
 });
@@ -318,7 +345,10 @@ describe('AC3.1 — one row per served, billed call, through the real pipeline',
     expect(JSON.parse(params[19] as string)).toEqual(r.venues.map((v: Record<string, unknown>) => ({
       exchange: v.exchange, est_cost_bps: v.est_cost_bps, round_trip_bps: v.round_trip_bps, liq_distance_pct: v.liq_distance_pct, your_rules: v.your_rules,
     })));
-    expect(String(inserts()[0][0])).toMatch(/\$19::jsonb, \$20::jsonb\)$/);
+    // DECISION-CALL-V2-W4 CH2: no stop, target or leverage — every odd is null, and the row still names its table.
+    expect(params.slice(20)).toEqual([null, null, null, null, 'odds-v1']);
+    expect(params).toHaveLength(25);
+    expect(String(inserts()[0][0])).toMatch(/\$19::jsonb, \$20::jsonb, \$21, \$22, \$23, \$24, \$25\)$/);
   });
 
   it('each call is its own row; the lazy ensure runs once per process', async () => {
@@ -561,12 +591,110 @@ describe('DECISION-CALL-V2-PAYER-REF-W1 — an x402 check is logged under its pa
   });
 });
 
+describe('DECISION-CALL-V2-W4 CH2 — shadow odds: logged beside the row, never served', () => {
+  const V2 = () => IN({ leverage: 20, stopPct: 2, targetPct: 4, orderType: 'limit' });
+  const oddsOf = (r: Record<string, any>) => noEdgeOdds({
+    side: r.side, stopPct: r.inputs.stop_pct, targetPct: r.inputs.target_pct, sigmaHoldPct: r.calc.sigma_hold_pct, liqDistancePct: r.calc.liq_distance_pct,
+  });
+
+  it('the lazy ensure IS migrations/053: the same ALTER, once normalized', () => {
+    const a = alterOf(MIGRATION_053);
+    expect(a, 'migration parser found nothing').toMatch(/^ALTER TABLE pre_trade_checks ADD COLUMN/);
+    expect(alterOf(STORE)).toBe(a);
+  });
+
+  it('053 adds exactly the five odds columns — nullable, no default, none named for a secret', () => {
+    expect(addedColumnsOf(MIGRATION_053)).toEqual([
+      'p_timeout DOUBLE PRECISION', 'p_target_first DOUBLE PRECISION', 'p_stop_first DOUBLE PRECISION', 'p_liq_hold DOUBLE PRECISION', 'odds_version TEXT',
+    ]);
+    expect(alterOf(MIGRATION_053)).not.toMatch(/NOT NULL|DEFAULT/);
+    for (const c of ODDS_COLUMNS) expect(c, c).not.toMatch(/equity|key|address|wallet|payer|(^|_)ip($|_)/);
+  });
+
+  it('the 053 down drops exactly those five columns, and says it is destructive', () => {
+    const down = readFileSync(join(ROOT, 'migrations/053_pre_trade_checks_shadow_odds.down.sql'), 'utf8');
+    expect(down).toContain('DESTRUCTIVE');
+    const dropped = [...down.matchAll(/DROP COLUMN IF EXISTS ([a-z_]+)/g)].map((m) => m[1]);
+    expect([...dropped].sort()).toEqual([...ODDS_COLUMNS].sort());
+    expect(down.split('\n').filter((l) => /^\s*DROP (TABLE|INDEX)/.test(l))).toEqual([]);
+  });
+
+  it('a bracketed, levered call logs noEdgeOdds of its own served figures — all four values, and odds-v1', async () => {
+    const out = await call(freeLicense(), V2());
+    await settle();
+    if (!out.ok) throw new Error('expected a served call');
+    const r = out.result as Record<string, any>;
+    const o = oddsOf(r);
+    for (const p of [o.pTimeout, o.pTargetFirst, o.pStopFirst, o.pLiqHold]) expect(typeof p, 'a vacuous fixture would log nulls').toBe('number');
+    const params = inserts()[0][1] as unknown[];
+    expect(params.slice(20)).toEqual([o.pTimeout, o.pTargetFirst, o.pStopFirst, o.pLiqHold, 'odds-v1']);
+  });
+
+  it('a side the response does not spell exactly is no side: null odds, never a guessed long', async () => {
+    const out = await runPreTradeCheck({ coin: 'BTC', side: 'short', sizeUsd: 10_000, leverage: 20, stopPct: 2, targetPct: 4 }, INTERNAL, testDeps.make!());
+    if (out.kind !== 'ok') throw new Error('expected ok');
+    const row = toPreTradeCheckLogRow({ response: out.response, facts: out.facts, channel: 'mcp', licenseKey: null });
+    expect(typeof row.p_timeout, 'the short itself has odds').toBe('number');
+    const odd = toPreTradeCheckLogRow({ response: { ...out.response, side: 'SHORT' }, facts: out.facts, channel: 'mcp', licenseKey: null });
+    expect([odd.p_timeout, odd.p_target_first, odd.p_stop_first, odd.p_liq_hold, odd.odds_version]).toEqual([null, null, null, null, 'odds-v1']);
+  });
+
+  it('the wire: no response carries an odds key or the table name (AC2.2 — an odds key reaching the response goes red)', async () => {
+    const out = await call(freeLicense(), V2());
+    await settle();
+    if (!out.ok) throw new Error('expected a served call');
+    expect(inserts(), 'the row was logged, so the odds existed for this call').toHaveLength(1);
+    const keys = deepKeys(out.result);
+    expect(keys.length, 'the scan must have a corpus').toBeGreaterThan(40);
+    for (const k of keys) expect(k, k).not.toMatch(/odds|^p_(timeout|target_first|stop_first|liq_hold)$|^p(Timeout|TargetFirst|StopFirst|LiqHold)$/i);
+    expect(JSON.stringify(out.result)).not.toContain('odds-v1');
+  });
+
+  it('the ALTER runs once per process before the first insert — and still runs after a read-only adoption', async () => {
+    await call(freeLicense());
+    await call(freeLicense());
+    await settle();
+    expect([creates().length, alters().length, inserts().length]).toEqual([1, 1, 2]);
+    const order = q.mock.calls.map((c) => String(c[0]));
+    expect(order.findIndex((x) => x.startsWith('ALTER TABLE pre_trade_checks'))).toBeLessThan(order.findIndex((x) => x.startsWith('INSERT INTO pre_trade_checks')));
+
+    q.mockReset();
+    q.mockResolvedValue([]);
+    _resetPreTradeCheckLogForTest();
+    q.mockResolvedValueOnce([{ t: true, i: true }]);
+    expect(await adoptPreTradeCheckTable()).toBe(true);
+    const outE = await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000 }, INTERNAL, testDeps.make!());
+    if (outE.kind !== 'ok') throw new Error('expected ok');
+    await recordPreTradeCheck({ response: outE.response, facts: { refMidPx: null }, channel: 'mcp', licenseKey: null });
+    expect([creates().length, alters().length, inserts().length], 'adoption marks the table present, never the 053 columns').toEqual([0, 1, 1]);
+  });
+
+  it('the ALTER failing costs only the row: fail-open, the call served, the next call retries it', async () => {
+    q.mockImplementation(async (sql: string) => { if (/ALTER TABLE pre_trade_checks/.test(sql)) throw new Error('permission denied'); return []; });
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const lic = freeLicense();
+    const out = await call(lic, V2());
+    await settle();
+    expect(out.ok).toBe(true);
+    expect(checkQuota(lic).used).toBe(1);
+    expect([inserts().length, _preTradeCheckLogFailuresForTest()]).toEqual([0, 1]);
+    q.mockImplementation(async () => []);
+    await call(freeLicense(), V2());
+    await settle();
+    expect([alters().length, inserts().length], 'a failed ALTER is not marked done').toEqual([2, 1]);
+    err.mockRestore();
+  });
+});
+
 describe('the row projection and the parity reads', () => {
   it('toPreTradeCheckLogRow names every column and nothing else — no equity, no key, at any depth', async () => {
     const out = await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000, equityUsd: 50_000, leverage: 10 }, INTERNAL, testDeps.make!());
     if (out.kind !== 'ok') throw new Error('expected ok');
     const row = toPreTradeCheckLogRow({ response: out.response, facts: out.facts, channel: 'mcp', licenseKey: 'av_free_row' });
-    expect(Object.keys(row)).toEqual(columnsOf(MIGRATION).map((c) => c.split(' ')[0]).filter((c) => c !== 'id'));
+    expect(Object.keys(row)).toEqual([
+      ...columnsOf(MIGRATION).map((c) => c.split(' ')[0]).filter((c) => c !== 'id'),
+      ...addedColumnsOf(MIGRATION_053).map((c) => c.split(' ')[0]),
+    ]);
     const keys: string[] = [];
     const walk = (x: unknown) => { if (Array.isArray(x)) x.forEach(walk); else if (x && typeof x === 'object') for (const [k, v] of Object.entries(x)) { keys.push(k); walk(v); } };
     walk(row);

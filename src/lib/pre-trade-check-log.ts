@@ -14,6 +14,11 @@
  *           `countLoggedChecks` (this table) over 24 h. The canary's session is read-only, so it ADOPTS the
  *           table (`to_regclass`) and never reaches the lazy ensure.
  *
+ * SHADOW ODDS (DECISION-CALL-V2-W4 CH2, migrations/053): each row also holds the no-edge odds of its order —
+ * `p_timeout`, `p_target_first`, `p_stop_first`, `p_liq_hold` and the `odds_version` table they come from —
+ * computed by `noEdgeOdds` (pre-trade-calc.ts) from the row's own served figures. LOGGED, NEVER SERVED: no
+ * response carries them, and they are computed here, after the response exists, inside the fail-open path.
+ *
  * WHAT A ROW NEVER HOLDS: equity, a raw license key, a wallet address or an IP. The caller is `caller_ref`,
  * `callerRef({ licenseKey, payerWallet })` (lifecycle/identity.ts — the hashEmail pattern under its own
  * domains): the license key, else the x402 payer (DECISION-CALL-V2-PAYER-REF-W1), else NULL — a keyless free
@@ -25,6 +30,8 @@
  */
 import { dbQuery } from './performance-db.js';
 import { callerRef } from './lifecycle/identity.js';
+import { noEdgeOdds } from './pre-trade-calc.js';
+import { ODDS_VERSION } from './pre-trade-odds-calibration.js';
 import type { PreTradeCheckFacts, PreTradeCheckResponse } from '../tools/pre-trade-check.js';
 
 const CREATE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS pre_trade_checks (
@@ -55,20 +62,38 @@ const CREATE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS pre_trade_checks (
 const CREATE_CHECKED_AT_INDEX_SQL =
   `CREATE INDEX IF NOT EXISTS idx_pre_trade_checks_checked_at ON pre_trade_checks (checked_at)`;
 
+// The shadow-odds columns (matches migrations/053). Nullable: a row logged before 053 has none, and an order
+// without a bracket or a liquidation distance has none of those values.
+const ADD_ODDS_COLUMNS_SQL = `ALTER TABLE pre_trade_checks
+  ADD COLUMN IF NOT EXISTS p_timeout      DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS p_target_first DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS p_stop_first   DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS p_liq_hold     DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS odds_version   TEXT`;
+
 let _ensured = false;
+// Its own flag: the read-only adoption marks the table as present, never the 053 columns, so a process
+// whose canary adopted first still runs the ALTER before its first write.
+let _oddsColumnsEnsured = false;
 let _failures = 0;
 
-/** Idempotent ensure of the table + index (matches migrations/051); once per process. */
+/** Idempotent ensure of the table + index (migrations/051) and the odds columns (migrations/053); once per process. */
 async function ensurePreTradeCheckTable(): Promise<void> {
-  if (_ensured) return;
-  await dbQuery(CREATE_TABLE_SQL);
-  await dbQuery(CREATE_CHECKED_AT_INDEX_SQL);
-  _ensured = true;
+  if (!_ensured) {
+    await dbQuery(CREATE_TABLE_SQL);
+    await dbQuery(CREATE_CHECKED_AT_INDEX_SQL);
+    _ensured = true;
+  }
+  if (!_oddsColumnsEnsured) {
+    await dbQuery(ADD_ODDS_COLUMNS_SQL);
+    _oddsColumnsEnsured = true;
+  }
 }
 
-/** Test-only reset of the once-per-process ensure flag and the failure counter. */
+/** Test-only reset of the once-per-process ensure flags and the failure counter. */
 export function _resetPreTradeCheckLogForTest(): void {
   _ensured = false;
+  _oddsColumnsEnsured = false;
   _failures = 0;
 }
 
@@ -114,6 +139,12 @@ export interface PreTradeCheckLogRow {
   ref_mid_px: number | null;
   rules: { id: string; source: string; limit: number | boolean; value: number | boolean | string | null; result: string; detail: string }[];
   venues: { exchange: string; est_cost_bps: number | null; round_trip_bps: number | null; liq_distance_pct: number | null; your_rules: string | null }[];
+  /** The no-edge odds (logged, never served) and the table they come from. */
+  p_timeout: number | null;
+  p_target_first: number | null;
+  p_stop_first: number | null;
+  p_liq_hold: number | null;
+  odds_version: string;
 }
 
 /** What one served call gives the log. */
@@ -131,9 +162,19 @@ export interface PreTradeCheckLogSource {
   facts: PreTradeCheckFacts;
 }
 
-/** The row: every column named from the served response — never a spread, never equity. */
+/** The row: every column named from the served response — never a spread, never equity. The odds are a
+ *  function of the served figures alone (stop, target, sigma_H, liquidation distance), so a row recomputes. */
 export function toPreTradeCheckLogRow(src: PreTradeCheckLogSource): PreTradeCheckLogRow {
   const r = src.response;
+  // The response types `side` as a string; a side it does not spell exactly is no side — null odds, never a guess.
+  const side = r.side === 'long' || r.side === 'short' ? r.side : null;
+  const odds = side === null ? null : noEdgeOdds({
+    side,
+    stopPct: r.inputs.stop_pct,
+    targetPct: r.inputs.target_pct,
+    sigmaHoldPct: r.calc.sigma_hold_pct,
+    liqDistancePct: r.calc.liq_distance_pct,
+  });
   return {
     checked_at: r.as_of,
     rule_version: r.rule_version,
@@ -157,13 +198,19 @@ export function toPreTradeCheckLogRow(src: PreTradeCheckLogSource): PreTradeChec
     venues: r.venues.map((v) => ({
       exchange: v.exchange, est_cost_bps: v.est_cost_bps, round_trip_bps: v.round_trip_bps, liq_distance_pct: v.liq_distance_pct, your_rules: v.your_rules,
     })),
+    p_timeout: odds === null ? null : odds.pTimeout,
+    p_target_first: odds === null ? null : odds.pTargetFirst,
+    p_stop_first: odds === null ? null : odds.pStopFirst,
+    p_liq_hold: odds === null ? null : odds.pLiqHold,
+    odds_version: ODDS_VERSION,
   };
 }
 
 const INSERT_SQL = `INSERT INTO pre_trade_checks (
   checked_at, rule_version, channel, caller_ref, coin, side, size_usd, hold_hours, timeframe, order_type,
-  leverage, stop_pct, target_pct, decision, decision_venue, sigma_1h_pct, liq_distance_pct, ref_mid_px, rules, venues
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb)`;
+  leverage, stop_pct, target_pct, decision, decision_venue, sigma_1h_pct, liq_distance_pct, ref_mid_px, rules, venues,
+  p_timeout, p_target_first, p_stop_first, p_liq_hold, odds_version
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22, $23, $24, $25)`;
 
 /**
  * Write one row for a served call. NEVER THROWS: building the row (every read of the served outcome, and
@@ -178,6 +225,7 @@ export async function recordPreTradeCheck(src: PreTradeCheckLogSource): Promise<
       row.checked_at, row.rule_version, row.channel, row.caller_ref, row.coin, row.side, row.size_usd, row.hold_hours,
       row.timeframe, row.order_type, row.leverage, row.stop_pct, row.target_pct, row.decision, row.decision_venue,
       row.sigma_1h_pct, row.liq_distance_pct, row.ref_mid_px, JSON.stringify(row.rules), JSON.stringify(row.venues),
+      row.p_timeout, row.p_target_first, row.p_stop_first, row.p_liq_hold, row.odds_version,
     ]);
     return true;
   } catch (e) {
