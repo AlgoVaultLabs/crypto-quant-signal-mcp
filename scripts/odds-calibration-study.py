@@ -717,6 +717,21 @@ def self_tests() -> list[str]:
     if abs(float(norm_cdf(np.array([0.0]))[0]) - 0.5) > 1e-15 or abs(float(norm_cdf(np.array([1.959963984540054]))[0]) - 0.975) > 1e-12:
         raise SelfTestFailure("norm_cdf")
     notes.append("norm_cdf(0)=0.5, norm_cdf(1.96)=0.975 ok")
+    # (5) the emitter's recalibration text: exact round trip, and both refusals fire (two-way)
+    for x in (2.523944459795622e-28, 5.717648576819556e-15, 0.1, 0.9999999999716436, 1.0 - 2.0 ** -53, 0.0):
+        if float(_ts_exact(x)) != x:
+            raise SelfTestFailure(f"_ts_exact round trip {x!r}")
+    good = [{"lo": None, "hi": 0.0, "value": None, "n_fit": 0}, {"lo": 0.0, "hi": 5.717648576819556e-15, "value": 0.00047, "n_fit": 9},
+            {"lo": 5.717648576819556e-15, "hi": None, "value": 0.5, "n_fit": 3}]
+    _recal_bin_texts("self-test", good)
+    for bad, why in (([dict(good[0]), {**good[1], "hi": 0.0}, {**good[2], "lo": 0.0}], "collapsed bin"),
+                     ([dict(good[0]), dict(good[1]), {**good[2], "lo": 6.9e-8}], "unshared edge")):
+        try:
+            _recal_bin_texts("self-test", bad)
+        except Indeterminate:
+            continue
+        raise SelfTestFailure(f"_recal_bin_texts accepted a {why}")
+    notes.append("recalibration text: exact round trip; collapsed bin and unshared edge both refused")
     return notes
 
 
@@ -811,6 +826,43 @@ def _ts_num(x, nd: int) -> str:
     return format(float(x), f".{nd}f")
 
 
+def _ts_exact(x) -> str:
+    """A recalibration number as the shortest text that parses back to the SAME float64 (Python repr).
+
+    A TypeScript numeric literal parses correctly rounded, so the consumer bins with the doubles the
+    hold-out was scored with. The 6-dp form it replaces collapsed distinct edges (target_first's
+    5.7e-15 and 6.9e-8 both printed 0.000000), which re-binned rows the scoring never saw that way.
+    """
+    if x is None:
+        return "null"
+    xf = float(x)
+    if not math.isfinite(xf):
+        raise Indeterminate(f"recalibration number {x!r} is not finite")
+    t = repr(xf)
+    if float(t) != xf:
+        raise Indeterminate(f"recalibration number {xf!r} does not round-trip through its text {t!r}")
+    return t
+
+
+def _recal_bin_texts(field: str, bins: list[dict]) -> list[tuple[str, str, str]]:
+    """The emitted (lo, hi, value) texts of one field's bins, checked AS PARSED BACK from the text.
+
+    Every bin holding fit rows must be reachable under lo <= v < hi (a null edge is ±inf), and each
+    bin's hi must be the next bin's lo. Any failure is INDETERMINATE, raised before any output exists.
+    """
+    texts = [(_ts_exact(b["lo"]), _ts_exact(b["hi"]), _ts_exact(b["value"])) for b in bins]
+    for j, ((lo_t, hi_t, _v), b) in enumerate(zip(texts, bins)):
+        lo = -math.inf if lo_t == "null" else float(lo_t)
+        hi = math.inf if hi_t == "null" else float(hi_t)
+        if b["n_fit"] > 0 and not lo < hi:
+            raise Indeterminate(f"{field} recalibration bin {j} holds {b['n_fit']} fit rows but its emitted "
+                                f"edges [{lo_t}, {hi_t}) can never match")
+        if j + 1 < len(texts) and hi_t != texts[j + 1][0]:
+            raise Indeterminate(f"{field} recalibration bins {j} and {j + 1} do not share an edge "
+                                f"({hi_t} vs {texts[j + 1][0]})")
+    return texts
+
+
 def _ts_str(s: str) -> str:
     return "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
@@ -847,7 +899,8 @@ def emit_ts(res: dict) -> str:
     o.append("export type OddsStage = 'dryrun' | 'holdout';")
     o.append("")
     o.append("/** One of 20 equal-count recalibration bins fitted on the fit window (B9): lo ≤ v < hi; a null edge is ±∞.")
-    o.append(" *  `value` is the fit-window mean label of the bin (null when no fit row fell in it — unreachable by construction). */")
+    o.append(" *  `value` is the fit-window mean label of the bin (null when no fit row fell in it — unreachable by construction).")
+    o.append(" *  lo, hi and value are the study's float64s printed round-trip exact, so this table bins as the hold-out was scored. */")
     o.append("export interface OddsRecalBin {")
     o.append("  readonly lo: number | null;")
     o.append("  readonly hi: number | null;")
@@ -928,8 +981,8 @@ def emit_ts(res: dict) -> str:
         o.append(f"      ecePp: {_ts_dec(f['ece_pp_3'])},")
         o.append(f"      ecePpBm: {_ts_dec(f['ece_pp_bm_3'])},")
         o.append("      recalBins: [")
-        for b in f["recal_bins"]:
-            o.append(f"        {{ lo: {_ts_num(b['lo'], 6)}, hi: {_ts_num(b['hi'], 6)}, value: {_ts_num(b['value'], 6)}, nFit: {b['n_fit']} }},")
+        for (lo_t, hi_t, v_t), b in zip(_recal_bin_texts(field, f["recal_bins"]), f["recal_bins"]):
+            o.append(f"        {{ lo: {lo_t}, hi: {hi_t}, value: {v_t}, nFit: {b['n_fit']} }},")
         o.append("      ],")
         for key, name in (("reliability", "reliability"), ("reliability_bm", "reliabilityBm")):
             o.append(f"      {name}: [")
