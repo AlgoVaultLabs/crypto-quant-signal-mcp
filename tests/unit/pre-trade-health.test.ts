@@ -11,6 +11,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  CALL_LEDGER_MAX_UNANCHORED_HOURS,
+  judgeCallLedgerHealth,
   judgeFeeTable,
   judgePreTradeHealth,
   judgeLogParity,
@@ -26,6 +28,7 @@ import { currentCaller, currentWeightClass } from '../../src/lib/upstream-weight
 import type { PreTradeCheckOutcome, PreTradeCheckResponse } from '../../src/tools/pre-trade-check.js';
 
 const DAY = 86_400_000;
+const HOUR = 3_600_000;
 const NEWEST_VERIFIED = Math.max(...VENUE_FEE_ROWS.map((r) => feeRowVerifiedAtMs(r)));
 const OLDEST_VERIFIED = Math.min(...VENUE_FEE_ROWS.map((r) => feeRowVerifiedAtMs(r)));
 const FRESH_NOW = NEWEST_VERIFIED + DAY;
@@ -166,6 +169,11 @@ function run(deps: Partial<PreTradeHealthDeps>, env: NodeJS.ProcessEnv = {}) {
     countServed: async () => 40,
     countLogged: async () => 40,
     firstLogged: async () => FRESH_NOW - 30 * DAY,
+    // The call-ledger leg's PASS world (V2-W5 CH2): every logged check has its leaves, and the two unanchored
+    // leaves have waited an hour — well inside the bound.
+    adoptLedger: async () => true,
+    countMissingLeaves: async () => ({ checked: 40, missing: 0 }),
+    countUnanchored: async () => ({ total: 80, unanchored: 2, oldestMs: FRESH_NOW - HOUR }),
     ...deps,
   };
   return main(['node', 'pre-trade-health.js'], env, full).then((code) => {
@@ -396,6 +404,116 @@ describe('main — the log-parity leg (AC3.2)', () => {
   });
 });
 
+// ── DECISION-CALL-V2-W5 CH2 — the call-ledger leg (CALL_LEDGER_HEALTH_VERDICT → call_ledger_stale) ─────────
+
+describe('judgeCallLedgerHealth — each leg from both sides', () => {
+  const base = { adopted: true, checked: 40, missing: 0, total: 80, unanchored: 0, oldestMs: null, nowMs: FRESH_NOW };
+
+  it('PASS: every logged check has its leaves and no leaf waits', () => {
+    expect(judgeCallLedgerHealth(base)).toEqual({ verdict: 'PASS', failKeys: [] });
+  });
+
+  it('one logged check without its leaves FAILs, keyed with its entity noun', () => {
+    expect(judgeCallLedgerHealth({ ...base, missing: 1 })).toEqual({
+      verdict: 'FAIL',
+      failKeys: ['call_ledger_leaves:1 of 40 logged checks lack a ledger leaf'],
+    });
+  });
+
+  it('the anchor bound from both sides: a leaf waiting exactly the bound PASSes, one millisecond more FAILs', () => {
+    const at = (ageMs: number) => judgeCallLedgerHealth({ ...base, unanchored: 3, oldestMs: FRESH_NOW - ageMs });
+    expect(at(CALL_LEDGER_MAX_UNANCHORED_HOURS * HOUR)).toEqual({ verdict: 'PASS', failKeys: [] });
+    const since = FRESH_NOW - CALL_LEDGER_MAX_UNANCHORED_HOURS * HOUR - 1;
+    expect(at(CALL_LEDGER_MAX_UNANCHORED_HOURS * HOUR + 1)).toEqual({
+      verdict: 'FAIL',
+      failKeys: [`call_ledger_anchor:3 of 80 leaves unanchored, the oldest for 26 h (since ${new Date(since).toISOString()})`],
+    });
+  });
+
+  it('unanchored leaves younger than the bound are the normal daytime state, never a FAIL', () => {
+    expect(judgeCallLedgerHealth({ ...base, unanchored: 80, oldestMs: FRESH_NOW - 20 * HOUR }).verdict).toBe('PASS');
+  });
+
+  it('both legs failing are both keyed, the leaves leg first', () => {
+    const r = judgeCallLedgerHealth({ ...base, missing: 2, unanchored: 5, oldestMs: FRESH_NOW - 30 * HOUR });
+    expect(r.verdict).toBe('FAIL');
+    expect(r.failKeys.map((k) => k.split(':')[0])).toEqual(['call_ledger_leaves', 'call_ledger_anchor']);
+  });
+
+  it('not adopted (no receipted check logged yet): nothing to judge — PASS whatever the counts say', () => {
+    expect(judgeCallLedgerHealth({ ...base, adopted: false, missing: 5, unanchored: 9, oldestMs: 0 })).toEqual({ verdict: 'PASS', failKeys: [] });
+  });
+
+  it('the bound is one day plus a slow night: 26 h', () => {
+    expect(CALL_LEDGER_MAX_UNANCHORED_HOURS).toBe(26);
+  });
+});
+
+describe('main — the call-ledger leg', () => {
+  it('PASS: one ledger token, after the database check and BEFORE the probe, with a positive CHECK line', async () => {
+    const { code, out } = await run({});
+    expect(code).toBe(0);
+    expect(token(out, 'CALL_LEDGER_HEALTH_VERDICT')).toEqual(['CALL_LEDGER_HEALTH_VERDICT=PASS']);
+    expect(token(out, 'CALL_LEDGER_HEALTH_FAIL_KEYS')).toEqual(['CALL_LEDGER_HEALTH_FAIL_KEYS=']);
+    const at = out.indexOf('CALL_LEDGER_HEALTH_VERDICT=PASS');
+    expect(at).toBeGreaterThan(out.indexOf('[pre-trade-health] CHECK db=REACHABLE regime_tables=ADOPTED'));
+    expect(at).toBeLessThan(out.findIndex((l) => l.startsWith('[pre-trade-health] CHECK probe=')));
+    expect(out).toContain(
+      `[pre-trade-health] CHECK call_ledger checks=40 missing_leaves=0 leaves=80 unanchored=2 oldest_unanchored=${new Date(FRESH_NOW - HOUR).toISOString()} max_hours=26 verdict=PASS`,
+    );
+  });
+
+  it('a stalled anchor FAILs the ledger token alone: exit 1, the health and fee tokens still PASS', async () => {
+    const { code, out } = await run({ countUnanchored: async () => ({ total: 80, unanchored: 12, oldestMs: FRESH_NOW - 31 * HOUR }) });
+    expect(code).toBe(1);
+    expect(token(out, 'CALL_LEDGER_HEALTH_VERDICT')).toEqual(['CALL_LEDGER_HEALTH_VERDICT=FAIL']);
+    expect(token(out, 'CALL_LEDGER_HEALTH_FAIL_KEYS')[0]).toMatch(/^CALL_LEDGER_HEALTH_FAIL_KEYS=call_ledger_anchor:12 of 80 leaves unanchored, the oldest for 31 h \(since /);
+    expect(token(out, 'PRE_TRADE_HEALTH_VERDICT')).toEqual(['PRE_TRADE_HEALTH_VERDICT=PASS']);
+    expect(token(out, 'VENUE_FEE_TABLE_VERDICT')).toEqual(['VENUE_FEE_TABLE_VERDICT=PASS']);
+  });
+
+  it('a logged check without its leaves FAILs, keyed', async () => {
+    const { code, out } = await run({ countMissingLeaves: async () => ({ checked: 40, missing: 3 }) });
+    expect(code).toBe(1);
+    expect(token(out, 'CALL_LEDGER_HEALTH_FAIL_KEYS')).toEqual(['CALL_LEDGER_HEALTH_FAIL_KEYS=call_ledger_leaves:3 of 40 logged checks lack a ledger leaf']);
+  });
+
+  it('no ledger yet: PASS, a positive ABSENT line, and the counts are never asked', async () => {
+    const asked: string[] = [];
+    const { code, out } = await run({
+      adoptLedger: async () => false,
+      countMissingLeaves: async () => { asked.push('missing'); return { checked: 0, missing: 0 }; },
+      countUnanchored: async () => { asked.push('unanchored'); return { total: 0, unanchored: 0, oldestMs: null }; },
+    });
+    expect(code).toBe(0);
+    expect(asked).toEqual([]);
+    expect(out).toContain('[pre-trade-health] CHECK call_ledger=ABSENT (no receipted check logged yet) — nothing to judge, verdict=PASS');
+    expect(token(out, 'CALL_LEDGER_HEALTH_VERDICT')).toEqual(['CALL_LEDGER_HEALTH_VERDICT=PASS']);
+  });
+
+  it('counts that cannot be read are INDETERMINATE, exit 3 — and the probe still runs', async () => {
+    const { code, out, calls } = await run({ countUnanchored: async () => { throw new Error('permission denied for table call_ledger_batches'); } });
+    expect(code).toBe(3);
+    expect(calls).toHaveLength(1);
+    expect(out).toContain('[pre-trade-health] CHECK call_ledger=UNREADABLE — not judged');
+    expect(token(out, 'CALL_LEDGER_HEALTH_VERDICT')).toEqual(['CALL_LEDGER_HEALTH_VERDICT=INDETERMINATE']);
+    expect(token(out, 'PRE_TRADE_HEALTH_VERDICT')).toEqual(['PRE_TRADE_HEALTH_VERDICT=PASS']);
+  });
+
+  it('an adoption that throws is INDETERMINATE too, never a PASS', async () => {
+    const { code, out } = await run({ adoptLedger: async () => { throw new Error('ECONNRESET'); } });
+    expect(code).toBe(3);
+    expect(token(out, 'CALL_LEDGER_HEALTH_VERDICT')).toEqual(['CALL_LEDGER_HEALTH_VERDICT=INDETERMINATE']);
+  });
+
+  it('an unreachable database prints the ledger token as INDETERMINATE — present, never missing', async () => {
+    const { code, out } = await run({ adoptTables: async () => { throw new Error('ECONNREFUSED'); } });
+    expect(code).toBe(3);
+    expect(token(out, 'CALL_LEDGER_HEALTH_VERDICT')).toEqual(['CALL_LEDGER_HEALTH_VERDICT=INDETERMINATE']);
+    expect(token(out, 'CALL_LEDGER_HEALTH_FAIL_KEYS')).toEqual(['CALL_LEDGER_HEALTH_FAIL_KEYS=']);
+  });
+});
+
 describe('source pins — what the probe can never do', () => {
   const src = readFileSync(join(__dirname, '../../src/scripts/pre-trade-health.ts'), 'utf8');
   const imports = src.split('\n').filter((l) => /^import\b/.test(l));
@@ -415,6 +533,11 @@ describe('source pins — what the probe can never do', () => {
   it('it ADOPTS the check log and never writes it: the parity leg reads, the probe (the engine, not the pipeline) logs nothing', () => {
     expect(imports.some((l) => l.includes("from '../lib/pre-trade-check-log.js'") && l.includes('adoptPreTradeCheckTable'))).toBe(true);
     expect(src).not.toMatch(/recordPreTradeCheck|INSERT|CREATE/);
+  });
+
+  it('it ADOPTS the call ledger and never ensures it: the ledger legs read, through to_regclass, and create nothing', () => {
+    expect(imports.some((l) => l.includes("from '../lib/pre-trade-check-log.js'") && l.includes('adoptCallLedger'))).toBe(true);
+    expect(src).not.toMatch(/ensureCallLedger|ensureCallLedgerBatches|sealNext|markSent/);
   });
 
   it('the probe is batch class under ONE literal caller tag', () => {
@@ -441,5 +564,14 @@ describe('the inventory row — what the canary is declared to judge', () => {
     expect(notes).toContain(`${LOG_PARITY_MAX_GAP_PCT}%`);
     expect(notes).toContain(`at least ${LOG_PARITY_MIN_GAP}`);
     expect(notes).toMatch(/UNREADABLE|cannot be read|could not be read/);
+  });
+
+  it('names the call-ledger token, its alert and its live bound (V2-W5 CH2)', () => {
+    const r = inventory.artifacts.find((a) => a.id === 'pre-trade-health-canary') as { notes?: string; alert_ids?: string[] } | undefined;
+    const notes = String(r?.notes ?? '');
+    expect(notes).toContain('CALL_LEDGER_HEALTH_VERDICT');
+    expect(notes).toContain('call_ledger_stale');
+    expect(notes).toContain(`${CALL_LEDGER_MAX_UNANCHORED_HOURS} h`);
+    expect(r?.alert_ids).toContain('call_ledger_stale');
   });
 });

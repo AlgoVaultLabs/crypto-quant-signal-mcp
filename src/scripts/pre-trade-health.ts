@@ -12,9 +12,17 @@
  * in a session the server holds read-only (PGOPTIONS default_transaction_read_only=on):
  *   docker exec <ctr> node dist/scripts/pre-trade-health.js
  * The tables are ADOPTED (to_regclass), never lazily ensured, so the probe issues no DDL — the regime
- * tables and, for the parity leg, the check log; neither is ever written from here.
+ * tables and, for the parity leg, the check log; and, for the call-ledger legs, the call ledger. None is ever
+ * written from here.
  *
- * ── TWO TOKENS, EACH EXACTLY ONCE — the wrapper reads each TOKEN, never the exit code ────────────
+ * ── THREE TOKENS, EACH EXACTLY ONCE — the wrapper reads each TOKEN, never the exit code ──────────
+ *   CALL_LEDGER_HEALTH_VERDICT=PASS|FAIL|INDETERMINATE (DECISION-CALL-V2-W5 CH2; the wrapper pages call_ledger_stale)
+ *     Printed SECOND, right after the database answers and BEFORE the probe, so a hung probe cannot hide it.
+ *     FAIL — a check logged since the ledger began lacks its verdict leaf, its odds leaf or a ledger id; or a
+ *            leaf has waited more than CALL_LEDGER_MAX_UNANCHORED_HOURS for a VERIFIED batch (never batched, or
+ *            in a batch still sealed or sent) — the nightly anchor is not keeping up.
+ *     PASS — both legs clean, every count printed beside the verdict; or no ledger yet (call_ledger absent).
+ *     INDETERMINATE — the counts could not be read, or the database is unreachable.
  *   VENUE_FEE_TABLE_VERDICT=PASS|FAIL|INDETERMINATE
  *     Printed FIRST and computed purely (the committed fee table and the clock), so a database outage
  *     never hides a stale fee row. FAIL names every `staleFeeRows` row with its verified-at date and
@@ -40,8 +48,8 @@
  * fee row, and the probe's wall time. Those line shapes are the wrapper's parse contract, pinned by
  * tests/unit/pre-trade-health.test.ts.
  *
- * Exit codes come from main()'s RETURN value (runScript ignores process.exitCode): 1 when either
- * token FAILs, else 3 when either is INDETERMINATE, else 0.
+ * Exit codes come from main()'s RETURN value (runScript ignores process.exitCode): 1 when any
+ * token FAILs, else 3 when any is INDETERMINATE, else 0.
  */
 
 import type { LicenseInfo } from '../types.js';
@@ -51,7 +59,7 @@ import { adoptExistingRegimeSnapshotTables } from '../lib/regime-snapshots.js';
 import { FEE_TABLE_MAX_AGE_DAYS, VENUE_FEE_ROWS, feeRowVerifiedAtMs, staleFeeRows, type VenueFeeRow } from '../lib/venue-fees.js';
 import type { PreTradeDecision } from '../lib/pre-trade-decision.js';
 import { runPreTradeCheck, type PreTradeCheckOutcome, type PreTradeCheckParams } from '../tools/pre-trade-check.js';
-import { adoptPreTradeCheckTable, countLoggedChecks, countServedChecks, firstLoggedCheckAt } from '../lib/pre-trade-check-log.js';
+import { adoptCallLedger, adoptPreTradeCheckTable, countChecksMissingLeaves, countLoggedChecks, countServedChecks, countUnanchoredLeaves, firstLoggedCheckAt } from '../lib/pre-trade-check-log.js';
 
 export type HealthVerdict = 'PASS' | 'FAIL' | 'INDETERMINATE';
 
@@ -173,6 +181,39 @@ export function judgeLogParity(served: number, logged: number): 'PASS' | 'FAIL' 
   return gap >= LOG_PARITY_MIN_GAP && gap > (served * LOG_PARITY_MAX_GAP_PCT) / 100 ? 'FAIL' : 'PASS';
 }
 
+// ── The call-ledger judge (pure) — DECISION-CALL-V2-W5 CH2 ──────────────────────────────────────
+
+/**
+ * The nightly anchor seals every leaf within ~24 h (00:13 UTC); a leaf unanchored for longer than this means it is
+ * not keeping up. 26 h = one day plus the margin a slow or retried night needs, the same bound the estate uses for
+ * "a daily producer skipped its slot" (MERKLE_ANCHOR_STALE_MS).
+ */
+export const CALL_LEDGER_MAX_UNANCHORED_HOURS = 26;
+
+export interface CallLedgerHealthInput {
+  /** false = no receipted check logged yet: nothing to judge. */
+  adopted: boolean;
+  checked: number;
+  missing: number;
+  total: number;
+  unanchored: number;
+  oldestMs: number | null;
+  nowMs: number;
+}
+
+/** Two legs, each a `<check>:<detail>` key on FAIL. Counts carry their entity nouns (the page prints them). */
+export function judgeCallLedgerHealth(i: CallLedgerHealthInput): { verdict: 'PASS' | 'FAIL'; failKeys: string[] } {
+  const failKeys: string[] = [];
+  if (i.adopted) {
+    if (i.missing > 0) failKeys.push(`call_ledger_leaves:${i.missing} of ${i.checked} logged checks lack a ledger leaf`);
+    if (i.oldestMs !== null && i.nowMs - i.oldestMs > CALL_LEDGER_MAX_UNANCHORED_HOURS * 3_600_000) {
+      const hours = Math.floor((i.nowMs - i.oldestMs) / 3_600_000);
+      failKeys.push(`call_ledger_anchor:${i.unanchored} of ${i.total} leaves unanchored, the oldest for ${hours} h (since ${new Date(i.oldestMs).toISOString()})`);
+    }
+  }
+  return { verdict: failKeys.length > 0 ? 'FAIL' : 'PASS', failKeys };
+}
+
 // ── Seams + the CLI body ────────────────────────────────────────────────────────────────────────
 
 export interface PreTradeHealthDeps {
@@ -189,6 +230,12 @@ export interface PreTradeHealthDeps {
   countLogged: (sinceMs: number) => Promise<number>;
   /** The check log's first row (epoch ms), null while it holds none (only asked when the log exists). */
   firstLogged: () => Promise<number | null>;
+  /** The call ledger (055), ADOPTED: true = it exists, false = no receipted check logged yet; throws = unreadable. */
+  adoptLedger: () => Promise<boolean>;
+  /** Checks logged since the ledger began, and those lacking a leaf (only asked when the ledger exists). */
+  countMissingLeaves: () => Promise<{ checked: number; missing: number }>;
+  /** Every leaf, those not yet in a verified batch, and the oldest of those (only asked when the ledger exists). */
+  countUnanchored: () => Promise<{ total: number; unanchored: number; oldestMs: number | null }>;
 }
 
 const DEFAULT_PRE_TRADE_HEALTH_DEPS: PreTradeHealthDeps = {
@@ -200,6 +247,9 @@ const DEFAULT_PRE_TRADE_HEALTH_DEPS: PreTradeHealthDeps = {
   countServed: (sinceMs) => countServedChecks(sinceMs),
   countLogged: (sinceMs) => countLoggedChecks(sinceMs),
   firstLogged: () => firstLoggedCheckAt(),
+  adoptLedger: () => adoptCallLedger(),
+  countMissingLeaves: () => countChecksMissingLeaves(),
+  countUnanchored: () => countUnanchoredLeaves(),
 };
 
 const errText = (e: unknown): string => (e instanceof Error ? `${e.name}: ${e.message}` : String(e));
@@ -227,10 +277,38 @@ export async function main(
   } catch (e) {
     console.error(`${TAG} database unreachable: ${errText(e)}`);
     console.log(`${TAG} CHECK db=UNREACHABLE — nothing was judged`);
+    console.log('CALL_LEDGER_HEALTH_FAIL_KEYS=');
+    console.log('CALL_LEDGER_HEALTH_VERDICT=INDETERMINATE');
     console.log('PRE_TRADE_HEALTH_FAIL_KEYS=');
     console.log('PRE_TRADE_HEALTH_VERDICT=INDETERMINATE');
     return fees.verdict === 'FAIL' ? EXIT.FAIL : EXIT.INDETERMINATE;
   }
+
+  // 2b. The call ledger (DECISION-CALL-V2-W5 CH2) — read-only, judged BEFORE the probe so a hung probe cannot hide it.
+  let ledger: HealthVerdict;
+  let ledgerKeys: string[] = [];
+  try {
+    if (!(await deps.adoptLedger())) {
+      console.log(`${TAG} CHECK call_ledger=ABSENT (no receipted check logged yet) — nothing to judge, verdict=PASS`);
+      ledger = 'PASS';
+    } else {
+      const m = await deps.countMissingLeaves();
+      const u = await deps.countUnanchored();
+      const lj = judgeCallLedgerHealth({ adopted: true, ...m, ...u, nowMs: deps.now() });
+      console.log(
+        `${TAG} CHECK call_ledger checks=${m.checked} missing_leaves=${m.missing} leaves=${u.total} unanchored=${u.unanchored} ` +
+          `oldest_unanchored=${u.oldestMs === null ? 'none' : new Date(u.oldestMs).toISOString()} max_hours=${CALL_LEDGER_MAX_UNANCHORED_HOURS} verdict=${lj.verdict}`,
+      );
+      ledger = lj.verdict;
+      ledgerKeys = lj.failKeys;
+    }
+  } catch (e) {
+    console.error(`${TAG} the call-ledger counts could not be read: ${errText(e)}`);
+    console.log(`${TAG} CHECK call_ledger=UNREADABLE — not judged`);
+    ledger = 'INDETERMINATE';
+  }
+  console.log(`CALL_LEDGER_HEALTH_FAIL_KEYS=${ledgerKeys.join(';')}`);
+  console.log(`CALL_LEDGER_HEALTH_VERDICT=${ledger}`);
 
   // 3. The probe — one call, batch class, timed.
   const p = PRE_TRADE_HEALTH_PROBE;
@@ -280,8 +358,8 @@ export async function main(
   console.log(`PRE_TRADE_HEALTH_FAIL_KEYS=${failKeys.join(';')}`);
   console.log(`PRE_TRADE_HEALTH_VERDICT=${verdict}`);
 
-  if (verdict === 'FAIL' || fees.verdict === 'FAIL') return EXIT.FAIL;
-  return verdict === 'INDETERMINATE' || fees.verdict === 'INDETERMINATE' ? EXIT.INDETERMINATE : EXIT.PASS;
+  if (verdict === 'FAIL' || fees.verdict === 'FAIL' || ledger === 'FAIL') return EXIT.FAIL;
+  return verdict === 'INDETERMINATE' || fees.verdict === 'INDETERMINATE' || ledger === 'INDETERMINATE' ? EXIT.INDETERMINATE : EXIT.PASS;
 }
 
 // require.main guard (CJS, target ES2022) — the canary invokes this directly.

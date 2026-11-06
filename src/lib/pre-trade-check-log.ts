@@ -424,3 +424,30 @@ export async function countChecksMissingLeaves(): Promise<{ checked: number; mis
   );
   return { checked: Number(rows[0]?.checked ?? 0), missing: Number(rows[0]?.missing ?? 0) };
 }
+
+/**
+ * DECISION-CALL-V2-W5 CH2 — the canary's "stale leaf" leg: every leaf (`total`), those not yet in a VERIFIED batch
+ * (`unanchored` — never batched, or batched into one still sealed or sent), and the oldest of those. The nightly
+ * anchor batches every leaf within ~24 h, so one waiting longer than the canary's bound means the anchor is not
+ * keeping up. Before the first anchor `call_ledger_batches` does not exist and every leaf is unanchored.
+ * READ-ONLY (to_regclass, never DDL); adopt the 055 objects first.
+ */
+export async function countUnanchoredLeaves(): Promise<{ total: number; unanchored: number; oldestMs: number | null }> {
+  const t = await dbQuery<{ b: boolean | null }>(`SELECT to_regclass('call_ledger_batches') IS NOT NULL AS b`);
+  const unanchored = t[0]?.b === true
+    ? `l.batch_id IS NULL OR NOT EXISTS (SELECT 1 FROM call_ledger_batches b WHERE b.batch_id = l.batch_id AND b.state = 'verified')`
+    : 'TRUE';
+  const rows = await dbQuery<{ total: string | number; unanchored: string | number; oldest: Date | string | null }>(
+    `SELECT COUNT(*) AS total,
+       COUNT(*) FILTER (WHERE ${unanchored}) AS unanchored,
+       MIN(l.created_at) FILTER (WHERE ${unanchored}) AS oldest
+     FROM call_ledger l`,
+  );
+  const oldest = rows[0]?.oldest ?? null;
+  const oldestMs = oldest === null ? null : oldest instanceof Date ? oldest.getTime() : Date.parse(String(oldest));
+  return {
+    total: Number(rows[0]?.total ?? 0),
+    unanchored: Number(rows[0]?.unanchored ?? 0),
+    oldestMs: oldestMs !== null && Number.isFinite(oldestMs) ? oldestMs : null,
+  };
+}

@@ -1467,6 +1467,30 @@
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-VENUE_FEE_TABLE_STALE-W{NEXT}",
       "notes": "DECISION-CALL-V1-W3 CH2. Pages CRITICAL_PERSISTENT on the FIRST FAIL of VENUE_FEE_TABLE_VERDICT: a src/lib/venue-fees.ts row older than FEE_TABLE_MAX_AGE_DAYS, the body naming each row's venue, verified-at date and source URL. Judged with no database, so it still acts when the health probe cannot. A PASS calls --clear (silent); a missing token pages and clears nothing. The row keeps pricing meanwhile, with a FEE_TABLE_STALE note in every response."
+    },
+    {
+      "alert_id": "call_ledger_stale",
+      "owner": "ops/monitoring/pre-trade-health-canary.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-CALL_LEDGER_STALE-W{NEXT}",
+      "notes": "DECISION-CALL-V2-W5 CH2. Pages CRITICAL_PERSISTENT on the FIRST FAIL of CALL_LEDGER_HEALTH_VERDICT: a check logged since the call ledger began that lacks its verdict or odds leaf, or a leaf not in a verified batch for more than 26 h (the nightly anchor at 00:13 UTC is not keeping up, whatever stopped it). The body names each failed leg with its counts and the oldest unanchored leaf's time. A PASS calls --clear (silent); INDETERMINATE (no ledger counts readable, an unreachable database, a missing token) pages and clears nothing. Repetition is the wrapper's 24 h cooldown."
+    },
+    {
+      "alert_id": "anchor_root_mismatch",
+      "owner": "ops/cron/publish-call-ledger-batch.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": false,
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-ANCHOR_ROOT_MISMATCH-W{NEXT}",
+      "notes": "DECISION-CALL-V2-W5 CH2. Pages CRITICAL_PERSISTENT when a call-ledger anchor run prints an ANCHOR_ROOT_MISMATCH line: the call-ledger registry on Base holds a different root (or count) for a batch id the ledger sealed, or the recheck rebuilt a root from the stored check rows that differs from the one on chain. The run stops there and the batch stays sealed, so every later run fails the same way until a human resolves it. The body is the mismatch lines. A PASS calls --clear (silent). The signal publisher prints the same line to /var/log/merkle-publish.log but pages nothing of its own (its crontab line has no wrapper); a stopped signal publisher is MERKLE_PUBLISH_LIVENESS's to report."
     }
   ],
   "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",
