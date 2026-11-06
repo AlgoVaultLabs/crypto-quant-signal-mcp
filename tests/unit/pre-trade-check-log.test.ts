@@ -252,13 +252,17 @@ describe('AC3.1 — the schema: the lazy ensure IS migrations/051, and it has no
     expect(down.split('\n').filter((l) => /^\s*DROP /.test(l))).toEqual(['DROP INDEX IF EXISTS idx_pre_trade_checks_checked_at;', 'DROP TABLE IF EXISTS pre_trade_checks;']);
   });
 
-  it('never on a public surface: the only SQL against pre_trade_checks in src/ is the log module\'s', () => {
+  it('never on a public surface: the SQL against pre_trade_checks in src/ is the log module\'s, and the outcome labeler only READS it', () => {
     const files: string[] = [];
     const walk = (d: string) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.ts')) files.push(p); } };
     walk(join(ROOT, 'src'));
     expect(files.length, 'the scan must have a corpus').toBeGreaterThan(100);
     const hits = files.filter((f) => /(FROM|INTO|UPDATE|JOIN|TABLE(\s+IF\s+NOT\s+EXISTS)?)\s+pre_trade_checks\b/.test(readFileSync(f, 'utf8')));
-    expect(hits.map((f) => f.slice(ROOT.length + 1))).toEqual(['src/lib/pre-trade-check-log.ts']);
+    expect(hits.map((f) => f.slice(ROOT.length + 1))).toEqual(['src/lib/pre-trade-check-log.ts', 'src/scripts/pre-trade-outcome-labeler.ts']);
+    // DECISION-CALL-V2-W4 CH3: the nightly labeler (a cron script, no route) reads the log and writes only its own table.
+    const labeler = readFileSync(join(ROOT, 'src/scripts/pre-trade-outcome-labeler.ts'), 'utf8');
+    expect(labeler).toMatch(/FROM pre_trade_checks c\b/);
+    expect(labeler).not.toMatch(/(INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE|TRUNCATE|TABLE\s+IF\s+NOT\s+EXISTS)\s+pre_trade_checks\b/);
   });
 });
 

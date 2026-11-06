@@ -173,6 +173,10 @@ describe('class preservation — tags moved, classes did not', () => {
     // scope so the canary can never spend a venue's interactive reserve; its own entrypoint, literal name
     // `pre_trade_health`.
     'src/scripts/pre-trade-health.ts': { runAsBatch: 1 },
+    // DECISION-CALL-V2-W4 CH3: the nightly pre_trade_check outcome labeler reads each logged check's decision-venue
+    // candles THROUGH the adapters under ONE batch scope, so it can never spend a venue's interactive reserve;
+    // its own entrypoint, literal name `pre_trade_outcome_labeler`.
+    'src/scripts/pre-trade-outcome-labeler.ts': { runAsBatch: 1 },
   };
 
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {
