@@ -180,6 +180,7 @@
     "@babel/core": "^7.29.0",
     "@babel/plugin-transform-modules-commonjs": "^7.28.6",
     "@babel/preset-react": "^7.28.5",
+    "@electric-sql/pglite": "0.5.11",
     "@nomicfoundation/hardhat-viem": "^3.0.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.1",

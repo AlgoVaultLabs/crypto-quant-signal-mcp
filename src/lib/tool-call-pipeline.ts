@@ -587,6 +587,10 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
     // caller write nothing; the health probe calls the engine directly and never reaches this row.
     // DECISION-CALL-V2-PAYER-REF-W1: the row runs inside the request scope on both x402 rails (the `/mcp` POST
     // store; the HTTP rail's ctx, entered below), so it reads the payer there and hands it over beside the key.
+    // DECISION-CALL-V2-W5: the predicate is decided ONCE, where the response is built — `toPreTradeCheckResponse`
+    // mints the call-ledger receipt for a served, billed, non-internal call — and this row logs exactly the
+    // responses that carry one (`ledger`). Never re-derived here, so a receipt and a row cannot disagree. The
+    // one read of the outcome here is `?.ledger`, which cannot throw on a missing response.
     run: async (input, license, attribute, served, channel) => {
       const out = await runAsCaller(processScopedTag('pre_trade_check'), () => attribute(served, () => runPreTradeCheck(
         {
@@ -608,7 +612,7 @@ const TOOLS: { readonly [K in CanonicalTool]: ToolRow } = {
       if (out.kind !== 'ok') {
         return { kind: 'refused', payload: out.payload as unknown as Record<string, unknown>, http: { status: out.status } };
       }
-      if (license.tier !== 'internal') {
+      if (out.response?.ledger !== undefined) {
         void recordPreTradeCheck({ response: out.response, facts: out.facts, channel, licenseKey: license.key, payerWallet: getRequestPayerWallet() });
       }
       return { kind: 'ok', result: out.response };

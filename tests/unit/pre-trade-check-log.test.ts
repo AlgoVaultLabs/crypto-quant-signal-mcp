@@ -52,6 +52,19 @@ vi.mock('../../src/tools/pre-trade-check.js', async (orig) => {
     },
   };
 });
+// DECISION-CALL-V2-W5: the receipt id is CSPRNG-minted per call; a test comparing two responses byte for byte
+// pins it here instead of carving the receipt out of the comparison.
+const ledgerIds = vi.hoisted(() => ({ fixed: null as null | string }));
+vi.mock('../../src/lib/call-ledger.js', async (orig) => {
+  const m = await orig<typeof import('../../src/lib/call-ledger.js')>();
+  return {
+    ...m,
+    mintCallLedgerId: () => {
+      if (ledgerIds.fixed === 'THROW') throw new Error('no entropy');
+      return ledgerIds.fixed ?? m.mintCallLedgerId();
+    },
+  };
+});
 
 /**
  * The x402 levers (DECISION-CALL-V2-PAYER-REF-W1). Off — the default — every override below delegates to the real
@@ -111,6 +124,8 @@ import {
 } from '../../src/lib/pre-trade-check-log.js';
 import { callerRef, hashEmail, PRE_TRADE_CALLER_REF_VERSION } from '../../src/lib/lifecycle/identity.js';
 import { noEdgeOdds } from '../../src/lib/pre-trade-calc.js';
+import { oddsLeaf } from '../../src/lib/call-ledger.js';
+import type { Hex } from 'viem';
 import {
   checkQuota,
   trackCall,
@@ -144,6 +159,7 @@ testDeps.make = (): PreTradeCheckDeps => ({
 const ROOT = resolve(__dirname, '../..');
 const MIGRATION = readFileSync(join(ROOT, 'migrations/051_pre_trade_checks.sql'), 'utf8');
 const MIGRATION_053 = readFileSync(join(ROOT, 'migrations/053_pre_trade_checks_shadow_odds.sql'), 'utf8');
+const MIGRATION_055 = readFileSync(join(ROOT, 'migrations/055_call_ledger.sql'), 'utf8');
 const STORE = readFileSync(join(ROOT, 'src/lib/pre-trade-check-log.ts'), 'utf8');
 /** The five shadow-odds columns 053 adds, in order (DECISION-CALL-V2-W4 CH2). */
 const ODDS_COLUMNS = ['p_timeout', 'p_target_first', 'p_stop_first', 'p_liq_hold', 'odds_version'];
@@ -184,6 +200,7 @@ afterAll(() => { if (savedKey === undefined) delete process.env[KEY_ENV]; else p
 beforeEach(() => {
   process.env[KEY_ENV] = TEST_KEY;
   testDeps.dropFacts = false;
+  ledgerIds.fixed = null;
   q.mockReset();
   q.mockResolvedValue([]);
   _resetPreTradeCheckLogForTest();
@@ -350,9 +367,16 @@ describe('AC3.1 — one row per served, billed call, through the real pipeline',
       exchange: v.exchange, est_cost_bps: v.est_cost_bps, round_trip_bps: v.round_trip_bps, liq_distance_pct: v.liq_distance_pct, your_rules: v.your_rules,
     })));
     // DECISION-CALL-V2-W4 CH2: no stop, target or leverage — every odd is null, and the row still names its table.
-    expect(params.slice(20)).toEqual([null, null, null, null, 'odds-v1']);
-    expect(params).toHaveLength(25);
-    expect(String(inserts()[0][0])).toMatch(/\$19::jsonb, \$20::jsonb, \$21, \$22, \$23, \$24, \$25\)$/);
+    expect(params.slice(20, 25)).toEqual([null, null, null, null, 'odds-v1']);
+    // DECISION-CALL-V2-W5: the same statement carries the receipt id, the tool, the SERVED verdict leaf, the odds
+    // leaf and its fresh salt — the salt the odds leaf was built with, never one the response carries.
+    const [ledgerId, tool, verdict, odds, salt] = params.slice(25) as string[];
+    expect([ledgerId, tool, verdict]).toEqual([r.ledger.id, 'pre_trade_check', r.ledger.leaf]);
+    expect(salt).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(odds).toBe(oddsLeaf({ v: 1, id: r.ledger.id, odds_version: 'odds-v1', p_timeout: null, p_target_first: null, p_stop_first: null, p_liq_hold: null }, salt as Hex));
+    expect(JSON.stringify(r)).not.toContain(salt.slice(2));
+    expect(params).toHaveLength(30);
+    expect(String(inserts()[0][0])).toMatch(/\$19::jsonb, \$20::jsonb, \$21, \$22, \$23, \$24, \$25, \$26\)\s+RETURNING id\s*\)\s*INSERT INTO call_ledger/);
   });
 
   it('each call is its own row; the lazy ensure runs once per process', async () => {
@@ -425,6 +449,7 @@ describe('AC3.1 — fail-open: a throwing insert leaves the response and billing
     // two responses are comparable byte for byte, with no field carved out of the comparison.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(NOW));
+    ledgerIds.fixed = `pcl_${'5a'.repeat(16)}`;
     const control = await call(freeLicense());
     await settle();
     expect(inserts()).toHaveLength(1);
@@ -472,7 +497,7 @@ describe('AC3.1 — fail-open: a throwing insert leaves the response and billing
   it('recordPreTradeCheck itself never rejects', async () => {
     q.mockRejectedValue(new Error('down'));
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const out = await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000 }, INTERNAL, testDeps.make!());
+    const out = await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000 }, freeLicense(), testDeps.make!());
     if (out.kind !== 'ok') throw new Error('expected ok');
     await expect(recordPreTradeCheck({ response: out.response, facts: out.facts, channel: 'mcp', licenseKey: 'av_x' })).resolves.toBe(false);
     err.mockRestore();
@@ -631,7 +656,7 @@ describe('DECISION-CALL-V2-W4 CH2 — shadow odds: logged beside the row, never 
     const o = oddsOf(r);
     for (const p of [o.pTimeout, o.pTargetFirst, o.pStopFirst, o.pLiqHold]) expect(typeof p, 'a vacuous fixture would log nulls').toBe('number');
     const params = inserts()[0][1] as unknown[];
-    expect(params.slice(20)).toEqual([o.pTimeout, o.pTargetFirst, o.pStopFirst, o.pLiqHold, 'odds-v1']);
+    expect(params.slice(20, 25)).toEqual([o.pTimeout, o.pTargetFirst, o.pStopFirst, o.pLiqHold, 'odds-v1']);
   });
 
   it('a side the response does not spell exactly is no side: null odds, never a guessed long', async () => {
@@ -658,19 +683,23 @@ describe('DECISION-CALL-V2-W4 CH2 — shadow odds: logged beside the row, never 
     await call(freeLicense());
     await call(freeLicense());
     await settle();
-    expect([creates().length, alters().length, inserts().length]).toEqual([1, 1, 2]);
+    // Two ALTERs per process: 053's odds columns, then 055's ledger_id (DECISION-CALL-V2-W5).
+    expect([creates().length, alters().length, inserts().length]).toEqual([1, 2, 2]);
     const order = q.mock.calls.map((c) => String(c[0]));
-    expect(order.findIndex((x) => x.startsWith('ALTER TABLE pre_trade_checks'))).toBeLessThan(order.findIndex((x) => x.startsWith('INSERT INTO pre_trade_checks')));
+    // The insert is one CTE statement since DECISION-CALL-V2-W5 (`WITH chk AS (INSERT INTO pre_trade_checks …`).
+    const firstInsert = order.findIndex((x) => x.includes('INSERT INTO pre_trade_checks'));
+    expect(firstInsert, 'the insert was issued').toBeGreaterThan(-1);
+    expect(order.findIndex((x) => x.startsWith('ALTER TABLE pre_trade_checks'))).toBeLessThan(firstInsert);
 
     q.mockReset();
     q.mockResolvedValue([]);
     _resetPreTradeCheckLogForTest();
     q.mockResolvedValueOnce([{ t: true, i: true }]);
     expect(await adoptPreTradeCheckTable()).toBe(true);
-    const outE = await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000 }, INTERNAL, testDeps.make!());
+    const outE = await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000 }, freeLicense(), testDeps.make!());
     if (outE.kind !== 'ok') throw new Error('expected ok');
     await recordPreTradeCheck({ response: outE.response, facts: { refMidPx: null }, channel: 'mcp', licenseKey: null });
-    expect([creates().length, alters().length, inserts().length], 'adoption marks the table present, never the 053 columns').toEqual([0, 1, 1]);
+    expect([creates().length, alters().length, inserts().length], 'adoption marks the table present, never the 053 or 055 objects').toEqual([0, 2, 1]);
   });
 
   it('the ALTER failing costs only the row: fail-open, the call served, the next call retries it', async () => {
@@ -685,7 +714,7 @@ describe('DECISION-CALL-V2-W4 CH2 — shadow odds: logged beside the row, never 
     q.mockImplementation(async () => []);
     await call(freeLicense(), V2());
     await settle();
-    expect([alters().length, inserts().length], 'a failed ALTER is not marked done').toEqual([2, 1]);
+    expect([alters().length, inserts().length], 'a failed ALTER is not marked done: 053 again, then 055').toEqual([3, 1]);
     err.mockRestore();
   });
 });
@@ -698,6 +727,7 @@ describe('the row projection and the parity reads', () => {
     expect(Object.keys(row)).toEqual([
       ...columnsOf(MIGRATION).map((c) => c.split(' ')[0]).filter((c) => c !== 'id'),
       ...addedColumnsOf(MIGRATION_053).map((c) => c.split(' ')[0]),
+      ...addedColumnsOf(MIGRATION_055).map((c) => c.split(' ')[0]),
     ]);
     const keys: string[] = [];
     const walk = (x: unknown) => { if (Array.isArray(x)) x.forEach(walk); else if (x && typeof x === 'object') for (const [k, v] of Object.entries(x)) { keys.push(k); walk(v); } };
@@ -714,10 +744,12 @@ describe('the row projection and the parity reads', () => {
     q.mockResolvedValueOnce([{ t: true, i: true }]);
     expect(await adoptPreTradeCheckTable()).toBe(true);
     expect(String(q.mock.calls[0][0])).toBe("SELECT to_regclass('pre_trade_checks') IS NOT NULL AS t, to_regclass('idx_pre_trade_checks_checked_at') IS NOT NULL AS i");
-    const out = await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000 }, INTERNAL, testDeps.make!());
+    // A receipted response (DECISION-CALL-V2-W5), so the write really reaches the ensure it is checking.
+    const out = await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000 }, freeLicense(), testDeps.make!());
     if (out.kind !== 'ok') throw new Error('expected ok');
     await recordPreTradeCheck({ response: out.response, facts: { refMidPx: null }, channel: 'mcp', licenseKey: null });
     expect(creates()).toHaveLength(0);
+    expect(inserts()).toHaveLength(1);
   });
 
   it('a missing index is not an adopted table', async () => {
@@ -750,5 +782,33 @@ describe('the row projection and the parity reads', () => {
       "SELECT COUNT(*) AS n FROM request_log WHERE tool_name = 'pre_trade_check' AND is_bot_internal IS NOT TRUE AND timestamp >= $1",
       [new Date(NOW - 24 * H).toISOString()],
     ]);
+  });
+});
+
+describe('DECISION-CALL-V2-W5 — a receipt and a row go together', () => {
+  it('a non-internal call the builder could not receipt is served without one — and never logged, no failure counted', async () => {
+    ledgerIds.fixed = 'THROW';
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const lic = freeLicense();
+    const out = await call(lic);
+    await settle();
+    if (!out.ok) throw new Error('expected a served call');
+    expect(out.result).not.toHaveProperty('ledger');
+    expect(checkQuota(lic).used, 'still billed: the receipt is not the call').toBe(1);
+    expect([inserts().length, _preTradeCheckLogFailuresForTest()]).toEqual([0, 0]);
+    expect(err.mock.calls.map((c) => c.join(' ')).filter((l) => l.startsWith('[pre-trade-check]'))).toHaveLength(1);
+    err.mockRestore();
+  });
+
+  it('a response whose row would not rebuild its served leaf is refused, never stored', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await runPreTradeCheck({ coin: 'BTC', side: 'long', sizeUsd: 10_000 }, freeLicense(), testDeps.make!());
+    if (out.kind !== 'ok' || !out.response.ledger) throw new Error('expected a receipted check');
+    const forged = { ...out.response, decision: out.response.decision === 'GO' ? 'WAIT' : 'GO' } as typeof out.response;
+    await expect(recordPreTradeCheck({ response: forged, facts: out.facts, channel: 'mcp', licenseKey: null })).resolves.toBe(false);
+    expect([inserts().length, _preTradeCheckLogFailuresForTest()]).toEqual([0, 1]);
+    const lines = err.mock.calls.map((c) => c.join(' ')).filter((l) => l.startsWith('[pre-trade-check-log]'));
+    expect(lines[0]).toContain('does not rebuild the served leaf');
+    err.mockRestore();
   });
 });
