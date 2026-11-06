@@ -164,6 +164,21 @@ describe('pre-trade-odds-calibration — table structure (B9, B11)', () => {
       expect(f.nFitRows).toBeGreaterThan(0);
     });
 
+    it(`${field}: every fitted bin is reachable — finite edges strictly increase and consecutive bins share them (class guard)`, () => {
+      // A table printed at 6 dp collapsed distinct fitted edges into [0, 0): bins holding fit rows that no
+      // lo <= v < hi lookup can return, so the consumer binned rows unlike the hold-out scoring. This pins
+      // the class, whatever printed the table: a populated bin is never empty, and no two edges tie.
+      const edges = f.recalBins.slice(0, -1).map((b) => b.hi);
+      expect(edges.length).toBe(19);
+      for (const e of edges) expect(typeof e === 'number' && Number.isFinite(e)).toBe(true);
+      for (let j = 1; j < edges.length; j++) expect(edges[j] as number).toBeGreaterThan(edges[j - 1] as number);
+      for (let j = 0; j < 20; j++) {
+        const b = f.recalBins[j];
+        if (j > 0) expect(b.lo).toBe(f.recalBins[j - 1].hi);
+        if (b.nFit > 0) expect(b.lo ?? -Infinity).toBeLessThan(b.hi ?? Infinity);
+      }
+    });
+
     it(`${field}: 10 equal-count reliability bins over the recalibrated forecast, and the BM copy for information`, () => {
       for (const bins of [f.reliability, f.reliabilityBm]) {
         expect(bins.length).toBe(10);
