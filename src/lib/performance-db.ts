@@ -2496,40 +2496,6 @@ export async function getNextBatchId(): Promise<number> {
   return parseInt((rows[0] as any).last_id) + 1;
 }
 
-/** Store a published Merkle batch. */
-export async function storeMerkleBatch(
-  batchId: number, merkleRoot: string, signalCount: number, txHash: string, blockNumber: string
-): Promise<void> {
-  const b = getBackend();
-  if (isPg && b instanceof PgBackend) {
-    await b.runAsync(
-      `INSERT INTO merkle_batches (batch_id, merkle_root, signal_count, tx_hash, block_number) VALUES (?, ?, ?, ?, ?)`,
-      batchId, merkleRoot, signalCount, txHash, blockNumber
-    );
-  } else {
-    b.run(
-      `INSERT INTO merkle_batches (batch_id, merkle_root, signal_count, tx_hash, block_number) VALUES (?, ?, ?, ?, ?)`,
-      batchId, merkleRoot, signalCount, txHash, blockNumber
-    );
-  }
-}
-
-/** Update a signal with its batch ID and Merkle proof. */
-export async function updateSignalMerkleProof(signalId: number, batchId: number, proof: string): Promise<void> {
-  const b = getBackend();
-  if (isPg && b instanceof PgBackend) {
-    await b.runAsync(
-      `UPDATE signals SET merkle_batch_id = ?, merkle_proof = ? WHERE id = ?`,
-      batchId, proof, signalId
-    );
-  } else {
-    b.run(
-      `UPDATE signals SET merkle_batch_id = ?, merkle_proof = ? WHERE id = ?`,
-      batchId, proof, signalId
-    );
-  }
-}
-
 /**
  * OPS-MERKLE-BATCH-IDENTITY-W1 — the batch IDENTITY + true total, derived ONCE
  * server-side so no consumer computes them from a paginated array.

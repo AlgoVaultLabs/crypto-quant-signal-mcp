@@ -1317,7 +1317,7 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 — is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "72998f1f0b60546b023ee71955d205a8c23ab4861d51b97bdccc57f38e50c35f",
+      "sha256": "7192b7412c32196a56c83cb65d7768ebfbbe560f23dd0447b5aea18fd4ae661d",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. SYNCED, NOT INSTALLED (OPS-DRIFT-ALERT-GENERATORS-W1, 2026-09-14): declaration-sync.sh fetches it on aoe-1 every hour (27 * * * *) through a DECLARATIONS row whose 5th field names ops/scripts/cron-interlock-registry.json, so a registry edit reaches the host within the hour with no re-install step. It used to be installed once behind a sync_exempt_reason (the sync could only reach ops/monitoring), with the refresh left to a sentence in these notes; IDENTITY-LIFECYCLE-W3 edited the registry three times on 2026-09-08, re-stamped this sha256, never re-installed, and aoe-1 paged HASH_DRIFT + REGISTRY_PARITY daily from 2026-09-09. Re-stamp this sha256 in the same commit as any registry edit; HASH_DRIFT on this row now means the hourly sync stopped landing, not that someone forgot a step. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot.",
@@ -2269,7 +2269,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "012d45ae8777e06a368e8d1c762b926130767f978d9371f97799f3c3bd1e03ea",
+      "sha256": "b81c3df314d7dadfa2f8632ac16e269ad3ba94a594ac3b0b02afedb48b8c86f4",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -3419,13 +3419,14 @@
       "schedule": "47 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "71d80639e8e62f0c8c5bb92fdb104fd2ca0d0f66c28d0a0aa45cd44bdf06e6c5",
+      "sha256": "5b58842a13d0a38a421a8df5f930c8a9e4614ce7604f346d1dad5dc091e053e2",
       "alert_ids": [
         "pre_trade_check_degraded",
-        "venue_fee_table_stale"
+        "venue_fee_table_stale",
+        "call_ledger_stale"
       ],
       "owner_wave": "DECISION-CALL-V1-W3",
-      "notes": "The hourly health canary for pre_trade_check (DECISION-CALL-V1-W3 CH2). Runs dist/scripts/pre-trade-health.js inside the app container in a session the server holds READ-ONLY (PGOPTIONS default_transaction_read_only=on, statement_timeout 60 s): ONE engine call — runPreTradeCheck BTC long $10,000, 8h, 4h, internal license, under runAsBatch(…, 'pre_trade_health') — never the pipeline, so no request_log row and no quota unit; the regime tables are adopted (to_regclass), never ensured. Two tokens: PRE_TRADE_HEALTH_VERDICT=PASS|FAIL|INDETERMINATE (FAIL = refusal, throw, no decision, or fewer than PRE_TRADE_HEALTH_MIN_VENUES (default 3) venues free of feed_unavailable / funding_unavailable; INDETERMINATE = database unreachable or no token) and VENUE_FEE_TABLE_VERDICT=PASS|FAIL|INDETERMINATE (staleFeeRows non-empty; judged with no database). pre_trade_check_degraded pages after 2 consecutive FAILs, venue_fee_table_stale on the first; PASS clears silently. State: /var/lib/algovault-monitoring/pre-trade-health/consecutive-fails, rewritten only on PASS or FAIL. Log /var/log/pre-trade-health.log: ONE summary line per run; the probe's full output of the newest run in .last and of the newest FAIL in .last-fail (bounded by construction). Publishes one canary_result_log record per run (canary pre-trade-health), pulled into the vault by monitoring-results-sync.sh. Third leg since DECISION-CALL-V2-W1 CH3 (inside PRE_TRADE_HEALTH_VERDICT; the wrapper is unchanged and reads the token): log parity — served non-internal pre_trade_check calls (request_log) against pre_trade_checks rows over 24 h, or since the log's first row when the log is younger (window=first_row:<iso>); the table is adopted, never written. A gap of more than 2% AND at least 3 is FAIL, keyed log_parity:served=N logged=M (no table counts as 0 logged, so served calls with no log FAIL by the same rule); counts that cannot be read are INDETERMINATE (CHECK log_parity=UNREADABLE — not judged), never FAIL. Lines: CHECK log_parity table=ADOPTED|ABSENT window=… max_gap_pct=2 min_gap=3 verdict=… and pre_trade_check_log served=N logged=M. Pages through pre_trade_check_degraded like the other legs (2 consecutive FAILs).",
+      "notes": "The hourly health canary for pre_trade_check (DECISION-CALL-V1-W3 CH2). Runs dist/scripts/pre-trade-health.js inside the app container in a session the server holds READ-ONLY (PGOPTIONS default_transaction_read_only=on, statement_timeout 60 s): ONE engine call — runPreTradeCheck BTC long $10,000, 8h, 4h, internal license, under runAsBatch(…, 'pre_trade_health') — never the pipeline, so no request_log row and no quota unit; the regime tables are adopted (to_regclass), never ensured. Two tokens: PRE_TRADE_HEALTH_VERDICT=PASS|FAIL|INDETERMINATE (FAIL = refusal, throw, no decision, or fewer than PRE_TRADE_HEALTH_MIN_VENUES (default 3) venues free of feed_unavailable / funding_unavailable; INDETERMINATE = database unreachable or no token) and VENUE_FEE_TABLE_VERDICT=PASS|FAIL|INDETERMINATE (staleFeeRows non-empty; judged with no database). pre_trade_check_degraded pages after 2 consecutive FAILs, venue_fee_table_stale on the first; PASS clears silently. State: /var/lib/algovault-monitoring/pre-trade-health/consecutive-fails, rewritten only on PASS or FAIL. Log /var/log/pre-trade-health.log: ONE summary line per run; the probe's full output of the newest run in .last and of the newest FAIL in .last-fail (bounded by construction). Publishes one canary_result_log record per run (canary pre-trade-health), pulled into the vault by monitoring-results-sync.sh. Third leg since DECISION-CALL-V2-W1 CH3 (inside PRE_TRADE_HEALTH_VERDICT; the wrapper is unchanged and reads the token): log parity — served non-internal pre_trade_check calls (request_log) against pre_trade_checks rows over 24 h, or since the log's first row when the log is younger (window=first_row:<iso>); the table is adopted, never written. A gap of more than 2% AND at least 3 is FAIL, keyed log_parity:served=N logged=M (no table counts as 0 logged, so served calls with no log FAIL by the same rule); counts that cannot be read are INDETERMINATE (CHECK log_parity=UNREADABLE — not judged), never FAIL. Lines: CHECK log_parity table=ADOPTED|ABSENT window=… max_gap_pct=2 min_gap=3 verdict=… and pre_trade_check_log served=N logged=M. Pages through pre_trade_check_degraded like the other legs (2 consecutive FAILs). Third TOKEN since DECISION-CALL-V2-W5 CH2: CALL_LEDGER_HEALTH_VERDICT=PASS|FAIL|INDETERMINATE, judged after the database check and BEFORE the probe (so a hung probe cannot hide it), read-only — the 055 objects adopted through to_regclass + information_schema, call_ledger_batches through to_regclass, never ensured. Two legs: a check logged since the ledger began that lacks its verdict or odds leaf (key call_ledger_leaves:N of M logged checks lack a ledger leaf), and a leaf not in a VERIFIED batch for more than 26 h (key call_ledger_anchor:N of M leaves unanchored, the oldest for H h (since <iso>)) — one day plus a slow night after the 00:13 UTC anchor. No ledger yet is PASS (CHECK call_ledger=ABSENT); counts that cannot be read, or an unreachable database, are INDETERMINATE (CHECK call_ledger=UNREADABLE — not judged). call_ledger_stale pages CRITICAL_PERSISTENT on the FIRST FAIL (no sustain: neither leg heals within the hour), PASS clears silently, INDETERMINATE and a missing token do neither; a ledger FAIL never moves the health arm's count. Line: CHECK call_ledger checks=N missing_leaves=N leaves=N unanchored=N oldest_unanchored=<iso|none> max_hours=26 verdict=…; the result record carries ledger and ledger_fail_keys. --self-test: 109 assertions.",
       "first_install": {
         "at": "20261031T115243Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
@@ -3455,6 +3456,32 @@
       "notes": "The pre_trade_check outcome labeler (DECISION-CALL-V2-W4 CH3) -> `pre_trade_check_outcomes` (migrations/054, permanent, INTERNAL). DATA PIPELINE, not a guard, inventoried on the hold-decision-labeler's reasoning: it lives under /opt/crypto-quant-signal-mcp and has a committed ancestor. `docker exec` dist/scripts/pre-trade-outcome-labeler.js under ONE runAsBatch scope (caller pre_trade_outcome_labeler): the work-list is every check whose hold ended >= 1 h ago with no outcome, oldest first, <= 500; candles from the DECISION venue's own getCandles (1m to 24 h, 5m to 7 d, 15m beyond; history reads, endTime given); ref_px = the first bar's open; bracket_first target|stop|timeout|both_in_one_bar (NULL without both a stop and a target); liq_touched (NULL without a served liquidation distance); a venue gap defers until 7 days after the hold, then unlabelable with its reason. `alert_ids` is empty: silent on success, one token PRE_TRADE_OUTCOME_VERDICT=PASS|FAIL|INDETERMINATE per run in /var/log/pre-trade-outcome-labeler.log (the wrapper prints INDETERMINATE when the child never reaches one). QUARANTINE: it writes no table but its own; no published track-record table (signals, directional_labels, /api/performance-public) reads it; nothing else in src/ names it (tests/unit/pre-trade-outcome-labeler.test.ts). Its one reader is the forward-calibration owed read as aoe_readonly, whose SELECT the labeler GRANTs explicitly. INSTALLED 2026-11-06T04:09:59Z: the one crontab line appended (+1/-0, backup crontab.bak.DECISION-CALL-V2-W4-CH3-20261106T040959Z), then one run exactly as cron invokes it — PRE_TRADE_OUTCOME_VERDICT and counts in the wave's status entry."
     },
     {
+      "id": "publish-call-ledger-batch",
+      "artifact": "ops/cron/publish-call-ledger-batch.sh",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/publish-call-ledger-batch.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/publish-call-ledger-batch.sh",
+          "schedule": "13 0 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "13 0 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "pending",
+      "pending_since": "2026-11-06",
+      "sha256": "216dbc690ae793b9e0778d976eb6e188badf4633f4a3276c704c08f70c7aec66",
+      "alert_ids": [
+        "anchor_root_mismatch"
+      ],
+      "owner_wave": "DECISION-CALL-V2-W5",
+      "repo_resident": true,
+      "notes": "The call-ledger anchor (DECISION-CALL-V2-W5 CH2): `docker exec` dist/scripts/publish-call-ledger-batch.js on the shared crash-safe anchor (src/lib/anchor-batch.ts) — reconcile every sealed or sent call_ledger_batches row against the call-ledger registry on Base, seal at most one batch per UTC day, send its root, read it back, mark it verified, then recheck the newest 7 verified batches by rebuilding every leaf from the stored check rows. The publisher key stays in the app container's environment: the wrapper passes no -e and never names it. Repo-resident (host_path is the checkout; it ships with the deploy's git pull and needs no installer step), inventoried on the pre-trade-outcome-labeler's reasoning. ONE TOKEN per run, CALL_LEDGER_ANCHOR_VERDICT=PASS|FAIL|INDETERMINATE, in /var/log/publish-call-ledger-batch.log; the wrapper prints INDETERMINATE when the child never reaches one, and its exit code is the token's. anchor_root_mismatch pages CRITICAL_PERSISTENT when the run prints an ANCHOR_ROOT_MISMATCH line (a registry root that differs from a sealed batch's, or a recheck that rebuilds a different root) — the run stopped and nothing new is anchored until a human resolves it; a PASS clears silently; every other FAIL or INDETERMINATE pages nothing here, because a stalled anchor is the health canary's call_ledger_stale. Shares ONE advisory lock and one publisher EOA with the signal publisher (5 0 * * *). Crontab line, house flock: 13 0 * * * flock -n /var/lock/algovault-publish-call-ledger-batch.lock /opt/crypto-quant-signal-mcp/ops/cron/publish-call-ledger-batch.sh >> /var/log/publish-call-ledger-batch.log 2>&1 — appended by the wave's §9 after the call-ledger registry address is committed (before that, the publisher is INDETERMINATE: no address). install_state is PENDING until that line exists: the file arrives with the deploy, but a row marked installed with a schedule and no live line is exactly what monitoring-inventory-reconcile.py reads as DARK, so §9's post-install commit flips it to installed with first_install, as it does the week-1 owed read. --self-test: 43 assertions."
+    },
+    {
       "id": "owed-read-pre-trade-odds-forward",
       "artifact": "ops/monitoring/owed-read-pre-trade-odds-forward.py",
       "kind": "executable",
@@ -3478,6 +3505,28 @@
         "at": "20261106T041020Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
+    },
+    {
+      "id": "owed-read-call-ledger-week-1",
+      "artifact": "ops/monitoring/owed-read-call-ledger-week-1.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/owed-read-call-ledger-week-1.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/owed-read-call-ledger-week-1.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:owed-read-runner",
+      "install_state": "pending",
+      "pending_since": "2026-11-06",
+      "sha256": "783b07199525357a1156a1d374c8a6fb24ecbecd7e665f89768ff712939945dd",
+      "alert_ids": [],
+      "owner_wave": "DECISION-CALL-V2-W5",
+      "notes": "The first-week owed read of the crash-safe anchor (DECISION-CALL-V2-W5 CH2, spec §9.7): ONE registry row, call-ledger-week-1, not_before = first_anchor_at + 7 d, expires_at = not_before + 72 h, registered with the MEASURED first_anchor_at (the first verified call_ledger_batches.anchored_at) in the post-install commit. Pre-registered here: 7 nights, D+1 … D+7 of the first seal's UTC date. Call ledger: a night owes a batch when a leaf was created the day before (after the first seal, for D+1) — exactly one sealed that date, verified, recheck_ok_at set, with as many leaves carrying its batch id as its leaf_count; a day with no leaf is QUIET, recorded and never owed. Signal: every night owes exactly one verified merkle_batch_seals row whose merkle_batches row carries the same root and count. No call_ledger_batches or merkle_batch_seals row may be left sealed or sent. PASS on all of it; FAIL names every break; INDETERMINATE when the anchors are not this read's, first_anchor_at is not the table's, or the snapshot cannot be read. One REPEATABLE READ READ ONLY transaction as aoe_readonly; it never selects a salt, a record field or an odds value. --self-test: 28 checks. PENDING until the wave's §9 installs it with ops/scripts/install-monitoring-artifact.sh."
     },
     {
       "id": "kernel-cve-floor",

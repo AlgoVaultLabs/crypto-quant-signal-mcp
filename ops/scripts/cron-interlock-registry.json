@@ -105,18 +105,44 @@
       "script": "src/scripts/publish-merkle-batch.ts",
       "container": "crypto-quant-signal-mcp-mcp-server-1",
       "process_pattern": "dist/scripts/publish-merkle-batch",
-      "class": "no-safe-kill",
-      "reason": "It sends an on-chain Base-mainnet `publishRoot` transaction and THEN writes the batch row + per-signal proofs to Postgres. Measured 2026-08-29: tx confirmed 00:05:04.169Z, batch complete 00:05:07.639Z — a ~3.5s window in which a recreate leaves a Merkle root committed on chain with no database record of it. Re-running does not repair that: getNextBatchId() mints a NEW batch id, so the orphaned root is permanent. Not atomic, not resumable, not idempotent — the only row in this registry that is genuinely none of the three.",
+      "class": "preempt-and-catchup",
+      "reason": "DECISION-CALL-V2-W5 CH2 moved it onto the shared crash-safe anchor (src/lib/anchor-batch.ts): the batch is SEALED in merkle_batch_seals (root, count, signal ids, proofs) before `publishRoot` is sent, the tx hash is stored the moment it is broadcast, and only the chain's confirmation writes merkle_batches + signals, in one statement. Every run reconciles a sealed or sent batch against verifyRoot before it seals anything new (root on chain = confirm it; absent = resend it; different = ANCHOR_ROOT_MISMATCH, stop), so a kill at ANY instant leaves a state the next run finishes — the ~3.5 s orphan window this row used to name is gone. Preempting it loses nothing; the cost of a kill is that the batch is confirmed by the next run (tests/unit/anchor-batch.test.ts kills it after seal, broadcast, send, receipt and confirm).",
       "max_runtime_s": 7,
       "runtime_instrument": "/var/log/merkle-publish.log — ISO-stamped lines grouped into runs on a 600s gap; max span over n=7 runs, read 2026-08-29",
       "cron_lines": 1,
       "cron": "5 0 * * *",
       "catchup_cmd": null,
       "source": "repo",
-      "verified_at": "2026-08-29",
-      "notes": "THIS IS THE ROW THAT KEEPS THE 18:00-02:59 UTC WINDOW ALIVE AS A DECLARED CONTROL. It fires at 00:05 UTC, inside that window, which is very likely what the folklore was protecting without anyone having written it down. The whole job is ~7s, so a 120s bounded wait covers it comfortably — the deploy is delayed by at most one job length and then PROCEEDS regardless.",
+      "verified_at": "2026-11-06",
+      "notes": "WAS no-safe-kill (the 2026-08-29 classification: send, then write, a ~3.5 s window of permanent orphans), the row that kept the 18:00-02:59 UTC deploy-free window alive. Reclassified by DECISION-CALL-V2-W5 CH2, which met this registry's own retire_when for it (\"writes its batch row ... before its on-chain send\"). A SIGTERM ends the run at once — it installs no graceful stop — and every step it finished is durable. The interlock's post-deploy catch-up does NOT run for this row: deploy-cron-interlock.sh cmd_catchup runs only carry-labeler's SLO-gated repair and records `catchup-unsupported` INDETERMINATE for any other preempted row; the repair is the publisher's own next run (00:05 UTC), which reconciles before it seals. Shares ONE advisory lock (ANCHOR_LOCK_KEY) and one publisher EOA with publish-call-ledger-batch (00:13 UTC). max_runtime_s is the pre-W5 measurement: the W5 code adds one INSERT before the send and one statement after the receipt; the chain work is unchanged.",
       "cron_match": [
         "dist/scripts/publish-merkle-batch"
+      ],
+      "owner_wave": "DECISION-CALL-V2-W5"
+    },
+    {
+      "id": "publish-call-ledger-batch",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "ops/cron/publish-call-ledger-batch.sh",
+      "container": "crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "dist/scripts/publish-call-ledger-batch",
+      "class": "preempt-and-catchup",
+      "reason": "The call-ledger anchor (DECISION-CALL-V2-W5 CH2) on the same crash-safe engine as publish-merkle-batch: call_ledger_batches row sealed with every leaf's batch id and proof in one statement BEFORE the send, the tx hash stored at broadcast, verified only after verifyRoot reads the root back; every run reconciles first. A kill at any instant loses nothing and sends nothing twice — the next run finishes the batch. A SIGTERM ends the run at once (no graceful stop); the wrapper prints CALL_LEDGER_ANCHOR_VERDICT=INDETERMINATE for a killed run, so a kill never reads as success.",
+      "max_runtime_s": 7,
+      "runtime_instrument": "INHERITED, not yet measured for this row: the signal publisher's measured max (same engine, same Base RPC, same send + receipt wait; /var/log/merkle-publish.log, n=7 runs, read 2026-08-29). This run adds the recheck's verifyRoot reads (at most 7). The first cron-shaped run (DECISION-CALL-V2-W5 §9.5) measures it; its wall time is recorded in the wave's evidence.",
+      "cron_lines": 1,
+      "cron": "13 0 * * *",
+      "catchup_cmd": null,
+      "source": "repo",
+      "verified_at": "2026-11-06",
+      "owner_wave": "DECISION-CALL-V2-W5",
+      "notes": "The interlock's post-deploy catch-up does NOT run for this row (cmd_catchup records `catchup-unsupported` INDETERMINATE for any preempted row but carry-labeler); the repair is the next 00:13 UTC run. Shares ONE advisory lock and one publisher EOA with publish-merkle-batch (00:05 UTC): a run that finds the lock held is INDETERMINATE and sends nothing.",
+      "cron_match": [
+        "ops/cron/publish-call-ledger-batch.sh"
       ]
     },
     {
@@ -1784,18 +1810,16 @@
   "_residual_no_safe_kill": {
     "signal-1": {
       "deploy": {
-        "count": 2,
+        "count": 1,
         "ids": [
-          "publish-merkle-batch",
           "geo-weekly-cron"
         ],
-        "ruling": "The 18:00-02:59 UTC deploy-free window is NOT retired. It is now a DECLARED control with two named rows justifying it, both of which fire inside it (00:05 and Mon 01:00). What changes is that it stops being folklore carried by an agent-side memory file — a third rule source in an estate that declares two — and becomes data these rows own. OPS-HOST-AUTO-REBOOT-W1 should read this block, not the memory file.",
-        "retire_when": "publish-merkle-batch writes its batch row in the same transaction boundary as (or before) its on-chain send, and geo-weekly-cron gains a checkpoint. Neither is in scope here."
+        "ruling": "The 18:00-02:59 UTC deploy-free window is NOT retired. It is a DECLARED control, now with ONE named row justifying it: geo-weekly-cron, which fires inside it (Mon 01:00). It stops being folklore carried by an agent-side memory file — a third rule source in an estate that declares two — and is data this row owns. OPS-HOST-AUTO-REBOOT-W1 should read this block, not the memory file. publish-merkle-batch left this block in DECISION-CALL-V2-W5 CH2 (sealed before its send; preempt-and-catchup).",
+        "retire_when": "geo-weekly-cron gains a checkpoint. Not in scope here."
       },
       "reboot": {
-        "count": 17,
+        "count": 16,
         "ids": [
-          "publish-merkle-batch",
           "geo-weekly-cron",
           "snapshot-landing-daily",
           "apt-unattended-upgrade",
@@ -1814,7 +1838,7 @@
           "funnel-snapshot"
         ],
         "ruling": "Under a REBOOT these rows ABORT the run while in flight (retried next hour) — they never extend a window. Most finish in seconds (the bot drains <=10s, the alert engine p50 0.37s); the long ones are editorial-publish (<=3374s, 02:00Z timer) and geo-weekly-cron (Mon 01:00Z), both of which start before the 03:00Z window opens. The post-arm recheck closes the check-then-act gap for the every-minute bot alert engine.",
-        "retire_when": "Each row's own repair: a claim-before-send (or send-then-claim with a dedupe key) for the Telegram senders, a checkpoint for geo-weekly-cron, a transaction boundary around publish-merkle-batch's on-chain send, an atomic write for snapshot-landing-daily. Not in scope here."
+        "retire_when": "Each row's own repair: a claim-before-send (or send-then-claim with a dedupe key) for the Telegram senders, a checkpoint for geo-weekly-cron, an atomic write for snapshot-landing-daily. Not in scope here. (publish-merkle-batch's repair — the seal before the send — shipped in DECISION-CALL-V2-W5 CH2.)"
       }
     },
     "aoe-1": {

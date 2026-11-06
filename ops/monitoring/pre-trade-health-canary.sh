@@ -4,7 +4,7 @@
 # The hourly health canary for pre_trade_check, the priced pre-trade decision call. "Installed" is not
 # "working": the tool can answer every call it gets and still be degraded for the next one — three venue
 # feeds down, a fee table past its verification date — with nothing paging. This wrapper runs ONE probe —
-# `dist/scripts/pre-trade-health.js`, INSIDE the app container — and acts on its two tokens. Nothing here
+# `dist/scripts/pre-trade-health.js`, INSIDE the app container — and acts on its three tokens. Nothing here
 # re-derives a verdict; this file only keeps a counter, pages, clears and publishes.
 #
 # ── READ-ONLY ─────────────────────────────────────────────────────────────────────────────────
@@ -12,7 +12,7 @@
 # refuses any write in the session (SQLSTATE 25006). The probe adopts the regime tables (to_regclass)
 # instead of ensuring them, and calls the ENGINE, not the pipeline: no request_log row, no quota unit.
 #
-# ── TWO TOKENS, TWO ALERTS (read each TOKEN, never the code) ────────────────────────────────────
+# ── THREE TOKENS, THREE ALERTS (read each TOKEN, never the code) ────────────────────────────────
 #   PRE_TRADE_HEALTH_VERDICT → pre_trade_check_degraded, CRITICAL_PERSISTENT after 2 CONSECUTIVE FAILs.
 #     One FAIL is never a page: the probe is one call through live venue feeds, and one blip is noise.
 #     $STATE_FILE holds the consecutive-FAIL count. PASS rewrites it to 0 and clears; FAIL increments it and
@@ -23,15 +23,19 @@
 #     skipped (one FAIL still pages nothing) and a corrupt file can never hold the alert dark.
 #   VENUE_FEE_TABLE_VERDICT → venue_fee_table_stale, CRITICAL_PERSISTENT on the FIRST FAIL (a date does not
 #     blip); PASS clears. The probe judges it with no database, so it still acts when the health token cannot.
-#   Both alerts: adopted (the owner calls --clear), announce_resolution false — a clear is silent.
+#   CALL_LEDGER_HEALTH_VERDICT → call_ledger_stale, CRITICAL_PERSISTENT on the FIRST FAIL (DECISION-CALL-V2-W5
+#     CH2). Two legs, judged by the probe: a check logged since the call ledger began that lacks a leaf, and a
+#     leaf the nightly anchor has not verified within the probe's max_hours. Neither heals by waiting an hour,
+#     so there is no sustain. PASS clears; a missing token (an old probe, a killed run) pages and clears nothing.
+#   All three alerts: adopted (the owner calls --clear), announce_resolution false — a clear is silent.
 #
 # ── LOGS ──────────────────────────────────────────────────────────────────────────────────────
-# $LOG gets ONE summary line per run (both verdicts, the count, the wall time). The probe's full output —
+# $LOG gets ONE summary line per run (the three verdicts, the count, the wall time). The probe's full output —
 # one line per check, per venue and per fee row — is overwritten into $LOG.last every run and copied to
 # $LOG.last-fail on a FAIL, so the newest run and the newest failure survive without an unbounded log.
 #
 # ── PUBLISHED ─────────────────────────────────────────────────────────────────────────────────
-# Every run appends ONE canary_result_log record (canary `pre-trade-health`): both verdicts, the wall time,
+# Every run appends ONE canary_result_log record (canary `pre-trade-health`): the three verdicts, the wall time,
 # venue states, the failed checks, the stale fee rows and the count. Identifiers and counts only.
 # ops/scripts/monitoring-results-sync.sh pulls it into the vault.
 #
@@ -52,6 +56,7 @@ DOCKER="${PRE_TRADE_HEALTH_DOCKER:-docker}"   # the self-test's seam; unset in p
 PGOPTS="-c default_transaction_read_only=on -c statement_timeout=60000"
 ALERT_ID="pre_trade_check_degraded"
 FEE_ALERT_ID="venue_fee_table_stale"
+LEDGER_ALERT_ID="call_ledger_stale"
 SUSTAIN=2
 CANARY="pre-trade-health"
 TAG="[pre-trade-health-canary]"
@@ -69,8 +74,9 @@ token_of() { # name output_file
 
 # The probe output, read by mode. Pure over the file.
 #   down    — one body line per DOWN venue        stale   — one body line per stale fee row
-#   limit   — the fee table's max age in days     metrics — the result record (health fees count)
-probe_read() { # mode output_file [health fees count]
+#   limit   — the fee table's max age in days     hours   — the call ledger's max unanchored hours
+#   metrics — the result record (health fees count ledger)
+probe_read() { # mode output_file [health fees count ledger]
   python3 - "$@" <<'PYR'
 import json, sys
 mode, out = sys.argv[1], sys.argv[2]
@@ -82,12 +88,12 @@ for line in open(out, encoding="utf-8", errors="replace"):
         if i >= 0:
             try: acc.append(json.loads(line[i + len(tag):]))
             except Exception: pass
-    if (line.startswith("PRE_TRADE_HEALTH_") or line.startswith("VENUE_FEE_TABLE_")) and "=" in line:
+    if line.startswith(("PRE_TRADE_HEALTH_", "VENUE_FEE_TABLE_", "CALL_LEDGER_HEALTH_")) and "=" in line:
         k, v = line.split("=", 1); kv[k] = v
     i = line.find("[pre-trade-health] CHECK ")
     if i >= 0:
         for tok in line[i:].split():
-            if tok.startswith(("max_age_days=", "decision=")): checks[tok.split("=", 1)[0]] = tok.split("=", 1)[1]
+            if tok.startswith(("max_age_days=", "decision=", "max_hours=")): checks[tok.split("=", 1)[0]] = tok.split("=", 1)[1]
 if mode == "down":
     for v in venues:
         if v.get("state") == "DOWN": print(f"- venue {v.get('exchange')} — {v.get('excluded')}")
@@ -98,13 +104,17 @@ elif mode == "stale":
             print(f"- venue {f.get('exchange')} — verified {f.get('verified_at')} ({f'{age} days' if isinstance(age, int) else 'unparseable date'}), source {f.get('source_url')}")
 elif mode == "limit":
     print(checks.get("max_age_days", "?"))
+elif mode == "hours":
+    print(checks.get("max_hours", "?"))
 elif mode == "metrics":
     health, fee_v, count = sys.argv[3], sys.argv[4], sys.argv[5]
+    ledger = sys.argv[6] if len(sys.argv) > 6 else "INDETERMINATE"
     by = {}
     for v in venues: by[v.get("state")] = by.get(v.get("state"), 0) + 1
     wall = kv.get("PRE_TRADE_HEALTH_WALL_MS", "")
     print(json.dumps({
-        "health": health, "fees": fee_v,
+        "health": health, "fees": fee_v, "ledger": ledger,
+        "ledger_fail_keys": [k for k in kv.get("CALL_LEDGER_HEALTH_FAIL_KEYS", "").split(";") if k],
         "wall_ms": int(wall) if wall.isdigit() else None,
         "decision": checks.get("decision"),
         "venues": len(venues), "venue_states": dict(sorted(by.items())),
@@ -146,6 +156,19 @@ fee_body() { # output_file
   printf 'Recommended wave: VENUE-FEES-REVERIFY-W{NEXT}\n'
 }
 
+# The call-ledger page (DECISION-CALL-V2-W5 CH2). Every key carries its entity noun ("logged checks", "leaves").
+ledger_body() { # output_file
+  printf '🛑 %s\n' "$LEDGER_ALERT_ID"
+  printf 'The pre_trade_check call ledger is behind: a logged check lacks its leaves, or a leaf has waited more than %s h for a verified anchor.\n' \
+    "$(probe_read hours "$1" 2>/dev/null || echo '?')"
+  tr ';' '\n' <<<"$(field CALL_LEDGER_HEALTH_FAIL_KEYS "$1")" | grep . | while IFS= read -r k; do
+    printf -- '- check %s — %s\n' "${k%%:*}" "${k#*:}"
+  done
+  printf 'Anchor runs: /var/log/publish-call-ledger-batch.log (CALL_LEDGER_ANCHOR_VERDICT) · batches: call_ledger_batches (state, recheck_ok_at)\n'
+  printf 'Log: %s (full probe output: %s.last-fail) · result: canary-results.jsonl (%s)\n' "$LOG" "$LOG" "$CANARY"
+  printf 'Recommended wave: DECISION-CALL-V2-W{NEXT}\n'
+}
+
 publish() { # verdict exit_code metrics_json
   python3 - "$RESULT_LOG_DIR" "$CANARY" "$1" "$2" "$3" <<'PYREC' 2>/dev/null || echo "$TAG CANARY_RESULT_LOG_FAILED=python_unavailable"
 import json, sys
@@ -166,21 +189,22 @@ print(f"[pre-trade-health-canary] CANARY_RESULT_LOG={detail}" if ok else f"[pre-
 PYREC
 }
 
-# One verdict for the run: FAIL if either token FAILs, else INDETERMINATE if either is, else PASS.
-combined() { # health fees
-  if [ "$1" = FAIL ] || [ "$2" = FAIL ]; then echo FAIL
-  elif [ "$1" = INDETERMINATE ] || [ "$2" = INDETERMINATE ]; then echo INDETERMINATE
+# One verdict for the run: FAIL if any token FAILs, else INDETERMINATE if any is, else PASS.
+combined() { # health fees ledger
+  if [ "$1" = FAIL ] || [ "$2" = FAIL ] || [ "$3" = FAIL ]; then echo FAIL
+  elif [ "$1" = INDETERMINATE ] || [ "$2" = INDETERMINATE ] || [ "$3" = INDETERMINATE ]; then echo INDETERMINATE
   else echo PASS; fi
 }
 
-finish() { # health fees detail [metrics_json]
+finish() { # health fees ledger detail [metrics_json]
   local v code
-  v="$(combined "$1" "$2")"
+  v="$(combined "$1" "$2" "$3")"
   case "$v" in PASS) code=0 ;; FAIL) code=1 ;; *) code=3 ;; esac
-  log "health=$1 fees=$2 $3"
-  publish "$v" "$code" "${4:-}"
-  echo "$TAG $(date -u +%Y-%m-%dT%H:%M:%SZ) PRE_TRADE_HEALTH_VERDICT=$1 $3"
+  log "health=$1 fees=$2 ledger=$3 $4"
+  publish "$v" "$code" "${5:-}"
+  echo "$TAG $(date -u +%Y-%m-%dT%H:%M:%SZ) PRE_TRADE_HEALTH_VERDICT=$1 $4"
   echo "$TAG $(date -u +%Y-%m-%dT%H:%M:%SZ) VENUE_FEE_TABLE_VERDICT=$2"
+  echo "$TAG $(date -u +%Y-%m-%dT%H:%M:%SZ) CALL_LEDGER_HEALTH_VERDICT=$3"
   exit "$code"
 }
 
@@ -218,13 +242,13 @@ clear_alert() { # alert_id note
 }
 
 run_canary() {
-  local out rc health fees prev count="" fails tmp detail
+  local out rc health fees ledger prev count="" fails tmp detail
   PTH_TMP="$(mktemp -d 2>/dev/null || echo "/tmp/pth.$$")"; mkdir -p "$PTH_TMP"; tmp="$PTH_TMP"
   trap 'rm -rf "$PTH_TMP"' EXIT
 
   # A plain string compare, never `… | grep -q`: under pipefail that can false-miss on SIGPIPE.
   if [ "$("$DOCKER" inspect -f '{{.State.Running}}' "$CTR" 2>/dev/null)" != true ]; then
-    finish INDETERMINATE INDETERMINATE "container $CTR is not running — nothing was judged; count untouched"
+    finish INDETERMINATE INDETERMINATE INDETERMINATE "container $CTR is not running — nothing was judged; count untouched"
   fi
 
   "$DOCKER" exec -e "PGOPTIONS=$PGOPTS" "$CTR" node dist/scripts/pre-trade-health.js > "$tmp/out" 2>&1
@@ -234,11 +258,18 @@ run_canary() {
   out="$tmp/out"
   health="$(token_of PRE_TRADE_HEALTH_VERDICT "$out")"
   fees="$(token_of VENUE_FEE_TABLE_VERDICT "$out")"
+  ledger="$(token_of CALL_LEDGER_HEALTH_VERDICT "$out")"
 
   # ── the fee arm: stateless, pages on the first FAIL ────────────────────────────────────────────
   case "$fees" in
     FAIL) fee_body "$out" | page "$FEE_ALERT_ID" ;;
     PASS) clear_alert "$FEE_ALERT_ID" "fee table PASS" ;;
+  esac
+
+  # ── the call-ledger arm: stateless, pages on the first FAIL (DECISION-CALL-V2-W5 CH2) ─────────────
+  case "$ledger" in
+    FAIL) ledger_body "$out" | page "$LEDGER_ALERT_ID" ;;
+    PASS) clear_alert "$LEDGER_ALERT_ID" "call ledger PASS" ;;
   esac
 
   # ── the health arm: the 2-run sustain ──────────────────────────────────────────────────────────
@@ -258,9 +289,9 @@ run_canary() {
       ;;
   esac
 
-  if [ "$health" = FAIL ] || [ "$fees" = FAIL ]; then cp "$tmp/out" "$LOG.last-fail" 2>/dev/null || true; fi
-  detail="probe rc=$rc count=${count:-untouched} wall_ms=$(field PRE_TRADE_HEALTH_WALL_MS "$out") fail_keys=$(field PRE_TRADE_HEALTH_FAIL_KEYS "$out") stale_fees=$(field VENUE_FEE_TABLE_STALE "$out")"
-  finish "$health" "$fees" "$detail" "$(probe_read metrics "$out" "$health" "$fees" "$count" 2>/dev/null || echo '{"metrics_unparseable":true}')"
+  if [ "$health" = FAIL ] || [ "$fees" = FAIL ] || [ "$ledger" = FAIL ]; then cp "$tmp/out" "$LOG.last-fail" 2>/dev/null || true; fi
+  detail="probe rc=$rc count=${count:-untouched} wall_ms=$(field PRE_TRADE_HEALTH_WALL_MS "$out") fail_keys=$(field PRE_TRADE_HEALTH_FAIL_KEYS "$out") stale_fees=$(field VENUE_FEE_TABLE_STALE "$out") ledger_fail_keys=$(field CALL_LEDGER_HEALTH_FAIL_KEYS "$out")"
+  finish "$health" "$fees" "$ledger" "$detail" "$(probe_read metrics "$out" "$health" "$fees" "$count" "$ledger" 2>/dev/null || echo '{"metrics_unparseable":true}')"
 }
 
 # ── two-way self-test, vacuity-guarded ─────────────────────────────────────────────────────────
@@ -304,6 +335,9 @@ EOF
       printf 'VENUE_FEE_TABLE_STALE=%s\n' "$s"
       [ -n "$f" ] && printf 'VENUE_FEE_TABLE_VERDICT=%s\n' "$f"
       printf '[pre-trade-health] CHECK db=REACHABLE regime_tables=ADOPTED\n'
+      printf '[pre-trade-health] CHECK call_ledger checks=40 missing_leaves=0 leaves=80 unanchored=2 max_hours=26 verdict=%s\n' "${LEDGER_UNDER_TEST-PASS}"
+      printf 'CALL_LEDGER_HEALTH_FAIL_KEYS=%s\n' "${LEDGER_KEYS_UNDER_TEST:-}"
+      [ -n "${LEDGER_UNDER_TEST-PASS}" ] && printf 'CALL_LEDGER_HEALTH_VERDICT=%s\n' "${LEDGER_UNDER_TEST-PASS}"
       for v in "$@"; do
         x="$(cut -d: -f2 <<<"$v")"; [ "$x" = - ] && x=null || x="\"$x\""
         printf '[pre-trade-health] VENUE {"exchange":"%s","excluded":%s,"state":"%s"}\n' "${v%%:*}" "$x" "${v##*:}"
@@ -320,6 +354,7 @@ EOF
   }
   htok() { grep -o 'PRE_TRADE_HEALTH_VERDICT=[A-Z]*' "$st/run.out" | tail -1 | cut -d= -f2; }
   ftok() { grep -o 'VENUE_FEE_TABLE_VERDICT=[A-Z]*' "$st/run.out" | tail -1 | cut -d= -f2; }
+  ltok() { grep -o 'CALL_LEDGER_HEALTH_VERDICT=[A-Z]*' "$st/run.out" | tail -1 | cut -d= -f2; }
   state() { cat "$st/state/consecutive-fails" 2>/dev/null | tr -d '\n' || true; }
   # `grep -c` prints 0 AND exits 1 on no match, so `|| echo 0` would print it twice.
   sends() { local n; n="$(grep -c "^ARGV $1 CRITICAL_PERSISTENT" "$st/sent" 2>/dev/null)"; echo "${n:-0}"; }
@@ -332,6 +367,7 @@ EOF
   probe PASS PASS '' '' "${UP5[@]}"
   ck 'pass run: health token PASS' "$(htok)" PASS
   ck 'pass run: fee token PASS' "$(ftok)" PASS
+  ck 'pass run: ledger token PASS' "$(ltok)" PASS
   ck 'pass run: exit 0' "$(cat "$st/run.rc")" 0
   has 'the probe runs read-only' "$(argv)" 'PGOPTIONS=-c default_transaction_read_only=on'
   has 'with a server-side statement timeout' "$(argv)" 'statement_timeout=60000'
@@ -339,8 +375,10 @@ EOF
   ck 'pass run: the count is 0' "$(state)" 0
   ck 'pass run: no health page' "$(sends "$ALERT_ID")" 0
   ck 'pass run: no fee page' "$(sends "$FEE_ALERT_ID")" 0
+  ck 'pass run: no ledger page' "$(sends "$LEDGER_ALERT_ID")" 0
   ck 'pass run: health PASS clears (adopted)' "$(clears "$ALERT_ID")" 1
   ck 'pass run: fee PASS clears (adopted)' "$(clears "$FEE_ALERT_ID")" 1
+  ck 'pass run: ledger PASS clears (adopted)' "$(clears "$LEDGER_ALERT_ID")" 1
   # (2) The broken health arm, FAIL #1: counted, NEVER paged — one FAIL pages nothing.
   probe FAIL PASS 'venues:2 of 5 up, below 3' '' "${DOWN3[@]}"
   ck 'fail 1: health token FAIL' "$(htok)" FAIL
@@ -393,6 +431,8 @@ EOF
   ck 'stopped container: exit 3' "$(cat "$st/run.rc")" 3
   ck 'stopped container: the count untouched' "$(state)" 1
   ck 'stopped container: nothing cleared' "$(clears "$FEE_ALERT_ID")" 7
+  ck 'stopped container: ledger INDETERMINATE' "$(ltok)" INDETERMINATE
+  ck 'stopped container: no ledger clear' "$(clears "$LEDGER_ALERT_ID")" 7
   # (9) The broken fee arm: the FIRST FAIL pages, naming the venue, its date and its source URL.
   probe PASS FAIL '' BYBIT "${UP5[@]}"
   ck 'fee fail: fee token FAIL' "$(ftok)" FAIL
@@ -436,6 +476,7 @@ EOF
     has 'the record carries the wall time' "$rec" '"wall_ms":1234'
     has 'the record counts venues by state' "$rec" '"venue_states":{"UP":5}'
     has 'the record carries both verdicts' "$rec" '"fees":"PASS","health":"PASS"'
+    has 'the record carries the ledger verdict' "$rec" '"ledger":"PASS"'
     RESULT_DIR_UNDER_TEST="$st/lib" probe FAIL PASS 'venues:2 of 5 up, below 3' '' "${DOWN3[@]}"
     has 'a FAIL record names the down venues' "$(tail -1 "$st/results.jsonl" 2>/dev/null)" '"down":["BINANCE:feed_unavailable","BYBIT:funding_unavailable","OKX:feed_unavailable"]'
     touch "$st/stopped"; RESULT_DIR_UNDER_TEST="$st/lib" probe PASS PASS '' ''; rm -f "$st/stopped"
@@ -465,14 +506,57 @@ EOF
     has 'send_telegram.sh sits beside this script' "missing" "present"
   fi
 
+  # (15) The call-ledger arm (DECISION-CALL-V2-W5 CH2): stateless — the FIRST FAIL pages, PASS clears,
+  #      INDETERMINATE and a missing token do neither. A ledger FAIL never moves the health count.
+  local lc ls hs
+  lc="$(clears "$LEDGER_ALERT_ID")"; ls="$(sends "$LEDGER_ALERT_ID")"; hs="$(sends "$ALERT_ID")"
+  printf '1\n' > "$st/state/consecutive-fails"
+  LEDGER_UNDER_TEST=FAIL LEDGER_KEYS_UNDER_TEST='call_ledger_anchor:12 of 80 leaves unanchored, the oldest for 31 h (since 2026-11-06T00:13:00.000Z)' \
+    probe INDETERMINATE PASS '' '' "${UP5[@]}"
+  ck 'ledger fail: ledger token FAIL' "$(ltok)" FAIL
+  ck 'ledger fail: exit 1 (a FAIL wins the code)' "$(cat "$st/run.rc")" 1
+  ck 'ledger fail: THE FIRST LEDGER FAIL PAGES' "$(sends "$LEDGER_ALERT_ID")" "$((ls + 1))"
+  has 'the ledger page goes to call_ledger_stale, CRITICAL_PERSISTENT, body on stdin' "$(cat "$st/sent")" 'ARGV call_ledger_stale CRITICAL_PERSISTENT -'
+  has 'the ledger body names the check with its entity noun' "$(cat "$st/sent")" '- check call_ledger_anchor — 12 of 80 leaves unanchored, the oldest for 31 h (since 2026-11-06T00:13:00.000Z)'
+  has 'the ledger body states the limit from the probe' "$(cat "$st/sent")" 'waited more than 26 h for a verified anchor'
+  has 'the ledger body carries its template wave id' "$(cat "$st/sent")" 'Recommended wave: DECISION-CALL-V2-W{NEXT}'
+  ck 'ledger fail: a FAIL never clears' "$(clears "$LEDGER_ALERT_ID")" "$lc"
+  ck 'ledger fail: the health arm does not page' "$(sends "$ALERT_ID")" "$hs"
+  ck 'ledger fail: the health count is untouched' "$(state)" 1
+  has 'a ledger FAIL keeps its full probe output in .last-fail' "$(cat "$st/log.last-fail" 2>/dev/null)" 'CALL_LEDGER_HEALTH_VERDICT=FAIL'
+  LEDGER_UNDER_TEST=FAIL LEDGER_KEYS_UNDER_TEST='call_ledger_leaves:3 of 40 logged checks lack a ledger leaf' \
+    probe PASS PASS '' '' "${UP5[@]}"
+  ck 'ledger fail 2: pages again (the wrapper dedups)' "$(sends "$LEDGER_ALERT_ID")" "$((ls + 2))"
+  has 'the ledger body names logged checks without a leaf' "$(cat "$st/sent")" '- check call_ledger_leaves — 3 of 40 logged checks lack a ledger leaf'
+  probe PASS PASS '' '' "${UP5[@]}"
+  ck 'ledger pass: clears' "$(clears "$LEDGER_ALERT_ID")" "$((lc + 1))"
+  LEDGER_UNDER_TEST=INDETERMINATE probe PASS PASS '' '' "${UP5[@]}"
+  ck 'ledger INDETERMINATE: token INDETERMINATE' "$(ltok)" INDETERMINATE
+  ck 'ledger INDETERMINATE: exit 3' "$(cat "$st/run.rc")" 3
+  ck 'ledger INDETERMINATE: no page' "$(sends "$LEDGER_ALERT_ID")" "$((ls + 2))"
+  ck 'ledger INDETERMINATE: no clear' "$(clears "$LEDGER_ALERT_ID")" "$((lc + 1))"
+  LEDGER_UNDER_TEST='' probe PASS PASS '' '' "${UP5[@]}"
+  ck 'no ledger token: INDETERMINATE' "$(ltok)" INDETERMINATE
+  ck 'no ledger token: exit 3' "$(cat "$st/run.rc")" 3
+  ck 'no ledger token: no page' "$(sends "$LEDGER_ALERT_ID")" "$((ls + 2))"
+  ck 'no ledger token: no clear' "$(clears "$LEDGER_ALERT_ID")" "$((lc + 1))"
+  if [ -r "$st/lib/canary_result_log.py" ]; then
+    LEDGER_UNDER_TEST=FAIL LEDGER_KEYS_UNDER_TEST='call_ledger_leaves:3 of 40 logged checks lack a ledger leaf' \
+      RESULT_DIR_UNDER_TEST="$st/lib" probe PASS PASS '' '' "${UP5[@]}"
+    has 'a ledger FAIL record carries the ledger verdict' "$(tail -1 "$st/results.jsonl" 2>/dev/null)" '"ledger":"FAIL"'
+    has 'and its fail keys' "$(tail -1 "$st/results.jsonl" 2>/dev/null)" '"ledger_fail_keys":["call_ledger_leaves:3 of 40 logged checks lack a ledger leaf"]'
+  else
+    has 'canary_result_log.py was copied by (13)' "missing" "present"
+  fi
+
   # Vacuity guard: a self-test that asserted nothing must never report a pass.
-  if [ "$checked" -lt 79 ]; then
-    echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= 79)"; return 3
+  if [ "$checked" -lt 109 ]; then
+    echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= 109)"; return 3
   fi
   if [ -n "$fails" ]; then
     echo "SELF_TEST_VERDICT=FAIL — ${fails#|}"; return 1
   fi
-  echo "SELF_TEST_VERDICT=PASS — $checked assertions (pass + clears · health FAIL 1 silent, FAIL 2 pages + body · repeat · reset · INDETERMINATE per probe, per token and per run · fee FAIL pages first time + body · fee clear · db-down fee page · unreadable count restarts · result record · wrapper cooldown + clear)"
+  echo "SELF_TEST_VERDICT=PASS — $checked assertions (pass + clears · health FAIL 1 silent, FAIL 2 pages + body · repeat · reset · INDETERMINATE per probe, per token and per run · fee FAIL pages first time + body · fee clear · db-down fee page · unreadable count restarts · result record · wrapper cooldown + clear · ledger FAIL pages first time + body · ledger clear · ledger INDETERMINATE and missing token silent · ledger record)"
   return 0
 }
 
