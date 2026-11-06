@@ -26,6 +26,8 @@ const HARNESS = path.join(REPO, 'ops/monitoring/kernel-auto-reboot.sh');
 const MONITORING = path.join(REPO, 'ops/monitoring');
 const REGISTRY = path.join(REPO, 'ops/scripts/cron-interlock-registry.json');
 const ALERT_REGISTRY = path.join(REPO, 'ops/monitoring/alert-registry.json');
+const FLOOR_HELPER = path.join(REPO, 'ops/monitoring/kernel-cve-floor.py');
+const FLOORS = path.join(REPO, 'ops/monitoring/kernel-cve-floors.json');
 /**
  * The PRE-W6 bytes, pinned as fixtures — never `git show <sha>:`, because CI checks out shallow and
  * has no history (measured: deploy run 39763287192, `fatal: invalid object name`). Each is pinned
@@ -52,8 +54,24 @@ function spawnAsync(cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv
 
 type World = ReturnType<typeof world>;
 
+/**
+ * OPS-CVE-2026-98432-INTERIM-W1 CH2: the world also wires the REAL kernel-cve-floor.py against the
+ * REAL declared floors (noble/generic 6.8.0-149.149), with only its OS reads and nft stubbed. The
+ * defaults keep every pre-CH2 world BELOW_FIX_ABSENT (nothing at 149 on disk), so a stale kernel stays
+ * the BREACH it always was.
+ */
+type WorldOpts = {
+  running?: string;
+  /** [kernel release, package version], newest LAST — its .list is the one aged by ageDays. */
+  kernels?: Array<[string, string]>;
+  ageDays?: number;
+  nft?: 'present' | 'absent';
+};
+
 /** One simulated aoe-1: a stale kernel, an --apply crontab, and every side effect recorded. */
-function world() {
+function world(o: WorldOpts = {}) {
+  const running = o.running ?? '6.8.0-142-generic';
+  const kernels = o.kernels ?? [['6.8.0-142-generic', '6.8.0-142.142'], ['6.8.0-147-generic', '6.8.0-147.147']];
   const dir = mkdtempSync(path.join(tmpdir(), 'kstale-e2e-'));
   const mk = (name: string, body: string) => {
     const p = path.join(dir, name);
@@ -63,21 +81,32 @@ function world() {
   mkdirSync(path.join(dir, 'bin'));
   mkdirSync(path.join(dir, 'dpkg'));
   mkdirSync(path.join(dir, 'peer'));
-  mk('bin/uname', '#!/bin/sh\necho 6.8.0-142-generic\n');
-  mk('bin/dpkg-query', '#!/bin/sh\nprintf "%s\\n" linux-image-6.8.0-142-generic linux-image-6.8.0-147-generic\n');
+  mk('bin/uname', `#!/bin/sh\necho ${running}\n`);
+  mk('bin/dpkg-query', `#!/bin/sh\nprintf "%s\\n" ${kernels.map(([k]) => `linux-image-${k}`).join(' ')}\n`);
   mk('bin/hostname', '#!/bin/sh\necho AlgoVault-AOE\n');
-  // Installed 8 days ago: past the 7-day threshold, so the canary decides BREACH.
-  const list = path.join(dir, 'dpkg', 'linux-image-6.8.0-147-generic.list');
+  // Default: installed 8 days ago — past the 7-day threshold, so the canary decides BREACH.
+  const list = path.join(dir, 'dpkg', `linux-image-${kernels[kernels.length - 1][0]}.list`);
   writeFileSync(list, '');
-  const installedAt = Date.now() / 1000 - 8 * 86400;
+  const installedAt = Date.now() / 1000 - (o.ageDays ?? 8) * 86400;
   utimesSync(list, installedAt, installedAt);
+  // The floor helper's own OS reads. Plain strings, never template literals: `${Version}` is dpkg's.
+  const versionCases = kernels.map(([k, v]) => '    linux-image-' + k + ") printf '" + v + "' ;;\n").join('');
+  const listing = kernels.map(([k, v]) => 'linux-image-' + k + '\\t' + v + '\\tii \\n').join('');
+  const kcfQuery = mk('kcf-dpkg-query',
+    '#!/bin/sh\n' +
+    "if [ \"$2\" = '-f=${Version}' ]; then\n  case \"$3\" in\n" + versionCases + '    *) exit 1 ;;\n  esac\n  exit 0\nfi\n' +
+    "printf '" + listing + "'\n");
   const files = {
     canaryPaged: path.join(dir, 'canary-paged'),
     harnessPaged: path.join(dir, 'harness-paged'),
     rebooted: path.join(dir, 'rebooted'),
     results: path.join(dir, 'results.jsonl'),
     marker: path.join(dir, 'peer', 'marker'),
+    nftArgv: path.join(dir, 'nft-argv'),
   };
+  const nft = mk('nft', o.nft === 'absent'
+    ? `#!/bin/sh\necho "$*" >> ${files.nftArgv}\necho "Error: No such file or directory" >&2\nexit 1\n`
+    : `#!/bin/sh\necho "$*" >> ${files.nftArgv}\nprintf 'table inet cve_2026_98432 {\\n\\tchain prerouting {\\n\\t\\ttype filter hook prerouting priority raw - 10; policy accept;\\n\\t\\tip protocol tcp ip hdrlength > 5 counter packets 0 bytes 0 drop comment "CVE-2026-98432 IPv4 TCP with IP options"\\n\\t}\\n}\\n'\n`);
   const env = {
     PATH: `${path.join(dir, 'bin')}:${process.env.PATH}`,
     PYTHONDONTWRITEBYTECODE: '1',
@@ -91,6 +120,14 @@ function world() {
     KERNEL_CANARY_RESULT_LOG_DIR: MONITORING,
     KERNEL_CANARY_ALERT_REGISTRY: ALERT_REGISTRY,
     KERNEL_CANARY_IDENTITY_FILE: mk('id', 'aoe-1\n'),
+    // CH2: the REAL floor helper and the REAL declared floors; only its OS reads and nft are stubbed.
+    KERNEL_CANARY_FLOOR_HELPER: FLOOR_HELPER,
+    KERNEL_CVE_FLOORS: FLOORS,
+    KERNEL_CVE_OS_RELEASE: mk('os-release', 'NAME="Ubuntu"\nVERSION_CODENAME=noble\n'),
+    KERNEL_CVE_UNAME: path.join(dir, 'bin', 'uname'),
+    KERNEL_CVE_DPKG_QUERY: kcfQuery,
+    KERNEL_CVE_DPKG: mk('kcf-dpkg', '#!/usr/bin/env python3\nimport re, sys\na = sys.argv[1:]\nkey = lambda v: [int(x) for x in re.findall(r"\\d+", v.split("~")[0])]\nsys.exit(0 if key(a[1]) >= key(a[3]) else 1)\n'),
+    KERNEL_CVE_NFT: nft,
     // The harness's seams: every destructive primitive recorded, never performed.
     AUTO_REBOOT_IDENTITY_FILE: path.join(dir, 'id'),
     AUTO_REBOOT_LOG: path.join(dir, 'harness.log'),
@@ -211,7 +248,7 @@ describe('W6 — the canary CLI contract', () => {
     const w = world();
     const r = runCanary(w, ['--decide']);
     expect(r.status).toBe(0);
-    expect(r.stdout).toMatch(/^KERNEL_STALENESS_DECISION=BREACH running=6\.8\.0-142-generic installed=6\.8\.0-147-generic age_days=8 breach_at=\d+\n$/);
+    expect(r.stdout).toMatch(/^KERNEL_STALENESS_DECISION=BREACH running=6\.8\.0-142-generic installed=6\.8\.0-147-generic age_days=8 breach_at=\d+ cve_floor=BELOW_FIX_ABSENT\n$/);
     expect(existsSync(w.env.KERNEL_CANARY_LOG)).toBe(false);
     expect(read(w.files.canaryPaged)).toBe('');
   });
@@ -227,5 +264,52 @@ describe('W6 — the canary CLI contract', () => {
     const dr = row.related_automation[0].decision_record;
     expect(dr).toEqual({ canary: 'kernel-auto-reboot', max_age_s: 7200 });
     expect(readFileSync(HARNESS, 'utf8')).toMatch(/^RESULT_CANARY="kernel-auto-reboot"$/m);
+  });
+});
+
+/**
+ * OPS-CVE-2026-98432-INTERIM-W1 CH2 — the floor, wired through the REAL canary, the REAL helper, the
+ * REAL declared floors and the REAL harness. Architect ruling Q4: a CVE-fixed kernel installed but not
+ * running makes the reboot due at once, not after the 7-day threshold.
+ */
+describe('CH2 — the kernel-CVE floor, end to end', () => {
+  const FIXED: Array<[string, string]> = [['6.8.0-147-generic', '6.8.0-147.147'], ['6.8.0-149-generic', '6.8.0-149.149']];
+
+  it('a CVE-fixed kernel installed ONE day ago is due now: the harness REBOOTS', { timeout: 60_000 }, () => {
+    const w = world({ running: '6.8.0-147-generic', kernels: FIXED, ageDays: 1 });
+    const d = runCanary(w, ['--decide']);
+    expect(d.stdout).toMatch(/^KERNEL_STALENESS_DECISION=BREACH running=6\.8\.0-147-generic installed=6\.8\.0-149-generic age_days=1 breach_at=\d+ cve_floor=BELOW_FIX_INSTALLED\n$/);
+    const r = runHarness(w, HARNESS, CANARY);
+    expect(r.verdict).toBe('REBOOTED');
+    expect(existsSync(w.files.rebooted)).toBe(true);
+    const rec = JSON.parse(read(w.files.results).trim().split('\n').pop()!);
+    expect(rec.metrics).toMatchObject({ kernel_installed: '6.8.0-149-generic', staleness: 'BREACH:1' });
+  });
+
+  it('the control: the same 1-day-old kernel WITHOUT the fix is NOT_DUE, and nothing reboots', { timeout: 60_000 }, () => {
+    const w = world({ running: '6.8.0-142-generic', ageDays: 1 });
+    const d = runCanary(w, ['--decide']);
+    expect(d.stdout).toMatch(/^KERNEL_STALENESS_DECISION=REPORT .* age_days=1 breach_at=\d+ cve_floor=BELOW_FIX_ABSENT\n$/);
+    expect(runHarness(w, HARNESS, CANARY).verdict).toBe('NOT_DUE');
+    expect(existsSync(w.files.rebooted)).toBe(false);
+  });
+
+  it('the live path: a missing interim table pages KERNEL_CVE_MITIGATION once, and nft is only ever LISTED', { timeout: 60_000 }, () => {
+    const w = world({ running: '6.8.0-147-generic', kernels: [['6.8.0-147-generic', '6.8.0-147.147']], nft: 'absent' });
+    expect(runCanary(w).status).toBe(0);
+    const body = read(w.files.canaryPaged);
+    expect((body.match(/^ALERT=KERNEL_CVE_MITIGATION SEV=CRITICAL_PERSISTENT$/gm) || []).length).toBe(1);
+    expect(pages(w.files.canaryPaged)).toBe(0); // the newest kernel, below the floor: REPORT, no staleness page
+    expect(body).toContain('state=MISSING table=inet/cve_2026_98432 unit=cve-2026-98432-nft.service');
+    expect(read(w.env.KERNEL_CANARY_LOG)).toContain('cve_mitigation=MISSING host=aoe-1');
+    expect(read(w.files.nftArgv).trim().split('\n')).toEqual(['list table inet cve_2026_98432']);
+  });
+
+  it('the live path: a loaded interim table is a positive PRESENT line and no page', { timeout: 60_000 }, () => {
+    const w = world({ running: '6.8.0-147-generic', kernels: [['6.8.0-147-generic', '6.8.0-147.147']] });
+    runCanary(w);
+    expect(read(w.files.canaryPaged)).toBe('');
+    expect(read(w.env.KERNEL_CANARY_LOG)).toMatch(/VERDICT=REPORT host=aoe-1 .*cve_floor=BELOW_FIX_ABSENT/);
+    expect(read(w.env.KERNEL_CANARY_LOG)).toContain('cve_mitigation=PRESENT host=aoe-1');
   });
 });

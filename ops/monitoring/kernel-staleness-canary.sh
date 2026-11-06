@@ -37,6 +37,18 @@
 #   the cron    runs hourly (it used to be daily: the harness's call no longer pages, so this
 #               schedule carries the latency); the 24 h wrapper cooldown keeps it ≤ 1 page/day/host.
 #   the host    is named by the estate label chain, with the hostname beside it.
+#
+# ── OPS-CVE-2026-98432-INTERIM-W1 CH2: THE KERNEL-CVE FLOOR ───────────────────────────────────────
+# A second dimension, CONSUMED from ops/monitoring/kernel-cve-floor.py (the ONE place a floor is
+# compared — single derivation; nothing here parses kernel-cve-floors.json or orders a version):
+#   cve_floor   --rows: MET · BELOW_FIX_INSTALLED · BELOW_FIX_ABSENT · NONE_APPLICABLE · INDETERMINATE.
+#               GREEN (OK) only when every applicable floor is MET; anything short of it is REPORT,
+#               which the harness reads as NOT_DUE. A fixed kernel already ON DISK makes the reboot due
+#               at once (architect ruling Q4): BREACH, with breach_at = that kernel's install instant.
+#   mitigation  --mitigation, LIVE PATH ONLY: while below a floor, the floor's interim nft table must be
+#               LOADED. MISSING or INDETERMINATE pages KERNEL_CVE_MITIGATION; nothing here ever writes a
+#               network rule (an unattended job detects and alerts, never mutates the firewall).
+# `--decide` gains ` cve_floor=<V>` at the END of its line: the harness's anchored regex is unchanged.
 set -uo pipefail
 
 ALERT_ID="KERNEL_STALENESS"
@@ -87,6 +99,9 @@ ALERT_REGISTRY="${KERNEL_CANARY_ALERT_REGISTRY:-/opt/algovault-monitoring/alert-
 # The estate host-label chain: MONITORING_HOST_LABELS, then this file, then `hostname -s`.
 IDENTITY_FILE="${KERNEL_CANARY_IDENTITY_FILE:-/etc/algovault-host-label}"
 PY_BIN="${KERNEL_CANARY_PY:-python3}"
+# OPS-CVE-2026-98432-INTERIM-W1 CH2: the kernel-CVE floor helper, run `python3 -I` (this directory
+# holds other .py files; -I keeps the script's directory and PYTHON* off the import path).
+FLOOR_HELPER="${KERNEL_CANARY_FLOOR_HELPER:-/opt/algovault-monitoring/kernel-cve-floor.py}"
 
 log() { printf '%s [%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ALERT_ID" "$*" | tee -a "$LOG" 2>/dev/null || true; }
 
@@ -109,11 +124,58 @@ decide() {
   echo "BREACH age_days=$age (>= ${threshold}d) — firing wrapper"
 }
 
+# --- the CVE-floor dimension (OPS-CVE-2026-98432-INTERIM-W1 CH2) -------------------------------
+# stderr is dropped and only an ANCHORED token is judged, so a missing or crashing helper reads as
+# INDETERMINATE — never as a pass, and never as "no floors".
+floor_helper() { "$PY_BIN" -I "$FLOOR_HELPER" "$@" 2>/dev/null; }
+
+# Echoes MET | BELOW_FIX_INSTALLED | BELOW_FIX_ABSENT | NONE_APPLICABLE | INDETERMINATE.
+# BELOW_FIX_INSTALLED is read from the ROW lines and wins over every other row: one CVE-fixed kernel
+# already on disk is reason enough to take the reboot now, whatever another row cannot decide.
+floor_verdict() {
+  local out v
+  out="$(floor_helper --rows)"
+  if grep -qE '^KERNEL_CVE_FLOOR cve=.* state=BELOW_FIX_INSTALLED( |$)' <<<"$out"; then
+    echo BELOW_FIX_INSTALLED; return
+  fi
+  v="$(grep -E '^KERNEL_CVE_FLOOR_VERDICT=(MET|BELOW|NONE_APPLICABLE|INDETERMINATE)( |$)' <<<"$out" | tail -1)" || true
+  v="${v#KERNEL_CVE_FLOOR_VERDICT=}"; v="${v%% *}"
+  case "$v" in
+    MET|NONE_APPLICABLE|INDETERMINATE) echo "$v" ;;
+    BELOW) echo BELOW_FIX_ABSENT ;;
+    *) echo INDETERMINATE ;;
+  esac
+}
+
+# The decision: the staleness result and the cve_floor dimension, combined in a DECLARED order (each
+# step asserted by --self-test). Pure. Echoes: <VERDICT> <detail>
+#   1. staleness INDETERMINATE stays INDETERMINATE — the harness refuses to act on an unknown;
+#   2. a CVE-fixed kernel installed but not running is a BREACH now (Q4), whatever its age;
+#   3. a stale kernel stays a BREACH;
+#   4. anything short of every floor MET is REPORT, never OK (the harness reads REPORT as NOT_DUE, so
+#      this step can never cause a reboot);
+#   5. otherwise the staleness result stands.
+combine() { # combine <staleness-result> <cve_floor>
+  local s="$1" f="$2"
+  case "${s%% *}" in INDETERMINATE) echo "$s; cve_floor=$f"; return ;; esac
+  if [ "$f" = BELOW_FIX_INSTALLED ]; then
+    echo "BREACH cve_floor=BELOW_FIX_INSTALLED — a kernel that meets a declared CVE floor is installed but not running: due now, not after ${THRESHOLD_DAYS}d (staleness: $s)"
+    return
+  fi
+  case "${s%% *}" in BREACH) echo "$s; cve_floor=$f"; return ;; esac
+  if [ "$f" != MET ]; then
+    echo "REPORT cve_floor=$f — not GREEN until the running kernel meets every declared CVE floor (staleness: $s)"
+    return
+  fi
+  echo "$s; cve_floor=MET"
+}
+
 
 # --- the decision's inputs, read ONCE by every path ------------------------------------------
-# Echoes: <running> <installed|<none>> <age_days> <breach_at|none>. Read-only: uname, dpkg-query,
-# stat. breach_at is the epoch at which this kernel falls due (its .list mtime + THRESHOLD_DAYS) —
-# the instant a harness decision must POSTDATE to be a decision about this BREACH.
+# Echoes: <running> <installed|<none>> <age_days> <breach_at|none> <installed_at|none>. Read-only:
+# uname, dpkg-query, stat. breach_at is the epoch at which this kernel falls due (its .list mtime +
+# THRESHOLD_DAYS) — the instant a harness decision must POSTDATE to be a decision about this BREACH.
+# installed_at is that .list mtime itself (CH2: a CVE-fixed kernel is due from it, see derive()).
 kernel_facts() {
   local running installed pkg mtime age=-1 breach=none
   running="$(uname -r 2>/dev/null)"
@@ -129,17 +191,36 @@ kernel_facts() {
       [ "$running" != "$installed" ] && breach=$(( mtime + THRESHOLD_DAYS * 86400 ))
     fi
   fi
-  printf '%s %s %s %s\n' "${running:-<unknown>}" "${installed:-<none>}" "$age" "$breach"
+  printf '%s %s %s %s %s\n' "${running:-<unknown>}" "${installed:-<none>}" "$age" "$breach" "${mtime:-none}"
 }
 
-# --decide's ONE line (R2.1) — the harness's interface. Pure: no log, no page, no crontab read.
+# The decision, derived ONCE per invocation and projected by every path (--decide, --print-coverage,
+# the live path). Sets RUNNING INSTALLED AGE_DAYS BREACH_AT CVE_FLOOR RESULT VERDICT in the CALLING
+# shell (never a subshell). Read-only: it runs the floor helper's --rows and nothing else of it.
+derive() {
+  local installed_at
+  read -r RUNNING INSTALLED AGE_DAYS BREACH_AT installed_at <<<"$(kernel_facts)"
+  [ "$INSTALLED" = "<none>" ] && INSTALLED=""
+  CVE_FLOOR="$(floor_verdict)"
+  RESULT="$(combine "$(decide "$RUNNING" "$INSTALLED" "$AGE_DAYS" "$THRESHOLD_DAYS")" "$CVE_FLOOR")"
+  VERDICT="${RESULT%% *}"
+  # A CVE-fixed kernel on disk is due from the instant it was INSTALLED — its .list mtime, the one
+  # instrument this file already trusts for the newest kernel. Not "now": no harness record could ever
+  # postdate that, so COVERED_REFUSING would be unreachable and a refusing harness would never page.
+  # Not install + THRESHOLD_DAYS: that is exactly the wait architect ruling Q4 removes.
+  if [ "$CVE_FLOOR" = BELOW_FIX_INSTALLED ] && [[ "$installed_at" =~ ^[0-9]+$ ]]; then
+    BREACH_AT="$installed_at"
+  fi
+  return 0
+}
+
+# --decide's ONE line (R2.1) — the harness's interface. Pure: no log, no page, no crontab read, and
+# no nft read (the mitigation is asserted on the live path only). CH2 appends ` cve_floor=<V>` LAST, so
+# the harness's anchored `^KERNEL_STALENESS_DECISION=` match and its field regexes are untouched.
 decision_line() {
-  local running installed age breach result
-  read -r running installed age breach <<<"$(kernel_facts)"
-  [ "$installed" = "<none>" ] && installed=""
-  result="$(decide "$running" "$installed" "$age" "$THRESHOLD_DAYS")"
-  printf 'KERNEL_STALENESS_DECISION=%s running=%s installed=%s age_days=%s breach_at=%s\n' \
-    "${result%% *}" "$running" "${installed:-<none>}" "$age" "$breach"
+  derive
+  printf 'KERNEL_STALENESS_DECISION=%s running=%s installed=%s age_days=%s breach_at=%s cve_floor=%s\n' \
+    "$VERDICT" "$RUNNING" "${INSTALLED:-<none>}" "$AGE_DAYS" "$BREACH_AT" "$CVE_FLOOR"
 }
 
 # The estate host-label chain (R2.6): MONITORING_HOST_LABELS, then the identity file, then
@@ -339,9 +420,9 @@ ACT
   return 0
 }
 
-fire() { # fire <running> <installed> <age_days> <breach_at|0>
-  local running="$1" installed="$2" age="$3" breach="$4"
-  local label hn labelled action head
+fire() { # fire <running> <installed> <age_days> <breach_at|0> [cve_floor]
+  local running="$1" installed="$2" age="$3" breach="$4" floor="${5:-}"
+  local label hn labelled action head why=""
   read -r label hn labelled <<<"$(host_label)"
   coverage_state "$label" "$breach"
   log "auto_reboot_coverage=$CV_STATE host=$label${CV_AT:+ newest=$CV_AT $CV_VERDICT/$CV_GATE}${CV_NOTE:+ note=$CV_NOTE}"
@@ -355,12 +436,15 @@ fire() { # fire <running> <installed> <age_days> <breach_at|0>
   action="$(decide_action "$CV_STATE" "$CV_N" "$CV_SINCE" "$CV_AT" "$CV_VERDICT" "$CV_GATE" "$CV_DETAIL" "$CV_NOTE")"
   if [ "$labelled" = labelled ]; then head="Host <b>${label}</b> (${hn})"
   else head="Host <b>${hn}</b> (unlabelled — no MONITORING_HOST_LABELS and no ${IDENTITY_FILE})"; fi
+  if [ "$floor" = BELOW_FIX_INSTALLED ]; then
+    why=$'\n'"cve_floor: BELOW_FIX_INSTALLED — the installed kernel meets a CVE floor declared in ops/monitoring/kernel-cve-floors.json, so the reboot is due now rather than ${THRESHOLD_DAYS} days after the install."
+  fi
   printf '%s\n' "$(cat <<EOF
 ${head} is running an out-of-date kernel.
 
 running:   ${running}
 installed: ${installed}
-pending:   ${age} days
+pending:   ${age} days${why}
 
 The newer kernel is installed but not running, so every security fix between the two is on disk and
 inactive. A local privilege-escalation there also un-bounds the least-privilege work elsewhere in
@@ -378,11 +462,65 @@ EOF
 )" | "$SEND" "$ALERT_ID" CRITICAL_PERSISTENT - 2>>"$LOG" || log "FAIL_OPEN: send_telegram invocation failed"
 }
 
+# --- the interim mitigation: ASSERTED, never restored (OPS-CVE-2026-98432-INTERIM-W1 CH2) -------
+# While the running kernel is below a declared floor, that floor's interim nft table (loaded at boot by
+# its own unit) is the only control between the bug and the network. The helper's --mitigation reads
+# `nft list table` per row; this projects its ONE anchored verdict token and logs a POSITIVE line on
+# every run (PRESENT · MISSING · RETIRED · NONE · INDETERMINATE), so a dark check can never pass for a
+# healthy one. MISSING and INDETERMINATE page KERNEL_CVE_MITIGATION. Nothing here writes a network
+# rule: restoring the table is the operator's `systemctl restart <unit>`.
+mitigation_check() {
+  local out line v rest
+  out="$(floor_helper --mitigation)"
+  line="$(grep -E '^KERNEL_CVE_MITIGATION_VERDICT=(PRESENT|MISSING|RETIRED|NONE|INDETERMINATE)( |$)' <<<"$out" | tail -1)" || true
+  if [ -n "$line" ]; then
+    v="${line#KERNEL_CVE_MITIGATION_VERDICT=}"; v="${v%% *}"
+  else
+    v=INDETERMINATE
+    line="KERNEL_CVE_MITIGATION_VERDICT=INDETERMINATE note=the floor helper printed no verdict ($FLOOR_HELPER)"
+  fi
+  rest="${line#KERNEL_CVE_MITIGATION_VERDICT=$v}"
+  log "cve_mitigation=$v host=$HOSTLABEL${rest}"
+  case "$v" in MISSING|INDETERMINATE) fire_mitigation "$v" "$out" "$line" ;; esac
+  return 0
+}
+
+fire_mitigation() { # fire_mitigation <MISSING|INDETERMINATE> <helper output> <verdict line>
+  local v="$1" rows label hn labelled head what extra=""
+  rows="$(grep -E '^KERNEL_CVE_MITIGATION cve=' <<<"$2")" || true
+  read -r label hn labelled <<<"$(host_label)"
+  if [ ! -x "$SEND" ]; then
+    log "FAIL_OPEN: wrapper not executable at $SEND — operator NOT notified of cve_mitigation=$v"; return
+  fi
+  if [ "$labelled" = labelled ]; then head="Host <b>${label}</b> (${hn})"
+  else head="Host <b>${hn}</b> (unlabelled — no MONITORING_HOST_LABELS and no ${IDENTITY_FILE})"; fi
+  if [ "$v" = MISSING ]; then
+    what="is below a declared kernel-CVE floor and the interim mitigation for it is NOT loaded."
+  else
+    what="cannot prove it meets a declared kernel-CVE floor, and whether the interim mitigation for it is loaded could NOT be verified."
+    extra=$'\n'"If a row note says nft or the floor helper could not run, fix that first: until it runs, treat the table as absent."
+  fi
+  printf '%s\n' "$(cat <<EOF
+${head} ${what}
+
+${rows:-(no per-row line: ${3})}
+
+The floors are declared in ops/monitoring/kernel-cve-floors.json. Until the running kernel meets its floor, the nft table named on the row is the only control between that kernel bug and the network.
+
+Action: restore it by hand with: systemctl restart <the unit named on the row>. Its ExecCondition re-checks the floor before it loads anything. Confirm with: nft list table <family> <table>, as named by table=<family>/<table> on the row. Nothing restores it automatically: an unattended job may detect a missing network rule and page, but never writes one.
+A restart or reload of nftables.service re-runs /etc/nftables.conf, and on a host where that file begins with flush ruleset (aoe-1) it removes this table with everything else.${extra}
+
+recommended_wave: OPS-KERNEL-CVE-MITIGATION-W{NEXT}
+EOF
+)" | "$SEND" KERNEL_CVE_MITIGATION CRITICAL_PERSISTENT - 2>>"$LOG" || log "FAIL_OPEN: send_telegram invocation failed (cve_mitigation=$v)"
+}
+
 # --- two-way self-test, vacuity-guarded ------------------------------------------------------
 if [ "${1:-}" = "--self-test" ]; then
   fails=(); checked=0
   REAL_SEND="$SEND" REAL_LOG="$LOG" REAL_DPKG="$DPKG_INFO_DIR" REAL_RLD="$RESULT_LOG_DIR"
   REAL_REG="$ALERT_REGISTRY" REAL_ID="$IDENTITY_FILE" REAL_PY="$PY_BIN" REAL_CRONTAB="$CRONTAB_BIN"
+  REAL_FLOOR="$FLOOR_HELPER"
   ok() { checked=$((checked + 1)); printf '  ✓ %s\n' "$1"; }
   bad() { checked=$((checked + 1)); printf '  ✗ %s\n' "$1"; fails+=("$2"); }
   same() { # same <label> <got> <want> <tag>
@@ -419,12 +557,56 @@ if [ "${1:-}" = "--self-test" ]; then
   list_at=$(( $(date -u +%s) - 7 * 86400 - 3600 ))
   TZ=UTC touch -t "$(date -u -r "$list_at" +%Y%m%d%H%M.%S 2>/dev/null || date -u -d "@$list_at" +%Y%m%d%H%M.%S)" "$st/dpkg/linux-image-6.8.0-147-generic.list"
   breach=$(( $(stat -c %Y "$st/dpkg/linux-image-6.8.0-147-generic.list" 2>/dev/null || stat -f %m "$st/dpkg/linux-image-6.8.0-147-generic.list") + 7 * 86400 ))
-  sp() { PATH="$st/bin:$PATH" TZ=UTC KERNEL_CANARY_DPKG_INFO_DIR="$st/dpkg" "$@"; }
+  # The kernel-CVE floor helper, faked: its two answers come from SHIM_FLOOR (--rows, default MET, so
+  # every pre-CH2 fixture keeps its meaning) and SHIM_MIT (--mitigation, default PRESENT: no page).
+  # The REAL helper is asserted by its own --self-test and, wired to this script, by the e2e suite.
+  cat > "$st/floor.py" <<'PYFLOOR'
+import os, sys
+p = os.environ.get("SHIM_HELPER_ARGV")
+if p:
+    with open(p, "a") as fh:
+        fh.write(" ".join(sys.argv[1:]) + "\n")
+mode = sys.argv[1] if len(sys.argv) > 1 else ""
+R = ("KERNEL_CVE_FLOOR cve=%s release=noble flavor=generic fixed=6.8.0-149.149 state=%s "
+     "running=6.8.0-142-generic running_pkg=6.8.0-142.142 note=fixture")
+V = "KERNEL_CVE_FLOOR_VERDICT=%s applicable=1 met=0 below_fix_installed=0 below_fix_absent=0 indeterminate=0"
+if mode == "--rows":
+    out = {
+        "MET": [R % ("CVE-2026-98432", "MET"), V % "MET"],
+        "ABSENT": [R % ("CVE-2026-98432", "BELOW_FIX_ABSENT"), V % "BELOW"],
+        "INSTALLED": [R % ("CVE-2026-98432", "BELOW_FIX_INSTALLED"), V % "BELOW"],
+        "INSTALLED_PLUS_INDET": [R % ("CVE-2026-98432", "BELOW_FIX_INSTALLED"), R % ("CVE-2026-22222", "INDETERMINATE"), V % "INDETERMINATE"],
+        "NONE": [R % ("CVE-2026-98432", "NOT_APPLICABLE"), V % "NONE_APPLICABLE"],
+        "INDET": [V % "INDETERMINATE"],
+        "FOREIGN": ["FOO_" + V % "MET", "X" + R % ("CVE-2026-98432", "BELOW_FIX_INSTALLED")],
+        "CRASH": None,
+    }[os.environ.get("SHIM_FLOOR", "MET")]
+    if out is None:
+        sys.exit(1)
+    print("\n".join(out))
+    sys.exit(0)
+if mode == "--mitigation":
+    row = ("KERNEL_CVE_MITIGATION cve=CVE-2026-98432 floor_state=BELOW_FIX_ABSENT state=%s "
+           "table=inet/cve_2026_98432 unit=cve-2026-98432-nft.service note=%s")
+    VM = "KERNEL_CVE_MITIGATION_VERDICT=%s present=0 missing=0 retired=0 indeterminate=0"
+    out = {
+        "PRESENT": [row % ("PRESENT", "fixture"), VM % "PRESENT"],
+        "MISSING": [row % ("MISSING", "table inet cve_2026_98432 is not loaded"), VM % "MISSING"],
+        "RETIRED": [row % ("RETIRED", "fixture"), VM % "RETIRED"],
+        "NONE": [VM % "NONE"],
+        "INDETERMINATE": [row % ("INDETERMINATE", "nft could not run at /usr/sbin/nft"), VM % "INDETERMINATE"],
+        "SILENT": [],
+    }[os.environ.get("SHIM_MIT", "PRESENT")]
+    print("\n".join(out))
+    sys.exit(0)
+sys.exit(64)
+PYFLOOR
+  sp() { PATH="$st/bin:$PATH" TZ=UTC KERNEL_CANARY_DPKG_INFO_DIR="$st/dpkg" KERNEL_CANARY_FLOOR_HELPER="$st/floor.py" "$@"; }
 
   echo "--- --decide: ONE line, pure (R2.1) ---"
   out="$(sp env KERNEL_CANARY_LOG="$st/decide.log" KERNEL_CANARY_WRAPPER="$st/no-send.sh" KERNEL_CANARY_CRONTAB="$st/no-crontab.sh" bash "$0" --decide 2>&1)"
   same "--decide prints exactly ONE line" "$(printf '%s\n' "$out" | grep -c .)" "1" decide-lines
-  if [[ "$out" =~ ^KERNEL_STALENESS_DECISION=BREACH\ running=6\.8\.0-142-generic\ installed=6\.8\.0-147-generic\ age_days=7\ breach_at=([0-9]+)$ ]]; then
+  if [[ "$out" =~ ^KERNEL_STALENESS_DECISION=BREACH\ running=6\.8\.0-142-generic\ installed=6\.8\.0-147-generic\ age_days=7\ breach_at=([0-9]+)\ cve_floor=MET$ ]]; then
     ok "…KERNEL_STALENESS_DECISION=BREACH with running/installed/age_days/breach_at"
     same "…breach_at = the newest kernel's .list mtime + THRESHOLD_DAYS" "${BASH_REMATCH[1]}" "$breach" decide-breach-at
   else
@@ -432,9 +614,49 @@ if [ "${1:-}" = "--self-test" ]; then
   fi
   same "…and writes NO log (pure)" "$([ -e "$st/decide.log" ] && echo wrote || echo clean)" "clean" decide-nolog
   out="$(sp env SHIM_RUNNING=6.8.0-147-generic bash "$0" --decide 2>&1)"
-  same "--decide on the newest kernel ⇒ OK, breach_at=none" "$out" "KERNEL_STALENESS_DECISION=OK running=6.8.0-147-generic installed=6.8.0-147-generic age_days=7 breach_at=none" decide-ok
+  same "--decide on the newest kernel, every floor met ⇒ OK, breach_at=none" "$out" "KERNEL_STALENESS_DECISION=OK running=6.8.0-147-generic installed=6.8.0-147-generic age_days=7 breach_at=none cve_floor=MET" decide-ok
   out="$(sp env SHIM_NO_KERNELS=1 bash "$0" --decide 2>&1)"
-  same "--decide with no kernels ⇒ INDETERMINATE installed=<none>" "$out" "KERNEL_STALENESS_DECISION=INDETERMINATE running=6.8.0-142-generic installed=<none> age_days=-1 breach_at=none" decide-none
+  same "--decide with no kernels ⇒ INDETERMINATE installed=<none>" "$out" "KERNEL_STALENESS_DECISION=INDETERMINATE running=6.8.0-142-generic installed=<none> age_days=-1 breach_at=none cve_floor=MET" decide-none
+
+  echo "--- the CVE-floor dimension (OPS-CVE-2026-98432-INTERIM-W1 CH2) ---"
+  cmb() { # cmb <want> <staleness-result> <cve_floor> <label>
+    local got; got="$(combine "$2" "$3")"
+    case "$got" in "$1 "*) ok "$4 ⇒ $1" ;; *) bad "$4 ⇒ expected $1, got: $got" "cmb-$1-$3" ;; esac
+  }
+  cmb OK            "OK delta=0 — running the newest installed kernel" MET "up to date AND every floor met: the ONLY green"
+  cmb REPORT        "OK delta=0 — running the newest installed kernel" BELOW_FIX_ABSENT "up to date, below a floor, no fix on disk"
+  cmb REPORT        "OK delta=0 — running the newest installed kernel" INDETERMINATE "a floor the helper cannot answer is never green"
+  cmb REPORT        "OK delta=0 — running the newest installed kernel" NONE_APPLICABLE "no floor applies: the fix cannot be proven"
+  cmb BREACH        "REPORT age_days=2 (< 7d threshold — reporting, not paging)" BELOW_FIX_INSTALLED "a CVE-fixed kernel installed 2 d ago is due NOW (Q4)"
+  cmb BREACH        "BREACH age_days=9 (>= 7d) — firing wrapper" BELOW_FIX_ABSENT "a stale kernel stays a BREACH below the floor"
+  cmb REPORT        "REPORT age_days=2 (< 7d threshold — reporting, not paging)" MET "met, behind a fresh kernel: REPORT as before"
+  cmb INDETERMINATE "INDETERMINATE installed=<none-found> (dpkg query returned nothing — cannot decide)" BELOW_FIX_INSTALLED "an unreadable staleness answer stays INDETERMINATE"
+  has "…and BELOW_FIX_INSTALLED says why it skips the threshold" "$(combine 'REPORT age_days=2' BELOW_FIX_INSTALLED)" "due now, not after 7d" cmb-why
+  fv() { # fv <SHIM_FLOOR mode | missing>
+    if [ "$1" = missing ]; then ( FLOOR_HELPER="$st/no-such-helper.py"; floor_verdict )
+    else ( export SHIM_FLOOR="$1"; FLOOR_HELPER="$st/floor.py"; floor_verdict ); fi
+  }
+  for pair in "MET MET" "ABSENT BELOW_FIX_ABSENT" "INSTALLED BELOW_FIX_INSTALLED" "INSTALLED_PLUS_INDET BELOW_FIX_INSTALLED" \
+              "NONE NONE_APPLICABLE" "INDET INDETERMINATE" "FOREIGN INDETERMINATE" "CRASH INDETERMINATE" "missing INDETERMINATE"; do
+    set -- $pair
+    same "floor_verdict: helper answers $1 ⇒ $2" "$(fv "$1")" "$2" "fv-$1"
+  done
+  out="$(sp env SHIM_FLOOR=ABSENT SHIM_RUNNING=6.8.0-147-generic bash "$0" --decide 2>&1)"
+  same "--decide: the newest kernel, below a floor with no fix on disk ⇒ REPORT (never OK)" "$out" "KERNEL_STALENESS_DECISION=REPORT running=6.8.0-147-generic installed=6.8.0-147-generic age_days=7 breach_at=none cve_floor=BELOW_FIX_ABSENT" decide-floor-absent
+  # A FRESH install (2 d old): staleness alone only REPORTs, and would fall due at install + 7 d.
+  mkdir -p "$st/dpkg-fresh"; : > "$st/dpkg-fresh/linux-image-6.8.0-147-generic.list"
+  fresh_at=$(( $(date -u +%s) - 2 * 86400 - 3600 ))
+  TZ=UTC touch -t "$(date -u -r "$fresh_at" +%Y%m%d%H%M.%S 2>/dev/null || date -u -d "@$fresh_at" +%Y%m%d%H%M.%S)" "$st/dpkg-fresh/linux-image-6.8.0-147-generic.list"
+  fresh_mtime=$(stat -c %Y "$st/dpkg-fresh/linux-image-6.8.0-147-generic.list" 2>/dev/null || stat -f %m "$st/dpkg-fresh/linux-image-6.8.0-147-generic.list")
+  out="$(sp env KERNEL_CANARY_DPKG_INFO_DIR="$st/dpkg-fresh" SHIM_FLOOR=ABSENT bash "$0" --decide 2>&1)"
+  same "the control: a 2 d-old kernel with NO CVE fix only REPORTs, due at install + 7 d" "$out" "KERNEL_STALENESS_DECISION=REPORT running=6.8.0-142-generic installed=6.8.0-147-generic age_days=2 breach_at=$((fresh_mtime + 7 * 86400)) cve_floor=BELOW_FIX_ABSENT" decide-fresh-control
+  out="$(sp env KERNEL_CANARY_DPKG_INFO_DIR="$st/dpkg-fresh" SHIM_FLOOR=INSTALLED bash "$0" --decide 2>&1)"
+  same "…the same kernel carrying a CVE fix ⇒ BREACH now, breach_at = its install instant (Q4)" "$out" "KERNEL_STALENESS_DECISION=BREACH running=6.8.0-142-generic installed=6.8.0-147-generic age_days=2 breach_at=$fresh_mtime cve_floor=BELOW_FIX_INSTALLED" decide-fresh-fix
+  out="$(sp env KERNEL_CANARY_FLOOR_HELPER="$st/no-such-helper.py" SHIM_RUNNING=6.8.0-147-generic bash "$0" --decide 2>&1)"
+  same "no helper on disk ⇒ cve_floor=INDETERMINATE and REPORT: never green, never a reboot" "$out" "KERNEL_STALENESS_DECISION=REPORT running=6.8.0-147-generic installed=6.8.0-147-generic age_days=7 breach_at=none cve_floor=INDETERMINATE" decide-nohelper
+  rm -f "$st/helper-argv"
+  sp env SHIM_HELPER_ARGV="$st/helper-argv" bash "$0" --decide >/dev/null 2>&1
+  same "--decide asks the helper for --rows ONLY (no nft read on the harness's path)" "$(cat "$st/helper-argv" 2>/dev/null)" "--rows" decide-rows-only
 
   echo "--- host label: the estate chain (R2.6) ---"
   same "MONITORING_HOST_LABELS wins" "$(sp env MONITORING_HOST_LABELS=signal-1,x KERNEL_CANARY_IDENTITY_FILE=/nonexistent bash -c "$(declare -f host_label); IDENTITY_FILE=/nonexistent host_label")" "signal-1 testhost labelled" label-env
@@ -548,6 +770,50 @@ if [ "${1:-}" = "--self-test" ]; then
   live ''
   has "SILENT pages that the harness is dead or not deciding" "$(cat "$st/captured" 2>/dev/null)" "has written no decision since never" live-silent
 
+  echo "--- CH2 on the cron path: a CVE-fixed kernel pages at 2 days; the mitigation is asserted, never restored ---"
+  rm -f "$st/captured" "$st/live.log"
+  printf '%s' "$(rec $((now - 1800)) signal-1 DEFERRED in_flight 4)" > "$st/results.jsonl"
+  sp env CAPTURE="$st/captured" ST_RESULTS="$st/results.jsonl" MONITORING_HOST_LABELS=signal-1 \
+    KERNEL_CANARY_DPKG_INFO_DIR="$st/dpkg-fresh" SHIM_FLOOR=INSTALLED SHIM_MIT=PRESENT \
+    KERNEL_CANARY_CRONTAB="$cron_yes" KERNEL_CANARY_RESULT_LOG_DIR="$st/rl" KERNEL_CANARY_ALERT_REGISTRY="$st/reg.json" \
+    KERNEL_CANARY_WRAPPER="$st/send.sh" KERNEL_CANARY_LOG="$st/live.log" bash "$0" >/dev/null 2>&1
+  body="$(cat "$st/captured" 2>/dev/null)"
+  has "a refused reboot onto a CVE-fixed kernel pages KERNEL_STALENESS at 2 days old" "$body" "argv=KERNEL_STALENESS|CRITICAL_PERSISTENT|-" floor-page
+  has "…naming the floor that made it due now" "$body" "cve_floor: BELOW_FIX_INSTALLED — the installed kernel meets a CVE floor declared in ops/monitoring/kernel-cve-floors.json" floor-page-why
+  has "…and the harness's refusal AFTER the install instant (COVERED_REFUSING)" "$body" "refused 4 consecutive run(s)" floor-page-record
+  mlive() { # mlive <SHIM_MIT> [env…] — the NEWEST kernel, below a floor with no fix: staleness pages nothing
+    local m="$1"; shift
+    rm -f "$st/captured" "$st/live.log"
+    sp env CAPTURE="$st/captured" ST_RESULTS="$st/results.jsonl" MONITORING_HOST_LABELS=signal-1 \
+      SHIM_RUNNING=6.8.0-147-generic SHIM_FLOOR=ABSENT SHIM_MIT="$m" \
+      KERNEL_CANARY_CRONTAB="$cron_yes" KERNEL_CANARY_RESULT_LOG_DIR="$st/rl" KERNEL_CANARY_ALERT_REGISTRY="$st/reg.json" \
+      KERNEL_CANARY_WRAPPER="$st/send.sh" KERNEL_CANARY_LOG="$st/live.log" "$@" bash "$0" >/dev/null 2>&1
+  }
+  mlive MISSING
+  body="$(cat "$st/captured" 2>/dev/null)"
+  has "MISSING pages as KERNEL_CVE_MITIGATION CRITICAL_PERSISTENT -" "$body" "argv=KERNEL_CVE_MITIGATION|CRITICAL_PERSISTENT|-" mit-argv
+  has "…headed by the estate label: the mitigation is NOT loaded" "$body" "Host <b>signal-1</b> (testhost) is below a declared kernel-CVE floor and the interim mitigation for it is NOT loaded." mit-head
+  has "…quoting the helper's row (table, unit, note)" "$body" "state=MISSING table=inet/cve_2026_98432 unit=cve-2026-98432-nft.service note=table inet cve_2026_98432 is not loaded" mit-row
+  has "…naming the hand restore through the unit" "$body" "systemctl restart <the unit named on the row>" mit-action
+  has "…and that nothing restores it automatically" "$body" "never writes one" mit-never
+  has "…and keeps the {NEXT} template" "$body" "recommended_wave: OPS-KERNEL-CVE-MITIGATION-W{NEXT}" mit-next
+  same "…exactly ONE page (the decision on the newest kernel pages nothing)" "$(grep -c '^argv=' "$st/captured" 2>/dev/null)" "1" mit-one-page
+  has "…the log carries the positive token" "$(cat "$st/live.log" 2>/dev/null)" "cve_mitigation=MISSING host=signal-1 present=0" mit-log-missing
+  has "…beside the decision's VERDICT=REPORT line" "$(cat "$st/live.log" 2>/dev/null)" "VERDICT=REPORT host=signal-1" mit-log-verdict
+  for m in PRESENT RETIRED NONE; do
+    mlive "$m"
+    same "$m does NOT page" "$([ -s "$st/captured" ] && echo paged || echo silent)" "silent" "mit-silent-$m"
+    has "…and still logs cve_mitigation=$m (a positive line on every run)" "$(cat "$st/live.log" 2>/dev/null)" "cve_mitigation=$m host=signal-1" "mit-log-$m"
+  done
+  mlive INDETERMINATE
+  has "INDETERMINATE pages that the mitigation could NOT be verified" "$(cat "$st/captured" 2>/dev/null)" "could NOT be verified" mit-indet
+  has "…and says to treat the table as absent until the check runs" "$(cat "$st/captured" 2>/dev/null)" "treat the table as absent" mit-indet-extra
+  mlive SILENT
+  has "a helper that prints no verdict pages too" "$(cat "$st/captured" 2>/dev/null)" "argv=KERNEL_CVE_MITIGATION|CRITICAL_PERSISTENT|-" mit-silent-helper
+  has "…and the log says why" "$(cat "$st/live.log" 2>/dev/null)" "cve_mitigation=INDETERMINATE host=signal-1 note=the floor helper printed no verdict" mit-silent-log
+  mlive PRESENT KERNEL_CANARY_FLOOR_HELPER="$st/no-such-helper.py"
+  has "no helper on disk at all pages INDETERMINATE (a dark check never passes)" "$(cat "$st/captured" 2>/dev/null)" "argv=KERNEL_CVE_MITIGATION|CRITICAL_PERSISTENT|-" mit-nohelper
+
   echo "--- SEAMS: the real defaults no fixture above can see ---"
   same "SEAM — the REAL alert wrapper" "$REAL_SEND" "/opt/algovault-monitoring/send_telegram.sh" seam-send
   same "SEAM — the REAL canary log" "$REAL_LOG" "/var/log/kernel-staleness-canary.log" seam-log
@@ -558,15 +824,16 @@ if [ "${1:-}" = "--self-test" ]; then
   same "SEAM — the REAL python" "$REAL_PY" "python3" seam-py
   same "SEAM — the REAL crontab" "$REAL_CRONTAB" "crontab" seam-crontab
   same "SEAM — the harness record a decision is read from is the harness's own canary name" "${AUTO_REBOOT_BASENAME%.sh}" "kernel-auto-reboot" seam-canary
+  same "SEAM — the REAL kernel-CVE floor helper" "$REAL_FLOOR" "/opt/algovault-monitoring/kernel-cve-floor.py" seam-floor
 
   # Vacuity guard: a self-test that asserts nothing must never report a pass.
-  if [ "$checked" -lt 70 ]; then
-    echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= 70)"; exit 3
+  if [ "$checked" -lt 110 ]; then
+    echo "SELF_TEST_VERDICT=INDETERMINATE — only $checked assertions ran (expected >= 110)"; exit 3
   fi
   if [ "${#fails[@]}" -gt 0 ]; then
     echo "SELF_TEST_VERDICT=FAIL — ${#fails[@]}/$checked: ${fails[*]}"; exit 1
   fi
-  echo "SELF_TEST_VERDICT=PASS — $checked assertions (decide fixtures, --decide purity + shape, the host-label chain, record-projected coverage in every state, every Action branch + direction-2 citations, --print-coverage, the cron path end to end, real seam defaults)"
+  echo "SELF_TEST_VERDICT=PASS — $checked assertions (decide fixtures, --decide purity + shape, the host-label chain, record-projected coverage in every state, every Action branch + direction-2 citations, --print-coverage, the cron path end to end, the CVE-floor dimension + the KERNEL_CVE_MITIGATION page, real seam defaults)"
   exit 0
 fi
 
@@ -581,20 +848,16 @@ fi
 # no live instrument could read it on a HEALTHY host, which is exactly when an install must be
 # verified. Prints the one line and writes nothing: no log, no wrapper (dpkg/uname are read-only).
 if [ "${1:-}" = "--print-coverage" ]; then
-  read -r _R _I _A PC_BREACH <<<"$(kernel_facts)"
+  derive   # the SAME breach instant the live path judges against (CH2 may move it to the install)
   read -r PC_LABEL _HN _LBL <<<"$(host_label)"
-  coverage_state "$PC_LABEL" "$PC_BREACH"
+  coverage_state "$PC_LABEL" "$BREACH_AT"
   echo "AUTO_REBOOT_COVERAGE=$CV_STATE"
   exit 0
 fi
 
 # --- live path -------------------------------------------------------------------------------
-read -r RUNNING INSTALLED AGE_DAYS BREACH_AT <<<"$(kernel_facts)"
-[ "$INSTALLED" = "<none>" ] && INSTALLED=""
+derive
 read -r HOSTLABEL _HN _LBL <<<"$(host_label)"
-
-RESULT="$(decide "$RUNNING" "$INSTALLED" "$AGE_DAYS" "$THRESHOLD_DAYS")"
-VERDICT="${RESULT%% *}"
 # POSITIVE per-host output on EVERY path: a row silently skipped by a load error must not look
 # identical to a row that passed.
 log "VERDICT=$VERDICT host=$HOSTLABEL running=$RUNNING installed=${INSTALLED:-<none>} ${RESULT#* }"
@@ -603,6 +866,7 @@ if [ "$VERDICT" = "BREACH" ]; then
   # An unknown install time cannot place a breach instant: every harness record then counts as a
   # decision about it (fail toward noise, never toward silence).
   [ "$BREACH_AT" = none ] && BREACH_AT=0
-  fire "$RUNNING" "$INSTALLED" "$AGE_DAYS" "$BREACH_AT"
+  fire "$RUNNING" "$INSTALLED" "$AGE_DAYS" "$BREACH_AT" "$CVE_FLOOR"
 fi
+mitigation_check
 exit 0

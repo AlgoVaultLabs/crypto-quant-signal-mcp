@@ -460,6 +460,20 @@
       ]
     },
     {
+      "alert_id": "KERNEL_CVE_MITIGATION",
+      "owner": "ops/monitoring/kernel-staleness-canary.sh",
+      "hosts": [
+        "aoe-1",
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-KERNEL_CVE_MITIGATION-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-KERNEL_CVE_MITIGATION-W{NEXT}",
+      "notes": "OPS-CVE-2026-98432-INTERIM-W1 CH2 (architect SCOPE DELTA: while the running kernel is below a declared floor the canary asserts the interim table + drop rule PRESENT, and an absent one pages through the existing path). Raised only by the LIVE path of kernel-staleness-canary.sh, never by --decide: it consumes kernel-cve-floor.py --mitigation, which LISTS each below-floor row's declared nft table and never writes one. Pages MISSING (table not loaded, or loaded without a rule carrying the declared match and verdict outside its comment) and INDETERMINATE (nft or the helper could not answer; until it can, the table is treated as absent). PRESENT, RETIRED (the running kernel meets the floor) and NONE log a positive cve_mitigation= line and stay silent. Restoration is a human `systemctl restart <unit>`: an unattended job never writes a network rule. Measured 2026-11-06: on aoe-1 nftables.service is enabled and /etc/nftables.conf begins with `flush ruleset`, so its restart or reload removes the table; signal-1 has nftables.service disabled. Fire site is a literal `\"$SEND\" KERNEL_CVE_MITIGATION CRITICAL_PERSISTENT -`, so scripts/check-alert-registry.mjs detects it by position. Resolution SILENT by the registry default."
+    },
+    {
       "alert_id": "KERNEL_AUTO_REBOOT",
       "owner": "ops/monitoring/kernel-auto-reboot.sh",
       "hosts": [
