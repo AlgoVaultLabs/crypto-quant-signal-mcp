@@ -180,7 +180,53 @@ test('the github-actions dead end stays marked unusable', () => {
   assert.ok(gha.count_at_owner_wave > 2500, 'the count that makes it unusable must stay recorded');
 });
 
+// OPS-CVE-2026-98432-INTERIM-W1 — the ONE in-VM exception to "the cloud firewall is the only
+// enforcement layer". It must stay DECLARED on every host, so that claim is never silently false. It
+// must stay TIME-BOXED: the removal trigger names the floor row, never a date or a bare version. And
+// it must stay in step with the committed bytes that enforce it.
+const NFT = path.join(REPO, 'ops/systemd/cve-2026-98432/cve-2026-98432.nft');
+const FLOORS = path.join(REPO, 'ops/monitoring/kernel-cve-floors.json');
+const nftCode = (text) => text.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+const verdictRules = (text) => nftCode(text).split('\n')
+  .filter((l) => /\b(accept|drop|reject)\b/.test(l) && !/\bpolicy\b/.test(l));
+
+test('the CVE-2026-98432 in-VM exception is declared on every host, time-boxed, and matches its ruleset', () => {
+  const row = JSON.parse(readFileSync(FLOORS, 'utf8')).floors.find((r) => r.cve === 'CVE-2026-98432');
+  assert.ok(row?.mitigation, 'kernel-cve-floors.json lost the CVE-2026-98432 row or its mitigation');
+  assert.match(doc._enforcement_semantics, /in_vm_layer\.cve_2026_98432/,
+    '_enforcement_semantics must name the exception, or its "ONLY enforcement layer" claim is false');
+  for (const [host, cfg] of Object.entries(doc.hosts)) {
+    const ex = cfg.in_vm_layer?.cve_2026_98432;
+    assert.equal(ex?.state, 'interim-mitigation', `${host}: the in-VM exception is not declared`);
+    assert.ok(ex.rollback?.includes('systemctl disable --now cve-2026-98432-nft.service'),
+      `${host}: the per-host rollback is not recorded`);
+  }
+  const trigger = doc.hosts['signal-1'].in_vm_layer.cve_2026_98432.removal_trigger;
+  assert.match(trigger, /kernel-cve-floors\.json/, 'the removal trigger must point at the floor row');
+  assert.match(trigger, /dpkg --compare-versions/, 'the removal trigger must compare PACKAGE versions');
+  assert.doesNotMatch(trigger, /\b6\.8\.0-\d+\.\d+\b/, 'a bare version here is a second copy of the floor');
+
+  const ruleset = readFileSync(NFT, 'utf8');
+  const m = row.mitigation;
+  assert.ok(nftCode(ruleset).includes(`table ${m.nft_family} ${m.nft_table} {`),
+    'the committed ruleset does not define the table the floors row declares');
+  assert.match(nftCode(ruleset), /type filter hook prerouting priority -310;/,
+    'prerouting at -310 is what covers Docker-published ports (DNAT at -100)');
+  assert.doesNotMatch(nftCode(ruleset), /flush\s+ruleset/, 'the ruleset must never clobber Docker/f2b/nftables.service');
+  const rules = verdictRules(ruleset);
+  assert.equal(rules.length, 1, `exactly ONE verdict rule expected, found ${rules.length}`);
+  assert.ok(rules[0].includes(m.nft_rule_match) && /\bdrop\b/.test(rules[0]),
+    `the one rule must ${m.nft_rule_verdict} \`${m.nft_rule_match}\`: ${rules[0]}`);
+});
+
 test('self-check: every detector fires on a known-bad fixture (both directions)', () => {
+  // In-VM exception detectors (OPS-CVE-2026-98432-INTERIM-W1).
+  assert.match(nftCode('flush ruleset\ntable inet x {}'), /flush\s+ruleset/, 'flush detector would not fire');
+  assert.doesNotMatch(nftCode('# flush ruleset is forbidden here\ntable inet x {}'), /flush\s+ruleset/,
+    'flush detector would false-fire on a comment');
+  assert.equal(verdictRules('type filter hook prerouting priority -310; policy accept;\nip hdrlength > 5 drop\ntcp dport 22 accept').length, 2,
+    'verdict-rule counter would not see a second rule');
+
   // Address detector — RFC-5737 documentation addresses, never a real host address.
   assert.ok(!isNonRoutable('198.51.100.7'), 'address detector would not fire on a public address');
   assert.ok(isNonRoutable('127.0.0.1') && isNonRoutable('172.18.0.1') && isNonRoutable('0.0.0.0'),

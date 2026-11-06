@@ -347,6 +347,18 @@ DECLARATIONS=(
   # canary is an ARTIFACT (executable, installed by reviewed SSH and never by this script).
   # It lands WITH its consumer, in one commit (Vacuity Guard 3 above).
   "node-runtime-registry.json|runtimes|10|signal-1,aoe-1"
+  # ── added by OPS-CVE-2026-98432-INTERIM-W1 CH1 ──
+  # The kernel-CVE floors (architect ruling Q4: each future kernel CVE becomes ONE row). Read by
+  # kernel-cve-floor.py on BOTH hosts — the cve-2026-98432-nft.service ExecCondition at boot, and
+  # kernel-staleness-canary.sh hourly — and aoe-1 has no checkout of this repo, so this sync is its
+  # only source. Named hosts, not `*` (the node-runtime-registry row's form).
+  # A failed sync costs nothing unsafe: the helper reads a missing or unparseable copy as NOT_MET,
+  # and the ExecCondition then LOADS the mitigation.
+  # `floors` is live 1, so the refusal floor is 0, presence only. It must sit strictly below the live
+  # count, and this row is a truncation guard, never a target.
+  # THE PAIRING: kernel-cve-floors.json is a DECLARATION (inert JSON, synced here) and
+  # kernel-cve-floor.py is an ARTIFACT (executable, installed by reviewed SSH, never here).
+  "kernel-cve-floors.json|floors|0|signal-1,aoe-1"
 )
 
 # Exactly one terminal token on stdout, plus — outside the hermetic suite — a durable record in

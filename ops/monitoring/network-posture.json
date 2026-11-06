@@ -12,7 +12,7 @@
     "already-loopback": "bound to 127.0.0.1 — needs no firewall rule at all; recorded so a future rebind to 0.0.0.0 is caught by POSTURE_DRIFT on its first cycle",
     "declared-closed": "deliberately unreachable from the internet; access is via another path (SSH tunnel, Cloudflare Tunnel)"
   },
-  "_enforcement_semantics": "The Hetzner Cloud Firewall is the ONLY enforcement layer, deliberately. It is enforced OUTSIDE the VM, so a bad rule cannot sever console access the way a bad `ufw enable` can, and it is not bypassed by Docker's iptables chains. See `in_vm_layer` per host for why nothing runs inside the VM. NO AUTOMATED MUTATION: an unattended job must never change a network rule — POSTURE_DRIFT detects and alerts, a human-dispatched wave applies. That limit is deliberate, not a gap.",
+  "_enforcement_semantics": "The Hetzner Cloud Firewall is the ONLY enforcement layer, deliberately. It is enforced OUTSIDE the VM, so a bad rule cannot sever console access the way a bad `ufw enable` can, and it is not bypassed by Docker's iptables chains. See `in_vm_layer` per host for why nothing runs inside the VM. NO AUTOMATED MUTATION: an unattended job must never change a network rule — POSTURE_DRIFT detects and alerts, a human-dispatched wave applies. That limit is deliberate, not a gap. ONE DECLARED, TIME-BOXED EXCEPTION (OPS-CVE-2026-98432-INTERIM-W1, architect ruling Q2): `in_vm_layer.cve_2026_98432` on both hosts drops IPv4 TCP carrying IP options, a packet SHAPE the cloud firewall cannot match. It removes no port and no source from the posture below, and it retires itself at the kernel floor declared in kernel-cve-floors.json.",
   "source_aliases": {
     "any": {
       "resolves_to": "0.0.0.0/0 + ::/0",
@@ -52,6 +52,17 @@
         "docker_user_chain": {
           "state": "declared-empty",
           "rationale": "DOCKER-USER exists on this host and is INTENTIONALLY empty. It is the one chain consulted BEFORE Docker's own ACCEPT rules, so it is the correct in-VM lever if one is ever needed — but it is redundant underneath an out-of-VM cloud firewall. Declared here so its emptiness is not mistaken for unfinished work."
+        },
+        "cve_2026_98432": {
+          "state": "interim-mitigation",
+          "ruling": "OPS-CVE-2026-98432-INTERIM-W1, architect ruling Q2 = A",
+          "what": "nft `table inet cve_2026_98432`, one chain `prerouting` (filter hook, priority -310, policy accept), ONE rule: drop IPv4 TCP whose IP header carries options (`ip protocol tcp ip hdrlength > 5`). Loaded at boot by cve-2026-98432-nft.service from /etc/cve-2026-98432.nft. Companion: net.mptcp.enabled=0 in the host netns via /etc/sysctl.d/60-cve-2026-98432-mptcp.conf.",
+          "why_in_vm": "The cloud firewall matches addresses, ports and protocols. It cannot match an IP-header length, so the one enforcement layer this file names cannot express this mitigation at all.",
+          "why_not_docker_user": "DOCKER-USER sits on the FORWARD path and never sees a SYN to a host process (sshd, caddy). A prerouting hook at -310 sees both kinds: host-bound packets, and container-published packets before Docker's DNAT at -100.",
+          "posture_unchanged": "It drops no port and no source: every `inbound` row keeps its declared reachability. POSTURE_DRIFT's probe is a plain TCP connect whose SYN carries no IP options, so the drop is invisible to it by construction.",
+          "removal_trigger": "The running kernel PACKAGE version (dpkg-query -W -f='${Version}' linux-image-$(uname -r), compared with dpkg --compare-versions, never the uname -r string) is >= the CVE-2026-98432 floor in ops/monitoring/kernel-cve-floors.json. From the first boot on such a kernel the unit's ExecCondition no longer loads the table. The files are removed by a later housekeeping wave.",
+          "automation_boundary": "No unattended job adds, restores or edits this rule. The unit's ExecCondition decides only whether to LOAD the committed file at boot, and it can skip the load only on a positive proof that the fixed kernel is running; any error or unknown loads it.",
+          "rollback": "systemctl disable --now cve-2026-98432-nft.service; rm -f /etc/systemd/system/cve-2026-98432-nft.service /etc/cve-2026-98432.nft; systemctl daemon-reload; rm -f /etc/sysctl.d/60-cve-2026-98432-mptcp.conf; sysctl -w net.mptcp.enabled=1"
         }
       },
       "inbound": [
@@ -176,6 +187,17 @@
         "docker_user_chain": {
           "state": "declared-empty",
           "rationale": "See signal-1. Empty by intent, not by omission."
+        },
+        "cve_2026_98432": {
+          "state": "interim-mitigation",
+          "ruling": "OPS-CVE-2026-98432-INTERIM-W1, architect ruling Q2 = A",
+          "what": "Identical to signal-1.in_vm_layer.cve_2026_98432 — the same committed ruleset, unit and sysctl file.",
+          "why_in_vm": "See signal-1.",
+          "why_not_docker_user": "See signal-1. This host makes the point sharpest: its ONE world-exposed container port (8080) is DNAT'd at prerouting, so an input-hook rule (Canonical's published form) would never see a SYN to it.",
+          "posture_unchanged": "See signal-1. nftables.service's own `table inet filter` (input policy drop) is untouched: this table is separate and runs earlier.",
+          "removal_trigger": "See signal-1 — the same floor row, evaluated on this host.",
+          "automation_boundary": "See signal-1.",
+          "rollback": "systemctl disable --now cve-2026-98432-nft.service; rm -f /etc/systemd/system/cve-2026-98432-nft.service /etc/cve-2026-98432.nft; systemctl daemon-reload; rm -f /etc/sysctl.d/60-cve-2026-98432-mptcp.conf; sysctl -w net.mptcp.enabled=1"
         }
       },
       "inbound": [

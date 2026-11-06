@@ -87,7 +87,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "987263b7f131bd7203587668438821330d386577901dd140a4fbbd1010d19a39",
+      "sha256": "260661984518f894e7dfd4f11b71c3f8eb353e4de031cbfbd53945b434f24dca",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
@@ -1227,7 +1227,7 @@
       ],
       "criticality": "load-bearing",
       "install_state": "installed",
-      "sha256": "4096e92090bef197632d88423270971fd315eabac8dbd5abe598700a5625a03c",
+      "sha256": "6c04e9c1dee6d2183e8cb37f2f9d37c3789f6a9473e0dfd3bab4f39ba4ac49ed",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],
@@ -3477,6 +3477,125 @@
         "at": "20261106T041020Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
+    },
+    {
+      "id": "kernel-cve-floor",
+      "artifact": "ops/monitoring/kernel-cve-floor.py",
+      "kind": "executable",
+      "host_path": "/opt/algovault-monitoring/kernel-cve-floor.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/kernel-cve-floor.py"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/kernel-cve-floor.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "systemd:cve-2026-98432-nft.service (ExecCondition, --met CVE-2026-98432)",
+      "install_state": "pending",
+      "sha256": "65681aab283b857c01a2c8b65e0d4ce12c6f76f0b5dbd2646b2c3b9319ff17bb",
+      "alert_ids": [],
+      "owner_wave": "OPS-CVE-2026-98432-INTERIM-W1",
+      "notes": "The ONE comparator of kernel-CVE floors (single-derivation). `--met <CVE>` prints KERNEL_CVE_FLOOR_MET=<CVE> only on a POSITIVE proof (floors parsed, at least one row applies to this host, every applicable row MET); cve-2026-98432-nft.service's ExecCondition consumes it through a /bin/sh wrapper that skips the load ONLY on that exact token AND exit 0, so every error, unknown, crash, timeout or missing interpreter LOADS the mitigation (systemd skips a unit whose ExecCondition exits 1-254, which is why the helper is never run bare). `--rows` prints one KERNEL_CVE_FLOOR line per row plus KERNEL_CVE_FLOOR_VERDICT=MET|BELOW|NONE_APPLICABLE|INDETERMINATE. Compares the RUNNING kernel's PACKAGE version (dpkg-query linux-image-$(uname -r)) with dpkg --compare-versions, never the uname -r string. A row applies only when the Ubuntu release, the flavour AND the upstream line all match, so an HWE 6.11 kernel never compares above a 6.8 floor. Read-only: no log, page, write or network. `--self-test` is hermetic and two-way: 85 assertions on a host, 6 of them against the real dpkg (79 off-host). tests/unit/kernel-cve-floor.test.ts pins a mutant without the line check FAILING it. Run as `python3 -I`."
+    },
+    {
+      "id": "kernel-cve-floors",
+      "artifact": "ops/monitoring/kernel-cve-floors.json",
+      "kind": "declaration-data",
+      "host_path": "/opt/algovault-monitoring/kernel-cve-floors.json",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/kernel-cve-floors.json"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/kernel-cve-floors.json"
+        }
+      ],
+      "criticality": "load-bearing",
+      "invoked_by": "read-by:kernel-cve-floor.py",
+      "install_state": "pending",
+      "sha256": "1ee054dc95375a316e6653abac862148c3199420e8858c8d7ec16dbf73202827",
+      "alert_ids": [],
+      "owner_wave": "OPS-CVE-2026-98432-INTERIM-W1",
+      "notes": "The kernel-CVE floors (architect ruling Q4: each future kernel CVE becomes ONE row), keyed by cve + Ubuntu release + kernel flavour; the first noble/generic row is CVE-2026-98432 >= 6.8.0-149.149 (tracker: pending, -proposed only, verified 2026-11-06). CLASSIFICATION: inert JSON DATA, i.e. a DECLARATION. It is SYNCED hourly to both hosts by declaration-sync.sh (`kernel-cve-floors.json|floors|0|signal-1,aoe-1`), and first-installed through install-monitoring-artifact.sh. Read only by kernel-cve-floor.py. A missing or unparseable copy reads as NOT_MET to the ExecCondition, which then LOADS the mitigation, so a failed sync can never retire it."
+    },
+    {
+      "id": "cve-2026-98432-nft-ruleset",
+      "artifact": "ops/systemd/cve-2026-98432/cve-2026-98432.nft",
+      "kind": "config",
+      "host_path": "/etc/cve-2026-98432.nft",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/etc/cve-2026-98432.nft"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/etc/cve-2026-98432.nft"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "systemd:cve-2026-98432-nft.service (ExecStart)",
+      "install_state": "pending",
+      "sha256": "78841a15b96ff76c882a595f3df1e0177948d53b9864a1beb16273b0d3f7ea63",
+      "alert_ids": [],
+      "owner_wave": "OPS-CVE-2026-98432-INTERIM-W1",
+      "notes": "Interim CVE-2026-98432 mitigation. Owns ONLY `table inet cve_2026_98432`: chain prerouting at -310 (after defrag -400, before conntrack and Docker's DNAT at -100), one rule dropping IPv4 TCP that carries IP options. It never flushes the ruleset. Declared in network-posture.json in_vm_layer.cve_2026_98432. Validated on a disposable netns on BOTH hosts before any install: reloads idempotently, a crafted IP-options SYN is counted and a plain SYN is not. Its Stage A sibling (cve-2026-98432-stage-a.nft, count + rate-limited log, no drop) is piped from the landed commit with `nft -f -` and never installed as a file, so it has no row. Removal trigger: the running kernel package reaches the CVE-2026-98432 floor in kernel-cve-floors.json. From that boot the unit's ExecCondition stops loading this table; removing the file rides a later housekeeping wave."
+    },
+    {
+      "id": "cve-2026-98432-nft-unit",
+      "artifact": "ops/systemd/cve-2026-98432/cve-2026-98432-nft.service",
+      "kind": "config",
+      "host_path": "/etc/systemd/system/cve-2026-98432-nft.service",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/etc/systemd/system/cve-2026-98432-nft.service"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/etc/systemd/system/cve-2026-98432-nft.service"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "systemd:sysinit.target",
+      "install_state": "pending",
+      "sha256": "4b322b08a9bd2ec3dfad6e3be3854fc2664b480ee272dd24ab4be6b6891bfb96",
+      "alert_ids": [],
+      "owner_wave": "OPS-CVE-2026-98432-INTERIM-W1",
+      "notes": "A dedicated oneshot unit, WantedBy=sysinit.target, After=nftables.service ufw.service, Before=network-pre.target. It is deliberately NOT Canonical's nftables.conf include: every nftables.conf on this estate starts with `flush ruleset`. The ExecCondition is the fail-safe /bin/sh wrapper around kernel-cve-floor.py --met CVE-2026-98432 (see that row). ExecStop deletes only its own table. `systemd-analyze verify` is clean on both hosts. Mode is set to 0644 after install, because the installer's first-install default (755) makes systemd warn about an executable unit file. Per-host rollback: systemctl disable --now cve-2026-98432-nft.service; rm -f this file and /etc/cve-2026-98432.nft; systemctl daemon-reload. KNOWN LIMIT: on aoe-1, restarting or reloading nftables.service re-runs its `flush ruleset`. That drops this table (and Docker's chains) while this unit still reads active. Restore with `systemctl restart cve-2026-98432-nft.service`. No unattended job restores it, because a firewall mutation is never automated."
+    },
+    {
+      "id": "cve-2026-98432-mptcp-sysctl",
+      "artifact": "ops/systemd/cve-2026-98432/60-cve-2026-98432-mptcp.conf",
+      "kind": "config",
+      "host_path": "/etc/sysctl.d/60-cve-2026-98432-mptcp.conf",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/etc/sysctl.d/60-cve-2026-98432-mptcp.conf"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/etc/sysctl.d/60-cve-2026-98432-mptcp.conf"
+        }
+      ],
+      "criticality": "medium",
+      "schedule": null,
+      "invoked_by": "systemd:systemd-sysctl.service",
+      "install_state": "pending",
+      "sha256": "9fee4710c2401b64ad2ae5af11f0559517f9dd723c728d06d75866802f2199ce",
+      "alert_ids": [],
+      "owner_wave": "OPS-CVE-2026-98432-INTERIM-W1",
+      "notes": "net.mptcp.enabled = 0 in the host netns only (the sysctl is per network namespace). This is defence in depth: the known exploit rides MPTCP, while the nft table is the primary mitigation. R0 measured zero MPTCP listeners in the host and every container netns, and MPCapableSYNRX 0 since boot (ss -HMln netid histogram; the spec's `ss -Mltn` ORs in plain TCP). It is applied live with `sysctl -p <this file>`, never `sysctl --system`, which would re-apply every file. Removal trigger: same as the nft ruleset. Rollback: rm -f this file; sysctl -w net.mptcp.enabled=1."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

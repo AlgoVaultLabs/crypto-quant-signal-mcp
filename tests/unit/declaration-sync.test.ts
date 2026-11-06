@@ -45,6 +45,17 @@ function run(...args: string[]): { out: string; code: number } {
  * will not match a 3-field row, so an entry written in the old shape fails the vacuity guard below
  * rather than being silently parsed with an undefined scope and synced everywhere.
  */
+/**
+ * The ONE directory the sync writes into, parsed from the script's own `DEST_DIR=` default — never a
+ * second hardcoded copy (OPS-CVE-2026-98432-INTERIM-W1). Every write is `$DEST_DIR/<name>`, so a
+ * host copy anywhere else is a path this sync cannot serve by construction.
+ */
+function syncDestDir(): string {
+  const m = /^DEST_DIR=\$\{DECLARATION_SYNC_DEST_DIR:-([^}]+)\}$/m.exec(readFileSync(SCRIPT, 'utf8'));
+  if (!m) throw new Error('could not locate DEST_DIR= in the script');
+  return m[1];
+}
+
 function declaredSet(): { name: string; key: string; min: number; scope: string; source?: string }[] {
   const src = readFileSync(SCRIPT, 'utf8');
   const block = /DECLARATIONS=\(([\s\S]*?)\n\)/.exec(src);
@@ -284,6 +295,15 @@ describe('the declared set is COMPLETE against the inventory, not just correct',
     if (!r.artifact || r.artifact.startsWith('external:')) return { code: 'no_artifact', why: 'no in-repo artifact' };
     if (!existsSync(path.join(ROOT, r.artifact))) return { code: 'artifact_absent', why: `artifact absent: ${r.artifact}` };
     if (copies.length === 0) return { code: 'no_host_copy', why: 'no host copy exists' };
+    // OPS-CVE-2026-98432-INTERIM-W1. A row whose EVERY host copy sits outside the sync's one
+    // destination directory cannot be served by it at all: it writes `$DEST_DIR/<name>` and nothing
+    // else. The first such rows are a firewall ruleset, a systemd unit and a sysctl file under /etc.
+    // For those an unattended sync would also BE the automated host mutation CLAUDE.md forbids; they
+    // reach a host only through the reviewed installer. A row with even ONE copy inside the
+    // directory is still required.
+    if (copies.every((p) => !p.startsWith(`${syncDestDir()}/`))) {
+      return { code: 'outside_sync_dest', why: `every host copy is outside ${syncDestDir()} — the sync cannot write there` };
+    }
     // NO `sync_exempt_reason` escape hatch any more (OPS-DRIFT-ALERT-GENERATORS-W1). Its only use on a
     // row WITH a committed artifact was cron-interlock-registry-aoe1, and its stated reason was a
     // CAPABILITY GAP in the sync (BASE_URL pinned to ops/monitoring) — the exemption is exactly how that
@@ -366,6 +386,11 @@ describe('the declared set is COMPLETE against the inventory, not just correct',
         case 'artifact_absent':
           expect(existsSync(path.join(ROOT, r.artifact!)),
             `${at} — but ${r.artifact} EXISTS in the repo`).toBe(false);
+          break;
+        case 'outside_sync_dest':
+          // Re-derived from the RAW copies and the script's own DEST_DIR, never via hostCopies().
+          expect(rawCopies(r).length > 0 && rawCopies(r).every((p) => !p.startsWith(`${syncDestDir()}/`)),
+            `${at} — but a host copy IS inside ${syncDestDir()}: ${rawCopies(r).join(', ')}`).toBe(true);
           break;
         case 'no_host_copy':
           // THE ONE THAT WAS FALSE. A row claiming no host copy must have none by ANY expression:
