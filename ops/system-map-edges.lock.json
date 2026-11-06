@@ -1,6 +1,6 @@
 {
   "generated_by": "scripts/check-map-edges.mjs --sync (edge-class grammar 2)",
-  "extracted_from_corpus_sha256": "80158413fbe0e467892a59e3cd3d8eb5a7376a436514403971c41c568982d478",
+  "extracted_from_corpus_sha256": "8d09843fa640aca257227e9e5d701049079b4fdfb500912aa1817ae32b648ff5",
   "components": [
     "Plausible CE",
     "algovault-blog-assets",
@@ -65,6 +65,7 @@
     "algovault-monitoring:consumes:crypto-quant-signal-mcp=tight",
     "algovault-monitoring:consumes:crypto-quant-signal-mcp=tight",
     "algovault-monitoring:produces:debt:1=tight",
+    "algovault-monitoring:produces:ext:Telegram Bot=tight",
     "algovault-monitoring:produces:ext:Telegram Bot=tight",
     "algovault-monitoring:produces:ext:Telegram Bot=tight",
     "algovault-monitoring:produces:ext:Telegram Bot=tight",
@@ -209,6 +210,7 @@
     "crypto-quant-signal-mcp:produces:internal:48=tight",
     "crypto-quant-signal-mcp:produces:internal:49=tight",
     "crypto-quant-signal-mcp:produces:internal:4=tight",
+    "crypto-quant-signal-mcp:produces:internal:50=tight",
     "crypto-quant-signal-mcp:produces:internal:5=tight",
     "crypto-quant-signal-mcp:produces:internal:6=tight",
     "crypto-quant-signal-mcp:produces:internal:7=tight",

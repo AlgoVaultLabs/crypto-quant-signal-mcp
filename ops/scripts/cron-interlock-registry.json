@@ -1690,6 +1690,29 @@
       "cron_match": [
         "/opt/algovault-monitoring/node-runtime-floor-canary.py"
       ]
+    },
+    {
+      "id": "pre-trade-outcome-labeler",
+      "host": "signal-1",
+      "events": [
+        "deploy",
+        "reboot"
+      ],
+      "script": "ops/cron/pre-trade-outcome-labeler.sh",
+      "container": "crypto-quant-signal-mcp-mcp-server-1",
+      "process_pattern": "dist/scripts/pre-trade-outcome-labeler",
+      "class": "safe-to-kill",
+      "reason": "Backlog-driven and budgeted: it labels pre_trade_checks rows that have no outcome yet, from DB state (an anti-join on pre_trade_check_outcomes), under --max-checks 500 --time-budget-min 30, and inserts each outcome row before it reads the next check, ON CONFLICT (check_id) DO NOTHING. A deploy-induced SIGKILL loses at most the check in flight and the venue weight spent on it; the next nightly picks up the rest. The wrapper prints PRE_TRADE_OUTCOME_VERDICT=INDETERMINATE for a killed run, so a kill never reads as success.",
+      "max_runtime_s": 1830,
+      "runtime_instrument": "PROJECTED, not measured: the run's own deadline --time-budget-min 30 (1800 s, read per check) + the runScript drain grace (15 s) + exec overhead. Re-measured at install as the cold wall of the run exactly as cron invokes it (env -i, /bin/sh -c) x 1.25, rounded up (precedent 53ee499e).",
+      "cron_lines": 0,
+      "cron": "13 7 * * *",
+      "catchup_cmd": null,
+      "source": "repo",
+      "verified_at": "2026-11-06",
+      "cron_match": [
+        "ops/cron/pre-trade-outcome-labeler.sh"
+      ]
     }
   ],
   "exclusions": [
