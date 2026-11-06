@@ -124,6 +124,13 @@ import { withTierWarning, withQuotaState, withAuthState, DEFAULT_UPGRADE_URL } f
 import { compatibleWith } from '../lib/primitive-projection.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import {
+  mintCallLedgerId,
+  receiptOf,
+  verdictRecordFromResponse,
+  type CallLedgerReceipt,
+  type ServedVerdictSource,
+} from '../lib/call-ledger.js';
+import {
   PRE_TRADE_CHECK_PARAM_DECL,
   PRE_TRADE_SIDES,
   PRE_TRADE_ORDER_TYPES,
@@ -315,6 +322,11 @@ export interface PreTradeCheckResponse {
   fee_table_verified_at: string;
   rule_version: number;
   as_of: string;
+  /**
+   * DECISION-CALL-V2-W5: the call-ledger receipt — `{id, leaf, verify}` — on every LOGGED check (served,
+   * billed, non-internal), absent otherwise. `leaf` commits this response's verdict (call-ledger.ts).
+   */
+  ledger?: CallLedgerReceipt;
   _algovault: AlgoVaultMeta;
 }
 
@@ -530,15 +542,35 @@ export interface PreTradeResponseInput {
 }
 
 /**
+ * The call-ledger receipt of a response body AS BUILT — the very object that is served (DECISION-CALL-V2-W5).
+ * A fresh id, and the verdict leaf of the body's own values. NEVER THROWS: a record it cannot hash (a
+ * non-finite figure) serves the call without a receipt, and a call without one is never logged, so the
+ * health canary's parity leg counts it.
+ */
+function mintReceipt(body: ServedVerdictSource): CallLedgerReceipt | null {
+  try {
+    return receiptOf(verdictRecordFromResponse(body, mintCallLedgerId()));
+  } catch (e) {
+    console.error(`[pre-trade-check] served without a ledger receipt: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);
+    return null;
+  }
+}
+
+/**
  * EXPORTED allow-list formatter. Every public key is copied by name from the engine's typed output —
  * never a spread — so a field added to the engine cannot reach the wire without being named here and
  * in the shape snapshot.
+ *
+ * THE RECEIPT (DECISION-CALL-V2-W5): this builder runs only on the served path, after `trackCall` billed the
+ * call, so `license.tier !== 'internal'` here IS the check log's predicate (served, billed, non-internal) —
+ * decided once. A logged call gets `ledger` (minted from the built body, appended after `as_of`); the pipeline
+ * logs a call exactly when its response carries one. A refusal never reaches this function.
  */
 export function toPreTradeCheckResponse(a: PreTradeResponseInput, meta: AlgoVaultMeta, license: LicenseInfo): PreTradeCheckResponse {
   const { ranking, decided, calc: c } = a;
   const best = ranking.best;
   const t = decided.timing;
-  return {
+  const body: Omit<PreTradeCheckResponse, 'ledger' | '_algovault'> = {
     coin: a.coin,
     side: a.side,
     size_usd: a.sizeUsd,
@@ -632,8 +664,11 @@ export function toPreTradeCheckResponse(a: PreTradeResponseInput, meta: AlgoVaul
     fee_table_verified_at: a.feeTableVerifiedAt,
     rule_version: PRE_TRADE_RULE_VERSION,
     as_of: new Date(a.nowMs).toISOString(),
-    _algovault: withAuthState(meta, license),
   };
+  const ledger = license.tier === 'internal' ? null : mintReceipt(body);
+  // Appended in order — `ledger` (when minted), then `_algovault` last — onto the body the receipt was minted
+  // from; never a spread of engine output.
+  return Object.assign(body, ledger === null ? {} : { ledger }, { _algovault: withAuthState(meta, license) });
 }
 
 // ── Gathering ───────────────────────────────────────────────────────────────────────────────────

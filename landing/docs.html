@@ -1098,6 +1098,7 @@ tailwind.config = {
           <tr class="param-row"><td>fee_table_verified_at</td><td class="text-gray-400">string</td><td class="text-gray-400">When the fee table was last verified.</td></tr>
           <tr class="param-row"><td>rule_version</td><td class="text-gray-400">number</td><td class="text-gray-400">The version of the rule set the decision was made under. A threshold change bumps it.</td></tr>
           <tr class="param-row"><td>as_of</td><td class="text-gray-400">string</td><td class="text-gray-400">When the check ran (ISO 8601).</td></tr>
+          <tr class="param-row"><td>ledger</td><td class="text-gray-400">object</td><td class="text-gray-400">Your receipt for this check: <code class="text-xs bg-navy-800 px-1 rounded">id</code>, <code class="text-xs bg-navy-800 px-1 rounded">leaf</code>, the hash that commits the verdict, and <code class="text-xs bg-navy-800 px-1 rounded">verify</code>, the <code class="text-xs bg-navy-800 px-1 rounded">verify://check/{id}</code> URI to check it against.</td></tr>
           <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Call metadata, including the tool name and your remaining quota.</td></tr>
         </tbody>
       </table>

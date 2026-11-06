@@ -138,7 +138,7 @@ function allKeys(x: unknown, out: string[] = []): string[] {
 
 const TOP_KEYS = ['coin', 'side', 'size_usd', 'hold_hours', 'timeframe', 'inputs', 'decision', 'reasons', 'rules', 'rules_summary', 'saved_rules', 'best_venue', 'size_limit_usd',
   'size_limit_usd_total', 'split', 'timing', 'regime', 'calc', 'underlying_session', 'venues', 'assumptions', 'fee_table_verified_at',
-  'rule_version', 'as_of', '_algovault'];
+  'rule_version', 'as_of', 'ledger', '_algovault'];
 const VENUE_KEYS = ['exchange', 'listed', 'excluded', 'liquidity_usd', 'volume_24h_usd', 'capacity_usd', 'size_pct_of_24h_volume',
   'funding_rate', 'funding_interval_hours', 'funding_interval_basis', 'next_funding_at', 'funding_events_in_hold', 'funding_cost_bps',
   'taker_fee_bps', 'round_trip_fee_bps', 'est_cost_bps', 'est_cost_usd', 'spread_bps', 'spread_basis',
@@ -146,7 +146,7 @@ const VENUE_KEYS = ['exchange', 'listed', 'excluded', 'liquidity_usd', 'volume_2
 const CALC_KEYS = ['sigma_1h_pct', 'sigma_hold_pct', 'expected_move_pct', 'round_trip_bps', 'accuracy_needed_pct', 'win_rate_needed_pct',
   'random_entry_target_first_pct', 'liq_distance_pct', 'liq_distance_sigma', 'liq_before_stop', 'loss_at_stop_pct_equity', 'one_sigma_day_pct_equity'];
 /** The v1 keys, as origin/main served them (DECISION-CALL-V1-W2). */
-const V1_TOP_KEYS = TOP_KEYS.filter((k) => !['inputs', 'rules', 'rules_summary', 'calc'].includes(k));
+const V1_TOP_KEYS = TOP_KEYS.filter((k) => !['inputs', 'rules', 'rules_summary', 'calc', 'ledger'].includes(k));
 const V1_VENUE_KEYS = VENUE_KEYS.slice(0, VENUE_KEYS.indexOf('maker_fee_bps'));
 const FORBIDDEN = ['call', 'verdict', 'reasoning', 'price_at_signal'];
 
@@ -176,6 +176,10 @@ describe('success — one decision, one unit', () => {
   it('exact allow-list: the top level, every venue row, and nothing else', async () => {
     const r = await ok(P({ sizeUsd: 30_000_000 }));
     expect(Object.keys(r)).toEqual(TOP_KEYS);
+    // DECISION-CALL-V2-W5: the receipt — on a logged (non-internal) call only, and nothing else changes.
+    expect(Object.keys(r.ledger!)).toEqual(['id', 'leaf', 'verify']);
+    const internal = await ok(P({ sizeUsd: 30_000_000 }), harness(), INTERNAL);
+    expect(Object.keys(internal)).toEqual(TOP_KEYS.filter((k) => k !== 'ledger'));
     for (const v of r.venues) expect(Object.keys(v)).toEqual(VENUE_KEYS);
     expect(Object.keys(r.best_venue!)).toEqual(['exchange', 'est_cost_bps', 'est_cost_usd', 'capacity_usd']);
     expect(Object.keys(r.timing!)).toEqual(['exchange', 'next_funding_at', 'minutes_to_next_funding', 'side_pays_next_funding', 'saving_bps_if_entered_after_next_funding']);
@@ -347,12 +351,12 @@ describe('invalid_parameter — the declaration\'s bounds, held on every channel
   });
 });
 
-describe('the served shape is the one audits/pre-trade-check-shape-snapshot-2026-11-03.json declares', () => {
-  const snap = JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', 'pre-trade-check-shape-snapshot-2026-11-03.json'), 'utf8')) as Record<string, string[]> & { endpoint: string; snapshot_date: string };
+describe('the served shape is the one audits/pre-trade-check-shape-snapshot-2026-11-06.json declares', () => {
+  const snap = JSON.parse(readFileSync(join(__dirname, '..', '..', 'audits', 'pre-trade-check-shape-snapshot-2026-11-06.json'), 'utf8')) as Record<string, string[]> & { endpoint: string; snapshot_date: string };
 
   it('carries the bundle builder\'s field names, and a unique endpoint', () => {
     expect(snap.endpoint).toBe('pre_trade_check (MCP tool)');
-    expect(snap.snapshot_date).toBe('2026-11-03');
+    expect(snap.snapshot_date).toBe('2026-11-06');
     expect(snap.allowed_keys).toEqual(TOP_KEYS);
     expect(snap.venues_row_keys).toEqual(VENUE_KEYS);
     expect(snap.calc_keys).toEqual(CALC_KEYS);
@@ -376,6 +380,7 @@ describe('the served shape is the one audits/pre-trade-check-shape-snapshot-2026
     expect(Object.keys(r.inputs)).toEqual(snap.inputs_keys);
     expect(Object.keys(r.calc)).toEqual(snap.calc_keys);
     expect(Object.keys(r.saved_rules)).toEqual(snap.saved_rules_keys);
+    expect(Object.keys(r.ledger!)).toEqual(snap.ledger_keys);
     for (const v of r.venues) expect(snap.liq_basis_values).toContain(v.liq_basis);
     expect(snap.order_type_values).toContain(r.inputs.order_type);
     expect(Object.keys(r.assumptions)).toEqual(snap.assumptions_keys);
@@ -428,7 +433,8 @@ describe('toPreTradeCheckResponse — the allow-list formatter copies, never spr
         calc, venueCosts, underlyingSession: 'ALWAYS_OPEN', feeTableVerifiedAt: '2026-10-24' },
       { tool: 'pre_trade_check' } as never, INTERNAL,
     );
-    expect(Object.keys(r)).toEqual(TOP_KEYS);
+    // An internal caller: every key but the receipt (DECISION-CALL-V2-W5 — `ledger` is the logged path's only).
+    expect(Object.keys(r)).toEqual(TOP_KEYS.filter((k) => k !== 'ledger'));
     const keys = allKeys({ ...r, _algovault: undefined });
     for (const k of Object.keys(poison)) expect(keys, k).not.toContain(k);
     expect(keys, 'a rule\'s internal failCode never reaches the wire').not.toContain('failCode');

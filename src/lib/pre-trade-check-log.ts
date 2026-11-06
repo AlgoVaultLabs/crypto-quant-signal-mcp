@@ -25,6 +25,15 @@
  * call. The row names every column from the served response — never a spread — so a field added to the
  * response cannot reach the log without being named here.
  *
+ * THE CALL LEDGER (DECISION-CALL-V2-W5 CH1, migrations/055, contract vault `Prompt/call-ledger-contract.md`):
+ * a row is written only for a response that carries a receipt (`ledger`, minted by `toPreTradeCheckResponse`
+ * on the served, billed, non-internal path — the log's own predicate, decided once). The SAME statement
+ * writes the check row (with its `ledger_id`) and both `call_ledger` leaves — the verdict leaf the caller
+ * holds and a salted odds leaf (a fresh 32-byte salt, stored on that leaf's row, never served) — so a check
+ * is either logged with both leaves or not at all. Before writing, the row must rebuild the served leaf
+ * (`verdictRecordFromRow`): a row that would not is refused, never stored. The salt is the only secret here;
+ * no reader of this module returns it.
+ *
  * PG-targeted ($N placeholders, `::jsonb`): `pre_trade_check` is `residency: 'hosted'`, refused before
  * dispatch on a local install, so this table only ever lives in the hosted Postgres.
  */
@@ -32,6 +41,15 @@ import { dbQuery } from './performance-db.js';
 import { callerRef } from './lifecycle/identity.js';
 import { noEdgeOdds } from './pre-trade-calc.js';
 import { ODDS_VERSION } from './pre-trade-odds-calibration.js';
+import {
+  CALL_LEDGER_TOOL,
+  mintOddsSalt,
+  oddsLeaf,
+  oddsRecordFromRow,
+  verdictLeaf,
+  verdictRecordFromRow,
+  type CheckRowLedgerSource,
+} from './call-ledger.js';
 import type { PreTradeCheckFacts, PreTradeCheckResponse } from '../tools/pre-trade-check.js';
 
 const CREATE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS pre_trade_checks (
@@ -71,13 +89,42 @@ const ADD_ODDS_COLUMNS_SQL = `ALTER TABLE pre_trade_checks
   ADD COLUMN IF NOT EXISTS p_liq_hold     DOUBLE PRECISION,
   ADD COLUMN IF NOT EXISTS odds_version   TEXT`;
 
+// The call ledger (matches migrations/055). One row per leaf: a logged check's verdict leaf and its odds leaf,
+// written in the check row's own statement. `ref_id` is that row's id (no FK: a future tool joins with its own
+// table). `batch_id` and `proof` stay NULL until the daily anchor seals the leaf into a batch.
+const CREATE_CALL_LEDGER_SQL = `CREATE TABLE IF NOT EXISTS call_ledger (
+  id         BIGSERIAL   PRIMARY KEY,
+  ledger_id  TEXT        NOT NULL CHECK (ledger_id ~ '^pcl_[0-9a-f]{32}$'),
+  kind       TEXT        NOT NULL CHECK (kind IN ('verdict', 'odds')),
+  tool       TEXT        NOT NULL,
+  ref_id     BIGINT      NOT NULL,
+  leaf       TEXT        NOT NULL UNIQUE CHECK (leaf ~ '^0x[0-9a-f]{64}$'),
+  salt       TEXT        CHECK (salt ~ '^0x[0-9a-f]{64}$'),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  batch_id   INTEGER,
+  proof      JSONB,
+  UNIQUE (ledger_id, kind),
+  CHECK ((kind = 'odds') = (salt IS NOT NULL))
+)`;
+
+// The anchor reads the unbatched leaves (batch_id IS NULL) and the recheck reads by batch.
+const CREATE_CALL_LEDGER_BATCH_INDEX_SQL =
+  `CREATE INDEX IF NOT EXISTS idx_call_ledger_batch_id ON call_ledger (batch_id)`;
+
+// The check row's receipt id (matches migrations/055). Nullable, no default — a catalog-only change; a row
+// logged before 055 has none.
+const ADD_LEDGER_ID_COLUMN_SQL = `ALTER TABLE pre_trade_checks
+  ADD COLUMN IF NOT EXISTS ledger_id TEXT`;
+
 let _ensured = false;
 // Its own flag: the read-only adoption marks the table as present, never the 053 columns, so a process
 // whose canary adopted first still runs the ALTER before its first write.
 let _oddsColumnsEnsured = false;
+// Its own flag, for the same reason: adoption never marks the 055 objects.
+let _ledgerEnsured = false;
 let _failures = 0;
 
-/** Idempotent ensure of the table + index (migrations/051) and the odds columns (migrations/053); once per process. */
+/** Idempotent ensure of the table + index (051), the odds columns (053) and the call ledger (055); once per process. */
 async function ensurePreTradeCheckTable(): Promise<void> {
   if (!_ensured) {
     await dbQuery(CREATE_TABLE_SQL);
@@ -88,12 +135,19 @@ async function ensurePreTradeCheckTable(): Promise<void> {
     await dbQuery(ADD_ODDS_COLUMNS_SQL);
     _oddsColumnsEnsured = true;
   }
+  if (!_ledgerEnsured) {
+    await dbQuery(CREATE_CALL_LEDGER_SQL);
+    await dbQuery(CREATE_CALL_LEDGER_BATCH_INDEX_SQL);
+    await dbQuery(ADD_LEDGER_ID_COLUMN_SQL);
+    _ledgerEnsured = true;
+  }
 }
 
 /** Test-only reset of the once-per-process ensure flags and the failure counter. */
 export function _resetPreTradeCheckLogForTest(): void {
   _ensured = false;
   _oddsColumnsEnsured = false;
+  _ledgerEnsured = false;
   _failures = 0;
 }
 
@@ -145,6 +199,8 @@ export interface PreTradeCheckLogRow {
   p_stop_first: number | null;
   p_liq_hold: number | null;
   odds_version: string;
+  /** The served receipt's id (migrations/055); null for a response that carries none — such a row is never written. */
+  ledger_id: string | null;
 }
 
 /** What one served call gives the log. */
@@ -203,29 +259,66 @@ export function toPreTradeCheckLogRow(src: PreTradeCheckLogSource): PreTradeChec
     p_stop_first: odds === null ? null : odds.pStopFirst,
     p_liq_hold: odds === null ? null : odds.pLiqHold,
     odds_version: ODDS_VERSION,
+    ledger_id: r.ledger ? r.ledger.id : null,
   };
 }
 
-const INSERT_SQL = `INSERT INTO pre_trade_checks (
-  checked_at, rule_version, channel, caller_ref, coin, side, size_usd, hold_hours, timeframe, order_type,
-  leverage, stop_pct, target_pct, decision, decision_venue, sigma_1h_pct, liq_distance_pct, ref_mid_px, rules, venues,
-  p_timeout, p_target_first, p_stop_first, p_liq_hold, odds_version
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22, $23, $24, $25)`;
+/**
+ * ONE statement, so ONE transaction: the check row, then both of its `call_ledger` leaves keyed to the row's
+ * new id. A constraint either insert breaks rolls back all three. $1–$25 are the 051 + 053 columns as before;
+ * $26 the ledger id, $27 the tool, $28 the verdict leaf, $29 the odds leaf, $30 the odds leaf's salt.
+ */
+const INSERT_SQL = `WITH chk AS (
+  INSERT INTO pre_trade_checks (
+    checked_at, rule_version, channel, caller_ref, coin, side, size_usd, hold_hours, timeframe, order_type,
+    leverage, stop_pct, target_pct, decision, decision_venue, sigma_1h_pct, liq_distance_pct, ref_mid_px, rules, venues,
+    p_timeout, p_target_first, p_stop_first, p_liq_hold, odds_version, ledger_id
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22, $23, $24, $25, $26)
+  RETURNING id
+)
+INSERT INTO call_ledger (ledger_id, kind, tool, ref_id, leaf, salt)
+SELECT $26::text, l.kind, $27::text, chk.id, l.leaf, l.salt
+FROM chk CROSS JOIN (VALUES ('verdict', $28::text, NULL::text), ('odds', $29::text, $30::text)) AS l (kind, leaf, salt)`;
+
+/** The row as `verdictRecordFromRow` / `oddsRecordFromRow` read it — the same projection the recheck applies to a stored row. */
+function ledgerSourceOf(row: PreTradeCheckLogRow): CheckRowLedgerSource {
+  return {
+    ledger_id: row.ledger_id, checked_at: row.checked_at, coin: row.coin, side: row.side, size_usd: row.size_usd,
+    hold_hours: row.hold_hours, timeframe: row.timeframe, order_type: row.order_type, leverage: row.leverage,
+    stop_pct: row.stop_pct, target_pct: row.target_pct, decision: row.decision, decision_venue: row.decision_venue,
+    rule_version: row.rule_version, rules: row.rules, odds_version: row.odds_version, p_timeout: row.p_timeout,
+    p_target_first: row.p_target_first, p_stop_first: row.p_stop_first, p_liq_hold: row.p_liq_hold,
+  };
+}
 
 /**
- * Write one row for a served call. NEVER THROWS: building the row (every read of the served outcome, and
- * the pseudonym, which needs the IP-hash key) and the insert both run inside the catch; a failure bumps the counter and logs one line. The call has
- * already been served and billed, and stays exactly that. Resolves true when the row was written.
+ * Write one row for a served call, with both of its ledger leaves. NEVER THROWS: building the row (every
+ * read of the served outcome, and the pseudonym, which needs the IP-hash key), both leaves and the insert
+ * all run inside the catch; a failure bumps the counter and logs one line. The call has already been served
+ * and billed, and stays exactly that. Resolves true when the row was written.
+ *
+ * REFUSED (counted as a failure, nothing written): a response with no receipt — the pipeline never hands
+ * one over, so one here is a caller bug — and a row that does not rebuild the served leaf, which would put
+ * a verdict on the record that the caller never received.
  */
 export async function recordPreTradeCheck(src: PreTradeCheckLogSource): Promise<boolean> {
   try {
     const row = toPreTradeCheckLogRow(src);
+    const receipt = src.response.ledger;
+    if (!receipt || row.ledger_id === null) throw new Error('the response carries no ledger receipt — no receipt, no row');
+    const source = ledgerSourceOf(row);
+    if (verdictLeaf(verdictRecordFromRow(source)) !== receipt.leaf) {
+      throw new Error(`the row does not rebuild the served leaf of ${receipt.id}`);
+    }
+    const salt = mintOddsSalt();
+    const odds = oddsLeaf(oddsRecordFromRow(source), salt);
     await ensurePreTradeCheckTable();
     await dbQuery(INSERT_SQL, [
       row.checked_at, row.rule_version, row.channel, row.caller_ref, row.coin, row.side, row.size_usd, row.hold_hours,
       row.timeframe, row.order_type, row.leverage, row.stop_pct, row.target_pct, row.decision, row.decision_venue,
       row.sigma_1h_pct, row.liq_distance_pct, row.ref_mid_px, JSON.stringify(row.rules), JSON.stringify(row.venues),
       row.p_timeout, row.p_target_first, row.p_stop_first, row.p_liq_hold, row.odds_version,
+      row.ledger_id, CALL_LEDGER_TOOL, receipt.leaf, odds, salt,
     ]);
     return true;
   } catch (e) {
@@ -277,4 +370,57 @@ export async function countServedChecks(sinceMs: number): Promise<number> {
     [new Date(sinceMs).toISOString()],
   );
   return Number(rows[0]?.n ?? 0);
+}
+
+// ── The call ledger's reads of this table (DECISION-CALL-V2-W5) ─────────────────────────────────
+// The SQL against pre_trade_checks stays in this module: the anchor's recheck and the health canary call
+// these, and never select the table themselves. None of them reads a salt, a caller or a venue figure.
+
+/** A stored check row, projected to exactly what the two ledger records read, plus its id. */
+export interface LedgerCheckRow extends CheckRowLedgerSource {
+  id: number | string;
+}
+
+/**
+ * The stored rows behind the given check ids (`call_ledger.ref_id`) — the recheck rebuilds every leaf from
+ * these with `verdictRecordFromRow` / `oddsRecordFromRow`, never from the stored leaves. Rows in id order.
+ */
+export async function readLedgerCheckRows(refIds: readonly (number | string)[]): Promise<LedgerCheckRow[]> {
+  if (refIds.length === 0) return [];
+  return dbQuery<LedgerCheckRow>(
+    `SELECT id, ledger_id, checked_at, coin, side, size_usd, hold_hours, timeframe, order_type, leverage, stop_pct, target_pct,
+       decision, decision_venue, rule_version, rules, odds_version, p_timeout, p_target_first, p_stop_first, p_liq_hold
+     FROM pre_trade_checks WHERE id = ANY($1::bigint[]) ORDER BY id`,
+    [refIds.map((x) => String(x))],
+  );
+}
+
+/**
+ * READ-ONLY adoption of the 055 objects (the canary's session is read-only): true when `call_ledger` and
+ * `pre_trade_checks.ledger_id` both exist. Issues no DDL. False = no receipted check has been logged yet.
+ */
+export async function adoptCallLedger(): Promise<boolean> {
+  const rows = await dbQuery<{ t: boolean | null; c: boolean | null }>(
+    `SELECT to_regclass('call_ledger') IS NOT NULL AS t,
+       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'pre_trade_checks' AND column_name = 'ledger_id') AS c`,
+  );
+  return rows[0]?.t === true && rows[0]?.c === true;
+}
+
+/**
+ * The canary's "logged check missing a leaf" leg: since the first receipted row, every check row (`checked`)
+ * and those lacking its verdict leaf, its odds leaf or a ledger id at all (`missing`) — a row an older writer
+ * logged after the ledger began counts. Both counts are printed, so a zero is never a search of nothing.
+ * The 055 objects must exist: adopt them first.
+ */
+export async function countChecksMissingLeaves(): Promise<{ checked: number; missing: number }> {
+  const rows = await dbQuery<{ checked: string | number; missing: string | number }>(
+    `SELECT COUNT(*) AS checked,
+       COUNT(*) FILTER (WHERE c.ledger_id IS NULL
+         OR NOT EXISTS (SELECT 1 FROM call_ledger l WHERE l.ledger_id = c.ledger_id AND l.kind = 'verdict')
+         OR NOT EXISTS (SELECT 1 FROM call_ledger l WHERE l.ledger_id = c.ledger_id AND l.kind = 'odds')) AS missing
+     FROM pre_trade_checks c
+     WHERE c.checked_at >= (SELECT MIN(f.checked_at) FROM pre_trade_checks f WHERE f.ledger_id IS NOT NULL)`,
+  );
+  return { checked: Number(rows[0]?.checked ?? 0), missing: Number(rows[0]?.missing ?? 0) };
 }
