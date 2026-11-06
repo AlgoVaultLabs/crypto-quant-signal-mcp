@@ -257,6 +257,102 @@
       },
       "criteria": "Did CH1 end the BingX closed-market freeze? A: no R0.2 cohort row (162 ids) still in reach with outcome_filled_at NULL; B: no BINGX|NC* coin_silent page on 2 UTC dates in [deploy+72 h, deploy+6 d]; C: no BingX 109429/418/429 ban row since deploy. One read-only snapshot; anchor parity, coverage and instrument guards, else INDETERMINATE.",
       "_expires_at_rule": "not_before = deploy_at (2026-10-29T16:52:32Z, CH1's app container start) + 6 d, rounded up to the hour; expires_at = not_before + 72 h."
+    },
+    {
+      "id": "pre-trade-odds-forward-030d",
+      "wave": "DECISION-CALL-V2-W4",
+      "not_before": "2026-12-06T04:11:08Z",
+      "expires_at": "2026-12-09T04:11:08Z",
+      "script": "owed-read-pre-trade-odds-forward.py",
+      "timeout_s": 300,
+      "anchors": {
+        "first_label_at": 1793938268,
+        "rung_days": 30,
+        "n_min": 500,
+        "reliability_bins": 10
+      },
+      "criteria": "PASS = per odds_version: n per field (bracket fields over bracket_first in target/stop/timeout, both_in_one_bar excluded and counted; liquidation over liq_touched), the date the bracketed n reaches 500, and 10-bin reliability + ECE for each field with n >= 500; FAIL = a label-table integrity break only; else INDETERMINATE. One read-only RR bundle.",
+      "_expires_at_rule": "not_before = first_label_at (2026-11-06T04:11:08Z, the earliest `labeled` outcome, read from the first run's log line first_labeled_at=2026-11-06T04:11:08.381Z) + 30 d; expires_at = not_before + 72 h (architect ruling Q3 = A)."
+    },
+    {
+      "id": "pre-trade-odds-forward-060d",
+      "wave": "DECISION-CALL-V2-W4",
+      "not_before": "2027-01-05T04:11:08Z",
+      "expires_at": "2027-01-08T04:11:08Z",
+      "script": "owed-read-pre-trade-odds-forward.py",
+      "timeout_s": 300,
+      "anchors": {
+        "first_label_at": 1793938268,
+        "rung_days": 60,
+        "n_min": 500,
+        "reliability_bins": 10
+      },
+      "criteria": "PASS = per odds_version: n per field (bracket fields over bracket_first in target/stop/timeout, both_in_one_bar excluded and counted; liquidation over liq_touched), the date the bracketed n reaches 500, and 10-bin reliability + ECE for each field with n >= 500; FAIL = a label-table integrity break only; else INDETERMINATE. One read-only RR bundle.",
+      "_expires_at_rule": "not_before = first_label_at (2026-11-06T04:11:08Z, the earliest `labeled` outcome, read from the first run's log line first_labeled_at=2026-11-06T04:11:08.381Z) + 60 d; expires_at = not_before + 72 h (architect ruling Q3 = A)."
+    },
+    {
+      "id": "pre-trade-odds-forward-090d",
+      "wave": "DECISION-CALL-V2-W4",
+      "not_before": "2027-02-04T04:11:08Z",
+      "expires_at": "2027-02-07T04:11:08Z",
+      "script": "owed-read-pre-trade-odds-forward.py",
+      "timeout_s": 300,
+      "anchors": {
+        "first_label_at": 1793938268,
+        "rung_days": 90,
+        "n_min": 500,
+        "reliability_bins": 10
+      },
+      "criteria": "PASS = per odds_version: n per field (bracket fields over bracket_first in target/stop/timeout, both_in_one_bar excluded and counted; liquidation over liq_touched), the date the bracketed n reaches 500, and 10-bin reliability + ECE for each field with n >= 500; FAIL = a label-table integrity break only; else INDETERMINATE. One read-only RR bundle.",
+      "_expires_at_rule": "not_before = first_label_at (2026-11-06T04:11:08Z, the earliest `labeled` outcome, read from the first run's log line first_labeled_at=2026-11-06T04:11:08.381Z) + 90 d; expires_at = not_before + 72 h (architect ruling Q3 = A)."
+    },
+    {
+      "id": "pre-trade-odds-forward-120d",
+      "wave": "DECISION-CALL-V2-W4",
+      "not_before": "2027-03-06T04:11:08Z",
+      "expires_at": "2027-03-09T04:11:08Z",
+      "script": "owed-read-pre-trade-odds-forward.py",
+      "timeout_s": 300,
+      "anchors": {
+        "first_label_at": 1793938268,
+        "rung_days": 120,
+        "n_min": 500,
+        "reliability_bins": 10
+      },
+      "criteria": "PASS = per odds_version: n per field (bracket fields over bracket_first in target/stop/timeout, both_in_one_bar excluded and counted; liquidation over liq_touched), the date the bracketed n reaches 500, and 10-bin reliability + ECE for each field with n >= 500; FAIL = a label-table integrity break only; else INDETERMINATE. One read-only RR bundle.",
+      "_expires_at_rule": "not_before = first_label_at (2026-11-06T04:11:08Z, the earliest `labeled` outcome, read from the first run's log line first_labeled_at=2026-11-06T04:11:08.381Z) + 120 d; expires_at = not_before + 72 h (architect ruling Q3 = A)."
+    },
+    {
+      "id": "pre-trade-odds-forward-150d",
+      "wave": "DECISION-CALL-V2-W4",
+      "not_before": "2027-04-05T04:11:08Z",
+      "expires_at": "2027-04-08T04:11:08Z",
+      "script": "owed-read-pre-trade-odds-forward.py",
+      "timeout_s": 300,
+      "anchors": {
+        "first_label_at": 1793938268,
+        "rung_days": 150,
+        "n_min": 500,
+        "reliability_bins": 10
+      },
+      "criteria": "PASS = per odds_version: n per field (bracket fields over bracket_first in target/stop/timeout, both_in_one_bar excluded and counted; liquidation over liq_touched), the date the bracketed n reaches 500, and 10-bin reliability + ECE for each field with n >= 500; FAIL = a label-table integrity break only; else INDETERMINATE. One read-only RR bundle.",
+      "_expires_at_rule": "not_before = first_label_at (2026-11-06T04:11:08Z, the earliest `labeled` outcome, read from the first run's log line first_labeled_at=2026-11-06T04:11:08.381Z) + 150 d; expires_at = not_before + 72 h (architect ruling Q3 = A)."
+    },
+    {
+      "id": "pre-trade-odds-forward-180d",
+      "wave": "DECISION-CALL-V2-W4",
+      "not_before": "2027-05-05T04:11:08Z",
+      "expires_at": "2027-05-08T04:11:08Z",
+      "script": "owed-read-pre-trade-odds-forward.py",
+      "timeout_s": 300,
+      "anchors": {
+        "first_label_at": 1793938268,
+        "rung_days": 180,
+        "n_min": 500,
+        "reliability_bins": 10
+      },
+      "criteria": "PASS = per odds_version: n per field (bracket fields over bracket_first in target/stop/timeout, both_in_one_bar excluded and counted; liquidation over liq_touched), the date the bracketed n reaches 500, and 10-bin reliability + ECE for each field with n >= 500; FAIL = a label-table integrity break only; else INDETERMINATE. One read-only RR bundle.",
+      "_expires_at_rule": "not_before = first_label_at (2026-11-06T04:11:08Z, the earliest `labeled` outcome, read from the first run's log line first_labeled_at=2026-11-06T04:11:08.381Z) + 180 d; expires_at = not_before + 72 h (architect ruling Q3 = A)."
     }
   ]
 }
