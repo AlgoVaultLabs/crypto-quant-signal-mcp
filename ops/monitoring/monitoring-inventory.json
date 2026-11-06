@@ -3633,13 +3633,13 @@
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "46322ee33d0d8491dad5c236523bce6333e014a4c5a6fe7a4d0db2dff5abbb91",
       "alert_ids": [],
       "owner_wave": "OPS-AUTOPUB-DEVTO-DECOUPLE-W1",
       "notes": "This owed read has registry id autopub-devto-scoped-first-run and owner OPS-AUTOPUB-DEVTO-DECOUPLE-W1 CH1 R5. install_at is 1793970267 = 2026-11-06T13:04:27Z, when algovault-editorial b30baad's /usr/local/bin/editorial-publish.sh was installed; that copy scopes a dev.to-only hold to the dev.to leg. The pre-registered constants live HERE; the registry row's anchors must equal them or the read is INDETERMINATE (a synced declaration can select this read, never retune it). It reads the editorial run-verdict ledger /var/lib/algovault-editorial/run-verdicts.jsonl (signal-1 is the editorial host) for slot 2026-11-09. PASS = a post-install record with PUBLISHED, devto HELD and a github.com/AlgoVaultLabs/crypto-quant-signal-mcp/discussions/<n> URL. FAIL = PUBLISHED under HELD with no such URL, or OPERATOR_HOLD while that day's run log (/var/log/algovault-editorial/run-20261109T*.log, PUBLISH_HOLD_ACTIVE) names only scope=devto holds. Everything else is INDETERMINATE. The two paths may be overridden ONLY under --sandbox. Read-only. Stdlib only, Python >= 3.9.",
       "first_install": {
-        "at": "20261106T132611Z",
+        "at": "20261106T134016Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
     }
