@@ -41,12 +41,13 @@ export const SIGNAL_REGISTRY: RegistryRow = Object.freeze({
   deployTx: '0x65fe231c5c2c66efd1c0083ed1eca06aab997ca9133477ad1cde5f36f406369b',
 });
 
-/** Null until DECISION-CALL-V2-W5 §9.3 commits the deployed address (REGISTRY_DEPLOY_VERDICT=PASS). */
+/** Deployed 2026-11-07 by DECISION-CALL-V2-W5 §9.2 (REGISTRY_DEPLOY_VERDICT=PASS, Base block 54188921, publisher nonce
+ *  214; runtime = the signal registry's), committed in §9.3. */
 export const CALL_LEDGER_REGISTRY: RegistryRow = Object.freeze({
   name: 'call-ledger',
   chainId: BASE_CHAIN_ID,
-  address: null,
-  deployTx: null,
+  address: '0x5f1cec4f56c274f36233d0e64f527c162b55b240',
+  deployTx: '0xb871abd946c83d77274bb2d56bb33c05ee2fa57395737e5d4f8a0a8b2d20f9cc',
 });
 
 /** keccak256 of the 1,627-byte creation code (the signal registry's deploy-tx input). */
