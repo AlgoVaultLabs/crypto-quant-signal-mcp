@@ -47,6 +47,7 @@ import {
 } from '../../src/scripts/publish-merkle-batch.js';
 import {
   main as ledgerMain,
+  callLedgerAnchorLedger,
   CREATE_CALL_LEDGER_BATCHES_SQL,
   RECHECK_BATCHES,
   _resetCallLedgerBatchesForTest,
@@ -364,6 +365,35 @@ describe('one batch per UTC day, judged on the SEAL day', () => {
     expect(bs.map((b) => b.id)).toEqual([1, 2]);
   });
 
+  // P1 (CH4 audit): the boundary is the UTC DAY, not the hour. now() is pinned at NOW inside one rolled-back
+  // transaction (an av_clock.now() ahead of pg_catalog on the search path). With the real clock, day and hour agree
+  // on every row up to now() while the suite runs between 00:00 and 00:59Z, so the test could not see the hour.
+  // public stays FIRST: an unqualified CREATE TABLE IF NOT EXISTS (the signal ledger's lazy ensure) targets the
+  // first schema on the path, and would otherwise make an empty av_clock copy of the table and read that.
+  const sealedTodayWith = async (pub: Pub, sealedAt: string): Promise<boolean> => {
+    await db.exec(pub === 'signal' ? CREATE_MERKLE_BATCH_SEALS_SQL : CREATE_CALL_LEDGER_BATCHES_SQL);
+    const pinned = new Date(NOW).toISOString();
+    await db.exec('BEGIN');
+    try {
+      await db.exec(`CREATE SCHEMA av_clock;
+        CREATE FUNCTION av_clock.now() RETURNS timestamptz LANGUAGE sql AS $$ SELECT '${pinned}'::timestamptz $$;
+        SET LOCAL search_path = public, av_clock, pg_catalog`);
+      expect(((await db.query('SELECT now() = $1::timestamptz AS pinned', [pinned])).rows[0] as { pinned: boolean }).pinned).toBe(true);
+      await db.exec(pub === 'signal'
+        ? `INSERT INTO merkle_batch_seals (batch_id, merkle_root, signal_count, signal_ids, proofs, state, sealed_at) VALUES (1, '0x${'aa'.repeat(32)}', 1, '{1}', '{"[]"}', 'sealed', ${sealedAt})`
+        : `INSERT INTO call_ledger_batches (batch_id, root, leaf_count, state, sealed_at) VALUES (1, '0x${'aa'.repeat(32)}', 1, 'sealed', ${sealedAt})`);
+      return await (pub === 'signal' ? signalAnchorLedger(() => {}) : callLedgerAnchorLedger()).sealedToday();
+    } finally {
+      await db.exec('ROLLBACK');
+    }
+  };
+  const TODAY_START_UTC = "(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')";
+
+  it.each(PUBS)('%s: a seal at 00:00:01Z today is today’s; one at 23:59:59Z yesterday is not', async (pub) => {
+    expect(await sealedTodayWith(pub, `${TODAY_START_UTC} + interval '1 second'`)).toBe(true);
+    expect(await sealedTodayWith(pub, `${TODAY_START_UTC} - interval '1 second'`)).toBe(false);
+  });
+
   it('signal: a batch the pre-W5 publisher published today (no seal row) counts as today’s', async () => {
     await seedSignals(4);
     await db.query(`INSERT INTO merkle_batches (batch_id, merkle_root, signal_count, tx_hash, block_number) VALUES (1, $1, 3, $2, '100')`, [OTHER_ROOT, `0x${'ab'.repeat(32)}`]);
@@ -396,6 +426,34 @@ describe('one batch per UTC day, judged on the SEAL day', () => {
     await runPub('signal', new FakeAnchorChain());
     const rows = (await db.query('SELECT confidence, merkle_batch_id FROM signals ORDER BY id')).rows as Array<{ confidence: number; merkle_batch_id: number | null }>;
     expect(rows.map((r) => r.merkle_batch_id === null)).toEqual([false, false, false, true, true]);
+  });
+});
+
+// ── the seal statement ──────────────────────────────────────────────────────────────────────────
+
+describe('the seal is one statement: a listed leaf that is already batched rolls the whole seal back', () => {
+  // P2 (CH4 audit): under the advisory lock no run reaches this guard, so the statement's own text is driven here.
+  // A leaf_count that is not the number of leaves the statement assigned is -1, and CHECK (leaf_count > 0) refuses it.
+  const SEAL_SQL = read('src/scripts/publish-call-ledger-batch.ts').match(/const SEAL_SQL = `([^`]+)`;/)?.[1] ?? '';
+  const ledgerRows = async () => (await db.query('SELECT id, batch_id, proof FROM call_ledger ORDER BY id')).rows as Array<{ id: number; batch_id: number | null; proof: unknown }>;
+  const proofsFor = (ids: number[]) => JSON.stringify(ids.map((id) => ({ id: String(id), proof: [] })));
+
+  it('one batched id in $3: the CHECK throws and nothing changes; the same seal without it lands', async () => {
+    expect(SEAL_SQL).toMatch(/^WITH n AS \(/);
+    await logChecks(2);
+    expect((await runPub('call-ledger', new FakeAnchorChain())).token).toBe('PASS');
+    await logChecks(1);
+    const before = await ledgerRows();
+    const batched = before.filter((r) => r.batch_id !== null).map((r) => Number(r.id));
+    const open = before.filter((r) => r.batch_id === null).map((r) => Number(r.id));
+    expect([batched.length, open.length]).toEqual([4, 2]);
+    const root = `0x${'bb'.repeat(32)}`;
+    await expect(db.query(SEAL_SQL, [root, open.length + 1, proofsFor([...open, batched[0]])])).rejects.toThrow(/call_ledger_batches_leaf_count_check/);
+    expect(await ledgerRows()).toEqual(before);
+    expect((await batchesOf('call-ledger')).map((b) => b.id)).toEqual([1]);
+    const sealed = (await db.query(SEAL_SQL, [root, open.length, proofsFor(open)])).rows as Array<{ batch_id: number; leaf_count: number }>;
+    expect(sealed.map((r) => [Number(r.batch_id), Number(r.leaf_count)])).toEqual([[2, 2]]);
+    expect((await ledgerRows()).filter((r) => r.batch_id === null)).toEqual([]);
   });
 });
 
@@ -520,6 +578,16 @@ describe('pins', () => {
     expect(at('await ledger.unresolved()')).toBeGreaterThan(at('await lock.tryAcquire()'));
     expect(at('await ledger.sealedToday()')).toBeGreaterThan(at('await ledger.unresolved()'));
     expect(at('await ledger.sealNext()')).toBeGreaterThan(at('await ledger.sealedToday()'));
+  });
+
+  it('sent is stored when the send returns, before the receipt is awaited (contract § Batches: sent = the tx hash is stored)', () => {
+    // P3 (CH4 audit): the fake chain's txInFlight sees every broadcast, so no convergence test needs the stored hash.
+    // This pin holds the order the build-and-runtime rule names: the idempotency record right after the irreversible send.
+    const body = ENGINE.slice(ENGINE.indexOf('export async function runAnchor'));
+    const at = (s: string) => body.indexOf(s);
+    expect(at('await chain.send(')).toBeGreaterThan(0);
+    expect(at('await ledger.markSent(')).toBeGreaterThan(at('await chain.send('));
+    expect(at('await chain.waitReceipt(')).toBeGreaterThan(at('await ledger.markSent('));
   });
 
   it('a direct runAnchor on the signal ledger never throws, even on a database error', async () => {
