@@ -43,10 +43,16 @@ function selfTest(cmd: string, args: string[]) {
   return { status: r.status, tokens, out: `${r.stdout ?? ''}\n${r.stderr ?? ''}` };
 }
 
-/** A pending row carries its clock; an installed one, its install record (monitoring-inventory-reconcile.py). */
+/** A pending row carries its clock; an installed one, its install record (monitoring-inventory-reconcile.py).
+ *  The record is the installer's first_install stamp — except on a repo-resident row: the deploy's git pull delivers
+ *  that file and no installer runs, so the house predicates (monitoring-primitive-parity's needsFirstInstall, the
+ *  reconciler's NO_BACKUP) exempt it, and a stamp would claim an install that never happened. */
 function expectInstallRecord(row: Row) {
   if (row.install_state === 'pending') {
     expect(row.pending_since, `${row.id}: a pending row without pending_since is the reconciler's NO_PENDING_SINCE breach`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  } else if (row.repo_resident) {
+    expect(row.install_state).toBe('installed');
+    expect(row.first_install, `${row.id}: repo-resident, so no installer stamp`).toBeUndefined();
   } else {
     expect(row.install_state).toBe('installed');
     expect(row.first_install?.at, `${row.id}: installed without first_install`).toMatch(/^\d{8}T\d{6}Z$/);
