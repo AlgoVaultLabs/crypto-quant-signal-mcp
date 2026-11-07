@@ -2160,7 +2160,7 @@
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "installed",
-      "sha256": "1fb9d3a04ee685ae91a66fc3b879d99f149f304bcb5c7efc05af414db5d4711e",
+      "sha256": "dfc02c7b9e56e1b843ef28ecbe1a937a02140c715ecc4a726f63f4a8a999a124",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
       "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence.",
@@ -3471,7 +3471,7 @@
       "criticality": "load-bearing",
       "schedule": "13 0 * * *",
       "invoked_by": "crontab:root",
-      "install_state": "pending",
+      "install_state": "installed",
       "pending_since": "2026-11-06",
       "sha256": "216dbc690ae793b9e0778d976eb6e188badf4633f4a3276c704c08f70c7aec66",
       "alert_ids": [
@@ -3479,7 +3479,7 @@
       ],
       "owner_wave": "DECISION-CALL-V2-W5",
       "repo_resident": true,
-      "notes": "The call-ledger anchor (DECISION-CALL-V2-W5 CH2): `docker exec` dist/scripts/publish-call-ledger-batch.js on the shared crash-safe anchor (src/lib/anchor-batch.ts) — reconcile every sealed or sent call_ledger_batches row against the call-ledger registry on Base, seal at most one batch per UTC day, send its root, read it back, mark it verified, then recheck the newest 7 verified batches by rebuilding every leaf from the stored check rows. The publisher key stays in the app container's environment: the wrapper passes no -e and never names it. Repo-resident (host_path is the checkout; it ships with the deploy's git pull and needs no installer step), inventoried on the pre-trade-outcome-labeler's reasoning. ONE TOKEN per run, CALL_LEDGER_ANCHOR_VERDICT=PASS|FAIL|INDETERMINATE, in /var/log/publish-call-ledger-batch.log; the wrapper prints INDETERMINATE when the child never reaches one, and its exit code is the token's. anchor_root_mismatch pages CRITICAL_PERSISTENT when the run prints an ANCHOR_ROOT_MISMATCH line (a registry root that differs from a sealed batch's, or a recheck that rebuilds a different root) — the run stopped and nothing new is anchored until a human resolves it; a PASS clears silently; every other FAIL or INDETERMINATE pages nothing here, because a stalled anchor is the health canary's call_ledger_stale. Shares ONE advisory lock and one publisher EOA with the signal publisher (5 0 * * *). Crontab line, house flock: 13 0 * * * flock -n /var/lock/algovault-publish-call-ledger-batch.lock /opt/crypto-quant-signal-mcp/ops/cron/publish-call-ledger-batch.sh >> /var/log/publish-call-ledger-batch.log 2>&1 — appended by the wave's §9 after the call-ledger registry address is committed (before that, the publisher is INDETERMINATE: no address). install_state is PENDING until that line exists: the file arrives with the deploy, but a row marked installed with a schedule and no live line is exactly what monitoring-inventory-reconcile.py reads as DARK, so §9's post-install commit flips it to installed with first_install, as it does the week-1 owed read. --self-test: 43 assertions."
+      "notes": "The call-ledger anchor (DECISION-CALL-V2-W5 CH2): `docker exec` dist/scripts/publish-call-ledger-batch.js on the shared crash-safe anchor (src/lib/anchor-batch.ts) — reconcile every sealed or sent call_ledger_batches row against the call-ledger registry on Base, seal at most one batch per UTC day, send its root, read it back, mark it verified, then recheck the newest 7 verified batches by rebuilding every leaf from the stored check rows. The publisher key stays in the app container's environment: the wrapper passes no -e and never names it. Repo-resident (host_path is the checkout; it ships with the deploy's git pull and needs no installer step), inventoried on the pre-trade-outcome-labeler's reasoning. ONE TOKEN per run, CALL_LEDGER_ANCHOR_VERDICT=PASS|FAIL|INDETERMINATE, in /var/log/publish-call-ledger-batch.log; the wrapper prints INDETERMINATE when the child never reaches one, and its exit code is the token's. anchor_root_mismatch pages CRITICAL_PERSISTENT when the run prints an ANCHOR_ROOT_MISMATCH line (a registry root that differs from a sealed batch's, or a recheck that rebuilds a different root) — the run stopped and nothing new is anchored until a human resolves it; a PASS clears silently; every other FAIL or INDETERMINATE pages nothing here, because a stalled anchor is the health canary's call_ledger_stale. Shares ONE advisory lock and one publisher EOA with the signal publisher (5 0 * * *). Crontab line, house flock: 13 0 * * * flock -n /var/lock/algovault-publish-call-ledger-batch.lock /opt/crypto-quant-signal-mcp/ops/cron/publish-call-ledger-batch.sh >> /var/log/publish-call-ledger-batch.log 2>&1 — appended by the wave's §9 after the call-ledger registry address is committed (before that, the publisher is INDETERMINATE: no address). install_state is PENDING until that line exists: the file arrives with the deploy, but a row marked installed with a schedule and no live line is exactly what monitoring-inventory-reconcile.py reads as DARK, so §9's post-install commit flips it to installed; repo-resident (the deploy delivers the file and no installer runs), it carries no first_install stamp, as the other repo-resident cron rows do not. --self-test: 43 assertions."
     },
     {
       "id": "owed-read-pre-trade-odds-forward",
@@ -3521,12 +3521,16 @@
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
-      "install_state": "pending",
+      "install_state": "installed",
       "pending_since": "2026-11-06",
       "sha256": "783b07199525357a1156a1d374c8a6fb24ecbecd7e665f89768ff712939945dd",
       "alert_ids": [],
       "owner_wave": "DECISION-CALL-V2-W5",
-      "notes": "The first-week owed read of the crash-safe anchor (DECISION-CALL-V2-W5 CH2, spec §9.7): ONE registry row, call-ledger-week-1, not_before = first_anchor_at + 7 d, expires_at = not_before + 72 h, registered with the MEASURED first_anchor_at (the first verified call_ledger_batches.anchored_at) in the post-install commit. Pre-registered here: 7 nights, D+1 … D+7 of the first seal's UTC date. Call ledger: a night owes a batch when a leaf was created the day before (after the first seal, for D+1) — exactly one sealed that date, verified, recheck_ok_at set, with as many leaves carrying its batch id as its leaf_count; a day with no leaf is QUIET, recorded and never owed. Signal: every night owes exactly one verified merkle_batch_seals row whose merkle_batches row carries the same root and count. No call_ledger_batches or merkle_batch_seals row may be left sealed or sent. PASS on all of it; FAIL names every break; INDETERMINATE when the anchors are not this read's, first_anchor_at is not the table's, or the snapshot cannot be read. One REPEATABLE READ READ ONLY transaction as aoe_readonly; it never selects a salt, a record field or an odds value. --self-test: 28 checks. PENDING until the wave's §9 installs it with ops/scripts/install-monitoring-artifact.sh."
+      "notes": "The first-week owed read of the crash-safe anchor (DECISION-CALL-V2-W5 CH2, spec §9.7): ONE registry row, call-ledger-week-1, not_before = first_anchor_at + 7 d, expires_at = not_before + 72 h, registered with the MEASURED first_anchor_at (the first verified call_ledger_batches.anchored_at) in the post-install commit. Pre-registered here: 7 nights, D+1 … D+7 of the first seal's UTC date. Call ledger: a night owes a batch when a leaf was created the day before (after the first seal, for D+1) — exactly one sealed that date, verified, recheck_ok_at set, with as many leaves carrying its batch id as its leaf_count; a day with no leaf is QUIET, recorded and never owed. Signal: every night owes exactly one verified merkle_batch_seals row whose merkle_batches row carries the same root and count. No call_ledger_batches or merkle_batch_seals row may be left sealed or sent. PASS on all of it; FAIL names every break; INDETERMINATE when the anchors are not this read's, first_anchor_at is not the table's, or the snapshot cannot be read. One REPEATABLE READ READ ONLY transaction as aoe_readonly; it never selects a salt, a record field or an odds value. --self-test: 28 checks. PENDING until the wave's §9 installs it with ops/scripts/install-monitoring-artifact.sh.",
+      "first_install": {
+        "at": "20261107T053733Z",
+        "by": "ops/scripts/install-monitoring-artifact.sh"
+      }
     },
     {
       "id": "kernel-cve-floor",

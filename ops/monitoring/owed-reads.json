@@ -384,6 +384,20 @@
       },
       "criteria": "Did the first post dev.to did not publish reach GitHub in full, with Medium off? PASS = the first post-deploy PUBLISHED record whose devto is not PUBLISHED has a crypto-quant-signal-mcp Discussion URL, github_body FULL, and no medium-runbook-state entry for its slug. FAIL = any part missing. INDETERMINATE = no such record yet. Read-only.",
       "_expires_at_rule": "Spec R5: not_before = 03:00Z on the first run day after the deploy (run days Mon,Wed,Fri; deploy Fri 2026-11-06 → Mon 2026-11-09); expires_at = not_before + 72 h."
+    },
+    {
+      "id": "call-ledger-week-1",
+      "wave": "DECISION-CALL-V2-W5",
+      "not_before": "2026-11-14T05:35:21Z",
+      "expires_at": "2026-11-17T05:35:21Z",
+      "script": "owed-read-call-ledger-week-1.py",
+      "timeout_s": 300,
+      "anchors": {
+        "first_anchor_at": 1794029721,
+        "nights": 7
+      },
+      "criteria": "Did the crash-safe anchor hold for its first week? Nights D+1..D+7 after the first seal (D = 2026-11-07): each owed call-ledger night has exactly one batch sealed that date, verified, recheck_ok_at set, leaf count matching; each night one verified merkle_batch_seals row whose merkle_batches row matches root and count; no sealed or sent row left. One read-only snapshot, else INDETERMINATE.",
+      "_expires_at_rule": "Spec §9.7: not_before = first_anchor_at (1794029721 = 2026-11-07T05:35:21Z, the chain time of call-ledger batch 1 = its call_ledger_batches.anchored_at, measured) + 7 d; expires_at = not_before + 72 h."
     }
   ]
 }
