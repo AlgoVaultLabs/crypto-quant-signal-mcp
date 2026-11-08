@@ -5,6 +5,16 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.34.0] - 2026-11-08
+
+### Added
+- Saved rules for `pre_trade_check`. Save your rules once with `PUT /api/pre-trade-rules` and your API key; `GET` reads them and `DELETE` clears them, unbilled. Every check that key makes then applies them, and rules sent with a call still win. A rule from your saved profile shows `source: "saved"`, and the response's `saved_rules` (`applied`, `updated_at`) says whether a profile applied.
+- The docs now show how to make `pre_trade_check` a step your agent cannot skip: the AlgoVault pre-trade gate for Claude Code and Codex, and recipes for LangChain and Freqtrade ("Gate your orders" on /docs).
+- Receipts. An answered `pre_trade_check` carries a `ledger` receipt (`id`, `leaf`, `verify`); a refused call carries none. Once its root is anchored on Base, `verify://check/{id}` or `GET /api/verify-check?id=` proves the verdict your agent got was recorded unchanged; until then the lookup reads `pending`.
+
+### Fixed
+- Market regime direction. A swing structure making both higher highs and lower lows now reads MIXED, and the trend direction then follows the directional index (+DI/−DI), so a falling market no longer reads TRENDING_UP. Applies to get_market_regime, scan_market_regimes and pre_trade_check's regime; regime ages in scan_market_regimes restart under the new rule.
+
 ## [1.33.0] - 2026-11-02
 
 ### Added
