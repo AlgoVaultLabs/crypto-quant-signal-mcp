@@ -169,7 +169,7 @@ test('src/index.ts: dashboard JSX-faithful H2 alignment + W3+W4 deliverables pre
   assert.match(ts, /Ranked by verified <span class="text-mint-400">win rate<\/span>\./, 'leaderboard GEO H2 present (P1)');
   assert.match(ts, /<h2>Latest Trade Calls<\/h2>/, 'recent-calls H2 matches JSX FeedSection');
   // P1 deliverable: one leaderboard reading every segment dimension from the payload.
-  const func = ts.slice(ts.indexOf('function getPerformanceDashboardHtml'), ts.indexOf('// ── Smithery sandbox export'));
+  const func = ts.slice(ts.indexOf('function getPerformanceDashboardHtml'), ts.indexOf('// ── In-process server export'));
   assert.ok(func.includes('id="leaderboard-section"'), 'unified leaderboard present');
   assert.ok(!func.includes('<h2>Performance by Timeframe</h2>'), 'old fixed TF section removed');
   assert.ok(!func.includes('id="tier-stat-card-tier1"'), 'old fixed tier section removed');

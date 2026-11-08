@@ -1270,7 +1270,7 @@ jobs:
       # RELEASE-v1.28.0-AND-README-LINK-GATE-W1 CH1 R1b.3 — the LIVE README link/badge check.
       #
       # README.md is the npm shopfront and the GitHub front page, and until this wave nothing had
-      # ever read a link or an image in it. The Smithery badge it carried returned 500 for three
+      # ever read a link or an image in it. A directory badge it carried returned 500 for three
       # consecutive days while every gate stayed green, and the primary Sign Up CTA answered 400.
       #
       # LIVE here, SELF-TEST ONLY in prepublishOnly, and the split is deliberate: a publish must

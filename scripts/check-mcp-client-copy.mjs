@@ -471,7 +471,7 @@ export function checkLiveNumbersNote(files, readFile) {
 /** Fence / class languages that ARE shell. Any other declared language is not scanned. */
 export const SHELL_LANG_RE = /^(?:bash|sh|shell|zsh|console)$/i;
 /** An UNTYPED block is shell when its first non-blank line starts with one of these commands. */
-export const SHELL_FIRST_WORD_RE = /^\s*(?:\$\s+)?(?:claude|codex|npx|npm|curl|smithery|export|git|uvx|pip|brew|docker|cd)\b/;
+export const SHELL_FIRST_WORD_RE = /^\s*(?:\$\s+)?(?:claude|codex|npx|npm|curl|export|git|uvx|pip|brew|docker|cd)\b/;
 /**
  * A URL carrying a glob character. Quote characters end it, so a quoted URL is matched whole.
  * The trailing `{0,}` is deliberate: a `*` right before the closing slash spells a block-comment

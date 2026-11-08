@@ -5564,9 +5564,8 @@ ${renderBrandFooter('desktop')}
 </html>`;
 }
 
-// ── Smithery sandbox export ──
-// Allows Smithery to scan tools/resources without starting the server.
-// See https://smithery.ai/docs/deploy#sandbox-server
+// ── In-process server export ──
+// Builds the MCP server without starting it, for in-process readers (scripts/lib/mcp-tools-list.mjs).
 export function createSandboxServer() {
   return createServer();
 }

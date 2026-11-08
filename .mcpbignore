@@ -2,7 +2,6 @@ src/
 tests/
 scripts/
 .github/
-.smithery/
 backtest-results.json
 Caddyfile
 Dockerfile
@@ -16,7 +15,6 @@ vitest.config.ts
 dist/facilitator.js
 dist/scripts/
 server.json
-smithery.yaml
 # x402/viem deps — only used in remote HTTP mode, not needed for stdio desktop extension
 node_modules/viem/
 node_modules/@x402/

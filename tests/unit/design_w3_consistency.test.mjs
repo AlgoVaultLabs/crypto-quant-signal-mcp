@@ -140,7 +140,7 @@ test('src/index.ts: track-record tier breakdown served by the unified leaderboar
   // cards in getPerformanceDashboardHtml) is replaced by the unified leaderboard,
   // which reads byTier from the same payload. The .tier-stat-card CSS class itself
   // remains (used by /account + /integrations — see design_w10).
-  const func = ts.slice(ts.indexOf('function getPerformanceDashboardHtml'), ts.indexOf('// ── Smithery sandbox export'));
+  const func = ts.slice(ts.indexOf('function getPerformanceDashboardHtml'), ts.indexOf('// ── In-process server export'));
   assert.ok(func.includes('id="leaderboard-section"'), 'unified leaderboard present');
   assert.ok(/d\.byTier/.test(func), 'tier breakdown read from byTier in the leaderboard');
   assert.ok(!func.includes('id="tier-stat-card-tier1"'), 'old per-tier stat cards removed from track-record');

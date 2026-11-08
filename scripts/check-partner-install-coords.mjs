@@ -136,7 +136,7 @@ const PATTERNS = [
   // `X@ver` says nothing either way and keeps the published-versions-exist predicate.
   { kind: 'npm', invocation: 'cli', re: /npm[ \t]+(?:i|install)[ \t]+-g[ \t]+(@?[a-z0-9][a-z0-9._/-]*(?:@[0-9][^\s"'`<>)]*)?)/g },
   { kind: 'npm', invocation: 'library', re: /npm[ \t]+(?:i|install)[ \t]+(@?[a-z0-9][a-z0-9._/-]*(?:@[0-9][^\s"'`<>)]*)?)/g },
-  // `npx [flags] <pkg>` — the form `@smithery/cli` ships in on the smithery tutorial.
+  // `npx [flags] <pkg>`.
   { kind: 'npm', invocation: 'cli', re: /npx[ \t]+(?:-[a-zA-Z-]+[ \t]+)*(@?[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?(?:@[0-9][^\s"'`<>)]*)?)/g },
   // a backticked `<pkg>@<ver>` — an unknown invocation, deliberately. See `unknown` above.
   { kind: 'npm', invocation: 'unknown', re: /`(@?[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?@[0-9][A-Za-z0-9._-]*)`/g },
@@ -532,7 +532,7 @@ export function selfTest() {
     "  setupSummary: '<code>claude plugin install binance/binance-skills-hub</code>',",
     "  install: 'npx skills add https://github.com/binance/binance-skills-hub',",
     '  run: `npm install bitget-mcp-server`,',
-    '  alt: `npx -y @smithery/cli install thing`,',
+    '  alt: `npx -y @acme-tools/cli install thing`,',
     '  src: `git clone https://github.com/gemini/developer-platform`,',
     "  endpoint: 'https://agent.binance.com/mcp/agentic',",
     "  { label: 'Hub', href: 'https://github.com/binance/binance-skills-hub' },",
@@ -667,8 +667,8 @@ export function selfTest() {
     return !c.some((x) => x.value === 'npm') || 'extracted a package literally called "npm"';
   });
   check('npx flags are skipped, the package is captured', () => {
-    const c = extractCoordinates('npx -y @smithery/cli install foo', 'x.md');
-    return c.some((x) => x.kind === 'npm' && x.value === '@smithery/cli') || `got ${JSON.stringify(c.map((x) => x.value))}`;
+    const c = extractCoordinates('npx -y @acme-tools/cli install foo', 'x.md');
+    return c.some((x) => x.kind === 'npm' && x.value === '@acme-tools/cli') || `got ${JSON.stringify(c.map((x) => x.value))}`;
   });
 
   // (8) "contains mcp" is NOT "is an MCP endpoint". Each row below was a live false positive on
@@ -686,7 +686,7 @@ export function selfTest() {
     ['https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues', false],
     ['https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp', false],
     ['https://pypi.org/project/llama-index-tools-mcp/', false],
-    ['https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp', false],
+    ['https://directory.example/server/@AlgoVaultLabs/crypto-quant-signal-mcp', false],
   ];
   for (const [url, want] of endpointCases) {
     check(`endpoint discriminator: ${want ? 'IS' : 'is NOT'} an endpoint — ${url.slice(0, 62)}`,

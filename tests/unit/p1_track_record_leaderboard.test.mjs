@@ -45,7 +45,7 @@ async function readBrandColors() {
   return obj;
 }
 function perfFunc(src) {
-  return src.slice(src.indexOf('function getPerformanceDashboardHtml'), src.indexOf('// ── Smithery sandbox export'));
+  return src.slice(src.indexOf('function getPerformanceDashboardHtml'), src.indexOf('// ── In-process server export'));
 }
 
 // Extract the dashboard's inline <script> (the leaderboard controller lives here).

@@ -10,7 +10,6 @@
 node_modules
 dist/
 .DS_Store
-.smithery/
 *.mcpb
 *.db
 

@@ -57,6 +57,14 @@
     {
       "path": "src/**/*.test.ts",
       "reason": "TEST FIXTURES. A test asserting that a retired phrase is REJECTED must be able to contain it; banning it here would make the guard's own coverage unwritable — the `exemption + its test are a pair` rule."
+    },
+    {
+      "path": "src/lib/attribution-sources.ts",
+      "reason": "CLASSIFIER, not copy. It names retired channels so inbound traffic from them still attributes; the gate compiles case-insensitively and cannot tell an identifier from a sentence."
+    },
+    {
+      "path": "src/lib/client-registry.ts",
+      "reason": "CLASSIFIER, not copy. Same reason as attribution-sources.ts: it matches a client's own User-Agent string, which outlives the channel."
     }
   ],
   "_vacuity_note": "A manifest that expands to zero files is INDETERMINATE, never PASS. The corpus is CONSTRUCTED here, so empty means this file is wrong — not that the estate is clean."

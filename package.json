@@ -97,7 +97,6 @@
     "readme:links:selftest": "node scripts/check-readme-links.mjs --self-test",
     "readme:snapshot:check": "node scripts/check-readme-snapshot-freshness.mjs --check",
     "readme:snapshot:selftest": "node scripts/check-readme-snapshot-freshness.mjs --self-test",
-    "smithery:sync:selftest": "node scripts/check-smithery-sync.mjs --self-test",
     "plugin:manifests": "node scripts/check-plugin-manifests.mjs",
     "plugin:manifests:selftest": "node scripts/check-plugin-manifests.mjs --self-test",
     "cursor:manifest:sync": "node scripts/check-plugin-manifests.mjs --sync",
@@ -207,7 +206,6 @@
     "LICENSE",
     "logo.png",
     "server.json",
-    "smithery.yaml",
     "plugin.json",
     "mcp.json",
     ".cursor-plugin/plugin.json"

@@ -18,7 +18,7 @@ const WORKFLOW = '.github/workflows/deploy.yml';
  * a red. This file runs in the ordinary suite (pre-push gate, CI, `deploy.yml`'s own vitest step),
  * which is what makes such a regression UNLANDABLE instead of merely unlikely.
  *
- * That is the same reasoning `tests/unit/smithery-sync-lane.test.ts` records for the publish lane.
+ * That is the same reasoning `tests/unit/publish-lane-invariants.test.ts` records for the publish lane.
  * The estate has already paid for the alternative: a sibling repo met an auth quirk with
  * `continue-on-error: true` and that surface went stale IN SILENCE for months.
  *

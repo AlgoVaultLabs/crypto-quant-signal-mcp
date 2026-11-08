@@ -34,7 +34,7 @@ async function read(rel) {
 function dashboardFn(ts) {
   // Extract just the getPerformanceDashboardHtml function body for scoped grep.
   const start = ts.indexOf('function getPerformanceDashboardHtml');
-  const end = ts.indexOf('// ── Smithery sandbox export', start);
+  const end = ts.indexOf('// ── In-process server export', start);
   return ts.slice(start, end);
 }
 

@@ -57,11 +57,11 @@ function stripComments(src) {
 
 // Scope a substring to the getPerformanceDashboardHtml function body.
 // The function declaration begins at `function getPerformanceDashboardHtml`.
-// The function ends at the next top-level `}` followed by `// ── Smithery sandbox export ──`.
+// The function ends at the next top-level `}` followed by `// ── In-process server export ──`.
 function scopeToPerfFunc(src) {
   const start = src.indexOf('function getPerformanceDashboardHtml');
   if (start < 0) return '';
-  const end = src.indexOf('// ── Smithery sandbox export', start);
+  const end = src.indexOf('// ── In-process server export', start);
   return src.slice(start, end < 0 ? undefined : end);
 }
 

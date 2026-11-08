@@ -52,7 +52,6 @@ dist
 .gitignore
 .github
 .claude
-.smithery
 *.mcpb
 
 # ── Test and local-only artifacts ────────────────────────────────────────────

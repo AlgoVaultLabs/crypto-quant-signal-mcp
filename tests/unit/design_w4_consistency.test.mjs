@@ -119,7 +119,7 @@ test('src/index.ts: getPerformanceDashboardHtml W3 + W4 layers both present', as
   // SUPERSEDED BY P1-TRACK-RECORD-LEADERBOARD-W1: the W3 tier-stat + W4 exchange-stat
   // + tf-bar grids are replaced by ONE unified leaderboard rendered from the same
   // payload (byTier / byExchange / byTimeframe / byAsset). Removed grids:
-  const func = ts.slice(ts.indexOf('function getPerformanceDashboardHtml'), ts.indexOf('// ── Smithery sandbox export'));
+  const func = ts.slice(ts.indexOf('function getPerformanceDashboardHtml'), ts.indexOf('// ── In-process server export'));
   assert.ok(func.includes('id="leaderboard-section"'), 'unified leaderboard present (P1)');
   assert.ok(!func.includes('id="tier-stat-card-tier1"'), 'old tier-stat grid removed');
   assert.ok(!func.includes('id="exchange-stat-card-HL"'), 'old exchange-stat grid removed');

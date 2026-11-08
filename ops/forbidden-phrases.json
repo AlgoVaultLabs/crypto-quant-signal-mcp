@@ -323,6 +323,21 @@
         "captured_on": "2026-10-12"
       },
       "severity": "error"
+    },
+    {
+      "id": "retired-channel-smithery",
+      "pattern": "\\bsmithery\\b",
+      "retired_on": "2026-10-31",
+      "superseded_by": "the install paths on /integrations: npx or the remote HTTPS URL",
+      "reason": "Smithery closed its API, accounts, keys, CLI and hosted URLs on 2026-10-31 and our listing returns 404. No public surface may send a user there; re-adding it needs Mr.1's ruling.",
+      "bare_token_na_reason": "The pattern is already the bare word-bounded token, so a second pass over it could add nothing.",
+      "fixture_provenance": {
+        "source_path": "landing/mcp.html",
+        "source_sha": "8631dce1b19930ea17676d0d6055395d4e8010bc",
+        "captured_on": "2026-11-08"
+      },
+      "severity": "error",
+      "negative_context": "retired: '\\d{4}-\\d{2}-\\d{2}'"
     }
   ],
   "_negative_context_contract": "negative_context: a regex tested against the SAME LINE. On a match the hit is SUPPRESSED and COUNTED, and the run prints the suppression total — 'detect the thing, then JUDGE it separately, and print what the predicate excludes'. This exists because a live surface may legitimately NAME a retired phrase in order to retire it: a README release recap saying '$79/yr … Superseded: annual was retired 2026-08-09', or an authoring runbook teaching 'never write 20 calls/day'. Deleting those sentences would destroy the record that the retirement happened, which is the opposite of what this gate exists for.",

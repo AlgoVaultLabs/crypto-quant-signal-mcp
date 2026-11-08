@@ -675,7 +675,7 @@ function selfTest() {
     'Free tier: put a free key in the Authorization header for 200 calls a month. Or drop it and the env block to try 20 calls. Keep the X-AlgoVault-Track-Token header either way.',
     'Without a key you get 20 calls a month; a free key gives 200.',
     'Check the key at https://api.algovault.com/account, or drop the Authorization header to try 20 free calls.',
-    'Connect via npx, Smithery, or remote HTTPS. Try 20 calls with no sign-in; sign in free for 200 calls/month.',
+    'Connect via npx or remote HTTPS. Try 20 calls with no sign-in; sign in free for 200 calls/month.',
   ];
 
   console.log('SELF-TEST — forbidden-phrase gate');

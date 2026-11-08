@@ -73,6 +73,7 @@ interface Step {
   env?: Record<string, unknown>;
   /** Widened by OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2 R7 for INVARIANT 5/6 — read, never relaxed. */
   if?: string;
+  continueOnError?: boolean;
 }
 
 interface Lane {
@@ -81,6 +82,9 @@ interface Lane {
   jobId: string | null;
   /** Widened by OPS-DISTTAG-EVENTUAL-CONSISTENCY-W1 CH2 R7 for INVARIANT 7: the parsed `on:` block. */
   on?: Record<string, unknown> | null;
+  /** A job-level `env:` would put every secret in scope of the publish step. */
+  jobEnv?: Record<string, unknown> | null;
+  jobContinueOnError?: boolean;
 }
 
 /** Structural read of the publishing job's step list. Comments are gone by construction. */
@@ -91,7 +95,7 @@ function parseLane(src: string): Lane {
   } catch {
     return { steps: [], jobId: null };
   }
-  const jobs = (doc.jobs ?? {}) as Record<string, { steps?: unknown[] }>;
+  const jobs = (doc.jobs ?? {}) as Record<string, { steps?: unknown[]; env?: unknown }>;
 
   // Identify the publishing job BY WHAT IT DOES, never by its key. A job renamed from `publish`
   // must not silently drop every assertion below to a vacuous pass.
@@ -107,10 +111,17 @@ function parseLane(src: string): Lane {
         with: (step.with ?? undefined) as Record<string, unknown> | undefined,
         env: (step.env ?? undefined) as Record<string, unknown> | undefined,
         if: step.if === undefined || step.if === null ? undefined : String(step.if),
+        continueOnError: 'continue-on-error' in step,
       };
     });
     if (steps.some((s) => /\bnpm publish\b/.test(s.run ?? ''))) {
-      return { steps, jobId, on: (doc.on ?? null) as Record<string, unknown> | null };
+      return {
+        steps,
+        jobId,
+        on: (doc.on ?? null) as Record<string, unknown> | null,
+        jobEnv: (job?.env ?? null) as Record<string, unknown> | null,
+        jobContinueOnError: 'continue-on-error' in (job ?? {}),
+      };
     }
   }
   return { steps: [], jobId: null };
@@ -237,6 +248,25 @@ describe('publish-npm.yml — the lane invariants, asserted over its parsed step
   });
 });
 
+describe('publish-npm.yml — no fail-open lever, no token in scope (INVARIANT 8–9)', () => {
+  it('INVARIANT 8 — no step and no job carries continue-on-error', () => {
+    // A fail-open lever converts a verification step into decoration, and it is always added in a
+    // hurry during a release. The raw scan matches a YAML key at line start, so prose stays legal.
+    const offenders = lane.steps.filter((s) => s.continueOnError).map((s) => s.name || `#${s.index}`);
+    expect(lane.steps.length, 'INVARIANT 8: a vacuous parse must never read as a clean lane').toBeGreaterThan(0);
+    expect(offenders, 'INVARIANT 8 (no fail-open): a step carries continue-on-error').toEqual([]);
+    expect(lane.jobContinueOnError, 'INVARIANT 8: the publishing job itself must not continue-on-error').toBe(false);
+    expect(SRC.split('\n').filter((l) => /^\s*continue-on-error\s*:/.test(l)), 'INVARIANT 8 (raw)').toEqual([]);
+  });
+
+  it('INVARIANT 9 — no job-level env, and the publish step binds no env at all', () => {
+    // A job-level `env:` puts every secret in scope of the publish step, and a present token makes
+    // npm skip the OIDC exchange (INVARIANT 3).
+    expect(lane.jobEnv, 'INVARIANT 9: no job-level env on the publishing job').toBeNull();
+    expect(Object.keys(find(lane, isPublish)?.env ?? {}).length, 'INVARIANT 9: the publish step binds env').toBe(0);
+  });
+});
+
 describe('the canary is PROVEN able to fail', () => {
   // Not ceremony. An assertion nobody has watched go red is a hope. Each fixture below is the REAL
   // lane source, deliberately broken ONE way, read through the SAME parseLane() the cases above
@@ -282,6 +312,16 @@ describe('the canary is PROVEN able to fail', () => {
     const broken = parseLane(moved);
     expect(idx(broken, isAncestorGuard)).toBeGreaterThanOrEqual(0); // still present…
     expect(idx(broken, isAncestorGuard) < idx(broken, isInstall)).toBe(false); // …but too late
+  });
+
+  it('injecting continue-on-error breaks INVARIANT 8', () => {
+    const broken = parseLane(mutate('      - name: Verify dist-tag\n', '      - name: Verify dist-tag\n        continue-on-error: true\n'));
+    expect(broken.steps.filter((s) => s.continueOnError).map((s) => s.name)).toEqual(['Verify dist-tag']);
+  });
+
+  it('a job-level env breaks INVARIANT 9', () => {
+    const broken = parseLane(mutate('    runs-on: ubuntu-latest\n', '    runs-on: ubuntu-latest\n    env:\n      SOME_SECRET: ${{ secrets.SOME_SECRET }}\n'));
+    expect(Object.keys(broken.jobEnv ?? {})).toContain('SOME_SECRET');
   });
 
   it('binding NODE_AUTH_TOKEN on the publish step breaks INVARIANT 3', () => {

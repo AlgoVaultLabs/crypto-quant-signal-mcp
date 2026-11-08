@@ -8,7 +8,7 @@
  * ── The bug class ───────────────────────────────────────────────────────────
  * `README.md` IS the npm shopfront — it is what an integrator lands on first, and it is rendered
  * verbatim on npmjs.com and on the GitHub repo front page. No gate has ever read a link or an
- * image in it. Measured 2026-08-19/20/21: the Smithery badge at `README.md:37` returned **500 on
+ * image in it. Measured 2026-08-19/20/21: a directory badge at `README.md:37` returned **500 on
  * three consecutive days**, so the front page of the package served a broken image to every
  * visitor, and nothing anywhere could notice.
  *
@@ -19,8 +19,8 @@
  * none of them covered.
  *
  * ── What this gate CANNOT see, stated so nobody over-trusts it ──────────────
- * A soft-404. Measured on the same Smithery listing this wave removes: both
- * `smithery.ai/server/@algovault/…` and `…/server/algovault/…` return **HTTP 200** while rendering
+ * A soft-404. Measured on the directory listing this wave removed: both URL forms of it returned
+ * **HTTP 200** while rendering
  * `404: Server Not Found or Removed`. A status-code checker passes that link. Body assertions are
  * a different corpus and a different wave — see the Out-of-scope note in status.md. Naming the
  * limit is worth more than implying coverage this does not have.

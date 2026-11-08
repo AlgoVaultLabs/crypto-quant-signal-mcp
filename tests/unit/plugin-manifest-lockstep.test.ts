@@ -32,8 +32,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
  * ── WHAT IT IS REALLY DEFENDING ─────────────────────────────────────────────
  * `Version-Bump-SOP.md` §4's companion arithmetic was a three-way equality
  * (`package.json` = `server.json` = `manifest.json`) and is now four-way. A new versioned file
- * that the release wave forgets to bump is exactly the drift class OPS-SMITHERY-PUBLISH-LANE-W1
- * spent a wave retiring on a different surface. Prose in an SOP has failed as a control here
+ * that the release wave forgets to bump is exactly the drift class an earlier wave
+ * spent itself retiring on a different surface. Prose in an SOP has failed as a control here
  * before; this is the gate.
  *
  * It also defends TWO duplications this wave deliberately introduced, because an unasserted
@@ -201,7 +201,7 @@ describe('every shipped manifest reaches an npm consumer, and carries clean publ
 
   it('plugin.json.description carries no baked venue count', () => {
     // Public copy: this string reaches the Cursor listing verbatim. Asserted through the SHARED
-    // predicate, so it cannot diverge from the one the Smithery gate enforces.
+    // predicate, so it cannot diverge from the one every public-copy gate enforces.
     expect(typeof plugin.description).toBe('string');
     expect(hasBakedVenueCount(plugin.description as string), 'the HELD list forbids a hardcoded venue count on every surface').toBe(false);
   });

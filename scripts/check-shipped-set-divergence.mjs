@@ -261,7 +261,7 @@ function selfTest() {
   };
 
   const CFG = { rootDir: 'src', outDir: 'dist', suffixes: emitSuffixes({ declaration: true, declarationMap: true, sourceMap: true }) };
-  const FILES = new Set(['dist', 'README.md', 'LICENSE', 'logo.png', 'server.json', 'smithery.yaml']);
+  const FILES = new Set(['dist', 'README.md', 'LICENSE', 'logo.png', 'server.json']);
   const expand = (changes) => changes.flatMap((c) => shippedEntriesFor(c, { filesSet: FILES, ...CFG }));
 
   console.log('── the tsc emit contract, derived and never hardcoded ──');

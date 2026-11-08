@@ -19,7 +19,7 @@ the generator.
 
 | Tutorial kind | Source of truth |
 |---|---|
-| **MCP clients** (`claude-desktop`, `cursor`, `cline`, `claude-code`, `smithery`, `codex`, `kimi`, `glm-zcode`) | `docs/integrations/mcp-clients/<slug>.md` — **this repo** |
+| **MCP clients** (`claude-desktop`, `cursor`, `cline`, `claude-code`, `codex`, `kimi`, `glm-zcode`) | `docs/integrations/mcp-clients/<slug>.md` — **this repo** |
 | **Exchange kits** (`binance`, `okx`, `bybit`, `bitget`, `gemini`, `kraken`, `alpaca`, `hyperliquid`, `aster`, `bingx`, `kucoin`, `gateio`) | `docs/integrations/<slug>.md` in **`algovault-skills`** (separate repo) |
 | **Agent frameworks** (`langchain`, `llamaindex`, `maf`, `crewai`) | `docs/integrations/<slug>.md` in **`algovault-skills`** |
 | **In-repo exchange kits** (`binance-agent-os`) | `docs/integrations/exchange-kits/<slug>.md` — **this repo** |
@@ -128,8 +128,6 @@ looks like three unrelated canaries rather than "you ran the generators out of o
   `X-AlgoVault-Track-Token` header is a *different* mechanism (funnel dedup) and is not a
   substitute. Do not "clean up" the query string.
 - **Track token matches the slug** — `X-AlgoVault-Track-Token: int-<slug>` on every config path.
-  `smithery` is the documented exception: it shows only the `@smithery/cli` install and carries no
-  raw connect URL, so it has no token by design.
 - **The free tier has TWO caps: `200 calls/month` AND `100 calls/day`.** Both are real and
   enforced independently — a call is refused when either is exhausted, and the daily window is a
   UTC calendar day resetting at 00:00 UTC. State whichever the reader needs; stating only one is

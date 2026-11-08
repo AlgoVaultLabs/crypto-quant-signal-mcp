@@ -126,5 +126,12 @@
     "source_sha": "c81a57407069f2abcbcbea66bda1f8b70c7e3c45",
     "captured_on": "2026-10-12",
     "note": "Sampled from the Codex FAQ at the pre-CH4 tip; one of the ~20 sentences this row enumerated. Rewritten by GROWTH-AGENT-SIGNIN-STEPUP-W1-V2 CH4; the gate reads these bytes from git history at source_sha."
+  },
+  "retired-channel-smithery": {
+    "sample": "Auto-managed connection via Smithery registry. Easiest install across clients.",
+    "source_path": "landing/mcp.html",
+    "source_sha": "8631dce1b19930ea17676d0d6055395d4e8010bc",
+    "captured_on": "2026-11-08",
+    "note": "Sampled from the /mcp client table before the channel was retired; the gate reads these bytes from git history at source_sha."
   }
 }

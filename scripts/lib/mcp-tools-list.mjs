@@ -1,11 +1,9 @@
 /**
  * Parse a `tools/list` response body from our own MCP origin — ONE derivation, two gates.
  *
- * WHY IT MOVED HERE. Authored inside `scripts/check-smithery-sync.mjs` by
- * `OPS-SMITHERY-PUBLISH-LANE-W1`; extracted by `OPS-CURSOR-PLUGIN-MANIFESTS-W1` when a second gate
- * needed the same parse. That file runs `main()` at module scope, so it cannot be imported without
- * executing the live gate, and re-implementing a response parser is how two readers of one wire
- * format come to disagree about it. Same reasoning as `scripts/lib/baked-venue-count.mjs`.
+ * WHY IT MOVED HERE. Extracted by `OPS-CURSOR-PLUGIN-MANIFESTS-W1` when a second gate needed the
+ * same parse. Re-implementing a response parser is how two readers of one wire format come to
+ * disagree about it. Same reasoning as `scripts/lib/baked-venue-count.mjs`.
  *
  * WHAT IT HANDLES, AND WHY EACH BRANCH EXISTS. The remote transport runs STATELESS
  * (`sessionIdGenerator: undefined`), so there is no `Mcp-Session-Id` and its absence is CORRECT —
@@ -17,7 +15,6 @@
  * never to a clean result, and never to FAIL. Empty-vs-unparseable is the line.
  *
  * Consumers of `parseToolNames`:
- *   - scripts/check-smithery-sync.mjs        (SMITHERY_SYNC_VERDICT)
  *   - scripts/check-plugin-manifests.mjs     (PLUGIN_MANIFESTS_VERDICT)
  *   - scripts/check-primitive-resolution.mjs (judges ops/primitive-registry.json against live tools/list)
  *
