@@ -22,6 +22,7 @@
  *       sources, or carries a reasoned SOURCE_EVIDENCE_EXEMPT entry (LANDING-MCP-CLIENTS-CLAIMS-W1)
  *   R9  every row with README cells carries an evidence claim that sits in its `readme.cell`
  *   R13 the surface footer equals the derivation from the rows — never a hand-typed list again
+ *   R14 every absolute off-site href in a row's HTML is one of that row's evidence sources
  *
  * Every rule is asserted TWO-WAY: once over the real SoT (must be clean) and once over a
  * synthetic broken fixture (must fire). A rule proven only on the clean side is a rule nobody
@@ -47,6 +48,7 @@ import {
   buildClaimEvidenceDoc,
   collapseWhitespace,
   evidenceProblems,
+  offSiteHrefs,
   isAbsoluteHttpsUrl,
   moduleCoverageProblems,
   readmeEvidenceProblems,
@@ -351,6 +353,42 @@ describe('R8 — every footer link is a page the canary confirms', () => {
 
   it('an exemption for a row that does not exist fires', () => {
     expect(sourceEvidenceProblems([fixtureRow()], { ghost: 'a reason' }).length).toBe(1);
+  });
+});
+
+describe('R14 — a link we send a reader to is an evidence anchor', () => {
+  const LISTING = 'https://smithery.ai/servers/algovault/crypto-quant-signal-mcp';
+  const link = (href: string) => `<p>Edit <code>~/.fixture/config.toml</code> &rarr; save. <a href="${href}">Listing</a></p>`;
+
+  it('the removed row\'s unanchored listing link fires, naming slug and href', () => {
+    const problems = evidenceProblems([fixtureRow({ walkthroughHtml: link(LISTING) })], render);
+    expect(problems.map((p) => p.rule)).toEqual(['R14']);
+    expect(problems[0].slug).toBe('fixture');
+    expect(problems[0].detail).toContain(LISTING);
+  });
+
+  it('a protocol-relative link is off-site too', () => {
+    expect(rules([fixtureRow({ whatYouGet: '<a href="//vendor.example/x">x</a>' })])).toEqual(['R14']);
+  });
+
+  it('an href that is one of the row\'s evidence sources passes', () => {
+    expect(rules([fixtureRow({ walkthroughHtml: link('https://vendor.example/docs') })])).toEqual([]);
+  });
+
+  it('our own host, a relative link and a mailto are not off-site', () => {
+    for (const href of ['https://api.algovault.com/health', 'https://algovault.com/docs', '/integrations/cursor', 'mailto:hi@algovault.com']) {
+      expect(rules([fixtureRow({ walkthroughHtml: link(href) })]), href).toEqual([]);
+    }
+  });
+
+  it('offSiteHrefs reads every rendered HTML field', () => {
+    const row = fixtureRow({
+      setupSummary: '<a href="https://a.example/1">a</a> Run <code>fixture add --flag</code>',
+      whatYouGet: "<a href='https://b.example/2'>b</a>",
+      walkthroughSummary: '<a href="https://c.example/3">c</a>',
+      walkthroughHtml: '<a href="https://d.example/4?a=1&amp;b=2">d</a>',
+    });
+    expect(offSiteHrefs(row)).toEqual(['https://a.example/1', 'https://b.example/2', 'https://c.example/3', 'https://d.example/4?a=1&b=2']);
   });
 });
 

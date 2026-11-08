@@ -26,7 +26,8 @@ Every row carries evidence entries: {claim, source, expect[], reject[]?, npmScop
     Case-SENSITIVE — measured: the Claude support page carries "Organization settings > Connectors",
     so a case-insensitive match would CONFIRM the false "Settings > Connectors". Tags become
     SPACES — measured: "mcp_servers Ignored" exists only across a </td><td> boundary.
-    A non-200 is `unreachable`. A final URL on a different host + path (ignoring a trailing `/`,
+    HTTP 404 or 410 grades `contradicted`: the page is gone, a definite finding that pages on that
+    run. Any other non-200 (403, 429, 5xx, a timeout) is `unreachable`. A final URL on a different host + path (ignoring a trailing `/`,
     the query and the fragment) is a `moved` NOTE — reported, never a finding on its own.
     Row evidence: any contradicted -> contradicted; else any unreachable -> unreachable; else
     confirmed. A row is confirmed only when EVERY one of its anchors confirms.
@@ -160,6 +161,8 @@ STATE_PRECEDENCE = (ST_CONTRADICTED, ST_STALE, ST_INDETERMINATE, ST_UNREACHABLE,
 AN_CONFIRMED = "confirmed"
 AN_CONTRADICTED = "contradicted"
 AN_UNREACHABLE = "unreachable"
+# The server said the page is gone, as opposed to refusing or failing to answer today.
+SOURCE_GONE_HTTP = (404, 410)
 AN_INDETERMINATE = "indeterminate"
 ANCHOR_PRECEDENCE = (AN_CONTRADICTED, AN_INDETERMINATE, AN_UNREACHABLE, AN_CONFIRMED)
 
@@ -368,7 +371,11 @@ def evaluate_anchor(anchor, page, scope_fn):
     out = {"claim": anchor.get("claim", ""), "source": anchor["source"], "note": page.get("note", ""),
            "moved": moved_to(anchor["source"], page.get("final")) if page["http"] == 200 else None}
     parts = []
-    if page["http"] != 200:
+    if page["http"] in SOURCE_GONE_HTTP:
+        parts.append(AN_CONTRADICTED)
+        out["source_gone"] = True
+        out["why"] = "source http=%s%s" % (page["http"], "; " + page["note"] if page.get("note") else "")
+    elif page["http"] != 200:
         parts.append(AN_UNREACHABLE)
         out["why"] = "source http=%s%s" % (page["http"], "; " + page["note"] if page.get("note") else "")
     else:
@@ -491,7 +498,7 @@ def _anchor_lines(a):
     if a.get("vendor"):
         lines.append("    vendor ships a first-party MCP client: %s" % ", ".join(a["vendor"]))
     if a.get("why"):
-        lines.append("    unverifiable today: %s" % a["why"])
+        lines.append("    %s: %s" % ("source gone" if a.get("source_gone") else "unverifiable today", a["why"]))
     lines.append("    source: %s%s" % (a["source"], " (moved → %s)" % a["moved"] if a.get("moved") else ""))
     return lines
 
@@ -962,6 +969,18 @@ def self_test():
     un = evaluate_anchor(anchor(), page("", http=400), scoper())
     check("a non-200 -> unreachable, carrying the http code",
           lambda: un["verdict"] == AN_UNREACHABLE and "400" in un["why"])
+    for code in (404, 410):
+        gone = evaluate_anchor(anchor(), page("", http=code), scoper())
+        check("http %d -> contradicted, the page is gone" % code,
+              lambda g=gone, c=code: g["verdict"] == AN_CONTRADICTED
+              and ("source http=%d" % c) in g["why"])
+        check("http %d reads as 'source gone', never 'unverifiable today'" % code,
+              lambda g=gone: "source gone: source http=" in "\n".join(_anchor_lines(g))
+              and "unverifiable today" not in "\n".join(_anchor_lines(g)))
+    for code in (403, 429, 500, 503, 0):
+        still = evaluate_anchor(anchor(), page("", http=code), scoper())
+        check("http %d -> unreachable, it ages as before" % code,
+              lambda s=still: s["verdict"] == AN_UNREACHABLE)
     mv = evaluate_anchor(anchor(src="https://v.example/old/path"),
                          page("<p>fixture add</p>", final="https://v.example/new/path"), scoper())
     check("a cross-path redirect -> still CONFIRMED, plus a `moved` note naming the final URL",

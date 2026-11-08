@@ -94,7 +94,7 @@ export function anchorTokenProblem(token: string): string | null {
 
 export interface EvidenceProblem {
   slug: string;
-  rule: 'R1' | 'R2' | 'R3' | 'R4' | 'R8' | 'R9';
+  rule: 'R1' | 'R2' | 'R3' | 'R4' | 'R8' | 'R9' | 'R14';
   detail: string;
 }
 
@@ -108,8 +108,35 @@ export function claimHaystack(e: EvidencedEntry, renderText: (e: EvidencedEntry)
   return collapseWhitespace(renderText(e) + readme);
 }
 
+const ROW_HTML_FIELDS = ['setupSummary', 'whatYouGet', 'walkthroughSummary', 'walkthroughHtml'] as const;
+const OWN_HOST_RE = /(^|\.)algovault\.com$/i;
+
 /**
- * R1–R4 over a set of rows. `renderText` is injected because the ONE derivation of reader-visible
+ * R14. Every absolute off-site href in a row's rendered HTML. A link we send a reader to is a claim
+ * that the page exists, so it has to be an evidence anchor the canary re-reads. Relative links are
+ * on-site by construction; a protocol-relative one is not, so it is read as https.
+ */
+export function offSiteHrefs(e: EvidencedEntry): string[] {
+  const out: string[] = [];
+  for (const field of ROW_HTML_FIELDS) {
+    const html = e[field];
+    if (typeof html !== 'string') continue;
+    for (const m of html.matchAll(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+      const href = (m[1] ?? m[2] ?? '').replace(/&amp;/g, '&').trim();
+      let url: URL;
+      try {
+        url = new URL(href.startsWith('//') ? `https:${href}` : href);
+      } catch {
+        continue;
+      }
+      if ((url.protocol === 'http:' || url.protocol === 'https:') && !OWN_HOST_RE.test(url.hostname)) out.push(href);
+    }
+  }
+  return out;
+}
+
+/**
+ * R1–R4 and R14 over a set of rows. `renderText` is injected because the ONE derivation of reader-visible
  * row text is `renderedRowText()` in scripts/check-mcp-client-copy.mjs — a second copy here would
  * be a second thing that can disagree with what the copy gate sees.
  */
@@ -144,6 +171,12 @@ export function evidenceProblems(
         out.push({ slug: e.slug, rule: 'R4', detail: `${at} npmScopeAbsence "${a.npmScopeAbsence}" is not an npm scope (@name)` });
       }
     });
+    const sources = new Set(evidence.map((a: LiveClaimEvidence) => a.source));
+    for (const href of offSiteHrefs(e)) {
+      if (!sources.has(href)) {
+        out.push({ slug: e.slug, rule: 'R14', detail: `off-site link ${href} is not one of this row's evidence sources, so nothing re-reads it` });
+      }
+    }
   }
   return out;
 }
