@@ -165,6 +165,8 @@ AlgoVault is drop-in for every MCP-spec client, every major agent framework, and
 
 Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a real BUY/SELL/HOLD verdict from `api.algovault.com/mcp`, prints it. ≤5 minutes to first call.
 
+**Pre-trade gate.** Make `pre_trade_check` a step your agent cannot skip. In [Claude Code](https://algovault.com/integrations/claude-code) and [Codex](https://algovault.com/integrations/codex), the AlgoVault pre-trade gate blocks an order until the check has run for that coin and side, and stops it on WAIT. The [LangChain](https://algovault.com/integrations/langchain) and [Freqtrade](https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/freqtrade) recipes run the check before an order and block it when the check cannot run.
+
 **Exchange Agent Trade Kits.** AlgoVault returns the analytics; your agent's risk policy decides what to execute. All demos run testnet/demo only. For Binance, the Agent OS path is the recommended default for new integrations — OAuth at connect time, no API keys on the machine; the key-based kit remains right for custom order types.
 
 <!-- BUILD:README_INTEGRATIONS_TABLE -->
@@ -201,6 +203,8 @@ The MCP tools live at `https://api.algovault.com/mcp`. Every asset works across 
 - **`get_track_record`** — the published track record as a tool call, for clients that bridge tools but not resources. `include` opens the per-asset, per-venue and recent-call sections.
 
 Performance is exposed as a read-only MCP resource: `performance://signal-performance` (aggregated PFE win rate, never raw outcomes). Full parameter reference at [algovault.com/docs](https://algovault.com/docs.html).
+
+Every answered `pre_trade_check` carries a receipt you can verify through the read-only resource `verify://check/{id}` or `GET /api/verify-check?id=`, against its root anchored on Base.
 
 ### Skills (20 ready-to-use Anthropic Agent Skills)
 
@@ -265,7 +269,15 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 
 ---
 
-## What's new in v1.33.0
+## What's new in v1.34.0
+
+- **📌 Save your rules once.** Save your `pre_trade_check` rules with `PUT /api/pre-trade-rules` and your API key, and every check that key makes applies them. Rules you send with a call still win. A rule from your saved profile shows `source: "saved"`, and `saved_rules` says whether a profile applied.
+- **🚧 Make the check a step your agent cannot skip.** In Claude Code and Codex, the AlgoVault pre-trade gate blocks an order tool call until `pre_trade_check` has recently checked that coin and side, and blocks it when the check returns WAIT. In LangChain and Freqtrade, a recipe runs the check before the order.
+- **🧾 A receipt with every answered check.** An answered `pre_trade_check` carries a `ledger` receipt. Once its root is anchored on Base, `verify://check/{id}` or `GET /api/verify-check?id=` proves the verdict your agent got was recorded unchanged.
+
+**Upgrading from v1.33.x** — additive. No tool or tool parameter was added, renamed or removed. `pre_trade_check` responses gain `saved_rules` and `ledger`, and a rule can now show `source: "saved"`. New: the resource `verify://check/{id}` and the routes `/api/pre-trade-rules` and `GET /api/verify-check`. Market regime direction follows a corrected rule, so some regimes read differently and regime ages in `scan_market_regimes` restarted.
+
+### v1.33.x highlights (recap)
 
 - **🛡️ Check an order against your own rules before you place it.** `pre_trade_check` takes the order you intend to place and your limits (maximum leverage, loss at your stop, accuracy needed to break even, funding) and returns each rule's pass or fail with its numbers, then GO, CAUTION or WAIT. It also shows where isolated liquidation sits on each venue that publishes its margin tiers, and whether it hits before your stop.
 - **🔐 Sign in from inside Claude.** Add AlgoVault as a custom connector and choose Sign in when needed. When Claude asks, click Connect and sign in with your email. On a paid plan, sign in with your subscription email and your plan applies.
@@ -277,14 +289,6 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 - **🧭 Screen a whole venue by market regime in one call.** `scan_market_regimes` returns every coin whose regime matches your filter — TRENDING_UP, TRENDING_DOWN, RANGING or VOLATILE — with confidence, trend strength, ADX, volatility ratio and how long the regime has held. Filter by regime, confidence, asset class, liquidity, regime age or your own watchlist, then sort by confidence or by the newest regime change. You pay one call per returned row (at least one per request); coins that don't match are free. A venue or timeframe it can't serve right now is refused with the alternatives, and isn't billed. The screener is served from the hosted endpoint; a local install lists it and refuses the call with a pointer there.
 
 **Upgrading from v1.31.x** — additive. One tool was added, `scan_market_regimes`; no tool or parameter was renamed or removed. `GET /api/plans/public` gains two blocks under `free`: `keyless` (the allowance without a key) and `telegram` (the Telegram bot's own allowance, counted in alerts). One free-tier allowance changed: 20 calls a month without a key; a free key gives 200 (up to 100/day).
-
-### v1.31.x highlights (recap)
-
-- **🧩 Install from the package, not from a pasted config block.** `plugin.json`, `mcp.json` and `.cursor-plugin/plugin.json` now ship inside the npm tarball, so an Agent-Plugins-compatible host — Cursor included — reads the server definition straight out of the installed package. Until this release those files lived in the repository only, and no npm consumer could obtain them.
-
-- **v1.31.1** — Trade-call verdicts are now chosen by one declared rule per timeframe and trend direction, instead of a global mode setting. The calls you receive are unchanged by the switch.
-
-**Upgrading from v1.30.x** — one value in the response envelope changed: `_algovault.compatible_with` is now `[]` and names no companion package. If your client rendered those package names, stop rendering them; there is no companion package published today. Nothing else in the envelope changed, and no tool or parameter was added, renamed or removed.
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
