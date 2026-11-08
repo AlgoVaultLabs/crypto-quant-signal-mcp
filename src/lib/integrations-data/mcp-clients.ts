@@ -308,47 +308,6 @@ const MCP_CLIENTS: SurfaceModule<EvidencedEntry> = {
       ],
     },
     {
-      slug: 'smithery',
-      displayName: 'Smithery',
-      surfaceType: 'mcp-client',
-      setupSummary:
-        '<code class="text-xs bg-navy-800 px-1 rounded">npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;</code>',
-      whatYouGet:
-        'Auto-managed connection via Smithery registry. Easiest install across clients.',
-      walkthroughHtml: `      <p>The Smithery CLI installs and configures the MCP server in your client of choice automatically:</p>
-      <div class="code-block bg-well border border-line rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300"># Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code
-npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;client&gt;</code></pre>
-      </div>
-      <p>The CLI writes a Smithery-gateway entry into your client's config. It carries no API key, so this path is the free tier. Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href="https://smithery.ai/servers/algovault/crypto-quant-signal-mcp" class="text-mint-400 hover:underline">smithery.ai</a>.</p>`,
-      fullTutorialUrl: '/integrations/smithery',
-      hasDedicatedPage: true,
-      kind: 'native',
-      source: 'https://www.npmjs.com/package/@smithery/cli',
-      verifiedAt: '2026-10-01',
-      sourceLabel: '@smithery/cli on npm',
-      evidence: [
-        {
-          // The canary rewrites an npmjs.com package page to its registry document (README included).
-          claim: 'npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp',
-          source: 'https://www.npmjs.com/package/@smithery/cli',
-          expect: ['smithery mcp add'],
-        },
-        {
-          claim: 'algovault/crypto-quant-signal-mcp',
-          source: 'https://registry.smithery.ai/servers/algovault/crypto-quant-signal-mcp',
-          expect: ['"qualifiedName":"algovault/crypto-quant-signal-mcp"'],
-        },
-        {
-          // `--client` is what lets `mcp add` run with no Smithery login (without it the CLI exits
-          // 1 asking for an API key); the README does not document it, the shipped bundle does.
-          claim: '--client <client>',
-          source: 'https://unpkg.com/@smithery/cli/dist/index.js',
-          expect: ['Install directly to an AI client'],
-        },
-      ],
-    },
-    {
       slug: 'plain-http',
       displayName: 'Plain HTTP / curl',
       surfaceType: 'mcp-client',

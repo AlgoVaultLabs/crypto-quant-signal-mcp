@@ -36,7 +36,7 @@
  *   2. footer preamble "verified 2026-04-30" -> "verified per client". Each row now carries its
  *      own `verifiedAt`, so one surface-wide date became a false claim the moment a single row
  *      was re-checked (5 were, on 2026-08-05).
- *   3. the @smithery/cli footer link's trailing "." -> " &middot;" — it is no longer the last
+ *   3. the then-last footer link's trailing "." -> " &middot;" — it is no longer the last
  *      link in the list. Positional only.
  * Every other line of the original six rows is present verbatim in the new fixture (verified by
  * exhaustive old-line containment, not by eyeballing the diff).
@@ -83,8 +83,7 @@
  * and the shell-quoting fix in two more. Reviewed BEFORE regenerating as a unit-level diff (HTML
  * split at tag boundaries, whitespace normalized): 66 changed units, every one inside an R-row —
  * claude-desktop R1–R4 (Customize → Connectors; the UI path is the free tier; the
- * Authorization:${AUTH_HEADER} + env JSON form), codex R6, smithery R8–R10 (`mcp add`, the
- * gateway entry, the /servers/algovault listing), plain-http R11 (no version literal), and the
+ * Authorization:${AUTH_HEADER} + env JSON form), codex R6, a since-retired row R8–R10, plain-http R11 (no version literal), and the
  * quoted `?src=docs` URL in claude-code and deepseek (R12). The raw file diff is 12 lines out,
  * 13 in. Nothing else in the surface moved.
  * ...and again in CH2 (2026-10-02) for R13: the footer link list is now DERIVED from each row's
@@ -145,6 +144,10 @@
  * substitutions made in mcp-clients.ts: "Easiest path (UI, free tier):" -> "Easiest path (UI):",
  * and "For a paid-tier key, use the JSON path below." -> the four sign-in sentences. Every other
  * line is unchanged.
+ *
+ * FIXTURE MAINTENANCE — 2026-11-08: regenerated to absorb the removal of one mcp-clients row, whose
+ * directory closed on 2026-10-31. Line diff checked before regenerating: only that row's table
+ * row, its walkthrough and its footer link leave, and nothing is added.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -191,12 +194,11 @@ describe('mcp-usage-docs byte-equivalence (C1 refactor contract)', () => {
     expect(renderedWithoutExchangeKits).not.toContain('Connect Your Exchange Kit');
   });
 
-  it('preserves the original 6 MCP-client table rows', () => {
+  it('preserves the original MCP-client table rows', () => {
     expect(renderedWithoutExchangeKits).toContain('Claude Desktop');
     expect(renderedWithoutExchangeKits).toContain('Cursor');
     expect(renderedWithoutExchangeKits).toContain('Cline (VSCode)');
     expect(renderedWithoutExchangeKits).toContain('Claude Code');
-    expect(renderedWithoutExchangeKits).toContain('Smithery');
     expect(renderedWithoutExchangeKits).toContain('Plain HTTP / curl');
   });
 

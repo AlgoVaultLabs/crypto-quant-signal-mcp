@@ -143,35 +143,6 @@
       ]
     },
     {
-      "slug": "smithery",
-      "kind": "native",
-      "verifiedAt": "2026-10-01",
-      "source": "https://www.npmjs.com/package/@smithery/cli",
-      "evidence": [
-        {
-          "claim": "npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp",
-          "source": "https://www.npmjs.com/package/@smithery/cli",
-          "expect": [
-            "smithery mcp add"
-          ]
-        },
-        {
-          "claim": "algovault/crypto-quant-signal-mcp",
-          "source": "https://registry.smithery.ai/servers/algovault/crypto-quant-signal-mcp",
-          "expect": [
-            "\"qualifiedName\":\"algovault/crypto-quant-signal-mcp\""
-          ]
-        },
-        {
-          "claim": "--client <client>",
-          "source": "https://unpkg.com/@smithery/cli/dist/index.js",
-          "expect": [
-            "Install directly to an AI client"
-          ]
-        }
-      ]
-    },
-    {
       "slug": "plain-http",
       "kind": "native",
       "verifiedAt": "2026-10-01",

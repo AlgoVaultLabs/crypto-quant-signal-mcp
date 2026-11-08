@@ -23,6 +23,7 @@ import { resolveOAuthMode } from './lib/oauth/mode.js';
 import { sendBearerChallenge } from './lib/oauth/metadata.js';
 import { applyChallenge } from './lib/oauth/challenge.js';
 import { mountOAuth, oauthCallbackBranch } from './lib/oauth/routes.js';
+import { integrationPageHandler } from './lib/integrations-data/retired-slugs.js';
 import { routeTradeCall } from './tools/trade-call-router.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
@@ -1336,7 +1337,7 @@ async function startHttp() {
   // the reading that `deepseek` "is a model, none of which have a page": DeepSeek
   // now ships its own agent runtime with a first-party MCP client, and that is a
   // SEPARATE product from the byo-model row, which keeps no page of its own.
-  const INTEGRATION_MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline', 'smithery',
+  const INTEGRATION_MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline',
     'codex', 'kimi', 'glm-zcode', 'deepseek-harness'] as const;
   const ALL_INTEGRATION_SLUGS = [...INTEGRATION_EXCHANGES, ...INTEGRATION_FRAMEWORKS, ...INTEGRATION_MCP_CLIENTS];
   const INTEGRATION_HTML = new Map<string, string>();
@@ -1351,15 +1352,8 @@ async function startHttp() {
       }
     }
   }
-  app.get('/integrations/:slug', (req, res) => {
-    const slug = (req.params.slug || '').toLowerCase().replace(/\.html$/, '');
-    const html = INTEGRATION_HTML.get(slug);
-    if (!html) {
-      return res.status(404).type('text/plain').send('Integration not found');
-    }
-    res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
-    res.type('text/html').send(html);
-  });
+  // A retired slug answers 301 before the 404 branch; see retired-slugs.ts.
+  app.get('/integrations/:slug', integrationPageHandler(INTEGRATION_HTML));
   app.get('/docs/integrations/:slug', (req, res) => {
     const slug = (req.params.slug || '').toLowerCase().replace(/\.html$/, '');
     return res.redirect(301, `/integrations/${slug}`);

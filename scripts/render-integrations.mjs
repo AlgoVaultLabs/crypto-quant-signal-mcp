@@ -65,7 +65,7 @@ const FRAMEWORKS = ['langchain', 'llamaindex', 'maf', 'crewai'];
 // from THIS repo at `docs/integrations/mcp-clients/<slug>.md` (NOT the
 // algovault-skills repo). Same htmlShell template; getSrcPath() routes
 // per-slug.
-const MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline', 'smithery',
+const MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline',
   // +3, each verified 2026-08-05 against that vendor's own MCP documentation.
   'codex', 'kimi', 'glm-zcode',
   // +1, verified 2026-08-28 against the harness source and registry.npmjs.org. NOTE the pairing:
@@ -260,7 +260,6 @@ const DATE_PUBLISHED = {
   'llamaindex':       '2026-05-18',
   'maf':              '2026-05-18',
   'okx':              '2026-04-25',
-  'smithery':         '2026-05-19',
 };
 
 
@@ -305,7 +304,6 @@ const DISPLAY_NAMES = {
   'binance-agent-os': 'Binance Agent OS',
   cursor: 'Cursor',
   cline: 'Cline (VSCode)',
-  smithery: 'Smithery',
   // Labels VERBATIM from src/lib/integrations-data/mcp-clients.ts displayName.
   // Needed here because the title-cased fallback renders "Kimi" and "Glm-zcode".
   codex: 'Codex',

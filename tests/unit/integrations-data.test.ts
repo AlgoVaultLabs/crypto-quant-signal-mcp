@@ -124,10 +124,10 @@ describe('integrations-data: cross-surface invariants', () => {
     expect(new Set(dedicated).size).toBe(dedicated.length);
   });
 
-  it('MCP_CLIENTS contains exactly 9 dedicated + 3 inline', () => {
+  it('MCP_CLIENTS contains exactly 8 dedicated + 3 inline', () => {
     const dedicated = MCP_CLIENTS.entries.filter((e) => e.hasDedicatedPage);
     const inline = MCP_CLIENTS.entries.filter((e) => !e.hasDedicatedPage);
-    expect(dedicated).toHaveLength(9);
+    expect(dedicated).toHaveLength(8);
     // plain-http (a transport), zai-api (server-side, nothing to install) and
     // deepseek (the bring-your-own-model path, not an install) each have no
     // /integrations/<slug> page. DeepSeek's own harness DOES have one, under the

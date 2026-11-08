@@ -5,14 +5,18 @@
  * An integration page's slug has to be listed in SIX independent places or the
  * page is silently broken in a different way at each one:
  *
- *   1. `src/lib/integrations-data/exchange-kits.ts`  — the card on /integrations
- *   2. `scripts/render-integrations.mjs` EXCHANGES   — whether the HTML is generated
- *   3. `src/index.ts` INTEGRATION_EXCHANGES          — whether the route 404s
+ *   1. its family's registry in `src/lib/integrations-data/` — the card on /integrations
+ *   2. `scripts/render-integrations.mjs` list        — whether the HTML is generated
+ *   3. `src/index.ts` INTEGRATION_* allow-list       — whether the route 404s
  *   4. `landing/integrations/<slug>.html`            — the artifact Express loads at boot
  *   5. `landing/sitemap.xml`                         — whether crawlers ever see it
  *   6. `landing/integrations.html` + `landing/docs.html` — generated index blocks
  *      (these are emitted from the registry by `scripts/build_landing.mjs`; a new
  *      kit entry leaves them stale until that generator is re-run)
+ *
+ * Every family is checked: exchanges, frameworks and MCP clients. A row with
+ * `hasDedicatedPage: false` has no page, so it must appear in no list. A slug in
+ * RETIRED_INTEGRATION_SLUGS must appear nowhere: the route answers it with a 301.
  *
  * Nothing previously tied these together, and they had already drifted: the
  * gemini/kraken/alpaca pages shipped in BROKER-PAIRING-CRYPTO-W1 (2026-06-05)
@@ -41,18 +45,36 @@ function arrayLiteral(src, name) {
   // Tolerates multi-line arrays and a trailing `as const`.
   const m = new RegExp(`${name}\\s*=\\s*\\[([\\s\\S]*?)\\]`).exec(src);
   if (!m) throw new Error(`could not locate the ${name} array literal`);
-  return [...m[1].matchAll(/'([a-z0-9-]+)'/g)].map((x) => x[1]);
+  // Comments inside the array are prose, not slugs.
+  return [...m[1].replace(/\/\/.*$/gm, '').matchAll(/'([a-z0-9-]+)'/g)].map((x) => x[1]);
+}
+
+/** `{ slug, dedicated }` per registry row, in file order. Each flag sits in its own slug's literal. */
+function registryRows(rel) {
+  return read(rel).split(/(?=\n\s+slug:\s*')/).slice(1).map((chunk) => {
+    const slug = /slug:\s*'([a-z0-9-]+)'/.exec(chunk)[1];
+    const flag = /hasDedicatedPage:\s*(true|false)/.exec(chunk);
+    return { slug, dedicated: flag ? flag[1] === 'true' : null };
+  });
+}
+
+// The keys of the one declaration the route also reads.
+function retiredSlugs() {
+  const m = /RETIRED_INTEGRATION_SLUGS\b[^=]*=\s*Object\.freeze\(\{([\s\S]*?)\n\}\)/.exec(
+    read('src/lib/integrations-data/retired-slugs.ts'),
+  );
+  if (!m) throw new Error('could not locate the RETIRED_INTEGRATION_SLUGS literal');
+  return [...m[1].matchAll(/^\s*'?([a-z0-9-]+)'?:\s*\{/gm)].map((x) => x[1]);
 }
 
 // ── The sources ──
-const kitsSrc = read('src/lib/integrations-data/exchange-kits.ts');
-const kits = [...kitsSrc.matchAll(/slug:\s*'([a-z0-9-]+)'/g)].map((m) => m[1]);
-
+const FAMILIES = [
+  { name: 'exchange', registry: 'src/lib/integrations-data/exchange-kits.ts', render: 'const EXCHANGES', route: 'const INTEGRATION_EXCHANGES' },
+  { name: 'framework', registry: 'src/lib/integrations-data/ai-agents.ts', render: 'const FRAMEWORKS', route: 'const INTEGRATION_FRAMEWORKS' },
+  { name: 'mcp-client', registry: 'src/lib/integrations-data/mcp-clients.ts', render: 'const MCP_CLIENTS', route: 'const INTEGRATION_MCP_CLIENTS' },
+];
 const renderSrc = read('scripts/render-integrations.mjs');
-const renderExchanges = arrayLiteral(renderSrc, 'const EXCHANGES');
-
 const indexSrc = read('src/index.ts');
-const routeExchanges = arrayLiteral(indexSrc, 'const INTEGRATION_EXCHANGES');
 
 const rendered = readdirSync(join(ROOT, 'landing', 'integrations'))
   .filter((f) => f.endsWith('.html'))
@@ -63,32 +85,74 @@ const sitemap = [...sitemapSrc.matchAll(/\/integrations\/([a-z0-9-]+)</g)].map((
 
 const problems = [];
 const note = (msg) => problems.push(msg);
-
-// ── 1. The three exchange-slug lists must agree exactly ──
 const setEq = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
-if (!setEq(kits, renderExchanges)) {
-  note(
-    `exchange-kits.ts and render-integrations.mjs EXCHANGES disagree:\n` +
-    `    only in exchange-kits.ts : ${kits.filter((s) => !renderExchanges.includes(s)).join(', ') || '—'}\n` +
-    `    only in render EXCHANGES : ${renderExchanges.filter((s) => !kits.includes(s)).join(', ') || '—'}`,
-  );
-}
-if (!setEq(renderExchanges, routeExchanges)) {
-  note(
-    `render-integrations.mjs EXCHANGES and index.ts INTEGRATION_EXCHANGES disagree:\n` +
-    `    only in render EXCHANGES        : ${renderExchanges.filter((s) => !routeExchanges.includes(s)).join(', ') || '—'}\n` +
-    `    only in INTEGRATION_EXCHANGES   : ${routeExchanges.filter((s) => !renderExchanges.includes(s)).join(', ') || '—'}\n` +
-    `    (a slug missing from the route allow-list 404s; a slug missing from the\n` +
-    `     render list has no HTML for Express to load at boot)`,
-  );
-}
+const only = (a, b) => a.filter((s) => !b.includes(s)).join(', ') || '—';
+const indexPage = read('landing/integrations.html');
 
-// ── 2. Every allow-listed slug must have a rendered artifact ──
-// index.ts reads each mirror into INTEGRATION_HTML at STARTUP and only warns on
-// a miss — so this drift surfaces as a 404 in prod, never as a build failure.
-for (const slug of routeExchanges) {
-  if (!existsSync(join(ROOT, 'landing', 'integrations', `${slug}.html`))) {
-    note(`'${slug}' is in INTEGRATION_EXCHANGES but landing/integrations/${slug}.html does not exist → 404 in prod`);
+const families = FAMILIES.map((f) => {
+  const rows = registryRows(f.registry);
+  return {
+    ...f,
+    rows,
+    dedicated: rows.filter((r) => r.dedicated === true).map((r) => r.slug),
+    pageless: rows.filter((r) => r.dedicated === false).map((r) => r.slug),
+    renderList: arrayLiteral(renderSrc, f.render),
+    routeList: arrayLiteral(indexSrc, f.route),
+  };
+});
+
+for (const f of families) {
+  // We construct this corpus, so an empty parse is a broken check, never a clean tree.
+  if (f.dedicated.length === 0) note(`${f.name}: parsed zero dedicated pages from ${f.registry}, so nothing was checked`);
+  for (const r of f.rows) {
+    if (r.dedicated === null) note(`${f.name}: '${r.slug}' has no hasDedicatedPage flag in ${f.registry}`);
+  }
+
+  // ── 1. The three slug lists of a family must agree exactly ──
+  if (!setEq(f.dedicated, f.renderList)) {
+    note(
+      `${f.name}: the registry and render-integrations.mjs disagree:\n` +
+      `    only in registry : ${only(f.dedicated, f.renderList)}\n` +
+      `    only in render   : ${only(f.renderList, f.dedicated)}`,
+    );
+  }
+  if (!setEq(f.renderList, f.routeList)) {
+    note(
+      `${f.name}: render-integrations.mjs and the index.ts allow-list disagree:\n` +
+      `    only in render : ${only(f.renderList, f.routeList)}\n` +
+      `    only in route  : ${only(f.routeList, f.renderList)}\n` +
+      `    (a slug missing from the route allow-list 404s; a slug missing from the\n` +
+      `     render list has no HTML for Express to load at boot)`,
+    );
+  }
+
+  // ── 2. Every allow-listed slug must have a rendered artifact ──
+  // index.ts reads each mirror into INTEGRATION_HTML at STARTUP and only warns on
+  // a miss — so this drift surfaces as a 404 in prod, never as a build failure.
+  for (const slug of f.routeList) {
+    if (!existsSync(join(ROOT, 'landing', 'integrations', `${slug}.html`))) {
+      note(`'${slug}' is in ${f.route.replace('const ', '')} but landing/integrations/${slug}.html does not exist → 404 in prod`);
+    }
+  }
+
+  // ── 2b. A row with no page must not have one anywhere ──
+  for (const slug of f.pageless) {
+    if (f.renderList.includes(slug) || f.routeList.includes(slug) || rendered.includes(slug)) {
+      note(`${f.name}: '${slug}' is hasDedicatedPage:false but is listed or rendered as a page`);
+    }
+  }
+
+  // ── 4. Generated index blocks must already list every dedicated slug ──
+  // `scripts/build_landing.mjs` renders the cards into landing/integrations.html
+  // (and a docs.html block) from the registry. Adding a registry entry without
+  // re-running that generator leaves the index silently missing the new page —
+  // which is how this canary's own wave first failed CI.
+  const missing = f.dedicated.filter((slug) => !indexPage.includes(`/integrations/${slug}`));
+  if (missing.length) {
+    note(
+      `landing/integrations.html is missing ${f.name} slug(s): ${missing.join(', ')}\n` +
+      `    → run \`npm run build:landing\` and commit the regenerated index`,
+    );
   }
 }
 
@@ -105,27 +169,28 @@ for (const slug of sitemap) {
   }
 }
 
-// ── 4. Generated index blocks must already list every kit slug ──
-// `scripts/build_landing.mjs` renders the kit cards into landing/integrations.html
-// (and a docs.html block) from the registry. Adding a registry entry without
-// re-running that generator leaves the index silently missing the new venue —
-// which is how this canary's own wave first failed CI. Checking it here means
-// the drift surfaces locally, before a push.
-{
-  const idx = read('landing/integrations.html');
-  const missing = kits.filter((slug) => !idx.includes(`/integrations/${slug}`));
-  if (missing.length) {
-    note(
-      `landing/integrations.html is missing kit slug(s): ${missing.join(', ')}\n` +
-      `    → run \`npm run build:landing\` and commit the regenerated index`,
-    );
+// ── 5. A retired slug appears nowhere ──
+const retired = retiredSlugs();
+if (retired.length === 0) note('parsed zero retired slugs from retired-slugs.ts, so nothing was checked');
+const GENERATED_PAGES = ['landing/integrations.html', 'landing/docs.html', 'landing/mcp.html', 'landing/index.html'];
+for (const slug of retired) {
+  for (const f of families) {
+    if (f.rows.some((r) => r.slug === slug)) note(`retired slug '${slug}' is still in ${f.registry}`);
+    if (f.renderList.includes(slug)) note(`retired slug '${slug}' is still in render-integrations.mjs ${f.render.replace('const ', '')}`);
+    if (f.routeList.includes(slug)) note(`retired slug '${slug}' is still in index.ts ${f.route.replace('const ', '')}, so the page wins over the 301`);
+  }
+  if (rendered.includes(slug)) note(`retired slug '${slug}' still has landing/integrations/${slug}.html`);
+  if (sitemap.includes(slug)) note(`retired slug '${slug}' is still in sitemap.xml → crawlers follow a redirect forever`);
+  const link = new RegExp(`/integrations/${slug}(?![a-z0-9-])`);
+  for (const page of GENERATED_PAGES) {
+    if (link.test(read(page))) note(`retired slug '${slug}' is still linked from ${page}`);
   }
 }
 
 // ── Report ──
 console.log(
-  `[lockstep] exchange-kits=${kits.length} render=${renderExchanges.length} ` +
-  `route=${routeExchanges.length} rendered=${rendered.length} sitemap=${sitemap.length}`,
+  `[lockstep] ${families.map((f) => `${f.name}=${f.dedicated.length}/${f.renderList.length}/${f.routeList.length}`).join(' ')} ` +
+  `(registry/render/route) rendered=${rendered.length} sitemap=${sitemap.length} retired=${retired.length}`,
 );
 if (problems.length === 0) {
   console.log('✓ check-integrations-registry-lockstep: all six slug surfaces agree.');

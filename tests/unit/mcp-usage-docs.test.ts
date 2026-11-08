@@ -40,8 +40,6 @@ describe('MCP_USAGE_HTML — structural invariants', () => {
     ['Cursor',             /\.cursor\/mcp\.json/],
     ['Cline',              /cline_mcp_settings\.json|streamableHttp/],
     ['Claude Code',        /claude mcp add/],
-    // LANDING-MCP-CLIENTS-CLAIMS-W1 R8/R9: `install` is gone from @smithery/cli; `mcp add` is the command.
-    ['Smithery',           /@smithery\/cli mcp add algovault\/crypto-quant-signal-mcp/],
     ['Plain HTTP',         /api\.algovault\.com\/mcp/],
   ])('mentions %s with verified config marker', (name, configPattern) => {
     expect(MCP_USAGE_HTML).toContain(name);
@@ -59,7 +57,6 @@ describe('MCP_USAGE_HTML — structural invariants', () => {
     expect(MCP_USAGE_HTML).toContain('href="https://cursor.com/docs/mcp"');
     expect(MCP_USAGE_HTML).toContain('href="https://docs.cline.bot/mcp/mcp-overview"');
     expect(MCP_USAGE_HTML).toContain('code.claude.com/docs/en/mcp');
-    expect(MCP_USAGE_HTML).toContain('@smithery/cli');
     expect(MCP_USAGE_HTML).not.toContain('modelcontextprotocol.io/quickstart/user');
     expect(MCP_USAGE_HTML).not.toContain('cursor.com/docs/context/mcp');
     expect(MCP_USAGE_HTML).not.toContain('connecting-to-a-remote-server');

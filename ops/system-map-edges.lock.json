@@ -1,6 +1,6 @@
 {
   "generated_by": "scripts/check-map-edges.mjs --sync (edge-class grammar 2)",
-  "extracted_from_corpus_sha256": "518ffe27d29ef9250295723d299afac1e9f014c989aedc48087f58e540228c41",
+  "extracted_from_corpus_sha256": "4babe2dd6c65373dff9c1036a50514979a92a446a33490a59e7814294b92fd23",
   "components": [
     "Plausible CE",
     "algovault-blog-assets",
@@ -27,7 +27,6 @@
     "Cursor",
     "Medium",
     "Resend",
-    "Smithery",
     "Telegram Bot",
     "TypeSafe AI Jev",
     "Vercel AI Gateway",
@@ -105,7 +104,6 @@
     "algovault-skills:produces:algovault-editorial=tight",
     "algovault-skills:produces:debt:1=tight",
     "algovault-skills:produces:ext:Anthropic plugins marketplace=tight",
-    "algovault-skills:produces:ext:Smithery=tight",
     "algovault-skills:produces:ext:npm registry=tight",
     "algovault-skills:produces:landing/=tight",
     "aoe:consumes:crypto-quant-signal-mcp=tight",
@@ -167,7 +165,6 @@
     "crypto-quant-signal-mcp:produces:debt:6=tight",
     "crypto-quant-signal-mcp:produces:ext:Cursor=tight",
     "crypto-quant-signal-mcp:produces:ext:Resend=tight",
-    "crypto-quant-signal-mcp:produces:ext:Smithery=tight",
     "crypto-quant-signal-mcp:produces:ext:Telegram Bot=tight",
     "crypto-quant-signal-mcp:produces:ext:Telegram Bot=tight",
     "crypto-quant-signal-mcp:produces:infra:1=tight",

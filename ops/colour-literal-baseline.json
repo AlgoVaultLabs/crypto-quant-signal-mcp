@@ -16,7 +16,7 @@
     "New pages should be born at 0: node scripts/new-landing-page.mjs --slug <slug> --title \"…\"",
     "--description \"…\" emits a skeleton carrying the theme region, the loader and zero literals."
   ],
-  "_total": 864,
+  "_total": 856,
   "counts": {
     "docs-src/partials/channel-mcp.html": 0,
     "docs-src/partials/channel-rest-api.html": 0,
@@ -91,7 +91,6 @@
     "landing/integrations/llamaindex.html": 8,
     "landing/integrations/maf.html": 8,
     "landing/integrations/okx.html": 8,
-    "landing/integrations/smithery.html": 8,
     "landing/langchain-crypto-trade-calls.html": 19,
     "landing/llamaindex-quant-trading-stack.html": 19,
     "landing/mcp.html": 18,

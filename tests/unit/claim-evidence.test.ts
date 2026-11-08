@@ -383,7 +383,7 @@ describe('R13 — the footer is derived from the rows, never hand-typed', () => 
 
   it('is exactly the ratified R13 list, in order', () => {
     expect(MCP_CLIENTS.meta.footerLinks.map((l) => l.label)).toEqual([
-      'Claude custom connectors', 'Cursor MCP docs', 'Cline MCP docs', 'Claude Code MCP docs', '@smithery/cli on npm',
+      'Claude custom connectors', 'Cursor MCP docs', 'Cline MCP docs', 'Claude Code MCP docs',
       'Codex MCP docs', 'Kimi Code MCP docs', 'ZCode MCP docs', 'DeepSeek Harness', 'Z.ai MCP-call docs', 'DeepSeek Anthropic API',
     ]);
     expect(MCP_CLIENTS.meta.footerLinks.find((l) => l.label === 'Cursor MCP docs')?.href).toBe('https://cursor.com/docs/mcp');

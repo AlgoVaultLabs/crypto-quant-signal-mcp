@@ -1702,11 +1702,6 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
           <td class="text-gray-400 text-sm px-4 py-3">Per-project MCP. Useful for backtest / strategy-dev repos. Team-shared via <code class="text-xs">.mcp.json</code>.</td>
         </tr>
         <tr class="border-b border-white/10">
-          <td class="text-white text-sm px-4 py-3 font-medium">Smithery</td>
-          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;name&gt;</code></td>
-          <td class="text-gray-400 text-sm px-4 py-3">Auto-managed connection via Smithery registry. Easiest install across clients.</td>
-        </tr>
-        <tr class="border-b border-white/10">
           <td class="text-white text-sm px-4 py-3 font-medium">Plain HTTP / curl</td>
           <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">curl -X POST https://api.algovault.com/mcp &hellip;</code></td>
           <td class="text-gray-400 text-sm px-4 py-3">Raw JSON-RPC. For developers integrating into bots, scripts, or non-MCP services.</td>
@@ -1838,18 +1833,6 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
 }</code></pre>
       </div>
       <p><strong>Verify:</strong> in Claude Code, run <code class="text-xs bg-navy-800 px-1 rounded">/mcp</code> to list connected servers; AlgoVault should appear with its tools.</p>
-    </div>
-  </details>
-
-  <details class="bg-navy-700 border border-line rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Smithery &mdash; setup walkthrough</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>The Smithery CLI installs and configures the MCP server in your client of choice automatically:</p>
-      <div class="code-block bg-well border border-line rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300"># Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code
-npx -y @smithery/cli mcp add algovault/crypto-quant-signal-mcp --client &lt;client&gt;</code></pre>
-      </div>
-      <p>The CLI writes a Smithery-gateway entry into your client's config. It carries no API key, so this path is the free tier. Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href="https://smithery.ai/servers/algovault/crypto-quant-signal-mcp" class="text-mint-400 hover:underline">smithery.ai</a>.</p>
     </div>
   </details>
 
@@ -1989,7 +1972,6 @@ claude mcp add --transport http --scope project algovault \
     <a class="text-mint-400 hover:underline" href="https://cursor.com/docs/mcp">Cursor MCP docs</a> &middot;
     <a class="text-mint-400 hover:underline" href="https://docs.cline.bot/mcp/mcp-overview">Cline MCP docs</a> &middot;
     <a class="text-mint-400 hover:underline" href="https://code.claude.com/docs/en/mcp">Claude Code MCP docs</a> &middot;
-    <a class="text-mint-400 hover:underline" href="https://www.npmjs.com/package/@smithery/cli">@smithery/cli on npm</a> &middot;
     <a class="text-mint-400 hover:underline" href="https://learn.chatgpt.com/docs/extend/mcp">Codex MCP docs</a> &middot;
     <a class="text-mint-400 hover:underline" href="https://moonshotai.github.io/kimi-code/en/customization/mcp.html">Kimi Code MCP docs</a> &middot;
     <a class="text-mint-400 hover:underline" href="https://zcode.z.ai/en/docs/mcp-services">ZCode MCP docs</a> &middot;

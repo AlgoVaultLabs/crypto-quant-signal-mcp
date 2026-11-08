@@ -179,7 +179,7 @@ export function stripCodeCommentsOnly(src, path) {
  */
 export const TUTORIAL_SLUGS = [
   'claude-desktop', 'cursor', 'cline', 'claude-code',
-  'smithery', 'codex', 'kimi', 'glm-zcode',
+  'codex', 'kimi', 'glm-zcode',
 ];
 
 /** @returns {string[]|null} null = a declared file is missing → INDETERMINATE, never a pass. */
