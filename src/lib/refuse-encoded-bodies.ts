@@ -5,8 +5,9 @@
  * Mounted as the FIRST `app.use` of each express app (src/index.ts, src/facilitator.ts), ahead
  * of every body parser and every route, so a refused body is answered before anything reads it.
  *
- *   'brotli' (the default)  refuses `br` and any coding outside identity / gzip / deflate.
- *   'all'                   refuses every coding except identity.
+ *   'all' (the default)  refuses every coding except identity.
+ *   'brotli'             refuses `br` and any coding outside identity / gzip / deflate. The
+ *                        rollback: set REFUSE_ENCODED_BODIES_MODE=brotli.
  *
  * Only a request that carries a body is judged, by the test body-parser itself applies
  * (`Transfer-Encoding` present, or a numeric `Content-Length`), so a bodiless GET / HEAD /
@@ -14,7 +15,7 @@
  * coding: one refused coding refuses the request.
  *
  * The mode comes from REFUSE_ENCODED_BODIES_MODE (`refuseEncodedBodiesFromEnv`). Unset means
- * 'brotli'; a value that is not a mode also means 'brotli', with a boot warning. Boot prints
+ * 'all'; a value that is not a mode also means 'all', with a boot warning. Boot prints
  * `[ingress] refuse-encoded-bodies mode=<mode>`. A route family added after this wave mounts
  * `refuseEncodedBodies({ mode: 'all' })` on its own path.
  *
@@ -25,6 +26,9 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 export type RefuseEncodedBodiesMode = 'brotli' | 'all';
 
 const MODES: readonly RefuseEncodedBodiesMode[] = ['brotli', 'all'];
+
+/** Unset and unrecognised both land here, so a mistyped rollback value never loosens the refusal. */
+const DEFAULT_MODE: RefuseEncodedBodiesMode = 'all';
 
 /** The codings 'brotli' mode lets through (body-parser decodes gzip and deflate itself). */
 const BROTLI_MODE_PASSES = new Set(['identity', 'gzip', 'deflate']);
@@ -63,19 +67,19 @@ export function refuseEncodedBodies({ mode }: { mode: RefuseEncodedBodiesMode })
 }
 
 /**
- * The middleware for the mode REFUSE_ENCODED_BODIES_MODE names. Unset or blank means 'brotli';
- * any other value that is not a mode also means 'brotli', and boot says so.
+ * The middleware for the mode REFUSE_ENCODED_BODIES_MODE names. Unset or blank means the default;
+ * any other value that is not a mode also means the default, and boot says so.
  */
 export function refuseEncodedBodiesFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   log: Pick<Console, 'log' | 'warn'> = console,
 ): RequestHandler {
   const raw = env.REFUSE_ENCODED_BODIES_MODE ?? '';
-  let mode: RefuseEncodedBodiesMode = 'brotli';
+  let mode: RefuseEncodedBodiesMode = DEFAULT_MODE;
   if ((MODES as readonly string[]).includes(raw)) {
     mode = raw as RefuseEncodedBodiesMode;
   } else if (raw !== '') {
-    log.warn(`[ingress] REFUSE_ENCODED_BODIES_MODE=${JSON.stringify(raw)} is not one of ${MODES.join(' | ')}; using brotli`);
+    log.warn(`[ingress] REFUSE_ENCODED_BODIES_MODE=${JSON.stringify(raw)} is not one of ${MODES.join(' | ')}; using ${DEFAULT_MODE}`);
   }
   log.log(`[ingress] refuse-encoded-bodies mode=${mode}`);
   return refuseEncodedBodies({ mode });

@@ -379,12 +379,12 @@ function quietLog(): { log: Pick<Console, 'log' | 'warn'>; lines: string[]; warn
 
 describe('refuseEncodedBodiesFromEnv', () => {
   const cases: [string | undefined, RefuseEncodedBodiesMode, boolean][] = [
-    [undefined, 'brotli', false],
-    ['', 'brotli', false],
+    [undefined, 'all', false],
+    ['', 'all', false],
     ['brotli', 'brotli', false],
     ['all', 'all', false],
-    ['ALL', 'brotli', true],
-    ['none', 'brotli', true],
+    ['ALL', 'all', true],
+    ['none', 'all', true],
   ];
   for (const [value, mode, warns] of cases) {
     it(`REFUSE_ENCODED_BODIES_MODE=${value === undefined ? '(unset)' : JSON.stringify(value)} → mode=${mode}${warns ? ', with a boot warning' : ''}`, async () => {
