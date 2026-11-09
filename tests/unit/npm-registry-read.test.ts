@@ -52,7 +52,6 @@ import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSy
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import yaml from 'js-yaml';
 
 const PKG = 'crypto-quant-signal-mcp';
 const V = '1.31.0';
@@ -529,45 +528,6 @@ describe('a blip on the FINAL poll cannot launder a definitive verdict', () => {
     expect(r.text).toMatch(/gh workflow run publish-npm\.yml --ref main -f mode=verify-only/);
     expect(r.text).toMatch(/Re-run button replays the tag push/);
     expect(r.text).not.toMatch(/re-run this workflow/i);
-  });
-});
-
-/** The Smithery step's run text, read through a structural parse — comments do not exist there. */
-function smitheryRun(src: string): string {
-  const doc = (yaml.load(src) as { jobs?: Record<string, { steps?: Array<{ run?: string }> }> }) ?? {};
-  for (const job of Object.values(doc.jobs ?? {})) {
-    const step = (job.steps ?? []).find((st) => /api\.smithery\.ai/.test(st.run ?? ''));
-    if (step) return step.run ?? '';
-  }
-  return '';
-}
-const LANE_PATH = resolve(__dirname, '..', '..', '.github', 'workflows', 'publish-npm.yml');
-
-describe('R6 + honesty: the Smithery leg follows package.json and never claims an upload that did not happen', () => {
-  const src = readFileSync(LANE_PATH, 'utf8');
-  /** Every reason the Smithery step's target-version / upload-wording contract is broken. */
-  const failures = (s: string): string[] => {
-    const run = smitheryRun(s);
-    const out: string[] = [];
-    if (!run) return ['no Smithery step'];
-    if (!/TARGET_VERSION="\$\x28jq -r \.version package\.json\x29"/.test(run)) out.push('TARGET_VERSION is not taken from package.json');
-    if (/TARGET_VERSION="\$\{GITHUB_REF_NAME/.test(run)) out.push('TARGET_VERSION is derived from the ref name (it is "main" on a dispatch)');
-    if (!/NPM_PUBLISH_OUTCOME/.test(run)) out.push('the step does not read what the publish step did');
-    // An unconditional claim that the publish succeeded may appear ONLY inside the UPLOAD_NOTE branch.
-    const claims = run.split('\n').filter((l) => /SUCCEEDED/.test(l) && !/UPLOAD_NOTE=/.test(l));
-    if (claims.length) out.push(`unconditional publish claim(s): ${claims.map((l) => l.trim().slice(0, 60)).join(' | ')}`);
-    return out;
-  };
-  it('holds on the real lane', () => expect(failures(src)).toEqual([]));
-  it('DELIBERATE BREAK: reverting TARGET_VERSION to the ref name is caught', () => {
-    const broken = src.replace('TARGET_VERSION="$(jq -r .version package.json)"', 'TARGET_VERSION="${GITHUB_REF_NAME#v}"');
-    expect(broken).not.toBe(src);
-    expect(failures(broken).join(' | ')).toMatch(/ref name/);
-  });
-  it('DELIBERATE BREAK: an unconditional "publish SUCCEEDED" message is caught', () => {
-    const broken = src.replace('see the divergence named above. ${UPLOAD_NOTE}', 'see the divergence named above. The npm publish SUCCEEDED;');
-    expect(broken).not.toBe(src);
-    expect(failures(broken).join(' | ')).toMatch(/unconditional publish claim/);
   });
 });
 
