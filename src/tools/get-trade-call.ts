@@ -1251,8 +1251,8 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   //    engine's own locals at call time, never re-derived later. The registry then decides, per
   //    cell, which variant's verdict is SERVED, and returns the stamp and the capture with it.
   //    Every projection below — the response, the ledger, the three persist arms — reads `rule`.
-  //    In every cell assigned M (18 of 20 since SIGNAL-VERDICT-RULE-SWITCH-3m-W1; 3m serves F), and
-  //    on every non-decisive call in any cell, `rule.served` IS `liveVerdict`, byte for byte.
+  //    In every cell `VERDICT_RULE_ASSIGNMENT` assigns M, and on every non-decisive call in any
+  //    cell, `rule.served` IS `liveVerdict`, byte for byte.
   const v1Verdict = deriveVerdict(
     { rsiScore: emittedScores.rsiScorePre, emaScore, fundingScore, oiScore: liveOiScore, volumeScore },
     verdictGates,

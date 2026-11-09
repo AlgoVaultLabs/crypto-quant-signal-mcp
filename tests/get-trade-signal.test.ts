@@ -18,6 +18,7 @@ vi.mock('../src/lib/performance-db.js', () => ({
 }));
 
 import { getTradeSignal, deriveVerdict, oiScoreFromOiDelta } from '../src/tools/get-trade-call.js';
+import { KILL_SWITCH_ENV } from '../src/lib/verdict-rule-registry.js';
 import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { resetLicenseCache } from '../src/lib/license.js';
 // OPS-VITEST-SUITE-REPAIR: neutralize the cross-asset grid so getTradeSignal's
@@ -179,8 +180,15 @@ describe('getTradeSignal', () => {
     });
     vi.mocked(getAdapter).mockReturnValue(adapter);
 
-    const result = await getTradeSignal({ coin: 'ETH' });
-    expect(['BUY', 'HOLD']).toContain(result.call);
+    // The subject is the scorer's direction, not which verdict rule the default timeframe is
+    // assigned, so every cell is forced to M.
+    vi.stubEnv(KILL_SWITCH_ENV, '1');
+    try {
+      const result = await getTradeSignal({ coin: 'ETH' });
+      expect(['BUY', 'HOLD']).toContain(result.call);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

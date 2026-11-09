@@ -14,6 +14,11 @@
  * The comparison run DELETES `TREND_MODE`. If the registry still needed the env var, the decisive
  * scenarios would fall back to the contrarian ladder and fail here.
  *
+ * It runs under the kill switch (`VERDICT_RULE_FORCE_M=1`, restored after). The fixture is rule M by
+ * construction, while the committed assignment moves cells to F over time (1h is one of them), so the
+ * proof "the registry path reproduces rule M" needs every cell forced to M. Never re-record the
+ * fixture to follow a switch.
+ *
  * SYNTHETIC INPUTS ONLY. The scenarios are deterministic seeded random walks plus three shaped
  * series; no production row is in this repo (the code repo is public).
  *
@@ -49,6 +54,7 @@ vi.mock('../../src/lib/hold-decision-capture.js', async (orig) => ({
 import {
   getTradeSignal, computeIndicatorScores, deriveVerdict, R4_THRESHOLDS,
 } from '../../src/tools/get-trade-call.js';
+import { KILL_SWITCH_ENV } from '../../src/lib/verdict-rule-registry.js';
 import { getAdapter } from '../../src/lib/exchange-adapter.js';
 import * as perfDb from '../../src/lib/performance-db.js';
 import { recordScorerInputCapture } from '../../src/lib/scorer-input-capture.js';
@@ -260,15 +266,18 @@ function expectSupersetPayloads(actual: Record<string, unknown>[], golden: Recor
 
 const ORIGINAL_TREND_MODE = process.env.TREND_MODE;
 const ORIGINAL_BASIS = process.env.CANDLE_BASIS;
+const ORIGINAL_KILL_SWITCH = process.env[KILL_SWITCH_ENV];
 afterAll(() => {
   if (ORIGINAL_TREND_MODE === undefined) delete process.env.TREND_MODE; else process.env.TREND_MODE = ORIGINAL_TREND_MODE;
   if (ORIGINAL_BASIS === undefined) delete process.env.CANDLE_BASIS; else process.env.CANDLE_BASIS = ORIGINAL_BASIS;
+  if (ORIGINAL_KILL_SWITCH === undefined) delete process.env[KILL_SWITCH_ENV]; else process.env[KILL_SWITCH_ENV] = ORIGINAL_KILL_SWITCH;
 });
 
 describe('R5 golden — the registry path (all cells M) reproduces the TREND_MODE=on engine byte for byte', () => {
   beforeEach(() => {
     process.env.CQS_API_KEY = 'test-key';
     process.env.CANDLE_BASIS = 'closed'; // production's basis
+    process.env[KILL_SWITCH_ENV] = '1'; // every cell M: the fixture is rule M, the assignment moves
     // Recording runs the PRE-registry code, which selects the rule from the env; the comparison
     // run deletes it, so a registry that still leaned on the env would fail the decisive cases.
     if (RECORD) process.env.TREND_MODE = 'on'; else delete process.env.TREND_MODE;

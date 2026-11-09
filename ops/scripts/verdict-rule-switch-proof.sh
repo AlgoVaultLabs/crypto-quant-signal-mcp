@@ -15,21 +15,30 @@
 #   f_missed         F cells' decisive rows not stamped 3, or not served `verdict_f`
 #   band_v3_outside  band_signals rows stamped 3 outside the F cells (band rows carry no decisive capture)
 #   f_served         F cells' decisive rows stamped 3 and served `verdict_f` — the positive evidence
+#   f_served_<tf>    the same, for ONE timeframe named by --switched: one COUNT per switched timeframe
+# `f_served` is one total, so a timeframe already on F fills its floor while a newly switched one has no row yet; the
+# per-timeframe counters are what prove the switch this run is about. Per-cell (tf × direction) f_served prints as
+# CELL lines, evidence only: one direction can be absent for hours, and f_missed already covers both.
 # The three cell counters join each (signal_hash, exchange)'s EARLIEST signals row (the gate's registered
 # convention; ~0.1% of hashes are true double-writes) to its one signal_scorer_inputs row
 # (uq_signal_scorer_inputs_hash_exchange). The cell is the scorer row's (timeframe, regime) — the call's own.
 # A v3 row with no scorer row cannot be shown to be inside an F cell, so it counts as outside.
 #
 # Verdict — exactly one terminal line; callers gate on the TOKEN, never the exit code:
-#   SWITCH_PROOF=PASS           exit 0   the first five are 0 and f_served ≥ 30
-#   SWITCH_PROOF=FAIL           exit 1   any of the first five is non-zero (FAIL outranks a thin f_served)
-#   SWITCH_PROOF=INDETERMINATE  exit 3   f_served < 30, or the host, the query or its output could not be read
+#   SWITCH_PROOF=PASS           exit 0   the first five are 0, f_served ≥ 30 and every f_served_<tf> ≥ 30
+#   SWITCH_PROOF=FAIL           exit 1   any of the first five is non-zero (FAIL outranks every thin counter)
+#   SWITCH_PROOF=INDETERMINATE  exit 3   f_served or an f_served_<tf> < 30, --switched missing or naming a timeframe
+#                                        with no --f-cells cell, or the host, the query or its output could not be read
 #
-# Usage: ops/scripts/verdict-rule-switch-proof.sh --since <epoch> --expect <rule_config_id> --f-cells <tf:REGIME,...>
+# Usage: ops/scripts/verdict-rule-switch-proof.sh --since <epoch> --expect <rule_config_id> --f-cells <tf:REGIME,...|none> \
+#          --switched <tf,...|none>
 #        ops/scripts/verdict-rule-switch-proof.sh --self-test
-#   e.g. --f-cells 3m:TRENDING_UP,3m:TRENDING_DOWN
-# A switch-BACK to all-M passes --f-cells none: then every v3 row is outside and f_served cannot reach the floor, so
-# a switch-back proves itself on the first four counters and reads INDETERMINATE by construction (stated, not hidden).
+#   e.g. --f-cells 3m:TRENDING_UP,3m:TRENDING_DOWN,30m:TRENDING_UP,30m:TRENDING_DOWN --switched 30m
+#   --f-cells names EVERY cell on F (a cell left out counts its stamp-3 rows as v3_outside); --switched names only the
+#   timeframes this deploy moved to F. A run that moved none to F passes --switched none.
+# A switch-BACK to all-M passes --f-cells none --switched none: then every v3 row is outside and f_served cannot reach
+# the floor, so a switch-back proves itself on the first four counters and reads INDETERMINATE by construction (stated,
+# not hidden).
 set -uo pipefail
 
 RO_TOKEN='TOKEN current_user=aoe_readonly transaction_read_only=on'
@@ -54,9 +63,37 @@ cells_array() {
   echo "ARRAY[$out]::text[]"
 }
 
-# proof_sql <since> <expect> <cells-array-literal> → the whole read-only session on stdout.
+# switched_tfs <tf,...|none> → the timeframes, space-separated ('' for none), or returns 1 on anything malformed or
+# repeated. Same whitelist reason as cells_array: each value is spliced into SQL and into a counter name.
+switched_tfs() {
+  local spec="$1" tf out='' parts=()
+  if [ "$spec" = none ]; then echo ''; return 0; fi
+  [[ "$spec" =~ ^[0-9]{1,2}[mhd](,[0-9]{1,2}[mhd])*$ ]] || return 1
+  IFS=',' read -r -a parts <<< "$spec"
+  for tf in "${parts[@]}"; do
+    case " $out " in *" $tf "*) return 1 ;; esac
+    out="${out:+$out }$tf"
+  done
+  echo "$out"
+}
+
+# switched_covered <space-separated tfs> <f-cells spec> → returns 1 and names the first timeframe with no --f-cells cell.
+# A switched timeframe outside the F cells could never count a row, so it can only ever read as a thin counter.
+switched_covered() {
+  local tf
+  for tf in $1; do
+    case ",$2," in *",$tf:TRENDING_"*) ;; *) echo "$tf"; return 1 ;; esac
+  done
+  return 0
+}
+
+# proof_sql <since> <expect> <cells-array-literal> <space-separated switched tfs> → the whole read-only session on stdout.
 proof_sql() {
-  local since="$1" expect="$2" cells="$3"
+  local since="$1" expect="$2" cells="$3" switched="$4" tf per_tf=''
+  for tf in $switched; do
+    per_tf="$per_tf
+UNION ALL SELECT 'COUNT f_served_$tf=' || (SELECT count(*) FROM j WHERE f_decisive AND v = 3 AND served_f AND tf = '$tf')"
+  done
   cat <<SQL
 BEGIN READ ONLY;
 SET LOCAL statement_timeout = '120s';
@@ -68,7 +105,8 @@ WITH s_all AS (
   SELECT DISTINCT ON (coalesce(signal_hash, 'id:' || id::text), exchange) *
   FROM s_all ORDER BY coalesce(signal_hash, 'id:' || id::text), exchange, id
 ), j AS (
-  SELECT f.signal AS served, f.verdict_rule_version AS v, ssi.scorer_input_id AS ssi_id,
+  SELECT f.signal AS served, f.verdict_rule_version AS v, ssi.scorer_input_id AS ssi_id, ssi.timeframe AS tf,
+         ssi.timeframe || ':' || coalesce(ssi.regime, '') AS cell,
          (ssi.timeframe || ':' || coalesce(ssi.regime, '')) = ANY ($cells) AND ssi.trend_decisive IS TRUE AS f_decisive,
          f.signal IS NOT DISTINCT FROM ssi.verdict_f AS served_f
   FROM s_first f
@@ -85,19 +123,21 @@ UNION ALL SELECT 'COUNT v3_outside=' || (SELECT count(*) FROM j WHERE v = 3 AND 
 UNION ALL SELECT 'COUNT f_missed=' || (SELECT count(*) FROM j WHERE f_decisive AND (v IS DISTINCT FROM 3 OR NOT served_f))
 UNION ALL SELECT 'COUNT band_rows=' || (SELECT count(*) FROM b)
 UNION ALL SELECT 'COUNT band_v3_outside=' || (SELECT count(*) FROM b WHERE verdict_rule_version = 3 AND NOT ((timeframe || ':' || coalesce(regime, '')) = ANY ($cells)))
-UNION ALL SELECT 'COUNT f_served=' || (SELECT count(*) FROM j WHERE f_decisive AND v = 3 AND served_f);
+UNION ALL SELECT 'COUNT f_served=' || (SELECT count(*) FROM j WHERE f_decisive AND v = 3 AND served_f)$per_tf
+UNION ALL SELECT 'CELL ' || c || ' f_served=' || (SELECT count(*) FROM j WHERE f_decisive AND v = 3 AND served_f AND cell = c) FROM unnest($cells) AS c;
 ROLLBACK;
 SQL
 }
 
-# parse_counts <output-file> → prints `name=value` per counter in COUNTERS order; returns 1 unless the token line is
-# the read-only token and every counter appears exactly once as a non-negative integer. Output we were handed and
-# could not parse is never a zero.
+# parse_counts <output-file> [space-separated switched tfs] → prints `name=value` per counter in COUNTERS order, then
+# one per switched timeframe; returns 1 unless the token line is the read-only token and every counter appears exactly
+# once as a non-negative integer. Output we were handed and could not parse is never a zero.
 parse_counts() {
-  local f="$1" name val n
+  local f="$1" switched="${2:-}" name val n tf per_tf=''
   [ -r "$f" ] || return 1
   [ "$(grep -c '^TOKEN ' "$f")" -eq 1 ] && grep -qxF "$RO_TOKEN" "$f" || return 1
-  for name in "${COUNTERS[@]}"; do
+  for tf in $switched; do per_tf="$per_tf f_served_$tf"; done
+  for name in "${COUNTERS[@]}" $per_tf; do
     n="$(grep -c "^COUNT $name=" "$f")"
     [ "$n" -eq 1 ] || return 1
     val="$(sed -n "s/^COUNT $name=//p" "$f")"
@@ -106,9 +146,9 @@ parse_counts() {
   done
 }
 
-# decide <parsed name=value lines | 'ind:<why>'> → prints the verdict line, returns its code.
+# decide <parsed name=value lines | 'ind:<why>'> [space-separated switched tfs] → prints the verdict line, returns its code.
 decide() {
-  local parsed="$1" name val red='' served=''
+  local parsed="$1" switched="${2:-}" name val red='' served='' tf thin=''
   case "$parsed" in ind:*) printf '[switch-proof] cannot verify: %s\n' "${parsed#ind:}" >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3 ;; esac
   for name in "${STRICT[@]}"; do
     val="$(printf '%s\n' "$parsed" | sed -n "s/^$name=//p")"
@@ -117,9 +157,18 @@ decide() {
   done
   served="$(printf '%s\n' "$parsed" | sed -n 's/^f_served=//p')"
   [[ "$served" =~ ^[0-9]+$ ]] || { echo '[switch-proof] cannot verify: f_served' >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3; }
+  for tf in $switched; do
+    val="$(printf '%s\n' "$parsed" | sed -n "s/^f_served_$tf=//p")"
+    [[ "$val" =~ ^[0-9]+$ ]] || { echo "[switch-proof] cannot verify: f_served_$tf" >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3; }
+    [ "$val" -ge "$F_SERVED_FLOOR" ] || thin="$thin $tf=$val"
+  done
   if [ -n "$red" ]; then printf '[switch-proof] FAIL:%s\n' "$red" >&2; echo 'SWITCH_PROOF=FAIL'; return 1; fi
   if [ "$served" -lt "$F_SERVED_FLOOR" ]; then
     printf '[switch-proof] f_served=%s < %s — clean so far, too thin to prove\n' "$served" "$F_SERVED_FLOOR" >&2
+    echo 'SWITCH_PROOF=INDETERMINATE'; return 3
+  fi
+  if [ -n "$thin" ]; then
+    printf '[switch-proof] switched timeframes below their own floor of %s:%s — clean so far, too thin to prove\n' "$F_SERVED_FLOOR" "$thin" >&2
     echo 'SWITCH_PROOF=INDETERMINATE'; return 3
   fi
   echo 'SWITCH_PROOF=PASS'; return 0
@@ -133,9 +182,9 @@ self_test() {
     { echo "$tok"; for kv in "$@"; do echo "COUNT $kv"; done; } > "$f"
   }
   local clean=(rows=900 keys=899 unjoined=0 wrong_config=0 v1=0 v3_outside=0 f_missed=0 band_rows=50 band_v3_outside=0)
-  expect_verdict() { # expect_verdict <label> <want-token> <want-code> <file>
-    local p; p="$(parse_counts "$4")" || p='ind:parse'
-    out="$(decide "$p" 2>/dev/null)"; code=$?
+  expect_verdict() { # expect_verdict <label> <want-token> <want-code> <file> [switched tfs]
+    local p; p="$(parse_counts "$4" "${5:-}")" || p='ind:parse'
+    out="$(decide "$p" "${5:-}" 2>/dev/null)"; code=$?
     [ "$out" = "SWITCH_PROOF=$2" ] && [ "$code" -eq "$3" ] || fails+=("$1: got '$out' exit $code, want SWITCH_PROOF=$2 exit $3")
   }
 
@@ -162,6 +211,61 @@ self_test() {
   : > "$tmp/empty";                                                     expect_verdict 'empty output (ssh/psql died)' INDETERMINATE 3 "$tmp/empty"
   expect_verdict 'an unreadable file' INDETERMINATE 3 "$tmp/does-not-exist"
 
+  # ── the per-timeframe floor: an older F timeframe must not be able to fill a newly switched one's ──
+  local sw='30m 1h'
+  fixture "$tmp/tf-none" "$RO_TOKEN" "${clean[@]}" f_served=500 f_served_30m=0 f_served_1h=0
+  expect_verdict '3m = 500, 30m = 1h = 0' INDETERMINATE 3 "$tmp/tf-none" "$sw"
+  fixture "$tmp/tf-one" "$RO_TOKEN" "${clean[@]}" f_served=559 f_served_30m=30 f_served_1h=29
+  expect_verdict '30m = 30, 1h = 29' INDETERMINATE 3 "$tmp/tf-one" "$sw"
+  fixture "$tmp/tf-two" "$RO_TOKEN" "${clean[@]}" f_served=560 f_served_30m=30 f_served_1h=30
+  expect_verdict 'both switched timeframes at the floor' PASS 0 "$tmp/tf-two" "$sw"
+  fixture "$tmp/tf-oldthin" "$RO_TOKEN" "${clean[@]}" f_served=29 f_served_30m=30 f_served_1h=30
+  expect_verdict 'the total floor still holds beside the per-timeframe one' INDETERMINATE 3 "$tmp/tf-oldthin" "$sw"
+  for k in wrong_config v1 v3_outside f_missed band_v3_outside; do
+    local row=() kv
+    for kv in "${clean[@]}"; do [ "${kv%%=*}" = "$k" ] && row+=("$k=1") || row+=("$kv"); done
+    fixture "$tmp/tf-red-$k" "$RO_TOKEN" "${row[@]}" f_served=500 f_served_30m=0 f_served_1h=0
+    expect_verdict "$k=1 outranks thin switched timeframes" FAIL 1 "$tmp/tf-red-$k" "$sw"
+    fixture "$tmp/tf-redfull-$k" "$RO_TOKEN" "${row[@]}" f_served=500 f_served_30m=30 f_served_1h=30
+    expect_verdict "$k=1 outranks full switched timeframes" FAIL 1 "$tmp/tf-redfull-$k" "$sw"
+  done
+  fixture "$tmp/tf-miss" "$RO_TOKEN" "${clean[@]}" f_served=500 f_served_30m=30
+  expect_verdict 'a missing per-timeframe counter (1h)' INDETERMINATE 3 "$tmp/tf-miss" "$sw"
+  fixture "$tmp/tf-dup" "$RO_TOKEN" "${clean[@]}" f_served=500 f_served_30m=30 f_served_1h=30 f_served_1h=30
+  expect_verdict 'a duplicated per-timeframe counter' INDETERMINATE 3 "$tmp/tf-dup" "$sw"
+  fixture "$tmp/tf-nan" "$RO_TOKEN" "${clean[@]}" f_served=500 f_served_30m=30 f_served_1h=lots
+  expect_verdict 'a non-integer per-timeframe counter' INDETERMINATE 3 "$tmp/tf-nan" "$sw"
+  { cat "$tmp/tf-two"; echo 'CELL 30m:TRENDING_UP f_served=30'; echo 'CELL 30m:TRENDING_DOWN f_served=0'; } > "$tmp/tf-cell"
+  expect_verdict 'CELL lines are evidence only (a direction at 0 does not hold the verdict)' PASS 0 "$tmp/tf-cell" "$sw"
+
+  # ── the --switched whitelist and its coverage: both refuse BEFORE the host is touched ──
+  [ "$(switched_tfs '30m,1h')" = '30m 1h' ] || fails+=("switched_tfs did not render 30m,1h: '$(switched_tfs '30m,1h')'")
+  { switched_tfs none >/dev/null && [ -z "$(switched_tfs none)" ]; } || fails+=('switched_tfs none is not the empty list')
+  for bad in '' '30m,' ',30m' '30m,,1h' '30M' 'x' 'none,30m' '30m,30m' "30m'; DROP TABLE signals; --" '30m 1h'; do
+    switched_tfs "$bad" >/dev/null 2>&1 && fails+=("switched_tfs accepted '$bad'")
+  done
+  switched_covered '30m 1h' '3m:TRENDING_UP,30m:TRENDING_DOWN,1h:TRENDING_UP' >/dev/null || fails+=('switched_covered refused covered timeframes')
+  [ "$(switched_covered '30m 1h' '30m:TRENDING_UP')" = 1h ] || fails+=('switched_covered did not name the uncovered 1h')
+  [ "$(switched_covered '1h' '11h:TRENDING_UP')" = 1h ] || fails+=('switched_covered took 11h for 1h')
+  switched_covered '' 'none' >/dev/null || fails+=('switched_covered refused --switched none')
+
+  # A function shadows the binary for these calls only, so a refusal that regressed cannot reach the host.
+  ssh() { : > "$tmp/ssh-reached"; cat >/dev/null; return 99; }
+  local id64 refused
+  id64="$(printf 'a%.0s' {1..64})"
+  expect_refused() { # expect_refused <label> <run_proof args...>: INDETERMINATE exit 3 AND the host never reached
+    local label="$1"; shift
+    rm -f "$tmp/ssh-reached"
+    refused="$(run_proof "$@" 2>/dev/null)"; code=$?
+    [ "$refused" = 'SWITCH_PROOF=INDETERMINATE' ] && [ "$code" -eq 3 ] || fails+=("$label: got '$refused' exit $code, want SWITCH_PROOF=INDETERMINATE exit 3")
+    [ ! -e "$tmp/ssh-reached" ] || fails+=("$label: reached the host before refusing")
+  }
+  expect_refused '--switched missing' --since 1700000000 --expect "$id64" --f-cells 30m:TRENDING_UP
+  expect_refused 'a switched timeframe with no --f-cells cell' --since 1700000000 --expect "$id64" --f-cells 3m:TRENDING_UP --switched 30m
+  expect_refused 'a switched timeframe under --f-cells none' --since 1700000000 --expect "$id64" --f-cells none --switched 30m
+  expect_refused 'a malformed --switched' --since 1700000000 --expect "$id64" --f-cells 30m:TRENDING_UP --switched "30m'; --"
+  unset -f ssh
+
   # ── the --f-cells whitelist: it is spliced into SQL ──
   cells="$(cells_array '3m:TRENDING_UP,3m:TRENDING_DOWN')" && [ "$cells" = "ARRAY['3m:TRENDING_UP','3m:TRENDING_DOWN']::text[]" ] \
     || fails+=("cells_array did not render the 3m pair: '$cells'")
@@ -171,7 +275,7 @@ self_test() {
   done
 
   # ── the bypassed artifact: the SQL the seam above never runs. Assert its shape, not just the parser ──
-  sql="$(proof_sql 1700000000 "$(printf 'a%.0s' {1..64})" "$cells")"
+  sql="$(proof_sql 1700000000 "$id64" "$cells" "$sw")"
   printf '%s\n' "$sql" | head -1 | grep -qx 'BEGIN READ ONLY;' || fails+=('SQL does not open with BEGIN READ ONLY')
   printf '%s\n' "$sql" | tail -1 | grep -qx 'ROLLBACK;' || fails+=('SQL does not close with ROLLBACK')
   printf '%s\n' "$sql" | grep -qiE 'outcome_|label|pfe_|mae_|return_1candle' && fails+=('SQL names an outcome/label column — sealed holdout')
@@ -181,24 +285,33 @@ self_test() {
     [ "$(printf '%s\n' "$sql" | grep -c "'COUNT $k='")" -eq 1 ] || fails+=("SQL does not emit COUNT $k exactly once")
   done
   [ "$(printf '%s\n' "$sql" | grep -c "created_at >= 1700000000")" -eq 2 ] || fails+=('--since does not bound both signals and band_signals')
+  for k in 30m 1h; do
+    [ "$(printf '%s\n' "$sql" | grep -c "'COUNT f_served_$k='")" -eq 1 ] || fails+=("SQL does not emit COUNT f_served_$k exactly once")
+    printf '%s\n' "$sql" | grep "'COUNT f_served_$k='" | grep -qF "AND served_f AND tf = '$k')" || fails+=("COUNT f_served_$k is not scoped to its own timeframe")
+  done
+  printf '%s\n' "$sql" | grep -q "'COUNT f_served_3m='" && fails+=('SQL counts a timeframe --switched did not name')
+  printf '%s\n' "$sql" | grep "^UNION ALL SELECT 'CELL '" | grep -qF "FROM unnest($cells) AS c;" || fails+=('per-cell evidence does not cover every --f-cells cell')
+  [ "$(printf '%s\n' "$sql" | grep -c 'COUNT f_served_')" -eq 2 ] || fails+=('SQL carries a per-timeframe COUNT beyond --switched')
+  [ "$(proof_sql 1700000000 "$id64" "$cells" '' | grep -c 'COUNT f_served_')" -eq 0 ] || fails+=('--switched none still emits a per-timeframe COUNT')
 
   rm -rf "$tmp"
   if [ "${#fails[@]}" -gt 0 ]; then
     printf '  ✗ %s\n' "${fails[@]}" >&2
     echo 'SELF-TEST: FAIL'; echo 'SWITCH_PROOF_SELF_TEST=FAIL'; return 1
   fi
-  echo 'SELF-TEST: PASS (decide both ways incl. FAIL-outranks-thin; parse refuses token/missing/duplicate/non-integer/empty; f-cells whitelist; SQL shape: read-only, rollback, no outcome/label/write, every counter once, --since on both tables)'
+  echo 'SELF-TEST: PASS (decide both ways incl. FAIL-outranks-thin; per-timeframe floor; parse refuses token/missing/duplicate/non-integer/empty; f-cells + switched whitelists, missing/uncovered --switched refused before the host; SQL shape: read-only, rollback, no outcome/label/write, every counter once, per-timeframe COUNTs scoped, --since on both tables)'
   echo 'SWITCH_PROOF_SELF_TEST=PASS'; return 0
 }
 
 run_proof() {
-  local since='' expect='' fcells='' cells out parsed
+  local since='' expect='' fcells='' switched_arg='' switched uncovered cells out parsed
   while [ $# -gt 0 ]; do
     [ $# -ge 2 ] || { echo "[switch-proof] $1 needs a value" >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3; }
     case "$1" in
       --since) since="$2" ;;
       --expect) expect="$2" ;;
       --f-cells) fcells="$2" ;;
+      --switched) switched_arg="$2" ;;
       *) echo "[switch-proof] unknown argument $1" >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3 ;;
     esac
     shift 2
@@ -206,20 +319,23 @@ run_proof() {
   [[ "$since" =~ ^[0-9]{10}$ ]] || { echo '[switch-proof] --since must be epoch seconds' >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3; }
   [[ "$expect" =~ ^[0-9a-f]{64}$ ]] || { echo '[switch-proof] --expect must be a 64-hex rule_config_id' >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3; }
   cells="$(cells_array "$fcells")" || { echo '[switch-proof] --f-cells must be tf:TRENDING_UP|DOWN[,...] or none' >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3; }
+  switched="$(switched_tfs "$switched_arg")" || { echo '[switch-proof] --switched is required: tf[,...] (no repeats) or none' >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3; }
+  uncovered="$(switched_covered "$switched" "$fcells")" || { echo "[switch-proof] --switched names $uncovered, which has no --f-cells cell" >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3; }
   command -v ssh >/dev/null 2>&1 || { echo '[switch-proof] ssh not on PATH' >&2; echo 'SWITCH_PROOF=INDETERMINATE'; return 3; }
   out="$(mktemp "${TMPDIR:-/tmp}/switch-proof.XXXXXX")" || { echo 'SWITCH_PROOF=INDETERMINATE'; return 3; }
-  proof_sql "$since" "$expect" "$cells" |
+  proof_sql "$since" "$expect" "$cells" "$switched" |
     ssh -o ConnectTimeout=20 -o ServerAliveInterval=15 -i "$KEY" "$HOST" \
       "docker exec -i $PG_CTR psql -U aoe_readonly -d signal_performance -At -q -v ON_ERROR_STOP=1" > "$out" 2> "$out.err"
-  if parsed="$(parse_counts "$out")"; then
-    printf '[switch-proof] since=%s expect=%s f-cells=%s\n' "$since" "${expect:0:12}…" "$fcells" >&2
+  if parsed="$(parse_counts "$out" "$switched")"; then
+    printf '[switch-proof] since=%s expect=%s f-cells=%s switched=%s\n' "$since" "${expect:0:12}…" "$fcells" "$switched_arg" >&2
     printf '%s\n' "$parsed" | sed 's/^/[switch-proof]   /' >&2
+    grep '^CELL ' "$out" | sed 's/^/[switch-proof]   /' >&2
   else
     tail -5 "$out.err" 2>/dev/null | sed 's/^/[switch-proof] stderr: /' >&2
     parsed='ind:host, query or output unreadable'
   fi
   rm -f "$out" "$out.err"
-  decide "$parsed"
+  decide "$parsed" "$switched"
 }
 
 # Sourceable for fixtures: a sourced copy defines the functions and runs nothing.

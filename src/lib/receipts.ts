@@ -151,7 +151,7 @@ export interface Receipts {
   /**
    * SIGNAL-VERDICT-RULE-REGISTRY-W1: a non-default verdict rule served this call — `fade` (the
    * call is the opposite side of the ledger's reading) or `hold`. OMITTED under today's rule.
-   * Live from SIGNAL-VERDICT-RULE-SWITCH-3m-W1 (3m serves F): `fade` on a 3m decisive call.
+   * `fade` appears on a trend-mode-decisive call in a cell `VERDICT_RULE_ASSIGNMENT` assigns F.
    * Declared in `audits/get-trade-call-shape-snapshot-2026-10-31.json` `receipts_allowed_keys`.
    */
   rule_variant?: 'fade' | 'hold';

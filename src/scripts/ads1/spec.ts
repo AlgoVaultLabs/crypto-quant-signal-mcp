@@ -73,7 +73,7 @@ export const CALIB_BIN_EDGES = [52, 55, 58, 61, 64, 67, 70, 75, 80, 90, 101] as 
  */
 export const CALIB_FLOOR_TS = 1776219824;
 
-/** TREND_MODE flip #2, final (D2): every signal after it carries verdict_rule_version = 2. */
+/** TREND_MODE flip #2, final (D2): every signal after it carries verdict_rule_version >= 2 (per `VERDICT_RULE_ASSIGNMENT`). */
 export const T_FLIP = 1788169595;
 /** The B-DIR v3 sealed-holdout floor (ratified 2026-09-26). */
 export const T_DIAG_END = 1790402400;
