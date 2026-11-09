@@ -35,7 +35,7 @@
  * **429 on HEAD and on GET**, while a sibling URL answered 429 on HEAD and **200** on GET, in the
  * same run, seconds apart. Treating that as FAIL would red a deploy for a third-party throttle on
  * links that are demonstrably fine. So the whole rate-limit/overload class —
- * `408 / 425 / 429 / 503`, plus ANY response carrying `Retry-After` — retries once and then
+ * `408 / 425 / 429 / 503 / 504`, plus ANY response carrying `Retry-After` — retries once and then
  * reports INDETERMINATE. A STABLE `403` or `405` is a different thing entirely: it is a permanent,
  * reproducible answer, so it stays an allowlist entry with a measured reason.
  *
@@ -75,10 +75,14 @@ const RETRY_AFTER_CAP_MS = 5000;
 /**
  * Statuses that mean "ask again later", not "this link is broken".
  *
- * 408 request-timeout · 425 too-early · 429 rate-limited · 503 unavailable. Anything carrying a
- * `Retry-After` header joins them regardless of status, because that header IS the server saying so.
+ * 408 request-timeout · 425 too-early · 429 rate-limited · 503 unavailable · 504 gateway-timeout.
+ * Anything carrying a `Retry-After` header joins them regardless of status, because that header IS
+ * the server saying so.
+ *
+ * 504 joined 2026-11-09: deploy run 42569966991 went red on 8 github.com URLs answering 504 during
+ * an outage, and all 8 answered 200 within the hour. A 500 still FAILs.
  */
-const TRANSPORT_STATUSES = new Set([408, 425, 429, 503]);
+const TRANSPORT_STATUSES = new Set([408, 425, 429, 503, 504]);
 
 /**
  * Expected non-200s, keyed by exact URL. EVERY entry carries a measured `reason`.
@@ -415,6 +419,7 @@ async function selfTest() {
     check('classify 404', classify('https://x.test', { status: 404, retryAfter: null, networkError: null }).verdict, 'FAIL');
     check('classify 500', classify('https://x.test', { status: 500, retryAfter: null, networkError: null }).verdict, 'FAIL');
     check('classify 503', classify('https://x.test', { status: 503, retryAfter: null, networkError: null }).verdict, 'INDETERMINATE');
+    check('classify 504', classify('https://x.test', { status: 504, retryAfter: null, networkError: null }).verdict, 'INDETERMINATE');
     check('classify 408', classify('https://x.test', { status: 408, retryAfter: null, networkError: null }).verdict, 'INDETERMINATE');
     check('classify 425', classify('https://x.test', { status: 425, retryAfter: null, networkError: null }).verdict, 'INDETERMINATE');
     check('classify DNS failure', classify('https://x.test', { status: null, retryAfter: null, networkError: 'ENOTFOUND' }).verdict, 'INDETERMINATE');
