@@ -758,15 +758,15 @@
       "events": [
         "reboot"
       ],
-      "script": "/opt/algovault-monitoring/{aoe-shadow-writer-stall-canary.py,aoe-output-liveness-canary.py,aoe-promotion-health-canary.py,kernel-staleness-canary.sh,boot-contract-canary.sh,declaration-sync.sh,kernel-auto-reboot.sh,aoe-peer-watchdog.sh}",
+      "script": "/opt/algovault-monitoring/{aoe-shadow-writer-stall-canary.py,aoe-promotion-health-canary.py,kernel-staleness-canary.sh,boot-contract-canary.sh,declaration-sync.sh,kernel-auto-reboot.sh,aoe-peer-watchdog.sh}",
       "container": "n/a — host processes",
       "process_pattern": "n/a — host processes, not docker exec",
       "class": "safe-to-kill",
-      "reason": "Six read-only probes and one declaration sync, every one of which re-derives its verdict from live state on its next fire. None writes application data; the heaviest side effect is a cooldown marker, which is re-derived. A reboot costs at most one skipped evaluation cycle. Re-enumerated 2026-10-02 by OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: kernel-auto-reboot.sh (7 * * * *, installed by OPS-HOST-AUTO-REBOOT-W1 and never added here) is the actor itself; aoe-peer-watchdog.sh (installed on aoe-1 by this wave) is a read-only TCP + HTTPS probe that pages the operator only while signal-1 holds an arm, and its counter is re-derived.",
+      "reason": "Five read-only probes and one declaration sync, every one of which re-derives its verdict from live state on its next fire. None writes application data; the heaviest side effect is a cooldown marker, which is re-derived. A reboot costs at most one skipped evaluation cycle. Re-enumerated 2026-10-02 by OPS-HOST-AUTO-REBOOT-SIGNAL1-PROMOTE-W1: kernel-auto-reboot.sh (7 * * * *, installed by OPS-HOST-AUTO-REBOOT-W1 and never added here) is the actor itself; aoe-peer-watchdog.sh (installed on aoe-1 by this wave) is a read-only TCP + HTTPS probe that pages the operator only while signal-1 holds an arm, and its counter is re-derived.",
       "max_runtime_s": 2,
       "runtime_instrument": "direct timed runs on aoe-1 under ALGOVAULT_TG_TEST_INERT=1 and MONITORING_HOST_LABELS=aoe-1, 2026-08-29: shadow-writer-stall 0s · output-liveness 1s · promotion-health 1s · kernel-staleness 0s · boot-contract 0s · declaration-sync 2s. Recorded value is the max. The two lines added 2026-10-02 are bounded by construction, not measured here: the watchdog exits immediately with no arm, and with one its probe is `timeout 10` TCP + `curl -m 10`, so <=20s; the harness is the reboot itself.",
-      "cron_lines": 8,
-      "cron": "13,18,23,28,33,38,43,48,53,57 * * * * · 47 * * * * · 41 * * * * · 37 * * * * (kernel-staleness-canary.sh, hourly since OPS-HOST-KERNEL-REBOOT-W6) · 37 8 * * * · 27 * * * * · 7 * * * * (kernel-auto-reboot.sh) · 3-53/5 * * * * (aoe-peer-watchdog.sh, from this wave's CH3)",
+      "cron_lines": 7,
+      "cron": "13,18,23,28,33,38,43,48,53,57 * * * * · 41 * * * * · 37 * * * * (kernel-staleness-canary.sh, hourly since OPS-HOST-KERNEL-REBOOT-W6) · 37 8 * * * · 27 * * * * · 7 * * * * (kernel-auto-reboot.sh) · 3-53/5 * * * * (aoe-peer-watchdog.sh, from this wave's CH3)",
       "catchup_cmd": null,
       "source": "host-only",
       "verified_at": "2026-10-02"
@@ -1858,9 +1858,8 @@
       "reason": "signal-1 runs the live population check at every BREACH (kernel-auto-reboot.sh), so an unclassified install there DEFERS the reboot — it is classified, never carried as debt."
     },
     "aoe-1": {
-      "count": 10,
+      "count": 9,
       "ids": [
-        "aoe-output-liveness-canary",
         "aoe-peer-watchdog",
         "aoe-promotion-health-canary",
         "aoe-shadow-writer-stall-canary",

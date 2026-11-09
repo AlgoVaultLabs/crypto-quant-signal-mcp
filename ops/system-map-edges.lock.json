@@ -1,6 +1,6 @@
 {
   "generated_by": "scripts/check-map-edges.mjs --sync (edge-class grammar 2)",
-  "extracted_from_corpus_sha256": "4babe2dd6c65373dff9c1036a50514979a92a446a33490a59e7814294b92fd23",
+  "extracted_from_corpus_sha256": "0b94d4acbe795ec9fc073d246c9c1e8106dd5615e10b0b5d0eb69926100a139e",
   "components": [
     "Plausible CE",
     "algovault-blog-assets",
@@ -108,7 +108,6 @@
     "algovault-skills:produces:landing/=tight",
     "aoe:consumes:crypto-quant-signal-mcp=tight",
     "aoe:consumes:crypto-quant-signal-mcp=tight",
-    "aoe:produces:algovault-monitoring=tight",
     "aoe:produces:algovault-monitoring=tight",
     "aoe:produces:algovault-monitoring=tight",
     "aoe:produces:crypto-quant-signal-mcp=tight",
