@@ -177,6 +177,8 @@ describe('class preservation — tags moved, classes did not', () => {
     // candles THROUGH the adapters under ONE batch scope, so it can never spend a venue's interactive reserve;
     // its own entrypoint, literal name `pre_trade_outcome_labeler`.
     'src/scripts/pre-trade-outcome-labeler.ts': { runAsBatch: 1 },
+    // EDGE-SR-LEVEL-PROBE-W1 CH1: one-shot Mac-side candle fetch — class-neutral runAsCaller, literal 'sr-level-probe'.
+    'src/scripts/sr-probe/fetch-candles.ts': { runAsCaller: 1 },
   };
 
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {

@@ -388,6 +388,12 @@
    "note": "a frozen registered text pinned to -v1; its owner migrates by a pre-result amendment or a new registration"
   },
   {
+   "path": "audits/sr-level-probe-preregistration-2026-11-10.md",
+   "role": "registration",
+   "consumer_id": null,
+   "note": "quotes the executed coverage statement, which counts -v1 presence by EXISTS; reads no -v1 value; the study's labels are -v2"
+  },
+  {
    "path": "audits/withheld-dwr-preregistration-2026-08-30.md",
    "role": "registration",
    "consumer_id": null,
