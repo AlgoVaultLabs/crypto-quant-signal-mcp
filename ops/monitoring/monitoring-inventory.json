@@ -1329,7 +1329,7 @@
       "schedule": null,
       "invoked_by": "imported-by:kernel-auto-reboot.sh (gate 4 — is a no-safe-kill aoe-1 job in flight)",
       "install_state": "installed",
-      "sha256": "1cce1c27d7eb8da214015cb9c91a7f7ea6db6417fa23109cfbf983d79e746f22",
+      "sha256": "78922360dd46bfecaa251656e4bc47917135c2d2f60cfdefe9a6ac105056cb28",
       "alert_ids": [],
       "owner_wave": "OPS-HOST-AUTO-REBOOT-W1",
       "notes": "A SYNCED COPY of the committed cron-interlock registry, on aoe-1 only. signal-1 needs no such row: ops/scripts/cron-interlock-registry.json is read there straight out of /opt/crypto-quant-signal-mcp, which deploy.yml refreshes with `git reset --hard origin/main` before every invocation — the staleness window is structurally unreachable. aoe-1 has NO checkout of that repo (measured 2026-08-29: /opt/crypto-quant-signal-mcp does not exist there), so kernel-auto-reboot.sh's fourth gate needs a local copy. SYNCED, NOT INSTALLED (OPS-DRIFT-ALERT-GENERATORS-W1, 2026-09-14): declaration-sync.sh fetches it on aoe-1 every hour (27 * * * *) through a DECLARATIONS row whose 5th field names ops/scripts/cron-interlock-registry.json, so a registry edit reaches the host within the hour with no re-install step. It used to be installed once behind a sync_exempt_reason (the sync could only reach ops/monitoring), with the refresh left to a sentence in these notes; IDENTITY-LIFECYCLE-W3 edited the registry three times on 2026-09-08, re-stamped this sha256, never re-installed, and aoe-1 paged HASH_DRIFT + REGISTRY_PARITY daily from 2026-09-09. Re-stamp this sha256 in the same commit as any registry edit; HASH_DRIFT on this row now means the hourly sync stopped landing, not that someone forgot a step. FOUND BY THE FIRST LIVE RUN of the harness: the default pointed at the signal-1 checkout path, and because both hosts were current every run short-circuited at gate 2 (NOT_DUE) and never reached the registry. It would have surfaced on the first run where a reboot was actually due, as an INDETERMINATE and a page instead of a reboot.",
@@ -2172,7 +2172,7 @@
       "schedule": null,
       "invoked_by": "called-by:owed-read-runner",
       "install_state": "installed",
-      "sha256": "dfc02c7b9e56e1b843ef28ecbe1a937a02140c715ecc4a726f63f4a8a999a124",
+      "sha256": "df4b0b95d2d24dbe8de83bf5e469ed182158f7ab874e07136bc5437582f81159",
       "alert_ids": [],
       "owner_wave": "OPS-OWED-READ-RUNNER-W1",
       "notes": "The owed-read registry (schema_version 1): one row per pre-registered time-gated read — id (marker filename + OWED_READ_FAIL key), wave, not_before, expires_at, script (owed-read-<slug>.py beside the runner, never a path), timeout_s, anchors, criteria. Inert data, DECLARED as `owed-reads.json|reads|0|signal-1` in declaration-sync.sh (floor 0: an empty registry is legitimate and the runner reports reads=0 positively). Rollback = delete the row; its marker stays as evidence.",
@@ -2281,7 +2281,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "54df7846a82ea850a0a919610f9ea79aed01b54db0c331faa388b14da9e746cb",
+      "sha256": "4b920b2b71cf7704ae3160f6712caabf2edf04652c81a17c478ade9fc95a5466",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -2616,7 +2616,7 @@
       "schedule": "43 12 * * 1",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "c493ad1b1f4ca2139f818446b7ebca25f9f160d9a6c01395c2cddb385cade0f1",
+      "sha256": "f8c6cf3d3fa30d9960e825426e431314bf33f5d53b51139a544dff8b96cb6f1e",
       "owner_wave": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
       "alert_ids": [
         "VERDICT_RULE_SWITCH_RECOMMENDED"
@@ -2628,7 +2628,7 @@
         "ops/monitoring/detector_envelope.py",
         "ops/monitoring/detector-envelope.schema.json"
       ],
-      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R1. The forward gate: executes the landed registration audits/verdict-rule-registry-preregistration-2026-10-02.md verbatim (query, windows, statistic, Holm, rule 1, magnitude veto, floors) — tests/unit/verdict-rule-registry.test.ts pins --show-config to it. RECOMMENDS per TIMEFRAME (joint UP/DOWN assignment in S1 = MM, FM, FF) and never writes src/lib/verdict-rule-assignment.ts. Weekly, Monday 12:43Z; the look instant is the SCHEDULED run, so the window chain is reproducible from the registration and the cron alone. Reads READ-ONLY as aoe_readonly (default_transaction_read_only) and REFUSES (INDETERMINATE) before reading a decided window unless signals has a VALID, READY, LIVE btree index on (signal_hash[, exchange]) — idx_signals_signal_hash_exchange, migrations/047, pre-applied 2026-10-03 (architect Q1 = A): 114.9 ms/row without it, 0.008 ms/row with it. Every statement runs under statement_timeout = 6250 ms (~10x the measured worst window, cap 300 s); a timeout makes the WHOLE run INDETERMINATE. VERDICT_RULE_GATE_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL = a switch is recommended and the page is the action. Pages VERDICT_RULE_SWITCH_RECOMMENDED through the wrapper's page-on-change (ALERT_KEYS <tf>:<UP><DOWN>:w<k> every evaluable run, --clear when none). One canary_result_log record per CELL per run (20). Gate-test with ALGOVAULT_TG_TEST_INERT=1. --self-test is hermetic, two-way, vacuity-guarded, asserts the bypassed SQL/binder/parser/record/envelope and is mutation-proven (12 + 6 breaks).",
+      "notes": "SIGNAL-VERDICT-RULE-REGISTRY-W1 CH3 R1. The forward gate: executes the landed registration audits/verdict-rule-registry-preregistration-2026-10-02.md verbatim (query, windows, statistic, Holm, rule 1, magnitude veto, floors) — tests/unit/verdict-rule-registry.test.ts pins --show-config to it. RECOMMENDS per TIMEFRAME (joint UP/DOWN assignment in S1 = MM, FM, FF) and never writes src/lib/verdict-rule-assignment.ts. Weekly, Monday 12:43Z; the look instant is the SCHEDULED run, so the window chain is reproducible from the registration and the cron alone. Reads READ-ONLY as aoe_readonly (default_transaction_read_only) and REFUSES (INDETERMINATE) before reading a decided window unless signals has a VALID, READY, LIVE btree index on (signal_hash[, exchange]) — idx_signals_signal_hash_exchange, migrations/047, pre-applied 2026-10-03 (architect Q1 = A): 114.9 ms/row without it, 0.008 ms/row with it. Every statement runs under statement_timeout = 6250 ms (~10x the measured worst window, cap 300 s); a timeout makes the WHOLE run INDETERMINATE. VERDICT_RULE_GATE_VERDICT=PASS|FAIL|INDETERMINATE maps 0/0/3; FAIL = a switch is recommended and the page is the action. Pages VERDICT_RULE_SWITCH_RECOMMENDED through the wrapper's page-on-change (ALERT_KEYS <tf>:<UP><DOWN>:w<k> every evaluable run, --clear when none). One canary_result_log record per CELL per run (20). Gate-test with ALGOVAULT_TG_TEST_INERT=1. --self-test is hermetic, two-way, vacuity-guarded, asserts the bypassed SQL/binder/parser/record/envelope and is mutation-proven (12 + 6 breaks). || SIGNAL-VERDICT-RULE-GATE-LIVE-RULE-W1 CH1: each run MEASURES the live assignment from served rows (the latest trend-decisive row per cell in 14 days, through the one-row predicate incumbent() uses; ? for a cell with no row), prints live=/live_at_look=/straddle=/page= per timeframe and VERDICT_RULE_GATE_PAGE_KEYS before the token, and pages only an ACTIONABLE window (SWITCH_TO away from the live rule on a window that does not straddle). Decided windows are FROZEN at their look in the LEDGER /var/lib/algovault-monitoring/verdict-rule-gate-decided.json (env VRG_LEDGER; schema_version 1, keyed by look epoch, the whole Holm family, written atomically before any print/record/page, never re-read or re-evaluated). Ledger absent, unreadable, wrong schema or unwritable => INDETERMINATE exit 3. RE-SEED after a loss (create-only, refuses an existing ledger): grep -a '\"canary\":\"verdict-rule-gate\"' '<vault>/Claude files/canary-results.jsonl' | ssh signal-1 /usr/bin/python3 /opt/algovault-monitoring/verdict-rule-gate.py --seed-ledger --records - (VERDICT_RULE_LEDGER_SEED_VERDICT). The host results log cannot seed it (2,000-line cap, ~170 lines a day).",
       "first_install": {
         "at": "20261004T073910Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
@@ -3543,6 +3543,28 @@
         "at": "20261107T053733Z",
         "by": "ops/scripts/install-monitoring-artifact.sh"
       }
+    },
+    {
+      "id": "owed-read-verdict-rule-3m-straddle-w2",
+      "artifact": "ops/monitoring/owed-read-verdict-rule-3m-straddle-w2.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/owed-read-verdict-rule-3m-straddle-w2.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/owed-read-verdict-rule-3m-straddle-w2.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:owed-read-runner",
+      "install_state": "pending",
+      "pending_since": "2026-11-10",
+      "sha256": "145f1b02cf6dc56ceed3a17ec80ef652d80b9157b1c33badabd81abbb9041066",
+      "alert_ids": [],
+      "owner_wave": "SIGNAL-VERDICT-RULE-GATE-LIVE-RULE-W1",
+      "notes": "T3's owed read (SIGNAL-VERDICT-RULE-GATE-LIVE-RULE-W1 CH2, arc ARC-VERDICT-RULE-SWITCH-30M-1H): ONE registry row, verdict-rule-3m-straddle-w2, not_before 2026-11-23T13:00Z (the first :00 after 3m window 2's scheduled look 2026-11-23T12:43Z), expires_at = not_before + 72 h. Pre-registered here: the earliest verdict-rule-gate record at/after the look for EACH 3m cell, window 2, DECIDED, reads live = live_at_look = FF, straddled true, actionable false (record leg); the alert wrapper's log holds >= 1 VERDICT_RULE_SWITCH_RECOMMENDED line at/after the look and none naming 3m:[MF]{2}:w2 (wrapper leg; SUPPRESSED_TEST_CONTEXT lines never count towards the >= 1). PASS iff both; FAIL iff contradicted; INDETERMINATE when a record or the log is absent. Reads only /var/lib/algovault-monitoring/canary-results.jsonl and /var/log/algovault-monitoring-telegram.log(.1) — no database, no network — so it detects a dark or regressed gate at its first straddled look. --self-test builds its record fixtures with the gate's own cell_record. PENDING until the wave's §9 installs it with ops/scripts/install-monitoring-artifact.sh."
     },
     {
       "id": "kernel-cve-floor",
