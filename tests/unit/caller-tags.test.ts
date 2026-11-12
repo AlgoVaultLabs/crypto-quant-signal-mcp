@@ -179,6 +179,8 @@ describe('class preservation — tags moved, classes did not', () => {
     'src/scripts/pre-trade-outcome-labeler.ts': { runAsBatch: 1 },
     // EDGE-SR-LEVEL-PROBE-W1 CH1: one-shot Mac-side candle fetch — class-neutral runAsCaller, literal 'sr-level-probe'.
     'src/scripts/sr-probe/fetch-candles.ts': { runAsCaller: 1 },
+    // EDGE-SR-LEVEL-BACKTEST-W1 CH1: one-shot Mac-side candle fetch — class-neutral runAsCaller, literal 'sr-level-backtest'.
+    'src/scripts/sr-backtest/fetch-store.ts': { runAsCaller: 1 },
   };
 
   it('every pre-wave class-setting site survives unchanged; the only additions are class-neutral', () => {
