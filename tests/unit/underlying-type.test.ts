@@ -6,9 +6,23 @@
  * projection and the floor (engine silent → UNKNOWN for a known TradFi symbol, else CRYPTO),
  * offline through the engine's own record seam.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
+
+// Only `upstreamFetch` is replaced (every other export stays real): the XT block drives the REAL
+// detector registry over XT's own payload. The other blocks never fetch (records are loaded directly).
+vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/lib/adapters/_upstream-fetch.js')>()),
+  upstreamFetch: vi.fn(),
+}));
+
 import { resolveAssetClass } from '../../src/lib/underlying-type.js';
-import { _clearAssetClassCache, _loadVenueRecordsForTest } from '../../src/lib/asset-class-detection.js';
+import {
+  _clearAssetClassCache,
+  _loadVenueRecordsForTest,
+  _setDetectorsForTest,
+  _warmForTest,
+} from '../../src/lib/asset-class-detection.js';
+import { upstreamFetch } from '../../src/lib/adapters/_upstream-fetch.js';
 
 describe('resolveAssetClass — a projection of the engine on every venue', () => {
   beforeEach(() => _clearAssetClassCache());
@@ -44,5 +58,41 @@ describe('resolveAssetClass — a projection of the engine on every venue', () =
     // DXY is in asset-tiers TRADFI_FALLBACK (isKnownTradFi) but intentionally NOT in
     // STATIC_ASSET_CLASS_MAP (FX, no confident session) → UNKNOWN.
     expect(await resolveAssetClass('DXY', 'BINANCE')).toBe('UNKNOWN');
+  });
+});
+
+describe('OPS-ASSET-CLASS-XT-DECODE-W1 — XT books resolve through XT’s own record', () => {
+  // XT's own symbol list, as served 2026-11-12T09:49Z (fields the detector reads, verbatim).
+  // Measured defect: no field venue lists USDTRY / USDNOK / NZDUSD / DE30EUR, so while XT sat in the
+  // union these four fell to the floor and resolved CRYPTO (AUD resolved only because MEXC lists it).
+  const XT_URL = 'https://fapi.xt.com/future/market/v1/public/symbol/list';
+  const XT_PAYLOAD = { returnCode: 0, msgInfo: 'success', error: null, result: [
+    { symbol: 'usdtry_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['FOREX'], labels: ['FOREX'] },
+    { symbol: 'usdnok_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['FOREX'], labels: ['FOREX'] },
+    { symbol: 'nzdusd_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['FOREX'], labels: ['FOREX'] },
+    { symbol: 'de30eur_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['INDEX'], labels: ['INDEX'] },
+    { symbol: 'aud_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['FOREX'], labels: ['FOREX'] },
+    { symbol: 'btc_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: null, labels: ['HOT'] },
+  ] };
+
+  beforeEach(() => {
+    _clearAssetClassCache();
+    (upstreamFetch as unknown as Mock).mockReset();
+    (upstreamFetch as unknown as Mock).mockImplementation(async (_cfg: unknown, req: { url: string }) => {
+      if (req.url === XT_URL) return XT_PAYLOAD;
+      throw new Error(`unmocked ${req.url}`); // every other venue fails open: XT's record alone decides
+    });
+  });
+  afterEach(() => _clearAssetClassCache());
+
+  it('XT FX and index books resolve to their TradFi class, never the CRYPTO floor', async () => {
+    _setDetectorsForTest(null); // the REAL detector registry
+    await _warmForTest();
+    expect(await resolveAssetClass('USDTRY', 'XT')).toBe('FX');
+    expect(await resolveAssetClass('USDNOK', 'XT')).toBe('FX');
+    expect(await resolveAssetClass('NZDUSD', 'XT')).toBe('FX');
+    expect(await resolveAssetClass('DE30EUR', 'XT')).toBe('INDEX');
+    expect(await resolveAssetClass('AUD', 'XT')).toBe('FX');
+    expect(await resolveAssetClass('BTC', 'XT')).toBe('CRYPTO');
   });
 });

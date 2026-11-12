@@ -159,6 +159,20 @@ export const VENUE_TAG_CLASS = {
     '4': { cls: 'COMMODITY', level: 2 },
     pre_market: { cls: 'PREMARKET', level: 2 },
   },
+  // XT `tags` (OPS-ASSET-CLASS-XT-DECODE-W1, live-probed 2026-11-12: 340 of 1,209 USDT perps tagged).
+  // Row ORDER is data: the detector's tag is the first row the contract's `tags` carry, so
+  // `Pre-M` (OpenAI/Anthropic: ['STOCK', 'Pre-M']) wins over STOCK. INDEX and STOCK are level 0
+  // because neither pins the family: XT tags 27 ETFs and funds INDEX beside its 12 market indices,
+  // and tags pre-IPO MOONSHOT and OURA plain STOCK (OKX: pre_market). Refinement names the class.
+  // No crypto row: an UNTAGGED contract is no record at all (the detector skips it).
+  XT: {
+    'Pre-M': { cls: 'PREMARKET', level: 2 },
+    FOREX: { cls: 'FX', level: 2 },
+    METAL: { cls: 'COMMODITY', level: 2 },
+    COMMODITY: { cls: 'COMMODITY', level: 2 },
+    INDEX: { cls: 'INDEX', level: 0 },
+    STOCK: { cls: 'EQUITY', level: 0 },
+  },
 } as const satisfies Readonly<Record<string, Readonly<Record<string, TagClass | 'CRYPTO'>>>>;
 
 /** The venues that publish their own per-instrument TradFi record. */

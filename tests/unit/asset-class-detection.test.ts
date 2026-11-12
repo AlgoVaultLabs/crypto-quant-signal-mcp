@@ -194,8 +194,10 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
     'https://api.gateio.ws/api/v4/futures/usdt/contracts': [
       { name: 'NASDAQ_USDT', contract_type: 'indices' }, { name: 'XAG_USDT', contract_type: 'metals' },
       { name: 'EUR_USDT', contract_type: 'forex' }, { name: 'BTC_USDT', contract_type: '' },
+      { name: 'CAT_USDT', contract_type: '' }, // a crypto CAT: XT's CAT (Caterpillar) must not borrow it
     ],
     'https://contract.mexc.com/api/v1/contract/detail': { data: [
+      { symbol: 'VOOSTOCK_USDT', typeLabel: 2, conceptPlate: ['mc-trade-zone-usstocks', 'mc-trade-zone-tradfi'] },
       { symbol: 'TENCENTSTOCK_USDT', typeLabel: 2, conceptPlate: ['mc-trade-zone-Stock', 'mc-trade-zone-hkstocks', 'mc-trade-zone-tradfi'] },
       { symbol: 'QQQSTOCK_USDT', typeLabel: 2, conceptPlate: ['mc-trade-zone-ETF', 'mc-trade-zone-Stock', 'mc-trade-zone-stockindex', 'mc-trade-zone-tradfi'] },
       { symbol: 'USOIL_USDT', typeLabel: 0, conceptPlate: ['mc-trade-zone-Commodities', 'mc-trade-zone-tradfi'] },
@@ -228,6 +230,19 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
       { instId: 'OPENAI-USDT-SWAP', instCategory: '3', ruleType: 'pre_market' },
       { instId: 'BTC-USDT-SWAP', instCategory: '1', ruleType: 'normal' },
       { instId: 'BTC-USD-SWAP', instCategory: '1', ruleType: 'normal' },
+    ] },
+    // XT `tags`, shapes as served 2026-11-12 (OPS-ASSET-CLASS-XT-DECODE-W1).
+    'https://fapi.xt.com/future/market/v1/public/symbol/list': { returnCode: 0, msgInfo: 'success', error: null, result: [
+      { symbol: 'usdtry_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['FOREX'] },
+      { symbol: 'de30eur_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['INDEX'] },
+      { symbol: 'voo_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['INDEX'] }, // an ETF XT tags INDEX
+      { symbol: 'xpt_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['METAL'] },
+      { symbol: 'paxg_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['METAL'] },
+      { symbol: 'openai_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['STOCK', 'Pre-M'] },
+      { symbol: 'cat_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: ['STOCK'] },
+      { symbol: 'clsk_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: null }, // a stock XT has not tagged yet
+      { symbol: 'btc_usdt', contractType: 'PERPETUAL', quoteCoin: 'usdt', tags: null },
+      { symbol: 'btc_usdt_230630', contractType: 'CURRENT_QUARTER', quoteCoin: 'usdt', tags: null },
     ] },
   };
 
@@ -274,6 +289,19 @@ describe('detectors — every venue’s own field, parsed (mocked upstreamFetch)
     expect(getAssetClass('OPENAI', 'OKX')).toBe('PREMARKET');
     expect(getAssetClass('BTC', 'OKX')).toBe('CRYPTO');
     expect(_getAssetClassLedgerForTest()!.venues.OKX).toMatchObject({ tradfi: 3, crypto: 1 }); // inverse swap skipped
+    // XT: its own `tags` decide; an untagged contract is no record (the union decides it); quarterlies skipped.
+    expect(getAssetClass('USDTRY', 'XT')).toBe('FX');
+    expect(getAssetClass('DE30EUR', 'XT')).toBe('INDEX');     // level 0, nothing refines it: XT's own INDEX
+    expect(getAssetClass('VOO', 'XT')).toBe('EQUITY');        // level 0 INDEX refined by MEXC's level-2 usstocks
+    expect(getAssetClass('PLATINUM', 'XT')).toBe('COMMODITY'); // the adapter's alias → xpt_usdt
+    expect(getAssetClass('XPT', 'XT')).toBe('COMMODITY');
+    expect(getAssetClass('PAXG', 'XT')).toBe('CRYPTO');       // the deny-list, whatever XT tags it
+    expect(getAssetClass('OPENAI', 'XT')).toBe('PREMARKET');  // Pre-M wins over STOCK
+    expect(getAssetClass('CAT', 'XT')).toBe('EQUITY');        // XT's own record beats Gate's crypto CAT…
+    expect(getAssetClass('CAT', 'GATE')).toBe('CRYPTO');      // …which still decides on Gate
+    expect(getAssetClass('CLSK', 'XT')).toBeNull();
+    expect(getAssetClass('BTC', 'XT')).toBe('CRYPTO');        // untagged: the union's crypto evidence
+    expect(_getAssetClassLedgerForTest()!.venues.XT).toMatchObject({ tradfi: 7, crypto: 0, denied: 1, lost: 0 });
     expect(_getAssetClassLedgerForTest()!.unmapped).toEqual([]);
   });
 });

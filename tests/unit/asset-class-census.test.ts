@@ -21,6 +21,7 @@ import {
   type FieldVenue,
 } from '../../src/lib/market-sessions-constants.js';
 import { evaluateTotality, type PerformancePublicTiers } from '../../src/scripts/asset-class-totality.js';
+import { fromXtSymbol } from '../../src/lib/adapters/xt.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CENSUS = JSON.parse(readFileSync(join(HERE, '..', 'fixtures', 'asset-class-census.json'), 'utf8')) as {
@@ -44,7 +45,7 @@ const bareOf = (v: FieldVenue, native: string) => venueRecord(v, native, '').bar
 
 describe('the census itself', () => {
   it('covers every active field venue; retired venues are skipped, not failed', () => {
-    expect(Object.keys(CENSUS.venues).sort()).toEqual(['BINANCE', 'BINGX', 'BITGET', 'BYBIT', 'GATE', 'HL', 'MEXC', 'OKX', 'WHITEBIT']);
+    expect(Object.keys(CENSUS.venues).sort()).toEqual(['BINANCE', 'BINGX', 'BITGET', 'BYBIT', 'GATE', 'HL', 'MEXC', 'OKX', 'WHITEBIT', 'XT']);
     expect(CENSUS.skipped_retired.sort()).toEqual(['BITMART', 'EDGEX']);
   });
 
@@ -76,7 +77,7 @@ describe('CH1.10 — every perp lands in its class, from its own venue’s recor
     expect(etf.length).toBeGreaterThanOrEqual(50);
     for (const [n] of etf) expect(family(cls(bareOf('BYBIT', n), 'BYBIT')), n).toBe('EQUITY');
     const fx = rowsWithTag('BYBIT', ['forex']);
-    expect(fx.map(([n]) => n).sort()).toEqual(['EURUSDUSDT', 'GBPUSDUSDT', 'USDJPYUSDT']);
+    expect(fx.map(([n]) => n).sort()).toEqual(['EURUSDUSDT', 'GBPUSDUSDT', 'USDBRLUSDT', 'USDJPYUSDT']);
     for (const [n] of fx) expect(cls(bareOf('BYBIT', n), 'BYBIT'), n).toBe('FX');
   });
 
@@ -118,6 +119,34 @@ describe('CH1.10 — every perp lands in its class, from its own venue’s recor
     }
     expect(cls('PURR', 'HL')).toBe('CRYPTO');
     expect(family(cls('PURR', 'OKX'))).toBe('EQUITY');
+  });
+
+  it('XT (OPS-ASSET-CLASS-XT-DECODE-W1): every tagged perp resolves TradFi through its own coin; FOREX → FX, INDEX → INDEX unless refined', () => {
+    const xt = CENSUS.venues.XT ?? [];
+    expect(xt.length).toBeGreaterThanOrEqual(300);
+    const coinOf = (native: string) => fromXtSymbol(native); // the coin the app stores and serves
+    for (const [native, tag] of xt) {
+      const c = cls(coinOf(native), 'XT');
+      if (['PAXG', 'XAUT'].includes(bareOf('XT', native))) { expect(c, native).toBe('CRYPTO'); continue; } // the deny-list
+      expect(c === null || c === 'CRYPTO', `${native} ${tag} → ${c}`).toBe(false);
+    }
+    const fx = rowsWithTag('XT', ['FOREX']);
+    expect(fx.length).toBeGreaterThanOrEqual(30);
+    for (const [n] of fx) expect(cls(coinOf(n), 'XT'), n).toBe('FX');
+    // The four books the measured defect named (resolved CRYPTO while XT sat in the union).
+    for (const [coin, want] of [['USDTRY', 'FX'], ['USDNOK', 'FX'], ['NZDUSD', 'FX'], ['DE30EUR', 'INDEX']] as const) {
+      expect(cls(coin, 'XT'), coin).toBe(want);
+    }
+    // Every XT market index no field venue lists stays INDEX (level 0, nothing refines it).
+    for (const coin of ['UK100GBP', 'FR40EUR', 'EU50EUR', 'HK33HKD', 'AU200AUD', 'DJ30', 'FUSHIA50']) expect(cls(coin, 'XT'), coin).toBe('INDEX');
+    // A ticker clash: XT's CAT is Caterpillar and its PURR Hyperliquid Strategies Inc.; elsewhere they are tokens.
+    expect(family(cls('CAT', 'XT'))).toBe('EQUITY');
+    expect(family(cls('PURR', 'XT'))).toBe('EQUITY');
+    expect(cls('PURR', 'HL')).toBe('CRYPTO');
+    // Pre-IPO: Pre-M wins over STOCK; a plain-STOCK pre-IPO name still refines from OKX's pre_market.
+    for (const coin of ['OPENAI', 'ANTHROPIC', 'MOONSHOT', 'OURA']) expect(cls(coin, 'XT'), coin).toBe('PREMARKET');
+    const L = SNAP.ledger.venues.XT!;
+    expect({ crypto: L.crypto, lost: L.lost, collisions: L.collisions }).toEqual({ crypto: 0, lost: 0, collisions: 0 });
   });
 
   it('an injected unknown tag (JP_EQUITY) lands by TAG_PATTERNS and in the ledger', () => {

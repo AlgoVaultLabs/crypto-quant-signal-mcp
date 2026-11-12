@@ -58,6 +58,7 @@ import { toWhitebitSymbol } from './adapters/whitebit.js';
 import { toBitmartSymbol } from './adapters/bitmart.js';
 import { toBingxSymbol } from './adapters/bingx.js';
 import { toOKXInstId } from './adapters/okx.js';
+import { toXtSymbol } from './adapters/xt.js';
 
 /**
  * Crypto tickers that collide with (or resemble) TradFi symbols — never Tier 3, whatever a venue
@@ -146,6 +147,7 @@ const VENUE_KEYING: Readonly<Record<FieldVenue, VenueKeying>> = {
   BINGX: { bare: (s) => s.replace(/-USDT$/, ''), native: toBingxSymbol },
   HL: { bare: (s) => s.replace(/^xyz:/i, '') },
   OKX: { bare: (s) => s.replace(/-USDT-SWAP$/, ''), native: toOKXInstId },
+  XT: { bare: (s) => s.replace(/_usdt$/, ''), native: toXtSymbol },
 };
 
 /** The field venues, in tag-table order — also the union's tie-break order. */
@@ -155,8 +157,10 @@ export const FIELD_VENUES: readonly FieldVenue[] = Object.keys(VENUE_TAG_CLASS) 
  * Venues that publish no usable per-instrument class field — resolved through the cross-venue union
  * (decoding them is OPS-TIER-CLASSIFIER-DECODE-W2). Together with the field venues this must cover
  * every `ExchangeId`: tsc refuses a new venue that is neither (structural, not asserted).
+ * XT left this list in OPS-ASSET-CLASS-XT-DECODE-W1: it publishes `tags` per contract, and in the
+ * union its FX and index books no field venue lists (USDTRY, NZDUSD, DE30EUR…) fell to the CRYPTO floor.
  */
-export const UNION_VENUES = ['ASTER', 'PHEMEX', 'XT', 'WEEX', 'HTX', 'KUCOIN'] as const satisfies readonly ExchangeId[];
+export const UNION_VENUES = ['ASTER', 'PHEMEX', 'WEEX', 'HTX', 'KUCOIN'] as const satisfies readonly ExchangeId[];
 type Unclassified = Exclude<ExchangeId, FieldVenue | (typeof UNION_VENUES)[number]>;
 const _everyVenueClassified: [Unclassified] extends [never] ? true : Unclassified = true;
 const _fieldVenuesAreExchanges: readonly ExchangeId[] = FIELD_VENUES;
@@ -189,6 +193,8 @@ function fetchVenue<T>(venue: ExchangeId, url: string): Promise<T> {
 
 /** MEXC zones, most specific first — the tag is the first one a contract carries. */
 const MEXC_ZONES: readonly string[] = Object.keys(VENUE_TAG_CLASS.MEXC).filter((t) => t !== '');
+/** XT tags in row order — the tag is the first one a contract carries (`Pre-M` before `STOCK`). */
+const XT_TAGS: readonly string[] = Object.keys(VENUE_TAG_CLASS.XT);
 
 const DETECTORS: Readonly<Record<FieldVenue, VenueDetector>> = {
   // Binance — contractType PERPETUAL (crypto) vs TRADIFI_PERPETUAL + underlyingType.
@@ -295,6 +301,22 @@ const DETECTORS: Readonly<Record<FieldVenue, VenueDetector>> = {
       'OKX', 'https://www.okx.com/api/v5/public/instruments?instType=SWAP');
     return (j.data ?? []).filter((c) => c.instId?.endsWith('-USDT-SWAP'))
       .map((c) => venueRecord('OKX', c.instId!, c.ruleType === 'pre_market' ? 'pre_market' : (c.instCategory ?? '')));
+  },
+  // XT — `tags` on the USDT perpetuals: the tag is the first `VENUE_TAG_CLASS.XT` row the contract
+  // carries (an unknown tag set still lands TradFi, by TAG_PATTERNS + the ledger). An UNTAGGED contract
+  // is NOT crypto evidence: XT leaves some stocks untagged (2026-11-12: CLSK, MURATA, SOFTBANK, ZHIPU,
+  // GOPRO sat untagged in its stock plates), so it yields no record and the union keeps deciding it.
+  XT: async () => {
+    const j = await fetchVenue<{ result?: Array<{ symbol?: string; contractType?: string; quoteCoin?: string; tags?: string[] | null }> }>(
+      'XT', 'https://fapi.xt.com/future/market/v1/public/symbol/list');
+    const out: VenueRecord[] = [];
+    for (const c of j.result ?? []) {
+      if (c.contractType !== 'PERPETUAL' || c.quoteCoin !== 'usdt' || !c.symbol?.endsWith('_usdt')) continue;
+      const tags = (c.tags ?? []).filter((t) => typeof t === 'string' && t !== '');
+      if (tags.length === 0) continue;
+      out.push(venueRecord('XT', c.symbol, XT_TAGS.find((t) => tags.includes(t)) ?? tags.join('+')));
+    }
+    return out;
   },
 };
 
