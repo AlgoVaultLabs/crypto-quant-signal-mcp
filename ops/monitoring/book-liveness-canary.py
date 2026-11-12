@@ -2,31 +2,26 @@
 """
 book-liveness-canary.py — OPS-PFE-METRIC-INTEGRITY-W1 R8 recurrence guard.
 
-Watches the emit-time book-liveness gate. Three checks, each printing a POSITIVE per-check line
-so a skipped check can never read like a passing one:
+Watches the emit-time book-liveness gate. Each check prints a POSITIVE per-check line so a skipped
+check can never read like a passing one:
 
-  1. FROZEN-ROW RATE (the defect itself).  Newly emitted signals landing in the S2 state
-     (`pfe_candles = 0 AND mae_return_pct = 0` — price moved in NEITHER direction, i.e. a shut
-     book) should trend toward ZERO once the gate is ENFORCING. Ceilings are MODE-AWARE: while
-     the gate is in `shadow` it is not removing those rows, so the bar tolerates them; at
-     `enforce` it ratchets to ~1% fleet-wide. See CEILING_NOTE below.
-
-  2. DEAD-BOOK PERSISTENCE (the gate's blast radius, correctly typed).  Replaces the retired
+  1. DEAD-BOOK PERSISTENCE (the gate's blast radius, correctly typed).  Replaces the retired
      per-venue suppression RATE — see WHY_THE_RATE_WAS_RETIRED. Separates a book that is dead
      from a market that is merely CLOSED, structurally rather than by calendar. Each dead book is
      then CLASSED by the app's own admission step (DEAD_BOOK_CLASS) and only the classes an
      operator can act on page.
 
-  3. SUPPRESSION VOLUME FLOOR (runaway-defect detector).  REPORT-ONLY until calibrated — see
-     FLOOR_PROMOTION. Catches an adapter parse defect (a string/null volume read as "not
-     traded") that would strangle a healthy venue, with no window dependency.
-
-  4. SENTINEL (leg S, OPS-BOOK-LIVENESS-W2).  One known-live book per active venue read through the
+  2. SENTINEL (leg S, OPS-BOOK-LIVENESS-W2).  One known-live book per active venue read through the
      adapter and judged by the gate's own predicate — a positive control for adapter blindness.
 
-  5. GATE MISS (leg G, OPS-BOOK-LIVENESS-W2).  Each S2 row in the lookback, its bars before entry
+  3. GATE MISS (leg G, OPS-BOOK-LIVENESS-W2).  Each S2 row in the lookback, its bars before entry
      judged by the gate's own predicate: did the gate let through a call it should have withheld?
      Legs S and G page under `book_liveness_defect` — see BOOK_LIVENESS_DEFECT below.
+
+  4. SUPPRESSIONS, RECORDED (never paged).  Per-venue counts for each of the last 7 UTC dates ride
+     in the result record — see SUPPRESSIONS_RECORD. The frozen-row RATE and the suppression FLOOR
+     that paged on these numbers were deleted by OPS-BOOK-LIVENESS-W2 CH3: both paged on the gate's
+     CORRECT work.
 
 CONTRACT (CLAUDE.md ## Automation-first recovery + ## Verification gate patterns):
   - Operator-action-required only. Delegates ALL gating to send_telegram.sh — cooldown,
@@ -89,22 +84,22 @@ APP_CONTAINER = "crypto-quant-signal-mcp-mcp-server-1"
 PG_DB = "signal_performance"
 TG = "/opt/algovault-monitoring/send_telegram.sh"
 
-# -- ONE ALERT ID, ONE REMEDY (OPS-ALARM-SINGLE-DERIVATION-W1 CH4) ----------------------------
+# -- ONE ALERT ID, ONE REMEDY (OPS-ALARM-SINGLE-DERIVATION-W1 CH4; OPS-BOOK-LIVENESS-W2 CH3) ---------
 #
-# Until this wave ONE id carried two different questions with two different remedies, and the one
-# that could not clear on its own (dead books) paged on the LEVEL every cooldown. Now:
-#   * ALERT_CEILING — LEVEL: the frozen-row rate + the promoted suppression floor. Calls `--clear`
-#     on a run with no level breach, so its state never outlives the condition.
-#   * ALERT_DEAD_BOOK — PAGE ON CHANGE, declared in DATA on its alert-registry row
-#     (`page_on: "change"`, review_by 2026-12-29). This canary reports the WHOLE dead set on EVERY
-#     run (ALERT_KEYS) or `--clear`s an empty one; send_telegram.sh decides what is NEW, because only
-#     it knows whether a page was delivered. Keys are entity ids `dead:<VENUE>|<COIN>`.
-# Distinct templated remedies: a level breach is a gate/adapter question, a NEW dead book is a
-# universe-admission question (the venue switched a contract off and a declaration missed it).
-ALERT_CEILING = "book_liveness_ceiling"
+# Two ids, both PAGE ON CHANGE (declared in DATA on their alert-registry rows). This canary reports each
+# id's WHOLE key set on EVERY run it can judge (ALERT_KEYS) or `--clear`s an empty one; send_telegram.sh
+# decides what is NEW, because only it knows whether a page was delivered.
+#   * ALERT_DEAD_BOOK — keys `dead:<VENUE>|<COIN>` (review_by 2026-12-29). A NEW dead book is a
+#     universe-admission question (the venue switched a contract off and a declaration missed it).
+#   * ALERT_DEFECT — keys `sentinel:<VENUE>` / `miss:<signals.id>`; see BOOK_LIVENESS_DEFECT. A gate or
+#     adapter question.
+# RETIRED by OPS-BOOK-LIVENESS-W2 CH3: `book_liveness_ceiling`, the LEVEL id of the frozen-row rate and the
+# promoted suppression floor. Its call sites, registry row and inventory alert id went in one commit, and its
+# host state was `--clear`ed once at install, so nothing of it outlives the checks.
 ALERT_DEAD_BOOK = "book_liveness_dead_book"
-WAVE_CEILING = "OPS-BOOK-LIVENESS-W{NEXT}"
+ALERT_DEFECT = "book_liveness_defect"
 WAVE_DEAD_BOOK = "OPS-UNIVERSE-ADMISSION-W{NEXT}"
+WAVE_DEFECT = "OPS-BOOK-LIVENESS-W{NEXT}"
 # A full blob URL: a bare *.md filename is not something an operator on a phone can open.
 RUNBOOK_URL = ("https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/blob/main/"
                "docs/RUNBOOK-BOOK-LIVENESS-FLIP.md")
@@ -128,9 +123,9 @@ RESULT_LINE_MARGIN_BYTES = 64
 # failed verdict script makes EVERY key STATUS_UNKNOWN — noise, never silence.
 DEAD_CLASSES = ("STATUS_UNKNOWN", "VENUE_OFF", "ADAPTER_CONTRADICTION", "THIN_LIVE")   # precedence order
 PAGED_CLASSES = frozenset(("STATUS_UNKNOWN", "VENUE_OFF", "ADAPTER_CONTRADICTION"))
-# One remedy per class. ADAPTER_CONTRADICTION is the gate/adapter question, so it shares the LEVEL
-# remedy's template; the other two are admission questions.
-CLASS_REMEDY = {"STATUS_UNKNOWN": WAVE_DEAD_BOOK, "VENUE_OFF": WAVE_DEAD_BOOK, "ADAPTER_CONTRADICTION": WAVE_CEILING}
+# One remedy per class. ADAPTER_CONTRADICTION is the gate/adapter question, so it shares
+# book_liveness_defect's remedy template; the other two are admission questions.
+CLASS_REMEDY = {"STATUS_UNKNOWN": WAVE_DEAD_BOOK, "VENUE_OFF": WAVE_DEAD_BOOK, "ADAPTER_CONTRADICTION": WAVE_DEFECT}
 ADMISSION_CMD = ["docker", "exec", APP_CONTAINER, "node", "dist/scripts/admission-verdict.js", "--keys"]
 ADMISSION_TOKEN = "ADMISSION_VERDICT_EMIT"
 ADMISSION_TIMEOUT_S = 240      # one universe fetch per venue + one 24-bar read per key, batch class
@@ -141,7 +136,7 @@ REASON_MAX_CHARS = 140         # per-key reason in the page body; the full reaso
 # -- BOOK_LIVENESS_DEFECT — a positive control and the gate's own predicate (OPS-BOOK-LIVENESS-W2 CH2) -------
 #
 # The floor (a per-venue suppression COUNT pinned at 3 x a September maximum) and the frozen-row RATE both
-# paged on the gate's CORRECT work. OPS-BOOK-LIVENESS-W1 measured 10 of 10 floor-breach books as equities
+# paged on the gate's CORRECT work, and CH3 of the same wave deleted them. OPS-BOOK-LIVENESS-W1 measured 10 of 10 floor-breach books as equities
 # the venue had paused or thinned (19 of 19 decisions CORRECT_SUPPRESSION) and 30 of 30 frozen rows as books
 # that read live at entry and closed afterwards. Two questions replace them, each asked of the app itself
 # through `book-liveness-probe.js` in the app container — its adapters and its `assessBookLiveness`:
@@ -159,8 +154,6 @@ REASON_MAX_CHARS = 140         # per-key reason in the page body; the full reaso
 # failed, or S2 rows exist and every one is UNVERIFIABLE (that run verified nothing); else PASS — zero S2 rows
 # is a fact, reported as PASS. INDETERMINATE neither fires nor clears the id: "could not judge" must never
 # prune an acknowledged key (ruling R3).
-ALERT_DEFECT = "book_liveness_defect"
-WAVE_DEFECT = "OPS-BOOK-LIVENESS-W{NEXT}"
 PROBE_CMD = ["docker", "exec", APP_CONTAINER, "node", "dist/scripts/book-liveness-probe.js"]
 PROBE_TOKEN = "BOOK_LIVENESS_PROBE_EMIT"
 PROBE_SENTINELS_TIMEOUT_S = 300   # every active venue: one universe fetch + one 24-bar read, concurrently
@@ -177,8 +170,7 @@ _S2_TF_RE = re.compile(r"^[0-9]{1,2}[mhd]$")
 VERDICT_TOKEN = "BOOK_LIVENESS_VERDICT"
 EXIT_INDETERMINATE = 3
 
-LOOKBACK_DAYS = 3
-MIN_DENOM = 200   # below this a percentage is noise, not a signal
+LOOKBACK_DAYS = 3   # leg G's window of S2 rows
 
 # -- WHY_THE_RATE_WAS_RETIRED ---------------------------------------------------------------
 #
@@ -207,37 +199,13 @@ MIN_DENOM = 200   # below this a percentage is noise, not a signal
 # pairs read NO-RECOVERY, including 25 plainly closed-market equity pairs, because the recovery
 # signal is read from the same deduped `signals` denominator described above. It may become
 # evaluable once the gate is enforcing; it is not evaluable now.
-
-# -- CEILING_NOTE - frozen-row ceilings are MODE-AWARE ---------------------------------------
 #
-# The SHADOW table tolerates the defect the gate exists to remove, because in shadow the gate is
-# NOT removing it. The ENFORCE table is the real bar: once emissions stop landing in frozen books
-# the S2 population should collapse. Leaving the shadow numbers in place at enforce would mean
-# the canary silently tolerates a fully regressed gate - a defensive threshold outliving its own
-# reason. Mode-keying discharges that ratchet STRUCTURALLY instead of leaving it as a runbook
-# checklist item nobody re-reads.
-#
-# Measured per-venue frozen rate on evaluated rows, 3d window, prod-204, 2026-08-28T16:16Z:
-#   XT 3.694% (14/379) - HTX 2.510% (6/239) - ASTER 0.682% (3/440) - GATE 0.076% (2/2634)
-#   every other emitting venue: EXACTLY 0.000%
-# For contrast, the 2026-07-21 baselines this replaces read ASTER 8.35% / HTX 4.98% / XT 0.15%.
-# XT's shadow ceiling is DELIBERATELY above its old 2.0 pin: the frozen population MIGRATED onto
-# XT (`XT|D`, `XT|EPT`) and HTX, and pinning shadow below the migrated reality would page every
-# night on a condition only ENFORCE can fix. The enforce ceiling is where the bar actually bites.
-#
-# TODO: revisit by 2026-09-11 - re-derive both tables from >=14d of live data spanning >=2
-# weekends, and record the revision in `Claude files/defensive-reductions-to-revisit.md`.
-FROZEN_CEILING_PCT_SHADOW = {
-    "XT": 6.0,       # measured 3.694%
-    "HTX": 5.0,      # measured 2.510%
-    "EDGEX": 4.0,    # 1.94% all-time; no rows in the live 3d window. Entry KEPT so the guard is
-                     # not silently dropped if EDGEX resumes emitting.
-    "ASTER": 3.0,    # measured 0.682% - down from the 8.35% that motivated the old 12.0 pin
-    "_DEFAULT": 1.0, # 12 of 16 emitting venues sit at exactly 0.000%
-}
-FROZEN_CEILING_PCT_ENFORCE = {
-    "_DEFAULT": 1.0, # the ratchet: with the gate enforcing, NO venue should keep minting S2 rows
-}
+# OPS-BOOK-LIVENESS-W2 CH3 then deleted the two LEVEL checks that paged in its place: the frozen-row RATE
+# (S2 rows per venue against a mode-keyed ceiling) and the suppression FLOOR (3 x a measured per-venue
+# maximum). Both counted the gate's CORRECT work: OPS-BOOK-LIVENESS-W1 measured 10 of 10 floor-breach
+# books as venue-paused or thin equities and 30 of 30 frozen rows as books that read live at entry and
+# closed afterwards. Their questions are now asked of the app itself (BOOK_LIVENESS_DEFECT), and the
+# counts survive unpaged in the result record (SUPPRESSIONS_RECORD).
 
 # -- DEAD_BOOK - the closed-vs-broken discriminator (EDGE-SELL-RESOLUTION-ENFORCE-W1 CH2) ----
 #
@@ -268,7 +236,7 @@ FROZEN_CEILING_PCT_ENFORCE = {
 # window is now seeded from the counter's real first row, 2026-08-25).
 #
 # The gap is TOTAL while it lasts, and that is why the output says so: under enforce a dead book
-# emits nothing, so it mints no frozen rows, so check 1 cannot see it either. There is no partial
+# emits nothing, so it mints no S2 rows, so leg G cannot see it either. There is no partial
 # coverage to fall back on.
 #
 # TODO: revisit by 2026-09-11 - confirm the longest legitimate closure against a real
@@ -277,38 +245,14 @@ FROZEN_CEILING_PCT_ENFORCE = {
 DEAD_BOOK_WINDOW_DAYS = 28
 DEAD_BOOK_MIN_DAYS = 24
 
-# -- FLOOR_PROMOTION - REPORT-ONLY, deliberately ---------------------------------------------
+# -- SUPPRESSIONS_RECORD - the counts the floor paged on, RECORDED and never paged (OPS-BOOK-LIVENESS-W2 CH3) --
 #
-# A per-(venue, day) suppression COUNT catches a runaway adapter parse defect immediately, with
-# no window dependency - the one thing the retired rate ceiling was genuinely good for.
-#
-# It ships REPORT-ONLY because it CANNOT YET BE CALIBRATED: the shadow window so far is
-# 2026-08-25 (Tue) -> 2026-08-28 (Fri) and contains NO WEEKEND, while the closed-market
-# population is exactly the one that peaks at a weekend. Observed weekday maxima per venue-day
-# are ASTER 10 - XT 10 - HTX 9 - GATE 5. Pinning from a weekday-only maximum would page on the
-# first Saturday: the precise failure this wave exists to avoid.
-#
-# PROMOTION CRITERION (numeric AND time-bounded, so it cannot sit in REPORT forever):
-#   >=14 days of counter data spanning >=2 weekends, then pin at 3x the observed per-venue
-#   maximum and promote to paging in `OPS-BOOK-LIVENESS-W{NEXT}`. Earliest 2026-09-08.
-# Every run appends its observed maximum to the log, so the healing RATE is measured at the
-# decision rather than guessed.
-FLOOR_REPORT_ONLY = False
-FLOOR_PROMOTION_EARLIEST = "2026-09-08"
-# PROMOTED (OPS-ALARM-SINGLE-DERIVATION-W1 CH4) — the criterion above was met: the counter has run
-# since 2026-08-25, and the exact 28-date window 2026-09-03..2026-09-30 holds 8 weekend dates.
-# Measured maxima per (venue, UTC day) over that window, read 2026-09-30T06:15Z (thin R0.5):
-FLOOR_MEASURED_AT = "2026-09-30"
-FLOOR_MEASURED_MAX = {"ASTER": 1060, "GATE": 472, "HTX": 96, "XT": 93, "BYBIT": 9, "MEXC": 6,
-                      "BINGX": 3, "HL": 2, "BITGET": 1}
-FLOOR_PIN_MULTIPLE = 3
-FLOOR_PINS = {venue: FLOOR_PIN_MULTIPLE * peak for venue, peak in FLOOR_MEASURED_MAX.items()}
-# A venue with NO observed maximum (BINANCE, OKX, KUCOIN, PHEMEX, WHITEBIT, WEEX at promotion) has
-# no "3 x observed max": it stays report-only, rather than a pin of 0 that would page on its first
-# suppression. The XT/HTX maxima include books the universe admission step has since removed, so
-# their pins are loose — loose is the safe side for a runaway-defect detector.
-# TODO: revisit by 2026-10-28 — re-measure once the window is entirely post-admission (from
-# 2026-10-28) and record the revision in `Claude files/defensive-reductions-to-revisit.md`.
+# Suppressions per (venue, UTC date) over the last SUPPRESSION_RECORD_DAYS dates ride in every result record,
+# aligned to the window's own dates, so a weekend or holiday peak stays visible in canary-results.jsonl
+# without paging on the gate's correct work. The runaway volume-parse defect those counts were meant to catch
+# is leg S's job: a live sentinel read FROZEN, on the first bad night, whatever the day of the week.
+# REASON-INDEPENDENT, like every window query here.
+SUPPRESSION_RECORD_DAYS = 7
 
 
 # == pure builders + parser - extracted so `--self-test` can assert the artifacts the DB seam
@@ -322,19 +266,6 @@ def _safe_literal(value):
     if not v or not all(c.isalnum() or c == "_" for c in v):
         raise ValueError("unsafe SQL literal: %r" % (value,))
     return v
-
-
-def build_frozen_sql(lookback_days):
-    """Per-venue frozen-row (S2) counts over the lookback window."""
-    return (
-        "SELECT exchange,"
-        " COUNT(*) FILTER (WHERE pfe_candles IS NOT NULL) AS n_eval,"
-        " COUNT(*) FILTER (WHERE pfe_candles = 0 AND mae_return_pct = 0) AS n_frozen"
-        " FROM signals"
-        " WHERE signal IN ('BUY','SELL')"
-        "   AND created_at >= EXTRACT(EPOCH FROM NOW())::bigint - %d*86400"
-        " GROUP BY 1 ORDER BY 1;" % int(lookback_days)
-    )
 
 
 def build_s2_rows_sql(lookback_days):
@@ -427,60 +358,56 @@ def build_counter_age_sql():
     )
 
 
-def build_shadow_recency_sql():
-    """Whole days since the SHADOW stage last wrote a suppression. 99999 when it never did.
-
-    This is how the canary knows whether its frozen-row window is still carrying rows from the
-    PREVIOUS rollout stage — see MIXED_WINDOW below.
-    """
+def build_suppressions_sql(days):
+    """Suppressions per (venue, UTC date) over EXACTLY `days` dates — RECORDED, never paged.
+    REASON-INDEPENDENT for the reason given on `build_persistence_sql`."""
     return (
-        "SELECT COALESCE((NOW()::date - MAX(date)), 99999)"
-        " FROM emit_suppressions WHERE reason = 'frozen_book_shadow';"
+        "SELECT exchange, date::text, SUM(suppress_count)::bigint"
+        " FROM emit_suppressions"
+        " WHERE %s"
+        " GROUP BY 1,2 ORDER BY 1,2;" % window_bounds(days).sql
     )
 
 
-def frozen_table_for(mode, shadow_age_days, lookback_days):
-    """(table, label) - which frozen-row ceiling applies RIGHT NOW.
-
-    -- MIXED_WINDOW: why the enforce ratchet cannot bite the instant the flag flips --
-    #
-    # The frozen-row check reads a LOOKBACK_DAYS window of already-emitted rows. The mode flag
-    # flips in one instant; that window does not. For LOOKBACK_DAYS after a shadow->enforce
-    # flip the window is still full of rows the gate was NOT YET SUPPRESSING, and judging them
-    # against the enforce ratchet pages on a regression that never happened.
-    #
-    # MEASURED at the real flip, 2026-08-29T03:25:45Z: the enforce table breached HTX 2.36%
-    # and XT 2.85% within seconds, and ALL 21 offending rows (ASTER 3, GATE 2, HTX 6, XT 10)
-    # were emitted BEFORE the flip - post-flip count was 0 on every venue. A guard that fires
-    # on its own cutover teaches the operator to ignore it, which is the failure mode this
-    # whole wave exists to retire.
-    #
-    # So the ratchet engages only once the window is ENTIRELY post-transition, detected from
-    # the DATA rather than from a stamp the canary would have to keep: `frozen_book_shadow`
-    # rows carry the last day the previous stage was writing. No new state, self-correcting,
-    # and it handles a flip BACK to shadow for free.
-    """
-    if mode != "enforce":
-        return FROZEN_CEILING_PCT_SHADOW, "shadow"
-    if shadow_age_days < lookback_days:
-        return FROZEN_CEILING_PCT_SHADOW, "shadow (MIXED_WINDOW)"
-    return FROZEN_CEILING_PCT_ENFORCE, "enforce"
+def record_dates(days, today):
+    """The window's own dates, oldest first, as ISO strings. PURE — THE bound's offset, never a second one."""
+    wb = window_bounds(days)
+    return [(today - timedelta(days=wb.lo_offset - i)).isoformat() for i in range(wb.days)]
 
 
-def build_floor_sql(window_days):
-    """Maximum suppressions recorded for any single (venue, day) in the window.
+def suppressions_record(rows, dates):
+    """{"dates": [...], "by_venue": {venue: [n per date]}} from `exchange|date|n` rows. PURE.
 
-    REASON-INDEPENDENT, same reasoning: a runaway adapter parse defect is a runaway defect in
-    either stage, and stage-scoping this reset the observed maxima at the flip too (measured
-    2026-08-29: ASTER 18 / XT 12 / HTX 9 / GATE 5 collapsed to XT 4 / HTX 1).
-    """
-    return (
-        "SELECT exchange, MAX(d), (array_agg(date ORDER BY d DESC))[1] FROM ("
-        "  SELECT exchange, date, SUM(suppress_count) AS d FROM emit_suppressions"
-        "   WHERE %s"
-        "   GROUP BY 1,2) t"
-        " GROUP BY 1 ORDER BY 2 DESC;" % window_bounds(window_days).sql
-    )
+    Counts are aligned to `dates`; a date with no row reads 0, a venue with no row is absent. A row dated
+    OUTSIDE the window is a defect of the INSTRUMENT (the query and the window disagree), raised as
+    ValueError and reported INDETERMINATE — never recorded as a fact about a venue."""
+    idx = {d: i for i, d in enumerate(dates)}
+    by_venue = {}
+    outside = []
+    for r in rows:
+        venue, day = r[0], r[1]
+        if day not in idx:
+            outside.append("%s@%s" % (venue, day))
+            continue
+        by_venue.setdefault(venue, [0] * len(dates))[idx[day]] += int(r[2] or 0)
+    if outside:
+        raise ValueError("%d suppression row(s) dated outside the %s..%s window: %s"
+                         % (len(outside), dates[0], dates[-1], ", ".join(outside[:5])))
+    return {"dates": list(dates), "by_venue": by_venue}
+
+
+def suppressions_line(rec):
+    """The positive line for the record: every venue's total and busiest date, or a stated zero."""
+    head = "suppressions (recorded, never paged): %d UTC dates %s..%s" % (
+        len(rec["dates"]), rec["dates"][0], rec["dates"][-1])
+    if not rec["by_venue"]:
+        return head + " - 0 on every venue"
+    parts = []
+    for venue in sorted(rec["by_venue"], key=lambda v: (-sum(rec["by_venue"][v]), v)):
+        counts = rec["by_venue"][venue]
+        peak = max(range(len(counts)), key=lambda i: (counts[i], -i))
+        parts.append("%s %d (peak %d on %s)" % (venue, sum(counts), counts[peak], rec["dates"][peak]))
+    return head + " - " + " · ".join(parts)
 
 
 def parse_rows(raw, min_fields):
@@ -510,10 +437,6 @@ def window_complete_note(min_date_iso, window_days):
     except (ValueError, TypeError):
         return "no suppressions recorded yet, so the window has not started"
     return "full coverage on %s" % (d0 + timedelta(days=window_bounds(window_days).lo_offset)).isoformat()
-
-
-def ceiling(table, venue):
-    return table.get(venue, table["_DEFAULT"])
 
 
 def resolve_mode(enabled_raw, mode_raw):
@@ -586,56 +509,6 @@ class DeadBook(NamedTuple):
 
 def dead_key(venue, coin):
     return "dead:%s|%s" % (venue, coin)
-
-
-def classify_floor(rows, pins=None):
-    """(breaches, info) for the PROMOTED floor. Pure.
-
-    `rows` are `exchange|max_day[|date_of_max]`. A venue with a pin breaches when its busiest day
-    in the window exceeds the pin; a venue with no observed maximum at promotion has no pin and is
-    reported, never paged.
-    """
-    pins = FLOOR_PINS if pins is None else pins
-    breaches, info = [], []
-    for r in rows:
-        venue, peak = r[0], int(r[1] or 0)
-        when = (" on %s" % r[2]) if len(r) > 2 and r[2] else ""
-        pin = pins.get(venue)
-        if pin is None:
-            info.append("floor %s: %d suppressions%s — no pin (no observed maximum at promotion), "
-                        "report-only" % (venue, peak, when))
-        elif peak > pin:
-            breaches.append("floor %s: %d suppressions%s > pin %d (%d x the %d measured %s)"
-                            % (venue, peak, when, pin, FLOOR_PIN_MULTIPLE,
-                               FLOOR_MEASURED_MAX.get(venue, 0), FLOOR_MEASURED_AT))
-        else:
-            info.append("floor %s: %d%s within pin %d" % (venue, peak, when, pin))
-    return breaches, info
-
-
-def build_ceiling_body(breaches, mode, stamp, lo, hi):
-    """The LEVEL alert's body: the breached measurements and nothing the run did not measure."""
-    return "\n".join([
-        "\U0001F9CA Book-liveness canary: LEVEL breach (frozen-row rate or suppression floor)",
-        "",
-        "Window: frozen %dd · floor %d dates %s..%s (UTC) · gate mode %s · checked %s"
-        % (LOOKBACK_DAYS, DEAD_BOOK_WINDOW_DAYS, lo, hi, mode, stamp),
-        "",
-        "BREACHED:",
-        *["  - %s" % b for b in breaches],
-        "",
-        "  - frozen-rate up  -> the emit gate regressed, its pin drifted, or a NEW venue started",
-        "                      serving zero-volume synthetic bars.",
-        "  - floor breached  -> one venue suppressed more on one day than %d x its measured"
-        % FLOOR_PIN_MULTIPLE,
-        "                      maximum: the runaway-parse-defect case (live volume read as zero).",
-        "",
-        "Rollback is one env key (behaviour returns to legacy, byte-identical):",
-        "  EMIT_BOOK_LIVENESS_ENABLED=0 && docker compose up -d mcp-server",
-        "",
-        "Runbook: %s" % RUNBOOK_URL,
-        "recommended_wave: %s" % WAVE_CEILING,
-    ])
 
 
 class AdmissionError(Exception):
@@ -775,13 +648,17 @@ def bound_keys(keys, render, cap_bytes):
     return kept, len(keys) - len(kept)
 
 
-def build_result_metrics(verdict, exit_code, mode, lo, hi, dead, floor_rows, level_breaches,
-                         evaluable, counter_age, dead_class=None, defect=None):
+def build_result_metrics(verdict, exit_code, mode, lo, hi, dead, evaluable, counter_age, dead_class=None,
+                         defect=None, suppressions=None):
     """The structured result line. Counts plus the dead-set KEYS, bounded to the recorder's cap.
 
     `dead_keys` keeps its meaning — the FULL dead set (OPS-ALARM-SINGLE-DERIVATION-W1's CLOSE_WHEN
     reads it). `dead_key_class` (key -> class) and `paged_keys` (the subset sent as ALERT_KEYS) ride
-    beside it, bounded by the SAME kept prefix so the three never disagree about which keys exist."""
+    beside it, bounded by the SAME kept prefix so the three never disagree about which keys exist.
+
+    `level_breaches` = the page keys of book_liveness_defect (OPS-BOOK-LIVENESS-W2 CH3: the LEVEL checks
+    it used to count are gone, and the ids that page now page on entities); `suppressions` replaces the
+    floor's `floor_max` (ruling R3)."""
     dead_class = dead_class or {}
     per_venue = {}
     for d in dead:
@@ -793,9 +670,10 @@ def build_result_metrics(verdict, exit_code, mode, lo, hi, dead, floor_rows, lev
         "counter_age_days": counter_age,
         "dead_set_size": len(dead),
         "dead_per_venue": per_venue,
-        "floor_max": {r[0]: int(r[1] or 0) for r in floor_rows},
-        "level_breaches": len(level_breaches),
+        "level_breaches": len(defect["keys"]) if defect is not None else 0,
     }
+    if suppressions is not None:
+        base["suppressions"] = suppressions
     if defect is not None:
         # Leg S and leg G ride in the SAME bounded line, so the dead-key bound below accounts for them.
         base.update(defect_metrics(defect))
@@ -1122,17 +1000,9 @@ def _dispatch(argv, body=None, keys=None):
         print("[book-liveness-canary] TG dispatch failed (fail-open): %s" % e, file=sys.stderr)
 
 
-# The six call sites stay LITERAL: check-alert-registry.mjs enumerates alert ids by their position
+# The four call sites stay LITERAL: check-alert-registry.mjs enumerates alert ids by their position
 # in a `[TG, "<id>", "CRITICAL_PERSISTENT"` call, and a parameterised id would hide them from it.
 # Each is its own stubbable seam, so a test can drive the real `main()` without touching the wrapper.
-def fire_ceiling(body):
-    _dispatch([TG, "book_liveness_ceiling", "CRITICAL_PERSISTENT", "-"], body)
-
-
-def clear_ceiling():
-    _dispatch([TG, "--clear", "book_liveness_ceiling"])
-
-
 def fire_dead_book(body, keys):
     _dispatch([TG, "book_liveness_dead_book", "CRITICAL_PERSISTENT", "-"], body, keys)
 
@@ -1197,11 +1067,11 @@ def emit(verdict, exit_code):
 
 
 def main():
-    breaches = []
     info = []
     now = datetime.now(timezone.utc)
     stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     lo, hi = (d.isoformat() for d in window_bounds(DEAD_BOOK_WINDOW_DAYS).dates(now.date()))
+    sdates = record_dates(SUPPRESSION_RECORD_DAYS, now.date())
 
     def indeterminate(what):
         print("[book-liveness-canary] %s INDETERMINATE - %s" % (stamp, what), file=sys.stderr)
@@ -1224,42 +1094,10 @@ def main():
         record_result("PASS", 0, {"mode": mode})
         return emit("PASS", 0)
 
-    reason = reason_for(mode)
-
-    try:
-        srows = parse_rows(psql(build_shadow_recency_sql()), 1)
-    except QueryError as e:
-        return indeterminate("shadow-recency query: %s" % e)
-    shadow_age = int(srows[0][0] or 0) if srows else 99999
-
-    frozen_table, table_label = frozen_table_for(mode, shadow_age, LOOKBACK_DAYS)
-    info.append("gate mode=%s (frozen ceilings=%s, suppression reason=%s)"
-                % (mode, table_label, reason))
-    if "MIXED_WINDOW" in table_label:
-        info.append("frozen window MIXED_WINDOW - shadow last wrote %dd ago, lookback is %dd; the "
-                    "enforce ratchet engages once the window is entirely post-transition"
-                    % (shadow_age, LOOKBACK_DAYS))
-
-    # -- 1. frozen-row rate --
-    try:
-        frozen = parse_rows(psql(build_frozen_sql(LOOKBACK_DAYS)), 3)
-    except QueryError as e:
-        return indeterminate("frozen query: %s" % e)
-
+    info.append("gate mode=%s (the gate writes emit_suppressions reason=%s)" % (mode, reason_for(mode)))
     evaluated = 0
-    for row in frozen:
-        venue, n_eval, n_frozen = row[0], int(row[1] or 0), int(row[2] or 0)
-        if n_eval < MIN_DENOM:
-            info.append("frozen %s: SKIPPED, n_eval=%d < MIN_DENOM=%d"
-                        % (venue, n_eval, MIN_DENOM))
-            continue
-        evaluated += 1
-        pct = 100.0 * n_frozen / n_eval
-        cap = ceiling(frozen_table, venue)
-        line = "frozen %s: %.2f%% (%d/%d), ceiling %.1f%%" % (venue, pct, n_frozen, n_eval, cap)
-        (breaches if pct > cap else info).append(line)
 
-    # -- 2. dead-book persistence (its own alert id, paged on the CHANGE) --
+    # -- 1. dead-book persistence (its own alert id, paged on the CHANGE) --
     try:
         prows = parse_rows(psql(build_persistence_sql(DEAD_BOOK_WINDOW_DAYS)), 6)
     except QueryError as e:
@@ -1284,9 +1122,9 @@ def main():
         # R2: the gap carries its own END DATE, in the output, beside the number it qualifies,
         # so a reader meets the expiry where they meet the blindness rather than in a status
         # file they may never open. Until that date there is NO dead-book detection AT ALL:
-        # under enforce a dead book emits nothing, so it mints no frozen rows either, and the
-        # frozen-row check above is structurally blind to it (measured 2026-08-29: zero
-        # directional emissions post-flip on all five known dead books).
+        # under enforce a dead book emits nothing, so it mints no S2 rows either, and leg G is
+        # structurally blind to it (measured 2026-08-29: zero directional emissions post-flip
+        # on all five known dead books).
         info.append("persistence: INSUFFICIENT_WINDOW - the counter is %d day(s) old, needs %d; "
                     "%s (%d day(s) carry a suppression). NO dead-book detection until then."
                     % (counter_age, DEAD_BOOK_WINDOW_DAYS,
@@ -1306,20 +1144,18 @@ def main():
                                                                         "window dates"),
                                                     DEAD_BOOK_MIN_DAYS, DEAD_BOOK_WINDOW_DAYS))
 
-    # -- 3. suppression volume floor (PROMOTED: a LEVEL check under ALERT_CEILING) --
+    # -- 2. suppressions per (venue, UTC date) over the last 7 dates: RECORDED, never paged --
     try:
-        frows = parse_rows(psql(build_floor_sql(DEAD_BOOK_WINDOW_DAYS)), 2)
+        srows = parse_rows(psql(build_suppressions_sql(SUPPRESSION_RECORD_DAYS)), 3)
     except QueryError as e:
-        return indeterminate("floor query: %s" % e)
+        return indeterminate("suppressions query: %s" % e)
+    try:
+        supp = suppressions_record(srows, sdates)
+    except ValueError as e:
+        return indeterminate("instrument_defect: %s" % e)
+    info.append(suppressions_line(supp))
 
-    floor_breaches, floor_info = classify_floor(frows)
-    breaches.extend(floor_breaches)
-    info.append("floor: PROMOTED — pins = %d x the per-venue maximum measured %s over %d dates "
-                "(FLOOR_REPORT_ONLY=%s)" % (FLOOR_PIN_MULTIPLE, FLOOR_MEASURED_AT,
-                                           DEAD_BOOK_WINDOW_DAYS, FLOOR_REPORT_ONLY))
-    info.extend(floor_info)
-
-    # -- 2b. class every dead book through the admission step itself (DEAD_BOOK_CLASS) --
+    # -- 1b. class every dead book through the admission step itself (DEAD_BOOK_CLASS) --
     classes, paged, thin = {}, [], []
     if evaluable and dead:
         try:
@@ -1333,7 +1169,7 @@ def main():
             "UNAVAILABLE (%s)" % failure if failure else " · ".join(
                 "%s %d" % (c, sum(1 for v in classes.values() if v["class"] == c)) for c in DEAD_CLASSES)))
 
-    # -- 4 + 5. sentinel and gate-miss legs (book_liveness_defect) — the app's own predicate --
+    # -- 3 + 4. sentinel and gate-miss legs (book_liveness_defect) — the app's own predicate --
     try:
         s2raw = parse_rows(psql(build_s2_rows_sql(LOOKBACK_DAYS)), 5)
     except QueryError as e:
@@ -1341,14 +1177,12 @@ def main():
     defect = run_defect_legs(mode, s2raw)
     evaluated += (defect["sentinel_failure"] is None) + (defect["rows_failure"] is None)
 
-    # -- verdict: FAIL describes the WORLD (a level breach, or a dead book the venue's own status
-    #    does not explain). Whether the operator is paged about it is the wrapper's decision. --
+    # -- verdict: FAIL describes the WORLD (a page key on either id). Whether the operator is paged
+    #    about it is the wrapper's decision. A leg that verified nothing makes the run INDETERMINATE. --
     print("[book-liveness-canary] %s mode=%s - %d check(s) evaluated, %d line(s)"
-          % (stamp, mode, evaluated, len(info) + len(breaches) + len(dead)))
+          % (stamp, mode, evaluated, len(info) + len(dead)))
     for ln in info:
         print("  %s" % ln)
-    for ln in breaches:
-        print("  BREACH %s" % ln)
     for d in paged:
         print("  BREACH dead book %s [%s] %s" % (d.line, classes[d.key]["class"], _class_detail(classes[d.key])))
     for d in thin:
@@ -1357,9 +1191,9 @@ def main():
         print(THIN_LIVE_LINE % len(thin))
     for ln in defect_lines(defect):
         print("  %s" % ln)
+    print("  level_breaches=%d (the page keys of %s)" % (len(defect["keys"]), ALERT_DEFECT))
 
-    # FAIL on any breach or page key; else a leg that verified nothing makes the run INDETERMINATE.
-    if breaches or paged or defect["verdict"] == "FAIL":
+    if paged or defect["verdict"] == "FAIL":
         verdict = "FAIL"
     elif defect["verdict"] == "INDETERMINATE":
         verdict = "INDETERMINATE"
@@ -1367,15 +1201,9 @@ def main():
         verdict = "PASS"
     exit_code = _token_exit_map()[verdict]
 
-    # ONE ALERT ID, ONE REMEDY — and each id hears from this run EVERY time: fire on its
-    # condition, `--clear` without it. An unevaluable dead-book window sends nothing at all:
-    # "could not judge" is not "nothing is dead".
-    if breaches:
-        body = build_ceiling_body(breaches, mode, stamp, lo, hi)
-        fire_ceiling(body)
-        print(body)
-    else:
-        clear_ceiling()
+    # ONE ALERT ID, ONE REMEDY — and each id hears from this run whenever it can be judged: fire on
+    # its keys, `--clear` without them. An unevaluable dead-book window, or an INDETERMINATE defect
+    # leg, sends nothing at all: "could not judge" is not "nothing is wrong".
     action, keys = dead_book_dispatch(evaluable, paged)
     if action == "fire":
         dbody = build_dead_body(paged, thin, classes, mode, stamp, lo, hi)
@@ -1395,8 +1223,8 @@ def main():
               "prune an acknowledged key)" % ALERT_DEFECT)
 
     record_result(verdict, exit_code, build_result_metrics(
-        verdict, exit_code, mode, lo, hi, dead, frows, breaches, evaluable, counter_age,
-        dead_class={k: v["class"] for k, v in classes.items()}, defect=defect))
+        verdict, exit_code, mode, lo, hi, dead, evaluable, counter_age,
+        dead_class={k: v["class"] for k, v in classes.items()}, defect=defect, suppressions=supp))
     return emit(verdict, exit_code)
 
 
@@ -1450,7 +1278,8 @@ def _self_test():
     ck("reason off maps to shadow", lambda: reason_for("off"), "frozen_book_shadow")
 
     # SQL builders: the DB seam bypasses these entirely
-    ck("frozen sql scopes the window", lambda: "3*86400" in build_frozen_sql(3), True)
+    ck("suppressions sql scopes THE 7-date bound",
+       lambda: window_bounds(7).sql in build_suppressions_sql(7), True)
     ck("persistence sql scopes the window with THE bound",
        lambda: window_bounds(28).sql in build_persistence_sql(28), True)
     ck("persistence sql carries the window-days-seen subquery",
@@ -1467,12 +1296,8 @@ def _self_test():
        lambda: "reason" in build_persistence_sql(28), False)
     ck("counter-age sql is REASON-INDEPENDENT",
        lambda: "reason" in build_counter_age_sql(), False)
-    ck("floor sql is REASON-INDEPENDENT",
-       lambda: "reason" in build_floor_sql(28), False)
-    ck("a stage change cannot alter ANY window query",
-       lambda: (build_persistence_sql(28), build_counter_age_sql(), build_floor_sql(28))
-               == (build_persistence_sql(28), build_counter_age_sql(), build_floor_sql(28)),
-       True)
+    ck("suppressions sql is REASON-INDEPENDENT",
+       lambda: "reason" in build_suppressions_sql(7), False)
     ck("builder refuses a quote-bearing literal", _quote_refused, True)
 
     # parser: field splitting and short-row rejection
@@ -1515,30 +1340,6 @@ def _self_test():
        lambda: window_complete_note("", 28),
        "no suppressions recorded yet, so the window has not started")
 
-    # MIXED_WINDOW: the ratchet must NOT bite while the window still carries shadow-era rows
-    ck("shadow mode uses the shadow table",
-       lambda: frozen_table_for("shadow", 0, 3)[1], "shadow")
-    ck("enforce with a FRESH shadow tail defers the ratchet",
-       lambda: frozen_table_for("enforce", 0, 3)[1], "shadow (MIXED_WINDOW)")
-    ck("enforce with a fresh tail really returns the LOOSER table",
-       lambda: frozen_table_for("enforce", 0, 3)[0] is FROZEN_CEILING_PCT_SHADOW, True)
-    ck("enforce past the lookback engages the ratchet",
-       lambda: frozen_table_for("enforce", 3, 3)[1], "enforce")
-    ck("enforce with no shadow history ever engages immediately",
-       lambda: frozen_table_for("enforce", 99999, 3)[1], "enforce")
-    # The ONE query that SHOULD be stage-scoped: "when did the previous stage last write" is a
-    # question ABOUT the stage. Asserted so the two kinds are never conflated again.
-    ck("shadow-recency sql scopes the shadow reason ON PURPOSE",
-       lambda: "reason = 'frozen_book_shadow'" in build_shadow_recency_sql(), True)
-
-    # ceiling lookup falls back, and the enforce table really is the ratchet
-    ck("shadow ceiling per venue", lambda: ceiling(FROZEN_CEILING_PCT_SHADOW, "XT"), 6.0)
-    ck("shadow ceiling default", lambda: ceiling(FROZEN_CEILING_PCT_SHADOW, "BINANCE"), 1.0)
-    ck("enforce ratchets every venue", lambda: ceiling(FROZEN_CEILING_PCT_ENFORCE, "XT"), 1.0)
-    ck("enforce is strictly tighter than shadow for XT",
-       lambda: ceiling(FROZEN_CEILING_PCT_ENFORCE, "XT") < ceiling(FROZEN_CEILING_PCT_SHADOW,
-                                                                   "XT"), True)
-
     # token -> exit-code mapping, asserted as the shipped DATA and not as a local copy
     ck("PASS maps to 0", lambda: emit_probe("PASS", 0), ("PASS", 0))
     ck("FAIL maps to 0", lambda: emit_probe("FAIL", 0), ("FAIL", 0))
@@ -1568,9 +1369,11 @@ def _self_test():
        True)
     ck("persistence sql carries THE bound, for its rows and its window_days_seen",
        lambda: build_persistence_sql(28).count(wb.sql), 2)
-    ck("floor sql carries THE bound", lambda: build_floor_sql(28).count(wb.sql), 1)
     ck("no window query is interval-derived (the D+1 form)",
-       lambda: any("INTERVAL" in q for q in (build_persistence_sql(28), build_floor_sql(28))), False)
+       lambda: any("INTERVAL" in q for q in (build_persistence_sql(28), build_suppressions_sql(7))), False)
+    ck("the record's dates ARE THE bound's 7 dates, oldest first",
+       lambda: record_dates(7, datetime(2026, 11, 11).date()),
+       ["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"])
     ck("window_complete_note projects with THE bound's offset",
        lambda: window_complete_note("2026-08-25", 28)
        == "full coverage on %s" % (datetime(2026, 8, 25).date()
@@ -1585,12 +1388,13 @@ def _self_test():
 
     # -- ONE ALERT ID, ONE REMEDY ---------------------------------------------------------------
     ck("both remedies are TEMPLATED",
-       lambda: all(re.search(r"^OPS-[A-Z0-9-]+-W\{NEXT\}$", w) for w in (WAVE_CEILING, WAVE_DEAD_BOOK)),
+       lambda: all(re.search(r"^OPS-[A-Z0-9-]+-W\{NEXT\}$", w) for w in (WAVE_DEFECT, WAVE_DEAD_BOOK)),
        True)
-    ck("the two remedies are DISTINCT", lambda: WAVE_CEILING != WAVE_DEAD_BOOK, True)
-    ck("the two alert ids are DISTINCT", lambda: ALERT_CEILING != ALERT_DEAD_BOOK, True)
-    cbody = build_ceiling_body(["frozen XT: 8.00% (40/500), ceiling 6.0%"], "enforce", "T",
-                               "2026-09-03", "2026-09-30")
+    ck("the two remedies are DISTINCT", lambda: WAVE_DEFECT != WAVE_DEAD_BOOK, True)
+    ck("the two alert ids are DISTINCT", lambda: ALERT_DEFECT != ALERT_DEAD_BOOK, True)
+    ck("the retired LEVEL id has no seam left (OPS-BOOK-LIVENESS-W2 CH3)",
+       lambda: [n for n in ("fire_ceiling", "clear_ceiling", "ALERT_CEILING", "WAVE_CEILING", "build_floor_sql", "build_frozen_sql", "frozen_table_for", "MIN_DENOM")
+                if n in globals()], [])
     def _safe(name, fn, default):
         """Build a fixture inside the suite: a builder that RAISES is a recorded FAIL, never a crash."""
         nonlocal checks
@@ -1607,16 +1411,12 @@ def _self_test():
                              "reason": "XT's own status switches it off"}}
     oc, op, ot = _safe("classify VENUE_OFF fixture", lambda: classify_dead_set(one_dead, off_v), ({}, [], []))
     dbody = _safe("VENUE_OFF body", lambda: build_dead_body(op, ot, oc, "enforce", "T", "2026-09-03", "2026-09-30"), "")
-    ck("the LEVEL body names only the LEVEL remedy",
-       lambda: (WAVE_CEILING in cbody, WAVE_DEAD_BOOK in cbody), (True, False))
     ck("a VENUE_OFF dead-book body names only the ADMISSION remedy",
-       lambda: (WAVE_DEAD_BOOK in dbody, WAVE_CEILING in dbody), (True, False))
-    ck("both bodies carry the runbook as a full blob URL",
-       lambda: (RUNBOOK_URL.startswith("https://github.com/"), RUNBOOK_URL in cbody,
-                RUNBOOK_URL in dbody), (True, True, True))
-    ck("no body carries a BARE runbook filename",
-       lambda: any("RUNBOOK-BOOK-LIVENESS-FLIP.md" in b.replace(RUNBOOK_URL, "") for b in (cbody, dbody)),
-       False)
+       lambda: (WAVE_DEAD_BOOK in dbody, WAVE_DEFECT in dbody), (True, False))
+    ck("the dead-book body carries the runbook as a full blob URL",
+       lambda: (RUNBOOK_URL.startswith("https://github.com/"), RUNBOOK_URL in dbody), (True, True))
+    ck("no dead-book body carries a BARE runbook filename",
+       lambda: "RUNBOOK-BOOK-LIVENESS-FLIP.md" in dbody.replace(RUNBOOK_URL, ""), False)
     ck("the dead-book body lists each key with its days, timeframes, class, status, last trade, bars",
        lambda: "dead:XT|EPT — suppressed on 26 of 28 days across 3 timeframe(s) — VENUE_OFF: status ok · "
                "last trade 2026-01-30T00:00:00.000Z · traded bars 24h 0 · " in dbody, True)
@@ -1629,7 +1429,7 @@ def _self_test():
        lambda: DEAD_CLASSES, ("STATUS_UNKNOWN", "VENUE_OFF", "ADAPTER_CONTRADICTION", "THIN_LIVE"))
     ck("one remedy per paged class: admission · admission · the gate/adapter",
        lambda: (CLASS_REMEDY["VENUE_OFF"], CLASS_REMEDY["STATUS_UNKNOWN"], CLASS_REMEDY["ADAPTER_CONTRADICTION"]),
-       (WAVE_DEAD_BOOK, WAVE_DEAD_BOOK, WAVE_CEILING))
+       (WAVE_DEAD_BOOK, WAVE_DEAD_BOOK, WAVE_DEFECT))
     ck("the seam is the app container's own admission step",
        lambda: ADMISSION_CMD, ["docker", "exec", APP_CONTAINER, "node", "dist/scripts/admission-verdict.js", "--keys"])
 
@@ -1675,7 +1475,7 @@ def _self_test():
     ck("a mixed set pages only the actionable key", lambda: dead_book_dispatch(True, mp), ("fire", [keys2[1]]))
     mbody = _safe("mixed body", lambda: build_dead_body(mp, mt, mc, "enforce", "T", "2026-09-13", "2026-10-10"), "")
     ck("an ADAPTER_CONTRADICTION body names the gate/adapter remedy, not admission",
-       lambda: ("recommended_wave: %s" % WAVE_CEILING in mbody, WAVE_DEAD_BOOK in mbody), (True, False))
+       lambda: ("recommended_wave: %s" % WAVE_DEFECT in mbody, WAVE_DEAD_BOOK in mbody), (True, False))
     ck("the body counts what it did NOT page", lambda: "DEAD_BOOKS_THIN_LIVE=1 " in mbody, True)
     ubody = _safe("STATUS_UNKNOWN body", lambda: build_dead_body(fp, ft, fc, "enforce", "T", "2026-09-13", "2026-10-10"), "")
     ck("a STATUS_UNKNOWN body says which venue needs a status source",
@@ -1684,9 +1484,9 @@ def _self_test():
        lambda: any("lists it as live, the book is genuinely thin" in b or "A NEW dead book on a venue" in b
                    for b in (dbody, mbody, ubody)), False)
     pre_wave = _safe("pre-wave record", lambda: build_result_metrics(
-        "FAIL", 0, "enforce", "2026-09-13", "2026-10-10", two, [], [], True, 47), {})
+        "FAIL", 0, "enforce", "2026-09-13", "2026-10-10", two, True, 47), {})
     classed = _safe("classed record", lambda: build_result_metrics(
-        "PASS", 0, "enforce", "2026-09-13", "2026-10-10", two, [], [], True, 47,
+        "PASS", 0, "enforce", "2026-09-13", "2026-10-10", two, True, 47,
         dead_class={k: v["class"] for k, v in mc.items()}), {})
     ck("dead_keys is IDENTICAL to the pre-wave derivation on the same fixture",
        lambda: (classed["dead_keys"], classed["dead_keys"] == pre_wave["dead_keys"]), (keys2, True))
@@ -1694,22 +1494,46 @@ def _self_test():
        lambda: (classed["dead_key_class"], classed["paged_keys"]),
        ({keys2[0]: "THIN_LIVE", keys2[1]: "ADAPTER_CONTRADICTION"}, [keys2[1]]))
 
-    # -- the PROMOTED floor -------------------------------------------------------------------
-    ck("the floor is promoted", lambda: FLOOR_REPORT_ONLY, False)
-    ck("floor pins are 3x the measured maxima", lambda: (FLOOR_PINS["ASTER"], FLOOR_PINS["BITGET"]),
-       (3180, 3))
-    ck("a floor ABOVE its pin breaches", lambda: len(classify_floor([["ASTER", "3181", "2026-09-30"]])[0]),
-       1)
-    ck("a floor AT its pin does not", lambda: len(classify_floor([["ASTER", "3180"]])[0]), 0)
-    ck("a venue with no observed maximum is REPORT-ONLY, never a pin of 0",
-       lambda: (len(classify_floor([["BINANCE", "5"]])[0]),
-                "report-only" in classify_floor([["BINANCE", "5"]])[1][0]), (0, True))
-    ck("floor sql reports the date of each venue's busiest day",
-       lambda: "array_agg(date ORDER BY d DESC)" in build_floor_sql(28), True)
+    # -- SUPPRESSIONS_RECORD: the counts the floor paged on, recorded and never paged (OPS-BOOK-LIVENESS-W2 CH3) --
+    d7 = record_dates(7, datetime(2026, 11, 11).date())
+    srec = _safe("suppressions record", lambda: suppressions_record(
+        [["BINGX", "2026-11-09", "14"], ["BITGET", "2026-11-08", "9"], ["BINGX", "2026-11-08", "2"]], d7),
+        {"dates": d7, "by_venue": {}})
+    ck("the record aligns each venue's counts to the window's dates and zero-fills the rest",
+       lambda: srec["by_venue"], {"BINGX": [0, 0, 0, 2, 14, 0, 0], "BITGET": [0, 0, 0, 9, 0, 0, 0]})
+    ck("a suppression row dated OUTSIDE the window is an instrument defect, never a fact",
+       lambda: _raises(lambda: suppressions_record([["XT", "2026-11-04", "3"]], d7), ValueError), True)
+    ck("the positive line names each venue's total and busiest date",
+       lambda: suppressions_line(srec), "suppressions (recorded, never paged): 7 UTC dates 2026-11-05..2026-11-11 - "
+                                         "BINGX 16 (peak 14 on 2026-11-09) · BITGET 9 (peak 9 on 2026-11-08)")
+    ck("…and states a zero rather than printing nothing",
+       lambda: suppressions_line({"dates": d7, "by_venue": {}}).endswith(" - 0 on every venue"), True)
+    # AC3.1 — W1's 11-08/09 state replayed: the floor paged BINGX 14 on 2026-11-09 > pin 9 and BITGET 9 on
+    # 2026-11-08 > pin 3 at the 2026-11-11T19:09Z run. With the sentinels LIVE and the S2 rows FROZE_AFTER
+    # (both measured by W1) the same counts now page NOTHING: they are recorded.
+    w1_state = judge_defect("enforce", {"mode": "sentinels", "sentinels": [
+        {"venue": v, "coin": "BTC", "state": "LIVE", "reason": "W1"} for v in ("BINGX", "BITGET", "ASTER", "XT")]}, None,
+        [S2Row(1321248, "XT", "USDTRY", "2h", 1794000000)], [],
+        {"mode": "rows", "rows": [{"signal_id": 1321248, "venue": "XT", "coin": "USDTRY", "timeframe": "2h",
+                                   "entry": "T", "verdict": "FROZE_AFTER", "reason": "W1"}]}, None)
+    ac31 = _safe("AC3.1 record", lambda: build_result_metrics(
+        "PASS", 0, "enforce", "2026-10-15", "2026-11-11", [], True, 78, defect=w1_state, suppressions=srec), {})
+    ck("AC3.1: the 11-08/09 state (BINGX 14, BITGET 9) pages NOTHING and CLEARS the defect id",
+       lambda: (w1_state["verdict"], defect_dispatch(w1_state["verdict"], w1_state["keys"]), ac31.get("level_breaches")),
+       ("PASS", ("clear", None), 0))
+    ck("…and the record still carries those counts, with no floor_max",
+       lambda: (ac31.get("suppressions", {}).get("by_venue", {}).get("BINGX"), "floor_max" in ac31),
+       ([0, 0, 0, 2, 14, 0, 0], False))
+    ck("level_breaches IS the defect id's page keys",
+       lambda: build_result_metrics("FAIL", 0, "enforce", "a", "b", [], True, 78,
+                                    defect=judge_defect("enforce", {"mode": "sentinels", "sentinels": [
+                                        {"venue": "BINGX", "coin": "BTC", "state": "FROZEN", "reason": "r"}]},
+                                        None, [], [], None, None))["level_breaches"], 1)
 
     # -- the bounded result line: the dead-set KEYS make the close condition machine-checkable --
     many = [DeadBook("XT", "C%04d" % i, 28, 3, "28 of 28 days") for i in range(2000)]
-    big = build_result_metrics("FAIL", 0, "enforce", "2026-09-03", "2026-09-30", many, [], [], True, 36)
+    big = build_result_metrics("FAIL", 0, "enforce", "2026-09-03", "2026-09-30", many, True, 36,
+                               suppressions={"dates": d7, "by_venue": {"V%02d" % i: [99999] * 7 for i in range(15)}})
     ck("an oversize dead set is TRUNCATED and the drop is RECORDED",
        lambda: (big["dead_keys_dropped"] > 0, len(big["dead_keys"]) + big["dead_keys_dropped"]),
        (True, 2000))
@@ -1717,14 +1541,13 @@ def _self_test():
        lambda: len((_build_record(RESULT_CANARY, "FAIL", 0, big) if _build_record
                     else json.dumps(big)).encode("utf-8")) <= _RESULT_MAX_BYTES, True)
     small = build_result_metrics("FAIL", 0, "enforce", "2026-09-03", "2026-09-30",
-                                 [DeadBook("XT", "EPT", 28, 3, "28 of 28 days")], [["ASTER", "10"]],
-                                 [], True, 36)
-    ck("a normal dead set is carried WHOLE",
-       lambda: (small["dead_keys"], small["dead_keys_dropped"], small["floor_max"]),
-       (["dead:XT|EPT"], 0, {"ASTER": 10}))
+                                 [DeadBook("XT", "EPT", 28, 3, "28 of 28 days")], True, 36, suppressions=srec)
+    ck("a normal dead set is carried WHOLE, beside the suppressions record",
+       lambda: (small["dead_keys"], small["dead_keys_dropped"], small["suppressions"] is srec),
+       (["dead:XT|EPT"], 0, True))
 
     # -- BOOK_LIVENESS_DEFECT: leg S (sentinel) + leg G (gate miss), OPS-BOOK-LIVENESS-W2 CH2 ----------
-    ck("the defect id is distinct from the other two", lambda: len({ALERT_CEILING, ALERT_DEAD_BOOK, ALERT_DEFECT}), 3)
+    ck("the defect id is distinct from the dead-book id", lambda: len({ALERT_DEAD_BOOK, ALERT_DEFECT}), 2)
     ck("the defect remedy is TEMPLATED", lambda: bool(re.search(r"^OPS-[A-Z0-9-]+-W\{NEXT\}$", WAVE_DEFECT)), True)
     ck("the probe seam is the app container's own CLI",
        lambda: PROBE_CMD, ["docker", "exec", APP_CONTAINER, "node", "dist/scripts/book-liveness-probe.js"])
@@ -1852,7 +1675,8 @@ def _self_test():
        lambda: ("miss:1328245" in gbody, "assessBookLiveness" in gbody, "volume parse" in gbody), (True, True, False))
 
     many_miss = judge("enforce", live4, [(i, "XT", "C%d" % i, "1h", "GATE_MISS") for i in range(1, 400)])
-    dm = build_result_metrics("FAIL", 0, "enforce", "2026-09-03", "2026-09-30", [], [], [], True, 36, defect=many_miss)
+    dm = build_result_metrics("FAIL", 0, "enforce", "2026-09-03", "2026-09-30", [], True, 36, defect=many_miss,
+                              suppressions={"dates": d7, "by_venue": {"V%02d" % i: [99999] * 7 for i in range(15)}})
     ck("the record carries every sentinel's state, the per-venue s2 counts and the BOUNDED page keys",
        lambda: (dm["sentinel"], dm["s2"]["XT"]["gate_miss"], len(dm["defect_keys"]), dm["defect_keys_dropped"]),
        ({"BINGX": "LIVE", "BITGET": "LIVE", "ASTER": "LIVE", "XT": "LIVE"}, 399, BODY_MAX_KEYS, 399 - BODY_MAX_KEYS))

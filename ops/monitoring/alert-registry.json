@@ -124,18 +124,6 @@
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-AUTOPUB_UNCLASSIFIED-W{NEXT}"
     },
     {
-      "alert_id": "book_liveness_ceiling",
-      "owner": "ops/monitoring/book-liveness-canary.py",
-      "hosts": [
-        "signal-1"
-      ],
-      "adopted": true,
-      "announce_resolution": false,
-      "envelope_adopted": false,
-      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-book_liveness_ceiling-W{NEXT}",
-      "notes": "OPS-ALARM-SINGLE-DERIVATION-W1 CH4: LEVEL only — the frozen-row rate plus the suppression floor, PROMOTED to paging (pins = 3 x the per-venue maximum measured 2026-09-30 over 28 dates). Adopted: the canary calls --clear on every run without a level breach. Dead-book persistence moved to book_liveness_dead_book, which pages on the CHANGE."
-    },
-    {
       "alert_id": "book_liveness_dead_book",
       "owner": "ops/monitoring/book-liveness-canary.py",
       "hosts": [
@@ -171,7 +159,7 @@
       },
       "envelope_adopted": false,
       "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-book_liveness_defect-W{NEXT}",
-      "notes": "OPS-BOOK-LIVENESS-W2 CH2: replaces the pins of book_liveness_ceiling with two questions asked of the app itself, through `docker exec … node dist/scripts/book-liveness-probe.js` (its adapters and assessBookLiveness, k of N read live). Leg S: one known-live book per active venue (ADMISSION_SOURCES kind != retired; BTC or the highest-volume admitted book), 24 x 1h through the adapter — FROZEN pages sentinel:<VENUE>, UNREADABLE is INDETERMINATE. Leg G: every S2 row (pfe = mae = 0) of the last 3 d, its bars before entry at its own timeframe — GATE_MISS pages miss:<id> only while the gate ENFORCES; FROZE_AFTER and UNVERIFIABLE are counted per venue and never page. The canary sends the page keys on a FAIL run and --clear on a PASS run; an INDETERMINATE run neither fires nor clears (it must not prune an acknowledged key). recommended_wave in the body: OPS-BOOK-LIVENESS-W{NEXT}."
+      "notes": "OPS-BOOK-LIVENESS-W2 CH2: replaces the pins of book_liveness_ceiling with two questions asked of the app itself, through `docker exec … node dist/scripts/book-liveness-probe.js` (its adapters and assessBookLiveness, k of N read live). Leg S: one known-live book per active venue (ADMISSION_SOURCES kind != retired; BTC or the highest-volume admitted book), 24 x 1h through the adapter — FROZEN pages sentinel:<VENUE>, UNREADABLE is INDETERMINATE. Leg G: every S2 row (pfe = mae = 0) of the last 3 d, its bars before entry at its own timeframe — GATE_MISS pages miss:<id> only while the gate ENFORCES; FROZE_AFTER and UNVERIFIABLE are counted per venue and never page. OPS-BOOK-LIVENESS-W2 CH3 retired book_liveness_ceiling (its row, call sites and inventory id), so this id and book_liveness_dead_book are the canary's only two. The canary sends the page keys on a FAIL run and --clear on a PASS run; an INDETERMINATE run neither fires nor clears (it must not prune an acknowledged key). recommended_wave in the body: OPS-BOOK-LIVENESS-W{NEXT}."
     },
     {
       "alert_id": "CANDLE_BASIS_FLIP_READY",

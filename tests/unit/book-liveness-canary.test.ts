@@ -48,12 +48,10 @@ function tokenLines(stdout: string): string[] {
  * changes which branch is exercised rather than passing silently.
  */
 const STUBS = [
-  // The four wrapper seams and the result recorder — every effect main() has, captured instead of
+  // The wrapper seams and the result recorder — every effect main() has, captured instead of
   // performed, and printed so a test can assert WHICH alert id heard WHAT on this run.
   'import json',
   'calls = []',
-  'm.fire_ceiling = lambda body: calls.append(["fire_ceiling"])',
-  'm.clear_ceiling = lambda: calls.append(["clear_ceiling"])',
   'm.fire_dead_book = lambda body, keys: calls.append(["fire_dead_book", keys])',
   'm.clear_dead_book = lambda: calls.append(["clear_dead_book"])',
   'm.fire_defect = lambda body, keys: calls.append(["fire_defect", keys])',
@@ -161,8 +159,7 @@ function runMain(mode: string, psqlPy: string, admissionPy = '') {
  * zero suppressions, i.e. a fully enforcing gate.
  */
 function psqlStub(
-  frozen: string, persistence: string, floor: string,
-  counterAge = '4|2026-08-25', shadowAge = '99999', s2 = '',
+  persistence: string, suppressions = '', counterAge = '4|2026-08-25', s2 = '',
 ): string {
   return [
     'def _q(sql):',
@@ -170,23 +167,38 @@ function psqlStub(
     // alias only that builder emits.
     '    if "s2_entry" in sql:',
     `        return ${JSON.stringify(s2)}`,
-    '    if "n_frozen" in sql:',
-    `        return ${JSON.stringify(frozen)}`,
     '    if "window_days_seen" in sql:',
     `        return ${JSON.stringify(persistence)}`,
-    // Both remaining builders mention MAX(date); route on what is UNIQUE to each, or a
-    // reordering of the two would silently swap which answer each query receives.
-    '    if "99999" in sql:',
-    `        return ${JSON.stringify(shadowAge)}`,
+    // Both remaining builders read dates; route on what is UNIQUE to each, or a reordering of the two
+    // would silently swap which answer each query receives.
     '    if "MIN(date)" in sql:',
     `        return ${JSON.stringify(counterAge)}`,
-    `    return ${JSON.stringify(floor)}`,
+    // OPS-BOOK-LIVENESS-W2 CH3: the 7-date suppressions record (exchange|date|n), recorded and never paged.
+    '    if "date::text" in sql:',
+    `        return ${JSON.stringify(suppressions)}`,
+    // Anything else is a query this stub does not know: a builder the canary should not be running.
+    '    raise m.QueryError("unrouted query: " + sql[:60])',
     'm.psql = _q',
   ].join('\n');
 }
 
-/** A clean fleet: one healthy venue over MIN_DENOM, a young counter, no suppressions. */
-const CLEAN = psqlStub('BINANCE|500|0', '', '');
+/** A clean fleet: a young counter, no suppressions, one LIVE sentinel (the default probe stub). */
+const CLEAN = psqlStub('');
+
+/**
+ * Appended AFTER a psqlStub: rewrites DATE0..DATE6 in its answers to the canary's own 7 record dates
+ * (oldest first), so a suppressions fixture can never age out of the window it is meant to sit in.
+ */
+const RELATIVE_DATES = [
+  'import datetime as _dt',
+  '_d = m.record_dates(7, _dt.datetime.now(_dt.timezone.utc).date())',
+  '_q1 = m.psql',
+  'def _qd(sql):',
+  '    out = _q1(sql)',
+  '    for i, d in enumerate(_d): out = out.replace("DATE%d" % i, d)',
+  '    return out',
+  'm.psql = _qd',
+].join('\n');
 
 describe('book-liveness-canary — verdict token grammar', () => {
   it('the --self-test emits EXACTLY ONE token line and exits 0', { timeout: 60_000 }, () => {
@@ -218,11 +230,10 @@ describe('book-liveness-canary — exit-code contract, through the real main()',
 
   it('FAIL exits 0 — the alert IS the action, so a breach must not bounce the cron line',
     { timeout: 30_000 }, () => {
-      // 40 frozen of 500 = 8.00%, over XT's 6.0 shadow ceiling.
-      const r = runMain('shadow', psqlStub('XT|500|40', '', ''));
+      const r = runMain('shadow', CLEAN, probeWorld({ BINGX: 'FROZEN' }));
       expect(r.status, r.stderr).toBe(0);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
-      expect(r.stdout).toMatch(/BREACH frozen XT: 8\.00%/);
+      expect(r.stdout).toContain('level_breaches=1 (the page keys of book_liveness_defect)');
     });
 
   it('an unreadable DB is INDETERMINATE/3 — verified NOTHING never reads as clean',
@@ -266,38 +277,25 @@ describe('book-liveness-canary — exit-code contract, through the real main()',
 });
 
 describe('book-liveness-canary — mode-awareness', () => {
-  it('shadow and enforce read DIFFERENT ceiling tables on identical input',
-    { timeout: 40_000 }, () => {
-      // 15 frozen of 500 = 3.00%: under XT's 6.0 shadow ceiling, over the 1.0 enforce ratchet.
-      const rows = psqlStub('XT|500|15', '', '', '4|2026-08-25', '3');   // shadow tail already aged out
-      const shadow = runMain('shadow', rows);
-      const enforce = runMain('enforce', rows);
-      expect(tokenLines(shadow.stdout)).toEqual([`${TOKEN}=PASS`]);
-      expect(tokenLines(enforce.stdout)).toEqual([`${TOKEN}=FAIL`]);
-    });
-
-  it('the stage reason is still DERIVED, but ONLY the stage query uses it — the detector '
-    + 'window is reason-INDEPENDENT so a flip cannot restart it', { timeout: 30_000 }, () => {
+  it('the stage reason is still DERIVED, and NO window query uses it — a flip cannot restart a detector',
+    { timeout: 30_000 }, () => {
       // MEASURED 2026-08-29: the shadow->enforce flip changed reason_for(mode), the window
       // queries were scoped by it, and the dead-book detector silently reset to zero — counter
       // age 5d -> 1d, and 3 of 5 KNOWN dead books dropped to zero recorded days. A window keyed
-      // on a mutable reason restarts itself every time the reason changes.
+      // on a mutable reason restarts itself every time the reason changes. The one stage-scoped
+      // query (the shadow-recency read behind MIXED_WINDOW) went with the frozen-row rate in
+      // OPS-BOOK-LIVENESS-W2 CH3.
       const r = spawnSync('python3', ['-c', [
         'import importlib.util',
         `spec = importlib.util.spec_from_file_location("c", ${JSON.stringify(PY)})`,
         'm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)',
         'print(m.reason_for("enforce"))',
         'print(m.reason_for("shadow"))',
-        // the stage query SHOULD be stage-scoped — that is its actual subject
-        'print("STAGE_SCOPED" if "frozen_book_shadow" in m.build_shadow_recency_sql() else "NO")',
-        // the three WINDOW queries must mention no reason at all
-        'w = [m.build_persistence_sql(28), m.build_counter_age_sql(), m.build_floor_sql(28)]',
+        'w = [m.build_persistence_sql(28), m.build_counter_age_sql(), m.build_suppressions_sql(7), m.build_s2_rows_sql(3)]',
         'print("WINDOW_REASON_FREE" if not any("reason" in q for q in w) else "LEAKED")',
       ].join('\n')], { encoding: 'utf8' });
       expect(r.status, r.stderr).toBe(0);
-      expect(r.stdout.trim().split('\n')).toEqual([
-        'frozen_book', 'frozen_book_shadow', 'STAGE_SCOPED', 'WINDOW_REASON_FREE',
-      ]);
+      expect(r.stdout.trim().split('\n')).toEqual(['frozen_book', 'frozen_book_shadow', 'WINDOW_REASON_FREE']);
     });
 });
 
@@ -305,7 +303,7 @@ describe('book-liveness-canary — closed-vs-broken discriminator', () => {
   it('a dead book breaches; a closed market on the SAME run does not', { timeout: 30_000 }, () => {
     // cols: exchange|coin|days|tfs|n|window_days_seen — a full 28-day window.
     const rows = ['XT|EPT|28|3|140|28', 'ASTER|SPY|9|2|9|28'].join('\n');
-    const r = runMain('enforce', psqlStub('BINANCE|500|0', rows, 'XT|10', '28|2026-08-01'));
+    const r = runMain('enforce', psqlStub(rows, '', '28|2026-08-01'));
     expect(r.status, r.stderr).toBe(0);
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
     expect(r.stdout).toMatch(/BREACH dead book XT\|EPT/);
@@ -315,32 +313,11 @@ describe('book-liveness-canary — closed-vs-broken discriminator', () => {
   it('a young counter reports INSUFFICIENT_WINDOW and never a verdict', { timeout: 30_000 }, () => {
     // The same dead book, but the counter has only seen 4 of 28 days.
     const rows = 'XT|EPT|4|3|15|4';
-    const r = runMain('shadow', psqlStub('BINANCE|500|0', rows, 'XT|10', '4|2026-08-25'));
+    const r = runMain('shadow', psqlStub(rows, '', '4|2026-08-25'));
     expect(r.status, r.stderr).toBe(0);
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
     expect(r.stdout).toMatch(/INSUFFICIENT_WINDOW - the counter is 4 day\(s\) old, needs 28; full coverage on 2026-09-21/);
       expect(r.stdout).toMatch(/NO dead-book detection until then/);
-  });
-});
-
-describe('book-liveness-canary — the shadow→enforce cutover must not page on itself', () => {
-  // MEASURED at the real flip, 2026-08-29T03:25:45Z: the enforce table breached HTX 2.36% and
-  // XT 2.85% within seconds, and ALL 21 offending rows were emitted BEFORE the flip (post-flip
-  // count 0 on every venue). The mode flips in an instant; the LOOKBACK_DAYS window does not.
-  it('a fresh shadow tail defers the ratchet and says so', { timeout: 30_000 }, () => {
-    // 15 frozen of 500 = 3.00% — over the 1.0 enforce ratchet, under XT's 6.0 shadow ceiling.
-    const r = runMain('enforce', psqlStub('XT|500|15', '', '', '28|2026-08-01', '0'));
-    expect(r.status, r.stderr).toBe(0);
-    expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
-    expect(r.stdout).toMatch(/frozen ceilings=shadow \(MIXED_WINDOW\)/);
-    expect(r.stdout).toMatch(/MIXED_WINDOW - shadow last wrote 0d ago, lookback is 3d/);
-  });
-
-  it('once the window is entirely post-transition the ratchet BITES', { timeout: 30_000 }, () => {
-    const r = runMain('enforce', psqlStub('XT|500|15', '', '', '28|2026-08-01', '3'));
-    expect(r.status, r.stderr).toBe(0);
-    expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
-    expect(r.stdout).toMatch(/BREACH frozen XT: 3\.00%.*ceiling 1\.0%/);
   });
 });
 
@@ -350,7 +327,7 @@ describe('book-liveness-canary — the target state', () => {
       // The state a fully enforcing gate reaches. Keying evaluability on "days carrying a
       // suppression" instead of counter AGE would make the canary call its own success
       // INSUFFICIENT_WINDOW forever.
-      const r = runMain('enforce', psqlStub('BINANCE|500|0', '', '', '28|2026-08-01'));
+      const r = runMain('enforce', psqlStub('', '', '28|2026-08-01'));
       expect(r.status, r.stderr).toBe(0);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
       expect(r.stdout).toMatch(/persistence: 0 suppressions in the last 28 days over a full 28-day counter - no dead books/);
@@ -359,21 +336,13 @@ describe('book-liveness-canary — the target state', () => {
 });
 
 describe('book-liveness-canary — reporting is positive, never absence-of-alert', () => {
-  it('a below-MIN_DENOM venue is reported as SKIPPED, not silently dropped',
+  it('the suppressions record prints every venue\'s total and busiest date, and never pages',
     { timeout: 30_000 }, () => {
-      const r = runMain('shadow', psqlStub('BITMART|3|3\nBINANCE|500|0', '', ''));
+      const r = runMain('enforce', `${psqlStub('', 'ASTER|DATE3|10\nBINGX|DATE6|3', '28|2026-08-01')}\n${RELATIVE_DATES}`);
       expect(r.status, r.stderr).toBe(0);
-      expect(r.stdout).toMatch(/frozen BITMART: SKIPPED, n_eval=3 < MIN_DENOM=200/);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
-    });
-
-  it('the PROMOTED floor prints every venue against its pin, and a pinless venue is report-only',
-    { timeout: 30_000 }, () => {
-      const r = runMain('shadow', psqlStub('BINANCE|500|0', '', 'ASTER|10|2026-09-14\nBINANCE|5'));
-      expect(r.stdout).toMatch(/floor: PROMOTED — pins = 3 x the per-venue maximum measured 2026-09-30/);
-      expect(r.stdout).toMatch(/floor ASTER: 10 on 2026-09-14 within pin 3180/);
-      expect(r.stdout).toMatch(/floor BINANCE: 5 suppressions — no pin .* report-only/);
-      expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
+      expect(r.stdout).toMatch(/suppressions \(recorded, never paged\): 7 UTC dates \d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2} - ASTER 10 \(peak 10 on \d{4}-\d{2}-\d{2}\) · BINGX 3 /);
+      expect(calls(r.stdout)).toEqual([['clear_dead_book'], ['clear_defect']]);
     });
 });
 
@@ -386,7 +355,7 @@ describe('book-liveness-canary — source-level invariants', () => {
   });
 
   it('ONE alert id, ONE remedy — two TEMPLATED, DISTINCT recommended waves', () => {
-    expect(SRC).toMatch(/^WAVE_CEILING = "OPS-BOOK-LIVENESS-W\{NEXT\}"$/m);
+    expect(SRC).toMatch(/^WAVE_DEFECT = "OPS-BOOK-LIVENESS-W\{NEXT\}"$/m);
     expect(SRC).toMatch(/^WAVE_DEAD_BOOK = "OPS-UNIVERSE-ADMISSION-W\{NEXT\}"$/m);
     // a literal wave number in a remedy is HALT-class (historical wave ids in comments are provenance)
     expect(SRC).not.toMatch(/^WAVE_[A-Z_]+ = "OPS-[A-Z0-9-]+-W\d/m);
@@ -394,17 +363,20 @@ describe('book-liveness-canary — source-level invariants', () => {
   });
 
   it('every alert id keeps LITERAL call sites, so the registry gate can enumerate them', () => {
-    expect(SRC).toContain('[TG, "book_liveness_ceiling", "CRITICAL_PERSISTENT", "-"]');
     expect(SRC).toContain('[TG, "book_liveness_dead_book", "CRITICAL_PERSISTENT", "-"]');
     expect(SRC).toContain('[TG, "book_liveness_defect", "CRITICAL_PERSISTENT", "-"]');
-    expect(SRC).toContain('[TG, "--clear", "book_liveness_ceiling"]');
     expect(SRC).toContain('[TG, "--clear", "book_liveness_dead_book"]');
     expect(SRC).toContain('[TG, "--clear", "book_liveness_defect"]');
   });
 
-  it('every defensive constant carries a revisit date', () => {
+  it('the retired LEVEL id has no call site left, and the pins are gone (OPS-BOOK-LIVENESS-W2 CH3, AC3.2)', () => {
+    expect(SRC).not.toMatch(/\[TG, "(--clear", ")?book_liveness_ceiling"/);
+    expect(SRC).not.toMatch(/FLOOR_PINS|FROZEN_CEILING_PCT|classify_floor|MIN_DENOM =/);
+  });
+
+  it('the dead-book window still carries its revisit date', () => {
     const todos = SRC.match(/TODO: revisit by (\d{4}-\d{2}-\d{2})/g) ?? [];
-    expect(todos.length).toBeGreaterThanOrEqual(2);
+    expect(todos.length).toBeGreaterThanOrEqual(1);
   });
 
   it('the canary does not re-implement any send_telegram gate inline', () => {
@@ -418,7 +390,7 @@ describe('book-liveness-canary — ONE window, ONE remedy per alert id (OPS-ALAR
   // cols: exchange|coin|days|tfs|n|window_days_seen
   it('"29 of the last 28" cannot be produced — a builder regression is INDETERMINATE instrument_defect',
     { timeout: 30_000 }, () => {
-      const r = runMain('enforce', psqlStub('BINANCE|500|0', 'XT|EPT|29|3|140|29', 'XT|10', '36|2026-08-25'));
+      const r = runMain('enforce', psqlStub('XT|EPT|29|3|140|29', '', '36|2026-08-25'));
       expect(r.status, r.stderr).toBe(3);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=INDETERMINATE`]);
       expect(r.stderr).toMatch(/instrument_defect: 29 of 28/);
@@ -427,14 +399,13 @@ describe('book-liveness-canary — ONE window, ONE remedy per alert id (OPS-ALAR
       expect(calls(r.stdout)).toEqual([]);          // never paged, never cleared
     });
 
-  it('a dead set fires the DEAD-BOOK id with ENTITY keys; the LEVEL id, unbreached, is cleared',
+  it('a dead set fires the DEAD-BOOK id with ENTITY keys; the defect id, unbreached, is cleared',
     { timeout: 30_000 }, () => {
       const rows = ['XT|EPT|28|3|140|28', 'HTX|LRDS|28|5|100|28', 'ASTER|SPY|9|2|9|28'].join('\n');
-      const r = runMain('enforce', psqlStub('BINANCE|500|0', rows, 'ASTER|10', '36|2026-08-25'));
+      const r = runMain('enforce', psqlStub(rows, '', '36|2026-08-25'));
       expect(r.status, r.stderr).toBe(0);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
       expect(calls(r.stdout)).toEqual([
-        ['clear_ceiling'],
         ['fire_dead_book', ['dead:XT|EPT', 'dead:HTX|LRDS']],
         ['clear_defect'],
       ]);
@@ -445,7 +416,7 @@ describe('book-liveness-canary — ONE window, ONE remedy per alert id (OPS-ALAR
 
   it('the result line carries the dead-set KEYS and the window dates', { timeout: 30_000 }, () => {
     const rows = ['XT|EPT|28|3|140|28', 'HTX|LRDS|28|5|100|28'].join('\n');
-    const r = runMain('enforce', psqlStub('BINANCE|500|0', rows, 'ASTER|10', '36|2026-08-25'));
+    const r = runMain('enforce', psqlStub(rows, '', '36|2026-08-25'));
     const [canary, verdict, code, metrics] = result(r.stdout);
     expect([canary, verdict, code]).toEqual(['book-liveness', 'FAIL', 0]);
     expect(metrics.dead_keys).toEqual(['dead:XT|EPT', 'dead:HTX|LRDS']);
@@ -457,38 +428,55 @@ describe('book-liveness-canary — ONE window, ONE remedy per alert id (OPS-ALAR
 
   it('an EMPTY evaluable dead set clears the dead-book id — the wrapper prunes only if called',
     { timeout: 30_000 }, () => {
-      const r = runMain('enforce', psqlStub('BINANCE|500|0', 'ASTER|SPY|9|2|9|28', 'ASTER|10', '36|2026-08-25'));
+      const r = runMain('enforce', psqlStub('ASTER|SPY|9|2|9|28', '', '36|2026-08-25'));
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
-      expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['clear_dead_book'], ['clear_defect']]);
+      expect(calls(r.stdout)).toEqual([['clear_dead_book'], ['clear_defect']]);
     });
 
   it('an UNEVALUABLE window says nothing to the dead-book id — "could not judge" is not "none dead"',
     { timeout: 30_000 }, () => {
-      const r = runMain('shadow', psqlStub('BINANCE|500|0', 'XT|EPT|4|3|15|4', 'XT|10', '4|2026-08-25'));
+      const r = runMain('shadow', psqlStub('XT|EPT|4|3|15|4', '', '4|2026-08-25'));
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
-      expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['clear_defect']]);
+      expect(calls(r.stdout)).toEqual([['clear_defect']]);
     });
 
-  it('a floor above its pin fires the LEVEL id — not the dead-book id', { timeout: 30_000 }, () => {
-    const r = runMain('enforce', psqlStub('BINANCE|500|0', 'ASTER|SPY|9|2|9|28', 'ASTER|5000|2026-09-30', '36|2026-08-25'));
-    expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
-    expect(r.stdout).toMatch(/BREACH floor ASTER: 5000 suppressions on 2026-09-30 > pin 3180 \(3 x the 1060 measured 2026-09-30\)/);
-    expect(r.stdout).toMatch(/recommended_wave: OPS-BOOK-LIVENESS-W\{NEXT\}/);
-    expect(calls(r.stdout)).toEqual([['fire_ceiling'], ['clear_dead_book'], ['clear_defect']]);
-  });
+  it('AC3.1: the 11-08/09 state (BINGX 14, BITGET 9) pages NOTHING — the counts are recorded',
+    { timeout: 30_000 }, () => {
+      // OPS-BOOK-LIVENESS-W1: the floor paged BINGX 14 on 2026-11-09 > pin 9 and BITGET 9 on 2026-11-08 > pin 3
+      // at the 2026-11-11T19:09Z run. Every one was a correct suppression. The same counts, today:
+      const r = runMain('enforce',
+        `${psqlStub('ASTER|SPY|9|2|9|28', 'BINGX|DATE5|14\nBITGET|DATE4|9', '36|2026-08-25')}\n${RELATIVE_DATES}`);
+      expect(r.status, r.stderr).toBe(0);
+      expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
+      expect(calls(r.stdout)).toEqual([['clear_dead_book'], ['clear_defect']]);
+      expect(r.stdout).toContain('level_breaches=0 (the page keys of book_liveness_defect)');
+      const metrics = result(r.stdout)[3] as { level_breaches: number; suppressions: { dates: string[]; by_venue: Record<string, number[]> } };
+      expect(metrics.level_breaches).toBe(0);
+      expect(metrics.suppressions.dates).toHaveLength(7);
+      expect(metrics.suppressions.by_venue).toEqual({ BINGX: [0, 0, 0, 0, 0, 14, 0], BITGET: [0, 0, 0, 0, 9, 0, 0] });
+      expect(metrics).not.toHaveProperty('floor_max');
+    });
+
+  it('a suppression row dated outside the 7-date window is an INDETERMINATE instrument_defect, never recorded',
+    { timeout: 30_000 }, () => {
+      const r = runMain('enforce', psqlStub('', 'XT|1999-01-01|3', '36|2026-08-25'));
+      expect(r.status, r.stderr).toBe(3);
+      expect(r.stderr).toMatch(/instrument_defect: 1 suppression row\(s\) dated outside the/);
+      expect(calls(r.stdout)).toEqual([]);
+    });
 });
 
 describe('book-liveness-canary — a dead book pages only when the venue does not explain it (OPS-ALARM-OWNER-DERIVATION-W1 CH2)', () => {
   // cols: exchange|coin|days|tfs|n|window_days_seen — R0.6's live shape: five thin, venue-live Aster books.
   const DEAD = ['ASTER|EWT|25|3|90|28', 'ASTER|KSTR|25|3|80|28', 'ASTER|SPY|9|2|9|28'].join('\n');
-  const run = (admission: string) => runMain('enforce', psqlStub('BINANCE|500|0', DEAD, 'ASTER|10', '47|2026-08-25'), admission);
+  const run = (admission: string) => runMain('enforce', psqlStub(DEAD, '', '47|2026-08-25'), admission);
 
   it('an all-THIN_LIVE dead set is PASS: nothing fires, the id is CLEARED, and the run says why',
     { timeout: 30_000 }, () => {
       const r = run(admissionClasses({ 'dead:ASTER|EWT': 'THIN_LIVE', 'dead:ASTER|KSTR': 'THIN_LIVE' }));
       expect(r.status, r.stderr).toBe(0);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
-      expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['clear_dead_book'], ['clear_defect']]);
+      expect(calls(r.stdout)).toEqual([['clear_dead_book'], ['clear_defect']]);
       expect(r.stdout).toContain('DEAD_BOOKS_THIN_LIVE=2 (not paged: the venue lists them tradeable; the emit gate is suppressing correctly)');
       expect(r.stdout).not.toContain('BREACH dead book');
       const metrics = result(r.stdout)[3];
@@ -505,7 +493,7 @@ describe('book-liveness-canary — a dead book pages only when the venue does no
   it('VENUE_OFF beside THIN_LIVE pages ONLY the VENUE_OFF key, with the admission remedy', { timeout: 30_000 }, () => {
     const r = run(admissionClasses({ 'dead:ASTER|EWT': 'VENUE_OFF', 'dead:ASTER|KSTR': 'THIN_LIVE' }));
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
-    expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['fire_dead_book', ['dead:ASTER|EWT']], ['clear_defect']]);
+    expect(calls(r.stdout)).toEqual([['fire_dead_book', ['dead:ASTER|EWT']], ['clear_defect']]);
     expect(r.stdout).toContain('dead:ASTER|EWT — suppressed on 25 of 28 days across 3 timeframe');
     expect(r.stdout).toContain('— VENUE_OFF: status ok · last trade n/a · traded bars 24h 0 · stub');
     expect(r.stdout).toContain('recommended_wave: OPS-UNIVERSE-ADMISSION-W{NEXT}');
@@ -515,7 +503,7 @@ describe('book-liveness-canary — a dead book pages only when the venue does no
 
   it('ADAPTER_CONTRADICTION pages with the gate/adapter remedy', { timeout: 30_000 }, () => {
     const r = run(admissionClasses({ 'dead:ASTER|EWT': 'THIN_LIVE', 'dead:ASTER|KSTR': 'ADAPTER_CONTRADICTION' }));
-    expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['fire_dead_book', ['dead:ASTER|KSTR']], ['clear_defect']]);
+    expect(calls(r.stdout)).toEqual([['fire_dead_book', ['dead:ASTER|KSTR']], ['clear_defect']]);
     expect(r.stdout).toContain('recommended_wave: OPS-BOOK-LIVENESS-W{NEXT}');
     expect(r.stdout).not.toContain('recommended_wave: OPS-UNIVERSE-ADMISSION-W{NEXT}');
   });
@@ -524,16 +512,16 @@ describe('book-liveness-canary — a dead book pages only when the venue does no
     const r = run('');   // the default stub: the docker exec failed
     expect(r.status, r.stderr).toBe(0);
     expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
-    expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['fire_dead_book', ['dead:ASTER|EWT', 'dead:ASTER|KSTR']], ['clear_defect']]);
+    expect(calls(r.stdout)).toEqual([['fire_dead_book', ['dead:ASTER|EWT', 'dead:ASTER|KSTR']], ['clear_defect']]);
     expect(r.stderr).toContain('admission verdict UNAVAILABLE - stubbed: no app container in the test');
     expect(r.stdout).toContain('declare a status source for ASTER');
     expect(result(r.stdout)[3].dead_key_class).toEqual({ 'dead:ASTER|EWT': 'STATUS_UNKNOWN', 'dead:ASTER|KSTR': 'STATUS_UNKNOWN' });
   });
 
   it('no dead set: the seam is never called and the id is cleared', { timeout: 30_000 }, () => {
-    const r = runMain('enforce', psqlStub('BINANCE|500|0', 'ASTER|SPY|9|2|9|28', 'ASTER|10', '47|2026-08-25'));
+    const r = runMain('enforce', psqlStub('ASTER|SPY|9|2|9|28', '', '47|2026-08-25'));
     expect(admCalls(r.stdout)).toEqual([]);
-    expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['clear_dead_book'], ['clear_defect']]);
+    expect(calls(r.stdout)).toEqual([['clear_dead_book'], ['clear_defect']]);
     expect(r.stdout).toContain('DEAD_BOOKS_THIN_LIVE=0 ');
   });
 
@@ -548,12 +536,12 @@ describe('book-liveness-canary — leg S and leg G page under book_liveness_defe
   const S2 = ['1328245|XT|AUD|8h|1794300000', '1311028|ASTER|SYRUP|15m|1794200000'].join('\n');
   const FIXTURES = path.join(REPO, 'tests/fixtures/book-liveness-probe');
 
-  it('a FROZEN sentinel FAILs and fires sentinel:<VENUE>; the other two ids still hear their own verdicts',
+  it('a FROZEN sentinel FAILs and fires sentinel:<VENUE>',
     { timeout: 30_000 }, () => {
       const r = runMain('enforce', CLEAN, probeWorld({ BINGX: 'FROZEN', XT: 'LIVE' }));
       expect(r.status, r.stderr).toBe(0);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
-      expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['fire_defect', ['sentinel:BINGX']]]);
+      expect(calls(r.stdout)).toEqual([['fire_defect', ['sentinel:BINGX']]]);
       expect(r.stdout).toContain('sentinel leg: 2 active venue(s) read - LIVE 1 · FROZEN 1 · UNREADABLE 0');
       expect(r.stdout).toContain("fix the adapter's volume parse");
       expect(r.stdout).toContain('recommended_wave: OPS-BOOK-LIVENESS-W{NEXT}');
@@ -561,10 +549,10 @@ describe('book-liveness-canary — leg S and leg G page under book_liveness_defe
 
   it('a GATE_MISS under enforce fires miss:<id>; each S2 row reaches the probe as its own row token',
     { timeout: 30_000 }, () => {
-      const r = runMain('enforce', psqlStub('BINANCE|500|0', '', '', '4|2026-08-25', '99999', S2),
+      const r = runMain('enforce', psqlStub('', '', '4|2026-08-25', S2),
         probeWorld({ XT: 'LIVE' }, { 1328245: 'GATE_MISS', 1311028: 'FROZE_AFTER' }));
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=FAIL`]);
-      expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['fire_defect', ['miss:1328245']]]);
+      expect(calls(r.stdout)).toEqual([['fire_defect', ['miss:1328245']]]);
       expect(probeCalls(r.stdout)).toEqual([
         ['sentinels'],
         ['rows', ['XT|AUD|8h|1794300000|1328245', 'ASTER|SYRUP|15m|1794200000|1311028']],
@@ -574,10 +562,10 @@ describe('book-liveness-canary — leg S and leg G page under book_liveness_defe
 
   it('a GATE_MISS under SHADOW is recorded per venue and never paged — the gate withholds nothing in shadow',
     { timeout: 30_000 }, () => {
-      const r = runMain('shadow', psqlStub('BINANCE|500|0', '', '', '4|2026-08-25', '99999', S2),
+      const r = runMain('shadow', psqlStub('', '', '4|2026-08-25', S2),
         probeWorld({ XT: 'LIVE' }, { 1328245: 'GATE_MISS', 1311028: 'FROZE_AFTER' }));
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
-      expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['clear_defect']]);
+      expect(calls(r.stdout)).toEqual([['clear_defect']]);
       expect(r.stdout).toContain('(gate mode shadow; a miss pages only while it enforces)');
       expect(result(r.stdout)[3].s2).toEqual({
         XT: { gate_miss: 1, froze_after: 0, unverifiable: 0 },
@@ -587,10 +575,10 @@ describe('book-liveness-canary — leg S and leg G page under book_liveness_defe
 
   it('an UNREADABLE sentinel is INDETERMINATE/3: book_liveness_defect hears nothing, the other ids still do',
     { timeout: 30_000 }, () => {
-      const r = runMain('enforce', CLEAN, probeWorld({ BINGX: 'UNREADABLE', XT: 'LIVE' }));
+      const r = runMain('enforce', psqlStub('', '', '36|2026-08-25'), probeWorld({ BINGX: 'UNREADABLE', XT: 'LIVE' }));
       expect(r.status, r.stderr).toBe(3);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=INDETERMINATE`]);
-      expect(calls(r.stdout)).toEqual([['clear_ceiling']]);
+      expect(calls(r.stdout)).toEqual([['clear_dead_book']]);
       expect(r.stdout).toContain('book_liveness_defect: INDETERMINATE - neither fired nor cleared');
       const [, verdict, code, metrics] = result(r.stdout);
       expect([verdict, code]).toEqual(['INDETERMINATE', 3]);
@@ -599,10 +587,10 @@ describe('book-liveness-canary — leg S and leg G page under book_liveness_defe
 
   it('a failed --rows call with S2 rows present is INDETERMINATE/3 — every row UNVERIFIABLE, none dropped',
     { timeout: 30_000 }, () => {
-      const r = runMain('enforce', psqlStub('BINANCE|500|0', '', '', '4|2026-08-25', '99999', S2),
+      const r = runMain('enforce', psqlStub('', '', '4|2026-08-25', S2),
         probeWorld({ XT: 'LIVE' }, 'timed out'));
       expect(r.status, r.stderr).toBe(3);
-      expect(calls(r.stdout)).toEqual([['clear_ceiling']]);
+      expect(calls(r.stdout)).toEqual([]);
       expect(r.stdout).toContain('gate-miss probe UNAVAILABLE - timed out');
       expect(result(r.stdout)[3].s2).toEqual({
         XT: { gate_miss: 0, froze_after: 0, unverifiable: 1 },
@@ -611,7 +599,7 @@ describe('book-liveness-canary — leg S and leg G page under book_liveness_defe
     });
 
   it('a failed --sentinels call is INDETERMINATE/3, and the rows leg still runs', { timeout: 30_000 }, () => {
-    const r = runMain('enforce', psqlStub('BINANCE|500|0', '', '', '4|2026-08-25', '99999', S2),
+    const r = runMain('enforce', psqlStub('', '', '4|2026-08-25', S2),
       probeWorld('docker exec: no such container', { 1328245: 'FROZE_AFTER', 1311028: 'FROZE_AFTER' }));
     expect(r.status, r.stderr).toBe(3);
     expect(r.stdout).toContain('sentinel leg: UNAVAILABLE - docker exec: no such container');
@@ -623,7 +611,7 @@ describe('book-liveness-canary — leg S and leg G page under book_liveness_defe
       const r = runMain('enforce', CLEAN);
       expect(r.status, r.stderr).toBe(0);
       expect(tokenLines(r.stdout)).toEqual([`${TOKEN}=PASS`]);
-      expect(calls(r.stdout)).toEqual([['clear_ceiling'], ['clear_defect']]);
+      expect(calls(r.stdout)).toEqual([['clear_defect']]);
       expect(r.stdout).toContain('sentinel leg: 1 active venue(s) read - LIVE 1 · FROZEN 0 · UNREADABLE 0');
       expect(r.stdout).toContain('gate-miss leg: 0 S2 rows in the last 3d - nothing to judge (a fact, not a gap)');
       expect(probeCalls(r.stdout)).toEqual([['sentinels']]);

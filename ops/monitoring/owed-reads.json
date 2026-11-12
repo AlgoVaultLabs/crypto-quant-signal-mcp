@@ -418,6 +418,26 @@
       },
       "criteria": "Did the first straddled look read itself? Earliest verdict-rule-gate records at/after 2026-11-23T12:43Z for 3m window 2, both cells, DECIDED: live = live_at_look = FF, straddled true, actionable false; and >= 1 VERDICT_RULE_SWITCH_RECOMMENDED wrapper-log line at/after the look, none naming 3m:[MF]{2}:w2. Absent record or log = INDETERMINATE.",
       "_expires_at_rule": "Spec CH2 R2: the scheduled look of 3m window 2 is 2026-11-23T12:43Z (registration chain + cron 43 12 * * 1); not_before = the first :00 after it; expires_at = not_before + 72 h, inside the host results log's ~11-day retention (2,000 lines, ~170 a day)."
+    },
+    {
+      "id": "book-liveness-weekend",
+      "wave": "OPS-BOOK-LIVENESS-W2",
+      "not_before": "2026-11-17T19:30:00Z",
+      "expires_at": "2026-11-20T19:30:00Z",
+      "script": "owed-read-book-liveness-weekend.py",
+      "timeout_s": 120,
+      "anchors": {
+        "canary": "book-liveness",
+        "weekend": [
+          "2026-11-14",
+          "2026-11-15",
+          "2026-11-16"
+        ],
+        "run_from": "2026-11-17T19:09:00Z",
+        "records": "/var/lib/algovault-monitoring/canary-results.jsonl"
+      },
+      "criteria": "Did the first weekend after the pins went page nothing? The earliest book-liveness record in [2026-11-17T19:09Z, +1 h): PASS = level_breaches 0 with the 2026-11-14..16 suppressions and the s2 counts carried; FAIL = level_breaches > 0; a missing record, an INDETERMINATE run or a record without those fields = INDETERMINATE.",
+      "_expires_at_rule": "Spec CH3 T4: install #2 ran on 2026-11-12 UTC; the first Saturday on or after it is 2026-11-14 and the first Tuesday after that is 2026-11-17; not_before = 19:30:00Z that day (after the canary's 19:09Z cron run), expires_at = not_before + 72 h, inside the host results log's retention."
     }
   ]
 }

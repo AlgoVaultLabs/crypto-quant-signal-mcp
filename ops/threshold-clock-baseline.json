@@ -11,20 +11,6 @@
     },
     {
       "kind": "clock",
-      "file": "ops/monitoring/book-liveness-canary.py",
-      "site": "ops/monitoring/book-liveness-canary.py::# TODO: revisit by 2026-09-11 - re-derive both tables from >=14d of live data spanning >=2",
-      "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
-      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
-    },
-    {
-      "kind": "clock",
-      "file": "ops/monitoring/book-liveness-canary.py",
-      "site": "ops/monitoring/book-liveness-canary.py::# TODO: revisit by 2026-10-28 — re-measure once the window is entirely post-admission (from",
-      "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
-      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
-    },
-    {
-      "kind": "clock",
       "file": "ops/monitoring/directional-label-freshness.py",
       "site": "ops/monitoring/directional-label-freshness.py::RECOVERY_CAP_MIN = int(os.environ.get(\"LF_RECOVERY_CAP_MIN\", \"20\"))   # TODO: revisit by 2026-08-07",
       "owner": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
@@ -167,20 +153,6 @@
       "kind": "threshold",
       "file": "ops/monitoring/book-liveness-canary.py",
       "site": "ops/monitoring/book-liveness-canary.py::_class_detail::len(reason) > REASON_MAX_CHARS",
-      "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
-      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
-    },
-    {
-      "kind": "threshold",
-      "file": "ops/monitoring/book-liveness-canary.py",
-      "site": "ops/monitoring/book-liveness-canary.py::classify_floor::peak > pin",
-      "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
-      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
-    },
-    {
-      "kind": "threshold",
-      "file": "ops/monitoring/book-liveness-canary.py",
-      "site": "ops/monitoring/book-liveness-canary.py::main::n_eval < MIN_DENOM",
       "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
       "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
     },

@@ -3,12 +3,6 @@
   "schema_version": 1,
   "sites": [
     {
-      "file": "ops/monitoring/book-liveness-canary.py",
-      "site": "main::100.0 * n_frozen / n_eval",
-      "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",
-      "owner": "OPS-PFE-METRIC-INTEGRITY-W1"
-    },
-    {
       "file": "ops/monitoring/directional-label-freshness.py",
       "site": "evaluate_coverage::labelled / emitted",
       "reason": "pre-existing at OPS-ALARM-SINGLE-DERIVATION-W1 (2026-09-29) — migrate through population_rate when this canary is next touched",

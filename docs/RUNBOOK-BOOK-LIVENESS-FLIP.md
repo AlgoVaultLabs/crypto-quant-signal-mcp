@@ -218,8 +218,11 @@ ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
       app's own admission step (below) and sends the ACTIONABLE keys `dead:<VENUE>|<COIN>`, or
       `--clear` when there are none. `send_telegram.sh` pages only a key it has not delivered
       before and prunes a key that leaves the set, so a book that recovers and dies again pages
-      again. `book_liveness_ceiling` keeps the LEVEL checks (frozen-row rate + the promoted
-      suppression floor) and clears itself on a clean run.
+      again. The LEVEL id `book_liveness_ceiling` and both its checks — the frozen-row rate and
+      the promoted suppression floor — were retired by `OPS-BOOK-LIVENESS-W2` CH3: both paged on
+      correct suppressions (`OPS-BOOK-LIVENESS-W1` measured 10 of 10 floor-breach books venue-paused
+      or thin, and 30 of 30 frozen rows live at entry). The per-venue suppression counts of the last
+      7 UTC dates ride in every result record (`suppressions`), recorded and never paged.
 
       **Which dead books page** (`OPS-ALARM-OWNER-DERIVATION-W1` CH2). "Dead" is a fact about the
       emit gate, not the venue, so the canary runs
@@ -237,8 +240,14 @@ ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
 
       The result record keeps `dead_keys` as the FULL dead set and adds `dead_key_class` and
       `paged_keys`. The contradiction check runs only where the venue's universe payload carries its
-      own last-trade time (XT, Aster, Binance today); the promoted per-venue suppression FLOOR remains
-      the runaway parse-defect detector everywhere.
+      own last-trade time (XT, Aster, Binance today). Everywhere, the **sentinel** replaces the floor
+      as the runaway parse-defect detector (`OPS-BOOK-LIVENESS-W2`): every run reads one known-live
+      book per active venue — BTC, or the venue's highest-volume admitted book — 24 × 1 h through the
+      adapter (`docker exec crypto-quant-signal-mcp-mcp-server-1 node dist/scripts/book-liveness-probe.js --sentinels`)
+      and judges it with the gate's own `assessBookLiveness`. A FROZEN read pages `book_liveness_defect`
+      key `sentinel:<VENUE>` (fix that adapter's volume parse); an S2 row whose bars before entry the
+      gate's own predicate would have withheld pages `miss:<signals.id>` while the gate enforces. An
+      UNREADABLE sentinel or a failed probe makes the run INDETERMINATE, which neither fires nor clears.
       - **Bootstrap (once, at install), no POST:**
         `ALERT_KEYS="<the dead set>" /opt/algovault-monitoring/send_telegram.sh --acknowledge book_liveness_dead_book`.
         The set measured at the thin R0 (2026-09-30T06:15Z, after universe admission went live):
