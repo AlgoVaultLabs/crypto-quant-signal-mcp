@@ -1,0 +1,846 @@
+{
+  "_comment": "OPS-THRESHOLD-CLOCK-W1 — SHRINK-ONLY baseline for scripts/check-threshold-clock.py. Each row is pre-existing debt: a dated revisit clock kept in prose (kind=clock), or a paging-canary comparison against a module-level numeric threshold with no self-running revisit (kind=threshold). Retire a clock by registering it as an ops/monitoring/owed-reads.json row; retire a threshold with `# threshold-revisit: <id>` or a reasoned `# threshold-exempt:` on its assignment. `--write-baseline` only ever removes rows. There is no flag that adds one.",
+  "schema_version": 1,
+  "sites": [
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/book-liveness-canary.py",
+      "site": "ops/monitoring/book-liveness-canary.py::# TODO: revisit by 2026-09-11 - confirm the longest legitimate closure against a real",
+      "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/book-liveness-canary.py",
+      "site": "ops/monitoring/book-liveness-canary.py::# TODO: revisit by 2026-09-11 - re-derive both tables from >=14d of live data spanning >=2",
+      "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/book-liveness-canary.py",
+      "site": "ops/monitoring/book-liveness-canary.py::# TODO: revisit by 2026-10-28 — re-measure once the window is entirely post-admission (from",
+      "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/directional-label-freshness.py",
+      "site": "ops/monitoring/directional-label-freshness.py::RECOVERY_CAP_MIN = int(os.environ.get(\"LF_RECOVERY_CAP_MIN\", \"20\"))   # TODO: revisit by 2026-08-07",
+      "owner": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/directional-label-freshness.py",
+      "site": "ops/monitoring/directional-label-freshness.py::TODO: revisit by 2026-08-04 — tier SLOs vs 30d of observed lag telemetry.",
+      "owner": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::ALPHA = 0.05         # Gate 2: 95% CI (two-sided).                    # TODO: revisit by 2026-09-27",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::C_MIN = 5            # Gate 1: min baseline conversions.              # TODO: revisit by 2026-09-27",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::MDE = 0.30           # Gate 2: min RELATIVE drop (practical signif.). # TODO: revisit by 2026-09-27",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::N_MIN = 30           # Gate 1: min current denominator (sessions).   # TODO: revisit by 2026-09-27",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::PERSISTENCE = 2      # Gate 3: consecutive significant WoW cycles.    # TODO: revisit by 2026-09-27",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/kernel-staleness-canary.sh",
+      "site": "ops/monitoring/kernel-staleness-canary.sh::# The former \"TODO: revisit by 2027-02-28\" is RETIRED, not moved. It asked a future reader to",
+      "owner": "OPS-HOST-KERNEL-REBOOT-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "ops/monitoring/postgres-cpu-snapshot.sh",
+      "site": "ops/monitoring/postgres-cpu-snapshot.sh::# TODO: revisit by 2026-10-25 — `Claude files/defensive-reductions-to-revisit.md` row INTEGRAL_PERSISTENT_PCT.",
+      "owner": "OPS-POSTGRES-CPU-AUTOPILOT-W1",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/lib/book-liveness.ts",
+      "site": "src/lib/book-liveness.ts::* // TODO: revisit by 2026-08-03 — re-tune only after OPS-PFE-METRIC-INTEGRITY-W1 R4 measures",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/lib/performance-db.ts",
+      "site": "src/lib/performance-db.ts::* TODO: revisit by 2026-11-13 — read the owed read `venue-closed-catchup` (ops/monitoring/owed-reads.json)",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/lib/script-lifecycle.ts",
+      "site": "src/lib/script-lifecycle.ts::* TODO: revisit by 2026-09-21 — once orphan count has held at 0 for a full",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/lib/tradfi-funding.ts",
+      "site": "src/lib/tradfi-funding.ts::* // TODO: revisit by 2026-09-01 (re-pull once more venues accrue >=30d + HL xyz history wired)",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/lib/traffic-classifier.ts",
+      "site": "src/lib/traffic-classifier.ts::* provider. `// TODO: revisit by 2026-09-27` (defensive-threshold hygiene).",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/lib/venue-budget-registry.ts",
+      "site": "src/lib/venue-budget-registry.ts::// // TODO: revisit by 2026-08-02 — if raw 429s reappear on Phemex, the group cap DOES",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/lib/venue-budget-registry.ts",
+      "site": "src/lib/venue-budget-registry.ts::// 180/min = 50%-of-360 derivation, reserve 40) and its EXPIRED-UNACTIONED `revisit by 2026-08-23`",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/lib/verdict-factors.ts",
+      "site": "src/lib/verdict-factors.ts::* TODO: revisit by 2026-08-21 — these two ratios were chosen in",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/scripts/backfill-directional-labels.ts",
+      "site": "src/scripts/backfill-directional-labels.ts::* rotation. TODO: revisit by 2026-08-04 — tighten/loosen from measured nightly",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/scripts/nightly-carry-labeler.ts",
+      "site": "src/scripts/nightly-carry-labeler.ts::* Env-overridable; TODO: revisit by 2026-08-04 against measured nightly timings",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "clock",
+      "file": "src/tools/scan-funding-arb.ts",
+      "site": "src/tools/scan-funding-arb.ts::// TODO(revisit by 2026-09-01): re-tune against more data — raise for fewer thin coins, lower for reach.",
+      "owner": "unowned",
+      "reason": "pre-existing dated revisit clock at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — retire it by registering the revisit as an ops/monitoring/owed-reads.json row and deleting the prose date"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/book-liveness-canary.py",
+      "site": "ops/monitoring/book-liveness-canary.py::_class_detail::len(reason) > REASON_MAX_CHARS",
+      "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/book-liveness-canary.py",
+      "site": "ops/monitoring/book-liveness-canary.py::classify_floor::peak > pin",
+      "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/book-liveness-canary.py",
+      "site": "ops/monitoring/book-liveness-canary.py::main::n_eval < MIN_DENOM",
+      "owner": "OPS-ALARM-SINGLE-DERIVATION-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/client-claim-freshness.py",
+      "site": "ops/monitoring/client-claim-freshness.py::aggregate::abs(len(verdicts) - prev_count) > ROW_COUNT_TOLERANCE",
+      "owner": "OPS-CLIENT-CLAIM-FRESHNESS-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/client-claim-freshness.py",
+      "site": "ops/monitoring/client-claim-freshness.py::self_test::n < _SELF_TEST_MIN_CHECKS",
+      "owner": "OPS-CLIENT-CLAIM-FRESHNESS-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/client-claim-freshness.py",
+      "site": "ops/monitoring/client-claim-freshness.py::self_test::n >= _SELF_TEST_MIN_CHECKS",
+      "owner": "OPS-CLIENT-CLAIM-FRESHNESS-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/decision-gate-orphan-canary.py",
+      "site": "ops/monitoring/decision-gate-orphan-canary.py::self_test::n < _SELF_TEST_MIN_CHECKS",
+      "owner": "OPS-RECALIBRATE-HARNESS-RETIRE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/decision-gate-orphan-canary.py",
+      "site": "ops/monitoring/decision-gate-orphan-canary.py::self_test::n >= _SELF_TEST_MIN_CHECKS",
+      "owner": "OPS-RECALIBRATE-HARNESS-RETIRE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/directional-label-freshness.py",
+      "site": "ops/monitoring/directional-label-freshness.py::coverage_page_decision::fails < CONSECUTIVE_TO_PAGE",
+      "owner": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/directional-label-freshness.py",
+      "site": "ops/monitoring/directional-label-freshness.py::coverage_page_decision::fails > COVERAGE_WINDOW_D",
+      "owner": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/directional-label-freshness.py",
+      "site": "ops/monitoring/directional-label-freshness.py::coverage_page_decision::gain >= COVERAGE_RECOVERING_MIN_GAIN - 1e-09",
+      "owner": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/directional-label-freshness.py",
+      "site": "ops/monitoring/directional-label-freshness.py::evaluate::now - newest_sig <= INPUT_FLOWING_H * 3600",
+      "owner": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/directional-label-freshness.py",
+      "site": "ops/monitoring/directional-label-freshness.py::evaluate_coverage::ratio >= COVERAGE_FLOOR",
+      "owner": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/directional-label-freshness.py",
+      "site": "ops/monitoring/directional-label-freshness.py::main::consecutive.get(v, 0) >= CONSECUTIVE_TO_PAGE",
+      "owner": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/directional-labels-race-integrity.py",
+      "site": "ops/monitoring/directional-labels-race-integrity.py::judge::age_h <= V2_FRESHNESS_MAX_AGE_H",
+      "owner": "EDGE-LABELER-RACE-WINDOW-V2-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/directional-labels-race-integrity.py",
+      "site": "ops/monitoring/directional-labels-race-integrity.py::paging::len(st['counter_runs']) <= ARMING_REPORT_ONLY_RUNS",
+      "owner": "EDGE-LABELER-RACE-WINDOW-V2-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/directional-labels-race-integrity.py",
+      "site": "ops/monitoring/directional-labels-race-integrity.py::paging::len(st['fail_streak']) >= PAGE_AFTER_CONSECUTIVE_FAILS",
+      "owner": "EDGE-LABELER-RACE-WINDOW-V2-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::compute_alert_conditions::c_from < N_MIN",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::compute_alert_conditions::p_to < C_MIN",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::evaluate_transition::from_c < N_MIN",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::evaluate_transition::to_p < C_MIN",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::is_significant_drop::rel_drop < MDE",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/funnel-leak-detector.py",
+      "site": "ops/monitoring/funnel-leak-detector.py::is_significant_drop::rel_drop >= MDE",
+      "owner": "ACTIVATION-FUNNEL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/llm-spend-monitor.py",
+      "site": "ops/monitoring/llm-spend-monitor.py::main::v > threshold",
+      "owner": "OPS-LLM-SPEND-MONITOR-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::build_body::used + len(line) + 1 > budget",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::check_pending_stale::age > PENDING_STALE_DAYS",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::check_pending_stale::age > PENDING_STALE_DAYS#2",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::check_pending_stale::age > PENDING_STALE_DAYS#3",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::check_pending_stale::age > PENDING_STALE_DAYS#4",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::check_pending_stale::age > PENDING_STALE_DAYS#5",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::evaluate_sot_parity_streak::consecutive >= need",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::main::streak >= CONSECUTIVE_TO_PAGE",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::main::streak >= CONSECUTIVE_TO_PAGE#2",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::render_finding_item::len(text) > BODY_MAX_VALUE_CHARS",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "site": "ops/monitoring/monitoring-inventory-reconcile.py::self_test::len(huge) <= BODY_BUDGET_CHARS",
+      "owner": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/node-runtime-floor-canary.py",
+      "site": "ops/monitoring/node-runtime-floor-canary.py::_capped::len(body) <= BODY_CAP",
+      "owner": "OPS-NODE-SECURITY-FLOOR-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/node-runtime-floor-canary.py",
+      "site": "ops/monitoring/node-runtime-floor-canary.py::_self_test_parsers::len(hb) <= BODY_CAP",
+      "owner": "OPS-NODE-SECURITY-FLOOR-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/node-runtime-floor-canary.py",
+      "site": "ops/monitoring/node-runtime-floor-canary.py::effective_floor::com['days_left'] <= EXPIRY_WARNING_DAYS",
+      "owner": "OPS-NODE-SECURITY-FLOOR-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/node-runtime-floor-canary.py",
+      "site": "ops/monitoring/node-runtime-floor-canary.py::floor_from_index::majors[-1] < MIN_NEWEST_MAJOR",
+      "owner": "OPS-NODE-SECURITY-FLOOR-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/node-runtime-floor-canary.py",
+      "site": "ops/monitoring/node-runtime-floor-canary.py::floor_from_index::parsed < MIN_INDEX_ROWS",
+      "owner": "OPS-NODE-SECURITY-FLOOR-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/node-runtime-floor-canary.py",
+      "site": "ops/monitoring/node-runtime-floor-canary.py::floor_from_index::v[0] < MIN_MAJOR",
+      "owner": "OPS-NODE-SECURITY-FLOOR-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/oauth-discovery-canary.py",
+      "site": "ops/monitoring/oauth-discovery-canary.py::self_test::DOCKER_TIMEOUT_S > 0",
+      "owner": "GROWTH-AGENT-SIGNIN-OAUTH-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/oauth-discovery-canary.py",
+      "site": "ops/monitoring/oauth-discovery-canary.py::self_test::HTTP_TIMEOUT_S > 0",
+      "owner": "GROWTH-AGENT-SIGNIN-OAUTH-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/oauth-discovery-canary.py",
+      "site": "ops/monitoring/oauth-discovery-canary.py::self_test::WRAPPER_TIMEOUT_S > 0",
+      "owner": "GROWTH-AGENT-SIGNIN-OAUTH-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/outcome-backfill-freshness.py",
+      "site": "ops/monitoring/outcome-backfill-freshness.py::_cells_brief::more > 0",
+      "owner": "OPS-OUTCOME-BACKFILL-STALL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/outcome-backfill-freshness.py",
+      "site": "ops/monitoring/outcome-backfill-freshness.py::arm_coin_silence::c['matured_7d'] < n",
+      "owner": "OPS-OUTCOME-BACKFILL-STALL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/outcome-backfill-freshness.py",
+      "site": "ops/monitoring/outcome-backfill-freshness.py::arm_venue_silence::v['matured_24h'] >= n",
+      "owner": "OPS-OUTCOME-BACKFILL-STALL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/outcome-backfill-freshness.py",
+      "site": "ops/monitoring/outcome-backfill-freshness.py::build_coin_body::len(body) > COIN_BODY_MAX_CHARS",
+      "owner": "OPS-OUTCOME-BACKFILL-STALL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/outcome-backfill-freshness.py",
+      "site": "ops/monitoring/outcome-backfill-freshness.py::build_coin_body::len(sec['failing']) > COIN_BODY_MAX_CELLS",
+      "owner": "OPS-OUTCOME-BACKFILL-STALL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/outcome-backfill-freshness.py",
+      "site": "ops/monitoring/outcome-backfill-freshness.py::is_coin_candidate::cell['matured_7d'] >= n",
+      "owner": "OPS-OUTCOME-BACKFILL-STALL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/outcome-backfill-freshness.py",
+      "site": "ops/monitoring/outcome-backfill-freshness.py::read_backfill_tail::size > limit",
+      "owner": "OPS-OUTCOME-BACKFILL-STALL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/outcome-backfill-freshness.py",
+      "site": "ops/monitoring/outcome-backfill-freshness.py::self_test::n < _SELF_TEST_MIN_CHECKS",
+      "owner": "OPS-OUTCOME-BACKFILL-STALL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/outcome-backfill-freshness.py",
+      "site": "ops/monitoring/outcome-backfill-freshness.py::self_test::n >= _SELF_TEST_MIN_CHECKS",
+      "owner": "OPS-OUTCOME-BACKFILL-STALL-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/owed-read-runner.py",
+      "site": "ops/monitoring/owed-read-runner.py::build_body::len(body) <= BODY_MAX_CHARS",
+      "owner": "OPS-OWED-READ-RUNNER-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/owed-read-runner.py",
+      "site": "ops/monitoring/owed-read-runner.py::build_body::len(fails) > BODY_MAX_READS",
+      "owner": "OPS-OWED-READ-RUNNER-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/owed-read-runner.py",
+      "site": "ops/monitoring/owed-read-runner.py::parse_read_output::len(raw.encode('utf-8')) > METRICS_MAX_BYTES",
+      "owner": "OPS-OWED-READ-RUNNER-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/owed-read-runner.py",
+      "site": "ops/monitoring/owed-read-runner.py::row_problems::1 <= t <= TIMEOUT_MAX_S",
+      "owner": "OPS-OWED-READ-RUNNER-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/owed-read-runner.py",
+      "site": "ops/monitoring/owed-read-runner.py::row_problems::len(c) <= CRITERIA_MAX_CHARS",
+      "owner": "OPS-OWED-READ-RUNNER-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/owed-read-runner.py",
+      "site": "ops/monitoring/owed-read-runner.py::row_problems::len(json.dumps(a).encode('utf-8')) > ANCHORS_MAX_BYTES",
+      "owner": "OPS-OWED-READ-RUNNER-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/owed-read-runner.py",
+      "site": "ops/monitoring/owed-read-runner.py::self_test::n < _SELF_TEST_MIN_CHECKS",
+      "owner": "OPS-OWED-READ-RUNNER-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/owed-read-runner.py",
+      "site": "ops/monitoring/owed-read-runner.py::self_test::n >= _SELF_TEST_MIN_CHECKS",
+      "owner": "OPS-OWED-READ-RUNNER-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/payment-decline-canary.py",
+      "site": "ops/monitoring/payment-decline-canary.py::classify_payers::e['age_days'] <= window_days",
+      "owner": "PAY-UNIONPAY-ATTRIBUTION-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/payment-decline-canary.py",
+      "site": "ops/monitoring/payment-decline-canary.py::self_test::SELF_TEST_MIN_CHECKS < 165",
+      "owner": "PAY-UNIONPAY-ATTRIBUTION-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/payment-decline-canary.py",
+      "site": "ops/monitoring/payment-decline-canary.py::self_test::total < SELF_TEST_MIN_CHECKS",
+      "owner": "PAY-UNIONPAY-ATTRIBUTION-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/quota-exhaustion-canary.py",
+      "site": "ops/monitoring/quota-exhaustion-canary.py::classify::now_s - start <= WINDOW_S",
+      "owner": "OPS-QUOTA-EXHAUSTION-NOTICE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/quota-exhaustion-canary.py",
+      "site": "ops/monitoring/quota-exhaustion-canary.py::classify::rate >= MIN_CALLS_PER_DAY",
+      "owner": "OPS-QUOTA-EXHAUSTION-NOTICE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/quota-exhaustion-canary.py",
+      "site": "ops/monitoring/quota-exhaustion-canary.py::self_test::39.0 < old_rate < 40.0",
+      "owner": "OPS-QUOTA-EXHAUSTION-NOTICE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/quota-exhaustion-canary.py",
+      "site": "ops/monitoring/quota-exhaustion-canary.py::self_test::old_rate < MIN_CALLS_PER_DAY",
+      "owner": "OPS-QUOTA-EXHAUSTION-NOTICE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/regime-budget-starvation-canary.py",
+      "site": "ops/monitoring/regime-budget-starvation-canary.py::classify_verification::tagged - denominator > VERIFY_MAX_ABSOLUTE_GAP",
+      "owner": "OPS-HL-INTERACTIVE-STARVATION-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/regime-budget-starvation-canary.py",
+      "site": "ops/monitoring/regime-budget-starvation-canary.py::classify_verification::tagged > VERIFY_MAX_MULTIPLE * denominator",
+      "owner": "OPS-HL-INTERACTIVE-STARVATION-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/scorer-input-identity-canary.py",
+      "site": "ops/monitoring/scorer-input-identity-canary.py::self_test.broken_is_caught::bad['max_sum_resid'] > TOLERANCE",
+      "owner": "OPS-SCORER-INPUT-PERSISTENCE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/scorer-input-identity-canary.py",
+      "site": "ops/monitoring/scorer-input-identity-canary.py::self_test::bad['max_sum_resid'] > TOLERANCE",
+      "owner": "OPS-SCORER-INPUT-PERSISTENCE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/stepup-readout.py",
+      "site": "ops/monitoring/stepup-readout.py::_selftest_oauth::size <= OAUTH_BLOCK_MAX_BYTES",
+      "owner": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/stepup-readout.py",
+      "site": "ops/monitoring/stepup-readout.py::evaluate_early_leg::1 <= post_days <= EARLY_LOOKBACK_DAYS",
+      "owner": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/stepup-readout.py",
+      "site": "ops/monitoring/stepup-readout.py::evaluate_early_leg::EARLY_COLLAPSE_FACTOR * post < pre_min",
+      "owner": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/stepup-readout.py",
+      "site": "ops/monitoring/stepup-readout.py::evaluate_early_leg::post_days < EARLY_FIRST_DAY",
+      "owner": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/stepup-readout.py",
+      "site": "ops/monitoring/stepup-readout.py::evaluate_early_leg::post_days >= WEEK_DAYS",
+      "owner": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/stepup-readout.py",
+      "site": "ops/monitoring/stepup-readout.py::evaluate_early_leg::pre_min < EARLY_MIN_PRE",
+      "owner": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/stepup-readout.py",
+      "site": "ops/monitoring/stepup-readout.py::fit_oauth::len(json.dumps(metrics, separators=(',', ':')).encode('utf-8')) <= RECORD_BUDGET_BYTES",
+      "owner": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/stepup-readout.py",
+      "site": "ops/monitoring/stepup-readout.py::judge_week::d < GUARD_DROP",
+      "owner": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/stepup-readout.py",
+      "site": "ops/monitoring/stepup-readout.py::judge_week::prior < ACT_MIN_PRIOR_WEEK",
+      "owner": "GROWTH-AGENT-SIGNIN-STEPUP-W1-V2",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/track-record-price-deviation-canary.py",
+      "site": "ops/monitoring/track-record-price-deviation-canary.py::alert_body::n > BODY_MAX_PAIRS",
+      "owner": "OPS-SERVED-CANDLE-TRUTH-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/track-record-price-deviation-canary.py",
+      "site": "ops/monitoring/track-record-price-deviation-canary.py::replay_runs::t - WINDOW_S <= r.t < t",
+      "owner": "OPS-SERVED-CANDLE-TRUTH-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "site": "ops/monitoring/trend-mode-readout-gate.py::evaluate::c > ceiling",
+      "owner": "SIGNAL-TREND-MODE-ENABLE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "site": "ops/monitoring/trend-mode-readout-gate.py::evaluate::g2 > limit",
+      "owner": "SIGNAL-TREND-MODE-ENABLE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "site": "ops/monitoring/trend-mode-readout-gate.py::evaluate::len(recent) < VOLUME_SUSTAIN_DAYS",
+      "owner": "SIGNAL-TREND-MODE-ENABLE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "site": "ops/monitoring/trend-mode-readout-gate.py::evaluate::v2.concentration_share > limit",
+      "owner": "SIGNAL-TREND-MODE-ENABLE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "site": "ops/monitoring/trend-mode-readout-gate.py::evaluate::v2.n < CONCENTRATION_MIN_N",
+      "owner": "SIGNAL-TREND-MODE-ENABLE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/trend-mode-readout-gate.py",
+      "site": "ops/monitoring/trend-mode-readout-gate.py::evaluate::v2.n_1d < LOW_POWER_CELL_MIN_N",
+      "owner": "SIGNAL-TREND-MODE-ENABLE-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/verdict-rule-gate.py",
+      "site": "ops/monitoring/verdict-rule-gate.py::_self_test::0 < STATEMENT_TIMEOUT_MS <= STATEMENT_TIMEOUT_CAP_MS == 300000",
+      "owner": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/verdict-rule-gate.py",
+      "site": "ops/monitoring/verdict-rule-gate.py::_self_test::ran < SELF_TEST_MIN_CHECKS",
+      "owner": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/verdict-rule-gate.py",
+      "site": "ops/monitoring/verdict-rule-gate.py::admissible::bound >= FLOOR_PP",
+      "owner": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/verdict-rule-gate.py",
+      "site": "ops/monitoring/verdict-rule-gate.py::coverage_ok::scored / rows >= COVERAGE_FLOOR",
+      "owner": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/verdict-rule-gate.py",
+      "site": "ops/monitoring/verdict-rule-gate.py::evaluate_family::st['mag_pos'] >= VETO_MIN_POSITIVE",
+      "owner": "SIGNAL-VERDICT-RULE-REGISTRY-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/website-drift-canary.py",
+      "site": "ops/monitoring/website-drift-canary.py::process_monotonic_observations::current > last_value * SPIKE_FACTOR",
+      "owner": "OPS-FRESHNESS-SOURCE-TRUTH-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/website-drift-canary.py",
+      "site": "ops/monitoring/website-drift-canary.py::process_monotonic_observations::entry['below_peak_streak'] >= REGRESSION_CONFIRM_RUNS",
+      "owner": "OPS-FRESHNESS-SOURCE-TRUTH-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    },
+    {
+      "kind": "threshold",
+      "file": "ops/monitoring/website-drift-canary.py",
+      "site": "ops/monitoring/website-drift-canary.py::save_monotonic_state::(now_dt - dt).days > STATE_PRUNE_DAYS",
+      "owner": "OPS-FRESHNESS-SOURCE-TRUTH-W1",
+      "reason": "pre-existing paging-canary threshold at OPS-THRESHOLD-CLOCK-W1 (2026-11-12) — register its revisit (# threshold-revisit: <owed-reads id>) or exempt it with a reason when this canary is next touched"
+    }
+  ]
+}
